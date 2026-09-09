@@ -214,9 +214,11 @@ describe('search() / visit() hop loop (260909)', () => {
 
     expect(createSpy).toHaveBeenCalledTimes(3);
     expect(webRuns.map((r) => r.name)).toEqual(['search', 'visit']);
-    // Both tools are offered on a plain text turn.
-    const firstReq = createSpy.mock.calls[0][0] as { tools: Array<{ name: string }> };
-    expect(firstReq.tools.map((t) => t.name)).toEqual(expect.arrayContaining(['search', 'visit']));
+    // The Anthropic path offers the native server search plus our visit.
+    const firstReq = createSpy.mock.calls[0][0] as { tools: Array<{ name: string; type?: string }> };
+    expect(firstReq.tools.map((t) => t.name)).toEqual(expect.arrayContaining(['web_search', 'visit']));
+    expect(firstReq.tools.find((t) => t.name === 'web_search')?.type).toBe('web_search_20250305');
+    expect(firstReq.tools.map((t) => t.name)).not.toContain('search');
     // The messages array is shared across hops (pushed in place), so inspect
     // the final transcript: every tool_use was answered, in order, with the
     // web result as the tool_result content.
@@ -273,6 +275,43 @@ describe('a line beside search() lands before the lookup (260909)', () => {
     const result = await sendChatMessage({ characterId: CHAR, text: 'look up x' }, d);
     expect(pushed).toEqual(['one sec, looking']);
     expect(result.replies).toEqual([]);
+  });
+});
+
+describe('native server-side web_search on the Anthropic path (260909)', () => {
+  const serverBlocks = [
+    { type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: { query: 'ucla chancellor' } },
+    { type: 'web_search_tool_result', tool_use_id: 'srvtoolu_1', content: [{ type: 'web_search_result', title: 'UCLA', url: 'https://ucla.edu', encrypted_content: 'x'.repeat(200) }] },
+  ];
+
+  it('pushes the pre-search line first and keeps only the post-search text as the reply', async () => {
+    createSpy.mockResolvedValueOnce({
+      stop_reason: 'end_turn',
+      content: [
+        { type: 'text', text: 'lemme check.' },
+        ...serverBlocks,
+        { type: 'text', text: "it's julio frenk." },
+      ],
+    });
+    const pushed: string[] = [];
+    const d: ChatDeps = { ...deps(), emitReply: (_id, m) => { pushed.push(m.text); } };
+    const result = await sendChatMessage({ characterId: CHAR, text: "who is ucla's chancellor" }, d);
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(pushed).toEqual(['lemme check']);
+    expect(result.replies.map((r) => r.text)).toEqual(["it's julio frenk"]);
+  });
+
+  it('resumes a pause_turn by sending the assistant content back verbatim', async () => {
+    createSpy
+      .mockResolvedValueOnce({ stop_reason: 'pause_turn', content: [{ type: 'text', text: 'one sec.' }, ...serverBlocks] })
+      .mockResolvedValueOnce({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'found it.' }] });
+    const result = await sendChatMessage({ characterId: CHAR, text: 'look it up' }, deps());
+    expect(createSpy).toHaveBeenCalledTimes(2);
+    const req2 = createSpy.mock.calls[1][0] as { messages: Array<{ role: string; content: unknown }> };
+    const last = req2.messages[req2.messages.length - 1];
+    expect(last.role).toBe('assistant');
+    expect(JSON.stringify(last.content)).toContain('web_search_tool_result');
+    expect(result.replies.map((r) => r.text)).toEqual(['found it']);
   });
 });
 

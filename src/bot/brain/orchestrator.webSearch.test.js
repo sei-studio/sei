@@ -156,6 +156,50 @@ describe('search() / visit() loop in the game brain (260909)', () => {
     expect(second).toContain('results for \\"netherite armor\\"')
   })
 
+  it('an Anthropic provider gets the native server web_search (+ visit), resumes pause_turn, and drops the server blocks from history afterwards', async () => {
+    _setTickIntervalForTests(10_000_000)
+    const serverBlocks = [
+      { type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: { query: 'netherite' } },
+      { type: 'web_search_tool_result', tool_use_id: 'srvtoolu_1', content: [{ type: 'web_search_result', title: 'Netherite', url: 'https://minecraft.wiki/w/Netherite', encrypted_content: 'x'.repeat(100) }] },
+    ]
+    const provider = makeProvider([
+      { text: 'checking', content: [{ type: 'text', text: 'checking' }, ...serverBlocks], toolUses: [], stopReason: 'pause_turn' },
+      // Search done; an inline visit() keeps the loop alive so a THIRD call
+      // shows what history looks like after the searched turn ended.
+      { text: 'ok', content: [{ type: 'text', text: 'ok' }, ...serverBlocks, { type: 'tool_use', id: 'v1', name: 'visit', input: { ref: 'https://minecraft.wiki/w/Netherite' } }], toolUses: [{ id: 'v1', name: 'visit', input: { ref: 'https://minecraft.wiki/w/Netherite' } }], stopReason: 'end_turn' },
+      { text: 'done', toolUses: [{ id: 's1', name: 'say', input: { text: 'smithing table plus an ingot' } }] },
+    ])
+    provider.capabilities = { vision: true, cached: true, local: false, serverWebSearch: true }
+    const web = makeWebSession()
+    const orch = createOrchestrator({
+      adapter: makeAdapter(),
+      config: makeConfig(),
+      reenqueue: () => {},
+      _anthropicOverride: provider,
+      _webSessionOverride: web,
+    })
+    await orch.handleDispatch('sei:chat_received', chat('how do i make netherite armor'))
+    const names = provider.calls[0].tools.map((t) => t.name)
+    expect(names).toContain('web_search')
+    expect(names).toContain('visit')
+    expect(names).not.toContain('search')
+    expect(provider.calls[0].tools.find((t) => t.name === 'web_search').type).toBe('web_search_20250305')
+    // pause_turn resumed: the second call carries the paused content verbatim.
+    expect(provider.calls.length).toBe(3)
+    const second = provider.calls[1].messages
+    const lastMsg = second[second.length - 1]
+    expect(lastMsg.role).toBe('assistant')
+    expect(JSON.stringify(lastMsg.content)).toContain('web_search_tool_result')
+    // Our client search never ran; visit did.
+    expect(web.runs.map((r) => r.name)).toEqual(['visit'])
+    // Once the searched turn ENDED (end_turn + visit), its server blocks are
+    // dropped from the history the third call sees; the visit tool_use stays.
+    const third = provider.calls[2].messages
+    const visitTurn = third.find((m) => m.role === 'assistant' && JSON.stringify(m.content).includes('"visit"'))
+    expect(visitTurn).toBeTruthy()
+    expect(JSON.stringify(visitTurn.content)).not.toContain('web_search_tool_result')
+  })
+
   it('withholds the tools and answers with an error when web access is disabled', async () => {
     _setTickIntervalForTests(10_000_000)
     const provider = makeProvider([

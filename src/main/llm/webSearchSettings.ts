@@ -9,7 +9,7 @@
 // 'auto' chain. The keyless chain needs no registration; a keyed provider
 // (brave / tavily / serper) is used only when its key is present.
 import type { UserConfig } from '../../shared/characterSchema';
-import { createWebSession, WEB_PROVIDERS } from '../../bot/web/webTools.js';
+import { createWebSession, electronFetchProvider, WEB_PROVIDERS } from '../../bot/web/webTools.js';
 
 export interface WebSearchSettings {
   provider: string;
@@ -46,7 +46,15 @@ export function getChatWebSession(characterId: string, settings: WebSearchSettin
     hit.lastUsed = now;
     return hit.session;
   }
-  const session = createWebSession({ provider: settings.provider, apiKey: settings.api_key, logger: console });
+  // Chromium fetch (net.fetch): browser TLS fingerprint + OS proxy, so the
+  // Cloudflare-fronted wikis and DuckDuckGo answer where Node's fetch is
+  // challenged (measured 260909). Resolved lazily on the first request.
+  const session = createWebSession({
+    provider: settings.provider,
+    apiKey: settings.api_key,
+    logger: console,
+    fetchProvider: electronFetchProvider,
+  });
   sessions.set(characterId, { session, settingsKey, lastUsed: now });
   return session;
 }

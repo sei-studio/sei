@@ -15,6 +15,8 @@ import {
   normalizeUserUrl,
   providerChain,
   looksRelevant,
+  wikiTitleFromUrl,
+  wikisForQuery,
   clip,
   WEB_TOOLS,
 } from './webTools.js'
@@ -269,5 +271,107 @@ describe('session', () => {
     const r = await s.search('q')
     expect(s.lastProvider).toBe('brave')
     expect(r.content).toBe('results for "q":\na. Brave hit (b.example) - a snippet')
+  })
+})
+
+describe('game wikis (260909)', () => {
+  const wikiSearchJson = (titles) => JSON.stringify({ query: { search: titles.map((t) => ({ title: t, snippet: `<span class="searchmatch">${t}</span> snippet` })) } })
+  const wikiParseJson = (title, html) => JSON.stringify({ parse: { title, displaytitle: title, text: { '*': html } } })
+
+  it('maps queries to wikis and article URLs to titles', () => {
+    expect(wikisForQuery('minecraft how to tame a fox').map((w) => w.host)).toEqual(['minecraft.wiki'])
+    expect(wikisForQuery('valorant vandal vs phantom').map((w) => w.host)).toEqual(['valorant.fandom.com'])
+    expect(wikisForQuery('ucla current chancellor')).toEqual([])
+    expect(wikiTitleFromUrl('https://minecraft.wiki/w/Java_Edition_1.21.11', { articlePath: '/w/' })).toBe('Java Edition 1.21.11')
+    expect(wikiTitleFromUrl('https://valorant.fandom.com/wiki/Patch_Notes/11.10', { articlePath: '/wiki/' })).toBe('Patch Notes/11.10')
+    expect(wikiTitleFromUrl('https://minecraft.wiki/api.php?x', { articlePath: '/w/' })).toBeNull()
+    expect(wikiTitleFromUrl('https://some.wiki/wiki/Thing', null)).toBe('Thing')
+  })
+
+  it('search asks the named wiki directly and lists its hits first, even when the engines fail', async () => {
+    const fetchImpl = scriptedFetch({
+      'minecraft.wiki/api.php?action=query': fakeResponse({ contentType: 'application/json', body: wikiSearchJson(['Taming', 'Fox']) }),
+      'duckduckgo.com': fakeResponse({ status: 202, body: 'challenge' }),
+      'bing.com': fakeResponse({ status: 500, body: '' }),
+      'wikipedia.org': fakeResponse({ status: 500, body: '' }),
+    })
+    const s = createWebSession({ fetchImpl })
+    const r = await s.search('minecraft how to tame a fox')
+    expect(r.is_error).toBe(false)
+    expect(s.lastProvider).toBe('wiki')
+    expect(r.content).toBe('results for "minecraft how to tame a fox":\na. Taming (minecraft.wiki) - Taming snippet\nb. Fox (minecraft.wiki) - Fox snippet')
+    expect(s.refs.get('a').url).toBe('https://minecraft.wiki/w/Taming')
+    // The wiki was asked WITHOUT the game name.
+    const wikiCall = fetchImpl.calls.find((c) => c.url.includes('minecraft.wiki/api.php'))
+    expect(decodeURIComponent(wikiCall.url)).toContain('srsearch=how to tame a fox')
+    // Recency words are dropped too.
+    fetchImpl.calls.length = 0
+    await s.search('most recent minecraft java version')
+    const wikiCall2 = fetchImpl.calls.find((c) => c.url.includes('minecraft.wiki/api.php'))
+    expect(decodeURIComponent(wikiCall2.url)).toContain('srsearch=java version')
+    // A DDG challenge arms the cooldown so the next search skips it.
+    expect(s.ddgBlockedUntil).toBeGreaterThan(Date.now())
+    fetchImpl.calls.length = 0
+    await s.search('minecraft creeper')
+    expect(fetchImpl.calls.some((c) => c.url.includes('duckduckgo.com'))).toBe(false)
+  })
+
+  it('alwaysWikiHosts asks the standing wiki for a query that never names the game', async () => {
+    const fetchImpl = scriptedFetch({
+      'minecraft.wiki/api.php?action=query': fakeResponse({ contentType: 'application/json', body: wikiSearchJson(['Fox']) }),
+      'bing.com': fakeResponse({ body: fixture('bing.html') }),
+    })
+    const s = createWebSession({ fetchImpl, provider: 'bing', alwaysWikiHosts: ['minecraft.wiki'] })
+    const r = await s.search('craft')
+    expect(r.content.split('\n')[1]).toMatch(/^a\. Fox \(minecraft\.wiki\)/)
+    expect(r.content.split('\n')[2]).toMatch(/craft\.do/)
+  })
+
+  it('visit on a known wiki reads through the MediaWiki API and pages the parsed text', async () => {
+    const html = '<div class="mw-parser-output"><p>The <b>Vandal</b> is a rifle.</p><p>' + 'Damage 40. '.repeat(80) + '</p></div>'
+    const fetchImpl = scriptedFetch({
+      'valorant.fandom.com/api.php?action=parse': fakeResponse({ contentType: 'application/json', body: wikiParseJson('Vandal', html) }),
+      'valorant.fandom.com/wiki/Vandal': fakeResponse({ status: 403, body: 'Just a moment...' }),
+    })
+    const s = createWebSession({ fetchImpl, limits: { pageChars: 400 } })
+    const v = await s.visit('https://valorant.fandom.com/wiki/Vandal')
+    expect(v.is_error).toBe(false)
+    expect(v.content).toMatch(/^valorant\.fandom\.com - Vandal \(VALORANT Wiki\) \(part 1\/\d+, page: 2 for more\)\nThe Vandal is a rifle\./)
+    expect(fetchImpl.calls.some((c) => c.url.includes('/wiki/Vandal'))).toBe(false) // never hit the walled HTML
+    const apiCall = fetchImpl.calls.find((c) => c.url.includes('action=parse'))
+    expect(apiCall.url).toContain('page=Vandal')
+  })
+
+  it('visit falls back to the HTML page when the wiki API does not answer', async () => {
+    const fetchImpl = scriptedFetch({
+      'minecraft.wiki/api.php': fakeResponse({ status: 500, body: '' }),
+      'minecraft.wiki/w/Fox': fakeResponse({ body: '<html><head><title>Fox</title></head><body><main>' + '<p>Foxes are passive mobs. </p>'.repeat(30) + '</main></body></html>' }),
+    })
+    const s = createWebSession({ fetchImpl })
+    const v = await s.visit('https://minecraft.wiki/w/Fox')
+    expect(v.is_error).toBe(false)
+    expect(v.content).toContain('Foxes are passive mobs')
+  })
+
+  it('an unknown wiki behind a bot wall is retried through its api.php', async () => {
+    const fetchImpl = scriptedFetch({
+      'some.wiki/wiki/Thing': fakeResponse({ status: 403, body: 'Just a moment...' }),
+      'some.wiki/api.php?action=parse': fakeResponse({ contentType: 'application/json', body: wikiParseJson('Thing', '<p>Thing is a thing.</p>') }),
+    })
+    const s = createWebSession({ fetchImpl })
+    const v = await s.visit('https://some.wiki/wiki/Thing')
+    expect(v.is_error).toBe(false)
+    expect(v.content).toContain('Thing is a thing.')
+  })
+
+  it('auto-redirect mode (Chromium fetch) gates the final url', async () => {
+    const fetchImpl = async (url) => {
+      const r = fakeResponse({ body: '<p>secret</p>' })
+      return { ...r, url: 'http://127.0.0.1/admin' } // Chromium followed a redirect to a private host
+    }
+    const s = createWebSession({ fetchImpl, manualRedirects: false })
+    const v = await s.visit('https://example.com/x')
+    expect(v.is_error).toBe(true)
+    expect(v.content).toMatch(/private addresses/)
   })
 })

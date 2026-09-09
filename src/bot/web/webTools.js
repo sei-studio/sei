@@ -41,10 +41,100 @@ export const KEYED_PROVIDERS = new Set(['brave', 'tavily', 'serper'])
 const BROWSER_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
 
+/**
+ * Which fetch to use. Electron's `net.fetch` rides the Chromium network
+ * stack: browser TLS fingerprint (so Cloudflare-fronted wikis and DuckDuckGo
+ * answer where Node's undici gets a 403 / challenge page, measured 260909),
+ * OS proxy honored. It is available in main AND in the bot's utilityProcess.
+ * It cannot do `redirect: 'manual'` ("Redirect was cancelled"), so with it we
+ * follow redirects and gate the FINAL url instead of every hop. Plain Node
+ * (tests, standalone scripts) falls back to global fetch with manual hops.
+ */
+export async function electronFetchProvider() {
+  try {
+    const m = await import('electron')
+    const net = m?.net ?? m?.default?.net
+    if (net && typeof net.fetch === 'function') return { fetch: /** @type {typeof fetch} */ (net.fetch.bind(net)), manualRedirects: false, kind: 'electron' }
+  } catch {}
+  return { fetch: globalThis.fetch, manualRedirects: true, kind: 'node' }
+}
+
+/**
+ * Game wikis searched DIRECTLY through their MediaWiki API when the query
+ * names the game (and always for `alwaysWikiHosts`, e.g. the Minecraft bot).
+ * The API answers from any network (the HTML pages sit behind Cloudflare),
+ * ranks by the wiki's own index, and `visit` on these hosts reads the page
+ * through `action=parse`, which is cleaner than the rendered HTML. Fextralife
+ * (Elden Ring etc.) is not MediaWiki and is deliberately absent.
+ */
+export const GAME_WIKIS = Object.freeze([
+  { name: 'Minecraft Wiki', host: 'minecraft.wiki', articlePath: '/w/', apiPath: '/api.php', match: /\bminecraft\b|\bmc\b|\bnether(ite)?\b|\bredstone\b|\bcreeper\b|\bender(man| dragon)?\b/i },
+  { name: 'VALORANT Wiki', host: 'valorant.fandom.com', articlePath: '/wiki/', apiPath: '/api.php', match: /\bvalorant\b|\bvandal\b|\bphantom\b|\bradiant\b|\bagents?\b.*\b(riot|valorant)\b/i },
+  { name: 'League of Legends Wiki', host: 'wiki.leagueoflegends.com', articlePath: '/en-us/', apiPath: '/en-us/api.php', match: /\bleague of legends\b|\blol\b|\bsummoner'?s rift\b/i },
+  { name: 'Terraria Wiki', host: 'terraria.wiki.gg', articlePath: '/wiki/', apiPath: '/api.php', match: /\bterraria\b/i },
+  { name: 'Stardew Valley Wiki', host: 'stardewvalleywiki.com', articlePath: '/', apiPath: '/mediawiki/api.php', match: /\bstardew\b/i },
+  { name: 'Old School RuneScape Wiki', host: 'oldschool.runescape.wiki', articlePath: '/w/', apiPath: '/api.php', match: /\bosrs\b|\bold ?school runescape\b/i },
+  { name: 'RuneScape Wiki', host: 'runescape.wiki', articlePath: '/w/', apiPath: '/api.php', match: /\brunescape\b(?!.*old ?school)/i },
+  { name: 'Fortnite Wiki', host: 'fortnite.fandom.com', articlePath: '/wiki/', apiPath: '/api.php', match: /\bfortnite\b/i },
+  { name: 'Genshin Impact Wiki', host: 'genshin-impact.fandom.com', articlePath: '/wiki/', apiPath: '/api.php', match: /\bgenshin\b/i },
+  { name: 'Honkai: Star Rail Wiki', host: 'honkai-star-rail.fandom.com', articlePath: '/wiki/', apiPath: '/api.php', match: /\bstar rail\b|\bhsr\b/i },
+  { name: 'Hollow Knight Wiki', host: 'hollowknight.wiki', articlePath: '/w/', apiPath: '/api.php', match: /\bhollow knight\b|\bsilksong\b/i },
+  { name: 'Bulbapedia', host: 'bulbapedia.bulbagarden.net', articlePath: '/wiki/', apiPath: '/w/api.php', match: /\bpok[eé]mon\b/i },
+  { name: 'Zelda Wiki', host: 'zeldawiki.wiki', articlePath: '/wiki/', apiPath: '/api.php', match: /\bzelda\b|\btears of the kingdom\b|\bbreath of the wild\b/i },
+  { name: 'Factorio Wiki', host: 'wiki.factorio.com', articlePath: '/', apiPath: '/api.php', match: /\bfactorio\b/i },
+  { name: 'Roblox Wiki', host: 'roblox.fandom.com', articlePath: '/wiki/', apiPath: '/api.php', match: /\broblox\b/i },
+  { name: 'Counter-Strike Wiki', host: 'counterstrike.fandom.com', articlePath: '/wiki/', apiPath: '/api.php', match: /\bcounter-?strike\b|\bcs2\b|\bcs:?go\b/i },
+  { name: 'Overwatch Wiki', host: 'overwatch.fandom.com', articlePath: '/wiki/', apiPath: '/api.php', match: /\boverwatch\b/i },
+  { name: 'Apex Legends Wiki', host: 'apexlegends.fandom.com', articlePath: '/wiki/', apiPath: '/api.php', match: /\bapex legends\b|\bapex\b.*\blegend/i },
+  { name: 'Deep Rock Galactic Wiki', host: 'deeprockgalactic.wiki.gg', articlePath: '/wiki/', apiPath: '/api.php', match: /\bdeep rock\b/i },
+  { name: 'Wikipedia', host: 'en.wikipedia.org', articlePath: '/wiki/', apiPath: '/w/api.php', match: null },
+])
+
+export function wikiFor(host) {
+  const h = String(host ?? '').toLowerCase().replace(/^www\./, '')
+  return GAME_WIKIS.find((w) => w.host === h) ?? null
+}
+
+/** Registry entries whose `match` fires on the query (Wikipedia never does). */
+export function wikisForQuery(query) {
+  const q = String(query ?? '')
+  return GAME_WIKIS.filter((w) => w.match && w.match.test(q))
+}
+
+/** Page title from a wiki article URL, or null when the path is not an article. */
+export function wikiTitleFromUrl(url, wiki) {
+  let u
+  try { u = new URL(url) } catch { return null }
+  const paths = wiki ? [wiki.articlePath] : ['/wiki/', '/w/']
+  for (const ap of paths) {
+    if (ap === '/' ) {
+      const seg = u.pathname.slice(1)
+      if (!seg || seg.includes('/') || seg.endsWith('.php')) continue
+      return safeDecode(seg).replace(/_/g, ' ')
+    }
+    if (u.pathname.startsWith(ap) && u.pathname.length > ap.length) {
+      const rest = u.pathname.slice(ap.length)
+      if (rest.endsWith('.php') || rest.startsWith('Special:')) return null
+      return safeDecode(rest).replace(/_/g, ' ')
+    }
+  }
+  return null
+}
+
+function safeDecode(s) {
+  try { return decodeURIComponent(s) } catch { return s }
+}
+
+export function wikiArticleUrl(wiki, title) {
+  return `https://${wiki.host}${wiki.articlePath}${encodeURIComponent(String(title).replace(/ /g, '_')).replace(/%3A/g, ':').replace(/%2F/g, '/')}`
+}
+
 export const SEARCH_TOOL_DESCRIPTION =
   'Search the web. Returns a few lettered results (a, b, c...) with a title and a short snippet each. ' +
   'Use it when the player asks about something you are not sure of, or when a fact, a recipe, a date, a price or a name matters and guessing would be worse than checking. ' +
   'Call visit(ref) with a result letter to read the page itself. Search results are private to you; tell the player what you learned in your own words. ' +
+  'Name the game in the query ("valorant vandal damage", "minecraft tame fox"): known game wikis are searched directly. ' +
+  'For anything recent (latest version, patch notes, current holder of a role) visit a result; snippets can be stale. ' +
   'Before searching, let the player know (say() in the game, your reply text in chat).'
 
 export const VISIT_TOOL_DESCRIPTION =
@@ -78,6 +168,44 @@ export const VISIT_TOOL = Object.freeze({
 
 export const WEB_TOOLS = Object.freeze([SEARCH_TOOL, VISIT_TOOL])
 export const WEB_TOOL_NAMES = new Set(['search', 'visit'])
+
+/**
+ * 260909: on an Anthropic-backed session (cloud proxy or Anthropic BYOK) the
+ * search is Anthropic's own server-side tool instead of ours: Brave-backed,
+ * runs inside the same response (the model searches, reads, and answers in
+ * one turn), no scraping, no key, and no network dependence on the user's
+ * machine. `web_search_20250305` is the variant Haiku 4.5 supports. Our
+ * `visit` still rides along for reading a specific page. Every other
+ * provider gets our `search` + `visit` pair. Per-request cap of 3 searches
+ * (each is billed by Anthropic at their per-search rate on top of tokens).
+ */
+export const SERVER_WEB_SEARCH_TOOL = Object.freeze({ type: 'web_search_20250305', name: 'web_search', max_uses: 3 })
+
+export function isServerWebBlock(type) {
+  return type === 'server_tool_use' || type === 'web_search_tool_result'
+}
+
+/** Tools for a surface: native server search when the provider has it, else ours. */
+export function webToolsFor({ serverWebSearch }) {
+  return serverWebSearch ? [SERVER_WEB_SEARCH_TOOL, VISIT_TOOL] : [...WEB_TOOLS]
+}
+
+/**
+ * Split a response's text around a server-side search: what the model wrote
+ * BEFORE its first web_search call ("lemme check") versus after (the answer).
+ * Text blocks joined with a space, trimmed. Empty strings when absent.
+ */
+export function splitTextAroundServerSearch(content) {
+  const blocks = Array.isArray(content) ? content : []
+  const first = blocks.findIndex((b) => b?.type === 'server_tool_use')
+  const textOf = (arr) => arr.filter((b) => b?.type === 'text' && typeof b.text === 'string').map((b) => b.text.trim()).filter(Boolean).join(' ').trim()
+  if (first < 0) return { before: '', after: textOf(blocks), searched: false }
+  return { before: textOf(blocks.slice(0, first)), after: textOf(blocks.slice(first)), searched: true }
+}
+
+// The "Before searching, let the player know" cue lives as literal text in
+// both surface baselines (promptLibrary.js CHAT_BASELINE / MINECRAFT_BASELINE):
+// that module must stay import-free for scripts/lib/promptLibraryEdit.
 
 // ---------------------------------------------------------------------------
 // Text helpers
@@ -233,7 +361,7 @@ export function normalizeUserUrl(ref) {
 // ---------------------------------------------------------------------------
 // Fetch with timeout, size cap, manual redirects, and an optional outer signal.
 
-async function fetchCapped(fetchImpl, url, { headers, method = 'GET', body, signal, timeoutMs, maxBytes, maxRedirects, validate } = {}) {
+async function fetchCapped(fetchImpl, url, { headers, method = 'GET', body, signal, timeoutMs, maxBytes, maxRedirects, validate, manualRedirects = true } = {}) {
   let current = url
   for (let hop = 0; hop <= maxRedirects; hop++) {
     if (validate) validate(current)
@@ -245,7 +373,12 @@ async function fetchCapped(fetchImpl, url, { headers, method = 'GET', body, sign
       signal.addEventListener('abort', onOuter, { once: true })
     }
     try {
-      const res = await fetchImpl(current, { method, headers, body, signal: ctrl.signal, redirect: 'manual' })
+      const res = await fetchImpl(current, { method, headers, body, signal: ctrl.signal, redirect: manualRedirects ? 'manual' : 'follow' })
+      if (!manualRedirects && res.url && res.url !== current) {
+        // Chromium followed the chain for us: gate where it landed.
+        if (validate) validate(res.url)
+        current = res.url
+      }
       if (res.status >= 300 && res.status < 400) {
         const loc = res.headers.get('location')
         if (!loc) throw new Error(`redirect without location (${res.status})`)
@@ -454,29 +587,69 @@ export function providerChain(provider, apiKey) {
 /**
  * @param {{
  *   fetchImpl?: typeof fetch,
+ *   fetchProvider?: (() => Promise<{ fetch: typeof fetch, manualRedirects: boolean, kind?: string }>) | null,
+ *   manualRedirects?: boolean,
  *   provider?: string,
  *   apiKey?: string,
  *   logger?: { info?: Function, warn?: Function, debug?: Function } | null,
  *   limits?: Partial<typeof DEFAULT_LIMITS>,
+ *   alwaysWikiHosts?: string[],
  * }} [opts]
  */
-export function createWebSession({ fetchImpl, provider = 'auto', apiKey = '', logger = null, limits = {} } = {}) {
+export function createWebSession({ fetchImpl, fetchProvider = null, manualRedirects = true, provider = 'auto', apiKey = '', logger = null, limits = {}, alwaysWikiHosts = [] } = {}) {
   const L = { ...DEFAULT_LIMITS, ...limits }
-  const doFetch = fetchImpl ?? globalThis.fetch
-  if (typeof doFetch !== 'function') throw new Error('createWebSession: no fetch available')
+  // Either a plain fetch (tests, scripts) or an async provider resolved on
+  // first use ({ fetch, manualRedirects }; see electronFetchProvider).
+  let impl = fetchImpl ? { fetch: fetchImpl, manualRedirects } : null
+  if (!impl && !fetchProvider) impl = { fetch: globalThis.fetch, manualRedirects: true }
+  if (impl && typeof impl.fetch !== 'function') throw new Error('createWebSession: no fetch available')
+  const resolveImpl = async () => {
+    if (!impl) {
+      impl = await fetchProvider()
+      logger?.info?.(`[sei/web] fetch via ${impl.kind ?? 'custom'}`)
+    }
+    return impl
+  }
   const refs = new Map() // label -> { url, title, host }
   let callsThisTurn = 0
   let lastProvider = null
+  // A DuckDuckGo challenge means this address is being rate-limited; asking
+  // again a few seconds later only extends it. Skip DDG for a while.
+  let ddgBlockedUntil = 0
+  const DDG_COOLDOWN_MS = 90_000
+  const alwaysWikis = (alwaysWikiHosts ?? []).map(wikiFor).filter(Boolean)
 
   const ctx = {
     limits: L,
     apiKey,
-    get(url, opts = {}) {
-      return fetchCapped(doFetch, url, { ...opts, timeoutMs: L.fetchTimeoutMs, maxBytes: L.maxBodyBytes, maxRedirects: L.maxRedirects })
+    async get(url, opts = {}) {
+      const { fetch, manualRedirects: manual } = await resolveImpl()
+      return fetchCapped(fetch, url, { ...opts, manualRedirects: manual, timeoutMs: L.fetchTimeoutMs, maxBytes: L.maxBodyBytes, maxRedirects: L.maxRedirects })
     },
-    post(url, opts = {}) {
-      return fetchCapped(doFetch, url, { ...opts, method: 'POST', timeoutMs: L.fetchTimeoutMs, maxBytes: L.maxBodyBytes, maxRedirects: 0 })
+    async post(url, opts = {}) {
+      const { fetch, manualRedirects: manual } = await resolveImpl()
+      return fetchCapped(fetch, url, { ...opts, method: 'POST', manualRedirects: manual, timeoutMs: L.fetchTimeoutMs, maxBytes: L.maxBodyBytes, maxRedirects: 0 })
     },
+  }
+
+  /** MediaWiki list=search on one wiki. Throws on a non-answer. */
+  async function wikiSearch(wiki, q, signal) {
+    const u = `https://${wiki.host}${wiki.apiPath}?action=query&list=search&format=json&srprop=snippet&srlimit=${Math.min(3, L.maxResults)}&srsearch=${encodeURIComponent(q)}`
+    const { res, text } = await ctx.get(u, { headers: { Accept: 'application/json', 'User-Agent': BROWSER_UA }, signal })
+    if (!res.ok) throw new Error(`${wiki.host} http ${res.status}`)
+    const j = JSON.parse(text)
+    return (j?.query?.search ?? []).map((r) => ({ title: r.title, url: wikiArticleUrl(wiki, r.title), snippet: stripTags(r.snippet ?? ''), wiki: wiki.name }))
+  }
+
+  /** Query with the game name removed, so the wiki's own index is not asked for its own name. */
+  function wikiQuery(wiki, q) {
+    // Also drop recency words: a wiki's full-text index matches "most recent"
+    // literally (minecraft.wiki ranked a lost alpha build first for "most
+    // recent java version"); the model reads the page to learn what is current.
+    const stripped = (wiki.match ? q.replace(wiki.match, ' ') : q)
+      .replace(/\b(most recent|latest|recent|current|currently|newest|new|now|today)\b/gi, ' ')
+      .replace(/\s+/g, ' ').trim()
+    return stripped.length >= 3 ? stripped : q
   }
 
   function addRef(r) {
@@ -493,43 +666,66 @@ export function createWebSession({ fetchImpl, provider = 'auto', apiKey = '', lo
     return L.maxCallsPerTurn > 0 && callsThisTurn >= L.maxCallsPerTurn
   }
 
-  async function search(query, { signal } = {}) {
-    const q = String(query ?? '').trim().replace(/\s+/g, ' ').slice(0, 200)
-    if (!q) return { content: 'search: empty query', is_error: true }
-    const chain = providerChain(provider, apiKey)
-    const errors = []
+  async function generalSearch(q, signal, errors) {
+    const chain = providerChain(provider, apiKey).filter((name) => name !== 'ddg' || Date.now() >= ddgBlockedUntil)
     for (const name of chain) {
       if (signal?.aborted) throw signal.reason ?? new Error('aborted')
       try {
         const raw = await providers[name](q, { ...ctx, signal })
         if (KEYLESS_PROVIDERS.has(name) && !looksRelevant(raw, q)) throw new Error(`${name} answered a different query`)
-        const seen = new Set()
-        const results = []
-        for (const r of raw) {
-          if (!r?.url || !/^https?:\/\//i.test(r.url)) continue
-          const key = r.url.replace(/[#?].*$/, '').replace(/\/$/, '')
-          if (seen.has(key)) continue
-          seen.add(key)
-          results.push(r)
-          if (results.length >= L.maxResults) break
-        }
-        if (results.length === 0) throw new Error(`${name} no results`)
+        if (raw.length === 0) throw new Error(`${name} no results`)
         lastProvider = name
-        const lines = results.map((r) => {
-          const label = addRef(r)
-          const host = hostOf(r.url)
-          const snippet = clip(r.snippet, L.snippetChars)
-          return `${label}. ${clip(r.title || host || r.url, L.titleChars)}${host ? ` (${host})` : ''}${snippet ? ` - ${snippet}` : ''}`
-        })
-        return { content: `results for "${q}":\n${lines.join('\n')}`, is_error: false }
+        return raw
       } catch (err) {
         if (signal?.aborted) throw err
+        if (name === 'ddg' && /challenge/i.test(String(err?.message))) ddgBlockedUntil = Date.now() + DDG_COOLDOWN_MS
         errors.push(`${name}: ${err?.message ?? err}`)
         logger?.debug?.(`[sei/web] search via ${name} failed: ${err?.message ?? err}`)
       }
     }
-    logger?.warn?.(`[sei/web] search failed on every provider: ${errors.join('; ')}`)
-    return { content: 'search failed: no search service answered. Tell the player you could not look it up right now.', is_error: true }
+    return []
+  }
+
+  async function search(query, { signal } = {}) {
+    const q = String(query ?? '').trim().replace(/\s+/g, ' ').slice(0, 200)
+    if (!q) return { content: 'search: empty query', is_error: true }
+    const errors = []
+    // Wikis named by the query (plus the surface's standing wikis) are asked
+    // directly, in parallel with the general engines. Their hits come first:
+    // for a game question the wiki page IS the answer, and the engines are
+    // the ones that hand back a storefront homepage.
+    const wikis = [...new Map([...wikisForQuery(q), ...alwaysWikis].map((w) => [w.host, w])).values()].slice(0, 2)
+    const [wikiSettled, general] = await Promise.all([
+      Promise.allSettled(wikis.map((w) => wikiSearch(w, wikiQuery(w, q), signal))),
+      generalSearch(q, signal, errors),
+    ])
+    const wikiHits = []
+    wikiSettled.forEach((r, i) => {
+      if (r.status === 'fulfilled') wikiHits.push(...r.value)
+      else errors.push(`${wikis[i].host}: ${r.reason?.message ?? r.reason}`)
+    })
+    if (wikiHits.length && !general.length) lastProvider = 'wiki'
+    const seen = new Set()
+    const results = []
+    for (const r of [...wikiHits, ...general]) {
+      if (!r?.url || !/^https?:\/\//i.test(r.url)) continue
+      const key = r.url.replace(/[#?].*$/, '').replace(/\/$/, '').toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      results.push(r)
+      if (results.length >= L.maxResults) break
+    }
+    if (results.length === 0) {
+      logger?.warn?.(`[sei/web] search failed on every provider: ${errors.join('; ')}`)
+      return { content: 'search failed: no search service answered. Tell the player you could not look it up right now.', is_error: true }
+    }
+    const lines = results.map((r) => {
+      const label = addRef(r)
+      const host = hostOf(r.url)
+      const snippet = clip(r.snippet, L.snippetChars)
+      return `${label}. ${clip(r.title || host || r.url, L.titleChars)}${host ? ` (${host})` : ''}${snippet ? ` - ${snippet}` : ''}`
+    })
+    return { content: `results for "${q}":\n${lines.join('\n')}`, is_error: false }
   }
 
   function resolveRef(ref) {
@@ -559,6 +755,14 @@ export function createWebSession({ fetchImpl, provider = 'auto', apiKey = '', lo
       return { content: `visit: ${err.message}`, is_error: true }
     }
     const pageNo = Math.max(1, Math.floor(Number(page) || 1))
+    // Known wiki: read through the MediaWiki API (answers from any network,
+    // no site chrome). Fall through to the HTML page when it does not.
+    const wiki = wikiFor(target.host)
+    const wikiTitle = wikiTitleFromUrl(url, wiki)
+    if (wiki && wikiTitle) {
+      const viaApi = await visitWikiApi(wiki, wikiTitle, target, pageNo, signal)
+      if (viaApi) return viaApi
+    }
     let fetched
     try {
       fetched = await ctx.get(url, {
@@ -575,7 +779,15 @@ export function createWebSession({ fetchImpl, provider = 'auto', apiKey = '', lo
     // Name the page by where it actually landed (a redirect to a docs host or
     // a mirror is the honest answer), never by the pre-redirect URL.
     if (fetched.url && fetched.url !== url) target = { ...target, host: hostOf(fetched.url) || target.host }
-    if (!res.ok) return { content: `visit: ${target.host || url} answered HTTP ${res.status}`, is_error: true }
+    if (!res.ok) {
+      // An unknown wiki behind a bot wall: its api.php usually still answers.
+      if ((res.status === 403 || res.status === 503) && !wiki && wikiTitleFromUrl(url, null)) {
+        const guess = { host: target.host, articlePath: /\/w\//.test(new URL(url).pathname) ? '/w/' : '/wiki/', apiPath: '/api.php', name: target.host }
+        const viaApi = await visitWikiApi(guess, wikiTitleFromUrl(url, null), target, pageNo, signal)
+        if (viaApi) return viaApi
+      }
+      return { content: `visit: ${target.host || url} answered HTTP ${res.status}`, is_error: true }
+    }
     const ct = (res.headers.get('content-type') ?? '').toLowerCase()
     let body
     let title = target.title
@@ -591,12 +803,35 @@ export function createWebSession({ fetchImpl, provider = 'auto', apiKey = '', lo
     if (body.length < 600 && /client challenge|just a moment|enable javascript|access denied|verify you are human|are you a robot/i.test(body)) {
       return { content: `visit: ${target.host || url} blocks automated readers. Try another result.`, is_error: true }
     }
+    return pageOut({ ...target, host: target.host || url }, title, body, pageNo)
+  }
+
+  function pageOut(target, title, body, pageNo) {
     const totalPages = Math.max(1, Math.ceil(body.length / L.pageChars))
-    if (pageNo > totalPages) return { content: `visit: ${target.host || url} has only ${totalPages} page${totalPages === 1 ? '' : 's'}.`, is_error: true }
+    if (pageNo > totalPages) return { content: `visit: ${target.host} has only ${totalPages} page${totalPages === 1 ? '' : 's'}.`, is_error: true }
     const slice = body.slice((pageNo - 1) * L.pageChars, pageNo * L.pageChars)
-    const head = `${target.label ? `[${target.label}] ` : ''}${target.host || url}${title ? ` - ${clip(title, L.titleChars)}` : ''}` +
+    const head = `${target.label ? `[${target.label}] ` : ''}${target.host}${title ? ` - ${clip(title, L.titleChars)}` : ''}` +
       (totalPages > 1 ? ` (part ${pageNo}/${totalPages}${pageNo < totalPages ? `, page: ${pageNo + 1} for more` : ''})` : '')
     return { content: `${head}\n${slice}`, is_error: false }
+  }
+
+  async function visitWikiApi(wiki, title, target, pageNo, signal) {
+    try {
+      const u = `https://${wiki.host}${wiki.apiPath}?action=parse&format=json&redirects=1&disabletoc=1&disableeditsection=1&prop=text%7Cdisplaytitle&page=${encodeURIComponent(title)}`
+      const { res, text } = await ctx.get(u, { headers: { Accept: 'application/json', 'User-Agent': BROWSER_UA }, signal })
+      if (!res.ok) return null
+      const j = JSON.parse(text)
+      const html = j?.parse?.text?.['*'] ?? j?.parse?.text
+      if (typeof html !== 'string' || !html) return null
+      const body = htmlToText(`<main>${html}</main>`)
+      if (!body) return null
+      const shown = stripTags(j?.parse?.displaytitle ?? '') || j?.parse?.title || title
+      return pageOut({ ...target, host: wiki.host }, `${shown} (${wiki.name})`, body, pageNo)
+    } catch (err) {
+      if (signal?.aborted) throw err
+      logger?.debug?.(`[sei/web] wiki api read failed for ${wiki.host}/${title}: ${err?.message ?? err}`)
+      return null
+    }
   }
 
   /**
@@ -623,6 +858,7 @@ export function createWebSession({ fetchImpl, provider = 'auto', apiKey = '', lo
     overBudget,
     refs,
     get lastProvider() { return lastProvider },
+    get ddgBlockedUntil() { return ddgBlockedUntil },
     get callsThisTurn() { return callsThisTurn },
   }
 }

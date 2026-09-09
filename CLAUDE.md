@@ -372,7 +372,34 @@ The bot has **one entry path** (`src/bot/index.js`): forked by Electron, it
 waits for an `init` message over the port. (The standalone `sei` CLI was
 removed 260722.)
 
-**Web search: `search()` / `visit()` (260909).** Two tools the model can call
+**Web search (260909).** Two backends, chosen per session by
+`webToolsFor()` in `src/bot/web/webTools.js`:
+
+- **Anthropic sessions (cloud proxy + Anthropic BYOK): Anthropic's own
+  server-side `web_search` tool** (`SERVER_WEB_SEARCH_TOOL`, type
+  `web_search_20250305`, the variant Haiku 4.5 supports, `max_uses` 3 per
+  request) plus our `visit`. The search runs INSIDE the response: the model
+  searches, reads, and answers in one turn; no scraping, no key, no
+  dependence on the user's network. The proxy forwards the body verbatim so
+  the tool passes through; each search is billed by Anthropic per search on
+  top of tokens (the proxy's ledger does not meter that yet). Two mechanics:
+  `stop_reason: 'pause_turn'` (a long search) is resumed by pushing the
+  assistant content back verbatim and calling again (bot `runIterations`,
+  chat hop loop); and once the turn ENDS the `server_tool_use` +
+  `web_search_tool_result` blocks are dropped from history
+  (`buildAssistantContent`, `isServerWebBlock`) because the encrypted result
+  payloads are pure ballast after the answer is written. The bot's cached
+  tool prose skips schema-less server tools. On the blocking typed-chat path
+  the text written BEFORE the search ("lemme check") is pushed immediately and
+  only the post-search text is the reply (`splitTextAroundServerSearch`).
+- **Every other provider (OpenAI-compatible, Gemini, Ollama): our
+  `search()` / `visit()`**, below. Capability flag: bot
+  `anthropicProvider.CAPABILITIES.serverWebSearch`; main `llm.kind ===
+  'anthropic'`. The "Before searching, let the player know" line sits as
+  literal text in both baselines (promptLibrary.js must stay import-free for
+  the prompt-editor script) so the announce rule holds on either backend.
+
+**Client web search: `search()` / `visit()`.** Two tools the model can call
 on EVERY conversational surface, with ONE rule that makes the loop: the
 result comes back as an ordinary `tool_result` and the surface's existing tool
 loop calls the model again, until it stops calling tools. Nothing new was
@@ -392,6 +419,31 @@ built for the loop itself.
   script/style/nav/header/footer/aside, prefer `<main>`/`<article>` when
   substantial, block tags → newlines. The tag regex tolerates `>` inside
   quoted attributes (Wikipedia's `data-mw` JSON leaked otherwise).
+- **Fetch through Chromium, not Node (260909).** `electronFetchProvider()`
+  resolves Electron's `net.fetch` lazily (available in main AND in the bot's
+  utilityProcess): browser TLS fingerprint + OS proxy. Measured from this
+  machine: minecraft.wiki, valorant.fandom.com and html.duckduckgo.com all
+  answer 200 under `net.fetch` where Node's undici gets a 403 / bot
+  challenge. `net.fetch` refuses `redirect: 'manual'`, so in that mode
+  redirects are followed and the FINAL url is gated instead of every hop
+  (`manualRedirects: false`). Plain Node (tests, scripts) keeps manual hops.
+  Electron gotcha met while probing: an ESM entry that top-level-awaits
+  `app.whenReady()` deadlocks (ready is deferred until the module evaluates);
+  probe scripts must be CJS or use `.then`.
+- **Game wikis are asked DIRECTLY (260909).** `GAME_WIKIS` (webTools.js) maps
+  game names in the query to MediaWiki hosts (minecraft.wiki,
+  valorant.fandom.com, wiki.leagueoflegends.com, terraria.wiki.gg, ...).
+  `search()` runs `api.php?list=search` on each matched wiki (game name
+  stripped from the query) in parallel with the general chain and lists the
+  wiki hits FIRST: for a game question the wiki page IS the answer, and the
+  engines are the ones that hand back a storefront homepage. The bot passes
+  `alwaysWikiHosts: ['minecraft.wiki']` so an in-game "how do i tame a fox"
+  hits the Minecraft Wiki without saying "minecraft". `visit()` on a known
+  wiki host reads through `action=parse` (cleaner than the rendered page,
+  answers from any network; HTML fallback), and an unknown `/wiki/` host
+  behind a bot wall is retried through its `api.php`. Fextralife (Elden Ring)
+  is not MediaWiki and is deliberately absent. A DuckDuckGo challenge arms a
+  90 s cooldown (`ddgBlockedUntil`) instead of re-asking a rate-limited IP.
 - **Providers: keyless by default.** `providerChain()` tries a keyed provider
   first only when its key is present (Brave `X-Subscription-Token` GET,
   Tavily `Bearer` POST, Serper `X-API-KEY` POST; request/response shapes

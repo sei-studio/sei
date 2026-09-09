@@ -27,11 +27,10 @@ import {
   QUIT_TOOL,
   END_CALL_TOOL,
   REMEMBER_TOOL,
-  SEARCH_TOOL,
-  VISIT_TOOL,
 } from './chatPrompts';
-import { isWebTool } from '../../bot/web/webTools.js';
+import { isWebTool, webToolsFor, splitTextAroundServerSearch } from '../../bot/web/webTools.js';
 import { getChatWebSession, resolveWebSearchSettings } from '../llm/webSearchSettings';
+import type { LlmToolDef } from '../llm/types';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import { isSilenceFiller } from '../../bot/brain/silenceFiller.js';
 import { isNoteLeak, stripThoughtTags } from './noteLeak';
@@ -733,10 +732,15 @@ export async function sendChatMessage(
     let launchCalled = false;
     // end_call + remember are offered only while a call is open (block 0
     // already flips for the primer, so this adds no extra cache churn).
+    // 260909: Anthropic sessions (cloud proxy or Anthropic BYOK) get the
+    // native server-side web_search + our visit; other providers get our
+    // search + visit (webToolsFor). Same list on every turn kind for the
+    // cache prefix.
+    const webTools = webToolsFor({ serverWebSearch: llm.kind === 'anthropic' }) as LlmToolDef[];
     const tools =
       args.voiceCall === true
-        ? [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, SEARCH_TOOL, VISIT_TOOL]
-        : [LAUNCH_TOOL, QUIT_TOOL, SEARCH_TOOL, VISIT_TOOL];
+        ? [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, ...webTools]
+        : [LAUNCH_TOOL, QUIT_TOOL, ...webTools];
     // 260909: per-character web session (lettered results survive across
     // turns). Resolved lazily so a turn that never searches pays nothing.
     let webSession: ReturnType<typeof getChatWebSession> | null = null;
@@ -821,8 +825,24 @@ export async function sendChatMessage(
           `${Date.now() - t0}ms in=${u?.input_tokens ?? '?'} out=${u?.output_tokens ?? '?'} ` +
           `cacheRead=${u?.cache_read_input_tokens ?? 0} cacheWrite=${u?.cache_creation_input_tokens ?? 0}`,
       );
+      // 260909: a server-side web search that ran long stops with pause_turn.
+      // Push the assistant content back verbatim and call again to finish.
+      if (res.stopReason === 'pause_turn') {
+        messages.push({ role: 'assistant', content: res.content });
+        continue;
+      }
       const text = textOf(res.content);
       if (text) replyText = text;
+      // 260909: with the server-side search the "lemme check" line and the
+      // answer arrive in ONE response as text blocks on either side of the
+      // search. On the blocking typed path push the pre-search line now (it
+      // is what the player should have seen first) and keep only the answer
+      // as the reply; voice streamed both already.
+      const split = splitTextAroundServerSearch(res.content);
+      if (split.searched && !isStreaming && typeof deps.emitReply === 'function') {
+        if (split.before) await emitStreamedBubble(split.before, split.after.length > 0);
+        replyText = split.after;
+      }
 
       // With two tools offered the model may call both in one response (e.g.
       // quit + launch for "log off and hop back in"). Every tool_use id in an
@@ -1229,7 +1249,7 @@ export async function sendVoiceGreetingTurn(
     // not a cacheRead" symptom). Matching them writes the tools+system prefix
     // here, during the ring, so the first spoken user reply is a fast cache READ.
     markLastMessageCached(messages);
-    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, SEARCH_TOOL, VISIT_TOOL];
+    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, ...(webToolsFor({ serverWebSearch: llm.kind === 'anthropic' }) as LlmToolDef[])];
     const res = await llm.call({
       maxTokens: 200,
       system,
@@ -1362,7 +1382,7 @@ export async function sendCompanionVoiceTurn(
     markLastMessageCached(messages);
 
     const llm = await buildLlmProvider();
-    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, SEARCH_TOOL, VISIT_TOOL];
+    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, ...(webToolsFor({ serverWebSearch: llm.kind === 'anthropic' }) as LlmToolDef[])];
     const res = await llm.call({
       maxTokens: 200,
       system,
@@ -1458,7 +1478,7 @@ export async function sendVoiceIdleTurn(
     // Same warm tools+system cache prefix as every other voice turn.
     markLastMessageCached(messages);
     const llm = await buildLlmProvider();
-    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, SEARCH_TOOL, VISIT_TOOL];
+    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, ...(webToolsFor({ serverWebSearch: llm.kind === 'anthropic' }) as LlmToolDef[])];
     const res = await llm.call({
       maxTokens: 200,
       system,

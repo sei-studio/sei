@@ -42,7 +42,7 @@ import { isSilenceFiller } from './silenceFiller.js'
 import { createHeartbeatLog, readHeartbeatForSeed } from './memory/heartbeat.js'
 import { createMemoryCompactor } from './memory/compactor.js'
 import { createWorldRegistry } from './memory/worlds.js'
-import { createWebSession, WEB_TOOLS, isWebTool } from '../web/webTools.js'
+import { createWebSession, electronFetchProvider, webToolsFor, isWebTool, isServerWebBlock } from '../web/webTools.js'
 
 // Post-process say() text before it hits in-game chat. Safety-only:
 // whitespace collapse (chat is single-line) and force lowercase (hardcoded).
@@ -768,6 +768,13 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     provider: webCfg.provider,
     apiKey: webCfg.api_key,
     logger,
+    // Chromium fetch from inside the utilityProcess (net.fetch is available
+    // there): Cloudflare-fronted wikis + DuckDuckGo answer, Node fetch is
+    // challenged. Falls back to Node fetch outside Electron (tests).
+    fetchProvider: electronFetchProvider,
+    // This is a Minecraft companion: every search also asks the Minecraft
+    // Wiki directly, whether or not the query says "minecraft".
+    alwaysWikiHosts: ['minecraft.wiki'],
     limits: {
       maxResults: webCfg.max_results,
       pageChars: webCfg.page_chars,
@@ -1363,7 +1370,9 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       .filter(t => visionOk || t.name !== 'look')
     const seen = new Set(personalityTools.map(t => t.name))
     const merged = [...personalityTools]
-    if (webSession) for (const t of WEB_TOOLS) { merged.push(t); seen.add(t.name) }
+    // Anthropic sessions get the native server-side web_search (+ our visit);
+    // every other provider gets our search + visit. See webToolsFor.
+    if (webSession) for (const t of webToolsFor({ serverWebSearch: !!anthropic.capabilities?.serverWebSearch })) { merged.push(t); seen.add(t.name) }
     for (const t of movementTools) {
       if (!seen.has(t.name)) { merged.push(t); seen.add(t.name) }
     }
@@ -3698,6 +3707,14 @@ function maybeWarnByteCap(loop, warned) {
       // 260708: the trigger has now been seen and answered by at least one
       // model response — an attack teardown no longer needs to preserve it.
       loop._respondedOnce = true
+      // 260909: a server-side web search that ran long stops with
+      // `pause_turn`; the assistant content (kept intact above, server blocks
+      // included) goes back as-is and the model is called again to finish.
+      // Bounded by iteration_cap like everything else.
+      if (resp.stopReason === 'pause_turn') {
+        logger.info?.(`[sei/orch] pause_turn (server web search in flight) — resuming (loop=${loop.id})`)
+        continue
+      }
 
       // Track responses-received so the first-turn-say predicate doesn't have
       // to deal with the seed-vs-non-seed iterationCount divergence (seed
@@ -4245,10 +4262,16 @@ function maybeWarnByteCap(loop, warned) {
     // through the raw response content so signatures/positions stay intact;
     // fall back to a synthesized array for callers / mocks without `content`.
     if (Array.isArray(resp.content) && resp.content.length > 0) {
-      return resp.content.map(b => {
+      // 260909: server web_search blocks (server_tool_use + the encrypted
+      // web_search_tool_result) are context ballast once the turn is over:
+      // the answer is already in the text. Drop them from history unless the
+      // turn PAUSED mid-search, in which case they must go back verbatim.
+      const keepServer = resp.stopReason === 'pause_turn'
+      const out = resp.content.filter(b => keepServer || !isServerWebBlock(b.type)).map(b => {
         if (b.type === 'tool_use') return { type: 'tool_use', id: b.id, name: b.name, input: b.input }
         return b
       })
+      if (out.length > 0) return out
     }
     const out = []
     if (resp.text) out.push({ type: 'text', text: resp.text })
