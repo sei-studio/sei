@@ -831,6 +831,18 @@ export async function sendChatMessage(
       // first.
       const toolUses = res.content.filter((b) => b.type === 'tool_use');
       if (!toolUses.length) break;
+      // 260909: a line written alongside search()/visit() ("lemme check") is
+      // meant to land BEFORE the lookup, the way a say() beside a dig() does
+      // in the game. On the blocking typed-chat path only the last hop's text
+      // used to survive, so that line was silently dropped. Persist + push it
+      // now over the same chat:message path a streamed voice sentence takes
+      // (the renderer queues pushed companion lines with its typing pacing),
+      // and clear replyText so the returned replies carry only what came
+      // after the results. Voice already streams every hop's sentences.
+      if (!isStreaming && text && typeof deps.emitReply === 'function' && toolUses.some((b) => isWebTool(b.name))) {
+        await emitStreamedBubble(text, false);
+        replyText = '';
+      }
 
       messages.push({ role: 'assistant', content: res.content });
       const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
@@ -943,11 +955,16 @@ export async function sendChatMessage(
     // NOTHING: the voice-scoped filler filter inside persistReplies removes it
     // before the "…" fallback could ever apply (splitReply already returned a
     // non-empty part). Typed chat keeps such lines — they are real replies there.
+    // A typed turn whose only text rode out early beside a web lookup (see the
+    // hop loop) has nothing left to persist; do not let the empty-reply
+    // fallback add a bubble after a line that already landed.
     const replies = isStreaming
       ? streamedReplies
-      : await persistReplies(args.characterId, replyText, prep.punctuation, {
-          voice: args.voiceCall === true,
-        });
+      : replyText.trim() || streamedReplies.length === 0
+        ? await persistReplies(args.characterId, replyText, prep.punctuation, {
+            voice: args.voiceCall === true,
+          })
+        : [];
 
     // Background compaction (260702): the reply is persisted, so if 50+
     // messages have aged past the window, fold them NOW — while the player is

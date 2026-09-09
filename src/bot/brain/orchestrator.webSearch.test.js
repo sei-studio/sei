@@ -129,6 +129,33 @@ describe('search() / visit() loop in the game brain (260909)', () => {
     expect(orch.currentLoop === null || orch.currentLoop.isTerminal === true || !orch.currentLoop.inFlight).toBe(true)
   })
 
+  it('a say() beside search() in the same turn is spoken up front and the loop still continues', async () => {
+    _setTickIntervalForTests(10_000_000)
+    const provider = makeProvider([
+      { text: 'checking', toolUses: [
+        { id: 's1', name: 'say', input: { text: 'one sec, let me look that up' } },
+        { id: 't1', name: 'search', input: { query: 'netherite armor' } },
+      ] },
+      { text: 'done', toolUses: [{ id: 's2', name: 'say', input: { text: 'smithing table plus an ingot' } }] },
+    ])
+    const web = makeWebSession()
+    const orch = createOrchestrator({
+      adapter: makeAdapter(),
+      config: makeConfig(),
+      reenqueue: () => {},
+      _anthropicOverride: provider,
+      _webSessionOverride: web,
+    })
+    await orch.handleDispatch('sei:chat_received', chat('how do i make netherite armor'))
+    expect(provider.calls.length).toBe(2)
+    expect(web.runs.map((r) => r.name)).toEqual(['search'])
+    // The second call carries results for BOTH tool_uses of the first turn.
+    const second = JSON.stringify(provider.calls[1].messages)
+    expect(second).toContain('"tool_use_id":"s1"')
+    expect(second).toContain('"tool_use_id":"t1"')
+    expect(second).toContain('results for \\"netherite armor\\"')
+  })
+
   it('withholds the tools and answers with an error when web access is disabled', async () => {
     _setTickIntervalForTests(10_000_000)
     const provider = makeProvider([

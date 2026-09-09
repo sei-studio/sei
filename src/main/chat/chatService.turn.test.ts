@@ -57,6 +57,7 @@ vi.mock('../llm/webSearchSettings', () => ({
 import type { ChatDeps } from './chatService';
 import { sendChatMessage, sendVoiceIdleTurn, sendCompanionVoiceTurn, cancelInflightTurn, CHAT_ABORTED } from './chatService';
 import { setCallActive } from '../voice/callState';
+import { readAll as chatStoreRead } from './chatStore';
 
 const CHAR = '55555555-5555-4555-8555-555555555555';
 let dir: string;
@@ -228,6 +229,50 @@ describe('search() / visit() hop loop (260909)', () => {
     expect(results[1].content).toContain('smithing table');
     // The final reply is what reaches the player.
     expect(result.replies.map((r) => r.text).join(' ')).toMatch(/smithing table/);
+  });
+});
+
+describe('a line beside search() lands before the lookup (260909)', () => {
+  it('pushes the same-hop text immediately and returns only the post-result reply', async () => {
+    webRuns.length = 0;
+    createSpy
+      .mockResolvedValueOnce({
+        content: [
+          { type: 'text', text: 'lemme check.' },
+          { type: 'tool_use', id: 'tu_s', name: 'search', input: { query: 'netherite armor' } },
+        ],
+      })
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'smithing table, diamond gear plus an ingot.' }] });
+
+    const pushed: string[] = [];
+    const d: ChatDeps = { ...deps(), emitReply: (_id, m) => { pushed.push(m.text); } };
+    const result = await sendChatMessage({ characterId: CHAR, text: 'how do i make netherite armor' }, d);
+
+    expect(pushed).toEqual(['lemme check']);
+    expect(result.replies.map((r) => r.text)).toEqual(['smithing table, diamond gear plus an ingot']);
+    // Both lines are in the transcript, in order.
+    const rows = await chatStoreRead(CHAR);
+    expect(rows.filter((r) => r.role === 'companion').map((r) => r.text)).toEqual([
+      'lemme check',
+      'smithing table, diamond gear plus an ingot',
+    ]);
+  });
+
+  it('a text-only final hop is not doubled by the empty-reply fallback', async () => {
+    webRuns.length = 0;
+    createSpy
+      .mockResolvedValueOnce({
+        content: [
+          { type: 'text', text: 'one sec, looking.' },
+          { type: 'tool_use', id: 'tu_s', name: 'search', input: { query: 'x' } },
+        ],
+      })
+      .mockResolvedValueOnce({ content: [] });
+    const pushed: string[] = [];
+    const d: ChatDeps = { ...deps(), emitReply: (_id, m) => { pushed.push(m.text); } };
+    const result = await sendChatMessage({ characterId: CHAR, text: 'look up x' }, d);
+    expect(pushed).toEqual(['one sec, looking']);
+    expect(result.replies).toEqual([]);
   });
 });
 

@@ -14,6 +14,7 @@ import {
   assertPublicHttpUrl,
   normalizeUserUrl,
   providerChain,
+  looksRelevant,
   clip,
   WEB_TOOLS,
 } from './webTools.js'
@@ -131,6 +132,25 @@ describe('labels + urls', () => {
     expect(providerChain('brave', 'k')).toEqual(['brave', 'ddg', 'bing', 'wikipedia'])
     expect(providerChain('ddg', '')).toEqual(['ddg', 'wikipedia'])
     expect(providerChain('nonsense', '')).toEqual(['ddg', 'bing', 'wikipedia'])
+  })
+
+  it('looksRelevant rejects a scrape that answered a different query', () => {
+    expect(looksRelevant([{ title: 'LATENT Definition & Meaning', snippet: 'present and capable of emerging' }], 'Latent Space podcast hosts')).toBe(false)
+    expect(looksRelevant([{ title: 'Latent Space: The AI Engineer Podcast', snippet: 'swyx and Alessio' }], 'Latent Space podcast hosts')).toBe(true)
+    expect(looksRelevant([{ title: 'anything', snippet: '' }], 'swyx')).toBe(true) // one-word query: no gate
+  })
+
+  it('search skips a scraped provider whose results do not match the query', async () => {
+    const junk = fixture('bing.html') // "craft" results
+    const fetchImpl = scriptedFetch({
+      'duckduckgo.com': fakeResponse({ status: 202, body: 'challenge' }),
+      'bing.com': fakeResponse({ body: junk }),
+      'wikipedia.org': fakeResponse({ contentType: 'application/json', body: JSON.stringify({ query: { search: [{ title: 'Latent Space', snippet: 'a <b>podcast</b>' }] } }) }),
+    })
+    const s = createWebSession({ fetchImpl })
+    const r = await s.search('latent space podcast hosts')
+    expect(s.lastProvider).toBe('wikipedia')
+    expect(r.content).toContain('a. Latent Space')
   })
 
   it('clip cuts on a word boundary with an ellipsis', () => {

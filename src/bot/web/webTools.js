@@ -44,7 +44,8 @@ const BROWSER_UA =
 export const SEARCH_TOOL_DESCRIPTION =
   'Search the web. Returns a few lettered results (a, b, c...) with a title and a short snippet each. ' +
   'Use it when the player asks about something you are not sure of, or when a fact, a recipe, a date, a price or a name matters and guessing would be worse than checking. ' +
-  'Call visit(ref) with a result letter to read the page itself. Search results are private to you; tell the player what you learned in your own words.'
+  'Call visit(ref) with a result letter to read the page itself. Search results are private to you; tell the player what you learned in your own words. ' +
+  'You may tell the player you are checking in the SAME turn (say() in the game, your reply text in chat); it lands before the results come back. Optional, not required.'
 
 export const VISIT_TOOL_DESCRIPTION =
   'Read a web page as plain text, one page of text at a time. Pass the letter of a search result (for example "b"), or a full URL. ' +
@@ -405,6 +406,27 @@ export function parseBingHtml(html) {
   return out
 }
 
+/**
+ * Scraped engines occasionally answer a DIFFERENT query than the one sent
+ * (Bing from a flagged egress returned dictionary entries for "latent" when
+ * asked about the Latent Space podcast). API providers do not do this, so the
+ * gate applies to ddg/bing only: with two or more significant query words, at
+ * least one result must carry two of them, else the scrape is treated as a
+ * miss and the chain moves on.
+ */
+export function looksRelevant(results, query) {
+  const words = [...new Set(String(query).toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? [])]
+  if (words.length < 2) return results.length > 0
+  return results.some((r) => {
+    const hay = `${r.title ?? ''} ${r.snippet ?? ''} ${r.url ?? ''}`.toLowerCase()
+    let hits = 0
+    for (const w of words) if (hay.includes(w)) hits++
+    return hits >= 2
+  })
+}
+
+const SCRAPED_PROVIDERS = new Set(['ddg', 'bing'])
+
 export function providerChain(provider, apiKey) {
   const p = WEB_PROVIDERS.includes(provider) ? provider : 'auto'
   const keyless = ['ddg', 'bing', 'wikipedia']
@@ -467,6 +489,7 @@ export function createWebSession({ fetchImpl, provider = 'auto', apiKey = '', lo
       if (signal?.aborted) throw signal.reason ?? new Error('aborted')
       try {
         const raw = await providers[name](q, { ...ctx, signal })
+        if (SCRAPED_PROVIDERS.has(name) && !looksRelevant(raw, q)) throw new Error(`${name} answered a different query`)
         const seen = new Set()
         const results = []
         for (const r of raw) {

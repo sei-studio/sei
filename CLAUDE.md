@@ -397,7 +397,10 @@ built for the loop itself.
   Tavily `Bearer` POST, Serper `X-API-KEY` POST; request/response shapes
   verified against each vendor's docs 260909), then the keyless chain
   DuckDuckGo HTML → Bing HTML → Wikipedia API. The first provider that yields
-  a result wins; a challenge page or empty scrape moves the chain on.
+  a result wins; a challenge page, an empty scrape, or (scraped engines only)
+  a result set that shares fewer than two query words with any hit
+  (`looksRelevant`: Bing from this egress returned dictionary entries for
+  "latent" when asked about the Latent Space podcast) moves the chain on.
   Wikipedia is the floor that always answers. Parsers are pinned on real
   fixtures in `src/bot/web/fixtures/`. From a flagged egress (this dev
   machine sits behind a shared proxy) DDG serves a bot challenge to curl but
@@ -420,6 +423,15 @@ built for the loop itself.
   bridged from main as `init.webSearch = {provider, api_key}`;
   `enabled:false` withholds both tools. `_webSessionOverride` on
   `createOrchestrator` is the test seam (`orchestrator.webSearch.test.js`).
+- **A line beside the lookup is allowed, not required.** The tool
+  description says so. In the game a `say()` in the same turn as `search()`
+  is emitted up front by `emitSayCalls` like a say beside a dig, and the loop
+  still continues. In typed chat the blocking path kept only the LAST hop's
+  text, so "lemme check" was dropped; now a hop with text AND a web tool call
+  persists + pushes that text immediately over `chat:message` (the renderer
+  queues pushed companion lines with its typing pacing) and the returned
+  replies carry only what came after the results. Voice already streams every
+  hop's sentences.
 - **Chat/voice wiring:** `chatService` offers both tools on every text and
   voice list (greeting, companion and idle turns included, so the cached
   tools+system prefix stays identical across turn kinds), dispatches them
