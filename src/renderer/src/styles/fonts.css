@@ -153,3 +153,41 @@
   font-style: normal;
   font-display: swap;
 }
+
+/* ── Fredericka the Great + Metamorphous (Don't Starve Together dashboard
+ * only, both OFL-1.1) ─────────────────────────────────────────────────────
+ * The DST dashboard is a documented exception to the Summoning Terminal
+ * tokens, the way the Minecraft panel is: it borrows the game's own
+ * hand-inked register. Fredericka carries the survivor name, the day
+ * number and the vitals figures (hatched, pencil-drawn, legible from 16px
+ * up); Metamorphous carries the small labels. Nothing else in the app
+ * should reference either.
+ */
+@font-face {
+  font-family: 'Fredericka the Great';
+  src: url('/fonts/fredericka-the-great-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Metamorphous';
+  src: url('/fonts/metamorphous-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ── Pixelify Sans (Stardew Valley dashboard only, OFL-1.1) ─────────────
+ * One variable file, weights 400-700. The Stardew dashboard reproduces the
+ * game's wooden menu frames and cream faces, and its rounded pixel text is
+ * the closest open face to the game's own. Nothing else should use it.
+ */
+@font-face {
+  font-family: 'Pixelify Sans';
+  src: url('/fonts/pixelify-sans-var.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}

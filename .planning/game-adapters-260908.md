@@ -521,6 +521,12 @@ appears next to you and starts talking in chat.
    the vitals row is per game (Stardew: stamina/health, time, season;
    DST: health/hunger/sanity, day/phase, temperature), inventory list, and a
    location line instead of the Minecraft minimap in v1.
+   *260909 update:* both dashboards were redesigned in their game's own
+   register (parchment + HUD badges + day clock for DST; wooden menu frames,
+   vertical E/H bars, date box, 12 x 3 slots for Stardew), as contained
+   token exceptions like the Minecraft panel. The controls became one shared
+   hook (`useGameControls`); the `?dashshot=` dev harness renders both over
+   fixtures. See CLAUDE.md "Dashboards in the games' own registers".
 5. **Errors** are per-game copies of the Minecraft ones: not installed
    (with the detected paths we looked in), install failed (with the log
    tail), world not open (with the exact in-game steps), farmhand without

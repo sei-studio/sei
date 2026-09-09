@@ -1675,6 +1675,47 @@ DST are STALE frames, keystrokes never reach the game, offline mode cannot
 resume an online-created world (create a new one), and `client_log.txt` is
 rewritten per launch.
 
+**Dashboards in the games' own registers (260909).** Both bot-backed
+dashboards are now DELIBERATE, CONTAINED EXCEPTIONS to the design tokens,
+under the same contract as `McDashboardPanel` (which the Stardew panel used
+to borrow wholesale, vanilla-gray windows and all): a game's live view
+should read like that game's HUD, not like a settings page. Each panel's
+CSS module declares its own palette on `.panel` and nothing outside the
+component references it.
+- `DstDashboardPanel` (+ `dstDashboard.ts`, pure + tested): ink ground,
+  aged-parchment sheets with burnt edges and hand-cut corners, the three
+  vitals as the HUD BADGES (dark ring, parchment face, the meter as coloured
+  liquid rising from the bottom, the organ icon on top, pulsing when low),
+  the CLOCK as the 16-segment day ring split day/dusk/night per season
+  (`DST_PHASE_SPLIT`; the mod reports the phase, not the segment, so the
+  whole phase is lit), body temperature with the game's freezing (<=0) and
+  overheating (>=70) bands, and the inventory bar as dark slots in rows of
+  15 with the equipped hand item in its own slot. Prefabs map to in-game
+  names (`dstItemLabel`). Fonts: Fredericka the Great for figures,
+  Metamorphous for labels (both OFL, DST-only).
+- `StardewDashboardPanel` (+ `stardewDashboard.ts`, pure + tested): the
+  wooden menu frame drawn in CSS (outline, wood band with highlight, inner
+  line, cream face), dark-plum text with the tan drop shadow in Pixelify
+  Sans (OFL, Stardew-only), ENERGY/HEALTH as the vertical HUD bars (green ->
+  yellow under a quarter -> red under a tenth), the DATE BOX (weekday from
+  the day number since day 1 is always Monday, weather + season icons, the
+  day dial from 6 AM to 2 AM, HUD-cased time, gold in its own box), and the
+  12 x 3 inventory with the held slot framed red.
+- **The controls are ONE hook, `components/games/useGameControls.ts`**
+  (paused/mode/disconnect/hover hint + `GAME_CONTROL_DESCRIPTIONS`); each
+  game paints its own buttons. `GameControlsWindow` (the token-styled
+  generic version) rides the same hook and is now unused by any registered
+  game; keep it for a future game that has no register of its own.
+- **Verify in a browser tab, not a summon:** `?dashshot=1` (or
+  `?dashshot=dontstarve|stardew`) on the dev server renders both panels
+  over fixture snapshots (`components/games/DevDashShot.tsx`).
+  `lib/ipcClient.ts` captures `window.sei` at module evaluation, and
+  main.tsx's static import of App reaches it first, so the harness stubs
+  live in `devHarnessStubs.ts`, which MUST stay main.tsx's first import.
+  Render tests (`*DashboardPanel.test.tsx`) pin the meters, the clock, the
+  slots and the zh coverage; CSS-module class names are hashed under vitest,
+  so the tests count `data-slot` attributes rather than class names.
+
 **Don't Starve Together (M2)** `native/dst-mod/sei/` (Lua, MIT, server-only,
 `all_clients_require_mod = false`, luacheck clean; `PROTOCOL.md`, mirrored in
 `src/shared/dstIpc.ts`). Body = a vanilla survivor prefab spawned on the

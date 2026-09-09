@@ -66,6 +66,16 @@ export const ZH_DONTSTARVE: Record<string, string> = {
   'Sanity': '理智',
   'Nothing carried yet.': '还没有携带任何物品。',
   'at {x}, {z}': '位于 {x}, {z}',
+  // Dashboard redesign (260909): the HUD badges, the day clock, the hand slot.
+  'Autumn': '秋',
+  'Daytime': '白天',
+  'Dusk': '黄昏',
+  'Night': '夜晚',
+  'Freezing': '冻僵',
+  'Cold': '寒冷',
+  'Hot': '炎热',
+  'Overheating': '过热',
+  'Hand': '手持',
 
   // ── setup modal body (components/dontstarve/DstSetupBody.tsx) ──
 
