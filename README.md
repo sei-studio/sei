@@ -98,6 +98,7 @@ To get more involved with the product side, reach out at [ouen@sei.gg](mailto:ou
 - [JunimoServer](https://github.com/stardew-valley-dedicated-server/server) (MIT): the chat-box postfix the Stardew companion listens through
 - [luy-0/StardewValley-MCP](https://github.com/luy-0/StardewValley-MCP) (Apache-2.0): the mod-as-listener transport and per-install token design, used as a reference
 - [SMAPI](https://smapi.io) (LGPL-3.0): the Stardew Valley mod loader, downloaded from its official release at install time, never vendored; its game-folder detection logic is ported in TypeScript
+- [Monocraft](https://github.com/IdreesInc/Monocraft) (OFL-1.1): the pixel face the Minecraft launch panel is set in
 - [Project AIRI](https://github.com/moeru-ai/airi): open-sourced digital "embodied" AI companion
 - [Character.AI](https://character.ai): demonstrated personalized AI characters
 - [Neuro-sama](https://vedal.ai/): showed that AI can make people happy

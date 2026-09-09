@@ -150,6 +150,9 @@ export const ZH_GAMES: Record<string, string> = {
   'Sei keeps looking while this window is open.': '这个窗口打开期间，Sei 会持续查找。',
   // components/GameErrorModal.tsx
   "{name} couldn't join {game}": '{name}无法加入 {game}',
+  // The one-step setup window on the launch panels (components/games/SetupStepper.tsx, 260909).
+  'Step {n} of {m}': '第 {n} 步，共 {m} 步',
+  'Waiting for your farm...': '等待你的农场…',
   // Game dashboards, companions in the same world (260909).
   "Open {name}'s chat": '打开{name}的聊天',
   'Holding {item}': '手持{item}',

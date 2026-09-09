@@ -1675,33 +1675,65 @@ DST are STALE frames, keystrokes never reach the game, offline mode cannot
 resume an online-created world (create a new one), and `client_log.txt` is
 rewritten per launch.
 
-**Minecraft has a setup list too (260909).** The Minecraft launch panel
-carries the same numbered list as the DST panel (`McSteps`, on a
-translucent card over the art): (1) Minecraft Java found, with a Get
-Minecraft link when it is not; (2) a SEI-READY Minecraft; (3) a world open
-to LAN with the live detection pill. Step 2 is the one that changed the
-product: the skin wizard used to be offered once at onboarding and once on
-the first Minecraft open, and a player who clicked past it had no way back
-but Settings. Now the step shows on EVERY open of the panel until an
-install is ready or the player presses "Do not show again"
-(`UserConfig.mc_setup_dismissed`; a ready install shows as done even after
-a dismissal). "Ready" is `shared/mcSetup.ts` `mcInstallReadyVersion`: a
-`versions/fabric-loader-<loader>-<mc>` profile for a version Sei's
-networking stack can join AND the companion-skin mod, so the scanner now
-reports every Fabric profile's version (`McInstall.fabric_mc_versions`) and
-Fabric for a snapshot no longer counts. The VERSION half is what the user
-asked for and what the wizard used to get wrong: it installed Fabric for
-whatever the launcher last ran (snapshots included) and fell back to a
+**Every launch panel is a one-step setup window in the game's register
+(260909).** The three bot-backed games' pre-launch surfaces (`McLaunchPanel`,
+`StardewLaunchPanel`, `DstLaunchPanel`) share one shape, centered on the
+game art: title, pack card, an OPTIONAL setup window, the big button, the
+help link. The window is `components/games/SetupStepper.tsx`: it shows ONE
+step at a time (Step n of m, the step's copy and its one button, Back /
+Next, dots), so it is never taller than its tallest step and the big button
+stays in view under it. The first cut drew every step as a numbered list on
+the panel (McSteps, DstSteps) and the list pushed Launch below the fold of
+the game aside. The steps are DATA from a per-game hook
+(`useMcSetupSteps`, `useStardewSetupSteps`, `useDstSetupSteps`), each step
+carrying its live `done` flag, so the window always shows the current state
+rather than instructions, and the SAME hook feeds the token-styled setup
+MODAL (DstSetupBody still renders the whole list there). Two window modes:
+`setup` opens on the first step that is not done, FOLLOWS progress (a step
+completing moves it on) and closes itself once everything is done; `help`
+opens on step 1 for reading through. The panel's big button reads "Set up"
+until the ONE-TIME part is done (`complete`: Minecraft = Java found and a
+Sei-ready install or "Do not show again"; Stardew = `install.ready`; DST =
+the helper in the game), then "Launch"; under an open window on an
+unfinished setup it is a disabled "Launch", the goal. "How do I set up
+launch?" shows only once the setup is complete and reopens the same window
+in help mode. The per-session steps (a world open to LAN, a farm open, a
+hosted world) are the last step of each list; a Launch pressed without one
+still goes through the summon flow's own setup modal. Each panel paints the
+window and buttons in its game's register through `StepperSkin` +
+`StepSkin` (class maps + the game's button component): the vanilla
+Minecraft dialog and raised gray button in Monocraft (OFL, a face drawn
+after the game's typeface; Press Start 2P only works at label sizes), the
+Stardew wooden frame with the cream face in Pixelify Sans, the Don't Starve
+parchment sheet in Fredericka + Metamorphous, all as documented token
+exceptions in their own CSS modules. `.content` uses `justify-content: safe
+center` so a stack taller than the aside scrolls instead of clipping the
+title. Verify with `?dashshot=mclaunch|dstlaunch|stardewlaunch` (+`&ready=1`
+for the set-up state) on the dev server.
+
+**Minecraft's setup step, and the detection bug (260909).** Step 2 of the
+Minecraft list is what changed the product: the skin wizard used to be
+offered once at onboarding and once on the first Minecraft open, and a
+player who clicked past it had no way back but Settings. Now the step is
+offered on every open until an install is ready or the player presses "Do
+not show again" (`UserConfig.mc_setup_dismissed`; a ready install shows as
+done even after a dismissal). "Ready" is `shared/mcSetup.ts`
+`mcInstallReadyVersion`: a `versions/fabric-loader-<loader>-<mc>` profile
+for a version Sei's networking stack can join AND the companion-skin mod,
+so the scanner reports every Fabric profile's version
+(`McInstall.fabric_mc_versions`) and Fabric for a snapshot no longer counts.
+The VERSION half is what the wizard used to get wrong: it installed Fabric
+for whatever the launcher last ran (snapshots included) and fell back to a
 pinned 1.21.4 only when the version was unreadable. `selectTargetMcVersion`
-now keeps a joinable version and moves anything else to the newest entry
-of `VERIFIED_MC_VERSIONS` (wizard.ts, a hand-maintained list of versions
-where Fabric + a pre-15 CustomSkinLoader have actually been launched
-together; a Modrinth listing is not proof, see the CSL 15.x note there).
-Since the Fabric profile is what the launcher downloads Minecraft for, this
-is "installing a compatible Minecraft" from the player's side, as a
-separate "Sei" profile that leaves their own untouched. The wizard's
-welcome copy says so now. Verify with `?dashshot=mclaunch` on the dev
-server; `McSteps.test.tsx` pins the states and the zh coverage.
+now keeps a joinable version and moves anything else to the newest entry of
+`VERIFIED_MC_VERSIONS` (wizard.ts, a hand-maintained list of versions where
+Fabric + a pre-15 CustomSkinLoader have actually been launched together; a
+Modrinth listing is not proof, see the CSL 15.x note there). The bug: the
+first cut of `useMcSetupStore.scan` read `detectMcInstalls()` as a bare
+array while the bridge answers `{ installs }`, so every scan came back as
+"no Minecraft found" on a machine with a vanilla install and a Sei profile.
+The tests had stubbed the bridge with an array, which is why they passed;
+the harness stub and `McSteps.test.tsx` now use the real shape.
 
 **Dashboards in the games' own registers (260909).** Both bot-backed
 dashboards are now DELIBERATE, CONTAINED EXCEPTIONS to the design tokens,

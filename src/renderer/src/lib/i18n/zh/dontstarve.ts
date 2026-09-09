@@ -30,6 +30,9 @@ export const ZH_DONTSTARVE: Record<string, string> = {
   "Host a world: in the game choose Host Game, pick a world (new or saved, caves on or off), then choose your survivor and press Go. Sei's helper is on automatically.":
     '主持一个世界：在游戏中选择“主持游戏”，挑一个世界（新建或已有存档，开不开洞穴都可以），然后选择你的角色并按“出发”。Sei 助手会自动开启。',
   'The game shows a "Mods Installed" notice at start. Press "I understand."': '游戏启动时会显示“已安装模组”提示，按“我明白了”即可。',
+  "Sei's helper": 'Sei 助手',
+  'The game': '游戏',
+  'A hosted world': '主持的世界',
   'Waiting for your world...': '等待你的世界…',
   "macOS needs your permission first: the game keeps its mods inside its app, and changing another app needs App Management. Open System Settings, go to Privacy & Security, then App Management, turn on Sei, and try again.":
     'macOS 需要你先授权：游戏把模组放在它自己的应用包里，而修改其他应用需要“应用程序管理”权限。请打开“系统设置”，进入“隐私与安全性”，再进入“应用程序管理”，打开 Sei，然后再试一次。',

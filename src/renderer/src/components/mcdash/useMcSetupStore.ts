@@ -36,8 +36,18 @@ export const useMcSetupStore = create<McSetupStoreState>((set, get) => ({
     if (get().scanning) return;
     set({ scanning: true });
     try {
-      const installs = await sei.detectMcInstalls();
-      set({ installs: Array.isArray(installs) ? installs : [] });
+      // The bridge answers `{ installs }` (the wizard's shape). The first cut
+      // read the result as a bare array, so every scan came back as "no
+      // Minecraft found" while a vanilla install with a Sei profile sat on
+      // disk (260909, the user's own machine). The tests had stubbed the
+      // bridge with an array, which is why they passed.
+      const res = (await sei.detectMcInstalls()) as unknown;
+      const installs = Array.isArray(res)
+        ? (res as McInstall[])
+        : res && typeof res === 'object' && Array.isArray((res as { installs?: unknown }).installs)
+          ? (res as { installs: McInstall[] }).installs
+          : [];
+      set({ installs });
     } catch {
       set((s) => ({ installs: s.installs ?? [] }));
     } finally {

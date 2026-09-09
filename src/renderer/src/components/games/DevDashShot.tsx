@@ -8,7 +8,9 @@
  *     http://localhost:5173/?dashshot=1            both panels stacked
  *     http://localhost:5173/?dashshot=dontstarve   one panel, full viewport
  *     http://localhost:5173/?dashshot=stardew
- *     http://localhost:5173/?dashshot=mclaunch     the Minecraft launch panel + setup list
+ *     http://localhost:5173/?dashshot=mclaunch     the Minecraft launch panel (add &ready=1 for the set-up state)
+ *     http://localhost:5173/?dashshot=dstlaunch    the Don't Starve Together launch panel
+ *     http://localhost:5173/?dashshot=stardewlaunch  the Stardew Valley launch panel
  *
  * It seeds useMcDashboardStore with fixture snapshots and useDataStore with
  * two named characters (window.sei is stubbed by devHarnessStubs.ts, which
@@ -25,6 +27,8 @@ import { useDataStore } from '../../lib/stores/useDataStore';
 import { DstDashboardPanel } from '../dontstarve/DstDashboardPanel';
 import { StardewDashboardPanel } from '../stardew/StardewDashboardPanel';
 import { McLaunchPanel } from '../mcdash/McLaunchPanel';
+import { DstLaunchPanel } from '../dontstarve/DstLaunchPanel';
+import { StardewLaunchPanel } from '../stardew/StardewLaunchPanel';
 
 const DST_ID = 'dashshot-dst';
 const SDV_ID = 'dashshot-sdv';
@@ -134,12 +138,18 @@ function seed(): void {
 seed();
 
 export function DevDashShot({ which }: { which: string }): React.ReactElement {
-  const only = which === 'dontstarve' || which === 'stardew' || which === 'mclaunch' ? which : null;
+  const only = which === 'dontstarve' || which === 'stardew' || which === 'mclaunch' || which === 'dstlaunch' || which === 'stardewlaunch' ? which : null;
   const box: React.CSSProperties = { height: only ? '100vh' : '50vh', minHeight: 420 };
-  if (only === 'mclaunch') {
+  if (only === 'mclaunch' || only === 'dstlaunch' || only === 'stardewlaunch') {
+    // The launch panels sit in the chat game aside, which is at most 62% of
+    // the window; the harness box matches so a window that pushes Launch
+    // below the fold is caught here rather than in the app.
+    const Panel = only === 'mclaunch' ? McLaunchPanel : only === 'dstlaunch' ? DstLaunchPanel : StardewLaunchPanel;
     return (
-      <div style={{ position: 'fixed', inset: 0, background: '#111' }}>
-        <McLaunchPanel characterId={DST_ID} />
+      <div style={{ position: 'fixed', inset: 0, background: '#111', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ height: '62vh', minHeight: 360 }}>
+          <Panel characterId={DST_ID} />
+        </div>
       </div>
     );
   }

@@ -1,7 +1,8 @@
 /* Don't Starve Together surfaces (game adapters M2, 260908). Tokens only;
  * the "Summoning Terminal" look, no game-styled exception here. */
 
-/* ── launch panel ── */
+/* ── launch panel (the survivor select lives in DstLaunchPanel.module.css
+ * since 260909; these remain for the settings + modal surfaces) ── */
 .panel {
   display: flex;
   flex-direction: column;
@@ -342,53 +343,28 @@
   color: var(--muted);
 }
 
-.searching {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-family: var(--mono);
+/* The token step skin (useDstSetupSteps in the setup modal): a quiet
+ * secondary line and a quiet text control. */
+.sub {
   font-size: 12px;
-  color: var(--muted);
+  line-height: 1.5;
+  color: var(--text-2);
 }
 
-.searchDots {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+.link {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  color: var(--text-2);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
 }
 
-.searchDots span {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  display: block;
-  animation: dstSearchPulse 1000ms ease-in-out infinite;
-}
-
-.searchDots span:nth-child(2) {
-  animation-delay: 200ms;
-}
-
-.searchDots span:nth-child(3) {
-  animation-delay: 400ms;
-}
-
-@keyframes dstSearchPulse {
-  0%,
-  100% {
-    transform: scale(0.55);
-    opacity: 0.3;
-  }
-  40% {
-    transform: scale(1.15);
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .searchDots span {
-    animation: none;
-    opacity: 0.75;
-  }
+.link:hover {
+  color: var(--text);
 }

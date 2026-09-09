@@ -191,3 +191,19 @@
   font-style: normal;
   font-display: swap;
 }
+
+/* ── Monocraft (Minecraft launch panel only, OFL-1.1) ───────────────────
+ * A pixel face drawn after the Minecraft typeface (IdreesInc/Monocraft,
+ * regular weight, converted to woff2). The Minecraft launch panel's setup
+ * window and buttons are painted in the game's own register, and at
+ * 14-16px this reads the way the game's GUI text does, where Press Start
+ * 2P (the dashboard's face) is an 8x8 arcade font that only works at label
+ * sizes. Nothing else in the app should reference it.
+ */
+@font-face {
+  font-family: 'Monocraft';
+  src: url('/fonts/monocraft-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
