@@ -1701,6 +1701,30 @@ component references it.
   the day number since day 1 is always Monday, weather + season icons, the
   day dial from 6 AM to 2 AM, HUD-cased time, gold in its own box), and the
   12 x 3 inventory with the held slot framed red.
+- **Several companions in one game share the dashboard (260909).** A
+  dashboard is mounted for ONE character, but Minecraft and Stardew run a
+  body per character, so the status strip became a STATUS ROW: this
+  companion's window first (titled with their name once there is company),
+  then one window per other companion online in the same game, each a
+  button that opens that companion's chat. Membership comes from
+  `useDataStore.summons` (same `game`, kind `online`), not from what is on
+  screen; the activity line needs that companion's telemetry, which main
+  samples only while WATCHED, so `useGameCompanions`
+  (`components/games/useGameCompanions.ts`) arms the watch flag for every
+  sibling while the dashboard is mounted and shows an ellipsis until the
+  first snapshot lands. All three dashboards use it (the Minecraft strip
+  grew `name` + `companions` props). DST is one body per world, so its row
+  never grows, but it rides the same code.
+- **The width is spent (260909).** Both game-styled bodies are CSS grids:
+  status row, then instruments, then inventory, with a PORTRAIT CARD in
+  the fourth column spanning rows 2-3 (the companion's own art via
+  `DashPortrait`, same seed + palette as the Home wall; name, survivor or
+  location, held item). Whatever width the fixed windows leave goes to the
+  face. The art is absolutely positioned inside its box so its canvas adds
+  no intrinsic height (otherwise the spanning card GREW the rows it spans:
+  measured, the first cut was a 700 px portrait). Under a container query
+  (`.panel` is `container-type: inline-size`; 1000 px DST, 900 px Stardew)
+  the card drops to a full-width row with the art on the left.
 - **The controls are ONE hook, `components/games/useGameControls.ts`**
   (paused/mode/disconnect/hover hint + `GAME_CONTROL_DESCRIPTIONS`); each
   game paints its own buttons. `GameControlsWindow` (the token-styled

@@ -31,6 +31,9 @@ import { useDataStore } from '../../lib/stores/useDataStore';
 import { sei } from '../../lib/ipcClient';
 import { useT } from '../../lib/i18n';
 import { useGameControls, GAME_CONTROL_DESCRIPTIONS } from '../games/useGameControls';
+import { useGameCompanions, companionActivityText } from '../games/useGameCompanions';
+import { DashPortrait } from '../games/DashPortrait';
+import { useUiStore } from '../../lib/stores/useUiStore';
 import {
   STARDEW_COLUMNS,
   STARDEW_SLOTS,
@@ -204,6 +207,8 @@ export function StardewDashboardPanel({ characterId }: StardewDashboardPanelProp
   const name = character?.name ?? t('Companion');
   const snapshot: StardewDashboardSnapshot | null = isStardewDashboardSnapshot(raw) ? raw : null;
   const controls = useGameControls(characterId, 'stardew');
+  const companions = useGameCompanions(characterId, 'stardew');
+  const navigate = useUiStore((s) => s.navigate);
 
   // Watch flag + one hydration pull (the push only carries changes after mount).
   useEffect(() => {
@@ -232,13 +237,34 @@ export function StardewDashboardPanel({ characterId }: StardewDashboardPanelProp
 
       {snapshot ? (
         <div className={styles.body}>
-          {/* Status strip: what the AI is doing right now. */}
-          <Frame className={styles.status} label={t('Status')}>
-            <span className={styles.label}>{t('Status')}</span>
-            <span className={styles.statusText} aria-live="polite">
-              {controls.paused ? t('Paused') : sentenceCase(snapshot.activity || 'idling')}
-            </span>
-          </Frame>
+          {/* Status row: what this companion is doing, plus one window per
+              other companion on the same farm (a click opens their chat). */}
+          <div className={styles.statusRow}>
+            <Frame className={styles.status} label={t('Status')}>
+              <span className={styles.label}>{companions.length ? name : t('Status')}</span>
+              <span className={styles.statusText} aria-live="polite">
+                {controls.paused ? t('Paused') : sentenceCase(snapshot.activity || 'idling')}
+              </span>
+            </Frame>
+            {companions.map((c) => {
+              const label = c.name ?? t('Companion');
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  className={`${styles.frame} ${styles.status} ${styles.statusPeer}`}
+                  aria-label={t("Open {name}'s chat", { name: label })}
+                  title={t("Open {name}'s chat", { name: label })}
+                  onClick={() => navigate({ kind: 'chat', characterId: c.id })}
+                >
+                  <span className={styles.face}>
+                    <span className={styles.label}>{label}</span>
+                    <span className={styles.statusText}>{companionActivityText(c, t('Paused'))}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
 
           {/* Vitals: the two HUD bars. */}
           <section className={styles.bars} aria-label={t('Vitals')}>
@@ -312,6 +338,22 @@ export function StardewDashboardPanel({ characterId }: StardewDashboardPanelProp
             </button>
           </Frame>
 
+          {/* Portrait card: the companion's art in a frame, with where they
+              are and what they hold. Fills the width the other frames leave. */}
+          <Frame className={styles.card} label={t('Companion')}>
+            <div className={styles.cardArt} aria-hidden="true">
+              <DashPortrait character={character} />
+            </div>
+            <div className={styles.cardText}>
+              <span className={styles.cardName}>{name}</span>
+              <span className={styles.cardLine}>
+                {snapshot.location} {snapshot.x}, {snapshot.y}
+                {snapshot.sleeping ? <span className={styles.dim}> {t('resting')}</span> : null}
+              </span>
+              <span className={styles.cardLine}>{snapshot.held ? t('Holding {item}', { item: snapshot.held }) : t('Empty hands')}</span>
+            </div>
+          </Frame>
+
           {/* Inventory: the 12 x 3 grid, held item framed in red. */}
           <Frame className={styles.inventory} label={t("{name}'s inventory", { name })}>
             <div className={styles.invGrid} style={{ gridTemplateColumns: `repeat(${STARDEW_COLUMNS}, 40px)` }}>
@@ -329,10 +371,6 @@ export function StardewDashboardPanel({ characterId }: StardewDashboardPanelProp
                   </div>
                 );
               })}
-            </div>
-            <div className={styles.posLine}>
-              {snapshot.location} {snapshot.x}, {snapshot.y}
-              {snapshot.sleeping ? <span className={styles.dim}> {t('resting')}</span> : null}
             </div>
           </Frame>
         </div>

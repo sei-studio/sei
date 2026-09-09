@@ -9,6 +9,9 @@
 import React, { useState } from 'react';
 import type { McGameMode } from '@shared/ipc';
 import { useT } from '../../lib/i18n';
+import { useUiStore } from '../../lib/stores/useUiStore';
+import { companionActivityText } from '../games/useGameCompanions';
+import type { GameCompanion } from '../games/useGameCompanions';
 import styles from './McDashboardPanel.module.css';
 
 /** "gathering oak logs..." → "Gathering oak logs...". */
@@ -32,18 +35,50 @@ export interface McDashStatusStripProps {
   /** The bot's lowercase activity line; sentence-cased for display. */
   activity: string;
   paused: boolean;
+  /** This companion's name, shown as the window title once there is more than one. */
+  name?: string;
+  /**
+   * The OTHER companions in the same game (useGameCompanions): one more
+   * status window each, laid out across the same row, clickable to open
+   * that companion's chat (and so its dashboard).
+   */
+  companions?: GameCompanion[];
 }
 
-/** The full-width status window: what the AI is doing right now. */
-export function McDashStatusStrip({ activity, paused }: McDashStatusStripProps): React.ReactElement {
+/**
+ * The status row: what the AI is doing right now, and, when several
+ * companions share the world (260909), one window per companion across the
+ * width that used to be one strip.
+ */
+export function McDashStatusStrip({ activity, paused, name, companions = [] }: McDashStatusStripProps): React.ReactElement {
   const t = useT();
+  const navigate = useUiStore((s) => s.navigate);
+  const many = companions.length > 0;
   return (
-    <section className={`${styles.dialog} ${styles.statusDialog}`} aria-label={t('Status')}>
-      <span className={styles.statusTitle}>{t('Status')}</span>
-      <span className={styles.statusText} aria-live="polite">
-        {paused ? t('Paused') : sentenceCase(activity || 'idling')}
-      </span>
-    </section>
+    <div className={styles.statusRow}>
+      <section className={`${styles.dialog} ${styles.statusDialog}`} aria-label={t('Status')}>
+        <span className={styles.statusTitle}>{many && name ? name : t('Status')}</span>
+        <span className={styles.statusText} aria-live="polite">
+          {paused ? t('Paused') : sentenceCase(activity || 'idling')}
+        </span>
+      </section>
+      {companions.map((c) => {
+        const label = c.name ?? t('Companion');
+        return (
+          <button
+            key={c.id}
+            type="button"
+            className={`${styles.dialog} ${styles.statusDialog} ${styles.statusPeer}`}
+            aria-label={t("Open {name}'s chat", { name: label })}
+            title={t("Open {name}'s chat", { name: label })}
+            onClick={() => navigate({ kind: 'chat', characterId: c.id })}
+          >
+            <span className={styles.statusTitle}>{label}</span>
+            <span className={styles.statusText}>{companionActivityText(c, t('Paused'))}</span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

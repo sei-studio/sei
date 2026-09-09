@@ -62,19 +62,27 @@ beforeEach(() => {
   };
 });
 
-async function render(snapshot: DstDashboardSnapshot | null, controls?: { paused: boolean; mode: 'reactive' | 'proactive' }): Promise<string> {
+async function render(snapshot: DstDashboardSnapshot | null, controls?: { paused: boolean; mode: 'reactive' | 'proactive' }, peer?: { id: string; name: string; activity?: string }): Promise<string> {
   vi.resetModules();
   const dash = {
-    gameSnapshots: { [ID]: snapshot },
+    gameSnapshots: { [ID]: snapshot, ...(peer && peer.activity ? { [peer.id]: { game: 'dontstarve', characterId: peer.id, ts: 1, activity: peer.activity, actionName: null } } : {}) },
+    snapshots: {},
     controls: { [ID]: controls },
     setPaused: vi.fn(),
     setMode: vi.fn(),
     setLaunch: vi.fn(),
     setWatching: vi.fn(),
   };
-  const data = { characters: [{ id: ID, name: 'Sui' }], setStatus: vi.fn() };
+  const summons = peer ? { [ID]: { kind: 'online', characterId: ID, game: 'dontstarve' }, [peer.id]: { kind: 'online', characterId: peer.id, game: 'dontstarve' }, other: { kind: 'online', characterId: 'other', game: 'minecraft' } } : {};
+  const data = { summons, characters: [{ id: ID, name: 'Sui' }], setStatus: vi.fn() };
   vi.doMock('../../lib/stores/useMcDashboardStore', () => ({
     useMcDashboardStore: Object.assign((selector: (s: typeof dash) => unknown) => selector(dash), { getState: () => dash, setState: vi.fn() }),
+  }));
+  if (peer) data.characters.push({ id: peer.id, name: peer.name });
+  // The portrait paints a canvas / reads the theme off `document`; not what these tests pin.
+  vi.doMock('../games/DashPortrait', () => ({ DashPortrait: () => null }));
+  vi.doMock('../../lib/stores/useUiStore', () => ({
+    useUiStore: Object.assign((selector: (s: { navigate: () => void }) => unknown) => selector({ navigate: vi.fn() }), { getState: () => ({ navigate: vi.fn() }) }),
   }));
   vi.doMock('../../lib/stores/useDataStore', () => ({
     useDataStore: Object.assign((selector: (s: typeof data) => unknown) => selector(data), { getState: () => data }),
@@ -133,6 +141,21 @@ describe('DstDashboardPanel', () => {
     expect(html).toContain('Paused');
     expect(html).not.toContain('Gathering twigs...');
     expect(html).toContain('>Resume<');
+  });
+
+  it('Test 7: another companion in the same game gets its own status window', async () => {
+    const alone = await render(SNAP);
+    expect(alone).not.toContain('statusPeer');
+    expect(alone).toContain('>Status<');
+    const html = await render(SNAP, undefined, { id: 'c2', name: 'Marv' });
+    expect(html).toContain('statusPeer');
+    expect(html).toContain('aria-label="Open Marv&#x27;s chat"');
+    // No snapshot from them yet: an ellipsis, never a claimed "idling".
+    expect(html).toContain('>...<');
+    // The minecraft session in the summons map is not on this game.
+    expect(html.match(/statusPeer/g)).toHaveLength(1);
+    const busy = await render(SNAP, undefined, { id: 'c2', name: 'Marv', activity: 'chopping wood...' });
+    expect(busy).toContain('Chopping wood...');
   });
 
   it('Test 6: every t() key in the panel has a zh entry and no em dash', async () => {

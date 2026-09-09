@@ -35,6 +35,7 @@ import { McDashMinimap } from './McDashMinimap';
 import { McDashAvatar } from './McDashAvatar';
 import { HeartsRow, FoodRow } from './McDashVitals';
 import { McDashStatusStrip, McDashControls } from './McDashControls';
+import { useGameCompanions } from '../games/useGameCompanions';
 import { useSkinServerBase, extractMcVersion, mcItemIconUrl, mcSkinUrl } from './mcAssetSource';
 import { effectiveMcUsername } from '@shared/characterSchema';
 import type { McDashItem } from '@shared/mcDashboardIpc';
@@ -131,6 +132,7 @@ export function McDashboardPanel({ characterId }: McDashboardPanelProps): React.
   const assetBase = useSkinServerBase();
   const t = useT();
   const name = character?.name ?? t('Companion');
+  const companions = useGameCompanions(characterId, 'minecraft');
 
   // 260725 runtime controls: absent entry == the per-summon defaults
   // (unpaused, proactive). Never persisted; the store drops the entry when
@@ -176,7 +178,7 @@ export function McDashboardPanel({ characterId }: McDashboardPanelProps): React.
               AI is doing right now (activityLabel in the bot: "gathering oak
               logs...", "thinking", "idling"; "paused" is renderer state).
               Shared with the other games' dashboards (McDashControls). ── */}
-          <McDashStatusStrip activity={snapshot.activity} paused={paused} />
+          <McDashStatusStrip activity={snapshot.activity} paused={paused} name={name} companions={companions} />
 
           {/* ── Inventory dialog (the classic light-gray window) ── */}
           <section className={styles.dialog} aria-label={t("{name}'s inventory", { name })}>

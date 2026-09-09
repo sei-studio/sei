@@ -76,6 +76,7 @@ export const ZH_DONTSTARVE: Record<string, string> = {
   'Hot': '炎热',
   'Overheating': '过热',
   'Hand': '手持',
+  'as {survivor}': '扮演 {survivor}',
 
   // ── setup modal body (components/dontstarve/DstSetupBody.tsx) ──
 

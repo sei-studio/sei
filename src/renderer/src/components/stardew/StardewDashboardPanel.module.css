@@ -45,6 +45,7 @@
   flex-direction: column;
   box-sizing: border-box;
   overflow: hidden;
+  container-type: inline-size;
   color: var(--sdv-text);
   font-family: var(--sdv-font);
   font-weight: 500;
@@ -74,17 +75,66 @@
   text-overflow: ellipsis;
 }
 
-/* ── Body: frames on the planks. ── */
+/* ── Body: frames on the planks, on a grid that spends the whole width.
+ * Row 1 is the status row, row 2 the bars + date box + controls, row 3 the
+ * inventory; the portrait card takes the fourth column across rows 2-3, so
+ * whatever width the fixed frames leave goes to the companion's face. ── */
 .body {
   flex: 1;
   min-height: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-content: flex-start;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: max-content max-content max-content minmax(220px, 1fr);
+  grid-auto-rows: max-content;
+  align-items: start;
   gap: 14px;
   padding: 14px;
   overflow: auto;
+}
+
+.statusRow {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.card {
+  grid-column: 4;
+  grid-row: 2 / 4;
+  align-self: stretch;
+  min-height: 0;
+}
+
+.inventory {
+  grid-column: 1 / 4;
+}
+
+/* Narrow panel: the card cannot have a column of its own, so it becomes a
+ * full-width row under the inventory, art on the left. */
+@container (max-width: 900px) {
+  .body {
+    grid-template-columns: max-content max-content max-content;
+  }
+
+  .card {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+
+  .card .face {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .cardArt {
+    flex: 0 0 120px;
+    height: 120px;
+    min-height: 0;
+  }
+
+  .inventory {
+    grid-column: 1 / -1;
+  }
 }
 
 /* The menu frame: outline, wood band with highlight, inner line, cream face. */
@@ -118,15 +168,39 @@
   color: var(--sdv-muted);
 }
 
-/* ── Status strip: full width. ── */
+/* ── Status windows: one per companion, sharing the row. ── */
 .status {
-  flex-basis: 100%;
+  flex: 1 1 240px;
+  min-width: 0;
 }
 
 .status .face {
   flex-direction: row;
   align-items: baseline;
   gap: 14px;
+}
+
+/* Another companion's window is a button that opens their chat; the face
+ * is a span inside it so the frame markup stays the same. */
+.statusPeer {
+  display: block;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.statusPeer .face {
+  display: flex;
+}
+
+.statusPeer:hover .face {
+  background: #fff0c4;
+}
+
+.statusPeer:focus-visible {
+  outline: 2px solid var(--sdv-select);
+  outline-offset: 2px;
 }
 
 .statusText {
@@ -379,12 +453,60 @@
 }
 
 /* ── Inventory grid. ── */
-.inventory {
-  flex-basis: 100%;
-}
-
 .inventory .face {
   gap: 8px;
+}
+
+/* ── Portrait card. ── */
+.card .face {
+  gap: 8px;
+  padding: 8px;
+}
+
+/* The art is positioned INSIDE the box so its canvas adds no intrinsic
+ * height: the card's height comes from the grid rows it spans, and the
+ * picture fills whatever is left after the text. */
+.cardArt {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 150px;
+  overflow: hidden;
+  background: var(--sdv-cream-2);
+  border: 2px solid var(--sdv-wood-line);
+  border-radius: 3px;
+  box-shadow: inset 2px 2px 0 rgba(120, 70, 20, 0.28);
+}
+
+.cardArt > * {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.cardText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 0 2px 2px;
+}
+
+.cardName {
+  font-size: 16px;
+  font-weight: 600;
+  text-shadow: 1px 1px 0 var(--sdv-text-shadow);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cardLine {
+  font-size: 11px;
+  color: var(--sdv-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .invGrid {
@@ -429,11 +551,6 @@
   color: #fff4d6;
   text-shadow: 1px 1px 0 var(--sdv-outline), -1px 0 0 var(--sdv-outline), 0 -1px 0 var(--sdv-outline);
   z-index: 1;
-}
-
-.posLine {
-  font-size: 11px;
-  color: var(--sdv-muted);
 }
 
 .dim {

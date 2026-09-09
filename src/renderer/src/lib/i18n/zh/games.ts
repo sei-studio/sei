@@ -150,4 +150,8 @@ export const ZH_GAMES: Record<string, string> = {
   'Sei keeps looking while this window is open.': '这个窗口打开期间，Sei 会持续查找。',
   // components/GameErrorModal.tsx
   "{name} couldn't join {game}": '{name}无法加入 {game}',
+  // Game dashboards, companions in the same world (260909).
+  "Open {name}'s chat": '打开{name}的聊天',
+  'Holding {item}': '手持{item}',
+  'Empty hands': '空手',
 };

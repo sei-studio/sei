@@ -44,6 +44,7 @@
   flex-direction: column;
   box-sizing: border-box;
   overflow: hidden;
+  container-type: inline-size;
   color: var(--dst-cream);
   font-family: var(--dst-label);
   background:
@@ -77,17 +78,63 @@
   color: var(--dst-paper-2);
 }
 
-/* ── Body: the sheets float on the ground. ── */
+/* ── Body: the sheets on the ground, on a grid that spends the whole width.
+ * Row 1 is the status row, row 2 the instruments, row 3 the inventory bar;
+ * the portrait card takes the fourth column across rows 2-3, so whatever
+ * width the fixed sheets leave goes to the companion's face. ── */
 .body {
   flex: 1;
   min-height: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-content: flex-start;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: max-content max-content max-content minmax(200px, 1fr);
+  grid-auto-rows: max-content;
+  align-items: start;
   gap: 14px;
   padding: 14px;
   overflow: auto;
+}
+
+.statusRow {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.card {
+  grid-column: 4;
+  grid-row: 2 / 4;
+  align-self: stretch;
+  min-height: 0;
+}
+
+.invBar {
+  grid-column: 1 / 4;
+}
+
+/* Narrow panel: the card cannot have a column of its own, so it becomes a
+ * full-width row under the bar, art on the left. */
+@container (max-width: 1000px) {
+  .body {
+    grid-template-columns: max-content max-content max-content;
+  }
+
+  .card {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .cardArt {
+    flex: 0 0 120px;
+    height: 120px;
+    min-height: 0;
+  }
+
+  .invBar {
+    grid-column: 1 / -1;
+  }
 }
 
 /* A sheet of parchment: cream gradient, ink rule, burnt edges, hand-cut corners. */
@@ -115,13 +162,30 @@
   color: var(--dst-paper-muted);
 }
 
-/* ── Status strip: full width. ── */
+/* ── Status windows: one per companion, sharing the row. ── */
 .status {
-  flex-basis: 100%;
+  flex: 1 1 240px;
+  min-width: 0;
   flex-direction: row;
   align-items: baseline;
   gap: 14px;
   padding: 10px 16px;
+}
+
+/* Another companion's window is a button that opens their chat. */
+.statusPeer {
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.statusPeer:hover {
+  background: linear-gradient(160deg, #f4e9cf 0%, #ecdfc0 45%, #d6c29a 100%);
+}
+
+.statusPeer:focus-visible {
+  outline: 2px solid var(--dst-hunger);
+  outline-offset: 2px;
 }
 
 .statusText {
@@ -460,7 +524,6 @@
 
 /* ── Inventory bar: the HUD's dark slots on a strip of ink. ── */
 .invBar {
-  flex-basis: 100%;
   display: flex;
   align-items: flex-start;
   gap: 14px;
@@ -474,7 +537,7 @@
 
 .invSlots {
   display: grid;
-  grid-template-columns: repeat(15, 42px);
+  grid-template-columns: repeat(15, 38px);
   gap: 4px;
   min-width: 0;
 }
@@ -499,8 +562,8 @@
 
 .slot {
   position: relative;
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
   box-sizing: border-box;
   background: var(--dst-slot);
   border: 2px solid var(--dst-slot-rim);
@@ -518,7 +581,8 @@
   position: absolute;
   inset: 3px;
   font-family: var(--dst-label);
-  font-size: 7.5px;
+  font-size: 7px;
+  letter-spacing: -0.01em;
   line-height: 1.15;
   color: var(--dst-cream);
   overflow: hidden;
@@ -536,13 +600,66 @@
   z-index: 1;
 }
 
-.location {
-  flex-basis: 100%;
-  margin: 0;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  color: var(--dst-paper-2);
-  opacity: 0.8;
+/* ── Portrait card. ── */
+.card {
+  padding: 10px;
+  gap: 10px;
+  min-height: 0;
+}
+
+/* The art is positioned INSIDE the box so its canvas adds no intrinsic
+ * height: the card's height comes from the grid rows it spans, and the
+ * picture fills whatever is left after the text. */
+.cardArt {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 150px;
+  overflow: hidden;
+  background: #2a2024;
+  border: 2px solid var(--dst-ink);
+  border-radius: 10px 4px 8px 5px / 5px 8px 4px 10px;
+  box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.45);
+  /* An old photograph on old paper. */
+  filter: sepia(0.35) contrast(1.05) saturate(0.9);
+}
+
+.cardArt > * {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.cardText {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cardName {
+  font-family: var(--dst-figure);
+  font-size: 20px;
+  line-height: 1.1;
+  color: var(--dst-paper-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cardSub {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dst-paper-muted);
+}
+
+.cardLine {
+  font-size: 12px;
+  color: var(--dst-paper-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .waiting {

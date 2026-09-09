@@ -26,6 +26,7 @@ import { StardewDashboardPanel } from '../stardew/StardewDashboardPanel';
 
 const DST_ID = 'dashshot-dst';
 const SDV_ID = 'dashshot-sdv';
+const SDV_PEER_ID = 'dashshot-sdv-peer';
 
 const DST_SNAPSHOT: DstDashboardSnapshot = {
   game: 'dontstarve',
@@ -106,19 +107,31 @@ function seed(): void {
       ...s.gameSnapshots,
       [DST_ID]: DST_SNAPSHOT as unknown as GenericGameDashboardSnapshot,
       [SDV_ID]: SDV_SNAPSHOT as unknown as GenericGameDashboardSnapshot,
+      // A second farmhand on the same farm, so the status row shows two windows.
+      [SDV_PEER_ID]: { ...SDV_SNAPSHOT, characterId: SDV_PEER_ID, activity: 'chopping wood...', actionName: 'chop' } as unknown as GenericGameDashboardSnapshot,
+    },
+  }));
+  useDataStore.setState((s) => ({
+    summons: {
+      ...s.summons,
+      [SDV_ID]: { kind: 'online', characterId: SDV_ID, game: 'stardew', uptimeMs: 0, startedAtMs: Date.now() },
+      [SDV_PEER_ID]: { kind: 'online', characterId: SDV_PEER_ID, game: 'stardew', uptimeMs: 0, startedAtMs: Date.now() },
     },
   }));
   useDataStore.setState((s) => ({
     characters: [
       ...s.characters,
-      { id: DST_ID, name: 'Sui' } as unknown as (typeof s.characters)[number],
-      { id: SDV_ID, name: 'Marv' } as unknown as (typeof s.characters)[number],
+      { id: DST_ID, name: 'Sui', portrait_image: './img/onboard/sui-stand.png' } as unknown as (typeof s.characters)[number],
+      { id: SDV_ID, name: 'Marv', portrait_image: './img/onboard/sui-talk-flipped.png' } as unknown as (typeof s.characters)[number],
+      { id: SDV_PEER_ID, name: 'Lyra' } as unknown as (typeof s.characters)[number],
     ],
   }));
 }
 
+// Seed once at import, never during render (React flags store writes from a render).
+seed();
+
 export function DevDashShot({ which }: { which: string }): React.ReactElement {
-  seed();
   const only = which === 'dontstarve' || which === 'stardew' ? which : null;
   const box: React.CSSProperties = { height: only ? '100vh' : '50vh', minHeight: 420 };
   return (

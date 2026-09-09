@@ -29,6 +29,9 @@ import { sei } from '../../lib/ipcClient';
 import { useDataStore } from '../../lib/stores/useDataStore';
 import { useMcDashboardStore } from '../../lib/stores/useMcDashboardStore';
 import { useGameControls, GAME_CONTROL_DESCRIPTIONS } from '../games/useGameControls';
+import { useGameCompanions, companionActivityText } from '../games/useGameCompanions';
+import { DashPortrait } from '../games/DashPortrait';
+import { useUiStore } from '../../lib/stores/useUiStore';
 import { clockSegments, dstItemLabel, meterPct, normalizePhase, normalizeSeason, slotCount, tempBand } from './dstDashboard';
 import type { DstPhase, DstSeason } from './dstDashboard';
 import styles from './DstDashboardPanel.module.css';
@@ -164,6 +167,8 @@ export function DstDashboardPanel({ characterId }: DstDashboardPanelProps): Reac
   const name = character?.name ?? t('Companion');
   const snapshot = raw && raw.game === 'dontstarve' ? (raw as unknown as DstDashboardSnapshot) : null;
   const controls = useGameControls(characterId, 'dontstarve');
+  const companions = useGameCompanions(characterId, 'dontstarve');
+  const navigate = useUiStore((s) => s.navigate);
 
   useEffect(() => {
     void sei.gameDashboardSetWatching(characterId, true).catch(() => undefined);
@@ -191,13 +196,32 @@ export function DstDashboardPanel({ characterId }: DstDashboardPanelProps): Reac
 
       {snapshot ? (
         <div className={styles.body}>
-          {/* Status strip: what the AI is doing right now. */}
-          <section className={`${styles.paper} ${styles.status}`} aria-label={t('Status')}>
-            <span className={styles.label}>{t('Status')}</span>
-            <span className={styles.statusText} aria-live="polite">
-              {controls.paused ? t('Paused') : sentenceCase(snapshot.activity || 'idling')}
-            </span>
-          </section>
+          {/* Status row: what this companion is doing, plus one window per
+              other companion in the same world (a click opens their chat). */}
+          <div className={styles.statusRow}>
+            <section className={`${styles.paper} ${styles.status}`} aria-label={t('Status')}>
+              <span className={styles.label}>{companions.length ? name : t('Status')}</span>
+              <span className={styles.statusText} aria-live="polite">
+                {controls.paused ? t('Paused') : sentenceCase(snapshot.activity || 'idling')}
+              </span>
+            </section>
+            {companions.map((c) => {
+              const label = c.name ?? t('Companion');
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  className={`${styles.paper} ${styles.status} ${styles.statusPeer}`}
+                  aria-label={t("Open {name}'s chat", { name: label })}
+                  title={t("Open {name}'s chat", { name: label })}
+                  onClick={() => navigate({ kind: 'chat', characterId: c.id })}
+                >
+                  <span className={styles.label}>{label}</span>
+                  <span className={styles.statusText}>{companionActivityText(c, t('Paused'))}</span>
+                </button>
+              );
+            })}
+          </div>
 
           {/* Vitals: the three HUD badges. */}
           <section className={`${styles.paper} ${styles.vitals}`} aria-label={t('Vitals')}>
@@ -260,6 +284,21 @@ export function DstDashboardPanel({ characterId }: DstDashboardPanelProps): Reac
             </button>
           </section>
 
+          {/* Portrait card: the companion's own art on a sheet, with who they
+              are playing as, what they hold and where they stand. Fills the
+              width the other sheets leave. */}
+          <section className={`${styles.paper} ${styles.card}`} aria-label={t('Companion')}>
+            <div className={styles.cardArt} aria-hidden="true">
+              <DashPortrait character={character} />
+            </div>
+            <div className={styles.cardText}>
+              <span className={styles.cardName}>{name}</span>
+              <span className={styles.cardSub}>{t('as {survivor}', { survivor: dstSurvivor(snapshot.prefab).name })}</span>
+              <span className={styles.cardLine}>{snapshot.held ? t('Holding {item}', { item: dstItemLabel(snapshot.held) }) : t('Empty hands')}</span>
+              <span className={styles.cardLine}>{t('at {x}, {z}', { x: Math.round(snapshot.x), z: Math.round(snapshot.z) })}</span>
+            </div>
+          </section>
+
           {/* Inventory bar: fifteen dark slots per row, the hand slot at the end. */}
           <section className={styles.invBar} aria-label={t("{name}'s inventory", { name })}>
             <div className={styles.invSlots}>
@@ -285,7 +324,6 @@ export function DstDashboardPanel({ characterId }: DstDashboardPanelProps): Reac
             </div>
           </section>
 
-          <p className={styles.location}>{t('at {x}, {z}', { x: Math.round(snapshot.x), z: Math.round(snapshot.z) })}</p>
         </div>
       ) : (
         <div className={styles.waiting}>{t('Waiting for {name}...', { name })}</div>
