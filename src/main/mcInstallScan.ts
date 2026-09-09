@@ -171,7 +171,7 @@ function idFor(kind: 'vanilla' | 'curseforge' | 'lunar', absPath: string): strin
  * Vanilla launcher creates `fabric-loader-<loaderVer>-<mcVer>/` when Fabric
  * is installed against a given MC version. Example: `fabric-loader-0.16.5-1.20.1`.
  */
-async function detectFabricLoader(mcDir: string): Promise<{ loaderVersion: string } | null> {
+async function detectFabricLoader(mcDir: string): Promise<{ loaderVersion: string; mcVersions: string[] } | null> {
   const versionsDir = path.join(mcDir, 'versions');
   let entries: string[];
   try {
@@ -183,13 +183,19 @@ async function detectFabricLoader(mcDir: string): Promise<{ loaderVersion: strin
     return null;
   }
   // Match `fabric-loader-<loaderVer>-<mcVer>`. loaderVer is x.y.z (semver),
-  // mcVer is x.y or x.y.z. We capture loaderVer in group 1.
+  // mcVer is x.y or x.y.z. Every profile counts (260909): the launch panel
+  // needs to know whether ANY of them is for a version Sei can join, not
+  // just that Fabric exists somewhere in the folder.
   const re = /^fabric-loader-(\d+\.\d+\.\d+)-(\d+\.\d+(?:\.\d+)?)$/;
+  let loaderVersion: string | null = null;
+  const mcVersions: string[] = [];
   for (const name of entries) {
     const m = re.exec(name);
-    if (m) return { loaderVersion: m[1] };
+    if (!m) continue;
+    loaderVersion ??= m[1];
+    if (!mcVersions.includes(m[2])) mcVersions.push(m[2]);
   }
-  return null;
+  return loaderVersion ? { loaderVersion, mcVersions } : null;
 }
 
 /**
@@ -403,6 +409,7 @@ export async function scanMcInstalls(opts?: ScanOpts): Promise<McInstall[]> {
         mc_version,
         loader: fabric ? 'fabric' : null,
         loader_version: fabric?.loaderVersion ?? null,
+        fabric_mc_versions: fabric?.mcVersions ?? [],
         csl_installed: csl.installed,
         csl_version: csl.version,
         sei_enabled: enabledSet.has(id),

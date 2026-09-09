@@ -8,6 +8,7 @@
  *     http://localhost:5173/?dashshot=1            both panels stacked
  *     http://localhost:5173/?dashshot=dontstarve   one panel, full viewport
  *     http://localhost:5173/?dashshot=stardew
+ *     http://localhost:5173/?dashshot=mclaunch     the Minecraft launch panel + setup list
  *
  * It seeds useMcDashboardStore with fixture snapshots and useDataStore with
  * two named characters (window.sei is stubbed by devHarnessStubs.ts, which
@@ -23,6 +24,7 @@ import { useMcDashboardStore } from '../../lib/stores/useMcDashboardStore';
 import { useDataStore } from '../../lib/stores/useDataStore';
 import { DstDashboardPanel } from '../dontstarve/DstDashboardPanel';
 import { StardewDashboardPanel } from '../stardew/StardewDashboardPanel';
+import { McLaunchPanel } from '../mcdash/McLaunchPanel';
 
 const DST_ID = 'dashshot-dst';
 const SDV_ID = 'dashshot-sdv';
@@ -132,8 +134,15 @@ function seed(): void {
 seed();
 
 export function DevDashShot({ which }: { which: string }): React.ReactElement {
-  const only = which === 'dontstarve' || which === 'stardew' ? which : null;
+  const only = which === 'dontstarve' || which === 'stardew' || which === 'mclaunch' ? which : null;
   const box: React.CSSProperties = { height: only ? '100vh' : '50vh', minHeight: 420 };
+  if (only === 'mclaunch') {
+    return (
+      <div style={{ position: 'fixed', inset: 0, background: '#111' }}>
+        <McLaunchPanel characterId={DST_ID} />
+      </div>
+    );
+  }
   return (
     <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', background: '#111' }}>
       {only !== 'stardew' ? (

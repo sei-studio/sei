@@ -46,6 +46,8 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { scanMcInstalls } from './mcInstallScan';
+import { supportedVersions } from 'minecraft-protocol/src/version.js';
+import { selectTargetMcVersion } from '../shared/mcSetup';
 import { installFabricLoader } from './fabricInstaller';
 import { downloadCustomSkinLoader, writeCustomSkinLoaderConfig } from './customSkinLoader';
 import { scanModJar } from './modScanner';
@@ -151,16 +153,18 @@ async function seedSeiGameDir(rootDir: string, seiGameDir: string): Promise<void
 const sessions = new Map<string, AbortController>();
 
 /**
- * Fallback MC version when `launcher_profiles.json` is unreadable or absent.
- * Used silently (no UI warning today); installs detected with a readable
- * version never touch it. Deliberately pinned to a known-good combination:
- * Fabric Loader + a pre-15 CustomSkinLoader build are VERIFIED working on
- * 1.21.4, while newer MC versions (26.x) are merely LISTED by CSL 14.28's
- * Modrinth metadata — and the CSL 15.x incident (crash 255 on 1.21.x builds
- * that also "listed" support) is why a listing is not treated as proof.
- * Bump only after actually launching Fabric + CSL on the new version.
+ * Minecraft versions where Fabric Loader + a pre-15 CustomSkinLoader build
+ * have ACTUALLY been launched together. The wizard installs Fabric for one
+ * of these whenever the player's own version is one Sei cannot join, or is
+ * unreadable (260909; it used to fall back to 1.21.4 only when unreadable
+ * and otherwise took whatever the launcher last ran, snapshots included).
+ * A newer version being LISTED by CSL's Modrinth metadata is not proof: the
+ * CSL 15.x builds listed 1.21.x and crashed it (code 255). Add a version
+ * here only after launching Fabric + CSL on it. The pick itself is
+ * shared/mcSetup.ts selectTargetMcVersion, so the launch panel's readiness
+ * rule and the wizard agree.
  */
-const DEFAULT_MC_VERSION = '1.21.4';
+const VERIFIED_MC_VERSIONS: readonly string[] = ['1.21.4'];
 
 /**
  * Allocate a fresh AbortController for the given sessionId and store it in
@@ -439,7 +443,13 @@ async function processOneInstall(
   }
 
   // ── Determine MC version (with fallback) ──────────────────────────────
-  const mcVersion = install.mc_version ?? DEFAULT_MC_VERSION;
+  // Vanilla: the Fabric profile decides the version, so steer an unjoinable
+  // or unreadable one to a verified, supported version (the launcher then
+  // downloads that Minecraft on the profile's first play). CurseForge
+  // instances carry their own loader + version and cannot be moved.
+  const mcVersion = install.kind === 'vanilla'
+    ? selectTargetMcVersion({ installVersion: install.mc_version, supported: supportedVersions, verified: VERIFIED_MC_VERSIONS })
+    : install.mc_version;
   if (!mcVersion) {
     onProgress({
       installId,

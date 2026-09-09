@@ -127,6 +127,22 @@ export const ZH_CHATUI: Record<string, string> = {
   'Connecting...': '连接中...',
   'Launch': '启动',
   'How do I set up launch?': '如何设置启动？',
+  // Minecraft setup steps on the launch panel (McSteps, 260909).
+  'Minecraft setup steps': 'Minecraft 设置步骤',
+  'Looking for Minecraft on this computer...': '正在这台电脑上查找 Minecraft…',
+  'Minecraft Java Edition is installed.': '已安装 Minecraft Java 版。',
+  'Install Minecraft Java Edition from minecraft.net, then check again.': '请从 minecraft.net 安装 Minecraft Java 版，然后重新检查。',
+  'Get Minecraft': '获取 Minecraft',
+  'Your Minecraft is Sei-ready: Fabric for {version} with companion skins. Pick the "Sei" profile in the launcher.': '你的 Minecraft 已为 Sei 准备就绪：{version} 版 Fabric 和伙伴皮肤。请在启动器中选择“Sei”配置。',
+  'Set up a Sei-ready Minecraft: a separate "Sei" profile in your launcher on a version Sei can join (up to {latest}), with Fabric and the companion-skin mod. One time, about a minute. Your own profile is not changed.':
+    '设置一个为 Sei 准备的 Minecraft：在启动器中新增一个独立的“Sei”配置，使用 Sei 能加入的版本（最高 {latest}），并装好 Fabric 和伙伴皮肤模组。只需一次，约一分钟。不会改动你自己的配置。',
+  'Set up': '设置',
+  'Do not show again': '不再显示',
+  'Your world is open to LAN.': '你的世界已开放到局域网。',
+  'Open a world to LAN:': '把世界开放到局域网：',
+  'Set up Minecraft for Sei': '为 Sei 设置 Minecraft',
+  'Sei adds a separate "Sei" profile to your Minecraft launcher: Fabric on a Minecraft version Sei can join, plus a small mod (CustomSkinLoader) so each companion shows their own skin and name in your world. Your own profile is not changed. Takes about a minute.':
+    'Sei 会在你的 Minecraft 启动器中新增一个独立的“Sei”配置：在 Sei 能加入的 Minecraft 版本上安装 Fabric，再加一个小模组（CustomSkinLoader），让每位伙伴在你的世界里显示自己的皮肤和名字。不会改动你自己的配置。约需一分钟。',
 
   // McInstallList / McInstallRow
   'Detected Minecraft installs': '检测到的 Minecraft 安装',

@@ -145,7 +145,7 @@ function WelcomeStep(): React.ReactElement {
   return (
     <WizardStepShell
       stepNumber={null}
-      heading={t('Set up Minecraft skins')}
+      heading={t('Set up Minecraft for Sei')}
       footer={
         <>
           {isReentry ? (
@@ -170,7 +170,7 @@ function WelcomeStep(): React.ReactElement {
     >
       <p>
         {t(
-          "Sei can give each companion a custom skin and username inside your Minecraft world. We'll install a small mod (CustomSkinLoader) into your Minecraft profile. Takes about a minute.",
+          "Sei adds a separate \"Sei\" profile to your Minecraft launcher: Fabric on a Minecraft version Sei can join, plus a small mod (CustomSkinLoader) so each companion shows their own skin and name in your world. Your own profile is not changed. Takes about a minute.",
         )}
       </p>
     </WizardStepShell>

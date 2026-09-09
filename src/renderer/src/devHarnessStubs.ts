@@ -21,6 +21,19 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
     gameDashboardSetPaused: noop,
     gameDashboardSetMode: noop,
     stop: noop,
+    // The Minecraft launch panel (?dashshot=mclaunch): a vanilla install
+    // with no Sei profile yet, the pack ready, nothing dismissed.
+    detectMcInstalls: async () => [
+      { id: 'v1', kind: 'vanilla', label: 'Vanilla Launcher', path: '/Users/you/Library/Application Support/minecraft', mc_version: '26.1', loader: null, loader_version: null, fabric_mc_versions: [], csl_installed: false, csl_version: null, sei_enabled: false, compatibility: 'full' },
+    ],
+    getConfig: async () => ({}),
+    saveConfig: noop,
+    openExternal: noop,
+    gamePackState: async () => ({ kind: 'ready', root: '/r' }),
+    gamePackEnsure: async () => ({ kind: 'ready', root: '/r' }),
+    onGamePackProgress: () => () => undefined,
+    wizardPromptShown: async () => ({ shown: true }),
+    getWizardState: async () => ({ version: 1, hasRunOnce: false, enabledInstallIds: [], lastRunAt: null, lastSkinServerPort: null }),
   };
 }
 

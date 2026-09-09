@@ -745,6 +745,13 @@ export interface McInstall {
   mc_version: string | null;
   loader: 'fabric' | 'forge' | null;
   loader_version: string | null;
+  /**
+   * Every Minecraft version a `versions/fabric-loader-<loader>-<mc>` profile
+   * exists for (260909). Vanilla installs only; CurseForge instances carry
+   * one loader per instance and report []. Optional so a renderer can read
+   * records from an older main; see shared/mcSetup.ts for the readiness rule.
+   */
+  fabric_mc_versions?: string[];
   csl_installed: boolean;
   csl_version: string | null;
   /** True when persisted wizard state previously enabled Sei here. */

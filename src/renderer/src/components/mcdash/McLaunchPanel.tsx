@@ -27,6 +27,7 @@ import { requestGameLaunch } from '../../lib/gameLaunch';
 import { ERROR_COPY } from '../../lib/errors';
 import { Button } from '../Button';
 import { GamePackCard } from '../games/GamePackCard';
+import { McSteps } from './McSteps';
 import { useT } from '../../lib/i18n';
 import styles from './McLaunchPanel.module.css';
 
@@ -59,6 +60,12 @@ export function McLaunchPanel({ characterId }: McLaunchPanelProps): React.ReactE
         {/* 260908 game packs: the Minecraft runtime is a download on first
             use; the card renders nothing once the pack is ready. */}
         <GamePackCard game="minecraft" />
+        {/* 260909: the standing setup list (game found, Sei-ready install,
+            world open to LAN). See McSteps for why it is a list, not the
+            one-time wizard prompt alone. */}
+        <div className={styles.stepsCard}>
+          <McSteps />
+        </div>
         <Button
           kind="accent"
           size="lg"

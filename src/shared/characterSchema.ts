@@ -730,6 +730,13 @@ export const UserConfigSchema = z.object({
    */
   skin_setup_pending: z.boolean().optional().default(false),
   /**
+   * The player dismissed the "set up a Sei-ready Minecraft" step on the
+   * Minecraft launch panel (260909). The step otherwise shows on every open
+   * of the panel until an install is Sei-ready (shared/mcSetup.ts). Absent =
+   * never dismissed. Written by the renderer through config:save.
+   */
+  mc_setup_dismissed: z.boolean().optional(),
+  /**
    * In-flight tutorial (260730). The post-onboarding tour used to be
    * deliberately unpersisted, which meant a mid-tour quit silently dropped
    * the rest of the tour AND the one-shot unique-reveal "say hello" page.

@@ -1675,6 +1675,34 @@ DST are STALE frames, keystrokes never reach the game, offline mode cannot
 resume an online-created world (create a new one), and `client_log.txt` is
 rewritten per launch.
 
+**Minecraft has a setup list too (260909).** The Minecraft launch panel
+carries the same numbered list as the DST panel (`McSteps`, on a
+translucent card over the art): (1) Minecraft Java found, with a Get
+Minecraft link when it is not; (2) a SEI-READY Minecraft; (3) a world open
+to LAN with the live detection pill. Step 2 is the one that changed the
+product: the skin wizard used to be offered once at onboarding and once on
+the first Minecraft open, and a player who clicked past it had no way back
+but Settings. Now the step shows on EVERY open of the panel until an
+install is ready or the player presses "Do not show again"
+(`UserConfig.mc_setup_dismissed`; a ready install shows as done even after
+a dismissal). "Ready" is `shared/mcSetup.ts` `mcInstallReadyVersion`: a
+`versions/fabric-loader-<loader>-<mc>` profile for a version Sei's
+networking stack can join AND the companion-skin mod, so the scanner now
+reports every Fabric profile's version (`McInstall.fabric_mc_versions`) and
+Fabric for a snapshot no longer counts. The VERSION half is what the user
+asked for and what the wizard used to get wrong: it installed Fabric for
+whatever the launcher last ran (snapshots included) and fell back to a
+pinned 1.21.4 only when the version was unreadable. `selectTargetMcVersion`
+now keeps a joinable version and moves anything else to the newest entry
+of `VERIFIED_MC_VERSIONS` (wizard.ts, a hand-maintained list of versions
+where Fabric + a pre-15 CustomSkinLoader have actually been launched
+together; a Modrinth listing is not proof, see the CSL 15.x note there).
+Since the Fabric profile is what the launcher downloads Minecraft for, this
+is "installing a compatible Minecraft" from the player's side, as a
+separate "Sei" profile that leaves their own untouched. The wizard's
+welcome copy says so now. Verify with `?dashshot=mclaunch` on the dev
+server; `McSteps.test.tsx` pins the states and the zh coverage.
+
 **Dashboards in the games' own registers (260909).** Both bot-backed
 dashboards are now DELIBERATE, CONTAINED EXCEPTIONS to the design tokens,
 under the same contract as `McDashboardPanel` (which the Stardew panel used

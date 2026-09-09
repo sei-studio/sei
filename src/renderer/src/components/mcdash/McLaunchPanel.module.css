@@ -72,3 +72,103 @@
   color: #fff;
 }
 
+
+/* ── Setup steps (McSteps, 260909) ──
+   The DstSteps list, on a translucent card over the darkened art: done
+   steps read as an accent check with dimmed text, the current one keeps
+   full white, later ones recede. Text is left-aligned inside the card even
+   though the panel centers everything else: a numbered list is read, not
+   glanced at. */
+.stepsCard {
+  width: min(560px, 100%);
+  box-sizing: border-box;
+  padding: var(--space-md) var(--space-md-plus);
+  text-align: left;
+  background: rgba(6, 9, 18, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(6px);
+}
+
+.steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.step {
+  display: flex;
+  gap: var(--space-md);
+  align-items: baseline;
+}
+
+.stepNumber {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  width: 22px;
+  flex-shrink: 0;
+}
+
+.stepBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-width: 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: #fff;
+}
+
+.stepDone .stepBody {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.stepLater .stepNumber {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.stepLater .stepBody {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.subStep {
+  padding-left: var(--space-sm);
+  color: inherit;
+}
+
+.stepHint {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  align-items: center;
+}
+
+/* "Do not show again": a quiet text control beside the Set up button. */
+.dismissLink {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.6);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.dismissLink:hover {
+  color: #fff;
+}
