@@ -70,6 +70,11 @@ namespace SeiCompanion.Actions
 
             int stuck = 0;
             int ticks = 0;
+            // The budget scales with the route: a flat 25 s lost a 68-tile
+            // crossing of the farm at NPC speed (measured 260910, "gave up
+            // walking to (80,15) after 25s" on the way to town).
+            int pathLen = npc.controller?.pathToEndPoint?.Count ?? 0;
+            int timeoutTicks = Math.Max(WalkTimeoutTicks, pathLen * 60);
             Vector2 last = npc.Position;
             while (npc.controller != null)
             {
@@ -104,10 +109,10 @@ namespace SeiCompanion.Actions
                     o.Fail($"stuck on the way to {Targets.Fmt(target)} at {Targets.Fmt(npc.TilePoint)}");
                     yield break;
                 }
-                if (ticks > WalkTimeoutTicks)
+                if (ticks > timeoutTicks)
                 {
                     npc.controller = null;
-                    o.Fail($"gave up walking to {Targets.Fmt(target)} after {WalkTimeoutTicks / 60}s");
+                    o.Fail($"gave up walking to {Targets.Fmt(target)} after {timeoutTicks / 60}s");
                     yield break;
                 }
             }

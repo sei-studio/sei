@@ -6,7 +6,7 @@ describe('stardewIpc contract', () => {
     const hello = StardewHelloSchema.parse({ mod: 'SeiCompanion', version: '0.1.0', protocol: 1, save: { loaded: true, farmName: 'Sunny', uniqueId: '1', day: 2, season: 'spring' } });
     expect(hello.save.farmName).toBe('Sunny');
     expect(StardewHelloSchema.safeParse({ mod: 'x' }).success).toBe(false);
-    expect(StardewModConfigSchema.parse({})).toEqual({ Port: 27431, Token: '', AnnounceInChat: true, ObserveHz: 2, StartingGold: 500, DisconnectGraceSeconds: 10 });
+    expect(StardewModConfigSchema.parse({})).toEqual({ Port: 27431, Token: '', AnnounceInChat: true, ObserveHz: 2, StartingGold: 500, DisconnectGraceSeconds: 10, DevCommands: false });
   });
 
   it('formats the Steam launch option and names the pack path', () => {
