@@ -72,7 +72,7 @@
     "@types/yauzl": "^2.10.3",
     "@vitejs/plugin-react": "^4.3.0",
     "electron": "42.0.0",
-    "electron-builder": "26.8.1",
+    "electron-builder": "^26.16.1",
     "electron-vite": "5.0.0",
     "playwright": "^1.61.0",
     "tsx": "^4.22.1",
