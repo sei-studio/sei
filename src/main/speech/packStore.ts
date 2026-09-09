@@ -100,7 +100,38 @@ function markerPath(id: SpeechPackId): string {
   return path.join(packRoot(id), 'pack.json');
 }
 
+/**
+ * One-shot heal of pre-260908 pack layouts (dev machines only — the old ids
+ * never shipped in a release). 'tts-zh-f' was renamed to 'tts-zh' (same
+ * archive, same extracted tree, same marker content), so an installed old dir
+ * is renamed in place instead of forcing a ~30MB re-download. 'tts-zh-m'
+ * (chaowen) was removed outright over its non-commercial weights lineage
+ * (see packs.ts), so any leftover dir is deleted — the unlicensed model must
+ * not linger on disk. Lazy single-flight; ran before any disk read.
+ */
+let legacyHeal: Promise<void> | null = null;
+function healLegacyDirs(): Promise<void> {
+  if (!legacyHeal) {
+    legacyHeal = (async () => {
+      const root = speechModelsRoot();
+      const oldZhF = path.join(root, 'tts-zh-f');
+      const newZh = packRoot('tts-zh');
+      try {
+        const hasOld = await stat(oldZhF).then((s) => s.isDirectory()).catch(() => false);
+        const hasNew = await stat(newZh).then(() => true).catch(() => false);
+        if (hasOld && !hasNew) await rename(oldZhF, newZh);
+        else if (hasOld) await rm(oldZhF, { recursive: true, force: true });
+      } catch (err) {
+        console.warn(`[sei/speech] tts-zh-f heal failed: ${(err as Error).message}`);
+      }
+      await rm(path.join(root, 'tts-zh-m'), { recursive: true, force: true }).catch(() => {});
+    })();
+  }
+  return legacyHeal;
+}
+
 export async function packReady(id: SpeechPackId): Promise<boolean> {
+  await healLegacyDirs();
   try {
     await stat(markerPath(id));
   } catch {

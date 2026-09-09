@@ -111,6 +111,9 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   const reconnecting = useVoiceStore((s) => s.reconnecting);
   const lastHeard = useVoiceStore((s) => s.lastHeard);
   const lastSpoken = useVoiceStore((s) => s.lastSpoken);
+  // 260908: voice-pipeline notice (unavailable / substitute pack). A system
+  // line, styled apart from the companion caption so it never reads as speech.
+  const callNotice = useVoiceStore((s) => s.callNotice);
   const error = useVoiceStore((s) => s.error);
   const participants = useVoiceStore((s) => s.participants);
   const liveAt = useVoiceStore((s) => s.liveAt);
@@ -523,6 +526,13 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
                 {lastHeard ? <p className={styles.captionUser}>{t('You: {text}', { text: lastHeard })}</p> : null}
               </div>
             ) : null}
+            {/* Voice notice (260908): shown regardless of captions — it is a
+                status line about the call's voice, not a caption of speech. */}
+            {callNotice ? (
+              <p className={styles.captionNotice} role="status">
+                {callNotice}
+              </p>
+            ) : null}
 
             {/* The demoted call cluster: small round tiles, no names, the same
                 compact pills the in-game chrome row uses. */}
@@ -694,6 +704,21 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
             <p className={styles.captionUser}>{t('You: {text}', { text: lastHeard })}</p>
           ) : null}
         </div>
+      ) : null}
+
+      {/* Voice notice (260908): a status line about the call's voice (pack
+          missing / substitute voice / paused). Deliberately OUTSIDE the
+          captions gate — like the STT fallback prompt below, it is a system
+          notice, not a caption of anything the companion said. */}
+      {callNotice ? (
+        <p
+          className={
+            backdropShown ? `${styles.captionNotice} ${styles.captionsOnArt}` : styles.captionNotice
+          }
+          role="status"
+        >
+          {callNotice}
+        </p>
       ) : null}
 
       {/* Cloud-STT hiccup on a model-less call: a non-blocking offer to install

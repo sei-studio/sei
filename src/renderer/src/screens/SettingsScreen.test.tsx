@@ -325,12 +325,18 @@ describe('SettingsScreen (W5 china-compat: Voice group, TTS packs + SenseVoice)'
     expect(src.includes("{ value: 'local'")).toBe(true);
   });
 
-  it('V.3: the three TTS pack rows carry the registry pack ids, free labels, and a remove affordance', () => {
+  it('V.3: the two TTS pack rows carry the registry pack ids and an uninstall affordance', () => {
     const src = readFileSync(SETTINGS_TSX, 'utf-8');
-    for (const id of ["'tts-en'", "'tts-zh-f'", "'tts-zh-m'"]) {
+    for (const id of ["'tts-en'", "'tts-zh'"]) {
       expect(src.includes(id)).toBe(true);
     }
-    expect(src.includes("t('(free)')")).toBe(true);
+    // The chaowen pack is gone (260908 licensing): no third row.
+    expect(src.includes("'tts-zh-f'")).toBe(false);
+    expect(src.includes("'tts-zh-m'")).toBe(false);
+    // 260907: the decorative "(free)" badge is gone, and deleting a downloaded
+    // pack says "Uninstall" (never "Remove", which is for library actions).
+    expect(src.includes("t('(free)')")).toBe(false);
+    expect(src.includes("t('Uninstall')")).toBe(true);
     expect(src.includes('onRemovePack')).toBe(true);
     expect(src.includes('<DownloadConfirmModal')).toBe(true);
   });
@@ -351,7 +357,7 @@ describe('SettingsScreen (W5 china-compat: Voice group, TTS packs + SenseVoice)'
     // Existing options byte-identical.
     expect(src.includes("{ value: 'scribe', label: t('ElevenLabs Scribe') }")).toBe(true);
     expect(src.includes("{ value: 'whisper', label: t('Local Whisper') }")).toBe(true);
-    expect(src.includes("{ value: 'sensevoice', label: t('SenseVoice (free)') }")).toBe(true);
+    expect(src.includes("{ value: 'sensevoice', label: t('SenseVoice') }")).toBe(true);
     // Picking SenseVoice with the pack absent detours through the confirm and
     // only persists once the download resolved.
     expect(src.includes("packStates[SENSEVOICE_PACK_ID]?.state !== 'ready'")).toBe(true);
@@ -401,9 +407,9 @@ describe('EditCharacterModal + VoicePicker (W5 local-TTS voice gating)', () => {
     for (const key of [
       "'Choose model'",
       "'Testing your key and model. This can take up to a minute.'",
-      "'SenseVoice (free)'",
+      "'SenseVoice'",
       "'Download ({mb} MB)'",
-      "'Local (free)'",
+      "'Local'",
     ]) {
       expect(block.includes(key)).toBe(true);
     }

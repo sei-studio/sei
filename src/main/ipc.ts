@@ -1611,6 +1611,22 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // renderer or the repo) + the call open/hang-up toggle. The toggle records
   // main-side state (idle-chat prompts read it) and forwards the mode into a
   // live game session so say() reroutes to the call.
+  // Substitute-pack notices (260908): local TTS spoke a line with a voice
+  // pack that does not match the conversation language (the matching one is
+  // not downloaded). Forwarded to every window so the call UI can show a
+  // system notice naming the better-fitting download. Wired lazily like the
+  // speech pack push below.
+  let ttsNoticeWired = false;
+  const wireTtsNotice = async (): Promise<void> => {
+    if (ttsNoticeWired) return;
+    ttsNoticeWired = true;
+    const { onTtsNotice } = await import('./voice/tts');
+    onTtsNotice((notice) => {
+      for (const w of BrowserWindow.getAllWindows()) {
+        if (!w.isDestroyed()) w.webContents.send(IpcChannel.voice.ttsNotice, notice);
+      }
+    });
+  };
   ipcMain.handle(IpcChannel.voice.tts, async (_event, argsRaw: unknown): Promise<ArrayBuffer> => {
     const args = z
       .object({
@@ -1620,6 +1636,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         prev: z.string().max(4000).optional(),
       })
       .parse(argsRaw);
+    await wireTtsNotice();
     const { voiceTts } = await import('./voice/tts');
     return await voiceTts(args);
   });
@@ -1636,6 +1653,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         prev: z.string().max(4000).optional(),
       })
       .parse(argsRaw);
+    await wireTtsNotice();
     const { voiceTtsStream } = await import('./voice/tts');
     const sender = event.sender;
     return await voiceTtsStream(args, (ev) => {
@@ -1686,7 +1704,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // on demand into <userData>/speech-models/. Contract: src/main/speech/index.ts.
   // Everything the renderer reads is named in the schemas here — zod strips
   // undeclared keys silently (the backseat gridSmall lesson).
-  const SpeechPackIdSchema = z.enum(['tts-en', 'tts-zh-f', 'tts-zh-m', 'stt-sensevoice']);
+  const SpeechPackIdSchema = z.enum(['tts-en', 'tts-zh', 'stt-sensevoice']);
   let speechPushWired = false;
   const wireSpeechPush = async (): Promise<void> => {
     if (speechPushWired) return;
@@ -1730,7 +1748,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         .parse(argsRaw);
       const { transcribeLocal } = await import('./speech');
       const { normalizeSttText } = await import('./voice/stt');
-      const res = await transcribeLocal(new Float32Array(args.pcm), args.sampleRate);
+      // Constrain SenseVoice's decode language to the conversation language
+      // (260907): full auto-detect on this build drifts English speech into
+      // Chinese. Best-effort — a failed config read falls back to auto-detect
+      // rather than blocking the transcription.
+      let chatLanguage: string | undefined;
+      try {
+        const { loadConfig } = await import('./configStore');
+        const { clampChatLanguage } = await import('../shared/chatLanguage');
+        chatLanguage = clampChatLanguage((await loadConfig()).chat_language);
+      } catch {
+        /* auto-detect */
+      }
+      const res = await transcribeLocal(new Float32Array(args.pcm), args.sampleRate, chatLanguage);
       return { text: normalizeSttText(res.text), ...(res.language ? { language: res.language } : {}) };
     },
   );

@@ -57,8 +57,8 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'Voice recognition': '语音识别',
   'ElevenLabs Scribe': 'ElevenLabs Scribe',
   'Local Whisper': '本地 Whisper',
-  'Free and offline. Downloads a small model on first call.':
-    '免费且离线。首次通话时会下载一个小模型。',
+  'Offline. Downloads a small model on first call.':
+    '离线运行。首次通话时会下载一个小模型。',
   'Better accuracy. Uses your ElevenLabs key.': '识别更准确。使用你的 ElevenLabs 密钥。',
   'Minecraft': 'Minecraft',
   'Custom skins': '自定义皮肤',

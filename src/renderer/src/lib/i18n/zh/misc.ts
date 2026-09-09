@@ -97,6 +97,16 @@ export const ZH_MISC: Record<string, string> = {
   // 260816 local speech: the sherpa voice pack for this call is not downloaded.
   '[voice unavailable, download the local voice pack in Settings]':
     '[语音不可用，请在设置中下载本地语音包]',
+  // 260908: the sentinel now names WHICH pack fits the conversation language,
+  // and a line spoken with a substitute pack gets its own notice.
+  '[voice unavailable, download the Chinese voice pack in Settings]':
+    '[语音不可用，请在设置中下载中文语音包]',
+  '[voice unavailable, download the English voice pack in Settings]':
+    '[语音不可用，请在设置中下载英文语音包]',
+  '[spoken with the English voice, download the Chinese voice pack in Settings for a better fit]':
+    '[已用英文语音代读，在设置中下载中文语音包效果更好]',
+  '[spoken with the Chinese voice, download the English voice pack in Settings for a better fit]':
+    '[已用中文语音代读，在设置中下载英文语音包效果更好]',
   // 260817 W10: sherpa-onnx itself failed to load (e.g. a build without the
   // platform package). Without this caption the companion is silently mute.
   '[voice unavailable, local speech cannot run on this install]':

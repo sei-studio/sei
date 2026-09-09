@@ -29,9 +29,9 @@
  *   SPEECH_DOWNLOAD_FAILED: ...   pack download failed on every source.
  *   SPEECH_RUNTIME_FAILED: ...    sherpa-onnx runtime failed to load.
  *
- * Pack ids: 'tts-en' (~78 MB, both en voices), 'tts-zh-f' (~30 MB),
- * 'tts-zh-m' (~13 MB), 'stt-sensevoice' (~155 MB). Which packs a given
- * character needs: resolveLocalVoice(voiceId, language) → LOCAL_VOICE_SPEC.
+ * Pack ids: 'tts-en' (~78 MB, both en voices), 'tts-zh' (~30 MB, both zh
+ * voices), 'stt-sensevoice' (~155 MB). Which packs a given character needs:
+ * resolveLocalVoice(voiceId, language) → LOCAL_VOICE_SPEC.
  * Models live in <userData>/speech-models/<packId>/ (device-global).
  */
 export { SPEECH_PACKS, SPEECH_PACK_IDS, isSpeechPackId, type SpeechPackId } from './packs';
@@ -49,6 +49,9 @@ export {
   resolveLocalVoice,
   voiceGenderFor,
   localVoiceFor,
+  pickLocalVoice,
   type LocalVoiceId,
+  type LocalVoicePick,
 } from './localVoice';
 export { synthesizeLocal, transcribeLocal, packMissingError } from './engine';
+export { detectSpokenLanguage } from './spokenLanguage';

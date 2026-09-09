@@ -421,6 +421,20 @@ export interface VoiceTtsChunkPush {
   error?: string;
 }
 
+/** One voice:tts-notice push (260908): local TTS spoke a line with a
+ * SUBSTITUTE voice pack because the pack matching the line's language (the
+ * conversation language, or the line's own script when it is predominantly
+ * Chinese) is not installed. The line still plays; the call UI shows a system
+ * notice naming the better-fitting download. Pack ids from
+ * src/main/speech/packs.ts ('tts-en' | 'tts-zh'). */
+export interface VoiceTtsNoticePush {
+  characterId: string;
+  /** Pack that would fit the conversation language but is not installed. */
+  missingPackId: string;
+  /** Pack the line was actually spoken with. */
+  spokenPackId: string;
+}
+
 /**
  * One speech pack's state in speech:pack-status / speech:pack-state pushes
  * (260816 local speech — sherpa-onnx model packs, src/main/speech/).
@@ -1794,6 +1808,8 @@ export interface RendererApi {
   voiceTtsStream(args: { characterId: string; text: string; more?: boolean; prev?: string }): Promise<{ streamId: string }>;
   /** Chunks/completions for voiceTtsStream (one subscription, ids multiplex). */
   onVoiceTtsChunk(cb: (push: VoiceTtsChunkPush) => void): Unsubscribe;
+  /** Local TTS spoke with a substitute voice pack (260908) — see VoiceTtsNoticePush. */
+  onVoiceTtsNotice(cb: (push: VoiceTtsNoticePush) => void): Unsubscribe;
   /**
    * Cloud speech-to-text (260724): transcribe one call utterance via
    * ElevenLabs Scribe (a resolved ElevenLabs key direct — dev env key or the
@@ -2859,6 +2875,8 @@ export const IpcChannel = {
     ttsStream: 'voice:tts-stream',
     /** Push (main → renderer): VoiceTtsChunkPush — ordered audio chunks for a ttsStream. */
     ttsChunk: 'voice:tts-chunk',
+    /** Push (main → renderer): VoiceTtsNoticePush — local TTS substitute-pack notice (260908). */
+    ttsNotice: 'voice:tts-notice',
     /** Invoke: cloud STT for one call utterance ({pcm, language?} → {text} | {unavailable}). */
     stt: 'voice:stt',
     /** Invoke: prewarm the voice upstream connection (fired at mic speech open). */

@@ -57,16 +57,16 @@ import styles from './SettingsScreen.module.css';
 const API_KEY_BULLET_LEN = 24;
 
 /**
- * W5 (china-compat, 260817): the local TTS voice packs offered in the Voice
- * group, in display order. Three PACKS carry the four voices — the English
- * pack contains both the female and the male speaker, so it is one download.
- * Ids match src/main/speech/packs.ts (the renderer never imports main); the
- * exact byte sizes arrive per pack on the speech:pack-status push.
+ * W5 (china-compat, 260817; zh collapsed to one pack 260908): the local TTS
+ * voice packs offered in the Voice group, in display order. Two PACKS carry
+ * the four voices — each pack contains both the female and the male speaker,
+ * so each language is one download. Ids match src/main/speech/packs.ts (the
+ * renderer never imports main); the exact byte sizes arrive per pack on the
+ * speech:pack-status push.
  */
 const TTS_PACK_ROWS: ReadonlyArray<{ id: string; label: string }> = [
   { id: 'tts-en', label: 'English voices, female and male' },
-  { id: 'tts-zh-f', label: 'Chinese voice, female' },
-  { id: 'tts-zh-m', label: 'Chinese voice, male' },
+  { id: 'tts-zh', label: 'Chinese voices, female and male' },
 ];
 
 const SENSEVOICE_PACK_ID = 'stt-sensevoice';
@@ -483,7 +483,7 @@ export function SettingsScreen(): React.ReactElement {
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('[SettingsScreen] speechPackRemove failed', err);
-      setPackError(t('Failed to remove. Try again.'));
+      setPackError(t('Failed to uninstall. Try again.'));
     }
   };
 
@@ -833,18 +833,19 @@ export function SettingsScreen(): React.ReactElement {
   const backendSegValue: 'cloud' | 'mykey' = isCloud ? 'cloud' : 'mykey';
   const visionMode = cfg?.vision_mode ?? 'on-demand';
 
-  // Version value: "v{x}" alone, or "v{x} · <status>" after a check.
-  const versionSuffix =
+  // Version value: "v{x}" alone, or "v{x} · <status>" after a check. The
+  // status word is color-coded (green ok / orange in progress / red failed).
+  const versionStatus: { text: string; cls: string } | null =
     updateStatus === 'checking'
-      ? ` · ${t('checking…')}`
+      ? { text: t('checking…'), cls: styles.statusWarn }
       : updateStatus === 'up-to-date'
-        ? ` · ${t('up to date')}`
+        ? { text: t('up to date'), cls: styles.statusOk }
         : updateStatus === 'available'
-          ? ` · ${t('update available')}`
+          ? { text: t('update available'), cls: styles.statusWarn }
           : updateStatus === 'error'
-            ? ` · ${t('check failed')}`
-            : '';
-  const versionValue = appVersion ? `v${appVersion}${versionSuffix}` : '–';
+            ? { text: t('check failed'), cls: styles.statusErr }
+            : null;
+  const versionValue = appVersion ? `v${appVersion}` : '–';
 
   // (The literal 'Reset all memories…' key below is what D-FIX.3 greps for.)
   const resetAllLabel = resetAllDone
@@ -1063,7 +1064,9 @@ export function SettingsScreen(): React.ReactElement {
                   </span>
                 ) : (
                   <>
-                    <span className={styles.monoValue}>
+                    <span
+                      className={hasKey ? styles.monoValue : `${styles.monoValue} ${styles.statusWarn}`}
+                    >
                       {hasKey ? '•'.repeat(API_KEY_BULLET_LEN) : t('Not set')}
                     </span>
                     <Button kind="ghost" size="sm" onClick={() => setEditingKey(true)}>
@@ -1149,11 +1152,11 @@ export function SettingsScreen(): React.ReactElement {
                   <div className={styles.row}>
                     <span className={styles.label}>{t('Connection')}</span>
                     {testState === 'testing' ? (
-                      <span className={styles.monoValue} role="status">
+                      <span className={`${styles.monoValue} ${styles.statusWarn}`} role="status">
                         {t('Testing…')}
                       </span>
                     ) : testState !== 'idle' && testState.ok ? (
-                      <span className={styles.monoValue} role="status">
+                      <span className={`${styles.monoValue} ${styles.statusOk}`} role="status">
                         {t('Working. Replied in {s}s.', {
                           s: (testState.latencyMs / 1000).toFixed(1),
                         })}
@@ -1203,7 +1206,7 @@ export function SettingsScreen(): React.ReactElement {
                 <InfoTip
                   label={t('About voice engines')}
                   text={t(
-                    'What speaks your companions\' lines on calls. ElevenLabs uses your own key. Local voices are free, run on this device, and work offline.',
+                    'What speaks your companions\' lines on calls. ElevenLabs uses your own key. Local voices run on this device and work offline.',
                   )}
                 />
               </span>
@@ -1212,7 +1215,7 @@ export function SettingsScreen(): React.ReactElement {
                 value={ttsEngine}
                 options={[
                   { value: 'elevenlabs', label: t('ElevenLabs') },
-                  { value: 'local', label: t('Local (free)') },
+                  { value: 'local', label: t('Local') },
                 ]}
                 onChange={(v) => void onSelectTtsEngine(v)}
               />
@@ -1229,7 +1232,7 @@ export function SettingsScreen(): React.ReactElement {
                     <InfoTip
                       label={t('About the ElevenLabs key')}
                       text={t(
-                        'ElevenLabs voices need your own ElevenLabs API key. No key? Switch to the free local voices.',
+                        'ElevenLabs voices need your own ElevenLabs API key. No key? Switch to the local voices.',
                       )}
                     />
                   </span>
@@ -1253,7 +1256,11 @@ export function SettingsScreen(): React.ReactElement {
                     </span>
                   ) : (
                     <>
-                      <span className={styles.monoValue}>
+                      <span
+                        className={
+                          hasElevenKey ? styles.monoValue : `${styles.monoValue} ${styles.statusWarn}`
+                        }
+                      >
                         {hasElevenKey ? '•'.repeat(API_KEY_BULLET_LEN) : t('Not set')}
                       </span>
                       <Button kind="ghost" size="sm" onClick={() => setEditingElevenKey(true)}>
@@ -1268,6 +1275,16 @@ export function SettingsScreen(): React.ReactElement {
                   )}
                 </div>
                 {elevenKeyError ? <div className={styles.errorRow}>{elevenKeyError}</div> : null}
+                {/* Local backend + no ElevenLabs key: the cloud voice pool (and
+                    the "Let Sei pick" auto-assign) has nothing to play through.
+                    Say so here instead of letting companions go silent. */}
+                {!hasElevenKey ? (
+                  <p className={`${styles.helper} ${styles.statusWarn}`} role="alert">
+                    {t(
+                      'Not connected to Sei cloud or an ElevenLabs key. Custom voices will not play. Local voice packs still work.',
+                    )}
+                  </p>
+                ) : null}
               </>
             ) : (
               <>
@@ -1279,20 +1296,20 @@ export function SettingsScreen(): React.ReactElement {
                   const st = packStates[row.id];
                   return (
                     <div className={styles.row} key={row.id}>
-                      <span className={styles.label}>{`${t(row.label)} ${t('(free)')}`}</span>
+                      <span className={styles.label}>{t(row.label)}</span>
                       {st?.state === 'downloading' ? (
-                        <span className={styles.monoValue} role="status">
+                        <span className={`${styles.monoValue} ${styles.statusWarn}`} role="status">
                           {t('Downloading… {pct}%', { pct: st.pct ?? 0 })}
                         </span>
                       ) : st?.state === 'ready' ? (
                         <>
-                          <span className={styles.monoValue}>{t('Ready')}</span>
+                          <span className={`${styles.monoValue} ${styles.statusOk}`}>{t('Ready')}</span>
                           <Button
                             kind="quiet"
                             size="sm"
                             onClick={() => void onRemovePack(row.id)}
                           >
-                            {t('Remove')}
+                            {t('Uninstall')}
                           </Button>
                         </>
                       ) : (
@@ -1310,7 +1327,7 @@ export function SettingsScreen(): React.ReactElement {
                 })}
                 <p className={styles.helper}>
                   {t(
-                    'Free voices that run on this device. Each companion speaks with the one matching their voice and chat language.',
+                    'Voices that run on this device. Each companion speaks with the one matching their voice and chat language.',
                   )}
                 </p>
               </>
@@ -1328,13 +1345,13 @@ export function SettingsScreen(): React.ReactElement {
                 options={[
                   { value: 'scribe', label: t('ElevenLabs Scribe') },
                   { value: 'whisper', label: t('Local Whisper') },
-                  { value: 'sensevoice', label: t('SenseVoice (free)') },
+                  { value: 'sensevoice', label: t('SenseVoice') },
                 ]}
                 onChange={(v) => void onSelectSttEngine(v)}
               />
             </div>
             {packStates[SENSEVOICE_PACK_ID]?.state === 'downloading' ? (
-              <p className={styles.helper} role="status">
+              <p className={`${styles.helper} ${styles.statusWarn}`} role="status">
                 {t('Downloading SenseVoice… {pct}%', {
                   pct: packStates[SENSEVOICE_PACK_ID]?.pct ?? 0,
                 })}
@@ -1342,9 +1359,9 @@ export function SettingsScreen(): React.ReactElement {
             ) : (
               <p className={styles.helper}>
                 {sttEngine === 'whisper'
-                  ? t('Free and offline. Downloads a small model on first call.')
+                  ? t('Offline. Downloads a small model on first call.')
                   : sttEngine === 'sensevoice'
-                    ? t('Free and offline. Runs on this device. Strongest on Chinese and English.')
+                    ? t('Offline. Runs on this device. Strongest for Chinese; English is weaker.')
                     : t('Better accuracy. Uses your ElevenLabs key.')}
               </p>
             )}
@@ -1635,7 +1652,15 @@ export function SettingsScreen(): React.ReactElement {
           <h3 className={styles.groupTitle}>{t('About') /* >About< */}</h3>
           <div className={styles.row}>
             <span className={styles.label}>{t('Version')}</span>
-            <span className={styles.value}>{versionValue}</span>
+            <span className={styles.value}>
+              {versionValue}
+              {appVersion && versionStatus ? (
+                <>
+                  {' · '}
+                  <span className={versionStatus.cls}>{versionStatus.text}</span>
+                </>
+              ) : null}
+            </span>
             <Button
               kind="ghost"
               size="sm"

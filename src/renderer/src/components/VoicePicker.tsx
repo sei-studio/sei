@@ -46,6 +46,7 @@ import {
   type VoiceParams,
 } from '../lib/voicePicker';
 import { attach as attachPitch, warm as warmPitchBus, whenReady as pitchReady } from '../lib/voice/pitchBus';
+import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { useT } from '../lib/i18n';
 import { PlayIcon, StopIcon } from './icons';
 import styles from './VoicePicker.module.css';
@@ -95,6 +96,30 @@ export function VoicePicker({
   /** Conversation language for bundled samples; 'en' until the config loads. */
   const langRef = useRef('en');
   const sliderIdBase = useId();
+
+  // Local backend with no ElevenLabs key (260907): the curated pool and the
+  // Auto assignment resolve to ElevenLabs voices, and neither the cloud proxy
+  // (no session) nor ElevenLabs (no key) can synthesize them, so a picked or
+  // auto-assigned voice is silent on calls. Warn on the picker itself rather
+  // than letting the companion go mute. null = probing (no warning yet).
+  const aiBackendKind = useCreditsStore((s) => s.ai_backend_kind);
+  const [hasElevenKey, setHasElevenKey] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void sei
+      .voiceElevenKeyStatus()
+      .then(({ present }) => {
+        if (alive) setHasElevenKey(present);
+      })
+      .catch(() => {
+        /* leave null — never warn on an unknown state */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const cloudVoicesUnavailable =
+    !localTtsMode && aiBackendKind === 'local' && hasElevenKey === false;
 
   useEffect(() => {
     // Re-arm on every (re)mount — StrictMode dev runs mount → cleanup → mount
@@ -333,6 +358,14 @@ export function VoicePicker({
     <div className={styles.root} role="radiogroup" aria-label={t('Voice')}>
       {localTtsMode ? null : (
       <>
+      {cloudVoicesUnavailable ? (
+        <div className={styles.warnNote} role="alert">
+          {t(
+            'Not connected to Sei cloud or an ElevenLabs key. Custom voices will not play. Local voice packs still work.',
+          )}
+        </div>
+      ) : null}
+
       {/* Auto — the recommended default. */}
       <button
         type="button"

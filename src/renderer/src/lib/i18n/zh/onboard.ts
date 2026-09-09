@@ -160,7 +160,7 @@ export const ZH_ONBOARD: Record<string, string> = {
   'I already have an account': '我已经有账号了',
   'New here? Create an account': '新来的？创建一个账号',
   "I'm new here": '我是新来的',
-  'Continue locally with my own API key': '使用我自己的 API 密钥本地继续',
+  'Use my own API key': '使用自己的 API 密钥继续',
   'I agree': '我同意',
   'One more thing: the {terms} and {privacy}.': '还有一件事：请阅读{terms}和{privacy}。',
   'Terms of Service': '服务条款',

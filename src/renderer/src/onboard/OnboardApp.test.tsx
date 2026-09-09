@@ -92,10 +92,10 @@ describe('OnboardApp W6: local wizard steps', () => {
   it('both voice steps offer a decide-later path', () => {
     expect((src.match(/Decide later/g) ?? []).length).toBeGreaterThanOrEqual(2);
   });
-  it('free local options are labeled (free) and confirm the download in MB', () => {
-    expect(src).toContain('Whisper (free)');
-    expect(src).toContain('SenseVoice (free, best for Chinese)');
-    expect(src).toContain('Local voices (free)');
+  it('local options drop the decorative (free) badge and confirm the download in MB', () => {
+    expect(src).not.toContain('Whisper (free)');
+    expect(src).toContain('SenseVoice (best for Chinese)');
+    expect(src).toContain("'Local voices'");
     expect(src).toContain('Download? ({mb} MB)');
   });
   it('pack sizes come from speech:pack-status and progress from speech:pack-state', () => {

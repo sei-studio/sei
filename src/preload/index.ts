@@ -240,6 +240,11 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.voice.ttsChunk, handler);
     return () => ipcRenderer.off(IpcChannel.voice.ttsChunk, handler);
   },
+  onVoiceTtsNotice(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, push: Parameters<typeof cb>[0]) => cb(push);
+    ipcRenderer.on(IpcChannel.voice.ttsNotice, handler);
+    return () => ipcRenderer.off(IpcChannel.voice.ttsNotice, handler);
+  },
   voiceStt: (args) => ipcRenderer.invoke(IpcChannel.voice.stt, args),
   // Local speech packs + SenseVoice STT (260816, china-compat W3+W4)
   speechPackStatus: () => ipcRenderer.invoke(IpcChannel.speech.packStatus),

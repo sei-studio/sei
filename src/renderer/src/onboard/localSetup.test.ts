@@ -26,8 +26,8 @@ const push = (state: SpeechPackStatePush['state'], bytes: number, pct?: number):
 });
 
 describe('ttsPackIdsFor', () => {
-  it('zh needs BOTH gendered packs (the companion has no gender yet)', () => {
-    expect(ttsPackIdsFor('zh')).toEqual(['tts-zh-f', 'tts-zh-m']);
+  it('zh is one pack covering both genders (260908, parallel to en)', () => {
+    expect(ttsPackIdsFor('zh')).toEqual(['tts-zh']);
   });
   it('en is one pack covering both genders', () => {
     expect(ttsPackIdsFor('en')).toEqual(['tts-en']);
@@ -41,8 +41,7 @@ describe('mbLabel', () => {
   it('rounds the exact archive bytes to whole MB', () => {
     // The real pack sizes from src/main/speech/packs.ts.
     expect(mbLabel(82_038_311)).toBe('78'); // tts-en
-    expect(mbLabel(31_559_701)).toBe('30'); // tts-zh-f
-    expect(mbLabel(14_011_298)).toBe('13'); // tts-zh-m
+    expect(mbLabel(31_559_701)).toBe('30'); // tts-zh
     expect(mbLabel(165_783_878)).toBe('158'); // stt-sensevoice
   });
   it('floors at 1 MB', () => {
@@ -172,15 +171,17 @@ describe('zh coverage of the wizard strings', () => {
       'Connection works ({seconds}s).',
       'Voice calls: how should companions hear you?',
       'ElevenLabs Scribe (your ElevenLabs key)',
-      'Whisper (free)',
-      'SenseVoice (free, best for Chinese)',
-      'The free options run on your computer. Whisper downloads itself on first use.',
+      // 260907: the decorative "(free)" badges and ", free." tails were
+      // dropped from the onboarding voice copy. 'Whisper' needs no zh entry
+      // (a missing key renders the English name, which is the name).
+      'SenseVoice (best for Chinese)',
+      'These options run on your computer. Whisper downloads itself on first use.',
       'Decide later',
-      'SenseVoice runs on your computer, free.',
+      'SenseVoice runs on your computer.',
       'And how should companions speak?',
       'ElevenLabs voices (your ElevenLabs key)',
-      'Local voices (free)',
-      'Local voices run on your computer, free.',
+      'Local voices',
+      'Local voices run on your computer.',
       'Paste your ElevenLabs API key. It powers Scribe recognition and ElevenLabs voices.',
       'ElevenLabs API key',
       'Already downloaded. Continue',

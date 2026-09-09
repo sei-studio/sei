@@ -56,33 +56,33 @@ export const ZH: Record<string, string> = {
   // Voice group: TTS engine + local voice packs
   'Voices': '语音',
   'About voice engines': '关于语音引擎',
-  "What speaks your companions' lines on calls. ElevenLabs uses your own key. Local voices are free, run on this device, and work offline.":
-    '通话时由谁来朗读伙伴的台词。ElevenLabs 使用你自己的密钥。本地语音免费，在本机运行，可离线使用。',
+  "What speaks your companions' lines on calls. ElevenLabs uses your own key. Local voices run on this device and work offline.":
+    '通话时由谁来朗读伙伴的台词。ElevenLabs 使用你自己的密钥。本地语音在本机运行，可离线使用。',
   'ElevenLabs': 'ElevenLabs',
-  'Local (free)': '本地（免费）',
-  'ElevenLabs voices need your own ElevenLabs API key. No key? Switch to the free local voices.':
-    'ElevenLabs 语音需要你自己的 ElevenLabs API 密钥。没有密钥？可以切换到免费的本地语音。',
+  'Local': '本地',
+  'ElevenLabs voices need your own ElevenLabs API key. No key? Switch to the local voices.':
+    'ElevenLabs 语音需要你自己的 ElevenLabs API 密钥。没有密钥？可以切换到本地语音。',
+  'Not connected to Sei cloud or an ElevenLabs key. Custom voices will not play. Local voice packs still work.':
+    '未连接 Sei 云端，也没有 ElevenLabs 密钥。自定义语音将无法播放。本地语音包仍可正常使用。',
   'English voices, female and male': '英语语音，女声和男声',
-  'Chinese voice, female': '中文语音，女声',
-  'Chinese voice, male': '中文语音，男声',
-  '(free)': '（免费）',
+  'Chinese voices, female and male': '中文语音，女声和男声',
   'Downloading… {pct}%': '下载中… {pct}%',
   'Ready': '已就绪',
   'Download…': '下载…',
-  'Free voices that run on this device. Each companion speaks with the one matching their voice and chat language.':
-    '在本机运行的免费语音。每位伙伴会使用与其声音和聊天语言匹配的那一个。',
+  'Uninstall': '卸载',
+  'Voices that run on this device. Each companion speaks with the one matching their voice and chat language.':
+    '在本机运行的语音。每位伙伴会使用与其声音和聊天语言匹配的那一个。',
   'Download failed. Check your connection and try again.': '下载失败。请检查网络后重试。',
-  'Failed to remove. Try again.': '移除失败。请重试。',
+  'Failed to uninstall. Try again.': '卸载失败。请重试。',
   // STT: SenseVoice row
   'SenseVoice': 'SenseVoice',
-  'SenseVoice (free)': 'SenseVoice（免费）',
   'Downloading SenseVoice… {pct}%': '正在下载 SenseVoice… {pct}%',
-  'Free and offline. Runs on this device. Strongest on Chinese and English.':
-    '免费离线，在本机运行。中英文识别效果最好。',
+  'Offline. Runs on this device. Strongest for Chinese; English is weaker.':
+    '离线，在本机运行。中文识别效果最好，英文识别相对较弱。',
   // Shared download confirm (DownloadConfirmModal)
   'Download {name}?': '下载{name}？',
-  'This is a free, one-time {mb} MB download. It is stored on this device and works offline.':
-    '这是一次性的免费下载（{mb} MB），保存在本机，可离线使用。',
+  'This is a one-time {mb} MB download. It is stored on this device and works offline.':
+    '这是一次性下载（{mb} MB），保存在本机，可离线使用。',
   'Download ({mb} MB)': '下载（{mb} MB）',
   // Edit companion voice section under local TTS
   'Local voices are on: Sei picks a local voice that matches this companion. Tune the pitch here. Their ElevenLabs voice is kept for when you switch back.':
@@ -106,16 +106,15 @@ export const ZH: Record<string, string> = {
   'The test failed. Check the model name and your key.': '测试失败了。请检查模型名称和你的密钥。',
   'Voice calls: how should companions hear you?': '语音通话：伙伴要怎么听到你说话？',
   'ElevenLabs Scribe (your ElevenLabs key)': 'ElevenLabs Scribe（用你的 ElevenLabs 密钥）',
-  'Whisper (free)': 'Whisper（免费）',
-  'SenseVoice (free, best for Chinese)': 'SenseVoice（免费，中文效果最好）',
-  'The free options run on your computer. Whisper downloads itself on first use.':
-    '免费选项在你的电脑上运行。Whisper 会在首次使用时自动下载。',
+  'SenseVoice (best for Chinese)': 'SenseVoice（中文效果最好）',
+  'These options run on your computer. Whisper downloads itself on first use.':
+    '这些选项在你的电脑上运行。Whisper 会在首次使用时自动下载。',
   'Decide later': '以后再决定',
-  'SenseVoice runs on your computer, free.': 'SenseVoice 在你的电脑上运行，免费。',
+  'SenseVoice runs on your computer.': 'SenseVoice 在你的电脑上运行。',
   'And how should companions speak?': '那伙伴要怎么说话呢？',
   'ElevenLabs voices (your ElevenLabs key)': 'ElevenLabs 语音（用你的 ElevenLabs 密钥）',
-  'Local voices (free)': '本地语音（免费）',
-  'Local voices run on your computer, free.': '本地语音在你的电脑上运行，免费。',
+  'Local voices': '本地语音',
+  'Local voices run on your computer.': '本地语音在你的电脑上运行。',
   'Paste your ElevenLabs API key. It powers Scribe recognition and ElevenLabs voices.':
     '粘贴你的 ElevenLabs API 密钥。它用于 Scribe 语音识别和 ElevenLabs 语音。',
   'ElevenLabs API key': 'ElevenLabs API 密钥',
