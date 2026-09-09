@@ -1135,7 +1135,28 @@ if (!gotLock) {
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
       app.quit();
+      return;
     }
+    // macOS stays resident when the last window closes — which meant a
+    // downloaded update NEVER installed for anyone who "closed and reopened
+    // the app" (260909): Squirrel.Mac applies a staged update on process
+    // TERMINATION, and closing the window terminates nothing, so the staged
+    // update was thrown away and re-downloaded every session while the app
+    // kept running the old version. When an update is ready and no bot
+    // session is live (a call or game dies with the window), the closed last
+    // window is the end of the session in every way that matters: quit for
+    // real, Squirrel installs, and the next open launches the new version.
+    void (async () => {
+      try {
+        const { isUpdateReadyToInstall } = await import('./updater');
+        if (!isUpdateReadyToInstall()) return;
+        if (supervisor && supervisor.getActiveIds().length > 0) return;
+        logger.info('update ready and last window closed: quitting so it installs');
+        app.quit();
+      } catch {
+        /* stay resident — the pill's restart still installs */
+      }
+    })();
   });
 
   app.on('before-quit', async (e) => {

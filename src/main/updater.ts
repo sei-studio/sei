@@ -219,6 +219,22 @@ let lastBackgroundCheckAt = 0;
 let backgroundCheckInFlight = false;
 /** True once the event-trigger listeners are attached (attach exactly once). */
 let eventsWired = false;
+/**
+ * True once an update has finished downloading and is installable on quit
+ * (260909). On Windows/Linux electron-updater's own quit hook installs it; on
+ * macOS the downloaded zip is handed to Squirrel.Mac, which installs a staged
+ * update when the PROCESS terminates. The macOS catch is that closing the last
+ * window does not terminate anything (the app stays resident in the dock), so
+ * index.ts reads this via isUpdateReadyToInstall() to quit for real when the
+ * last window closes and nothing is still running — otherwise the staged
+ * update is silently thrown away and re-downloaded next session.
+ */
+let updateReadyToInstall = false;
+
+/** Whether a downloaded update is waiting to install on the next real quit. */
+export function isUpdateReadyToInstall(): boolean {
+  return updateReadyToInstall;
+}
 
 /* -------------------------------------------------------------------------- */
 /*  version.json fetch (ported from updateChecker.ts)                          */
@@ -507,6 +523,7 @@ async function handleUpdateAvailable(info: unknown): Promise<void> {
  *     so the restart is theirs to trigger via app:update-install.
  */
 async function handleUpdateDownloaded(): Promise<void> {
+  updateReadyToInstall = true;
   const apply = mandatoryApply;
   if (apply === null) {
     // Optional consented flow.
@@ -531,6 +548,9 @@ async function handleUpdateDownloaded(): Promise<void> {
   // update still installs on the next quit via autoInstallOnAppQuit; the card
   // just adds a "Restart now" affordance.
   send(IpcChannel.app.updateDownloaded, { forced: false, onRestart: true });
+  // "next quit" means a real process quit: Cmd-Q, or the quit-on-last-window-
+  // close that index.ts adds on macOS when this update is ready. Closing the
+  // window alone never installed anything on macOS (260909).
   logger.info('updater: mandatory update downloaded; applies on next quit (pill offers restart now)');
 }
 
