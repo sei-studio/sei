@@ -23,8 +23,8 @@ export const STARDEW_LOOPBACK_HOST = 'localhost';
 export const SMAPI_VERSION = '4.5.2';
 export const SMAPI_INSTALLER_ASSET = `SMAPI-${SMAPI_VERSION}-installer.zip`;
 export const SMAPI_INSTALLER_ORIGIN_URL = `https://github.com/Pathoschild/SMAPI/releases/download/${SMAPI_VERSION}/${SMAPI_INSTALLER_ASSET}`;
-/** Approximate installer zip size for the "about NN MB" copy. */
-export const SMAPI_INSTALLER_SIZE_HINT_BYTES = 12 * 1024 * 1024;
+/** Approximate installer zip size for the "about NN MB" copy (4.5.2 measures 42 MB). */
+export const SMAPI_INSTALLER_SIZE_HINT_BYTES = 42 * 1024 * 1024;
 /** Folder name of the mod inside <game>/Mods/. */
 export const STARDEW_MOD_FOLDER = 'SeiCompanion';
 /** Where the built mod lives inside a game pack root (and the repo root in dev). */
@@ -66,6 +66,8 @@ export const StardewModConfigSchema = z.object({
   ObserveHz: z.number().int().min(0).max(10).default(2),
   StartingGold: z.number().int().min(0).default(500),
   DisconnectGraceSeconds: z.number().int().min(0).default(10),
+  /** Developer frames (`newFarm`), for the live test harness only; the app never sets it. */
+  DevCommands: z.boolean().default(false),
 });
 export type StardewModConfig = z.infer<typeof StardewModConfigSchema>;
 

@@ -10,6 +10,7 @@ import { createStardewRegistry } from './registry.js'
 import { createSnapshotComposer } from './observers/snapshot.js'
 import { wireStardewEvents } from './fsmWires.js'
 import { createDashboardTelemetry } from './dashboard/telemetry.js'
+import { createProgressionFlags, getProgression } from './observers/progression.js'
 import { classifyConnectError } from './errors.js'
 import {
   STARDEW_BASELINE,
@@ -42,7 +43,11 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
   let _handlers = null
   let paused = false
 
-  const onObs = (f) => { if (f?.obs) latestObs = f.obs }
+  // 260910: the progression frontier's one-way latches (visited town, deepest
+  // mine level, cleared / foraged / harvested / fished / bought), fed by
+  // every observation and every verb result.
+  const latches = createProgressionFlags()
+  const onObs = (f) => { if (f?.obs) { latestObs = f.obs; latches.observe(f.obs) } }
   const onSave = (f) => { if (f) save = { ...f } }
   const onWelcome = (f) => { if (f?.hello?.save) save = f.hello.save }
   client.on('obs', onObs)
@@ -59,7 +64,17 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
         return `failed: ${err?.message ?? err}`
       }
       const detail = String(result?.detail ?? (result?.ok ? 'done' : 'failed'))
-      return result?.ok ? detail : `failed: ${detail}`
+      const text = result?.ok ? detail : `failed: ${detail}`
+      latches.result(name, args, text)
+      // Refresh the observation before the result reaches the brain: the 2 Hz
+      // push lags a warp by up to half a second, so the turn after a door
+      // used to read the OLD map's coordinates and walk to them on the new
+      // one (measured 260910: house tile 9,9 re-issued on the farm).
+      try {
+        const r = await client.request({ t: 'observe' }, { timeoutMs: 3_000 })
+        if (r?.ok && r.obs) { latestObs = r.obs; latches.observe(r.obs) }
+      } catch { /* the next push covers it */ }
+      return text
     },
   })
 
@@ -96,6 +111,12 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
     capabilityParagraph,
     actionRules,
     eventAddendum,
+    /**
+     * The first-fortnight frontier (observers/progression.js) for the
+     * heartbeat's "reachable next" list. The brain's `flags` argument is the
+     * Minecraft dimension latches; Stardew keeps its own in `latches`.
+     */
+    getProgression: () => getProgression(latestObs, latches),
 
     // ── Session lifecycle ─────────────────────────────────────────────
     attach(handlers) {

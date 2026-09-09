@@ -49,9 +49,14 @@ namespace SeiCompanion.Actions
                 var walk = new Outcome();
                 yield return Movement.WalkTo(ctx, hop.StandTile, true, walk);
                 if (!walk.Ok) { yield return Result.Fail(walk.Detail); yield break; }
+                // A door the model walks through on purpose ends following:
+                // measured 260910, with the host still inside, the follow tick
+                // routed the body straight back in, four times in a row.
+                bool wasFollowing = body.FollowTarget != null;
+                body.FollowTarget = null;
                 body.WarpTo(hop.TargetName, hop.TargetTile);
                 body.Session?.SendEvent("warped", new Dictionary<string, object> { ["location"] = body.LocationName });
-                yield return Result.Success($"went through to {body.LocationName}");
+                yield return Result.Success($"went through to {body.LocationName}, now at {Targets.Fmt(body.Npc.TilePoint)}{(wasFollowing ? " (stopped following)" : "")}");
                 yield break;
             }
 

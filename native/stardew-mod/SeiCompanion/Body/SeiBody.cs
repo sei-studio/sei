@@ -603,7 +603,9 @@ namespace SeiCompanion.Body
             }
             if (string.Equals(name, "player", StringComparison.OrdinalIgnoreCase) || string.Equals(name, "host", StringComparison.OrdinalIgnoreCase))
                 return Game1.player;
-            return null;
+            // Host-only v1: a name that matches nobody (the model once used the
+            // owner's account name, 260910) still means the person beside you.
+            return Game1.player;
         }
 
         public T FindTool<T>() where T : Tool

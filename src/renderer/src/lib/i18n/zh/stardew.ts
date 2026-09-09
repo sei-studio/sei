@@ -9,7 +9,7 @@ export const ZH_STARDEW: Record<string, string> = {
   'Check again': '重新检查',
   'Set up Stardew Valley for Sei': '为 Sei 设置星露谷物语',
   "SMAPI is installed. Sei's helper mod still needs to be added to your game, a few seconds of setup.": 'SMAPI 已安装。还需要把 Sei 的辅助模组加入游戏，只需几秒钟。',
-  "This installs SMAPI, the mod loader Stardew Valley uses (about 12 MB, from its official release), and adds Sei's helper mod to your game. One-time setup; the game must be closed.": '这会安装 SMAPI（星露谷物语使用的模组加载器，约 12 MB，来自官方发布）并把 Sei 的辅助模组加入游戏。一次性设置，安装时请先关闭游戏。',
+  "This installs SMAPI, the mod loader Stardew Valley uses (about 42 MB, from its official release), and adds Sei's helper mod to your game. One-time setup; the game must be closed.": '这会安装 SMAPI（星露谷物语使用的模组加载器，约 42 MB，来自官方发布）并把 Sei 的辅助模组加入游戏。一次性设置，安装时请先关闭游戏。',
   'Setup progress, {pct} percent': '设置进度 {pct}%',
   'Setting up...': '正在设置…',
   "Add Sei's helper": '添加 Sei 的辅助模组',

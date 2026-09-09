@@ -83,6 +83,9 @@ expects an answer, `id` (any string; the answer echoes it).
 | `pause` | `paused` | freezes the body (reflexes off, controller dropped, commands refused) |
 | `cmd` | `name`, `args` | runs a verb; the `result` arrives on COMPLETION (seconds to a minute for a `gather`); `progress` frames may precede it |
 | `cancel` | `target` (the `cmd`'s `id`, or omitted for whatever runs) | aborts the running verb; its `result` reads `aborted` |
+| `loadFarm` | `slot?` (save folder name; default the newest) | DEVELOPER frame (same gate): load a save from the title screen. |
+| `devState` | | DEVELOPER frame (same gate): `result.state` names the menu, game mode, event and world state, for a driver with no screen. |
+| `newFarm` | `farmer?`, `farm?`, `favoriteThing?` | DEVELOPER frame, refused unless config.json has `DevCommands: true` (the app never sets it): from the title screen, starts a new game through the game's own character menu and skips the arrival cutscene. For a test driver with no hands on the game window. |
 
 ### `result`
 
@@ -129,7 +132,9 @@ latest Observation and stay valid ~90 s.
   "name": "Sui", "location": "Farm", "locationKind": "farm", "x": 62, "y": 18, "facing": "down",
   "stamina": 210, "maxStamina": 270, "health": 100, "maxHealth": 100, "exhausted": false, "gold": 500,
   "time": 1330, "timeText": "1:30 PM", "day": 3, "dayOfWeek": "Wed", "season": "spring", "year": 1,
-  "weather": "sunny", "isDark": false,
+  "weather": "sunny", "isDark": false, "daysPlayed": 3,
+  "farm": {"crops": 24, "dryCrops": 12, "readyCrops": 0, "deadCrops": 0, "soil": 6, "twigs": 40, "weeds": 120, "stones": 80, "debris": 240, "bigClumps": 12, "grownTrees": 60, "shippingBinItems": 0},
+  "host": {"name": "Ouen", "money": 500, "seeds": 0, "stamina": 270, "maxStamina": 270, "farmingLevel": 0, "mailWaiting": 1},
   "follow": "Ouen", "paused": false, "sleeping": false, "inAction": null, "lastResult": "water: watered 12 crops",
   "inventory": [{"slot": 0, "id": "(T)Axe", "name": "Axe", "count": 1, "kind": "tool"}],
   "held": "Axe", "wateringCan": {"left": 18, "max": 40},
@@ -153,8 +158,12 @@ latest Observation and stay valid ~90 s.
 }
 ```
 
-Entity kinds: `player`, `monster`, `villager`, `animal`, `pet`, `horse`,
-`child`, `companion`. `stage` on a crop is `phase/phases`; `ready` is what
+`farm` is the WHOLE Farm map (recomputed at most once a second) and `host`
+the host farmer, so the bot can answer "what is the farm's next job" from
+inside the house; they feed the first-fortnight progression frontier
+(`src/bot/adapter/stardew/observers/progression.json`). Entity kinds:
+`player`, `monster`, `villager`, `animal`, `pet`, `horse`, `child`,
+`companion`. `stage` on a crop is `phase/phases`; `ready` is what
 matters. Lists are nearest-first and capped, so an empty list means "none
 within 8 tiles", not "none on the map".
 

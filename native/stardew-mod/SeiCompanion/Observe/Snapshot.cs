@@ -61,6 +61,9 @@ namespace SeiCompanion.Observe
                 ["lastResult"] = body.LastActionResult,
             };
 
+            obs["daysPlayed"] = (int)Game1.stats.DaysPlayed;
+            obs["farm"] = FarmStats();
+            obs["host"] = HostInfo();
             obs["inventory"] = Inventory(body, out string held, out Dictionary<string, object> can);
             obs["held"] = held;
             obs["wateringCan"] = can;
@@ -69,6 +72,95 @@ namespace SeiCompanion.Observe
             obs["warps"] = Warps(body, loc, me);
             obs["player"] = PlayerInfo(body, loc, me);
             return obs;
+        }
+
+        /*********
+        ** The whole farm + the host (for the progression frontier and the
+        ** "what is the farm's next job" questions; the 8-tile scan cannot
+        ** answer them from inside the house)
+        *********/
+        private static int _farmTick;
+        private static Dictionary<string, object> _farmCache;
+
+        /// <summary>Farm-wide counts, recomputed at most every 60 ticks (one second).</summary>
+        public static Dictionary<string, object> FarmStats()
+        {
+            try
+            {
+                if (_farmCache != null && Game1.ticks - _farmTick < 60)
+                    return _farmCache;
+                Farm farm = Game1.getFarm();
+                int crops = 0, dry = 0, ready = 0, soil = 0, dead = 0, twigs = 0, weeds = 0, stones = 0, trees = 0, clumps = 0;
+                foreach (TerrainFeature tf in farm.terrainFeatures.Values)
+                {
+                    switch (tf)
+                    {
+                        case HoeDirt d when d.crop != null:
+                            crops++;
+                            if (d.crop.dead.Value) dead++;
+                            else if (d.readyForHarvest()) ready++;
+                            else if (!d.isWatered()) dry++;
+                            break;
+                        case HoeDirt _:
+                            soil++;
+                            break;
+                        case Tree t when t.growthStage.Value >= 5 && !t.stump.Value:
+                            trees++;
+                            break;
+                    }
+                }
+                foreach (SObject o in farm.objects.Values)
+                {
+                    if (o == null) continue;
+                    if (o.IsTwig()) twigs++;
+                    else if (o.IsWeeds()) weeds++;
+                    else if (o.IsBreakableStone() || o.Name == "Stone") stones++;
+                }
+                if (farm.resourceClumps != null) clumps = farm.resourceClumps.Count;
+                int shipped = 0;
+                try { shipped = farm.getShippingBin(Game1.player)?.Count ?? 0; } catch { }
+                _farmCache = new Dictionary<string, object>
+                {
+                    ["crops"] = crops, ["dryCrops"] = dry, ["readyCrops"] = ready, ["deadCrops"] = dead,
+                    ["soil"] = soil, ["twigs"] = twigs, ["weeds"] = weeds, ["stones"] = stones,
+                    ["debris"] = twigs + weeds + stones, ["bigClumps"] = clumps, ["grownTrees"] = trees,
+                    ["shippingBinItems"] = shipped,
+                };
+                _farmTick = Game1.ticks;
+                return _farmCache;
+            }
+            catch
+            {
+                return _farmCache;
+            }
+        }
+
+        /// <summary>The host farmer: wallet, seeds in the bag, level, mail waiting.</summary>
+        public static Dictionary<string, object> HostInfo()
+        {
+            try
+            {
+                Farmer p = Game1.player;
+                int seeds = 0;
+                foreach (Item it in p.Items)
+                {
+                    if (it is SObject o && o.Category == SObject.SeedsCategory) seeds += it.Stack;
+                }
+                return new Dictionary<string, object>
+                {
+                    ["name"] = p.Name,
+                    ["money"] = p.Money,
+                    ["seeds"] = seeds,
+                    ["stamina"] = (int)p.Stamina,
+                    ["maxStamina"] = p.MaxStamina,
+                    ["farmingLevel"] = p.FarmingLevel,
+                    ["mailWaiting"] = Game1.mailbox.Count,
+                };
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         /*********

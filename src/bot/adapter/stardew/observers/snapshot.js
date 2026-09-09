@@ -59,12 +59,26 @@ export function composeSnapshot(obs, opts = {}) {
     lines.push(`  crops: ${tileList(t.crops, (r) => `${r.name} @${r.x},${r.y}${r.ready ? ' READY' : r.dead ? ' dead' : r.watered ? '' : ' dry'}${r.stage && !r.ready ? ` ${r.stage}` : ''}`)}`)
   }
   if (Array.isArray(t.soil) && t.soil.length) lines.push(`  empty soil: ${tileList(t.soil, (r) => `@${r.x},${r.y}`, 6)}`)
-  if (Array.isArray(t.trees) && t.trees.length) lines.push(`  trees: ${tileList(t.trees, (r) => `${r.handle} ${r.kind}${r.grown === false ? ' (young)' : ''}${n(r.fruit) > 0 ? ` (${r.fruit} fruit)` : ''} @${r.x},${r.y}`)}`)
-  if (Array.isArray(t.rocks) && t.rocks.length) lines.push(`  rocks: ${tileList(t.rocks, (r) => `${r.handle} ${r.kind} @${r.x},${r.y}`)}`)
+  // Resource clumps (large stumps, hollow logs, boulders) need an upgraded
+  // tool the companion starts without; say so where they are listed, or the
+  // model swings at them (measured 260910: chop on a hollow log, twice).
+  if (Array.isArray(t.trees) && t.trees.length) lines.push(`  trees: ${tileList(t.trees, (r) => `${r.handle} ${r.kind}${r.grown === false ? ' (young)' : ''}${n(r.fruit) > 0 ? ` (${r.fruit} fruit)` : ''}${r.big ? ' (needs an upgraded axe)' : ''} @${r.x},${r.y}`)}`)
+  if (Array.isArray(t.rocks) && t.rocks.length) lines.push(`  rocks: ${tileList(t.rocks, (r) => `${r.handle} ${r.kind}${r.big ? ' (needs an upgraded pickaxe)' : ''} @${r.x},${r.y}`)}`)
   if (Array.isArray(t.forage) && t.forage.length) lines.push(`  forage: ${tileList(t.forage, (r) => `${r.handle} ${r.name} @${r.x},${r.y}`)}`)
   if (Array.isArray(t.chests) && t.chests.length) lines.push(`  chests: ${tileList(t.chests, (r) => `${r.handle} chest (${n(r.items)} items) @${r.x},${r.y}`)}`)
   if (Array.isArray(t.machines) && t.machines.length) lines.push(`  machines: ${tileList(t.machines, (r) => `${r.handle} ${r.name}${r.ready ? ' READY' : n(r.minutes) > 0 ? ` (${r.minutes} min)` : ' (empty)'} @${r.x},${r.y}`)}`)
   if (Array.isArray(t.ladders) && t.ladders.length) lines.push(`  ladders: ${tileList(t.ladders, (r) => `${r.handle} ${r.kind} @${r.x},${r.y}`)}`)
+
+  // The whole farm and the host (mod `farm` / `host`, 260910): the 8-tile
+  // scan cannot say what the farm's next job is from inside the house.
+  const fm = obs.farm
+  if (fm && typeof fm === 'object') {
+    lines.push(`whole farm: crops ${n(fm.crops)} (${n(fm.dryCrops)} dry, ${n(fm.readyCrops)} ready${n(fm.deadCrops) ? `, ${n(fm.deadCrops)} dead` : ''}), tilled empty soil ${n(fm.soil)}, debris ${n(fm.debris)} (${n(fm.twigs)} twigs, ${n(fm.weeds)} weeds, ${n(fm.stones)} stones), big stumps/logs/boulders ${n(fm.bigClumps)}, grown trees ${n(fm.grownTrees)}, shipping bin: ${n(fm.shippingBinItems)} items`)
+  }
+  const host = obs.host
+  if (host && typeof host === 'object') {
+    lines.push(`player ${host.name ?? 'host'}: ${n(host.money)}g, ${n(host.seeds)} seeds in their bag, energy ${n(host.stamina)}/${n(host.maxStamina)}, farming level ${n(host.farmingLevel)}${n(host.mailWaiting) ? `, ${n(host.mailWaiting)} letter(s) waiting in the mailbox` : ''}`)
+  }
 
   const compSet = new Set((companions ?? []).map((s) => String(s).toLowerCase()))
   const ents = Array.isArray(obs.entities) ? obs.entities : []
@@ -84,7 +98,11 @@ export function composeSnapshot(obs, opts = {}) {
 
   lines.push(`follow_target: ${obs.follow ?? '(none)'}`)
   const p = obs.player
-  const ownerName = pinUsername || p?.name || 'the player'
+  // The host farmer IS the owner in Stardew (the mod's `player` is
+  // Game1.player), so their in-game name wins over the account's pinned
+  // username: measured 260910, the pin said "Sei" (the profile's preferred
+  // name) while the farmer was "Ouen", two names for one person.
+  const ownerName = p?.name || pinUsername || 'the player'
   if (p) {
     if (p.sameLocation) lines.push(`owner ${ownerName}: @${n(p.x)},${n(p.y)} (${n(p.dist)} tiles away)`)
     else lines.push(`owner ${ownerName}: in ${p.location} (a different map; call follow or come to reach them)`)

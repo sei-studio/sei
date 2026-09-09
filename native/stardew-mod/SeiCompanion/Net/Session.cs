@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using StardewModdingAPI;
 using SeiCompanion.Body;
+using SeiCompanion.Dev;
 
 namespace SeiCompanion.Net
 {
@@ -210,6 +211,29 @@ namespace SeiCompanion.Net
                     body.RunCommand(id, name, args);
                     return;
                 }
+                case "newFarm":
+                {
+                    // Developer frame (DevCommands.cs): refused unless config.json opts in.
+                    if (!this._mod.Config.DevCommands) { this.SendResult(id, false, "dev commands are off (DevCommands in config.json)"); return; }
+                    string farmer = root.TryGetProperty("farmer", out JsonElement fr) ? fr.GetString() : null;
+                    string farm = root.TryGetProperty("farm", out JsonElement fm) ? fm.GetString() : null;
+                    string fav = root.TryGetProperty("favoriteThing", out JsonElement fv) ? fv.GetString() : null;
+                    string err = DevCommands.NewFarm(this._mod, string.IsNullOrWhiteSpace(farmer) ? "Farmer" : farmer.Trim(), string.IsNullOrWhiteSpace(farm) ? "Sei" : farm.Trim(), string.IsNullOrWhiteSpace(fav) ? "Sei" : fav.Trim());
+                    this.SendResult(id, err == null, err ?? "new farm started; the save loads in a moment");
+                    return;
+                }
+                case "loadFarm":
+                {
+                    if (!this._mod.Config.DevCommands) { this.SendResult(id, false, "dev commands are off (DevCommands in config.json)"); return; }
+                    string slot = root.TryGetProperty("slot", out JsonElement sl) ? sl.GetString() : null;
+                    string err = DevCommands.LoadFarm(this._mod, slot);
+                    this.SendResult(id, err == null, err ?? "loading; the save is up in a moment");
+                    return;
+                }
+                case "devState":
+                    if (!this._mod.Config.DevCommands) { this.SendResult(id, false, "dev commands are off (DevCommands in config.json)"); return; }
+                    this.SendResult(id, true, "ok", new Dictionary<string, object> { ["state"] = DevCommands.State() });
+                    return;
                 default:
                     this.SendResult(id, false, $"unknown message type {type}");
                     return;

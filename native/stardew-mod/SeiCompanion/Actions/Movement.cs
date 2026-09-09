@@ -118,6 +118,10 @@ namespace SeiCompanion.Actions
                     o.Fail($"no known route from {body.LocationName} to {locationName}");
                     yield break;
                 }
+                // A commanded trip (ctx.Id set) to another map ends following;
+                // the follow tick's own background travel keeps its target.
+                if (ctx.Id != null && route.Count > 0)
+                    body.FollowTarget = null;
                 foreach (Hop hop in route)
                 {
                     if (ctx.Cancelled) yield break;
@@ -152,8 +156,9 @@ namespace SeiCompanion.Actions
             var o = new Outcome();
             if (!string.Equals(t.LocationName, body.LocationName, StringComparison.OrdinalIgnoreCase))
             {
+                bool wasFollowing = body.FollowTarget != null;
                 yield return Travel(ctx, t.LocationName, t.HasTile ? t.Tile : (Point?)null, o);
-                yield return o.Ok ? Result.Success($"arrived in {body.LocationName} at {Targets.Fmt(body.Npc.TilePoint)}") : Result.Fail(o.Detail);
+                yield return o.Ok ? Result.Success($"arrived in {body.LocationName} at {Targets.Fmt(body.Npc.TilePoint)}{(wasFollowing && body.FollowTarget == null ? " (stopped following)" : "")}") : Result.Fail(o.Detail);
                 yield break;
             }
             if (!t.HasTile) { yield return Result.Success($"already in {body.LocationName}"); yield break; }

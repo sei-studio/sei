@@ -114,7 +114,7 @@ export function useStardewSetupSteps(skin: StepSkin): StardewSetup {
         <span>
           {install?.smapiInstalled
             ? t("SMAPI is installed. Sei's helper mod still needs to be added to your game, a few seconds of setup.")
-            : t("This installs SMAPI, the mod loader Stardew Valley uses (about 12 MB, from its official release), and adds Sei's helper mod to your game. One-time setup; the game must be closed.")}
+            : t("This installs SMAPI, the mod loader Stardew Valley uses (about 42 MB, from its official release), and adds Sei's helper mod to your game. One-time setup; the game must be closed.")}
         </span>
         {installing ? (
           <>

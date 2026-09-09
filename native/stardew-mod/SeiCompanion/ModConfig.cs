@@ -29,6 +29,13 @@ namespace SeiCompanion
         /// <summary>Seconds a body survives after its client disconnects before it is removed.</summary>
         public int DisconnectGraceSeconds { get; set; } = 10;
 
+        /// <summary>
+        /// Accept developer frames (`newFarm`: start a new game from the title
+        /// screen). Off by default; the Sei app never sets it. Exists for the
+        /// live test harness, where the driver has no hands on the game.
+        /// </summary>
+        public bool DevCommands { get; set; } = false;
+
         public static string NewToken()
         {
             return Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");

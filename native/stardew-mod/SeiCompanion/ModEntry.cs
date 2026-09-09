@@ -9,6 +9,7 @@ using StardewModdingAPI.Events;
 using StardewValley;
 using SeiCompanion.Body;
 using SeiCompanion.Chat;
+using SeiCompanion.Dev;
 using SeiCompanion.Net;
 
 namespace SeiCompanion
@@ -116,6 +117,9 @@ namespace SeiCompanion
                 catch (Exception ex) { this.Monitor.Log($"Queued work failed: {ex}", LogLevel.Error); }
             }
 
+            // A dev-started farm ends its arrival cutscene here (no-op otherwise).
+            DevCommands.Tick(this);
+
             if (!Context.IsWorldReady)
                 return;
 
@@ -177,6 +181,7 @@ namespace SeiCompanion
         {
             foreach (string id in this.Bodies.Keys.ToList())
                 this.Despawn(id, "returned to title");
+            DevCommands.Reset();
             this.Server.NotifySaveState();
         }
 

@@ -58,8 +58,8 @@ export interface StardewInstallEnv {
   readRegistry: (hive: 'HKLM' | 'HKCU', key: string, name: string) => Promise<string | null>;
   /** Where the built mod lives (a pack root or the repo root in dev). */
   getPackRoot: () => Promise<string>;
-  /** Temp dir for the installer zip. */
-  tmpDir: () => string;
+  /** Temp dir for the installer zip (async: production resolves it through Electron's paths). */
+  tmpDir: () => string | Promise<string>;
   fetch: typeof fetch;
   /** SMAPI installer download sources, mirror first. */
   smapiSources: () => { url: string; connectTimeoutMs?: number }[];
@@ -77,10 +77,13 @@ export function defaultEnv(): StardewInstallEnv {
       const { ensurePack } = await import('../packs');
       return ensurePack('stardew');
     },
-    tmpDir: () => {
-      // Lazy: `paths` needs Electron's app; tests never reach it.
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { paths } = require('../../paths') as typeof import('../../paths');
+    tmpDir: async () => {
+      // Lazy: `paths` needs Electron's app; tests never reach it. A dynamic
+      // import, not a relative `require`: electron-vite bundles main into
+      // one file, where require('../../paths') has nothing to resolve to
+      // (measured 260910: "Cannot find module '../../paths'" from the
+      // running installer, after the download had already succeeded).
+      const { paths } = await import('../../paths');
       return path.join(paths.userData(), 'tmp');
     },
     fetch: (input, init) => fetch(input, init),
@@ -575,7 +578,7 @@ export async function installStardew({ onProgress = () => {}, signal = null, env
       fail('SMAPI_INSTALL_FAILED', String((err as Error)?.message ?? err).replace(/^SMAPI_INSTALL_FAILED:\s*/, ''));
     }
     onProgress({ stage: 'smapi-installing' });
-    const workDir = path.join(env.tmpDir(), `smapi-installer-${env.now().toString(36)}`);
+    const workDir = path.join(await env.tmpDir(), `smapi-installer-${env.now().toString(36)}`);
     try {
       const installer = await extractSmapiInstaller(zipBytes!, workDir, env.platform);
       const { stdout, stderr } = await env.runInstaller(installer, ['--install', '--no-prompt', '--game-path', gamePath], path.dirname(installer));
