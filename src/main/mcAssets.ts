@@ -36,7 +36,7 @@
  */
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { createRequire } from 'node:module';
+import { bundleRequire } from './bundleRequire';
 
 /** GET /mcassets/<version>/item/<name>.png — the ONLY accepted URL shape. */
 const MC_ASSET_URL_RE =
@@ -183,15 +183,15 @@ let cachedRoot: string | null | undefined;
 
 /**
  * Locate prismarine-viewer's bundled textures dir. Resolved relative to this
- * module (works from the bundled CJS main in dev and packaged builds; the
- * createRequire fallback covers ESM test runners). Null when the package
+ * bundle via bundleRequire (dev, vitest and packaged builds alike; the main
+ * bundle is ESM, so there is no ambient `require`). Null when the package
  * can't be resolved — the endpoint then 404s and the renderer keeps its
  * text-label slots.
  */
 export function defaultTexturesRoot(): string | null {
   if (cachedRoot !== undefined) return cachedRoot;
   try {
-    const req = typeof require === 'function' ? require : createRequire(process.cwd() + '/');
+    const req = bundleRequire();
     cachedRoot = path.join(path.dirname(req.resolve('prismarine-viewer/package.json')), 'public', 'textures');
   } catch {
     cachedRoot = null;

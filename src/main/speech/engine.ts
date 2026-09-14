@@ -18,7 +18,8 @@
  * sherpa-onnx-node's addon.js resolves the platform package RELATIVE to its
  * own module dir (`../sherpa-onnx-<platform>-<arch>/sherpa-onnx.node`), which
  * holds in node_modules and in app.asar.unpacked (node_modules is
- * asarUnpacked). The env-var advice in its README applies only when that
+ * asarUnpacked). The module itself is loaded through bundleRequire (anchored
+ * to this bundle's location; see that file for the 260915 packaged-build bug). The env-var advice in its README applies only when that
  * relative require fails; if it ever does, the error we throw carries the
  * addon's own message.
  *
@@ -28,9 +29,9 @@
  * that the renderer maps to a download prompt — NEVER auto-downloaded
  * mid-call.
  */
-import { createRequire } from 'node:module';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
+import { bundleRequire } from '../bundleRequire';
 import { LOCAL_VOICE_SPEC, type LocalVoiceId } from './localVoice';
 import { SPEECH_PACKS, type SpeechPackId } from './packs';
 import { packModelDir, packReady } from './packStore';
@@ -51,9 +52,11 @@ let sherpa: SherpaModule | null = null;
 
 function loadSherpa(): SherpaModule {
   if (sherpa) return sherpa;
-  const req = typeof require === 'function' ? require : createRequire(process.cwd() + '/');
+  // Anchored to the bundle, NOT process.cwd(): a Finder-launched packaged app
+  // runs from `/`, where a cwd-relative require finds no node_modules and every
+  // local voice line failed with SPEECH_RUNTIME_FAILED (260915, v0.6.1).
   try {
-    sherpa = req('sherpa-onnx-node');
+    sherpa = bundleRequire()('sherpa-onnx-node');
   } catch (err) {
     throw new Error(`SPEECH_RUNTIME_FAILED: sherpa-onnx-node load failed: ${(err as Error).message}`);
   }

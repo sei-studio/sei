@@ -36,7 +36,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { createRequire } from 'node:module';
+import { bundleRequire } from './bundleRequire';
 import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -519,8 +519,7 @@ let _sharp: SharpLike | null | undefined;
  */
 function loadSharp(): SharpLike | null {
   if (_sharp !== undefined) return _sharp;
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const req = typeof require === 'function' ? require : createRequire(process.cwd() + '/');
+  const req = bundleRequire();
   const tries: Array<() => string> = [
     () => req.resolve('sharp', { paths: [path.dirname(req.resolve('img2skin/package.json'))] }),
     () => req.resolve('sharp'),
