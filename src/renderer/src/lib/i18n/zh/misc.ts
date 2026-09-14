@@ -275,6 +275,12 @@ export const ZH_MISC: Record<string, string> = {
   'Pitch': '音高',
   'Reset': '重置',
   'Higher or lower voice. Speaking pace stays the same.': '声音更高或更低。语速保持不变。',
+  'Higher or lower voice. Speaking pace stays the same. Press play to hear it.':
+    '声音更高或更低。语速保持不变。按播放试听。',
+  'Hear the pitch': '试听音高',
+  'Stop the pitch sample': '停止试听',
+  'Download a voice pack in Settings to hear a sample.': '先在设置中下载语音包，才能试听。',
+  'Local speech cannot run on this install.': '本地语音无法在此安装上运行。',
   'Calmness': '平稳度',
   'Higher is steadier and more even. Lower is more dramatic.':
     '越高越平稳均匀，越低越富有戏剧性。',

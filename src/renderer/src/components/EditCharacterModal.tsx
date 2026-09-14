@@ -559,6 +559,7 @@ export function EditCharacterModal({
                     params={voiceParams}
                     onParamsChange={setVoiceParams}
                     localTtsMode={localTtsMode}
+                    previewCharacterId={character.id}
                   />
                 </div>
               ) : null}

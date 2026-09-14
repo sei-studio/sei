@@ -780,17 +780,39 @@ const PREVIEW_LINES: Record<ChatLanguage, string> = {
  * ElevenLabs stability and still does change them.
  */
 export async function voicePreviewTts(args: {
-  voiceId: string;
+  voiceId?: string;
   calmness?: number;
+  characterId?: string;
 }): Promise<ArrayBuffer> {
-  const { voiceId } = args;
+  const language = await ttsLanguage();
+  const line = PREVIEW_LINES[language] ?? PREVIEW_LINES.en;
+  // Local TTS (260915): the pitch slider in Edit companion had NO sample under
+  // local voices (the ElevenLabs list and its play buttons are hidden there),
+  // so dragging it gave no feedback at all until the next call line. The
+  // sample now synthesizes through the same local voice the call would use:
+  // the companion's resolved voiceId decides gender exactly like a live clip
+  // (synthesizeLocalClip), falling back to the picker's voiceId, then to a
+  // female voice for a companion that has none yet. WAV bytes, ~100 ms, not
+  // disk-cached: the mp3 preview cache is keyed on voiceId+text and would
+  // hand a local user a stale ElevenLabs clip (or the reverse) after an
+  // engine switch.
+  if (await localTtsSelected()) {
+    let voiceId = args.voiceId;
+    if (args.characterId) {
+      const character = await getCharacter(args.characterId);
+      if (character && character.metadata?.voiceId !== NO_VOICE_ID) {
+        voiceId = await resolveVoiceId(character);
+      }
+    }
+    const localText = speechTextFor(line, language) || line;
+    return await synthesizeLocalClip(localText, voiceId ?? '', language, args.characterId ?? '');
+  }
+  const voiceId = args.voiceId ?? '';
   if (!isPoolVoiceId(voiceId)) throw new Error('VOICE_TTS_FAILED: unknown voice');
   const calmness =
     typeof args.calmness === 'number' && Number.isFinite(args.calmness)
       ? Math.min(1, Math.max(0, args.calmness))
       : undefined;
-  const language = await ttsLanguage();
-  const line = PREVIEW_LINES[language] ?? PREVIEW_LINES.en;
   // The tag shape is unchanged so entries cached before 260731 at pitch 1 stay
   // valid; only the pitch component of the key is gone.
   const paramTag = calmness !== undefined ? `\n#pitch=1;calm=${calmness}` : '';

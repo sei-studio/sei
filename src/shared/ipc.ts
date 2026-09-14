@@ -1951,8 +1951,13 @@ export interface RendererApi {
    * it is applied locally at playback (renderer lib/voice/pitchBus.ts) and
    * changes nothing about the synthesized bytes, so sending it would only
    * fragment the preview cache.
+   *
+   * Local TTS (260915): under `tts_engine: 'local'` the sample is a WAV from
+   * the local voice pack. `characterId` lets main pick the SAME local voice a
+   * call would (gender from the companion's resolved voiceId), so the pitch
+   * slider in Edit companion has something to play; `voiceId` may be omitted.
    */
-  voicePreview(args: { voiceId: string; calmness?: number }): Promise<ArrayBuffer>;
+  voicePreview(args: { voiceId?: string; calmness?: number; characterId?: string }): Promise<ArrayBuffer>;
   /**
    * Whether voice samples can synthesize right now (signed-in session, a dev
    * TTS key, or a stored BYOK ElevenLabs key). The picker disables sample

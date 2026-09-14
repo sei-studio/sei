@@ -68,6 +68,14 @@ export interface VoicePickerProps {
    * from this mode, so cloud characters and a later engine switch keep it.
    */
   localTtsMode?: boolean;
+  /**
+   * Local TTS (260915): the companion whose local voice the pitch sample
+   * should use (Edit companion passes its id; the creation flow has none yet).
+   * main resolves gender from the companion exactly like a live call line, so
+   * the sample is the voice the player will actually hear, at the slider's
+   * pitch. Ignored outside localTtsMode.
+   */
+  previewCharacterId?: string;
 }
 
 export function VoicePicker({
@@ -76,6 +84,7 @@ export function VoicePicker({
   params,
   onParamsChange,
   localTtsMode = false,
+  previewCharacterId,
 }: VoicePickerProps): React.ReactElement {
   const t = useT();
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
@@ -125,12 +134,14 @@ export function VoicePicker({
     // Re-arm on every (re)mount — StrictMode dev runs mount → cleanup → mount
     // on the SAME instance, and the ref keeps its false from the first cleanup.
     aliveRef.current = true;
-    // Local-TTS mode renders only the pitch slider — no voice list to load,
-    // no samples to probe, no shifter to warm for previews.
-    if (localTtsMode) return;
     // Build the pitch shifter while the player is still reading the voice list,
     // so the first sample they play is already shifted (see toggleSample).
+    // 260915: warmed in local-TTS mode as well — its pitch sample (the only
+    // way to hear the slider without a call) plays through the same bus.
     warmPitchBus();
+    // Local-TTS mode renders only the pitch slider plus its sample — no voice
+    // list to load, no ElevenLabs samples to probe.
+    if (localTtsMode) return;
     void sei
       .voiceListVoices()
       .then((v) => {
@@ -289,6 +300,51 @@ export function VoicePicker({
   }
 
   const samplesOff = samplesAvailable === false;
+
+  /** Sentinel id for the local-TTS pitch sample in playingId / loadingId. */
+  const LOCAL_SAMPLE_ID = '__local-sample__';
+
+  /**
+   * Local TTS (260915): play the companion's LOCAL voice saying the preview
+   * line, shifted to the slider. Before this the slider had no sample in
+   * local mode (the ElevenLabs list and its play buttons are hidden), so a
+   * player dragging it heard nothing until the next call line and read the
+   * slider as broken. Synthesis is ~100 ms on the local pack; the shifter is
+   * awaited (bounded) so the sample never plays at the wrong pitch.
+   */
+  async function toggleLocalSample(): Promise<void> {
+    if (playingId === LOCAL_SAMPLE_ID) {
+      stopPlayback();
+      return;
+    }
+    stopPlayback();
+    setError(null);
+    setLoadingId(LOCAL_SAMPLE_ID);
+    try {
+      if (pitch !== PITCH_DEFAULT) await pitchReady();
+      if (!aliveRef.current) return;
+      const buf = await sei.voicePreview({
+        ...(value !== null && value !== NO_VOICE_ID ? { voiceId: value } : {}),
+        ...(previewCharacterId ? { characterId: previewCharacterId } : {}),
+      });
+      if (!aliveRef.current) return;
+      const url = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+      const ok = await startAudio(url, LOCAL_SAMPLE_ID, pitch);
+      if (!ok && aliveRef.current) setError(t('Sample unavailable right now.'));
+    } catch (err) {
+      if (!aliveRef.current) return;
+      const msg = String((err as Error)?.message ?? '');
+      if (/VOICE_PACK_MISSING/.test(msg)) {
+        setError(t('Download a voice pack in Settings to hear a sample.'));
+      } else if (/SPEECH_RUNTIME_FAILED/.test(msg)) {
+        setError(t('Local speech cannot run on this install.'));
+      } else {
+        setError(t('Sample unavailable right now.'));
+      }
+    } finally {
+      if (aliveRef.current) setLoadingId(null);
+    }
+  }
 
   function setPitchParam(next: number): void {
     onParamsChange(normalizeVoiceParams({ pitch: next, calmness: params.calmness }));
@@ -467,6 +523,26 @@ export function VoicePicker({
               {t('Pitch')}
             </label>
             <span className={styles.tunerValue}>{pitch.toFixed(2)}</span>
+            {localTtsMode ? (
+              <button
+                type="button"
+                className={styles.playBtn}
+                aria-label={
+                  playingId === LOCAL_SAMPLE_ID ? t('Stop the pitch sample') : t('Hear the pitch')
+                }
+                title={playingId === LOCAL_SAMPLE_ID ? t('Stop the pitch sample') : t('Hear the pitch')}
+                disabled={loadingId !== null && loadingId !== LOCAL_SAMPLE_ID}
+                onClick={() => void toggleLocalSample()}
+              >
+                {loadingId === LOCAL_SAMPLE_ID ? (
+                  <span className={styles.loadingDot} aria-hidden="true" />
+                ) : playingId === LOCAL_SAMPLE_ID ? (
+                  <StopIcon size={14} />
+                ) : (
+                  <PlayIcon size={14} />
+                )}
+              </button>
+            ) : null}
             <button
               type="button"
               className={styles.tunerReset}
@@ -488,7 +564,9 @@ export function VoicePicker({
             onChange={(e) => setPitchParam(Number(e.target.value))}
           />
           <div className={styles.tunerHint}>
-            {t('Higher or lower voice. Speaking pace stays the same.')}
+            {localTtsMode
+              ? t('Higher or lower voice. Speaking pace stays the same. Press play to hear it.')
+              : t('Higher or lower voice. Speaking pace stays the same.')}
           </div>
         </div>
 

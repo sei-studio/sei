@@ -2164,10 +2164,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // preview, never a bad upstream request. `pitch` was dropped from the
     // payload at 260731 (it is applied at playback now) and zod strips unknown
     // keys, so a renderer still sending it is a no-op rather than an error.
+    // 260915: `voiceId` is optional and `characterId` is new, both for the
+    // local-TTS sample (voicePreviewTts derives the local voice from the
+    // companion, so a picker at "Auto" can still play one).
     const args = z
       .object({
-        voiceId: z.string().min(1).max(64),
+        voiceId: z.string().min(1).max(64).optional(),
         calmness: z.number().finite().optional(),
+        characterId: z.string().min(1).max(64).optional(),
       })
       .parse(argsRaw);
     const { voicePreviewTts } = await import('./voice/tts');
