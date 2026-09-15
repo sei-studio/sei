@@ -25,6 +25,11 @@ export function createOllamaProvider(config, { fetchImpl = globalThis.fetch } = 
     const body = {
       model,
       stream: false,
+      // Thinking OFF (260915): Ollama enables it by default on qwen3/deepseek-r1/
+      // gemma4-class models and bills the reasoning against num_predict, so a
+      // short turn came back with an EMPTY content and the bot fell silent.
+      // Accepted by models without the capability too; see src/main/llm/ollama.ts.
+      think: false,
       options: { num_predict: maxTokens },
       messages: anthropicToOpenAIMessages(messages, systemText),
     }

@@ -219,6 +219,9 @@ describe('ollama provider call', () => {
     expect(fetchImpl.mock.calls[0][0]).toBe('http://localhost:11434/api/chat')
     const body = JSON.parse(fetchImpl.mock.calls[0][1].body)
     expect(body.stream).toBe(false)
+    // 260915: thinking is switched off on the wire so qwen3/deepseek-r1-class
+    // models cannot spend the whole num_predict budget in message.thinking.
+    expect(body.think).toBe(false)
     expect(out.text).toBe('hi')
     expect(out.toolUses).toEqual([{ id: expect.stringMatching(/^toolu_/), name: 'go', input: { x: 1 } }])
     expect(out.usage).toEqual({ prompt_tokens: 5, completion_tokens: 7 })
