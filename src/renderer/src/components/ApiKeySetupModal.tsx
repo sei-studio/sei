@@ -94,7 +94,10 @@ export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps
   };
 
   const providerLabel = t(PROVIDER_LABELS[provider] ?? 'API');
-  const canSave = apiKey.trim() !== '' && !saving;
+  // Ollama is keyless (260915): Save was disabled for it because the field
+  // had to be non-empty, so the modal could never switch to a local model.
+  const keyless = provider === 'ollama';
+  const canSave = (apiKey.trim() !== '' || keyless) && !saving;
 
   return (
     <ModalShell title={t('Use your own API key')} tier="stacked" onClose={onCancel} escClose={false}>
@@ -102,6 +105,9 @@ export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps
         {t('Pick a provider and paste a key. Sei runs on your key instead of playtime.')}
       </p>
       <ProviderSelect value={provider} onChange={setProvider} compact />
+      {keyless ? (
+        <p className={styles.body}>{t('Ollama runs on your computer and needs no API key.')}</p>
+      ) : (
       <div className={styles.keyField}>
         <span className={styles.fieldLabel}>
           {t('Paste your {provider} API key', { provider: providerLabel })}
@@ -123,6 +129,7 @@ export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps
           aria-invalid={!!error}
         />
       </div>
+      )}
       {error ? <p className={styles.error}>{error}</p> : null}
       <ModalFooter>
         <Button kind="quiet" disabled={saving} onClick={onCancel}>

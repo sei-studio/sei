@@ -193,6 +193,7 @@ export const ZH_ONBOARD: Record<string, string> = {
 
   /* ── Local (BYOK) setup panel ─────────────────────────────────────── */
   'Pick your model provider and paste your API key.': '选择你的模型服务商，然后粘贴你的 API 密钥。',
+  'Pick your model provider.': '选择你的模型服务商。',
   'Model provider': '模型服务商',
   'API key': 'API 密钥',
 

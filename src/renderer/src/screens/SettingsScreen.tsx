@@ -1042,6 +1042,12 @@ export function SettingsScreen(): React.ReactElement {
                   compact
                 />
               </div>
+              {/* Ollama is keyless (260915): no key row, no "Not set" warning —
+                  a local server authenticates nothing, so asking for a key
+                  read as a blocker to people setting up local models. */}
+              {currentProvider === 'ollama' ? (
+                <p className={styles.helper}>{t('Ollama runs on your computer and needs no API key.')}</p>
+              ) : (
               <div className={styles.row}>
                 <span className={styles.label}>{t('API key')}</span>
                 {editingKey ? (
@@ -1075,7 +1081,8 @@ export function SettingsScreen(): React.ReactElement {
                   </>
                 )}
               </div>
-              {keyError ? <div className={styles.errorRow}>{keyError}</div> : null}
+              )}
+              {keyError && currentProvider !== 'ollama' ? <div className={styles.errorRow}>{keyError}</div> : null}
 
               {/* W5 (260817): model picker. Shown once the provider can list
                   models (a saved key, or Ollama which needs none). Persists to

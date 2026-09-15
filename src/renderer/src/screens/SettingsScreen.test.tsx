@@ -74,6 +74,17 @@ describe('SettingsScreen (Party restyle structure)', () => {
     expect(src.includes('Switch to your own API key')).toBe(false);
   });
 
+  it('S.2b: the API key row is hidden for Ollama, which is keyless (260915)', () => {
+    const src = readFileSync(SETTINGS_TSX, 'utf-8');
+    expect(src.includes("currentProvider === 'ollama' ? (")).toBe(true);
+    expect(src.includes("t('Ollama runs on your computer and needs no API key.')")).toBe(true);
+    // The row itself sits on the other branch of that conditional.
+    const from = src.indexOf("currentProvider === 'ollama' ? (");
+    const block = src.slice(from, from + 600);
+    expect(block.includes("{t('API key')}")).toBe(true);
+    expect(block.indexOf('needs no API key') < block.indexOf("{t('API key')}")).toBe(true);
+  });
+
   it('S.3: theme picker is four color swatches, no System option', () => {
     const src = readFileSync(SETTINGS_TSX, 'utf-8');
     expect(src.includes('aria-label="Theme"')).toBe(true);

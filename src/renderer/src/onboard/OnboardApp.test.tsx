@@ -108,6 +108,14 @@ describe('OnboardApp W6: local wizard steps', () => {
   it('ollama may proceed without an API key; every other provider requires one', () => {
     expect(src).toContain("key.trim() !== '' || provider === 'ollama'");
   });
+  it('ollama hides the key field and any pasted key is cleared on switching to it (260915)', () => {
+    // The password input renders only on the non-ollama branch, replaced by
+    // the keyless note; the heading no longer asks for a key.
+    expect(src).toContain("if (next === 'ollama') setKey('')");
+    expect(src).toContain("? tt('Pick your model provider.')");
+    const keyStep = src.slice(src.indexOf("if (step === 'key') {"), src.indexOf("if (step === 'model') {"));
+    expect(keyStep).toMatch(/provider === 'ollama' \? \(\s*<p[^]*?needs no API key[^]*?\) : \(\s*<input/);
+  });
 });
 
 describe('OnboardApp: key-step probe (260817)', () => {

@@ -1629,11 +1629,21 @@ function LocalSetupPanel(props: { onDone: (choices: LocalSetupChoices) => void }
   if (step === 'key') {
     return (
       <div className={styles.panel}>
-        <p className={styles.panelText}>{tt('Pick your model provider and paste your API key.')}</p>
+        <p className={styles.panelText}>
+          {provider === 'ollama'
+            ? tt('Pick your model provider.')
+            : tt('Pick your model provider and paste your API key.')}
+        </p>
         <select
           className={styles.fieldSelect}
           value={provider}
-          onChange={(e) => setProvider(e.target.value as ProviderKind)}
+          onChange={(e) => {
+            const next = e.target.value as ProviderKind;
+            setProvider(next);
+            // Keyless provider (260915): a key pasted for a previous pick must
+            // not ride along into the Ollama save.
+            if (next === 'ollama') setKey('');
+          }}
           aria-label={tt('Model provider')}
         >
           {PROVIDERS.map((p) => (
@@ -1642,20 +1652,21 @@ function LocalSetupPanel(props: { onDone: (choices: LocalSetupChoices) => void }
             </option>
           ))}
         </select>
-        <input
-          className={styles.field}
-          type="password"
-          value={key}
-          placeholder="sk-..."
-          onChange={(e) => setKey(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') void submitKey();
-          }}
-          aria-label={tt('API key')}
-        />
         {provider === 'ollama' ? (
           <p className={styles.panelNote}>{tt('Ollama runs on your computer and needs no API key.')}</p>
-        ) : null}
+        ) : (
+          <input
+            className={styles.field}
+            type="password"
+            value={key}
+            placeholder="sk-..."
+            onChange={(e) => setKey(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void submitKey();
+            }}
+            aria-label={tt('API key')}
+          />
+        )}
         {busy ? <p className={styles.panelNote}>{tt('Checking your key...')}</p> : null}
         {error ? (
           <p className={styles.panelError} role="alert">
