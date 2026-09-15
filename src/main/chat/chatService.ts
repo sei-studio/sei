@@ -209,6 +209,127 @@ export function splitReply(
 }
 
 /**
+ * Reply tidy (260915). A small local model (live capture: qwen3-vl:2b behind
+ * Ollama, on a call) does not stop talking: it copies its own earlier lines out
+ * of the transcript and cycles them ("i'm just here, for you. i'm not a perfect
+ * person, but... i'm just a catgirl maid, but..." four times over) until
+ * num_predict cuts it mid-word ("i'm just a"), and every one of those sentences
+ * was persisted and SPOKEN. Sampling penalties (repeat_penalty 1.15-1.2,
+ * presence_penalty) measured no better on the real transcript, so the guard is
+ * deterministic, on the reply text, before it is bubbled or spoken:
+ *   - a sentence that already appeared verbatim in this reply (case- and
+ *     punctuation-insensitive) is dropped; interjections shorter than
+ *     REPEAT_MIN_KEY_CHARS ("no. no.") are exempt because they repeat on purpose;
+ *   - when the provider reports the reply was cut by the token cap
+ *     (stopReason 'max_tokens'), an unterminated trailing fragment is dropped
+ *     rather than spoken as a half sentence — unless it is all there is;
+ *   - `maxSentences` caps how much is kept (LOCAL_VOICE_MAX_SENTENCES on a
+ *     call with a local model, which is prompted for one short line and
+ *     ignores it; cloud models comply and never hit it).
+ * Nothing legitimate is removed from a well-behaved reply: no repeats, no
+ * truncation, under the cap = the text comes back unchanged. Exported for
+ * testing.
+ */
+export const LOCAL_VOICE_MAX_SENTENCES = 4;
+const REPEAT_MIN_KEY_CHARS = 12;
+const TERMINATED_RE = /[.!?。！？…]["'”’)\]]*$/;
+
+export interface ReplyGate {
+  /** true = keep this sentence; false = drop it (a verbatim repeat, or over the cap). */
+  admit(unit: string): boolean;
+  readonly stats: { kept: number; droppedRepeats: number; capped: boolean };
+}
+
+/**
+ * One gate per reply: the repeat set and the sentence count live for exactly
+ * one turn. The streamed voice turn feeds it sentence by sentence as they are
+ * extracted (a spoken bubble cannot be taken back, so the decision has to be
+ * made before the emit); tidyReply feeds it the whole text at once.
+ */
+export function createReplyGate(opts: { maxSentences?: number } = {}): ReplyGate {
+  const seen = new Set<string>();
+  const stats = { kept: 0, droppedRepeats: 0, capped: false };
+  return {
+    stats,
+    admit(unit: string): boolean {
+      if (opts.maxSentences !== undefined && stats.kept >= opts.maxSentences) {
+        stats.capped = true;
+        return false;
+      }
+      const key = unit.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+      // A Han character carries about a word, so it counts double toward the
+      // interjection exemption: "你好呀，今天想干嘛？" is a full sentence.
+      const weight = key.length + (key.match(/\p{Script=Han}/gu)?.length ?? 0);
+      if (weight >= REPEAT_MIN_KEY_CHARS) {
+        if (seen.has(key)) {
+          stats.droppedRepeats++;
+          return false;
+        }
+        seen.add(key);
+      }
+      stats.kept++;
+      return true;
+    },
+  };
+}
+
+/** Re-join admitted sentences: a space after a Western terminator, none after a CJK one. */
+function joinUnits(units: string[]): string {
+  let out = '';
+  for (const u of units) {
+    if (out) out += /[。！？]["'”’)\]]*$/.test(out) ? '' : ' ';
+    out += u;
+  }
+  return out;
+}
+
+export function tidyReply(
+  text: string,
+  opts: { truncated?: boolean; maxSentences?: number } = {},
+): { text: string; droppedRepeats: number; droppedTail: boolean; capped: boolean } {
+  const gate = createReplyGate({ maxSentences: opts.maxSentences });
+  // Per line: the admitted units, plus the line verbatim when nothing in it
+  // was dropped, so an untouched line is reproduced byte for byte instead of
+  // being re-joined (CJK sentences carry no space after 。！？).
+  const lines: Array<{ units: string[]; verbatim?: string }> = [];
+  let lastWasFragment = false;
+  for (const rawLine of text.split('\n')) {
+    const { sentences, rest } = takeSentences(rawLine);
+    const tail = rest.trim();
+    const units = tail ? [...sentences, tail] : sentences;
+    const out: string[] = [];
+    let changed = false;
+    for (let i = 0; i < units.length; i++) {
+      const u = units[i];
+      if (!gate.admit(u)) {
+        changed = true;
+        if (gate.stats.capped) break;
+        continue;
+      }
+      out.push(u);
+      lastWasFragment = i === units.length - 1 && Boolean(tail) && !TERMINATED_RE.test(u);
+    }
+    if (out.length) lines.push({ units: out, ...(changed ? {} : { verbatim: rawLine }) });
+    if (gate.stats.capped) break;
+  }
+  let droppedTail = false;
+  if (opts.truncated && lastWasFragment && gate.stats.kept > 1) {
+    const last = lines[lines.length - 1];
+    last.units.pop();
+    delete last.verbatim;
+    if (!last.units.length) lines.pop();
+    droppedTail = true;
+  }
+  const tidied = lines.map((l) => l.verbatim ?? joinUnits(l.units)).join('\n').trim();
+  return {
+    text: tidied || text.trim(),
+    droppedRepeats: gate.stats.droppedRepeats,
+    droppedTail,
+    capped: gate.stats.capped,
+  };
+}
+
+/**
  * A sentence this short does not become its own spoken clip (260729). "oh.",
  * "um.", "wait." are lead-ins, not utterances: split off on their own they are
  * synthesized as a separate request, which lands as a complete little statement
@@ -511,9 +632,23 @@ async function persistReplies(
   characterId: string,
   replyText: string,
   punctuation: 'casual' | 'deliberate' = 'casual',
-  opts?: { voice?: boolean; rememberCalled?: boolean },
+  opts?: { voice?: boolean; rememberCalled?: boolean; truncated?: boolean; local?: boolean },
 ): Promise<ChatMessage[]> {
   const now = Date.now();
+  // Loop/cut-off guard first (tidyReply): repeated sentences and a max_tokens
+  // half-sentence never reach a bubble or TTS. The spoken-line cap applies
+  // only to a LOCAL model on a call; typed chat and cloud voice are untouched.
+  const tidy = tidyReply(replyText, {
+    truncated: opts?.truncated === true,
+    ...(opts?.voice && opts?.local ? { maxSentences: LOCAL_VOICE_MAX_SENTENCES } : {}),
+  });
+  if (tidy.droppedRepeats || tidy.droppedTail || tidy.capped) {
+    console.log(
+      `[sei/chat] reply tidied char=${characterId.slice(0, 8)} repeats=${tidy.droppedRepeats} ` +
+        `tail=${tidy.droppedTail} capped=${tidy.capped}`,
+    );
+  }
+  replyText = tidy.text;
   // Silence-filler drop is voice-only (see SILENCE_FILLER_RE): typed chat never
   // prompts the "(silence)" convention, so a filler-shaped line there is a real
   // reply and persisting it beats silently losing the turn.
@@ -656,6 +791,13 @@ export async function sendChatMessage(
     const isVoice = args.voiceCall === true && typeof deps.emitReply === 'function';
     const isStreaming = isVoice;
     const streamedReplies: ChatMessage[] = [];
+    // Loop guard on the streamed path (260915, see tidyReply): the verbatim-
+    // repeat drop and the local-model spoken-line cap, decided per sentence as
+    // it is extracted, because on a call the bubble is spoken the instant it
+    // exists. The blocking path gets the same via tidyReply in persistReplies.
+    const gate = createReplyGate(
+      isVoice && llm.backend === 'local' ? { maxSentences: LOCAL_VOICE_MAX_SENTENCES } : {},
+    );
     let streamBuf = '';
     /** A sub-threshold sentence waiting to ride out with the next one. */
     let shortLeadIn = '';
@@ -701,6 +843,8 @@ export async function sendChatMessage(
 
     let launch: ChatSendResult['launch'];
     let replyText = '';
+    /** The hop that produced `replyText` was cut by the token cap (tidyReply). */
+    let truncated = false;
     // Task 2 — the actual summon is deferred until AFTER the reply is persisted,
     // so the companion's "hopping in" acknowledgement lands in chat before the
     // live-session popup (SummonedWidget) appears. Set when launch() resolves to
@@ -758,6 +902,7 @@ export async function sendChatMessage(
                 shortLeadIn = s;
                 continue;
               }
+              if (!gate.admit(s)) continue;
               await emitStreamedBubble(s, i < sentences.length - 1 || streamBuf.trim().length > 0);
             }
           }
@@ -781,7 +926,18 @@ export async function sendChatMessage(
         // Nothing more is known to follow: a further hop may still speak, but
         // only after a tool round trip, which is a new utterance by then.
         const tail = [shortLeadIn, streamBuf.trim()].filter(Boolean).join(' ');
-        if (tail) await emitStreamedBubble(tail, false);
+        // 260915: a tail the token cap cut mid-sentence is not spoken as a
+        // half sentence when something already was this hop; and the tail
+        // passes the same repeat/cap gate as every other sentence.
+        const cutOff =
+          res.stopReason === 'max_tokens' && !TERMINATED_RE.test(tail) && streamedReplies.length > 0;
+        if (tail && !cutOff && gate.admit(tail)) await emitStreamedBubble(tail, false);
+        if (gate.stats.droppedRepeats || gate.stats.capped || cutOff) {
+          console.log(
+            `[sei/chat] reply tidied char=${args.characterId.slice(0, 8)} hop=${hop} ` +
+              `repeats=${gate.stats.droppedRepeats} tail=${cutOff} capped=${gate.stats.capped}`,
+          );
+        }
         shortLeadIn = '';
         streamBuf = '';
       }
@@ -795,7 +951,10 @@ export async function sendChatMessage(
           `cacheRead=${u?.cache_read_input_tokens ?? 0} cacheWrite=${u?.cache_creation_input_tokens ?? 0}`,
       );
       const text = textOf(res.content);
-      if (text) replyText = text;
+      if (text) {
+        replyText = text;
+        truncated = res.stopReason === 'max_tokens';
+      }
 
       // With two tools offered the model may call both in one response (e.g.
       // quit + launch for "log off and hop back in"). Every tool_use id in an
@@ -898,6 +1057,8 @@ export async function sendChatMessage(
       ? streamedReplies
       : await persistReplies(args.characterId, replyText, prep.punctuation, {
           voice: args.voiceCall === true,
+          truncated,
+          local: llm.backend === 'local',
         });
 
     // Background compaction (260702): the reply is persisted, so if 50+
@@ -1007,7 +1168,10 @@ export async function sendLaunchFailedTurn(
   });
   const replyText = textOf(res.content);
   if (!replyText) return [];
-  return persistReplies(characterId, replyText, prep.punctuation);
+  return persistReplies(characterId, replyText, prep.punctuation, {
+    truncated: res.stopReason === 'max_tokens',
+    local: llm.backend === 'local',
+  });
 }
 
 /**
@@ -1088,7 +1252,10 @@ export async function sendFirstMeetingTurn(
       if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
       const replyText = textOf(res.content);
       if (!replyText) return [];
-      return await persistReplies(characterId, replyText, prep.punctuation);
+      return await persistReplies(characterId, replyText, prep.punctuation, {
+        truncated: res.stopReason === 'max_tokens',
+        local: llm.backend === 'local',
+      });
     } catch (err) {
       // Superseded by a real user message — the greeting is best-effort, so a
       // deliberate abort is not a failure; drop it silently. Real errors still
@@ -1178,7 +1345,12 @@ export async function sendVoiceGreetingTurn(
     const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');
     const replyText = textOf(res.content);
     if (!replyText) return [];
-    return await persistReplies(characterId, replyText, prep.punctuation, { voice: true, rememberCalled });
+    return await persistReplies(characterId, replyText, prep.punctuation, {
+      voice: true,
+      rememberCalled,
+      truncated: res.stopReason === 'max_tokens',
+      local: llm.backend === 'local',
+    });
   } catch (err) {
     // Superseded by a real message (or a real failure) — the greeting is
     // best-effort either way; the call works without it.
@@ -1316,7 +1488,12 @@ export async function sendCompanionVoiceTurn(
     const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');
     const replyText = textOf(res.content);
     if (!replyText) return [];
-    return await persistReplies(characterId, replyText, prep.punctuation, { voice: true, rememberCalled });
+    return await persistReplies(characterId, replyText, prep.punctuation, {
+      voice: true,
+      rememberCalled,
+      truncated: res.stopReason === 'max_tokens',
+      local: llm.backend === 'local',
+    });
   } catch (err) {
     if (!isAbortError(err)) {
       // Usage limit (260730): raise the popup; useVoiceStore hangs up on it.
@@ -1417,7 +1594,12 @@ export async function sendVoiceIdleTurn(
     const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');
     const replyText = textOf(res.content);
     if (!replyText) return { messages: [], ...(endCall ? { endCall: true } : {}) };
-    const spoken = await persistReplies(characterId, replyText, prep.punctuation, { voice: true, rememberCalled });
+    const spoken = await persistReplies(characterId, replyText, prep.punctuation, {
+      voice: true,
+      rememberCalled,
+      truncated: res.stopReason === 'max_tokens',
+      local: llm.backend === 'local',
+    });
     return { messages: spoken, ...(endCall ? { endCall: true } : {}) };
   } catch (err) {
     if (!isAbortError(err)) {
