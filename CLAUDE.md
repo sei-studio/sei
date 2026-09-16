@@ -1685,6 +1685,12 @@ unreferenced rather than deleted; either revive them or remove them.
 
 ## Minecraft setup wizard: the target version (260916)
 
+> Superseded in part by the games branch (260916, same day): the wizard now builds
+> ONE "Sei <version>" profile PER version with a picker in the setup list, and
+> readiness is per profile (`sei_ready_versions`). The version rule below
+> (newest supported, never last-played) still holds; see "Minecraft's setup
+> step, and the detection bug" in the Game adapters section for the current shape.
+
 The skin-setup wizard builds a "Sei" Fabric profile in the vanilla launcher,
 and **the version it builds it for is the newest one in minecraft-protocol's
 `supportedVersions`**, never the launcher's last-played version
