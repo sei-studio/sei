@@ -46,6 +46,11 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { scanMcInstalls } from './mcInstallScan';
+// Dependency-free CJS data module: the same table the bot's networking stack
+// enforces, so the profile the wizard builds can never target a version the
+// bot then refuses to join.
+import { supportedVersions } from 'minecraft-protocol/src/version.js';
+import { selectTargetMcVersion } from '../shared/mcSetup';
 import { installFabricLoader } from './fabricInstaller';
 import { downloadCustomSkinLoader, writeCustomSkinLoaderConfig } from './customSkinLoader';
 import { scanModJar } from './modScanner';
@@ -150,17 +155,20 @@ async function seedSeiGameDir(rootDir: string, seiGameDir: string): Promise<void
  */
 const sessions = new Map<string, AbortController>();
 
-/**
- * Fallback MC version when `launcher_profiles.json` is unreadable or absent.
- * Used silently (no UI warning today); installs detected with a readable
- * version never touch it. Deliberately pinned to a known-good combination:
- * Fabric Loader + a pre-15 CustomSkinLoader build are VERIFIED working on
- * 1.21.4, while newer MC versions (26.x) are merely LISTED by CSL 14.28's
- * Modrinth metadata — and the CSL 15.x incident (crash 255 on 1.21.x builds
- * that also "listed" support) is why a listing is not treated as proof.
- * Bump only after actually launching Fabric + CSL on the new version.
+/*
+ * The wizard's target Minecraft version is NOT the launcher's last-played
+ * version (260916). It used to be, with a pinned fallback only when the
+ * version was unreadable, and on any machine that had played 26.2 or 26.3
+ * that built a "Sei" profile the bot itself could not join: the player then
+ * got the version-not-supported popup for the profile Sei had just made for
+ * them (measured on the 260914 support case, and 6 of the 13 users who tried
+ * a summon that week). The pick is `selectTargetMcVersion` in
+ * shared/mcSetup.ts: the newest version in minecraft-protocol's supported
+ * table, so the Sei profile is always one the bot can join. Nothing here
+ * verifies that Fabric + CustomSkinLoader actually launch on that version;
+ * the CSL pick (customSkinLoader.ts) stays on the pre-15 builds Modrinth
+ * lists for it, and a launch failure is reported by the game, not hidden.
  */
-const DEFAULT_MC_VERSION = '1.21.4';
 
 /**
  * Allocate a fresh AbortController for the given sessionId and store it in
@@ -438,8 +446,14 @@ async function processOneInstall(
     return;
   }
 
-  // ── Determine MC version (with fallback) ──────────────────────────────
-  const mcVersion = install.mc_version ?? DEFAULT_MC_VERSION;
+  // ── Determine MC version ──────────────────────────────────────────────
+  // Vanilla: the Fabric profile decides the version, so it is the newest one
+  // Sei can join (the launcher downloads that Minecraft on the profile's
+  // first play). CurseForge instances carry their own loader + version and
+  // cannot be moved.
+  const mcVersion = install.kind === 'vanilla'
+    ? selectTargetMcVersion({ supported: supportedVersions })
+    : install.mc_version;
   if (!mcVersion) {
     onProgress({
       installId,

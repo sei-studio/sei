@@ -170,7 +170,7 @@ function WelcomeStep(): React.ReactElement {
     >
       <p>
         {t(
-          "Sei can give each companion a custom skin and username inside your Minecraft world. We'll install a small mod (CustomSkinLoader) into your Minecraft profile. Takes about a minute.",
+          "Sei adds a separate \"Sei\" profile to your Minecraft launcher: Fabric on a Minecraft version Sei can join, plus a small mod (CustomSkinLoader) so each companion shows their own skin and name in your world. Your own profile is not changed. Takes about a minute.",
         )}
       </p>
     </WizardStepShell>
@@ -389,18 +389,14 @@ function DoneStep(): React.ReactElement {
   // failure that still routed here). Only an all-ok run earns the green pill.
   const anyFailed = error != null || results.some((r) => !r.ok);
 
-  // Derive a representative profile name for the body copy. For vanilla installs
-  // the launcher shows a "fabric-loader-{loaderVersion}-{mcVersion}" profile; for
-  // CurseForge instances the launcher shows the instance name directly.
+  // Derive a representative profile name for the body copy. For vanilla
+  // installs the installer renames the Fabric profile to "Sei" (260916: it
+  // used to be quoted here as fabric-loader-<loader>-<mc>, a name the
+  // launcher never showed); CurseForge instances show the instance name.
   const profileName = (() => {
     const first = installs.find((i) => selectedIds.has(i.id));
     if (!first) return 'your modded';
-    if (first.kind === 'vanilla') {
-      const lv = first.loader_version ?? '';
-      const mv = first.mc_version ?? '';
-      if (lv && mv) return `fabric-loader-${lv}-${mv}`;
-      return 'Fabric Loader';
-    }
+    if (first.kind === 'vanilla') return '"Sei"';
     return first.label;
   })();
 

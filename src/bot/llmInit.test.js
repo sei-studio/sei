@@ -85,6 +85,22 @@ describe('applyLlmInit', () => {
     expect(() => ConfigSchema.parse(out)).not.toThrow()
   })
 
+  it('ollama boots with NO key at all: the supervisor ships an empty apiKey for the keyless provider', () => {
+    // The production shape (src/bot/index.js): anthropic.api_key is the init
+    // apiKey verbatim, and for Ollama that is ''. This used to fail
+    // ConfigSchema.parse ("anthropic.api_key is required when cloudMode is
+    // not set") on every summon, because the fixture below always carried a
+    // fake Anthropic key. Pinned so the keyless provider cannot regress.
+    const out = applyLlmInit(rawFor({ anthropic: { api_key: '' } }), { provider: 'ollama', model: 'llama3.2', api_key: '' }, '')
+    const cfg = ConfigSchema.parse(out)
+    expect(cfg.llm.provider).toBe('ollama')
+    expect(cfg.anthropic.api_key).toBe('')
+  })
+
+  it('anthropic with no key and no cloudMode is still refused', () => {
+    expect(() => ConfigSchema.parse(applyLlmInit(rawFor({ anthropic: { api_key: '' } }), { provider: 'anthropic', api_key: '' }, ''))).toThrow(/api_key is required/)
+  })
+
   it('ollama gets model/base_url but no api_key field', () => {
     const out = applyLlmInit(rawFor(), {
       provider: 'ollama',

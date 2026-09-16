@@ -108,6 +108,7 @@ type LineId =
   | 'dots'
   | 'ahh'
   | 'skippedThird'
+  | 'noAccount'
   | 'ready';
 
 const SCRIPT: Record<LineId, string> = {
@@ -115,6 +116,10 @@ const SCRIPT: Record<LineId, string> = {
   runPlace: 'I run this place. The Sei terminal, I mean.',
   newQ: 'Hmmmm... Are you new here?',
   welcomeBack: "Ah, welcome back. I'm not needed here then. Back to gaming I go!",
+  // 260916: the "No" answer signed into an account that did not exist yet
+  // (Google creates one on the spot). Sui comes back and asks again instead
+  // of letting a brand-new player land on Home with no name and no companion.
+  noAccount: "Wait, that login has no account yet. So you ARE new here! Let's try that again.",
   nameQ: "So! My name's Sui. What do I call you?",
   iSee: 'I see I see... {name}!',
   job: 'So, {name}, my job here is to help you meet other AI friends from my world.',
@@ -145,6 +150,7 @@ const HINT_LINES: LineId[] = [
   'allDone',
   'dots',
   'skippedThird',
+  'noAccount',
 ];
 
 /* ── Machine ─────────────────────────────────────────────────────────────── */
@@ -158,6 +164,7 @@ type Phase =
   | { k: 'setup' } // "setting up..." — config save + generation
   | { k: 'welcome-existing' } // new-user branch signed into an EXISTING account
   | { k: 'return' } // ground + Sui come back for the send-off
+  | { k: 'no-account' } // returning sign-in made a NEW account: Sui comes back to re-ask
   | { k: 'fade'; done?: boolean };
 
 interface Answers {
@@ -267,6 +274,7 @@ export function OnboardApp({
       setPhase((p) => {
         if (p.k === 'intro') return { k: 'line', id: 'hey' };
         if (p.k === 'return') return { k: 'line', id: 'ready' };
+        if (p.k === 'no-account') return { k: 'line', id: 'noAccount' };
         return p;
       });
     }, 1000);
@@ -507,7 +515,7 @@ export function OnboardApp({
   // Re-entering the scene for the send-off: ground slides in → Sui walks in
   // (onGroundIn/onSuiEntered above route 'return' to the 'ready' line).
   useEffect(() => {
-    if (phase.k === 'return' && !groundIn) setGroundIn(true);
+    if ((phase.k === 'return' || phase.k === 'no-account') && !groundIn) setGroundIn(true);
   }, [phase.k, groundIn]);
 
   // ── Talking pose follows the typewriter ────────────────────────────────
@@ -597,6 +605,10 @@ export function OnboardApp({
       case 'welcomeBack':
         walkOff('auth-returning');
         break;
+      case 'noAccount':
+        answersRef.current.returning = false;
+        goLine('newQ');
+        break;
       case 'nameQ':
         if (name.trim()) goLine('iSee');
         break;
@@ -668,6 +680,33 @@ export function OnboardApp({
     return false;
   }, []);
 
+  /**
+   * The returning branch signed into an account that was created by that very
+   * sign-in (260916). Google sign-in creates the account on the spot, so
+   * "I've been here before" + a Google login the player had never used with
+   * Sei used to complete as a returning user: no config written, no name, no
+   * companion, and the first summon refused with "your name is missing"
+   * (the 260914 support case). A minutes-old account is not a returning one.
+   */
+  const signedIntoFreshAccount = useCallback((): boolean => {
+    const a = authRef.current;
+    if (a.kind !== 'signed_in') return false;
+    const ageMs = Date.now() - Date.parse(a.user.createdAt);
+    return Number.isFinite(ageMs) && ageMs < 10 * 60_000;
+  }, []);
+
+  /** Returning sign-in that made a new account: back to the scene, re-ask.
+   * The boot sign-in variant has no scene to resume, so it replays the full
+   * one from the start (the same remount as its "I'm new here" link). */
+  const resumeAsNew = useCallback(() => {
+    if (startAtSignIn) {
+      onStartFresh?.();
+      return;
+    }
+    answersRef.current.returning = false;
+    setPhase({ k: 'no-account' });
+  }, [startAtSignIn, onStartFresh]);
+
   /** Post-auth continuation: ToS gate, then setup (new) or done (returning). */
   const [needsTos, setNeedsTos] = useState(false);
   const proceedingRef = useRef(false);
@@ -688,7 +727,8 @@ export function OnboardApp({
           /* offline ToS check: let the normal window's gate re-ask */
         }
         if (mode === 'returning') {
-          complete(false, null);
+          if (signedIntoFreshAccount()) resumeAsNew();
+          else complete(false, null);
         } else if (signedIntoExistingAccount()) {
           // They walked the new-user branch but signed into an account that
           // already exists. Running setup here would clobber the profile's
@@ -702,7 +742,7 @@ export function OnboardApp({
         proceedingRef.current = false;
       }
     },
-    [complete, signedIntoExistingAccount],
+    [complete, signedIntoExistingAccount, signedIntoFreshAccount, resumeAsNew],
   );
 
   const agreeTos = useCallback(async () => {
@@ -713,10 +753,12 @@ export function OnboardApp({
     }
     setNeedsTos(false);
     const mode = phase.k === 'auth' ? phase.mode : 'new';
-    if (mode === 'returning') complete(false, null);
-    else if (signedIntoExistingAccount()) setPhase({ k: 'welcome-existing' });
+    if (mode === 'returning') {
+      if (signedIntoFreshAccount()) resumeAsNew();
+      else complete(false, null);
+    } else if (signedIntoExistingAccount()) setPhase({ k: 'welcome-existing' });
     else setPhase({ k: 'setup' });
-  }, [phase, complete, signedIntoExistingAccount]);
+  }, [phase, complete, signedIntoExistingAccount, signedIntoFreshAccount, resumeAsNew]);
 
   // Watch for the sign-in to land while the auth panel is up.
   useEffect(() => {
@@ -880,7 +922,7 @@ function LineControls(props: LineControlsProps): React.ReactElement | null {
       return (
         <div className={styles.choices}>
           <button className={styles.pill} onClick={() => goLine('nameQ')}>
-            {tt('Yes')}
+            {tt("Yes, I'm new")}
           </button>
           <button
             className={styles.pill}
@@ -889,7 +931,7 @@ function LineControls(props: LineControlsProps): React.ReactElement | null {
               goLine('welcomeBack');
             }}
           >
-            {tt('No')}
+            {tt('No, I have an account')}
           </button>
           <button className={styles.quietLink} onClick={() => goLine('runPlace')}>
             {tt('Back')}
@@ -1122,6 +1164,11 @@ function AuthPanel(props: {
         const res = await sei.signInPassword({ email: email.trim(), password });
         if (!res.ok) {
           if (res.code === 'region_blocked') setRegionBlocked(true);
+          // A wrong password and a nonexistent account are the same error
+          // from the server. On the returning panel, say the second one
+          // out loud and name the way out (260916).
+          else if (res.code === 'invalid_credentials' && mode === 'returning' && props.onStartFresh)
+            setError(`${res.message} ${t('No account with that email yet? Press "I\'m new here" below.')}`);
           else setError(res.message);
         }
         // Right password, address never confirmed. Main has already sent a

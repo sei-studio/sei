@@ -224,10 +224,11 @@ export const ConfigSchema = z.object({
       baseURL: z.string().url(),
       authToken: z.string().min(1),
     }).optional(),
-  }).refine(
-    (a) => a.cloudMode != null || (a.api_key != null && a.api_key.length > 0),
-    { message: 'anthropic.api_key is required when cloudMode is not set' },
-  ),
+    // The "api_key required unless cloudMode" invariant is enforced at the
+    // ConfigSchema level (superRefine at the bottom of the file), because it
+    // also depends on llm.provider: a keyless provider (Ollama) has nothing to
+    // put here, and a sub-object refine cannot see its sibling.
+  }),
   llm: z.object({
     rate_limit_per_min: z.number().int().min(1).default(30),
     debounce_ms: z.number().int().min(0).default(500),
@@ -363,6 +364,24 @@ export const ConfigSchema = z.object({
     max_calls_per_loop: z.number().int().min(0).default(6),
   }).default({}),
   adapter: AdapterSchema,
+}).superRefine((cfg, ctx) => {
+  // 260916: the Anthropic key is required only when the Anthropic path is
+  // what will actually be called: BYOK with llm.provider 'anthropic' and no
+  // cloudMode. It used to be a refine on the `anthropic` sub-object alone,
+  // which could not see llm.provider, so a session on the one keyless
+  // provider (Ollama) shipped anthropic.api_key '' and died here before the
+  // bot ever pinged the world ("Config validation failed" on every summon,
+  // every Minecraft version; the 260914 support case). Other providers only
+  // passed by accident: their vendor key was copied into anthropic.api_key.
+  const a = cfg.anthropic
+  if (a.cloudMode != null) return
+  if (cfg.llm.provider !== 'anthropic') return
+  if (a.api_key != null && a.api_key.length > 0) return
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: ['anthropic'],
+    message: 'anthropic.api_key is required when cloudMode is not set',
+  })
 })
 
 /**

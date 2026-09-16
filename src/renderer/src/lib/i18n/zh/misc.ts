@@ -1,7 +1,7 @@
 /** Filled by the localization sweep. See ../zh.ts for the dictionary rules. */
 export const ZH_MISC: Record<string, string> = {
   // ── lib/errors.ts (ERROR_COPY / WARN_COPY / fallback) ──────────────────
-  "Couldn't finish joining your world in time. Press Summon to try again.":
+  "Couldn't finish joining your world in time. Press Launch to try again.":
     '未能及时加入你的世界。请再次点击召唤重试。',
   "We can't see an open LAN world. In Minecraft, press Esc, choose Open to LAN, then click Start LAN World.":
     '没有检测到开放的局域网世界。在 Minecraft 中按 Esc，选择「对局域网开放」，然后点击「创建局域网世界」。',
@@ -10,7 +10,8 @@ export const ZH_MISC: Record<string, string> = {
   'Anthropic is throttling requests. Wait a minute and try again.':
     'Anthropic 正在限流请求。请稍等一分钟再试。',
   'No internet connection. Reconnect and try again.': '没有网络连接。请重新联网后再试。',
-  'Sei stopped unexpectedly. Press Summon to restart.': 'Sei 意外停止了。点击召唤以重新启动。',
+  'Sei stopped before it could join your world. Press Launch to try again. If it keeps happening, the console at the bottom of the app has the reason.':
+    'Sei 在加入你的世界之前停止了。点击启动重试。如果反复出现，应用底部的控制台里有原因。',
   'LAN auto-detect is blocked on this network. Try a home Wi-Fi network.':
     '当前网络阻止了局域网自动发现。请尝试家用 Wi-Fi 网络。',
   "Couldn't read your saved API key from the system keychain. Re-run onboarding to re-save it.":
@@ -19,7 +20,7 @@ export const ZH_MISC: Record<string, string> = {
     '你的系统没有安全存储。Sei 会保存你的 API 密钥，但它不会受到硬件保护。',
   "A bundled module didn't load. Reinstall Sei from the .dmg / .exe.":
     '有一个内置模块加载失败。请通过 .dmg / .exe 重新安装 Sei。',
-  "This world's Minecraft version is not supported yet. Open your world on a supported Java version and press Summon again.":
+  "This world's Minecraft version is not supported yet. Open your world on a supported Java version and press Launch again.":
     '暂不支持这个世界的 Minecraft 版本。请用受支持的 Java 版打开你的世界，然后再次点击召唤。',
   'This world runs Forge or NeoForge and only lets in players who have its mods. Sei joins as a normal Minecraft client, so the world turns it away. Open a world without server-side mods, or use Fabric with client-only mods like minimaps.':
     '这个世界运行的是 Forge 或 NeoForge，只允许装有相同模组的玩家加入。Sei 以普通 Minecraft 客户端身份加入，因此会被拒之门外。请打开一个没有服务端模组的世界，或改用 Fabric 搭配小地图这类纯客户端模组。',
@@ -40,8 +41,8 @@ export const ZH_MISC: Record<string, string> = {
   "You've used this week's credits. Upgrade or top up on the plan screen, or switch to your own API key in Settings.":
     '本周的额度已用完。你可以在方案页面升级或充值，或在设置中切换为自己的 API 密钥。',
   'Too many requests right now. Wait a little and try again.': '当前请求过多。请稍等片刻再试。',
-  'Your name is missing. Re-run onboarding from Settings to set your name, then summon again.':
-    '缺少你的名字。请在设置中重新运行引导流程填写名字，然后再次召唤。',
+  "Sei doesn't know your name yet. Open Settings, type it into the Name field, then press Launch again.":
+    'Sei 还不知道你的名字。打开设置，在“名字”一栏填写，然后再次点击启动。',
   'Detected MC {version}. Sei needs MC 1.14 or newer. Pick a newer profile or switch to a supported version such as {latest} before continuing.':
     '检测到 MC {version}。Sei 需要 MC 1.14 或更新版本。请选择更新的配置，或切换到 {latest} 等受支持的版本后再继续。',
   "Couldn't read mod metadata, so this mod will be skipped. If it's actually compatible, copy it into <install>/sei/mods/ manually.":

@@ -27,12 +27,15 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   // and reachable off to verify the one thing already known to be fine.
   // Retrying is the action that actually works (measured: it succeeded 21s
   // later on the same world), so lead with it.
-  BOT_START_TIMEOUT: "Couldn't finish joining your world in time. Press Summon to try again.",
+  BOT_START_TIMEOUT: "Couldn't finish joining your world in time. Press Launch to try again.",
   LAN_NOT_OPEN: "We can't see an open LAN world. In Minecraft, press Esc, choose Open to LAN, then click Start LAN World.",
   INVALID_API_KEY: "Your Anthropic API key was rejected. Open Settings → re-run onboarding to paste a fresh key.",
   RATE_LIMITED: "Anthropic is throttling requests. Wait a minute and try again.",
   NETWORK_OFFLINE: "No internet connection. Reconnect and try again.",
-  BOT_CRASH: "Sei stopped unexpectedly. Press Summon to restart.",
+  // 260916: the button this sits under says Launch, not Summon, and "stopped
+  // unexpectedly" read as a mid-game crash even when the companion never
+  // joined. Says which of the two happened.
+  BOT_CRASH: "Sei stopped before it could join your world. Press Launch to try again. If it keeps happening, the console at the bottom of the app has the reason.",
   LAN_UNAVAILABLE: "LAN auto-detect is blocked on this network. Try a home Wi-Fi network.",
   KEYCHAIN_LOCKED: "Couldn't read your saved API key from the system keychain. Re-run onboarding to re-save it.",
   KEYCHAIN_FALLBACK_PLAINTEXT: "Your system has no secret store. Sei will save your API key but it won't be hardware-protected.",
@@ -40,7 +43,7 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   // No hardcoded version range here: the real range comes from
   // minecraft-protocol.supportedVersions in the bot's error text (surfaced by
   // UnsupportedVersionModal), and a stale hardcode would lie to users.
-  UNSUPPORTED_MC_VERSION: "This world's Minecraft version is not supported yet. Open your world on a supported Java version and press Summon again.",
+  UNSUPPORTED_MC_VERSION: "This world's Minecraft version is not supported yet. Open your world on a supported Java version and press Launch again.",
   // 260806: split out of LAN_NOT_OPEN. A Forge/NeoForge world that requires its
   // mods on the client kicks Sei every time, and the old copy sent the player to
   // re-open a world that was open and answering pings. Says what is actually
@@ -61,7 +64,9 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   // 260828: pre-gate refusal — onboarding never captured a name. Previously
   // surfaced as BOT_CRASH ("Sei stopped unexpectedly. Press Summon to restart."),
   // which told users to retry the one thing that cannot work until they fix it.
-  PREFERRED_NAME_MISSING: "Your name is missing. Re-run onboarding from Settings to set your name, then summon again.",
+  // 260916: names the exact field. "Re-run onboarding" sent people back
+  // through the whole Sui scene for a one-line fix.
+  PREFERRED_NAME_MISSING: "Sei doesn't know your name yet. Open Settings, type it into the Name field, then press Launch again.",
 };
 
 /**

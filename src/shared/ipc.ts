@@ -743,6 +743,14 @@ export interface McInstall {
   mc_version: string | null;
   loader: 'fabric' | 'forge' | null;
   loader_version: string | null;
+  /**
+   * Every Minecraft version a `versions/fabric-loader-<loader>-<mc>` profile
+   * exists for (260916). Vanilla installs only; CurseForge instances carry
+   * one version in `mc_version`. Readiness (shared/mcSetup.ts) needs the
+   * whole list: Fabric for a snapshot or an unsupported release is not a
+   * Sei-ready install even though `loader === 'fabric'`.
+   */
+  fabric_mc_versions?: string[];
   csl_installed: boolean;
   csl_version: string | null;
   /** True when persisted wizard state previously enabled Sei here. */

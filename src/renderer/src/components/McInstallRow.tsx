@@ -20,7 +20,6 @@ import React from 'react';
 import { supportedVersions } from 'minecraft-protocol/src/version.js';
 import type { McInstall } from '@shared/ipc';
 import { StatusPill, type StatusPillTone } from './StatusPill';
-import { WARN_COPY } from '../lib/errors';
 import { t, useT } from '../lib/i18n';
 import styles from './McInstallRow.module.css';
 
@@ -31,26 +30,6 @@ export interface McInstallRowProps {
   install: McInstall;
   selected: boolean;
   onToggle: () => void;
-}
-
-/**
- * Detect pre-1.14 MC versions (260518-o1k T8). Fabric Loader's current
- * builds require MC ≥ 1.14, so anything older surfaces a warning so
- * the user can deselect that row.
- *
- * Parses `major.minor[.patch]`. Returns false for any unparseable or
- * null input — we don't warn on what we can't read; the link/install
- * step will surface its own error if it actually fails.
- */
-function isPre114(v: string | null | undefined): boolean {
-  if (typeof v !== 'string') return false;
-  const m = /^(\d+)\.(\d+)/.exec(v.trim());
-  if (!m) return false;
-  const major = parseInt(m[1], 10);
-  const minor = parseInt(m[2], 10);
-  if (!Number.isFinite(major) || !Number.isFinite(minor)) return false;
-  if (major < 1) return true; // never occurs for MC, defensive
-  return major === 1 && minor < 14;
 }
 
 interface PillSpec {
@@ -178,15 +157,14 @@ export function McInstallRow({ install, selected, onToggle }: McInstallRowProps)
             )}
           </div>
         ) : null}
-        {/* 260518-o1k T8: pre-1.14 MC inline warning (vanilla only).
-            Informational — Continue is not disabled (per D4: no version
-            override picker in this task). User can deselect this row and
-            proceed. */}
-        {install.kind === 'vanilla' && isPre114(install.mc_version) ? (
-          <div className={styles.warning}>
-            {t(WARN_COPY.MC_VERSION_PRE_1_14, {
-              version: install.mc_version!,
-              latest: LATEST_SUPPORTED,
+        {/* 260916: the wizard no longer installs for the launcher's
+            last-played version (that built Sei profiles the bot could not
+            join once 26.2 shipped), so the old pre-1.14 warning about the
+            detected version is gone with it. Say what will be built. */}
+        {install.kind === 'vanilla' ? (
+          <div className={styles.lunarCaption}>
+            {t('Adds a separate "Sei" profile on Minecraft {version}. Your own profiles are not changed.', {
+              version: LATEST_SUPPORTED,
             })}
           </div>
         ) : null}

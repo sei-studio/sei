@@ -454,8 +454,9 @@ export const ZH_MODALS: Record<string, string> = {
   'Back to settings': '返回设置',
   'Set up later': '以后再设置',
   'Begin': '开始',
-  "Sei can give each companion a custom skin and username inside your Minecraft world. We'll install a small mod (CustomSkinLoader) into your Minecraft profile. Takes about a minute.":
-    'Sei 可以让每位伙伴在你的 Minecraft 世界中拥有自定义皮肤和用户名。我们会向你的 Minecraft 配置安装一个小模组（CustomSkinLoader）。大约需要一分钟。',
+  'Sei adds a separate "Sei" profile to your Minecraft launcher: Fabric on a Minecraft version Sei can join, plus a small mod (CustomSkinLoader) so each companion shows their own skin and name in your world. Your own profile is not changed. Takes about a minute.':
+    'Sei 会在你的 Minecraft 启动器里添加一个单独的“Sei”配置：在 Sei 能加入的 Minecraft 版本上安装 Fabric，外加一个小模组（CustomSkinLoader），让每个伙伴在你的世界里显示自己的皮肤和名字。你自己的配置不会被改动。大约需要一分钟。',
+  'Adds a separate "Sei" profile on Minecraft {version}. Your own profiles are not changed.': '添加一个单独的“Sei”配置，使用 Minecraft {version}。你自己的配置不会被改动。',
   'Looking for Minecraft installs': '正在查找 Minecraft 安装',
   'Scanning your Minecraft launcher and CurseForge instances. This stays on your computer.':
     '正在扫描你的 Minecraft 启动器和 CurseForge 实例。这些操作只在你的电脑上进行。',
