@@ -53,13 +53,16 @@ describe('gamePacks: naming', () => {
 
   it('Test 2: sources are mirror first with a connect budget, then the release', () => {
     const s = gamePackSources('0.7.0', 'sei-pack-minecraft-0.7.0-darwin-arm64.zip');
-    expect(s[0].url).toBe(`${GAME_PACK_MIRROR_BASE}/sei-pack-minecraft-0.7.0-darwin-arm64.zip`);
+    expect(s[0].url).toBe(`${GAME_PACK_MIRROR_BASE}/stable/sei-pack-minecraft-0.7.0-darwin-arm64.zip`);
     expect(s[0].connectTimeoutMs).toBeGreaterThan(0);
     expect(s[1].url).toBe(`${gamePackOriginBase('0.7.0')}/sei-pack-minecraft-0.7.0-darwin-arm64.zip`);
     expect(s[1].connectTimeoutMs).toBeUndefined();
     expect(GAME_PACK_MIRROR_BASE).toBe('https://dl.sei.gg/updates');
     expect(gamePackOriginBase('0.7.0')).toBe('https://github.com/sei-studio/sei/releases/download/v0.7.0');
-    expect(manifestSources('0.7.0')[0].url).toBe(`${GAME_PACK_MIRROR_BASE}/game-packs-0.7.0.json`);
+    expect(manifestSources('0.7.0')[0].url).toBe(`${GAME_PACK_MIRROR_BASE}/stable/game-packs-0.7.0.json`);
+    // A prerelease build was cut from a pre-release tag, which mirror-release.yml files under beta/.
+    expect(manifestSources('0.6.5-beta.1')[0].url).toBe(`${GAME_PACK_MIRROR_BASE}/beta/game-packs-0.6.5-beta.1.json`);
+    expect(gamePackSources('0.6.5-beta.1', 'x.zip')[0].url).toBe(`${GAME_PACK_MIRROR_BASE}/beta/x.zip`);
   });
 });
 

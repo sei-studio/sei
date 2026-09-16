@@ -108,12 +108,26 @@ export function parsePackAssetName(
 // ── Download sources ────────────────────────────────────────────────────────
 
 /**
- * Flat mirror of every published release asset (R2 behind Cloudflare, reachable
+ * Mirror of every published release asset (R2 behind Cloudflare, reachable
  * from mainland China). Same bucket + prefix the updater feed and
  * mirror-release.yml use; src/main/speech/mirrors.ts holds the speech-model
  * prefix of the same host.
+ *
+ * The layout is CHANNEL-SEPARATED (mirror-release.yml, 260909): artifacts land
+ * under `updates/stable/` or `updates/beta/` by whether the GitHub release was
+ * published as a pre-release, and only the feed ymls stay flat. The packs and
+ * the manifest are release assets like any other, so the client must look in
+ * the channel dir of ITS OWN version (`gamePackMirrorDir`): a version with a
+ * prerelease part (`0.6.5-beta.1`) was cut from a pre-release tag. The first
+ * cut fetched them flat and 404ed on every mirror attempt, silently falling
+ * back to GitHub (slow or blocked exactly where the mirror exists for).
  */
 export const GAME_PACK_MIRROR_BASE = 'https://dl.sei.gg/updates';
+
+/** `beta` for a prerelease app version (a `-` suffix), `stable` otherwise. */
+export function gamePackMirrorDir(version: string): 'beta' | 'stable' {
+  return version.includes('-') ? 'beta' : 'stable';
+}
 
 /** Origin: the GitHub release the app version was cut from. */
 export function gamePackOriginBase(version: string): string {
@@ -137,7 +151,7 @@ export interface GamePackSource {
 export function gamePackSources(version: string, asset: string): GamePackSource[] {
   return [
     {
-      url: `${GAME_PACK_MIRROR_BASE}/${asset}`,
+      url: `${GAME_PACK_MIRROR_BASE}/${gamePackMirrorDir(version)}/${asset}`,
       connectTimeoutMs: GAME_PACK_MIRROR_CONNECT_TIMEOUT_MS,
     },
     { url: `${gamePackOriginBase(version)}/${asset}` },
