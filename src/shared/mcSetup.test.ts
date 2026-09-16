@@ -26,6 +26,11 @@ describe('mcSetup', () => {
     expect(mcInstallReadyVersion({ ...base, compatibility: 'limited', fabric_mc_versions: ['26.1'] }, SUPPORTED)).toBeNull();
     // A record from an older main (no versions list) keeps the old meaning.
     expect(mcInstallReadyVersion(base, SUPPORTED)).toBe('26.1');
+    // Per-profile truth wins when present: the mod must sit in THAT
+    // version's own game dir, not anywhere on the install.
+    expect(mcInstallReadyVersion({ ...base, fabric_mc_versions: ['26.1', '1.21.4'], sei_ready_versions: ['1.21.4'] }, SUPPORTED)).toBe('1.21.4');
+    expect(mcInstallReadyVersion({ ...base, fabric_mc_versions: ['26.1'], sei_ready_versions: [] }, SUPPORTED)).toBeNull();
+    expect(mcInstallReadyVersion({ ...base, csl_installed: false, sei_ready_versions: ['26.1'] }, SUPPORTED)).toBe('26.1');
     expect(anyMcInstallReady([{ ...base, loader: null }, { ...base, fabric_mc_versions: ['1.20.1'] }], SUPPORTED)).toBe('1.20.1');
   });
 

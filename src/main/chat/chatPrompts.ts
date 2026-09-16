@@ -27,7 +27,7 @@ import {
 } from '../../bot/brain/promptLibrary.js';
 import type { ChatLanguage } from '../../shared/chatLanguage';
 import { audioTagDirective } from '../voice/audioTags';
-import { renderGamesDirective } from '../../shared/games';
+import { renderGamesDirective, GAME_CATALOG, type GameCatalogEntry } from '../../shared/games';
 
 export interface BuildSystemArgs {
   persona: Persona;
@@ -70,6 +70,13 @@ export interface BuildSystemArgs {
    * bounce back. Detection only — NOT whether the companion has joined.
    */
   openWorldDetected: boolean;
+  /**
+   * Game adapters (M0, 260908): world status for the OTHER self-launchable
+   * games (never Minecraft, which openWorldDetected covers). Each entry adds
+   * one status line after the Minecraft ones. Empty/absent today, so the
+   * prompt is unchanged until a second game becomes available.
+   */
+  otherWorlds?: { game: string; name: string; open: boolean }[];
   /**
    * 260703: whether THIS companion has a live, fully-spawned game session right
    * now (supervisor online — distinct from openWorldDetected, which is about
@@ -340,7 +347,14 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
             'A question like "are you in the game?" or "can you see my world?" is NOT a request to join — just answer it in words; do not launch.'
           : 'World status: no open Minecraft world is detected — the player has none open to LAN, so launch would fail. ' +
             'Do not call launch. If they want to play Minecraft, walk them through opening their world to LAN in your own words. ' +
-            'You cannot see their screen, so describe the steps, do not quote any status text.'),
+            'You cannot see their screen, so describe the steps, do not quote any status text.') +
+        (args.otherWorlds ?? [])
+          .map((w) =>
+            w.open
+              ? `\nWorld status: an open ${w.name} world is detected, so you could join it if asked (launch with game "${w.game}"). Only call launch when the player clearly asks you to play or join right now.`
+              : `\nWorld status: no open ${w.name} world is detected, so launch with game "${w.game}" would fail. Do not call launch for it; if they want to play ${w.name}, ask them to open their world in the game first.`,
+          )
+          .join(''),
   });
 
   // Prompt caching (260706): re-sending the full memory + summary uncached every
@@ -416,24 +430,58 @@ export function markMessageCached(
   }
 }
 
-/** The single agent-initiated handoff tool. */
-export const LAUNCH_TOOL = {
-  name: 'launch',
-  description:
-    'Join the player in Minecraft and start playing alongside them — this pulls you out of chat and into their world. ' +
-    'ONLY call this when the player clearly asks you to play or join right now (e.g. "let\'s play", "come in", "join me"). ' +
-    'Do NOT call it to answer a question about connection status, or just because a world is open. ' +
-    'Minecraft is the only game you can start yourself; the others in # GAMES are opened by the player, so suggest those in words instead of calling this. ' +
-    'It begins joining immediately; if the player has no LAN world open you will be told so, and should ask them to open one. ' +
-    'Whenever you do call it, acknowledge in the same turn that you\'re hopping in.',
-  input_schema: {
-    type: 'object' as const,
-    properties: {
-      game: { type: 'string' as const, enum: ['minecraft'], description: 'The game to launch. Only "minecraft" is available.' },
+/**
+ * The games the companion can start ITSELF right now: catalog rows with
+ * `selfLaunch && available` (src/shared/games.ts). Today that is Minecraft
+ * alone; a second game joins this list the day its `available` flips, and the
+ * launch tool below re-describes itself from the list.
+ */
+export const SELF_LAUNCH_GAMES: GameCatalogEntry[] = GAME_CATALOG.filter((g) => g.selfLaunch && g.available);
+
+/**
+ * Build the single agent-initiated handoff tool for a set of self-launchable
+ * games. With ONE game (the current catalog) the description and enum are the
+ * exact pre-M0 Minecraft strings, byte for byte (pinned in chatPrompts.test);
+ * with several it names them all and stops assuming a LAN world.
+ */
+export function launchToolFor(games: { id: string; name: string }[]) {
+  const list = games.length ? games : [{ id: 'minecraft', name: 'Minecraft' }];
+  const names = list.map((g) => g.name);
+  const single = list.length === 1;
+  const joined = names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}` : names[0];
+  return {
+    name: 'launch',
+    description: single
+      ? 'Join the player in Minecraft and start playing alongside them — this pulls you out of chat and into their world. ' +
+        'ONLY call this when the player clearly asks you to play or join right now (e.g. "let\'s play", "come in", "join me"). ' +
+        'Do NOT call it to answer a question about connection status, or just because a world is open. ' +
+        'Minecraft is the only game you can start yourself; the others in # GAMES are opened by the player, so suggest those in words instead of calling this. ' +
+        'It begins joining immediately; if the player has no LAN world open you will be told so, and should ask them to open one. ' +
+        'Whenever you do call it, acknowledge in the same turn that you\'re hopping in.'
+      : `Join the player in ${joined} and start playing alongside them — this pulls you out of chat and into their world. ` +
+        'ONLY call this when the player clearly asks you to play or join right now (e.g. "let\'s play", "come in", "join me"). ' +
+        'Do NOT call it to answer a question about connection status, or just because a world is open. ' +
+        `${names.join(', ')} are the games you can start yourself; the others in # GAMES are opened by the player, so suggest those in words instead of calling this. ` +
+        'It begins joining immediately; if the player has no world open in that game you will be told so, and should ask them to open one. ' +
+        'Whenever you do call it, acknowledge in the same turn that you\'re hopping in.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        game: {
+          type: 'string' as const,
+          enum: list.map((g) => g.id),
+          description: single
+            ? 'The game to launch. Only "minecraft" is available.'
+            : `The game to launch: ${list.map((g) => `"${g.id}" (${g.name})`).join(', ')}.`,
+        },
+      },
+      required: ['game'],
     },
-    required: ['game'],
-  },
-};
+  };
+}
+
+/** The single agent-initiated handoff tool (built from the live catalog). */
+export const LAUNCH_TOOL = launchToolFor(SELF_LAUNCH_GAMES);
 
 /**
  * Task 5 — leave the game from chat. The companion can already call quit_game()

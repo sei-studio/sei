@@ -39,8 +39,8 @@ import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { ChessPanel } from '../components/chess/ChessPanel';
 import { ChessReplayPanel } from '../components/chess/ChessReplayPanel';
 import { useMcDashboardStore } from '../lib/stores/useMcDashboardStore';
-import { McDashboardPanel } from '../components/mcdash/McDashboardPanel';
-import { McLaunchPanel } from '../components/mcdash/McLaunchPanel';
+import { getGameSurface } from '../lib/gameSurfaces';
+import { botGameName } from '../lib/gameLaunch';
 import { GameSurface } from '../components/GameSurface';
 import { ChatTopBar } from '../components/ChatTopBar';
 import { sei } from '../lib/ipcClient';
@@ -320,7 +320,12 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     : ({ category: 'idle', label: t('Idle') } as const);
   const online = summon?.kind === 'online';
   const connecting = summon?.kind === 'connecting';
-  const nowVerb = presence.category === 'in-game' ? actionVerb(action) : null;
+  // Game adapters (M0): a non-Minecraft game's verb is its dashboard activity
+  // line; Minecraft keeps the verb table.
+  const gameActivity = useMcDashboardStore((s) => s.gameSnapshots[characterId]?.activity ?? null);
+  const nowVerb = presence.category === 'in-game'
+    ? actionVerb(action, { game: summon?.game ?? 'minecraft', activity: gameActivity })
+    : null;
 
   const doSend = (): void => {
     const text = draft.trim();
@@ -433,24 +438,29 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   // opens the recorded game in this same slot. Purely local view state; it
   // covers (and never disturbs) any live surface below it in the priority.
   const chessReplayOpen = useChessStore((s) => isChessReplayOpen(s, characterId));
-  // Minecraft dashboard (260721): shown in this same slot whenever the bot
-  // is online (open or closed, nothing in between). The snapshot clears when
-  // the bot leaves.
+  // Bot-backed game dashboard (260721; per-game since M0 260908): shown in
+  // this same slot whenever the bot is online (open or closed, nothing in
+  // between). The snapshot clears when the bot leaves. Which game's panel
+  // mounts comes from GAME_SURFACES[summon.game] (Minecraft: McDashboardPanel).
   const mcOnline = summon?.kind === 'online';
   const mcDashReset = useMcDashboardStore((s) => s.reset);
   const mcDashOpen = mcOnline;
   useEffect(() => {
     if (!mcOnline) mcDashReset(characterId);
   }, [mcOnline, characterId, mcDashReset]);
-  // Minecraft launch panel (260721): opened by the games picker's Minecraft
-  // tile while the bot is offline; it owns the Launch button. Once the bot
+  // Launch panel (260721): opened by the games picker's tile for a bot-backed
+  // game while the bot is offline; it owns the Launch button. Once the bot
   // comes online it hands the same game slot off to the live dashboard.
-  const mcLaunch = useMcDashboardStore((s) => s.launch[characterId] === true);
+  const launchGame = useMcDashboardStore((s) => s.launch[characterId] ?? null);
+  const mcLaunch = launchGame != null;
   const mcSetLaunch = useMcDashboardStore((s) => s.setLaunch);
   const mcLaunchOpen = mcLaunch && !mcOnline;
   useEffect(() => {
     if (mcOnline && mcLaunch) mcSetLaunch(characterId, false);
   }, [mcOnline, mcLaunch, characterId, mcSetLaunch]);
+  const surfaceGame = mcOnline ? (summon?.game ?? 'minecraft') : (launchGame ?? 'minecraft');
+  const gameSurface = getGameSurface(surfaceGame);
+  const gameSurfaceName = botGameName(surfaceGame);
   const gameOpen = chessReplayOpen || chessOpen || mcDashOpen || mcLaunchOpen;
 
   // Unified end control (260721): every surface ends from GameSurface's
@@ -613,9 +623,9 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
                 ? t('Chess replay')
                 : chessOpen
                 ? t('Chess')
-                : mcDashOpen
-                  ? t('Minecraft dashboard')
-                  : t('Minecraft')
+                : surfaceGame === 'minecraft'
+                  ? (mcDashOpen ? t('Minecraft dashboard') : t('Minecraft'))
+                  : (mcDashOpen ? t('{game} dashboard', { game: gameSurfaceName }) : gameSurfaceName)
             }
             aria-hidden={!gameOpen}
           >
@@ -643,9 +653,9 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
                 ) : chessOpen ? (
                   <ChessPanel characterId={characterId} />
                 ) : mcDashOpen ? (
-                  <McDashboardPanel characterId={characterId} />
+                  <gameSurface.DashboardPanel characterId={characterId} />
                 ) : (
-                  <McLaunchPanel characterId={characterId} />
+                  <gameSurface.LaunchPanel characterId={characterId} />
                 )}
               </GameSurface>
             ) : null}

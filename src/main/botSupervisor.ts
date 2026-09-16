@@ -30,6 +30,8 @@ import type {
   VisionCapability,
 } from '../shared/ipc';
 import { effectiveMcUsername, type Character } from '../shared/characterSchema';
+import { isGameId, type GameId } from '../shared/gameIpc';
+import { getGameModule, type GameModule } from './games';
 import { clampChatLanguage } from '../shared/chatLanguage';
 import { buildLlmInitSection, type LlmInitSection } from './llmInitSection';
 import { resolveWebSearchSettings } from './llm/webSearchSettings';
@@ -214,7 +216,20 @@ function botEntryPath(): string {
 }
 
 export interface BotSupervisorOptions {
-  /** Returns the cached LAN port if connected, null otherwise. Wired by main. */
+  /**
+   * Game adapters (M0, 260908): resolve the GameModule for a game id. Defaults
+   * to the registry in ./games. When NO module is registered for 'minecraft'
+   * (older wiring, tests), a legacy Minecraft module is synthesized from
+   * getLanPort/getLanMotd/getSkinServerBaseUrl below, so the pre-M0 option set
+   * keeps working unchanged.
+   */
+  getGameModule?: (game: GameId) => GameModule | null;
+  /**
+   * Game adapters: the downloaded game pack root for this game, shipped to the
+   * bot as `packRoot` (src/bot/packLoader.js). Optional; null until the
+   * game-pack branch wires it. */
+  /** Returns the cached LAN port if connected, null otherwise. Wired by main.
+   *  LEGACY: read only when no Minecraft GameModule is registered. */
   getLanPort: () => number | null;
   /**
    * Returns the cached LAN world MOTD (level name) if connected, else null.
@@ -319,7 +334,8 @@ export interface BotSupervisorOptions {
 }
 
 export interface BotSupervisor {
-  summon(characterId: string): Promise<void>;
+  /** Fork a bot for this character into `game` (default 'minecraft'). */
+  summon(characterId: string, game?: GameId): Promise<void>;
   /** Stop one summoned character, or — with no id — every active session. */
   stop(characterId?: string): Promise<void>;
   /** First active character id (or null). Back-compat: callers that only ask
@@ -401,8 +417,11 @@ export interface BotSupervisor {
 
 interface ActiveSession {
   characterId: string;
+  /** Game adapters (M0): which game this session was forked into. */
+  game: GameId;
   /**
-   * Effective in-game MC username this bot connected under (effectiveMcUsername).
+   * Effective in-game username this bot connected under (the game module's
+   * effectiveUsername; Minecraft: effectiveMcUsername).
    * Tracked so a second summon can refuse a name collision before forking — two
    * bots sharing a username get the second kicked with `name_taken`.
    */
@@ -463,13 +482,61 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
   // duplicate-username guard can also see attempts that haven't reached
   // sessions.set yet (two DIFFERENT characters sharing a username, summoned
   // together, would otherwise both fork and one gets kicked `name_taken`).
-  const pendingUsernames = new Map<string, string>();
+  const pendingUsernames = new Map<string, { username: string; game: GameId }>();
   // Plan 10-06: latest known Supabase access_token (JWT). The jwtBridge
   // module-level closure calls updateJwt() on every TOKEN_REFRESHED / SIGNED_IN
   // / USER_UPDATED / SIGNED_OUT (T-10-06-01: only the JWT, never the refresh
   // token). Stored even when no session is active so the next summon's init
   // payload carries a fresh value.
   let latestJwt: string | null = null;
+
+  // Game adapters (M0): the game each character was last summoned into, so
+  // every status this supervisor emits (connecting, online, error, idle) is
+  // stamped with it and the renderer / play row / analytics never guess.
+  const lastGame = new Map<string, GameId>();
+  const sendStatus = (status: BotStatus): void => {
+    opts.sendStatus({ ...status, game: lastGame.get(status.characterId) ?? 'minecraft' });
+  };
+
+  /**
+   * Resolve the GameModule for a summon. The registry (src/main/games) wins;
+   * with nothing registered for Minecraft, synthesize the pre-M0 behavior from
+   * the legacy option closures so older wiring and the existing tests hold.
+   */
+  const resolveGameModule = (game: GameId): GameModule | null => {
+    const fromOpts = opts.getGameModule?.(game) ?? null;
+    if (fromOpts) return fromOpts;
+    const registered = getGameModule(game);
+    if (registered) return registered;
+    if (game !== 'minecraft') return null;
+    return {
+      id: 'minecraft',
+      displayName: 'Minecraft',
+      effectiveUsername: (c) => effectiveMcUsername(c),
+      collides: (a, b) => a.toLowerCase() === b.toLowerCase(),
+      watcher: { start() {}, async checkNow() { return { game: 'minecraft', kind: 'closed' }; }, stop() {} },
+      getWorldState: () => {
+        const port = opts.getLanPort();
+        return port == null
+          ? { game: 'minecraft', kind: 'closed' }
+          : { game: 'minecraft', kind: 'open', port, motd: opts.getLanMotd?.() ?? '', lastSeenAt: Date.now() };
+      },
+      getJoinTarget: (ctx) => {
+        const port = opts.getLanPort();
+        if (port == null) return null;
+        return {
+          port,
+          motd: opts.getLanMotd?.() ?? null,
+          mc_username: (ctx.userConfig.mc_username ?? '').trim(),
+          skinServerBaseUrl: ctx.skinServerBaseUrl,
+        };
+      },
+      joinTargetMissingError: {
+        error: 'LAN_NOT_OPEN',
+        message: 'No LAN world detected. Open one to LAN in Minecraft.',
+      },
+    };
+  };
 
   const lifecycleToStatus = (
     e: BotLifecycle,
@@ -512,7 +579,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // for this id (e.g. a mid-session crash that already dropped the session
       // without a terminal push). Emit `idle` so a "Disconnect" click always
       // clears the widget instead of no-op'ing on an orphaned status.
-      opts.sendStatus({ kind: 'idle', characterId });
+      sendStatus({ kind: 'idle', characterId });
       return;
     }
     // Diagnostics (260720): mark the drain as requested BEFORE anything can
@@ -560,7 +627,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     if (sessions.get(characterId) === session) sessions.delete(characterId);
     // 260618: a companion left — refresh the survivors' rosters.
     broadcastRoster();
-    opts.sendStatus({ kind: 'idle', characterId });
+    sendStatus({ kind: 'idle', characterId });
     // Party redesign §5: the session is gone — clear any lingering action verb
     // so the roster line doesn't stick on "gathering wood…" after Disconnect.
     opts.onBotAction?.(characterId, null, undefined, Date.now());
@@ -586,8 +653,9 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
    */
   function broadcastRoster(): void {
     for (const session of sessions.values()) {
+      // Game adapters (M0): only sessions in the SAME game share a world.
       const companions = [...sessions.values()]
-        .filter((s) => s !== session)
+        .filter((s) => s !== session && s.game === session.game)
         .map((s) => s.username);
       try {
         session.port1.postMessage({ type: 'roster', companions });
@@ -682,36 +750,53 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     return reporter;
   }
 
-  async function _summon(characterId: string, reporter: FailureReporter): Promise<void> {
+  async function _summon(characterId: string, reporter: FailureReporter, game: GameId): Promise<void> {
     // Multi-summon: do NOT stop the other bots. Re-summoning an already-running
     // character is a no-op (the UI shows "unsummon" for live characters, so the
     // only way here is a double-fire) — never fork a duplicate child for it.
     if (sessions.has(characterId)) return;
+
+    const module = resolveGameModule(game);
+    if (!module) throw new Error(`GAME_NOT_INSTALLED: no game module registered for ${game}`);
 
     const character: Character | null = await getCharacter(characterId);
     if (!character) throw new Error(`Character not found: ${characterId}`);
 
     // Duplicate in-game-name guard: two bots can't share a username (the world
     // kicks the second with `name_taken`). Refuse to fork when a live session
-    // already uses this character's effective MC username. The renderer
-    // pre-checks and raises a popup on the common path; this is the
-    // authoritative backstop that closes the click-twice-fast race. Compared
-    // case-insensitively to match MC's username handling.
-    const username = effectiveMcUsername(character);
+    // IN THE SAME GAME already uses this character's effective username. The
+    // renderer pre-checks and raises a popup on the common path; this is the
+    // authoritative backstop that closes the click-twice-fast race. The game
+    // module owns the naming rule and the collision test (Minecraft: compared
+    // case-insensitively to match MC's username handling).
+    const username = module.effectiveUsername(character);
+    // 260909: some games seat ONE companion per world (Don't Starve Together's
+    // helper runs a single body; a second offer replaced the first and, via a
+    // link-reset race, left a brainless survivor standing). Refuse a second
+    // character while any session in that game is live or pending. The
+    // launch panel pre-checks and names the occupant; this is the backstop.
+    if (module.maxBodies === 1) {
+      const occupied =
+        [...sessions.entries()].some(([id, s]) => id !== characterId && s.game === game) ||
+        [...pendingUsernames.entries()].some(([id, p]) => id !== characterId && p.game === game);
+      if (occupied) {
+        throw new Error(module.oneBodyError?.message ?? `DST_ONE_COMPANION: ${module.displayName} fits one companion at a time.`);
+      }
+    }
     for (const s of sessions.values()) {
-      if (s.username.toLowerCase() === username.toLowerCase()) {
+      if (s.game === game && module.collides(s.username, username)) {
         throw new Error(`SUMMON_USERNAME_CONFLICT: ${username}`);
       }
     }
     // 260705 (issue #6): also refuse when a PENDING summon (pre-registration,
     // not yet in `sessions`) holds this username. Check-then-set is safe here —
     // no await between them, so two attempts serialize on the event loop.
-    for (const [otherId, otherName] of pendingUsernames) {
-      if (otherId !== characterId && otherName.toLowerCase() === username.toLowerCase()) {
+    for (const [otherId, other] of pendingUsernames) {
+      if (otherId !== characterId && other.game === game && module.collides(other.username, username)) {
         throw new Error(`SUMMON_USERNAME_CONFLICT: ${username}`);
       }
     }
-    pendingUsernames.set(characterId, username);
+    pendingUsernames.set(characterId, { username, game });
 
     // Phase 13-15 (PROXY-07, D-57): branch on AI backend kind.
     //   - 'cloud-proxy' → bot routes Anthropic traffic through the Fly.io
@@ -754,7 +839,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
           '[sei/sup] summon blocked: weekly limit reached with no extra credits — raising popup, not forking the bot',
         );
         opts.emitHardStop({ reason: 'depleted' });
-        opts.sendStatus({ kind: 'idle', characterId });
+        sendStatus({ kind: 'idle', characterId });
         throw new Error('CLOUD_CREDITS_DEPLETED');
       }
     } else {
@@ -775,7 +860,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         if (!(await hasApiKey())) {
           const message =
             'Local mode is on but no API key is saved. Add your API key in Settings, or switch to managed billing.';
-          opts.sendStatus({ kind: 'error', error: 'INVALID_API_KEY', message, characterId });
+          sendStatus({ kind: 'error', error: 'INVALID_API_KEY', message, characterId });
           throw new Error(`LOCAL_NO_API_KEY: ${message}`);
         }
         // GUI-05: loadApiKey can throw KEYCHAIN_UNAVAILABLE / decrypt errors when
@@ -789,7 +874,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
           const message = (err && typeof err === 'object' && 'message' in err)
             ? String((err as { message: unknown }).message)
             : String(err);
-          opts.sendStatus({ kind: 'error', error: ec, message, characterId });
+          sendStatus({ kind: 'error', error: ec, message, characterId });
           throw err;
         }
       }
@@ -845,24 +930,60 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         message: 'Your name is missing. Re-run onboarding from Settings.',
         characterId,
       };
-      opts.sendStatus(status);
+      sendStatus(status);
       throw new Error('PREFERRED_NAME_MISSING');
     }
 
-    const lanPort = opts.getLanPort();
-    if (lanPort == null) {
+    // Game adapters (M0): the game module says what the bot needs to join
+    // (Minecraft: the cached LAN port + MOTD; null = nothing to join). The
+    // missing-target error is the module's (Minecraft: LAN_NOT_OPEN, unchanged).
+    const joinTarget = module.getJoinTarget({
+      userConfig: userCfg,
+      skinServerBaseUrl: opts.getSkinServerBaseUrl(),
+    });
+    if (joinTarget == null) {
       const status: BotStatus = {
         kind: 'error',
-        error: 'LAN_NOT_OPEN',
-        message: 'No LAN world detected. Open one to LAN in Minecraft.',
+        error: module.joinTargetMissingError.error,
+        message: module.joinTargetMissingError.message,
         characterId,
       };
-      opts.sendStatus(status);
-      throw new Error('LAN_NOT_OPEN');
+      sendStatus(status);
+      throw new Error(module.joinTargetMissingError.error);
+    }
+    // Legacy init keys (one release): an older bot build reads the Minecraft
+    // join target off the top-level lanPort / lanMotd / skinServerBaseUrl.
+    const mcTarget = game === 'minecraft'
+      ? (joinTarget as { port: number; motd: string | null; skinServerBaseUrl: string | null })
+      : null;
+    const lanPort = mcTarget?.port ?? null;
+
+    // 260908 game packs: the adapter's runtime (mineflayer, minecraft-data,
+    // prismarine-viewer, gl, ...) is a download on first use, not part of the
+    // installer. Await it BEFORE startedAtMs is taken: a first-run download can
+    // run minutes, and summonDeadlineAt (shipped to the child below) is derived
+    // from that clock, so measuring from before the download would hand the
+    // bot a deadline already in the past. Dev resolves to the repo root
+    // instantly; a cached pack costs one installed.json read. Progress rides
+    // the game:pack-progress push, which is what the launch card shows.
+    opts.sendStatus({ kind: 'connecting', characterId, game });
+    let packRoot: string;
+    try {
+      const { ensurePack } = await import('./games/packs');
+      packRoot = await ensurePack(game);
+    } catch (err) {
+      const detail = errText(err).replace(/^GAME_PACK_DOWNLOAD_FAILED:\s*/, '');
+      opts.sendStatus({
+        kind: 'error',
+        error: 'GAME_PACK_DOWNLOAD_FAILED',
+        message: `Could not download the ${game} support files: ${detail}`,
+        characterId,
+      });
+      throw new Error(`GAME_PACK_DOWNLOAD_FAILED: ${detail}`);
     }
 
     const startedAtMs = Date.now();
-    opts.sendStatus({ kind: 'connecting', characterId });
+    sendStatus({ kind: 'connecting', characterId });
 
     const router = await createLogRouter({ characterId, sendBatch: opts.sendLog });
     // Cross-surface continuity (Phase 18/19): the rolling summary + recent
@@ -912,6 +1033,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
 
     const session: ActiveSession = {
       characterId,
+      game,
       username,
       backendKind: aiBackendKind,
       startedAtMs,
@@ -976,7 +1098,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         stderrTail: tails.stderr,
         stdoutTail: tails.stdout,
       });
-      opts.sendStatus({
+      sendStatus({
         kind: 'error',
         error: err,
         message: `Bot did not signal ready within ${SUMMON_TIMEOUT_MS / 1000}s.`,
@@ -1028,6 +1150,23 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // it. Not a BotStatus event — return before lifecycleToStatus.
       if ((data as { type?: string }).type === 'dashboard') {
         opts.onDashboard?.(characterId, (data as { snapshot?: unknown }).snapshot);
+        return;
+      }
+      // Don't Starve Together (game-adapters M2, 260908): the bot's loopback
+      // listener is up; hand {port, token} to the DST module so its watcher
+      // can offer the summon to the mod on the next heartbeat. Not a
+      // BotStatus event — return before lifecycleToStatus.
+      if ((data as { type?: string }).type === 'dst-listen') {
+        void (async () => {
+          try {
+            const { DstListenMessageSchema } = await import('../shared/dstIpc');
+            const msg = DstListenMessageSchema.parse(data);
+            const mod = getGameModule('dontstarve') as { setSummonOffer?: (id: string, l: { port: number; token: string }) => Promise<void> } | null;
+            await mod?.setSummonOffer?.(characterId, { port: msg.port, token: msg.token });
+          } catch (err) {
+            logger.warn(`dst-listen handoff failed for ${characterId}: ${(err as Error).message}`);
+          }
+        })();
         return;
       }
       if (data.type === 'summon-ready' && !summonResolved) {
@@ -1118,7 +1257,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         void _stop(characterId, STOP_TIMEOUT_MS);
       }
       const status = lifecycleToStatus(data, characterId, startedAtMs);
-      if (status) opts.sendStatus(status);
+      if (status) sendStatus(status);
     });
     port1.start();
 
@@ -1168,14 +1307,28 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
               type: 'init',
               character,
               apiKey,
+              // Game adapters (M0): which runtime the bot loads and what it
+              // joins. `joinTarget` is the module's game-specific object
+              // (Minecraft: {port, motd, mc_username, skinServerBaseUrl}).
+              game,
+              joinTarget,
+              // Human label for the memory registry / section headers
+              // (Minecraft: the LAN MOTD). null lets the adapter pick its own.
+              worldLabel: mcTarget?.motd ?? (joinTarget as { label?: unknown }).label ?? null,
+              // LEGACY (one release): the pre-M0 Minecraft keys, for an older
+              // bot build that predates `game`/`joinTarget`.
               lanPort,
-              // World label for the memory registry / section headers (best-effort).
-              lanMotd: opts.getLanMotd?.() ?? null,
+              lanMotd: mcTarget?.motd ?? null,
               // 260801: when this attempt's watchdog fires (epoch ms). The bot
               // sizes its own connect guard to land just inside it so a stalled
               // join reports WHY instead of being overwritten by the generic
               // 30s timeout. See summonDeadlineFrom above.
               summonDeadlineAt: summonDeadlineFrom(startedAtMs),
+              // 260908 game packs: where the adapter's node_modules live.
+              // src/bot/packLoader.js registers a resolve hook for it before
+              // the game runtime is imported; equal to the bot's own app root
+              // in dev (hook is a no-op there).
+              packRoot,
               // Profile-scoped root — the bot resolves memory under this dir, so it
               // must be the active account's profile (paths.profileRoot()), never
               // the device-global userData root.
@@ -1196,9 +1349,9 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
               // session is already in `sessions` (added before this spawn handler),
               // so filter it out. broadcastRoster() keeps this current afterwards.
               companions: [...sessions.values()]
-                .filter((s) => s.characterId !== characterId)
+                .filter((s) => s.characterId !== characterId && s.game === game)
                 .map((s) => s.username),
-              skinServerBaseUrl: opts.getSkinServerBaseUrl(),
+              skinServerBaseUrl: mcTarget?.skinServerBaseUrl ?? opts.getSkinServerBaseUrl(),
               // Plan 10-06: ship the latest known JWT so a bot summoned while
               // signed_in has a token in hand before TOKEN_REFRESHED fires. Phase
               // 13 reads this; in Phase 10 the bot loop ignores it.
@@ -1266,7 +1419,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
             stderrTail: tails.stderr,
             stdoutTail: tails.stdout,
           });
-          opts.sendStatus({ kind: 'error', error: ec, message: err.message, characterId });
+          sendStatus({ kind: 'error', error: ec, message: err.message, characterId });
           summonReject(err);
         }
       },
@@ -1328,7 +1481,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
           stderrTail: tails.stderr,
           stdoutTail: tails.stdout,
         });
-        opts.sendStatus({ kind: 'error', error: ec, message, characterId });
+        sendStatus({ kind: 'error', error: ec, message, characterId });
         summonReject(new Error(message));
       } else {
         // The bot WAS live (reached summon-ready) and has now exited without
@@ -1404,9 +1557,9 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
           // route to their own modals renderer-side. The terminal error also
           // closes the play-session bookkeeping in broadcastStatus; the idle
           // push below still clears the widget.
-          opts.sendStatus({ kind: 'error', error: errorClass, message, characterId, midSession: true });
+          sendStatus({ kind: 'error', error: errorClass, message, characterId, midSession: true });
         }
-        opts.sendStatus({ kind: 'idle', characterId });
+        sendStatus({ kind: 'idle', characterId });
       }
       // Resolve `exited` only AFTER the playtime write lands. _stop awaits
       // `exited` before emitting the idle status, and the renderer refreshes the
@@ -1604,7 +1757,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
           // transient so broadcastStatus does not drop it from onlineIds (which
           // would silently reroute in-game chat to the standalone brain) or post
           // a spurious mid-session "played for X" row (260703).
-          opts.sendStatus({
+          sendStatus({
             kind: 'error',
             error: ec,
             message,
@@ -1631,11 +1784,13 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
    * summon landing anywhere in the check-to-register gap joins the in-flight
    * attempt (same promise, same outcome) instead of forking a duplicate child.
    */
-  function summon(characterId: string): Promise<void> {
+  function summon(characterId: string, gameArg: GameId = 'minecraft'): Promise<void> {
     const pending = pendingSummons.get(characterId);
     if (pending) return pending;
+    const game: GameId = isGameId(gameArg) ? gameArg : 'minecraft';
+    lastGame.set(characterId, game);
     const reporter = createFailureReporter(characterId);
-    const attempt = _summon(characterId, reporter)
+    const attempt = _summon(characterId, reporter, game)
       .catch((err: unknown) => {
         // Diagnostics backstop (260720): any throw whose site did not report
         // (all the pre-gate refusals, plus stragglers like a store read or
@@ -1654,6 +1809,8 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
             'DAILY_LIMIT_REACHED: refused before fork, the daily play limit window is still active.',
           PREFERRED_NAME_MISSING:
             'PREFERRED_NAME_MISSING: refused before fork, preferred_name is missing from config (onboarding incomplete).',
+          GAME_WORLD_NOT_OPEN:
+            'GAME_WORLD_NOT_OPEN: refused before fork, no open game world was detected at summon time.',
         };
         const raw = errText(err);
         reporter.fire({

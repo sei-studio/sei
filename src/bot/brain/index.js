@@ -348,6 +348,21 @@ export async function start({ config, adapter, logger = console, onTerminalError
         }
       }, config.memory?.spawn_settle_delay_ms ?? 500)
     },
+    // Game-adapters M0 follow-up (260908): an adapter can ask for an idle
+    // tick with a reason it names (DST: a day-phase change; Stardew: a new
+    // day, night approaching). It rides the same P3 path as the spawn
+    // greeting, so it can never starve a P0 attack or P1 chat, and it is
+    // ignored until the first spawn has fired so a wire that emits before the
+    // body exists cannot burn an LLM call on '(snapshot unavailable)'.
+    onIdleNudge: (evt) => {
+      if (!greetingFired) return
+      const reason = typeof evt?.reason === 'string' && evt.reason ? evt.reason : 'adapter_nudge'
+      try {
+        queue.enqueue(Priority.P3_IDLE, 'sei:idle', { ...(evt ?? {}), reason })
+      } catch (err) {
+        logger.warn?.(`[sei/brain] adapter idle nudge enqueue failed: ${err.message}`)
+      }
+    },
   })
 
   orchestrator.start().catch(err => logger.warn?.(`[sei/brain] orchestrator.start failed: ${err.message}`))
@@ -394,9 +409,17 @@ export async function start({ config, adapter, logger = console, onTerminalError
         }
         return
       }
-      const framed =
-        `${who} messaged you through Sei chat. They are NOT in the game with you right now. ` +
-        `They said: "${raw}". Reply to them in chat. If you would rather stop playing to talk, call quit_game().`
+      // 260910: the "NOT in the game" reading is a Minecraft fact (the app
+      // is where a player types when they are out of the world). A Stardew
+      // or Don't Starve host IS in the game whenever the world is open, and
+      // read with the old framing the companion asked whether the player
+      // was "actually here" while standing one tile from them.
+      const hostGame = typeof adapter?.gameName === 'string' && adapter.gameName !== 'Minecraft'
+      const framed = hostGame
+        ? `${who} typed this in the Sei app rather than the game's chat (they are still in the game with you; the app is just another way to talk). ` +
+          `They said: "${raw}". Reply with say() as usual; it reaches them in the app too. If you would rather stop playing to talk, call quit_game().`
+        : `${who} messaged you through Sei chat. They are NOT in the game with you right now. ` +
+          `They said: "${raw}". Reply to them in chat. If you would rather stop playing to talk, call quit_game().`
       try {
         queue.enqueue(Priority.P1_CHAT, 'sei:chat_received', {
           username: who,

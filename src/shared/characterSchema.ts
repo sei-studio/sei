@@ -807,6 +807,13 @@ export const UserConfigSchema = z.object({
    */
   skin_setup_pending: z.boolean().optional().default(false),
   /**
+   * The player dismissed the "set up a Sei-ready Minecraft" step on the
+   * Minecraft launch panel (260909). The step otherwise shows on every open
+   * of the panel until an install is Sei-ready (shared/mcSetup.ts). Absent =
+   * never dismissed. Written by the renderer through config:save.
+   */
+  mc_setup_dismissed: z.boolean().optional(),
+  /**
    * In-flight tutorial (260730). The post-onboarding tour used to be
    * deliberately unpersisted, which meant a mid-tour quit silently dropped
    * the rest of the tour AND the one-shot unique-reveal "say hello" page.
@@ -1024,6 +1031,31 @@ export const UserConfigSchema = z.object({
    * and NOT defaulted (absent ≡ false) — same convention as analytics_opt_out.
    */
   stt_local_fallback: z.boolean().optional(),
+  /**
+   * DEPRECATED (260909), never read. Don't Starve Together discovery used to
+   * bind this one fixed port; it now binds the first free port of
+   * DST_DISCOVERY_PORTS and the helper mod probes the same list, so there is
+   * nothing to configure. Kept so a config written by the M2 build still
+   * parses.
+   */
+  dst_port: z.number().int().min(1024).max(65535).optional(),
+  /**
+   * Which survivor each character plays as in Don't Starve Together, SPARSE
+   * like call_backdrop: an absent character id means "not chosen yet" and
+   * the character picks on first launch (src/main/games/dontstarve/
+   * survivorPick.ts). `source: 'user'` marks a launch-panel override. Kept
+   * here and NOT in character.metadata (metadata cloud-syncs verbatim and is
+   * not editable on foreign characters). No `.default({})` on purpose.
+   */
+  dst_survivor: z
+    .record(
+      z.object({
+        prefab: z.string().min(1).max(32),
+        source: z.enum(['auto', 'user']).default('auto'),
+        reason: z.string().max(400).optional(),
+      }),
+    )
+    .optional(),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;

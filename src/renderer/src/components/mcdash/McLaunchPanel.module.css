@@ -1,15 +1,39 @@
-/* McLaunchPanel — Minecraft launch surface. The art fills the panel under a
- * dark scrim; the content floats on top. Foregrounds are fixed light values
- * because they always sit on the darkened art, in both themes. No boxes, no
- * divider lines. */
+/* McLaunchPanel — Minecraft launch surface (260721; the game's own register
+ * since 260909).
+ *
+ * DELIBERATE EXCEPTION to the app design tokens, the same contract as
+ * McDashboardPanel.module.css: the pre-launch surface reads like the game's
+ * GUI. The art fills the panel under a dark scrim (the pause-menu darkening);
+ * everything on it is vanilla: the title in a pixel face with the 2px dark
+ * shadow, the setup window as the light-gray #c6c6c6 dialog with the pixel
+ * bevels (white top/left, #555 bottom/right, black rounded outline) and
+ * dark-gray GUI text, and the buttons as the raised gray button with the
+ * bluish hover and the 1px text shadow. Scope stays inside this component.
+ * Content is centered, the way the game's menus are. */
 
 .panel {
+  --mc-font: 'Monocraft', 'Press Start 2P', 'Courier New', monospace;
+  --mc-dialog: #c6c6c6;
+  --mc-dialog-light: #ffffff;
+  --mc-dialog-dark: #555555;
+  --mc-outline: #101010;
+  --mc-button: #8b8b8b;
+  --mc-button-hover: #7f8ac4;
+  --mc-button-dark: #373737;
+  --mc-gui-text: #404040;
+  --mc-gui-muted: #6a6a6a;
+  --mc-green: #55ff55;
+  --mc-red: #ff5555;
+  --mc-yellow: #ffffa0;
+  --sw-dot: var(--mc-green);
+
   position: relative;
   height: 100%;
   min-height: 0;
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
+  font-family: var(--mc-font);
 }
 
 /* Dark version of the art: an even darkening plus a deeper base gradient. */
@@ -25,50 +49,255 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: var(--space-md-plus);
+  /* `safe`: a stack taller than the aside (window open + the survivor
+   * sheet) scrolls from the top instead of clipping the title above the
+   * scrollable range, which is what plain centering does to overflow. */
+  justify-content: safe center;
+  gap: 14px;
   padding: var(--space-lg);
   text-align: center;
+  overflow-y: auto;
 }
 
 .title {
-  margin: 0 0 var(--space-sm);
-  font-family: var(--display);
-  font-size: 34px;
-  font-weight: 600;
+  margin: 0 0 4px;
+  font-family: var(--mc-font);
+  font-size: 32px;
+  font-weight: 400;
   letter-spacing: 0.02em;
-  color: #fff;
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
+  color: #ffffff;
+  text-shadow: 3px 3px 0 #3f3f3f;
 }
 
-/* One-line summon-failure reason under the Launch button. Fixed light-red on
- * the darkened art (same rationale as the other fixed foregrounds here). */
-.failLine {
-  margin: 0;
-  max-width: 420px;
-  font-family: var(--sans);
+/* ── The raised vanilla button ──
+ * Gray face, light top/left bevel, dark bottom/right, black outline, white
+ * label with the 1px shadow; the hover face goes bluish with a yellow
+ * label, the way the game's does. */
+.btn {
+  -webkit-appearance: none;
+  appearance: none;
+  font-family: var(--mc-font);
   font-size: 13px;
-  line-height: 1.45;
-  color: #ffb3ad;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+  letter-spacing: 0.02em;
+  text-align: center;
+  color: #ffffff;
+  text-shadow: 1px 1px 0 #3f3f3f;
+  background: var(--mc-button);
+  padding: 8px 14px;
+  box-sizing: border-box;
+  border-top: 2px solid var(--mc-dialog-light);
+  border-left: 2px solid var(--mc-dialog-light);
+  border-bottom: 2px solid var(--mc-button-dark);
+  border-right: 2px solid var(--mc-button-dark);
+  outline: 2px solid var(--mc-outline);
+  cursor: pointer;
 }
 
-.setupLink {
+.btn:hover:not(:disabled) {
+  background: var(--mc-button-hover);
+  color: var(--mc-yellow);
+}
+
+.btn:focus-visible {
+  outline-color: #ffffff;
+}
+
+.btn:disabled {
+  background: #6e6e6e;
+  color: #a0a0a0;
+  text-shadow: 1px 1px 0 #2f2f2f;
+  cursor: default;
+}
+
+.btnQuiet {
+  background: #7a7a7a;
+}
+
+.btnBig {
+  width: min(320px, 100%);
+  padding: 13px 18px;
+  font-size: 17px;
+  text-shadow: 2px 2px 0 #3f3f3f;
+  outline-width: 3px;
+}
+
+/* ── The setup window: the classic light-gray GUI dialog. ── */
+.window {
+  width: min(520px, 100%);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--mc-dialog);
+  border: 3px solid var(--mc-outline);
+  border-radius: 5px;
+  box-shadow:
+    inset 3px 3px 0 var(--mc-dialog-light),
+    inset -3px -3px 0 var(--mc-dialog-dark);
+  color: var(--mc-gui-text);
+  text-align: center;
+}
+
+.head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: 'count close' 'title close';
+  align-items: center;
+  column-gap: 8px;
+}
+
+.count {
+  grid-area: count;
+  font-size: 11px;
+  color: var(--mc-gui-muted);
+}
+
+.stepTitle {
+  grid-area: title;
+  font-size: 15px;
+  color: var(--mc-gui-text);
+}
+
+.stepTitle[data-done] {
+  color: #2f7a2f;
+}
+
+.close {
+  grid-area: close;
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0 4px;
+  font-family: var(--mc-font);
+  font-size: 20px;
+  line-height: 1;
+  color: var(--mc-gui-muted);
+  cursor: pointer;
+}
+
+.close:hover {
+  color: var(--mc-gui-text);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--mc-gui-text);
+}
+
+.sub {
+  font-size: 13px;
+  color: var(--mc-gui-muted);
+}
+
+.mono {
+  font-size: 12px;
+  color: var(--mc-gui-muted);
+  word-break: break-all;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+/* "Do not show again": a quiet text control beside the Set up button. */
+.link {
   -webkit-appearance: none;
   appearance: none;
   border: none;
   background: transparent;
   padding: 0;
-  font-family: var(--sans);
-  font-size: 13.5px;
-  color: rgba(255, 255, 255, 0.72);
+  font-family: var(--mc-font);
+  font-size: 12px;
+  color: var(--mc-gui-muted);
   text-decoration: underline;
   text-underline-offset: 3px;
   cursor: pointer;
-  transition: color 120ms var(--ease);
 }
 
-.setupLink:hover {
-  color: #fff;
+.link:hover {
+  color: var(--mc-gui-text);
 }
 
+.nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.navBtn {
+  composes: btn;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+/* Step dots: little slots, green once the step is done, white for the
+ * step on screen. */
+.dots {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  background: var(--mc-button);
+  outline: 2px solid var(--mc-outline);
+}
+
+.dotDone {
+  background: var(--mc-green);
+}
+
+.dotNow {
+  background: #ffffff;
+}
+
+.dotDone.dotNow {
+  background: var(--mc-green);
+  outline-color: #ffffff;
+}
+
+/* One-line summon-failure reason under the big button, in the game's red. */
+.failLine {
+  margin: 0;
+  max-width: 420px;
+  font-family: var(--mc-font);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--mc-red);
+  text-shadow: 1px 1px 0 #3f3f3f;
+}
+
+/* "How do I set up launch?": quiet GUI text on the art, no underline (the
+ * game's menus have none), full white on hover. */
+.helpLink {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: var(--mc-font);
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.72);
+  text-shadow: 1px 1px 0 #3f3f3f;
+  cursor: pointer;
+}
+
+.helpLink:hover {
+  color: #ffffff;
+}

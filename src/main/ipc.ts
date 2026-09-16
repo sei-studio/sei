@@ -36,6 +36,7 @@ import {
   type ChatMessage,
   type SpokenLineContext,
 } from '../shared/ipc';
+import { GAME_IDS, isGameId, type GameId, type WorldState, type WorldStates } from '../shared/gameIpc';
 import { CharacterSchema, UserConfigSchema, UserPreferencesSchema, MAX_COMPANION_SLOTS, type Character, type UserConfig } from '../shared/characterSchema';
 import { SHOWN_PROVIDERS, GRANDFATHERED_PROVIDERS, type ProviderKind } from '../shared/llmCatalog';
 import { loadConfig, saveConfig } from './configStore';
@@ -167,6 +168,13 @@ export interface IpcHandlerDeps {
    * the cached `getLanState()` on any error. Optional for older wiring.
    */
   checkLanNow?: () => Promise<LanState>;
+  /**
+   * Game adapters (M0, 260908): every registered game's world state (the
+   * world:get snapshot) and a fresh per-game detection pass (world:check-now).
+   * Optional for older wiring; absent means only Minecraft (via getLanState).
+   */
+  getWorldStates?: () => WorldStates;
+  worldCheckNow?: (game: GameId) => Promise<WorldState>;
   /**
    * Current per-character bot statuses (snapshot). The `bot:status` channel
    * only PUSHES on transitions, so a freshly-(re)subscribed renderer pulls
@@ -675,14 +683,22 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   };
 
   // Bot supervision
-  ipcMain.handle(IpcChannel.bot.summon, async (_event, idArg: unknown) => {
-    const id = IdSchema.parse(idArg);
+  // Game adapters (M0): the payload is {characterId, game?}; a bare id string
+  // (older preload) is still accepted and means Minecraft.
+  const SummonArgSchema = z.union([
+    IdSchema,
+    z.object({ characterId: IdSchema, game: z.enum(GAME_IDS as unknown as [GameId, ...GameId[]]).optional() }),
+  ]);
+  ipcMain.handle(IpcChannel.bot.summon, async (_event, argRaw: unknown) => {
+    const arg = SummonArgSchema.parse(argRaw);
+    const id = typeof arg === 'string' ? arg : arg.characterId;
+    const game: GameId = typeof arg === 'string' ? 'minecraft' : (arg.game ?? 'minecraft');
     // 260828: this handler is the USER-ACTION summon path (the renderer's
     // Summon button and every popup retry go through it). A manual attempt is
     // never blocked — it clears any pre-gate auto-retry block so the automatic
     // paths (launch() tool, voice launch honors) get a fresh chance too.
     clearSummonBlock(id);
-    await deps.supervisor.summon(id);
+    await deps.supervisor.summon(id, game);
   });
   ipcMain.handle(IpcChannel.bot.stop, async (_event, idArg: unknown) => {
     // Multi-summon: `stop(id)` drains one session; `stop()` (no id) drains all.
@@ -710,6 +726,25 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     } catch {
       return deps.getLanState();
     }
+  });
+
+  // Game adapters (M0): the per-game world union. world:get seeds a freshly
+  // loaded renderer (world:state only pushes on change); world:check-now is
+  // the generic summon flow's live-truth gate. With no world wiring (older
+  // main) Minecraft's state is derived from getLanState.
+  ipcMain.handle(IpcChannel.world.get, async (): Promise<WorldStates> => {
+    return deps.getWorldStates?.() ?? { minecraft: { game: 'minecraft', ...deps.getLanState() } };
+  });
+  ipcMain.handle(IpcChannel.world.checkNow, async (_event, gameArg: unknown): Promise<WorldState> => {
+    const game: GameId = isGameId(gameArg) ? gameArg : 'minecraft';
+    try {
+      if (deps.worldCheckNow) return await deps.worldCheckNow(game);
+      if (game === 'minecraft') return { game, ...((await deps.checkLanNow?.()) ?? deps.getLanState()) };
+    } catch {
+      /* fall through to the cached snapshot */
+    }
+    const cached = deps.getWorldStates?.()[game];
+    return cached ?? (game === 'minecraft' ? { game, ...deps.getLanState() } : { game, kind: 'unavailable' });
   });
 
   // Character CRUD
@@ -1319,7 +1354,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       { characterId: args.characterId, text: args.text, replyTo: args.replyTo, voiceCall: inCall, voicePeers: args.voicePeers },
       {
         getLanState: deps.getLanState,
-        summon: (id) => deps.supervisor.summon(id),
+        getWorldStates: deps.getWorldStates,
+        summon: (id, game) => deps.supervisor.summon(id, game),
         // 260828 retry-loop guard: launch() refuses (and tells the model not
         // to retry) while a summon pre-gate refusal is still standing.
         blockedAutoLaunch: (id) => blockedAutoSummon(id),
@@ -1652,6 +1688,31 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return deps.supervisor.setGameMode(args.characterId, args.mode);
   });
 
+  // ── Generic game dashboard (game adapters M0, 260908) ─────────────────────
+  // The gamedash:* set the two new games use. Same supervisor port messages
+  // as mcdash:* (dashboard-watch / game-pause / game-mode are game-agnostic);
+  // only the snapshot store differs (src/main/games/gameDashboardService).
+  ipcMain.handle(IpcChannel.gamedash.get, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    if (!deps.supervisor.isActive(id)) return null;
+    const { getGameDashboardSnapshot } = await import('./games/gameDashboardService');
+    return getGameDashboardSnapshot(id);
+  });
+  ipcMain.handle(IpcChannel.gamedash.setWatching, async (_event, argsRaw: unknown) => {
+    const args = z.object({ characterId: IdSchema, watching: z.boolean() }).parse(argsRaw);
+    deps.supervisor.setDashboardWatch(args.characterId, args.watching);
+  });
+  ipcMain.handle(IpcChannel.gamedash.setPaused, async (_event, argsRaw: unknown) => {
+    const args = z.object({ characterId: IdSchema, paused: z.boolean() }).parse(argsRaw);
+    return deps.supervisor.setGamePaused(args.characterId, args.paused);
+  });
+  ipcMain.handle(IpcChannel.gamedash.setMode, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ characterId: IdSchema, mode: z.enum(['reactive', 'proactive']) })
+      .parse(argsRaw);
+    return deps.supervisor.setGameMode(args.characterId, args.mode);
+  });
+
   // ── Voice calls (260705) ──────────────────────────────────────────────────
   // TTS synthesis (proxy passthrough; the ElevenLabs key never reaches the
   // renderer or the repo) + the call open/hang-up toggle. The toggle records
@@ -1743,6 +1804,127 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.voice.sttPrewarm, async (): Promise<void> => {
     const { prewarmTts } = await import('./voice/tts');
     prewarmTts();
+  });
+
+  // ── Game packs (260908) ───────────────────────────────────────────────────
+  // A game adapter's runtime node_modules, downloaded on first use into
+  // <userData>/game-packs/<game>/. Contract: src/shared/gamePacks.ts; store:
+  // src/main/games/packs.ts. The push carries the whole state object, and the
+  // renderer reads every field of it, so keep the zod schema below in step
+  // with GamePackState (zod strips undeclared keys silently).
+  // Every game with a pack (src/shared/gamePacks.ts); the renderer's pack
+  // card asks for each GAME_ID at boot.
+  const GameIdSchema = z.enum(['minecraft', 'stardew', 'dontstarve']);
+  let gamePackPushWired = false;
+  const wireGamePackPush = async (): Promise<void> => {
+    if (gamePackPushWired) return;
+    gamePackPushWired = true;
+    const { onGamePackState } = await import('./games/packs');
+    onGamePackState((game, state) => {
+      for (const w of BrowserWindow.getAllWindows()) {
+        if (!w.isDestroyed()) w.webContents.send(IpcChannel.game.packProgress, { game, state });
+      }
+    });
+  };
+  ipcMain.handle(IpcChannel.game.packState, async (_event, argsRaw: unknown) => {
+    const args = z.object({ game: GameIdSchema }).parse(argsRaw);
+    await wireGamePackPush();
+    const { getPackState } = await import('./games/packs');
+    return getPackState(args.game);
+  });
+  ipcMain.handle(IpcChannel.game.packEnsure, async (_event, argsRaw: unknown) => {
+    const args = z.object({ game: GameIdSchema }).parse(argsRaw);
+    await wireGamePackPush();
+    const { ensurePack, getPackState } = await import('./games/packs');
+    try {
+      const root = await ensurePack(args.game);
+      return { kind: 'ready', root };
+    } catch {
+      // The store already published the error state; hand it back so the
+      // card renders the retry without a second round trip.
+      return getPackState(args.game);
+    }
+  });
+
+  // ── Don't Starve Together (game-adapters M2, 260908) ─────────────────────
+  // Install detection + the mod copy, the Steam launch, the per-character
+  // survivor pick, and the discovery port. Everything goes through the
+  // registered DST GameModule (src/main/games/dontstarve); the renderer
+  // never names a path. Contract: src/shared/dstIpc.ts.
+  const dstModule = async () => {
+    const { getGameModule } = await import('./games');
+    const mod = getGameModule('dontstarve') as import('./games/dontstarve').DstGameModule | null;
+    if (!mod) throw new Error("Don't Starve Together support is not available in this build.");
+    return mod;
+  };
+  ipcMain.handle(IpcChannel.dst.installState, async () => {
+    const mod = await dstModule();
+    return mod.getInstallState();
+  });
+  ipcMain.handle(IpcChannel.dst.install, async () => {
+    const mod = await dstModule();
+    return mod.runInstall((state) => {
+      for (const w of BrowserWindow.getAllWindows()) {
+        if (!w.isDestroyed()) w.webContents.send(IpcChannel.dst.installProgress, state);
+      }
+    });
+  });
+  ipcMain.handle(IpcChannel.dst.launch, async (): Promise<void> => {
+    const mod = await dstModule();
+    await mod.install?.launch();
+  });
+  // macOS App Management (260909): the mods folder is inside the game's app
+  // bundle, so the copy needs this permission. A fixed pane URL, not a
+  // renderer-supplied one, which is why it bypasses the https-only
+  // external-URL validator.
+  ipcMain.handle(IpcChannel.dst.openAppManagement, async (): Promise<void> => {
+    if (process.platform !== 'darwin') return;
+    const { shell } = await import('electron');
+    await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_AppBundles');
+  });
+  ipcMain.handle(IpcChannel.dst.survivorGet, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { getOrPickSurvivor } = await import('./games/dontstarve/survivorPick');
+    return getOrPickSurvivor(id);
+  });
+  ipcMain.handle(IpcChannel.dst.survivorSet, async (_event, argsRaw: unknown) => {
+    const { DstSurvivorSetSchema } = await import('../shared/dstIpc');
+    const args = DstSurvivorSetSchema.parse(argsRaw);
+    IdSchema.parse(args.characterId);
+    const { setSurvivor } = await import('./games/dontstarve/survivorPick');
+    return setSurvivor(args.characterId, args.prefab);
+  });
+
+  // ── Stardew Valley install / launch (game-adapters M1, 260908) ───────────
+  // src/main/games/stardew: detection is a fresh pass each call (cheap: a
+  // few stats); the install is single-flight and streams its stages on the
+  // stardew:install-progress push; a failure rejects with the ErrorClass
+  // prefix the renderer maps through ERROR_COPY.
+  let stardewInstallInFlight: Promise<unknown> | null = null;
+  ipcMain.handle(IpcChannel.stardew.installState, async () => {
+    const { detectStardew } = await import('./games/stardew/install');
+    return detectStardew();
+  });
+  ipcMain.handle(IpcChannel.stardew.install, async () => {
+    if (stardewInstallInFlight) return stardewInstallInFlight;
+    const { installStardew } = await import('./games/stardew/install');
+    stardewInstallInFlight = installStardew({
+      onProgress: (ev) => {
+        for (const w of BrowserWindow.getAllWindows()) {
+          if (!w.isDestroyed()) w.webContents.send(IpcChannel.stardew.installProgress, ev);
+        }
+      },
+    }).finally(() => {
+      stardewInstallInFlight = null;
+      // The watcher reads the port from the freshly written config on its
+      // next pass; nudge it so the launch panel flips without the 3 s wait.
+      void deps.worldCheckNow?.('stardew').catch(() => {});
+    });
+    return stardewInstallInFlight;
+  });
+  ipcMain.handle(IpcChannel.stardew.launch, async () => {
+    const { launchStardew } = await import('./games/stardew/launch');
+    return launchStardew();
   });
 
   // ── Local speech (260816, china-compat W3+W4) ─────────────────────────────
@@ -2615,6 +2797,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       sessionId: z.string().min(1),
       installIds: z.array(z.string().min(1)).min(1),
       skinServerBaseUrl: z.string().url(),
+      // 260916: per-install version pick. Named here or it is STRIPPED
+      // (zod drops undeclared keys silently; the backseat gridSmall lesson).
+      mcVersions: z.record(z.string().min(1), z.string().min(1)).optional(),
     }).parse(argsRaw);
     const { runWizardInstall } = await import('./wizard');
     return await runWizardInstall({

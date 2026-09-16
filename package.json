@@ -3,6 +3,9 @@
   "version": "0.6.4",
   "type": "module",
   "main": "dist/main/index.js",
+  "workspaces": [
+    "packs/*"
+  ],
   "scripts": {
     "dev": "node scripts/dev-viewer.mjs",
     "dev:tools": "node scripts/dev-viewer.mjs --tools",
@@ -16,6 +19,13 @@
     "dist:mac": "electron-vite build && electron-builder --mac",
     "dist:win": "electron-vite build && electron-builder --win",
     "dist:linux": "electron-vite build && electron-builder --linux",
+    "build:packs": "node scripts/build-game-pack.mjs minecraft --out release/packs",
+    "build:packs:manifest": "node scripts/build-game-pack-manifest.mjs release/packs --out release/packs",
+    "check:packs": "node scripts/build-game-pack.mjs minecraft --dry-run && node scripts/build-game-pack.mjs stardew --dry-run",
+    "build:stardew-mod": "bash scripts/build-stardew-mod.sh",
+    "build:packs:stardew": "node scripts/build-game-pack.mjs stardew --out release/packs",
+    "stardew:art": "node scripts/gen-stardew-placeholder-art.mjs",
+    "stardew:fake-mod": "node scripts/fake-stardew-mod.mjs",
     "postinstall": "node scripts/postinstall.mjs",
     "build:audiotap": "bash scripts/build-mac-audio-tap.sh",
     "predev": "bash scripts/build-mac-audio-tap.sh && node scripts/fetch-live2d-core.mjs",
@@ -32,17 +42,11 @@
     "cce-1": "file:./vendor/cce-1",
     "chess.js": "^1.4.0",
     "electron-updater": "^6.8.3",
-    "gl": "file:./vendor/gl-8.1.6-cxx20.tgz",
     "img2skin": "file:./vendor/skin-gen",
     "jszip": "^3.10.1",
-    "mineflayer": "^4.38.0",
-    "mineflayer-auto-eat": "^5.0.0",
-    "mineflayer-pathfinder": "^2.4.5",
-    "node-canvas-webgl": "^0.3.0",
     "pixi-live2d-display-lipsyncpatch": "^0.5.0-ls-8",
     "pixi.js": "^7.4.3",
     "posthog-node": "^4.18.0",
-    "prismarine-viewer": "^1.33.0",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "semver": "^7.8.0",
@@ -59,7 +63,7 @@
   "overrides": {
     "node-canvas-webgl": {
       "canvas": "^3.2.0",
-      "gl": "$gl"
+      "gl": "file:./vendor/gl-8.1.6-cxx20.tgz"
     }
   },
   "devDependencies": {

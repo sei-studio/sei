@@ -37,7 +37,39 @@ export type ErrorClass =
   // Previously mislabeled as BOT_CRASH in the BotStatus while the throw already
   // used this token — production analytics showed users retry-looping on the
   // misleading "Sei stopped unexpectedly" copy.
-  | 'PREFERRED_NAME_MISSING';
+  | 'PREFERRED_NAME_MISSING'
+  // Game adapters (M0, 260908): game-neutral classes for the second and third
+  // games. Minecraft keeps its own classes above (LAN_NOT_OPEN etc.); a game
+  // module maps its own failures onto these, and the renderer routes them by
+  // (game, errorClass) to a generic modal carrying ERROR_COPY.
+  | 'GAME_WORLD_NOT_OPEN'
+  | 'GAME_NOT_INSTALLED'
+  | 'GAME_INSTALL_FAILED'
+  | 'GAME_NOT_ANSWERING'
+  | 'GAME_VERSION_UNSUPPORTED'
+  // 260908 game packs: the adapter's runtime (a downloadable zip of its
+  // node_modules, src/main/games/packs.ts) could not be fetched, verified or
+  // extracted. Pre-fork like the wizard's MOD_DOWNLOAD_FAILED; a retry is the
+  // fix that usually works.
+  | 'GAME_PACK_DOWNLOAD_FAILED'
+  // Don't Starve Together (game-adapters M2, 260908): only where the copy
+  // must differ from the GAME_* classes. The mod answered but no survivor
+  // appeared; Sei could not bind its loopback listener or the discovery
+  // port; the survivor died (an ownerless body has no client to revive it).
+  | 'DST_SPAWN_FAILED'
+  | 'DST_PORT_IN_USE'
+  | 'DST_BODY_DIED'
+  // 260909: the helper runs ONE body per world. A second character's summon
+  // used to replace the first (and, through a link-reset race, strand a
+  // brainless survivor), so the supervisor refuses it and the launch panel
+  // says who is already there.
+  | 'DST_ONE_COMPANION'
+  // Stardew Valley (M1, 260908): the two failures whose copy must differ from
+  // the generic GAME_* classes. A farmhand without the mod cannot be shown a
+  // custom-sprite NPC, so the mod refuses to spawn; SMAPI's own installer
+  // failing is a different fix from the mod copy failing.
+  | 'STARDEW_FARMHAND_NO_MOD'
+  | 'SMAPI_INSTALL_FAILED';
 
 export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'BOT_START_TIMEOUT',
@@ -63,4 +95,16 @@ export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'CLOUD_CREDITS_DEPLETED',
   'DAILY_LIMIT_REACHED',
   'PREFERRED_NAME_MISSING',
+  'GAME_WORLD_NOT_OPEN',
+  'GAME_NOT_INSTALLED',
+  'GAME_INSTALL_FAILED',
+  'GAME_NOT_ANSWERING',
+  'GAME_VERSION_UNSUPPORTED',
+  'GAME_PACK_DOWNLOAD_FAILED',
+  'DST_SPAWN_FAILED',
+  'DST_PORT_IN_USE',
+  'DST_BODY_DIED',
+  'DST_ONE_COMPANION',
+  'STARDEW_FARMHAND_NO_MOD',
+  'SMAPI_INSTALL_FAILED',
 ]);

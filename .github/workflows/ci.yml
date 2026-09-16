@@ -52,3 +52,9 @@ jobs:
 
       - name: Test
         run: npm test
+
+      - name: Validate game pack workspace (dry run)
+        # 260908: resolves the packs/minecraft workspace's production closure
+        # from the hoisted tree, compiles every prune glob against it and
+        # checks the must-keep paths. No native rebuild, no zip; ~10s.
+        run: npm run check:packs

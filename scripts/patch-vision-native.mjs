@@ -29,12 +29,15 @@ import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from '
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+// Default: the repo root. Every patch function also takes an explicit root so
+// scripts/build-game-pack.mjs can patch a STAGED tree (a pack's own nan copy)
+// before rebuilding its natives (260908).
+const DEFAULT_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const TAG = 'v8::kExternalPointerTypeTagDefault';
 
 const log = (m) => console.log(`[patch-vision-native] ${m}`);
 
-export function patchGlGyp() {
+export function patchGlGyp(root = DEFAULT_ROOT) {
   const f = join(root, 'node_modules/gl/binding.gyp');
   if (!existsSync(f)) return log('gl not installed — skipping gyp patch');
   let s = readFileSync(f, 'utf8');
@@ -102,7 +105,7 @@ export function patchV8MsvcBuiltins(includeNodeDir) {
   log(`V8 MSVC shim: patched ${patched} header(s) using __builtin_frame_address (scanned ${scanned})`);
 }
 
-export function patchNanNew() {
+export function patchNanNew(root = DEFAULT_ROOT) {
   const f = join(root, 'node_modules/nan/nan_implementation_12_inl.h');
   if (!existsSync(f)) return log('nan not installed — skipping External::New patch');
   let s = readFileSync(f, 'utf8');
@@ -128,7 +131,7 @@ export function patchNanNew() {
   log(`patched ${count} nan External::New call site(s)`);
 }
 
-export function patchNanValue() {
+export function patchNanValue(root = DEFAULT_ROOT) {
   const f = join(root, 'node_modules/nan/nan_callbacks_12_inl.h');
   if (!existsSync(f)) return log('nan not installed — skipping External::Value patch');
   let s = readFileSync(f, 'utf8');
@@ -146,7 +149,7 @@ export function patchNanValue() {
 // EXPORTS it from the V8 lib — a strict linker (Windows MSVC) then fails with
 // LNK2019. macOS hides this behind dynamic_lookup, which is why the mac CI
 // missed it. The modern, exported replacement is ArrayBuffer::Data() (V8 11.4+).
-export function patchNanTypedArrayContents() {
+export function patchNanTypedArrayContents(root = DEFAULT_ROOT) {
   const f = join(root, 'node_modules/nan/nan_typedarray_contents.h');
   if (!existsSync(f)) return log('nan not installed — skipping TypedArrayContents patch');
   let s = readFileSync(f, 'utf8');
@@ -158,11 +161,11 @@ export function patchNanTypedArrayContents() {
   log(`patched ${count} nan TypedArrayContents GetBackingStore site(s)`);
 }
 
-export function applyAll() {
-  patchGlGyp();
-  patchNanNew();
-  patchNanValue();
-  patchNanTypedArrayContents();
+export function applyAll(root = DEFAULT_ROOT) {
+  patchGlGyp(root);
+  patchNanNew(root);
+  patchNanValue(root);
+  patchNanTypedArrayContents(root);
 }
 
 // Run directly (postinstall step 1)

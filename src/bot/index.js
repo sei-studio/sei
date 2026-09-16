@@ -1,13 +1,24 @@
-// src/bot/index.js — bot entry (forked by Electron main).
+// src/bot/index.js — bot entry (forked by Electron main). THE COMPOSER.
 //
-// Startup: wait for {type:'init', character, apiKey, lanPort, userDataDir,
-// mc_username, preferred_name} message over MessagePort, build a
-// ConfigSchema-conformant config, and start the bot. Lifecycle events
+// Startup: wait for the {type:'init', ...} message over MessagePort, build a
+// ConfigSchema-conformant config, dynamic-import the GAME RUNTIME named by the
+// init payload's `game` (src/bot/adapter/<game>/runtime.js), and start the
+// brain against the adapter that runtime constructs. Lifecycle events
 // (BotLifecycle vocabulary, src/shared/ipc.ts D-19) are posted back on the
 // same port AND mirrored to stdout for the rolling log file.
+//
+// Game-adapters M0 (260908): this file is GAME-AGNOSTIC. Nothing under
+// ./adapter/ is imported statically — the runtime is loaded by name, so a
+// Stardew or Don't Starve session never loads mineflayer. The composer owns:
+// config parse, the pack loader hook, brain start (through the runtime's
+// createBrain hook), the returned handle, port dispatch, lifecycle and error
+// emission. The runtime owns the body: connect, reconnect, adapter +
+// telemetry per connection. Contract: RuntimeHooks / RuntimeHandle in
+// src/bot/brain/types.js.
+//
 // (260722: the standalone `sei` CLI path was removed; the bot only runs as a
-// utilityProcess now, so it never calls discoverLanPort — main hands the
-// cached LAN port over per CONTEXT D-25 / Pitfall 6.)
+// utilityProcess now, so it never discovers the world itself — main hands the
+// join target over per CONTEXT D-25 / Pitfall 6.)
 //
 // Sources:
 //   - RESEARCH §Pattern 1 (bot side) — parentPort message flow
@@ -15,20 +26,9 @@
 //     MessagePortMain), D-19 (lifecycle vocabulary), D-25 (bot does NOT
 //     re-discover LAN during summon — main hands the cached port over)
 
-import { ConfigSchema } from './config.js'
+import { ConfigSchema, GAME_KINDS } from './config.js'
 import { applyLlmInit } from './llmInit.js'
-import { createBotInstance, resolveServerVersion } from './adapter/minecraft/connect.js'
-
-// The Electron path hands the bot `version: 'auto'`. start() resolves that to an
-// EXPLICIT, supported version via a status ping (resolveServerVersion) before
-// the first connect — so the bot matches whatever the player's LAN world runs
-// (1.20.6, 1.21.x, …) while staying bounded to minecraft-protocol's supported
-// set. Pinning a single version (the old '1.21.1') broke every world on a
-// different version; raw mineflayer in-handshake auto-detect was avoided because
-// it produced protocol kicks. Ping-then-pass-explicit gets both: auto-match
-// without the handshake-detect failure mode.
-import { createMinecraftAdapter } from './adapter/minecraft/index.js'
-import { createDashboardTelemetry } from './adapter/minecraft/dashboard/telemetry.js'
+import { preparePackLoader } from './packLoader.js'
 import { start as startBrain } from './brain/index.js'
 
 const logger = {
@@ -37,384 +37,123 @@ const logger = {
   error: (m) => console.error(`[sei] ${typeof m === 'string' ? m : JSON.stringify(m)}`),
 }
 
-// ─── Core start() — config-in, {stop}-out ─────────────────────────────────
+/**
+ * Load a game runtime module by kind. Validated against GAME_KINDS so the
+ * specifier can never be steered outside ./adapter/. Exported for tests.
+ */
+export async function loadRuntimeModule(kind) {
+  if (!GAME_KINDS.includes(kind)) throw new Error(`unknown game kind: ${String(kind)}`)
+  return import(`./adapter/${kind}/runtime.js`)
+}
+
+// ─── Core start() — config-in, handle-out ─────────────────────────────────
 // The Electron path receives `config` over MessagePort; from here down it is
-// connect, attach adapter, start brain.
+// load the runtime, let it connect, start the brain per connection.
 //
-// 260508-nkk: an optional `hooks` arg lets callers receive (a) `onReady()`
-// when mineflayer's actual `'spawn'` event fires (NOT just when bringUp
-// returns — bringUp resolves before mineflayer connects), and (b)
-// `onConnectError(err)` when the connect-level wall-clock timeout in
-// connect.js trips because spawn never fired. The Electron path uses these
-// to emit `summon-ready` / `error` lifecycle messages that reflect the bot's
-// actual world state rather than just "brain initialized."
+// `hooks`:
+//   onReady()            — the runtime reported its FIRST successful spawn
+//                          (the Electron path emits `summon-ready`).
+//   onError({error, message, retryAfterSeconds?})
+//                        — the runtime hit a TERMINAL connect/disconnect
+//                          failure, already classified to an ErrorClass.
+//   onTerminalError(info)— the BRAIN halted (402 depleted, 429, …).
+//   onAuthExpired()      — the brain saw a 401 expired JWT.
+//   onDashboard(snapshot)— telemetry snapshots (straight up the port).
+//   runtime              — an already-imported runtime module ({createRuntime});
+//                          absent → loaded by config.adapter.kind. Tests pass a
+//                          fake here to boot the composer without a game.
 export async function start(config, hooks = {}) {
-  const { onReady = () => {}, onConnectError = () => {}, onTerminalError = null, onAuthExpired = null, onDashboard = null } = hooks
-  const mc = config.adapter.minecraft
+  const {
+    onReady = () => {},
+    onError = () => {},
+    onTerminalError = null,
+    onAuthExpired = null,
+    onDashboard = null,
+    // Game-adapters M2 (260908): a runtime that must tell MAIN something
+    // outside the lifecycle vocabulary posts it here (the DST runtime reports
+    // its loopback listener as {type:'dst-listen', port, token} so main's
+    // watcher can hand the mod the address). Raw port message; null in tests.
+    postPortMessage = null,
+    runtime: runtimeModule = null,
+  } = hooks
+  const kind = config?.adapter?.kind ?? 'minecraft'
+  const mod = runtimeModule ?? await loadRuntimeModule(kind)
+  if (typeof mod?.createRuntime !== 'function') {
+    throw new Error(`game runtime for "${kind}" exports no createRuntime()`)
+  }
 
+  // The brain currently wired to a live body. The runtime tells us when one
+  // starts (onBrainReady) and when the body dies (onBrainLost); every port
+  // forwarder below reads this pointer. src/bot/portForwarders.test.js pins
+  // that each port-dispatched method has a `_brain?.X?.(` forwarder here.
   let _brain = null
-  let _bot = null
-  let _adapter = null
-  // Minecraft dashboard (260721): telemetry loop, one per mineflayer instance
-  // (recreated on reconnect). The renderer's watching flag outlives instances.
-  let _dash = null
-  let _dashWatching = false
-  let _stopped = false
-  let _reconnectTimer = null
-  // 260508-nkk: only forward the FIRST spawn → onReady; subsequent
-  // reconnect-spawns are normal recovery and must not duplicate
-  // summon-ready (the supervisor already gates on summonResolved, but
-  // belt-and-suspenders).
-  let _readyFired = false
-  // 260508-nkk follow-up: cap reconnects so a stale/wrong LAN port stops
-  // hammering the server (and racking up Anthropic calls from each new
-  // brain spawned by bringUp). Reset on first successful spawn.
-  const MAX_RECONNECT_ATTEMPTS = 3
-  let _reconnectAttempts = 0
+  let _runtime = null
+  const ownUsername = () => config?.adapter?.[kind]?.username ?? null
 
-  // ─── Resolve the Minecraft protocol version ────────────────────────────────
-  // 'auto' (the Electron default) status-pings the LAN world and selects the
-  // version our networking deps actually implement, then hands mineflayer that
-  // EXPLICIT version below — sidestepping the in-handshake auto-detect path that
-  // historically produced protocol kicks. Resolved ONCE here; reconnects reuse
-  // it. A ping FAILURE is non-fatal: fall back to mineflayer's own auto-detect
-  // (connect.js omits `version` when it sees 'auto'), and let the normal
-  // connect / reconnect loop handle a genuinely unreachable world. Only a
-  // SUCCESSFUL ping reporting an UNSUPPORTED version aborts, with a clear error.
-  if (!mc.version || mc.version === 'auto') {
-    try {
-      mc.version = await resolveServerVersion({ host: mc.host, port: mc.port, logger })
-      logger.info(`Auto-detected Minecraft version: ${mc.version}`)
-    } catch (err) {
-      if (err && err.code === 'UNSUPPORTED_MC_VERSION') {
-        logger.error(`[sei] ${err.message}`)
-        try { onConnectError(err) } catch (cbErr) {
-          logger.warn(`onConnectError hook threw: ${cbErr && cbErr.message}`)
-        }
-        return
+  // Game-agnostic brain start, handed to the runtime as createBrain so the
+  // runtime can (re)start it per connection while the callbacks stay here.
+  const createBrain = (adapter) => startBrain({
+    config, adapter, logger, onTerminalError, onAuthExpired,
+    // Task 4 — a reply to a message that came in over Sei chat (not in-game)
+    // is routed back UP to the chat surface instead of spoken in-world.
+    onSeiChatReply: (text) => emitLifecycle({ type: 'chat', from: config?.persona?.name ?? 'your companion', text }),
+    // Party redesign §2/§5 — the orchestrator dispatched a world-acting tool
+    // (name set) or drained back to idle (name null). Emit an `action`
+    // lifecycle so main forwards it to the renderer's presence verb line.
+    // Same emit path as onSeiChatReply; emitLifecycle guards the port (a CLI
+    // run has no port and just logs). Non-throwing.
+    onAction: (payload) => {
+      // Dashboard telemetry (260721): the loop translates the current tool
+      // into the activity line and emits on change.
+      try { _runtime?.telemetry?.setAction(payload?.name ?? null, payload?.args) } catch {}
+      try {
+        emitLifecycle({ type: 'action', name: payload?.name ?? null, args: payload?.args })
+      } catch {}
+    },
+    // Task 4 — the bot called quit(): leave the game the same graceful way a
+    // main-initiated stop would (drain, disconnect, exit → supervisor reaps).
+    onQuitRequested: () => { try { gracefulShutdown() } catch {} },
+    // Voice calls (260705) — the bot called end_call(): ask main to hang up
+    // the player's call (the bot stays in the game). The farewell say() was
+    // already routed up before this fires, and the renderer drains its TTS
+    // queue before tearing the call down.
+    onCallEndRequested: () => emitLifecycle({ type: 'call-end' }),
+  })
+
+  _runtime = await mod.createRuntime(config, {
+    logger,
+    summonDeadlineAt: config?._seiSummonDeadlineAt ?? null,
+    createBrain,
+    onBrainReady: (brain) => {
+      _brain = brain
+      // 260618: apply any companion roster known before the brain was ready
+      // (init payload, or a {type:'roster'} that arrived during connect / a
+      // reconnect). config._seiCompanions is the cross-reconnect source of truth.
+      try { _brain.setCompanions?.(config._seiCompanions ?? []) } catch {}
+    },
+    onBrainLost: () => { _brain = null },
+    onConnected: () => {
+      try { onReady() } catch (err) {
+        logger.warn(`onReady hook threw: ${err && err.message}`)
       }
-      logger.warn(
-        `[sei] Version ping failed (${err && err.message}) — ` +
-        `falling back to mineflayer auto-detect.`,
-      )
-      mc.version = 'auto' // connect.js omits version when 'auto' → mineflayer detects in-handshake
-    }
-  }
-
-  const bringUp = async () => {
-    _bot = createBotInstance({
-      host: mc.host,
-      port: mc.port,
-      auth: mc.auth,
-      username: mc.username,
-      version: mc.version,
-      config,
-      logger,
-      onSpawn: () => {
-        // brain wires session start via adapter.attach onSpawn; this hook is
-        // for the surrounding lifecycle (summon-ready emit). 260508-nkk: was
-        // a no-op; now fires onReady the first time mineflayer's spawn event
-        // lands so the supervisor's "Connecting…" → "Online" flip happens at
-        // the right moment.
-        if (_readyFired) return
-        _readyFired = true
-        // 260508-nkk follow-up: a successful spawn means the server is
-        // reachable; reset the reconnect counter so future drops don't
-        // count against the original cap.
-        _reconnectAttempts = 0
-        try { onReady() } catch (err) {
-          logger.warn(`onReady hook threw: ${err && err.message}`)
-        }
-        // TEMPORARY — Phase 15-01 de-risk spike (REMOVE after the packaged-build
-        // checkpoint approves). Behind SEI_VISION_SPIKE=1 so it ships nothing
-        // permanent. Proves the native gl/canvas render path loads + renders inside
-        // the bot utilityProcess under the Electron 42 ABI (dev AND packaged dist).
-        // Dynamic import keeps povRenderer (→ native gl/canvas dlopen) off the normal
-        // startup path; only loaded when the flag is set.
-        if (process.env.SEI_VISION_SPIKE === '1') {
-          // Give chunks ~3s to stream in after spawn before the one-shot render.
-          setTimeout(async () => {
-            try {
-              const { renderPov } = await import('./adapter/minecraft/render/povRenderer.js')
-              const result = await renderPov(_bot)
-              if (result?.ok) {
-                logger.info(`vision spike: rendered ${result.buffer.length} bytes JPEG`)
-              } else {
-                logger.warn(`vision spike: degraded (${result?.reason ?? 'unknown'}) — render returned no frame`)
-              }
-            } catch (err) {
-              logger.error(`vision spike: render threw — ${(err && err.stack) || err}`)
-            }
-          }, 3000)
-        }
-      },
-      onEnd: (humanizedReason, info) => {
-        if (_stopped) return
-        // Tear down adapter listeners before discarding the bot reference.
-        // Otherwise the OLD bot's listeners only become
-        // GC-eligible when the closure releases, leaving a window where the
-        // adapter still has dangling listeners on a dead mineflayer instance.
-        try { _adapter?.detach?.() } catch {}
-        _adapter = null
-        // Dashboard telemetry is bound to the dead instance — a reconnect
-        // creates a fresh one (bringUp) with the same watching flag.
-        try { _dash?.stop() } catch {}
-        _dash = null
-        _bot = null
-        clearTimeout(_reconnectTimer)
-
-        // MODDED HOST — terminal on the FIRST kick, before either branch below
-        // (260806). A Forge/NeoForge world that requires its mods client-side
-        // rejects a vanilla client every single time, so the reconnect budget
-        // buys nothing: it just spends 15 seconds re-earning the same kick three
-        // times. Worse, both branches below end in LAN_NOT_OPEN, so the user was
-        // told to re-open a world that was open and reachable the whole time
-        // (measured live: five summons, four of them re-opening the world).
-        // Placed above the _readyFired split because the answer is the same
-        // whether we were kicked during the join handshake or after spawning.
-        if (info?.modded) {
-          _stopped = true
-          logger.error(`[sei] Modded world rejected Sei (${humanizedReason}) — not retrying.`)
-          try {
-            onConnectError(new Error(`MODDED_HOST_REJECTED: ${humanizedReason}.`))
-          } catch (cbErr) {
-            logger.warn(`onConnectError hook threw: ${cbErr && cbErr.message}`)
-          }
-          return
-        }
-
-        // POST-SPAWN drop: the bot was in the world and the socket closed.
-        // Historically this was ALWAYS terminal ("the player closed the
-        // world"), because the old unconditional reconnect had two bugs:
-        //   1. The `_reconnectAttempts = 0` reset was gated on `_readyFired`,
-        //      so the counter was wiped on EVERY post-spawn drop and the bot
-        //      reconnected FOREVER into a genuinely closed world.
-        //   2. The brain from the dead session was never stopped — its
-        //      orchestrator loop kept firing idle-tick Anthropic calls into a
-        //      detached adapter (phantom chat into a closed socket).
-        // 260710: always-terminal overcorrected. Server KICKS with the world
-        // still open are real — live case: a chat-signing rejection
-        // (multiplayer.disconnect.chat_validation_failed, an nmp 1.66.0
-        // chat-checksum bug on 1.21.11) killed the session and told the user
-        // to "re-open" a world that was open the whole time. Disambiguate by
-        // STATUS-PINGING the LAN port:
-        //   - ping answers  → the world is up; this was a kick. Stop the dead
-        //     session's brain (fixes historical bug 2), then bounded rejoin.
-        //     The attempt counter is deliberately NOT reset on reconnect
-        //     spawns (fixes historical bug 1), so a kick loop still gives up
-        //     after MAX_RECONNECT_ATTEMPTS for the whole session.
-        //   - ping dead → the player really closed the world; terminal
-        //     LAN_NOT_OPEN exactly as before.
-        if (_readyFired) {
-          const deadBrain = _brain
-          _brain = null
-          void (async () => {
-            try { await deadBrain?.stop() } catch (err) {
-              logger.warn(`brain stop after disconnect threw: ${err && err.message}`)
-            }
-            if (_stopped) return
-            let worldStillOpen = false
-            try {
-              await resolveServerVersion({
-                host: mc.host, port: mc.port, timeoutMs: 1500,
-                logger: { info: () => {} }, // quiet — this is a liveness probe, not version resolution
-              })
-              worldStillOpen = true
-            } catch { /* closed, unreachable, or version weirdness → terminal path */ }
-            if (_stopped) return
-
-            if (worldStillOpen) {
-              _reconnectAttempts += 1
-              if (_reconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
-                logger.info(
-                  `[sei] Kicked from the world but it is still open (${humanizedReason}) — ` +
-                  `rejoining in ${mc.reconnect_delay_ms}ms ` +
-                  `(attempt ${_reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}).`,
-                )
-                _reconnectTimer = setTimeout(() => {
-                  if (_stopped) return
-                  logger.info('Attempting to rejoin...')
-                  bringUp().catch(err => logger.error(`Rejoin failed: ${err.message}`))
-                }, mc.reconnect_delay_ms)
-                return
-              }
-              // Kick loop — the server keeps ejecting us. Give up with an
-              // honest message (NOT "re-open your world": it IS open).
-              _stopped = true
-              logger.error(
-                `[sei] Kicked ${MAX_RECONNECT_ATTEMPTS} times by a world that is still open ` +
-                `(${humanizedReason}) — giving up.`,
-              )
-              try {
-                onConnectError(new Error(
-                  `LAN_NOT_OPEN: The world kept kicking Sei (${humanizedReason}). ` +
-                  `Try summoning again in a moment.`,
-                ))
-              } catch (cbErr) {
-                logger.warn(`onConnectError hook threw: ${cbErr && cbErr.message}`)
-              }
-              return
-            }
-
-            _stopped = true
-            logger.info(
-              `[sei] Lost connection to the LAN world (${humanizedReason}) — stopping. ` +
-              `Re-open the world to LAN and click Summon again.`,
-            )
-            try {
-              onConnectError(new Error(
-                `LAN_NOT_OPEN: Lost connection to the LAN world (${humanizedReason}). ` +
-                `Re-open the world to LAN in Minecraft and click Summon again.`,
-              ))
-            } catch (cbErr) {
-              logger.warn(`onConnectError hook threw: ${cbErr && cbErr.message}`)
-            }
-          })()
-          return
-        }
-
-        // PRE-SPAWN: never reached the world yet (stale/wrong LAN port, or a
-        // world that isn't actually open). Bounded reconnect — the counter is
-        // correct here because _readyFired is false, so a wrong port gives up
-        // after MAX_RECONNECT_ATTEMPTS instead of hammering the server and
-        // spawning a fresh brain (+greeting Anthropic call) on every retry.
-        _reconnectAttempts += 1
-        if (_reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
-          _stopped = true
-          logger.error(
-            `[sei] Giving up after ${MAX_RECONNECT_ATTEMPTS} failed connect attempts ` +
-            `(${humanizedReason}). Re-open LAN in Minecraft and click Summon again.`,
-          )
-          try {
-            onConnectError(new Error(
-              `LAN_NOT_OPEN: Could not reach the LAN world after ${MAX_RECONNECT_ATTEMPTS} attempts ` +
-              `(${humanizedReason}). Re-open the world to LAN in Minecraft and click Summon again.`,
-            ))
-          } catch (cbErr) {
-            logger.warn(`onConnectError hook threw: ${cbErr && cbErr.message}`)
-          }
-          return
-        }
-        logger.info(
-          `Reconnecting in ${mc.reconnect_delay_ms}ms ` +
-          `(attempt ${_reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}, ${humanizedReason})...`,
-        )
-        _reconnectTimer = setTimeout(() => {
-          if (_stopped) return
-          logger.info('Attempting reconnect...')
-          bringUp().catch(err => logger.error(`Reconnect failed: ${err.message}`))
-        }, mc.reconnect_delay_ms)
-      },
-      onError: (err) => logger.warn(`Connection error: ${err && err.message}`),
-      // 260508-nkk: connect.js's wall-clock connect timeout fires this when
-      // mineflayer's 'spawn' never lands within CONNECT_TIMEOUT_MS. Surface
-      // up so the supervisor sees a structured BOT_START_TIMEOUT lifecycle
-      // error instead of waiting the full 30s outer summon timer with no
-      // diagnostic signal. Per CLAUDE.md "every external call has a timeout".
-      onConnectTimeout: (err) => {
-        if (_readyFired || _stopped) return
-        try { onConnectError(err) } catch (cbErr) {
-          logger.warn(`onConnectError hook threw: ${cbErr && cbErr.message}`)
-        }
-      },
-    })
-
-    // visionEnabled: true — registration is unconditional here because the
-    // provider (and its capabilities.vision) does not exist yet at adapter
-    // construction; the AUTHORITATIVE D-10 gate is the orchestrator's
-    // tool-list filter (combinedToolsFor), which never offers `look` to
-    // a non-VLM provider. Without this flag the action was never registered
-    // at all — the filter can only remove tools, not add them (15-VERIFICATION
-    // gap, VIS-02).
-    _adapter = createMinecraftAdapter({ bot: _bot, config, visionEnabled: true })
-    // Minecraft dashboard (260721): telemetry for THIS mineflayer instance.
-    // Emits nothing until the renderer flags itself watching (setDashboardWatch
-    // below); the flag is re-applied across reconnects.
-    if (typeof onDashboard === 'function') {
-      try { _dash?.stop() } catch {}
-      _dash = createDashboardTelemetry({ bot: _bot, emit: onDashboard, logger })
-      if (_dashWatching) _dash.setWatching(true)
-    }
-    // Keep the brain local until we've confirmed the connection survived the
-    // startBrain await. onEnd (a fast-failing reconnect, or the user closing
-    // the world) can fire DURING this await — it nulls _bot and _adapter. If
-    // we assigned _brain unconditionally and then touched _bot._sei_startChat,
-    // we hit "Cannot read properties of null (reading '_sei_startChat')" on
-    // every dropped reconnect (observed in the field log).
-    const brain = await startBrain({
-      config, adapter: _adapter, logger, onTerminalError, onAuthExpired,
-      // Task 4 — a reply to a message that came in over Sei chat (not in-game)
-      // is routed back UP to the chat surface instead of spoken in-world.
-      onSeiChatReply: (text) => emitLifecycle({ type: 'chat', from: config?.persona?.name ?? 'your companion', text }),
-      // Party redesign §2/§5 — the orchestrator dispatched a world-acting tool
-      // (name set) or drained back to idle (name null). Emit an `action`
-      // lifecycle so main forwards it to the renderer's presence verb line.
-      // Same emit path as onSeiChatReply; emitLifecycle guards the port (a CLI
-      // run has no port and just logs). Non-throwing.
-      onAction: (payload) => {
-        // Minecraft dashboard (260721): the telemetry loop translates the
-        // current tool into the activity line and emits on change.
-        try { _dash?.setAction(payload?.name ?? null, payload?.args) } catch {}
-        try {
-          emitLifecycle({ type: 'action', name: payload?.name ?? null, args: payload?.args })
-        } catch {}
-      },
-      // Task 4 — the bot called quit(): leave the game the same graceful way a
-      // main-initiated stop would (drain, disconnect, exit → supervisor reaps).
-      onQuitRequested: () => { try { gracefulShutdown() } catch {} },
-      // Voice calls (260705) — the bot called end_call(): ask main to hang up
-      // the player's call (the bot stays in the game). The farewell say() was
-      // already routed up before this fires, and the renderer drains its TTS
-      // queue before tearing the call down.
-      onCallEndRequested: () => emitLifecycle({ type: 'call-end' }),
-    })
-    if (_stopped || !_bot) {
-      // The connection dropped (or we were stopped) while startBrain awaited.
-      // This brain is already orphaned — tear it down instead of wiring chat
-      // onto a dead/null bot. Any reconnect was already scheduled by onEnd.
-      try { await brain.stop() } catch {}
-      return
-    }
-    _brain = brain
-    // 260618: apply any companion roster known before the brain was ready (init
-    // payload, or a {type:'roster'} that arrived during connect / a reconnect).
-    // config._seiCompanions is the cross-reconnect source of truth.
-    try { _brain.setCompanions?.(config._seiCompanions ?? []) } catch {}
-
-    // Wire the legacy chat behavior (bot.on('chat') with player/addressed/
-    // nearby filtering and sei:chat_received emission) without an
-    // orchestrator handle. fsmWires translates sei:chat_received into
-    // brain.onChat; the brain priority queue handles player-chat preemption
-    // (P1→P0 escalation when a non-P0 action is in flight). Stop-verb
-    // fast-path body-cancel was previously a synchronous side-effect of
-    // chat.js when given an orchestrator; with the brain↔adapter seam,
-    // that fast path runs through the normal queue (one extra Haiku
-    // round-trip on "stop").
-    try { _bot._sei_startChat?.(null) } catch (err) {
-      logger.warn(`startChat hookup failed: ${err && err.message}`)
-    }
-  }
-
-  await bringUp()
+    },
+    onDisconnected: (info) => {
+      logger.info(`[sei] ${kind} body disconnected (${info?.reason ?? 'unknown'})${info?.willRetry ? ' — retrying' : ''}`)
+    },
+    onError: (info) => {
+      try { onError(info) } catch (err) {
+        logger.warn(`onError hook threw: ${err && err.message}`)
+      }
+    },
+    onDashboard: typeof onDashboard === 'function' ? onDashboard : null,
+    postPortMessage: typeof postPortMessage === 'function' ? postPortMessage : null,
+    emitVisionCapability,
+  })
 
   return {
     async stop() {
-      _stopped = true
-      clearTimeout(_reconnectTimer)
-      try { _dash?.stop() } catch {}
-      _dash = null
-      if (_brain) {
-        try { await _brain.stop() } catch {}
-      }
-      // Same teardown as onEnd to guarantee clean listener disposal on
-      // graceful shutdown, not just on reconnect.
-      try { _adapter?.detach?.() } catch {}
-      _adapter = null
-      if (_bot) {
-        try { _bot.quit('Sei stopping') } catch {}
-        _bot = null
-      }
-      logger.info('Bot stopped.')
+      try { await _runtime?.stop?.() } catch {}
+      _brain = null
     },
     /**
      * Phase 13-15 (PROXY-07): push a refreshed Supabase JWT into the bot
@@ -490,15 +229,20 @@ export async function start(config, hooks = {}) {
     /**
      * 260618: update the roster of OTHER AI companions in this world. Called by
      * the parentPort {type:'roster'} handler whenever the supervisor summons or
-     * stops a sibling bot. Writes config._seiCompanions (read by chat.js, which
-     * has no orchestrator handle) AND forwards to the brain (snapshot pin/label
-     * + companions seed block). No-op list for solo sessions.
+     * stops a sibling bot. The runtime filters its own name out and records
+     * the list where its body reads it (config._seiCompanions, for chat.js
+     * which has no orchestrator handle); the brain gets the same list
+     * (snapshot pin/label + companions seed block). No-op list for solo sessions.
      */
     setCompanions(names) {
-      const list = Array.isArray(names)
-        ? names.filter(n => typeof n === 'string' && n.trim() && n !== mc.username)
-        : []
-      try { config._seiCompanions = list } catch {}
+      let list = null
+      try { list = _runtime?.setCompanions?.(names) ?? null } catch {}
+      if (!Array.isArray(list)) {
+        list = Array.isArray(names)
+          ? names.filter(n => typeof n === 'string' && n.trim() && n !== ownUsername())
+          : []
+        try { config._seiCompanions = list } catch {}
+      }
       try { _brain?.setCompanions?.(list) } catch {}
     },
     /**
@@ -525,15 +269,14 @@ export async function start(config, hooks = {}) {
       try { return _brain?.visionCapable?.() === true } catch { return false }
     },
     /**
-     * Minecraft dashboard (260721): the renderer's visibility flag, forwarded
-     * from the parentPort {type:'dashboard-watch'} handler. NOT a brain
-     * passthrough — telemetry lives on the adapter side of the seam
-     * (portForwarders.test.js exempts it). The flag is remembered so a
-     * reconnect's fresh telemetry instance resumes in the same state.
+     * Dashboard (260721): the renderer's visibility flag, forwarded from the
+     * parentPort {type:'dashboard-watch'} handler. NOT a brain passthrough —
+     * telemetry lives on the runtime side of the seam (portForwarders.test.js
+     * exempts it). The runtime remembers the flag so a reconnect's fresh
+     * telemetry instance resumes in the same state.
      */
     setDashboardWatch(active) {
-      _dashWatching = active === true
-      try { _dash?.setWatching(_dashWatching) } catch {}
+      try { _runtime?.setDashboardWatch?.(active) } catch {}
     },
   }
 }
@@ -570,24 +313,45 @@ function emitLifecycle(payload) {
   console.log(`[lifecycle] ${JSON.stringify(payload)}`)
 }
 
+/**
+ * Init payload → {game, joinTarget, worldLabel, packRoot} (M0, 260908).
+ *
+ * New shape: `game` ('minecraft' | 'stardew' | 'dontstarve'), `joinTarget`
+ * (game-specific; Minecraft `{port, motd, mc_username, skinServerBaseUrl}`),
+ * optional `worldLabel`, optional `packRoot`. LEGACY (one release): a payload
+ * with no `game` is a Minecraft summon from an older main and its top-level
+ * `lanPort`/`lanMotd`/`mc_username`/`skinServerBaseUrl` are folded into the
+ * Minecraft joinTarget. Exported for tests.
+ */
+export function resolveInitGame(initData) {
+  const legacy = initData?.game == null
+  const game = GAME_KINDS.includes(initData?.game) ? initData.game : 'minecraft'
+  let joinTarget = initData?.joinTarget && typeof initData.joinTarget === 'object' ? initData.joinTarget : null
+  if (!joinTarget && game === 'minecraft') {
+    joinTarget = {
+      port: initData?.lanPort ?? null,
+      motd: initData?.lanMotd ?? null,
+      mc_username: initData?.mc_username ?? '',
+      skinServerBaseUrl: initData?.skinServerBaseUrl ?? null,
+    }
+  }
+  const labelRaw = initData?.worldLabel ?? joinTarget?.motd ?? joinTarget?.label ?? (legacy ? initData?.lanMotd : null)
+  const worldLabel = (typeof labelRaw === 'string' && labelRaw.trim()) ? labelRaw.trim() : null
+  const packRoot = typeof initData?.packRoot === 'string' && initData.packRoot.trim() ? initData.packRoot : null
+  return { game, joinTarget, worldLabel, packRoot, legacy }
+}
+
 async function bootstrapWithInit(initData) {
   const {
     character,
     apiKey,
-    lanPort,
-    lanMotd,             // LAN world MOTD (level name) for world labeling; may be absent
     // 260801: epoch ms at which the supervisor's summon watchdog fires. Sized
     // by main so the connect guard below can report a specific failure a beat
     // BEFORE the generic one lands. Absent on older main → connect.js falls
     // back to its flat CONNECT_TIMEOUT_MS.
     summonDeadlineAt,    // number | undefined
     userDataDir,
-    mc_username,         // Minecraft username collected in onboarding
     preferred_name,      // seeds player_username for player-recognition
-    skinServerBaseUrl,   // Logged for verification; the real consumer is
-                         // CustomSkinLoader on the host's MC client. The bot itself never
-                         // hits this URL — the setup wizard stamps it into
-                         // customskinloader.json on the user's MC install.
     // Phase 13-15 (PROXY-07): when the user has selected `cloud-proxy` as
     // their AI backend (apiKeyStore.getAiBackendKind()), the supervisor ships
     // `{ baseURL, authToken }` here so the SDK routes through the Fly.io
@@ -639,13 +403,35 @@ async function bootstrapWithInit(initData) {
     webSearch,            // { provider?: string, api_key?: string } | undefined
   } = initData
 
+  // Game-adapters M0: which game, where to join, what to call the world.
+  const { game, joinTarget, worldLabel, packRoot } = resolveInitGame(initData)
+  // The in-game player username collected in onboarding (Minecraft: inside
+  // the join target; legacy payloads carried it top-level).
+  const mc_username = joinTarget?.mc_username ?? initData.mc_username
+
+  // The game pack resolve hook must be in place BEFORE the runtime module is
+  // resolved (src/bot/packLoader.js registers it; a no-op in dev, where the
+  // pack root is the repo itself).
+  await preparePackLoader(packRoot)
+  let runtimeModule
+  try {
+    runtimeModule = await loadRuntimeModule(game)
+  } catch (err) {
+    emitLifecycle({
+      type: 'error',
+      error: 'BOT_CRASH',
+      message: `Could not load the ${game} game runtime: ${String((err && err.message) || err)}`,
+    })
+    return
+  }
+
   // Build a config shape that satisfies ConfigSchema.parse (see
-  // src/bot/config.js — adapter.minecraft requires {host, auth, username}
-  // and `version` must be a string, not boolean). v1 hardcodes
-  // `auth: 'microsoft'` per CONN-02. Username comes from onboarding's
-  // UserConfig (NOT from character.id — characters are personas, not
-  // Minecraft accounts). player_username is seeded from preferred_name so
-  // the bot recognises the human player from the first chat.
+  // src/bot/config.js — the adapter.<game> block comes from the runtime's
+  // adapterConfigFrom; for Minecraft that is {host, auth, username, port,
+  // version}). Username comes from the persona / character.username (NOT
+  // from character.id — characters are personas, not game accounts).
+  // player_username is seeded from preferred_name so the bot recognises the
+  // human player from the first chat.
   //
   // Memory paths are explicit: player_md_path + memory_md_path. A
   // `memory.dir` wrapper is NOT part of ConfigSchema — passing one would
@@ -666,22 +452,13 @@ async function bootstrapWithInit(initData) {
   // so the renderer could end up in an indefinite Connecting state
   // pending the full 30s outer timer. Run through ConfigSchema.parse so
   // every required default is populated from one source of truth.
-  // The bot's MC login name must NOT collide with the LAN host's own player
-  // (else the server kicks with multiplayer.disconnect.name_taken). Derive it
-  // from the character's persona, sanitized to MC's username constraints:
-  // [A-Za-z0-9_], ≤16 chars, non-empty. Falls back to 'Sei' if the persona
-  // name reduces to empty after sanitization.
-  const sanitizeMcName = (s) => {
-    const cleaned = String(s || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 16)
-    return cleaned || 'Sei'
-  }
-  // Prefer per-persona character.username over the legacy sanitized name
-  // fallback. The username field has regex /^[A-Za-z0-9_]+$/ + length cap 16
-  // baked into CharacterSchema, so it's already MC-valid by the time it
-  // reaches this code. Null/empty falls back to the sanitized persona name.
-  const bot_mc_username = (typeof character.username === 'string' && character.username.trim())
-    ? character.username.trim()
-    : sanitizeMcName(character.name)
+  // The bot's in-game login name is game-specific (Minecraft: the persona's
+  // character.username, else the persona name sanitized to MC's username
+  // rules; see adapter/minecraft/runtime.js botUsernameFor). The runtime
+  // owns the rule so a game with different naming constraints supplies its own.
+  const bot_mc_username = typeof runtimeModule.botUsernameFor === 'function'
+    ? runtimeModule.botUsernameFor(character)
+    : String(character?.name || 'Sei')
 
   // player_username is a label/pin only — v1.0 single-human LAN no longer
   // gates owner-recognition on a username match (chat.js treats any non-bot
@@ -722,9 +499,10 @@ async function bootstrapWithInit(initData) {
       : {}),
     player_username: playerName,
     player_display_name: playerDisplayName,
-    // World label for the memory registry / section headers. Trim to null when
-    // absent or blank so worlds.js falls back to a spawn-coords label.
-    lan_motd: (typeof lanMotd === 'string' && lanMotd.trim()) ? lanMotd.trim() : null,
+    // World label for the memory registry / section headers (Minecraft: the
+    // LAN MOTD). null when absent so the adapter's getWorldIdentity() falls
+    // back to its own label.
+    world_label: worldLabel,
     persona: {
       // persona.name is the MC-safe sanitized name so the bot's in-chat
       // identity and login username always match.
@@ -758,22 +536,23 @@ async function bootstrapWithInit(initData) {
     anthropic: cloudMode
       ? { api_key: '', cloudMode: { baseURL: cloudMode.baseURL, authToken: cloudMode.authToken } }
       : { api_key: apiKey },
+    // The game's adapter block, built by its runtime from the join target
+    // (Minecraft: loopback host, offline auth, version 'auto' → resolved by a
+    // status ping in the runtime).
     adapter: {
-      kind: 'minecraft',
-      minecraft: {
-        host: '127.0.0.1',
-        port: lanPort,
-        auth: 'offline',
-        username: bot_mc_username,
-        // 'auto' → resolved to the world's actual (supported) version by a
-        // status ping in start(); see resolveServerVersion.
-        version: 'auto',
-      },
+      kind: game,
+      [game]: typeof runtimeModule.adapterConfigFrom === 'function'
+        ? runtimeModule.adapterConfigFrom({ joinTarget, botUsername: bot_mc_username, character })
+        : {},
     },
     memory: {
       player_md_path: `${memDir}/PLAYER.md`,
       memory_md_path: `${memDir}/MEMORY.md`,
-      heartbeat_md_path: `${memDir}/HEARTBEAT.md`,
+      // Goals are per GAME (260909): the first DST summon read the character's
+      // Minecraft goals ("reach stone pickaxe tier") out of HEARTBEAT.md and
+      // was told to pursue them in the Constant. Minecraft keeps the bare name
+      // so existing installs keep their goals; other games get a suffixed file.
+      heartbeat_md_path: game === 'minecraft' ? `${memDir}/HEARTBEAT.md` : `${memDir}/HEARTBEAT.${game}.md`,
       worlds_json_path: `${memDir}/worlds.json`,
     },
     // Bridge the vision tier + cadence into config.vision. Every other vision
@@ -810,7 +589,7 @@ async function bootstrapWithInit(initData) {
   // updated live via the {type:'roster'} port message.
   try {
     config._seiCompanions = Array.isArray(companions)
-      ? companions.filter(c => typeof c === 'string' && c.trim() && c !== config.adapter.minecraft.username)
+      ? companions.filter(c => typeof c === 'string' && c.trim() && c !== bot_mc_username)
       : []
   } catch {}
 
@@ -845,33 +624,27 @@ async function bootstrapWithInit(initData) {
 
   emitLifecycle({ type: 'init-ack' })
 
-  // Trust main's handover — it owns the LAN watcher and revalidates port
-  // freshness via its 3-second stale window. Bot-side re-discovery was
-  // briefly added as a workaround when summon was failing for unrelated
-  // protocol-handshake reasons; logs proved both ports always agreed
-  // (handover working as designed). Removed per Pitfall 6 (CONTEXT D-25):
-  // discoverLanPort lives only on the CLI path below the !parentPort guard.
-  if (lanPort == null) {
-    emitLifecycle({
-      type: 'error',
-      error: 'LAN_NOT_OPEN',
-      message:
-        'No LAN broadcast detected. Make sure your Minecraft world is open to LAN ' +
-        '(ESC → Open to LAN → Start LAN World) and click Summon again.',
-    })
+  // Trust main's handover — it owns the per-game watcher and revalidates
+  // freshness itself. The bot never re-discovers the world (Pitfall 6,
+  // CONTEXT D-25); this is only the bot-side backstop for a payload with
+  // nothing to join (Minecraft: LAN_NOT_OPEN, same message as before).
+  const missing = typeof runtimeModule.checkJoinTarget === 'function'
+    ? runtimeModule.checkJoinTarget(joinTarget)
+    : null
+  if (missing) {
+    emitLifecycle({ type: 'error', error: missing.error ?? 'BOT_CRASH', message: missing.message ?? 'Nothing to join.' })
     return
   }
   logger.info(
-    `LAN connected at port ${lanPort}, starting "${character.name}" ` +
-    `(mc_username=${config.adapter.minecraft.username}, ` +
-    `player=${config.player_username}, version=${config.adapter.minecraft.version})`,
+    `${game} join target ${JSON.stringify(joinTarget ?? null)}, starting "${character.name}" ` +
+    `(username=${bot_mc_username}, player=${config.player_username})`,
   )
   // Log the skin-server URL so a developer running `npm run dev` can
   // confirm the supervisor → bot init handover. The bot
   // never fetches from this URL (CustomSkinLoader on the host's MC client is
   // the actual consumer); this line exists purely for verification.
-  if (skinServerBaseUrl) {
-    logger.info(`[sei] skin server URL handed to bot: ${skinServerBaseUrl}`)
+  if (joinTarget?.skinServerBaseUrl) {
+    logger.info(`[sei] skin server URL handed to bot: ${joinTarget.skinServerBaseUrl}`)
   }
 
   // 260508-nkk root cause #2: previously `summon-ready` fired immediately
@@ -884,35 +657,37 @@ async function bootstrapWithInit(initData) {
   let _running_local = null
   try {
     _running_local = await start(config, {
+      runtime: runtimeModule,
       onReady: () => {
         emitLifecycle({ type: 'summon-ready' })
       },
       // 260618: reactive JWT recovery — bot → main "send me a fresh token".
       onAuthExpired: requestJwtRefresh,
-      // Minecraft dashboard (260721): telemetry snapshots go straight up the
-      // port. Deliberately NOT emitLifecycle — its stdout mirror would spam
-      // the rolling log with a ~1.5KB base64 minimap every 2s.
+      // Dashboard telemetry (260721): snapshots go straight up the port.
+      // Deliberately NOT emitLifecycle — its stdout mirror would spam the
+      // rolling log with a ~1.5KB base64 minimap every 2s.
       onDashboard: (snapshot) => {
         try { initPort?.postMessage({ type: 'dashboard', snapshot }) } catch {}
       },
-      onConnectError: (err) => {
-        const message = String((err && err.message) || err)
+      // Game-adapters M2: raw port messages a runtime needs main to see
+      // (the DST runtime's {type:'dst-listen', port, token}). Not a
+      // lifecycle event; the supervisor routes it before lifecycleToStatus.
+      postPortMessage: (payload) => {
+        try { initPort?.postMessage(payload) } catch {}
+        // Type only: the DST message carries a per-summon token that must
+        // not land in the rolling log file.
+        console.log(`[lifecycle] ${JSON.stringify({ type: payload?.type ?? 'port-message' })}`)
+      },
+      // A TERMINAL connect/disconnect failure, classified by the game runtime
+      // (contract v2 classifyConnectError) to the class whose ERROR_COPY gives
+      // the user the right next step.
+      onError: (info) => {
+        const message = String(info?.message ?? '')
         emitLifecycle({
           type: 'error',
-          // A dropped live session and an exhausted initial-connect retry both
-          // arrive tagged "LAN_NOT_OPEN:"; an unsupported world version is
-          // "UNSUPPORTED_MC_VERSION:"; a Forge/NeoForge world that turns a
-          // vanilla client away is "MODDED_HOST_REJECTED:"; a silent spawn stall
-          // (connect.js's wall-clock guard) is a BOT_START_TIMEOUT. Route to the
-          // class whose ERROR_COPY gives the user the right next step.
-          error: message.startsWith('UNSUPPORTED_MC_VERSION')
-            ? 'UNSUPPORTED_MC_VERSION'
-            : message.startsWith('MODDED_HOST_REJECTED')
-              ? 'MODDED_HOST_REJECTED'
-              : message.startsWith('LAN_NOT_OPEN')
-                ? 'LAN_NOT_OPEN'
-                : 'BOT_START_TIMEOUT',
+          error: info?.error ?? 'BOT_START_TIMEOUT',
           message,
+          ...(info?.retryAfterSeconds != null ? { retryAfterSeconds: info.retryAfterSeconds } : {}),
         })
         // The bot can't recover on its own (initial connect exhausted, a live
         // session dropped, or spawn stalled). Run the same graceful shutdown

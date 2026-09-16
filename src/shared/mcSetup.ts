@@ -22,6 +22,14 @@ export interface McSetupInstallLike {
   csl_installed: boolean;
   /** Absent on records from a main older than this field: fall back to `loader`. */
   fabric_mc_versions?: string[];
+  /**
+   * Versions with a launcher profile whose OWN mods folder carries the skin
+   * mod (260916, one "Sei <version>" profile per version, each with its own
+   * game dir). When present this is the readiness truth; absent (older
+   * main, or launcher_profiles.json unreadable) falls back to "Fabric for a
+   * supported version exists somewhere + the mod exists somewhere".
+   */
+  sei_ready_versions?: string[];
   compatibility: 'full' | 'limited';
 }
 
@@ -44,6 +52,10 @@ export function compareMcVersions(a: string, b: string): number {
  */
 export function mcInstallReadyVersion(install: McSetupInstallLike, supported: readonly string[]): string | null {
   if (install.compatibility !== 'full') return null;
+  if (Array.isArray(install.sei_ready_versions)) {
+    const ok = install.sei_ready_versions.filter((v) => supported.includes(v)).sort(compareMcVersions);
+    return ok.length ? ok[ok.length - 1] : null;
+  }
   if (install.loader !== 'fabric' || !install.csl_installed) return null;
   if (!Array.isArray(install.fabric_mc_versions)) return supported[supported.length - 1] ?? null;
   const ok = install.fabric_mc_versions.filter((v) => supported.includes(v)).sort(compareMcVersions);

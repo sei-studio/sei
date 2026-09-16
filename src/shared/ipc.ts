@@ -57,6 +57,14 @@ export type {
   BackseatTick,
 } from './backseatIpc';
 import type { McDashboardSnapshot, McDashboardSnapshotPush } from './mcDashboardIpc';
+import type { GameId, WorldState, WorldStates, GameDashboardSnapshot } from './gameIpc';
+import { StardewIpcChannel, type StardewInstallState, type StardewInstallProgressEvent, type StardewLaunchResult } from './stardewIpc';
+import { GameIpcChannel } from './gameIpc';
+export type { GameId, WorldState, WorldStates, GameDashboardSnapshot } from './gameIpc';
+import type { GamePackProgressPush, GamePackState } from './gamePacks';
+import type { DstInstallState, DstSurvivorPick } from './dstIpc';
+import { DstChannel } from './dstIpc';
+export type { GamePackProgressPush, GamePackState } from './gamePacks';
 export type {
   McDashboardSnapshot,
   McDashboardSnapshotPush,
@@ -90,7 +98,16 @@ export type Unsubscribe = () => void;
  * omitted the id because there was only ever one session; that ambiguity is no
  * longer safe.) The renderer keys `useDataStore.summons` by this id.
  */
-export type BotStatus =
+export type BotStatus = BotStatusBase & {
+  /**
+   * Game adapters (M0, 260908): which game this session is (or was) in.
+   * Stamped by the supervisor on every status it emits; absent only on
+   * statuses from a main older than this field (treat as 'minecraft').
+   */
+  game?: GameId;
+};
+
+type BotStatusBase =
   | { kind: 'idle'; characterId: string }
   | { kind: 'connecting'; characterId: string }
   // `startedAtMs` is the epoch ms when this session's clock started (main and
@@ -745,12 +762,19 @@ export interface McInstall {
   loader_version: string | null;
   /**
    * Every Minecraft version a `versions/fabric-loader-<loader>-<mc>` profile
-   * exists for (260916). Vanilla installs only; CurseForge instances carry
-   * one version in `mc_version`. Readiness (shared/mcSetup.ts) needs the
-   * whole list: Fabric for a snapshot or an unsupported release is not a
-   * Sei-ready install even though `loader === 'fabric'`.
+   * exists for (260909). Vanilla installs only; CurseForge instances carry
+   * one loader per instance and report []. Optional so a renderer can read
+   * records from an older main; see shared/mcSetup.ts for the readiness rule.
    */
   fabric_mc_versions?: string[];
+  /**
+   * Versions whose launcher profile (`fabric-loader-<loader>-<mc>`) has the
+   * skin mod in ITS OWN mods folder (260916). The wizard builds one
+   * "Sei <version>" profile per version at `<.minecraft>/sei/<version>/`, so
+   * readiness is per profile; see shared/mcSetup.ts. Absent when
+   * launcher_profiles.json could not be read.
+   */
+  sei_ready_versions?: string[];
   csl_installed: boolean;
   csl_version: string | null;
   /** True when persisted wizard state previously enabled Sei here. */
@@ -774,6 +798,8 @@ export interface WizardInstallResult {
   message?: string;
   installedFabricVersion?: string;
   installedCslVersion?: string;
+  /** Vanilla-only (260916): the Minecraft version the "Sei <version>" profile was built for. */
+  installedMcVersion?: string;
   /**
    * Vanilla-only (260518-o1k T6). Summary of the mod-link pass that ran
    * between the Fabric install and the CSL config write. Absent for
@@ -1419,8 +1445,36 @@ export interface RendererApi {
   // Bot supervision (request/response with timeouts — main enforces).
   // `stop(id)` stops one summoned character; `stop()` (no id) stops every
   // active session (used by sign-out / account-swap teardown).
-  summon(characterId: string): Promise<void>;
+  summon(characterId: string, game?: GameId): Promise<void>;
   stop(characterId?: string): Promise<void>;
+
+  // Game adapters (M0, 260908) — the game-neutral world + dashboard surface.
+  // See src/shared/gameIpc.ts. Minecraft keeps onLan/getLanState/lanCheckNow
+  // and the mcDashboard* members; these carry the per-game unions.
+  onWorldState(cb: (state: WorldState) => void): Unsubscribe;
+  getWorldStates(): Promise<WorldStates>;
+  worldCheckNow(game: GameId): Promise<WorldState>;
+  gameDashboardGet(characterId: string): Promise<GameDashboardSnapshot | null>;
+  gameDashboardSetWatching(characterId: string, watching: boolean): Promise<void>;
+  onGameDashboardSnapshot(cb: (s: GameDashboardSnapshot) => void): Unsubscribe;
+  gameSetPaused(characterId: string, paused: boolean): Promise<boolean>;
+  gameSetMode(characterId: string, mode: McGameMode): Promise<boolean>;
+
+  // Don't Starve Together (game-adapters M2, 260908) — see src/shared/dstIpc.ts.
+  /** Detect the game + helper mod (re-applies modsettings.lua when found). */
+  dstInstallState(): Promise<DstInstallState>;
+  /** Copy the helper mod from the game pack into the game and force-enable it. */
+  dstInstall(): Promise<DstInstallState>;
+  /** Open steam://rungameid/322330 (after re-applying the enable). */
+  dstLaunch(): Promise<void>;
+  /** macOS only: open System Settings > Privacy & Security > App Management (260909). */
+  dstOpenAppManagement(): Promise<void>;
+  /** The character's survivor, derived by the character on first use. */
+  dstSurvivorGet(characterId: string): Promise<DstSurvivorPick>;
+  /** Override (prefab) or forget (null) the survivor pick. */
+  dstSurvivorSet(characterId: string, prefab: string | null): Promise<DstSurvivorPick>;
+  /** Push: install progress while dstInstall runs. */
+  onDstInstallProgress(cb: (state: DstInstallState) => void): Unsubscribe;
 
   // Character CRUD
   listCharacters(): Promise<Character[]>;
@@ -1825,6 +1879,37 @@ export interface RendererApi {
   mcDashboardSetWatching(characterId: string, watching: boolean): Promise<void>;
   /** Telemetry pushes (~every 2s while watching, plus on action change). */
   onMcDashboardSnapshot(cb: (s: McDashboardSnapshotPush) => void): Unsubscribe;
+
+  // --- Game packs (260908) --- see src/shared/gamePacks.ts for the contract
+  // and src/main/games/packs.ts for the store. A game adapter's runtime
+  // (Minecraft: mineflayer, minecraft-data, prismarine-viewer, gl, ...) is a
+  // download on first use, not part of the installer.
+  /** Current state of one game's pack (never touches the network). */
+  gamePackState(game: GameId): Promise<GamePackState>;
+  /**
+   * Start (or join) the download + install of one game's pack. Resolves with
+   * the state once the job settles (`ready`, or `error` carrying
+   * GAME_PACK_DOWNLOAD_FAILED); never rejects on a download failure so the
+   * card can render the retry from the returned state. Progress arrives on
+   * onGamePackProgress while it runs.
+   */
+  gamePackEnsure(game: GameId): Promise<GamePackState>;
+  /** Push: every state change of any game's pack (downloading ticks, ready, error). */
+  onGamePackProgress(cb: (push: GamePackProgressPush) => void): Unsubscribe;
+
+  // --- Stardew Valley (game-adapters M1, 260908) --- src/shared/stardewIpc.ts
+  /** Fresh detection: game folder, SMAPI, the Sei companion mod, its config. */
+  stardewInstallState(): Promise<StardewInstallState>;
+  /**
+   * Install SMAPI (downloaded from its GitHub release at install time) and
+   * place the companion mod; progress arrives on onStardewInstallProgress.
+   * Rejects with an Error whose message starts with the ErrorClass
+   * (GAME_NOT_INSTALLED / SMAPI_INSTALL_FAILED / GAME_INSTALL_FAILED).
+   */
+  stardewInstall(): Promise<StardewInstallState>;
+  /** Start the game through SMAPI (no-op with a message when it is already running). */
+  stardewLaunch(): Promise<StardewLaunchResult>;
+  onStardewInstallProgress(cb: (ev: StardewInstallProgressEvent) => void): Unsubscribe;
   /**
    * 260725 play/pause: freeze/resume the in-game brain. Paused: no game LLM
    * calls, in-flight actions abort-frozen; on a live voice call only voice
@@ -2077,7 +2162,17 @@ export interface RendererApi {
    * Install Fabric Loader (vanilla) and/or drop CustomSkinLoader into each selected install. Emits progress via onWizardProgress.
    * `sessionId` is a renderer-generated opaque id (e.g. crypto.randomUUID()) that lets a subsequent wizardCancel(sessionId) abort THIS install run.
    */
-  runWizardInstall(args: { sessionId: string; installIds: string[]; skinServerBaseUrl: string }): Promise<{ results: WizardInstallResult[] }>;
+  runWizardInstall(args: {
+    sessionId: string;
+    installIds: string[];
+    skinServerBaseUrl: string;
+    /**
+     * installId → Minecraft version the player picked for that vanilla
+     * launcher (260916). Absent or unjoinable → the newest supported version
+     * (shared/mcSetup.ts selectTargetMcVersion). Ignored for CurseForge.
+     */
+    mcVersions?: Record<string, string>;
+  }): Promise<{ results: WizardInstallResult[] }>;
   /**
    * Abort an in-flight runWizardInstall by sessionId. Main holds a Map<sessionId, AbortController>;
    * this resolves immediately after firing .abort() — the in-flight runWizardInstall promise then rejects.
@@ -2692,7 +2787,11 @@ export interface RecoveryRepairResult {
 /* -------------------------------------------------------------------------- */
 
 export const IpcChannel = {
+  // Game adapters (M0, 260908): world:* + gamedash:* (src/shared/gameIpc.ts).
+  world: GameIpcChannel.world,
+  gamedash: GameIpcChannel.gamedash,
   bot: {
+    /** Invoke: {characterId, game?} (a bare characterId string is still accepted). */
     summon: 'bot:summon',
     stop: 'bot:stop',
     status: 'bot:status',
@@ -2935,6 +3034,19 @@ export const IpcChannel = {
     /** Invoke: 260725 runtime game mode ({characterId, mode} → boolean). */
     setMode: 'mcdash:set-mode',
   },
+  /** Stardew Valley install / launch (game-adapters M1, src/main/games/stardew). */
+  stardew: StardewIpcChannel,
+  /** Game packs (260908, src/main/games/packs.ts). */
+  game: {
+    /** Invoke: {game} → GamePackState (disk + live state only, no network). */
+    packState: 'game:pack-state',
+    /** Invoke: {game} → GamePackState once the download/install job settles. */
+    packEnsure: 'game:pack-ensure',
+    /** Push (main → renderer): GamePackProgressPush on every state change. */
+    packProgress: 'game:pack-progress',
+  },
+  /** Don't Starve Together (game-adapters M2, 260908; src/shared/dstIpc.ts). */
+  dst: DstChannel,
   voice: {
     /** Invoke: synthesize a spoken line ({characterId, text} → ArrayBuffer of audio/mpeg). */
     tts: 'voice:tts',
