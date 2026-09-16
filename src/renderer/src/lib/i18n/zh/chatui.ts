@@ -137,7 +137,7 @@ export const ZH_CHATUI: Record<string, string> = {
   'Minecraft Java Edition is installed.': '已安装 Minecraft Java 版。',
   'Install Minecraft Java Edition from minecraft.net, then check again.': '请从 minecraft.net 安装 Minecraft Java 版，然后重新检查。',
   'Get Minecraft': '获取 Minecraft',
-  'Your Minecraft is Sei-ready: Fabric for {version} with companion skins. Pick the "Sei" profile in the launcher.': '你的 Minecraft 已为 Sei 准备就绪：{version} 版 Fabric 和伙伴皮肤。请在启动器中选择“Sei”配置。',
+  'Your Minecraft is Sei-ready: Fabric for {version} with companion skins. Pick the "Sei {version}" profile in the launcher.': '你的 Minecraft 已为 Sei 准备就绪：{version} 版 Fabric 和伙伴皮肤。请在启动器中选择“Sei {version}”配置。',
   'Set up a Sei-ready Minecraft: a separate "Sei" profile in your launcher on a version Sei can join (up to {latest}), with Fabric and the companion-skin mod. One time, about a minute. Your own profile is not changed.':
     '设置一个为 Sei 准备的 Minecraft：在启动器中新增一个独立的“Sei”配置，使用 Sei 能加入的版本（最高 {latest}），并装好 Fabric 和伙伴皮肤模组。只需一次，约一分钟。不会改动你自己的配置。',
   'Minecraft Java Edition': 'Minecraft Java 版',

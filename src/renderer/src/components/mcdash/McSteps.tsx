@@ -119,7 +119,7 @@ export function useMcSetupSteps(skin: StepSkin): McSetup {
       title: t('A Sei-ready Minecraft'),
       done: installDone,
       body: installDone ? (
-        <span>{t('Your Minecraft is Sei-ready: Fabric for {version} with companion skins. Pick the "Sei" profile in the launcher.', { version: readyVersion })}</span>
+        <span>{t('Your Minecraft is Sei-ready: Fabric for {version} with companion skins. Pick the "Sei {version}" profile in the launcher.', { version: readyVersion })}</span>
       ) : (
         <>
           <span>

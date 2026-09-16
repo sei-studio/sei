@@ -20,7 +20,6 @@ import React from 'react';
 import { supportedVersions } from 'minecraft-protocol/src/version.js';
 import type { McInstall } from '@shared/ipc';
 import { StatusPill, type StatusPillTone } from './StatusPill';
-import { WARN_COPY } from '../lib/errors';
 import { t, useT } from '../lib/i18n';
 import styles from './McInstallRow.module.css';
 
@@ -31,26 +30,15 @@ export interface McInstallRowProps {
   install: McInstall;
   selected: boolean;
   onToggle: () => void;
-}
-
-/**
- * Detect pre-1.14 MC versions (260518-o1k T8). Fabric Loader's current
- * builds require MC ≥ 1.14, so anything older surfaces a warning so
- * the user can deselect that row.
- *
- * Parses `major.minor[.patch]`. Returns false for any unparseable or
- * null input — we don't warn on what we can't read; the link/install
- * step will surface its own error if it actually fails.
- */
-function isPre114(v: string | null | undefined): boolean {
-  if (typeof v !== 'string') return false;
-  const m = /^(\d+)\.(\d+)/.exec(v.trim());
-  if (!m) return false;
-  const major = parseInt(m[1], 10);
-  const minor = parseInt(m[2], 10);
-  if (!Number.isFinite(major) || !Number.isFinite(minor)) return false;
-  if (major < 1) return true; // never occurs for MC, defensive
-  return major === 1 && minor < 14;
+  /**
+   * 260916: vanilla rows carry a Minecraft version picker. The wizard builds
+   * one "Sei <version>" profile per pick, so a player can keep a 1.21.4
+   * profile for their old world beside a 26.1 one. Absent = no picker
+   * (Settings re-entry paths that predate it), main defaults to the newest.
+   */
+  versionOptions?: string[];
+  version?: string;
+  onVersionChange?: (version: string) => void;
 }
 
 interface PillSpec {
@@ -119,10 +107,18 @@ function pillFor(install: McInstall): PillSpec {
   };
 }
 
-export function McInstallRow({ install, selected, onToggle }: McInstallRowProps): React.ReactElement {
+export function McInstallRow({
+  install,
+  selected,
+  onToggle,
+  versionOptions,
+  version,
+  onVersionChange,
+}: McInstallRowProps): React.ReactElement {
   // Subscribes to the language so pillFor's bare t() re-evaluates on toggle.
   const t = useT();
   const pill = pillFor(install);
+  const readyVersions = install.sei_ready_versions ?? [];
   const checkboxId = `mc-install-${install.id}`;
   // 260518-o1k T7: Lunar rows are read-only — surfaced for transparency
   // only, with the checkbox disabled and the row's onClick a no-op.
@@ -178,16 +174,40 @@ export function McInstallRow({ install, selected, onToggle }: McInstallRowProps)
             )}
           </div>
         ) : null}
-        {/* 260518-o1k T8: pre-1.14 MC inline warning (vanilla only).
-            Informational — Continue is not disabled (per D4: no version
-            override picker in this task). User can deselect this row and
-            proceed. */}
-        {install.kind === 'vanilla' && isPre114(install.mc_version) ? (
-          <div className={styles.warning}>
-            {t(WARN_COPY.MC_VERSION_PRE_1_14, {
-              version: install.mc_version!,
-              latest: LATEST_SUPPORTED,
-            })}
+        {/* 260916: the wizard no longer installs for the launcher's
+            last-played version (that built Sei profiles the bot could not
+            join once 26.2 shipped), so the old pre-1.14 warning about the
+            detected version is gone. The row now says which profile will be
+            built and lets the player pick its version. */}
+        {install.kind === 'vanilla' && versionOptions && onVersionChange ? (
+          <div className={styles.versionRow} onClick={(e) => e.stopPropagation()}>
+            <label className={styles.versionLabel} htmlFor={`${checkboxId}-version`}>
+              {t('Minecraft version for the Sei profile')}
+            </label>
+            <select
+              id={`${checkboxId}-version`}
+              className={styles.versionSelect}
+              value={version ?? versionOptions[0]}
+              onChange={(e) => onVersionChange(e.target.value)}
+              onKeyDown={(e) => e.stopPropagation()}
+            >
+              {versionOptions.map((v) => (
+                <option key={v} value={v}>
+                  {readyVersions.includes(v) ? t('{version} (set up)', { version: v }) : v}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+        {install.kind === 'vanilla' ? (
+          <div className={styles.lunarCaption}>
+            {readyVersions.length > 0
+              ? t('Sei profiles already in your launcher: {versions}. Picking another version adds one more; your own profiles are not changed.', {
+                  versions: readyVersions.join(', '),
+                })
+              : t('Adds a separate "Sei {version}" profile to your launcher. Your own profiles are not changed.', {
+                  version: version ?? versionOptions?.[0] ?? LATEST_SUPPORTED,
+                })}
           </div>
         ) : null}
       </div>

@@ -1,7 +1,7 @@
 /**
- * Minecraft "Sei-ready" readiness (260909). Pure, shared by main (the
- * wizard's target-version pick) and the renderer (the launch panel's setup
- * list), so the two can never disagree about what "set up" means.
+ * Minecraft "Sei-ready" readiness + the wizard's target version (260916).
+ * Pure, shared by main (the skin wizard) and the renderer (setup UI), so
+ * the two can never disagree about what "set up" means.
  *
  * A Minecraft install is Sei-ready when the skin-setup wizard has put a
  * Fabric profile there for a Minecraft version Sei's networking stack can
@@ -22,6 +22,14 @@ export interface McSetupInstallLike {
   csl_installed: boolean;
   /** Absent on records from a main older than this field: fall back to `loader`. */
   fabric_mc_versions?: string[];
+  /**
+   * Versions with a launcher profile whose OWN mods folder carries the skin
+   * mod (260916, one "Sei <version>" profile per version, each with its own
+   * game dir). When present this is the readiness truth; absent (older
+   * main, or launcher_profiles.json unreadable) falls back to "Fabric for a
+   * supported version exists somewhere + the mod exists somewhere".
+   */
+  sei_ready_versions?: string[];
   compatibility: 'full' | 'limited';
 }
 
@@ -44,6 +52,10 @@ export function compareMcVersions(a: string, b: string): number {
  */
 export function mcInstallReadyVersion(install: McSetupInstallLike, supported: readonly string[]): string | null {
   if (install.compatibility !== 'full') return null;
+  if (Array.isArray(install.sei_ready_versions)) {
+    const ok = install.sei_ready_versions.filter((v) => supported.includes(v)).sort(compareMcVersions);
+    return ok.length ? ok[ok.length - 1] : null;
+  }
   if (install.loader !== 'fabric' || !install.csl_installed) return null;
   if (!Array.isArray(install.fabric_mc_versions)) return supported[supported.length - 1] ?? null;
   const ok = install.fabric_mc_versions.filter((v) => supported.includes(v)).sort(compareMcVersions);
@@ -62,29 +74,36 @@ export function anyMcInstallReady(installs: readonly McSetupInstallLike[], suppo
 /** Fabric Loader's current builds need Minecraft 1.14 or newer. */
 export const FABRIC_MIN_MC = '1.14';
 
+/** A release version string ("1.21.4", "26.1"): no snapshot / pre-release suffix. */
+const RELEASE_RE = /^\d+\.\d+(?:\.\d+)?$/;
+
+/** Supported versions the wizard can install Fabric for, newest first. */
+export function installableMcVersions(supported: readonly string[]): string[] {
+  return supported
+    .filter((v) => RELEASE_RE.test(v) && compareMcVersions(v, FABRIC_MIN_MC) >= 0)
+    .sort(compareMcVersions)
+    .reverse();
+}
+
 /**
  * Which Minecraft version the wizard should install Fabric for.
  *
- * A player already on a version Sei can join keeps it (their worlds are on
- * it, and this is what the wizard always did). Anyone else, a version Sei
- * cannot join (a snapshot, a release newer than the networking stack) or no
- * readable version at all, gets the newest VERIFIED version: one where
- * Fabric plus the companion-skin mod have actually been launched together.
- * A Modrinth listing is not proof (the CustomSkinLoader 15.x builds listed
- * 1.21.x and crashed it), which is why `verified` is a hand-maintained list
- * and not a lookup. If the verified list has nothing Sei can join, the
- * newest supported version is the last resort.
+ * The NEWEST version Sei's networking stack can join, full stop. The
+ * launcher's last-played version is deliberately not an input (260916): the
+ * wizard used to install Fabric for whatever the launcher last ran, which
+ * on any machine that had played 26.2 or 26.3 produced a "Sei" profile the
+ * bot itself could not join, and the version-not-supported popup pointed
+ * the player at the profile that had just been built for them. A version
+ * the player explicitly asked for (`requested`, the setup picker) wins
+ * when Sei can join it; anything else falls to the newest supported one.
+ * Null only when nothing supported is new enough for Fabric.
  */
 export function selectTargetMcVersion(args: {
-  installVersion: string | null | undefined;
   supported: readonly string[];
-  verified: readonly string[];
+  requested?: string | null;
 }): string | null {
-  const { installVersion, supported, verified } = args;
-  const joinable = (v: string): boolean => supported.includes(v) && compareMcVersions(v, FABRIC_MIN_MC) >= 0;
-  if (installVersion && joinable(installVersion)) return installVersion;
-  const newestFirst = (list: readonly string[]): string[] => [...list].sort(compareMcVersions).reverse();
-  for (const v of newestFirst(verified)) if (joinable(v)) return v;
-  for (const v of newestFirst(supported)) if (joinable(v)) return v;
-  return null;
+  const { supported, requested } = args;
+  const installable = installableMcVersions(supported);
+  if (requested && installable.includes(requested)) return requested;
+  return installable[0] ?? null;
 }

@@ -30,6 +30,11 @@ import { StatusPill } from './StatusPill';
 import { ModalShell } from './ModalShell';
 import { WizardStepShell } from './WizardStepShell';
 import { McInstallList } from './McInstallList';
+// Dependency-free CJS data module (deep import on purpose, see
+// UnsupportedVersionModal): the same table the bot's networking stack
+// enforces, so the picker can only offer versions Sei can join.
+import { supportedVersions } from 'minecraft-protocol/src/version.js';
+import { installableMcVersions } from '@shared/mcSetup';
 import { InstallProgressList } from './InstallProgressList';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useWizardStore, type WizardStep } from '../lib/stores/useWizardStore';
@@ -245,8 +250,12 @@ function PickInstallsStep(): React.ReactElement {
   const installs = useWizardStore((s) => s.installs);
   const selectedIds = useWizardStore((s) => s.selectedIds);
   const toggleSelected = useWizardStore((s) => s.toggleSelected);
+  const versionByInstall = useWizardStore((s) => s.versionByInstall);
+  const setInstallVersion = useWizardStore((s) => s.setInstallVersion);
   const gotoStep = useWizardStore((s) => s.gotoStep);
   const runInstall = useWizardStore((s) => s.runInstall);
+  // Newest first; the default pick (no entry in versionByInstall) is [0].
+  const versionOptions = React.useMemo(() => installableMcVersions(supportedVersions), []);
   return (
     <WizardStepShell
       stepNumber={2}
@@ -269,13 +278,16 @@ function PickInstallsStep(): React.ReactElement {
     >
       <p>
         {t(
-          'Sei will install Fabric Loader and CustomSkinLoader into each install you select. Already-modded CurseForge instances get only the mod jar.',
+          'Pick a Minecraft version for each launcher. Sei adds a separate "Sei <version>" profile there with Fabric and the companion-skin mod, and leaves your own profiles alone. Already-modded CurseForge instances get only the mod jar.',
         )}
       </p>
       <McInstallList
         installs={installs}
         selectedIds={selectedIds}
         onToggle={toggleSelected}
+        versionOptions={versionOptions}
+        versionByInstall={versionByInstall}
+        onVersionChange={setInstallVersion}
       />
     </WizardStepShell>
   );
@@ -389,17 +401,16 @@ function DoneStep(): React.ReactElement {
   // failure that still routed here). Only an all-ok run earns the green pill.
   const anyFailed = error != null || results.some((r) => !r.ok);
 
-  // Derive a representative profile name for the body copy. For vanilla installs
-  // the launcher shows a "fabric-loader-{loaderVersion}-{mcVersion}" profile; for
-  // CurseForge instances the launcher shows the instance name directly.
+  // Derive a representative profile name for the body copy. For vanilla
+  // installs the installer names the profile "Sei <version>" (260916; it
+  // used to be quoted here as fabric-loader-<loader>-<mc>, a name the
+  // launcher never showed); CurseForge instances show the instance name.
   const profileName = (() => {
     const first = installs.find((i) => selectedIds.has(i.id));
     if (!first) return 'your modded';
     if (first.kind === 'vanilla') {
-      const lv = first.loader_version ?? '';
-      const mv = first.mc_version ?? '';
-      if (lv && mv) return `fabric-loader-${lv}-${mv}`;
-      return 'Fabric Loader';
+      const built = results.find((r) => r.installId === first.id)?.installedMcVersion;
+      return `"Sei ${built ?? installableMcVersions(supportedVersions)[0] ?? ''}"`.replace(/ "$/, '"');
     }
     return first.label;
   })();

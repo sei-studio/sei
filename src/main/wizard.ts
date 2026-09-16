@@ -152,19 +152,20 @@ async function seedSeiGameDir(rootDir: string, seiGameDir: string): Promise<void
  */
 const sessions = new Map<string, AbortController>();
 
-/**
- * Minecraft versions where Fabric Loader + a pre-15 CustomSkinLoader build
- * have ACTUALLY been launched together. The wizard installs Fabric for one
- * of these whenever the player's own version is one Sei cannot join, or is
- * unreadable (260909; it used to fall back to 1.21.4 only when unreadable
- * and otherwise took whatever the launcher last ran, snapshots included).
- * A newer version being LISTED by CSL's Modrinth metadata is not proof: the
- * CSL 15.x builds listed 1.21.x and crashed it (code 255). Add a version
- * here only after launching Fabric + CSL on it. The pick itself is
- * shared/mcSetup.ts selectTargetMcVersion, so the launch panel's readiness
- * rule and the wizard agree.
+/*
+ * The wizard's target Minecraft version is NOT the launcher's last-played
+ * version (260916). It used to be, with a pinned 1.21.4 fallback only when
+ * that was unreadable (and, briefly, a hand-kept VERIFIED list the
+ * unjoinable ones were moved to), and on any machine that had played 26.2
+ * or 26.3 that built a "Sei" profile the bot itself could not join: the
+ * player then got the version-not-supported popup for the profile Sei had
+ * just made for them (the 260914 support case, and 6 of the 13 users who
+ * tried a summon that week). The pick is `selectTargetMcVersion` in
+ * shared/mcSetup.ts: the version the player chose in the setup picker when
+ * Sei can join it, else the newest version in minecraft-protocol's
+ * supported table. One "Sei <version>" profile per version, each with its
+ * own game dir under `<.minecraft>/sei/<version>/`, so several can coexist.
  */
-const VERIFIED_MC_VERSIONS: readonly string[] = ['1.21.4'];
 
 /**
  * Allocate a fresh AbortController for the given sessionId and store it in
@@ -216,11 +217,22 @@ export interface RunWizardInstallArgs {
   installIds: string[];
   /** e.g. `http://127.0.0.1:54321` — captured from `skin:get-server-url`. */
   skinServerBaseUrl: string;
+  /** installId → requested Minecraft version (vanilla only; see selectTargetMcVersion). */
+  mcVersions?: Record<string, string>;
   /**
    * Per-step progress callback. The IPC handler forwards each event to
    * the renderer via `webContents.send(IpcChannel.wizard.progress, ev)`.
    */
   onProgress: (ev: WizardProgressEvent) => void;
+}
+
+/**
+ * Link manifests are per GAME DIR (260916): one "Sei <version>" profile per
+ * version means one mods folder per version, and reconciling a 26.1 dir
+ * against what was linked into the 1.21.4 dir would unlink the wrong jars.
+ */
+function linkManifestKey(installId: string, mcVersion: string): string {
+  return `${installId}@${mcVersion}`;
 }
 
 /**
@@ -265,7 +277,7 @@ function isCancellationError(err: unknown, signal: AbortSignal): boolean {
 export async function runWizardInstall(
   args: RunWizardInstallArgs,
 ): Promise<{ results: WizardInstallResult[] }> {
-  const { sessionId, installIds, skinServerBaseUrl, onProgress } = args;
+  const { sessionId, installIds, skinServerBaseUrl, onProgress, mcVersions } = args;
 
   // ── Pre-flight: validate sessionId ────────────────────────────────────
   if (!sessionId || typeof sessionId !== 'string') {
@@ -323,7 +335,7 @@ export async function runWizardInstall(
       }
 
       try {
-        await processOneInstall(install, skinServerBaseUrl, ctl.signal, onProgress, results);
+        await processOneInstall(install, skinServerBaseUrl, ctl.signal, onProgress, results, mcVersions?.[installId] ?? null);
       } catch (err) {
         // Defensive — processOneInstall is supposed to catch and push to
         // results itself. This catch is a last-resort net for an
@@ -421,6 +433,7 @@ async function processOneInstall(
   signal: AbortSignal,
   onProgress: (ev: WizardProgressEvent) => void,
   results: WizardInstallResult[],
+  requestedVersion: string | null = null,
 ): Promise<void> {
   const installId = install.id;
 
@@ -448,7 +461,7 @@ async function processOneInstall(
   // downloads that Minecraft on the profile's first play). CurseForge
   // instances carry their own loader + version and cannot be moved.
   const mcVersion = install.kind === 'vanilla'
-    ? selectTargetMcVersion({ installVersion: install.mc_version, supported: supportedVersions, verified: VERIFIED_MC_VERSIONS })
+    ? selectTargetMcVersion({ supported: supportedVersions, requested: requestedVersion })
     : install.mc_version;
   if (!mcVersion) {
     onProgress({
@@ -488,6 +501,9 @@ async function processOneInstall(
       const fabricRes = await installFabricLoader({
         mcInstall: install,
         mcVersion,
+        // One launcher profile + game dir per version (260916).
+        profileName: `Sei ${mcVersion}`,
+        gameDirName: mcVersion,
         signal,
         onProgress: (pct) => onProgress({ installId, stage: 'fabric-downloading', pct }),
       });
@@ -555,7 +571,7 @@ async function processOneInstall(
   let newLinkManifest: LinkManifest | null = null;
   if (install.kind === 'vanilla' && seiGameDir) {
     const priorState = await loadWizardState().catch(() => null);
-    const priorManifest = priorState?.linkManifests?.[installId] ?? null;
+    const priorManifest = priorState?.linkManifests?.[linkManifestKey(installId, mcVersion)] ?? null;
     try {
       const stageResult = await runModLinkStage({
         install,
@@ -670,7 +686,7 @@ async function processOneInstall(
         ...current,
         linkManifests: {
           ...(current.linkManifests ?? {}),
-          [installId]: newLinkManifest,
+          [linkManifestKey(installId, mcVersion)]: newLinkManifest,
         },
       });
     } catch (err) {
@@ -687,6 +703,7 @@ async function processOneInstall(
     ok: true,
     installedFabricVersion,
     installedCslVersion,
+    ...(install.kind === 'vanilla' ? { installedMcVersion: mcVersion } : {}),
     ...(modLinkSummary ? { modLinkSummary } : {}),
   });
 }

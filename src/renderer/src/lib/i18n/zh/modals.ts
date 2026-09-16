@@ -464,8 +464,12 @@ export const ZH_MODALS: Record<string, string> = {
   "Sei looked in the usual places and didn't find a Minecraft install. Install Minecraft from minecraft.net or the CurseForge app, then re-run this wizard from Settings.":
     'Sei 在常见位置查找后没有发现 Minecraft 安装。请从 minecraft.net 或 CurseForge 应用安装 Minecraft，然后从设置中重新运行此向导。',
   'Pick which installs to enable': '选择要启用的安装',
-  'Sei will install Fabric Loader and CustomSkinLoader into each install you select. Already-modded CurseForge instances get only the mod jar.':
-    'Sei 会向你选择的每个安装中安装 Fabric Loader 和 CustomSkinLoader。已装模组的 CurseForge 实例只会安装模组 jar。',
+  'Pick a Minecraft version for each launcher. Sei adds a separate "Sei <version>" profile there with Fabric and the companion-skin mod, and leaves your own profiles alone. Already-modded CurseForge instances get only the mod jar.':
+    '为每个启动器选择一个 Minecraft 版本。Sei 会在那里添加一个单独的“Sei <版本>”配置，附带 Fabric 和伙伴皮肤模组，不会改动你自己的配置。已经装好模组的 CurseForge 实例只会获得模组 jar。',
+  'Minecraft version for the Sei profile': 'Sei 配置使用的 Minecraft 版本',
+  '{version} (set up)': '{version}（已设置）',
+  'Sei profiles already in your launcher: {versions}. Picking another version adds one more; your own profiles are not changed.': '启动器里已有的 Sei 配置：{versions}。选择其他版本会再添加一个；你自己的配置不会被改动。',
+  'Adds a separate "Sei {version}" profile to your launcher. Your own profiles are not changed.': '会在你的启动器里添加一个单独的“Sei {version}”配置。你自己的配置不会被改动。',
   'Setting up your installs': '正在设置你的安装',
   "Downloading Fabric Loader and CustomSkinLoader. Don't close Minecraft if it's open.":
     '正在下载 Fabric Loader 和 CustomSkinLoader。如果 Minecraft 已打开，请不要关闭它。',

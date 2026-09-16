@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { anyMcInstallReady, compareMcVersions, mcInstallReadyVersion, selectTargetMcVersion } from './mcSetup';
+import {
+  anyMcInstallReady,
+  compareMcVersions,
+  installableMcVersions,
+  mcInstallReadyVersion,
+  selectTargetMcVersion,
+} from './mcSetup';
 
 const SUPPORTED = ['1.20.1', '1.21.4', '1.21.11', '26.1'];
 
@@ -20,26 +26,29 @@ describe('mcSetup', () => {
     expect(mcInstallReadyVersion({ ...base, compatibility: 'limited', fabric_mc_versions: ['26.1'] }, SUPPORTED)).toBeNull();
     // A record from an older main (no versions list) keeps the old meaning.
     expect(mcInstallReadyVersion(base, SUPPORTED)).toBe('26.1');
+    // Per-profile truth wins when present: the mod must sit in THAT
+    // version's own game dir, not anywhere on the install.
+    expect(mcInstallReadyVersion({ ...base, fabric_mc_versions: ['26.1', '1.21.4'], sei_ready_versions: ['1.21.4'] }, SUPPORTED)).toBe('1.21.4');
+    expect(mcInstallReadyVersion({ ...base, fabric_mc_versions: ['26.1'], sei_ready_versions: [] }, SUPPORTED)).toBeNull();
+    expect(mcInstallReadyVersion({ ...base, csl_installed: false, sei_ready_versions: ['26.1'] }, SUPPORTED)).toBe('26.1');
     expect(anyMcInstallReady([{ ...base, loader: null }, { ...base, fabric_mc_versions: ['1.20.1'] }], SUPPORTED)).toBe('1.20.1');
   });
 
-  it('keeps the player on their own version when Sei can join it', () => {
-    expect(selectTargetMcVersion({ installVersion: '1.21.11', supported: SUPPORTED, verified: ['1.21.4'] })).toBe('1.21.11');
+  it('the wizard target is the newest supported version, whatever the launcher last played', () => {
+    expect(selectTargetMcVersion({ supported: SUPPORTED })).toBe('26.1');
+    expect(selectTargetMcVersion({ supported: SUPPORTED, requested: null })).toBe('26.1');
+    // The supported table is not sorted newest-last by contract; sort, do not trust order.
+    expect(selectTargetMcVersion({ supported: ['26.1', '1.21.4'] })).toBe('26.1');
   });
 
-  it('moves an unsupported or missing version to the newest VERIFIED supported one', () => {
-    expect(selectTargetMcVersion({ installVersion: '27.1', supported: SUPPORTED, verified: ['1.21.4'] })).toBe('1.21.4');
-    expect(selectTargetMcVersion({ installVersion: null, supported: SUPPORTED, verified: ['1.20.1', '1.21.4'] })).toBe('1.21.4');
-    // A verified version the networking stack has since dropped is skipped.
-    expect(selectTargetMcVersion({ installVersion: null, supported: SUPPORTED, verified: ['1.19.2', '1.21.4'] })).toBe('1.21.4');
+  it('an explicit request wins only when Sei can join it', () => {
+    expect(selectTargetMcVersion({ supported: SUPPORTED, requested: '1.21.4' })).toBe('1.21.4');
+    expect(selectTargetMcVersion({ supported: SUPPORTED, requested: '26.2' })).toBe('26.1');
+    expect(selectTargetMcVersion({ supported: SUPPORTED, requested: '1.12.2' })).toBe('26.1');
   });
 
-  it('falls back to the newest supported version when nothing verified is joinable', () => {
-    expect(selectTargetMcVersion({ installVersion: null, supported: SUPPORTED, verified: ['1.19.2'] })).toBe('26.1');
-  });
-
-  it('skips versions older than Fabric supports', () => {
-    expect(selectTargetMcVersion({ installVersion: '1.12.2', supported: ['1.12.2', '1.16.5'], verified: [] })).toBe('1.16.5');
-    expect(selectTargetMcVersion({ installVersion: null, supported: ['1.8.9'], verified: [] })).toBeNull();
+  it('never targets a snapshot or a version older than Fabric supports', () => {
+    expect(installableMcVersions(['1.8.9', '1.12.2', '1.16.5', '1.21.4', '26.1-snapshot-3', '26.1'])).toEqual(['26.1', '1.21.4', '1.16.5']);
+    expect(selectTargetMcVersion({ supported: ['1.8.9'] })).toBeNull();
   });
 });

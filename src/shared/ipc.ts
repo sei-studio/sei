@@ -767,6 +767,14 @@ export interface McInstall {
    * records from an older main; see shared/mcSetup.ts for the readiness rule.
    */
   fabric_mc_versions?: string[];
+  /**
+   * Versions whose launcher profile (`fabric-loader-<loader>-<mc>`) has the
+   * skin mod in ITS OWN mods folder (260916). The wizard builds one
+   * "Sei <version>" profile per version at `<.minecraft>/sei/<version>/`, so
+   * readiness is per profile; see shared/mcSetup.ts. Absent when
+   * launcher_profiles.json could not be read.
+   */
+  sei_ready_versions?: string[];
   csl_installed: boolean;
   csl_version: string | null;
   /** True when persisted wizard state previously enabled Sei here. */
@@ -790,6 +798,8 @@ export interface WizardInstallResult {
   message?: string;
   installedFabricVersion?: string;
   installedCslVersion?: string;
+  /** Vanilla-only (260916): the Minecraft version the "Sei <version>" profile was built for. */
+  installedMcVersion?: string;
   /**
    * Vanilla-only (260518-o1k T6). Summary of the mod-link pass that ran
    * between the Fabric install and the CSL config write. Absent for
@@ -2147,7 +2157,17 @@ export interface RendererApi {
    * Install Fabric Loader (vanilla) and/or drop CustomSkinLoader into each selected install. Emits progress via onWizardProgress.
    * `sessionId` is a renderer-generated opaque id (e.g. crypto.randomUUID()) that lets a subsequent wizardCancel(sessionId) abort THIS install run.
    */
-  runWizardInstall(args: { sessionId: string; installIds: string[]; skinServerBaseUrl: string }): Promise<{ results: WizardInstallResult[] }>;
+  runWizardInstall(args: {
+    sessionId: string;
+    installIds: string[];
+    skinServerBaseUrl: string;
+    /**
+     * installId → Minecraft version the player picked for that vanilla
+     * launcher (260916). Absent or unjoinable → the newest supported version
+     * (shared/mcSetup.ts selectTargetMcVersion). Ignored for CurseForge.
+     */
+    mcVersions?: Record<string, string>;
+  }): Promise<{ results: WizardInstallResult[] }>;
   /**
    * Abort an in-flight runWizardInstall by sessionId. Main holds a Map<sessionId, AbortController>;
    * this resolves immediately after firing .abort() — the in-flight runWizardInstall promise then rejects.

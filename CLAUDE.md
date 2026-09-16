@@ -1899,11 +1899,24 @@ so the scanner reports every Fabric profile's version
 (`McInstall.fabric_mc_versions`) and Fabric for a snapshot no longer counts.
 The VERSION half is what the wizard used to get wrong: it installed Fabric
 for whatever the launcher last ran (snapshots included) and fell back to a
-pinned 1.21.4 only when the version was unreadable. `selectTargetMcVersion`
-now keeps a joinable version and moves anything else to the newest entry of
-`VERIFIED_MC_VERSIONS` (wizard.ts, a hand-maintained list of versions where
-Fabric + a pre-15 CustomSkinLoader have actually been launched together; a
-Modrinth listing is not proof, see the CSL 15.x note there). The bug: the
+pinned 1.21.4 only when the version was unreadable, so once 26.2 shipped any
+machine that had played it got a Sei profile the bot could not join (the
+260914 support case: 6 of the 13 users who tried a summon that week hit the
+version popup on 26.2). **Since 260916 the launcher's last-played version is
+not an input at all.** `selectTargetMcVersion` (shared/mcSetup.ts, the only
+place the rule lives) takes the version the player picked in the setup
+list's row picker when Sei can join it, else the newest entry of
+minecraft-protocol's supported table; the hand-kept VERIFIED list is gone.
+**One "Sei <version>" profile per version**, each with its own game dir at
+`<.minecraft>/sei/<version>/` (the pre-260916 single profile used
+`<.minecraft>/sei/` and is left alone), because Fabric loads every jar in
+mods/ and the skin mod is built per version, so two versions cannot share
+one folder. Link manifests are keyed `installId@version` for the same
+reason. Readiness is per PROFILE: the scanner reads launcher_profiles.json
+and reports `McInstall.sei_ready_versions` (Fabric profiles whose own mods
+folder has the skin mod), falling back to the old whole-install rule only
+when that file is unreadable. The picker rides `runWizardInstall.mcVersions`
+(named in the main/ipc.ts zod or it is stripped). The bug: the
 first cut of `useMcSetupStore.scan` read `detectMcInstalls()` as a bare
 array while the bridge answers `{ installs }`, so every scan came back as
 "no Minecraft found" on a machine with a vanilla install and a Sei profile.

@@ -2793,6 +2793,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       sessionId: z.string().min(1),
       installIds: z.array(z.string().min(1)).min(1),
       skinServerBaseUrl: z.string().url(),
+      // 260916: per-install version pick. Named here or it is STRIPPED
+      // (zod drops undeclared keys silently; the backseat gridSmall lesson).
+      mcVersions: z.record(z.string().min(1), z.string().min(1)).optional(),
     }).parse(argsRaw);
     const { runWizardInstall } = await import('./wizard');
     return await runWizardInstall({
