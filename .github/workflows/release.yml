@@ -317,8 +317,9 @@ jobs:
           mkdir -p dist-release
           cp "${assets[@]}" dist-release/
           # 260908 game packs: the pack zips are release assets like any other
-          # (mirror-release.yml mirrors every asset flat, which is what the
-          # client's mirror URL assumes). The meta sidecars are NOT assets;
+          # (mirror-release.yml files them under updates/<channel>/, which is
+          # where the client's mirror URL looks: shared/gamePacks.ts
+          # gamePackMirrorDir). The meta sidecars are NOT assets;
           # they ride a separate artifact into the release job's manifest step.
           cp release/packs/sei-pack-*.zip dist-release/
           mkdir -p dist-packmeta
