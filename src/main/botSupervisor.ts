@@ -32,6 +32,7 @@ import type {
 import { effectiveMcUsername, type Character } from '../shared/characterSchema';
 import { clampChatLanguage } from '../shared/chatLanguage';
 import { buildLlmInitSection, type LlmInitSection } from './llmInitSection';
+import { resolveWebSearchSettings } from './llm/webSearchSettings';
 import { getCharacter, patchCharacter } from './characterStore';
 import { loadApiKey, hasApiKey, getAiBackendKind, type AiBackendKind } from './apiKeyStore';
 import { buildLaunchContinuity } from './chat/continuity';
@@ -812,6 +813,9 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // in-game replies get the same reading/typing pacing as the in-app chat.
     // Default ON (matches UserConfig.realistic_typing) when the field is absent.
     const realisticTyping = userCfg.realistic_typing !== false;
+    // 260909: web search provider + key for the brain's search / visit tools
+    // (env override > UserConfig.web_search_* > keyless 'auto' chain).
+    const webSearch = resolveWebSearchSettings(userCfg);
     // 260709: bridge the conversation language into the bot's # LANGUAGE
     // directive. Fork-time like vision_mode — a Settings change applies at the
     // next summon (the chat surface re-reads it per turn).
@@ -1228,6 +1232,9 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
               // bot skips its cold FIRST CONTACT greeting (which would otherwise
               // double the standalone launch reply). Deterministic; no race.
               voiceCallActive: opts.isVoiceCallActive?.(characterId) ?? false,
+              // 260909: { provider, api_key } for the brain's search / visit
+              // tools. The bot maps it onto config.web in bootstrapWithInit.
+              webSearch,
             },
             [port2],
           );

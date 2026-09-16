@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { portraitSrc } from './portraitSrc';
+import { bumpPortraitRef, portraitSrc } from './portraitSrc';
 
 describe('portraitSrc — resolves portrait_image refs to loadable URLs', () => {
   it('returns null for nullish refs (→ procedural sprite fallback)', () => {
@@ -27,5 +27,19 @@ describe('portraitSrc — resolves portrait_image refs to loadable URLs', () => 
     expect(portraitSrc('data:image/png;base64,AAAA')).toBe('data:image/png;base64,AAAA');
     expect(portraitSrc('blob:abc')).toBe('blob:abc');
     expect(portraitSrc('sei-portrait://local/x.png')).toBe('sei-portrait://local/x.png');
+  });
+
+  it('bumpPortraitRef adds a per-ref cache-buster to bare refs only (260909)', () => {
+    const uuid = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
+    const other = '6ba7b811-9dad-11d1-80b4-00c04fd430c8';
+    expect(portraitSrc(`${uuid}.png`)).toBe(`sei-portrait://local/${uuid}.png`);
+    bumpPortraitRef(`${uuid}.png`);
+    expect(portraitSrc(`${uuid}.png`)).toBe(`sei-portrait://local/${uuid}.png?v=1`);
+    bumpPortraitRef(`${uuid}.png`);
+    expect(portraitSrc(`${uuid}.png`)).toBe(`sei-portrait://local/${uuid}.png?v=2`);
+    // Other refs and non-bare refs are untouched.
+    expect(portraitSrc(`${other}.png`)).toBe(`sei-portrait://local/${other}.png`);
+    expect(portraitSrc('./img/sui.png')).toBe('./img/sui.png');
+    bumpPortraitRef(null);
   });
 });

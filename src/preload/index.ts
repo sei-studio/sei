@@ -64,6 +64,10 @@ const api: RendererApi = {
   // Phase 11 D-28 portrait pipeline.
   charsApplyPortrait: (args) => ipcRenderer.invoke(IpcChannel.chars.applyPortrait, args),
   charsRemovePortrait: (id) => ipcRenderer.invoke(IpcChannel.chars.removePortrait, id),
+  // 260909 — card-image versions + regeneration.
+  charsPortraitVersions: (id) => ipcRenderer.invoke(IpcChannel.chars.portraitVersions, id),
+  charsPortraitRegenerate: (id) => ipcRenderer.invoke(IpcChannel.chars.portraitRegenerate, id),
+  charsPortraitSelect: (args) => ipcRenderer.invoke(IpcChannel.chars.portraitSelect, args),
 
   // Phase 11 D-16 — public/private toggle.
   charsSetShared: (args) => ipcRenderer.invoke(IpcChannel.chars.setShared, args),

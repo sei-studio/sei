@@ -20,7 +20,17 @@ import { CHAT_TIMEOUT_MS } from './sdk';
 // local BYOK) rides the exact old SDK path inside it, streaming included.
 import { buildLlmProvider } from '../llm';
 import { raiseUsageLimitPopup } from './usageLimit';
-import { buildSystemBlocks, markLastMessageCached, LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL } from './chatPrompts';
+import {
+  buildSystemBlocks,
+  markLastMessageCached,
+  LAUNCH_TOOL,
+  QUIT_TOOL,
+  END_CALL_TOOL,
+  REMEMBER_TOOL,
+} from './chatPrompts';
+import { isWebTool, webToolsFor, splitTextAroundServerSearch } from '../../bot/web/webTools.js';
+import { getChatWebSession, resolveWebSearchSettings } from '../llm/webSearchSettings';
+import type { LlmToolDef } from '../llm/types';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import { isSilenceFiller } from '../../bot/brain/silenceFiller.js';
 import { isNoteLeak, stripThoughtTags } from './noteLeak';
@@ -84,7 +94,11 @@ export interface ChatDeps {
 // (compaction_trigger_bytes 4096 -> 8192 in src/bot/config.js) so the chat
 // window keeps seeing the whole pre-compaction file.
 const MEMORY_BUDGET_BYTES = 12000;
-const MAX_HOPS = 3;
+// 260909: raised 3 -> 6 for search() / visit(). A lookup is one hop per call
+// (search, then a visit, then the reply is already three), and the web
+// session's own per-turn budget (maxCallsPerTurn) bounds the spin below
+// this. Non-web turns still exit on the first hop with no tool_use.
+const MAX_HOPS = 6;
 /**
  * Voice calls (260706): cap the transcript sent to the model to the last N rows.
  * Memory (MEMORY.md) + the rolling summary still carry older context, so the
@@ -862,8 +876,25 @@ export async function sendChatMessage(
     let launchCalled = false;
     // end_call + remember are offered only while a call is open (block 0
     // already flips for the primer, so this adds no extra cache churn).
+    // 260909: Anthropic sessions (cloud proxy or Anthropic BYOK) get the
+    // native server-side web_search + our visit; other providers get our
+    // search + visit (webToolsFor). Same list on every turn kind for the
+    // cache prefix.
+    const webTools = webToolsFor({ serverWebSearch: llm.kind === 'anthropic' }) as LlmToolDef[];
     const tools =
-      args.voiceCall === true ? [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL] : [LAUNCH_TOOL, QUIT_TOOL];
+      args.voiceCall === true
+        ? [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, ...webTools]
+        : [LAUNCH_TOOL, QUIT_TOOL, ...webTools];
+    // 260909: per-character web session (lettered results survive across
+    // turns). Resolved lazily so a turn that never searches pays nothing.
+    let webSession: ReturnType<typeof getChatWebSession> | null = null;
+    const webSessionFor = async () => {
+      if (!webSession) {
+        webSession = getChatWebSession(args.characterId, resolveWebSearchSettings(await loadConfig()));
+        webSession.beginTurn();
+      }
+      return webSession;
+    };
 
     for (let hop = 0; hop < MAX_HOPS; hop++) {
       // Hard cap kept low so a reply can't ratchet into paragraphs. Each turn
@@ -950,10 +981,26 @@ export async function sendChatMessage(
           `${Date.now() - t0}ms in=${u?.input_tokens ?? '?'} out=${u?.output_tokens ?? '?'} ` +
           `cacheRead=${u?.cache_read_input_tokens ?? 0} cacheWrite=${u?.cache_creation_input_tokens ?? 0}`,
       );
+      // 260909: a server-side web search that ran long stops with pause_turn.
+      // Push the assistant content back verbatim and call again to finish.
+      if (res.stopReason === 'pause_turn') {
+        messages.push({ role: 'assistant', content: res.content });
+        continue;
+      }
       const text = textOf(res.content);
       if (text) {
         replyText = text;
         truncated = res.stopReason === 'max_tokens';
+        // 260909: with the server-side search the "lemme check" line and the
+        // answer arrive in ONE response as text blocks on either side of the
+        // search. On the blocking typed path push the pre-search line now (it
+        // is what the player should have seen first) and keep only the answer
+        // as the reply; voice streamed both already.
+        const split = splitTextAroundServerSearch(res.content);
+        if (split.searched && !isStreaming && typeof deps.emitReply === 'function') {
+          if (split.before) await emitStreamedBubble(split.before, split.after.length > 0);
+          replyText = split.after;
+        }
       }
 
       // With two tools offered the model may call both in one response (e.g.
@@ -963,6 +1010,18 @@ export async function sendChatMessage(
       // first.
       const toolUses = res.content.filter((b) => b.type === 'tool_use');
       if (!toolUses.length) break;
+      // 260909: a line written alongside search()/visit() ("lemme check") is
+      // meant to land BEFORE the lookup, the way a say() beside a dig() does
+      // in the game. On the blocking typed-chat path only the last hop's text
+      // used to survive, so that line was silently dropped. Persist + push it
+      // now over the same chat:message path a streamed voice sentence takes
+      // (the renderer queues pushed companion lines with its typing pacing),
+      // and clear replyText so the returned replies carry only what came
+      // after the results. Voice already streams every hop's sentences.
+      if (!isStreaming && text && typeof deps.emitReply === 'function' && toolUses.some((b) => isWebTool(b.name))) {
+        await emitStreamedBubble(text, false);
+        replyText = '';
+      }
 
       messages.push({ role: 'assistant', content: res.content });
       const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
@@ -1019,6 +1078,28 @@ export async function sendChatMessage(
           } else {
             note = 'Nothing was saved; the text was empty.';
           }
+        } else if (isWebTool(toolUse.name)) {
+          // 260909: search() / visit(). The result IS the note; the loop
+          // re-calls the model with it and keeps going until it stops calling
+          // tools (bounded by MAX_HOPS and the session's per-turn budget).
+          // A failed lookup is reported as an error result so the model can
+          // tell the player honestly instead of inventing an answer.
+          try {
+            const ws = await webSessionFor();
+            const r = await ws.runTool(toolUse.name, (toolUse.input ?? {}) as Record<string, unknown>, { signal: ctrl.signal });
+            note = r.content;
+            if (r.is_error) toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: note, is_error: true });
+            else toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: note });
+            console.log(
+              `[sei/chat] ${toolUse.name} char=${args.characterId.slice(0, 8)} ${r.is_error ? 'error' : `${note.length} chars`}` +
+                (ws.lastProvider ? ` via ${ws.lastProvider}` : ''),
+            );
+            continue;
+          } catch (err) {
+            if (ctrl.signal.aborted) throw err;
+            console.warn(`[sei/chat] ${toolUse.name} failed: ${(err as Error).message}`);
+            note = `${toolUse.name} failed. Tell the player you could not look it up right now.`;
+          }
         } else {
           // Unreachable with the closed tool set, but an unanswered tool_use
           // would poison the next hop — answer it rather than break mid-turn.
@@ -1053,13 +1134,18 @@ export async function sendChatMessage(
     // NOTHING: the voice-scoped filler filter inside persistReplies removes it
     // before the "…" fallback could ever apply (splitReply already returned a
     // non-empty part). Typed chat keeps such lines — they are real replies there.
+    // A typed turn whose only text rode out early beside a web lookup (see the
+    // hop loop) has nothing left to persist; do not let the empty-reply
+    // fallback add a bubble after a line that already landed.
     const replies = isStreaming
       ? streamedReplies
-      : await persistReplies(args.characterId, replyText, prep.punctuation, {
-          voice: args.voiceCall === true,
-          truncated,
-          local: llm.backend === 'local',
-        });
+      : replyText.trim() || streamedReplies.length === 0
+        ? await persistReplies(args.characterId, replyText, prep.punctuation, {
+            voice: args.voiceCall === true,
+            truncated,
+            local: llm.backend === 'local',
+          })
+        : [];
 
     // Background compaction (260702): the reply is persisted, so if 50+
     // messages have aged past the window, fold them NOW — while the player is
@@ -1330,7 +1416,7 @@ export async function sendVoiceGreetingTurn(
     // not a cacheRead" symptom). Matching them writes the tools+system prefix
     // here, during the ring, so the first spoken user reply is a fast cache READ.
     markLastMessageCached(messages);
-    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL];
+    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, ...(webToolsFor({ serverWebSearch: llm.kind === 'anthropic' }) as LlmToolDef[])];
     const res = await llm.call({
       maxTokens: 200,
       system,
@@ -1468,7 +1554,7 @@ export async function sendCompanionVoiceTurn(
     markLastMessageCached(messages);
 
     const llm = await buildLlmProvider();
-    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL];
+    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, ...(webToolsFor({ serverWebSearch: llm.kind === 'anthropic' }) as LlmToolDef[])];
     const res = await llm.call({
       maxTokens: 200,
       system,
@@ -1569,7 +1655,7 @@ export async function sendVoiceIdleTurn(
     // Same warm tools+system cache prefix as every other voice turn.
     markLastMessageCached(messages);
     const llm = await buildLlmProvider();
-    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL];
+    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, ...(webToolsFor({ serverWebSearch: llm.kind === 'anthropic' }) as LlmToolDef[])];
     const res = await llm.call({
       maxTokens: 200,
       system,

@@ -154,8 +154,9 @@ coordinates — it calls registered tools only.
 - Minecraft action set: `src/bot/adapter/minecraft/registry.js` — **18 world
   actions** registered (follow/come/goto, dig, find, gather, build, place,
   equip, consume, sleep, container ops, etc.).
-- Plus **3 brain tools** wired by the orchestrator: `remember`, `forget`,
-  `end_loop`.
+- Plus the brain tools wired by the orchestrator: `remember`, `forget`,
+  `setGoal` / `clearGoal`, `end_loop`, `say`, `quit_game`, `end_call`, and
+  (260909) the web pair `search` / `visit` (below).
 
 **Speech (say() tool).** The LLM's **text output is a private scratchpad** — it
 is NOT sent to chat. The bot speaks only by calling the **`say` tool** (a
@@ -324,9 +325,182 @@ questions) and the CharacterPage gear menu → Knowledge popup
 (`KnowledgeModal`, available for ALL characters). Prompt framing treats
 knowledge strictly as reference DATA, never instructions.
 
+**Portrait regenerate + versions (260909).** Owned characters (predicate:
+`!is_default && (!owner || owner === currentUserId)`, the CharacterPage
+`canShare` rule; `kind:'unique'` Awakened companions ARE owned even though
+`viewOnly` blocks their Edit modal) can regenerate the card image up to
+`MAX_PORTRAIT_REGENS` (3, lifetime, `characterSchema.ts`) and switch between
+every version. Only the version on display reaches the cloud.
+
+- **Storage:** versions are sidecar files `<uuid>-v<n>.png` in the portraits
+  dir (served as-is by `sei-portrait://`, filename gate already allows them),
+  recorded in `character.metadata.portrait_versions` / `portrait_active` /
+  `portrait_regen_count` (metadata rides the cloud row verbatim, no schema
+  migration). The first versioned write snapshots an existing canonical file
+  as v1 `'original'`; uploads via `PortraitImagePicker` are recorded as
+  `'upload'` versions (max `MAX_PORTRAIT_VERSIONS` 8, oldest inactive upload
+  evicted).
+- **Selecting = copying onto the canonical file.** Cloud upload reads
+  `<uuid>.png` unconditionally (`syncQueue.ts`, `ipc.ts` moderation +
+  migration paths) and the storage object name is server-derived, so
+  `selectPortraitVersion` copies the sidecar's bytes onto the canonical file
+  through `applyPortrait`, which saves the character and enqueues the mirror.
+  The md5 `.uploaded.json` marker in `cloudCharacterClient` skips a re-upload
+  of bytes already in the cloud (switching back is free).
+- **Generation:** `regeneratePortrait()` in `uniqueGeneration.ts` reuses the
+  cast pipeline's private pieces (`assemblePortraitPrompt`,
+  `generatePortraitPng` KusArt-via-proxy, `zoomToCharacter`,
+  `toCompliantPortraitPng`, `resolveKusartStyleId`). Prompt source is the
+  stored soulcaster sheet when present, else name + description + persona
+  source. Needs a session JWT in every backend mode (the proxy route is
+  JWT-authed); signed-out returns `not_signed_in` and the modal disables the
+  button with "Sign in to regenerate." Per-character single-flight in
+  `ipc.ts`; typed results `not_signed_in | limit | not_found | busy |
+  generation_failed | network`. Injectable `generate` is the test seam
+  (`uniqueGeneration.regen.test.ts`).
+- **Cleanup:** `src/main/portraitFiles.ts` (`deletePortraitFiles`) removes
+  canonical + sidecars + the md5 marker on character delete /
+  remove-from-library / `removePortrait`; `_user.png` / `_bg.png` never match.
+- **IPC:** `chars:portrait-versions`, `chars:portrait-regenerate`,
+  `chars:portrait-select` (uuid-gated; select also pins `file` to
+  `^<uuid>(-v\d+)?\.png$`). UI: `PortraitVersionsModal` from the
+  CharacterPage gear menu ("Card image", owned only) and a `Regenerate`
+  button beside the Appearance tab's picker. `bumpPortraitRef()` in
+  `portraitSrc.ts` cache-busts the canonical image after a swap.
+
 The bot has **one entry path** (`src/bot/index.js`): forked by Electron, it
 waits for an `init` message over the port. (The standalone `sei` CLI was
 removed 260722.)
+
+**Web search (260909).** Two backends, chosen per session by
+`webToolsFor()` in `src/bot/web/webTools.js`:
+
+- **Anthropic sessions (cloud proxy + Anthropic BYOK): Anthropic's own
+  server-side `web_search` tool** (`SERVER_WEB_SEARCH_TOOL`, type
+  `web_search_20250305`, the variant Haiku 4.5 supports, `max_uses` 3 per
+  request) plus our `visit`. The search runs INSIDE the response: the model
+  searches, reads, and answers in one turn; no scraping, no key, no
+  dependence on the user's network. The proxy forwards the body verbatim so
+  the tool passes through; each search is billed by Anthropic per search on
+  top of tokens (the proxy's ledger does not meter that yet). Two mechanics:
+  `stop_reason: 'pause_turn'` (a long search) is resumed by pushing the
+  assistant content back verbatim and calling again (bot `runIterations`,
+  chat hop loop); and the `server_tool_use` + `web_search_tool_result`
+  blocks stay in the loop history verbatim: the docs say a continuation
+  whose `encrypted_content` is missing or modified is a 400, and dropping
+  the whole pair is untested from this machine (region gate). The cost is
+  bounded to one loop; chat rebuilds its transcript from text rows. The bot's cached
+  tool prose skips schema-less server tools. On the blocking typed-chat path
+  the text written BEFORE the search ("lemme check") is pushed immediately and
+  only the post-search text is the reply (`splitTextAroundServerSearch`).
+- **Every other provider (OpenAI-compatible, Gemini, Ollama): our
+  `search()` / `visit()`**, below. Capability flag: bot
+  `anthropicProvider.CAPABILITIES.serverWebSearch`; main `llm.kind ===
+  'anthropic'`. The "Before searching, let the player know" line sits as
+  literal text in both baselines (promptLibrary.js must stay import-free for
+  the prompt-editor script) so the announce rule holds on either backend.
+
+**Client web search: `search()` / `visit()`.** Two tools the model can call
+on EVERY conversational surface, with ONE rule that makes the loop: the
+result comes back as an ordinary `tool_result` and the surface's existing tool
+loop calls the model again, until it stops calling tools. Nothing new was
+built for the loop itself.
+
+- **Core:** `src/bot/web/webTools.js`, pure JS with no Electron or mineflayer
+  imports, so the bot (raw ESM, asar-unpacked) and main (bundled) both import
+  it. `createWebSession()` is the only state: a lettered result table plus a
+  per-turn budget. Tool definitions (`SEARCH_TOOL` / `VISIT_TOOL`) are shared
+  verbatim by both sides so the model meets one contract.
+- **Context is the cost, so the model never sees a URL.** `search(query)`
+  returns up to 5 lines `a. Title (host) - snippet` (title 70 chars, snippet
+  150, ~250 tokens total); `visit(ref, page?)` takes a letter (or a raw URL)
+  and returns ~2400 chars of de-boilerplated text per part with a `part n/m`
+  header. Labels run a..z, aa.. and are session-wide, so a `visit("b")` on a
+  later turn still resolves. HTML→text is regex-only (`htmlToText`): drop
+  script/style/nav/header/footer/aside, prefer `<main>`/`<article>` when
+  substantial, block tags → newlines. The tag regex tolerates `>` inside
+  quoted attributes (Wikipedia's `data-mw` JSON leaked otherwise).
+- **Fetch through Chromium, not Node (260909).** `electronFetchProvider()`
+  resolves Electron's `net.fetch` lazily (available in main AND in the bot's
+  utilityProcess): browser TLS fingerprint + OS proxy. Measured from this
+  machine: minecraft.wiki, valorant.fandom.com and html.duckduckgo.com all
+  answer 200 under `net.fetch` where Node's undici gets a 403 / bot
+  challenge. `net.fetch` refuses `redirect: 'manual'`, so in that mode
+  redirects are followed and the FINAL url is gated instead of every hop
+  (`manualRedirects: false`). Plain Node (tests, scripts) keeps manual hops.
+  Electron gotcha met while probing: an ESM entry that top-level-awaits
+  `app.whenReady()` deadlocks (ready is deferred until the module evaluates);
+  probe scripts must be CJS or use `.then`.
+- **Game wikis are asked DIRECTLY (260909).** `GAME_WIKIS` (webTools.js) maps
+  game names in the query to MediaWiki hosts (minecraft.wiki,
+  valorant.fandom.com, wiki.leagueoflegends.com, terraria.wiki.gg, ...).
+  `search()` runs `api.php?list=search` on each matched wiki (game name
+  stripped from the query) in parallel with the general chain and lists the
+  wiki hits FIRST: for a game question the wiki page IS the answer, and the
+  engines are the ones that hand back a storefront homepage. The bot passes
+  `alwaysWikiHosts: ['minecraft.wiki']` so an in-game "how do i tame a fox"
+  hits the Minecraft Wiki without saying "minecraft". `visit()` on a known
+  wiki host reads through `action=parse` (cleaner than the rendered page,
+  answers from any network; HTML fallback), and an unknown `/wiki/` host
+  behind a bot wall is retried through its `api.php`. Fextralife (Elden Ring)
+  is not MediaWiki and is deliberately absent. A DuckDuckGo challenge arms a
+  90 s cooldown (`ddgBlockedUntil`) instead of re-asking a rate-limited IP.
+- **Providers: keyless by default.** `providerChain()` tries a keyed provider
+  first only when its key is present (Brave `X-Subscription-Token` GET,
+  Tavily `Bearer` POST, Serper `X-API-KEY` POST; request/response shapes
+  verified against each vendor's docs 260909), then the keyless chain
+  DuckDuckGo HTML → Bing HTML → Wikipedia API. The first provider that yields
+  a result wins; a challenge page, an empty scrape, or (scraped engines only)
+  a result set that shares fewer than two query words with any hit
+  (`looksRelevant`: Bing from this egress returned dictionary entries for
+  "latent" when asked about the Latent Space podcast) moves the chain on.
+  Wikipedia is the floor that always answers. Parsers are pinned on real
+  fixtures in `src/bot/web/fixtures/`. From a flagged egress (this dev
+  machine sits behind a shared proxy) DDG serves a bot challenge to curl but
+  answers Node fetch with browser headers; Cloudflare-walled sites
+  (minecraft.wiki, wikiHow) refuse `visit` and the tool says so
+  ("blocks automated readers. Try another result.") instead of inventing.
+- **Safety:** `assertPublicHttpUrl` gates every hop (http(s) only, no
+  credentials, no loopback/link-local/RFC1918 literals, `.local`); redirects
+  are followed MANUALLY (`redirect: 'manual'`, 5 max) so each hop is
+  re-checked; bodies are streamed with a 1.5 MB cap and an 8 s timeout; the
+  outer loop's abort signal cancels an in-flight fetch. Non-text content
+  types are refused rather than dumped.
+- **Bot brain wiring:** `search`/`visit` are in `INLINE_METADATA` (result
+  fills synchronously, no suspend) but deliberately NOT in
+  `PERSONALITY_NAMES`, so they count as `movementCalls` and `continueLoop`
+  stays true: `runIterations` calls the model again with the result. Also in
+  `ACTION_VERB_SKIP` (no presence verb). Budget is per LOOP
+  (`config.web.max_calls_per_loop`, default 6, armed once per `runIterations`
+  entry via `loop._webBudgetArmed`). `config.web` (`src/bot/config.js`) is
+  bridged from main as `init.webSearch = {provider, api_key}`;
+  `enabled:false` withholds both tools. `_webSessionOverride` on
+  `createOrchestrator` is the test seam (`orchestrator.webSearch.test.js`).
+- **A line beside the lookup is nudged, not required.** The tool
+  description ends with one short line, "Before searching, let the player
+  know", so a lookup is not a silent pause. In the game a `say()` in the same turn as `search()`
+  is emitted up front by `emitSayCalls` like a say beside a dig, and the loop
+  still continues. In typed chat the blocking path kept only the LAST hop's
+  text, so "lemme check" was dropped; now a hop with text AND a web tool call
+  persists + pushes that text immediately over `chat:message` (the renderer
+  queues pushed companion lines with its typing pacing) and the returned
+  replies carry only what came after the results. Voice already streams every
+  hop's sentences.
+- **Chat/voice wiring:** `chatService` offers both tools on every text and
+  voice list (greeting, companion and idle turns included, so the cached
+  tools+system prefix stays identical across turn kinds), dispatches them
+  from a per-character session (`getChatWebSession`, 1 h idle TTL, in
+  `src/main/llm/webSearchSettings.ts`), and `MAX_HOPS` went 3 → 6. Chess,
+  Draw! and backseat do NOT offer them (game turns, prompt-cache churn).
+- **Settings:** the "Search" group in Settings (bottom, above About) is the
+  only UI: provider `Seg` (Auto (free) / Brave / Tavily / Serper) plus a
+  masked key editor shown only for a keyed provider. Persisted as
+  `UserConfig.web_search_provider` / `web_search_api_key` (both `.optional()`
+  with NO default so the renderer's whole-config literals keep typechecking;
+  absent = auto), plain in config.json like `provider_config` keys.
+  `resolveWebSearchSettings()` also honors `SEI_SEARCH_PROVIDER` /
+  `SEI_SEARCH_API_KEY` env overrides for development. A normal user never
+  opens the group: the keyless chain needs no setup.
 
 ---
 

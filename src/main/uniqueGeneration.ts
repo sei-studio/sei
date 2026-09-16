@@ -44,6 +44,7 @@ import type {
   GenerateUniqueInput,
   GenerateUniqueResult,
   GenStage,
+  PortraitRegenResult,
   UniqueGender,
 } from '../shared/ipc';
 import type {
@@ -1204,6 +1205,181 @@ function classifyGenError(err: unknown): 'network' | 'generation_failed' {
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Portrait prompt assembly (shared by the cast + regenerate paths)           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The fixed framing suffix that follows the subject description. See the
+ * long rationale at the call site in runPipeline: "one character" suppresses
+ * multi-figure compositions, "reference sheet" phrasing must never be used,
+ * and the wide "medium shot from the waist up" wording keeps the whole head
+ * in frame so zoomToCharacter can tighten it deterministically afterwards.
+ */
+const PORTRAIT_FRAMING_SUFFIX =
+  'One character, medium shot from the waist up. ' +
+  'The entire head is fully visible with empty space above the head. ' +
+  'The character faces the viewer and looks toward the camera. Not a close up of the face. ' +
+  'Front view, never seen from behind. ' +
+  'Background: a softly blurred, out of focus setting that fits the character, ' +
+  'shallow depth of field. The character is in sharp focus.';
+
+/**
+ * Assemble the KusArt prompt: subject + framing suffix + optional tone clause
+ * (expression/pose) + beastkin humanization clause. Em/en dashes are stripped
+ * (the subject and tone are LLM-written and may contain them) — user copy
+ * standard, and the image model reads a comma identically. Pure; exported for
+ * unit tests.
+ */
+export function assemblePortraitPrompt(args: {
+  subject: string;
+  tone?: string | null;
+  beastkin?: boolean;
+}): string {
+  const beastkinClause = args.beastkin
+    ? ' Beastkin: fully human face and body with smooth human skin, absolutely no fur on the face or body; fur only on the animal ears and tail.'
+    : '';
+  const tone = String(args.tone ?? '').replace(/\s+/g, ' ').trim();
+  const toneClause = tone ? ` Their expression, pose and body language convey: ${tone}.` : '';
+  const subject = args.subject.trim().replace(/[.\s]+$/, '');
+  return (`${subject}. ${PORTRAIT_FRAMING_SUFFIX}` + toneClause + beastkinClause).replace(
+    /\s*[—–]\s*/g,
+    ', ',
+  );
+}
+
+/** Longest persona/description excerpt folded into a fallback subject line. */
+const REGEN_FALLBACK_TEXT_MAX = 600;
+
+/**
+ * Build the regenerate prompt for a character (260909). Awakened companions
+ * carry their soulcaster sheet verbatim in `metadata.soulcaster_sheet`, so
+ * the prompt is exactly what the original cast used. Hand-made customs have
+ * no sheet: fall back to name + description + persona text under the same
+ * framing suffix. Returns null only when there is nothing at all to describe.
+ * Pure; exported for unit tests.
+ */
+export function buildRegenPortraitPrompt(
+  character: Pick<Character, 'name' | 'description' | 'persona' | 'metadata'>,
+): { prompt: string; gender: UniqueGender } | null {
+  const sheetRaw = (character.metadata as Record<string, unknown> | undefined)?.soulcaster_sheet;
+  if (sheetRaw && typeof sheetRaw === 'object') {
+    const sheet = sheetRaw as Partial<Sheet>;
+    if (typeof sheet.image_prompt === 'string' && sheet.image_prompt.trim()) {
+      const g = String(sheet.gender ?? '').toLowerCase();
+      const gender: UniqueGender = g === 'male' ? 'male' : g === 'female' ? 'female' : 'other';
+      return {
+        prompt: assemblePortraitPrompt({
+          subject: sheet.image_prompt,
+          tone: sheet.personality?.tone,
+          beastkin: sheet.background === 'beastkin',
+        }),
+        gender,
+      };
+    }
+  }
+  const clip = (v: unknown): string =>
+    typeof v === 'string' ? condense(v.replace(/\s+/g, ' ').trim(), 6, REGEN_FALLBACK_TEXT_MAX) : '';
+  const description = clip(character.description);
+  // The expanded persona is the LLM-facing prompt (long, rule-heavy); the
+  // user's own source blurb describes the character far better per token.
+  const persona = clip(character.persona?.source) || clip(character.persona?.expanded);
+  const parts = [description, persona].filter((x) => x.length > 0);
+  if (parts.length === 0 && !character.name.trim()) return null;
+  const subject = `A character portrait of ${character.name.trim() || 'a companion'}${
+    parts.length ? `. ${parts.join(' ')}` : ''
+  }`;
+  return { prompt: assemblePortraitPrompt({ subject }), gender: 'other' };
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Portrait regeneration (260909)                                            */
+/* -------------------------------------------------------------------------- */
+
+/** Raw-PNG producer; the default is the KusArt proxy round trip. */
+export type PortraitGenerateFn = (prompt: string, styleId: string, jwt: string) => Promise<Buffer>;
+
+export interface RegeneratePortraitArgs {
+  characterId: string;
+  /**
+   * Session JWT for the proxy. `undefined` = resolve from the Supabase session
+   * (the normal IPC path); `null` = explicitly signed out.
+   */
+  jwt?: string | null;
+  /** Injectable generator so the orchestration is unit-testable without KusArt. */
+  generate?: PortraitGenerateFn;
+}
+
+/**
+ * Regenerate a character's card image: build the prompt from its sheet (or a
+ * hand-made fallback), run the KusArt round trip with the user's art-style
+ * preference, post-process exactly like the cast path (zoom-crop + compliance
+ * downscale), then store the bytes as the next version and make it active.
+ * The cap (MAX_PORTRAIT_REGENS) is enforced here as a fast guard AND inside
+ * addPortraitVersion (the write is the authority). Never throws for expected
+ * failures.
+ */
+export async function regeneratePortrait(args: RegeneratePortraitArgs): Promise<PortraitRegenResult> {
+  const { getCharacter } = await import('./characterStore');
+  const char = await getCharacter(args.characterId);
+  if (!char) return { ok: false, code: 'not_found', message: 'Character not found.' };
+
+  // Image generation rides the proxy (JWT-authed) in every backend mode, so
+  // a signed-out user cannot regenerate regardless of local/BYOK.
+  let jwt = args.jwt;
+  if (jwt === undefined) {
+    const { getClient } = await import('./auth/supabaseClient');
+    jwt = (await getClient().auth.getSession()).data.session?.access_token ?? null;
+  }
+  if (!jwt) return { ok: false, code: 'not_signed_in', message: 'Sign in to regenerate.' };
+
+  const { portraitRegenCountOf, MAX_PORTRAIT_REGENS } = await import('../shared/characterSchema');
+  if (portraitRegenCountOf(char) >= MAX_PORTRAIT_REGENS) {
+    return { ok: false, code: 'limit', message: 'No regenerations left for this character.' };
+  }
+
+  const built = buildRegenPortraitPrompt(char);
+  if (!built) {
+    return {
+      ok: false,
+      code: 'generation_failed',
+      message: 'This companion has no description to draw from yet. Add one and try again.',
+    };
+  }
+
+  let artStyle: UserPreferences['art_style'] | null | undefined;
+  try {
+    const { loadConfig } = await import('./configStore');
+    artStyle = (await loadConfig()).user_profile?.art_style;
+  } catch {
+    artStyle = undefined;
+  }
+  const styleId = resolveKusartStyleId(artStyle, built.gender);
+  const generate = args.generate ?? generatePortraitPng;
+
+  let bytes: Buffer;
+  try {
+    const raw = await generate(built.prompt, styleId, jwt);
+    const cropped = await zoomToCharacter(raw);
+    bytes = await toCompliantPortraitPng(cropped);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, code: classifyGenError(err), message: `Image generation failed: ${msg}` };
+  }
+
+  const { addPortraitVersion, PORTRAIT_REGEN_LIMIT } = await import('./portraitStore');
+  try {
+    const state = await addPortraitVersion({ characterId: char.id, bytes, source: 'regen' });
+    return { ok: true, state };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes(PORTRAIT_REGEN_LIMIT)) {
+      return { ok: false, code: 'limit', message: 'No regenerations left for this character.' };
+    }
+    return { ok: false, code: 'generation_failed', message: `Couldn't save the new image: ${msg}` };
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Orchestrator                                                              */
 /* -------------------------------------------------------------------------- */
 
@@ -1373,25 +1549,11 @@ async function runPipeline(args: {
   // animal ears. "Front view, never seen from behind" exists because a beastkin
   // render (Anaya, wolf-person) came back as a full-body BACK view — the clause's
   // tail emphasis invites the model to turn the character around to show it.
-  const beastkinClause =
-    sheet.background === 'beastkin'
-      ? ' Beastkin: fully human face and body with smooth human skin, absolutely no fur on the face or body; fur only on the animal ears and tail.'
-      : '';
-  const tone = String(sheet.personality?.tone ?? '').replace(/\s+/g, ' ').trim();
-  const toneClause = tone ? ` Their expression, pose and body language convey: ${tone}.` : '';
-  // Em/en dashes are stripped from the assembled prompt (sheet.image_prompt and
-  // the tone are LLM-written and may contain them) — user copy standard, and the
-  // image model reads a comma identically.
-  const imagePrompt = (
-    `${sheet.image_prompt}. One character, medium shot from the waist up. ` +
-    'The entire head is fully visible with empty space above the head. ' +
-    'The character faces the viewer and looks toward the camera. Not a close up of the face. ' +
-    'Front view, never seen from behind. ' +
-    'Background: a softly blurred, out of focus setting that fits the character, ' +
-    'shallow depth of field. The character is in sharp focus.' +
-    toneClause +
-    beastkinClause
-  ).replace(/\s*[—–]\s*/g, ', ');
+  const imagePrompt = assemblePortraitPrompt({
+    subject: sheet.image_prompt,
+    tone: sheet.personality?.tone,
+    beastkin: sheet.background === 'beastkin',
+  });
 
   // ── Parallel: (portrait → skin) + persona expansion ────────────────────
   let portraitBytes: Buffer | null = null;

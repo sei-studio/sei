@@ -44,9 +44,17 @@ vi.mock('./cloud/syncQueue', () => ({
 }));
 
 import { _setUserDataOverride, paths } from './paths';
-import { applyPortrait, removePortrait } from './portraitStore';
-import { saveCharacter } from './characterStore';
+import {
+  addPortraitVersion,
+  applyPortrait,
+  getPortraitVersions,
+  removePortrait,
+  selectPortraitVersion,
+} from './portraitStore';
+import { deletePortraitFiles, listPortraitVersionFilesOnDisk } from './portraitFiles';
+import { deleteCharacter, getCharacter, saveCharacter } from './characterStore';
 import type { Character } from '../shared/characterSchema';
+import { MAX_PORTRAIT_REGENS, MAX_PORTRAIT_VERSIONS } from '../shared/characterSchema';
 
 let tmp: string;
 
@@ -192,5 +200,191 @@ describe('removePortrait', () => {
       await readFile(paths.characterPath(UUID_A), 'utf8'),
     );
     expect(persisted.portrait_image).toBeNull();
+  });
+});
+
+// ── Versions (260909) ─────────────────────────────────────────────────────
+
+/** A PNG whose IDAT differs per `tag` so version bytes are distinguishable. */
+function buildTaggedPng(tag: number): Buffer {
+  const png = buildPng(64, 64);
+  // Append a private ancillary chunk; validatePortrait only checks the
+  // signature + IHDR, and byte-equality is what the tests compare.
+  const data = Buffer.from([tag]);
+  const chunk = buildChunk('tEXt', data);
+  return Buffer.concat([png.subarray(0, png.length - 12), chunk, png.subarray(png.length - 12)]);
+}
+
+async function readMeta(id: string): Promise<Record<string, unknown>> {
+  const persisted = JSON.parse(await readFile(paths.characterPath(id), 'utf8'));
+  return persisted.metadata ?? {};
+}
+
+describe('portrait versions', () => {
+  it('an unversioned canonical portrait lists as a single virtual original', async () => {
+    await saveCharacter({ ...makeChar(UUID_A), portrait_image: `${UUID_A}.png` });
+    await mkdir(paths.portraitsDir(), { recursive: true });
+    await writeFile(paths.portraitPath(UUID_A), buildTaggedPng(0));
+
+    const state = await getPortraitVersions(UUID_A);
+    expect(state.versions).toEqual([
+      { file: `${UUID_A}.png`, created_at: expect.any(String), source: 'original' },
+    ]);
+    expect(state.active).toBe(`${UUID_A}.png`);
+    expect(state.regenCount).toBe(0);
+    expect(state.regenLimit).toBe(MAX_PORTRAIT_REGENS);
+    // Listing must not materialize anything on disk.
+    expect(await listPortraitVersionFilesOnDisk(UUID_A)).toEqual([]);
+  });
+
+  it('first regen snapshots the existing canonical as v1 (original) and stores v2', async () => {
+    await saveCharacter({ ...makeChar(UUID_A), portrait_image: `${UUID_A}.png` });
+    await mkdir(paths.portraitsDir(), { recursive: true });
+    const original = buildTaggedPng(0);
+    await writeFile(paths.portraitPath(UUID_A), original);
+
+    const regen = buildTaggedPng(1);
+    const state = await addPortraitVersion({ characterId: UUID_A, bytes: regen, source: 'regen' });
+
+    expect(state.versions.map((v) => [v.file, v.source])).toEqual([
+      [`${UUID_A}-v1.png`, 'original'],
+      [`${UUID_A}-v2.png`, 'regen'],
+    ]);
+    expect(state.active).toBe(`${UUID_A}-v2.png`);
+    expect(state.regenCount).toBe(1);
+    // Sidecars hold the right bytes; canonical now holds the regen.
+    expect((await readFile(paths.portraitPath(UUID_A))).equals(regen)).toBe(true);
+    expect((await readFile(path.join(paths.portraitsDir(), `${UUID_A}-v1.png`))).equals(original)).toBe(true);
+    expect((await readFile(path.join(paths.portraitsDir(), `${UUID_A}-v2.png`))).equals(regen)).toBe(true);
+    // Metadata persisted on the character row.
+    const meta = await readMeta(UUID_A);
+    expect(meta.portrait_active).toBe(`${UUID_A}-v2.png`);
+    expect(meta.portrait_regen_count).toBe(1);
+    expect((meta.portrait_versions as unknown[]).length).toBe(2);
+  });
+
+  it('a character with no portrait gets v1 as the regen itself (nothing to snapshot)', async () => {
+    await saveCharacter(makeChar(UUID_A));
+    const state = await addPortraitVersion({ characterId: UUID_A, bytes: buildTaggedPng(1), source: 'regen' });
+    expect(state.versions.map((v) => [v.file, v.source])).toEqual([[`${UUID_A}-v1.png`, 'regen']]);
+    expect(state.active).toBe(`${UUID_A}-v1.png`);
+  });
+
+  it('select copies the sidecar bytes onto the canonical file and sets portrait_active', async () => {
+    await saveCharacter({ ...makeChar(UUID_A), portrait_image: `${UUID_A}.png` });
+    await mkdir(paths.portraitsDir(), { recursive: true });
+    const original = buildTaggedPng(0);
+    await writeFile(paths.portraitPath(UUID_A), original);
+    const regen = buildTaggedPng(1);
+    await addPortraitVersion({ characterId: UUID_A, bytes: regen, source: 'regen' });
+    expect((await readFile(paths.portraitPath(UUID_A))).equals(regen)).toBe(true);
+
+    const state = await selectPortraitVersion({ characterId: UUID_A, file: `${UUID_A}-v1.png` });
+
+    expect(state.active).toBe(`${UUID_A}-v1.png`);
+    expect((await readFile(paths.portraitPath(UUID_A))).equals(original)).toBe(true);
+    const persisted = JSON.parse(await readFile(paths.characterPath(UUID_A), 'utf8'));
+    expect(persisted.portrait_image).toBe(`${UUID_A}.png`);
+    expect(persisted.metadata.portrait_active).toBe(`${UUID_A}-v1.png`);
+    // Selecting does not consume a regeneration.
+    expect(state.regenCount).toBe(1);
+    // Both sidecars survive the swap.
+    expect(await listPortraitVersionFilesOnDisk(UUID_A)).toEqual([`${UUID_A}-v1.png`, `${UUID_A}-v2.png`]);
+  });
+
+  it('select rejects a file that is not a recorded version of this character', async () => {
+    await saveCharacter(makeChar(UUID_A));
+    await addPortraitVersion({ characterId: UUID_A, bytes: buildTaggedPng(1), source: 'regen' });
+    await expect(
+      selectPortraitVersion({ characterId: UUID_A, file: `${UUID_A}-v9.png` }),
+    ).rejects.toThrow(/Unknown portrait version/);
+    await expect(
+      selectPortraitVersion({ characterId: UUID_A, file: '../../etc/passwd.png' }),
+    ).rejects.toThrow(/Unknown portrait version/);
+  });
+
+  it('refuses a regen past MAX_PORTRAIT_REGENS but still accepts uploads', async () => {
+    await saveCharacter(makeChar(UUID_A));
+    for (let i = 1; i <= MAX_PORTRAIT_REGENS; i++) {
+      const state = await addPortraitVersion({ characterId: UUID_A, bytes: buildTaggedPng(i), source: 'regen' });
+      expect(state.regenCount).toBe(i);
+    }
+    await expect(
+      addPortraitVersion({ characterId: UUID_A, bytes: buildTaggedPng(9), source: 'regen' }),
+    ).rejects.toThrow(/PORTRAIT_REGEN_LIMIT/);
+    // Count is untouched by the refused attempt, and an upload still works.
+    expect((await readMeta(UUID_A)).portrait_regen_count).toBe(MAX_PORTRAIT_REGENS);
+    const after = await applyPortrait({ characterId: UUID_A, bytes: buildTaggedPng(10) });
+    expect(after).toBe(`${UUID_A}.png`);
+    const state = await getPortraitVersions(UUID_A);
+    expect(state.regenCount).toBe(MAX_PORTRAIT_REGENS);
+    expect(state.versions.at(-1)?.source).toBe('upload');
+  });
+
+  it('applyPortrait (picker upload) records an upload version', async () => {
+    await saveCharacter(makeChar(UUID_A));
+    await applyPortrait({ characterId: UUID_A, bytes: buildTaggedPng(1) });
+    await applyPortrait({ characterId: UUID_A, bytes: buildTaggedPng(2) });
+    const state = await getPortraitVersions(UUID_A);
+    expect(state.versions.map((v) => [v.file, v.source])).toEqual([
+      [`${UUID_A}-v1.png`, 'upload'],
+      [`${UUID_A}-v2.png`, 'upload'],
+    ]);
+    expect(state.active).toBe(`${UUID_A}-v2.png`);
+    expect(state.regenCount).toBe(0);
+  });
+
+  it('evicts the oldest inactive upload past MAX_PORTRAIT_VERSIONS, never the original', async () => {
+    await saveCharacter({ ...makeChar(UUID_A), portrait_image: `${UUID_A}.png` });
+    await mkdir(paths.portraitsDir(), { recursive: true });
+    await writeFile(paths.portraitPath(UUID_A), buildTaggedPng(0));
+    for (let i = 1; i <= MAX_PORTRAIT_VERSIONS; i++) {
+      await applyPortrait({ characterId: UUID_A, bytes: buildTaggedPng(i) });
+    }
+    const state = await getPortraitVersions(UUID_A);
+    expect(state.versions.length).toBe(MAX_PORTRAIT_VERSIONS);
+    expect(state.versions[0]).toMatchObject({ file: `${UUID_A}-v1.png`, source: 'original' });
+    // v2 (the oldest upload) was evicted, on disk too.
+    expect(state.versions.some((v) => v.file === `${UUID_A}-v2.png`)).toBe(false);
+    expect(await listPortraitVersionFilesOnDisk(UUID_A)).not.toContain(`${UUID_A}-v2.png`);
+    expect(state.active).toBe(`${UUID_A}-v${MAX_PORTRAIT_VERSIONS + 1}.png`);
+  });
+
+  it('removePortrait unlinks the sidecars and clears the version metadata', async () => {
+    await saveCharacter(makeChar(UUID_A));
+    await addPortraitVersion({ characterId: UUID_A, bytes: buildTaggedPng(1), source: 'regen' });
+    await applyPortrait({ characterId: UUID_A, bytes: buildTaggedPng(2) });
+    expect(await listPortraitVersionFilesOnDisk(UUID_A)).toHaveLength(2);
+
+    await removePortrait(UUID_A);
+
+    expect(await listPortraitVersionFilesOnDisk(UUID_A)).toEqual([]);
+    await expect(access(paths.portraitPath(UUID_A))).rejects.toThrow();
+    const meta = await readMeta(UUID_A);
+    expect(meta.portrait_versions).toBeUndefined();
+    expect(meta.portrait_active).toBeUndefined();
+    // Lifetime cap survives a remove.
+    expect(meta.portrait_regen_count).toBe(1);
+    expect((await getCharacter(UUID_A))?.portrait_image).toBeNull();
+  });
+
+  it('deleteCharacter removes the canonical portrait, its sidecars and the upload marker', async () => {
+    await saveCharacter(makeChar(UUID_A));
+    await addPortraitVersion({ characterId: UUID_A, bytes: buildTaggedPng(1), source: 'regen' });
+    await applyPortrait({ characterId: UUID_A, bytes: buildTaggedPng(2) });
+    await writeFile(`${paths.portraitPath(UUID_A)}.uploaded.json`, '{"owner":"x","md5":"y"}');
+    // The reserved slots must survive untouched.
+    await writeFile(paths.portraitPath('_user'), buildPng(8, 8));
+
+    await deleteCharacter(UUID_A);
+
+    await expect(access(paths.portraitPath(UUID_A))).rejects.toThrow();
+    await expect(access(`${paths.portraitPath(UUID_A)}.uploaded.json`)).rejects.toThrow();
+    expect(await listPortraitVersionFilesOnDisk(UUID_A)).toEqual([]);
+    await expect(access(paths.portraitPath('_user'))).resolves.toBeUndefined();
+  });
+
+  it('deletePortraitFiles is ENOENT-tolerant', async () => {
+    await expect(deletePortraitFiles(UUID_A)).resolves.toBeUndefined();
   });
 });

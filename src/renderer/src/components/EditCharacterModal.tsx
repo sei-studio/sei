@@ -42,6 +42,7 @@ import { TextField } from './TextField';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ResetMemoryConfirmModal } from './ResetMemoryConfirmModal';
 import { PortraitImagePicker } from './PortraitImagePicker';
+import { PortraitVersionsModal } from './PortraitVersionsModal';
 import { SkinEditor } from './SkinEditor';
 import { VoicePicker } from './VoicePicker';
 import type { VoiceParams } from '../lib/voicePicker';
@@ -87,6 +88,8 @@ export function EditCharacterModal({
   const [name, setName] = useState<string>(character.name ?? '');
   const [description, setDescription] = useState<string>(character.description ?? '');
   const [portraitImage, setPortraitImage] = useState<string | null>(character.portrait_image);
+  // 260909: Card image versions + regenerate popup (stacked above this modal).
+  const [portraitVersionsOpen, setPortraitVersionsOpen] = useState(false);
   const [personaSource, setPersonaSource] = useState<string>(character.persona.source ?? '');
   const [personaExpanded, setPersonaExpanded] = useState<string>(character.persona.expanded ?? '');
   // Voice (260720): null = Auto (metadata.voiceId unset), 'none' = silent,
@@ -282,7 +285,11 @@ export function EditCharacterModal({
     setPortraitImage(ref);
     setError(null);
     try {
-      const persisted = await sei.saveCharacter({ ...character, portrait_image: ref }, { skipExpansion: true });
+      // Read the LATEST row first: applyPortrait / removePortrait in main just
+      // rewrote metadata (portrait_versions / portrait_active, 260909), and
+      // saving the stale `character` prop over it would drop those records.
+      const latest = (await sei.getCharacter(character.id)) ?? character;
+      const persisted = await sei.saveCharacter({ ...latest, portrait_image: ref }, { skipExpansion: true });
       await refreshCharacter(character.id);
       onSaved?.(persisted);
     } catch (err) {
@@ -529,11 +536,19 @@ export function EditCharacterModal({
                 <>
                   <div className={styles.subSection}>
                     <label className={styles.label}>{t('Card image')}</label>
-                    <PortraitImagePicker
-                      characterId={character.id}
-                      value={portraitImage}
-                      onChange={(ref) => void persistPortrait(ref)}
-                    />
+                    <div className={styles.portraitRow}>
+                      <PortraitImagePicker
+                        characterId={character.id}
+                        value={portraitImage}
+                        onChange={(ref) => void persistPortrait(ref)}
+                      />
+                      {/* 260909: the editor only opens for characters the user
+                          owns, so the versions + regenerate popup is always
+                          available here (it gates sign-in itself). */}
+                      <Button kind="ghost" size="sm" onClick={() => setPortraitVersionsOpen(true)}>
+                        {t('Regenerate')}
+                      </Button>
+                    </div>
                   </div>
                   <div className={styles.subSection}>
                     <label className={styles.label}>{t('Skin')}</label>
@@ -869,6 +884,19 @@ export function EditCharacterModal({
           characterName={character.name}
           onCancel={() => setResetConfirmOpen(false)}
           onConfirm={() => void doResetMemory()}
+        />
+      ) : null}
+      {portraitVersionsOpen ? (
+        <PortraitVersionsModal
+          characterId={character.id}
+          characterName={character.name}
+          tier="stacked"
+          onClose={() => {
+            setPortraitVersionsOpen(false);
+            // The popup may have swapped the canonical bytes; the ref string
+            // is unchanged but the picker preview must repaint.
+            void refreshCharacter(character.id);
+          }}
         />
       ) : null}
     </>
