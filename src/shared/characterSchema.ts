@@ -107,6 +107,16 @@ export const MAX_CREATIONS_PER_DAY = 4;
 export const MAX_PORTRAIT_REGENS = 3;
 
 /**
+ * `code` on the Error `addPortraitVersion` (portraitStore) throws when a
+ * 'regen' write would exceed MAX_PORTRAIT_REGENS, and the user copy for it.
+ * Defined once here (shared, no main-process imports) so the fast guard in
+ * `regeneratePortrait` and the store's authoritative refusal say the same
+ * thing.
+ */
+export const PORTRAIT_REGEN_LIMIT = 'PORTRAIT_REGEN_LIMIT';
+export const PORTRAIT_REGEN_LIMIT_COPY = 'No regenerations left for this character.';
+
+/**
  * Soft cap on the number of portrait versions kept per character. Regens are
  * bounded by MAX_PORTRAIT_REGENS (+1 for the original snapshot); manual
  * uploads are not, so the oldest inactive upload is evicted past this many.
@@ -910,7 +920,8 @@ export const UserConfigSchema = z.object({
    * account. A keyed provider (brave / tavily / serper) is used only when
    * web_search_api_key is set. Resolved by src/main/llm/webSearchSettings.ts,
    * which also honors the SEI_SEARCH_PROVIDER / SEI_SEARCH_API_KEY env
-   * overrides for development. No UI yet: set them in config.json. Both
+   * overrides for development. Edited from Settings > Search (the provider
+   * picker + key field); the env overrides win over the saved values. Both
    * stay `.optional()` with NO default so the many renderer call sites that
    * build a whole UserConfig literal keep typechecking; absence = 'auto'.
    */

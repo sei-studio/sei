@@ -30,7 +30,8 @@ import {
 } from './chatPrompts';
 import { isWebTool, webToolsFor, splitTextAroundServerSearch } from '../../bot/web/webTools.js';
 import { getChatWebSession, resolveWebSearchSettings } from '../llm/webSearchSettings';
-import type { LlmToolDef } from '../llm/types';
+import type { LlmCallParams, LlmMessage, LlmProvider, LlmResult, LlmToolDef } from '../llm/types';
+import type { UserConfig } from '../../shared/characterSchema';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import { isSilenceFiller } from '../../bot/brain/silenceFiller.js';
 import { isNoteLeak, stripThoughtTags } from './noteLeak';
@@ -99,6 +100,84 @@ const MEMORY_BUDGET_BYTES = 12000;
 // session's own per-turn budget (maxCallsPerTurn) bounds the spin below
 // this. Non-web turns still exit on the first hop with no tool_use.
 const MAX_HOPS = 6;
+
+/**
+ * 260917: ONE tool list per surface shape, built here so the four voice turn
+ * kinds (user, greeting, companion reaction, idle nudge) cannot drift apart.
+ * Tools sit at the front of the prompt-cache prefix, so membership must be
+ * byte-identical across them (see sendVoiceGreetingTurn). Anthropic sessions
+ * (cloud proxy or Anthropic BYOK) get the native server-side web_search + our
+ * visit; other providers get our search + visit (webToolsFor).
+ */
+function chatTools(llm: Pick<LlmProvider, 'kind'>, voice: boolean): LlmToolDef[] {
+  const web = webToolsFor({ serverWebSearch: llm.kind === 'anthropic' }) as LlmToolDef[];
+  return voice ? [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, ...web] : [LAUNCH_TOOL, QUIT_TOOL, ...web];
+}
+
+/**
+ * 260917: the single-shot voice turns (greeting, companion reaction, idle
+ * nudge) offer search()/visit() for prompt-cache parity with the user turn
+ * but have no hop loop, so a lookup the model announced ("one sec, let me
+ * check") was never run and the promised answer never came. This runs the
+ * web tool_uses of ONE response (or resumes a server-side pause_turn) and
+ * makes exactly ONE follow-up call. Bounded on purpose: a follow-up that asks
+ * for another lookup is not honored. The returned content keeps the first
+ * response's text and its non-web tool_use blocks (callers honor
+ * launch/remember/end_call off this array) ahead of the follow-up's content,
+ * so the pre-search line is spoken before the answer.
+ */
+async function followUpWebTools(p: {
+  characterId: string;
+  llm: LlmProvider;
+  system: LlmCallParams['system'];
+  tools: LlmToolDef[];
+  messages: LlmMessage[];
+  res: LlmResult;
+  ctrl: AbortController;
+  config: Pick<UserConfig, 'web_search_provider' | 'web_search_api_key'>;
+}): Promise<LlmResult> {
+  const { res } = p;
+  const hasWebUse = res.content.some((b) => b.type === 'tool_use' && isWebTool(b.name));
+  const paused = res.stopReason === 'pause_turn';
+  if (!hasWebUse && !paused) return res;
+  const messages: LlmMessage[] = [...p.messages, { role: 'assistant', content: res.content }];
+  if (hasWebUse) {
+    const ws = getChatWebSession(p.characterId, resolveWebSearchSettings(p.config));
+    ws.beginTurn();
+    const results: Anthropic.Messages.ToolResultBlockParam[] = [];
+    for (const b of res.content) {
+      if (b.type !== 'tool_use') continue;
+      if (isWebTool(b.name)) {
+        try {
+          const r = await ws.runTool(b.name, (b.input ?? {}) as Record<string, unknown>, { signal: p.ctrl.signal });
+          results.push({ type: 'tool_result', tool_use_id: b.id, content: r.content, ...(r.is_error ? { is_error: true } : {}) });
+          console.log(`[sei/chat] ${b.name} (voice follow-up) char=${p.characterId.slice(0, 8)} ${r.is_error ? 'error' : `${r.content.length} chars`}`);
+        } catch (err) {
+          if (p.ctrl.signal.aborted) throw err;
+          console.warn(`[sei/chat] ${b.name} (voice follow-up) failed: ${(err as Error).message}`);
+          results.push({ type: 'tool_result', tool_use_id: b.id, content: `${b.name} failed. Tell the player you could not look it up right now.`, is_error: true });
+        }
+      } else {
+        // launch / remember / end_call / quit are honored by the caller off the
+        // first response; every tool_use still needs a tool_result.
+        results.push({ type: 'tool_result', tool_use_id: b.id, content: 'ok' });
+      }
+    }
+    messages.push({ role: 'user', content: results });
+  }
+  const next = await p.llm.call({
+    maxTokens: 300,
+    system: p.system,
+    tools: p.tools,
+    stopSequences: TRANSCRIPT_STOP_SEQUENCES,
+    messages,
+    timeoutMs: CHAT_TIMEOUT_MS,
+    signal: p.ctrl.signal,
+  });
+  const lead = res.content.filter((b) => b.type === 'text' || (b.type === 'tool_use' && !isWebTool(b.name)));
+  const content = [...lead, ...next.content];
+  return { ...next, content, text: textOf(content) };
+}
 /**
  * Voice calls (260706): cap the transcript sent to the model to the last N rows.
  * Memory (MEMORY.md) + the rolling summary still carry older context, so the
@@ -415,8 +494,9 @@ export const TRANSCRIPT_STOP_SEQUENCES = [
 /** Concatenate the text blocks of an Anthropic response content array. */
 function textOf(content: Array<{ type: string }>): string {
   return content
-    .map((b) => (b.type === 'text' ? (b as unknown as { text: string }).text : ''))
-    .join('')
+    .map((b) => (b.type === 'text' ? (b as unknown as { text: string }).text.trim() : ''))
+    .filter(Boolean)
+    .join(' ')
     .trim();
 }
 
@@ -876,21 +956,14 @@ export async function sendChatMessage(
     let launchCalled = false;
     // end_call + remember are offered only while a call is open (block 0
     // already flips for the primer, so this adds no extra cache churn).
-    // 260909: Anthropic sessions (cloud proxy or Anthropic BYOK) get the
-    // native server-side web_search + our visit; other providers get our
-    // search + visit (webToolsFor). Same list on every turn kind for the
-    // cache prefix.
-    const webTools = webToolsFor({ serverWebSearch: llm.kind === 'anthropic' }) as LlmToolDef[];
-    const tools =
-      args.voiceCall === true
-        ? [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, ...webTools]
-        : [LAUNCH_TOOL, QUIT_TOOL, ...webTools];
+    // Same list on every voice turn kind for the cache prefix (chatTools).
+    const tools = chatTools(llm, args.voiceCall === true);
     // 260909: per-character web session (lettered results survive across
     // turns). Resolved lazily so a turn that never searches pays nothing.
     let webSession: ReturnType<typeof getChatWebSession> | null = null;
     const webSessionFor = async () => {
       if (!webSession) {
-        webSession = getChatWebSession(args.characterId, resolveWebSearchSettings(await loadConfig()));
+        webSession = getChatWebSession(args.characterId, resolveWebSearchSettings(config));
         webSession.beginTurn();
       }
       return webSession;
@@ -1018,8 +1091,11 @@ export async function sendChatMessage(
       // (the renderer queues pushed companion lines with its typing pacing),
       // and clear replyText so the returned replies carry only what came
       // after the results. Voice already streams every hop's sentences.
-      if (!isStreaming && text && typeof deps.emitReply === 'function' && toolUses.some((b) => isWebTool(b.name))) {
-        await emitStreamedBubble(text, false);
+      // Emit replyText, not text: when a server-side search and a client
+      // visit() ride the same response the split above has already pushed
+      // the pre-search line, and replyText holds only what followed it.
+      if (!isStreaming && replyText && typeof deps.emitReply === 'function' && toolUses.some((b) => isWebTool(b.name))) {
+        await emitStreamedBubble(replyText, false);
         replyText = '';
       }
 
@@ -1416,8 +1492,8 @@ export async function sendVoiceGreetingTurn(
     // not a cacheRead" symptom). Matching them writes the tools+system prefix
     // here, during the ring, so the first spoken user reply is a fast cache READ.
     markLastMessageCached(messages);
-    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, ...(webToolsFor({ serverWebSearch: llm.kind === 'anthropic' }) as LlmToolDef[])];
-    const res = await llm.call({
+    const tools = chatTools(llm, true);
+    const first = await llm.call({
       maxTokens: 200,
       system,
       tools,
@@ -1426,6 +1502,9 @@ export async function sendVoiceGreetingTurn(
       timeoutMs: CHAT_TIMEOUT_MS,
       signal: ctrl.signal,
     });
+    if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
+    // 260917: run an announced lookup and speak its answer (one bounded hop).
+    const res = await followUpWebTools({ characterId, llm, system, tools, messages, res: first, ctrl, config: prep.config });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
     await honorRememberCalls(characterId, res.content);
     const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');
@@ -1491,8 +1570,10 @@ export async function observeVoiceLine(
  * later turns remember the banter and never mistake a companion for the player.
  * B's own reply is persisted voice-flagged too (hidden from the chat view).
  *
- * No tools are offered: a cross-companion reaction should just talk, not launch
- * or hang up (the player or the primary companion drives those). Registered in
+ * The same tool list as every other voice turn is offered for the shared
+ * cache prefix; launch/remember are honored inline, a web lookup gets one
+ * bounded follow-up (followUpWebTools), end_call/quit stay inert here (the
+ * player or the primary companion drives those). Registered in
  * the same per-character `inflight` slot as sendChatMessage so a player barge-in
  * (a new real utterance to this companion) supersedes an in-flight reaction.
  */
@@ -1554,8 +1635,8 @@ export async function sendCompanionVoiceTurn(
     markLastMessageCached(messages);
 
     const llm = await buildLlmProvider();
-    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, ...(webToolsFor({ serverWebSearch: llm.kind === 'anthropic' }) as LlmToolDef[])];
-    const res = await llm.call({
+    const tools = chatTools(llm, true);
+    const first = await llm.call({
       maxTokens: 200,
       system,
       tools,
@@ -1564,6 +1645,9 @@ export async function sendCompanionVoiceTurn(
       timeoutMs: CHAT_TIMEOUT_MS,
       signal: ctrl.signal,
     });
+    if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
+    // 260917: run an announced lookup and speak its answer (one bounded hop).
+    const res = await followUpWebTools({ characterId, llm, system, tools, messages, res: first, ctrl, config: prep.config });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
     await honorRememberCalls(characterId, res.content);
     // 260708: honor launch() the same single-shot way remember() is honored —
@@ -1655,8 +1739,8 @@ export async function sendVoiceIdleTurn(
     // Same warm tools+system cache prefix as every other voice turn.
     markLastMessageCached(messages);
     const llm = await buildLlmProvider();
-    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, ...(webToolsFor({ serverWebSearch: llm.kind === 'anthropic' }) as LlmToolDef[])];
-    const res = await llm.call({
+    const tools = chatTools(llm, true);
+    const first = await llm.call({
       maxTokens: 200,
       system,
       tools,
@@ -1665,6 +1749,9 @@ export async function sendVoiceIdleTurn(
       timeoutMs: CHAT_TIMEOUT_MS,
       signal: ctrl.signal,
     });
+    if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return { messages: [] };
+    // 260917: run an announced lookup and speak its answer (one bounded hop).
+    const res = await followUpWebTools({ characterId, llm, system, tools, messages, res: first, ctrl, config: prep.config });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return { messages: [] };
     await honorRememberCalls(characterId, res.content);
     // No tool loop runs here, so honor end_call by flagging it for the caller:

@@ -315,6 +315,94 @@ describe('native server-side web_search on the Anthropic path (260909)', () => {
   });
 });
 
+describe('server search + client visit in one response (260917)', () => {
+  const serverBlocks = [
+    { type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: { query: 'netherite armor' } },
+    { type: 'web_search_tool_result', tool_use_id: 'srvtoolu_1', content: [{ type: 'web_search_result', title: 'Netherite', url: 'https://minecraft.wiki/w/Netherite', encrypted_content: 'x'.repeat(200) }] },
+  ];
+
+  it('emits the pre-search line ONCE and the post-search line once, then answers', async () => {
+    webRuns.length = 0;
+    createSpy
+      .mockResolvedValueOnce({
+        stop_reason: 'tool_use',
+        content: [
+          { type: 'text', text: 'lemme check.' },
+          ...serverBlocks,
+          { type: 'text', text: 'opening the page.' },
+          { type: 'tool_use', id: 'tu_v', name: 'visit', input: { ref: 'a' } },
+        ],
+      })
+      .mockResolvedValueOnce({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'smithing table, ancient debris.' }] });
+    const pushed: string[] = [];
+    const d: ChatDeps = { ...deps(), emitReply: (_id, m) => { pushed.push(m.text); } };
+    const result = await sendChatMessage({ characterId: CHAR, text: 'how do i get netherite' }, d);
+    expect(createSpy).toHaveBeenCalledTimes(2);
+    expect(webRuns.map((r) => r.name)).toEqual(['visit']);
+    // The pre-search line must not be glued to, or repeated with, the line
+    // that followed the server search.
+    expect(pushed).toEqual(['lemme check', 'opening the page']);
+    expect(result.replies.map((r) => r.text)).toEqual(['smithing table, ancient debris']);
+    const rows = await chatStoreRead(CHAR);
+    const companion = rows.filter((r) => r.role === 'companion').map((r) => r.text);
+    expect(companion.filter((t) => t.startsWith('lemme check')).length).toBe(1);
+  });
+});
+
+describe('single-shot voice turns run an announced lookup (260917)', () => {
+  it('idle nudge: a search() tool_use gets ONE follow-up call and the answer is spoken after the announce', async () => {
+    setCallActive(CHAR, true);
+    webRuns.length = 0;
+    createSpy
+      .mockResolvedValueOnce({
+        stop_reason: 'tool_use',
+        content: [
+          { type: 'text', text: 'one sec, let me look that up.' },
+          { type: 'tool_use', id: 'tu_s', name: 'search', input: { query: 'netherite armor' } },
+        ],
+      })
+      .mockResolvedValueOnce({
+        stop_reason: 'tool_use',
+        content: [
+          { type: 'text', text: 'netherite is the strongest armor.' },
+          // A second lookup is NOT honored: the follow-up is bounded to one hop.
+          { type: 'tool_use', id: 'tu_v', name: 'visit', input: { ref: 'a' } },
+        ],
+      });
+    const result = await sendVoiceIdleTurn(CHAR, 60, [], { openWorldDetected: false });
+    expect(createSpy).toHaveBeenCalledTimes(2);
+    expect(webRuns.map((r) => r.name)).toEqual(['search']);
+    const req2 = createSpy.mock.calls[1][0] as { messages: Array<{ role: string; content: unknown }> };
+    const last = req2.messages[req2.messages.length - 1];
+    expect(last.role).toBe('user');
+    expect(JSON.stringify(last.content)).toContain('"tool_use_id":"tu_s"');
+    const spoken = result.messages.map((m) => m.text).join(' ');
+    expect(spoken).toContain('one sec, let me look that up');
+    expect(spoken).toContain('netherite is the strongest armor');
+  });
+
+  it('companion reaction: a pause_turn (server search ran long) is resumed once', async () => {
+    setCallActive(CHAR, true);
+    createSpy
+      .mockResolvedValueOnce({
+        stop_reason: 'pause_turn',
+        content: [
+          { type: 'text', text: 'hang on.' },
+          { type: 'server_tool_use', id: 'srvtoolu_2', name: 'web_search', input: { query: 'x' } },
+          { type: 'web_search_tool_result', tool_use_id: 'srvtoolu_2', content: [] },
+        ],
+      })
+      .mockResolvedValueOnce({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'found it, it is julio frenk.' }] });
+    const result = await sendCompanionVoiceTurn(CHAR, { speakerName: 'Sui', text: 'who runs ucla', peers: ['Sui'] });
+    expect(createSpy).toHaveBeenCalledTimes(2);
+    const req2 = createSpy.mock.calls[1][0] as { messages: Array<{ role: string; content: unknown }> };
+    expect(req2.messages[req2.messages.length - 1].role).toBe('assistant');
+    const spoken = result.map((m) => m.text).join(' ');
+    expect(spoken).toContain('hang on');
+    expect(spoken).toContain('julio frenk');
+  });
+});
+
 describe('silence-by-convention + idle nudge (260707)', () => {
   it('a "(silence)" reply ends the turn with no reply persisted', async () => {
     createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: '(silence)' }] });

@@ -16,6 +16,7 @@
 import React, { useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useT } from '../lib/i18n';
+import { cleanIpcError } from '../lib/errors';
 import { UploadIcon } from './icons';
 import styles from './KnowledgeDropZone.module.css';
 
@@ -72,14 +73,9 @@ export function KnowledgeDropZone({
         const extracted = await sei.knowledgeExtract({ name: file.name, bytesBase64 });
         await onExtracted(extracted);
       } catch (err) {
-        // Main's KnowledgeExtractError copy is user-facing; strip the IPC wrapper
-        // ("Error invoking remote method 'knowledge:extract': Error: ...").
-        const raw = (err as Error).message ?? String(err);
-        failed.push(
-          raw
-            .replace(/^Error invoking remote method '[^']*':\s*/, '')
-            .replace(/^(KnowledgeExtractError|Error):\s*/, ''),
-        );
+        // Main's KnowledgeExtractError copy is user-facing; strip the IPC
+        // wrapper ("Error invoking remote method 'knowledge:extract': ...").
+        failed.push(cleanIpcError(err));
       }
     }
     setErrors(failed);

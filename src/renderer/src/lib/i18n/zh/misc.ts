@@ -2,7 +2,7 @@
 export const ZH_MISC: Record<string, string> = {
   // ── lib/errors.ts (ERROR_COPY / WARN_COPY / fallback) ──────────────────
   "Couldn't finish joining your world in time. Press Launch to try again.":
-    '未能及时加入你的世界。请再次点击召唤重试。',
+    '未能及时加入你的世界。请再次点击启动重试。',
   "We can't see an open LAN world. In Minecraft, press Esc, choose Open to LAN, then click Start LAN World.":
     '没有检测到开放的局域网世界。在 Minecraft 中按 Esc，选择「对局域网开放」，然后点击「创建局域网世界」。',
   'Your Anthropic API key was rejected. Open Settings → re-run onboarding to paste a fresh key.':
@@ -21,7 +21,7 @@ export const ZH_MISC: Record<string, string> = {
   "A bundled module didn't load. Reinstall Sei from the .dmg / .exe.":
     '有一个内置模块加载失败。请通过 .dmg / .exe 重新安装 Sei。',
   "This world's Minecraft version is not supported yet. Open your world on a supported Java version and press Launch again.":
-    '暂不支持这个世界的 Minecraft 版本。请用受支持的 Java 版打开你的世界，然后再次点击召唤。',
+    '暂不支持这个世界的 Minecraft 版本。请用受支持的 Java 版打开你的世界，然后再次点击启动。',
   'This world runs Forge or NeoForge and only lets in players who have its mods. Sei joins as a normal Minecraft client, so the world turns it away. Open a world without server-side mods, or use Fabric with client-only mods like minimaps.':
     '这个世界运行的是 Forge 或 NeoForge，只允许装有相同模组的玩家加入。Sei 以普通 Minecraft 客户端身份加入，因此会被拒之门外。请打开一个没有服务端模组的世界，或改用 Fabric 搭配小地图这类纯客户端模组。',
   "Couldn't download CustomSkinLoader. Check your connection and try the setup again.":

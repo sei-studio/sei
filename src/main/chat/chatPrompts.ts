@@ -12,7 +12,6 @@
  * (CHAT_BASELINE states this; the game brain's say()/snapshot mechanics live in
  * MINECRAFT_BASELINE and are never loaded here.) The only tool is `launch`.
  */
-import { SEARCH_TOOL as WEB_SEARCH_TOOL, VISIT_TOOL as WEB_VISIT_TOOL } from '../../bot/web/webTools.js';
 import type { LlmToolDef } from '../llm/types';
 import type { Persona } from '../../shared/characterSchema';
 import {
@@ -484,15 +483,6 @@ export const QUIT_TOOL = {
  * voice call site must offer the same tool list or the shared prompt-cache
  * prefix stops hitting).
  */
-/**
- * 260909: search() / visit(). Same definitions the game brain offers
- * (src/bot/web/webTools.js) so the model meets one contract everywhere. The
- * hop loop in chatService answers each call from the per-character web
- * session and re-calls the model until it stops calling tools.
- */
-export const SEARCH_TOOL = WEB_SEARCH_TOOL as LlmToolDef;
-export const VISIT_TOOL = WEB_VISIT_TOOL as LlmToolDef;
-
 export const REMEMBER_TOOL = {
   name: 'remember',
   description:

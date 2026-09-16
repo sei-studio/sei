@@ -387,4 +387,105 @@ describe('portrait versions', () => {
   it('deletePortraitFiles is ENOENT-tolerant', async () => {
     await expect(deletePortraitFiles(UUID_A)).resolves.toBeUndefined();
   });
+
+  it('removePortrait also drops the md5 upload marker', async () => {
+    await saveCharacter(makeChar(UUID_A));
+    await applyPortrait({ characterId: UUID_A, bytes: buildTaggedPng(1) });
+    const marker = `${paths.portraitPath(UUID_A)}.uploaded.json`;
+    await writeFile(marker, '{"owner":"x","md5":"y"}');
+
+    await removePortrait(UUID_A);
+
+    await expect(access(marker)).rejects.toThrow();
+  });
+});
+
+// ── Synced metadata vs local sidecars (second-device reconciliation) ──────
+//
+// `metadata.portrait_versions` / `portrait_active` ride the cloud row verbatim
+// but the `<uuid>-v<n>.png` sidecars are local-only, so a second device (or a
+// cache-on-demand row) carries a version list whose files it never had.
+
+describe('portrait versions: metadata synced without sidecars', () => {
+  const syncedMeta = {
+    portrait_versions: [
+      { file: `${UUID_A}-v1.png`, created_at: '2026-05-21T00:00:00.000Z', source: 'original' },
+      { file: `${UUID_A}-v2.png`, created_at: '2026-05-22T00:00:00.000Z', source: 'regen' },
+    ],
+    portrait_active: `${UUID_A}-v2.png`,
+    portrait_regen_count: 1,
+  };
+
+  async function seedSyncedCharacter(canonical: Buffer): Promise<void> {
+    await saveCharacter({ ...makeChar(UUID_A), portrait_image: `${UUID_A}.png`, metadata: syncedMeta });
+    await mkdir(paths.portraitsDir(), { recursive: true });
+    await writeFile(paths.portraitPath(UUID_A), canonical);
+  }
+
+  it('lists only the virtual canonical original when no recorded sidecar is on disk', async () => {
+    await seedSyncedCharacter(buildTaggedPng(0));
+
+    const state = await getPortraitVersions(UUID_A);
+
+    expect(state.versions).toEqual([
+      { file: `${UUID_A}.png`, created_at: expect.any(String), source: 'original' },
+    ]);
+    expect(state.active).toBe(`${UUID_A}.png`);
+    // The regen count is metadata and DOES follow the character.
+    expect(state.regenCount).toBe(1);
+    expect(await listPortraitVersionFilesOnDisk(UUID_A)).toEqual([]);
+  });
+
+  it('a write on that device snapshots its canonical first, past the synced indices', async () => {
+    const canonical = buildTaggedPng(0);
+    await seedSyncedCharacter(canonical);
+
+    const upload = buildTaggedPng(5);
+    const state = await addPortraitVersion({ characterId: UUID_A, bytes: upload });
+
+    // v1/v2 are taken by the synced records, so the snapshot is v3 and the
+    // upload v4; the phantom entries are dropped from the list.
+    expect(state.versions.map((v) => [v.file, v.source])).toEqual([
+      [`${UUID_A}-v3.png`, 'original'],
+      [`${UUID_A}-v4.png`, 'upload'],
+    ]);
+    expect(state.active).toBe(`${UUID_A}-v4.png`);
+    expect((await readFile(path.join(paths.portraitsDir(), `${UUID_A}-v3.png`))).equals(canonical)).toBe(true);
+    expect((await readFile(paths.portraitPath(UUID_A))).equals(upload)).toBe(true);
+    // Switching back to what this device was showing works.
+    const back = await selectPortraitVersion({ characterId: UUID_A, file: `${UUID_A}-v3.png` });
+    expect(back.active).toBe(`${UUID_A}-v3.png`);
+    expect((await readFile(paths.portraitPath(UUID_A))).equals(canonical)).toBe(true);
+  });
+
+  it('selecting a recorded-but-missing version is an unknown version, not ENOENT', async () => {
+    await seedSyncedCharacter(buildTaggedPng(0));
+    await expect(
+      selectPortraitVersion({ characterId: UUID_A, file: `${UUID_A}-v2.png` }),
+    ).rejects.toThrow(/Unknown portrait version/);
+    // Nothing was written or changed by the refusal.
+    expect((await getPortraitVersions(UUID_A)).active).toBe(`${UUID_A}.png`);
+  });
+
+  it('keeps the sidecars that ARE on disk and reports the canonical as active when the recorded active is not', async () => {
+    const canonical = buildTaggedPng(0);
+    await seedSyncedCharacter(canonical);
+    // Only v1 made it to this machine; the recorded active (v2) did not.
+    const v1 = buildTaggedPng(1);
+    await writeFile(path.join(paths.portraitsDir(), `${UUID_A}-v1.png`), v1);
+
+    const state = await getPortraitVersions(UUID_A);
+    expect(state.versions.map((v) => v.file)).toEqual([`${UUID_A}-v1.png`]);
+    expect(state.active).toBe(`${UUID_A}.png`);
+
+    // A regen on this device still snapshots the canonical it is showing.
+    const next = await addPortraitVersion({ characterId: UUID_A, bytes: buildTaggedPng(7), source: 'regen' });
+    expect(next.versions.map((v) => [v.file, v.source])).toEqual([
+      [`${UUID_A}-v1.png`, 'original'],
+      [`${UUID_A}-v3.png`, 'original'],
+      [`${UUID_A}-v4.png`, 'regen'],
+    ]);
+    expect((await readFile(path.join(paths.portraitsDir(), `${UUID_A}-v3.png`))).equals(canonical)).toBe(true);
+    expect(next.regenCount).toBe(2);
+  });
 });

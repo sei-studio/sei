@@ -308,10 +308,13 @@ export function createAnthropicClient(config) {
           else if (ev.delta.type === 'thinking_delta') cur.thinking = (cur.thinking ?? '') + ev.delta.thinking
           else if (ev.delta.type === 'signature_delta') cur.signature = ev.delta.signature
         } else if (ev.type === 'content_block_stop' && cur) {
-          if (cur.type === 'tool_use') {
+          // A native web_search call streams as `server_tool_use` with the
+          // same input_json_delta shape as a tool_use; both need the parse or
+          // the block lands in history with no `input` (260917).
+          if (cur.type === 'tool_use' || cur.type === 'server_tool_use') {
             if (curJson) { try { cur.input = JSON.parse(curJson) } catch { cur.input = cur.input ?? {} } }
             else cur.input = cur.input ?? {}
-            if (cur.name === 'say') fireSayOnce(cur)
+            if (cur.type === 'tool_use' && cur.name === 'say') fireSayOnce(cur)
           }
           content.push(cur)
           cur = null

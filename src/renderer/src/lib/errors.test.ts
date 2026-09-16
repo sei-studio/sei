@@ -15,7 +15,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { ERROR_COPY, classifyRendererError } from './errors';
+import { ERROR_COPY, classifyRendererError, cleanIpcError } from './errors';
 import { ALL_ERROR_CLASSES } from '@shared/errorClasses';
 
 const NEOFORGE_KICK = 'This server has mods that require NeoForge to be installed on the client.';
@@ -65,6 +65,22 @@ describe('classifyRendererError — modded hosts', () => {
     expect(classifyRendererError(new Error('model row failed to render')).class).not.toBe(
       'MODDED_HOST_REJECTED',
     );
+  });
+});
+
+describe('cleanIpcError', () => {
+  it('strips the invoke wrapper and the Error prefix', () => {
+    expect(
+      cleanIpcError(new Error("Error invoking remote method 'chars:portrait-select': Error: Unknown portrait version.")),
+    ).toBe('Unknown portrait version.');
+  });
+
+  it('strips any error class name, and leaves a plain message alone', () => {
+    expect(
+      cleanIpcError(new Error("Error invoking remote method 'knowledge:extract': KnowledgeExtractError: That file is empty.")),
+    ).toBe('That file is empty.');
+    expect(cleanIpcError(new Error('Character not found.'))).toBe('Character not found.');
+    expect(cleanIpcError('plain string')).toBe('plain string');
   });
 });
 

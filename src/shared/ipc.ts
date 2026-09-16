@@ -930,7 +930,7 @@ export type PortraitRegenResult =
   | { ok: true; state: PortraitVersionsState }
   | {
       ok: false;
-      code: 'not_signed_in' | 'limit' | 'not_found' | 'busy' | 'generation_failed' | 'network';
+      code: 'not_signed_in' | 'limit' | 'not_found' | 'generation_failed' | 'network';
       message: string;
     };
 

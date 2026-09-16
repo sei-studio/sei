@@ -20,9 +20,11 @@
 //      is tried in order and the first that yields results wins. Wikipedia is
 //      the floor that always answers, even from an IP the scrapers challenge.
 //
-// This file is pure JS with no Electron / mineflayer imports so the bot
-// (raw ESM, asar-unpacked) and Electron main (bundled by electron-vite) can
-// both import it. Keep it that way.
+// This file has no mineflayer import and no static Electron import: the only
+// Electron touch is the OPTIONAL dynamic `import('electron')` inside
+// `electronFetchProvider`, which fails soft under plain Node. That keeps it
+// importable by the bot (raw ESM, asar-unpacked), Electron main (bundled by
+// electron-vite) and the test runner alike. Keep it that way.
 
 const DEFAULT_LIMITS = Object.freeze({
   maxResults: 5,
@@ -30,6 +32,11 @@ const DEFAULT_LIMITS = Object.freeze({
   snippetChars: 150,
   pageChars: 2400,
   fetchTimeoutMs: 8000,
+  // The keyless search chain (DDG -> Bing -> Wikipedia) runs SEQUENTIALLY,
+  // so on a network that blackholes the scrapers every search used to wait
+  // fetchTimeoutMs per engine (~16 s). Search endpoints get a shorter clock;
+  // visit keeps fetchTimeoutMs (a page read is one fetch, and worth waiting).
+  searchTimeoutMs: 4000,
   maxBodyBytes: 1_500_000,
   maxCallsPerTurn: 6,
   maxRedirects: 5,
@@ -42,21 +49,145 @@ const BROWSER_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
 
 /**
- * Which fetch to use. Electron's `net.fetch` rides the Chromium network
- * stack: browser TLS fingerprint (so Cloudflare-fronted wikis and DuckDuckGo
- * answer where Node's undici gets a 403 / challenge page, measured 260909),
- * OS proxy honored. It is available in main AND in the bot's utilityProcess.
- * It cannot do `redirect: 'manual'` ("Redirect was cancelled"), so with it we
- * follow redirects and gate the FINAL url instead of every hop. Plain Node
- * (tests, standalone scripts) falls back to global fetch with manual hops.
+ * Which transport to use. Electron's `net` rides the Chromium network stack:
+ * browser TLS fingerprint (so Cloudflare-fronted wikis and DuckDuckGo answer
+ * where Node's undici gets a 403 / challenge page, measured 260909), OS proxy
+ * honored. It is available in main AND in the bot's utilityProcess.
+ *
+ * 260917: this used to hand back `net.fetch` with redirects FOLLOWED and the
+ * final `res.url` gated. Two things made that a hole: `net.fetch` returns a
+ * constructed Response whose `.url` is '' (electron.d.ts documents `.url` as
+ * incorrect), so the post-fetch gate compared '' to the request URL and never
+ * ran; and `net.fetch` cannot do `redirect: 'manual'` (it attaches no
+ * 'redirect' listener, so a manual redirect is cancelled). A public URL that
+ * 302'd to 127.0.0.1 / 169.254.169.254 / a LAN host had its body returned to
+ * the model. The provider is now built on `net.request({redirect:'manual'})`,
+ * whose 'redirect' event lets the caller's URL gate run on EVERY hop before
+ * `followRedirect()` (see `createNetRequester`). Plain Node (tests, scripts)
+ * falls back to global fetch with the manual-redirect loop in `fetchCapped`.
+ *
+ * Shape: `{ request, kind }` (Electron) or `{ fetch, manualRedirects, kind }`
+ * (Node). `fetchCapped` accepts either.
  */
 export async function electronFetchProvider() {
   try {
     const m = await import('electron')
     const net = m?.net ?? m?.default?.net
-    if (net && typeof net.fetch === 'function') return { fetch: /** @type {typeof fetch} */ (net.fetch.bind(net)), manualRedirects: false, kind: 'electron' }
+    if (net && typeof net.request === 'function') return { request: createNetRequester(net), kind: 'electron' }
   } catch {}
   return { fetch: globalThis.fetch, manualRedirects: true, kind: 'node' }
+}
+
+/**
+ * A `request(url, init, guard)` over Electron's `net.request` (ClientRequest,
+ * https://electronjs.org/docs/api/client-request). Exported so tests can
+ * drive it with a fake `net`. Contract, mirroring `fetchCapped`'s Node path:
+ *   - `guard.validate(url)` runs on the initial URL and, in the 'redirect'
+ *     event, on every redirect target BEFORE `followRedirect()`. A throwing
+ *     gate aborts the request; nothing past the redirect is ever read.
+ *   - hops are counted against `guard.maxRedirects` (too many = reject).
+ *   - `followRedirect()` is called SYNCHRONOUSLY inside the event, which is
+ *     what Electron requires (an unanswered 'redirect' cancels the request).
+ *   - the body is collected up to `guard.maxBytes` then the request is
+ *     aborted; `guard.timeoutMs` and `guard.signal` both abort it and reject
+ *     with 'timeout' / the signal's reason, the same errors the Node path
+ *     surfaces.
+ * Resolves `{ res: { status, ok, headers.get() }, text, url }` where `url` is
+ * where the chain actually landed.
+ */
+export function createNetRequester(net) {
+  return function request(url, { method = 'GET', headers = {}, body } = {}, { validate, maxRedirects = 5, maxBytes = Infinity, signal, timeoutMs } = {}) {
+    return new Promise((resolve, reject) => {
+      try { if (validate) validate(url) } catch (err) { reject(err); return }
+      if (signal?.aborted) { reject(signal.reason ?? new Error('aborted')); return }
+      let settled = false
+      let hops = 0
+      let current = url
+      let req = null
+      const chunks = []
+      let total = 0
+      const onOuter = () => fail(signal?.reason ?? new Error('aborted'))
+      const timer = timeoutMs > 0 ? setTimeout(() => fail(new Error('timeout')), timeoutMs) : null
+      if (signal) signal.addEventListener('abort', onOuter, { once: true })
+      const cleanup = () => {
+        if (timer) clearTimeout(timer)
+        if (signal) signal.removeEventListener('abort', onOuter)
+      }
+      const abortReq = () => { try { req?.abort() } catch {} }
+      const fail = (err) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        abortReq()
+        reject(err)
+      }
+      try {
+        req = net.request({ url, method, redirect: 'manual' })
+      } catch (err) {
+        fail(err)
+        return
+      }
+      for (const [k, v] of Object.entries(headers ?? {})) {
+        if (v === undefined || v === null) continue
+        try { req.setHeader(k, String(v)) } catch {}
+      }
+      req.on('redirect', (_status, _method, redirectUrl) => {
+        if (settled) return
+        hops += 1
+        if (hops > maxRedirects) { fail(new Error('too many redirects')); return }
+        let next
+        try {
+          next = new URL(redirectUrl, current).toString()
+          if (validate) validate(next)
+        } catch (err) {
+          fail(err)
+          return
+        }
+        current = next
+        try { req.followRedirect() } catch (err) { fail(err) }
+      })
+      req.on('error', (err) => fail(err ?? new Error('request failed')))
+      req.on('response', (res) => {
+        if (settled) return
+        const status = Number(res.statusCode)
+        const get = headerGetter(res.headers)
+        const len = Number(get('content-length') ?? 0)
+        if (len && len > maxBytes * 4) { fail(new Error('page too large')); return }
+        const done = () => {
+          if (settled) return
+          settled = true
+          cleanup()
+          const buf = concatChunks(chunks, total)
+          const text = decodeBody(buf, get('content-type'))
+          resolve({ res: { status, ok: status >= 200 && status < 300, headers: { get } }, text, url: current })
+          // Past the cap: stop the transfer now that the promise has its bytes.
+          if (total >= maxBytes) abortReq()
+        }
+        res.on('data', (chunk) => {
+          if (settled) return
+          const u8 = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk)
+          chunks.push(u8)
+          total += u8.byteLength
+          if (total >= maxBytes) done()
+        })
+        res.on('end', done)
+        res.on('error', (err) => fail(err ?? new Error('response failed')))
+        res.on('aborted', () => fail(new Error('aborted')))
+      })
+      if (body !== undefined && body !== null) req.end(typeof body === 'string' ? body : Buffer.from(body))
+      else req.end()
+    })
+  }
+}
+
+/** Electron's `IncomingMessage.headers` is a lowercase record of string | string[]. */
+function headerGetter(headers) {
+  const h = headers ?? {}
+  return (name) => {
+    const v = h[String(name).toLowerCase()]
+    if (v === undefined || v === null) return null
+    return Array.isArray(v) ? v.join(', ') : String(v)
+  }
 }
 
 /**
@@ -321,8 +452,10 @@ export function labelFor(index) {
 
 // ---------------------------------------------------------------------------
 // URL safety (visit only): http(s), no credentials, no loopback / link-local
-// / RFC1918 literals. Redirects are followed manually so every hop is
-// re-checked. DNS rebinding is out of scope for a companion's page reads.
+// / RFC1918 literals. Every redirect hop is re-checked before it is followed
+// (Electron: the 'redirect' event in createNetRequester; Node: the manual
+// loop in fetchCapped). DNS rebinding is out of scope for a companion's page
+// reads.
 
 const PRIVATE_V4 = [
   /^0\./, /^10\./, /^127\./, /^169\.254\./, /^192\.168\./, /^172\.(1[6-9]|2\d|3[01])\./, /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./,
@@ -360,8 +493,19 @@ export function normalizeUserUrl(ref) {
 
 // ---------------------------------------------------------------------------
 // Fetch with timeout, size cap, manual redirects, and an optional outer signal.
+// `impl` is a transport object: `{ request }` (Electron net.request, every
+// hop gated inside the request) or `{ fetch, manualRedirects }` (Node: this
+// loop is the redirect follower). A bare function is treated as a manual-
+// redirect fetch.
 
-async function fetchCapped(fetchImpl, url, { headers, method = 'GET', body, signal, timeoutMs, maxBytes, maxRedirects, validate, manualRedirects = true } = {}) {
+async function fetchCapped(impl, url, { headers, method = 'GET', body, signal, timeoutMs, maxBytes, maxRedirects, validate, manualRedirects } = {}) {
+  if (typeof impl === 'function') impl = { fetch: impl, manualRedirects: true }
+  if (typeof impl?.request === 'function') {
+    return impl.request(url, { method, headers, body }, { validate, maxRedirects, maxBytes, signal, timeoutMs })
+  }
+  const fetchImpl = impl?.fetch
+  if (typeof fetchImpl !== 'function') throw new Error('no fetch available')
+  const manual = manualRedirects ?? impl.manualRedirects ?? true
   let current = url
   for (let hop = 0; hop <= maxRedirects; hop++) {
     if (validate) validate(current)
@@ -373,10 +517,21 @@ async function fetchCapped(fetchImpl, url, { headers, method = 'GET', body, sign
       signal.addEventListener('abort', onOuter, { once: true })
     }
     try {
-      const res = await fetchImpl(current, { method, headers, body, signal: ctrl.signal, redirect: manualRedirects ? 'manual' : 'follow' })
-      if (!manualRedirects && res.url && res.url !== current) {
-        // Chromium followed the chain for us: gate where it landed.
-        if (validate) validate(res.url)
+      const res = await fetchImpl(current, { method, headers, body, signal: ctrl.signal, redirect: manual ? 'manual' : 'follow' })
+      if (!manual && validate) {
+        // The transport followed the chain for us: gate where it landed. An
+        // EMPTY res.url is "unknown", not "no redirect" (Electron's net.fetch
+        // reports '' for every response), and an unknown landing cannot pass
+        // a gate, so it is refused rather than trusted.
+        if (!res.url) {
+          try { await res.body?.cancel?.() } catch {}
+          throw new Error('redirect target unknown (the transport did not report the final URL)')
+        }
+        if (res.url !== current) {
+          validate(res.url)
+          current = res.url
+        }
+      } else if (!manual && res.url && res.url !== current) {
         current = res.url
       }
       if (res.status >= 300 && res.status < 400) {
@@ -416,11 +571,18 @@ async function readCapped(res, maxBytes) {
       break
     }
   }
+  return decodeBody(concatChunks(chunks, total), res.headers.get('content-type'))
+}
+
+function concatChunks(chunks, total) {
   const buf = new Uint8Array(total)
   let off = 0
   for (const c of chunks) { buf.set(c, off); off += c.byteLength }
-  const ct = res.headers.get('content-type') ?? ''
-  const cs = /charset=([\w-]+)/i.exec(ct)?.[1]
+  return buf
+}
+
+function decodeBody(buf, contentType) {
+  const cs = /charset=([\w-]+)/i.exec(contentType ?? '')?.[1]
   try {
     return new TextDecoder(cs || 'utf-8', { fatal: false }).decode(buf)
   } catch {
@@ -587,7 +749,7 @@ export function providerChain(provider, apiKey) {
 /**
  * @param {{
  *   fetchImpl?: typeof fetch,
- *   fetchProvider?: (() => Promise<{ fetch: typeof fetch, manualRedirects: boolean, kind?: string }>) | null,
+ *   fetchProvider?: (() => Promise<{ fetch?: typeof fetch, manualRedirects?: boolean, request?: Function, kind?: string }>) | null,
  *   manualRedirects?: boolean,
  *   provider?: string,
  *   apiKey?: string,
@@ -599,13 +761,15 @@ export function providerChain(provider, apiKey) {
 export function createWebSession({ fetchImpl, fetchProvider = null, manualRedirects = true, provider = 'auto', apiKey = '', logger = null, limits = {}, alwaysWikiHosts = [] } = {}) {
   const L = { ...DEFAULT_LIMITS, ...limits }
   // Either a plain fetch (tests, scripts) or an async provider resolved on
-  // first use ({ fetch, manualRedirects }; see electronFetchProvider).
+  // first use ({ request } or { fetch, manualRedirects }; see
+  // electronFetchProvider).
   let impl = fetchImpl ? { fetch: fetchImpl, manualRedirects } : null
   if (!impl && !fetchProvider) impl = { fetch: globalThis.fetch, manualRedirects: true }
   if (impl && typeof impl.fetch !== 'function') throw new Error('createWebSession: no fetch available')
   const resolveImpl = async () => {
     if (!impl) {
       impl = await fetchProvider()
+      if (typeof impl?.request !== 'function' && typeof impl?.fetch !== 'function') throw new Error('createWebSession: fetch provider returned no transport')
       logger?.info?.(`[sei/web] fetch via ${impl.kind ?? 'custom'}`)
     }
     return impl
@@ -614,28 +778,44 @@ export function createWebSession({ fetchImpl, fetchProvider = null, manualRedire
   let callsThisTurn = 0
   let lastProvider = null
   // A DuckDuckGo challenge means this address is being rate-limited; asking
-  // again a few seconds later only extends it. Skip DDG for a while.
+  // again a few seconds later only extends it. Skip DDG for a while. A
+  // TIMEOUT arms the same cooldown (260917): a network that blackholes the
+  // scrapers used to cost the full clock on every search, every time. Bing
+  // gets its own clock for the same reason.
   let ddgBlockedUntil = 0
-  const DDG_COOLDOWN_MS = 90_000
+  let bingBlockedUntil = 0
+  const ENGINE_COOLDOWN_MS = 90_000
+  const BLOCKING_FAILURE = /challenge|timeout/i
   const alwaysWikis = (alwaysWikiHosts ?? []).map(wikiFor).filter(Boolean)
 
   const ctx = {
     limits: L,
     apiKey,
     async get(url, opts = {}) {
-      const { fetch, manualRedirects: manual } = await resolveImpl()
-      return fetchCapped(fetch, url, { ...opts, manualRedirects: manual, timeoutMs: L.fetchTimeoutMs, maxBytes: L.maxBodyBytes, maxRedirects: L.maxRedirects })
+      const transport = await resolveImpl()
+      return fetchCapped(transport, url, { ...opts, timeoutMs: opts.timeoutMs ?? L.fetchTimeoutMs, maxBytes: L.maxBodyBytes, maxRedirects: L.maxRedirects })
     },
     async post(url, opts = {}) {
-      const { fetch, manualRedirects: manual } = await resolveImpl()
-      return fetchCapped(fetch, url, { ...opts, method: 'POST', manualRedirects: manual, timeoutMs: L.fetchTimeoutMs, maxBytes: L.maxBodyBytes, maxRedirects: 0 })
+      const transport = await resolveImpl()
+      return fetchCapped(transport, url, { ...opts, method: 'POST', timeoutMs: opts.timeoutMs ?? L.fetchTimeoutMs, maxBytes: L.maxBodyBytes, maxRedirects: 0 })
     },
+  }
+
+  /**
+   * The ctx a search provider sees: `signal` and the per-endpoint timeout are
+   * injected into EVERY get/post, so a provider cannot forget to forward the
+   * outer abort (FSM preemption / a superseding chat send used to be unable
+   * to cancel an in-flight engine fetch, 260917).
+   */
+  function searchCtx(signal, timeoutMs) {
+    const inject = (opts = {}) => ({ ...opts, signal, timeoutMs: opts.timeoutMs ?? timeoutMs })
+    return { ...ctx, signal, get: (url, opts) => ctx.get(url, inject(opts)), post: (url, opts) => ctx.post(url, inject(opts)) }
   }
 
   /** MediaWiki list=search on one wiki. Throws on a non-answer. */
   async function wikiSearch(wiki, q, signal) {
     const u = `https://${wiki.host}${wiki.apiPath}?action=query&list=search&format=json&srprop=snippet&srlimit=${Math.min(3, L.maxResults)}&srsearch=${encodeURIComponent(q)}`
-    const { res, text } = await ctx.get(u, { headers: { Accept: 'application/json', 'User-Agent': BROWSER_UA }, signal })
+    const { res, text } = await ctx.get(u, { headers: { Accept: 'application/json', 'User-Agent': BROWSER_UA }, signal, timeoutMs: L.searchTimeoutMs })
     if (!res.ok) throw new Error(`${wiki.host} http ${res.status}`)
     const j = JSON.parse(text)
     return (j?.query?.search ?? []).map((r) => ({ title: r.title, url: wikiArticleUrl(wiki, r.title), snippet: stripTags(r.snippet ?? ''), wiki: wiki.name }))
@@ -667,18 +847,24 @@ export function createWebSession({ fetchImpl, fetchProvider = null, manualRedire
   }
 
   async function generalSearch(q, signal, errors) {
-    const chain = providerChain(provider, apiKey).filter((name) => name !== 'ddg' || Date.now() >= ddgBlockedUntil)
+    const now = Date.now()
+    const chain = providerChain(provider, apiKey).filter((name) => (name !== 'ddg' || now >= ddgBlockedUntil) && (name !== 'bing' || now >= bingBlockedUntil))
     for (const name of chain) {
       if (signal?.aborted) throw signal.reason ?? new Error('aborted')
       try {
-        const raw = await providers[name](q, { ...ctx, signal })
+        // Keyless engines are a sequential chain, so each gets the short
+        // search clock; a keyed API is a single call on the page clock.
+        const raw = await providers[name](q, searchCtx(signal, KEYLESS_PROVIDERS.has(name) ? L.searchTimeoutMs : L.fetchTimeoutMs))
         if (KEYLESS_PROVIDERS.has(name) && !looksRelevant(raw, q)) throw new Error(`${name} answered a different query`)
         if (raw.length === 0) throw new Error(`${name} no results`)
         lastProvider = name
         return raw
       } catch (err) {
         if (signal?.aborted) throw err
-        if (name === 'ddg' && /challenge/i.test(String(err?.message))) ddgBlockedUntil = Date.now() + DDG_COOLDOWN_MS
+        if (BLOCKING_FAILURE.test(String(err?.message))) {
+          if (name === 'ddg') ddgBlockedUntil = Date.now() + ENGINE_COOLDOWN_MS
+          else if (name === 'bing') bingBlockedUntil = Date.now() + ENGINE_COOLDOWN_MS
+        }
         errors.push(`${name}: ${err?.message ?? err}`)
         logger?.debug?.(`[sei/web] search via ${name} failed: ${err?.message ?? err}`)
       }
@@ -699,6 +885,9 @@ export function createWebSession({ fetchImpl, fetchProvider = null, manualRedire
       Promise.allSettled(wikis.map((w) => wikiSearch(w, wikiQuery(w, q), signal))),
       generalSearch(q, signal, errors),
     ])
+    // Preempted while the engines were answering: the turn that asked is
+    // gone, so stale results must not be handed to whatever runs next.
+    if (signal?.aborted) throw signal.reason ?? new Error('aborted')
     const wikiHits = []
     wikiSettled.forEach((r, i) => {
       if (r.status === 'fulfilled') wikiHits.push(...r.value)
@@ -859,6 +1048,7 @@ export function createWebSession({ fetchImpl, fetchProvider = null, manualRedire
     refs,
     get lastProvider() { return lastProvider },
     get ddgBlockedUntil() { return ddgBlockedUntil },
+    get bingBlockedUntil() { return bingBlockedUntil },
     get callsThisTurn() { return callsThisTurn },
   }
 }

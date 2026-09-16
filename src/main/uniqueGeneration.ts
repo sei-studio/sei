@@ -54,7 +54,16 @@ import type {
   UserPreferences,
   UserPreferencesPatch,
 } from '../shared/characterSchema';
-import { COMPANION_DYNAMICS, MAX_COMPANION_SLOTS, PREF_QUESTIONS, countsAsHomeSlot } from '../shared/characterSchema';
+import {
+  COMPANION_DYNAMICS,
+  MAX_COMPANION_SLOTS,
+  MAX_PORTRAIT_REGENS,
+  PORTRAIT_REGEN_LIMIT,
+  PORTRAIT_REGEN_LIMIT_COPY,
+  PREF_QUESTIONS,
+  countsAsHomeSlot,
+  portraitRegenCountOf,
+} from '../shared/characterSchema';
 import { PORTRAIT_MAX_BYTES, PORTRAIT_MAX_DIM } from './portraitImageUtil';
 import { parsePngIhdr } from './skinImageUtil';
 
@@ -1332,9 +1341,8 @@ export async function regeneratePortrait(args: RegeneratePortraitArgs): Promise<
   }
   if (!jwt) return { ok: false, code: 'not_signed_in', message: 'Sign in to regenerate.' };
 
-  const { portraitRegenCountOf, MAX_PORTRAIT_REGENS } = await import('../shared/characterSchema');
   if (portraitRegenCountOf(char) >= MAX_PORTRAIT_REGENS) {
-    return { ok: false, code: 'limit', message: 'No regenerations left for this character.' };
+    return { ok: false, code: 'limit', message: PORTRAIT_REGEN_LIMIT_COPY };
   }
 
   const built = buildRegenPortraitPrompt(char);
@@ -1366,14 +1374,16 @@ export async function regeneratePortrait(args: RegeneratePortraitArgs): Promise<
     return { ok: false, code: classifyGenError(err), message: `Image generation failed: ${msg}` };
   }
 
-  const { addPortraitVersion, PORTRAIT_REGEN_LIMIT } = await import('./portraitStore');
+  const { addPortraitVersion } = await import('./portraitStore');
   try {
     const state = await addPortraitVersion({ characterId: char.id, bytes, source: 'regen' });
     return { ok: true, state };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes(PORTRAIT_REGEN_LIMIT)) {
-      return { ok: false, code: 'limit', message: 'No regenerations left for this character.' };
+    // The store tags its refusal with `code`; the message sniff is only the
+    // fallback for an error that was re-wrapped somewhere on the way here.
+    if ((err as { code?: unknown } | null)?.code === PORTRAIT_REGEN_LIMIT || msg.includes(PORTRAIT_REGEN_LIMIT)) {
+      return { ok: false, code: 'limit', message: PORTRAIT_REGEN_LIMIT_COPY };
     }
     return { ok: false, code: 'generation_failed', message: `Couldn't save the new image: ${msg}` };
   }

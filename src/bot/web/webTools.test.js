@@ -18,6 +18,7 @@ import {
   wikiTitleFromUrl,
   wikisForQuery,
   clip,
+  createNetRequester,
   WEB_TOOLS,
 } from './webTools.js'
 
@@ -364,14 +365,237 @@ describe('game wikis (260909)', () => {
     expect(v.content).toContain('Thing is a thing.')
   })
 
-  it('auto-redirect mode (Chromium fetch) gates the final url', async () => {
-    const fetchImpl = async (url) => {
+  it('follow-redirect fetch mode gates the reported final url', async () => {
+    const fetchImpl = async () => {
       const r = fakeResponse({ body: '<p>secret</p>' })
-      return { ...r, url: 'http://127.0.0.1/admin' } // Chromium followed a redirect to a private host
+      return { ...r, url: 'http://127.0.0.1/admin' } // the transport followed a redirect to a private host
     }
     const s = createWebSession({ fetchImpl, manualRedirects: false })
     const v = await s.visit('https://example.com/x')
     expect(v.is_error).toBe(true)
     expect(v.content).toMatch(/private addresses/)
+  })
+
+  it('follow-redirect fetch mode refuses an EMPTY res.url instead of treating it as same-origin', async () => {
+    // Electron's net.fetch reports res.url as '' for every response, which the
+    // old check read as "no redirect happened" and let the body through.
+    const fetchImpl = async () => ({ ...fakeResponse({ body: '<p>secret</p>' }), url: '' })
+    const s = createWebSession({ fetchImpl, manualRedirects: false })
+    const v = await s.visit('https://example.com/x')
+    expect(v.is_error).toBe(true)
+    expect(v.content).toMatch(/redirect target unknown/)
+    expect(v.content).not.toContain('secret')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The Electron transport: a fake of `net.request` (ClientRequest +
+// IncomingMessage) driving createNetRequester. Routes: url substring ->
+// { status, headers, body } | { redirect } | { hang: true } | function(url).
+
+function fakeNet(routes) {
+  const calls = []   // every URL the transport was asked to open, in order
+  const bodiesRead = [] // every URL whose body was actually delivered
+  function route(url) {
+    for (const [needle, r] of Object.entries(routes)) if (url.includes(needle)) return typeof r === 'function' ? r(url) : r
+    return { status: 404, body: 'nope' }
+  }
+  function request({ url, method, redirect }) {
+    const handlers = {}
+    const req = {
+      url, method, redirect, headers: {}, aborted: false, followed: false, body: undefined,
+      setHeader(k, v) { this.headers[k] = v },
+      on(ev, fn) { (handlers[ev] ??= []).push(fn); return req },
+      abort() { req.aborted = true },
+      followRedirect() { req.followed = true },
+      end(body) { req.body = body; queueMicrotask(() => run(url)) },
+    }
+    const emit = (ev, ...a) => (handlers[ev] ?? []).forEach((f) => f(...a))
+    function run(u) {
+      if (req.aborted) return
+      calls.push(u)
+      const r = route(u)
+      if (r.redirect) {
+        req.followed = false
+        emit('redirect', r.status ?? 302, method, r.redirect, {})
+        if (req.aborted) return
+        if (req.followed) queueMicrotask(() => run(new URL(r.redirect, u).toString()))
+        else emit('error', new Error('Redirect was cancelled'))
+        return
+      }
+      if (r.hang) return
+      const res = makeIncoming(r)
+      emit('response', res)
+      queueMicrotask(() => {
+        if (req.aborted) return
+        bodiesRead.push(u)
+        res.push(Buffer.from(r.body ?? ''))
+      })
+    }
+    return req
+  }
+  function makeIncoming(r) {
+    const h = {}
+    const status = r.status ?? 200
+    const res = {
+      statusCode: status,
+      headers: Object.fromEntries(Object.entries({ 'content-type': 'text/html; charset=utf-8', ...(r.headers ?? {}) }).map(([k, v]) => [k.toLowerCase(), v])),
+      on(ev, fn) { (h[ev] ??= []).push(fn); return res },
+      push(buf) {
+        const chunk = r.chunk ?? buf.length
+        for (let i = 0; i < buf.length; i += chunk) (h.data ?? []).forEach((f) => f(buf.subarray(i, i + chunk)))
+        ;(h.end ?? []).forEach((f) => f())
+      },
+    }
+    return res
+  }
+  return { request, calls, bodiesRead }
+}
+
+describe('electron transport (net.request, 260917)', () => {
+  const sessionOver = (net, extra = {}) => createWebSession({ fetchProvider: async () => ({ request: createNetRequester(net), kind: 'fake-electron' }), ...extra })
+
+  it('a redirect to a private host is refused BEFORE its body is read, with the gate error', async () => {
+    const net = fakeNet({
+      'example.com/start': { redirect: 'http://127.0.0.1:9/admin' },
+      '127.0.0.1': { body: '<p>secret</p>' },
+    })
+    const s = sessionOver(net)
+    const v = await s.visit('https://example.com/start')
+    expect(v.is_error).toBe(true)
+    expect(v.content).toMatch(/private addresses/)
+    expect(net.calls).toEqual(['https://example.com/start'])
+    expect(net.bodiesRead).toEqual([])
+    // Link-local (cloud metadata) and RFC1918 hops are refused the same way.
+    for (const bad of ['http://169.254.169.254/latest/meta-data', 'http://192.168.1.1/']) {
+      const n = fakeNet({ 'example.com': { redirect: bad } })
+      const r = await sessionOver(n).visit('https://example.com/x')
+      expect(r.is_error, bad).toBe(true)
+      expect(n.bodiesRead, bad).toEqual([])
+    }
+  })
+
+  it('a redirect to a public host is followed and the final url is recorded', async () => {
+    const net = fakeNet({
+      'www.craft.do/': { redirect: 'https://docs.craft.do/long', status: 301 },
+      'docs.craft.do/long': { body: '<html><head><title>Long Page</title></head><body><main>' + '<p>hello there reader </p>'.repeat(40) + '</main></body></html>' },
+    })
+    const s = sessionOver(net)
+    const v = await s.visit('https://www.craft.do/')
+    expect(v.is_error).toBe(false)
+    expect(v.content).toMatch(/^docs\.craft\.do - Long Page/)
+    expect(net.calls).toEqual(['https://www.craft.do/', 'https://docs.craft.do/long'])
+    expect(net.bodiesRead).toEqual(['https://docs.craft.do/long'])
+    // A relative Location resolves against the hop it came from.
+    const rel = fakeNet({ 'a.example/x': { redirect: '/y' }, 'a.example/y': { body: '<p>landed on y</p>' } })
+    expect((await sessionOver(rel).visit('https://a.example/x')).content).toContain('landed on y')
+    expect(rel.calls[1]).toBe('https://a.example/y')
+  })
+
+  it('more than maxRedirects hops rejects', async () => {
+    const net = fakeNet({
+      'h.example/1': { redirect: 'https://h.example/2' },
+      'h.example/2': { redirect: 'https://h.example/3' },
+      'h.example/3': { body: '<p>end</p>' },
+    })
+    const v = await sessionOver(net, { limits: { maxRedirects: 1 } }).visit('https://h.example/1')
+    expect(v.is_error).toBe(true)
+    expect(v.content).toMatch(/too many redirects/)
+    expect(net.bodiesRead).toEqual([])
+    // Exactly maxRedirects hops is fine.
+    expect((await sessionOver(net, { limits: { maxRedirects: 2 } }).visit('https://h.example/1')).content).toContain('end')
+  })
+
+  it('times out, honors the outer abort, sends headers + POST bodies, and caps the body', async () => {
+    const net = fakeNet({
+      'slow.example': { hang: true },
+      'big.example': { body: 'x'.repeat(5000), chunk: 1000 },
+      'api.tavily.com': { body: JSON.stringify({ results: [{ title: 'T', url: 'https://t.example/', content: 'c' }] }), headers: { 'content-type': 'application/json' } },
+    })
+    const s = sessionOver(net, { limits: { fetchTimeoutMs: 30, maxBodyBytes: 2500 }, provider: 'tavily', apiKey: 'TK' })
+    const slow = await s.visit('https://slow.example/')
+    expect(slow.is_error).toBe(true)
+    expect(slow.content).toMatch(/timed out/)
+
+    const ctrl = new AbortController()
+    const p = s.visit('https://slow.example/', { signal: ctrl.signal })
+    ctrl.abort(new Error('preempted'))
+    await expect(p).rejects.toThrow(/preempted/)
+
+    const r = await s.search('anything')
+    expect(s.lastProvider).toBe('tavily')
+    expect(r.content).toContain('a. T')
+    const tavilyReq = net.calls.find((u) => u.includes('tavily'))
+    expect(tavilyReq).toBeTruthy()
+
+    const big = await s.visit('https://big.example/')
+    expect(big.is_error).toBe(false)
+    // 2.5 KB cap on a 5 KB page: the page is truncated, not refused.
+    expect(big.content.length).toBeLessThan(2700)
+  })
+
+  it('the transport is asked for manual redirects and carries the request headers', async () => {
+    const seen = []
+    const net = {
+      request(opts) {
+        const req = fakeNet({ 'x.example': { body: '<p>ok page</p>' } }).request(opts)
+        seen.push({ opts, req })
+        return req
+      },
+    }
+    await sessionOver(net).visit('https://x.example/')
+    expect(seen[0].opts).toMatchObject({ url: 'https://x.example/', method: 'GET', redirect: 'manual' })
+    expect(seen[0].req.headers['User-Agent']).toMatch(/Mozilla/)
+  })
+})
+
+describe('search cancellation + engine cooldowns (260917)', () => {
+  it('the outer abort reaches the engine fetch and search throws instead of returning stale results', async () => {
+    const ctrl = new AbortController()
+    let innerSignal = null
+    const fetchImpl = scriptedFetch({
+      'duckduckgo.com': async (url, init) => {
+        innerSignal = init.signal
+        ctrl.abort(new Error('preempted'))
+        if (init.signal.aborted) throw init.signal.reason
+        return fakeResponse({ body: fixture('ddg.html') })
+      },
+    })
+    const s = createWebSession({ fetchImpl })
+    await expect(s.search('craft tools', { signal: ctrl.signal })).rejects.toThrow(/preempted/)
+    expect(innerSignal).toBeInstanceOf(AbortSignal)
+    expect(innerSignal.aborted).toBe(true)
+    expect(fetchImpl.calls.some((c) => c.url.includes('bing.com'))).toBe(false) // the chain did not move on
+  })
+
+  it('a timeout arms the DDG and Bing cooldowns, and keyless engines run on searchTimeoutMs', async () => {
+    const hang = (url, init) => new Promise((_, rej) => init.signal.addEventListener('abort', () => rej(init.signal.reason)))
+    const fetchImpl = scriptedFetch({
+      'duckduckgo.com': hang,
+      'bing.com': hang,
+      'wikipedia.org': fakeResponse({ contentType: 'application/json', body: JSON.stringify({ query: { search: [{ title: 'Craft', snippet: 'craft <b>things</b>' }] } }) }),
+    })
+    const s = createWebSession({ fetchImpl, limits: { searchTimeoutMs: 20, fetchTimeoutMs: 60_000 } })
+    const t0 = Date.now()
+    const r = await s.search('craft')
+    expect(Date.now() - t0).toBeLessThan(2000) // two engines timed out on the SEARCH clock, not the 60 s page clock
+    expect(r.is_error).toBe(false)
+    expect(s.lastProvider).toBe('wikipedia')
+    expect(s.ddgBlockedUntil).toBeGreaterThan(Date.now())
+    expect(s.bingBlockedUntil).toBeGreaterThan(Date.now())
+    fetchImpl.calls.length = 0
+    await s.search('craft')
+    expect(fetchImpl.calls.map((c) => c.url).some((u) => /duckduckgo|bing\.com/.test(u))).toBe(false)
+    expect(fetchImpl.calls.some((c) => c.url.includes('wikipedia.org'))).toBe(true)
+  })
+
+  it('visit keeps the page clock (fetchTimeoutMs), not the search clock', async () => {
+    const fetchImpl = scriptedFetch({
+      'page.example': (url, init) => new Promise((res) => setTimeout(() => res(fakeResponse({ body: '<p>slow but fine page</p>' })), 40)),
+    })
+    const s = createWebSession({ fetchImpl, limits: { searchTimeoutMs: 5, fetchTimeoutMs: 2000 } })
+    const v = await s.visit('https://page.example/')
+    expect(v.is_error).toBe(false)
+    expect(v.content).toContain('slow but fine page')
   })
 })

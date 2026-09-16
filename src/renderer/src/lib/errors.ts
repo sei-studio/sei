@@ -70,6 +70,22 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
 };
 
 /**
+ * Strip Electron's IPC wrapper from a rejected `ipcRenderer.invoke` so main's
+ * user-facing copy shows clean. A main-side throw arrives as
+ * "Error invoking remote method 'chars:portrait-select': Error: Unknown
+ * portrait version." and the class name is whatever main threw
+ * (KnowledgeExtractError, Error, ...), so the second strip is class-agnostic.
+ * Use for surfaces that show main's message verbatim; structured errors that
+ * carry an ErrorClass go through ERROR_COPY instead.
+ */
+export function cleanIpcError(err: unknown): string {
+  const raw = (err as Error)?.message ?? String(err);
+  return raw
+    .replace(/^Error invoking remote method '[^']*':\s*/, '')
+    .replace(/^[A-Za-z]*Error:\s*/, '');
+}
+
+/**
  * Non-fatal warning copy (260518-o1k T8).
  *
  * Distinct from ERROR_COPY because these are not ErrorClass-keyed — they

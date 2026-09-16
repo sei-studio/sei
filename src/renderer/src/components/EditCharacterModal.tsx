@@ -288,6 +288,13 @@ export function EditCharacterModal({
       // Read the LATEST row first: applyPortrait / removePortrait in main just
       // rewrote metadata (portrait_versions / portrait_active, 260909), and
       // saving the stale `character` prop over it would drop those records.
+      //
+      // This renderer-side save looks redundant (main already saved the row
+      // when it applied the bytes) but is LOAD-BEARING for SHARED characters:
+      // applyPortrait calls the store-level saveCharacter, and the moderation
+      // gate on new portrait bytes runs only inside the chars:save IPC handler
+      // that sei.saveCharacter reaches. Dropping this call would publish an
+      // unmoderated image.
       const latest = (await sei.getCharacter(character.id)) ?? character;
       const persisted = await sei.saveCharacter({ ...latest, portrait_image: ref }, { skipExpansion: true });
       await refreshCharacter(character.id);

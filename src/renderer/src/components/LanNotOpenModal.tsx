@@ -18,6 +18,7 @@ import React from 'react';
 // UnsupportedVersionModal): the package root pulls the full protocol stack,
 // which must never enter the renderer.
 import { supportedVersions } from 'minecraft-protocol/src/version.js';
+import { selectTargetMcVersion } from '@shared/mcSetup';
 import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
@@ -27,7 +28,11 @@ import { attemptSummon } from '../lib/summonFlow';
 import styles from './LanNotOpenModal.module.css';
 
 /** Highest Minecraft Java version Sei's networking stack can join. */
-const LATEST_SUPPORTED: string = supportedVersions[supportedVersions.length - 1];
+// 260917: the same rule the setup wizard installs by (release-only, sorted;
+// the table's order is not a contract), so this copy never names a version
+// the wizard would not build.
+const LATEST_SUPPORTED: string =
+  selectTargetMcVersion({ supported: supportedVersions }) ?? supportedVersions[supportedVersions.length - 1];
 
 const STEPS: readonly string[] = [
   'Open your world in Minecraft Java.',

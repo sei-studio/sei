@@ -26,6 +26,13 @@
  *
  * On the first versioned write, an existing unversioned canonical portrait
  * is snapshotted as v1 (source 'original') so the user can always go back.
+ *
+ * The version LIST is reconciled against disk on every read (`versionsOnDisk`):
+ * `metadata.portrait_versions` / `portrait_active` ride the cloud row verbatim
+ * while the sidecars are local-only, so a second device sees recorded versions
+ * whose files it never had. Those are filtered out rather than listed, a
+ * missing active file means "the canonical is what is showing", and a write
+ * on such a device snapshots its canonical first so the picture is not lost.
  */
 
 import { access, mkdir, readFile, unlink } from 'node:fs/promises';
@@ -37,14 +44,16 @@ import { paths } from './paths';
 import { validatePortrait } from './portraitImageUtil';
 import { getCharacter, saveCharacter } from './characterStore';
 import {
+  deletePortraitFiles,
   listPortraitVersionFilesOnDisk,
   portraitVersionPath,
-  unlinkPortraitVersionFiles,
 } from './portraitFiles';
 import type { Character, PortraitVersion, PortraitVersionSource } from '../shared/characterSchema';
 import {
   MAX_PORTRAIT_REGENS,
   MAX_PORTRAIT_VERSIONS,
+  PORTRAIT_REGEN_LIMIT,
+  PORTRAIT_REGEN_LIMIT_COPY,
   portraitActiveOf,
   portraitRegenCountOf,
   portraitVersionFile,
@@ -64,8 +73,13 @@ export interface ApplyPortraitArgs {
   source?: Exclude<PortraitVersionSource, 'original'>;
 }
 
-/** Thrown by addPortraitVersion when a 'regen' write would exceed the cap. */
-export const PORTRAIT_REGEN_LIMIT = 'PORTRAIT_REGEN_LIMIT';
+/**
+ * `code` of the Error addPortraitVersion throws when a 'regen' write would
+ * exceed the cap (+ its user copy). Defined in the shared schema so the fast
+ * guard in uniqueGeneration can import it statically; re-exported here for
+ * callers that only know the store.
+ */
+export { PORTRAIT_REGEN_LIMIT, PORTRAIT_REGEN_LIMIT_COPY } from '../shared/characterSchema';
 
 function canonicalRef(characterId: string): string {
   return `${characterId}.png`;
@@ -78,6 +92,23 @@ async function fileExists(p: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * The recorded versions that are actually on THIS device's disk, plus every
+ * sidecar found (recorded or not). `metadata.portrait_versions` cloud-syncs
+ * verbatim with the character row (cloudCharacterClient passes metadata
+ * through; cacheOnDemand saves the row and downloads only the canonical
+ * `<uuid>.png`), but the `<uuid>-v<n>.png` sidecars never leave the machine
+ * that wrote them. Every reader of the list goes through here so a phantom
+ * entry can never be shown, selected (raw ENOENT) or mistaken for "this
+ * device already has a versioned history".
+ */
+async function versionsOnDisk(char: Character): Promise<{ versions: PortraitVersion[]; onDisk: string[] }> {
+  const onDisk = await listPortraitVersionFilesOnDisk(char.id);
+  const present = new Set(onDisk.map((f) => f.toLowerCase()));
+  const versions = portraitVersionsOf(char).filter((v) => present.has(v.file.toLowerCase()));
+  return { versions, onDisk };
 }
 
 async function writeCanonical(characterId: string, bytes: Buffer): Promise<void> {
@@ -101,10 +132,10 @@ async function writeSidecar(file: string, bytes: Buffer): Promise<void> {
  * show it without a write happening just because the modal opened.
  */
 async function stateOf(char: Character): Promise<PortraitVersionsState> {
-  const versions = portraitVersionsOf(char);
+  const { versions } = await versionsOnDisk(char);
   const regenCount = portraitRegenCountOf(char);
+  const canonical = canonicalRef(char.id);
   if (versions.length === 0) {
-    const canonical = canonicalRef(char.id);
     const has = await fileExists(paths.portraitPath(char.id));
     return {
       versions: has ? [{ file: canonical, created_at: char.created, source: 'original' }] : [],
@@ -113,9 +144,15 @@ async function stateOf(char: Character): Promise<PortraitVersionsState> {
       regenLimit: MAX_PORTRAIT_REGENS,
     };
   }
+  // A recorded active file this device does not have (metadata synced from
+  // another machine) means the canonical file is showing bytes no local
+  // sidecar holds: report the canonical as active rather than a phantom.
+  const recordedActive = portraitActiveOf(char);
+  const active =
+    recordedActive !== null && versions.some((v) => v.file === recordedActive) ? recordedActive : canonical;
   return {
     versions,
-    active: portraitActiveOf(char),
+    active,
     regenCount,
     regenLimit: MAX_PORTRAIT_REGENS,
   };
@@ -145,31 +182,42 @@ export async function addPortraitVersion(args: ApplyPortraitArgs): Promise<Portr
   let regenCount = portraitRegenCountOf(char);
   if (source === 'regen') {
     if (regenCount >= MAX_PORTRAIT_REGENS) {
-      throw new Error(`${PORTRAIT_REGEN_LIMIT}: no regenerations left for this character.`);
+      const err = new Error(`${PORTRAIT_REGEN_LIMIT}: ${PORTRAIT_REGEN_LIMIT_COPY}`) as Error & { code: string };
+      err.code = PORTRAIT_REGEN_LIMIT;
+      throw err;
     }
     regenCount += 1;
   }
 
   const id = args.characterId;
-  let versions = portraitVersionsOf(char);
-  // Next index: past everything recorded AND everything on disk, so a stale
-  // sidecar from an interrupted write can never be silently overwritten.
-  const onDisk = await listPortraitVersionFilesOnDisk(id);
+  const recorded = portraitVersionsOf(char);
+  const present = await versionsOnDisk(char);
+  const onDisk = present.onDisk;
+  let versions = present.versions;
+  // Next index: past everything recorded (on this device or not) AND
+  // everything on disk, so neither a stale sidecar from an interrupted write
+  // nor an index another device already handed out is silently overwritten.
   let maxIdx = 0;
-  for (const f of [...versions.map((v) => v.file), ...onDisk]) {
+  for (const f of [...recorded.map((v) => v.file), ...onDisk]) {
     const n = portraitVersionIndex(id, f);
     if (n !== null && n > maxIdx) maxIdx = n;
   }
 
-  // First versioned write: keep the current canonical bytes as 'original'.
-  if (versions.length === 0) {
+  // Keep the current canonical bytes as 'original' whenever no local sidecar
+  // holds them: the first versioned write on this device (nothing on disk,
+  // whatever the synced metadata claims), or a canonical whose recorded
+  // active version lives on another machine. Without this the picture the
+  // user is looking at is overwritten with nothing to switch back to.
+  const recordedActive = portraitActiveOf(char);
+  const canonicalHeld = recordedActive !== null && versions.some((v) => v.file === recordedActive);
+  if (onDisk.length === 0 || !canonicalHeld) {
     const canonicalPath = paths.portraitPath(id);
     if (await fileExists(canonicalPath)) {
       const orig = await readFile(canonicalPath);
       const origFile = portraitVersionFile(id, maxIdx + 1);
       maxIdx += 1;
       await writeSidecar(origFile, orig);
-      versions = [{ file: origFile, created_at: char.created, source: 'original' }];
+      versions = [...versions, { file: origFile, created_at: char.created, source: 'original' }];
     }
   }
 
@@ -236,11 +284,15 @@ export async function selectPortraitVersion(args: {
   const char = await getCharacter(id);
   if (!char) throw new Error('Character not found.');
 
-  const versions = portraitVersionsOf(char);
+  const { versions } = await versionsOnDisk(char);
   if (file === canonicalRef(id)) {
-    if (versions.length === 0) return stateOf(char);
+    // The virtual canonical entry: a no-op while it is what is showing.
+    const state = await stateOf(char);
+    if (state.active === file) return state;
     throw new Error('Unknown portrait version.');
   }
+  // A version recorded in synced metadata but absent from this disk fails
+  // here too, instead of surfacing as a raw ENOENT from readFile below.
   if (portraitVersionIndex(id, file) === null || !versions.some((v) => v.file === file)) {
     throw new Error('Unknown portrait version.');
   }
@@ -265,20 +317,17 @@ export async function selectPortraitVersion(args: {
 }
 
 /**
- * Clear the character's portrait_image and remove the on-disk file plus every
- * stored version. The lifetime regen count is kept (it is a cap, not a
- * per-portrait budget). ENOENT (file already gone) is swallowed — best-effort
- * cleanup.
+ * Clear the character's portrait_image and remove the on-disk file, every
+ * stored version AND the cloud client's md5 upload marker (deletePortraitFiles,
+ * the same sweep character delete runs; leaving the marker behind would make
+ * a later re-upload of identical bytes look already-uploaded). The lifetime
+ * regen count is kept (it is a cap, not a per-portrait budget). ENOENT (file
+ * already gone) is swallowed — best-effort cleanup.
  */
 export async function removePortrait(characterId: string): Promise<void> {
   const char = await getCharacter(characterId);
   if (!char) throw new Error('Character not found.');
-  try {
-    await unlink(paths.portraitPath(characterId));
-  } catch {
-    /* swallow ENOENT — best-effort */
-  }
-  await unlinkPortraitVersionFiles(characterId);
+  await deletePortraitFiles(characterId);
   const metadata: Record<string, unknown> = { ...(char.metadata ?? {}) };
   delete metadata.portrait_versions;
   delete metadata.portrait_active;

@@ -707,6 +707,45 @@ export function OnboardApp({
     setPhase({ k: 'no-account' });
   }, [startAtSignIn, onStartFresh]);
 
+  /**
+   * 260917: the authoritative answer to "has this account set up before" is
+   * whether the profile has a name, not how old the account is. Main
+   * backfills preferred_name from the cloud profile before the scope flips
+   * (profileScope.ts), and only the app's own setup ever writes that column,
+   * so a veteran on a second machine reads as onboarded and a minutes-old
+   * Google sign-in with no profile does not. The two age heuristics above
+   * stay as the fallback for when the read fails (null = could not tell).
+   */
+  const accountHasProfile = useCallback(async (): Promise<boolean | null> => {
+    try {
+      const cfg = await sei.getConfig();
+      return Boolean((cfg.preferred_name ?? '').trim());
+    } catch {
+      return null;
+    }
+  }, []);
+
+  /** Route a signed-in user: setup (no profile yet) or done (has one). */
+  const routeAfterAuth = useCallback(
+    async (mode: 'new' | 'returning') => {
+      const has = await accountHasProfile();
+      if (mode === 'returning') {
+        const fresh = has === null ? signedIntoFreshAccount() : !has;
+        if (fresh) resumeAsNew();
+        else complete(false, null);
+      } else if (has === null ? signedIntoExistingAccount() : has) {
+        // They walked the new-user branch but signed into an account that
+        // already has a profile. Running setup here would clobber the
+        // profile's config and mint a new character on the account (260729):
+        // greet them instead and route as returning.
+        setPhase({ k: 'welcome-existing' });
+      } else {
+        setPhase({ k: 'setup' });
+      }
+    },
+    [accountHasProfile, complete, signedIntoExistingAccount, signedIntoFreshAccount, resumeAsNew],
+  );
+
   /** Post-auth continuation: ToS gate, then setup (new) or done (returning). */
   const [needsTos, setNeedsTos] = useState(false);
   const proceedingRef = useRef(false);
@@ -726,23 +765,12 @@ export function OnboardApp({
         } catch {
           /* offline ToS check: let the normal window's gate re-ask */
         }
-        if (mode === 'returning') {
-          if (signedIntoFreshAccount()) resumeAsNew();
-          else complete(false, null);
-        } else if (signedIntoExistingAccount()) {
-          // They walked the new-user branch but signed into an account that
-          // already exists. Running setup here would clobber the profile's
-          // config and mint a new character on the account (260729) — greet
-          // them instead and route as returning.
-          setPhase({ k: 'welcome-existing' });
-        } else {
-          setPhase({ k: 'setup' });
-        }
+        await routeAfterAuth(mode);
       } finally {
         proceedingRef.current = false;
       }
     },
-    [complete, signedIntoExistingAccount, signedIntoFreshAccount, resumeAsNew],
+    [routeAfterAuth],
   );
 
   const agreeTos = useCallback(async () => {
@@ -753,12 +781,8 @@ export function OnboardApp({
     }
     setNeedsTos(false);
     const mode = phase.k === 'auth' ? phase.mode : 'new';
-    if (mode === 'returning') {
-      if (signedIntoFreshAccount()) resumeAsNew();
-      else complete(false, null);
-    } else if (signedIntoExistingAccount()) setPhase({ k: 'welcome-existing' });
-    else setPhase({ k: 'setup' });
-  }, [phase, complete, signedIntoExistingAccount, signedIntoFreshAccount, resumeAsNew]);
+    await routeAfterAuth(mode);
+  }, [phase, routeAfterAuth]);
 
   // Watch for the sign-in to land while the auth panel is up.
   useEffect(() => {

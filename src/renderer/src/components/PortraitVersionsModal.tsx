@@ -18,6 +18,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useT } from '../lib/i18n';
+import { cleanIpcError } from '../lib/errors';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { bumpPortraitRef, portraitSrc } from '../lib/portraitSrc';
@@ -35,12 +36,6 @@ export interface PortraitVersionsModalProps {
   tier?: 'base' | 'stacked';
 }
 
-/** Strip Electron's IPC wrapper so main's user-facing copy shows clean. */
-function cleanError(err: unknown): string {
-  const raw = (err as Error)?.message ?? String(err);
-  return raw.replace(/^Error invoking remote method '[^']*':\s*/, '').replace(/^Error:\s*/, '');
-}
-
 export function PortraitVersionsModal({
   characterId,
   characterName,
@@ -56,9 +51,6 @@ export function PortraitVersionsModal({
   const [error, setError] = useState<string | null>(null);
   const [regenerating, setRegenerating] = useState(false);
   const [selecting, setSelecting] = useState<string | null>(null);
-  // Local cache-buster for the big preview + thumbnails: the canonical URL
-  // never changes when its bytes do, so bump after every swap.
-  const [bust, setBust] = useState(0);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -72,7 +64,7 @@ export function PortraitVersionsModal({
       const next = await sei.charsPortraitVersions(characterId);
       if (mounted.current) setState(next);
     } catch (err) {
-      if (mounted.current) setError(cleanError(err));
+      if (mounted.current) setError(cleanIpcError(err));
     }
   }, [characterId]);
 
@@ -80,10 +72,13 @@ export function PortraitVersionsModal({
     void load();
   }, [load]);
 
-  /** After the canonical bytes changed: repaint everywhere + refresh the row. */
+  /**
+   * After the canonical bytes changed: repaint everywhere + refresh the row.
+   * bumpPortraitRef busts the canonical URL for every consumer, this modal
+   * included; the sidecars are write-once, so their URLs never go stale.
+   */
   const afterSwap = async (next: PortraitVersionsState): Promise<void> => {
     bumpPortraitRef(`${characterId}.png`);
-    setBust((b) => b + 1);
     setState(next);
     await refreshCharacter(characterId);
   };
@@ -97,7 +92,7 @@ export function PortraitVersionsModal({
       const next = await sei.charsPortraitSelect({ characterId, file });
       await afterSwap(next);
     } catch (err) {
-      setError(cleanError(err));
+      setError(cleanIpcError(err));
     } finally {
       if (mounted.current) setSelecting(null);
     }
@@ -117,7 +112,7 @@ export function PortraitVersionsModal({
       }
       await afterSwap(res.state);
     } catch (err) {
-      setError(cleanError(err));
+      setError(cleanIpcError(err));
     } finally {
       if (mounted.current) setRegenerating(false);
     }
@@ -125,7 +120,7 @@ export function PortraitVersionsModal({
 
   const regensLeft = state ? Math.max(0, state.regenLimit - state.regenCount) : 0;
   const canRegenerate = !!state && signedIn && regensLeft > 0 && !regenerating && !selecting;
-  const activeSrc = state?.active ? withBust(portraitSrc(state.active), bust) : null;
+  const activeSrc = state?.active ? portraitSrc(state.active) : null;
   const busy = regenerating || selecting !== null;
 
   const label = (v: PortraitVersion, i: number): string => {
@@ -168,7 +163,7 @@ export function PortraitVersionsModal({
         <div className={styles.versions} role="listbox" aria-label={t('Stored versions')}>
           {state.versions.map((v, i) => {
             const isActive = state.active === v.file;
-            const src = withBust(portraitSrc(v.file), bust);
+            const src = portraitSrc(v.file);
             return (
               <button
                 key={v.file}
@@ -210,9 +205,4 @@ export function PortraitVersionsModal({
       </ModalFooter>
     </ModalShell>
   );
-}
-
-function withBust(src: string | null, bust: number): string | null {
-  if (!src || bust === 0) return src;
-  return `${src}${src.includes('?') ? '&' : '?'}m=${bust}`;
 }

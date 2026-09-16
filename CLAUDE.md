@@ -339,7 +339,13 @@ every version. Only the version on display reaches the cloud.
   migration). The first versioned write snapshots an existing canonical file
   as v1 `'original'`; uploads via `PortraitImagePicker` are recorded as
   `'upload'` versions (max `MAX_PORTRAIT_VERSIONS` 8, oldest inactive upload
-  evicted).
+  evicted). **The list is reconciled against disk on every read** (260917):
+  the metadata syncs with the row but the sidecars do not, so on a second
+  device `portraitStore` lists only the recorded versions whose files exist,
+  treats a `portrait_active` it does not have as "the canonical is showing",
+  refuses to select a phantom ("Unknown portrait version", not ENOENT), and
+  snapshots that device's canonical before the first write that would
+  overwrite it.
 - **Selecting = copying onto the canonical file.** Cloud upload reads
   `<uuid>.png` unconditionally (`syncQueue.ts`, `ipc.ts` moderation +
   migration paths) and the storage object name is server-derived, so
@@ -355,12 +361,18 @@ every version. Only the version on display reaches the cloud.
   source. Needs a session JWT in every backend mode (the proxy route is
   JWT-authed); signed-out returns `not_signed_in` and the modal disables the
   button with "Sign in to regenerate." Per-character single-flight in
-  `ipc.ts`; typed results `not_signed_in | limit | not_found | busy |
-  generation_failed | network`. Injectable `generate` is the test seam
+  `ipc.ts` (a second call joins the in-flight promise, so there is no
+  `busy` result); typed results `not_signed_in | limit | not_found |
+  generation_failed | network`, the cap refusal carrying
+  `code = PORTRAIT_REGEN_LIMIT` (constant + copy in `characterSchema.ts`,
+  defined once). Injectable `generate` is the test seam
   (`uniqueGeneration.regen.test.ts`).
 - **Cleanup:** `src/main/portraitFiles.ts` (`deletePortraitFiles`) removes
-  canonical + sidecars + the md5 marker on character delete /
-  remove-from-library / `removePortrait`; `_user.png` / `_bg.png` never match.
+  canonical + sidecars + the md5 marker, and is the ONE sweep run by character
+  delete, remove-from-library and `removePortrait` alike (removePortrait used
+  to unlink canonical + sidecars itself and leave the marker, so a later
+  re-upload of identical bytes looked already-uploaded); `_user.png` /
+  `_bg.png` never match.
 - **IPC:** `chars:portrait-versions`, `chars:portrait-regenerate`,
   `chars:portrait-select` (uuid-gated; select also pins `file` to
   `^<uuid>(-v\d+)?\.png$`). UI: `PortraitVersionsModal` from the
@@ -406,9 +418,11 @@ result comes back as an ordinary `tool_result` and the surface's existing tool
 loop calls the model again, until it stops calling tools. Nothing new was
 built for the loop itself.
 
-- **Core:** `src/bot/web/webTools.js`, pure JS with no Electron or mineflayer
-  imports, so the bot (raw ESM, asar-unpacked) and main (bundled) both import
-  it. `createWebSession()` is the only state: a lettered result table plus a
+- **Core:** `src/bot/web/webTools.js`, no mineflayer import and no static
+  Electron import: its only Electron touch is the OPTIONAL dynamic
+  `import('electron')` inside `electronFetchProvider`, which fails soft under
+  plain Node, so the bot (raw ESM, asar-unpacked), main (bundled) and the
+  test runner all import it. `createWebSession()` is the only state: a lettered result table plus a
   per-turn budget. Tool definitions (`SEARCH_TOOL` / `VISIT_TOOL`) are shared
   verbatim by both sides so the model meets one contract.
 - **Context is the cost, so the model never sees a URL.** `search(query)`
@@ -420,14 +434,29 @@ built for the loop itself.
   script/style/nav/header/footer/aside, prefer `<main>`/`<article>` when
   substantial, block tags → newlines. The tag regex tolerates `>` inside
   quoted attributes (Wikipedia's `data-mw` JSON leaked otherwise).
-- **Fetch through Chromium, not Node (260909).** `electronFetchProvider()`
-  resolves Electron's `net.fetch` lazily (available in main AND in the bot's
-  utilityProcess): browser TLS fingerprint + OS proxy. Measured from this
-  machine: minecraft.wiki, valorant.fandom.com and html.duckduckgo.com all
-  answer 200 under `net.fetch` where Node's undici gets a 403 / bot
-  challenge. `net.fetch` refuses `redirect: 'manual'`, so in that mode
-  redirects are followed and the FINAL url is gated instead of every hop
-  (`manualRedirects: false`). Plain Node (tests, scripts) keeps manual hops.
+- **Fetch through Chromium, not Node (260909, rebuilt on `net.request`
+  260917).** `electronFetchProvider()` resolves Electron's `net` lazily
+  (available in main AND in the bot's utilityProcess): browser TLS
+  fingerprint + OS proxy. Measured from this machine: minecraft.wiki,
+  valorant.fandom.com and html.duckduckgo.com all answer 200 under Chromium's
+  stack where Node's undici gets a 403 / bot challenge. The first cut used
+  `net.fetch` with redirects followed and the FINAL `res.url` gated, and that
+  was a hole: `net.fetch` returns a constructed Response whose `.url` is ''
+  (electron.d.ts documents `.url` as incorrect), so the gate compared '' to
+  the request URL and never ran, and `net.fetch` cannot do
+  `redirect: 'manual'` (no 'redirect' listener, so a manual redirect is
+  cancelled). A public URL that 302'd to 127.0.0.1 / 169.254.169.254 / a LAN
+  host had its body returned to the model. The provider is now
+  `createNetRequester(net)`: `net.request({redirect:'manual'})`, headers via
+  `setHeader`, POST body written, and in the `'redirect'` event the caller's
+  gate runs on the redirect URL and hops are counted against `maxRedirects`
+  BEFORE `followRedirect()` (which Electron requires to be called
+  synchronously); a failing gate aborts the request, so nothing past the
+  redirect is read. Body cap, timeout and the outer abort signal match the
+  Node path. `fetchCapped` stays the single entry and accepts either
+  transport (`{request}` or `{fetch, manualRedirects}`); a follow-mode fetch
+  whose `res.url` is EMPTY is refused as "unknown landing", never trusted as
+  same-origin. Plain Node (tests, scripts) keeps the manual-redirect loop.
   Electron gotcha met while probing: an ESM entry that top-level-awaits
   `app.whenReady()` deadlocks (ready is deferred until the module evaluates);
   probe scripts must be CJS or use `.then`.
@@ -443,8 +472,16 @@ built for the loop itself.
   wiki host reads through `action=parse` (cleaner than the rendered page,
   answers from any network; HTML fallback), and an unknown `/wiki/` host
   behind a bot wall is retried through its `api.php`. Fextralife (Elden Ring)
-  is not MediaWiki and is deliberately absent. A DuckDuckGo challenge arms a
-  90 s cooldown (`ddgBlockedUntil`) instead of re-asking a rate-limited IP.
+  is not MediaWiki and is deliberately absent. A DuckDuckGo challenge OR a
+  timeout arms a 90 s cooldown (`ddgBlockedUntil`) instead of re-asking a
+  rate-limited or blackholed engine; Bing has the same clock
+  (`bingBlockedUntil`, timeout-armed). Keyless search endpoints (the
+  DDG/Bing/Wikipedia chain and the wiki `list=search` calls) run on
+  `searchTimeoutMs` (4 s), since the chain is sequential and used to cost
+  `fetchTimeoutMs` per engine on a dead network; keyed APIs and `visit` keep
+  `fetchTimeoutMs` (8 s). Every engine fetch carries the turn's abort
+  signal (`searchCtx` injects it, so a provider cannot forget), and a search
+  preempted mid-flight throws rather than returning stale results.
 - **Providers: keyless by default.** `providerChain()` tries a keyed provider
   first only when its key is present (Brave `X-Subscription-Token` GET,
   Tavily `Bearer` POST, Serper `X-API-KEY` POST; request/response shapes
@@ -460,12 +497,19 @@ built for the loop itself.
   answers Node fetch with browser headers; Cloudflare-walled sites
   (minecraft.wiki, wikiHow) refuse `visit` and the tool says so
   ("blocks automated readers. Try another result.") instead of inventing.
-- **Safety:** `assertPublicHttpUrl` gates every hop (http(s) only, no
-  credentials, no loopback/link-local/RFC1918 literals, `.local`); redirects
-  are followed MANUALLY (`redirect: 'manual'`, 5 max) so each hop is
-  re-checked; bodies are streamed with a 1.5 MB cap and an 8 s timeout; the
-  outer loop's abort signal cancels an in-flight fetch. Non-text content
-  types are refused rather than dumped.
+- **Safety:** `assertPublicHttpUrl` gates the initial URL and every redirect
+  hop before it is followed (http(s) only, no credentials, no
+  loopback/link-local/RFC1918 literals, `.local`), 5 hops max. On the
+  Electron path that gate runs inside `net.request`'s `'redirect'` event
+  ahead of `followRedirect()` (`createNetRequester`); on the Node path it is
+  the manual loop in `fetchCapped` (`redirect: 'manual'`, one fetch per hop).
+  A follow-mode transport that cannot report where it landed (empty
+  `res.url`) is refused, not trusted. Bodies are streamed with a 1.5 MB cap
+  and an 8 s timeout (4 s for keyless search endpoints); the outer loop's
+  abort signal cancels an in-flight fetch on both paths. Non-text content
+  types are refused rather than dumped. Pinned in `webTools.test.js`: a
+  private-host redirect is aborted before its body is read, a public one is
+  followed with the final url recorded, and hops past `maxRedirects` reject.
 - **Bot brain wiring:** `search`/`visit` are in `INLINE_METADATA` (result
   fills synchronously, no suspend) but deliberately NOT in
   `PERSONALITY_NAMES`, so they count as `movementCalls` and `continueLoop`
@@ -492,6 +536,16 @@ built for the loop itself.
   from a per-character session (`getChatWebSession`, 1 h idle TTL, in
   `src/main/llm/webSearchSettings.ts`), and `MAX_HOPS` went 3 → 6. Chess,
   Draw! and backseat do NOT offer them (game turns, prompt-cache churn).
+  260917: the list is built in ONE place (`chatTools(llm, voice)`) so the
+  four voice turn kinds cannot drift, and the three SINGLE-SHOT voice turns
+  (greeting, companion reaction, idle nudge) no longer drop a lookup they
+  announced: `followUpWebTools` runs the response's web tool_uses (or resumes
+  a `pause_turn`) and makes exactly ONE follow-up call, bounded on purpose,
+  with the pre-search line spoken before the answer. Also fixed the same
+  day: when a server-side search and a client `visit()` rode ONE response
+  the pre-search line was pushed twice (the client-tool emit used the full
+  text instead of the already-split remainder), and `textOf` joins text
+  blocks with a space, not `''`.
 - **Settings:** the "Search" group in Settings (bottom, above About) is the
   only UI: provider `Seg` (Auto (free) / Brave / Tavily / Serper) plus a
   masked key editor shown only for a keyed provider. Persisted as
@@ -1663,7 +1717,14 @@ Two more things from the same case, since they are why he never got in:
   Google sign-in creates the account on the spot, so the returning branch used
   to complete a brand-new player as returning: no config written, no name, no
   companion, and the first summon refused with "your name is missing".
-  `signedIntoFreshAccount` (account younger than 10 minutes) sends the scene
+  260917: the route is decided by whether the profile HAS A NAME
+  (`accountHasProfile` reads `preferred_name` off `sei.getConfig()`; main
+  backfills it from the cloud profile before the scope flips, and only the
+  app's own setup ever writes that column), so a veteran on a second machine
+  reads as onboarded and a minutes-old Google sign-in does not. The two age
+  heuristics (`signedIntoFreshAccount` under 10 minutes, `signedIntoExistingAccount`
+  over 48 h) survive only as the fallback when that read fails. A returning
+  login with no profile sends the scene
   to the `no-account` phase: Sui walks back in, says so, and re-asks the
   new-here question. The boot sign-in variant has no scene to resume and
   replays the full one. A password sign-in cannot tell "no account" from
