@@ -516,17 +516,37 @@ function treeHashOf(staging) {
   return { treeHash: h.digest('hex'), files: files.length, bytes };
 }
 
+/**
+ * The bsdtar binary that writes the zip. On Windows the runner's Git Bash puts
+ * GNU tar first on PATH (measured on the v0.6.5-beta.1 build: `tar --version`
+ * answered "tar (GNU tar) 1.35" and the Minecraft win32-x64 pack never got
+ * zipped), while Windows' own C:\Windows\System32\tar.exe IS bsdtar and
+ * writes `--format zip` fine. Prefer that absolute path there; everywhere
+ * else the first `tar` on PATH is bsdtar (macOS) or is checked and refused.
+ */
+function findBsdtar() {
+  const candidates =
+    process.platform === 'win32'
+      ? [path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe'), 'tar']
+      : ['tar'];
+  const seen = [];
+  for (const c of candidates) {
+    const ver = spawnSync(c, ['--version'], { encoding: 'utf8' });
+    const out = (ver.stdout || ver.stderr || '').trim().split('\n')[0];
+    if (/bsdtar/.test(ver.stdout ?? '')) return c;
+    seen.push(`${c}: ${out || 'not found'}`);
+  }
+  throw new Error(`bsdtar is required to write the zip (found: ${seen.join('; ')})`);
+}
+
 function zipStaging(staging, zipPath, entries = ['pack.json', 'node_modules']) {
   rmSync(zipPath, { force: true });
   mkdirSync(path.dirname(zipPath), { recursive: true });
-  const ver = spawnSync('tar', ['--version'], { encoding: 'utf8' });
-  if (!/bsdtar/.test(ver.stdout ?? '')) {
-    throw new Error(`bsdtar is required to write the zip (found: ${(ver.stdout || ver.stderr || '').trim() || 'no tar'})`);
-  }
+  const tar = findBsdtar();
   const args = ['--format', 'zip', '-cf', zipPath];
   if (process.platform === 'darwin') args.push('--no-xattrs', '--no-mac-metadata');
   args.push('-C', staging, ...entries);
-  const res = spawnSync('tar', args, { stdio: 'inherit' });
+  const res = spawnSync(tar, args, { stdio: 'inherit' });
   if (res.status !== 0) throw new Error(`tar exited ${res.status}`);
 }
 
