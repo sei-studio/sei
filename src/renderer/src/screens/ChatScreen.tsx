@@ -78,14 +78,17 @@ type PanelCard = 'companion' | 'user';
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /* Drag-resize bounds for the game/chat split (260721): the game area never
- * shrinks below a playable band and the chat keeps composer + a few lines. */
+ * shrinks below a playable band. 260917: it CAN grow all the way to the
+ * bottom; a drag that leaves less than SPLIT_COLLAPSE_CHAT_PX of chat (about
+ * one composer band) snaps into the expanded state instead of leaving a
+ * sliver, and dragging back up leaves it again. */
 const SPLIT_MIN_GAME_PX = 180;
-const SPLIT_MIN_CHAT_PX = 220;
+const SPLIT_COLLAPSE_CHAT_PX = 96;
 /** ArrowUp/ArrowDown nudge on the (focusable) split handle. */
 const SPLIT_KEY_STEP_PX = 24;
 
 function clampSplitPx(px: number, total: number): number {
-  return Math.min(Math.max(px, SPLIT_MIN_GAME_PX), Math.max(SPLIT_MIN_GAME_PX, total - SPLIT_MIN_CHAT_PX));
+  return Math.min(Math.max(px, SPLIT_MIN_GAME_PX), Math.max(SPLIT_MIN_GAME_PX, total));
 }
 
 function pad2(n: number): string {
@@ -537,12 +540,21 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     };
     setSplitDragging(true);
   };
+  /** Apply a dragged/nudged game height: collapse the chat when almost none
+   * is left, otherwise leave expanded mode and keep the split. */
+  const applySplitPx = (px: number, total: number): void => {
+    if (total - px < SPLIT_COLLAPSE_CHAT_PX) {
+      setGameExpanded(true);
+      setGameSplit(null);
+      return;
+    }
+    if (gameExpanded) setGameExpanded(false);
+    setGameSplit((px / total) * 100);
+  };
   const onSplitPointerMove = (e: React.PointerEvent<HTMLDivElement>): void => {
     const d = splitDrag.current;
     if (!d || d.total <= 0) return;
-    const px = clampSplitPx(d.startH + (e.clientY - d.startY), d.total);
-    if (gameExpanded) setGameExpanded(false);
-    setGameSplit((px / d.total) * 100);
+    applySplitPx(clampSplitPx(d.startH + (e.clientY - d.startY), d.total), d.total);
   };
   const onSplitPointerUp = (e: React.PointerEvent<HTMLDivElement>): void => {
     if (!splitDrag.current) return;
@@ -567,9 +579,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     const total = col.getBoundingClientRect().height;
     if (total <= 0) return;
     const cur = area.getBoundingClientRect().height;
-    const px = clampSplitPx(cur + (e.key === 'ArrowDown' ? SPLIT_KEY_STEP_PX : -SPLIT_KEY_STEP_PX), total);
-    if (gameExpanded) setGameExpanded(false);
-    setGameSplit((px / total) * 100);
+    applySplitPx(clampSplitPx(cur + (e.key === 'ArrowDown' ? SPLIT_KEY_STEP_PX : -SPLIT_KEY_STEP_PX), total), total);
   };
   // Dragged split, clamped so a later window resize can't starve either side.
   // Applied only on the open, non-expanded split: the class rules keep owning
@@ -577,9 +587,12 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   const gameAreaStyle: React.CSSProperties | undefined =
     gameOpen && !gameExpanded && gameSplit !== null
       ? {
-          height: `clamp(${SPLIT_MIN_GAME_PX}px, ${gameSplit}%, calc(100% - ${SPLIT_MIN_CHAT_PX}px))`,
+          height: `clamp(${SPLIT_MIN_GAME_PX}px, ${gameSplit}%, calc(100% - ${SPLIT_COLLAPSE_CHAT_PX}px))`,
         }
       : undefined;
+  // 260917: a dashboard with no dragged split sizes the game area to its
+  // content (.gameFit in the module css), so its rows never scroll.
+  const gameFit = gameOpen && !gameExpanded && gameSplit === null && mcDashOpen && !chessOpen && !chessReplayOpen;
   // Unread dot: a companion (or system) line that lands WHILE chat is hidden
   // lights a red dot on the toggle; showing chat again clears it. Derived from
   // the store's message list length, so pushed and awaited replies both count;
@@ -600,7 +613,9 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     <div
       className={`${styles.root} ${panelOpen ? styles.presOpen : ''} ${
         gameOpen ? styles.gameOpen : ''
-      } ${chatHidden ? styles.gameExpanded : ''} ${splitDragging ? styles.splitDragging : ''}`}
+      } ${chatHidden ? styles.gameExpanded : ''} ${splitDragging ? styles.splitDragging : ''} ${
+        gameFit ? styles.gameFit : ''
+      }`}
     >
       {/* ── Top bar: identical structure across chat, games and calls
           (260721) — the shared ChatTopBar. Game fullscreen hides it too

@@ -29,6 +29,7 @@ import { StardewDashboardPanel } from '../stardew/StardewDashboardPanel';
 import { McLaunchPanel } from '../mcdash/McLaunchPanel';
 import { DstLaunchPanel } from '../dontstarve/DstLaunchPanel';
 import { StardewLaunchPanel } from '../stardew/StardewLaunchPanel';
+import { ChatScreen } from '../../screens/ChatScreen';
 
 const DST_ID = 'dashshot-dst';
 const SDV_ID = 'dashshot-sdv';
@@ -138,6 +139,21 @@ function seed(): void {
 seed();
 
 export function DevDashShot({ which }: { which: string }): React.ReactElement {
+  // ?dashshot=chat (Stardew) | chatdst: the dashboard hosted inside the real
+  // ChatScreen (260917), for the game/chat split, the drag handle and the
+  // composer. The fixture summon is online, so the dashboard slot opens.
+  if (which === 'chat' || which === 'chatdst') {
+    if (which === 'chatdst') {
+      useDataStore.setState((s) => ({
+        summons: { ...s.summons, [DST_ID]: { kind: 'online', characterId: DST_ID, game: 'dontstarve', uptimeMs: 0, startedAtMs: Date.now() } },
+      }));
+    }
+    return (
+      <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', background: 'var(--window)' }}>
+        <ChatScreen characterId={which === 'chatdst' ? DST_ID : SDV_ID} />
+      </div>
+    );
+  }
   const only = which === 'dontstarve' || which === 'stardew' || which === 'mclaunch' || which === 'dstlaunch' || which === 'stardewlaunch' ? which : null;
   const box: React.CSSProperties = { height: only ? '100vh' : '50vh', minHeight: 420 };
   if (only === 'mclaunch' || only === 'dstlaunch' || only === 'stardewlaunch') {
