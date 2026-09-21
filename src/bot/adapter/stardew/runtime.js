@@ -29,10 +29,14 @@ export function botUsernameFor(character) {
 /**
  * The `adapter.stardew` block for ConfigSchema (src/bot/config.js
  * StardewAdapterSchema). `joinTarget` is main's StardewJoinTarget:
- * { port, token, label, uniqueId? } (src/shared/stardewIpc.ts).
+ * { port, token, label, uniqueId?, appearance? } (src/shared/stardewIpc.ts).
  */
 export function adapterConfigFrom({ joinTarget, botUsername }) {
+  const appearance = joinTarget?.appearance
   return {
+    // 260921: the farmer look main derived for this character, when there is
+    // one. Left out entirely otherwise so the mod's default look applies.
+    ...(appearance && typeof appearance === 'object' ? { appearance } : {}),
     // localhost, not 127.0.0.1: the mod's HttpListener binds `localhost`
     // (the one prefix Windows allows without a URL ACL) and http.sys matches
     // the Host header, so the IP form would be refused there.
@@ -176,7 +180,12 @@ export async function createRuntime(config, hooks) {
     const remaining = Math.max(2000, budget - (Date.now() - startedAt))
     let result
     try {
-      result = await client.request({ t: 'spawn', name: sd.username }, { timeoutMs: remaining })
+      // `appearance` is optional on the wire (PROTOCOL.md): a mod built before
+      // 260921 ignores the unknown field and keeps its placeholder sprite.
+      // It rides every spawn, so a reconnect that re-spawns looks the same.
+      const spawnFrame = { t: 'spawn', name: sd.username }
+      if (sd.appearance) spawnFrame.appearance = sd.appearance
+      result = await client.request(spawnFrame, { timeoutMs: remaining })
     } catch (err) {
       throw new Error(`BOT_START_TIMEOUT: The Stardew Valley mod answered but the companion did not spawn in time (${err?.message ?? err}). Make sure your farm is loaded (not the title screen) and try again.`)
     }

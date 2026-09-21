@@ -8,6 +8,7 @@
  * adapter (plain JS) reads the same wire shapes by hand; keep the two in step.
  */
 import { z } from 'zod';
+import type { StardewAppearance } from './stardewAppearance';
 
 /* ── Mod defaults ─────────────────────────────────────────────────────── */
 
@@ -68,6 +69,13 @@ export const StardewModConfigSchema = z.object({
   DisconnectGraceSeconds: z.number().int().min(0).default(10),
   /** Developer frames (`newFarm`), for the live test harness only; the app never sets it. */
   DevCommands: z.boolean().default(false),
+  /**
+   * 260921: draw the companion as a customized farmer. False restores the
+   * shared placeholder sprite (the escape hatch if the farmer draw misbehaves
+   * on some setup). Named here so a re-install keeps a player's choice; the
+   * app has no UI for it.
+   */
+  FarmerLook: z.boolean().default(true),
 });
 export type StardewModConfig = z.infer<typeof StardewModConfigSchema>;
 
@@ -100,6 +108,14 @@ export interface StardewJoinTarget {
   /** Farm name; the supervisor lifts it into `worldLabel`. */
   label: string | null;
   uniqueId: string | null;
+  /**
+   * How this character looks as a farmer (260921, src/shared/
+   * stardewAppearance.ts), merged in by the module's prepareJoin. The bot
+   * forwards it verbatim in the `spawn` frame. Optional end to end: an old
+   * mod ignores the field and an old app never sends it, and the body then
+   * keeps the mod's neutral default look.
+   */
+  appearance?: StardewAppearance;
 }
 
 /* ── Dashboard snapshot (bot → main → renderer, gamedash:snapshot) ────── */

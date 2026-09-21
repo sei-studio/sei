@@ -197,7 +197,10 @@ export function createFakeMod(opts = {}) {
               result(reqId, false, 'a companion with that name is already in the world', { error: 'NAME_TAKEN' })
               return
             }
-            body = { name, sessionId: id, session: sessionRef, closed: false }
+            // 260921: the optional farmer look. The real mod clamps every
+            // field against the game; the fake only remembers what it got.
+            const appearance = msg.appearance && typeof msg.appearance === 'object' ? msg.appearance : null
+            body = { name, sessionId: id, session: sessionRef, closed: false, appearance }
             state.bodies.set(name, body)
             result(reqId, true, `spawned as ${name} in Farm`, { name, location: 'Farm', x: 62, y: 18 })
             send({ t: 'spawned', name, location: 'Farm', x: 62, y: 18 })
@@ -257,6 +260,11 @@ export function createFakeMod(opts = {}) {
           if (name === 'gather') send({ t: 'progress', id: reqId, text: `gathering ${args.kind ?? 'things'}: 1/${args.count ?? 5}` })
           return
         }
+        case 'devAppearance':
+          // Mirrors the real developer frame's shape (DevCommands.Appearance).
+          if (!body) { result(reqId, false, 'not spawned'); return }
+          result(reqId, true, 'ok', { appearance: { custom: !!body.appearance, requested: body.appearance, applied: body.appearance } })
+          return
         default:
           result(reqId, false, `unknown message type ${msg.t}`)
       }

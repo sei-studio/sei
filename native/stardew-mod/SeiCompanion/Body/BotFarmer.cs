@@ -28,7 +28,14 @@ namespace SeiCompanion.Body
         /// <summary>The companion's own wallet. Farmer.Money throws for any farmer other than Game1.player, so it lives here.</summary>
         public int Gold { get; set; }
 
-        /// <summary>No-op: the paired NPC is the visual.</summary>
+        /// <summary>
+        /// No-op on purpose, still (260921). The farmer IS the visual now, but
+        /// it is drawn by BodyDraw from inside the paired NPC's draw call, at
+        /// the NPC's position and depth, through FarmerRenderer directly.
+        /// Farmer.draw would also draw a second ground shadow, the held tool
+        /// and the username, and would run for any game path that happens to
+        /// hold this farmer; keeping it empty keeps one draw path.
+        /// </summary>
         public override void draw(SpriteBatch b)
         {
         }

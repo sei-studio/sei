@@ -937,7 +937,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // Game adapters (M0): the game module says what the bot needs to join
     // (Minecraft: the cached LAN port + MOTD; null = nothing to join). The
     // missing-target error is the module's (Minecraft: LAN_NOT_OPEN, unchanged).
-    const joinTarget = module.getJoinTarget({
+    let joinTarget = module.getJoinTarget({
       userConfig: userCfg,
       skinServerBaseUrl: opts.getSkinServerBaseUrl(),
     });
@@ -980,6 +980,21 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         characterId,
       });
       throw new Error(`GAME_PACK_DOWNLOAD_FAILED: ${detail}`);
+    }
+
+    // 260921: the module's per-character step (Stardew: the companion's
+    // appearance, one LLM call on the first summon, stored afterwards). Here,
+    // ahead of startedAtMs, for the same reason as the pack: whatever it
+    // costs must not come out of the summon deadline. The module bounds its
+    // own wait; a failure only means the join target goes out without the
+    // extra fields.
+    if (module.prepareJoin) {
+      try {
+        const extra = await module.prepareJoin({ characterId, character });
+        if (extra) joinTarget = { ...(joinTarget as Record<string, unknown>), ...extra };
+      } catch (err) {
+        console.warn(`[sei/supervisor] ${game} prepareJoin failed (continuing): ${errText(err)}`);
+      }
     }
 
     const startedAtMs = Date.now();

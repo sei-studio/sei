@@ -2167,6 +2167,108 @@ a purchase, till, plant, water, fish, chest take/put, sleep, a day end. Not
 yet verified: in-game typed chat and voice (no game window), pause/mode on
 Stardew, combat, a second companion, a farmhand.
 
+**Stardew companions look like themselves (260921).** Every Stardew body used
+to be the one shared placeholder NPC sprite. It is now drawn as a FARMER
+dressed with the game's own character creator knobs: gender, skin, hairstyle,
+hair color, eye color, shirt, pants, pants color, accessory. No hat (not a
+creator knob, and it hides the hair).
+- **One LLM call per character, in main.**
+  `src/main/games/stardew/appearance.ts` follows `chessProfile.ts` (forced
+  tool call `set_stardew_appearance`, through `buildLlmProvider`, so cloud and
+  BYOK both work) and `survivorPick.ts` (injectable deps, persisted SPARSE in
+  `UserConfig.stardew_appearance[characterId]`, not in `character.metadata`,
+  which cloud-syncs verbatim and is not editable on a default such as Lyra).
+  Input is `gatherAppearanceText`: the soulcaster sheet's appearance block and
+  image prompt first, then the description, then the persona source (the
+  expanded persona only as a last resort). The character text sits between
+  `<character>` tags and the system prompt says it is data. Two deliberate
+  differences from the two precedents: a FAILED derivation is never persisted
+  (a stored fallback would make the character generic forever because of one
+  network error; the cost is at most one retry per summon), and the result is
+  salvaged FIELD BY FIELD (`coerceStardewAppearance`: a model that gets eight
+  knobs right and invents a shirt number still produced a usable look; fewer
+  than 5 valid fields counts as a failure).
+- **The legend is the feature.** The model cannot see the sprite sheets, so
+  `src/shared/stardewAppearance.ts` lists every ALLOWED index with a short
+  description of what it looks like, and the schema admits nothing else (42
+  hairstyles, 70 shirts, 24 skins, 4 pants, 13 accessories). Tool properties
+  are plain `integer` with the legend in the description, not JSON-schema
+  number enums, because not every provider accepts those; the Zod schema is
+  the gate. Ranges and the legend come from the game itself, not from a wiki:
+  the 1.6.15 assemblies were read with Mono.Cecil (`changeSkinColor` wraps at
+  0..23, `changeAccessory` at -1..29, shirts and pants are STRING item ids in
+  1.6), `Data/Shirts` and `Data/Pants` were unpacked and parsed (the creator's
+  own set is the rows with `CanChooseDuringCharacterCustomization`: shirts
+  "1000".."1111", pants "0".."3"), `Data/HairData` adds hairstyles 100..122 to
+  the sheet's 0..55, and the hair, shirt, accessory and pants sheets were
+  unpacked (the game's MonoGame LZX decoder, run from a scratch tool) and
+  looked at composited on the farmer body. The config row is deliberately
+  LOOSE in `characterSchema.ts`; the strict legend check runs in the reader,
+  so removing an index from a legend re-derives one character instead of
+  failing the whole config parse.
+- **Plumbing.** `GameModule.prepareJoin({characterId, character})` is a new
+  optional async seam. The supervisor awaits it beside `ensurePack`, BEFORE
+  `startedAtMs`, so it never comes out of the 30 s summon deadline, and merges
+  what it returns into the join target (`getJoinTarget` is synchronous and
+  does not know the character). Stardew's returns `{appearance}` from
+  `appearanceForSummon`: a stored look at once, else a first derivation
+  awaited for at most `APPEARANCE_SUMMON_WAIT_MS` (6 s), then the summon goes
+  ahead WITHOUT the field while the single-flight derivation finishes and
+  persists for next time. `adapterConfigFrom` copies it into `adapter.stardew`
+  (loose schema with `.catch(undefined)` in `src/bot/config.js`: looks must
+  never fail a bot config) and `runtime.js` adds it to the `spawn` frame, on
+  reconnect spawns too. The field is optional end to end and
+  `STARDEW_PROTOCOL_VERSION` is unchanged: an old mod ignores it, an old app
+  never sends it.
+- **The mod draws the shadow Farmer in the NPC's place, and the NPC stays the
+  body.** `Body/Appearance.cs` clamps the frame field by field against what
+  THE RUNNING GAME accepts (`Farmer.GetAllHairstyleIndices()`,
+  `Game1.shirtData` / `pantsData`), not against the app's legend, so the
+  legend can grow without a mod rebuild; then applies it through the game's
+  own `change*` methods, gender first (it swaps the base texture and re-applies
+  the shirt). `Body/BodyDraw.cs` is a Harmony PREFIX on
+  `NPC.draw(SpriteBatch, float)` that, for a registered body, calls
+  `FarmerRenderer.draw` with the shadow and skips the NPC's own draw. A prefix
+  rather than an SMAPI `Rendered*` event because the farmer has to be inside
+  the world's depth-sorted batch to pass behind trees; rather than an NPC
+  subclass because `location.characters` is a NetCollection of NPC. Rendering
+  the 16 walk frames into a sprite sheet was the fallback and was not needed.
+  The decompile facts above still hold: the shadow is in neither
+  `Game1.otherFarmers` nor `location.farmers`, and `BotFarmer.draw` stays a
+  no-op so there is one draw path. Load-bearing details: the farmer is drawn
+  16 px LOWER than the NPC position (an NPC's box is y+16..y+48, a farmer's
+  y..y+32, both draw feet at the box bottom, so without it the feet float
+  above the ground shadow and the collision box); depth is the NPC's own rule
+  (`StandingPixel.Y / 10000`); the ground shadow needs nothing because
+  `Game1.DrawWorld` draws character shadows separately from `NPC.draw`; the
+  tool-use hop still shows because `getLocalPosition` carries `yJumpOffset`;
+  emotes are kept by calling `npc.DrawEmote`. The shadow's `Update` never
+  runs, so `SeiBody.AnimateShadow` advances the walk cycle each tick from
+  whether the NPC moved (`FarmerSprite.animate(walkUp|Right|Down|Left, 16)`,
+  else `StopAnimation` + `faceDirection`), only on the host's current map
+  (FarmerSprite's footstep dust and sound are written for the map on screen),
+  and the paused branch of `Tick` refreshes `_lastPos` or the walk cycle would
+  run on the spot for the whole pause. Any failure (apply, animate, draw)
+  flips that body back to the placeholder sprite for good and logs once;
+  `FarmerLook: false` in the mod's config.json turns the whole thing off.
+  No appearance in the frame means the mod's neutral default farmer, which is
+  the ONLY default (main sends no field rather than a second copy of it).
+- **Dev frame:** `devAppearance` (same `DevCommands` gate) returns the clamped
+  request, the rejected fields, the values read back from the shadow farmer
+  and the sprite frame / facing / base texture. `scripts/fake-stardew-mod.mjs`
+  records the field and answers the same frame.
+- **Unverified (the game was not launched for this change):** that the farmer
+  actually draws in place and at the right height, the walk cycle in four
+  directions, depth sorting against trees and buildings, the look of each
+  legend entry on a dressed body in motion (the legend was written from the
+  sheets, some hair entries from silhouettes only), what a farmhand sees
+  (their game has no registry entry, so it should be the placeholder), and the
+  quality of the model's picks for real characters. Tool-use animations are
+  not implemented: a swing is still the NPC hop. Owed: a user override in the
+  launch panel (`source: 'user'` is already in the stored row and is kept
+  as is), and re-deriving when a character's description changes
+  (`clearAppearance` exists; nothing calls it yet).
+
 **Dashboards in the games' own registers (260909).** Both bot-backed
 dashboards are now DELIBERATE, CONTAINED EXCEPTIONS to the design tokens,
 under the same contract as `McDashboardPanel` (which the Stardew panel used

@@ -36,6 +36,13 @@ namespace SeiCompanion
         /// </summary>
         public bool DevCommands { get; set; } = false;
 
+        /// <summary>
+        /// Draw the companion as a customized farmer (Body/Appearance.cs,
+        /// Body/BodyDraw.cs). False keeps the shared placeholder NPC sprite:
+        /// the escape hatch if the farmer draw misbehaves on some setup.
+        /// </summary>
+        public bool FarmerLook { get; set; } = true;
+
         public static string NewToken()
         {
             return Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");

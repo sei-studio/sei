@@ -54,4 +54,17 @@ describe('stardew game module', () => {
     await new Promise<void>((r) => server.close(() => r()));
     await rm(root, { recursive: true, force: true });
   });
+
+  it('prepareJoin attaches a derived appearance, and nothing at all for the default look or a failure', async () => {
+    const look = { gender: 'female' as const, skin: 3, hair: 26, hairColor: '#c0c8ff', eyeColor: '#6a4cff', shirt: 1016, pants: 2, pantsColor: '#1b1b3a', accessory: -1 };
+    const args = { characterId: 'c1', character: { name: 'Lyra' } as never };
+    const quiet = { info: () => {}, warn: () => {} };
+    const derived = createStardewGameModule({ logger: quiet, appearanceFor: async (id) => { expect(id).toBe('c1'); return { appearance: look, source: 'auto' }; } });
+    expect(await derived.prepareJoin?.(args)).toEqual({ appearance: look });
+    // No field for the default: the mod's own neutral look is the one default.
+    const fallback = createStardewGameModule({ logger: quiet, appearanceFor: async () => ({ appearance: look, source: 'default' }) });
+    expect(await fallback.prepareJoin?.(args)).toBeNull();
+    const broken = createStardewGameModule({ logger: quiet, appearanceFor: async () => { throw new Error('boom'); } });
+    expect(await broken.prepareJoin?.(args)).toBeNull();
+  });
 });

@@ -76,7 +76,7 @@ expects an answer, `id` (any string; the answer echoes it).
 | `t` | fields | notes |
 |---|---|---|
 | `ping` | | answered off-thread with `{save}` |
-| `spawn` | `name` | creates the body beside the host. Errors: `NO_SAVE`, `NOT_HOST`, `FARMHAND_NO_MOD`, `NAME_TAKEN`, `NO_ART` (in `result.error`). A reconnecting bot that spawns with the same name inside the disconnect grace ADOPTS the existing body. |
+| `spawn` | `name`, `appearance?` | creates the body beside the host. Errors: `NO_SAVE`, `NOT_HOST`, `FARMHAND_NO_MOD`, `NAME_TAKEN`, `NO_ART` (in `result.error`). A reconnecting bot that spawns with the same name inside the disconnect grace ADOPTS the existing body (an `appearance` sent with that spawn is applied to it). `appearance` is optional, see Appearance below. |
 | `despawn` | | removes the body now |
 | `observe` | | `result.obs` carries a fresh Observation |
 | `say` | `text` | chat box line `Name: text` (if `AnnounceInChat`) + speech bubble |
@@ -87,8 +87,30 @@ expects an answer, `id` (any string; the answer echoes it).
 | `devTime` | `time` (600..2600) | DEVELOPER frame (same gate): set the game clock. |
 | `devSleep` | | DEVELOPER frame (same gate): the host goes to bed (the game saves and the next day starts). |
 | `devDebris` | | DEVELOPER frame (same gate): `result.debris` lists the item debris lying in the body's location. |
+| `devAppearance` | | DEVELOPER frame (same gate): `result.appearance` is `{custom, farmerLook, requested, rejected, applied, sprite}`: the clamped look from the spawn frame, the fields the game refused, the values read back from the shadow farmer, and the sprite frame / facing / base texture in use. |
 | `devState` | | DEVELOPER frame (same gate): `result.state` names the menu, game mode, event and world state, for a driver with no screen. |
 | `newFarm` | `farmer?`, `farm?`, `favoriteThing?` | DEVELOPER frame, refused unless config.json has `DevCommands: true` (the app never sets it): from the title screen, starts a new game through the game's own character menu and skips the arrival cutscene. For a test driver with no hands on the game window. |
+
+### Appearance (the optional `spawn.appearance` object)
+
+The companion is drawn as a farmer dressed through the game's own character
+creator methods. Every field is optional and checked against what the running
+game accepts; a field that is missing, mistyped or out of range keeps the
+default for that field, and a frame with no `appearance` gets the whole
+default look. Protocol version is unchanged: an older mod ignores the field.
+
+| field | type | accepted | default |
+|---|---|---|---|
+| `gender` | string | `"female"`, `"male"` | `"female"` |
+| `skin` | int | 0..23 | 0 |
+| `hair` | int | any index in `Farmer.GetAllHairstyleIndices()` (vanilla: 0..55, 100..122) | 47 |
+| `hairColor`, `eyeColor`, `pantsColor` | string | `"#rrggbb"` | brown, brown, blue |
+| `shirt` | int | its string form must be a key of `Data/Shirts` (the creator offers 1000..1111) | 1005 |
+| `pants` | int | its string form must be a key of `Data/Pants` (the creator offers 0..3) | 0 |
+| `accessory` | int | -1 (none) .. 29 | -1 |
+
+`FarmerLook: false` in config.json turns the farmer draw off and the body uses
+the shared placeholder sprite, as before.
 
 ### `result`
 
