@@ -35,6 +35,7 @@ import {
 import { buildAnthropicTools } from './schemaBridge.js'
 import { createInflightTracker, describeArgs } from './inflight.js'
 import { createConvoMemory } from './convoMemory.js'
+import { createLookupLog, extractServerLookup } from './lookups.js'
 import { logChatOut, logActionResult } from './log.js'
 import { errLine } from './errStrings.js'
 import { createMemoryLog, readMemoryForSeed } from './memory/memoryLog.js'
@@ -291,6 +292,77 @@ export function shouldSuppressIdleSay({ triggerEvent, lastSelf, lastPlayer, now 
   return true
 }
 
+/**
+ * An EXACT repeat of something she already said, with nothing from the player
+ * in between (260921).
+ *
+ * Deliberately the narrowest possible test: every segment of the candidate
+ * must equal, after normalization, a line of hers that is newer than the
+ * player's last line. It cannot tell a reworded repeat from a new thought and
+ * does not try to (the 260731 lesson: a gate that guesses at similarity
+ * swallows answers and invitations); rewording is the prompt's and the
+ * scheduler's problem. It exists because the same sentence twice is never a
+ * new thought: live, "what question, i'm listening nya" went out twice 9s
+ * apart and "what did you figure out" twice in 21s, neither with a word from
+ * the player between them. Once the player speaks, saying the same words
+ * again is allowed (they may have asked twice).
+ *
+ * @param {Object} args
+ * @param {string[]} args.segments                  the candidate, split as it would be sent
+ * @param {Array<{at:number,text:string}>} args.selfLines
+ * @param {{at:number}|null} args.lastPlayer
+ * @param {number} [args.now=Date.now()]
+ * @param {number} [args.windowMs=120000]
+ * @returns {boolean} true = every segment is an exact repeat
+ */
+export function isExactRepeatSincePlayerSpoke({ segments, selfLines, lastPlayer, now = Date.now(), windowMs = 120_000 }) {
+  const norm = (t) => String(t ?? '').toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, ' ').replace(/\s+/g, ' ').trim()
+  const cand = (segments ?? []).map(norm).filter(Boolean)
+  if (cand.length === 0) return false
+  const since = Math.max(lastPlayer?.at ?? 0, now - windowMs)
+  const said = new Set((selfLines ?? []).filter(l => l && l.at > since).map(l => norm(l.text)))
+  if (said.size === 0) return false
+  return cand.every(c => said.has(c))
+}
+
+/**
+ * How long a line the companion just said holds the floor before the next
+ * idle tick may fire (260921).
+ *
+ * This is SCHEDULING, not a gate on speech: nothing she decides to say is ever
+ * dropped by it. The agentic idle cadence is 5s, sized for resuming WORK after
+ * a finished step. Applied to conversation it is shorter than the time it
+ * takes a person to open the game's chat box and type a reply (measured on a
+ * Stardew session: the player's answers landed 3-15s after her line), so her
+ * question was followed by an idle turn before anyone could have answered it,
+ * and an idle turn is nudged to speak. That is where three greetings in forty
+ * seconds and three "morning" lines in seventeen came from. The window only
+ * applies while her line is the LAST thing said: once the player speaks, the
+ * normal cadence is back.
+ */
+export const REPLY_WINDOW_MS = 20_000
+
+/**
+ * Remaining floor-hold, in ms (0 = none). Pure; the orchestrator feeds it.
+ *
+ * @param {Object} args
+ * @param {{at:number}|null} args.lastSelf    last line the companion decided to say
+ * @param {{at:number}|null} args.lastPlayer  last line the player said
+ * @param {number} [args.sendDeadline=0]      when the last paced segment reaches chat
+ * @param {number} [args.now=Date.now()]
+ * @param {number} [args.windowMs=REPLY_WINDOW_MS]
+ */
+export function replyWindowRemainingMs({ lastSelf, lastPlayer, sendDeadline = 0, now = Date.now(), windowMs = REPLY_WINDOW_MS }) {
+  if (!(windowMs > 0)) return 0
+  if (!lastSelf || !lastSelf.at) return 0
+  // The player has spoken since: this is their floor now, not hers.
+  if (lastPlayer && lastPlayer.at >= lastSelf.at) return 0
+  // The window opens when the line is READABLE, which with a typing lead is
+  // later than when it was decided.
+  const spokenAt = Math.max(lastSelf.at, sendDeadline || 0)
+  return Math.max(0, spokenAt + windowMs - now)
+}
+
 // System prompt assembly: combined BASELINE_INSTRUCTIONS (game-agnostic,
 // brain/prompts.js) + adapter.actionRules() (game-specific, adapter/prompts.js).
 // Joined with a blank line so each side can be edited independently.
@@ -485,6 +557,11 @@ export async function composeSeedBlocks({
   adapter = null,
   recentPlayerChatText = null,
   yourRecentMessagesText = null,
+  // 260921: both sides as one chronological exchange. When given it REPLACES
+  // the two one-sided lists above (see convoMemory.formatConversationBlock).
+  recentConversationText = null,
+  // 260921: notes from earlier web lookups this session (lookups.js).
+  lookupsText = null,
   playerMessageText = null,
   companions = [],
   frontierText = '',
@@ -660,11 +737,18 @@ export async function composeSeedBlocks({
   if (companionsText) {
     blocks.push({ type: 'text', name: 'companions', text: companionsText })
   }
-  if (recentPlayerChatText) {
-    blocks.push({ type: 'text', name: 'recent_player_chat', text: recentPlayerChatText })
+  if (recentConversationText) {
+    blocks.push({ type: 'text', name: 'recent_conversation', text: recentConversationText })
+  } else {
+    if (recentPlayerChatText) {
+      blocks.push({ type: 'text', name: 'recent_player_chat', text: recentPlayerChatText })
+    }
+    if (yourRecentMessagesText) {
+      blocks.push({ type: 'text', name: 'your_recent_messages', text: yourRecentMessagesText })
+    }
   }
-  if (yourRecentMessagesText) {
-    blocks.push({ type: 'text', name: 'your_recent_messages', text: yourRecentMessagesText })
+  if (lookupsText) {
+    blocks.push({ type: 'text', name: 'lookups', text: lookupsText })
   }
   blocks.push({ type: 'text', name: 'event',    text: eventText })
   blocks.push({ type: 'text', name: 'snapshot', text: snapshotText })
@@ -887,6 +971,8 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // "do it" need player context; loopHistory keeps the bot from re-asking
   // questions or rediscovering tasks across cold-composed loops).
   const convoMemory = createConvoMemory()
+  // 260921: what she found on the web, kept across loops (see lookups.js).
+  const lookupLog = createLookupLog()
   // chains is a no-op shim (kept to preserve any stragglers referencing it).
   const chains = createChainTracker({ maxHops: config.llm.max_hops })
 
@@ -922,10 +1008,15 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       // not slice: a raw slice can cut an emoji in half and ship a lone
       // surrogate to chat.
       const msg = clipChars(msgRaw, caps.chatMaxChars)
+      // 260921: recorded NOW, when the line is decided, not inside send().
+      // With a typing lead the send fires 1-6s later, and every turn composed
+      // in that gap was blind to the line: an idle tick re-greeted over a
+      // greeting still in the queue, and re-answered a question whose answer
+      // was still being "typed" (with a different answer).
+      convoMemory.recentChat.pushSelf(config.persona.name, msg)
       const send = () => {
         logChatOut(msg)
         try { adapter.chat(msg) } catch {}
-        convoMemory.recentChat.pushSelf(config.persona.name, msg)
       }
       const at = leadMs + i * 550
       if (at <= 0) send()
@@ -970,6 +1061,18 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       // the player-message silence guard (the line IS already in chat).
       loop._spokeThisLoop = true
       return { emitted: true, content: 'said (suppressed duplicate of your last line)' }
+    }
+    // 260921: the same sentence again, with nothing from the player between.
+    if (isExactRepeatSincePlayerSpoke({
+      segments: splitChatMessages(line, config.persona?.punctuation),
+      selfLines: convoMemory.recentChat._internal.selfLines,
+      lastPlayer: convoMemory.recentChat.lastPlayer?.() ?? null,
+    })) {
+      logger.info?.(`[sei/orch] exact repeat not sent (loop=${loop.id}): ${line.slice(0, 80)}`)
+      // The line IS in chat already, so the player-message silence guard and
+      // the one-say-per-turn slot both count it as spoken.
+      loop._spokeThisLoop = true
+      return { emitted: true, content: 'not sent: you already said exactly this and they have not answered it yet. Let it stand; do not reword it either.' }
     }
     // 260730: unprompted-chatter floor. An idle tick may not talk over the
     // bot's own last line while the player has said nothing back. The
@@ -1802,23 +1905,60 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // variant, repairAfterAbort, and the fold fallbacks) renders through this so
   // they read identically. The action is still considered live, so the framing
   // matches the silent action-tick monitor — it just carries the player's words.
-  function interruptTurnText(loop, chatText, who = null, teammate = false) {
-    const action = extractPriorTask(loop)
+  function interruptTurnText(loop, chatText, who = null, teammate = false, unanswered = false) {
+    // 260921: "mid-action" only when something is actually running.
+    // extractPriorTask returns the last tool call in the history whether or
+    // not it has finished, so a line that landed BETWEEN actions (the gather
+    // had just completed; the next call was the one preempted) was framed
+    // "You're currently: gather. You are MID-ACTION, and the DEFAULT is to
+    // KEEP GOING". Measured: the model took that at its word, re-issued the
+    // gather, wrote its answer to the player's question in the private
+    // scratchpad and never called say(). A background action (follow) counts
+    // as running with no in_flight, because it outlives the call that
+    // started it and its stop tool is the one the player may be asking for.
+    const priorTask = extractPriorTask(loop)
+    const priorName = priorTask ? priorTask.split(' ')[0] : null
+    const action = (loop.inFlight || (priorName && caps.backgroundActions[priorName])) ? priorTask : null
     // 260703: a fresh player line resets the per-loop "have I spoken since
     // the player's latest message" flag — the silence backstop (scratchpad
     // salvage at end_loop) keys off it, and a say() from BEFORE this
     // interrupt doesn't count as answering it.
     if (chatText && String(chatText).trim()) {
       loop._spokeThisLoop = false
+      // 260921: a real line folded into a game-event loop IS owed a reply.
+      if (!teammate) loop._noReplyOwed = false
+      // 260921: the unanswered-line retry (see runIterations) re-presents the
+      // SAME line; only a genuinely new one re-arms it.
+      if (!unanswered) {
+        loop._lastPlayerLine = teammate ? null : { text: String(chatText), who: who ?? null }
+        loop._unansweredRetried = false
+        loop._unansweredNudgeText = null
+      }
       // 260708 (thought-leak fix): mid-call with a roster (or on a teammate's
       // call line), this line takes yield-allowed framing, so a silent end is
       // deliberate — flag the loop so the scratchpad salvage never speaks the
       // yield reasoning.
       loop._groupVoiceLine = voiceCallActive && (companions.length > 0 || teammate === true)
     }
+    // 260921: a mid-loop player line arrives with the conversation it belongs
+    // to. These turns used to carry the new line ALONE; the only transcript in
+    // the loop was the seed's, as old as the loop (90s and five player lines
+    // stale on the measured session), so "nothing" arrived without the "shake
+    // them and see what falls" it answered, and "answer my question" without a
+    // visible question. recordIncomingChat runs before the enqueue, so the
+    // block already ends on the line being delivered.
+    let convo = null
+    if (chatText && String(chatText).trim() && !teammate) {
+      try { convo = convoMemory.recentChat.formatConversationBlock() } catch {}
+    }
+    const convoLead = convo ? `${convo}\n\n` : ''
     // 260703: mid-loop interrupt turns carry the sticky greet hint too (no-op
     // once a say() line has reached chat this session).
-    return withGreetingHint(NUDGES.actionTurn({
+    // 260921: second delivery of a line the last turn left unspoken.
+    const unansweredLead = unanswered
+      ? 'Your last turn did NOT call say(), so they heard nothing back from you. Whatever you wrote in your text was private; it never reached them. Their line is still waiting:\n'
+      : ''
+    return convoLead + unansweredLead + withGreetingHint(NUDGES.actionTurn({
       action,
       stopTool: stopToolForAction(action),
       playerLine: chatText ?? '',
@@ -2323,7 +2463,14 @@ function maybeWarnByteCap(loop, warned) {
         ? adapter.eventAddendum(event === 'idle' ? 'sei:idle' : event, data)
         : ''
       const isP1Event = event === 'player_chat' || event === 'sei:chat_received'
-      if (isP1Event) {
+      if (isP1Event && data?.gameEvent === true) {
+        // 260921: an adapter-raised notice (Stardew: a new day, 10 PM) that
+        // rides the chat channel for its priority. It is not a message: no
+        // speaker framing, no reply owed, and the end_loop scratchpad salvage
+        // must never speak the private reasoning of a turn that chose silence.
+        loop._noReplyOwed = true
+        eventText = `Event: game_event\n${String(data?.text ?? '').trim()}\nNobody said this to you; it is the game telling you something happened. Act on it if it changes what you should be doing. say() is optional here: speak only if you have something to say about it that you have not already said.`
+      } else if (isP1Event) {
         // 260616 (#2): surface the player's actual words as a dedicated
         // player_message block placed LAST in the turn (composeSeedBlocks), so
         // the model reads them right before replying — instead of a machine
@@ -2358,6 +2505,8 @@ function maybeWarnByteCap(loop, warned) {
             ? `your teammate ${speakerName} just said this on the voice call`
             : `your teammate ${speakerName} just spoke to you`)
           : isVoiceLine ? 'the player just said this on the voice call' : 'the player just spoke to you'
+        // 260921: kept for the unanswered-line retry (runIterations).
+        loop._lastPlayerLine = fromTeammate ? null : { text: String(data?.text ?? '').trim(), who: speakerName || null }
         playerMessageText = `${opener}${teammateVoice ? ':' : '. respond to THIS, not to the scene around you:'}\n"${String(data?.text ?? '').trim()}"\n` +
           (groupVoice
             ? voiceGroupGuidance(companions).trim() + ' Your text output is a private scratchpad the player can NEVER see; a reply that exists only in your text is silence to them; only say() reaches them.'
@@ -2428,8 +2577,8 @@ function maybeWarnByteCap(loop, warned) {
         seedBlocks = await composeSeedBlocks({
           sessionState, playerStore, config, adapter,
           eventText, snapshotText: snapshotText(),
-          recentPlayerChatText: convoMemory.recentChat.formatPlayerBlock(),
-          yourRecentMessagesText: convoMemory.recentChat.formatSelfBlock(),
+          recentConversationText: convoMemory.recentChat.formatConversationBlock(),
+          lookupsText: lookupLog.formatBlock(),
           playerMessageText,
           companions,
           frontierText: progFrontierText,
@@ -2733,6 +2882,11 @@ function maybeWarnByteCap(loop, warned) {
       try {
         const r = await webSession.runTool(use.name, use.input ?? {}, { signal: loop.abortController?.signal })
         lastActionResult = r.is_error ? `${use.name} failed` : `${use.name} ok`
+        // 260921: note the query; the NEXT response (written with the result
+        // in view) is the conclusion the lookup log keeps.
+        if (!r.is_error && use.name === 'search' && use.input?.query) {
+          loop._pendingLookupQueries = [...(loop._pendingLookupQueries ?? []), String(use.input.query)]
+        }
         logger.info?.(`[sei/orch] ${use.name}(${JSON.stringify(use.input ?? {}).slice(0, 120)}) -> ${r.is_error ? 'error' : `${r.content.length} chars`}${webSession.lastProvider ? ` via ${webSession.lastProvider}` : ''}`)
         return { result: { type: 'tool_result', tool_use_id: use.id, content: r.content, is_error: !!r.is_error }, terminate: false }
       } catch (err) {
@@ -3466,6 +3620,14 @@ function maybeWarnByteCap(loop, warned) {
     // its framing allows silence and the redrive below must not relabel it as
     // the player speaking.
     const teammate = data?.teammate === true
+    // 260921: the unanswered-line retry. Dropped when the reply has gone out
+    // in the meantime (the action finished first and its continuation spoke,
+    // or carried the nudge itself).
+    const unanswered = data?.unanswered === true
+    if (unanswered) {
+      if (loop._spokeThisLoop || !loop._unansweredNudgeText) return
+      loop._unansweredNudgeText = null
+    }
     const action = extractPriorTask(loop)
     // 260608-tik: the player-message variant renders through interruptTurnText,
     // the one chokepoint for mid-action interrupt turns — it resets
@@ -3475,7 +3637,7 @@ function maybeWarnByteCap(loop, warned) {
     // actionTurn shows elapsed and runs the agentic-follow review only when
     // playerLine == null — so only the silent monitor builds its own turn.
     const tickEventText = playerMessage != null
-      ? interruptTurnText(loop, playerMessage, who, teammate)
+      ? interruptTurnText(loop, playerMessage, who, teammate, unanswered)
       : withGreetingHint(NUDGES.actionTurn({
           action,
           stopTool: stopToolForAction(action),
@@ -3754,6 +3916,12 @@ function maybeWarnByteCap(loop, warned) {
       // included) goes back as-is and the model is called again to finish.
       // Bounded by iteration_cap like everything else.
       if (resp.stopReason === 'pause_turn') {
+        // 260921: the paused half carries the queries; the resumed half
+        // carries the conclusion. Hold the queries for the lookup log.
+        try {
+          const paused = extractServerLookup(resp.content)
+          if (paused?.queries.length) loop._pendingLookupQueries = [...(loop._pendingLookupQueries ?? []), ...paused.queries]
+        } catch {}
         logger.info?.(`[sei/orch] pause_turn (server web search in flight) — resuming (loop=${loop.id})`)
         continue
       }
@@ -3784,6 +3952,27 @@ function maybeWarnByteCap(loop, warned) {
       // thanks for having me"). Stash this iteration's say flag so the terminal
       // tool dispatch (dispatchTool) can suppress its farewell.
       loop._saySpokenThisIteration = saySpokenThisTurn
+
+      // 260921: keep what a web lookup FOUND past the end of this loop (see
+      // lookups.js). Server-side search: queries and her conclusion ride this
+      // one response. Client search()/visit(): the queries were noted when the
+      // tool ran last iteration, and this response, the first one written with
+      // the results in view, is the conclusion (unless it searches again).
+      try {
+        const toldNow = String(toolUses.find(u => u.name === 'say')?.input?.text ?? '')
+        const server = extractServerLookup(resp.content)
+        const carried = loop._pendingLookupQueries ?? []
+        const searchingAgain = toolUses.some(u => u.name === 'search' || u.name === 'visit')
+        if (server) {
+          lookupLog.record({ queries: [...carried, ...server.queries], finding: server.finding, told: toldNow })
+          loop._pendingLookupQueries = null
+        } else if (carried.length > 0 && !searchingAgain) {
+          lookupLog.record({ queries: carried, finding: respText, told: toldNow })
+          loop._pendingLookupQueries = null
+        }
+      } catch (err) {
+        logger.debug?.(`[sei/orch] lookup log skipped: ${err?.message ?? err}`)
+      }
 
       // 260514-ngj: R1-R4 interrupt-response dispatcher. Keyed off the
       // CURRENT iteration's trigger (loop._currentIterationTrigger), NOT
@@ -3868,7 +4057,7 @@ function maybeWarnByteCap(loop, warned) {
       // silent") — salvaging it reads the bot's private thoughts over TTS to
       // the whole call (live failure, session 2026-07-08T17-58). Solo calls
       // and typed chat keep the backstop: there a reply is mandatory.
-      if (_p1Trigger && !loop._groupVoiceLine && !loop._spokeThisLoop && respText && toolUses.some(u => u.name === 'end_loop')) {
+      if (_p1Trigger && !loop._groupVoiceLine && !loop._noReplyOwed && !loop._spokeThisLoop && respText && toolUses.some(u => u.name === 'end_loop')) {
         logger.info?.(`[sei/orch] salvaging scratchpad as reply — player message was about to end unspoken (loop=${loop.id})`)
         try { _emitSayLine(loop, respText) } catch {}
       }
@@ -3879,6 +4068,31 @@ function maybeWarnByteCap(loop, warned) {
       // is {remember, forget, end_loop}; everything else suspends the
       // loop via startLongRunner (260514-gam universal-inflight).
       const newSuspendingTools = toolUses.filter(u => !isInlineMetadata(u.name))
+
+      // 260921: a player line answered with ACTIONS ONLY. The 260703 salvage
+      // above covers text + end_loop; this is its sibling: text + a world
+      // action, no say(). Measured: asked a question mid-chore, the model wrote
+      // "i'm not sure, but i think each world is its own farm" in its private
+      // text, called gather, and the loop carried on; the player waited 30s
+      // and typed "answer my question". The scratchpad is NOT salvaged here
+      // (on these turns it is usually reasoning about the chore, and speaking
+      // it would leak it). Instead the line is delivered ONCE more, flagged as
+      // unanswered: right away through the action-tick channel while the new
+      // action runs, or on the loop's next call if that comes first.
+      if (_p1Trigger && !loop._groupVoiceLine && !loop._noReplyOwed && !loop._spokeThisLoop &&
+          !hasEndLoop && !loop._unansweredRetried && loop._lastPlayerLine?.text) {
+        loop._unansweredRetried = true
+        const line = loop._lastPlayerLine
+        loop._unansweredNudgeText = `${line.who ? `${line.who} ` : 'The player '}said: "${line.text}". Your last turn did NOT call say(), so they heard nothing back from you. Whatever you wrote in your text was private; it never reached them. Answer them now with one short say(), in this turn, alongside whatever else you do (skip it only if their line truly needs no reply at all).`
+        logger.info?.(`[sei/orch] player line left unspoken (actions only) — re-delivering once (loop=${loop.id})`)
+        if (newSuspendingTools.length > 0) {
+          try {
+            reenqueue('sei:action_tick', { playerMessage: line.text, who: line.who, unanswered: true })
+          } catch (err) {
+            logger.warn?.(`[sei/orch] unanswered-line tick reenqueue failed: ${err.message}`)
+          }
+        }
+      }
 
       // 260616: a SILENT action_tick is a check-in, not an action channel. The
       // running long-runner stays in flight; the model may speak, stay silent,
@@ -4413,6 +4627,19 @@ function maybeWarnByteCap(loop, warned) {
       return null
     }
     const budget = config.anthropic.thinking_budget_tokens ?? 0
+    // 260921: the unanswered-line nudge (armed in runIterations) rides the
+    // loop's next call when that call comes before the retry tick does, eg
+    // the new action finished at once. Appended to the last USER turn, which
+    // is always what a call answers.
+    if (loop._unansweredNudgeText && !loop._spokeThisLoop) {
+      const msgs = loop._internal.messages
+      const lastMsg = msgs[msgs.length - 1]
+      if (lastMsg && lastMsg.role === 'user' && Array.isArray(lastMsg.content)) {
+        lastMsg.content.push({ type: 'text', name: 'unanswered', text: loop._unansweredNudgeText })
+        loop._currentIterationTrigger = 'sei:chat_received'
+      }
+    }
+    loop._unansweredNudgeText = null
     // Mark the window where an LLM call is genuinely in flight (the loop is
     // mid-iteration, parking the FSM dispatch thread). handlePreempt reads this
     // to decide whether a P0/P1 enqueue needs to abort the call to unblock the
@@ -4612,6 +4839,13 @@ function maybeWarnByteCap(loop, warned) {
     inflight,
     /** Record an incoming chat line in convoMemory (chat.js calls this). */
     recordIncomingChat: (who, text) => convoMemory.recentChat.pushPlayer(who, text),
+    // 260921: the idle timer's floor-hold (see REPLY_WINDOW_MS). brain/index.js
+    // folds it into idleFallbackMs so the FSM needs no knowledge of speech.
+    replyWindowRemainingMs: () => replyWindowRemainingMs({
+      lastSelf: convoMemory.recentChat.lastSelf?.() ?? null,
+      lastPlayer: convoMemory.recentChat.lastPlayer?.() ?? null,
+      sendDeadline: _lastChatSendDeadline,
+    }),
     /**
      * 260618: update the roster of OTHER AI companion usernames in this world.
      * Called by brain.setCompanions ← src/bot/index.js's {type:'roster'} handler
