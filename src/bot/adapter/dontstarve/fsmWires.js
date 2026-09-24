@@ -51,6 +51,7 @@ export function wireLinkEvents(link, handlers, opts) {
       username,
       text,
       playerSpoke: !fromCompanion,
+      fromCompanion,
       addressed: isAddressed,
       nearby: true,
       suppressInterrupt,
