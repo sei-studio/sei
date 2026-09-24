@@ -42,6 +42,26 @@ interface DstStoreState {
 
 let offProgress: (() => void) | null = null;
 
+/**
+ * What a detection pass may do to the state on screen (260925). Detection
+ * never reports an install error (it only reads the disk), so before this the
+ * 3 s poll in useDstSetupSteps replaced a failed install's error with a plain
+ * "found, helper missing" within 3 s: on the v0.6.5-beta.2 playtest the macOS
+ * App Management explanation flashed and the step went back to "Add Sei's
+ * helper" before it could be read. An error now stays until the helper is
+ * actually in the game (the player fixed it some other way), the game is no
+ * longer found, or the player presses Try again (runInstall). A pass that
+ * lands while an install runs is dropped for the same reason.
+ */
+export function mergeDetected(current: DstInstallState | null, detected: DstInstallState, installBusy: boolean): DstInstallState | null {
+  if (installBusy) return current;
+  if (current?.kind === 'error') {
+    const resolved = detected.kind === 'not_found' || (detected.kind === 'found' && detected.modInstalled);
+    if (!resolved) return current;
+  }
+  return detected;
+}
+
 export const useDstStore = create<DstStoreState>((set, get) => {
   try {
     offProgress = api().onDstInstallProgress?.((s) => set({ install: s })) ?? null;
@@ -58,10 +78,14 @@ export const useDstStore = create<DstStoreState>((set, get) => {
     refreshInstall: async () => {
       const fn = api().dstInstallState;
       if (!fn) return null;
+      // An install in flight owns `install` (its progress pushes and its
+      // result); a detection pass racing it would flash the plain button.
+      if (get().installBusy) return get().install;
       try {
         const s = await fn();
-        set({ install: s });
-        return s;
+        const next = mergeDetected(get().install, s, get().installBusy);
+        if (next !== get().install) set({ install: next });
+        return next;
       } catch {
         return null;
       }
