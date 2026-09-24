@@ -12,8 +12,7 @@ import {
   OVERLAP_ECHO,
   pushEnv,
   textOverlap,
-  type EnvSample,
-} from './echoGate';
+  type EnvSample, shareVoiceDuring, SHARE_VOICE_LEAD_MS } from './echoGate';
 
 /** Deterministic pseudo-random (LCG) — tests must not depend on Math.random. */
 function lcg(seed: number): () => number {
@@ -226,3 +225,32 @@ describe('companionAudioGapMs (260925 act offers)', () => {
     expect(companionAudioGapMs([], 5000, 6000)).toBeNull();
   });
 });
+
+describe('shareVoiceDuring (260925 act)', () => {
+  const env = (from: number, to: number, db: number) => {
+    const out: Array<{ t: number; db: number }> = [];
+    for (let t = from; t <= to; t += 32) out.push({ t, db });
+    return out;
+  };
+
+  it('is true when the share was audible with words during the utterance', () => {
+    expect(shareVoiceDuring({ envelope: env(1_000, 2_000, -30), transcript: 'yes sir right away' }, 1_200, 1_600)).toBe(true);
+  });
+
+  it('counts speech just before the utterance started', () => {
+    const e = [...env(1_000, 1_000 + 32 * 3, -30), ...env(1_200, 2_000, -80)];
+    expect(shareVoiceDuring({ envelope: e, transcript: 'yes' }, 1_000 + SHARE_VOICE_LEAD_MS - 50, 1_700)).toBe(true);
+  });
+
+  it('is false for music tags, silence, or words while the window was quiet', () => {
+    expect(shareVoiceDuring({ envelope: env(1_000, 2_000, -30), transcript: '[Music] ♪' }, 1_200, 1_600)).toBe(false);
+    expect(shareVoiceDuring({ envelope: env(1_000, 2_000, -30), transcript: '' }, 1_200, 1_600)).toBe(false);
+    expect(shareVoiceDuring({ envelope: env(1_000, 2_000, -70), transcript: 'hello there' }, 1_200, 1_600)).toBe(false);
+  });
+
+  it('is null with no share audio in the window', () => {
+    expect(shareVoiceDuring({ envelope: [], transcript: 'hello' }, 1_200, 1_600)).toBeNull();
+    expect(shareVoiceDuring({ envelope: env(5_000, 6_000, -30), transcript: 'hello' }, 1_200, 1_600)).toBeNull();
+  });
+});
+

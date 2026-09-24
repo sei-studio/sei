@@ -827,7 +827,16 @@ async function runTurn(
   let offer: { line: string; id: string } | null = opts.offer ?? null;
   const call = s.controlOffered ? controlCall(res.content as never) : null;
   if (call) {
-    const d = s.control.onCall({ tickKind: tick.kind, userText: tick.text, call, confirmedThisTurn: opts.confirmedThisTurn });
+    // A call that passes the words check still needs the intent check (one
+    // small model call that sees only the player's line and the goal); any
+    // doubt, error or timeout turns it into an offer.
+    const { checkControlIntent } = await import('../computerUse/actSession');
+    const d = await s.control.decide(
+      { tickKind: tick.kind, userText: tick.text, call, confirmedThisTurn: opts.confirmedThisTurn },
+      checkControlIntent,
+      ctrl.signal,
+    );
+    if (ctrl.signal.aborted || s.inflight !== ctrl) return;
     slog(s, `turn ${tick.kind}: control "${d.goal.slice(0, 120)}" -> ${d.kind}${d.kind === 'run' ? '' : ` (${d.why})`}`);
     if (d.kind === 'run') {
       offer = null;

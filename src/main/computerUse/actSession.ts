@@ -37,6 +37,7 @@ import { helperAvailable, helperPath, MacInputHelper } from './inputHelper';
 import { buildJevChooser } from './jevChooser';
 import { targetRect } from './scope';
 import { TEXT_CHOOSER_MODEL, TextChooser, textChooserKind } from './textChooser';
+import { createIntentCheck } from './intentCheck';
 import { actFlagFromEnv } from './controlTool';
 import type { ControlOrigin } from './controlPolicy';
 import { makeVerifier, VisionChooser, type LlmCall } from './visionChooser';
@@ -167,6 +168,26 @@ function passThroughWindowIds(): Set<number> {
   return ids;
 }
 
+/** The chooser's LLM path: the dev key when SEI_ACT_ANTHROPIC_KEY is set, else the normal provider. */
+async function chooserCall(): Promise<{ call: LlmCall; anthropic: boolean }> {
+  const directKey = process.env.SEI_ACT_ANTHROPIC_KEY;
+  if (directKey) return { call: createDirectAnthropicCall(directKey), anthropic: true };
+  const llm = await buildLlmProvider();
+  return { call: (p) => llm.call(p), anthropic: llm.kind === 'anthropic' };
+}
+
+/**
+ * The intent check in front of an immediate run (controlPolicy.IntentCheck):
+ * one small Haiku call on the same path and key as the text chooser that sees
+ * only the player's line and the goal. Throws on any failure; the gate treats
+ * that as no.
+ */
+export async function checkControlIntent(utterance: string, goal: string, signal: AbortSignal): Promise<boolean> {
+  const { call, anthropic } = await chooserCall();
+  const check = createIntentCheck({ call, anthropic, model: process.env.SEI_ACT_INTENT_MODEL || TEXT_CHOOSER_MODEL });
+  return check(utterance, goal, signal);
+}
+
 async function buildChoosers(system: string): Promise<{
   vision: VisionChooser;
   text: Chooser | null;
@@ -174,9 +195,9 @@ async function buildChoosers(system: string): Promise<{
   budgetModel: string;
 }> {
   const model = process.env.SEI_ACT_MODEL || DEFAULT_ACT_MODEL;
+  let budgetModel = model;
   let call: LlmCall;
   let anthropic = true;
-  let budgetModel = model;
   const directKey = process.env.SEI_ACT_ANTHROPIC_KEY;
   if (directKey) {
     call = createDirectAnthropicCall(directKey);

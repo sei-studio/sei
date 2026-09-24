@@ -6,11 +6,14 @@
  * So whether a call runs is decided here, mechanically, from things the screen
  * cannot write: the tick kind and the player's own words.
  *
- *   1. RUN at once: a USER tick, and the call's `request` (the player's words
- *      the model says asked for it) is really in what the player just said AND
- *      every content word of the goal is in it. Quoting "this game is so hard"
- *      to justify "uninstall the game", or "open settings" to justify "open
- *      settings and turn off the firewall", does not pass.
+ *   1. RUN at once: a USER tick, the call's `request` (the player's words
+ *      the model says asked for it) is really in what the player just said,
+ *      every content word of the goal is in it in order, AND a small model
+ *      that sees only the player's line and the goal agrees they are asking
+ *      for exactly this, now (IntentCheck: "please don't delete my save" has
+ *      all the words and is not a request). Quoting "this game is so hard" to
+ *      justify "uninstall the game", or "open settings" to justify "open
+ *      settings and turn off the firewall", fails the words already.
  *   2. Otherwise OFFER: nothing runs. The companion asks "want me to
  *      <goal>?" (the literal goal, composed here, so the player confirms what
  *      will actually run and not the model's paraphrase of it). The offer is
@@ -19,8 +22,9 @@
  *      it off drops it); in text, once it is shown. Only then is it pending,
  *      for PENDING_CONTROL_TTL_MS.
  *   3. The player's NEXT line settles a pending offer: a bare yes runs it,
- *      anything else drops it. A spoken yes within a second of any
- *      companion's voice may be that voice, so it is re-asked instead.
+ *      anything else drops it. A spoken yes right after any companion's voice,
+ *      or over speech from the shared window, may not be the player, so it is
+ *      re-asked instead.
  *
  * Every mistake here is on the safe side: a real request that fails the check
  * costs one "want me to ...?" round trip.
@@ -91,17 +95,29 @@ function sameWord(x: string, y: string): boolean {
   return x.length >= 4 && y.length >= 4 && (x.startsWith(y) || y.startsWith(x));
 }
 
-/** Every content word of `goal` is among `said`'s. */
-function coversGoal(said: string[], goal: string[]): boolean {
-  return goal.length > 0 && goal.every((g) => said.some((w) => sameWord(w, g)));
+/**
+ * Every content word of `goal` is among `said`'s, IN THE SAME ORDER ("from
+ * downloads to trash" does not cover "from trash to downloads").
+ */
+function coversGoalInOrder(said: string[], goal: string[]): boolean {
+  if (!goal.length) return false;
+  let i = 0;
+  for (const g of goal) {
+    while (i < said.length && !sameWord(said[i]!, g)) i++;
+    if (i >= said.length) return false;
+    i++;
+  }
+  return true;
 }
 
 /**
- * The model's `request` quote is a real ask from this line for THIS goal: it
+ * The LEXICAL precondition for running at once: the model's `request` quote
  * appears in what the player said (word-aligned, case and punctuation
  * ignored), it is more than a single word, and EVERY content word of the goal
- * is in it. Anything the goal adds beyond the player's words ("and turn off
- * the firewall") makes it an offer instead.
+ * is in it in order. Anything the goal adds beyond the player's words ("and
+ * turn off the firewall") makes it an offer instead. Words cannot tell a
+ * request from "please don't delete my save", so a pass here still needs the
+ * intent check (IntentCheck) before anything runs.
  */
 export function requestMatches(request: string | undefined, userText: string | undefined, goal: string): boolean {
   if (!request || !userText) return false;
@@ -112,7 +128,7 @@ export function requestMatches(request: string | undefined, userText: string | u
   if (cjk ? r.replace(/\s/g, '').length < 2 : r.split(' ').length < 2) return false;
   const inLine = cjk ? u.replace(/\s/g, '').includes(r.replace(/\s/g, '')) : ` ${u} `.includes(` ${r} `);
   if (!inLine) return false;
-  return coversGoal(contentTokens(r), contentTokens(goal));
+  return coversGoalInOrder(contentTokens(r), contentTokens(goal));
 }
 
 export function decideControl(o: { tickKind: string; userText?: string; call: ControlCall }): ControlDecision {
@@ -162,28 +178,56 @@ export function isAffirmation(text: string): boolean {
   return core > 0 && rest.trim() === '' && n.split(' ').length <= 5;
 }
 
-/** A spoken answer this close to companion audio may be that audio. */
-export const TTS_GUARD_MS = 1_000;
+/**
+ * A spoken answer this close to companion audio may be that audio. Echo tails
+ * are short; a longer guard mostly re-asks players who answer quickly.
+ */
+export const TTS_GUARD_MS = 300;
+
+/** What the renderer knows about a line that came from the microphone (BackseatTick.mic). */
+export interface MicInfo {
+  /** ms since companion audio last stopped; 0 = overlapped; null = none before it. */
+  ttsGapMs: number | null;
+  /** The shared window's audio had speech during the utterance (or just before it); null = unknown. */
+  shareVoice?: boolean | null;
+}
 
 export type PendingResolution = 'affirmed' | 'unsure' | 'declined' | 'expired' | 'none';
 
 /**
- * Settle a pending offer with the player's next line. `ttsGapMs` is set for
- * a line that came from the microphone (BackseatTick.mic): a yes within
- * TTS_GUARD_MS of companion audio is 'unsure' and gets re-asked.
+ * Settle a pending offer with the player's next line. `mic` is set for a line
+ * that came from the microphone: a yes within TTS_GUARD_MS of companion audio,
+ * or while the shared window was playing speech (a game, a stream, a friend
+ * on the call through the speakers), may not be the player, so it is 'unsure'
+ * and gets re-asked.
  */
 export function resolvePending(
   p: PendingControl | null,
   userText: string | undefined,
   now: number,
-  mic?: { ttsGapMs: number | null },
+  mic?: MicInfo,
 ): PendingResolution {
   if (!p) return 'none';
   if (now - p.at > PENDING_CONTROL_TTL_MS) return 'expired';
   if (!isAffirmation(userText ?? '')) return 'declined';
   if (mic && mic.ttsGapMs !== null && mic.ttsGapMs < TTS_GUARD_MS) return 'unsure';
+  if (mic?.shareVoice === true) return 'unsure';
   return 'affirmed';
 }
+
+// ── Intent: is the player asking for this, now? ──────────────────────────
+
+/**
+ * Asks a small model whether `utterance` directly asks for `goal` right now.
+ * It sees ONLY those two strings: never the screen, OCR, the screen
+ * transcript or the companion's reasoning, so nothing on screen can argue for
+ * a yes. Resolves true only on a clean yes; the caller treats a rejection or
+ * a timeout as no.
+ */
+export type IntentCheck = (utterance: string, goal: string, signal: AbortSignal) => Promise<boolean>;
+
+/** How long the intent check may take before the call falls back to an offer. */
+export const INTENT_TIMEOUT_MS = 5_000;
 
 /** The one-line offer, built from the literal goal. */
 export function proposalLine(goal: string): string {
@@ -210,7 +254,12 @@ export type CallOutcome =
    * `offer` is the line to speak and the id to confirm it with once heard
    * (heard()), or null when the same goal is already on offer.
    */
-  | { kind: 'propose'; goal: string; why: 'not_user_tick' | 'not_asked'; offer: { line: string; id: string } | null }
+  | {
+      kind: 'propose';
+      goal: string;
+      why: 'not_user_tick' | 'not_asked' | 'intent_no';
+      offer: { line: string; id: string } | null;
+    }
   | { kind: 'ignored'; goal: string; why: 'confirmed_this_turn' };
 
 /** A draft never heard back from (dropped TTS, a closed overlay) stops counting after this. */
@@ -234,7 +283,7 @@ export class ControlGate {
   constructor(private readonly now: () => number = () => Date.now()) {}
 
   /** The player's next line settles any pending offer, whatever it says. A draft they never heard is not theirs to answer. */
-  onUserLine(text: string | undefined, mic?: { ttsGapMs: number | null }): LineOutcome {
+  onUserLine(text: string | undefined, mic?: MicInfo): LineOutcome {
     const p = this.pending;
     this.pending = null;
     const r = resolvePending(p, text, this.now(), mic);
@@ -266,6 +315,39 @@ export class ControlGate {
           : undefined;
     if (onOffer !== undefined && normalizeWords(onOffer) === normalizeWords(d.goal)) return { ...d, offer: null };
     return { ...d, offer: this.offer(d.goal) };
+  }
+
+  /**
+   * onCall, plus the intent check for a lexical 'run': the call runs at once
+   * only when `intent` answers a clean yes within INTENT_TIMEOUT_MS; a no, an
+   * error, a timeout or an abort (`signal`) makes it an offer. The check is
+   * given the player's whole line, not the model's `request` quote.
+   */
+  async decide(
+    o: { tickKind: string; userText?: string; call: ControlCall; confirmedThisTurn?: boolean },
+    intent: IntentCheck,
+    signal?: AbortSignal,
+  ): Promise<CallOutcome> {
+    const d = this.onCall(o);
+    if (d.kind !== 'run') return d;
+    let yes = false;
+    const ctrl = new AbortController();
+    const onAbort = (): void => ctrl.abort();
+    signal?.addEventListener('abort', onAbort, { once: true });
+    const timer = setTimeout(() => ctrl.abort(), INTENT_TIMEOUT_MS);
+    try {
+      yes = await Promise.race([
+        intent(o.userText ?? '', d.goal, ctrl.signal),
+        new Promise<boolean>((resolve) => ctrl.signal.addEventListener('abort', () => resolve(false), { once: true })),
+      ]);
+    } catch {
+      yes = false;
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    }
+    if (yes === true && !signal?.aborted) return d;
+    return { kind: 'propose', goal: d.goal, why: 'intent_no', offer: this.offer(d.goal) };
   }
 
   /** Draft a (re-)offer of `goal`; it becomes answerable once heard(). */

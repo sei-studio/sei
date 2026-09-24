@@ -1590,7 +1590,12 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         transcript: z.string().max(4000).optional(),
         shareLabel: z.string().max(200).optional(),
         // 260925 act: the line came from the mic; how close companion audio was.
-        mic: z.object({ ttsGapMs: z.number().min(0).max(86_400_000).nullable() }).optional(),
+        mic: z
+          .object({
+            ttsGapMs: z.number().min(0).max(86_400_000).nullable(),
+            shareVoice: z.boolean().nullable().optional(),
+          })
+          .optional(),
       })
       .parse(tickRaw);
     const backseat = await import('./backseat/backseatService');

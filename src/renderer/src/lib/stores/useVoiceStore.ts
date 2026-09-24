@@ -1332,8 +1332,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         // 260925 act: how close companion audio was, so main can refuse a
         // "yes" to a control offer that may have been a companion's voice.
         const now = Date.now();
-        const ttsGapMs = companionAudioGapMs(audibleLines, span?.t0 ?? now, span?.t1 ?? now);
-        void capture.sendUserTick(text, { ttsGapMs }).catch(() => {
+        const t0 = span?.t0 ?? now;
+        const t1 = span?.t1 ?? now;
+        const ttsGapMs = companionAudioGapMs(audibleLines, t0, t1);
+        void capture.sendUserTick(text, { ttsGapMs, t0, t1 }).catch(() => {
           /* a dropped tick is a missed answer, never a broken call */
         });
         continue;

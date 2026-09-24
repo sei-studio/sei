@@ -321,3 +321,37 @@ export function companionAudioGapMs(
   }
   return gap;
 }
+
+/** How far before the utterance's start share speech still counts (260925 act). */
+export const SHARE_VOICE_LEAD_MS = 300;
+/** A share-audio level at or above this means something was audible (dBFS of a ~32 ms window). */
+export const SHARE_VOICE_DB = -50;
+
+/**
+ * 260925 backseat act: did the SHARED WINDOW's audio carry speech during a
+ * mic utterance, or in the SHARE_VOICE_LEAD_MS before it? A one-word "yes" to
+ * a control offer is too short for the echo gate's word overlap, and a game
+ * character, a streamer or a friend on another call saying it through the
+ * speakers reads exactly like the player. Speech = the screen transcript has
+ * a real word in a segment overlapping that window (bracketed tags such as
+ * "[Music]" do not count) AND the share audio was audible in it; the second
+ * half keeps a word from earlier in the same 3 s Whisper chunk from counting
+ * when the window itself was quiet. Null when there is no share audio at all
+ * (no samples in the window), so the caller knows it could not judge.
+ * `probe` is the capture handle's echoProbe-shaped read of [t0 - lead, t1].
+ */
+export function shareVoiceDuring(
+  probe: { envelope: EnvSample[]; transcript: string },
+  uttT0: number,
+  uttT1: number,
+): boolean | null {
+  const from = uttT0 - SHARE_VOICE_LEAD_MS;
+  const inWindow = probe.envelope.filter((s) => s.t >= from && s.t <= uttT1);
+  if (!inWindow.length) return null;
+  const audible = inWindow.some((s) => s.db >= SHARE_VOICE_DB);
+  const words = probe.transcript
+    .replace(/\[[^\]]*\]|\([^)]*\)|[♪♫]/g, ' ')
+    .trim();
+  return audible && /\p{L}/u.test(words);
+}
+

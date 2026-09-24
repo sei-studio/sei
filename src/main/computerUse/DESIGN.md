@@ -29,12 +29,26 @@ things the screen cannot write: the tick kind and the player's own words.
 - **Run at once** only on a USER tick whose call carries `request` (the
   player's words that asked for it) and that quote is really in the player's
   line (word-aligned, case and punctuation ignored, 2+ words or 2+ CJK
-  chars) and EVERY content word of the goal is in that quote (exact, or a
-  shared prefix when both are 4+ letters; CJK: every bigram of the goal).
-  Direction words (on, off, up, down) count, so "turn on" never justifies
-  "turn off". Quoting "this game is so hard" for "uninstall the game", or
-  "can you open settings" for "open settings and turn off the firewall",
-  fails: anything the goal adds beyond the player's words makes it an offer.
+  chars) and EVERY content word of the goal is in that quote IN ORDER
+  (exact, or a shared prefix when both are 4+ letters; CJK: every bigram of
+  the goal). Direction words (on, off, up, down) count, so "turn on" never
+  justifies "turn off", and "from downloads to trash" never justifies "from
+  trash to downloads". Quoting "this game is so hard" for "uninstall the
+  game", or "can you open settings" for "open settings and turn off the
+  firewall", fails: anything the goal adds beyond the player's words makes
+  it an offer.
+- **Then the intent check** (`intentCheck.ts`, `ControlGate.decide`). Words
+  cannot tell "please don't delete my save file", "should i uninstall this
+  game?" or "never buy the battle pass lol" from a request, so a call that
+  passes them still needs one small Haiku call (same path and key as the
+  text chooser, `checkControlIntent`) that sees ONLY the player's whole line
+  and the goal string, never screen text, OCR, the screen transcript or the
+  companion's reasoning: "Is the person directly asking the assistant to do
+  exactly this task, now? Answer yes or no." Only a clean `yes` runs; a no,
+  anything else, an error, a 5 s timeout (`INTENT_TIMEOUT_MS`) or the turn
+  being superseded makes it an offer. `scripts/act-intent-eval.ts` runs 16
+  cases (7 requests, 9 non-requests that pass the words) against the real
+  model: 16/16 at n=3, p50 590 ms.
 - **Otherwise it is an offer.** Nothing runs; the companion's line gets
   `want me to <goal>?` appended (composed from the literal goal, not the
   model's words, so the player says yes to exactly what would run; spoken
@@ -59,13 +73,19 @@ things the screen cannot write: the tick kind and the player's own words.
   with origin `confirmed`; anything else drops it; after 30 s it has
   expired. A control() call in the reply to that yes is ignored (the run
   already started). The same goal is not offered twice while on offer.
-- **A spoken yes near a companion's voice is asked again.** Every mic line
-  carries `mic.ttsGapMs` (`echoGate.companionAudioGapMs`: 0 when any
+- **A spoken yes that may not be the player is asked again.** Every mic
+  line carries `mic.ttsGapMs` (`echoGate.companionAudioGapMs`: 0 when any
   companion line was audible during the utterance, else the gap since the
-  last one ended). Under 1 s (`TTS_GUARD_MS`) the yes may be that voice (or
-  another companion's) through the speakers, so nothing runs and the offer
-  is asked again as a new draft that must be heard again. Typed lines carry
-  no `mic` and are not gated.
+  last one ended) and `mic.shareVoice` (`echoGate.shareVoiceDuring`: after
+  the tick's bounded screen-STT flush, the shared window's transcript has a
+  real word in the utterance window or the 300 ms before it AND the share
+  audio was audible then; music tags do not count; null without share
+  audio). A yes within 300 ms of companion audio (`TTS_GUARD_MS`; echo
+  tails are short) or over share speech (a game, a stream, a friend on
+  another call through the speakers) starts nothing, and the offer is asked
+  again as a new draft that must be heard again. Typed lines carry no
+  `mic` and are not gated. Not covered: a voice from speakers that is not
+  the shared window's audio.
 - The act loop's system prompt says which it was: "They asked you to do
   something on it ("<their words>")" or "You offered to do something on it
   and they said yes". The per-step text says `Goal:`, never "The player

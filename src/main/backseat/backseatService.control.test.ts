@@ -13,6 +13,8 @@ const h = vi.hoisted(() => ({
   said: [] as string[],
   speech: [] as Array<{ text: string; confirmId?: string }>,
   onCall: false,
+  intentAnswer: true as boolean,
+  intentSeen: [] as Array<[string, string]>,
 }));
 
 vi.mock('electron', () => ({ app: { isPackaged: true, getPath: () => '/tmp' } }));
@@ -67,6 +69,10 @@ vi.mock('../computerUse/actSession', () => ({
     return { ok: true };
   },
   stopAct: () => {},
+  checkControlIntent: async (u: string, g: string) => {
+    h.intentSeen.push([u, g]);
+    return h.intentAnswer;
+  },
   ACT_CANCELLED: 'ACT_CANCELLED',
 }));
 
@@ -82,9 +88,11 @@ import {
 const CH = 'sui';
 let now = 1_000_000;
 
-const flush = () => new Promise((r) => setTimeout(r, 0));
+const flush = async () => {
+  for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
+};
 
-async function tick(kind: BackseatTick['kind'], text?: string, mic?: { ttsGapMs: number | null }): Promise<void> {
+async function tick(kind: BackseatTick['kind'], text?: string, mic?: BackseatTick['mic']): Promise<void> {
   // Past the speak gap, so a non-user tick is not dropped for it.
   now += MIN_SPEAK_GAP_MS + 1_000;
   vi.setSystemTime(now);
@@ -115,6 +123,8 @@ describe('backseat control() wiring', () => {
     h.said.length = 0;
     h.speech.length = 0;
     h.onCall = false;
+    h.intentAnswer = true;
+    h.intentSeen.length = 0;
     initBackseatService({
       pushChatMessage: (_c, m, speech) => {
         if (m.role !== 'companion') return;
@@ -225,6 +235,21 @@ describe('backseat control() wiring', () => {
     expect(h.said).toEqual(['ugh', 'want me to uninstall the game?', 'ok', 'want me to open settings and turn off the firewall?']);
   });
 
+  // Review round 3: the words pass, the intent check says no.
+  it.each([
+    ["please don't delete my save file", 'delete my save file', "don't delete my save file"],
+    ['should i uninstall this game?', 'uninstall this game', 'uninstall this game'],
+    ['never buy the battle pass lol', 'buy the battle pass', 'buy the battle pass'],
+  ])('"%s" is an offer when the intent check says no', async (line, goal, request) => {
+    await startBackseat(CH, 'window:77:0', 'Safari', 'text' as never);
+    h.intentAnswer = false;
+    h.replies.push({ text: 'hm', control: { goal, request } });
+    await tick('user', line);
+    expect(h.intentSeen).toEqual([[line, goal]]);
+    expect(h.starts).toHaveLength(0);
+    expect(h.said).toEqual(['hm', `want me to ${goal}?`]);
+  });
+
   describe('on a voice call', () => {
     beforeEach(() => {
       h.onCall = true;
@@ -275,13 +300,27 @@ describe('backseat control() wiring', () => {
       const first = lastConfirmId()!;
       backseatLineHeard(CH, first, true);
       h.replies.push({ text: 'wait was that you' });
-      await tick('user', 'yes', { ttsGapMs: 400 });
+      await tick('user', 'yes', { ttsGapMs: 100 });
       expect(h.starts).toHaveLength(0);
       expect(h.said.slice(-2)).toEqual(['wait was that you', 'want me to close the popup?']);
       const second = lastConfirmId()!;
       expect(second).not.toBe(first);
       backseatLineHeard(CH, second, true);
       await tick('user', 'yes', { ttsGapMs: 3_000 });
+      expect(h.starts).toHaveLength(1);
+    });
+
+    it('a yes over speech from the shared window is asked again', async () => {
+      await startBackseat(CH, 'window:77:0', 'Safari', 'text' as never);
+      h.replies.push({ text: 'hey', control: { goal: 'close the popup' } });
+      await tick('idle');
+      backseatLineHeard(CH, lastConfirmId()!, true);
+      h.replies.push({ text: 'hm' });
+      await tick('user', 'yes', { ttsGapMs: 5_000, shareVoice: true });
+      expect(h.starts).toHaveLength(0);
+      expect(h.said.slice(-1)).toEqual(['want me to close the popup?']);
+      backseatLineHeard(CH, lastConfirmId()!, true);
+      await tick('user', 'yes', { ttsGapMs: 5_000, shareVoice: false });
       expect(h.starts).toHaveLength(1);
     });
   });

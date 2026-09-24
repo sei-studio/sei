@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   ControlGate,
+  INTENT_TIMEOUT_MS,
   PENDING_CONTROL_TTL_MS,
   TTS_GUARD_MS,
   decideControl,
@@ -17,7 +18,7 @@ describe('requestMatches', () => {
   });
 
   it('ignores case, punctuation and apostrophes', () => {
-    expect(requestMatches("can't find the SAVE button, click it", "I can't find the save button, click it?", 'click the Save button')).toBe(true);
+    expect(requestMatches("can't find it, CLICK the save button", "I can't find it, click the save button?", 'click the Save button')).toBe(true);
   });
 
   it('rejects a quote that is not in what the player said', () => {
@@ -58,6 +59,18 @@ describe('requestMatches', () => {
     expect(requestMatches('open settings', 'open settings', 'open settings')).toBe(true);
     expect(requestMatches('open settings and turn off the firewall', 'pls open settings and turn off the firewall', 'open settings and turn off the firewall')).toBe(true);
     expect(requestMatches('change my settings', 'change my settings please', 'open the setting panel')).toBe(false);
+  });
+
+  it('needs the goal words in the same order', () => {
+    expect(requestMatches('move it from downloads to trash', 'move it from downloads to trash', 'move it from trash to downloads')).toBe(false);
+    expect(requestMatches('move it from downloads to trash', 'move it from downloads to trash', 'move it from downloads to trash')).toBe(true);
+    expect(requestMatches('rename draft to final', 'rename draft to final', 'rename final to draft')).toBe(false);
+  });
+
+  it('passes negations, questions and "never" on words alone (the intent check catches them)', () => {
+    expect(requestMatches("please don't delete my save file", "please don't delete my save file", 'delete my save file')).toBe(true);
+    expect(requestMatches('should i uninstall this game', 'should i uninstall this game?', 'uninstall this game')).toBe(true);
+    expect(requestMatches('never buy the battle pass', 'never buy the battle pass lol', 'buy the battle pass')).toBe(true);
   });
 
   it('keeps on and off apart', () => {
@@ -182,12 +195,21 @@ describe('resolvePending', () => {
   });
 
   it('a spoken yes during or right after companion audio is unsure', () => {
+    expect(TTS_GUARD_MS).toBe(300);
     expect(resolvePending(p, 'yes', 2_000, { ttsGapMs: 0 })).toBe('unsure');
     expect(resolvePending(p, 'yes', 2_000, { ttsGapMs: TTS_GUARD_MS - 1 })).toBe('unsure');
     expect(resolvePending(p, 'yes', 2_000, { ttsGapMs: TTS_GUARD_MS })).toBe('affirmed');
+    // A quick real answer 400 ms after the offer ended is taken.
+    expect(resolvePending(p, 'yes', 2_000, { ttsGapMs: 400 })).toBe('affirmed');
     expect(resolvePending(p, 'yes', 2_000, { ttsGapMs: null })).toBe('affirmed');
     // A no is a no wherever it came from.
     expect(resolvePending(p, 'no', 2_000, { ttsGapMs: 0 })).toBe('declined');
+  });
+
+  it('a spoken yes over speech from the shared window is unsure', () => {
+    expect(resolvePending(p, 'yes', 2_000, { ttsGapMs: 5_000, shareVoice: true })).toBe('unsure');
+    expect(resolvePending(p, 'yes', 2_000, { ttsGapMs: 5_000, shareVoice: false })).toBe('affirmed');
+    expect(resolvePending(p, 'yes', 2_000, { ttsGapMs: null, shareVoice: null })).toBe('affirmed');
   });
 });
 
@@ -312,7 +334,7 @@ describe('ControlGate', () => {
   it('a yes near companion audio is unsure, and nothing stays pending', () => {
     const { gate } = mk();
     offerHeard(gate, 'turn on dark mode');
-    expect(gate.onUserLine('yes', { ttsGapMs: 300 })).toEqual({ kind: 'unsure', goal: 'turn on dark mode' });
+    expect(gate.onUserLine('yes', { ttsGapMs: 100 })).toEqual({ kind: 'unsure', goal: 'turn on dark mode' });
     expect(gate.pending).toBeNull();
     // The service re-asks through offer(), which must be heard again.
     const again = gate.offer('turn on dark mode');
@@ -381,5 +403,81 @@ describe('ControlGate', () => {
     });
     expect(gate.pending).toBeNull();
     expect(gate.draft).toBeNull();
+  });
+
+  describe('decide (words, then intent)', () => {
+    const yes = async () => true;
+    const no = async () => false;
+
+    it('runs only when the words pass AND the intent check says yes', async () => {
+      const { gate } = mk();
+      const seen: Array<[string, string]> = [];
+      const r = await gate.decide({ tickKind: 'user', userText: 'hey can you turn on dark mode', call }, async (u, g) => {
+        seen.push([u, g]);
+        return true;
+      });
+      expect(r).toMatchObject({ kind: 'run', goal: 'turn on dark mode' });
+      // The check sees the player's whole line and the goal, nothing else.
+      expect(seen).toEqual([['hey can you turn on dark mode', 'turn on dark mode']]);
+    });
+
+    it.each([
+      ["please don't delete my save file", 'delete my save file'],
+      ['should i uninstall this game?', 'uninstall this game'],
+      ['never buy the battle pass lol', 'buy the battle pass'],
+    ])('"%s" passes the words, the classifier says no, so it is an offer', async (line, goal) => {
+      const { gate } = mk();
+      const request = line.replace(/[?]| lol$/g, '').replace(/^please /, '');
+      const r = await gate.decide({ tickKind: 'user', userText: line, call: { goal, request } }, no);
+      expect(r).toMatchObject({ kind: 'propose', why: 'intent_no', offer: { line: `want me to ${goal}?` } });
+    });
+
+    it('a reordered goal never reaches the classifier', async () => {
+      const { gate } = mk();
+      let asked = false;
+      const r = await gate.decide(
+        {
+          tickKind: 'user',
+          userText: 'move it from downloads to trash',
+          call: { goal: 'move it from trash to downloads', request: 'move it from downloads to trash' },
+        },
+        async () => (asked = true),
+      );
+      expect(asked).toBe(false);
+      expect(r).toMatchObject({ kind: 'propose', why: 'not_asked' });
+    });
+
+    it('an error or a timeout is an offer', async () => {
+      vi.useFakeTimers();
+      try {
+        const { gate } = mk();
+        const bad = await gate.decide({ tickKind: 'user', userText: 'turn on dark mode', call }, async () => {
+          throw new Error('503');
+        });
+        expect(bad).toMatchObject({ kind: 'propose', why: 'intent_no' });
+        const slow = gate.decide({ tickKind: 'user', userText: 'turn on dark mode', call }, () => new Promise<boolean>(() => {}));
+        await vi.advanceTimersByTimeAsync(INTENT_TIMEOUT_MS + 1);
+        expect(await slow).toMatchObject({ kind: 'propose', why: 'intent_no' });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('an aborted turn does not run, even on a yes', async () => {
+      const { gate } = mk();
+      const ctrl = new AbortController();
+      ctrl.abort();
+      const r = await gate.decide({ tickKind: 'user', userText: 'turn on dark mode', call }, yes, ctrl.signal);
+      expect(r.kind).toBe('propose');
+    });
+
+    it('offers and ignored calls skip the classifier', async () => {
+      const { gate } = mk();
+      let asked = 0;
+      const count = async () => (asked++, true);
+      await gate.decide({ tickKind: 'idle', call }, count);
+      await gate.decide({ tickKind: 'user', userText: 'yes', call, confirmedThisTurn: true }, count);
+      expect(asked).toBe(0);
+    });
   });
 });
