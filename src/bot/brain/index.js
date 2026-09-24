@@ -13,6 +13,7 @@
 // can shut down cleanly on SIGTERM / Electron quit / test teardown.
 
 import { createOrchestrator } from './orchestrator.js'
+import { playerLabel } from './convoMemory.js'
 import { createSessionState } from './sessionState.js'
 import { loadPlayer, savePlayer, formatPlayerSeedBlock } from './memory/player.js'
 import { Priority, createPriorityQueue, attackedPriority } from './fsm.js'
@@ -259,7 +260,7 @@ export async function start({ config, adapter, logger = console, onTerminalError
       // said it, so it has no place in the conversation transcript, where it
       // read as a speaker and reset "has the player spoken since my last line".
       if (!evt.gameEvent) {
-        try { orchestrator.recordIncomingChat?.(evt.username, evt.text) } catch {}
+        try { orchestrator.recordIncomingChat?.(evt.username, evt.text, { companion: evt.fromCompanion === true }) } catch {}
       }
       // 260618 (M1): a message aimed only at another companion, or a sibling
       // bot's own chatter, is recorded above but must NOT interrupt this bot.
@@ -398,7 +399,7 @@ export async function start({ config, adapter, logger = console, onTerminalError
       const raw = String(text ?? '').trim()
       if (!raw) return
       const who = String(from || 'The player')
-      try { orchestrator.recordIncomingChat?.(who, raw) } catch {}
+      try { orchestrator.recordIncomingChat?.(who, raw, { companion: false }) } catch {}
       // 260708: a live voice-call utterance while the bot is in-game is NOT an
       // out-of-band text message, and the old framing ("NOT in the game with
       // you right now") was factually wrong on every line of a play-while-
@@ -429,10 +430,14 @@ export async function start({ config, adapter, logger = console, onTerminalError
       // read with the old framing the companion asked whether the player
       // was "actually here" while standing one tile from them.
       const hostGame = typeof adapter?.gameName === 'string' && adapter.gameName !== 'Minecraft'
+      // 260925: named by role. The player's chosen name can be "Sei" (the
+      // app) or a companion's, and "Sei typed this in the Sei app" is how a
+      // playtest companion lost track of who asked what (convoMemory.playerLabel).
+      const whoLabel = playerLabel(who)
       const framed = hostGame
-        ? `${who} typed this in the Sei app rather than the game's chat (they are still in the game with you; the app is just another way to talk). ` +
+        ? `The ${whoLabel} typed this in the Sei app rather than the game's chat (they are still in the game with you; the app is just another way to talk). ` +
           `They said: "${raw}". Reply with say() as usual; it reaches them in the app too. If you would rather stop playing to talk, call quit_game().`
-        : `${who} messaged you through Sei chat. They are NOT in the game with you right now. ` +
+        : `The ${whoLabel} messaged you through Sei chat. They are NOT in the game with you right now. ` +
           `They said: "${raw}". Reply to them in chat. If you would rather stop playing to talk, call quit_game().`
       try {
         queue.enqueue(Priority.P1_CHAT, 'sei:chat_received', {
@@ -467,7 +472,7 @@ export async function start({ config, adapter, logger = console, onTerminalError
       const who = isPlayer
         ? String(config.player_display_name || 'The player')
         : String(from)
-      try { orchestrator.recordIncomingChat?.(who, raw) } catch {}
+      try { orchestrator.recordIncomingChat?.(who, raw, { companion: !isPlayer }) } catch {}
       if (isPlayer) return
       _observeWake.push(who, raw)
     },

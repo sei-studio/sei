@@ -45,7 +45,6 @@ export function useDstSetupSteps(skin: StepSkin): DstSetup {
   const refreshInstall = useDstStore((s) => s.refreshInstall);
   const runInstall = useDstStore((s) => s.runInstall);
   const launchGame = useDstStore((s) => s.launchGame);
-  const openAppManagement = useDstStore((s) => s.openAppManagement);
   const world = useDataStore((s) => s.worlds.dontstarve);
   const dstWorld = world && world.game === 'dontstarve' ? world : null;
   const worldOpen = dstWorld?.kind === 'open';
@@ -101,11 +100,10 @@ export function useDstSetupSteps(skin: StepSkin): DstSetup {
         ) : install?.kind === 'error' && install.permission ? (
           <>
             <span role="alert">
-              {t("macOS needs your permission first: the game keeps its mods inside its app, and changing another app needs App Management. Open System Settings, go to Privacy & Security, then App Management, turn on Sei, and try again.")}
+              {t("macOS blocked Sei from adding the helper to the game (it needs App Management permission).")}
             </span>
             <div className={skin.actions}>
-              <Button kind="primary" onClick={() => void openAppManagement()}>{t('Open System Settings')}</Button>
-              <Button kind="quiet" disabled={installBusy} onClick={() => void runInstall()}>{t('Try again')}</Button>
+              <Button kind="primary" disabled={installBusy} onClick={() => void runInstall()}>{t('Try again')}</Button>
             </div>
           </>
         ) : install?.kind === 'error' ? (

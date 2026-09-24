@@ -29,52 +29,67 @@ import { z } from 'zod';
 export interface LegendRow {
   id: number;
   look: string;
+  /** Hair only: the length group the menu lists it under. */
+  group?: HairGroup;
 }
+
+/**
+ * The hair menu's headings, in the order the model reads them. Length is the
+ * first thing to match (260925: Sui's long hair came out as short wild spikes),
+ * so the menu is grouped by it instead of listed by index.
+ */
+export type HairGroup = 'short' | 'chin to shoulder length' | 'long, worn loose' | 'tied up (ponytail, buns, braids, twin tails)';
+export const STARDEW_HAIR_GROUPS: readonly HairGroup[] = [
+  'short',
+  'chin to shoulder length',
+  'long, worn loose',
+  'tied up (ponytail, buns, braids, twin tails)',
+];
 
 /** Hairstyles. `hair` on the wire is the game's hairstyle index. */
 export const STARDEW_HAIR_LEGEND: readonly LegendRow[] = [
-  { id: 0, look: 'short, messy, swept to one side' },
-  { id: 1, look: 'short and neat, parted, covers the ears' },
-  { id: 3, look: 'big round afro' },
-  { id: 5, look: 'shaved sides with a small tuft on top' },
-  { id: 6, look: 'chin-length bob' },
-  { id: 7, look: 'very short crop' },
-  { id: 8, look: 'wild spikes in every direction' },
-  { id: 9, look: 'short with a long fringe swept over one eye' },
-  { id: 11, look: 'buzz cut' },
-  { id: 12, look: 'long low ponytail down the back' },
-  { id: 13, look: 'short, spiky and unkempt' },
-  { id: 16, look: 'tall high ponytail' },
-  { id: 17, look: 'shoulder-length with curled ends' },
-  { id: 21, look: 'two high buns' },
-  { id: 22, look: 'single bun on top of the head' },
-  { id: 24, look: 'long and wavy, past the shoulders' },
-  { id: 26, look: 'very long and straight, down to the waist' },
-  { id: 27, look: 'medium bob with flipped-out ends' },
-  { id: 28, look: 'mid-height ponytail' },
-  { id: 30, look: 'short low twin tails' },
-  { id: 33, look: 'long twin braids' },
-  { id: 34, look: 'medium twin pigtails' },
-  { id: 35, look: 'high side ponytail' },
-  { id: 37, look: 'short fluffy twin pigtails worn high' },
-  { id: 38, look: 'round bob with a headband' },
-  { id: 39, look: 'long and straight with a headband' },
-  { id: 40, look: 'big voluminous curls' },
-  { id: 47, look: 'plain straight shoulder-length' },
-  { id: 48, look: 'messy layered shoulder-length' },
-  { id: 52, look: 'bald' },
-  { id: 100, look: 'long and straight with full bangs' },
-  { id: 101, look: 'long, thick and curly' },
-  { id: 102, look: 'very long and straight, no bangs' },
-  { id: 103, look: 'low ponytail worn over one shoulder' },
-  { id: 104, look: 'one long braid down the back' },
-  { id: 105, look: 'long hair swept over one shoulder' },
-  { id: 107, look: 'fluffy chin-length bob' },
-  { id: 108, look: 'short and tousled' },
-  { id: 110, look: 'long and straight with a side part' },
-  { id: 115, look: 'long and straight with a centre part, to mid-back' },
-  { id: 118, look: 'long, voluminous and wavy' },
-  { id: 120, look: 'long and layered' },
+  { id: 0, look: 'short, messy, swept to one side', group: 'short' },
+  { id: 1, look: 'short and neat, parted, covers the ears', group: 'short' },
+  { id: 3, look: 'big round afro', group: 'chin to shoulder length' },
+  { id: 5, look: 'shaved sides with a small tuft on top', group: 'short' },
+  { id: 6, look: 'chin-length bob', group: 'chin to shoulder length' },
+  { id: 7, look: 'very short crop', group: 'short' },
+  { id: 8, look: 'wild spikes in every direction', group: 'short' },
+  { id: 9, look: 'short with a long fringe swept over one eye', group: 'short' },
+  { id: 11, look: 'buzz cut', group: 'short' },
+  { id: 12, look: 'long low ponytail down the back', group: 'tied up (ponytail, buns, braids, twin tails)' },
+  { id: 13, look: 'short, spiky and unkempt', group: 'short' },
+  { id: 16, look: 'tall high ponytail', group: 'tied up (ponytail, buns, braids, twin tails)' },
+  { id: 17, look: 'shoulder-length with curled ends', group: 'chin to shoulder length' },
+  { id: 21, look: 'two high buns', group: 'tied up (ponytail, buns, braids, twin tails)' },
+  { id: 22, look: 'single bun on top of the head', group: 'tied up (ponytail, buns, braids, twin tails)' },
+  { id: 24, look: 'long and wavy, past the shoulders', group: 'long, worn loose' },
+  { id: 26, look: 'very long and straight, down to the waist', group: 'long, worn loose' },
+  { id: 27, look: 'medium bob with flipped-out ends', group: 'chin to shoulder length' },
+  { id: 28, look: 'mid-height ponytail', group: 'tied up (ponytail, buns, braids, twin tails)' },
+  { id: 30, look: 'short low twin tails', group: 'tied up (ponytail, buns, braids, twin tails)' },
+  { id: 33, look: 'long twin braids', group: 'tied up (ponytail, buns, braids, twin tails)' },
+  { id: 34, look: 'medium twin pigtails', group: 'tied up (ponytail, buns, braids, twin tails)' },
+  { id: 35, look: 'high side ponytail', group: 'tied up (ponytail, buns, braids, twin tails)' },
+  { id: 37, look: 'short fluffy twin pigtails worn high', group: 'tied up (ponytail, buns, braids, twin tails)' },
+  { id: 38, look: 'round bob with a headband', group: 'chin to shoulder length' },
+  { id: 39, look: 'long and straight with a headband', group: 'long, worn loose' },
+  { id: 40, look: 'big voluminous curls', group: 'chin to shoulder length' },
+  { id: 47, look: 'plain straight shoulder-length', group: 'chin to shoulder length' },
+  { id: 48, look: 'messy layered shoulder-length', group: 'chin to shoulder length' },
+  { id: 52, look: 'bald', group: 'short' },
+  { id: 100, look: 'long and straight with full bangs', group: 'long, worn loose' },
+  { id: 101, look: 'long, thick and curly', group: 'long, worn loose' },
+  { id: 102, look: 'very long and straight, no bangs', group: 'long, worn loose' },
+  { id: 103, look: 'low ponytail worn over one shoulder', group: 'tied up (ponytail, buns, braids, twin tails)' },
+  { id: 104, look: 'one long braid down the back', group: 'tied up (ponytail, buns, braids, twin tails)' },
+  { id: 105, look: 'long hair swept over one shoulder', group: 'long, worn loose' },
+  { id: 107, look: 'fluffy chin-length bob', group: 'chin to shoulder length' },
+  { id: 108, look: 'short and tousled', group: 'short' },
+  { id: 110, look: 'long and straight with a side part', group: 'long, worn loose' },
+  { id: 115, look: 'long and straight with a centre part, to mid-back', group: 'long, worn loose' },
+  { id: 118, look: 'long, voluminous and wavy', group: 'long, worn loose' },
+  { id: 120, look: 'long and layered', group: 'long, worn loose' },
 ];
 
 /** Skin tones (index into the game's 24-row skin palette). */
@@ -274,7 +289,66 @@ export function coerceStardewAppearance(input: unknown): { appearance: StardewAp
   return { appearance: out as StardewAppearance, salvaged };
 }
 
+/**
+ * Generator version of a derived appearance (260925). Bump it when the
+ * derivation changes enough that looks made by the old one should be redone:
+ * a stored 'auto' row (local or cloud) older than this is re-derived, and the
+ * cloud accepts the newer row over the old one. A 'user' row is never redone.
+ *   1 = text only (260921). Defaults have no description, so the model
+ *       invented a look from the personality ("tomboy gremlin" -> wild blue
+ *       spikes for Sui, whose portrait has long silver hair).
+ *   2 = the portrait via vision + the grouped menu below.
+ * The proxy caps the version it accepts (sei-proxy src/games/profile.ts
+ * PROFILE_MAX_VERSION): raise that and deploy the proxy BEFORE shipping a
+ * bump, or the new rows are rejected (400) and stay local.
+ */
+export const STARDEW_APPEARANCE_VERSION = 2;
+
 const renderRows = (rows: readonly LegendRow[]): string => rows.map((r) => `${r.id} ${r.look}`).join('; ');
+const menuLines = (rows: readonly LegendRow[]): string => rows.map((r) => `  ${r.id} = ${r.look}`).join('\n');
+
+/**
+ * The whole creator as one labelled menu, one option per line, hair grouped by
+ * length (model-facing). This is what the model picks from; the tool schema
+ * only points at it.
+ */
+export function renderStardewAppearanceMenu(): string {
+  const hair = STARDEW_HAIR_GROUPS.map(
+    (g) => `  ${g}:\n${STARDEW_HAIR_LEGEND.filter((r) => r.group === g).map((r) => `    ${r.id} = ${r.look}`).join('\n')}`,
+  ).join('\n');
+  return [
+    'HAIR (field "hair"), grouped by length:',
+    hair,
+    '',
+    'SKIN (field "skin"):',
+    menuLines(STARDEW_SKIN_LEGEND),
+    '',
+    'TOP (field "shirt"):',
+    menuLines(STARDEW_SHIRT_LEGEND),
+    '',
+    'BOTTOM (field "pants", dyed with pantsColor):',
+    menuLines(STARDEW_PANTS_LEGEND),
+    '',
+    'FACE ACCESSORY (field "accessory"):',
+    menuLines(STARDEW_ACCESSORY_LEGEND),
+    '',
+    'COLORS (fields "hairColor", "eyeColor", "pantsColor"): any #rrggbb.',
+  ].join('\n');
+}
+
+/** A legend row's description, for logs and evidence ("hair 100 long and straight with full bangs"). */
+export function describeStardewAppearance(a: StardewAppearance): string {
+  const look = (rows: readonly LegendRow[], id: number): string => rows.find((r) => r.id === id)?.look ?? '?';
+  return [
+    `${a.gender}`,
+    `skin ${a.skin} (${look(STARDEW_SKIN_LEGEND, a.skin)})`,
+    `hair ${a.hair} (${look(STARDEW_HAIR_LEGEND, a.hair)}) ${a.hairColor}`,
+    `eyes ${a.eyeColor}`,
+    `shirt ${a.shirt} (${look(STARDEW_SHIRT_LEGEND, a.shirt)})`,
+    `pants ${a.pants} (${look(STARDEW_PANTS_LEGEND, a.pants)}) ${a.pantsColor}`,
+    `accessory ${a.accessory} (${look(STARDEW_ACCESSORY_LEGEND, a.accessory)})`,
+  ].join(', ');
+}
 
 /** The legends as the tool's per-field descriptions (model-facing). */
 export const STARDEW_APPEARANCE_LEGENDS = {

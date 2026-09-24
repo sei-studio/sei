@@ -34,7 +34,7 @@ import {
 } from './prompts.js'
 import { buildAnthropicTools } from './schemaBridge.js'
 import { createInflightTracker, describeArgs } from './inflight.js'
-import { createConvoMemory } from './convoMemory.js'
+import { createConvoMemory, playerLabel } from './convoMemory.js'
 import { createLookupLog, extractServerLookup } from './lookups.js'
 import { logChatOut, logActionResult } from './log.js'
 import { errLine } from './errStrings.js'
@@ -316,13 +316,51 @@ export function shouldSuppressIdleSay({ triggerEvent, lastSelf, lastPlayer, now 
  * @returns {boolean} true = every segment is an exact repeat
  */
 export function isExactRepeatSincePlayerSpoke({ segments, selfLines, lastPlayer, now = Date.now(), windowMs = 120_000 }) {
-  const norm = (t) => String(t ?? '').toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, ' ').replace(/\s+/g, ' ').trim()
-  const cand = (segments ?? []).map(norm).filter(Boolean)
-  if (cand.length === 0) return false
+  const { kept, dropped } = splitRepeatedSegments({ segments, selfLines, lastPlayer, now, windowMs })
+  return dropped.length > 0 && kept.length === 0
+}
+
+const normSegment = (t) => String(t ?? '').toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, ' ').replace(/\s+/g, ' ').trim()
+
+/**
+ * The same exact test, one SENTENCE at a time (260925).
+ *
+ * The whole-line version let a re-asked question through whenever it rode
+ * beside anything new. v0.6.5-beta.2 playtest: she asked "so what's the vibe,
+ * you wanna just plant these parsnips or you got something else in mind",
+ * her come() finished 8 s later, and the action-complete turn said "i'm here.
+ * so what's the vibe, ..." with the question word for word. "i'm here" was
+ * new, so the line went out whole, and the unanswered question was on screen
+ * twice. Now each segment that exactly repeats a line of hers newer than the
+ * player's last line is dropped and the rest is sent. Still exact match only,
+ * for the 260731 reason above.
+ *
+ * @returns {{ kept: string[], dropped: string[] }} the candidate's segments, in order
+ */
+export function splitRepeatedSegments({ segments, selfLines, lastPlayer, now = Date.now(), windowMs = 120_000 }) {
+  const all = (segments ?? []).map((s) => String(s ?? '').trim()).filter((s) => normSegment(s))
   const since = Math.max(lastPlayer?.at ?? 0, now - windowMs)
-  const said = new Set((selfLines ?? []).filter(l => l && l.at > since).map(l => norm(l.text)))
-  if (said.size === 0) return false
-  return cand.every(c => said.has(c))
+  const said = new Set((selfLines ?? []).filter(l => l && l.at > since).map(l => normSegment(l.text)))
+  if (said.size === 0) return { kept: all, dropped: [] }
+  const kept = []
+  const dropped = []
+  for (const seg of all) (said.has(normSegment(seg)) ? dropped : kept).push(seg)
+  return { kept, dropped }
+}
+
+/**
+ * Re-join the segments that survived splitRepeatedSegments into one say()
+ * line that splits back into exactly those segments: a segment that ends a
+ * sentence is followed by a space, anything else (it was cut at a dash) by
+ * an em dash, the other separator splitChatMessages breaks on.
+ */
+export function joinSegments(segments) {
+  let out = ''
+  for (const seg of segments) {
+    if (!out) out = seg
+    else out += (/[.?!。！？]$/.test(out) ? ' ' : ' — ') + seg
+  }
+  return out
 }
 
 /**
@@ -1057,7 +1095,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // strips banned content (coordinates, stage directions); shouldSuppressLoopEndSay
   // dedups a loop_end turn that merely repeats the last spoken line.
   function _emitSayLine(loop, rawText) {
-    const line = postProcessSay(String(rawText ?? '').trim())
+    let line = postProcessSay(String(rawText ?? '').trim())
     if (!line) {
       lastActionResult = 'say: empty'
       // emitted:false — an empty say() does NOT consume the one-per-turn slot.
@@ -1078,16 +1116,27 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       return { emitted: true, content: 'said (suppressed duplicate of your last line)' }
     }
     // 260921: the same sentence again, with nothing from the player between.
-    if (isExactRepeatSincePlayerSpoke({
-      segments: splitChatMessages(line, config.persona?.punctuation),
+    // 260925: checked per sentence, so a repeat riding beside something new
+    // ("i'm here. <the same question>") loses the repeat and keeps the rest.
+    // Split with 'deliberate' punctuation so a kept segment keeps its period
+    // for the re-join; the normal split below still applies the persona's.
+    const { kept: keptSegs, dropped: repeatSegs } = splitRepeatedSegments({
+      segments: splitChatMessages(line, 'deliberate'),
       selfLines: convoMemory.recentChat._internal.selfLines,
       lastPlayer: convoMemory.recentChat.lastPlayer?.() ?? null,
-    })) {
+    })
+    let repeatNote = ''
+    if (repeatSegs.length > 0 && keptSegs.length === 0) {
       logger.info?.(`[sei/orch] exact repeat not sent (loop=${loop.id}): ${line.slice(0, 80)}`)
       // The line IS in chat already, so the player-message silence guard and
       // the one-say-per-turn slot both count it as spoken.
       loop._spokeThisLoop = true
-      return { emitted: true, content: 'not sent: you already said exactly this and they have not answered it yet. Let it stand; do not reword it either.' }
+      return { emitted: true, content: 'not sent: you already said exactly this and they have not answered it yet. Let it stand; do not reword it, and do not answer it for them. Wait for their reply.' }
+    }
+    if (repeatSegs.length > 0) {
+      logger.info?.(`[sei/orch] repeated sentence(s) dropped (loop=${loop.id}): ${repeatSegs.join(' | ').slice(0, 120)}`)
+      line = joinSegments(keptSegs)
+      repeatNote = ` Not sent, because you already said it and they have not answered yet: "${repeatSegs.join(' ')}". Do not reword it or answer it for them; wait for their reply.`
     }
     // 260730: unprompted-chatter floor. An idle tick may not talk over the
     // bot's own last line while the player has said nothing back. The
@@ -1152,7 +1201,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       }
 
       lastActionResult = 'said (sei chat)'
-      return { emitted: true, content: 'sent to chat' }
+      return { emitted: true, content: 'sent to chat' + repeatNote }
     }
     // "Realistic typing" (config.realistic_typing): delay the in-world line as if
     // the bot read the player's message and then typed the reply. Reading keys on
@@ -1165,7 +1214,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       : 0
     emitChatMessages(line, leadMs)
     lastActionResult = 'said'
-    return { emitted: true, content: 'said' }
+    return { emitted: true, content: 'said' + repeatNote }
   }
 
   // 260617: emit EVERY say() tool call in the batch UP FRONT — before any
@@ -1920,6 +1969,16 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // variant, repairAfterAbort, and the fold fallbacks) renders through this so
   // they read identically. The action is still considered live, so the framing
   // matches the silent action-tick monitor — it just carries the player's words.
+  // 260925: how a mid-loop line's speaker is named in the turn text. A
+  // teammate keeps its own name; the human is "player (name)".
+  function speakerForTurn(who, teammate) {
+    if (!who) return null
+    const name = String(who)
+    if (teammate === true) return name
+    if (companions.some((c) => String(c).toLowerCase() === name.toLowerCase())) return name
+    return playerLabel(name)
+  }
+
   function interruptTurnText(loop, chatText, who = null, teammate = false, unanswered = false) {
     // 260921: "mid-action" only when something is actually running.
     // extractPriorTask returns the last tool call in the history whether or
@@ -1977,7 +2036,9 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       action,
       stopTool: stopToolForAction(action),
       playerLine: chatText ?? '',
-      who: who ?? null,
+      // 260925: the human is named by role ("player (Sei) said"), since their
+      // chosen name can be the app's or a companion's (see playerLabel).
+      who: speakerForTurn(who, teammate),
       visionOff: _visionMode() === 'off',
       // 260708: while a call is live, player lines are voice and (with a
       // roster) take the group-addressing framing instead of mandatory-reply.
@@ -4853,7 +4914,9 @@ function maybeWarnByteCap(loop, warned) {
     throttle: ingressThrottle,
     inflight,
     /** Record an incoming chat line in convoMemory (chat.js calls this). */
-    recordIncomingChat: (who, text) => convoMemory.recentChat.pushPlayer(who, text),
+    // opts.companion: a sibling AI's line; anything else is the human player's
+    // and is labelled by role in the transcript (convoMemory.playerLabel).
+    recordIncomingChat: (who, text, opts) => convoMemory.recentChat.pushPlayer(who, text, opts),
     // 260921: the idle timer's floor-hold (see REPLY_WINDOW_MS). brain/index.js
     // folds it into idleFallbackMs so the FSM needs no knowledge of speech.
     // Stardew only (REPLY_WINDOW_GAMES): 0 elsewhere, so Minecraft's agentic

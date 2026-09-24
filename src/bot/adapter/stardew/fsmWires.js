@@ -52,6 +52,7 @@ export function wireStardewEvents(client, handlers, { botName, companions = () =
       username: from,
       text,
       playerSpoke: !fromCompanion,
+      fromCompanion,
       addressed: mentions(text, botName),
       nearby: f.sameLocation !== false,
       // A sibling companion's own chatter, or a line aimed by name at a

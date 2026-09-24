@@ -279,7 +279,9 @@ async function install(e: GamePackEnv, game: GameId, opts: EnsurePackOptions): P
 
     const zipPath = await downloadZip(e, game, entry, opts);
     const root = await extractZip(e, game, entry, zipPath);
-    await rm(zipPath, { force: true }).catch(() => {});
+    // The whole download dir, not just the zip: an empty tmp/ used to stay
+    // behind in every pack dir after a successful install.
+    await rm(tmpDir(e, game), { recursive: true, force: true }).catch(() => {});
     await writeInstalled(e, {
       game,
       version: e.version,
@@ -562,7 +564,10 @@ async function pruneOtherVersions(e: GamePackEnv, game: GameId, keep: string): P
     return;
   }
   for (const n of names) {
-    if (n === keep || n === 'installed.json' || n === 'tmp') continue;
+    // tmp/ is swept too: installs are single-flight per game and this runs
+    // after one finished, so nothing is downloading into it (clears the empty
+    // tmp/ left by builds before 260925).
+    if (n === keep || n === 'installed.json') continue;
     await rm(path.join(gameDir(e, game), n), { recursive: true, force: true }).catch(() => {});
   }
 }

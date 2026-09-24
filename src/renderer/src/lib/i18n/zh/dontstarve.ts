@@ -34,9 +34,8 @@ export const ZH_DONTSTARVE: Record<string, string> = {
   'The game': '游戏',
   'A hosted world': '主持的世界',
   'Waiting for your world...': '等待你的世界…',
-  "macOS needs your permission first: the game keeps its mods inside its app, and changing another app needs App Management. Open System Settings, go to Privacy & Security, then App Management, turn on Sei, and try again.":
-    'macOS 需要你先授权：游戏把模组放在它自己的应用包里，而修改其他应用需要“应用程序管理”权限。请打开“系统设置”，进入“隐私与安全性”，再进入“应用程序管理”，打开 Sei，然后再试一次。',
-  'Open System Settings': '打开系统设置',
+  "macOS blocked Sei from adding the helper to the game (it needs App Management permission).":
+    'macOS 阻止了 Sei 把助手添加到游戏中（需要“应用程序管理”权限）。',
 
   // ── launch panel (components/dontstarve/DstLaunchPanel.tsx) ──
   "Looking for Don't Starve Together on this computer...": '正在这台电脑上查找《饥荒联机版》…',

@@ -176,7 +176,7 @@ export function startChat(bot, config, orchestrator = null) {
     // chatter came from the player.
     const displayName = fromCompanion ? username : (config.player_display_name || username)
 
-    try { orchestrator?.recordIncomingChat?.(displayName, message) } catch {}
+    try { orchestrator?.recordIncomingChat?.(displayName, message, { companion: fromCompanion }) } catch {}
 
     const addressed = mentionsName(message, bot.username)
     const addressedToSibling = roster.some(c => mentionsName(message, c))
@@ -224,7 +224,7 @@ export function startChat(bot, config, orchestrator = null) {
     // not wake. We always emit for a sibling so its chatter still lands in
     // history even when it doesn't interrupt.
     if (playerSpoke || addressed || nearby || fromCompanion) {
-      const payload = { username: displayName, message, addressed, playerSpoke, suppressInterrupt }
+      const payload = { username: displayName, message, addressed, playerSpoke, suppressInterrupt, fromCompanion }
       if (bot._seiDebouncer) {
         bot._seiDebouncer.debounce(`chat:${displayName}`, payload, (p) => bot.emit('sei:chat_received', p))
       } else {

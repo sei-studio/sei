@@ -222,6 +222,8 @@ describe('game packs: ensurePack', () => {
     expect(await getPackState('minecraft')).toEqual({ kind: 'ready', root });
     // The tmp download dir is gone.
     await expect(stat(path.join(store, 'minecraft', 'tmp', FILE))).rejects.toBeTruthy();
+    // ...and so is the tmp dir itself (260925: an empty tmp/ stayed behind).
+    await expect(stat(path.join(store, 'minecraft', 'tmp'))).rejects.toBeTruthy();
   });
 
   it('Test 3: an installed pack makes no request on the next call', async () => {

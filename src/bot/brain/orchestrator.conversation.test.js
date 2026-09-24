@@ -26,9 +26,12 @@ import {
   replyWindowRemainingMs,
   replyWindowApplies,
   isExactRepeatSincePlayerSpoke,
+  splitRepeatedSegments,
+  joinSegments,
+  splitChatMessages,
   REPLY_WINDOW_MS,
 } from './orchestrator.js'
-import { createConvoMemory } from './convoMemory.js'
+import { createConvoMemory, playerLabel } from './convoMemory.js'
 import { createLookupLog, extractServerLookup } from './lookups.js'
 
 function makeProvider(script) {
@@ -120,9 +123,9 @@ describe('convoMemory.formatConversationBlock', () => {
     vi.setSystemTime(1_021_000)
     const lines = m.formatConversationBlock().split('\n').slice(1)
     expect(lines).toEqual([
-      '[21s ago] newb: do all worlds spawn in the same place?',
+      '[21s ago] player (newb): do all worlds spawn in the same place?',
       '[11s ago] you: you ready to plant?',
-      '[1s ago] newb: answer my question',
+      '[1s ago] player (newb): answer my question',
     ])
   })
 
@@ -244,9 +247,9 @@ describe('what she said is visible to her next turn the moment it is decided', (
     expect(adapter.chat).not.toHaveBeenCalled()
     await orch.handleDispatch('sei:idle', { quietMs: 5001 })
     const convo = blockText(provider.calls[1], 'recent_conversation')
-    expect(convo).toContain('newb: is there anything we can do with the rocks')
+    expect(convo).toContain('player (newb): is there anything we can do with the rocks')
     expect(convo).toContain('you: we can sell the stone at the shipping bin')
-    expect(convo.indexOf('] newb:')).toBeLessThan(convo.indexOf('] you:')) // the header itself mentions "you:"
+    expect(convo.indexOf('] player (newb):')).toBeLessThan(convo.indexOf('] you:')) // the header itself mentions "you:"
     // The merged block replaces the two one-sided lists.
     expect(blockNames(provider.calls[1])).not.toContain('your_recent_messages')
     expect(blockNames(provider.calls[1])).not.toContain('recent_player_chat')
@@ -383,5 +386,135 @@ describe('the same sentence twice', () => {
     orch.recordIncomingChat('newb', 'huh?')
     await orch.handleDispatch('sei:chat_received', chat('huh?'))
     expect(adapter.chat).toHaveBeenCalledTimes(2)
+  })
+})
+
+// 260925: v0.6.5-beta.2 playtest (Sui, Stardew). The player's preferred name
+// was "Sei", the app's own name. Asked in the app to "ask me a question about
+// what i want to do on the farm today", she asked; her come() finished 8 s
+// later and the action-complete turn said "i'm here. <the same question>",
+// which went out whole because "i'm here" was new; then 20 s later an idle
+// turn answered the question herself, her scratchpad reading "They asked
+// 'so what's the vibe...'", her own line, attributed to the player.
+const Q = "so what's the vibe, you wanna just plant these parsnips or you got something else in mind for the farm"
+
+describe('who said it stays unambiguous when the player is called "Sei"', () => {
+  it('labels the human by role and a sibling companion by name', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(2_000_000)
+    const m = createConvoMemory().recentChat
+    m.pushPlayer('Sei', 'hey sui, ask me a question about the farm')
+    m.pushPlayer('Marv', 'i will get wood', { companion: true })
+    m.pushSelf('Sui', Q)
+    const lines = m.formatConversationBlock().split('\n').slice(1)
+    expect(lines).toEqual([
+      '[0s ago] player (Sei): hey sui, ask me a question about the farm',
+      '[0s ago] Marv: i will get wood',
+      `[0s ago] you: ${Q}`,
+    ])
+    expect(m.formatPlayerBlock()).toContain('] player (Sei): hey sui')
+  })
+
+  it('never produces a bare name, even one equal to hers', () => {
+    expect(playerLabel('Sui')).toBe('player (Sui)')
+    expect(playerLabel('The player')).toBe('player')
+    expect(playerLabel('')).toBe('player')
+  })
+
+  it('the transcript header says the player is never her, and her own open question waits on them', async () => {
+    _setTickIntervalForTests(10_000_000)
+    const { orch, provider } = makeOrch({ script: [{ text: '', toolUses: [] }] })
+    orch.recordIncomingChat('Sei', 'hey sui, ask me a question about the farm')
+    await orch.handleDispatch('sei:idle', { quietMs: 23_000 })
+    const convo = blockText(provider.calls[0], 'recent_conversation')
+    expect(convo).toContain('] player (Sei): hey sui')
+    expect(convo).not.toMatch(/\] Sei:/)
+    expect(convo).toContain('it is still them, never you')
+    expect(convo).toContain('do not answer it yourself')
+  })
+
+  it('a mid-action player line names them by role in the turn text', async () => {
+    _setTickIntervalForTests(10_000_000)
+    let release
+    const running = new Promise((r) => { release = r })
+    const adapter = makeAdapter({ executeAction: () => running })
+    const { orch, provider } = makeOrch({
+      adapter,
+      script: [
+        { text: '', toolUses: [{ id: 'g1', name: 'goTo', input: {} }] },
+        { text: '', toolUses: [say('t2', 'ok')] },
+        { text: '', toolUses: [] },
+      ],
+    })
+    const first = orch.handleDispatch('sei:idle', { quietMs: 10_000 })
+    await vi.waitFor(() => expect(provider.calls.length).toBe(1))
+    orch.recordIncomingChat('Sei', 'wait for me')
+    const second = orch.handleDispatch('sei:chat_received', { ...chat('wait for me'), username: 'Sei' })
+    release('arrived')
+    await Promise.allSettled([first, second])
+    const texts = provider.calls.slice(1).map((c) => JSON.stringify(c.blocks) + JSON.stringify(c.messages ?? []))
+    expect(texts.join('\n')).toContain('player (Sei)')
+  })
+})
+
+describe('a re-asked question is dropped sentence by sentence', () => {
+  const now = 900_000
+  it('keeps the new sentence and drops the repeated one', () => {
+    const r = splitRepeatedSegments({
+      segments: splitChatMessages(`i'm here. ${Q}`, 'deliberate'),
+      selfLines: [{ at: now - 8000, text: Q }],
+      lastPlayer: { at: now - 12_000 },
+      now,
+    })
+    expect(r.kept).toEqual(["i'm here."])
+    expect(r.dropped).toEqual([Q])
+    // The whole-line predicate still reads "not every segment repeats".
+    expect(isExactRepeatSincePlayerSpoke({ segments: [`i'm here`, Q], selfLines: [{ at: now - 8000, text: Q }], lastPlayer: null, now })).toBe(false)
+  })
+
+  it('drops nothing once the player has answered', () => {
+    const r = splitRepeatedSegments({ segments: ["i'm here.", Q], selfLines: [{ at: now - 8000, text: Q }], lastPlayer: { at: now - 1000 }, now })
+    expect(r.dropped).toEqual([])
+  })
+
+  it('re-joins survivors so they split back into the same messages', () => {
+    const segs = ['ok.', 'first thing', 'then the second']
+    expect(splitChatMessages(joinSegments(segs), 'deliberate')).toEqual(segs)
+    expect(joinSegments(['one'])).toBe('one')
+  })
+
+  it('replays the playtest: the action-complete turn does not re-ask the open question', async () => {
+    _setTickIntervalForTests(10_000_000)
+    const { orch, adapter, provider } = makeOrch({
+      script: [
+        { text: '', toolUses: [say('t1', Q), { id: 'g1', name: 'goTo', input: {} }] },
+        { text: '', toolUses: [say('t2', `i'm here. ${Q}`), { id: 'g2', name: 'goTo', input: {} }] },
+        { text: '', toolUses: [] },
+      ],
+    })
+    orch.recordIncomingChat('Sei', 'hey sui, ask me a question about what i want to do on the farm today, then let me think')
+    await orch.handleDispatch('sei:chat_received', { ...chat('hey sui, ask me a question about what i want to do on the farm today, then let me think'), username: 'Sei' })
+    await orch.handleDispatch('sei:action_complete', { name: 'goTo', tool_use_id: 'g1', result: 'arrived' }).catch(() => {})
+    await vi.waitFor(() => expect(adapter.chat.mock.calls.map((c) => c[0])).toContain("i'm here"))
+    const sent = adapter.chat.mock.calls.map((c) => c[0])
+    expect(sent.filter((t) => t === Q)).toHaveLength(1)
+    // The model is told what was held back and not to answer it for them
+    // (visible on the next call of the loop, after the second walk).
+    await orch.handleDispatch('sei:action_complete', { name: 'goTo', tool_use_id: 'g2', result: 'arrived' }).catch(() => {})
+    const results = JSON.stringify(provider.calls.map((c) => c.messages ?? []))
+    expect(results).toContain('Do not reword it or answer it for them')
+  })
+
+  it('still drops the whole line when every sentence repeats', async () => {
+    _setTickIntervalForTests(10_000_000)
+    const { orch, adapter } = makeOrch({
+      script: [
+        { text: '', toolUses: [say('t1', Q)] },
+        { text: '', toolUses: [say('t2', `${Q}.`)] },
+      ],
+    })
+    await orch.handleDispatch('sei:idle', { quietMs: 10_000 })
+    await orch.handleDispatch('sei:idle', { quietMs: 30_000 })
+    expect(adapter.chat).toHaveBeenCalledTimes(1)
   })
 })
