@@ -8,6 +8,13 @@
  * "verify files" rewrite that file, so enable() is re-applied on every Sei
  * launch and before every summon.
  *
+ * Upgrades (260925): installMod runs on every Launch from Sei and copies the
+ * pack's mod over the installed one, so a newer helper lands on the next
+ * launch. When modinfo.lua says the pack's copy is newer than the installed
+ * one, the old folder is removed first, so a script the new version dropped
+ * does not linger. The folder holds no user settings (DST keeps mod
+ * configuration in the save data, not the mod folder).
+ *
  * Paths (research report 4.4):
  *   Windows  <Steam>\steamapps\common\Don't Starve Together\mods\
  *   macOS    <Steam>/steamapps/common/Don't Starve Together/dontstarve_steam.app/Contents/mods/
@@ -20,12 +27,13 @@
  * `deps` object so the tests run against fixtures.
  */
 import { execFile } from 'node:child_process';
-import { cp, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import type { DstInstallState } from '../../../shared/dstIpc';
 import { DST_STEAM_APP_ID } from '../../../shared/dstIpc';
 import { findGameProcess, type GameProcessState } from './process';
+import { packModIsNewer } from '../modVersion';
 
 export const DST_INSTALL_DIR_NAME = "Don't Starve Together";
 export const MOD_ID = 'sei';
@@ -38,6 +46,8 @@ export interface InstallDeps {
   readText(p: string): Promise<string | null>;
   writeText(p: string, text: string): Promise<void>;
   copyDir(from: string, to: string): Promise<void>;
+  /** Remove a directory tree (no error when it is already gone). */
+  removeDir(p: string): Promise<void>;
   listDir(p: string): Promise<string[]>;
   /** Windows only: HKCU\Software\Valve\Steam\SteamPath, or null. */
   registrySteamPath(): Promise<string | null>;
@@ -94,6 +104,9 @@ export function defaultDeps(): InstallDeps {
     copyDir: async (from, to) => {
       await mkdir(path.dirname(to), { recursive: true });
       await cp(from, to, { recursive: true, force: true });
+    },
+    removeDir: async (p) => {
+      await rm(p, { recursive: true, force: true });
     },
     listDir: async (p) => {
       try {
@@ -335,9 +348,16 @@ export async function installMod(
   if (!src) {
     return { kind: 'error', error: 'GAME_INSTALL_FAILED', message: `The helper mod files are missing from ${opts.packRoot}.` };
   }
+  const dest = path.join(found.modsDir, MOD_ID);
   try {
+    const installed = await deps.readText(path.join(dest, 'modinfo.lua'));
+    const packVersion = modVersionFrom(await deps.readText(path.join(src, 'modinfo.lua')));
+    if (installed != null && packModIsNewer(packVersion, modVersionFrom(installed))) {
+      opts.onProgress?.('replacing');
+      await deps.removeDir(dest);
+    }
     opts.onProgress?.('copying');
-    await deps.copyDir(src, path.join(found.modsDir, MOD_ID));
+    await deps.copyDir(src, dest);
     opts.onProgress?.('enabling');
     await enableMod(found.modsDir, deps);
   } catch (err) {

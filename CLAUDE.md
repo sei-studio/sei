@@ -1935,7 +1935,13 @@ bot (every client dials `localhost`, not `127.0.0.1`, for Windows
 `HttpListener`). 20 verbs in `src/bot/adapter/stardew/registry.js`. Install
 (`src/main/games/stardew/install.ts`) ports SMAPI's GameScanner logic,
 downloads the SMAPI installer (mirror first), runs it `--install --no-prompt`,
-copies the mod from `<packRoot>/assets/stardew-mod/SeiCompanion`. **The mod
+copies the mod from `<packRoot>/assets/stardew-mod/SeiCompanion`. The setup
+only runs while something is missing, so `launchStardew` calls
+`upgradeModIfNewer` before it starts the game (260925): when the pack's
+`manifest.json` Version is newer than the installed one it re-places the mod,
+keeping `config.json` (token + port). A game started through Steam instead
+keeps its old mod until the next launch from Sei. **Bump the manifest Version
+with every mod change** or installed copies never update. **The mod
 compiles only against the game's assemblies** (verified clean against
 1.6.15 + SMAPI 4.5.2 on this machine), so `assets/stardew-mod/` is a TRACKED
 build output the release packs with `--skip-build`; rebuild and commit it
@@ -2368,7 +2374,9 @@ special needs (meat-only, vegetarian, souls, wetness, fire, frailty) are DATA
 read by both the BT and the primer, never branches. Install = mod copy into
 `<install>/mods/sei/` + `modsettings.lua` (`ForceEnableMod("sei")`,
 `DisableLocalModWarning()`), re-applied on every launch because game updates
-rewrite that file; launch = `steam://rungameid/322330`. Four spikes wait for
+rewrite that file; the mod copy also runs on every launch, and when the
+pack's `modinfo.lua` version is newer the old `mods/sei/` is removed first
+(260925); launch = `steam://rungameid/322330`. Four spikes wait for
 the live checklist: a joiner with `all_clients_require_mod = false`,
 ownerless `inst:Remove()`, a caves-enabled host, the QueryServer hold.
 
