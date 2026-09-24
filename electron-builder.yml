@@ -159,6 +159,56 @@ files:
 artifactName: Sei-${os}-${arch}.${ext}
 
 asar: true
+
+# 260925 Electron fuses (flipped in the packaged Electron binary right before
+# signing, by app-builder-lib's doAddElectronFuses via @electron/fuses). Until
+# this block existed every shipped build ran with Electron's default fuse wire
+# (read off the installed v0.6.5-beta.2: 101100011), so any local process could
+# relaunch the signed Sei with `--inspect`, ELECTRON_RUN_AS_NODE=1 or
+# NODE_OPTIONS=--require=... and run arbitrary code AS Sei, inheriting its TCC
+# grants (Screen Recording, Automation, folder access) and its keychain /
+# safeStorage key. Fuses are compiled into the binary, so none of this touches
+# `npm run dev` or the `ELECTRON_RUN_AS_NODE=1 npx electron ...` smoke tests:
+# those run the unpackaged node_modules/electron binary, which is never flipped.
+#
+# Nothing in the packaged app relies on the three Node escape hatches: no code
+# path spawns process.execPath with ELECTRON_RUN_AS_NODE, the bot is forked
+# with utilityProcess.fork (not child_process.fork of the Electron binary) and
+# passes no execArgv, and nothing reads NODE_OPTIONS. The one casualty is the
+# out-of-app fallback in scripts/heal-phantom-call.{mjs,command}, which used the
+# installed Sei as a Node runtime; it now asks for Node instead (the in-app
+# recovery in src/main/recovery covers users without Node).
+#
+# The remote test tooling is unaffected: it drives the renderer over Chromium's
+# --remote-debugging-port, which is a Chromium switch and not governed by any
+# fuse.
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  # Encrypts the Chromium cookie store with the same OS key safeStorage already
+  # uses (macOS "Sei Safe Storage" keychain item, Windows DPAPI), so it adds no
+  # new keychain prompt. One-way: existing plaintext cookies stay readable and
+  # are re-encrypted on write, but turning this back OFF later corrupts the
+  # store. Sei itself keeps no auth in cookies (the Supabase session lives in
+  # safeStorage via src/main/auth/sessionStore.ts).
+  enableCookieEncryption: true
+  # Load the app ONLY from resources/app.asar (default search order also tries
+  # resources/app/ and default_app.asar, which lets someone drop a folder next
+  # to the asar and have it loaded). Compatible with our asarUnpack layout: the
+  # unpacked tree is reached through the asar's own unpacked-file redirection
+  # and via the explicit app.asar.unpacked path botSupervisor.botEntryPath()
+  # hands utilityProcess.fork; neither is an app-entry lookup.
+  onlyLoadAppFromAsar: true
+  # Left OFF on purpose. Integrity validation only covers app.asar (dist/ main,
+  # preload, renderer); src/bot/** and every node_modules package live in
+  # app.asar.unpacked, which it never checks, so the protection is thin. The
+  # failure mode is a hard crash at launch on mac/win if the hash embedded at
+  # pack time (Info.plist ElectronAsarIntegrity / win resource) ever disagrees
+  # with the asar that signing and notarization leave behind, and that can only
+  # be verified on a real signed mac/win build, not on the Linux build host.
+  enableEmbeddedAsarIntegrityValidation: false
+
 extraResources:
   - from: build/icon.png
     to: icon.png
