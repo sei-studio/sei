@@ -2739,6 +2739,22 @@ Packaging is **electron-builder** (`electron-builder.yml`):
   fields from the lockfile; after a bump, `git diff package-lock.json` should
   show only the version lines.
 
+**No remote debugging in stable builds (260925).** The fuses
+(`electronFuses` in `electron-builder.yml`) turn off RunAsNode, NODE_OPTIONS and
+`--inspect`, but Chromium's `--remote-debugging-port` / `--remote-debugging-pipe`
+have no fuse: any local process could relaunch the signed app with CDP and drive
+the renderer (preload IPC + TCC grants). `src/main/remoteDebugGuard.ts`, the
+FIRST import of `src/main/index.ts`, calls `process.exit(1)` when a packaged
+build whose version has no prerelease tag sees `--remote-debugging-*`,
+`--inspect*`, `--debug-port` or `--js-flags` (argv scan plus
+`app.commandLine.hasSwitch`; pure policy in `remoteDebugPolicy.ts`). Packaged
+betas (`X.Y.Z-beta.N`) and dev are unaffected. Measured on Linux: Chromium
+opens the DevTools port only AFTER the main script has evaluated, so exiting
+there means the port never listens. Consequence: **installed-app CDP
+verification (`open -a Sei --args --remote-debugging-port=...`) only works on a
+beta**; a stable install quits immediately. Keep the guard the first import, and
+never `appendSwitch` a debugging switch in production code.
+
 Common scripts: `npm run dev` (electron-vite dev), `npm run build`,
 `npm run dist:mac` / `dist:win` / `dist:linux`.
 

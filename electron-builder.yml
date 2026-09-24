@@ -179,9 +179,11 @@ asar: true
 # installed Sei as a Node runtime; it now asks for Node instead (the in-app
 # recovery in src/main/recovery covers users without Node).
 #
-# The remote test tooling is unaffected: it drives the renderer over Chromium's
-# --remote-debugging-port, which is a Chromium switch and not governed by any
-# fuse.
+# Chromium's --remote-debugging-port / -pipe are not governed by any fuse, so
+# src/main/remoteDebugGuard.ts (first import of the main entry) makes packaged
+# STABLE builds exit at startup when they see them (or --inspect*, --js-flags).
+# Packaged betas and dev still allow them, so the remote test tooling that
+# relaunches the installed app with --remote-debugging-port must use a beta.
 electronFuses:
   runAsNode: false
   enableNodeOptionsEnvironmentVariable: false
