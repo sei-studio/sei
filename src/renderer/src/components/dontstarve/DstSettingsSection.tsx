@@ -45,9 +45,9 @@ export function DstSettingsSection(_props: GameSettingsSectionProps): React.Reac
       <div className={settings.row}>
         <span className={styles.rowLabel}>{t('Helper mod')}</span>
         <span className={styles.rowValue}>{status}</span>
-        {install?.kind === 'found' && (!install.modInstalled || !install.enabled) ? (
+        {install?.kind === 'found' && (!install.modInstalled || !install.enabled || install.grantNeeded) ? (
           <Button kind="primary" size="sm" disabled={installBusy} onClick={() => void runInstall()}>
-            {install.modInstalled ? t('Enable') : t('Add')}
+            {!install.modInstalled ? t('Add') : !install.enabled ? t('Enable') : t('Update helper')}
           </Button>
         ) : install?.kind === 'not_found' ? (
           <Button kind="quiet" size="sm" onClick={() => void refreshInstall()}>{t('Check again')}</Button>

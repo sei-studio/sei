@@ -124,6 +124,21 @@ describe('useDstSetupSteps + DstLaunchPanel', () => {
     expect(open).toContain('Your world is open: Camp, day 4.');
   });
 
+  it('Test 3b (260925): macOS grant states: a blocked update, a reset enable line, the panel and Finder progress', async () => {
+    const blocked = { ...FOUND, modInstalled: true, modVersion: '0.2.0', enabled: true, grantNeeded: true };
+    const a = await renderSteps(blocked);
+    expect(a).toContain('data-step="helper"');
+    expect(a).toContain('macOS needs your OK once to add it.');
+    expect(a).toContain('>Update helper<');
+    expect(a).toContain('data-complete="false"');
+    const off = await renderSteps({ ...FOUND, modInstalled: true, modVersion: '0.2.0', enabled: false });
+    expect(off).toContain('>Turn the helper back on<');
+    const asking = await renderSteps({ kind: 'installing', step: 'asking' });
+    expect(asking).toContain('Click Install helper in the window macOS opened.');
+    const finder = await renderSteps({ kind: 'installing', step: 'finder' });
+    expect(finder).toContain('Copying through Finder.');
+  });
+
   it('Test 4: the token list renders all four steps', async () => {
     await mockStores(FOUND);
     const { DstSteps } = await import('./DstSteps');

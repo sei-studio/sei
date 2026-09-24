@@ -56,7 +56,12 @@ let offProgress: (() => void) | null = null;
 export function mergeDetected(current: DstInstallState | null, detected: DstInstallState, installBusy: boolean): DstInstallState | null {
   if (installBusy) return current;
   if (current?.kind === 'error') {
-    const resolved = detected.kind === 'not_found' || (detected.kind === 'found' && detected.modInstalled);
+    // "In the game" = what the helper step counts as done (260925): an older
+    // helper waiting on the macOS grant, or a disabled one, has not resolved
+    // a refused Update helper / Turn the helper back on click.
+    const resolved =
+      detected.kind === 'not_found' ||
+      (detected.kind === 'found' && detected.modInstalled && detected.enabled && !detected.grantNeeded);
     if (!resolved) return current;
   }
   return detected;

@@ -58,7 +58,9 @@ export function useDstSetupSteps(skin: StepSkin): DstSetup {
   }, [refreshInstall, worldOpen]);
 
   const found = install?.kind === 'found' ? install : null;
-  const helperReady = found != null && found.modInstalled && found.enabled;
+  // grantNeeded (macOS, 260925): a game launch could not write a helper
+  // update and never asks on its own, so the step is open until a click.
+  const helperReady = found != null && found.modInstalled && found.enabled && !found.grantNeeded;
   // A live heartbeat proves every earlier step whatever detection last said.
   const gameRunning = worldOpen || (found?.gameRunning ?? false);
   const needsRestart = !worldOpen && (found?.needsRestart ?? false);
@@ -96,7 +98,7 @@ export function useDstSetupSteps(skin: StepSkin): DstSetup {
       done: helperReady,
       body:
         install?.kind === 'installing' ? (
-          <span aria-live="polite">{install.step === 'enabling' ? t('Enabling the helper in the game') : t('Copying the helper into the game folder')}</span>
+          <span aria-live="polite">{installingLine(install.step, t)}</span>
         ) : install?.kind === 'error' && install.permission ? (
           <>
             <span role="alert">
@@ -116,6 +118,20 @@ export function useDstSetupSteps(skin: StepSkin): DstSetup {
           </>
         ) : helperReady ? (
           <span>{t("Sei's helper is in the game (v{version}).", { version: found?.modVersion ?? '?' })}</span>
+        ) : found?.modInstalled && found.enabled && found.grantNeeded ? (
+          <>
+            <span>{t("A newer version of Sei's helper is ready. macOS needs your OK once to add it.")}</span>
+            <div className={skin.actions}>
+              <Button kind="primary" disabled={installBusy} onClick={() => void runInstall()}>{t('Update helper')}</Button>
+            </div>
+          </>
+        ) : found?.modInstalled && !found.enabled ? (
+          <>
+            <span>{t("The game turned Sei's helper off. Game updates do this.")}</span>
+            <div className={skin.actions}>
+              <Button kind="primary" disabled={installBusy} onClick={() => void runInstall()}>{t('Turn the helper back on')}</Button>
+            </div>
+          </>
         ) : (
           <>
             <span>
@@ -187,6 +203,22 @@ export function useDstSetupSteps(skin: StepSkin): DstSetup {
     allDone: steps.every((s) => s.done),
     known: install != null,
   };
+}
+
+/** What the helper step says while an install runs. */
+function installingLine(step: string, t: ReturnType<typeof useT>): string {
+  switch (step) {
+    case 'enabling':
+      return t('Enabling the helper in the game');
+    // macOS (260925): the Open panel is up and waiting for the click.
+    case 'asking':
+      return t('Click Install helper in the window macOS opened.');
+    // macOS: Finder copies it in; the first time macOS asks to let Sei control Finder.
+    case 'finder':
+      return t('Copying through Finder. If macOS asks whether Sei may control Finder, click Allow.');
+    default:
+      return t('Copying the helper into the game folder');
+  }
 }
 
 /* ── The token-styled numbered list (the setup modal's body) ── */

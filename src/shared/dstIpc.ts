@@ -199,7 +199,19 @@ export type DstInstallState =
        * game and open it again" step. A live heartbeat clears it.
        */
       needsRestart: boolean;
+      /**
+       * macOS (260925): a game launch needed to write the helper (a newer
+       * version, or modsettings.lua after a game update) and macOS refused.
+       * A launch never shows a dialog, so the helper step asks for the click
+       * instead. Absent = nothing pending.
+       */
+      grantNeeded?: boolean;
     }
+  /**
+   * `step`: 'replacing' | 'copying' | 'enabling', plus on macOS (260925)
+   * 'asking' (the Open panel is up, waiting for the player) and 'finder'
+   * (Finder is copying the helper in, maybe behind its Automation prompt).
+   */
   | { kind: 'installing'; step: string }
   | {
       kind: 'error';
@@ -208,9 +220,10 @@ export type DstInstallState =
       /**
        * macOS refused the write (260909): the game's mods folder lives INSIDE
        * dontstarve_steam.app, and since macOS 13 changing another app's
-       * bundle needs the App Management permission (EPERM otherwise, from
-       * every process without it). The step shows the System Settings path
-       * and a button that opens the pane.
+       * bundle is gated (EPERM from every process without a grant). Since
+       * 260925 a clicked install first tries the Open panel grant and the
+       * Finder copy (install.ts installMod); this is what is left when both
+       * failed. The step shows one line and "Try again".
        */
       permission?: boolean;
     };
@@ -231,7 +244,11 @@ export const DstSurvivorSetSchema = z.object({
 export const DstChannel = {
   /** Invoke: () → DstInstallState (no writes). */
   installState: 'dst:install-state',
-  /** Invoke: () → DstInstallState after copying the mod + enabling it. */
+  /**
+   * Invoke: () → DstInstallState after copying the mod + enabling it. A
+   * user click by contract: on macOS it may show the Open panel and fall
+   * back to a Finder copy when the game bundle refuses the write (260925).
+   */
   install: 'dst:install',
   /** Invoke: () → void; opens steam://rungameid/322330. */
   launch: 'dst:launch',
@@ -241,6 +258,9 @@ export const DstChannel = {
   survivorSet: 'dst:survivor-set',
   /** Push: DstInstallState while an install runs. */
   installProgress: 'dst:install-progress',
-  /** Invoke: () → void; macOS only, opens Privacy & Security > App Management. */
+  /**
+   * Invoke: () → void; macOS only, opens Privacy & Security > App Management.
+   * Unused since 260925 (the install asks through the Open panel instead).
+   */
   openAppManagement: 'dst:open-app-management',
 } as const;

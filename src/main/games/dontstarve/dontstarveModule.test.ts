@@ -10,9 +10,11 @@ function build(cfg: Partial<UserConfig> = {}, installState: unknown = { kind: 'f
   const watcher = createDstWatcher({ now: () => t, log: () => {}, port: 0 });
   const detect = vi.fn(async () => installState as never);
   const enable = vi.fn(async () => {});
-  const install = vi.fn(async () => ({ kind: 'found', installPath: '/i', modsDir: '/i/mods', modInstalled: true, modVersion: '0.1.0', enabled: true }) as never);
+  const install = vi.fn(async (_opts: unknown) => ({ kind: 'found', installPath: '/i', modsDir: '/i/mods', modInstalled: true, modVersion: '0.1.0', enabled: true }) as never);
   const launch = vi.fn(async () => {});
+  const isCurrent = vi.fn(async (_packRoot: string, _modsDir: string) => false);
   const mod = createDontStarveGameModule({
+    isCurrent,
     watcher,
     detect,
     enable,
@@ -23,7 +25,7 @@ function build(cfg: Partial<UserConfig> = {}, installState: unknown = { kind: 'f
     getPackRoot: async () => '/pack',
     log: () => {},
   });
-  return { mod, watcher, detect, enable, install, launch, tick: (ms: number) => { t += ms; } };
+  return { mod, watcher, detect, enable, install, launch, isCurrent, tick: (ms: number) => { t += ms; } };
 }
 
 describe('dontstarve GameModule', () => {
@@ -86,5 +88,47 @@ describe('dontstarve GameModule', () => {
     const s = await mod.getInstallState();
     expect(enable).toHaveBeenCalledWith('/i/mods');
     expect(s).toMatchObject({ kind: 'found', enabled: true });
+  });
+
+  it('macOS (260925): a launch never passes a grant; a refused needed write flags grantNeeded until a clicked install lands', async () => {
+    const { mod, install, launch, detect } = build();
+    const refused = { kind: 'error', error: 'GAME_INSTALL_FAILED', message: 'EPERM', permission: true };
+    install.mockResolvedValueOnce(refused as never);
+    await mod.install!.launch();
+    expect(install.mock.calls[0][0]).toMatchObject({ packRoot: '/pack', grant: undefined });
+    // The game still launches, with whatever helper is there.
+    expect(launch).toHaveBeenCalledTimes(1);
+    expect(detect).toHaveBeenCalled();
+    expect(mod.lastInstall).toMatchObject({ kind: 'found', grantNeeded: true });
+    expect(await mod.getInstallState()).toMatchObject({ grantNeeded: true });
+
+    // The click carries the grant through to installMod and clears the flag.
+    const grant = { pickFolder: vi.fn() } as never;
+    const s = await mod.runInstall(undefined, { grant });
+    expect(install.mock.calls[1][0]).toMatchObject({ grant });
+    expect(s).not.toHaveProperty('grantNeeded');
+    expect(await mod.getInstallState()).not.toHaveProperty('grantNeeded');
+  });
+
+  it('grantNeeded clears when detection sees the helper current and enabled (fixed some other way)', async () => {
+    const { mod, install, isCurrent } = build();
+    install.mockResolvedValueOnce({ kind: 'error', error: 'GAME_INSTALL_FAILED', message: 'EPERM', permission: true } as never);
+    await mod.install!.launch();
+    expect(await mod.getInstallState()).toMatchObject({ grantNeeded: true });
+    expect(isCurrent).toHaveBeenLastCalledWith('/pack', '/i/mods');
+    isCurrent.mockResolvedValue(true);
+    expect(await mod.getInstallState()).not.toHaveProperty('grantNeeded');
+    // And it stays cleared: a later poll that could not check does not bring it back.
+    isCurrent.mockResolvedValue(false);
+    expect(await mod.getInstallState()).not.toHaveProperty('grantNeeded');
+  });
+
+  it('a clicked install that macOS still refuses returns the error as is (no flag, the step shows it)', async () => {
+    const { mod, install } = build();
+    const refused = { kind: 'error', error: 'GAME_INSTALL_FAILED', message: 'EPERM', permission: true };
+    install.mockResolvedValueOnce(refused as never);
+    const s = await mod.runInstall(undefined, { grant: {} as never });
+    expect(s).toEqual(refused);
+    expect(await mod.getInstallState()).not.toHaveProperty('grantNeeded');
   });
 });

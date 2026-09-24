@@ -323,6 +323,15 @@ mac:
     # entitlement in build/entitlements.mac.plist) getUserMedia silently fails in
     # the packaged/notarized build even after the user allows the mic.
     NSMicrophoneUsageDescription: "Sei uses your microphone so you can talk to your characters on a voice call."
+    # DST helper (260925): when the Open panel route is cancelled, Sei asks
+    # Finder (via /usr/bin/osascript) to copy the helper into the game bundle,
+    # and macOS shows "Sei wants access to control Finder" once. This string is
+    # the explanation line on that prompt. No entitlement goes with it: the
+    # Apple Event is sent by osascript, not by Sei's hardened-runtime binary
+    # (measured working on a signed build with no automation entitlement), and
+    # com.apple.security.automation.apple-events is only needed when the app's
+    # own process sends events.
+    NSAppleEventsUsageDescription: "Sei asks Finder to copy its helper into Don't Starve Together when macOS will not let Sei write there itself."
 
 # dmg layout: app on the left, /Applications link on the right — the classic
 # drag-to-install window (re-enabled 260728 with the texture prune above).

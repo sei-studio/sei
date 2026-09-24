@@ -1861,13 +1861,26 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const mod = await dstModule();
     return mod.getInstallState();
   });
-  ipcMain.handle(IpcChannel.dst.install, async () => {
+  // dst:install is only ever a click in the renderer, so on macOS it carries
+  // the one-click grant (260925): when the game bundle refuses the write,
+  // the Open panel appears as a sheet on the window that asked, then the
+  // Finder copy. A game launch (dst:launch) never passes one.
+  ipcMain.handle(IpcChannel.dst.install, async (event) => {
     const mod = await dstModule();
-    return mod.runInstall((state) => {
-      for (const w of BrowserWindow.getAllWindows()) {
-        if (!w.isDestroyed()) w.webContents.send(IpcChannel.dst.installProgress, state);
-      }
-    });
+    let grant: import('./games/dontstarve/install').MacGrant | undefined;
+    if (process.platform === 'darwin') {
+      const { createMacGrant } = await import('./games/dontstarve/macGrant');
+      const language = await loadConfig().then((c) => (c.ui_language === 'zh' ? 'zh' : 'en') as 'en' | 'zh', () => 'en' as const);
+      grant = createMacGrant({ window: BrowserWindow.fromWebContents(event.sender), language });
+    }
+    return mod.runInstall(
+      (state) => {
+        for (const w of BrowserWindow.getAllWindows()) {
+          if (!w.isDestroyed()) w.webContents.send(IpcChannel.dst.installProgress, state);
+        }
+      },
+      { grant },
+    );
   });
   ipcMain.handle(IpcChannel.dst.launch, async (): Promise<void> => {
     const mod = await dstModule();

@@ -337,9 +337,113 @@ export async function detectInstall(deps: InstallDeps = defaultDeps()): Promise<
   };
 }
 
-/** Copy the mod from the pack into the game and force-enable it. */
+/**
+ * The macOS one-click grant (260925). Only an explicit click in Sei ("Add
+ * Sei's helper", "Try again", "Update helper") passes one; a game launch and
+ * the detection poll never do, so they can never pop a dialog on their own.
+ * Every member is injectable; the Electron + osascript implementation lives
+ * in macGrant.ts so this file stays importable from plain node tests.
+ */
+export interface MacGrant {
+  /**
+   * Show the native Open panel on `defaultPath`, attached to the Sei window,
+   * with the "Install helper" button. `hint` = the second showing after the
+   * player picked some other folder. Resolves the chosen folder, or null on
+   * cancel.
+   */
+  pickFolder(opts: { defaultPath: string; hint: boolean }): Promise<string | null>;
+  /** `tell application "Finder" to duplicate <sources> to <destDir> with replacing`. */
+  finderDuplicate(sources: string[], destDir: string): Promise<void>;
+  realpath(p: string): Promise<string>;
+  /** A fresh private staging directory (outside the game bundle). */
+  makeTempDir(): Promise<string>;
+  /** Every file under `dir`, as a path relative to it plus its mode bits. */
+  fileModes(dir: string): Promise<{ rel: string; mode: number }[]>;
+  chmod(p: string, mode: number): Promise<void>;
+}
+
+/** The .app bundle that holds a macOS mods dir (`<app>/Contents/mods`). */
+export function appBundleFor(modsDir: string): string {
+  return path.dirname(path.dirname(modsDir));
+}
+
+function isPermissionError(err: unknown, platform: NodeJS.Platform): boolean {
+  const s = installError(err, platform);
+  return s.kind === 'error' && s.permission === true;
+}
+
+/**
+ * One attempt at the plain install: replace an older helper, copy the pack's
+ * copy over, force-enable it. Resolves null on success or the error.
+ */
+async function writeHelper(
+  src: string,
+  modsDir: string,
+  deps: InstallDeps,
+  onProgress?: (step: string) => void,
+): Promise<unknown> {
+  const dest = path.join(modsDir, MOD_ID);
+  try {
+    const installed = await deps.readText(path.join(dest, 'modinfo.lua'));
+    const packVersion = modVersionFrom(await deps.readText(path.join(src, 'modinfo.lua')));
+    if (installed != null && packModIsNewer(packVersion, modVersionFrom(installed))) {
+      onProgress?.('replacing');
+      await deps.removeDir(dest);
+    }
+    onProgress?.('copying');
+    await deps.copyDir(src, dest);
+    onProgress?.('enabling');
+    await enableMod(modsDir, deps);
+    return null;
+  } catch (err) {
+    return err ?? new Error('install failed');
+  }
+}
+
+/**
+ * Is the helper in the game, current, and enabled? Then a refused write was
+ * only the every-launch refresh and nothing is actually missing.
+ */
+async function helperCurrent(src: string, modsDir: string, deps: InstallDeps): Promise<boolean> {
+  const installed = await deps.readText(path.join(modsDir, MOD_ID, 'modinfo.lua'));
+  if (installed == null) return false;
+  const packVersion = modVersionFrom(await deps.readText(path.join(src, 'modinfo.lua')));
+  if (packModIsNewer(packVersion, modVersionFrom(installed))) return false;
+  const settings = await deps.readText(path.join(modsDir, 'modsettings.lua'));
+  return settings != null && rewriteModSettings(settings) === settings;
+}
+
+/**
+ * helperCurrent from a pack root, for the module to clear `grantNeeded` when
+ * detection finds the helper current and enabled (260925). Read-only.
+ */
+export async function isHelperCurrent(packRoot: string, modsDir: string, deps: InstallDeps = defaultDeps()): Promise<boolean> {
+  const src = await resolveModSource(packRoot, deps);
+  return src != null && helperCurrent(src, modsDir, deps);
+}
+
+/**
+ * Copy the mod from the pack into the game and force-enable it.
+ *
+ * macOS (260925, measured on a signed v0.6.5-beta.2 with App Management off):
+ * the mods folder is inside dontstarve_steam.app, so every write there is
+ * EPERM until the player grants it. The write is ALWAYS tried first (the
+ * grant persists across Sei restarts; across a reboot or a DST update it is
+ * unmeasured). On EPERM, with a `grant` (a user click):
+ *   1. the Open panel on the mods folder; picking `mods` or the .app writes a
+ *      com.apple.macl grant and the retry succeeds. Any other folder shows
+ *      the panel once more with a hint. Cancel = no: the permission error, no
+ *      Finder.
+ *   2. a second wrong folder, still EPERM, or a panel that threw: Finder copies it in (Finder is exempt from App
+ *      Management; costs one "Sei wants access to control Finder" prompt).
+ *   3. both fail: the permission error the step already shows.
+ * Without a grant (a game launch) there is never a dialog: a refused refresh
+ * of a helper that is already current and enabled counts as success, and a
+ * needed write returns the permission error for the UI to surface.
+ * Windows and Linux never take the grant path (EPERM there is a plain error).
+ */
 export async function installMod(
-  opts: { packRoot: string; onProgress?: (step: string) => void },
+  opts: { packRoot: string; onProgress?: (step: string) => void; grant?: MacGrant },
   deps: InstallDeps = defaultDeps(),
 ): Promise<DstInstallState> {
   const { found, searched } = await findDstInstall(deps);
@@ -348,22 +452,112 @@ export async function installMod(
   if (!src) {
     return { kind: 'error', error: 'GAME_INSTALL_FAILED', message: `The helper mod files are missing from ${opts.packRoot}.` };
   }
-  const dest = path.join(found.modsDir, MOD_ID);
-  try {
-    const installed = await deps.readText(path.join(dest, 'modinfo.lua'));
-    const packVersion = modVersionFrom(await deps.readText(path.join(src, 'modinfo.lua')));
-    if (installed != null && packModIsNewer(packVersion, modVersionFrom(installed))) {
-      opts.onProgress?.('replacing');
-      await deps.removeDir(dest);
-    }
-    opts.onProgress?.('copying');
-    await deps.copyDir(src, dest);
-    opts.onProgress?.('enabling');
-    await enableMod(found.modsDir, deps);
-  } catch (err) {
-    return installError(err, deps.platform);
+  const first = await writeHelper(src, found.modsDir, deps, opts.onProgress);
+  if (first == null) return detectInstall(deps);
+  const refused = installError(first, deps.platform);
+  if (refused.kind !== 'error' || !refused.permission) return refused;
+  if (!opts.grant) {
+    return (await helperCurrent(src, found.modsDir, deps).catch(() => false)) ? detectInstall(deps) : refused;
   }
-  return detectInstall(deps);
+  const outcome = await grantAndInstall(src, found.modsDir, opts.grant, deps, opts.onProgress);
+  if (outcome === 'installed') return detectInstall(deps);
+  if (outcome instanceof Error) return installError(outcome, deps.platform);
+  return refused;
+}
+
+/**
+ * Steps 1 and 2 of the macOS flow above. Resolves 'installed', 'refused'
+ * (the player cancelled the panel, or both routes failed on permission), or a non-permission Error that the
+ * caller reports as it is.
+ */
+export async function grantAndInstall(
+  src: string,
+  modsDir: string,
+  grant: MacGrant,
+  deps: InstallDeps,
+  onProgress?: (step: string) => void,
+): Promise<'installed' | 'refused' | Error> {
+  const real = (p: string): Promise<string | null> => grant.realpath(p).then(normalizeForCompare, () => null);
+  const accepted = [await real(modsDir), await real(appBundleFor(modsDir))].filter((p): p is string => p != null);
+  for (let hint = false; ; hint = true) {
+    onProgress?.('asking');
+    // Cancel means no: no Finder prompt after it, the step shows the one
+    // line and "Try again". A panel that could not show (it threw) is not
+    // an answer, so that one still goes to Finder.
+    const picked = await grant.pickFolder({ defaultPath: modsDir, hint }).then(
+      (p) => p,
+      () => undefined,
+    );
+    if (picked === null) return 'refused';
+    if (picked === undefined) break;
+    const chosen = await real(picked);
+    if (chosen == null || !accepted.includes(chosen)) {
+      if (hint) break;
+      continue;
+    }
+    const err = await writeHelper(src, modsDir, deps, onProgress);
+    if (err == null) return 'installed';
+    if (!isPermissionError(err, deps.platform)) return err instanceof Error ? err : new Error(String(err));
+    break;
+  }
+  onProgress?.('finder');
+  return (await finderInstall(src, modsDir, grant, deps)) ? 'installed' : 'refused';
+}
+
+/** realpath output, compared the way APFS names compare (case-insensitive, NFC). */
+function normalizeForCompare(p: string): string {
+  return p.replace(/[\\/]+$/, '').normalize('NFC').toLowerCase();
+}
+
+/**
+ * The Finder fallback: stage the mod and the new modsettings.lua outside the
+ * bundle, have Finder duplicate both into the mods folder with replacing (a
+ * replaced folder is replaced whole, so an upgrade drops stale scripts), put
+ * the source file modes back where macOS lets us (Finder resets a replaced
+ * file to 0644 and a fresh mtime), read everything back, and remove the
+ * staging. True only when the files are verifiably in place.
+ */
+export async function finderInstall(src: string, modsDir: string, grant: MacGrant, deps: InstallDeps): Promise<boolean> {
+  let stage: string | null = null;
+  try {
+    stage = await grant.makeTempDir();
+    const stagedMod = path.join(stage, MOD_ID);
+    await deps.copyDir(src, stagedMod);
+    const settingsPath = path.join(modsDir, 'modsettings.lua');
+    const settingsNow = await deps.readText(settingsPath);
+    const settingsNext = rewriteModSettings(settingsNow);
+    const sources = [stagedMod];
+    if (settingsNext !== settingsNow) {
+      const stagedSettings = path.join(stage, 'modsettings.lua');
+      await deps.writeText(stagedSettings, settingsNext);
+      sources.push(stagedSettings);
+    }
+    await grant.finderDuplicate(sources, modsDir);
+
+    const dest = path.join(modsDir, MOD_ID);
+    const want = await grant.fileModes(src);
+    const landed = new Map((await grant.fileModes(dest)).map((f) => [f.rel, f.mode]));
+    for (const f of want) {
+      const mode = landed.get(f.rel);
+      if (mode == null) return false;
+      if ((mode & 0o777) !== (f.mode & 0o777)) await grant.chmod(path.join(dest, f.rel), f.mode & 0o777).catch(() => undefined);
+    }
+    const [packInfo, landedInfo, landedSettings] = await Promise.all([
+      deps.readText(path.join(src, 'modinfo.lua')),
+      deps.readText(path.join(dest, 'modinfo.lua')),
+      deps.readText(settingsPath),
+    ]);
+    return (
+      packInfo != null &&
+      landedInfo === packInfo &&
+      landedSettings != null &&
+      rewriteModSettings(landedSettings) === landedSettings
+    );
+  } catch {
+    return false;
+  } finally {
+    if (stage) await deps.removeDir(stage).catch(() => undefined);
+  }
 }
 
 /**
