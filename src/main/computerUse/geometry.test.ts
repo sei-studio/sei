@@ -56,6 +56,23 @@ describe('mixed-DPI capture planning', () => {
   });
 });
 
+describe("Shawn's real layout (helper displays output, 260925)", () => {
+  // External main at 0,0; built-in to its LEFT, at negative x.
+  const real: DisplayInfo[] = [
+    { id: 2, bounds: { x: 0, y: 0, w: 3440, h: 1440 }, scale: 1, main: true },
+    { id: 1, bounds: { x: -1512, y: 0, w: 1512, h: 982 }, scale: 2, main: false },
+  ];
+  it('plans the built-in display at 1280x831 and maps back into negative x', () => {
+    const plan = planCapture(real[1]!.bounds, real, budgetForModel('claude-sonnet-5'))!;
+    expect(plan).toMatchObject({ displayId: 1, width: 1280, height: 831 });
+    const f = { rect: plan.rect, width: plan.width, height: plan.height };
+    const g = imageToGlobal({ x: 0, y: 0 }, f);
+    expect(g.x).toBeLessThan(-1510);
+    expect(imageToGlobal({ x: 1279, y: 830 }, f).x).toBeLessThan(0);
+    expect(globalToImage({ x: -756, y: 491 }, f)).toEqual({ x: 640, y: 415 });
+  });
+});
+
 describe('image <-> global mapping', () => {
   const frames = [
     // built-in, 2x, downscaled

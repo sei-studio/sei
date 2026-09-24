@@ -175,7 +175,7 @@ if (e2e) {
     const t2 = Date.now()
     const ax = await safe('e2e: ax_dump', () => req('ax_dump', { pid: te.pid, maxNodes: 400 }, 8000))
     const tAx = Date.now() - t2
-    const hit = (ax?.nodes ?? []).find((n) => typeof n.value === 'string' && n.value.includes(text))
+    const hit = (ax?.nodes ?? []).find((n) => typeof n.value === 'string' && n.value.toLowerCase().includes(text)) // TextEdit auto-capitalizes
     check('e2e: ax_dump reads TextEdit', (ax?.nodes?.length ?? 0) > 0, `${ax?.nodes?.length} nodes in ${tAx} ms; roles ${JSON.stringify([...new Set((ax?.nodes ?? []).map((n) => n.role))].slice(0, 12))}`)
     check('e2e: typed text visible in the AX tree', !!hit, hit ? hit.role : 'no match')
     const foc = await req('ax_focused')
