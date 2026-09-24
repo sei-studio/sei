@@ -16,6 +16,9 @@
  *   - RESEARCH §Pitfall 5 (everything behind app.whenReady)
  *   - CONTEXT D-15, D-21, D-32, project constraints
  */
+// MUST stay the first import: refuses --remote-debugging-* / --inspect* /
+// --js-flags in packaged stable builds before anything else evaluates.
+import './remoteDebugGuard';
 import { app, BrowserWindow, session, systemPreferences } from 'electron';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
