@@ -14,6 +14,15 @@
  *   7. A zip entry with `..` is rejected before anything is committed.
  *   8. Older version dirs are deleted after a successful install.
  *   9. Concurrent ensurePack calls share one download (single-flight).
+ *  10. An asset pack (no node_modules/, Stardew/DST shape) installs.
+ *  11. A zip without its game's required payload (the 745-byte v0.6.5-beta.1
+ *      DST pack) is rejected and nothing is committed.
+ *  12. A payload-less INSTALL from that zip is not re-linked on the next
+ *      version even though the manifest treeHash matches: it is downloaded
+ *      again and ends up with the mod.
+ *  13. A re-link candidate whose file count disagrees with pack.json `files`
+ *      is downloaded again too.
+ *  14. getPackState reads a payload-less same-version install as missing.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
@@ -47,15 +56,49 @@ interface Fixture {
   treeHash: string;
 }
 
-async function buildZip(opts: { treeHash?: string; evil?: boolean } = {}): Promise<Fixture> {
+/** The DST mod as the fixed builder zips it. */
+const DST_FILES: Record<string, string> = {
+  'node_modules/.sei-pack-keep': '',
+  'assets/dst-mod/sei/modinfo.lua': 'name = "Sei"\nversion = "1.0.0"\n',
+  'assets/dst-mod/sei/modmain.lua': '-- sei\n',
+  'assets/dst-mod/sei/scripts/sei/net.lua': '-- net\n',
+};
+
+/**
+ * The v0.6.5-beta.1 DST zip, byte for byte in shape: pack.json promising 14
+ * files and the empty node_modules placeholder, no assets/.
+ */
+const DST_BETA1_FILES: Record<string, string> = { 'node_modules/.sei-pack-keep': '' };
+
+async function buildZip(
+  opts: {
+    treeHash?: string;
+    evil?: boolean;
+    game?: string;
+    /** Replaces the default Minecraft tree. */
+    files?: Record<string, string>;
+    /** pack.json `files`; defaults to the real count, null omits it. */
+    packFiles?: number | null;
+  } = {},
+): Promise<Fixture> {
   const treeHash = opts.treeHash ?? 'a'.repeat(64);
+  const game = opts.game ?? 'minecraft';
   const zip = new JSZip();
-  zip.file('pack.json', JSON.stringify({ game: 'minecraft', version: 'x', treeHash }));
-  zip.file('node_modules/fake-dep/package.json', JSON.stringify({ name: 'fake-dep', main: 'index.js' }));
-  zip.file('node_modules/fake-dep/index.js', 'module.exports = "pack";');
-  zip.file('node_modules/fake-dep/build/Release/fake.node', Buffer.from([1, 2, 3]), {
-    unixPermissions: 0o755,
-  });
+  const files = opts.files ?? {
+    'node_modules/fake-dep/package.json': JSON.stringify({ name: 'fake-dep', main: 'index.js' }),
+    'node_modules/fake-dep/index.js': 'module.exports = "pack";',
+    'node_modules/mineflayer/package.json': JSON.stringify({ name: 'mineflayer' }),
+    'node_modules/minecraft-data/package.json': JSON.stringify({ name: 'minecraft-data' }),
+  };
+  const count = Object.keys(files).length + (opts.files ? 0 : 1);
+  const packFiles = opts.packFiles === undefined ? count : opts.packFiles;
+  zip.file('pack.json', JSON.stringify({ game, version: 'x', treeHash, ...(packFiles === null ? {} : { files: packFiles }) }));
+  for (const [name, body] of Object.entries(files)) zip.file(name, body);
+  if (!opts.files) {
+    zip.file('node_modules/fake-dep/build/Release/fake.node', Buffer.from([1, 2, 3]), {
+      unixPermissions: 0o755,
+    });
+  }
   if (opts.evil) zip.file('../evil.txt', 'nope');
   const buf = await zip.generateAsync({ type: 'nodebuffer', platform: 'UNIX', compression: 'DEFLATE' });
   return { zip: buf, sha256: createHash('sha256').update(buf).digest('hex'), treeHash };
@@ -94,14 +137,15 @@ let served: Served;
 const VERSION = '1.2.3';
 const FILE = `sei-pack-minecraft-${VERSION}-darwin-arm64.zip`;
 
-function manifestFor(fx: Fixture, version = VERSION, file = FILE) {
+function manifestFor(fx: Fixture, version = VERSION, file = FILE, game = 'minecraft') {
+  const any = game !== 'minecraft';
   return JSON.stringify({
     version,
     packs: [
       {
-        game: 'minecraft',
-        platform: 'darwin',
-        arch: 'arm64',
+        game,
+        platform: any ? 'any' : 'darwin',
+        arch: any ? 'any' : 'arm64',
         file,
         sha256: fx.sha256,
         bytes: fx.zip.length,
@@ -271,6 +315,91 @@ describe('game packs: ensurePack', () => {
     const [a, b] = await Promise.all([ensurePack('minecraft'), ensurePack('minecraft')]);
     expect(a).toBe(b);
     expect(served.requests.filter((u) => u.includes(FILE)).length).toBe(1);
+  });
+});
+
+describe('game packs: payload integrity (260924, empty v0.6.5-beta.1 DST pack)', () => {
+  const dstFile = (v: string) => `sei-pack-dontstarve-${v}-any-any.zip`;
+  const serveDst = (fx: Fixture, v: string) => {
+    served.routes.set(`/mirror/game-packs-${v}.json`, { status: 200, body: manifestFor(fx, v, dstFile(v), 'dontstarve'), type: 'application/json' });
+    served.routes.set(`/mirror/${dstFile(v)}`, { status: 200, body: fx.zip, type: 'application/zip' });
+  };
+
+  it('Test 10: an asset pack with no node_modules/ installs (Stardew shape)', async () => {
+    const fx = await buildZip({
+      game: 'stardew',
+      files: {
+        'assets/stardew-mod/SeiCompanion/SeiCompanion.dll': 'MZ',
+        'assets/stardew-mod/SeiCompanion/manifest.json': '{}',
+        'assets/stardew-mod/SeiCompanion/Assets/portrait.png': 'png',
+      },
+    });
+    const file = `sei-pack-stardew-${VERSION}-any-any.zip`;
+    served.routes.set(`/mirror/game-packs-${VERSION}.json`, { status: 200, body: manifestFor(fx, VERSION, file, 'stardew'), type: 'application/json' });
+    served.routes.set(`/mirror/${file}`, { status: 200, body: fx.zip, type: 'application/zip' });
+    configure();
+    const root = await ensurePack('stardew');
+    await stat(path.join(root, 'assets/stardew-mod/SeiCompanion/SeiCompanion.dll'));
+    await expect(stat(path.join(root, 'node_modules'))).rejects.toBeTruthy();
+    expect(await getPackState('stardew')).toEqual({ kind: 'ready', root });
+  });
+
+  it('Test 11: a zip without its required payload is rejected, nothing committed', async () => {
+    const fx = await buildZip({ game: 'dontstarve', files: DST_BETA1_FILES, packFiles: 14 });
+    serveDst(fx, VERSION);
+    configure();
+    await expect(ensurePack('dontstarve')).rejects.toThrow(/GAME_PACK_DOWNLOAD_FAILED: .*incomplete: missing assets\/dst-mod\/sei\/modinfo\.lua/);
+    await expect(stat(path.join(store, 'dontstarve', 'installed.json'))).rejects.toBeTruthy();
+    await expect(stat(path.join(store, 'dontstarve', VERSION))).rejects.toBeTruthy();
+  });
+
+  /** Lay down what a beta.1 client has on disk after installing the empty pack. */
+  async function seedBeta1Install(treeHash: string, oldVersion: string): Promise<void> {
+    const root = path.join(store, 'dontstarve', oldVersion);
+    await mkdir(path.join(root, 'node_modules'), { recursive: true });
+    await writeFile(path.join(root, 'node_modules', '.sei-pack-keep'), '');
+    await writeFile(path.join(root, 'pack.json'), JSON.stringify({ game: 'dontstarve', version: oldVersion, treeHash, files: 14 }));
+    await writeFile(
+      path.join(store, 'dontstarve', 'installed.json'),
+      JSON.stringify({ game: 'dontstarve', version: oldVersion, treeHash, platform: 'any', arch: 'any', installedAt: 'x' }),
+    );
+  }
+
+  it('Test 12: a payload-less install is downloaded again even when the treeHash matches', async () => {
+    const treeHash = 'd'.repeat(64);
+    await seedBeta1Install(treeHash, '1.2.2');
+    // The fixed rebuild of the SAME mod sources carries the SAME treeHash.
+    const fx = await buildZip({ game: 'dontstarve', files: DST_FILES, treeHash });
+    serveDst(fx, VERSION);
+    configure();
+    const root = await ensurePack('dontstarve');
+    expect(root).toBe(path.join(store, 'dontstarve', VERSION));
+    expect(served.requests).toContain(`/mirror/${dstFile(VERSION)}`);
+    expect(await readFile(path.join(root, 'assets/dst-mod/sei/modinfo.lua'), 'utf8')).toContain('version = "1.0.0"');
+    await expect(stat(path.join(store, 'dontstarve', '1.2.2'))).rejects.toBeTruthy();
+  });
+
+  it('Test 13: a re-link candidate whose file count disagrees with pack.json is downloaded again', async () => {
+    const treeHash = 'e'.repeat(64);
+    const fx = await buildZip({ game: 'dontstarve', files: DST_FILES, treeHash });
+    serveDst(fx, VERSION);
+    configure();
+    await ensurePack('dontstarve');
+    // Lose a non-required file from the installed tree.
+    await rm(path.join(store, 'dontstarve', VERSION, 'assets/dst-mod/sei/scripts/sei/net.lua'));
+
+    const NEXT = '1.2.4';
+    serveDst(fx, NEXT);
+    configure(NEXT);
+    const root = await ensurePack('dontstarve');
+    expect(served.requests).toContain(`/mirror/${dstFile(NEXT)}`);
+    await stat(path.join(root, 'assets/dst-mod/sei/scripts/sei/net.lua'));
+  });
+
+  it('Test 14: getPackState reads a payload-less same-version install as missing', async () => {
+    await seedBeta1Install('f'.repeat(64), VERSION);
+    configure();
+    expect(await getPackState('dontstarve')).toEqual({ kind: 'missing' });
   });
 });
 

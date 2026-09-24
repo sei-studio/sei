@@ -4,7 +4,7 @@
  *
  * A game pack is a zip of `node_modules/` (a production install of the
  * `packs/<game>` npm workspace with native modules rebuilt against Electron's
- * ABI) plus a `pack.json`, built by scripts/build-game-pack.mjs and published
+ * ABI) and/or `assets/` (a game-side mod: Stardew, DST) plus a `pack.json`, built by scripts/build-game-pack.mjs and published
  * beside the app's release assets. Nothing in it is bundled in the installer:
  * the Minecraft adapter's dependencies alone were 753MB of the packaged app on
  * mac arm64 and dead weight for a player who never opens Minecraft.
@@ -46,6 +46,17 @@ export interface GamePackDescriptor {
    * close to the real thing (measured on the darwin arm64 pack).
    */
   sizeHintBytes: number;
+  /**
+   * Files (pack-root relative, posix) a usable pack must contain. The client
+   * treats an extracted or installed pack missing any of them as broken and
+   * downloads it again instead of re-linking it; the builder refuses to write
+   * a zip without them. Must equal REQUIRED_PAYLOAD in
+   * scripts/lib/gamePackVerify.mjs (pinned by its test). v0.6.5-beta.1's DST
+   * pack held pack.json and an empty node_modules/ only, and its treeHash
+   * (computed over the staged tree, mod included) would have matched every
+   * fixed rebuild, so without this check those installs would never repair.
+   */
+  requiredPaths: readonly string[];
 }
 
 export const GAME_PACKS: Record<GameId, GamePackDescriptor> = {
@@ -57,6 +68,7 @@ export const GAME_PACKS: Record<GameId, GamePackDescriptor> = {
     // unpacked); the win32 pack carries gl's DLL payload on top. The copy
     // rounds to whole MB, and ERROR_COPY names the same figure.
     sizeHintBytes: 50 * 1024 * 1024,
+    requiredPaths: ['node_modules/mineflayer/package.json', 'node_modules/minecraft-data/package.json'],
   },
   // The two mod-driven games carry no node_modules: their pack is the
   // game-side mod (Stardew: the built SMAPI DLL + manifest; DST: the Lua
@@ -67,12 +79,14 @@ export const GAME_PACKS: Record<GameId, GamePackDescriptor> = {
     name: 'Stardew Valley',
     platformSpecific: false,
     sizeHintBytes: 2 * 1024 * 1024,
+    requiredPaths: ['assets/stardew-mod/SeiCompanion/SeiCompanion.dll', 'assets/stardew-mod/SeiCompanion/manifest.json'],
   },
   dontstarve: {
     id: 'dontstarve',
     name: "Don't Starve Together",
     platformSpecific: false,
     sizeHintBytes: 1 * 1024 * 1024,
+    requiredPaths: ['assets/dst-mod/sei/modinfo.lua', 'assets/dst-mod/sei/modmain.lua'],
   },
 };
 
