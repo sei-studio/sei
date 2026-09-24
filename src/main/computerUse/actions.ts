@@ -269,12 +269,10 @@ export function toHelperCommand(
       if ('error' in c) return { ok: false, error: c.error };
       const why = blockedCombo(c.key, c.modifiers);
       if (why) return { ok: false, error: `refused: ${a.input.keys} is not allowed (${why})` };
-      // A bare printable key is text entry too (password fields).
-      const printable = c.modifiers.length === 0 && c.key.length === 1;
       return {
         ok: true,
         command: { cmd: 'key', key: c.key, modifiers: c.modifiers as HelperModifier[], repeat: 1 },
-        touch: { ...none, keyboard: true, typing: printable || c.key === 'space' },
+        touch: { ...none, keyboard: true, typing: entersText(c.key, c.modifiers) },
       };
     }
     case 'hold_key': {
@@ -283,7 +281,7 @@ export function toHelperCommand(
       return {
         ok: true,
         command: { cmd: 'hold', key: k, ms: a.input.ms },
-        touch: { ...none, keyboard: true, typing: k.length === 1 },
+        touch: { ...none, keyboard: true, typing: entersText(k, []) },
       };
     }
     case 'wait':
@@ -292,6 +290,21 @@ export function toHelperCommand(
       return { ok: false, error: `${a.name} is not an input action` };
   }
 }
+
+/**
+ * A key press that enters text, and so goes through the typing guard
+ * (password fields, focus in the shared app): a printable key or space with
+ * no cmd or ctrl. shift and option only change WHICH character it types
+ * (shift+a is "A", option+e starts an accent), so they do not make it a
+ * command.
+ */
+export function entersText(key: string, modifiers: readonly string[]): boolean {
+  if (modifiers.includes('cmd') || modifiers.includes('ctrl')) return false;
+  return key.length === 1 || key === 'space';
+}
+
+/** Prefix of the helper's error when its own password guard stops a key or a type (native/mac-input). */
+export const SECURE_INPUT_ERROR = 'refused: secure input';
 
 /** One-line description of an action, for history and logs. */
 export function describeAction(a: ParsedAction): string {

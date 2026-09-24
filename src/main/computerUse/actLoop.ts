@@ -28,7 +28,7 @@
  * Nothing else preempts the loop (the 260619 livelock lesson).
  */
 import { abortable, isAbortError, sleep } from './abortable';
-import { describeAction, INPUT_ACTIONS, toHelperCommand, type ActionTouch, type ParsedAction } from './actions';
+import { describeAction, INPUT_ACTIONS, SECURE_INPUT_ERROR, toHelperCommand, type ActionTouch, type ParsedAction } from './actions';
 import {
   DEFAULT_PICK_POLICY,
   pickChooser,
@@ -516,6 +516,17 @@ export class ActRun {
           const msg = e instanceof Error ? e.message : String(e);
           timing.actionMs = this.now() - a0;
           finishStep(false, `failed: ${msg}`, timing.actionMs);
+          // The helper saw the player (its reply can beat the user_input
+          // event here) and now refuses every action until re-armed.
+          if (/cancelled: user input/.test(msg)) {
+            this.stop('user_input');
+            return end('user_input', stopSummary());
+          }
+          // The helper's own password guard: secure input came on (or focus
+          // moved into a password field) while it was typing.
+          if (msg.startsWith(SECURE_INPUT_ERROR)) {
+            return end('gave_up', 'It needs a password typed in, and that is for the player to do.');
+          }
           forceVision = true;
           continue;
         }

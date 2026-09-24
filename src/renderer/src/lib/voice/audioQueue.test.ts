@@ -255,3 +255,80 @@ describe('audioQueue pitch shifting', () => {
     expect(el.paused).toBe(false);
   });
 });
+
+describe('audioQueue per-clip completion (260925 act offers)', () => {
+  function clip(q: ReturnType<typeof createAudioQueue>, text: string, onDone: (c: boolean) => void, turn?: string) {
+    const h = q.enqueueStream('sui', text, 1, { blob: true, onDone, ...(turn ? { turn } : {}) });
+    h.push(new ArrayBuffer(8));
+    h.end();
+    return h;
+  }
+
+  it('reports true once when the clip plays to its end', () => {
+    const q = createAudioQueue(vi.fn());
+    const done = vi.fn();
+    clip(q, 'want me to close the popup?', done);
+    const el = FakeAudio.instances.at(-1)!;
+    expect(done).not.toHaveBeenCalled();
+    el.dispatch('ended');
+    el.dispatch('ended');
+    expect(done.mock.calls).toEqual([[true]]);
+  });
+
+  it('reports false when a barge-in clears it mid-clip', () => {
+    const q = createAudioQueue(vi.fn());
+    const done = vi.fn();
+    clip(q, 'want me to close the popup?', done);
+    const el = FakeAudio.instances.at(-1)!;
+    q.clear();
+    el.dispatch('ended');
+    expect(done.mock.calls).toEqual([[false]]);
+  });
+
+  it('reports false for a queued clip dropped by clear() or by a newer turn', () => {
+    const q = createAudioQueue(vi.fn());
+    const first = vi.fn();
+    const cleared = vi.fn();
+    clip(q, 'first.', first);
+    clip(q, 'want me to close the popup?', cleared);
+    q.clear();
+    expect(cleared.mock.calls).toEqual([[false]]);
+
+    const superseded = vi.fn();
+    clip(q, 'playing now.', vi.fn(), 'A');
+    clip(q, 'want me to open settings?', superseded, 'A');
+    clip(q, 'newer.', vi.fn(), 'B');
+    expect(superseded.mock.calls).toEqual([[false]]);
+  });
+
+  it('reports false when deafened (the player did not hear it), on error, and on stop()', () => {
+    const q = createAudioQueue(vi.fn());
+    const deaf = vi.fn();
+    clip(q, 'one.', deaf);
+    q.setOutputMuted(true);
+    FakeAudio.instances.at(-1)!.dispatch('ended');
+    expect(deaf.mock.calls).toEqual([[false]]);
+    q.setOutputMuted(false);
+
+    const err = vi.fn();
+    clip(q, 'two.', err);
+    FakeAudio.instances.at(-1)!.dispatch('error');
+    expect(err.mock.calls).toEqual([[false]]);
+
+    const stopped = vi.fn();
+    clip(q, 'three.', stopped);
+    q.stop();
+    expect(stopped.mock.calls).toEqual([[false]]);
+    const late = vi.fn();
+    clip(q, 'four.', late);
+    expect(late.mock.calls).toEqual([[false]]);
+  });
+
+  it('reports false for a clip whose synthesis failed with no audio', () => {
+    const q = createAudioQueue(vi.fn());
+    const done = vi.fn();
+    const h = q.enqueueStream('sui', 'want me to?', 1, { blob: true, onDone: done });
+    h.fail();
+    expect(done.mock.calls).toEqual([[false]]);
+  });
+});

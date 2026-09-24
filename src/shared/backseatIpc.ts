@@ -534,6 +534,15 @@ export interface BackseatTick {
    */
   shareLabel?: string;
   /**
+   * 260925 act: set on a 'user' tick whose text came from the MICROPHONE (a
+   * call), absent for typed lines. `ttsGapMs` is how long before the start of
+   * the utterance any companion's voice last stopped: 0 when it overlapped,
+   * null when no companion has spoken on this call. A yes to a control offer
+   * heard within a second of companion audio may be that audio (a sibling's
+   * "sure!", her own leaked line), so it is re-asked rather than acted on.
+   */
+  mic?: { ttsGapMs: number | null };
+  /**
    * How old each frame in the grid is, in seconds before `capturedAt`, oldest
    * first — one entry per cell ACTUALLY drawn, after duplicates were dropped.
    *

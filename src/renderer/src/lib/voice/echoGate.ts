@@ -297,3 +297,27 @@ export function finalScreenEcho(args: {
   if (micTokens >= 2 && overlap >= OVERLAP_FINAL) return true;
   return corr.valid && corr.r >= CORR_STRONG && !refHasText;
 }
+
+/**
+ * 260925 backseat act: how long before this utterance any companion's voice
+ * last stopped, in ms. 0 when a companion line overlapped the utterance (or is
+ * still audible), null when no companion line started before it ended. A
+ * control-offer "yes" heard this close to companion audio may BE that audio (a
+ * sibling's "sure!", her own leaked line), so main re-asks instead of acting.
+ * `lines` are the audible-line windows (t1 = 0 while still audible).
+ */
+export function companionAudioGapMs(
+  lines: ReadonlyArray<{ t0: number; t1: number }>,
+  uttT0: number,
+  uttT1: number,
+): number | null {
+  let gap: number | null = null;
+  for (const l of lines) {
+    if (l.t0 > uttT1) continue; // started after the utterance: irrelevant
+    const end = l.t1 || Infinity;
+    if (end >= uttT0) return 0;
+    const g = uttT0 - end;
+    if (gap === null || g < gap) gap = g;
+  }
+  return gap;
+}

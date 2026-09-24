@@ -80,6 +80,17 @@ describe('toHelperCommand', () => {
     expect(h.ok && h.command).toEqual({ cmd: 'hold', key: 'w', ms: 500 });
   });
 
+  it('sends printable combos through the typing guard, commands not', () => {
+    const typing = (keys: string) => {
+      const r = toHelperCommand(parsed('key', { keys }), frame);
+      return r.ok && r.touch.typing;
+    };
+    for (const k of ['a', 'shift+a', 'shift+1', 'alt+e', 'shift+alt+2', 'space', 'shift+space', '/']) expect(typing(k), k).toBe(true);
+    for (const k of ['cmd+a', 'ctrl+a', 'cmd+shift+a', 'ctrl+shift+1', 'return', 'tab', 'escape', 'shift+tab', 'down']) expect(typing(k), k).toBe(false);
+    const hold = toHelperCommand(parsed('hold_key', { key: 'space', ms: 500 }), frame);
+    expect(hold.ok && hold.touch.typing).toBe(true);
+  });
+
   it('wait touches nothing', () => {
     const w = toHelperCommand(parsed('wait', { ms: 500 }), frame);
     expect(w.ok && w.touch).toEqual({ points: [], keyboard: false, typing: false });

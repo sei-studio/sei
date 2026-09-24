@@ -8,14 +8,19 @@
  *
  *   1. RUN at once: a USER tick, and the call's `request` (the player's words
  *      the model says asked for it) is really in what the player just said AND
- *      shares a content word with the goal. Quoting "what's this?" to justify
- *      "click buy now" does not pass.
- *   2. Otherwise PROPOSE: nothing runs. The companion asks "want me to
+ *      every content word of the goal is in it. Quoting "this game is so hard"
+ *      to justify "uninstall the game", or "open settings" to justify "open
+ *      settings and turn off the firewall", does not pass.
+ *   2. Otherwise OFFER: nothing runs. The companion asks "want me to
  *      <goal>?" (the literal goal, composed here, so the player confirms what
- *      will actually run and not the model's paraphrase of it), and the goal
- *      is held as pending for PENDING_CONTROL_TTL_MS.
- *   3. The player's NEXT line settles a pending goal: a plain yes runs it,
- *      anything else drops it. Only that one line counts, and only in time.
+ *      will actually run and not the model's paraphrase of it). The offer is
+ *      a DRAFT until the player has heard it: on a call, until the renderer
+ *      reports the line played to its end (a barge-in or a newer turn cutting
+ *      it off drops it); in text, once it is shown. Only then is it pending,
+ *      for PENDING_CONTROL_TTL_MS.
+ *   3. The player's NEXT line settles a pending offer: a bare yes runs it,
+ *      anything else drops it. A spoken yes within a second of any
+ *      companion's voice may be that voice, so it is re-asked instead.
  *
  * Every mistake here is on the safe side: a real request that fails the check
  * costs one "want me to ...?" round trip.
@@ -37,8 +42,6 @@ export type ControlDecision =
   | { kind: 'run'; goal: string; origin: 'asked'; request: string }
   | { kind: 'propose'; goal: string; why: 'not_user_tick' | 'not_asked' };
 
-export type PendingResolution = 'affirmed' | 'declined' | 'expired' | 'none';
-
 const CJK = /[぀-ヿ㐀-䶿一-鿿가-힯]/;
 const CJK_RUN = /[぀-ヿ㐀-䶿一-鿿가-힯]+/g;
 
@@ -52,10 +55,14 @@ export function normalizeWords(s: string): string {
     .trim();
 }
 
-/** Words that carry no task content: asking, politeness, pronouns. */
+/**
+ * Words that carry no task content: asking, politeness, pronouns. Direction
+ * and state words (on, off, in, out, up, down) are NOT here: "turn on" and
+ * "turn off" must not match each other.
+ */
 const FILLER = new Set(
   (
-    'the a an and or to of in on at for with from into onto by is are be it its this that these those there here ' +
+    'the a an and or to of at for with from into onto by is are be it its this that these those there here ' +
     'you your me my i we our us can could would will should shall do does did please pls plz just now then also too ' +
     'want wanna need help let lets get make go some any thing stuff like really so ok okay yes yeah hey hi ' +
     'what how why when where which who something'
@@ -73,26 +80,28 @@ function contentTokens(s: string): string[] {
       }
       continue;
     }
-    if (w.length >= 3 && !FILLER.has(w)) out.push(w);
+    if (w.length >= 2 && !FILLER.has(w)) out.push(w);
   }
   return out;
 }
 
-function tokensOverlap(a: string[], b: string[]): boolean {
-  for (const x of a) {
-    for (const y of b) {
-      if (x === y) return true;
-      // Light stemming: "settings" / "setting", "opened" / "open".
-      if (x.length >= 4 && y.length >= 4 && (x.startsWith(y) || y.startsWith(x))) return true;
-    }
-  }
-  return false;
+function sameWord(x: string, y: string): boolean {
+  if (x === y) return true;
+  // Light stemming: "settings" / "setting", "opened" / "open".
+  return x.length >= 4 && y.length >= 4 && (x.startsWith(y) || y.startsWith(x));
+}
+
+/** Every content word of `goal` is among `said`'s. */
+function coversGoal(said: string[], goal: string[]): boolean {
+  return goal.length > 0 && goal.every((g) => said.some((w) => sameWord(w, g)));
 }
 
 /**
- * The model's `request` quote is a real ask from this line: it appears in
- * what the player said (word-aligned, case and punctuation ignored), it is
- * more than a single word, and it shares a content word with the goal.
+ * The model's `request` quote is a real ask from this line for THIS goal: it
+ * appears in what the player said (word-aligned, case and punctuation
+ * ignored), it is more than a single word, and EVERY content word of the goal
+ * is in it. Anything the goal adds beyond the player's words ("and turn off
+ * the firewall") makes it an offer instead.
  */
 export function requestMatches(request: string | undefined, userText: string | undefined, goal: string): boolean {
   if (!request || !userText) return false;
@@ -103,7 +112,7 @@ export function requestMatches(request: string | undefined, userText: string | u
   if (cjk ? r.replace(/\s/g, '').length < 2 : r.split(' ').length < 2) return false;
   const inLine = cjk ? u.replace(/\s/g, '').includes(r.replace(/\s/g, '')) : ` ${u} `.includes(` ${r} `);
   if (!inLine) return false;
-  return tokensOverlap(contentTokens(r), contentTokens(goal));
+  return coversGoal(contentTokens(r), contentTokens(goal));
 }
 
 export function decideControl(o: { tickKind: string; userText?: string; call: ControlCall }): ControlDecision {
@@ -113,49 +122,67 @@ export function decideControl(o: { tickKind: string; userText?: string; call: Co
   return { kind: 'run', goal, origin: 'asked', request: o.call.request!.trim() };
 }
 
-// ── The player's answer to a proposal ────────────────────────────────────
+// ── The player's answer to an offer ──────────────────────────────────────
 
-const YES_WORDS = new Set(
-  'yes yeah yea yep yup ya yah yass sure ok okay okey kk alright aight absolutely definitely certainly affirmative'.split(' '),
-);
-const YES_PHRASES = ['go ahead', 'go for it', 'go on', 'do it', 'do that', 'please do', 'sounds good', 'of course', 'why not', 'lets do it'];
-/** Words allowed around a yes ("yeah go ahead thanks"). Anything else means the line says more than yes. */
-const YES_FILLER = new Set(
-  'please pls plz thanks thank thx ty you do it that go ahead for on sounds good of course why not lets sure thing cool great nice fine lol haha haha man dude bro now then just'.split(' '),
-);
-const NO_WORDS = new Set(
-  'no nope nah not dont never stop wait cancel later hold but instead nvm nevermind rather actually hmm'.split(' '),
-);
-const CJK_YES = ['好', '可以', '行', '是的', '对', '嗯', '要', 'はい', 'うん', 'いいよ', 'お願い', 'おねがい', '네', '응', '좋아'];
-const CJK_NO = ['不', '别', '没', '等', '算了', 'いいえ', 'いや', 'だめ', 'ダメ', 'やめ', '待', '아니', '싫', '잠깐'];
+/** The yes itself. */
+const YES_CORE = ['yes', 'yeah', 'yea', 'yep', 'yup', 'sure', 'do it', 'go ahead'];
+/** Allowed around it, and nothing else. */
+const YES_EXTRA = ['please', 'pls', 'plz', 'ok', 'okay'];
+/** CJK yes pieces; an answer must be made only of these. */
+const CJK_YES = ['好的', '好啊', '好吧', '好', '可以', '行', '是的', '要', '麻烦了', 'はい', 'うん', 'いいよ', 'お願いします', 'お願い', 'おねがい', '네', '응', '좋아', '그래'];
 
-/** A plain yes: an affirmative, no negation, and nothing else of substance. */
+/**
+ * A bare yes: yes / yeah / sure / do it / go ahead, optionally with please
+ * or ok, and NOTHING else ("yeah totally", "yes but later" and "ok open
+ * safari" are not a yes to the offer). A plain "ok" alone is not a yes
+ * either: it is as often "ok, I heard you".
+ */
 export function isAffirmation(text: string): boolean {
   const n = normalizeWords(text);
   if (!n) return false;
   if (CJK.test(n)) {
-    const compact = n.replace(/\s/g, '');
-    if (CJK_NO.some((w) => compact.includes(w))) return false;
-    if (compact.length > 6) return false;
-    return CJK_YES.some((w) => compact.includes(w));
+    let rest = n.replace(/\s/g, '');
+    if (rest.length > 8) return false;
+    while (rest) {
+      const hit = CJK_YES.find((w) => rest.startsWith(w));
+      if (!hit) return false;
+      rest = rest.slice(hit.length);
+    }
+    return true;
   }
-  const words = n.split(' ');
-  if (words.length > 8) return false;
-  if (words.some((w) => NO_WORDS.has(w))) return false;
-  const padded = ` ${n} `;
-  const yes = words.some((w) => YES_WORDS.has(w)) || YES_PHRASES.some((p) => padded.includes(` ${p} `));
-  if (!yes) return false;
-  // At most one word outside the yes vocabulary (their companion's name, say):
-  // "ok open safari" asks for something else and is not a yes to the offer.
-  const other = words.filter((w) => !YES_WORDS.has(w) && !YES_FILLER.has(w));
-  return other.length <= 1;
+  let rest = ` ${n} `;
+  let core = 0;
+  for (const phrase of [...YES_CORE, ...YES_EXTRA]) {
+    const pat = ` ${phrase} `;
+    while (rest.includes(pat)) {
+      rest = rest.replace(pat, ' ');
+      if (YES_CORE.includes(phrase)) core += 1;
+    }
+  }
+  return core > 0 && rest.trim() === '' && n.split(' ').length <= 5;
 }
 
-/** Settle a pending proposal with the player's next line. */
-export function resolvePending(p: PendingControl | null, userText: string | undefined, now: number): PendingResolution {
+/** A spoken answer this close to companion audio may be that audio. */
+export const TTS_GUARD_MS = 1_000;
+
+export type PendingResolution = 'affirmed' | 'unsure' | 'declined' | 'expired' | 'none';
+
+/**
+ * Settle a pending offer with the player's next line. `ttsGapMs` is set for
+ * a line that came from the microphone (BackseatTick.mic): a yes within
+ * TTS_GUARD_MS of companion audio is 'unsure' and gets re-asked.
+ */
+export function resolvePending(
+  p: PendingControl | null,
+  userText: string | undefined,
+  now: number,
+  mic?: { ttsGapMs: number | null },
+): PendingResolution {
   if (!p) return 'none';
   if (now - p.at > PENDING_CONTROL_TTL_MS) return 'expired';
-  return isAffirmation(userText ?? '') ? 'affirmed' : 'declined';
+  if (!isAffirmation(userText ?? '')) return 'declined';
+  if (mic && mic.ttsGapMs !== null && mic.ttsGapMs < TTS_GUARD_MS) return 'unsure';
+  return 'affirmed';
 }
 
 /** The one-line offer, built from the literal goal. */
@@ -175,29 +202,42 @@ export function proposalLine(goal: string): string {
 
 export type LineOutcome =
   | { kind: 'none' }
-  | { kind: 'affirmed' | 'declined' | 'expired'; goal: string };
+  | { kind: 'affirmed' | 'unsure' | 'declined' | 'expired'; goal: string };
 
 export type CallOutcome =
   | { kind: 'run'; goal: string; origin: 'asked'; request: string }
-  /** `line` is the offer to speak, or null when the same goal is already on offer. */
-  | { kind: 'propose'; goal: string; why: 'not_user_tick' | 'not_asked'; line: string | null }
+  /**
+   * `offer` is the line to speak and the id to confirm it with once heard
+   * (heard()), or null when the same goal is already on offer.
+   */
+  | { kind: 'propose'; goal: string; why: 'not_user_tick' | 'not_asked'; offer: { line: string; id: string } | null }
   | { kind: 'ignored'; goal: string; why: 'confirmed_this_turn' };
 
+/** A draft never heard back from (dropped TTS, a closed overlay) stops counting after this. */
+const DRAFT_MAX_AGE_MS = 60_000;
+/** A draft younger than this may still be queued for playback, so the same goal is not re-offered. */
+const DRAFT_DEDUPE_MS = 15_000;
+
 /**
- * One backseat session's control state: at most one offer pending, settled by
+ * One backseat session's control state: at most one offer, first a DRAFT
+ * (spoken but not yet heard), then PENDING (heard, answerable), settled by
  * the player's next line. backseatService calls onUserLine for every player
- * line BEFORE the turn runs, and onCall for a control() call in the reply.
+ * line BEFORE the turn runs, onCall for a control() call in the reply,
+ * heard() when the renderer reports the offer line's playback, and
+ * dropOffer() on a barge-in.
  */
 export class ControlGate {
   pending: PendingControl | null = null;
+  draft: { goal: string; id: string; at: number } | null = null;
+  private seq = 0;
 
   constructor(private readonly now: () => number = () => Date.now()) {}
 
-  /** The player's next line settles any pending offer, whatever it says. */
-  onUserLine(text: string | undefined): LineOutcome {
+  /** The player's next line settles any pending offer, whatever it says. A draft they never heard is not theirs to answer. */
+  onUserLine(text: string | undefined, mic?: { ttsGapMs: number | null }): LineOutcome {
     const p = this.pending;
     this.pending = null;
-    const r = resolvePending(p, text, this.now());
+    const r = resolvePending(p, text, this.now(), mic);
     return r === 'none' || !p ? { kind: 'none' } : { kind: r, goal: p.goal };
   }
 
@@ -211,19 +251,55 @@ export class ControlGate {
     if (o.confirmedThisTurn) return { kind: 'ignored', goal: d.goal, why: 'confirmed_this_turn' };
     if (d.kind === 'run') {
       this.pending = null;
+      this.draft = null;
       return d;
     }
     const now = this.now();
-    const same =
-      this.pending &&
-      now - this.pending.at <= PENDING_CONTROL_TTL_MS &&
-      normalizeWords(this.pending.goal) === normalizeWords(d.goal);
-    if (same) return { ...d, line: null };
-    this.pending = { goal: d.goal, at: now };
-    return { ...d, line: proposalLine(d.goal) };
+    // The same goal already on offer is not offered twice in a row. A draft
+    // counts only while it could still be playing: one whose line was dropped
+    // unheard must not block the offer from being made again.
+    const onOffer =
+      this.pending && now - this.pending.at <= PENDING_CONTROL_TTL_MS
+        ? this.pending.goal
+        : this.draft && now - this.draft.at <= DRAFT_DEDUPE_MS
+          ? this.draft.goal
+          : undefined;
+    if (onOffer !== undefined && normalizeWords(onOffer) === normalizeWords(d.goal)) return { ...d, offer: null };
+    return { ...d, offer: this.offer(d.goal) };
+  }
+
+  /** Draft a (re-)offer of `goal`; it becomes answerable once heard(). */
+  offer(goal: string): { line: string; id: string } {
+    const id = `offer-${++this.seq}-${this.now()}`;
+    this.pending = null;
+    this.draft = { goal, id, at: this.now() };
+    return { line: proposalLine(goal), id };
+  }
+
+  /**
+   * The renderer's report on the offer line: played to its end (`completed`)
+   * or cut off. Only a completed, current draft becomes pending. Returns what
+   * happened, for the log.
+   */
+  heard(id: string, completed: boolean): 'armed' | 'dropped' | 'stale' {
+    const d = this.draft;
+    if (!d || d.id !== id) return 'stale';
+    this.draft = null;
+    if (!completed || this.now() - d.at > DRAFT_MAX_AGE_MS) return 'dropped';
+    this.pending = { goal: d.goal, at: this.now() };
+    return 'armed';
+  }
+
+  /** A barge-in: the player talked over the companion, so an offer in flight was not (fully) heard. */
+  dropOffer(): boolean {
+    const had = this.draft !== null || this.pending !== null;
+    this.draft = null;
+    this.pending = null;
+    return had;
   }
 
   clear(): void {
+    this.draft = null;
     this.pending = null;
   }
 }

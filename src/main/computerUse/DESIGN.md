@@ -29,20 +29,43 @@ things the screen cannot write: the tick kind and the player's own words.
 - **Run at once** only on a USER tick whose call carries `request` (the
   player's words that asked for it) and that quote is really in the player's
   line (word-aligned, case and punctuation ignored, 2+ words or 2+ CJK
-  chars) and shares a content word with the goal. Quoting "what is this?" to
-  justify "click Buy now" fails.
+  chars) and EVERY content word of the goal is in that quote (exact, or a
+  shared prefix when both are 4+ letters; CJK: every bigram of the goal).
+  Direction words (on, off, up, down) count, so "turn on" never justifies
+  "turn off". Quoting "this game is so hard" for "uninstall the game", or
+  "can you open settings" for "open settings and turn off the firewall",
+  fails: anything the goal adds beyond the player's words makes it an offer.
 - **Otherwise it is an offer.** Nothing runs; the companion's line gets
   `want me to <goal>?` appended (composed from the literal goal, not the
   model's words, so the player says yes to exactly what would run; spoken
-  even when the reply had no text). The goal is held as pending for 30 s
-  (`PENDING_CONTROL_TTL_MS`). Jolt, idle, start and completion-event turns
-  are always offers.
-- **The player's next line settles it**, whatever it says: a plain yes
-  (`isAffirmation`: an affirmative, no negation, at most one other word;
-  CJK: an affirmative token, no negation, at most 6 chars) starts it with
-  origin `confirmed`; anything else drops it; after 30 s it has expired. A
-  control() call in the reply to that yes is ignored (the run already
-  started). The same goal is not offered twice while pending.
+  even when the reply had no text). Jolt, idle, start and completion-event
+  turns are always offers.
+- **An offer must be HEARD before it can be answered.** It starts as a
+  draft. On a call, main pushes the offer line with
+  `SpokenLineContext.confirmId`; the renderer's audio queue reports each
+  clip's end (`onDone(completed)`), and `backseat:line-heard` arms the offer
+  only when that clip played to its natural end. A clip cut off by a
+  barge-in, superseded by a newer turn, dropped or failed in TTS reports
+  `completed: false` and the offer is dropped; one never reported on simply
+  never arms (fail closed). Without a call the line is text and arms when
+  shown. Once armed it is pending for 30 s (`PENDING_CONTROL_TTL_MS`),
+  counted from when it was heard. A barge-in (`interruptBackseat`), a pause
+  and the session ending withdraw any offer.
+- **The player's next line settles it**, whatever it says. Only a BARE yes
+  counts (`isAffirmation`): yes / yeah / yep / sure / do it / go ahead,
+  optionally with please or ok, and nothing else ("yeah thanks sui",
+  "sure thing", a lone "ok" are not yes); CJK: the line is made only of
+  listed yes pieces (好, 好的, 可以, はい, うん, お願い, 네, ...). A yes starts it
+  with origin `confirmed`; anything else drops it; after 30 s it has
+  expired. A control() call in the reply to that yes is ignored (the run
+  already started). The same goal is not offered twice while on offer.
+- **A spoken yes near a companion's voice is asked again.** Every mic line
+  carries `mic.ttsGapMs` (`echoGate.companionAudioGapMs`: 0 when any
+  companion line was audible during the utterance, else the gap since the
+  last one ended). Under 1 s (`TTS_GUARD_MS`) the yes may be that voice (or
+  another companion's) through the speakers, so nothing runs and the offer
+  is asked again as a new draft that must be heard again. Typed lines carry
+  no `mic` and are not gated.
 - The act loop's system prompt says which it was: "They asked you to do
   something on it ("<their words>")" or "You offered to do something on it
   and they said yes". The per-step text says `Goal:`, never "The player
@@ -113,8 +136,10 @@ backseat turn --control({goal, request})--> ControlGate --run--> actSession.star
    and a newline only at the very end, because a Tab or Return mid-text
    moves focus past the password check. `type` takes at most 200 characters
    and `hold_key` at most 3 s (schema and helper both), so no single action
-   runs long. Typing (`type`, bare printable keys, `hold_key` on a letter)
-   first checks `ax_focused`, failing closed: if the focused element cannot
+   runs long. Typing (`type`, and any `key`/`hold_key` that enters text:
+   a single printable character or space with no cmd/ctrl, so shift+a and
+   alt+e count; `actions.entersText`) first checks `ax_focused`, failing
+   closed: if the focused element cannot
    be read (no AX answer, an error, some Chromium/Electron apps) nothing is
    typed and the run gives up asking the player to type it; a password field
    ends the run; focus owned by any pid other than the shared window's
@@ -122,7 +147,13 @@ backseat turn --control({goal, request})--> ControlGate --run--> actSession.star
    first"). The scope check (`scope.ts`) runs on a fresh window list before
    every input action: pointer inside the target, not on Sei's pill, topmost
    window is the shared app; keys need the shared app frontmost. 3 refusals
-   = give up.
+   = give up. The helper re-checks INSIDE every text-entering action: before
+   each typed character it reads `IsSecureEventInputEnabled()` (secure
+   keyboard entry, on while any password field has focus), and every 16
+   characters the focused element's AX subrole (`AXSecureTextField`); either
+   refuses with `refused: secure input` and the run gives up asking the
+   player to type it. Known cost: secure input is system-wide, so Terminal's
+   Secure Keyboard Entry or a password manager holding it blocks all typing.
 8. **Act** via the helper, log the action, settle 300 ms.
 
 ## Controls
@@ -166,7 +197,10 @@ and mouse event; a key or mouse event WITHOUT the tag is the player. The tap
 thread itself then bumps the cancel generation (every running action checks
 it between 10 ms slices, so a 200-char `type` or a 3 s `hold` stops within one
 slice), queues `release_all`, and emits `user_input`; main aborts the run.
-The action's reply is `cancelled: user input`. Autorepeat keyDowns are
+The action's reply is `cancelled: user input`. The helper then LOCKS OUT:
+every later action is refused (`cancelled: user input (actions refused until
+the watcher is re-armed)`) until main sends `watch` again, which it does only
+when starting a new run. Autorepeat keyDowns are
 ignored. There is no "injecting" window any more: the player's input counts
 during our own actions too.
 
@@ -182,7 +216,10 @@ runner the helper runs with `SEI_MAC_INPUT_TEST=1`, which enables a
 long `type` (key and mouse) and a 3 s `hold`, the check posts one and asserts
 the action returns `cancelled: user input` within 100 ms of it, with exactly
 one `user_input` event, and that our own tagged click and typing never
-trigger it. Without the env var the command is rejected.
+trigger it. It also checks the lockout (an action after the abort is refused
+until `watch` re-arms) and, through `test_secure_input` (also test-only,
+forces the secure-input answer), that a long `type` stops with
+`refused: secure input` mid-text and shift+a is refused the same way. Without the env var the command is rejected.
 
 ## Screen text is untrusted
 

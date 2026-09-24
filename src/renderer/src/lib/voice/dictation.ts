@@ -314,7 +314,8 @@ registerProcessor('sei-vad-capture', SeiVadCapture);
 `;
 
 export async function createDictation(opts: {
-  onUtterance: (text: string) => void;
+  /** `span` (260925): wall-clock bounds of the utterance's audio, when known. */
+  onUtterance: (text: string, span?: { t0: number; t1: number }) => void;
   onStatus: (status: DictationStatus, detail?: string) => void;
   /** CONFIRMED barge-in: a word was transcribed from speech that opened during
    * hold. The owner should stop companion playback — which releases the hold —
@@ -684,7 +685,7 @@ export async function createDictation(opts: {
         console.log(`[sei/voice] echo-gate: dropped speaker echo — "${text.slice(0, 80)}"`);
         return;
       }
-      opts.onUtterance(text);
+      opts.onUtterance(text, { t0, t1 });
     };
     const check = opts.echoCheck;
     if (!check || !text) {

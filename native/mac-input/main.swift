@@ -20,7 +20,8 @@
 //            {"id":N,"ok":false,"error":"..."}; and unsolicited events:
 //            {"event":"ready",...} once at start, {"event":"user_input",...}
 //            when the armed watcher sees the player's own input (once per
-//            arming; the in-flight action is already cancelled by then).
+//            arming; the in-flight action is already cancelled by then, and
+//            every later action is refused until `watch` re-arms).
 //   stderr   free-form diagnostics.
 //   EOF on stdin releases every held key and button, then exits (orphan
 //   guard). A helper that outlives its parent with a key held down would be
@@ -33,7 +34,8 @@
 // pid), ax_focused (the focused element, used to refuse typing into secure
 // fields), watch. Control: cancel, release_all. Test only (needs
 // SEI_MAC_INPUT_TEST=1 in the helper's environment, which Sei never sets):
-// test_user_event, an UNTAGGED event standing in for the player.
+// test_user_event, an UNTAGGED event standing in for the player;
+// test_secure_input, secure event input on/off as a password field sets it.
 //
 // Coordinates are GLOBAL POINTS in the Quartz space: origin at the top-left
 // of the main display, y down. That is the space CGEvent, CGWindowList and
@@ -53,6 +55,7 @@
 // Sei deliberately never asks for.
 
 import Foundation
+import Carbon.HIToolbox // IsSecureEventInputEnabled
 import AppKit
 import CoreGraphics
 import ApplicationServices
@@ -61,7 +64,7 @@ import ScreenCaptureKit
 import UniformTypeIdentifiers
 import Vision
 
-let HELPER_VERSION = "0.2.0"
+let HELPER_VERSION = "0.3.0"
 
 signal(SIGPIPE, SIG_IGN)
 
@@ -199,6 +202,16 @@ final class HelperState {
     /// Why the last cancel happened ("user_input" when the watcher fired), for
     /// the cancelled action's reply.
     var cancelReason = "cancelled"
+    /// Set when the watcher saw the player: every action is refused from then
+    /// until main re-arms the watcher for a new run. Guarded by `lock`.
+    var lockedOut = false
+}
+
+let LOCKED_OUT_ERROR = "cancelled: user input (actions refused until the watcher is re-armed)"
+
+func isLockedOut() -> Bool {
+    state.lock.lock(); defer { state.lock.unlock() }
+    return state.lockedOut
 }
 
 
@@ -408,10 +421,50 @@ func keyCode(_ name: String) throws -> CGKeyCode {
     return c
 }
 
+// ── Secure input guard ─────────────────────────────────────────────────────
+//
+// Main checks the focused element once before a typing action. Focus can move
+// during one (a page script, an autofocus, the Return that ends a login
+// form), so the helper re-checks while it types: macOS's secure event input
+// (on while a password field has focus) before EVERY character, and the
+// focused element's AX subrole every SECURE_AX_EVERY characters (an AX call is
+// a cross-process round trip, a few ms). Either one stops the action with an
+// error that starts with SECURE_INPUT_ERROR, which main treats as the
+// password guard. Secure input can also be on because another app turned it
+// on (Terminal's Secure Keyboard Entry, some password managers); typing is
+// refused then too, on purpose.
+
+let SECURE_INPUT_ERROR = "refused: secure input"
+let SECURE_AX_EVERY = 16
+
+func focusedIsSecureField() -> Bool {
+    let sys = AXUIElementCreateSystemWide()
+    AXUIElementSetMessagingTimeout(sys, 0.1)
+    guard let v = axAttr(sys, kAXFocusedUIElementAttribute as String), CFGetTypeID(v) == AXUIElementGetTypeID() else { return false }
+    return axString(v as! AXUIElement, kAXSubroleAttribute as String) == "AXSecureTextField"
+}
+
+func checkSecureInput(ax: Bool) throws {
+    if IsSecureEventInputEnabled() {
+        throw ActionError(message: "\(SECURE_INPUT_ERROR): secure keyboard entry is on (a password field has focus)")
+    }
+    if ax && focusedIsSecureField() {
+        throw ActionError(message: "\(SECURE_INPUT_ERROR): keyboard focus is in a password field")
+    }
+}
+
+/// A key that enters text when pressed without cmd or ctrl (letters, digits,
+/// punctuation, space; shift and option only change which character).
+func entersText(_ name: String, _ flags: CGEventFlags) -> Bool {
+    if flags.contains(.maskCommand) || flags.contains(.maskControl) { return false }
+    return name.count == 1 || name == "space"
+}
+
 func doKey(_ args: [String: Any], _ gen: Int) throws {
     guard let name = args["key"] as? String else { throw ActionError(message: "missing key") }
     let code = try keyCode(name)
     let flags = try modsArg(args)
+    if entersText(name, flags) { try checkSecureInput(ax: true) }
     let rep = max(1, min(100, (args["repeat"] as? NSNumber)?.intValue ?? 1))
     try withModifiers(flags) {
         for _ in 0..<rep {
@@ -456,6 +509,7 @@ func doKeyUp(_ args: [String: Any]) throws {
 
 func doHold(_ args: [String: Any], _ gen: Int) throws {
     let ms = max(10, min(HOLD_MAX_MS, (args["ms"] as? NSNumber)?.doubleValue ?? 500))
+    if let name = args["key"] as? String, entersText(name, state.heldMods) { try checkSecureInput(ax: true) }
     try doKeyDown(args)
     let ok = sleepChecked(ms / 1000, gen)
     try doKeyUp(args)
@@ -465,8 +519,9 @@ func doHold(_ args: [String: Any], _ gen: Int) throws {
 func doType(_ args: [String: Any], _ gen: Int) throws {
     guard let text = args["text"] as? String else { throw ActionError(message: "missing text") }
     guard text.count <= TYPE_MAX_CHARS else { throw ActionError(message: "text too long (at most \(TYPE_MAX_CHARS) characters per type)") }
-    for ch in text {
+    for (i, ch) in text.enumerated() {
         if state.generation != gen { throw ActionError(message: "cancelled") }
+        try checkSecureInput(ax: i % SECURE_AX_EVERY == 0)
         if ch == "\n" || ch == "\r" {
             postKey(0x24, down: true, flags: state.heldMods)
             postKey(0x24, down: false, flags: state.heldMods)
@@ -505,6 +560,10 @@ func cancelActions(_ reason: String) {
 }
 
 func runAction(_ id: Int, _ cmd: String, _ args: [String: Any], _ gen: Int) {
+    if isLockedOut() {
+        replyError(id, LOCKED_OUT_ERROR, ["at": now()])
+        return
+    }
     if state.generation != gen {
         replyError(id, cancelReasonNow(), ["at": now()])
         return
@@ -959,10 +1018,13 @@ final class Watcher {
         if type == .keyDown && event.getIntegerValueField(.keyboardEventAutorepeat) != 0 { return }
         lock.lock()
         guard armed else { lock.unlock(); return }
-        // One report per arming; main re-arms for the next run.
+        // One report per arming; main re-arms for the next run. Until then
+        // every action is refused (lockedOut), so nothing queued behind the
+        // cancelled one, or sent before main has seen user_input, can run.
         armed = false
         if let t = tap { CGEvent.tapEnable(tap: t, enable: false) }
         lock.unlock()
+        state.lock.lock(); state.lockedOut = true; state.lock.unlock()
         // Stop the in-flight action NOW (it checks every ~10 ms), then let go
         // of anything held once it has returned.
         cancelActions("cancelled: user input")
@@ -1050,7 +1112,16 @@ func handle(_ line: String) {
     case "watch":
         if (obj["enabled"] as? Bool) ?? false {
             // "tap" is the only mode; main refuses to drive without it.
-            if let err = watcher.arm() { replyError(id, err) } else { reply(id, ["mode": "tap"]) }
+            // Arming (a new run) is the only thing that lifts the lockout. It
+            // is lifted BEFORE the tap goes live, so a player event right
+            // after arming locks it again instead of being overwritten.
+            state.lock.lock(); let wasLocked = state.lockedOut; state.lockedOut = false; state.lock.unlock()
+            if let err = watcher.arm() {
+                state.lock.lock(); state.lockedOut = state.lockedOut || wasLocked; state.lock.unlock()
+                replyError(id, err)
+            } else {
+                reply(id, ["mode": "tap"])
+            }
         } else {
             watcher.disarm()
             reply(id)
@@ -1065,6 +1136,12 @@ func handle(_ line: String) {
         guard TEST_COMMANDS else { replyError(id, "unknown command \(cmd)"); return }
         postTestUserEvent((obj["kind"] as? String) ?? "key")
         reply(id, ["at": now()])
+    case "test_secure_input":
+        // Test only: turn macOS secure event input on or off from here, as a
+        // focused password field would (the CI mid-type password check).
+        guard TEST_COMMANDS else { replyError(id, "unknown command \(cmd)"); return }
+        if (obj["enabled"] as? Bool) ?? false { EnableSecureEventInput() } else { DisableSecureEventInput() }
+        reply(id, ["enabled": IsSecureEventInputEnabled(), "at": now()])
     case "release_all":
         cancelActions("cancelled")
         releaseAllNow()

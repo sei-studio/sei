@@ -269,10 +269,31 @@ if (abortCheck) {
       check(`abort: ${name} reported user_input`, userInputs.length === seen + 1, JSON.stringify(userInputs.slice(seen)))
     }
     await trial('type', () => req('type', { text: 'a'.repeat(200) }, 20000), 'key')
+    // After the player took over, nothing runs until main re-arms.
+    const locked = await req('wait', { ms: 10 })
+    check('abort: actions refused after user input until re-armed', locked.ok === false && /re-armed/.test(locked.error ?? ''), JSON.stringify(locked))
     await trial('type', () => req('type', { text: 'b'.repeat(200) }, 20000), 'mouse')
     await trial('hold', () => req('hold', { key: 'shift', ms: 3000 }, 20000), 'key')
+    // Re-arming lifts the lockout.
+    if (await arm()) {
+      const again = await req('wait', { ms: 10 })
+      check('abort: re-arming lifts the lockout', again.ok === true, JSON.stringify(again))
+    }
     const off = await req('watch', { enabled: false })
     check('abort: watcher disarms', off.ok)
+
+    // 3. The password guard mid-type: secure event input turning on while a
+    //    type is running stops it (a login field taking focus mid-text).
+    const pendingType = req('type', { text: 'c'.repeat(200) }, 20000)
+    await sleep(400)
+    const on = await req('test_secure_input', { enabled: true })
+    const typed = await pendingType
+    const shifted = await req('key', { key: 'a', modifiers: ['shift'] })
+    const off2 = await req('test_secure_input', { enabled: false })
+    check('secure: test switch turned secure input on', on.ok && on.enabled === true, JSON.stringify(on))
+    check('secure: type stopped when secure input turned on', typed.ok === false && /secure input/.test(typed.error ?? ''), JSON.stringify(typed))
+    check('secure: shift+letter refused while secure input is on', shifted.ok === false && /secure input/.test(shifted.error ?? ''), JSON.stringify(shifted))
+    check('secure: test switch turned it back off', off2.ok && off2.enabled === false, JSON.stringify(off2))
   }
   try {
     execFileSync('pkill', ['-x', 'TextEdit'])

@@ -37,7 +37,7 @@ export const CONTROL_TOOL: LlmToolDef = {
     properties: {
       goal: {
         type: 'string',
-        description: 'What to get done, as one short phrase that starts with a verb. It is read back to the player as a question when they did not ask for it.',
+        description: 'What to get done, as one short phrase that starts with a verb. When the player asked, use their own words for it and add nothing they did not ask for, or it becomes a question to them instead. It is read back to the player as a question when they did not ask for it.',
       },
       request: {
         type: 'string',

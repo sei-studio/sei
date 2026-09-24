@@ -275,6 +275,41 @@ describe('ActRun', () => {
     }
   });
 
+  it('shift+letter goes through the password guard like typing', async () => {
+    const { env, ex } = makeEnv({
+      vision: scripted('vision', [{ action: { name: 'key', input: { keys: 'shift+a' } } }]),
+      focused: async () => ({ depth: 0, parent: -1, role: 'AXTextField', subrole: 'AXSecureTextField' }),
+    });
+    const out = await new ActRun(env, { settleMs: 0 }).run();
+    expect(out.summary).toMatch(/password/);
+    expect(ex.acts).toHaveLength(0);
+  });
+
+  it('ends on the helper password guard firing mid-type', async () => {
+    const { env, ex } = makeEnv({
+      vision: scripted('vision', [{ action: { name: 'type', input: { text: 'hello' } } }]),
+      focused: async () => ({ depth: 0, parent: -1, role: 'AXTextField', pid: 42 }),
+      targetPid: 42,
+    });
+    ex.actImpl = async () => {
+      throw new Error('refused: secure input: secure keyboard entry is on (a password field has focus)');
+    };
+    const out = await new ActRun(env, { settleMs: 0 }).run();
+    expect(out).toMatchObject({ reason: 'gave_up' });
+    expect(out.summary).toMatch(/password/);
+    expect(ex.acts).toHaveLength(1);
+  });
+
+  it('a helper lockout reply ends the run as the player taking over', async () => {
+    const { env, ex } = makeEnv({ vision: scripted('vision', [{ action: { name: 'click', input: { x: 10, y: 10, button: 'left' } } }]) });
+    ex.actImpl = async () => {
+      throw new Error('cancelled: user input (actions refused until the watcher is re-armed)');
+    };
+    const out = await new ActRun(env, { settleMs: 0 }).run();
+    expect(out).toMatchObject({ reason: 'user_input', status: 'aborted' });
+    expect(ex.acts).toHaveLength(1);
+  });
+
   it('bare printable keys go through the same focus guard', async () => {
     const { env, ex } = makeEnv({ vision: scripted('vision', [{ action: { name: 'key', input: { keys: 'a' } } }]), focused: async () => null });
     const out = await new ActRun(env, { settleMs: 0 }).run();

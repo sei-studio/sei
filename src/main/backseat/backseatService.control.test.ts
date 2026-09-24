@@ -11,6 +11,8 @@ const h = vi.hoisted(() => ({
   replies: [] as Array<{ text?: string; control?: { goal: string; request?: string } }>,
   starts: [] as Array<Record<string, unknown>>,
   said: [] as string[],
+  speech: [] as Array<{ text: string; confirmId?: string }>,
+  onCall: false,
 }));
 
 vi.mock('electron', () => ({ app: { isPackaged: true, getPath: () => '/tmp' } }));
@@ -68,20 +70,38 @@ vi.mock('../computerUse/actSession', () => ({
   ACT_CANCELLED: 'ACT_CANCELLED',
 }));
 
-import { endBackseat, handleTick, initBackseatService, startBackseat } from './backseatService';
+import {
+  backseatLineHeard,
+  endBackseat,
+  handleTick,
+  initBackseatService,
+  interruptBackseat,
+  startBackseat,
+} from './backseatService';
 
 const CH = 'sui';
 let now = 1_000_000;
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
-async function tick(kind: BackseatTick['kind'], text?: string): Promise<void> {
+async function tick(kind: BackseatTick['kind'], text?: string, mic?: { ttsGapMs: number | null }): Promise<void> {
   // Past the speak gap, so a non-user tick is not dropped for it.
   now += MIN_SPEAK_GAP_MS + 1_000;
   vi.setSystemTime(now);
-  await handleTick({ characterId: CH, kind, grid: 'data:image/jpeg;base64,AAAA', capturedAt: now, frameAges: [0], ...(text ? { text } : {}) });
+  await handleTick({
+    characterId: CH,
+    kind,
+    grid: 'data:image/jpeg;base64,AAAA',
+    capturedAt: now,
+    frameAges: [0],
+    ...(text ? { text } : {}),
+    ...(mic ? { mic } : {}),
+  });
   await flush();
 }
+
+/** The confirm id main attached to the last spoken offer line. */
+const lastConfirmId = () => [...h.speech].reverse().find((l) => l.confirmId)?.confirmId;
 
 const toolNames = (i: number) => (h.requests[i]?.tools ?? []).map((t) => t.name);
 
@@ -93,14 +113,18 @@ describe('backseat control() wiring', () => {
     h.replies.length = 0;
     h.starts.length = 0;
     h.said.length = 0;
+    h.speech.length = 0;
+    h.onCall = false;
     initBackseatService({
-      pushChatMessage: (_c, m) => {
-        if (m.role === 'companion') h.said.push(m.text);
+      pushChatMessage: (_c, m, speech) => {
+        if (m.role !== 'companion') return;
+        h.said.push(m.text);
+        h.speech.push({ text: m.text, ...(speech?.confirmId ? { confirmId: speech.confirmId } : {}) });
       },
       pushState: () => {},
       pushLine: () => {},
       requestClip: () => {},
-      isCallActive: () => false,
+      isCallActive: () => h.onCall,
     });
   });
 
@@ -188,5 +212,77 @@ describe('backseat control() wiring', () => {
     expect(toolNames(1)).toEqual(['save_clip', 'remember']);
     expect(h.starts).toHaveLength(0);
     expect(h.said).toEqual(['ok', 'ok']);
+  });
+
+  // Review of d2804c7, HIGH 1: one shared word no longer counts as asking.
+  it('does not run a goal the player only half asked for', async () => {
+    await startBackseat(CH, 'window:77:0', 'Safari', 'text' as never);
+    h.replies.push({ text: 'ugh', control: { goal: 'uninstall the game', request: 'this game is so hard' } });
+    await tick('user', 'this game is so hard');
+    h.replies.push({ text: 'ok', control: { goal: 'open settings and turn off the firewall', request: 'can you open settings' } });
+    await tick('user', 'can you open settings');
+    expect(h.starts).toHaveLength(0);
+    expect(h.said).toEqual(['ugh', 'want me to uninstall the game?', 'ok', 'want me to open settings and turn off the firewall?']);
+  });
+
+  describe('on a voice call', () => {
+    beforeEach(() => {
+      h.onCall = true;
+    });
+
+    it('an offer is answerable only once the renderer says it played in full', async () => {
+      await startBackseat(CH, 'window:77:0', 'Safari', 'text' as never);
+      h.replies.push({ text: 'hey', control: { goal: 'close the popup' } });
+      await tick('idle');
+      const id = lastConfirmId();
+      expect(id).toBeTruthy();
+      expect(h.speech.find((l) => l.text === 'hey')?.confirmId).toBeUndefined();
+      // A yes before the line finished answers nothing.
+      await tick('user', 'yes', { ttsGapMs: 5_000 });
+      expect(h.starts).toHaveLength(0);
+
+      h.replies.push({ text: 'hey', control: { goal: 'close the popup' } });
+      await tick('idle');
+      backseatLineHeard(CH, lastConfirmId()!, true);
+      await tick('user', 'yes', { ttsGapMs: 5_000 });
+      expect(h.starts).toHaveLength(1);
+      expect(h.starts[0]).toMatchObject({ goal: 'close the popup', origin: 'confirmed' });
+    });
+
+    it('an offer that was cut off is never armed', async () => {
+      await startBackseat(CH, 'window:77:0', 'Safari', 'text' as never);
+      h.replies.push({ text: 'hey', control: { goal: 'close the popup' } });
+      await tick('idle');
+      backseatLineHeard(CH, lastConfirmId()!, false);
+      await tick('user', 'yes', { ttsGapMs: 5_000 });
+      expect(h.starts).toHaveLength(0);
+    });
+
+    it('a barge-in withdraws a heard offer', async () => {
+      await startBackseat(CH, 'window:77:0', 'Safari', 'text' as never);
+      h.replies.push({ text: 'hey', control: { goal: 'close the popup' } });
+      await tick('idle');
+      backseatLineHeard(CH, lastConfirmId()!, true);
+      interruptBackseat(CH);
+      await tick('user', 'yes', { ttsGapMs: 5_000 });
+      expect(h.starts).toHaveLength(0);
+    });
+
+    it('a yes right after companion audio is asked again, not acted on', async () => {
+      await startBackseat(CH, 'window:77:0', 'Safari', 'text' as never);
+      h.replies.push({ text: 'hey', control: { goal: 'close the popup' } });
+      await tick('idle');
+      const first = lastConfirmId()!;
+      backseatLineHeard(CH, first, true);
+      h.replies.push({ text: 'wait was that you' });
+      await tick('user', 'yes', { ttsGapMs: 400 });
+      expect(h.starts).toHaveLength(0);
+      expect(h.said.slice(-2)).toEqual(['wait was that you', 'want me to close the popup?']);
+      const second = lastConfirmId()!;
+      expect(second).not.toBe(first);
+      backseatLineHeard(CH, second, true);
+      await tick('user', 'yes', { ttsGapMs: 3_000 });
+      expect(h.starts).toHaveLength(1);
+    });
   });
 });

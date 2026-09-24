@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  companionAudioGapMs,
   classifyScreenEcho,
   dbOf,
   ENV_FLOOR_DB,
@@ -209,5 +210,19 @@ describe('finalScreenEcho', () => {
     expect(
       finalScreenEcho({ corr: CORR({ refActive: 0.9 }), overlap: 1, micTokens: 1, refHasText: true }),
     ).toBe(false);
+  });
+});
+
+describe('companionAudioGapMs (260925 act offers)', () => {
+  it('is 0 when a companion line overlaps the utterance or is still audible', () => {
+    expect(companionAudioGapMs([{ t0: 1000, t1: 2500 }], 2000, 3000)).toBe(0);
+    expect(companionAudioGapMs([{ t0: 1000, t1: 0 }], 5000, 6000)).toBe(0);
+  });
+  it('is the time since the last companion audio ended', () => {
+    expect(companionAudioGapMs([{ t0: 0, t1: 1000 }, { t0: 1200, t1: 4200 }], 5000, 5600)).toBe(800);
+  });
+  it('ignores lines that started after the utterance, and is null with no audio before it', () => {
+    expect(companionAudioGapMs([{ t0: 7000, t1: 0 }], 5000, 6000)).toBeNull();
+    expect(companionAudioGapMs([], 5000, 6000)).toBeNull();
   });
 });

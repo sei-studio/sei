@@ -316,6 +316,9 @@ export function setBackseatPaused(characterId: string, paused: boolean): void {
     s.inflight?.abort();
     s.inflight = null;
     s.inflightKind = null;
+    // An open "want me to ...?" does not survive a pause: the next line after
+    // unpausing is not an answer to it.
+    s.control.clear();
   }
   push(s);
 }
@@ -326,6 +329,7 @@ export async function endBackseat(characterId: string): Promise<void> {
   s.inflight?.abort();
   s.inflight = null;
   s.state.phase = 'ended';
+  s.control.clear();
   if (actFlagFromEnv()) {
     const { stopAct } = await import('../computerUse/actSession');
     stopAct(characterId);
@@ -412,11 +416,29 @@ export async function endBackseat(characterId: string): Promise<void> {
  */
 export function interruptBackseat(characterId: string): void {
   const s = sessions.get(characterId);
-  if (!s || !s.inflight) return;
+  if (!s) return;
+  // 260925 act: a barge-in also withdraws a "want me to ...?" offer. The
+  // player talked over the companion, so there is no telling how much of the
+  // offer they heard, and their words are not an answer to it.
+  if (s.control.dropOffer()) slog(s, 'control offer withdrawn: the player talked over the companion');
+  if (!s.inflight) return;
   slog(s, `${s.inflightKind ?? 'idle'} turn aborted: the player started talking`);
   s.inflight.abort();
   s.inflight = null;
   s.inflightKind = null;
+}
+
+/**
+ * 260925 act: the renderer's report on a control offer line (SpokenLineContext
+ * .confirmId): it played to its end, or it was cut off (barge-in, a newer
+ * turn superseding it, a TTS failure). Only a line heard in full makes the
+ * offer answerable; see ControlGate.heard.
+ */
+export function backseatLineHeard(characterId: string, confirmId: string, completed: boolean): void {
+  const s = sessions.get(characterId);
+  if (!s || s.state.phase === 'ended') return;
+  const r = s.control.heard(confirmId, completed);
+  slog(s, `control offer ${confirmId}: ${completed ? 'played' : 'cut off'} -> ${r}`);
 }
 
 /** Drop every session (renderer death/reload — capture cannot outlive it). */
@@ -592,16 +614,24 @@ export async function handleTick(tick: BackseatTick): Promise<void> {
 
   const notes: string[] = [];
   // 260925 act: the player's line settles a pending "want me to ...?" offer
-  // (controlPolicy). Only a plain yes, and only this next line, starts it.
+  // (controlPolicy). Only a bare yes, and only this next line, starts it. A
+  // spoken yes too close to a companion's voice is asked again instead.
   let confirmedThisTurn = false;
+  let reoffer: { line: string; id: string } | undefined;
   if (isUser && s.controlOffered) {
-    const r = s.control.onUserLine(tick.text);
+    const r = s.control.onUserLine(tick.text, tick.mic);
     if (r.kind !== 'none') slog(s, `control offer "${r.goal.slice(0, 120)}": ${r.kind}`);
     if (r.kind === 'affirmed') {
       confirmedThisTurn = true;
       void beginControl(s, r.goal, { origin: 'confirmed' });
       notes.push(
         `[System note, not the player speaking: you offered to "${r.goal}" and they said yes, so it is starting now in the background. Do not call control for it again.]`,
+      );
+    } else if (r.kind === 'unsure') {
+      reoffer = s.control.offer(r.goal);
+      notes.push(
+        `[System note, not the player speaking: you offered to "${r.goal}". A yes came in while a voice was still playing, so it may not have been them.` +
+          ` Nothing was started. The offer is asked again after your line; do not call control for it.]`,
       );
     } else if (r.kind === 'declined') {
       notes.push(`[System note, not the player speaking: you offered to "${r.goal}" and they did not say yes, so it was not done.]`);
@@ -626,7 +656,7 @@ export async function handleTick(tick: BackseatTick): Promise<void> {
   s.inflight = ctrl;
   s.inflightKind = tick.kind;
   try {
-    await runTurn(s, tick, ctrl, { extraNote, confirmedThisTurn });
+    await runTurn(s, tick, ctrl, { extraNote, confirmedThisTurn, offer: reoffer });
   } catch (err) {
     const e = err as { name?: string; message?: string };
     if (e?.name !== 'AbortError' && !/abort/i.test(e?.message ?? '')) {
@@ -652,7 +682,13 @@ async function runTurn(
   s: Session,
   tick: BackseatTick,
   ctrl: AbortController,
-  opts: { extraNote?: string; noteOverride?: string; confirmedThisTurn?: boolean } = {},
+  opts: {
+    extraNote?: string;
+    noteOverride?: string;
+    confirmedThisTurn?: boolean;
+    /** An offer to (re-)ask after this turn's line (ControlGate.offer). */
+    offer?: { line: string; id: string };
+  } = {},
 ): Promise<void> {
   const character = await getCharacter(s.characterId);
   if (!character) return;
@@ -787,14 +823,18 @@ async function runTurn(
   // what they said). Anything else, a jolt, an idle look, or a call the
   // screen talked the model into, becomes an offer read back to the player
   // ("want me to ...?"), which runs only if their next line is a yes.
-  let offerLine: string | null = null;
+  // The offer is a draft until the player has heard it (emitCompanionLines).
+  let offer: { line: string; id: string } | null = opts.offer ?? null;
   const call = s.controlOffered ? controlCall(res.content as never) : null;
   if (call) {
     const d = s.control.onCall({ tickKind: tick.kind, userText: tick.text, call, confirmedThisTurn: opts.confirmedThisTurn });
     slog(s, `turn ${tick.kind}: control "${d.goal.slice(0, 120)}" -> ${d.kind}${d.kind === 'run' ? '' : ` (${d.why})`}`);
-    if (d.kind === 'run') void beginControl(s, d.goal, { origin: 'asked', request: d.request });
-    else if (d.kind === 'propose') offerLine = d.line;
+    if (d.kind === 'run') {
+      offer = null;
+      void beginControl(s, d.goal, { origin: 'asked', request: d.request });
+    } else if (d.kind === 'propose' && d.offer) offer = d.offer;
   }
+  const offerLine = offer?.line ?? null;
 
   // stripDashes because asking did not work: the contract has forbidden em
   // dashes since 260802 and the model still writes them in most lines, and
@@ -867,13 +907,13 @@ async function runTurn(
   }
   // The offer is composed from the literal goal, not left to the model, so
   // the player says yes to exactly what would run.
-  if (offerLine) parts.push(offerLine);
+  if (offer) parts.push(offer.line);
   if (!parts.length) return;
   slog(s, `turn ${tick.kind}: said ${parts.length} line(s)${clip ? ' + clip' : ''}`);
 
   // Awaited, as before the act spike: the lines are persisted before this
   // turn ends and the next one reads the transcript.
-  await emitCompanionLines(s, parts, voiceCall, clip);
+  await emitCompanionLines(s, parts, voiceCall, clip, offer ? { index: parts.length - 1, id: offer.id } : undefined);
 }
 
 /**
@@ -886,6 +926,12 @@ function emitCompanionLines(
   parts: string[],
   voiceCall: boolean,
   clip: { path: string; reason: string } | null,
+  /**
+   * 260925 act: parts[index] is a control offer. On a call the renderer
+   * reports whether that clip played in full (backseatLineHeard) and only
+   * then is it answerable; in text it is answerable once it is shown.
+   */
+  confirm?: { index: number; id: string },
 ): Promise<void> {
   return (async () => {
     const d = requireDeps();
@@ -921,9 +967,11 @@ function emitCompanionLines(
               ...(i > 0 ? { prev: parts[i - 1] } : {}),
               ...(i < parts.length - 1 ? { more: true } : {}),
               turn: turnTag,
+              ...(confirm && confirm.index === i ? { confirmId: confirm.id } : {}),
             }
           : undefined,
       );
+      if (confirm && confirm.index === i && !voiceCall) s.control.heard(confirm.id, true);
       // The overlay's mini chat is fed separately: it shows lines in BOTH modes
       // (voice included, where the transcript deliberately hides them) because
       // the overlay is the only thing on screen while a game is fullscreen.

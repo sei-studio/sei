@@ -93,7 +93,8 @@ export interface CaptureHandle {
   /** Latch a grid ending now, to ride along with the message being composed. */
   armUserGrid: () => void;
   /** Send the player's finished line with the latched (or a fresh) grid. */
-  sendUserTick: (text: string) => Promise<void>;
+  /** `mic` (260925): set when the line came from the call's microphone (see BackseatTick.mic). */
+  sendUserTick: (text: string, mic?: { ttsGapMs: number | null }) => Promise<void>;
   /**
    * The companion just said something. Push the scheduled look back a full
    * fresh interval: main already spoke about these seconds, and an idle tick
@@ -633,6 +634,7 @@ export async function startCapture(
       joltReason?: 'gain' | 'color' | 'switch';
       sinceSwitchS?: number;
       transcript?: string;
+      mic?: { ttsGapMs: number | null };
     } = {},
   ): Promise<void> => {
     if (stopped) return;
@@ -891,7 +893,7 @@ export async function startCapture(
         }
       })();
     },
-    sendUserTick: async (text: string) => {
+    sendUserTick: async (text: string, mic?: { ttsGapMs: number | null }) => {
       if (stopped) return;
       // The latch is best-effort. If it never armed (the player pasted a whole
       // message, or typed faster than one composite), or it armed so long ago
@@ -905,7 +907,7 @@ export async function startCapture(
       // What the game said around the moment they reacted to — the flush
       // window reaches back far enough to cover a held grid's span.
       const transcript = await tickTranscript();
-      await sendTick('user', grid, { text, transcript });
+      await sendTick('user', grid, { text, transcript, ...(mic ? { mic } : {}) });
     },
     noteSpoke: () => {
       lastSpokeLocalAt = Date.now();

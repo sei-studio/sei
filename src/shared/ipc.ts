@@ -641,6 +641,15 @@ export interface SpokenLineContext {
    * it before the synthesis call); untagged lines are never dropped.
    */
   turn?: string;
+  /**
+   * 260925 backseat act: report back whether THIS line was heard in full.
+   * Set on a control offer ("want me to ...?"): the offer only becomes
+   * answerable once the renderer says the clip played to its end
+   * (backseatLineHeard, completed=true). A clip cut off by a barge-in,
+   * superseded, deafened, or never synthesized reports completed=false.
+   * Never sent to TTS.
+   */
+  confirmId?: string;
 }
 
 /** A main → renderer chat push (bot reply while in-game, or a system line). */
@@ -1859,6 +1868,8 @@ export interface RendererApi {
   backseatShareLabel(sourceId: string): Promise<string | null>;
   /** Abort the in-flight backseat turn (the player barged in over it). */
   backseatInterrupt(characterId: string): Promise<void>;
+  /** 260925 act: whether the line pushed with SpokenLineContext.confirmId played to its end. */
+  backseatLineHeard(args: { characterId: string; confirmId: string; completed: boolean }): Promise<void>;
   backseatSetPaused(characterId: string, paused: boolean): Promise<void>;
   /** Answer to a backseat:clip-request; null when no segment was available. */
   backseatSaveClip(characterId: string, requestId: string, webmBase64: string | null): Promise<void>;
@@ -3013,6 +3024,8 @@ export const IpcChannel = {
     shareLabel: 'backseat:share-label',
     /** Abort the in-flight turn: the player started talking over it. */
     interrupt: 'backseat:interrupt',
+    /** 260925 act: a confirmId line finished playing (or was cut off). */
+    lineHeard: 'backseat:line-heard',
     /** Push: raw tap PCM to the overlay renderer (ArrayBuffer payload). */
     pcm: 'backseat:pcm',
     /** Push: full BackseatState on every change. */
