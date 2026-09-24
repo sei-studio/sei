@@ -2642,6 +2642,11 @@ Packaging is **electron-builder** (`electron-builder.yml`):
 - **Linux:** AppImage (best-effort unsigned).
 - `postinstall` runs `electron-builder install-app-deps` to rebuild native
   modules against Electron's ABI.
+- **Version bumps:** run `npm install --package-lock-only` only where
+  `node_modules` is already installed. In a fresh worktree without it
+  (v0.6.5-beta.2) it looped through postinstall and stripped the `libc`
+  fields from the lockfile; after a bump, `git diff package-lock.json` should
+  show only the version lines.
 
 Common scripts: `npm run dev` (electron-vite dev), `npm run build`,
 `npm run dist:mac` / `dist:win` / `dist:linux`.
