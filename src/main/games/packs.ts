@@ -26,7 +26,14 @@
  *     unix modes ride the zip so `.node` files come back executable.
  *   - A matching `treeHash` on an already-installed pack is re-linked to the
  *     new version WITHOUT a download (two releases cut from one lockfile
- *     produce byte-identical trees even though their zips differ).
+ *     produce byte-identical trees even though their zips differ), but only
+ *     when the installed tree really holds what its pack.json promises: every
+ *     GAME_PACKS[game].requiredPaths file, and pack.json's `files` count. An
+ *     install that fails either reads as missing and is downloaded again
+ *     (260924: v0.6.5-beta.1's DST pack extracted to pack.json alone while
+ *     its treeHash matched the fixed rebuild, so a hash-only re-link would
+ *     have kept those installs empty forever).
+ *   - An extracted zip is held to the same check before it is committed.
  *   - Older versions of a game's pack are deleted once the new one commits.
  *   - Single-flight per game; every failure maps to GAME_PACK_DOWNLOAD_FAILED.
  */
@@ -140,8 +147,16 @@ async function readInstalled(e: GamePackEnv, game: GameId): Promise<InstalledRec
       return null;
     }
     // The record promises a tree; a half-deleted store must read as missing.
-    const s = await stat(path.join(versionRoot(e, game, raw.version), 'pack.json'));
+    const root = versionRoot(e, game, raw.version);
+    const s = await stat(path.join(root, 'pack.json'));
     if (!s.isFile()) return null;
+    // ...and a tree without its payload (the empty v0.6.5-beta.1 DST pack)
+    // must too, or the re-link below would carry it forward. A few stats.
+    const missing = await missingPayload(root, game);
+    if (missing.length) {
+      console.warn(`[sei/game-packs] installed ${game} ${raw.version} is missing ${missing.join(', ')}; will download again`);
+      return null;
+    }
     return raw as InstalledRecord;
   } catch {
     return null;
@@ -243,7 +258,13 @@ async function install(e: GamePackEnv, game: GameId, opts: EnsurePackOptions): P
     }
 
     // Same tree already on disk under an older version: re-link, no download.
-    if (installed && installed.treeHash === entry.treeHash) {
+    // The full file-count check runs here, once per app update, not on the
+    // per-summon fast path above.
+    if (
+      installed &&
+      installed.treeHash === entry.treeHash &&
+      (await treeProblem(versionRoot(e, game, installed.version), game)) === null
+    ) {
       const from = versionRoot(e, game, installed.version);
       const to = versionRoot(e, game, e.version);
       if (from !== to) {
@@ -475,11 +496,62 @@ async function extractZip(
   if (packJson.game !== game || packJson.treeHash !== entry.treeHash) {
     throw new Error(`${entry.file} pack.json does not match the manifest`);
   }
-  await stat(path.join(stagingRoot, 'node_modules'));
+  // Asset packs (Stardew, DST) carry no node_modules/, so the check is the
+  // game's own payload list, not a fixed directory.
+  const problem = await treeProblem(stagingRoot, game);
+  if (problem) throw new Error(`${entry.file} is incomplete: ${problem}`);
 
   await rm(finalRoot, { recursive: true, force: true });
   await rename(stagingRoot, finalRoot);
   return finalRoot;
+}
+
+// ── Integrity ───────────────────────────────────────────────────────────────
+
+/** The game's required payload files that are not regular files under root. */
+async function missingPayload(root: string, game: GameId): Promise<string[]> {
+  const missing: string[] = [];
+  for (const rel of GAME_PACKS[game].requiredPaths) {
+    try {
+      if (!(await stat(path.join(root, ...rel.split('/')))).isFile()) missing.push(rel);
+    } catch {
+      missing.push(rel);
+    }
+  }
+  return missing;
+}
+
+/** Regular files under dir, recursively. */
+async function countFiles(dir: string): Promise<number> {
+  let n = 0;
+  for (const ent of await readdir(dir, { withFileTypes: true })) {
+    if (ent.isDirectory()) n += await countFiles(path.join(dir, ent.name));
+    else if (ent.isFile()) n++;
+  }
+  return n;
+}
+
+/**
+ * Why the pack tree at root is not usable, or null when it is: a required
+ * payload file is missing, or the tree holds fewer files than pack.json's
+ * `files` (the count the builder hashed; pack.json itself excluded). Extra
+ * files are tolerated: a stray .DS_Store or Thumbs.db the OS drops into the
+ * store must not force a 50MB Minecraft re-download. A pack.json without a
+ * numeric `files` skips only the count.
+ */
+async function treeProblem(root: string, game: GameId): Promise<string | null> {
+  try {
+    const missing = await missingPayload(root, game);
+    if (missing.length) return `missing ${missing.join(', ')}`;
+    const pj = JSON.parse(await readFile(path.join(root, 'pack.json'), 'utf8')) as { files?: unknown };
+    if (typeof pj.files === 'number') {
+      const have = (await countFiles(root)) - 1;
+      if (have < pj.files) return `holds ${have} files, pack.json lists ${pj.files}`;
+    }
+    return null;
+  } catch (err) {
+    return errText(err);
+  }
 }
 
 async function pruneOtherVersions(e: GamePackEnv, game: GameId, keep: string): Promise<void> {

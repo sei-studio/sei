@@ -343,6 +343,21 @@ export function isExactRepeatSincePlayerSpoke({ segments, selfLines, lastPlayer,
 export const REPLY_WINDOW_MS = 20_000
 
 /**
+ * Games whose idle timer honours REPLY_WINDOW_MS (adapter.gameName). Stardew
+ * only for now: the window was measured on a Stardew session, where the
+ * companion is mostly talking. In agentic Minecraft the 5s idle cadence is
+ * how she resumes her goal after a step, and holding it for 20s after every
+ * line she says slowed that down four-fold. DST keeps its old cadence too
+ * until a DST session shows it needs the hold.
+ */
+export const REPLY_WINDOW_GAMES = new Set(['Stardew Valley'])
+
+/** True when the reply-window floor-hold applies to this adapter's game. */
+export function replyWindowApplies(adapter) {
+  return typeof adapter?.gameName === 'string' && REPLY_WINDOW_GAMES.has(adapter.gameName)
+}
+
+/**
  * Remaining floor-hold, in ms (0 = none). Pure; the orchestrator feeds it.
  *
  * @param {Object} args
@@ -4841,7 +4856,9 @@ function maybeWarnByteCap(loop, warned) {
     recordIncomingChat: (who, text) => convoMemory.recentChat.pushPlayer(who, text),
     // 260921: the idle timer's floor-hold (see REPLY_WINDOW_MS). brain/index.js
     // folds it into idleFallbackMs so the FSM needs no knowledge of speech.
-    replyWindowRemainingMs: () => replyWindowRemainingMs({
+    // Stardew only (REPLY_WINDOW_GAMES): 0 elsewhere, so Minecraft's agentic
+    // cadence is unchanged.
+    replyWindowRemainingMs: () => !replyWindowApplies(adapter) ? 0 : replyWindowRemainingMs({
       lastSelf: convoMemory.recentChat.lastSelf?.() ?? null,
       lastPlayer: convoMemory.recentChat.lastPlayer?.() ?? null,
       sendDeadline: _lastChatSendDeadline,

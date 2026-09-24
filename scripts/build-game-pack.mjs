@@ -70,6 +70,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { minimatch } from 'minimatch';
 import { applyAll, patchV8MsvcBuiltins } from './patch-vision-native.mjs';
+import { REQUIRED_PAYLOAD, treeHashOfEntries, verifyPackZip } from './lib/gamePackVerify.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -175,7 +176,8 @@ async function buildAssetPack(opts) {
   const zipName = `sei-pack-${opts.game}-${version}-any-any.zip`;
   const zipPath = path.join(opts.out, zipName);
   log(`zipping -> ${zipPath}`);
-  zipStaging(staging, zipPath, ['pack.json', 'assets']);
+  zipStaging(staging, zipPath);
+  await assertZipMatchesTree(zipPath, packJson);
   const zipBytes = statSync(zipPath).size;
   const sha256 = sha256File(zipPath);
   const meta = { game: opts.game, platform: 'any', arch: 'any', file: zipName, sha256, bytes: zipBytes, treeHash };
@@ -505,15 +507,14 @@ function sha256File(p) {
 
 /** sha256 over sorted relative paths and per-file sha256s (pack.json excluded). */
 function treeHashOf(staging) {
-  const files = listFiles(staging, staging).filter((f) => f !== 'pack.json').sort();
-  const h = createHash('sha256');
+  const files = listFiles(staging, staging).filter((f) => f !== 'pack.json');
   let bytes = 0;
-  for (const f of files) {
+  const entries = files.map((f) => {
     const p = path.join(staging, ...f.split('/'));
     bytes += statSync(p).size;
-    h.update(`${f}\n${sha256File(p)}\n`);
-  }
-  return { treeHash: h.digest('hex'), files: files.length, bytes };
+    return [f, sha256File(p)];
+  });
+  return { ...treeHashOfEntries(entries), bytes };
 }
 
 /**
@@ -522,13 +523,14 @@ function treeHashOf(staging) {
  * answered "tar (GNU tar) 1.35" and the Minecraft win32-x64 pack never got
  * zipped), while Windows' own C:\Windows\System32\tar.exe IS bsdtar and
  * writes `--format zip` fine. Prefer that absolute path there; everywhere
- * else the first `tar` on PATH is bsdtar (macOS) or is checked and refused.
+ * else the first `tar` on PATH is bsdtar (macOS), or a `bsdtar` binary is
+ * (Linux with libarchive-tools), or the build is refused.
  */
 function findBsdtar() {
   const candidates =
     process.platform === 'win32'
       ? [path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe'), 'tar']
-      : ['tar'];
+      : ['tar', 'bsdtar'];
   const seen = [];
   for (const c of candidates) {
     const ver = spawnSync(c, ['--version'], { encoding: 'utf8' });
@@ -539,7 +541,18 @@ function findBsdtar() {
   throw new Error(`bsdtar is required to write the zip (found: ${seen.join('; ')})`);
 }
 
-function zipStaging(staging, zipPath, entries = ['pack.json', 'node_modules']) {
+/**
+ * Zip EVERY top-level entry of the staging dir. It used to take an explicit
+ * entry list defaulting to `pack.json node_modules`, and the DST pack (whose
+ * mod lives under assets/) called it without one: v0.6.5-beta.1 shipped a
+ * 745-byte DST pack holding only pack.json and the node_modules placeholder.
+ * The staging dir holds exactly what treeHashOf hashed, so zipping all of it
+ * keeps the zip and the treeHash in step by construction;
+ * assertZipMatchesTree then proves it.
+ */
+function zipStaging(staging, zipPath) {
+  const entries = readdirSync(staging).sort((a, b) => (a === 'pack.json' ? -1 : b === 'pack.json' ? 1 : a.localeCompare(b)));
+  if (!entries.includes('pack.json')) throw new Error(`staging ${staging} has no pack.json`);
   rmSync(zipPath, { force: true });
   mkdirSync(path.dirname(zipPath), { recursive: true });
   const tar = findBsdtar();
@@ -548,6 +561,29 @@ function zipStaging(staging, zipPath, entries = ['pack.json', 'node_modules']) {
   args.push('-C', staging, ...entries);
   const res = spawnSync(tar, args, { stdio: 'inherit' });
   if (res.status !== 0) throw new Error(`tar exited ${res.status}`);
+}
+
+/**
+ * Re-read the written zip and fail the build unless it holds exactly the
+ * hashed tree plus the game's required payload (scripts/lib/gamePackVerify.mjs).
+ * The client re-links an installed pack whose treeHash matches the manifest,
+ * so a zip that silently drops files would stay broken on every machine that
+ * installed it, even after a fixed rebuild of the same sources.
+ */
+async function assertZipMatchesTree(zipPath, packJson) {
+  if (!REQUIRED_PAYLOAD[packJson.game]) {
+    throw new Error(`no REQUIRED_PAYLOAD for ${packJson.game} in scripts/lib/gamePackVerify.mjs (and GAME_PACKS requiredPaths)`);
+  }
+  const problems = await verifyPackZip(readFileSync(zipPath), {
+    game: packJson.game,
+    treeHash: packJson.treeHash,
+    files: packJson.files,
+  });
+  if (problems.length) {
+    rmSync(zipPath, { force: true });
+    throw new Error(`${path.basename(zipPath)} failed verification, not publishing it:\n  - ${problems.join('\n  - ')}`);
+  }
+  log(`verified: zip holds the ${packJson.files} hashed files and the required payload (${REQUIRED_PAYLOAD[packJson.game].join(', ')})`);
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────
@@ -584,7 +620,8 @@ async function main() {
   log(`copying closure to ${staging}`);
   copyClosure(nodes, staging);
   // A pack with no npm dependencies (DST: the Lua mod only) still ships a
-  // node_modules/ dir because the client's extractor expects one.
+  // node_modules/ dir: the extractor before 260924 required one. The client
+  // now checks GAME_PACKS[game].requiredPaths instead.
   mkdirSync(path.join(staging, 'node_modules'), { recursive: true });
   if (nodes.length === 0) writeFileSync(path.join(staging, 'node_modules', '.sei-pack-keep'), '');
   if (assets.length) {
@@ -631,6 +668,7 @@ async function main() {
   const zipPath = path.join(opts.out, zipName);
   log(`zipping -> ${zipPath}`);
   zipStaging(staging, zipPath);
+  await assertZipMatchesTree(zipPath, packJson);
   const zipBytes = statSync(zipPath).size;
   const sha256 = sha256File(zipPath);
   const meta = { game: opts.game, platform: opts.platform, arch: opts.arch, file: zipName, sha256, bytes: zipBytes, treeHash };

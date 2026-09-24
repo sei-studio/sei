@@ -1894,7 +1894,17 @@ with progress, sha256 verify, jszip extract with traversal rejection,
 `installed.json`, older versions pruned, single-flight; dev short-circuits
 to the repo root, `SEI_GAME_PACKS_DIR` exercises the real path in dev),
 `game:pack-*` IPC, `useGamePackStore` + `GamePackCard` in every launch
-panel. The supervisor awaits `ensurePack(game)` BEFORE `startedAtMs` so a
+panel. **A treeHash match is not proof of a usable pack (260924).**
+v0.6.5-beta.1 shipped a 745-byte DST pack: the builder hashed the staged
+mod under `assets/` but zipped only `pack.json node_modules`, and the
+client's extractor required `node_modules/`, which failed every Stardew
+install (no node_modules in an asset pack) with ENOENT. Now the builder
+zips every staged entry and re-reads each zip
+(`scripts/lib/gamePackVerify.mjs`: treeHash re-derived from the zip bytes,
+file count, the game's required payload), CI builds the two any-any packs
+for real on every push, and the client checks `GAME_PACKS[game].requiredPaths`
+(+ pack.json `files` on re-link and extract), so a payload-less install
+reads as missing and is downloaded again even when its treeHash matches. The supervisor awaits `ensurePack(game)` BEFORE `startedAtMs` so a
 multi-minute download never eats the 30 s summon deadline, and ships
 `packRoot` in the init payload; `src/bot/packLoader.js` registers a
 `module.register()` resolve hook (normal resolution first, pack second) plus

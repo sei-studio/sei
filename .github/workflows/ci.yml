@@ -22,7 +22,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       # headless-gl (vision render path) builds from source via node-gyp, which needs
@@ -41,6 +41,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config libxi-dev libglu1-mesa-dev libglew-dev
+          # bsdtar, for the platform-neutral game pack build below.
+          sudo apt-get install -y libarchive-tools
 
       - name: Install dependencies
         env:
@@ -58,3 +60,15 @@ jobs:
         # from the hoisted tree, compiles every prune glob against it and
         # checks the must-keep paths. No native rebuild, no zip; ~10s.
         run: npm run check:packs
+
+      - name: Build + verify the platform-neutral game packs
+        # 260924: v0.6.5-beta.1 shipped a DST pack with no mod in it (the zip
+        # step dropped assets/). The DST and Stardew packs need no native
+        # rebuild and no game install (Stardew wraps the checked-in mod
+        # build), so build them for real on every push: the builder re-reads
+        # each zip and fails when it does not hold the hashed tree and the
+        # game's required payload (scripts/lib/gamePackVerify.mjs).
+        run: |
+          node scripts/build-game-pack.mjs dontstarve --platform any --arch any --out "$RUNNER_TEMP/packs"
+          node scripts/build-game-pack.mjs stardew --platform any --arch any --skip-build --out "$RUNNER_TEMP/packs"
+          ls -la "$RUNNER_TEMP/packs"
