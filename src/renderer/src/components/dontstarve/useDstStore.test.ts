@@ -58,6 +58,11 @@ describe('mergeDetected', () => {
     const gone: DstInstallState = { kind: 'not_found', searched: [] };
     expect(mergeDetected(EPERM, gone, false)).toBe(gone);
   });
+  it('keeps it while the installed helper is disabled or still waits on the macOS grant (260925)', async () => {
+    const { mergeDetected } = await loadStore(bridge);
+    expect(mergeDetected(EPERM, { ...INSTALLED, enabled: false }, false)).toBe(EPERM);
+    expect(mergeDetected(EPERM, { ...INSTALLED, grantNeeded: true } as DstInstallState, false)).toBe(EPERM);
+  });
   it('drops a pass while an install runs', async () => {
     const { mergeDetected } = await loadStore(bridge);
     const installing: DstInstallState = { kind: 'installing', step: 'copying' };
