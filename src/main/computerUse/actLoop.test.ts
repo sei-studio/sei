@@ -300,6 +300,65 @@ describe('ActRun', () => {
     expect(text.calls).toHaveLength(0);
   });
 
+  it('text chooser "type text" goes to vision on re-indexed options, then Return is offered first', async () => {
+    const field: AxNode = { depth: 1, parent: -1, role: 'AXTextField', value: 'draft', enabled: true, frame: { x: 300, y: 100, w: 300, h: 30 } };
+    const hints: boolean[] = [];
+    const text = scripted(
+      'haiku-text',
+      [
+        (_s, o) => ({ index: o.findIndex((x) => x.kind === 'type'), probs: [0.9] }),
+        (_s, o) => {
+          // After typing, "press Return to submit" leads the list.
+          expect(o[0]!.label).toBe('press Return to submit what was just typed');
+          return { index: 0, probs: [0.9] };
+        },
+      ],
+      true,
+    );
+    const vision = scripted('vision', [(_s, o) => {
+      expect(o.some((x) => x.kind === 'type')).toBe(false);
+      expect(o.every((x, i) => x.index === i)).toBe(true);
+      return { action: { name: 'type', input: { text: ' more' } } };
+    }, done]);
+    const { env, ex } = makeEnv({
+      vision,
+      text,
+      focused: async () => field,
+      perceive: async (f, _sig, h) => {
+        hints.push(h.afterTyping);
+        return perceive({ frame: f, targetRect: RECT, ax: richAx, focused: field, afterTyping: h.afterTyping });
+      },
+    });
+    const out = await new ActRun(env, { settleMs: 0, maxSteps: 3 }).run();
+    // A filled field keeps the text chooser; its "type" pick is redone by vision.
+    expect(out.timings[0]).toMatchObject({ chooser: 'vision', pick: 'fallback' });
+    expect(text.calls[0]!.options.some((x) => x.kind === 'type')).toBe(true);
+    expect(ex.acts[0]).toMatchObject({ cmd: 'type' });
+    expect(out.timings[1]).toMatchObject({ chooser: 'haiku-text', pick: 'text' });
+    expect(ex.acts[1]).toMatchObject({ cmd: 'key' });
+    expect(hints.slice(0, 3)).toEqual([false, true, false]);
+  });
+
+  it('an empty focused field goes straight to vision (typing is next)', async () => {
+    const field: AxNode = { depth: 1, parent: -1, role: 'AXTextField', value: '', enabled: true, frame: { x: 300, y: 100, w: 300, h: 30 } };
+    const vision = scripted('vision', [done]);
+    const text = scripted('haiku-text', [{ index: 0 }], true);
+    const { env } = makeEnv({ vision, text, perceive: async (f) => perceive({ frame: f, targetRect: RECT, ax: richAx, focused: field }) });
+    const out = await new ActRun(env, { settleMs: 0 }).run();
+    expect(out.timings[0]).toMatchObject({ chooser: 'vision', pick: 'typing' });
+    expect(text.calls).toHaveLength(0);
+  });
+
+  it('the text chooser can end the run with DONE, still checked by vision', async () => {
+    const verify = vi.fn(async () => ({ achieved: true, why: 'sent', latencyMs: 1 }));
+    const text = scripted('haiku-text', [(_s, o) => ({ index: o.findIndex((x) => x.kind === 'done'), probs: [0.9] })], true);
+    const { env, ex } = makeEnv({ text, verify, perceive: async (f) => perceive({ frame: f, targetRect: RECT, ax: richAx }) });
+    const out = await new ActRun(env, { settleMs: 0 }).run();
+    expect(out.reason).toBe('done');
+    expect(verify).toHaveBeenCalledTimes(1);
+    expect(ex.acts).toHaveLength(0);
+  });
+
   it('passes player lines to the next step', async () => {
     const vision = scripted('vision', [click, done]);
     const { env, ex } = makeEnv({ vision });

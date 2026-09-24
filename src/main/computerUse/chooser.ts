@@ -18,6 +18,13 @@
  *     (jevChooser.ts). An open-source scorer being evaluated plugs in the
  *     same way, by providing a ScoreFn.
  *
+ *   - TextChooser (textChooser.ts): Claude Haiku 4.5 in text mode over the
+ *     same numbered options, forced tool call with the index. The default
+ *     text chooser (research 260925: 11/11 on the synthetic set, ~0.8 s).
+ *   - LocalChooser: NOT implemented. The seam for an on-device scorer
+ *     (SemIf + Qwen on MLX) is ScoreFn below; wrap it in ProbabilityChooser
+ *     and add a case to actSession's text chooser switch.
+ *
  * pickChooser() decides per step which one runs.
  */
 import type { LlmUsage } from '../llm/types';
@@ -98,15 +105,18 @@ export function pickChooser(p: {
   if (p.forceVision) return { chooser: p.vision, reason: 'forced' };
   if (!p.perception) return { chooser: p.vision, reason: 'no_perception' };
   if (p.perception.richness < pol.minRichness) return { chooser: p.vision, reason: 'thin' };
-  // A text chooser cannot produce text to type.
-  if (p.perception.focusedEditable) return { chooser: p.vision, reason: 'typing' };
+  // A text chooser cannot produce text to type. An EMPTY focused field means
+  // typing is next; a filled one may mean submitting (the text chooser has
+  // "press Return" and a `type` option that hands the step to vision).
+  if (p.perception.focusedEditable && p.perception.focusedEmpty) return { chooser: p.vision, reason: 'typing' };
   return { chooser: p.text, reason: 'text' };
 }
 
-/** A text choice that should be redone by the vision chooser (low confidence or unusable). */
+/** A text choice that should be redone by the vision chooser (low confidence, unusable, or "type text"). */
 export function textChoiceNeedsVision(c: Choice, options: ActOption[], policy: PickPolicy = DEFAULT_PICK_POLICY): boolean {
   if (c.error) return true;
   if (c.index === undefined || c.index < 0 || c.index >= options.length) return true;
+  if (!options[c.index]!.action) return true;
   if (c.probs && c.probs.length) {
     const top = Math.max(...c.probs);
     if (top < policy.minConfidence) return true;

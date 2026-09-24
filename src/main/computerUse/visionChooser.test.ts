@@ -8,7 +8,7 @@ const frame = { data: 'AAAA', mime: 'image/jpeg' as const, width: 1280, height: 
 const state: ChooseState = {
   goal: 'open the settings',
   frame,
-  perception: { state: 'Everything below is read from the screen.', options: [], richness: 1, focusedEditable: false, focusedSecure: false },
+  perception: { state: 'Everything below is read from the screen.', options: [], richness: 1, focusedEditable: false, focusedSecure: false, focusedEmpty: false },
   step: 3,
   maxSteps: 40,
   timeLeftS: 100,

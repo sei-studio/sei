@@ -11,12 +11,13 @@ const fake = (name: string, textOnly: boolean): Chooser => ({
 });
 const vision = fake('vision', false);
 const text = fake('jev', true);
-const perc = (richness: number, focusedEditable = false): Perception => ({
+const perc = (richness: number, focusedEditable = false, focusedEmpty = focusedEditable): Perception => ({
   state: '',
   options: [],
   richness,
   focusedEditable,
   focusedSecure: false,
+  focusedEmpty,
 });
 
 describe('pickChooser', () => {
@@ -33,14 +34,20 @@ describe('pickChooser', () => {
     expect(pickChooser({ text, vision, perception: null, forceVision: false }).reason).toBe('no_perception');
     expect(pickChooser({ text, vision, perception: perc(20), forceVision: true }).reason).toBe('forced');
     expect(pickChooser({ text, vision, perception: perc(20, true), forceVision: false }).reason).toBe('typing');
+    // A filled field may mean "submit": the text chooser keeps it (it has Return and a type hand-off).
+    expect(pickChooser({ text, vision, perception: perc(20, true, false), forceVision: false }).reason).toBe('text');
   });
 });
 
 describe('textChoiceNeedsVision', () => {
-  const opts = [{ index: 0 }, { index: 1 }] as ActOption[];
+  const opts = [{ index: 0, action: { name: 'wait', input: { ms: 100 } } }, { index: 1, action: { name: 'wait', input: { ms: 100 } } }] as ActOption[];
   const c = (x: Partial<Choice>): Choice => ({ latencyMs: 0, ...x });
   it('accepts a confident choice', () => {
     expect(textChoiceNeedsVision(c({ index: 1, probs: [0.1, 0.9] }), opts)).toBe(false);
+  });
+  it('hands a chosen "type text" option (no action) to vision', () => {
+    const withType = [{ index: 0, kind: 'type', label: 'type text into the focused field' }, { index: 1 }] as ActOption[];
+    expect(textChoiceNeedsVision(c({ index: 0, probs: [0.9, 0] }), withType)).toBe(true);
   });
   it('rejects low confidence, errors and out-of-range indexes', () => {
     expect(textChoiceNeedsVision(c({ index: 0, probs: [0.3, 0.29] }), opts)).toBe(true);

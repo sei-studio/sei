@@ -14,9 +14,10 @@
  *
  * Dev knobs (env): SEI_ACT_MODEL (vision chooser, default claude-sonnet-5),
  * SEI_ACT_VERIFY_MODEL, SEI_ACT_ANTHROPIC_KEY (direct Anthropic, dev only),
- * SEI_ACT_THINKING=off / SEI_ACT_EFFORT, SEI_JEV_API_KEY + SEI_JEV_MODEL
- * (text chooser), SEI_ACT_CHOOSER=vision (ignore Jev), SEI_ACT_PERCEIVE=0
- * (no AX/OCR options), SEI_ACT_MAX_STEPS, SEI_ACT_MAX_SECONDS.
+ * SEI_ACT_THINKING=off / SEI_ACT_EFFORT, SEI_ACT_TEXT_CHOOSER (haiku | jev |
+ * local | none) + SEI_ACT_TEXT_MODEL, SEI_JEV_API_KEY + SEI_JEV_MODEL,
+ * SEI_ACT_CHOOSER=vision (vision only), SEI_ACT_PERCEIVE=0 (no AX/OCR
+ * options), SEI_ACT_MAX_STEPS, SEI_ACT_MAX_SECONDS.
  */
 import { app, BrowserWindow, globalShortcut } from 'electron';
 import { buildLlmProvider } from '../llm';
@@ -30,6 +31,7 @@ import { budgetForModel } from './geometry';
 import { helperPath, MacInputHelper } from './inputHelper';
 import { buildJevChooser } from './jevChooser';
 import { targetRect } from './scope';
+import { TEXT_CHOOSER_MODEL, TextChooser, textChooserKind } from './textChooser';
 import { actFlagFromEnv } from './controlTool';
 import { makeVerifier, VisionChooser, type LlmCall } from './visionChooser';
 
@@ -149,8 +151,25 @@ async function buildChoosers(system: string): Promise<{
   }
   const vision = new VisionChooser({ call, model, system, cache: anthropic, anthropicExtra: extra });
   const verify = makeVerifier({ call, model: process.env.SEI_ACT_VERIFY_MODEL || model, anthropic });
-  const text = process.env.SEI_ACT_CHOOSER === 'vision' ? null : buildJevChooser(process.env);
-  return { vision, text, verify, budgetModel };
+  return { vision, text: buildTextChooser(call, anthropic), verify, budgetModel };
+}
+
+/**
+ * The text chooser, by config (SEI_ACT_TEXT_CHOOSER):
+ *   haiku (default) - Haiku 4.5 in text mode through the same call (cloud proxy);
+ *   jev             - TypeSafe Jev, needs SEI_JEV_API_KEY (else none);
+ *   local           - seam for an on-device scorer, not implemented (none);
+ *   none            - every step on vision (also SEI_ACT_CHOOSER=vision).
+ */
+function buildTextChooser(call: LlmCall, anthropic: boolean): Chooser | null {
+  switch (textChooserKind()) {
+    case 'haiku':
+      return new TextChooser({ call, model: process.env.SEI_ACT_TEXT_MODEL || TEXT_CHOOSER_MODEL, anthropic });
+    case 'jev':
+      return buildJevChooser(process.env);
+    default:
+      return null;
+  }
 }
 
 /**

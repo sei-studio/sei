@@ -162,7 +162,7 @@ export interface ActEnv {
   /** A fresh frame of the target, with `thumb`, and `ocr` when `withOcr`. */
   capture(withOcr: boolean, signal: AbortSignal): Promise<Frame>;
   /** AX + OCR -> options. Absent or throwing = vision only this step. */
-  perceive?(frame: Frame, signal: AbortSignal): Promise<Perception | null>;
+  perceive?(frame: Frame, signal: AbortSignal, hints: { afterTyping: boolean }): Promise<Perception | null>;
   /** Scope check against the screen as it is now. */
   scope(touch: ActionTouch, signal: AbortSignal): Promise<ScopeResult>;
   /** The element with keyboard focus (AX), for the password-field guard. */
@@ -252,6 +252,7 @@ export class ActRun {
     let prevThumb: string | undefined;
     let actedSincePrev = false;
     let lastFrame: Frame | undefined;
+    let afterTyping = false;
 
     const end = (reason: StopReason, summary: string, error?: string): ActOutcome => ({
       reason,
@@ -319,13 +320,17 @@ export class ActRun {
         let perception: Perception | null = null;
         if (env.perceive) {
           try {
-            perception = await abortable(env.perceive(frame, signal), signal);
+            perception = await abortable(env.perceive(frame, signal, { afterTyping }), signal);
           } catch (e) {
             if (isAbortError(e) || signal.aborted) throw e;
             env.onEvent({ type: 'log', msg: `perceive failed: ${String(e)}` });
           }
         }
         const options: ActOption[] = perception?.options ?? [];
+        // The vision chooser has a real type tool, so it does not get the
+        // text choosers' "type text" hand-off option (re-indexed without it).
+        const visionOptions: ActOption[] = options.filter((o) => o.kind !== 'type').map((o, i) => ({ ...o, index: i }));
+        afterTyping = false;
         const s2 = this.now();
 
         // 4. Choose.
@@ -346,6 +351,7 @@ export class ActRun {
         let chooser = picked.chooser;
         let pick: StepTiming['pick'] = picked.reason;
         let choice: Choice;
+        let shown = chooser.textOnly ? options : visionOptions;
         if (chooser.textOnly) {
           try {
             choice = await abortable(chooser.choose(state, options, history, signal), signal);
@@ -354,20 +360,26 @@ export class ActRun {
             choice = { error: e instanceof Error ? e.message : String(e), latencyMs: this.now() - s2 };
           }
           if (textChoiceNeedsVision(choice, options, policy)) {
-            env.onEvent({ type: 'log', msg: `text chooser ${chooser.name} unsure (${choice.error ?? `p=${Math.max(...(choice.probs ?? [0])).toFixed(2)}`}), asking vision` });
+            const why =
+              choice.error ??
+              (choice.index !== undefined && options[choice.index]?.kind === 'type'
+                ? 'chose to type'
+                : `p=${Math.max(...(choice.probs ?? [0])).toFixed(2)}`);
+            env.onEvent({ type: 'log', msg: `text chooser ${chooser.name} handed off (${why}), asking vision` });
             chooser = env.vision;
             pick = 'fallback';
-            choice = await abortable(chooser.choose(state, options, history, signal), signal);
+            shown = visionOptions;
+            choice = await abortable(chooser.choose(state, shown, history, signal), signal);
           }
         } else {
-          choice = await abortable(chooser.choose(state, options, history, signal), signal);
+          choice = await abortable(chooser.choose(state, shown, history, signal), signal);
         }
         const s3 = this.now();
 
         if (choice.say) env.onEvent({ type: 'say', text: choice.say });
         const action: ParsedAction | undefined =
-          choice.index !== undefined ? options[choice.index]?.action : choice.action;
-        const label = choice.index !== undefined ? `option ${choice.index} (${options[choice.index]?.label ?? '?'})` : action ? describeAction(action) : 'nothing';
+          choice.index !== undefined ? shown[choice.index]?.action : choice.action;
+        const label = choice.index !== undefined ? `option ${choice.index} (${shown[choice.index]?.label ?? '?'})` : action ? describeAction(action) : 'nothing';
 
         const timing: StepTiming = {
           step: steps,
@@ -481,6 +493,7 @@ export class ActRun {
         }
         timing.actionMs = this.now() - a0;
         actedSincePrev = true;
+        afterTyping = action.name === 'type';
         finishStep(true, 'ok', timing.actionMs);
         if (L.settleMs > 0) await sleep(L.settleMs, signal);
       }

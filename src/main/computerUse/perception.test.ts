@@ -46,14 +46,41 @@ describe('perceive (fixture: sign-in page)', () => {
 
   it('ends with the generic options, DONE and GIVE_UP last', () => {
     const tail = p.options.slice(p.richness).map((o) => o.kind);
-    expect(tail).toEqual(['key', 'key', 'key', 'key', 'key', 'key', 'key', 'key', 'scroll', 'scroll', 'wait', 'done', 'give_up']);
+    // Focus is in the (empty) Email field, so the "type text" hand-off leads.
+    expect(tail).toEqual(['type', 'key', 'key', 'key', 'key', 'key', 'key', 'key', 'key', 'scroll', 'scroll', 'wait', 'done', 'give_up']);
     expect(p.options.every((o, i) => o.index === i)).toBe(true);
+    expect(p.options.find((o) => o.kind === 'type')!.action).toBeUndefined();
+    expect(p.focusedEmpty).toBe(true);
+  });
+
+  it('always lists DONE, worded as already achieved', () => {
+    for (const q of [p, perceive({ frame, targetRect: fixture.window }), perceive({ ...base, afterTyping: true, maxOptions: 20 })]) {
+      const d = q.options.find((o) => o.kind === 'done')!;
+      expect(d.label).toBe('DONE: the goal is already achieved on this screen');
+      expect(d.action).toEqual({ name: 'done', input: { summary: '' } });
+    }
+  });
+
+  it('after typing, lists "press Return to submit" first and only once', () => {
+    const typedFocus = { ...(fixture.focused as AxNode), value: 'me@example.com' };
+    const q = perceive({ ...base, focused: typedFocus, afterTyping: true });
+    expect(q.options[0]).toMatchObject({ index: 0, kind: 'key', label: 'press Return to submit what was just typed', action: { name: 'key', input: { keys: 'return' } } });
+    expect(q.options.filter((o) => o.action?.name === 'key' && (o.action.input as { keys: string }).keys === 'return')).toHaveLength(1);
+    expect(q.focusedEmpty).toBe(false);
+    expect(q.richness).toBe(7);
+    // Without the hint, Return is an ordinary generic option.
+    expect(perceive({ ...base, focused: typedFocus }).options.find((o) => o.label === 'press Return')).toBeDefined();
+  });
+
+  it('offers no "type" option without an editable focus', () => {
+    expect(perceive({ ...base, focused: null }).options.some((o) => o.kind === 'type')).toBe(false);
+    expect(perceive({ ...base, focused: fixture.focusedSecure as AxNode }).options.some((o) => o.kind === 'type')).toBe(false);
   });
 
   it('maps click options to image px at the control center', () => {
     const signIn = p.options.find((o) => o.label === 'click button "Sign in"')!;
-    expect(signIn.action.name).toBe('click');
-    const a = signIn.action.input as { x: number; y: number };
+    expect(signIn.action!.name).toBe('click');
+    const a = signIn.action!.input as { x: number; y: number };
     // center (1960, 416) global -> image
     expect(a.x).toBe(Math.floor(((1960 - 1512) * 1280) / 1200));
     expect(a.y).toBe(Math.floor(((416 - 25) * 853) / 800));

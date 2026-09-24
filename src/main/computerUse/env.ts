@@ -73,8 +73,8 @@ export function makePerceive(o: {
   seiPids: () => Set<number>;
   maxNodes?: number;
   log?: (m: string) => void;
-}): (frame: Frame, signal: AbortSignal) => Promise<Perception | null> {
-  return async (frame, signal) => {
+}): (frame: Frame, signal: AbortSignal, hints?: { afterTyping: boolean }) => Promise<Perception | null> {
+  return async (frame, signal, hints) => {
     const [windows, displays, frontmost] = await Promise.all([
       o.executor.windows(),
       o.executor.displays(),
@@ -104,7 +104,7 @@ export function makePerceive(o: {
         : Promise.resolve([]),
       o.executor.axFocused(signal).catch(() => null),
     ]);
-    return perceive({ frame, targetRect: rect, ax, ocr: frame.ocr, focused, appName, windowTitle });
+    return perceive({ frame, targetRect: rect, ax, ocr: frame.ocr, focused, appName, windowTitle, afterTyping: hints?.afterTyping });
   };
 }
 

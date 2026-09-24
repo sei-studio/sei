@@ -40,13 +40,21 @@ backseat turn (user tick) --control({goal})--> actSession.startControl
    focused element (`ax_focused`) and OCR → a state text and numbered
    options. AX controls (buttons, links, fields, menu items, ...) that are
    enabled, >= 4 pt, and centred inside the target; OCR text (conf >= 0.4) not
-   already inside an AX control; then generic options (Return, Escape, Tab,
-   Space, arrows, scroll up/down, wait 1 s, DONE, GIVE_UP). Password fields
-   are never listed and their values never read. `richness` = AX + OCR count.
-4. **Pick a chooser** (`chooser.pickChooser`): the text chooser (Jev) only
-   when there is one, the options are rich (>= 3), keyboard focus is not in
-   an editable field (text choosers cannot produce text), and vision was not
-   forced. A text choice with top probability < 0.35 is redone by vision.
+   already inside an AX control; then generic options: "type text into the
+   focused field" (only when focus is editable; it has no action and hands
+   the step to vision, which writes the text), Return, Escape, Tab, Space,
+   arrows, scroll up/down, wait 1 s, DONE, GIVE_UP. DONE and GIVE_UP are
+   ALWAYS listed, last, even at the option cap. After a `type` step the
+   list opens with "press Return to submit what was just typed". Password
+   fields are never listed and their values never read. `richness` = AX +
+   OCR count.
+4. **Pick a chooser** (`chooser.pickChooser`): the text chooser when there
+   is one, the options are rich (>= 3), vision was not forced, and focus is
+   not in an EMPTY editable field (typing is next, and text choosers cannot
+   produce text; a filled field stays on text so it can pick Return). Else
+   vision. A text choice is redone by vision when its confidence is < 0.35,
+   when it is unusable, or when it picked the "type text" hand-off. Vision
+   sees the same options minus the hand-off, re-indexed.
 5. **Choose**: `choose(state, options, history)` returns `{index, probs?}` or
    a direct action. One action per step.
 6. **Terminal**: `give_up` ends. `done` runs a separate vision check on the
@@ -101,15 +109,45 @@ chooser's reasoning.
 
 ## Choosers
 
-- `VisionChooser` (default): Claude via the main LLM layer (cloud proxy or
-  BYOK), stateless per step: goal, text history, notes, player lines,
-  perception state + options, one image. Model `SEI_ACT_MODEL` (default
-  `claude-sonnet-5`, effort low). `SEI_ACT_ANTHROPIC_KEY` uses Anthropic
-  directly (dev only).
+The contract is `choose(state, options, history) -> {index, probs?} |
+{action}`. Which text chooser runs is config only: `SEI_ACT_TEXT_CHOOSER` =
+`haiku` (default) | `jev` | `local` | `none`; `SEI_ACT_CHOOSER=vision` turns
+text choosers off.
+
+- `TextChooser` (`textChooser.ts`, default text chooser): Claude Haiku 4.5
+  in text mode through the main LLM layer, so the cloud proxy or the
+  player's BYOK provider, like every other Haiku call. State text + numbered
+  options, a forced `choose` tool with `index` (an enum of the option
+  numbers) and `confidence`; the confidence becomes a one-hot probability so
+  the same < 0.35 fallback applies. The prompt names the two weak spots the
+  260925 research found in every model: checking first whether the goal is
+  already done, and pressing Return after typing. `SEI_ACT_TEXT_MODEL`
+  overrides the model.
+- `VisionChooser`: Claude with one image per step: goal, text history,
+  notes, player lines, perception state + options. Model `SEI_ACT_MODEL`
+  (default `claude-sonnet-5`, effort low). Runs thin screens (games,
+  canvases), empty focused fields, stalls, and every text fallback.
+  `SEI_ACT_ANTHROPIC_KEY` uses Anthropic directly (dev only).
 - `ProbabilityChooser`: any scorer `(goal, state, history, options) ->
   probs`. `JevChooser` is one (TypeSafe `jev-1.13.0`, `SEI_JEV_API_KEY`;
-  returns null without a key, so every step runs on vision). An open-source
-  scorer plugs in the same way.
+  without a key there is no text chooser and every step runs on vision).
+- `LocalChooser`: not implemented. An on-device scorer (SemIf + Qwen on MLX)
+  would be a `ScoreFn` wrapped in `ProbabilityChooser`, added as the `local`
+  case in `actSession.buildTextChooser`. Today `local` means no text chooser.
+
+## Eval
+
+`__fixtures__/chooser-eval.json` is the seed set: the 11 synthetic cases from
+the research (0-based, DONE/GIVE_UP in the loop's wording, including a
+30-option list, an already-done screen and a type-then-Return screen) plus 2
+cases of real perception output over the AX/OCR fixture (one with a prompt
+injection button as a distractor). `chooserEval.test.ts` pins the shape and
+the coverage of both weak spots. Run it against a chooser with
+`npx tsx scripts/act-chooser-eval.ts [--chooser haiku|jev] [--n 3]`. Grow it
+with real `ax_dump` captures toward 50-100 cases.
+
+First run (Haiku 4.5, direct, n=3): 39/39, p50 930 ms, p90 1014 ms, about
+1150 input and 52 output tokens a step.
 
 ## Helper (`native/mac-input`)
 
@@ -126,8 +164,9 @@ the hosted runner is Accessibility-trusted, so a TextEdit end-to-end step
 `actions.ts` tools/validation/mapping, `keys.ts` key names, `geometry.ts`
 coordinate spaces and image budget, `perception.ts` options, `chooser.ts`
 interface + selection + probability adapter, `visionChooser.ts` Claude
-chooser + completion check, `jevChooser.ts`, `actLoop.ts` loop, `scope.ts`,
+chooser + completion check, `textChooser.ts` Haiku text chooser, `jevChooser.ts`, `actLoop.ts` loop, `scope.ts`,
 `env.ts` capture/perceive/scope over the helper, `inputHelper.ts` helper
 client, `driveOverlay.ts` Stop pill, `actSession.ts` wiring,
 `controlTool.ts` the backseat tool + completion note, `directAnthropic.ts`
-dev client. Latency probe: `npx tsx scripts/act-latency-probe.ts`.
+dev client. Latency probe: `npx tsx scripts/act-latency-probe.ts`; chooser
+eval: `npx tsx scripts/act-chooser-eval.ts`.

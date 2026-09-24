@@ -21,15 +21,19 @@ import { globalToImage, intersect, rectContains } from './geometry';
 import type { ParsedAction } from './actions';
 import type { AxNode, Frame, OcrBox, Rect } from './types';
 
-export type OptionKind = 'ax' | 'ocr' | 'key' | 'scroll' | 'wait' | 'done' | 'give_up';
+/**
+ * `type` is special: text choosers cannot write the text, so choosing it
+ * hands the step to the vision chooser, which can. It has no action.
+ */
+export type OptionKind = 'ax' | 'ocr' | 'type' | 'key' | 'scroll' | 'wait' | 'done' | 'give_up';
 
 export interface ActOption {
   index: number;
   kind: OptionKind;
   /** Plain words, e.g. `click button "Save"`. */
   label: string;
-  /** The action in image px of the frame the options were built on. */
-  action: ParsedAction;
+  /** The action in image px of the frame the options were built on (absent for `type`). */
+  action?: ParsedAction;
   /** For AX options: the element's role. */
   role?: string;
 }
@@ -39,8 +43,10 @@ export interface Perception {
   options: ActOption[];
   /** AX + OCR options (on-screen things to act on). */
   richness: number;
-  /** Keyboard focus is in an editable text element (typing needs the vision chooser). */
+  /** Keyboard focus is in an editable text element. */
   focusedEditable: boolean;
+  /** ...and that element is empty (the next step almost certainly types, so it goes to vision). */
+  focusedEmpty: boolean;
   /** Keyboard focus is in a password field (typing is refused). */
   focusedSecure: boolean;
 }
@@ -108,6 +114,8 @@ export interface PerceiveInput {
   windowTitle?: string;
   /** Cap on the whole list (Jev allows 255). */
   maxOptions?: number;
+  /** The previous action typed text: "press Return" goes to the top, worded as submitting it. */
+  afterTyping?: boolean;
 }
 
 function clean(s: string | undefined): string {
@@ -218,12 +226,17 @@ export function perceive(p: PerceiveInput): Perception {
   }
 
   const options: ActOption[] = [];
-  const push = (kind: OptionKind, label: string, action: ParsedAction, role?: string) =>
-    options.push({ index: options.length, kind, label, action, ...(role ? { role } : {}) });
+  const push = (kind: OptionKind, label: string, action: ParsedAction | undefined, role?: string) =>
+    options.push({ index: options.length, kind, label, ...(action ? { action } : {}), ...(role ? { role } : {}) });
+  const focusedEditable = isEditable(p.focused) && p.focused?.subrole !== 'AXSecureTextField';
 
   const tc = toImg(p.targetRect);
-  const generics: Array<[OptionKind, string, ParsedAction]> = [
-    ['key', 'press Return', { name: 'key', input: { keys: 'return' } }],
+  const returnOpt: [OptionKind, string, ParsedAction] = p.afterTyping
+    ? ['key', 'press Return to submit what was just typed', { name: 'key', input: { keys: 'return' } }]
+    : ['key', 'press Return', { name: 'key', input: { keys: 'return' } }];
+  const generics: Array<[OptionKind, string, ParsedAction | undefined]> = [
+    ...(focusedEditable ? [['type', 'type text into the focused field', undefined] as [OptionKind, string, undefined]] : []),
+    ...(p.afterTyping ? [] : [returnOpt]),
     ['key', 'press Escape', { name: 'key', input: { keys: 'escape' } }],
     ['key', 'press Tab', { name: 'key', input: { keys: 'tab' } }],
     ['key', 'press Space', { name: 'key', input: { keys: 'space' } }],
@@ -234,15 +247,17 @@ export function perceive(p: PerceiveInput): Perception {
     ['scroll', 'scroll up', { name: 'scroll', input: { x: tc.x, y: tc.y, direction: 'up', amount: 5 } }],
     ['scroll', 'scroll down', { name: 'scroll', input: { x: tc.x, y: tc.y, direction: 'down', amount: 5 } }],
     ['wait', 'wait one second', { name: 'wait', input: { ms: 1000 } }],
-    ['done', 'DONE: the goal is achieved', { name: 'done', input: { summary: '' } }],
+    ['done', 'DONE: the goal is already achieved on this screen', { name: 'done', input: { summary: '' } }],
     ['give_up', 'GIVE_UP: the goal cannot be reached from here', { name: 'give_up', input: { reason: '' } }],
   ];
-  const room = Math.max(0, max - generics.length);
+  // After typing, submitting is the most likely next step: list it first.
+  if (p.afterTyping) push(...returnOpt);
+  const room = Math.max(0, max - generics.length - options.length);
   for (const c of seen.slice(0, room)) {
     const pt = toImg(c.rect);
     push(c.kind, c.label, { name: 'click', input: { x: pt.x, y: pt.y, button: 'left' } }, c.role);
   }
-  const richness = options.length;
+  const richness = options.filter((o) => o.kind === 'ax' || o.kind === 'ocr').length;
   for (const [k, l, a] of generics) push(k, l, a);
 
   // State text.
@@ -277,7 +292,8 @@ export function perceive(p: PerceiveInput): Perception {
     state: lines.join('\n'),
     options,
     richness,
-    focusedEditable: isEditable(p.focused) && p.focused?.subrole !== 'AXSecureTextField',
+    focusedEditable,
+    focusedEmpty: focusedEditable && !clean(p.focused?.value),
     focusedSecure: p.focused?.subrole === 'AXSecureTextField',
   };
 }
