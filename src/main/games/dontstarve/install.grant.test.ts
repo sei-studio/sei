@@ -14,6 +14,8 @@ const APP = path.join(INSTALL, 'dontstarve_steam.app');
 const MODS = path.join(APP, 'Contents', 'mods');
 const PACK_MOD = '/pack/assets/dst-mod/sei';
 const STAGE = '/tmp/sei-dst-1';
+/** Two wrong folders: the second showing ends the panel route. */
+const WRONG_TWICE = ['/Users/me/Desktop', '/Users/me/Downloads'];
 const VDF = `"libraryfolders"\n{\n\t"0"\n\t{\n\t\t"path"\t\t"${ROOT}"\n\t\t"apps"\n\t\t{\n\t\t\t"322330"\t\t"1"\n\t\t}\n\t}\n}\n`;
 const SHIPPED_SETTINGS = '--ForceEnableMod("kioskmode_dst")\n';
 
@@ -196,13 +198,35 @@ describe('installMod on macOS without a grant (260925)', () => {
     expect(s).toMatchObject({ kind: 'found', modInstalled: true, enabled: true });
   });
 
-  it('cancel falls back to the Finder copy: staged mod + new modsettings.lua, verified, staging removed', async () => {
+  it('cancel means no: the permission error, no Finder, nothing staged', async () => {
     const d = makeDisk({ installed: '0.2.0' });
     const { grant, calls } = fakeGrant(d, { picks: [null] });
     const steps: string[] = [];
     const s = await installMod({ packRoot: '/pack', grant, onProgress: (x) => steps.push(x) }, d.deps);
+    expect(s).toMatchObject({ kind: 'error', error: 'GAME_INSTALL_FAILED', permission: true });
+    expect(steps).toEqual(['replacing', 'asking']);
+    expect(calls.picks).toHaveLength(1);
+    expect(calls.finder).toHaveLength(0);
+    expect(d.disk.files.get(path.join(MODS, 'sei', 'modinfo.lua'))).toContain('0.2.0');
+    expect(d.listUnder(STAGE)).toEqual([]);
+  });
+
+  it('a hinted re-show that is cancelled is still a no', async () => {
+    const d = makeDisk();
+    const { grant, calls } = fakeGrant(d, { picks: ['/Users/me/Desktop', null] });
+    const s = await installMod({ packRoot: '/pack', grant }, d.deps);
+    expect(s).toMatchObject({ kind: 'error', permission: true });
+    expect(calls.picks).toHaveLength(2);
+    expect(calls.finder).toHaveLength(0);
+  });
+
+  it('the Finder copy: staged mod + new modsettings.lua, verified, staging removed', async () => {
+    const d = makeDisk({ installed: '0.2.0' });
+    const { grant, calls } = fakeGrant(d, { picks: WRONG_TWICE });
+    const steps: string[] = [];
+    const s = await installMod({ packRoot: '/pack', grant, onProgress: (x) => steps.push(x) }, d.deps);
     expect(s).toMatchObject({ kind: 'found', modInstalled: true, modVersion: '0.3.0', enabled: true });
-    expect(steps).toEqual(['replacing', 'asking', 'finder']);
+    expect(steps).toEqual(['replacing', 'asking', 'asking', 'finder']);
     expect(calls.finder).toEqual([{ sources: [path.join(STAGE, 'sei'), path.join(STAGE, 'modsettings.lua')], dest: MODS }]);
     // The upgrade replaced the folder whole: the dropped script is gone.
     expect(d.disk.files.has(path.join(MODS, 'sei', 'stale.lua'))).toBe(false);
@@ -214,7 +238,7 @@ describe('installMod on macOS without a grant (260925)', () => {
 
   it('Finder copies only the mod when modsettings.lua is already right', async () => {
     const d = makeDisk({ settings: rewriteModSettings(SHIPPED_SETTINGS) });
-    const { grant, calls } = fakeGrant(d, { picks: [null] });
+    const { grant, calls } = fakeGrant(d, { picks: WRONG_TWICE });
     const s = await installMod({ packRoot: '/pack', grant }, d.deps);
     expect(s).toMatchObject({ kind: 'found', modInstalled: true, enabled: true });
     expect(calls.finder[0].sources).toEqual([path.join(STAGE, 'sei')]);
@@ -231,7 +255,7 @@ describe('installMod on macOS without a grant (260925)', () => {
 
   it('both routes failing returns the permission error, with the staging cleaned up', async () => {
     const d = makeDisk();
-    const { grant, calls } = fakeGrant(d, { picks: [null], finderFails: true });
+    const { grant, calls } = fakeGrant(d, { picks: WRONG_TWICE, finderFails: true });
     const s = await installMod({ packRoot: '/pack', grant }, d.deps);
     expect(s).toMatchObject({ kind: 'error', error: 'GAME_INSTALL_FAILED', permission: true });
     expect(calls.finder).toHaveLength(1);
@@ -240,13 +264,13 @@ describe('installMod on macOS without a grant (260925)', () => {
 
   it('a Finder copy that did not land is a failure, not a success', async () => {
     const d = makeDisk();
-    const { grant } = fakeGrant(d, { picks: [null], finderNoop: true });
+    const { grant } = fakeGrant(d, { picks: WRONG_TWICE, finderNoop: true });
     const s = await installMod({ packRoot: '/pack', grant }, d.deps);
     expect(s).toMatchObject({ kind: 'error', permission: true });
     expect(d.listUnder(STAGE)).toEqual([]);
   });
 
-  it('a panel that throws (window gone) counts as cancel', async () => {
+  it('a panel that throws (window gone) is not an answer: it goes to Finder', async () => {
     const d = makeDisk();
     const { grant, calls } = fakeGrant(d, { picks: [] });
     grant.pickFolder = async () => {

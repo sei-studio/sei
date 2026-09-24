@@ -25,7 +25,7 @@ import {
 import { DST_DEFAULT_SURVIVOR, isDstSurvivorPrefab, renderDstSurvivorBrief } from '../../../shared/dstSurvivors';
 import type { GameModule, GameJoinContext, GameInstall } from '../index';
 import { createDstWatcher, type DstWatcher } from './watcher';
-import { detectInstall, enableMod, installMod, type MacGrant } from './install';
+import { detectInstall, enableMod, installMod, isHelperCurrent, type MacGrant } from './install';
 import { launchDst } from './launch';
 
 /** The offer lives this long past the bot's report (the supervisor's summon
@@ -40,6 +40,8 @@ export interface DstModuleDeps {
   detect: typeof detectInstall;
   install: typeof installMod;
   enable: typeof enableMod;
+  /** Read-only: is the helper in `modsDir` as new as the pack's and enabled? */
+  isCurrent: (packRoot: string, modsDir: string) => Promise<boolean>;
   launch: () => Promise<void>;
   watcher?: DstWatcher;
   log?: (msg: string) => void;
@@ -74,6 +76,7 @@ function defaultDeps(): DstModuleDeps {
     detect: detectInstall,
     install: installMod,
     enable: enableMod,
+    isCurrent: (packRoot, modsDir) => isHelperCurrent(packRoot, modsDir),
     launch: () => launchDst(),
     log: (m) => console.log(`[sei/dst] ${m}`),
   };
@@ -91,6 +94,8 @@ export function createDontStarveGameModule(overrides: Partial<DstModuleDeps> = {
    * install succeeds.
    */
   let grantNeeded = false;
+  /** The pack the refused run used, so the poll can re-check without ensurePack. */
+  let grantPackRoot: string | null = null;
   let lastEnableError = '';
   let onUpdate: ((s: WorldState) => void) | null = null;
 
@@ -118,6 +123,11 @@ export function createDontStarveGameModule(overrides: Partial<DstModuleDeps> = {
         if (msg !== lastEnableError) log(`re-enable failed: ${msg}`);
         lastEnableError = msg;
       }
+    }
+    if (grantNeeded && lastInstall.kind === 'found' && lastInstall.modInstalled && lastInstall.enabled && grantPackRoot) {
+      // Fixed some other way (App Management turned on, a manual copy):
+      // detection sees the helper current and enabled, so nothing is pending.
+      if (await deps.isCurrent(grantPackRoot, lastInstall.modsDir).catch(() => false)) grantNeeded = false;
     }
     if (grantNeeded && lastInstall.kind === 'found') lastInstall = { ...lastInstall, grantNeeded: true };
     // A heartbeat is the helper talking, so whatever the file times say the
@@ -238,6 +248,7 @@ export function createDontStarveGameModule(overrides: Partial<DstModuleDeps> = {
         // flag it and hand back what is on disk (the launch goes ahead with
         // whatever helper is there).
         grantNeeded = true;
+        grantPackRoot = packRoot;
         s = await refreshInstall();
       } else if (s.kind === 'found' && s.modInstalled && s.enabled) {
         grantNeeded = false;

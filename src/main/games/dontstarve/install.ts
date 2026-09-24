@@ -414,6 +414,15 @@ async function helperCurrent(src: string, modsDir: string, deps: InstallDeps): P
 }
 
 /**
+ * helperCurrent from a pack root, for the module to clear `grantNeeded` when
+ * detection finds the helper current and enabled (260925). Read-only.
+ */
+export async function isHelperCurrent(packRoot: string, modsDir: string, deps: InstallDeps = defaultDeps()): Promise<boolean> {
+  const src = await resolveModSource(packRoot, deps);
+  return src != null && helperCurrent(src, modsDir, deps);
+}
+
+/**
  * Copy the mod from the pack into the game and force-enable it.
  *
  * macOS (260925, measured on a signed v0.6.5-beta.2 with App Management off):
@@ -423,8 +432,9 @@ async function helperCurrent(src: string, modsDir: string, deps: InstallDeps): P
  * unmeasured). On EPERM, with a `grant` (a user click):
  *   1. the Open panel on the mods folder; picking `mods` or the .app writes a
  *      com.apple.macl grant and the retry succeeds. Any other folder shows
- *      the panel once more with a hint.
- *   2. cancel, or still EPERM: Finder copies it in (Finder is exempt from App
+ *      the panel once more with a hint. Cancel = no: the permission error, no
+ *      Finder.
+ *   2. a second wrong folder, still EPERM, or a panel that threw: Finder copies it in (Finder is exempt from App
  *      Management; costs one "Sei wants access to control Finder" prompt).
  *   3. both fail: the permission error the step already shows.
  * Without a grant (a game launch) there is never a dialog: a refused refresh
@@ -457,7 +467,7 @@ export async function installMod(
 
 /**
  * Steps 1 and 2 of the macOS flow above. Resolves 'installed', 'refused'
- * (both routes failed on permission), or a non-permission Error that the
+ * (the player cancelled the panel, or both routes failed on permission), or a non-permission Error that the
  * caller reports as it is.
  */
 export async function grantAndInstall(
@@ -471,8 +481,15 @@ export async function grantAndInstall(
   const accepted = [await real(modsDir), await real(appBundleFor(modsDir))].filter((p): p is string => p != null);
   for (let hint = false; ; hint = true) {
     onProgress?.('asking');
-    const picked = await grant.pickFolder({ defaultPath: modsDir, hint }).catch(() => null);
-    if (picked == null) break;
+    // Cancel means no: no Finder prompt after it, the step shows the one
+    // line and "Try again". A panel that could not show (it threw) is not
+    // an answer, so that one still goes to Finder.
+    const picked = await grant.pickFolder({ defaultPath: modsDir, hint }).then(
+      (p) => p,
+      () => undefined,
+    );
+    if (picked === null) return 'refused';
+    if (picked === undefined) break;
     const chosen = await real(picked);
     if (chosen == null || !accepted.includes(chosen)) {
       if (hint) break;

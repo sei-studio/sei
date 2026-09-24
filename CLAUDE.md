@@ -2008,7 +2008,8 @@ again", "Update helper", "Turn the helper back on"; `dst:install` passes a
 `MacGrant`) tries the plain install; on a darwin EPERM it shows the Open panel
 as a sheet on the Sei window, accepts only a realpath equal to `modsDir` or the
 `.app` (case-insensitive), re-shows it once with a hint for any other folder,
-and retries. Cancel, a second wrong folder, or a retry that still EPERMs goes
+and retries. Cancel means no: the one line plus "Try again", no Finder. A
+second wrong folder, a retry that still EPERMs, or a panel that threw goes
 to Finder: the mod and the new `modsettings.lua` are staged in a temp dir and
 duplicated in with replacing (a replaced folder is replaced whole, so an
 upgrade drops stale scripts), source file modes are put back where macOS
@@ -2019,7 +2020,8 @@ Only when both fail does `DstSteps` show the one App Management line plus
 refused write counts as success when the helper is already current and
 enabled (the every-launch recopy is a refresh), otherwise the launch goes
 ahead with whatever helper is there and the module sets `grantNeeded` on the
-found state, so the helper step comes back with the button (a disabled
+found state, so the helper step comes back with the button (cleared again
+when a later detection sees the helper current and enabled) (a disabled
 `modsettings.lua` shows as "Turn the helper back on" straight from detection).
 The error still PERSISTS as before: `useDstStore` skips the poll while an
 install is in flight and `mergeDetected` keeps an error until the helper is in

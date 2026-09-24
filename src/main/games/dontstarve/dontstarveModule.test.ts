@@ -12,7 +12,9 @@ function build(cfg: Partial<UserConfig> = {}, installState: unknown = { kind: 'f
   const enable = vi.fn(async () => {});
   const install = vi.fn(async (_opts: unknown) => ({ kind: 'found', installPath: '/i', modsDir: '/i/mods', modInstalled: true, modVersion: '0.1.0', enabled: true }) as never);
   const launch = vi.fn(async () => {});
+  const isCurrent = vi.fn(async (_packRoot: string, _modsDir: string) => false);
   const mod = createDontStarveGameModule({
+    isCurrent,
     watcher,
     detect,
     enable,
@@ -23,7 +25,7 @@ function build(cfg: Partial<UserConfig> = {}, installState: unknown = { kind: 'f
     getPackRoot: async () => '/pack',
     log: () => {},
   });
-  return { mod, watcher, detect, enable, install, launch, tick: (ms: number) => { t += ms; } };
+  return { mod, watcher, detect, enable, install, launch, isCurrent, tick: (ms: number) => { t += ms; } };
 }
 
 describe('dontstarve GameModule', () => {
@@ -105,6 +107,19 @@ describe('dontstarve GameModule', () => {
     const s = await mod.runInstall(undefined, { grant });
     expect(install.mock.calls[1][0]).toMatchObject({ grant });
     expect(s).not.toHaveProperty('grantNeeded');
+    expect(await mod.getInstallState()).not.toHaveProperty('grantNeeded');
+  });
+
+  it('grantNeeded clears when detection sees the helper current and enabled (fixed some other way)', async () => {
+    const { mod, install, isCurrent } = build();
+    install.mockResolvedValueOnce({ kind: 'error', error: 'GAME_INSTALL_FAILED', message: 'EPERM', permission: true } as never);
+    await mod.install!.launch();
+    expect(await mod.getInstallState()).toMatchObject({ grantNeeded: true });
+    expect(isCurrent).toHaveBeenLastCalledWith('/pack', '/i/mods');
+    isCurrent.mockResolvedValue(true);
+    expect(await mod.getInstallState()).not.toHaveProperty('grantNeeded');
+    // And it stays cleared: a later poll that could not check does not bring it back.
+    isCurrent.mockResolvedValue(false);
     expect(await mod.getInstallState()).not.toHaveProperty('grantNeeded');
   });
 
