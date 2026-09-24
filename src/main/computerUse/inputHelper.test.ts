@@ -111,6 +111,17 @@ describe('MacInputHelper protocol', () => {
     expect(h.alive).toBe(false);
   });
 
+  it('cancels an action that timed out, so it stops before the next one runs', async () => {
+    const f = fakeChild();
+    const p = MacInputHelper.start('bin', { spawn: (() => f.child) as unknown as SpawnFn, readyTimeoutMs: 1000, actTimeoutMs: 20 });
+    f.send({ event: 'ready', version: 1, pid: 42 });
+    const h = await p;
+    const a = h.act({ cmd: 'type', text: 'a long line' }, new AbortController().signal);
+    await expect(a).rejects.toThrow(/timed out/);
+    await tick();
+    expect(f.sent.map((m) => m.cmd)).toEqual(['type', 'cancel']);
+  });
+
   it('resolves the packaged and dev paths', () => {
     expect(helperPath(true, '/R', '/A')).toBe('/R/mac-input/sei-mac-input');
     expect(helperPath(false, '/R', '/A')).toBe('/A/resources/mac-input/sei-mac-input');

@@ -112,4 +112,25 @@ describe('toHelperCommand', () => {
     expect(describeAction(parsed('click', { x: 10.4, y: 20.6, button: 'right' }))).toBe('right click (10, 21)');
     expect(describeAction(parsed('type', { text: 'x'.repeat(50) }))).toMatch(/\.\.\."$/);
   });
+
+  it('refuses launcher hotkeys and emptying the Trash', () => {
+    for (const k of ['cmd+space', 'alt+space', 'cmd+alt+space', 'option+space', 'cmd+shift+backspace', 'cmd+alt+shift+backspace']) {
+      const m = toHelperCommand(parsed('key', { keys: k }), frame);
+      expect(m.ok, k).toBe(false);
+      if (!m.ok) expect(m.error).toMatch(/refused/);
+    }
+    for (const k of ['space', 'shift+space', 'ctrl+space', 'backspace', 'cmd+backspace']) {
+      expect(toHelperCommand(parsed('key', { keys: k }), frame).ok, k).toBe(true);
+    }
+  });
+
+  it('types one field at a time: no tabs, a newline only at the end', () => {
+    expect(toHelperCommand(parsed('type', { text: 'hello' }), frame).ok).toBe(true);
+    expect(toHelperCommand(parsed('type', { text: 'search words\n' }), frame).ok).toBe(true);
+    // A tab or an inner newline moves focus mid-text, past the password-field check.
+    for (const text of ['user@example.com\tsecret', 'user@example.com\nsecret', 'a\r\nb', 'x\n\n']) {
+      const m = toHelperCommand(parsed('type', { text }), frame);
+      expect(m.ok, JSON.stringify(text)).toBe(false);
+    }
+  });
 });

@@ -112,7 +112,7 @@ export const ACT_TOOLS: LlmToolDef[] = [
   },
   {
     name: 'type',
-    description: 'Type text into whatever has keyboard focus. A newline presses Return.',
+    description: 'Type text into whatever has keyboard focus, one field at a time. A newline at the very end presses Return. No tabs or other newlines: press those with key, as their own step.',
     input_schema: { type: 'object', properties: { text: { type: 'string', maxLength: 500 } }, required: ['text'] },
   },
   {
@@ -169,6 +169,13 @@ export function blockedCombo(key: string, mods: readonly string[]): string | nul
   if (cmd && m.has('alt') && key === 'escape') return 'force quit';
   // Power and eject combos: sleep, restart, shut down.
   if (key === 'power' || key === 'eject') return 'sleep, restart or shut down';
+  // Launchers (Spotlight cmd+space, Finder search cmd+alt+space, Alfred,
+  // Raycast and ChatGPT on alt+space). Their panels take keystrokes without
+  // changing the frontmost app, so the scope check cannot see that the keys
+  // left the shared window, and a launcher can open or run anything.
+  if (key === 'space' && (cmd || m.has('alt'))) return 'opening a launcher outside the shared window';
+  // Empty the Trash (with alt: without asking); in browsers, clear history.
+  if (cmd && m.has('shift') && key === 'backspace') return 'emptying the Trash or clearing history';
   // ctrl+cmd+f is fullscreen and fine; ctrl+alt+cmd+anything else is left to scope.
   return null;
 }
@@ -236,8 +243,18 @@ export function toHelperCommand(
       const dx = a.input.direction === 'left' ? n : a.input.direction === 'right' ? -n : 0;
       return { ok: true, command: { cmd: 'scroll', x: p.x, y: p.y, dx, dy }, touch: { ...none, points: [p] } };
     }
-    case 'type':
+    case 'type': {
+      // The helper types a tab or newline as a real Tab or Return key, which
+      // can move focus mid-text (Tab to the next field, Return to a password
+      // page), past the one focus check the password guard runs before the
+      // action. So one type fills one field: a newline is allowed only as the
+      // last character, and tabs never.
+      const body = a.input.text.replace(/\r?\n$/, '');
+      if (/[\t\r\n]/.test(body)) {
+        return { ok: false, error: 'type fills one field at a time: no tabs, and a newline only at the very end. Use the key tool for tab or return, as its own step' };
+      }
       return { ok: true, command: { cmd: 'type', text: a.input.text }, touch: { ...none, keyboard: true, typing: true } };
+    }
     case 'key': {
       const c = parseCombo(a.input.keys);
       if ('error' in c) return { ok: false, error: c.error };

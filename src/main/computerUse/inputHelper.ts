@@ -20,6 +20,8 @@ import type { AppInfo, AxNode, DisplayInfo, OcrBox, Permissions, Rect, WindowInf
 export const READY_TIMEOUT_MS = 5000;
 export const QUERY_TIMEOUT_MS = 4000;
 export const SCREENSHOT_TIMEOUT_MS = 10000;
+/** Generous: a hold can legitimately run 10 s, and a long type on a slow Mac longer. */
+export const ACT_TIMEOUT_MS = 30000;
 
 export interface HelperShot {
   data: string;
@@ -92,6 +94,7 @@ export class MacInputHelper implements InputExecutor {
   private pending = new Map<number, Pending>();
   private events = new EventEmitter();
   private exited = false;
+  private actTimeoutMs = ACT_TIMEOUT_MS;
   ready: Record<string, unknown> | null = null;
 
   private constructor(private log: (m: string) => void) {}
@@ -99,9 +102,10 @@ export class MacInputHelper implements InputExecutor {
   /** Spawn and wait for the ready event. Throws on a missing binary or no ready in time. */
   static async start(
     bin: string,
-    opts: { log?: (m: string) => void; spawn?: SpawnFn; readyTimeoutMs?: number } = {},
+    opts: { log?: (m: string) => void; spawn?: SpawnFn; readyTimeoutMs?: number; actTimeoutMs?: number } = {},
   ): Promise<MacInputHelper> {
     const h = new MacInputHelper(opts.log ?? (() => {}));
+    if (opts.actTimeoutMs !== undefined) h.actTimeoutMs = opts.actTimeoutMs;
     const spawnFn: SpawnFn = opts.spawn ?? ((b) => nodeSpawn(b, [], { stdio: ['pipe', 'pipe', 'pipe'] }));
     const child = spawnFn(bin);
     h.child = child;
@@ -190,8 +194,13 @@ export class MacInputHelper implements InputExecutor {
   async act(command: HelperCommand, signal?: AbortSignal): Promise<{ ms: number }> {
     if (signal?.aborted) throw new AbortError(signal.reason);
     const { cmd, ...args } = command;
-    // Generous timeout: a hold can legitimately run 10 s.
-    const p = this.request(cmd, args, 20000);
+    // A timed-out action is still running in the helper (a long type keeps
+    // typing), so a timeout cancels it before the loop moves on; otherwise the
+    // next step's action would queue behind it and the keys would keep landing.
+    const p = this.request(cmd, args, this.actTimeoutMs).catch((e: Error) => {
+      if (/timed out/.test(e.message)) void this.cancel().catch(() => {});
+      throw e;
+    });
     if (!signal) return p.then((r) => ({ ms: Number(r.ms ?? 0) }));
     return new Promise((resolve, reject) => {
       const onAbort = () => {

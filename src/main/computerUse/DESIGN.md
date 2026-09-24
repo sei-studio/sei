@@ -63,7 +63,11 @@ backseat turn (user tick) --control({goal})--> actSession.startControl
    the next step runs on vision. 3 failed checks = give up.
 7. **Guards**: coordinates are clamped into the frame (so into the shared
    bounds). Blocked combos are never sent (cmd+q and every cmd+..+q,
-   cmd+alt+esc force quit, power/eject). Typing (`type`, bare printable keys,
+   cmd+alt+esc force quit, power/eject, launcher hotkeys cmd/alt+space
+   whose panels take keys without changing the frontmost app, and
+   cmd+shift+backspace empty Trash). One `type` fills one field: no tabs,
+   and a newline only at the very end, because a Tab or Return mid-text
+   moves focus past the password check. Typing (`type`, bare printable keys,
    `hold_key` on a letter) first checks `ax_focused`; a password field ends
    the run. The scope check (`scope.ts`) runs on a fresh window list before
    every input action: pointer inside the target, not on Sei's pill, topmost
@@ -88,7 +92,10 @@ aborting also sends the helper `cancel` + `release_all`. It fires on:
 - the overlay Stop pill;
 - the Ctrl+Shift+Esc global hotkey;
 - a stop word in a player line;
-- a new `control()` call (`replaced`);
+- a new `control()` call (`replaced`), from any character: there is one
+  mouse and keyboard, so one run at a time app-wide. A stop, a share ending
+  or a newer call during a run's START (helper spawn, permissions, choosers)
+  cancels the start (`ACT_CANCELLED`) before it can drive;
 - the time cap (default 120 s);
 - ending the backseat session.
 

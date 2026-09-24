@@ -818,21 +818,23 @@ async function runTurn(
   if (!parts.length) return;
   slog(s, `turn ${tick.kind}: said ${parts.length} line(s)${clip ? ' + clip' : ''}`);
 
-  emitCompanionLines(s, parts, voiceCall, clip);
-  push(s);
+  // Awaited, as before the act spike: the lines are persisted before this
+  // turn ends and the next one reads the transcript.
+  await emitCompanionLines(s, parts, voiceCall, clip);
 }
 
 /**
  * Persist + push the companion's spoken parts (the tail of runTurn, shared
  * with the 260925 act loop's say() lines so both speak through one path).
+ * Never rejects: a failure is logged.
  */
 function emitCompanionLines(
   s: Session,
   parts: string[],
   voiceCall: boolean,
   clip: { path: string; reason: string } | null,
-): void {
-  void (async () => {
+): Promise<void> {
+  return (async () => {
     const d = requireDeps();
     const now = Date.now();
     // One tag per turn (260806). Backseat turns land every 10-20 s while TTS
@@ -886,9 +888,15 @@ function emitCompanionLines(
   })().catch((err) => slog(s, `line emit failed: ${(err as Error).message}`, true));
 }
 
+/** This session is still the live one for its character (not ended or replaced). */
+function sessionLive(s: Session): boolean {
+  return sessions.get(s.characterId) === s && s.state.phase !== 'ended';
+}
+
 /** 260925 act spike: start (or replace) the control run on this share. */
 async function beginControl(s: Session, goal: string, name: string, persona: string | undefined): Promise<void> {
-  const { startControl } = await import('../computerUse/actSession');
+  const { startControl, stopAct, ACT_CANCELLED } = await import('../computerUse/actSession');
+  if (!sessionLive(s)) return;
   slog(s, `control requested: "${goal.slice(0, 200)}"`);
   const r = await startControl({
     characterId: s.characterId,
@@ -904,10 +912,24 @@ async function beginControl(s: Session, goal: string, name: string, persona: str
         .filter((t) => t && !isSilenceFiller(t));
       if (!parts.length) return;
       s.lastSpokeAt = Date.now();
-      emitCompanionLines(s, parts, requireDeps().isCallActive?.(s.characterId) === true, null);
+      void emitCompanionLines(s, parts, requireDeps().isCallActive?.(s.characterId) === true, null);
     },
     onEnd: (outcome, g) => void runControlEvent(s, g, outcome),
   });
+  // Stopped or replaced before it started: nothing ran, nothing to report.
+  // (First, so a start cancelled by a newer session's call never stops that
+  // newer run below.)
+  if (!r.ok && r.error === ACT_CANCELLED) {
+    slog(s, 'control start cancelled');
+    return;
+  }
+  // The share may have ended while the run was starting (helper spawn,
+  // permissions, choosers). endBackseat's stopAct cancels a start it can see;
+  // this catches the one that had not registered yet.
+  if (!sessionLive(s)) {
+    if (r.ok) stopAct(s.characterId);
+    return;
+  }
   if (!r.ok) {
     slog(s, `control failed to start: ${r.error}`, true);
     void runControlEvent(s, goal, {

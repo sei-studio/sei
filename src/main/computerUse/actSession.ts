@@ -71,6 +71,24 @@ interface Running {
 
 const running = new Map<string, Running>();
 
+/**
+ * Starts still in progress (helper spawning, permission check, choosers
+ * building: easily a second or more). A stop, the end of the share, or a newer
+ * control() call cancels them here, because they are not in `running` yet and
+ * would otherwise begin driving after the thing that should have stopped them.
+ */
+interface StartToken {
+  characterId: string;
+  cancelled: boolean;
+}
+const starting = new Set<StartToken>();
+
+function cancelStarts(characterId?: string): void {
+  for (const t of starting) if (characterId === undefined || t.characterId === characterId) t.cancelled = true;
+}
+
+export const ACT_CANCELLED = 'ACT_CANCELLED';
+
 export function isActing(characterId: string): boolean {
   return running.has(characterId);
 }
@@ -80,10 +98,12 @@ export function actingGoal(characterId: string): string | null {
 }
 
 export function stopAct(characterId: string, reason: StopReason = 'stopped'): void {
+  cancelStarts(characterId);
   running.get(characterId)?.run.stop(reason);
 }
 
 export function stopAllActs(): void {
+  cancelStarts();
   for (const r of running.values()) r.run.stop('stopped');
 }
 
@@ -173,18 +193,31 @@ function buildTextChooser(call: LlmCall, anthropic: boolean): Chooser | null {
 }
 
 /**
- * Start a control run. A running one for the same character is stopped
- * ('replaced') first and awaited. Resolves once the new run has STARTED (or
- * failed to), not when it ends; `onEnd` gets the outcome.
+ * Start a control run. There is one mouse and one keyboard, so a running run
+ * (any character's) is stopped ('replaced') first and awaited, and a start
+ * still in progress is cancelled. Resolves once the new run has STARTED (or
+ * failed to, `ACT_CANCELLED` when a stop or a newer start got there first),
+ * not when it ends; `onEnd` gets the outcome.
  */
 export async function startControl(o: ControlStartOptions): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!actFlagEnabled()) return { ok: false, error: 'ACT_DISABLED' };
-  const prev = running.get(o.characterId);
-  if (prev) {
+  cancelStarts();
+  const token: StartToken = { characterId: o.characterId, cancelled: false };
+  starting.add(token);
+  try {
+    return await startControlInner(o, token);
+  } finally {
+    starting.delete(token);
+  }
+}
+
+async function startControlInner(o: ControlStartOptions, token: StartToken): Promise<{ ok: true } | { ok: false; error: string }> {
+  for (const [id, prev] of [...running]) {
     prev.run.stop('replaced');
     await Promise.race([prev.done.catch(() => null), new Promise((r) => setTimeout(r, 3000))]);
-    if (running.get(o.characterId) === prev) running.delete(o.characterId);
+    if (running.get(id) === prev) running.delete(id);
   }
+  if (token.cancelled) return { ok: false, error: ACT_CANCELLED };
   const target = targetFromSourceId(o.sourceId, o.sourceName);
   if (!target) return { ok: false, error: `ACT_BAD_SOURCE: ${o.sourceId}` };
 
@@ -198,7 +231,11 @@ export async function startControl(o: ControlStartOptions): Promise<{ ok: true }
   }
   o.log(`act helper ready: ${JSON.stringify(helper.ready)}`);
   let overlay: DriveOverlay | null = null;
+  const checkCancelled = (): void => {
+    if (token.cancelled) throw new Error(ACT_CANCELLED);
+  };
   try {
+    checkCancelled();
     const perms = await helper.permissions(false);
     o.log(`act permissions as the helper sees them: ${JSON.stringify(perms)}`);
     if (!perms.postEventAccess || !perms.axTrusted) {
@@ -206,6 +243,7 @@ export async function startControl(o: ControlStartOptions): Promise<{ ok: true }
       o.log(`act permissions after prompt: ${JSON.stringify(asked)}`, true);
       if (!asked.postEventAccess) throw new Error('ACT_NO_ACCESSIBILITY');
     }
+    checkCancelled();
     const [windows, displays] = await Promise.all([helper.windows(), helper.displays()]);
     const rect = targetRect({ target, windows, displays });
     if (!rect) throw new Error('ACT_TARGET_GONE');
@@ -218,6 +256,9 @@ export async function startControl(o: ControlStartOptions): Promise<{ ok: true }
       targetLabel: o.sourceName,
     });
     const { vision, text, verify, budgetModel } = await buildChoosers(system);
+    // Last await before the run exists: nothing below yields until run() has
+    // been registered in `running`, where stopAct can reach it.
+    checkCancelled();
     const limits = { ...DEFAULT_LIMITS, ...limitsFromEnv(), ...o.limits };
     o.log(
       `act start: goal="${o.goal.slice(0, 160)}" vision=${vision.model} text=${text ? text.model : 'none'} ` +
