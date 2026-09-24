@@ -398,7 +398,12 @@ async function deriveOnce(characterId: string, deps: AppearanceDeps): Promise<Re
   // 5. Share it, unless it is a blind guess about a character that has art.
   let result: ResolvedAppearance = { appearance, source: 'auto' };
   let version = STARDEW_APPEARANCE_VERSION;
-  const shareable = Boolean(image) || !portrait;
+  // "Has art" is the character's portrait ref, not whether the bytes could be
+  // read here: a ref whose file is not cached yet (cache-on-demand downloads it
+  // after saving the ref), failed to download, is too large or is an
+  // unsupported format still means the text-only guess is blind.
+  const hasArt = Boolean(portrait) || (typeof character.portrait_image === 'string' && character.portrait_image.trim() !== '');
+  const shareable = Boolean(image) || !hasArt;
   if (shareable && deps.writeCloud) {
     const wrote = await deps.writeCloud({ characterId, version, data: appearance }).catch(() => null);
     if (wrote?.ok) {

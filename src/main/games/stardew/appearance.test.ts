@@ -330,9 +330,32 @@ describe('shared cloud looks + the portrait (260925)', () => {
   });
 
   it('a character with no art at all shares its text-only look', async () => {
-    const { d, writeCloud } = suiDeps({ readPortrait: async () => null, canSee: async () => false });
+    const { d, writeCloud } = suiDeps({
+      getCharacter: async () => ({
+        name: 'Sui',
+        description: 'long silver hair, navy coat',
+        persona: { source: 'tomboy gremlin', expanded: '' },
+        metadata: {},
+        portrait_image: null,
+      }),
+      readPortrait: async () => null,
+      canSee: async () => false,
+    });
     await getOrDeriveAppearance('sui', d);
     expect(writeCloud).toHaveBeenCalledTimes(1);
+  });
+
+  it('a portrait ref whose file cannot be read (not cached yet, too big) still keeps a text guess local', async () => {
+    const seen: DeriveArgs[] = [];
+    const { d, writeCloud } = suiDeps({
+      readPortrait: async () => null,
+      canSee: async () => true,
+      derive: async (a) => { seen.push(a); return SUI_V1; },
+    });
+    expect((await getOrDeriveAppearance('sui', d)).appearance.hair).toBe(8);
+    expect(seen[0].image).toBeNull();
+    expect(writeCloud).not.toHaveBeenCalled();
+    expect(d.cfg.stardew_appearance?.sui?.hair).toBe(8);
   });
 
   it('this user\'s own override beats the cloud row', async () => {
