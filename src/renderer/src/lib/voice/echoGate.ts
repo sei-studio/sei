@@ -336,12 +336,17 @@ export const SHARE_VOICE_DB = -50;
  * a real word in a segment overlapping that window (bracketed tags such as
  * "[Music]" do not count) AND the share audio was audible in it; the second
  * half keeps a word from earlier in the same 3 s Whisper chunk from counting
- * when the window itself was quiet. Null when there is no share audio at all
- * (no samples in the window), so the caller knows it could not judge.
- * `probe` is the capture handle's echoProbe-shaped read of [t0 - lead, t1].
+ * when the window itself was quiet.
+ *
+ * Audible share audio that has NOT been transcribed through the end of the
+ * utterance (`judgedThrough` < uttT1: no model, a timed-out flush, a wedged
+ * worker) cannot be ruled out, so it counts as speech too (true): the caller
+ * re-asks rather than trusting a yes it could not check. Null only when there
+ * is no share audio at all in the window. `probe` is the capture handle's
+ * echoProbe-shaped read of [t0 - lead, t1].
  */
 export function shareVoiceDuring(
-  probe: { envelope: EnvSample[]; transcript: string },
+  probe: { envelope: EnvSample[]; transcript: string; judgedThrough: number },
   uttT0: number,
   uttT1: number,
 ): boolean | null {
@@ -349,6 +354,7 @@ export function shareVoiceDuring(
   const inWindow = probe.envelope.filter((s) => s.t >= from && s.t <= uttT1);
   if (!inWindow.length) return null;
   const audible = inWindow.some((s) => s.db >= SHARE_VOICE_DB);
+  if (audible && probe.judgedThrough < uttT1) return true;
   const words = probe.transcript
     .replace(/\[[^\]]*\]|\([^)]*\)|[♪♫]/g, ' ')
     .trim();

@@ -921,6 +921,7 @@ export async function startCapture(
               {
                 envelope: echoEnv.filter((s) => s.t >= mic.t0 - SHARE_VOICE_LEAD_MS && s.t <= mic.t1),
                 transcript: stt.textAround(mic.t0 - SHARE_VOICE_LEAD_MS, mic.t1),
+                judgedThrough: stt.judgedThrough(),
               },
               mic.t0,
               mic.t1,

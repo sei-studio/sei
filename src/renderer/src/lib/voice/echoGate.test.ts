@@ -227,6 +227,8 @@ describe('companionAudioGapMs (260925 act offers)', () => {
 });
 
 describe('shareVoiceDuring (260925 act)', () => {
+  /** The STT has judged everything up to here (well past every window below). */
+  const DONE = 1e12;
   const env = (from: number, to: number, db: number) => {
     const out: Array<{ t: number; db: number }> = [];
     for (let t = from; t <= to; t += 32) out.push({ t, db });
@@ -234,23 +236,32 @@ describe('shareVoiceDuring (260925 act)', () => {
   };
 
   it('is true when the share was audible with words during the utterance', () => {
-    expect(shareVoiceDuring({ envelope: env(1_000, 2_000, -30), transcript: 'yes sir right away' }, 1_200, 1_600)).toBe(true);
+    expect(shareVoiceDuring({ envelope: env(1_000, 2_000, -30), transcript: 'yes sir right away', judgedThrough: DONE }, 1_200, 1_600)).toBe(true);
   });
 
   it('counts speech just before the utterance started', () => {
     const e = [...env(1_000, 1_000 + 32 * 3, -30), ...env(1_200, 2_000, -80)];
-    expect(shareVoiceDuring({ envelope: e, transcript: 'yes' }, 1_000 + SHARE_VOICE_LEAD_MS - 50, 1_700)).toBe(true);
+    expect(shareVoiceDuring({ envelope: e, transcript: 'yes', judgedThrough: DONE }, 1_000 + SHARE_VOICE_LEAD_MS - 50, 1_700)).toBe(true);
   });
 
   it('is false for music tags, silence, or words while the window was quiet', () => {
-    expect(shareVoiceDuring({ envelope: env(1_000, 2_000, -30), transcript: '[Music] ♪' }, 1_200, 1_600)).toBe(false);
-    expect(shareVoiceDuring({ envelope: env(1_000, 2_000, -30), transcript: '' }, 1_200, 1_600)).toBe(false);
-    expect(shareVoiceDuring({ envelope: env(1_000, 2_000, -70), transcript: 'hello there' }, 1_200, 1_600)).toBe(false);
+    expect(shareVoiceDuring({ envelope: env(1_000, 2_000, -30), transcript: '[Music] ♪', judgedThrough: DONE }, 1_200, 1_600)).toBe(false);
+    expect(shareVoiceDuring({ envelope: env(1_000, 2_000, -30), transcript: '', judgedThrough: DONE }, 1_200, 1_600)).toBe(false);
+    expect(shareVoiceDuring({ envelope: env(1_000, 2_000, -70), transcript: 'hello there', judgedThrough: DONE }, 1_200, 1_600)).toBe(false);
   });
 
   it('is null with no share audio in the window', () => {
-    expect(shareVoiceDuring({ envelope: [], transcript: 'hello' }, 1_200, 1_600)).toBeNull();
-    expect(shareVoiceDuring({ envelope: env(5_000, 6_000, -30), transcript: 'hello' }, 1_200, 1_600)).toBeNull();
+    expect(shareVoiceDuring({ envelope: [], transcript: 'hello', judgedThrough: DONE }, 1_200, 1_600)).toBeNull();
+    expect(shareVoiceDuring({ envelope: env(5_000, 6_000, -30), transcript: 'hello', judgedThrough: DONE }, 1_200, 1_600)).toBeNull();
+  });
+
+  it('audible share audio not yet transcribed counts as speech (re-ask)', () => {
+    // Transcription off, or the flush timed out before the utterance was chewed.
+    expect(shareVoiceDuring({ envelope: env(1_000, 2_000, -30), transcript: '', judgedThrough: 0 }, 1_200, 1_600)).toBe(true);
+    expect(shareVoiceDuring({ envelope: env(1_000, 2_000, -30), transcript: '', judgedThrough: 1_500 }, 1_200, 1_600)).toBe(true);
+    // Quiet share audio needs no transcript to be ruled out.
+    expect(shareVoiceDuring({ envelope: env(1_000, 2_000, -80), transcript: '', judgedThrough: 0 }, 1_200, 1_600)).toBe(false);
+    // Judged through the end and silent of words: music only.
+    expect(shareVoiceDuring({ envelope: env(1_000, 2_000, -30), transcript: '', judgedThrough: 1_600 }, 1_200, 1_600)).toBe(false);
   });
 });
-

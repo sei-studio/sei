@@ -44,7 +44,7 @@ export interface PendingControl {
 
 export type ControlDecision =
   | { kind: 'run'; goal: string; origin: 'asked'; request: string }
-  | { kind: 'propose'; goal: string; why: 'not_user_tick' | 'not_asked' };
+  | { kind: 'propose'; goal: string; why: 'not_user_tick' | 'not_asked' | 'unsafe_goal' };
 
 const CJK = /[぀-ヿ㐀-䶿一-鿿가-힯]/;
 const CJK_RUN = /[぀-ヿ㐀-䶿一-鿿가-힯]+/g;
@@ -131,10 +131,57 @@ export function requestMatches(request: string | undefined, userText: string | u
   return coversGoalInOrder(contentTokens(r), contentTokens(goal));
 }
 
+/** Longest goal that may run without an offer. */
+export const IMMEDIATE_GOAL_MAX_CHARS = 120;
+
+/**
+ * A goal that must never run without an offer, whatever the player said:
+ * quotes (of any kind), line breaks or other control characters, or longer
+ * than IMMEDIATE_GOAL_MAX_CHARS. The word checks count content words only, so
+ * without this a goal could carry a fake quoted request and a "yes" in its
+ * punctuation and filler, aimed at the intent check.
+ */
+export function unsafeGoal(goal: string): boolean {
+  return (
+    goal.length > IMMEDIATE_GOAL_MAX_CHARS ||
+    /["'`\u2018\u2019\u201A\u201B\u201C\u201D\u201E\u201F\u00AB\u00BB\u2039\u203A\u300C-\u300F\uFF02\uFF07]/.test(goal) ||
+    /[\p{Cc}\p{Cf}\u2028\u2029]/u.test(goal)
+  );
+}
+
+/** Articles a goal may add to the player's words ("open settings" -> "open the settings"). */
+const GOAL_MAY_ADD = new Set(['the', 'a', 'an']);
+
+/**
+ * EVERY word of the goal, filler included (please, yes, now, can, you...), is
+ * in what the player said (exact, or the light stem match), except a bare
+ * article. CJK: every character of the goal is in the line. So a goal cannot
+ * add words the player never said, content or not.
+ */
+export function goalWordsSaid(goal: string, userText: string): boolean {
+  const g = normalizeWords(goal);
+  const u = normalizeWords(userText);
+  if (!g || !u) return false;
+  const uWords = u.split(' ');
+  const uChars = new Set([...u.replace(/\s/g, '')]);
+  for (const w of g.split(' ')) {
+    if (GOAL_MAY_ADD.has(w)) continue;
+    if (CJK.test(w)) {
+      for (const ch of w) if (!uChars.has(ch)) return false;
+      continue;
+    }
+    if (!uWords.some((x) => sameWord(x, w))) return false;
+  }
+  return true;
+}
+
 export function decideControl(o: { tickKind: string; userText?: string; call: ControlCall }): ControlDecision {
   const goal = o.call.goal.trim();
   if (o.tickKind !== 'user') return { kind: 'propose', goal, why: 'not_user_tick' };
-  if (!requestMatches(o.call.request, o.userText, goal)) return { kind: 'propose', goal, why: 'not_asked' };
+  if (unsafeGoal(goal)) return { kind: 'propose', goal, why: 'unsafe_goal' };
+  if (!requestMatches(o.call.request, o.userText, goal) || !goalWordsSaid(goal, o.userText ?? '')) {
+    return { kind: 'propose', goal, why: 'not_asked' };
+  }
   return { kind: 'run', goal, origin: 'asked', request: o.call.request!.trim() };
 }
 
@@ -231,7 +278,12 @@ export const INTENT_TIMEOUT_MS = 5_000;
 
 /** The one-line offer, built from the literal goal. */
 export function proposalLine(goal: string): string {
-  let g = goal.trim().replace(/[.!?\s]+$/, '');
+  // Spoken and captioned: no line breaks or control characters in it.
+  let g = goal
+    .replace(/[\p{Cc}\p{Cf}\u2028\u2029]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.!?\s]+$/, '');
   // "Turn on dark mode" -> "turn on dark mode", but keep "I", "VPN", "Safari".
   if (/^[A-Z][a-z]/.test(g)) g = g[0]!.toLowerCase() + g.slice(1);
   g = g.replace(/^to\s+/i, '');
@@ -257,7 +309,7 @@ export type CallOutcome =
   | {
       kind: 'propose';
       goal: string;
-      why: 'not_user_tick' | 'not_asked' | 'intent_no';
+      why: 'not_user_tick' | 'not_asked' | 'unsafe_goal' | 'intent_no';
       offer: { line: string; id: string } | null;
     }
   | { kind: 'ignored'; goal: string; why: 'confirmed_this_turn' };
@@ -277,7 +329,8 @@ const DRAFT_DEDUPE_MS = 15_000;
  */
 export class ControlGate {
   pending: PendingControl | null = null;
-  draft: { goal: string; id: string; at: number } | null = null;
+  /** `spoken`: the line went out (spoken()); only then can it block a repeat or be armed. */
+  draft: { goal: string; id: string; at: number; spoken: boolean } | null = null;
   private seq = 0;
 
   constructor(private readonly now: () => number = () => Date.now()) {}
@@ -305,12 +358,12 @@ export class ControlGate {
     }
     const now = this.now();
     // The same goal already on offer is not offered twice in a row. A draft
-    // counts only while it could still be playing: one whose line was dropped
-    // unheard must not block the offer from being made again.
+    // counts only once its line went out and while it could still be playing:
+    // one never sent, or dropped unheard, must not block the offer again.
     const onOffer =
       this.pending && now - this.pending.at <= PENDING_CONTROL_TTL_MS
         ? this.pending.goal
-        : this.draft && now - this.draft.at <= DRAFT_DEDUPE_MS
+        : this.draft && this.draft.spoken && now - this.draft.at <= DRAFT_DEDUPE_MS
           ? this.draft.goal
           : undefined;
     if (onOffer !== undefined && normalizeWords(onOffer) === normalizeWords(d.goal)) return { ...d, offer: null };
@@ -347,6 +400,8 @@ export class ControlGate {
       signal?.removeEventListener('abort', onAbort);
     }
     if (yes === true && !signal?.aborted) return d;
+    // A superseded turn speaks nothing, so it drafts nothing either.
+    if (signal?.aborted) return { kind: 'propose', goal: d.goal, why: 'intent_no', offer: null };
     return { kind: 'propose', goal: d.goal, why: 'intent_no', offer: this.offer(d.goal) };
   }
 
@@ -354,8 +409,16 @@ export class ControlGate {
   offer(goal: string): { line: string; id: string } {
     const id = `offer-${++this.seq}-${this.now()}`;
     this.pending = null;
-    this.draft = { goal, id, at: this.now() };
+    this.draft = { goal, id, at: this.now(), spoken: false };
     return { line: proposalLine(goal), id };
+  }
+
+  /** The offer line `id` was sent out (persisted and pushed to be spoken or shown). */
+  spoken(id: string): void {
+    if (this.draft?.id === id) {
+      this.draft.spoken = true;
+      this.draft.at = this.now();
+    }
   }
 
   /**
@@ -365,7 +428,7 @@ export class ControlGate {
    */
   heard(id: string, completed: boolean): 'armed' | 'dropped' | 'stale' {
     const d = this.draft;
-    if (!d || d.id !== id) return 'stale';
+    if (!d || d.id !== id || !d.spoken) return 'stale';
     this.draft = null;
     if (!completed || this.now() - d.at > DRAFT_MAX_AGE_MS) return 'dropped';
     this.pending = { goal: d.goal, at: this.now() };

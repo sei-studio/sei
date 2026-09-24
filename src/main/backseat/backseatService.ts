@@ -965,6 +965,9 @@ function emitCompanionLines(
         ...(clip && i === parts.length - 1 ? { clip } : {}),
       };
       await chatStore.appendMessage(s.characterId, msg);
+      // The offer line goes out now: from here it can block a repeat and be
+      // armed by the renderer's report (never before, see ControlGate).
+      if (confirm && confirm.index === i) s.control.spoken(confirm.id);
       d.pushChatMessage(
         s.characterId,
         msg,
