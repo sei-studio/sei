@@ -70,6 +70,16 @@ export interface GameModule {
   getJoinTarget(ctx: GameJoinContext): unknown | null;
   /** The BotStatus error surfaced when getJoinTarget returns null. */
   joinTargetMissingError: { error: ErrorClass; message: string };
+  /**
+   * Optional per-CHARACTER async step (260921), run by the supervisor after
+   * the join target exists and BEFORE the summon clock starts (beside
+   * ensurePack), so it never eats SUMMON_TIMEOUT_MS. Returns fields to merge
+   * into the join target, or null. getJoinTarget is synchronous and does not
+   * know the character; this is where a game attaches something derived for
+   * one (Stardew: the companion's appearance). Must bound its own wait and
+   * must not throw; the supervisor ignores a rejection anyway.
+   */
+  prepareJoin?(args: { characterId: string; character: Character }): Promise<Record<string, unknown> | null>;
   install?: GameInstall;
 }
 

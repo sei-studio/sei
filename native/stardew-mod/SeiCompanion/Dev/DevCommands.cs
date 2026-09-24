@@ -262,6 +262,51 @@ namespace SeiCompanion.Dev
             return list;
         }
 
+        /// <summary>
+        /// Game thread: what the body looks like, for a driver with no screen.
+        /// `requested` is the clamped look from the spawn frame, `applied` is
+        /// read back from the shadow farmer's own fields (the two differ only
+        /// if a change* method wrapped a value), `rejected` names the fields
+        /// the game refused, and `sprite` says which frame is on and whether
+        /// the farmer draw is live or has fallen back to the placeholder.
+        /// </summary>
+        public static System.Collections.Generic.Dictionary<string, object> Appearance(SeiCompanion.Body.SeiBody body)
+        {
+            var look = body.Look;
+            var requested = new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["gender"] = look.Male ? "male" : "female",
+                ["skin"] = look.Skin,
+                ["hair"] = look.Hair,
+                ["hairColor"] = SeiCompanion.Body.Appearance.Hex(look.HairColor),
+                ["eyeColor"] = SeiCompanion.Body.Appearance.Hex(look.EyeColor),
+                ["shirt"] = look.Shirt,
+                ["pants"] = look.Pants,
+                ["pantsColor"] = SeiCompanion.Body.Appearance.Hex(look.PantsColor),
+                ["accessory"] = look.Accessory,
+            };
+            var result = new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["custom"] = look.Custom,
+                ["farmerLook"] = body.FarmerLook,
+                ["requested"] = requested,
+                ["rejected"] = look.Rejected,
+            };
+            try
+            {
+                result["applied"] = SeiCompanion.Body.Appearance.Read(body.Shadow);
+                result["sprite"] = new System.Collections.Generic.Dictionary<string, object>
+                {
+                    ["frame"] = body.Shadow.FarmerSprite.CurrentFrame,
+                    ["animation"] = body.Shadow.FarmerSprite.CurrentSingleAnimation,
+                    ["facing"] = body.Shadow.FacingDirection,
+                    ["texture"] = body.Shadow.FarmerRenderer.textureName.Value,
+                };
+            }
+            catch (Exception ex) { result["error"] = ex.Message; }
+            return result;
+        }
+
         /// <summary>Game thread: end the day the way the bed does (the host sleeps; the game saves and starts the next day).</summary>
         public static string Sleep(ModEntry mod)
         {

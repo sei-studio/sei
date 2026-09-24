@@ -127,11 +127,17 @@ export function wireStardewEvents(client, handlers, { botName, companions = () =
     }
   })
 
+  // 260921: gameEvent marks a line nobody SAID. Without it the brain framed
+  // the new-day notice as a line spoken to the companion ("a direct message
+  // never gets silence"), which contradicts the notice's own "only speak if
+  // it fits" and produced a second "morning" seconds after the first; it also
+  // filed the notice in the chat transcript as a speaker.
   const systemLine = (text) => {
     handlers.onChat?.({
       username: 'sei',
       text,
       playerSpoke: false,
+      gameEvent: true,
       addressed: true,
       nearby: true,
     })

@@ -18,10 +18,13 @@ using SObject = StardewValley.Object;
 namespace SeiCompanion.Body
 {
     /// <summary>
-    /// One companion in the world: the visible NPC (walks, collides, is drawn,
-    /// carries the speech bubble) paired with the invisible BotFarmer shadow
-    /// that every game mechanic accepts as `who`. The shadow is synced FROM the
-    /// NPC before anything reads it; nothing ever moves the shadow itself.
+    /// One companion in the world: the NPC (walks, collides, carries the
+    /// speech bubble, emotes and ground shadow) paired with the BotFarmer
+    /// shadow that every game mechanic accepts as `who`. The shadow is synced
+    /// FROM the NPC before anything reads it; nothing ever moves the shadow
+    /// itself. Since 260921 the shadow is also what the player SEES: BodyDraw
+    /// draws it, dressed with the character's Appearance, where the NPC's
+    /// placeholder sprite would have been drawn.
     /// </summary>
     public sealed class SeiBody
     {
@@ -46,6 +49,16 @@ namespace SeiCompanion.Body
 
         /// <summary>Result of the most recent tool use, for the next observation.</summary>
         public string LastActionResult { get; set; }
+
+        /// <summary>The look the shadow farmer was dressed with (the default look until ApplyLook runs).</summary>
+        public Appearance Look { get; private set; } = new Appearance();
+
+        /// <summary>
+        /// Draw this body as its customized farmer (BodyDraw) instead of the
+        /// NPC's placeholder sprite. Starts from config.json's FarmerLook and
+        /// is switched off for good by a failed apply or a failed draw.
+        /// </summary>
+        public bool FarmerLook { get; set; }
 
         private int _followCooldown;
         private Vector2 _lastFollowGoal = new Vector2(-1, -1);
@@ -82,7 +95,7 @@ namespace SeiCompanion.Body
         /*********
         ** Lifecycle
         *********/
-        public void Spawn()
+        public void Spawn(Appearance look = null)
         {
             Farmer host = Game1.player;
             GameLocation loc = host.currentLocation ?? Game1.getFarm();
@@ -108,6 +121,78 @@ namespace SeiCompanion.Body
                 this.GiveStartingKit();
             this.SyncShadow();
             this._lastPos = this.Npc.Position;
+            this.ApplyLook(look);
+            BodyDraw.Register(this);
+        }
+
+        /// <summary>
+        /// Dress the shadow farmer and start drawing it in the NPC's place
+        /// (BodyDraw). Also called when a reconnecting bot adopts the body, so
+        /// a look derived after the first spawn takes effect without a
+        /// re-summon. Never throws: a failure leaves the placeholder sprite.
+        /// </summary>
+        public void ApplyLook(Appearance look)
+        {
+            this.Look = look ?? new Appearance();
+            this.FarmerLook = this.Mod.Config.FarmerLook;
+            if (!this.FarmerLook)
+                return;
+            try
+            {
+                // The shadow never runs Farmer.Update, so nothing else would
+                // hand the sprite its owner or put it on a standing frame.
+                this.Shadow.FarmerSprite.SetOwner(this.Shadow);
+                this.Look.ApplyTo(this.Shadow);
+                this.Shadow.FarmerSprite.StopAnimation();
+                this.Shadow.FarmerSprite.faceDirection(this.Shadow.FacingDirection);
+                if (this.Look.Rejected.Count > 0)
+                    this.Monitor.Log($"{this.Name}: appearance fields the game refused (defaults used): {string.Join(", ", this.Look.Rejected)}", LogLevel.Debug);
+            }
+            catch (Exception ex)
+            {
+                this.FarmerLook = false;
+                this.Monitor.Log($"{this.Name}: could not apply the farmer look, using the placeholder sprite: {ex.Message}", LogLevel.Warn);
+            }
+        }
+
+        /// <summary>
+        /// The shadow's Update never runs (tick-free design, BotFarmer.cs), so
+        /// its walk cycle is advanced here from what the NPC did this tick:
+        /// moved = the walk animation for the facing, still = the standing
+        /// frame. Only on the host's current map: FarmerSprite's footstep
+        /// side effects (dust, sound) are written for the map on screen.
+        /// </summary>
+        private void AnimateShadow()
+        {
+            if (!this.FarmerLook)
+                return;
+            try
+            {
+                FarmerSprite sprite = this.Shadow.FarmerSprite;
+                bool moving = Vector2.Distance(this.Npc.Position, this._lastPos) > 0.5f;
+                if (moving && this.Npc.currentLocation == Game1.currentLocation)
+                {
+                    int walk;
+                    switch (this.Npc.FacingDirection)
+                    {
+                        case 0: walk = FarmerSprite.walkUp; break;
+                        case 1: walk = FarmerSprite.walkRight; break;
+                        case 3: walk = FarmerSprite.walkLeft; break;
+                        default: walk = FarmerSprite.walkDown; break;
+                    }
+                    sprite.animate(walk, 16);
+                }
+                else
+                {
+                    sprite.StopAnimation();
+                    sprite.faceDirection(this.Shadow.FacingDirection);
+                }
+            }
+            catch (Exception ex)
+            {
+                this.FarmerLook = false;
+                this.Monitor.Log($"{this.Name}: farmer animation failed, using the placeholder sprite: {ex.Message}", LogLevel.Warn);
+            }
         }
 
         private void GiveStartingKit()
@@ -155,6 +240,7 @@ namespace SeiCompanion.Body
         {
             this.Runner.Abort($"interrupted: {reason}");
             this.Background.Abort(reason);
+            BodyDraw.Unregister(this);
             if (this.Npc != null)
             {
                 this.Npc.controller = null;
@@ -222,12 +308,18 @@ namespace SeiCompanion.Body
             if (this.Npc.currentLocation == null)
                 return;
             this.SyncShadow();
+            // Before anything below moves the body by hand (follow catch-up,
+            // barrier hop): those are teleports, not steps to animate.
+            this.AnimateShadow();
 
             if (this.Paused)
             {
                 // Stand still like a player away from the keyboard.
                 this.Npc.controller = null;
                 this.Npc.Halt();
+                // Keep the movement baseline current, or the walk cycle would
+                // run on the spot for the whole pause.
+                this._lastPos = this.Npc.Position;
                 return;
             }
 

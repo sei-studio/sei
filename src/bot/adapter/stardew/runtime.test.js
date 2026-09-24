@@ -110,6 +110,41 @@ describe('stardew runtime against the fake mod', () => {
     expect(hooks.onConnected).toHaveBeenCalledTimes(1)
   })
 
+  it('ships the appearance in the spawn frame when main sent one, and no field at all when it did not (260921)', async () => {
+    const look = { gender: 'female', skin: 3, hair: 26, hairColor: '#c0c8ff', eyeColor: '#6a4cff', shirt: 1016, pants: 2, pantsColor: '#1b1b3a', accessory: -1 }
+    expect(adapterConfigFrom({ joinTarget: { port: 1, token: 't', appearance: look }, botUsername: 'Sui' }).appearance).toEqual(look)
+    mod = createFakeMod()
+    const port = await mod.ready
+    const config = ConfigSchema.parse({
+      player_username: 'Ouen',
+      persona: { name: 'Sui', expanded: 'x' },
+      anthropic: { api_key: 'k' },
+      adapter: { kind: 'stardew', stardew: { ...adapterConfigFrom({ joinTarget: { port, token: 'test-token', appearance: look }, botUsername: 'Sui' }), reconnect_delay_ms: 50 } },
+    })
+    const { hooks } = hooksWith()
+    const handle = await createRuntime(config, hooks)
+    expect(mod.state.frames.find((f) => f.t === 'spawn')).toMatchObject({ name: 'Sui', appearance: look })
+    expect(mod.state.bodies.get('Sui').appearance).toEqual(look)
+    await handle.stop()
+    await mod.close()
+
+    // No appearance from main (old app, first-summon timeout): the frame has
+    // no such key, so the mod's own default is the only default there is.
+    mod = createFakeMod()
+    const port2 = await mod.ready
+    const { hooks: hooks2 } = hooksWith()
+    const handle2 = await createRuntime(configFor(port2), hooks2)
+    expect('appearance' in mod.state.frames.find((f) => f.t === 'spawn')).toBe(false)
+    await handle2.stop()
+
+    // A malformed block never fails the bot config; it is dropped.
+    const bad = ConfigSchema.parse({
+      player_username: 'Ouen', persona: { name: 'Sui', expanded: 'x' }, anthropic: { api_key: 'k' },
+      adapter: { kind: 'stardew', stardew: { ...adapterConfigFrom({ joinTarget: { port: 1, token: 't', appearance: { hair: 'long' } }, botUsername: 'Sui' }) } },
+    })
+    expect(bad.adapter.stardew.appearance).toBeUndefined()
+  })
+
   it('aborting a running verb sends cancel and resolves "aborted"', async () => {
     mod = createFakeMod({ commandDelayMs: 500 })
     const port = await mod.ready

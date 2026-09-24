@@ -1056,6 +1056,32 @@ export const UserConfigSchema = z.object({
       }),
     )
     .optional(),
+  /**
+   * How each character looks in Stardew Valley (260921): the farmer
+   * customization knobs derived once per character by
+   * src/main/games/stardew/appearance.ts. SPARSE and outside
+   * character.metadata for the same reasons as dst_survivor. The row is
+   * deliberately LOOSE here (plain ints and strings): the strict, legend-bound
+   * check is StardewAppearanceSchema (src/shared/stardewAppearance.ts), run by
+   * the reader, so dropping an index from a legend re-derives one character
+   * instead of failing the whole config parse. No `.default({})` on purpose.
+   */
+  stardew_appearance: z
+    .record(
+      z.object({
+        gender: z.string().max(16),
+        skin: z.number().int(),
+        hair: z.number().int(),
+        hairColor: z.string().max(16),
+        eyeColor: z.string().max(16),
+        shirt: z.number().int(),
+        pants: z.number().int(),
+        pantsColor: z.string().max(16),
+        accessory: z.number().int(),
+        source: z.enum(['auto', 'user']).default('auto'),
+      }),
+    )
+    .optional(),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;

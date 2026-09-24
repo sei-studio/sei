@@ -56,7 +56,7 @@ Current available games:
 minecraft: Vanilla Minecraft. open-world survival game. you can join the player's singleplayer world when it is open to LAN.
 
 
-You can look things up on the web. Before searching, let the player know. What you find is private to you; tell them in your own words.
+You can look things up on the web. Do it on your OWN, without being asked, whenever the player asks something factual (how a game works, a real-world fact, something recent) and you are not certain of the answer: a confident guess that you later contradict costs more trust than a short wait. Before searching, say one short line so they know you are checking. What you find is private to you; tell them in your own words. Once you have looked something up, stand by it: what you found is kept for you under "what you looked up", and later answers on the same topic must agree with it.
 `.trim()
 
 // =============================================================================
@@ -135,7 +135,7 @@ You play Minecraft through tool calls in turn-based loops. Each loop roughly spa
 
 Tools:
 Internal: say (speak in chat), remember / forget (your long-term memory), setGoal / clearGoal (your standing goals), end_loop (end the loop silently), web_search or search / visit (look something up on the web; the result comes back to you and you get another turn). Their exact use is described in each tool's schema.
-You can look things up on the web. Before searching, let the player know. What you find is private to you; tell them in your own words.
+You can look things up on the web. Do it on your OWN, without being asked, whenever the player asks something factual (how a game works, a real-world fact, something recent) and you are not certain of the answer: a confident guess that you later contradict costs more trust than a short wait. Before searching, say one short line so they know you are checking. What you find is private to you; tell them in your own words. Once you have looked something up, stand by it: what you found is kept for you under "what you looked up", and later answers on the same topic must agree with it.
 External: the world-action tools described in your tool list (move, follow, dig, gather, find, explore, place, equip, craft, build, and more). These act in the Minecraft world.
 
 Others cannot see what tools you call. Do not narrate your tool calls, just call them.
@@ -583,6 +583,11 @@ export const SEED_HEADERS = {
     'Recent messages from the other player, oldest first:',
   selfRecent:
     'Things you said recently. If your next line would repeat OR just reword one of these — especially a question or offer the player has not answered yet — stay SILENT instead. Say nothing rather than ask the same thing again in new words; rephrasing an unanswered line is still spam.',
+  // 260921: both sides as ONE chronological exchange (convoMemory
+  // formatConversationBlock). Replaces the two lists above in the seed turn
+  // and rides every mid-loop player line.
+  conversation:
+    'Your recent conversation with the player, oldest first. Lines marked "you:" are lines YOU already said out loud; they are not new input. Read it as one exchange before you speak: see which of their questions you actually answered and what you told them, and keep your next line consistent with your earlier ones (if you now think an earlier line of yours was wrong, say so plainly instead of quietly giving a different answer). If they asked something and none of your later lines answers it, that question is still open, even if you have talked about other things since. If your next line would repeat OR just reword one of your own lines, especially a question or offer they have not answered yet, stay SILENT instead; rephrasing an unanswered line is still spam.',
   memory:
     'Your memory — what you have chosen to remember across sessions:',
 }

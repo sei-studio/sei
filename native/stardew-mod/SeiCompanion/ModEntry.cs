@@ -69,6 +69,8 @@ namespace SeiCompanion
 
             var harmony = new Harmony(this.ModManifest.UniqueID);
             ChatHook.Apply(harmony, this.Monitor, this.OnChatLine);
+            if (this.Config.FarmerLook)
+                BodyDraw.Apply(harmony, this.Monitor);
 
             this.Server = new Server(this.Config, this.Monitor, this);
             this.Server.Start();
@@ -192,8 +194,12 @@ namespace SeiCompanion
         /*********
         ** Bodies
         *********/
-        /// <summary>Spawn a body for a session. Runs on the game thread. Returns an error code or null.</summary>
-        internal string Spawn(string sessionId, string name, Session session, out SeiBody body)
+        /// <summary>
+        /// Spawn a body for a session. Runs on the game thread. Returns an error code or null.
+        /// `look` is the already-clamped appearance from the spawn frame, or null
+        /// when the frame had none (an older app, or a look not derived yet).
+        /// </summary>
+        internal string Spawn(string sessionId, string name, Session session, Appearance look, out SeiBody body)
         {
             body = null;
             if (!Context.IsWorldReady)
@@ -232,6 +238,10 @@ namespace SeiCompanion
                 // body instead of spawning a second one.
                 this.Bodies.Remove(pair.Key);
                 other.Adopt(session);
+                // A look that arrives with the reconnect (derived after the
+                // first spawn) is applied; none keeps what the body wears.
+                if (look != null)
+                    other.ApplyLook(look);
                 this.Bodies[sessionId] = other;
                 body = other;
                 this.Monitor.Log($"Companion {cleanName} re-adopted by a reconnecting bot.", LogLevel.Info);
@@ -239,7 +249,7 @@ namespace SeiCompanion
             }
 
             body = new SeiBody(cleanName, session, this);
-            body.Spawn();
+            body.Spawn(look);
             this.Bodies[sessionId] = body;
             this.Monitor.Log($"Spawned companion {cleanName}.", LogLevel.Info);
             return null;

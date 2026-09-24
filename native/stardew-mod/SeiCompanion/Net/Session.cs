@@ -155,7 +155,12 @@ namespace SeiCompanion.Net
                 case "spawn":
                 {
                     string name = root.TryGetProperty("name", out JsonElement n) ? n.GetString() : "Sei";
-                    string err = this._mod.Spawn(this.Id, name, this, out SeiBody spawned);
+                    // Optional (PROTOCOL.md): absent = the default look. Clamped
+                    // field by field against the game before anything uses it.
+                    Appearance look = root.TryGetProperty("appearance", out JsonElement ap) && ap.ValueKind == JsonValueKind.Object
+                        ? Appearance.FromJson(ap)
+                        : null;
+                    string err = this._mod.Spawn(this.Id, name, this, look, out SeiBody spawned);
                     if (err != null)
                     {
                         this.SendResult(id, false, SpawnErrorText(err), new Dictionary<string, object> { ["error"] = err });
@@ -260,6 +265,11 @@ namespace SeiCompanion.Net
                     this.SendResult(id, err == null, err ?? "sleeping; the next day starts in a moment");
                     return;
                 }
+                case "devAppearance":
+                    if (!this._mod.Config.DevCommands) { this.SendResult(id, false, "dev commands are off (DevCommands in config.json)"); return; }
+                    if (body == null) { this.SendResult(id, false, "not spawned"); return; }
+                    this.SendResult(id, true, "ok", new Dictionary<string, object> { ["appearance"] = DevCommands.Appearance(body) });
+                    return;
                 case "devState":
                     if (!this._mod.Config.DevCommands) { this.SendResult(id, false, "dev commands are off (DevCommands in config.json)"); return; }
                     this.SendResult(id, true, "ok", new Dictionary<string, object> { ["state"] = DevCommands.State() });

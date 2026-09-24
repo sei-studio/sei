@@ -221,7 +221,13 @@ export async function start({ config, adapter, logger = console, onTerminalError
     // the in-app reactive/proactive mode buttons mutate
     // config.persona.proactiveness live (orchestrator.setGameMode) and the
     // cadence must follow without a re-summon.
-    idleFallbackMs: () => config.llm?.idle_fallback_ms ?? idleCadenceMs(config.persona?.proactiveness),
+    // 260921: never sooner than the reply window of a line she just said. The
+    // tier cadence is for resuming work; a question needs longer than 5s to
+    // be answered (orchestrator REPLY_WINDOW_MS). Slower tiers already clear it.
+    idleFallbackMs: () => Math.max(
+      config.llm?.idle_fallback_ms ?? idleCadenceMs(config.persona?.proactiveness),
+      orchestrator.replyWindowRemainingMs?.() ?? 0,
+    ),
     logger,
   })
 
@@ -247,7 +253,12 @@ export async function start({ config, adapter, logger = console, onTerminalError
       // directly; we keep that record path here so the adapter only emits
       // normalized events). This runs ALWAYS — even for a suppressed line —
       // so a message aimed at a sibling still lands in this bot's chat history.
-      try { orchestrator.recordIncomingChat?.(evt.username, evt.text) } catch {}
+      // 260921: EXCEPT a game event (evt.gameEvent: a new day, 10 PM). Nobody
+      // said it, so it has no place in the conversation transcript, where it
+      // read as a speaker and reset "has the player spoken since my last line".
+      if (!evt.gameEvent) {
+        try { orchestrator.recordIncomingChat?.(evt.username, evt.text) } catch {}
+      }
       // 260618 (M1): a message aimed only at another companion, or a sibling
       // bot's own chatter, is recorded above but must NOT interrupt this bot.
       // chat.js set the flag; honoring it here keeps the line in history while
@@ -263,6 +274,7 @@ export async function start({ config, adapter, logger = console, onTerminalError
         text: evt.text,
         addressed: evt.addressed,
         playerSpoke: evt.playerSpoke,
+        ...(evt.gameEvent ? { gameEvent: true } : {}),
       })
     },
     onAttacked: (evt) => {

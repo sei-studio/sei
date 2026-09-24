@@ -204,6 +204,38 @@ describe('summon(id, "stardew") through a registered GameModule', () => {
     await p;
   });
 
+  it('merges the module prepareJoin fields into the join target, and a rejecting one changes nothing (260921)', async () => {
+    const look = { gender: 'female', skin: 3, hair: 26 };
+    const prepareJoin = vi.fn(async (_args: { characterId: string; character: { name: string } }) => ({ appearance: look }));
+    registerGameModule({ ...stardewModule(true), prepareJoin });
+    const { sup } = makeSupervisor();
+    const fake = armFakeChild();
+    const p = sup.summon(A, 'stardew');
+    await vi.waitFor(() => expect(forkSpy).toHaveBeenCalledTimes(1));
+    fake.emitSpawn();
+    await vi.waitFor(() => expect(fake.postMessage).toHaveBeenCalledTimes(1));
+    const init = fake.postMessage.mock.calls[0][0] as Record<string, unknown>;
+    expect(prepareJoin).toHaveBeenCalledTimes(1);
+    expect(prepareJoin.mock.calls[0][0].characterId).toBe(A);
+    expect(init.joinTarget).toEqual({ port: 8123, token: 'tok', label: 'Sunny Farm', appearance: look });
+    fake.emitPortMessage({ type: 'summon-ready' });
+    await p;
+  });
+
+  it('a prepareJoin that rejects never fails the summon', async () => {
+    registerGameModule({ ...stardewModule(true), prepareJoin: async () => { throw new Error('boom'); } });
+    const { sup } = makeSupervisor();
+    const fake = armFakeChild();
+    const p = sup.summon(A, 'stardew');
+    await vi.waitFor(() => expect(forkSpy).toHaveBeenCalledTimes(1));
+    fake.emitSpawn();
+    await vi.waitFor(() => expect(fake.postMessage).toHaveBeenCalledTimes(1));
+    const init = fake.postMessage.mock.calls[0][0] as Record<string, unknown>;
+    expect(init.joinTarget).toEqual({ port: 8123, token: 'tok', label: 'Sunny Farm' });
+    fake.emitPortMessage({ type: 'summon-ready' });
+    await p;
+  });
+
   it('refuses an unknown game with no module', async () => {
     const { sup } = makeSupervisor();
     await expect(sup.summon(A, 'dontstarve')).rejects.toThrow(/GAME_NOT_INSTALLED/);

@@ -8,6 +8,7 @@
 import type { Character } from '../../../shared/characterSchema';
 import type { WorldState } from '../../../shared/gameIpc';
 import type { StardewJoinTarget, StardewWorldState } from '../../../shared/stardewIpc';
+import type { StardewAppearance } from '../../../shared/stardewAppearance';
 import type { GameModule, GameJoinContext } from '../index';
 import { detectStardew, installStardew, readModConfig, type StardewInstallEnv } from './install';
 import { launchStardew } from './launch';
@@ -30,6 +31,8 @@ export interface StardewModuleOpts {
   fetch?: typeof fetch;
   intervalMs?: number;
   logger?: { info: (m: string) => void; warn: (m: string) => void };
+  /** Test seam: the appearance lookup prepareJoin runs (default: appearance.ts appearanceForSummon). */
+  appearanceFor?: (characterId: string) => Promise<{ appearance: StardewAppearance; source: string }>;
 }
 
 export function createStardewGameModule(opts: StardewModuleOpts = {}): GameModule {
@@ -74,6 +77,22 @@ export function createStardewGameModule(opts: StardewModuleOpts = {}): GameModul
     joinTargetMissingError: {
       error: 'GAME_WORLD_NOT_OPEN',
       message: 'No open farm found. Start Stardew Valley through SMAPI with the Sei companion mod, load your farm, then press Launch again.',
+    },
+    // 260921: the companion is drawn as a customized farmer. The look is
+    // stored per character after one LLM call; a first summon waits a few
+    // seconds for it at most and otherwise goes out WITHOUT the field (the
+    // mod's neutral default) while the derivation finishes for next time.
+    // Lazy import: appearance.ts reaches the LLM layer, which the watcher
+    // and install paths (and their tests) have no reason to load.
+    prepareJoin: async ({ characterId }) => {
+      try {
+        const lookup = opts.appearanceFor ?? (async (id: string) => (await import('./appearance')).appearanceForSummon(id));
+        const resolved = await lookup(characterId);
+        return resolved.source === 'default' ? null : { appearance: resolved.appearance };
+      } catch (err) {
+        logger.warn(`[sei/stardew] appearance lookup failed (default look): ${(err as Error).message}`);
+        return null;
+      }
     },
     install: {
       detect: async () => {

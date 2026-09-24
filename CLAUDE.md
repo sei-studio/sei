@@ -280,6 +280,74 @@ skeleton fight happened in complete silence and the player found out by asking
 "are u ok?"), and the mid-action check-in's blanket "call NO say()" now exempts
 taking damage.
 
+**Conversation continuity in the game brain (260921).** One 17-minute Stardew
+session (Lyra, 48 loops, 166 spoken lines) showed repeated lines while the
+player was silent, a question she "did not see", conflicting answers, and web
+searches the player never benefited from. None of it was fixed by filtering
+what she says; every cause was something her prompt did not contain or a turn
+that ran at the wrong time. The pieces, all in `src/bot/brain/` and pinned in
+`orchestrator.conversation.test.js`:
+
+- **Quiet is measured from the END of her turn** (`fsm.js`). The idle timer
+  counted from an event's ARRIVAL, so at the agentic 5 s cadence it fired while
+  the reply to that event was still generating (a turn takes 4-8 s), queued
+  behind it, and dispatched the instant the turn closed (measured: 3 ms after).
+  The timer callback now skips while a dispatch is in flight and `processNext`
+  re-arms it when the dispatch finishes.
+- **A line she just said holds the floor** (`REPLY_WINDOW_MS` 20 s,
+  `replyWindowRemainingMs`, folded into `idleFallbackMs` in `brain/index.js`).
+  This is SCHEDULING, not a gate: nothing she decides to say is dropped. 5 s is
+  sized for resuming work and is shorter than the time it takes to open the
+  game's chat and type (the player's replies landed 3-15 s after her lines), so
+  her question was followed by an idle turn nobody could have answered yet, and
+  an idle turn is nudged to speak. The window applies only while her line is
+  the last thing said, and opens when the PACED line is readable
+  (`_lastChatSendDeadline`), not when it was decided. Replayed over the session:
+  35 of its 40 idle turns would have been deferred.
+- **Her lines are recorded when DECIDED, not when the paced send fires**
+  (`emitChatMessages`). With realistic typing a line reaches chat 1-6 s after
+  the turn that wrote it, and a turn composed inside that gap did not know the
+  line existed. That is how "we can sell the stone and fiber at the shipping
+  bin" was followed 8 s later by "the rocks don't do much".
+- **One chronological transcript replaces the two one-sided lists**
+  (`convoMemory.formatConversationBlock`, seed block `recent_conversation`,
+  header `SEED_HEADERS.conversation`). Two lists hide the ORDER, and the order
+  is the information: a question followed by an unrelated line of hers looks
+  identical to an answered one. The same block now rides every mid-loop player
+  line (`interruptTurnText`); those turns used to carry the new line ALONE, with
+  the only transcript being the seed's, as old as the loop.
+- **"MID-ACTION, KEEP GOING" only when something is running.**
+  `extractPriorTask` returns the last tool call whether or not it finished, so a
+  line that landed between actions was told an action was still running. The
+  model re-issued the gather and wrote its answer in the private scratchpad.
+  `interruptTurnText` now keys on `loop.inFlight` (or a background action such
+  as follow).
+- **A player line answered with actions only is delivered once more**, flagged
+  as unanswered (`_unansweredRetried`, through the action-tick channel or the
+  loop's next call, whichever comes first). The scratchpad is NOT salvaged on
+  these turns: beside a world action it is usually reasoning about the chore.
+- **What a web lookup FOUND outlives its loop** (`lookups.js`, seed block
+  `lookups`). She searched in three separate turns inside 50 s (four billed
+  searches); no turn could see what the previous one found, so each re-derived
+  the answer in new words, and by the fourth the search text about multiplayer
+  cabins had become "your cabin's in a different spot than mine". The log keeps
+  the query, her own post-result conclusion and the line she told the player.
+  The baseline also now says WHEN to search (on her own, when unsure of a
+  factual answer): the server-side `web_search` tool is schema-less, so before
+  this nothing in the prompt said when, only that she could.
+- **A game event is not someone speaking** (`gameEvent: true` from the Stardew
+  adapter's `systemLine`). "A new day" was framed as a line spoken to her with
+  a mandatory reply, and was filed in the transcript as a speaker.
+- **The one text filter is an exact match**
+  (`isExactRepeatSincePlayerSpoke`): every segment equal, after normalization,
+  to a line of hers newer than the player's last line. It does not attempt
+  similarity, for the 260731 reason above.
+
+Not done, on purpose: no similarity dedupe, no cancelling of a queued line when
+the player speaks first (it is now in her transcript, so the reply that follows
+is coherent with it). Unverified live; the numbers above are a replay of the
+log's timing, not a new session.
+
 **Memory.** Per-character memory directory.
 - **Writes are LLM-driven:** the model calls `remember()` / `forget()` to
   maintain an append-only `MEMORY.md`; `PLAYER.md` tracks the other player.
@@ -2108,6 +2176,108 @@ loop, no model): debris, wood, forage lookup, farm to Pierre's and back with
 a purchase, till, plant, water, fish, chest take/put, sleep, a day end. Not
 yet verified: in-game typed chat and voice (no game window), pause/mode on
 Stardew, combat, a second companion, a farmhand.
+
+**Stardew companions look like themselves (260921).** Every Stardew body used
+to be the one shared placeholder NPC sprite. It is now drawn as a FARMER
+dressed with the game's own character creator knobs: gender, skin, hairstyle,
+hair color, eye color, shirt, pants, pants color, accessory. No hat (not a
+creator knob, and it hides the hair).
+- **One LLM call per character, in main.**
+  `src/main/games/stardew/appearance.ts` follows `chessProfile.ts` (forced
+  tool call `set_stardew_appearance`, through `buildLlmProvider`, so cloud and
+  BYOK both work) and `survivorPick.ts` (injectable deps, persisted SPARSE in
+  `UserConfig.stardew_appearance[characterId]`, not in `character.metadata`,
+  which cloud-syncs verbatim and is not editable on a default such as Lyra).
+  Input is `gatherAppearanceText`: the soulcaster sheet's appearance block and
+  image prompt first, then the description, then the persona source (the
+  expanded persona only as a last resort). The character text sits between
+  `<character>` tags and the system prompt says it is data. Two deliberate
+  differences from the two precedents: a FAILED derivation is never persisted
+  (a stored fallback would make the character generic forever because of one
+  network error; the cost is at most one retry per summon), and the result is
+  salvaged FIELD BY FIELD (`coerceStardewAppearance`: a model that gets eight
+  knobs right and invents a shirt number still produced a usable look; fewer
+  than 5 valid fields counts as a failure).
+- **The legend is the feature.** The model cannot see the sprite sheets, so
+  `src/shared/stardewAppearance.ts` lists every ALLOWED index with a short
+  description of what it looks like, and the schema admits nothing else (42
+  hairstyles, 70 shirts, 24 skins, 4 pants, 13 accessories). Tool properties
+  are plain `integer` with the legend in the description, not JSON-schema
+  number enums, because not every provider accepts those; the Zod schema is
+  the gate. Ranges and the legend come from the game itself, not from a wiki:
+  the 1.6.15 assemblies were read with Mono.Cecil (`changeSkinColor` wraps at
+  0..23, `changeAccessory` at -1..29, shirts and pants are STRING item ids in
+  1.6), `Data/Shirts` and `Data/Pants` were unpacked and parsed (the creator's
+  own set is the rows with `CanChooseDuringCharacterCustomization`: shirts
+  "1000".."1111", pants "0".."3"), `Data/HairData` adds hairstyles 100..122 to
+  the sheet's 0..55, and the hair, shirt, accessory and pants sheets were
+  unpacked (the game's MonoGame LZX decoder, run from a scratch tool) and
+  looked at composited on the farmer body. The config row is deliberately
+  LOOSE in `characterSchema.ts`; the strict legend check runs in the reader,
+  so removing an index from a legend re-derives one character instead of
+  failing the whole config parse.
+- **Plumbing.** `GameModule.prepareJoin({characterId, character})` is a new
+  optional async seam. The supervisor awaits it beside `ensurePack`, BEFORE
+  `startedAtMs`, so it never comes out of the 30 s summon deadline, and merges
+  what it returns into the join target (`getJoinTarget` is synchronous and
+  does not know the character). Stardew's returns `{appearance}` from
+  `appearanceForSummon`: a stored look at once, else a first derivation
+  awaited for at most `APPEARANCE_SUMMON_WAIT_MS` (6 s), then the summon goes
+  ahead WITHOUT the field while the single-flight derivation finishes and
+  persists for next time. `adapterConfigFrom` copies it into `adapter.stardew`
+  (loose schema with `.catch(undefined)` in `src/bot/config.js`: looks must
+  never fail a bot config) and `runtime.js` adds it to the `spawn` frame, on
+  reconnect spawns too. The field is optional end to end and
+  `STARDEW_PROTOCOL_VERSION` is unchanged: an old mod ignores it, an old app
+  never sends it.
+- **The mod draws the shadow Farmer in the NPC's place, and the NPC stays the
+  body.** `Body/Appearance.cs` clamps the frame field by field against what
+  THE RUNNING GAME accepts (`Farmer.GetAllHairstyleIndices()`,
+  `Game1.shirtData` / `pantsData`), not against the app's legend, so the
+  legend can grow without a mod rebuild; then applies it through the game's
+  own `change*` methods, gender first (it swaps the base texture and re-applies
+  the shirt). `Body/BodyDraw.cs` is a Harmony PREFIX on
+  `NPC.draw(SpriteBatch, float)` that, for a registered body, calls
+  `FarmerRenderer.draw` with the shadow and skips the NPC's own draw. A prefix
+  rather than an SMAPI `Rendered*` event because the farmer has to be inside
+  the world's depth-sorted batch to pass behind trees; rather than an NPC
+  subclass because `location.characters` is a NetCollection of NPC. Rendering
+  the 16 walk frames into a sprite sheet was the fallback and was not needed.
+  The decompile facts above still hold: the shadow is in neither
+  `Game1.otherFarmers` nor `location.farmers`, and `BotFarmer.draw` stays a
+  no-op so there is one draw path. Load-bearing details: the farmer is drawn
+  16 px LOWER than the NPC position (an NPC's box is y+16..y+48, a farmer's
+  y..y+32, both draw feet at the box bottom, so without it the feet float
+  above the ground shadow and the collision box); depth is the NPC's own rule
+  (`StandingPixel.Y / 10000`); the ground shadow needs nothing because
+  `Game1.DrawWorld` draws character shadows separately from `NPC.draw`; the
+  tool-use hop still shows because `getLocalPosition` carries `yJumpOffset`;
+  emotes are kept by calling `npc.DrawEmote`. The shadow's `Update` never
+  runs, so `SeiBody.AnimateShadow` advances the walk cycle each tick from
+  whether the NPC moved (`FarmerSprite.animate(walkUp|Right|Down|Left, 16)`,
+  else `StopAnimation` + `faceDirection`), only on the host's current map
+  (FarmerSprite's footstep dust and sound are written for the map on screen),
+  and the paused branch of `Tick` refreshes `_lastPos` or the walk cycle would
+  run on the spot for the whole pause. Any failure (apply, animate, draw)
+  flips that body back to the placeholder sprite for good and logs once;
+  `FarmerLook: false` in the mod's config.json turns the whole thing off.
+  No appearance in the frame means the mod's neutral default farmer, which is
+  the ONLY default (main sends no field rather than a second copy of it).
+- **Dev frame:** `devAppearance` (same `DevCommands` gate) returns the clamped
+  request, the rejected fields, the values read back from the shadow farmer
+  and the sprite frame / facing / base texture. `scripts/fake-stardew-mod.mjs`
+  records the field and answers the same frame.
+- **Unverified (the game was not launched for this change):** that the farmer
+  actually draws in place and at the right height, the walk cycle in four
+  directions, depth sorting against trees and buildings, the look of each
+  legend entry on a dressed body in motion (the legend was written from the
+  sheets, some hair entries from silhouettes only), what a farmhand sees
+  (their game has no registry entry, so it should be the placeholder), and the
+  quality of the model's picks for real characters. Tool-use animations are
+  not implemented: a swing is still the NPC hop. Owed: a user override in the
+  launch panel (`source: 'user'` is already in the stored row and is kept
+  as is), and re-deriving when a character's description changes
+  (`clearAppearance` exists; nothing calls it yet).
 
 **Dashboards in the games' own registers (260909).** Both bot-backed
 dashboards are now DELIBERATE, CONTAINED EXCEPTIONS to the design tokens,

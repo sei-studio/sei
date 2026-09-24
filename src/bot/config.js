@@ -130,6 +130,24 @@ const StardewAdapterSchema = z.object({
   // The companion's in-game display name (persona name, sanitised).
   username: z.string().min(1),
   reconnect_delay_ms: z.number().int().min(0).default(3000),
+  // 260921: how the companion looks as a farmer, forwarded verbatim in the
+  // spawn frame. Deliberately LOOSE here: main validated it against the
+  // legend-bound schema (src/shared/stardewAppearance.ts, which this process
+  // cannot import) and the mod clamps every field against the game, so a
+  // second strict copy would only be a third place to keep in step. `.catch`
+  // drops a malformed block instead of failing the whole bot config: looks
+  // must never be the reason a summon dies.
+  appearance: z.object({
+    gender: z.string(),
+    skin: z.number().int(),
+    hair: z.number().int(),
+    hairColor: z.string(),
+    eyeColor: z.string(),
+    shirt: z.number().int(),
+    pants: z.number().int(),
+    pantsColor: z.string(),
+    accessory: z.number().int(),
+  }).optional().catch(undefined),
 })
 
 // Game adapters (M0, 260908). `kind` selects which runtime the composer
