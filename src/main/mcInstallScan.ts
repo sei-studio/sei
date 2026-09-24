@@ -183,9 +183,9 @@ async function detectFabricLoader(mcDir: string): Promise<{ loaderVersion: strin
     return null;
   }
   // Match `fabric-loader-<loaderVer>-<mcVer>`. loaderVer is x.y.z (semver),
-  // mcVer is x.y or x.y.z. Every profile counts (260916): readiness needs to
-  // know whether ANY of them is for a version Sei can join, not just that
-  // Fabric exists somewhere in the folder.
+  // mcVer is x.y or x.y.z. Every profile counts (260909): the launch panel
+  // needs to know whether ANY of them is for a version Sei can join, not
+  // just that Fabric exists somewhere in the folder.
   const re = /^fabric-loader-(\d+\.\d+\.\d+)-(\d+\.\d+(?:\.\d+)?)$/;
   let loaderVersion: string | null = null;
   const mcVersions: string[] = [];
@@ -196,6 +196,45 @@ async function detectFabricLoader(mcDir: string): Promise<{ loaderVersion: strin
     if (!mcVersions.includes(m[2])) mcVersions.push(m[2]);
   }
   return loaderVersion ? { loaderVersion, mcVersions } : null;
+}
+
+/**
+ * Which Fabric profiles in `launcher_profiles.json` carry the skin mod in
+ * their OWN mods folder (260916). The wizard builds one "Sei <version>"
+ * profile per version, each with its own game dir (`<.minecraft>/sei/<v>/`;
+ * the pre-260916 single profile used `<.minecraft>/sei/`), so "the mod is
+ * somewhere on this install" no longer says which versions are playable.
+ * A profile with no gameDir loads the shared `<.minecraft>/mods/`.
+ * Returns null when the launcher file cannot be read (caller falls back to
+ * the whole-install rule).
+ */
+async function detectSeiProfiles(
+  mcDir: string,
+): Promise<{ ready: string[]; csl: { installed: boolean; version: string | null } } | null> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await fs.readFile(path.join(mcDir, 'launcher_profiles.json'), 'utf8'));
+  } catch {
+    return null;
+  }
+  const profiles = (parsed as { profiles?: unknown })?.profiles;
+  if (!profiles || typeof profiles !== 'object') return null;
+  const re = /^fabric-loader-\d+\.\d+\.\d+-(\d+\.\d+(?:\.\d+)?)$/;
+  const ready: string[] = [];
+  let csl: { installed: boolean; version: string | null } = { installed: false, version: null };
+  for (const entry of Object.values(profiles as Record<string, unknown>)) {
+    if (!entry || typeof entry !== 'object') continue;
+    const e = entry as { lastVersionId?: unknown; gameDir?: unknown };
+    const m = typeof e.lastVersionId === 'string' ? re.exec(e.lastVersionId) : null;
+    if (!m) continue;
+    const gameDir =
+      typeof e.gameDir === 'string' && e.gameDir.trim() ? path.resolve(mcDir, e.gameDir) : mcDir;
+    const found = await detectCustomSkinLoader(path.join(gameDir, 'mods'));
+    if (!found.installed) continue;
+    if (!ready.includes(m[1])) ready.push(m[1]);
+    if (!csl.installed) csl = found;
+  }
+  return { ready, csl };
 }
 
 /**
@@ -397,7 +436,14 @@ export async function scanMcInstalls(opts?: ScanOpts): Promise<McInstall[]> {
       // install, which surfaced a false "1 install needs update" in Settings
       // right after a successful skin setup. Check the isolated gameDir first,
       // then fall back to the legacy shared mods dir for pre-isolation setups.
-      let csl = await detectCustomSkinLoader(path.join(vp, 'sei', 'mods'));
+      // 260916: one game dir per "Sei <version>" profile, so ask the
+      // launcher file which profiles actually carry the mod, then fall back
+      // to the two historical locations for csl_installed.
+      const seiProfiles = await detectSeiProfiles(vp);
+      let csl = seiProfiles?.csl ?? { installed: false, version: null };
+      if (!csl.installed) {
+        csl = await detectCustomSkinLoader(path.join(vp, 'sei', 'mods'));
+      }
       if (!csl.installed) {
         csl = await detectCustomSkinLoader(path.join(vp, 'mods'));
       }
@@ -410,6 +456,7 @@ export async function scanMcInstalls(opts?: ScanOpts): Promise<McInstall[]> {
         loader: fabric ? 'fabric' : null,
         loader_version: fabric?.loaderVersion ?? null,
         fabric_mc_versions: fabric?.mcVersions ?? [],
+        ...(seiProfiles ? { sei_ready_versions: seiProfiles.ready } : {}),
         csl_installed: csl.installed,
         csl_version: csl.version,
         sei_enabled: enabledSet.has(id),

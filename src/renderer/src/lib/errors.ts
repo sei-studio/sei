@@ -67,6 +67,24 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   // 260916: names the exact field. "Re-run onboarding" sent people back
   // through the whole Sui scene for a one-line fix.
   PREFERRED_NAME_MISSING: "Sei doesn't know your name yet. Open Settings, type it into the Name field, then press Launch again.",
+  // Game adapters (M0, 260908): game-neutral copy. The per-game setup modal
+  // adds the game's own steps; this is what the generic error modal shows.
+  GAME_WORLD_NOT_OPEN: "We can't see a game world to join. Open your world in the game, then press Play again.",
+  GAME_NOT_INSTALLED: "We couldn't find this game on your computer. Install it, then press Play again.",
+  GAME_INSTALL_FAILED: "Couldn't finish setting up the companion mod for this game. Make sure the game is closed, then try the setup again.",
+  GAME_NOT_ANSWERING: "The game is open but isn't answering. Make sure the Sei mod is enabled in the game, then press Play again.",
+  GAME_VERSION_UNSUPPORTED: "This game version isn't supported yet. Update the game to a supported version and press Play again.",
+  // 260908 game packs. The size mirrors GAME_PACKS.minecraft.sizeHintBytes
+  // (src/shared/gamePacks.ts); gamePacks.test.ts pins the two together.
+  GAME_PACK_DOWNLOAD_FAILED: "Couldn't download the support files this game needs (about 50 MB for Minecraft). Check your connection and press Play again. A retry usually works.",
+  // Don't Starve Together (game-adapters M2, 260908).
+  DST_SPAWN_FAILED: "Sei's helper answered, but no survivor appeared in your world. Make sure you are the host, then press Play again.",
+  DST_PORT_IN_USE: "Sei couldn't open its local port for Don't Starve Together. Change the discovery port in Settings, or close whatever is using it, and try again.",
+  DST_BODY_DIED: "Your companion's survivor died in the Constant. Press Play to summon them again.",
+  DST_ONE_COMPANION: "Don't Starve Together fits one companion at a time. Disconnect the companion already in your world, then press Play.",
+  // Stardew Valley (game-adapters M1, 260908).
+  STARDEW_FARMHAND_NO_MOD: "Someone in your farm doesn't have the Sei companion mod, so your companion can't appear for them. Ask them to install it, or play without them for now.",
+  SMAPI_INSTALL_FAILED: "Couldn't install SMAPI, the mod loader Stardew Valley needs. Make sure the game is closed and try the setup again, or install SMAPI from smapi.io and then re-run the setup.",
 };
 
 /**

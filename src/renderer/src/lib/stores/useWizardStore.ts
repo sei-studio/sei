@@ -37,6 +37,12 @@ export interface WizardStoreState {
   installs: McInstall[];
   selectedIds: Set<string>;
   /**
+   * installId → Minecraft version picked for that vanilla launcher (260916).
+   * Absent = the newest supported version (main's default too). Sent as
+   * `mcVersions` on runWizardInstall; one "Sei <version>" profile per pick.
+   */
+  versionByInstall: Record<string, string>;
+  /**
    * Non-null while runWizardInstall is in flight. Lets cancelInstall
    * pass the correct id to sei.wizardCancel(sessionId). Generated per run via
    * `crypto.randomUUID()` so the matching cancel targets THIS run, not a stale one.
@@ -53,6 +59,7 @@ export interface WizardStoreState {
   gotoStep: (step: WizardStep) => void;
   runDetection: () => Promise<void>;
   toggleSelected: (id: string) => void;
+  setInstallVersion: (id: string, version: string) => void;
   runInstall: () => Promise<void>;
   /** Async because it fires an IPC call across the process boundary. */
   cancelInstall: () => Promise<void>;
@@ -69,6 +76,7 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
     isReentry: false,
     installs: [],
     selectedIds: new Set(),
+    versionByInstall: {},
     sessionId: null,
     progress: new Map(),
     results: [],
@@ -81,6 +89,7 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
         step: 'welcome',
         installs: [],
         selectedIds: new Set(),
+        versionByInstall: {},
         progress: new Map(),
         results: [],
         error: null,
@@ -147,6 +156,10 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
       set({ selectedIds: next });
     },
 
+    setInstallVersion: (id, version) => {
+      set({ versionByInstall: { ...get().versionByInstall, [id]: version } });
+    },
+
     runInstall: async () => {
       // Generate a fresh sessionId for this install run. The renderer
       // stores it in state so cancelInstall can pass it back through sei.wizardCancel.
@@ -173,10 +186,15 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
         const fullIds = new Set(
           get().installs.filter((i) => i.compatibility === 'full').map((i) => i.id),
         );
+        const installIds = Array.from(get().selectedIds).filter((id) => fullIds.has(id));
+        const picks = get().versionByInstall;
+        const mcVersions: Record<string, string> = {};
+        for (const id of installIds) if (picks[id]) mcVersions[id] = picks[id];
         const { results } = await sei.runWizardInstall({
           sessionId,
-          installIds: Array.from(get().selectedIds).filter((id) => fullIds.has(id)),
+          installIds,
           skinServerBaseUrl: baseUrl,
+          ...(Object.keys(mcVersions).length ? { mcVersions } : {}),
         });
         const anyFailed = results.some((r) => !r.ok);
         set({ results, step: anyFailed ? 'one-failed' : 'done' });

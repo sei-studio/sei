@@ -1,0 +1,56 @@
+/* GameControlsWindow / GameStatusStrip (game adapters M2). Tokens only. */
+.strip {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.stripTitle {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.stripText {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.modeLabel {
+  margin-left: var(--space-sm);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.hint {
+  min-height: 1.4em;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-2);
+}

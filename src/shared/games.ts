@@ -42,8 +42,11 @@ export const GAME_CATALOG: GameCatalogEntry[] = [
   // not belong in a grid beside chess, so it lives on the call controls' share
   // button instead. The companion still knows it can be shown a screen: that is
   // in the voice primer, where it can say something useful about it.
-  { id: 'stardew', name: 'Stardew Valley', available: false },
-  { id: 'dontstarve', name: "Don't Starve Together", available: false },
+  // Game adapters (260908): both bot-backed games are live tiles. The
+  // companion cannot start them itself (no selfLaunch): each needs a one-time
+  // install pass (SMAPI / the DST helper mod) that only the player can run.
+  { id: 'stardew', name: 'Stardew Valley', available: true },
+  { id: 'dontstarve', name: "Don't Starve Together", available: true },
   { id: 'focus', name: 'Focus', available: false },
 ];
 
@@ -65,7 +68,10 @@ export function renderGamesDirective(): string {
     lines.push(
       'The player starts any of them from the games menu beside the chat box. ' +
         (mine.length
-          ? `${named(mine)} you can also start yourself; ${named(theirs)} you cannot, so suggest ` +
+          ? // "The others" rather than naming them again (260908): with five
+            // live games the repeated list pushed the block past its budget
+            // and said nothing the first line had not.
+            `${named(mine)} you can also start yourself; the others you cannot, so suggest ` +
             'rather than offering to open one.'
           : `You cannot open ${named(theirs)} yourself, so suggest rather than offering to.`),
     );

@@ -163,6 +163,17 @@ export function createPriorityQueue({ onDispatch, onPreempt = null, idleFallback
     clearTimeout(idleTimer)
     if (disposed || holdPredicate) return
     idleTimer = setTimeout(() => {
+      // 260921: a dispatch in flight means the companion is mid-turn, which is
+      // the opposite of idle. The timer used to count from the last event's
+      // ARRIVAL, so at the agentic 5s cadence it fired while the reply to that
+      // very event was still generating; the tick queued behind the turn and
+      // dispatched the instant it ended. Measured on a Stardew session: an idle
+      // turn opened 3 ms after a reply's loop closed, before the reply's paced
+      // chat line had even been sent, saw the player's question as unanswered,
+      // and answered it a second time with a different answer. Skip the tick;
+      // processNext re-arms the timer when the dispatch finishes, so quiet is
+      // measured from the END of the companion's own turn.
+      if (currentAction) return
       idleStreak += 1
       enqueue(Priority.P3_IDLE, 'sei:idle', { quietMs: Date.now() - lastActivityAt })
     }, idleDelay())
@@ -309,6 +320,11 @@ export function createPriorityQueue({ onDispatch, onPreempt = null, idleFallback
         currentAction = null
       }
     }
+
+    // 260921: quiet starts when the turn ENDS (see resetIdleTimer). Re-arming
+    // here also covers the tick that was skipped because this dispatch was
+    // still running when the timer fired.
+    resetIdleTimer()
 
     if (queue.length > 0) {
       setImmediate(processNext)

@@ -1,3 +1,5 @@
+// Must stay the first import: see devHarnessStubs.ts.
+import './devHarnessStubs';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './App';
@@ -15,6 +17,16 @@ if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('ches
   // works in a plain browser tab. Lazy import keeps it out of prod bundles.
   void import('./components/chess/DevChessShot').then(({ DevChessShot }) => {
     root.render(<DevChessShot />);
+  });
+} else if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('dashshot')) {
+  // Dev-only screenshot harness (260909): http://localhost:5173/?dashshot=1
+  // renders the Don't Starve Together + Stardew Valley dashboards over
+  // fixture snapshots (or one of them with ?dashshot=dontstarve|stardew), no
+  // summon and no real IPC, so the game-styled panels can be checked in a
+  // plain browser tab. Lazy import keeps it out of prod bundles.
+  const which = new URLSearchParams(window.location.search).get('dashshot') ?? '';
+  void import('./components/games/DevDashShot').then(({ DevDashShot }) => {
+    root.render(<DevDashShot which={which} />);
   });
   // 260803: the `?backseat=1` branch is gone with the backseat overlay window.
   // Screen sharing is a call feature now and its capture runs in THIS window;

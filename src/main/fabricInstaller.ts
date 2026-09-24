@@ -370,6 +370,15 @@ export interface InstallFabricLoaderOpts {
   mcVersion: string;
   /** Override loader pick (skips the meta-API loader-list call). */
   loaderVersion?: string;
+  /**
+   * 260916: one profile per Minecraft version. The launcher profile is
+   * renamed to `profileName` (default "Sei") and pointed at
+   * `<.minecraft>/sei/<gameDirName>/` (default `<.minecraft>/sei/`, the
+   * pre-260916 single dir). Each version needs its own dir because Fabric
+   * loads every jar in mods/, and the skin mod is built per version.
+   */
+  profileName?: string;
+  gameDirName?: string;
   /** Progress callback — currently called at three milestones (0/30/90). */
   onProgress?: (pct: number) => void;
   /** Threaded through from main's Map<sessionId, AbortController>. */
@@ -389,6 +398,7 @@ export async function installFabricLoader(
   opts: InstallFabricLoaderOpts,
 ): Promise<{ loaderVersion: string; seiGameDir: string }> {
   const { mcInstall, mcVersion, onProgress, signal } = opts;
+  const profileName = opts.profileName ?? 'Sei';
 
   // Pre-flight: cancel check before any network IO.
   if (signal?.aborted) {
@@ -528,7 +538,9 @@ export async function installFabricLoader(
   // launcher_profiles.json. The Mojang launcher tolerates a missing
   // gameDir (auto-creates) but explicit creation here is clearer + lets
   // T5 drop the CSL JAR into a pre-existing path without race.
-  const seiGameDir = path.join(mcInstall.path, 'sei');
+  const seiGameDir = opts.gameDirName
+    ? path.join(mcInstall.path, 'sei', opts.gameDirName)
+    : path.join(mcInstall.path, 'sei');
   await fs.mkdir(seiGameDir, { recursive: true });
   await fs.mkdir(path.join(seiGameDir, 'mods'), { recursive: true });
 
@@ -554,7 +566,7 @@ export async function installFabricLoader(
       const expectedKey = `fabric-loader-${loaderVersion}-${mcVersion}`;
       const exactProf = parsed.profiles[expectedKey];
       if (exactProf) {
-        exactProf.name = 'Sei';
+        exactProf.name = profileName;
         // Mojang launcher accepts both relative and absolute gameDir
         // strings. We write the absolute path because it's unambiguous
         // across launcher working-dir quirks (the launcher resolves
@@ -573,7 +585,7 @@ export async function installFabricLoader(
             (key.startsWith('fabric-loader-') ||
               (typeof prof.name === 'string' && prof.name.startsWith('fabric-loader-')))
           ) {
-            prof.name = 'Sei';
+            prof.name = profileName;
             prof.gameDir = seiGameDir;
           }
         }
