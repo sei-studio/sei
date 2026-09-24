@@ -25,6 +25,13 @@
 //   guard). A helper that outlives its parent with a key held down would be
 //   the computer-use version of the stop-button lag.
 //
+// Commands. Actions (serial, cancellable): move, click, drag, scroll, key,
+// key_down, key_up, hold, type, wait. Queries: ping, permissions, frontmost,
+// app, windows, window, displays, cursor, keys, screenshot (+ optional
+// `thumb` and `ocr` on the same frame), ax_dump (the Accessibility tree of a
+// pid), ax_focused (the focused element, used to refuse typing into secure
+// fields), watch. Control: cancel, release_all.
+//
 // Coordinates are GLOBAL POINTS in the Quartz space: origin at the top-left
 // of the main display, y down. That is the space CGEvent, CGWindowList and
 // CGDisplayBounds use, and on macOS it is also Electron's screen DIP space.
@@ -41,6 +48,7 @@ import ApplicationServices
 import ImageIO
 import ScreenCaptureKit
 import UniformTypeIdentifiers
+import Vision
 
 let HELPER_VERSION = "0.1.0"
 
@@ -54,6 +62,8 @@ let outLock = NSLock()
 let state = HelperState()
 let eventSource = CGEventSource(stateID: .privateState)
 let actionQueue = DispatchQueue(label: "sei.mac-input.actions")
+/// Slow queries (AX walks) run here so the reader thread stays free for cancel.
+let queryQueue = DispatchQueue(label: "sei.mac-input.queries", attributes: .concurrent)
 
 /// Canonical key names (lowercase) to macOS virtual key codes (kVK_*, US
 /// layout). src/main/computerUse/keys.ts normalizes model-side names to these
@@ -68,7 +78,7 @@ let KEY_CODES: [String: CGKeyCode] = [
     "\\": 0x2A, ",": 0x2B, "/": 0x2C, "n": 0x2D, "m": 0x2E, ".": 0x2F,
     "tab": 0x30, "space": 0x31, "`": 0x32, "backspace": 0x33, "escape": 0x35,
     "cmd": 0x37, "shift": 0x38, "capslock": 0x39, "alt": 0x3A, "ctrl": 0x3B,
-    "fn": 0x3F, "enter": 0x4C,
+    "fn": 0x3F, "kp_enter": 0x4C,
     "f1": 0x7A, "f2": 0x78, "f3": 0x63, "f4": 0x76, "f5": 0x60, "f6": 0x61,
     "f7": 0x62, "f8": 0x64, "f9": 0x65, "f10": 0x6D, "f11": 0x67, "f12": 0x6F,
     "f13": 0x69, "f14": 0x6B, "f15": 0x71, "f16": 0x6A, "f17": 0x40, "f18": 0x4F,
@@ -314,7 +324,7 @@ func doClick(_ args: [String: Any], _ gen: Int) throws {
     // Hover first: some apps and games only arm a widget on hover and drop a
     // click that arrives with no preceding move.
     guard sleepChecked(0.05, gen) else { throw ActionError(message: "cancelled") }
-    try withModifiers(flags) {
+    withModifiers(flags) {
         for i in 1...count {
             postMouse(downT, p, btn, clickState: Int64(i), flags: flags)
             state.lock.lock(); state.heldButtons.insert(btn.rawValue); state.lock.unlock()
@@ -597,12 +607,53 @@ func jpegBase64(_ img: CGImage, quality: Double) -> String? {
     return (data as Data).base64EncodedString()
 }
 
+/// 32x18 grayscale thumbnail as hex, for main's "did the screen change" test
+/// (stall detection). Tolerant of JPEG noise in a way a byte hash is not.
+func thumbHex(_ img: CGImage) -> String? {
+    let w = 32, h = 18
+    var buf = [UInt8](repeating: 0, count: w * h)
+    let ok: Bool = buf.withUnsafeMutableBytes { raw -> Bool in
+        guard let ctx = CGContext(data: raw.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w,
+                                  space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return false }
+        ctx.interpolationQuality = .medium
+        ctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h))
+        return true
+    }
+    guard ok else { return nil }
+    return buf.map { String(format: "%02x", $0) }.joined()
+}
+
+/// Text boxes in `img`, which shows global rect `r`, mapped to global points.
+/// Apple Vision's on-device recognizer; nothing leaves the machine.
+func ocrBoxes(_ img: CGImage, _ r: CGRect, accurate: Bool) -> [[String: Any]] {
+    let req = VNRecognizeTextRequest()
+    req.recognitionLevel = accurate ? .accurate : .fast
+    req.usesLanguageCorrection = accurate
+    let handler = VNImageRequestHandler(cgImage: img, options: [:])
+    do { try handler.perform([req]) } catch { return [] }
+    var out: [[String: Any]] = []
+    for obs in req.results ?? [] {
+        guard let cand = obs.topCandidates(1).first else { continue }
+        let bb = obs.boundingBox // normalized, origin bottom-left
+        out.append([
+            "text": cand.string,
+            "confidence": Double(cand.confidence),
+            "x": Double(r.minX + bb.minX * r.width),
+            "y": Double(r.minY + (1 - bb.maxY) * r.height),
+            "w": Double(bb.width * r.width),
+            "h": Double(bb.height * r.height),
+        ])
+    }
+    return out
+}
+
 /// One frame of `rect` (global points, clipped to its display), scaled by
 /// ScreenCaptureKit to exactly width x height pixels, with every window of
 /// `excludePids` removed (Sei's own windows, so the model never sees its own
 /// overlay). The reply carries the rect actually captured; main maps model
 /// coordinates through that rect and the image size, which is what keeps
 /// mixed-DPI setups exact without either side knowing a backing scale.
+/// Optional extras on the same frame: `thumb` (change detection) and `ocr`.
 @available(macOS 14.0, *)
 func screenshot(_ id: Int, _ args: [String: Any]) async {
     let t0 = now()
@@ -644,24 +695,111 @@ func screenshot(_ id: Int, _ args: [String: Any]) async {
         let q = (args["quality"] as? NSNumber)?.doubleValue ?? 0.8
         guard let b64 = jpegBase64(img, quality: q) else { throw ActionError(message: "jpeg encode failed") }
         let tEnc = now()
-        reply(id, [
+        var o: [String: Any] = [
             "data": b64,
             "mime": "image/jpeg",
             "width": img.width,
             "height": img.height,
             "rect": rectDict(r),
             "displayId": Int(d.displayID),
-            "timing": [
-                "contentMs": Int((tContent - t0) * 1000),
-                "captureMs": Int((tCap - tContent) * 1000),
-                "encodeMs": Int((tEnc - tCap) * 1000),
-            ],
-        ])
+        ]
+        var timing: [String: Any] = [
+            "contentMs": Int((tContent - t0) * 1000),
+            "captureMs": Int((tCap - tContent) * 1000),
+            "encodeMs": Int((tEnc - tCap) * 1000),
+        ]
+        if (args["thumb"] as? Bool) ?? false, let t = thumbHex(img) { o["thumb"] = t }
+        if (args["ocr"] as? Bool) ?? false {
+            let tO = now()
+            o["ocr"] = ocrBoxes(img, r, accurate: (args["ocrAccurate"] as? Bool) ?? false)
+            timing["ocrMs"] = Int((now() - tO) * 1000)
+        }
+        o["timing"] = timing
+        reply(id, o)
     } catch let e as ActionError {
         replyError(id, e.message)
     } catch {
         replyError(id, "screenshot failed: \(error.localizedDescription)")
     }
+}
+
+// ── Accessibility tree ──────────────────────────────────────────────────────
+//
+// For the text-only chooser: the target app's AX elements with role, label
+// and frame (global points, same space as everything else here). Needs the
+// Accessibility grant, same as posting events. Bounded by node count and
+// depth, with a short messaging timeout so a hung app cannot hang the helper.
+// Runs on queryQueue, not the reader thread, so `cancel` is never stuck
+// behind a slow tree walk.
+
+func axAttr(_ el: AXUIElement, _ name: String) -> AnyObject? {
+    var v: AnyObject?
+    guard AXUIElementCopyAttributeValue(el, name as CFString, &v) == .success else { return nil }
+    return v
+}
+
+func axString(_ el: AXUIElement, _ name: String) -> String? {
+    guard let v = axAttr(el, name) else { return nil }
+    if let s = v as? String { return s.isEmpty ? nil : String(s.prefix(160)) }
+    if let n = v as? NSNumber { return n.stringValue }
+    return nil
+}
+
+func axFrame(_ el: AXUIElement) -> CGRect? {
+    guard let p = axAttr(el, kAXPositionAttribute as String), let s = axAttr(el, kAXSizeAttribute as String),
+          CFGetTypeID(p) == AXValueGetTypeID(), CFGetTypeID(s) == AXValueGetTypeID() else { return nil }
+    var pt = CGPoint.zero
+    var sz = CGSize.zero
+    guard AXValueGetValue(p as! AXValue, .cgPoint, &pt), AXValueGetValue(s as! AXValue, .cgSize, &sz) else { return nil }
+    return CGRect(origin: pt, size: sz)
+}
+
+func axNode(_ el: AXUIElement, depth: Int, parent: Int) -> [String: Any] {
+    var o: [String: Any] = ["depth": depth, "parent": parent]
+    if let r = axString(el, kAXRoleAttribute as String) { o["role"] = r }
+    if let r = axString(el, kAXSubroleAttribute as String) { o["subrole"] = r }
+    if let t = axString(el, kAXTitleAttribute as String) { o["title"] = t }
+    if let t = axString(el, kAXDescriptionAttribute as String) { o["description"] = t }
+    if let t = axString(el, "AXPlaceholderValue") { o["placeholder"] = t }
+    // Never read the value of a secure field.
+    if (o["subrole"] as? String) != "AXSecureTextField", let t = axString(el, kAXValueAttribute as String) { o["value"] = t }
+    if let f = axFrame(el) { o["frame"] = rectDict(f) }
+    if let e = axAttr(el, kAXEnabledAttribute as String) as? Bool { o["enabled"] = e }
+    if let f = axAttr(el, kAXFocusedAttribute as String) as? Bool, f { o["focused"] = true }
+    return o
+}
+
+func axDump(pid: Int, maxNodes: Int, maxDepth: Int) -> [[String: Any]] {
+    let app = AXUIElementCreateApplication(pid_t(pid))
+    AXUIElementSetMessagingTimeout(app, 0.25)
+    var out: [[String: Any]] = []
+    var queue: [(AXUIElement, Int, Int)] = []
+    if let wins = axAttr(app, kAXWindowsAttribute as String) as? [AXUIElement] {
+        for w in wins { queue.append((w, 0, -1)) }
+    }
+    var i = 0
+    while i < queue.count && out.count < maxNodes {
+        let (el, depth, parent) = queue[i]
+        i += 1
+        let idx = out.count
+        out.append(axNode(el, depth: depth, parent: parent))
+        if depth >= maxDepth { continue }
+        if let kids = axAttr(el, kAXChildrenAttribute as String) as? [AXUIElement] {
+            for k in kids { queue.append((k, depth + 1, idx)) }
+        }
+    }
+    return out
+}
+
+func axFocused() -> [String: Any] {
+    let sys = AXUIElementCreateSystemWide()
+    AXUIElementSetMessagingTimeout(sys, 0.25)
+    guard let v = axAttr(sys, kAXFocusedUIElementAttribute as String), CFGetTypeID(v) == AXUIElementGetTypeID() else { return [:] }
+    let el = v as! AXUIElement
+    var o = axNode(el, depth: 0, parent: -1)
+    var pid: pid_t = 0
+    if AXUIElementGetPid(el, &pid) == .success { o["pid"] = Int(pid) }
+    return o
 }
 
 // ── User-input watcher ──────────────────────────────────────────────────────
@@ -780,6 +918,17 @@ func handle(_ line: String) {
         } else {
             replyError(id, "screenshot needs macOS 14")
         }
+    case "ax_dump":
+        let pid = (obj["pid"] as? NSNumber)?.intValue ?? -1
+        let maxNodes = max(1, min(2000, (obj["maxNodes"] as? NSNumber)?.intValue ?? 400))
+        let maxDepth = max(1, min(60, (obj["maxDepth"] as? NSNumber)?.intValue ?? 25))
+        queryQueue.async {
+            let t0 = now()
+            let nodes = axDump(pid: pid, maxNodes: maxNodes, maxDepth: maxDepth)
+            reply(id, ["nodes": nodes, "ms": Int((now() - t0) * 1000)])
+        }
+    case "ax_focused":
+        queryQueue.async { reply(id, ["element": axFocused()]) }
     case "watch":
         if (obj["enabled"] as? Bool) ?? false { watcher.arm() } else { watcher.disarm() }
         reply(id)

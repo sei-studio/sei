@@ -62,6 +62,8 @@ import * as chatStore from '../chat/chatStore';
 import type { LogBatch } from '../../shared/ipc';
 import { BACKSEAT_CONTRACT, SAVE_CLIP_TOOL, stripDashes, tickNote } from './backseatPrompts';
 import { createBackseatLog, NULL_BACKSEAT_LOG, type BackseatLog } from './backseatLog';
+import { actFlagFromEnv, CONTROL_TOOL, controlEventNote, controlGoal } from '../computerUse/controlTool';
+import type { ActOutcome } from '../computerUse/actLoop';
 
 /**
  * Tick priority. Strictly ordered: a tick preempts an in-flight turn only when
@@ -103,6 +105,8 @@ export interface BackseatDeps {
 
 interface Session {
   characterId: string;
+  /** desktopCapturer source id of the share (260925: the act loop's target). */
+  sourceId: string;
   state: BackseatState;
   /** Aborts the in-flight turn, if any. */
   inflight: AbortController | null;
@@ -228,6 +232,7 @@ export async function startBackseat(
   const log = await createBackseatLog(characterId, deps?.pushLog ?? (() => {}));
   const s: Session = {
     characterId,
+    sourceId,
     state: {
       characterId,
       phase: 'watching',
@@ -298,6 +303,10 @@ export async function endBackseat(characterId: string): Promise<void> {
   s.inflight?.abort();
   s.inflight = null;
   s.state.phase = 'ended';
+  if (actFlagFromEnv()) {
+    const { stopAct } = await import('../computerUse/actSession');
+    stopAct(characterId);
+  }
   const durationMs = Date.now() - s.state.startedAt;
   const lineCount = s.state.lines.length;
   // Unresolved clip harvests would otherwise keep their promises alive.
@@ -491,6 +500,16 @@ export async function handleTick(tick: BackseatTick): Promise<void> {
   const isUser = tick.kind === 'user';
   const label = tick.kind + (tick.joltReason ? `:${tick.joltReason}` : '');
 
+  // 260925 act spike: while the companion is driving (control()), jolts and
+  // idle looks are dropped (the livelock lesson: nothing may preempt the act
+  // loop). The player's own lines still get a normal turn below, so the
+  // companion can talk while it drives.
+  const acting = actFlagFromEnv() && (await import('../computerUse/actSession')).isActing(s.characterId);
+  if (acting && !isUser) {
+    slog(s, `tick ${label} dropped (acting)`);
+    return;
+  }
+
   // Being talked to always earns an answer, so a user tick skips the speak-gap
   // floor. Everything else respects it: two lines about the same six seconds
   // is worse than one.
@@ -548,11 +567,25 @@ export async function handleTick(tick: BackseatTick): Promise<void> {
     d.pushLine(s.characterId, line);
   }
 
+  let extraNote: string | undefined;
+  if (acting && isUser) {
+    const { actPlayerLine, actingGoal } = await import('../computerUse/actSession');
+    const goal = actingGoal(s.characterId);
+    const r = actPlayerLine(s.characterId, tick.text ?? '');
+    slog(s, `tick ${label} -> act ${r}`);
+    // A stop word stopped the run mechanically; the completion event turn
+    // is the reply, so this line does not get a second one.
+    if (r === 'stopped') return;
+    extraNote =
+      `[System note, not the player speaking: you are controlling their computer right now for "${goal ?? ''}", and it keeps running while you talk.` +
+      ` Their line is also passed to it. Call control again only if they want something different done.]`;
+  }
+
   const ctrl = new AbortController();
   s.inflight = ctrl;
   s.inflightKind = tick.kind;
   try {
-    await runTurn(s, tick, ctrl);
+    await runTurn(s, tick, ctrl, { extraNote });
   } catch (err) {
     const e = err as { name?: string; message?: string };
     if (e?.name !== 'AbortError' && !/abort/i.test(e?.message ?? '')) {
@@ -574,7 +607,12 @@ export async function handleTick(tick: BackseatTick): Promise<void> {
   }
 }
 
-async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): Promise<void> {
+async function runTurn(
+  s: Session,
+  tick: BackseatTick,
+  ctrl: AbortController,
+  opts: { extraNote?: string; noteOverride?: string } = {},
+): Promise<void> {
   const character = await getCharacter(s.characterId);
   if (!character) return;
   const config = await loadConfig();
@@ -644,7 +682,7 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
   const prevAge = s.prevGrid ? Date.now() - s.prevGrid.at : Infinity;
   const prev = prevAge <= PREV_GRID_MAX_AGE_MS ? s.prevGrid : null;
 
-  const note = tickNote({
+  const baseNote = opts.noteOverride ?? tickNote({
     kind: tick.kind,
     joltReason: tick.joltReason,
     sinceSwitchS: tick.sinceSwitchS,
@@ -655,6 +693,7 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
     frameAges: tick.frameAges,
     secondsSincePrevGrid: prev ? prevAge / 1000 : undefined,
   });
+  const note = opts.extraNote ? `${baseNote}\n\n${opts.extraNote}` : baseNote;
   const strip = (d: string): string => d.replace(/^data:image\/\w+;base64,/, '');
   const image = (data: string): unknown => ({
     type: 'image',
@@ -676,7 +715,7 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
     // a second, screenless one alongside it.
     maxTokens: tick.kind === 'user' ? 400 : 160,
     system,
-    tools: [SAVE_CLIP_TOOL, REMEMBER_TOOL],
+    tools: actFlagFromEnv() ? [SAVE_CLIP_TOOL, REMEMBER_TOOL, CONTROL_TOOL] : [SAVE_CLIP_TOOL, REMEMBER_TOOL],
     messages,
     timeoutMs: CHAT_TIMEOUT_MS,
     signal: ctrl.signal,
@@ -698,6 +737,16 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
   );
 
   await honorRemember(s, res.content, tick.kind === 'user');
+
+  // 260925 act spike: control({goal}) is async. The run starts in the
+  // background (replacing any running one) and this turn's own line is still
+  // spoken below; when the run ends, runControlEvent gives the companion a
+  // turn to react. Honored on a USER tick only: the player has to have asked.
+  const goal = actFlagFromEnv() ? controlGoal(res.content as never) : null;
+  if (goal) {
+    if (tick.kind === 'user') void beginControl(s, goal, character.name, character.persona?.expanded);
+    else slog(s, `turn ${tick.kind}: control ignored (not a user tick)`);
+  }
 
   // stripDashes because asking did not work: the contract has forbidden em
   // dashes since 260802 and the model still writes them in most lines, and
@@ -769,54 +818,152 @@ async function runTurn(s: Session, tick: BackseatTick, ctrl: AbortController): P
   if (!parts.length) return;
   slog(s, `turn ${tick.kind}: said ${parts.length} line(s)${clip ? ' + clip' : ''}`);
 
-  const d = requireDeps();
-  const now = Date.now();
-  // One tag per turn (260806). Backseat turns land every 10-20 s while TTS
-  // playback of a multi-part reply can run longer, so a new turn's lines used
-  // to queue behind the old turn's and the spoken commentary drifted further
-  // behind the screen every turn. The tag lets the renderer's audio queue drop
-  // the OLD turn's unplayed parts the moment a NEW turn's first line arrives —
-  // the clip already playing finishes its sentence, then playback jumps to now.
-  const turnTag = randomUUID();
-  for (let i = 0; i < parts.length; i++) {
-    const msg: ChatMessage = {
-      id: randomUUID(),
-      role: 'companion',
-      text: parts[i],
-      ts: now + i,
-      // In voice mode the line is spoken by the live call and hidden from the
-      // transcript, exactly as every other call line is.
-      ...(voiceCall ? { voice: true } : {}),
-      // The clip rides on the last part so it renders under the whole thought.
-      ...(clip && i === parts.length - 1 ? { clip } : {}),
-    };
-    await chatStore.appendMessage(s.characterId, msg);
-    d.pushChatMessage(
-      s.characterId,
-      msg,
-      // Voice mode also gets the prosody context the streamed chat reply's
-      // per-sentence pushes carry; these parts were synthesized context-free
-      // before, so every clip's intonation reset mid-thought.
-      voiceCall
-        ? {
-            ...(i > 0 ? { prev: parts[i - 1] } : {}),
-            ...(i < parts.length - 1 ? { more: true } : {}),
-            turn: turnTag,
-          }
-        : undefined,
-    );
-    // The overlay's mini chat is fed separately: it shows lines in BOTH modes
-    // (voice included, where the transcript deliberately hides them) because
-    // the overlay is the only thing on screen while a game is fullscreen.
-    const line: BackseatLine = {
-      id: msg.id,
-      text: msg.text,
-      at: msg.ts,
-      ...(clip && i === parts.length - 1 ? { clipPath: clip.path } : {}),
-    };
-    s.state.lines.push(line);
-    while (s.state.lines.length > LINE_TAIL) s.state.lines.shift();
-    d.pushLine(s.characterId, line);
-  }
+  emitCompanionLines(s, parts, voiceCall, clip);
   push(s);
+}
+
+/**
+ * Persist + push the companion's spoken parts (the tail of runTurn, shared
+ * with the 260925 act loop's say() lines so both speak through one path).
+ */
+function emitCompanionLines(
+  s: Session,
+  parts: string[],
+  voiceCall: boolean,
+  clip: { path: string; reason: string } | null,
+): void {
+  void (async () => {
+    const d = requireDeps();
+    const now = Date.now();
+    // One tag per turn (260806). Backseat turns land every 10-20 s while TTS
+    // playback of a multi-part reply can run longer, so a new turn's lines used
+    // to queue behind the old turn's and the spoken commentary drifted further
+    // behind the screen every turn. The tag lets the renderer's audio queue drop
+    // the OLD turn's unplayed parts the moment a NEW turn's first line arrives —
+    // the clip already playing finishes its sentence, then playback jumps to now.
+    const turnTag = randomUUID();
+    for (let i = 0; i < parts.length; i++) {
+      const msg: ChatMessage = {
+        id: randomUUID(),
+        role: 'companion',
+        text: parts[i],
+        ts: now + i,
+        // In voice mode the line is spoken by the live call and hidden from the
+        // transcript, exactly as every other call line is.
+        ...(voiceCall ? { voice: true } : {}),
+        // The clip rides on the last part so it renders under the whole thought.
+        ...(clip && i === parts.length - 1 ? { clip } : {}),
+      };
+      await chatStore.appendMessage(s.characterId, msg);
+      d.pushChatMessage(
+        s.characterId,
+        msg,
+        // Voice mode also gets the prosody context the streamed chat reply's
+        // per-sentence pushes carry; these parts were synthesized context-free
+        // before, so every clip's intonation reset mid-thought.
+        voiceCall
+          ? {
+              ...(i > 0 ? { prev: parts[i - 1] } : {}),
+              ...(i < parts.length - 1 ? { more: true } : {}),
+              turn: turnTag,
+            }
+          : undefined,
+      );
+      // The overlay's mini chat is fed separately: it shows lines in BOTH modes
+      // (voice included, where the transcript deliberately hides them) because
+      // the overlay is the only thing on screen while a game is fullscreen.
+      const line: BackseatLine = {
+        id: msg.id,
+        text: msg.text,
+        at: msg.ts,
+        ...(clip && i === parts.length - 1 ? { clipPath: clip.path } : {}),
+      };
+      s.state.lines.push(line);
+      while (s.state.lines.length > LINE_TAIL) s.state.lines.shift();
+      d.pushLine(s.characterId, line);
+    }
+    push(s);
+  })().catch((err) => slog(s, `line emit failed: ${(err as Error).message}`, true));
+}
+
+/** 260925 act spike: start (or replace) the control run on this share. */
+async function beginControl(s: Session, goal: string, name: string, persona: string | undefined): Promise<void> {
+  const { startControl } = await import('../computerUse/actSession');
+  slog(s, `control requested: "${goal.slice(0, 200)}"`);
+  const r = await startControl({
+    characterId: s.characterId,
+    characterName: name,
+    persona,
+    sourceId: s.sourceId,
+    sourceName: s.state.sourceName,
+    goal,
+    log: (m, warn) => slog(s, m, warn),
+    speak: (text) => {
+      const parts = splitReply(stripDashes(text), 'casual')
+        .map(stripThoughtTags)
+        .filter((t) => t && !isSilenceFiller(t));
+      if (!parts.length) return;
+      s.lastSpokeAt = Date.now();
+      emitCompanionLines(s, parts, requireDeps().isCallActive?.(s.characterId) === true, null);
+    },
+    onEnd: (outcome, g) => void runControlEvent(s, g, outcome),
+  });
+  if (!r.ok) {
+    slog(s, `control failed to start: ${r.error}`, true);
+    void runControlEvent(s, goal, {
+      reason: 'error',
+      status: 'aborted',
+      steps: 0,
+      elapsedMs: 0,
+      summary: `It could not start (${r.error}).`,
+      timings: [],
+      history: [],
+    });
+  }
+}
+
+/**
+ * 260925 act spike: the completion event. When a control run ends, the
+ * companion gets its own turn with the run's last frame and a note saying
+ * {status, steps, summary}, and reacts to it. A run replaced by a newer
+ * control() call reports nothing (the new run will). Waits briefly for a
+ * turn already in flight so the reaction does not cut off an answer.
+ */
+async function runControlEvent(s: Session, goal: string, outcome: ActOutcome): Promise<void> {
+  if (outcome.reason === 'replaced') return;
+  slog(s, `control event: ${outcome.status} steps=${outcome.steps} "${outcome.summary.slice(0, 160)}"`);
+  for (let waited = 0; s.inflight && waited < 10_000; waited += 200) {
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  if (sessions.get(s.characterId) !== s || s.state.phase === 'ended') return;
+  if (s.inflight) {
+    s.inflight.abort();
+    s.inflight = null;
+    s.inflightKind = null;
+  }
+  const frame = outcome.lastFrame;
+  if (!frame) {
+    slog(s, 'control event: no frame to show, skipped', true);
+    return;
+  }
+  const secondsSinceLastLine = s.lastSpokeAt ? (Date.now() - s.lastSpokeAt) / 1000 : null;
+  const note =
+    `[System note, not the player speaking: ${controlEventNote(goal, { status: outcome.status, steps: outcome.steps, summary: outcome.summary })}` +
+    (secondsSinceLastLine === null ? '' : ` You last spoke about ${Math.round(secondsSinceLastLine)} seconds ago.`) +
+    ']';
+  const tick: BackseatTick = { characterId: s.characterId, kind: 'jolt', grid: frame.data, capturedAt: frame.capturedAt, frameAges: [0] };
+  const ctrl = new AbortController();
+  s.inflight = ctrl;
+  s.inflightKind = 'jolt';
+  try {
+    await runTurn(s, tick, ctrl, { noteOverride: note });
+  } catch (err) {
+    const e = err as { name?: string; message?: string };
+    if (e?.name !== 'AbortError' && !/abort/i.test(e?.message ?? '')) slog(s, `control event turn failed: ${e?.message}`, true);
+  } finally {
+    if (s.inflight === ctrl) {
+      s.inflight = null;
+      s.inflightKind = null;
+    }
+  }
 }

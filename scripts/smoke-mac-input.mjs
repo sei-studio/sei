@@ -3,7 +3,11 @@
 // binary, drives every query over the JSON-lines protocol and prints what came
 // back. Used by the macOS CI job and by hand on a Mac:
 //
-//   node scripts/smoke-mac-input.mjs [path/to/sei-mac-input] [--act]
+//   node scripts/smoke-mac-input.mjs [path/to/sei-mac-input] [--act] [--e2e]
+//
+// --e2e (CI only, it drives TextEdit): opens a new TextEdit document, clicks
+// into it, types a line, and checks the text arrived through the AX tree and
+// through OCR. Never run it on a machine someone is using.
 //
 // Queries must answer. Injection is only exercised with --act (it moves the
 // real cursor): a CI runner has no Accessibility grant, so posted events are
@@ -11,9 +15,11 @@
 // reported, not required, for the same reason (no Screen Recording grant).
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 
 const args = process.argv.slice(2)
 const act = args.includes('--act')
+const e2e = args.includes('--e2e')
 const bin = args.find((a) => !a.startsWith('--')) ?? 'resources/mac-input/sei-mac-input'
 if (!existsSync(bin)) {
   console.error(`missing helper binary: ${bin}`)
@@ -79,6 +85,14 @@ if (wins.windows?.length) {
   check('window by id', one.ok && one.window?.id === w0.id, JSON.stringify(one.window))
 }
 
+const focused = await req('ax_focused')
+check('ax_focused answers', focused.ok, JSON.stringify(focused.element))
+
+if (front.pid) {
+  const ax = await req('ax_dump', { pid: front.pid, maxNodes: 50 }, 8000)
+  check('ax_dump answers', ax.ok && Array.isArray(ax.nodes), `${ax.nodes?.length} nodes in ${ax.ms} ms (0 without the Accessibility grant)`)
+}
+
 const keys = await req('keys')
 check('keys', keys.ok && keys.keys.includes('return') && keys.keys.includes('a'), `${keys.keys?.length} keys`)
 
@@ -105,11 +119,11 @@ const d0 = displays.displays?.[0]
 if (d0) {
   const shot = await req(
     'screenshot',
-    { displayId: d0.id, width: Math.round(d0.bounds.w / 2), height: Math.round(d0.bounds.h / 2), quality: 0.7 },
+    { displayId: d0.id, width: Math.round(d0.bounds.w / 2), height: Math.round(d0.bounds.h / 2), quality: 0.7, thumb: true, ocr: true },
     15000,
   )
   console.log(
-    `info screenshot: ${shot.ok ? `${shot.width}x${shot.height} ${shot.data.length} b64 chars rect=${JSON.stringify(shot.rect)} timing=${JSON.stringify(shot.timing)}` : shot.error}`,
+    `info screenshot: ${shot.ok ? `${shot.width}x${shot.height} ${shot.data.length} b64 chars rect=${JSON.stringify(shot.rect)} timing=${JSON.stringify(shot.timing)} thumb=${shot.thumb?.length} ocr=${shot.ocr?.length} boxes` : shot.error}`,
   )
 }
 
@@ -118,6 +132,55 @@ if (act) {
   const mv = await req('move', target)
   const after = await req('cursor')
   check('move moved the cursor', mv.ok && Math.abs(after.x - target.x) < 2 && Math.abs(after.y - target.y) < 2, JSON.stringify(after))
+}
+
+if (e2e) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const osa = (script) => execFileSync('osascript', ['-e', script], { encoding: 'utf8' }).trim()
+  osa('tell application "TextEdit" to activate')
+  await sleep(1500)
+  osa('tell application "TextEdit" to make new document')
+  osa('tell application "TextEdit" to activate')
+  await sleep(1500)
+  const ws = (await req('windows')).windows ?? []
+  const te = ws.find((w) => w.owner === 'TextEdit' && w.bounds.w > 200 && w.bounds.h > 150)
+  check('e2e: TextEdit window found', !!te, JSON.stringify(te))
+  if (te) {
+    const c = { x: te.bounds.x + te.bounds.w / 2, y: te.bounds.y + te.bounds.h / 2 }
+    const t0 = Date.now()
+    const click = await req('click', { ...c, button: 'left', count: 1 })
+    const tClick = Date.now() - t0
+    const text = 'sei act smoke 4217'
+    const t1 = Date.now()
+    const typed = await req('type', { text }, 15000)
+    const tType = Date.now() - t1
+    check('e2e: click + type replied', click.ok && typed.ok, `click ${tClick} ms, type ${tType} ms`)
+    await sleep(500)
+    const fr = await req('frontmost')
+    check('e2e: TextEdit is frontmost', fr.name === 'TextEdit', JSON.stringify(fr))
+    const t2 = Date.now()
+    const ax = await req('ax_dump', { pid: te.pid, maxNodes: 400 }, 8000)
+    const tAx = Date.now() - t2
+    const hit = (ax.nodes ?? []).find((n) => typeof n.value === 'string' && n.value.includes(text))
+    check('e2e: typed text visible in the AX tree', !!hit, `${ax.nodes?.length} nodes in ${tAx} ms; ${hit ? hit.role : 'no match'}`)
+    const foc = await req('ax_focused')
+    check('e2e: focused element is the text area', foc.element?.role === 'AXTextArea', JSON.stringify({ role: foc.element?.role, pid: foc.element?.pid }))
+    const t3 = Date.now()
+    const shot = await req('screenshot', { rect: te.bounds, width: Math.round(te.bounds.w), height: Math.round(te.bounds.h), thumb: true, ocr: true }, 15000)
+    const ocrHit = (shot.ocr ?? []).find((b) => /smoke/i.test(b.text))
+    check('e2e: typed text found by OCR', !!ocrHit, `${shot.ocr?.length} boxes in ${Date.now() - t3} ms timing=${JSON.stringify(shot.timing)} ${ocrHit ? JSON.stringify(ocrHit) : ''}`)
+    if (ocrHit) {
+      const inside = ocrHit.x >= te.bounds.x - 2 && ocrHit.y >= te.bounds.y - 2 && ocrHit.x + ocrHit.w <= te.bounds.x + te.bounds.w + 2
+      check('e2e: OCR box is in global points inside the window', inside, JSON.stringify(te.bounds))
+    }
+    const k = await req('key', { key: 'a', modifiers: ['cmd'] })
+    const del = await req('key', { key: 'delete', modifiers: [] })
+    check('e2e: key combo replied', k.ok && del.ok)
+  }
+  try {
+    osa('tell application "TextEdit" to close every document saving no')
+    osa('tell application "TextEdit" to quit')
+  } catch {}
 }
 
 child.stdin.end()

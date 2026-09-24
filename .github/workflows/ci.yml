@@ -97,3 +97,10 @@ jobs:
 
       - name: Smoke test
         run: node scripts/smoke-mac-input.mjs resources/mac-input/sei-mac-input
+
+      # The hosted runner reports Accessibility and Screen Recording as
+      # granted, so real injection, AX and OCR can be exercised end to end.
+      # Informational: GUI state on a hosted runner is not ours to control.
+      - name: End-to-end (TextEdit)
+        continue-on-error: true
+        run: node scripts/smoke-mac-input.mjs resources/mac-input/sei-mac-input --act --e2e
