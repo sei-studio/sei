@@ -39,9 +39,14 @@ const VDF = `"libraryfolders"
 }
 `;
 
-function fakeFs(files: Record<string, string>, dirs: string[] = [], platform: NodeJS.Platform = 'win32'): InstallDeps & { writes: Record<string, string>; copies: [string, string][] } {
+function fakeFs(
+  files: Record<string, string>,
+  dirs: string[] = [],
+  platform: NodeJS.Platform = 'win32',
+): InstallDeps & { writes: Record<string, string>; copies: [string, string][]; removed: string[] } {
   const writes: Record<string, string> = {};
   const copies: [string, string][] = [];
+  const removed: string[] = [];
   const all = () => ({ ...files, ...writes });
   return {
     mtime: async (p) => (p in all() ? 1000 : null),
@@ -53,10 +58,12 @@ function fakeFs(files: Record<string, string>, dirs: string[] = [], platform: No
     readText: async (p) => all()[p] ?? null,
     writeText: async (p, t) => { writes[p] = t; },
     copyDir: async (from, to) => { copies.push([from, to]); },
+    removeDir: async (p) => { removed.push(p); },
     listDir: async () => [],
     registrySteamPath: async () => null,
     writes,
     copies,
+    removed,
   };
 }
 
@@ -149,6 +156,33 @@ describe('install + detect', () => {
     const writesBefore = Object.keys(deps.writes).length;
     await enableMod(modsDir, deps);
     expect(Object.keys(deps.writes).length).toBe(writesBefore);
+  });
+
+  it('replaces an older installed helper (the old folder goes first) and copies over a same-version or newer one (260925)', async () => {
+    const installed = path.join(modsDir, 'sei', 'modinfo.lua');
+    const packInfo = '/pack/assets/dst-mod/sei/modinfo.lua';
+    const older = fakeFs({ [vdfPath]: vdfMac, [packInfo]: 'version = "0.2.1"', [installed]: 'version = "0.2.0"' }, [install], 'darwin');
+    const progress = vi.fn();
+    await installMod({ packRoot: '/pack', onProgress: progress }, older);
+    expect(older.removed).toEqual([path.join(modsDir, 'sei')]);
+    expect(older.copies).toEqual([['/pack/assets/dst-mod/sei', path.join(modsDir, 'sei')]]);
+    expect(progress.mock.calls.map((c) => c[0])).toEqual(['replacing', 'copying', 'enabling']);
+
+    // Same version: the copy still runs (it repairs a damaged folder) but nothing is removed.
+    const same = fakeFs({ [vdfPath]: vdfMac, [packInfo]: 'version = "0.2.0"', [installed]: 'version = "0.2.0"' }, [install], 'darwin');
+    await installMod({ packRoot: '/pack' }, same);
+    expect(same.removed).toEqual([]);
+    expect(same.copies).toHaveLength(1);
+
+    // An installed modinfo without a readable version counts as older.
+    const unreadable = fakeFs({ [vdfPath]: vdfMac, [packInfo]: 'version = "0.2.0"', [installed]: 'name = "Sei companion"' }, [install], 'darwin');
+    await installMod({ packRoot: '/pack' }, unreadable);
+    expect(unreadable.removed).toEqual([path.join(modsDir, 'sei')]);
+
+    // First install: nothing to remove.
+    const fresh = fakeFs({ [vdfPath]: vdfMac, [packInfo]: 'version = "0.2.0"' }, [install], 'darwin');
+    await installMod({ packRoot: '/pack' }, fresh);
+    expect(fresh.removed).toEqual([]);
   });
 
   it('reports not_found with the searched paths and a missing pack as GAME_INSTALL_FAILED', async () => {

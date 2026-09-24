@@ -105,7 +105,7 @@ export function createStardewGameModule(opts: StardewModuleOpts = {}): GameModul
       // Copying the mod folder IS enabling it; SMAPI loads every folder in Mods/.
       enable: async () => {},
       launch: async () => {
-        const r = await launchStardew({ env: opts.env, fetch: opts.fetch });
+        const r = await launchStardew({ env: opts.env, fetch: opts.fetch, logger });
         if (!r.launched && r.message && /^[A-Z_]+:/.test(r.message)) throw new Error(r.message);
       },
     },

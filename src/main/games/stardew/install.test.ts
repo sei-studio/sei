@@ -27,8 +27,11 @@ import {
   installStardew,
   launcherPath,
   storeFromPath,
+  upgradeModIfNewer,
+  readManifestVersion,
   type StardewInstallEnv,
 } from './install';
+import { launchStardew } from './launch';
 
 const VDF = `
 "libraryfolders"
@@ -204,6 +207,93 @@ describe('detection + install against a fake game folder', () => {
     expect(again.Token).toBe(cfg.Token);
     expect(again.Port).toBe(27500);
     await expect(placeMod(game, path.join(root, 'empty-pack'))).rejects.toThrow(/GAME_INSTALL_FAILED/);
+  });
+
+  describe('upgrading an installed mod from a newer pack (260925)', () => {
+    const packMod = () => path.join(pack, 'assets', 'stardew-mod', 'SeiCompanion');
+    const installed = () => path.join(game, 'Mods', 'SeiCompanion');
+    const setPack = async (version: string, dll: string) => {
+      await writeFile(path.join(packMod(), 'manifest.json'), JSON.stringify({ Version: version }));
+      await writeFile(path.join(packMod(), 'SeiCompanion.dll'), dll);
+    };
+
+    it('replaces an older mod, keeps config.json and user files, drops assets the new version no longer ships', async () => {
+      // 0.1.0 in the game, paired on a custom port, with an asset 0.1.1 dropped and a user data file.
+      await setPack('0.1.0', 'old-dll');
+      const cfg = await placeMod(game, pack, { port: 27500 });
+      await writeFile(path.join(installed(), 'Assets', 'retired.png'), 'old');
+      await mkdir(path.join(installed(), 'data'), { recursive: true });
+      await writeFile(path.join(installed(), 'data', 'notes.json'), '{}');
+
+      await setPack('0.1.1', 'new-dll');
+      expect(await upgradeModIfNewer(game, pack)).toEqual({ upgraded: true, from: '0.1.0', to: '0.1.1' });
+      expect(await readFile(path.join(installed(), 'SeiCompanion.dll'), 'utf8')).toBe('new-dll');
+      expect(await readManifestVersion(installed())).toBe('0.1.1');
+      expect(await readFile(path.join(installed(), 'Assets', 'companion.png'), 'utf8')).toBe('png');
+      await expect(readFile(path.join(installed(), 'Assets', 'retired.png'), 'utf8')).rejects.toThrow();
+      expect(await readFile(path.join(installed(), 'data', 'notes.json'), 'utf8')).toBe('{}');
+      const after = await readModConfig(game);
+      expect(after).toMatchObject({ Port: 27500, Token: cfg.Token });
+
+      // Same version again: nothing to do, nothing rewritten.
+      await writeFile(path.join(installed(), 'SeiCompanion.dll'), 'untouched');
+      expect(await upgradeModIfNewer(game, pack)).toEqual({ upgraded: false, from: '0.1.1', to: '0.1.1' });
+      expect(await readFile(path.join(installed(), 'SeiCompanion.dll'), 'utf8')).toBe('untouched');
+    });
+
+    it('never downgrades, never installs from scratch, and replaces a mod whose manifest has no readable Version', async () => {
+      await setPack('0.2.0', 'newer-in-game');
+      await placeMod(game, pack);
+      await setPack('0.1.1', 'older-in-pack');
+      expect(await upgradeModIfNewer(game, pack)).toMatchObject({ upgraded: false, from: '0.2.0', to: '0.1.1' });
+      expect(await readFile(path.join(installed(), 'SeiCompanion.dll'), 'utf8')).toBe('newer-in-game');
+
+      // A pack without a readable manifest cannot claim to be newer.
+      await writeFile(path.join(packMod(), 'manifest.json'), 'not json');
+      expect((await upgradeModIfNewer(game, pack)).upgraded).toBe(false);
+
+      // An installed manifest with no Version is replaced by the pack's known-good copy.
+      await setPack('0.1.1', 'pack-dll');
+      await writeFile(path.join(installed(), 'manifest.json'), JSON.stringify({ Name: 'Sei Companion' }));
+      expect(await upgradeModIfNewer(game, pack)).toEqual({ upgraded: true, from: null, to: '0.1.1' });
+      expect(await readFile(path.join(installed(), 'SeiCompanion.dll'), 'utf8')).toBe('pack-dll');
+
+      // No mod in the game: placing it the first time is the setup's job.
+      const fresh = path.join(root, 'fresh-game');
+      await mkdir(fresh, { recursive: true });
+      expect((await upgradeModIfNewer(fresh, pack)).upgraded).toBe(false);
+      await expect(readFile(path.join(fresh, 'Mods', 'SeiCompanion', 'manifest.json'), 'utf8')).rejects.toThrow();
+    });
+
+    it('reads a manifest saved with a UTF-8 BOM', async () => {
+      await writeFile(path.join(packMod(), 'manifest.json'), '\uFEFF' + JSON.stringify({ Version: '0.1.1' }));
+      expect(await readManifestVersion(packMod())).toBe('0.1.1');
+    });
+
+    it.skipIf(process.platform === 'win32')('the launch updates an older mod before it starts the game, and a launch still starts when the pack cannot be fetched', async () => {
+      // SMAPI wired in, with a launcher that exits at once instead of starting a game.
+      await writeFile(path.join(game, 'StardewModdingAPI.dll'), 'x');
+      await writeFile(path.join(game, 'StardewModdingAPI.deps.json'), '{}');
+      await writeFile(path.join(game, 'StardewValley'), '#!/bin/sh\n# ./StardewModdingAPI\nexit 0\n');
+      await chmod(path.join(game, 'StardewValley'), 0o755);
+      await setPack('0.1.0', 'old-dll');
+      const cfg = await placeMod(game, pack);
+      await setPack('0.1.1', 'new-dll');
+      const closedGame: typeof fetch = async () => {
+        throw new Error('ECONNREFUSED');
+      };
+      const logs: string[] = [];
+      const logger = { info: (m: string) => logs.push(m), warn: (m: string) => logs.push(m) };
+
+      expect(await launchStardew({ env: envFor(), fetch: closedGame, logger })).toMatchObject({ launched: true, via: 'launcher' });
+      expect(await readFile(path.join(installed(), 'SeiCompanion.dll'), 'utf8')).toBe('new-dll');
+      expect((await readModConfig(game))?.Token).toBe(cfg.Token);
+      expect(logs.join('\n')).toMatch(/0\.1\.0 -> 0\.1\.1/);
+
+      const noPack = envFor({ getPackRoot: async () => { throw new Error('GAME_PACK_DOWNLOAD_FAILED: offline'); } });
+      expect(await launchStardew({ env: noPack, fetch: closedGame, logger })).toMatchObject({ launched: true });
+      expect(logs.at(-1)).toMatch(/update skipped: GAME_PACK_DOWNLOAD_FAILED/);
+    });
   });
 
   it.skipIf(process.platform === 'win32')('installs SMAPI from the fixture zip (mirror 404 falls through to origin) then the mod, streaming stages', async () => {

@@ -17,6 +17,12 @@
  *      <game>/Mods/SeiCompanion and write config.json with a fresh token +
  *      port (an existing token is kept, so a re-run never breaks a running
  *      game's pairing).
+ *   4. KEEP THE MOD CURRENT (260925): the setup only runs while something is
+ *      missing, so an app update that ships a newer mod in its pack used to
+ *      leave the old SeiCompanion.dll in the game forever. upgradeModIfNewer
+ *      compares manifest.json `Version` (pack vs installed) and re-places
+ *      the mod when the pack's is newer, keeping config.json; the launch
+ *      calls it before starting the game (launch.ts).
  *
  * Pure helpers (parseVdf, parseRegQuery, defaultInstallPaths, classify...)
  * are exported for tests; the I/O functions take an `env` for the same
@@ -42,6 +48,7 @@ import {
   type StardewModConfig,
 } from '../../../shared/stardewIpc';
 import { DL_MIRROR_BASE, MIRROR_CONNECT_TIMEOUT_MS } from '../../speech/mirrors';
+import { packModIsNewer } from '../modVersion';
 
 const execFileAsync = promisify(execFile);
 const STEAM_APP_ID = '413150';
@@ -300,14 +307,20 @@ export async function readModConfig(gamePath: string): Promise<StardewModConfig 
   }
 }
 
-async function readModVersion(gamePath: string): Promise<string | null> {
+/** manifest.json `Version` of the mod folder at `dir` (installed or in the pack), or null. */
+export async function readManifestVersion(dir: string): Promise<string | null> {
   try {
-    const raw = await fs.readFile(path.join(modDir(gamePath), 'manifest.json'), 'utf8');
+    // SMAPI tolerates a UTF-8 BOM in manifest.json; JSON.parse does not.
+    const raw = (await fs.readFile(path.join(dir, 'manifest.json'), 'utf8')).replace(/^\uFEFF/, '');
     const j = JSON.parse(raw) as { Version?: unknown };
     return typeof j.Version === 'string' ? j.Version : null;
   } catch {
     return null;
   }
+}
+
+function readModVersion(gamePath: string): Promise<string | null> {
+  return readManifestVersion(modDir(gamePath));
 }
 
 /**
@@ -515,9 +528,16 @@ async function copyDir(src: string, dest: string): Promise<void> {
   }
 }
 
+/** Files the mod has shipped under names the current pack may no longer use. */
+const LEGACY_MOD_ENTRIES = ['SeiCompanion.dll', 'SeiCompanion.pdb', 'manifest.json', 'Assets'];
+/** Never removed by a re-place: SMAPI's per-user mod settings. */
+const USER_MOD_ENTRIES = new Set(['config.json']);
+
 /**
  * Copy the built mod into <game>/Mods/SeiCompanion (replacing the previous
  * files, keeping config.json) and write config.json with a token + port.
+ * Every top-level entry the pack ships is removed first, so a file or asset
+ * the new version dropped does not outlive it inside a replaced folder.
  */
 export async function placeMod(gamePath: string, packRoot: string, opts: { port?: number } = {}): Promise<StardewModConfig> {
   const src = path.join(packRoot, ...STARDEW_MOD_PACK_PATH);
@@ -529,10 +549,11 @@ export async function placeMod(gamePath: string, packRoot: string, opts: { port?
   }
   const dest = modDir(gamePath);
   const existing = await readModConfig(gamePath);
-  for (const name of ['SeiCompanion.dll', 'SeiCompanion.pdb', 'manifest.json']) {
-    await fs.rm(path.join(dest, name), { force: true }).catch(() => {});
+  const shipped = await fs.readdir(src).catch(() => [] as string[]);
+  for (const name of new Set([...LEGACY_MOD_ENTRIES, ...shipped])) {
+    if (USER_MOD_ENTRIES.has(name)) continue;
+    await fs.rm(path.join(dest, name), { recursive: true, force: true }).catch(() => {});
   }
-  await fs.rm(path.join(dest, 'Assets'), { recursive: true, force: true }).catch(() => {});
   await copyDir(src, dest);
   const config: StardewModConfig = StardewModConfigSchema.parse({
     ...(existing ?? {}),
@@ -541,6 +562,31 @@ export async function placeMod(gamePath: string, packRoot: string, opts: { port?
   });
   await fs.writeFile(path.join(dest, 'config.json'), JSON.stringify(config, null, 2) + '\n', 'utf8');
   return config;
+}
+
+export interface ModUpgradeResult {
+  upgraded: boolean;
+  /** Installed version before (null = unreadable or not installed). */
+  from: string | null;
+  /** The pack's version (null = the pack has no readable manifest). */
+  to: string | null;
+}
+
+/**
+ * Replace the installed mod with the pack's copy when the pack's manifest
+ * Version is newer (or the installed one is unreadable). config.json, and so
+ * the pairing token and port, survives (placeMod). A game folder without the
+ * mod is left alone: placing it the first time is the setup's job. Call it
+ * only while the game is closed; Windows locks a loaded SeiCompanion.dll.
+ */
+export async function upgradeModIfNewer(gamePath: string, packRoot: string): Promise<ModUpgradeResult> {
+  const installedDll = path.join(modDir(gamePath), 'SeiCompanion.dll');
+  const from = await readModVersion(gamePath);
+  const to = await readManifestVersion(path.join(packRoot, ...STARDEW_MOD_PACK_PATH));
+  if (!(await exists(installedDll)) && from == null) return { upgraded: false, from, to };
+  if (!packModIsNewer(to, from)) return { upgraded: false, from, to };
+  await placeMod(gamePath, packRoot);
+  return { upgraded: true, from, to };
 }
 
 /* ── The whole install ───────────────────────────────────────────────── */
