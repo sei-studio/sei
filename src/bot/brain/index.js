@@ -224,6 +224,8 @@ export async function start({ config, adapter, logger = console, onTerminalError
     // 260921: never sooner than the reply window of a line she just said. The
     // tier cadence is for resuming work; a question needs longer than 5s to
     // be answered (orchestrator REPLY_WINDOW_MS). Slower tiers already clear it.
+    // 260924: Stardew only (REPLY_WINDOW_GAMES); the orchestrator returns 0 for
+    // Minecraft and DST so their idle cadence is what it was.
     idleFallbackMs: () => Math.max(
       config.llm?.idle_fallback_ms ?? idleCadenceMs(config.persona?.proactiveness),
       orchestrator.replyWindowRemainingMs?.() ?? 0,

@@ -24,6 +24,7 @@ import {
   createOrchestrator,
   _setTickIntervalForTests,
   replyWindowRemainingMs,
+  replyWindowApplies,
   isExactRepeatSincePlayerSpoke,
   REPLY_WINDOW_MS,
 } from './orchestrator.js'
@@ -49,9 +50,10 @@ function makeProvider(script) {
   }
 }
 
-function makeAdapter({ executeAction } = {}) {
+function makeAdapter({ executeAction, gameName = 'Stardew Valley' } = {}) {
   const ACTIONS = ['follow', 'unfollow', 'goTo', 'gather']
   return {
+    gameName,
     listActions: () => ACTIONS,
     getActionSchema: () => z.object({ player: z.string().optional(), kind: z.string().optional() }),
     getActionDescription: (n) => `do ${n}`,
@@ -142,6 +144,37 @@ describe('replyWindowRemainingMs', () => {
     const now = 100_000
     expect(replyWindowRemainingMs({ lastSelf: { at: now }, lastPlayer: null, sendDeadline: now + 5000, now }))
       .toBe(REPLY_WINDOW_MS + 5000)
+  })
+})
+
+describe('the reply window is Stardew only', () => {
+  it('applies to Stardew and not to Minecraft, DST or an unnamed adapter', () => {
+    expect(replyWindowApplies({ gameName: 'Stardew Valley' })).toBe(true)
+    expect(replyWindowApplies({ gameName: 'Minecraft' })).toBe(false)
+    expect(replyWindowApplies({ gameName: "Don't Starve Together" })).toBe(false)
+    expect(replyWindowApplies({})).toBe(false)
+    expect(replyWindowApplies(null)).toBe(false)
+  })
+
+  async function holdAfterSay(gameName) {
+    _setTickIntervalForTests(10_000_000)
+    const { orch } = makeOrch({
+      adapter: makeAdapter({ gameName }),
+      script: [{ text: '', toolUses: [say('t1', 'want to go fishing after this?')] }],
+    })
+    orch.recordIncomingChat('newb', 'hey')
+    await orch.handleDispatch('sei:chat_received', chat('hey'))
+    return orch.replyWindowRemainingMs()
+  }
+
+  it('holds the idle floor after her line in Stardew', async () => {
+    const held = await holdAfterSay('Stardew Valley')
+    expect(held).toBeGreaterThan(REPLY_WINDOW_MS - 5000)
+    expect(held).toBeLessThanOrEqual(REPLY_WINDOW_MS)
+  })
+
+  it('does not hold it in Minecraft, so the agentic cadence resumes the goal as before', async () => {
+    expect(await holdAfterSay('Minecraft')).toBe(0)
   })
 })
 
