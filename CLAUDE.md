@@ -1977,26 +1977,57 @@ start, so `install.ts` reports `needsRestart` when the running game predates
 the helper files, from `ps`/CIM start times; a live heartbeat clears it), and
 a world must be hosted.
 
-**macOS needs App Management for the DST helper (260909, measured).** The
-game's mods folder is `dontstarve_steam.app/Contents/mods/`, inside the app
-bundle, and since macOS 13 writing into another app's bundle is gated by the
-App Management privacy permission: `mkdir .../mods/sei` returns EPERM from the
-Sei process, from a shell, from anything without the grant (the folder itself
-is owner-writable; Finder duplicate also stalls behind an Automation prompt).
-The binary hard-codes `../mods/` relative to its executable (checked with
-`strings`), so there is no other folder to write to. `installError` in
-`install.ts` classifies a darwin EPERM as `permission: true` and `DstSteps`
-shows ONE line naming App Management plus "Try again" (260925: the System
-Settings deep link was dropped on purpose; users are not sent to Settings while
-an install route that avoids the bundle is researched. The
-`dst:open-app-management` IPC still exists, unused). The error PERSISTS: the
-setup hook's 3 s poll used to replace it with a plain "helper missing" within
-a tick, because detection never reports install errors. `useDstStore`
-now skips the poll while an install is in flight and `mergeDetected` keeps an
-error until the helper is actually in the game (or the game is gone). Whether a SIGNED
-Sei build gets the automatic "would like to update other applications" prompt
-is unverified: the dev Electron got no prompt, only the refusal. Windows has no
-equivalent (the mods folder sits beside the exe).
+**macOS: the DST helper installs with one in-app click (260925, measured).**
+The game's mods folder is `dontstarve_steam.app/Contents/mods/`, inside the
+app bundle, and it holds both `mods/sei/` and `modsettings.lua`. Since macOS
+13 writing into another app's bundle is gated: without a grant every write
+there from Sei is EPERM (the folder itself is owner-writable; the refusal is
+TCC). The binary hard-codes `../mods/` relative to its executable, so there is
+no other folder (research: `~/suisei/research/dst-mod-install-no-appmgmt-2026-09-25.md`).
+What works, measured on a signed v0.6.5-beta.2 with App Management OFF
+(`~/suisei/reports/dst-grant-test-260925/`):
+- **The Open panel grants the folder.** `dialog.showOpenDialog(win,
+  {defaultPath: modsDir, properties: ['openDirectory','treatPackageAsDirectory',
+  'createDirectory'], buttonLabel: 'Install helper', message})`; once the
+  player clicks the button with `mods` selected (it opens there, so one click),
+  macOS writes a `com.apple.macl` grant and Sei can mkdir, copy, delete,
+  rewrite `modsettings.lua` and write-temp-then-rename inside `mods`.
+  Choosing `dontstarve_steam.app` itself grants the whole bundle. Writes
+  outside the chosen folder stay EPERM. The grant survived a full quit and
+  relaunch of Sei; across a REBOOT or a DST UPDATE it is untested, which is
+  why the write is always tried first and the panel shown only on EPERM.
+- **Finder is exempt.** `tell application "Finder" to duplicate ... with
+  replacing`, sent through `/usr/bin/osascript` from Sei, shows one "Sei wants
+  access to control Finder" prompt and then works. A replaced file comes back
+  0644 with a fresh mtime. No automation entitlement: the event is sent by
+  osascript, and the test build had none. `NSAppleEventsUsageDescription` in
+  `mac.extendInfo` is only the prompt's explanation line.
+The flow (`installMod` + `grantAndInstall` + `finderInstall` in `install.ts`,
+the Electron half in `macGrant.ts`): a CLICK ("Add Sei's helper", "Try
+again", "Update helper", "Turn the helper back on"; `dst:install` passes a
+`MacGrant`) tries the plain install; on a darwin EPERM it shows the Open panel
+as a sheet on the Sei window, accepts only a realpath equal to `modsDir` or the
+`.app` (case-insensitive), re-shows it once with a hint for any other folder,
+and retries. Cancel, a second wrong folder, or a retry that still EPERMs goes
+to Finder: the mod and the new `modsettings.lua` are staged in a temp dir and
+duplicated in with replacing (a replaced folder is replaced whole, so an
+upgrade drops stale scripts), source file modes are put back where macOS
+allows (best effort), everything is read back, and the staging is removed.
+Only when both fail does `DstSteps` show the one App Management line plus
+"Try again". **Nothing without a click ever shows a dialog.** A game launch
+(`install.launch`) and the setup poll's re-enable run with no grant: a
+refused write counts as success when the helper is already current and
+enabled (the every-launch recopy is a refresh), otherwise the launch goes
+ahead with whatever helper is there and the module sets `grantNeeded` on the
+found state, so the helper step comes back with the button (a disabled
+`modsettings.lua` shows as "Turn the helper back on" straight from detection).
+The error still PERSISTS as before: `useDstStore` skips the poll while an
+install is in flight and `mergeDetected` keeps an error until the helper is in
+the game. `dst:open-app-management` still exists, unused. Windows and Linux
+never take the grant path (their mods folder sits beside the exe; an EPERM
+there is a plain error). Unverified on a Mac as built: the whole flow end to
+end in a packaged build, the Finder "replace a folder whole" semantics, and
+grant persistence across a reboot or a DST update.
 
 **First live DST session (260909), and what it broke.** The end-to-end run
 (tile, helper, restart, Host Game, Launch, greeting, come, follow) works, and
