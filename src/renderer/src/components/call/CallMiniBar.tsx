@@ -69,7 +69,7 @@ export function CallMiniBar(): React.ReactElement {
     const online = summons[id]?.kind === 'online';
     // The Minecraft dashboard is always open while the bot is online (no
     // hide/minimize, 260721); offline, the launch panel counts while open.
-    return online || mcDashState.launch[id] === true;
+    return online || mcDashState.launch[id] != null;
   });
 
   // Ending the game returns the call to its fullscreen surface: when the last

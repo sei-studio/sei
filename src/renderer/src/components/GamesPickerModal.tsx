@@ -18,7 +18,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { attemptSummon } from '../lib/summonFlow';
-import { openGame, requestGameLaunch, type LaunchGameId } from '../lib/gameLaunch';
+import { openGame, requestGameLaunch, isBotGame, type LaunchGameId } from '../lib/gameLaunch';
 import { GAMES, type GameDef } from '../lib/games';
 import { visionBlocked, visionGateReason } from '../lib/visionGate';
 import { MCBlock, GamepadIcon, InfoIcon, PlusIcon } from './icons';
@@ -131,7 +131,9 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
     // the cross-launch confirm first; otherwise openGame mounts the picked
     // surface in the chat's game area (chess card / Minecraft launch panel,
     // or the live dashboard when the bot is already online).
-    if (g.id === 'chess' || g.id === 'minecraft' || g.id === 'draw') {
+    // Game adapters (M0): the bot-backed games (stardew, dontstarve) route
+    // through the same gate and open their registered launch panel.
+    if (g.id === 'chess' || g.id === 'minecraft' || g.id === 'draw' || isBotGame(g.id)) {
       const id = g.id as LaunchGameId;
       closeModal();
       requestGameLaunch(characterId, { id, name: g.name }, () => openGame(characterId, id));

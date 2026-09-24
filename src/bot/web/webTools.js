@@ -204,6 +204,7 @@ export const GAME_WIKIS = Object.freeze([
   { name: 'League of Legends Wiki', host: 'wiki.leagueoflegends.com', articlePath: '/en-us/', apiPath: '/en-us/api.php', match: /\bleague of legends\b|\blol\b|\bsummoner'?s rift\b/i },
   { name: 'Terraria Wiki', host: 'terraria.wiki.gg', articlePath: '/wiki/', apiPath: '/api.php', match: /\bterraria\b/i },
   { name: 'Stardew Valley Wiki', host: 'stardewvalleywiki.com', articlePath: '/', apiPath: '/mediawiki/api.php', match: /\bstardew\b/i },
+  { name: "Don't Starve Wiki", host: 'dontstarve.wiki.gg', articlePath: '/wiki/', apiPath: '/api.php', match: /\bdon'?t starve\b|\bdst\b/i },
   { name: 'Old School RuneScape Wiki', host: 'oldschool.runescape.wiki', articlePath: '/w/', apiPath: '/api.php', match: /\bosrs\b|\bold ?school runescape\b/i },
   { name: 'RuneScape Wiki', host: 'runescape.wiki', articlePath: '/w/', apiPath: '/api.php', match: /\brunescape\b(?!.*old ?school)/i },
   { name: 'Fortnite Wiki', host: 'fortnite.fandom.com', articlePath: '/wiki/', apiPath: '/api.php', match: /\bfortnite\b/i },

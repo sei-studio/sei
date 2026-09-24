@@ -1,5 +1,13 @@
 /** Game surfaces (chess + Draw!). See ../zh.ts for the dictionary rules. */
 export const ZH_GAMES: Record<string, string> = {
+  // ── Game packs (260908, components/games/GamePackCard) ───────────────────
+  'Download {name} support (about {mb} MB)': '下载 {name} 支持文件（约 {mb} MB）',
+  'Playing {name} together needs a one-time download. It is stored on this device and only downloads again after an update that needs a newer version.':
+    '一起玩 {name} 需要一次性下载支持文件。文件会保存在这台设备上，只有更新后需要新版本时才会再次下载。',
+  'Downloading {name} support…': '正在下载 {name} 支持文件…',
+  '{name} support download, {pct} percent': '{name} 支持文件下载进度 {pct}%',
+  '{received} of {total} MB': '{received} / {total} MB',
+  "Couldn't download {name} support": '无法下载 {name} 支持文件',
   // ── Mini tile (bottom-right return tile) ──────────────────────────────────
   'Back to game': '返回游戏',
   'Draw!': '你画我猜！',
@@ -127,4 +135,26 @@ export const ZH_GAMES: Record<string, string> = {
   // the caller so the composer can put the highlighter behind the word alone,
   // and {a} is the English article, which Chinese simply drops.
   'according to {name}, this is {a} {word}.': '据{name}说，这是{word}。',
+
+  // ── Game adapters (M0, 260908): generic bot-backed game surfaces ─────────
+  // components/games/GenericGamePanels.tsx
+  'Your world is open. Press Play to bring your companion in.': '你的世界已经打开。点击「一起玩」让伙伴加入。',
+  'Open your world in {game} first, then press Play.': '请先在 {game} 中打开你的世界，然后点击「一起玩」。',
+  'Playing': '游戏中',
+  // screens/ChatScreen.tsx (per-game aside label)
+  '{game} dashboard': '{game} 面板',
+  // components/GameSetupModal.tsx
+  'Open your {game} world': '打开你的 {game} 世界',
+  'Sei could not find an open {game} world. Open your world in the game with the Sei mod enabled; your companion joins as soon as it appears.':
+    'Sei 没有找到已打开的 {game} 世界。请在游戏中启用 Sei 模组并打开你的世界，伙伴会在世界出现后立即加入。',
+  'Sei keeps looking while this window is open.': '这个窗口打开期间，Sei 会持续查找。',
+  // components/GameErrorModal.tsx
+  "{name} couldn't join {game}": '{name}无法加入 {game}',
+  // The one-step setup window on the launch panels (components/games/SetupStepper.tsx, 260909).
+  'Step {n} of {m}': '第 {n} 步，共 {m} 步',
+  'Waiting for your farm...': '等待你的农场…',
+  // Game dashboards, companions in the same world (260909).
+  "Open {name}'s chat": '打开{name}的聊天',
+  'Holding {item}': '手持{item}',
+  'Empty hands': '空手',
 };

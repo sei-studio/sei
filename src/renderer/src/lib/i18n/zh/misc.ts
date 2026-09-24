@@ -28,6 +28,8 @@ export const ZH_MISC: Record<string, string> = {
     '无法下载 CustomSkinLoader。请检查网络连接后重新运行设置。',
   "Couldn't install Fabric Loader. Make sure Minecraft is closed, then try the setup again.":
     '无法安装 Fabric Loader。请确认 Minecraft 已关闭，然后重新运行设置。',
+  "Couldn't download the Minecraft support files (about 50 MB). Check your connection and press Summon again. A retry usually works.":
+    '无法下载 Minecraft 支持文件（约 50 MB）。请检查网络连接后再次点击召唤。通常重试一次即可。',
   "We couldn't find any Minecraft installs. Install Minecraft, then re-run setup from Settings.":
     '没有找到任何 Minecraft 安装。请先安装 Minecraft，再从设置中重新运行设置向导。',
   "Couldn't look up that username on Mojang. Check the spelling and your connection.":
@@ -38,6 +40,19 @@ export const ZH_MISC: Record<string, string> = {
     'Sei 无法保留用于提供皮肤的本地端口。请重启 Sei 后再试。',
   "Sei doesn't have permission to write to your Minecraft folder. Grant access and try again.":
     'Sei 没有写入你的 Minecraft 文件夹的权限。请授予访问权限后再试。',
+  // Game adapters (M0, 260908): game-neutral ERROR_COPY rows.
+  "We can't see a game world to join. Open your world in the game, then press Play again.":
+    '没有检测到可加入的游戏世界。请在游戏中打开你的世界，然后再次点击「一起玩」。',
+  "We couldn't find this game on your computer. Install it, then press Play again.":
+    '在你的电脑上没有找到这个游戏。请先安装，然后再次点击「一起玩」。',
+  "Couldn't finish setting up the companion mod for this game. Make sure the game is closed, then try the setup again.":
+    '无法完成这个游戏的伙伴模组设置。请确认游戏已关闭，然后重新运行设置。',
+  "The game is open but isn't answering. Make sure the Sei mod is enabled in the game, then press Play again.":
+    '游戏已打开但没有响应。请确认游戏中已启用 Sei 模组，然后再次点击「一起玩」。',
+  "This game version isn't supported yet. Update the game to a supported version and press Play again.":
+    '暂不支持这个游戏版本。请把游戏更新到受支持的版本，然后再次点击「一起玩」。',
+  "Couldn't download the files this game needs. Check your connection and press Play again.":
+    '无法下载这个游戏所需的文件。请检查网络连接，然后再次点击「一起玩」。',
   "You've used this week's credits. Upgrade or top up on the plan screen, or switch to your own API key in Settings.":
     '本周的额度已用完。你可以在方案页面升级或充值，或在设置中切换为自己的 API 密钥。',
   'Too many requests right now. Wait a little and try again.': '当前请求过多。请稍等片刻再试。',

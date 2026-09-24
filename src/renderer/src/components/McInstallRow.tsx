@@ -35,6 +35,15 @@ export interface McInstallRowProps {
   install: McInstall;
   selected: boolean;
   onToggle: () => void;
+  /**
+   * 260916: vanilla rows carry a Minecraft version picker. The wizard builds
+   * one "Sei <version>" profile per pick, so a player can keep a 1.21.4
+   * profile for their old world beside a 26.1 one. Absent = no picker
+   * (Settings re-entry paths that predate it), main defaults to the newest.
+   */
+  versionOptions?: string[];
+  version?: string;
+  onVersionChange?: (version: string) => void;
 }
 
 interface PillSpec {
@@ -103,10 +112,18 @@ function pillFor(install: McInstall): PillSpec {
   };
 }
 
-export function McInstallRow({ install, selected, onToggle }: McInstallRowProps): React.ReactElement {
+export function McInstallRow({
+  install,
+  selected,
+  onToggle,
+  versionOptions,
+  version,
+  onVersionChange,
+}: McInstallRowProps): React.ReactElement {
   // Subscribes to the language so pillFor's bare t() re-evaluates on toggle.
   const t = useT();
   const pill = pillFor(install);
+  const readyVersions = install.sei_ready_versions ?? [];
   const checkboxId = `mc-install-${install.id}`;
   // 260518-o1k T7: Lunar rows are read-only — surfaced for transparency
   // only, with the checkbox disabled and the row's onClick a no-op.
@@ -165,12 +182,37 @@ export function McInstallRow({ install, selected, onToggle }: McInstallRowProps)
         {/* 260916: the wizard no longer installs for the launcher's
             last-played version (that built Sei profiles the bot could not
             join once 26.2 shipped), so the old pre-1.14 warning about the
-            detected version is gone with it. Say what will be built. */}
+            detected version is gone. The row now says which profile will be
+            built and lets the player pick its version. */}
+        {install.kind === 'vanilla' && versionOptions && onVersionChange ? (
+          <div className={styles.versionRow} onClick={(e) => e.stopPropagation()}>
+            <label className={styles.versionLabel} htmlFor={`${checkboxId}-version`}>
+              {t('Minecraft version for the Sei profile')}
+            </label>
+            <select
+              id={`${checkboxId}-version`}
+              className={styles.versionSelect}
+              value={version ?? versionOptions[0]}
+              onChange={(e) => onVersionChange(e.target.value)}
+              onKeyDown={(e) => e.stopPropagation()}
+            >
+              {versionOptions.map((v) => (
+                <option key={v} value={v}>
+                  {readyVersions.includes(v) ? t('{version} (set up)', { version: v }) : v}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
         {install.kind === 'vanilla' ? (
           <div className={styles.lunarCaption}>
-            {t('Adds a separate "Sei" profile on Minecraft {version}. Your own profiles are not changed.', {
-              version: LATEST_SUPPORTED,
-            })}
+            {readyVersions.length > 0
+              ? t('Sei profiles already in your launcher: {versions}. Picking another version adds one more; your own profiles are not changed.', {
+                  versions: readyVersions.join(', '),
+                })
+              : t('Adds a separate "Sei {version}" profile to your launcher. Your own profiles are not changed.', {
+                  version: version ?? versionOptions?.[0] ?? LATEST_SUPPORTED,
+                })}
           </div>
         ) : null}
       </div>

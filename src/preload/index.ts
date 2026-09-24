@@ -33,10 +33,32 @@ import {
   type AvatarManifest,
   type BotActionPush,
   type GenProgressEvent,
+  type WorldState,
+  type GameDashboardSnapshot,
 } from '../shared/ipc';
 
 const api: RendererApi = {
-  summon: (id) => ipcRenderer.invoke(IpcChannel.bot.summon, id),
+  // Game adapters (M0): {characterId, game} (main also still accepts a bare id).
+  summon: (id, game) => ipcRenderer.invoke(IpcChannel.bot.summon, { characterId: id, game: game ?? 'minecraft' }),
+  onWorldState(cb: (state: WorldState) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, state: WorldState): void => cb(state);
+    ipcRenderer.on(IpcChannel.world.state, handler);
+    return () => ipcRenderer.off(IpcChannel.world.state, handler);
+  },
+  getWorldStates: () => ipcRenderer.invoke(IpcChannel.world.get),
+  worldCheckNow: (game) => ipcRenderer.invoke(IpcChannel.world.checkNow, game),
+  gameDashboardGet: (characterId) => ipcRenderer.invoke(IpcChannel.gamedash.get, characterId),
+  gameDashboardSetWatching: (characterId, watching) =>
+    ipcRenderer.invoke(IpcChannel.gamedash.setWatching, { characterId, watching }),
+  onGameDashboardSnapshot(cb: (s: GameDashboardSnapshot) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, s: GameDashboardSnapshot): void => cb(s);
+    ipcRenderer.on(IpcChannel.gamedash.snapshot, handler);
+    return () => ipcRenderer.off(IpcChannel.gamedash.snapshot, handler);
+  },
+  gameSetPaused: (characterId, paused) =>
+    ipcRenderer.invoke(IpcChannel.gamedash.setPaused, { characterId, paused }),
+  gameSetMode: (characterId, mode) =>
+    ipcRenderer.invoke(IpcChannel.gamedash.setMode, { characterId, mode }),
   stop: (id) => ipcRenderer.invoke(IpcChannel.bot.stop, id),
 
   listCharacters: () => ipcRenderer.invoke(IpcChannel.chars.list),
@@ -250,6 +272,35 @@ const api: RendererApi = {
     return () => ipcRenderer.off(IpcChannel.voice.ttsNotice, handler);
   },
   voiceStt: (args) => ipcRenderer.invoke(IpcChannel.voice.stt, args),
+  // Stardew Valley (game-adapters M1, src/main/games/stardew)
+  stardewInstallState: () => ipcRenderer.invoke(IpcChannel.stardew.installState),
+  stardewInstall: () => ipcRenderer.invoke(IpcChannel.stardew.install),
+  stardewLaunch: () => ipcRenderer.invoke(IpcChannel.stardew.launch),
+  onStardewInstallProgress(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, ev: Parameters<typeof cb>[0]) => cb(ev);
+    ipcRenderer.on(IpcChannel.stardew.installProgress, handler);
+    return () => ipcRenderer.off(IpcChannel.stardew.installProgress, handler);
+  },
+  // Game packs (260908, src/main/games/packs.ts)
+  gamePackState: (game) => ipcRenderer.invoke(IpcChannel.game.packState, { game }),
+  gamePackEnsure: (game) => ipcRenderer.invoke(IpcChannel.game.packEnsure, { game }),
+  onGamePackProgress(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, push: Parameters<typeof cb>[0]) => cb(push);
+    ipcRenderer.on(IpcChannel.game.packProgress, handler);
+    return () => ipcRenderer.off(IpcChannel.game.packProgress, handler);
+  },
+  // Don't Starve Together (game-adapters M2, 260908; src/shared/dstIpc.ts)
+  dstInstallState: () => ipcRenderer.invoke(IpcChannel.dst.installState),
+  dstInstall: () => ipcRenderer.invoke(IpcChannel.dst.install),
+  dstLaunch: () => ipcRenderer.invoke(IpcChannel.dst.launch),
+  dstOpenAppManagement: () => ipcRenderer.invoke(IpcChannel.dst.openAppManagement),
+  dstSurvivorGet: (characterId) => ipcRenderer.invoke(IpcChannel.dst.survivorGet, characterId),
+  dstSurvivorSet: (characterId, prefab) => ipcRenderer.invoke(IpcChannel.dst.survivorSet, { characterId, prefab }),
+  onDstInstallProgress(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, state: Parameters<typeof cb>[0]) => cb(state);
+    ipcRenderer.on(IpcChannel.dst.installProgress, handler);
+    return () => ipcRenderer.off(IpcChannel.dst.installProgress, handler);
+  },
   // Local speech packs + SenseVoice STT (260816, china-compat W3+W4)
   speechPackStatus: () => ipcRenderer.invoke(IpcChannel.speech.packStatus),
   speechPackDownload: (args) => ipcRenderer.invoke(IpcChannel.speech.packDownload, args),

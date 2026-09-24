@@ -1,0 +1,389 @@
+/* DstLaunchPanel — Don't Starve Together launch surface (game adapters M2;
+ * the game's own register since 260909).
+ *
+ * DELIBERATE EXCEPTION to the app design tokens, the same contract as
+ * DstDashboardPanel.module.css: the pre-launch surface reads like the
+ * game's menus. The art sits under an ink scrim with a vignette; the title
+ * is hand-inked cream (Fredericka the Great); the setup window and the
+ * survivor row are sheets of aged parchment (cream gradient, ink rule,
+ * burnt edges, hand-cut corners) with ink text in Metamorphous; the
+ * primary button is ink on paper and the big Launch is a sheet of its own.
+ * Scope stays inside this component. Content is centered. */
+
+.panel {
+  --dst-figure: 'Fredericka the Great', 'Metamorphous', Georgia, serif;
+  --dst-label: 'Metamorphous', Georgia, serif;
+  --dst-ground: #17121a;
+  --dst-ink: #17110f;
+  --dst-ink-2: #3a2c2c;
+  --dst-rule: #5a4632;
+  --dst-paper: #e6d7b6;
+  --dst-paper-2: #cbb58c;
+  --dst-paper-hi: #f4e9cf;
+  --dst-paper-text: #2b1d16;
+  --dst-paper-muted: #6f5a44;
+  --dst-cream: #ead9b5;
+  --dst-hunger: #d68a2e;
+  --dst-danger: #c14a3a;
+  --sw-dot: var(--dst-hunger);
+
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  font-family: var(--dst-label);
+  color: var(--dst-cream);
+}
+
+/* Ink over the art: dark, with a vignette toward the ground colour. */
+.scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(23, 18, 26, 0.55) 0%, rgba(23, 18, 26, 0.8) 60%, rgba(14, 11, 16, 0.92) 100%);
+}
+
+.content {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* `safe`: a stack taller than the aside (window open + the survivor
+   * sheet) scrolls from the top instead of clipping the title above the
+   * scrollable range, which is what plain centering does to overflow. */
+  justify-content: safe center;
+  gap: 14px;
+  padding: var(--space-lg);
+  text-align: center;
+  overflow-y: auto;
+}
+
+.title {
+  margin: 0 0 2px;
+  font-family: var(--dst-figure);
+  font-size: 34px;
+  font-weight: 400;
+  letter-spacing: 0.03em;
+  color: var(--dst-cream);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
+}
+
+/* A sheet of parchment (the dashboard's .paper). */
+.sheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(520px, 100%);
+  box-sizing: border-box;
+  padding: 12px 16px;
+  color: var(--dst-paper-text);
+  background: linear-gradient(160deg, #eee1c2 0%, var(--dst-paper) 45%, var(--dst-paper-2) 100%);
+  border: 2px solid var(--dst-ink);
+  border-radius: 14px 6px 12px 8px / 8px 12px 6px 14px;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 246, 224, 0.5),
+    inset 0 0 26px rgba(70, 45, 20, 0.35),
+    0 6px 14px rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ── Buttons ──
+ * Primary: ink on paper. Quiet: parchment with an ink rule. Big: a sheet. */
+.btn {
+  -webkit-appearance: none;
+  appearance: none;
+  font-family: var(--dst-label);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: var(--dst-cream);
+  background: linear-gradient(180deg, var(--dst-ink-2) 0%, var(--dst-ink) 100%);
+  padding: 7px 14px;
+  box-sizing: border-box;
+  border: 2px solid var(--dst-rule);
+  border-radius: 10px 4px 8px 5px / 4px 8px 5px 10px;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+
+.btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, #4d3b3b 0%, #2a1f1c 100%);
+  border-color: var(--dst-hunger);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--dst-hunger);
+  outline-offset: 2px;
+}
+
+.btn:disabled {
+  color: rgba(234, 217, 181, 0.45);
+  cursor: default;
+  box-shadow: none;
+}
+
+.btnQuiet {
+  color: var(--dst-paper-text);
+  background: linear-gradient(160deg, var(--dst-paper) 0%, var(--dst-paper-2) 100%);
+  border-color: var(--dst-ink);
+}
+
+.btnQuiet:hover:not(:disabled) {
+  background: linear-gradient(160deg, var(--dst-paper-hi) 0%, var(--dst-paper) 100%);
+  border-color: var(--dst-ink);
+}
+
+.btnQuiet:disabled {
+  color: var(--dst-paper-muted);
+}
+
+.btnBig {
+  width: min(320px, 100%);
+  padding: 12px 18px;
+  font-family: var(--dst-figure);
+  font-size: 22px;
+  letter-spacing: 0.04em;
+  color: var(--dst-paper-text);
+  background: linear-gradient(160deg, #eee1c2 0%, var(--dst-paper) 45%, var(--dst-paper-2) 100%);
+  border-color: var(--dst-ink);
+  border-radius: 14px 6px 12px 8px / 8px 12px 6px 14px;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 246, 224, 0.5),
+    inset 0 0 26px rgba(70, 45, 20, 0.35),
+    0 6px 14px rgba(0, 0, 0, 0.45);
+}
+
+.btnBig:hover:not(:disabled) {
+  background: linear-gradient(160deg, var(--dst-paper-hi) 0%, #ecdfc0 45%, #d6c29a 100%);
+  border-color: var(--dst-ink);
+}
+
+.btnBig:disabled {
+  color: var(--dst-paper-muted);
+  background: linear-gradient(160deg, var(--dst-paper-2) 0%, #b9a47e 100%);
+}
+
+/* ── The setup window: a sheet. ── */
+.window {
+  composes: sheet;
+  gap: 10px;
+}
+
+.head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: 'count close' 'title close';
+  align-items: center;
+  column-gap: 8px;
+}
+
+.count {
+  grid-area: count;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dst-paper-muted);
+}
+
+.stepTitle {
+  grid-area: title;
+  font-family: var(--dst-figure);
+  font-size: 19px;
+  color: var(--dst-paper-text);
+}
+
+.stepTitle[data-done] {
+  color: #4a5e2c;
+}
+
+.close {
+  grid-area: close;
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0 4px;
+  font-family: var(--dst-figure);
+  font-size: 22px;
+  line-height: 1;
+  color: var(--dst-paper-muted);
+  cursor: pointer;
+}
+
+.close:hover {
+  color: var(--dst-paper-text);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--dst-paper-text);
+}
+
+.sub {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dst-paper-muted);
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dst-paper-muted);
+  word-break: break-all;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.link {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: var(--dst-label);
+  font-size: 12px;
+  color: var(--dst-paper-muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.link:hover {
+  color: var(--dst-paper-text);
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.navBtn {
+  composes: btn;
+  padding: 5px 12px;
+  font-size: 12px;
+}
+
+/* Step dots: ink rings, filled paper once done, the dusk orange on the
+ * step on screen. */
+.dots {
+  display: inline-flex;
+  gap: 7px;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 2px solid var(--dst-ink);
+  background: transparent;
+}
+
+.dotDone {
+  background: var(--dst-ink);
+}
+
+.dotNow {
+  border-color: var(--dst-hunger);
+  box-shadow: 0 0 0 1px var(--dst-hunger);
+}
+
+/* Lines that float on the ink. */
+.nameLine {
+  margin: 0;
+  max-width: 460px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--dst-cream);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
+}
+
+.subLine {
+  margin: 0;
+  font-family: var(--dst-figure);
+  font-size: 15px;
+  color: var(--dst-paper-2);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
+}
+
+.failLine {
+  margin: 0;
+  max-width: 420px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #e9907f;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
+}
+
+.helpLink {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: var(--dst-label);
+  font-size: 13px;
+  color: var(--dst-paper-2);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.helpLink:hover {
+  color: var(--dst-cream);
+}
+
+/* ── Survivor sheet ── */
+.survivorRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 13.5px;
+  color: var(--dst-paper-text);
+}
+
+.survivorReason {
+  margin: 0;
+  font-size: 12.5px;
+  font-style: italic;
+  color: var(--dst-paper-muted);
+}
+
+.select {
+  padding: 3px 8px;
+  font-family: var(--dst-label);
+  font-size: 12px;
+  color: var(--dst-paper-text);
+  background: var(--dst-paper-hi);
+  border: 2px solid var(--dst-ink);
+  border-radius: 6px 3px 5px 3px / 3px 5px 3px 6px;
+}
+
+.select:focus-visible {
+  outline: 2px solid var(--dst-hunger);
+  outline-offset: 1px;
+}

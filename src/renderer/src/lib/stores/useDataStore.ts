@@ -15,6 +15,8 @@
 import { create } from 'zustand';
 import type { Character } from '@shared/characterSchema';
 import type { BotStatus, BotActionPush, LanState, LogEntry, LogBatch } from '@shared/ipc';
+import type { WorldState, WorldStates } from '@shared/gameIpc';
+import { modalForBotStatus } from '../botErrorRouting';
 import { sei } from '../ipcClient';
 import { useUiStore } from './useUiStore';
 
@@ -23,6 +25,10 @@ const MAX_LOG_LINES = 5000;
 interface DataState {
   characters: Character[];
   lan: LanState;
+  /** Game adapters (M0, 260908): every bot-backed game's world state, keyed
+   *  by game (world:state pushes + the world:get seed). Minecraft's member
+   *  mirrors `lan`. */
+  worlds: WorldStates;
   /**
    * Per-character bot status, keyed by characterId (multi-summon). An absent
    * key means "not summoned" (idle); a present entry is connecting/online/error.
@@ -57,6 +63,7 @@ interface DataState {
   removeCharacter: (id: string) => void;
 
   setLan: (state: LanState) => void;
+  setWorld: (state: WorldState) => void;
   /** Route a single status push into the per-character map (idle clears the key). */
   setStatus: (status: BotStatus) => void;
   /** Route a bot:action push into the per-character action map. */
@@ -70,6 +77,7 @@ export const useDataStore = create<DataState>((set) => ({
   characters: [],
   recentlyDeletedIds: new Set<string>(),
   lan: { kind: 'closed' },
+  worlds: {},
   summons: {},
   actions: {},
   logs: [],
@@ -113,6 +121,7 @@ export const useDataStore = create<DataState>((set) => ({
     }),
 
   setLan: (state) => set({ lan: state }),
+  setWorld: (state) => set((s) => ({ worlds: { ...s.worlds, [state.game]: state } })),
   setStatus: (status) =>
     set((s) => {
       // Defend the map key: a malformed/legacy status without a characterId
@@ -164,6 +173,18 @@ export const useDataStore = create<DataState>((set) => ({
  */
 function wireIpc(): () => void {
   const offLan = sei.onLan((state) => useDataStore.getState().setLan(state));
+  // Game adapters (M0): the per-game world union rides world:state; seed by
+  // pull for the same reason as the LAN state below. Optional-call: an older
+  // preload without the members just leaves `worlds` empty.
+  const offWorld = sei.onWorldState?.((state) => useDataStore.getState().setWorld(state)) ?? (() => {});
+  void sei
+    .getWorldStates?.()
+    .then((states) => {
+      if (states) useDataStore.setState({ worlds: states });
+    })
+    .catch(() => {
+      /* leave empty; a subsequent push corrects it */
+    });
   // Seed the LAN state once the listener is attached. The onLan push only
   // fires on CHANGE, so on a (re)load while a world is already open the store
   // would otherwise sit at its initial 'closed' until the next change.
@@ -195,55 +216,15 @@ function wireIpc(): () => void {
     if (status.kind === 'idle' && status.characterId) {
       void useDataStore.getState().refreshCharacter(status.characterId);
     }
-    // 260709 — unsupported world version gets a popup, not just a model-row
-    // status: the Play flow otherwise fails with no visible feedback. Opened
-    // here (the single onStatus subscription) so every summon entry point is
-    // covered. Status pushes fire on transitions only, so one failed summon
-    // opens exactly one popup.
-    if (status.kind === 'error' && status.error === 'UNSUPPORTED_MC_VERSION') {
-      useUiStore.getState().openModal({
-        kind: 'unsupported-version',
-        characterId: status.characterId,
-        message: status.message,
-      });
-    }
-    // 260720 — LAN_NOT_OPEN failures get the same treatment: prod data shows
-    // users hitting this repeatedly and churning, so the failure opens a popup
-    // with numbered "open to LAN" steps instead of only the model-row line.
-    if (status.kind === 'error' && status.error === 'LAN_NOT_OPEN') {
-      useUiStore.getState().openModal({
-        kind: 'lan-not-open',
-        characterId: status.characterId,
-      });
-    }
-    // 260806 — a Forge/NeoForge world that requires its mods client-side kicks
-    // Sei every time. This used to arrive as LAN_NOT_OPEN and got the "open to
-    // LAN" steps for a world that was already open; it needs its own surface
-    // because the resolution is a different world, not a different setting.
-    if (status.kind === 'error' && status.error === 'MODDED_HOST_REJECTED') {
-      useUiStore.getState().openModal({
-        kind: 'modded-host',
-        characterId: status.characterId,
-      });
-    }
-    // 260720 — crash popup: a LIVE session died unexpectedly (the supervisor
-    // marks the terminal error with midSession; only a nonzero exit with no
-    // stop requested ever carries it, so user stops, app quit, clean session
-    // ends, and every pre-summon failure are all excluded by construction).
-    // Classes with a dedicated popup above keep their own surface; everything
-    // else was previously a silent vanish.
-    if (
-      status.kind === 'error' &&
-      status.midSession === true &&
-      status.error !== 'LAN_NOT_OPEN' &&
-      status.error !== 'UNSUPPORTED_MC_VERSION' &&
-      status.error !== 'MODDED_HOST_REJECTED'
-    ) {
-      useUiStore.getState().openModal({
-        kind: 'bot-crash',
-        characterId: status.characterId,
-      });
-    }
+    // Error → modal routing, keyed by (game, errorClass): the Minecraft table
+    // (unsupported version 260709, LAN not open 260720, modded host 260806)
+    // is unchanged; the game-neutral GAME_* classes open the generic popup;
+    // a mid-session death with no dedicated surface opens the crash popup
+    // (260720). Opened here (the single onStatus subscription) so every
+    // summon entry point is covered; status pushes fire on transitions only,
+    // so one failed summon opens exactly one popup. See lib/botErrorRouting.
+    const modal = modalForBotStatus(status);
+    if (modal) useUiStore.getState().openModal(modal);
     useDataStore.getState().setStatus(status);
   });
   // Seed the summons map once the listener is attached (260703). Status pushes
@@ -302,6 +283,7 @@ function wireIpc(): () => void {
     offVisionCapability();
     offLlmCapability();
     offAction();
+    offWorld();
   };
 }
 

@@ -31,7 +31,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       # headless-gl (vision render path) builds from source via node-gyp, which needs
@@ -128,6 +128,37 @@ jobs:
           fi
 
           npm run ${{ matrix.build_cmd }} -- "${extra[@]}"
+
+      - name: Build game packs
+        # 260908 game packs: the Minecraft adapter's runtime (mineflayer,
+        # minecraft-data, prismarine-viewer, gl, ...) lives in the
+        # packs/minecraft npm workspace and is NOT in the installer. Each leg
+        # builds the pack(s) for its OS from the same hoisted node_modules the
+        # app was just packaged from (scripts/build-game-pack.mjs): mac builds
+        # arm64 AND x64 (x64 cross-rebuilds gl with node-gyp --arch=x64 and
+        # fetches canvas's x64 N-API prebuild, the same cross path
+        # electron-builder's install-app-deps takes for the x64 app); windows
+        # builds x64. The zips go up with the installers; the <zip>.meta.json
+        # sidecars go up separately so the release job can write ONE manifest
+        # without npm ci.
+        env:
+          npm_config_python: ${{ steps.setup-python.outputs.python-path }}
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            node scripts/build-game-pack.mjs minecraft --platform darwin --arch arm64 --out release/packs
+            node scripts/build-game-pack.mjs minecraft --platform darwin --arch x64 --out release/packs
+            # Platform-neutral packs (game-side mods only, no node_modules
+            # natives) are built ONCE, on the mac leg, as any-any.
+            node scripts/build-game-pack.mjs dontstarve --platform any --arch any --out release/packs
+            # The Stardew pack wraps the CHECKED-IN mod build (assets/stardew-mod,
+            # see .gitignore): the SMAPI mod compiles only against the game's
+            # assemblies, which no runner has.
+            node scripts/build-game-pack.mjs stardew --platform any --arch any --skip-build --out release/packs
+          else
+            node scripts/build-game-pack.mjs minecraft --platform win32 --arch x64 --out release/packs
+          fi
+          ls -la release/packs/
 
       - name: Verify cloud config baked into bundle
         # v0.2.0 shipped with empty SUPABASE_URL/ANON because the build-time
@@ -285,6 +316,14 @@ jobs:
           assets=(release/*.dmg release/*.zip release/*.exe release/*.AppImage release/*.blockmap release/*.yml)
           mkdir -p dist-release
           cp "${assets[@]}" dist-release/
+          # 260908 game packs: the pack zips are release assets like any other
+          # (mirror-release.yml files them under updates/<channel>/, which is
+          # where the client's mirror URL looks: shared/gamePacks.ts
+          # gamePackMirrorDir). The meta sidecars are NOT assets;
+          # they ride a separate artifact into the release job's manifest step.
+          cp release/packs/sei-pack-*.zip dist-release/
+          mkdir -p dist-packmeta
+          cp release/packs/*.zip.meta.json dist-packmeta/
           # builder-debug.yml is electron-builder's own debug dump, swept up by
           # the *.yml glob. It is not an update feed and must not ship.
           rm -f dist-release/builder-debug.yml
@@ -298,6 +337,13 @@ jobs:
           path: dist-release/
           if-no-files-found: error
 
+      - name: Upload game pack metadata
+        uses: actions/upload-artifact@v7
+        with:
+          name: packmeta-${{ matrix.artifact_name }}
+          path: dist-packmeta/
+          if-no-files-found: error
+
   release:
     needs: build
     runs-on: ubuntu-latest
@@ -308,10 +354,35 @@ jobs:
     # lets the draft ship the good mac assets now; Windows is a known follow-up.
     if: always() && startsWith(github.ref, 'refs/tags/v')
     steps:
-      - name: Download all artifacts
+      # Only for scripts/build-game-pack-manifest.mjs, which is dependency-free
+      # in --from-meta mode (no npm ci here).
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download release artifacts
         uses: actions/download-artifact@v8
         with:
+          pattern: sei-*
           path: artifacts
+
+      - name: Download game pack metadata
+        uses: actions/download-artifact@v8
+        with:
+          pattern: packmeta-*
+          path: pack-meta
+
+      - name: Write the game pack manifest
+        # 260908: one game-packs-<version>.json across both legs, listing every
+        # pack with sha256 / size / treeHash. It is uploaded as a release asset
+        # beside the zips (and mirrored with them). A leg that failed simply
+        # contributes no packs, the same way it contributes no installer.
+        run: |
+          if find pack-meta -name '*.zip.meta.json' | grep -q .; then
+            node scripts/build-game-pack-manifest.mjs pack-meta --from-meta --out artifacts/game-packs
+            cat artifacts/game-packs/game-packs-*.json
+          else
+            echo "::warning::no game pack metadata was uploaded; the release ships without a game-packs manifest"
+          fi
 
       - name: List collected assets
         run: find artifacts -type f | sort

@@ -1,5 +1,6 @@
 /**
- * Ambient declaration for the deep import used by UnsupportedVersionModal:
+ * Ambient declaration for the deep import used by UnsupportedVersionModal,
+ * McSteps and main's wizard (shared so both tsconfigs see it, 260909):
  * minecraft-protocol's version table is a dependency-free CJS data module,
  * safe to bundle into the renderer (unlike the package root, which pulls the
  * full protocol stack). Kept in its own file — global.d.ts is a module (it

@@ -1,0 +1,574 @@
+/* StardewDashboardPanel — Stardew Valley menu styling (260909).
+ *
+ * DELIBERATE EXCEPTION to the app design tokens, the same contract as
+ * McDashboardPanel.module.css: this one panel reproduces the game's wooden
+ * menu frames so the companion's farm day reads the way it does in the
+ * game. The frame is drawn with our own CSS (no game textures): a dark
+ * brown outline, a golden wood band with a light top highlight, an inner
+ * brown line, and the cream face. Text is the game's dark plum with the
+ * tan drop shadow, set in a rounded pixel face. The ground behind the
+ * frames is dim plank wood. Scope stays inside the stardew dashboard
+ * component. */
+
+.panel {
+  --sdv-font: 'Pixelify Sans', 'Press Start 2P', 'Courier New', monospace;
+  /* Frame + face. */
+  --sdv-outline: #5c2b0c;
+  --sdv-wood: #d99a4a;
+  --sdv-wood-2: #c07d31;
+  --sdv-wood-hi: #f4cc84;
+  --sdv-wood-line: #8f4c15;
+  --sdv-cream: #fce3a8;
+  --sdv-cream-2: #f6d58f;
+  /* Text. */
+  --sdv-text: #221122;
+  --sdv-text-shadow: #ce9c5f;
+  --sdv-muted: #6f4a2c;
+  /* Slots. */
+  --sdv-slot: #f3cf85;
+  --sdv-slot-edge: #b97a2e;
+  --sdv-select: #e0322c;
+  /* Meters. */
+  --sdv-energy: #52d14b;
+  --sdv-energy-2: #1f9a3a;
+  --sdv-health: #ef5a3c;
+  --sdv-health-2: #b72d1d;
+  --sdv-low: #efc82d;
+  --sdv-critical: #d8332a;
+  /* Ground. */
+  --sdv-ground: #3a2618;
+  --sdv-ground-2: #2f1e12;
+
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+  container-type: inline-size;
+  color: var(--sdv-text);
+  font-family: var(--sdv-font);
+  font-weight: 500;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 46px, rgba(0, 0, 0, 0.14) 46px 48px),
+    linear-gradient(180deg, var(--sdv-ground) 0%, var(--sdv-ground-2) 100%);
+}
+
+/* ── Header: a wood strip. ── */
+.head {
+  display: flex;
+  align-items: center;
+  padding: 7px 14px;
+  background: linear-gradient(180deg, var(--sdv-wood) 0%, var(--sdv-wood-2) 100%);
+  border-bottom: 3px solid var(--sdv-outline);
+  box-shadow: inset 0 2px 0 var(--sdv-wood-hi);
+  flex: none;
+}
+
+.headTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--sdv-text);
+  text-shadow: 1px 1px 0 var(--sdv-text-shadow);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Body: frames on the planks, on a grid that spends the whole width.
+ * Row 1 is the status row, row 2 the bars + date box + controls, row 3 the
+ * inventory; the portrait card takes the fourth column across rows 2-3, so
+ * whatever width the fixed frames leave goes to the companion's face. ── */
+.body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: max-content max-content max-content minmax(220px, 1fr);
+  grid-auto-rows: max-content;
+  align-items: start;
+  gap: 14px;
+  padding: 14px;
+  overflow: auto;
+}
+
+.statusRow {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.card {
+  grid-column: 4;
+  grid-row: 2 / 4;
+  align-self: stretch;
+  min-height: 0;
+}
+
+.inventory {
+  grid-column: 1 / 4;
+}
+
+/* Narrow panel: the card cannot have a column of its own, so it becomes a
+ * full-width row under the inventory, art on the left. */
+@container (max-width: 900px) {
+  .body {
+    grid-template-columns: max-content max-content max-content;
+  }
+
+  .card {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+
+  .card .face {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .cardArt {
+    flex: 0 0 120px;
+    height: 120px;
+    min-height: 0;
+  }
+
+  .inventory {
+    grid-column: 1 / -1;
+  }
+}
+
+/* The menu frame: outline, wood band with highlight, inner line, cream face. */
+.frame {
+  flex: none;
+  box-sizing: border-box;
+  padding: 5px;
+  background: linear-gradient(180deg, var(--sdv-wood) 0%, var(--sdv-wood-2) 100%);
+  border: 2px solid var(--sdv-outline);
+  border-radius: 7px;
+  box-shadow: inset 0 2px 0 var(--sdv-wood-hi), inset 0 -2px 0 rgba(90, 40, 8, 0.35), 0 4px 10px rgba(0, 0, 0, 0.4);
+}
+
+.face {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  background: var(--sdv-cream);
+  border: 2px solid var(--sdv-wood-line);
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px rgba(255, 244, 214, 0.7);
+}
+
+.label {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sdv-muted);
+}
+
+/* ── Status windows: one per companion, sharing the row. ── */
+.status {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.status .face {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 14px;
+}
+
+/* Another companion's window is a button that opens their chat; the face
+ * is a span inside it so the frame markup stays the same. */
+.statusPeer {
+  display: block;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.statusPeer .face {
+  display: flex;
+}
+
+.statusPeer:hover .face {
+  background: #fff0c4;
+}
+
+.statusPeer:focus-visible {
+  outline: 2px solid var(--sdv-select);
+  outline-offset: 2px;
+}
+
+.statusText {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--sdv-text);
+  text-shadow: 1px 1px 0 var(--sdv-text-shadow);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* ── The two vertical bars. ── */
+.bars {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  flex: none;
+}
+
+.vbar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+/* The letter tab above the bar: a tiny framed square. */
+.vbarTag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--sdv-text);
+  text-shadow: 1px 1px 0 var(--sdv-text-shadow);
+  background: var(--sdv-cream);
+  border: 2px solid var(--sdv-outline);
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 2px var(--sdv-wood);
+}
+
+.vbarFrame {
+  padding: 4px;
+  background: linear-gradient(180deg, var(--sdv-wood) 0%, var(--sdv-wood-2) 100%);
+  border: 2px solid var(--sdv-outline);
+  border-radius: 5px;
+  box-shadow: inset 0 2px 0 var(--sdv-wood-hi), 0 4px 10px rgba(0, 0, 0, 0.4);
+}
+
+.vbarTrack {
+  position: relative;
+  width: 14px;
+  height: 150px;
+  background: #17120e;
+  border: 2px solid var(--sdv-wood-line);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.vbarFill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(180deg, var(--sdv-energy) 0%, var(--sdv-energy-2) 100%);
+  box-shadow: inset 2px 0 0 rgba(255, 255, 255, 0.35);
+  transition: height 500ms ease;
+}
+
+.vbar[data-kind='health'] .vbarFill {
+  background: linear-gradient(180deg, var(--sdv-health) 0%, var(--sdv-health-2) 100%);
+}
+
+.vbar[data-tone='low'] .vbarFill {
+  background: linear-gradient(180deg, var(--sdv-low) 0%, #c49a12 100%);
+}
+
+.vbar[data-tone='critical'] .vbarFill {
+  background: linear-gradient(180deg, var(--sdv-critical) 0%, #8f1d16 100%);
+}
+
+.vbarValue {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sdv-cream);
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
+}
+
+/* ── Date box + gold box. ── */
+.dateStack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: none;
+}
+
+.date {
+  width: 168px;
+}
+
+.dateRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dateDay {
+  font-size: 16px;
+  font-weight: 600;
+  text-shadow: 1px 1px 0 var(--sdv-text-shadow);
+}
+
+.dateIcons {
+  display: inline-flex;
+  align-items: center;
+}
+
+.icon {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+
+.dial {
+  width: 68px;
+  height: 34px;
+  display: block;
+}
+
+.dateTime {
+  font-size: 20px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--sdv-text);
+  text-shadow: 2px 2px 0 var(--sdv-text-shadow);
+  padding: 4px 0 0;
+  border-top: 2px solid var(--sdv-wood-line);
+}
+
+.dateYear {
+  font-size: 10px;
+  text-align: center;
+  color: var(--sdv-muted);
+}
+
+.gold .face {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 6px 10px;
+}
+
+.coin {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.goldValue {
+  font-size: 15px;
+  font-weight: 600;
+  text-shadow: 1px 1px 0 var(--sdv-text-shadow);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ── Controls window. ── */
+.controls {
+  width: 206px;
+}
+
+.modeRow {
+  display: flex;
+  gap: 6px;
+}
+
+.modeRow .btn {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* A menu button: cream face in a thin wood frame; the selected one is
+ * pressed in (darker face, inset shadow). */
+.btn {
+  font-family: var(--sdv-font);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--sdv-text);
+  text-shadow: 1px 1px 0 var(--sdv-text-shadow);
+  background: var(--sdv-cream);
+  padding: 7px 8px;
+  box-sizing: border-box;
+  border: 2px solid var(--sdv-outline);
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 2px var(--sdv-wood), inset 0 -3px 0 var(--sdv-wood-2), inset 0 0 0 3px var(--sdv-wood-hi);
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: #fff0c4;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--sdv-select);
+  outline-offset: 1px;
+}
+
+.btnOn {
+  background: var(--sdv-wood);
+  color: #fff4d6;
+  text-shadow: 1px 1px 0 var(--sdv-outline);
+  box-shadow: inset 0 0 0 2px var(--sdv-wood-2), inset 0 3px 0 rgba(90, 40, 8, 0.45);
+}
+
+.btnOn:hover {
+  background: var(--sdv-wood);
+}
+
+.btnLeave {
+  margin-top: auto;
+  background: #d9553f;
+  color: #fff4d6;
+  text-shadow: 1px 1px 0 #6b1d12;
+  box-shadow: inset 0 0 0 2px #a83a29, inset 0 -3px 0 #8f2c1e;
+}
+
+.btnLeave:hover {
+  background: #e4634d;
+}
+
+.hint {
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--sdv-text);
+  min-height: 48px;
+}
+
+/* ── Inventory grid. ── */
+.inventory .face {
+  gap: 8px;
+}
+
+/* ── Portrait card. ── */
+.card .face {
+  gap: 8px;
+  padding: 8px;
+}
+
+/* The art is positioned INSIDE the box so its canvas adds no intrinsic
+ * height: the card's height comes from the grid rows it spans, and the
+ * picture fills whatever is left after the text. */
+.cardArt {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 150px;
+  overflow: hidden;
+  background: var(--sdv-cream-2);
+  border: 2px solid var(--sdv-wood-line);
+  border-radius: 3px;
+  box-shadow: inset 2px 2px 0 rgba(120, 70, 20, 0.28);
+}
+
+.cardArt > * {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.cardText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 0 2px 2px;
+}
+
+.cardName {
+  font-size: 16px;
+  font-weight: 600;
+  text-shadow: 1px 1px 0 var(--sdv-text-shadow);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cardLine {
+  font-size: 11px;
+  color: var(--sdv-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.invGrid {
+  display: grid;
+  gap: 4px;
+}
+
+.slot {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  box-sizing: border-box;
+  background: var(--sdv-slot);
+  border: 2px solid var(--sdv-slot-edge);
+  border-radius: 3px;
+  box-shadow: inset 2px 2px 0 rgba(120, 70, 20, 0.28), inset -2px -2px 0 rgba(255, 244, 214, 0.55);
+  overflow: hidden;
+}
+
+.slotHeld {
+  outline: 3px solid var(--sdv-select);
+  outline-offset: -1px;
+  z-index: 1;
+}
+
+.slotLabel {
+  position: absolute;
+  inset: 3px;
+  font-size: 8px;
+  line-height: 1.1;
+  color: var(--sdv-text);
+  overflow: hidden;
+  overflow-wrap: break-word;
+}
+
+.slotCount {
+  position: absolute;
+  right: 2px;
+  bottom: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff4d6;
+  text-shadow: 1px 1px 0 var(--sdv-outline), -1px 0 0 var(--sdv-outline), 0 -1px 0 var(--sdv-outline);
+  z-index: 1;
+}
+
+.dim {
+  color: #9b7a55;
+}
+
+.waiting {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: var(--sdv-cream);
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vbarFill {
+    transition: none;
+  }
+}

@@ -280,6 +280,74 @@ skeleton fight happened in complete silence and the player found out by asking
 "are u ok?"), and the mid-action check-in's blanket "call NO say()" now exempts
 taking damage.
 
+**Conversation continuity in the game brain (260921).** One 17-minute Stardew
+session (Lyra, 48 loops, 166 spoken lines) showed repeated lines while the
+player was silent, a question she "did not see", conflicting answers, and web
+searches the player never benefited from. None of it was fixed by filtering
+what she says; every cause was something her prompt did not contain or a turn
+that ran at the wrong time. The pieces, all in `src/bot/brain/` and pinned in
+`orchestrator.conversation.test.js`:
+
+- **Quiet is measured from the END of her turn** (`fsm.js`). The idle timer
+  counted from an event's ARRIVAL, so at the agentic 5 s cadence it fired while
+  the reply to that event was still generating (a turn takes 4-8 s), queued
+  behind it, and dispatched the instant the turn closed (measured: 3 ms after).
+  The timer callback now skips while a dispatch is in flight and `processNext`
+  re-arms it when the dispatch finishes.
+- **A line she just said holds the floor** (`REPLY_WINDOW_MS` 20 s,
+  `replyWindowRemainingMs`, folded into `idleFallbackMs` in `brain/index.js`).
+  This is SCHEDULING, not a gate: nothing she decides to say is dropped. 5 s is
+  sized for resuming work and is shorter than the time it takes to open the
+  game's chat and type (the player's replies landed 3-15 s after her lines), so
+  her question was followed by an idle turn nobody could have answered yet, and
+  an idle turn is nudged to speak. The window applies only while her line is
+  the last thing said, and opens when the PACED line is readable
+  (`_lastChatSendDeadline`), not when it was decided. Replayed over the session:
+  35 of its 40 idle turns would have been deferred.
+- **Her lines are recorded when DECIDED, not when the paced send fires**
+  (`emitChatMessages`). With realistic typing a line reaches chat 1-6 s after
+  the turn that wrote it, and a turn composed inside that gap did not know the
+  line existed. That is how "we can sell the stone and fiber at the shipping
+  bin" was followed 8 s later by "the rocks don't do much".
+- **One chronological transcript replaces the two one-sided lists**
+  (`convoMemory.formatConversationBlock`, seed block `recent_conversation`,
+  header `SEED_HEADERS.conversation`). Two lists hide the ORDER, and the order
+  is the information: a question followed by an unrelated line of hers looks
+  identical to an answered one. The same block now rides every mid-loop player
+  line (`interruptTurnText`); those turns used to carry the new line ALONE, with
+  the only transcript being the seed's, as old as the loop.
+- **"MID-ACTION, KEEP GOING" only when something is running.**
+  `extractPriorTask` returns the last tool call whether or not it finished, so a
+  line that landed between actions was told an action was still running. The
+  model re-issued the gather and wrote its answer in the private scratchpad.
+  `interruptTurnText` now keys on `loop.inFlight` (or a background action such
+  as follow).
+- **A player line answered with actions only is delivered once more**, flagged
+  as unanswered (`_unansweredRetried`, through the action-tick channel or the
+  loop's next call, whichever comes first). The scratchpad is NOT salvaged on
+  these turns: beside a world action it is usually reasoning about the chore.
+- **What a web lookup FOUND outlives its loop** (`lookups.js`, seed block
+  `lookups`). She searched in three separate turns inside 50 s (four billed
+  searches); no turn could see what the previous one found, so each re-derived
+  the answer in new words, and by the fourth the search text about multiplayer
+  cabins had become "your cabin's in a different spot than mine". The log keeps
+  the query, her own post-result conclusion and the line she told the player.
+  The baseline also now says WHEN to search (on her own, when unsure of a
+  factual answer): the server-side `web_search` tool is schema-less, so before
+  this nothing in the prompt said when, only that she could.
+- **A game event is not someone speaking** (`gameEvent: true` from the Stardew
+  adapter's `systemLine`). "A new day" was framed as a line spoken to her with
+  a mandatory reply, and was filed in the transcript as a speaker.
+- **The one text filter is an exact match**
+  (`isExactRepeatSincePlayerSpoke`): every segment equal, after normalization,
+  to a line of hers newer than the player's last line. It does not attempt
+  similarity, for the 260731 reason above.
+
+Not done, on purpose: no similarity dedupe, no cancelling of a queued line when
+the player speaks first (it is now in her transcript, so the reply that follows
+is coherent with it). Unverified live; the numbers above are a replay of the
+log's timing, not a new session.
+
 **Memory.** Per-character memory directory.
 - **Writes are LLM-driven:** the model calls `remember()` / `forget()` to
   maintain an append-only `MEMORY.md`; `PLAYER.md` tracks the other player.
@@ -1685,6 +1753,12 @@ unreferenced rather than deleted; either revive them or remove them.
 
 ## Minecraft setup wizard: the target version (260916)
 
+> Superseded in part by the games branch (260916, same day): the wizard now builds
+> ONE "Sei <version>" profile PER version with a picker in the setup list, and
+> readiness is per profile (`sei_ready_versions`). The version rule below
+> (newest supported, never last-played) still holds; see "Minecraft's setup
+> step, and the detection bug" in the Game adapters section for the current shape.
+
 The skin-setup wizard builds a "Sei" Fabric profile in the vanilla launcher,
 and **the version it builds it for is the newest one in minecraft-protocol's
 `supportedVersions`**, never the launcher's last-played version
@@ -1729,6 +1803,578 @@ Two more things from the same case, since they are why he never got in:
   new-here question. The boot sign-in variant has no scene to resume and
   replays the full one. A password sign-in cannot tell "no account" from
   "wrong password" (same server error), so that panel names the way out.
+
+## Game adapters: Stardew Valley + Don't Starve Together (260908)
+
+The companion can be launched into the player's own Stardew Valley farm or
+hosted Don't Starve Together world the way it is launched into a Minecraft
+LAN world. Design and research: `.planning/game-adapters-260908.md` (+
+`.planning/research/game-adapters-*-260908.md`, `dst-survivors-260908.md`).
+Both tiles are `available: true` in `src/shared/games.ts` (flipped 260908 so
+the user can run the live checklist from the app itself); the live checklist
+(plan section 5, M3, per game) is still owed, and neither game self-launches
+(`selfLaunch` off: each needs a player-run install pass first). Settings
+hosts every game under ONE "Games" group (`GamesSettingsGroup`: left column
+picks the game, right column shows that game's registered section).
+
+- **Neither game has a mineflayer.** DST has no headless client and Steam
+  allows one instance per account; a Stardew split-screen farmhand is
+  gamepad-only. So in both games the companion is a BODY spawned by a
+  Sei-owned mod inside the host's own game, visible to everyone in the world,
+  and driven by the existing Node brain over localhost. The brain is not
+  forked: `src/bot/brain/*` is one implementation and each game supplies an
+  adapter (contract v2 in `src/bot/brain/types.js`).
+- **Discovery in main, protocol in the bot**, like Minecraft (`lanWatcher`
+  vs `adapter/minecraft/connect.js`). `src/main/games/<game>/watcher.ts`
+  answers "is a world open"; `src/bot/adapter/<game>/runtime.js` speaks the
+  game protocol. No game protocol code in main.
+- **Reflexes live in the mod, decisions in the brain.** Retaliation,
+  fleeing below a health floor, eating, darkness, end-of-day sleep run in the
+  game process at frame rate (the Minecraft `behaviors/*` loops are the
+  precedent) and report through the same `sei:attacked` / `sei:survival`
+  event vocabulary. The LLM issues closed Zod-typed verbs; composite verbs
+  (`gather(kind, count)`) loop mod-side so one call does a job.
+
+**M0, the shared seams (all three games plug into these):**
+
+- Bot: the composer `src/bot/index.js` is game-agnostic and dynamic-imports
+  `src/bot/adapter/<kind>/runtime.js` (`botUsernameFor`, `adapterConfigFrom`,
+  `checkJoinTarget`, `createRuntime(config, hooks) -> RuntimeHandle`), so
+  mineflayer never loads for a non-Minecraft session. `adapter.kind` is
+  `z.enum(GAME_KINDS)` with a real sub-schema per game in `src/bot/config.js`.
+  Adapter contract v2 (`ADAPTER_INTERFACE_VERSION = 2`): every Minecraft name
+  that had leaked into the brain is now an optional adapter member with a
+  Minecraft default in `src/bot/brain/adapterDefaults.js` (`gameName`,
+  `chatMaxChars`, `backgroundActions`, `progressActions`, `visionActions`,
+  `prefilterToolBatch`/`postProcessToolBatch`, `surfaceBaseline`,
+  `sessionEndClause`, `stuckNudges`, `eventAddendum` as the ONLY source of
+  idle/attacked/survival/death prose, `getWorldIdentity`, `createTelemetry`,
+  `classifyConnectError`), plus the optional `onIdleNudge` handler (a P3 idle
+  tick with a named reason, ignored before the first spawn).
+  `src/bot/brain/systemBlocks.minecraft.test.js` pins the Minecraft cached
+  system prefix and tool list BYTE-FOR-BYTE against a fixture generated on the
+  pre-refactor tree; touch the brain and that test tells you whether the model
+  sees anything different.
+- Main: `src/main/games/index.ts` `GameModule` registry (`effectiveUsername`,
+  `collides`, `watcher`, `getJoinTarget`, `joinTargetMissingError`,
+  `install`), registered from `src/main/index.ts`. `botSupervisor.summon(id,
+  game)`; every `BotStatus` carries `game`; the play row, `bot_session_ended
+  {game}` and `foldIfDue` (which Minecraft had been missing) key on the
+  module. `src/shared/gameIpc.ts`: `GameId`, the `WorldState` and
+  `GameDashboardSnapshot` unions, `world:*` and `gamedash:*` channels
+  (`lan:*` / `mcdash:*` stay as Minecraft aliases). The chat-surface `launch`
+  tool takes a `game` validated against catalog rows with `selfLaunch &&
+  available`.
+- Renderer: `registerGameSurface`, `registerSummonFlow`, `BOT_ERROR_ROUTES`
+  by `(game, errorClass)`, `registerGameSettingsSection`,
+  `registerGameSetupModal`; each game's `register*.ts` is imported once from
+  `App.tsx`. `useMcDashboardStore.launch[id]` is the game whose launch panel
+  is open. The controls window + status strip are shared
+  (`mcdash/McDashControls.tsx`, `games/GameControlsWindow.tsx`), not copied.
+
+**Game packs (260908, the user's decision 1).** Adapter runtimes are
+DOWNLOADED on first use, Minecraft included: its deps (`minecraft-data`
+429 MB, `prismarine-viewer` 392 MB, `gl` 218 MB on disk) live in the npm
+workspace `packs/minecraft` which the root package does NOT depend on, so
+electron-builder's npm collector (`npm list --omit dev` from the root) leaves
+them out of the installer: measured 1.1 GB -> 706 MB app, 48 MB zip. Root
+`npm ci` still hoists them, so dev and vitest are unchanged.
+`scripts/build-game-pack.mjs <game> --platform --arch` builds
+`sei-pack-<game>-<version>-<platform>-<arch>.zip` (Minecraft per platform
+with natives rebuilt against Electron's ABI and the same texture prunes as
+`electron-builder.yml`; Stardew and DST as `any-any` asset packs carrying
+the game-side mod under `assets/`); `pack.json` carries a `treeHash` over
+sorted paths + contents so a re-download is skipped when the content did not
+change. The release workflow builds every pack beside the app and the release
+job writes ONE `game-packs-<version>.json` manifest (sha256 per zip);
+`mirror-release.yml` mirrors it all to `dl.sei.gg/updates/`. Client:
+`src/shared/gamePacks.ts` (descriptors, asset names, mirror-first URLs),
+`src/main/games/packs.ts` (`getPackState`, `ensurePack`: manifest, download
+with progress, sha256 verify, jszip extract with traversal rejection,
+`installed.json`, older versions pruned, single-flight; dev short-circuits
+to the repo root, `SEI_GAME_PACKS_DIR` exercises the real path in dev),
+`game:pack-*` IPC, `useGamePackStore` + `GamePackCard` in every launch
+panel. **A treeHash match is not proof of a usable pack (260924).**
+v0.6.5-beta.1 shipped a 745-byte DST pack: the builder hashed the staged
+mod under `assets/` but zipped only `pack.json node_modules`, and the
+client's extractor required `node_modules/`, which failed every Stardew
+install (no node_modules in an asset pack) with ENOENT. Now the builder
+zips every staged entry and re-reads each zip
+(`scripts/lib/gamePackVerify.mjs`: treeHash re-derived from the zip bytes,
+file count, the game's required payload), CI builds the two any-any packs
+for real on every push, and the client checks `GAME_PACKS[game].requiredPaths`
+(+ pack.json `files` on re-link and extract), so a payload-less install
+reads as missing and is downloaded again even when its treeHash matches. The supervisor awaits `ensurePack(game)` BEFORE `startedAtMs` so a
+multi-minute download never eats the 30 s summon deadline, and ships
+`packRoot` in the init payload; `src/bot/packLoader.js` registers a
+`module.register()` resolve hook (normal resolution first, pack second) plus
+NODE_PATH for the CJS `createRequire` path BEFORE the composer imports the
+runtime. **The composer's runtime import must stay dynamic**: a static
+import is hoisted past the hook. Two traps: the root `overrides` entry for
+`gl` must be the literal tarball spec (an override cannot reference a
+workspace dep), and a fresh worktree needs `npm install --ignore-scripts` to
+link `node_modules/@sei/*` before the pack builder's `npm list` sees the
+workspaces.
+
+**Stardew Valley (M1)** `native/stardew-mod/SeiCompanion/` (C#, net6.0,
+SMAPI >= 4.5, MIT; `PROTOCOL.md` beside it, mirrored in
+`src/shared/stardewIpc.ts`). Body = a vanilla `NPC` (the visible sprite,
+default placeholder art generated by `scripts/gen-stardew-placeholder-art.mjs`)
+paired with an invisible `BotFarmer : Farmer` shadow (Farmtronics pattern)
+that performs tool use, combat and placement through the game's own APIs;
+the shadow is NEVER added to `Game1.otherFarmers`. Decompile facts that
+shaped it, cited in code: `MeleeWeapon.DoDamage` returns early for a
+non-local farmer (combat goes through `location.damageMonster`),
+`Farmer.Money` throws for anyone but `Game1.player` (own wallet in
+`modData`), `Crop.harvest` hands items to `Game1.player` (re-implemented),
+`WarpPathfindingCache` ignores the Farm (own BFS over warps + doors),
+monsters target only `location.farmers` (contact damage is simulated by the
+reflex loop). Transport: `HttpListener` on `http://localhost:<port>/`,
+`GET /hello` unauthenticated for the watcher, `/ws?token=` NDJSON for the
+bot (every client dials `localhost`, not `127.0.0.1`, for Windows
+`HttpListener`). 20 verbs in `src/bot/adapter/stardew/registry.js`. Install
+(`src/main/games/stardew/install.ts`) ports SMAPI's GameScanner logic,
+downloads the SMAPI installer (mirror first), runs it `--install --no-prompt`,
+copies the mod from `<packRoot>/assets/stardew-mod/SeiCompanion`. **The mod
+compiles only against the game's assemblies** (verified clean against
+1.6.15 + SMAPI 4.5.2 on this machine), so `assets/stardew-mod/` is a TRACKED
+build output the release packs with `--skip-build`; rebuild and commit it
+with any C# change. Verified live 260910 (see the Stardew live-test
+paragraph below): the SMAPI installer driven from Node on macOS, the NPC
+walking (with the barrier hop), fishing, tool swings, cross-map travel and
+the shop. Still unverified: combat in the mines (spring 5+), a farmhand.
+
+**Discovery has no setting (260909).** Main binds the first free port of
+`DST_DISCOVERY_PORTS` (27424..27428, `src/shared/dstIpc.ts`) and the mod
+probes the same list every beat until one answers `app: "sei"`, then sticks
+to it (three misses = probe again). The M2 build had one fixed port with a
+Settings row and a mod option that had to agree, which is a setup step a
+player cannot be asked for; `UserConfig.dst_port` survives as a dead field so
+old configs parse. The other two player steps the game itself forces are
+written into `DstSteps` (shown after the tile AND in the setup modal): the
+helper must be in the game BEFORE it starts (mods are indexed once, at game
+start, so `install.ts` reports `needsRestart` when the running game predates
+the helper files, from `ps`/CIM start times; a live heartbeat clears it), and
+a world must be hosted.
+
+**macOS needs App Management for the DST helper (260909, measured).** The
+game's mods folder is `dontstarve_steam.app/Contents/mods/`, inside the app
+bundle, and since macOS 13 writing into another app's bundle is gated by the
+App Management privacy permission: `mkdir .../mods/sei` returns EPERM from the
+Sei process, from a shell, from anything without the grant (the folder itself
+is owner-writable; Finder duplicate also stalls behind an Automation prompt).
+The binary hard-codes `../mods/` relative to its executable (checked with
+`strings`), so there is no other folder to write to. `installError` in
+`install.ts` classifies a darwin EPERM as `permission: true` and `DstSteps`
+turns it into the System Settings path plus an "Open System Settings" button
+(`dst:open-app-management`, a fixed `x-apple.systempreferences:` URL that
+bypasses the https-only external-URL validator on purpose). Whether a SIGNED
+Sei build gets the automatic "would like to update other applications" prompt
+is unverified: the dev Electron got no prompt, only the refusal. Windows has no
+equivalent (the mods folder sits beside the exe).
+
+**First live DST session (260909), and what it broke.** The end-to-end run
+(tile, helper, restart, Host Game, Launch, greeting, come, follow) works, and
+five things were wrong on the way that are worth knowing before the next
+adapter. (1) `composeSeedBlocks` sent an EMPTY `seed_cuboid_grammar` text
+block for any adapter without a cuboid grammar (DST, Stardew); Anthropic
+answers an empty text block with 400 and the cloud proxy surfaced it as a
+502, so the body spawned and every brain call failed. The block is now
+omitted and the cache breakpoint moves to `seed_player`. Suspect this shape
+first when a new surface's calls all fail while the same prompt works for
+Minecraft. (2) Goals were per character, not per game: the first DST turn
+read "reach stone pickaxe tier" out of `HEARTBEAT.md` and was told to pursue
+it. Non-Minecraft games now use `HEARTBEAT.<game>.md` (`src/bot/index.js`);
+Minecraft keeps the bare name so existing goals survive. (3) `come`/`follow`
+resolved the player only inside the 24-unit perception sweep, and "come here"
+is asked exactly when the body has wandered out of it (measured: 75 units,
+"no player nearby"). Both now fall back to the pinned player's USERID
+(`goto`/`follow` with `userid` in the mod, resolved against `AllPlayers`;
+`""` means nearest). (4) The mod's heartbeat rode `DoPeriodicTask`, which
+is sim time and stops on every server autopause (the survivor lobby, the
+pause menu), so Sei flapped the world open/closed; it is `DoStaticPeriodicTask`
+now. (5) `DisableLocalModWarning()` does NOT suppress the "Mods Installed"
+force-enable notice, which shows on EVERY launch until the player ticks
+"Don't show this again"; the step copy says to press "I understand". Also
+measured: the real menu path is Host Game (not Play, then Host), a saved
+world resumes through the survivor lobby, and DST DROPS all input while it
+is not the frontmost app (background computer-use clicks worked for the
+menus only because the game had focus; keystrokes never reached it), so a
+computer-use test has to `open` the app bundle first and can only talk to
+the companion through the Sei chat, which the brain frames as "NOT in the
+game with you" by design (the Minecraft framing; a player who IS the host
+gets the same wording).
+
+**Second live DST round (260909, later): pause, crash, second companion.**
+Verified: Pause holds the body still (a creature walked past a frozen
+Wickerbottom for 20 s), Resume and the Reactive/Proactive switch take,
+chop / pickup / goTo / come / gather / build (with a correct
+missing-ingredient result) all ran from one chat instruction, killing the
+game process stopped the bot inside 10 s with GAME_WORLD_NOT_OPEN and the
+"Try again" re-summoned into the resumed save, and a bot killed with SIGKILL
+raised the app's Connection lost modal. Left overnight, host AFK, the body
+DIED: dusk in the dark (Charlie), sanity to zero, then starvation; the
+death path itself worked (death event, memory write, DST_BODY_DIED, clean
+stop, play row written). ONE COMPANION PER WORLD is now enforced: the helper
+runs a single body and a second character's offer replaced the first
+through a link-reset race (Despawn posts "despawned" then drops the link;
+with `Net.Configure` called BEFORE `Companion.Summon` both landed on the new
+runtime, which quit, while the old one starved of heartbeats and quit too,
+leaving a brainless survivor). `GameModule.maxBodies = 1` +
+`DST_ONE_COMPANION` in the supervisor, and `DstLaunchPanel` names the
+occupant instead of offering Launch. The mod also gained a DEAD-RUNTIME
+WATCHDOG (`Net.DEAD_AFTER` consecutive transport failures -> `Net.onDead` ->
+Despawn "runtime gone", measured 4 s after a SIGKILL) and every Despawn step
+is pcall-guarded and logged, because the first watchdog despawn logged and
+still left a body standing (cause under investigation with the new logging).
+Computer-use notes for the next round: DST needs to be the frontmost app
+(`open` the bundle; Chrome steals focus back whenever the user browses), the
+first click on a DST widget only HOVERS it and the second fires (send single
+clicks twice, not a double-click), background screenshots of an unfocused
+DST are STALE frames, keystrokes never reach the game, offline mode cannot
+resume an online-created world (create a new one), and `client_log.txt` is
+rewritten per launch.
+
+**Every launch panel is a one-step setup window in the game's register
+(260909).** The three bot-backed games' pre-launch surfaces (`McLaunchPanel`,
+`StardewLaunchPanel`, `DstLaunchPanel`) share one shape, centered on the
+game art: title, pack card, an OPTIONAL setup window, the big button, the
+help link. The window is `components/games/SetupStepper.tsx`: it shows ONE
+step at a time (Step n of m, the step's copy and its one button, Back /
+Next, dots), so it is never taller than its tallest step and the big button
+stays in view under it. The first cut drew every step as a numbered list on
+the panel (McSteps, DstSteps) and the list pushed Launch below the fold of
+the game aside. The steps are DATA from a per-game hook
+(`useMcSetupSteps`, `useStardewSetupSteps`, `useDstSetupSteps`), each step
+carrying its live `done` flag, so the window always shows the current state
+rather than instructions, and the SAME hook feeds the token-styled setup
+MODAL (DstSetupBody still renders the whole list there). Two window modes:
+`setup` opens on the first step that is not done, FOLLOWS progress (a step
+completing moves it on) and closes itself once everything is done; `help`
+opens on step 1 for reading through. The panel's big button reads "Set up"
+until the ONE-TIME part is done (`complete`: Minecraft = Java found and a
+Sei-ready install or "Do not show again"; Stardew = `install.ready`; DST =
+the helper in the game), then "Launch"; under an open window on an
+unfinished setup it is a disabled "Launch", the goal. "How do I set up
+launch?" shows only once the setup is complete and reopens the same window
+in help mode. The per-session steps (a world open to LAN, a farm open, a
+hosted world) are the last step of each list; a Launch pressed without one
+still goes through the summon flow's own setup modal. Each panel paints the
+window and buttons in its game's register through `StepperSkin` +
+`StepSkin` (class maps + the game's button component): the vanilla
+Minecraft dialog and raised gray button in Monocraft (OFL, a face drawn
+after the game's typeface; Press Start 2P only works at label sizes), the
+Stardew wooden frame with the cream face in Pixelify Sans, the Don't Starve
+parchment sheet in Fredericka + Metamorphous, all as documented token
+exceptions in their own CSS modules. `.content` uses `justify-content: safe
+center` so a stack taller than the aside scrolls instead of clipping the
+title. Verify with `?dashshot=mclaunch|dstlaunch|stardewlaunch` (+`&ready=1`
+for the set-up state) on the dev server.
+
+**Minecraft's setup step, and the detection bug (260909).** Step 2 of the
+Minecraft list is what changed the product: the skin wizard used to be
+offered once at onboarding and once on the first Minecraft open, and a
+player who clicked past it had no way back but Settings. Now the step is
+offered on every open until an install is ready or the player presses "Do
+not show again" (`UserConfig.mc_setup_dismissed`; a ready install shows as
+done even after a dismissal). "Ready" is `shared/mcSetup.ts`
+`mcInstallReadyVersion`: a `versions/fabric-loader-<loader>-<mc>` profile
+for a version Sei's networking stack can join AND the companion-skin mod,
+so the scanner reports every Fabric profile's version
+(`McInstall.fabric_mc_versions`) and Fabric for a snapshot no longer counts.
+The VERSION half is what the wizard used to get wrong: it installed Fabric
+for whatever the launcher last ran (snapshots included) and fell back to a
+pinned 1.21.4 only when the version was unreadable, so once 26.2 shipped any
+machine that had played it got a Sei profile the bot could not join (the
+260914 support case: 6 of the 13 users who tried a summon that week hit the
+version popup on 26.2). **Since 260916 the launcher's last-played version is
+not an input at all.** `selectTargetMcVersion` (shared/mcSetup.ts, the only
+place the rule lives) takes the version the player picked in the setup
+list's row picker when Sei can join it, else the newest entry of
+minecraft-protocol's supported table; the hand-kept VERIFIED list is gone.
+**One "Sei <version>" profile per version**, each with its own game dir at
+`<.minecraft>/sei/<version>/` (the pre-260916 single profile used
+`<.minecraft>/sei/` and is left alone), because Fabric loads every jar in
+mods/ and the skin mod is built per version, so two versions cannot share
+one folder. Link manifests are keyed `installId@version` for the same
+reason. Readiness is per PROFILE: the scanner reads launcher_profiles.json
+and reports `McInstall.sei_ready_versions` (Fabric profiles whose own mods
+folder has the skin mod), falling back to the old whole-install rule only
+when that file is unreadable. The picker rides `runWizardInstall.mcVersions`
+(named in the main/ipc.ts zod or it is stripped). The bug: the
+first cut of `useMcSetupStore.scan` read `detectMcInstalls()` as a bare
+array while the bridge answers `{ installs }`, so every scan came back as
+"no Minecraft found" on a machine with a vanilla install and a Sei profile.
+The tests had stubbed the bridge with an array, which is why they passed;
+the harness stub and `McSteps.test.tsx` now use the real shape.
+
+**Stardew live test on this Mac (260910), and what it changed.** Run from
+the app with computer use on the dev Electron only (the game window was
+never granted, so a `DevCommands` gate in the mod's config.json unlocks
+developer frames: `newFarm` starts a game through the character menu with
+the intro skipped, `loadFarm` reloads a save from the title, `devSleep`
+ends the day through the bed path, `devTime` sets the clock, `devState` /
+`devDebris` / `devTiles` report state; the app never sets the flag). The
+game's `startup_preferences` was switched to windowed for the session (its
+borderless-fullscreen default put the Sei window on an unreachable Space).
+Findings, all fixed on `feat/game-adapters`:
+- SMAPI "installed" was `StardewModdingAPI.dll` alone; this Mac had the dll
+  (unpacked to compile the mod) with the vanilla launcher and no deps.json,
+  so the installer was skipped and the game started without SMAPI forever.
+  `smapiInstalledIn` requires the dll + `StardewModdingAPI.deps.json` + the
+  launch hook (`StardewModdingAPI.exe`; on macOS/Linux the `StardewValley`
+  script replaced by SMAPI's unix-launcher.sh, which runs
+  `./StardewModdingAPI`). `spawnGame` sets `SMAPI_NO_TERMINAL` so the
+  launcher does not open a Terminal window. A `require('../../paths')` in
+  the installer's temp-dir resolver broke inside the electron-vite bundle
+  ("Cannot find module"); it is a dynamic import now. The zip is 42 MB.
+- Every map exit carries the `NPCBarrier` tile property and both the NPC
+  pathfinder and the NPC's step collision honor it: the companion could not
+  leave the farm. `TryPath` searches as a farmer (the shadow) and drives
+  the NPC controller with that path; `BarrierHop` in Tick steps a stalled
+  body across (or off) an NPC-only tile. `IsWalkable` uses the same farmer
+  collision (the occupancy mask counted tilled soil as an obstacle).
+  `Router.Exits` adds buildings with an inside, or nothing routed home.
+- `Farmer.addItemToInventoryBool` refused every drop for the shadow (25
+  pieces of debris, nothing in the bag) and `Debris.collect` threw on the
+  cosmetic chunks: `TakeItem` manages the bag itself and `CollectDebris`
+  lifts the item out of OBJECT/RESOURCE/ARCHAEOLOGY debris.
+- A felled tree only finishes falling in the map's current-location update,
+  which runs for the host's map alone; with the host indoors the chop loop
+  swung to its cap (80 energy a tree, no wood). `ChopAt` ticks a falling
+  tree itself. This is the general shape of "the companion works on a map
+  the host is not on"; anything else that needs the location update
+  (debris landing, machines are fine, they run on the clock) owes the same.
+- Following undid every commanded door warp (the follow tick routed the
+  body back to the host inside); a commanded map change now clears the
+  follow target and says so. The observation is refreshed after every verb
+  so the turn after a warp reads the new map's coordinates. The owner line
+  names the host farmer, not the account's pinned name. Big stumps and
+  boulders are marked as needing an upgraded tool in the snapshot.
+- The heartbeat's "reachable next" list was EMPTY for Stardew, so the
+  companion asked the player what the move was three ways in a minute and
+  never acted. `observers/progression.json` is the first fortnight of a new
+  farm (patch, the chest seeds, 50 wood, forage, town, seeds at Pierre's, a
+  fish, the mines on spring 5, copper), each label an invitation with a part
+  for the player; predicates read the mod's new `farm` (whole-Farm counts)
+  and `host` blocks plus one-way latches from verb results. Latches live in
+  the adapter instance, so they reset on re-summon (owed: persist them
+  beside HEARTBEAT.stardew.md). The Stardew prompt gained a new-player rule
+  (one concrete step and your half of it, mechanics when relevant, controls
+  on request, stakes around the day's one big thing), a following rule, the
+  shipping bin, the player's crafting recipes and the first-spring calendar.
+- An app-typed line that lands mid-action was framed "NOT in the game with
+  you" (the Minecraft assumption) and its say() answer stayed in the game:
+  the framing is game-aware now and a loop that absorbed an app line
+  mirrors its lines to the app (`loop._seiChatFolded`).
+- The search branch is merged: every game bot also asks its own wiki
+  (contract v2 `wikiHosts`: stardewvalleywiki.com, dontstarve.wiki.gg).
+Verified live with the model: greeting, a committed project from the
+frontier, leaving the house, 45 pieces of debris cleared with drops, the
+dashboard strip; and by hand with a test body on the socket (the fastest
+loop, no model): debris, wood, forage lookup, farm to Pierre's and back with
+a purchase, till, plant, water, fish, chest take/put, sleep, a day end. Not
+yet verified: in-game typed chat and voice (no game window), pause/mode on
+Stardew, combat, a second companion, a farmhand.
+
+**Stardew companions look like themselves (260921).** Every Stardew body used
+to be the one shared placeholder NPC sprite. It is now drawn as a FARMER
+dressed with the game's own character creator knobs: gender, skin, hairstyle,
+hair color, eye color, shirt, pants, pants color, accessory. No hat (not a
+creator knob, and it hides the hair).
+- **One LLM call per character, in main.**
+  `src/main/games/stardew/appearance.ts` follows `chessProfile.ts` (forced
+  tool call `set_stardew_appearance`, through `buildLlmProvider`, so cloud and
+  BYOK both work) and `survivorPick.ts` (injectable deps, persisted SPARSE in
+  `UserConfig.stardew_appearance[characterId]`, not in `character.metadata`,
+  which cloud-syncs verbatim and is not editable on a default such as Lyra).
+  Input is `gatherAppearanceText`: the soulcaster sheet's appearance block and
+  image prompt first, then the description, then the persona source (the
+  expanded persona only as a last resort). The character text sits between
+  `<character>` tags and the system prompt says it is data. Two deliberate
+  differences from the two precedents: a FAILED derivation is never persisted
+  (a stored fallback would make the character generic forever because of one
+  network error; the cost is at most one retry per summon), and the result is
+  salvaged FIELD BY FIELD (`coerceStardewAppearance`: a model that gets eight
+  knobs right and invents a shirt number still produced a usable look; fewer
+  than 5 valid fields counts as a failure).
+- **The legend is the feature.** The model cannot see the sprite sheets, so
+  `src/shared/stardewAppearance.ts` lists every ALLOWED index with a short
+  description of what it looks like, and the schema admits nothing else (42
+  hairstyles, 70 shirts, 24 skins, 4 pants, 13 accessories). Tool properties
+  are plain `integer` with the legend in the description, not JSON-schema
+  number enums, because not every provider accepts those; the Zod schema is
+  the gate. Ranges and the legend come from the game itself, not from a wiki:
+  the 1.6.15 assemblies were read with Mono.Cecil (`changeSkinColor` wraps at
+  0..23, `changeAccessory` at -1..29, shirts and pants are STRING item ids in
+  1.6), `Data/Shirts` and `Data/Pants` were unpacked and parsed (the creator's
+  own set is the rows with `CanChooseDuringCharacterCustomization`: shirts
+  "1000".."1111", pants "0".."3"), `Data/HairData` adds hairstyles 100..122 to
+  the sheet's 0..55, and the hair, shirt, accessory and pants sheets were
+  unpacked (the game's MonoGame LZX decoder, run from a scratch tool) and
+  looked at composited on the farmer body. The config row is deliberately
+  LOOSE in `characterSchema.ts`; the strict legend check runs in the reader,
+  so removing an index from a legend re-derives one character instead of
+  failing the whole config parse.
+- **Plumbing.** `GameModule.prepareJoin({characterId, character})` is a new
+  optional async seam. The supervisor awaits it beside `ensurePack`, BEFORE
+  `startedAtMs`, so it never comes out of the 30 s summon deadline, and merges
+  what it returns into the join target (`getJoinTarget` is synchronous and
+  does not know the character). Stardew's returns `{appearance}` from
+  `appearanceForSummon`: a stored look at once, else a first derivation
+  awaited for at most `APPEARANCE_SUMMON_WAIT_MS` (6 s), then the summon goes
+  ahead WITHOUT the field while the single-flight derivation finishes and
+  persists for next time. `adapterConfigFrom` copies it into `adapter.stardew`
+  (loose schema with `.catch(undefined)` in `src/bot/config.js`: looks must
+  never fail a bot config) and `runtime.js` adds it to the `spawn` frame, on
+  reconnect spawns too. The field is optional end to end and
+  `STARDEW_PROTOCOL_VERSION` is unchanged: an old mod ignores it, an old app
+  never sends it.
+- **The mod draws the shadow Farmer in the NPC's place, and the NPC stays the
+  body.** `Body/Appearance.cs` clamps the frame field by field against what
+  THE RUNNING GAME accepts (`Farmer.GetAllHairstyleIndices()`,
+  `Game1.shirtData` / `pantsData`), not against the app's legend, so the
+  legend can grow without a mod rebuild; then applies it through the game's
+  own `change*` methods, gender first (it swaps the base texture and re-applies
+  the shirt). `Body/BodyDraw.cs` is a Harmony PREFIX on
+  `NPC.draw(SpriteBatch, float)` that, for a registered body, calls
+  `FarmerRenderer.draw` with the shadow and skips the NPC's own draw. A prefix
+  rather than an SMAPI `Rendered*` event because the farmer has to be inside
+  the world's depth-sorted batch to pass behind trees; rather than an NPC
+  subclass because `location.characters` is a NetCollection of NPC. Rendering
+  the 16 walk frames into a sprite sheet was the fallback and was not needed.
+  The decompile facts above still hold: the shadow is in neither
+  `Game1.otherFarmers` nor `location.farmers`, and `BotFarmer.draw` stays a
+  no-op so there is one draw path. Load-bearing details: the farmer is drawn
+  16 px LOWER than the NPC position (an NPC's box is y+16..y+48, a farmer's
+  y..y+32, both draw feet at the box bottom, so without it the feet float
+  above the ground shadow and the collision box); depth is the NPC's own rule
+  (`StandingPixel.Y / 10000`); the ground shadow needs nothing because
+  `Game1.DrawWorld` draws character shadows separately from `NPC.draw`; the
+  tool-use hop still shows because `getLocalPosition` carries `yJumpOffset`;
+  emotes are kept by calling `npc.DrawEmote`. The shadow's `Update` never
+  runs, so `SeiBody.AnimateShadow` advances the walk cycle each tick from
+  whether the NPC moved (`FarmerSprite.animate(walkUp|Right|Down|Left, 16)`,
+  else `StopAnimation` + `faceDirection`), only on the host's current map
+  (FarmerSprite's footstep dust and sound are written for the map on screen),
+  and the paused branch of `Tick` refreshes `_lastPos` or the walk cycle would
+  run on the spot for the whole pause. Any failure (apply, animate, draw)
+  flips that body back to the placeholder sprite for good and logs once;
+  `FarmerLook: false` in the mod's config.json turns the whole thing off.
+  No appearance in the frame means the mod's neutral default farmer, which is
+  the ONLY default (main sends no field rather than a second copy of it).
+- **Dev frame:** `devAppearance` (same `DevCommands` gate) returns the clamped
+  request, the rejected fields, the values read back from the shadow farmer
+  and the sprite frame / facing / base texture. `scripts/fake-stardew-mod.mjs`
+  records the field and answers the same frame.
+- **Unverified (the game was not launched for this change):** that the farmer
+  actually draws in place and at the right height, the walk cycle in four
+  directions, depth sorting against trees and buildings, the look of each
+  legend entry on a dressed body in motion (the legend was written from the
+  sheets, some hair entries from silhouettes only), what a farmhand sees
+  (their game has no registry entry, so it should be the placeholder), and the
+  quality of the model's picks for real characters. Tool-use animations are
+  not implemented: a swing is still the NPC hop. Owed: a user override in the
+  launch panel (`source: 'user'` is already in the stored row and is kept
+  as is), and re-deriving when a character's description changes
+  (`clearAppearance` exists; nothing calls it yet).
+
+**Dashboards in the games' own registers (260909).** Both bot-backed
+dashboards are now DELIBERATE, CONTAINED EXCEPTIONS to the design tokens,
+under the same contract as `McDashboardPanel` (which the Stardew panel used
+to borrow wholesale, vanilla-gray windows and all): a game's live view
+should read like that game's HUD, not like a settings page. Each panel's
+CSS module declares its own palette on `.panel` and nothing outside the
+component references it.
+- `DstDashboardPanel` (+ `dstDashboard.ts`, pure + tested): ink ground,
+  aged-parchment sheets with burnt edges and hand-cut corners, the three
+  vitals as the HUD BADGES (dark ring, parchment face, the meter as coloured
+  liquid rising from the bottom, the organ icon on top, pulsing when low),
+  the CLOCK as the 16-segment day ring split day/dusk/night per season
+  (`DST_PHASE_SPLIT`; the mod reports the phase, not the segment, so the
+  whole phase is lit), body temperature with the game's freezing (<=0) and
+  overheating (>=70) bands, and the inventory bar as dark slots in rows of
+  15 with the equipped hand item in its own slot. Prefabs map to in-game
+  names (`dstItemLabel`). Fonts: Fredericka the Great for figures,
+  Metamorphous for labels (both OFL, DST-only).
+- `StardewDashboardPanel` (+ `stardewDashboard.ts`, pure + tested): the
+  wooden menu frame drawn in CSS (outline, wood band with highlight, inner
+  line, cream face), dark-plum text with the tan drop shadow in Pixelify
+  Sans (OFL, Stardew-only), ENERGY/HEALTH as the vertical HUD bars (green ->
+  yellow under a quarter -> red under a tenth), the DATE BOX (weekday from
+  the day number since day 1 is always Monday, weather + season icons, the
+  day dial from 6 AM to 2 AM, HUD-cased time, gold in its own box), and the
+  12 x 3 inventory with the held slot framed red.
+- **Several companions in one game share the dashboard (260909).** A
+  dashboard is mounted for ONE character, but Minecraft and Stardew run a
+  body per character, so the status strip became a STATUS ROW: this
+  companion's window first (titled with their name once there is company),
+  then one window per other companion online in the same game, each a
+  button that opens that companion's chat. Membership comes from
+  `useDataStore.summons` (same `game`, kind `online`), not from what is on
+  screen; the activity line needs that companion's telemetry, which main
+  samples only while WATCHED, so `useGameCompanions`
+  (`components/games/useGameCompanions.ts`) arms the watch flag for every
+  sibling while the dashboard is mounted and shows an ellipsis until the
+  first snapshot lands. All three dashboards use it (the Minecraft strip
+  grew `name` + `companions` props). DST is one body per world, so its row
+  never grows, but it rides the same code.
+- **The width is spent (260909).** Both game-styled bodies are CSS grids:
+  status row, then instruments, then inventory, with a PORTRAIT CARD in
+  the fourth column spanning rows 2-3 (the companion's own art via
+  `DashPortrait`, same seed + palette as the Home wall; name, survivor or
+  location, held item). Whatever width the fixed windows leave goes to the
+  face. The art is absolutely positioned inside its box so its canvas adds
+  no intrinsic height (otherwise the spanning card GREW the rows it spans:
+  measured, the first cut was a 700 px portrait). Under a container query
+  (`.panel` is `container-type: inline-size`; 1000 px DST, 900 px Stardew)
+  the card drops to a full-width row with the art on the left.
+- **The controls are ONE hook, `components/games/useGameControls.ts`**
+  (paused/mode/disconnect/hover hint + `GAME_CONTROL_DESCRIPTIONS`); each
+  game paints its own buttons. `GameControlsWindow` (the token-styled
+  generic version) rides the same hook and is now unused by any registered
+  game; keep it for a future game that has no register of its own.
+- **Verify in a browser tab, not a summon:** `?dashshot=1` (or
+  `?dashshot=dontstarve|stardew`) on the dev server renders both panels
+  over fixture snapshots (`components/games/DevDashShot.tsx`).
+  `lib/ipcClient.ts` captures `window.sei` at module evaluation, and
+  main.tsx's static import of App reaches it first, so the harness stubs
+  live in `devHarnessStubs.ts`, which MUST stay main.tsx's first import.
+  Render tests (`*DashboardPanel.test.tsx`) pin the meters, the clock, the
+  slots and the zh coverage; CSS-module class names are hashed under vitest,
+  so the tests count `data-slot` attributes rather than class names.
+
+**Don't Starve Together (M2)** `native/dst-mod/sei/` (Lua, MIT, server-only,
+`all_clients_require_mod = false`, luacheck clean; `PROTOCOL.md`, mirrored in
+`src/shared/dstIpc.ts`). Body = a vanilla survivor prefab spawned on the
+master sim with `scripts/brains/seibrain.lua` (FAtiMA-DST skeleton): safety
+layer first (run away under 35% health, find light at dusk, fight back when
+told, eat under 25% hunger), then the command slot. **Transport direction is
+inverted**: a mod can only reach out through `TheSim:QueryServer` to
+127.0.0.1 (Klei blocked third-party URLs in Jan 2025, hotfix 653007 carved
+localhost back out; no headers, bodies under ~20 KB), so main's watcher hosts
+a discovery port and answers the mod's 2 s heartbeat with a summon offer `{token, botPort, ...}` after the bot's
+runtime reports its ephemeral `node:http` port over a `dst-listen` port
+message; the mod then POSTs `/obs` at 3 Hz (delta-compressed, <= 8 KB) and
+polls `GET /cmd` with a 400 ms bounded hold (measure it against the
+undocumented QueryServer timeout on day one). 21 verbs. **The character picks
+her survivor** (user decision 3): `src/main/games/dontstarve/survivorPick.ts`
+is a one-off LLM call over the persona + the roster brief in
+`src/shared/dstSurvivors.ts` (15 eligible; Wes, Wonkey, Woodie, Wanda
+excluded, reasons in the brief), persisted sparse in
+`UserConfig.dst_survivor[characterId]`, user-overridable in the launch panel;
+the chosen survivor's perks ride the world primer, and each survivor's
+special needs (meat-only, vegetarian, souls, wetness, fire, frailty) are DATA
+read by both the BT and the primer, never branches. Install = mod copy into
+`<install>/mods/sei/` + `modsettings.lua` (`ForceEnableMod("sei")`,
+`DisableLocalModWarning()`), re-applied on every launch because game updates
+rewrite that file; launch = `steam://rungameid/322330`. Four spikes wait for
+the live checklist: a joiner with `all_clients_require_mod = false`,
+ownerless `inst:Remove()`, a caves-enabled host, the QueryServer hold.
+
+**Credits:** every reused project is in the README Acknowledgements with its
+license (user decision 7); copied code carries a header credit and
+`native/<mod>/THIRD_PARTY_NOTICES.md`.
 
 ## Instrumenting a game or timed surface (REQUIRED)
 
@@ -1878,6 +2524,30 @@ State is `useUiStore.gameFullscreen`, and the rule for any NEW game surface is:
 
 The `windowFullscreenToggle` / `windowIsFullscreen` IPC still exists on the
 preload bridge but no renderer surface calls it.
+
+**The game/chat split (260917).** Three rules in `ChatScreen`:
+- A game DASHBOARD with no user-dragged split sizes the game area to its
+  content (`.gameFit`: `height: auto`, capped at the column minus a 200px
+  chat band), so the Stardew / DST / Minecraft dashboards never scroll
+  internally at a normal window height. The dashboards were laid out for the
+  full picture and at the old 62% default their `.body` grids hid the bottom
+  rows. Chess and the launch panels keep an explicit default, now
+  `min(72%, calc(100% - 240px))` (was 62% / 280px), because they paint
+  absolute art that needs a definite height. A dragged split turns the fit
+  off; double-click on the handle restores it.
+- The drag handle goes ALL THE WAY DOWN: fewer than `SPLIT_COLLAPSE_CHAT_PX`
+  (96px) of chat left snaps into the existing expanded state (the same one
+  the "V" toggles) instead of leaving a sliver, and dragging back up leaves
+  it. The old 220px chat floor is gone.
+- The composer dock is IN-FLOW below the message list, not floating over it.
+  The floating dock's window-coloured band went transparent over a custom app
+  background, so the conversation showed under and beside the message box;
+  in-flow, the list is clipped where the dock begins and the background can
+  still show through. `MiniTile` measures `[data-chat-composer]` by rect, so
+  it is unaffected.
+`?dashshot=chat|chatdst` mounts a dashboard inside the real ChatScreen (a
+Proxy over the stub bridge answers whatever the screen asks) for checking
+any of this in a plain tab.
 
 ## Directory map
 

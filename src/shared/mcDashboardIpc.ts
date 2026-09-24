@@ -43,6 +43,9 @@ export interface McDashMap {
 }
 
 export interface McDashboardSnapshot {
+  /** Game adapters (M0, 260908): discriminant for GameDashboardSnapshot
+   *  (src/shared/gameIpc.ts). Stamped by mcDashboardService on every push. */
+  game: 'minecraft';
   characterId: string;
   ts: number;
   /** 'overworld' | 'the_nether' | 'the_end' (raw dimension name, unprefixed). */

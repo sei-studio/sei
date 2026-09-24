@@ -17,12 +17,19 @@ export interface McInstallListProps {
   installs: McInstall[];
   selectedIds: Set<string>;
   onToggle: (id: string) => void;
+  /** 260916: per-launcher Minecraft version pick (vanilla rows only). */
+  versionOptions?: string[];
+  versionByInstall?: Record<string, string>;
+  onVersionChange?: (id: string, version: string) => void;
 }
 
 export function McInstallList({
   installs,
   selectedIds,
   onToggle,
+  versionOptions,
+  versionByInstall,
+  onVersionChange,
 }: McInstallListProps): React.ReactElement {
   const t = useT();
   return (
@@ -33,6 +40,9 @@ export function McInstallList({
           install={install}
           selected={selectedIds.has(install.id)}
           onToggle={() => onToggle(install.id)}
+          versionOptions={versionOptions}
+          version={versionByInstall?.[install.id]}
+          onVersionChange={onVersionChange ? (v) => onVersionChange(install.id, v) : undefined}
         />
       ))}
     </div>

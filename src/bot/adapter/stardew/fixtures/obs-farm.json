@@ -1,0 +1,43 @@
+{
+  "name": "Sui", "location": "Farm", "locationKind": "farm", "x": 62, "y": 18, "facing": "down",
+  "stamina": 210, "maxStamina": 270, "health": 100, "maxHealth": 100, "exhausted": false, "gold": 500,
+  "time": 1330, "timeText": "1:30 PM", "day": 3, "dayOfWeek": "Wed", "season": "spring", "year": 1,
+  "weather": "sunny", "isDark": false,
+  "follow": "Ouen", "paused": false, "sleeping": false, "inAction": null, "lastResult": null,
+  "inventory": [
+    { "slot": 0, "id": "(T)Axe", "name": "Axe", "count": 1, "kind": "tool" },
+    { "slot": 1, "id": "(T)Hoe", "name": "Hoe", "count": 1, "kind": "tool" },
+    { "slot": 2, "id": "(T)WateringCan", "name": "Watering Can", "count": 1, "kind": "tool" },
+    { "slot": 3, "id": "(T)Pickaxe", "name": "Pickaxe", "count": 1, "kind": "tool" },
+    { "slot": 4, "id": "(W)47", "name": "Scythe", "count": 1, "kind": "scythe" },
+    { "slot": 5, "id": "(T)BambooPole", "name": "Bamboo Pole", "count": 1, "kind": "rod" },
+    { "slot": 6, "id": "(W)0", "name": "Rusty Sword", "count": 1, "kind": "weapon" },
+    { "slot": 7, "id": "(O)472", "name": "Parsnip Seeds", "count": 15, "kind": "seed" },
+    { "slot": 8, "id": "(O)20", "name": "Leek", "count": 2, "kind": "forage", "edible": 16 }
+  ],
+  "held": "Axe", "wateringCan": { "left": 18, "max": 40 },
+  "tiles": {
+    "radius": 8,
+    "crops": [
+      { "x": 60, "y": 20, "name": "Parsnip", "ready": false, "watered": true, "dead": false, "stage": "2/5", "dist": 2 },
+      { "x": 61, "y": 20, "name": "Parsnip", "ready": false, "watered": false, "dead": false, "stage": "2/5", "dist": 2 },
+      { "x": 59, "y": 21, "name": "Cauliflower", "ready": true, "watered": true, "dead": false, "stage": "6/6", "dist": 4 }
+    ],
+    "soil": [ { "x": 61, "y": 21, "watered": false, "dist": 3 }, { "x": 62, "y": 21, "watered": false, "dist": 3 } ],
+    "trees": [ { "handle": "#4", "x": 70, "y": 12, "kind": "oak", "grown": true, "stage": 5, "dist": 9 } ],
+    "rocks": [ { "handle": "#5", "x": 66, "y": 19, "kind": "stone", "dist": 4 } ],
+    "forage": [ { "handle": "#6", "x": 58, "y": 24, "name": "Leek", "dist": 7 } ],
+    "chests": [ { "handle": "#7", "x": 64, "y": 14, "items": 3, "dist": 4 } ],
+    "machines": [ { "handle": "#8", "x": 65, "y": 14, "name": "Furnace", "ready": true, "minutes": 0, "holding": "Copper Bar", "dist": 5 } ],
+    "ladders": [],
+    "water": { "x": 71, "y": 30, "dist": 15 },
+    "counts": { "crops": 24, "dryCrops": 12, "readyCrops": 1, "twigs": 3, "weeds": 9, "stones": 5, "emptySoil": 6 }
+  },
+  "entities": [
+    { "handle": "#1", "kind": "player", "name": "Ouen", "farmerId": "9001", "isHost": true, "x": 63, "y": 18, "dist": 1, "pinned": true },
+    { "handle": "#2", "kind": "monster", "name": "Green Slime", "x": 50, "y": 10, "dist": 15, "health": 24, "maxHealth": 24 },
+    { "handle": "#9", "kind": "villager", "name": "Marnie", "x": 55, "y": 22, "dist": 8 }
+  ],
+  "warps": [ { "handle": "#3", "to": "BusStop", "x": 79, "y": 17, "dist": 17 } ],
+  "player": { "name": "Ouen", "farmerId": "9001", "location": "Farm", "x": 63, "y": 18, "sameLocation": true, "dist": 1 }
+}

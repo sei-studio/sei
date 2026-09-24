@@ -118,9 +118,92 @@ const MinecraftAdapterSchema = z.object({
   player_stagger_ms: z.number().int().min(0).default(350),
 })
 
+// Stardew Valley (M1, 260908): the loopback link to the SMAPI mod
+// (native/stardew-mod/PROTOCOL.md). Built by adapter/stardew/runtime.js
+// adapterConfigFrom from main's StardewJoinTarget {port, token, label}.
+const StardewAdapterSchema = z.object({
+  host: z.string().default('localhost'),
+  port: z.number().int().min(1).max(65535).optional(),
+  // The per-install secret the mod's config.json carries; the WebSocket
+  // upgrade is refused without it.
+  token: z.string().default(''),
+  // The companion's in-game display name (persona name, sanitised).
+  username: z.string().min(1),
+  reconnect_delay_ms: z.number().int().min(0).default(3000),
+  // 260921: how the companion looks as a farmer, forwarded verbatim in the
+  // spawn frame. Deliberately LOOSE here: main validated it against the
+  // legend-bound schema (src/shared/stardewAppearance.ts, which this process
+  // cannot import) and the mod clamps every field against the game, so a
+  // second strict copy would only be a third place to keep in step. `.catch`
+  // drops a malformed block instead of failing the whole bot config: looks
+  // must never be the reason a summon dies.
+  appearance: z.object({
+    gender: z.string(),
+    skin: z.number().int(),
+    hair: z.number().int(),
+    hairColor: z.string(),
+    eyeColor: z.string(),
+    shirt: z.number().int(),
+    pants: z.number().int(),
+    pantsColor: z.string(),
+    accessory: z.number().int(),
+  }).optional().catch(undefined),
+})
+
+// Game adapters (M0, 260908). `kind` selects which runtime the composer
+// (src/bot/index.js) dynamic-imports from src/bot/adapter/<kind>/runtime.js;
+// only that game's sub-tree is required. `dontstarve` is a passthrough
+// PLACEHOLDER until its adapter lands. Keep the member list in sync with
+// GAME_KINDS below and GameId in src/shared/gameIpc.ts.
+export const GAME_KINDS = ['minecraft', 'stardew', 'dontstarve']
+
+// Don't Starve Together (game-adapters M2, 260908). Built by
+// src/bot/adapter/dontstarve/runtime.js adapterConfigFrom from main's
+// DstJoinTarget (src/shared/dstIpc.ts): the world identity (session id +
+// label), who to spawn beside, the survivor prefab + its primer paragraph,
+// and the announce toggle. The runtime's own loopback listener is ephemeral
+// (port 0) and reported back to main, so no port lives here.
+export const DontStarveAdapterSchema = z.object({
+  username: z.string().min(1).max(32),
+  session: z.string().default(''),
+  label: z.string().default(''),
+  day: z.number().int().nonnegative().default(1),
+  season: z.string().default(''),
+  phase: z.string().default(''),
+  caves: z.boolean().default(false),
+  nearUserid: z.string().default(''),
+  nearName: z.string().default(''),
+  prefab: z.string().min(1).max(32).default('wilson'),
+  survivorBrief: z.string().default(''),
+  announce: z.boolean().default(true),
+  /** Wait for the mod's `spawned` after the runtime starts listening. */
+  spawn_timeout_ms: z.number().int().min(1000).default(25_000),
+  /** No mod traffic for this long after spawn = the world is gone. */
+  heartbeat_loss_ms: z.number().int().min(1000).default(10_000),
+  /** Bounded long-poll hold for GET /cmd (measured against QueryServer on day one). */
+  cmd_hold_ms: z.number().int().min(0).max(5000).default(400),
+  /** After a death, how long the brain gets to react before the session ends. */
+  death_grace_ms: z.number().int().min(0).default(8_000),
+})
+
 const AdapterSchema = z.object({
-  kind: z.literal('minecraft').default('minecraft'),
-  minecraft: MinecraftAdapterSchema,
+  kind: z.enum(GAME_KINDS).default('minecraft'),
+  minecraft: MinecraftAdapterSchema.optional(),
+  stardew: StardewAdapterSchema.optional(),
+  dontstarve: DontStarveAdapterSchema.optional(),
+}).superRefine((a, ctx) => {
+  if (a.kind === 'dontstarve' && !a.dontstarve) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['dontstarve'], message: 'adapter.dontstarve is required when adapter.kind is "dontstarve"' })
+  }
+  // A Minecraft session still REQUIRES its block (unchanged contract: the
+  // old schema made `minecraft` mandatory, so a Minecraft config without it
+  // must keep failing to parse instead of silently booting a bodiless bot).
+  if (a.kind === 'minecraft' && !a.minecraft) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['minecraft'], message: 'adapter.minecraft is required when adapter.kind is "minecraft"' })
+  }
+  if (a.kind === 'stardew' && !a.stardew) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['stardew'], message: 'adapter.stardew is required when adapter.kind is "stardew"' })
+  }
 })
 
 // The full set of provider kinds the bot factory can run (see
@@ -136,7 +219,7 @@ export const LLM_PROVIDER_KINDS = [
   'cerebras', 'perplexity',
 ]
 
-export const ConfigSchema = z.object({
+const ConfigObjectSchema = z.object({
   // chat_mode: 'chat' (default) — only `say()` lines reach Minecraft chat.
   // 'full' — assistant `text` (private scratch) ALSO reaches chat with a
   // `[think] ` prefix so the player can watch the bot's reasoning in real
@@ -159,10 +242,12 @@ export const ConfigSchema = z.object({
   // (this process cannot import that TS module).
   chat_language: z.enum(['en', 'zh', 'ja', 'ko', 'fr', 'es']).default('en'),
   player_username: z.string(),
-  // LAN world MOTD (level name) from discovery, used as a human label for the
-  // world registry / MEMORY.md section headers. Optional — falls back to spawn
-  // coords when absent (e.g. the broadcast carried no MOTD).
-  lan_motd: z.string().nullable().default(null),
+  // Human label for the world this session joins (Minecraft: the LAN MOTD /
+  // level name; Stardew: the farm name; DST: the cluster name), used by the
+  // world registry / MEMORY.md section headers. Optional — the adapter's
+  // getWorldIdentity() falls back to its own label when absent. 260908: was
+  // `lan_motd`; the legacy key is hoisted into this one at parse time below.
+  world_label: z.string().nullable().default(null),
   // Friendly name the LLM addresses the player by. Substituted in chat events
   // and convo memory in place of the raw MC username so the bot never speaks
   // the player's gamertag. Falls back to player_username when empty.
@@ -385,6 +470,21 @@ export const ConfigSchema = z.object({
 })
 
 /**
+ * Legacy key hoist (260908): `lan_motd` was renamed `world_label` when the
+ * bot went multi-game. Accepted as an alias for one release so a config.json
+ * or an older main's init mapping still parses; an explicit `world_label`
+ * wins. Applied in a preprocess so ConfigSchema.parse stays the single entry.
+ */
+function hoistLegacyWorldLabel(raw) {
+  if (!raw || typeof raw !== 'object') return raw
+  if (raw.world_label !== undefined || raw.lan_motd === undefined) return raw
+  const { lan_motd, ...rest } = raw
+  return { ...rest, world_label: lan_motd }
+}
+
+export const ConfigSchema = z.preprocess(hoistLegacyWorldLabel, ConfigObjectSchema)
+
+/**
  * Hoist legacy top-level minecraft fields into adapter.minecraft.* if the
  * caller hasn't already supplied an `adapter` object. This is NOT a
  * backwards-compat shim — it is a one-shot migration applied at parse time
@@ -423,7 +523,7 @@ export function loadConfig(path = './config.json', overrides = {}) {
     raw.adapter.minecraft = { ...raw.adapter.minecraft, port: overrides.port }
   }
   if (overrides.motd != null && String(overrides.motd).trim()) {
-    raw.lan_motd = String(overrides.motd).trim()
+    raw.world_label = String(overrides.motd).trim()
   }
   return ConfigSchema.parse(raw)
 }

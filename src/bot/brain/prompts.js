@@ -22,6 +22,10 @@ export {
   PUNCTUATION_DIRECTIVES,
   SEED_HEADERS,
   NUDGES,
+  adaptNudges,
+  ACTION_STUCK_NUDGE_VISION,
+  ACTION_STUCK_NUDGE_NOVISION,
+  SESSION_END_CLAUSE,
   MEMORY_GOAL_CUE,
   // Render functions (interpolate runtime values into the prompt text).
   renderPersona,

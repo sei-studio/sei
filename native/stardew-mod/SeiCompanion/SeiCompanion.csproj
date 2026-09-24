@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Sei companion mod for Stardew Valley (SMAPI). Built by
+    scripts/build-stardew-mod.sh from the repo root; see ../README.md.
+
+    Pathoschild.Stardew.ModBuildConfig resolves the game + SMAPI reference
+    assemblies from GamePath (or its own GameScanner defaults), copies the
+    build into <game>/Mods/SeiCompanion when EnableModDeploy is on, and adds
+    the Lib.Harmony reference SMAPI bundles when EnableHarmony is on.
+
+    Pass the game folder explicitly on a machine where auto-detection
+    fails:  dotnet build -p:GamePath="/path/to/Stardew Valley"
+  -->
+  <PropertyGroup>
+    <AssemblyName>SeiCompanion</AssemblyName>
+    <RootNamespace>SeiCompanion</RootNamespace>
+    <Version>0.1.1</Version>
+    <TargetFramework>net6.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <Platforms>AnyCPU</Platforms>
+    <EnableHarmony>true</EnableHarmony>
+    <!-- The repo's pack builder copies the output itself; never deploy or zip
+         from the build (a dev machine may not even have the game). -->
+    <EnableModDeploy>false</EnableModDeploy>
+    <EnableModZip>false</EnableModZip>
+    <!-- SMAPI's bundled DLLs are not copied into the output (the game ships
+         them); the mod folder is DLL + manifest + Assets + config. -->
+    <BundleExtraAssemblies>None</BundleExtraAssemblies>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(GamePath)' == '' and '$(GAME_PATH)' != ''">
+    <GamePath>$(GAME_PATH)</GamePath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="manifest.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Assets\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

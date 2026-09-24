@@ -89,6 +89,19 @@ files:
   - "!.env*"
   # sibling working copies / forks
   - "!mineflayer/**"
+  # 260908 GAME PACKS. packs/<game>/package.json is an npm WORKSPACE that owns
+  # a game adapter's heavy runtime deps (Minecraft: mineflayer, minecraft-data,
+  # prismarine-viewer, gl, node-canvas-webgl, ...). The root package.json does
+  # NOT depend on the workspace, and electron-builder's npm collector
+  # (app-builder-lib/out/node-module-collector/npmNodeModulesCollector.js)
+  # only follows `_dependencies` of the root, so nothing reachable ONLY through
+  # the workspace is packed: those packages ship as a downloadable pack built by
+  # scripts/build-game-pack.mjs and fetched on first use by
+  # src/main/games/packs.ts. The texture / gl-residue / bedrock prunes that used
+  # to live in this file moved with them to packs/minecraft/prune.mjs, which the
+  # pack builder applies. The workspace directory itself must stay out of the
+  # app tree too (both matchers, see above).
+  - "!packs/**"
   # 260803 vendor: stop shipping vendor/ TWICE. Every vendored package is a
   # `file:` dependency, so electron-builder already copies its dereferenced tree
   # to node_modules/<name>, which asarUnpack then unpacks. The literal vendor/
@@ -113,74 +126,25 @@ files:
   # source maps + node_modules trim
   - "!**/*.map"
   - "!**/node_modules/*/{test,tests,__tests__,*.md,*.markdown,LICENSE*,license*}"
-  # 260803 bedrock: minecraft-data ships the complete Bedrock Edition data tree
-  # (329MB / 398 files) and nothing in this app speaks Bedrock. It CANNOT be
-  # dropped wholesale: minecraft-data/index.js (lines 6, 103, 111) and
-  # lib/supportsFeature.js (line 3) EAGERLY require
-  # bedrock/common/{protocolVersions,versions,legacy,features}.json at module
-  # load time, so a blanket `bedrock/**` glob makes `require('minecraft-data')`
-  # throw and kills the bot utilityProcess on every summon. Every bedrock
-  # VERSION directory begins with a digit (0.14 through 1.26.30) while only
-  # `common` and `latest` begin with a letter, so the [0-9] character class
-  # prunes exactly the version dirs and leaves the eagerly-required common/
-  # files in place. The `**/` prefix also catches the nested copy under
-  # mineflayer-utils.
-  - "!**/minecraft-data/minecraft-data/data/bedrock/[0-9]*/**"
-  # 260803 headless-gl: `gl` is 208MB unpacked, and the only runtime artifact is
-  # build/Release/webgl.node (2.3MB) plus src/javascript/**, index.js and
-  # package.json. `bindings('webgl')` (node_modules/bindings/bindings.js lines
-  # 36-58) walks a FIXED ordered list of 13 candidate paths and returns on the
-  # first one that requires successfully; there is no directory scan, and the
-  # winner is always candidate #3, build/Release/webgl.node. Nothing ever looks
-  # in bin/ (that copy is written by @electron/rebuild's legacy node-pre-gyp
-  # compat step and is unreachable). Everything excluded below is node-gyp build
-  # residue: the ANGLE source checkout, the intermediate object trees, and the
-  # generated makefiles / project files.
-  #
-  # DO NOT broaden any of this to "!node_modules/gl/build/Release/**". On
-  # Windows, gl's binding.gyp copies libEGL.dll, libGLESv2.dll and
-  # d3dcompiler_47.dll into build/Release and they are required at load time.
-  # That mistake builds clean and tests green on macOS, and only surfaces as a
-  # LoadLibrary failure inside the bot utilityProcess on an end user's Windows
-  # machine. Keeping the exclusions narrow (named subdirectories plus
-  # object-file extensions) makes that failure impossible.
-  #
-  # The lists deliberately cover both toolchains: make (*.a, obj.target, .deps)
-  # and MSVC (*.lib/.obj/.pdb/.ilk/.exp/.iobj/.ipdb/.tlog, build/Release/obj).
-  # The half that does not apply is a harmless no-op on each platform. gl/deps
-  # holds the prebuilt Windows DLLs and import libs that binding.gyp copies at
-  # compile time, so it is Windows-only content and is excluded in the mac
-  # section below rather than here.
-  - "!node_modules/gl/angle/**"
-  - "!node_modules/gl/bin/**"
-  - "!node_modules/gl/node_modules/**"
-  - "!node_modules/gl/src/native/**"
-  - "!node_modules/gl/build/Release/obj.target/**"
-  - "!node_modules/gl/build/Release/obj/**"
-  - "!node_modules/gl/build/Release/.deps/**"
-  - "!node_modules/gl/build/Release/*.{a,o,lib,obj,pdb,ilk,exp,iobj,ipdb,tlog}"
-  - "!node_modules/gl/build/angle/**"
-  - "!node_modules/gl/build/{Makefile,binding.Makefile,gyp-mac-tool,config.gypi}"
-  - "!node_modules/gl/build/*.{mk,vcxproj,sln,filters}"
+  # 260908: the minecraft-data bedrock prune and the headless-gl build-residue
+  # prune that lived here since 260803 moved to packs/minecraft/prune.mjs (with
+  # their rationale); those packages are no longer in the app tree at all.
   # 260803 three: drop the build variants no code path can reach. Root three
   # (0.185.1) has an exports map, so the app resolves to build/three.module.js
   # (+ three.core.js) and build/three.cjs; the ./webgpu and ./tsl subpaths have
   # zero importers, which makes the webgpu/tsl bundles and every *.min.js dead
-  # weight. The nested 0.128.0 under prismarine-viewer has NO exports field, so
-  # Node uses `main: build/three.js` and can never reach three.module.js or
-  # three.min.js. The nested 0.156.1 under skinview3d DOES have an exports
+  # weight. (The nested 0.128.0 under prismarine-viewer ships in the Minecraft
+  # game pack since 260908; its prune is in packs/minecraft/prune.mjs.) The
+  # nested 0.156.1 under skinview3d DOES have an exports
   # field, which shadows `main` and does not export ./build/*, so three.js,
   # three.min.js and three.module.min.js there are unreachable (only three.cjs
   # and three.module.js are used). The renderer's copies are Vite-bundled into
   # dist/renderer (electron.vite.config.ts applies externalizeDepsPlugin to main
   # and preload only), so nothing loads three from node_modules at runtime.
-  # Together with the gl residue above this is about 209MB and 1,870 files.
   - "!node_modules/three/build/*.min.js"
   - "!node_modules/three/build/three.webgpu.js"
   - "!node_modules/three/build/three.webgpu.nodes.js"
   - "!node_modules/three/build/three.tsl.js"
-  - "!node_modules/prismarine-viewer/node_modules/three/build/three.min.js"
-  - "!node_modules/prismarine-viewer/node_modules/three/build/three.module.js"
   - "!node_modules/skinview3d/node_modules/three/build/three.js"
   - "!node_modules/skinview3d/node_modules/three/build/three.min.js"
   - "!node_modules/skinview3d/node_modules/three/build/three.module.min.js"
@@ -261,18 +225,11 @@ mac:
   notarize: true   # team id comes from APPLE_TEAM_ID env var (.env.local locally; GH Actions secret in CI)
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
-  # Skip code-signing the prismarine-viewer texture tree (~32k .png/.json/.mcmeta
-  # data files under asar.unpacked). They contain NO Mach-O / executable code, so
-  # they neither need nor benefit from individual signatures — they stay sealed in
-  # the app's CodeResources via the main bundle signature either way. electron-osx-sign
-  # otherwise runs `codesign --timestamp` once PER FILE, i.e. 32k sequential Apple
-  # timestamp-server round-trips; when that TSA is slow the mac signing step takes
-  # 85min+ or stalls indefinitely (a single hung connection wedges the whole serial
-  # sign). Excluding them drops signing to a few minutes and removes the stall risk.
-  # Scope is deliberately narrow (this texture path only) so real native binaries
-  # — canvas/gl .node, Electron Framework — are STILL signed + hardened + notarized.
-  signIgnore:
-    - "prismarine-viewer/public/textures/"
+  # (Until 260908 a signIgnore for prismarine-viewer/public/textures/ lived
+  # here: ~32k data files that made electron-osx-sign's per-file codesign
+  # stall. The texture tree now ships in the downloadable Minecraft game pack,
+  # which is never code-signed as part of the app, so the entry is gone. If a
+  # future pack asset lands back inside the app bundle, bring it back.)
   # macOS 15+/26 Local Network privacy. Declaring NSLocalNetworkUsageDescription
   # makes the system show the "allow Sei to find devices on your local network"
   # prompt and list Sei under System Settings → Privacy & Security → Local
@@ -283,10 +240,9 @@ mac:
   # build/entitlements.mac.plist.
   # 260710 chess: drop the linux + windows onnxruntime prebuilds from mac builds
   # (~76MB saved; both mac arches stay because arm64+x64 build in one job).
-  # 260728 dmg: prune prismarine-viewer textures to the versions players run
-  # (see the DMG RE-ENABLED note above) — the file-count cut is what makes the
-  # dmg target buildable again. Keep 1.20.1 / 1.21.1 / 1.21.4; the second line
-  # drops the orphaned per-version atlas PNGs that sit beside the folders.
+  # 260728 dmg: the prismarine-viewer texture prune that made the dmg
+  # buildable again now lives in packs/minecraft/prune.mjs (260908); the
+  # texture tree left the app bundle altogether with the Minecraft game pack.
   # 260803 chess: cce-1 bundles its OWN nested onnxruntime-node (259MB on disk,
   # a different ABI generation from the top-level @huggingface/transformers
   # copy: napi-v6, not napi-v3; darwin 75MB / linux 57MB / win32 128MB), so the
@@ -297,9 +253,6 @@ mac:
   # match the destination path. Dropping linux + win32 saves ~184MB on mac;
   # darwin/ only has an arm64 prebuild, so the x64 mac build has no chess
   # inference either way and this changes nothing for it.
-  # 260803 headless-gl: gl/deps is the prebuilt Windows DLL + import-lib payload
-  # that binding.gyp copies into build/Release at compile time. It is dead
-  # weight on macOS, so it is pruned here rather than at the top level.
   files:
     # ── app-tree exclusions ───────────────────────────────────────────────
     # Duplicated verbatim in the win block. These are copies of top-level
@@ -312,6 +265,7 @@ mac:
     # but nothing was stopping the next hand-built artifact from doing so.
     # src/ stays: the bot ships as raw ESM source and is forked from there.
     - "!vendor/**"
+    - "!packs/**"
     - "!.planning/**"
     - "!docs/**"
     - "!demo/**"
@@ -343,29 +297,9 @@ mac:
     # (same situation as cce-1's arm64-only darwin prebuild).
     - "!node_modules/sherpa-onnx-linux-*/**"
     - "!node_modules/sherpa-onnx-win-*/**"
-    - "!node_modules/gl/deps/**"
-    - "!node_modules/prismarine-viewer/public/textures/1.{8.8,9.4,10.2,11.2,12.2,13.2,14.4,15.2,16.1,17.1,18.1,19}/**"
-    - "!node_modules/prismarine-viewer/public/textures/1.{8.8,9.4,10.2,11.2,12.2,13.2,14.4,15.2,16.1,16.4,17.1,18.1,19}.png"
-    # 1.16.4 IS PRUNED, BUT NOT ENTIRELY (260806). It is not just another old
-    # version: viewer/lib/entities.js line 12 constructs every entity as
-    # `new Entity('1.16.4', entity.name, scene)` with the version HARDCODED, so
-    # `textures/1.16.4/{entity,items,misc}` is the ONLY entity texture tree the
-    # viewer ever reads, on every world, at every version. Excluding 1.16.4 with
-    # the rest of the old versions therefore removed the textures for EVERY
-    # entity in EVERY packaged build — and prismarine-viewer's loadTexture has no
-    # .catch, so the first entity to enter the bot's POV render became an
-    # unhandled rejection and killed the bot process (measured live 260805: three
-    # sessions, exit code 1, world still open). render/textureFallback.js now
-    # makes that survivable; keeping these three subtrees is what makes entities
-    # actually look like themselves. The cost is 837 files / 0.6MB, taking the
-    # kept tree from 9,394 to 10,231 files — worth re-checking against the DMG
-    # volume-sizing failure documented above (32k overflowed, 9.4k did not) on
-    # the first `npm run dist:mac`. Everything else under 1.16.4 is
-    # genuinely unused, so it is dropped explicitly below rather than by relying
-    # on negation ordering in this list. The 1.16.4.png BLOCK atlas above stays
-    # excluded: block rendering resolves per world version, never to 1.16.4.
-    - "!node_modules/prismarine-viewer/public/textures/1.16.4/{blocks,colormap,effect,environment,font,gui,map,mob_effect,models,painting,particle}/**"
-    - "!node_modules/prismarine-viewer/public/textures/1.16.4/*.json"
+    # 260908: the prismarine-viewer texture prune (and the 1.16.4 entity-texture
+    # exception, 260806) moved to packs/minecraft/prune.mjs with the Minecraft
+    # game pack. prismarine-viewer is not in the app tree any more.
   # 260728 backseat: the bundled ScreenCaptureKit system-audio tap
   # (native/mac-audio-tap, built by scripts/build-mac-audio-tap.sh into a
   # UNIVERSAL binary — one file serves both arch builds). Chromium loopback
@@ -418,18 +352,17 @@ win:
   # match the destination path. Dropping darwin + linux saves ~130MB; the
   # win32/arm64 line mirrors the arm64 exclusion above (this target is
   # `arch: [x64]` only) for a further ~64MB.
-  # 260803 install time: prune prismarine-viewer textures exactly as the mac
-  # section does. This is the single biggest win on windows: 32,465 texture
-  # files drop to 9,391, removing 23,074 files and about 134 seconds of NSIS
-  # install time, almost all of which was per-file overhead rather than bytes.
-  # The cost is the same as on mac (no POV vision, text item labels, on worlds
-  # older than 1.20); see the tradeoff note in the mac section, including why
-  # the atlas-existence pre-check in povRenderer.js must stay.
+  # 260803 install time: the prismarine-viewer texture prune was the single
+  # biggest win on windows (32,465 texture files down to 9,391, about 134
+  # seconds of NSIS per-file install overhead). Since 260908 the whole texture
+  # tree ships in the downloadable Minecraft game pack instead (prune list in
+  # packs/minecraft/prune.mjs), so the installer carries none of it.
   files:
     # ── app-tree exclusions ───────────────────────────────────────────────
     # Kept identical to the mac block; see the comment there for why the
     # top-level `files:` copy of these does nothing on its own.
     - "!vendor/**"
+    - "!packs/**"
     - "!.planning/**"
     - "!docs/**"
     - "!demo/**"
@@ -457,28 +390,9 @@ win:
     - "!node_modules/sherpa-onnx-darwin-*/**"
     - "!node_modules/sherpa-onnx-linux-*/**"
     - "!node_modules/sherpa-onnx-win-ia32/**"
-    - "!node_modules/prismarine-viewer/public/textures/1.{8.8,9.4,10.2,11.2,12.2,13.2,14.4,15.2,16.1,17.1,18.1,19}/**"
-    - "!node_modules/prismarine-viewer/public/textures/1.{8.8,9.4,10.2,11.2,12.2,13.2,14.4,15.2,16.1,16.4,17.1,18.1,19}.png"
-    # 1.16.4 IS PRUNED, BUT NOT ENTIRELY (260806). It is not just another old
-    # version: viewer/lib/entities.js line 12 constructs every entity as
-    # `new Entity('1.16.4', entity.name, scene)` with the version HARDCODED, so
-    # `textures/1.16.4/{entity,items,misc}` is the ONLY entity texture tree the
-    # viewer ever reads, on every world, at every version. Excluding 1.16.4 with
-    # the rest of the old versions therefore removed the textures for EVERY
-    # entity in EVERY packaged build — and prismarine-viewer's loadTexture has no
-    # .catch, so the first entity to enter the bot's POV render became an
-    # unhandled rejection and killed the bot process (measured live 260805: three
-    # sessions, exit code 1, world still open). render/textureFallback.js now
-    # makes that survivable; keeping these three subtrees is what makes entities
-    # actually look like themselves. The cost is 837 files / 0.6MB, taking the
-    # kept tree from 9,394 to 10,231 files — worth re-checking against the DMG
-    # volume-sizing failure documented above (32k overflowed, 9.4k did not) on
-    # the first `npm run dist:mac`. Everything else under 1.16.4 is
-    # genuinely unused, so it is dropped explicitly below rather than by relying
-    # on negation ordering in this list. The 1.16.4.png BLOCK atlas above stays
-    # excluded: block rendering resolves per world version, never to 1.16.4.
-    - "!node_modules/prismarine-viewer/public/textures/1.16.4/{blocks,colormap,effect,environment,font,gui,map,mob_effect,models,painting,particle}/**"
-    - "!node_modules/prismarine-viewer/public/textures/1.16.4/*.json"
+    # 260908: the prismarine-viewer texture prune (and the 1.16.4 entity-texture
+    # exception, 260806) moved to packs/minecraft/prune.mjs with the Minecraft
+    # game pack. prismarine-viewer is not in the app tree any more.
   # Windows ships UNSIGNED for now (RESEARCH §Resolved Q2). SmartScreen's
   # "unknown publisher" warning is the accepted UX.
   #

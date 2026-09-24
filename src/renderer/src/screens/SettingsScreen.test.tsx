@@ -9,7 +9,7 @@
  *
  * Structural invariants (Party restyle):
  *   S.1  — sentence-case Oswald group headers (Profile / Account / AI /
- *          Minecraft / Appearance / About / Danger); no all-caps eyebrows.
+ *          Games / Appearance / About / Danger); no all-caps eyebrows.
  *   S.2  — Backend switch is a <Seg> (Cloud / My key) that drives the
  *          SwitchBackendConfirmModal; cancel reverts because the value tracks
  *          ai_backend_kind.
@@ -51,7 +51,7 @@ beforeEach(() => {
 describe('SettingsScreen (Party restyle structure)', () => {
   it('S.1: sentence-case Oswald group headers, no all-caps eyebrows', () => {
     const src = readFileSync(SETTINGS_TSX, 'utf-8');
-    for (const h of ['>Profile<', '>Account<', '>AI<', '>Minecraft<', '>Appearance<', '>About<', '>Danger<']) {
+    for (const h of ['>Profile<', '>Account<', '>AI<', '>Games<', '>Appearance<', '>About<', '>Danger<']) {
       expect(src.includes(h)).toBe(true);
     }
     // The old uppercase section eyebrows are gone.
@@ -140,11 +140,14 @@ describe('SettingsScreen (ui-A1 mode gating)', () => {
     expect(providerIdx).toBeGreaterThan(0);
   });
 
-  it('A1.3: MINECRAFT section is shown in BOTH cloud and local mode', () => {
+  it('A1.3: GAMES section is shown in BOTH cloud and local mode', () => {
     const src = readFileSync(SETTINGS_TSX, 'utf-8');
-    // Skin sideloading is independent of the AI-backend billing path, so the
-    // group must render regardless of mode. Anchor on the sentence-case header.
-    const skinsIdx = src.indexOf('>Minecraft<');
+    // Skin sideloading and game setup are independent of the AI-backend
+    // billing path, so the group must render regardless of mode. Anchor on
+    // the sentence-case header (260908: one "Games" group hosts every game,
+    // Minecraft's rows inside it via GamesSettingsGroup).
+    const skinsIdx = src.indexOf('>Games<');
+    expect(src.includes('<GamesSettingsGroup')).toBe(true);
     expect(skinsIdx).toBeGreaterThan(0);
     // The group must NOT be wrapped in a local-only gate. The 200 chars before
     // the header should not open an `aiBackendKind === 'local'` conditional.
