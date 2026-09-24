@@ -40,13 +40,13 @@ beforeEach(() => {
  * useSyncExternalStore server snapshot), so a setState on the real store is
  * invisible to a server render. Mock the hook to select from a seeded state.
  */
-async function render(state: GamePackState): Promise<string> {
-  const store = { packs: { minecraft: state }, refresh: vi.fn(), ensure: vi.fn(), init: vi.fn() };
+async function render(state: GamePackState, game: 'minecraft' | 'stardew' | 'dontstarve' = 'minecraft'): Promise<string> {
+  const store = { packs: { [game]: state }, refresh: vi.fn(), ensure: vi.fn(), init: vi.fn() };
   vi.doMock('../../lib/stores/useGamePackStore', () => ({
     useGamePackStore: (selector: (s: typeof store) => unknown) => selector(store),
   }));
   const { GamePackCard } = await import('./GamePackCard');
-  return renderToStaticMarkup(React.createElement(GamePackCard, { game: 'minecraft' }));
+  return renderToStaticMarkup(React.createElement(GamePackCard, { game }));
 }
 
 describe('GamePackCard', () => {
@@ -69,6 +69,23 @@ describe('GamePackCard', () => {
     expect(html).toContain('aria-valuenow="25"');
     expect(html).toContain('12 of 48 MB');
     expect(html).not.toContain('<button');
+  });
+
+  it('Test 3b: the small mod packs are sized in KB, not "about 1 MB" (260925)', async () => {
+    const stardew = await render({ kind: 'missing' }, 'stardew');
+    expect(stardew).toContain('Download Stardew Valley support (about 110 KB)');
+    expect(stardew).toContain('Download (110 KB)');
+  });
+
+  it('Test 3c: DST reads in KB too, offer and progress', async () => {
+    const dst = await render({ kind: 'missing' }, 'dontstarve');
+    expect(dst).toContain('(about 32 KB)');
+    expect(dst).not.toContain('MB');
+  });
+
+  it('Test 3d: a KB download counts in KB', async () => {
+    const partial = await render({ kind: 'downloading', received: 50 * 1024, total: 107 * 1024 }, 'stardew');
+    expect(partial).toContain('50 of 107 KB');
   });
 
   it('Test 4: error shows the copy and a Retry', async () => {

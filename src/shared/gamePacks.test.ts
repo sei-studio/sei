@@ -22,6 +22,7 @@ import {
   packAssetName,
   packProgressPct,
   packSizeMb,
+  packSizeLabel,
   parseGamePackManifest,
   parsePackAssetName,
   pickPackEntry,
@@ -86,6 +87,11 @@ describe('gamePacks: copy helpers', () => {
   it('Test 5: size + progress clamp', () => {
     expect(packSizeMb(100)).toBe(1);
     expect(packSizeMb(120 * 1024 * 1024)).toBe(120);
+    expect(packSizeLabel(30 * 1024)).toBe('30 KB');
+    expect(packSizeLabel(100)).toBe('1 KB');
+    expect(packSizeLabel(50 * 1024 * 1024)).toBe('50 MB');
+    expect(packSizeLabel(12 * 1024 * 1024, 48 * 1024 * 1024)).toBe('12 MB');
+    expect(packSizeLabel(12 * 1024, 107 * 1024)).toBe('12 KB');
     expect(packProgressPct(0, 0)).toBe(0);
     expect(packProgressPct(50, 100)).toBe(50);
     expect(packProgressPct(200, 100)).toBe(100);

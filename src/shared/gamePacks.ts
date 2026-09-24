@@ -72,20 +72,20 @@ export const GAME_PACKS: Record<GameId, GamePackDescriptor> = {
   },
   // The two mod-driven games carry no node_modules: their pack is the
   // game-side mod (Stardew: the built SMAPI DLL + manifest; DST: the Lua
-  // mod), platform-neutral, built once as any-any. Sizes are estimates until
-  // the first CI build measures them.
+  // mod), platform-neutral, built once as any-any. Sizes measured on the
+  // v0.6.5-beta.2 packs: Stardew ~107 KB, DST ~30 KB.
   stardew: {
     id: 'stardew',
     name: 'Stardew Valley',
     platformSpecific: false,
-    sizeHintBytes: 2 * 1024 * 1024,
+    sizeHintBytes: 110 * 1024,
     requiredPaths: ['assets/stardew-mod/SeiCompanion/SeiCompanion.dll', 'assets/stardew-mod/SeiCompanion/manifest.json'],
   },
   dontstarve: {
     id: 'dontstarve',
     name: "Don't Starve Together",
     platformSpecific: false,
-    sizeHintBytes: 1 * 1024 * 1024,
+    sizeHintBytes: 32 * 1024,
     requiredPaths: ['assets/dst-mod/sei/modinfo.lua', 'assets/dst-mod/sei/modmain.lua'],
   },
 };
@@ -240,6 +240,23 @@ export interface GamePackProgressPush {
 /** Whole mebibytes for user copy, floored at 1 so a tiny pack never says 0. */
 export function packSizeMb(bytes: number): number {
   return Math.max(1, Math.round(bytes / (1024 * 1024)));
+}
+
+/**
+ * A size for the pack card: "50 MB", or "107 KB" under a megabyte (260925:
+ * the Stardew and DST packs are a few dozen KB and read "about 1 MB" / "2 MB"
+ * through packSizeMb's whole-MB floor). `unitOf` picks the unit from another
+ * size, so "12 of 107 KB" never mixes units mid-download.
+ */
+export function packSizeLabel(bytes: number, unitOf: number = bytes): string {
+  const { n, unit } = packSizeParts(bytes, unitOf);
+  return `${n} ${unit}`;
+}
+
+/** packSizeLabel's number and unit apart, for "12 of 48 MB". */
+export function packSizeParts(bytes: number, unitOf: number = bytes): { n: number; unit: 'KB' | 'MB' } {
+  if (unitOf < 1024 * 1024) return { n: Math.max(1, Math.round(bytes / 1024)), unit: 'KB' };
+  return { n: packSizeMb(bytes), unit: 'MB' };
 }
 
 /** 0..100 for a progress bar; 0 while the total is unknown. */

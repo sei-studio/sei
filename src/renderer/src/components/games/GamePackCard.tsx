@@ -17,7 +17,7 @@
  */
 import React, { useEffect } from 'react';
 import type { GameId } from '@shared/gamePacks';
-import { GAME_PACKS, packProgressPct, packSizeMb } from '@shared/gamePacks';
+import { GAME_PACKS, packProgressPct, packSizeLabel, packSizeParts } from '@shared/gamePacks';
 import { useT } from '../../lib/i18n';
 import { ERROR_COPY } from '../../lib/errors';
 import { useGamePackStore } from '../../lib/stores/useGamePackStore';
@@ -59,9 +59,9 @@ export function GamePackCard({ game, className }: GamePackCardProps): React.Reac
           label={t('{name} support download, {pct} percent', { name: desc.name, pct })}
         />
         <p className={styles.meta}>
-          {t('{received} of {total} MB', {
-            received: Math.min(packSizeMb(state.received), packSizeMb(total)),
-            total: packSizeMb(total),
+          {t('{received} of {total}', {
+            received: packSizeParts(Math.min(state.received, total), total).n,
+            total: packSizeLabel(total),
           })}
         </p>
       </section>
@@ -82,10 +82,10 @@ export function GamePackCard({ game, className }: GamePackCardProps): React.Reac
     );
   }
 
-  const mb = packSizeMb(desc.sizeHintBytes);
+  const size = packSizeLabel(desc.sizeHintBytes);
   return (
     <section className={cls} data-state="missing">
-      <h3 className={styles.title}>{t('Download {name} support (about {mb} MB)', { name: desc.name, mb })}</h3>
+      <h3 className={styles.title}>{t('Download {name} support (about {size})', { name: desc.name, size })}</h3>
       <p className={styles.body}>
         {t(
           'Playing {name} together needs a one-time download. It is stored on this device and only downloads again after an update that needs a newer version.',
@@ -94,7 +94,7 @@ export function GamePackCard({ game, className }: GamePackCardProps): React.Reac
       </p>
       <div className={styles.actions}>
         <Button kind="primary" size="md" onClick={() => void ensure(game)}>
-          {t('Download ({mb} MB)', { mb })}
+          {t('Download ({size})', { size })}
         </Button>
       </div>
     </section>
