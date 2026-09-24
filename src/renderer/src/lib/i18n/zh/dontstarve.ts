@@ -43,6 +43,14 @@ export const ZH_DONTSTARVE: Record<string, string> = {
   "Adding Sei's helper...": '正在添加 Sei 助手…',
   'Enabling the helper in the game': '正在游戏中启用助手',
   'Copying the helper into the game folder': '正在把助手复制到游戏文件夹',
+  'Click Install helper in the window macOS opened.': '请在 macOS 打开的窗口中点击“安装助手”。',
+  'Copying through Finder. If macOS asks whether Sei may control Finder, click Allow.':
+    '正在通过访达复制。如果 macOS 询问是否允许 Sei 控制访达，请点击“允许”。',
+  "A newer version of Sei's helper is ready. macOS needs your OK once to add it.":
+    '新版 Sei 助手已就绪。macOS 需要你确认一次才能添加。',
+  'Update helper': '更新助手',
+  "The game turned Sei's helper off. Game updates do this.": '游戏关闭了 Sei 助手。游戏更新会这样做。',
+  'Turn the helper back on': '重新开启助手',
   "Couldn't add Sei's helper": '无法添加 Sei 助手',
   "Add Sei's helper": '添加 Sei 助手',
   'Opening Steam...': '正在打开 Steam…',

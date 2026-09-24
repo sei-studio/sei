@@ -25,7 +25,7 @@ import {
 import { DST_DEFAULT_SURVIVOR, isDstSurvivorPrefab, renderDstSurvivorBrief } from '../../../shared/dstSurvivors';
 import type { GameModule, GameJoinContext, GameInstall } from '../index';
 import { createDstWatcher, type DstWatcher } from './watcher';
-import { detectInstall, enableMod, installMod } from './install';
+import { detectInstall, enableMod, installMod, type MacGrant } from './install';
 import { launchDst } from './launch';
 
 /** The offer lives this long past the bot's report (the supervisor's summon
@@ -49,7 +49,12 @@ export interface DstGameModule extends GameModule {
   /** The bot runtime is listening: hand the mod a summon on the next heartbeat. */
   setSummonOffer(characterId: string, listen: Pick<DstListenMessage, 'port' | 'token'> | null): Promise<void>;
   getInstallState(): Promise<DstInstallState>;
-  runInstall(onProgress?: (state: DstInstallState) => void): Promise<DstInstallState>;
+  /**
+   * Copy + enable the helper. `grant` = this run comes from a click in Sei,
+   * so on macOS it may show the Open panel and fall back to Finder (260925);
+   * without one (a game launch) it never shows a dialog.
+   */
+  runInstall(onProgress?: (state: DstInstallState) => void, opts?: { grant?: MacGrant }): Promise<DstInstallState>;
   readonly watcherDst: DstWatcher;
   /** Install detection cached from the last detect pass (null = not run yet). */
   readonly lastInstall: DstInstallState | null;
@@ -79,6 +84,14 @@ export function createDontStarveGameModule(overrides: Partial<DstModuleDeps> = {
   const log = deps.log ?? (() => {});
   const watcher = deps.watcher ?? createDstWatcher({ log });
   let lastInstall: DstInstallState | null = null;
+  /**
+   * macOS (260925): a run without a click (a game launch) needed to write the
+   * helper and was refused. No dialog may appear then, so the step comes back
+   * in the UI instead (`grantNeeded` on the found state) until a clicked
+   * install succeeds.
+   */
+  let grantNeeded = false;
+  let lastEnableError = '';
   let onUpdate: ((s: WorldState) => void) | null = null;
 
   function tagged(): WorldState {
@@ -93,13 +106,20 @@ export function createDontStarveGameModule(overrides: Partial<DstModuleDeps> = {
     lastInstall = await deps.detect();
     if (lastInstall.kind === 'found' && lastInstall.modInstalled && !lastInstall.enabled) {
       // Re-apply modsettings.lua: game updates and Steam verify rewrite it.
+      // Write-only, never a dialog: this runs at Sei start and on the setup
+      // poll. On macOS without the grant it fails, detection keeps
+      // `enabled: false`, and the helper step offers the click that fixes it.
       try {
         await deps.enable(lastInstall.modsDir);
         lastInstall = { ...lastInstall, enabled: true };
+        lastEnableError = '';
       } catch (err) {
-        log(`re-enable failed: ${(err as Error).message}`);
+        const msg = (err as Error).message;
+        if (msg !== lastEnableError) log(`re-enable failed: ${msg}`);
+        lastEnableError = msg;
       }
     }
+    if (grantNeeded && lastInstall.kind === 'found') lastInstall = { ...lastInstall, grantNeeded: true };
     // A heartbeat is the helper talking, so whatever the file times say the
     // running game HAS loaded it (a re-enable just above cannot fire one).
     if (lastInstall.kind === 'found' && lastInstall.needsRestart && watcher.getState().kind === 'open') {
@@ -209,10 +229,19 @@ export function createDontStarveGameModule(overrides: Partial<DstModuleDeps> = {
       log(`summon offer queued for ${offer.name} (${prefab}) -> bot port ${listen.port}`);
     },
     getInstallState: () => refreshInstall(),
-    async runInstall(onProgress) {
+    async runInstall(onProgress, opts = {}) {
       const packRoot = await deps.getPackRoot();
       onProgress?.({ kind: 'installing', step: 'copying' });
-      const s = await deps.install({ packRoot, onProgress: (step) => onProgress?.({ kind: 'installing', step }) });
+      let s = await deps.install({ packRoot, grant: opts.grant, onProgress: (step) => onProgress?.({ kind: 'installing', step }) });
+      if (s.kind === 'error' && s.permission && !opts.grant) {
+        // A launch-time write macOS refused: no dialog without a click, so
+        // flag it and hand back what is on disk (the launch goes ahead with
+        // whatever helper is there).
+        grantNeeded = true;
+        s = await refreshInstall();
+      } else if (s.kind === 'found' && s.modInstalled && s.enabled) {
+        grantNeeded = false;
+      }
       lastInstall = s;
       onProgress?.(s);
       onUpdate?.(tagged());
