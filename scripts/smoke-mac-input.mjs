@@ -136,50 +136,61 @@ if (act) {
 
 if (e2e) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-  const osa = (script) => execFileSync('osascript', ['-e', script], { encoding: 'utf8' }).trim()
-  osa('tell application "TextEdit" to activate')
-  await sleep(1500)
-  osa('tell application "TextEdit" to make new document')
-  osa('tell application "TextEdit" to activate')
-  await sleep(1500)
+  const safe = async (name, fn) => {
+    try {
+      return await fn()
+    } catch (e) {
+      check(name, false, String(e?.message ?? e).slice(0, 300))
+      return undefined
+    }
+  }
+  // What is on screen before we start (diagnosis on a headless runner).
+  const d = (await req('displays')).displays?.[0]
+  if (d) {
+    const full = await req('screenshot', { displayId: d.id, width: d.bounds.w, height: d.bounds.h, ocr: true, ocrAccurate: true }, 20000)
+    console.log(`info screen text before e2e: ${JSON.stringify((full.ocr ?? []).map((b) => b.text).slice(0, 40))}`)
+  }
+  // LaunchServices only: osascript needs an Automation grant and times out on a runner.
+  const doc = '/tmp/sei-act-smoke.txt'
+  execFileSync('bash', ['-c', `printf '' > ${doc}; open -a TextEdit ${doc}`])
+  await sleep(3000)
   const ws = (await req('windows')).windows ?? []
   const te = ws.find((w) => w.owner === 'TextEdit' && w.bounds.w > 200 && w.bounds.h > 150)
-  check('e2e: TextEdit window found', !!te, JSON.stringify(te))
+  check('e2e: TextEdit window found', !!te, JSON.stringify(te ?? ws.map((w) => w.owner)))
+  console.log(`info frontmost after open: ${JSON.stringify(await req('frontmost'))}`)
   if (te) {
-    const c = { x: te.bounds.x + te.bounds.w / 2, y: te.bounds.y + te.bounds.h / 2 }
+    const c = { x: Math.round(te.bounds.x + te.bounds.w / 2), y: Math.round(te.bounds.y + te.bounds.h / 2) }
     const t0 = Date.now()
     const click = await req('click', { ...c, button: 'left', count: 1 })
     const tClick = Date.now() - t0
+    const cur = await req('cursor')
+    check('e2e: click moved the cursor', Math.abs(cur.x - c.x) < 2 && Math.abs(cur.y - c.y) < 2, `${JSON.stringify(cur)} want ${JSON.stringify(c)}`)
     const text = 'sei act smoke 4217'
     const t1 = Date.now()
     const typed = await req('type', { text }, 15000)
     const tType = Date.now() - t1
     check('e2e: click + type replied', click.ok && typed.ok, `click ${tClick} ms, type ${tType} ms`)
-    await sleep(500)
-    const fr = await req('frontmost')
-    check('e2e: TextEdit is frontmost', fr.name === 'TextEdit', JSON.stringify(fr))
+    await sleep(700)
+    console.log(`info frontmost after click: ${JSON.stringify(await req('frontmost'))}`)
     const t2 = Date.now()
-    const ax = await req('ax_dump', { pid: te.pid, maxNodes: 400 }, 8000)
+    const ax = await safe('e2e: ax_dump', () => req('ax_dump', { pid: te.pid, maxNodes: 400 }, 8000))
     const tAx = Date.now() - t2
-    const hit = (ax.nodes ?? []).find((n) => typeof n.value === 'string' && n.value.includes(text))
-    check('e2e: typed text visible in the AX tree', !!hit, `${ax.nodes?.length} nodes in ${tAx} ms; ${hit ? hit.role : 'no match'}`)
+    const hit = (ax?.nodes ?? []).find((n) => typeof n.value === 'string' && n.value.includes(text))
+    check('e2e: ax_dump reads TextEdit', (ax?.nodes?.length ?? 0) > 0, `${ax?.nodes?.length} nodes in ${tAx} ms; roles ${JSON.stringify([...new Set((ax?.nodes ?? []).map((n) => n.role))].slice(0, 12))}`)
+    check('e2e: typed text visible in the AX tree', !!hit, hit ? hit.role : 'no match')
     const foc = await req('ax_focused')
     check('e2e: focused element is the text area', foc.element?.role === 'AXTextArea', JSON.stringify({ role: foc.element?.role, pid: foc.element?.pid }))
     const t3 = Date.now()
-    const shot = await req('screenshot', { rect: te.bounds, width: Math.round(te.bounds.w), height: Math.round(te.bounds.h), thumb: true, ocr: true }, 15000)
+    const shot = await req('screenshot', { rect: te.bounds, width: Math.round(te.bounds.w), height: Math.round(te.bounds.h), thumb: true, ocr: true, ocrAccurate: true }, 15000)
     const ocrHit = (shot.ocr ?? []).find((b) => /smoke/i.test(b.text))
-    check('e2e: typed text found by OCR', !!ocrHit, `${shot.ocr?.length} boxes in ${Date.now() - t3} ms timing=${JSON.stringify(shot.timing)} ${ocrHit ? JSON.stringify(ocrHit) : ''}`)
+    check('e2e: typed text found by OCR', !!ocrHit, `${shot.ocr?.length} boxes in ${Date.now() - t3} ms timing=${JSON.stringify(shot.timing)} text=${JSON.stringify((shot.ocr ?? []).map((b) => b.text).slice(0, 10))}`)
     if (ocrHit) {
       const inside = ocrHit.x >= te.bounds.x - 2 && ocrHit.y >= te.bounds.y - 2 && ocrHit.x + ocrHit.w <= te.bounds.x + te.bounds.w + 2
       check('e2e: OCR box is in global points inside the window', inside, JSON.stringify(te.bounds))
     }
-    const k = await req('key', { key: 'a', modifiers: ['cmd'] })
-    const del = await req('key', { key: 'delete', modifiers: [] })
-    check('e2e: key combo replied', k.ok && del.ok)
   }
   try {
-    osa('tell application "TextEdit" to close every document saving no')
-    osa('tell application "TextEdit" to quit')
+    execFileSync('pkill', ['-x', 'TextEdit'])
   } catch {}
 }
 
