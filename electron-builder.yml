@@ -321,6 +321,11 @@ mac:
   # grant, not by an entitlement, and screenshots ride the Screen Recording
   # grant backseat already asks for. Which process macOS attributes the child's
   # events to (Sei.app vs the helper) is the open question the Mac step answers.
+  # It builds on every mac release, flag or not, but a compile failure is NOT
+  # fatal: build-mac-input.sh leaves resources/mac-input absent (with a CI
+  # ::warning), electron-builder skips a missing `from` dir with a warning, and
+  # the app then reports control unavailable (actSession.controlAvailability).
+  # CI's mac-input-helper job builds it strict, so a break shows up on the PR.
   extraResources:
     - from: resources/audio-tap
       to: audio-tap

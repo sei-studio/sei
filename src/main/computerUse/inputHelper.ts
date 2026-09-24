@@ -11,6 +11,7 @@
  * rejects without waiting, so a stop never queues behind a drag or a held key.
  */
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { AbortError, abortable } from './abortable';
@@ -20,8 +21,8 @@ import type { AppInfo, AxNode, DisplayInfo, OcrBox, Permissions, Rect, WindowInf
 export const READY_TIMEOUT_MS = 5000;
 export const QUERY_TIMEOUT_MS = 4000;
 export const SCREENSHOT_TIMEOUT_MS = 10000;
-/** Generous: a hold can legitimately run 10 s, and a long type on a slow Mac longer. */
-export const ACT_TIMEOUT_MS = 30000;
+/** Generous against the per-action caps: a hold runs at most 3 s and a type at most 200 characters (about 6 s). */
+export const ACT_TIMEOUT_MS = 15000;
 
 export interface HelperShot {
   data: string;
@@ -71,7 +72,12 @@ export interface InputExecutor {
   axDump(pid: number, opts?: { maxNodes?: number; maxDepth?: number }, signal?: AbortSignal): Promise<AxNode[]>;
   /** The element with keyboard focus, system wide. */
   axFocused(signal?: AbortSignal): Promise<AxNode | null>;
-  watch(enabled: boolean): Promise<void>;
+  /**
+   * Arm or disarm the player-input watcher. Arming resolves with the mode the
+   * helper runs ('tap': tagged-event tap, the only mode the loop accepts) and
+   * rejects when it cannot watch at all.
+   */
+  watch(enabled: boolean): Promise<{ mode: string | null }>;
   onUserInput(cb: (e: UserInputEvent) => void): () => void;
   dispose(): void;
 }
@@ -85,6 +91,19 @@ export function helperPath(isPackaged: boolean, resourcesPath: string, appPath: 
   return isPackaged
     ? path.join(resourcesPath, 'mac-input', 'sei-mac-input')
     : path.join(appPath, 'resources', 'mac-input', 'sei-mac-input');
+}
+
+/**
+ * Whether the helper binary is there. A mac release whose helper failed to
+ * compile ships without it (scripts/build-mac-input.sh), and the feature then
+ * reports unavailable instead of failing at the first control() call.
+ */
+export function helperAvailable(bin: string, exists: (p: string) => boolean = existsSync): boolean {
+  try {
+    return exists(bin);
+  } catch {
+    return false;
+  }
 }
 
 export class MacInputHelper implements InputExecutor {
@@ -285,8 +304,9 @@ export class MacInputHelper implements InputExecutor {
     };
   }
 
-  async watch(enabled: boolean): Promise<void> {
-    await this.request('watch', { enabled });
+  async watch(enabled: boolean): Promise<{ mode: string | null }> {
+    const r = await this.request('watch', { enabled });
+    return { mode: typeof r.mode === 'string' ? r.mode : null };
   }
 
   onUserInput(cb: (e: UserInputEvent) => void): () => void {

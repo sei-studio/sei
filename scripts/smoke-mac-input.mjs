@@ -3,11 +3,19 @@
 // binary, drives every query over the JSON-lines protocol and prints what came
 // back. Used by the macOS CI job and by hand on a Mac:
 //
-//   node scripts/smoke-mac-input.mjs [path/to/sei-mac-input] [--act] [--e2e]
+//   node scripts/smoke-mac-input.mjs [path/to/sei-mac-input] [--act] [--e2e] [--abort]
 //
 // --e2e (CI only, it drives TextEdit): opens a new TextEdit document, clicks
 // into it, types a line, and checks the text arrived through the AX tree and
 // through OCR. Never run it on a machine someone is using.
+//
+// --abort (CI only, it types into TextEdit): the player-takes-over check.
+// Arms the watcher, checks that our own click and a long type do NOT trip it
+// (every event we post is tagged), then starts a long type and a hold and
+// injects one UNTAGGED key or mouse event through the helper's test-only
+// test_user_event command (SEI_MAC_INPUT_TEST=1, set here and never by Sei).
+// The action must end as cancelled by user input within ABORT_MAX_MS on the
+// helper's own clock, and a user_input event must arrive.
 //
 // Queries must answer. Injection is only exercised with --act (it moves the
 // real cursor): a CI runner has no Accessibility grant, so posted events are
@@ -20,13 +28,19 @@ import { execFileSync } from 'node:child_process'
 const args = process.argv.slice(2)
 const act = args.includes('--act')
 const e2e = args.includes('--e2e')
+const abortCheck = args.includes('--abort')
+const ABORT_MAX_MS = 100
 const bin = args.find((a) => !a.startsWith('--')) ?? 'resources/mac-input/sei-mac-input'
 if (!existsSync(bin)) {
   console.error(`missing helper binary: ${bin}`)
   process.exit(1)
 }
 
-const child = spawn(bin, [], { stdio: ['pipe', 'pipe', 'pipe'] })
+const child = spawn(bin, [], {
+  stdio: ['pipe', 'pipe', 'pipe'],
+  env: abortCheck ? { ...process.env, SEI_MAC_INPUT_TEST: '1' } : process.env,
+})
+const userInputs = []
 child.stderr.on('data', (d) => process.stderr.write(`[helper] ${d}`))
 let buf = ''
 const pending = new Map()
@@ -41,7 +55,10 @@ child.stdout.on('data', (d) => {
     if (!line) continue
     const msg = JSON.parse(line)
     if (msg.event === 'ready') ready(msg)
-    else if (msg.event) console.log('event', msg)
+    else if (msg.event === 'user_input') {
+      userInputs.push({ ...msg, recvAt: Date.now() })
+      console.log('event', msg)
+    } else if (msg.event) console.log('event', msg)
     else pending.get(msg.id)?.(msg)
   }
 })
@@ -104,6 +121,14 @@ check('bad action rejected', bad.ok === false, bad.error)
 
 const unknown = await req('frobnicate')
 check('unknown command rejected', unknown.ok === false, unknown.error)
+
+if (!abortCheck) {
+  const gated = await req('test_user_event', { kind: 'key' })
+  check('test_user_event needs SEI_MAC_INPUT_TEST', gated.ok === false, gated.error)
+}
+
+const tooLong = await req('type', { text: 'x'.repeat(201) })
+check('type over 200 characters rejected', tooLong.ok === false && /too long/.test(tooLong.error), tooLong.error)
 
 const wait = req('wait', { ms: 3000 })
 await new Promise((r) => setTimeout(r, 100))
@@ -188,6 +213,66 @@ if (e2e) {
       const inside = ocrHit.x >= te.bounds.x - 2 && ocrHit.y >= te.bounds.y - 2 && ocrHit.x + ocrHit.w <= te.bounds.x + te.bounds.w + 2
       check('e2e: OCR box is in global points inside the window', inside, JSON.stringify(te.bounds))
     }
+  }
+  try {
+    execFileSync('pkill', ['-x', 'TextEdit'])
+  } catch {}
+}
+
+if (abortCheck) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  // Somewhere harmless for the keys to land.
+  const doc = '/tmp/sei-act-abort.txt'
+  execFileSync('bash', ['-c', `printf '' > ${doc}; open -a TextEdit ${doc}`])
+  await sleep(3000)
+  const ws = (await req('windows')).windows ?? []
+  const te = ws.find((w) => w.owner === 'TextEdit' && w.bounds.w > 200 && w.bounds.h > 150)
+  console.log(`info abort: TextEdit window ${JSON.stringify(te?.bounds ?? null)}`)
+
+  const arm = async () => {
+    const w = await req('watch', { enabled: true })
+    check('abort: watcher armed with the event tap', w.ok && w.mode === 'tap', JSON.stringify(w))
+    return w.ok
+  }
+
+  if (await arm()) {
+    // 1. Our own input must not trip it: a click (cursor move + button) and a
+    //    long type, all tagged.
+    const before = userInputs.length
+    if (te) {
+      const c = { x: Math.round(te.bounds.x + te.bounds.w / 2), y: Math.round(te.bounds.y + te.bounds.h / 2) }
+      const click = await req('click', { ...c, button: 'left', count: 1 })
+      check('abort: our click completes with the watcher armed', click.ok, JSON.stringify(click))
+    }
+    const own = await req('type', { text: 'our own typing does not count as the player. '.repeat(3).slice(0, 140) }, 20000)
+    await sleep(300)
+    check('abort: our long type completes with the watcher armed', own.ok, JSON.stringify(own))
+    check('abort: no user_input from our own events', userInputs.length === before, JSON.stringify(userInputs.slice(before)))
+
+    // 2. The player mid-action: an untagged event during a long type (key,
+    //    then mouse) and during a hold.
+    const trial = async (name, start, kind) => {
+      if (!(await arm())) return
+      const seen = userInputs.length
+      const pending = start()
+      await sleep(400)
+      const posted = await req('test_user_event', { kind })
+      const res = await pending
+      const helperMs = (res.at - posted.at) * 1000
+      await sleep(100)
+      check(
+        `abort: ${name} cancelled by an untagged ${kind} event`,
+        res.ok === false && /user input/.test(res.error ?? ''),
+        JSON.stringify({ error: res.error, ranMs: res.ms }),
+      )
+      check(`abort: ${name} stopped within ${ABORT_MAX_MS} ms`, Number.isFinite(helperMs) && helperMs >= 0 && helperMs < ABORT_MAX_MS, `${helperMs.toFixed(1)} ms on the helper clock`)
+      check(`abort: ${name} reported user_input`, userInputs.length === seen + 1, JSON.stringify(userInputs.slice(seen)))
+    }
+    await trial('type', () => req('type', { text: 'a'.repeat(200) }, 20000), 'key')
+    await trial('type', () => req('type', { text: 'b'.repeat(200) }, 20000), 'mouse')
+    await trial('hold', () => req('hold', { key: 'shift', ms: 3000 }, 20000), 'key')
+    const off = await req('watch', { enabled: false })
+    check('abort: watcher disarms', off.ok)
   }
   try {
     execFileSync('pkill', ['-x', 'TextEdit'])

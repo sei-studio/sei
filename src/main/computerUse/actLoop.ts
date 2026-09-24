@@ -165,8 +165,13 @@ export interface ActEnv {
   perceive?(frame: Frame, signal: AbortSignal, hints: { afterTyping: boolean }): Promise<Perception | null>;
   /** Scope check against the screen as it is now. */
   scope(touch: ActionTouch, signal: AbortSignal): Promise<ScopeResult>;
-  /** The element with keyboard focus (AX), for the password-field guard. */
+  /**
+   * The element with keyboard focus (AX), for the typing guard. Text entry is
+   * refused when this is absent, fails, or returns null (fail closed).
+   */
   focused?(signal: AbortSignal): Promise<AxNode | null>;
+  /** Pid of the shared app. When set, text entry needs the focused element to belong to it. */
+  targetPid?: number;
   onEvent(e: ActEvent): void;
   policy?: PickPolicy;
   now?: () => number;
@@ -283,10 +288,17 @@ export class ActRun {
       this.stop('user_input', e.kind === 'key' ? 'keyboard' : 'mouse'),
     );
     try {
-      await abortable(env.executor.watch(true), signal).catch((e) => {
-        if (isAbortError(e)) throw e;
-        env.onEvent({ type: 'log', msg: `watch failed: ${String(e)}` });
+      // Fail closed: without the tagged-event watcher the player could not
+      // take over mid-action, so nothing is driven.
+      const watch = await abortable(env.executor.watch(true), signal).catch((e) => {
+        if (isAbortError(e) || signal.aborted) throw e;
+        return { mode: null, error: String(e) };
       });
+      if (watch.mode !== 'tap') {
+        const why = 'error' in watch ? watch.error : `watch mode ${watch.mode ?? 'none'}`;
+        env.onEvent({ type: 'log', msg: `input watch unavailable (${why}), not driving` });
+        return end('error', "Could not watch the mouse and keyboard for the player taking over, so I did not touch anything.", `ACT_NO_INPUT_WATCH: ${why}`);
+      }
 
       for (;;) {
         if (signal.aborted) return end(this.stopReason, stopSummary());
@@ -459,14 +471,30 @@ export class ActRun {
           forceVision = true;
           continue;
         }
-        if (m.touch.typing && env.focused) {
-          const f = await abortable(env.focused(signal), signal).catch((e) => {
-            if (isAbortError(e) || signal.aborted) throw e;
-            return null;
-          });
-          if (f?.subrole === 'AXSecureTextField') {
+        if (m.touch.typing) {
+          // Fail closed: text goes nowhere unless we can see where it goes.
+          const f = env.focused
+            ? await abortable(env.focused(signal), signal).catch((e) => {
+                if (isAbortError(e) || signal.aborted) throw e;
+                return null;
+              })
+            : null;
+          if (!f) {
+            finishStep(false, 'refused: could not read which field has keyboard focus');
+            return end('gave_up', 'I could not tell which field the typing would go into, so I did not type. The player needs to type it.');
+          }
+          if (f.subrole === 'AXSecureTextField') {
             finishStep(false, 'refused: keyboard focus is in a password field');
             return end('gave_up', 'It needs a password typed in, and that is for the player to do.');
+          }
+          if (env.targetPid !== undefined && f.pid !== env.targetPid) {
+            scopeRefusals += 1;
+            const why = 'keyboard focus is not in the shared app';
+            finishStep(false, `refused: ${why}`);
+            if (scopeRefusals >= L.maxScopeRefusals) return end('scope', `Kept trying to type outside what was shared: ${why}.`);
+            notes.push(`That was not typed: ${why}. Click the field in the shared window first.`);
+            forceVision = true;
+            continue;
           }
         }
         const sc = await abortable(env.scope(m.touch, signal), signal);

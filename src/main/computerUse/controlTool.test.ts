@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { actFlagFromEnv, CONTROL_TOOL, controlEventNote, controlGoal } from './controlTool';
+import { actFlagFromEnv, CONTROL_TOOL, controlCall, controlEventNote, controlGoal } from './controlTool';
 import { normalizeKey, parseCombo } from './keys';
 
 describe('control tool', () => {
@@ -12,6 +12,15 @@ describe('control tool', () => {
     expect(controlGoal([{ type: 'text' }, { type: 'tool_use', name: 'control', input: { goal: '  open settings ' } }])).toBe('open settings');
     expect(controlGoal([{ type: 'tool_use', name: 'remember', input: { text: 'x' } }])).toBeNull();
     expect(controlGoal([{ type: 'tool_use', name: 'control', input: { goal: '' } }])).toBeNull();
+  });
+  it('reads the optional request quote', () => {
+    expect(CONTROL_TOOL.input_schema).toMatchObject({ properties: { request: { type: 'string' } } });
+    expect(controlCall([{ type: 'tool_use', name: 'control', input: { goal: 'open settings', request: ' open the settings ' } }])).toEqual({
+      goal: 'open settings',
+      request: 'open the settings',
+    });
+    expect(controlCall([{ type: 'tool_use', name: 'control', input: { goal: 'open settings', request: '' } }])).toEqual({ goal: 'open settings' });
+    expect(controlCall([{ type: 'tool_use', name: 'control', input: { goal: 'open settings', request: 5 } }])).toEqual({ goal: 'open settings' });
   });
   it('writes the completion event plainly', () => {
     const n = controlEventNote('open settings', { status: 'gave_up', steps: 1, summary: 'It needs a password' });

@@ -26,9 +26,11 @@ const deferred = (): Deferred => {
 };
 
 const helpers: Array<{ disposed: boolean; gate: Deferred }> = [];
+let helperThere = true;
 
 vi.mock('./inputHelper', () => ({
   helperPath: () => '/bin/helper',
+  helperAvailable: () => helperThere,
   MacInputHelper: {
     start: async () => {
       const rec = { disposed: false, gate: deferred() };
@@ -42,7 +44,7 @@ vi.mock('./inputHelper', () => ({
         },
         windows: async () => [{ id: 77, pid: 9, layer: 0, alpha: 1, onScreen: true, bounds: { x: 0, y: 0, w: 800, h: 600 } }],
         displays: async () => [{ id: 1, bounds: { x: 0, y: 0, w: 1440, h: 900 }, scale: 2, main: true }],
-        watch: () => new Promise(() => {}),
+        watch: () => new Promise<{ mode: string | null }>(() => {}),
         onUserInput: () => () => {},
         cancel: async () => {},
         releaseAll: async () => {},
@@ -54,7 +56,7 @@ vi.mock('./inputHelper', () => ({
   },
 }));
 
-import { ACT_CANCELLED, isActing, startControl, stopAct } from './actSession';
+import { ACT_CANCELLED, controlAvailability, isActing, startControl, stopAct } from './actSession';
 
 const opts = (characterId: string) => ({
   characterId,
@@ -62,6 +64,8 @@ const opts = (characterId: string) => ({
   sourceId: 'window:77:0',
   sourceName: 'Safari',
   goal: 'open the settings',
+  origin: 'asked' as const,
+  request: 'open the settings',
   speak: () => {},
   log: () => {},
 });
@@ -71,6 +75,7 @@ const tick = () => new Promise((r) => setTimeout(r, 5));
 describe('startControl start window', () => {
   beforeEach(() => {
     helpers.length = 0;
+    helperThere = true;
   });
 
   it('a stop during the start cancels it: no run, helper disposed', async () => {
@@ -96,5 +101,39 @@ describe('startControl start window', () => {
     expect(isActing('c1')).toBe(false);
     expect(isActing('c2')).toBe(true);
     stopAct('c2');
+  });
+});
+
+describe('control availability (M0: window shares only)', () => {
+  beforeEach(() => {
+    helpers.length = 0;
+    helperThere = true;
+  });
+
+  it('is offered on a window share with the helper present', () => {
+    expect(controlAvailability('window:77:0')).toEqual({ ok: true });
+  });
+
+  it('is not offered on a whole-screen share', () => {
+    expect(controlAvailability('screen:1:0')).toEqual({ ok: false, why: 'not_window' });
+  });
+
+  it('is not offered when the helper was not bundled', () => {
+    helperThere = false;
+    expect(controlAvailability('window:77:0')).toEqual({ ok: false, why: 'helper_missing' });
+  });
+
+  it('startControl refuses a screen share without spawning the helper', async () => {
+    await expect(startControl({ ...opts('c3'), sourceId: 'screen:1:0' })).resolves.toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/^ACT_SCREEN_SHARE/),
+    });
+    expect(helpers).toHaveLength(0);
+  });
+
+  it('startControl refuses when the helper is missing', async () => {
+    helperThere = false;
+    await expect(startControl(opts('c4'))).resolves.toEqual({ ok: false, error: 'ACT_HELPER_MISSING' });
+    expect(helpers).toHaveLength(0);
   });
 });

@@ -50,7 +50,7 @@ export function historyText(history: HistoryEntry[], keep: number): string {
 /** The user message for one step (exported for tests). */
 export function buildStepContent(state: ChooseState, options: ActOption[], history: HistoryEntry[], keep = 12): Block[] {
   const lines: string[] = [];
-  lines.push(`The player asked: "${state.goal.trim()}"`);
+  lines.push(`Goal: ${state.goal.trim()}`);
   lines.push(`Steps so far:\n${historyText(history, keep)}`);
   for (const n of state.notes) lines.push(n);
   for (const l of state.playerLines) lines.push(`The player just said: "${l}"`);

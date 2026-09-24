@@ -19,6 +19,15 @@ import { parseCombo, normalizeKey, type HelperModifier } from './keys';
 import type { Frame, Point } from './types';
 
 const coord = z.number().finite();
+
+/**
+ * Per-action caps (the helper enforces the same numbers). One action is one
+ * burst between checks, so they stay short: 200 characters is about 6 s of
+ * typing, and a key held longer than 3 s is a game input that should be
+ * several steps anyway.
+ */
+export const TYPE_MAX_CHARS = 200;
+export const HOLD_MAX_MS = 3000;
 const xy = { x: coord, y: coord };
 
 export const ActionSchemas = {
@@ -32,8 +41,8 @@ export const ActionSchemas = {
     amount: z.number().int().min(1).max(15).default(3),
   }),
   key: z.object({ keys: z.string().min(1).max(60) }),
-  hold_key: z.object({ key: z.string().min(1).max(30), ms: z.number().int().min(20).max(10_000) }),
-  type: z.object({ text: z.string().min(1).max(500) }),
+  hold_key: z.object({ key: z.string().min(1).max(30), ms: z.number().int().min(20).max(HOLD_MAX_MS) }),
+  type: z.object({ text: z.string().min(1).max(TYPE_MAX_CHARS) }),
   wait: z.object({ ms: z.number().int().min(50).max(5000) }),
   choose: z.object({ index: z.number().int().min(0) }),
   say: z.object({ text: z.string().min(1).max(300) }),
@@ -103,17 +112,17 @@ export const ACT_TOOLS: LlmToolDef[] = [
   },
   {
     name: 'hold_key',
-    description: 'Hold one key down for some milliseconds, then release it. For movement keys in games.',
+    description: 'Hold one key down for some milliseconds (at most 3000), then release it. For movement keys in games.',
     input_schema: {
       type: 'object',
-      properties: { key: { type: 'string' }, ms: { type: 'integer', minimum: 20, maximum: 10000 } },
+      properties: { key: { type: 'string' }, ms: { type: 'integer', minimum: 20, maximum: HOLD_MAX_MS } },
       required: ['key', 'ms'],
     },
   },
   {
     name: 'type',
-    description: 'Type text into whatever has keyboard focus, one field at a time. A newline at the very end presses Return. No tabs or other newlines: press those with key, as their own step.',
-    input_schema: { type: 'object', properties: { text: { type: 'string', maxLength: 500 } }, required: ['text'] },
+    description: 'Type text into whatever has keyboard focus, one field at a time, at most 200 characters per call. A newline at the very end presses Return. No tabs or other newlines: press those with key, as their own step.',
+    input_schema: { type: 'object', properties: { text: { type: 'string', maxLength: TYPE_MAX_CHARS } }, required: ['text'] },
   },
   {
     name: 'wait',

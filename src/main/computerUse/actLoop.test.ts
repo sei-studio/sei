@@ -15,6 +15,8 @@ class FakeExecutor implements InputExecutor {
   cancels = 0;
   releases = 0;
   watching: boolean[] = [];
+  watchMode: string | null = 'tap';
+  watchError: string | null = null;
   private listeners = new Set<(e: UserInputEvent) => void>();
   actImpl: (c: HelperCommand, signal?: AbortSignal) => Promise<{ ms: number }> = async () => ({ ms: 1 });
   async act(c: HelperCommand, signal?: AbortSignal) {
@@ -53,6 +55,8 @@ class FakeExecutor implements InputExecutor {
   }
   async watch(on: boolean) {
     this.watching.push(on);
+    if (on && this.watchError) throw new Error(this.watchError);
+    return { mode: on ? this.watchMode : null };
   }
   onUserInput(cb: (e: UserInputEvent) => void) {
     this.listeners.add(cb);
@@ -255,6 +259,71 @@ describe('ActRun', () => {
     expect(out).toMatchObject({ reason: 'gave_up' });
     expect(out.summary).toMatch(/password/);
     expect(ex.acts).toHaveLength(0);
+  });
+
+  it('refuses to type when the focused element cannot be read (fail closed)', async () => {
+    for (const focused of [undefined, async () => null, async (): Promise<AxNode | null> => { throw new Error('AX timeout'); }]) {
+      const { env, ex } = makeEnv({
+        vision: scripted('vision', [{ action: { name: 'type', input: { text: 'hello' } } }]),
+        ...(focused ? { focused } : {}),
+      });
+      const out = await new ActRun(env, { settleMs: 0 }).run();
+      expect(out).toMatchObject({ reason: 'gave_up', status: 'gave_up' });
+      expect(out.summary).toMatch(/player needs to type it/);
+      expect(out.history[0]!.result).toMatch(/could not read which field/);
+      expect(ex.acts).toHaveLength(0);
+    }
+  });
+
+  it('bare printable keys go through the same focus guard', async () => {
+    const { env, ex } = makeEnv({ vision: scripted('vision', [{ action: { name: 'key', input: { keys: 'a' } } }]), focused: async () => null });
+    const out = await new ActRun(env, { settleMs: 0 }).run();
+    expect(out.reason).toBe('gave_up');
+    expect(ex.acts).toHaveLength(0);
+  });
+
+  it('refuses to type into an app other than the shared one, and says so to the chooser', async () => {
+    const other: AxNode = { depth: 0, parent: -1, role: 'AXTextField', pid: 99 };
+    const vision = scripted('vision', [{ action: { name: 'type', input: { text: 'hello' } } }, done]);
+    const { env, ex } = makeEnv({ vision, focused: async () => other, targetPid: 42 });
+    const out = await new ActRun(env, { settleMs: 0 }).run();
+    expect(ex.acts).toHaveLength(0);
+    expect(out.history[0]!.result).toMatch(/not in the shared app/);
+    expect(vision.calls[1]!.state.notes.join(' ')).toMatch(/Click the field in the shared window/);
+    expect(out.reason).toBe('done');
+  });
+
+  it('counts wrong-app focus as a scope refusal', async () => {
+    const { env, ex } = makeEnv({
+      vision: scripted('vision', [{ action: { name: 'type', input: { text: 'hello' } } }]),
+      focused: async () => ({ depth: 0, parent: -1, role: 'AXTextField' }),
+      targetPid: 42,
+    });
+    const out = await new ActRun(env, { settleMs: 0, maxScopeRefusals: 2 }).run();
+    expect(out).toMatchObject({ reason: 'scope', steps: 2 });
+    expect(ex.acts).toHaveLength(0);
+  });
+
+  it('types when focus is a normal field in the shared app', async () => {
+    const mine: AxNode = { depth: 0, parent: -1, role: 'AXTextField', pid: 42 };
+    const { env, ex } = makeEnv({ vision: scripted('vision', [{ action: { name: 'type', input: { text: 'hello' } } }, done]), focused: async () => mine, targetPid: 42 });
+    const out = await new ActRun(env, { settleMs: 0 }).run();
+    expect(ex.acts[0]).toEqual({ cmd: 'type', text: 'hello' });
+    expect(out.reason).toBe('done');
+  });
+
+  it('does not drive at all without the tagged-event watcher (fail closed)', async () => {
+    for (const setup of [(ex: FakeExecutor) => (ex.watchMode = null), (ex: FakeExecutor) => (ex.watchError = 'could not create the input event tap')]) {
+      const vision = scripted('vision', [click]);
+      const { env, ex, events } = makeEnv({ vision });
+      setup(ex);
+      const out = await new ActRun(env, { settleMs: 0 }).run();
+      expect(out).toMatchObject({ reason: 'error', status: 'aborted', steps: 0 });
+      expect(out.error).toMatch(/ACT_NO_INPUT_WATCH/);
+      expect(vision.calls).toHaveLength(0);
+      expect(ex.acts).toHaveLength(0);
+      expect(events.some((e) => e.type === 'log' && /input watch unavailable/.test(e.msg))).toBe(true);
+    }
   });
 
   it('refuses blocked combos without sending them and keeps going', async () => {

@@ -62,7 +62,8 @@ import * as chatStore from '../chat/chatStore';
 import type { LogBatch } from '../../shared/ipc';
 import { BACKSEAT_CONTRACT, SAVE_CLIP_TOOL, stripDashes, tickNote } from './backseatPrompts';
 import { createBackseatLog, NULL_BACKSEAT_LOG, type BackseatLog } from './backseatLog';
-import { actFlagFromEnv, CONTROL_TOOL, controlEventNote, controlGoal } from '../computerUse/controlTool';
+import { actFlagFromEnv, CONTROL_TOOL, controlCall, controlEventNote } from '../computerUse/controlTool';
+import { ControlGate, type ControlOrigin } from '../computerUse/controlPolicy';
 import type { ActOutcome } from '../computerUse/actLoop';
 
 /**
@@ -83,6 +84,18 @@ const CLIP_TIMEOUT_MS = 12_000;
 /** The one surface constant that is genuinely a per-surface tier: backseat
  *  runs at the reactive tier like chat, chess and voice. */
 const BACKSEAT_PROACTIVENESS = 1;
+
+/**
+ * The tool array for a session, fixed when the session starts (260925 act).
+ * control() is on it only for a WINDOW share with the flag on and the helper
+ * bundled (controlAvailability). Tools render at the head of the cached
+ * prefix, so an array that changed between ticks (say, control() only on
+ * user ticks) would make every switch a full cache miss. The share kind
+ * cannot change inside a session, so one decision at start holds for every
+ * tick kind; whether a call RUNS is decided later, per call (ControlGate).
+ */
+const TOOLS_BASE = [SAVE_CLIP_TOOL, REMEMBER_TOOL];
+const TOOLS_WITH_CONTROL = [SAVE_CLIP_TOOL, REMEMBER_TOOL, CONTROL_TOOL];
 
 export interface BackseatDeps {
   /** `speech` (260806): set on a voice-mode reply's per-part pushes — prosody
@@ -156,6 +169,10 @@ interface Session {
   prevGrid: { data: string; at: number } | null;
   /** Per-session log into the in-app console + a rolling file (backseatLog). */
   log: BackseatLog;
+  /** 260925 act: control() is on this session's tool array (see TOOLS_WITH_CONTROL). */
+  controlOffered: boolean;
+  /** 260925 act: the pending "want me to ...?" offer, settled by the player's next line. */
+  control: ControlGate;
 }
 
 const sessions = new Map<string, Session>();
@@ -230,6 +247,9 @@ export async function startBackseat(
 
   const character = await getCharacter(characterId);
   const log = await createBackseatLog(characterId, deps?.pushLog ?? (() => {}));
+  const control = actFlagFromEnv()
+    ? (await import('../computerUse/actSession')).controlAvailability(sourceId)
+    : ({ ok: false, why: 'flag_off' } as const);
   const s: Session = {
     characterId,
     sourceId,
@@ -251,9 +271,12 @@ export async function startBackseat(
     historyAnchor: -1,
     prevGrid: null,
     log,
+    controlOffered: control.ok,
+    control: new ControlGate(),
   };
   sessions.set(characterId, s);
   slog(s, `session start: mode=${mode}, source="${sourceName}"`);
+  if (actFlagFromEnv()) slog(s, control.ok ? 'control: offered (window share)' : `control: not offered (${control.why})`);
   // 260803: main no longer opens a window here. The renderer starts capture
   // itself right after this resolves (useBackseatStore.share), which is what
   // lets the share be a call control rather than a launch.
@@ -567,7 +590,23 @@ export async function handleTick(tick: BackseatTick): Promise<void> {
     d.pushLine(s.characterId, line);
   }
 
-  let extraNote: string | undefined;
+  const notes: string[] = [];
+  // 260925 act: the player's line settles a pending "want me to ...?" offer
+  // (controlPolicy). Only a plain yes, and only this next line, starts it.
+  let confirmedThisTurn = false;
+  if (isUser && s.controlOffered) {
+    const r = s.control.onUserLine(tick.text);
+    if (r.kind !== 'none') slog(s, `control offer "${r.goal.slice(0, 120)}": ${r.kind}`);
+    if (r.kind === 'affirmed') {
+      confirmedThisTurn = true;
+      void beginControl(s, r.goal, { origin: 'confirmed' });
+      notes.push(
+        `[System note, not the player speaking: you offered to "${r.goal}" and they said yes, so it is starting now in the background. Do not call control for it again.]`,
+      );
+    } else if (r.kind === 'declined') {
+      notes.push(`[System note, not the player speaking: you offered to "${r.goal}" and they did not say yes, so it was not done.]`);
+    }
+  }
   if (acting && isUser) {
     const { actPlayerLine, actingGoal } = await import('../computerUse/actSession');
     const goal = actingGoal(s.characterId);
@@ -576,16 +615,18 @@ export async function handleTick(tick: BackseatTick): Promise<void> {
     // A stop word stopped the run mechanically; the completion event turn
     // is the reply, so this line does not get a second one.
     if (r === 'stopped') return;
-    extraNote =
+    notes.push(
       `[System note, not the player speaking: you are controlling their computer right now for "${goal ?? ''}", and it keeps running while you talk.` +
-      ` Their line is also passed to it. Call control again only if they want something different done.]`;
+      ` Their line is also passed to it. Call control again only if they want something different done.]`,
+    );
   }
+  const extraNote = notes.length ? notes.join('\n\n') : undefined;
 
   const ctrl = new AbortController();
   s.inflight = ctrl;
   s.inflightKind = tick.kind;
   try {
-    await runTurn(s, tick, ctrl, { extraNote });
+    await runTurn(s, tick, ctrl, { extraNote, confirmedThisTurn });
   } catch (err) {
     const e = err as { name?: string; message?: string };
     if (e?.name !== 'AbortError' && !/abort/i.test(e?.message ?? '')) {
@@ -611,7 +652,7 @@ async function runTurn(
   s: Session,
   tick: BackseatTick,
   ctrl: AbortController,
-  opts: { extraNote?: string; noteOverride?: string } = {},
+  opts: { extraNote?: string; noteOverride?: string; confirmedThisTurn?: boolean } = {},
 ): Promise<void> {
   const character = await getCharacter(s.characterId);
   if (!character) return;
@@ -715,7 +756,7 @@ async function runTurn(
     // a second, screenless one alongside it.
     maxTokens: tick.kind === 'user' ? 400 : 160,
     system,
-    tools: actFlagFromEnv() ? [SAVE_CLIP_TOOL, REMEMBER_TOOL, CONTROL_TOOL] : [SAVE_CLIP_TOOL, REMEMBER_TOOL],
+    tools: s.controlOffered ? TOOLS_WITH_CONTROL : TOOLS_BASE,
     messages,
     timeoutMs: CHAT_TIMEOUT_MS,
     signal: ctrl.signal,
@@ -741,11 +782,18 @@ async function runTurn(
   // 260925 act spike: control({goal}) is async. The run starts in the
   // background (replacing any running one) and this turn's own line is still
   // spoken below; when the run ends, runControlEvent gives the companion a
-  // turn to react. Honored on a USER tick only: the player has to have asked.
-  const goal = actFlagFromEnv() ? controlGoal(res.content as never) : null;
-  if (goal) {
-    if (tick.kind === 'user') void beginControl(s, goal, character.name, character.persona?.expanded);
-    else slog(s, `turn ${tick.kind}: control ignored (not a user tick)`);
+  // turn to react. It runs at once only when the player's own words on this
+  // USER tick asked for it (ControlGate checks the `request` quote against
+  // what they said). Anything else, a jolt, an idle look, or a call the
+  // screen talked the model into, becomes an offer read back to the player
+  // ("want me to ...?"), which runs only if their next line is a yes.
+  let offerLine: string | null = null;
+  const call = s.controlOffered ? controlCall(res.content as never) : null;
+  if (call) {
+    const d = s.control.onCall({ tickKind: tick.kind, userText: tick.text, call, confirmedThisTurn: opts.confirmedThisTurn });
+    slog(s, `turn ${tick.kind}: control "${d.goal.slice(0, 120)}" -> ${d.kind}${d.kind === 'run' ? '' : ` (${d.why})`}`);
+    if (d.kind === 'run') void beginControl(s, d.goal, { origin: 'asked', request: d.request });
+    else if (d.kind === 'propose') offerLine = d.line;
   }
 
   // stripDashes because asking did not work: the contract has forbidden em
@@ -764,7 +812,7 @@ async function runTurn(
   // spoken aloud in a voice call, but it is now an anomaly worth counting
   // rather than the expected path — if this line shows up often in a session
   // log, the contract is not landing and the fix is the prompt, not the parse.
-  if (!replyText || isSilenceFiller(replyText)) {
+  if ((!replyText || isSilenceFiller(replyText)) && !offerLine) {
     slog(
       s,
       `turn ${tick.kind}: NO LINE despite always-speak` +
@@ -803,7 +851,9 @@ async function runTurn(
   // call itself was honored above; only the leaked note is dropped.
   const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');
   const parts: string[] = [];
-  for (const raw of splitReply(replyText, character.metadata?.punctuation === 'deliberate' ? 'deliberate' : 'casual')) {
+  const punctuation = character.metadata?.punctuation === 'deliberate' ? 'deliberate' : 'casual';
+  const replyParts = replyText && !isSilenceFiller(replyText) ? splitReply(replyText, punctuation) : [];
+  for (const raw of replyParts) {
     // stripThoughtTags before the empty check: a part that was ONLY the model's
     // pseudo-XML ("</final_thought>", spoken and captioned live 260807) strips
     // to nothing and drops here.
@@ -815,6 +865,9 @@ async function runTurn(
     }
     parts.push(t);
   }
+  // The offer is composed from the literal goal, not left to the model, so
+  // the player says yes to exactly what would run.
+  if (offerLine) parts.push(offerLine);
   if (!parts.length) return;
   slog(s, `turn ${tick.kind}: said ${parts.length} line(s)${clip ? ' + clip' : ''}`);
 
@@ -894,17 +947,24 @@ function sessionLive(s: Session): boolean {
 }
 
 /** 260925 act spike: start (or replace) the control run on this share. */
-async function beginControl(s: Session, goal: string, name: string, persona: string | undefined): Promise<void> {
+async function beginControl(
+  s: Session,
+  goal: string,
+  how: { origin: ControlOrigin; request?: string },
+): Promise<void> {
   const { startControl, stopAct, ACT_CANCELLED } = await import('../computerUse/actSession');
+  const character = await getCharacter(s.characterId);
   if (!sessionLive(s)) return;
-  slog(s, `control requested: "${goal.slice(0, 200)}"`);
+  slog(s, `control starting (${how.origin}): "${goal.slice(0, 200)}"`);
   const r = await startControl({
     characterId: s.characterId,
-    characterName: name,
-    persona,
+    characterName: character?.name ?? s.state.aiName,
+    persona: character?.persona?.expanded,
     sourceId: s.sourceId,
     sourceName: s.state.sourceName,
     goal,
+    origin: how.origin,
+    request: how.request,
     log: (m, warn) => slog(s, m, warn),
     speak: (text) => {
       const parts = splitReply(stripDashes(text), 'casual')

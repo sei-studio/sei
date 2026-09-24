@@ -75,9 +75,9 @@ jobs:
 
   # 260925 backseat act (M0 spike): the macOS input helper only compiles on
   # macOS, and nothing else in CI runs there. Build it (universal, same script
-  # predev/predist use) and drive its query protocol. Posted input and
-  # screenshots are not asserted: the runner has no Accessibility or Screen
-  # Recording grant.
+  # predev/predist use) and drive its query protocol. The hosted runner is
+  # Accessibility-trusted, so the player-takes-over abort check runs for real
+  # and is REQUIRED.
   mac-input-helper:
     runs-on: macos-latest
     steps:
@@ -90,6 +90,10 @@ jobs:
           node-version: 22
 
       - name: Build helper
+        # Strict here: a release build skips the helper on a compile failure
+        # (the feature reports unavailable), CI must not.
+        env:
+          SEI_MAC_INPUT_STRICT: '1'
         run: |
           swiftc --version
           bash scripts/build-mac-input.sh
@@ -97,6 +101,12 @@ jobs:
 
       - name: Smoke test
         run: node scripts/smoke-mac-input.mjs resources/mac-input/sei-mac-input
+
+      # User input must stop an action mid-way: our own tagged events must not
+      # trip the watcher, and one untagged key or mouse event during a long
+      # type or a hold must cancel it within 100 ms (helper clock).
+      - name: Abort on player input
+        run: node scripts/smoke-mac-input.mjs resources/mac-input/sei-mac-input --abort
 
       # The hosted runner reports Accessibility and Screen Recording as
       # granted, so real injection, AX and OCR can be exercised end to end.

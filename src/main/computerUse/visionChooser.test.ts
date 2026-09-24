@@ -32,7 +32,8 @@ describe('buildStepContent', () => {
     const c = buildStepContent(state, options, [{ step: 1, action: 'click (1, 1)', ok: false, result: 'refused: x' }]);
     expect(c.map((b) => b.type)).toEqual(['text', 'image']);
     const t = String(c[0]!.text);
-    expect(t).toMatch(/The player asked: "open the settings"/);
+    expect(t).toMatch(/Goal: open the settings/);
+    expect(t).not.toMatch(/The player asked/);
     expect(t).toMatch(/1\. click \(1, 1\): failed, refused: x/);
     expect(t).toMatch(/The player just said: "the gear icon"/);
     expect(t).toMatch(/0\. click button "Settings"/);

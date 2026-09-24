@@ -7,6 +7,11 @@
  * helper exists. One control run per character at a time; a new control()
  * call stops the running one ('replaced') and starts fresh.
  *
+ * M0 drives WINDOW shares only (controlAvailability): on a whole-screen share
+ * everything on every display is in reach, and the scope check can only
+ * narrow that to "not a Sei window". A release whose helper did not compile
+ * ships without it, and control is then unavailable rather than broken.
+ *
  * Per run: spawn the helper, check permissions (and log what the helper sees,
  * which is the TCC attribution question), build the choosers and the
  * completion check, show the driving pill, register the kill-switch hotkey,
@@ -28,11 +33,12 @@ import { createDirectAnthropicCall } from './directAnthropic';
 import { createDriveOverlay, type DriveOverlay } from './driveOverlay';
 import { makeCapture, makePerceive, makeScope, targetFromSourceId } from './env';
 import { budgetForModel } from './geometry';
-import { helperPath, MacInputHelper } from './inputHelper';
+import { helperAvailable, helperPath, MacInputHelper } from './inputHelper';
 import { buildJevChooser } from './jevChooser';
 import { targetRect } from './scope';
 import { TEXT_CHOOSER_MODEL, TextChooser, textChooserKind } from './textChooser';
 import { actFlagFromEnv } from './controlTool';
+import type { ControlOrigin } from './controlPolicy';
 import { makeVerifier, VisionChooser, type LlmCall } from './visionChooser';
 
 export const KILL_HOTKEY = 'Control+Shift+Escape';
@@ -41,6 +47,23 @@ export const DEFAULT_ACT_MODEL = 'claude-sonnet-5';
 
 export function actFlagEnabled(): boolean {
   return actFlagFromEnv();
+}
+
+function binPath(): string {
+  return helperPath(app.isPackaged, process.resourcesPath, app.getAppPath());
+}
+
+export type ControlAvailability = { ok: true } | { ok: false; why: 'flag_off' | 'not_window' | 'helper_missing' };
+
+/**
+ * Whether control() is offered for a share. Checked once at session start:
+ * the answer fixes that session's tool array (see backseatService).
+ */
+export function controlAvailability(sourceId: string): ControlAvailability {
+  if (!actFlagEnabled()) return { ok: false, why: 'flag_off' };
+  if (targetFromSourceId(sourceId)?.kind !== 'window') return { ok: false, why: 'not_window' };
+  if (!helperAvailable(binPath())) return { ok: false, why: 'helper_missing' };
+  return { ok: true };
 }
 
 /** A player line that means "stop now", checked before it reaches the model. Mechanical on purpose: it must work while the model call is in flight. */
@@ -55,6 +78,10 @@ export interface ControlStartOptions {
   sourceId: string;
   sourceName: string;
   goal: string;
+  /** How the run came about (controlPolicy): the player asked, or confirmed an offer. */
+  origin: ControlOrigin;
+  /** The player's words that asked for it, when origin is 'asked'. */
+  request?: string;
   /** Speak a line in the character's voice through the backseat speech path. */
   speak: (text: string) => void;
   log: (msg: string, warn?: boolean) => void;
@@ -220,10 +247,14 @@ async function startControlInner(o: ControlStartOptions, token: StartToken): Pro
   if (token.cancelled) return { ok: false, error: ACT_CANCELLED };
   const target = targetFromSourceId(o.sourceId, o.sourceName);
   if (!target) return { ok: false, error: `ACT_BAD_SOURCE: ${o.sourceId}` };
+  // Backstop for the tool never being offered on these (controlAvailability).
+  if (target.kind !== 'window') return { ok: false, error: 'ACT_SCREEN_SHARE: control drives window shares only' };
+  const bin = binPath();
+  if (!helperAvailable(bin)) return { ok: false, error: 'ACT_HELPER_MISSING' };
 
   let helper: MacInputHelper;
   try {
-    helper = await MacInputHelper.start(helperPath(app.isPackaged, process.resourcesPath, app.getAppPath()), {
+    helper = await MacInputHelper.start(bin, {
       log: (m) => o.log(m),
     });
   } catch (e) {
@@ -247,13 +278,18 @@ async function startControlInner(o: ControlStartOptions, token: StartToken): Pro
     const [windows, displays] = await Promise.all([helper.windows(), helper.displays()]);
     const rect = targetRect({ target, windows, displays });
     if (!rect) throw new Error('ACT_TARGET_GONE');
-    if (target.kind === 'window') target.pid = windows.find((w) => w.id === target.windowId)?.pid;
+    target.pid = windows.find((w) => w.id === target.windowId)?.pid;
+    // The typing guard checks keyboard focus against this pid; without it
+    // there is nothing to check against, so do not start.
+    if (target.pid === undefined) throw new Error('ACT_TARGET_GONE: no owning process for the shared window');
 
     const system = buildActSystem({
       characterName: o.characterName,
       persona: o.persona,
       target,
       targetLabel: o.sourceName,
+      origin: o.origin,
+      request: o.request,
     });
     const { vision, text, verify, budgetModel } = await buildChoosers(system);
     // Last await before the run exists: nothing below yields until run() has
@@ -261,7 +297,7 @@ async function startControlInner(o: ControlStartOptions, token: StartToken): Pro
     checkCancelled();
     const limits = { ...DEFAULT_LIMITS, ...limitsFromEnv(), ...o.limits };
     o.log(
-      `act start: goal="${o.goal.slice(0, 160)}" vision=${vision.model} text=${text ? text.model : 'none'} ` +
+      `act start: goal="${o.goal.slice(0, 160)}" origin=${o.origin} vision=${vision.model} text=${text ? text.model : 'none'} ` +
         `target=${JSON.stringify(target)} rect=${JSON.stringify(rect)} steps=${limits.maxSteps} secs=${limits.maxMs / 1000}`,
     );
 
@@ -313,6 +349,7 @@ async function startControlInner(o: ControlStartOptions, token: StartToken): Pro
           ? {}
           : { perceive: makePerceive({ executor: helper, target, seiPids, log: (m) => o.log(`act ${m}`) }) }),
         focused: (signal) => helper.axFocused(signal),
+        targetPid: target.pid,
         scope: makeScope({
           executor: helper,
           target,

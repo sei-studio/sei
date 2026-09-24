@@ -19,7 +19,8 @@
 //   stdout   one line per response: {"id":N,"ok":true, ...} or
 //            {"id":N,"ok":false,"error":"..."}; and unsolicited events:
 //            {"event":"ready",...} once at start, {"event":"user_input",...}
-//            while the watcher is armed.
+//            when the armed watcher sees the player's own input (once per
+//            arming; the in-flight action is already cancelled by then).
 //   stderr   free-form diagnostics.
 //   EOF on stdin releases every held key and button, then exits (orphan
 //   guard). A helper that outlives its parent with a key held down would be
@@ -30,7 +31,9 @@
 // app, windows, window, displays, cursor, keys, screenshot (+ optional
 // `thumb` and `ocr` on the same frame), ax_dump (the Accessibility tree of a
 // pid), ax_focused (the focused element, used to refuse typing into secure
-// fields), watch. Control: cancel, release_all.
+// fields), watch. Control: cancel, release_all. Test only (needs
+// SEI_MAC_INPUT_TEST=1 in the helper's environment, which Sei never sets):
+// test_user_event, an UNTAGGED event standing in for the player.
 //
 // Coordinates are GLOBAL POINTS in the Quartz space: origin at the top-left
 // of the main display, y down. That is the space CGEvent, CGWindowList and
@@ -40,6 +43,14 @@
 // reader thread. Actions run one at a time on a serial queue. `cancel` bumps a
 // generation counter that every long action polls between steps, then
 // releases everything held, so a stop never waits behind a drag or a held key.
+//
+// Our events vs the player's. Every event we post is TAGGED with SEI_EVENT_TAG
+// in kCGEventSourceUserData. The watcher is an active CGEventTap (it passes
+// every event through untouched) that treats any UNTAGGED key or mouse event
+// as the player taking over: it cancels the in-flight action on the spot and
+// tells main. An active tap needs the Accessibility grant that posting already
+// needs; a listen-only tap would need Input Monitoring for key events, which
+// Sei deliberately never asks for.
 
 import Foundation
 import AppKit
@@ -50,7 +61,7 @@ import ScreenCaptureKit
 import UniformTypeIdentifiers
 import Vision
 
-let HELPER_VERSION = "0.1.0"
+let HELPER_VERSION = "0.2.0"
 
 signal(SIGPIPE, SIG_IGN)
 
@@ -60,7 +71,21 @@ signal(SIGPIPE, SIG_IGN)
 let outLock = NSLock()
 
 let state = HelperState()
-let eventSource = CGEventSource(stateID: .privateState)
+/// Marks every event we post (kCGEventSourceUserData). Hardware events and
+/// other processes' events carry 0 there unless they set it themselves.
+let SEI_EVENT_TAG: Int64 = 0x5E1AC7
+let eventSource: CGEventSource? = {
+    let s = CGEventSource(stateID: .privateState)
+    s?.userData = SEI_EVENT_TAG
+    return s
+}()
+/// Test-only commands (test_user_event). Main never sets this.
+let TEST_COMMANDS = ProcessInfo.processInfo.environment["SEI_MAC_INPUT_TEST"] == "1"
+/// Per-action caps, matching src/main/computerUse/actions.ts. Short on
+/// purpose: an action is one burst, and a long one is a long time for the
+/// player to wait for the next check.
+let TYPE_MAX_CHARS = 200
+let HOLD_MAX_MS = 3000.0
 let actionQueue = DispatchQueue(label: "sei.mac-input.actions")
 /// Slow queries (AX walks) run here so the reader thread stays free for cancel.
 let queryQueue = DispatchQueue(label: "sei.mac-input.queries", attributes: .concurrent)
@@ -123,8 +148,12 @@ func reply(_ id: Int, _ fields: [String: Any] = [:]) {
     send(o)
 }
 
-func replyError(_ id: Int, _ message: String) {
-    send(["id": id, "ok": false, "error": message])
+func replyError(_ id: Int, _ message: String, _ extra: [String: Any] = [:]) {
+    var o = extra
+    o["id"] = id
+    o["ok"] = false
+    o["error"] = message
+    send(o)
 }
 
 func log(_ s: String) {
@@ -167,12 +196,9 @@ final class HelperState {
     var heldMods: CGEventFlags = []
     /// Mouse buttons currently held down by us.
     var heldButtons = Set<UInt32>()
-    /// True while an action is posting events; the watcher ignores input then.
-    var injecting = false
-    /// When the last injected event was posted (systemUptime).
-    var lastInjectEnd: Double = 0
-    /// Where we last put the cursor, for the "user moved the mouse" check.
-    var lastCursorTarget: CGPoint? = nil
+    /// Why the last cancel happened ("user_input" when the watcher fired), for
+    /// the cancelled action's reply.
+    var cancelReason = "cancelled"
 }
 
 
@@ -190,17 +216,17 @@ func modifierFlags(_ names: [String]) -> CGEventFlags? {
 
 // ── Posting ─────────────────────────────────────────────────────────────────
 
-func markInjected() {
-    state.lock.lock()
-    state.lastInjectEnd = now()
-    state.lock.unlock()
+/// Tag and post. The ONLY way this helper posts an event, so the watcher can
+/// always tell ours from the player's.
+func post(_ e: CGEvent) {
+    e.setIntegerValueField(.eventSourceUserData, value: SEI_EVENT_TAG)
+    e.post(tap: .cghidEventTap)
 }
 
 func postKey(_ code: CGKeyCode, down: Bool, flags: CGEventFlags) {
     guard let e = CGEvent(keyboardEventSource: eventSource, virtualKey: code, keyDown: down) else { return }
     e.flags = flags
-    e.post(tap: .cghidEventTap)
-    markInjected()
+    post(e)
 }
 
 /// A modifier press/release is a flagsChanged event on real hardware; games
@@ -209,8 +235,7 @@ func postFlagsChanged(_ code: CGKeyCode, flags: CGEventFlags) {
     guard let e = CGEvent(keyboardEventSource: eventSource, virtualKey: code, keyDown: true) else { return }
     e.type = .flagsChanged
     e.flags = flags
-    e.post(tap: .cghidEventTap)
-    markInjected()
+    post(e)
 }
 
 func currentCursor() -> CGPoint {
@@ -230,11 +255,7 @@ func postMouse(_ type: CGEventType, _ p: CGPoint, _ button: CGMouseButton, click
     guard let e = CGEvent(mouseEventSource: eventSource, mouseType: type, mouseCursorPosition: p, mouseButton: button) else { return }
     if clickState > 0 { e.setIntegerValueField(.mouseEventClickState, value: clickState) }
     e.flags = flags.union(state.heldMods)
-    e.post(tap: .cghidEventTap)
-    state.lock.lock()
-    state.lastCursorTarget = p
-    state.lastInjectEnd = now()
-    state.lock.unlock()
+    post(e)
 }
 
 func moveTo(_ p: CGPoint) {
@@ -377,8 +398,7 @@ func doScroll(_ args: [String: Any], _ gen: Int) throws {
         guard let e = CGEvent(scrollWheelEvent2Source: eventSource, units: .line, wheelCount: 2, wheel1: wy, wheel2: wx, wheel3: 0) else { continue }
         e.location = p
         e.flags = state.heldMods
-        e.post(tap: .cghidEventTap)
-        markInjected()
+        post(e)
         guard sleepChecked(0.015, gen) else { throw ActionError(message: "cancelled") }
     }
 }
@@ -435,7 +455,7 @@ func doKeyUp(_ args: [String: Any]) throws {
 }
 
 func doHold(_ args: [String: Any], _ gen: Int) throws {
-    let ms = max(10, min(300_000, (args["ms"] as? NSNumber)?.doubleValue ?? 500))
+    let ms = max(10, min(HOLD_MAX_MS, (args["ms"] as? NSNumber)?.doubleValue ?? 500))
     try doKeyDown(args)
     let ok = sleepChecked(ms / 1000, gen)
     try doKeyUp(args)
@@ -444,6 +464,7 @@ func doHold(_ args: [String: Any], _ gen: Int) throws {
 
 func doType(_ args: [String: Any], _ gen: Int) throws {
     guard let text = args["text"] as? String else { throw ActionError(message: "missing text") }
+    guard text.count <= TYPE_MAX_CHARS else { throw ActionError(message: "text too long (at most \(TYPE_MAX_CHARS) characters per type)") }
     for ch in text {
         if state.generation != gen { throw ActionError(message: "cancelled") }
         if ch == "\n" || ch == "\r" {
@@ -463,24 +484,32 @@ func doType(_ args: [String: Any], _ gen: Int) throws {
                     e.keyboardSetUnicodeString(stringLength: buf.count, unicodeString: buf.baseAddress)
                 }
                 e.flags = []
-                e.post(tap: .cghidEventTap)
-                markInjected()
+                post(e)
             }
         }
         guard sleepChecked(0.008, gen) else { throw ActionError(message: "cancelled") }
     }
 }
 
+func cancelReasonNow() -> String {
+    state.lock.lock(); defer { state.lock.unlock() }
+    return state.cancelReason
+}
+
+/// Stop the in-flight action at its next check (every ~10 ms), then let go of
+/// everything once it has returned (queued behind it on purpose, so the
+/// action cannot press something after the release).
+func cancelActions(_ reason: String) {
+    state.lock.lock(); state.cancelReason = reason; state.lock.unlock()
+    _ = state.bump()
+}
+
 func runAction(_ id: Int, _ cmd: String, _ args: [String: Any], _ gen: Int) {
     if state.generation != gen {
-        replyError(id, "cancelled")
+        replyError(id, cancelReasonNow(), ["at": now()])
         return
     }
-    state.lock.lock(); state.injecting = true; state.lock.unlock()
     let t0 = now()
-    defer {
-        state.lock.lock(); state.injecting = false; state.lastInjectEnd = now(); state.lock.unlock()
-    }
     do {
         switch cmd {
         case "move": moveTo(try point(args))
@@ -499,7 +528,9 @@ func runAction(_ id: Int, _ cmd: String, _ args: [String: Any], _ gen: Int) {
         }
         reply(id, ["ms": Int((now() - t0) * 1000)])
     } catch let e as ActionError {
-        replyError(id, e.message)
+        // "at" (systemUptime) lets the CI abort check measure how long a
+        // cancel took to land, on the helper's own clock.
+        replyError(id, e.message == "cancelled" ? cancelReasonNow() : e.message, ["at": now(), "ms": Int((now() - t0) * 1000)])
     } catch {
         replyError(id, "\(error)")
     }
@@ -804,68 +835,155 @@ func axFocused() -> [String: Any] {
 
 // ── User-input watcher ──────────────────────────────────────────────────────
 //
-// Pauses the act loop the moment the player touches the mouse or keyboard.
-// No event tap (that would need Input Monitoring, which the backseat plans
-// deliberately avoid): CGEventSource's per-type idle clock is read at 20 Hz
-// and compared with when WE last posted, and the cursor is compared with where
-// we last put it. Whether the HID idle clock also counts our own posted events
-// does not matter, because anything within the grace window after our last
-// post is ignored either way.
+// Stops the act loop the moment the player touches the mouse or keyboard,
+// including in the middle of an action (a hold, a long type, a drag).
+//
+// An active CGEventTap on the session: it sees every key and mouse event and
+// passes each one through untouched. Events we posted carry SEI_EVENT_TAG in
+// kCGEventSourceUserData and are ignored; ANY other key or mouse event is the
+// player (or something else that is not us, which is just as good a reason to
+// stop). On the first one the watcher cancels the in-flight action right here,
+// without a round trip to main, and then reports it.
+//
+// Active rather than listen-only on purpose: a listen-only tap needs the Input
+// Monitoring grant to see key events, an active one needs Accessibility, which
+// posting events already needs. The tap stays DISABLED while not armed, so
+// outside a run it costs nothing, and it is re-enabled if macOS disables it
+// for a slow callback (the callback only reads two fields).
+//
+// The replaced design read CGEventSource idle clocks and ignored everything
+// while an action was running, which made the player invisible for the whole
+// of a 10 s hold or a long type.
+
+/// Event types that count as the player taking over. Key-ups and button-ups
+/// are left out: every real interaction starts with a down or a move, and an
+/// up for a key pressed before arming is not a takeover.
+let WATCH_TYPES: [(CGEventType, String)] = [
+    (.keyDown, "key"), (.flagsChanged, "key"),
+    (.mouseMoved, "mouse"), (.leftMouseDown, "mouse"), (.rightMouseDown, "mouse"),
+    (.otherMouseDown, "mouse"), (.leftMouseDragged, "mouse"), (.rightMouseDragged, "mouse"),
+    (.otherMouseDragged, "mouse"), (.scrollWheel, "mouse"),
+]
+
+func watchKind(_ type: CGEventType) -> String? {
+    return WATCH_TYPES.first(where: { $0.0 == type })?.1
+}
+
+/// Tap callback: a C function pointer, so no captures; it goes through the
+/// global `watcher`.
+func watchTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
+    watcher.onEvent(type, event)
+    return Unmanaged.passUnretained(event)
+}
 
 final class Watcher {
-    var timer: DispatchSourceTimer? = nil
-    var armedAt: Double = 0
-    let graceS = 0.25
-    let moveTolerance: CGFloat = 3
+    /// Guards every field below. Touched from the reader thread (arm, disarm)
+    /// and the tap thread (onEvent).
+    private let lock = NSLock()
+    private var armed = false
+    private var tap: CFMachPort? = nil
 
-    func arm() {
-        disarm()
-        armedAt = now()
-        let t = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "sei.mac-input.watch"))
-        t.schedule(deadline: .now() + 0.05, repeating: 0.05)
-        t.setEventHandler { [weak self] in self?.tick() }
-        timer = t
-        t.resume()
+    /// Create the tap (once) and enable it. Returns nil when armed, else why not.
+    func arm() -> String? {
+        lock.lock()
+        let existing = tap
+        lock.unlock()
+        let t: CFMachPort
+        if let e = existing {
+            t = e
+        } else {
+            guard let made = startTapThread() else {
+                return "could not create the input event tap (Accessibility not granted?)"
+            }
+            t = made
+        }
+        lock.lock()
+        tap = t
+        armed = true
+        CGEvent.tapEnable(tap: t, enable: true)
+        lock.unlock()
+        return nil
     }
 
     func disarm() {
-        timer?.cancel()
-        timer = nil
+        lock.lock()
+        armed = false
+        if let t = tap { CGEvent.tapEnable(tap: t, enable: false) }
+        lock.unlock()
     }
 
-    private func tick() {
-        state.lock.lock()
-        let injecting = state.injecting
-        let lastInject = state.lastInjectEnd
-        let target = state.lastCursorTarget
-        state.lock.unlock()
-        if injecting { return }
-        let t = now()
-        let kinds: [(CGEventType, String)] = [
-            (.keyDown, "key"), (.flagsChanged, "key"),
-            (.mouseMoved, "mouse"), (.leftMouseDown, "mouse"), (.rightMouseDown, "mouse"),
-            (.otherMouseDown, "mouse"), (.leftMouseDragged, "mouse"), (.scrollWheel, "mouse"),
-        ]
-        for (type, kind) in kinds {
-            let ago = CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: type)
-            let at = t - ago
-            if at > armedAt && at > lastInject + graceS {
-                fire(kind, "\(type.rawValue)", ago)
+    /// The tap gets its own thread and run loop, so it never waits behind the
+    /// main run loop or the reader. Returns the tap once it is installed.
+    private func startTapThread() -> CFMachPort? {
+        var mask: CGEventMask = 0
+        for (type, _) in WATCH_TYPES { mask |= CGEventMask(1) << CGEventMask(type.rawValue) }
+        // A box, not a captured var: Thread's block may be @Sendable, where
+        // mutating a captured var does not compile.
+        final class TapBox { var tap: CFMachPort? = nil }
+        let box = TapBox()
+        let boxLock = NSLock()
+        let ready = DispatchSemaphore(value: 0)
+        let th = Thread {
+            guard let t = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
+                                            eventsOfInterest: mask, callback: watchTapCallback, userInfo: nil) else {
+                ready.signal()
                 return
             }
+            // Created enabled; stay off until arm() turns it on.
+            CGEvent.tapEnable(tap: t, enable: false)
+            let src = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, t, 0)
+            CFRunLoopAddSource(CFRunLoopGetCurrent(), src, .commonModes)
+            boxLock.lock(); box.tap = t; boxLock.unlock()
+            ready.signal()
+            CFRunLoopRun()
         }
-        if let p = target, t - lastInject > graceS {
-            let c = currentCursor()
-            if abs(c.x - p.x) > moveTolerance || abs(c.y - p.y) > moveTolerance {
-                fire("mouse", "cursor", 0)
-            }
-        }
+        th.name = "sei.mac-input.watch"
+        th.start()
+        _ = ready.wait(timeout: .now() + 2)
+        boxLock.lock(); defer { boxLock.unlock() }
+        return box.tap
     }
 
-    private func fire(_ kind: String, _ source: String, _ ago: Double) {
-        // One event per arming; main re-arms after it resumes.
-        disarm()
-        send(["event": "user_input", "kind": kind, "source": source, "ago": ago])
+    func onEvent(_ type: CGEventType, _ event: CGEvent) {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            lock.lock()
+            if armed, let t = tap { CGEvent.tapEnable(tap: t, enable: true) }
+            lock.unlock()
+            return
+        }
+        guard let kind = watchKind(type) else { return }
+        // Ours.
+        if event.getIntegerValueField(.eventSourceUserData) == SEI_EVENT_TAG { return }
+        // Key auto-repeat of a key that was already down: its first press
+        // either counted already or predates arming.
+        if type == .keyDown && event.getIntegerValueField(.keyboardEventAutorepeat) != 0 { return }
+        lock.lock()
+        guard armed else { lock.unlock(); return }
+        // One report per arming; main re-arms for the next run.
+        armed = false
+        if let t = tap { CGEvent.tapEnable(tap: t, enable: false) }
+        lock.unlock()
+        // Stop the in-flight action NOW (it checks every ~10 ms), then let go
+        // of anything held once it has returned.
+        cancelActions("cancelled: user input")
+        actionQueue.async { releaseAllNow() }
+        send(["event": "user_input", "kind": kind, "source": "\(type.rawValue)", "ago": 0, "at": now()])
+    }
+}
+
+/// test_user_event: one UNTAGGED event from a separate source, standing in
+/// for the player (the CI abort check). A key the text never contains, or a
+/// 1 pt cursor nudge.
+func postTestUserEvent(_ kind: String) {
+    let src = CGEventSource(stateID: .hidSystemState)
+    if kind == "mouse" {
+        let c = currentCursor()
+        CGEvent(mouseEventSource: src, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: c.x + 1, y: c.y), mouseButton: .left)?
+            .post(tap: .cghidEventTap)
+    } else {
+        // F18: no app binds it by default.
+        CGEvent(keyboardEventSource: src, virtualKey: 0x4F, keyDown: true)?.post(tap: .cghidEventTap)
+        CGEvent(keyboardEventSource: src, virtualKey: 0x4F, keyDown: false)?.post(tap: .cghidEventTap)
     }
 }
 
@@ -930,19 +1048,25 @@ func handle(_ line: String) {
     case "ax_focused":
         queryQueue.async { reply(id, ["element": axFocused()]) }
     case "watch":
-        if (obj["enabled"] as? Bool) ?? false { watcher.arm() } else { watcher.disarm() }
-        reply(id)
+        if (obj["enabled"] as? Bool) ?? false {
+            // "tap" is the only mode; main refuses to drive without it.
+            if let err = watcher.arm() { replyError(id, err) } else { reply(id, ["mode": "tap"]) }
+        } else {
+            watcher.disarm()
+            reply(id)
+        }
     case "cancel":
-        // Stop the in-flight action at its next check, then let go of
-        // everything once it has returned (queued behind it on purpose, so
-        // the action cannot press something after the release).
-        _ = state.bump()
+        cancelActions("cancelled")
         actionQueue.async {
             releaseAllNow()
             reply(id)
         }
+    case "test_user_event":
+        guard TEST_COMMANDS else { replyError(id, "unknown command \(cmd)"); return }
+        postTestUserEvent((obj["kind"] as? String) ?? "key")
+        reply(id, ["at": now()])
     case "release_all":
-        _ = state.bump()
+        cancelActions("cancelled")
         releaseAllNow()
         actionQueue.async {
             releaseAllNow()
