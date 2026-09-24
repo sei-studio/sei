@@ -1079,6 +1079,8 @@ export const UserConfigSchema = z.object({
         pantsColor: z.string().max(16),
         accessory: z.number().int(),
         source: z.enum(['auto', 'user']).default('auto'),
+        /** Generator version (STARDEW_APPEARANCE_VERSION). Absent = 1, the text-only derivation. */
+        version: z.number().int().optional(),
       }),
     )
     .optional(),
