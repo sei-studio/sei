@@ -72,3 +72,28 @@ jobs:
           node scripts/build-game-pack.mjs dontstarve --platform any --arch any --out "$RUNNER_TEMP/packs"
           node scripts/build-game-pack.mjs stardew --platform any --arch any --skip-build --out "$RUNNER_TEMP/packs"
           ls -la "$RUNNER_TEMP/packs"
+
+  # 260925 backseat act (M0 spike): the macOS input helper only compiles on
+  # macOS, and nothing else in CI runs there. Build it (universal, same script
+  # predev/predist use) and drive its query protocol. Posted input and
+  # screenshots are not asserted: the runner has no Accessibility or Screen
+  # Recording grant.
+  mac-input-helper:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Build helper
+        run: |
+          swiftc --version
+          bash scripts/build-mac-input.sh
+          lipo -archs resources/mac-input/sei-mac-input
+
+      - name: Smoke test
+        run: node scripts/smoke-mac-input.mjs resources/mac-input/sei-mac-input

@@ -313,9 +313,19 @@ mac:
   # read the text on the shared screen. It worked and was still removed: the
   # window title answers the question that was actually hurting, for no
   # per-frame cost. See the note in src/shared/backseatIpc.ts.)
+  #
+  # 260925 backseat act (M0 spike, dev flag SEI_BACKSEAT_ACT): the input
+  # executor helper (native/mac-input, scripts/build-mac-input.sh, universal).
+  # Posts CGEvents, queries windows/displays, takes per-step screenshots. It
+  # needs NO new entitlement: CGEvent posting is gated by the Accessibility TCC
+  # grant, not by an entitlement, and screenshots ride the Screen Recording
+  # grant backseat already asks for. Which process macOS attributes the child's
+  # events to (Sei.app vs the helper) is the open question the Mac step answers.
   extraResources:
     - from: resources/audio-tap
       to: audio-tap
+    - from: resources/mac-input
+      to: mac-input
   extendInfo:
     NSLocalNetworkUsageDescription: "Sei finds your Minecraft world when you open it to LAN so your characters can join it on this Mac."
     # Voice calls (260707): the TCC prompt string macOS shows the first time Sei
