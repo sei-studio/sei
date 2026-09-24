@@ -191,6 +191,7 @@ const api: RendererApi = {
     ipcRenderer.invoke(IpcChannel.backseat.shareLabel, sourceId),
   backseatInterrupt: (characterId) =>
     ipcRenderer.invoke(IpcChannel.backseat.interrupt, characterId),
+  backseatLineHeard: (args) => ipcRenderer.invoke(IpcChannel.backseat.lineHeard, args),
   backseatSetPaused: (characterId, paused) =>
     ipcRenderer.invoke(IpcChannel.backseat.setPaused, { characterId, paused }),
   backseatSaveClip: (characterId, requestId, webmBase64) =>

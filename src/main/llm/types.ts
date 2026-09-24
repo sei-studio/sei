@@ -76,6 +76,13 @@ export interface LlmCallParams {
    * completes (per-hop reveal is the accepted degradation).
    */
   onContentBlock?: (block: Anthropic.Messages.ContentBlock) => void;
+  /**
+   * 260925 (backseat act spike): extra top-level request fields merged into
+   * the Anthropic request as is (e.g. `thinking`, `output_config`). Honored
+   * ONLY by the Anthropic adapter and only when set, so every existing call
+   * site sends exactly the request it sent before. Other providers ignore it.
+   */
+  anthropicExtra?: Record<string, unknown>;
 }
 
 export interface LlmResult {

@@ -1589,6 +1589,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         sinceSwitchS: z.number().min(0).max(3600).optional(),
         transcript: z.string().max(4000).optional(),
         shareLabel: z.string().max(200).optional(),
+        // 260925 act: the line came from the mic; how close companion audio was.
+        mic: z
+          .object({
+            ttsGapMs: z.number().min(0).max(86_400_000).nullable(),
+            shareVoice: z.boolean().nullable().optional(),
+          })
+          .optional(),
       })
       .parse(tickRaw);
     const backseat = await import('./backseat/backseatService');
@@ -1624,6 +1631,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const id = IdSchema.parse(idArg);
     const backseat = await import('./backseat/backseatService');
     backseat.interruptBackseat(id);
+  });
+  ipcMain.handle(IpcChannel.backseat.lineHeard, async (_event, argsRaw: unknown) => {
+    const args = z.object({ characterId: IdSchema, confirmId: z.string().max(100), completed: z.boolean() }).parse(argsRaw);
+    const backseat = await import('./backseat/backseatService');
+    backseat.backseatLineHeard(args.characterId, args.confirmId, args.completed);
   });
   ipcMain.handle(IpcChannel.backseat.setPaused, async (_event, argsRaw: unknown) => {
     const args = z.object({ characterId: IdSchema, paused: z.boolean() }).parse(argsRaw);

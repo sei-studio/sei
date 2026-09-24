@@ -297,3 +297,67 @@ export function finalScreenEcho(args: {
   if (micTokens >= 2 && overlap >= OVERLAP_FINAL) return true;
   return corr.valid && corr.r >= CORR_STRONG && !refHasText;
 }
+
+/**
+ * 260925 backseat act: how long before this utterance any companion's voice
+ * last stopped, in ms. 0 when a companion line overlapped the utterance (or is
+ * still audible), null when no companion line started before it ended. A
+ * control-offer "yes" heard this close to companion audio may BE that audio (a
+ * sibling's "sure!", her own leaked line), so main re-asks instead of acting.
+ * `lines` are the audible-line windows (t1 = 0 while still audible).
+ */
+export function companionAudioGapMs(
+  lines: ReadonlyArray<{ t0: number; t1: number }>,
+  uttT0: number,
+  uttT1: number,
+): number | null {
+  let gap: number | null = null;
+  for (const l of lines) {
+    if (l.t0 > uttT1) continue; // started after the utterance: irrelevant
+    const end = l.t1 || Infinity;
+    if (end >= uttT0) return 0;
+    const g = uttT0 - end;
+    if (gap === null || g < gap) gap = g;
+  }
+  return gap;
+}
+
+/** How far before the utterance's start share speech still counts (260925 act). */
+export const SHARE_VOICE_LEAD_MS = 300;
+/** A share-audio level at or above this means something was audible (dBFS of a ~32 ms window). */
+export const SHARE_VOICE_DB = -50;
+
+/**
+ * 260925 backseat act: did the SHARED WINDOW's audio carry speech during a
+ * mic utterance, or in the SHARE_VOICE_LEAD_MS before it? A one-word "yes" to
+ * a control offer is too short for the echo gate's word overlap, and a game
+ * character, a streamer or a friend on another call saying it through the
+ * speakers reads exactly like the player. Speech = the screen transcript has
+ * a real word in a segment overlapping that window (bracketed tags such as
+ * "[Music]" do not count) AND the share audio was audible in it; the second
+ * half keeps a word from earlier in the same 3 s Whisper chunk from counting
+ * when the window itself was quiet.
+ *
+ * Audible share audio that has NOT been transcribed through the end of the
+ * utterance (`judgedThrough` < uttT1: no model, a timed-out flush, a wedged
+ * worker) cannot be ruled out, so it counts as speech too (true): the caller
+ * re-asks rather than trusting a yes it could not check. Null only when there
+ * is no share audio at all in the window. `probe` is the capture handle's
+ * echoProbe-shaped read of [t0 - lead, t1].
+ */
+export function shareVoiceDuring(
+  probe: { envelope: EnvSample[]; transcript: string; judgedThrough: number },
+  uttT0: number,
+  uttT1: number,
+): boolean | null {
+  const from = uttT0 - SHARE_VOICE_LEAD_MS;
+  const inWindow = probe.envelope.filter((s) => s.t >= from && s.t <= uttT1);
+  if (!inWindow.length) return null;
+  const audible = inWindow.some((s) => s.db >= SHARE_VOICE_DB);
+  if (audible && probe.judgedThrough < uttT1) return true;
+  const words = probe.transcript
+    .replace(/\[[^\]]*\]|\([^)]*\)|[♪♫]/g, ' ')
+    .trim();
+  return audible && /\p{L}/u.test(words);
+}
+

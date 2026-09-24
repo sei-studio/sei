@@ -68,6 +68,7 @@ export async function createAnthropicProvider(backend: LlmBackend): Promise<LlmP
     if (p.tools !== undefined) params.tools = p.tools;
     if (p.toolChoice !== undefined) params.tool_choice = p.toolChoice;
     if (p.stopSequences !== undefined) params.stop_sequences = p.stopSequences;
+    if (p.anthropicExtra) Object.assign(params, p.anthropicExtra);
     const opts: Record<string, unknown> = {};
     if (p.timeoutMs !== undefined) opts.timeout = p.timeoutMs;
     if (p.signal !== undefined) opts.signal = p.signal;

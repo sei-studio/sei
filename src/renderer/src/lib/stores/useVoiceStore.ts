@@ -52,6 +52,7 @@ import { createAudioQueue, type AudioQueue, type TtsStreamHandle } from '../voic
 import { t } from '../i18n';
 import { createDictation, type Dictation } from '../voice/dictation';
 import {
+  companionAudioGapMs,
   classifyScreenEcho,
   envelopeCorrelation,
   finalScreenEcho,
@@ -757,10 +758,19 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     // `turn` is queue bookkeeping (drop a superseded turn's unplayed lines),
     // never a synthesis parameter: main's TTS zod would strip it silently, but
     // splitting here keeps the request honest.
-    const { turn, ...ttsCtx } = ctx;
+    // `confirmId` (260925 backseat act) is bookkeeping too: main asks to hear
+    // whether THIS line (a "want me to ...?" control offer) played to its end,
+    // and the offer only becomes answerable once it did.
+    const { turn, confirmId, ...ttsCtx } = ctx;
+    const onDone = confirmId
+      ? (completed: boolean): void => {
+          void sei.backseatLineHeard?.({ characterId, confirmId, completed }).catch(() => {});
+        }
+      : undefined;
+    if (!queue) onDone?.(false);
     const worthStreaming = text.length >= STREAM_MIN_CHARS;
     if (canStream && worthStreaming && queue) {
-      const handle = queue.enqueueStream(characterId, text, pitchRateOf(characterId), { turn });
+      const handle = queue.enqueueStream(characterId, text, pitchRateOf(characterId), { turn, onDone });
       void sei
         .voiceTtsStream({ characterId, text, ...ttsCtx })
         .then(({ streamId }) => {
@@ -795,6 +805,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     const slot = queue?.enqueueStream(characterId, text, pitchRateOf(characterId), {
       blob: true,
       turn,
+      onDone,
     });
     void sei
       .voiceTts({ characterId, text, ...ttsCtx })
@@ -1259,7 +1270,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
   /** A player utterance arrived (from the mic). Barge-in already cleared the
    * audio queue; here we supersede any running chain, mirror the line to the
    * non-responders for context, and kick off the responder's turn. */
-  function dispatchUserTurn(text: string): void {
+  function dispatchUserTurn(text: string, span?: { t0: number; t1: number }): void {
     const parts = get().participants;
     if (!parts.length || get().status !== 'live') return;
     // Reject Whisper hallucinations (echo/breath/silence → "hhhhh", "you",
@@ -1318,7 +1329,13 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         // read as a spontaneous line from an older one.
         if (parts.length === 1) armTurnCapture(mySeq, id, 0);
         else speakerOriginSeq.set(id, mySeq);
-        void capture.sendUserTick(text).catch(() => {
+        // 260925 act: how close companion audio was, so main can refuse a
+        // "yes" to a control offer that may have been a companion's voice.
+        const now = Date.now();
+        const t0 = span?.t0 ?? now;
+        const t1 = span?.t1 ?? now;
+        const ttsGapMs = companionAudioGapMs(audibleLines, t0, t1);
+        void capture.sendUserTick(text, { ttsGapMs, t0, t1 }).catch(() => {
           /* a dropped tick is a missed answer, never a broken call */
         });
         continue;
@@ -1746,12 +1763,12 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
             if (session !== mySession) return;
             set({ connectingDetail: status === 'loading-model' && detail ? detail : null });
           },
-          onUtterance: (text) => {
+          onUtterance: (text, span) => {
             if (session !== mySession) return;
             const s = get();
             if (s.status !== 'live' || !s.participants.length) return;
             // The director handles addressing, mirroring, and the reply chain.
-            dispatchUserTurn(text);
+            dispatchUserTurn(text, span);
           },
           // Speakers-into-the-mic filter (260807): her own leaked TTS and the
           // shared screen's audio must not become "the player said ...".

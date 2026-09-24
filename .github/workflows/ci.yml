@@ -72,3 +72,45 @@ jobs:
           node scripts/build-game-pack.mjs dontstarve --platform any --arch any --out "$RUNNER_TEMP/packs"
           node scripts/build-game-pack.mjs stardew --platform any --arch any --skip-build --out "$RUNNER_TEMP/packs"
           ls -la "$RUNNER_TEMP/packs"
+
+  # 260925 backseat act (M0 spike): the macOS input helper only compiles on
+  # macOS, and nothing else in CI runs there. Build it (universal, same script
+  # predev/predist use) and drive its query protocol. The hosted runner is
+  # Accessibility-trusted, so the player-takes-over abort check runs for real
+  # and is REQUIRED.
+  mac-input-helper:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Build helper
+        # Strict here: a release build skips the helper on a compile failure
+        # (the feature reports unavailable), CI must not.
+        env:
+          SEI_MAC_INPUT_STRICT: '1'
+        run: |
+          swiftc --version
+          bash scripts/build-mac-input.sh
+          lipo -archs resources/mac-input/sei-mac-input
+
+      - name: Smoke test
+        run: node scripts/smoke-mac-input.mjs resources/mac-input/sei-mac-input
+
+      # User input must stop an action mid-way: our own tagged events must not
+      # trip the watcher, and one untagged key or mouse event during a long
+      # type or a hold must cancel it within 100 ms (helper clock).
+      - name: Abort on player input
+        run: node scripts/smoke-mac-input.mjs resources/mac-input/sei-mac-input --abort
+
+      # The hosted runner reports Accessibility and Screen Recording as
+      # granted, so real injection, AX and OCR can be exercised end to end.
+      # Informational: GUI state on a hosted runner is not ours to control.
+      - name: End-to-end (TextEdit)
+        continue-on-error: true
+        run: node scripts/smoke-mac-input.mjs resources/mac-input/sei-mac-input --act --e2e

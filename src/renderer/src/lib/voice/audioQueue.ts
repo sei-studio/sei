@@ -67,12 +67,16 @@ export interface AudioQueue {
    * newer turn, and playing it out would put the voice a whole turn behind
    * whatever the two of you are looking at (the backseat drift). The clip at
    * the playhead is never touched — the current sentence finishes, then
-   * playback jumps to the new turn. Untagged clips are never dropped. */
+   * playback jumps to the new turn. Untagged clips are never dropped.
+   *
+   * `opts.onDone` (260925) is called exactly once for this clip: `true` when
+   * it played to its natural end, audibly (not deafened); `false` when it was
+   * cut off (barge-in clear, stop), superseded, failed, or empty. */
   enqueueStream(
     characterId: string,
     text?: string,
     rate?: number,
-    opts?: { blob?: boolean; turn?: string },
+    opts?: { blob?: boolean; turn?: string; onDone?: (completed: boolean) => void },
   ): TtsStreamHandle;
   /** True while a clip is playing (or queued clips remain). */
   speaking(): boolean;
@@ -116,7 +120,24 @@ type StreamItem = {
   /** Set while this item is the one playing — new chunks flow straight in. */
   onChunk: ((c: ArrayBuffer) => void) | null;
   onEnd: (() => void) | null;
+  /** Once-only completion report (see enqueueStream's opts.onDone). */
+  onDone: ((completed: boolean) => void) | null;
 };
+
+/** Wrap a completion callback so only its first call counts. */
+function once(fn?: (completed: boolean) => void): ((completed: boolean) => void) | null {
+  if (!fn) return null;
+  let fired = false;
+  return (completed) => {
+    if (fired) return;
+    fired = true;
+    try {
+      fn(completed);
+    } catch {
+      /* a report must never break playback */
+    }
+  };
+}
 type Item = BufferItem | StreamItem;
 
 const canStreamMpeg = (): boolean =>
@@ -189,6 +210,16 @@ export function createAudioQueue(
   const pending: Item[] = [];
   let current: HTMLAudioElement | null = null;
   let currentCleanup: (() => void) | null = null;
+  /** The playing clip's completion report, if it asked for one. */
+  let currentDone: ((completed: boolean) => void) | null = null;
+
+  /** Report the current clip's outcome (first report wins; see `once`). */
+  function settleCurrent(el: HTMLAudioElement | null, completed: boolean): void {
+    if (el && current !== el) return;
+    const d = currentDone;
+    currentDone = null;
+    d?.(completed);
+  }
   /** An item is occupying the playhead (incl. a stream slot still waiting for
    * its first bytes, when no HTMLAudioElement exists yet). */
   let busy = false;
@@ -219,7 +250,13 @@ export function createAudioQueue(
     return pitchBus.attach(el, rate);
   }
 
-  function playBuffer(buf: ArrayBuffer, characterId: string, rate: number, text?: string): void {
+  function playBuffer(
+    buf: ArrayBuffer,
+    characterId: string,
+    rate: number,
+    text?: string,
+    onDone: ((completed: boolean) => void) | null = null,
+  ): void {
     // Local TTS (260816) delivers WAV bytes instead of mp3. Sniff the RIFF
     // header: a WAV clip is typed honestly and carries its exact length in its
     // own header, so it needs no trailing-silence pad (the pad exists for mp3
@@ -242,13 +279,21 @@ export function createAudioQueue(
     // After applyPitch on purpose — the tap reuses the shifter's source node.
     const detachTap = tapClipLevel(el, characterId);
     current = el;
+    currentDone = onDone;
     currentCleanup = () => {
       detachTap?.();
       detachPitch?.();
       URL.revokeObjectURL(url);
     };
-    const done = (): void => finishCurrent(el);
-    el.addEventListener('ended', done, { once: true });
+    const done = (): void => {
+      settleCurrent(el, false);
+      finishCurrent(el);
+    };
+    const ended = (): void => {
+      settleCurrent(el, !el.muted);
+      finishCurrent(el);
+    };
+    el.addEventListener('ended', ended, { once: true });
     el.addEventListener('error', done, { once: true });
     markAudibleOnPlay(el, characterId, text);
     onSpeakingChange(true, characterId, text);
@@ -279,6 +324,8 @@ export function createAudioQueue(
         if (item.dropped) return; // cleared while waiting
         const total = item.chunks.reduce((n, c) => n + c.byteLength, 0);
         if (total === 0) {
+          currentDone = null;
+          item.onDone?.(false);
           playNext();
           return;
         }
@@ -288,7 +335,7 @@ export function createAudioQueue(
           all.set(new Uint8Array(c), off);
           off += c.byteLength;
         }
-        playBuffer(all.buffer, item.characterId, item.rate, item.text);
+        playBuffer(all.buffer, item.characterId, item.rate, item.text, item.onDone);
       };
       if (item.ended || item.failed) playCollected();
       else {
@@ -296,6 +343,7 @@ export function createAudioQueue(
         // reach this waiting slot and later enqueues don't double-start.
         item.onEnd = playCollected;
         current = new Audio();
+        currentDone = item.onDone;
         currentCleanup = () => {
           item.dropped = true;
           item.onEnd = null;
@@ -308,6 +356,7 @@ export function createAudioQueue(
     const ms = new MediaSource();
     const url = URL.createObjectURL(ms);
     const el = new Audio(url);
+    currentDone = item.onDone;
     el.muted = outputMuted;
     // A clip enqueued while a provisional barge-in is open must not start at
     // full volume: the player may still be mid-sentence.
@@ -323,7 +372,15 @@ export function createAudioQueue(
     let srcEnded = false;
     let silencePadded = false;
 
-    const done = (): void => finishCurrent(el);
+    const done = (): void => {
+      settleCurrent(el, false);
+      finishCurrent(el);
+    };
+    const ended = (): void => {
+      // A failed stream plays out what arrived; that is not the whole line.
+      settleCurrent(el, !el.muted && !item.failed);
+      finishCurrent(el);
+    };
 
     const maybeFinalize = (): void => {
       if (srcEnded || !sb || sb.updating) return;
@@ -394,7 +451,7 @@ export function createAudioQueue(
       detachPitch?.();
       URL.revokeObjectURL(url);
     };
-    el.addEventListener('ended', done, { once: true });
+    el.addEventListener('ended', ended, { once: true });
     el.addEventListener('error', done, { once: true });
     markAudibleOnPlay(el, item.characterId, item.text);
     onSpeakingChange(true, item.characterId, item.text);
@@ -417,8 +474,10 @@ export function createAudioQueue(
     }
     busy = true;
     if (item.kind === 'buffer') playBuffer(item.buf, item.characterId, item.rate, item.text);
-    else if (item.dropped || (item.failed && item.chunks.length === 0)) playNext();
-    else playStream(item);
+    else if (item.dropped || (item.failed && item.chunks.length === 0)) {
+      item.onDone?.(false);
+      playNext();
+    } else playStream(item);
   }
 
   /**
@@ -508,9 +567,14 @@ export function createAudioQueue(
 
   function haltPlayback(fadeMs = 0): void {
     for (const item of pending) {
-      if (item.kind === 'stream') item.dropped = true;
+      if (item.kind === 'stream') {
+        item.dropped = true;
+        item.onDone?.(false);
+      }
     }
     pending.length = 0;
+    // Cut off: whatever was playing did not finish.
+    settleCurrent(null, false);
     if (current) {
       const el = current;
       const cleanup = currentCleanup;
@@ -541,6 +605,7 @@ export function createAudioQueue(
           const p = pending[i];
           if (p.kind === 'stream' && p.characterId === characterId && p.turn && p.turn !== opts.turn) {
             p.dropped = true;
+            p.onDone?.(false);
             pending.splice(i, 1);
           }
         }
@@ -558,6 +623,7 @@ export function createAudioQueue(
         dropped: false,
         onChunk: null,
         onEnd: null,
+        onDone: once(opts?.onDone),
       };
       const handle: TtsStreamHandle = {
         push(chunk) {
@@ -578,6 +644,7 @@ export function createAudioQueue(
       };
       if (stopped) {
         item.dropped = true;
+        item.onDone?.(false);
         return handle;
       }
       pending.push(item);

@@ -60,6 +60,13 @@ export interface SttStream {
    *  what has been chewed so far — no flush, no cap; the gate compares words,
    *  it does not ship them to a model. */
   textAround(t0: number, t1: number): string;
+  /**
+   * 260925 act: wall-clock ms up to which the share audio has been JUDGED
+   * (transcribed, or found silent). Past it the ring's silence means nothing
+   * yet: the audio was not transcribed (no model, a wedged worker, a flush
+   * that timed out). 0 before anything was judged.
+   */
+  judgedThrough(): number;
   stop(): void;
 }
 
@@ -111,6 +118,11 @@ export function createSttStream(opts: { language?: string } = {}): SttStream {
   let flushArmed = false;
   /** Resolvers waiting on the CURRENT dispatch (the flush path). */
   let settleWaiters: Array<() => void> = [];
+  /** See SttStream.judgedThrough. */
+  let judgedUntil = 0;
+  const judged = (t: number): void => {
+    if (t > judgedUntil) judgedUntil = t;
+  };
 
   const pendingMs = (): number => (pendingSamples / STT_SAMPLE_RATE) * 1000;
 
@@ -137,6 +149,8 @@ export function createSttStream(opts: { language?: string } = {}): SttStream {
 
     // Silence never reaches the worker; the empty segment is simply not added.
     if (!worker || !ready || rmsDb(audio) < ENERGY_FLOOR_DB) {
+      // Silence is a judgement; audio with no model to hear it is not.
+      if (samples && rmsDb(audio) < ENERGY_FLOOR_DB) judged(t1);
       settle();
       return;
     }
@@ -154,6 +168,7 @@ export function createSttStream(opts: { language?: string } = {}): SttStream {
       clearTimeout(timeout);
       busy = false;
       if (text) pushSegment(segments, { t0, t1, text }, Date.now(), TRANSCRIPT_KEEP_MS);
+      judged(t1);
       if (flushArmed) {
         // A tick is waiting on the tail that piled up behind this job.
         flushArmed = false;
@@ -224,6 +239,10 @@ export function createSttStream(opts: { language?: string } = {}): SttStream {
         maybeDispatch(true);
       });
       return windowText(segments, Date.now(), TICK_TRANSCRIPT_MS, TICK_TRANSCRIPT_MAX_CHARS);
+    },
+
+    judgedThrough(): number {
+      return judgedUntil;
     },
 
     textAround(t0: number, t1: number): string {
