@@ -832,7 +832,7 @@ async function runTurn(
     // doubt, error or timeout turns it into an offer.
     const { checkControlIntent } = await import('../computerUse/actSession');
     const d = await s.control.decide(
-      { tickKind: tick.kind, userText: tick.text, call, confirmedThisTurn: opts.confirmedThisTurn },
+      { tickKind: tick.kind, userText: tick.text, call, confirmedThisTurn: opts.confirmedThisTurn, mic: tick.mic },
       checkControlIntent,
       ctrl.signal,
     );

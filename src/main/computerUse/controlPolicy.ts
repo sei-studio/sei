@@ -44,7 +44,7 @@ export interface PendingControl {
 
 export type ControlDecision =
   | { kind: 'run'; goal: string; origin: 'asked'; request: string }
-  | { kind: 'propose'; goal: string; why: 'not_user_tick' | 'not_asked' | 'unsafe_goal' };
+  | { kind: 'propose'; goal: string; why: 'not_user_tick' | 'not_asked' | 'unsafe_goal' | 'voice_doubt' };
 
 const CJK = /[぀-ヿ㐀-䶿一-鿿가-힯]/;
 const CJK_RUN = /[぀-ヿ㐀-䶿一-鿿가-힯]+/g;
@@ -89,10 +89,29 @@ function contentTokens(s: string): string[] {
   return out;
 }
 
-function sameWord(x: string, y: string): boolean {
+/**
+ * The simple inflections of `w`: plural / third person (-s, -es, -ies), past
+ * (-d, -ed, -ied, doubled consonant) and -ing (dropping a final e, doubled
+ * consonant). Only for a base of 3+ letters.
+ */
+function inflections(w: string): string[] {
+  if (w.length < 3) return [];
+  const out = [`${w}s`, `${w}es`, `${w}d`, `${w}ed`, `${w}ing`];
+  const last = w[w.length - 1]!;
+  if (/[bdfgklmnprtvz]/.test(last)) out.push(`${w}${last}ed`, `${w}${last}ing`);
+  if (last === 'e') out.push(`${w.slice(0, -1)}ing`);
+  if (last === 'y') out.push(`${w.slice(0, -1)}ies`, `${w.slice(0, -1)}ied`);
+  return out;
+}
+
+/**
+ * The same whole word, or one a simple inflection of the other ("settings" /
+ * "setting", "opened" / "open", "closing" / "close"). Never a longer word
+ * that merely starts with it: "file" is not "filesystem".
+ */
+export function sameWord(x: string, y: string): boolean {
   if (x === y) return true;
-  // Light stemming: "settings" / "setting", "opened" / "open".
-  return x.length >= 4 && y.length >= 4 && (x.startsWith(y) || y.startsWith(x));
+  return inflections(x).includes(y) || inflections(y).includes(x);
 }
 
 /**
@@ -175,13 +194,33 @@ export function goalWordsSaid(goal: string, userText: string): boolean {
   return true;
 }
 
-export function decideControl(o: { tickKind: string; userText?: string; call: ControlCall }): ControlDecision {
+/**
+ * The request came from the microphone and may not be the player: companion
+ * audio within TTS_GUARD_MS of it, or speech in the shared window's audio
+ * during it (a game, a stream, a friend through the speakers). Typed lines
+ * carry no `mic` and are never in doubt.
+ */
+export function micInDoubt(mic: MicInfo | undefined): boolean {
+  if (!mic) return false;
+  if (mic.ttsGapMs !== null && mic.ttsGapMs < TTS_GUARD_MS) return true;
+  return mic.shareVoice === true;
+}
+
+export function decideControl(o: {
+  tickKind: string;
+  userText?: string;
+  call: ControlCall;
+  mic?: MicInfo;
+}): ControlDecision {
   const goal = o.call.goal.trim();
   if (o.tickKind !== 'user') return { kind: 'propose', goal, why: 'not_user_tick' };
   if (unsafeGoal(goal)) return { kind: 'propose', goal, why: 'unsafe_goal' };
   if (!requestMatches(o.call.request, o.userText, goal) || !goalWordsSaid(goal, o.userText ?? '')) {
     return { kind: 'propose', goal, why: 'not_asked' };
   }
+  // The same voice checks as a yes to an offer: "can you uninstall this
+  // game" from the speakers must not run anything by itself.
+  if (micInDoubt(o.mic)) return { kind: 'propose', goal, why: 'voice_doubt' };
   return { kind: 'run', goal, origin: 'asked', request: o.call.request!.trim() };
 }
 
@@ -257,9 +296,7 @@ export function resolvePending(
   if (!p) return 'none';
   if (now - p.at > PENDING_CONTROL_TTL_MS) return 'expired';
   if (!isAffirmation(userText ?? '')) return 'declined';
-  if (mic && mic.ttsGapMs !== null && mic.ttsGapMs < TTS_GUARD_MS) return 'unsure';
-  if (mic?.shareVoice === true) return 'unsure';
-  return 'affirmed';
+  return micInDoubt(mic) ? 'unsure' : 'affirmed';
 }
 
 // ── Intent: is the player asking for this, now? ──────────────────────────
@@ -309,7 +346,7 @@ export type CallOutcome =
   | {
       kind: 'propose';
       goal: string;
-      why: 'not_user_tick' | 'not_asked' | 'unsafe_goal' | 'intent_no';
+      why: 'not_user_tick' | 'not_asked' | 'unsafe_goal' | 'voice_doubt' | 'intent_no';
       offer: { line: string; id: string } | null;
     }
   | { kind: 'ignored'; goal: string; why: 'confirmed_this_turn' };
@@ -348,7 +385,13 @@ export class ControlGate {
    * already started a confirmed run, so a call in the same reply (usually the
    * model restating the goal) is not a second one.
    */
-  onCall(o: { tickKind: string; userText?: string; call: ControlCall; confirmedThisTurn?: boolean }): CallOutcome {
+  onCall(o: {
+    tickKind: string;
+    userText?: string;
+    call: ControlCall;
+    confirmedThisTurn?: boolean;
+    mic?: MicInfo;
+  }): CallOutcome {
     const d = decideControl(o);
     if (o.confirmedThisTurn) return { kind: 'ignored', goal: d.goal, why: 'confirmed_this_turn' };
     if (d.kind === 'run') {
@@ -377,7 +420,7 @@ export class ControlGate {
    * given the player's whole line, not the model's `request` quote.
    */
   async decide(
-    o: { tickKind: string; userText?: string; call: ControlCall; confirmedThisTurn?: boolean },
+    o: { tickKind: string; userText?: string; call: ControlCall; confirmedThisTurn?: boolean; mic?: MicInfo },
     intent: IntentCheck,
     signal?: AbortSignal,
   ): Promise<CallOutcome> {

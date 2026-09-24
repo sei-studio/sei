@@ -30,8 +30,8 @@ things the screen cannot write: the tick kind and the player's own words.
   player's words that asked for it) and that quote is really in the player's
   line (word-aligned, case and punctuation ignored, 2+ words or 2+ CJK
   chars) and EVERY content word of the goal is in that quote IN ORDER
-  (exact, or a shared prefix when both are 4+ letters; CJK: every bigram of
-  the goal). Direction words (on, off, up, down) count, so "turn on" never
+  (the same whole word or a simple inflection of it: -s, -es, -ed, -ing;
+  "file" never matches "filesystem"; CJK: every bigram of the goal). Direction words (on, off, up, down) count, so "turn on" never
   justifies "turn off", and "from downloads to trash" never justifies "from
   trash to downloads". Quoting "this game is so hard" for "uninstall the
   game", or "can you open settings" for "open settings and turn off the
@@ -43,6 +43,11 @@ things the screen cannot write: the tick kind and the player's own words.
   format character, or over 120 chars (`unsafeGoal`,
   `IMMEDIATE_GOAL_MAX_CHARS`) never runs at once; it is an offer
   (`unsafe_goal`), and the offer line collapses control characters.
+- **A spoken request that may not be the player is an offer.** The same
+  voice checks as a yes to an offer (below: companion audio within 300 ms,
+  or speech in the shared window's audio) apply to the line that asked:
+  "can you uninstall this game" from the speakers becomes an offer
+  (`voice_doubt`), without asking the classifier.
 - **Then the intent check** (`intentCheck.ts`, `ControlGate.decide`). Words
   cannot tell "please don't delete my save file", "should i uninstall this
   game?" or "never buy the battle pass lol" from a request, so a call that

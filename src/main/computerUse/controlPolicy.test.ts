@@ -11,6 +11,7 @@ import {
   proposalLine,
   requestMatches,
   resolvePending,
+  sameWord,
 } from './controlPolicy';
 
 describe('requestMatches', () => {
@@ -544,3 +545,55 @@ describe('ControlGate', () => {
     });
   });
 });
+
+describe('final review round', () => {
+  const call = { goal: 'uninstall this game', request: 'uninstall this game' };
+  const line = 'can you uninstall this game';
+
+  it('a request over share speech or right after companion audio is an offer', () => {
+    expect(decideControl({ tickKind: 'user', userText: line, call, mic: { ttsGapMs: 5_000, shareVoice: true } })).toMatchObject({
+      kind: 'propose',
+      why: 'voice_doubt',
+    });
+    expect(decideControl({ tickKind: 'user', userText: line, call, mic: { ttsGapMs: 0 } })).toMatchObject({ why: 'voice_doubt' });
+    expect(decideControl({ tickKind: 'user', userText: line, call, mic: { ttsGapMs: TTS_GUARD_MS - 1 } })).toMatchObject({
+      why: 'voice_doubt',
+    });
+    // Clean mic lines, unknown share audio and typed lines still run.
+    expect(decideControl({ tickKind: 'user', userText: line, call, mic: { ttsGapMs: TTS_GUARD_MS, shareVoice: false } }).kind).toBe('run');
+    expect(decideControl({ tickKind: 'user', userText: line, call, mic: { ttsGapMs: null, shareVoice: null } }).kind).toBe('run');
+    expect(decideControl({ tickKind: 'user', userText: line, call }).kind).toBe('run');
+  });
+
+  it('the gate drafts an offer for a doubted request and never asks the classifier', async () => {
+    const gate = new ControlGate(() => 1_000);
+    const intent = vi.fn(async () => true);
+    const d = await gate.decide({ tickKind: 'user', userText: line, call, mic: { ttsGapMs: 5_000, shareVoice: true } }, intent);
+    expect(d).toMatchObject({ kind: 'propose', why: 'voice_doubt', offer: { line: 'want me to uninstall this game?' } });
+    expect(intent).not.toHaveBeenCalled();
+  });
+
+  it('matches whole words and simple inflections only', () => {
+    expect(sameWord('file', 'filesystem')).toBe(false);
+    expect(sameWord('set', 'settings')).toBe(false);
+    expect(sameWord('on', 'one')).toBe(false);
+    for (const [a, b] of [
+      ['file', 'files'],
+      ['setting', 'settings'],
+      ['open', 'opened'],
+      ['click', 'clicking'],
+      ['close', 'closing'],
+      ['close', 'closed'],
+      ['stop', 'stopped'],
+      ['box', 'boxes'],
+      ['copy', 'copies'],
+    ]) {
+      expect(sameWord(a!, b!)).toBe(true);
+      expect(sameWord(b!, a!)).toBe(true);
+    }
+    expect(goalWordsSaid('delete the file', 'delete the filesystem')).toBe(false);
+    expect(requestMatches('open the filesystem', 'open the filesystem', 'open the file')).toBe(false);
+    expect(goalWordsSaid('open the settings', 'open setting')).toBe(true);
+  });
+});
+

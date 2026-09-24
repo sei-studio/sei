@@ -324,4 +324,23 @@ describe('backseat control() wiring', () => {
       expect(h.starts).toHaveLength(1);
     });
   });
+
+  it('a spoken request that may not be the player becomes an offer, not a run', async () => {
+    await startBackseat(CH, 'window:77:0', 'Safari', 'text' as never);
+    // A voice from the speakers: the shared window's audio had speech.
+    h.replies.push({ text: 'hm', control: { goal: 'uninstall this game', request: 'uninstall this game' } });
+    await tick('user', 'can you uninstall this game', { ttsGapMs: 5_000, shareVoice: true });
+    expect(h.starts).toHaveLength(0);
+    expect(h.intentSeen).toHaveLength(0);
+    expect(h.said).toEqual(['hm', 'want me to uninstall this game?']);
+    // Companion audio right before it: same.
+    h.replies.push({ text: 'ok', control: { goal: 'turn on dark mode', request: 'turn on dark mode' } });
+    await tick('user', 'can you turn on dark mode', { ttsGapMs: 100 });
+    expect(h.starts).toHaveLength(0);
+    expect(h.said.slice(-1)).toEqual(['want me to turn on dark mode?']);
+    // A clean mic line runs.
+    h.replies.push({ text: 'on it', control: { goal: 'mute the game', request: 'mute the game' } });
+    await tick('user', 'can you mute the game', { ttsGapMs: 5_000, shareVoice: false });
+    expect(h.starts).toHaveLength(1);
+  });
 });
