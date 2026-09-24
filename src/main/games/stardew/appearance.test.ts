@@ -1,6 +1,8 @@
 /** Stardew appearance (260921): the one-off derivation with a stubbed LLM. */
 import { describe, it, expect, vi } from 'vitest';
 import {
+  APPEARANCE_CLOUD_WAIT_WITH_LOCAL_MS,
+  APPEARANCE_SUMMON_WAIT_MS,
   appearanceForSummon,
   buildAppearanceMessage,
   clearAppearance,
@@ -330,9 +332,32 @@ describe('shared cloud looks + the portrait (260925)', () => {
   });
 
   it('a character with no art at all shares its text-only look', async () => {
-    const { d, writeCloud } = suiDeps({ readPortrait: async () => null, canSee: async () => false });
+    const { d, writeCloud } = suiDeps({
+      getCharacter: async () => ({
+        name: 'Sui',
+        description: 'long silver hair, navy coat',
+        persona: { source: 'tomboy gremlin', expanded: '' },
+        metadata: {},
+        portrait_image: null,
+      }),
+      readPortrait: async () => null,
+      canSee: async () => false,
+    });
     await getOrDeriveAppearance('sui', d);
     expect(writeCloud).toHaveBeenCalledTimes(1);
+  });
+
+  it('a portrait ref whose file cannot be read (not cached yet, too big) still keeps a text guess local', async () => {
+    const seen: DeriveArgs[] = [];
+    const { d, writeCloud } = suiDeps({
+      readPortrait: async () => null,
+      canSee: async () => true,
+      derive: async (a) => { seen.push(a); return SUI_V1; },
+    });
+    expect((await getOrDeriveAppearance('sui', d)).appearance.hair).toBe(8);
+    expect(seen[0].image).toBeNull();
+    expect(writeCloud).not.toHaveBeenCalled();
+    expect(d.cfg.stardew_appearance?.sui?.hair).toBe(8);
   });
 
   it('this user\'s own override beats the cloud row', async () => {
@@ -359,5 +384,75 @@ describe('shared cloud looks + the portrait (260925)', () => {
     });
     expect((await getOrDeriveAppearance('sui', noRoute.d)).appearance.hair).toBe(100);
     expect(noRoute.d.cfg.stardew_appearance?.sui).toMatchObject({ hair: 100, version: STARDEW_APPEARANCE_VERSION });
+  });
+});
+
+// Review finding (260925): the cloud read may take up to its 5 s timeout and a
+// summon waits 6 s in total, so a slow network could push a summon onto the
+// default look while a good local copy sat on disk. Each test uses its own
+// character id so a stuck single-flight in one cannot leak into the next.
+describe('slow cloud reads (260925)', () => {
+  const currentLocal = (id: string) =>
+    ({ stardew_appearance: { [id]: { ...SUI_V2, source: 'auto', version: STARDEW_APPEARANCE_VERSION } } }) as Partial<UserConfig>;
+
+  it('a current local copy ships once the cloud cap passes, and the late cloud row refreshes the cache', async () => {
+    vi.useFakeTimers();
+    try {
+      let answer: (r: GameProfileRead) => void = () => {};
+      const derive = vi.fn(async () => SUI_V1);
+      const { d, writeCloud } = suiDeps(
+        { derive, readCloud: () => new Promise<GameProfileRead>((r) => { answer = r; }) },
+        currentLocal('sui-slow'),
+      );
+      let shipped: Awaited<ReturnType<typeof appearanceForSummon>> | null = null;
+      void appearanceForSummon('sui-slow', { deps: d }).then((r) => { shipped = r; });
+
+      await vi.advanceTimersByTimeAsync(APPEARANCE_CLOUD_WAIT_WITH_LOCAL_MS - 1);
+      expect(shipped).toBeNull();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(shipped).toMatchObject({ source: 'auto', appearance: { hair: 100 } });
+      expect(APPEARANCE_CLOUD_WAIT_WITH_LOCAL_MS).toBeLessThan(APPEARANCE_SUMMON_WAIT_MS);
+
+      // The cloud answers later with a different current look: it lands in the cache for next time.
+      answer({ ok: true, profile: profile({ ...SUI_V2, hair: 115 }) });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(d.cfg.stardew_appearance?.['sui-slow']).toMatchObject({ hair: 115, source: 'auto', version: STARDEW_APPEARANCE_VERSION });
+      expect(derive).not.toHaveBeenCalled();
+      expect(writeCloud).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a cloud answer inside the cap still wins over the local copy', async () => {
+    vi.useFakeTimers();
+    try {
+      const { d } = suiDeps(
+        { readCloud: () => new Promise<GameProfileRead>((r) => setTimeout(() => r({ ok: true, profile: profile({ ...SUI_V2, hair: 115 }) }), 1_000)) },
+        currentLocal('sui-fast'),
+      );
+      const pending = getOrDeriveAppearance('sui-fast', d);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect((await pending).appearance.hair).toBe(115);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('with no local copy the cloud read is not capped (there is nothing better to use)', async () => {
+    vi.useFakeTimers();
+    try {
+      const derive = vi.fn(async () => SUI_V1);
+      const { d } = suiDeps({
+        derive,
+        readCloud: () => new Promise<GameProfileRead>((r) => setTimeout(() => r({ ok: true, profile: profile(SUI_V2) }), 3_000)),
+      });
+      const pending = getOrDeriveAppearance('sui-nolocal', d);
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect((await pending).appearance.hair).toBe(100);
+      expect(derive).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

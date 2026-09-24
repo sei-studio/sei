@@ -23,7 +23,10 @@
  *   when the cloud has no answer (offline, signed out, not deployed yet).
  *   Resolution order: local 'user' row (this user's own override) > cloud row
  *   at the current version (or any cloud 'user' row, the owner's edit) > local
- *   'auto' row at the current version > a new derivation.
+ *   'auto' row at the current version > a new derivation. When that local
+ *   'auto' row exists, the cloud read is capped at
+ *   APPEARANCE_CLOUD_WAIT_WITH_LOCAL_MS so a slow network never pushes a
+ *   summon onto the default look; a late cloud answer refreshes the cache.
  * - A derivation is only OFFERED to the cloud when it saw the portrait, or the
  *   character has no portrait at all. A text-only guess about a character with
  *   art (a BYOK model without vision) stays local, so one blind guess cannot
@@ -89,6 +92,14 @@ export interface AppearanceDeps {
 
 /** How long a summon waits on a first derivation before going ahead with the default look. */
 export const APPEARANCE_SUMMON_WAIT_MS = 6_000;
+/**
+ * With a current local copy in hand, how long the cloud read may take before
+ * the local copy is used as is (the read keeps going and refreshes the cache
+ * for next time). Without this a slow network could hold the summon until
+ * APPEARANCE_SUMMON_WAIT_MS and ship the default look while a good local one
+ * sat unused.
+ */
+export const APPEARANCE_CLOUD_WAIT_WITH_LOCAL_MS = 1_500;
 /** Fewer validated fields than this and the answer is treated as a failed derivation. */
 const MIN_SALVAGED_FIELDS = 5;
 const TEXT_MAX = 3000;
@@ -308,6 +319,18 @@ function usableCloudRow(read: GameProfileRead | null): { appearance: StardewAppe
   return { appearance, version: profile.version, source: profile.source };
 }
 
+const SLOW = Symbol('slow');
+
+/** `p`, or SLOW when it has not settled within `ms`. */
+function within<T>(p: Promise<T>, ms: number): Promise<T | typeof SLOW> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const slow = new Promise<typeof SLOW>((resolve) => {
+    timer = setTimeout(() => resolve(SLOW), ms);
+    timer.unref?.();
+  });
+  return Promise.race([p, slow]).finally(() => clearTimeout(timer));
+}
+
 /** One derivation per character at a time; a second caller joins the first. */
 const inFlight = new Map<string, Promise<ResolvedAppearance>>();
 
@@ -352,8 +375,27 @@ async function deriveOnce(characterId: string, deps: AppearanceDeps): Promise<Re
   const local = readStoredAppearance(cfg, characterId);
   if (local?.source === 'user') return local;
 
-  // 2. The shared cloud row, when there is a current one.
-  const cloudRead = deps.readCloud ? await deps.readCloud(characterId).catch(() => null) : null;
+  // 2. The shared cloud row, when there is a current one. When a current local
+  //    copy exists the read only gets APPEARANCE_CLOUD_WAIT_WITH_LOCAL_MS; a
+  //    slower answer lands in the local cache in the background instead.
+  const cloudPending = deps.readCloud ? deps.readCloud(characterId).catch(() => null) : null;
+  let cloudRead: GameProfileRead | null = null;
+  if (cloudPending && local) {
+    const raced = await within(cloudPending, APPEARANCE_CLOUD_WAIT_WITH_LOCAL_MS);
+    if (raced === SLOW) {
+      deps.log?.(
+        `appearance: cloud read slower than ${APPEARANCE_CLOUD_WAIT_WITH_LOCAL_MS}ms, using the local copy and refreshing it in the background`,
+      );
+      void cloudPending.then(async (late) => {
+        const cloud = usableCloudRow(late);
+        if (cloud) await cacheLocally(deps, characterId, cloud.appearance, cloud.version);
+      });
+      return local;
+    }
+    cloudRead = raced;
+  } else if (cloudPending) {
+    cloudRead = await cloudPending;
+  }
   if (cloudRead && !cloudRead.ok) deps.log?.(`appearance: cloud read unavailable (${cloudRead.reason}), using the local copy`);
   const cloud = usableCloudRow(cloudRead);
   if (cloud) {
@@ -398,7 +440,12 @@ async function deriveOnce(characterId: string, deps: AppearanceDeps): Promise<Re
   // 5. Share it, unless it is a blind guess about a character that has art.
   let result: ResolvedAppearance = { appearance, source: 'auto' };
   let version = STARDEW_APPEARANCE_VERSION;
-  const shareable = Boolean(image) || !portrait;
+  // "Has art" is the character's portrait ref, not whether the bytes could be
+  // read here: a ref whose file is not cached yet (cache-on-demand downloads it
+  // after saving the ref), failed to download, is too large or is an
+  // unsupported format still means the text-only guess is blind.
+  const hasArt = Boolean(portrait) || (typeof character.portrait_image === 'string' && character.portrait_image.trim() !== '');
+  const shareable = Boolean(image) || !hasArt;
   if (shareable && deps.writeCloud) {
     const wrote = await deps.writeCloud({ characterId, version, data: appearance }).catch(() => null);
     if (wrote?.ok) {

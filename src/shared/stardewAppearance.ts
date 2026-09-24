@@ -298,6 +298,9 @@ export function coerceStardewAppearance(input: unknown): { appearance: StardewAp
  *       invented a look from the personality ("tomboy gremlin" -> wild blue
  *       spikes for Sui, whose portrait has long silver hair).
  *   2 = the portrait via vision + the grouped menu below.
+ * The proxy caps the version it accepts (sei-proxy src/games/profile.ts
+ * PROFILE_MAX_VERSION): raise that and deploy the proxy BEFORE shipping a
+ * bump, or the new rows are rejected (400) and stay local.
  */
 export const STARDEW_APPEARANCE_VERSION = 2;
 
