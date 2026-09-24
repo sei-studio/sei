@@ -533,9 +533,11 @@ async function countFiles(dir: string): Promise<number> {
 
 /**
  * Why the pack tree at root is not usable, or null when it is: a required
- * payload file is missing, or the tree holds fewer/more files than pack.json's
- * `files` (the count the builder hashed; pack.json itself excluded). A
- * pack.json without a numeric `files` skips only the count.
+ * payload file is missing, or the tree holds fewer files than pack.json's
+ * `files` (the count the builder hashed; pack.json itself excluded). Extra
+ * files are tolerated: a stray .DS_Store or Thumbs.db the OS drops into the
+ * store must not force a 50MB Minecraft re-download. A pack.json without a
+ * numeric `files` skips only the count.
  */
 async function treeProblem(root: string, game: GameId): Promise<string | null> {
   try {
@@ -544,7 +546,7 @@ async function treeProblem(root: string, game: GameId): Promise<string | null> {
     const pj = JSON.parse(await readFile(path.join(root, 'pack.json'), 'utf8')) as { files?: unknown };
     if (typeof pj.files === 'number') {
       const have = (await countFiles(root)) - 1;
-      if (have !== pj.files) return `holds ${have} files, pack.json lists ${pj.files}`;
+      if (have < pj.files) return `holds ${have} files, pack.json lists ${pj.files}`;
     }
     return null;
   } catch (err) {

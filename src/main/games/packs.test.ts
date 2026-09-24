@@ -20,8 +20,10 @@
  *  12. A payload-less INSTALL from that zip is not re-linked on the next
  *      version even though the manifest treeHash matches: it is downloaded
  *      again and ends up with the mod.
- *  13. A re-link candidate whose file count disagrees with pack.json `files`
- *      is downloaded again too.
+ *  13. A re-link candidate with fewer files than pack.json `files` is
+ *      downloaded again too.
+ *  13b. Extra files (a Finder .DS_Store) do not break the re-link: no zip
+ *      request.
  *  14. getPackState reads a payload-less same-version install as missing.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -379,7 +381,7 @@ describe('game packs: payload integrity (260924, empty v0.6.5-beta.1 DST pack)',
     await expect(stat(path.join(store, 'dontstarve', '1.2.2'))).rejects.toBeTruthy();
   });
 
-  it('Test 13: a re-link candidate whose file count disagrees with pack.json is downloaded again', async () => {
+  it('Test 13: a re-link candidate missing a file listed in pack.json is downloaded again', async () => {
     const treeHash = 'e'.repeat(64);
     const fx = await buildZip({ game: 'dontstarve', files: DST_FILES, treeHash });
     serveDst(fx, VERSION);
@@ -394,6 +396,23 @@ describe('game packs: payload integrity (260924, empty v0.6.5-beta.1 DST pack)',
     const root = await ensurePack('dontstarve');
     expect(served.requests).toContain(`/mirror/${dstFile(NEXT)}`);
     await stat(path.join(root, 'assets/dst-mod/sei/scripts/sei/net.lua'));
+  });
+
+  it('Test 13b: a stray extra file (.DS_Store) still re-links without downloading', async () => {
+    const treeHash = 'e'.repeat(64);
+    const fx = await buildZip({ game: 'dontstarve', files: DST_FILES, treeHash });
+    serveDst(fx, VERSION);
+    configure();
+    await ensurePack('dontstarve');
+    await writeFile(path.join(store, 'dontstarve', VERSION, 'assets/.DS_Store'), 'finder');
+
+    const NEXT = '1.2.4';
+    serveDst(fx, NEXT);
+    configure(NEXT);
+    served.requests.length = 0;
+    const root = await ensurePack('dontstarve');
+    expect(served.requests).not.toContain(`/mirror/${dstFile(NEXT)}`);
+    await stat(path.join(root, 'assets/dst-mod/sei/modinfo.lua'));
   });
 
   it('Test 14: getPackState reads a payload-less same-version install as missing', async () => {
