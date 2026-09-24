@@ -341,7 +341,21 @@ that ran at the wrong time. The pieces, all in `src/bot/brain/` and pinned in
 - **The one text filter is an exact match**
   (`isExactRepeatSincePlayerSpoke`): every segment equal, after normalization,
   to a line of hers newer than the player's last line. It does not attempt
-  similarity, for the 260731 reason above.
+  similarity, for the 260731 reason above. Since 260925 it works per SENTENCE
+  (`splitRepeatedSegments`): the v0.6.5-beta.2 Stardew session re-asked an
+  unanswered question as "i'm here. <the same question>", which the
+  whole-line check let through. Now the repeated sentence is dropped, the new
+  one is sent (`joinSegments` re-joins survivors so they split back the same),
+  and the say() result tells her what was held back and not to answer it
+  for the player.
+- **Speaker labels cannot collide with her name (260925).** Player lines in
+  the transcript read `player (<name>)` (`convoMemory.playerLabel`), sibling
+  companions keep their own name (`pushPlayer(..., {companion})`, fed from the
+  adapters' `fromCompanion`), and her own lines stay `you:`. The same session's
+  player went by "Sei", so the transcript said `Sei: ...` and the app framing
+  said "Sei typed this in the Sei app", and her scratchpad attributed her own
+  question to the player and answered it. The conversation header says a
+  question of hers that has not been answered is waiting on them.
 
 Not done, on purpose: no similarity dedupe, no cancelling of a queued line when
 the player speaks first (it is now in her transcript, so the reply that follows
@@ -1972,9 +1986,14 @@ is owner-writable; Finder duplicate also stalls behind an Automation prompt).
 The binary hard-codes `../mods/` relative to its executable (checked with
 `strings`), so there is no other folder to write to. `installError` in
 `install.ts` classifies a darwin EPERM as `permission: true` and `DstSteps`
-turns it into the System Settings path plus an "Open System Settings" button
-(`dst:open-app-management`, a fixed `x-apple.systempreferences:` URL that
-bypasses the https-only external-URL validator on purpose). Whether a SIGNED
+shows ONE line naming App Management plus "Try again" (260925: the System
+Settings deep link was dropped on purpose; users are not sent to Settings while
+an install route that avoids the bundle is researched. The
+`dst:open-app-management` IPC still exists, unused). The error PERSISTS: the
+setup hook's 3 s poll used to replace it with a plain "helper missing" within
+a tick, because detection never reports install errors. `useDstStore`
+now skips the poll while an install is in flight and `mergeDetected` keeps an
+error until the helper is actually in the game (or the game is gone). Whether a SIGNED
 Sei build gets the automatic "would like to update other applications" prompt
 is unverified: the dev Electron got no prompt, only the refusal. Windows has no
 equivalent (the mods folder sits beside the exe).
@@ -2284,6 +2303,37 @@ creator knob, and it hides the hair).
   launch panel (`source: 'user'` is already in the stored row and is kept
   as is), and re-deriving when a character's description changes
   (`clearAppearance` exists; nothing calls it yet).
+- **260925: the model sees the portrait, and the look is shared (v2).** The
+  v0.6.5-beta.2 playtest drew Sui with wild blue spikes and a bright purple
+  shirt. Root cause: the defaults have no description and no sheet, so the
+  model got the personality blurb ("tomboy gremlin") and invented a look; it
+  never saw the character. Now:
+  - The portrait goes in as an IMAGE when the active backend can see
+    (`activeLlmVision() === 'yes'`: cloud proxy, Anthropic BYOK, vision local
+    models), read from `paths.portraitPath(id)` (cache-on-demand puts a cloud
+    character's art there) or its https URL, and the prompt makes the picture
+    the truth. The options are one labelled MENU in the message
+    (`renderStardewAppearanceMenu`, hair grouped by length), and the tool call
+    starts with an `observed` sentence. `scripts/stardew-appearance-probe.ts`
+    runs v1 against v2 on the fixture portraits with the dev key. Measured
+    (Haiku 4.5, 3 runs each): Sui's hair went from 8 (wild spikes) every run to
+    a long style (115/24/110) in lavender every run; Lyra from a chin-length bob
+    to long brown hair and a black top with a white collar; Marv from grey skin
+    to red skin and bald, every run.
+  - **The look lives in the CLOUD** (`src/main/cloud/gameProfileClient.ts`,
+    table `character_game_profiles` + `POST /games/profile` in sei-proxy):
+    read under RLS, written only through the proxy, FIRST WRITE WINS, and the
+    response carries the stored row so a race loser adopts the winner's look.
+    Every user then gets the same Sui. Resolution: local `user` row (this
+    user's override) > cloud row at the current version (or the owner's cloud
+    `user` edit) > local `auto` row at the current version > a new derivation.
+    The config row is only a cache for when the cloud has no answer.
+  - A derivation is offered to the cloud only when it SAW the portrait, or the
+    character has no art at all: a blind text guess by a BYOK model without
+    vision stays local, so it cannot become everyone's look.
+  - `STARDEW_APPEARANCE_VERSION` (2) tags every row; older `auto` rows (every
+    v1 look already in a config) are ignored and redone, and the proxy lets a
+    higher version replace an `auto` row but never a `user` one.
 
 **Dashboards in the games' own registers (260909).** Both bot-backed
 dashboards are now DELIBERATE, CONTAINED EXCEPTIONS to the design tokens,
