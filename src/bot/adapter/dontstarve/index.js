@@ -11,7 +11,7 @@ import { createSnapshotComposer } from './observers/snapshot.js'
 import { wireLinkEvents } from './fsmWires.js'
 import { createDashboardTelemetry } from './dashboard/telemetry.js'
 import { classifyConnectError } from './errors.js'
-import { createAlertWatcher, lightMeans } from './observers/alerts.js'
+import { createAlertWatcher, lightMeans, nudgesAllowed } from './observers/alerts.js'
 import { createHabitLog } from './observers/habits.js'
 import { createProgressionLatches, getProgression } from './observers/progression.js'
 import {
@@ -61,7 +61,7 @@ export function createDontStarveAdapter({ link, config }) {
     // ─── Action surface ───────────────────────────────────────────────
     listActions: () => registry.list(),
     getActionSchema: (name) => registry.schema(name),
-    getActionDescription: (name) => describeAction(name) || registry.description(name),
+    getActionDescription: (name) => describeAction(name, hasCaps()) || registry.description(name),
     executeAction: async (name, args, ctx = {}) => {
       const execConfig = { ...config, ...ctx }
       const result = await registry.execute(name, args, null, execConfig)
@@ -111,6 +111,9 @@ export function createDontStarveAdapter({ link, config }) {
           count: 1,
         }),
         onNudge: (a) => handlers.onIdleNudge?.({ reason: 'alert', alert: a.key, text: a.text }),
+        // A passive character gets no extra turns for nudges; it reads them
+        // in the snapshot's heads_up line.
+        allowNudges: () => nudgesAllowed(config.persona?.proactiveness),
       })
       const onObs = () => {
         if (!hasCaps() || link.paused) return

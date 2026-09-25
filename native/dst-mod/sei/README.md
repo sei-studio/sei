@@ -77,13 +77,18 @@ cluster token:
    `userid`, `SetCanSleep(false)`, invincible so the world does not reset).
 4. `node scripts/dst-headless-harness.mjs --console <fifo> --near <userid>`
    with a scenario on stdin (`tool`, `snap`, `obs`, `lua`, `wait`, `events`).
+   Scenarios for the 0.3.0 habits are in `scripts/dst-headless-scenarios/`
+   (chop near a fire at night, a night alone, holds/defend/give).
 
 What a server with no real client cannot show: entities away from a real
-player are asleep, and a sleeping light does not light anything. A held
-torch's light and a freshly built campfire never lit the body there, which
-is why the light habit falls back to a torch-sized light on the body itself
-(always awake). With the host nearby in the real game everything near them
-is awake.
+player are asleep, and a sleeping light does not light anything (the same
+happens in the real game when the body is far from the host). Setting
+`SetCanSleep(false)` does not wake an entity that is already asleep, only
+one set in the frame it spawns, so the mod keeps the light entities of what
+the body equips awake from the equip event, and respawns the flame of a
+burning fire near the body awake (`Reflexes.KeepFiresAwake`). Fire heat did
+not change the body's temperature on the test server, so warming up is
+checked only as walking to the fire.
 
 ## Credits
 

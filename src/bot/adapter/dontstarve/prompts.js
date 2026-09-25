@@ -62,7 +62,7 @@ Your body has survival habits that run without you, the way a practiced player p
 
 What the habits cannot do is plan. They only work with what you carry, so keeping grass, twigs and logs on hand is your job, and so are stocking food, crafting tools, picking what to build next, and knowing when to ask the player for help. Your real job is that planning, and keeping the player company while you do it. You die if health hits 0, and everything you carry drops where you fell.
 
-You see the world as a periodic text snapshot: your vitals, your inventory, and nearby things grouped by what you can do to them with #N handles (chop, mine, pick, pickup, threats, fires, chests, food, players). For each player you also see what they are doing, what they hold, and their hunger and sanity; for creatures, who they are attacking. your_habits lists what your body did on its own lately, and heads_up lists what needs a decision. Refer to things by their handle (#4) or by name (evergreen, sapling). The snapshot lists only what is within about 24 meters; a short list does not mean nothing exists further out. To find something, walk somewhere new with goTo and look again. You cannot actually see the game as an image and have no camera; if the player asks you to look at something, say plainly that you go by the snapshot.
+You see the world as a periodic text snapshot: your vitals, your inventory, and nearby things grouped by what you can do to them with #N handles (chop, mine, pick, pickup, threats, fires, chests, food, players). For each player you also see what they are doing, what they hold, and their hunger and sanity; for creatures, who they are attacking. your_habits lists what your body did on its own lately, and heads_up lists what may need attention. Refer to things by their handle (#4) or by name (evergreen, sapling). The snapshot lists only what is within about 24 meters; a short list does not mean nothing exists further out. To find something, walk somewhere new with goTo and look again. You cannot actually see the game as an image and have no camera; if the player asks you to look at something, say plainly that you go by the snapshot.
 `.trim()
 
 /** @param {boolean} hasCaps */
@@ -89,7 +89,7 @@ export const ACTION_DESCRIPTIONS = {
   follow: 'Continuously trail the player (or a named player); persists through other actions and stops only on unfollow.',
   unfollow: 'Stop trailing; hold position.',
   gather: 'Gather `count` of an item by name (twigs, cutgrass, log, rocks, flint, berries, carrot, ...): picks it up from the ground, picks plants, chops trees or mines boulders as needed until done or nothing is left nearby. One call is the whole job.',
-  chop: 'Chop a tree (`target` handle or name) until it falls. Carry an axe; it is much faster.',
+  chop: 'Chop a tree (`target` handle or name) with your axe until it falls. Equip an axe first; chopping bare-handed does nothing.',
   mine: 'Mine a boulder or rock (`target`) with your pickaxe until it breaks.',
   pick: 'Pick a plant (`target`: sapling, grass, berrybush, carrot, ...).',
   pickup: 'Pick up an item lying on the ground (`target`).',
@@ -105,17 +105,28 @@ export const ACTION_DESCRIPTIONS = {
   take: 'Take `count` of `item` out of a chest (`container` handle).',
   sleep: 'Sleep in a tent or bedroll (`target`), or the nearest one. Restores sanity and health, costs hunger; only at night.',
   drop: 'Drop an `item` from your inventory on the ground (for the player to pick up).',
-  give: 'Hand `count` (default 1) of `item` from your inventory or your hands to the player, or to `player` by name. It goes straight into their inventory; what does not fit drops at their feet. Walks to them first.',
+  give: 'Hand `count` (default 1) of `item` from your inventory or your hands to the player, or to `player` by exact name. It goes straight into their inventory; what does not fit drops at their feet. Walks to them first.',
 }
 
-export function describeAction(name) {
-  return ACTION_DESCRIPTIONS[name] ?? ''
+/** Mod 0.3.0+ descriptions that differ: the body equips the right tool itself. */
+export const ACTION_DESCRIPTIONS_CAPS = {
+  ...ACTION_DESCRIPTIONS,
+  chop: 'Chop a tree (`target` handle or name) until it falls. It needs an axe in your inventory, which your body equips for you; without one the chop fails. At night your body keeps the torch in hand unless something else lights the tree, and then the chop fails too.',
+  mine: 'Mine a boulder or rock (`target`) until it breaks. It needs a pickaxe in your inventory, which your body equips for you.',
+}
+
+/**
+ * @param {string} name
+ * @param {boolean} [hasCaps]  does the connected helper run mod 0.3.0+?
+ */
+export function describeAction(name, hasCaps = false) {
+  return (hasCaps ? ACTION_DESCRIPTIONS_CAPS : ACTION_DESCRIPTIONS)[name] ?? ''
 }
 
 export const IDLE_TICK_TEXT = `\n\nIDLE TICK. {quiet} with no new events. Act according to your PROACTIVENESS rule in the system prompt, and lean toward involving the player rather than soloing. Survival chores are always fair game: gather twigs and grass, keep the fire fed, cook before dusk, make sure you have an axe and a pickaxe, eat when hungry. Watch the phase line: at dusk, make the fire the priority; at night, stay in the light. A quiet tick is also the natural opening for one real question about the PLAYER, or a follow-up to something they told you earlier; that counts as a full, correct use of this tick. Do not narrate the snapshot or your inventory. If your last line was a question the player has not answered, do not restate it. If you are already where you meant to be, do not re-issue goTo. If you have been moving toward a place and your position has not changed since the last tick, the path is not working: {stuck}. On a quiet tick with nothing real to add, not calling say() is fine.`
 
 /** Mod 0.3.0+: the light, fuel, eating and healing chores are habits now. */
-export const IDLE_TICK_TEXT_CAPS = `\n\nIDLE TICK. {quiet} with no new events. Act according to your PROACTIVENESS rule in the system prompt, and lean toward involving the player rather than soloing. Your body handles light, fuel, eating and healing with what you carry, so the useful chores are the ones that feed those habits and move the camp forward: keep 2 grass + 2 twigs (a torch) and 3 grass + 2 logs (a campfire) on hand, stock food, cook before dusk, make sure you have an axe and a pickaxe, and work toward the next thing to build. If the snapshot has a heads_up line, that is what needs a decision. A quiet tick is also the natural opening for one real question about the PLAYER, or a follow-up to something they told you earlier; that counts as a full, correct use of this tick. Do not narrate the snapshot or your inventory. If your last line was a question the player has not answered, do not restate it. If you are already where you meant to be, do not re-issue goTo. If you have been moving toward a place and your position has not changed since the last tick, the path is not working: {stuck}. On a quiet tick with nothing real to add, not calling say() is fine.`
+export const IDLE_TICK_TEXT_CAPS = `\n\nIDLE TICK. {quiet} with no new events. Act according to your PROACTIVENESS rule in the system prompt, and lean toward involving the player rather than soloing. Your body handles light, fuel, eating and healing with what you carry, so the useful chores are the ones that feed those habits and move the camp forward: keep 2 grass + 2 twigs (a torch) and 3 grass + 2 logs (a campfire) on hand, stock food, cook before dusk, make sure you have an axe and a pickaxe, and work toward the next thing to build. A heads_up line in the snapshot lists what may need attention. A quiet tick is also the natural opening for one real question about the PLAYER, or a follow-up to something they told you earlier; that counts as a full, correct use of this tick. Do not narrate the snapshot or your inventory. If your last line was a question the player has not answered, do not restate it. If you are already where you meant to be, do not re-issue goTo. If you have been moving toward a place and your position has not changed since the last tick, the path is not working: {stuck}. On a quiet tick with nothing real to add, not calling say() is fine.`
 
 export const STUCK_NUDGE = 'goTo a different point a few meters to the side, then try again'
 
@@ -129,15 +140,17 @@ export const SURVIVAL_ATE = 'Note: you were hungry and ate {item} from your inve
 export const SURVIVAL_DARK_CAPS = 'Heads up: it is {phase}, you are in the dark, and your body has nothing to make light with (a torch needs 2 grass + 2 twigs, a campfire 3 grass + 2 logs) and no fire in sight. The darkness kills within seconds. Act in this same turn: goTo the player if they have a light, or gather grass and twigs if they are right beside you. Say one short line so the player knows.'
 export const DEFEND_ADDENDUM = 'Heads up: {label} went for {player}, and your body is fighting it. Tell them in one short in-character line that you are on it. Your body keeps fighting while it has the health; if it turns bad (you are low, more of them arrive), call flee() and goTo the player.'
 export const ALERT_ADDENDUM = 'Heads up: {text}. {hint}'
+// Facts for the decision, not orders: what the brain does with an alert is
+// up to the character and its proactiveness rule.
 export const ALERT_HINTS = Object.freeze({
-  starving: 'Food comes first now: pick berries or carrots you can see, cook meat on a fire, or ask the player to share. Say one short line so they know.',
-  low_health: 'Nothing is attacking you. Your body already uses any healing salve or healing food you carry; if you have none, stay out of fights, eat cooked food, and tell the player.',
-  freezing: 'Get warm now: stand by a fire or build one (3 grass + 2 logs). Tell the player.',
-  overheating: 'Cool down now: get into shade and away from fires. Tell the player.',
-  dusk_no_light: 'Before it gets dark, get 2 grass and 2 twigs for a torch or 3 grass and 2 logs for a campfire, or stay close to the player and their light. Tell them if you need their help.',
-  low_sanity: 'Low sanity brings shadow creatures. Pick flowers, eat cooked food, sleep in a tent at night, and keep away from monsters and the dark. Tell the player how you are doing if it fits.',
-  player_hungry: 'If you carry food they can eat, give() them some or offer to cook. A short line is enough.',
-  season: 'Talk it over with the player: winter wants a warm hat, a thermal stone and food put away; summer wants a way to stay cool.',
+  starving: 'Berries and carrots are the quickest food; meat needs a fire to cook. The player may have food to share.',
+  low_health: 'Nothing is attacking you. Your body already uses the healing salves and healing food you carry; cooked food and rest also help.',
+  freezing: 'Standing next to a fire warms you; a campfire takes 3 grass + 2 logs.',
+  overheating: 'Shade and distance from fires cool you down.',
+  dusk_no_light: 'A torch takes 2 grass + 2 twigs and a campfire 3 grass + 2 logs; the player\'s light works too.',
+  low_sanity: 'Low sanity brings shadow creatures. Flowers, cooked food, a tent at night and staying out of the dark bring it back up.',
+  player_hungry: 'give() can hand them food you carry.',
+  season: 'Winter calls for a warm hat, a thermal stone and food put away; summer for a way to stay cool.',
 })
 
 function alertHint(key) {

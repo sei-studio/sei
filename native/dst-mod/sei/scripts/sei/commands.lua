@@ -36,6 +36,20 @@ local GIVE_RANGE = 3
 local WALK_TIMEOUT_S = 30
 local WORK_ACTIONS = { CHOP = true, MINE = true, DIG = true, HAMMER = true }
 local WORK_TAG = { CHOP = "CHOP_workable", MINE = "MINE_workable", DIG = "DIG_workable", HAMMER = "HAMMER_workable" }
+local WORK_TOOL = { CHOP = "an axe", MINE = "a pickaxe", DIG = "a shovel", HAMMER = "a hammer" }
+-- In the dark the body walks to the work with its light in hand and only
+-- then decides torch or tool, by the light where it will stand.
+local WORK_JUDGE_DIST = 3
+
+--- Why a work action cannot start (Reflexes.EquipTool's reason), as the
+--- result text the LLM reads.
+local function noToolText(name, why)
+    local verb = string.lower(name)
+    if why == "dark" then
+        return "too dark to " .. verb .. " here: keeping the torch in hand, nothing else lights this spot. Work next to a fire or wait for day"
+    end
+    return "cannot " .. verb .. " without " .. (WORK_TOOL[name] or "a tool") .. ": craft one or carry one"
+end
 
 local state = { inst = nil, since = 0, polling = false, task = nil, stopped = true }
 
@@ -129,7 +143,18 @@ local function actionFor(inst, cmd)
         return nil
     end
     local invobject = cmd.invobject ~= nil and Util.Ent(cmd.invobject) or nil
-    if invobject == nil and WORK_ACTIONS[name] then invobject = Reflexes.EquipTool(inst, act) end
+    if invobject == nil and WORK_ACTIONS[name] then
+        if target ~= nil and Reflexes.IsDark() and not cmd.state.started then
+            local walk, arrived = walkTo(inst, cmd, target, WORK_JUDGE_DIST, target.prefab)
+            if not arrived then return walk end
+        end
+        local why
+        invobject, why = Reflexes.EquipTool(inst, act)
+        if invobject == nil then
+            Commands.Finish(inst, cmd, false, noToolText(name, why))
+            return nil
+        end
+    end
     local pos = cmd.pos ~= nil and Vector3(cmd.pos.x or 0, 0, cmd.pos.z or 0) or nil
     if WORK_ACTIONS[name] and cmd.state.started and not keepWorking(name, target) then
         Commands.Finish(inst, cmd, true, string.lower(name) .. " done: " .. (target and target.prefab or "target"))
@@ -186,7 +211,14 @@ local function gatherNext(inst, cmd)
         if not plant then
             local w = nearestWith(inst, GATHER_RADIUS, function(v) return v:HasTag(WORK_TAG[wantFlag]) and not v:HasTag("burnt") end)
             if w ~= nil then
-                local tool = Reflexes.EquipTool(inst, ACTIONS[wantFlag])
+                if Reflexes.IsDark() and Util.DistXZ(inst, w) > WORK_JUDGE_DIST then
+                    return BufferedAction(inst, w, ACTIONS.WALKTO)
+                end
+                local tool, why = Reflexes.EquipTool(inst, ACTIONS[wantFlag])
+                if tool == nil then
+                    Commands.Finish(inst, cmd, have > 0, "gathered " .. have .. " " .. cmd.prefab .. "; " .. noToolText(wantFlag, why))
+                    return nil
+                end
                 return BufferedAction(inst, w, ACTIONS[wantFlag], tool)
             end
         end
@@ -481,6 +513,9 @@ local function dispatch(inst, cmd)
             result(cmd.id, false, item.prefab .. " cannot be equipped")
         else
             local ok = inst.components.inventory:Equip(item)
+            -- The habits leave an item the LLM equipped where it is
+            -- (Reflexes.CommandHeld) until it equips something else.
+            if ok then Reflexes.Hold(inst, item) end
             result(cmd.id, ok and true or false, ok and ("equipped " .. item.prefab) or ("could not equip " .. item.prefab))
         end
     elseif kind == "drop" then

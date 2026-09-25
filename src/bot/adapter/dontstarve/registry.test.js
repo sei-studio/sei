@@ -73,6 +73,41 @@ describe('DST registry', () => {
     expect(await reg.execute('give', { item: 'gold' }, null, {})).toBe('no "gold" in your inventory')
   })
 
+  it('give only hands to an exact player name, and to the host only when no name is given', async () => {
+    const { link, sent, state } = fakeLink()
+    link.hasCaps = true
+    state.ents.set(2002, { guid: 2002, prefab: 'wendy', name: 'Stevie', flags: ['player'], x: 2, z: 2 })
+    const reg = createDefaultRegistry({ link })
+    // Case-insensitive exact match on a player in sight.
+    expect(await reg.execute('give', { item: 'berries', player: 'stevie' }, null, {})).toBe('ok:give')
+    expect(sent.at(-1)).toMatchObject({ kind: 'give', guid: 2002 })
+    // A partial name is not a match, and nothing is sent.
+    const n = sent.length
+    const miss = await reg.execute('give', { item: 'berries', player: 'Ste' }, null, {})
+    expect(miss).toMatch(/^no player named "Ste"\. You can give to: .*Steve.*Stevie|^no player named "Ste"\. You can give to: .*Stevie.*Steve/)
+    expect(sent.length).toBe(n)
+    // No name: the host, never "whoever is first".
+    expect(await reg.execute('give', { item: 'berries' }, null, {})).toBe('ok:give')
+    expect(sent.at(-1)).toMatchObject({ kind: 'give', guid: 2001 })
+  })
+
+  it('give reaches the host by userid when they are out of sight, and refuses to guess without one', async () => {
+    const { link, sent, state } = fakeLink()
+    link.hasCaps = true
+    for (const [guid, e] of [...state.ents]) if (e.flags.includes('player')) state.ents.delete(guid)
+    const reg = createDefaultRegistry({ link })
+    expect(await reg.execute('give', { item: 'berries', player: 'STEVE' }, null, {})).toBe('ok:give')
+    expect(sent.at(-1)).toMatchObject({ kind: 'give', userid: 'KU_steve' })
+    expect(await reg.execute('give', { item: 'berries' }, null, {})).toBe('ok:give')
+    expect(sent.at(-1)).toMatchObject({ kind: 'give', userid: 'KU_steve' })
+    expect(await reg.execute('give', { item: 'berries', player: 'Wes' }, null, {})).toBe('no player named "Wes". You can give to: Steve.')
+    link.playerName = () => null
+    link.playerUserid = () => ''
+    const n = sent.length
+    expect(await reg.execute('give', { item: 'berries' }, null, {})).toBe('say who to give it to (player). You can give to: nobody in sight.')
+    expect(sent.length).toBe(n)
+  })
+
   it('maps verbs to one command each, resolving handles, names and inventory items', async () => {
     const { link, sent, state } = fakeLink()
     const reg = createDefaultRegistry({ link })

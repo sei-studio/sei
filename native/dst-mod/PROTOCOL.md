@@ -141,7 +141,7 @@ Command kinds (`sei/commands.lua` dispatch):
 | `goto` | `guid` or `x`,`z`; `range?` | slotted (goto node) | `arrived (1.8 away)` / `cant_reach: ...` |
 | `attack` | `guid`, `label?`, `pvp?` | slotted (ChaseAndAttack) | `killed spider` / `gave up the fight ...` |
 | `flee` | `seconds?` | immediate (RunAway for N s) | `running from danger` |
-| `action` | `name` (CHOP/MINE/PICK/PICKUP/EAT/COOK/SLEEPIN/...), `target?`, `invobject?`, `pos?`, `recipe?` | slotted (DoAction) | `chop done: evergreen` / `could not pick ...` |
+| `action` | `name` (CHOP/MINE/PICK/PICKUP/EAT/COOK/SLEEPIN/...), `target?`, `invobject?`, `pos?`, `recipe?` | slotted (DoAction) | `chop done: evergreen` / `could not pick ...` / (0.3.0, CHOP/MINE/DIG/HAMMER) `cannot chop without an axe: ...` / `too dark to chop here: ...` |
 | `gather` | `prefab`, `count`, `source?` (CHOP/MINE/plant prefab) | slotted loop | `gathered 4 twigs` |
 | `build` | `recipe`, `pos?` | slotted (learn at a prototyper if needed) | `built campfire` / `missing ingredients for ...` |
 | `container` | `op` (store/take), `container`, `item`, `count` | slotted | `stored 2 log` |

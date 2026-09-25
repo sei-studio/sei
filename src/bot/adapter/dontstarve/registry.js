@@ -102,6 +102,32 @@ export function createDefaultRegistry({ link }) {
     return players[0] ?? null
   }
 
+  // give() hands items away, so it never guesses: a name must match a player
+  // exactly (case-insensitive), and only an empty name means the host (the
+  // player this companion was summoned for). Anything else is an error that
+  // lists who can receive.
+  function resolveGiveTarget(name) {
+    const players = state.nearby((e) => e.flags.includes('player') && !e.flags.includes('companion'))
+    const host = { name: link.playerName?.() ?? null, userid: link.playerUserid?.() ?? '' }
+    const known = [...new Set([...players.map((e) => e.name).filter(Boolean), ...(host.name ? [host.name] : [])])]
+    const list = known.length ? known.join(', ') : 'nobody in sight'
+    const wanted = String(name ?? '').trim()
+    if (wanted) {
+      const n = wanted.toLowerCase()
+      const hit = players.find((e) => (e.name ?? '').toLowerCase() === n)
+      if (hit) return { guid: hit.guid }
+      if (host.name && host.name.toLowerCase() === n && host.userid) return { userid: host.userid }
+      return { error: `no player named "${wanted}". You can give to: ${list}.` }
+    }
+    if (host.name || host.userid) {
+      const near = host.name ? players.find((e) => (e.name ?? '').toLowerCase() === host.name.toLowerCase()) : null
+      if (near) return { guid: near.guid }
+      if (host.userid) return { userid: host.userid }
+    }
+    if (players.length === 1) return { guid: players[0].guid }
+    return { error: `say who to give it to (player). You can give to: ${list}.` }
+  }
+
   const notFound = (spec, what = 'thing') => `no ${what} matching "${spec}" nearby. Use a #N handle from the snapshot or move closer.`
 
   registry.register('goTo', z.object({
@@ -241,10 +267,10 @@ export function createDefaultRegistry({ link }) {
       const worn = Object.values(state.self?.equip ?? {}).find((e) => e.prefab === prefab)
       if (!it && !worn) return `no "${args.item}" in your inventory`
       const item = it?.prefab ?? worn.prefab
-      const p = resolvePlayer(args.player)
-      if (p) return link.send({ kind: 'give', item, count: args.count, guid: p.guid }, execOpts(cfg))
-      const far = playerByUserid()
-      return link.send({ kind: 'give', item, count: args.count, userid: far.userid }, execOpts(cfg))
+      const to = resolveGiveTarget(args.player)
+      if (to.error) return to.error
+      if (to.guid != null) return link.send({ kind: 'give', item, count: args.count, guid: to.guid }, execOpts(cfg))
+      return link.send({ kind: 'give', item, count: args.count, userid: to.userid }, execOpts(cfg))
     })
   }
 

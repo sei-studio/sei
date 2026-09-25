@@ -1,0 +1,24 @@
+# Headless DST scenario for scripts/dst-headless-harness.mjs (see
+# native/dst-mod/sei/README.md, "Headless testing"). Needs the stand-in
+# player STEVE (userid KU_test) spawned from the console first. Lines tagged
+# [test] print to the server log; read them there.
+# ===== night habits alone, far from any real client: torch, campfire she builds, fuel, dawn =====
+lua for _,v in pairs(Ents) do if v.prefab=="campfire" then v:Remove() end end; local c=require("sei/companion").inst; c.components.health:SetInvincible(false); c.components.health:SetPercent(1); local i=c.components.inventory; for k=1,4 do i:GiveItem(SpawnPrefab("twigs")) end; for k=1,7 do i:GiveItem(SpawnPrefab("cutgrass")) end; for k=1,4 do i:GiveItem(SpawnPrefab("log")) end; TheWorld:PushEvent("ms_setclocksegs",{day=4,dusk=2,night=10}); TheWorld:PushEvent("ms_setphase","dusk"); print("[test] N materials given, dusk")
+tool unfollow {}
+wait 32000
+lua local c=require("sei/companion").inst; local _,t=c.components.inventory:Has("torch",1); local h=c.components.inventory:GetEquippedItem(EQUIPSLOTS.HANDS); print("[test] N late dusk torches", t, "hands", h and h.prefab)
+lua TheWorld:PushEvent("ms_setphase","night"); print("[test] N night")
+wait 15000
+lua local c=require("sei/companion").inst; local h=c.components.inventory:GetEquippedItem(EQUIPSLOTS.HANDS); print("[test] N night hands", h and h.prefab, "inlight", c.LightWatcher:IsInLight(), "health", c.components.health.currenthealth, "body Light on", c.Light:IsEnabled())
+# no torch, no twigs: she has to build a campfire, alone, and it has to light her
+lua local c=require("sei/companion").inst; local i=c.components.inventory; local h=i:Unequip(EQUIPSLOTS.HANDS); if h then h:Remove() end; for _,it in pairs(i.itemslots) do if it.prefab=="torch" or it.prefab=="twigs" then it:Remove() end end; print("[test] N torch and twigs taken")
+wait 15000
+lua local c=require("sei/companion").inst; local f=nil; for _,v in pairs(Ents) do if v.prefab=="campfire" then f=v end end; local fx=f and f.components.burnable.fxchildren[1]; print("[test] N built fire", f and f.GUID, "fire light awake", fx and fx.components.firefx.light.entity:IsAwake(), "dist", f and string.format("%.1f", c:GetDistanceSqToInst(f)^0.5), "inlight", c.LightWatcher:IsInLight(), "health", c.components.health.currenthealth); rawset(_G,"FN",f)
+lua if FN then FN.components.fueled:SetPercent(0.2) end; print("[test] N fire set low")
+wait 8000
+lua print("[test] N fire pct after fuel habit", FN and FN.components.fueled:GetPercent()); local c=require("sei/companion").inst; print("[test] N health", c.components.health.currenthealth, "inlight", c.LightWatcher:IsInLight())
+lua TheWorld:PushEvent("ms_setphase","day"); print("[test] N dawn")
+wait 3000
+lua local c=require("sei/companion").inst; local n=0; for _ in pairs(c.sei.wokeFires or {}) do n=n+1 end; print("[test] N fires held awake by day", n); c.components.health:SetInvincible(true); TheWorld:PushEvent("ms_setclocksegs",{day=8,dusk=6,night=2})
+events
+quit

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  eventAddendum, worldPrimer, DST_BASELINE, DST_BASELINE_CAPS, dstBaseline, ACTION_DESCRIPTIONS,
+  eventAddendum, worldPrimer, DST_BASELINE, DST_BASELINE_CAPS, dstBaseline, ACTION_DESCRIPTIONS, ACTION_DESCRIPTIONS_CAPS, describeAction, ALERT_HINTS,
   CAPABILITY_PARAGRAPH, CAPABILITY_PARAGRAPH_CAPS, capabilityParagraph, ACTION_RULES, ACTION_RULES_CAPS, actionRules,
 } from './prompts.js'
 import { createDefaultRegistry } from './registry.js'
@@ -39,11 +39,25 @@ describe('DST prompts', () => {
     expect(ACTION_RULES_CAPS).toMatch(/give\(item\)/)
   })
 
-  it('states the real recipes and no bare-handed chop claim', () => {
-    const all = [worldPrimer(''), ACTION_RULES, ACTION_RULES_CAPS, CAPABILITY_PARAGRAPH_CAPS, ...Object.values(ACTION_DESCRIPTIONS)].join('\n')
+  it('states the real recipes, and that chopping needs an axe on either helper', () => {
+    const all = [worldPrimer(''), ACTION_RULES, ACTION_RULES_CAPS, CAPABILITY_PARAGRAPH_CAPS, ...Object.values(ACTION_DESCRIPTIONS_CAPS)].join('\n')
     expect(all).not.toMatch(/3 logs/)
     expect(all).toMatch(/3 grass \+ 2 logs/)
-    expect(ACTION_DESCRIPTIONS.chop).not.toMatch(/bare-handed/)
+    // An older helper does not equip tools for the model.
+    expect(describeAction('chop')).toMatch(/Equip an axe first; chopping bare-handed does nothing/)
+    expect(describeAction('chop', false)).toBe(ACTION_DESCRIPTIONS.chop)
+    // 0.3.0 equips the axe itself, still needs one, and keeps the torch in the dark.
+    expect(describeAction('chop', true)).toMatch(/needs an axe in your inventory, which your body equips for you; without one the chop fails/)
+    expect(describeAction('chop', true)).toMatch(/keeps the torch in hand/)
+    expect(describeAction('give', true)).toMatch(/by exact name/)
+    expect(describeAction('goTo', true)).toBe(ACTION_DESCRIPTIONS.goTo)
+  })
+
+  it('words alert hints as information, not orders', () => {
+    for (const [k, v] of Object.entries(ALERT_HINTS)) {
+      expect(v, k).not.toMatch(/\b(now|Tell the player|Say one short line|Talk it over)\b/)
+      expect(v, k).not.toMatch(/^(Get|Cool|Pick|Food comes first)/)
+    }
   })
 
   it('keeps the model-facing prose free of em dashes', () => {
@@ -57,13 +71,13 @@ describe('DST prompts', () => {
     const caps = { hasCaps: true }
     expect(eventAddendum('sei:attacked', { attackerKind: 'defend', attackerLabel: 'spider', player: 'Steve' }, caps)).toMatch(/spider went for Steve, and your body is fighting it/)
     expect(eventAddendum('sei:attacked', { attackerKind: 'reflex', survivalKind: 'alert', alert: 'starving', alertText: 'you are starving (hunger 9%) and carry nothing you can eat' }, caps))
-      .toMatch(/^Heads up: you are starving .*Food comes first/)
+      .toMatch(/^Heads up: you are starving .*Berries and carrots are the quickest food/)
     expect(eventAddendum('sei:attacked', { attackerKind: 'reflex', survivalKind: 'dark', phase: 'night' }, caps)).toMatch(/nothing to make light with/)
     expect(eventAddendum('sei:attacked', { attackerKind: 'reflex', survivalKind: 'dark', phase: 'night' })).toMatch(/AUTOMATICALLY walking toward/)
     const nudge = eventAddendum('sei:idle', { quietMs: 5000, reason: 'alert', alert: 'player_hungry_2001', text: 'Steve is hungry (20%)' }, caps)
     expect(nudge).toMatch(/Your body handles light, fuel, eating and healing/)
-    expect(nudge).toMatch(/Heads up: Steve is hungry \(20%\)\. If you carry food they can eat, give\(\) them some/)
-    expect(eventAddendum('sei:idle', { quietMs: 5000, reason: 'alert', alert: 'season_autumn_19', text: 'winter starts in 2 days' }, caps)).toMatch(/winter wants a warm hat/)
+    expect(nudge).toMatch(/Heads up: Steve is hungry \(20%\)\. give\(\) can hand them food you carry/)
+    expect(eventAddendum('sei:idle', { quietMs: 5000, reason: 'alert', alert: 'season_autumn_19', text: 'winter starts in 2 days' }, caps)).toMatch(/Winter calls for a warm hat/)
     expect(eventAddendum('sei:idle', { quietMs: 5000, reason: 'phase_change', phase: 'dusk', day: 2 }, caps)).toMatch(/makes a torch late in dusk/)
     expect(eventAddendum('sei:idle', { quietMs: 5000 })).not.toMatch(/Your body handles/)
   })

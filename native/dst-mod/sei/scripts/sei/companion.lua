@@ -18,6 +18,7 @@ local Events = require("sei/events")
 local Perception = require("sei/perception")
 local Commands = require("sei/commands")
 local Survivors = require("sei/survivors")
+local Reflexes = require("sei/reflexes")
 
 local Companion = {}
 
@@ -80,6 +81,7 @@ function Companion.Summon(offer)
         if body.components.health ~= nil and body.components.health:IsDead() then return end
         body:PushBufferedAction(BufferedAction(body, target, ACTIONS.ATTACK))
     end)
+    Reflexes.Attach(inst)
     Events.Attach(inst)
     Perception.Start(inst)
     Commands.Start(inst)
@@ -125,6 +127,7 @@ function Companion.Despawn(reason)
         print("[sei] despawned (" .. tostring(reason or "") .. "): no live body")
         return
     end
+    step("Reflexes.ReleaseFires", function() Reflexes.ReleaseFires(inst) end)
     pcall(function() inst:StopBrain() end)
     pcall(function() inst:ClearBufferedAction() end)
     if inst.components.locomotor ~= nil then pcall(function() inst.components.locomotor:Stop() end) end

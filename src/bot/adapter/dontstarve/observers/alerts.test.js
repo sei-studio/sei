@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { computeAlerts, createAlertWatcher, lightMeans, ALERT_TUNING } from './alerts.js'
+import { computeAlerts, createAlertWatcher, lightMeans, nudgesAllowed, ALERT_TUNING } from './alerts.js'
 import { createObservationState } from '../protocol.js'
 import { createFakeMod } from '../../../../../scripts/fake-dst-mod.mjs'
 
@@ -108,6 +108,25 @@ describe('DST alert watcher', () => {
     expect(w.check().map((a) => a.key)).toEqual(['freezing'])
     expect(onWake).toHaveBeenCalledTimes(2)
     expect(onNudge).not.toHaveBeenCalled()
+  })
+
+  it('holds nudges for a passive character but still wakes for survival', () => {
+    const st = stateWith((f) => { noSpider(f); f.self.sanity = 20; f.self.freezing = true })
+    const onWake = vi.fn()
+    const onNudge = vi.fn()
+    let allow = false
+    const w = createAlertWatcher({ state: st, onWake, onNudge, allowNudges: () => allow, now: () => 0 })
+    expect(w.check().map((a) => a.key)).toEqual(['freezing'])
+    expect(onNudge).not.toHaveBeenCalled()
+    expect(computeAlerts(st).map((a) => a.key)).toContain('low_sanity') // still in the snapshot
+    expect(nudgesAllowed(0)).toBe(false)
+    expect(nudgesAllowed(1)).toBe(true)
+    expect(nudgesAllowed(2)).toBe(true)
+    expect(nudgesAllowed(undefined)).toBe(true) // the config default is reactive
+    allow = true
+    w.reset()
+    w.check()
+    expect(onNudge).toHaveBeenCalledWith(expect.objectContaining({ key: 'low_sanity' }))
   })
 
   it('reset forgets the cooldowns (a new body after a death)', () => {

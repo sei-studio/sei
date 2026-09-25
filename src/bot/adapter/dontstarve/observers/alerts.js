@@ -9,7 +9,10 @@
 //   wake   (P1, through onAttacked attackerKind 'reflex'): starving with no
 //          food, health low, freezing or overheating
 //   nudge  (P3 idle tick with reason 'alert'): dusk with no way to make light,
-//          sanity low, the player hungry, the season about to turn
+//          sanity low, the player hungry, the season about to turn. Only for a
+//          character whose proactiveness dial is reactive or agentic
+//          (nudgesAllowed): a passive one gets no extra turns, and reads
+//          these in the snapshot's heads_up line like a note.
 //   note   (snapshot only): a creature attacking a player
 //
 // computeAlerts() is pure (state in, list out) and also feeds the snapshot's
@@ -128,17 +131,29 @@ export function computeAlerts(state) {
 }
 
 /**
+ * Does this proactiveness dial (config.persona.proactiveness, 0-2) get
+ * nudge turns? Passive (0) does not; reactive and agentic do.
+ * @param {unknown} proactiveness
+ */
+export function nudgesAllowed(proactiveness) {
+  const lvl = Number.isInteger(proactiveness) ? proactiveness : 1
+  return lvl >= 1
+}
+
+/**
  * Edge-triggered alerts with a per-key cooldown: an alert fires when it
  * APPEARS (absent on the previous check) and its key has not fired within
- * the cooldown for its level. Notes never fire.
+ * the cooldown for its level. Notes never fire, and nudges only while
+ * allowNudges() says so (they stay in the snapshot either way).
  *
  * @param {object} args
  * @param {object} args.state
  * @param {(alert: {key: string, level: string, text: string}) => void} args.onWake
  * @param {(alert: {key: string, level: string, text: string}) => void} args.onNudge
+ * @param {() => boolean} [args.allowNudges]
  * @param {() => number} [args.now]
  */
-export function createAlertWatcher({ state, onWake, onNudge, now = Date.now }) {
+export function createAlertWatcher({ state, onWake, onNudge, allowNudges = () => true, now = Date.now }) {
   let active = new Set()
   const lastFired = new Map()
   return {
@@ -150,6 +165,7 @@ export function createAlertWatcher({ state, onWake, onNudge, now = Date.now }) {
       const t = now()
       for (const a of alerts) {
         if (a.level === 'note' || active.has(a.key)) continue
+        if (a.level === 'nudge' && !allowNudges()) continue
         const cooldown = ALERT_TUNING.cooldownMs[a.level] ?? 60_000
         const last = lastFired.get(a.key)
         if (last != null && t - last < cooldown) continue

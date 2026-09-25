@@ -7,7 +7,7 @@
 --
 --   1. safety   fire panic (unless fire-immune), run from hostiles below the
 --               survivor's flee threshold; in the dark hold a carried light,
---               craft a torch, walk to a visible fire or build a campfire
+--               craft a torch, walk to a visible light or build a campfire
 --               (sei/reflexes.lua); walk to a fire when freezing; heal when
 --               hurt and safe; eat below 25% hunger (diet-aware, skips food
 --               that hurts unless starving)
@@ -29,7 +29,6 @@
 require("behaviours/wander")
 require("behaviours/follow")
 require("behaviours/runaway")
-require("behaviours/findlight")
 require("behaviours/chaseandattack")
 require("behaviours/doaction")
 require("behaviours/panic")
@@ -44,8 +43,9 @@ local Util = require("sei/util")
 local RUN_AWAY_DIST = 10
 local STOP_RUN_AWAY_DIST = 16
 local LIGHT_SEE_DIST = 24
--- Inside Reflexes.NearLight's 2.5, so arriving ends the need.
-local LIGHT_SAFE_DIST = 2
+-- The seek-light node stops this close to a light even if the engine still
+-- reads the spot as dark (a dying fire).
+local LIGHT_SAFE_DIST = 1.5
 local HUNGRY_PCT = 0.25
 local STARVING_PCT = 0.08
 local TICK_S = 0.5
@@ -57,6 +57,8 @@ local DEFEND_REPORT_S = 15
 -- Retry gaps so a habit that cannot finish (no valid spot, no path) does not
 -- spin every frame.
 local LIGHT_RETRY_S = 4
+-- After a dusk check that found nothing to do.
+local LIGHT_IDLE_RETRY_S = 1
 local HEAL_RETRY_S = 4
 local FUEL_RETRY_S = 3
 
@@ -89,6 +91,48 @@ function SeiGoTo:Visit()
     end
     self.status = RUNNING
     self:Sleep(0.25)
+end
+
+-- ── custom node: walk to a light (or a fire) ───────────────────────────────
+--
+-- Vanilla FindLight walks to the closest "lightsource", which for this body
+-- is often its own torch (distance 0: instant success) or a light that is
+-- asleep and lights nothing. This one takes the target from `pick` and stops
+-- when `arrived` says so (for light: Reflexes.LitByOthers, the same test
+-- NeedsLight uses).
+
+local SeiSeekLight = Class(BehaviourNode, function(self, inst, name, pick, arrived)
+    BehaviourNode._ctor(self, name)
+    self.inst = inst
+    self.pick = pick
+    self.arrived = arrived
+    self.targ = nil
+    self.nextPick = 0
+end)
+
+function SeiSeekLight:Visit()
+    if self.status == READY then
+        self.targ = nil
+        self.nextPick = 0
+        self.status = RUNNING
+    end
+    if self.status ~= RUNNING then return end
+    local now = GetTime()
+    if self.targ == nil or not self.targ:IsValid() or now >= self.nextPick then
+        self.targ = self.pick(self.inst)
+        self.nextPick = now + 2
+    end
+    if self.targ == nil then
+        self.status = FAILED
+        return
+    end
+    if self.arrived(self.inst, self.targ) then
+        self.inst.components.locomotor:Stop()
+        self.status = SUCCESS
+        return
+    end
+    self.inst.components.locomotor:GoToPoint(self.inst:GetPositionAdjacentTo(self.targ, 1), nil, true)
+    self:Sleep(0.5)
 end
 
 -- ── predicates ──────────────────────────────────────────────────────────────
@@ -131,18 +175,39 @@ local function needsLight(inst)
     return Reflexes.NeedsLight(inst)
 end
 
+-- lightNext is the earliest time the light habit may try again. Every
+-- attempt sets it, including one that returned no action (it equipped a
+-- carried light, or there is nothing to do but walk to a light), so a step
+-- that changes nothing cannot repeat every frame.
 local function lightStep(inst)
     if inst.sg ~= nil and inst.sg:HasStateTag("busy") then return nil end
     local now = GetTime()
-    if inst.sei.lightTry ~= nil and now - inst.sei.lightTry < LIGHT_RETRY_S then return nil end
+    if inst.sei.lightNext ~= nil and now < inst.sei.lightNext then return nil end
     local b
     if Reflexes.NeedsLight(inst) then
         b = Reflexes.LightAction(inst, LIGHT_SEE_DIST)
+        inst.sei.lightNext = now + LIGHT_RETRY_S
     else
         b = Reflexes.DuskPrep(inst, LIGHT_SEE_DIST)
+        inst.sei.lightNext = now + (b ~= nil and LIGHT_RETRY_S or LIGHT_IDLE_RETRY_S)
     end
-    if b ~= nil then inst.sei.lightTry = now end
     return b
+end
+
+local function seekLightTarget(inst)
+    return (Reflexes.NearestLight(inst, LIGHT_SEE_DIST))
+end
+
+local function litNow(inst, targ)
+    return Reflexes.LitByOthers(inst) or Util.DistXZ(inst, targ) <= LIGHT_SAFE_DIST
+end
+
+local function warmFireTarget(inst)
+    return (Reflexes.BurningFire(inst, WARM_SEE_DIST))
+end
+
+local function warmNow(inst, targ)
+    return Util.DistXZ(inst, targ) <= WARM_SAFE_DIST
 end
 
 -- Night light, or getting it ready late in dusk (Reflexes.DuskPrep).
@@ -257,13 +322,16 @@ function SeiBrain:OnStart()
                 local h = hostileNear(inst, RUN_AWAY_DIST)
                 Events.Post("survival", { what = "retreat", threat = h and h.prefab or "hostiles", healthpct = Util.Round1(healthPct(inst)) })
             end
+            -- Keep the fires near the body burning visibly even when no
+            -- real player is near (see reflexes.lua); paused too, like a
+            -- player away from the keyboard.
+            Reflexes.KeepFiresAwake(inst)
             if needsLight(inst) and now - self.lastDarkReport > 20 then
                 self.lastDarkReport = now
                 Events.Post("survival", { what = "dark", phase = TheWorld.state.phase })
             end
             if inst.sei ~= nil and not inst.sei.paused then
                 Reflexes.StowDayTorch(inst)
-                Reflexes.SyncBodyLight(inst)
                 self:Defend(now)
                 -- Gear up once per new fight target.
                 local t = inst.components.combat ~= nil and inst.components.combat.target or nil
@@ -283,8 +351,8 @@ function SeiBrain:OnStart()
         WhileNode(function() return shouldRunAway(inst) end, "LowHealthRunAway",
             RunAway(inst, function(guy) return guy:HasTag("_combat") and guy:HasTag("hostile") and not guy:HasTag("player") end, RUN_AWAY_DIST, STOP_RUN_AWAY_DIST)),
         IfNode(function() return lightDue(inst) end, "MakeLight", DoAction(inst, function() return lightStep(inst) end, "Light", true)),
-        WhileNode(function() return needsLight(inst) end, "FindLight", FindLight(inst, LIGHT_SEE_DIST, LIGHT_SAFE_DIST)),
-        WhileNode(function() return freezingNearFire(inst) end, "WarmUp", FindLight(inst, WARM_SEE_DIST, WARM_SAFE_DIST)),
+        WhileNode(function() return needsLight(inst) end, "FindLight", SeiSeekLight(inst, "SeekLight", seekLightTarget, litNow)),
+        WhileNode(function() return freezingNearFire(inst) end, "WarmUp", SeiSeekLight(inst, "SeekWarmth", warmFireTarget, warmNow)),
         IfNode(function() return wantsHeal(inst) end, "Heal", DoAction(inst, function() return healStep(inst) end, "Heal", true)),
         IfNode(function() return hungry(inst) end, "Hungry", DoAction(inst, function() return eatFromInventory(inst) end, "Eat", true)),
         -- 2. flee (explicit)
@@ -330,6 +398,7 @@ function SeiBrain:Defend(now)
 end
 
 function SeiBrain:OnStop()
+    Reflexes.ReleaseFires(self.inst)
     if self.tickTask ~= nil then
         self.tickTask:Cancel()
         self.tickTask = nil

@@ -4,7 +4,7 @@ import { createDontStarveAdapter } from './index.js'
 import { createObservationState, createHandleRegistry } from './protocol.js'
 import { createFakeMod } from '../../../../scripts/fake-dst-mod.mjs'
 
-function adapterWith({ hasCaps }) {
+function adapterWith({ hasCaps, proactiveness }) {
   const state = createObservationState()
   const mod = createFakeMod({ botPort: 1, token: 'x' })
   const frame = mod.frame(true)
@@ -15,7 +15,8 @@ function adapterWith({ hasCaps }) {
     playerName: () => 'Steve', playerUserid: () => 'KU_steve', send: vi.fn(async () => 'built firepit'),
     say: vi.fn(), setPaused: vi.fn(), paused: false, hasCaps, guid: 9001, modVersion: hasCaps ? '0.3.0' : null,
   }
-  const adapter = createDontStarveAdapter({ link, config: { adapter: { dontstarve: { prefab: 'wilson' } } } })
+  const persona = proactiveness == null ? undefined : { name: 'Sui', expanded: '', proactiveness }
+  const adapter = createDontStarveAdapter({ link, config: { adapter: { dontstarve: { prefab: 'wilson' } }, persona } })
   const handlers = { onAttacked: vi.fn(), onIdleNudge: vi.fn() }
   adapter.attach(handlers)
   return { adapter, link, handlers, state }
@@ -37,6 +38,25 @@ describe('DST adapter: mod 0.3.0 wiring', () => {
     link.events.emit('survival', { what: 'light', did: 'prepared' })
     expect(adapter.createSnapshotComposer().next({})).toContain('your_habits (done on your own lately): made a torch for tonight')
     adapter.detach()
+  })
+
+  it('gives a passive character no nudge turns, a reactive one a nudge', () => {
+    const passive = adapterWith({ hasCaps: true, proactiveness: 0 })
+    passive.state.self.sanity = 10
+    passive.link.events.emit('obs', {})
+    expect(passive.handlers.onIdleNudge).not.toHaveBeenCalled()
+    expect(passive.adapter.createSnapshotComposer().next({})).toMatch(/heads_up: .*sanity is low/)
+    passive.adapter.detach()
+    const reactive = adapterWith({ hasCaps: true, proactiveness: 1 })
+    reactive.state.self.sanity = 10
+    reactive.link.events.emit('obs', {})
+    expect(reactive.handlers.onIdleNudge).toHaveBeenCalledWith(expect.objectContaining({ reason: 'alert', alert: 'low_sanity' }))
+    reactive.adapter.detach()
+  })
+
+  it('describes chop for the helper it is talking to', () => {
+    expect(adapterWith({ hasCaps: true }).adapter.getActionDescription('chop')).toMatch(/your body equips for you/)
+    expect(adapterWith({ hasCaps: false }).adapter.getActionDescription('chop')).toMatch(/Equip an axe first/)
   })
 
   it('an older helper gets no alerts, no habits line and the 0.2 prompts', () => {
