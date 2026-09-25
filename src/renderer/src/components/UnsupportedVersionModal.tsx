@@ -19,7 +19,7 @@
 
 import React from 'react';
 import { t as tr, useT } from '../lib/i18n';
-import { MC_SUPPORTED_RANGE, mcRangeVars } from '../lib/mcVersions';
+import { MC_RECOMMENDED, mcRangeVars } from '../lib/mcVersions';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { useUiStore } from '../lib/stores/useUiStore';
@@ -27,12 +27,13 @@ import { useDataStore } from '../lib/stores/useDataStore';
 import styles from './UnsupportedVersionModal.module.css';
 
 /**
- * Highest Minecraft Java version Sei's networking stack can join. Derived from
- * minecraft-protocol's table (lib/mcVersions), and the same version the setup
- * wizard installs by, so this copy never names a version the wizard would
- * not build.
+ * The version the launcher steps point at: the one the setup wizard builds
+ * (lib/mcVersions MC_RECOMMENDED, capped by WIZARD_MAX_MC), so this copy never
+ * names a version the wizard would not build or where skins do not work. The
+ * body's {versions} list still names every version Sei can join (incl. newer
+ * ones like 26.2 / 26.3).
  */
-const LATEST_SUPPORTED: string = MC_SUPPORTED_RANGE.newest;
+const RECOMMENDED: string = MC_RECOMMENDED;
 
 // Rendered through t(step, { version }). The {version} placeholder is filled
 // at display time so the step copy stays a stable dictionary key. 260926:
@@ -102,13 +103,13 @@ export function UnsupportedVersionModal({
         {joinBefore}
         <strong>{name}</strong>
         {joinAfter} {humanBody(message, detectedVersion)}{' '}
-        {t('To switch to a supported version:')}
+        {t('To switch to {version}, where companion skins work:', { version: RECOMMENDED })}
       </p>
       <ol className={styles.steps}>
         {STEPS.map((step, i) => (
           <li key={i} className={styles.step}>
             <span className={styles.stepNumber}>{String(i + 1).padStart(2, '0')}</span>
-            <span className={styles.stepBody}>{t(step, { version: LATEST_SUPPORTED })}</span>
+            <span className={styles.stepBody}>{t(step, { version: RECOMMENDED })}</span>
           </li>
         ))}
       </ol>

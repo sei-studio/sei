@@ -58,8 +58,10 @@ const run = (cmd, args) => execFileSync(cmd, args, { cwd: root, stdio: 'inherit'
 
 // 0. JS dependency patches (patches/*.patch). Fails the install if a patch no longer
 // applies (e.g. a dep was bumped), so a build can never silently drop 26.x support.
+// --error-on-warn also fails on a version mismatch (a lockfile bump that leaves a
+// patch made for the old version applying to the new one).
 log('applying patch-package patches...');
-run('npx', ['patch-package', '--error-on-fail']);
+run('npx', ['patch-package', '--error-on-fail', '--error-on-warn']);
 
 // 1. Patch gl/nan sources before any compile.
 log('applying vision native source patches...');

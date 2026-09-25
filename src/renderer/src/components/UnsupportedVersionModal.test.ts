@@ -33,6 +33,17 @@ describe('UnsupportedVersionModal copy (260926)', () => {
     expect(bare).not.toContain('{');
   });
 
+  it('recommends the wizard version, not the newest joinable one', async () => {
+    const { MC_RECOMMENDED } = await import('../lib/mcVersions');
+    const { WIZARD_MAX_MC, selectTargetMcVersion } = await import('@shared/mcSetup');
+    expect(MC_RECOMMENDED).toBe(WIZARD_MAX_MC);
+    expect(MC_RECOMMENDED).toBe(selectTargetMcVersion({ supported: supportedVersions }));
+    expect(MC_RECOMMENDED).not.toBe(NEWEST);
+    // The body still names the newest joinable version in its list.
+    useLangStore.getState().setLang('en');
+    expect(humanBody('', '26.4')).toContain(`to ${NEWEST}`);
+  });
+
   it('is translated in zh with the numbers intact', () => {
     useLangStore.getState().setLang('zh');
     const body = humanBody(BOT_MSG, null);
