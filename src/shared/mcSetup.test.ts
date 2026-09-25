@@ -3,9 +3,12 @@ import {
   anyMcInstallReady,
   compareMcVersions,
   installableMcVersions,
+  isMcVersionNewerThanSupported,
   mcInstallReadyVersion,
   selectTargetMcVersion,
+  supportedMcRange,
 } from './mcSetup';
+import { supportedVersions as realSupported } from 'minecraft-protocol/src/version.js';
 
 const SUPPORTED = ['1.20.1', '1.21.4', '1.21.11', '26.1'];
 
@@ -50,5 +53,28 @@ describe('mcSetup', () => {
   it('never targets a snapshot or a version older than Fabric supports', () => {
     expect(installableMcVersions(['1.8.9', '1.12.2', '1.16.5', '1.21.4', '26.1-snapshot-3', '26.1'])).toEqual(['26.1', '1.21.4', '1.16.5']);
     expect(selectTargetMcVersion({ supported: ['1.8.9'] })).toBeNull();
+  });
+
+  it('states the supported range from the protocol table, releases only, from the bot floor', () => {
+    expect(supportedMcRange(['1.7', '1.8.8', '1.21.4', '26.1-snapshot-2', '26.1', '1.12.2'])).toEqual({ oldest: '1.8.8', newest: '26.1' });
+    expect(supportedMcRange([])).toBeNull();
+    // The shipped table: the ceiling is whatever minecraft-protocol says, never a hardcode.
+    const r = supportedMcRange(realSupported);
+    expect(r).not.toBeNull();
+    expect(realSupported).toContain(r!.newest);
+    expect(realSupported).toContain(r!.oldest);
+  });
+
+  it('flags a world newer than the newest supported version (the 26.2 / 26.3 case) only', () => {
+    const sup = ['1.8.8', '1.21.4', '26.1'];
+    expect(isMcVersionNewerThanSupported('26.2', sup)).toBe(true);
+    expect(isMcVersionNewerThanSupported('26.3-snapshot-1', sup)).toBe(true);
+    expect(isMcVersionNewerThanSupported('Paper 26.2', sup)).toBe(true);
+    expect(isMcVersionNewerThanSupported('26.1', sup)).toBe(false);
+    expect(isMcVersionNewerThanSupported('1.21.4', sup)).toBe(false);
+    // Older-but-unlisted and unparseable names are left to the bot's protocol check.
+    expect(isMcVersionNewerThanSupported('1.21.7', sup)).toBe(false);
+    expect(isMcVersionNewerThanSupported('Forge', sup)).toBe(false);
+    expect(isMcVersionNewerThanSupported(undefined, sup)).toBe(false);
   });
 });

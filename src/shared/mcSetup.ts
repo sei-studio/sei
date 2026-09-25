@@ -107,3 +107,50 @@ export function selectTargetMcVersion(args: {
   if (requested && installable.includes(requested)) return requested;
   return installable[0] ?? null;
 }
+
+/**
+ * mineflayer's floor (its README: "Supports Minecraft 1.8 to <newest>").
+ * minecraft-protocol's table also lists 1.7, which the protocol layer can
+ * speak but the bot cannot play, so the range we TELL players starts here.
+ * The ceiling is never hardcoded: it is always the newest entry in the table.
+ */
+export const BOT_MIN_MC = '1.8';
+
+export interface McSupportedRange {
+  /** Oldest release Sei can join, e.g. "1.8.8". */
+  oldest: string;
+  /** Newest release Sei can join, e.g. "26.1". */
+  newest: string;
+}
+
+/**
+ * The Minecraft Java range Sei can join, derived from minecraft-protocol's
+ * `supportedVersions` (the table the bot enforces at connect). Release
+ * versions only, sorted (the table's order is not a contract). Null only
+ * for an empty/unusable table.
+ */
+export function supportedMcRange(supported: readonly string[]): McSupportedRange | null {
+  const releases = supported
+    .filter((v) => RELEASE_RE.test(v) && compareMcVersions(v, BOT_MIN_MC) >= 0)
+    .sort(compareMcVersions);
+  if (releases.length === 0) return null;
+  return { oldest: releases[0], newest: releases[releases.length - 1] };
+}
+
+/**
+ * Is the world's reported version name clearly NEWER than anything Sei can
+ * join? Reads the first "1.21.4" / "26.2" shaped number out of the ping's
+ * version name (servers may decorate it, e.g. "Paper 1.21.4"). Only the
+ * newer-than-newest case answers true: that is the real-world failure
+ * (Minecraft 26.2 / 26.3 shipped before our protocol stack), and an older or
+ * unparseable name is left for the bot's exact protocol check to judge.
+ */
+export function isMcVersionNewerThanSupported(
+  versionName: string | null | undefined,
+  supported: readonly string[],
+): boolean {
+  const m = versionName?.match(/\d{1,2}\.\d{1,3}(?:\.\d{1,3})?/);
+  const range = supportedMcRange(supported);
+  if (!m || !range) return false;
+  return compareMcVersions(m[0], range.newest) > 0;
+}

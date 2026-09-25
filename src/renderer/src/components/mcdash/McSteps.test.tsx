@@ -55,6 +55,7 @@ interface Opts {
   installs: McInstall[] | null;
   dismissed?: boolean;
   lanOpen?: boolean;
+  lanVersion?: string;
 }
 
 async function mockStores(opts: Opts): Promise<void> {
@@ -70,7 +71,7 @@ async function mockStores(opts: Opts): Promise<void> {
     useWizardStore: (selector: (s: { open: boolean; openWizard: () => void }) => unknown) => selector({ open: false, openWizard: vi.fn() }),
   }));
   const data = {
-    lan: opts.lanOpen ? { kind: 'open', port: 1, motd: '', lastSeenAt: 1 } : { kind: 'closed' },
+    lan: opts.lanOpen ? { kind: 'open', port: 1, motd: '', lastSeenAt: 1, versionName: opts.lanVersion } : { kind: 'closed' },
     summons: {},
     characters: [],
   };
@@ -177,6 +178,18 @@ describe('useMcSetupSteps + McLaunchPanel', () => {
     const { useMcSetupStore } = await import('./useMcSetupStore');
     await useMcSetupStore.getState().scan();
     expect(useMcSetupStore.getState().installs).toEqual([VANILLA]);
+  });
+
+  // 260926: the panel states the supported range before the first Launch,
+  // and warns when the open world is already known to be too new.
+  it('Test 9: the panel names the supported range and flags a too-new world', async () => {
+    const plain = await renderPanel({ installs: [VANILLA], dismissed: true });
+    expect(plain).toContain('Works with Minecraft Java 1.20.1 to 26.1.');
+    const tooNew = await renderPanel({ installs: [VANILLA], dismissed: true, lanOpen: true, lanVersion: '26.2' });
+    expect(tooNew).toContain('Your open world is on Minecraft 26.2');
+    expect(tooNew).toContain('1.20.1 to 26.1');
+    const ok = await renderPanel({ installs: [VANILLA], dismissed: true, lanOpen: true, lanVersion: '1.21.4' });
+    expect(ok).not.toContain('Your open world is on');
   });
 
   it('Test 8: every t() key has a zh entry and no em dash', async () => {

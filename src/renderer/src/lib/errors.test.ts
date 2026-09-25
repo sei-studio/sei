@@ -15,7 +15,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { ERROR_COPY, classifyRendererError, cleanIpcError } from './errors';
+import { ERROR_COPY, classifyRendererError, cleanIpcError, errorCopyText } from './errors';
+import { supportedVersions } from 'minecraft-protocol/src/version.js';
 import { ALL_ERROR_CLASSES } from '@shared/errorClasses';
 
 const NEOFORGE_KICK = 'This server has mods that require NeoForge to be installed on the client.';
@@ -103,5 +104,17 @@ describe('ERROR_COPY', () => {
   // so the copy must not suggest it.
   it('does not tell a modded-host user to press Summon again', () => {
     expect(ERROR_COPY.MODDED_HOST_REJECTED.toLowerCase()).not.toContain('summon again');
+  });
+
+  // 260926: the copy names the exact range (from minecraft-protocol's table)
+  // and the launcher path, and no placeholder ever renders literally.
+  it('UNSUPPORTED_MC_VERSION names the supported range and the launcher steps', () => {
+    const copy = errorCopyText('UNSUPPORTED_MC_VERSION');
+    expect(copy).toContain(`to ${supportedVersions[supportedVersions.length - 1]}`);
+    expect(copy).toContain('Installations');
+    expect(copy).toContain('New installation');
+    for (const cls of ALL_ERROR_CLASSES) {
+      expect(errorCopyText(cls), `unfilled placeholder in ${cls}`).not.toMatch(/\{(oldest|newest)\}/);
+    }
   });
 });

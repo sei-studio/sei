@@ -238,6 +238,29 @@ function pingWithTimeout(options, timeoutMs) {
 }
 
 /**
+ * The supported range as players should read it (260926): release versions
+ * only, from mineflayer's 1.8 floor (the protocol table also lists 1.7, which
+ * the bot cannot play) to the table's newest entry. Mirrors
+ * supportedMcRange() in src/shared/mcSetup.ts, which the renderer uses for
+ * the same sentence.
+ */
+export function supportedRangeText(versions = supportedVersions) {
+  const parts = (v) => v.split('.').map((n) => parseInt(n, 10) || 0)
+  const cmp = (a, b) => {
+    const pa = parts(a)
+    const pb = parts(b)
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const d = (pa[i] ?? 0) - (pb[i] ?? 0)
+      if (d !== 0) return d
+    }
+    return 0
+  }
+  const releases = versions.filter((v) => /^\d+\.\d+(?:\.\d+)?$/.test(v) && cmp(v, '1.8') >= 0).sort(cmp)
+  if (releases.length === 0) return 'no versions'
+  return `${releases[0]} to ${releases[releases.length - 1]}`
+}
+
+/**
  * Status-ping the LAN server and resolve the Minecraft version Sei should
  * connect with, bounded to what our networking deps actually implement. The
  * Electron path passes `version: 'auto'`; this resolves it to an EXPLICIT
@@ -263,8 +286,8 @@ export async function resolveServerVersion({ host, port, timeoutMs = PING_TIMEOU
     const reported = name || (typeof protocol === 'number' ? `protocol ${protocol}` : 'an unknown version')
     const err = new Error(
       `UNSUPPORTED_MC_VERSION: This world is running Minecraft ${reported}, which Sei can't join yet. ` +
-      `Sei supports Java ${supportedVersions[0]}–${supportedVersions[supportedVersions.length - 1]}. ` +
-      `Switch your world to a supported version and click Summon again.`,
+      `Sei supports Minecraft Java ${supportedRangeText()}. ` +
+      `Open your world from a launcher installation on a supported version and press Launch again.`,
     )
     err.code = 'UNSUPPORTED_MC_VERSION'
     throw err

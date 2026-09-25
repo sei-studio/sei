@@ -7,42 +7,43 @@
  * error only reached the character page's model row, so a summon started from
  * the Play flow appeared to do nothing (260709 report).
  *
- * The body renders the bot's already-humanized error text (with the
- * `UNSUPPORTED_MC_VERSION:` prefix stripped), which names the world's version
- * and the supported range, followed by numbered launcher steps (mirroring
- * LanNotOpenModal) for switching the world to a supported version.
+ * The body names the world's version (parsed from the bot's error text, else
+ * the LAN watcher's ping) and the exact supported range from
+ * minecraft-protocol's table, followed by numbered launcher steps (mirroring
+ * LanNotOpenModal) for making an installation on a supported version. 260926:
+ * the body used to be the bot's raw English sentence, so it was never
+ * translated.
  * Dismiss-only; the user resolves it by opening a world on a supported
  * version. Modeled on SummonConflictModal.
  */
 
 import React from 'react';
-// Dependency-free CJS data module — the same table the bot's networking stack
-// (minecraft-protocol) enforces, so the stated ceiling can never drift from
-// what Sei actually joins. Deep import on purpose: the package root pulls the
-// full protocol stack, which must never enter the renderer.
-import { supportedVersions } from 'minecraft-protocol/src/version.js';
-import { selectTargetMcVersion } from '@shared/mcSetup';
 import { t as tr, useT } from '../lib/i18n';
+import { MC_RANGE_VARS, MC_SUPPORTED_RANGE } from '../lib/mcVersions';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import styles from './UnsupportedVersionModal.module.css';
 
-/** Highest Minecraft Java version Sei's networking stack can join. */
-// 260917: the same rule the setup wizard installs by (release-only, sorted;
-// the table's order is not a contract), so this copy never names a version
-// the wizard would not build.
-const LATEST_SUPPORTED: string =
-  selectTargetMcVersion({ supported: supportedVersions }) ?? supportedVersions[supportedVersions.length - 1];
+/**
+ * Highest Minecraft Java version Sei's networking stack can join. Derived from
+ * minecraft-protocol's table (lib/mcVersions), and the same version the setup
+ * wizard installs by, so this copy never names a version the wizard would
+ * not build.
+ */
+const LATEST_SUPPORTED: string = MC_SUPPORTED_RANGE.newest;
 
-// Rendered through t(step, { version }) — the {version} placeholder is filled
-// at display time so the step copy stays a stable dictionary key.
+// Rendered through t(step, { version }). The {version} placeholder is filled
+// at display time so the step copy stays a stable dictionary key. 260926:
+// spells out the launcher's own path (Installations, New installation,
+// Version) since the old "create or select an installation" left players
+// guessing where the version is chosen.
 const STEPS: readonly string[] = [
-  'Open the Minecraft launcher and go to the Installations tab.',
-  'Create or select an installation on {version} or another supported version.',
-  'Open your world from that installation.',
-  'Return to Sei and try the summon again.',
+  'Open the Minecraft Launcher and go to the Installations tab.',
+  'Click New installation, pick release {version} in the Version list, then click Create.',
+  'Press Play on that installation, open your world, then choose Open to LAN.',
+  'Return to Sei and press Launch again.',
 ];
 
 export interface UnsupportedVersionModalProps {
@@ -51,30 +52,26 @@ export interface UnsupportedVersionModalProps {
 }
 
 /**
- * Strip the machine-readable error-class prefix; keep the human sentence.
- * The bot's message names the world's version AND the supported range (built
- * from minecraft-protocol.supportedVersions in the bot adapter). When it is
- * missing, fall back to the LAN watcher's detected version so the popup still
- * states which version was seen, plus the ceiling from the same version table.
+ * The world's version as the bot reported it ("This world is running
+ * Minecraft 26.2, which ..."), or null. Only the version is taken from the
+ * bot's text: the sentence itself is rebuilt here so it is translated and
+ * always carries the supported range.
  */
-function humanBody(message: string, detectedVersion: string | null): string {
-  const stripped = message
-    .replace(/^\s*UNSUPPORTED_MC_VERSION:\s*/, '')
-    // The bot's message ends with its own one-line instruction (connect.js);
-    // the numbered steps below replace it, so drop it when present.
-    .replace(/Switch your world to a supported version and click Summon again\.\s*$/, '')
-    .trim();
-  if (stripped.length > 0) return stripped;
-  if (detectedVersion) {
-    return tr(
-      'This world is running Minecraft {version}, which is not supported yet. Sei supports Java versions up to {latest}.',
-      { version: detectedVersion, latest: LATEST_SUPPORTED },
-    );
+export function reportedVersion(message: string): string | null {
+  const m = message.match(/running Minecraft (.+?), which/);
+  return m ? m[1].trim() : null;
+}
+
+/** The body sentence: which version the world runs and what Sei supports. */
+export function humanBody(message: string, detectedVersion: string | null): string {
+  const version = reportedVersion(message) ?? detectedVersion;
+  if (version) {
+    return tr('This world is running Minecraft {version}, which Sei cannot join yet. Sei works with Minecraft Java {oldest} to {newest}.', {
+      ...MC_RANGE_VARS,
+      version,
+    });
   }
-  return tr(
-    'This world runs a Minecraft version that is not supported yet. Sei supports Java versions up to {latest}.',
-    { latest: LATEST_SUPPORTED },
-  );
+  return tr('This world runs a Minecraft version Sei cannot join yet. Sei works with Minecraft Java {oldest} to {newest}.', MC_RANGE_VARS);
 }
 
 export function UnsupportedVersionModal({

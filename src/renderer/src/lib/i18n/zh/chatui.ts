@@ -131,6 +131,9 @@ export const ZH_CHATUI: Record<string, string> = {
   'Connecting...': '连接中...',
   'Launch': '启动',
   'How do I set up launch?': '如何设置启动？',
+  'Works with Minecraft Java {oldest} to {newest}.': '支持 Minecraft Java 版 {oldest} 至 {newest}。',
+  'Your open world is on Minecraft {version}, which Sei cannot join yet. Sei works with Minecraft Java {oldest} to {newest}.':
+    '你打开的世界是 Minecraft {version}，Sei 暂时无法加入。Sei 支持 Minecraft Java 版 {oldest} 至 {newest}。',
   // Minecraft setup steps on the launch panel (McSteps, 260909).
   'Minecraft setup steps': 'Minecraft 设置步骤',
   'Looking for Minecraft on this computer...': '正在这台电脑上查找 Minecraft…',
