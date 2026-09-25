@@ -2404,7 +2404,7 @@ export interface RendererApi {
    */
   feedbackSubmit: (args: { body: string; email?: string; claimReward?: boolean }) => Promise<
     | { ok: true; usage_reset: boolean; already_claimed: boolean }
-    | { ok: false; code: string }
+    | { ok: false; code: string; status?: number; reason?: string }
   >;
   /**
    * 260706 — report a companion (POST /report, 20/day per user). Reasons are

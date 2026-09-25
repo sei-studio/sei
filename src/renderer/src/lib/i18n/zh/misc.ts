@@ -199,8 +199,8 @@ export const ZH_MISC: Record<string, string> = {
   // ── FeedbackRewardCard ─────────────────────────────────────────────────
   'Daily feedback limit reached. Try again tomorrow.': '已达到今日反馈上限。请明天再试。',
   'Sign in to submit feedback.': '请登录后提交反馈。',
-  'Feedback could not be sent. Check your connection and try again.':
-    '反馈发送失败。请检查网络连接后重试。',
+  'Feedback could not be sent. Your message is still here. Check your connection and press Submit to try again.':
+    '反馈发送失败。你的内容仍保留在这里。请检查网络连接，然后再次点击提交。',
   "This week's credits are reset. Thank you for the feedback.":
     '本周额度已重置。感谢你的反馈。',
   'Feedback sent. The reward was already claimed on this account.':
