@@ -487,6 +487,20 @@ function getLanMotd(): string | null {
 }
 
 async function bootstrap(): Promise<void> {
+  // 0-pre. Install marker (260926). MUST be the first thing bootstrap does:
+  //        it tells a fresh install from an existing one by probing for Sei
+  //        state under userData, which every later step starts creating. The
+  //        installer_first_launch event itself fires after analytics init
+  //        (step 5b-ii). Never throws. See firstLaunch.ts.
+  try {
+    const { noteLaunch } = await import('./firstLaunch');
+    const { paths } = await import('./paths');
+    const kind = noteLaunch(paths.userData(), app.getVersion());
+    if (kind !== 'seen') logger.info(`install marker: ${kind}`);
+  } catch (err) {
+    logger.warn(`install marker failed: ${(err as Error).message}`);
+  }
+
   // 0. Auth foundation — wire safeStorage-backed session storage into the
   //    Supabase client BEFORE any auth IPC handler can call getClient().
   //    This is the only legal point in the lifecycle to call setStorageAdapter
@@ -1108,6 +1122,12 @@ async function bootstrap(): Promise<void> {
   try {
     const { initAnalytics, capture } = await import('./analytics');
     await initAnalytics();
+    // Once per install (260926): platform, arch, OS version and, on macOS,
+    // whether Sei runs from /Applications or translocated. Shape only.
+    const { takeInstallerFirstLaunch, installerFirstLaunchProps, currentFirstLaunchEnv } = await import('./firstLaunch');
+    if (takeInstallerFirstLaunch()) {
+      capture('installer_first_launch', installerFirstLaunchProps(currentFirstLaunchEnv()));
+    }
     capture('app_opened');
   } catch (err) {
     logger.warn(`analytics init failed: ${(err as Error).message}`);

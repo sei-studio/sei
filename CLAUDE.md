@@ -2675,6 +2675,19 @@ defaults was invisible. Cached, not read per event (commonProps is sync);
 `setUiLanguage()` is refreshed from the `config:save` IPC handler, the single
 path both Settings and the onboarding Sui stage write it through.
 
+**`installer_first_launch` fires once per install (260926).** It carries
+`platform`, `arch`, `os_version`, `packaged`, `arm64_translation`, and on macOS
+`in_applications`, `translocated` and a coarse `app_location` enum
+(`applications`/`translocated`/`volume`/`downloads`/`other`, never a path).
+"Once" is the device-global `<userData>/install-marker.json`, created with an
+exclusive open by `noteLaunch()` as the FIRST step of `bootstrap()`
+(`src/main/firstLaunch.ts`). It cannot key on `analytics_install_id`: that id
+lives in the profile-scoped config, so a first sign-in would mint a new one.
+The marker step also probes for older Sei state (`PRIOR_STATE_ENTRIES`), so an
+existing install updating to the first build with this code is classified
+`upgrade` and sends nothing. Keep that list in sync if a new device-global
+file appears, and keep `noteLaunch()` ahead of anything that writes userData.
+
 ### The play row is ONE sentence, shared (260728)
 
 `src/main/chat/playSummary.ts` owns it, and every game surface calls it:
