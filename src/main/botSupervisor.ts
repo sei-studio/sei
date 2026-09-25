@@ -61,6 +61,41 @@ const SUMMON_TIMEOUT_MS = 30_000;
  */
 const BOOT_TIMEOUT_MS = 60_000;
 const STOP_TIMEOUT_MS = 10_000;
+/**
+ * 260926: app quit. The per-bot drain gets this long before the kill
+ * escalation, and the whole supervisor shutdown is hard-capped at
+ * SHUTDOWN_HARD_CAP_MS: anything still alive then is killed outright. Quit
+ * used to wait out a pending summon (up to 90s) plus a 10s drain.
+ */
+const SHUTDOWN_DRAIN_MS = 2_000;
+const SHUTDOWN_HARD_CAP_MS = 4_000;
+/**
+ * 260926: how long a stop waits for a cancelled pending summon to settle. After
+ * the fork the cancel settles it at once; before the fork it is bounded by the
+ * attempt's pre-fork awaits (store reads, the credit gate).
+ */
+const CANCEL_SETTLE_MS = 3_000;
+
+/**
+ * 260926: the rejection of a summon that a stop cancelled. A user action, not
+ * a failure: no error status, no diagnostic, no "couldn't join" line.
+ */
+export const SUMMON_CANCELLED = 'SUMMON_CANCELLED';
+export function isSummonCancelled(err: unknown): boolean {
+  return errText(err).startsWith(SUMMON_CANCELLED);
+}
+function summonCancelledError(): Error {
+  const e = new Error(`${SUMMON_CANCELLED}: stopped before the companion finished joining.`);
+  (e as Error & { code?: string }).code = SUMMON_CANCELLED;
+  return e;
+}
+
+/** Per-attempt cancel handle, owned by summon() and armed by _summon. */
+interface SummonControl {
+  cancelled: boolean;
+  /** Set once the child is forked: kill it and reject the summon now. */
+  cancel?: () => void;
+}
 
 /**
  * 260810: module-level "is this character summoned right now" probe.
@@ -512,6 +547,8 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
   // (the 30s watchdog guarantees it does), which overlaps sessions.set — so
   // there is no instant where a character is neither reserved nor registered.
   const pendingSummons = new Map<string, Promise<void>>();
+  // 260926: the cancel handle of each pending summon (same keys).
+  const summonControls = new Map<string, SummonControl>();
   // Effective MC username of each pending (pre-registration) summon, so the
   // duplicate-username guard can also see attempts that haven't reached
   // sessions.set yet (two DIFFERENT characters sharing a username, summoned
@@ -605,8 +642,24 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // report success — and the bot joined anyway seconds later. Wait for the
     // pending attempt to settle (bounded by the summon watchdog) and stop the
     // session it registered; if it failed, there is genuinely nothing to stop.
+    //
+    // 260926: that wait was the whole summon budget (up to 90s on a slow
+    // boot). A stop now CANCELS the pending attempt: the child, if forked, is
+    // killed at once and the summon rejects with SUMMON_CANCELLED (silent).
     const pending = pendingSummons.get(characterId);
-    if (pending) await pending.catch(() => { /* failed summon == nothing to stop */ });
+    if (pending) {
+      const ctl = summonControls.get(characterId);
+      if (ctl) {
+        ctl.cancelled = true;
+        ctl.cancel?.();
+      }
+      let settleTimer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        pending.catch(() => { /* failed or cancelled summon == nothing to stop */ }),
+        new Promise<void>((r) => { settleTimer = setTimeout(r, CANCEL_SETTLE_MS); }),
+      ]);
+      clearTimeout(settleTimer);
+    }
     const session = sessions.get(characterId);
     if (!session) {
       // No live session — but the renderer may still be showing a stale entry
@@ -793,7 +846,12 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     return reporter;
   }
 
-  async function _summon(characterId: string, reporter: FailureReporter, game: GameId): Promise<void> {
+  async function _summon(
+    characterId: string,
+    reporter: FailureReporter,
+    game: GameId,
+    ctl: SummonControl = { cancelled: false },
+  ): Promise<void> {
     // Multi-summon: do NOT stop the other bots. Re-summoning an already-running
     // character is a no-op (the UI shows "unsummon" for live characters, so the
     // only way here is a double-fire) — never fork a duplicate child for it.
@@ -1046,6 +1104,11 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     sendStatus({ kind: 'connecting', characterId, stage: 'starting' });
 
     const router = await createLogRouter({ characterId, sendBatch: opts.sendLog });
+    // 260926: a stop landed during the pre-fork awaits. Never fork.
+    if (ctl.cancelled) {
+      try { await router.close(); } catch { /* best-effort */ }
+      throw summonCancelledError();
+    }
     // Cross-surface continuity (Phase 18/19): the rolling summary + recent
     // window, so the companion carries the app conversation into the world.
     // PURE DISK READ (260702) — compaction runs only as a chat-surface
@@ -1179,8 +1242,27 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     };
     let summonTimer = setTimeout(onWatchdog, BOOT_TIMEOUT_MS);
 
+    // 260926: stop during a pending summon. Kill the child now (no graceful
+    // drain: it is not in the world yet, or barely) and reject the summon as
+    // cancelled; the catch below closes the port and drops the session. The
+    // exit handler sees summonResolved + stopRequested and reports nothing.
+    let cancelled = false;
+    ctl.cancel = () => {
+      if (summonResolved) return;
+      summonResolved = true;
+      cancelled = true;
+      clearTimeout(summonTimer);
+      session.stopRequested = true;
+      logger.info(`summon of ${characterId} cancelled by a stop: killing the bot process`);
+      try { child.kill(); } catch { /* best-effort */ }
+      summonReject(summonCancelledError());
+    };
+    if (ctl.cancelled) ctl.cancel();
+
     port1.on('message', (e: { data: BotLifecycle | { type: 'vision-capability'; visionCapable: boolean } }) => {
       const data = e.data;
+      // A cancelled summon's child is being killed: nothing it says counts.
+      if (cancelled) return;
       // Phase 15 (D-10/VIS-03): the bot pushes its active-provider vision
       // capability on summon-ready and on each backend switch. Route it to the
       // dedicated renderer channel (NOT BotStatus) and return early — it is not
@@ -1888,8 +1970,12 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     const game: GameId = isGameId(gameArg) ? gameArg : 'minecraft';
     lastGame.set(characterId, game);
     const reporter = createFailureReporter(characterId);
-    const attempt = _summon(characterId, reporter, game)
+    const ctl: SummonControl = { cancelled: false };
+    summonControls.set(characterId, ctl);
+    const attempt = _summon(characterId, reporter, game, ctl)
       .catch((err: unknown) => {
+        // A stop cancelled it: the user's own action, not a failure.
+        if (isSummonCancelled(err)) throw err;
         // Diagnostics backstop (260720): any throw whose site did not report
         // (all the pre-gate refusals, plus stragglers like a store read or
         // fork throw) is a pre-fork failure. Once-guarded, so a site-specific
@@ -1920,6 +2006,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       })
       .finally(() => {
         if (pendingSummons.get(characterId) === attempt) pendingSummons.delete(characterId);
+        if (summonControls.get(characterId) === ctl) summonControls.delete(characterId);
         pendingUsernames.delete(characterId);
       });
     pendingSummons.set(characterId, attempt);
@@ -2046,8 +2133,27 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         return false;
       }
     },
+    // 260926: hard-capped. Pending summons are cancelled (killed) by _stop;
+    // live bots get a short drain, then the kill escalation; whatever is
+    // still alive at the cap is killed outright so quit never hangs on a bot.
     shutdown: async () => {
-      await _stopAll(STOP_TIMEOUT_MS);
+      let capTimer: ReturnType<typeof setTimeout> | undefined;
+      const drained = await Promise.race([
+        _stopAll(SHUTDOWN_DRAIN_MS).then(() => true, () => true),
+        new Promise<boolean>((r) => { capTimer = setTimeout(() => r(false), SHUTDOWN_HARD_CAP_MS); }),
+      ]);
+      clearTimeout(capTimer);
+      if (!drained) {
+        logger.warn(`supervisor shutdown hit its ${SHUTDOWN_HARD_CAP_MS}ms cap: killing the remaining bots`);
+        for (const ctl of summonControls.values()) {
+          ctl.cancelled = true;
+          try { ctl.cancel?.(); } catch { /* best-effort */ }
+        }
+        for (const s of sessions.values()) {
+          s.stopRequested = true;
+          try { s.child.kill(); } catch { /* best-effort */ }
+        }
+      }
     },
     // Plan 10-06: cache the latest JWT and, if a session is live, push it on
     // port1 with a `{type:'jwt'}` message. The utilityProcess in Phase 10

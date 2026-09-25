@@ -26,7 +26,7 @@ import { closeSplashWindow, createMainWindow, createSplashWindow } from './windo
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { isAnalyticsActive, shutdownAnalytics, capture } from './analytics';
 import { notePreGateFailure, clearSummonBlock } from './summonGuard';
-import { createBotSupervisor } from './botSupervisor';
+import { createBotSupervisor, SUMMON_CANCELLED } from './botSupervisor';
 import { registerGameModule, getGameModule, listGameModules } from './games';
 import { createMinecraftGameModule } from './games/minecraft';
 import { createDontStarveGameModule } from './games/dontstarve';
@@ -1042,6 +1042,8 @@ async function bootstrap(): Promise<void> {
     // push the replies live. No canned system row (task 7) — the companion
     // reports the failure in its own words.
     notifyLaunchFailed: (id, reason) => {
+      // 260926: a stop cancelled the join. The player did that on purpose.
+      if (reason.startsWith(SUMMON_CANCELLED)) return;
       void (async () => {
         try {
           const { sendLaunchFailedTurn } = await import('./chat/chatService');
