@@ -67,6 +67,9 @@ import { IdTag } from '../components/IdTag';
 import { CHAT_TEXT_MAX, type ChatMessage, type ChatReplyRef, type UserProfile } from '@shared/ipc';
 import type { Character } from '@shared/characterSchema';
 import { ClipCard } from '../components/backseat/ClipCard';
+import { FirstMomentCard } from '../components/FirstMomentCard';
+import { useFirstMomentStore } from '../lib/stores/useFirstMomentStore';
+import { useTutorialStore } from '../lib/stores/useTutorialStore';
 import styles from './ChatScreen.module.css';
 
 export interface ChatScreenProps {
@@ -154,6 +157,13 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   );
   const showTyping = awaiting && !onCall;
   const loading = useChatStore((s) => s.loading[characterId]) ?? false;
+  // The guided first moment (260926): the next-step card under the first
+  // greeting. Held back while Sui's tour is running (its scrim would cover
+  // it, and first_moment_shown should mean the player could actually see it).
+  const firstMomentReady = useFirstMomentStore(
+    (s) => s.characterId === characterId && s.status === 'ready',
+  );
+  const tutorialActive = useTutorialStore((s) => s.active);
   const load = useChatStore((s) => s.load);
   const send = useChatStore((s) => s.send);
 
@@ -255,7 +265,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     toBottom();
     const r = requestAnimationFrame(toBottom);
     return () => cancelAnimationFrame(r);
-  }, [messages, awaiting, characterId, loading]);
+  }, [messages, awaiting, characterId, loading, firstMomentReady, tutorialActive]);
 
   // Scrollbar auto-hide: the thumb is transparent at rest and shows only
   // while the list is actively scrolling (data-scrolling, cleared after a
@@ -834,6 +844,9 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
               </React.Fragment>
             );
           })}
+          {firstMomentReady && !loading && !tutorialActive && !gameOpen ? (
+            <FirstMomentCard characterId={characterId} />
+          ) : null}
         </div>
 
         {/* ── Floating composer (hovers over the chat window) ── */}

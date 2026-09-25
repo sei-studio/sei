@@ -645,6 +645,48 @@ built for the loop itself.
 
 ---
 
+## Guided first moment (260926)
+
+A new player's first session ends in their companion's chat, with the
+companion greeting first and one concrete next step under the greeting. Before
+this, onboarding landed on Home: 24% of new installs never used any surface.
+
+- **Who gets it.** `firstMomentCompanion(res, suiId)` (`lib/firstMoment.ts`)
+  in `App.tsx` `handleOnboardComplete`, only on the `res.tutorial` branch (a
+  NEW player; the returning-user / `accountHasProfile` route passes
+  `tutorial:false` and never arms). The companion is the generated one, else
+  Sui. Every backend works: the greeting is the ordinary first-meeting turn on
+  `buildLlmProvider()`.
+- **Flow.** `useFirstMomentStore.arm(id)` starts a Minecraft install probe.
+  The tutorial still runs; its end (`TutorialOverlay.finish` ->
+  `enterFirstMoment()`) navigates to that companion's chat instead of Home.
+  `useChatStore.load()` on the empty transcript asks `greetingOptions` (waits
+  at most `MC_PROBE_WAIT_MS` for the probe) and passes
+  `chatOpened(id, {firstMoment: {primary}})`; main adds
+  `thoughtFirstMoment(primary)` after `THOUGHT_FIRST_MEETING`, so the greeting
+  (which already knows `preferred_name`) ends on the invitation. After the
+  whole greeting is revealed the store goes `ready` and `ChatScreen` renders
+  `FirstMomentCard` at the end of the message list (hidden while the tour is
+  active or a game is open). The full tour opens the chat at its say-hi step,
+  so the greeting can land mid-tour; the card waits for the tour to end.
+- **Buttons reuse existing paths.** Chess and Minecraft go through
+  `requestGameLaunch` + `openGame` (the Play together tiles), the call through
+  `startOrOpenCall`. Minecraft is offered only when a LAN world is open (then
+  it leads) or an install was detected; otherwise chess leads, with no install.
+  "Not now" or any tile retires the card for the session. Nothing persists.
+- **Failure is silent.** An existing transcript, an empty greeting, a thrown
+  greeting call or a planning error settles the store as `failed`: the plain
+  chat, no card, no error. The one-time Backseat tip is held back while the
+  moment is pending or showing (`shouldShowBackseatTip.firstMomentLive`).
+- **Analytics (shape only, renderer `sei.track`):** `first_moment_shown
+  {primary, minecraft_offered, companion: sui|generated}`,
+  `first_moment_action {action: chess|minecraft|call|dismiss, primary,
+  ms_since_shown}`, `first_moment_fallback {reason}`. Not session events, so
+  nothing to add to `SESSION_EVENTS`.
+- **Verify in a tab:** `?dashshot=chatfirst` (chess + Minecraft + call),
+  `&nomc=1` (chess + call), `&lan=1` (Minecraft leads). The harness greeting is
+  a stub; the live greeting's wording is the model's.
+
 ## Chess minigame (260710)
 
 An in-app untimed chess game against the character, launched from the "Play

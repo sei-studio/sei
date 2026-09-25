@@ -2466,11 +2466,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // empty transcript, never chatted) and returns any greeting replies. A fresh
   // world-detection pass first so the greeting's prompt reflects live LAN truth,
   // same as chat:send.
-  ipcMain.handle(IpcChannel.chat.opened, async (_event, idArg: unknown): Promise<ChatMessage[]> => {
+  // `firstMoment` (260926): the guided first moment after onboarding; the
+  // greeting also ends on an offer to play `primary`. A malformed options arg
+  // degrades to a plain greeting rather than failing the open.
+  const ChatOpenedOptsSchema = z
+    .object({ firstMoment: z.object({ primary: z.enum(['chess', 'minecraft']) }).optional() })
+    .optional();
+  ipcMain.handle(IpcChannel.chat.opened, async (_event, idArg: unknown, optsArg?: unknown): Promise<ChatMessage[]> => {
     const id = IdSchema.parse(idArg);
+    const parsedOpts = ChatOpenedOptsSchema.safeParse(optsArg);
+    const opts = parsedOpts.success ? parsedOpts.data : undefined;
     const { sendFirstMeetingTurn } = await import('./chat/chatService');
     try { await deps.refreshLanState?.(); } catch { /* greeting proceeds on cache */ }
-    return await sendFirstMeetingTurn(id, { getLanState: deps.getLanState });
+    return await sendFirstMeetingTurn(id, { getLanState: deps.getLanState }, opts);
   });
 
   ipcMain.handle(IpcChannel.chat.previews, async (): Promise<Record<string, ChatPreview>> => {

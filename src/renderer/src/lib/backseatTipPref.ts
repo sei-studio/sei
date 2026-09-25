@@ -94,7 +94,9 @@ export function dismissBackseatTip(): void {
  * player is already past the point the tip is for. A modal (including the
  * source picker the button itself opens) means the header is behind a scrim.
  * The tutorial has its own Backseat step with its own spotlight, and two
- * pointers at one button is worse than either alone.
+ * pointers at one button is worse than either alone. The guided first moment
+ * (260926) offers its own next step under the first greeting, and a second
+ * card about a different feature would compete with it.
  */
 export function shouldShowBackseatTip(input: {
   /** backseatTipDone() at mount, or true once dismissed this session. */
@@ -107,10 +109,13 @@ export function shouldShowBackseatTip(input: {
   modalOpen: boolean;
   /** The guided tour is running. */
   tutorialActive: boolean;
+  /** The guided first moment is pending or its card is up. */
+  firstMomentLive?: boolean;
 }): boolean {
   if (input.done) return false;
   if (!input.onChatScreen) return false;
   if (input.sharing) return false;
   if (input.modalOpen) return false;
+  if (input.firstMomentLive) return false;
   return !input.tutorialActive;
 }

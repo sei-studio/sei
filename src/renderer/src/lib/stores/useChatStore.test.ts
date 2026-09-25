@@ -329,3 +329,100 @@ describe('useChatStore.resetForScope: no transcript crosses accounts', () => {
     }
   });
 });
+
+/**
+ * The guided first moment (260926) rides load()'s greeting path: the armed
+ * companion's empty-transcript open passes chatOpened options that steer the
+ * greeting, and every way the greeting can fail leaves the plain chat screen.
+ */
+describe('useChatStore.load: guided first moment', () => {
+  async function setup() {
+    const w = (globalThis as unknown as { window: { sei: Record<string, unknown> } }).window;
+    w.sei.detectMcInstalls = vi.fn().mockResolvedValue({ installs: [] });
+    w.sei.track = vi.fn();
+    const store = await loadStore();
+    const { useUiStore } = await import('./useUiStore');
+    useUiStore.setState({ realisticTyping: false });
+    const { useFirstMomentStore } = await import('./useFirstMomentStore');
+    return { store, fm: useFirstMomentStore };
+  }
+
+  it('an unarmed open calls chatOpened exactly as before (no options)', async () => {
+    chatHistoryMock.mockResolvedValue([]);
+    chatOpenedMock.mockResolvedValue([msg('hi')]);
+    const { store, fm } = await setup();
+    await store.getState().load('c1');
+    expect(chatOpenedMock).toHaveBeenCalledWith('c1');
+    expect(chatOpenedMock.mock.calls[0]).toHaveLength(1);
+    expect(fm.getState().status).toBeNull();
+  });
+
+  it('the armed companion greets with the first-moment options, then the card is ready', async () => {
+    chatHistoryMock.mockResolvedValue([]);
+    chatOpenedMock.mockResolvedValue([msg('hi'), msg('chess?')]);
+    const { store, fm } = await setup();
+    fm.getState().arm('c1');
+    await store.getState().load('c1');
+    expect(chatOpenedMock).toHaveBeenCalledWith('c1', { firstMoment: { primary: 'chess' } });
+    expect(store.getState().messages['c1']).toHaveLength(2);
+    expect(fm.getState().status).toBe('ready');
+  });
+
+  it('another companion opened first is left alone and the arm survives', async () => {
+    chatHistoryMock.mockResolvedValue([]);
+    chatOpenedMock.mockResolvedValue([msg('hi')]);
+    const { store, fm } = await setup();
+    fm.getState().arm('c1');
+    await store.getState().load('other');
+    expect(chatOpenedMock).toHaveBeenCalledWith('other');
+    expect(fm.getState().status).toBe('armed');
+  });
+
+  it('a greeting call that throws falls back silently to the plain chat', async () => {
+    chatHistoryMock.mockResolvedValue([]);
+    chatOpenedMock.mockRejectedValue(new Error('llm down'));
+    const { store, fm } = await setup();
+    fm.getState().arm('c1');
+    await store.getState().load('c1');
+    expect(fm.getState().status).toBe('failed');
+    expect(store.getState().awaiting['c1']).toBe(false);
+    expect(store.getState().messages['c1'] ?? []).toHaveLength(0);
+  });
+
+  it('an empty greeting (main found the companion ineligible) falls back', async () => {
+    chatHistoryMock.mockResolvedValue([]);
+    chatOpenedMock.mockResolvedValue([]);
+    const { store, fm } = await setup();
+    fm.getState().arm('c1');
+    await store.getState().load('c1');
+    expect(fm.getState().status).toBe('failed');
+  });
+
+  it('a planning failure still greets the plain way and settles the moment', async () => {
+    chatHistoryMock.mockResolvedValue([]);
+    chatOpenedMock.mockResolvedValue([msg('hi')]);
+    const { store, fm } = await setup();
+    fm.getState().arm('c1');
+    const realOptions = fm.getState().greetingOptions;
+    fm.setState({
+      greetingOptions: async (id: string) => {
+        await realOptions(id); // moves the status to 'greeting'
+        throw new Error('plan failed');
+      },
+    });
+    await store.getState().load('c1');
+    expect(chatOpenedMock).toHaveBeenCalledWith('c1');
+    expect(chatOpenedMock.mock.calls[0]).toHaveLength(1);
+    expect(store.getState().messages['c1']).toHaveLength(1);
+    expect(fm.getState().status).toBe('failed');
+  });
+
+  it('an existing transcript means no greeting and no card', async () => {
+    chatHistoryMock.mockResolvedValue([msg('old')]);
+    const { store, fm } = await setup();
+    fm.getState().arm('c1');
+    await store.getState().load('c1');
+    expect(chatOpenedMock).not.toHaveBeenCalled();
+    expect(fm.getState().status).toBe('failed');
+  });
+});

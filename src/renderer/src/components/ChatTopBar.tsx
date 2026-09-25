@@ -36,6 +36,7 @@ import {
   dismissBackseatTip,
   shouldShowBackseatTip,
 } from '../lib/backseatTipPref';
+import { useFirstMomentStore } from '../lib/stores/useFirstMomentStore';
 import { startOrOpenCall } from '../lib/callLaunch';
 import { visionBlocked, visionGateReason } from '../lib/visionGate';
 import { pickPalette } from '../lib/portraitPalettes';
@@ -85,6 +86,9 @@ export function ChatTopBar({ characterId }: ChatTopBarProps): React.ReactElement
   const modalOpen = useUiStore((s) => s.modal !== null);
   const sharing = useBackseatStore((s) => s.sharingFor !== null);
   const tutorialActive = useTutorialStore((s) => s.active);
+  const firstMomentLive = useFirstMomentStore(
+    (s) => s.status === 'armed' || s.status === 'greeting' || s.status === 'ready',
+  );
   // The flag is per ACCOUNT, so a scope change has to re-read it. Switching
   // accounts does not necessarily remount this header, and inheriting the
   // previous account's dismissal would silence the notice for someone who has
@@ -100,6 +104,7 @@ export function ChatTopBar({ characterId }: ChatTopBarProps): React.ReactElement
     sharing,
     modalOpen,
     tutorialActive,
+    firstMomentLive,
   });
 
   const theme: 'light' | 'dark' =

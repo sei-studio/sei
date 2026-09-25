@@ -12,6 +12,8 @@
  *     http://localhost:5173/?dashshot=dstlaunch    the Don't Starve Together launch panel
  *     http://localhost:5173/?dashshot=stardewlaunch  the Stardew Valley launch panel
  *     http://localhost:5173/?dashshot=creditwall&part=modal|credits|draw|banner  the credit wall surfaces (DevCreditWallShot)
+ *     http://localhost:5173/?dashshot=chatfirst    the guided first moment (260926) in the real ChatScreen
+ *                                                  (&nomc=1: no Minecraft install; &lan=1: a LAN world open)
  *
  * It seeds useMcDashboardStore with fixture snapshots and useDataStore with
  * two named characters (window.sei is stubbed by devHarnessStubs.ts, which
@@ -32,10 +34,12 @@ import { DstLaunchPanel } from '../dontstarve/DstLaunchPanel';
 import { StardewLaunchPanel } from '../stardew/StardewLaunchPanel';
 import { ChatScreen } from '../../screens/ChatScreen';
 import { DevCreditWallShot } from '../DevCreditWallShot';
+import { useFirstMomentStore } from '../../lib/stores/useFirstMomentStore';
 
 const DST_ID = 'dashshot-dst';
 const SDV_ID = 'dashshot-sdv';
 const SDV_PEER_ID = 'dashshot-sdv-peer';
+const FIRST_ID = 'dashshot-first';
 
 const DST_SNAPSHOT: DstDashboardSnapshot = {
   game: 'dontstarve',
@@ -133,8 +137,16 @@ function seed(): void {
       { id: DST_ID, name: 'Sui', portrait_image: './img/onboard/sui-stand.png' } as unknown as (typeof s.characters)[number],
       { id: SDV_ID, name: 'Marv', portrait_image: './img/onboard/sui-talk-flipped.png' } as unknown as (typeof s.characters)[number],
       { id: SDV_PEER_ID, name: 'Lyra' } as unknown as (typeof s.characters)[number],
+      { id: FIRST_ID, name: 'Nova', portrait_image: './img/onboard/sui-stand.png' } as unknown as (typeof s.characters)[number],
     ],
   }));
+  // ?dashshot=chatfirst: armed exactly as App.tsx arms it at onboarding
+  // completion, so opening the chat runs the real greeting + card path.
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('dashshot') === 'chatfirst') {
+    if (params.has('lan')) useDataStore.setState({ lan: { kind: 'open', port: 25565, motd: 'My World', lastSeenAt: Date.now() } });
+    useFirstMomentStore.getState().arm(FIRST_ID);
+  }
 }
 
 // Seed once at import, never during render (React flags store writes from a render).
@@ -146,6 +158,13 @@ export function DevDashShot({ which }: { which: string }): React.ReactElement {
   // ?dashshot=chat (Stardew) | chatdst: the dashboard hosted inside the real
   // ChatScreen (260917), for the game/chat split, the drag handle and the
   // composer. The fixture summon is online, so the dashboard slot opens.
+  if (which === 'chatfirst') {
+    return (
+      <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', background: 'var(--window)' }}>
+        <ChatScreen characterId={FIRST_ID} />
+      </div>
+    );
+  }
   if (which === 'chat' || which === 'chatdst') {
     if (which === 'chatdst') {
       useDataStore.setState((s) => ({

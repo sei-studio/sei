@@ -655,6 +655,18 @@ export interface SpokenLineContext {
   confirmId?: string;
 }
 
+/**
+ * The first game the guided first moment offers (260926). Chess needs no
+ * install, so it is the default; Minecraft leads only when a LAN world is
+ * already open.
+ */
+export type FirstMomentGame = 'chess' | 'minecraft';
+
+/** Options for `chatOpened` (see RendererApi.chatOpened). */
+export interface ChatOpenedOptions {
+  firstMoment?: { primary: FirstMomentGame };
+}
+
 /** A main → renderer chat push (bot reply while in-game, or a system line). */
 export interface ChatMessagePush {
   characterId: string;
@@ -1781,8 +1793,13 @@ export interface RendererApi {
    * a first-meeting greeting fires (any companion kind, empty transcript, never
    * chatted) and returns any greeting replies to append; returns [] otherwise.
    * Safe to call on every empty-history open — main no-ops when ineligible.
+   *
+   * `opts.firstMoment` (260926): this open is the guided first moment right
+   * after onboarding, so the greeting also ends by inviting the player to the
+   * given game (the renderer shows the matching buttons under it). Ignored
+   * when the greeting itself is ineligible.
    */
-  chatOpened(characterId: string): Promise<ChatMessage[]>;
+  chatOpened(characterId: string, opts?: ChatOpenedOptions): Promise<ChatMessage[]>;
   /**
    * Last chat line per character (Party redesign §2) — the roster "lastline"
    * preview without loading full transcripts. Keys are character ids; missing

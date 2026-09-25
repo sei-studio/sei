@@ -1,0 +1,116 @@
+/* FirstMomentCard (260926): next-step tiles under the first greeting.
+ * Indented to the chat's message column (40px avatar gutter + column gap) so
+ * it reads as part of the companion's turn. Sharp, borderless tiles like the
+ * "Play together" picker; the game tiles reuse its art with the same bottom
+ * scrim. Tokens only, except the white-on-art label, which matches the
+ * picker's image tiles. */
+
+.root {
+  padding: var(--space-sm) 0 var(--space-xs) calc(40px + var(--space-md));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  animation: fade-up 280ms var(--ease-pop) both;
+}
+
+.tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.tile {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
+  width: 168px;
+  height: 92px;
+  border: none;
+  padding: var(--space-sm) var(--space-md);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+  color: var(--text);
+  background-color: var(--surface-2);
+  transition: filter 140ms var(--ease), background-color 140ms var(--ease), box-shadow 140ms var(--ease);
+}
+
+.tile:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.label {
+  position: relative;
+  z-index: 1;
+  line-height: 1.15;
+}
+
+.artTile {
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.artTile::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent 30%, rgba(6, 6, 8, 0.86) 100%);
+}
+
+.artTile .label {
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
+
+.artTile:hover {
+  filter: brightness(1.08);
+}
+
+/* The game the companion just offered: an accent ring so the eye lands there. */
+.primary {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.callTile:hover {
+  background-color: var(--accent-soft);
+}
+
+.callIcon {
+  display: inline-flex;
+  color: var(--accent-strong);
+  margin-bottom: auto;
+}
+
+.dismiss {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: var(--space-xs) 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.dismiss:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root {
+    animation: none;
+  }
+}
