@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type Anthropic from '@anthropic-ai/sdk';
-import type { ChatMessage, ChatSendResult, LanState, SpokenLineContext } from '../../shared/ipc';
+import type { ChatMessage, ChatOpenedOptions, ChatSendResult, LanState, SpokenLineContext } from '../../shared/ipc';
 import type { GameId, WorldStates } from '../../shared/gameIpc';
 import { paths } from '../paths';
 import { loadConfig } from '../configStore';
@@ -49,6 +49,7 @@ import {
   pushThought,
   renderThoughtNote,
   THOUGHT_FIRST_MEETING,
+  thoughtFirstMoment,
   THOUGHT_JOINING_GAME,
 } from './thoughts';
 
@@ -1387,6 +1388,7 @@ const firstMeetingInflight = new Map<string, Promise<ChatMessage[]>>();
 export async function sendFirstMeetingTurn(
   characterId: string,
   deps?: Pick<ChatDeps, 'getLanState'>,
+  opts?: ChatOpenedOptions,
 ): Promise<ChatMessage[]> {
   const existing = firstMeetingInflight.get(characterId);
   if (existing) return existing;
@@ -1401,13 +1403,20 @@ export async function sendFirstMeetingTurn(
     const transcript = await chatStore.readAll(characterId);
     if (transcript.length > 0) return [];
 
-    pushThought(characterId, THOUGHT_FIRST_MEETING);
     const prep = await prepareChatTurn(characterId, {
       openWorldDetected: deps?.getLanState?.().kind === 'open',
       inGame: false,
     });
     if (!prep) return [];
     const { system, messages } = prep;
+    // Pushed only once the turn is certain to drain them below: a thought left
+    // queued by a failed prep would ride the player's first typed message or
+    // the voice greeting instead (and the first-moment one promises a button
+    // that would not be there).
+    pushThought(characterId, THOUGHT_FIRST_MEETING);
+    // The guided first moment (260926): the same greeting, ending on an offer
+    // to play. Pushed after the first-meeting thought so it closes the note.
+    if (opts?.firstMoment) pushThought(characterId, thoughtFirstMoment(opts.firstMoment.primary));
     // The transcript is empty, so messages is empty: the drained thought becomes
     // the (only) user message, satisfying Anthropic's "first message is user".
     foldUserNote(messages, renderThoughtNote(drainThoughts(characterId)));

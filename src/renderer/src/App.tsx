@@ -34,6 +34,9 @@ import { OnboardApp, type OnboardResult } from './onboard/OnboardApp';
 import { SuiPrefsScene } from './onboard/SuiPrefsScene';
 import { TutorialOverlay } from './components/tutorial/TutorialOverlay';
 import { useTutorialStore, type TutorialStep } from './lib/stores/useTutorialStore';
+import { useFirstMomentStore } from './lib/stores/useFirstMomentStore';
+import { firstMomentCompanion } from './lib/firstMoment';
+import { DEFAULT_CHARACTER_UUIDS } from '@shared/defaultCharacters';
 import { SkinSetupScreen } from './screens/SkinSetupScreen';
 import { CharactersScreen } from './screens/CharactersScreen';
 import { AwakenScreen } from './screens/AwakenScreen';
@@ -780,6 +783,11 @@ export function App(): React.ReactElement {
         // modal over the tutorial (260729).
         void useAuthStore.getState().refreshTosStatus();
         if (res.tutorial) {
+          // The guided first moment (260926): a NEW player's tour ends in their
+          // companion's chat, greeted first, with a next step to click. Only
+          // this branch arms it; a returning sign-in never does.
+          const fm = firstMomentCompanion(res, DEFAULT_CHARACTER_UUIDS.sui);
+          if (fm) useFirstMomentStore.getState().arm(fm);
           useTutorialStore.getState().start(res.characterId);
           if (res.characterId) {
             // Land on the character reveal page (portrait + "Say hello"); the

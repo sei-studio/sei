@@ -12,7 +12,7 @@ beforeEach(() => {
 });
 
 describe('resetAccountScopedState', () => {
-  it('clears transcripts, avatar manifests, bot logs, deleted ids and feedback drafts', async () => {
+  it('clears transcripts, avatar manifests, bot logs, deleted ids, feedback drafts and a pending first moment', async () => {
     const { useChatStore } = await import('./stores/useChatStore');
     const { useAvatarStore } = await import('./stores/useAvatarStore');
     const { useDataStore } = await import('./stores/useDataStore');
@@ -29,6 +29,8 @@ describe('resetAccountScopedState', () => {
       recentlyDeletedIds: new Set(['sui']),
     });
     drafts.setFeedbackDraft('bug', 'my unsent words');
+    const { useFirstMomentStore } = await import('./stores/useFirstMomentStore');
+    useFirstMomentStore.getState().arm('sui');
 
     resetAccountScopedState();
 
@@ -38,6 +40,7 @@ describe('resetAccountScopedState', () => {
     expect(useDataStore.getState().logs).toEqual([]);
     expect(useDataStore.getState().recentlyDeletedIds.size).toBe(0);
     expect(drafts.getFeedbackDraft('bug')).toBe('');
+    expect(useFirstMomentStore.getState().status).toBeNull();
   });
 
   it('an avatar fetch begun for the old account does not land after the reset', async () => {

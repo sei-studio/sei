@@ -16,6 +16,7 @@ import { create } from 'zustand';
 import { sei } from '../ipcClient';
 import { useDataStore } from './useDataStore';
 import { useUiStore } from './useUiStore';
+import { useFirstMomentStore } from './useFirstMomentStore';
 import {
   notifyCompanionText,
   notifyPlayerText,
@@ -328,7 +329,17 @@ export const useChatStore = create<ChatState>((set, get) => {
 
   load: async (characterId) => {
     const put = setIn(scopeEpoch);
-    if (get().loaded[characterId]) return;
+    if (get().loaded[characterId]) {
+      // The guided first moment rides the greeting of the FIRST load. A chat
+      // already loaded this app session (and not mid-fetch, where the first
+      // load still owns it) will not greet again, so settle an armed moment as
+      // a silent fallback instead of leaving it pending all session.
+      const fm = useFirstMomentStore.getState();
+      if (!get().loading[characterId] && fm.characterId === characterId && fm.status === 'armed') {
+        fm.greetingResult(characterId, false, 'already_loaded');
+      }
+      return;
+    }
     // Mark loaded up front so a re-entry while the fetch is in flight doesn't
     // double-fire; on failure we reset it so a later open can retry. `loading`
     // flips on synchronously alongside it — it drives the wireframe skeleton and
@@ -362,10 +373,29 @@ export const useChatStore = create<ChatState>((set, get) => {
       // policy, so calling on every empty open is fine (main no-ops otherwise).
       // Show the typing indicator while we wait, then append via the same deduped
       // path a live push uses.
+      const firstMoment = useFirstMomentStore.getState();
+      if (history.length > 0) {
+        // The guided first moment (260926) rides the first-meeting greeting,
+        // which needs an empty transcript. Anything already here means no
+        // greeting, so no card: settle it as a silent fallback.
+        firstMoment.greetingResult(characterId, false, 'history');
+      }
       if (history.length === 0 && sei.chatOpened) {
         put((s) => ({ awaiting: { ...s.awaiting, [characterId]: true } }));
+        // undefined unless this is the armed first-moment companion.
+        let fmOpts: Awaited<ReturnType<typeof firstMoment.greetingOptions>>;
         try {
-          const greeting = await sei.chatOpened(characterId);
+          fmOpts = await firstMoment.greetingOptions(characterId);
+        } catch {
+          // Planning failed: greet the ordinary way, and settle the moment so
+          // it cannot sit in 'greeting' for the rest of the session.
+          fmOpts = undefined;
+          useFirstMomentStore.getState().greetingResult(characterId, false, 'options_failed');
+        }
+        try {
+          const greeting = fmOpts
+            ? await sei.chatOpened(characterId, fmOpts)
+            : await sei.chatOpened(characterId);
           // Reveal a multi-message greeting one bubble at a time, each with its
           // OWN typing delay — same theater send() uses — instead of dumping the
           // whole greeting at once (a two-part hello must arrive as two texts,
@@ -385,8 +415,19 @@ export const useChatStore = create<ChatState>((set, get) => {
             }));
           }
           if (fresh.length === 0) put((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
+          // The card shows only after the whole greeting has been revealed. An
+          // empty greeting (main found the companion ineligible) falls back.
+          // Counted on what main returned, not on `fresh`: a line main already
+          // pushed over chat:message is still part of the greeting.
+          if (fmOpts) {
+            const ok = greeting.length > 0;
+            useFirstMomentStore.getState().greetingResult(characterId, ok, ok ? undefined : 'no_greeting');
+          }
         } catch {
           put((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
+          // Greeting call failed (LLM down, bad key, timeout): the normal chat
+          // screen, with no card and no error.
+          if (fmOpts) useFirstMomentStore.getState().greetingResult(characterId, false, 'greeting_failed');
         }
       }
     } catch {
@@ -435,6 +476,15 @@ export const useChatStore = create<ChatState>((set, get) => {
     const token = (sendSeq[characterId] ?? 0) + 1;
     sendSeq[characterId] = token;
     const isCurrent = (): boolean => epoch === scopeEpoch && sendSeq[characterId] === token;
+
+    // The guided first moment: a player who types instead of clicking has
+    // answered it. Retire the card (counted as 'typed'); typed before the card
+    // was up, the moment is settled so it never lands under their message.
+    const fm = useFirstMomentStore.getState();
+    if (fm.characterId === characterId) {
+      if (fm.status === 'ready') fm.act('typed');
+      else if (fm.status === 'armed' || fm.status === 'greeting') fm.greetingResult(characterId, false, 'typed_first');
+    }
 
     const inCallEarly = isVoiceCallActive(characterId);
     // A message TYPED to a companion who is on the live call still has to reach

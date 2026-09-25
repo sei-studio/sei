@@ -10,14 +10,16 @@
  * scope-changed handler, before it reloads config and characters.
  *
  * Cleared here: chat transcripts + previews + in-flight reveals, imported
- * avatar manifests, unsent feedback drafts, and the dev console's bot log
- * (bot lines quote the conversation), and the recently-deleted id set. Stores that already re-seed on scope or
+ * avatar manifests, unsent feedback drafts, the dev console's bot log (bot
+ * lines quote the conversation), the recently-deleted id set, and a pending
+ * guided first moment. Stores that already re-seed on scope or
  * auth change (characters, library state, credits, cloud ids) are not
  * repeated here.
  */
 import { useChatStore } from './stores/useChatStore';
 import { useAvatarStore } from './stores/useAvatarStore';
 import { useDataStore } from './stores/useDataStore';
+import { useFirstMomentStore } from './stores/useFirstMomentStore';
 import { clearAllFeedbackDrafts } from './feedbackDraft';
 
 export function resetAccountScopedState(): void {
@@ -28,4 +30,6 @@ export function resetAccountScopedState(): void {
   // a default deleted by one account must not vanish for the next.
   useDataStore.setState({ recentlyDeletedIds: new Set<string>() });
   clearAllFeedbackDrafts();
+  // A pending guided first moment belongs to the account that armed it.
+  useFirstMomentStore.getState().reset();
 }

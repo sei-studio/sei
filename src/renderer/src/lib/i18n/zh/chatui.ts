@@ -217,4 +217,8 @@ export const ZH_CHATUI: Record<string, string> = {
     '一段安静的共同工作时光。{name} 会在你做事时陪伴你。',
   'Tell us what you want to play together. Suggestions go straight to the team.':
     '告诉我们你想一起玩什么。建议会直接送达团队。',
+  // Guided first moment (260926): the next-step card under the first greeting.
+  'Play chess now': '现在来下棋',
+  'Summon me in Minecraft': '叫我进 Minecraft',
+  'Call me': '给我打电话',
 };

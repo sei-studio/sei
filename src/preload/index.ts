@@ -135,7 +135,7 @@ const api: RendererApi = {
   chatHistoryBefore: (characterId, beforeId) =>
     ipcRenderer.invoke(IpcChannel.chat.historyBefore, { characterId, beforeId }),
   chatSend: (args) => ipcRenderer.invoke(IpcChannel.chat.send, args),
-  chatOpened: (characterId) => ipcRenderer.invoke(IpcChannel.chat.opened, characterId),
+  chatOpened: (characterId, opts) => ipcRenderer.invoke(IpcChannel.chat.opened, characterId, opts),
   chatPreviews: () => ipcRenderer.invoke(IpcChannel.chat.previews),
   onChatMessage(cb: (push: ChatMessagePush) => void) {
     const handler = (_e: Electron.IpcRendererEvent, push: ChatMessagePush) => cb(push);

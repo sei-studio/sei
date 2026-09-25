@@ -36,8 +36,33 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
         : `not yet, still ${['watering the parsnips', 'chopping wood by the pond', 'clearing the debris north of the house', 'checking the shipping bin'][i % 4]}. give me a minute and i'll head over.`,
     ts: now - (24 - i) * 90_000,
   }));
+  // ?dashshot=chatfirst (260926): the guided first moment. An empty
+  // transcript, so the armed greeting fires, answered after a short think with
+  // a two-bubble greeting that ends on the chess offer. `&nomc=1` reports no
+  // Minecraft install (chess + call only); `&lan=1` has a LAN world open
+  // (Minecraft leads).
+  const firstMode = params.get('dashshot') === 'chatfirst';
+  const noMc = params.has('nomc');
+  const firstGreeting = async (): Promise<unknown[]> => {
+    await new Promise((r) => setTimeout(r, 900));
+    const lan = params.has('lan');
+    return [
+      { id: 'fm-1', role: 'companion', text: 'oh hey Robin, you made it!', ts: Date.now() },
+      {
+        id: 'fm-2',
+        role: 'companion',
+        text: lan ? "i see your world is open. want me to hop in right now?" : 'wanna play a quick game of chess with me? i promise to go easy. maybe.',
+        ts: Date.now(),
+      },
+    ];
+  };
   const base: Record<string, unknown> = {
-    chatHistory: async () => (chatMode ? chatRows : []),
+    chatHistory: async () => (firstMode ? [] : chatMode ? chatRows : []),
+    chatOpened: firstMode ? firstGreeting : async () => [],
+    // The Proxy's generic answer is not a LanState; the data store seeds from
+    // this on start, so answer the real shape (open with `&lan=1`).
+    getLanState: async () =>
+      params.has('lan') ? { kind: 'open', port: 25565, motd: 'My World', lastSeenAt: Date.now() } : { kind: 'closed' },
     chatHistoryOlder: async () => [],
     chatPreviews: async () => ({}),
     gameDashboardSetWatching: noop,
@@ -54,7 +79,7 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
     // detectMcInstalls answers `{ installs }`, the wizard's shape: a stub
     // returning a bare array hid the 260909 "not detected" bug.
     detectMcInstalls: async () => ({
-      installs: [
+      installs: noMc ? [] : [
         {
           id: 'v1', kind: 'vanilla', label: 'Vanilla Launcher', path: '/Users/you/Library/Application Support/minecraft', mc_version: '26.1',
           loader: ready ? 'fabric' : null, loader_version: ready ? '0.19.3' : null, fabric_mc_versions: ready ? ['1.21.1'] : [],

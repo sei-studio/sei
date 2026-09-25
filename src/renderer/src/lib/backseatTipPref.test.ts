@@ -112,6 +112,11 @@ describe('shouldShowBackseatTip', () => {
     // scrim would sit over the card anyway.
     expect(shouldShowBackseatTip({ ...base, tutorialActive: true })).toBe(false);
   });
+
+  it('hides while the guided first moment is pending or showing its card', () => {
+    expect(shouldShowBackseatTip({ ...base, firstMomentLive: true })).toBe(false);
+    expect(shouldShowBackseatTip({ ...base, firstMomentLive: false })).toBe(true);
+  });
 });
 
 describe('backseatTipDone persistence', () => {
