@@ -22,6 +22,18 @@ describe('stardew prompts', () => {
     expect(SESSION_END_CLAUSE).toMatch(/quit_game/)
   })
 
+  it('describes follow as a standing order that a trip only puts on hold', () => {
+    // 260924 playtest: the old rule said a goTo to another map ENDS following,
+    // matching the mod; both now hold it until the player moves on.
+    expect(ACTION_RULES).toMatch(/follow is a standing order/)
+    expect(ACTION_RULES).toMatch(/puts it on hold/)
+    expect(ACTION_RULES).toMatch(/lasts through the night/)
+    expect(ACTION_RULES).not.toMatch(/ends following for you/)
+    // The model walked into the player with goTo(their x,y) three times.
+    expect(ACTION_RULES).toMatch(/never goTo with their coordinates/)
+    expect(ACTION_RULES).not.toMatch(/\u2014/)
+  })
+
   it('has a description for every registry verb and no verb without one', () => {
     expect(Object.keys(ACTION_DESCRIPTIONS).sort()).toEqual([...VERB_NAMES].sort())
   })

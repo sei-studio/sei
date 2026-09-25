@@ -29,6 +29,22 @@ function tileList(rows, render, max = 8) {
 }
 
 /**
+ * The follow_target value. Since mod 0.1.2 a commanded trip to another map
+ * puts following ON HOLD (`followHold` = the map the player was on) instead
+ * of ending it, so the model must be told it still stands: the 260924
+ * playtest lost "follow me" for the rest of the session because the old mod
+ * cleared it and the snapshot then said "(none)". A mod that predates the
+ * field sends no `followHold` and reads as before.
+ */
+export function followLine(obs) {
+  const who = obs?.follow
+  if (!who) return '(none)'
+  if (obs.sleeping) return `${who} (resumes when you wake up)`
+  if (obs.followHold) return `${who} (on hold while they stay in ${obs.followHold}; picks up again when they leave it or come to you. unfollow to stop)`
+  return who
+}
+
+/**
  * Pure: render one observation as snapshot text.
  * @param {object} obs   The mod's observation (may be null before the first push).
  * @param {{ lastActionResult?: string|null, inFlight?: any, pinUsername?: string|null, companions?: string[], worldTag?: string|null }} opts
@@ -96,7 +112,7 @@ export function composeSnapshot(obs, opts = {}) {
   const warps = Array.isArray(obs.warps) ? obs.warps : []
   if (warps.length) lines.push(`ways out: ${warps.map((w) => `${w.handle} to ${w.to} @${w.x},${w.y}`).join('; ')}`)
 
-  lines.push(`follow_target: ${obs.follow ?? '(none)'}`)
+  lines.push(`follow_target: ${followLine(obs)}`)
   const p = obs.player
   // The host farmer IS the owner in Stardew (the mod's `player` is
   // Game1.player), so their in-game name wins over the account's pinned
