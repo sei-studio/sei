@@ -83,6 +83,7 @@ import { useSyncStore } from './lib/stores/useSyncStore';
 import { useCreditsStore } from './lib/stores/useCreditsStore';
 import { useCloudCharactersStore } from './lib/stores/useCloudCharactersStore';
 import { useLibraryStateStore } from './lib/stores/useLibraryStateStore';
+import { resetAccountScopedState } from './lib/scopeReset';
 import { AuthChoiceScreen } from './screens/AuthChoiceScreen';
 import { AcceptToSModal } from './components/AcceptToSModal';
 import { OfflineRetryModal } from './components/OfflineRetryModal';
@@ -403,6 +404,9 @@ export function App(): React.ReactElement {
   //    above; this handles the local-file-backed stores + routing.
   useEffect(() => {
     return sei.onScopeChanged((ev) => {
+      // Drop the previous account's in-memory data first (transcripts are
+      // keyed by character id, and the defaults share ids across profiles).
+      resetAccountScopedState();
       void (async () => {
         // Onboarding completion is keyed on preferred_name (the "Name" field);
         // the Minecraft-username step was retired from the GUI (260605).
