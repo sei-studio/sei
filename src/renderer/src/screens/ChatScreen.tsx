@@ -50,6 +50,7 @@ import { pickPalette } from '../lib/portraitPalettes';
 import { useDominantColor } from '../lib/useDominantColor';
 import { presenceOf, useMinuteTick } from '../lib/presence';
 import { actionVerb } from '../lib/actionVerb';
+import { connectingLabel } from '../lib/summonProgress';
 import { readGameLayout, writeGameLayout } from '../lib/gameLayoutPref';
 import { PixelPortrait } from '../components/PixelPortrait';
 import { Presence } from '../components/Presence';
@@ -965,7 +966,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
                   </Button>
                 ) : connecting ? (
                   <Button kind="ghost" fullWidth disabled>
-                    {t('Connecting…')}
+                    {connectingLabel(summon, t)}
                   </Button>
                 ) : (
                   <Button

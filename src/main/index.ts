@@ -269,6 +269,8 @@ async function appendChatMessage(characterId: string, message: ChatMessage): Pro
 // <game> for Y" system row into that character's chat transcript. First-online
 // wins so a mid-session backend-switch re-emit doesn't reset the clock.
 const playStartedAt = new Map<string, { at: number; game: GameId }>();
+/** 260926: boot-phase props of the last summon-ready, consumed by the first-online capture. */
+const pendingBootProps = new Map<string, Record<string, number | string | null>>();
 
 /** Post the "You and <name> played <game> for <duration>" system row, then
  *  fire the rolling-summary fold like every other game surface does. */
@@ -405,7 +407,12 @@ function broadcastStatus(status: BotStatus): void {
       const game: GameId = status.game ?? 'minecraft';
       playStartedAt.set(id, { at: Date.now(), game });
       // Analytics (260707): first-online is the "bot reached the world" signal.
-      capture('character_summoned', { character_id: id, game });
+      // 260926: the attempt's boot-phase breakdown (supervisor onSummonReady,
+      // which fires just before this 'online' status), so dashboards can see
+      // where cold-boot time goes on successful summons too.
+      const bootProps = pendingBootProps.get(id) ?? {};
+      pendingBootProps.delete(id);
+      capture('character_summoned', { character_id: id, game, ...bootProps });
     }
   } else if (status.kind === 'error' || status.kind === 'idle') {
     const started = playStartedAt.get(id);
@@ -841,6 +848,11 @@ async function bootstrap(): Promise<void> {
     // phase, exit code, redacted stderr/stdout tails, and MC/world context.
     // Note summon_phase == 'mid_session' rows are post-summon crashes; filter
     // them out of summon-failure-rate insights.
+    // 260926: stash the boot breakdown for the character_summoned capture in
+    // broadcastStatus (the 'online' status follows synchronously).
+    onSummonReady: (characterId, bootProps) => {
+      pendingBootProps.set(characterId, bootProps);
+    },
     onSummonFailure: (info) => {
       // 260828 retry-loop guard: a pre-gate refusal is deterministic — arm the
       // auto-retry block so the launch() tool and the voice launch honors stop

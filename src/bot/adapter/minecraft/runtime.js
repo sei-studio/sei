@@ -28,6 +28,7 @@
 import { createBotInstance, resolveServerVersion } from './connect.js'
 import { createMinecraftAdapter } from './index.js'
 import { classifyConnectError } from './errors.js'
+import { bootMarks, markBoot } from '../../bootTiming.js'
 
 /**
  * The bot's MC login name must NOT collide with the LAN host's own player
@@ -137,6 +138,7 @@ export async function createRuntime(config, hooks) {
       mc.version = 'auto' // connect.js omits version when 'auto' → mineflayer detects in-handshake
     }
   }
+  markBoot('version_resolved')
 
   const bringUp = async () => {
     _bot = createBotInstance({
@@ -159,6 +161,27 @@ export async function createRuntime(config, hooks) {
         _reconnectAttempts = 0
         try { onConnected() } catch (err) {
           logger.warn(`onConnected hook threw: ${err && err.message}`)
+        }
+        // 260926: one line with the boot phases (ms since process start), so
+        // the rolling log shows where a slow start went. The same marks reach
+        // main's diagnostics over the port (bootTiming.js).
+        try {
+          const m = bootMarks()
+          const t0 = m.process_start ?? 0
+          logger.info(`boot timings (ms since process start): ${Object.entries(m).map(([k, v]) => `${k}=${v - t0}`).join(' ')}`)
+        } catch {}
+        // 260926: the render stack is no longer loaded at boot (see
+        // behaviors/visualize.js). Warm it shortly after spawn when vision is
+        // on, so the first look() does not pay a cold native load inside its
+        // render timeout. A failure here only logs: look() degrades to "can't
+        // see" and retries the import.
+        if (config?.vision?.mode && config.vision.mode !== 'off') {
+          setTimeout(() => {
+            if (_stopped) return
+            import('./behaviors/visualize.js')
+              .then(({ loadPovRenderer }) => loadPovRenderer())
+              .catch((err) => logger.warn(`vision renderer failed to load: ${err && err.message}`))
+          }, 4000)
         }
         // TEMPORARY — Phase 15-01 de-risk spike (REMOVE after the packaged-build
         // checkpoint approves). Behind SEI_VISION_SPIKE=1 so it ships nothing

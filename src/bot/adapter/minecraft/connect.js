@@ -25,6 +25,7 @@ import { startSurvival } from './behaviors/survival.js'
 import { applyWorldPause } from './behaviors/pause.js'
 import { installFaceOnDig } from './behaviors/face.js'
 import { forgeHandshakeEnabled, installForgeHandshake, sampleWorldNames } from './forgeHandshake.js'
+import { markBoot } from '../../bootTiming.js'
 
 /**
  * Extract human-readable text from mineflayer kick/disconnect reasons,
@@ -336,7 +337,12 @@ export function createBotInstance({
   // mineflayer auto-detects when version is omitted/undefined.
   if (version && version !== 'auto') botOpts.version = version
 
+  // 260926 boot timing: createBot synchronously loads the version's
+  // minecraft-data registry (large JSON), so it gets its own phase.
+  markBoot('create_bot')
   const bot = createBot(botOpts)
+  markBoot('bot_created')
+  try { bot.once('login', () => markBoot('login')) } catch {}
 
   // Forge/NeoForge handshake SPIKE (260806). Off unless SEI_FORGE_HANDSHAKE=1.
   // Must be installed here, immediately after createBot and before the socket
@@ -413,6 +419,7 @@ export function createBotInstance({
     logger.info?.(`[sei] Connected to ${host}:${port} as ${username}`)
     if (!_spawned) {
       _spawned = true
+      markBoot('spawn')
       _clearConnectTimer()
       safeStart('loadPlugin(pathfinder)', () => bot.loadPlugin(pathfinder))
       // Face-what-you-break (260708): wrap bot.dig AFTER the pathfinder loads

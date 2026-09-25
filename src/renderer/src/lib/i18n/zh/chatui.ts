@@ -129,6 +129,8 @@ export const ZH_CHATUI: Record<string, string> = {
 
   // McLaunchPanel
   'Connecting...': '连接中...',
+  'Starting companion...': '正在启动伙伴...',
+  'Joining your world...': '正在进入你的世界...',
   'Launch': '启动',
   'How do I set up launch?': '如何设置启动？',
   'Works with Minecraft Java {oldest} to {newest}.': '支持 Minecraft Java 版 {oldest} 至 {newest}。',

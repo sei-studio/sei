@@ -207,7 +207,11 @@ function wireIpc(): () => void {
         ([cid, st]) =>
           cid !== status.characterId && (st.kind === 'connecting' || st.kind === 'online'),
       );
-      if (!anyOther) useDataStore.getState().clearLogs();
+      // 260926: a session now pushes 'connecting' twice (stage 'starting',
+      // then 'joining' once the bot has booted). Only the first one starts a
+      // fresh console, or the join would wipe the boot logs.
+      const alreadyConnecting = others[status.characterId]?.kind === 'connecting';
+      if (!anyOther && !alreadyConnecting) useDataStore.getState().clearLogs();
     }
     // When a session ends (idle), pull the character's freshly-written
     // last_launched / playtime_ms. Main defers emitting 'idle' until the

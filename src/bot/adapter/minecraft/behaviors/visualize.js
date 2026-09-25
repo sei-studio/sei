@@ -15,9 +15,10 @@
 // The old coordinate/entity aiming (x,y,z / entity / target) is GONE — the new
 // model is "turn relative to where I'm facing", which is what a player does.
 //
-// ESM-only on the module graph here: the only heavy thing this imports is
-// renderPov, whose module statically requires native gl/canvas. Tests vi.mock
-// '../render/povRenderer.js' so the natives never load under system-Node vitest.
+// ESM-only on the module graph here: the only heavy thing this uses is
+// renderPov, whose module statically requires native gl/canvas, so it is
+// imported lazily (loadPovRenderer). Tests vi.mock '../render/povRenderer.js'
+// so the natives never load under system-Node vitest.
 //
 // RETURN SHAPE — the load-bearing contract the orchestrator reads to attach the image:
 //   single success: { text: string, image: { mediaType, dataBase64 } }
@@ -29,8 +30,26 @@
 // re-nest without updating the orchestrator's destructure
 // (image.mediaType / image.dataBase64 / images[].*).
 
-import { renderPov } from '../render/povRenderer.js'
 import { cardinalFromYaw } from '../facing.js'
+
+// 260926: loaded on first use, not at module load. A static import here
+// pulled the whole render stack (native gl + canvas and its DLLs, three,
+// prismarine-viewer: about 20MB, 80% of the Minecraft runtime's bytes) into
+// every bot's cold boot, before createBot, even with vision off. On Windows,
+// where Defender scans each freshly read file, that boot ran 21-24s and was
+// the main cause of BOT_START_TIMEOUT (14 people in 30 days). It also meant
+// any failure to load that stack (a missing module in the game pack) killed
+// the summon instead of degrading vision. runtime.js warms it after spawn.
+let _povRendererP = null
+export function loadPovRenderer() {
+  if (!_povRendererP) {
+    _povRendererP = import('../render/povRenderer.js').catch((err) => {
+      _povRendererP = null // let a later look() retry
+      throw err
+    })
+  }
+  return _povRendererP
+}
 
 /** VIS-08 degrade copy (D-01 discretion wording). Returned, never thrown. */
 export const CANT_SEE_COPY = "I can't see clearly right now"
@@ -184,7 +203,8 @@ export async function captureFrame(bot, config, { idle = false } = {}) {
   let abortListener = null
 
   const renderPromise = Promise.resolve()
-    .then(() => renderPov(bot, { width: res, height: res, quality }))
+    .then(() => loadPovRenderer())
+    .then(({ renderPov }) => renderPov(bot, { width: res, height: res, quality }))
     .then((r) => ({ kind: 'render', value: r }))
     .catch(() => ({ kind: 'render', value: { ok: false, reason: 'cant_see' } }))
 

@@ -109,7 +109,10 @@ export type BotStatus = BotStatusBase & {
 
 type BotStatusBase =
   | { kind: 'idle'; characterId: string }
-  | { kind: 'connecting'; characterId: string }
+  // 260926: stage 'starting' = the bot process is booting (cold boot can take
+  // 20s+ on Windows); 'joining' = booted, connecting to the world. Optional so
+  // older senders and tests stay valid; absent reads as 'starting'.
+  | { kind: 'connecting'; characterId: string; stage?: 'starting' | 'joining' }
   // `startedAtMs` is the epoch ms when this session's clock started (main and
   // renderer share the system clock). The renderer derives a LIVE uptime from
   // it (Date.now() - startedAtMs) so the status line counts up even though main

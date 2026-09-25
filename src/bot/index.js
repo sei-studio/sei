@@ -26,10 +26,17 @@
 //     MessagePortMain), D-19 (lifecycle vocabulary), D-25 (bot does NOT
 //     re-discover LAN during summon — main hands the cached port over)
 
+// First on purpose: ESM evaluates static imports in order, so bootTiming's
+// process_start stamp is taken before the heavy graph below loads.
+import { markBoot, onBootMark } from './bootTiming.js'
 import { ConfigSchema, GAME_KINDS } from './config.js'
 import { applyLlmInit } from './llmInit.js'
 import { preparePackLoader } from './packLoader.js'
 import { start as startBrain } from './brain/index.js'
+
+// 260926: the static graph above (config, zod, the brain, the LLM SDKs) is
+// evaluated by now. See bootTiming.js for the phase list.
+markBoot('modules_loaded')
 
 const logger = {
   info:  (m) => console.log(`[sei] ${typeof m === 'string' ? m : JSON.stringify(m)}`),
@@ -342,6 +349,7 @@ export function resolveInitGame(initData) {
 }
 
 async function bootstrapWithInit(initData) {
+  markBoot('init_received')
   const {
     character,
     apiKey,
@@ -350,6 +358,11 @@ async function bootstrapWithInit(initData) {
     // BEFORE the generic one lands. Absent on older main → connect.js falls
     // back to its flat CONNECT_TIMEOUT_MS.
     summonDeadlineAt,    // number | undefined
+    // 260926: the supervisor's READY budget (ms). Its ready watchdog now starts
+    // when this bot reports booted (init-ack), not at fork, so a slow cold boot
+    // no longer eats the join budget. When present it replaces
+    // summonDeadlineAt: the deadline is init-ack time + readyBudgetMs.
+    readyBudgetMs,       // number | undefined
     userDataDir,
     preferred_name,      // seeds player_username for player-recognition
     // Phase 13-15 (PROXY-07): when the user has selected `cloud-proxy` as
@@ -413,9 +426,11 @@ async function bootstrapWithInit(initData) {
   // resolved (src/bot/packLoader.js registers it; a no-op in dev, where the
   // pack root is the repo itself).
   await preparePackLoader(packRoot)
+  markBoot('pack_loader_ready')
   let runtimeModule
   try {
     runtimeModule = await loadRuntimeModule(game)
+    markBoot('runtime_loaded')
   } catch (err) {
     emitLifecycle({
       type: 'error',
@@ -609,9 +624,16 @@ async function bootstrapWithInit(initData) {
   // 260801: the supervisor's watchdog deadline, read by connect.js to size its
   // connect guard so a stalled join names its own cause. Stashed post-parse
   // like _seiKnowledge — ConfigSchema strips unknown keys.
+  //
+  // 260926: with readyBudgetMs the deadline starts NOW (booted), matching the
+  // supervisor, which re-arms its watchdog for the same budget when it
+  // receives the init-ack below. Main's timer starts a message-hop later
+  // than this one, so the connect guard still lands inside it.
   try {
     config._seiSummonDeadlineAt =
-      Number.isFinite(summonDeadlineAt) ? Number(summonDeadlineAt) : null
+      Number.isFinite(readyBudgetMs) && Number(readyBudgetMs) > 0
+        ? Date.now() + Number(readyBudgetMs)
+        : Number.isFinite(summonDeadlineAt) ? Number(summonDeadlineAt) : null
   } catch {}
 
   // Voice calls (260707): stash whether this bot is spawning into an open call
@@ -622,6 +644,9 @@ async function bootstrapWithInit(initData) {
     config._seiVoiceCallActive = initVoiceCallActive === true
   } catch {}
 
+  // init-ack doubles as "booted": the supervisor switches from its cold-boot
+  // budget to the ready budget on it.
+  markBoot('booted')
   emitLifecycle({ type: 'init-ack' })
 
   // Trust main's handover — it owns the per-game watcher and revalidates
@@ -827,6 +852,13 @@ if (process.parentPort) {
       }
       initPort = ports[0]
       initPort.start()
+      // 260926: boot-phase stamps go up as full snapshots (no stdout mirror:
+      // main folds them into the summon diagnostics). The first post is the
+      // init_received stamp in bootstrapWithInit, which carries the phases
+      // stamped before the port existed.
+      onBootMark((marks) => {
+        try { initPort?.postMessage({ type: 'boot-timing', marks }) } catch {}
+      })
       // Future commands from main (e.g. {type:'stop'} during graceful
       // shutdown — supervisor sends this via port1.postMessage) arrive here.
       initPort.on('message', (e) => {

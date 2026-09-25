@@ -25,7 +25,8 @@
  * check, host-compatibility gate). With no open world detected, that flow
  * opens the Minecraft setup modal on the "Connecting to world" tab WITH
  * the searching animation, and auto-resumes the summon when a world
- * opens. While the summon is in flight the button reads "Connecting..."
+ * opens. While the summon is in flight the button reads "Starting
+ * companion..." then "Joining your world..." (lib/summonProgress),
  * (disabled); on failure a one-line plain-English reason (ERROR_COPY)
  * shows under it. Once the bot is online, ChatScreen swaps this panel for
  * the live dashboard (McDashboardPanel).
@@ -36,6 +37,7 @@ import { useDataStore } from '../../lib/stores/useDataStore';
 import { attemptSummon } from '../../lib/summonFlow';
 import { requestGameLaunch } from '../../lib/gameLaunch';
 import { errorCopyText } from '../../lib/errors';
+import { connectingLabel } from '../../lib/summonProgress';
 import { MC_RANGE_VARS, worldTooNewForSei } from '../../lib/mcVersions';
 import { GamePackCard } from '../games/GamePackCard';
 import { SetupStepper, useSetupWindow, type StepButtonProps, type StepSkin, type StepperSkin } from '../games/SetupStepper';
@@ -136,7 +138,7 @@ export function McLaunchPanel({ characterId }: McLaunchPanelProps): React.ReactE
           disabled={bigDisabled}
           onClick={showSetUp ? win.openSetup : launch}
         >
-          {connecting ? t('Connecting...') : showSetUp ? t('Set up') : t('Launch')}
+          {connecting ? connectingLabel(summon, t) : showSetUp ? t('Set up') : t('Launch')}
         </button>
         {failReason ? (
           <p className={styles.failLine} role="alert">

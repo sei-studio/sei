@@ -42,9 +42,24 @@ import { readKnowledgeForPrompt } from './knowledge/knowledgeStore';
 import { loadConfig as loadUserConfig } from './configStore'; // UserConfig for bot init
 import { paths } from './paths';
 import { createLogRouter, type LogRouter } from './logRouter';
-import type { SummonFailureInfo, SummonPhase } from './diagnostics';
+import { bootPhaseProps, type SummonFailureInfo, type SummonPhase } from './diagnostics';
 
+/**
+ * The READY budget: from the bot reporting "booted" (its init-ack) to
+ * summon-ready. 260926: this clock used to start at fork, so the child's cold
+ * boot came out of it. On Windows that boot measured 21-24s (module load plus
+ * Defender scanning the unpacked files), which left the join 5s at best and
+ * made BOT_START_TIMEOUT the top summon failure (14 people in 30 days). The
+ * boot now has its own budget below and this one starts when it ends.
+ */
 const SUMMON_TIMEOUT_MS = 30_000;
+/**
+ * The cold-boot budget: fork to init-ack (process start, the bot's module
+ * graph, the game runtime import, config parse). Generous on purpose: a slow
+ * machine that is still booting is shown "Starting companion..." instead of a
+ * failure. Only a boot that never finishes trips it.
+ */
+const BOOT_TIMEOUT_MS = 60_000;
 const STOP_TIMEOUT_MS = 10_000;
 
 /**
@@ -86,7 +101,13 @@ export function isCharacterSummoned(characterId: string): boolean {
  * machine and clock) and, unlike a duplicated budget constant in the bot,
  * cannot drift out of step with SUMMON_TIMEOUT_MS.
  */
-const summonDeadlineFrom = (startedAtMs: number): number => startedAtMs + SUMMON_TIMEOUT_MS;
+//
+// 260926: the ready watchdog now starts at init-ack, so the bot computes its
+// deadline itself from `readyBudgetMs` (shipped in init) at the moment it
+// sends init-ack. summonDeadlineAt stays in the payload as the worst case
+// (boot budget + ready budget from fork) for any reader that lacks the budget.
+const summonDeadlineFrom = (startedAtMs: number): number =>
+  startedAtMs + BOOT_TIMEOUT_MS + SUMMON_TIMEOUT_MS;
 
 /**
  * Phase 13-15 (PROXY-07, D-40 sub-delivery a): Fly.io proxy base URL.
@@ -331,6 +352,13 @@ export interface BotSupervisorOptions {
    * Optional — undefined no-ops; a throwing callback is swallowed.
    */
   onSummonFailure?: (info: SummonFailureInfo) => void;
+  /**
+   * 260926: a summon reached summon-ready. Carries the attempt's boot-phase
+   * breakdown (flat *_ms props from diagnostics.bootPhaseProps) so the
+   * success event can show where cold-boot time goes too, not only failures.
+   * Optional; a throwing callback is swallowed.
+   */
+  onSummonReady?: (characterId: string, bootProps: Record<string, number | string | null>) => void;
 }
 
 export interface BotSupervisor {
@@ -435,6 +463,12 @@ interface ActiveSession {
    */
   backendKind: AiBackendKind;
   startedAtMs: number;
+  /**
+   * 260926: boot-phase stamps (epoch ms) pushed by the bot as
+   * {type:'boot-timing'} snapshots (src/bot/bootTiming.js). Folded into the
+   * summon diagnostics so a slow or stalled start shows WHERE it went.
+   */
+  bootMarks?: Record<string, number>;
   child: UtilityProcess;
   port1: Electron.MessagePortMain;
   router: LogRouter;
@@ -712,6 +746,11 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
   interface FailureReporter {
     /** Set once the backend kind is read, so even pre-fork failures carry it. */
     backend: AiBackendKind | null;
+    /**
+     * 260926: set at fork. `marks` is read live from the session at fire
+     * time, so a failure carries every phase the bot reached.
+     */
+    boot: { forkAtMs: number; marks: () => Record<string, number> | undefined } | null;
     fire(partial: {
       phase: SummonPhase;
       errorClass: string;
@@ -727,6 +766,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     let fired = false;
     const reporter: FailureReporter = {
       backend: null,
+      boot: null,
       fire(partial) {
         if (fired) return;
         fired = true;
@@ -741,6 +781,9 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
             stdoutTail: partial.stdoutTail ?? '',
             durationMs: Date.now() - startedAtMs,
             backend: reporter.backend,
+            boot: reporter.boot
+              ? { attemptStartMs: startedAtMs, forkAtMs: reporter.boot.forkAtMs, marks: reporter.boot.marks() ?? {} }
+              : undefined,
           });
         } catch {
           /* diagnostics must never break summon/exit handling */
@@ -966,7 +1009,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // bot a deadline already in the past. Dev resolves to the repo root
     // instantly; a cached pack costs one installed.json read. Progress rides
     // the game:pack-progress push, which is what the launch card shows.
-    opts.sendStatus({ kind: 'connecting', characterId, game });
+    opts.sendStatus({ kind: 'connecting', characterId, game, stage: 'starting' });
     let packRoot: string;
     try {
       const { ensurePack } = await import('./games/packs');
@@ -998,7 +1041,9 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     }
 
     const startedAtMs = Date.now();
-    sendStatus({ kind: 'connecting', characterId });
+    // 260926: stage drives the launch button's progress label ("Starting
+    // companion..." until the bot has booted, then "Joining your world...").
+    sendStatus({ kind: 'connecting', characterId, stage: 'starting' });
 
     const router = await createLogRouter({ characterId, sendBatch: opts.sendLog });
     // Cross-surface continuity (Phase 18/19): the rolling summary + recent
@@ -1025,6 +1070,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // the logs reappear unmodified on the next bot fork.
     const seiBackend = aiBackendKind; // 'local' | 'cloud-proxy'
     const seiHasApiKey = apiKey ? '1' : '';
+    const forkAtMs = Date.now();
     const child = utilityProcess.fork(botEntryPath(), [], {
       stdio: 'pipe', // Pitfall 2 — required for stdout/stderr access
       serviceName: `sei-bot-${characterId}`,
@@ -1059,6 +1105,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       resolveExited,
     };
     sessions.set(characterId, session);
+    reporter.boot = { forkAtMs, marks: () => session.bootMarks };
 
     // stdout/stderr line-split → router. We also keep the last ~16KB of
     // stderr/stdout so the exit-before-ready handler can attach the actual
@@ -1097,17 +1144,24 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       summonResolve = resolve;
       summonReject = reject;
     });
-    const summonTimer = setTimeout(() => {
+    // 260926: two budgets. BOOT_TIMEOUT_MS runs from fork until the bot's
+    // init-ack ("booted"); then SUMMON_TIMEOUT_MS runs from init-ack until
+    // summon-ready. A slow cold boot no longer eats the join budget.
+    let watchdogPhase: 'boot' | 'ready' = 'boot';
+    const onWatchdog = (): void => {
       if (summonResolved) return;
       summonResolved = true;
       const err: ErrorClass = 'BOT_START_TIMEOUT';
-      // Derived from the actual constant so the diagnostic never lies about
+      // Derived from the actual constants so the diagnostic never lies about
       // how long the watchdog actually waited.
-      const timeoutMessage =
-        `Bot did not signal summon-ready within ${SUMMON_TIMEOUT_MS / 1000}s of the summon attempt ` +
-        '(no summon-ready and no terminal lifecycle error from the child).';
+      const booting = watchdogPhase === 'boot';
+      const timeoutMessage = booting
+        ? `Bot did not finish booting within ${BOOT_TIMEOUT_MS / 1000}s of the fork ` +
+          '(no init-ack and no terminal lifecycle error from the child).'
+        : `Bot did not signal summon-ready within ${SUMMON_TIMEOUT_MS / 1000}s of booting ` +
+          '(no summon-ready and no terminal lifecycle error from the child).';
       reporter.fire({
-        phase: 'ready_timeout',
+        phase: booting ? 'boot_timeout' : 'ready_timeout',
         errorClass: err,
         errorMessage: timeoutMessage,
         stderrTail: tails.stderr,
@@ -1116,11 +1170,14 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       sendStatus({
         kind: 'error',
         error: err,
-        message: `Bot did not signal ready within ${SUMMON_TIMEOUT_MS / 1000}s.`,
+        message: booting
+          ? `Bot did not finish starting within ${BOOT_TIMEOUT_MS / 1000}s.`
+          : `Bot did not signal ready within ${SUMMON_TIMEOUT_MS / 1000}s.`,
         characterId,
       });
       summonReject(new Error(err));
-    }, SUMMON_TIMEOUT_MS);
+    };
+    let summonTimer = setTimeout(onWatchdog, BOOT_TIMEOUT_MS);
 
     port1.on('message', (e: { data: BotLifecycle | { type: 'vision-capability'; visionCapable: boolean } }) => {
       const data = e.data;
@@ -1184,9 +1241,32 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         })();
         return;
       }
+      // 260926: boot-phase snapshot (src/bot/bootTiming.js). Not a lifecycle
+      // status; kept on the session for the diagnostics.
+      if ((data as { type?: string }).type === 'boot-timing') {
+        const marks = (data as { marks?: unknown }).marks;
+        if (marks && typeof marks === 'object') session.bootMarks = marks as Record<string, number>;
+        return;
+      }
+      // 260926: init-ack means the bot has booted (modules, game runtime,
+      // config). Swap the cold-boot budget for the ready budget, which the bot
+      // started on its side at the same moment (readyBudgetMs).
+      if (data.type === 'init-ack' && !summonResolved && watchdogPhase === 'boot') {
+        watchdogPhase = 'ready';
+        clearTimeout(summonTimer);
+        summonTimer = setTimeout(onWatchdog, SUMMON_TIMEOUT_MS);
+        sendStatus({ kind: 'connecting', characterId, stage: 'joining' });
+      }
       if (data.type === 'summon-ready' && !summonResolved) {
         summonResolved = true;
         clearTimeout(summonTimer);
+        // 260926: the success-side boot breakdown (character_summoned).
+        try {
+          opts.onSummonReady?.(
+            characterId,
+            bootPhaseProps({ attemptStartMs: startedAtMs, forkAtMs, marks: session.bootMarks ?? {} }),
+          );
+        } catch { /* diagnostics must never break a summon */ }
         // Voice calls (260705): if the player has a call open with this
         // character (it launch()ed into the world mid-call), apply the mode
         // now — the bot only learns it over the port.
@@ -1339,6 +1419,9 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
               // join reports WHY instead of being overwritten by the generic
               // 30s timeout. See summonDeadlineFrom above.
               summonDeadlineAt: summonDeadlineFrom(startedAtMs),
+              // 260926: the ready budget. The bot starts it at init-ack, the
+              // same moment this supervisor re-arms its watchdog for it.
+              readyBudgetMs: SUMMON_TIMEOUT_MS,
               // 260908 game packs: where the adapter's node_modules live.
               // src/bot/packLoader.js registers a resolve hook for it before
               // the game runtime is imported; equal to the bot's own app root
