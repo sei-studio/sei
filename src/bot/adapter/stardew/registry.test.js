@@ -126,4 +126,21 @@ describe('stardew registry', () => {
     await expect(reg.execute('give', {}, null, {})).rejects.toThrow()
     await expect(reg.execute('water', { scope: 'world' }, null, {})).rejects.toThrow()
   })
+
+  it('stops a patch on the mod\'s safety interrupts instead of sending the next tile', async () => {
+    for (const reason of ['bedtime', 'retreating: health is low', 'knocked out', 'interrupted: the player warped', 'superseded by a new command', 'paused by the player']) {
+      let n = 0
+      const send = vi.fn(async () => (++n === 1 ? 'tilled (0,0)' : `failed: ${reason}`))
+      const out = await tillPatch({ x: 0, y: 0, width: 5, height: 1 }, send)
+      expect(send, reason).toHaveBeenCalledTimes(2)
+      expect(out, reason).toBe(`tilled 1 tile of the 5x1 patch from (0,0) to (4,0); stopped: ${reason}`)
+    }
+    const first = vi.fn(async () => 'failed: bedtime')
+    expect(await tillPatch({ x: 0, y: 0, width: 3, height: 1 }, first)).toBe('failed: tilled nothing in the 3x1 patch from (0,0) to (2,0); stopped: bedtime')
+    expect(first).toHaveBeenCalledTimes(1)
+    // A cancel from the mod reads as an abort.
+    const cancelled = vi.fn(async () => 'failed: aborted')
+    expect(await tillPatch({ x: 0, y: 0, width: 3, height: 1 }, cancelled)).toBe('aborted')
+    expect(cancelled).toHaveBeenCalledTimes(1)
+  })
 })

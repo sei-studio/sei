@@ -5,7 +5,7 @@
 // `cmd` frame whose `detail` string comes back as the tool result.
 
 import { ADAPTER_INTERFACE_VERSION } from '../../brain/types.js'
-import { COMMAND_TIMEOUT_MS } from './client.js'
+import { commandTimeouts } from './client.js'
 import { createStardewRegistry } from './registry.js'
 import { createSnapshotComposer } from './observers/snapshot.js'
 import { wireStardewEvents } from './fsmWires.js'
@@ -68,7 +68,7 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
     send: async (name, args, { signal } = {}) => {
       let result
       try {
-        result = await client.request({ t: 'cmd', name, args }, { timeoutMs: COMMAND_TIMEOUT_MS, signal })
+        result = await client.request({ t: 'cmd', name, args }, { ...commandTimeouts(name, args), signal })
       } catch (err) {
         if (signal?.aborted || /aborted/.test(String(err?.message))) return 'aborted'
         return `failed: ${err?.message ?? err}`
@@ -136,7 +136,13 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
     attach(handlers) {
       if (_attachDispose) { try { _attachDispose() } catch {} }
       _handlers = handlers
-      _attachDispose = wireStardewEvents(client, handlers, { botName: botUsername, companions, logger })
+      _attachDispose = wireStardewEvents(client, handlers, {
+        botName: botUsername,
+        companions,
+        logger,
+        // Read live: the dashboard's reactive/proactive switch mutates it.
+        getProactiveness: () => config.persona?.proactiveness ?? 1,
+      })
     },
     /**
      * The runtime awaits the spawn result BEFORE the brain exists, so the

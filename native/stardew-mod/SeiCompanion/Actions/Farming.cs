@@ -144,6 +144,13 @@ namespace SeiCompanion.Actions
                 if (next == null) break;
                 var o = new Outcome();
                 yield return HarvestAt(ctx, next.Value, o);
+                if (!o.Ok && o.Detail == BagFull)
+                {
+                    string got = done > 0 ? $"harvested {done} crops: {string.Join(", ", names.Distinct().Take(4))}; " : "";
+                    string full = $"{got}stopped: {BagFull}, the rest is still in the ground (ship() the produce or put things in a chest, then harvest again)";
+                    yield return done > 0 ? Result.Success(full) : Result.Fail(full);
+                    yield break;
+                }
                 if (!o.Ok)
                 {
                     // An unreachable crop is stepped over; anything else ends the round.
@@ -195,7 +202,8 @@ namespace SeiCompanion.Actions
                     var walk = new Outcome();
                     yield return Movement.WalkTo(ctx, tile, true, walk);
                     if (!walk.Ok) { o.Fail(walk.Detail); yield break; }
-                    string result = HarvestCrop(body, dirt, tile);
+                    string result = HarvestCrop(body, dirt, tile, out bool bagFull);
+                    if (bagFull) { o.Fail(BagFull); yield break; }
                     if (result == null) { o.Fail("harvest failed"); yield break; }
                     o.Pass(result);
                     yield break;
@@ -246,8 +254,12 @@ namespace SeiCompanion.Actions
         }
 
         /// <summary>Take a ready crop into the shadow's inventory: one stack per CropData, regrow or destroy, farming XP.</summary>
-        public static string HarvestCrop(SeiBody body, HoeDirt dirt, Point tile)
+        /// <summary>The HarvestAt failure for a full bag; the harvest loop stops on it.</summary>
+        public const string BagFull = "your bag is full";
+
+        public static string HarvestCrop(SeiBody body, HoeDirt dirt, Point tile, out bool bagFull)
         {
+            bagFull = false;
             Crop crop = dirt.crop;
             CropData data = null;
             try { data = crop.GetData(); } catch { }
@@ -259,6 +271,9 @@ namespace SeiCompanion.Actions
             try { item = ItemRegistry.Create(crop.indexOfHarvest.Value, count, 0, allowNull: true); }
             catch { item = null; }
             if (item == null) return null;
+            // 0.1.3: a full bag leaves the crop in the ground. TakeItem would
+            // drop it at the body's feet and the round would still count it.
+            if (!body.HasRoomFor(item)) { bagFull = true; return null; }
             string name = item.DisplayName;
             body.TakeItem(item);
             try { body.Shadow.gainExperience(0, 8); } catch { }

@@ -193,4 +193,25 @@ describe('stardew fsm wires', () => {
     settle(undefined)
     expect(h.onIdleNudge).not.toHaveBeenCalled()
   })
+
+  it('nudges only in proactive mode, read live', () => {
+    const c = fakeClient()
+    const h = handlers()
+    let t = 0
+    let tier = 1
+    wireStardewEvents(c, h, { botName: 'Sui', now: () => t, getProactiveness: () => tier })
+    const push = () => c.emit('obs', { obs: { host: { holding: 'Hoe' }, player: { sameLocation: true } } })
+    push()
+    t += ACTIVITY_SETTLE_MS
+    push()
+    expect(h.onIdleNudge).not.toHaveBeenCalled()
+    tier = 0
+    t += ACTIVITY_SETTLE_MS
+    push()
+    expect(h.onIdleNudge).not.toHaveBeenCalled()
+    tier = 2
+    t += ACTIVITY_SETTLE_MS
+    push()
+    expect(h.onIdleNudge).toHaveBeenCalledTimes(1)
+  })
 })

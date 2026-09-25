@@ -77,6 +77,15 @@ namespace SeiCompanion.Actions
                 yield return Result.Fail($"something is on {Targets.Fmt(t.Tile)}; clear it first (mine or chop)");
                 yield break;
             }
+            // 0.1.3: a patch till walks a whole rectangle, so never swing the hoe
+            // at a sapling, planted grass, flooring, a bush or a stump.
+            bool bigThing = ClumpAt(loc, t.Tile) != null;
+            try { bigThing = bigThing || loc.getLargeTerrainFeatureAt(t.Tile.X, t.Tile.Y) != null; } catch { }
+            if (existing != null || bigThing)
+            {
+                yield return Result.Fail($"{Targets.Fmt(t.Tile)} has a tree, sapling, grass, flooring or a bush on it; leave it be");
+                yield break;
+            }
             var walk = new Outcome();
             yield return Movement.WalkTo(ctx, t.Tile, true, walk);
             if (!walk.Ok) { yield return Result.Fail(walk.Detail); yield break; }

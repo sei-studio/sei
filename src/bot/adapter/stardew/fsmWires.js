@@ -18,7 +18,8 @@
 //                                chores (dry / ready crops).
 //   obs (host.holding)        -> onIdleNudge reason 'player_activity' when the
 //                                player takes out a tool and keeps it out
-//                                (mod 0.1.3); rate-limited, see ACTIVITY_*.
+//                                (mod 0.1.3), proactive mode only;
+//                                rate-limited, see ACTIVITY_*.
 
 import { MORNING_CHORES, MORNING_RAIN } from './prompts.js'
 
@@ -28,6 +29,8 @@ export const DAY_OBS_WAIT_MS = 3_000
 export const ACTIVITY_SETTLE_MS = 3_000
 /** At most one activity nudge per this window, whatever the activity. */
 export const ACTIVITY_MIN_GAP_MS = 60_000
+/** The proactiveness tier (config.persona.proactiveness) the nudge needs: 2 = agentic, the app's "proactive" mode. */
+export const ACTIVITY_MIN_PROACTIVENESS = 2
 /** The same activity nudges again only after this long. */
 export const ACTIVITY_REPEAT_MS = 5 * 60_000
 
@@ -87,7 +90,7 @@ function mentions(text, name) {
  * @param {{ botName: string, companions?: () => string[], logger?: object }} opts
  * @returns {() => void} dispose
  */
-export function wireStardewEvents(client, handlers, { botName, companions = () => [], logger = console, now = () => Date.now(), setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
+export function wireStardewEvents(client, handlers, { botName, companions = () => [], logger = console, getProactiveness = () => 2, now = () => Date.now(), setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
   if (!client) throw new Error('wireStardewEvents: client required')
   if (!handlers) throw new Error('wireStardewEvents: handlers required')
   const known = new Map() // farmerId -> username
@@ -199,6 +202,9 @@ export function wireStardewEvents(client, handlers, { botName, companions = () =
     // Only when they are working beside the companion, and it is free.
     if (obs.player && obs.player.sameLocation === false) return
     if (obs.inAction || obs.sleeping || obs.paused) return
+    // Proactive (agentic, tier 2+) only: a reactive or passive companion
+    // waits to be asked, and this would be an extra turn a minute for it.
+    if (!(Number(getProactiveness()) >= ACTIVITY_MIN_PROACTIVENESS)) return
     if (t - lastNudgeAt < ACTIVITY_MIN_GAP_MS) return
     if (t - (lastNudgeByActivity.get(activity) ?? -Infinity) < ACTIVITY_REPEAT_MS) return
     nudgedFor = activity

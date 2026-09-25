@@ -119,6 +119,11 @@ export function patchTiles(x, y, width = 1, height = 1) {
 
 // A single till that failed for a reason the next tile shares: stop the patch.
 const TILL_FATAL = /energy|exhausted|no hoe|day is ending|paused|unknown action/i
+// The mod's own interrupts (Reflexes.cs / SeiBody.cs Runner.Abort reasons):
+// a reflex took the body (retreat, knock-out, the 2 AM walk home) or the
+// command was cancelled or replaced. Sending the next tile would start a new
+// command on top of it and cancel the retreat or the walk home.
+const TILL_INTERRUPT = /^(aborted|bedtime|knocked out|retreating|interrupted|superseded|paused)\b/i
 // Walk failures in a row before the patch is called blocked.
 const TILL_MAX_WALK_FAILS = 4
 const WALK_FAIL = /^(stuck|no walkable|no path|gave up walking|ended at)/i
@@ -157,7 +162,8 @@ export async function tillPatch(args, send, { signal = null, onProgress = null }
       try { onProgress?.({ dug: tilled + already, total: tiles.length }) } catch { /* telemetry only */ }
       continue
     }
-    if (TILL_FATAL.test(detail)) { stop = detail; break }
+    if (/^aborted\b/i.test(detail)) { stop = 'aborted'; break }
+    if (TILL_INTERRUPT.test(detail) || TILL_FATAL.test(detail)) { stop = detail; break }
     walkFailsInARow = WALK_FAIL.test(detail) ? walkFailsInARow + 1 : 0
     // The reason without the tile, so one line covers every stone in the patch.
     const reason = detail.replace(/^\(\d+,\d+\)\s*/, '').replace(/\(\d+,\d+\)/g, 'it').slice(0, 90)

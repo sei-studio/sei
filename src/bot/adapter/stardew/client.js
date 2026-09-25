@@ -13,6 +13,18 @@ export const DEFAULT_REQUEST_TIMEOUT_MS = 20_000
 /** A verb can run a long time (a 40-swing gather); the mod always answers
  *  eventually, and the brain's own abort cancels sooner. */
 export const COMMAND_TIMEOUT_MS = 180_000
+/** water / harvest scope "farm" (mod 0.1.3) can cover 200 crops with refills:
+ *  a hard cap well past that, plus a no-progress timeout (each crop reports). */
+export const FARM_COMMAND_TIMEOUT_MS = 15 * 60_000
+export const FARM_COMMAND_IDLE_TIMEOUT_MS = 240_000
+
+/** The timeouts for one `cmd` frame: `{timeoutMs, idleTimeoutMs?}`. */
+export function commandTimeouts(name, args) {
+  if ((name === 'water' || name === 'harvest') && args?.scope === 'farm') {
+    return { timeoutMs: FARM_COMMAND_TIMEOUT_MS, idleTimeoutMs: FARM_COMMAND_IDLE_TIMEOUT_MS }
+  }
+  return { timeoutMs: COMMAND_TIMEOUT_MS }
+}
 
 let _seq = 0
 export function nextId() {
@@ -58,6 +70,8 @@ export function createStardewClient({ port, token, host = 'localhost', logger = 
       emitter.emit('result', frame)
       return
     }
+    // A running command's progress keeps its no-progress timer alive.
+    if (frame.t === 'progress' && frame.id != null) pending.get(String(frame.id))?.onProgress?.()
     if (frame.t === 'welcome') welcome = frame
     emitter.emit(frame.t, frame)
     emitter.emit('frame', frame)
@@ -131,33 +145,58 @@ export function createStardewClient({ port, token, host = 'localhost', logger = 
   /**
    * Send a frame that expects a `result`. Resolves with the raw result frame
    * (never rejects on ok:false — the caller reads `detail`).
+   *
+   * `timeoutMs` is a hard cap; `idleTimeoutMs` (optional) is the longest gap
+   * between the command's `progress` frames. A `cmd` that times out either
+   * way is CANCELLED in the mod too, so the body does not keep working on a
+   * command the brain has already written off.
    */
-  function request(frame, { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, signal = null } = {}) {
+  function request(frame, { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, idleTimeoutMs = null, signal = null } = {}) {
     const id = frame.id ?? nextId()
     return new Promise((resolve, reject) => {
       if (signal?.aborted) { reject(new Error('aborted')); return }
-      const timer = setTimeout(() => {
-        pending.delete(id)
-        reject(new Error(`${frame.t}${frame.name ? ` ${frame.name}` : ''} timed out after ${Math.round(timeoutMs / 1000)}s`))
-      }, timeoutMs)
-      const onAbort = () => {
+      let idleTimer = null
+      const cleanup = () => {
         clearTimeout(timer)
+        if (idleTimer) clearTimeout(idleTimer)
         pending.delete(id)
+        if (signal) signal.removeEventListener('abort', onAbort)
+      }
+      const cancelInMod = () => {
+        if (frame.t !== 'cmd') return
+        try { send({ id: nextId(), t: 'cancel', target: id }) } catch {}
+      }
+      const fail = (message) => {
+        if (!pending.has(id)) return
+        cleanup()
+        cancelInMod()
+        reject(new Error(message))
+      }
+      const label = `${frame.t}${frame.name ? ` ${frame.name}` : ''}`
+      const timer = setTimeout(() => fail(`${label} timed out after ${Math.round(timeoutMs / 1000)}s`), timeoutMs)
+      const armIdle = () => {
+        if (!idleTimeoutMs) return
+        if (idleTimer) clearTimeout(idleTimer)
+        idleTimer = setTimeout(() => fail(`${label} made no progress for ${Math.round(idleTimeoutMs / 1000)}s`), idleTimeoutMs)
+      }
+      function onAbort() {
+        if (!pending.has(id)) return
+        cleanup()
         try { send({ id: nextId(), t: 'cancel', target: id }) } catch {}
         reject(new Error('aborted'))
       }
       if (signal) signal.addEventListener('abort', onAbort, { once: true })
       pending.set(id, {
-        resolve: (r) => { if (signal) signal.removeEventListener('abort', onAbort); resolve(r) },
-        reject: (e) => { if (signal) signal.removeEventListener('abort', onAbort); reject(e) },
+        resolve: (r) => { cleanup(); resolve(r) },
+        reject: (e) => { cleanup(); reject(e) },
+        onProgress: armIdle,
         timer,
       })
+      armIdle()
       try {
         send({ ...frame, id })
       } catch (err) {
-        clearTimeout(timer)
-        pending.delete(id)
-        if (signal) signal.removeEventListener('abort', onAbort)
+        cleanup()
         reject(err)
       }
     })

@@ -154,20 +154,32 @@ namespace SeiCompanion.Actions
             Item probe = item.getOne();
             probe.Stack = moving;
             if (!who.couldInventoryAcceptThisItem(probe)) { yield return Result.Fail($"{who.Name}'s bag is full"); yield break; }
-            Item portion = Split(body, item, moving);
-            int before = portion.Stack;
-            bool ok;
-            try { ok = who.addItemToInventoryBool(portion); }
-            catch (Exception ex)
+            // Atomic hand-off: nothing leaves the companion's bag until the
+            // player's bag has taken it. The whole stack goes as the item
+            // itself, still in its slot (a partial add leaves the remainder
+            // there); a part goes as a copy and only the part that landed is
+            // taken off the original.
+            bool whole = moving >= item.Stack;
+            Item gift = whole ? item : item.getOne();
+            if (!whole) gift.Stack = moving;
+            bool ok = false;
+            string error = null;
+            try { ok = who.addItemToInventoryBool(gift); }
+            catch (Exception ex) { error = ex.Message; }
+            int given = ok ? moving : Math.Max(0, moving - Math.Max(0, gift.Stack));
+            if (whole)
             {
-                body.TakeItem(portion);
-                yield return Result.Fail($"handing it over failed: {ex.Message}");
-                yield break;
+                // The object now lives in the player's bag (or was stacked onto
+                // theirs); drop the companion's reference to what went over.
+                int slot = body.SlotOf(item);
+                if (slot >= 0 && (ok || item.Stack <= 0)) body.Shadow.Items[slot] = null;
             }
-            int given = ok ? before : Math.Max(0, before - portion.Stack);
-            // Whatever did not fit comes back to the companion's bag.
-            if (!ok && portion.Stack > 0) body.TakeItem(portion);
-            if (given <= 0) { yield return Result.Fail($"{who.Name}'s bag is full"); yield break; }
+            else if (given > 0)
+            {
+                item.Stack -= given;
+                if (item.Stack <= 0) { int slot = body.SlotOf(item); if (slot >= 0) body.Shadow.Items[slot] = null; }
+            }
+            if (given <= 0) { yield return Result.Fail(error != null ? $"handing it over failed: {error}" : $"{who.Name}'s bag is full"); yield break; }
             try { who.currentLocation.playSound("pickUpItem"); } catch { }
             yield return Result.Success($"handed {given} {name} to {who.Name}");
         }

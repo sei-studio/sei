@@ -109,14 +109,14 @@ describe('stardew snapshot composer', () => {
     const now = farmChores(o, { modVersion: '0.1.3' })
     expect(now).toEqual([
       '12 dry crops on the farm (water scope "farm")',
-      '1 crop ready to harvest (harvest scope "farm")',
+      '1 crop ready to harvest on the farm (harvest scope "farm")',
       '#8 Furnace ready to empty (harvest with its #N)',
       'Leek x2 in your bag to ship or give (unless the player wants it kept)',
     ])
     const old = farmChores(o, { modVersion: '0.1.2' })
     expect(old).toEqual([
-      '12 dry crops on the farm',
-      '1 crop ready to harvest',
+      '12 dry crops on the farm (water() covers those within 20 tiles of you)',
+      '1 crop ready to harvest on the farm (harvest() covers those within 20 tiles of you)',
       '#8 Furnace ready to empty (harvest with its #N)',
       'the watering can is empty (water() a water tile to refill, nearest @71,30)',
     ])

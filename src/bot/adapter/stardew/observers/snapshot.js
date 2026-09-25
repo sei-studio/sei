@@ -72,8 +72,10 @@ export function farmChores(obs, { modVersion = null } = {}) {
   if (fm) {
     const dry = n(fm.dryCrops)
     const ready = n(fm.readyCrops)
-    if (dry > 0) out.push(`${dry} dry crop${dry === 1 ? '' : 's'} on the farm${chores ? ' (water scope "farm")' : ''}`)
-    if (ready > 0) out.push(`${ready} crop${ready === 1 ? '' : 's'} ready to harvest${chores ? ' (harvest scope "farm")' : ''}`)
+    // An older mod's water() / harvest() reach 20 tiles from the body, so the
+    // whole-farm count says so rather than promising one call covers it.
+    if (dry > 0) out.push(`${dry} dry crop${dry === 1 ? '' : 's'} on the farm${chores ? ' (water scope "farm")' : ' (water() covers those within 20 tiles of you)'}`)
+    if (ready > 0) out.push(`${ready} crop${ready === 1 ? '' : 's'} ready to harvest on the farm${chores ? ' (harvest scope "farm")' : ' (harvest() covers those within 20 tiles of you)'}`)
   }
   const machines = Array.isArray(obs.tiles?.machines) ? obs.tiles.machines.filter((m) => m?.ready) : []
   if (machines.length) out.push(`${machines.map((m) => `${m.handle} ${m.name}`).slice(0, 3).join(', ')} ready to empty (harvest with its #N)`)

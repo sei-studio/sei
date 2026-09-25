@@ -1064,6 +1064,32 @@ namespace SeiCompanion.Body
             return -1;
         }
 
+        /// <summary>
+        /// Would TakeItem keep ALL of `item` (the same stacking and empty-slot
+        /// rules, without changing anything)? A full bag would otherwise drop
+        /// the rest at the body's feet.
+        /// </summary>
+        public bool HasRoomFor(Item item)
+        {
+            if (item == null) return true;
+            try
+            {
+                var items = this.Shadow.Items;
+                int left = item.Stack;
+                for (int i = 0; i < items.Count; i++)
+                {
+                    Item slot = items[i];
+                    if (slot == null || !slot.canStackWith(item)) continue;
+                    left -= Math.Max(0, slot.maximumStackSize() - slot.Stack);
+                    if (left <= 0) return true;
+                }
+                for (int i = 0; i < items.Count && i < this.Shadow.MaxItems; i++)
+                    if (items[i] == null) return true;
+                return items.Count < this.Shadow.MaxItems;
+            }
+            catch { return true; }
+        }
+
         /// <summary>Add to the shadow's inventory, or drop it at the body's feet when full. Returns true when kept.</summary>
         /// <summary>
         /// Put an item in the shadow's bag: stack onto a matching stack, else

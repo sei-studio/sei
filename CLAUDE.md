@@ -2290,17 +2290,26 @@ snapshot counted the whole farm). Audit: `~/suisei/reports/stardew-capability-au
   height})` up to `MAX_TILL_TILES` (40) is composed APP-side in
   `registry.js` `tillPatch` from single-tile tills, serpentine order, stones
   and grass skipped and named, energy / no hoe / abort / 4 unreachable tiles
-  in a row stop it, progress via `onProgress` ("- 6/15" in in_flight).
+  in a row stop it, progress via `onProgress` ("- 6/15" in in_flight). The
+  mod's own interrupts (bedtime, retreating, knocked out, interrupted,
+  superseded, paused, aborted) also stop it: sending the next tile would
+  start a new command on top of the retreat or the walk home. The mod's
+  till refuses any tile with a terrain feature, bush or clump (0.1.3).
+- **Timeouts:** a farm-scope water/harvest gets a 15 min cap plus a 240 s
+  no-progress timeout (`commandTimeouts` in `client.js`, reset by each
+  `progress` frame); any `cmd` that times out is also CANCELLED in the mod.
 - **water / harvest `scope: "farm"`** (0.1.3): walk to the Farm and cover the
   whole map (default 120, max 200). With no tile, water refills the can at
   the nearest water (`Tools.NearestWater`, up to 3 refills) instead of
-  stopping at 40, and both step over up to 5 crops they cannot walk to. An
-  older mod gets `scope` dropped by the registry.
+  stopping at 40, and both step over up to 5 crops they cannot walk to.
+  Harvest stops at a full bag and leaves the crop in the ground
+  (`SeiBody.HasRoomFor`). An older mod gets `scope` dropped by the registry
+  and the chores line says its calls reach 20 tiles.
 - **ship / give** (0.1.3, `Actions/Shipping.cs`): ship walks to the farm's
   shipping bin and drops produce (crops/forage/fish by default, or a named
   item); give walks to the HOST and puts an item in their bag
   (`addItemToInventoryBool`, host only: a farmhand's inventory lives on
-  their machine). Before these a harvest sat in the companion's bag.
+  their machine; nothing leaves her bag until the add has landed). Before these a harvest sat in the companion's bag.
   `CHORES_VERBS` are hidden from `listActions` and refused by the registry
   on an older mod.
 - **Proactive layer:** the snapshot gains a `chores:` line
@@ -2311,8 +2320,9 @@ snapshot counted the whole farm). Audit: `~/suisei/reports/stardew-capability-au
   (max `DAY_OBS_WAIT_MS`) for the new day's first observation and names the
   morning's chores. `fsmWires` raises `onIdleNudge({reason:
   'player_activity'})` when the host keeps a tool out for 3 s (once per
-  60 s, same activity once per 5 min, never in a menu/event, off-map or
-  while the body is busy) and the idle addendum pitches "your half" of that
+  60 s, same activity once per 5 min, proactive mode only (tier 2, read
+  live from `config.persona.proactiveness`), never in a menu/event, off-map
+  or while the body is busy) and the idle addendum pitches "your half" of that
   job (`ACTIVITY_SUGGESTIONS`).
 - Prompt text for all of it is gated on 0.1.3 (`ACTION_RULES_CHORES`,
   `CAPABILITY_PARAGRAPH_CHORES`, `describeAction`); 0.1.2 keeps
@@ -2322,7 +2332,8 @@ snapshot counted the whole farm). Audit: `~/suisei/reports/stardew-capability-au
   and verify on the Mac): `Item.canBeShipped`, `Object.sellToStorePrice`,
   `Farm.buildings` + `ShippingBin`, `Farm.getShippingBin(..).Add`,
   `Farmer.addItemToInventoryBool` on the host, `Farmer.CurrentItem`,
-  `Game1.eventUp`, `Game1.weatherForTomorrow`.
+  `Game1.eventUp`, `Game1.weatherForTomorrow`,
+  `GameLocation.getLargeTerrainFeatureAt`.
 
 **Stardew companions look like themselves (260921).** Every Stardew body used
 to be the one shared placeholder NPC sprite. It is now drawn as a FARMER
