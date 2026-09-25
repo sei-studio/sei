@@ -18,10 +18,10 @@ export function activityLabel(name, args) {
     case 'come': return 'coming to you...'
     case 'follow': return 'following you'
     case 'unfollow': return 'idling'
-    case 'till': return 'tilling the soil...'
-    case 'water': return a.x != null ? 'watering a crop...' : 'watering the crops...'
+    case 'till': return (a.width ?? 1) * (a.height ?? 1) > 1 ? 'tilling a patch...' : 'tilling the soil...'
+    case 'water': return a.x != null ? 'watering a crop...' : a.scope === 'farm' ? 'watering the farm...' : 'watering the crops...'
     case 'plant': return `planting ${a.seed ?? 'seeds'}...`
-    case 'harvest': return 'harvesting...'
+    case 'harvest': return a.scope === 'farm' ? 'harvesting the farm...' : 'harvesting...'
     case 'chop': return 'chopping wood...'
     case 'mine': return 'breaking rocks...'
     case 'gather': return `gathering ${a.kind ?? 'things'}...`
@@ -34,6 +34,8 @@ export function activityLabel(name, args) {
     case 'buy': return `buying ${a.item ?? 'something'}...`
     case 'interact': return 'looking at something...'
     case 'sleep': return 'heading to bed...'
+    case 'ship': return 'shipping...'
+    case 'give': return `handing over ${a.item ?? 'something'}...`
     default: return `${name}...`
   }
 }

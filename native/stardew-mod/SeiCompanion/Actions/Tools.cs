@@ -77,6 +77,15 @@ namespace SeiCompanion.Actions
                 yield return Result.Fail($"something is on {Targets.Fmt(t.Tile)}; clear it first (mine or chop)");
                 yield break;
             }
+            // 0.1.3: a patch till walks a whole rectangle, so never swing the hoe
+            // at a sapling, planted grass, flooring, a bush or a stump.
+            bool bigThing = ClumpAt(loc, t.Tile) != null;
+            try { bigThing = bigThing || loc.getLargeTerrainFeatureAt(t.Tile.X, t.Tile.Y) != null; } catch { }
+            if (existing != null || bigThing)
+            {
+                yield return Result.Fail($"{Targets.Fmt(t.Tile)} has a tree, sapling, grass, flooring or a bush on it; leave it be");
+                yield break;
+            }
             var walk = new Outcome();
             yield return Movement.WalkTo(ctx, t.Tile, true, walk);
             if (!walk.Ok) { yield return Result.Fail(walk.Detail); yield break; }
@@ -118,26 +127,153 @@ namespace SeiCompanion.Actions
                 yield break;
             }
 
-            // No tile: every dry crop in reach, nearest first.
+            // No tile: every dry crop in reach, nearest first. scope "farm"
+            // (mod 0.1.3) walks to the Farm first and covers the whole map, so
+            // "water the crops" works from the house or the far corner of the
+            // farm; the 20-tile reach answered "nothing here needs water"
+            // while the snapshot's whole-farm line listed a dozen dry crops.
+            bool farmWide = FarmScope(ctx);
+            if (farmWide)
+            {
+                var go = new Outcome();
+                yield return ToFarm(ctx, go);
+                if (!go.Ok) { yield return Result.Fail(go.Detail); yield break; }
+            }
+            int reach = farmWide ? WholeMap : ScanRadius;
             int done = 0;
-            int limit = Math.Clamp(ctx.Int("count") ?? 30, 1, 60);
-            for (int i = 0; i < limit; i++)
+            int refills = 0;
+            // A crop the body cannot walk to (behind a fence, across water) is
+            // skipped rather than ending the whole round; energy still ends it.
+            var skipped = new HashSet<Point>();
+            string lastSkip = null;
+            int limit = Math.Clamp(ctx.Int("count") ?? (farmWide ? 120 : 30), 1, farmWide ? 200 : 60);
+            for (int i = 0; i < limit + MaxSkips; i++)
             {
                 if (ctx.Cancelled) yield break;
-                Point? next = NearestDryCrop(body);
+                if (done >= limit) break;
+                Point? next = NearestDryCrop(body, reach, skipped);
                 if (next == null) break;
                 if (can.WaterLeft <= 0 && !can.IsBottomless)
                 {
-                    yield return Result.Fail(done > 0 ? $"watered {done} crops, then the can ran dry; water(x,y) on a water tile to refill" : "the watering can is empty; water(x,y) on a water tile to refill it");
-                    yield break;
+                    // 0.1.3: refill at the nearest water and carry on, the
+                    // way a player would, instead of stopping at 40.
+                    var refill = new Outcome();
+                    if (refills < MaxRefills)
+                        yield return RefillAtNearestWater(ctx, can, refill);
+                    else
+                        refill.Fail("refilled the can three times already");
+                    if (!refill.Ok)
+                    {
+                        yield return Result.Fail(done > 0 ? $"watered {done} crops, then the can ran dry and {refill.Detail}" : $"the watering can is empty and {refill.Detail}");
+                        yield break;
+                    }
+                    refills++;
+                    ctx.Progress($"refilled the can, watered {done} so far");
                 }
                 var o = new Outcome();
                 yield return WaterTile(ctx, next.Value, o);
-                if (!o.Ok) { yield return Result.Fail(done > 0 ? $"watered {done} crops, then: {o.Detail}" : o.Detail); yield break; }
+                if (!o.Ok)
+                {
+                    if (!IsWalkFailure(o.Detail) || skipped.Count >= MaxSkips) { yield return Result.Fail(done > 0 ? $"watered {done} crops, then: {o.Detail}" : o.Detail); yield break; }
+                    skipped.Add(next.Value);
+                    lastSkip = o.Detail;
+                    continue;
+                }
+                // A crop that stays dry would be picked again next round.
+                if (o.Detail != null && o.Detail.StartsWith("tried to water"))
+                {
+                    skipped.Add(next.Value);
+                    lastSkip = o.Detail;
+                    if (skipped.Count > MaxSkips) break;
+                    continue;
+                }
                 done++;
                 ctx.Progress($"watered {done} crops");
             }
-            yield return Result.Success(done == 0 ? "nothing here needs water" : $"watered {done} crops ({can.WaterLeft}/{can.waterCanMax} left in the can)");
+            string refilled = refills > 0 ? $", refilled the can {refills}x" : "";
+            string where = farmWide ? " on the farm" : "";
+            string skips = skipped.Count > 0 ? $"; skipped {skipped.Count} it could not reach ({lastSkip})" : "";
+            if (done == 0 && skipped.Count > 0) { yield return Result.Fail($"could not reach the dry crops{where}: {lastSkip}"); yield break; }
+            yield return Result.Success(done == 0 ? $"nothing{where} needs water" : $"watered {done} crops{where}{refilled} ({can.WaterLeft}/{can.waterCanMax} left in the can){skips}");
+        }
+
+        /// <summary>A whole-map reach for scope "farm" (every Farm map fits inside it).</summary>
+        public const int WholeMap = 400;
+        private const int MaxRefills = 3;
+        /// <summary>Unreachable crops a round may step over before it gives up.</summary>
+        public const int MaxSkips = 5;
+        private const int WaterSearchRadius = 80;
+
+        /// <summary>Is this a Movement.WalkTo failure (the tile cannot be reached), as opposed to a tool, energy or item failure?</summary>
+        public static bool IsWalkFailure(string detail)
+        {
+            string d = detail ?? "";
+            return d.StartsWith("stuck") || d.StartsWith("no walkable") || d.StartsWith("no path") || d.StartsWith("gave up walking") || d.StartsWith("ended at");
+        }
+
+        /// <summary>Did the command ask for the whole farm (`scope: "farm"`, mod 0.1.3)?</summary>
+        public static bool FarmScope(ActionContext ctx)
+        {
+            string scope = ctx.Str("scope");
+            return scope != null && scope.Trim().Equals("farm", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>Walk to the Farm map when the body is anywhere else (the farmhouse, town).</summary>
+        public static IEnumerable<object> ToFarm(ActionContext ctx, Outcome o)
+        {
+            SeiBody body = ctx.Body;
+            string farm = Game1.getFarm()?.NameOrUniqueName ?? "Farm";
+            if (string.Equals(body.LocationName, farm, StringComparison.OrdinalIgnoreCase))
+            {
+                o.Pass();
+                yield break;
+            }
+            var travel = new Outcome();
+            yield return Movement.Travel(ctx, farm, null, travel);
+            if (!travel.Ok) { o.Fail($"could not get to the farm: {travel.Detail}"); yield break; }
+            o.Pass();
+        }
+
+        /// <summary>
+        /// The nearest water tile on the body's map by Chebyshev rings, so the
+        /// first hit is on the near shore. Null when none within `radius`.
+        /// </summary>
+        public static Point? NearestWater(GameLocation loc, Point from, int radius)
+        {
+            if (loc.isWaterTile(from.X, from.Y)) return from;
+            for (int d = 1; d <= radius; d++)
+            {
+                Point? best = null;
+                float bestDist = float.MaxValue;
+                for (int x = from.X - d; x <= from.X + d; x++)
+                {
+                    for (int y = from.Y - d; y <= from.Y + d; y++)
+                    {
+                        if (Math.Max(Math.Abs(x - from.X), Math.Abs(y - from.Y)) != d) continue;
+                        if (!loc.isTileOnMap(x, y) || !loc.isWaterTile(x, y)) continue;
+                        float dist = Vector2.Distance(new Vector2(x, y), new Vector2(from.X, from.Y));
+                        if (dist < bestDist) { bestDist = dist; best = new Point(x, y); }
+                    }
+                }
+                if (best != null) return best;
+            }
+            return null;
+        }
+
+        /// <summary>Walk to the nearest water and fill the can (the refill path of water(x,y) on a water tile).</summary>
+        public static IEnumerable<object> RefillAtNearestWater(ActionContext ctx, WateringCan can, Outcome o)
+        {
+            SeiBody body = ctx.Body;
+            GameLocation loc = body.Npc.currentLocation;
+            Point? water = NearestWater(loc, body.Npc.TilePoint, WaterSearchRadius);
+            if (water == null) { o.Fail($"there is no water within {WaterSearchRadius} tiles to refill it"); yield break; }
+            var walk = new Outcome();
+            yield return Movement.WalkTo(ctx, water.Value, true, walk);
+            if (!walk.Ok) { o.Fail($"could not reach the water at {Targets.Fmt(water.Value)} to refill it ({walk.Detail})"); yield break; }
+            can.WaterLeft = can.waterCanMax;
+            try { loc.playSound("slosh", new Vector2(water.Value.X, water.Value.Y)); } catch { }
+            yield return WaitTicks.Ms(300);
+            o.Pass($"refilled at {Targets.Fmt(water.Value)}");
         }
 
         private static IEnumerable<object> WaterTile(ActionContext ctx, Point tile, Outcome o)
@@ -162,7 +298,7 @@ namespace SeiCompanion.Actions
             o.Pass(dirt.isWatered() ? $"watered {Targets.Fmt(tile)}" : $"tried to water {Targets.Fmt(tile)} but it stayed dry");
         }
 
-        public static Point? NearestDryCrop(SeiBody body)
+        public static Point? NearestDryCrop(SeiBody body, int reach = ScanRadius, HashSet<Point> skip = null)
         {
             GameLocation loc = body.Npc.currentLocation;
             Vector2 me = body.Npc.Tile;
@@ -172,8 +308,10 @@ namespace SeiCompanion.Actions
             {
                 if (!(pair.Value is HoeDirt dirt) || dirt.crop == null || dirt.isWatered() || dirt.crop.dead.Value)
                     continue;
+                if (skip != null && skip.Contains(pair.Key.ToPoint()))
+                    continue;
                 float d = Vector2.Distance(pair.Key, me);
-                if (d <= ScanRadius && d < bestDist) { bestDist = d; best = pair.Key.ToPoint(); }
+                if (d <= reach && d < bestDist) { bestDist = d; best = pair.Key.ToPoint(); }
             }
             return best;
         }

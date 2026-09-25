@@ -133,10 +133,10 @@ latest Observation and stay valid ~90 s.
 | `come` | `{player?}` | walk to the player, across maps |
 | `follow` | `{player?}` | trail the player until `unfollow` (background; answers at once). A commanded trip (`goTo`, `interact` on a door, `sleep`) to a map the player is not on puts following on hold (`followHold` in the observation) until the player leaves the map they were on or comes to the body; it no longer ends following. Following survives the night. A command takes the body off a follow trip to another map; trailing resumes when it ends. Follow never enters a festival, an event or a temporary map; it waits for the player to come back. |
 | `unfollow` | | stop trailing |
-| `till` | `{x,y}` | hoe a diggable tile |
-| `water` | `{x,y}` (crop, or a water tile to refill) or `{count?}` for every dry crop nearby | watering can |
+| `till` | `{x,y}` | hoe a diggable tile. Refuses a tile with any terrain feature (sapling, grass, flooring), a bush or a stump (0.1.3). The app composes `till({x,y,width,height})` patches from single tills and stops on energy, a missing hoe or any mod interrupt (bedtime, retreating, knocked out, interrupted, superseded, paused, aborted) |
+| `water` | `{x,y}` (crop, or a water tile to refill) or `{count?, scope?}` for every dry crop nearby | watering can. With no tile: `scope: "farm"` (0.1.3) walks to the Farm first and covers the whole map; an empty can is refilled at the nearest water and the round carries on (0.1.3, at most 3 refills); a crop the body cannot reach is skipped (at most 5) instead of ending the round |
 | `plant` | `{seed, x?, y?, count?}` | seeds or fertilizer onto tilled soil; no tile = nearest empty soil |
-| `harvest` | `{x,y}` / `{target}` or nothing for every ready crop nearby | crops, fruit trees, forage, ready machines |
+| `harvest` | `{x,y}` / `{target}` or `{count?, scope?}` for every ready crop nearby | crops, fruit trees, forage, ready machines. `scope: "farm"` (0.1.3) as for `water`. A crop that would not fit in the bag stays in the ground and the round stops with "your bag is full" (0.1.3) |
 | `chop` | `{x,y}` / `{target:"#N"}` | axe a tree, stump, log or twig until it is gone |
 | `mine` | `{x,y}` / `{target:"#N"}` | pickaxe a stone, ore node or boulder until it is gone |
 | `gather` | `{kind: forage\|wood\|stone\|fiber\|debris, count?}` | loop: nearest matching target, walk, act, until `count` items (or targets for debris) |
@@ -149,6 +149,8 @@ latest Observation and stay valid ~90 s.
 | `buy` | `{item, qty?, shop?}` | buy from the shop the body is standing in, paid from its own wallet |
 | `interact` | `{target:"#N"}` / `{x,y}` | warps and doors, mine ladders, chests (lists contents), machines (empties when ready), forage, villagers (faces them) |
 | `sleep` | | walk home and lie down; the day ends when the player sleeps |
+| `ship` | `{item?, count?}` | (0.1.3) walk to the Farm's shipping bin and drop the named item (`count` of it, default the whole stack), or with no item every crop, forage and fish in the bag. The bin pays the farm overnight. Refuses tools and anything the bin does not buy. |
+| `give` | `{item, count?, player?}` | (0.1.3) walk to the player and hand them `count` of an item (default the whole stack) into their inventory. Host only; a farmhand's bag lives on their machine. Nothing leaves the companion's bag until the player's bag has taken it. |
 
 ## Observation
 
@@ -159,7 +161,8 @@ latest Observation and stay valid ~90 s.
   "time": 1330, "timeText": "1:30 PM", "day": 3, "dayOfWeek": "Wed", "season": "spring", "year": 1,
   "weather": "sunny", "isDark": false, "daysPlayed": 3,
   "farm": {"crops": 24, "dryCrops": 12, "readyCrops": 0, "deadCrops": 0, "soil": 6, "twigs": 40, "weeds": 120, "stones": 80, "debris": 240, "bigClumps": 12, "grownTrees": 60, "shippingBinItems": 0},
-  "host": {"name": "Ouen", "money": 500, "seeds": 0, "stamina": 270, "maxStamina": 270, "farmingLevel": 0, "mailWaiting": 1},
+  "host": {"name": "Ouen", "money": 500, "seeds": 0, "stamina": 270, "maxStamina": 270, "farmingLevel": 0, "mailWaiting": 1, "holding": "Watering Can", "menu": null, "inEvent": false},
+  "tomorrow": "Rain",
   "follow": "Ouen", "followHold": null, "paused": false, "sleeping": false, "inAction": null, "lastResult": "water: watered 12 crops",
   "inventory": [{"slot": 0, "id": "(T)Axe", "name": "Axe", "count": 1, "kind": "tool"}],
   "held": "Axe", "wateringCan": {"left": 18, "max": 40},
@@ -182,6 +185,10 @@ latest Observation and stay valid ~90 s.
   "player": {"name": "Ouen", "location": "Farm", "x": 63, "y": 18, "sameLocation": true, "dist": 1}
 }
 ```
+
+`host.holding` / `host.menu` (the active menu's type name, eg `ShopMenu`,
+`LetterViewerMenu`) / `host.inEvent` (a cutscene is playing) and `tomorrow`
+(the game's forecast id) are 0.1.3; an older mod omits them.
 
 `farm` is the WHOLE Farm map (recomputed at most once a second) and `host`
 the host farmer, so the bot can answer "what is the farm's next job" from

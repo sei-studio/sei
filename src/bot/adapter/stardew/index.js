@@ -5,13 +5,14 @@
 // `cmd` frame whose `detail` string comes back as the tool result.
 
 import { ADAPTER_INTERFACE_VERSION } from '../../brain/types.js'
-import { COMMAND_TIMEOUT_MS } from './client.js'
+import { commandTimeouts } from './client.js'
 import { createStardewRegistry } from './registry.js'
 import { createSnapshotComposer } from './observers/snapshot.js'
 import { wireStardewEvents } from './fsmWires.js'
 import { createDashboardTelemetry } from './dashboard/telemetry.js'
 import { createProgressionFlags, getProgression } from './observers/progression.js'
 import { classifyConnectError } from './errors.js'
+import { modHasChores, CHORES_VERBS } from './modVersion.js'
 import {
   STARDEW_BASELINE,
   SESSION_END_CLAUSE,
@@ -54,11 +55,20 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
   client.on('save', onSave)
   client.on('welcome', onWelcome)
 
+  /**
+   * The connected mod's version, from the welcome frame's hello. Prompt and
+   * snapshot wording that only holds for a newer mod gates on it
+   * (modVersion.js): the bundled mod DLL is rebuilt on a Mac, so the app can
+   * ship ahead of the mod it talks to.
+   */
+  const modVersion = () => client.welcome?.hello?.version ?? null
+
   const registry = createStardewRegistry({
+    getModVersion: modVersion,
     send: async (name, args, { signal } = {}) => {
       let result
       try {
-        result = await client.request({ t: 'cmd', name, args }, { timeoutMs: COMMAND_TIMEOUT_MS, signal })
+        result = await client.request({ t: 'cmd', name, args }, { ...commandTimeouts(name, args), signal })
       } catch (err) {
         if (signal?.aborted || /aborted/.test(String(err?.message))) return 'aborted'
         return `failed: ${err?.message ?? err}`
@@ -79,21 +89,18 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
   })
 
   const companions = () => (Array.isArray(config._seiCompanions) ? config._seiCompanions : [])
-  /**
-   * The connected mod's version, from the welcome frame's hello. Prompt and
-   * snapshot wording that only holds for a newer mod gates on it
-   * (modVersion.js): the bundled mod DLL is rebuilt on a Mac, so the app can
-   * ship ahead of the mod it talks to.
-   */
-  const modVersion = () => client.welcome?.hello?.version ?? null
 
   return {
     interfaceVersion: ADAPTER_INTERFACE_VERSION,
 
     // ── Action surface ────────────────────────────────────────────────
-    listActions: () => registry.list(),
+    // ship / give exist from mod 0.1.3; an older mod would answer "unknown action".
+    listActions: () => {
+      const all = registry.list()
+      return modHasChores(modVersion()) ? all : all.filter((n) => !CHORES_VERBS.includes(n))
+    },
     getActionSchema: (name) => registry.schema(name),
-    getActionDescription: (name) => describeAction(name) || registry.description?.(name) || '',
+    getActionDescription: (name) => describeAction(name, modVersion()) || registry.description?.(name) || '',
     executeAction: async (name, args, ctx = {}) => {
       if (paused) return 'paused: the player paused the game'
       const execConfig = { ...config, ...ctx }
@@ -115,7 +122,7 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
       return latestObs
     },
     worldPrimer,
-    capabilityParagraph,
+    capabilityParagraph: () => capabilityParagraph(modVersion()),
     actionRules: () => actionRules(modVersion()),
     eventAddendum,
     /**
@@ -129,7 +136,13 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
     attach(handlers) {
       if (_attachDispose) { try { _attachDispose() } catch {} }
       _handlers = handlers
-      _attachDispose = wireStardewEvents(client, handlers, { botName: botUsername, companions, logger })
+      _attachDispose = wireStardewEvents(client, handlers, {
+        botName: botUsername,
+        companions,
+        logger,
+        // Read live: the dashboard's reactive/proactive switch mutates it.
+        getProactiveness: () => config.persona?.proactiveness ?? 1,
+      })
     },
     /**
      * The runtime awaits the spawn result BEFORE the brain exists, so the
@@ -199,7 +212,7 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
     // does not; keep say() lines short.
     chatMaxChars: 200,
     backgroundActions: { follow: 'unfollow' },
-    progressActions: ['gather', 'water', 'harvest', 'chop', 'mine', 'goTo', 'fish'],
+    progressActions: ['gather', 'water', 'harvest', 'chop', 'mine', 'goTo', 'fish', 'till', 'plant', 'ship', 'give'],
     visionActions: [],
     surfaceBaseline: () => STARDEW_BASELINE,
     sessionEndClause: () => SESSION_END_CLAUSE,
