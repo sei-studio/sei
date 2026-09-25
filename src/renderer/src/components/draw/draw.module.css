@@ -573,6 +573,13 @@
   max-width: 340px;
 }
 
+.pausedActions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
 /* The paper itself. Sized in px by DrawCanvas rather than by aspect-ratio:
    `height:100%` plus `max-width:100%` clamps the width without giving the
    height back, so a box wider than 10:7 silently stretched the page and the

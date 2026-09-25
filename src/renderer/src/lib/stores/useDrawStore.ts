@@ -38,6 +38,7 @@ interface DrawApi {
   drawSaveGallery(characterId: string, pngDataUrl: string): Promise<string>;
   drawEnd(characterId: string): Promise<void>;
   drawResume(characterId: string): Promise<void>;
+  drawFinish(characterId: string): Promise<DrawGameState | null>;
   onDrawState(cb: (s: DrawGameState) => void): () => void;
   onDrawAiStroke(cb: (s: DrawAiStroke) => void): () => void;
   onDrawSnapshotRequest(cb: (r: DrawSnapshotRequest) => void): () => void;
@@ -71,6 +72,8 @@ export interface DrawStoreState {
   saveGallery: (characterId: string, pngDataUrl: string) => Promise<string | null>;
   /** Resume a game paused by the usage limit; state comes back on the push. */
   resume: (characterId: string) => void;
+  /** End a credit-wall-paused game into the gallery, drawings kept (260926). */
+  finishEarly: (characterId: string) => void;
   end: (characterId: string) => Promise<void>;
 }
 
@@ -181,6 +184,11 @@ export const useDrawStore = create<DrawStoreState>((set, get) => {
 
     resume: (characterId) => {
       void drawApi().drawResume?.(characterId)?.catch?.(() => {});
+    },
+
+    finishEarly: (characterId) => {
+      // The state push that follows moves the screen to the gallery.
+      void drawApi().drawFinish?.(characterId)?.catch?.(() => {});
     },
 
     end: async (characterId) => {

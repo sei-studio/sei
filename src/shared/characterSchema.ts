@@ -895,6 +895,14 @@ export const UserConfigSchema = z.object({
    */
   feedback_reward_claimed: z.boolean().optional().default(false),
   /**
+   * 260926 — "Your free play is back" launch banner. The weekly reset time
+   * (CreditsStatus.resets_at) remembered the last time this account was seen
+   * AT the credit wall; null/absent otherwise. When a later launch finds the
+   * wall gone and this time passed, the banner shows once and this clears.
+   * See decideFreePlayBanner in src/shared/freePlayReset.ts.
+   */
+  free_play_wall_resets_at: z.string().nullable().optional(),
+  /**
    * Looking (vision) mode — how the companion sees the world:
    *   'off'        — never looks; plays from world data only. No look()/explore()
    *                  pictures and no automatic views.

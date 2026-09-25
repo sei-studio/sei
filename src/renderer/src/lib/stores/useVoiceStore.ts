@@ -49,7 +49,8 @@ import { useDataStore } from './useDataStore';
 import { useBackseatStore, backseatCapture } from './useBackseatStore';
 import { voicePitchRate } from '@shared/voicePitch';
 import { createAudioQueue, type AudioQueue, type TtsStreamHandle } from '../voice/audioQueue';
-import { t } from '../i18n';
+import { t, uiLanguage } from '../i18n';
+import { currentResetLine } from '../useResetLine';
 import { createDictation, type Dictation } from '../voice/dictation';
 import {
   companionAudioGapMs,
@@ -556,7 +557,12 @@ function friendlyError(err: unknown): string {
   // empty — the `name` is the reliable signal (NotAllowedError / NotFoundError).
   const name = (err as { name?: string })?.name ?? '';
   if (/VOICE_NO_SESSION/.test(msg)) return t('Sign in to use voice calls.');
-  if (/VOICE_NO_CREDITS/.test(msg)) return t("You've used this week's credits. Upgrade or top up to keep calling.");
+  if (/VOICE_NO_CREDITS/.test(msg)) {
+    // 260926: say when free play comes back, not just that it is gone.
+    const base = t("You've used this week's credits. Upgrade or top up to keep calling.");
+    const reset = currentResetLine();
+    return reset ? `${base}${uiLanguage() === 'zh' ? '' : ' '}${reset}` : base;
+  }
   // 260810: the daily dollar cap was retired 260724, so a voice 429 is the
   // burst rate gate — never claim a daily cap or a tomorrow reset.
   if (/VOICE_RATE_LIMITED/.test(msg)) return t('Too many requests right now. Wait a little and try again.');

@@ -11,6 +11,7 @@
  *     http://localhost:5173/?dashshot=mclaunch     the Minecraft launch panel (add &ready=1 for the set-up state)
  *     http://localhost:5173/?dashshot=dstlaunch    the Don't Starve Together launch panel
  *     http://localhost:5173/?dashshot=stardewlaunch  the Stardew Valley launch panel
+ *     http://localhost:5173/?dashshot=creditwall&part=modal|credits|draw|banner  the credit wall surfaces (DevCreditWallShot)
  *
  * It seeds useMcDashboardStore with fixture snapshots and useDataStore with
  * two named characters (window.sei is stubbed by devHarnessStubs.ts, which
@@ -30,6 +31,7 @@ import { McLaunchPanel } from '../mcdash/McLaunchPanel';
 import { DstLaunchPanel } from '../dontstarve/DstLaunchPanel';
 import { StardewLaunchPanel } from '../stardew/StardewLaunchPanel';
 import { ChatScreen } from '../../screens/ChatScreen';
+import { DevCreditWallShot } from '../DevCreditWallShot';
 
 const DST_ID = 'dashshot-dst';
 const SDV_ID = 'dashshot-sdv';
@@ -139,6 +141,8 @@ function seed(): void {
 seed();
 
 export function DevDashShot({ which }: { which: string }): React.ReactElement {
+  // ?dashshot=creditwall&part=modal|credits|draw|banner (260926).
+  if (which === 'creditwall') return <DevCreditWallShot />;
   // ?dashshot=chat (Stardew) | chatdst: the dashboard hosted inside the real
   // ChatScreen (260917), for the game/chat split, the drag handle and the
   // composer. The fixture summon is online, so the dashboard slot opens.

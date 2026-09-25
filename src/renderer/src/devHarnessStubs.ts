@@ -21,6 +21,11 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
   // async undefined (or, for on* subscriptions, an unsubscribe), and the chat
   // history is a fixture long enough to scroll.
   const chatMode = (params.get('dashshot') ?? '').startsWith('chat');
+  // ?dashshot=creditwall (260926): the credit wall surfaces (usage-limit
+  // popup, Credits screen callout, Draw! paused card, free-play-back banner)
+  // over a fixture plan snapshot that is at the wall with the reset 3 days out.
+  // Add &lang=zh for the Chinese copy.
+  const creditWallMode = (params.get('dashshot') ?? '') === 'creditwall';
   const now = Date.now();
   const chatRows = Array.from({ length: 24 }, (_, i) => ({
     id: `row-${i}`,
@@ -79,6 +84,19 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
     worldCheckNow: async () => null,
     lanCheckNow: async () => ({ kind: 'closed' }),
     getConfig: async () => ({}),
+    creditsGet: async () => ({
+      plan: 'free',
+      usage_pct: 100,
+      over_limit: true,
+      resets_at: new Date(now + 3 * 86_400_000).toISOString(),
+      extra_credits_used: 0,
+      extra_credits_total: 0,
+      renews_at: null,
+      ends_at: null,
+      subscription_status_raw: null,
+      ai_backend_kind: 'cloud-proxy',
+      feedback_reward_available: false,
+    }),
     saveConfig: noop,
     openExternal: noop,
     gamePackState: async () => ({ kind: 'ready', root: '/r' }),
@@ -87,7 +105,7 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
     wizardPromptShown: async () => ({ shown: true }),
     getWizardState: async () => ({ version: 1, hasRunOnce: false, enabledInstallIds: [], lastRunAt: null, lastSkinServerPort: null }),
   };
-  (window as unknown as { sei: Record<string, unknown> }).sei = chatMode
+  (window as unknown as { sei: Record<string, unknown> }).sei = chatMode || creditWallMode
     ? new Proxy(base, {
         get(target, key) {
           if (key in target) return target[key as string];

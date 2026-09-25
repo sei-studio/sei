@@ -19,6 +19,7 @@ import { ROUNDS, type DrawStroke } from '@shared/drawIpc';
 import { useDrawStore } from '../../lib/stores/useDrawStore';
 import { useUiStore } from '../../lib/stores/useUiStore';
 import { useT } from '../../lib/i18n';
+import { useResetLine } from '../../lib/useResetLine';
 import { DrawCanvas, type DrawCanvasControl } from './DrawCanvas';
 import { DrawChat } from './DrawChat';
 import { DrawGallery } from './DrawGallery';
@@ -82,6 +83,8 @@ function DrawScreenBody({ characterId }: { characterId: string }): React.ReactEl
   const sendChat = useDrawStore((s) => s.sendChat);
   const saveGallery = useDrawStore((s) => s.saveGallery);
   const resume = useDrawStore((s) => s.resume);
+  const finishEarly = useDrawStore((s) => s.finishEarly);
+  const resetLine = useResetLine();
   const end = useDrawStore((s) => s.end);
   const navigate = useUiStore((s) => s.navigate);
   // Draw! is a route of its own, so it already covers the chat screen; the
@@ -279,6 +282,9 @@ function DrawScreenBody({ characterId }: { characterId: string }): React.ReactEl
   const iAmDrawing = state.drawer === 'player';
   const live = state.phase === 'drawing';
   const paused = state.paused === true;
+  // 260926: the weekly credit wall reads as a pause with a date, not an error:
+  // when free play comes back, and a way to end here with the drawings kept.
+  const creditWall = paused && state.pausedReason === 'depleted';
   // While usage-limit paused the clock holds at the latched remainder (main
   // stopped its timers; turnEndsAt is stale by design until resume).
   const remaining = paused
@@ -325,21 +331,50 @@ function DrawScreenBody({ characterId }: { characterId: string }): React.ReactEl
             {paused ? (
               <div className={styles.pausedOverlay}>
                 <p className={styles.pausedTitle}>{t('game paused')}</p>
-                <p className={`${styles.pausedNote} ${styles.typed}`}>
-                  {t(
-                    'usage limit reached. top up or wait, then resume: the turn picks up right where it stopped.',
-                  )}
-                </p>
-                <button
-                  type="button"
-                  className={styles.handBtn}
-                  data-on="true"
-                  onClick={() => resume(characterId)}
-                >
-                  <SquiggleHighlight seed="resume-hl" />
-                  <SquiggleFrame seed="resume-btn" />
-                  <span className={styles.btnLabel}>{t('Resume')}</span>
-                </button>
+                {creditWall ? (
+                  <>
+                    <p className={`${styles.pausedNote} ${styles.typed}`}>
+                      {t("you're out of playtime for now, so {name} can't draw or guess.", {
+                        name: state.aiName,
+                      })}
+                    </p>
+                    {resetLine ? (
+                      <p className={`${styles.pausedNote} ${styles.typed}`}>{resetLine}</p>
+                    ) : null}
+                    <p className={`${styles.pausedNote} ${styles.typed}`}>
+                      {t('top up and resume, or end the game and keep your drawings.')}
+                    </p>
+                  </>
+                ) : (
+                  <p className={`${styles.pausedNote} ${styles.typed}`}>
+                    {t(
+                      'usage limit reached. top up or wait, then resume: the turn picks up right where it stopped.',
+                    )}
+                  </p>
+                )}
+                <div className={styles.pausedActions}>
+                  <button
+                    type="button"
+                    className={styles.handBtn}
+                    data-on="true"
+                    onClick={() => resume(characterId)}
+                  >
+                    <SquiggleHighlight seed="resume-hl" />
+                    <SquiggleFrame seed="resume-btn" />
+                    <span className={styles.btnLabel}>{t('Resume')}</span>
+                  </button>
+                  {creditWall ? (
+                    <button
+                      type="button"
+                      className={styles.handBtn}
+                      onClick={() => finishEarly(characterId)}
+                    >
+                      <SquiggleHighlight seed="finish-hl" />
+                      <SquiggleFrame seed="finish-btn" />
+                      <span className={styles.btnLabel}>{t('End game')}</span>
+                    </button>
+                  ) : null}
+                </div>
               </div>
             ) : null}
             <div className={styles.canvasFrame}>

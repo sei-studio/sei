@@ -162,6 +162,12 @@ export interface DrawGameState {
    */
   paused?: boolean;
   pausedRemainingMs?: number;
+  /**
+   * Why it paused (260926). 'depleted' = the weekly credit wall: the paused
+   * card carries the free-play reset date and offers draw:finish (end the
+   * game, keep the drawings) next to Resume. Absent on older mains.
+   */
+  pausedReason?: 'depleted' | 'rate_limited';
   /** Committed strokes for the current turn (see the ai-stroke note above). */
   strokes: DrawStroke[];
   /**

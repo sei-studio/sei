@@ -9,6 +9,7 @@ import React from 'react';
 import type { GameId } from '@shared/gameIpc';
 import type { ErrorClass } from '@shared/errorClasses';
 import { useT } from '../lib/i18n';
+import { useResetLine } from '../lib/useResetLine';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { useUiStore } from '../lib/stores/useUiStore';
@@ -32,6 +33,9 @@ export function GameErrorModal({ game, characterId, error, message }: GameErrorM
   const name = rawName ?? t('Your companion');
   const gameName = botGameName(game);
   const copy = ERROR_COPY[error] ? errorCopyText(error, t) : message;
+  // 260926: a credit-wall refusal says when free play comes back.
+  const resetLine = useResetLine();
+  const showReset = error === 'CLOUD_CREDITS_DEPLETED' && !!resetLine;
   const onTryAgain = (): void => {
     closeModal();
     void attemptSummon(characterId, game);
@@ -40,6 +44,7 @@ export function GameErrorModal({ game, characterId, error, message }: GameErrorM
   return (
     <ModalShell title={title} width={480} scrimClose onClose={closeModal} aria-label={title}>
       <p className={styles.body}>{copy}</p>
+      {showReset ? <p className={styles.body}>{resetLine}</p> : null}
       {message && message !== copy ? <p className={styles.hint}>{message}</p> : null}
       <ModalFooter>
         <Button kind="quiet" size="md" onClick={closeModal}>

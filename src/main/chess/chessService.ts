@@ -39,7 +39,8 @@ import path from 'node:path';
 import type Anthropic from '@anthropic-ai/sdk';
 import { raiseUsageLimitPopup } from '../chat/usageLimit';
 import { Chess } from 'chess.js';
-import type { ChatMessage, ChatSendResult, LogBatch } from '../../shared/ipc';
+import type { ChatMessage, ChatSendResult, CreditsStatus, LogBatch } from '../../shared/ipc';
+import { quietCompanionNotice } from '../../shared/freePlayReset';
 import type {
   ChessColor,
   ChessDownloadProgress,
@@ -73,6 +74,7 @@ import { surfaceLanguage } from '../../shared/chatLanguage';
 import { ensureModel, modelReady } from './modelStore';
 import { getOrCreateChessProfile, type ChessProfile } from './chessProfile';
 import { createChessLog, NULL_CHESS_LOG, type ChessLog } from './chessLog';
+import { loadAnalytics } from '../lazyAnalytics';
 
 // ── deps + module state ──────────────────────────────────────────────────────
 
@@ -87,7 +89,17 @@ export interface ChessDeps {
    * Minecraft bot logs ride). Optional: tests run without it.
    */
   pushLog?: (batch: LogBatch) => void;
+  /**
+   * Credit-wall quiet mode (260926): the account's plan snapshot, read to date
+   * the quiet notice and to notice when a top up / reset lifted the wall.
+   * Optional: production reads proxyClient.creditsGet lazily; tests inject.
+   * null = unknown (signed out, read failed).
+   */
+  creditsSnapshot?: () => Promise<ChessCreditsSnapshot | null>;
 }
+
+/** The slice of CreditsStatus the quiet mode reads. */
+export type ChessCreditsSnapshot = Pick<CreditsStatus, 'plan' | 'resets_at' | 'over_limit' | 'ai_backend_kind'>;
 
 interface CandidateOut {
   macro: { text: string };
@@ -199,6 +211,19 @@ interface Session {
    * table talk as a live game.
    */
   spoke: boolean;
+  /**
+   * Credit-wall quiet mode (260926). Set when a turn 402s on the cloud
+   * allowance: from then on the ENGINE plays every move (the top sampled
+   * candidate, the same strength the character would have had) and no LLM
+   * turn runs at all, so the game keeps going instead of re-hitting the wall
+   * (and re-raising the popup) on every move. Lifted when a later snapshot
+   * says the wall is gone (top up, upgrade, weekly reset, switch to BYOK).
+   */
+  creditQuiet: boolean;
+  /** The one system notice explaining the quiet has been posted this game. */
+  creditNoticeSent: boolean;
+  /** Last time quiet mode re-checked the credits snapshot (throttle). */
+  creditProbeAt: number;
 }
 
 /**
@@ -216,6 +241,8 @@ export const CHESS_TIMING = {
   idleMaxMs: 90_000,
   /** Idle cadence multiplier cap from consecutive silent ticks. */
   idleBackoffCap: 4,
+  /** How often quiet mode re-reads the credits snapshot to see if the wall lifted. */
+  creditProbeMs: 60_000,
 };
 
 const sessions = new Map<string, Session>();
@@ -333,6 +360,9 @@ export async function startChess(
     lastMacro: '',
     thinkingSince: null,
     spoke: false,
+    creditQuiet: false,
+    creditNoticeSent: false,
+    creditProbeAt: 0,
   };
   try {
     s.log = await createChessLog(characterId, d.pushLog ?? (() => {}));
@@ -364,7 +394,7 @@ export async function startChess(
   // capture() is a no-op when it is not. No board state, no chat, no persona.
   void (async () => {
     try {
-      const { capture } = await import('../analytics');
+      const { capture } = await loadAnalytics();
       capture('chess_game_started', {
         character_id: characterId,
         player_color: playerColor,
@@ -636,6 +666,17 @@ async function dispatchChess(
 
 async function dispatchYourMove(s: Session): Promise<void> {
   if (s.status !== 'active' || s.chess.turn() === s.playerColor) return;
+  // Credit wall (260926): the engine plays on alone, no LLM call at all.
+  if (await creditQuietHolds(s)) {
+    if (s.status !== 'active') return;
+    try {
+      await fallbackPlay(s, 'credit wall, companion quiet');
+    } catch (err2) {
+      console.error(`[sei/chess] quiet engine move failed: ${describeErr(err2)}`);
+      endSession(s, { winner: null, reason: 'abandoned' }, { silent: true });
+    }
+    return;
+  }
   // A transient transport failure (stale keep-alive socket, network blip)
   // gets one retry after a short pause; anything else, or a second failure,
   // falls back so the game never stalls.
@@ -657,15 +698,17 @@ async function dispatchYourMove(s: Session): Promise<void> {
       // failure itself was invisible before this. Shape only, never content.
       void (async () => {
         try {
-          const { captureSurfaceError, surfaceErrorClass } = await import('../analytics');
+          const { captureSurfaceError, surfaceErrorClass } = await loadAnalytics();
           captureSurfaceError('chess', `move_turn_${surfaceErrorClass(err)}`, s.characterId);
         } catch { /* analytics is never load-bearing */ }
       })();
       // Usage limit (260730): raise the popup, skip the retry (it would 402
       // again), and fall through to fallbackPlay — the ENGINE picks the move
-      // for free, so the game stays alive and playable; after a top up the
-      // next turn simply talks again. Nothing here ends the session.
-      const limited = await raiseUsageLimitPopup(err);
+      // for free, so the game stays alive and playable. 260926: a depleted
+      // allowance also latches quiet mode, so the following moves skip the LLM
+      // entirely (no 402 per move, no popup per move) and one chat notice
+      // says why. Nothing here ends the session.
+      const limited = await onTurnUsageLimit(s, err);
       if (!limited && attempt === 0 && isConnectionError(err)) {
         await new Promise((r) => setTimeout(r, 1500));
         if (s.status !== 'active') return;
@@ -673,7 +716,7 @@ async function dispatchYourMove(s: Session): Promise<void> {
       }
       // The game must never stall: fall back to the first candidate silently.
       try {
-        await fallbackPlay(s);
+        await fallbackPlay(s, limited === 'depleted' ? 'credit wall' : 'no valid play() from the model');
       } catch (err2) {
         console.error(`[sei/chess] fallback move failed: ${describeErr(err2)}`);
         endSession(s, { winner: null, reason: 'abandoned' }, { silent: true });
@@ -689,15 +732,19 @@ async function dispatchChat(s: Session, nudge: boolean): Promise<void> {
   const voiceCall = entries.some((e) => e.voiceCall) || isCallActive(s.characterId);
   let replies: ChatMessage[] = [];
   try {
-    replies = await runChessLlmTurn(s, { kind: 'chat-reply', voiceCall });
+    // Credit wall (260926): quiet mode answers nothing; the notice already
+    // told the player why.
+    if (!(await creditQuietHolds(s))) {
+      replies = await runChessLlmTurn(s, { kind: 'chat-reply', voiceCall });
+    }
   } catch (err) {
     if ((err as Error).message !== CHAT_ABORTED) {
-      void raiseUsageLimitPopup(err);
+      await onTurnUsageLimit(s, err);
       console.warn(`[sei/chess] chat reply failed: ${describeErr(err)}`);
       // Analytics (260828): genuine reply failure (aborts excluded above).
       void (async () => {
         try {
-          const { captureSurfaceError, surfaceErrorClass } = await import('../analytics');
+          const { captureSurfaceError, surfaceErrorClass } = await loadAnalytics();
           captureSurfaceError('chess', `chat_turn_${surfaceErrorClass(err)}`, s.characterId);
         } catch { /* analytics is never load-bearing */ }
       })();
@@ -724,17 +771,18 @@ async function dispatchIdle(s: Session): Promise<void> {
   // Never chatter while a decided move is presenting (it would reset the
   // reveal's quiet gate). While deciding, the turn itself is about to speak.
   if (s.aiThinking) return;
+  if (await creditQuietHolds(s)) return;
   let replies: ChatMessage[] = [];
   try {
     replies = await runChessLlmTurn(s, { kind: 'idle', voiceCall: isCallActive(s.characterId) });
   } catch (err) {
     if ((err as Error).message !== CHAT_ABORTED) {
-      void raiseUsageLimitPopup(err);
+      await onTurnUsageLimit(s, err);
       console.warn(`[sei/chess] idle turn failed: ${describeErr(err)}`);
       // Analytics (260828): genuine idle-turn failure (aborts excluded above).
       void (async () => {
         try {
-          const { captureSurfaceError, surfaceErrorClass } = await import('../analytics');
+          const { captureSurfaceError, surfaceErrorClass } = await loadAnalytics();
           captureSurfaceError('chess', `idle_turn_${surfaceErrorClass(err)}`, s.characterId);
         } catch { /* analytics is never load-bearing */ }
       })();
@@ -909,7 +957,7 @@ function endSession(s: Session, result: ChessResult, opts?: { silent?: boolean }
   // still spent); `reason` distinguishes them. See the games rule in CLAUDE.md.
   void (async () => {
     try {
-      const { capture } = await import('../analytics');
+      const { capture } = await loadAnalytics();
       capture('chess_game_ended', {
         character_id: s.characterId,
         duration_ms: durationMs,
@@ -966,7 +1014,9 @@ function endSession(s: Session, result: ChessResult, opts?: { silent?: boolean }
     })();
   }
 
-  if (!opts?.silent) {
+  // Credit wall (260926): a quiet companion does not react to the result
+  // either; that call would only 402.
+  if (!opts?.silent && !s.creditQuiet) {
     // No mechanical memory line for the result (260725): template writes read
     // as canned next to the character's own remember() notes, and the game-over
     // reaction turn below can remember() anything actually worth keeping.
@@ -1031,12 +1081,115 @@ async function candidatesFor(s: Session): Promise<CandidateOut> {
   return out;
 }
 
-async function fallbackPlay(s: Session): Promise<void> {
+// ── credit-wall quiet mode (260926) ─────────────────────────────────────────
+
+async function readCreditsSnapshot(): Promise<ChessCreditsSnapshot | null> {
+  try {
+    const custom = deps?.creditsSnapshot;
+    if (custom) return await custom();
+    const { creditsGet } = await import('../cloud/proxyClient');
+    return await creditsGet();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A turn's LLM call failed. Raise the usage-limit popup when it is one (only
+ * ever the FIRST time per quiet stretch: later turns never reach the LLM) and
+ * latch quiet mode on a depleted allowance. Returns the usage-limit reason.
+ */
+async function onTurnUsageLimit(s: Session, err: unknown): Promise<'depleted' | 'rate_limited' | null> {
+  const reason = await raiseUsageLimitPopup(err);
+  if (reason === 'depleted' && s.status === 'active') enterCreditQuiet(s);
+  return reason;
+}
+
+function enterCreditQuiet(s: Session): void {
+  if (s.creditQuiet) return;
+  s.creditQuiet = true;
+  s.creditProbeAt = Date.now();
+  s.log.line('credit wall: companion goes quiet, the engine plays on');
+  if (s.creditNoticeSent) return;
+  s.creditNoticeSent = true;
+  // Analytics: once per game, the first time the wall turns into quiet play.
+  void (async () => {
+    try {
+      const { capture } = await loadAnalytics();
+      capture('credit_wall_degraded', {
+        surface: 'chess',
+        character_id: s.characterId,
+        mode: 'engine_only',
+        plies: s.history.length,
+      });
+    } catch { /* analytics is never load-bearing */ }
+  })();
+  void postQuietNotice(s);
+}
+
+/**
+ * The one system line in the chat that explains the silence, dated when the
+ * reset time is known. Pushed live but NOT persisted: it describes this game
+ * only, and a persisted copy would be replayed into every later prompt.
+ * Wording follows the character's language, like every other game line.
+ */
+async function postQuietNotice(s: Session): Promise<void> {
+  let name = 'your companion';
+  let lang: 'en' | 'zh' = 'en';
+  try {
+    const c = await getCharacter(s.characterId);
+    if (c?.name) name = c.name;
+    const { characterLanguage } = await import('../../shared/chatLanguage');
+    if (characterLanguage(c?.metadata) === 'zh') lang = 'zh';
+  } catch { /* generic name */ }
+  const snap = await readCreditsSnapshot();
+  if (s.status === 'ended') return;
+  const msg: ChatMessage = {
+    id: randomUUID(),
+    role: 'system',
+    text: quietCompanionNotice({
+      name,
+      lang,
+      plan: snap?.plan,
+      resetsAt: snap?.resets_at,
+      nowMs: Date.now(),
+    }),
+    ts: Date.now(),
+  };
+  try {
+    requireDeps().pushChatMessage(s.characterId, msg);
+  } catch { /* best-effort */ }
+}
+
+/**
+ * True while quiet mode holds. Re-reads the credits snapshot at most every
+ * CHESS_TIMING.creditProbeMs and lifts the quiet when the wall is gone (or the
+ * user switched to their own key), so a top up mid-game brings the character
+ * back on the next turn. An unknown snapshot keeps it quiet: the cost of a
+ * wrong guess the other way is another 402.
+ */
+async function creditQuietHolds(s: Session): Promise<boolean> {
+  if (!s.creditQuiet) return false;
+  if (Date.now() - s.creditProbeAt < CHESS_TIMING.creditProbeMs) return true;
+  s.creditProbeAt = Date.now();
+  const snap = await readCreditsSnapshot();
+  if (snap && (snap.over_limit === false || snap.ai_backend_kind === 'local')) {
+    s.creditQuiet = false;
+    s.log.line('credit wall lifted: the companion talks again');
+    return false;
+  }
+  return true;
+}
+
+async function fallbackPlay(s: Session, why = 'no valid play() from the model'): Promise<void> {
   const { candidates } = await candidatesFor(s);
   if (s.status !== 'active') return;
+  // candidates[0] is the engine's top sampled candidate (Maia, Elo-tempered,
+  // with the blunder layers applied), so an engine-only move keeps the
+  // character's strength instead of jumping to Stockfish's best.
   const pick = candidates[0];
   if (!pick) throw new Error('no candidates');
-  s.log.line(`fallback: playing first candidate ${pick.san} (no valid play() from the model)`);
+  s.log.line(`fallback: playing first candidate ${pick.san} (${why})`);
   beginHold(s, { uci: pick.uci, san: pick.san }, []);
   await presentHold(s);
 }

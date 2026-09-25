@@ -630,4 +630,9 @@ export const ZH_MODALS: Record<string, string> = {
     '恢复完成。所有被移除的内容都已保留备份。',
   'Something went wrong during cleanup. A backup was made first, so nothing is lost. Try again later.':
     '清理过程中出了点问题。已提前创建备份，数据不会丢失。请稍后重试。',
+  // 260926: the free-play-is-back launch banner (FreePlayBackBanner).
+  'Your free play is back. Your companions are ready when you are.':
+    '你的免费游玩已经恢复了，伙伴们随时等你回来。',
+  'Your weekly allowance is back. Your companions are ready when you are.':
+    '你的每周额度已经恢复了，伙伴们随时等你回来。',
 };

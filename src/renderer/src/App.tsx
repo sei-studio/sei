@@ -76,6 +76,7 @@ import { NoticesInboxModal } from './components/NoticesInboxModal';
 import { RecoveryPrompt } from './components/recovery/RecoveryPrompt';
 import { useNoticesStore } from './lib/stores/useNoticesStore';
 import { Banner } from './components/Banner';
+import { FreePlayBackBanner } from './components/FreePlayBackBanner';
 import { ERROR_COPY } from './lib/errors';
 import * as authStore from './lib/stores/useAuthStore';
 const { useAuthStore } = authStore;
@@ -937,6 +938,9 @@ export function App(): React.ReactElement {
               onDismiss={() => setWarnings((w) => ({ ...w, keychainDismissed: true }))}
             />
           ) : null}
+          {/* 260926: "Your free play is back", once, after the weekly reset
+              lifts a credit wall this profile hit. Cloud accounts only. */}
+          {authState.kind === 'signed_in' ? <FreePlayBackBanner /> : null}
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             {!railHidden ? <IconRail /> : null}
             {/*

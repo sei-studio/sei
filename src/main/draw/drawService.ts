@@ -97,6 +97,7 @@ import { pickWords } from './wordBank';
 import { findWordMatch, matchesWord, saysWord } from './guessMatch';
 import { guessGate } from './guessSchedule';
 import { humanizeStroke } from './strokeHumanize';
+import { loadAnalytics } from '../lazyAnalytics';
 import {
   CLEAR_TOOL,
   MAX_AI_STROKES,
@@ -382,6 +383,14 @@ interface Session {
    */
   paused: boolean;
   pausedRemainingMs: number;
+  /**
+   * Why the game paused (260926): 'depleted' is the weekly credit wall, where
+   * the paused card also carries the reset date and an "end game, keep the
+   * drawings" way out; 'rate_limited' is a short proxy throttle.
+   */
+  pausedReason: 'depleted' | 'rate_limited' | null;
+  /** credit_wall_degraded already fired for this session (once per game). */
+  creditWallReported: boolean;
   guess: GuessSched;
   draw: DrawRun;
   /** In-flight turn-end reaction call, so teardown can abort it. */
@@ -442,7 +451,13 @@ function toState(s: Session): DrawGameState {
     word: visibleWord(s),
     wordChoices: s.phase === 'pick' ? s.wordChoices : [],
     turnEndsAt: s.phase === 'drawing' ? s.turnEndsAt : null,
-    ...(s.paused ? { paused: true, pausedRemainingMs: s.pausedRemainingMs } : {}),
+    ...(s.paused
+      ? {
+          paused: true,
+          pausedRemainingMs: s.pausedRemainingMs,
+          ...(s.pausedReason ? { pausedReason: s.pausedReason } : {}),
+        }
+      : {}),
     strokes: s.strokes,
     clearSeq: s.clearSeq,
     chat: s.chat,
@@ -571,6 +586,8 @@ async function newSession(characterId: string, rounds = 3): Promise<Session> {
     gapTimer: null,
     paused: false,
     pausedRemainingMs: 0,
+    pausedReason: null,
+    creditWallReported: false,
     guess: freshGuess(),
     draw: freshDraw(),
     endCtrl: null,
@@ -643,7 +660,7 @@ export async function startDraw(characterId: string, rounds: number): Promise<Dr
 
   void (async () => {
     try {
-      const { capture } = await import('../analytics');
+      const { capture } = await loadAnalytics();
       capture('draw_game_started', { character_id: characterId, rounds: s.rounds });
     } catch { /* analytics is never load-bearing */ }
   })();
@@ -742,14 +759,31 @@ export async function endDraw(characterId: string): Promise<void> {
  * Only a live 'drawing' phase pauses — a turn-end reaction failure just
  * costs the reaction line.
  */
-function pauseForUsageLimit(s: Session): void {
+function pauseForUsageLimit(s: Session, reason: 'depleted' | 'rate_limited'): void {
   if (s.paused || s.phase !== 'drawing') return;
   s.paused = true;
+  s.pausedReason = reason;
   s.pausedRemainingMs = Math.max(10_000, s.turnEndsAt - Date.now());
   if (s.turnTimer) { clearTimeout(s.turnTimer); s.turnTimer = null; }
   if (s.poll) { clearInterval(s.poll); s.poll = null; }
   s.guess.ctrl?.abort();
-  log(s, `usage-limit pause: ${Math.round(s.pausedRemainingMs / 1000)}s of the turn latched`);
+  log(s, `usage-limit pause (${reason}): ${Math.round(s.pausedRemainingMs / 1000)}s of the turn latched`);
+  if (reason === 'depleted' && !s.creditWallReported) {
+    // Analytics (260926): the credit wall turned into a pause, not an error.
+    // Once per game; the renderer's paused card carries the reset date.
+    s.creditWallReported = true;
+    void (async () => {
+      try {
+        const { capture } = await loadAnalytics();
+        capture('credit_wall_degraded', {
+          surface: 'draw',
+          character_id: s.characterId,
+          mode: 'paused',
+          round: s.round,
+        });
+      } catch { /* analytics is never load-bearing */ }
+    })();
+  }
   push(s);
 }
 
@@ -763,6 +797,7 @@ export function resumeDraw(characterId: string): void {
   const s = sessions.get(characterId);
   if (!s || !s.paused) return;
   s.paused = false;
+  s.pausedReason = null;
   s.turnStartedAt = Date.now() - (TURN_MS - s.pausedRemainingMs);
   s.turnEndsAt = Date.now() + s.pausedRemainingMs;
   const key = s.turnKey;
@@ -779,6 +814,36 @@ export function resumeDraw(characterId: string): void {
   }
   log(s, 'usage-limit pause resumed');
   push(s);
+}
+
+/**
+ * "End game" from the credit-wall pause (draw:finish, 260926). The game cannot
+ * go on without the character's model calls, so instead of leaving it frozen
+ * (or throwing the player out) it ends the way a finished game does: straight
+ * to the gallery with every drawing made so far, the interrupted turn
+ * included when it had anything on the page, so it can still be saved. The
+ * row is recorded as reason 'credit_wall', not 'abandoned': the player did
+ * not walk away, the allowance ran out. No-op outside a live game.
+ */
+export function finishDrawEarly(characterId: string): DrawGameState | null {
+  const s = sessions.get(characterId);
+  if (!s) return null;
+  if (s.phase === 'gallery' || s.round === 0) return toState(s);
+  teardownTimers(s);
+  if (s.phase === 'drawing' && s.drawer && s.strokes.length > 0) {
+    s.gallery.push({ round: s.round, drawer: s.drawer, word: s.word, strokes: s.strokes, guessed: false });
+  }
+  s.turnKey = randomUUID();
+  s.paused = false;
+  s.pausedReason = null;
+  s.phase = 'gallery';
+  s.drawer = null;
+  s.word = '';
+  s.wordChoices = [];
+  log(s, `game ended at the credit wall ${s.scores.player}-${s.scores.ai}`);
+  push(s);
+  void finishGame(s, 'credit_wall');
+  return toState(s);
 }
 
 /**
@@ -825,7 +890,7 @@ export function shutdownDraw(): void {
  * Minecraft, chess, calls and this (see the games rule in CLAUDE.md). Fired
  * for abandoned games too: that time was still spent.
  */
-async function finishGame(s: Session, reason: 'completed' | 'abandoned'): Promise<void> {
+async function finishGame(s: Session, reason: 'completed' | 'abandoned' | 'credit_wall'): Promise<void> {
   // A completed game finishes when the last turn resolves, and AGAIN when the
   // player closes the gallery. Without this guard that is two draw_game_ended
   // events and two transcript rows for one game.
@@ -836,7 +901,7 @@ async function finishGame(s: Session, reason: 'completed' | 'abandoned'): Promis
 
   void (async () => {
     try {
-      const { capture } = await import('../analytics');
+      const { capture } = await loadAnalytics();
       capture('draw_game_ended', {
         character_id: s.characterId,
         duration_ms: durationMs,
@@ -1268,12 +1333,15 @@ async function dispatchGuess(s: Session): Promise<void> {
     log(s, `guess failed: ${String(err)}`);
     // A failed call must not swallow what the player said.
     s.guess.pendingPlayerChat.unshift(...said);
-    if (await raiseUsageLimitPopup(err)) pauseForUsageLimit(s);
+    {
+      const limit = await raiseUsageLimitPopup(err);
+      if (limit) pauseForUsageLimit(s, limit);
+    }
     // Analytics (260828): genuine guess-turn failure. Abort-shaped errors
     // (turn end, teardown) are user-initiated ends and never emit.
     void (async () => {
       try {
-        const { captureSurfaceError, surfaceErrorClass } = await import('../analytics');
+        const { captureSurfaceError, surfaceErrorClass } = await loadAnalytics();
         const cls = surfaceErrorClass(err);
         if (cls !== 'aborted') captureSurfaceError('draw', `guess_turn_${cls}`, s.characterId);
       } catch { /* analytics is never load-bearing */ }
@@ -1425,7 +1493,7 @@ async function runTurnEndReaction(
     // Analytics (260828): genuine turn-end reaction failure; aborts never emit.
     void (async () => {
       try {
-        const { captureSurfaceError, surfaceErrorClass } = await import('../analytics');
+        const { captureSurfaceError, surfaceErrorClass } = await loadAnalytics();
         const cls = surfaceErrorClass(err);
         if (cls !== 'aborted') captureSurfaceError('draw', `turn_end_${cls}`, s.characterId);
       } catch { /* analytics is never load-bearing */ }
@@ -1528,11 +1596,14 @@ async function runDrawTurn(s: Session): Promise<void> {
     }
   } catch (err) {
     log(s, `draw turn failed: ${String(err)}`);
-    if (await raiseUsageLimitPopup(err)) pauseForUsageLimit(s);
+    {
+      const limit = await raiseUsageLimitPopup(err);
+      if (limit) pauseForUsageLimit(s, limit);
+    }
     // Analytics (260828): genuine drawing-turn failure; aborts never emit.
     void (async () => {
       try {
-        const { captureSurfaceError, surfaceErrorClass } = await import('../analytics');
+        const { captureSurfaceError, surfaceErrorClass } = await loadAnalytics();
         const cls = surfaceErrorClass(err);
         if (cls !== 'aborted') captureSurfaceError('draw', `draw_turn_${cls}`, s.characterId);
       } catch { /* analytics is never load-bearing */ }
@@ -1998,4 +2069,4 @@ async function prepareCall(s: Session): Promise<{
 }
 
 /** Test seam: drive a tick by hand, without the interval. */
-export const __test = { tickGuessScheduler, sessions };
+export const __test = { tickGuessScheduler, dispatchGuess, sessions };

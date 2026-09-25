@@ -176,6 +176,7 @@ const api: RendererApi = {
     ipcRenderer.invoke(IpcChannel.draw.saveGallery, { characterId, pngDataUrl }),
   drawEnd: (characterId) => ipcRenderer.invoke(IpcChannel.draw.end, characterId),
   drawResume: (characterId) => ipcRenderer.invoke(IpcChannel.draw.resume, characterId),
+  drawFinish: (characterId) => ipcRenderer.invoke(IpcChannel.draw.finish, characterId),
 
 
   // Backseat (260728) — see src/shared/backseatIpc.ts.

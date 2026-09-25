@@ -1517,6 +1517,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const draw = await import('./draw/drawService');
     draw.resumeDraw(id);
   });
+  ipcMain.handle(IpcChannel.draw.finish, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const draw = await import('./draw/drawService');
+    return draw.finishDrawEarly(id);
+  });
   ipcMain.handle(IpcChannel.draw.end, async (_event, idArg: unknown) => {
     const id = IdSchema.parse(idArg);
     const draw = await import('./draw/drawService');
