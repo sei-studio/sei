@@ -64,7 +64,10 @@ boundaries are load-bearing — respect them.
   watchdogs: a **60s cold-boot budget** (`BOOT_TIMEOUT_MS`, fork to the bot's
   `init-ack`) and then a **30s ready budget** (`SUMMON_TIMEOUT_MS`, `init-ack`
   to `summon-ready`); stop has a 10s timeout then
-  escalates to kill. The in-game username is `effectiveMcUsername(character)` in
+  escalates to kill. A stop during a PENDING summon cancels it instead: the
+  child is killed at once and the summon rejects with `SUMMON_CANCELLED`
+  (silent, no error status or diagnostic). App quit (`shutdown()`) is
+  hard-capped at 4s. The in-game username is `effectiveMcUsername(character)` in
   `src/shared/characterSchema.ts` (`character.username` ?? sanitized name).
 - IPC contracts and shared Zod schemas live in `src/shared` and are the single
   source of truth for both sides of the bridge.
@@ -2926,8 +2929,15 @@ pins it at whatever percent it reached.
   since fork) plus `boot_last_phase`. The biggest boot cost was the vision
   stack: `visualize.js` statically imported the POV renderer, which loaded
   native `gl`, `canvas`, `three` and prismarine-viewer (about 80% of the
-  runtime's bytes read at import) on every summon. It now loads lazily and is
-  warmed a few seconds after spawn. Keep heavy or native modules out of the
+  runtime's bytes read at import) on every summon. It now loads lazily through
+  `render/povStackLoader.js`, warmed 6s after spawn only when the model can
+  take images. The loader must never hold the event loop for long (the bot is
+  in the world by then, and a blocked loop misses the server keep-alive and
+  gets kicked): it reads every file of the stack asynchronously first (so the
+  disk read and antivirus scan happen off the loop), then requires three,
+  canvas and gl one per event-loop turn, and logs its timings to the bot log.
+  A failed load is final for the session (a failed ESM import stays cached);
+  `look()` says so once in full. Keep heavy or native modules out of the
   runtime's static import graph.
 - **Native ABI mismatch** → `@electron/rebuild` / `install-app-deps` runs in
   `postinstall`. Test packaged builds on a clean machine.

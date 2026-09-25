@@ -29,6 +29,7 @@ import { createBotInstance, resolveServerVersion } from './connect.js'
 import { createMinecraftAdapter } from './index.js'
 import { classifyConnectError } from './errors.js'
 import { bootMarks, markBoot } from '../../bootTiming.js'
+import { configurePovStackLoader, loadPovStack } from './render/povStackLoader.js'
 
 /**
  * The bot's MC login name must NOT collide with the LAN host's own player
@@ -82,6 +83,19 @@ export function checkJoinTarget(joinTarget) {
 /** Cap reconnects so a stale/wrong LAN port stops hammering the server (and
  *  racking up Anthropic calls from each new brain spawned by bringUp). Reset
  *  on first successful spawn. */
+// 260926: when the post-spawn render-stack warm-up starts. After the join's
+// chunk burst, before a player's first "what do you see".
+const VISION_WARMUP_DELAY_MS = 6000
+
+/**
+ * 260926: warm the render stack only when vision is on and the active model
+ * can take images. Exported for tests.
+ */
+export function visionWarmupWanted(config, brain) {
+  if (!config?.vision?.mode || config.vision.mode === 'off') return false
+  try { return brain?.visionCapable?.() === true } catch { return false }
+}
+
 const MAX_RECONNECT_ATTEMPTS = 3
 
 /**
@@ -92,6 +106,8 @@ const MAX_RECONNECT_ATTEMPTS = 3
 export async function createRuntime(config, hooks) {
   const { logger, createBrain, onBrainReady, onBrainLost, onConnected, onDisconnected, onError, onDashboard, emitVisionCapability } = hooks
   const mc = config.adapter.minecraft
+  // The render-stack loader's timing line goes to the bot log (diagnostics).
+  configurePovStackLoader({ log: (m) => logger.info(m) })
 
   let _brain = null
   let _bot = null
@@ -171,18 +187,22 @@ export async function createRuntime(config, hooks) {
           logger.info(`boot timings (ms since process start): ${Object.entries(m).map(([k, v]) => `${k}=${v - t0}`).join(' ')}`)
         } catch {}
         // 260926: the render stack is no longer loaded at boot (see
-        // behaviors/visualize.js). Warm it shortly after spawn when vision is
-        // on, so the first look() does not pay a cold native load inside its
-        // render timeout. A failure here only logs: look() degrades to "can't
-        // see" and retries the import.
-        if (config?.vision?.mode && config.vision.mode !== 'off') {
-          setTimeout(() => {
-            if (_stopped) return
-            import('./behaviors/visualize.js')
-              .then(({ loadPovRenderer }) => loadPovRenderer())
-              .catch((err) => logger.warn(`vision renderer failed to load: ${err && err.message}`))
-          }, 4000)
-        }
+        // behaviors/visualize.js). Warm it after spawn, but only when vision
+        // is on AND the active model can take images: a text-only model never
+        // gets look(), so loading ~20MB of natives for it is pure cost. The
+        // loader (render/povStackLoader.js) prefetches asynchronously and
+        // yields between the heavy requires, so the warm-up does not stall
+        // keep-alives; it logs its timings to the bot log. A later look() on a
+        // model switched to vision mid-session loads it on first use. A
+        // failure only logs: look() tells the player vision is unavailable.
+        setTimeout(() => {
+          if (_stopped) return
+          if (!visionWarmupWanted(config, _brain)) {
+            logger.info('vision warm-up skipped: vision is off or the model cannot take images')
+            return
+          }
+          loadPovStack().catch(() => { /* logged by the loader; look() degrades */ })
+        }, VISION_WARMUP_DELAY_MS)
         // TEMPORARY — Phase 15-01 de-risk spike (REMOVE after the packaged-build
         // checkpoint approves). Behind SEI_VISION_SPIKE=1 so it ships nothing
         // permanent. Proves the native gl/canvas render path loads + renders inside

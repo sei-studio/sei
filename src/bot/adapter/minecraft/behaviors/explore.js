@@ -70,7 +70,8 @@ export async function exploreAction(args, bot, config, opts = {}) {
   if (opts?.vision && config?.vision?.mode !== 'off' && !signal?.aborted) {
     await faceYaw(bot, targetYaw)
     if (!signal?.aborted) {
-      const f = await captureFrame(bot, config)
+      // Never hold explore for a cold render stack: degrade to text instead.
+      const f = await captureFrame(bot, config, { loadWaitMs: 0 })
       if (f && typeof f === 'object' && f.ok) {
         return { text, image: { mediaType: f.mediaType, dataBase64: f.dataBase64 } }
       }

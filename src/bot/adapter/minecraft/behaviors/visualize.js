@@ -31,6 +31,7 @@
 // (image.mediaType / image.dataBase64 / images[].*).
 
 import { cardinalFromYaw } from '../facing.js'
+import { loadPovStack, povStackReady, povStackUnavailable } from '../render/povStackLoader.js'
 
 // 260926: loaded on first use, not at module load. A static import here
 // pulled the whole render stack (native gl + canvas and its DLLs, three,
@@ -39,17 +40,34 @@ import { cardinalFromYaw } from '../facing.js'
 // where Defender scans each freshly read file, that boot ran 21-24s and was
 // the main cause of BOT_START_TIMEOUT (14 people in 30 days). It also meant
 // any failure to load that stack (a missing module in the game pack) killed
-// the summon instead of degrading vision. runtime.js warms it after spawn.
-let _povRendererP = null
+// the summon instead of degrading vision. The load itself goes through
+// povStackLoader.js, which prefetches asynchronously and yields between the
+// heavy requires so it never holds the event loop long enough to miss a
+// keep-alive. runtime.js warms it after spawn when the model can see.
 export function loadPovRenderer() {
-  if (!_povRendererP) {
-    _povRendererP = import('../render/povRenderer.js').catch((err) => {
-      _povRendererP = null // let a later look() retry
-      throw err
-    })
-  }
-  return _povRendererP
+  return loadPovStack()
 }
+
+/**
+ * How long an explicit look() waits for a cold render stack before degrading.
+ * Normally the post-spawn warm-up has finished long before the first look; this
+ * covers a look that races it on a slow machine. The bot keeps running while
+ * it waits (the load yields), it is just a slow "looking".
+ */
+export const VISION_LOAD_TIMEOUT_MS = 45000
+
+/** The render stack failed to load: said once, so the model can tell the player. */
+export const VISION_UNAVAILABLE_FIRST_COPY = "My vision failed to load, so I can't see anything for the rest of this session. Tell the player once, briefly, and carry on without looking."
+/** Every later look() after that. */
+export const VISION_UNAVAILABLE_COPY = 'Vision is unavailable for the rest of this session.'
+let _toldUnavailable = false
+function unavailableCopy() {
+  if (_toldUnavailable) return VISION_UNAVAILABLE_COPY
+  _toldUnavailable = true
+  return VISION_UNAVAILABLE_FIRST_COPY
+}
+/** Test-only. */
+export function __resetVisionUnavailableNotice() { _toldUnavailable = false }
 
 /** VIS-08 degrade copy (D-01 discretion wording). Returned, never thrown. */
 export const CANT_SEE_COPY = "I can't see clearly right now"
@@ -178,15 +196,40 @@ export function __resetVisualizeDedupeCache() {
  *
  * @param {object} bot     Live mineflayer bot (utilityProcess only).
  * @param {object} config  Validated config; reads config.vision + config.signal.
- * @param {{ idle?: boolean }} [opts]  idle:true opts into D-02 dedupe.
+ * @param {{ idle?: boolean, loadWaitMs?: number }} [opts]  idle:true opts into
+ *   D-02 dedupe. loadWaitMs: how long to wait for a cold render stack (default
+ *   VISION_LOAD_TIMEOUT_MS for an explicit look, 0 for idle frames); 0 starts
+ *   the load in the background and degrades this frame.
  * @returns {Promise<
  *   { ok: true, mediaType: string, dataBase64: string }
  *   | { skip: true }
- *   | string >}   ('aborted' or CANT_SEE_COPY)
+ *   | string >}   ('aborted', CANT_SEE_COPY or a VISION_UNAVAILABLE copy)
  */
-export async function captureFrame(bot, config, { idle = false } = {}) {
+export async function captureFrame(bot, config, { idle = false, loadWaitMs } = {}) {
   const signal = config?.signal
   if (signal?.aborted) return 'aborted'
+
+  // ── Render stack (260926) ────────────────────────────────────────────────
+  // A failed load is final for the session (see povStackLoader.js). Idle
+  // frames skip quietly; an explicit look says so, once in full.
+  if (povStackUnavailable()) return idle ? { skip: true } : unavailableCopy()
+  if (!povStackReady()) {
+    const waitMs = loadWaitMs ?? (idle ? 0 : VISION_LOAD_TIMEOUT_MS)
+    const loading = loadPovStack().then(() => 'ready', () => 'failed')
+    if (waitMs <= 0) return CANT_SEE_COPY // warming up; the next frame will see
+    let loadTimer = null
+    let onAbort = null
+    const state = await Promise.race([
+      loading,
+      new Promise((resolve) => { loadTimer = setTimeout(() => resolve('timeout'), waitMs) }),
+      ...(signal ? [new Promise((resolve) => { onAbort = () => resolve('aborted'); signal.addEventListener('abort', onAbort, { once: true }) })] : []),
+    ])
+    clearTimeout(loadTimer)
+    if (signal && onAbort) { try { signal.removeEventListener('abort', onAbort) } catch {} }
+    if (state === 'aborted') return 'aborted'
+    if (state === 'failed') return idle ? { skip: true } : unavailableCopy()
+    if (state === 'timeout') return CANT_SEE_COPY
+  }
 
   // config.vision is the source of truth for the render knobs (D-03/D-04).
   // resolution_px is already .max(512)-capped at parse time (15-03 / VIS-06).
@@ -202,8 +245,7 @@ export async function captureFrame(bot, config, { idle = false } = {}) {
   let timeoutHandle = null
   let abortListener = null
 
-  const renderPromise = Promise.resolve()
-    .then(() => loadPovRenderer())
+  const renderPromise = loadPovStack()
     .then(({ renderPov }) => renderPov(bot, { width: res, height: res, quality }))
     .then((r) => ({ kind: 'render', value: r }))
     .catch(() => ({ kind: 'render', value: { ok: false, reason: 'cant_see' } }))
@@ -327,7 +369,7 @@ export async function visualizeAction(args, bot, config) {
   }
 
   const f = await captureFrame(bot, config, { idle: args?.idle === true })
-  if (typeof f === 'string') return f               // 'aborted' or CANT_SEE_COPY
+  if (typeof f === 'string') return f               // 'aborted', CANT_SEE_COPY or unavailable
   if (f.skip === true) return { skip: true }        // idle near-duplicate (D-02)
   // 260803: name the axis. look({orientation:"backward"}) TURNS THE BOT, and
   // before this the result said nothing about it — the model got a picture it
