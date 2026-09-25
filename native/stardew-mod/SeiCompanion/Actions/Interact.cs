@@ -49,14 +49,16 @@ namespace SeiCompanion.Actions
                 var walk = new Outcome();
                 yield return Movement.WalkTo(ctx, hop.StandTile, true, walk);
                 if (!walk.Ok) { yield return Result.Fail(walk.Detail); yield break; }
-                // A door the model walks through on purpose ends following:
-                // measured 260910, with the host still inside, the follow tick
-                // routed the body straight back in, four times in a row.
-                bool wasFollowing = body.FollowTarget != null;
-                body.FollowTarget = null;
+                // A door the model walks through on purpose puts following on
+                // hold while the player stays on their map: measured 260910,
+                // with the host still inside, the follow tick routed the body
+                // straight back in, four times in a row. It used to end
+                // following for good, which lost the player's "follow me"
+                // (260924). See SeiBody.FollowHoldAt.
+                body.HoldFollowForTrip(hop.TargetName);
                 body.WarpTo(hop.TargetName, hop.TargetTile);
                 body.Session?.SendEvent("warped", new Dictionary<string, object> { ["location"] = body.LocationName });
-                yield return Result.Success($"went through to {body.LocationName}, now at {Targets.Fmt(body.Npc.TilePoint)}{(wasFollowing ? " (stopped following)" : "")}");
+                yield return Result.Success($"went through to {body.LocationName}, now at {Targets.Fmt(body.Npc.TilePoint)}{Movement.FollowHoldNote(body)}");
                 yield break;
             }
 
@@ -127,7 +129,9 @@ namespace SeiCompanion.Actions
             GameLocation house = Game1.getLocationFromName("FarmHouse");
             Point bed = new Point(9, 9);
             try { if (house is FarmHouse fh) bed = fh.GetPlayerBedSpot(); } catch { }
-            body.FollowTarget = null;
+            // Following survives the night: Sleeping holds the body in bed
+            // and the morning's wake-up clears it, so a "follow me" given in
+            // the evening still stands the next day.
             yield return Movement.Travel(ctx, "FarmHouse", bed, travel);
             if (!travel.Ok)
             {

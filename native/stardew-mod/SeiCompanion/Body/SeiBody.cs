@@ -36,7 +36,42 @@ namespace SeiCompanion.Body
         public IMonitor Monitor => this.Mod.Monitor;
 
         /// <summary>The player being trailed (a farmer name), or null.</summary>
-        public string FollowTarget { get; set; }
+        public string FollowTarget
+        {
+            get => this._followTarget;
+            set { this._followTarget = value; this.FollowHoldAt = null; }
+        }
+        private string _followTarget;
+
+        /// <summary>
+        /// Following is ON HOLD (not cancelled) while this names the map the
+        /// followed player was on when a command took the body to another map.
+        /// The follow tick resumes by itself once the player leaves that map or
+        /// comes to the body's map. Before 260925 such a command cleared the
+        /// follow target for good: in the v0.6.5-beta.2 playtest the player
+        /// said "follow me, we're heading outside", the model walked out first
+        /// (goTo Farm), and nothing trailed the player for the rest of the
+        /// session. The hold keeps the 260910 fix (the follow tick no longer
+        /// drags the body straight back through the door it was sent out of).
+        /// </summary>
+        public string FollowHoldAt { get; private set; }
+
+        /// <summary>
+        /// A command is taking the body to `destination`. When that is not the
+        /// followed player's map, put following on hold until the player moves
+        /// on. Returns true when a hold was set (so results can say so).
+        /// </summary>
+        public bool HoldFollowForTrip(string destination)
+        {
+            if (this._followTarget == null)
+                return false;
+            Farmer target = this.ResolvePlayer(this._followTarget);
+            string theirs = target?.currentLocation?.NameOrUniqueName;
+            if (theirs == null || string.Equals(theirs, destination, StringComparison.OrdinalIgnoreCase))
+                return false;
+            this.FollowHoldAt = theirs;
+            return true;
+        }
         public bool Paused { get; private set; }
         public bool Sleeping { get; set; }
         public bool Detached { get; private set; }
@@ -384,9 +419,30 @@ namespace SeiCompanion.Body
             Farmer target = this.ResolvePlayer(this.FollowTarget);
             if (target == null || target.currentLocation == null)
                 return;
+            if (this.FollowHoldAt != null)
+            {
+                // Resume once the player has moved on from the map they were on
+                // when a command sent the body away, or has come to the body.
+                bool together = target.currentLocation == this.Npc.currentLocation;
+                bool movedOn = !string.Equals(target.currentLocation.NameOrUniqueName, this.FollowHoldAt, StringComparison.OrdinalIgnoreCase);
+                if (!together && !movedOn)
+                    return;
+                this.FollowHoldAt = null;
+                this._followCooldown = 0;
+            }
+
+            bool sameMap = target.currentLocation == this.Npc.currentLocation;
+            // Count a stall on EVERY tick. It used to be counted only on the
+            // ticks past the re-path cooldown (1 in 6 to 16), so "stuck for
+            // 180 ticks" meant 20 to 50 seconds of walking into something.
+            if (sameMap && this.Npc.controller != null && Vector2.Distance(this.Npc.Position, this._lastPos) < 0.5f)
+                this._stuckTicks++;
+            else
+                this._stuckTicks = 0;
+
             if (this._followCooldown > 0) { this._followCooldown--; return; }
 
-            if (target.currentLocation != this.Npc.currentLocation)
+            if (!sameMap)
             {
                 // Different map: route there in the background; teleport beside
                 // them only when no route exists (the mines, festival maps).
@@ -412,19 +468,18 @@ namespace SeiCompanion.Body
                 this._stuckTicks = 0;
                 return;
             }
-            // Stuck for a while while trailing on the same map: hop beside them.
-            if (Vector2.Distance(this.Npc.Position, this._lastPos) < 0.5f && this.Npc.controller != null)
-                this._stuckTicks++;
-            else
-                this._stuckTicks = 0;
+            // Stuck for a while while trailing on the same map (3 s of no
+            // progress with a live path), or far behind: hop beside them.
             if (this._stuckTicks > 180 || dist > 18f)
             {
-                Vector2? spot = this.FreeTileNear(target.currentLocation, target.Tile, 1);
+                Vector2? spot = this.FreeTileNear(target.currentLocation, target.Tile, 1, this.Npc.Tile);
                 if (spot.HasValue)
                 {
                     this.Npc.controller = null;
                     this.Npc.Position = spot.Value * 64f;
                     this._stuckTicks = 0;
+                    this.SyncShadow();
+                    return;
                 }
             }
             if (Vector2.Distance(target.Tile, this._lastFollowGoal) < 1.5f && this.Npc.controller != null)
@@ -432,7 +487,10 @@ namespace SeiCompanion.Body
                 this._followCooldown = 5;
                 return;
             }
-            Vector2? goal = this.FreeTileNear(target.currentLocation, target.Tile, 1);
+            // The free tile beside them on OUR side: the nearest-to-the-player
+            // pick was as likely to be behind them, and the way there went
+            // through their tile.
+            Vector2? goal = this.FreeTileNear(target.currentLocation, target.Tile, 1, this.Npc.Tile);
             if (goal.HasValue && this.TryPath(goal.Value.ToPoint(), null))
             {
                 this._lastFollowGoal = target.Tile;
@@ -445,6 +503,10 @@ namespace SeiCompanion.Body
         }
 
         private int _hopStuckTicks;
+        private int _farmerBlockTicks;
+
+        /// <summary>Ticks stalled against a farmer before stepping through them (1 s: a walking player usually clears the way first).</summary>
+        private const int FarmerBlockHopTicks = 60;
 
         /// <summary>
         /// The NPC's own step collision honors the NPCBarrier tile property
@@ -460,20 +522,43 @@ namespace SeiCompanion.Body
             if (ctl?.pathToEndPoint == null || ctl.pathToEndPoint.Count == 0)
             {
                 this._hopStuckTicks = 0;
+                this._farmerBlockTicks = 0;
                 return;
             }
             if (Vector2.Distance(this.Npc.Position, this._lastPos) >= 0.5f)
             {
                 this._hopStuckTicks = 0;
+                this._farmerBlockTicks = 0;
                 return;
             }
-            if (++this._hopStuckTicks < 10)
-                return;
-            this._hopStuckTicks = 0;
             Point next = ctl.pathToEndPoint.Peek();
             GameLocation loc = this.Npc.currentLocation;
             if (next == this.Npc.TilePoint)
                 return;
+
+            // A farmer in the way. The NPC's step collision refuses to walk
+            // into a farmer while the path search never sees one, so a path
+            // across the player's tile stalls on the tile before it (every
+            // "stuck" in the v0.6.5-beta.2 playtest). TryPath routes around a
+            // standing player; this is for a player who steps into the path,
+            // or stands in a one-tile doorway: after a second, step through
+            // them, as the player already walks through the companion
+            // (farmerPassesThrough).
+            if (this.FarmerOn(loc, next) || this.FarmerOn(loc, this.Npc.TilePoint))
+            {
+                if (++this._farmerBlockTicks < FarmerBlockHopTicks)
+                    return;
+                this._farmerBlockTicks = 0;
+                this._hopStuckTicks = 0;
+                this.Npc.Position = new Vector2(next.X * 64, next.Y * 64);
+                this.SyncShadow();
+                return;
+            }
+            this._farmerBlockTicks = 0;
+
+            if (++this._hopStuckTicks < 10)
+                return;
+            this._hopStuckTicks = 0;
             bool barrier;
             try
             {
@@ -515,6 +600,22 @@ namespace SeiCompanion.Body
                 Stack<Point> path = null;
                 try { path = PathFindController.findPath(this.Npc.TilePoint, target, PathFindController.isAtEndPoint, loc, this.Shadow, 10000); }
                 catch (Exception ex) { this.Monitor.Log($"{this.Name}: farmer path search threw: {ex.Message}", LogLevel.Trace); }
+                // The game's search walks straight through a standing farmer
+                // (it never looks at them), and the NPC then stalls against
+                // them. Detour around every farmer on this map when the found
+                // path crosses one; keep the game's path when no detour exists
+                // (a player in a one-tile doorway), BarrierHop steps through.
+                if (path != null && path.Count > 0)
+                {
+                    HashSet<Point> occupied = this.FarmerTiles(loc);
+                    occupied.Remove(this.Npc.TilePoint);
+                    if (occupied.Count > 0 && !occupied.Contains(target) && path.Any(p => occupied.Contains(p)))
+                    {
+                        Stack<Point> detour = this.DetourPath(loc, target, occupied);
+                        if (detour != null)
+                            path = detour;
+                    }
+                }
                 PathFindController controller;
                 if (path != null && path.Count > 0)
                 {
@@ -557,8 +658,73 @@ namespace SeiCompanion.Body
             this.SyncShadow();
         }
 
-        /// <summary>A passable tile within `radius` of `around`, nearest first, or null.</summary>
-        public Vector2? FreeTileNear(GameLocation loc, Vector2 around, int radius)
+        /// <summary>
+        /// Our own path to `target` that avoids `blocked` tiles, over the same
+        /// walkability the verbs use, as a stack in the game's shape (next
+        /// tile on top, the start tile included). Null when there is none.
+        /// </summary>
+        private Stack<Point> DetourPath(GameLocation loc, Point target, HashSet<Point> blocked)
+        {
+            try
+            {
+                Point start = this.Npc.TilePoint;
+                List<(int X, int Y)> tiles = GridPath.Find(
+                    (start.X, start.Y),
+                    (target.X, target.Y),
+                    (x, y) => !blocked.Contains(new Point(x, y)) && this.IsWalkable(loc, new Vector2(x, y)),
+                    4000);
+                if (tiles == null || tiles.Count == 0)
+                    return null;
+                var stack = new Stack<Point>();
+                for (int i = tiles.Count - 1; i >= 0; i--)
+                    stack.Push(new Point(tiles[i].X, tiles[i].Y));
+                return stack;
+            }
+            catch (Exception ex)
+            {
+                this.Monitor.Log($"{this.Name}: detour search threw: {ex.Message}", LogLevel.Trace);
+                return null;
+            }
+        }
+
+        /// <summary>Every tile a farmer's bounding box overlaps on this map (the host, farmhands; never the shadow).</summary>
+        public HashSet<Point> FarmerTiles(GameLocation loc)
+        {
+            var tiles = new HashSet<Point>();
+            if (loc == null) return tiles;
+            try
+            {
+                foreach (Farmer f in Game1.getOnlineFarmers())
+                {
+                    if (f == null || f.currentLocation != loc) continue;
+                    Rectangle box = f.GetBoundingBox();
+                    for (int x = box.Left / 64; x <= (box.Right - 1) / 64; x++)
+                        for (int y = box.Top / 64; y <= (box.Bottom - 1) / 64; y++)
+                            tiles.Add(new Point(x, y));
+                }
+            }
+            catch { }
+            return tiles;
+        }
+
+        /// <summary>Whether a farmer stands on (overlaps) this tile.</summary>
+        public bool FarmerOn(GameLocation loc, Point tile)
+        {
+            return this.FarmerTiles(loc).Contains(tile);
+        }
+
+        public bool FarmerOn(GameLocation loc, Vector2 tile)
+        {
+            return this.FarmerOn(loc, new Point((int)tile.X, (int)tile.Y));
+        }
+
+        /// <summary>
+        /// A passable tile within `radius` of `around` that no farmer stands
+        /// on, or null. Nearest to `around` first; with `prefer`, nearest to
+        /// that (the body's own tile) first, so the body stops on its side of
+        /// the player instead of walking round them.
+        /// </summary>
+        public Vector2? FreeTileNear(GameLocation loc, Vector2 around, int radius, Vector2? prefer = null)
         {
             var candidates = new List<Vector2>();
             for (int dx = -radius; dx <= radius; dx++)
@@ -567,8 +733,14 @@ namespace SeiCompanion.Body
                     if (dx == 0 && dy == 0) continue;
                     candidates.Add(new Vector2(around.X + dx, around.Y + dy));
                 }
-            foreach (Vector2 t in candidates.OrderBy(t => Vector2.Distance(t, around)))
+            HashSet<Point> occupied = this.FarmerTiles(loc);
+            IEnumerable<Vector2> order = prefer.HasValue
+                ? candidates.OrderBy(t => Vector2.Distance(t, prefer.Value)).ThenBy(t => Vector2.Distance(t, around))
+                : candidates.OrderBy(t => Vector2.Distance(t, around));
+            foreach (Vector2 t in order)
             {
+                if (occupied.Contains(new Point((int)t.X, (int)t.Y)))
+                    continue;
                 if (this.IsWalkable(loc, t))
                     return t;
             }
