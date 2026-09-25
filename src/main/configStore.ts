@@ -149,7 +149,7 @@ const RENDERER_SETTABLE_KEYS: readonly (keyof UserConfig)[] = [
   'has_been_welcomed',
   'feedback_reward_claimed',
   // 260926: the free-play-is-back banner's memory of the last wall.
-  'free_play_wall_resets_at',
+  'free_play_wall',
   'vision_mode',
   'stt_engine',
   'stt_local_fallback',

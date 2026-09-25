@@ -896,12 +896,14 @@ export const UserConfigSchema = z.object({
   feedback_reward_claimed: z.boolean().optional().default(false),
   /**
    * 260926 — "Your free play is back" launch banner. The weekly reset time
-   * (CreditsStatus.resets_at) remembered the last time this account was seen
-   * AT the credit wall; null/absent otherwise. When a later launch finds the
-   * wall gone and this time passed, the banner shows once and this clears.
-   * See decideFreePlayBanner in src/shared/freePlayReset.ts.
+   * (CreditsStatus.resets_at) remembered the last time an account was seen
+   * AT the credit wall, keyed by that account's user id because config.json
+   * is per profile, not per account, and survives switching accounts. null or
+   * absent otherwise. When a later launch finds the SAME account off the wall
+   * with this time passed, the banner shows once and this clears. See
+   * decideFreePlayBanner in src/shared/freePlayReset.ts.
    */
-  free_play_wall_resets_at: z.string().nullable().optional(),
+  free_play_wall: z.object({ user_id: z.string(), resets_at: z.string() }).nullable().optional(),
   /**
    * Looking (vision) mode — how the companion sees the world:
    *   'off'        — never looks; plays from world data only. No look()/explore()

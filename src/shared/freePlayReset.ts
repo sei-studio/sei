@@ -115,25 +115,37 @@ export function quietCompanionNotice(opts: {
 }): string {
   const { name, lang } = opts;
   const free = (opts.plan ?? 'free') === 'free';
+  // Party is the top plan: there is nothing to upgrade to, so only top up.
+  const top = opts.plan === 'party';
   const reset = formatResetLine(opts.resetsAt, opts.nowMs, { lang, plan: opts.plan });
   if (lang === 'zh') {
     const lead = free
       ? `你的免费游玩已用完，${name}会继续安静地陪你下完这局，但暂时不会聊天。`
       : `本周额度已用完，${name}会继续安静地陪你下完这局，但暂时不会聊天。`;
-    return `${lead}${reset ?? ''}充值或升级可以让TA更早开口。`;
+    return `${lead}${reset ?? ''}${top ? '充值' : '充值或升级'}可以让TA更早开口。`;
   }
   const lead = free
     ? `You're out of free play for now, so ${name} will keep playing quietly, with no chat.`
     : `This week's allowance is used up, so ${name} will keep playing quietly, with no chat.`;
-  return `${lead}${reset ? ` ${reset}` : ''} Top up or upgrade to bring them back sooner.`;
+  const cta = top ? 'Top up to bring them back sooner.' : 'Top up or upgrade to bring them back sooner.';
+  return `${lead}${reset ? ` ${reset}` : ''} ${cta}`;
+}
+
+/** What config.free_play_wall holds: one account's remembered wall. */
+export interface StoredWall {
+  user_id: string;
+  resets_at: string;
 }
 
 /**
  * "Your free play is back" launch banner bookkeeping (260926). Pure so the
  * rules are testable without a store:
  *
- *   - `stored` is the reset time remembered the last time the account was seen
- *     AT the wall (config.free_play_wall_resets_at), or null.
+ *   - `stored` is the wall remembered the last time an account was seen AT it
+ *     (config.free_play_wall), or null. It only counts for the account that
+ *     wrote it: config.json is per profile and survives switching accounts,
+ *     so another account's entry is treated as nothing remembered (and is
+ *     overwritten, not acted on, when this account reaches the wall).
  *   - At the wall: remember the current resets_at (keep the old one when the
  *     snapshot has none).
  *   - Off the wall with a remembered reset that has PASSED: show the banner
@@ -147,17 +159,21 @@ export function quietCompanionNotice(opts: {
  * leave config untouched.
  */
 export function decideFreePlayBanner(
-  stored: string | null | undefined,
+  stored: StoredWall | null | undefined,
+  userId: string | null | undefined,
   snap: { cloud: boolean; snapshotFailed: boolean; over_limit: boolean; resets_at: string },
   nowMs: number,
-): { show: boolean; store: string | null | undefined } {
-  if (!snap.cloud || snap.snapshotFailed) return { show: false, store: undefined };
+): { show: boolean; store: StoredWall | null | undefined } {
+  if (!userId || !snap.cloud || snap.snapshotFailed) return { show: false, store: undefined };
+  const mine = stored && stored.user_id === userId ? stored.resets_at : null;
   if (snap.over_limit) {
-    const next = snap.resets_at || stored || null;
-    return { show: false, store: next !== (stored ?? null) ? next : undefined };
+    const next = snap.resets_at || mine;
+    if (!next || next === mine) return { show: false, store: undefined };
+    return { show: false, store: { user_id: userId, resets_at: next } };
   }
-  if (!stored) return { show: false, store: undefined };
-  const at = Date.parse(stored);
+  // Another account's memory (or none): nothing to say, and nothing to clear.
+  if (!mine) return { show: false, store: undefined };
+  const at = Date.parse(mine);
   if (Number.isFinite(at) && at <= nowMs) return { show: true, store: null };
   return { show: false, store: null };
 }

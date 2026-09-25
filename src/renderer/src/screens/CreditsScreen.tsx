@@ -301,9 +301,12 @@ export function CreditsScreen(): React.ReactElement {
   const endsText = formatRenewal(endsAt);
   const resetsIn = resetsAt ? formatResetsIn(resetsAt, nowMs) : '';
   // 260926: at the wall, spell out when free play comes back, right above the
-  // plans and next to Top up. Re-evaluated on the 60s tick above.
+  // plans and next to Top up. Re-evaluated on the 60s tick above. Gated on
+  // over_limit only: at 100% of the allowance with extra credits left the
+  // user can still play, so "resets in N days" would read as a wall that
+  // is not there.
   const resetLine = useResetLine();
-  const showResetCallout = cloudMode && !snapshotFailed && (overLimit || atLimit) && !!resetLine;
+  const showResetCallout = cloudMode && !snapshotFailed && overLimit && !!resetLine;
   const isSubscribed = plan !== 'free';
   // "To be cancelled": still on the paid tier but set to cancel at period end.
   const cancelScheduled = isSubscribed && subscriptionStatusRaw === 'cancelled';

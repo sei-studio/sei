@@ -105,6 +105,17 @@ describe('quietCompanionNotice', () => {
     expect(line).not.toMatch(/ {2}/);
   });
 
+  it('Party is the top plan, so it only offers a top up', () => {
+    const line = quietCompanionNotice({ name: 'Marv', lang: 'en', plan: 'party', resetsAt: '', nowMs: NOW });
+    expect(line).toContain('Top up to bring them back sooner.');
+    expect(line).not.toMatch(/upgrade/i);
+    expect(quietCompanionNotice({ name: 'Marv', lang: 'en', plan: 'quest', resetsAt: '', nowMs: NOW })).toContain(
+      'Top up or upgrade',
+    );
+    const zh = quietCompanionNotice({ name: '小马', lang: 'zh', plan: 'party', resetsAt: '', nowMs: NOW });
+    expect(zh).not.toContain('升级');
+  });
+
   it('Chinese', () => {
     const line = quietCompanionNotice({ name: '小马', lang: 'zh', resetsAt: iso(at(2026, 9, 30, 9)), nowMs: NOW });
     expect(line).toContain('小马');
@@ -116,42 +127,57 @@ describe('quietCompanionNotice', () => {
 describe('decideFreePlayBanner', () => {
   const base = { cloud: true, snapshotFailed: false, over_limit: false, resets_at: '' };
   const reset = iso(at(2026, 9, 30, 9));
+  const ME = 'user-a';
+  const mine = { user_id: ME, resets_at: reset };
 
-  it('remembers the reset time while at the wall', () => {
-    expect(decideFreePlayBanner(null, { ...base, over_limit: true, resets_at: reset }, NOW)).toEqual({
+  it('remembers the reset time, keyed by account, while at the wall', () => {
+    expect(decideFreePlayBanner(null, ME, { ...base, over_limit: true, resets_at: reset }, NOW)).toEqual({
       show: false,
-      store: reset,
+      store: mine,
     });
     // Already remembered: no write.
-    expect(decideFreePlayBanner(reset, { ...base, over_limit: true, resets_at: reset }, NOW)).toEqual({
+    expect(decideFreePlayBanner(mine, ME, { ...base, over_limit: true, resets_at: reset }, NOW)).toEqual({
       show: false,
       store: undefined,
     });
     // At the wall with no reset time in the snapshot keeps what we had.
-    expect(decideFreePlayBanner(reset, { ...base, over_limit: true }, NOW).store).toBeUndefined();
+    expect(decideFreePlayBanner(mine, ME, { ...base, over_limit: true }, NOW).store).toBeUndefined();
   });
 
   it('shows once after the remembered reset has passed and the wall is gone', () => {
     const later = at(2026, 9, 30, 12);
-    expect(decideFreePlayBanner(reset, { ...base, resets_at: iso(at(2026, 10, 7, 9)) }, later)).toEqual({
+    expect(decideFreePlayBanner(mine, ME, { ...base, resets_at: iso(at(2026, 10, 7, 9)) }, later)).toEqual({
       show: true,
       store: null,
     });
     // Nothing remembered: nothing to show.
-    expect(decideFreePlayBanner(null, base, later)).toEqual({ show: false, store: undefined });
+    expect(decideFreePlayBanner(null, ME, base, later)).toEqual({ show: false, store: undefined });
   });
 
   it('a top up before the reset clears the memory without a banner', () => {
-    expect(decideFreePlayBanner(reset, base, NOW)).toEqual({ show: false, store: null });
+    expect(decideFreePlayBanner(mine, ME, base, NOW)).toEqual({ show: false, store: null });
+  });
+
+  it("another account's memory is never acted on (config is per profile, not per account)", () => {
+    const later = at(2026, 9, 30, 12);
+    // Account B signs in on the same profile after A hit the wall: no banner,
+    // and A's entry is left alone.
+    expect(decideFreePlayBanner(mine, 'user-b', base, later)).toEqual({ show: false, store: undefined });
+    // B reaching the wall itself replaces the entry with its own.
+    expect(
+      decideFreePlayBanner(mine, 'user-b', { ...base, over_limit: true, resets_at: iso(at(2026, 10, 2, 9)) }, NOW),
+    ).toEqual({ show: false, store: { user_id: 'user-b', resets_at: iso(at(2026, 10, 2, 9)) } });
+    // No signed-in user: nothing at all.
+    expect(decideFreePlayBanner(mine, null, base, later)).toEqual({ show: false, store: undefined });
   });
 
   it('unknown snapshots change nothing', () => {
     const later = at(2026, 9, 30, 12);
-    expect(decideFreePlayBanner(reset, { ...base, snapshotFailed: true }, later)).toEqual({
+    expect(decideFreePlayBanner(mine, ME, { ...base, snapshotFailed: true }, later)).toEqual({
       show: false,
       store: undefined,
     });
-    expect(decideFreePlayBanner(reset, { ...base, cloud: false }, later)).toEqual({
+    expect(decideFreePlayBanner(mine, ME, { ...base, cloud: false }, later)).toEqual({
       show: false,
       store: undefined,
     });

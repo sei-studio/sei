@@ -37,7 +37,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type Anthropic from '@anthropic-ai/sdk';
-import { raiseUsageLimitPopup } from '../chat/usageLimit';
+import { classifyUsageLimit, raiseUsageLimitPopup } from '../chat/usageLimit';
 import { Chess } from 'chess.js';
 import type { ChatMessage, ChatSendResult, CreditsStatus, LogBatch } from '../../shared/ipc';
 import { quietCompanionNotice } from '../../shared/freePlayReset';
@@ -99,7 +99,21 @@ export interface ChessDeps {
 }
 
 /** The slice of CreditsStatus the quiet mode reads. */
-export type ChessCreditsSnapshot = Pick<CreditsStatus, 'plan' | 'resets_at' | 'over_limit' | 'ai_backend_kind'>;
+export type ChessCreditsSnapshot = Pick<
+  CreditsStatus,
+  'plan' | 'resets_at' | 'over_limit' | 'ai_backend_kind' | 'usage_pct' | 'extra_credits_total'
+>;
+
+/**
+ * Quiet-mode state a rematch inherits (review 260926): a walled player who
+ * plays again must not get a second popup, notice and analytics event.
+ */
+interface CreditWallCarry {
+  quiet: boolean;
+  noticeSent: boolean;
+  probeAt: number;
+  baseline: ChessCreditsSnapshot | null;
+}
 
 interface CandidateOut {
   macro: { text: string };
@@ -224,6 +238,14 @@ interface Session {
   creditNoticeSent: boolean;
   /** Last time quiet mode re-checked the credits snapshot (throttle). */
   creditProbeAt: number;
+  /**
+   * The credits snapshot read when quiet began (null = the read failed).
+   * Quiet only lifts when a later snapshot has really CHANGED against it
+   * (creditWallLifted): `over_limit` alone is not enough, because an account
+   * with a few extra credits left reads over_limit:false in my_plan while the
+   * proxy's worst-case reservation still 402s every turn.
+   */
+  creditBaseline: ChessCreditsSnapshot | null;
 }
 
 /**
@@ -243,6 +265,12 @@ export const CHESS_TIMING = {
   idleBackoffCap: 4,
   /** How often quiet mode re-reads the credits snapshot to see if the wall lifted. */
   creditProbeMs: 60_000,
+  /**
+   * Ceiling on one credits read. The read sits inside the move and chat
+   * dispatch, so a hung network must not stall the game: past this it counts
+   * as unknown (null), which keeps the companion quiet.
+   */
+  creditReadTimeoutMs: 4_000,
 };
 
 const sessions = new Map<string, Session>();
@@ -315,7 +343,11 @@ export function getChessState(characterId: string): ChessGameState | null {
 
 export async function startChess(
   characterId: string,
-  opts?: { playerColor?: 'w' | 'b' | 'random' },
+  opts?: {
+    playerColor?: 'w' | 'b' | 'random';
+    /** Internal: rematch() hands over the credit-wall quiet state. Never from IPC. */
+    creditWall?: CreditWallCarry;
+  },
 ): Promise<ChessGameState> {
   const d = requireDeps();
   if (d.isSummoned(characterId)) {
@@ -360,9 +392,10 @@ export async function startChess(
     lastMacro: '',
     thinkingSince: null,
     spoke: false,
-    creditQuiet: false,
-    creditNoticeSent: false,
-    creditProbeAt: 0,
+    creditQuiet: opts?.creditWall?.quiet ?? false,
+    creditNoticeSent: opts?.creditWall?.noticeSent ?? false,
+    creditProbeAt: opts?.creditWall?.probeAt ?? 0,
+    creditBaseline: opts?.creditWall?.baseline ?? null,
   };
   try {
     s.log = await createChessLog(characterId, d.pushLog ?? (() => {}));
@@ -508,6 +541,14 @@ export async function rematch(characterId: string): Promise<ChessGameState> {
   sessions.delete(characterId);
   return startChess(characterId, {
     playerColor: old.playerColor === 'w' ? 'b' : 'w',
+    // Still on the wall: the new game starts quiet, with no second popup,
+    // notice or credit_wall_degraded event (review 260926).
+    creditWall: {
+      quiet: old.creditQuiet,
+      noticeSent: old.creditNoticeSent,
+      probeAt: old.creditProbeAt,
+      baseline: old.creditBaseline,
+    },
   });
 }
 
@@ -1084,14 +1125,45 @@ async function candidatesFor(s: Session): Promise<CandidateOut> {
 // ── credit-wall quiet mode (260926) ─────────────────────────────────────────
 
 async function readCreditsSnapshot(): Promise<ChessCreditsSnapshot | null> {
-  try {
+  const read = (async (): Promise<ChessCreditsSnapshot | null> => {
     const custom = deps?.creditsSnapshot;
     if (custom) return await custom();
     const { creditsGet } = await import('../cloud/proxyClient');
     return await creditsGet();
-  } catch {
-    return null;
+  })().catch(() => null);
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), CHESS_TIMING.creditReadTimeoutMs);
+  });
+  try {
+    return await Promise.race([read, timeout]);
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+/**
+ * Has the wall really moved since quiet began? Pure; exported for the test.
+ * `over_limit:false` alone is deliberately NOT enough: my_plan reads false
+ * while a few extra credits remain, but the proxy reserves the worst case
+ * per call and still 402s, so trusting it re-woke the companion into a fresh
+ * 402 about once a minute. Lift on a real change instead: switched to a local
+ * key, allowance no longer spent, more extra credits than before, a new
+ * period, or a plan change. With no baseline (the read at the wall failed),
+ * only the unambiguous signals count.
+ */
+export function creditWallLifted(
+  baseline: ChessCreditsSnapshot | null,
+  snap: ChessCreditsSnapshot | null,
+): boolean {
+  if (!snap) return false;
+  if (snap.ai_backend_kind === 'local') return true;
+  if (snap.usage_pct < 100) return true;
+  if (!baseline) return false;
+  if (snap.extra_credits_total > baseline.extra_credits_total) return true;
+  if (snap.resets_at && snap.resets_at !== baseline.resets_at) return true;
+  if (snap.plan !== baseline.plan) return true;
+  return false;
 }
 
 /**
@@ -1100,6 +1172,14 @@ async function readCreditsSnapshot(): Promise<ChessCreditsSnapshot | null> {
  * latch quiet mode on a depleted allowance. Returns the usage-limit reason.
  */
 async function onTurnUsageLimit(s: Session, err: unknown): Promise<'depleted' | 'rate_limited' | null> {
+  // The popup is raised ONCE per session (review 260926). After the first
+  // wall, a 402 (for instance right after a lift that proved premature)
+  // just goes quiet again: the player has already been told, and a popup
+  // every minute over a running game is the exit this change removes.
+  if (s.creditNoticeSent && classifyUsageLimit(err) === 'depleted') {
+    if (s.status === 'active') enterCreditQuiet(s);
+    return 'depleted';
+  }
   const reason = await raiseUsageLimitPopup(err);
   if (reason === 'depleted' && s.status === 'active') enterCreditQuiet(s);
   return reason;
@@ -1110,6 +1190,11 @@ function enterCreditQuiet(s: Session): void {
   s.creditQuiet = true;
   s.creditProbeAt = Date.now();
   s.log.line('credit wall: companion goes quiet, the engine plays on');
+  // The baseline the lift check compares against. Read in the background:
+  // until it lands the probe throttle keeps quiet anyway.
+  void readCreditsSnapshot().then((snap) => {
+    if (s.creditQuiet) s.creditBaseline = snap;
+  });
   if (s.creditNoticeSent) return;
   s.creditNoticeSent = true;
   // Analytics: once per game, the first time the wall turns into quiet play.
@@ -1173,7 +1258,7 @@ async function creditQuietHolds(s: Session): Promise<boolean> {
   if (Date.now() - s.creditProbeAt < CHESS_TIMING.creditProbeMs) return true;
   s.creditProbeAt = Date.now();
   const snap = await readCreditsSnapshot();
-  if (snap && (snap.over_limit === false || snap.ai_backend_kind === 'local')) {
+  if (creditWallLifted(s.creditBaseline, snap)) {
     s.creditQuiet = false;
     s.log.line('credit wall lifted: the companion talks again');
     return false;

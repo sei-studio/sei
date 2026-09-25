@@ -46,6 +46,8 @@ vi.mock('./chessProfile', () => ({
 }));
 vi.mock('../chat/usageLimit', () => ({
   raiseUsageLimitPopup: popupSpy,
+  classifyUsageLimit: (err: { status?: number }) =>
+    err?.status === 402 ? 'depleted' : err?.status === 429 ? 'rate_limited' : null,
 }));
 vi.mock('../analytics', () => ({
   capture: captureSpy,
@@ -81,6 +83,9 @@ import {
   ackReveal,
   handlePlayerChat,
   endChess,
+  resign,
+  rematch,
+  creditWallLifted,
   shutdownChess,
   CHESS_TIMING,
   type ChessCreditsSnapshot,
@@ -91,6 +96,8 @@ let dir: string;
 let pushed: ChessGameState[];
 let chatPushed: ChatMessage[];
 let snapshot: ChessCreditsSnapshot | null;
+/** > 0 makes the credits read hang that long (the hung-network case). */
+let snapshotDelayMs = 0;
 
 function paymentRequired(): Error {
   const e = new Error('402 {"type":"error","error":{"type":"payment_required"}}') as Error & { status: number };
@@ -139,15 +146,21 @@ beforeEach(async () => {
   snapshot = {
     plan: 'free',
     over_limit: true,
+    usage_pct: 100,
+    extra_credits_total: 0,
     resets_at: new Date(Date.now() + 3 * 86_400_000).toISOString(),
     ai_backend_kind: 'cloud-proxy',
   };
+  snapshotDelayMs = 0;
   initChessService({
     pushState: (s) => pushed.push(s),
     pushDownload: () => {},
     pushChatMessage: (_id, msg) => chatPushed.push(msg),
     isSummoned: () => false,
-    creditsSnapshot: async () => snapshot,
+    creditsSnapshot: async () => {
+      if (snapshotDelayMs > 0) await new Promise((r) => setTimeout(r, snapshotDelayMs));
+      return snapshot;
+    },
   });
   getCharacterSpy.mockImplementation(async () => ({
     id: CHAR,
@@ -167,6 +180,7 @@ beforeEach(async () => {
   CHESS_TIMING.capMs = 45_000;
   CHESS_TIMING.capReplyCycles = 4;
   CHESS_TIMING.creditProbeMs = 60_000;
+  CHESS_TIMING.creditReadTimeoutMs = 4_000;
 });
 
 afterEach(async () => {
@@ -233,8 +247,9 @@ describe('chess on the credit wall', () => {
     await ackNextAiMove(0);
     expect(createSpy).toHaveBeenCalledTimes(1);
 
-    // Topped up: the next move turn talks again.
-    snapshot = { ...snapshot!, over_limit: false };
+    // Topped up (more extra credits than at the wall): the next move turn
+    // talks again.
+    snapshot = { ...snapshot!, over_limit: false, extra_credits_total: 500 };
     createSpy.mockReset();
     createSpy.mockImplementation(async (params: { tools?: { name: string }[] }) => {
       if (params.tools?.some((t) => t.name === 'play')) {
@@ -269,5 +284,105 @@ describe('chess on the credit wall', () => {
     expect(createSpy.mock.calls.length).toBeGreaterThan(calls);
     expect(quietNotices()).toHaveLength(0);
     expect(degradedEvents()).toHaveLength(0);
+  });
+
+  it('over_limit:false alone does not lift the quiet (a few extra credits left still 402)', async () => {
+    CHESS_TIMING.creditProbeMs = 0;
+    await startChess(CHAR, { playerColor: 'w' });
+    await playerMove(CHAR, 'e2e4');
+    await ackNextAiMove(0);
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    // my_plan says not over the limit, but nothing actually changed.
+    snapshot = { ...snapshot!, over_limit: false };
+    const mark = pushed.length;
+    await playerMove(CHAR, 'd2d4');
+    await ackNextAiMove(mark);
+    expect(createSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('a lift that proves premature goes quiet again with no second popup, notice or event', async () => {
+    CHESS_TIMING.creditProbeMs = 0;
+    await startChess(CHAR, { playerColor: 'w' });
+    await playerMove(CHAR, 'e2e4');
+    await ackNextAiMove(0);
+    expect(popupSpy).toHaveBeenCalledTimes(1);
+    // Wait for the background baseline read before the top up lands.
+    await new Promise((r) => setTimeout(r, 20));
+    // Topped up a little: the snapshot changed, so quiet lifts, but the
+    // proxy's worst-case reservation still 402s the turn.
+    snapshot = { ...snapshot!, over_limit: false, extra_credits_total: 3 };
+    let mark = pushed.length;
+    await playerMove(CHAR, 'd2d4');
+    await ackNextAiMove(mark);
+    expect(createSpy).toHaveBeenCalledTimes(2);
+    expect(popupSpy).toHaveBeenCalledTimes(1);
+    // Quiet again: the next move costs no call.
+    mark = pushed.length;
+    await playerMove(CHAR, 'g1f3');
+    await ackNextAiMove(mark);
+    expect(createSpy).toHaveBeenCalledTimes(2);
+    await waitFor(() => (quietNotices().length ? true : undefined));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(quietNotices()).toHaveLength(1);
+    expect(degradedEvents()).toHaveLength(1);
+  });
+
+  it('a hung credits read does not stall the move (times out as unknown, stays quiet)', async () => {
+    CHESS_TIMING.creditProbeMs = 0;
+    CHESS_TIMING.creditReadTimeoutMs = 50;
+    await startChess(CHAR, { playerColor: 'w' });
+    await playerMove(CHAR, 'e2e4');
+    await ackNextAiMove(0);
+    snapshotDelayMs = 60_000;
+    const t0 = Date.now();
+    const mark = pushed.length;
+    await playerMove(CHAR, 'd2d4');
+    await ackNextAiMove(mark);
+    expect(Date.now() - t0).toBeLessThan(2_000);
+    expect(createSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('a rematch on the wall starts quiet: no second popup, notice or event', async () => {
+    await startChess(CHAR, { playerColor: 'w' });
+    await playerMove(CHAR, 'e2e4');
+    await ackNextAiMove(0);
+    await waitFor(() => (degradedEvents().length ? true : undefined));
+    await resign(CHAR);
+    const mark = pushed.length;
+    // The player takes black, so the engine opens for the character at once.
+    const next = await rematch(CHAR);
+    expect(next.playerColor).toBe('b');
+    await waitFor(() => pushed.slice(mark).find((st) => st.pendingAiMove !== null));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(popupSpy).toHaveBeenCalledTimes(1);
+    expect(quietNotices()).toHaveLength(1);
+    expect(degradedEvents()).toHaveLength(1);
+  });
+});
+
+describe('creditWallLifted', () => {
+  const wall: ChessCreditsSnapshot = {
+    plan: 'free',
+    over_limit: true,
+    usage_pct: 100,
+    extra_credits_total: 3,
+    resets_at: '2026-09-30T00:00:00.000Z',
+    ai_backend_kind: 'cloud-proxy',
+  };
+  it('does not lift on over_limit:false alone', () => {
+    expect(creditWallLifted(wall, { ...wall, over_limit: false })).toBe(false);
+  });
+  it('lifts on a real change', () => {
+    expect(creditWallLifted(wall, { ...wall, extra_credits_total: 1000 })).toBe(true);
+    expect(creditWallLifted(wall, { ...wall, resets_at: '2026-10-07T00:00:00.000Z' })).toBe(true);
+    expect(creditWallLifted(wall, { ...wall, usage_pct: 0 })).toBe(true);
+    expect(creditWallLifted(wall, { ...wall, plan: 'quest' })).toBe(true);
+    expect(creditWallLifted(wall, { ...wall, ai_backend_kind: 'local' })).toBe(true);
+  });
+  it('unknown stays quiet; with no baseline only unambiguous signals count', () => {
+    expect(creditWallLifted(wall, null)).toBe(false);
+    expect(creditWallLifted(null, { ...wall, over_limit: false, extra_credits_total: 1000 })).toBe(false);
+    expect(creditWallLifted(null, { ...wall, usage_pct: 10 })).toBe(true);
   });
 });
