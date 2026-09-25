@@ -739,8 +739,13 @@ export async function deleteAccount(): Promise<DeleteAccountResult> {
   // T-10-06-09's "stop bot before clearing session" invariant applies here
   // too. Without this, the running bot continues with a soon-to-be-invalid
   // JWT until its next action (which will 401-cascade in Phase 13). User
-  // has already confirmed via DeleteAccountModal, no re-prompt.
-  await stopBotIfActive('deleteAccount');
+  // has already confirmed via DeleteAccountModal, no re-prompt. Inside the
+  // account teardown (260926) so bot_session_ended carries the reason, as on
+  // sign-out; the scope switch that follows ends every other surface.
+  {
+    const { withAccountTeardown } = await import('../profile/scopeBarrier');
+    await withAccountTeardown(() => stopBotIfActive('deleteAccount'));
+  }
   const res = await callEdgeFunction('delete-me', {
     jwt: session.access_token,
     method: 'POST',

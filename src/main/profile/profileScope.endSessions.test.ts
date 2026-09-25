@@ -80,6 +80,11 @@ vi.mock('../backseat/backseatService', () => ({
     await rowWriter('backseat', 15);
   }),
 }));
+vi.mock('../chat/chatService', () => ({
+  cancelAllInflightTurns: vi.fn(() => {
+    noteCall('chat-turns', 'abort');
+  }),
+}));
 vi.mock('../chat/chatSession', () => ({
   endAllChatSessions: vi.fn(async (reason: string) => {
     noteCall('chat', reason);
@@ -89,7 +94,13 @@ vi.mock('../chat/chatSession', () => ({
 import { paths, _setUserDataOverride, setActiveScope, getActiveScope, profileRootFor } from '../paths';
 import { IpcChannel } from '../../shared/ipc';
 import { initProfileScope, switchScopeForAuth, _resetForTests } from './profileScope';
-import { _resetScopeBarrierForTests, isAccountTeardownActive } from './scopeBarrier';
+import {
+  _resetScopeBarrierForTests,
+  isAccountTeardownActive,
+  isScopeSwitchPending,
+  beginSessionStart,
+  ACCOUNT_SWITCHING,
+} from './scopeBarrier';
 
 const UUID_A = 'a1111111-1111-4111-8111-111111111111';
 const UUID_B = 'b2222222-2222-4222-8222-222222222222';
@@ -101,6 +112,9 @@ let stopScope: string | null;
 let voiceReason: string | null;
 /** What main had done when it pushed app:scope-ending. */
 let atEnding: { ended: string[]; voice: string | null; scope: string } | null;
+/** Per-test override for the supervisor's stop(). */
+let stopImpl: (() => Promise<void>) | null;
+let scopeChanges: string[];
 
 function transcriptFor(scope: string): string {
   return path.join(profileRootFor(scope), 'memory', SUI, 'chat.jsonl');
@@ -126,8 +140,11 @@ beforeEach(async () => {
   stopScope = null;
   voiceReason = null;
   atEnding = null;
+  stopImpl = null;
+  scopeChanges = [];
   const supervisor = {
     stop: vi.fn(async () => {
+      if (stopImpl) return stopImpl();
       stopScope = getActiveScope();
       // A bot's play row is registered by broadcastStatus only once its
       // process has exited, i.e. just as stop() resolves.
@@ -138,8 +155,9 @@ beforeEach(async () => {
   const win = {
     isDestroyed: () => false,
     webContents: {
-      send: (channel: string) => {
+      send: (channel: string, payload?: { scope: string }) => {
         sent.push(channel);
+        if (channel === IpcChannel.app.scopeChanged && payload) scopeChanges.push(payload.scope);
         if (channel === IpcChannel.app.scopeEnding) {
           atEnding = {
             ended: h.calls.map((c) => c.surface).sort(),
@@ -175,9 +193,9 @@ describe('switchScopeForAuth ends the outgoing account\'s sessions', () => {
     await switchScopeForAuth(next);
 
     // 1. Every surface ended, with the reason, in A, inside the teardown.
-    expect(h.calls.map((c) => c.surface).sort()).toEqual(['backseat', 'chat', 'chess', 'draw']);
+    expect(h.calls.map((c) => c.surface).sort()).toEqual(['backseat', 'chat', 'chat-turns', 'chess', 'draw']);
     for (const c of h.calls) {
-      expect(c.reason).toBe('account_switch');
+      expect(c.reason).toBe(c.surface === 'chat-turns' ? 'abort' : 'account_switch');
       expect(c.scope).toBe(UUID_A);
       expect(c.teardown).toBe(true);
     }
@@ -197,7 +215,7 @@ describe('switchScopeForAuth ends the outgoing account\'s sessions', () => {
     //    may still have been in flight) and before scope-changed; the scope
     //    did move afterwards.
     expect(atEnding).toEqual({
-      ended: ['backseat', 'chat', 'chess', 'draw'],
+      ended: ['backseat', 'chat', 'chat-turns', 'chess', 'draw'],
       voice: 'account_switch',
       scope: UUID_A,
     });
@@ -208,6 +226,52 @@ describe('switchScopeForAuth ends the outgoing account\'s sessions', () => {
 
     // 4. The teardown flag is down again.
     expect(isAccountTeardownActive()).toBe(false);
+  });
+
+  it('a hung end step still switches scope at the ceiling and lowers the teardown flag', async () => {
+    _resetForTests();
+    initProfileScope({
+      supervisor: { stop: vi.fn(() => new Promise<void>(() => {})) } as never,
+      getMainWindow: () => null,
+      teardownCeilingMs: 50,
+    });
+    const t0 = Date.now();
+    await switchScopeForAuth(UUID_B);
+    expect(Date.now() - t0).toBeLessThan(2_000);
+    expect(getActiveScope()).toBe(UUID_B);
+    expect(isAccountTeardownActive()).toBe(false);
+    expect(isScopeSwitchPending()).toBe(false);
+    // Starts are allowed again in the new account.
+    expect(() => beginSessionStart()).not.toThrow();
+  });
+
+  it('overlapping switches run in order and end in the last requested scope', async () => {
+    // A -> local with a slow teardown, and local -> B requested 20ms later,
+    // the way authState fires them (detached, back to back).
+    stopImpl = () => new Promise((r) => setTimeout(r, 120));
+    const first = switchScopeForAuth(null);
+    await new Promise((r) => setTimeout(r, 20));
+    const second = switchScopeForAuth(UUID_B);
+    await Promise.all([first, second]);
+    expect(getActiveScope()).toBe(UUID_B);
+    expect(scopeChanges).toEqual(['local', UUID_B]);
+    // The second switch started from 'local', not from A a second time.
+    expect(h.calls.filter((c) => c.surface === 'chess').map((c) => c.scope)).toEqual([UUID_A, 'local']);
+    expect(isScopeSwitchPending()).toBe(false);
+  });
+
+  it('refuses session starts for the whole switch, from the moment it is requested', async () => {
+    stopImpl = () => new Promise((r) => setTimeout(r, 30));
+    const guardBefore = beginSessionStart();
+    const switching = switchScopeForAuth(UUID_B);
+    // Requested: a new start is refused at once, and a start already in
+    // flight fails its final check.
+    expect(() => beginSessionStart()).toThrow(ACCOUNT_SWITCHING);
+    expect(guardBefore.stillValid()).toBe(false);
+    await switching;
+    expect(() => beginSessionStart()).not.toThrow();
+    // The scope moved, so a start begun in A is still invalid afterwards.
+    expect(guardBefore.stillValid()).toBe(false);
   });
 
   it('a token refresh (same scope) ends nothing', async () => {

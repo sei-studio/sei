@@ -87,7 +87,7 @@ import { useSyncStore } from './lib/stores/useSyncStore';
 import { useCreditsStore } from './lib/stores/useCreditsStore';
 import { useCloudCharactersStore } from './lib/stores/useCloudCharactersStore';
 import { useLibraryStateStore } from './lib/stores/useLibraryStateStore';
-import { endLiveSurfaces, resetAccountScopedState } from './lib/scopeReset';
+import { handleScopeEnding, resetAccountScopedState } from './lib/scopeReset';
 import { AuthChoiceScreen } from './screens/AuthChoiceScreen';
 import { AcceptToSModal } from './components/AcceptToSModal';
 import { OfflineRetryModal } from './components/OfflineRetryModal';
@@ -411,7 +411,7 @@ export function App(): React.ReactElement {
   // (hang up, stop capture, leave the game screen) instead of leaving a dead
   // surface up until app:scope-changed, which can be seconds away.
   useEffect(() => {
-    return sei.onScopeEnding?.(() => endLiveSurfaces());
+    return sei.onScopeEnding?.(() => handleScopeEnding());
   }, []);
 
   useEffect(() => {

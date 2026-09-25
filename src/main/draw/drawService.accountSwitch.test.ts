@@ -49,7 +49,14 @@ vi.mock('../llm', () => ({
 }));
 
 import { initDrawService, startDraw, pickDrawWord, endDraw, endAllDraw, __test } from './drawService';
-import { pendingScopedWrites, _resetScopeBarrierForTests } from '../profile/scopeBarrier';
+import {
+  pendingScopedWrites,
+  beginScopeSwitch,
+  noteScopeChanged,
+  ACCOUNT_SWITCHING,
+  _resetScopeBarrierForTests,
+} from '../profile/scopeBarrier';
+import { getCharacter } from '../characterStore';
 
 const CHAR = 'char-switch';
 
@@ -121,5 +128,29 @@ describe('Draw! on an account switch', () => {
   it('with no game open it resolves and records nothing', async () => {
     await endAllDraw('account_switch');
     expect(events('draw_game_ended')).toHaveLength(0);
+  });
+});
+
+describe('Draw! starts across an account switch', () => {
+  it('a start while a switch is pending is refused and opens nothing', async () => {
+    const release = beginScopeSwitch();
+    await expect(startDraw(CHAR, 3)).rejects.toMatchObject({ code: ACCOUNT_SWITCHING });
+    expect(__test.sessions.has(CHAR)).toBe(false);
+    release();
+    await expect(startDraw(CHAR, 3)).resolves.toBeTruthy();
+    expect(__test.sessions.has(CHAR)).toBe(true);
+  });
+
+  it('a start the switch lands in the middle of is unwound: no session, no event', async () => {
+    vi.mocked(getCharacter).mockImplementationOnce(async () => {
+      // The account changes while the start is loading the character.
+      const release = beginScopeSwitch();
+      noteScopeChanged();
+      release();
+      return null;
+    });
+    await expect(startDraw(CHAR, 3)).rejects.toMatchObject({ code: ACCOUNT_SWITCHING });
+    expect(__test.sessions.has(CHAR)).toBe(false);
+    expect(events('draw_game_started')).toHaveLength(0);
   });
 });

@@ -139,32 +139,15 @@ function rendererTarget(): string {
   return path.join(__dirname, '../renderer/index.html');
 }
 
-/**
- * Account switch (260926): close every open call from MAIN, before the scope
- * moves. A call is renderer-driven and the renderer only reports the hang-up
- * after it hears app:scope-ending, by which time the scope may already be the
- * next account's, so main posts the call row and voice_call_ended itself
- * (the same pair notifyCallEnded writes, timed from the renderer's connect
- * report) and callState swallows the renderer's late report. Awaits the row.
- */
+/** Account switch (260926): close every open call from main (see accountSwitchCalls.ts). */
 async function endVoiceCallsForAccountSwitch(reason: string): Promise<void> {
-  const { closeAllCallsFromMain } = await import('./voice/callState');
-  const closed = closeAllCallsFromMain();
-  if (closed.length === 0) return;
-  closeCallOverlay();
-  const writes: Promise<void>[] = [];
-  for (const { characterId, connectedMs } of closed) {
-    supervisor?.setVoiceCall(characterId, false);
-    // Never connected: no row and no event, the renderer's own rule.
-    if (connectedMs === null || connectedMs <= 0) continue;
-    capture('voice_call_ended', { character_id: characterId, duration_ms: connectedMs, reason });
-    writes.push(
-      trackScopedWrite(emitCallSession(characterId, connectedMs)).catch((err) => {
-        console.warn(`[sei] account switch: call row for ${characterId} failed: ${(err as Error).message}`);
-      }),
-    );
-  }
-  await Promise.all(writes);
+  const { endCallsForAccountSwitch } = await import('./voice/accountSwitchCalls');
+  await endCallsForAccountSwitch(reason, {
+    setVoiceCall: (id, onCall) => supervisor?.setVoiceCall(id, onCall),
+    closeOverlay: closeCallOverlay,
+    capture,
+    emitCallSession,
+  });
 }
 
 /**
@@ -372,8 +355,10 @@ async function emitCallSession(characterId: string, durationMs: number): Promise
 function endVoiceCallFromCompanion(characterId: string): void {
   void (async () => {
     try {
-      const { setCallActive } = await import('./voice/callState');
-      setCallActive(characterId, false);
+      // 260926: remembered until the renderer's report posts the row, so an
+      // account switch in between can still close it in the right account.
+      const { endCallFromCompanion } = await import('./voice/callState');
+      endCallFromCompanion(characterId);
     } catch { /* state module unavailable — renderer teardown still proceeds */ }
   })();
   if (mainWindow && !mainWindow.isDestroyed()) {

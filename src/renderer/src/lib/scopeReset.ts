@@ -20,8 +20,8 @@
  * per-account session (the voice call, screen capture, the chess and Draw!
  * mirrors) and leaves any screen that belongs to one. Main ends the sessions
  * themselves, writes their rows into the outgoing account, and then pushes
- * app:scope-ending, which runs this at once; resetAccountScopedState runs it
- * again as the safety net (it is idempotent).
+ * app:scope-ending, which runs this at once (handleScopeEnding);
+ * resetAccountScopedState runs it again only when scope-ending never came.
  */
 import { useChatStore } from './stores/useChatStore';
 import { useAvatarStore } from './stores/useAvatarStore';
@@ -71,8 +71,25 @@ export function endLiveSurfaces(): void {
   } catch { /* keep going */ }
 }
 
-export function resetAccountScopedState(): void {
+/** Set by app:scope-ending, cleared by the scope-changed reset that follows. */
+let liveSurfacesEnded = false;
+
+/** The app:scope-ending handler: main has ended its sessions; drop ours. */
+export function handleScopeEnding(): void {
+  liveSurfacesEnded = true;
   endLiveSurfaces();
+}
+
+export function resetAccountScopedState(): void {
+  // The live surfaces went down at app:scope-ending, which main always sends
+  // before app:scope-changed. Main refuses session starts from its first
+  // step until it has sent scope-changed, then allows them in the new
+  // account; a start the player makes in that gap is answered after this
+  // handler would run, so ending the surfaces a second time here would drop
+  // the new account's session from the UI and leave it running in main. The
+  // second pass is kept only for a switch whose scope-ending never arrived.
+  if (!liveSurfacesEnded) endLiveSurfaces();
+  liveSurfacesEnded = false;
   useChatStore.getState().resetForScope();
   useAvatarStore.getState().reset();
   useDataStore.getState().clearLogs();

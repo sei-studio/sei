@@ -56,7 +56,7 @@ import { CHAT_TIMEOUT_MS } from '../chat/sdk';
 import { buildLlmProvider } from '../llm';
 import { buildSystemBlocks, clockNow, markLastMessageCached, REMEMBER_TOOL } from '../chat/chatPrompts';
 import { readChatContext, foldIfDue } from '../chat/continuity';
-import { trackScopedWrite } from '../profile/scopeBarrier';
+import { accountSwitchingError, beginSessionStart, trackScopedWrite } from '../profile/scopeBarrier';
 import { playSummaryText } from '../chat/playSummary';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import {
@@ -357,6 +357,8 @@ export async function startChess(
   const existing = sessions.get(characterId);
   if (existing && existing.status !== 'ended') return snapshot(existing);
   if (existing) void existing.log.close().catch(() => {});
+  // 260926: no session may start across an account switch (scopeBarrier).
+  const startGuard = beginSessionStart();
 
   const pick = opts?.playerColor ?? 'w';
   const playerColor: ChessColor =
@@ -419,6 +421,14 @@ export async function startChess(
     },
     logger: console,
   }) as ChessQueue;
+  if (!startGuard.stillValid()) {
+    // An account switch began while the profile and log were loading: the
+    // switch has already ended every game, so this one must not appear now.
+    s.queue.dispose();
+    s.queue = null;
+    void s.log.close().catch(() => {});
+    throw accountSwitchingError();
+  }
   sessions.set(characterId, s);
   push(s);
 
@@ -1065,8 +1075,9 @@ function endSession(
       } catch { /* best-effort */ }
       // Continuity OUT (CLAUDE.md contract): fold after the play row, like
       // Draw! and backseat. A silent end runs no reaction turn, whose fold
-      // would otherwise have picked the row up.
-      void foldIfDue(s.characterId, personaExpanded).catch(() => {});
+      // would otherwise have picked the row up. Not on the credit wall: the
+      // fold is an LLM call and would only 402; the next fold picks it up.
+      if (!s.creditQuiet) void foldIfDue(s.characterId, personaExpanded).catch(() => {});
     })());
   }
 

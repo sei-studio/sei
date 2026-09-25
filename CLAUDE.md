@@ -3074,6 +3074,30 @@ pins it at whatever percent it reached.
   `foldIfDue` defers (it would bill the new account), and a fold whose
   summarizer straddles the switch is dropped rather than written into the
   next account's bridge.
+  Guarantees around it (review, 260926):
+  - Switches are serialized (a promise chain in `profileScope.ts`; prev/next
+    scope are read inside it, same scope = no-op) and the whole teardown is
+    bounded by `withAccountTeardown` (10s ceiling): a hung end step never
+    keeps the scope from moving or leaves the fold deferred. The end promises
+    are tracked like rows, so the bounded drain is the only wait.
+  - From the moment a switch is requested until main has sent
+    `app:scope-changed`, session starts are refused (`beginSessionStart`,
+    error `ACCOUNT_SWITCHING`). A start whose awaits straddle a switch
+    re-checks `stillValid()` right before `sessions.set` and unwinds.
+    **A new session surface must take the same guard.** The renderer's
+    scope-changed reset does not end the live surfaces a second time after
+    `app:scope-ending` (that would orphan a session started in the new
+    account in the gap); `useBackseatStore.share` ends main's session if the
+    scope epoch changed under it.
+  - Chat turns are refused during a switch and tagged with the scope they
+    began in (`withScopedTurn`); a turn still running when the account
+    changes is aborted (`cancelAllInflightTurns`) and writes no transcript row,
+    MEMORY.md line or fold (`turnMayWrite` / `scopedTurnCurrent`). The
+    last_chatted stamp is not gated.
+  - A companion hang-up (`end_call`) whose renderer report has not arrived
+    is kept in `callState` (`endCallFromCompanion`) so the switch closes it
+    and writes its row in the old account; `applyCallReport` is the pure
+    composition the `voice:call-state` handler runs.
 - **Native ABI mismatch** → `@electron/rebuild` / `install-app-deps` runs in
   `postinstall`. Test packaged builds on a clean machine.
 - **Bot ESM module type in packaged builds** → `src/bot/package.json` exists

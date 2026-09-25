@@ -102,4 +102,28 @@ describe('resetAccountScopedState', () => {
     expect(useUiStore.getState().view).toEqual({ kind: 'settings' });
     expect(useUiStore.getState().modal).toBeNull();
   });
+
+  it('after app:scope-ending, the scope-changed reset leaves a session started in the new account alone', async () => {
+    const { useChessStore } = await import('./stores/useChessStore');
+    const { useVoiceStore } = await import('./stores/useVoiceStore');
+    const { handleScopeEnding, resetAccountScopedState } = await import('./scopeReset');
+    const endCall = vi.fn();
+    useVoiceStore.setState({ status: 'live', participants: ['sui'] as never, endCall } as never);
+    useChessStore.setState({ games: { sui: { status: 'active' } as never } });
+
+    handleScopeEnding();
+    expect(endCall).toHaveBeenCalledTimes(1);
+    expect(useChessStore.getState().games).toEqual({});
+
+    // Main allowed starts once it sent scope-changed; the player started a
+    // game in the new account before this handler ran.
+    useChessStore.setState({ games: { lyra: { status: 'active' } as never } });
+    resetAccountScopedState();
+    expect(useChessStore.getState().games).toEqual({ lyra: { status: 'active' } });
+
+    // One pass per switch: a later scope-changed with no scope-ending (the
+    // safety net) ends surfaces again.
+    resetAccountScopedState();
+    expect(useChessStore.getState().games).toEqual({});
+  });
 });

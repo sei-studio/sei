@@ -74,7 +74,15 @@ import {
   shutdownChess,
   CHESS_TIMING,
 } from './chessService';
-import { drainScopedWrites, pendingScopedWrites, _resetScopeBarrierForTests } from '../profile/scopeBarrier';
+import {
+  drainScopedWrites,
+  pendingScopedWrites,
+  beginScopeSwitch,
+  noteScopeChanged,
+  ACCOUNT_SWITCHING,
+  _resetScopeBarrierForTests,
+} from '../profile/scopeBarrier';
+import { getOrCreateChessProfile } from './chessProfile';
 
 const CHAR = '66666666-6666-4666-8666-666666666666';
 let dir: string;
@@ -181,5 +189,30 @@ describe('chess on an account switch', () => {
     endAllChess('account_switch');
     expect(pendingScopedWrites()).toBe(0);
     expect(events('chess_game_ended')).toHaveLength(0);
+  });
+});
+
+describe('chess starts across an account switch', () => {
+  it('a start while a switch is pending is refused and opens nothing', async () => {
+    const release = beginScopeSwitch();
+    await expect(startChess(CHAR, { playerColor: 'w' })).rejects.toMatchObject({ code: ACCOUNT_SWITCHING });
+    expect(getChessState(CHAR)).toBeNull();
+    release();
+    await startChess(CHAR, { playerColor: 'w' });
+    expect(getChessState(CHAR)).not.toBeNull();
+  });
+
+  it('a start the switch lands in the middle of is unwound: no session, no event', async () => {
+    vi.mocked(getOrCreateChessProfile).mockImplementationOnce(async () => {
+      // The account changes while the start loads the chess profile.
+      const release = beginScopeSwitch();
+      noteScopeChanged();
+      release();
+      return { elo: 900, styleNote: 'testy', source: 'auto' } as never;
+    });
+    await expect(startChess(CHAR, { playerColor: 'w' })).rejects.toMatchObject({ code: ACCOUNT_SWITCHING });
+    expect(getChessState(CHAR)).toBeNull();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(events('chess_game_started')).toHaveLength(0);
   });
 });

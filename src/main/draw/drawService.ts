@@ -86,7 +86,7 @@ import { CHAT_TIMEOUT_MS } from '../chat/sdk';
 import { activeLlmVision, buildLlmProvider, type LlmProvider } from '../llm';
 import { buildSystemBlocks, clockNow, REMEMBER_TOOL } from '../chat/chatPrompts';
 import { readChatContext, foldIfDue } from '../chat/continuity';
-import { trackScopedWrite } from '../profile/scopeBarrier';
+import { accountSwitchingError, beginSessionStart, trackScopedWrite } from '../profile/scopeBarrier';
 import { playSummaryText } from '../chat/playSummary';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import { splitReply } from '../chat/chatService';
@@ -404,9 +404,8 @@ interface Session {
    * prefix and re-bills the whole cached thread on every minute rollover.
    */
   clock: string;
-  /** finishGame has already run for this session; it must never run twice. */
-  finished: boolean;
-  /** The one finishGame run (analytics + play row + fold), for awaiting it. */
+  /** The one finishGame run (analytics + play row + fold). Set once: a game
+   *  is recorded exactly once, and a later caller awaits the same run. */
   finishing: Promise<void> | null;
   playerName: string;
   aiName: string;
@@ -596,7 +595,6 @@ async function newSession(characterId: string, rounds = 3): Promise<Session> {
     endCtrl: null,
     startedAt: Date.now(),
     clock: clockNow(),
-    finished: false,
     finishing: null,
     playerName: (config.preferred_name ?? '').trim() || 'You',
     aiName: character?.name ?? 'Companion',
@@ -615,7 +613,10 @@ export async function openDraw(characterId: string): Promise<DrawGameState> {
   }
   let s = sessions.get(characterId);
   if (!s) {
+    // 260926: no session may start across an account switch (scopeBarrier).
+    const startGuard = beginSessionStart();
     s = await newSession(characterId);
+    if (!startGuard.stillValid()) throw accountSwitchingError();
     sessions.set(characterId, s);
   }
   push(s);
@@ -642,6 +643,8 @@ export async function startDraw(characterId: string, rounds: number): Promise<Dr
     err.code = DRAW_ERR_NO_VISION;
     throw err;
   }
+  // 260926: no session may start across an account switch (scopeBarrier).
+  const startGuard = beginSessionStart();
   // A fresh game every start, so a replay never inherits the previous scores.
   // A previous game still mid-play is abandoned properly rather than dropped,
   // or its playtime would never be reported.
@@ -653,6 +656,7 @@ export async function startDraw(characterId: string, rounds: number): Promise<Dr
   }
   const clamped = Math.max(MIN_ROUNDS, Math.min(MAX_ROUNDS, Math.round(rounds) || 1));
   const s = await newSession(characterId, clamped);
+  if (!startGuard.stillValid()) throw accountSwitchingError();
   sessions.set(characterId, s);
 
   // One word for each of the character's turns, WORD_CHOICES for each of the
@@ -687,6 +691,7 @@ export async function newDrawGame(characterId: string): Promise<DrawGameState> {
     err.code = DRAW_ERR_MC_ACTIVE;
     throw err;
   }
+  const startGuard = beginSessionStart();
   const prev = sessions.get(characterId);
   if (prev) {
     teardownTimers(prev);
@@ -694,6 +699,7 @@ export async function newDrawGame(characterId: string): Promise<DrawGameState> {
     if (prev.round > 0) await finishGame(prev, prev.phase === 'gallery' ? 'completed' : 'abandoned');
   }
   const s = await newSession(characterId, prev?.rounds ?? 3);
+  if (!startGuard.stillValid()) throw accountSwitchingError();
   sessions.set(characterId, s);
   push(s);
   return toState(s);
@@ -924,7 +930,6 @@ function finishGame(
   // first call's promise, so a caller that awaits it (endDraw, the account
   // switch) still waits for the row to land.
   if (s.finishing) return s.finishing;
-  s.finished = true;
   // Tracked (260926): an account switch drains this before it re-points the
   // profile scope, so the row lands in THIS account's transcript.
   s.finishing = trackScopedWrite(recordFinishedGame(s, reason));

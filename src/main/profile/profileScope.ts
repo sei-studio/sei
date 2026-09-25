@@ -26,20 +26,25 @@ import { mkdir } from 'node:fs/promises';
 import { paths, setActiveScope, getActiveScope, SCOPE_LOCAL } from '../paths';
 import { IpcChannel, type ScopeChangedEvent } from '../../shared/ipc';
 import type { BotSupervisorType } from '../botSupervisor';
+import { beginScopeSwitch, noteScopeChanged } from './scopeBarrier';
 
 let supervisorRef: BotSupervisorType | null = null;
 let getMainWindowRef: () => BrowserWindow | null = () => null;
 let endVoiceCallsRef: ((reason: string) => Promise<void>) | undefined;
+let teardownCeilingMs: number | undefined;
 
 export function initProfileScope(deps: {
   supervisor: BotSupervisorType;
   getMainWindow: () => BrowserWindow | null;
   /** Close open voice calls from main (index.ts owns the call row). */
   endVoiceCalls?: (reason: string) => Promise<void>;
+  /** Bound on ending the old account's sessions (tests; default 10s). */
+  teardownCeilingMs?: number;
 }): void {
   supervisorRef = deps.supervisor;
   getMainWindowRef = deps.getMainWindow;
   endVoiceCallsRef = deps.endVoiceCalls;
+  teardownCeilingMs = deps.teardownCeilingMs;
 }
 
 /**
@@ -59,7 +64,25 @@ async function ensureProfileInitialized(): Promise<void> {
  * when signed out). No-op when the scope is unchanged (token refresh, the
  * INITIAL_SESSION replay at boot — boot already set + seeded the scope).
  */
-export async function switchScopeForAuth(userId: string | null): Promise<void> {
+export function switchScopeForAuth(userId: string | null): Promise<void> {
+  // Serialized (260926). authState fires each switch detached, and one switch
+  // spends seconds ending sessions before it moves the scope, so a second
+  // auth event (sign-out, then straight into another sign-in) used to run
+  // alongside it: both read the same "previous" scope, and whichever set the
+  // scope LAST won, not the one requested last (the overlap test in
+  // profileScope.endSessions.test.ts fails without the chain). Each switch now waits
+  // for the one before it and reads the scope it starts from only then.
+  // The pending flag goes up at once, so session starts are refused from the
+  // moment the auth event lands (scopeBarrier.beginSessionStart).
+  const release = beginScopeSwitch();
+  const run = switchChain.then(() => runScopeSwitch(userId)).finally(release);
+  switchChain = run.catch(() => {});
+  return run;
+}
+
+let switchChain: Promise<void> = Promise.resolve();
+
+async function runScopeSwitch(userId: string | null): Promise<void> {
   const prevScope = getActiveScope();
   const nextScope = userId ?? SCOPE_LOCAL;
   if (prevScope === nextScope) return;
@@ -78,6 +101,7 @@ export async function switchScopeForAuth(userId: string | null): Promise<void> {
     await endAccountSessions({
       supervisor: supervisorRef,
       endVoiceCalls: endVoiceCallsRef,
+      ...(teardownCeilingMs !== undefined ? { ceilingMs: teardownCeilingMs } : {}),
       notifyRenderer: () => {
         const win = getMainWindowRef();
         if (win && !win.isDestroyed()) win.webContents.send(IpcChannel.app.scopeEnding);
@@ -89,6 +113,7 @@ export async function switchScopeForAuth(userId: string | null): Promise<void> {
 
   // 2. Re-point every profile-scoped path at the new account's bucket.
   setActiveScope(nextScope);
+  noteScopeChanged();
   console.log(`[sei] profileScope: ${prevScope} → ${nextScope} (${reason})`);
 
   // 3. Initialize a brand-new profile (returning accounts / 'local' no-op here).
@@ -231,7 +256,9 @@ export async function switchScopeForAuth(userId: string | null): Promise<void> {
 
 /** TEST-ONLY: clear the injected supervisor / window refs. */
 export function _resetForTests(): void {
+  switchChain = Promise.resolve();
   supervisorRef = null;
   getMainWindowRef = () => null;
   endVoiceCallsRef = undefined;
+  teardownCeilingMs = undefined;
 }

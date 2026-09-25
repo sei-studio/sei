@@ -21,6 +21,9 @@ const h = vi.hoisted(() => ({
   intentAnswer: true as boolean,
   intentSeen: [] as Array<[string, string]>,
   rows: 0,
+  /** Runs inside startBackseat's character load (a switch landing mid-start). */
+  onGetCharacter: null as null | (() => void),
+  logsClosed: 0,
 }));
 
 vi.mock('electron', () => ({ app: { isPackaged: true, getPath: () => '/tmp' } }));
@@ -40,7 +43,12 @@ vi.mock('../chat/usageLimit', async (orig) => ({
 vi.mock('../paths', () => ({ paths: { memoryDir: () => '/nonexistent/sei-test-memory' } }));
 vi.mock('../configStore', () => ({ loadConfig: async () => ({}) }));
 vi.mock('../characterStore', () => ({
-  getCharacter: async () => ({ name: 'Sui', persona: { expanded: 'Sui persona' }, metadata: {} }),
+  getCharacter: async () => {
+    const hook = h.onGetCharacter;
+    h.onGetCharacter = null;
+    hook?.();
+    return { name: 'Sui', persona: { expanded: 'Sui persona' }, metadata: {} };
+  },
 }));
 vi.mock('../chat/sdk', () => ({ CHAT_TIMEOUT_MS: 1000 }));
 vi.mock('../llm', () => ({
@@ -80,7 +88,7 @@ vi.mock('../chat/chatStore', () => ({
     h.rows += 1;
   },
 }));
-vi.mock('./backseatLog', () => ({ createBackseatLog: async () => ({ line: () => {}, close: async () => {} }), NULL_BACKSEAT_LOG: { line: () => {}, close: async () => {} } }));
+vi.mock('./backseatLog', () => ({ createBackseatLog: async () => ({ line: () => {}, close: async () => { h.logsClosed++; } }), NULL_BACKSEAT_LOG: { line: () => {}, close: async () => {} } }));
 vi.mock('../computerUse/controlTool', async (orig) => ({
   ...(await orig<typeof import('../computerUse/controlTool')>()),
   actFlagFromEnv: () => true,
@@ -101,7 +109,13 @@ vi.mock('../computerUse/actSession', () => ({
 }));
 
 import { endAllBackseat, endBackseat, initBackseatService, startBackseat } from './backseatService';
-import { pendingScopedWrites, _resetScopeBarrierForTests } from '../profile/scopeBarrier';
+import {
+  pendingScopedWrites,
+  beginScopeSwitch,
+  noteScopeChanged,
+  ACCOUNT_SWITCHING,
+  _resetScopeBarrierForTests,
+} from '../profile/scopeBarrier';
 
 const ended = () => h.captures.filter(([e]) => e === 'backseat_ended');
 
@@ -153,5 +167,51 @@ describe('backseat on an account switch', () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(ended()).toHaveLength(1);
     expect(ended()[0][1]).not.toHaveProperty('reason');
+  });
+});
+
+describe('backseat starts across an account switch', () => {
+  beforeEach(() => {
+    h.captures.length = 0;
+    h.logsClosed = 0;
+    _resetScopeBarrierForTests();
+    initBackseatService({
+      pushChatMessage: () => {},
+      pushState: () => {},
+      pushLine: () => {},
+      requestClip: () => {},
+      isCallActive: () => false,
+    });
+  });
+  afterEach(async () => {
+    await endBackseat('sui');
+  });
+
+  it('a start while a switch is pending is refused', async () => {
+    const release = beginScopeSwitch();
+    await expect(startBackseat('sui', 'screen:1:0', 'Screen', 'text' as never)).rejects.toMatchObject({
+      code: ACCOUNT_SWITCHING,
+    });
+    release();
+    await endBackseat('sui');
+    // Nothing was open, so nothing ends.
+    expect(ended()).toHaveLength(0);
+  });
+
+  it('a start the switch lands in the middle of is unwound: log closed, no session', async () => {
+    h.onGetCharacter = () => {
+      const release = beginScopeSwitch();
+      noteScopeChanged();
+      release();
+    };
+    await expect(startBackseat('sui', 'screen:1:0', 'Screen', 'text' as never)).rejects.toMatchObject({
+      code: ACCOUNT_SWITCHING,
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(h.logsClosed).toBe(1);
+    expect(h.captures.filter(([e]) => e === 'backseat_started')).toHaveLength(0);
+    // No session to end: an end reports nothing.
+    await endBackseat('sui');
+    expect(ended()).toHaveLength(0);
   });
 });

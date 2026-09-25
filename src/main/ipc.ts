@@ -2036,28 +2036,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         live: z.boolean().optional(),
       })
       .parse(argsRaw);
-    const { setCallActive, markCallLive, isCallActive, wasClosedByMain, consumeClosedByMain } =
-      await import('./voice/callState');
-    if (args.active && args.live) {
-      // A connect racing an account switch: main already ended this call and
-      // posted its row, so it must not come back to life here.
-      if (wasClosedByMain(args.characterId)) return;
-      if (isCallActive(args.characterId)) {
-        markCallLive(args.characterId);
-        return;
-      }
-      // Otherwise a group join, reported open + live in one call: fall through.
-    }
-    // Account switch (260926): main closed this call itself (row + event in the
-    // outgoing account). The renderer's own hang-up report arrives after the
-    // scope moved, so repeating the bookkeeping would write the NEXT account.
-    if (!args.active && consumeClosedByMain(args.characterId)) return;
-    setCallActive(args.characterId, args.active);
-    if (args.active && args.live) markCallLive(args.characterId);
-    deps.supervisor.setVoiceCall(args.characterId, args.active);
-    if (!args.active && typeof args.connectedMs === 'number' && args.connectedMs > 0) {
-      deps.notifyCallEnded?.(args.characterId, args.connectedMs);
-    }
+    // The state transition and its account-switch cases live in callState
+    // (applyCallReport, 260926); this handler applies the side effects.
+    const { applyCallReport } = await import('./voice/callState');
+    const fx = applyCallReport(args);
+    if (fx.voiceCall !== null) deps.supervisor.setVoiceCall(args.characterId, fx.voiceCall);
+    if (fx.endedMs !== null) deps.notifyCallEnded?.(args.characterId, fx.endedMs);
+    if (!fx.stamp) return;
     // Presence (260707): a call is a real interaction, so stamp last_chatted at
     // BOTH edges. Game sessions and text chat already drive the "online" dot;
     // a call previously only did when the player happened to speak a turn (that

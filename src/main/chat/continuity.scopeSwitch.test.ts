@@ -79,6 +79,16 @@ describe('fold across an account switch (260926)', () => {
     expect(await bridgeIn(UUID_A)).toMatchObject({ summary: 'ROLLED SUMMARY', summarizedCount: 50 });
   });
 
+  it('a hung teardown that hits its ceiling does not leave the fold off', async () => {
+    await seed(100);
+    // One end step never finishes; the ceiling lets the switch go on.
+    const out = await withAccountTeardown(() => new Promise<void>(() => {}), 20);
+    expect(out).toBeUndefined();
+    await foldIfDue(CHAR);
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(await bridgeIn(UUID_A)).toMatchObject({ summary: 'ROLLED SUMMARY', summarizedCount: 50 });
+  });
+
   it('a fold still summarizing when the scope moves writes nowhere', async () => {
     await seed(100);
     createSpy.mockImplementationOnce(async () => {

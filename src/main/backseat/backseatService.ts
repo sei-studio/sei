@@ -54,7 +54,7 @@ import { buildSystemBlocks, markMessageCached, REMEMBER_TOOL } from '../chat/cha
 import { toMessages, isSilenceFiller, splitReply } from '../chat/chatService';
 import { isNoteLeak, stripThoughtTags } from '../chat/noteLeak';
 import { readChatContext, foldIfDue } from '../chat/continuity';
-import { trackScopedWrite } from '../profile/scopeBarrier';
+import { accountSwitchingError, beginSessionStart, trackScopedWrite } from '../profile/scopeBarrier';
 import { playSummaryText } from '../chat/playSummary';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import { surfaceLanguage } from '../../shared/chatLanguage';
@@ -246,6 +246,8 @@ export async function startBackseat(
   sourceName: string,
   mode: BackseatMode,
 ): Promise<BackseatState> {
+  // 260926: no session may start across an account switch (scopeBarrier).
+  const startGuard = beginSessionStart();
   const existing = sessions.get(characterId);
   if (existing && existing.state.phase !== 'ended') await endBackseat(characterId);
 
@@ -291,6 +293,10 @@ export async function startBackseat(
     creditWallUntil: 0,
     creditWallReported: false,
   };
+  if (!startGuard.stillValid()) {
+    void log.close().catch(() => {});
+    throw accountSwitchingError();
+  }
   sessions.set(characterId, s);
   slog(s, `session start: mode=${mode}, source="${sourceName}"`);
   if (actFlagFromEnv()) slog(s, control.ok ? 'control: offered (window share)' : `control: not offered (${control.why})`);
