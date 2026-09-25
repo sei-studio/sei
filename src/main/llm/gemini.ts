@@ -8,6 +8,7 @@
 import type { ProviderKind } from '../../shared/llmCatalog';
 import { modelVision } from '../../shared/llmCatalog';
 import type { LlmCallParams, LlmProvider, LlmResult } from './types';
+import { requestDeadline, timeoutOr } from './timeout';
 import {
   anthropicToGeminiContents,
   anthropicToolsToGeminiTools,
@@ -57,7 +58,8 @@ export function createGeminiProvider(opts: {
       if (p.signal.aborted) controller.abort();
       else p.signal.addEventListener('abort', onParentAbort, { once: true });
     }
-    const timer = setTimeout(() => controller.abort(), p.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    const timeoutMs = p.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const deadline = requestDeadline(controller, timeoutMs);
     let resp: Response;
     try {
       resp = await fetchImpl(
@@ -69,8 +71,10 @@ export function createGeminiProvider(opts: {
           signal: controller.signal,
         },
       );
+    } catch (err) {
+      throw timeoutOr(err, deadline, p.signal, 'gemini', timeoutMs);
     } finally {
-      clearTimeout(timer);
+      deadline.clear();
       if (p.signal) p.signal.removeEventListener('abort', onParentAbort);
     }
     if (!resp.ok) {

@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import type { ProviderKind } from '../../shared/llmCatalog';
 import { modelVision } from '../../shared/llmCatalog';
 import type { LlmCallParams, LlmProvider, LlmResult, LlmToolUse } from './types';
+import { requestDeadline, timeoutOr } from './timeout';
 import {
   anthropicToOpenAIMessages,
   anthropicToolsToOpenAITools,
@@ -83,7 +84,8 @@ export function createOllamaProvider(opts: {
       if (p.signal.aborted) controller.abort();
       else p.signal.addEventListener('abort', onParentAbort, { once: true });
     }
-    const timer = setTimeout(() => controller.abort(), effectiveTimeoutMs(p.timeoutMs));
+    const timeoutMs = effectiveTimeoutMs(p.timeoutMs);
+    const deadline = requestDeadline(controller, timeoutMs);
     let resp: Response;
     try {
       resp = await fetchImpl(`${baseUrl}/api/chat`, {
@@ -92,8 +94,10 @@ export function createOllamaProvider(opts: {
         body: JSON.stringify(body),
         signal: controller.signal,
       });
+    } catch (err) {
+      throw timeoutOr(err, deadline, p.signal, 'ollama', timeoutMs);
     } finally {
-      clearTimeout(timer);
+      deadline.clear();
       if (p.signal) p.signal.removeEventListener('abort', onParentAbort);
     }
     if (!resp.ok) {

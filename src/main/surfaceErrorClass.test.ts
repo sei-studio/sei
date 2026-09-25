@@ -12,6 +12,7 @@ import { surfaceErrorClass } from './surfaceErrorClass';
 import { createOllamaProvider } from './llm/ollama';
 import { createOpenAICompatProvider } from './llm/openaiCompat';
 import { createGeminiProvider } from './llm/gemini';
+import { LlmTimeoutError } from './llm/timeout';
 
 const params = { maxTokens: 50, system: 'sys', messages: [{ role: 'user' as const, content: 'hi' }] };
 
@@ -173,6 +174,11 @@ describe('surfaceErrorClass: transport codes and our own sentinels', () => {
   it('maps the no-key and no-base-URL sentinels', () => {
     expect(surfaceErrorClass(new Error('LOCAL_NO_API_KEY: Local mode is on but no API key is saved.'))).toBe('no_api_key');
     expect(surfaceErrorClass(new Error("LLM provider 'openrouter' has no base URL configured."))).toBe('config');
+  });
+  it('a provider deadline is timeout, even though its fetch was aborted', () => {
+    expect(surfaceErrorClass(new LlmTimeoutError('ollama', 120_000))).toBe('timeout');
+    // A stringified copy (e.g. relayed from the bot process) keeps the sentinel.
+    expect(surfaceErrorClass(new Error(new LlmTimeoutError('gemini', 30_000).message))).toBe('timeout');
   });
   it('a bug on our side is internal_error, not unknown', () => {
     expect(surfaceErrorClass(new TypeError("Cannot read properties of undefined (reading 'content')"))).toBe('internal_error');

@@ -166,6 +166,9 @@ export function surfaceErrorClass(err: unknown): SurfaceErrorClass {
   const msg = collectMessages(err);
   const codes = collectCodes(err);
 
+  // A provider's own request deadline (llm/timeout.ts). Checked before the
+  // abort test: the underlying fetch was aborted, but nobody cancelled it.
+  if (e?.code === 'LLM_TIMEOUT' || name === 'LlmTimeoutError' || msg.startsWith('llm_timeout')) return 'timeout';
   // A user/supersede abort. Surfaces filter these before reporting, but keep
   // the token stable for any caller that does not.
   if (name === 'AbortError' || name === 'APIUserAbortError' || /abort/.test(msg)) return 'aborted';
