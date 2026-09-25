@@ -253,22 +253,35 @@ if (abortCheck) {
 
     // 2. The player mid-action: an untagged event during a long type (key,
     //    then mouse) and during a hold.
+    // The latency check gets up to ABORT_ATTEMPTS tries: a shared CI VM
+    // occasionally stalls one run past the bar (167 ms once), and a real
+    // regression fails every try. Cancel and user_input are checked each time.
+    const ABORT_ATTEMPTS = 3
     const trial = async (name, start, kind) => {
-      if (!(await arm())) return
-      const seen = userInputs.length
-      const pending = start()
-      await sleep(400)
-      const posted = await req('test_user_event', { kind })
-      const res = await pending
-      const helperMs = (res.at - posted.at) * 1000
-      await sleep(100)
-      check(
-        `abort: ${name} cancelled by an untagged ${kind} event`,
-        res.ok === false && /user input/.test(res.error ?? ''),
-        JSON.stringify({ error: res.error, ranMs: res.ms }),
-      )
-      check(`abort: ${name} stopped within ${ABORT_MAX_MS} ms`, Number.isFinite(helperMs) && helperMs >= 0 && helperMs < ABORT_MAX_MS, `${helperMs.toFixed(1)} ms on the helper clock`)
-      check(`abort: ${name} reported user_input`, userInputs.length === seen + 1, JSON.stringify(userInputs.slice(seen)))
+      const times = []
+      for (let attempt = 1; attempt <= ABORT_ATTEMPTS; attempt++) {
+        if (!(await arm())) return
+        const seen = userInputs.length
+        const pending = start()
+        await sleep(400)
+        const posted = await req('test_user_event', { kind })
+        const res = await pending
+        const helperMs = (res.at - posted.at) * 1000
+        await sleep(100)
+        check(
+          `abort: ${name} cancelled by an untagged ${kind} event`,
+          res.ok === false && /user input/.test(res.error ?? ''),
+          JSON.stringify({ error: res.error, ranMs: res.ms }),
+        )
+        check(`abort: ${name} reported user_input`, userInputs.length === seen + 1, JSON.stringify(userInputs.slice(seen)))
+        times.push(helperMs)
+        const fast = Number.isFinite(helperMs) && helperMs >= 0 && helperMs < ABORT_MAX_MS
+        if (fast || attempt === ABORT_ATTEMPTS) {
+          check(`abort: ${name} stopped within ${ABORT_MAX_MS} ms`, fast, `${times.map((t) => t.toFixed(1)).join(', ')} ms on the helper clock`)
+          return
+        }
+        console.log(`  retry: ${name} stopped in ${helperMs.toFixed(1)} ms, over ${ABORT_MAX_MS} ms (attempt ${attempt}/${ABORT_ATTEMPTS})`)
+      }
     }
     await trial('type', () => req('type', { text: 'a'.repeat(200) }, 20000), 'key')
     // After the player took over, nothing runs until main re-arms.
