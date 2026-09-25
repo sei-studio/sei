@@ -212,8 +212,6 @@ export const ZH_MODALS: Record<string, string> = {
   "Sei's servers are limiting requests right now, so your companion has to sit this one out. This does not use up any of your credits. You can try again in a little while.":
     'Sei 的服务器目前正在限制请求，你的伙伴只能先休息一下。这不会消耗你的任何积分。请稍后再试。',
   'Usage limit reached': '已达使用上限',
-  "You've used this week's allowance. It refreshes {when}. Upgrade for a bigger weekly allowance, or top up to keep playing now.":
-    '你已用完本周额度。额度将于 {when} 刷新。升级可获得更高的每周额度，或充值以立即继续游玩。',
   "You've used this week's allowance. Upgrade for a bigger weekly allowance, or top up to keep playing now.":
     '你已用完本周额度。升级可获得更高的每周额度，或充值以立即继续游玩。',
   'Top up': '充值',
@@ -630,4 +628,9 @@ export const ZH_MODALS: Record<string, string> = {
     '恢复完成。所有被移除的内容都已保留备份。',
   'Something went wrong during cleanup. A backup was made first, so nothing is lost. Try again later.':
     '清理过程中出了点问题。已提前创建备份，数据不会丢失。请稍后重试。',
+  // 260926: the free-play-is-back launch banner (FreePlayBackBanner).
+  'Your free play is back. Your companions are ready when you are.':
+    '你的免费游玩已经恢复了，伙伴们随时等你回来。',
+  'Your weekly allowance is back. Your companions are ready when you are.':
+    '你的每周额度已经恢复了，伙伴们随时等你回来。',
 };

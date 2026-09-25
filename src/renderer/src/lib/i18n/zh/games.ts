@@ -113,6 +113,12 @@ export const ZH_GAMES: Record<string, string> = {
   'game paused': '游戏已暂停',
   'usage limit reached. top up or wait, then resume: the turn picks up right where it stopped.':
     '已达到用量上限。充值或稍等片刻后继续：回合会从停下的地方接着进行。',
+  // 260926: the credit-wall variant of the pause card. The reset line between
+  // these two comes from src/shared/freePlayReset.ts.
+  "you're out of playtime for now, so {name} can't draw or guess.":
+    '你的游玩时间暂时用完了，{name}现在没法画画或猜词。',
+  'top up and resume, or end the game and keep your drawings.':
+    '充值后可以继续，也可以现在结束游戏并保留你们的画。',
   // Shared with CreditsScreen's resume-plan button, so the value must fit
   // both "resume the paused game" and "resume the plan".
   'Resume': '恢复',

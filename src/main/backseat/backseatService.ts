@@ -59,12 +59,14 @@ import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import { surfaceLanguage } from '../../shared/chatLanguage';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import * as chatStore from '../chat/chatStore';
+import { classifyUsageLimit, raiseUsageLimitPopup } from '../chat/usageLimit';
 import type { LogBatch } from '../../shared/ipc';
 import { BACKSEAT_CONTRACT, SAVE_CLIP_TOOL, stripDashes, tickNote } from './backseatPrompts';
 import { createBackseatLog, NULL_BACKSEAT_LOG, type BackseatLog } from './backseatLog';
 import { actFlagFromEnv, CONTROL_TOOL, controlCall, controlEventNote } from '../computerUse/controlTool';
 import { ControlGate, type ControlOrigin } from '../computerUse/controlPolicy';
 import type { ActOutcome } from '../computerUse/actLoop';
+import { loadAnalytics } from '../lazyAnalytics';
 
 /**
  * Tick priority. Strictly ordered: a tick preempts an in-flight turn only when
@@ -173,7 +175,19 @@ interface Session {
   controlOffered: boolean;
   /** 260925 act: the pending "want me to ...?" offer, settled by the player's next line. */
   control: ControlGate;
+  /**
+   * Credit wall (260926). Until this time screen-driven ticks are dropped: on a
+   * spent allowance every one of them 402s, silently, every few seconds. The
+   * player's own lines still get a turn (and re-raise the popup), so a top up
+   * brings the companion straight back.
+   */
+  creditWallUntil: number;
+  /** The first wall of this session raised the popup and the analytics event. */
+  creditWallReported: boolean;
 }
+
+/** How long screen ticks rest after a 402 before one tries again (260926). */
+const CREDIT_WALL_BACKOFF_MS = 60_000;
 
 const sessions = new Map<string, Session>();
 let deps: BackseatDeps | null = null;
@@ -273,6 +287,8 @@ export async function startBackseat(
     log,
     controlOffered: control.ok,
     control: new ControlGate(),
+    creditWallUntil: 0,
+    creditWallReported: false,
   };
   sessions.set(characterId, s);
   slog(s, `session start: mode=${mode}, source="${sourceName}"`);
@@ -291,7 +307,7 @@ export async function startBackseat(
 
   void (async () => {
     try {
-      const { capture } = await import('../analytics');
+      const { capture } = await loadAnalytics();
       capture('backseat_started', {
         character_id: characterId,
         mode,
@@ -353,7 +369,7 @@ export async function endBackseat(characterId: string): Promise<void> {
   }
   void (async () => {
     try {
-      const { capture } = await import('../analytics');
+      const { capture } = await loadAnalytics();
       // duration_ms is the load-bearing key name: the analytics dashboard sums
       // playtime across every event in SESSION_EVENTS by that field.
       capture('backseat_ended', {
@@ -555,6 +571,11 @@ export async function handleTick(tick: BackseatTick): Promise<void> {
     return;
   }
 
+  if (!isUser && Date.now() < s.creditWallUntil) {
+    slog(s, `tick ${label} dropped (credit wall)`);
+    return;
+  }
+
   // Being talked to always earns an answer, so a user tick skips the speak-gap
   // floor. Everything else respects it: two lines about the same six seconds
   // is worse than one.
@@ -665,10 +686,11 @@ export async function handleTick(tick: BackseatTick): Promise<void> {
       // above). Shape only, never the message.
       void (async () => {
         try {
-          const { captureSurfaceError, surfaceErrorClass } = await import('../analytics');
+          const { captureSurfaceError, surfaceErrorClass } = await loadAnalytics();
           captureSurfaceError('backseat', `turn_${surfaceErrorClass(err)}`, s.characterId);
         } catch { /* analytics is never load-bearing */ }
       })();
+      void onCreditWall(s, err, isUser);
     }
   } finally {
     if (s.inflight === ctrl) {
@@ -676,6 +698,30 @@ export async function handleTick(tick: BackseatTick): Promise<void> {
       s.inflightKind = null;
     }
   }
+}
+
+/**
+ * A turn failed: if it was the credit wall, rest the screen ticks, raise the
+ * usage-limit popup (the first time this session, and again whenever the
+ * player spoke into the wall), and report the degrade once (260926). Before
+ * this the 402s were silent: the companion just stopped talking mid-share.
+ */
+async function onCreditWall(s: Session, err: unknown, fromUser: boolean): Promise<void> {
+  if (classifyUsageLimit(err) !== 'depleted') return;
+  s.creditWallUntil = Date.now() + CREDIT_WALL_BACKOFF_MS;
+  if (s.creditWallReported && !fromUser) return;
+  const reason = await raiseUsageLimitPopup(err);
+  if (reason !== 'depleted' || s.creditWallReported) return;
+  s.creditWallReported = true;
+  slog(s, 'credit wall: screen ticks rest, the player can still talk');
+  try {
+    const { capture } = await loadAnalytics();
+    capture('credit_wall_degraded', {
+      surface: 'backseat',
+      character_id: s.characterId,
+      mode: 'screen_ticks_paused',
+    });
+  } catch { /* analytics is never load-bearing */ }
 }
 
 async function runTurn(

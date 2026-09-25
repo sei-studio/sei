@@ -1842,6 +1842,11 @@ export interface RendererApi {
   drawEnd(characterId: string): Promise<void>;
   /** Resume a game paused by a usage limit (260730): re-arms the turn clock. */
   drawResume(characterId: string): Promise<void>;
+  /**
+   * End a game paused on the credit wall (260926): straight to the gallery
+   * with the drawings so far, recorded as reason 'credit_wall'.
+   */
+  drawFinish(characterId: string): Promise<DrawGameState | null>;
   onDrawState(cb: (state: DrawGameState) => void): Unsubscribe;
   onDrawAiStroke(cb: (s: DrawAiStroke) => void): Unsubscribe;
   onDrawSnapshotRequest(cb: (r: DrawSnapshotRequest) => void): Unsubscribe;
@@ -3000,6 +3005,8 @@ export const IpcChannel = {
     end: 'draw:end',
     /** Invoke: resume after a usage-limit pause (260730). */
     resume: 'draw:resume',
+    /** Invoke: end a credit-wall-paused game into the gallery (260926). */
+    finish: 'draw:finish',
     /** Push: full DrawGameState on every change. */
     state: 'draw:state',
     /** Push: DrawAiStroke, one per stroke the character draws. */

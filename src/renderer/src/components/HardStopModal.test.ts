@@ -58,6 +58,17 @@ describe('HardStopModal', () => {
     expect(SRC.includes('if (!hardStopActive || isRateLimited) return;')).toBe(true);
   });
 
+  it('H.6: the depleted body carries the free-play reset line next to the CTAs (260926)', () => {
+    const start = SRC.indexOf('const handleUpgrade');
+    const branch = SRC.slice(start);
+    expect(SRC.includes('useResetLine()')).toBe(true);
+    expect(branch.includes('{resetLine ?')).toBe(true);
+    // Omitted, not blank, when the proxy sent no reset time.
+    expect(branch.includes(': null}')).toBe(true);
+    expect(branch.includes('handleTopUp')).toBe(true);
+    expect(branch.includes('handleUpgrade')).toBe(true);
+  });
+
   it('H.5: no em dash in the rate-limited body copy', () => {
     const start = SRC.indexOf('const retryWhen');
     const branch = SRC.slice(start, SRC.indexOf('</ModalShell>', start));

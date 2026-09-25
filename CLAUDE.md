@@ -2642,6 +2642,11 @@ Rules that follow from the existing implementations:
 - Use a **lazy `await import('../analytics')` inside a fire-and-forget block**,
   so the module graph and the tests never depend on analytics being
   initialized. `capture()` is already a no-op when uninitialized or opted out.
+  260926: chess, Draw! and backseat go through `loadAnalytics()`
+  (`src/main/lazyAnalytics.ts`), one cached lazy import. Two separate
+  `import('../analytics')` calls in the same tick can resolve to different
+  instances under vitest mocking, so a mocked `capture` silently misses the
+  second event. Prefer it for new capture sites.
 - Then add the new `_ended` name to `SESSION_EVENTS` in the analytics repo
   (`~/slop/sei-studio/analytics/server.mjs`) and a label in `SURFACE_LABEL`
   (`public/app.js`). That is the only dashboard change needed.
