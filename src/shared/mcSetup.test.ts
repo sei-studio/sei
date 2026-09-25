@@ -47,6 +47,15 @@ describe('mcSetup', () => {
     expect(selectTargetMcVersion({ supported: SUPPORTED, requested: '1.12.2' })).toBe('26.1');
   });
 
+  it('caps the wizard profile at WIZARD_MAX_MC even when the bot can join newer', () => {
+    // 260926: the bot joins 26.2 / 26.3, but CustomSkinLoader has no verified
+    // build there, so setup keeps building the 26.1 profile.
+    const joinable = [...SUPPORTED, '26.2', '26.3'];
+    expect(selectTargetMcVersion({ supported: joinable })).toBe('26.1');
+    expect(selectTargetMcVersion({ supported: joinable, requested: '26.3' })).toBe('26.1');
+    expect(installableMcVersions(joinable)[0]).toBe('26.1');
+  });
+
   it('never targets a snapshot or a version older than Fabric supports', () => {
     expect(installableMcVersions(['1.8.9', '1.12.2', '1.16.5', '1.21.4', '26.1-snapshot-3', '26.1'])).toEqual(['26.1', '1.21.4', '1.16.5']);
     expect(selectTargetMcVersion({ supported: ['1.8.9'] })).toBeNull();
