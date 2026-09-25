@@ -38,7 +38,7 @@ import { attemptSummon } from '../../lib/summonFlow';
 import { requestGameLaunch } from '../../lib/gameLaunch';
 import { errorCopyText } from '../../lib/errors';
 import { connectingLabel } from '../../lib/summonProgress';
-import { MC_RANGE_VARS, worldTooNewForSei } from '../../lib/mcVersions';
+import { mcRangeVars, worldTooNewForSei } from '../../lib/mcVersions';
 import { GamePackCard } from '../games/GamePackCard';
 import { SetupStepper, useSetupWindow, type StepButtonProps, type StepSkin, type StepperSkin } from '../games/SetupStepper';
 import { useMcSetupSteps } from './McSteps';
@@ -146,11 +146,11 @@ export function McLaunchPanel({ characterId }: McLaunchPanelProps): React.ReactE
           </p>
         ) : worldTooNew ? (
           <p className={styles.failLine} role="status">
-            {t('Your open world is on Minecraft {version}, which Sei cannot join yet. Sei works with Minecraft Java {oldest} to {newest}.', { ...MC_RANGE_VARS, version: worldVersion ?? '' })}
+            {t('Your open world is on Minecraft {version}, which Sei cannot join yet. Sei works with Minecraft Java {versions}.', { ...mcRangeVars(t), version: worldVersion ?? '' })}
           </p>
         ) : (
           <p className={styles.versionLine}>
-            {t('Works with Minecraft Java {oldest} to {newest}.', MC_RANGE_VARS)}
+            {t('Works with Minecraft Java {versions}.', mcRangeVars(t))}
           </p>
         )}
         {setup.complete && win.mode === null ? (

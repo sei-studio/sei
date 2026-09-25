@@ -137,6 +137,87 @@ export function supportedMcRange(supported: readonly string[]): McSupportedRange
   return { oldest: releases[0], newest: releases[releases.length - 1] };
 }
 
+/** One row of minecraft-data's pc/common/protocolVersions.json. */
+export interface McProtocolRow {
+  minecraftVersion: string;
+  /** The wire protocol number. */
+  version: number;
+  usesNetty?: boolean;
+}
+
+/** Release versions (1.8 and newer) in the protocol table, oldest first. */
+export function mcReleases(rows: readonly McProtocolRow[]): string[] {
+  const out = new Set<string>();
+  for (const r of rows) {
+    if (r.usesNetty === false) continue;
+    if (RELEASE_RE.test(r.minecraftVersion) && compareMcVersions(r.minecraftVersion, BOT_MIN_MC) >= 0) {
+      out.add(r.minecraftVersion);
+    }
+  }
+  return [...out].sort(compareMcVersions);
+}
+
+/**
+ * 260926: every release a world can run that Sei can actually join, oldest
+ * first. Mirrors the bot's check at connect (connect.js
+ * resolveSupportedVersion): the world's version is joinable when it is in
+ * minecraft-protocol's `supportedVersions` by name, or when it speaks the same
+ * protocol as a supported entry (1.20.3 speaks 1.20.4's). The table is not a
+ * contiguous range: 1.9 to 1.9.2, 1.11, 1.12.1 and more have protocols of
+ * their own that the stack does not implement.
+ */
+export function joinableMcVersions(supported: readonly string[], rows: readonly McProtocolRow[]): string[] {
+  const protocolOf = new Map<string, number>();
+  for (const r of rows) {
+    if (r.usesNetty === false) continue;
+    if (!protocolOf.has(r.minecraftVersion)) protocolOf.set(r.minecraftVersion, r.version);
+  }
+  const supportedProtocols = new Set<number>();
+  for (const v of supported) {
+    const p = protocolOf.get(v);
+    if (p !== undefined) supportedProtocols.add(p);
+  }
+  const out = new Set<string>();
+  for (const v of mcReleases(rows)) {
+    const p = protocolOf.get(v);
+    if (supported.includes(v) || (p !== undefined && supportedProtocols.has(p))) out.add(v);
+  }
+  // A supported entry the data table does not list yet still counts.
+  for (const v of supported) {
+    if (RELEASE_RE.test(v) && compareMcVersions(v, BOT_MIN_MC) >= 0) out.add(v);
+  }
+  return [...out].sort(compareMcVersions);
+}
+
+/**
+ * The joinable versions as players should read them: consecutive releases
+ * (with no unsupported release between them) collapse to "a to b", so every
+ * gap stays visible. "1.8 to 1.8.9, 1.9.3, 1.9.4, ..., 1.19 to 1.21.11, 26.1
+ * to 26.1.2".
+ */
+export function formatMcVersionList(
+  joinable: readonly string[],
+  releases: readonly string[],
+  span: (from: string, to: string) => string = (from, to) => `${from} to ${to}`,
+): string {
+  const ok = new Set(joinable);
+  const order = [...new Set([...releases, ...joinable])].sort(compareMcVersions);
+  const runs: string[][] = [];
+  let run: string[] = [];
+  for (const v of order) {
+    if (ok.has(v)) {
+      run.push(v);
+    } else if (run.length) {
+      runs.push(run);
+      run = [];
+    }
+  }
+  if (run.length) runs.push(run);
+  return runs
+    .map((r) => (r.length >= 3 ? span(r[0], r[r.length - 1]) : r.join(', ')))
+    .join(', ');
+}
+
 /**
  * Is the world's reported version name clearly NEWER than anything Sei can
  * join? Reads the first "1.21.4" / "26.2" shaped number out of the ping's
@@ -148,9 +229,14 @@ export function supportedMcRange(supported: readonly string[]): McSupportedRange
 export function isMcVersionNewerThanSupported(
   versionName: string | null | undefined,
   supported: readonly string[],
+  rows?: readonly McProtocolRow[],
 ): boolean {
   const m = versionName?.match(/\d{1,2}\.\d{1,3}(?:\.\d{1,3})?/);
-  const range = supportedMcRange(supported);
-  if (!m || !range) return false;
-  return compareMcVersions(m[0], range.newest) > 0;
+  if (!m) return false;
+  // 260926: with the protocol table, the newest JOINABLE release (26.1.2
+  // speaks 26.1's protocol), not the table's newest entry.
+  const joinable = rows ? joinableMcVersions(supported, rows) : null;
+  const newest = joinable?.length ? joinable[joinable.length - 1] : supportedMcRange(supported)?.newest;
+  if (!newest) return false;
+  return compareMcVersions(m[0], newest) > 0;
 }

@@ -184,10 +184,10 @@ describe('useMcSetupSteps + McLaunchPanel', () => {
   // and warns when the open world is already known to be too new.
   it('Test 9: the panel names the supported range and flags a too-new world', async () => {
     const plain = await renderPanel({ installs: [VANILLA], dismissed: true });
-    expect(plain).toContain('Works with Minecraft Java 1.20.1 to 26.1.');
+    expect(plain).toContain('Works with Minecraft Java 1.20, 1.20.1, 1.21.4, 26.1 to 26.1.2.');
     const tooNew = await renderPanel({ installs: [VANILLA], dismissed: true, lanOpen: true, lanVersion: '26.2' });
     expect(tooNew).toContain('Your open world is on Minecraft 26.2');
-    expect(tooNew).toContain('1.20.1 to 26.1');
+    expect(tooNew).toContain('1.21.4, 26.1 to 26.1.2');
     const ok = await renderPanel({ installs: [VANILLA], dismissed: true, lanOpen: true, lanVersion: '1.21.4' });
     expect(ok).not.toContain('Your open world is on');
   });

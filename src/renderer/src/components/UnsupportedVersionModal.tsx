@@ -19,7 +19,7 @@
 
 import React from 'react';
 import { t as tr, useT } from '../lib/i18n';
-import { MC_RANGE_VARS, MC_SUPPORTED_RANGE } from '../lib/mcVersions';
+import { MC_SUPPORTED_RANGE, mcRangeVars } from '../lib/mcVersions';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { useUiStore } from '../lib/stores/useUiStore';
@@ -66,12 +66,12 @@ export function reportedVersion(message: string): string | null {
 export function humanBody(message: string, detectedVersion: string | null): string {
   const version = reportedVersion(message) ?? detectedVersion;
   if (version) {
-    return tr('This world is running Minecraft {version}, which Sei cannot join yet. Sei works with Minecraft Java {oldest} to {newest}.', {
-      ...MC_RANGE_VARS,
+    return tr('This world is running Minecraft {version}, which Sei cannot join yet. Sei works with Minecraft Java {versions}.', {
+      ...mcRangeVars(tr),
       version,
     });
   }
-  return tr('This world runs a Minecraft version Sei cannot join yet. Sei works with Minecraft Java {oldest} to {newest}.', MC_RANGE_VARS);
+  return tr('This world runs a Minecraft version Sei cannot join yet. Sei works with Minecraft Java {versions}.', mcRangeVars(tr));
 }
 
 export function UnsupportedVersionModal({
