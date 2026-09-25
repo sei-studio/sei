@@ -14,6 +14,7 @@ import { mkdtemp, writeFile, utimes, readdir, mkdir } from 'node:fs/promises';
 import {
   redact,
   buildSummonDiagnostic,
+  bootPhaseProps,
   pruneLogsDir,
   type SummonFailureInfo,
 } from './diagnostics';
@@ -407,5 +408,89 @@ describe('pruneLogsDir', () => {
   it('is a silent no-op on a missing directory', async () => {
     const { deleted } = await pruneLogsDir(path.join(os.tmpdir(), 'sei-prune-does-not-exist-xyz'));
     expect(deleted).toBe(0);
+  });
+});
+
+// 260926: BOT_START_TIMEOUT breakdown. Flat per-phase props, ms since fork.
+describe('bootPhaseProps', () => {
+  const FORK = 1_000_000;
+
+  it('flattens every stamped phase to ms since fork, plus fork setup and the last phase', () => {
+    const props = bootPhaseProps({
+      attemptStartMs: FORK - 250,
+      forkAtMs: FORK,
+      marks: {
+        process_start: FORK + 400,
+        modules_loaded: FORK + 6_000,
+        init_received: FORK + 6_100,
+        pack_loader_ready: FORK + 6_200,
+        runtime_loaded: FORK + 21_000,
+        booted: FORK + 21_300,
+      },
+    });
+    expect(props).toEqual({
+      boot_fork_ms: 250,
+      boot_process_start_ms: 400,
+      boot_modules_loaded_ms: 6_000,
+      boot_init_received_ms: 6_100,
+      boot_pack_loader_ready_ms: 6_200,
+      boot_runtime_loaded_ms: 21_000,
+      boot_booted_ms: 21_300,
+      boot_last_phase: 'booted',
+    });
+  });
+
+  it('picks the furthest phase by boot order, not by object key order', () => {
+    const props = bootPhaseProps({
+      attemptStartMs: FORK,
+      forkAtMs: FORK,
+      marks: { spawn: FORK + 30_000, process_start: FORK + 10, login: FORK + 29_000 },
+    });
+    expect(props.boot_last_phase).toBe('spawn');
+  });
+
+  it('reports a null last phase when the bot never stamped one', () => {
+    const props = bootPhaseProps({ attemptStartMs: FORK, forkAtMs: FORK, marks: {} });
+    expect(props).toEqual({ boot_fork_ms: 0, boot_last_phase: null });
+  });
+
+  it('drops malformed names and values, and clamps a pre-fork process_start to 0', () => {
+    const props = bootPhaseProps({
+      attemptStartMs: FORK,
+      forkAtMs: FORK,
+      marks: {
+        process_start: FORK - 3,
+        'Bad Name': FORK + 5,
+        nan_value: Number.NaN,
+        ['x'.repeat(40)]: FORK + 1,
+      } as Record<string, number>,
+    });
+    expect(props).toEqual({ boot_fork_ms: 0, boot_process_start_ms: 0, boot_last_phase: 'process_start' });
+  });
+
+  it('buildSummonDiagnostic carries the breakdown and the boot_timeout phase', () => {
+    const diag = buildSummonDiagnostic(
+      baseInfo({
+        phase: 'boot_timeout',
+        errorClass: 'BOT_START_TIMEOUT',
+        boot: {
+          attemptStartMs: FORK,
+          forkAtMs: FORK,
+          marks: { process_start: FORK + 500, modules_loaded: FORK + 45_000 },
+        },
+      }),
+      { lan: null, signedIn: true, packaged: true },
+    );
+    expect(diag).toMatchObject({
+      summon_phase: 'boot_timeout',
+      boot_process_start_ms: 500,
+      boot_modules_loaded_ms: 45_000,
+      boot_last_phase: 'modules_loaded',
+    });
+  });
+
+  it('buildSummonDiagnostic adds no boot props when there is no boot info (pre-gate)', () => {
+    const diag = buildSummonDiagnostic(baseInfo({ phase: 'pre_gate' }), { lan: null, signedIn: true, packaged: true });
+    expect(Object.keys(diag).some((k) => k.startsWith('boot_'))).toBe(false);
   });
 });

@@ -6,6 +6,16 @@
 /** Mod 0.1.2: a trip to another map puts follow on hold instead of ending it, and sleep keeps it. */
 export const FOLLOW_HOLD_MIN_MOD = '0.1.2'
 
+/**
+ * Mod 0.1.3: the ship and give verbs, water/harvest `scope: "farm"`, the
+ * watering can refilling itself mid-round, and the host's activity
+ * (`host.holding` / `menu` / `inEvent`) plus `tomorrow` in the observation.
+ */
+export const CHORES_MIN_MOD = '0.1.3'
+
+/** Verbs an older mod answers with "unknown action"; hidden from the tool list until the mod has them. */
+export const CHORES_VERBS = Object.freeze(['ship', 'give'])
+
 function parts(version) {
   const m = /^\s*v?(\d+)\.(\d+)(?:\.(\d+))?/.exec(String(version ?? ''))
   return m ? [Number(m[1]), Number(m[2]), Number(m[3] ?? 0)] : null
@@ -29,4 +39,9 @@ export function modVersionAtLeast(version, min) {
 /** Does this mod hold follow across a trip and the night (see FOLLOW_HOLD_MIN_MOD)? */
 export function modHoldsFollow(version) {
   return modVersionAtLeast(version, FOLLOW_HOLD_MIN_MOD)
+}
+
+/** Does this mod have ship / give / farm-wide chores (see CHORES_MIN_MOD)? */
+export function modHasChores(version) {
+  return modVersionAtLeast(version, CHORES_MIN_MOD)
 }

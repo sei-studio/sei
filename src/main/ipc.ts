@@ -3918,9 +3918,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.feedback.submit, async (_e, argsRaw: unknown) => {
     const parsed = FeedbackSubmitArgsSchema.parse(argsRaw);
     const { feedbackSubmit } = await import('./cloud/proxyClient');
-    const res = await feedbackSubmit(parsed);
-    trackAnalytics('feedback_submitted');
-    return res;
+    const { submitFeedbackTracked } = await import('./feedbackSubmit');
+    // 260926: feedback_submitted only on success, feedback_failed otherwise
+    // (it used to fire on every call, so lost sends counted as received).
+    return submitFeedbackTracked(parsed, { submit: feedbackSubmit, track: trackAnalytics });
   });
 
   // feedback:report — 260706. Proxy POST /report (20/day per user).

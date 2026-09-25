@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { eventAddendum, ACTION_DESCRIPTIONS, STARDEW_BASELINE, WORLD_PRIMER, CAPABILITY_PARAGRAPH, ACTION_RULES, ACTION_RULES_LEGACY, SESSION_END_CLAUSE, actionRules } from './prompts.js'
-import { modVersionAtLeast, modHoldsFollow } from './modVersion.js'
+import { eventAddendum, ACTION_DESCRIPTIONS, STARDEW_BASELINE, WORLD_PRIMER, CAPABILITY_PARAGRAPH, CAPABILITY_PARAGRAPH_CHORES, ACTION_RULES, ACTION_RULES_CHORES, ACTION_RULES_LEGACY, SESSION_END_CLAUSE, actionRules, capabilityParagraph, describeAction } from './prompts.js'
+import { modVersionAtLeast, modHoldsFollow, modHasChores } from './modVersion.js'
 import { VERB_NAMES } from './registry.js'
 
 describe('stardew prompts', () => {
@@ -49,7 +49,8 @@ describe('stardew prompts', () => {
     expect(actionRules(null)).toBe(ACTION_RULES_LEGACY)
     expect(actionRules(undefined)).toBe(ACTION_RULES_LEGACY)
     expect(actionRules('0.1.2')).toBe(ACTION_RULES)
-    expect(actionRules('0.2.0')).toBe(ACTION_RULES)
+    expect(actionRules('0.1.3')).toBe(ACTION_RULES_CHORES)
+    expect(actionRules('0.2.0')).toBe(ACTION_RULES_CHORES)
   })
 
   it('compares mod versions numerically', () => {
@@ -83,5 +84,60 @@ describe('stardew prompts', () => {
     expect(eventAddendum('sei:death', { cause: 'Bat', where: 'UndergroundMine12' })).toMatch(/KNOCKED OUT by Bat in UndergroundMine12/)
     expect(eventAddendum('sei:death', { lastAttack: { label: 'Green Slime' } })).toMatch(/by Green Slime/)
     expect(eventAddendum('sei:something_else', {})).toBe('')
+  })
+
+  it('describes farm-wide chores and the hand-off only to a 0.1.3 mod', () => {
+    expect(modHasChores('0.1.3')).toBe(true)
+    expect(modHasChores('0.1.2')).toBe(false)
+    expect(modHasChores(null)).toBe(false)
+    expect(ACTION_RULES_CHORES).toMatch(/water\(\{scope:"farm"\}\)/)
+    expect(ACTION_RULES_CHORES).toMatch(/refills the can at the nearest water/)
+    expect(ACTION_RULES_CHORES).toMatch(/Hand-off rule/)
+    expect(ACTION_RULES_CHORES).toMatch(/Player activity rule/)
+    expect(ACTION_RULES_CHORES).toMatch(/follow is a standing order/)
+    // The 0.1.2 and older rules never mention verbs or fields that mod lacks.
+    for (const rules of [ACTION_RULES, ACTION_RULES_LEGACY]) {
+      expect(rules).not.toMatch(/ship\(\)|give\(|scope:"farm"|Player activity rule/)
+      // The till patch is composed app-side, so every mod gets it.
+      expect(rules).toMatch(/till\(\{x, y, width, height\}\)/)
+      expect(rules).toMatch(/refills when you water\(\) a water tile/)
+    }
+    for (const text of [ACTION_RULES_CHORES, ACTION_RULES, ACTION_RULES_LEGACY, CAPABILITY_PARAGRAPH, CAPABILITY_PARAGRAPH_CHORES]) {
+      expect(text).not.toMatch(/\{jobs_rule\}|\{handoff\}|\{following_rule\}/)
+    }
+    for (const text of [ACTION_RULES_CHORES, CAPABILITY_PARAGRAPH_CHORES]) {
+      // New model-facing text follows the plain-prose rule.
+      expect(text.replace(ACTION_RULES, '')).not.toMatch(/\u2014/)
+    }
+    expect(capabilityParagraph('0.1.3')).toBe(CAPABILITY_PARAGRAPH_CHORES)
+    expect(capabilityParagraph('0.1.2')).toBe(CAPABILITY_PARAGRAPH)
+    expect(CAPABILITY_PARAGRAPH_CHORES).toMatch(/shipping bin/)
+    expect(CAPABILITY_PARAGRAPH).not.toMatch(/shipping bin, hand items/)
+  })
+
+  it('gates the water / harvest descriptions and describes the new verbs', () => {
+    expect(describeAction('water', '0.1.3')).toMatch(/scope/)
+    expect(describeAction('water', '0.1.2')).not.toMatch(/scope/)
+    expect(describeAction('harvest', '0.1.3')).toMatch(/scope/)
+    expect(describeAction('harvest', null)).not.toMatch(/scope/)
+    expect(describeAction('till', null)).toMatch(/width/)
+    expect(describeAction('ship', '0.1.3')).toMatch(/shipping bin/)
+    expect(describeAction('give', '0.1.3')).toMatch(/player/)
+    for (const name of ['till', 'water', 'harvest', 'ship', 'give']) {
+      expect(describeAction(name, '0.1.3')).not.toMatch(/\u2014/)
+    }
+  })
+
+  it('adds the player-activity nudge to an idle tick only when the wires name one', () => {
+    const plain = eventAddendum('sei:idle', { quietMs: 10_000 })
+    expect(plain).not.toMatch(/took out their/)
+    const nudge = eventAddendum('sei:idle', { reason: 'player_activity', activity: 'watering', item: 'Watering Can' })
+    expect(nudge).toMatch(/IDLE TICK/)
+    expect(nudge).toMatch(/The player just took out their Watering Can, so they are probably watering\./)
+    expect(nudge).toMatch(/other end of the field/)
+    expect(nudge).not.toMatch(/\{item\}|\{activity\}|\{suggestion\}/)
+    const other = eventAddendum('sei:idle', { reason: 'player_activity', activity: 'juggling', item: 'Ball' })
+    expect(other).toMatch(/the same job beside them/)
+    expect(eventAddendum('sei:idle', { reason: 'player_activity' })).not.toMatch(/took out their/)
   })
 })

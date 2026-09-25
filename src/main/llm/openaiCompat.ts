@@ -23,6 +23,7 @@
 import type { ProviderKind } from '../../shared/llmCatalog';
 import { DEEPSEEK_EXTRA_BODY, FIRST_TOKEN_TIMEOUT_FLOOR_MS, modelVision } from '../../shared/llmCatalog';
 import type { LlmCallParams, LlmProvider, LlmResult, LlmToolUse } from './types';
+import { requestDeadline, timeoutOr } from './timeout';
 import {
   anthropicToOpenAIMessages,
   anthropicToolsToOpenAITools,
@@ -138,11 +139,8 @@ export function createOpenAICompatProvider(opts: {
       if (p.signal.aborted) controller.abort();
       else p.signal.addEventListener('abort', onParentAbort, { once: true });
     }
-    let timer = setTimeout(() => controller.abort(), timeoutMs);
-    const rearm = (): void => {
-      clearTimeout(timer);
-      timer = setTimeout(() => controller.abort(), timeoutMs);
-    };
+    const deadline = requestDeadline(controller, timeoutMs);
+    const rearm = (): void => deadline.rearm();
 
     try {
       const resp = await fetchImpl(`${baseUrl}/chat/completions`, {
@@ -227,8 +225,10 @@ export function createOpenAICompatProvider(opts: {
         usage,
         stopReason: toolUses.length > 0 && stopReason === null ? 'tool_use' : stopReason,
       };
+    } catch (err) {
+      throw timeoutOr(err, deadline, p.signal, kind, timeoutMs);
     } finally {
-      clearTimeout(timer);
+      deadline.clear();
       if (p.signal) p.signal.removeEventListener('abort', onParentAbort);
     }
   }

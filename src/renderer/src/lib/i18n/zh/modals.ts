@@ -187,8 +187,8 @@ export const ZH_MODALS: Record<string, string> = {
   'What should we improve?': '我们应该改进什么？',
   'Daily feedback limit reached. Try again tomorrow.': '已达每日反馈上限，请明天再试。',
   'Sign in to submit feedback.': '请登录后提交反馈。',
-  'Feedback could not be sent. Check your connection and try again.':
-    '反馈发送失败。请检查网络连接后重试。',
+  'Feedback could not be sent. Your message is still here. Check your connection and press Submit to try again.':
+    '反馈发送失败。你的内容仍保留在这里。请检查网络连接，然后再次点击提交。',
   'Feedback sent': '反馈已发送',
   'Thank you. We read all comments within 24 hrs.':
     '谢谢！我们会在 24 小时内阅读所有留言。',
@@ -582,15 +582,17 @@ export const ZH_MODALS: Record<string, string> = {
   'Minecraft version not supported': '不支持的 Minecraft 版本',
   "{name} couldn't join.": '{name} 无法加入。',
   'To switch to a supported version:': '切换到受支持版本的方法：',
-  'This world is running Minecraft {version}, which is not supported yet. Sei supports Java versions up to {latest}.':
-    '这个世界运行的是 Minecraft {version}，暂不支持。Sei 支持的 Java 版本最高为 {latest}。',
-  'This world runs a Minecraft version that is not supported yet. Sei supports Java versions up to {latest}.':
-    '这个世界运行的 Minecraft 版本暂不支持。Sei 支持的 Java 版本最高为 {latest}。',
-  'Open the Minecraft launcher and go to the Installations tab.':
+  'This world is running Minecraft {version}, which Sei cannot join yet. Sei works with Minecraft Java {versions}.':
+    '这个世界运行的是 Minecraft {version}，Sei 暂时无法加入。Sei 支持 Minecraft Java 版 {versions}。',
+  'This world runs a Minecraft version Sei cannot join yet. Sei works with Minecraft Java {versions}.':
+    '这个世界的 Minecraft 版本 Sei 暂时无法加入。Sei 支持 Minecraft Java 版 {versions}。',
+  'Open the Minecraft Launcher and go to the Installations tab.':
     '打开 Minecraft 启动器，进入「安装」选项卡。',
-  'Create or select an installation on {version} or another supported version.':
-    '创建或选择 {version} 或其他受支持版本的安装。',
-  'Open your world from that installation.': '从该安装打开你的世界。',
+  'Click New installation, pick release {version} in the Version list, then click Create.':
+    '点击「新建安装」，在「版本」列表中选择 release {version}，然后点击「创建」。',
+  'Press Play on that installation, open your world, then choose Open to LAN.':
+    '用该安装点击「开始游戏」，打开你的世界，然后选择「对局域网开放」。',
+  'Return to Sei and press Launch again.': '回到 Sei，再次点击启动。',
   'Alternatively, run the skin setup in Sei settings. It installs our modded Fabric version of Minecraft, which is supported and shows character skins.':
     '或者，在 Sei 设置中运行皮肤设置。它会安装我们的 Fabric 模组版 Minecraft，该版本受支持并能显示角色皮肤。',
   'Minecraft may not open worlds saved on a newer version. If your world will not open, create a new world on the supported version and play there.':

@@ -109,7 +109,10 @@ export type BotStatus = BotStatusBase & {
 
 type BotStatusBase =
   | { kind: 'idle'; characterId: string }
-  | { kind: 'connecting'; characterId: string }
+  // 260926: stage 'starting' = the bot process is booting (cold boot can take
+  // 20s+ on Windows); 'joining' = booted, connecting to the world. Optional so
+  // older senders and tests stay valid; absent reads as 'starting'.
+  | { kind: 'connecting'; characterId: string; stage?: 'starting' | 'joining' }
   // `startedAtMs` is the epoch ms when this session's clock started (main and
   // renderer share the system clock). The renderer derives a LIVE uptime from
   // it (Date.now() - startedAtMs) so the status line counts up even though main
@@ -2404,7 +2407,7 @@ export interface RendererApi {
    */
   feedbackSubmit: (args: { body: string; email?: string; claimReward?: boolean }) => Promise<
     | { ok: true; usage_reset: boolean; already_claimed: boolean }
-    | { ok: false; code: string }
+    | { ok: false; code: string; status?: number; reason?: string }
   >;
   /**
    * 260706 — report a companion (POST /report, 20/day per user). Reasons are

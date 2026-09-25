@@ -25,6 +25,7 @@ import { startSurvival } from './behaviors/survival.js'
 import { applyWorldPause } from './behaviors/pause.js'
 import { installFaceOnDig } from './behaviors/face.js'
 import { forgeHandshakeEnabled, installForgeHandshake, sampleWorldNames } from './forgeHandshake.js'
+import { markBoot } from '../../bootTiming.js'
 
 /**
  * Extract human-readable text from mineflayer kick/disconnect reasons,
@@ -238,6 +239,63 @@ function pingWithTimeout(options, timeoutMs) {
 }
 
 /**
+ * The versions Sei can join, as players should read them (260926): every
+ * release from mineflayer's 1.8 floor that resolveSupportedVersion accepts
+ * (named in the protocol table, or speaking a supported entry's protocol),
+ * with consecutive releases collapsed to "a to b" so the gaps stay visible:
+ * "1.8 to 1.8.9, 1.9.3, 1.9.4, ..., 1.19 to 1.21.11, 26.1 to 26.1.2".
+ * Mirrors joinableMcVersions() + formatMcVersionList() in
+ * src/shared/mcSetup.ts, which the renderer uses for the same sentence;
+ * connect.version.test.js pins the two to the same output.
+ *
+ * @param {readonly string[]} [versions]  minecraft-protocol's supportedVersions
+ * @param {ReadonlyArray<{minecraftVersion:string, version:number, usesNetty?:boolean}>} [rows]
+ *   minecraft-data's pc protocol table
+ */
+export function supportedRangeText(versions = supportedVersions, rows = pcProtocolRows()) {
+  const parts = (v) => v.split('.').map((n) => parseInt(n, 10) || 0)
+  const cmp = (a, b) => {
+    const pa = parts(a)
+    const pb = parts(b)
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const d = (pa[i] ?? 0) - (pb[i] ?? 0)
+      if (d !== 0) return d
+    }
+    return 0
+  }
+  const isRelease = (v) => /^\d+\.\d+(?:\.\d+)?$/.test(v) && cmp(v, '1.8') >= 0
+  const protocolOf = new Map()
+  for (const r of rows) {
+    if (r.usesNetty === false) continue
+    if (!protocolOf.has(r.minecraftVersion)) protocolOf.set(r.minecraftVersion, r.version)
+  }
+  const supportedProtocols = new Set(versions.map((v) => protocolOf.get(v)).filter((p) => p !== undefined))
+  const releases = [...new Set([...protocolOf.keys()].filter(isRelease))]
+  const ok = new Set(releases.filter((v) => versions.includes(v) || supportedProtocols.has(protocolOf.get(v))))
+  for (const v of versions) if (isRelease(v)) ok.add(v)
+  if (ok.size === 0) return 'no versions'
+  const order = [...new Set([...releases, ...ok])].sort(cmp)
+  const runs = []
+  let run = []
+  for (const v of order) {
+    if (ok.has(v)) run.push(v)
+    else if (run.length) { runs.push(run); run = [] }
+  }
+  if (run.length) runs.push(run)
+  return runs.map((r) => (r.length >= 3 ? `${r[0]} to ${r[r.length - 1]}` : r.join(', '))).join(', ')
+}
+
+/** minecraft-data's pc protocol table as flat rows; [] if it will not load. */
+function pcProtocolRows() {
+  try {
+    const byProtocol = minecraftData.postNettyVersionsByProtocolVersion?.pc ?? {}
+    return Object.values(byProtocol).flat()
+  } catch {
+    return []
+  }
+}
+
+/**
  * Status-ping the LAN server and resolve the Minecraft version Sei should
  * connect with, bounded to what our networking deps actually implement. The
  * Electron path passes `version: 'auto'`; this resolves it to an EXPLICIT
@@ -263,8 +321,8 @@ export async function resolveServerVersion({ host, port, timeoutMs = PING_TIMEOU
     const reported = name || (typeof protocol === 'number' ? `protocol ${protocol}` : 'an unknown version')
     const err = new Error(
       `UNSUPPORTED_MC_VERSION: This world is running Minecraft ${reported}, which Sei can't join yet. ` +
-      `Sei supports Java ${supportedVersions[0]}–${supportedVersions[supportedVersions.length - 1]}. ` +
-      `Switch your world to a supported version and click Summon again.`,
+      `Sei supports Minecraft Java ${supportedRangeText()}. ` +
+      `Open your world from a launcher installation on a supported version and press Launch again.`,
     )
     err.code = 'UNSUPPORTED_MC_VERSION'
     throw err
@@ -313,7 +371,12 @@ export function createBotInstance({
   // mineflayer auto-detects when version is omitted/undefined.
   if (version && version !== 'auto') botOpts.version = version
 
+  // 260926 boot timing: createBot synchronously loads the version's
+  // minecraft-data registry (large JSON), so it gets its own phase.
+  markBoot('create_bot')
   const bot = createBot(botOpts)
+  markBoot('bot_created')
+  try { bot.once('login', () => markBoot('login')) } catch {}
 
   // Forge/NeoForge handshake SPIKE (260806). Off unless SEI_FORGE_HANDSHAKE=1.
   // Must be installed here, immediately after createBot and before the socket
@@ -390,6 +453,7 @@ export function createBotInstance({
     logger.info?.(`[sei] Connected to ${host}:${port} as ${username}`)
     if (!_spawned) {
       _spawned = true
+      markBoot('spawn')
       _clearConnectTimer()
       safeStart('loadPlugin(pathfinder)', () => bot.loadPlugin(pathfinder))
       // Face-what-you-break (260708): wrap bot.dig AFTER the pathfinder loads

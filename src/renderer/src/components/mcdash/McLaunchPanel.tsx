@@ -25,7 +25,8 @@
  * check, host-compatibility gate). With no open world detected, that flow
  * opens the Minecraft setup modal on the "Connecting to world" tab WITH
  * the searching animation, and auto-resumes the summon when a world
- * opens. While the summon is in flight the button reads "Connecting..."
+ * opens. While the summon is in flight the button reads "Starting
+ * companion..." then "Joining your world..." (lib/summonProgress),
  * (disabled); on failure a one-line plain-English reason (ERROR_COPY)
  * shows under it. Once the bot is online, ChatScreen swaps this panel for
  * the live dashboard (McDashboardPanel).
@@ -35,7 +36,9 @@ import React from 'react';
 import { useDataStore } from '../../lib/stores/useDataStore';
 import { attemptSummon } from '../../lib/summonFlow';
 import { requestGameLaunch } from '../../lib/gameLaunch';
-import { ERROR_COPY } from '../../lib/errors';
+import { errorCopyText } from '../../lib/errors';
+import { connectingLabel } from '../../lib/summonProgress';
+import { mcRangeVars, worldTooNewForSei } from '../../lib/mcVersions';
 import { GamePackCard } from '../games/GamePackCard';
 import { SetupStepper, useSetupWindow, type StepButtonProps, type StepSkin, type StepperSkin } from '../games/SetupStepper';
 import { useMcSetupSteps } from './McSteps';
@@ -85,8 +88,15 @@ export function McLaunchPanel({ characterId }: McLaunchPanelProps): React.ReactE
   const t = useT();
   const summon = useDataStore((s) => s.summons[characterId]);
   const connecting = summon?.kind === 'connecting';
-  const failReason =
-    summon?.kind === 'error' ? (ERROR_COPY[summon.error] ?? ERROR_COPY.BOT_CRASH) : null;
+  const failReason = summon?.kind === 'error' ? errorCopyText(summon.error, t) : null;
+  // 260926: say which Minecraft versions work BEFORE the first Launch, and
+  // warn when the open world is already known to be too new (the LAN
+  // watcher's status ping names its version). UNSUPPORTED_MC_VERSION was the
+  // top summon blocker by people (19 in 30 days, mostly 26.2 / 26.3) and the
+  // player only learned the rule after a failed launch.
+  const lan = useDataStore((s) => s.lan);
+  const worldVersion = lan.kind === 'open' ? (lan.versionName ?? null) : null;
+  const worldTooNew = worldTooNewForSei(worldVersion);
   const setup = useMcSetupSteps(STEP_SKIN);
   const win = useSetupWindow(setup.allDone);
 
@@ -128,13 +138,21 @@ export function McLaunchPanel({ characterId }: McLaunchPanelProps): React.ReactE
           disabled={bigDisabled}
           onClick={showSetUp ? win.openSetup : launch}
         >
-          {connecting ? t('Connecting...') : showSetUp ? t('Set up') : t('Launch')}
+          {connecting ? connectingLabel(summon, t) : showSetUp ? t('Set up') : t('Launch')}
         </button>
         {failReason ? (
           <p className={styles.failLine} role="alert">
-            {t(failReason)}
+            {failReason}
           </p>
-        ) : null}
+        ) : worldTooNew ? (
+          <p className={styles.failLine} role="status">
+            {t('Your open world is on Minecraft {version}, which Sei cannot join yet. Sei works with Minecraft Java {versions}.', { ...mcRangeVars(t), version: worldVersion ?? '' })}
+          </p>
+        ) : (
+          <p className={styles.versionLine}>
+            {t('Works with Minecraft Java {versions}.', mcRangeVars(t))}
+          </p>
+        )}
         {setup.complete && win.mode === null ? (
           <button type="button" className={styles.helpLink} onClick={win.openHelp}>
             {t('How do I set up launch?')}

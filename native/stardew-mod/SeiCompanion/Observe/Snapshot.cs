@@ -65,6 +65,7 @@ namespace SeiCompanion.Observe
             };
 
             obs["daysPlayed"] = (int)Game1.stats.DaysPlayed;
+            obs["tomorrow"] = TomorrowWeather();
             obs["farm"] = FarmStats();
             obs["host"] = HostInfo();
             obs["inventory"] = Inventory(body, out string held, out Dictionary<string, object> can);
@@ -158,6 +159,12 @@ namespace SeiCompanion.Observe
                     ["maxStamina"] = p.MaxStamina,
                     ["farmingLevel"] = p.FarmingLevel,
                     ["mailWaiting"] = Game1.mailbox.Count,
+                    // 0.1.3: what the player is doing right now, so the
+                    // companion can join in (they picked up the watering can)
+                    // or hold its chatter (a shop, a letter, a cutscene).
+                    ["holding"] = p.CurrentItem?.DisplayName,
+                    ["menu"] = Game1.activeClickableMenu?.GetType().Name,
+                    ["inEvent"] = Game1.eventUp,
                 };
             }
             catch
@@ -525,6 +532,17 @@ namespace SeiCompanion.Observe
             if (Game1.isSnowing) return "snow";
             if (Game1.isDebrisWeather) return "windy";
             return "sunny";
+        }
+
+        /// <summary>
+        /// Tomorrow's forecast as the game stores it (1.6: "Sun", "Rain",
+        /// "Storm", "Wind", "Snow", "Festival", "Wedding", "GreenRain"), or
+        /// null. Convert.ToString keeps this building if the field's type
+        /// changes (it was an int before 1.6).
+        /// </summary>
+        public static string TomorrowWeather()
+        {
+            try { return Convert.ToString(Game1.weatherForTomorrow); } catch { return null; }
         }
 
         public static string TimeText(int t)

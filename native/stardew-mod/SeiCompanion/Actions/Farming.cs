@@ -121,25 +121,56 @@ namespace SeiCompanion.Actions
                 yield return o.Ok ? Result.Success(o.Detail) : Result.Fail(o.Detail);
                 yield break;
             }
-            int limit = Math.Clamp(ctx.Int("count") ?? 30, 1, 60);
+            // scope "farm" (mod 0.1.3): walk to the Farm and take every ready
+            // crop on it, not only those within 20 tiles (see Tools.Water).
+            bool farmWide = Tools.FarmScope(ctx);
+            if (farmWide)
+            {
+                var go = new Outcome();
+                yield return Tools.ToFarm(ctx, go);
+                if (!go.Ok) { yield return Result.Fail(go.Detail); yield break; }
+            }
+            int reach = farmWide ? Tools.WholeMap : Tools.ScanRadius;
+            int limit = Math.Clamp(ctx.Int("count") ?? (farmWide ? 120 : 30), 1, farmWide ? 200 : 60);
             int done = 0;
             var names = new List<string>();
-            for (int i = 0; i < limit; i++)
+            var skipped = new HashSet<Point>();
+            string lastSkip = null;
+            for (int i = 0; i < limit + Tools.MaxSkips; i++)
             {
                 if (ctx.Cancelled) yield break;
-                Point? next = NearestReadyCrop(body);
+                if (done >= limit) break;
+                Point? next = NearestReadyCrop(body, reach, skipped);
                 if (next == null) break;
                 var o = new Outcome();
                 yield return HarvestAt(ctx, next.Value, o);
-                if (!o.Ok) { yield return Result.Fail(done > 0 ? $"harvested {done}, then: {o.Detail}" : o.Detail); yield break; }
+                if (!o.Ok && o.Detail == BagFull)
+                {
+                    string got = done > 0 ? $"harvested {done} crops: {string.Join(", ", names.Distinct().Take(4))}; " : "";
+                    string full = $"{got}stopped: {BagFull}, the rest is still in the ground (ship() the produce or put things in a chest, then harvest again)";
+                    yield return done > 0 ? Result.Success(full) : Result.Fail(full);
+                    yield break;
+                }
+                if (!o.Ok)
+                {
+                    // An unreachable crop is stepped over; anything else ends the round.
+                    if (!Tools.IsWalkFailure(o.Detail) || skipped.Count >= Tools.MaxSkips) { yield return Result.Fail(done > 0 ? $"harvested {done}, then: {o.Detail}" : o.Detail); yield break; }
+                    skipped.Add(next.Value);
+                    lastSkip = o.Detail;
+                    continue;
+                }
                 done++;
                 names.Add(o.Detail);
                 ctx.Progress($"harvested {done}");
             }
-            yield return done > 0 ? Result.Success($"harvested {done} crops: {string.Join(", ", names.Distinct().Take(4))}") : Result.Fail("nothing is ready to harvest nearby");
+            string where = farmWide ? " on the farm" : " nearby";
+            string skips = skipped.Count > 0 ? $"; skipped {skipped.Count} it could not reach ({lastSkip})" : "";
+            yield return done > 0
+                ? Result.Success($"harvested {done} crops: {string.Join(", ", names.Distinct().Take(4))}{skips}")
+                : Result.Fail(skipped.Count > 0 ? $"could not reach the ready crops{where}: {lastSkip}" : $"nothing is ready to harvest{where}");
         }
 
-        public static Point? NearestReadyCrop(SeiBody body)
+        public static Point? NearestReadyCrop(SeiBody body, int reach = Tools.ScanRadius, HashSet<Point> skip = null)
         {
             GameLocation loc = body.Npc.currentLocation;
             Vector2 me = body.Npc.Tile;
@@ -149,8 +180,10 @@ namespace SeiCompanion.Actions
             {
                 if (!(pair.Value is HoeDirt dirt) || dirt.crop == null || !dirt.readyForHarvest())
                     continue;
+                if (skip != null && skip.Contains(pair.Key.ToPoint()))
+                    continue;
                 float d = Vector2.Distance(pair.Key, me);
-                if (d <= Tools.ScanRadius && d < bestDist) { bestDist = d; best = pair.Key.ToPoint(); }
+                if (d <= reach && d < bestDist) { bestDist = d; best = pair.Key.ToPoint(); }
             }
             return best;
         }
@@ -169,7 +202,8 @@ namespace SeiCompanion.Actions
                     var walk = new Outcome();
                     yield return Movement.WalkTo(ctx, tile, true, walk);
                     if (!walk.Ok) { o.Fail(walk.Detail); yield break; }
-                    string result = HarvestCrop(body, dirt, tile);
+                    string result = HarvestCrop(body, dirt, tile, out bool bagFull);
+                    if (bagFull) { o.Fail(BagFull); yield break; }
                     if (result == null) { o.Fail("harvest failed"); yield break; }
                     o.Pass(result);
                     yield break;
@@ -220,8 +254,12 @@ namespace SeiCompanion.Actions
         }
 
         /// <summary>Take a ready crop into the shadow's inventory: one stack per CropData, regrow or destroy, farming XP.</summary>
-        public static string HarvestCrop(SeiBody body, HoeDirt dirt, Point tile)
+        /// <summary>The HarvestAt failure for a full bag; the harvest loop stops on it.</summary>
+        public const string BagFull = "your bag is full";
+
+        public static string HarvestCrop(SeiBody body, HoeDirt dirt, Point tile, out bool bagFull)
         {
+            bagFull = false;
             Crop crop = dirt.crop;
             CropData data = null;
             try { data = crop.GetData(); } catch { }
@@ -233,6 +271,9 @@ namespace SeiCompanion.Actions
             try { item = ItemRegistry.Create(crop.indexOfHarvest.Value, count, 0, allowNull: true); }
             catch { item = null; }
             if (item == null) return null;
+            // 0.1.3: a full bag leaves the crop in the ground. TakeItem would
+            // drop it at the body's feet and the round would still count it.
+            if (!body.HasRoomFor(item)) { bagFull = true; return null; }
             string name = item.DisplayName;
             body.TakeItem(item);
             try { body.Shadow.gainExperience(0, 8); } catch { }

@@ -31,6 +31,9 @@ namespace SeiCompanion.Actions
                 ["buy"] = Shop.Buy,
                 ["interact"] = Interact.Do,
                 ["sleep"] = Interact.Sleep,
+                // 0.1.3
+                ["ship"] = Shipping.Ship,
+                ["give"] = Shipping.Give,
             };
 
         public static Func<ActionContext, IEnumerable<object>> Resolve(string name)
