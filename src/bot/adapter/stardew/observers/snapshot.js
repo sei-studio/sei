@@ -6,7 +6,7 @@
 // about 1.2k tokens; every list is already capped by the mod.
 
 import { getInFlightLineForSnapshot } from '../../../brain/inflight.js'
-import { modHoldsFollow } from '../modVersion.js'
+import { modHoldsFollow, modHasChores } from '../modVersion.js'
 
 const MAX_INV = 20
 
@@ -47,6 +47,99 @@ export function followLine(obs, holdAware = false) {
   return who
 }
 
+/** Inventory kinds (mod Snapshot.ItemKind) that ship() with no item sends. */
+const PRODUCE_KINDS = new Set(['crop', 'fish', 'forage'])
+
+/**
+ * The farm's work right now, as short phrases (mod 0.1.3 hints how to do it
+ * in one call). Pure; reads the whole-farm counts, the nearby machines and
+ * the companion's own bag. Empty when there is nothing to do.
+ *
+ * Why: the 8-tile scan said "0 dry" while the whole-farm line said 12, and
+ * water() only reached 20 tiles, so the idle tick's "water what is dry" had
+ * nothing to act on. The Minecraft heartbeat gets its next job from the
+ * frontier; the daily chores are Stardew's equivalent and change every day.
+ *
+ * @param {object|null} obs
+ * @param {{ modVersion?: string|null }} [opts]
+ * @returns {string[]}
+ */
+export function farmChores(obs, { modVersion = null } = {}) {
+  if (!obs || typeof obs !== 'object') return []
+  const chores = modHasChores(modVersion)
+  const out = []
+  const fm = obs.farm && typeof obs.farm === 'object' ? obs.farm : null
+  if (fm) {
+    const dry = n(fm.dryCrops)
+    const ready = n(fm.readyCrops)
+    if (dry > 0) out.push(`${dry} dry crop${dry === 1 ? '' : 's'} on the farm${chores ? ' (water scope "farm")' : ''}`)
+    if (ready > 0) out.push(`${ready} crop${ready === 1 ? '' : 's'} ready to harvest${chores ? ' (harvest scope "farm")' : ''}`)
+  }
+  const machines = Array.isArray(obs.tiles?.machines) ? obs.tiles.machines.filter((m) => m?.ready) : []
+  if (machines.length) out.push(`${machines.map((m) => `${m.handle} ${m.name}`).slice(0, 3).join(', ')} ready to empty (harvest with its #N)`)
+  if (chores) {
+    const produce = new Map()
+    for (const it of Array.isArray(obs.inventory) ? obs.inventory : []) {
+      if (it && PRODUCE_KINDS.has(it.kind)) produce.set(it.name, (produce.get(it.name) ?? 0) + n(it.count, 1))
+    }
+    if (produce.size) {
+      const list = [...produce].slice(0, 4).map(([name, c]) => (c > 1 ? `${name} x${c}` : name)).join(', ')
+      out.push(`${list}${produce.size > 4 ? ` +${produce.size - 4} more` : ''} in your bag to ship or give (unless the player wants it kept)`)
+    }
+  } else {
+    // An older mod has no refill mid-round: an empty can blocks the chore.
+    const can = obs.wateringCan
+    if (can && n(can.left) === 0 && fm && n(fm.dryCrops) > 0) {
+      const w = obs.tiles?.water
+      out.push(`the watering can is empty (water() a water tile to refill${w ? `, nearest @${n(w.x)},${n(w.y)}` : ''})`)
+    }
+  }
+  return out
+}
+
+/** The active menu's type name (mod `host.menu`) as a few plain words. */
+const MENU_WORDS = {
+  ShopMenu: 'shopping',
+  LetterViewerMenu: 'reading a letter',
+  DialogueBox: 'in a conversation',
+  GameMenu: 'in their inventory or menu',
+  ItemGrabMenu: 'looking in a chest',
+  CraftingPage: 'crafting',
+  ShippingMenu: 'looking at the day\'s earnings',
+  LevelUpMenu: 'picking a level-up',
+  PurchaseAnimalsMenu: 'buying animals',
+  CarpenterMenu: 'planning a building',
+  AnimalQueryMenu: 'looking at an animal',
+  QuestLog: 'reading the quest log',
+  Billboard: 'reading the town board',
+  MuseumMenu: 'at the museum',
+  JunimoNoteMenu: 'looking at the bundles',
+  ChooseFromListMenu: 'in a menu',
+  NamingMenu: 'naming something',
+  TitleMenu: 'at the title screen',
+}
+
+/**
+ * What the player is doing right now (mod 0.1.3 `host.holding` / `menu` /
+ * `inEvent`), for the host line. '' when the mod reported none of it.
+ */
+export function hostActivity(host) {
+  if (!host || typeof host !== 'object') return ''
+  const parts = []
+  if (host.inEvent) parts.push('busy: watching a cutscene')
+  else if (host.menu) parts.push(`busy: ${MENU_WORDS[host.menu] ?? 'in a menu'}`)
+  if (host.holding) parts.push(`holding ${host.holding}`)
+  return parts.join(', ')
+}
+
+/** The mod's `tomorrow` forecast id (1.6 weather ids) as a word, or null. */
+export function forecastWord(id) {
+  const k = String(id ?? '').trim().toLowerCase()
+  if (!k) return null
+  const map = { sun: 'sunny', rain: 'rain', storm: 'storm', wind: 'windy', snow: 'snow', festival: 'festival day', wedding: 'a wedding', greenrain: 'green rain' }
+  return map[k] ?? null
+}
+
 /**
  * Pure: render one observation as snapshot text.
  * @param {object} obs   The mod's observation (may be null before the first push).
@@ -60,7 +153,8 @@ export function composeSnapshot(obs, opts = {}) {
   const lines = []
   if (worldTag) lines.push(`world: ${worldTag}`)
   lines.push(`location: ${obs.location} (${obs.locationKind ?? 'map'})  pos: ${n(obs.x)},${n(obs.y)}  facing: ${obs.facing ?? 'down'}`)
-  lines.push(`${obs.season ?? '?'} ${n(obs.day)}, year ${n(obs.year, 1)}${obs.dayOfWeek ? ` (${obs.dayOfWeek})` : ''}  time: ${obs.timeText ?? obs.time}  weather: ${obs.weather ?? 'sunny'}${obs.isDark ? '  (dark)' : ''}`)
+  const tomorrow = forecastWord(obs.tomorrow)
+  lines.push(`${obs.season ?? '?'} ${n(obs.day)}, year ${n(obs.year, 1)}${obs.dayOfWeek ? ` (${obs.dayOfWeek})` : ''}  time: ${obs.timeText ?? obs.time}  weather: ${obs.weather ?? 'sunny'}${tomorrow ? ` (tomorrow: ${tomorrow})` : ''}${obs.isDark ? '  (dark)' : ''}`)
   const ex = obs.exhausted ? ' EXHAUSTED' : ''
   lines.push(`energy: ${n(obs.stamina)}/${n(obs.maxStamina)}${ex}  health: ${n(obs.health)}/${n(obs.maxHealth)}  gold: ${n(obs.gold)}g`)
   if (obs.sleeping) lines.push('status: resting in bed (the day ends when the player sleeps)')
@@ -98,8 +192,11 @@ export function composeSnapshot(obs, opts = {}) {
   }
   const host = obs.host
   if (host && typeof host === 'object') {
-    lines.push(`player ${host.name ?? 'host'}: ${n(host.money)}g, ${n(host.seeds)} seeds in their bag, energy ${n(host.stamina)}/${n(host.maxStamina)}, farming level ${n(host.farmingLevel)}${n(host.mailWaiting) ? `, ${n(host.mailWaiting)} letter(s) waiting in the mailbox` : ''}`)
+    const doing = hostActivity(host)
+    lines.push(`player ${host.name ?? 'host'}: ${doing ? `${doing}, ` : ''}${n(host.money)}g, ${n(host.seeds)} seeds in their bag, energy ${n(host.stamina)}/${n(host.maxStamina)}, farming level ${n(host.farmingLevel)}${n(host.mailWaiting) ? `, ${n(host.mailWaiting)} letter(s) waiting in the mailbox` : ''}`)
   }
+  const chores = farmChores(obs, { modVersion })
+  if (chores.length) lines.push(`chores: ${chores.join('; ')}`)
 
   const compSet = new Set((companions ?? []).map((s) => String(s).toLowerCase()))
   const ents = Array.isArray(obs.entities) ? obs.entities : []

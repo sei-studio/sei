@@ -2282,6 +2282,48 @@ the v0.6.5-beta.2 playtest log (`~/suisei/reports/playtest-v065b2/`):
   carries the 0.1.2 manifest. Do not bump the asset manifest by hand without
   the DLL, or installs would record 0.1.2 with old code and never update.
 
+**Stardew chores + hand-off (260926, mod 0.1.3, unverified in game).** From
+the same playtest (goal: parsnips; she had no seeds, the host had 16, a 15-tile
+field was 15 till calls, and "water the crops" reached 20 tiles while the
+snapshot counted the whole farm). Audit: `~/suisei/reports/stardew-capability-audit-2026-09-26.md`.
+- **till a patch in one call** (every mod version): `till({x, y, width,
+  height})` up to `MAX_TILL_TILES` (40) is composed APP-side in
+  `registry.js` `tillPatch` from single-tile tills, serpentine order, stones
+  and grass skipped and named, energy / no hoe / abort / 4 unreachable tiles
+  in a row stop it, progress via `onProgress` ("- 6/15" in in_flight).
+- **water / harvest `scope: "farm"`** (0.1.3): walk to the Farm and cover the
+  whole map (default 120, max 200). With no tile, water refills the can at
+  the nearest water (`Tools.NearestWater`, up to 3 refills) instead of
+  stopping at 40, and both step over up to 5 crops they cannot walk to. An
+  older mod gets `scope` dropped by the registry.
+- **ship / give** (0.1.3, `Actions/Shipping.cs`): ship walks to the farm's
+  shipping bin and drops produce (crops/forage/fish by default, or a named
+  item); give walks to the HOST and puts an item in their bag
+  (`addItemToInventoryBool`, host only: a farmhand's inventory lives on
+  their machine). Before these a harvest sat in the companion's bag.
+  `CHORES_VERBS` are hidden from `listActions` and refused by the registry
+  on an older mod.
+- **Proactive layer:** the snapshot gains a `chores:` line
+  (`farmChores`: dry / ready crops with the farm-wide call, ready machines,
+  produce to ship), the player line says what the host is holding and when
+  they are in a menu or cutscene (`host.holding/menu/inEvent`), the date line
+  carries tomorrow's forecast (`tomorrow`). The new-day notice now waits
+  (max `DAY_OBS_WAIT_MS`) for the new day's first observation and names the
+  morning's chores. `fsmWires` raises `onIdleNudge({reason:
+  'player_activity'})` when the host keeps a tool out for 3 s (once per
+  60 s, same activity once per 5 min, never in a menu/event, off-map or
+  while the body is busy) and the idle addendum pitches "your half" of that
+  job (`ACTIVITY_SUGGESTIONS`).
+- Prompt text for all of it is gated on 0.1.3 (`ACTION_RULES_CHORES`,
+  `CAPABILITY_PARAGRAPH_CHORES`, `describeAction`); 0.1.2 keeps
+  `ACTION_RULES` (plus the till patch, which is app-side). Same rule as
+  0.1.2: `assets/stardew-mod/` is NOT rebuilt here; rebuild on the Mac and
+  commit, which also ships the 0.1.3 manifest. New game APIs used (compile
+  and verify on the Mac): `Item.canBeShipped`, `Object.sellToStorePrice`,
+  `Farm.buildings` + `ShippingBin`, `Farm.getShippingBin(..).Add`,
+  `Farmer.addItemToInventoryBool` on the host, `Farmer.CurrentItem`,
+  `Game1.eventUp`, `Game1.weatherForTomorrow`.
+
 **Stardew companions look like themselves (260921).** Every Stardew body used
 to be the one shared placeholder NPC sprite. It is now drawn as a FARMER
 dressed with the game's own character creator knobs: gender, skin, hairstyle,

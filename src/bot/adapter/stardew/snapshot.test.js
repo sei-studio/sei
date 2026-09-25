@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { composeSnapshot, createSnapshotComposer, followLine } from './observers/snapshot.js'
+import { composeSnapshot, createSnapshotComposer, followLine, farmChores, hostActivity, forecastWord } from './observers/snapshot.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const obs = () => JSON.parse(readFileSync(path.join(HERE, 'fixtures', 'obs-farm.json'), 'utf8'))
@@ -102,5 +102,56 @@ describe('stardew snapshot composer', () => {
     expect(second).toContain('recent_events: health -20')
     composer.reset()
     expect(composer.next({})).not.toContain('INVENTORY JUST CHANGED')
+  })
+
+  it('lists the farm\'s chores, with the farm-wide calls only for a 0.1.3 mod', () => {
+    const o = { ...obs(), farm: { crops: 24, dryCrops: 12, readyCrops: 1, soil: 6 }, wateringCan: { left: 0, max: 40 } }
+    const now = farmChores(o, { modVersion: '0.1.3' })
+    expect(now).toEqual([
+      '12 dry crops on the farm (water scope "farm")',
+      '1 crop ready to harvest (harvest scope "farm")',
+      '#8 Furnace ready to empty (harvest with its #N)',
+      'Leek x2 in your bag to ship or give (unless the player wants it kept)',
+    ])
+    const old = farmChores(o, { modVersion: '0.1.2' })
+    expect(old).toEqual([
+      '12 dry crops on the farm',
+      '1 crop ready to harvest',
+      '#8 Furnace ready to empty (harvest with its #N)',
+      'the watering can is empty (water() a water tile to refill, nearest @71,30)',
+    ])
+    expect(farmChores(null)).toEqual([])
+    expect(farmChores({ farm: { dryCrops: 0, readyCrops: 0 } }, { modVersion: '0.1.3' })).toEqual([])
+  })
+
+  it('renders the chores line after the player line, and none when there is nothing to do', () => {
+    const o = { ...obs(), farm: { crops: 24, dryCrops: 12, readyCrops: 0 }, host: { name: 'Ouen', money: 500, holding: 'Watering Can' } }
+    const text = composeSnapshot(o, { pinUsername: 'Ouen', modVersion: '0.1.3' })
+    const lines = text.split('\n')
+    const hostAt = lines.findIndex((l) => l.startsWith('player Ouen: holding Watering Can, 500g'))
+    expect(hostAt).toBeGreaterThan(-1)
+    expect(lines[hostAt + 1]).toMatch(/^chores: 12 dry crops on the farm \(water scope "farm"\); #8 Furnace ready to empty/)
+    const quiet = { ...obs(), farm: { crops: 0 }, tiles: { ...obs().tiles, machines: [] }, inventory: [] }
+    expect(composeSnapshot(quiet, { modVersion: '0.1.3' })).not.toMatch(/^chores:/m)
+  })
+
+  it('says what the player is doing and tomorrow\'s weather when the mod reports it', () => {
+    expect(hostActivity({ holding: 'Hoe' })).toBe('holding Hoe')
+    expect(hostActivity({ menu: 'ShopMenu', holding: 'Hoe' })).toBe('busy: shopping, holding Hoe')
+    expect(hostActivity({ menu: 'SomeModMenu' })).toBe('busy: in a menu')
+    expect(hostActivity({ inEvent: true, menu: 'DialogueBox' })).toBe('busy: watching a cutscene')
+    expect(hostActivity({})).toBe('')
+    expect(hostActivity(null)).toBe('')
+    expect(forecastWord('Rain')).toBe('rain')
+    expect(forecastWord('GreenRain')).toBe('green rain')
+    expect(forecastWord('Festival')).toBe('festival day')
+    expect(forecastWord('')).toBeNull()
+    expect(forecastWord('SomethingNew')).toBeNull()
+    const text = composeSnapshot({ ...obs(), tomorrow: 'Storm' }, {})
+    expect(text).toContain('weather: sunny (tomorrow: storm)')
+    // An older mod sends neither: the lines read as before.
+    const before = composeSnapshot(obs(), {})
+    expect(before).toContain('weather: sunny\n')
+    expect(before).not.toMatch(/tomorrow|busy:/)
   })
 })

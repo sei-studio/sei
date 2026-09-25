@@ -12,6 +12,7 @@ import { wireStardewEvents } from './fsmWires.js'
 import { createDashboardTelemetry } from './dashboard/telemetry.js'
 import { createProgressionFlags, getProgression } from './observers/progression.js'
 import { classifyConnectError } from './errors.js'
+import { modHasChores, CHORES_VERBS } from './modVersion.js'
 import {
   STARDEW_BASELINE,
   SESSION_END_CLAUSE,
@@ -54,7 +55,16 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
   client.on('save', onSave)
   client.on('welcome', onWelcome)
 
+  /**
+   * The connected mod's version, from the welcome frame's hello. Prompt and
+   * snapshot wording that only holds for a newer mod gates on it
+   * (modVersion.js): the bundled mod DLL is rebuilt on a Mac, so the app can
+   * ship ahead of the mod it talks to.
+   */
+  const modVersion = () => client.welcome?.hello?.version ?? null
+
   const registry = createStardewRegistry({
+    getModVersion: modVersion,
     send: async (name, args, { signal } = {}) => {
       let result
       try {
@@ -79,21 +89,18 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
   })
 
   const companions = () => (Array.isArray(config._seiCompanions) ? config._seiCompanions : [])
-  /**
-   * The connected mod's version, from the welcome frame's hello. Prompt and
-   * snapshot wording that only holds for a newer mod gates on it
-   * (modVersion.js): the bundled mod DLL is rebuilt on a Mac, so the app can
-   * ship ahead of the mod it talks to.
-   */
-  const modVersion = () => client.welcome?.hello?.version ?? null
 
   return {
     interfaceVersion: ADAPTER_INTERFACE_VERSION,
 
     // ── Action surface ────────────────────────────────────────────────
-    listActions: () => registry.list(),
+    // ship / give exist from mod 0.1.3; an older mod would answer "unknown action".
+    listActions: () => {
+      const all = registry.list()
+      return modHasChores(modVersion()) ? all : all.filter((n) => !CHORES_VERBS.includes(n))
+    },
     getActionSchema: (name) => registry.schema(name),
-    getActionDescription: (name) => describeAction(name) || registry.description?.(name) || '',
+    getActionDescription: (name) => describeAction(name, modVersion()) || registry.description?.(name) || '',
     executeAction: async (name, args, ctx = {}) => {
       if (paused) return 'paused: the player paused the game'
       const execConfig = { ...config, ...ctx }
@@ -115,7 +122,7 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
       return latestObs
     },
     worldPrimer,
-    capabilityParagraph,
+    capabilityParagraph: () => capabilityParagraph(modVersion()),
     actionRules: () => actionRules(modVersion()),
     eventAddendum,
     /**
@@ -199,7 +206,7 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
     // does not; keep say() lines short.
     chatMaxChars: 200,
     backgroundActions: { follow: 'unfollow' },
-    progressActions: ['gather', 'water', 'harvest', 'chop', 'mine', 'goTo', 'fish'],
+    progressActions: ['gather', 'water', 'harvest', 'chop', 'mine', 'goTo', 'fish', 'till', 'plant', 'ship', 'give'],
     visionActions: [],
     surfaceBaseline: () => STARDEW_BASELINE,
     sessionEndClause: () => SESSION_END_CLAUSE,

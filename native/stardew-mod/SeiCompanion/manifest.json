@@ -1,7 +1,7 @@
 {
   "Name": "Sei Companion",
   "Author": "Sei",
-  "Version": "0.1.2",
+  "Version": "0.1.3",
   "Description": "Spawns an AI companion from the Sei desktop app into your farm as a helper who walks, works, fights, and talks beside you.",
   "UniqueID": "Sei.SeiCompanion",
   "EntryDll": "SeiCompanion.dll",
