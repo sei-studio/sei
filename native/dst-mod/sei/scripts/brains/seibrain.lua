@@ -6,17 +6,22 @@
 -- asked for. The layers, top to bottom (first that wants to run wins):
 --
 --   1. safety   fire panic (unless fire-immune), run from hostiles below the
---               survivor's flee threshold, find light at dusk/night when not
---               in light, eat from the inventory below 25% hunger (diet-aware)
+--               survivor's flee threshold; in the dark hold a carried light,
+--               craft a torch, walk to a visible light or build a campfire
+--               (sei/reflexes.lua); walk to a fire when freezing; heal when
+--               hurt and safe; eat below 25% hunger (diet-aware, skips food
+--               that hurts unless starving)
 --   2. flee     an explicit flee command (RunAway for a few seconds)
---   3. attack   an explicit attack command, or fighting back when hit and
---               fight-back is on (ChaseAndAttack)
---   4. goto     walk to a point/entity (custom node; arrival supervised by
+--   3. attack   an explicit attack command, fighting back when hit, or
+--               defending a player a monster is attacking (ChaseAndAttack,
+--               best weapon and armor put on first)
+--   4. fire     at dusk/night, feed a nearby fire running low
+--   5. goto     walk to a point/entity (custom node; arrival supervised by
 --               Commands.Tick)
---   5. command  DoAction over Commands.NextAction (chop/mine/pick/eat/build/
---               gather/container/light fire), re-issued until done
---   6. follow   trail the leader (Follow) when nothing else is running
---   7. stand    still. The brain decides; the body does not wander.
+--   6. command  DoAction over Commands.NextAction (chop/mine/pick/eat/build/
+--               gather/container/light fire/give), re-issued until done
+--   7. follow   trail the leader (Follow) when nothing else is running
+--   8. stand    still. The brain decides; the body does not wander.
 --
 -- Reflexes here never wait on the LLM (plan decision 4). What they did is
 -- reported through sei/events.lua so the brain can talk about it.
@@ -24,7 +29,6 @@
 require("behaviours/wander")
 require("behaviours/follow")
 require("behaviours/runaway")
-require("behaviours/findlight")
 require("behaviours/chaseandattack")
 require("behaviours/doaction")
 require("behaviours/panic")
@@ -32,15 +36,31 @@ require("behaviours/standstill")
 
 local Commands = require("sei/commands")
 local Events = require("sei/events")
+local Reflexes = require("sei/reflexes")
 local Survivors = require("sei/survivors")
 local Util = require("sei/util")
 
 local RUN_AWAY_DIST = 10
 local STOP_RUN_AWAY_DIST = 16
 local LIGHT_SEE_DIST = 24
-local LIGHT_SAFE_DIST = 4
+-- The seek-light node stops this close to a light even if the engine still
+-- reads the spot as dark (a dying fire).
+local LIGHT_SAFE_DIST = 1.5
 local HUNGRY_PCT = 0.25
+local STARVING_PCT = 0.08
 local TICK_S = 0.5
+local WARM_SEE_DIST = 20
+local WARM_SAFE_DIST = 3
+local FUEL_RADIUS = 10
+local DEFEND_MARGIN = 0.1
+local DEFEND_REPORT_S = 15
+-- Retry gaps so a habit that cannot finish (no valid spot, no path) does not
+-- spin every frame.
+local LIGHT_RETRY_S = 4
+-- After a dusk check that found nothing to do.
+local LIGHT_IDLE_RETRY_S = 1
+local HEAL_RETRY_S = 4
+local FUEL_RETRY_S = 3
 
 -- ── custom node: walk to a point or entity ─────────────────────────────────
 
@@ -71,6 +91,48 @@ function SeiGoTo:Visit()
     end
     self.status = RUNNING
     self:Sleep(0.25)
+end
+
+-- ── custom node: walk to a light (or a fire) ───────────────────────────────
+--
+-- Vanilla FindLight walks to the closest "lightsource", which for this body
+-- is often its own torch (distance 0: instant success) or a light that is
+-- asleep and lights nothing. This one takes the target from `pick` and stops
+-- when `arrived` says so (for light: Reflexes.LitByOthers, the same test
+-- NeedsLight uses).
+
+local SeiSeekLight = Class(BehaviourNode, function(self, inst, name, pick, arrived)
+    BehaviourNode._ctor(self, name)
+    self.inst = inst
+    self.pick = pick
+    self.arrived = arrived
+    self.targ = nil
+    self.nextPick = 0
+end)
+
+function SeiSeekLight:Visit()
+    if self.status == READY then
+        self.targ = nil
+        self.nextPick = 0
+        self.status = RUNNING
+    end
+    if self.status ~= RUNNING then return end
+    local now = GetTime()
+    if self.targ == nil or not self.targ:IsValid() or now >= self.nextPick then
+        self.targ = self.pick(self.inst)
+        self.nextPick = now + 2
+    end
+    if self.targ == nil then
+        self.status = FAILED
+        return
+    end
+    if self.arrived(self.inst, self.targ) then
+        self.inst.components.locomotor:Stop()
+        self.status = SUCCESS
+        return
+    end
+    self.inst.components.locomotor:GoToPoint(self.inst:GetPositionAdjacentTo(self.targ, 1), nil, true)
+    self:Sleep(0.5)
 end
 
 -- ── predicates ──────────────────────────────────────────────────────────────
@@ -110,13 +172,55 @@ end
 
 local function needsLight(inst)
     if inst.sei == nil or inst.sei.paused then return false end
-    local phase = TheWorld.state.phase
-    if phase ~= "night" and phase ~= "dusk" then return false end
-    if inst.LightWatcher ~= nil and inst.LightWatcher:IsInLight() then return false end
-    -- A held light (torch, lantern) counts as light.
-    local hands = inst.components.inventory ~= nil and inst.components.inventory:GetEquippedItem(EQUIPSLOTS.HANDS) or nil
-    if hands ~= nil and hands.components.fueled ~= nil and hands:HasTag("lighter") then return false end
-    return true
+    return Reflexes.NeedsLight(inst)
+end
+
+-- lightNext is the earliest time the light habit may try again. Every
+-- attempt sets it, including one that returned no action (it equipped a
+-- carried light, or there is nothing to do but walk to a light), so a step
+-- that changes nothing cannot repeat every frame.
+local function lightStep(inst)
+    if inst.sg ~= nil and inst.sg:HasStateTag("busy") then return nil end
+    local now = GetTime()
+    if inst.sei.lightNext ~= nil and now < inst.sei.lightNext then return nil end
+    local b
+    if Reflexes.NeedsLight(inst) then
+        b = Reflexes.LightAction(inst, LIGHT_SEE_DIST)
+        inst.sei.lightNext = now + LIGHT_RETRY_S
+    else
+        b = Reflexes.DuskPrep(inst, LIGHT_SEE_DIST)
+        inst.sei.lightNext = now + (b ~= nil and LIGHT_RETRY_S or LIGHT_IDLE_RETRY_S)
+    end
+    return b
+end
+
+local function seekLightTarget(inst)
+    return (Reflexes.NearestLight(inst, LIGHT_SEE_DIST))
+end
+
+local function litNow(inst, targ)
+    return Reflexes.LitByOthers(inst) or Util.DistXZ(inst, targ) <= LIGHT_SAFE_DIST
+end
+
+local function warmFireTarget(inst)
+    return (Reflexes.BurningFire(inst, WARM_SEE_DIST))
+end
+
+local function warmNow(inst, targ)
+    return Util.DistXZ(inst, targ) <= WARM_SAFE_DIST
+end
+
+-- Night light, or getting it ready late in dusk (Reflexes.DuskPrep).
+local function lightDue(inst)
+    if inst.sei == nil or inst.sei.paused then return false end
+    return TheWorld.state.phase ~= "day" or TheWorld:HasTag("cave")
+end
+
+local function freezingNearFire(inst)
+    if inst.sei == nil or inst.sei.paused then return false end
+    if not inst:IsFreezing() then return false end
+    local fire, d = Reflexes.BurningFire(inst, WARM_SEE_DIST)
+    return fire ~= nil and d > WARM_SAFE_DIST
 end
 
 local function hungry(inst)
@@ -124,27 +228,31 @@ local function hungry(inst)
     return hungerPct(inst) < HUNGRY_PCT
 end
 
+local function wantsHeal(inst)
+    if inst.sei == nil or inst.sei.paused then return false end
+    if inst.sei.healTry ~= nil and GetTime() - inst.sei.healTry < HEAL_RETRY_S then return false end
+    return Reflexes.WantsHeal(inst, hostileNear)
+end
+
+local function healStep(inst)
+    if inst.sg ~= nil and inst.sg:HasStateTag("busy") then return nil end
+    inst.sei.healTry = GetTime()
+    return Reflexes.HealAction(inst)
+end
+
+local function fuelStep(inst)
+    if inst.sei == nil or inst.sei.paused then return nil end
+    if inst.sg ~= nil and inst.sg:HasStateTag("busy") then return nil end
+    local now = GetTime()
+    if inst.sei.fuelTry ~= nil and now - inst.sei.fuelTry < FUEL_RETRY_S then return nil end
+    local b = Reflexes.FuelAction(inst, FUEL_RADIUS)
+    if b ~= nil then inst.sei.fuelTry = now end
+    return b
+end
+
 local function eatFromInventory(inst)
     if inst.sg ~= nil and inst.sg:HasStateTag("busy") then return nil end
-    local inv, eater = inst.components.inventory, inst.components.eater
-    if inv == nil or eater == nil then return nil end
-    local s = survivorOf(inst)
-    local prefab = inst.sei.prefab
-    local function pick(pred)
-        return inv:FindItem(function(item)
-            return item.components.edible ~= nil and eater:CanEat(item) and Survivors.DietAllows(prefab, item) and pred(item)
-        end)
-    end
-    local food = nil
-    if s.souls then food = pick(function(i) return i:HasTag("soul") end) end
-    if food == nil and s.needsCrockpot then food = pick(function(i) return i:HasTag("preparedfood") end) end
-    if food == nil then
-        food = pick(function(i)
-            if s.eatsSpoiled then return true end
-            return i.components.perishable == nil or i.components.perishable:GetPercent() > 0.2
-        end)
-    end
-    if food == nil and hungerPct(inst) < 0.08 then food = pick(function() return true end) end
+    local food = Reflexes.ChooseFood(inst, hungerPct(inst) < STARVING_PCT)
     if food == nil then return nil end
     local b = BufferedAction(inst, food, ACTIONS.EAT)
     b:AddSuccessAction(function()
@@ -199,6 +307,9 @@ function SeiBrain:OnStart()
 
     self.lastLowHealthReport = 0
     self.lastDarkReport = 0
+    self.lastDefendReport = 0
+    self.lastDefendThreat = nil
+    self.gearTarget = nil
     if self.tickTask ~= nil then self.tickTask:Cancel() end
     self.tickTask = inst:DoPeriodicTask(TICK_S, function()
         Util.Guard("brain.tick", function()
@@ -211,9 +322,25 @@ function SeiBrain:OnStart()
                 local h = hostileNear(inst, RUN_AWAY_DIST)
                 Events.Post("survival", { what = "retreat", threat = h and h.prefab or "hostiles", healthpct = Util.Round1(healthPct(inst)) })
             end
+            -- Keep the fires near the body burning visibly even when no
+            -- real player is near (see reflexes.lua); paused too, like a
+            -- player away from the keyboard.
+            Reflexes.KeepFiresAwake(inst)
             if needsLight(inst) and now - self.lastDarkReport > 20 then
                 self.lastDarkReport = now
                 Events.Post("survival", { what = "dark", phase = TheWorld.state.phase })
+            end
+            if inst.sei ~= nil and not inst.sei.paused then
+                Reflexes.StowDayTorch(inst)
+                self:Defend(now)
+                -- Gear up once per new fight target.
+                local t = inst.components.combat ~= nil and inst.components.combat.target or nil
+                if t ~= nil and t ~= self.gearTarget then
+                    self.gearTarget = t
+                    Reflexes.GearUp(inst, t)
+                elseif t == nil then
+                    self.gearTarget = nil
+                end
             end
         end, require("sei/net").ReportError)
     end)
@@ -223,28 +350,55 @@ function SeiBrain:OnStart()
         WhileNode(function() return onFire(inst) end, "OnFire", Panic(inst)),
         WhileNode(function() return shouldRunAway(inst) end, "LowHealthRunAway",
             RunAway(inst, function(guy) return guy:HasTag("_combat") and guy:HasTag("hostile") and not guy:HasTag("player") end, RUN_AWAY_DIST, STOP_RUN_AWAY_DIST)),
-        WhileNode(function() return needsLight(inst) end, "FindLight", FindLight(inst, LIGHT_SEE_DIST, LIGHT_SAFE_DIST)),
+        IfNode(function() return lightDue(inst) end, "MakeLight", DoAction(inst, function() return lightStep(inst) end, "Light", true)),
+        WhileNode(function() return needsLight(inst) end, "FindLight", SeiSeekLight(inst, "SeekLight", seekLightTarget, litNow)),
+        WhileNode(function() return freezingNearFire(inst) end, "WarmUp", SeiSeekLight(inst, "SeekWarmth", warmFireTarget, warmNow)),
+        IfNode(function() return wantsHeal(inst) end, "Heal", DoAction(inst, function() return healStep(inst) end, "Heal", true)),
         IfNode(function() return hungry(inst) end, "Hungry", DoAction(inst, function() return eatFromInventory(inst) end, "Eat", true)),
         -- 2. flee (explicit)
         WhileNode(function() return fleeing(inst) end, "Flee",
             RunAway(inst, function(guy) return guy:HasTag("_combat") and not guy:HasTag("player") and not guy:HasTag("companion") end, 14, 20)),
         -- 3. attack / fight back
         WhileNode(function() return attacking(inst) end, "Attack", ChaseAndAttack(inst, 20, 30)),
-        -- 4. goto
+        -- 4. tend a fire running low (dusk/night)
+        DoAction(inst, function() return fuelStep(inst) end, "Fuel", true),
+        -- 5. goto
         WhileNode(function() return gotoSlot(inst) end, "GoTo", SeiGoTo(inst)),
-        -- 5. the command slot
+        -- 6. the command slot
         WhileNode(function() return actionSlot(inst) end, "Command",
             DoAction(inst, function() return Commands.NextAction(inst) end, "SeiCommand", true)),
-        -- 6. follow
+        -- 7. follow
         WhileNode(function() return followTarget(inst) ~= nil end, "Follow",
             Follow(inst, function() return followTarget(inst) end, 2, inst.sei.followDist or 4, 14, true)),
-        -- 7. stand still
+        -- 8. stand still
         StandStill(inst),
     }, 0.25)
     self.bt = BT(inst, root)
 end
 
+--- Take on a monster that is attacking a player we are with. Only with
+--- fight-back on, enough health to spare, and nothing else to fight.
+function SeiBrain:Defend(now)
+    local inst = self.inst
+    local sei = inst.sei
+    if not sei.fight or fleeing(inst) or inst.components.combat == nil then return end
+    if inst.components.combat.target ~= nil then return end
+    if sei.cmd ~= nil and (sei.cmd.kind == "attack" or sei.cmd.kind == "goto") then return end
+    if healthPct(inst) <= Survivors.FleeHealthPct(sei.prefab) + DEFEND_MARGIN then return end
+    local threat = Reflexes.ThreatToPlayer(inst)
+    if threat == nil then return end
+    inst.components.combat:SetTarget(threat)
+    if threat ~= self.lastDefendThreat or now - self.lastDefendReport > DEFEND_REPORT_S then
+        self.lastDefendThreat = threat
+        self.lastDefendReport = now
+        local victim = threat.components.combat.target
+        Events.Post("survival", { what = "defend", threat = threat.prefab, guid = threat.GUID,
+            player = victim ~= nil and (victim.name or victim.prefab) or "", userid = victim ~= nil and victim.userid or "" })
+    end
+end
+
 function SeiBrain:OnStop()
+    Reflexes.ReleaseFires(self.inst)
     if self.tickTask ~= nil then
         self.tickTask:Cancel()
         self.tickTask = nil

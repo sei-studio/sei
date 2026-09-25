@@ -50,6 +50,7 @@ export function activityLabel(name, args) {
     case 'take': return 'taking items from a chest...'
     case 'sleep': return 'sleeping...'
     case 'drop': { const t = term(args, ['item']); return t ? `dropping ${t}...` : 'dropping...' }
+    case 'give': { const t = term(args, ['item']); return t ? `giving ${t}...` : 'giving...' }
     default: return humanize(name)
   }
 }

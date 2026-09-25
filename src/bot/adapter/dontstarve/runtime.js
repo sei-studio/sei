@@ -27,6 +27,7 @@ import { EventEmitter } from 'node:events'
 import { createDontStarveAdapter } from './index.js'
 import { classifyConnectError } from './errors.js'
 import { createObservationState, createHandleRegistry, CMD_HOLD_MS, CMD_RESULT_TIMEOUT_MS, HEARTBEAT_LOSS_MS } from './protocol.js'
+import { modHasCaps } from './modVersion.js'
 
 const MAX_BODY_BYTES = 65_536
 const REPORT_MARGIN_MS = 3_000
@@ -132,6 +133,15 @@ export function createDstLink({ dst, logger = console, holdMs = null, resultTime
   let contacted = false
   let paused = false
   let closed = false
+  // The helper's version, from its `spawned` event (mod 0.3.0+; older mods
+  // send none and read as legacy). Registered before any other listener so
+  // everything reacting to `spawned` already sees it.
+  let modVersion = null
+  let bodyGuid = null
+  events.on('spawned', (ev) => {
+    modVersion = typeof ev?.mod === 'string' && ev.mod ? ev.mod : null
+    bodyGuid = typeof ev?.guid === 'number' ? ev.guid : null
+  })
 
   const link = {
     events, state, handles,
@@ -142,6 +152,12 @@ export function createDstLink({ dst, logger = console, holdMs = null, resultTime
     get lastSeenAt() { return lastSeenAt },
     get contacted() { return contacted },
     get paused() { return paused },
+    /** The connected helper's version string, or null (pre-0.3.0 / not yet spawned). */
+    get modVersion() { return modVersion },
+    /** Does the connected helper run the 0.3.0 capability set (give, reflexes, richer perception)? */
+    get hasCaps() { return modHasCaps(modVersion) },
+    /** The body's entity guid in the world (from `spawned`), or null. */
+    get guid() { return bodyGuid },
     session: dst?.session ?? '',
     body: { fight: true, followLabel: dst?.nearName || null },
     playerName: () => dst?.nearName || null,
@@ -369,7 +385,7 @@ export async function createRuntime(config, hooks) {
     _spawned = true
     clearTimeout(_spawnTimer); _spawnTimer = null
     if (typeof info?.session === 'string' && info.session) link.session = info.session
-    logger.info(`[sei] DST survivor spawned (${info?.prefab ?? dst.prefab}) as "${info?.name ?? dst.username}"`)
+    logger.info(`[sei] DST survivor spawned (${info?.prefab ?? dst.prefab}) as "${info?.name ?? dst.username}", helper mod ${link.modVersion ?? '< 0.3.0'}`)
     bringUp(info).catch((err) => {
       logger.error(`[sei] DST bring-up failed: ${err && err.stack || err}`)
       fail(`DST_SPAWN_FAILED: ${err && err.message}`)

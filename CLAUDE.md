@@ -2568,6 +2568,45 @@ pack's `modinfo.lua` version is newer the old `mods/sei/` is removed first
 the live checklist: a joiner with `all_clients_require_mod = false`,
 ownerless `inst:Remove()`, a caves-enabled host, the QueryServer hold.
 
+**DST helper 0.3.0: habits, alerts, frontier (260926).** Audit and headless
+results: `~/suisei/reports/dst-capability-audit-2026-09-26.md`. Three things
+worth knowing before touching the DST body:
+- **Combat never landed a hit before this.** `ChaseAndAttack` calls
+  `combat:TryAttack`, which only pushes `doattack`, and survivor stategraphs
+  have no handler for it (players swing through the ATTACK action).
+  `companion.lua` now translates `doattack` into a buffered ATTACK.
+- **Survival chores are habits in the mod** (`scripts/sei/reflexes.lua`):
+  dusk torch, night light, fire tending, gear-up, defending the player,
+  healing, food choice. They report `survival` events that do NOT wake the
+  brain (`fsmWires.js`); they surface as the snapshot's `your_habits` line.
+  The brain is woken by `observers/alerts.js` (starving with no food,
+  freezing, low health with nothing hostile near) and nudged at P3 (dusk with
+  no way to make light, low sanity, player hungry, season turning) only when
+  `persona.proactiveness` >= 1; passive characters see them in `heads_up`. The
+  prompt tells the model the habits cannot plan: keeping the makings on hand
+  is its job. `observers/progression.js` gives the heartbeat a frontier.
+- **Everything new gates on the helper's reported version**
+  (`modVersion.js`, `CAPS_MIN_MOD`). A world keeps the helper it started
+  with, so an older helper gets the old prompts, verbs and wake routing.
+  Bump `modinfo.lua` and `scripts/sei/version.lua` together (a test checks).
+- **"Am I lit" is ONE test**, `Reflexes.LitByOthers`: the engine light
+  (`TheSim:GetLightAtPoint`) at the body's feet with its own held lights
+  switched off for the reading, with hysteresis (0.2 in, 0.1 out). Light,
+  tool and gear habits all use it, so the torch and the axe cannot swap
+  every tick. In the dark a work command walks there with the torch and
+  refuses ("too dark to chop here") unless something else lights the spot.
+- **Sleeping lights light nothing.** Entities away from a real client sleep
+  (also in real play when the body is far from the host). `SetCanSleep(false)`
+  does not wake an entity that is already asleep, only one set in the frame
+  it spawns. So the equip listener keeps held lights awake, and
+  `Reflexes.KeepFiresAwake` respawns the flame of a burning fire near the
+  body awake (released at day or when she leaves). No light on the body.
+- **Habits never undo an explicit `equip`** (`Reflexes.Hold`/`CommandHeld`)
+  except dark with no light. Defend needs a `hostile` tag or a hit on the
+  player in the last 6 s, never shadow creatures. `give` needs an exact name.
+Headless testing (Linux dedicated server + `scripts/dst-headless-harness.mjs`)
+is in `native/dst-mod/sei/README.md`.
+
 **Credits:** every reused project is in the README Acknowledgements with its
 license (user decision 7); copied code carries a header credit and
 `native/<mod>/THIRD_PARTY_NOTICES.md`.

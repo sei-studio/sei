@@ -51,7 +51,7 @@ const now = () => Date.now()
 export function createFakeMod(opts) {
   const {
     botPort, token, prefab = 'wilson', name = 'Sui', obsHz = 3,
-    onCommand = null, log = () => {}, fetchImpl = globalThis.fetch,
+    modVersion = null, onCommand = null, log = () => {}, fetchImpl = globalThis.fetch,
   } = opts
   if (!botPort || !token) throw new Error('createFakeMod: botPort and token required')
   const base = `http://127.0.0.1:${botPort}`
@@ -114,7 +114,8 @@ export function createFakeMod(opts) {
       return r
     },
     async spawn() {
-      return mod.event('spawned', { guid: 9001, prefab, name, x: self.x, z: self.z, session: 'SESSION-FAKE-1', world: 'Fake World', near: 'KU_fake' })
+      // modVersion: a 0.3.0+ helper reports its version (null = an older one).
+      return mod.event('spawned', { guid: 9001, prefab, name, x: self.x, z: self.z, session: 'SESSION-FAKE-1', world: 'Fake World', near: 'KU_fake', ...(modVersion ? { mod: modVersion } : {}) })
     },
     async despawned(reason = 'test') {
       return mod.event('despawned', { reason })

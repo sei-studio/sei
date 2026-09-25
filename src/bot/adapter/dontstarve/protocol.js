@@ -29,6 +29,8 @@ export const EVENT_KINDS = Object.freeze([
 export const COMMAND_KINDS = Object.freeze([
   'say', 'stop', 'despawn', 'fight', 'follow', 'unfollow', 'equip', 'drop', 'goto',
   'attack', 'flee', 'action', 'gather', 'build', 'container', 'lightfire', 'resync',
+  // mod 0.3.0
+  'give',
 ])
 
 const num = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d)
@@ -45,8 +47,10 @@ export function createObservationState() {
     hasFull: false,
     lastAt: 0,
     self: null,     // normalized self block (see normalizeSelf)
-    world: null,    // { day, phase, season, raining, snowing, temp, caves }
-    ents: new Map(), // guid -> { guid, prefab, x, z, flags, name?, qty?, hp? }
+    world: null,    // { day, phase, season, seasonDays, raining, snowing, temp, caves }
+    // guid -> { guid, prefab, x, z, flags, name?, qty?, hp?, target?,
+    //           activity?, activityTarget?, hold?, hungerPct?, sanityPct? }
+    ents: new Map(),
     truncated: false,
   }
 
@@ -92,6 +96,8 @@ export function createObservationState() {
       day: Math.max(1, Math.round(num(raw.day, 1))),
       phase: str(raw.phase, 'day'),
       season: str(raw.season, ''),
+      // mod 0.3.0: days left in the season (null from older mods).
+      seasonDays: typeof raw.seasondays === 'number' ? raw.seasondays : null,
       raining: raw.raining === true,
       snowing: raw.snowing === true,
       temp: num(raw.temp),
@@ -125,6 +131,14 @@ export function createObservationState() {
           name: typeof raw.n === 'string' ? raw.n : (prev?.name ?? null),
           qty: typeof raw.q === 'number' ? raw.q : (prev?.qty ?? null),
           hp: typeof raw.h === 'number' ? raw.h : (prev?.hp ?? null),
+          // mod 0.3.0. A delta re-sends the whole entity, so an absent field
+          // means "cleared", not "unchanged".
+          target: typeof raw.t === 'number' ? raw.t : null,
+          activity: typeof raw.a === 'string' ? raw.a : null,
+          activityTarget: typeof raw.at === 'string' ? raw.at : null,
+          hold: typeof raw.hold === 'string' ? raw.hold : null,
+          hungerPct: typeof raw.hu === 'number' ? raw.hu : null,
+          sanityPct: typeof raw.sa === 'number' ? raw.sa : null,
           seenAt: now,
         })
       }

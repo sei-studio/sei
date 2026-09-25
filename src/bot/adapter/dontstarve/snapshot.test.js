@@ -63,4 +63,34 @@ describe('DST snapshot composer', () => {
     const composer = createSnapshotComposer({ state: st, handles: createHandleRegistry(), dst: {} })
     expect(composer.next({})).toMatch(/snapshot unavailable/)
   })
+
+  it('mod 0.3.0: season countdown, what the player is doing, who a creature attacks, habits and heads-up', () => {
+    const st = createObservationState()
+    const mod = createFakeMod({ botPort: 1, token: 'x' })
+    const frame = mod.frame(true)
+    frame.world.seasondays = 2
+    const player = frame.ents.find((e) => e.f.includes('player'))
+    Object.assign(player, { a: 'chop', at: 'evergreen', hold: 'axe', hu: 0.2, sa: 0.9 })
+    frame.ents.find((e) => e.p === 'spider').t = player.g
+    st.apply(frame)
+    const composer = createSnapshotComposer({
+      state: st, handles: createHandleRegistry(), dst: { prefab: 'wilson' }, getBodyState: () => ({ fight: true }),
+      getSelfGuid: () => 9001, getHabits: () => ['made a torch for tonight', 'fed the campfire with log (x2)'],
+    })
+    const text = composer.next({ lastActionResult: null })
+    expect(text).toContain('day 3 autumn (2 days left), day')
+    expect(text).toMatch(/Steve #\d+ \([\d.]+m, chopping evergreen, holding axe, hunger 20%, sanity 90%\)/)
+    expect(text).toMatch(/spider #\d+ \([\d.]+m, [^)]*attacking Steve/)
+    expect(text).toContain('your_habits (done on your own lately): made a torch for tonight; fed the campfire with log (x2)')
+    expect(text).toMatch(/heads_up: winter starts in 2 days; Steve is hungry \(20%\); spider is attacking Steve/)
+  })
+
+  it('an older helper sends none of the new fields and the lines stay out', () => {
+    const { st } = fixtureState()
+    const composer = createSnapshotComposer({ state: st, handles: createHandleRegistry(), dst: { prefab: 'wilson' }, getBodyState: () => ({ fight: true }) })
+    const text = composer.next({ lastActionResult: null })
+    expect(text).not.toContain('your_habits')
+    expect(text).not.toContain('days left')
+    expect(text).not.toMatch(/holding|attacking/)
+  })
 })

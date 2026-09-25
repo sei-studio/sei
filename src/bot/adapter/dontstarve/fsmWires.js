@@ -8,6 +8,18 @@
 //   survival    -> onAttacked    attackerKind 'reflex' (P1): the safety layer
 //                                retreated / walked to light / ate on its own
 //   enterdark   -> onAttacked    attackerKind 'reflex', survivalKind 'dark' (P1)
+//
+// Helper mod 0.3.0+ (opts.hasCaps) runs survival HABITS (light, fuel, gear,
+// heal, smart eating, defending the player) that report every act as a
+// survival event. Those are routine and do not wake the brain; they land in
+// the snapshot's your_habits line (observers/habits.js). What still wakes it:
+//   survival retreat -> reflex critical_retreat (health low near hostiles)
+//   survival defend  -> attackerKind 'defend' (P1): a monster went for the
+//                       player and the body took it on
+//   survival dark    -> reflex dark, ONLY when opts.darkNeedsBrain() says the
+//                       habits have nothing to make light with
+//   enterdark        -> nothing (the light watcher lags nightfall by seconds
+//                       and the habit is already on it)
 //   death       -> onDeath       (P1)
 //   spawned     -> onSpawn
 //   phase       -> a P3 idle tick with reason 'phase_change' via onIdleNudge
@@ -24,7 +36,8 @@ const ADDRESS_RE = (name) => new RegExp(`\\b${name.replace(/[.*+?^${}()|[\\]\\\\
 /**
  * @param {import('node:events').EventEmitter} link  the runtime's event bus
  * @param {import('../../brain/types.js').AdapterHandlers} handlers
- * @param {{ botName: string, companions: () => string[], playerName?: string|null }} opts
+ * @param {{ botName: string, companions: () => string[], playerName?: string|null,
+ *   hasCaps?: () => boolean, darkNeedsBrain?: () => boolean }} opts
  * @returns {() => void} dispose
  */
 export function wireLinkEvents(link, handlers, opts) {
@@ -69,8 +82,28 @@ export function wireLinkEvents(link, handlers, opts) {
     })
   })
 
+  const hasCaps = () => opts?.hasCaps?.() === true
+
   const onSurvival = safe('onSurvival', (p) => {
     const what = String(p.what ?? 'retreat')
+    if (hasCaps()) {
+      if (what === 'defend') {
+        handlers.onAttacked?.({
+          attacker: null,
+          attackerLabel: String(p.threat ?? 'a monster'),
+          attackerKind: 'defend',
+          survivalKind: 'defend',
+          player: p.player ? String(p.player) : null,
+          count: 1,
+        })
+        return
+      }
+      if (what === 'dark') {
+        if (opts?.darkNeedsBrain && !opts.darkNeedsBrain()) return
+      } else if (what !== 'retreat') {
+        return // a habit (light, fuel, equip, heal, ate): shown in your_habits
+      }
+    }
     handlers.onAttacked?.({
       attacker: null,
       attackerLabel: String(p.threat ?? 'danger'),
@@ -83,6 +116,7 @@ export function wireLinkEvents(link, handlers, opts) {
   })
 
   const onEnterDark = safe('onEnterDark', (p) => {
+    if (hasCaps()) return
     handlers.onAttacked?.({
       attacker: null,
       attackerLabel: 'the darkness',

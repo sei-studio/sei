@@ -11,10 +11,19 @@ import { createSnapshotComposer } from './observers/snapshot.js'
 import { wireLinkEvents } from './fsmWires.js'
 import { createDashboardTelemetry } from './dashboard/telemetry.js'
 import { classifyConnectError } from './errors.js'
+import { createAlertWatcher, lightMeans, nudgesAllowed } from './observers/alerts.js'
+import { createHabitLog } from './observers/habits.js'
+import { createProgressionLatches, getProgression } from './observers/progression.js'
 import {
-  DST_BASELINE, worldPrimer, CAPABILITY_PARAGRAPH, ACTION_RULES, describeAction,
+  dstBaseline, worldPrimer, capabilityParagraph, actionRules, describeAction,
   eventAddendum, SESSION_END_CLAUSE, STUCK_NUDGES,
 } from './prompts.js'
+
+/** How often the alert watcher re-reads the 3 Hz observation. */
+const ALERT_CHECK_MS = 2000
+
+/** Short attacker labels for alert wakes (formatEventData prints them). */
+const ALERT_LABELS = { starving: 'hunger', low_health: 'low health', freezing: 'the cold', overheating: 'the heat' }
 
 /** In-game chat/talker line cap (speak.lua clips at 160). */
 export const DST_CHAT_MAX_CHARS = 160
@@ -29,6 +38,13 @@ export function createDontStarveAdapter({ link, config }) {
   if (!config) throw new Error('createDontStarveAdapter: config required')
   const dst = config.adapter?.dontstarve ?? {}
   const registry = createDefaultRegistry({ link })
+  // Mod 0.3.0+ (modVersion.js CAPS_MIN_MOD): survival habits, give, richer
+  // perception. The adapter is built after the spawn, so the version is known
+  // here and in the cached system prefix; an older helper keeps the 0.2
+  // prompts, wake routing and verb set.
+  const hasCaps = () => link.hasCaps === true
+  const habits = createHabitLog(link.events)
+  const latches = createProgressionLatches()
   const players = () => {
     const out = {}
     for (const e of link.state.nearby((x) => x.flags.includes('player'))) {
@@ -45,10 +61,12 @@ export function createDontStarveAdapter({ link, config }) {
     // ─── Action surface ───────────────────────────────────────────────
     listActions: () => registry.list(),
     getActionSchema: (name) => registry.schema(name),
-    getActionDescription: (name) => describeAction(name) || registry.description(name),
+    getActionDescription: (name) => describeAction(name, hasCaps()) || registry.description(name),
     executeAction: async (name, args, ctx = {}) => {
       const execConfig = { ...config, ...ctx }
-      return registry.execute(name, args, null, execConfig)
+      const result = await registry.execute(name, args, null, execConfig)
+      latches.result(name, result)
+      return result
     },
 
     // ─── Perception + prompt blocks ───────────────────────────────────
@@ -57,20 +75,61 @@ export function createDontStarveAdapter({ link, config }) {
       handles: link.handles,
       dst,
       getBodyState: () => link.body,
+      getSelfGuid: () => link.guid ?? null,
+      getHabits: () => (hasCaps() ? habits.recent() : []),
     }),
     worldPrimer: () => worldPrimer(dst.survivorBrief),
-    capabilityParagraph: () => CAPABILITY_PARAGRAPH,
-    actionRules: () => ACTION_RULES,
-    eventAddendum,
+    capabilityParagraph: () => capabilityParagraph(hasCaps()),
+    actionRules: () => actionRules(hasCaps()),
+    eventAddendum: (event, data) => eventAddendum(event, data, { hasCaps: hasCaps() }),
+    /** The DST spine (observers/progression.js) for the heartbeat frontier. */
+    getProgression: () => getProgression(link.state, latches),
 
     // ─── Session lifecycle ────────────────────────────────────────────
     attach(handlers) {
       if (_dispose) { try { _dispose() } catch {} }
-      _dispose = wireLinkEvents(link.events, handlers, {
+      const unwire = wireLinkEvents(link.events, handlers, {
         botName: link.botName,
         companions: () => config._seiCompanions ?? [],
         playerName: config.player_username ?? null,
+        hasCaps,
+        darkNeedsBrain: () => !lightMeans(link.state).any,
       })
+      // Proactive alerts (observers/alerts.js): the situations a good
+      // partner notices. Only with the 0.3.0 habits: an older helper still
+      // wakes on every reflex, and the alert prose assumes the habits.
+      let lastCheck = 0
+      const watcher = createAlertWatcher({
+        state: link.state,
+        onWake: (a) => handlers.onAttacked?.({
+          attacker: null,
+          attackerLabel: ALERT_LABELS[a.key] ?? 'trouble',
+          attackerKind: 'reflex',
+          survivalKind: 'alert',
+          alert: a.key,
+          alertText: a.text,
+          count: 1,
+        }),
+        onNudge: (a) => handlers.onIdleNudge?.({ reason: 'alert', alert: a.key, text: a.text }),
+        // A passive character gets no extra turns for nudges; it reads them
+        // in the snapshot's heads_up line.
+        allowNudges: () => nudgesAllowed(config.persona?.proactiveness),
+      })
+      const onObs = () => {
+        if (!hasCaps() || link.paused) return
+        const now = Date.now()
+        if (now - lastCheck < ALERT_CHECK_MS) return
+        lastCheck = now
+        try { watcher.check() } catch (err) { console.error?.(`[sei/dst] alert check threw: ${err && err.message}`) }
+      }
+      const onDeath = () => { watcher.reset(); habits.clear() }
+      link.events.on('obs', onObs)
+      link.events.on('death', onDeath)
+      _dispose = () => {
+        unwire()
+        link.events.off('obs', onObs)
+        link.events.off('death', onDeath)
+      }
     },
     detach() {
       if (_dispose) { try { _dispose() } catch {} }
@@ -98,7 +157,7 @@ export function createDontStarveAdapter({ link, config }) {
     backgroundActions: { follow: 'unfollow' },
     progressActions: ['gather', 'build'],
     visionActions: [],
-    surfaceBaseline: () => DST_BASELINE,
+    surfaceBaseline: () => dstBaseline(hasCaps()),
     sessionEndClause: () => SESSION_END_CLAUSE,
     stuckNudges: () => ({ ...STUCK_NUDGES }),
     getWorldIdentity: () => {

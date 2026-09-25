@@ -36,7 +36,7 @@ local PORTS = { 27424, 27425, 27426, 27427, 27428 }
 local ANNOUNCE = GetModConfigData("announce")
 if ANNOUNCE == nil then ANNOUNCE = true end
 local HEARTBEAT_S = 2
-local MOD_VERSION = "0.2.0"
+local MOD_VERSION = require("sei/version")
 -- A request that has not called back for this long is written off, so one
 -- hung QueryServer cannot silence a port forever.
 local INFLIGHT_STALE_S = 10

@@ -233,3 +233,23 @@ async function waitFor(pred, timeoutMs = 4_000, stepMs = 20) {
     await sleep(stepMs)
   }
 }
+
+describe('DST link: what the helper reports at spawn', () => {
+  const quiet = { info() {}, warn() {}, error() {} }
+  for (const [version, caps] of [['0.3.0', true], [null, false]]) {
+    it(`mod ${version ?? '(none)'}: modVersion, hasCaps and the body guid`, async () => {
+      const link = createDstLink({ dst: { username: 'Sui', cmd_hold_ms: 0 }, logger: quiet })
+      await link.listen()
+      const mod = createFakeMod({ botPort: link.port, token: link.token, onCommand: () => false, modVersion: version })
+      try {
+        await mod.spawn()
+        expect(link.modVersion).toBe(version)
+        expect(link.hasCaps).toBe(caps)
+        expect(link.guid).toBe(9001)
+      } finally {
+        await link.close()
+      }
+    })
+  }
+})
+
