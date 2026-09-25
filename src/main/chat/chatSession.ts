@@ -79,7 +79,9 @@ export function noteChatMessage(characterId: string): void {
  * Close one character's session and emit `chat_session_ended`. Idempotent — a
  * quit racing the idle timer emits exactly one event.
  */
-export async function endChatSession(characterId: string, reason: 'idle' | 'quit'): Promise<void> {
+export type ChatSessionEndReason = 'idle' | 'quit' | 'account_switch';
+
+export async function endChatSession(characterId: string, reason: ChatSessionEndReason): Promise<void> {
   const live = sessions.get(characterId);
   if (!live) return;
   clearTimeout(live.timer);
@@ -98,8 +100,11 @@ export async function endChatSession(characterId: string, reason: 'idle' | 'quit
 /**
  * Close every open session. Called from the app's quit path so a conversation
  * still inside its idle window is not lost — without this, quitting mid-chat
- * (the normal way a chat ends) would drop the session entirely.
+ * (the normal way a chat ends) would drop the session entirely. Also from the
+ * account switch (260926, reason 'account_switch'): the next message after a
+ * switch belongs to the other account's session, and the event must go out
+ * while analytics is still identified as the outgoing account.
  */
-export async function endAllChatSessions(): Promise<void> {
-  await Promise.all([...sessions.keys()].map((id) => endChatSession(id, 'quit')));
+export async function endAllChatSessions(reason: ChatSessionEndReason = 'quit'): Promise<void> {
+  await Promise.all([...sessions.keys()].map((id) => endChatSession(id, reason)));
 }

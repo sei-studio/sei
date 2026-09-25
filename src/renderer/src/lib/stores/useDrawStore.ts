@@ -75,6 +75,11 @@ export interface DrawStoreState {
   /** End a credit-wall-paused game into the gallery, drawings kept (260926). */
   finishEarly: (characterId: string) => void;
   end: (characterId: string) => Promise<void>;
+  /**
+   * Account switch (260926): forget every game without calling main, which
+   * already ended them (and recorded them) for the outgoing account.
+   */
+  resetForScope: () => void;
 }
 
 /** Push unsubscriber, torn down on HMR dispose (see useChessStore). */
@@ -190,6 +195,8 @@ export const useDrawStore = create<DrawStoreState>((set, get) => {
       // The state push that follows moves the screen to the gallery.
       void drawApi().drawFinish?.(characterId)?.catch?.(() => {});
     },
+
+    resetForScope: () => set({ games: {}, starting: {}, error: {}, savedTo: {} }),
 
     end: async (characterId) => {
       set((s) => {

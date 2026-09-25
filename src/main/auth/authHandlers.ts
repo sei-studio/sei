@@ -696,8 +696,11 @@ export async function cancelGoogle(): Promise<void> {
  */
 export async function signOut(): Promise<void> {
   // D-09 + T-10-06-09: stop the bot first so its final request flushes under
-  // the still-valid JWT.
-  await stopBotIfActive('signOut');
+  // the still-valid JWT. Inside the account teardown (260926) so the session
+  // is recorded as ended by the account switch this sign-out starts; the
+  // switch itself ends every other surface (profile/accountSessions.ts).
+  const { withAccountTeardown } = await import('../profile/scopeBarrier');
+  await withAccountTeardown(() => stopBotIfActive('signOut'));
   try {
     await getClient().auth.signOut();
   } catch (err) {

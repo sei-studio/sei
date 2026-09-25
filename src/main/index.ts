@@ -34,6 +34,7 @@ import { createStardewGameModule } from './games/stardew';
 import type { GameId, WorldState, WorldStates } from '../shared/gameIpc';
 import { isCallActive, wasCallRecentlyActive, activeCallIds, clearAllCalls } from './voice/callState';
 import { initCallOverlay, closeCallOverlay } from './callOverlay';
+import { trackScopedWrite, isAccountTeardownActive } from './profile/scopeBarrier';
 import { formatPlayDuration, playSummaryText } from './chat/playSummary';
 import { initUpdater } from './updater';
 import { initNotices } from './notices';
@@ -136,6 +137,34 @@ function rendererTarget(): string {
     return process.env.ELECTRON_RENDERER_URL;
   }
   return path.join(__dirname, '../renderer/index.html');
+}
+
+/**
+ * Account switch (260926): close every open call from MAIN, before the scope
+ * moves. A call is renderer-driven and the renderer only reports the hang-up
+ * after it hears app:scope-ending, by which time the scope may already be the
+ * next account's, so main posts the call row and voice_call_ended itself
+ * (the same pair notifyCallEnded writes, timed from the renderer's connect
+ * report) and callState swallows the renderer's late report. Awaits the row.
+ */
+async function endVoiceCallsForAccountSwitch(reason: string): Promise<void> {
+  const { closeAllCallsFromMain } = await import('./voice/callState');
+  const closed = closeAllCallsFromMain();
+  if (closed.length === 0) return;
+  closeCallOverlay();
+  const writes: Promise<void>[] = [];
+  for (const { characterId, connectedMs } of closed) {
+    supervisor?.setVoiceCall(characterId, false);
+    // Never connected: no row and no event, the renderer's own rule.
+    if (connectedMs === null || connectedMs <= 0) continue;
+    capture('voice_call_ended', { character_id: characterId, duration_ms: connectedMs, reason });
+    writes.push(
+      trackScopedWrite(emitCallSession(characterId, connectedMs)).catch((err) => {
+        console.warn(`[sei] account switch: call row for ${characterId} failed: ${(err as Error).message}`);
+      }),
+    );
+  }
+  await Promise.all(writes);
 }
 
 /**
@@ -419,10 +448,17 @@ function broadcastStatus(status: BotStatus): void {
     if (started !== undefined) {
       playStartedAt.delete(id);
       const durationMs = Date.now() - started.at;
-      void emitPlaySession(id, durationMs, started.game);
+      // Tracked (260926): an account switch stops the bots and then drains
+      // this, so the row lands in the outgoing account's transcript.
+      void trackScopedWrite(emitPlaySession(id, durationMs, started.game)).catch(() => {});
       // One event name across games (the analytics dashboard sums playtime
       // by event name); `game` is the split.
-      capture('bot_session_ended', { character_id: id, duration_ms: durationMs, game: started.game });
+      capture('bot_session_ended', {
+        character_id: id,
+        duration_ms: durationMs,
+        game: started.game,
+        ...(isAccountTeardownActive() ? { reason: 'account_switch' } : {}),
+      });
     }
     // 260720: the thin summon_failed capture that used to live here (terminal
     // error with no live session → character_id + reason) moved to the
@@ -908,7 +944,11 @@ async function bootstrap(): Promise<void> {
   //     supervisor + window before initAuthState can fire an auth event.
   {
     const { initProfileScope } = await import('./profile/profileScope');
-    initProfileScope({ supervisor, getMainWindow: () => mainWindow });
+    initProfileScope({
+      supervisor,
+      getMainWindow: () => mainWindow,
+      endVoiceCalls: endVoiceCallsForAccountSwitch,
+    });
   }
 
   // Chess minigame (260710): module-state deps for src/main/chess/chessService.
@@ -1071,7 +1111,7 @@ async function bootstrap(): Promise<void> {
     // Voice calls (260705): a live call ended — post the "You and X called for
     // Y" system row (renderer supplies how long audio actually flowed).
     notifyCallEnded: (id, connectedMs) => {
-      void emitCallSession(id, connectedMs);
+      void trackScopedWrite(emitCallSession(id, connectedMs)).catch(() => {});
       // Analytics (260728): calls are playtime too. `connectedMs` is the time
       // audio actually flowed (the renderer only reports it for calls that
       // connected), so a failed call contributes nothing. Same `duration_ms`

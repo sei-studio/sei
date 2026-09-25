@@ -7,7 +7,10 @@
  * re-points it when auth state changes AT RUNTIME — sign-in, sign-out, or
  * swapping accounts — and drives the "start fresh like a new install" behavior:
  *
- *   1. Tear down the active bot (it holds the OLD scope's character + memory).
+ *   1. End every live session of the OLD account (accountSessions.ts: chess,
+ *      Draw!, backseat, voice calls, chat sessions, every game bot), writing
+ *      their closing rows into the OLD scope before it moves (260926; this
+ *      used to stop only the bots).
  *   2. Re-point the data scope at the new account's bucket.
  *   3. Initialize a brand-new profile (mkdir + seed the bundled default
  *      characters, idempotent per-profile) so a fresh account looks like a
@@ -26,13 +29,17 @@ import type { BotSupervisorType } from '../botSupervisor';
 
 let supervisorRef: BotSupervisorType | null = null;
 let getMainWindowRef: () => BrowserWindow | null = () => null;
+let endVoiceCallsRef: ((reason: string) => Promise<void>) | undefined;
 
 export function initProfileScope(deps: {
   supervisor: BotSupervisorType;
   getMainWindow: () => BrowserWindow | null;
+  /** Close open voice calls from main (index.ts owns the call row). */
+  endVoiceCalls?: (reason: string) => Promise<void>;
 }): void {
   supervisorRef = deps.supervisor;
   getMainWindowRef = deps.getMainWindow;
+  endVoiceCallsRef = deps.endVoiceCalls;
 }
 
 /**
@@ -60,12 +67,24 @@ export async function switchScopeForAuth(userId: string | null): Promise<void> {
   const reason: ScopeChangedEvent['reason'] =
     prevScope === SCOPE_LOCAL ? 'sign-in' : nextScope === SCOPE_LOCAL ? 'sign-out' : 'switch';
 
-  // 1. Tear down the active bot before the scope moves out from under it. On
-  //    sign-out authHandlers already stopped it (D-09); stop() is a no-op when
-  //    nothing is active.
-  if (supervisorRef) {
-    try { await supervisorRef.stop(); }
-    catch (err) { console.warn(`[sei] profileScope: bot stop failed: ${(err as Error).message}`); }
+  // 1. End every live session of the outgoing account before the scope moves
+  //    out from under it (260926: chess, Draw!, backseat, calls, chat
+  //    sessions and every game bot, not only the bots). Their `_ended` events
+  //    and play rows are written HERE, while the scope still points at the old
+  //    account. On sign-out authHandlers already stopped the bots (D-09);
+  //    every end is a no-op when nothing is live.
+  try {
+    const { endAccountSessions } = await import('./accountSessions');
+    await endAccountSessions({
+      supervisor: supervisorRef,
+      endVoiceCalls: endVoiceCallsRef,
+      notifyRenderer: () => {
+        const win = getMainWindowRef();
+        if (win && !win.isDestroyed()) win.webContents.send(IpcChannel.app.scopeEnding);
+      },
+    });
+  } catch (err) {
+    console.warn(`[sei] profileScope: ending the old account's sessions failed: ${(err as Error).message}`);
   }
 
   // 2. Re-point every profile-scoped path at the new account's bucket.
@@ -214,4 +233,5 @@ export async function switchScopeForAuth(userId: string | null): Promise<void> {
 export function _resetForTests(): void {
   supervisorRef = null;
   getMainWindowRef = () => null;
+  endVoiceCallsRef = undefined;
 }

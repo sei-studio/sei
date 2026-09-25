@@ -3054,6 +3054,26 @@ pins it at whatever percent it reached.
   handler; the chat store also drops the results of any load / send / push
   begun before the reset (`scopeEpoch`). Any NEW renderer cache keyed by
   character id or holding account data must be cleared there.
+- **An account switch ends every live session first (260926)** →
+  `switchScopeForAuth` used to stop only the game bots, so a chess game, a
+  Draw! round, a backseat share and a voice call kept running under the
+  previous account (and authState has already applied the NEW JWT by then).
+  Now `endAccountSessions` (`src/main/profile/accountSessions.ts`) runs before
+  the scope moves: `endAllChess` / `endAllDraw` / `endAllBackseat`, main's
+  `endVoiceCallsForAccountSwitch` (index.ts, timed from the renderer's
+  `live:true` connect report; the renderer's late hang-up report is dropped
+  via `consumeClosedByMain`), `endAllChatSessions('account_switch')`, then
+  `app:scope-ending` to the renderer (`endLiveSurfaces` in `scopeReset.ts`:
+  hang up, stop capture, clear the game mirrors, go Home), then
+  `supervisor.stop()`. Every `_ended` event carries `reason: 'account_switch'`.
+  Closing rows are written fire-and-forget and resolve `paths.*` when they hit
+  the disk, so each is registered with `trackScopedWrite`
+  (`profile/scopeBarrier.ts`) and the switch `drainScopedWrites()` before it
+  re-points the scope. **A new surface with a closing row must track it and
+  add an `endAll*` to `endAccountSessions`.** While the teardown runs
+  `foldIfDue` defers (it would bill the new account), and a fold whose
+  summarizer straddles the switch is dropped rather than written into the
+  next account's bridge.
 - **Native ABI mismatch** → `@electron/rebuild` / `install-app-deps` runs in
   `postinstall`. Test packaged builds on a clean machine.
 - **Bot ESM module type in packaged builds** → `src/bot/package.json` exists

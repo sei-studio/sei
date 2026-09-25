@@ -2060,8 +2060,18 @@ export interface RendererApi {
    * renderer-measured. When present and >0, main posts the "You and X called
    * for Y" system row to the chat transcript. Omitted when the call never
    * connected (error before live) so a failed dial never logs a call.
+   *
+   * `live` (active:true only, 260926): the call just CONNECTED, the moment
+   * the renderer's stopwatch starts. Main stamps it so it can close the call
+   * itself on an account switch with the same duration the renderer would
+   * have reported. A group join reports active+live in one call.
    */
-  voiceCallSetActive(args: { characterId: string; active: boolean; connectedMs?: number }): Promise<void>;
+  voiceCallSetActive(args: {
+    characterId: string;
+    active: boolean;
+    connectedMs?: number;
+    live?: boolean;
+  }): Promise<void>;
   /**
    * The call pipeline just went LIVE — ask the companion to speak first (like
    * greeting on spawn). In-game sessions get a {type:'voice-call-greet'} port
@@ -2636,6 +2646,15 @@ export interface RendererApi {
    * its stores + routing in response (260603 per-profile partitioning).
    */
   onScopeChanged(cb: (ev: ScopeChangedEvent) => void): Unsubscribe;
+  /**
+   * Fires at the START of an account scope change (260926), once main has
+   * ended the outgoing account's live sessions (chess, Draw!, backseat, calls,
+   * game bots) and before it switches the data scope. The renderer drops its
+   * half of those surfaces at once (hangs up the call without speaking,
+   * stops screen capture, clears the game mirrors) rather than leaving them
+   * live until app:scope-changed, which can be seconds later.
+   */
+  onScopeEnding(cb: () => void): Unsubscribe;
   /* ── Unique-companion generation (260703 procgen) ─────────────────────── */
   /**
    * Run the full unique-companion pipeline (cloud mode + signed-in only):
@@ -3239,6 +3258,10 @@ export const IpcChannel = {
     // new profile is initialized + bot stopped. The renderer re-bootstraps
     // (reloads config + characters, re-routes to onboarding-or-home) on it.
     scopeChanged: 'app:scope-changed',
+    // 260926: main pushes this at the START of a scope change, after it has
+    // ended the outgoing account's live sessions, so the renderer tears down
+    // its call / capture / game UI at once instead of at scope-changed.
+    scopeEnding: 'app:scope-ending',
     // Phase 11 plan 12 — main-side validated launcher of OS browser for
     // ToS / Privacy links from the renderer. The renderer can't call
     // shell.openExternal directly (contextIsolation), and we don't want to

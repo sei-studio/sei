@@ -2032,10 +2032,28 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         // the "You and X called for Y" row. Absent → the call never connected
         // (dial error), so nothing is logged.
         connectedMs: z.number().int().nonnegative().optional(),
+        // Connect report (260926): the call went live. See markCallLive.
+        live: z.boolean().optional(),
       })
       .parse(argsRaw);
-    const { setCallActive } = await import('./voice/callState');
+    const { setCallActive, markCallLive, isCallActive, wasClosedByMain, consumeClosedByMain } =
+      await import('./voice/callState');
+    if (args.active && args.live) {
+      // A connect racing an account switch: main already ended this call and
+      // posted its row, so it must not come back to life here.
+      if (wasClosedByMain(args.characterId)) return;
+      if (isCallActive(args.characterId)) {
+        markCallLive(args.characterId);
+        return;
+      }
+      // Otherwise a group join, reported open + live in one call: fall through.
+    }
+    // Account switch (260926): main closed this call itself (row + event in the
+    // outgoing account). The renderer's own hang-up report arrives after the
+    // scope moved, so repeating the bookkeeping would write the NEXT account.
+    if (!args.active && consumeClosedByMain(args.characterId)) return;
     setCallActive(args.characterId, args.active);
+    if (args.active && args.live) markCallLive(args.characterId);
     deps.supervisor.setVoiceCall(args.characterId, args.active);
     if (!args.active && typeof args.connectedMs === 'number' && args.connectedMs > 0) {
       deps.notifyCallEnded?.(args.characterId, args.connectedMs);

@@ -55,4 +55,51 @@ describe('resetAccountScopedState', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(useAvatarStore.getState().manifests).toEqual({});
   });
+
+  it('ends the live surfaces: hangs up, stops the share, clears the games, leaves the chat', async () => {
+    const { useVoiceStore } = await import('./stores/useVoiceStore');
+    const { useBackseatStore } = await import('./stores/useBackseatStore');
+    const { useChessStore } = await import('./stores/useChessStore');
+    const { useDrawStore } = await import('./stores/useDrawStore');
+    const { useUiStore } = await import('./stores/useUiStore');
+    const { resetAccountScopedState } = await import('./scopeReset');
+
+    const endCall = vi.fn();
+    useVoiceStore.setState({ status: 'live', participants: ['sui'] as never, endCall } as never);
+    useBackseatStore.setState({ active: { sui: true } as never, sharingFor: 'sui', starting: true });
+    useChessStore.setState({ games: { sui: { status: 'active' } as never }, panelIntent: { sui: true } as never });
+    useDrawStore.setState({ games: { sui: { phase: 'drawing' } as never } });
+    useUiStore.getState().navigate({ kind: 'chat', characterId: 'sui' });
+    useUiStore.getState().setGameFullscreen(true);
+
+    resetAccountScopedState();
+
+    expect(endCall).toHaveBeenCalledTimes(1);
+    expect(useBackseatStore.getState().active).toEqual({});
+    expect(useBackseatStore.getState().sharingFor).toBeNull();
+    expect(useBackseatStore.getState().starting).toBe(false);
+    expect(useChessStore.getState().games).toEqual({});
+    expect(useChessStore.getState().panelIntent).toEqual({});
+    expect(useDrawStore.getState().games).toEqual({});
+    expect(useUiStore.getState().view).toEqual({ kind: 'home' });
+    expect(useUiStore.getState().gameFullscreen).toBe(false);
+  });
+
+  it('with nothing live it does not hang up, and a screen that is not per-account stays', async () => {
+    const { useVoiceStore } = await import('./stores/useVoiceStore');
+    const { useUiStore } = await import('./stores/useUiStore');
+    const { endLiveSurfaces } = await import('./scopeReset');
+
+    const endCall = vi.fn();
+    useVoiceStore.setState({ status: 'idle', participants: [], endCall } as never);
+    useUiStore.getState().navigate({ kind: 'settings' });
+    // A modal about one of the old account's characters goes; the view stays.
+    useUiStore.getState().openModal({ kind: 'delete-confirm', characterId: 'sui' });
+
+    endLiveSurfaces();
+
+    expect(endCall).not.toHaveBeenCalled();
+    expect(useUiStore.getState().view).toEqual({ kind: 'settings' });
+    expect(useUiStore.getState().modal).toBeNull();
+  });
 });

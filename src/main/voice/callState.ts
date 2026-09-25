@@ -23,13 +23,70 @@ const endedCalls = new Map<string, number>();
  * call; short enough that genuinely post-call in-game chatter still shows. */
 const RECENT_CALL_GRACE_MS = 8000;
 
+/** When each open call went LIVE (the renderer's connect, not the dial). */
+const liveSince = new Map<string, number>();
+
+/**
+ * Calls main closed itself on an account switch (260926). The renderer tears
+ * its half of the call down afterwards and reports the hang-up as usual; that
+ * report must not post a second call row (into the NEW account's transcript)
+ * or a second voice_call_ended. Consumed by the report, cleared by a new dial.
+ */
+const closedByMain = new Set<string>();
+
 export function setCallActive(characterId: string, active: boolean): void {
   if (active) {
     activeCalls.add(characterId);
     endedCalls.delete(characterId);
+    liveSince.delete(characterId);
+    closedByMain.delete(characterId);
   } else if (activeCalls.delete(characterId)) {
     endedCalls.set(characterId, Date.now());
+    liveSince.delete(characterId);
   }
+}
+
+/**
+ * The renderer's call connected (the moment its stopwatch starts). Ignored
+ * for a call main no longer has open, so a connect racing an account switch
+ * cannot resurrect a call main already ended.
+ */
+export function markCallLive(characterId: string): void {
+  if (activeCalls.has(characterId) && !liveSince.has(characterId)) {
+    liveSince.set(characterId, Date.now());
+  }
+}
+
+/**
+ * Close every open call from main (account switch, 260926). Returns each
+ * call with how long it was live, null when it never connected (the
+ * renderer's own rule: an unconnected call leaves no row and no event).
+ */
+export function closeAllCallsFromMain(): Array<{ characterId: string; connectedMs: number | null }> {
+  const now = Date.now();
+  const closed: Array<{ characterId: string; connectedMs: number | null }> = [];
+  for (const id of activeCalls) {
+    const since = liveSince.get(id);
+    closed.push({ characterId: id, connectedMs: since === undefined ? null : Math.max(0, now - since) });
+    endedCalls.set(id, now);
+    closedByMain.add(id);
+  }
+  activeCalls.clear();
+  liveSince.clear();
+  return closed;
+}
+
+/**
+ * True when main already closed this call: the caller skips the hang-up
+ * bookkeeping the renderer's late report would otherwise repeat.
+ */
+export function wasClosedByMain(characterId: string): boolean {
+  return closedByMain.has(characterId);
+}
+
+/** As wasClosedByMain, and forgets it: the renderer's hang-up report. */
+export function consumeClosedByMain(characterId: string): boolean {
+  return closedByMain.delete(characterId);
 }
 
 export function isCallActive(characterId: string): boolean {
@@ -61,4 +118,5 @@ export function clearAllCalls(): void {
   const now = Date.now();
   for (const id of activeCalls) endedCalls.set(id, now);
   activeCalls.clear();
+  liveSince.clear();
 }

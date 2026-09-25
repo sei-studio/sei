@@ -97,6 +97,13 @@ interface BackseatStore {
   end: (characterId: string) => Promise<void>;
   /** Reconcile against main, e.g. after a reload. */
   refresh: (characterId: string) => Promise<void>;
+  /**
+   * Account switch (260926): stop capture and forget every session and any
+   * armed share, WITHOUT backseat:end. Main already ended the sessions (and
+   * wrote their rows) for the outgoing account; a share still starting is
+   * abandoned when it resolves.
+   */
+  resetForScope: () => void;
 }
 
 /** The live capture, held outside the store: it is a handle with methods, not
@@ -111,6 +118,10 @@ let offLine: (() => void) | null = null;
 /** Deadline timer for the armed share. Held outside the store for the same
  *  reason `capture` is: it is a handle, not something anyone renders. */
 let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Bumped by resetForScope: a share() begun under the previous account sees
+ *  it changed across its awaits and unwinds instead of landing. */
+let scopeEpoch = 0;
 
 /** The armed-grid + send path, for whoever is showing the share UI. */
 export function backseatCapture(): CaptureHandle | null {
@@ -149,6 +160,7 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
 
     share: async (characterId, source) => {
       if (get().starting) return false;
+      const epoch = scopeEpoch;
       set({ starting: true, error: null });
       // Order matters: main registers the session first, so a start it refuses
       // (a live Minecraft summon) never leaves a capture running with nothing
@@ -170,8 +182,15 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
         });
         return false;
       }
+      if (epoch !== scopeEpoch) return false;
       try {
-        capture = await startCapture(characterId, source.id, source.name);
+        const started = await startCapture(characterId, source.id, source.name);
+        if (epoch !== scopeEpoch) {
+          // The account changed while capture was coming up.
+          stopCapture();
+          return false;
+        }
+        capture = started;
       } catch (err) {
         // Capture failed after main accepted the session, so unwind it rather
         // than leaving a session with no pictures.
@@ -259,6 +278,23 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
       } catch {
         /* already ended */
       }
+    },
+
+    resetForScope: () => {
+      scopeEpoch += 1;
+      if (pendingTimer) clearTimeout(pendingTimer);
+      pendingTimer = null;
+      stopCapture();
+      capture = null;
+      set({
+        active: {},
+        sharingFor: null,
+        stream: null,
+        sourceName: null,
+        starting: false,
+        error: null,
+        pendingShare: null,
+      });
     },
 
     refresh: async (characterId) => {
