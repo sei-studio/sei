@@ -220,3 +220,44 @@ describe('useChatStore — paced arrival for pushed bubbles', () => {
     }
   });
 });
+
+describe('useChatStore.send: model timeout vs user cancel (260926)', () => {
+  // What a rejected ipcRenderer.invoke carries across the bridge.
+  const ipcError = (inner: string): Error => new Error(`Error invoking remote method 'chat:send': ${inner}`);
+
+  async function sendRejecting(err: Error) {
+    const w = globalThis as unknown as { window: { sei: Record<string, unknown> } };
+    w.window.sei.chatSend = vi.fn(async () => {
+      throw err;
+    });
+    const store = await loadStore();
+    const { useUiStore } = await import('./useUiStore');
+    useUiStore.setState({ realisticTyping: false });
+    await store.getState().send('c1', 'hello?');
+    return store.getState();
+  }
+
+  it('a model timeout shows a short failure line and clears the typing indicator', async () => {
+    const s = await sendRejecting(
+      ipcError('LlmTimeoutError: LLM_TIMEOUT: the ollama model did not answer within 120s.'),
+    );
+    const list = s.messages.c1;
+    expect(list.map((m) => m.role)).toEqual(['user', 'companion']);
+    expect(list[1].text).toMatch(/took too long/);
+    expect(s.awaiting.c1).toBe(false);
+  });
+
+  it('a user cancel stays silent: no failure line', async () => {
+    const s = await sendRejecting(ipcError('Error: CHAT_ABORTED'));
+    expect(s.messages.c1.map((m) => m.role)).toEqual(['user']);
+    expect(s.awaiting.c1).toBe(false);
+  });
+
+  it('chatFailureLine keeps its other cases apart', async () => {
+    const { chatFailureLine, isLlmTimeout } = await import('./useChatStore');
+    expect(isLlmTimeout(ipcError('LlmTimeoutError: LLM_TIMEOUT: x'))).toBe(true);
+    expect(isLlmTimeout(ipcError('Error: CHAT_ABORTED'))).toBe(false);
+    expect(chatFailureLine(ipcError('Error: LOCAL_NO_API_KEY'))).toMatch(/no API key/);
+    expect(chatFailureLine(ipcError('Error: 500 upstream'))).toMatch(/couldn't reply/);
+  });
+});

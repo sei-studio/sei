@@ -285,6 +285,16 @@
 
 /* "How do I set up launch?": quiet GUI text on the art, no underline (the
  * game's menus have none), full white on hover. */
+.versionLine {
+  margin: 0;
+  max-width: 420px;
+  font-family: var(--mc-font);
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.72);
+  text-shadow: 1px 1px 0 #3f3f3f;
+}
+
 .helpLink {
   -webkit-appearance: none;
   appearance: none;

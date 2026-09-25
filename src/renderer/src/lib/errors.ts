@@ -14,6 +14,7 @@
  */
 import type { ErrorClass } from '@shared/errorClasses';
 import { t } from './i18n';
+import { mcRangeVars } from './mcVersions';
 
 /**
  * Plain-English error copy. Verbatim from UI-SPEC §"Plain-English error copy".
@@ -40,10 +41,12 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   KEYCHAIN_LOCKED: "Couldn't read your saved API key from the system keychain. Re-run onboarding to re-save it.",
   KEYCHAIN_FALLBACK_PLAINTEXT: "Your system has no secret store. Sei will save your API key but it won't be hardware-protected.",
   NATIVE_MODULE_MISMATCH: "A bundled module didn't load. Reinstall Sei from the .dmg / .exe.",
-  // No hardcoded version range here: the real range comes from
-  // minecraft-protocol.supportedVersions in the bot's error text (surfaced by
-  // UnsupportedVersionModal), and a stale hardcode would lie to users.
-  UNSUPPORTED_MC_VERSION: "This world's Minecraft version is not supported yet. Open your world on a supported Java version and press Launch again.",
+  // 260926: names the exact range and the launcher steps. The old copy ("open
+  // your world on a supported Java version") named no version, and 19 people
+  // in 30 days hit it, mostly on 26.2 / 26.3. {versions} / {newest} are filled
+  // from minecraft-protocol's table at render time (errorCopyText), never
+  // hardcoded, so the numbers cannot go stale.
+  UNSUPPORTED_MC_VERSION: "This world's Minecraft version is not supported yet. Sei works with Minecraft Java {versions}. In the Minecraft Launcher, go to Installations, click New installation, pick {newest} as the version, then open your world from it and press Launch again.",
   // 260806: split out of LAN_NOT_OPEN. A Forge/NeoForge world that requires its
   // mods on the client kicks Sei every time, and the old copy sent the player to
   // re-open a world that was open and answering pings. Says what is actually
@@ -86,6 +89,18 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   STARDEW_FARMHAND_NO_MOD: "Someone in your farm doesn't have the Sei companion mod, so your companion can't appear for them. Ask them to install it, or play without them for now.",
   SMAPI_INSTALL_FAILED: "Couldn't install SMAPI, the mod loader Stardew Valley needs. Make sure the game is closed and try the setup again, or install SMAPI from smapi.io and then re-run the setup.",
 };
+
+/**
+ * The translated copy for an error class, with every placeholder the table
+ * uses filled in (today the Minecraft version range). Prefer this over a bare
+ * `t(ERROR_COPY[cls])`, which would render `{newest}` literally.
+ */
+export function errorCopyText(
+  cls: ErrorClass,
+  tr: (en: string, params?: Record<string, string | number>) => string = t,
+): string {
+  return tr(ERROR_COPY[cls] ?? ERROR_COPY.BOT_CRASH, mcRangeVars(tr));
+}
 
 /**
  * Strip Electron's IPC wrapper from a rejected `ipcRenderer.invoke` so main's
@@ -152,7 +167,7 @@ export function classifyRendererError(err: unknown): { class: ErrorClass; copy: 
     return { class: 'NETWORK_OFFLINE', copy: t(ERROR_COPY.NETWORK_OFFLINE) };
   }
   if (/unsupported_mc_version|unsupported.*version|version.*not.*support|incompatible.*version/i.test(lower)) {
-    return { class: 'UNSUPPORTED_MC_VERSION', copy: t(ERROR_COPY.UNSUPPORTED_MC_VERSION) };
+    return { class: 'UNSUPPORTED_MC_VERSION', copy: errorCopyText('UNSUPPORTED_MC_VERSION') };
   }
   // Before the LAN branch (260806): the modded-host kick text contains "kicked"
   // and often "connect" ("Please install Forge to connect"), so it would

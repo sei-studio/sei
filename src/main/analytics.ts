@@ -331,27 +331,12 @@ export function captureSurfaceError(
 
 /**
  * Classify an arbitrary caught error into a stable shape token for
- * surface_error's error_class. Message-sniffing only — the MESSAGE never
- * leaves the machine through this path. Mirrors the keyword families of
- * botSupervisor.classifyChildError, reduced to the shapes the LLM surfaces
- * actually produce.
+ * surface_error's error_class. Message-sniffing only: the MESSAGE never
+ * leaves the machine through this path. Lives in ./surfaceErrorClass (pure,
+ * no electron) since 260926, which added the local/BYOK provider classes
+ * (connection_refused, model_not_found, context_length, ...).
  */
-export function surfaceErrorClass(err: unknown): string {
-  const msg =
-    err && typeof err === 'object' && 'message' in err
-      ? String((err as { message: unknown }).message)
-      : String(err);
-  const name =
-    err && typeof err === 'object' && 'name' in err ? String((err as { name: unknown }).name) : '';
-  const lower = msg.toLowerCase();
-  if (name === 'AbortError' || /abort/i.test(lower)) return 'aborted';
-  if (/402|payment|credit|billing/i.test(lower)) return 'payment_required';
-  if (/429|rate.?limit|throttl|overloaded/i.test(lower)) return 'rate_limited';
-  if (/401|unauthorized|invalid.*api.*key|x-api-key|authentication_error/i.test(lower)) return 'auth';
-  if (/timeout|timed.?out/i.test(lower)) return 'timeout';
-  if (/enotfound|enetunreach|getaddrinfo|econnreset|econnrefused|fetch failed|network|offline|socket/i.test(lower)) return 'network';
-  return 'unknown';
-}
+export { surfaceErrorClass } from './surfaceErrorClass';
 
 /**
  * True while events are attributed to a signed-in account (260720): the

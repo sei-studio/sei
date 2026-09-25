@@ -2,10 +2,18 @@ import { describe, it, expect } from 'vitest';
 import {
   anyMcInstallReady,
   compareMcVersions,
+  formatMcVersionList,
   installableMcVersions,
+  joinableMcVersions,
+  mcReleases,
+  type McProtocolRow,
+  isMcVersionNewerThanSupported,
   mcInstallReadyVersion,
   selectTargetMcVersion,
+  supportedMcRange,
 } from './mcSetup';
+import { supportedVersions as realSupported } from 'minecraft-protocol/src/version.js';
+import realRows from 'minecraft-data/minecraft-data/data/pc/common/protocolVersions.json';
 
 const SUPPORTED = ['1.20.1', '1.21.4', '1.21.11', '26.1'];
 
@@ -50,5 +58,76 @@ describe('mcSetup', () => {
   it('never targets a snapshot or a version older than Fabric supports', () => {
     expect(installableMcVersions(['1.8.9', '1.12.2', '1.16.5', '1.21.4', '26.1-snapshot-3', '26.1'])).toEqual(['26.1', '1.21.4', '1.16.5']);
     expect(selectTargetMcVersion({ supported: ['1.8.9'] })).toBeNull();
+  });
+
+  it('states the supported range from the protocol table, releases only, from the bot floor', () => {
+    expect(supportedMcRange(['1.7', '1.8.8', '1.21.4', '26.1-snapshot-2', '26.1', '1.12.2'])).toEqual({ oldest: '1.8.8', newest: '26.1' });
+    expect(supportedMcRange([])).toBeNull();
+    // The shipped table: the ceiling is whatever minecraft-protocol says, never a hardcode.
+    const r = supportedMcRange(realSupported);
+    expect(r).not.toBeNull();
+    expect(realSupported).toContain(r!.newest);
+    expect(realSupported).toContain(r!.oldest);
+  });
+
+  it('flags a world newer than the newest supported version (the 26.2 / 26.3 case) only', () => {
+    const sup = ['1.8.8', '1.21.4', '26.1'];
+    expect(isMcVersionNewerThanSupported('26.2', sup)).toBe(true);
+    expect(isMcVersionNewerThanSupported('26.3-snapshot-1', sup)).toBe(true);
+    expect(isMcVersionNewerThanSupported('Paper 26.2', sup)).toBe(true);
+    expect(isMcVersionNewerThanSupported('26.1', sup)).toBe(false);
+    expect(isMcVersionNewerThanSupported('1.21.4', sup)).toBe(false);
+    // Older-but-unlisted and unparseable names are left to the bot's protocol check.
+    expect(isMcVersionNewerThanSupported('1.21.7', sup)).toBe(false);
+    expect(isMcVersionNewerThanSupported('Forge', sup)).toBe(false);
+    expect(isMcVersionNewerThanSupported(undefined, sup)).toBe(false);
+  });
+
+  // 260926: the copy lists the joinable set with its gaps, not a range.
+  const ROWS: McProtocolRow[] = [
+    { minecraftVersion: '1.7.10', version: 5 },
+    { minecraftVersion: '1.8', version: 47 },
+    { minecraftVersion: '1.8.8', version: 47 },
+    { minecraftVersion: '1.8.9', version: 47 },
+    { minecraftVersion: '1.9', version: 107 },
+    { minecraftVersion: '1.9.4', version: 110 },
+    { minecraftVersion: '1.10', version: 210 },
+    { minecraftVersion: '1.10.2', version: 210 },
+    { minecraftVersion: '1.11', version: 315 },
+    { minecraftVersion: '1.12.2', version: 340 },
+    { minecraftVersion: '1.21.5', version: 770 },
+    { minecraftVersion: '26.1', version: 775 },
+    { minecraftVersion: '26.1.2', version: 775 },
+    { minecraftVersion: '26.2-snapshot-1', version: 1073742000 },
+    { minecraftVersion: '26.2', version: 776 },
+  ];
+  const SUP = ['1.7', '1.8.8', '1.9.4', '1.10.2', '1.12.2', '26.1'];
+
+  it('joinable = named in the table or speaking a supported protocol, from 1.8', () => {
+    expect(joinableMcVersions(SUP, ROWS)).toEqual(['1.8', '1.8.8', '1.8.9', '1.9.4', '1.10', '1.10.2', '1.12.2', '26.1', '26.1.2']);
+    expect(mcReleases(ROWS)).toEqual(['1.8', '1.8.8', '1.8.9', '1.9', '1.9.4', '1.10', '1.10.2', '1.11', '1.12.2', '1.21.5', '26.1', '26.1.2', '26.2']);
+  });
+
+  it('formats runs compactly and keeps the gaps', () => {
+    expect(formatMcVersionList(joinableMcVersions(SUP, ROWS), mcReleases(ROWS))).toBe('1.8 to 1.8.9, 1.9.4 to 1.10.2, 1.12.2, 26.1, 26.1.2');
+    expect(formatMcVersionList(['1.8', '1.8.9', '1.10'], ['1.8', '1.8.9', '1.9', '1.10'], (a, b) => `${a}至${b}`)).toBe('1.8, 1.8.9, 1.10');
+    expect(formatMcVersionList(['1', '2', '3'], ['1', '2', '3'], (a, b) => `${a}至${b}`)).toBe('1至3');
+  });
+
+  it('with the protocol table, a world on a same-protocol patch (26.1.2) is not "too new"', () => {
+    expect(isMcVersionNewerThanSupported('26.1.2', SUP)).toBe(true); // range alone gets it wrong
+    expect(isMcVersionNewerThanSupported('26.1.2', SUP, ROWS)).toBe(false);
+    expect(isMcVersionNewerThanSupported('26.2', SUP, ROWS)).toBe(true);
+  });
+
+  it('on the shipped tables: the list starts at 1.8, skips 1.9, and reaches the newest supported entry', () => {
+    const rows = realRows as McProtocolRow[];
+    const joinable = joinableMcVersions(realSupported, rows);
+    expect(joinable[0]).toBe('1.8');
+    expect(joinable).not.toContain('1.9');
+    expect(joinable).toContain(realSupported[realSupported.length - 1]);
+    const text = formatMcVersionList(joinable, mcReleases(rows));
+    expect(text).toMatch(/^1\.8 to 1\.8\.9, /);
+    expect(text).not.toMatch(/\u2014/);
   });
 });

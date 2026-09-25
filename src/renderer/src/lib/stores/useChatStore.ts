@@ -125,6 +125,25 @@ function isLocalNoApiKey(err: unknown): boolean {
   return /LOCAL_NO_API_KEY/.test(String((err as { message?: string })?.message ?? err));
 }
 
+/**
+ * 260926: a local/BYOK provider hit its own request deadline
+ * (main/llm/timeout.ts). Used to arrive as an abort and vanish silently.
+ */
+export function isLlmTimeout(err: unknown): boolean {
+  return /LLM_TIMEOUT/.test(String((err as { message?: string })?.message ?? err));
+}
+
+/** The companion line shown when a chat turn fails for real. */
+export function chatFailureLine(err: unknown): string {
+  if (isLocalNoApiKey(err)) {
+    return "i can't reply: you're in local mode but no API key is saved. add one in Settings, or switch to managed billing.";
+  }
+  if (isLlmTimeout(err)) {
+    return 'sorry, the model took too long to answer. try again, or pick a faster model in Settings.';
+  }
+  return "sorry, i couldn't reply just now. try again in a moment?";
+}
+
 /** Small pause between multi-message replies so they arrive one at a time. Used
  *  only when "Realistic typing" is OFF (otherwise the gap is length-scaled). */
 const REPLY_GAP_MS = 650;
@@ -520,8 +539,10 @@ export const useChatStore = create<ChatState>((set, get) => {
       // retries the same utterance while the call shows "Reconnecting…", so
       // the apology bubble below (which is never spoken) would only clutter
       // the transcript. Local no-key failures stay on the chat surface: a
-      // retry cannot conjure a missing API key.
-      if (!isLocalNoApiKey(err) && notifyTurnFailed(characterId)) {
+      // retry cannot conjure a missing API key. Neither do model timeouts
+      // (260926): the local deadline is 120s, so a retry is two more silent
+      // minutes on the same model.
+      if (!isLocalNoApiKey(err) && !isLlmTimeout(err) && notifyTurnFailed(characterId)) {
         set((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
         return null;
       }
@@ -533,9 +554,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       const fallback: ChatMessage = {
         id: `local-err-${Date.now()}`,
         role: 'companion',
-        text: isLocalNoApiKey(err)
-          ? "i can't reply: you're in local mode but no API key is saved. add one in Settings, or switch to managed billing."
-          : "sorry, i couldn't reply just now. try again in a moment?",
+        text: chatFailureLine(err),
         ts: Date.now(),
       };
       set((s) => ({

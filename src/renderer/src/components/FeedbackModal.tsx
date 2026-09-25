@@ -13,6 +13,7 @@
 
 import React, { useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { clearFeedbackDraft, getFeedbackDraft, setFeedbackDraft } from '../lib/feedbackDraft';
 import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
@@ -26,7 +27,7 @@ function submitErrorCopy(code: string): string {
     case 'PROXY_NO_SESSION':
       return 'Sign in to submit feedback.';
     default:
-      return 'Feedback could not be sent. Check your connection and try again.';
+      return 'Feedback could not be sent. Your message is still here. Check your connection and press Submit to try again.';
   }
 }
 
@@ -50,7 +51,15 @@ export function FeedbackModal({
 }: FeedbackModalProps): React.ReactElement {
   const t = useT();
   const [email, setEmail] = useState('');
-  const [body, setBody] = useState('');
+  // 260926: the draft outlives the modal, so a failed send followed by a
+  // close does not lose the text. Keyed by title: "Suggest a game" and
+  // "Submit feedback" are separate drafts.
+  const draftKey = `modal:${title}`;
+  const [body, setBodyState] = useState(() => getFeedbackDraft(draftKey));
+  const setBody = (v: string): void => {
+    setBodyState(v);
+    setFeedbackDraft(draftKey, v);
+  };
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
@@ -69,6 +78,7 @@ export function FeedbackModal({
         ...(trimmedEmail ? { email: trimmedEmail } : {}),
       });
       if (res.ok) {
+        clearFeedbackDraft(draftKey);
         setDone(true);
       } else {
         setError(submitErrorCopy(res.code));

@@ -60,9 +60,14 @@ boundaries are load-bearing — respect them.
   sessions are fully independent. **Two bots may never share an in-game
   username** (the world kicks the second with `name_taken`), so `summon` refuses
   a colliding effective username before forking (the renderer pre-checks and
-  shows a popup; the supervisor is the authoritative backstop). Summon has a
-  hard **30s timeout** (`SUMMON_TIMEOUT_MS`); stop has a 10s timeout then
-  escalates to kill. The in-game username is `effectiveMcUsername(character)` in
+  shows a popup; the supervisor is the authoritative backstop). Summon has two
+  watchdogs: a **60s cold-boot budget** (`BOOT_TIMEOUT_MS`, fork to the bot's
+  `init-ack`) and then a **30s ready budget** (`SUMMON_TIMEOUT_MS`, `init-ack`
+  to `summon-ready`); stop has a 10s timeout then
+  escalates to kill. A stop during a PENDING summon cancels it instead: the
+  child is killed at once and the summon rejects with `SUMMON_CANCELLED`
+  (silent, no error status or diagnostic). App quit (`shutdown()`) is
+  hard-capped at 4s. The in-game username is `effectiveMcUsername(character)` in
   `src/shared/characterSchema.ts` (`character.username` ?? sanitized name).
 - IPC contracts and shared Zod schemas live in `src/shared` and are the single
   source of truth for both sides of the bridge.
@@ -2910,6 +2915,30 @@ pins it at whatever percent it reached.
   instead of sending the player to verify the one thing already known to be
   fine. Anything else nested inside a supervisor deadline owes the same
   treatment.
+- **The summon deadline used to include the bot's cold boot** → until 260926
+  the 30s watchdog started at `fork`, and a packaged Windows boot (module graph
+  plus Defender scanning every file it opens) measured 21-24s before
+  `createBot`, so the connect guard sat on its 5s floor and BOT_START_TIMEOUT
+  was the top Windows summon failure (14 people in 30 days). Now the boot has
+  its own 60s budget (`BOOT_TIMEOUT_MS`, phase `boot_timeout`) and the 30s
+  ready budget starts at `init-ack`; the bot starts the same budget on its side
+  from `readyBudgetMs` in the init payload. The status carries
+  `stage: 'starting' | 'joining'` so the launch button shows progress.
+  `src/bot/bootTiming.js` stamps each boot phase and main folds them into
+  `summon_failed` / `character_summoned` as flat `boot_<phase>_ms` props (ms
+  since fork) plus `boot_last_phase`. The biggest boot cost was the vision
+  stack: `visualize.js` statically imported the POV renderer, which loaded
+  native `gl`, `canvas`, `three` and prismarine-viewer (about 80% of the
+  runtime's bytes read at import) on every summon. It now loads lazily through
+  `render/povStackLoader.js`, warmed 6s after spawn only when the model can
+  take images. The loader must never hold the event loop for long (the bot is
+  in the world by then, and a blocked loop misses the server keep-alive and
+  gets kicked): it reads every file of the stack asynchronously first (so the
+  disk read and antivirus scan happen off the loop), then requires three,
+  canvas and gl one per event-loop turn, and logs its timings to the bot log.
+  A failed load is final for the session (a failed ESM import stays cached);
+  `look()` says so once in full. Keep heavy or native modules out of the
+  runtime's static import graph.
 - **Native ABI mismatch** → `@electron/rebuild` / `install-app-deps` runs in
   `postinstall`. Test packaged builds on a clean machine.
 - **Bot ESM module type in packaged builds** → `src/bot/package.json` exists

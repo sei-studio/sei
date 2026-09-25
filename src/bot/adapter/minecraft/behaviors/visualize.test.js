@@ -11,7 +11,7 @@
 // rendered frame as an image content block on the LLM turn. Extra keys or a
 // nesting change would silently break that downstream contract.
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
 // Mock the renderPov contract from 15-01. visualize.js imports renderPov from
 // this exact specifier; mocking it keeps node-canvas-webgl / gl / canvas off
@@ -20,9 +20,17 @@ const renderPovMock = vi.fn()
 vi.mock('../render/povRenderer.js', () => ({
   renderPov: (...args) => renderPovMock(...args),
 }))
+// The stack loader (260926) would prefetch and require the real natives; these
+// tests are about the result contract, so it hands back the mocked renderer.
+const { stack } = vi.hoisted(() => ({ stack: { ready: true, unavailable: false, fail: false, hang: false } }))
+vi.mock('../render/povStackLoader.js', () => ({
+  loadPovStack: () => (stack.hang ? new Promise(() => {}) : stack.fail ? Promise.reject(new Error("Cannot find module 'three'")) : import('../render/povRenderer.js')),
+  povStackReady: () => stack.ready,
+  povStackUnavailable: () => stack.unavailable,
+}))
 
 // Imported AFTER the mock is declared (vi.mock is hoisted, so this is safe).
-const { visualizeAction, __resetVisualizeDedupeCache } = await import('./visualize.js')
+const { visualizeAction, captureFrame, __resetVisualizeDedupeCache, __resetVisionUnavailableNotice, CANT_SEE_COPY, VISION_UNAVAILABLE_FIRST_COPY, VISION_UNAVAILABLE_COPY } = await import('./visualize.js')
 
 // A minimal bot stub with the fields the dedupe hash quantizes (position +
 // yaw/pitch). renderPov itself is mocked, so the bot is only read by the
@@ -255,5 +263,55 @@ describe('vision grounding — blurry-vision honesty (260709)', () => {
     const res = await visualizeAction({}, makeBot(), config)
     expect(res.text).toContain('cannot see it well')
     expect(res.text).toContain('blurry')
+  })
+})
+
+describe('visualizeAction: render stack not ready or unavailable (260926)', () => {
+  const bot = () => ({ entity: { position: { x: 0, y: 64, z: 0 }, yaw: 0, pitch: 0 }, look: async () => {} })
+  afterEach(() => {
+    stack.ready = true
+    stack.unavailable = false
+    stack.fail = false
+    stack.hang = false
+    __resetVisionUnavailableNotice()
+  })
+
+  it('an explicit look waits for a cold stack, then renders', async () => {
+    stack.ready = false
+    renderPovMock.mockResolvedValueOnce({ ok: true, mediaType: 'image/jpeg', buffer: Buffer.from('jpg') })
+    const r = await visualizeAction({}, bot(), { vision: {} })
+    expect(r.image?.dataBase64).toBe(Buffer.from('jpg').toString('base64'))
+  })
+
+  it('an idle frame never waits for a cold stack: it degrades and lets the load run', async () => {
+    stack.ready = false
+    renderPovMock.mockClear()
+    const r = await captureFrame(bot(), { vision: {} }, { idle: true })
+    expect(r).toBe(CANT_SEE_COPY)
+    expect(renderPovMock).not.toHaveBeenCalled()
+  })
+
+  it('a failed load tells the model once in full, then briefly; idle frames skip quietly', async () => {
+    stack.ready = false
+    stack.fail = true
+    expect(await visualizeAction({}, bot(), { vision: {} })).toBe(VISION_UNAVAILABLE_FIRST_COPY)
+    stack.unavailable = true
+    expect(await visualizeAction({}, bot(), { vision: {} })).toBe(VISION_UNAVAILABLE_COPY)
+    expect(await captureFrame(bot(), { vision: {} }, { idle: true })).toEqual({ skip: true })
+  })
+
+  it('an abort while waiting for the stack returns aborted', async () => {
+    stack.ready = false
+    stack.hang = true
+    const ac = new AbortController()
+    const p = captureFrame(bot(), { vision: {}, signal: ac.signal }, { loadWaitMs: 60_000 })
+    ac.abort()
+    expect(await p).toBe('aborted')
+  })
+
+  it('a stack that is still loading after the wait degrades to cant-see', async () => {
+    stack.ready = false
+    stack.hang = true
+    expect(await captureFrame(bot(), { vision: {} }, { loadWaitMs: 5 })).toBe(CANT_SEE_COPY)
   })
 })

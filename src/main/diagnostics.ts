@@ -38,12 +38,15 @@ import type { LanState } from '../shared/ipc';
  *                       error, or exited before signaling summon-ready).
  *   - 'connect'       → the bot ran and reported a structured lifecycle error
  *                       before summon-ready (MC connect refused, bad version...).
- *   - 'ready_timeout' → 30s summon watchdog fired with no terminal signal.
+ *   - 'boot_timeout'  → the bot never finished booting (no init-ack) within
+ *                       the 60s cold-boot budget (260926).
+ *   - 'ready_timeout' → the bot booted but did not reach summon-ready within
+ *                       the 30s ready budget, which starts at init-ack.
  *   - 'mid_session'   → the bot WAS live and crashed (nonzero exit, no stop
  *                       requested). Not a failed summon per se — filter on
  *                       summon_phase in dashboards that count summon failures.
  */
-export type SummonPhase = 'pre_gate' | 'fork' | 'connect' | 'ready_timeout' | 'mid_session';
+export type SummonPhase = 'pre_gate' | 'fork' | 'connect' | 'boot_timeout' | 'ready_timeout' | 'mid_session';
 
 /**
  * Raw failure info handed up by botSupervisor's onSummonFailure callback.
@@ -63,6 +66,68 @@ export interface SummonFailureInfo {
    *  a crude time-to-crash signal. */
   durationMs: number;
   backend?: 'local' | 'cloud-proxy' | null;
+  /** 260926: boot-phase stamps for the attempt (see bootPhaseProps). */
+  boot?: BootTimingInfo;
+}
+
+/**
+ * 260926: the raw boot timeline of one summon attempt. All values are epoch
+ * ms. `marks` comes from the bot child (src/bot/bootTiming.js) and holds only
+ * the phases it reached, so a stalled boot shows where it stopped.
+ */
+export interface BootTimingInfo {
+  /** When the summon attempt started (after pre-gate and pack install). */
+  attemptStartMs: number;
+  /** When main called utilityProcess.fork. */
+  forkAtMs: number;
+  marks: Record<string, number>;
+}
+
+/**
+ * Bot boot phases in the order they happen. Anything the bot stamps that is
+ * not listed still gets a prop; this list only picks `boot_last_phase`.
+ */
+export const BOOT_PHASE_ORDER = [
+  'process_start',
+  'modules_loaded',
+  'init_received',
+  'pack_loader_ready',
+  'runtime_loaded',
+  'booted',
+  'version_resolved',
+  'create_bot',
+  'bot_created',
+  'login',
+  'spawn',
+] as const;
+
+const BOOT_MARK_NAME_RE = /^[a-z][a-z0-9_]{0,31}$/;
+
+/**
+ * Flatten a boot timeline into PostHog props: `boot_<phase>_ms` is the time
+ * from fork to that phase, `boot_fork_ms` is attempt start to fork (log
+ * router setup etc.), and `boot_last_phase` is the furthest phase reached
+ * (null when the bot never reported one). Flat numbers so dashboards can
+ * break BOT_START_TIMEOUT down by phase without parsing.
+ */
+export function bootPhaseProps(info: BootTimingInfo): Record<string, number | string | null> {
+  const out: Record<string, number | string | null> = {
+    boot_fork_ms: Math.max(0, Math.round(info.forkAtMs - info.attemptStartMs)),
+  };
+  let last: string | null = null;
+  let lastRank = -1;
+  for (const [name, at] of Object.entries(info.marks ?? {})) {
+    if (!BOOT_MARK_NAME_RE.test(name) || typeof at !== 'number' || !Number.isFinite(at)) continue;
+    // process_start can land a hair before fork on coarse clocks; clamp at 0.
+    out[`boot_${name}_ms`] = Math.max(0, Math.round(at - info.forkAtMs));
+    const rank = (BOOT_PHASE_ORDER as readonly string[]).indexOf(name);
+    if (rank > lastRank) {
+      lastRank = rank;
+      last = name;
+    }
+  }
+  out.boot_last_phase = last;
+  return out;
 }
 
 /** Main-process context stamped onto the diagnostic at capture time. */
@@ -252,6 +317,7 @@ export function buildSummonDiagnostic(
     electron_version: process.versions.electron ?? null,
     node_version: process.versions.node ?? null,
   };
+  if (info.boot) Object.assign(diag, bootPhaseProps(info.boot));
   if (!omitsHeavyText(info.errorClass, info.phase)) {
     diag.error_message = redact(info.errorMessage ?? '').slice(0, ERROR_MESSAGE_CAP);
     // Keep the END of each tail — the crash is at the bottom.

@@ -15,7 +15,7 @@ import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { attemptSummon } from '../lib/summonFlow';
 import { botGameName } from '../lib/gameLaunch';
-import { ERROR_COPY } from '../lib/errors';
+import { ERROR_COPY, errorCopyText } from '../lib/errors';
 import styles from './LanNotOpenModal.module.css';
 
 export interface GameErrorModalProps {
@@ -31,7 +31,7 @@ export function GameErrorModal({ game, characterId, error, message }: GameErrorM
   const rawName = useDataStore((s) => s.characters.find((c) => c.id === characterId)?.name ?? null);
   const name = rawName ?? t('Your companion');
   const gameName = botGameName(game);
-  const copy = ERROR_COPY[error] ? t(ERROR_COPY[error]) : message;
+  const copy = ERROR_COPY[error] ? errorCopyText(error, t) : message;
   const onTryAgain = (): void => {
     closeModal();
     void attemptSummon(characterId, game);

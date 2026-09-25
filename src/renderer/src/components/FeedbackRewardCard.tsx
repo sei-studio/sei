@@ -15,6 +15,7 @@
 
 import React, { useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { clearFeedbackDraft, getFeedbackDraft, setFeedbackDraft } from '../lib/feedbackDraft';
 import { t as tBare, useT } from '../lib/i18n';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
@@ -29,9 +30,11 @@ function submitErrorCopy(code: string): string {
     case 'PROXY_NO_SESSION':
       return tBare('Sign in to submit feedback.');
     default:
-      return tBare('Feedback could not be sent. Check your connection and try again.');
+      return tBare('Feedback could not be sent. Your message is still here. Check your connection and press Submit to try again.');
   }
 }
+
+const DRAFT_KEY = 'reward-card';
 
 export interface FeedbackRewardCardProps {
   /**
@@ -49,7 +52,13 @@ export function FeedbackRewardCard({ onDone }: FeedbackRewardCardProps): React.R
   );
   const refreshCredits = useCreditsStore((s) => s.refresh);
   const t = useT();
-  const [body, setBody] = useState('');
+  // 260926: the draft survives the card unmounting (leaving the plan screen
+  // after a failed send), cleared only on success.
+  const [body, setBodyState] = useState(() => getFeedbackDraft(DRAFT_KEY));
+  const setBody = (v: string): void => {
+    setBodyState(v);
+    setFeedbackDraft(DRAFT_KEY, v);
+  };
   const [replyToEmail, setReplyToEmail] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +81,7 @@ export function FeedbackRewardCard({ onDone }: FeedbackRewardCardProps): React.R
         setError(submitErrorCopy(res.code));
         return;
       }
+      clearFeedbackDraft(DRAFT_KEY);
       // Persist the claimed mirror so the banner never re-appears on this
       // profile, then let the parent swap in the standing feedback button.
       const cfg = await sei.getConfig();

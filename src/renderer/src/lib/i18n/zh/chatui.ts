@@ -129,8 +129,15 @@ export const ZH_CHATUI: Record<string, string> = {
 
   // McLaunchPanel
   'Connecting...': '连接中...',
+  'Starting companion...': '正在启动伙伴...',
+  'Joining your world...': '正在进入你的世界...',
   'Launch': '启动',
   'How do I set up launch?': '如何设置启动？',
+  'Works with Minecraft Java {versions}.': '支持 Minecraft Java 版 {versions}。',
+  'Your open world is on Minecraft {version}, which Sei cannot join yet. Sei works with Minecraft Java {versions}.':
+    '你打开的世界是 Minecraft {version}，Sei 暂时无法加入。Sei 支持 Minecraft Java 版 {versions}。',
+  // Span inside the supported-version list ("1.19 to 1.21.11"), lib/mcVersions.
+  '{from} to {to}': '{from} 至 {to}',
   // Minecraft setup steps on the launch panel (McSteps, 260909).
   'Minecraft setup steps': 'Minecraft 设置步骤',
   'Looking for Minecraft on this computer...': '正在这台电脑上查找 Minecraft…',

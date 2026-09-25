@@ -42,10 +42,60 @@ import { readKnowledgeForPrompt } from './knowledge/knowledgeStore';
 import { loadConfig as loadUserConfig } from './configStore'; // UserConfig for bot init
 import { paths } from './paths';
 import { createLogRouter, type LogRouter } from './logRouter';
-import type { SummonFailureInfo, SummonPhase } from './diagnostics';
+import { bootPhaseProps, type SummonFailureInfo, type SummonPhase } from './diagnostics';
 
+/**
+ * The READY budget: from the bot reporting "booted" (its init-ack) to
+ * summon-ready. 260926: this clock used to start at fork, so the child's cold
+ * boot came out of it. On Windows that boot measured 21-24s (module load plus
+ * Defender scanning the unpacked files), which left the join 5s at best and
+ * made BOT_START_TIMEOUT the top summon failure (14 people in 30 days). The
+ * boot now has its own budget below and this one starts when it ends.
+ */
 const SUMMON_TIMEOUT_MS = 30_000;
+/**
+ * The cold-boot budget: fork to init-ack (process start, the bot's module
+ * graph, the game runtime import, config parse). Generous on purpose: a slow
+ * machine that is still booting is shown "Starting companion..." instead of a
+ * failure. Only a boot that never finishes trips it.
+ */
+const BOOT_TIMEOUT_MS = 60_000;
 const STOP_TIMEOUT_MS = 10_000;
+/**
+ * 260926: app quit. The per-bot drain gets this long before the kill
+ * escalation, and the whole supervisor shutdown is hard-capped at
+ * SHUTDOWN_HARD_CAP_MS: anything still alive then is killed outright. Quit
+ * used to wait out a pending summon (up to 90s) plus a 10s drain.
+ */
+const SHUTDOWN_DRAIN_MS = 2_000;
+const SHUTDOWN_HARD_CAP_MS = 4_000;
+/**
+ * 260926: how long a stop waits for a cancelled pending summon to settle. After
+ * the fork the cancel settles it at once; before the fork it is bounded by the
+ * attempt's pre-fork awaits (store reads, the credit gate).
+ */
+const CANCEL_SETTLE_MS = 3_000;
+
+/**
+ * 260926: the rejection of a summon that a stop cancelled. A user action, not
+ * a failure: no error status, no diagnostic, no "couldn't join" line.
+ */
+export const SUMMON_CANCELLED = 'SUMMON_CANCELLED';
+export function isSummonCancelled(err: unknown): boolean {
+  return errText(err).startsWith(SUMMON_CANCELLED);
+}
+function summonCancelledError(): Error {
+  const e = new Error(`${SUMMON_CANCELLED}: stopped before the companion finished joining.`);
+  (e as Error & { code?: string }).code = SUMMON_CANCELLED;
+  return e;
+}
+
+/** Per-attempt cancel handle, owned by summon() and armed by _summon. */
+interface SummonControl {
+  cancelled: boolean;
+  /** Set once the child is forked: kill it and reject the summon now. */
+  cancel?: () => void;
+}
 
 /**
  * 260810: module-level "is this character summoned right now" probe.
@@ -86,7 +136,13 @@ export function isCharacterSummoned(characterId: string): boolean {
  * machine and clock) and, unlike a duplicated budget constant in the bot,
  * cannot drift out of step with SUMMON_TIMEOUT_MS.
  */
-const summonDeadlineFrom = (startedAtMs: number): number => startedAtMs + SUMMON_TIMEOUT_MS;
+//
+// 260926: the ready watchdog now starts at init-ack, so the bot computes its
+// deadline itself from `readyBudgetMs` (shipped in init) at the moment it
+// sends init-ack. summonDeadlineAt stays in the payload as the worst case
+// (boot budget + ready budget from fork) for any reader that lacks the budget.
+const summonDeadlineFrom = (startedAtMs: number): number =>
+  startedAtMs + BOOT_TIMEOUT_MS + SUMMON_TIMEOUT_MS;
 
 /**
  * Phase 13-15 (PROXY-07, D-40 sub-delivery a): Fly.io proxy base URL.
@@ -331,6 +387,13 @@ export interface BotSupervisorOptions {
    * Optional — undefined no-ops; a throwing callback is swallowed.
    */
   onSummonFailure?: (info: SummonFailureInfo) => void;
+  /**
+   * 260926: a summon reached summon-ready. Carries the attempt's boot-phase
+   * breakdown (flat *_ms props from diagnostics.bootPhaseProps) so the
+   * success event can show where cold-boot time goes too, not only failures.
+   * Optional; a throwing callback is swallowed.
+   */
+  onSummonReady?: (characterId: string, bootProps: Record<string, number | string | null>) => void;
 }
 
 export interface BotSupervisor {
@@ -435,6 +498,12 @@ interface ActiveSession {
    */
   backendKind: AiBackendKind;
   startedAtMs: number;
+  /**
+   * 260926: boot-phase stamps (epoch ms) pushed by the bot as
+   * {type:'boot-timing'} snapshots (src/bot/bootTiming.js). Folded into the
+   * summon diagnostics so a slow or stalled start shows WHERE it went.
+   */
+  bootMarks?: Record<string, number>;
   child: UtilityProcess;
   port1: Electron.MessagePortMain;
   router: LogRouter;
@@ -478,6 +547,8 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
   // (the 30s watchdog guarantees it does), which overlaps sessions.set — so
   // there is no instant where a character is neither reserved nor registered.
   const pendingSummons = new Map<string, Promise<void>>();
+  // 260926: the cancel handle of each pending summon (same keys).
+  const summonControls = new Map<string, SummonControl>();
   // Effective MC username of each pending (pre-registration) summon, so the
   // duplicate-username guard can also see attempts that haven't reached
   // sessions.set yet (two DIFFERENT characters sharing a username, summoned
@@ -571,8 +642,24 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // report success — and the bot joined anyway seconds later. Wait for the
     // pending attempt to settle (bounded by the summon watchdog) and stop the
     // session it registered; if it failed, there is genuinely nothing to stop.
+    //
+    // 260926: that wait was the whole summon budget (up to 90s on a slow
+    // boot). A stop now CANCELS the pending attempt: the child, if forked, is
+    // killed at once and the summon rejects with SUMMON_CANCELLED (silent).
     const pending = pendingSummons.get(characterId);
-    if (pending) await pending.catch(() => { /* failed summon == nothing to stop */ });
+    if (pending) {
+      const ctl = summonControls.get(characterId);
+      if (ctl) {
+        ctl.cancelled = true;
+        ctl.cancel?.();
+      }
+      let settleTimer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        pending.catch(() => { /* failed or cancelled summon == nothing to stop */ }),
+        new Promise<void>((r) => { settleTimer = setTimeout(r, CANCEL_SETTLE_MS); }),
+      ]);
+      clearTimeout(settleTimer);
+    }
     const session = sessions.get(characterId);
     if (!session) {
       // No live session — but the renderer may still be showing a stale entry
@@ -712,6 +799,11 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
   interface FailureReporter {
     /** Set once the backend kind is read, so even pre-fork failures carry it. */
     backend: AiBackendKind | null;
+    /**
+     * 260926: set at fork. `marks` is read live from the session at fire
+     * time, so a failure carries every phase the bot reached.
+     */
+    boot: { forkAtMs: number; marks: () => Record<string, number> | undefined } | null;
     fire(partial: {
       phase: SummonPhase;
       errorClass: string;
@@ -727,6 +819,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     let fired = false;
     const reporter: FailureReporter = {
       backend: null,
+      boot: null,
       fire(partial) {
         if (fired) return;
         fired = true;
@@ -741,6 +834,9 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
             stdoutTail: partial.stdoutTail ?? '',
             durationMs: Date.now() - startedAtMs,
             backend: reporter.backend,
+            boot: reporter.boot
+              ? { attemptStartMs: startedAtMs, forkAtMs: reporter.boot.forkAtMs, marks: reporter.boot.marks() ?? {} }
+              : undefined,
           });
         } catch {
           /* diagnostics must never break summon/exit handling */
@@ -750,7 +846,12 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     return reporter;
   }
 
-  async function _summon(characterId: string, reporter: FailureReporter, game: GameId): Promise<void> {
+  async function _summon(
+    characterId: string,
+    reporter: FailureReporter,
+    game: GameId,
+    ctl: SummonControl = { cancelled: false },
+  ): Promise<void> {
     // Multi-summon: do NOT stop the other bots. Re-summoning an already-running
     // character is a no-op (the UI shows "unsummon" for live characters, so the
     // only way here is a double-fire) — never fork a duplicate child for it.
@@ -966,7 +1067,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // bot a deadline already in the past. Dev resolves to the repo root
     // instantly; a cached pack costs one installed.json read. Progress rides
     // the game:pack-progress push, which is what the launch card shows.
-    opts.sendStatus({ kind: 'connecting', characterId, game });
+    opts.sendStatus({ kind: 'connecting', characterId, game, stage: 'starting' });
     let packRoot: string;
     try {
       const { ensurePack } = await import('./games/packs');
@@ -998,9 +1099,16 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     }
 
     const startedAtMs = Date.now();
-    sendStatus({ kind: 'connecting', characterId });
+    // 260926: stage drives the launch button's progress label ("Starting
+    // companion..." until the bot has booted, then "Joining your world...").
+    sendStatus({ kind: 'connecting', characterId, stage: 'starting' });
 
     const router = await createLogRouter({ characterId, sendBatch: opts.sendLog });
+    // 260926: a stop landed during the pre-fork awaits. Never fork.
+    if (ctl.cancelled) {
+      try { await router.close(); } catch { /* best-effort */ }
+      throw summonCancelledError();
+    }
     // Cross-surface continuity (Phase 18/19): the rolling summary + recent
     // window, so the companion carries the app conversation into the world.
     // PURE DISK READ (260702) — compaction runs only as a chat-surface
@@ -1025,6 +1133,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // the logs reappear unmodified on the next bot fork.
     const seiBackend = aiBackendKind; // 'local' | 'cloud-proxy'
     const seiHasApiKey = apiKey ? '1' : '';
+    const forkAtMs = Date.now();
     const child = utilityProcess.fork(botEntryPath(), [], {
       stdio: 'pipe', // Pitfall 2 — required for stdout/stderr access
       serviceName: `sei-bot-${characterId}`,
@@ -1059,6 +1168,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       resolveExited,
     };
     sessions.set(characterId, session);
+    reporter.boot = { forkAtMs, marks: () => session.bootMarks };
 
     // stdout/stderr line-split → router. We also keep the last ~16KB of
     // stderr/stdout so the exit-before-ready handler can attach the actual
@@ -1097,17 +1207,24 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       summonResolve = resolve;
       summonReject = reject;
     });
-    const summonTimer = setTimeout(() => {
+    // 260926: two budgets. BOOT_TIMEOUT_MS runs from fork until the bot's
+    // init-ack ("booted"); then SUMMON_TIMEOUT_MS runs from init-ack until
+    // summon-ready. A slow cold boot no longer eats the join budget.
+    let watchdogPhase: 'boot' | 'ready' = 'boot';
+    const onWatchdog = (): void => {
       if (summonResolved) return;
       summonResolved = true;
       const err: ErrorClass = 'BOT_START_TIMEOUT';
-      // Derived from the actual constant so the diagnostic never lies about
+      // Derived from the actual constants so the diagnostic never lies about
       // how long the watchdog actually waited.
-      const timeoutMessage =
-        `Bot did not signal summon-ready within ${SUMMON_TIMEOUT_MS / 1000}s of the summon attempt ` +
-        '(no summon-ready and no terminal lifecycle error from the child).';
+      const booting = watchdogPhase === 'boot';
+      const timeoutMessage = booting
+        ? `Bot did not finish booting within ${BOOT_TIMEOUT_MS / 1000}s of the fork ` +
+          '(no init-ack and no terminal lifecycle error from the child).'
+        : `Bot did not signal summon-ready within ${SUMMON_TIMEOUT_MS / 1000}s of booting ` +
+          '(no summon-ready and no terminal lifecycle error from the child).';
       reporter.fire({
-        phase: 'ready_timeout',
+        phase: booting ? 'boot_timeout' : 'ready_timeout',
         errorClass: err,
         errorMessage: timeoutMessage,
         stderrTail: tails.stderr,
@@ -1116,14 +1233,36 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       sendStatus({
         kind: 'error',
         error: err,
-        message: `Bot did not signal ready within ${SUMMON_TIMEOUT_MS / 1000}s.`,
+        message: booting
+          ? `Bot did not finish starting within ${BOOT_TIMEOUT_MS / 1000}s.`
+          : `Bot did not signal ready within ${SUMMON_TIMEOUT_MS / 1000}s.`,
         characterId,
       });
       summonReject(new Error(err));
-    }, SUMMON_TIMEOUT_MS);
+    };
+    let summonTimer = setTimeout(onWatchdog, BOOT_TIMEOUT_MS);
+
+    // 260926: stop during a pending summon. Kill the child now (no graceful
+    // drain: it is not in the world yet, or barely) and reject the summon as
+    // cancelled; the catch below closes the port and drops the session. The
+    // exit handler sees summonResolved + stopRequested and reports nothing.
+    let cancelled = false;
+    ctl.cancel = () => {
+      if (summonResolved) return;
+      summonResolved = true;
+      cancelled = true;
+      clearTimeout(summonTimer);
+      session.stopRequested = true;
+      logger.info(`summon of ${characterId} cancelled by a stop: killing the bot process`);
+      try { child.kill(); } catch { /* best-effort */ }
+      summonReject(summonCancelledError());
+    };
+    if (ctl.cancelled) ctl.cancel();
 
     port1.on('message', (e: { data: BotLifecycle | { type: 'vision-capability'; visionCapable: boolean } }) => {
       const data = e.data;
+      // A cancelled summon's child is being killed: nothing it says counts.
+      if (cancelled) return;
       // Phase 15 (D-10/VIS-03): the bot pushes its active-provider vision
       // capability on summon-ready and on each backend switch. Route it to the
       // dedicated renderer channel (NOT BotStatus) and return early — it is not
@@ -1184,9 +1323,32 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         })();
         return;
       }
+      // 260926: boot-phase snapshot (src/bot/bootTiming.js). Not a lifecycle
+      // status; kept on the session for the diagnostics.
+      if ((data as { type?: string }).type === 'boot-timing') {
+        const marks = (data as { marks?: unknown }).marks;
+        if (marks && typeof marks === 'object') session.bootMarks = marks as Record<string, number>;
+        return;
+      }
+      // 260926: init-ack means the bot has booted (modules, game runtime,
+      // config). Swap the cold-boot budget for the ready budget, which the bot
+      // started on its side at the same moment (readyBudgetMs).
+      if (data.type === 'init-ack' && !summonResolved && watchdogPhase === 'boot') {
+        watchdogPhase = 'ready';
+        clearTimeout(summonTimer);
+        summonTimer = setTimeout(onWatchdog, SUMMON_TIMEOUT_MS);
+        sendStatus({ kind: 'connecting', characterId, stage: 'joining' });
+      }
       if (data.type === 'summon-ready' && !summonResolved) {
         summonResolved = true;
         clearTimeout(summonTimer);
+        // 260926: the success-side boot breakdown (character_summoned).
+        try {
+          opts.onSummonReady?.(
+            characterId,
+            bootPhaseProps({ attemptStartMs: startedAtMs, forkAtMs, marks: session.bootMarks ?? {} }),
+          );
+        } catch { /* diagnostics must never break a summon */ }
         // Voice calls (260705): if the player has a call open with this
         // character (it launch()ed into the world mid-call), apply the mode
         // now — the bot only learns it over the port.
@@ -1339,6 +1501,9 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
               // join reports WHY instead of being overwritten by the generic
               // 30s timeout. See summonDeadlineFrom above.
               summonDeadlineAt: summonDeadlineFrom(startedAtMs),
+              // 260926: the ready budget. The bot starts it at init-ack, the
+              // same moment this supervisor re-arms its watchdog for it.
+              readyBudgetMs: SUMMON_TIMEOUT_MS,
               // 260908 game packs: where the adapter's node_modules live.
               // src/bot/packLoader.js registers a resolve hook for it before
               // the game runtime is imported; equal to the bot's own app root
@@ -1805,8 +1970,12 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     const game: GameId = isGameId(gameArg) ? gameArg : 'minecraft';
     lastGame.set(characterId, game);
     const reporter = createFailureReporter(characterId);
-    const attempt = _summon(characterId, reporter, game)
+    const ctl: SummonControl = { cancelled: false };
+    summonControls.set(characterId, ctl);
+    const attempt = _summon(characterId, reporter, game, ctl)
       .catch((err: unknown) => {
+        // A stop cancelled it: the user's own action, not a failure.
+        if (isSummonCancelled(err)) throw err;
         // Diagnostics backstop (260720): any throw whose site did not report
         // (all the pre-gate refusals, plus stragglers like a store read or
         // fork throw) is a pre-fork failure. Once-guarded, so a site-specific
@@ -1837,6 +2006,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       })
       .finally(() => {
         if (pendingSummons.get(characterId) === attempt) pendingSummons.delete(characterId);
+        if (summonControls.get(characterId) === ctl) summonControls.delete(characterId);
         pendingUsernames.delete(characterId);
       });
     pendingSummons.set(characterId, attempt);
@@ -1963,8 +2133,27 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         return false;
       }
     },
+    // 260926: hard-capped. Pending summons are cancelled (killed) by _stop;
+    // live bots get a short drain, then the kill escalation; whatever is
+    // still alive at the cap is killed outright so quit never hangs on a bot.
     shutdown: async () => {
-      await _stopAll(STOP_TIMEOUT_MS);
+      let capTimer: ReturnType<typeof setTimeout> | undefined;
+      const drained = await Promise.race([
+        _stopAll(SHUTDOWN_DRAIN_MS).then(() => true, () => true),
+        new Promise<boolean>((r) => { capTimer = setTimeout(() => r(false), SHUTDOWN_HARD_CAP_MS); }),
+      ]);
+      clearTimeout(capTimer);
+      if (!drained) {
+        logger.warn(`supervisor shutdown hit its ${SHUTDOWN_HARD_CAP_MS}ms cap: killing the remaining bots`);
+        for (const ctl of summonControls.values()) {
+          ctl.cancelled = true;
+          try { ctl.cancel?.(); } catch { /* best-effort */ }
+        }
+        for (const s of sessions.values()) {
+          s.stopRequested = true;
+          try { s.child.kill(); } catch { /* best-effort */ }
+        }
+      }
     },
     // Plan 10-06: cache the latest JWT and, if a session is live, push it on
     // port1 with a `{type:'jwt'}` message. The utilityProcess in Phase 10
