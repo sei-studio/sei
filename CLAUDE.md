@@ -673,14 +673,21 @@ this, onboarding landed on Home: 24% of new installs never used any surface.
   `requestGameLaunch` + `openGame` (the Play together tiles), the call through
   `startOrOpenCall`. Minecraft is offered only when a LAN world is open (then
   it leads) or an install was detected; otherwise chess leads, with no install.
-  "Not now" or any tile retires the card for the session. Nothing persists.
-- **Failure is silent.** An existing transcript, an empty greeting, a thrown
-  greeting call or a planning error settles the store as `failed`: the plain
-  chat, no card, no error. The one-time Backseat tip is held back while the
+  "Not now", any tile, or the player typing a message instead (`typed`)
+  retires the card for the session. Nothing persists; an account scope change
+  resets the store. LAN state is read from main at planning time (the state
+  main's greeting turn sees), falling back to the renderer's cached copy.
+- **Failure is silent.** An existing transcript, a chat already loaded this
+  app session (`already_loaded`), a message typed before the card was up
+  (`typed_first`), an empty greeting, a thrown greeting call or a planning
+  error settles the store as `failed`: the plain chat, no card, no error.
+  Main pushes the greeting's thoughts only after `prepareChatTurn` succeeds,
+  so a failed prep cannot leave "a button will appear" queued for the
+  player's first message. The one-time Backseat tip is held back while the
   moment is pending or showing (`shouldShowBackseatTip.firstMomentLive`).
 - **Analytics (shape only, renderer `sei.track`):** `first_moment_shown
   {primary, minecraft_offered, companion: sui|generated}`,
-  `first_moment_action {action: chess|minecraft|call|dismiss, primary,
+  `first_moment_action {action: chess|minecraft|call|dismiss|typed, primary,
   ms_since_shown}`, `first_moment_fallback {reason}`. Not session events, so
   nothing to add to `SESSION_EVENTS`.
 - **Verify in a tab:** `?dashshot=chatfirst` (chess + Minecraft + call),

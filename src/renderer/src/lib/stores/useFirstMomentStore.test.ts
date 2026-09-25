@@ -80,6 +80,33 @@ describe('greetingOptions: only the armed companion steers its greeting', () => 
     });
   });
 
+  it("main's LAN state wins over a stale cached copy", async () => {
+    const w = (globalThis as unknown as { window: { sei: Record<string, unknown> } }).window;
+    w.sei.getLanState = vi.fn().mockResolvedValue({ kind: 'open', port: 25565, motd: 'w', lastSeenAt: 0 });
+    const { useFirstMomentStore, useDataStore } = await load();
+    useDataStore.setState({ lan: { kind: 'closed' } });
+    useFirstMomentStore.getState().arm('c1');
+    expect(await useFirstMomentStore.getState().greetingOptions('c1')).toEqual({
+      firstMoment: { primary: 'minecraft' },
+    });
+  });
+
+  it('a hung LAN read falls back to the cached copy', async () => {
+    vi.useFakeTimers();
+    try {
+      const w = (globalThis as unknown as { window: { sei: Record<string, unknown> } }).window;
+      w.sei.getLanState = vi.fn().mockReturnValue(new Promise(() => {}));
+      const { useFirstMomentStore, useDataStore, MC_PROBE_WAIT_MS } = await load();
+      useDataStore.setState({ lan: { kind: 'open', port: 25565, motd: 'w', lastSeenAt: 0 } });
+      useFirstMomentStore.getState().arm('c1');
+      const p = useFirstMomentStore.getState().greetingOptions('c1');
+      await vi.advanceTimersByTimeAsync(MC_PROBE_WAIT_MS + 10);
+      expect(await p).toEqual({ firstMoment: { primary: 'minecraft' } });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('a hung install probe does not hold the greeting past the wait', async () => {
     vi.useFakeTimers();
     try {

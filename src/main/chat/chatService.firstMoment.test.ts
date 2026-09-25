@@ -33,7 +33,7 @@ vi.mock('../llm/webSearchSettings', () => ({
 }));
 
 import { sendFirstMeetingTurn } from './chatService';
-import { thoughtFirstMoment } from './thoughts';
+import { clearThoughts, peekThoughts, thoughtFirstMoment } from './thoughts';
 
 const CHAR = '66666666-6666-4666-8666-666666666666';
 let dir: string;
@@ -60,6 +60,7 @@ beforeEach(async () => {
     character = updater(structuredClone(character));
     return structuredClone(character);
   });
+  clearThoughts(CHAR);
   callSpy.mockReset();
   callSpy.mockResolvedValue({ content: [{ type: 'text', text: 'hey Robin! wanna play chess?' }], stopReason: 'end_turn' });
 });
@@ -106,6 +107,22 @@ describe('sendFirstMeetingTurn with firstMoment', () => {
     const out = await sendFirstMeetingTurn(CHAR, undefined, { firstMoment: { primary: 'chess' } });
     expect(out).toEqual([]);
     expect(callSpy).not.toHaveBeenCalled();
+  });
+
+  it('a turn that bails before the call leaves no thought queued for the next message', async () => {
+    // prepareChatTurn re-reads the character; gone by then = early return.
+    getCharacterSpy.mockImplementationOnce(async () => structuredClone(character)).mockImplementationOnce(async () => null);
+    const out = await sendFirstMeetingTurn(CHAR, undefined, { firstMoment: { primary: 'chess' } });
+    expect(out).toEqual([]);
+    expect(callSpy).not.toHaveBeenCalled();
+    expect(peekThoughts(CHAR)).toEqual([]);
+  });
+
+  it('a prep that throws leaves no thought queued either', async () => {
+    const { loadConfig } = await import('../configStore');
+    vi.mocked(loadConfig).mockRejectedValueOnce(new Error('config unreadable'));
+    await expect(sendFirstMeetingTurn(CHAR, undefined, { firstMoment: { primary: 'chess' } })).rejects.toThrow('config');
+    expect(peekThoughts(CHAR)).toEqual([]);
   });
 
   it('an LLM failure propagates so the renderer can fall back', async () => {

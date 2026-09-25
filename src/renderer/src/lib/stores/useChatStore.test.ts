@@ -417,6 +417,74 @@ describe('useChatStore.load: guided first moment', () => {
     expect(fm.getState().status).toBe('failed');
   });
 
+  it('a chat already loaded this session settles the arm as already_loaded', async () => {
+    chatHistoryMock.mockResolvedValue([]);
+    chatOpenedMock.mockResolvedValue([]);
+    const { store, fm } = await setup();
+    await store.getState().load('c1'); // e.g. the previous account opened it
+    fm.getState().arm('c1');
+    await store.getState().load('c1');
+    expect(fm.getState().status).toBe('failed');
+    const w = (globalThis as unknown as { window: { sei: { track: ReturnType<typeof vi.fn> } } }).window;
+    expect(w.sei.track).toHaveBeenCalledWith('first_moment_fallback', { reason: 'already_loaded' });
+  });
+
+  it('a second load while the first is still fetching does not settle the arm', async () => {
+    let releaseHistory: (rows: ChatMessage[]) => void = () => {};
+    chatHistoryMock.mockReturnValue(new Promise<ChatMessage[]>((r) => (releaseHistory = r)));
+    chatOpenedMock.mockResolvedValue([msg('hi')]);
+    const { store, fm } = await setup();
+    fm.getState().arm('c1');
+    const first = store.getState().load('c1');
+    await store.getState().load('c1'); // StrictMode double mount
+    expect(fm.getState().status).toBe('armed');
+    releaseHistory([]);
+    await first;
+    expect(fm.getState().status).toBe('ready');
+  });
+
+  it('typing instead of clicking retires a ready card as typed', async () => {
+    chatHistoryMock.mockResolvedValue([]);
+    chatOpenedMock.mockResolvedValue([msg('hi')]);
+    const w = (globalThis as unknown as { window: { sei: Record<string, unknown> } }).window;
+    w.sei.chatSend = vi.fn(async () => ({ replies: [] }));
+    w.sei.getCharacter = vi.fn(async () => null);
+    const { store, fm } = await setup();
+    fm.getState().arm('c1');
+    await store.getState().load('c1');
+    expect(fm.getState().status).toBe('ready');
+    await store.getState().send('c1', 'hey');
+    expect(fm.getState().status).toBe('done');
+    const track = w.sei.track as ReturnType<typeof vi.fn>;
+    expect(track).toHaveBeenCalledWith('first_moment_action', expect.objectContaining({ action: 'typed' }));
+    // Only the first send counts.
+    await store.getState().send('c1', 'again');
+    expect(track.mock.calls.filter((c) => c[0] === 'first_moment_action')).toHaveLength(1);
+  });
+
+  it('typing before the card is up settles the moment so it never lands late', async () => {
+    const w = (globalThis as unknown as { window: { sei: Record<string, unknown> } }).window;
+    w.sei.chatSend = vi.fn(async () => ({ replies: [] }));
+    w.sei.getCharacter = vi.fn(async () => null);
+    const { store, fm } = await setup();
+    fm.getState().arm('c1');
+    await store.getState().send('c1', 'hi first');
+    expect(fm.getState().status).toBe('failed');
+  });
+
+  it('a send to another companion leaves the card alone', async () => {
+    chatHistoryMock.mockResolvedValue([]);
+    chatOpenedMock.mockResolvedValue([msg('hi')]);
+    const w = (globalThis as unknown as { window: { sei: Record<string, unknown> } }).window;
+    w.sei.chatSend = vi.fn(async () => ({ replies: [] }));
+    w.sei.getCharacter = vi.fn(async () => null);
+    const { store, fm } = await setup();
+    fm.getState().arm('c1');
+    await store.getState().load('c1');
+    await store.getState().send('other', 'hey');
+    expect(fm.getState().status).toBe('ready');
+  });
+
   it('an existing transcript means no greeting and no card', async () => {
     chatHistoryMock.mockResolvedValue([msg('old')]);
     const { store, fm } = await setup();

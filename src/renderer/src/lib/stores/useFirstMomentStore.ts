@@ -13,7 +13,9 @@
  *                    did not (failed: the chat stays the normal chat, no
  *                    card, no error). Failures are silent to the player.
  *   markShown        the card actually rendered (fires first_moment_shown).
- *   act(action)      a button or "Not now" (fires first_moment_action).
+ *   act(action)      a button, "Not now", or the player typing instead
+ *                    ('typed', from useChatStore.send) retires the card
+ *                    (fires first_moment_action).
  *
  * Deliberately NOT persisted: it is a one-shot nudge for the first session,
  * and a quit before it shows simply means no card. The tutorial is the only
@@ -37,6 +39,8 @@ export type FirstMomentStatus = 'armed' | 'greeting' | 'ready' | 'done' | 'faile
 /** How long the greeting waits on the Minecraft install probe before it
  *  plans without it (the probe then just counts as "not installed"). */
 export const MC_PROBE_WAIT_MS = 1500;
+/** How long planning waits on main's LAN state before using the cached copy. */
+const LAN_READ_WAIT_MS = 500;
 
 interface FirstMomentState {
   characterId: string | null;
@@ -48,8 +52,9 @@ interface FirstMomentState {
   greetingOptions: (characterId: string) => Promise<ChatOpenedOptions | undefined>;
   greetingResult: (characterId: string, ok: boolean, reason?: string) => void;
   markShown: () => void;
-  act: (action: FirstMomentAction) => void;
-  /** Tests only. */
+  /** 'typed': the player wrote a message instead of clicking. */
+  act: (action: FirstMomentAction | 'typed') => void;
+  /** Forget everything: account scope changes (App.tsx) and tests. */
   reset: () => void;
 }
 
@@ -84,6 +89,23 @@ function withTimeout(p: Promise<boolean>, ms: number): Promise<boolean> {
   });
 }
 
+/** Whether a LAN world is open, asked of main (the state its greeting turn
+ *  reads) rather than the renderer's pushed copy, which can lag it. Falls back
+ *  to the cached copy when the ask fails or is slow. */
+async function lanIsOpen(): Promise<boolean> {
+  const cached = (): boolean => useDataStore.getState().lan?.kind === 'open';
+  try {
+    const fresh = await Promise.race([
+      sei.getLanState(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), LAN_READ_WAIT_MS)),
+    ]);
+    if (fresh && typeof fresh.kind === 'string') return fresh.kind === 'open';
+  } catch {
+    /* fall through to the cached copy */
+  }
+  return cached();
+}
+
 function track(event: string, props: Record<string, string | number | boolean | null>): void {
   try {
     sei.track(event, props);
@@ -107,8 +129,10 @@ export const useFirstMomentStore = create<FirstMomentState>((set, get) => ({
     const s = get();
     if (s.characterId !== characterId || s.status !== 'armed') return undefined;
     set({ status: 'greeting' });
-    const mcInstalled = mcProbe ? await withTimeout(mcProbe, MC_PROBE_WAIT_MS) : false;
-    const lanOpen = useDataStore.getState().lan?.kind === 'open';
+    const [mcInstalled, lanOpen] = await Promise.all([
+      mcProbe ? withTimeout(mcProbe, MC_PROBE_WAIT_MS) : Promise.resolve(false),
+      lanIsOpen(),
+    ]);
     const plan = planFirstMoment({ lanOpen, mcInstalled });
     // A reset or re-arm while the probe was pending wins.
     if (get().characterId !== characterId || get().status !== 'greeting') return undefined;
