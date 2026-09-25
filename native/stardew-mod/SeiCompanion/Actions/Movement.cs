@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.Xna.Framework;
 using StardewValley;
 using SeiCompanion.Body;
@@ -12,6 +13,24 @@ namespace SeiCompanion.Actions
         /// <summary>Ticks of no movement while a controller is live before a walk counts as stuck (2.5 s).</summary>
         private const int StuckTicks = 150;
         private const int WalkTimeoutTicks = 60 * 25;
+        /// <summary>Ticks stalled with a farmer on the next tile before re-routing around them (0.5 s).</summary>
+        private const int FarmerRepathTicks = 30;
+        /// <summary>Fresh path searches one walk may make after a stall.</summary>
+        private const int MaxRepaths = 2;
+
+        private static bool NextTileHasFarmer(SeiBody body, GameLocation loc, NPC npc)
+        {
+            try
+            {
+                var path = npc.controller?.pathToEndPoint;
+                if (path == null || path.Count == 0) return false;
+                Point next = path.Peek();
+                if (next == npc.TilePoint && path.Count > 1)
+                    next = path.ElementAt(1);
+                return body.FarmerOn(loc, next);
+            }
+            catch { return false; }
+        }
 
         /// <summary>
         /// Walk to a tile on the current map. With `adjacentOk` the walk ends on
@@ -25,6 +44,12 @@ namespace SeiCompanion.Actions
             NPC npc = body.Npc;
             GameLocation loc = npc.currentLocation;
             Point here = npc.TilePoint;
+            // A tile a farmer stands on is never a place to stand: the NPC
+            // cannot step into a farmer, so "go to the player's tile" (the
+            // model's goTo(x,y) with the owner's coordinates, measured 260924)
+            // means "go next to it".
+            if (body.FarmerOn(loc, target))
+                adjacentOk = true;
             int need = adjacentOk ? 1 : 0;
             if (Targets.Chebyshev(here, target) <= need)
             {
@@ -37,13 +62,16 @@ namespace SeiCompanion.Actions
             var goals = new List<Point>();
             if (!adjacentOk && body.IsWalkable(loc, new Vector2(target.X, target.Y)))
                 goals.Add(target);
-            // Neighbours nearest to us first so the body approaches from its side.
+            // Neighbours nearest to us first so the body approaches from its
+            // side; none a farmer stands on.
+            HashSet<Point> occupied = body.FarmerTiles(loc);
             var ring = new List<Point>();
             for (int dx = -1; dx <= 1; dx++)
                 for (int dy = -1; dy <= 1; dy++)
                 {
                     if (dx == 0 && dy == 0) continue;
                     var p = new Point(target.X + dx, target.Y + dy);
+                    if (occupied.Contains(p)) continue;
                     if (body.IsWalkable(loc, new Vector2(p.X, p.Y))) ring.Add(p);
                 }
             ring.Sort((a, b) => Targets.Chebyshev(a, here).CompareTo(Targets.Chebyshev(b, here)));
@@ -59,7 +87,9 @@ namespace SeiCompanion.Actions
             Point goal = goals[0];
             foreach (Point g in goals)
             {
-                if (Targets.Chebyshev(here, g) == 0) { pathed = true; goal = g; break; }
+                // Standing on a goal already: drop any leftover controller (a
+                // follow walk) or the loop below would wait on it.
+                if (Targets.Chebyshev(here, g) == 0) { npc.controller = null; pathed = true; goal = g; break; }
                 if (body.TryPath(g, null)) { pathed = true; goal = g; break; }
             }
             if (!pathed)
@@ -70,6 +100,7 @@ namespace SeiCompanion.Actions
 
             int stuck = 0;
             int ticks = 0;
+            int repaths = 0;
             // The budget scales with the route: a flat 25 s lost a 68-tile
             // crossing of the farm at NPC speed (measured 260910, "gave up
             // walking to (80,15) after 25s" on the way to town).
@@ -80,9 +111,26 @@ namespace SeiCompanion.Actions
             {
                 yield return null;
                 if (ctx.Cancelled) yield break;
+                // A menu, dialogue or event freezes the world: no progress, no
+                // stall, and no time off the walk's budget.
+                if (!Game1.shouldTimePass()) continue;
                 ticks++;
                 if (Vector2.Distance(npc.Position, last) < 0.25f) stuck++; else stuck = 0;
                 last = npc.Position;
+                // Stalled against a farmer (the player walked into the path):
+                // route around them from here before BarrierHop's step-through.
+                if (stuck == FarmerRepathTicks && repaths < MaxRepaths && NextTileHasFarmer(body, loc, npc))
+                {
+                    repaths++;
+                    if (body.TryPath(goal, null)) { stuck = 0; continue; }
+                }
+                if (stuck > StuckTicks && repaths < MaxRepaths)
+                {
+                    // One fresh search from where the body stands before
+                    // giving up: what was in the way may have moved.
+                    repaths++;
+                    if (body.TryPath(goal, null)) { stuck = 0; continue; }
+                }
                 if (stuck > StuckTicks)
                 {
                     // Name what stopped the step (the tile the controller wanted
@@ -98,14 +146,25 @@ namespace SeiCompanion.Actions
                             var rect = new Rectangle(nextTile.X * 64 + 8, nextTile.Y * 64 + 8, 48, 48);
                             bool npcCol = loc.isCollidingPosition(rect, Game1.viewport, false, 0, false, npc, true, false, false);
                             bool farmerCol = loc.isCollidingPosition(rect, Game1.viewport, true, 0, false, body.Shadow, true, false, false);
+                            bool farmerOn = body.FarmerOn(loc, nextTile);
                             loc.objects.TryGetValue(v, out StardewValley.Object obj);
                             loc.terrainFeatures.TryGetValue(v, out StardewValley.TerrainFeatures.TerrainFeature tf);
-                            what = $" next {Targets.Fmt(nextTile)} npcCol={npcCol} farmerCol={farmerCol} object={obj?.Name ?? "-"} feature={tf?.GetType().Name ?? "-"}";
+                            what = $" next {Targets.Fmt(nextTile)} npcCol={npcCol} farmerCol={farmerCol} farmerOn={farmerOn} object={obj?.Name ?? "-"} feature={tf?.GetType().Name ?? "-"} repaths={repaths}";
                         }
                         body.Monitor.Log($"{body.Name}: stuck at {Targets.Fmt(npc.TilePoint)} heading to {Targets.Fmt(target)}{what}", StardewModdingAPI.LogLevel.Debug);
                     }
                     catch { }
                     npc.controller = null;
+                    // Stuck, but already beside what we walked to: that is an
+                    // arrival (the last step was into the player, 260924).
+                    if (adjacentOk && Targets.Chebyshev(npc.TilePoint, target) <= 1)
+                    {
+                        npc.speed = 2;
+                        body.Shadow.FaceToward(new Vector2(target.X, target.Y));
+                        npc.faceDirection(body.Shadow.FacingDirection);
+                        o.Pass("arrived");
+                        yield break;
+                    }
                     o.Fail($"stuck on the way to {Targets.Fmt(target)} at {Targets.Fmt(npc.TilePoint)}");
                     yield break;
                 }
@@ -143,10 +202,12 @@ namespace SeiCompanion.Actions
                     o.Fail($"no known route from {body.LocationName} to {locationName}");
                     yield break;
                 }
-                // A commanded trip (ctx.Id set) to another map ends following;
-                // the follow tick's own background travel keeps its target.
+                // A commanded trip (ctx.Id set) to a map the followed player is
+                // not on puts following ON HOLD until they move on (see
+                // SeiBody.FollowHoldAt); it used to end following for good.
+                // The follow tick's own background travel keeps its target.
                 if (ctx.Id != null && route.Count > 0)
-                    body.FollowTarget = null;
+                    body.HoldFollowForTrip(locationName);
                 foreach (Hop hop in route)
                 {
                     if (ctx.Cancelled) yield break;
@@ -172,6 +233,14 @@ namespace SeiCompanion.Actions
             o.Pass($"in {body.LocationName}");
         }
 
+        /// <summary>The result suffix for a trip that put following on hold, else "".</summary>
+        public static string FollowHoldNote(SeiBody body)
+        {
+            if (body.FollowTarget == null || body.FollowHoldAt == null)
+                return "";
+            return $" (following {body.FollowTarget} is on hold while they stay in {body.FollowHoldAt}; it picks up again when they leave it or come to you. Call unfollow to stop for good)";
+        }
+
         /// <summary>goTo: a tile, a handle, or another location.</summary>
         public static IEnumerable<object> GoTo(ActionContext ctx)
         {
@@ -181,9 +250,8 @@ namespace SeiCompanion.Actions
             var o = new Outcome();
             if (!string.Equals(t.LocationName, body.LocationName, StringComparison.OrdinalIgnoreCase))
             {
-                bool wasFollowing = body.FollowTarget != null;
                 yield return Travel(ctx, t.LocationName, t.HasTile ? t.Tile : (Point?)null, o);
-                yield return o.Ok ? Result.Success($"arrived in {body.LocationName} at {Targets.Fmt(body.Npc.TilePoint)}{(wasFollowing && body.FollowTarget == null ? " (stopped following)" : "")}") : Result.Fail(o.Detail);
+                yield return o.Ok ? Result.Success($"arrived in {body.LocationName} at {Targets.Fmt(body.Npc.TilePoint)}{FollowHoldNote(body)}") : Result.Fail(o.Detail);
                 yield break;
             }
             if (!t.HasTile) { yield return Result.Success($"already in {body.LocationName}"); yield break; }
@@ -205,6 +273,12 @@ namespace SeiCompanion.Actions
                 if (!o.Ok) { yield return Result.Fail(o.Detail); yield break; }
             }
             yield return WalkTo(ctx, who.TilePoint, true, o);
+            // They kept walking while we came: one more leg to where they are now.
+            if (o.Ok && who.currentLocation == body.Npc.currentLocation && Targets.Chebyshev(body.Npc.TilePoint, who.TilePoint) > 2)
+            {
+                o = new Outcome();
+                yield return WalkTo(ctx, who.TilePoint, true, o);
+            }
             yield return o.Ok ? Result.Success($"next to {who.Name}") : Result.Fail(o.Detail);
         }
     }

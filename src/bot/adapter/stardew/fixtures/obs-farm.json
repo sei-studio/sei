@@ -3,7 +3,7 @@
   "stamina": 210, "maxStamina": 270, "health": 100, "maxHealth": 100, "exhausted": false, "gold": 500,
   "time": 1330, "timeText": "1:30 PM", "day": 3, "dayOfWeek": "Wed", "season": "spring", "year": 1,
   "weather": "sunny", "isDark": false,
-  "follow": "Ouen", "paused": false, "sleeping": false, "inAction": null, "lastResult": null,
+  "follow": "Ouen", "followHold": null, "paused": false, "sleeping": false, "inAction": null, "lastResult": null,
   "inventory": [
     { "slot": 0, "id": "(T)Axe", "name": "Axe", "count": 1, "kind": "tool" },
     { "slot": 1, "id": "(T)Hoe", "name": "Hoe", "count": 1, "kind": "tool" },

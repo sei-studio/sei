@@ -131,7 +131,7 @@ latest Observation and stay valid ~90 s.
 |---|---|---|
 | `goTo` | `{x,y}` or `{target:"#N"}` or `{location:"Town", x?, y?}` | walk there; crosses maps through the warp graph |
 | `come` | `{player?}` | walk to the player, across maps |
-| `follow` | `{player?}` | trail the player until `unfollow` (background; answers at once) |
+| `follow` | `{player?}` | trail the player until `unfollow` (background; answers at once). A commanded trip (`goTo`, `interact` on a door, `sleep`) to a map the player is not on puts following on hold (`followHold` in the observation) until the player leaves the map they were on or comes to the body; it no longer ends following. Following survives the night. A command takes the body off a follow trip to another map; trailing resumes when it ends. Follow never enters a festival, an event or a temporary map; it waits for the player to come back. |
 | `unfollow` | | stop trailing |
 | `till` | `{x,y}` | hoe a diggable tile |
 | `water` | `{x,y}` (crop, or a water tile to refill) or `{count?}` for every dry crop nearby | watering can |
@@ -160,7 +160,7 @@ latest Observation and stay valid ~90 s.
   "weather": "sunny", "isDark": false, "daysPlayed": 3,
   "farm": {"crops": 24, "dryCrops": 12, "readyCrops": 0, "deadCrops": 0, "soil": 6, "twigs": 40, "weeds": 120, "stones": 80, "debris": 240, "bigClumps": 12, "grownTrees": 60, "shippingBinItems": 0},
   "host": {"name": "Ouen", "money": 500, "seeds": 0, "stamina": 270, "maxStamina": 270, "farmingLevel": 0, "mailWaiting": 1},
-  "follow": "Ouen", "paused": false, "sleeping": false, "inAction": null, "lastResult": "water: watered 12 crops",
+  "follow": "Ouen", "followHold": null, "paused": false, "sleeping": false, "inAction": null, "lastResult": "water: watered 12 crops",
   "inventory": [{"slot": 0, "id": "(T)Axe", "name": "Axe", "count": 1, "kind": "tool"}],
   "held": "Axe", "wateringCan": {"left": 18, "max": 40},
   "tiles": {

@@ -2235,6 +2235,53 @@ a purchase, till, plant, water, fish, chest take/put, sleep, a day end. Not
 yet verified: in-game typed chat and voice (no game window), pause/mode on
 Stardew, combat, a second companion, a farmhand.
 
+**Stardew follow + pathing (260925, mod 0.1.2, unverified in game).** From
+the v0.6.5-beta.2 playtest log (`~/suisei/reports/playtest-v065b2/`):
+- **Walks stalled INTO the player.** All six "stuck" results in the SMAPI log
+  had the next path tile equal to the player's tile with both collision
+  checks false. The game's path search (`PathFindController.findPath`, run
+  as the shadow farmer) never looks at farmers, while the NPC's step
+  collision refuses to walk into one, so any path across the player stalled
+  on the tile before it; `goTo` to the player's own coordinates could never
+  arrive. Now: `TryPath` detours with the mod's own 4-connected A*
+  (`Body/GridPath.cs`, pure, tested by `native/stardew-mod/GridPathTests`,
+  `dotnet run` with no game) when the game's path crosses a farmer tile,
+  keeping the game's path when no detour exists; `BarrierHop` steps THROUGH
+  a farmer after 1 s stalled (the doorway case); `WalkTo` treats a
+  farmer-occupied target as "next to it", drops farmer tiles from its goal
+  ring, re-paths (max 2) on a stall, and reports "arrived" when a stall
+  leaves it beside an adjacent-ok target; `come` takes one more leg when the
+  player walked on; the follow tick picks the free tile beside the player on
+  the body's side and counts stalls every tick (it counted 1 tick in 6-16).
+- **Follow was cleared for good by any commanded map change** (and by
+  bedtime/sleep), so "follow me, we're heading outside" died the moment the
+  model walked out first. Now a commanded trip to a map the player is not on
+  puts following ON HOLD (`SeiBody.FollowHoldAt`, obs `followHold`, snapshot
+  `follow_target: X (on hold ...)`), released when the player leaves that
+  map or reaches the body, which keeps the 260910 fix (no dragging back
+  through the door). Following survives the night (`Sleeping` pauses it).
+  The Stardew Following/Stuck rules in `prompts.js` say so, but ONLY when
+  the connected mod reports 0.1.2+ in its welcome/hello
+  (`adapter/stardew/modVersion.js`, `actionRules(modVersion)`,
+  `composeSnapshot({ modVersion })`); an older mod still ends follow on a
+  trip, so it gets `ACTION_RULES_LEGACY` and the bare follow name. Gate any
+  future prompt text that describes new mod behavior the same way: the app
+  ships before the Mac-built DLL.
+- Review follow-ups (same PR): a command aborts a background follow-travel
+  (it used to warp the body mid-purchase); stall counters (follow tick,
+  BarrierHop, WalkTo) skip ticks where `!Game1.shouldTimePass()` (a chest
+  menu teleported the body); follow-side `FreeTileNear(..., reachable: true)`
+  needs the tile within 2 x radius steps of the player (`GridPath.WithinSteps`,
+  never across a fence corner); detours are capped at
+  `GridPath.DetourBudget` (4x the game's path, 16..400 nodes); follow never
+  travels or warps into a festival, an event or a temporary map (`Temp`,
+  `IsTemporary` by reflection), it waits.
+- The mod source is at 0.1.2 but `assets/stardew-mod/` is still the OLD
+  build (its DLL even reports assembly 0.1.0): rebuild on a machine with the
+  game (`scripts/build-stardew-mod.sh`) and commit the output, which also
+  carries the 0.1.2 manifest. Do not bump the asset manifest by hand without
+  the DLL, or installs would record 0.1.2 with old code and never update.
+
 **Stardew companions look like themselves (260921).** Every Stardew body used
 to be the one shared placeholder NPC sprite. It is now drawn as a FARMER
 dressed with the game's own character creator knobs: gender, skin, hairstyle,

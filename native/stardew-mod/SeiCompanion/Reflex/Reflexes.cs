@@ -203,7 +203,7 @@ namespace SeiCompanion.Reflex
             SeiBody body = this._body;
             if (body.Paused || body.Sleeping) return;
             body.Runner.Abort("bedtime");
-            body.FollowTarget = null;
+            // Following is kept: Sleeping pauses the follow tick until morning.
             var ctx = new ActionContext(body, null, default);
             body.Background.Start(ctx, "bedtime", Interact.Sleep(ctx));
             body.Session?.SendEvent("survival", new Dictionary<string, object>

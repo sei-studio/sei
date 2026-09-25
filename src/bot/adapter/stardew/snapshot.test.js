@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { composeSnapshot, createSnapshotComposer } from './observers/snapshot.js'
+import { composeSnapshot, createSnapshotComposer, followLine } from './observers/snapshot.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const obs = () => JSON.parse(readFileSync(path.join(HERE, 'fixtures', 'obs-farm.json'), 'utf8'))
@@ -36,6 +36,49 @@ describe('stardew snapshot composer', () => {
     o.player = { ...o.player, location: 'Town', sameLocation: false, dist: -1 }
     const text = composeSnapshot(o, { pinUsername: 'Ouen' })
     expect(text).toContain('owner Ouen: in Town (a different map; call follow or come to reach them)')
+  })
+
+  it('keeps a held follow visible instead of reading as no follow (260924 playtest)', () => {
+    // The old mod cleared the follow target on any commanded map change and
+    // the snapshot said "(none)" for the rest of the session. The hold keeps
+    // the target and names why the body is not trailing right now.
+    const o = obs()
+    o.location = 'Farm'
+    o.followHold = 'FarmHouse'
+    o.player = { ...o.player, location: 'FarmHouse', sameLocation: false, dist: -1 }
+    const text = composeSnapshot(o, { pinUsername: 'Ouen', modVersion: '0.1.2' })
+    expect(text).toContain('follow_target: Ouen (on hold while they stay in FarmHouse; picks up again when they leave it or come to you. unfollow to stop)')
+    expect(text).not.toContain('follow_target: (none)')
+  })
+
+  it('renders the follow line for every mod state, old mods included', () => {
+    expect(followLine({ follow: null }, true)).toBe('(none)')
+    expect(followLine({}, true)).toBe('(none)')
+    expect(followLine(null, true)).toBe('(none)')
+    expect(followLine({ follow: 'Ouen' }, true)).toBe('Ouen')
+    expect(followLine({ follow: 'Ouen', followHold: null }, true)).toBe('Ouen')
+    expect(followLine({ follow: 'Ouen', sleeping: true }, true)).toBe('Ouen (resumes when you wake up)')
+    expect(followLine({ follow: 'Ouen', followHold: 'Town' }, true)).toMatch(/^Ouen \(on hold while they stay in Town;/)
+    // A mod before 0.1.2 ends follow on a trip and at night: never claim it holds.
+    expect(followLine({ follow: 'Ouen', sleeping: true }, false)).toBe('Ouen')
+    expect(followLine({ follow: 'Ouen', followHold: 'Town' }, false)).toBe('Ouen')
+    expect(followLine({ follow: 'Ouen', followHold: 'Town' })).toBe('Ouen')
+  })
+
+  it('gates the held-follow wording on the mod version', () => {
+    const o = obs()
+    o.followHold = 'FarmHouse'
+    const line = (v) => composeSnapshot(o, { modVersion: v }).split('\n').find((l) => l.startsWith('follow_target:'))
+    expect(line('0.1.2')).toMatch(/on hold/)
+    expect(line('0.2.0')).toMatch(/on hold/)
+    expect(line('0.1.1')).toBe('follow_target: Ouen')
+    expect(line(null)).toBe('follow_target: Ouen')
+    // The live composer reads the version the adapter got in the welcome.
+    let v = '0.1.1'
+    const composer = createSnapshotComposer({ getObs: () => o, getModVersion: () => v })
+    expect(composer.next()).toContain('follow_target: Ouen\n')
+    v = '0.1.2'
+    expect(composer.next()).toMatch(/follow_target: Ouen \(on hold/)
   })
 
   it('handles a missing observation and labels companions', () => {

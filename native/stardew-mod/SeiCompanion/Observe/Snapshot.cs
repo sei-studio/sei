@@ -55,6 +55,9 @@ namespace SeiCompanion.Observe
                 ["weather"] = Weather(),
                 ["isDark"] = SafeIsDark(loc),
                 ["follow"] = body.FollowTarget,
+                // The map the followed player was on when a command took the
+                // body elsewhere: following is on hold until they leave it.
+                ["followHold"] = body.FollowHoldAt,
                 ["paused"] = body.Paused,
                 ["sleeping"] = body.Sleeping,
                 ["inAction"] = body.Runner.ActionName,

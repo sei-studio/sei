@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createFakeMod } from '../../../../scripts/fake-stardew-mod.mjs'
 import { createRuntime, adapterConfigFrom, checkJoinTarget, botUsernameFor, connectTimeoutFor, spawnErrorMessage } from './runtime.js'
 import { ConfigSchema } from '../../config.js'
+import { ACTION_RULES, ACTION_RULES_LEGACY } from './prompts.js'
 
 const quiet = { info: () => {}, warn: () => {}, error: () => {} }
 
@@ -72,6 +73,16 @@ describe('stardew runtime against the fake mod', () => {
   let mod
   afterEach(async () => { if (mod) await mod.close(); mod = null })
 
+  it('gives the model the held-follow rule only when the mod reports 0.1.2 or later', async () => {
+    mod = createFakeMod({ modVersion: '0.1.2' })
+    const port = await mod.ready
+    const { hooks } = hooksWith()
+    const handle = await createRuntime(configFor(port), hooks)
+    expect(hooks.onError).not.toHaveBeenCalled()
+    expect(handle.adapter.actionRules()).toBe(ACTION_RULES)
+    await handle.stop()
+  })
+
   it('connects, spawns, starts the brain, fires onConnected once, streams observations, runs a verb, and despawns on stop', async () => {
     mod = createFakeMod({ obsHz: 10 })
     const port = await mod.ready
@@ -88,6 +99,8 @@ describe('stardew runtime against the fake mod', () => {
     expect(adapter.getLatestObservation()?.location).toBe('Farm')
     expect(adapter.getWorldIdentity()).toEqual({ fingerprint: 'stardew:123456789', label: 'Sunny Farm' })
     expect(Object.keys(adapter.getKnownPlayers())).toEqual(['Ouen'])
+    // The fake mod reports 0.1.0: the follow rule is the one that mod keeps.
+    expect(adapter.actionRules()).toBe(ACTION_RULES_LEGACY)
     // A verb round-trips to the mod and returns its detail string.
     const out = await adapter.executeAction('water', {}, { signal: new AbortController().signal })
     expect(out).toBe('watered 12 crops (18/40 left in the can)')
