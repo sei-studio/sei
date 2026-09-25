@@ -18,6 +18,7 @@ import { describe, it, expect } from 'vitest';
 import { ERROR_COPY, classifyRendererError, cleanIpcError, errorCopyText } from './errors';
 import { supportedVersions } from 'minecraft-protocol/src/version.js';
 import { ALL_ERROR_CLASSES } from '@shared/errorClasses';
+import { WIZARD_MAX_MC } from '@shared/mcSetup';
 
 const NEOFORGE_KICK = 'This server has mods that require NeoForge to be installed on the client.';
 
@@ -114,7 +115,20 @@ describe('ERROR_COPY', () => {
     expect(copy).toContain('Installations');
     expect(copy).toContain('New installation');
     for (const cls of ALL_ERROR_CLASSES) {
-      expect(errorCopyText(cls), `unfilled placeholder in ${cls}`).not.toMatch(/\{(oldest|newest)\}/);
+      expect(errorCopyText(cls), `unfilled placeholder in ${cls}`).not.toMatch(/\{(oldest|newest|recommended|versions)\}/);
     }
+  });
+
+  // 260926 (PR #26): the bot joins 26.2 / 26.3, but the skin mod only works on
+  // the wizard's version. The copy lists every joinable version and steers the
+  // launcher steps to the wizard's version, never to the protocol table's newest.
+  it('UNSUPPORTED_MC_VERSION lists 26.2 / 26.3 but recommends the skin-mod version', () => {
+    const copy = errorCopyText('UNSUPPORTED_MC_VERSION');
+    const newest = supportedVersions[supportedVersions.length - 1];
+    expect(newest).toBe('26.3');
+    expect(copy, copy).toContain(`to ${newest}`);
+    expect(copy).toContain(`For companion skins, use ${WIZARD_MAX_MC}`);
+    expect(copy).toContain(`pick ${WIZARD_MAX_MC} as the version`);
+    expect(copy).not.toContain(`pick ${newest}`);
   });
 });

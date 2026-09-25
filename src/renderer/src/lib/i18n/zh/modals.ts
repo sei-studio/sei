@@ -581,7 +581,7 @@ export const ZH_MODALS: Record<string, string> = {
   // ── UnsupportedVersionModal ──
   'Minecraft version not supported': '不支持的 Minecraft 版本',
   "{name} couldn't join.": '{name} 无法加入。',
-  'To switch to a supported version:': '切换到受支持版本的方法：',
+  'To switch to {version}, where companion skins work:': '切换到 {version}（可显示伙伴皮肤）的方法：',
   'This world is running Minecraft {version}, which Sei cannot join yet. Sei works with Minecraft Java {versions}.':
     '这个世界运行的是 Minecraft {version}，Sei 暂时无法加入。Sei 支持 Minecraft Java 版 {versions}。',
   'This world runs a Minecraft version Sei cannot join yet. Sei works with Minecraft Java {versions}.':

@@ -19,6 +19,7 @@ import {
   isMcVersionNewerThanSupported,
   joinableMcVersions,
   mcReleases,
+  selectTargetMcVersion,
   supportedMcRange,
   type McProtocolRow,
   type McSupportedRange,
@@ -31,18 +32,29 @@ export const MC_SUPPORTED_RANGE: McSupportedRange = supportedMcRange(supportedVe
   newest: supportedVersions[supportedVersions.length - 1] ?? '',
 };
 
+/**
+ * The version to TELL players to install: the one the setup wizard builds its
+ * Fabric + CustomSkinLoader profile for (selectTargetMcVersion, capped by
+ * WIZARD_MAX_MC). Not MC_SUPPORTED_RANGE.newest: the bot joins newer worlds
+ * (26.2 / 26.3) where the skin mod has no verified build, so steering players
+ * there would cost them companion skins.
+ */
+export const MC_RECOMMENDED: string = selectTargetMcVersion({ supported: supportedVersions }) ?? MC_SUPPORTED_RANGE.newest;
+
 /** Every release Sei can join, oldest first (see joinableMcVersions). */
 export const MC_JOINABLE: readonly string[] = joinableMcVersions(supportedVersions, ROWS);
 
 /**
  * Placeholders for t(): `{versions}` is the compact joinable list with its
- * gaps ("1.8 to 1.8.9, 1.9.3, 1.9.4, ..."); `{newest}` is the version the
- * launcher steps and the setup wizard install; `{oldest}` is kept for callers
- * that still name the floor.
+ * gaps ("1.8 to 1.8.9, 1.9.3, 1.9.4, ..."); `{recommended}` is the version the
+ * launcher steps and the setup wizard install (MC_RECOMMENDED); `{newest}` is
+ * the newest version Sei can join; `{oldest}` is kept for callers that still
+ * name the floor.
  */
 export const MC_RANGE_VARS: Record<string, string> = {
   oldest: MC_SUPPORTED_RANGE.oldest,
   newest: MC_SUPPORTED_RANGE.newest,
+  recommended: MC_RECOMMENDED,
   versions: formatMcVersionList(MC_JOINABLE, mcReleases(ROWS)),
 };
 

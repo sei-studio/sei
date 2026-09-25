@@ -154,4 +154,10 @@ export const MUST_KEEP = [
   'node_modules/prismarine-viewer/public/textures/1.21.4',
   'node_modules/prismarine-viewer/node_modules/three/build/three.js',
   'node_modules/mineflayer/package.json',
+  // 260926 Minecraft 26.2 / 26.3: these exist only when patches/*.patch applied
+  // (postinstall patch-package). A pack without them would ship without 26.x
+  // support, so refuse to build it.
+  'node_modules/minecraft-data/minecraft-data/data/pc/26.2/protocol.json',
+  'node_modules/minecraft-data/minecraft-data/data/pc/26.3/version.json',
+  'node_modules/mineflayer/lib/playerActionIds.js',
 ];

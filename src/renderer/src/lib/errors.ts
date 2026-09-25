@@ -43,10 +43,11 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   NATIVE_MODULE_MISMATCH: "A bundled module didn't load. Reinstall Sei from the .dmg / .exe.",
   // 260926: names the exact range and the launcher steps. The old copy ("open
   // your world on a supported Java version") named no version, and 19 people
-  // in 30 days hit it, mostly on 26.2 / 26.3. {versions} / {newest} are filled
-  // from minecraft-protocol's table at render time (errorCopyText), never
-  // hardcoded, so the numbers cannot go stale.
-  UNSUPPORTED_MC_VERSION: "This world's Minecraft version is not supported yet. Sei works with Minecraft Java {versions}. In the Minecraft Launcher, go to Installations, click New installation, pick {newest} as the version, then open your world from it and press Launch again.",
+  // in 30 days hit it, mostly on 26.2 / 26.3. {versions} (every joinable
+  // version, from minecraft-protocol's table) and {recommended} (the version the
+  // setup wizard builds, where companion skins work) are filled at render time
+  // (errorCopyText), never hardcoded, so the numbers cannot go stale.
+  UNSUPPORTED_MC_VERSION: "This world's Minecraft version is not supported yet. Sei works with Minecraft Java {versions}. For companion skins, use {recommended}: in the Minecraft Launcher, go to Installations, click New installation, pick {recommended} as the version, then open your world from it and press Launch again.",
   // 260806: split out of LAN_NOT_OPEN. A Forge/NeoForge world that requires its
   // mods on the client kicks Sei every time, and the old copy sent the player to
   // re-open a world that was open and answering pings. Says what is actually
@@ -93,7 +94,7 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
 /**
  * The translated copy for an error class, with every placeholder the table
  * uses filled in (today the Minecraft version range). Prefer this over a bare
- * `t(ERROR_COPY[cls])`, which would render `{newest}` literally.
+ * `t(ERROR_COPY[cls])`, which would render `{recommended}` literally.
  */
 export function errorCopyText(
   cls: ErrorClass,

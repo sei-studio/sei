@@ -172,7 +172,7 @@ function connectTimeoutFor(summonDeadlineAt, now = Date.now()) {
   return Math.max(MIN_CONNECT_TIMEOUT_MS, Math.min(CONNECT_TIMEOUT_MS, remaining))
 }
 
-export const __testables = { connectTimeoutFor, CONNECT_TIMEOUT_MS, REPORT_MARGIN_MS, MIN_CONNECT_TIMEOUT_MS }
+export const __testables = { connectTimeoutFor, CONNECT_TIMEOUT_MS, REPORT_MARGIN_MS, MIN_CONNECT_TIMEOUT_MS, resolveSupportedVersion, supportedVersionForProtocol }
 
 // Wall-clock budget for the pre-connect status ping (resolveServerVersion).
 // Short — a LAN status query on localhost answers in well under a second; if it

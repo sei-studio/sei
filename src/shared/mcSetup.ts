@@ -77,10 +77,22 @@ export const FABRIC_MIN_MC = '1.14';
 /** A release version string ("1.21.4", "26.1"): no snapshot / pre-release suffix. */
 const RELEASE_RE = /^\d+\.\d+(?:\.\d+)?$/;
 
+/**
+ * Newest version the wizard installs its Fabric + CustomSkinLoader profile for.
+ * The bot can JOIN newer worlds (minecraft-protocol's supportedVersions goes to
+ * 26.3), but the skin mod lags: as of 260926 no CustomSkinLoader build on
+ * Modrinth lists 26.3, and 26.2 only has the 15.x "Universal" rework that crashed
+ * 1.21.x at launch. A 26.3 target would fail setup with MOD_DOWNLOAD_FAILED.
+ * Raise this once a CSL build for the newer version is verified in game.
+ */
+export const WIZARD_MAX_MC = '26.1';
+
 /** Supported versions the wizard can install Fabric for, newest first. */
 export function installableMcVersions(supported: readonly string[]): string[] {
   return supported
-    .filter((v) => RELEASE_RE.test(v) && compareMcVersions(v, FABRIC_MIN_MC) >= 0)
+    .filter((v) => RELEASE_RE.test(v)
+      && compareMcVersions(v, FABRIC_MIN_MC) >= 0
+      && compareMcVersions(v, WIZARD_MAX_MC) <= 0)
     .sort(compareMcVersions)
     .reverse();
 }

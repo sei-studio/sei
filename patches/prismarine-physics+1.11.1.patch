@@ -1,0 +1,22 @@
+diff --git a/node_modules/prismarine-physics/lib/features.json b/node_modules/prismarine-physics/lib/features.json
+index 647ea48..c547e02 100644
+--- a/node_modules/prismarine-physics/lib/features.json
++++ b/node_modules/prismarine-physics/lib/features.json
+@@ -7,7 +7,7 @@
+   {
+     "name": "proportionalLiquidGravity",
+     "description": "Liquid gravity is a proportion of normal gravity",
+-    "versions": ["1.13", "1.14", "1.15", "1.16", "1.17", "1.18", "1.19", "1.20", "1.21", "26.1"]
++    "versions": ["1.13", "1.14", "1.15", "1.16", "1.17", "1.18", "1.19", "1.20", "1.21", "26.1", "26.2", "26.3"]
+   },
+   {
+     "name": "velocityBlocksOnCollision",
+@@ -22,7 +22,7 @@
+   {
+     "name": "climbUsingJump",
+     "description": "Entity can climb ladders and vines by pressing jump",
+-    "versions": ["1.14", "1.15", "1.16", "1.17", "1.18", "1.19", "1.20", "1.21", "26.1"]
++    "versions": ["1.14", "1.15", "1.16", "1.17", "1.18", "1.19", "1.20", "1.21", "26.1", "26.2", "26.3"]
+   },
+   {
+     "name": "climbableTrapdoor",
