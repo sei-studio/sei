@@ -261,3 +261,71 @@ describe('useChatStore.send: model timeout vs user cancel (260926)', () => {
     expect(chatFailureLine(ipcError('Error: 500 upstream'))).toMatch(/couldn't reply/);
   });
 });
+
+/**
+ * Account scope change (260926): the bundled defaults share their UUIDs across
+ * profiles, so a transcript cached for account A must never show for account B.
+ */
+describe('useChatStore.resetForScope: no transcript crosses accounts', () => {
+  it("drops every cached transcript, preview and flag, so the next open re-reads the new account's disk", async () => {
+    chatHistoryMock.mockResolvedValue([msg('a-private')]);
+    const store = await loadStore();
+    await store.getState().load('sui');
+    store.setState({ previews: { sui: { text: 'a-private', role: 'companion', ts: 0 } as never } });
+    expect(store.getState().messages.sui).toHaveLength(1);
+
+    store.getState().resetForScope();
+    const s = store.getState();
+    expect(s.messages).toEqual({});
+    expect(s.previews).toEqual({});
+    expect(s.loaded).toEqual({});
+    expect(s.awaiting).toEqual({});
+
+    chatHistoryMock.mockResolvedValue([msg('b-own')]);
+    await store.getState().load('sui');
+    expect(store.getState().messages.sui.map((m) => m.id)).toEqual(['b-own']);
+  });
+
+  it("a history fetch still in flight for the old account never lands in the new one", async () => {
+    const d = deferred<ChatMessage[]>();
+    chatHistoryMock.mockReturnValueOnce(d.promise);
+    const store = await loadStore();
+    const pending = store.getState().load('sui');
+    store.getState().resetForScope();
+    d.resolve([msg('a-private')]);
+    await pending;
+    expect(store.getState().messages.sui).toBeUndefined();
+    expect(store.getState().loaded.sui).toBeUndefined();
+  });
+
+  it('a reply in flight for the old account is dropped', async () => {
+    const d = deferred<{ replies: ChatMessage[] }>();
+    const w = globalThis as unknown as { window: { sei: Record<string, unknown> } };
+    w.window.sei.chatSend = vi.fn(() => d.promise);
+    w.window.sei.getCharacter = vi.fn(async () => null);
+    const store = await loadStore();
+    const { useUiStore } = await import('./useUiStore');
+    useUiStore.setState({ realisticTyping: false });
+    const sending = store.getState().send('sui', 'a secret');
+    store.getState().resetForScope();
+    d.resolve({ replies: [msg('a-reply')] });
+    await sending;
+    expect(store.getState().messages.sui).toBeUndefined();
+  });
+
+  it('a pushed line queued for the old account is not revealed after the reset', async () => {
+    vi.useFakeTimers();
+    try {
+      const store = await loadStore();
+      const { useUiStore } = await import('./useUiStore');
+      useUiStore.setState({ realisticTyping: true });
+      pushHandler({ characterId: 'sui', message: msg('a-pushed') });
+      store.getState().resetForScope();
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(store.getState().messages.sui).toBeUndefined();
+      expect(store.getState().awaiting.sui).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

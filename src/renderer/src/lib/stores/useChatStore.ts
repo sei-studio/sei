@@ -83,6 +83,14 @@ interface ChatState {
    * loaded-once guard would keep showing the wiped conversation from cache.
    */
   evictLocal: (characterId: string) => void;
+  /**
+   * Drop EVERY cached transcript, preview and in-flight reveal. Called on
+   * app:scope-changed: the bundled defaults (Sui, Lyra, ...) share their
+   * UUIDs across profiles, so without this the next account opened the
+   * previous account's conversation straight from memory. Results of any
+   * load / send / push begun before the reset are discarded on arrival.
+   */
+  resetForScope: () => void;
 }
 
 /**
@@ -109,6 +117,13 @@ let offChatMessage: (() => void) | null = null;
 const pushQueue: Record<string, Promise<void>> = {};
 /** Bubbles queued but not yet revealed, per character. Drives `awaiting`. */
 const pushPending: Record<string, number> = {};
+
+/**
+ * Account scope generation. Bumped by resetForScope(); every async path
+ * captures it when it starts and drops its writes if it changed meanwhile, so
+ * a transcript fetched for the previous account cannot land in the new one.
+ */
+let scopeEpoch = 0;
 
 /** True if a rejected chatSend was our deliberate interrupt (not a real error). */
 function isChatAbort(err: unknown): boolean {
@@ -194,6 +209,12 @@ function appendMessage(
 }
 
 export const useChatStore = create<ChatState>((set, get) => {
+  /** A `set` that no-ops once the account scope has changed since `epoch`. */
+  const setIn =
+    (epoch: number) =>
+    (partial: Partial<ChatState> | ((s: ChatState) => Partial<ChatState>)): void => {
+      if (epoch === scopeEpoch) set(partial);
+    };
   // Subscribe once to main → renderer chat pushes: the live game bot replying to
   // a routed message (task 4), chess/watch table talk, and "joined/left your
   // world" system lines (task 1). Append deduped by id.
@@ -237,6 +258,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         revealPushed(characterId, message);
         return;
       }
+      const epoch = scopeEpoch;
       const first = (pushPending[characterId] ?? 0) === 0;
       pushPending[characterId] = (pushPending[characterId] ?? 0) + 1;
       set((s) => ({ awaiting: { ...s.awaiting, [characterId]: true } }));
@@ -250,6 +272,8 @@ export const useChatStore = create<ChatState>((set, get) => {
           const realism = useUiStore.getState().realisticTyping;
           const waitMs = inCall ? 0 : realism ? typingDelayMs(message.text) : first ? 0 : REPLY_GAP_MS;
           if (waitMs > 0) await delay(waitMs);
+          // Queued under the previous account: drop it (its counters were reset).
+          if (epoch !== scopeEpoch) return;
           pushPending[characterId] = Math.max(0, (pushPending[characterId] ?? 1) - 1);
           // Voice calls (260705): a companion line that arrived over the push
           // (an in-game bot routing say() to the call) is spoken aloud, at the
@@ -274,6 +298,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           }
         })
         .catch(() => {
+          if (epoch !== scopeEpoch) return;
           pushPending[characterId] = Math.max(0, (pushPending[characterId] ?? 1) - 1);
           set((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
         });
@@ -292,22 +317,24 @@ export const useChatStore = create<ChatState>((set, get) => {
   previews: {},
 
   loadPreviews: async () => {
+    const put = setIn(scopeEpoch);
     try {
       const previews = await sei.chatPreviews?.();
-      if (previews) set({ previews });
+      if (previews) put({ previews });
     } catch {
       /* roster falls back to transcript-derived lines only */
     }
   },
 
   load: async (characterId) => {
+    const put = setIn(scopeEpoch);
     if (get().loaded[characterId]) return;
     // Mark loaded up front so a re-entry while the fetch is in flight doesn't
     // double-fire; on failure we reset it so a later open can retry. `loading`
     // flips on synchronously alongside it — it drives the wireframe skeleton and
     // is cleared the moment the history lands (before the greeting turn, which
     // the typing indicator covers via `awaiting`).
-    set((s) => ({
+    put((s) => ({
       loaded: { ...s.loaded, [characterId]: true },
       loading: { ...s.loading, [characterId]: true },
     }));
@@ -318,7 +345,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       // this async read. Overwriting messages[id] with the disk snapshot used to
       // clobber it — so a just-ended call left no visible trace in the GUI.
       // Keep any already-stored rows the disk history doesn't yet include.
-      set((s) => {
+      put((s) => {
         const existing = s.messages[characterId] ?? [];
         const seenIds = new Set(history.map((m) => m.id));
         const extras = existing.filter((m) => !seenIds.has(m.id));
@@ -336,7 +363,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       // Show the typing indicator while we wait, then append via the same deduped
       // path a live push uses.
       if (history.length === 0 && sei.chatOpened) {
-        set((s) => ({ awaiting: { ...s.awaiting, [characterId]: true } }));
+        put((s) => ({ awaiting: { ...s.awaiting, [characterId]: true } }));
         try {
           const greeting = await sei.chatOpened(characterId);
           // Reveal a multi-message greeting one bubble at a time, each with its
@@ -349,21 +376,21 @@ export const useChatStore = create<ChatState>((set, get) => {
           for (let i = 0; i < fresh.length; i++) {
             const waitMs = realism ? typingDelayMs(fresh[i].text) : i > 0 ? REPLY_GAP_MS : 0;
             if (waitMs > 0) {
-              set((s) => ({ awaiting: { ...s.awaiting, [characterId]: true } }));
+              put((s) => ({ awaiting: { ...s.awaiting, [characterId]: true } }));
               await delay(waitMs);
             }
-            set((s) => ({
+            put((s) => ({
               messages: appendMessage(s.messages, characterId, fresh[i]),
               awaiting: { ...s.awaiting, [characterId]: i < fresh.length - 1 },
             }));
           }
-          if (fresh.length === 0) set((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
+          if (fresh.length === 0) put((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
         } catch {
-          set((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
+          put((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
         }
       }
     } catch {
-      set((s) => ({
+      put((s) => ({
         loaded: { ...s.loaded, [characterId]: false },
         loading: { ...s.loading, [characterId]: false },
       }));
@@ -371,16 +398,17 @@ export const useChatStore = create<ChatState>((set, get) => {
   },
 
   loadOlder: async (characterId) => {
+    const put = setIn(scopeEpoch);
     const s = get();
     if (!s.hasOlder[characterId] || s.loadingOlder[characterId]) return;
     // Cursor: the oldest loaded row. It came from a disk read (load/loadOlder),
     // so its id exists in the JSONL; optimistic local- rows only ever append.
     const oldest = (s.messages[characterId] ?? [])[0];
     if (!oldest || !sei.chatHistoryBefore) return;
-    set((st) => ({ loadingOlder: { ...st.loadingOlder, [characterId]: true } }));
+    put((st) => ({ loadingOlder: { ...st.loadingOlder, [characterId]: true } }));
     try {
       const page = await sei.chatHistoryBefore(characterId, oldest.id);
-      set((st) => {
+      put((st) => {
         const cur = st.messages[characterId] ?? [];
         const seen = new Set(cur.map((m) => m.id));
         const fresh = page.filter((m) => !seen.has(m.id));
@@ -395,16 +423,18 @@ export const useChatStore = create<ChatState>((set, get) => {
       });
     } catch {
       // Keep hasOlder as-is so a later scroll can retry.
-      set((st) => ({ loadingOlder: { ...st.loadingOlder, [characterId]: false } }));
+      put((st) => ({ loadingOlder: { ...st.loadingOlder, [characterId]: false } }));
     }
   },
 
   send: async (characterId, text, replyTo, voicePeers) => {
+    const epoch = scopeEpoch;
+    const put = setIn(epoch);
     // #9 — claim this character's latest-send slot. A follow-up send bumps this,
     // interrupts the in-flight LLM call (main aborts it), and takes over state.
     const token = (sendSeq[characterId] ?? 0) + 1;
     sendSeq[characterId] = token;
-    const isCurrent = (): boolean => sendSeq[characterId] === token;
+    const isCurrent = (): boolean => epoch === scopeEpoch && sendSeq[characterId] === token;
 
     const inCallEarly = isVoiceCallActive(characterId);
     // A message TYPED to a companion who is on the live call still has to reach
@@ -438,7 +468,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     // the audio, so pacing is disabled for the call's character.
     const inCall = inCallEarly;
     const realism = !inCall && useUiStore.getState().realisticTyping;
-    set((s) => ({
+    put((s) => ({
       messages: appendMessage(s.messages, characterId, userMsg),
       // In-call exchanges are hidden in the chat UI (ChatMessage.voice), so a
       // typing indicator would point at bubbles that never appear — keep it off.
@@ -462,7 +492,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           void replyPromise.catch(() => {});
           return null;
         }
-        set((s) => ({ awaiting: { ...s.awaiting, [characterId]: true } }));
+        put((s) => ({ awaiting: { ...s.awaiting, [characterId]: true } }));
       }
       const result = await replyPromise;
       // A newer send superseded us mid-flight — it owns the reply + awaiting now.
@@ -475,8 +505,8 @@ export const useChatStore = create<ChatState>((set, get) => {
         // character so Home presence flips off "New" without a reload.
         void useDataStore.getState().refreshCharacter(characterId);
         window.setTimeout(() => {
-          if (sendSeq[characterId] === token) {
-            set((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
+          if (isCurrent()) {
+            put((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
           }
         }, ROUTED_AWAIT_TIMEOUT_MS);
         return result;
@@ -495,11 +525,11 @@ export const useChatStore = create<ChatState>((set, get) => {
       for (let i = 0; i < replies.length; i++) {
         const waitMs = inCall ? 0 : realism ? typingDelayMs(replies[i].text) : i > 0 ? REPLY_GAP_MS : 0;
         if (waitMs > 0) {
-          set((s) => ({ awaiting: { ...s.awaiting, [characterId]: true } }));
+          put((s) => ({ awaiting: { ...s.awaiting, [characterId]: true } }));
           await delay(waitMs);
           if (!isCurrent()) return result;
         }
-        set((s) => ({
+        put((s) => ({
           messages: appendMessage(s.messages, characterId, replies[i]),
           awaiting: { ...s.awaiting, [characterId]: !inCall && i < replies.length - 1 },
         }));
@@ -532,7 +562,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       // Deliberate interrupt (main aborted this turn): don't show the "sorry"
       // fallback; the follow-up send keeps `awaiting` true for its own reply.
       if (isChatAbort(err)) {
-        set((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
+        put((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
         return null;
       }
       // 260725: on a live voice call the director owns a failed turn — it
@@ -543,7 +573,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       // (260926): the local deadline is 120s, so a retry is two more silent
       // minutes on the same model.
       if (!isLocalNoApiKey(err) && !isLlmTimeout(err) && notifyTurnFailed(characterId)) {
-        set((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
+        put((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
         return null;
       }
       // Real failure — never strand the typing indicator: surface an apologetic
@@ -557,7 +587,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         text: chatFailureLine(err),
         ts: Date.now(),
       };
-      set((s) => ({
+      put((s) => ({
         messages: appendMessage(s.messages, characterId, fallback),
         awaiting: { ...s.awaiting, [characterId]: false },
       }));
@@ -573,6 +603,22 @@ export const useChatStore = create<ChatState>((set, get) => {
       hasOlder: { ...s.hasOlder, [characterId]: false },
       loadingOlder: { ...s.loadingOlder, [characterId]: false },
     }));
+  },
+
+  resetForScope: () => {
+    scopeEpoch += 1;
+    for (const k of Object.keys(sendSeq)) delete sendSeq[k];
+    for (const k of Object.keys(pushQueue)) delete pushQueue[k];
+    for (const k of Object.keys(pushPending)) delete pushPending[k];
+    set({
+      messages: {},
+      awaiting: {},
+      loaded: {},
+      loading: {},
+      hasOlder: {},
+      loadingOlder: {},
+      previews: {},
+    });
   },
   };
 });

@@ -23,3 +23,9 @@ export function setFeedbackDraft(key: string, body: string): void {
 export function clearFeedbackDraft(key: string): void {
   drafts.delete(key);
 }
+
+/** Drop every draft: the account changed (app:scope-changed), and one
+ *  account's unsent words must not appear in another's form. */
+export function clearAllFeedbackDrafts(): void {
+  drafts.clear();
+}

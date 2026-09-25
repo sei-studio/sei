@@ -2991,6 +2991,15 @@ pins it at whatever percent it reached.
   A failed load is final for the session (a failed ESM import stays cached);
   `look()` says so once in full. Keep heavy or native modules out of the
   runtime's static import graph.
+- **Renderer caches outlive an account switch** → main re-points every
+  per-profile store on `app:scope-changed`, but a Zustand store keeps what it
+  already read, and the bundled defaults (Sui, Lyra, ...) share their UUIDs
+  across profiles. Until 260926 the next account opened the previous
+  account's chat transcript straight from `useChatStore`. `App.tsx` now calls
+  `resetAccountScopedState()` (`lib/scopeReset.ts`) first in its scope-changed
+  handler; the chat store also drops the results of any load / send / push
+  begun before the reset (`scopeEpoch`). Any NEW renderer cache keyed by
+  character id or holding account data must be cleared there.
 - **Native ABI mismatch** → `@electron/rebuild` / `install-app-deps` runs in
   `postinstall`. Test packaged builds on a clean machine.
 - **Bot ESM module type in packaged builds** → `src/bot/package.json` exists
