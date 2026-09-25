@@ -54,6 +54,7 @@ import { buildSystemBlocks, markMessageCached, REMEMBER_TOOL } from '../chat/cha
 import { toMessages, isSilenceFiller, splitReply } from '../chat/chatService';
 import { isNoteLeak, stripThoughtTags } from '../chat/noteLeak';
 import { readChatContext, foldIfDue } from '../chat/continuity';
+import { accountSwitchingError, beginSessionStart, trackScopedWrite } from '../profile/scopeBarrier';
 import { playSummaryText } from '../chat/playSummary';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import { surfaceLanguage } from '../../shared/chatLanguage';
@@ -245,6 +246,8 @@ export async function startBackseat(
   sourceName: string,
   mode: BackseatMode,
 ): Promise<BackseatState> {
+  // 260926: no session may start across an account switch (scopeBarrier).
+  const startGuard = beginSessionStart();
   const existing = sessions.get(characterId);
   if (existing && existing.state.phase !== 'ended') await endBackseat(characterId);
 
@@ -290,6 +293,10 @@ export async function startBackseat(
     creditWallUntil: 0,
     creditWallReported: false,
   };
+  if (!startGuard.stillValid()) {
+    void log.close().catch(() => {});
+    throw accountSwitchingError();
+  }
   sessions.set(characterId, s);
   slog(s, `session start: mode=${mode}, source="${sourceName}"`);
   if (actFlagFromEnv()) slog(s, control.ok ? 'control: offered (window share)' : `control: not offered (${control.why})`);
@@ -339,7 +346,17 @@ export function setBackseatPaused(characterId: string, paused: boolean): void {
   push(s);
 }
 
-export async function endBackseat(characterId: string): Promise<void> {
+/**
+ * End one session: analytics (backseat_ended, duration_ms), the play row and
+ * the fold. `reason` is analytics only (260926: 'account_switch' from the
+ * account switch; absent for an ordinary stop). Tracked by the scope write
+ * barrier so an account switch waits for the row before it moves the scope.
+ */
+export function endBackseat(characterId: string, reason?: string): Promise<void> {
+  return trackScopedWrite(endBackseatSession(characterId, reason));
+}
+
+async function endBackseatSession(characterId: string, reason?: string): Promise<void> {
   const s = sessions.get(characterId);
   if (!s || s.state.phase === 'ended') return;
   s.inflight?.abort();
@@ -377,6 +394,7 @@ export async function endBackseat(characterId: string): Promise<void> {
         duration_ms: durationMs,
         mode: s.state.mode,
         lines: lineCount,
+        ...(reason ? { reason } : {}),
       });
     } catch {
       /* analytics is never load-bearing */
@@ -455,6 +473,14 @@ export function backseatLineHeard(characterId: string, confirmId: string, comple
   if (!s || s.state.phase === 'ended') return;
   const r = s.control.heard(confirmId, completed);
   slog(s, `control offer ${confirmId}: ${completed ? 'played' : 'cut off'} -> ${r}`);
+}
+
+/**
+ * End every session for an account switch (260926) and wait for their rows.
+ * The renderer stops its capture on app:scope-ending; this is main's half.
+ */
+export async function endAllBackseat(reason: string): Promise<void> {
+  await Promise.all([...sessions.keys()].map((id) => endBackseat(id, reason).catch(() => {})));
 }
 
 /** Drop every session (renderer death/reload — capture cannot outlive it). */

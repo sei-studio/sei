@@ -123,11 +123,17 @@ const inFlight = new Set<string>();
  * Rebuilt when the persona text changes (rare; the plateau state is an
  * acceptable loss there).
  */
-const compactors = new Map<string, { personaKey: string; compactor: CompactorLike }>();
+const compactors = new Map<string, { personaKey: string; filePath: string; compactor: CompactorLike }>();
 
 function getCompactor(characterId: string, filePath: string, personaExpanded: string): CompactorLike {
   const cached = compactors.get(characterId);
-  if (cached && cached.personaKey === personaExpanded) return cached.compactor;
+  // The file path is part of the key (260926): it carries the profile scope,
+  // and the bundled defaults share ids (and personas) across profiles, so a
+  // compactor cached under one account would otherwise go on compacting that
+  // account's MEMORY.md after a switch to another.
+  if (cached && cached.personaKey === personaExpanded && cached.filePath === filePath) {
+    return cached.compactor;
+  }
   const compactor = createMemoryCompactor({
     anthropic: chatAnthropicAdapter,
     memoryLog: { path: filePath },
@@ -141,7 +147,7 @@ function getCompactor(characterId: string, filePath: string, personaExpanded: st
     },
     logger: console,
   }) as CompactorLike;
-  compactors.set(characterId, { personaKey: personaExpanded, compactor });
+  compactors.set(characterId, { personaKey: personaExpanded, filePath, compactor });
   return compactor;
 }
 

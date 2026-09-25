@@ -32,7 +32,8 @@
 import { readFile, writeFile, mkdir, rm, rename, copyFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { ChatMessage } from '../../shared/ipc';
-import { paths } from '../paths';
+import { paths, getActiveScope } from '../paths';
+import { isAccountTeardownActive } from '../profile/scopeBarrier';
 import { readAll } from './chatStore';
 import { CHAT_MODEL } from './sdk';
 // The multi-provider layer (china-compat W1). Anthropic (cloud + BYOK) rides
@@ -229,6 +230,12 @@ const foldInFlight = new Set<string>();
 const FOLD_MAX_MESSAGES = 300;
 
 export async function foldIfDue(characterId: string, personaExpanded?: string): Promise<void> {
+  // 260926: deferred, not dropped, while an account switch is ending the old
+  // account's sessions. authState has already applied the NEW session by then,
+  // so an LLM fold (or compaction) here would bill the incoming account for
+  // the outgoing account's summary. The watermark stays put; the next fold in
+  // the old account folds these rows.
+  if (isAccountTeardownActive()) return;
   // Chat-side MEMORY.md compaction (260810) piggybacks on the fold cadence:
   // foldIfDue is already fired (fire-and-forget) by every surface that appends
   // memory in main — chat turns, chess, Draw!, backseat — so this one hook
@@ -241,6 +248,8 @@ export async function foldIfDue(characterId: string, personaExpanded?: string): 
     // 260705: capture BEFORE the transcript read — a clear landing between
     // this snapshot and the summarizer's return must invalidate the fold.
     const epoch = clearEpoch(characterId);
+    // 260926: and the profile scope, compared before the write like the epoch.
+    const scope = getActiveScope();
     const raw = await readAll(characterId);
     const counted = raw.filter(isCounted);
     let bridge = await readBridge(characterId);
@@ -255,7 +264,10 @@ export async function foldIfDue(characterId: string, personaExpanded?: string): 
     const evicted = unsummarized
       .slice(0, Math.min(unsummarized.length - RECENT_WINDOW, FOLD_MAX_MESSAGES))
       .map((m) => ({ role: m.role as 'user' | 'companion', text: m.text, ts: m.ts }));
-    await foldIntoSummary(characterId, bridge, evicted, epoch, personaExpanded);
+    // The reads above can straddle an account switch too: a transcript read
+    // in one scope must never be folded against another scope's bridge.
+    if (getActiveScope() !== scope) return;
+    await foldIntoSummary(characterId, bridge, evicted, epoch, personaExpanded, scope);
   } finally {
     foldInFlight.delete(characterId);
   }
@@ -311,6 +323,8 @@ async function foldIntoSummary(
   // transcript; compared before writeBridge.
   epoch: number,
   personaExpanded?: string,
+  // 260926: the profile scope foldIfDue started in (see the check below).
+  scope: string = getActiveScope(),
 ): Promise<BridgeState> {
   try {
     const llm = await buildLlmProvider();
@@ -371,6 +385,15 @@ async function foldIntoSummary(
     // fold summarized was wiped, and writing would resurrect the deleted bridge.
     if (clearEpoch(id) !== epoch) {
       console.warn(`[sei] chat summary fold for ${id} superseded by clear — dropping`);
+      return bridge;
+    }
+    // The account changed while the summarizer ran (260926). bridgePath()
+    // resolves against the ACTIVE scope, so writing now would put this
+    // account's summary into the next account's bridge for the same id (the
+    // bundled defaults share ids across profiles). Drop it: the old account's
+    // watermark never moved, so its next fold redoes this batch.
+    if (getActiveScope() !== scope) {
+      console.warn(`[sei] chat summary fold for ${id} crossed an account switch — dropping`);
       return bridge;
     }
     // 260810 fold safety: an empty/unusable fold output used to keep the OLD

@@ -34,6 +34,7 @@ import { createStardewGameModule } from './games/stardew';
 import type { GameId, WorldState, WorldStates } from '../shared/gameIpc';
 import { isCallActive, wasCallRecentlyActive, activeCallIds, clearAllCalls } from './voice/callState';
 import { initCallOverlay, closeCallOverlay } from './callOverlay';
+import { trackScopedWrite, isAccountTeardownActive } from './profile/scopeBarrier';
 import { formatPlayDuration, playSummaryText } from './chat/playSummary';
 import { initUpdater } from './updater';
 import { initNotices } from './notices';
@@ -136,6 +137,17 @@ function rendererTarget(): string {
     return process.env.ELECTRON_RENDERER_URL;
   }
   return path.join(__dirname, '../renderer/index.html');
+}
+
+/** Account switch (260926): close every open call from main (see accountSwitchCalls.ts). */
+async function endVoiceCallsForAccountSwitch(reason: string): Promise<void> {
+  const { endCallsForAccountSwitch } = await import('./voice/accountSwitchCalls');
+  await endCallsForAccountSwitch(reason, {
+    setVoiceCall: (id, onCall) => supervisor?.setVoiceCall(id, onCall),
+    closeOverlay: closeCallOverlay,
+    capture,
+    emitCallSession,
+  });
 }
 
 /**
@@ -343,8 +355,10 @@ async function emitCallSession(characterId: string, durationMs: number): Promise
 function endVoiceCallFromCompanion(characterId: string): void {
   void (async () => {
     try {
-      const { setCallActive } = await import('./voice/callState');
-      setCallActive(characterId, false);
+      // 260926: remembered until the renderer's report posts the row, so an
+      // account switch in between can still close it in the right account.
+      const { endCallFromCompanion } = await import('./voice/callState');
+      endCallFromCompanion(characterId);
     } catch { /* state module unavailable — renderer teardown still proceeds */ }
   })();
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -419,10 +433,17 @@ function broadcastStatus(status: BotStatus): void {
     if (started !== undefined) {
       playStartedAt.delete(id);
       const durationMs = Date.now() - started.at;
-      void emitPlaySession(id, durationMs, started.game);
+      // Tracked (260926): an account switch stops the bots and then drains
+      // this, so the row lands in the outgoing account's transcript.
+      void trackScopedWrite(emitPlaySession(id, durationMs, started.game)).catch(() => {});
       // One event name across games (the analytics dashboard sums playtime
       // by event name); `game` is the split.
-      capture('bot_session_ended', { character_id: id, duration_ms: durationMs, game: started.game });
+      capture('bot_session_ended', {
+        character_id: id,
+        duration_ms: durationMs,
+        game: started.game,
+        ...(isAccountTeardownActive() ? { reason: 'account_switch' } : {}),
+      });
     }
     // 260720: the thin summon_failed capture that used to live here (terminal
     // error with no live session → character_id + reason) moved to the
@@ -908,7 +929,11 @@ async function bootstrap(): Promise<void> {
   //     supervisor + window before initAuthState can fire an auth event.
   {
     const { initProfileScope } = await import('./profile/profileScope');
-    initProfileScope({ supervisor, getMainWindow: () => mainWindow });
+    initProfileScope({
+      supervisor,
+      getMainWindow: () => mainWindow,
+      endVoiceCalls: endVoiceCallsForAccountSwitch,
+    });
   }
 
   // Chess minigame (260710): module-state deps for src/main/chess/chessService.
@@ -1071,7 +1096,7 @@ async function bootstrap(): Promise<void> {
     // Voice calls (260705): a live call ended — post the "You and X called for
     // Y" system row (renderer supplies how long audio actually flowed).
     notifyCallEnded: (id, connectedMs) => {
-      void emitCallSession(id, connectedMs);
+      void trackScopedWrite(emitCallSession(id, connectedMs)).catch(() => {});
       // Analytics (260728): calls are playtime too. `connectedMs` is the time
       // audio actually flowed (the renderer only reports it for calls that
       // connected), so a failed call contributes nothing. Same `duration_ms`

@@ -86,6 +86,7 @@ import { CHAT_TIMEOUT_MS } from '../chat/sdk';
 import { activeLlmVision, buildLlmProvider, type LlmProvider } from '../llm';
 import { buildSystemBlocks, clockNow, REMEMBER_TOOL } from '../chat/chatPrompts';
 import { readChatContext, foldIfDue } from '../chat/continuity';
+import { accountSwitchingError, beginSessionStart, trackScopedWrite } from '../profile/scopeBarrier';
 import { playSummaryText } from '../chat/playSummary';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import { splitReply } from '../chat/chatService';
@@ -403,8 +404,9 @@ interface Session {
    * prefix and re-bills the whole cached thread on every minute rollover.
    */
   clock: string;
-  /** finishGame has already run for this session; it must never run twice. */
-  finished: boolean;
+  /** The one finishGame run (analytics + play row + fold). Set once: a game
+   *  is recorded exactly once, and a later caller awaits the same run. */
+  finishing: Promise<void> | null;
   playerName: string;
   aiName: string;
 }
@@ -593,7 +595,7 @@ async function newSession(characterId: string, rounds = 3): Promise<Session> {
     endCtrl: null,
     startedAt: Date.now(),
     clock: clockNow(),
-    finished: false,
+    finishing: null,
     playerName: (config.preferred_name ?? '').trim() || 'You',
     aiName: character?.name ?? 'Companion',
     // 260730: the game runs in the character's language (word bank + the
@@ -611,7 +613,10 @@ export async function openDraw(characterId: string): Promise<DrawGameState> {
   }
   let s = sessions.get(characterId);
   if (!s) {
+    // 260926: no session may start across an account switch (scopeBarrier).
+    const startGuard = beginSessionStart();
     s = await newSession(characterId);
+    if (!startGuard.stillValid()) throw accountSwitchingError();
     sessions.set(characterId, s);
   }
   push(s);
@@ -638,6 +643,8 @@ export async function startDraw(characterId: string, rounds: number): Promise<Dr
     err.code = DRAW_ERR_NO_VISION;
     throw err;
   }
+  // 260926: no session may start across an account switch (scopeBarrier).
+  const startGuard = beginSessionStart();
   // A fresh game every start, so a replay never inherits the previous scores.
   // A previous game still mid-play is abandoned properly rather than dropped,
   // or its playtime would never be reported.
@@ -649,6 +656,7 @@ export async function startDraw(characterId: string, rounds: number): Promise<Dr
   }
   const clamped = Math.max(MIN_ROUNDS, Math.min(MAX_ROUNDS, Math.round(rounds) || 1));
   const s = await newSession(characterId, clamped);
+  if (!startGuard.stillValid()) throw accountSwitchingError();
   sessions.set(characterId, s);
 
   // One word for each of the character's turns, WORD_CHOICES for each of the
@@ -683,6 +691,7 @@ export async function newDrawGame(characterId: string): Promise<DrawGameState> {
     err.code = DRAW_ERR_MC_ACTIVE;
     throw err;
   }
+  const startGuard = beginSessionStart();
   const prev = sessions.get(characterId);
   if (prev) {
     teardownTimers(prev);
@@ -690,6 +699,7 @@ export async function newDrawGame(characterId: string): Promise<DrawGameState> {
     if (prev.round > 0) await finishGame(prev, prev.phase === 'gallery' ? 'completed' : 'abandoned');
   }
   const s = await newSession(characterId, prev?.rounds ?? 3);
+  if (!startGuard.stillValid()) throw accountSwitchingError();
   sessions.set(characterId, s);
   push(s);
   return toState(s);
@@ -878,6 +888,26 @@ export async function saveGallery(characterId: string, pngDataUrl: string): Prom
   return file;
 }
 
+/**
+ * End every game for an account switch (260926). Same choke point as a
+ * player closing the game (finishGame: analytics with duration_ms, the play
+ * row, the fold), recorded with `reason` instead of 'abandoned'. A finished
+ * game in the gallery was already recorded; awaiting it here still drains a
+ * row write that is in flight. Resolves once every row has landed.
+ */
+export async function endAllDraw(reason: 'account_switch'): Promise<void> {
+  const ending: Promise<void>[] = [];
+  for (const s of [...sessions.values()]) {
+    teardownTimers(s);
+    sessions.delete(s.characterId);
+    s.turnKey = randomUUID();
+    if (s.round > 0) ending.push(finishGame(s, s.phase === 'gallery' ? 'completed' : reason));
+  }
+  // Nothing in flight can ever answer a snapshot request now.
+  snapshotWaiters.clear();
+  await Promise.all(ending);
+}
+
 export function shutdownDraw(): void {
   for (const s of sessions.values()) teardownTimers(s);
   sessions.clear();
@@ -890,12 +920,26 @@ export function shutdownDraw(): void {
  * Minecraft, chess, calls and this (see the games rule in CLAUDE.md). Fired
  * for abandoned games too: that time was still spent.
  */
-async function finishGame(s: Session, reason: 'completed' | 'abandoned' | 'credit_wall'): Promise<void> {
+function finishGame(
+  s: Session,
+  reason: 'completed' | 'abandoned' | 'credit_wall' | 'account_switch',
+): Promise<void> {
   // A completed game finishes when the last turn resolves, and AGAIN when the
   // player closes the gallery. Without this guard that is two draw_game_ended
-  // events and two transcript rows for one game.
-  if (s.finished) return;
-  s.finished = true;
+  // events and two transcript rows for one game. The second call gets the
+  // first call's promise, so a caller that awaits it (endDraw, the account
+  // switch) still waits for the row to land.
+  if (s.finishing) return s.finishing;
+  // Tracked (260926): an account switch drains this before it re-points the
+  // profile scope, so the row lands in THIS account's transcript.
+  s.finishing = trackScopedWrite(recordFinishedGame(s, reason));
+  return s.finishing;
+}
+
+async function recordFinishedGame(
+  s: Session,
+  reason: 'completed' | 'abandoned' | 'credit_wall' | 'account_switch',
+): Promise<void> {
   const durationMs = Date.now() - s.startedAt;
   const turnsPlayed = s.gallery.length;
 

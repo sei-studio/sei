@@ -1884,6 +1884,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // Connected: the stopwatch starts HERE, the moment we are actually ready.
       const now = Date.now();
       liveSince.set(characterId, now);
+      // Tell main the call is live (260926): it closes the call itself on an
+      // account switch and needs the same stopwatch start to time it.
+      void sei.voiceCallSetActive({ characterId, active: true, live: true }).catch(() => {});
       silenceDressing();
       if (!useUiStore.getState().callDeafened) {
         playConnectedChime();
@@ -1927,7 +1930,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       const joinerName = nameOf(characterId);
       set({ participants: [...s.participants, characterId] });
       liveSince.set(characterId, Date.now());
-      void sei.voiceCallSetActive({ characterId, active: true }).catch(() => {});
+      // A join is live the moment it lands (no ring), so open + live in one.
+      void sei.voiceCallSetActive({ characterId, active: true, live: true }).catch(() => {});
       // Tell the companions already on the call that someone joined, so they know
       // it is now a bigger room and act accordingly (their next turn's voicePeers
       // will include the newcomer, but this lands the fact in their transcript now).

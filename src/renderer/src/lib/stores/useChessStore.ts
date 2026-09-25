@@ -128,6 +128,12 @@ interface ChessStoreState {
   reveal: (characterId: string, uci: string) => void;
   /** Patch board-local UI state. */
   setUi: (characterId: string, patch: Partial<ChessBoardUi>) => void;
+  /**
+   * Account switch (260926): forget every game, replay and open panel
+   * without calling main, which already ended the games for the outgoing
+   * account. Engine download progress is device-wide and is kept.
+   */
+  resetForScope: () => void;
 }
 
 /** How long the reveal slide animation runs before the ack is sent. Keep in
@@ -346,6 +352,9 @@ export const useChessStore = create<ChessStoreState>((set, get) => {
         ui: { ...s.ui, [key]: { ...DEFAULT_UI } },
       }));
     },
+
+    resetForScope: () =>
+      set({ games: {}, panelIntent: {}, revealed: {}, starting: {}, hydrated: {}, ui: {} }),
 
     closeReplay: (characterId) => {
       const key = replayKeyFor(characterId);

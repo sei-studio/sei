@@ -7,7 +7,10 @@
  * re-points it when auth state changes AT RUNTIME — sign-in, sign-out, or
  * swapping accounts — and drives the "start fresh like a new install" behavior:
  *
- *   1. Tear down the active bot (it holds the OLD scope's character + memory).
+ *   1. End every live session of the OLD account (accountSessions.ts: chess,
+ *      Draw!, backseat, voice calls, chat sessions, every game bot), writing
+ *      their closing rows into the OLD scope before it moves (260926; this
+ *      used to stop only the bots).
  *   2. Re-point the data scope at the new account's bucket.
  *   3. Initialize a brand-new profile (mkdir + seed the bundled default
  *      characters, idempotent per-profile) so a fresh account looks like a
@@ -23,16 +26,25 @@ import { mkdir } from 'node:fs/promises';
 import { paths, setActiveScope, getActiveScope, SCOPE_LOCAL } from '../paths';
 import { IpcChannel, type ScopeChangedEvent } from '../../shared/ipc';
 import type { BotSupervisorType } from '../botSupervisor';
+import { beginScopeSwitch, noteScopeChanged } from './scopeBarrier';
 
 let supervisorRef: BotSupervisorType | null = null;
 let getMainWindowRef: () => BrowserWindow | null = () => null;
+let endVoiceCallsRef: ((reason: string) => Promise<void>) | undefined;
+let teardownCeilingMs: number | undefined;
 
 export function initProfileScope(deps: {
   supervisor: BotSupervisorType;
   getMainWindow: () => BrowserWindow | null;
+  /** Close open voice calls from main (index.ts owns the call row). */
+  endVoiceCalls?: (reason: string) => Promise<void>;
+  /** Bound on ending the old account's sessions (tests; default 10s). */
+  teardownCeilingMs?: number;
 }): void {
   supervisorRef = deps.supervisor;
   getMainWindowRef = deps.getMainWindow;
+  endVoiceCallsRef = deps.endVoiceCalls;
+  teardownCeilingMs = deps.teardownCeilingMs;
 }
 
 /**
@@ -52,7 +64,25 @@ async function ensureProfileInitialized(): Promise<void> {
  * when signed out). No-op when the scope is unchanged (token refresh, the
  * INITIAL_SESSION replay at boot — boot already set + seeded the scope).
  */
-export async function switchScopeForAuth(userId: string | null): Promise<void> {
+export function switchScopeForAuth(userId: string | null): Promise<void> {
+  // Serialized (260926). authState fires each switch detached, and one switch
+  // spends seconds ending sessions before it moves the scope, so a second
+  // auth event (sign-out, then straight into another sign-in) used to run
+  // alongside it: both read the same "previous" scope, and whichever set the
+  // scope LAST won, not the one requested last (the overlap test in
+  // profileScope.endSessions.test.ts fails without the chain). Each switch now waits
+  // for the one before it and reads the scope it starts from only then.
+  // The pending flag goes up at once, so session starts are refused from the
+  // moment the auth event lands (scopeBarrier.beginSessionStart).
+  const release = beginScopeSwitch();
+  const run = switchChain.then(() => runScopeSwitch(userId)).finally(release);
+  switchChain = run.catch(() => {});
+  return run;
+}
+
+let switchChain: Promise<void> = Promise.resolve();
+
+async function runScopeSwitch(userId: string | null): Promise<void> {
   const prevScope = getActiveScope();
   const nextScope = userId ?? SCOPE_LOCAL;
   if (prevScope === nextScope) return;
@@ -60,16 +90,30 @@ export async function switchScopeForAuth(userId: string | null): Promise<void> {
   const reason: ScopeChangedEvent['reason'] =
     prevScope === SCOPE_LOCAL ? 'sign-in' : nextScope === SCOPE_LOCAL ? 'sign-out' : 'switch';
 
-  // 1. Tear down the active bot before the scope moves out from under it. On
-  //    sign-out authHandlers already stopped it (D-09); stop() is a no-op when
-  //    nothing is active.
-  if (supervisorRef) {
-    try { await supervisorRef.stop(); }
-    catch (err) { console.warn(`[sei] profileScope: bot stop failed: ${(err as Error).message}`); }
+  // 1. End every live session of the outgoing account before the scope moves
+  //    out from under it (260926: chess, Draw!, backseat, calls, chat
+  //    sessions and every game bot, not only the bots). Their `_ended` events
+  //    and play rows are written HERE, while the scope still points at the old
+  //    account. On sign-out authHandlers already stopped the bots (D-09);
+  //    every end is a no-op when nothing is live.
+  try {
+    const { endAccountSessions } = await import('./accountSessions');
+    await endAccountSessions({
+      supervisor: supervisorRef,
+      endVoiceCalls: endVoiceCallsRef,
+      ...(teardownCeilingMs !== undefined ? { ceilingMs: teardownCeilingMs } : {}),
+      notifyRenderer: () => {
+        const win = getMainWindowRef();
+        if (win && !win.isDestroyed()) win.webContents.send(IpcChannel.app.scopeEnding);
+      },
+    });
+  } catch (err) {
+    console.warn(`[sei] profileScope: ending the old account's sessions failed: ${(err as Error).message}`);
   }
 
   // 2. Re-point every profile-scoped path at the new account's bucket.
   setActiveScope(nextScope);
+  noteScopeChanged();
   console.log(`[sei] profileScope: ${prevScope} → ${nextScope} (${reason})`);
 
   // 3. Initialize a brand-new profile (returning accounts / 'local' no-op here).
@@ -212,6 +256,9 @@ export async function switchScopeForAuth(userId: string | null): Promise<void> {
 
 /** TEST-ONLY: clear the injected supervisor / window refs. */
 export function _resetForTests(): void {
+  switchChain = Promise.resolve();
   supervisorRef = null;
   getMainWindowRef = () => null;
+  endVoiceCallsRef = undefined;
+  teardownCeilingMs = undefined;
 }

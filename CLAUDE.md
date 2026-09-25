@@ -3054,6 +3054,50 @@ pins it at whatever percent it reached.
   handler; the chat store also drops the results of any load / send / push
   begun before the reset (`scopeEpoch`). Any NEW renderer cache keyed by
   character id or holding account data must be cleared there.
+- **An account switch ends every live session first (260926)** →
+  `switchScopeForAuth` used to stop only the game bots, so a chess game, a
+  Draw! round, a backseat share and a voice call kept running under the
+  previous account (and authState has already applied the NEW JWT by then).
+  Now `endAccountSessions` (`src/main/profile/accountSessions.ts`) runs before
+  the scope moves: `endAllChess` / `endAllDraw` / `endAllBackseat`, main's
+  `endVoiceCallsForAccountSwitch` (index.ts, timed from the renderer's
+  `live:true` connect report; the renderer's late hang-up report is dropped
+  via `consumeClosedByMain`), `endAllChatSessions('account_switch')`, then
+  `app:scope-ending` to the renderer (`endLiveSurfaces` in `scopeReset.ts`:
+  hang up, stop capture, clear the game mirrors, go Home), then
+  `supervisor.stop()`. Every `_ended` event carries `reason: 'account_switch'`.
+  Closing rows are written fire-and-forget and resolve `paths.*` when they hit
+  the disk, so each is registered with `trackScopedWrite`
+  (`profile/scopeBarrier.ts`) and the switch `drainScopedWrites()` before it
+  re-points the scope. **A new surface with a closing row must track it and
+  add an `endAll*` to `endAccountSessions`.** While the teardown runs
+  `foldIfDue` defers (it would bill the new account), and a fold whose
+  summarizer straddles the switch is dropped rather than written into the
+  next account's bridge.
+  Guarantees around it (review, 260926):
+  - Switches are serialized (a promise chain in `profileScope.ts`; prev/next
+    scope are read inside it, same scope = no-op) and the whole teardown is
+    bounded by `withAccountTeardown` (10s ceiling): a hung end step never
+    keeps the scope from moving or leaves the fold deferred. The end promises
+    are tracked like rows, so the bounded drain is the only wait.
+  - From the moment a switch is requested until main has sent
+    `app:scope-changed`, session starts are refused (`beginSessionStart`,
+    error `ACCOUNT_SWITCHING`). A start whose awaits straddle a switch
+    re-checks `stillValid()` right before `sessions.set` and unwinds.
+    **A new session surface must take the same guard.** The renderer's
+    scope-changed reset does not end the live surfaces a second time after
+    `app:scope-ending` (that would orphan a session started in the new
+    account in the gap); `useBackseatStore.share` ends main's session if the
+    scope epoch changed under it.
+  - Chat turns are refused during a switch and tagged with the scope they
+    began in (`withScopedTurn`); a turn still running when the account
+    changes is aborted (`cancelAllInflightTurns`) and writes no transcript row,
+    MEMORY.md line or fold (`turnMayWrite` / `scopedTurnCurrent`). The
+    last_chatted stamp is not gated.
+  - A companion hang-up (`end_call`) whose renderer report has not arrived
+    is kept in `callState` (`endCallFromCompanion`) so the switch closes it
+    and writes its row in the old account; `applyCallReport` is the pure
+    composition the `voice:call-state` handler runs.
 - **Native ABI mismatch** → `@electron/rebuild` / `install-app-deps` runs in
   `postinstall`. Test packaged builds on a clean machine.
 - **Bot ESM module type in packaged builds** → `src/bot/package.json` exists

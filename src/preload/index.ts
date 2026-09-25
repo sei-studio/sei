@@ -618,6 +618,11 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.app.scopeChanged, handler);
     return () => ipcRenderer.off(IpcChannel.app.scopeChanged, handler);
   },
+  onScopeEnding(cb: () => void) {
+    const handler = () => cb();
+    ipcRenderer.on(IpcChannel.app.scopeEnding, handler);
+    return () => ipcRenderer.off(IpcChannel.app.scopeEnding, handler);
+  },
 
   // --- Onboarding chrome toggle (260728) ---
   windowSetButtonsVisible: (visible: boolean) =>

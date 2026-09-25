@@ -40,6 +40,7 @@ import { isNoteLeak, stripThoughtTags } from './noteLeak';
 import { isCallActive } from '../voice/callState';
 import { stripAudioTags, SUPPORTS_AUDIO_TAGS } from '../voice/audioTags';
 import { readChatContext, foldIfDue, formatChatTimestamp } from './continuity';
+import { scopedTurnCurrent, withScopedTurn } from '../profile/scopeBarrier';
 import { maybeCompactChatMemory } from './memoryCompaction';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import { surfaceLanguage } from '../../shared/chatLanguage';
@@ -228,6 +229,34 @@ export function cancelInflightTurn(characterId: string): void {
   inflight.get(characterId)?.abort();
 }
 
+/**
+ * Account switch (260926): abort every chat turn still waiting on the model.
+ * Its reply would be billed to the incoming account (authState has already
+ * applied the new session) and could land in the incoming account's
+ * transcript. Same CHAT_ABORTED path as a supersede.
+ */
+export function cancelAllInflightTurns(): void {
+  for (const ctrl of inflight.values()) ctrl.abort();
+}
+
+/**
+ * The account-switch write gate (260926) for everything a turn persists: a
+ * turn that began under one account, or is still running while the account
+ * changes, writes nothing (rows or MEMORY.md). The bundled defaults share ids
+ * across profiles, so a late write would otherwise land in the next account's
+ * files. Turns are tagged by withScopedTurn (the exported wrappers below).
+ */
+function turnMayWrite(characterId: string, what: string): boolean {
+  if (scopedTurnCurrent()) return true;
+  console.warn(`[sei/chat] ${what} for ${characterId.slice(0, 8)} dropped: the account changed during the turn`);
+  return false;
+}
+
+async function appendTurnRow(characterId: string, msg: ChatMessage): Promise<void> {
+  if (!turnMayWrite(characterId, 'transcript row')) return;
+  await chatStore.appendMessage(characterId, msg);
+}
+
 async function readMemoryTail(characterId: string): Promise<string> {
   try {
     const raw = await readFile(path.join(paths.memoryDir(characterId), 'MEMORY.md'), 'utf8');
@@ -247,6 +276,8 @@ async function readMemoryTail(characterId: string): Promise<string> {
  * a failed append never breaks the spoken reply.
  */
 async function honorRememberCalls(characterId: string, content: Anthropic.Messages.ContentBlock[]): Promise<void> {
+  if (!content.some((b) => b.type === 'tool_use' && b.name === 'remember')) return;
+  if (!turnMayWrite(characterId, 'remember()')) return;
   let appended = false;
   for (const b of content) {
     if (b.type !== 'tool_use' || b.name !== 'remember') continue;
@@ -783,11 +814,11 @@ async function persistReplies(
     // Spoken on a live call → hidden in the chat UI (see ChatMessage.voice).
     ...(opts?.voice ? { voice: true } : {}),
   }));
-  for (const reply of replies) await chatStore.appendMessage(characterId, reply);
+  for (const reply of replies) await appendTurnRow(characterId, reply);
   return replies;
 }
 
-export async function sendChatMessage(
+async function sendChatMessageImpl(
   args: {
     characterId: string;
     text: string;
@@ -822,7 +853,7 @@ export async function sendChatMessage(
       // either way the exchange is spoken) → hidden in the chat UI.
       ...(args.voiceCall === true ? { voice: true } : {}),
     };
-    await chatStore.appendMessage(args.characterId, userMsg);
+    await appendTurnRow(args.characterId, userMsg);
 
     // Task 4 — if the companion is live in-game, route this message INTO that
     // session (same brain + prompt cache) instead of the standalone chat brain,
@@ -841,7 +872,7 @@ export async function sendChatMessage(
         // In-game chatter appends to the transcript without ever running a
         // standalone chat turn, so drain any fold backlog from here too —
         // otherwise a long play session could grow the window unbounded.
-        void foldIfDue(args.characterId, character.persona.expanded).catch(() => {});
+        if (scopedTurnCurrent()) void foldIfDue(args.characterId, character.persona.expanded).catch(() => {});
         // A routed exchange is still a chat — stamp last_chatted here too, or
         // the Home card keeps calling a companion the player talks to in-game
         // "New". Best-effort, same as the standalone-turn stamp below.
@@ -943,7 +974,7 @@ export async function sendChatMessage(
           ...(args.voiceCall === true ? { voice: true } : {}),
         };
         streamedReplies.push(msg);
-        await chatStore.appendMessage(args.characterId, msg);
+        await appendTurnRow(args.characterId, msg);
         deps.emitReply?.(args.characterId, msg, { prev: prevSpoken, more: i < parts.length - 1 || moreAfter });
         prevSpoken = b;
       }
@@ -1155,10 +1186,9 @@ export async function sendChatMessage(
           const memText = String((toolUse.input as { text?: string })?.text ?? '').trim();
           if (memText) {
             try {
-              const written = await appendMemory(
-                path.join(paths.memoryDir(args.characterId), 'MEMORY.md'),
-                memText,
-              );
+              const written = turnMayWrite(args.characterId, 'remember()')
+                ? await appendMemory(path.join(paths.memoryDir(args.characterId), 'MEMORY.md'), memText)
+                : 0;
               // 260725: appendMemory returns 0 when its bounded duplicate guard
               // skips the write. Reporting a save that never happened taught the
               // model to trust a second entry that does not exist, so mirror the
@@ -1247,7 +1277,7 @@ export async function sendChatMessage(
     // messages have aged past the window, fold them NOW — while the player is
     // typing — rather than making some future turn (or a summon) pay for it.
     // Fire-and-forget; single-flighted inside foldIfDue.
-    void foldIfDue(args.characterId, character.persona.expanded).catch(() => {});
+    if (scopedTurnCurrent()) void foldIfDue(args.characterId, character.persona.expanded).catch(() => {});
 
     // Task 2 — NOW that the "hopping in" reply is persisted (and about to be
     // returned + rendered), kick off the real join. Firing it here rather than
@@ -1314,7 +1344,7 @@ export async function sendChatMessage(
  * offered — this turn reports the failure, it must not retry the launch.
  * Replies are persisted here; the caller pushes them to the renderer.
  */
-export async function sendLaunchFailedTurn(
+async function sendLaunchFailedTurnImpl(
   characterId: string,
   reason: string,
 ): Promise<ChatMessage[]> {
@@ -1385,7 +1415,7 @@ const firstMeetingInflight = new Map<string, Promise<ChatMessage[]>>();
  * The renderer calls this on every empty-history open and lets main no-op; policy
  * (emptiness) lives here, never in the renderer.
  */
-export async function sendFirstMeetingTurn(
+async function sendFirstMeetingTurnImpl(
   characterId: string,
   deps?: Pick<ChatDeps, 'getLanState'>,
   opts?: ChatOpenedOptions,
@@ -1477,7 +1507,7 @@ export async function sendFirstMeetingTurn(
  * player who starts talking immediately supersedes the greeting turn instead
  * of racing it (two replies interleaving on the call).
  */
-export async function sendVoiceGreetingTurn(
+async function sendVoiceGreetingTurnImpl(
   characterId: string,
   peers: string[] = [],
 ): Promise<ChatMessage[]> {
@@ -1579,7 +1609,7 @@ export async function observeVoiceLine(
     voice: true,
   };
   try {
-    await chatStore.appendMessage(characterId, row);
+    await appendTurnRow(characterId, row);
   } catch (err) {
     console.warn(`[sei] observeVoiceLine failed for ${characterId}: ${(err as Error).message}`);
   }
@@ -1605,7 +1635,7 @@ export async function observeVoiceLine(
  * the same per-character `inflight` slot as sendChatMessage so a player barge-in
  * (a new real utterance to this companion) supersedes an in-flight reaction.
  */
-export async function sendCompanionVoiceTurn(
+async function sendCompanionVoiceTurnImpl(
   characterId: string,
   ctx: {
     speakerName: string;
@@ -1634,7 +1664,7 @@ export async function sendCompanionVoiceTurn(
       ts: Date.now(),
       voice: true,
     };
-    await chatStore.appendMessage(characterId, heard);
+    await appendTurnRow(characterId, heard);
 
     const prep = await prepareChatTurn(characterId, {
       openWorldDetected: ctx.openWorldDetected === true,
@@ -1719,7 +1749,7 @@ export async function sendCompanionVoiceTurn(
  * the model hung up this turn (end_call). The renderer speaks `messages` (the
  * goodbye) first, then runs its companion-hang-up path.
  */
-export async function sendVoiceIdleTurn(
+async function sendVoiceIdleTurnImpl(
   characterId: string,
   quietSeconds: number,
   peers: string[] = [],
@@ -1939,6 +1969,48 @@ function blockedReason(errorClass: string): string {
     default:
       return 'a setup problem the player has to fix in the app first';
   }
+}
+
+// ── Account-scoped turn entry points (260926) ─────────────────────────────────
+// Every exported LLM turn runs under withScopedTurn: refused while an account
+// switch is running, and tagged with the scope it began in so its writes are
+// dropped if the account changes before it lands (turnMayWrite). The bodies
+// (and their docs) are the *Impl functions above.
+
+export function sendChatMessage(
+  ...args: Parameters<typeof sendChatMessageImpl>
+): ReturnType<typeof sendChatMessageImpl> {
+  return withScopedTurn(() => sendChatMessageImpl(...args));
+}
+
+export function sendLaunchFailedTurn(
+  ...args: Parameters<typeof sendLaunchFailedTurnImpl>
+): ReturnType<typeof sendLaunchFailedTurnImpl> {
+  return withScopedTurn(() => sendLaunchFailedTurnImpl(...args));
+}
+
+export function sendFirstMeetingTurn(
+  ...args: Parameters<typeof sendFirstMeetingTurnImpl>
+): ReturnType<typeof sendFirstMeetingTurnImpl> {
+  return withScopedTurn(() => sendFirstMeetingTurnImpl(...args));
+}
+
+export function sendVoiceGreetingTurn(
+  ...args: Parameters<typeof sendVoiceGreetingTurnImpl>
+): ReturnType<typeof sendVoiceGreetingTurnImpl> {
+  return withScopedTurn(() => sendVoiceGreetingTurnImpl(...args));
+}
+
+export function sendCompanionVoiceTurn(
+  ...args: Parameters<typeof sendCompanionVoiceTurnImpl>
+): ReturnType<typeof sendCompanionVoiceTurnImpl> {
+  return withScopedTurn(() => sendCompanionVoiceTurnImpl(...args));
+}
+
+export function sendVoiceIdleTurn(
+  ...args: Parameters<typeof sendVoiceIdleTurnImpl>
+): ReturnType<typeof sendVoiceIdleTurnImpl> {
+  return withScopedTurn(() => sendVoiceIdleTurnImpl(...args));
 }
 
 export { readRecent } from './chatStore';

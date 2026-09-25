@@ -56,6 +56,7 @@ import { CHAT_TIMEOUT_MS } from '../chat/sdk';
 import { buildLlmProvider } from '../llm';
 import { buildSystemBlocks, clockNow, markLastMessageCached, REMEMBER_TOOL } from '../chat/chatPrompts';
 import { readChatContext, foldIfDue } from '../chat/continuity';
+import { accountSwitchingError, beginSessionStart, trackScopedWrite } from '../profile/scopeBarrier';
 import { playSummaryText } from '../chat/playSummary';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import {
@@ -356,6 +357,8 @@ export async function startChess(
   const existing = sessions.get(characterId);
   if (existing && existing.status !== 'ended') return snapshot(existing);
   if (existing) void existing.log.close().catch(() => {});
+  // 260926: no session may start across an account switch (scopeBarrier).
+  const startGuard = beginSessionStart();
 
   const pick = opts?.playerColor ?? 'w';
   const playerColor: ChessColor =
@@ -418,6 +421,14 @@ export async function startChess(
     },
     logger: console,
   }) as ChessQueue;
+  if (!startGuard.stillValid()) {
+    // An account switch began while the profile and log were loading: the
+    // switch has already ended every game, so this one must not appear now.
+    s.queue.dispose();
+    s.queue = null;
+    void s.log.close().catch(() => {});
+    throw accountSwitchingError();
+  }
   sessions.set(characterId, s);
   push(s);
 
@@ -970,7 +981,13 @@ function checkGameOver(s: Session): boolean {
   return true;
 }
 
-function endSession(s: Session, result: ChessResult, opts?: { silent?: boolean }): void {
+function endSession(
+  s: Session,
+  result: ChessResult,
+  // `reason` overrides the analytics reason only (260926: 'account_switch');
+  // the game's own result, the replay row and the renderer keep `result`.
+  opts?: { silent?: boolean; reason?: string },
+): void {
   s.turnSeq++;
   try { s.turnCtrl?.abort(); } catch { /* already done */ }
   s.turnCtrl = null;
@@ -1003,7 +1020,7 @@ function endSession(s: Session, result: ChessResult, opts?: { silent?: boolean }
         character_id: s.characterId,
         duration_ms: durationMs,
         plies: s.history.length,
-        reason: result.reason,
+        reason: opts?.reason ?? result.reason,
         // 'player' | 'ai' | 'draw' — never the raw colour, which would need
         // playerColor to interpret.
         outcome: result.winner === null ? 'draw' : result.winner === s.playerColor ? 'player' : 'ai',
@@ -1020,12 +1037,16 @@ function endSession(s: Session, result: ChessResult, opts?: { silent?: boolean }
   // live game and resumes it ("the board's still waiting").
   if (result.reason !== 'abandoned' || s.history.length > 0 || s.spoke) {
     const plyCount = s.history.length;
-    void (async () => {
+    // Tracked (260926): an account switch drains this before it re-points the
+    // profile scope, so the row lands in THIS account's transcript.
+    void trackScopedWrite((async () => {
       let name = 'your companion';
+      let personaExpanded: string | undefined;
       let rowLanguage: 'zh' | undefined;
       try {
         const c = await getCharacter(s.characterId);
         if (c?.name) name = c.name;
+        personaExpanded = c?.persona?.expanded;
         const { characterLanguage } = await import('../../shared/chatLanguage');
         if (characterLanguage(c?.metadata) === 'zh') rowLanguage = 'zh';
       } catch { /* generic name */ }
@@ -1052,7 +1073,12 @@ function endSession(s: Session, result: ChessResult, opts?: { silent?: boolean }
         await chatStore.appendMessage(s.characterId, ev);
         requireDeps().pushChatMessage(s.characterId, ev);
       } catch { /* best-effort */ }
-    })();
+      // Continuity OUT (CLAUDE.md contract): fold after the play row, like
+      // Draw! and backseat. A silent end runs no reaction turn, whose fold
+      // would otherwise have picked the row up. Not on the credit wall: the
+      // fold is an LLM call and would only 402; the next fold picks it up.
+      if (!s.creditQuiet) void foldIfDue(s.characterId, personaExpanded).catch(() => {});
+    })());
   }
 
   // Credit wall (260926): a quiet companion does not react to the result
@@ -1968,6 +1994,32 @@ function tryParseMove(s: Session, raw: string): { uci: string; san: string } | n
     return { uci: m.from + m.to + (m.promotion ?? ''), san: m.san };
   } catch {
     return null;
+  }
+}
+
+/**
+ * End every live game for an account switch (260926). Same choke point as
+ * every other exit (endSession: analytics with duration_ms, the play row),
+ * silent so no reaction turn runs under the incoming account's JWT, and the
+ * sessions are dropped so a late renderer chess:end for the old game is a
+ * no-op. The engine stays warm; it holds no account data.
+ */
+export function endAllChess(reason: string): void {
+  for (const s of [...sessions.values()]) {
+    if (s.status !== 'ended') {
+      endSession(s, { winner: null, reason: 'abandoned' }, { silent: true, reason });
+    } else {
+      // Already over; a game-over reaction turn may still be in flight.
+      s.turnSeq++;
+      try { s.turnCtrl?.abort(); } catch { /* already done */ }
+      s.turnCtrl = null;
+      clearHoldTimers(s);
+      flushChatBuffer(s);
+      s.queue?.dispose();
+      s.queue = null;
+    }
+    void s.log.close().catch(() => {});
+    sessions.delete(s.characterId);
   }
 }
 

@@ -132,6 +132,20 @@ describe('session end', () => {
     ]);
   });
 
+  it('an account switch closes open sessions with reason account_switch', async () => {
+    await note('char-a');
+    await vi.advanceTimersByTimeAsync(4_000);
+    await note('char-a');
+
+    await endAllChatSessions('account_switch');
+    expect(events('chat_session_ended')).toEqual([
+      { character_id: 'char-a', duration_ms: 4_000, messages: 2, reason: 'account_switch' },
+    ]);
+    // The next message (the new account's) opens a fresh session.
+    await note('char-a');
+    expect(events('chat_session_started')).toHaveLength(2);
+  });
+
   it('leaves nothing open after the quit sweep', async () => {
     await note('char-a');
     await note('char-b');

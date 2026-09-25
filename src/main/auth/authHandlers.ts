@@ -696,8 +696,11 @@ export async function cancelGoogle(): Promise<void> {
  */
 export async function signOut(): Promise<void> {
   // D-09 + T-10-06-09: stop the bot first so its final request flushes under
-  // the still-valid JWT.
-  await stopBotIfActive('signOut');
+  // the still-valid JWT. Inside the account teardown (260926) so the session
+  // is recorded as ended by the account switch this sign-out starts; the
+  // switch itself ends every other surface (profile/accountSessions.ts).
+  const { withAccountTeardown } = await import('../profile/scopeBarrier');
+  await withAccountTeardown(() => stopBotIfActive('signOut'));
   try {
     await getClient().auth.signOut();
   } catch (err) {
@@ -736,8 +739,13 @@ export async function deleteAccount(): Promise<DeleteAccountResult> {
   // T-10-06-09's "stop bot before clearing session" invariant applies here
   // too. Without this, the running bot continues with a soon-to-be-invalid
   // JWT until its next action (which will 401-cascade in Phase 13). User
-  // has already confirmed via DeleteAccountModal, no re-prompt.
-  await stopBotIfActive('deleteAccount');
+  // has already confirmed via DeleteAccountModal, no re-prompt. Inside the
+  // account teardown (260926) so bot_session_ended carries the reason, as on
+  // sign-out; the scope switch that follows ends every other surface.
+  {
+    const { withAccountTeardown } = await import('../profile/scopeBarrier');
+    await withAccountTeardown(() => stopBotIfActive('deleteAccount'));
+  }
   const res = await callEdgeFunction('delete-me', {
     jwt: session.access_token,
     method: 'POST',

@@ -191,3 +191,64 @@ describe('useBackseatStore vision-gate error mapping (china-compat W9)', () => {
     );
   });
 });
+
+/**
+ * share() racing an account switch (260926): resetForScope bumps the epoch; a
+ * share begun under the previous account must not come up afterwards, and a
+ * session main registered for it must be ended rather than left orphaned.
+ */
+describe('useBackseatStore share() across an account switch', () => {
+  it('main accepted the session, then the account changed: ends it, starts no capture', async () => {
+    const { useBackseatStore } = await loadStore();
+    let accept!: () => void;
+    backseatStartMock.mockImplementationOnce(() => new Promise<void>((r) => (accept = r)));
+    const sharing = useBackseatStore.getState().share('char-a', source('win-1'));
+    useBackseatStore.getState().resetForScope();
+    accept();
+    expect(await sharing).toBe(false);
+    expect(backseatEndMock).toHaveBeenCalledWith('char-a');
+    expect(startCaptureMock).not.toHaveBeenCalled();
+    const st = useBackseatStore.getState();
+    expect(st.sharingFor).toBeNull();
+    expect(st.stream).toBeNull();
+    expect(st.starting).toBe(false);
+    expect(st.active).toEqual({});
+  });
+
+  it('the account changed while capture was coming up: stops capture and ends the session', async () => {
+    const { useBackseatStore } = await loadStore();
+    let captured!: (h: unknown) => void;
+    startCaptureMock.mockImplementationOnce(() => new Promise((r) => (captured = r)));
+    const sharing = useBackseatStore.getState().share('char-a', source('win-1'));
+    // Let backseatStart resolve and startCapture begin.
+    for (let i = 0; i < 10 && !captured; i++) await Promise.resolve();
+    expect(startCaptureMock).toHaveBeenCalled();
+    useBackseatStore.getState().resetForScope();
+    stopCaptureMock.mockClear();
+    captured({ stream: { id: 'late' }, noteSpoke: () => {} });
+    expect(await sharing).toBe(false);
+    expect(stopCaptureMock).toHaveBeenCalledTimes(1);
+    expect(backseatEndMock).toHaveBeenCalledWith('char-a');
+    expect(useBackseatStore.getState().sharingFor).toBeNull();
+    expect(useBackseatStore.getState().stream).toBeNull();
+  });
+
+  it('main refused because the account is changing: no error shown after the reset', async () => {
+    const { useBackseatStore } = await loadStore();
+    let refuse!: (e: Error) => void;
+    backseatStartMock.mockImplementationOnce(() => new Promise<void>((_r, j) => (refuse = j)));
+    const sharing = useBackseatStore.getState().share('char-a', source('win-1'));
+    useBackseatStore.getState().resetForScope();
+    refuse(new Error('ACCOUNT_SWITCHING: the account is changing, try again in a moment'));
+    expect(await sharing).toBe(false);
+    expect(useBackseatStore.getState().error).toBeNull();
+    expect(useBackseatStore.getState().starting).toBe(false);
+  });
+
+  it('control: with no switch the share comes up', async () => {
+    const { useBackseatStore } = await loadStore();
+    expect(await useBackseatStore.getState().share('char-a', source('win-1'))).toBe(true);
+    expect(backseatEndMock).not.toHaveBeenCalled();
+    expect(useBackseatStore.getState().sharingFor).toBe('char-a');
+  });
+});

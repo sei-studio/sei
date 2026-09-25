@@ -2032,14 +2032,17 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         // the "You and X called for Y" row. Absent → the call never connected
         // (dial error), so nothing is logged.
         connectedMs: z.number().int().nonnegative().optional(),
+        // Connect report (260926): the call went live. See markCallLive.
+        live: z.boolean().optional(),
       })
       .parse(argsRaw);
-    const { setCallActive } = await import('./voice/callState');
-    setCallActive(args.characterId, args.active);
-    deps.supervisor.setVoiceCall(args.characterId, args.active);
-    if (!args.active && typeof args.connectedMs === 'number' && args.connectedMs > 0) {
-      deps.notifyCallEnded?.(args.characterId, args.connectedMs);
-    }
+    // The state transition and its account-switch cases live in callState
+    // (applyCallReport, 260926); this handler applies the side effects.
+    const { applyCallReport } = await import('./voice/callState');
+    const fx = applyCallReport(args);
+    if (fx.voiceCall !== null) deps.supervisor.setVoiceCall(args.characterId, fx.voiceCall);
+    if (fx.endedMs !== null) deps.notifyCallEnded?.(args.characterId, fx.endedMs);
+    if (!fx.stamp) return;
     // Presence (260707): a call is a real interaction, so stamp last_chatted at
     // BOTH edges. Game sessions and text chat already drive the "online" dot;
     // a call previously only did when the player happened to speak a turn (that

@@ -87,7 +87,7 @@ import { useSyncStore } from './lib/stores/useSyncStore';
 import { useCreditsStore } from './lib/stores/useCreditsStore';
 import { useCloudCharactersStore } from './lib/stores/useCloudCharactersStore';
 import { useLibraryStateStore } from './lib/stores/useLibraryStateStore';
-import { resetAccountScopedState } from './lib/scopeReset';
+import { handleScopeEnding, resetAccountScopedState } from './lib/scopeReset';
 import { AuthChoiceScreen } from './screens/AuthChoiceScreen';
 import { AcceptToSModal } from './components/AcceptToSModal';
 import { OfflineRetryModal } from './components/OfflineRetryModal';
@@ -406,6 +406,14 @@ export function App(): React.ReactElement {
   //    This is what makes switching accounts "start fresh like a new install".
   //    Credits/cloud-id stores reset via their own authState-keyed effects
   //    above; this handles the local-file-backed stores + routing.
+  // 260926: main has ended the outgoing account's live sessions (chess, Draw!,
+  // backseat, calls, bots) and is about to switch scope. Drop our half now
+  // (hang up, stop capture, leave the game screen) instead of leaving a dead
+  // surface up until app:scope-changed, which can be seconds away.
+  useEffect(() => {
+    return sei.onScopeEnding?.(() => handleScopeEnding());
+  }, []);
+
   useEffect(() => {
     return sei.onScopeChanged((ev) => {
       // Drop the previous account's in-memory data first (transcripts are
