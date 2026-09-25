@@ -2260,7 +2260,22 @@ the v0.6.5-beta.2 playtest log (`~/suisei/reports/playtest-v065b2/`):
   `follow_target: X (on hold ...)`), released when the player leaves that
   map or reaches the body, which keeps the 260910 fix (no dragging back
   through the door). Following survives the night (`Sleeping` pauses it).
-  The Stardew Following/Stuck rules in `prompts.js` say so.
+  The Stardew Following/Stuck rules in `prompts.js` say so, but ONLY when
+  the connected mod reports 0.1.2+ in its welcome/hello
+  (`adapter/stardew/modVersion.js`, `actionRules(modVersion)`,
+  `composeSnapshot({ modVersion })`); an older mod still ends follow on a
+  trip, so it gets `ACTION_RULES_LEGACY` and the bare follow name. Gate any
+  future prompt text that describes new mod behavior the same way: the app
+  ships before the Mac-built DLL.
+- Review follow-ups (same PR): a command aborts a background follow-travel
+  (it used to warp the body mid-purchase); stall counters (follow tick,
+  BarrierHop, WalkTo) skip ticks where `!Game1.shouldTimePass()` (a chest
+  menu teleported the body); follow-side `FreeTileNear(..., reachable: true)`
+  needs the tile within 2 x radius steps of the player (`GridPath.WithinSteps`,
+  never across a fence corner); detours are capped at
+  `GridPath.DetourBudget` (4x the game's path, 16..400 nodes); follow never
+  travels or warps into a festival, an event or a temporary map (`Temp`,
+  `IsTemporary` by reflection), it waits.
 - The mod source is at 0.1.2 but `assets/stardew-mod/` is still the OLD
   build (its DLL even reports assembly 0.1.0): rebuild on a machine with the
   game (`scripts/build-stardew-mod.sh`) and commit the output, which also

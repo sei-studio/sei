@@ -111,6 +111,9 @@ namespace SeiCompanion.Actions
             {
                 yield return null;
                 if (ctx.Cancelled) yield break;
+                // A menu, dialogue or event freezes the world: no progress, no
+                // stall, and no time off the walk's budget.
+                if (!Game1.shouldTimePass()) continue;
                 ticks++;
                 if (Vector2.Distance(npc.Position, last) < 0.25f) stuck++; else stuck = 0;
                 last = npc.Position;

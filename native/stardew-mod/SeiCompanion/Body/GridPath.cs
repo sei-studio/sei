@@ -70,6 +70,53 @@ namespace SeiCompanion.Body
             return null;
         }
 
+        /// <summary>
+        /// Whether `goal` can be walked to from `start` in at most `maxSteps`
+        /// 4-connected steps (a bounded BFS). `passable` is asked about every
+        /// tile but the start. Used to keep "the free tile beside the player"
+        /// on the player's side of a fence: a tile one step away diagonally
+        /// with both corners blocked is across a barrier, not beside them.
+        /// </summary>
+        public static bool WithinSteps((int X, int Y) start, (int X, int Y) goal, Func<int, int, bool> passable, int maxSteps)
+        {
+            if (passable == null) throw new ArgumentNullException(nameof(passable));
+            if (start == goal) return true;
+            if (maxSteps <= 0 || H(start, goal) > maxSteps) return false;
+            var seen = new HashSet<(int X, int Y)> { start };
+            var frontier = new List<(int X, int Y)> { start };
+            for (int step = 1; step <= maxSteps && frontier.Count > 0; step++)
+            {
+                var next = new List<(int X, int Y)>();
+                foreach ((int X, int Y) cur in frontier)
+                {
+                    foreach ((int dx, int dy) in Steps)
+                    {
+                        var t = (cur.X + dx, cur.Y + dy);
+                        // Never wander further than the steps left can come back from.
+                        if (H(t, goal) > maxSteps - step) continue;
+                        if (!seen.Add(t)) continue;
+                        if (!passable(t.Item1, t.Item2)) continue;
+                        if (t == goal) return true;
+                        next.Add(t);
+                    }
+                }
+                frontier = next;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// The expansion budget for a detour around a farmer: four times the
+        /// game's own path length, at most 400. A detour is a few tiles longer
+        /// than the straight path; a search that needs more than that is
+        /// looking for a way round the whole map and should give up (the
+        /// caller then keeps the game's path and steps through the player).
+        /// </summary>
+        public static int DetourBudget(int gamePathLength)
+        {
+            return Math.Clamp(4 * Math.Max(1, gamePathLength), 16, 400);
+        }
+
         private static int H((int X, int Y) a, (int X, int Y) b) => Math.Abs(a.X - b.X) + Math.Abs(a.Y - b.Y);
 
         private static List<(int X, int Y)> Rebuild(Dictionary<(int X, int Y), (int X, int Y)> came, (int X, int Y) start, (int X, int Y) goal)

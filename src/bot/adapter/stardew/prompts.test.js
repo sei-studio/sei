@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { eventAddendum, ACTION_DESCRIPTIONS, STARDEW_BASELINE, WORLD_PRIMER, CAPABILITY_PARAGRAPH, ACTION_RULES, SESSION_END_CLAUSE } from './prompts.js'
+import { eventAddendum, ACTION_DESCRIPTIONS, STARDEW_BASELINE, WORLD_PRIMER, CAPABILITY_PARAGRAPH, ACTION_RULES, ACTION_RULES_LEGACY, SESSION_END_CLAUSE, actionRules } from './prompts.js'
+import { modVersionAtLeast, modHoldsFollow } from './modVersion.js'
 import { VERB_NAMES } from './registry.js'
 
 describe('stardew prompts', () => {
@@ -32,6 +33,35 @@ describe('stardew prompts', () => {
     // The model walked into the player with goTo(their x,y) three times.
     expect(ACTION_RULES).toMatch(/never goTo with their coordinates/)
     expect(ACTION_RULES).not.toMatch(/\u2014/)
+  })
+
+  it('keeps the old following rule for a mod that still ends follow on a trip', () => {
+    // The bundled DLL is rebuilt on a Mac after this ships: until then the
+    // mod clears follow on a warp, so the model must still re-call follow.
+    expect(ACTION_RULES_LEGACY).toMatch(/ends following for you/)
+    expect(ACTION_RULES_LEGACY).not.toMatch(/standing order|puts it on hold/)
+    expect(ACTION_RULES_LEGACY).not.toMatch(/\{following_rule\}/)
+    expect(ACTION_RULES).not.toMatch(/\{following_rule\}/)
+    // The stuck advice is true for every mod.
+    expect(ACTION_RULES_LEGACY).toMatch(/never goTo with their coordinates/)
+    expect(actionRules('0.1.1')).toBe(ACTION_RULES_LEGACY)
+    expect(actionRules('0.1.0')).toBe(ACTION_RULES_LEGACY)
+    expect(actionRules(null)).toBe(ACTION_RULES_LEGACY)
+    expect(actionRules(undefined)).toBe(ACTION_RULES_LEGACY)
+    expect(actionRules('0.1.2')).toBe(ACTION_RULES)
+    expect(actionRules('0.2.0')).toBe(ACTION_RULES)
+  })
+
+  it('compares mod versions numerically', () => {
+    expect(modVersionAtLeast('0.1.10', '0.1.2')).toBe(true)
+    expect(modVersionAtLeast('0.1.2', '0.1.2')).toBe(true)
+    expect(modVersionAtLeast('0.1.2-beta.1', '0.1.2')).toBe(true)
+    expect(modVersionAtLeast('1.0', '0.1.2')).toBe(true)
+    expect(modVersionAtLeast('0.1.1', '0.1.2')).toBe(false)
+    expect(modVersionAtLeast('0.0.9', '0.1.2')).toBe(false)
+    expect(modVersionAtLeast('', '0.1.2')).toBe(false)
+    expect(modVersionAtLeast('garbage', '0.1.2')).toBe(false)
+    expect(modHoldsFollow(null)).toBe(false)
   })
 
   it('has a description for every registry verb and no verb without one', () => {

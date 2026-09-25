@@ -6,6 +6,7 @@
 // about 1.2k tokens; every list is already capped by the mod.
 
 import { getInFlightLineForSnapshot } from '../../../brain/inflight.js'
+import { modHoldsFollow } from '../modVersion.js'
 
 const MAX_INV = 20
 
@@ -31,14 +32,16 @@ function tileList(rows, render, max = 8) {
 /**
  * The follow_target value. Since mod 0.1.2 a commanded trip to another map
  * puts following ON HOLD (`followHold` = the map the player was on) instead
- * of ending it, so the model must be told it still stands: the 260924
- * playtest lost "follow me" for the rest of the session because the old mod
- * cleared it and the snapshot then said "(none)". A mod that predates the
- * field sends no `followHold` and reads as before.
+ * of ending it, and sleep keeps it, so the model must be told it still
+ * stands: the 260924 playtest lost "follow me" for the rest of the session
+ * because the old mod cleared it and the snapshot then said "(none)".
+ * `holdAware` is true only for a mod that does this (modVersion.js); an older
+ * mod gets the bare name, as before.
  */
-export function followLine(obs) {
+export function followLine(obs, holdAware = false) {
   const who = obs?.follow
   if (!who) return '(none)'
+  if (!holdAware) return who
   if (obs.sleeping) return `${who} (resumes when you wake up)`
   if (obs.followHold) return `${who} (on hold while they stay in ${obs.followHold}; picks up again when they leave it or come to you. unfollow to stop)`
   return who
@@ -47,10 +50,12 @@ export function followLine(obs) {
 /**
  * Pure: render one observation as snapshot text.
  * @param {object} obs   The mod's observation (may be null before the first push).
- * @param {{ lastActionResult?: string|null, inFlight?: any, pinUsername?: string|null, companions?: string[], worldTag?: string|null }} opts
+ * @param {{ lastActionResult?: string|null, inFlight?: any, pinUsername?: string|null, companions?: string[], worldTag?: string|null, modVersion?: string|null }} opts
+ *   `modVersion` is the connected mod's (welcome/hello); it gates wording
+ *   that only holds for newer mods.
  */
 export function composeSnapshot(obs, opts = {}) {
-  const { lastActionResult = null, inFlight = null, pinUsername = null, companions = [], worldTag = null } = opts
+  const { lastActionResult = null, inFlight = null, pinUsername = null, companions = [], worldTag = null, modVersion = null } = opts
   if (!obs) return '(snapshot unavailable: waiting for the first observation from the game)'
   const lines = []
   if (worldTag) lines.push(`world: ${worldTag}`)
@@ -112,7 +117,7 @@ export function composeSnapshot(obs, opts = {}) {
   const warps = Array.isArray(obs.warps) ? obs.warps : []
   if (warps.length) lines.push(`ways out: ${warps.map((w) => `${w.handle} to ${w.to} @${w.x},${w.y}`).join('; ')}`)
 
-  lines.push(`follow_target: ${followLine(obs)}`)
+  lines.push(`follow_target: ${followLine(obs, modHoldsFollow(modVersion))}`)
   const p = obs.player
   // The host farmer IS the owner in Stardew (the mod's `player` is
   // Game1.player), so their in-game name wins over the account's pinned
@@ -134,7 +139,7 @@ export function composeSnapshot(obs, opts = {}) {
  * Minecraft composer has, so a handoff from the player or a hit lands loudly.
  * @param {{ getObs: () => object|null }} deps
  */
-export function createSnapshotComposer({ getObs }) {
+export function createSnapshotComposer({ getObs, getModVersion = () => null }) {
   let prevCounts = null
   let prevHealth = null
 
@@ -149,7 +154,7 @@ export function createSnapshotComposer({ getObs }) {
   return {
     next(opts = {}) {
       const obs = getObs()
-      const base = composeSnapshot(obs, opts)
+      const base = composeSnapshot(obs, { modVersion: getModVersion(), ...opts })
       if (!obs) return base
       const cur = countMap(obs)
       const changes = []

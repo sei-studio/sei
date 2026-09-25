@@ -134,7 +134,7 @@ namespace SeiCompanion.Body
         {
             Farmer host = Game1.player;
             GameLocation loc = host.currentLocation ?? Game1.getFarm();
-            Vector2 tile = this.FreeTileNear(loc, host.Tile, 1) ?? host.Tile;
+            Vector2 tile = this.FreeTileNear(loc, host.Tile, 1, reachable: true) ?? host.Tile;
             Vector2 pos = tile * 64f;
             var sprite = new AnimatedSprite(ModEntry.SpriteAsset, 0, 16, 32);
             this.Npc = new NPC(sprite, pos, loc.Name, 2, "Sei_" + this.Name.Replace(' ', '_'), this.Mod.CompanionPortrait, false)
@@ -307,7 +307,7 @@ namespace SeiCompanion.Body
             // Wake up beside the host so the day starts together.
             Farmer host = Game1.player;
             if (host?.currentLocation != null && this.Npc != null && this.Npc.currentLocation != host.currentLocation)
-                this.WarpTo(host.currentLocation.NameOrUniqueName, this.FreeTileNear(host.currentLocation, host.Tile, 1)?.ToPoint() ?? host.TilePoint);
+                this.WarpTo(host.currentLocation.NameOrUniqueName, this.FreeTileNear(host.currentLocation, host.Tile, 1, reachable: true)?.ToPoint() ?? host.TilePoint);
             this.Session?.SendEvent("day_started", new Dictionary<string, object>
             {
                 ["day"] = Game1.dayOfMonth,
@@ -435,26 +435,41 @@ namespace SeiCompanion.Body
             // Count a stall on EVERY tick. It used to be counted only on the
             // ticks past the re-path cooldown (1 in 6 to 16), so "stuck for
             // 180 ticks" meant 20 to 50 seconds of walking into something.
-            if (sameMap && this.Npc.controller != null && Vector2.Distance(this.Npc.Position, this._lastPos) < 0.5f)
-                this._stuckTicks++;
-            else
-                this._stuckTicks = 0;
+            // A frozen world (a chest, a shop menu, dialogue, an event) stops
+            // every NPC; that is not a stall, and counting it teleported the
+            // body after a 3 s look into a chest (review of PR #21).
+            if (Game1.shouldTimePass())
+            {
+                if (sameMap && this.Npc.controller != null && Vector2.Distance(this.Npc.Position, this._lastPos) < 0.5f)
+                    this._stuckTicks++;
+                else
+                    this._stuckTicks = 0;
+            }
 
             if (this._followCooldown > 0) { this._followCooldown--; return; }
 
             if (!sameMap)
             {
+                // A festival, a cutscene or a temporary map (festival grounds,
+                // event stages) is the game's business: warping a body in can
+                // break the event. Wait where we are; trailing picks up again
+                // once the player is back on a real map.
+                if (Game1.isFestival() || Game1.eventUp || this.IsTemporaryMap(target.currentLocation))
+                {
+                    this._followCooldown = 60;
+                    return;
+                }
                 // Different map: route there in the background; teleport beside
-                // them only when no route exists (the mines, festival maps).
+                // them only when no route exists (the mines).
                 List<Hop> route = Router.FindRoute(this.Npc.currentLocation, target.currentLocation.NameOrUniqueName);
                 if (route != null && route.Count > 0 && route.Count <= 4)
                 {
                     var ctx = new ActionContext(this, null, default);
-                    this.Background.Start(ctx, "follow-travel", Movement.Travel(ctx, target.currentLocation.NameOrUniqueName, null));
+                    this.Background.Start(ctx, FollowTravel, Movement.Travel(ctx, target.currentLocation.NameOrUniqueName, null));
                 }
                 else
                 {
-                    this.WarpTo(target.currentLocation.NameOrUniqueName, this.FreeTileNear(target.currentLocation, target.Tile, 1)?.ToPoint() ?? target.TilePoint);
+                    this.WarpTo(target.currentLocation.NameOrUniqueName, this.FreeTileNear(target.currentLocation, target.Tile, 1, reachable: true)?.ToPoint() ?? target.TilePoint);
                     this.Session?.SendEvent("warped", new Dictionary<string, object> { ["location"] = this.LocationName, ["reason"] = "caught up with the player" });
                 }
                 this._followCooldown = 30;
@@ -472,7 +487,7 @@ namespace SeiCompanion.Body
             // progress with a live path), or far behind: hop beside them.
             if (this._stuckTicks > 180 || dist > 18f)
             {
-                Vector2? spot = this.FreeTileNear(target.currentLocation, target.Tile, 1, this.Npc.Tile);
+                Vector2? spot = this.FreeTileNear(target.currentLocation, target.Tile, 1, this.Npc.Tile, reachable: true);
                 if (spot.HasValue)
                 {
                     this.Npc.controller = null;
@@ -490,7 +505,7 @@ namespace SeiCompanion.Body
             // The free tile beside them on OUR side: the nearest-to-the-player
             // pick was as likely to be behind them, and the way there went
             // through their tile.
-            Vector2? goal = this.FreeTileNear(target.currentLocation, target.Tile, 1, this.Npc.Tile);
+            Vector2? goal = this.FreeTileNear(target.currentLocation, target.Tile, 1, this.Npc.Tile, reachable: true);
             if (goal.HasValue && this.TryPath(goal.Value.ToPoint(), null))
             {
                 this._lastFollowGoal = target.Tile;
@@ -501,6 +516,9 @@ namespace SeiCompanion.Body
                 this._followCooldown = 30;
             }
         }
+
+        /// <summary>The background routine name of a follow trip to another map.</summary>
+        private const string FollowTravel = "follow-travel";
 
         private int _hopStuckTicks;
         private int _farmerBlockTicks;
@@ -531,10 +549,21 @@ namespace SeiCompanion.Body
                 this._farmerBlockTicks = 0;
                 return;
             }
+            // A frozen world is not a stall (see FollowTick).
+            if (!Game1.shouldTimePass())
+                return;
             Point next = ctl.pathToEndPoint.Peek();
             GameLocation loc = this.Npc.currentLocation;
-            if (next == this.Npc.TilePoint)
-                return;
+            Point here = this.Npc.TilePoint;
+            // The path stack carries the start tile, so the top can be the
+            // tile the body stands on; the step it is trying to make is the
+            // one after it.
+            Point step = next;
+            if (step == here)
+            {
+                foreach (Point p in ctl.pathToEndPoint)
+                    if (p != here) { step = p; break; }
+            }
 
             // A farmer in the way. The NPC's step collision refuses to walk
             // into a farmer while the path search never sees one, so a path
@@ -544,17 +573,23 @@ namespace SeiCompanion.Body
             // or stands in a one-tile doorway: after a second, step through
             // them, as the player already walks through the companion
             // (farmerPassesThrough).
-            if (this.FarmerOn(loc, next) || this.FarmerOn(loc, this.Npc.TilePoint))
+            // This runs before the own-tile return below: a player standing ON
+            // the body's tile blocks its first step just the same.
+            if (step != here && (this.FarmerOn(loc, step) || this.FarmerOn(loc, here)))
             {
                 if (++this._farmerBlockTicks < FarmerBlockHopTicks)
                     return;
                 this._farmerBlockTicks = 0;
                 this._hopStuckTicks = 0;
-                this.Npc.Position = new Vector2(next.X * 64, next.Y * 64);
+                if (next == here)
+                    ctl.pathToEndPoint.Pop();
+                this.Npc.Position = new Vector2(step.X * 64, step.Y * 64);
                 this.SyncShadow();
                 return;
             }
             this._farmerBlockTicks = 0;
+            if (next == here)
+                return;
 
             if (++this._hopStuckTicks < 10)
                 return;
@@ -565,7 +600,6 @@ namespace SeiCompanion.Body
                 // Standing ON a barrier tile blocks every step too (the step
                 // check's box still overlaps the tile it leaves), so the tile
                 // under the body counts as well as the next one.
-                Point here = this.Npc.TilePoint;
                 var rect = new Rectangle(next.X * 64 + 8, next.Y * 64 + 8, 48, 48);
                 barrier = loc.doesTileHaveProperty(next.X, next.Y, "NPCBarrier", "Back") != null
                     || loc.doesTileHaveProperty(here.X, here.Y, "NPCBarrier", "Back") != null
@@ -611,7 +645,7 @@ namespace SeiCompanion.Body
                     occupied.Remove(this.Npc.TilePoint);
                     if (occupied.Count > 0 && !occupied.Contains(target) && path.Any(p => occupied.Contains(p)))
                     {
-                        Stack<Point> detour = this.DetourPath(loc, target, occupied);
+                        Stack<Point> detour = this.DetourPath(loc, target, occupied, GridPath.DetourBudget(path.Count));
                         if (detour != null)
                             path = detour;
                     }
@@ -663,7 +697,7 @@ namespace SeiCompanion.Body
         /// walkability the verbs use, as a stack in the game's shape (next
         /// tile on top, the start tile included). Null when there is none.
         /// </summary>
-        private Stack<Point> DetourPath(GameLocation loc, Point target, HashSet<Point> blocked)
+        private Stack<Point> DetourPath(GameLocation loc, Point target, HashSet<Point> blocked, int maxNodes)
         {
             try
             {
@@ -672,7 +706,7 @@ namespace SeiCompanion.Body
                     (start.X, start.Y),
                     (target.X, target.Y),
                     (x, y) => !blocked.Contains(new Point(x, y)) && this.IsWalkable(loc, new Vector2(x, y)),
-                    4000);
+                    maxNodes);
                 if (tiles == null || tiles.Count == 0)
                     return null;
                 var stack = new Stack<Point>();
@@ -722,9 +756,12 @@ namespace SeiCompanion.Body
         /// A passable tile within `radius` of `around` that no farmer stands
         /// on, or null. Nearest to `around` first; with `prefer`, nearest to
         /// that (the body's own tile) first, so the body stops on its side of
-        /// the player instead of walking round them.
+        /// the player instead of walking round them. With `reachable`, the tile
+        /// must also be a short walk from `around` (at most 2 x radius steps,
+        /// `around` itself counted as open since a farmer stands there), so a
+        /// tile across a fence corner from the player is never "beside" them.
         /// </summary>
-        public Vector2? FreeTileNear(GameLocation loc, Vector2 around, int radius, Vector2? prefer = null)
+        public Vector2? FreeTileNear(GameLocation loc, Vector2 around, int radius, Vector2? prefer = null, bool reachable = false)
         {
             var candidates = new List<Vector2>();
             for (int dx = -radius; dx <= radius; dx++)
@@ -741,8 +778,15 @@ namespace SeiCompanion.Body
             {
                 if (occupied.Contains(new Point((int)t.X, (int)t.Y)))
                     continue;
-                if (this.IsWalkable(loc, t))
-                    return t;
+                if (!this.IsWalkable(loc, t))
+                    continue;
+                if (reachable && !GridPath.WithinSteps(
+                        ((int)around.X, (int)around.Y),
+                        ((int)t.X, (int)t.Y),
+                        (x, y) => (x == (int)around.X && y == (int)around.Y) || this.IsWalkable(loc, new Vector2(x, y)),
+                        2 * radius))
+                    continue;
+                return t;
             }
             return null;
         }
@@ -762,6 +806,19 @@ namespace SeiCompanion.Body
                 var rect = new Rectangle((int)tile.X * 64 + 8, (int)tile.Y * 64 + 8, 48, 48);
                 return !loc.isCollidingPosition(rect, Game1.viewport, true, 0, false, this.Shadow, true, false, false);
             }
+            catch { return false; }
+        }
+
+        /// <summary>
+        /// Festival grounds and event stages: maps the game builds for the
+        /// occasion (named "Temp") and drops afterwards. GameLocation.IsTemporary
+        /// is read by reflection so a game build without it still loads the mod.
+        /// </summary>
+        private bool IsTemporaryMap(GameLocation loc)
+        {
+            if (loc == null) return false;
+            if (string.Equals(loc.Name, "Temp", StringComparison.OrdinalIgnoreCase)) return true;
+            try { return this.Mod.Helper.Reflection.GetProperty<bool>(loc, "IsTemporary", required: false)?.GetValue() ?? false; }
             catch { return false; }
         }
 
@@ -831,6 +888,15 @@ namespace SeiCompanion.Body
             {
                 this.Session?.SendResult(id, false, $"error: {ex.Message}");
                 return;
+            }
+            // A background follow-travel would keep walking (and warping) the
+            // body under the command: buying seeds in Town while the player
+            // steps into the FarmHouse got warped mid-purchase. The command
+            // owns the body; FollowTick starts a fresh trip once it ends.
+            if (this.Background.Busy && this.Background.ActionName == FollowTravel)
+            {
+                this.Background.Abort("a command took over");
+                if (this.Npc != null) this.Npc.controller = null;
             }
             this.Runner.Start(ctx, name, routine);
         }

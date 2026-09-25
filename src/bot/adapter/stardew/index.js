@@ -79,6 +79,13 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
   })
 
   const companions = () => (Array.isArray(config._seiCompanions) ? config._seiCompanions : [])
+  /**
+   * The connected mod's version, from the welcome frame's hello. Prompt and
+   * snapshot wording that only holds for a newer mod gates on it
+   * (modVersion.js): the bundled mod DLL is rebuilt on a Mac, so the app can
+   * ship ahead of the mod it talks to.
+   */
+  const modVersion = () => client.welcome?.hello?.version ?? null
 
   return {
     interfaceVersion: ADAPTER_INTERFACE_VERSION,
@@ -94,7 +101,7 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
     },
 
     // ── Perception + prompt blocks ────────────────────────────────────
-    createSnapshotComposer: () => createSnapshotComposer({ getObs: () => latestObs }),
+    createSnapshotComposer: () => createSnapshotComposer({ getObs: () => latestObs, getModVersion: modVersion }),
     /** The newest observation (tests + telemetry). */
     getLatestObservation: () => latestObs,
     /** Ask the mod for a fresh observation now (the first turn after spawn). */
@@ -109,7 +116,7 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
     },
     worldPrimer,
     capabilityParagraph,
-    actionRules,
+    actionRules: () => actionRules(modVersion()),
     eventAddendum,
     /**
      * The first-fortnight frontier (observers/progression.js) for the

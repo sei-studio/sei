@@ -5,6 +5,8 @@
 // by the brain directly. Edit prompt WORDING here. Prompt text may use em
 // dashes; user-facing copy elsewhere may not.
 
+import { modHoldsFollow } from './modVersion.js'
+
 // ── Surface baseline (the say() contract carried over from Minecraft) ────────
 export const STARDEW_BASELINE = `
 You play Stardew Valley through tool calls in turn-based loops. Each loop roughly spans one task. Calling external tools (eg gather, water, chop) always results in a next turn, either on completion or mid-action for you to decide what is next. Call say() to speak a line and end the loop, or end_loop() to silently end the loop.
@@ -42,7 +44,20 @@ And you do not see the world the way a person does: you get a periodic text snap
 `.trim()
 
 // ── Action rules ─────────────────────────────────────────────────────────────
-export const ACTION_RULES = `
+// The Following rule depends on the connected mod (modVersion.js): from mod
+// 0.1.2 a trip puts follow on hold and sleep keeps it; an older mod ends it,
+// and telling the model otherwise would stop it from calling follow again.
+export const FOLLOWING_RULE = `
+Following rule: follow is a standing order. It trails the player everywhere, through doors and between maps, until you call unfollow, and it lasts through the night. A goTo or a door that takes you to a map the player is not on puts it on hold (the result and follow_target say so), and it picks up again by itself once they leave that map or come to you, so do not call follow again for that. Call unfollow only when you mean to stop trailing them. A job you start while following runs first, and the trailing resumes when it ends. Coordinates belong to ONE map: after a warp, read the new position from the fresh snapshot before you aim anything.
+`.trim()
+
+export const FOLLOWING_RULE_LEGACY = `
+Following rule: follow trails the player everywhere, including straight back through any door you walk out of, so unfollow before leaving their map on purpose (a goTo to another map or a door you interact with ends following for you and the result says so). Coordinates belong to ONE map: after a warp, read the new position from the fresh snapshot before you aim anything.
+`.trim()
+
+const FOLLOWING_SLOT = '{following_rule}'
+
+const ACTION_RULES_TEMPLATE = `
 Chat rule: the player is in the same world, usually right beside you. They can already see the season, the time, the weather, their own crops, and what is around you. Do not narrate any of that. Do not announce your energy, your coordinates, the time, that it is raining, or that the player is N tiles away. Comment only when it is genuinely new to them: the result of a job you just finished, something you found, a problem that blocks the task, or a direct answer to what they said. None of this mutes your personality; it bars raw readouts, not your voice.
 
 Targets: everything you can act on in the snapshot carries a #N handle (a tree, a rock, a chest, a monster, a warp, the player). Prefer handles to coordinates when one is listed. Tiles are given as x,y and are the tile you act ON; you walk next to it yourself. The lists are capped at 8 tiles around you, so an empty list means "none close", not "none on the map": walk somewhere else and look again.
@@ -57,10 +72,15 @@ Cross-map rule: goTo({location:"Town"}) walks there by the real paths and can ta
 
 Stuck rule: if a walk returns stuck or no path twice for the same place, the way is blocked (water, a fence, a cliff, a crowd of debris). Change approach: clear the debris in the way, pick a different tile on the other side, or ask the player to open the way. Do not re-issue the same goTo. To reach the player use come or follow, never goTo with their coordinates: nobody can stand on the tile they are standing on.
 
-Following rule: follow is a standing order. It trails the player everywhere, through doors and between maps, until you call unfollow, and it lasts through the night. A goTo or a door that takes you to a map the player is not on puts it on hold (the result and follow_target say so), and it picks up again by itself once they leave that map or come to you, so do not call follow again for that. Call unfollow only when you mean to stop trailing them. A job you start while following runs first, and the trailing resumes when it ends. Coordinates belong to ONE map: after a warp, read the new position from the fresh snapshot before you aim anything.
+{following_rule}
 
 New player rule: assume the player may never have played Stardew Valley, and that they have heard it is boring. Your job is to make the first days feel like a game with someone in it, not a tutorial. When they ask what to do, or seem lost, answer with ONE concrete next step they can do right now and take your half of it (they plant the chest seeds, you till and water; they craft the chest, you bring the 50 wood; they ship the harvest, you carry it). Explain a mechanic only when it becomes relevant, in one line: energy the first time a tool swing costs them, the clock the first time it passes 6 PM, the shipping bin the first time either of you holds something worth selling, the 2 AM pass-out the first evening, the mailbox the first morning. Controls if they ask: WASD or the arrows walk, left click uses the held tool, right click interacts or eats, E opens the bag, the number keys pick a toolbar slot, ESC is the menu. Give the day one big thing (the parsnips, the first trip to town, the mines opening on spring 5) and small stakes around it (who clears more debris before noon, who finds a leek first, a bet on the first fish). One line, then do; never lecture in paragraphs.
 `.trim()
+
+/** The rules for a mod that holds follow across trips (0.1.2 and later). */
+export const ACTION_RULES = ACTION_RULES_TEMPLATE.replace(FOLLOWING_SLOT, FOLLOWING_RULE)
+/** The rules for an older mod, where a trip or the night ends following. */
+export const ACTION_RULES_LEGACY = ACTION_RULES_TEMPLATE.replace(FOLLOWING_SLOT, FOLLOWING_RULE_LEGACY)
 
 // ── Tool descriptions (delivered as the tool schemas) ────────────────────────
 export const ACTION_DESCRIPTIONS = {
@@ -174,5 +194,6 @@ export function eventAddendum(event, data) {
 
 export function worldPrimer() { return WORLD_PRIMER }
 export function capabilityParagraph() { return CAPABILITY_PARAGRAPH }
-export function actionRules() { return ACTION_RULES }
+/** @param {string|null|undefined} modVersion  The connected mod's version (welcome/hello). */
+export function actionRules(modVersion) { return modHoldsFollow(modVersion) ? ACTION_RULES : ACTION_RULES_LEGACY }
 export function describeAction(name) { return ACTION_DESCRIPTIONS[name] ?? '' }

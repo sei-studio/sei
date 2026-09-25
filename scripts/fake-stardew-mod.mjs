@@ -87,6 +87,7 @@ export function createFakeMod(opts = {}) {
     spawnError = null,
     dropAfterMs = 0,
     obsHz = 2,
+    modVersion = '0.1.0-fake',
     commandDelayMs = 30,
     observation = null,
     log = () => {},
@@ -114,7 +115,7 @@ export function createFakeMod(opts = {}) {
     loaded: state.saveLoaded,
     ...(state.saveLoaded ? { farmName: state.farmName, uniqueId: state.uniqueId, day: state.day, season: state.season, year: state.year, time: state.time, isHost: true, companions: [...state.bodies.keys()] } : {}),
   })
-  const hello = () => ({ mod: 'SeiCompanion', version: '0.1.0-fake', protocol: 1, game: '1.6.15', smapi: '4.5.2', port: actualPort(), save: save() })
+  const hello = () => ({ mod: 'SeiCompanion', version: modVersion, protocol: 1, game: '1.6.15', smapi: '4.5.2', port: actualPort(), save: save() })
 
   const server = createServer((req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1')
