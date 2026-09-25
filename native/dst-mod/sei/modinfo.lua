@@ -5,7 +5,7 @@
 name = "Sei companion"
 description = "Lets a Sei companion join your world as a survivor. Server-side only; joining friends need nothing. The mod does nothing unless the Sei app is running."
 author = "Sei"
-version = "0.2.0"
+version = "0.3.0"
 forumthread = ""
 api_version = 10
 dst_compatible = true

@@ -61,6 +61,18 @@ describe('DST registry', () => {
     ])
   })
 
+  it('adds give for a 0.3.0 helper and hands an inventory item to the player', async () => {
+    const { link, sent } = fakeLink()
+    link.hasCaps = true
+    const reg = createDefaultRegistry({ link })
+    expect(reg.list()).toContain('give')
+    expect(await reg.execute('give', { item: 'berries', count: 2 }, null, {})).toBe('ok:give')
+    expect(sent.at(-1)).toMatchObject({ kind: 'give', item: 'berries', count: 2, guid: 2001 })
+    expect(await reg.execute('give', { item: 'axe' }, null, {})).toBe('ok:give') // the one in hand
+    expect(sent.at(-1)).toMatchObject({ kind: 'give', item: 'axe', count: 1 })
+    expect(await reg.execute('give', { item: 'gold' }, null, {})).toBe('no "gold" in your inventory')
+  })
+
   it('maps verbs to one command each, resolving handles, names and inventory items', async () => {
     const { link, sent, state } = fakeLink()
     const reg = createDefaultRegistry({ link })

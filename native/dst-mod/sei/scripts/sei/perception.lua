@@ -86,6 +86,32 @@ local function flagKey(f)
     return table.concat(f, ",")
 end
 
+-- Player states that say nothing about what they are doing.
+local QUIET_STATES = {
+    idle = true, run = true, run_start = true, run_stop = true, walk = true, walk_start = true, walk_stop = true,
+    funnyidle = true, mounted_idle = true, emote = true, talk = true, hit = true,
+}
+
+--- What a player is doing right now (mod 0.3.0): the action they are
+--- performing and its target, else a telling stategraph state. Nil when
+--- idle or walking.
+local function activityOf(v)
+    local ba = v.bufferedaction
+    if ba ~= nil and ba.action ~= nil and ba.action.id ~= nil and ba.action ~= ACTIONS.WALKTO then
+        return string.lower(ba.action.id), ba.target ~= nil and ba.target.prefab or nil
+    end
+    local st = v.sg ~= nil and v.sg.currentstate ~= nil and v.sg.currentstate.name or nil
+    if st ~= nil and not QUIET_STATES[st] then return st, nil end
+    return nil, nil
+end
+
+local function pct(c, cur, max)
+    if c == nil then return nil end
+    local m = c[max] or 0
+    if m <= 0 then return nil end
+    return Util.Round1((c[cur] or 0) / m)
+end
+
 local function encodeEntity(inst, v, sx, sz)
     local x, _, z = v.Transform:GetWorldPosition()
     local e = {
@@ -101,7 +127,24 @@ local function encodeEntity(inst, v, sx, sz)
         e.h = Util.Round1(v.components.health:GetPercent())
     end
     if v.components.burnable ~= nil and v.components.burnable:IsBurning() then e.f[#e.f + 1] = "burning" end
-    return e, x, z
+    -- mod 0.3.0: who a creature is fighting, and what a player is up to.
+    local extra = ""
+    local c = v.components.combat
+    if c ~= nil and c.target ~= nil and c.target:IsValid() and not v:HasTag("player") then
+        e.t = c.target.GUID
+        extra = extra .. "t" .. e.t
+    end
+    if v:HasTag("player") and not v:HasTag("sei_companion") then
+        e.a, e.at = activityOf(v)
+        local inv = v.components.inventory
+        local held = inv ~= nil and inv:GetEquippedItem(EQUIPSLOTS.HANDS) or nil
+        e.hold = held ~= nil and held.prefab or nil
+        e.hu = pct(v.components.hunger, "current", "max")
+        e.sa = pct(v.components.sanity, "current", "max")
+        extra = extra .. "|" .. tostring(e.a) .. tostring(e.at) .. "|" .. tostring(e.hold)
+            .. "|" .. tostring(e.h) .. "|" .. tostring(e.hu) .. "|" .. tostring(e.sa)
+    end
+    return e, x, z, extra
 end
 
 local function encodeItem(inst, item)
@@ -159,6 +202,7 @@ local function worldBlock()
         day = (ws.cycles or 0) + 1,
         phase = ws.phase,
         season = ws.season,
+        seasondays = ws.remainingdaysinseason,
         raining = ws.israining and true or false,
         snowing = ws.issnowing and true or false,
         temp = Util.Round1(ws.temperature or 0),
@@ -175,8 +219,8 @@ local function buildFrame(inst, full)
     local count = 0
     for _, v in ipairs(ents) do
         if v ~= inst and v.Transform ~= nil and v.prefab ~= nil and count < MAX_ENTS then
-            local e, x, z = encodeEntity(inst, v, sx, sz)
-            local key = flagKey(e.f)
+            local e, x, z, extra = encodeEntity(inst, v, sx, sz)
+            local key = flagKey(e.f) .. extra
             seen[v.GUID] = { x = x, z = z, f = key }
             local prev = state.last[v.GUID]
             local changed = full or prev == nil or prev.f ~= key

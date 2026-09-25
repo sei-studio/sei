@@ -67,6 +67,19 @@ function Companion.Summon(offer)
         paused = false,
     }
     Companion.inst = inst
+    -- A survivor's stategraph (SGwilson) has no "doattack" handler: players
+    -- swing through the ATTACK action. The brain's ChaseAndAttack (and the
+    -- attack command) call combat:TryAttack, which only pushes "doattack",
+    -- so without this the body chased and stood beside its target without
+    -- ever hitting it (measured headless 260926: a spider at 0.8 m stayed at
+    -- full health for 10 s). Translate it into the action a player would do.
+    inst:ListenForEvent("doattack", function(body, data)
+        local target = data ~= nil and data.target or (body.components.combat ~= nil and body.components.combat.target)
+        if target == nil or not target:IsValid() or body.sg == nil then return end
+        if body.sg:HasStateTag("attack") or body.sg:HasStateTag("busy") then return end
+        if body.components.health ~= nil and body.components.health:IsDead() then return end
+        body:PushBufferedAction(BufferedAction(body, target, ACTIONS.ATTACK))
+    end)
     Events.Attach(inst)
     Perception.Start(inst)
     Commands.Start(inst)
@@ -87,6 +100,7 @@ function Companion.Summon(offer)
         session = TheNet.GetSessionIdentifier ~= nil and TheNet:GetSessionIdentifier() or "",
         world = TheNet.GetServerName ~= nil and TheNet:GetServerName() or "",
         near = near ~= nil and near.userid or "",
+        mod = require("sei/version"),
     })
     return inst
 end

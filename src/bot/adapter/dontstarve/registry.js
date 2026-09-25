@@ -227,6 +227,27 @@ export function createDefaultRegistry({ link }) {
   containerVerb('store', 'store')
   containerVerb('take', 'take')
 
+  // give (helper mod 0.3.0+). Registered only when the connected helper can
+  // run it: an older helper answers "unknown command", and a world keeps the
+  // helper it started with until it restarts (modVersion.js).
+  if (link.hasCaps) {
+    registry.register('give', z.object({
+      item: z.string().min(1),
+      count: z.number().int().min(1).max(40).default(1),
+      player: z.string().optional(),
+    }), async (args, _bot, cfg) => {
+      const prefab = itemPrefab(args.item)
+      const it = resolveInventory(args.item)
+      const worn = Object.values(state.self?.equip ?? {}).find((e) => e.prefab === prefab)
+      if (!it && !worn) return `no "${args.item}" in your inventory`
+      const item = it?.prefab ?? worn.prefab
+      const p = resolvePlayer(args.player)
+      if (p) return link.send({ kind: 'give', item, count: args.count, guid: p.guid }, execOpts(cfg))
+      const far = playerByUserid()
+      return link.send({ kind: 'give', item, count: args.count, userid: far.userid }, execOpts(cfg))
+    })
+  }
+
   registry.register('sleep', z.object({ target: Target.optional() }), async (args, _bot, cfg) => {
     const guid = args.target != null ? resolveEntity(args.target) : (state.nearby((e) => e.flags.includes('sleep'))[0]?.guid ?? null)
     if (guid == null) return 'no tent or bedroll nearby'

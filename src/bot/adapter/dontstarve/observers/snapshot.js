@@ -10,6 +10,7 @@
 
 import { PERCEPTION_RADIUS } from '../protocol.js'
 import { survivorName } from '../survivors.js'
+import { computeAlerts } from './alerts.js'
 
 const BUCKET_CAP = 6
 const INV_CAP = 20
@@ -38,6 +39,22 @@ function pct(cur, max) {
   return max > 0 ? `${Math.round(cur)}/${Math.round(max)}` : `${Math.round(cur)}`
 }
 
+// Mod 0.3.0 reports what a player or creature is doing as the game's action
+// id (lowercased) or its animation state. The common ones read as verbs.
+const ACTIVITY_VERBS = {
+  chop: 'chopping', mine: 'mining', dig: 'digging', hammer: 'hammering', pick: 'picking',
+  pickup: 'picking up', attack: 'attacking', eat: 'eating', build: 'crafting', cook: 'cooking',
+  addfuel: 'feeding', harvest: 'harvesting', plant: 'planting', fish: 'fishing', sleepin: 'sleeping in',
+  store: 'storing into', rummage: 'opening', give: 'giving to', drop: 'dropping', deploy: 'placing',
+  walkto: 'walking to', lightfire: 'lighting', heal: 'healing', equip: 'equipping', unequip: 'unequipping',
+}
+
+function activityText(e) {
+  if (!e.activity) return null
+  const verb = ACTIVITY_VERBS[e.activity] ?? e.activity
+  return e.activityTarget ? `${verb} ${e.activityTarget}` : verb
+}
+
 function itemLine(it) {
   const q = it.qty > 1 ? ` x${it.qty}` : ''
   const spoil = it.spoil != null && it.spoil < 0.3 ? ' (spoiling)' : ''
@@ -51,7 +68,12 @@ function itemLine(it) {
  * @param {object} args.dst  config.adapter.dontstarve
  * @param {() => {fight: boolean, followLabel: string|null}} [args.getBodyState]
  */
-export function createSnapshotComposer({ state, handles, dst, getBodyState = () => ({ fight: true, followLabel: null }) }) {
+export function createSnapshotComposer({
+  state, handles, dst,
+  getBodyState = () => ({ fight: true, followLabel: null }),
+  getSelfGuid = () => null,
+  getHabits = () => [],
+}) {
   let prevHp = null
   let prevInv = null
 
@@ -61,6 +83,19 @@ export function createSnapshotComposer({ state, handles, dst, getBodyState = () 
     if (e.qty && e.qty > 1) parts.push(`x${e.qty}`)
     if (withHp && e.hp != null) parts.push(`${Math.round(e.hp * 100)}% hp`)
     if (e.flags.includes('burning')) parts.push('burning')
+    // mod 0.3.0: who a creature is after, and what a player is up to.
+    if (e.target != null && !e.flags.includes('player')) {
+      const selfGuid = getSelfGuid()
+      const victim = e.target === selfGuid ? 'you' : (state.ents.get(e.target)?.name ?? state.ents.get(e.target)?.prefab ?? null)
+      if (victim) parts.push(`attacking ${victim}`)
+    }
+    if (e.flags.includes('player')) {
+      const act = activityText(e)
+      if (act) parts.push(act)
+      if (e.hold) parts.push(`holding ${e.hold}`)
+      if (e.hungerPct != null) parts.push(`hunger ${Math.round(e.hungerPct * 100)}%`)
+      if (e.sanityPct != null) parts.push(`sanity ${Math.round(e.sanityPct * 100)}%`)
+    }
     return `${parts.join(', ')})`
   }
 
@@ -88,7 +123,8 @@ export function createSnapshotComposer({ state, handles, dst, getBodyState = () 
       const lines = []
       const name = survivorName(dst?.prefab)
       const weather = world.raining ? ', raining' : world.snowing ? ', snowing' : ''
-      lines.push(`world: ${opts.worldTag ?? (dst?.label || 'the Constant')} | day ${world.day} ${world.season}, ${world.phase}${weather} | air ${fmt1(world.temp)}`)
+      const left = typeof world.seasonDays === 'number' ? ` (${Math.max(0, Math.round(world.seasonDays))} days left)` : ''
+      lines.push(`world: ${opts.worldTag ?? (dst?.label || 'the Constant')} | day ${world.day} ${world.season}${left}, ${world.phase}${weather} | air ${fmt1(world.temp)}`)
       const warn = []
       if (self.freezing) warn.push('FREEZING')
       if (self.overheating) warn.push('OVERHEATING')
@@ -106,6 +142,10 @@ export function createSnapshotComposer({ state, handles, dst, getBodyState = () 
       const followLabel = body.followLabel ?? (followEnt ? (followEnt.name ?? followEnt.prefab) : null)
       lines.push(`follow: ${followLabel ?? 'nobody'} | fight back when hit: ${body.fight === false ? 'off' : 'on'}${self.target != null ? ` | fighting: ${state.ents.get(self.target)?.prefab ?? 'something'}` : ''}`)
       if (prevHp != null && self.hp < prevHp - 0.5) lines.push(`recent_events: health -${Math.round(prevHp - self.hp)}`)
+      const habits = getHabits() ?? []
+      if (habits.length) lines.push(`your_habits (done on your own lately): ${habits.join('; ')}`)
+      const alerts = computeAlerts(state)
+      if (alerts.length) lines.push(`heads_up: ${alerts.map((a) => a.text).join('; ')}`)
 
       const all = state.nearby()
       const used = new Set()

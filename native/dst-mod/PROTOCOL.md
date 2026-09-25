@@ -87,7 +87,7 @@ body (`x`, `z` = dx, dz, one decimal); the bot stores them absolute.
   },
   "ents": [{ "g": 100456, "p": "evergreen", "x": 4.2, "z": -1.1, "f": ["chop"], "n": null, "q": null, "h": null }],
   "gone": [100999],
-  "world": { "day": 3, "phase": "day", "season": "autumn", "raining": false, "snowing": false, "temp": 20, "dayprogress": 0.4, "caves": false },
+  "world": { "day": 3, "phase": "day", "season": "autumn", "seasondays": 18, "raining": false, "snowing": false, "temp": 20, "dayprogress": 0.4, "caves": false },
   "truncated": false
 }
 ```
@@ -106,6 +106,13 @@ body (`x`, `z` = dx, dz, one decimal); the bot stores them absolute.
   (combat entities and players).
 - Inventory item flags: `equip`, `eat`, `fuel`, `tool`, `weapon`, `armor`;
   `s` = freshness fraction when perishable.
+- Mod 0.3.0 adds, per entity: `t` = guid of what a non-player creature is
+  fighting; and for players other than the companion `a` (the action they
+  are doing, lowercased action id such as `chop`, or a stategraph state),
+  `at` (that action's target prefab), `hold` (hands item prefab), `hu` and
+  `sa` (hunger and sanity fractions). A delta re-sends the whole entity, so
+  an absent field means cleared. `world.seasondays` = days left in the
+  season.
 
 Response: `{"full": <bool>}`.
 
@@ -139,6 +146,7 @@ Command kinds (`sei/commands.lua` dispatch):
 | `build` | `recipe`, `pos?` | slotted (learn at a prototyper if needed) | `built campfire` / `missing ingredients for ...` |
 | `container` | `op` (store/take), `container`, `item`, `count` | slotted | `stored 2 log` |
 | `lightfire` | `recipe?` | slotted (ADDFUEL, else build campfire) | `fed the campfire with log` |
+| `give` (0.3.0) | `item` (prefab), `count?`, `guid` or `userid` (player) | slotted (walks over, then gives) | `gave 2 berries to Steve` / `no berries in inventory` |
 | `resync` | | immediate | `ok` |
 | `despawn` | | immediate; body removed | `despawning`, then `despawned` event |
 
@@ -153,7 +161,7 @@ result is `replaced by <kind>`). Every slotted command has a deadline
 
 | kind | fields |
 |---|---|
-| `spawned` | `guid`, `prefab`, `name`, `x`, `z`, `session`, `world`, `near` |
+| `spawned` | `guid`, `prefab`, `name`, `x`, `z`, `session`, `world`, `near`, `mod` (0.3.0+: the helper's version; absent = older) |
 | `spawnfailed` | `reason` |
 | `despawned` | `reason` |
 | `result` | `id`, `ok`, `text` (answers a command) |
@@ -163,7 +171,7 @@ result is `replaced by <kind>`). Every slotted command has a deadline
 | `enterdark` / `enterlight` | `phase?` |
 | `actionfailed` | `action`, `reason` |
 | `phase` | `phase`, `day` (world phase change) |
-| `survival` | `what` (`retreat` / `dark` / `ate`), `threat?`, `healthpct?`, `phase?`, `item?`, `hunger?` (the safety layer acted) |
+| `survival` | `what` (`retreat` / `dark` / `ate`), `threat?`, `healthpct?`, `phase?`, `item?`, `hunger?` (the safety layer acted). Mod 0.3.0 habits add: `light` + `did` (`prepared` / `crafted` / `equipped` / `built` / `stowed`) + `item`; `fuel` + `item`, `fire`; `equip` + `items[]`, `target?`; `heal` + `item`, `healthpct`; `defend` + `threat`, `guid`, `player`, `userid` |
 
 Response: `{}`.
 

@@ -21,11 +21,19 @@ local Util = require("sei/util")
 local Speak = require("sei/speak")
 local Events = require("sei/events")
 local Survivors = require("sei/survivors")
+local Reflexes = require("sei/reflexes")
 
 local Commands = {}
 
 local POLL_RETRY_S = 1
 local CMD_TIMEOUT_S = 90
+-- How far gather looks for loose items, plants and work targets (mod 0.3.0;
+-- was 20/24, and "none left nearby" came back while a grass field sat just
+-- past the edge).
+local GATHER_RADIUS = 40
+local LIGHTFIRE_RADIUS = 12
+local GIVE_RANGE = 3
+local WALK_TIMEOUT_S = 30
 local WORK_ACTIONS = { CHOP = true, MINE = true, DIG = true, HAMMER = true }
 local WORK_TAG = { CHOP = "CHOP_workable", MINE = "MINE_workable", DIG = "DIG_workable", HAMMER = "HAMMER_workable" }
 
@@ -88,6 +96,19 @@ local function countOf(inst, prefab)
     return n or 0
 end
 
+--- Walk to `target` through a WALKTO action (the locomotor reports arrival).
+--- Returns (action, arrived). A body that has not arrived by the deadline
+--- finishes the command with cant_reach.
+local function walkTo(inst, cmd, target, range, what)
+    if Util.DistXZ(inst, target) <= range then return nil, true end
+    if cmd.state.walkDeadline == nil then cmd.state.walkDeadline = GetTime() + WALK_TIMEOUT_S end
+    if GetTime() > cmd.state.walkDeadline then
+        Commands.Finish(inst, cmd, false, "cant_reach " .. what .. " (" .. Util.Round1(Util.DistXZ(inst, target)) .. " away)")
+        return nil, false
+    end
+    return BufferedAction(inst, target, ACTIONS.WALKTO), false
+end
+
 local function keepWorking(name, target)
     local tag = WORK_TAG[name]
     return tag ~= nil and target ~= nil and target:IsValid() and target:HasTag(tag)
@@ -108,6 +129,7 @@ local function actionFor(inst, cmd)
         return nil
     end
     local invobject = cmd.invobject ~= nil and Util.Ent(cmd.invobject) or nil
+    if invobject == nil and WORK_ACTIONS[name] then invobject = Reflexes.EquipTool(inst, act) end
     local pos = cmd.pos ~= nil and Vector3(cmd.pos.x or 0, 0, cmd.pos.z or 0) or nil
     if WORK_ACTIONS[name] and cmd.state.started and not keepWorking(name, target) then
         Commands.Finish(inst, cmd, true, string.lower(name) .. " done: " .. (target and target.prefab or "target"))
@@ -149,12 +171,12 @@ local function gatherNext(inst, cmd)
     -- Loose items on the ground first, then pickable plants, then work targets
     -- whose product is what we want (a tree for logs, a boulder for rocks).
     local wantFlag = cmd.source
-    local ground = nearestWith(inst, 20, function(v)
+    local ground = nearestWith(inst, GATHER_RADIUS, function(v)
         return v.prefab == cmd.prefab and v.components.inventoryitem ~= nil and v.components.inventoryitem.canbepickedup
             and v.components.inventoryitem:GetGrandOwner() == nil and not v:HasTag("heavy")
     end)
     if ground ~= nil then return BufferedAction(inst, ground, ACTIONS.PICKUP) end
-    local pick = nearestWith(inst, 24, function(v)
+    local pick = nearestWith(inst, GATHER_RADIUS, function(v)
         return v:HasTag("pickable") and (v.prefab == cmd.prefab or (wantFlag ~= nil and v.prefab == wantFlag)
             or (v.components.pickable ~= nil and v.components.pickable.product == cmd.prefab))
     end)
@@ -162,8 +184,11 @@ local function gatherNext(inst, cmd)
     if wantFlag ~= nil and WORK_TAG[wantFlag] ~= nil then
         local plant = inst.sei and Survivors.Get(inst.sei.prefab).plantFriend and wantFlag == "CHOP"
         if not plant then
-            local w = nearestWith(inst, 24, function(v) return v:HasTag(WORK_TAG[wantFlag]) and not v:HasTag("burnt") end)
-            if w ~= nil then return BufferedAction(inst, w, ACTIONS[wantFlag]) end
+            local w = nearestWith(inst, GATHER_RADIUS, function(v) return v:HasTag(WORK_TAG[wantFlag]) and not v:HasTag("burnt") end)
+            if w ~= nil then
+                local tool = Reflexes.EquipTool(inst, ACTIONS[wantFlag])
+                return BufferedAction(inst, w, ACTIONS[wantFlag], tool)
+            end
         end
     end
     Commands.Finish(inst, cmd, have > 0, "gathered " .. have .. " " .. cmd.prefab .. "; none left nearby")
@@ -191,13 +216,8 @@ local function buildNext(inst, cmd)
             Commands.Finish(inst, cmd, false, "need a science machine (or better) nearby to learn " .. cmd.recipe)
             return nil
         end
-        if Util.DistXZ(inst, proto) > 3 then
-            if not cmd.state.walking then
-                cmd.state.walking = true
-                inst.components.locomotor:GoToEntity(proto, nil, true)
-            end
-            return nil
-        end
+        local walk, arrived = walkTo(inst, cmd, proto, 3, proto.prefab)
+        if not arrived then return walk end
         local ok = builder:UsePrototyper(proto, true)
         if not ok or not builder:KnowsRecipe(recipe) then
             Commands.Finish(inst, cmd, false, "could not learn " .. cmd.recipe .. " at " .. proto.prefab)
@@ -214,12 +234,25 @@ local function buildNext(inst, cmd)
         return nil
     end
     local pt = nil
-    if cmd.pos ~= nil then
+    if recipe.placer ~= nil then
+        -- A placed structure needs a clear, buildable spot (mod 0.3.0; the
+        -- old random point 2.5 away often landed in a tree or on water and the
+        -- build failed with no reason).
+        if cmd.pos ~= nil then
+            local want = Vector3(cmd.pos.x, 0, cmd.pos.z)
+            local ok = TheWorld.Map.CanDeployRecipeAtPoint == nil
+                or TheWorld.Map:CanDeployRecipeAtPoint(want, recipe, 0, inst)
+            if ok then pt = want end
+        end
+        if pt == nil and cmd.state.pt ~= nil then pt = cmd.state.pt end
+        if pt == nil then pt = Reflexes.PlacementPoint(inst, recipe, nil, 2, 7) end
+        if pt == nil then
+            Commands.Finish(inst, cmd, false, "no clear spot to place " .. cmd.recipe .. " here; move to open ground")
+            return nil
+        end
+        cmd.state.pt = pt
+    elseif cmd.pos ~= nil then
         pt = Vector3(cmd.pos.x, 0, cmd.pos.z)
-    elseif recipe.placer ~= nil then
-        local x, _, z = inst.Transform:GetWorldPosition()
-        local ang = math.random() * 2 * math.pi
-        pt = Vector3(x + 2.5 * math.cos(ang), 0, z + 2.5 * math.sin(ang))
     end
     local b = BufferedAction(inst, nil, ACTIONS.BUILD, nil, pt or inst:GetPosition(), cmd.recipe, recipe.build_distance)
     b:AddSuccessAction(function() Commands.Finish(inst, cmd, true, "built " .. cmd.recipe) end)
@@ -233,15 +266,8 @@ local function containerNext(inst, cmd)
         Commands.Finish(inst, cmd, false, "no container there")
         return nil
     end
-    if Util.DistXZ(inst, box) > 2.5 then
-        if not cmd.state.walking then
-            cmd.state.walking = true
-            inst.components.locomotor:GoToEntity(box, nil, true)
-        end
-        if cmd.state.deadline == nil then cmd.state.deadline = GetTime() + 20 end
-        if GetTime() > cmd.state.deadline then Commands.Finish(inst, cmd, false, "cant_reach the container") end
-        return nil
-    end
+    local walk, arrived = walkTo(inst, cmd, box, 2.5, "the container")
+    if not arrived then return walk end
     local inv, cont = inst.components.inventory, box.components.container
     local moved = 0
     local want = cmd.count or 1
@@ -273,7 +299,7 @@ local function containerNext(inst, cmd)
 end
 
 local function lightFireNext(inst, cmd)
-    local fire = nearestWith(inst, 8, function(v) return v.components.fueled ~= nil and (v:HasTag("campfire") or v.prefab == "firepit" or v.prefab == "campfire") end)
+    local fire = nearestWith(inst, LIGHTFIRE_RADIUS, function(v) return v.components.fueled ~= nil and (v:HasTag("campfire") or v.prefab == "firepit" or v.prefab == "campfire") end)
     if fire ~= nil then
         local fuel = findInvItem(inst, function(i) return i:HasTag("BURNABLE_fuel") and fire.components.fueled:CanAcceptFuelItem(i) end)
         if fuel == nil then
@@ -290,13 +316,92 @@ local function lightFireNext(inst, cmd)
     return buildNext(inst, cmd)
 end
 
+--- Hand items to a player (mod 0.3.0). Walks over, then moves the items
+--- straight into their inventory: ACTIONS.GIVETOPLAYER needs the giver's
+--- inventory to be opened by the receiver, which an ownerless body never is.
+--- A receiver with no room gets the rest dropped at their feet.
+local function takeOne(inv, item, n)
+    if item.components.stackable ~= nil and item.components.stackable:StackSize() > n then
+        return item.components.stackable:Get(n), n
+    end
+    local size = item.components.stackable ~= nil and item.components.stackable:StackSize() or 1
+    return inv:RemoveItem(item, true), size
+end
+
+local function giveNext(inst, cmd)
+    local target = nil
+    if cmd.guid ~= nil then target = Util.Ent(cmd.guid) end
+    if target == nil then target = Util.FindPlayer(cmd.userid, inst) end
+    if target == nil then
+        Commands.Finish(inst, cmd, false, "nobody to give it to")
+        return nil
+    end
+    local inv = inst.components.inventory
+    local want = math.max(1, math.floor(cmd.count or 1))
+    local has = countOf(inst, cmd.item)
+    local worn = nil
+    if has == 0 then
+        for _, it in pairs(inv.equipslots) do
+            if it.prefab == cmd.item then worn = it end
+        end
+        if worn == nil then
+            Commands.Finish(inst, cmd, false, "no " .. cmd.item .. " in inventory")
+            return nil
+        end
+    end
+    local who = target.name or target.prefab
+    local walk, arrived = walkTo(inst, cmd, target, GIVE_RANGE, who)
+    if not arrived then return walk end
+    local given, dropped = 0, 0
+    local function hand(one, n)
+        local tinv = target.components.inventory
+        if tinv == nil then
+            one.Transform:SetPosition(target.Transform:GetWorldPosition())
+            dropped = dropped + n
+            return
+        end
+        -- A full inventory drops the item at the receiver's feet by itself.
+        tinv:GiveItem(one, nil, inst:GetPosition())
+        if one:IsValid() and one.components.inventoryitem ~= nil and one.components.inventoryitem.owner == nil then
+            dropped = dropped + n
+        else
+            given = given + n
+        end
+    end
+    if worn ~= nil then
+        local slotName = worn.components.equippable ~= nil and worn.components.equippable.equipslot or nil
+        local item = slotName ~= nil and inv:Unequip(slotName) or nil
+        if item ~= nil then hand(item, 1) end
+    else
+        local left = math.min(want, has)
+        while left > 0 do
+            local item = inv:FindItem(function(i) return i.prefab == cmd.item end)
+            if item == nil then break end
+            local one, n = takeOne(inv, item, left)
+            if one == nil then break end
+            hand(one, n)
+            left = left - n
+        end
+    end
+    local total = given + dropped
+    if total == 0 then
+        Commands.Finish(inst, cmd, false, "could not hand over " .. cmd.item)
+        return nil
+    end
+    local text = "gave " .. total .. " " .. cmd.item .. " to " .. who
+    if dropped > 0 then text = text .. " (" .. dropped .. " dropped at their feet: their inventory is full)" end
+    if total < want then text = text .. "; only had " .. total end
+    Commands.Finish(inst, cmd, true, text)
+    return nil
+end
+
 --- The command slot's getactionfn (brains/seibrain.lua). Returns a
 --- BufferedAction or nil (nil also when the command just finished).
 function Commands.NextAction(inst)
     local cmd = inst.sei and inst.sei.cmd or nil
     if cmd == nil then return nil end
     if inst.sg ~= nil and inst.sg:HasStateTag("busy") and cmd.kind ~= "container" then return nil end
-    if cmd.state.deadline ~= nil and cmd.kind ~= "gather" and cmd.kind ~= "container" and GetTime() > cmd.state.deadline then
+    if cmd.state.deadline ~= nil and cmd.kind ~= "gather" and cmd.kind ~= "container" and cmd.kind ~= "give" and GetTime() > cmd.state.deadline then
         Commands.Finish(inst, cmd, false, "timeout: " .. cmd.kind .. " took too long")
         return nil
     end
@@ -307,6 +412,7 @@ function Commands.NextAction(inst)
         elseif cmd.kind == "build" then action = buildNext(inst, cmd)
         elseif cmd.kind == "container" then action = containerNext(inst, cmd)
         elseif cmd.kind == "lightfire" then action = lightFireNext(inst, cmd)
+        elseif cmd.kind == "give" then action = giveNext(inst, cmd)
         end
     end, function(msg)
         Net.ReportError(msg)
@@ -318,7 +424,8 @@ end
 --- Is the slotted command one the DoAction slot runs (vs goto/attack/flee,
 --- which the brain runs with dedicated nodes)?
 function Commands.IsActionSlot(cmd)
-    return cmd ~= nil and (cmd.kind == "action" or cmd.kind == "gather" or cmd.kind == "build" or cmd.kind == "container" or cmd.kind == "lightfire")
+    return cmd ~= nil and (cmd.kind == "action" or cmd.kind == "gather" or cmd.kind == "build" or cmd.kind == "container"
+        or cmd.kind == "lightfire" or cmd.kind == "give")
 end
 
 -- ── dispatch ────────────────────────────────────────────────────────────────
@@ -421,7 +528,7 @@ local function dispatch(inst, cmd)
         cancelCurrent(inst, "fleeing")
         inst.sei.flee = GetTime() + (cmd.seconds or 6)
         result(cmd.id, true, "running from danger")
-    elseif kind == "action" or kind == "gather" or kind == "build" or kind == "container" or kind == "lightfire" then
+    elseif kind == "action" or kind == "gather" or kind == "build" or kind == "container" or kind == "lightfire" or kind == "give" then
         slot(inst, cmd)
     elseif kind == "resync" then
         require("sei/perception").RequestFull()
