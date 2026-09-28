@@ -31,6 +31,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { CallInactivityPopup } from './CallInactivityPopup';
+import { MicAccessCard } from '../permissions/MicAccessCard';
 import { useUiStore } from '../../lib/stores/useUiStore';
 import { useVoiceStore } from '../../lib/stores/useVoiceStore';
 import { useDataStore } from '../../lib/stores/useDataStore';
@@ -44,6 +45,10 @@ export function CallMiniBar(): React.ReactElement {
   const navigate = useUiStore((s) => s.navigate);
   const participants = useVoiceStore((s) => s.participants);
   const status = useVoiceStore((s) => s.status);
+  // 260929: a dial held up by microphone access redials by itself once access
+  // is on (MicAccessCard), so an armed share waits for that instead of being
+  // dropped with the error. Its own TTL still bounds the wait.
+  const micBlocked = useVoiceStore((s) => s.micBlocked !== null);
   const summons = useDataStore((s) => s.summons);
   const chessState = useChessStore((s) => s);
   const mcDashState = useMcDashboardStore((s) => s);
@@ -92,13 +97,20 @@ export function CallMiniBar(): React.ReactElement {
   useEffect(() => {
     if (!pendingShare) return;
     if (status === 'error') {
-      clearPendingShare();
+      if (!micBlocked) clearPendingShare();
       return;
     }
     if (status !== 'live') return;
     if (!participants.includes(pendingShare.characterId)) return;
     void consumePendingShare(pendingShare.characterId);
-  }, [pendingShare, status, participants, clearPendingShare, consumePendingShare]);
+  }, [pendingShare, status, micBlocked, participants, clearPendingShare, consumePendingShare]);
 
-  return <CallInactivityPopup />;
+  // 260929: the microphone card rides the same always-mounted host, so a call
+  // held up by mic access is explained on whatever view it was dialed from.
+  return (
+    <>
+      <CallInactivityPopup />
+      <MicAccessCard />
+    </>
+  );
 }

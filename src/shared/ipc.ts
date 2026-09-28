@@ -56,6 +56,8 @@ export type {
   BackseatState,
   BackseatTick,
 } from './backseatIpc';
+import type { OsPermissionKind, OsPermissionStatus, PermissionResume } from './permissionsIpc';
+export type { OsPermissionKind, OsPermissionStatus, PermissionResume } from './permissionsIpc';
 import type { McDashboardSnapshot, McDashboardSnapshotPush } from './mcDashboardIpc';
 import type { GameId, WorldState, WorldStates, GameDashboardSnapshot } from './gameIpc';
 import { StardewIpcChannel, type StardewInstallState, type StardewInstallProgressEvent, type StardewLaunchResult } from './stardewIpc';
@@ -2032,6 +2034,23 @@ export interface RendererApi {
   onDrawAiStroke(cb: (s: DrawAiStroke) => void): Unsubscribe;
   onDrawSnapshotRequest(cb: (r: DrawSnapshotRequest) => void): Unsubscribe;
 
+  // --- OS permission flows (260929) --- see src/shared/permissionsIpc.ts.
+  /** Current OS access status for the microphone or (macOS) Screen Recording. */
+  permissionsStatus(kind: OsPermissionKind): Promise<OsPermissionStatus>;
+  /** macOS: show the system mic prompt if never answered. True when granted. */
+  permissionsRequestMic(): Promise<boolean>;
+  /** Open the OS Settings page for this permission. False when there is none. */
+  permissionsOpenSettings(kind: OsPermissionKind): Promise<boolean>;
+  /** macOS: re-list sources to see whether Screen Recording is on now. */
+  permissionsProbeScreen(): Promise<boolean>;
+  /** Remember what to reopen if Sei restarts in the next few minutes. */
+  permissionsArmResume(resume: PermissionResume): Promise<void>;
+  permissionsClearResume(): Promise<void>;
+  /** One-shot read of the resume flag at boot (null when none or expired). */
+  permissionsTakeResume(): Promise<PermissionResume | null>;
+  /** "Restart Sei and continue": arm the resume flag, then relaunch. */
+  permissionsRelaunch(resume: PermissionResume): Promise<void>;
+
   // --- Backseat (260728) --- see src/shared/backseatIpc.ts for the tick
   // model, the image-grid geometry and the authority split. The renderer owns
   // capture; every model call happens in main.
@@ -3244,6 +3263,19 @@ export const IpcChannel = {
     line: 'backseat:line',
     /** Push: main asking the renderer to harvest the rolling clip buffer. */
     clipRequest: 'backseat:clip-request',
+  },
+  // OS permission flows (260929) — microphone for calls, Screen Recording for
+  // screen share on macOS. See src/shared/permissionsIpc.ts.
+  permissions: {
+    status: 'permissions:status',
+    requestMic: 'permissions:request-mic',
+    /** Opens a System Settings / ms-settings page from a fixed allowlist. */
+    openSettings: 'permissions:open-settings',
+    probeScreen: 'permissions:probe-screen',
+    armResume: 'permissions:arm-resume',
+    clearResume: 'permissions:clear-resume',
+    takeResume: 'permissions:take-resume',
+    relaunch: 'permissions:relaunch',
   },
   // Minecraft dashboard (260721) — bot telemetry surfaced while summoned.
   // Protocol details in src/shared/mcDashboardIpc.ts.

@@ -139,10 +139,32 @@ export const ZH_MISC: Record<string, string> = {
   'This voice is not in your ElevenLabs library. Add it there, or pick a different voice.':
     '这个声音不在你的 ElevenLabs 声音库中。请先在那里添加它，或选择其他声音。',
   'No microphone was found. Connect one and try again.': '没有找到麦克风。请连接后重试。',
-  'Microphone access is blocked by Windows. In Settings, open Privacy & security > Microphone, turn on microphone access and "Let desktop apps access your microphone", then try again.':
-    '麦克风访问被 Windows 阻止。请在系统设置中打开「隐私和安全性 > 麦克风」，开启麦克风访问以及「允许桌面应用访问你的麦克风」，然后重试。',
-  'Microphone access was blocked. Allow it and try again.': '麦克风访问被拒绝。请允许后重试。',
+  'Microphone access is off for Sei.': 'Sei 的麦克风权限已关闭。',
   'Voice call failed to start. Try again in a moment.': '语音通话启动失败。请稍后再试。',
+
+  // ── OS permission cards (MicAccessCard / ScreenAccessGate, 260929) ────
+  'Turn on your microphone': '开启麦克风',
+  'Restart Sei to use your microphone': '重启 Sei 以使用麦克风',
+  'Sei needs your microphone so {name} can hear you.': 'Sei 需要使用麦克风，{name} 才能听到你说话。',
+  'In System Settings, open Privacy & Security > Microphone and turn on Sei.':
+    '在「系统设置」中打开「隐私与安全性 > 麦克风」，然后开启 Sei。',
+  'In Settings, turn on Microphone access and Let desktop apps access your microphone.':
+    '在「设置」中开启「麦克风访问权限」和「允许桌面应用访问你的麦克风」。',
+  'On this Mac, microphone access is managed by Screen Time or your organization.':
+    '这台 Mac 的麦克风权限由「屏幕使用时间」或你的组织管理。',
+  'The call starts on its own once access is on.': '权限开启后，通话会自动开始。',
+  'Microphone access is on, but Sei needs a restart to use it.': '麦克风权限已开启，但 Sei 需要重启才能使用。',
+  'Restart Sei and call': '重启 Sei 并通话',
+  'Open Settings': '打开设置',
+  'Sei needs Screen Recording permission to see your screen.': 'Sei 需要「屏幕录制」权限才能看到你的屏幕。',
+  'In System Settings, open Privacy & Security > Screen Recording and turn on Sei.':
+    '在「系统设置」中打开「隐私与安全性 > 屏幕录制」，然后开启 Sei。',
+  'Your windows show up here once access is on.': '权限开启后，你的窗口会显示在这里。',
+  'I turned it on': '我已开启',
+  'macOS sometimes needs Sei to restart before it can see the screen.': 'macOS 有时需要重启 Sei 才能看到屏幕。',
+  'Restart Sei and continue': '重启 Sei 并继续',
+  'Could not read your open windows. Check screen recording permission for Sei.':
+    '无法读取你打开的窗口。请检查 Sei 的屏幕录制权限。',
 
   // ── Call inactivity watchdog (CallInactivityPopup, 260810) ─────────────
   'Are you still there?': '你还在吗？',

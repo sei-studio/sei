@@ -1,0 +1,93 @@
+/**
+ * Renderer side of the OS permission flows (260929). The cards
+ * (components/permissions/*) and the voice store call these; main owns the
+ * actual OS calls (src/main/permissions/*).
+ */
+import { sei } from '../ipcClient';
+import type { OsPermissionKind } from '@shared/permissionsIpc';
+
+export type PermissionEvent = 'permission_prompt_shown' | 'permission_settings_opened' | 'permission_granted';
+
+/** Analytics: shape only, {kind, platform}. */
+export function trackPermission(event: PermissionEvent, kind: OsPermissionKind): void {
+  try {
+    sei.track(event, { kind, platform: sei.platform });
+  } catch {
+    /* analytics must never break the flow */
+  }
+}
+
+/** Open the OS Settings page for this permission and record it. */
+export async function openPermissionSettings(kind: OsPermissionKind): Promise<void> {
+  trackPermission('permission_settings_opened', kind);
+  try {
+    await sei.permissionsOpenSettings(kind);
+  } catch {
+    /* nothing to open on this platform; the card copy still names the page */
+  }
+}
+
+export type MicPreflight = 'ok' | 'blocked' | 'restricted';
+
+/**
+ * Run on a Call press, before the call connects. On macOS this is where the
+ * system "allow microphone" prompt appears the first time (it used to fire at
+ * app boot). Windows has no per-app prompt for desktop apps, so only a
+ * definite 'denied' stops the call here; the call's own getUserMedia catches
+ * the "Let desktop apps access your microphone" switch.
+ */
+export async function micPreflight(platform: string = sei.platform): Promise<MicPreflight> {
+  let status: string;
+  try {
+    status = await sei.permissionsStatus('mic');
+  } catch {
+    return 'ok';
+  }
+  if (platform === 'darwin') {
+    if (status === 'granted' || status === 'unknown') return 'ok';
+    if (status === 'restricted') return 'restricted';
+    if (status === 'not-determined') {
+      try {
+        return (await sei.permissionsRequestMic()) ? 'ok' : 'blocked';
+      } catch {
+        return 'ok';
+      }
+    }
+    return 'blocked';
+  }
+  if (platform === 'win32' && (status === 'denied' || status === 'restricted')) return 'blocked';
+  return 'ok';
+}
+
+/**
+ * The poll check behind the microphone card. macOS reports a new grant live,
+ * so its status is enough. On Windows the status does not follow the "Let
+ * desktop apps access your microphone" switch, so after the status check this
+ * opens the mic for an instant and closes it again. Any failure other than a
+ * permission refusal (no mic plugged in, say) is not this card's problem and
+ * counts as access: the call then reports the real reason.
+ */
+export async function micAccessOk(platform: string = sei.platform): Promise<boolean> {
+  let status: string;
+  try {
+    status = await sei.permissionsStatus('mic');
+  } catch {
+    status = 'unknown';
+  }
+  if (platform === 'darwin') return status === 'granted';
+  if (status === 'denied' || status === 'restricted') return false;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach((track) => track.stop());
+    return true;
+  } catch (err) {
+    return !isPermissionRefusal(err);
+  }
+}
+
+/** A getUserMedia failure that means "not allowed", not "no device". */
+export function isPermissionRefusal(err: unknown): boolean {
+  const name = (err as { name?: string })?.name ?? '';
+  const msg = String((err as Error)?.message ?? err ?? '');
+  return name === 'NotAllowedError' || name === 'SecurityError' || /permission/i.test(msg);
+}

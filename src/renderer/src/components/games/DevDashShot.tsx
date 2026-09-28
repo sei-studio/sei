@@ -13,6 +13,7 @@
  *     http://localhost:5173/?dashshot=stardewlaunch  the Stardew Valley launch panel
  *     http://localhost:5173/?dashshot=creditwall&part=modal|credits|draw|banner  the credit wall surfaces (DevCreditWallShot)
  *     http://localhost:5173/?dashshot=chatfirst    the guided first moment (260926) in the real ChatScreen
+ *     http://localhost:5173/?dashshot=perms&part=mic|screen|...  the OS permission cards (DevPermsShot, 260929)
  *                                                  (&nomc=1: no Minecraft install; &lan=1: a LAN world open)
  *
  * It seeds useMcDashboardStore with fixture snapshots and useDataStore with
@@ -34,6 +35,7 @@ import { DstLaunchPanel } from '../dontstarve/DstLaunchPanel';
 import { StardewLaunchPanel } from '../stardew/StardewLaunchPanel';
 import { ChatScreen } from '../../screens/ChatScreen';
 import { DevCreditWallShot } from '../DevCreditWallShot';
+import { DevPermsShot } from '../permissions/DevPermsShot';
 import { useFirstMomentStore } from '../../lib/stores/useFirstMomentStore';
 
 const DST_ID = 'dashshot-dst';
@@ -155,6 +157,8 @@ seed();
 export function DevDashShot({ which }: { which: string }): React.ReactElement {
   // ?dashshot=creditwall&part=modal|credits|draw|banner (260926).
   if (which === 'creditwall') return <DevCreditWallShot />;
+  // ?dashshot=perms&part=mic|mic-win|mic-restricted|mic-restart|screen|screen-waiting|screen-restart (260929).
+  if (which === 'perms') return <DevPermsShot />;
   // ?dashshot=chat (Stardew) | chatdst: the dashboard hosted inside the real
   // ChatScreen (260917), for the game/chat split, the drag handle and the
   // composer. The fixture summon is online, so the dashboard slot opens.

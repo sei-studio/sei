@@ -780,11 +780,15 @@ async function bootstrap(): Promise<void> {
   // 1c. Microphone permission (voice calls, 260707). Electron's default
   //     permission handler DENIES `media` requests in a packaged app, so
   //     getUserMedia in the renderer would reject before macOS TCC is ever
-  //     consulted. Grant mic (and the check) for our own renderer content, and
-  //     on macOS proactively trigger the OS prompt so the "allow microphone"
-  //     dialog appears at a sane time rather than mid-call. Pairs with the
-  //     NSMicrophoneUsageDescription + audio-input entitlement in the packaged
-  //     build (see electron-builder.yml / build/entitlements.mac.plist).
+  //     consulted. Grant mic (and the check) for our own renderer content.
+  //     Pairs with the NSMicrophoneUsageDescription + audio-input entitlement
+  //     in the packaged build (see electron-builder.yml /
+  //     build/entitlements.mac.plist).
+  //     260929: the macOS "allow microphone" prompt is no longer raised here at
+  //     boot, where it arrived before the player knew why Sei wanted a mic. It
+  //     is asked on the first Call press instead (permissions/permissionsService
+  //     requestMic, called from the voice store's startCall), and a denial gets
+  //     a card with an Open Settings button (MicAccessCard).
   //     `clipboard-sanitized-write` must stay in the allowlist: installing these
   //     handlers replaces Electron's grant-all default, so without it every
   //     navigator.clipboard.writeText (all copy buttons) rejects with
@@ -799,21 +803,13 @@ async function bootstrap(): Promise<void> {
       cb(allowMedia(permission));
     });
     session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowMedia(permission));
-    if (process.platform === 'darwin') {
-      try {
-        if (systemPreferences.getMediaAccessStatus('microphone') !== 'granted') {
-          void systemPreferences.askForMediaAccess('microphone').catch(() => {});
-        }
-      } catch {
-        /* older Electron / non-mac path — getUserMedia still prompts on first use */
-      }
-    } else if (process.platform === 'win32') {
+    if (process.platform === 'win32') {
       // 260709 — Windows never shows a per-app mic prompt for desktop apps:
       // getUserMedia either works silently or fails because the OS privacy
       // toggle ("Let desktop apps access your microphone") is off. There is
       // no askForMediaAccess on Windows, so we can only read the status and
-      // leave a loud diagnostic; the renderer's call-error copy tells the
-      // user which Settings page fixes it.
+      // leave a loud diagnostic; the renderer's MicAccessCard opens the
+      // Settings page that fixes it.
       try {
         const micStatus = systemPreferences.getMediaAccessStatus('microphone');
         if (micStatus !== 'granted') {
