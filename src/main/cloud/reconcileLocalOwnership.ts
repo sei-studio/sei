@@ -34,15 +34,22 @@
  */
 
 import { unlink } from 'node:fs/promises';
-import { paths } from '../paths';
+import { paths, getActiveScope } from '../paths';
 
 export async function reconcileLocalOwnershipOnSignIn(
   currentUserId: string,
 ): Promise<void> {
+  // The sweep awaits the cloud once per character, and it runs outside the
+  // serialized scope switch. Every local write below resolves against the
+  // ACTIVE profile, so if the account changes mid-sweep it stops: deleting
+  // the next profile's files as "foreign to" the previous user is the one
+  // thing it must never do. The new account's sign-in runs its own sweep.
+  const scope = getActiveScope();
+  const scopeMoved = () => getActiveScope() !== scope;
   const { listCharacters, saveCharacterRaw } = await import('../characterStore');
   const { downloadCharacter } = await import('./cloudCharacterClient');
   const { dropOpsForUuid } = await import('./syncQueue');
-  const { loadConfig, saveConfig } = await import('../configStore');
+  const { loadConfig, updateConfig } = await import('../configStore');
 
   let chars;
   try {
@@ -68,10 +75,12 @@ export async function reconcileLocalOwnershipOnSignIn(
   }
 
   // Item 10: track added_world_ids removals so we persist them once after the
-  // sweep (the set is mutated in the unpublish-cleanup branch below).
-  let addedWorldIdsChanged = false;
+  // sweep. Only the removals are applied to the list on disk: an add that
+  // lands while the sweep awaits the cloud must survive it.
+  const evictedWorldIds = new Set<string>();
 
   for (const c of chars) {
+    if (scopeMoved()) break;
     if (c.is_default) continue;
     if (addedWorldIds.has(c.id)) {
       // Item 10 — unpublish cleanup. A character the user added from the World
@@ -88,11 +97,12 @@ export async function reconcileLocalOwnershipOnSignIn(
       // so a transient blip can't wrongly evict a still-valid add.
       try {
         const cloud = await downloadCharacter(c.id);
+        if (scopeMoved()) break;
         if (!cloud || cloud.shared === false) {
           await deleteLocalChar(c.id);
           await dropOpsForUuid(c.id).catch(() => {});
           addedWorldIds.delete(c.id);
-          addedWorldIdsChanged = true;
+          evictedWorldIds.add(c.id);
           console.log(
             `[sei] reconcile: world char ${c.id} no longer shared — dropped persona content, kept memory`,
           );
@@ -108,6 +118,7 @@ export async function reconcileLocalOwnershipOnSignIn(
       // be a lie if a previous save force-stamped current-user onto a leaked
       // foreign-owned file (the original Eris symptom).
       const cloud = await downloadCharacter(c.id);
+      if (scopeMoved()) break;
       if (cloud) {
         if (cloud.owner === currentUserId) {
           // Cloud agrees you own it. Stamp the local copy if it drifted.
@@ -148,10 +159,16 @@ export async function reconcileLocalOwnershipOnSignIn(
   // above so the dropped chars don't re-count as "in library" on the next
   // browse:list / HomeGrid render. Best-effort: a write failure just means the
   // (already-deleted-on-disk) char is reconsidered next launch.
-  if (addedWorldIdsChanged) {
+  if (evictedWorldIds.size > 0) {
     try {
-      const cfg = await loadConfig();
-      await saveConfig({ ...cfg, added_world_ids: Array.from(addedWorldIds) });
+      // Pinned to the profile the evictions were made in.
+      await updateConfig(
+        (cfg) => ({
+          ...cfg,
+          added_world_ids: (cfg.added_world_ids ?? []).filter((id) => !evictedWorldIds.has(id)),
+        }),
+        { scope },
+      );
       void (await import('./librarySync')).syncLibraryRoster('unpublish-cleanup');
     } catch (err) {
       console.warn(

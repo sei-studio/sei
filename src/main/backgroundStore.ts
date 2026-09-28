@@ -16,7 +16,7 @@ import { atomicWrite } from '../bot/brain/storage/atomicWrite.js';
 import { withFileLock } from '../bot/brain/storage/fileLock.js';
 import { paths } from './paths';
 import { parsePngIhdr } from './skinImageUtil';
-import { loadConfig, saveConfig } from './configStore';
+import { updateConfig } from './configStore';
 
 const BG_SLOT = '_bg';
 
@@ -69,8 +69,7 @@ export async function applyBackgroundImage(bytes: Buffer): Promise<string> {
     await atomicWrite(target, bytes);
   });
   const ref = `${BG_SLOT}.png`;
-  const cfg = await loadConfig();
-  await saveConfig({ ...cfg, background_image: ref });
+  await updateConfig((cfg) => ({ ...cfg, background_image: ref }));
   return ref;
 }
 
@@ -80,6 +79,5 @@ export async function removeBackgroundImage(): Promise<void> {
   } catch {
     /* swallow ENOENT — best-effort */
   }
-  const cfg = await loadConfig();
-  await saveConfig({ ...cfg, background_image: null });
+  await updateConfig((cfg) => ({ ...cfg, background_image: null }));
 }
