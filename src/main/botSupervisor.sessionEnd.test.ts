@@ -160,6 +160,7 @@ const NEOFORGE_TARGET: LanHost = { client: 'neoforge', forgeModCount: null, forg
 const WEAK_FORGE: LanHost = { client: 'forge', forgeModCount: null };
 const MODDED_FABRIC: LanHost = { client: 'fabric', forgeModCount: null, seiSkinMod: true, otherModCount: 3 };
 const OUR_FABRIC: LanHost = { client: 'fabric', forgeModCount: null, seiSkinMod: true, otherModCount: 0 };
+const QUILT: LanHost = { client: 'quilt', forgeModCount: null };
 const VANILLA: LanHost = { client: 'vanilla', forgeModCount: null };
 
 async function summonToReady(getLanHost?: () => LanHost | undefined): Promise<{
@@ -245,7 +246,7 @@ describe('session end reasons (260929)', () => {
   });
 });
 
-describe('join timeout on a modded host (260929)', () => {
+describe('join timeout on a Forge-family host (260929)', () => {
   async function startSummon(getLanHost: () => LanHost | undefined) {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
     const onSummonFailure = vi.fn();
@@ -259,8 +260,8 @@ describe('join timeout on a modded host (260929)', () => {
   }
 
   // A strongly detected Forge host never gets this far (pre-gate below), so
-  // these run on hosts that still summon: weak-evidence Forge, modded Fabric.
-  it('a ready timeout on a modded host is reported as MODDED_HOST_REJECTED', async () => {
+  // these run on the Forge-family host that still summons: weak evidence.
+  it('a ready timeout on a Forge-family host is reported as MODDED_HOST_REJECTED', async () => {
     const { p, fake, statuses, onSummonFailure } = await startSummon(() => WEAK_FORGE);
     fake.emitPortMessage({ type: 'init-ack' });
     await vi.advanceTimersByTimeAsync(31_000);
@@ -274,8 +275,8 @@ describe('join timeout on a modded host (260929)', () => {
     expect(statuses.find((s) => s.kind === 'error')).toMatchObject({ error: 'MODDED_HOST_REJECTED' });
   });
 
-  it("the bot's own connect-guard timeout on a modded host is reclassified too", async () => {
-    const { p, fake, statuses, onSummonFailure } = await startSummon(() => MODDED_FABRIC);
+  it("the bot's own connect-guard timeout on a Forge-family host is reclassified too", async () => {
+    const { p, fake, statuses, onSummonFailure } = await startSummon(() => WEAK_FORGE);
     fake.emitPortMessage({ type: 'init-ack' });
     fake.emitPortMessage({ type: 'error', error: 'BOT_START_TIMEOUT', message: 'connect guard: 20000ms' });
     await expect(p).rejects.toThrow('MODDED_HOST_REJECTED');
@@ -287,14 +288,31 @@ describe('join timeout on a modded host (260929)', () => {
     expect(statuses.find((s) => s.kind === 'error')).toMatchObject({ error: 'MODDED_HOST_REJECTED' });
   });
 
-  it("stays a plain timeout on Sei's own Fabric setup", async () => {
-    const { p, fake, onSummonFailure } = await startSummon(() => OUR_FABRIC);
+  it.each([
+    ["Sei's own Fabric setup", OUR_FABRIC],
+    ['Fabric with other mods', MODDED_FABRIC],
+    ['Quilt', QUILT],
+  ])('a ready timeout stays a plain timeout on %s', async (_label, host) => {
+    const { p, fake, onSummonFailure } = await startSummon(() => host);
     fake.emitPortMessage({ type: 'init-ack' });
     await vi.advanceTimersByTimeAsync(31_000);
     await expect(p).rejects.toThrow('BOT_START_TIMEOUT');
     const info = onSummonFailure.mock.calls[0][0] as SummonFailureInfo;
     expect(info.errorClass).toBe('BOT_START_TIMEOUT');
     expect(info.reclassifiedFrom).toBeUndefined();
+  });
+
+  it.each([
+    ['Fabric with other mods', MODDED_FABRIC],
+    ['Quilt', QUILT],
+  ])("the connect-guard timeout stays a plain timeout on %s", async (_label, host) => {
+    const { p, fake, statuses, onSummonFailure } = await startSummon(() => host);
+    fake.emitPortMessage({ type: 'init-ack' });
+    fake.emitPortMessage({ type: 'error', error: 'BOT_START_TIMEOUT', message: 'connect guard: 20000ms' });
+    await expect(p).rejects.toThrow('BOT_START_TIMEOUT');
+    expect(onSummonFailure.mock.calls[0][0]).toMatchObject({ phase: 'connect', errorClass: 'BOT_START_TIMEOUT' });
+    expect(onSummonFailure.mock.calls[0][0].reclassifiedFrom).toBeUndefined();
+    expect(statuses.find((s) => s.kind === 'error')).toMatchObject({ error: 'BOT_START_TIMEOUT' });
   });
 
   it('a BOOT timeout says nothing about the world and is never reclassified', async () => {

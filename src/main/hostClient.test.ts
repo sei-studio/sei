@@ -14,7 +14,7 @@ import { forgeModCountFromStatus } from './mcPing';
 import { parseLsof, parseNetstat, parseTasklist } from './listeningPorts';
 import {
   lanHostWarning,
-  isModdedLanHost,
+  isForgeFamilyLanHost,
   forgeHostBlock,
   forgeHostBlockedMessage,
   type LanHost,
@@ -272,21 +272,22 @@ describe('forgeHostBlock (260929, the one hard-stop check)', () => {
   });
 });
 
-describe('isModdedLanHost (260929, timeout reclassification)', () => {
-  it('is true for Forge-family, Quilt, and Fabric with foreign mods', () => {
-    expect(isModdedLanHost(host('forge'))).toBe(true);
-    expect(isModdedLanHost(host('neoforge'))).toBe(true);
-    expect(isModdedLanHost(host('quilt'))).toBe(true);
-    expect(isModdedLanHost(host('unknown', 2))).toBe(true);
-    expect(isModdedLanHost({ client: 'fabric', forgeModCount: null, seiSkinMod: true, otherModCount: 3 })).toBe(true);
+describe('isForgeFamilyLanHost (260929, timeout reclassification)', () => {
+  it('is true for Forge and NeoForge on any evidence, and unknown hosts with Forge ping data', () => {
+    expect(isForgeFamilyLanHost(host('forge'))).toBe(true);
+    expect(isForgeFamilyLanHost(host('neoforge'))).toBe(true);
+    expect(isForgeFamilyLanHost({ client: 'forge', forgeModCount: null })).toBe(true);
+    expect(isForgeFamilyLanHost(host('unknown', 2))).toBe(true);
   });
 
-  it("is false for Sei's own Fabric setup, vanilla, Lunar and unknown hosts", () => {
-    expect(isModdedLanHost({ client: 'fabric', forgeModCount: null, seiSkinMod: true, otherModCount: 0 })).toBe(false);
-    expect(isModdedLanHost(host('vanilla'))).toBe(false);
-    expect(isModdedLanHost(host('lunar'))).toBe(false);
-    expect(isModdedLanHost(host('unknown'))).toBe(false);
-    expect(isModdedLanHost(undefined)).toBe(false);
+  it('is false for Fabric (with or without foreign mods), Quilt, vanilla, Lunar and unknown hosts', () => {
+    expect(isForgeFamilyLanHost({ client: 'fabric', forgeModCount: null, seiSkinMod: true, otherModCount: 3 })).toBe(false);
+    expect(isForgeFamilyLanHost({ client: 'fabric', forgeModCount: null, seiSkinMod: true, otherModCount: 0 })).toBe(false);
+    expect(isForgeFamilyLanHost(host('quilt'))).toBe(false);
+    expect(isForgeFamilyLanHost(host('vanilla'))).toBe(false);
+    expect(isForgeFamilyLanHost(host('lunar'))).toBe(false);
+    expect(isForgeFamilyLanHost(host('unknown'))).toBe(false);
+    expect(isForgeFamilyLanHost(undefined)).toBe(false);
   });
 });
 

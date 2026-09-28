@@ -424,14 +424,19 @@ export function forgeHostBlockedMessage(loader: 'Forge' | 'NeoForge'): string {
 }
 
 /**
- * Is this host one where a summon that TIMES OUT is best explained by the
- * mods (260929)? Any modded classification: Forge-family, Quilt, or Fabric
- * with foreign mods. The supervisor uses it to report a ready timeout as
- * MODDED_HOST_REJECTED instead of a generic BOT_START_TIMEOUT.
+ * Is this a Forge-family host, where a summon that TIMES OUT is best
+ * explained by the loader refusing a vanilla client (260929)? Forge or
+ * NeoForge on any evidence (a weak-evidence host still summons, so its
+ * timeouts land here), or an unclassified host whose ping or command line
+ * showed Forge. Fabric with foreign mods and Quilt are NOT included: they
+ * often let a vanilla client in, so their timeouts stay generic
+ * BOT_START_TIMEOUTs. The supervisor uses it to report a join timeout as
+ * MODDED_HOST_REJECTED.
  */
-export function isModdedLanHost(host: LanHost | undefined): boolean {
-  const w = lanHostWarning(host);
-  return w === 'forge' || w === 'modded';
+export function isForgeFamilyLanHost(host: LanHost | undefined): boolean {
+  if (!host) return false;
+  if (host.client === 'forge' || host.client === 'neoforge') return true;
+  return lanHostWarning(host) === 'forge';
 }
 
 // ── In-app chat (Phase 18/19) ───────────────────────────────────────────────

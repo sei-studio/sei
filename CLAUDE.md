@@ -2739,11 +2739,13 @@ summons) and the supervisor pre-gate (error `FORGE_HOST_BLOCKED`, backstop for
 the voice launch honors; `SEI_FORGE_HANDSHAKE=1` bypasses it). The retry guard
 block for that class is released as soon as the LAN host stops being a blocked
 Forge host. Quilt and Fabric with foreign mods keep the soft `'modded'`
-warning. A join TIMEOUT (ready
-phase, or the bot's connect guard) on any modded host is reported as
+warning. A join TIMEOUT (ready phase, or the bot's connect guard) on a
+Forge-family host (`isForgeFamilyLanHost()`: Forge/NeoForge on any evidence,
+or an unclassified host with Forge ping data) is reported as
 `MODDED_HOST_REJECTED` with `reclassified_from: 'BOT_START_TIMEOUT'` on
 `summon_failed`, so the player gets ModdedHostModal instead of generic timeout
-copy. `character_summoned` carries `host_client`.
+copy. Timeouts on Fabric with foreign mods and on Quilt stay plain
+`BOT_START_TIMEOUT`: those hosts often do let a vanilla client in. `character_summoned` carries `host_client`.
 
 **Text chat counts too (260801).** Chat was the last surface with no
 instrumentation at all, so playtime meant "everything except the thing people

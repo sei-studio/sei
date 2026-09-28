@@ -22,7 +22,7 @@ import {
 } from 'electron';
 import path from 'node:path';
 import {
-  isModdedLanHost,
+  isForgeFamilyLanHost,
   forgeHostBlock,
   forgeHostBlockedMessage,
   FORGE_HOST_BLOCKED,
@@ -1265,16 +1265,16 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // init-ack ("booted"); then SUMMON_TIMEOUT_MS runs from init-ack until
     // summon-ready. A slow cold boot no longer eats the join budget.
     let watchdogPhase: 'boot' | 'ready' = 'boot';
-    // 260929: a JOIN timeout on a known modded host (Forge, or Fabric/Quilt
-    // with foreign mods) is the host refusing a vanilla client, not a slow
-    // machine. Live, 4 of 10 BOT_START_TIMEOUTs in a week were modded hosts,
+    // 260929: a JOIN timeout on a Forge-family host is the host refusing a
+    // vanilla client, not a slow machine. Fabric with foreign mods and Quilt
+    // often let a vanilla client in, so their timeouts stay generic. Live, 4 of 10 BOT_START_TIMEOUTs in a week were modded hosts,
     // and the timeout copy never mentioned mods. Report it as the modded-host
     // failure so the player gets ModdedHostModal and the dashboard counts it
     // with the kicks. A BOOT timeout (the bot never finished starting) says
     // nothing about the world, so it is left alone.
     const moddedHost = (): boolean => {
       if (game !== 'minecraft') return false;
-      try { return isModdedLanHost(opts.getLanHost?.()); } catch { return false; }
+      try { return isForgeFamilyLanHost(opts.getLanHost?.()); } catch { return false; }
     };
     const onWatchdog = (): void => {
       if (summonResolved) return;
@@ -1446,7 +1446,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // specific error with a generic BOT_START_TIMEOUT message. Resolve
       // the promise immediately so bot:summon's IPC caller unblocks at the
       // moment we have actionable information, not 30s later.
-      // 260929: the bot's own connect guard timing out on a known modded host
+      // 260929: the bot's own connect guard timing out on a Forge-family host
       // is the same modded-host failure as the ready watchdog above.
       let reclassifiedFrom: string | undefined;
       if (data.type === 'error' && !summonResolved && data.error === 'BOT_START_TIMEOUT' && moddedHost()) {
