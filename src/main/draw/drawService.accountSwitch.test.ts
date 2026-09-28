@@ -16,7 +16,12 @@ vi.mock('electron', () => ({
 }));
 vi.mock('../chat/usageLimit', () => ({ raiseUsageLimitPopup: vi.fn(async () => null) }));
 vi.mock('../voice/callState', () => ({ isCallActive: () => false }));
-vi.mock('../configStore', () => ({ loadConfig: vi.fn(async () => ({})) }));
+// A returning player (260929): the intro game (character first, one round) is
+// covered in drawService.intro.test.ts; these tests exercise a normal game.
+vi.mock('../configStore', () => ({
+  loadConfig: vi.fn(async () => ({ draw_intro_done: true })),
+  updateConfig: vi.fn(async () => ({})),
+}));
 vi.mock('../characterStore', () => ({ getCharacter: vi.fn(async () => null) }));
 vi.mock('../chat/sdk', () => ({ CHAT_TIMEOUT_MS: 20_000 }));
 vi.mock('../chat/chatPrompts', () => ({

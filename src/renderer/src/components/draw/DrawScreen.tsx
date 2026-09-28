@@ -7,7 +7,7 @@
  * splits top/bottom and this game wants canvas-beside-chat.
  *
  * Four phases map to four layouts:
- *   setup    title, how many rounds, start
+ *   setup    title, how the game goes (the intro game says so), start
  *   pick     three words to choose between, before each of the player's turns
  *   drawing  header (word or who is drawing, and the clock) + canvas + chat,
  *   turn-end same layout, revealed answer, input still live
@@ -215,7 +215,15 @@ function DrawScreenBody({ characterId }: { characterId: string }): React.ReactEl
             ))}
           </div>
 
-          <p className={styles.tagline}>{t('Take turns drawing and guessing. Three rounds.')}</p>
+          {/* 260929: a player's first game is the intro (main decides):
+              one round, and the companion draws first. */}
+          <p className={styles.tagline}>
+            {state.intro
+              ? t('{name} draws first, you guess. Then it is your turn. One quick round.', {
+                  name: state.aiName,
+                })
+              : t('Take turns drawing and guessing. Three rounds.')}
+          </p>
 
           <button
             type="button"
