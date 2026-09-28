@@ -202,6 +202,11 @@ export async function downloadModelFile(
       }
       const total = Number(res.headers.get('content-length')) || expected;
       const out = createWriteStream(tmp);
+      // A disk error (no space, no permission, the path is a directory) also
+      // reaches the write callback below, which classifies it as 'disk'.
+      // Without a listener the stream's own 'error' event is an uncaught
+      // exception in main.
+      out.on('error', () => {});
       const hash = createHash('sha256');
       let received = 0;
       let lastPct = -1;

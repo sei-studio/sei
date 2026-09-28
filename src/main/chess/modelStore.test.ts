@@ -8,7 +8,7 @@
  * the mirror primary for everyone again.
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -144,5 +144,29 @@ describe('downloadModelFile (260929 timeout + retry)', () => {
       timing: { ...FAST, attempts: 1 },
     }).catch((e: unknown) => e)) as ModelDownloadError;
     expect(short.kind).toBe('size');
+  });
+
+  it('classifies a disk error without throwing out of the stream', async () => {
+    // The temp path is a directory, so opening it for writing fails.
+    await mkdir(`${target}.download`);
+    const err = (await downloadModelFile(target, ['https://a.example/m'], {
+      fetchImpl: (async () => okResponse(payload())) as unknown as typeof fetch,
+      expectedBytes: BYTES,
+      timing: { ...FAST, attempts: 1 },
+    }).catch((e: unknown) => e)) as ModelDownloadError;
+    expect(err).toBeInstanceOf(ModelDownloadError);
+    expect(err.kind).toBe('disk');
+  });
+
+  it('never touches an existing file at the target when every attempt fails', async () => {
+    await writeFile(target, 'cached');
+    const err = await downloadModelFile(target, ['https://a.example/m'], {
+      fetchImpl: (async () => okResponse([new Uint8Array(10)])) as unknown as typeof fetch,
+      expectedBytes: BYTES,
+      timing: FAST,
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ModelDownloadError);
+    expect(await readFile(target, 'utf8')).toBe('cached');
+    await expect(stat(`${target}.download`)).rejects.toThrow();
   });
 });
