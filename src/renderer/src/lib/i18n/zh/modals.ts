@@ -601,10 +601,10 @@ export const ZH_MODALS: Record<string, string> = {
   "{name} couldn't join.": '{name} 无法加入。',
   'Play from the Sei profile instead. It runs {version}, with companion skins:':
     '请改用 Sei 配置来玩。它运行 {version}，可显示伙伴皮肤：',
-  'This world is running Minecraft {version}, which Sei cannot join yet. Sei works with Minecraft Java {versions}.':
-    '这个世界运行的是 Minecraft {version}，Sei 暂时无法加入。Sei 支持 Minecraft Java 版 {versions}。',
-  'This world runs a Minecraft version Sei cannot join yet. Sei works with Minecraft Java {versions}.':
-    '这个世界的 Minecraft 版本 Sei 暂时无法加入。Sei 支持 Minecraft Java 版 {versions}。',
+  'This world is running Minecraft {version}, which Sei cannot join yet. Sei works with most Minecraft Java versions from {oldest} to {newest}.':
+    '这个世界运行的是 Minecraft {version}，Sei 暂时无法加入。Sei 支持 {oldest} 至 {newest} 之间的大多数 Minecraft Java 版本。',
+  'This world runs a Minecraft version Sei cannot join yet. Sei works with most Minecraft Java versions from {oldest} to {newest}.':
+    '这个世界的 Minecraft 版本 Sei 暂时无法加入。Sei 支持 {oldest} 至 {newest} 之间的大多数 Minecraft Java 版本。',
 
   // ── UpdatePopup ──
   'Update': '更新',

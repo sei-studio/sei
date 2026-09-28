@@ -22,7 +22,7 @@
 
 import React from 'react';
 import { t as tr, useT } from '../lib/i18n';
-import { MC_RECOMMENDED, mcRangeVars } from '../lib/mcVersions';
+import { MC_RANGE_VARS, MC_RECOMMENDED, mcVersionSpanList } from '../lib/mcVersions';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { useUiStore } from '../lib/stores/useUiStore';
@@ -35,8 +35,8 @@ import { useSeiProfileAction } from './mcdash/useStartMinecraft';
  * The version the Sei profile runs: the one the setup wizard builds
  * (lib/mcVersions MC_RECOMMENDED, capped by WIZARD_MAX_MC), so this copy never
  * names a version the wizard would not build or where skins do not work. The
- * body's {versions} list still names every version Sei can join (incl. newer
- * ones like 26.2 / 26.3).
+ * body's range still reaches the newest version Sei can join (incl. newer
+ * ones like 26.2 / 26.3), and "Which versions?" lists every one.
  */
 const RECOMMENDED: string = MC_RECOMMENDED;
 
@@ -62,16 +62,21 @@ export function reportedVersion(message: string): string | null {
   return m ? m[1].trim() : null;
 }
 
-/** The body sentence: which version the world runs and what Sei supports. */
+/**
+ * The body sentence: which version the world runs and what Sei supports.
+ * 260929: the supported set is the short "most versions from {oldest} to
+ * {newest}"; the exact list (with its gaps) is the "Which versions?"
+ * disclosure below the body, one span per chip.
+ */
 export function humanBody(message: string, detectedVersion: string | null): string {
   const version = reportedVersion(message) ?? detectedVersion;
   if (version) {
-    return tr('This world is running Minecraft {version}, which Sei cannot join yet. Sei works with Minecraft Java {versions}.', {
-      ...mcRangeVars(tr),
+    return tr('This world is running Minecraft {version}, which Sei cannot join yet. Sei works with most Minecraft Java versions from {oldest} to {newest}.', {
+      ...MC_RANGE_VARS,
       version,
     });
   }
-  return tr('This world runs a Minecraft version Sei cannot join yet. Sei works with Minecraft Java {versions}.', mcRangeVars(tr));
+  return tr('This world runs a Minecraft version Sei cannot join yet. Sei works with most Minecraft Java versions from {oldest} to {newest}.', MC_RANGE_VARS);
 }
 
 export function UnsupportedVersionModal({
@@ -103,7 +108,19 @@ export function UnsupportedVersionModal({
       <p className={styles.body}>
         {joinBefore}
         <strong>{name}</strong>
-        {joinAfter} {humanBody(message, detectedVersion)}{' '}
+        {joinAfter} {humanBody(message, detectedVersion)}
+      </p>
+      <details className={styles.versions}>
+        <summary className={styles.versionsSummary}>{t('Which versions?')}</summary>
+        <ul className={styles.spans} aria-label={t('Versions Sei can join')}>
+          {mcVersionSpanList(t).map((span) => (
+            <li key={span} className={styles.span}>
+              {span}
+            </li>
+          ))}
+        </ul>
+      </details>
+      <p className={styles.body}>
         {t('Play from the Sei profile instead. It runs {version}, with companion skins:', { version: RECOMMENDED })}
       </p>
       <ol className={styles.steps}>

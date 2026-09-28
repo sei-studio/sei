@@ -19,6 +19,10 @@
  *   Start Minecraft   (260929) once set up, with a Sei profile and no open
  *                     world: selects the Sei profile in the Minecraft
  *                     Launcher and opens it (useStartMinecraft)
+ *   version line      "Works with most Minecraft Java versions from 1.8 to
+ *                     26.3." + "Which versions?" (260929), which opens a
+ *                     small GUI window listing every joinable span, one
+ *                     per slot (the inline list was a wall of numbers)
  *   help link         "How do I set up launch?", only once the setup is
  *                     done: it reopens the same window on step 1, with
  *                     every step's live state, for anyone who wants to
@@ -41,7 +45,7 @@ import { attemptSummon } from '../../lib/summonFlow';
 import { requestGameLaunch } from '../../lib/gameLaunch';
 import { errorCopyText } from '../../lib/errors';
 import { connectingLabel } from '../../lib/summonProgress';
-import { mcRangeVars, worldTooNewForSei } from '../../lib/mcVersions';
+import { MC_RANGE_VARS, mcVersionSpanList, worldTooNewForSei } from '../../lib/mcVersions';
 import { GamePackCard } from '../games/GamePackCard';
 import { SetupStepper, useSetupWindow, type StepButtonProps, type StepSkin, type StepperSkin } from '../games/SetupStepper';
 import { useMcSetupSteps } from './McSteps';
@@ -85,6 +89,34 @@ const WINDOW_SKIN: StepperSkin = {
   navBtn: styles.navBtn,
 };
 
+/**
+ * "Which versions?" (260929): every joinable span as a slot in the vanilla
+ * dialog, so the gaps (1.9.0 to 1.9.2, 1.11, ...) are readable instead of
+ * buried in one sentence. Derived from the same table as the short line.
+ */
+function McVersionsWindow({ onClose }: { onClose: () => void }): React.ReactElement {
+  const t = useT();
+  const spans = mcVersionSpanList(t);
+  return (
+    <section className={styles.window} aria-label={t('Versions Sei can join')} data-slot="mc-versions">
+      <div className={styles.head}>
+        <span className={styles.stepTitle}>{t('Versions Sei can join')}</span>
+        <button type="button" className={styles.close} onClick={onClose} aria-label={t('Close')}>
+          ×
+        </button>
+      </div>
+      <ul className={styles.spans}>
+        {spans.map((span) => (
+          <li key={span} className={styles.span}>
+            {span}
+          </li>
+        ))}
+      </ul>
+      <span className={styles.sub}>{t('Versions not listed here will not work.')}</span>
+    </section>
+  );
+}
+
 export interface McLaunchPanelProps {
   characterId: string;
 }
@@ -111,6 +143,23 @@ export function McLaunchPanel({ characterId }: McLaunchPanelProps): React.ReactE
   const worldTooNew = worldTooNewForSei(worldVersion);
   const setup = useMcSetupSteps(STEP_SKIN);
   const win = useSetupWindow(setup.allDone);
+  const [versionsOpen, setVersionsOpen] = React.useState(false);
+  // The short range needs its list beside it; an unrelated failure line
+  // (credits, a crash) does not name versions, so it gets no link.
+  const namesRange = !failReason || (summon?.kind === 'error' && summon.error === 'UNSUPPORTED_MC_VERSION');
+  const versionsLink = namesRange ? (
+    <>
+      {' '}
+      <button
+        type="button"
+        className={styles.inlineLink}
+        aria-expanded={versionsOpen}
+        onClick={() => setVersionsOpen((v) => !v)}
+      >
+        {t('Which versions?')}
+      </button>
+    </>
+  ) : null;
 
   const launch = (): void =>
     // 260721: shared cross-launch gate — a live chess game or screen share
@@ -170,16 +219,20 @@ export function McLaunchPanel({ characterId }: McLaunchPanelProps): React.ReactE
         {failReason ? (
           <p className={styles.failLine} role="alert">
             {failReason}
+            {versionsLink}
           </p>
         ) : worldTooNew ? (
           <p className={styles.failLine} role="status">
-            {t('Your open world is on Minecraft {version}, which Sei cannot join yet. Sei works with Minecraft Java {versions}.', { ...mcRangeVars(t), version: worldVersion ?? '' })}
+            {t('Your open world is on Minecraft {version}, which Sei cannot join yet. Sei works with most Minecraft Java versions from {oldest} to {newest}.', { ...MC_RANGE_VARS, version: worldVersion ?? '' })}
+            {versionsLink}
           </p>
         ) : (
           <p className={styles.versionLine}>
-            {t('Works with Minecraft Java {versions}.', mcRangeVars(t))}
+            {t('Works with most Minecraft Java versions from {oldest} to {newest}.', MC_RANGE_VARS)}
+            {versionsLink}
           </p>
         )}
+        {versionsOpen && namesRange ? <McVersionsWindow onClose={() => setVersionsOpen(false)} /> : null}
         {setup.complete && win.mode === null ? (
           <button type="button" className={styles.helpLink} onClick={win.openHelp}>
             {t('How do I set up launch?')}

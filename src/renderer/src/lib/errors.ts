@@ -14,7 +14,7 @@
  */
 import type { ErrorClass } from '@shared/errorClasses';
 import { t } from './i18n';
-import { mcRangeVars } from './mcVersions';
+import { MC_RANGE_VARS } from './mcVersions';
 
 /**
  * Plain-English error copy. Verbatim from UI-SPEC §"Plain-English error copy".
@@ -47,11 +47,14 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   // version, from minecraft-protocol's table) and {recommended} (the version the
   // setup wizard builds, where companion skins work) are filled at render time
   // (errorCopyText), never hardcoded, so the numbers cannot go stale.
+  // 260929: {versions} became "most versions from {oldest} to {newest}"; the
+  // inline list was a wall of numbers. The exact list is behind "Which
+  // versions?" in the Minecraft panel and the routed modal.
   // 260929 (R1c): points at the Sei profile the setup wizard builds (on
   // {recommended}, with skins) instead of walking through a hand-made
   // launcher installation; the routed modal carries the Start Minecraft /
   // Set up Sei profile button.
-  UNSUPPORTED_MC_VERSION: "This world's Minecraft version is not supported yet. Sei works with Minecraft Java {versions}. Open the Sei profile in the Minecraft Launcher (it runs {recommended}, with companion skins), open or create a world there, open it to LAN, and press Launch again. No Sei profile yet? Set it up from the Minecraft screen in Sei.",
+  UNSUPPORTED_MC_VERSION: "This world's Minecraft version is not supported yet. Sei works with most Minecraft Java versions from {oldest} to {newest}. Open the Sei profile in the Minecraft Launcher (it runs {recommended}, with companion skins), open or create a world there, open it to LAN, and press Launch again. No Sei profile yet? Set it up from the Minecraft screen in Sei.",
   // 260806: split out of LAN_NOT_OPEN. A Forge/NeoForge world that requires its
   // mods on the client kicks Sei every time, and the old copy sent the player to
   // re-open a world that was open and answering pings. Says what is actually
@@ -108,7 +111,7 @@ export function errorCopyText(
   cls: ErrorClass,
   tr: (en: string, params?: Record<string, string | number>) => string = t,
 ): string {
-  return tr(ERROR_COPY[cls] ?? ERROR_COPY.BOT_CRASH, mcRangeVars(tr));
+  return tr(ERROR_COPY[cls] ?? ERROR_COPY.BOT_CRASH, MC_RANGE_VARS);
 }
 
 /**
