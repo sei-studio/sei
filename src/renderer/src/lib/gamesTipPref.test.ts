@@ -1,18 +1,18 @@
 /**
- * Tests for backseatTipPref (260803): the one-time Backseat tip's show/dismiss
- * rules.
+ * Tests for gamesTipPref (260929): the one-time games tip's show/dismiss
+ * rules. The module replaced backseatTipPref (260803) and keeps its rules.
  *
  * The predicate is the whole feature: get it wrong and either nobody ever sees
  * the tip, or it comes back forever. Both are invisible in review, and both
- * have already happened once each here.
+ * happened once each to the Backseat tip this replaced.
  *
  * Invariants under test:
- *   1. Nothing stored → the tip shows on the chat screen.
- *   2. Each suppression alone is enough to hide it: dismissed, on the call
- *      view, already sharing, a modal open, the tutorial running.
- *   3. "Got it" persists, and is the ONLY thing that does. Sharing must NOT
- *      retire the tip: the people most owed a beta notice are the ones who
- *      already used the feature in an earlier build.
+ *   1. Nothing stored -> the tip shows on the chat screen.
+ *   2. Each suppression alone is enough to hide it: retired, on the call view,
+ *      a game surface open, a modal open, the tutorial running, the first
+ *      moment live.
+ *   3. Retiring persists. The key is NEW, so a dismissal of the old Backseat
+ *      tip does not carry over: everyone sees this one once.
  *   4. The flag is PER ACCOUNT. localStorage is one bucket for the whole app
  *      and is not moved when the profile scope changes, so the key carries the
  *      scope; a second account on the same machine must not inherit the
@@ -31,11 +31,9 @@ vi.mock('./stores/useAuthStore', () => ({
   useAuthStore: { getState: () => ({ state: authState }) },
 }));
 
-const { backseatTipDone, dismissBackseatTip, shouldShowBackseatTip } = await import(
-  './backseatTipPref'
-);
+const { gamesTipDone, dismissGamesTip, shouldShowGamesTip } = await import('./gamesTipPref');
 
-const KEY_LOCAL = 'sei.backseatTipDone.v2.local';
+const KEY_LOCAL = 'sei.gamesTipDone.v1.local';
 
 const signedIn = (id: string): AuthState => ({
   kind: 'signed_in',
@@ -81,97 +79,90 @@ afterEach(() => {
 const base = {
   done: false,
   onChatScreen: true,
-  sharing: false,
   modalOpen: false,
   tutorialActive: false,
 } as const;
 
-describe('shouldShowBackseatTip', () => {
+describe('shouldShowGamesTip', () => {
   it('shows for a first-time player on the chat screen', () => {
-    expect(shouldShowBackseatTip({ ...base })).toBe(true);
+    expect(shouldShowGamesTip({ ...base })).toBe(true);
   });
 
   it('hides once the tip is done', () => {
-    expect(shouldShowBackseatTip({ ...base, done: true })).toBe(false);
+    expect(shouldShowGamesTip({ ...base, done: true })).toBe(false);
   });
 
   it('hides on the call view, where the player is already past it', () => {
-    expect(shouldShowBackseatTip({ ...base, onChatScreen: false })).toBe(false);
+    expect(shouldShowGamesTip({ ...base, onChatScreen: false })).toBe(false);
   });
 
-  it('hides while a share is already running', () => {
-    expect(shouldShowBackseatTip({ ...base, sharing: true })).toBe(false);
+  it('hides while a game surface is open under the header', () => {
+    expect(shouldShowGamesTip({ ...base, gameOpen: true })).toBe(false);
+    expect(shouldShowGamesTip({ ...base, gameOpen: false })).toBe(true);
   });
 
-  it('hides behind a modal, including the picker the button itself opens', () => {
-    expect(shouldShowBackseatTip({ ...base, modalOpen: true })).toBe(false);
+  it('hides behind a modal, including the games picker the button itself opens', () => {
+    expect(shouldShowGamesTip({ ...base, modalOpen: true })).toBe(false);
   });
 
   it('hides during the tutorial, which spotlights the same button', () => {
     // Two pointers at one button is worse than either alone, and the tutorial
     // scrim would sit over the card anyway.
-    expect(shouldShowBackseatTip({ ...base, tutorialActive: true })).toBe(false);
+    expect(shouldShowGamesTip({ ...base, tutorialActive: true })).toBe(false);
   });
 
   it('hides while the guided first moment is pending or showing its card', () => {
-    expect(shouldShowBackseatTip({ ...base, firstMomentLive: true })).toBe(false);
-    expect(shouldShowBackseatTip({ ...base, firstMomentLive: false })).toBe(true);
+    expect(shouldShowGamesTip({ ...base, firstMomentLive: true })).toBe(false);
+    expect(shouldShowGamesTip({ ...base, firstMomentLive: false })).toBe(true);
   });
 });
 
-describe('backseatTipDone persistence', () => {
+describe('gamesTipDone persistence', () => {
   it('is false before anything happens', () => {
-    expect(backseatTipDone()).toBe(false);
+    expect(gamesTipDone()).toBe(false);
   });
 
-  it('is true after "Got it"', () => {
-    dismissBackseatTip();
+  it('is true once retired ("Got it" or a click on the games button)', () => {
+    dismissGamesTip();
     expect(localStorage.getItem(KEY_LOCAL)).toBe('1');
-    expect(backseatTipDone()).toBe(true);
+    expect(gamesTipDone()).toBe(true);
   });
 
-  it('is NOT retired by a share, only by "Got it"', () => {
-    // The regression this pins: an earlier version wrote the same flag from
-    // useBackseatStore.share(), so everyone who had used backseat before the
-    // tip existed was silenced by their own first share and never saw it.
-    // Nothing outside this module may write the flag.
-    expect(backseatTipDone()).toBe(false);
-    expect(shouldShowBackseatTip({ ...base, sharing: true })).toBe(false);
-    expect(shouldShowBackseatTip({ ...base, sharing: false })).toBe(true);
-  });
-
-  it('ignores a flag left by the previous key, so the notice re-announces', () => {
-    localStorage.setItem('sei.backseatTipDone', '1');
-    expect(backseatTipDone()).toBe(false);
+  it('ignores a dismissed Backseat tip, so everyone sees the games tip once', () => {
+    // The games tip replaced the Backseat one in the same header; a player who
+    // pressed "Got it" on that one has not been told about the games.
+    localStorage.setItem('sei.gamesTipDone.v2.local', '1');
+    localStorage.setItem('sei.gamesTipDone', '1');
+    expect(gamesTipDone()).toBe(false);
   });
 
   it('does not carry a dismissal across accounts', () => {
     authState = signedIn('11111111-1111-1111-1111-111111111111');
-    dismissBackseatTip();
-    expect(backseatTipDone()).toBe(true);
+    dismissGamesTip();
+    expect(gamesTipDone()).toBe(true);
 
     authState = signedIn('22222222-2222-2222-2222-222222222222');
-    expect(backseatTipDone()).toBe(false);
+    expect(gamesTipDone()).toBe(false);
 
     // ...and the first account keeps its dismissal rather than being reset by
     // the second account arriving.
     authState = signedIn('11111111-1111-1111-1111-111111111111');
-    expect(backseatTipDone()).toBe(true);
+    expect(gamesTipDone()).toBe(true);
   });
 
   it('keeps the signed-out profile separate from any account', () => {
     // 'local' is a real profile scope in main (paths.setActiveScope), not an
     // absence of one, so it gets its own flag like any account.
-    dismissBackseatTip();
-    expect(backseatTipDone()).toBe(true);
+    dismissGamesTip();
+    expect(gamesTipDone()).toBe(true);
     authState = signedIn('33333333-3333-3333-3333-333333333333');
-    expect(backseatTipDone()).toBe(false);
+    expect(gamesTipDone()).toBe(false);
   });
 
   it('degrades to not-done when storage is unavailable', () => {
     install(fakeStorage({ throws: true }));
-    expect(backseatTipDone()).toBe(false);
-    expect(() => dismissBackseatTip()).not.toThrow();
-    expect(backseatTipDone()).toBe(false);
+    expect(gamesTipDone()).toBe(false);
+    expect(() => dismissGamesTip()).not.toThrow();
+    expect(gamesTipDone()).toBe(false);
   });
 });

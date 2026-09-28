@@ -1,13 +1,17 @@
 /**
- * backseatTipPref (260803) : the one-time "Backseat is here" tip's memory.
+ * gamesTipPref (260929) : the one-time "New games added" tip's memory.
  *
- * Backseat is in beta and effectively undiscoverable. The tip points at the
- * Backseat button in the CHAT HEADER once, and then never again.
+ * The tip hangs under the games (gamepad) button in the CHAT HEADER once, and
+ * then never again. It announces the two newest games (Stardew Valley and
+ * Don't Starve Together), because the picker is one click away and still easy
+ * to never open.
  *
- * The header and not the call controls (260803). It pointed at the share pill
- * there first, which was the wrong end of the funnel: those controls only exist
- * once you are on a call, and someone already on a call does not need to be
- * told a call feature exists. The chat screen is where a player starts.
+ * It replaced the one-time Backseat tip (260803), which lived under the
+ * header's Backseat button with the same card, the same rules and the same
+ * storage shape. That tip's history is why the rules below are what they are.
+ * Its key (sei.backseatTipDone.v2.<scope>) is simply no longer read: this key
+ * is new, so everyone sees the games tip once, including every player who
+ * already dismissed the Backseat one.
  *
  * WHY localStorage and not config.json. This is the established shape for a
  * one-time renderer UI flag (see gameLayoutPref, voice/modelPrefetch): reads
@@ -17,19 +21,17 @@
  * writes back a whole config it read earlier can revert unrelated fields), and
  * a cosmetic tip is not worth exposing every other setting to that.
  *
- * "GOT IT" IS THE ONLY THING THAT RETIRES IT (revised 260803). The first
- * version also retired the tip on any successful share, reasoning that someone
- * who had already found the feature would read the tip as the app not noticing
- * what they just did. Tried live, that was wrong in the one case that matters
- * most: everybody who used backseat in an earlier build had the flag written
- * the first time they shared, and so was never shown the announcement of the
- * thing they had been using. A beta notice is for exactly those people. It
- * costs one click to dismiss and it does not render over a running share, so
- * the cost of showing it to someone who already knows is close to nothing,
- * while the cost of the other error is that the notice reaches nobody.
+ * TWO THINGS RETIRE IT: "Got it", and clicking the games button itself. The
+ * button click is the player finding exactly what the tip points at, so a tip
+ * still hanging there when they close the picker would read as the app not
+ * noticing. Nothing else does. In particular, opening a game some other way
+ * (the first-moment card, the companion's launch tool) does not: the Backseat
+ * tip once retired itself on any use of the feature, and that silenced exactly
+ * the players who had used it in an earlier build and were owed the notice of
+ * what was new. The same holds here, since the news is the two new games.
  *
  * The key carries a version for the same reason. Bumping it re-announces to
- * everyone, including anyone the previous rule had already silenced, without
+ * everyone, including anyone who already dismissed this version, without
  * asking them to clear anything by hand.
  *
  * PER ACCOUNT, NOT PER MACHINE (260803). localStorage is one bucket for the
@@ -38,8 +40,7 @@
  * carries the scope, which is the signed-in account's UUID or 'local' when
  * signed out, exactly as `paths.setActiveScope` uses it. Without that, signing
  * into a second account on the same machine would inherit the first account's
- * dismissal and the new account would never be told the feature exists, which
- * is the same failure the share-retires-it rule had.
+ * dismissal and the new account would never be told.
  *
  * The scope is read from useAuthStore, the renderer's mirror of main's
  * AuthState, so it changes with the account within one session and needs no
@@ -48,7 +49,7 @@
 
 import { useAuthStore } from './stores/useAuthStore';
 
-const KEY_BASE = 'sei.backseatTipDone.v2';
+const KEY_BASE = 'sei.gamesTipDone.v1';
 
 /** The active profile scope: the account UUID, or 'local' when signed out. */
 function scope(): string {
@@ -60,8 +61,8 @@ function key(): string {
   return `${KEY_BASE}.${scope()}`;
 }
 
-/** True once the player has dismissed the tip with "Got it", on THIS account. */
-export function backseatTipDone(): boolean {
+/** True once the player has retired the tip, on THIS account. */
+export function gamesTipDone(): boolean {
   try {
     return localStorage.getItem(key()) === '1';
   } catch {
@@ -71,18 +72,16 @@ export function backseatTipDone(): boolean {
   }
 }
 
-/** Record that the tip is finished with. Idempotent, best effort. */
-function setDone(): void {
+/**
+ * Record that the tip is finished with: "Got it" was pressed, or the games
+ * button was clicked. Idempotent, best effort.
+ */
+export function dismissGamesTip(): void {
   try {
     localStorage.setItem(key(), '1');
   } catch {
     /* private mode / quota: the tip just won't stay dismissed */
   }
-}
-
-/** "Got it" was pressed. */
-export function dismissBackseatTip(): void {
-  setDone();
 }
 
 /**
@@ -92,19 +91,24 @@ export function dismissBackseatTip(): void {
  * Every suppression here is about not talking over something else. The header
  * is shared by the chat screen and the call view, and on the call view the
  * player is already past the point the tip is for. A modal (including the
- * source picker the button itself opens) means the header is behind a scrim.
- * The tutorial has its own Backseat step with its own spotlight, and two
+ * games picker the button itself opens) means the header is behind a scrim.
+ * The tutorial has its own games step with its own spotlight, and two
  * pointers at one button is worse than either alone. The guided first moment
- * (260926) offers its own next step under the first greeting, and a second
- * card about a different feature would compete with it.
+ * (260926) offers its own games under the first greeting, and a second card
+ * saying the same thing would compete with it. An open game surface (chess,
+ * Draw!, a launch panel or a live dashboard) sits right under the header, so
+ * the card would cover the game, and the player is already playing one.
+ *
+ * The Backseat tip also hid while a screen share ran, because the share WAS
+ * the feature it announced. That does not apply to games, so it is gone.
  */
-export function shouldShowBackseatTip(input: {
-  /** backseatTipDone() at mount, or true once dismissed this session. */
+export function shouldShowGamesTip(input: {
+  /** gamesTipDone() at mount, or true once retired this session. */
   done: boolean;
   /** The header is on the chat screen, not the fullscreen call view. */
   onChatScreen: boolean;
-  /** A share is already running. */
-  sharing: boolean;
+  /** A game surface is open in this chat (chess, launch panel, dashboard...). */
+  gameOpen?: boolean;
   /** Any modal is open over the screen. */
   modalOpen: boolean;
   /** The guided tour is running. */
@@ -114,7 +118,7 @@ export function shouldShowBackseatTip(input: {
 }): boolean {
   if (input.done) return false;
   if (!input.onChatScreen) return false;
-  if (input.sharing) return false;
+  if (input.gameOpen) return false;
   if (input.modalOpen) return false;
   if (input.firstMomentLive) return false;
   return !input.tutorialActive;

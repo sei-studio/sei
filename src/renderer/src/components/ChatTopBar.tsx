@@ -7,16 +7,17 @@
  * Context-aware behavior, identical structure:
  *   - back:  chat → home; call view → back to that chat (the call keeps
  *            running; GameSurface's chrome row / the icon-rail badge carry it).
- *   - controller: opens the games picker, including mid-call.
+ *   - controller: opens the games picker, including mid-call. It carries the
+ *            one-time "New games added" tip (260929), which announces Stardew
+ *            Valley and Don't Starve Together; clicking the button retires it. See
+ *            lib/gamesTipPref.
  *   - backseat: opens the screen-share source picker (260803). It is here
  *            because backseat's only other entry point is the share button in
  *            the call controls, which you cannot reach without already being on
  *            a call, so nobody who had not already found the feature ever saw
  *            it. From here, confirming a source starts the call as well (the
- *            picker arms a pending share; see ShareScreenModal). It also
- *            carries the one-time beta tip, for the same reason it exists:
- *            this is the first place a player could find the feature, so it is
- *            the only place worth pointing at. See lib/backseatTipPref.
+ *            picker arms a pending share; see ShareScreenModal). Its one-time
+ *            beta tip was moved to the games button (260929).
  *   - phone: no call → start one. With a game surface open the call starts IN
  *            PLACE (260722, startOrOpenCall: this screen stays, GameSurface's
  *            chrome row shows the compact controls); otherwise the fullscreen
@@ -28,14 +29,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
-import { useBackseatStore } from '../lib/stores/useBackseatStore';
 import { useTutorialStore } from '../lib/stores/useTutorialStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
-import {
-  backseatTipDone,
-  dismissBackseatTip,
-  shouldShowBackseatTip,
-} from '../lib/backseatTipPref';
+import { gamesTipDone, dismissGamesTip, shouldShowGamesTip } from '../lib/gamesTipPref';
 import { useFirstMomentStore } from '../lib/stores/useFirstMomentStore';
 import { startOrOpenCall } from '../lib/callLaunch';
 import { visionBlocked, visionGateReason } from '../lib/visionGate';
@@ -46,11 +42,19 @@ import { IdTag } from './IdTag';
 import { useT } from '../lib/i18n';
 import styles from './ChatTopBar.module.css';
 
-export interface ChatTopBarProps {
-  characterId: string;
+/** A name that must not wrap mid-way: its spaces become non-breaking. */
+function keepWhole(name: string): string {
+  return name.replace(/ /g, '\u00a0');
 }
 
-export function ChatTopBar({ characterId }: ChatTopBarProps): React.ReactElement {
+export interface ChatTopBarProps {
+  characterId: string;
+  /** A game surface is open below the header (ChatScreen's own `gameOpen`).
+   *  Only hides the one-time games tip, which would otherwise cover the game. */
+  gameOpen?: boolean;
+}
+
+export function ChatTopBar({ characterId, gameOpen = false }: ChatTopBarProps): React.ReactElement {
   const navigate = useUiStore((s) => s.navigate);
   const openModal = useUiStore((s) => s.openModal);
   const setChatReturnId = useUiStore((s) => s.setChatReturnId);
@@ -79,12 +83,11 @@ export function ChatTopBar({ characterId }: ChatTopBarProps): React.ReactElement
       ? t('End the Minecraft session to use Backseat')
       : null;
 
-  // The one-time Backseat tip. `done` is read once at mount (localStorage) and
-  // flipped in memory by "Got it", so the card leaves without a second read.
-  // Everything else it depends on is live state: see backseatTipPref for why
-  // each of these suppresses it.
+  // The one-time games tip. `done` is read once at mount (localStorage) and
+  // flipped in memory by "Got it" or a click on the games button, so the card
+  // leaves without a second read. Everything else it depends on is live
+  // state: see gamesTipPref for why each of these suppresses it.
   const modalOpen = useUiStore((s) => s.modal !== null);
-  const sharing = useBackseatStore((s) => s.sharingFor !== null);
   const tutorialActive = useTutorialStore((s) => s.active);
   const firstMomentLive = useFirstMomentStore(
     (s) => s.status === 'armed' || s.status === 'greeting' || s.status === 'ready',
@@ -94,14 +97,18 @@ export function ChatTopBar({ characterId }: ChatTopBarProps): React.ReactElement
   // previous account's dismissal would silence the notice for someone who has
   // never seen it.
   const authScope = useAuthStore((s) => (s.state.kind === 'signed_in' ? s.state.user.id : 'local'));
-  const [tipDone, setTipDone] = useState(backseatTipDone);
+  const [tipDone, setTipDone] = useState(gamesTipDone);
   useEffect(() => {
-    setTipDone(backseatTipDone());
+    setTipDone(gamesTipDone());
   }, [authScope]);
-  const showTip = shouldShowBackseatTip({
+  const retireTip = (): void => {
+    dismissGamesTip();
+    setTipDone(true);
+  };
+  const showTip = shouldShowGamesTip({
     done: tipDone,
     onChatScreen: !onCallView,
-    sharing,
+    gameOpen,
     modalOpen,
     tutorialActive,
     firstMomentLive,
@@ -168,65 +175,68 @@ export function ChatTopBar({ characterId }: ChatTopBarProps): React.ReactElement
         {character?.public_id ? <IdTag id={character.public_id} size="sm" /> : null}
       </button>
       <div className={styles.headerActions}>
-        <button
-          type="button"
-          className={styles.iconBtn}
-          onClick={() => openModal({ kind: 'games-picker', characterId })}
-          aria-label={t('Play together')}
-          data-tip={t('Play together')}
-          data-tip-edge="right"
-          data-tutorial="games-btn"
-        >
-          <GamepadIcon size={18} />
-        </button>
         {/* Wrapped so the card anchors to the button itself rather than to the
-            actions row, whose width changes with the call button's label. */}
-        <div className={styles.backseatWrap}>
+            actions row. */}
+        <div className={styles.tipWrap}>
           <button
             type="button"
             className={styles.iconBtn}
             onClick={() => {
-              if (!backseatDisabled) openModal({ kind: 'share-screen', characterId });
+              // Finding the button is what the tip was for, so it retires too.
+              if (!tipDone) retireTip();
+              openModal({ kind: 'games-picker', characterId });
             }}
-            disabled={backseatDisabled}
-            aria-disabled={backseatDisabled}
-            aria-label={t('Backseat (beta)')}
-            title={backseatReason ?? undefined}
-            data-tip={backseatReason ?? t('Backseat (beta)')}
+            aria-label={t('Play together')}
+            data-tip={t('Play together')}
             data-tip-edge="right"
-            data-tutorial="backseat-btn"
+            data-tutorial="games-btn"
           >
-            <BackseatIcon size={18} />
+            <GamepadIcon size={18} />
           </button>
 
           {/* Hangs BELOW the button with the tail pointing up: the header is at
               the top of the window, so there is nowhere above it to go. */}
           {showTip ? (
-            <div className={styles.tip}>
+            <div className={styles.tip} role="note">
               <span className={styles.tipTail} aria-hidden="true" />
               <div className={styles.tipHead}>
                 <span className={styles.tipIcon} aria-hidden="true">
-                  <BackseatIcon size={18} />
+                  <GamepadIcon size={18} />
                 </span>
                 <span className={styles.tipNew}>{t('NEW')}</span>
               </div>
-              <p className={styles.tipTitle}>{t('Stream anything with Backseat (beta)')}</p>
+              <p className={styles.tipTitle}>{t('New games added')}</p>
+              {/* The game names are kept whole (non-breaking spaces), so a
+                  line never ends inside one, e.g. "Don't Starve / Together". */}
               <p className={styles.tipBody}>
-                {t('Try streaming your game, watching a movie, or doomscrolling together!')}
+                {t('{first} and {second} are here. Play them with {name}.', {
+                  first: keepWhole(t('Stardew Valley')),
+                  second: keepWhole(t("Don't Starve Together")),
+                  name: companionName,
+                })}
               </p>
-              <button
-                type="button"
-                className={styles.tipBtn}
-                onClick={() => {
-                  dismissBackseatTip();
-                  setTipDone(true);
-                }}
-              >
+              <button type="button" className={styles.tipBtn} onClick={retireTip}>
                 {t('Got it')}
               </button>
             </div>
           ) : null}
         </div>
+        <button
+          type="button"
+          className={styles.iconBtn}
+          onClick={() => {
+            if (!backseatDisabled) openModal({ kind: 'share-screen', characterId });
+          }}
+          disabled={backseatDisabled}
+          aria-disabled={backseatDisabled}
+          aria-label={t('Backseat (beta)')}
+          title={backseatReason ?? undefined}
+          data-tip={backseatReason ?? t('Backseat (beta)')}
+          data-tip-edge="right"
+          data-tutorial="backseat-btn"
+        >
+          <BackseatIcon size={18} />
+        </button>
         <button
           type="button"
           className={onCallView ? `${styles.iconBtn} ${styles.iconBtnActive}` : styles.iconBtn}

@@ -683,8 +683,8 @@ this, onboarding landed on Home: 24% of new installs never used any surface.
   error settles the store as `failed`: the plain chat, no card, no error.
   Main pushes the greeting's thoughts only after `prepareChatTurn` succeeds,
   so a failed prep cannot leave "a button will appear" queued for the
-  player's first message. The one-time Backseat tip is held back while the
-  moment is pending or showing (`shouldShowBackseatTip.firstMomentLive`).
+  player's first message. The one-time games tip is held back while the
+  moment is pending or showing (`shouldShowGamesTip.firstMomentLive`).
 - **Analytics (shape only, renderer `sei.track`):** `first_moment_shown
   {primary, minecraft_offered, companion: sui|generated}`,
   `first_moment_action {action: chess|minecraft|call|dismiss|typed, primary,
@@ -1740,19 +1740,20 @@ The design and its measurements are committed at
   when the call reaches `live`. It cannot be inline: the ~40 MB voice module's
   install gate can hold the dial for minutes or refuse it. The arm carries a
   180 s deadline, is re-checked against the wall clock before firing (timers
-  lag across sleep), and is dropped on `status === 'error'`. A one-time
-  localStorage tip (`lib/backseatTipPref`) hangs under the CHAT HEADER's
-  Backseat button, tail pointing up at it. Not the call controls: those only
-  exist once you are on a call, and a notice about a feature is worth nothing to
-  someone already that far in. **"Got it" is the only thing that retires it.**
-  Sharing used to as well, on the reasoning that someone who found the feature
-  does not need telling; live, that silenced exactly the people the beta notice
-  was for, since anyone who used backseat in an earlier build wrote the flag on
-  their first share. **The key carries both a version and the PROFILE SCOPE**
-  (`user.id`, or `local`): localStorage is one bucket for the whole app and is
-  NOT moved when the scope changes, so without the scope a second account on the
-  same machine inherits the first's dismissal. Bumping the version re-announces
-  to everyone without anyone clearing storage by hand.
+  lag across sleep), and is dropped on `status === 'error'`. The one-time
+  "NEW" tip card that hung under the header's Backseat button moved to the
+  GAMES button on 260929 ("New games added", announcing Stardew Valley and
+  Don't Starve Together;
+  `lib/gamesTipPref`, new key `sei.gamesTipDone.v1.<scope>` so everyone sees it
+  once). Its rules carried over: **it retires only on "Got it" or a click on
+  the games button itself**, never on using a feature some other way (the
+  Backseat version once retired on any share, and that silenced exactly the
+  players who had used backseat in an earlier build and were owed the notice).
+  **The key carries both a version and the PROFILE SCOPE** (`user.id`, or
+  `local`): localStorage is one bucket for the whole app and is NOT moved when
+  the scope changes, so without the scope a second account on the same machine
+  inherits the first's dismissal. Bumping the version re-announces to everyone
+  without anyone clearing storage by hand.
 - **UI (260803, 260804).** Entry is the share pill in `CallControls`; the picker
   is `ShareScreenModal` (a `ModalShell`, **Window / Entire screen as two tabs**
   since 260804 — stacked sections put the screens below the fold behind however

@@ -633,7 +633,9 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
           (260729): fullscreen means the game gets every pixel the app window
           has, and the bar's own buttons (call, end) live in the game's bottom
           chrome row, so nothing up here is load-bearing while it is hidden. ── */}
-      {!(gameOpen && gameFullscreen) ? <ChatTopBar characterId={characterId} /> : null}
+      {!(gameOpen && gameFullscreen) ? (
+        <ChatTopBar characterId={characterId} gameOpen={gameOpen} />
+      ) : null}
 
       <div className={styles.content}>
         <div className={styles.mainCol} ref={mainColRef}>
