@@ -34,11 +34,18 @@
  */
 
 import { unlink } from 'node:fs/promises';
-import { paths } from '../paths';
+import { paths, getActiveScope } from '../paths';
 
 export async function reconcileLocalOwnershipOnSignIn(
   currentUserId: string,
 ): Promise<void> {
+  // The sweep awaits the cloud once per character, and it runs outside the
+  // serialized scope switch. Every local write below resolves against the
+  // ACTIVE profile, so if the account changes mid-sweep it stops: deleting
+  // the next profile's files as "foreign to" the previous user is the one
+  // thing it must never do. The new account's sign-in runs its own sweep.
+  const scope = getActiveScope();
+  const scopeMoved = () => getActiveScope() !== scope;
   const { listCharacters, saveCharacterRaw } = await import('../characterStore');
   const { downloadCharacter } = await import('./cloudCharacterClient');
   const { dropOpsForUuid } = await import('./syncQueue');
@@ -73,6 +80,7 @@ export async function reconcileLocalOwnershipOnSignIn(
   const evictedWorldIds = new Set<string>();
 
   for (const c of chars) {
+    if (scopeMoved()) break;
     if (c.is_default) continue;
     if (addedWorldIds.has(c.id)) {
       // Item 10 — unpublish cleanup. A character the user added from the World
@@ -89,6 +97,7 @@ export async function reconcileLocalOwnershipOnSignIn(
       // so a transient blip can't wrongly evict a still-valid add.
       try {
         const cloud = await downloadCharacter(c.id);
+        if (scopeMoved()) break;
         if (!cloud || cloud.shared === false) {
           await deleteLocalChar(c.id);
           await dropOpsForUuid(c.id).catch(() => {});
@@ -109,6 +118,7 @@ export async function reconcileLocalOwnershipOnSignIn(
       // be a lie if a previous save force-stamped current-user onto a leaked
       // foreign-owned file (the original Eris symptom).
       const cloud = await downloadCharacter(c.id);
+      if (scopeMoved()) break;
       if (cloud) {
         if (cloud.owner === currentUserId) {
           // Cloud agrees you own it. Stamp the local copy if it drifted.
@@ -151,10 +161,14 @@ export async function reconcileLocalOwnershipOnSignIn(
   // (already-deleted-on-disk) char is reconsidered next launch.
   if (evictedWorldIds.size > 0) {
     try {
-      await updateConfig((cfg) => ({
-        ...cfg,
-        added_world_ids: (cfg.added_world_ids ?? []).filter((id) => !evictedWorldIds.has(id)),
-      }));
+      // Pinned to the profile the evictions were made in.
+      await updateConfig(
+        (cfg) => ({
+          ...cfg,
+          added_world_ids: (cfg.added_world_ids ?? []).filter((id) => !evictedWorldIds.has(id)),
+        }),
+        { scope },
+      );
       void (await import('./librarySync')).syncLibraryRoster('unpublish-cleanup');
     } catch (err) {
       console.warn(
