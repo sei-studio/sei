@@ -492,10 +492,32 @@ win:
   signtoolOptions:
     publisherName: null
 
+# 260929 one-click installer (outside-app-steps R2b). The assisted installer
+# was Welcome, install mode, Choose folder, Install, Finish: 3 to 4 clicks
+# before the app ever ran, on the platform that is 93% of installs. One-click
+# is a progress bar that launches Sei when done (runAfterFinish defaults on).
+#
+# Upgrade safety for installs made by the ASSISTED installer (v0.6.4 and
+# earlier), verified on windows-latest (.github/workflows/nsis-upgrade-check.yml):
+#   - The uninstall key is Software\Microsoft\Windows\CurrentVersion\Uninstall\
+#     <APP_GUID>, and APP_GUID is a UUIDv5 of appId (LOCKED), not of the
+#     installer mode, so the one-click installer finds and replaces the old
+#     entry: one Apps & features row, never two.
+#   - A per-user install in a folder the user picked keeps that folder:
+#     multiUser.nsh reuses HKCU Software\<APP_GUID> InstallLocation. Only a
+#     FRESH install gets the default %LOCALAPPDATA%\Programs\sei.
+#   - userData is %APPDATA%\Sei in every mode and the old uninstaller runs with
+#     /KEEP_APP_DATA --updated, so settings, characters and the session stay.
+#   - The one case the stock one-click installer misses is a PER-MACHINE
+#     install ("Anyone who uses this computer" on the old install-mode page,
+#     HKLM + Program Files). build/installer.nsh (customInstall) removes that
+#     copy after the per-user install lands, with one admin prompt.
+# allowToChangeInstallationDirectory is gone: electron-builder rejects it with
+# oneClick (it only exists for the assisted installer).
 nsis:
-  oneClick: false                          # show Welcome / Choose Path
-  perMachine: false                        # per-user install — no admin prompt
-  allowToChangeInstallationDirectory: true
+  oneClick: true
+  perMachine: false                        # per-user install, no admin prompt
+  include: build/installer.nsh
 
 # Linux (AppImage) dropped 2026-06-20: the prismarine-viewer headless-gl native
 # dep won't build on the Linux runner and the target was untested anyway. Re-add a
