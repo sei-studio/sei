@@ -28,6 +28,10 @@
   --scene-ink: rgba(242, 234, 217, 0.92);
   --scene-ink-soft: rgba(242, 234, 217, 0.62);
   --scene-text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+  /* Error copy on the art. The theme --red is tuned for app surfaces; on the
+   * scrim it read at about 1.6:1 over a light square and 3.4:1 over a dark
+   * one. This tint is about 5:1 and 11:1. */
+  --scene-error: #ffc2b8;
 }
 
 /* Translucent backing for interactive HUD clusters that need it (move list,
@@ -108,9 +112,10 @@
   margin: 0;
   max-width: 320px;
   font-family: var(--sans);
-  font-size: 12.5px;
-  line-height: 1.45;
-  color: var(--red);
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--scene-error);
   text-shadow: var(--scene-text-shadow);
 }
 
