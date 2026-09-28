@@ -102,10 +102,17 @@ export function upsertSeiProfile(
   for (const [k, p] of Object.entries(profiles)) {
     if (!p || typeof p !== 'object') continue;
     if (typeof p.gameDir !== 'string' || !p.gameDir.trim()) continue;
-    if (samePath(profileGameDir(opts.mcDir, p), opts.gameDir)) {
-      key = k;
-      break;
-    }
+    if (!samePath(profileGameDir(opts.mcDir, p), opts.gameDir)) continue;
+    // Before 260929 setup renamed EVERY fabric-loader-* profile to "Sei" and
+    // pointed it at the Sei game dir of the version just set up, so this dir
+    // can also be claimed by the player's own Fabric profile or by Sei's
+    // profile for another version. Only a profile running this version (or
+    // not a Fabric profile at all) is ours to reuse; otherwise a new
+    // `sei-<version>` entry is made and the misfiled one is left as it is.
+    const m = typeof p.lastVersionId === 'string' ? FABRIC_VERSION_ID_RE.exec(p.lastVersionId) : null;
+    if (m && m[1] !== opts.mcVersion) continue;
+    key = k;
+    break;
   }
   key ??= `sei-${opts.mcVersion}`;
   const nowIso = opts.now.toISOString();
@@ -145,8 +152,25 @@ export interface SeiProfileRef {
 }
 
 /**
+ * True when `gameDir` is a per-version Sei dir (`<mcDir>/sei/<v>`) for a
+ * Minecraft version other than `mcVersion`. Such a profile was misfiled by
+ * the pre-260929 setup bug (every fabric-loader-* profile was repointed at
+ * the newest Sei dir): its mods folder holds another version's skin mod, so
+ * Fabric refuses to start it. It must never count as a Sei-ready profile.
+ */
+export function inOtherVersionSeiDir(mcDir: string, gameDir: string, mcVersion: string): boolean {
+  const rel = path.relative(path.join(mcDir, 'sei'), gameDir);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return false;
+  const parts = rel.split(/[\\/]+/).filter(Boolean);
+  if (parts.length !== 1 || !/^\d+\.\d+(?:\.\d+)?$/.test(parts[0])) return false;
+  return parts[0] !== mcVersion;
+}
+
+/**
  * Fabric profiles in a document, with the Minecraft version and resolved
  * game dir. Callers decide which of these count as "Sei" (skin mod present).
+ * Profiles pointed at another version's Sei dir are left out (see
+ * inOtherVersionSeiDir).
  */
 export function listFabricProfiles(doc: LauncherProfilesDoc, mcDir: string): SeiProfileRef[] {
   const out: SeiProfileRef[] = [];
@@ -156,11 +180,13 @@ export function listFabricProfiles(doc: LauncherProfilesDoc, mcDir: string): Sei
     if (!p || typeof p !== 'object') continue;
     const m = typeof p.lastVersionId === 'string' ? FABRIC_VERSION_ID_RE.exec(p.lastVersionId) : null;
     if (!m) continue;
+    const gameDir = profileGameDir(mcDir, p);
+    if (inOtherVersionSeiDir(mcDir, gameDir, m[1])) continue;
     out.push({
       key,
       name: typeof p.name === 'string' && p.name.trim() ? p.name : key,
       mcVersion: m[1],
-      gameDir: profileGameDir(mcDir, p),
+      gameDir,
       lastUsed: typeof p.lastUsed === 'string' ? p.lastUsed : null,
     });
   }
@@ -180,16 +206,44 @@ export async function readProfilesFile(file: string): Promise<LauncherProfilesDo
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw err;
   }
-  const parsed = JSON.parse(raw) as unknown;
+  // Tolerate a UTF-8 BOM (hand-edited files); JSON.parse rejects it.
+  const parsed = JSON.parse(raw.replace(/^﻿/, '')) as unknown;
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error(`${path.basename(file)} is not a JSON object`);
   }
   return parsed as LauncherProfilesDoc;
 }
 
-/** Atomic write, two-space JSON like the launcher and the Fabric installer. */
-export async function writeProfilesFile(file: string, doc: LauncherProfilesDoc): Promise<void> {
-  await atomicWrite(file, JSON.stringify(doc, null, 2));
+/** Rename errors Windows raises while another process (launcher, antivirus) has the file open. */
+const TRANSIENT_WIN_CODES = new Set(['EPERM', 'EBUSY', 'EACCES']);
+const WRITE_RETRY_DELAYS_MS = [100, 300, 800];
+
+/**
+ * Atomic write, two-space JSON like the launcher and the Fabric installer.
+ * On Windows the final rename fails while another process holds the file
+ * open without delete sharing (antivirus scanning it, the launcher reading
+ * it), so a transient EPERM/EBUSY/EACCES is retried a few times. The old
+ * file stays intact on every failure.
+ */
+export async function writeProfilesFile(
+  file: string,
+  doc: LauncherProfilesDoc,
+  opts: { platform?: NodeJS.Platform; write?: (file: string, text: string) => Promise<void> } = {},
+): Promise<void> {
+  const text = JSON.stringify(doc, null, 2);
+  const write = opts.write ?? ((f: string, t: string) => atomicWrite(f, t));
+  const platform = opts.platform ?? process.platform;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await write(file, text);
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? '';
+      const delay = WRITE_RETRY_DELAYS_MS[attempt];
+      if (platform !== 'win32' || !TRANSIENT_WIN_CODES.has(code) || delay == null) throw err;
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
 }
 
 /** Absolute paths of the launcher profile files present in `mcDir`. */
