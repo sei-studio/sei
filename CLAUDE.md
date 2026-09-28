@@ -2720,7 +2720,11 @@ code, never the host's kick text. A session that ended on an error also
 fires **`bot_session_failed`** (same props, `duration_s` only, not a playtime
 event), the post-join counterpart of `summon_failed`. App quit closes live
 sessions in `before-quit` BEFORE the analytics flush (`app_quit`); the
-drain's own idle statuses come after the flush and used to be lost.
+drain's own idle statuses come after the flush and used to be lost. That
+flush runs before `supervisor.shutdown()`, so it is bounded
+(`ANALYTICS_SHUTDOWN_TIMEOUT_MS`, 2.5s): posthog-node's own default is 30s,
+and with PostHog unreachable quit hung that long with the bot still in the
+world.
 
 **Forge/NeoForge hosts are blocked before summon (260929).** Only on STRONG
 evidence: the status ping's forgeData/modinfo (`forgeModCount != null`) or an
