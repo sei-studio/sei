@@ -80,6 +80,8 @@ export async function saveConfig(config: UserConfig): Promise<void> {
  * switch lands in the profile it began in, never the next one. A caller that
  * awaits (network, disk) between deciding to write and calling this passes
  * `opts.scope`, the profile it read, so the write cannot follow the switch.
+ *
+ * A mutate that changes nothing (same serialized config) skips the write.
  */
 export async function updateConfig(
   mutate: (current: UserConfig) => UserConfig,
@@ -90,15 +92,19 @@ export async function updateConfig(
   await mkdir(path.dirname(target), { recursive: true });
   let next: UserConfig | undefined;
   await withFileLock(target, async () => {
+    let raw: string | null = null;
     let cfg: UserConfig;
     try {
-      cfg = UserConfigSchema.parse(JSON.parse(await readFile(target, 'utf8')));
+      raw = await readFile(target, 'utf8');
+      cfg = UserConfigSchema.parse(JSON.parse(raw));
     } catch (err: unknown) {
       if (err && (err as NodeJS.ErrnoException).code === 'ENOENT') cfg = { ...DEFAULT_CONFIG };
       else throw err;
     }
     next = UserConfigSchema.parse(mutate(cfg));
-    await atomicWrite(target, JSON.stringify(next, null, 2) + '\n');
+    const text = JSON.stringify(next, null, 2) + '\n';
+    if (text === raw) return;
+    await atomicWrite(target, text);
   });
   return next!;
 }

@@ -7,7 +7,7 @@
  * read-modify-write: accumulation, non-positive no-ops, and field preservation.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, stat, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { _setUserDataOverride, paths, setActiveScope, profileRootFor } from './paths';
@@ -223,6 +223,19 @@ describe('saveConfigFromRenderer', () => {
 });
 
 describe('updateConfig', () => {
+  it('260929: a mutate that changes nothing does not rewrite the file', async () => {
+    await saveConfig({ ...(await loadConfig()), preferred_name: 'Ouen' });
+    const old = new Date('2020-01-01T00:00:00Z');
+    await utimes(paths.configPath(), old, old);
+    const out = await updateConfig((cfg) => cfg);
+    expect(out.preferred_name).toBe('Ouen');
+    expect((await stat(paths.configPath())).mtimeMs).toBe(old.getTime());
+    // A real change still writes.
+    await updateConfig((cfg) => ({ ...cfg, preferred_name: 'Sui' }));
+    expect((await stat(paths.configPath())).mtimeMs).not.toBe(old.getTime());
+    expect((await loadConfig()).preferred_name).toBe('Sui');
+  });
+
   it('260929: opts.scope writes the named profile, not the active one', async () => {
     setActiveScope(UUID_B);
     await updateConfig((cfg) => ({ ...cfg, preferred_name: 'A' }), { scope: UUID_A });
