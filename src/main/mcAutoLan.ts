@@ -145,18 +145,28 @@ async function listAutoLanJars(modsDir: string): Promise<string[]> {
 }
 
 async function removeJars(modsDir: string, names: string[]): Promise<number> {
+  return (await removeJarsDetailed(modsDir, names)).removed;
+}
+
+/** `failed` counts copies still on disk (e.g. locked by a running game on Windows). */
+async function removeJarsDetailed(
+  modsDir: string,
+  names: string[],
+): Promise<{ removed: number; failed: number }> {
   let removed = 0;
+  let failed = 0;
   for (const name of names) {
     try {
       await fs.unlink(path.join(modsDir, name));
       removed += 1;
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        failed += 1;
         logger.warn(`autolan: could not remove ${name}: ${(err as Error).message}`);
       }
     }
   }
-  return removed;
+  return { removed, failed };
 }
 
 /**
@@ -214,7 +224,16 @@ export async function installAutoLanMod(opts: InstallAutoLanOpts): Promise<{
       await fs.unlink(staged).catch(() => {});
       throw err;
     }
-    await removeJars(modsDir, others);
+    const { failed } = await removeJarsDetailed(modsDir, others);
+    if (failed > 0) {
+      // An old copy is still there (Windows keeps a running game's jars
+      // locked). Two jars with the same mod id stop Fabric from launching, so
+      // take the new one back out and leave the old one, which still matches
+      // this profile's version. The next sync (game closed) replaces it.
+      await fs.unlink(finalPath).catch(() => {});
+      logger.warn(`autolan: old copy in ${modsDir} is locked; kept it and did not place ${jar.file}`);
+      return { status: 'failed' };
+    }
     logger.info(`autolan: placed ${jar.file} for Minecraft ${mcVersion} in ${modsDir}`);
     return { status: 'installed', file: jar.file };
   } catch (err) {
@@ -259,7 +278,11 @@ export async function findSeiProfiles(mcDir: string): Promise<SeiProfile[]> {
     const gameDir = path.resolve(mcDir, e.gameDir);
     const rel = path.relative(seiRoot, gameDir);
     if (rel.startsWith('..') || path.isAbsolute(rel)) continue;
-    if (!out.some((p) => p.gameDir === gameDir)) out.push({ gameDir, mcVersion: m[1] });
+    // Distinct (gameDir, version) pairs: two profiles may share one dir (the
+    // pre-260916 single `<mcDir>/sei`), and the sync must see both versions.
+    if (!out.some((p) => p.gameDir === gameDir && p.mcVersion === m[1])) {
+      out.push({ gameDir, mcVersion: m[1] });
+    }
   }
   return out;
 }
@@ -283,15 +306,29 @@ export async function syncAutoLanForSeiProfiles(opts: SyncAutoLanOpts): Promise<
   if (enabled && !manifest) return [];
   const results: Array<SeiProfile & { status: AutoLanInstallStatus; file?: string }> = [];
   for (const mcDir of opts.mcDirs) {
-    for (const profile of await findSeiProfiles(mcDir)) {
+    const byDir = new Map<string, string[]>();
+    for (const p of await findSeiProfiles(mcDir)) {
+      byDir.set(p.gameDir, [...(byDir.get(p.gameDir) ?? []), p.mcVersion]);
+    }
+    for (const [gameDir, versions] of byDir) {
+      // Several profiles on one game dir (the pre-260916 shared `<mcDir>/sei`)
+      // with versions that need different builds (or none): any one jar would
+      // stop Fabric from launching the other profile, so none goes in.
+      const conflict =
+        manifest !== null &&
+        versions.length > 1 &&
+        new Set(versions.map((v) => pickAutoLanJar(manifest, v)?.file ?? null)).size > 1;
+      if (conflict) {
+        logger.info(`autolan: ${gameDir} is shared by Minecraft ${versions.join(', ')}; not installing there`);
+      }
       const r = await installAutoLanMod({
-        modsDir: path.join(profile.gameDir, 'mods'),
-        mcVersion: profile.mcVersion,
+        modsDir: path.join(gameDir, 'mods'),
+        mcVersion: versions[0],
         assetsDir: opts.assetsDir,
-        enabled,
+        enabled: enabled && !conflict,
         manifest,
       });
-      results.push({ ...profile, ...r });
+      results.push({ gameDir, mcVersion: versions[0], ...r });
     }
   }
   return results;

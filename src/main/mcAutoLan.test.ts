@@ -12,7 +12,8 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { promises as fsp } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AUTOLAN_JAR_RE,
   findSeiProfiles,
@@ -59,6 +60,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await rm(tmp, { recursive: true, force: true });
 });
 
@@ -143,6 +145,24 @@ describe('installAutoLanMod', () => {
     const r = await installAutoLanMod({ modsDir, mcVersion: '1.21.1', assetsDir });
     expect(r.status).toBe('current');
     expect(await readdir(modsDir)).toEqual([JAR_B]);
+  });
+
+  it('keeps a locked old build and takes the new one back out (no duplicate mod id)', async () => {
+    const modsDir = path.join(tmp, 'mods');
+    await mkdir(modsDir, { recursive: true });
+    const old = 'sei-autolan-0.9.0+mc1.21.1.jar';
+    await writeFile(path.join(modsDir, old), 'old');
+    const realUnlink = fsp.unlink.bind(fsp);
+    vi.spyOn(fsp, 'unlink').mockImplementation(async (p) => {
+      if (String(p).endsWith(old)) {
+        throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' });
+      }
+      return realUnlink(p);
+    });
+
+    const r = await installAutoLanMod({ modsDir, mcVersion: '1.21.1', assetsDir });
+    expect(r.status).toBe('failed');
+    expect(await readdir(modsDir)).toEqual([old]);
   });
 
   it('removes a copy when no build covers the profile version', async () => {
@@ -250,6 +270,27 @@ describe('syncAutoLanForSeiProfiles', () => {
 
     const again = await syncAutoLanForSeiProfiles({ mcDirs: [mcDir], assetsDir });
     expect(again.map((r) => r.status)).toEqual(['current', 'current', 'absent']);
+  });
+
+  it('leaves a game dir shared by versions that need different builds without the mod', async () => {
+    const mcDir = path.join(tmp, '.minecraft');
+    const shared = path.join(mcDir, 'sei');
+    await writeLauncherProfiles(mcDir, {
+      old: { lastVersionId: 'fabric-loader-0.15.0-1.21.1', gameDir: shared },
+      older: { lastVersionId: 'fabric-loader-0.15.0-26.1', gameDir: shared },
+      same1: { lastVersionId: 'fabric-loader-0.15.0-1.21.1', gameDir: path.join(mcDir, 'sei', 'x') },
+      same2: { lastVersionId: 'fabric-loader-0.15.0-1.21.4', gameDir: path.join(mcDir, 'sei', 'x') },
+    });
+    await mkdir(path.join(shared, 'mods'), { recursive: true });
+    await writeFile(path.join(shared, 'mods', JAR_B), BYTES[JAR_B]);
+
+    const results = await syncAutoLanForSeiProfiles({ mcDirs: [mcDir], assetsDir });
+    expect(results.map((r) => [r.gameDir, r.status])).toEqual([
+      [shared, 'removed'],
+      [path.join(mcDir, 'sei', 'x'), 'installed'],
+    ]);
+    expect(await readdir(path.join(shared, 'mods'))).toEqual([]);
+    expect(await readdir(path.join(mcDir, 'sei', 'x', 'mods'))).toEqual([JAR_B]);
   });
 
   it('removes the jar from every Sei profile when turned off', async () => {
