@@ -32,6 +32,7 @@
 import React, { useEffect } from 'react';
 import { supportedVersions } from 'minecraft-protocol/src/version.js';
 import { useT } from '../../lib/i18n';
+import { MC_NEWEST_JOINABLE } from '../../lib/mcVersions';
 import { sei } from '../../lib/ipcClient';
 import { useDataStore } from '../../lib/stores/useDataStore';
 import { useWizardStore } from '../../lib/stores/useWizardStore';
@@ -42,8 +43,12 @@ import { useFirewallHint, useStartMinecraft } from './useStartMinecraft';
 const POLL_MS = 10_000;
 const GET_MINECRAFT_URL = 'https://www.minecraft.net/download';
 
-/** Highest Minecraft Java version Sei's networking stack can join. */
-const LATEST_SUPPORTED: string = supportedVersions[supportedVersions.length - 1];
+/**
+ * Newest Minecraft Java version Sei can join (260929: the sorted joinable
+ * list's end, shared with every other "up to" line, not the table's last
+ * entry, whose order is not a contract).
+ */
+const LATEST_SUPPORTED: string = MC_NEWEST_JOINABLE;
 
 const LAN_STEPS: readonly string[] = [
   'Launch Minecraft and open your singleplayer world.',

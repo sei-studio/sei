@@ -15,13 +15,9 @@
  */
 
 import React from 'react';
-// Dependency-free CJS data module — the same table the bot's networking stack
-// (minecraft-protocol) enforces, so the stated ceiling can never drift from
-// what Sei actually joins. Deep import on purpose (mirrors
-// UnsupportedVersionModal): the package root pulls the full protocol stack,
-// which must never enter the renderer.
-import { supportedVersions } from 'minecraft-protocol/src/version.js';
-import { selectTargetMcVersion } from '@shared/mcSetup';
+// The ceiling comes from minecraft-protocol's table via lib/mcVersions (the
+// same table the bot enforces), so it can never drift from what Sei joins.
+import { MC_NEWEST_JOINABLE } from '../lib/mcVersions';
 import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
@@ -31,12 +27,13 @@ import { attemptSummon } from '../lib/summonFlow';
 import { useFirewallHint, useSeiProfileAction } from './mcdash/useStartMinecraft';
 import styles from './LanNotOpenModal.module.css';
 
-/** Highest Minecraft Java version Sei's networking stack can join. */
-// 260917: the same rule the setup wizard installs by (release-only, sorted;
-// the table's order is not a contract), so this copy never names a version
-// the wizard would not build.
-const LATEST_SUPPORTED: string =
-  selectTargetMcVersion({ supported: supportedVersions }) ?? supportedVersions[supportedVersions.length - 1];
+/**
+ * Newest Minecraft Java version Sei can join, from the same joinable list the
+ * "Which versions?" control shows (lib/mcVersions). 260929: this used to be
+ * the setup wizard's target (26.1), so the hint said "up to 26.1" while Sei
+ * joins 26.2 / 26.3; the wizard version is named where the Sei profile is.
+ */
+const LATEST_SUPPORTED: string = MC_NEWEST_JOINABLE;
 
 const STEPS: readonly string[] = [
   'Open your world in Minecraft Java.',
