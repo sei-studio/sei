@@ -895,6 +895,15 @@ export const UserConfigSchema = z.object({
    */
   feedback_reward_claimed: z.boolean().optional().default(false),
   /**
+   * Draw! intro game done (260929), written by MAIN only (not in
+   * RENDERER_SETTABLE_KEYS). Until a player finishes one Draw! game, the game
+   * is the short intro: one round with the companion drawing first, so they
+   * see how a turn works before they have to draw on the spot (12 of 18
+   * games were abandoned, 4 at 0 turns about 70s into the player's first
+   * drawing turn). Set when that intro game completes; absent = not yet.
+   */
+  draw_intro_done: z.boolean().optional(),
+  /**
    * 260926 — "Your free play is back" launch banner. The weekly reset time
    * (CreditsStatus.resets_at) remembered the last time an account was seen
    * AT the credit wall, keyed by that account's user id because config.json

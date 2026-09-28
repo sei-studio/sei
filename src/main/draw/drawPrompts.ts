@@ -146,13 +146,19 @@ export function drawContractBlock(opts: {
   playerName: string;
   rounds: number;
   turnSeconds: number;
+  /** 260929: the player's first game, where the character draws first. */
+  intro?: boolean;
 }): string {
   const { playerName, rounds, turnSeconds } = opts;
   return [
     '# DRAW! GAME',
     `You are playing Draw!, a sketch-guessing game, against ${playerName} inside the Sei app. ` +
       `The game is ${rounds} round${rounds === 1 ? '' : 's'}. Each round you both get a turn: one of you draws a secret word ` +
-      `while the other guesses in chat. A turn lasts ${turnSeconds} seconds and ends early the moment the guesser says the word.`,
+      `while the other guesses in chat. A turn lasts ${turnSeconds} seconds and ends early the moment the guesser says the word.` +
+      (opts.intro
+        ? ` This is ${playerName}'s first game of Draw!, so you draw first and they guess, then they draw. ` +
+          'Keep your picture simple and clear so they can see how a turn works.'
+        : ''),
     // 260729, live capture (web): the character told the player a wrong guess
     // was correct ("yes! that's it!") and then invented a round change,
     // because nothing told it the engine adjudicates. This paragraph is that

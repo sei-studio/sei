@@ -153,6 +153,16 @@ describe('the game is the referee', () => {
     expect(contract).toContain('no guess so far has been right');
   });
 
+  // 260929: the intro game flips the turn order; the model is told once, in
+  // the cached contract, and a normal game's contract is unchanged.
+  it('tells the character it draws first only in the intro game', () => {
+    const intro = drawContractBlock({ playerName: PLAYER, rounds: 1, turnSeconds: 180, intro: true });
+    expect(intro).toContain(`This is ${PLAYER}'s first game of Draw!, so you draw first`);
+    expect(intro).toContain('The game is 1 round.');
+    const normal = drawContractBlock({ playerName: PLAYER, rounds: 3, turnSeconds: 180 });
+    expect(normal).not.toContain('first game');
+  });
+
   it('restates on the drawing turn that every guess so far is wrong', () => {
     const block = buildDrawTurnBlock({
       round: 1,

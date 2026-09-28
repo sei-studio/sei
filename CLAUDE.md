@@ -750,7 +750,8 @@ Turn-based sketch guessing, launched from the "Play together" tiles. **Mutually
 exclusive with a Minecraft summon and with chess** per character (the shared
 `lib/gameLaunch.ts` gate).
 
-- **Shape:** always `ROUNDS` (3) rounds; the 1-5 setup chooser was removed
+- **Shape:** always `ROUNDS` (3) rounds (the intro game below is the one
+  exception); the 1-5 setup chooser was removed
   260728, since it is a choice nobody has the information to make before their
   first game and does not want to make again after it. MIN/MAX survive only as
   the bounds main clamps an incoming `drawStart` to. Each ROUND is two
@@ -764,6 +765,26 @@ exclusive with a Minecraft summon and with chess** per character (the shared
   word directly, so `wordChoices` in the pushed state never reveals anything it
   drew. "Play again" returns to the setup screen (`drawNewGame`) rather than
   restarting in place, so the player lands somewhere they can stop.
+- **The intro game (260929).** Real usage: 12 of 18 games abandoned, 4 at 0
+  turns about 70s into the player's own first drawing turn. So until a
+  player finishes one game (`UserConfig.draw_intro_done`, main-owned, set
+  when an intro game completes), the game is the intro: `INTRO_ROUNDS` (1)
+  round, and the CHARACTER draws first (`Session.firstDrawer`), with one
+  system line telling the player to type guesses. Main decides it when the
+  session is created and says so in `DrawGameState.intro`, so the setup copy
+  matches; Start keeps the setup screen's verdict and "Play again" after an
+  intro is always a normal game. Turn order lives in `turnOrder.ts`
+  (`nextTurn` / `isLastTurn`): never test "the character just drew" for
+  game over again. The contract block says the character goes first only
+  in the intro.
+- **Turn analytics (260929).** `draw_turn_ended {round, rounds, turn_number,
+  drawer, phase: pick|drawing, outcome: guessed|timeout|abandoned|
+  account_switch, turn_ms, strokes, guesser_lines, intro, paused}` fires
+  when a turn resolves AND for the turn that was live when the game was
+  quit (a `pick` row = the player never chose a word). `turn_ms` on a
+  guessed turn is the guess latency. Not a session event (no `duration_ms`).
+  `draw_game_started/_ended` also carry `intro` and `first_drawer`, and
+  `_ended` the `phase` it stopped in.
 - **The chat log is a PROMPT, and it used to leak (260728).** Every system line
   is replayed verbatim into the character's next call, so
   `"Round 1 of 3. Your turn to draw: horn."` did two things at once: handed the

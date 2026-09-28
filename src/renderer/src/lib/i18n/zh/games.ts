@@ -99,6 +99,7 @@ export const ZH_GAMES: Record<string, string> = {
   'A hand-drawn crown': '一顶手绘的王冠',
   'A hand-drawn horse': '一匹手绘的马',
   'Take turns drawing and guessing. Three rounds.': '轮流画画和猜词。一共三轮。',
+  '{name} draws first, you guess. Then it is your turn. One quick round.': '{name}先画，你来猜。然后轮到你画。只玩一轮。',
   'Start!': '开始！',
   'Starting...': '正在开始...',
   'Leave Draw!': '退出你画我猜',
