@@ -1,0 +1,200 @@
+{
+ "sorts": [
+  {
+   "sortId": "top-trending",
+   "sortDisplayName": "Top Trending",
+   "contentType": "Games",
+   "games": [
+    {
+     "universeId": 10035204815,
+     "rootPlaceId": 124216119978534,
+     "name": "[🌋] Ride A Pet",
+     "playerCount": 125005,
+     "isSponsored": false,
+     "totalUpVotes": 280773
+    },
+    {
+     "universeId": 2668101271,
+     "rootPlaceId": 6961824067,
+     "name": "Fling Things and People",
+     "playerCount": 20246,
+     "isSponsored": false,
+     "totalUpVotes": 944361
+    },
+    {
+     "universeId": 7326934954,
+     "rootPlaceId": 79546208627805,
+     "name": "99 Nights in the Forest 🔦",
+     "playerCount": 106354,
+     "isSponsored": false,
+     "totalUpVotes": 5410145
+    },
+    {
+     "universeId": 5595353122,
+     "rootPlaceId": 16205713724,
+     "name": "Slayers 2",
+     "playerCount": 140941,
+     "isSponsored": false,
+     "totalUpVotes": 868084
+    },
+    {
+     "universeId": 10684750879,
+     "rootPlaceId": 118805555015549,
+     "name": "[Enhance]+1 Loot To Forge",
+     "playerCount": 39545,
+     "isSponsored": false,
+     "totalUpVotes": 82181
+    },
+    {
+     "universeId": 5995470825,
+     "rootPlaceId": 17516596118,
+     "name": "[🔥NEW MYTHIC] Hypershot",
+     "playerCount": 20372,
+     "isSponsored": false,
+     "totalUpVotes": 1851803
+    }
+   ]
+  },
+  {
+   "sortId": "up-and-coming",
+   "sortDisplayName": "Up-and-Coming",
+   "contentType": "Games",
+   "games": [
+    {
+     "universeId": 10764640833,
+     "rootPlaceId": 92722005168254,
+     "name": "SKI (ALPHA)",
+     "playerCount": 7925,
+     "isSponsored": false,
+     "totalUpVotes": 4959
+    },
+    {
+     "universeId": 10765012427,
+     "rootPlaceId": 123720558354386,
+     "name": "Build the Pyramid!",
+     "playerCount": 16013,
+     "isSponsored": false,
+     "totalUpVotes": 49995
+    },
+    {
+     "universeId": 10039889230,
+     "rootPlaceId": 99925503388128,
+     "name": "Fishing Master",
+     "playerCount": 3223,
+     "isSponsored": false,
+     "totalUpVotes": 4858
+    },
+    {
+     "universeId": 10766456501,
+     "rootPlaceId": 74205509034203,
+     "name": "The Hunt: Roblox 20",
+     "playerCount": 5044,
+     "isSponsored": false,
+     "totalUpVotes": 19139
+    },
+    {
+     "universeId": 10765167636,
+     "rootPlaceId": 126710589265077,
+     "name": "[🚀] 2 Player Raid Tycoon",
+     "playerCount": 4192,
+     "isSponsored": false,
+     "totalUpVotes": 6973
+    },
+    {
+     "universeId": 10764297006,
+     "rootPlaceId": 138110382920220,
+     "name": "Pixel Conquest",
+     "playerCount": 4895,
+     "isSponsored": false,
+     "totalUpVotes": 6515
+    }
+   ]
+  },
+  {
+   "sortId": "top-playing-now",
+   "sortDisplayName": "Top Playing Now",
+   "contentType": "Games",
+   "games": [
+    {
+     "universeId": 10563114921,
+     "rootPlaceId": 107778070777162,
+     "name": "Steal An Egg",
+     "playerCount": 1045001,
+     "isSponsored": false,
+     "totalUpVotes": 2944350
+    },
+    {
+     "universeId": 1686885941,
+     "rootPlaceId": 4924922222,
+     "name": "Brookhaven 🏡RP",
+     "playerCount": 337560,
+     "isSponsored": false,
+     "totalUpVotes": 8594904
+    },
+    {
+     "universeId": 66654135,
+     "rootPlaceId": 142823291,
+     "name": "Murder Mystery 2",
+     "playerCount": 205740,
+     "isSponsored": false,
+     "totalUpVotes": 10607016
+    },
+    {
+     "universeId": 994732206,
+     "rootPlaceId": 2753915549,
+     "name": "Blox Fruits",
+     "playerCount": 180248,
+     "isSponsored": false,
+     "totalUpVotes": 12720715
+    },
+    {
+     "universeId": 5595353122,
+     "rootPlaceId": 16205713724,
+     "name": "Slayers 2",
+     "playerCount": 140941,
+     "isSponsored": false,
+     "totalUpVotes": 868084
+    },
+    {
+     "universeId": 6035872082,
+     "rootPlaceId": 17625359962,
+     "name": "RIVALS",
+     "playerCount": 138395,
+     "isSponsored": false,
+     "totalUpVotes": 10659852
+    }
+   ]
+  },
+  {
+   "sortId": "made-with-build",
+   "sortDisplayName": "Explore Something New",
+   "contentType": "Games",
+   "games": [
+    {
+     "universeId": 10766357013,
+     "rootPlaceId": 121922799762080,
+     "name": "Mini Golf: Wild Fairways",
+     "playerCount": 28,
+     "isSponsored": false,
+     "totalUpVotes": 54
+    },
+    {
+     "universeId": 10612995138,
+     "rootPlaceId": 116385321470055,
+     "name": "[🏠 UPDATE] Loot Wars [Beta]",
+     "playerCount": 6,
+     "isSponsored": false,
+     "totalUpVotes": 136
+    },
+    {
+     "universeId": 10767659751,
+     "rootPlaceId": 73021429982912,
+     "name": "Find The Key 🗝️",
+     "playerCount": 8,
+     "isSponsored": false,
+     "totalUpVotes": 15
+    }
+   ]
+  }
+ ]
+}

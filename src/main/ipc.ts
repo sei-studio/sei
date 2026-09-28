@@ -230,6 +230,13 @@ const IdSchema = z.string().regex(
   { message: 'characterId must be a UUID' },
 );
 
+/** 260929: a backseat game id (the registry in shared/backseatGames.ts). */
+const BackseatGameIdSchema = z.string().max(40).regex(/^[a-z0-9_-]+$/);
+const BackseatGameSelectionSchema = z.object({
+  gameId: BackseatGameIdSchema,
+  universeId: z.number().int().positive().optional(),
+});
+
 /**
  * 260703 procgen — thrown when a CREATE (chars:save of a new id) or a
  * library-add (chars:add-to-library / chars:restore-default) would push the
@@ -1576,6 +1583,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         sourceId: z.string().max(300),
         sourceName: z.string().max(200),
         mode: z.enum(['voice', 'text']),
+        // 260929 backseat games: ids only; main looks the game up itself.
+        game: BackseatGameSelectionSchema.optional(),
       })
       .parse(argsRaw);
     const { BACKSEAT_ERR_MC_ACTIVE } = await import('../shared/backseatIpc');
@@ -1586,7 +1595,32 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       args.sourceId,
       args.sourceName,
       args.mode,
+      args.game,
     );
+  });
+  // 260929 backseat games: the "which game are you playing?" step. Lookups
+  // run in main (the renderer has no network of its own for this) and never
+  // throw for a Roblox-side failure; a missing provider answers empty.
+  ipcMain.handle(IpcChannel.backseat.gameResolve, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ gameId: BackseatGameIdSchema, input: z.string().max(500) })
+      .parse(argsRaw);
+    const { lookupFor } = await import('./backseat/games');
+    const lookup = lookupFor(args.gameId);
+    if (!lookup) return { kind: 'error', code: 'network' } as const;
+    return await lookup.resolve(args.input.slice(0, 200));
+  });
+  ipcMain.handle(IpcChannel.backseat.gamePopular, async (_event, idArg: unknown) => {
+    const gameId = BackseatGameIdSchema.parse(idArg);
+    const { lookupFor } = await import('./backseat/games');
+    return (await lookupFor(gameId)?.popular()) ?? [];
+  });
+  ipcMain.handle(IpcChannel.backseat.gameDetails, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ gameId: BackseatGameIdSchema, universeId: z.number().int().positive() })
+      .parse(argsRaw);
+    const { lookupFor } = await import('./backseat/games');
+    return (await lookupFor(args.gameId)?.details(args.universeId)) ?? null;
   });
   ipcMain.handle(IpcChannel.backseat.getState, async (_event, idArg: unknown) => {
     const id = IdSchema.parse(idArg);

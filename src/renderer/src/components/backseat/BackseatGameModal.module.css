@@ -1,0 +1,200 @@
+/**
+ * Backseat game modal (260929): the one-time intro and the "which game" step
+ * for a backseat game tile. The body of a ModalShell, so the shell owns the
+ * scrim, panel, title and footer. Same registers as ShareScreenModal, which
+ * this hands over to.
+ */
+
+/* ── Intro ─────────────────────────────────────────────────────────────── */
+
+.intro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.introArt {
+  aspect-ratio: 16 / 10;
+  background-size: cover;
+  background-position: center;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border);
+}
+
+.introText {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+/* ── Pick ──────────────────────────────────────────────────────────────── */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  min-height: 0;
+  max-height: 68vh;
+}
+
+.sub {
+  margin: var(--space-xs) 0 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.searchRow {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-sm);
+}
+
+.field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.error {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--red);
+}
+
+.note {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--warn);
+}
+
+.listHead {
+  margin-top: var(--space-xs);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding-right: var(--space-xs);
+}
+
+.empty {
+  margin: var(--space-lg) 0;
+  text-align: center;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--surface-2);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 120ms var(--ease);
+}
+
+.row:hover,
+.row:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.rowBody,
+.pickedBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.rowName,
+.pickedName {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picked {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding: var(--space-sm);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md, 8px);
+  background: var(--surface-2);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.pickedName {
+  font-size: 16px;
+  white-space: normal;
+}
+
+.pickedDesc {
+  margin-top: var(--space-xs);
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-line;
+}
+
+.icon {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm, 6px);
+  object-fit: cover;
+  background: var(--bg4);
+}
+
+.iconLarge {
+  width: 72px;
+  height: 72px;
+}
+
+.iconBlank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--display);
+  font-size: 18px;
+  color: var(--muted);
+}

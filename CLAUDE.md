@@ -1762,6 +1762,30 @@ The design and its measurements are committed at
   tile, no text mode (there is nowhere to type) and no pause button (the share
   toggle is it). `useBackseatStore.active` still feeds the IconRail activity
   badge and the cross-launch gate.
+- **Backseat game tiles are the one exception to "no games tile" (260929).**
+  "Roblox (Backseat)" in the games picker is an ordinary share with a game
+  attached. The registry is `src/shared/backseatGames.ts` (a new game such as
+  Valorant is one entry: name, art, window names to preselect, knowledge text,
+  optional lookup provider). Flow: one-time intro per account
+  (`lib/backseatGamePref.ts`, key `sei.backseatGameIntro.v1.<gameId>.<scope>`),
+  then an optional pick step (`BackseatGameModal`), then `ShareScreenModal`,
+  which preselects a window whose title matches `windowNames` (polls up to
+  2 min, never a browser tab). Only `{gameId, universeId}` crosses IPC; main
+  re-fetches the details (`main/backseat/games/`), so no renderer text reaches
+  the prompt. The knowledge + the picked game's page (fenced, marked
+  untrusted, `fenceSafe`) ride in `extraStable` after `BACKSEAT_CONTRACT`
+  (`renderBackseatGameBlock`). Game sessions ALSO get the web tools
+  (`sessionTools`, one array for every tick; ordinary shares are unchanged),
+  which is the tools-suppress-speech trade above, taken on purpose so "how do
+  I get a house" gets answered; `GAME_SESSION_WEB_SEARCH` turns it off.
+  Roblox's omni-search is rate-limited to about 1 request a minute per IP
+  (`x-ratelimit-reset`): the client arms a cooldown and matches the explore
+  sorts' popular pool instead, and says so in the UI; link paste
+  (`universes/v1/places/<id>/universe`) is always reliable. Analytics:
+  `backseat_game_selected {game, has_specific_game, source, universe_id}`
+  (never the typed search), and `backseat_started/_ended` carry `game`.
+  Verify with `?dashshot=roblox&part=picker|intro|pick|share` (+`&lang=zh`) or
+  `scripts/roblox-backseat-shots.ts`.
 - **THERE IS ONE CONVERSATION, NOT TWO (260804).** While a companion is sharing,
   `dispatchUserTurn` routes the player's utterance to `capture.sendUserTick`
   and SKIPS that companion's ordinary voice turn; anyone else on the call still

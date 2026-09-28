@@ -181,8 +181,19 @@ const api: RendererApi = {
 
   // Backseat (260728) — see src/shared/backseatIpc.ts.
   backseatSources: () => ipcRenderer.invoke(IpcChannel.backseat.sources),
-  backseatStart: (characterId, sourceId, sourceName, mode) =>
-    ipcRenderer.invoke(IpcChannel.backseat.start, { characterId, sourceId, sourceName, mode }),
+  backseatStart: (characterId, sourceId, sourceName, mode, game) =>
+    ipcRenderer.invoke(IpcChannel.backseat.start, {
+      characterId,
+      sourceId,
+      sourceName,
+      mode,
+      ...(game ? { game } : {}),
+    }),
+  backseatGameResolve: (gameId, input) =>
+    ipcRenderer.invoke(IpcChannel.backseat.gameResolve, { gameId, input }),
+  backseatGamePopular: (gameId) => ipcRenderer.invoke(IpcChannel.backseat.gamePopular, gameId),
+  backseatGameDetails: (gameId, universeId) =>
+    ipcRenderer.invoke(IpcChannel.backseat.gameDetails, { gameId, universeId }),
   backseatGetState: (characterId) =>
     ipcRenderer.invoke(IpcChannel.backseat.getState, characterId),
   backseatTick: (tick) => ipcRenderer.invoke(IpcChannel.backseat.tick, tick),

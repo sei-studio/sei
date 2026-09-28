@@ -53,6 +53,7 @@ import { MiniTile } from './components/MiniTile';
 import { CallOverlayPusher } from './components/CallOverlayPusher';
 import { CrossLaunchConfirmModal } from './components/CrossLaunchConfirmModal';
 import { ShareScreenModal } from './components/backseat/ShareScreenModal';
+import { BackseatGameModal } from './components/backseat/BackseatGameModal';
 import { GamesPickerModal } from './components/GamesPickerModal';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { CreditsScreen } from './screens/CreditsScreen';
@@ -1096,7 +1097,11 @@ export function App(): React.ReactElement {
       {/* 260803 — the screen-share source picker, opened from the call
           controls' share button (the games-picker tile is gone). */}
       {modal?.kind === 'share-screen' ? (
-        <ShareScreenModal characterId={modal.characterId} />
+        <ShareScreenModal characterId={modal.characterId} game={modal.game} />
+      ) : null}
+      {/* 260929 — a backseat game tile (Roblox): intro + pick-your-game. */}
+      {modal?.kind === 'backseat-game' ? (
+        <BackseatGameModal characterId={modal.characterId} gameId={modal.gameId} />
       ) : null}
       {/* 260721 — launching a game while another one is active: confirm ends
           the previous session via its normal end path, then proceeds. */}

@@ -40,6 +40,7 @@
 
 import { create } from 'zustand';
 import type { BackseatSource, BackseatState } from '../../../../shared/backseatIpc';
+import type { BackseatGameSelection } from '../../../../shared/backseatGames';
 import { startCapture, stopCapture, type CaptureHandle } from '../backseat/captureController';
 import { sei } from '../ipcClient';
 import { t } from '../i18n';
@@ -60,6 +61,8 @@ export const PENDING_SHARE_TTL_MS = 180_000;
 export interface PendingShare {
   characterId: string;
   source: BackseatSource;
+  /** Set when the share came from a backseat game tile (260929). */
+  game?: BackseatGameSelection;
   /** Epoch ms after which this must not fire. */
   expiresAt: number;
 }
@@ -82,9 +85,17 @@ interface BackseatStore {
 
   /** Start sharing `source` with `characterId`. Throws nothing: failures land
    *  in `error` so the picker can stay open and let them try another window. */
-  share: (characterId: string, source: BackseatSource) => Promise<boolean>;
+  share: (
+    characterId: string,
+    source: BackseatSource,
+    game?: BackseatGameSelection,
+  ) => Promise<boolean>;
   /** Remember a share to start once a call with `characterId` goes live. */
-  armPendingShare: (characterId: string, source: BackseatSource) => void;
+  armPendingShare: (
+    characterId: string,
+    source: BackseatSource,
+    game?: BackseatGameSelection,
+  ) => void;
   /** Drop the armed share (call failed, deadline passed, or it just fired). */
   clearPendingShare: () => void;
   /** Start the armed share if it is still valid. Returns whether it started. */
@@ -158,7 +169,7 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
     error: null,
     pendingShare: null,
 
-    share: async (characterId, source) => {
+    share: async (characterId, source, game) => {
       if (get().starting) return false;
       const epoch = scopeEpoch;
       set({ starting: true, error: null });
@@ -166,7 +177,7 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
       // (a live Minecraft summon) never leaves a capture running with nothing
       // to send ticks to.
       try {
-        await sei.backseatStart(characterId, source.id, source.name, 'voice');
+        await sei.backseatStart(characterId, source.id, source.name, 'voice', game);
       } catch (err) {
         // Refused because the account is changing (ACCOUNT_SWITCHING), or it
         // changed while main answered: resetForScope already reset the store.
@@ -222,7 +233,7 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
       return true;
     },
 
-    armPendingShare: (characterId, source) => {
+    armPendingShare: (characterId, source, game) => {
       get().clearPendingShare();
       const expiresAt = Date.now() + PENDING_SHARE_TTL_MS;
       pendingTimer = setTimeout(() => {
@@ -230,7 +241,7 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
         // The call never came (declined install, backed out, dial failed).
         set({ pendingShare: null });
       }, PENDING_SHARE_TTL_MS);
-      set({ pendingShare: { characterId, source, expiresAt } });
+      set({ pendingShare: { characterId, source, expiresAt, ...(game ? { game } : {}) } });
     },
 
     clearPendingShare: () => {
@@ -249,7 +260,7 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
       // an arm still readable while share() awaits would fire a second time.
       get().clearPendingShare();
       if (expired) return false;
-      return get().share(pending.characterId, pending.source);
+      return get().share(pending.characterId, pending.source, pending.game);
     },
 
     stopSharing: async () => {

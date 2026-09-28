@@ -62,7 +62,18 @@ import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memor
 import * as chatStore from '../chat/chatStore';
 import { classifyUsageLimit, raiseUsageLimitPopup } from '../chat/usageLimit';
 import type { LogBatch } from '../../shared/ipc';
-import { BACKSEAT_CONTRACT, SAVE_CLIP_TOOL, stripDashes, tickNote } from './backseatPrompts';
+import {
+  BACKSEAT_CONTRACT,
+  SAVE_CLIP_TOOL,
+  renderBackseatGameBlock,
+  stripDashes,
+  tickNote,
+} from './backseatPrompts';
+import { resolveGameContext } from './games';
+import type { BackseatGameDef, BackseatGameInfo, BackseatGameSelection } from '../../shared/backseatGames';
+import { isWebTool, webToolsFor } from '../../bot/web/webTools.js';
+import { getChatWebSession, resolveWebSearchSettings } from '../llm/webSearchSettings';
+import type { LlmMessage, LlmProvider, LlmResult, LlmToolDef } from '../llm/types';
 import { createBackseatLog, NULL_BACKSEAT_LOG, type BackseatLog } from './backseatLog';
 import { actFlagFromEnv, CONTROL_TOOL, controlCall, controlEventNote } from '../computerUse/controlTool';
 import { ControlGate, type ControlOrigin } from '../computerUse/controlPolicy';
@@ -99,6 +110,29 @@ const BACKSEAT_PROACTIVENESS = 1;
  */
 const TOOLS_BASE = [SAVE_CLIP_TOOL, REMEMBER_TOOL];
 const TOOLS_WITH_CONTROL = [SAVE_CLIP_TOOL, REMEMBER_TOOL, CONTROL_TOOL];
+
+/**
+ * 260929: a session started from a backseat GAME tile (Roblox) also offers
+ * web search, so "how do I get to the second sea" can be answered. The same
+ * pair chat uses (webToolsFor): Anthropic's server-side web_search + visit on
+ * an Anthropic backend, our search() + visit() elsewhere. Only game sessions:
+ * the tool array is fixed per session (it heads the cached prefix) and an
+ * ordinary share keeps exactly the array it had. Flip this to false to ship
+ * the game tiles without search if it measurably costs lines (see "Attaching
+ * TOOLS suppresses speech" in CLAUDE.md).
+ */
+export const GAME_SESSION_WEB_SEARCH = true;
+
+/** The tool array for one turn of a session. Stable for the session: the
+ *  provider kind only changes if the player switches backends mid-share. */
+export function sessionTools(
+  s: Pick<Session, 'controlOffered' | 'game'>,
+  llmKind: string,
+): LlmToolDef[] {
+  const base = (s.controlOffered ? TOOLS_WITH_CONTROL : TOOLS_BASE) as LlmToolDef[];
+  if (!s.game || !GAME_SESSION_WEB_SEARCH) return base;
+  return [...base, ...(webToolsFor({ serverWebSearch: llmKind === 'anthropic' }) as LlmToolDef[])];
+}
 
 export interface BackseatDeps {
   /** `speech` (260806): set on a voice-mode reply's per-part pushes — prosody
@@ -185,6 +219,12 @@ interface Session {
   creditWallUntil: number;
   /** The first wall of this session raised the popup and the analytics event. */
   creditWallReported: boolean;
+  /**
+   * 260929: set when the share was started from a backseat game tile (Roblox):
+   * the registry entry plus the picked experience, when there is one. Fixed
+   * for the session, so its prompt block never moves the cached prefix.
+   */
+  game: { def: BackseatGameDef; game: BackseatGameInfo | null } | null;
 }
 
 /** How long screen ticks rest after a 402 before one tries again (260926). */
@@ -245,6 +285,7 @@ export async function startBackseat(
   sourceId: string,
   sourceName: string,
   mode: BackseatMode,
+  gameSel?: BackseatGameSelection,
 ): Promise<BackseatState> {
   // 260926: no session may start across an account switch (scopeBarrier).
   const startGuard = beginSessionStart();
@@ -262,8 +303,13 @@ export async function startBackseat(
     );
   }
 
-  const character = await getCharacter(characterId);
-  const log = await createBackseatLog(characterId, deps?.pushLog ?? (() => {}));
+  // The game's details were fetched by the pick step, so this is normally a
+  // cache hit; resolveGameContext caps a miss so the share never waits long.
+  const [character, log, game] = await Promise.all([
+    getCharacter(characterId),
+    createBackseatLog(characterId, deps?.pushLog ?? (() => {})),
+    resolveGameContext(gameSel).catch(() => null),
+  ]);
   const control = actFlagFromEnv()
     ? (await import('../computerUse/actSession')).controlAvailability(sourceId)
     : ({ ok: false, why: 'flag_off' } as const);
@@ -292,6 +338,7 @@ export async function startBackseat(
     control: new ControlGate(),
     creditWallUntil: 0,
     creditWallReported: false,
+    game,
   };
   if (!startGuard.stillValid()) {
     void log.close().catch(() => {});
@@ -299,6 +346,17 @@ export async function startBackseat(
   }
   sessions.set(characterId, s);
   slog(s, `session start: mode=${mode}, source="${sourceName}"`);
+  if (game) {
+    slog(
+      s,
+      `game: ${game.def.id}` +
+        (game.game
+          ? ` "${game.game.name}" (universe ${game.game.universeId})`
+          : gameSel?.universeId
+            ? ` (universe ${gameSel.universeId}, details unavailable)`
+            : ' (no specific game)'),
+    );
+  }
   if (actFlagFromEnv()) slog(s, control.ok ? 'control: offered (window share)' : `control: not offered (${control.why})`);
   // 260803: main no longer opens a window here. The renderer starts capture
   // itself right after this resolves (useBackseatStore.share), which is what
@@ -319,6 +377,11 @@ export async function startBackseat(
         character_id: characterId,
         mode,
         source_kind: sourceId.startsWith('screen:') ? 'screen' : 'window',
+        // 260929: which backseat game tile started it, if any. Shape only:
+        // the id, never the game's name.
+        ...(game
+          ? { game: game.def.id, has_specific_game: !!gameSel?.universeId }
+          : {}),
       });
     } catch {
       /* analytics is never load-bearing */
@@ -394,6 +457,7 @@ async function endBackseatSession(characterId: string, reason?: string): Promise
         duration_ms: durationMs,
         mode: s.state.mode,
         lines: lineCount,
+        ...(s.game ? { game: s.game.def.id } : {}),
         ...(reason ? { reason } : {}),
       });
     } catch {
@@ -409,13 +473,16 @@ async function endBackseatSession(characterId: string, reason?: string): Promise
     // window name is deliberately dropped with the rest of the detail; what
     // survives is that the two of them spent the time together.
     const character = await getCharacter(characterId);
+    // 260929: a session from a game tile remembers the GAME ("played Roblox"),
+    // which is what the two of them did; "Backseat" is only how.
+    const played = s.game?.def.name ?? 'Backseat';
     const row: ChatMessage = {
       id: randomUUID(),
       role: 'system',
       ts: Date.now(),
       text: playSummaryText(
         character?.name ?? 'your companion',
-        'Backseat',
+        played,
         durationMs,
         // The row is PERSISTED transcript content, so it is written in the
         // language the two of them talk in, not the current UI language.
@@ -425,7 +492,7 @@ async function endBackseatSession(characterId: string, reason?: string): Promise
           ? 'zh'
           : undefined,
       ),
-      event: { kind: 'play', game: 'Backseat', durationMs },
+      event: { kind: 'play', game: played, durationMs },
     };
     await chatStore.appendMessage(characterId, row);
     requireDeps().pushChatMessage(characterId, row);
@@ -750,6 +817,80 @@ async function onCreditWall(s: Session, err: unknown, fromUser: boolean): Promis
   } catch { /* analytics is never load-bearing */ }
 }
 
+/**
+ * 260929: the bounded web follow-up for a game session, modelled on chat's
+ * followUpWebTools. Backseat turns are single-shot, so a client search()/
+ * visit() the model asked for, or a server-side search that stopped with
+ * pause_turn, gets ONE more call with the results and no further lookups
+ * (a follow-up that asks for another is not honored). Any other tool_use in
+ * the first response (remember, save_clip, control) gets a plain "ok" result
+ * so the request is well-formed, and stays in the returned content so the
+ * caller still honors it. The first response's text leads, so a "let me
+ * check" is spoken before the answer. Everything else returns `res` as is.
+ */
+async function followUpWebLookup(p: {
+  s: Session;
+  llm: LlmProvider;
+  system: ReturnType<typeof buildSystemBlocks>;
+  tools: LlmToolDef[];
+  messages: LlmMessage[];
+  res: LlmResult;
+  ctrl: AbortController;
+}): Promise<LlmResult> {
+  const { res, s } = p;
+  const webUses = res.content.filter(
+    (b): b is Anthropic.Messages.ToolUseBlock => b.type === 'tool_use' && isWebTool(b.name),
+  );
+  const paused = res.stopReason === 'pause_turn';
+  if (!webUses.length && !paused) return res;
+  const messages: LlmMessage[] = [...p.messages, { role: 'assistant', content: res.content }];
+  if (webUses.length) {
+    const ws = getChatWebSession(s.characterId, resolveWebSearchSettings(await loadConfig()));
+    ws.beginTurn();
+    const results: Anthropic.Messages.ToolResultBlockParam[] = [];
+    for (const b of res.content) {
+      if (b.type !== 'tool_use') continue;
+      if (!isWebTool(b.name)) {
+        results.push({ type: 'tool_result', tool_use_id: b.id, content: 'ok' });
+        continue;
+      }
+      try {
+        const r = await ws.runTool(b.name, (b.input ?? {}) as Record<string, unknown>, { signal: p.ctrl.signal });
+        results.push({ type: 'tool_result', tool_use_id: b.id, content: r.content, ...(r.is_error ? { is_error: true } : {}) });
+        slog(s, `${b.name}: ${r.is_error ? 'error' : `${r.content.length} chars`}`);
+      } catch (err) {
+        if (p.ctrl.signal.aborted) throw err;
+        slog(s, `${b.name} failed: ${(err as Error).message}`, true);
+        results.push({
+          type: 'tool_result',
+          tool_use_id: b.id,
+          content: `${b.name} failed. Tell the player you could not look it up right now.`,
+          is_error: true,
+        });
+      }
+    }
+    messages.push({ role: 'user', content: results });
+  } else {
+    slog(s, 'web search paused the turn; resuming once');
+  }
+  const next = await p.llm.call({
+    maxTokens: 400,
+    system: p.system,
+    tools: p.tools,
+    messages,
+    timeoutMs: CHAT_TIMEOUT_MS,
+    signal: p.ctrl.signal,
+  });
+  const lead = res.content.filter((b) => b.type === 'text' || (b.type === 'tool_use' && !isWebTool(b.name)));
+  const content = [...lead, ...next.content];
+  const text = content
+    .filter((b): b is Anthropic.Messages.TextBlock => b.type === 'text')
+    .map((b) => b.text)
+    .join(' ')
+    .trim();
+  return { ...next, content, text };
+}
+
 async function runTurn(
   s: Session,
   tick: BackseatTick,
@@ -772,6 +913,8 @@ async function runTurn(
   ]);
 
   const voiceCall = requireDeps().isCallActive?.(s.characterId) === true;
+  const llm = await buildLlmProvider();
+  const tools = sessionTools(s, llm.kind);
   const system = buildSystemBlocks({
     persona: character.persona,
     name: character.name,
@@ -791,7 +934,13 @@ async function runTurn(
     language: surfaceLanguage(character.metadata, config.chat_language),
     // The whole-session contract rides inside the cached region, so the grid
     // explanation and the register are written once and read every tick.
-    extraStable: BACKSEAT_CONTRACT,
+    // 260929: a game tile's block (knowledge + the picked experience) rides
+    // with it; fixed for the session, so it never moves the prefix.
+    extraStable: s.game
+      ? `${BACKSEAT_CONTRACT}\n\n${renderBackseatGameBlock(s.game.def, s.game.game, {
+          canSearch: tools.some((t) => isWebTool(t.name) || t.name === 'web_search'),
+        })}`
+      : BACKSEAT_CONTRACT,
   } as Parameters<typeof buildSystemBlocks>[0]);
 
   // Verbatim window, anchored rather than sliding (see Session.historyAnchor).
@@ -855,8 +1004,7 @@ async function runTurn(
   ];
   messages.push({ role: 'user', content: content as never });
 
-  const llm = await buildLlmProvider();
-  const res = await llm.call({
+  const first = await llm.call({
     // Two short lines. A cap this low is itself a register control: it is
     // hard to write a paragraph in 160 tokens. 260804: a tick the player
     // SPOKE gets room for a real answer, because this is now the only turn
@@ -864,17 +1012,20 @@ async function runTurn(
     // a second, screenless one alongside it.
     maxTokens: tick.kind === 'user' ? 400 : 160,
     system,
-    tools: s.controlOffered ? TOOLS_WITH_CONTROL : TOOLS_BASE,
+    tools,
     messages,
     timeoutMs: CHAT_TIMEOUT_MS,
     signal: ctrl.signal,
   });
   if (ctrl.signal.aborted || s.inflight !== ctrl) return;
+  // 260929: a game session's lookup (web tools) gets exactly one follow-up.
+  const res = await followUpWebLookup({ s, llm, system, tools, messages, res: first, ctrl });
+  if (ctrl.signal.aborted || s.inflight !== ctrl) return;
 
   // The cache layout above is only worth anything if it hits, and the only way
   // to know is to read it back. cacheRead should dominate within a session;
   // cacheWrite staying high tick after tick means the prefix is churning.
-  const u = res.usage as unknown as {
+  const u = first.usage as unknown as {
     input_tokens?: number;
     cache_read_input_tokens?: number;
     cache_creation_input_tokens?: number;

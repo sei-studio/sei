@@ -12,6 +12,7 @@
  *     http://localhost:5173/?dashshot=dstlaunch    the Don't Starve Together launch panel
  *     http://localhost:5173/?dashshot=stardewlaunch  the Stardew Valley launch panel
  *     http://localhost:5173/?dashshot=creditwall&part=modal|credits|draw|banner  the credit wall surfaces (DevCreditWallShot)
+ *     http://localhost:5173/?dashshot=roblox&part=picker|intro|pick|share  the Roblox backseat tile flow (DevRobloxShot)
  *     http://localhost:5173/?dashshot=chatfirst    the guided first moment (260926) in the real ChatScreen
  *                                                  (&nomc=1: no Minecraft install; &lan=1: a LAN world open)
  *
@@ -34,6 +35,7 @@ import { DstLaunchPanel } from '../dontstarve/DstLaunchPanel';
 import { StardewLaunchPanel } from '../stardew/StardewLaunchPanel';
 import { ChatScreen } from '../../screens/ChatScreen';
 import { DevCreditWallShot } from '../DevCreditWallShot';
+import { DevRobloxShot } from '../backseat/DevRobloxShot';
 import { useFirstMomentStore } from '../../lib/stores/useFirstMomentStore';
 
 const DST_ID = 'dashshot-dst';
@@ -155,6 +157,8 @@ seed();
 export function DevDashShot({ which }: { which: string }): React.ReactElement {
   // ?dashshot=creditwall&part=modal|credits|draw|banner (260926).
   if (which === 'creditwall') return <DevCreditWallShot />;
+  // ?dashshot=roblox&part=picker|intro|pick|share (260929).
+  if (which === 'roblox') return <DevRobloxShot />;
   // ?dashshot=chat (Stardew) | chatdst: the dashboard hosted inside the real
   // ChatScreen (260917), for the game/chat split, the drag handle and the
   // composer. The fixture summon is online, so the dashboard slot opens.

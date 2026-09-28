@@ -72,13 +72,15 @@ describe('visionGateReason', () => {
   });
 });
 
-describe('GamesPickerModal locks the Draw! tile', () => {
+describe('GamesPickerModal locks the Draw! and backseat game tiles', () => {
   const source = read('../components/GamesPickerModal.tsx');
 
-  it('Test 3: reads llmVision + llmModel and locks only the draw tile', () => {
+  it('Test 3: reads llmVision + llmModel and locks only the draw and backseat game tiles', () => {
     expect(source.includes('s.llmVision')).toBe(true);
     expect(source.includes('s.llmModel')).toBe(true);
-    expect(source.includes("g.id === 'draw' && drawVisionLocked")).toBe(true);
+    // 260929: a backseat game tile (Roblox) is a screen share, so it needs
+    // vision exactly like the share pill does.
+    expect(source.includes("(g.id === 'draw' || isBackseatGameId(g.id)) && drawVisionLocked")).toBe(true);
   });
 
   it('Test 3b: the locked tile is dimmed and disabled, never hidden', () => {
@@ -87,7 +89,7 @@ describe('GamesPickerModal locks the Draw! tile', () => {
   });
 
   it('Test 3c: the reason rides the existing info popup', () => {
-    expect(source.includes("visionGateReason(t, 'draw', llmModel)")).toBe(true);
+    expect(source.includes("visionGateReason(t, isBackseatGameId(g.id) ? 'backseat' : 'draw', llmModel)")).toBe(true);
   });
 });
 

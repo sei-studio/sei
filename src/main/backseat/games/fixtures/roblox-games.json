@@ -1,0 +1,43 @@
+{
+ "data": [
+  {
+   "id": 1686885941,
+   "rootPlaceId": 4924922222,
+   "name": "Brookhaven 🏡RP",
+   "description": "A place to play with like minded people and roleplay. Own and live in amazing houses, drive cool vehicles and explore the city. Be whoever you want to be in Brookhaven RP.\n\nLatest Update:\n🦕 Jurassic World Event!\n🦖💥 T.rex!!! Tyrannosaurus rex has arrived in Jurassic World! Use caution when navigating the T.rex paddock! ⚠️\n🏡 New House - Brand new Jurassic World House with dinosaur hologram & research lab!\n🛻 New Vehicle - New Jurassic World InGen Utility Truck!\n⚡ New Items - New shock prod tool, flare emote & new Jurassic World props!\n\nPrivate Server Benefits:\n· Prop Saving\n· Server-Wide Music\n· Server-Wide Announcements\n· Remove or Lock Props\n· Check Prop Owners\n· Set Players as Admins\n· Kick / Temp Ban Players\n· Set Day of the Week\n· Set Time by the Hour\n· Change Weather and Lighting\n· Speed up Time\n· Server Theme Controls\n· No Wait Time for Changing House \n· Spawn Up to Three Vehicles\n· Prop Limit Increased\n· Freecam for PC users (Shift+P)",
+   "sourceName": null,
+   "sourceDescription": null,
+   "creator": {
+    "id": 3104358,
+    "name": "Brookhaven by Voldex",
+    "type": "Group",
+    "isRNVAccount": false,
+    "hasVerifiedBadge": false
+   },
+   "price": null,
+   "allowedGearGenres": [
+    "TownAndCity"
+   ],
+   "allowedGearCategories": [],
+   "isGenreEnforced": true,
+   "copyingAllowed": false,
+   "playing": 336926,
+   "visits": 88061091047,
+   "maxPlayers": 30,
+   "created": "2020-04-21T02:15:38.373Z",
+   "updated": "2026-09-25T20:05:44.062Z",
+   "studioAccessToApisAllowed": false,
+   "createVipServersAllowed": false,
+   "universeAvatarType": "MorphToR15",
+   "genre": "Town and City",
+   "genre_l1": "Roleplay & Avatar Sim",
+   "genre_l2": "Life",
+   "untranslated_genre_l1": "roleplay_and_avatar_sim",
+   "isAllGenre": false,
+   "isFavoritedByUser": false,
+   "favoritedCount": 30230293,
+   "canonicalUrlPath": "/games/4924922222/Brookhaven-RP",
+   "isContentRestricted": false
+  }
+ ]
+}

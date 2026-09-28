@@ -90,13 +90,24 @@ describe('useBackseatStore pending share', () => {
     await expect(useBackseatStore.getState().consumePendingShare('char-a')).resolves.toBe(true);
 
     expect(backseatStartMock).toHaveBeenCalledTimes(1);
-    expect(backseatStartMock).toHaveBeenCalledWith('char-a', 'win-1', 'window-win-1', 'voice');
+    // No game selection on an ordinary share (260929: a backseat game tile
+    // arms one, see the test below).
+    expect(backseatStartMock).toHaveBeenCalledWith('char-a', 'win-1', 'window-win-1', 'voice', undefined);
     expect(useBackseatStore.getState().sharingFor).toBe('char-a');
     expect(useBackseatStore.getState().pendingShare).toBeNull();
 
     // A second consume (the watchdog effect re-running) must be a no-op.
     await expect(useBackseatStore.getState().consumePendingShare('char-a')).resolves.toBe(false);
     expect(backseatStartMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('carries a backseat game selection from the arm to the start', async () => {
+    const { useBackseatStore } = await loadStore();
+    const game = { gameId: 'roblox', universeId: 1686885941 };
+    useBackseatStore.getState().armPendingShare('char-a', source('win-1'), game);
+
+    await expect(useBackseatStore.getState().consumePendingShare('char-a')).resolves.toBe(true);
+    expect(backseatStartMock).toHaveBeenCalledWith('char-a', 'win-1', 'window-win-1', 'voice', game);
   });
 
   it('ignores a consume for a different companion and keeps the arm', async () => {

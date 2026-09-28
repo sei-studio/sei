@@ -26,6 +26,37 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
   // over a fixture plan snapshot that is at the wall with the reset 3 days out.
   // Add &lang=zh for the Chinese copy.
   const creditWallMode = (params.get('dashshot') ?? '') === 'creditwall';
+  // ?dashshot=roblox (260929): the backseat game tile flow. The lookups call
+  // through to functions a screenshot driver exposed (backed by the real
+  // main-side Roblox client), else answer from a small fixture.
+  const robloxMode = (params.get('dashshot') ?? '') === 'roblox';
+  type DevRoblox = {
+    __seiDevRobloxResolve?: (input: string) => Promise<unknown>;
+    __seiDevRobloxPopular?: () => Promise<unknown>;
+    __seiDevRobloxDetails?: (id: number) => Promise<unknown>;
+  };
+  const dev = window as unknown as DevRoblox;
+  const fixturePopular = [
+    { universeId: 1686885941, name: 'Brookhaven 🏡RP', creator: 'Brookhaven by Voldex', playing: 402_113 },
+    { universeId: 994732206, name: 'Blox Fruits', creator: 'Gamer Robot Inc', playing: 311_940 },
+    { universeId: 66654135, name: 'Murder Mystery 2', creator: 'Nikilis', playing: 98_310 },
+  ];
+  const thumb = (label: string, hue: number): string => {
+    try {
+      const c = document.createElement('canvas');
+      c.width = 320;
+      c.height = 180;
+      const g = c.getContext('2d')!;
+      g.fillStyle = `hsl(${hue} 45% 22%)`;
+      g.fillRect(0, 0, 320, 180);
+      g.fillStyle = `hsl(${hue} 60% 70%)`;
+      g.font = '600 22px sans-serif';
+      g.fillText(label, 16, 96);
+      return c.toDataURL();
+    } catch {
+      return '';
+    }
+  };
   const now = Date.now();
   const chatRows = Array.from({ length: 24 }, (_, i) => ({
     id: `row-${i}`,
@@ -57,6 +88,26 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
     ];
   };
   const base: Record<string, unknown> = {
+    ...(robloxMode
+      ? {
+          track: () => undefined,
+          backseatGameResolve: async (_g: string, input: string) =>
+            dev.__seiDevRobloxResolve
+              ? dev.__seiDevRobloxResolve(input)
+              : { kind: 'results', results: fixturePopular.slice(0, 1) },
+          backseatGamePopular: async () =>
+            dev.__seiDevRobloxPopular ? dev.__seiDevRobloxPopular() : fixturePopular,
+          backseatGameDetails: async (_g: string, id: number) =>
+            dev.__seiDevRobloxDetails ? dev.__seiDevRobloxDetails(id) : null,
+          backseatSources: async () => [
+            { id: 'window:11:0', name: 'Notes', kind: 'window', thumbnail: thumb('Notes', 40) },
+            { id: 'window:12:0', name: 'Brookhaven - Roblox - Google Chrome', kind: 'window', thumbnail: thumb('Chrome', 210) },
+            { id: 'window:13:0', name: 'Roblox', kind: 'window', thumbnail: thumb('Roblox', 220) },
+            { id: 'window:14:0', name: 'Discord', kind: 'window', thumbnail: thumb('Discord', 250) },
+            { id: 'screen:0:0', name: 'Entire screen', kind: 'screen', thumbnail: thumb('Screen', 0) },
+          ],
+        }
+      : {}),
     chatHistory: async () => (firstMode ? [] : chatMode ? chatRows : []),
     chatOpened: firstMode ? firstGreeting : async () => [],
     // The Proxy's generic answer is not a LanState; the data store seeds from
@@ -130,7 +181,7 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
     wizardPromptShown: async () => ({ shown: true }),
     getWizardState: async () => ({ version: 1, hasRunOnce: false, enabledInstallIds: [], lastRunAt: null, lastSkinServerPort: null }),
   };
-  (window as unknown as { sei: Record<string, unknown> }).sei = chatMode || creditWallMode
+  (window as unknown as { sei: Record<string, unknown> }).sei = chatMode || creditWallMode || robloxMode
     ? new Proxy(base, {
         get(target, key) {
           if (key in target) return target[key as string];
