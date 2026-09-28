@@ -71,9 +71,10 @@ export const ZH_CHATUI: Record<string, string> = {
   'Screen sharing needs a model that can see images. Your current model does not support vision.':
     '屏幕共享需要能看懂图像的模型。你当前的模型不支持视觉能力。',
   'NEW': '新功能',
-  'Stream anything with Backseat (beta)': '用 Backseat（测试版）分享任何画面',
-  'Try streaming your game, watching a movie, or doomscrolling together!':
-    '试试分享你的游戏、一起看电影，或者一起刷视频！',
+  // One-time games tip under the header's games button (260929).
+  'Play games together': '一起玩游戏',
+  'Play chess, Draw!, and Minecraft with {name}.': '和{name}一起下国际象棋、玩你画我猜和 Minecraft。',
+  "New in beta: Stardew Valley and Don't Starve Together.": '测试版新增：星露谷物语和饥荒联机版。',
   'Show {name} your screen': '把你的屏幕分享给{name}',
   'Sound is shared too, so {name} can hear it.': '声音也会一起共享，{name} 能听到。',
   'Sharing starts a voice call.': '开始共享会同时发起语音通话。',
