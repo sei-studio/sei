@@ -14,6 +14,7 @@ import {
   clearResume,
   macMajor,
   normalizeStatus,
+  parseArmableResume,
   parseResume,
   screenProbeSeesOtherApps,
   settingsUrlFor,
@@ -195,6 +196,15 @@ describe('resume flag', () => {
     clearResume(dir);
     clearResume(dir);
     expect(takeResume(dir)).toBeNull();
+  });
+
+  it('only the share picker can be armed without a relaunch', () => {
+    expect(parseArmableResume({ kind: 'share-screen', characterId: CHAR })).toEqual({
+      kind: 'share-screen',
+      characterId: CHAR,
+    });
+    expect(parseArmableResume({ kind: 'call', characterId: CHAR })).toBeNull();
+    expect(parseArmableResume({ kind: 'share-screen', characterId: '../x' })).toBeNull();
   });
 
   it('parseResume rejects bad kinds and ids', () => {

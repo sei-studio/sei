@@ -17,6 +17,7 @@ import {
   assertAllowedSettingsUrl,
   clearResume,
   normalizeStatus,
+  parseArmableResume,
   parseResume,
   screenProbeSeesOtherApps,
   settingsUrlFor,
@@ -119,7 +120,7 @@ export function registerPermissionHandlers(): void {
   );
   ipcMain.handle(IpcChannel.permissions.probeScreen, async () => probeScreen());
   ipcMain.handle(IpcChannel.permissions.armResume, async (_e, raw: unknown) => {
-    const resume = parseResume(raw);
+    const resume = parseArmableResume(raw);
     if (!resume) throw new Error('Invalid resume flag');
     armResume(resume);
   });

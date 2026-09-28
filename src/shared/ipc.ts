@@ -2043,7 +2043,11 @@ export interface RendererApi {
   permissionsOpenSettings(kind: OsPermissionKind): Promise<boolean>;
   /** macOS: re-list sources to see whether Screen Recording is on now. */
   permissionsProbeScreen(): Promise<boolean>;
-  /** Remember what to reopen if Sei restarts in the next few minutes. */
+  /**
+   * Remember to reopen the share picker if Sei restarts in the next few
+   * minutes. Main refuses kind 'call' here: a call resume dials on boot, so
+   * only permissionsRelaunch (the player's restart click) may write one.
+   */
   permissionsArmResume(resume: PermissionResume): Promise<void>;
   permissionsClearResume(): Promise<void>;
   /** One-shot read of the resume flag at boot (null when none or expired). */

@@ -116,6 +116,18 @@ export function parseResume(raw: unknown): PermissionResume | null {
   return { kind: r.kind, characterId: r.characterId };
 }
 
+/**
+ * What `permissions:arm-resume` may arm WITHOUT a relaunch: the share picker
+ * only. It is armed when System Settings opens (macOS's own "Quit & Reopen"
+ * restarts Sei), and reopening a picker starts nothing. A 'call' resume dials
+ * on boot, so it is written only by `permissions:relaunch`, the player's own
+ * "Restart Sei and call" click, never left armed by a Settings visit.
+ */
+export function parseArmableResume(raw: unknown): PermissionResume | null {
+  const resume = parseResume(raw);
+  return resume && resume.kind === 'share-screen' ? resume : null;
+}
+
 export function writeResume(dir: string, resume: PermissionResume, now: number = Date.now()): void {
   mkdirSync(dir, { recursive: true });
   const body: ResumeFile = { resume, at: now };
