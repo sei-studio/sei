@@ -413,13 +413,23 @@ export function isAnalyticsActive(): boolean {
   return client !== null;
 }
 
+/**
+ * Upper bound on the quit-time flush (260929). posthog-node's own default is
+ * 30s, and before-quit awaits this BEFORE the supervisor drains the bots, so
+ * with PostHog unreachable (blocked network, dead proxy) quitting hung for
+ * 30s with the companion still standing in the world. A healthy batch POST
+ * takes well under a second.
+ */
+export const ANALYTICS_SHUTDOWN_TIMEOUT_MS = 2500;
+
 /** Flush + close the client. Call from the before-quit teardown chain. */
-export async function shutdownAnalytics(): Promise<void> {
+export async function shutdownAnalytics(timeoutMs: number = ANALYTICS_SHUTDOWN_TIMEOUT_MS): Promise<void> {
   if (!client) return;
   try {
-    await client.shutdown();
+    await client.shutdown(timeoutMs);
   } catch (err) {
-    logger.warn(`analytics: shutdown flush failed: ${(err as Error).message}`);
+    // posthog-node rejects its timeout with a bare string, not an Error.
+    logger.warn(`analytics: shutdown flush failed: ${err instanceof Error ? err.message : String(err)}`);
   }
   client = null;
 }
