@@ -59,13 +59,11 @@ describe('micPreflight on macOS', () => {
 });
 
 describe('micPreflight on Windows', () => {
-  it('blocks only on a definite denial', async () => {
-    statusSpy.mockResolvedValue('denied');
-    expect(await micPreflight('win32')).toBe('blocked');
-    statusSpy.mockResolvedValue('granted');
-    expect(await micPreflight('win32')).toBe('ok');
-    statusSpy.mockResolvedValue('unknown');
-    expect(await micPreflight('win32')).toBe('ok');
+  it('never stops a call: the status read is not the desktop-apps switch, getUserMedia decides', async () => {
+    for (const status of ['denied', 'restricted', 'granted', 'unknown']) {
+      statusSpy.mockResolvedValue(status);
+      expect(await micPreflight('win32')).toBe('ok');
+    }
     expect(requestSpy).not.toHaveBeenCalled();
   });
 });
@@ -92,10 +90,23 @@ describe('micAccessOk', () => {
     expect(stop).toHaveBeenCalledTimes(1);
     // No mic plugged in is not a permission problem: the call says so itself.
     expect(await micAccessOk('win32')).toBe(true);
-    statusSpy.mockResolvedValue('denied');
-    expect(await micAccessOk('win32')).toBe(false);
     expect(getUserMedia).toHaveBeenCalledTimes(3);
     vi.unstubAllGlobals();
+  });
+
+  it('Windows ignores a "denied" status when the mic actually opens', async () => {
+    const stop = vi.fn();
+    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [{ stop }] });
+    vi.stubGlobal('navigator', { mediaDevices: { getUserMedia } });
+    statusSpy.mockResolvedValue('denied');
+    expect(await micAccessOk('win32')).toBe(true);
+    expect(stop).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
+  it('macOS treats a broken bridge as "not yet"', async () => {
+    statusSpy.mockRejectedValue(new Error('no handler'));
+    expect(await micAccessOk('darwin')).toBe(false);
   });
 });
 

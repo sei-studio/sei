@@ -32,50 +32,54 @@ export type MicPreflight = 'ok' | 'blocked' | 'restricted';
 /**
  * Run on a Call press, before the call connects. On macOS this is where the
  * system "allow microphone" prompt appears the first time (it used to fire at
- * app boot). Windows has no per-app prompt for desktop apps, so only a
- * definite 'denied' stops the call here; the call's own getUserMedia catches
- * the "Let desktop apps access your microphone" switch.
+ * app boot).
+ *
+ * Everywhere else it never stops a call. Windows has no per-app prompt for
+ * desktop apps, and its status read is not the switch that decides: Electron
+ * reads the device-wide consent (DeviceAccessInformation), which can say
+ * 'denied' while "Let desktop apps access your microphone" lets Sei's
+ * getUserMedia through. Before 260929 that status was only logged and the call
+ * went ahead; gating on it would lock such a player out of calls, with a card
+ * whose poll could never clear. The call's own getUserMedia is the test, and a
+ * refusal there raises the same card.
  */
 export async function micPreflight(platform: string = sei.platform): Promise<MicPreflight> {
+  if (platform !== 'darwin') return 'ok';
   let status: string;
   try {
     status = await sei.permissionsStatus('mic');
   } catch {
     return 'ok';
   }
-  if (platform === 'darwin') {
-    if (status === 'granted' || status === 'unknown') return 'ok';
-    if (status === 'restricted') return 'restricted';
-    if (status === 'not-determined') {
-      try {
-        return (await sei.permissionsRequestMic()) ? 'ok' : 'blocked';
-      } catch {
-        return 'ok';
-      }
+  if (status === 'granted' || status === 'unknown') return 'ok';
+  if (status === 'restricted') return 'restricted';
+  if (status === 'not-determined') {
+    try {
+      return (await sei.permissionsRequestMic()) ? 'ok' : 'blocked';
+    } catch {
+      return 'ok';
     }
-    return 'blocked';
   }
-  if (platform === 'win32' && (status === 'denied' || status === 'restricted')) return 'blocked';
-  return 'ok';
+  return 'blocked';
 }
 
 /**
  * The poll check behind the microphone card. macOS reports a new grant live,
  * so its status is enough. On Windows the status does not follow the "Let
- * desktop apps access your microphone" switch, so after the status check this
- * opens the mic for an instant and closes it again. Any failure other than a
- * permission refusal (no mic plugged in, say) is not this card's problem and
- * counts as access: the call then reports the real reason.
+ * desktop apps access your microphone" switch (see micPreflight), so this
+ * opens the mic for an instant and closes it again, and that is the whole
+ * answer. Any failure other than a permission refusal (no mic plugged in, say)
+ * is not this card's problem and counts as access: the call then reports the
+ * real reason.
  */
 export async function micAccessOk(platform: string = sei.platform): Promise<boolean> {
-  let status: string;
-  try {
-    status = await sei.permissionsStatus('mic');
-  } catch {
-    status = 'unknown';
+  if (platform === 'darwin') {
+    try {
+      return (await sei.permissionsStatus('mic')) === 'granted';
+    } catch {
+      return false;
+    }
   }
-  if (platform === 'darwin') return status === 'granted';
-  if (status === 'denied' || status === 'restricted') return false;
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     stream.getTracks().forEach((track) => track.stop());

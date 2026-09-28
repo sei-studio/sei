@@ -7,9 +7,9 @@
  * call dials again by itself the moment it is on.
  *
  * Raised by useVoiceStore (micBlocked) from two places: the Call-press
- * preflight (macOS denied / restricted, Windows denied) and a getUserMedia
- * refusal while the call was coming up (Windows' "Let desktop apps access your
- * microphone" switch, which no status call reports). If macOS reports access
+ * preflight (macOS denied / restricted) and a getUserMedia refusal while the
+ * call was coming up (on Windows the only signal: the "Let desktop apps access
+ * your microphone" switch is not what the status call reports). If macOS reports access
  * as granted and the mic still refuses, the grant has not reached this process
  * and the card offers "Restart Sei and call" instead (resume flag, see
  * usePermissionResume).
