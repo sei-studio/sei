@@ -91,7 +91,8 @@ describe('UnsupportedVersionModal', () => {
   it('points at the Sei profile: Start Minecraft when it exists', () => {
     seed([READY]);
     const html = unsupported();
-    expect(html).toContain('Open your world from the Sei profile instead.');
+    expect(html).toContain('Play from the Sei profile instead.');
+    expect(html).toContain('keeps its own worlds');
     expect(html).toContain('Press Start Minecraft below.');
     expect(html).toContain('>Start Minecraft<');
     expect(html).not.toContain('New installation');

@@ -44,7 +44,7 @@ const RECOMMENDED: string = MC_RECOMMENDED;
 const STEP_QUIT = 'Save and quit your world.';
 const STEP_START = 'Press Start Minecraft below. The launcher opens with the Sei profile selected. Press Play.';
 const STEP_SETUP = 'Press Set up Sei profile below. Sei adds a "Sei {version}" profile to your launcher in about a minute. Then open the launcher, pick that profile, and press Play.';
-const STEP_LAN = 'Open your world, choose Open to LAN, then press Launch in Sei again.';
+const STEP_LAN = 'Open or create a world, choose Open to LAN, then press Launch in Sei again.';
 
 export interface UnsupportedVersionModalProps {
   characterId: string;
@@ -104,7 +104,7 @@ export function UnsupportedVersionModal({
         {joinBefore}
         <strong>{name}</strong>
         {joinAfter} {humanBody(message, detectedVersion)}{' '}
-        {t('Open your world from the Sei profile instead. It runs {version}, with companion skins:', { version: RECOMMENDED })}
+        {t('Play from the Sei profile instead. It runs {version}, with companion skins:', { version: RECOMMENDED })}
       </p>
       <ol className={styles.steps}>
         {steps.map((step, i) => (
@@ -116,7 +116,7 @@ export function UnsupportedVersionModal({
       </ol>
       <p className={styles.hint}>
         {t(
-          'Minecraft may not open worlds saved on a newer version. If your world will not open, create a new world in the Sei profile and play there.',
+          'The Sei profile keeps its own worlds, apart from your other profiles. If its world list is empty, create a new world there.',
         )}
       </p>
       {action.note ? (

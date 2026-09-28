@@ -82,7 +82,7 @@ const TITLES: Record<Exclude<LanHostWarning, 'forge'>, string> = {
 const FORGE_STEP_QUIT = 'Save and quit your world.';
 const FORGE_STEP_START = 'Press Start Minecraft below. The launcher opens with the Sei profile selected. Press Play.';
 const FORGE_STEP_SETUP = 'Press Set up Sei profile below. Sei adds a "Sei {version}" profile to your launcher in about a minute. Then open the launcher, pick that profile, and press Play.';
-const FORGE_STEP_LAN = 'Open a world, choose Open to LAN, then press Launch in Sei again.';
+const FORGE_STEP_LAN = 'Open or create a world, choose Open to LAN, then press Launch in Sei again.';
 
 /** Substitute {token} placeholders in a translated string with React nodes,
  * so styled spans (the bold companion name) survive translation without
@@ -121,7 +121,7 @@ function ForgeHostBlocked({ characterId, host }: { characterId: string; host: La
       <p className={stepStyles.body}>
         {richText(
           t(
-            'Your world is hosted from {loader}. {name} joins as a normal Minecraft player, and {loader} worlds turn those players away, so the summon would fail. To play together, host your world from the Sei profile instead:',
+            'Your world is hosted from {loader}. {name} joins as a normal Minecraft player, and {loader} worlds turn those players away, so the summon would fail. To play together, host a world from the Sei profile instead:',
             { loader },
           ),
           { name: <strong>{name}</strong> },
@@ -136,9 +136,7 @@ function ForgeHostBlocked({ characterId, host }: { characterId: string; host: La
         ))}
       </ol>
       <p className={stepStyles.hint}>
-        {t('A world that needs {loader} mods may not open without them. If yours will not, make a new world in the Sei profile.', {
-          loader,
-        })}
+        {t('The Sei profile keeps its own worlds, apart from your other profiles. If its world list is empty, create a new world there.')}
       </p>
       {action.note ? (
         <p className={stepStyles.note} role="status" data-tone={action.note.tone}>

@@ -291,16 +291,16 @@ export const ZH_MODALS: Record<string, string> = {
     '如果加入失败，请在 Minecraft 启动器中用 Sei 配置来开启你的世界。',
   // Forge/NeoForge block (260929)
   "Sei can't join {loader} worlds": 'Sei 无法加入 {loader} 世界',
-  'Your world is hosted from {loader}. {name} joins as a normal Minecraft player, and {loader} worlds turn those players away, so the summon would fail. To play together, host your world from the Sei profile instead:':
-    '你的世界由 {loader} 开启。{name} 以普通 Minecraft 玩家身份加入，而 {loader} 世界会拒绝这类玩家，所以召唤会失败。想一起玩，请改用 Sei 配置开启你的世界：',
+  'Your world is hosted from {loader}. {name} joins as a normal Minecraft player, and {loader} worlds turn those players away, so the summon would fail. To play together, host a world from the Sei profile instead:':
+    '你的世界由 {loader} 开启。{name} 以普通 Minecraft 玩家身份加入，而 {loader} 世界会拒绝这类玩家，所以召唤会失败。想一起玩，请改用 Sei 配置开启一个世界：',
   'Save and quit your world.': '保存并退出你的世界。',
   'Press Start Minecraft below. The launcher opens with the Sei profile selected. Press Play.':
     '点击下方的「打开 Minecraft」。启动器会打开并选好 Sei 配置，点击「开始游戏」即可。',
   'Press Set up Sei profile below. Sei adds a "Sei {version}" profile to your launcher in about a minute. Then open the launcher, pick that profile, and press Play.':
     '点击下方的「设置 Sei 配置」。Sei 会在大约一分钟内为启动器添加「Sei {version}」配置。然后打开启动器，选择该配置，点击「开始游戏」。',
-  'Open a world, choose Open to LAN, then press Launch in Sei again.': '打开一个世界，选择「对局域网开放」，然后回到 Sei 再次点击启动。',
-  'A world that needs {loader} mods may not open without them. If yours will not, make a new world in the Sei profile.':
-    '依赖 {loader} 模组的世界没有这些模组可能无法打开。如果打不开，请在 Sei 配置中新建一个世界。',
+  'Open or create a world, choose Open to LAN, then press Launch in Sei again.': '打开或创建一个世界，选择「对局域网开放」，然后回到 Sei 再次点击启动。',
+  'The Sei profile keeps its own worlds, apart from your other profiles. If its world list is empty, create a new world there.':
+    'Sei 配置有自己的世界，和你的其他配置分开。如果世界列表是空的，请在其中创建一个新世界。',
 
   // ── LanNotOpenModal ──
   "Couldn't reach your world": '无法连接到你的世界',
@@ -599,16 +599,12 @@ export const ZH_MODALS: Record<string, string> = {
   // ── UnsupportedVersionModal ──
   'Minecraft version not supported': '不支持的 Minecraft 版本',
   "{name} couldn't join.": '{name} 无法加入。',
-  'Open your world from the Sei profile instead. It runs {version}, with companion skins:':
-    '请改用 Sei 配置打开你的世界。它运行 {version}，可显示伙伴皮肤：',
+  'Play from the Sei profile instead. It runs {version}, with companion skins:':
+    '请改用 Sei 配置来玩。它运行 {version}，可显示伙伴皮肤：',
   'This world is running Minecraft {version}, which Sei cannot join yet. Sei works with Minecraft Java {versions}.':
     '这个世界运行的是 Minecraft {version}，Sei 暂时无法加入。Sei 支持 Minecraft Java 版 {versions}。',
   'This world runs a Minecraft version Sei cannot join yet. Sei works with Minecraft Java {versions}.':
     '这个世界的 Minecraft 版本 Sei 暂时无法加入。Sei 支持 Minecraft Java 版 {versions}。',
-  'Open your world, choose Open to LAN, then press Launch in Sei again.':
-    '打开你的世界，选择「对局域网开放」，然后回到 Sei 再次点击启动。',
-  'Minecraft may not open worlds saved on a newer version. If your world will not open, create a new world in the Sei profile and play there.':
-    'Minecraft 可能无法打开在更新版本中保存的世界。如果你的世界无法打开，请在 Sei 配置中创建一个新世界游玩。',
 
   // ── UpdatePopup ──
   'Update': '更新',

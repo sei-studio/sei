@@ -51,7 +51,7 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   // {recommended}, with skins) instead of walking through a hand-made
   // launcher installation; the routed modal carries the Start Minecraft /
   // Set up Sei profile button.
-  UNSUPPORTED_MC_VERSION: "This world's Minecraft version is not supported yet. Sei works with Minecraft Java {versions}. Open the Sei profile in the Minecraft Launcher (it runs {recommended}, with companion skins), load your world there, and press Launch again. No Sei profile yet? Set it up from the Minecraft screen in Sei.",
+  UNSUPPORTED_MC_VERSION: "This world's Minecraft version is not supported yet. Sei works with Minecraft Java {versions}. Open the Sei profile in the Minecraft Launcher (it runs {recommended}, with companion skins), open or create a world there, open it to LAN, and press Launch again. No Sei profile yet? Set it up from the Minecraft screen in Sei.",
   // 260806: split out of LAN_NOT_OPEN. A Forge/NeoForge world that requires its
   // mods on the client kicks Sei every time, and the old copy sent the player to
   // re-open a world that was open and answering pings. Says what is actually
@@ -61,7 +61,7 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   // 260929: refused before fork (Forge/NeoForge host on strong evidence). The
   // routed modal (ForgeHostBlocked) carries the launcher steps; this is the
   // one-line model-row copy.
-  FORGE_HOST_BLOCKED: "Sei can't join Forge or NeoForge worlds. Open the Sei profile in the Minecraft Launcher, load your world there, and open it to LAN.",
+  FORGE_HOST_BLOCKED: "Sei can't join Forge or NeoForge worlds. Open the Sei profile in the Minecraft Launcher, open or create a world there, and open it to LAN.",
   // Skin pipeline + setup-wizard errors. Do NOT rephrase — the UI checker
   // matches these strings byte-for-byte against the spec.
   MOD_DOWNLOAD_FAILED: "Couldn't download CustomSkinLoader. Check your connection and try the setup again.",

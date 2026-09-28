@@ -419,7 +419,7 @@ export function forgeHostBlock(host: LanHost | undefined): { loader: 'Forge' | '
 export function forgeHostBlockedMessage(loader: 'Forge' | 'NeoForge'): string {
   return (
     `Sei can't join ${loader} worlds. ` +
-    'To play together, open the Sei profile in the Minecraft Launcher, load your world there, and open it to LAN.'
+    'To play together, open the Sei profile in the Minecraft Launcher, open or create a world there, and open it to LAN.'
   );
 }
 
