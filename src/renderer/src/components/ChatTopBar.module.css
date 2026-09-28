@@ -233,10 +233,6 @@
   color: var(--muted);
 }
 
-.tipLine {
-  display: block;
-}
-
 .tipBtn {
   -webkit-appearance: none;
   appearance: none;

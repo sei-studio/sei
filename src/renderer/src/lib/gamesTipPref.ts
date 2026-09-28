@@ -1,10 +1,10 @@
 /**
- * gamesTipPref (260929) : the one-time "Play games together" tip's memory.
+ * gamesTipPref (260929) : the one-time "New games added" tip's memory.
  *
  * The tip hangs under the games (gamepad) button in the CHAT HEADER once, and
- * then never again. It names what the games picker holds, including the two
- * newest games (Stardew Valley and Don't Starve Together, beta), because the
- * picker is one click away and still easy to never open.
+ * then never again. It announces the two newest games (Stardew Valley and
+ * Don't Starve Together), because the picker is one click away and still easy
+ * to never open.
  *
  * It replaced the one-time Backseat tip (260803), which lived under the
  * header's Backseat button with the same card, the same rules and the same

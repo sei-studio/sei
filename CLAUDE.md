@@ -1742,7 +1742,8 @@ The design and its measurements are committed at
   180 s deadline, is re-checked against the wall clock before firing (timers
   lag across sleep), and is dropped on `status === 'error'`. The one-time
   "NEW" tip card that hung under the header's Backseat button moved to the
-  GAMES button on 260929 ("Play games together", naming the picker's games;
+  GAMES button on 260929 ("New games added", announcing Stardew Valley and
+  Don't Starve Together;
   `lib/gamesTipPref`, new key `sei.gamesTipDone.v1.<scope>` so everyone sees it
   once). Its rules carried over: **it retires only on "Got it" or a click on
   the games button itself**, never on using a feature some other way (the

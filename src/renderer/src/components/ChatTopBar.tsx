@@ -8,8 +8,8 @@
  *   - back:  chat → home; call view → back to that chat (the call keeps
  *            running; GameSurface's chrome row / the icon-rail badge carry it).
  *   - controller: opens the games picker, including mid-call. It carries the
- *            one-time "Play games together" tip (260929), which names what is
- *            in the picker; clicking the button retires the tip. See
+ *            one-time "New games added" tip (260929), which announces Stardew
+ *            Valley and Don't Starve Together; clicking the button retires it. See
  *            lib/gamesTipPref.
  *   - backseat: opens the screen-share source picker (260803). It is here
  *            because backseat's only other entry point is the share button in
@@ -205,20 +205,15 @@ export function ChatTopBar({ characterId, gameOpen = false }: ChatTopBarProps): 
                 </span>
                 <span className={styles.tipNew}>{t('NEW')}</span>
               </div>
-              <p className={styles.tipTitle}>{t('Play games together')}</p>
-              {/* Each sentence starts its own line and wraps naturally. The game
-                  names are kept whole (non-breaking spaces), so a line never
-                  ends inside one, e.g. "Don't Starve / Together". */}
+              <p className={styles.tipTitle}>{t('New games added')}</p>
+              {/* The game names are kept whole (non-breaking spaces), so a
+                  line never ends inside one, e.g. "Don't Starve / Together". */}
               <p className={styles.tipBody}>
-                <span className={styles.tipLine}>
-                  {t('Play chess, Draw!, and Minecraft with {name}.', { name: companionName })}
-                </span>
-                <span className={styles.tipLine}>
-                  {t('New in beta: {first} and {second}.', {
-                    first: keepWhole(t('Stardew Valley')),
-                    second: keepWhole(t("Don't Starve Together")),
-                  })}
-                </span>
+                {t('{first} and {second} are here. Play them with {name}.', {
+                  first: keepWhole(t('Stardew Valley')),
+                  second: keepWhole(t("Don't Starve Together")),
+                  name: companionName,
+                })}
               </p>
               <button type="button" className={styles.tipBtn} onClick={retireTip}>
                 {t('Got it')}
