@@ -25,7 +25,7 @@ import { randomUUID } from 'node:crypto';
 import { closeSplashWindow, createMainWindow, createSplashWindow } from './windowChrome';
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { isAnalyticsActive, shutdownAnalytics, capture } from './analytics';
-import { notePreGateFailure, clearSummonBlock } from './summonGuard';
+import { notePreGateFailure, clearSummonBlock, clearSummonBlocksOfClass } from './summonGuard';
 import { createBotSupervisor, SUMMON_CANCELLED } from './botSupervisor';
 import { registerGameModule, getGameModule, listGameModules } from './games';
 import { createMinecraftGameModule } from './games/minecraft';
@@ -51,7 +51,7 @@ import {
   publishGameDashboardSnapshot,
   clearGameDashboard,
 } from './games/gameDashboardService';
-import { IpcChannel, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type GenProgressEvent, type VisionCapability, type ChatMessage, type SpokenLineContext } from '../shared/ipc';
+import { IpcChannel, forgeHostBlock, FORGE_HOST_BLOCKED, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type GenProgressEvent, type VisionCapability, type ChatMessage, type SpokenLineContext } from '../shared/ipc';
 
 // Lock the app name early so app.getPath('userData') resolves to
 // "Sei" (packaged) or "Sei Dev" (electron-vite dev) — keeping dev state
@@ -202,6 +202,11 @@ function broadcastLan(state: LanState): void {
     (state.kind === 'open' ? ` (port=${state.port}, motd=${JSON.stringify(state.motd)})` : ''),
   );
   latestLanState = state;
+  // 260929: a Forge pre-gate refusal blocks automatic re-launches only while
+  // the world it was about is still up; release it once the host changes.
+  if (!forgeHostBlock(state.kind === 'open' ? state.host : undefined)) {
+    clearSummonBlocksOfClass(FORGE_HOST_BLOCKED);
+  }
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(IpcChannel.lan.state, state);
   }

@@ -2722,11 +2722,20 @@ event), the post-join counterpart of `summon_failed`. App quit closes live
 sessions in `before-quit` BEFORE the analytics flush (`app_quit`); the
 drain's own idle statuses come after the flush and used to be lost.
 
-**Forge/NeoForge hosts are blocked before summon (260929).**
-`lanHostWarning()` returns `'forge'` for them (or for a ping carrying
-forgeData), and `LanHostWarningModal` renders a blocking variant with no
-"Summon anyway" that points at the Sei launcher profile. Quilt and Fabric
-with foreign mods keep the soft `'modded'` warning. A join TIMEOUT (ready
+**Forge/NeoForge hosts are blocked before summon (260929).** Only on STRONG
+evidence: the status ping's forgeData/modinfo (`forgeModCount != null`) or an
+explicit launch target on the host command line (`LanHost.forgeLaunchTarget`,
+`hasForgeLaunchTarget()` in hostClient.ts). Forge classified from a weak
+cmdline substring alone gets the soft `'modded'` warning so a misread never
+locks anyone out. The one check is `forgeHostBlock()` in `src/shared/ipc.ts`,
+used by all three entry points: the Summon button (`lanHostWarning() ===
+'forge'` opens the blocking `LanHostWarningModal`, no "Summon anyway"), the
+chat `launch()` tool (`resolveLaunch` returns a relayable note and never
+summons) and the supervisor pre-gate (error `FORGE_HOST_BLOCKED`, backstop for
+the voice launch honors; `SEI_FORGE_HANDSHAKE=1` bypasses it). The retry guard
+block for that class is released as soon as the LAN host stops being a blocked
+Forge host. Quilt and Fabric with foreign mods keep the soft `'modded'`
+warning. A join TIMEOUT (ready
 phase, or the bot's connect guard) on any modded host is reported as
 `MODDED_HOST_REJECTED` with `reclassified_from: 'BOT_START_TIMEOUT'` on
 `summon_failed`, so the player gets ModdedHostModal instead of generic timeout

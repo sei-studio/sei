@@ -30,6 +30,16 @@ describe('LanHostWarningModal forge block', () => {
     expect(html).not.toContain('—'); // no em-dashes in the copy
   });
 
+  it('Forge on weak evidence gets the soft warning: says it may be Forge, keeps Summon anyway', () => {
+    const html = renderToStaticMarkup(
+      <LanHostWarningModal characterId="c1" warning="modded" host={{ client: 'forge', forgeModCount: null }} fromChat={false} />,
+    );
+    expect(html).toContain('may be running Forge');
+    expect(html).toContain('Sei profile');
+    expect(html).toContain('Summon anyway');
+    expect(html).not.toContain('—');
+  });
+
   it('a Quilt host keeps the soft warning with its escape hatch', () => {
     expect(render('modded', 'quilt')).toContain('Summon anyway');
   });

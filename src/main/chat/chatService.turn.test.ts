@@ -55,7 +55,8 @@ vi.mock('../llm/webSearchSettings', () => ({
 }));
 
 import type { ChatDeps } from './chatService';
-import { sendChatMessage, sendVoiceIdleTurn, sendCompanionVoiceTurn, cancelInflightTurn, CHAT_ABORTED } from './chatService';
+import type { LanHost } from '../../shared/ipc';
+import { sendChatMessage, sendLaunchFailedTurn, sendVoiceIdleTurn, sendCompanionVoiceTurn, cancelInflightTurn, CHAT_ABORTED } from './chatService';
 import { setCallActive } from '../voice/callState';
 import { readAll as chatStoreRead } from './chatStore';
 
@@ -146,6 +147,65 @@ describe('sendChatMessage — parallel tool_use blocks', () => {
     expect(blocks).toHaveLength(1);
     expect(blocks[0].tool_use_id).toBe('tu_1');
     expect(result.launch).toEqual({ game: 'minecraft', status: 'lan-not-open' });
+  });
+
+  // 260929: the chat launch() path gets the same Forge hard stop as the
+  // Summon button (shared forgeHostBlock), as a plain note to relay.
+  const openLan = (host: LanHost | undefined): ChatDeps['getLanState'] => () => ({
+    kind: 'open',
+    port: 55555,
+    motd: 'World',
+    lastSeenAt: Date.now(),
+    host,
+  });
+  const launchOnce = async (d: ChatDeps): Promise<{ note: string; result: Awaited<ReturnType<typeof sendChatMessage>> }> => {
+    createSpy
+      .mockResolvedValueOnce({ content: [{ type: 'tool_use', id: 'tu_1', name: 'launch', input: { game: 'minecraft' } }] })
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'ok' }] });
+    const result = await sendChatMessage({ characterId: CHAR, text: 'hop in' }, d);
+    const secondReq = createSpy.mock.calls[1][0] as { messages: Array<{ role: string; content: unknown }> };
+    const blocks = secondReq.messages[secondReq.messages.length - 1].content as Array<{ content: unknown }>;
+    return { note: JSON.stringify(blocks[0].content), result };
+  };
+
+  it.each([
+    ['Forge (status ping)', { client: 'forge', forgeModCount: 2 } as LanHost, 'Forge'],
+    ['NeoForge (launch target)', { client: 'neoforge', forgeModCount: null, forgeLaunchTarget: true } as LanHost, 'NeoForge'],
+  ])('launch() on a %s host refuses with a plain, relayable reason and never summons', async (_l, host, loader) => {
+    const d = { ...deps(), getLanState: openLan(host) };
+    const { note, result } = await launchOnce(d);
+    expect(note).toContain(`can't join ${loader} worlds`);
+    expect(note).toContain('Sei profile');
+    expect(note).toContain('do not retry');
+    expect(result.launch).toEqual({ game: 'minecraft', status: 'lan-not-open' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(d.summon).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['vanilla', { client: 'vanilla', forgeModCount: null } as LanHost],
+    ["Sei's own Fabric profile", { client: 'fabric', forgeModCount: null, seiSkinMod: true, otherModCount: 0 } as LanHost],
+    ['Forge on weak evidence only', { client: 'forge', forgeModCount: null } as LanHost],
+  ])('launch() on a %s host still joins', async (_l, host) => {
+    const d = { ...deps(), getLanState: openLan(host) };
+    const { note, result } = await launchOnce(d);
+    expect(note).not.toContain("can't join");
+    expect(result.launch).toEqual({ game: 'minecraft', status: 'summoning' });
+    await vi.waitFor(() => expect(d.summon).toHaveBeenCalledTimes(1));
+  });
+
+  it('a Forge pre-gate refusal from a voice launch is relayed as the reason, without "try again"', async () => {
+    createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: "can't get into forge worlds, try the sei profile" }] });
+    await sendLaunchFailedTurn(
+      CHAR,
+      "FORGE_HOST_BLOCKED: Sei can't join Forge worlds. To play together, open the Sei profile in the Minecraft Launcher, load your world there, and open it to LAN.",
+    );
+    const req = createSpy.mock.calls[0][0] as { messages: Array<{ role: string; content: unknown }> };
+    const sent = JSON.stringify(req.messages[req.messages.length - 1].content);
+    expect(sent).toContain("Sei can't join Forge worlds");
+    expect(sent).toContain('Sei profile');
+    expect(sent).toContain('Do not offer to try again');
+    expect(sent).not.toContain('FORGE_HOST_BLOCKED');
   });
 
   it('does NOT run a second hop when quit rides with an already-spoken goodbye (double-goodbye guard)', async () => {

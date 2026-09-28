@@ -29,6 +29,17 @@ const MINECRAFT_ROUTES: Partial<Record<ErrorClass, Route>> = {
   // 260806 — a Forge/NeoForge world that requires its mods client-side
   // needs its own surface: the resolution is a different world.
   MODDED_HOST_REJECTED: (s) => ({ kind: 'modded-host', characterId: s.characterId }),
+  // 260929 — the supervisor's Forge pre-gate refused the summon (a path that
+  // skipped the renderer's host gate, e.g. a voice-call launch). Same blocking
+  // surface the Summon button shows. The status carries only the message, so
+  // the loader is read back from it (forgeHostBlockedMessage names it).
+  FORGE_HOST_BLOCKED: (s) => ({
+    kind: 'lan-host-warning',
+    characterId: s.characterId,
+    warning: 'forge',
+    host: { client: /neoforge/i.test(s.message) ? 'neoforge' : 'forge', forgeModCount: null, forgeLaunchTarget: true },
+    fromChat: false,
+  }),
 };
 
 const genericRoute: Route = (s, game) => ({

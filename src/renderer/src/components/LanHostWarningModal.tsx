@@ -11,7 +11,9 @@
  *                 was kicked or timed out, costing players 2 to 32 minutes of
  *                 retries, so the modal says Sei can't join and points at the
  *                 Sei profile instead (ForgeHostBlocked below).
- *   - 'modded'  → Quilt, or Fabric with mods besides Sei's skin mod. Sei
+ *   - 'modded'  → Quilt, Forge/NeoForge seen only in weak cmdline markers
+ *                 (a possible misread, so never a hard stop), or Fabric
+ *                 with mods besides Sei's skin mod. Sei
  *                 joins as a vanilla player; client-side mods (minimaps etc.)
  *                 are fine, but content mods can make the world refuse the
  *                 join.
@@ -32,7 +34,7 @@
  */
 
 import React from 'react';
-import type { LanHost, LanHostWarning } from '@shared/ipc';
+import { forgeHostBlock, type LanHost, type LanHostWarning } from '@shared/ipc';
 import { sei } from '../lib/ipcClient';
 import { useT } from '../lib/i18n';
 import { Button } from './Button';
@@ -71,10 +73,6 @@ const TITLES: Record<Exclude<LanHostWarning, 'forge'>, string> = {
   lunar: 'Lunar Client detected',
 };
 
-/** 'forge' covers NeoForge too; a ping-only detection reads as Forge. */
-function forgeLabel(host: LanHost): string {
-  return host.client === 'neoforge' ? 'NeoForge' : 'Forge';
-}
 
 // Launcher steps for the Forge block, in the numbered style of LanNotOpenModal.
 const FORGE_STEPS: readonly string[] = [
@@ -109,7 +107,9 @@ function ForgeHostBlocked({ characterId, host }: { characterId: string; host: La
   const openModal = useUiStore((s) => s.openModal);
   const rawName = useDataStore((s) => s.characters.find((c) => c.id === characterId)?.name ?? null);
   const name = rawName ?? t('Your companion');
-  const loader = forgeLabel(host);
+  // Shared with main's pre-gate and the chat launch() refusal; a ping-only
+  // detection reads as Forge.
+  const loader = forgeHostBlock(host)?.loader ?? 'Forge';
   const title = t("Sei can't join {loader} worlds", { loader });
   return (
     <ModalShell title={title} width={480} scrimClose onClose={closeModal} aria-label={title}>
@@ -171,6 +171,7 @@ function LanHostWarningPrompt({
   const title = t(TITLES[warning]);
   const modCount = host.forgeModCount;
   const hasMods = warning === 'modded' && modCount != null && modCount > 0;
+  const maybeForge = warning === 'modded' && (host.client === 'forge' || host.client === 'neoforge');
   // Only the vanilla and modded warnings persist; lunar stays session-scoped.
   const showDontShowAgain = warning === 'vanilla' || warning === 'modded';
   const strongName = { name: <strong>{name}</strong> };
@@ -226,6 +227,24 @@ function LanHostWarningPrompt({
             {t(
               'To see custom skins, run skin setup (Settings) and host the world from the Sei profile.',
             )}
+          </p>
+        </>
+      ) : maybeForge ? (
+        // 260929: Forge/NeoForge seen only in weak cmdline markers (no ping
+        // forgeData, no launch target). Could be a misread, so this stays a
+        // heads-up with "Summon anyway" instead of the hard stop.
+        <>
+          <p className={styles.body}>
+            {richText(
+              t(
+                "Your world looks like it may be running {loader}. {name} can't join {loader} worlds, so if it is, the summon will fail.",
+                { loader: t(loaderLabel(host)) },
+              ),
+              strongName,
+            )}
+          </p>
+          <p className={styles.hint}>
+            {t('If the join fails, host your world from the Sei profile in the Minecraft Launcher.')}
           </p>
         </>
       ) : (

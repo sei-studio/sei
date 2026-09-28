@@ -11,6 +11,13 @@ describe('modalForBotStatus', () => {
     expect(modalForBotStatus(err('MODDED_HOST_REJECTED'))).toEqual({ kind: 'modded-host', characterId: 'c1' });
   });
 
+  it('opens the blocking Forge modal for a supervisor Forge pre-gate refusal (260929)', () => {
+    const forge = modalForBotStatus(err('FORGE_HOST_BLOCKED', { message: "Sei can't join Forge worlds. ..." }));
+    expect(forge).toMatchObject({ kind: 'lan-host-warning', characterId: 'c1', warning: 'forge', host: { client: 'forge' } });
+    const neo = modalForBotStatus(err('FORGE_HOST_BLOCKED', { message: "Sei can't join NeoForge worlds. ..." }));
+    expect(neo).toMatchObject({ warning: 'forge', host: { client: 'neoforge' } });
+  });
+
   it('opens the crash popup only for a mid-session death with no dedicated surface', () => {
     expect(modalForBotStatus(err('BOT_CRASH'))).toBeNull();
     expect(modalForBotStatus(err('BOT_CRASH', { midSession: true }))).toEqual({ kind: 'bot-crash', characterId: 'c1' });

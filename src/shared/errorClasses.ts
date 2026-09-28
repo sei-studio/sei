@@ -23,6 +23,10 @@ export type ErrorClass =
   | 'NATIVE_MODULE_MISMATCH'
   | 'UNSUPPORTED_MC_VERSION'
   | 'MODDED_HOST_REJECTED'
+  // 260929: summon refused before fork because the LAN host is Forge/NeoForge
+  // on strong evidence (forgeHostBlock in shared/ipc.ts). Distinct from
+  // MODDED_HOST_REJECTED, which is a join the world actually turned away.
+  | 'FORGE_HOST_BLOCKED'
   // Skin + setup-wizard surfaces
   | 'MOD_DOWNLOAD_FAILED'
   | 'FABRIC_INSTALL_FAILED'
@@ -84,6 +88,7 @@ export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'NATIVE_MODULE_MISMATCH',
   'UNSUPPORTED_MC_VERSION',
   'MODDED_HOST_REJECTED',
+  'FORGE_HOST_BLOCKED',
   // Skin + setup-wizard surfaces
   'MOD_DOWNLOAD_FAILED',
   'FABRIC_INSTALL_FAILED',

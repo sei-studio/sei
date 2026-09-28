@@ -54,6 +54,10 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   // wrong and what actually works, and does NOT say "press Summon again":
   // retrying is the one thing guaranteed not to help here.
   MODDED_HOST_REJECTED: 'This world runs Forge or NeoForge and only lets in players who have its mods. Sei joins as a normal Minecraft client, so the world turns it away. Open a world without server-side mods, or use Fabric with client-only mods like minimaps.',
+  // 260929: refused before fork (Forge/NeoForge host on strong evidence). The
+  // routed modal (ForgeHostBlocked) carries the launcher steps; this is the
+  // one-line model-row copy.
+  FORGE_HOST_BLOCKED: "Sei can't join Forge or NeoForge worlds. Open the Sei profile in the Minecraft Launcher, load your world there, and open it to LAN.",
   // Skin pipeline + setup-wizard errors. Do NOT rephrase — the UI checker
   // matches these strings byte-for-byte against the spec.
   MOD_DOWNLOAD_FAILED: "Couldn't download CustomSkinLoader. Check your connection and try the setup again.",

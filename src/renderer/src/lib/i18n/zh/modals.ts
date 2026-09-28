@@ -285,6 +285,10 @@ export const ZH_MODALS: Record<string, string> = {
     '如果加入失败，请尝试没有服务端模组的世界。',
   "Don't show this again": '不再显示',
   'Summon anyway': '仍然召唤',
+  "Your world looks like it may be running {loader}. {name} can't join {loader} worlds, so if it is, the summon will fail.":
+    '你的世界似乎在运行 {loader}。{name} 无法加入 {loader} 世界，如果确实如此，召唤会失败。',
+  'If the join fails, host your world from the Sei profile in the Minecraft Launcher.':
+    '如果加入失败，请在 Minecraft 启动器中用 Sei 配置来开启你的世界。',
   // Forge/NeoForge block (260929)
   "Sei can't join {loader} worlds": 'Sei 无法加入 {loader} 世界',
   'Your world is hosted from {loader}. {name} joins as a normal Minecraft player, and {loader} worlds turn those players away, so the summon would fail. To play together, host your world from the Sei profile instead:':

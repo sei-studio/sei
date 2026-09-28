@@ -320,6 +320,14 @@ export interface LanHost {
    */
   seiSkinMod?: boolean;
   otherModCount?: number | null;
+  /**
+   * 260929 — the host command line names an explicit Forge/NeoForge launch
+   * target (`--launchTarget forgeclient`, `--fml.forgeVersion`, the FML
+   * tweaker, NeoForge's startup main class). Strong evidence, unlike the
+   * substring markers classifyCmdline uses, which can come from an instance
+   * name or install path. See hasForgeLaunchTarget in src/main/hostClient.ts.
+   */
+  forgeLaunchTarget?: boolean;
 }
 
 /**
@@ -336,13 +344,17 @@ export type LanHostWarning = 'vanilla' | 'modded' | 'lunar' | 'forge';
  *   - 'vanilla' → host runs plain vanilla Minecraft, i.e. WITHOUT Sei's
  *     Fabric skin setup: the companion joins fine but renders with a default
  *     Minecraft skin (CustomSkinLoader never runs).
- *   - 'forge'   → Forge/NeoForge (by process or by the ping's forgeData).
+ *   - 'forge'   → Forge/NeoForge on STRONG evidence only: the ping's
+ *     forgeData / modinfo, or an explicit launch target on the host command
+ *     line (forgeLaunchTarget). A Forge/NeoForge classification from weaker
+ *     cmdline markers falls to 'modded' so a misread never locks anyone out.
  *     BLOCKING (260929): in practice a Forge-family server rejects Sei's
  *     vanilla-protocol client whatever its mod list (live, 09-22..28: Forge
  *     1.12.2 to 1.21.11 with 0 to 4 mods, every summon kicked or timed out),
  *     so "Summon anyway" only ever bought a failure of up to 30s. The Forge handshake in
  *     src/bot/adapter/minecraft/forgeHandshake.js is an off-by-default spike.
- *   - 'modded'  → Quilt, or Fabric with mod jars BESIDES Sei's skin mod:
+ *   - 'modded'  → Quilt, Forge/NeoForge on weak evidence only, or Fabric
+ *     with mod jars BESIDES Sei's skin mod:
  *     server-side-only mods let a vanilla client in, content mods can make
  *     the world refuse it, so this one keeps its "Summon anyway".
  *   - null      → silence. Notably: Fabric with only Sei's skin mod installed
@@ -356,7 +368,13 @@ export function lanHostWarning(host: LanHost | undefined): LanHostWarning | null
   if (!host) return null;
   if (host.client === 'lunar') return 'lunar';
   if (host.client === 'vanilla') return 'vanilla';
-  if (host.client === 'forge' || host.client === 'neoforge') return 'forge';
+  if (host.client === 'forge' || host.client === 'neoforge') {
+    // Hard-block only on strong evidence (260929): the ping's forgeData /
+    // modinfo, or an explicit launch target on the command line. A bare
+    // marker (e.g. "neoforge" in an instance path) could be a misread, so it
+    // gets the soft warning, which keeps "Summon anyway".
+    return hasStrongForgeEvidence(host) ? 'forge' : 'modded';
+  }
   if (host.client === 'quilt') return 'modded';
   if (host.client === 'fabric') {
     // Fabric is Sei's own loader. Warn only on positive evidence of mods
@@ -364,10 +382,45 @@ export function lanHostWarning(host: LanHost | undefined): LanHostWarning | null
     if (host.otherModCount != null && host.otherModCount > 0) return 'modded';
     return null;
   }
-  // Cmdline classification failed but the ping itself carried Forge metadata
-  // (forgeData / modinfo), which only Forge-family servers send.
-  if (host.forgeModCount != null) return 'forge';
+  // Cmdline classification failed, but the ping carried Forge metadata
+  // (forgeData / modinfo, which only Forge-family servers send) or the
+  // command line named a Forge launch target.
+  if (hasStrongForgeEvidence(host)) return 'forge';
   return null;
+}
+
+/** Strong Forge-family evidence: the status ping or an explicit launch target. */
+function hasStrongForgeEvidence(host: LanHost): boolean {
+  return host.forgeModCount != null || host.forgeLaunchTarget === true;
+}
+
+/** Error class for a summon refused because the host is Forge/NeoForge. */
+export const FORGE_HOST_BLOCKED = 'FORGE_HOST_BLOCKED';
+
+/**
+ * THE Forge/NeoForge hard-stop check (260929), shared by every summon entry
+ * point so they cannot drift: the renderer's Summon button (via
+ * lanHostWarning in summonFlow), the chat launch() tool (chatService
+ * resolveLaunch) and the supervisor's pre-gate (the backstop for the voice
+ * launch honors and anything else that calls summon directly). Returns the
+ * loader name for the copy, or null when the host is not blocked. Weak or
+ * ambiguous evidence is never blocked here; it gets the soft warning.
+ */
+export function forgeHostBlock(host: LanHost | undefined): { loader: 'Forge' | 'NeoForge' } | null {
+  if (!host || lanHostWarning(host) !== 'forge') return null;
+  return { loader: host.client === 'neoforge' ? 'NeoForge' : 'Forge' };
+}
+
+/**
+ * Plain-words explanation of the Forge block, for the error status and for
+ * the companion to relay to the player. No app jargon beyond the launcher
+ * profile name the setup wizard creates.
+ */
+export function forgeHostBlockedMessage(loader: 'Forge' | 'NeoForge'): string {
+  return (
+    `Sei can't join ${loader} worlds. ` +
+    'To play together, open the Sei profile in the Minecraft Launcher, load your world there, and open it to LAN.'
+  );
 }
 
 /**

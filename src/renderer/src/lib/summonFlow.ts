@@ -85,6 +85,8 @@ export async function summonWithHostGate(
   // 260929: a Forge/NeoForge host is a hard stop, not a heads-up. It is never
   // acknowledged or suppressed ("Don't show this again" for the old modded
   // warning does not cover it) and the modal has no "Summon anyway".
+  // Same decision as forgeHostBlock, the check main's pre-gate and the chat
+  // launch() tool use; weak evidence lands in the soft 'modded' warning below.
   if (warning === 'forge' && host) {
     useUiStore.getState().openModal({ kind: 'lan-host-warning', characterId: id, warning, host, fromChat });
     return;

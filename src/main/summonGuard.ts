@@ -70,6 +70,19 @@ export function blockedAutoSummon(
   return rec.errorClass;
 }
 
+/**
+ * Drop every block armed by one error class (260929). The Forge host block
+ * is a fact about the CURRENT world, not a setup step: once the LAN host is
+ * no longer a blocked Forge host (the player reopened from the Sei profile),
+ * index.ts clears it so the automatic launch paths work again without the
+ * 5-minute wait.
+ */
+export function clearSummonBlocksOfClass(errorClass: string): void {
+  for (const [id, rec] of lastPreGate) {
+    if (rec.errorClass === errorClass) lastPreGate.delete(id);
+  }
+}
+
 /** Test seam: drop all state. */
 export function resetSummonGuardForTest(): void {
   lastPreGate.clear();

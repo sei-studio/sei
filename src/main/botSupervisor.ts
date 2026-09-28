@@ -23,6 +23,9 @@ import {
 import path from 'node:path';
 import {
   isModdedLanHost,
+  forgeHostBlock,
+  forgeHostBlockedMessage,
+  FORGE_HOST_BLOCKED,
   type BotStatus,
   type LogBatch,
   type BotLifecycle,
@@ -1086,6 +1089,22 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       };
       sendStatus(status);
       throw new Error(module.joinTargetMissingError.error);
+    }
+    // 260929: Forge/NeoForge hard stop, before anything is downloaded or
+    // forked. The renderer's Summon button already refuses these hosts; this
+    // is the backstop for every other entry point (the voice-call launch
+    // honors, anything calling summon directly), using the SAME shared check
+    // (forgeHostBlock) so the paths cannot drift. The chat launch() tool
+    // refuses earlier with a model-facing note (chatService resolveLaunch).
+    // SEI_FORGE_HANDSHAKE=1 keeps the handshake spike testable.
+    if (game === 'minecraft' && process.env.SEI_FORGE_HANDSHAKE !== '1') {
+      let block: ReturnType<typeof forgeHostBlock> = null;
+      try { block = forgeHostBlock(opts.getLanHost?.()); } catch { block = null; }
+      if (block) {
+        const message = forgeHostBlockedMessage(block.loader);
+        sendStatus({ kind: 'error', error: FORGE_HOST_BLOCKED, message, characterId });
+        throw new Error(`${FORGE_HOST_BLOCKED}: ${message}`);
+      }
     }
     // Legacy init keys (one release): an older bot build reads the Minecraft
     // join target off the top-level lanPort / lanMotd / skinServerBaseUrl.

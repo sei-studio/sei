@@ -9,10 +9,16 @@
  *   - parseLsof / parseNetstat: pid extraction feeding the classifier.
  */
 import { describe, it, expect } from 'vitest';
-import { classifyCmdline } from './hostClient';
+import { classifyCmdline, hasForgeLaunchTarget } from './hostClient';
 import { forgeModCountFromStatus } from './mcPing';
 import { parseLsof, parseNetstat, parseTasklist } from './listeningPorts';
-import { lanHostWarning, isModdedLanHost, type LanHost } from '../shared/ipc';
+import {
+  lanHostWarning,
+  isModdedLanHost,
+  forgeHostBlock,
+  forgeHostBlockedMessage,
+  type LanHost,
+} from '../shared/ipc';
 
 const host = (client: LanHost['client'], forgeModCount: number | null = null): LanHost => ({
   client,
@@ -105,10 +111,22 @@ describe('lanHostWarning (three-way classification, 260721)', () => {
     otherModCount,
   });
 
-  it('blocks Forge and NeoForge hosts (260929), Quilt keeps the soft modded warning', () => {
-    expect(lanHostWarning(host('forge'))).toBe('forge');
-    expect(lanHostWarning(host('neoforge'))).toBe('forge');
+  it('blocks Forge and NeoForge hosts on strong evidence (260929), Quilt keeps the soft modded warning', () => {
+    // Ping forgeData / modinfo.
+    expect(lanHostWarning(host('forge', 0))).toBe('forge');
+    expect(lanHostWarning(host('neoforge', 12))).toBe('forge');
+    // Explicit launch target on the command line.
+    expect(lanHostWarning({ client: 'forge', forgeModCount: null, forgeLaunchTarget: true })).toBe('forge');
+    expect(lanHostWarning({ client: 'neoforge', forgeModCount: null, forgeLaunchTarget: true })).toBe('forge');
     expect(lanHostWarning(host('quilt'))).toBe('modded');
+  });
+
+  it('falls back to the soft modded warning when the Forge evidence is weak', () => {
+    // Classified Forge/NeoForge from a cmdline substring only: no ping
+    // metadata, no launch target. Could be an instance name, so no hard stop.
+    expect(lanHostWarning(host('forge'))).toBe('modded');
+    expect(lanHostWarning(host('neoforge'))).toBe('modded');
+    expect(lanHostWarning({ client: 'neoforge', forgeModCount: null, forgeLaunchTarget: false })).toBe('modded');
   });
 
   it('case 1: a vanilla host gets the vanilla (default skin) disclaimer', () => {
@@ -142,9 +160,115 @@ describe('lanHostWarning (three-way classification, 260721)', () => {
     expect(lanHostWarning(host('unknown', 0))).toBe('forge');
   });
 
+  it('blocks as Forge when only the launch target matched', () => {
+    expect(lanHostWarning({ client: 'unknown', forgeModCount: null, forgeLaunchTarget: true })).toBe('forge');
+  });
+
   it('stays silent for unknown and missing hosts', () => {
     expect(lanHostWarning(host('unknown'))).toBe(null);
     expect(lanHostWarning(undefined)).toBe(null);
+  });
+});
+
+// Command lines shaped like what each launcher really passes (trimmed).
+const CMD = {
+  vanilla:
+    '/usr/bin/java -Xmx2G -Djava.library.path=/x/natives -cp /x/client.jar net.minecraft.client.main.Main ' +
+    '--username Steve --version 1.21.1 --gameDir /Users/x/Library/Application Support/minecraft --assetsDir /x/assets',
+  seiFabric:
+    '/usr/bin/java -Xmx2G -DFabricMcEmu= net.minecraft.client.main.Main -cp /x/libraries/net/fabricmc/fabric-loader/0.16.9/fabric-loader-0.16.9.jar ' +
+    'net.fabricmc.loader.impl.launch.knot.KnotClient --username Steve --version fabric-loader-0.16.9-1.21.1 ' +
+    '--gameDir /Users/x/Library/Application Support/minecraft/sei/1.21.1',
+  forge120:
+    'java -Xmx4G -p /x/bootstraplauncher-1.1.2.jar cpw.mods.bootstraplauncher.BootstrapLauncher --username Steve ' +
+    '--version 1.20.1-forge-47.3.0 --launchTarget forgeclient --fml.forgeVersion 47.3.0 --fml.mcVersion 1.20.1 ' +
+    '--fml.forgeGroup net.minecraftforge --fml.mcpVersion 20230612.114412',
+  forge112:
+    'javaw -Xmx4G -cp /x/launchwrapper-1.12.jar net.minecraft.launchwrapper.Launch --username Steve ' +
+    '--version 1.12.2-forge-14.23.5.2860 --tweakClass net.minecraftforge.fml.common.launcher.FMLTweaker --versionType Forge',
+  forge116:
+    'java -cp /x/modlauncher-8.1.3.jar cpw.mods.modlauncher.Launcher --username Steve --launchTarget fmlclient ' +
+    '--fml.forgeVersion 36.2.39 --fml.mcVersion 1.16.5',
+  neoforge121:
+    '"C:\\Program Files\\Java\\bin\\javaw.exe" -Xmx4G cpw.mods.bootstraplauncher.BootstrapLauncher "--launchTarget" "forgeclient" ' +
+    '"--fml.neoForgeVersion" "21.1.77" "--fml.fmlVersion" "4.0.24" "--fml.mcVersion" "1.21.1"',
+  // A Fabric instance that happens to be NAMED after NeoForge: the substring
+  // marker reads it as NeoForge, which is exactly the misread to guard.
+  fabricNamedNeoforge:
+    'java -cp /x/fabric-loader-0.16.9.jar net.fabricmc.loader.impl.launch.knot.KnotClient ' +
+    '--gameDir /home/x/.local/share/PrismLauncher/instances/neoforge-port-test/.minecraft',
+};
+
+/** Mirrors lanWatcher.hostFor: cmdline → cached host fields + the ping. */
+function hostFromCmdline(cmdline: string, forgeModCount: number | null = null, mods?: Partial<LanHost>): LanHost {
+  return {
+    client: classifyCmdline(cmdline),
+    forgeModCount,
+    forgeLaunchTarget: hasForgeLaunchTarget(cmdline),
+    ...mods,
+  };
+}
+
+describe('hasForgeLaunchTarget (260929, strong cmdline evidence)', () => {
+  it('matches the launch targets Forge and NeoForge launchers pass', () => {
+    expect(hasForgeLaunchTarget(CMD.forge120)).toBe(true);
+    expect(hasForgeLaunchTarget(CMD.forge112)).toBe(true);
+    expect(hasForgeLaunchTarget(CMD.forge116)).toBe(true);
+    expect(hasForgeLaunchTarget(CMD.neoforge121)).toBe(true);
+    expect(hasForgeLaunchTarget('java cpw.mods.bootstraplauncher.BootstrapLauncher --launchTarget forge_client')).toBe(true);
+    expect(hasForgeLaunchTarget('java cpw.mods.bootstraplauncher.BootstrapLauncher --launchTarget neoforgeclient')).toBe(true);
+    expect(hasForgeLaunchTarget('java -cp x net.neoforged.fml.startup.Client --username Steve')).toBe(true);
+  });
+
+  it('does not match vanilla, Fabric, or a loader named only in a path', () => {
+    expect(hasForgeLaunchTarget(CMD.vanilla)).toBe(false);
+    expect(hasForgeLaunchTarget(CMD.seiFabric)).toBe(false);
+    expect(hasForgeLaunchTarget(CMD.fabricNamedNeoforge)).toBe(false);
+    expect(hasForgeLaunchTarget('java -Dx=/Users/x/curseforge/minecraft/Instances/Pack net.minecraft.client.main.Main')).toBe(false);
+    expect(hasForgeLaunchTarget('java -cp /libs/net/minecraftforge/forge.jar net.minecraft.client.main.Main')).toBe(false);
+    expect(hasForgeLaunchTarget('')).toBe(false);
+  });
+});
+
+describe('forgeHostBlock (260929, the one hard-stop check)', () => {
+  it("never blocks vanilla or Sei's own Fabric profile", () => {
+    expect(forgeHostBlock(hostFromCmdline(CMD.vanilla))).toBeNull();
+    expect(forgeHostBlock(hostFromCmdline(CMD.seiFabric, null, { seiSkinMod: true, otherModCount: 0 }))).toBeNull();
+    expect(lanHostWarning(hostFromCmdline(CMD.seiFabric, null, { seiSkinMod: true, otherModCount: 0 }))).toBeNull();
+  });
+
+  it('never blocks Fabric, even with other mods (soft warning only)', () => {
+    const modded = hostFromCmdline(CMD.seiFabric, null, { seiSkinMod: true, otherModCount: 5 });
+    expect(forgeHostBlock(modded)).toBeNull();
+    expect(lanHostWarning(modded)).toBe('modded');
+  });
+
+  it('blocks real Forge and NeoForge hosts, from the cmdline alone or the ping alone', () => {
+    expect(forgeHostBlock(hostFromCmdline(CMD.forge120))).toEqual({ loader: 'Forge' });
+    expect(forgeHostBlock(hostFromCmdline(CMD.forge112))).toEqual({ loader: 'Forge' });
+    expect(forgeHostBlock(hostFromCmdline(CMD.forge116))).toEqual({ loader: 'Forge' });
+    expect(forgeHostBlock(hostFromCmdline(CMD.neoforge121))).toEqual({ loader: 'NeoForge' });
+    // Cmdline unreadable (e.g. ps failed) but the ping carried forgeData.
+    expect(forgeHostBlock(hostFromCmdline('', 3))).toEqual({ loader: 'Forge' });
+  });
+
+  it('does not hard-block on a weak marker; that host gets the soft warning with Summon anyway', () => {
+    const misread = hostFromCmdline(CMD.fabricNamedNeoforge);
+    expect(misread.client).toBe('neoforge');
+    expect(forgeHostBlock(misread)).toBeNull();
+    expect(lanHostWarning(misread)).toBe('modded');
+  });
+
+  it('never blocks an unknown or missing host', () => {
+    expect(forgeHostBlock(hostFromCmdline(''))).toBeNull();
+    expect(forgeHostBlock(undefined)).toBeNull();
+  });
+
+  it('has a plain message naming the loader and the fix', () => {
+    const m = forgeHostBlockedMessage('NeoForge');
+    expect(m).toContain("Sei can't join NeoForge worlds");
+    expect(m).toContain('Sei profile');
+    expect(m).not.toMatch(/\u2014|\u2013/);
   });
 });
 

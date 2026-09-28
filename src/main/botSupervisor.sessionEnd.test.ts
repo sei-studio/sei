@@ -152,8 +152,15 @@ afterEach(() => {
 
 type Status = { kind: string; error?: string; message?: string; endReason?: string; kickCode?: string };
 
+// Strong evidence (ping forgeData): refused at the pre-gate, never forked.
 const FORGE: LanHost = { client: 'forge', forgeModCount: 0 };
+// Strong evidence from the command line only (no ping metadata).
+const NEOFORGE_TARGET: LanHost = { client: 'neoforge', forgeModCount: null, forgeLaunchTarget: true };
+// Weak evidence (a cmdline marker only): soft warning, the summon still runs.
+const WEAK_FORGE: LanHost = { client: 'forge', forgeModCount: null };
+const MODDED_FABRIC: LanHost = { client: 'fabric', forgeModCount: null, seiSkinMod: true, otherModCount: 3 };
 const OUR_FABRIC: LanHost = { client: 'fabric', forgeModCount: null, seiSkinMod: true, otherModCount: 0 };
+const VANILLA: LanHost = { client: 'vanilla', forgeModCount: null };
 
 async function summonToReady(getLanHost?: () => LanHost | undefined): Promise<{
   sup: ReturnType<typeof createBotSupervisor>;
@@ -251,8 +258,10 @@ describe('join timeout on a modded host (260929)', () => {
     return { p, fake, statuses, onSummonFailure };
   }
 
-  it('a ready timeout on a Forge host is reported as MODDED_HOST_REJECTED', async () => {
-    const { p, fake, statuses, onSummonFailure } = await startSummon(() => FORGE);
+  // A strongly detected Forge host never gets this far (pre-gate below), so
+  // these run on hosts that still summon: weak-evidence Forge, modded Fabric.
+  it('a ready timeout on a modded host is reported as MODDED_HOST_REJECTED', async () => {
+    const { p, fake, statuses, onSummonFailure } = await startSummon(() => WEAK_FORGE);
     fake.emitPortMessage({ type: 'init-ack' });
     await vi.advanceTimersByTimeAsync(31_000);
     await expect(p).rejects.toThrow('MODDED_HOST_REJECTED');
@@ -265,8 +274,8 @@ describe('join timeout on a modded host (260929)', () => {
     expect(statuses.find((s) => s.kind === 'error')).toMatchObject({ error: 'MODDED_HOST_REJECTED' });
   });
 
-  it("the bot's own connect-guard timeout on a Forge host is reclassified too", async () => {
-    const { p, fake, statuses, onSummonFailure } = await startSummon(() => FORGE);
+  it("the bot's own connect-guard timeout on a modded host is reclassified too", async () => {
+    const { p, fake, statuses, onSummonFailure } = await startSummon(() => MODDED_FABRIC);
     fake.emitPortMessage({ type: 'init-ack' });
     fake.emitPortMessage({ type: 'error', error: 'BOT_START_TIMEOUT', message: 'connect guard: 20000ms' });
     await expect(p).rejects.toThrow('MODDED_HOST_REJECTED');
@@ -289,9 +298,56 @@ describe('join timeout on a modded host (260929)', () => {
   });
 
   it('a BOOT timeout says nothing about the world and is never reclassified', async () => {
-    const { p, onSummonFailure } = await startSummon(() => FORGE);
+    const { p, onSummonFailure } = await startSummon(() => WEAK_FORGE);
     await vi.advanceTimersByTimeAsync(61_000);
     await expect(p).rejects.toThrow('BOT_START_TIMEOUT');
     expect(onSummonFailure.mock.calls[0][0]).toMatchObject({ phase: 'boot_timeout', errorClass: 'BOT_START_TIMEOUT' });
+  });
+});
+
+describe('Forge host pre-gate (260929)', () => {
+  async function trySummon(host: LanHost | undefined) {
+    const onSummonFailure = vi.fn();
+    const statuses: Status[] = [];
+    const sup = makeSupervisor({ onSummonFailure, sendStatus: (s) => statuses.push(s as Status), getLanHost: () => host });
+    armFakeChild();
+    const p = sup.summon(A);
+    p.catch(() => {});
+    return { p, statuses, onSummonFailure };
+  }
+
+  it.each([
+    ['Forge seen in the status ping', FORGE, 'Forge'],
+    ['NeoForge with an explicit launch target', NEOFORGE_TARGET, 'NeoForge'],
+  ])('refuses %s before forking, with a plain message', async (_label, host, loader) => {
+    const { p, statuses, onSummonFailure } = await trySummon(host);
+    await expect(p).rejects.toThrow(/^FORGE_HOST_BLOCKED: Sei can't join/);
+    expect(forkSpy).not.toHaveBeenCalled();
+    const err = statuses.find((s) => s.kind === 'error');
+    expect(err).toMatchObject({ error: 'FORGE_HOST_BLOCKED' });
+    expect(err?.message).toContain(`Sei can't join ${loader} worlds`);
+    expect(err?.message).toContain('Sei profile');
+    expect(onSummonFailure.mock.calls[0][0]).toMatchObject({ phase: 'pre_gate', errorClass: 'FORGE_HOST_BLOCKED' });
+  });
+
+  it.each([
+    ['vanilla', VANILLA],
+    ["Sei's own Fabric profile", OUR_FABRIC],
+    ['Fabric with other mods', MODDED_FABRIC],
+    ['Forge on weak evidence only', WEAK_FORGE],
+    ['an undetected host', undefined],
+  ])('lets %s through to the fork', async (_label, host) => {
+    await trySummon(host);
+    await vi.waitFor(() => expect(forkSpy).toHaveBeenCalledTimes(1));
+  });
+
+  it('SEI_FORGE_HANDSHAKE=1 keeps the handshake spike reachable', async () => {
+    vi.stubEnv('SEI_FORGE_HANDSHAKE', '1');
+    try {
+      await trySummon(FORGE);
+      await vi.waitFor(() => expect(forkSpy).toHaveBeenCalledTimes(1));
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
