@@ -47,6 +47,9 @@ export const GAME_CATALOG: GameCatalogEntry[] = [
   // install pass (SMAPI / the DST helper mod) that only the player can run.
   { id: 'stardew', name: 'Stardew Valley', available: true },
   { id: 'dontstarve', name: "Don't Starve Together", available: true },
+  // 260929: Roblox is a SOON tile like Focus until its screen-share (backseat)
+  // flow ships, which turns this row into a live tile.
+  { id: 'roblox', name: 'Roblox', available: false },
   { id: 'focus', name: 'Focus', available: false },
 ];
 
