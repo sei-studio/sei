@@ -133,9 +133,13 @@ export const ZH_CHATUI: Record<string, string> = {
   'Joining your world...': '正在进入你的世界...',
   'Launch': '启动',
   'How do I set up launch?': '如何设置启动？',
-  'Works with Minecraft Java {versions}.': '支持 Minecraft Java 版 {versions}。',
-  'Your open world is on Minecraft {version}, which Sei cannot join yet. Sei works with Minecraft Java {versions}.':
-    '你打开的世界是 Minecraft {version}，Sei 暂时无法加入。Sei 支持 Minecraft Java 版 {versions}。',
+  'Works with most Minecraft Java versions from {oldest} to {newest}.': '支持 {oldest} 至 {newest} 之间的大多数 Minecraft Java 版本。',
+  'Your open world is on Minecraft {version}, which Sei cannot join yet. Sei works with most Minecraft Java versions from {oldest} to {newest}.':
+    '你打开的世界是 Minecraft {version}，Sei 暂时无法加入。Sei 支持 {oldest} 至 {newest} 之间的大多数 Minecraft Java 版本。',
+  // "Which versions?" list (McLaunchPanel + UnsupportedVersionModal, 260929).
+  'Which versions?': '支持哪些版本？',
+  'Versions Sei can join': 'Sei 可以加入的版本',
+  'Versions not listed here will not work.': '未列出的版本无法使用。',
   // Span inside the supported-version list ("1.19 to 1.21.11"), lib/mcVersions.
   '{from} to {to}': '{from} 至 {to}',
   // Minecraft setup steps on the launch panel (McSteps, 260909).

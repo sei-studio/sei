@@ -6,6 +6,7 @@ import {
   installableMcVersions,
   joinableMcVersions,
   mcReleases,
+  mcVersionSpans,
   type McProtocolRow,
   isMcVersionNewerThanSupported,
   mcInstallReadyVersion,
@@ -121,6 +122,14 @@ describe('mcSetup', () => {
     expect(formatMcVersionList(joinableMcVersions(SUP, ROWS), mcReleases(ROWS))).toBe('1.8 to 1.8.9, 1.9.4 to 1.10.2, 1.12.2, 26.1, 26.1.2');
     expect(formatMcVersionList(['1.8', '1.8.9', '1.10'], ['1.8', '1.8.9', '1.9', '1.10'], (a, b) => `${a}至${b}`)).toBe('1.8, 1.8.9, 1.10');
     expect(formatMcVersionList(['1', '2', '3'], ['1', '2', '3'], (a, b) => `${a}至${b}`)).toBe('1至3');
+  });
+
+  // 260929: the "Which versions?" list shows one span per row; the one-line
+  // formatter is exactly those spans joined.
+  it('spans are the formatter\'s runs, one entry per run', () => {
+    const spans = mcVersionSpans(joinableMcVersions(SUP, ROWS), mcReleases(ROWS));
+    expect(spans).toEqual(['1.8 to 1.8.9', '1.9.4 to 1.10.2', '1.12.2', '26.1, 26.1.2']);
+    expect(spans.join(', ')).toBe(formatMcVersionList(joinableMcVersions(SUP, ROWS), mcReleases(ROWS)));
   });
 
   it('with the protocol table, a world on a same-protocol patch (26.1.2) is not "too new"', () => {

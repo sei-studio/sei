@@ -421,7 +421,7 @@ export function forgeHostBlock(host: LanHost | undefined): { loader: 'Forge' | '
 export function forgeHostBlockedMessage(loader: 'Forge' | 'NeoForge'): string {
   return (
     `Sei can't join ${loader} worlds. ` +
-    'To play together, open the Sei profile in the Minecraft Launcher, load your world there, and open it to LAN.'
+    'To play together, open the Sei profile in the Minecraft Launcher, open or create a world there, and open it to LAN.'
   );
 }
 
@@ -979,6 +979,31 @@ export interface McInstall {
    */
   compatibility: 'full' | 'limited';
 }
+
+/** Which Minecraft Launcher build Start Minecraft opened. */
+export type MinecraftLauncherKind = 'mac' | 'windows' | 'windows-store';
+
+/**
+ * Result of startMinecraft (260929): the Sei profile was selected in the
+ * launcher (lastUsed = now) and the launcher was opened. The player still
+ * presses Play. `alreadyOpen`: the launcher was running, so it keeps its own
+ * selection and the player has to pick the profile next to Play.
+ */
+export type StartMinecraftResult =
+  | {
+      ok: true;
+      profileName: string;
+      mcVersion: string;
+      launcher: MinecraftLauncherKind;
+      alreadyOpen: boolean;
+    }
+  | {
+      ok: false;
+      /** no_profile: no Sei-ready profile. no_launcher / launch_failed: the profile is selected but the launcher did not open. */
+      reason: 'no_profile' | 'no_launcher' | 'launch_failed';
+      profileName?: string;
+      detail?: string;
+    };
 
 /** Per-install install result returned from runWizardInstall. */
 export interface WizardInstallResult {
@@ -2411,6 +2436,12 @@ export interface RendererApi {
    * this resolves immediately after firing .abort() — the in-flight runWizardInstall promise then rejects.
    */
   wizardCancel(sessionId: string): Promise<void>;
+  /**
+   * Select the Sei profile in the Minecraft Launcher and open the launcher
+   * (260929). `mcVersion` picks that version's Sei profile; absent = the
+   * newest supported one. Never throws; see StartMinecraftResult.
+   */
+  startMinecraft(args?: { mcVersion?: string }): Promise<StartMinecraftResult>;
   /** Returns the persisted wizard state (which installs are enabled, last setup timestamp, last skin server port). */
   getWizardState(): Promise<WizardState>;
   /**
@@ -3511,6 +3542,8 @@ export const IpcChannel = {
     // ('get') / persist ('set') a profile-scoped flag so the prompt fires at
     // most once per account.
     promptShown: 'wizard:prompt-shown',
+    // 260929: select the Sei profile + open the Minecraft Launcher.
+    startMinecraft: 'wizard:start-minecraft',
   },
   auth: {
     state: 'auth:state',

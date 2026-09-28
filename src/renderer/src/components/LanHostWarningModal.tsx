@@ -43,6 +43,8 @@ import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { acknowledgeHostWarning, launchSummon } from '../lib/summonFlow';
 import styles from './LanHostWarningModal.module.css';
+import { useSeiProfileAction } from './mcdash/useStartMinecraft';
+import { MC_RECOMMENDED } from '../lib/mcVersions';
 import stepStyles from './LanNotOpenModal.module.css';
 
 export interface LanHostWarningModalProps {
@@ -75,11 +77,12 @@ const TITLES: Record<Exclude<LanHostWarning, 'forge'>, string> = {
 
 
 // Launcher steps for the Forge block, in the numbered style of LanNotOpenModal.
-const FORGE_STEPS: readonly string[] = [
-  'Save and quit your world, then open the Minecraft Launcher.',
-  'Pick the Sei profile (named "Sei" and a version number) and press Play. No Sei profile yet? Use Set up Sei profile below.',
-  'Open a world, choose Open to LAN, then press Launch in Sei again.',
-];
+// Step 2 follows the footer button: Start Minecraft when a Sei profile
+// exists, Set up Sei profile when it does not (260929).
+const FORGE_STEP_QUIT = 'Save and quit your world.';
+const FORGE_STEP_START = 'Press Start Minecraft below. The launcher opens with the Sei profile selected. Press Play.';
+const FORGE_STEP_SETUP = 'Press Set up Sei profile below. Sei adds a "Sei {version}" profile to your launcher in about a minute. Then open the launcher, pick that profile, and press Play.';
+const FORGE_STEP_LAN = 'Open or create a world, choose Open to LAN, then press Launch in Sei again.';
 
 /** Substitute {token} placeholders in a translated string with React nodes,
  * so styled spans (the bold companion name) survive translation without
@@ -98,13 +101,15 @@ function richText(text: string, nodes: Record<string, React.ReactNode>): React.R
 /**
  * 260929: the blocking Forge/NeoForge variant. Deliberately no summon button:
  * the join cannot work, and offering it is what produced the retry loops. The
- * one-click guide opens the Minecraft setup window on its skin tab, which runs
- * the wizard that builds the "Sei <version>" launcher profile.
+ * footer button is Start Minecraft (opens the launcher on the Sei profile) or,
+ * with no Sei profile yet, Set up Sei profile (opens the wizard that builds
+ * the "Sei <version>" launcher profile).
  */
 function ForgeHostBlocked({ characterId, host }: { characterId: string; host: LanHost }): React.ReactElement {
   const t = useT();
   const closeModal = useUiStore((s) => s.closeModal);
-  const openModal = useUiStore((s) => s.openModal);
+  const action = useSeiProfileAction({ onBeforeSetup: closeModal });
+  const forgeSteps = [FORGE_STEP_QUIT, action.ready ? FORGE_STEP_START : FORGE_STEP_SETUP, FORGE_STEP_LAN];
   const rawName = useDataStore((s) => s.characters.find((c) => c.id === characterId)?.name ?? null);
   const name = rawName ?? t('Your companion');
   // Shared with main's pre-gate and the chat launch() refusal; a ping-only
@@ -116,35 +121,34 @@ function ForgeHostBlocked({ characterId, host }: { characterId: string; host: La
       <p className={stepStyles.body}>
         {richText(
           t(
-            'Your world is hosted from {loader}. {name} joins as a normal Minecraft player, and {loader} worlds turn those players away, so the summon would fail. To play together, host your world from the Sei profile instead:',
+            'Your world is hosted from {loader}. {name} joins as a normal Minecraft player, and {loader} worlds turn those players away, so the summon would fail. To play together, host a world from the Sei profile instead:',
             { loader },
           ),
           { name: <strong>{name}</strong> },
         )}
       </p>
       <ol className={stepStyles.steps}>
-        {FORGE_STEPS.map((step, i) => (
+        {forgeSteps.map((step, i) => (
           <li key={i} className={stepStyles.step}>
             <span className={stepStyles.stepNumber}>{String(i + 1).padStart(2, '0')}</span>
-            <span className={stepStyles.stepBody}>{t(step)}</span>
+            <span className={stepStyles.stepBody}>{t(step, { version: MC_RECOMMENDED })}</span>
           </li>
         ))}
       </ol>
       <p className={stepStyles.hint}>
-        {t('A world that needs {loader} mods may not open without them. If yours will not, make a new world in the Sei profile.', {
-          loader,
-        })}
+        {t('The Sei profile keeps its own worlds, apart from your other profiles. If its world list is empty, create a new world there.')}
       </p>
+      {action.note ? (
+        <p className={stepStyles.note} role="status" data-tone={action.note.tone}>
+          {action.note.text}
+        </p>
+      ) : null}
       <ModalFooter>
-        <Button
-          kind="ghost"
-          size="md"
-          onClick={() => openModal({ kind: 'mc-setup', tab: 'skin', searching: false })}
-        >
-          {t('Set up Sei profile')}
-        </Button>
-        <Button kind="accent" size="md" onClick={closeModal}>
+        <Button kind="quiet" size="md" onClick={closeModal}>
           {t('Got it')}
+        </Button>
+        <Button kind="accent" size="md" disabled={action.busy || !action.known} onClick={action.onClick}>
+          {action.known ? action.label : t('Set up Sei profile')}
         </Button>
       </ModalFooter>
     </ModalShell>

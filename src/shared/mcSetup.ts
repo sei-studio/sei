@@ -202,16 +202,18 @@ export function joinableMcVersions(supported: readonly string[], rows: readonly 
 }
 
 /**
- * The joinable versions as players should read them: consecutive releases
- * (with no unsupported release between them) collapse to "a to b", so every
- * gap stays visible. "1.8 to 1.8.9, 1.9.3, 1.9.4, ..., 1.19 to 1.21.11, 26.1
- * to 26.1.2".
+ * The joinable versions grouped into runs of consecutive releases (no
+ * unsupported release between them), oldest first. Each entry is one span as
+ * players should read it: a run of three or more collapses to "a to b", a
+ * shorter one lists its versions ("1.11.1, 1.11.2"). Every gap stays visible.
+ * 260929: split out of formatMcVersionList so the "Which versions?" list can
+ * show one span per row instead of one long sentence.
  */
-export function formatMcVersionList(
+export function mcVersionSpans(
   joinable: readonly string[],
   releases: readonly string[],
   span: (from: string, to: string) => string = (from, to) => `${from} to ${to}`,
-): string {
+): string[] {
   const ok = new Set(joinable);
   const order = [...new Set([...releases, ...joinable])].sort(compareMcVersions);
   const runs: string[][] = [];
@@ -225,9 +227,19 @@ export function formatMcVersionList(
     }
   }
   if (run.length) runs.push(run);
-  return runs
-    .map((r) => (r.length >= 3 ? span(r[0], r[r.length - 1]) : r.join(', ')))
-    .join(', ');
+  return runs.map((r) => (r.length >= 3 ? span(r[0], r[r.length - 1]) : r.join(', ')));
+}
+
+/**
+ * The joinable versions as one line: mcVersionSpans joined. "1.8 to 1.8.9,
+ * 1.9.3, 1.9.4, ..., 1.19 to 1.21.11, 26.1 to 26.1.2".
+ */
+export function formatMcVersionList(
+  joinable: readonly string[],
+  releases: readonly string[],
+  span: (from: string, to: string) => string = (from, to) => `${from} to ${to}`,
+): string {
+  return mcVersionSpans(joinable, releases, span).join(', ');
 }
 
 /**

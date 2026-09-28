@@ -419,6 +419,7 @@ const api: RendererApi = {
   detectMcInstalls: () => ipcRenderer.invoke(IpcChannel.wizard.detectInstalls),
   runWizardInstall: (args) => ipcRenderer.invoke(IpcChannel.wizard.install, args),
   wizardCancel: (sessionId) => ipcRenderer.invoke(IpcChannel.wizard.cancel, sessionId),
+  startMinecraft: (args) => ipcRenderer.invoke(IpcChannel.wizard.startMinecraft, args ?? {}),
   getWizardState: () => ipcRenderer.invoke(IpcChannel.wizard.getState),
   wizardPromptShown: (action: 'get' | 'set') => ipcRenderer.invoke(IpcChannel.wizard.promptShown, action),
 

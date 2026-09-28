@@ -47,3 +47,18 @@
   color: var(--muted);
   margin: 0;
 }
+
+/* Result line under a Start Minecraft press (260929). */
+.note {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  border-left: 2px solid var(--accent);
+  background: var(--accent-soft);
+}
+
+.note[data-tone='warn'] {
+  border-left-color: var(--warn);
+}

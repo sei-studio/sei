@@ -81,3 +81,11 @@
 .modLinkExclusionList li {
   list-style: disc;
 }
+
+/* 260929: Start Minecraft next to Finish setup on the done step. */
+.doneActions {
+  display: inline-flex;
+  gap: var(--space-sm);
+  align-items: center;
+}
+

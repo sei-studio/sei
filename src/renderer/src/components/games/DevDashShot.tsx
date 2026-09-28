@@ -12,6 +12,7 @@
  *     http://localhost:5173/?dashshot=dstlaunch    the Don't Starve Together launch panel
  *     http://localhost:5173/?dashshot=stardewlaunch  the Stardew Valley launch panel
  *     http://localhost:5173/?dashshot=creditwall&part=modal|credits|draw|banner  the credit wall surfaces (DevCreditWallShot)
+ *     http://localhost:5173/?dashshot=mcprofile&part=lan|unsupported|forge|setup|done  the Sei profile / Start Minecraft surfaces (DevMcProfileShot)
  *     http://localhost:5173/?dashshot=chatfirst    the guided first moment (260926) in the real ChatScreen
  *     http://localhost:5173/?dashshot=perms&part=mic|screen|...  the OS permission cards (DevPermsShot, 260929)
  *                                                  (&nomc=1: no Minecraft install; &lan=1: a LAN world open)
@@ -35,6 +36,7 @@ import { DstLaunchPanel } from '../dontstarve/DstLaunchPanel';
 import { StardewLaunchPanel } from '../stardew/StardewLaunchPanel';
 import { ChatScreen } from '../../screens/ChatScreen';
 import { DevCreditWallShot } from '../DevCreditWallShot';
+import { DevMcProfileShot } from '../mcdash/DevMcProfileShot';
 import { DevPermsShot } from '../permissions/DevPermsShot';
 import { useFirstMomentStore } from '../../lib/stores/useFirstMomentStore';
 
@@ -157,6 +159,8 @@ seed();
 export function DevDashShot({ which }: { which: string }): React.ReactElement {
   // ?dashshot=creditwall&part=modal|credits|draw|banner (260926).
   if (which === 'creditwall') return <DevCreditWallShot />;
+  // ?dashshot=mcprofile&part=... (260929).
+  if (which === 'mcprofile') return <DevMcProfileShot />;
   // ?dashshot=perms&part=mic|mic-win|mic-restricted|mic-restart|screen|screen-waiting|screen-restart (260929).
   if (which === 'perms') return <DevPermsShot />;
   // ?dashshot=chat (Stardew) | chatdst: the dashboard hosted inside the real
