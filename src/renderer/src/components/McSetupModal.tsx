@@ -6,7 +6,7 @@
  * (searching=true, via summonFlow.proceedSummon). Two tabs:
  *
  *  - 'world' (default): the open-to-LAN steps with the live world-detection
- *    pill. The "searching for an open LAN world" animation appears ONLY in
+ *    pill, and Start Minecraft (260929) when a Sei profile exists. The "searching for an open LAN world" animation appears ONLY in
  *    the launch-blocked path (searching=true); the plain help window shows
  *    the same steps without it.
  *  - 'skin': brief pointer to skin setup, with a button that opens the skin
@@ -38,6 +38,8 @@ import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { StatusPill, type StatusPillTone } from './StatusPill';
 import styles from './McSetupModal.module.css';
+import noteStyles from './LanNotOpenModal.module.css';
+import { useFirewallHint, useSeiProfileAction } from './mcdash/useStartMinecraft';
 
 /** Highest Minecraft Java version Sei's networking stack can join. */
 // 260917: the same rule the setup wizard installs by (release-only, sorted;
@@ -85,6 +87,8 @@ export function McSetupModal({ tab: initialTab, searching }: McSetupModalProps):
   const returnToChat = useUiStore((s) => s.pendingSummonReturnToChat);
   const setPendingSummonReturnToChat = useUiStore((s) => s.setPendingSummonReturnToChat);
   const openWizard = useWizardStore((s) => s.openWizard);
+  const action = useSeiProfileAction();
+  const firewallHint = useFirewallHint();
 
   // ── Auto-resume on open world (D-56) ────────────────────────────────────
   useEffect(() => {
@@ -171,6 +175,12 @@ export function McSetupModal({ tab: initialTab, searching }: McSetupModalProps):
               latest: LATEST_SUPPORTED,
             })}
           </p>
+          {firewallHint ? <p className={styles.hint}>{firewallHint}</p> : null}
+          {action.note ? (
+            <p className={noteStyles.note} role="status" data-tone={action.note.tone}>
+              {action.note.text}
+            </p>
+          ) : null}
           {searching ? (
             <div className={styles.searching}>
               <span className={styles.searchDots} aria-hidden="true">
@@ -198,6 +208,11 @@ export function McSetupModal({ tab: initialTab, searching }: McSetupModalProps):
       )}
 
       <ModalFooter>
+        {tab === 'world' && action.ready && lan.kind !== 'open' ? (
+          <Button kind="ghost" size="md" disabled={action.busy} onClick={action.onClick}>
+            {action.label}
+          </Button>
+        ) : null}
         <Button kind="primary" size="md" onClick={onClose}>
           {t('Close')}
         </Button>

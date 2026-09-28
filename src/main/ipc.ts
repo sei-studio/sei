@@ -2881,6 +2881,15 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return;
   });
 
+  ipcMain.handle(IpcChannel.wizard.startMinecraft, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ mcVersion: z.string().min(1).max(32).optional() })
+      .optional()
+      .parse(argsRaw ?? {});
+    const { startMinecraft } = await import('./mcLauncher');
+    return await startMinecraft({ mcVersion: args?.mcVersion });
+  });
+
   ipcMain.handle(IpcChannel.wizard.getState, async () => {
     const { loadWizardState } = await import('./wizardStateStore');
     return await loadWizardState();

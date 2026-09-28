@@ -16,6 +16,9 @@
  *                     "Launch"; disabled with a "Launch" label while the
  *                     window is open on an unfinished setup, so it is
  *                     visible under the window and reads as the goal
+ *   Start Minecraft   (260929) once set up, with a Sei profile and no open
+ *                     world: selects the Sei profile in the Minecraft
+ *                     Launcher and opens it (useStartMinecraft)
  *   help link         "How do I set up launch?", only once the setup is
  *                     done: it reopens the same window on step 1, with
  *                     every step's live state, for anyone who wants to
@@ -42,6 +45,7 @@ import { mcRangeVars, worldTooNewForSei } from '../../lib/mcVersions';
 import { GamePackCard } from '../games/GamePackCard';
 import { SetupStepper, useSetupWindow, type StepButtonProps, type StepSkin, type StepperSkin } from '../games/SetupStepper';
 import { useMcSetupSteps } from './McSteps';
+import { useSeiProfile, useStartMinecraft } from './useStartMinecraft';
 import { useT, uiLanguage } from '../../lib/i18n';
 import { useResetLine } from '../../lib/useResetLine';
 import styles from './McLaunchPanel.module.css';
@@ -113,6 +117,11 @@ export function McLaunchPanel({ characterId }: McLaunchPanelProps): React.ReactE
     // confirms (and ends) before the summon runs.
     requestGameLaunch(characterId, { id: 'minecraft', name: 'Minecraft' }, () => void attemptSummon(characterId));
 
+  const seiProfile = useSeiProfile();
+  const launcher = useStartMinecraft();
+  const showStart =
+    setup.complete && seiProfile.version != null && lan.kind !== 'open' && !connecting && win.mode === null;
+
   const showSetUp = setup.known && !setup.complete && win.mode === null;
   const bigDisabled = connecting || !setup.known || (!setup.complete && win.mode !== null);
 
@@ -148,6 +157,16 @@ export function McLaunchPanel({ characterId }: McLaunchPanelProps): React.ReactE
         >
           {connecting ? connectingLabel(summon, t) : showSetUp ? t('Set up') : t('Launch')}
         </button>
+        {showStart ? (
+          <McButton kind="primary" disabled={launcher.busy} onClick={() => void launcher.start(seiProfile.version)}>
+            {t('Start Minecraft')}
+          </McButton>
+        ) : null}
+        {showStart && launcher.note ? (
+          <p className={styles.versionLine} role="status">
+            {launcher.note.text}
+          </p>
+        ) : null}
         {failReason ? (
           <p className={styles.failLine} role="alert">
             {failReason}

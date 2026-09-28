@@ -192,9 +192,24 @@ describe('useMcSetupSteps + McLaunchPanel', () => {
     expect(ok).not.toContain('Your open world is on');
   });
 
+  // 260929 (R1b): with a Sei-ready install the world step and the panel offer
+  // Start Minecraft; not before setup, and not once a world is open.
+  it('Test 10: Start Minecraft appears once a Sei profile exists and no world is open', async () => {
+    const ready = { ...VANILLA, loader: 'fabric' as const, fabric_mc_versions: ['1.21.4'], csl_installed: true };
+    const steps = await renderSteps({ installs: [ready] });
+    expect(steps).toContain('data-step="world"');
+    expect(steps).toContain('>Start Minecraft<');
+    const panel = await renderPanel({ installs: [ready] });
+    expect(panel).toContain('>Start Minecraft<');
+    expect(panel).toContain('>Launch<');
+    expect(await renderPanel({ installs: [ready], lanOpen: true, lanVersion: '1.21.4' })).not.toContain('Start Minecraft');
+    expect(await renderPanel({ installs: [VANILLA] })).not.toContain('Start Minecraft');
+    expect(await renderPanel({ installs: [VANILLA], dismissed: true })).not.toContain('Start Minecraft');
+  });
+
   it('Test 8: every t() key has a zh entry and no em dash', async () => {
     const all: string[] = [];
-    for (const file of ['McSteps.tsx', 'McLaunchPanel.tsx']) {
+    for (const file of ['McSteps.tsx', 'McLaunchPanel.tsx', 'useStartMinecraft.ts']) {
       const src = readFileSync(resolve(__dirname, file), 'utf8');
       all.push(...[...src.matchAll(/\bt\(\s*'((?:[^'\\]|\\.)*)'/g)].map((m) => m[1].replace(/\\'/g, "'")));
       all.push(...[...src.matchAll(/\bt\(\s*"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]));

@@ -47,7 +47,11 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   // version, from minecraft-protocol's table) and {recommended} (the version the
   // setup wizard builds, where companion skins work) are filled at render time
   // (errorCopyText), never hardcoded, so the numbers cannot go stale.
-  UNSUPPORTED_MC_VERSION: "This world's Minecraft version is not supported yet. Sei works with Minecraft Java {versions}. For companion skins, use {recommended}: in the Minecraft Launcher, go to Installations, click New installation, pick {recommended} as the version, then open your world from it and press Launch again.",
+  // 260929 (R1c): points at the Sei profile the setup wizard builds (on
+  // {recommended}, with skins) instead of walking through a hand-made
+  // launcher installation; the routed modal carries the Start Minecraft /
+  // Set up Sei profile button.
+  UNSUPPORTED_MC_VERSION: "This world's Minecraft version is not supported yet. Sei works with Minecraft Java {versions}. Open the Sei profile in the Minecraft Launcher (it runs {recommended}, with companion skins), load your world there, and press Launch again. No Sei profile yet? Set it up from the Minecraft screen in Sei.",
   // 260806: split out of LAN_NOT_OPEN. A Forge/NeoForge world that requires its
   // mods on the client kicks Sei every time, and the old copy sent the player to
   // re-open a world that was open and answering pings. Says what is actually

@@ -109,11 +109,13 @@ describe('ERROR_COPY', () => {
 
   // 260926: the copy names the exact range (from minecraft-protocol's table)
   // and the launcher path, and no placeholder ever renders literally.
-  it('UNSUPPORTED_MC_VERSION names the supported range and the launcher steps', () => {
+  // 260929 (R1c): the fix is the Sei profile, not a hand-made installation.
+  it('UNSUPPORTED_MC_VERSION names the supported range and points at the Sei profile', () => {
     const copy = errorCopyText('UNSUPPORTED_MC_VERSION');
     expect(copy).toContain(`to ${supportedVersions[supportedVersions.length - 1]}`);
-    expect(copy).toContain('Installations');
-    expect(copy).toContain('New installation');
+    expect(copy).toContain('Open the Sei profile');
+    expect(copy).not.toContain('New installation');
+    expect(copy).not.toContain('—');
     for (const cls of ALL_ERROR_CLASSES) {
       expect(errorCopyText(cls), `unfilled placeholder in ${cls}`).not.toMatch(/\{(oldest|newest|recommended|versions)\}/);
     }
@@ -127,8 +129,7 @@ describe('ERROR_COPY', () => {
     const newest = supportedVersions[supportedVersions.length - 1];
     expect(newest).toBe('26.3');
     expect(copy, copy).toContain(`to ${newest}`);
-    expect(copy).toContain(`For companion skins, use ${WIZARD_MAX_MC}`);
-    expect(copy).toContain(`pick ${WIZARD_MAX_MC} as the version`);
-    expect(copy).not.toContain(`pick ${newest}`);
+    expect(copy).toContain(`it runs ${WIZARD_MAX_MC}, with companion skins`);
+    expect(copy).not.toContain(`runs ${newest}`);
   });
 });

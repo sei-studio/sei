@@ -20,8 +20,8 @@ export const ZH_MISC: Record<string, string> = {
     '你的系统没有安全存储。Sei 会保存你的 API 密钥，但它不会受到硬件保护。',
   "A bundled module didn't load. Reinstall Sei from the .dmg / .exe.":
     '有一个内置模块加载失败。请通过 .dmg / .exe 重新安装 Sei。',
-  "This world's Minecraft version is not supported yet. Sei works with Minecraft Java {versions}. For companion skins, use {recommended}: in the Minecraft Launcher, go to Installations, click New installation, pick {recommended} as the version, then open your world from it and press Launch again.":
-    '暂不支持这个世界的 Minecraft 版本。Sei 支持 Minecraft Java 版 {versions}。如需显示伙伴皮肤，请使用 {recommended}：在 Minecraft 启动器中进入「安装」，点击「新建安装」，将版本选为 {recommended}，然后用它打开你的世界，再次点击启动。',
+  "This world's Minecraft version is not supported yet. Sei works with Minecraft Java {versions}. Open the Sei profile in the Minecraft Launcher (it runs {recommended}, with companion skins), load your world there, and press Launch again. No Sei profile yet? Set it up from the Minecraft screen in Sei.":
+    '暂不支持这个世界的 Minecraft 版本。Sei 支持 Minecraft Java 版 {versions}。请在 Minecraft 启动器中打开 Sei 配置（运行 {recommended}，可显示伙伴皮肤），在其中载入你的世界，然后再次点击启动。还没有 Sei 配置？请在 Sei 的 Minecraft 页面中设置。',
   'This world runs Forge or NeoForge and only lets in players who have its mods. Sei joins as a normal Minecraft client, so the world turns it away. Open a world without server-side mods, or use Fabric with client-only mods like minimaps.':
     '这个世界运行的是 Forge 或 NeoForge，只允许装有相同模组的玩家加入。Sei 以普通 Minecraft 客户端身份加入，因此会被拒之门外。请打开一个没有服务端模组的世界，或改用 Fabric 搭配小地图这类纯客户端模组。',
   "Sei can't join Forge or NeoForge worlds. Open the Sei profile in the Minecraft Launcher, load your world there, and open it to LAN.":

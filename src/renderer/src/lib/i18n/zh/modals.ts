@@ -293,13 +293,14 @@ export const ZH_MODALS: Record<string, string> = {
   "Sei can't join {loader} worlds": 'Sei 无法加入 {loader} 世界',
   'Your world is hosted from {loader}. {name} joins as a normal Minecraft player, and {loader} worlds turn those players away, so the summon would fail. To play together, host your world from the Sei profile instead:':
     '你的世界由 {loader} 开启。{name} 以普通 Minecraft 玩家身份加入，而 {loader} 世界会拒绝这类玩家，所以召唤会失败。想一起玩，请改用 Sei 配置开启你的世界：',
-  'Save and quit your world, then open the Minecraft Launcher.': '保存并退出你的世界，然后打开 Minecraft 启动器。',
-  'Pick the Sei profile (named "Sei" and a version number) and press Play. No Sei profile yet? Use Set up Sei profile below.':
-    '选择 Sei 配置（名称是“Sei”加版本号），然后点击“开始游戏”。还没有 Sei 配置？点击下方的“设置 Sei 配置”。',
+  'Save and quit your world.': '保存并退出你的世界。',
+  'Press Start Minecraft below. The launcher opens with the Sei profile selected. Press Play.':
+    '点击下方的「打开 Minecraft」。启动器会打开并选好 Sei 配置，点击「开始游戏」即可。',
+  'Press Set up Sei profile below. Sei adds a "Sei {version}" profile to your launcher in about a minute. Then open the launcher, pick that profile, and press Play.':
+    '点击下方的「设置 Sei 配置」。Sei 会在大约一分钟内为启动器添加「Sei {version}」配置。然后打开启动器，选择该配置，点击「开始游戏」。',
   'Open a world, choose Open to LAN, then press Launch in Sei again.': '打开一个世界，选择「对局域网开放」，然后回到 Sei 再次点击启动。',
   'A world that needs {loader} mods may not open without them. If yours will not, make a new world in the Sei profile.':
     '依赖 {loader} 模组的世界没有这些模组可能无法打开。如果打不开，请在 Sei 配置中新建一个世界。',
-  'Set up Sei profile': '设置 Sei 配置',
 
   // ── LanNotOpenModal ──
   "Couldn't reach your world": '无法连接到你的世界',
@@ -309,8 +310,8 @@ export const ZH_MODALS: Record<string, string> = {
   'Press Esc and choose Open to LAN.': '按 Esc，选择「对局域网开放」。',
   'Click Start LAN World.': '点击「创建局域网世界」。',
   'Return to Sei and try the summon again.': '回到 Sei，再次尝试召唤。',
-  'The world must be running on this computer or another computer on the same network. Once it is open to LAN, Sei finds it automatically.':
-    '世界必须运行在这台电脑或同一网络中的另一台电脑上。开放到局域网后，Sei 会自动找到它。',
+  'The world must be running on this computer. Once it is open to LAN, Sei finds it automatically.':
+    '世界必须运行在这台电脑上。开放到局域网后，Sei 会自动找到它。',
   'Your world also needs a supported Minecraft Java version. Sei supports versions up to {latest}.':
     '你的世界还需要运行受支持的 Minecraft Java 版本。Sei 支持最高到 {latest} 的版本。',
   'Try again': '再试一次',
@@ -503,6 +504,8 @@ export const ZH_MODALS: Record<string, string> = {
     '部分安装未完成，但其余已就绪。打开 Minecraft，从启动器下拉菜单中选择 {profile} 配置并进入你的世界。你可以从设置中为其余安装重新运行设置。',
   'Open Minecraft, pick the {profile} profile from the launcher dropdown, and start your world. Companions will appear with their chosen skin and username.':
     '打开 Minecraft，从启动器下拉菜单中选择 {profile} 配置并进入你的世界。伙伴会以他们选择的皮肤和用户名出现。',
+  'Press Start Minecraft to open the launcher with the {profile} profile selected, then press Play and open your world. Companions will appear with their chosen skin and username.':
+    '点击「打开 Minecraft」，启动器会打开并选好 {profile} 配置。然后点击「开始游戏」并进入你的世界。伙伴会以他们选择的皮肤和用户名出现。',
   'Linked 1 mod.': '已关联 1 个模组。',
   'Linked {count} mods.': '已关联 {count} 个模组。',
   'Linked 1 mod, excluded {excluded} (wrong MC version or unreadable metadata).':
@@ -596,22 +599,16 @@ export const ZH_MODALS: Record<string, string> = {
   // ── UnsupportedVersionModal ──
   'Minecraft version not supported': '不支持的 Minecraft 版本',
   "{name} couldn't join.": '{name} 无法加入。',
-  'To switch to {version}, where companion skins work:': '切换到 {version}（可显示伙伴皮肤）的方法：',
+  'Open your world from the Sei profile instead. It runs {version}, with companion skins:':
+    '请改用 Sei 配置打开你的世界。它运行 {version}，可显示伙伴皮肤：',
   'This world is running Minecraft {version}, which Sei cannot join yet. Sei works with Minecraft Java {versions}.':
     '这个世界运行的是 Minecraft {version}，Sei 暂时无法加入。Sei 支持 Minecraft Java 版 {versions}。',
   'This world runs a Minecraft version Sei cannot join yet. Sei works with Minecraft Java {versions}.':
     '这个世界的 Minecraft 版本 Sei 暂时无法加入。Sei 支持 Minecraft Java 版 {versions}。',
-  'Open the Minecraft Launcher and go to the Installations tab.':
-    '打开 Minecraft 启动器，进入「安装」选项卡。',
-  'Click New installation, pick release {version} in the Version list, then click Create.':
-    '点击「新建安装」，在「版本」列表中选择 release {version}，然后点击「创建」。',
-  'Press Play on that installation, open your world, then choose Open to LAN.':
-    '用该安装点击「开始游戏」，打开你的世界，然后选择「对局域网开放」。',
-  'Return to Sei and press Launch again.': '回到 Sei，再次点击启动。',
-  'Alternatively, run the skin setup in Sei settings. It installs our modded Fabric version of Minecraft, which is supported and shows character skins.':
-    '或者，在 Sei 设置中运行皮肤设置。它会安装我们的 Fabric 模组版 Minecraft，该版本受支持并能显示角色皮肤。',
-  'Minecraft may not open worlds saved on a newer version. If your world will not open, create a new world on the supported version and play there.':
-    'Minecraft 可能无法打开在更新版本中保存的世界。如果你的世界无法打开，请在受支持的版本上创建一个新世界游玩。',
+  'Open your world, choose Open to LAN, then press Launch in Sei again.':
+    '打开你的世界，选择「对局域网开放」，然后回到 Sei 再次点击启动。',
+  'Minecraft may not open worlds saved on a newer version. If your world will not open, create a new world in the Sei profile and play there.':
+    'Minecraft 可能无法打开在更新版本中保存的世界。如果你的世界无法打开，请在 Sei 配置中创建一个新世界游玩。',
 
   // ── UpdatePopup ──
   'Update': '更新',

@@ -40,6 +40,8 @@ import { useUiStore } from '../lib/stores/useUiStore';
 import { useWizardStore, type WizardStep } from '../lib/stores/useWizardStore';
 import { WARN_COPY } from '../lib/errors';
 import styles from './SetupWizardModal.module.css';
+import noteStyles from './LanNotOpenModal.module.css';
+import { useStartMinecraft } from './mcdash/useStartMinecraft';
 
 export function SetupWizardModal(): React.ReactElement | null {
   const t = useT();
@@ -400,6 +402,12 @@ function DoneStep(): React.ReactElement {
   // failed result as a partial outcome (empty results + an error = a total
   // failure that still routed here). Only an all-ok run earns the green pill.
   const anyFailed = error != null || results.some((r) => !r.ok);
+  // 260929: a vanilla launcher got its "Sei <version>" profile, so offer to
+  // open the launcher on it (CurseForge instances start from their own app).
+  const builtVanilla = results.find(
+    (r) => r.ok && r.installedMcVersion && installs.find((i) => i.id === r.installId)?.kind === 'vanilla',
+  );
+  const launcher = useStartMinecraft();
 
   // Derive a representative profile name for the body copy. For vanilla
   // installs the installer names the profile "Sei <version>" (260916; it
@@ -434,9 +442,21 @@ function DoneStep(): React.ReactElement {
       footer={
         <>
           <span />
-          <Button kind="accent" size="md" onClick={closeWizard}>
-            {t('Finish setup')}
-          </Button>
+          <span className={styles.doneActions}>
+            {builtVanilla ? (
+              <Button
+                kind="ghost"
+                size="md"
+                disabled={launcher.busy}
+                onClick={() => void launcher.start(builtVanilla.installedMcVersion)}
+              >
+                {t('Start Minecraft')}
+              </Button>
+            ) : null}
+            <Button kind="accent" size="md" onClick={closeWizard}>
+              {t('Finish setup')}
+            </Button>
+          </span>
         </>
       }
     >
@@ -453,11 +473,21 @@ function DoneStep(): React.ReactElement {
               "Some installs didn't finish, but the rest are ready. Open Minecraft, pick the {profile} profile from the launcher dropdown, and start your world. You can re-run setup for the others from Settings.",
               { profile: profileName },
             )
-          : t(
-              'Open Minecraft, pick the {profile} profile from the launcher dropdown, and start your world. Companions will appear with their chosen skin and username.',
-              { profile: profileName },
-            )}
+          : builtVanilla
+            ? t(
+                'Press Start Minecraft to open the launcher with the {profile} profile selected, then press Play and open your world. Companions will appear with their chosen skin and username.',
+                { profile: profileName },
+              )
+            : t(
+                'Open Minecraft, pick the {profile} profile from the launcher dropdown, and start your world. Companions will appear with their chosen skin and username.',
+                { profile: profileName },
+              )}
       </p>
+      {launcher.note ? (
+        <p className={noteStyles.note} role="status" data-tone={launcher.note.tone}>
+          {launcher.note.text}
+        </p>
+      ) : null}
 
       {summaries.length > 0 ? (
         <div className={styles.modLinkSummary}>
