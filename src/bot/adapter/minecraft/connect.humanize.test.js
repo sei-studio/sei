@@ -117,4 +117,21 @@ describe('kickReasonCode', () => {
     expect(kickReasonCode({ text: 'get out Bob' })).toBe('other')
     expect(kickReasonCode(null)).toBe('other')
   })
+
+  it('never copies a typed key-shaped kick text', () => {
+    // /kick <bot> <reason> arrives as literal text, so a host can type
+    // something shaped like a translation key. Only vanilla keys get through.
+    expect(kickReasonCode('disconnect.jenny_smith_go_home')).toBe('other')
+    expect(kickReasonCode('bye multiplayer.disconnect.jenny_smith')).toBe('other')
+    expect(kickReasonCode({ text: 'disconnect.bob_lives_at_12' })).toBe('other')
+    expect(kickReasonCode(JSON.stringify({ text: 'multiplayer.disconnect.jenny' }))).toBe('other')
+    expect(kickReasonCode(JSON.stringify({ text: 'multiplayer.disconnect.kicked' }))).toBe('kicked')
+  })
+
+  it('reads the key from a JSON-string or NBT kick reason', () => {
+    expect(kickReasonCode(JSON.stringify({ translate: 'multiplayer.disconnect.server_shutdown' }))).toBe('server_shutdown')
+    expect(
+      kickReasonCode({ type: 'compound', value: { translate: { type: 'string', value: 'multiplayer.disconnect.name_taken' } } }),
+    ).toBe('name_taken')
+  })
 })

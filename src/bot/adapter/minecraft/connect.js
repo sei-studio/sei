@@ -98,22 +98,39 @@ export function isModdedHostRejection(reason) {
  * a fixed set of codes matched from well-known wordings. Everything else is
  * 'other'.
  *
+ * A key is trusted only from a chat component's `translate` field, which the
+ * game's code writes (a typed /kick reason arrives as literal text). A key
+ * found in TEXT (a plain string, a `text` field, or a substring) must be one
+ * of VANILLA_KICK_KEYS, or a host could type "disconnect.<anything>" and have
+ * it copied into analytics.
+ *
  * @param {unknown} reason  raw kick reason (string or chat component)
  * @returns {string}  e.g. 'kicked', 'name_taken', 'modded', 'other'
  */
 export function kickReasonCode(reason) {
   if (reason == null) return 'other'
-  const keyOf = (k) => {
+  const keyOf = (k, trusted) => {
     if (typeof k !== 'string') return null
     const key = k.trim()
     // Vanilla namespaces only: a free-form "word.word" could be anything.
     if (!/^(multiplayer\.)?disconnect\.[a-z0-9_.]+$/i.test(key)) return null
-    return key.toLowerCase().replace(/^(multiplayer\.)?disconnect\./, '').slice(0, 40) || null
+    const code = key.toLowerCase().replace(/^(multiplayer\.)?disconnect\./, '').slice(0, 40)
+    if (!code) return null
+    return trusted || VANILLA_KICK_KEYS.has(code) ? code : null
   }
-  const fromKey = keyOf(typeof reason === 'object' ? reason.translate : reason)
+  // Pre-1.20.3 servers send the reason as a JSON string; newer ones as an NBT
+  // compound ({type, value: {translate: {value}}}). Read either shape.
+  let component = reason
+  if (typeof reason === 'string' && /^\s*\{/.test(reason)) {
+    try { component = JSON.parse(reason) } catch { component = reason }
+  }
+  const translate = typeof component === 'object' && component !== null
+    ? (typeof component.translate === 'string' ? component.translate : component.value?.translate?.value)
+    : undefined
+  const fromKey = keyOf(translate, true)
   if (fromKey) return fromKey
-  const text = extractReasonText(reason)
-  const keyText = keyOf(text)
+  const text = extractReasonText(component)
+  const keyText = keyOf(text, false)
   if (keyText) return keyText
   if (isModdedHostRejection(text)) return 'modded'
   const r = text.toLowerCase()
@@ -128,9 +145,30 @@ export function kickReasonCode(reason) {
   if (/\bidl(e|ing)\b/.test(r)) return 'idling'
   if (r.includes('spam')) return 'spam'
   if (r.includes('kicked by an operator')) return 'kicked'
-  if (r.includes('multiplayer.disconnect.')) return keyOf(r.slice(r.indexOf('multiplayer.disconnect.')).split(/[^a-z0-9_.]/)[0]) ?? 'other'
+  if (r.includes('multiplayer.disconnect.')) return keyOf(r.slice(r.indexOf('multiplayer.disconnect.')).split(/[^a-z0-9_.]/)[0], false) ?? 'other'
   return 'other'
 }
+
+/**
+ * Vanilla kick translation keys (en_us.json, 1.8 to 1.21), with the
+ * `multiplayer.disconnect.` / `disconnect.` prefix removed and lowercased.
+ * Only these may be read out of free text by kickReasonCode.
+ */
+const VANILLA_KICK_KEYS = new Set([
+  'authservers_down', 'bad_chat_index', 'banned', 'banned.expiration', 'banned.reason',
+  'banned_ip.expiration', 'banned_ip.reason', 'chat_validation_failed', 'duplicate_login',
+  'expired_public_key', 'flying', 'generic', 'idling', 'illegal_characters', 'incompatible',
+  'invalid_entity_attacked', 'invalid_packet', 'invalid_player_data', 'invalid_player_movement',
+  'invalid_public_key_signature', 'invalid_vehicle_movement', 'ip_banned', 'kicked',
+  'missing_public_key', 'missing_tags', 'name_taken', 'not_whitelisted', 'out_of_order_chat',
+  'outdated_client', 'outdated_server', 'server_full', 'server_shutdown', 'slow_login',
+  'too_many_pending_chats', 'transfers_disabled', 'unexpected_query_response', 'unsigned_chat',
+  'unverified_username',
+  // disconnect.*
+  'closed', 'disconnected', 'endofstream', 'exceeded_packet_rate', 'genericreason',
+  'ignoring_status_request', 'loginfailed', 'loginfailedinfo', 'lost', 'overflow',
+  'packeterror', 'quitting', 'spam', 'timeout', 'unknownhost',
+])
 
 /**
  * Plain-English translation of mineflayer disconnect reasons. Exposed for
