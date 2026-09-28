@@ -3211,6 +3211,14 @@ pins it at whatever percent it reached.
     is kept in `callState` (`endCallFromCompanion`) so the switch closes it
     and writes its row in the old account; `applyCallReport` is the pure
     composition the `voice:call-state` handler runs.
+- **A whole-config write reverts other writers (260929)** → every main-process
+  write of the profile `config.json` goes through `configStore.updateConfig`
+  (locked read-modify-write, path fixed when the call starts) and sets only
+  the keys that writer owns. `loadConfig()` then `saveConfig()` is for seeding
+  and tests: a game ending in the gap (chess difficulty, the Draw! intro,
+  playtime) was reverted by the stale copy. Renderer saves go through
+  `saveConfigFromRenderer`; a new `UserConfig` key must be added to
+  `RENDERER_SETTABLE_KEYS` or `MAIN_OWNED_KEYS` (a test checks).
 - **Native ABI mismatch** → `@electron/rebuild` / `install-app-deps` runs in
   `postinstall`. Test packaged builds on a clean machine.
 - **Bot ESM module type in packaged builds** → `src/bot/package.json` exists

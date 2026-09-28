@@ -149,7 +149,7 @@ export async function importLocalProfileInto(
   }
 
   const { saveCharacterRaw } = await import('../characterStore');
-  const { loadConfig, saveConfig } = await import('../configStore');
+  const { updateConfig } = await import('../configStore');
 
   const peek = await peekLocalProfile();
   const requested = opts?.characterIds ?? peek.migratableCharacterIds;
@@ -191,14 +191,13 @@ export async function importLocalProfileInto(
   let copiedOnboarding = false;
   const localCfg = await readLocalConfig();
   if (localCfg && (localCfg.mc_username || localCfg.preferred_name)) {
-    const targetCfg = await loadConfig();
-    const patch: Partial<typeof targetCfg> = {};
-    if (!(targetCfg.mc_username ?? '').trim() && localCfg.mc_username) patch.mc_username = localCfg.mc_username;
-    if (!(targetCfg.preferred_name ?? '').trim() && localCfg.preferred_name) patch.preferred_name = localCfg.preferred_name;
-    if (Object.keys(patch).length > 0) {
-      await saveConfig({ ...targetCfg, ...patch });
-      copiedOnboarding = true;
-    }
+    await updateConfig((targetCfg) => {
+      const patch: Partial<typeof targetCfg> = {};
+      if (!(targetCfg.mc_username ?? '').trim() && localCfg.mc_username) patch.mc_username = localCfg.mc_username;
+      if (!(targetCfg.preferred_name ?? '').trim() && localCfg.preferred_name) patch.preferred_name = localCfg.preferred_name;
+      copiedOnboarding = Object.keys(patch).length > 0;
+      return copiedOnboarding ? { ...targetCfg, ...patch } : targetCfg;
+    });
   }
 
   logger.info(`imported ${imported.length} character(s) into ${targetScope}; onboarding copied: ${copiedOnboarding}`);

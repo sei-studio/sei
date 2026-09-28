@@ -39,7 +39,7 @@ import {
 import { GAME_IDS, isGameId, type GameId, type WorldState, type WorldStates } from '../shared/gameIpc';
 import { CharacterSchema, UserConfigSchema, UserPreferencesSchema, MAX_COMPANION_SLOTS, type Character, type UserConfig } from '../shared/characterSchema';
 import { SHOWN_PROVIDERS, GRANDFATHERED_PROVIDERS, type ProviderKind } from '../shared/llmCatalog';
-import { loadConfig, saveConfig } from './configStore';
+import { loadConfig } from './configStore';
 import { DEFAULT_CHARACTER_UUIDS } from './defaultCharacters';
 import { listCharacters, getCharacter, expandAndSaveCharacter, saveCharacter, deleteCharacter, resetMemoryForCharacter, checkCreateQuota, recordCreation } from './characterStore';
 import {
@@ -923,13 +923,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       // UserConfig.added_default_ids (they live in the World tab otherwise),
       // so "remove from library" strips the id from that list. The legacy
       // removed_default_ids field is no longer consulted anywhere.
-      const { loadConfig, saveConfig } = await import('./configStore');
-      const cfg = await loadConfig();
-      const added = (cfg.added_default_ids ?? []).filter((x) => x !== id);
-      if (added.length !== (cfg.added_default_ids ?? []).length) {
-        await saveConfig({ ...cfg, added_default_ids: added });
-        void (await import('./cloud/librarySync')).syncLibraryRoster('default-removed');
-      }
+      const { updateConfig } = await import('./configStore');
+      let removed = false;
+      await updateConfig((cfg) => {
+        const added = (cfg.added_default_ids ?? []).filter((x) => x !== id);
+        removed = added.length !== (cfg.added_default_ids ?? []).length;
+        return removed ? { ...cfg, added_default_ids: added } : cfg;
+      });
+      if (removed) void (await import('./cloud/librarySync')).syncLibraryRoster('default-removed');
       return;
     }
     await deleteCharacter(id);
@@ -941,7 +942,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     if (!char.is_default) {
       throw new Error('Only default characters can be restored.');
     }
-    const { loadConfig, saveConfig } = await import('./configStore');
+    const { loadConfig, updateConfig } = await import('./configStore');
     const cfg = await loadConfig();
     // 260703 procgen slot backstop — re-adding a default to Home occupies a
     // slot; refuse when the library is already full UNLESS this default is
@@ -954,8 +955,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // default writes it into added_default_ids (the set HomeGrid/IconRail and
     // the slot guard above actually read).
     if (!alreadyOnHome) {
-      const added = [...(cfg.added_default_ids ?? []), id];
-      await saveConfig({ ...cfg, added_default_ids: added });
+      await updateConfig((cur) =>
+        (cur.added_default_ids ?? []).includes(id)
+          ? cur
+          : { ...cur, added_default_ids: [...(cur.added_default_ids ?? []), id] },
+      );
       void (await import('./cloud/librarySync')).syncLibraryRoster('default-invited');
     }
   });
@@ -1011,14 +1015,16 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
     const { ensureLocallyCached } = await import('./cloud/cacheOnDemand');
     await ensureLocallyCached(id);
-    const { loadConfig, saveConfig } = await import('./configStore');
-    const cfg = await loadConfig();
-    const added = new Set(cfg.added_world_ids ?? []);
-    if (!added.has(id)) {
+    const { updateConfig } = await import('./configStore');
+    let wasAdded = false;
+    await updateConfig((cfg) => {
+      const added = new Set(cfg.added_world_ids ?? []);
+      if (added.has(id)) return cfg;
       added.add(id);
-      await saveConfig({ ...cfg, added_world_ids: Array.from(added) });
-      void (await import('./cloud/librarySync')).syncLibraryRoster('world-added');
-    }
+      wasAdded = true;
+      return { ...cfg, added_world_ids: Array.from(added) };
+    });
+    if (wasAdded) void (await import('./cloud/librarySync')).syncLibraryRoster('world-added');
   });
 
   // Remove a foreign-owned World character from the user's library. Two
@@ -1032,13 +1038,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     if (deps.supervisor.isActive(id)) {
       throw new Error('Cannot remove the currently summoned character. Stop first.');
     }
-    const { loadConfig, saveConfig } = await import('./configStore');
-    const cfg = await loadConfig();
-    const added = (cfg.added_world_ids ?? []).filter((x) => x !== id);
-    if (added.length !== (cfg.added_world_ids ?? []).length) {
-      await saveConfig({ ...cfg, added_world_ids: added });
-      void (await import('./cloud/librarySync')).syncLibraryRoster('world-removed');
-    }
+    const { updateConfig } = await import('./configStore');
+    let removed = false;
+    await updateConfig((cfg) => {
+      const added = (cfg.added_world_ids ?? []).filter((x) => x !== id);
+      removed = added.length !== (cfg.added_world_ids ?? []).length;
+      return removed ? { ...cfg, added_world_ids: added } : cfg;
+    });
+    if (removed) void (await import('./cloud/librarySync')).syncLibraryRoster('world-removed');
     // Wipe local cache files via the same hand-rolled deletion the reconcile
     // sweep uses (skips the cloud-mirror enqueue inside characterStore.
     // deleteCharacter that would 403 against RLS for a foreign-owned row).

@@ -152,12 +152,16 @@ async function runScopeSwitch(userId: string | null): Promise<void> {
     //     device has no name yet, so onboarding doesn't re-ask for a name the
     //     account already set elsewhere.
     try {
-      const { loadConfig, saveConfig } = await import('../configStore');
+      const { loadConfig, updateConfig } = await import('../configStore');
       const cfg = await loadConfig();
       if (!(cfg.preferred_name ?? '').trim()) {
         const { fetchMyProfileName } = await import('../cloud/cloudCharacterClient');
         const cloudName = await fetchMyProfileName();
-        if (cloudName) await saveConfig({ ...cfg, preferred_name: cloudName });
+        if (cloudName) {
+          await updateConfig((cur) =>
+            (cur.preferred_name ?? '').trim() ? cur : { ...cur, preferred_name: cloudName },
+          );
+        }
       }
     } catch (err) {
       console.warn(`[sei] profileScope: cloud name backfill failed: ${(err as Error).message}`);
@@ -207,10 +211,10 @@ async function runScopeSwitch(userId: string | null): Promise<void> {
       const { loadWizardState } = await import('../wizardStateStore');
       const wiz = await loadWizardState();
       if (!wiz.hasRunOnce) {
-        const { loadConfig, saveConfig } = await import('../configStore');
+        const { loadConfig, updateConfig } = await import('../configStore');
         const cfg = await loadConfig();
         if ((cfg.preferred_name ?? '').trim() && cfg.skin_setup_pending !== true) {
-          await saveConfig({ ...cfg, skin_setup_pending: true });
+          await updateConfig((cur) => ({ ...cur, skin_setup_pending: true }));
         }
       }
     } catch (err) {

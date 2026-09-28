@@ -42,7 +42,7 @@ export async function reconcileLocalOwnershipOnSignIn(
   const { listCharacters, saveCharacterRaw } = await import('../characterStore');
   const { downloadCharacter } = await import('./cloudCharacterClient');
   const { dropOpsForUuid } = await import('./syncQueue');
-  const { loadConfig, saveConfig } = await import('../configStore');
+  const { loadConfig, updateConfig } = await import('../configStore');
 
   let chars;
   try {
@@ -68,8 +68,9 @@ export async function reconcileLocalOwnershipOnSignIn(
   }
 
   // Item 10: track added_world_ids removals so we persist them once after the
-  // sweep (the set is mutated in the unpublish-cleanup branch below).
-  let addedWorldIdsChanged = false;
+  // sweep. Only the removals are applied to the list on disk: an add that
+  // lands while the sweep awaits the cloud must survive it.
+  const evictedWorldIds = new Set<string>();
 
   for (const c of chars) {
     if (c.is_default) continue;
@@ -92,7 +93,7 @@ export async function reconcileLocalOwnershipOnSignIn(
           await deleteLocalChar(c.id);
           await dropOpsForUuid(c.id).catch(() => {});
           addedWorldIds.delete(c.id);
-          addedWorldIdsChanged = true;
+          evictedWorldIds.add(c.id);
           console.log(
             `[sei] reconcile: world char ${c.id} no longer shared — dropped persona content, kept memory`,
           );
@@ -148,10 +149,12 @@ export async function reconcileLocalOwnershipOnSignIn(
   // above so the dropped chars don't re-count as "in library" on the next
   // browse:list / HomeGrid render. Best-effort: a write failure just means the
   // (already-deleted-on-disk) char is reconsidered next launch.
-  if (addedWorldIdsChanged) {
+  if (evictedWorldIds.size > 0) {
     try {
-      const cfg = await loadConfig();
-      await saveConfig({ ...cfg, added_world_ids: Array.from(addedWorldIds) });
+      await updateConfig((cfg) => ({
+        ...cfg,
+        added_world_ids: (cfg.added_world_ids ?? []).filter((id) => !evictedWorldIds.has(id)),
+      }));
       void (await import('./librarySync')).syncLibraryRoster('unpublish-cleanup');
     } catch (err) {
       console.warn(

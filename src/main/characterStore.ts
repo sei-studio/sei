@@ -452,14 +452,15 @@ export async function checkCreateQuota(): Promise<{
  */
 export async function recordCreation(): Promise<void> {
   try {
-    const { loadConfig, saveConfig } = await import('./configStore');
-    const config = await loadConfig();
-    const now = Date.now();
-    const kept = creationsInWindow(config.creation_times, now).map((t) =>
-      new Date(t).toISOString(),
-    );
-    kept.push(new Date(now).toISOString());
-    await saveConfig({ ...config, creation_times: kept });
+    const { updateConfig } = await import('./configStore');
+    await updateConfig((config) => {
+      const now = Date.now();
+      const kept = creationsInWindow(config.creation_times, now).map((t) =>
+        new Date(t).toISOString(),
+      );
+      kept.push(new Date(now).toISOString());
+      return { ...config, creation_times: kept };
+    });
   } catch (err) {
     logger.warn(`recordCreation failed: ${(err as Error).message}`);
   }

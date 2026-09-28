@@ -13,7 +13,7 @@ import { safeStorage } from 'electron';
 import { readFile, writeFile, access, mkdir, unlink, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { paths } from './paths';
-import { loadConfig, saveConfig } from './configStore';
+import { loadConfig, updateConfig } from './configStore';
 
 /**
  * Persist plaintext API key encrypted by OS keychain.
@@ -125,8 +125,9 @@ export async function getAiBackendKind(): Promise<AiBackendKind> {
 }
 
 /**
- * Persist the AI backend kind. Round-trips through configStore.saveConfig so
- * the Zod schema + atomic write + file-lock semantics are inherited.
+ * Persist the AI backend kind. A locked read-modify-write
+ * (configStore.updateConfig) that sets only these two keys, so a concurrent
+ * config write elsewhere is never reverted.
  *
  * 260703: also stamps `ai_backend_kind_source` so the sign-in cloud default
  * can tell an EXPLICIT user choice apart from a prior default write:
@@ -140,8 +141,7 @@ export async function setAiBackendKind(
   kind: AiBackendKind,
   source: 'default' | 'user' = 'user',
 ): Promise<void> {
-  const cfg = await loadConfig();
-  await saveConfig({ ...cfg, ai_backend_kind: kind, ai_backend_kind_source: source });
+  await updateConfig((cfg) => ({ ...cfg, ai_backend_kind: kind, ai_backend_kind_source: source }));
   notifyAiBackendKindChanged(kind);
 }
 
@@ -192,8 +192,22 @@ export async function applyCloudDefaultForSignIn(): Promise<void> {
   if (cfg.ai_backend_kind_source === 'user') return; // explicit choice — keep it
   if ((cfg.ai_backend_kind ?? 'local') === 'local' && (await hasApiKey())) return; // legacy BYOK
   if (cfg.ai_backend_kind === 'cloud-proxy') return; // already there — no write
-  await saveConfig({ ...cfg, ai_backend_kind: 'cloud-proxy', ai_backend_kind_source: 'default' });
-  notifyAiBackendKindChanged('cloud-proxy');
+  await writeCloudDefault();
+}
+
+/**
+ * The cloud default, written under the config lock. An explicit user choice
+ * that landed while the caller was checking (hasApiKey awaits) wins: the
+ * default never stomps it.
+ */
+async function writeCloudDefault(): Promise<void> {
+  let wrote = false;
+  await updateConfig((cur) => {
+    if (cur.ai_backend_kind_source === 'user') return cur;
+    wrote = true;
+    return { ...cur, ai_backend_kind: 'cloud-proxy', ai_backend_kind_source: 'default' };
+  });
+  if (wrote) notifyAiBackendKindChanged('cloud-proxy');
 }
 
 /**
@@ -226,6 +240,5 @@ export async function ensureCloudDefaultForSignedIn(): Promise<void> {
   if ((cfg.ai_backend_kind ?? 'local') !== 'local') return; // already cloud-proxy
   if (cfg.ai_backend_kind_source === 'user') return; // explicit choice — never override it
   if (await hasApiKey()) return; // a real BYOK choice — never override it
-  await saveConfig({ ...cfg, ai_backend_kind: 'cloud-proxy', ai_backend_kind_source: 'default' });
-  notifyAiBackendKindChanged('cloud-proxy');
+  await writeCloudDefault();
 }

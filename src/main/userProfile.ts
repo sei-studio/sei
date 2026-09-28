@@ -11,7 +11,7 @@ import { atomicWrite } from '../bot/brain/storage/atomicWrite.js';
 import { withFileLock } from '../bot/brain/storage/fileLock.js';
 import { paths } from './paths';
 import { validatePortrait } from './portraitImageUtil';
-import { loadConfig, saveConfig } from './configStore';
+import { loadConfig, updateConfig } from './configStore';
 import type { UserProfile } from '../shared/ipc';
 
 const USER_SLOT = '_user';
@@ -67,8 +67,7 @@ export async function applyUserProfilePicture(bytes: Buffer): Promise<string> {
     await atomicWrite(target, bytes);
   });
   const ref = `${USER_SLOT}.png`;
-  const cfg = await loadConfig();
-  await saveConfig({ ...cfg, profile_picture: ref });
+  await updateConfig((cfg) => ({ ...cfg, profile_picture: ref }));
   return ref;
 }
 
@@ -78,6 +77,5 @@ export async function removeUserProfilePicture(): Promise<void> {
   } catch {
     /* swallow ENOENT — best-effort */
   }
-  const cfg = await loadConfig();
-  await saveConfig({ ...cfg, profile_picture: null });
+  await updateConfig((cfg) => ({ ...cfg, profile_picture: null }));
 }

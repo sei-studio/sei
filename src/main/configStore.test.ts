@@ -15,10 +15,13 @@ import {
   addPlaytimeMs,
   backfillTotalPlaytimeOnce,
   loadConfig,
+  MAIN_OWNED_KEYS,
+  RENDERER_SETTABLE_KEYS,
   saveConfig,
   saveConfigFromRenderer,
+  updateConfig,
 } from './configStore';
-import { CharacterSchema } from '../shared/characterSchema';
+import { CharacterSchema, UserConfigSchema } from '../shared/characterSchema';
 
 const UUID_A = '11111111-1111-4111-8111-111111111111';
 const UUID_B = '22222222-2222-4222-8222-222222222222';
@@ -187,6 +190,34 @@ describe('saveConfigFromRenderer', () => {
     const cfg = await loadConfig();
     expect(cfg.ai_backend_kind).toBe('cloud-proxy');
     expect(cfg.preferred_name).toBe('Ouen');
+  });
+  it('260929: a stale renderer copy never reverts the game-end keys (chess difficulty, Draw! intro)', async () => {
+    const mountSnapshot = await loadConfig();
+    // A chess game and a Draw! intro end while Settings stays mounted.
+    await updateConfig((cfg) => ({ ...cfg, chess_elo_offsets: { [UUID_A]: -100 } }));
+    await updateConfig((cfg) => ({ ...cfg, draw_intro_done: true }));
+    await saveConfigFromRenderer({
+      ...mountSnapshot,
+      chess_elo_offsets: {},
+      draw_intro_done: false,
+      theme_mode: 'mint',
+    });
+    const cfg = await loadConfig();
+    expect(cfg.chess_elo_offsets).toEqual({ [UUID_A]: -100 });
+    expect(cfg.draw_intro_done).toBe(true);
+    expect(cfg.theme_mode).toBe('mint');
+  });
+
+  it('260929: the Minecraft setup dismissal (renderer-owned) persists', async () => {
+    await saveConfigFromRenderer({ ...(await loadConfig()), mc_setup_dismissed: true });
+    expect((await loadConfig()).mc_setup_dismissed).toBe(true);
+  });
+
+  it('every UserConfig key is either renderer-settable or main-owned, never both', () => {
+    const renderer = new Set<string>(RENDERER_SETTABLE_KEYS);
+    const main = new Set<string>(MAIN_OWNED_KEYS);
+    expect([...renderer].filter((k) => main.has(k))).toEqual([]);
+    expect([...renderer, ...main].sort()).toEqual(Object.keys(UserConfigSchema.shape).sort());
   });
 });
 
