@@ -1894,7 +1894,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           if (session !== mySession) return;
           micBlocked = {
             characterId,
-            restricted: status === 'restricted',
+            // Restricted means Screen Time / MDM, a macOS-only answer.
+            restricted: sei.platform === 'darwin' && status === 'restricted',
             needsRestart: sei.platform === 'darwin' && status === 'granted',
           };
         }

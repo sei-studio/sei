@@ -150,8 +150,9 @@ export const ZH_MISC: Record<string, string> = {
     '在「系统设置」中打开「隐私与安全性 > 麦克风」，然后开启 Sei。',
   'In Settings, turn on Microphone access and Let desktop apps access your microphone.':
     '在「设置」中开启「麦克风访问权限」和「允许桌面应用访问你的麦克风」。',
-  'On this Mac, microphone access is managed by Screen Time or your organization.':
-    '这台 Mac 的麦克风权限由「屏幕使用时间」或你的组织管理。',
+  'Microphone unavailable': '麦克风不可用',
+  'Your microphone is locked by Screen Time or a device policy on this Mac.':
+    '这台 Mac 的麦克风已被「屏幕使用时间」或设备管理策略锁定。',
   'The call starts on its own once access is on.': '权限开启后，通话会自动开始。',
   'Microphone access is on, but Sei needs a restart to use it.': '麦克风权限已开启，但 Sei 需要重启才能使用。',
   'Restart Sei and call': '重启 Sei 并通话',

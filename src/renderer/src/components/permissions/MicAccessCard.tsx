@@ -14,6 +14,11 @@
  * and the card offers "Restart Sei and call" instead (resume flag, see
  * usePermissionResume).
  *
+ * Restricted (macOS only: Screen Time or an MDM profile locks the mic) is a
+ * different card: the player cannot turn it on in Settings, so it shows one
+ * line saying the mic is locked and a Close button. No Settings button, no
+ * poll, no "the call starts on its own".
+ *
  * Mounted by CallMiniBar, which lives on every view, at the 'stacked' tier.
  */
 import React, { useCallback, useEffect } from 'react';
@@ -71,11 +76,27 @@ export function MicAccessCardBody({
 
   // No poll while a restart is the only way forward: the status already says
   // granted, so polling would "succeed" and redial into the same refusal.
-  useAccessPoll(!needsRestart, () => micAccessOk(platform), onGranted, false);
+  // Restricted: nothing the player can do here will change the answer.
+  useAccessPoll(!needsRestart && !restricted, () => micAccessOk(platform), onGranted, false);
 
   const restart = (): void => {
     void sei.permissionsRelaunch({ kind: 'call', characterId }).catch(() => {});
   };
+
+  if (restricted) {
+    return (
+      <ModalShell title={t('Microphone unavailable')} width={420} tier="stacked" onClose={dismiss}>
+        <div className={styles.body}>
+          <p className={styles.why}>{t('Your microphone is locked by Screen Time or a device policy on this Mac.')}</p>
+        </div>
+        <ModalFooter>
+          <Button size="md" onClick={dismiss}>
+            {t('Close')}
+          </Button>
+        </ModalFooter>
+      </ModalShell>
+    );
+  }
 
   return (
     <ModalShell
@@ -91,11 +112,9 @@ export function MicAccessCardBody({
           <>
             <p className={styles.why}>{t('Sei needs your microphone so {name} can hear you.', { name })}</p>
             <p className={styles.how}>
-              {restricted
-                ? t('On this Mac, microphone access is managed by Screen Time or your organization.')
-                : isMac
-                  ? t('In System Settings, open Privacy & Security > Microphone and turn on Sei.')
-                  : t('In Settings, turn on Microphone access and Let desktop apps access your microphone.')}
+              {isMac
+                ? t('In System Settings, open Privacy & Security > Microphone and turn on Sei.')
+                : t('In Settings, turn on Microphone access and Let desktop apps access your microphone.')}
             </p>
             <p className={styles.waiting}>
               <span className={styles.dot} aria-hidden="true" />
