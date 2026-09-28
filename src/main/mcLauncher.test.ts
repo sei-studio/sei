@@ -144,6 +144,18 @@ describe('launcherCandidates', () => {
       mc,
     );
     expect(storeNewer.map((x) => x.kind)).toEqual(['windows-store', 'windows']);
+
+    // Sei's own setup writes both profile files, so the accounts files (which
+    // only the launchers write) decide when they exist.
+    const legacyAcc = `${mc}\\launcher_accounts.json`;
+    const storeAcc = `${mc}\\launcher_accounts_microsoft_store.json`;
+    const accountsSayLegacy = await launcherCandidates(
+      env('win32', [legacy, storeFile], {
+        [norm(storeFile)]: 9, [norm(legacyFile)]: 8, [norm(legacyAcc)]: 5, [norm(storeAcc)]: 4,
+      }),
+      mc,
+    );
+    expect(accountsSayLegacy.map((x) => x.kind)).toEqual(['windows', 'windows-store']);
   });
 
   it('Linux (dev only) has no launcher to open', async () => {

@@ -137,10 +137,21 @@ export async function launcherCandidates(e: LauncherEnv, mcDir: string | null): 
     }
   }
   if (store && legacy && mcDir) {
-    // Both installed: the launcher the player used last wrote its file last.
-    const storeT = (await e.mtimeMs(win.join(mcDir, LAUNCHER_PROFILE_FILES[1]))) ?? 0;
-    const legacyT = (await e.mtimeMs(win.join(mcDir, LAUNCHER_PROFILE_FILES[0]))) ?? 0;
-    return legacyT > storeT ? [legacy, store] : [store, legacy];
+    // Both installed: the launcher the player used last wrote its files last.
+    // The accounts files come first because Sei never writes them; Sei's own
+    // setup writes BOTH profile files, which leaves their mtimes saying
+    // nothing about the player. Profile files are the fallback when neither
+    // accounts file exists.
+    for (const [legacyName, storeName] of [
+      ['launcher_accounts.json', 'launcher_accounts_microsoft_store.json'],
+      [LAUNCHER_PROFILE_FILES[0], LAUNCHER_PROFILE_FILES[1]],
+    ] as const) {
+      const storeT = await e.mtimeMs(win.join(mcDir, storeName));
+      const legacyT = await e.mtimeMs(win.join(mcDir, legacyName));
+      if (storeT == null && legacyT == null) continue;
+      return (legacyT ?? 0) > (storeT ?? 0) ? [legacy, store] : [store, legacy];
+    }
+    return [store, legacy];
   }
   if (store) out.push(store);
   if (legacy) out.push(legacy);
