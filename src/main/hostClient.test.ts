@@ -12,7 +12,7 @@ import { describe, it, expect } from 'vitest';
 import { classifyCmdline } from './hostClient';
 import { forgeModCountFromStatus } from './mcPing';
 import { parseLsof, parseNetstat, parseTasklist } from './listeningPorts';
-import { lanHostWarning, type LanHost } from '../shared/ipc';
+import { lanHostWarning, isModdedLanHost, type LanHost } from '../shared/ipc';
 
 const host = (client: LanHost['client'], forgeModCount: number | null = null): LanHost => ({
   client,
@@ -105,9 +105,9 @@ describe('lanHostWarning (three-way classification, 260721)', () => {
     otherModCount,
   });
 
-  it('maps foreign loaders to the modded disclaimer', () => {
-    expect(lanHostWarning(host('forge'))).toBe('modded');
-    expect(lanHostWarning(host('neoforge'))).toBe('modded');
+  it('blocks Forge and NeoForge hosts (260929), Quilt keeps the soft modded warning', () => {
+    expect(lanHostWarning(host('forge'))).toBe('forge');
+    expect(lanHostWarning(host('neoforge'))).toBe('forge');
     expect(lanHostWarning(host('quilt'))).toBe('modded');
   });
 
@@ -137,13 +137,32 @@ describe('lanHostWarning (three-way classification, 260721)', () => {
     expect(lanHostWarning(host('lunar'))).toBe('lunar');
   });
 
-  it('falls back to modded when only the ping carried forge metadata', () => {
-    expect(lanHostWarning(host('unknown', 4))).toBe('modded');
+  it('blocks as Forge when only the ping carried forge metadata', () => {
+    expect(lanHostWarning(host('unknown', 4))).toBe('forge');
+    expect(lanHostWarning(host('unknown', 0))).toBe('forge');
   });
 
   it('stays silent for unknown and missing hosts', () => {
     expect(lanHostWarning(host('unknown'))).toBe(null);
     expect(lanHostWarning(undefined)).toBe(null);
+  });
+});
+
+describe('isModdedLanHost (260929, timeout reclassification)', () => {
+  it('is true for Forge-family, Quilt, and Fabric with foreign mods', () => {
+    expect(isModdedLanHost(host('forge'))).toBe(true);
+    expect(isModdedLanHost(host('neoforge'))).toBe(true);
+    expect(isModdedLanHost(host('quilt'))).toBe(true);
+    expect(isModdedLanHost(host('unknown', 2))).toBe(true);
+    expect(isModdedLanHost({ client: 'fabric', forgeModCount: null, seiSkinMod: true, otherModCount: 3 })).toBe(true);
+  });
+
+  it("is false for Sei's own Fabric setup, vanilla, Lunar and unknown hosts", () => {
+    expect(isModdedLanHost({ client: 'fabric', forgeModCount: null, seiSkinMod: true, otherModCount: 0 })).toBe(false);
+    expect(isModdedLanHost(host('vanilla'))).toBe(false);
+    expect(isModdedLanHost(host('lunar'))).toBe(false);
+    expect(isModdedLanHost(host('unknown'))).toBe(false);
+    expect(isModdedLanHost(undefined)).toBe(false);
   });
 });
 

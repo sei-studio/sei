@@ -21,13 +21,17 @@ import {
   type UtilityProcess,
 } from 'electron';
 import path from 'node:path';
-import type {
-  BotStatus,
-  LogBatch,
-  BotLifecycle,
-  ErrorClass,
-  CreditsHardStopEvent,
-  VisionCapability,
+import {
+  isModdedLanHost,
+  type BotStatus,
+  type LogBatch,
+  type BotLifecycle,
+  type ErrorClass,
+  type CreditsHardStopEvent,
+  type VisionCapability,
+  type LanHost,
+  type SessionEndReason,
+  type StopReason,
 } from '../shared/ipc';
 import { effectiveMcUsername, type Character } from '../shared/characterSchema';
 import { isGameId, type GameId } from '../shared/gameIpc';
@@ -294,6 +298,12 @@ export interface BotSupervisorOptions {
    * absent the bot labels worlds by spawn coords instead.
    */
   getLanMotd?: () => string | null;
+  /**
+   * 260929: the detected host client of the open LAN world (lanWatcher). A
+   * Minecraft summon that times out on a modded host is reported as
+   * MODDED_HOST_REJECTED instead of a generic BOT_START_TIMEOUT. Optional.
+   */
+  getLanHost?: () => LanHost | undefined;
   /** Forward to renderer via webContents.send('bot:status', status). */
   sendStatus: (status: BotStatus) => void;
   /**
@@ -399,8 +409,12 @@ export interface BotSupervisorOptions {
 export interface BotSupervisor {
   /** Fork a bot for this character into `game` (default 'minecraft'). */
   summon(characterId: string, game?: GameId): Promise<void>;
-  /** Stop one summoned character, or — with no id — every active session. */
-  stop(characterId?: string): Promise<void>;
+  /**
+   * Stop one summoned character, or — with no id — every active session.
+   * `reason` (260929, default 'user_stop') becomes the `endReason` on the
+   * terminal idle status, i.e. bot_session_ended.reason.
+   */
+  stop(characterId?: string, reason?: StopReason): Promise<void>;
   /** First active character id (or null). Back-compat: callers that only ask
    *  "is ANY bot running" still work. Prefer getActiveIds()/isActive(id). */
   getActiveId(): string | null;
@@ -529,6 +543,13 @@ interface ActiveSession {
    * mid_session onSummonFailure diagnostic.
    */
   stopRequested?: boolean;
+  /** 260929: why _stop was asked to drain this session (end-reason analytics). */
+  stopReason?: StopReason;
+  /**
+   * 260929: the bot's own summon-stopped reason. 'quit' = the companion
+   * called quit() and left on its own (no stop from main).
+   */
+  selfStopReason?: string;
 }
 
 export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
@@ -623,7 +644,15 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         // but flip the dot back to amber until reconnect.
         return { kind: 'connecting', characterId };
       case 'error':
-        return { kind: 'error', error: e.error, message: e.message, characterId };
+        return {
+          kind: 'error',
+          error: e.error,
+          message: e.message,
+          characterId,
+          // 260929: why a live session ended, when the bot could tell.
+          ...(e.endReason ? { endReason: e.endReason } : {}),
+          ...(e.kickCode ? { kickCode: e.kickCode } : {}),
+        };
       case 'exit':
         // Exit is handled separately — supervisor flips to 'idle' when no
         // active session remains (see _stopActive).
@@ -636,7 +665,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     }
   };
 
-  async function _stop(characterId: string, timeoutMs: number): Promise<void> {
+  async function _stop(characterId: string, timeoutMs: number, reason: StopReason = 'user_stop'): Promise<void> {
     // 260705 (issue #6): a stop landing in the pre-registration window (status
     // already "Connecting…", sessions.set not reached) used to find no session,
     // report success — and the bot joined anyway seconds later. Wait for the
@@ -666,12 +695,15 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // for this id (e.g. a mid-session crash that already dropped the session
       // without a terminal push). Emit `idle` so a "Disconnect" click always
       // clears the widget instead of no-op'ing on an orphaned status.
-      sendStatus({ kind: 'idle', characterId });
+      sendStatus({ kind: 'idle', characterId, endReason: reason });
       return;
     }
     // Diagnostics (260720): mark the drain as requested BEFORE anything can
     // make the child exit, so the exit handler never mistakes this stop (or
     // its kill escalation) for a mid-session crash.
+    // 260929: the FIRST stop's reason sticks (a user Stop followed by the
+    // quit-time drain is still a user stop).
+    if (session.stopRequested !== true) session.stopReason = reason;
     session.stopRequested = true;
     // BL-01: kill the JWT rotation pump BEFORE port1.close() so a pending
     // tick (in the middle of a refreshSession await) cannot postMessage
@@ -714,19 +746,19 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     if (sessions.get(characterId) === session) sessions.delete(characterId);
     // 260618: a companion left — refresh the survivors' rosters.
     broadcastRoster();
-    sendStatus({ kind: 'idle', characterId });
+    sendStatus({ kind: 'idle', characterId, endReason: session.stopReason ?? reason });
     // Party redesign §5: the session is gone — clear any lingering action verb
     // so the roster line doesn't stick on "gathering wood…" after Disconnect.
     opts.onBotAction?.(characterId, null, undefined, Date.now());
   }
 
   /** Drain every active session in parallel (sign-out / before-quit). */
-  async function _stopAll(timeoutMs: number): Promise<void> {
+  async function _stopAll(timeoutMs: number, reason: StopReason = 'user_stop'): Promise<void> {
     // Include pending (pre-registration) summons so an app shutdown mid-summon
     // drains the child that attempt is about to register (_stop awaits the
     // reservation) instead of leaving it to die with the parent process.
     const ids = new Set([...sessions.keys(), ...pendingSummons.keys()]);
-    await Promise.all([...ids].map((id) => _stop(id, timeoutMs)));
+    await Promise.all([...ids].map((id) => _stop(id, timeoutMs, reason)));
   }
 
   /**
@@ -811,6 +843,8 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       exitCode?: number | null;
       stderrTail?: string;
       stdoutTail?: string;
+      /** 260929: the class this failure was reported as before reclassification. */
+      reclassifiedFrom?: string;
     }): void;
   }
 
@@ -832,6 +866,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
             exitCode: partial.exitCode ?? null,
             stderrTail: partial.stderrTail ?? '',
             stdoutTail: partial.stdoutTail ?? '',
+            ...(partial.reclassifiedFrom ? { reclassifiedFrom: partial.reclassifiedFrom } : {}),
             durationMs: Date.now() - startedAtMs,
             backend: reporter.backend,
             boot: reporter.boot
@@ -1211,13 +1246,25 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // init-ack ("booted"); then SUMMON_TIMEOUT_MS runs from init-ack until
     // summon-ready. A slow cold boot no longer eats the join budget.
     let watchdogPhase: 'boot' | 'ready' = 'boot';
+    // 260929: a JOIN timeout on a known modded host (Forge, or Fabric/Quilt
+    // with foreign mods) is the host refusing a vanilla client, not a slow
+    // machine. Live, 4 of 10 BOT_START_TIMEOUTs in a week were modded hosts,
+    // and the timeout copy never mentioned mods. Report it as the modded-host
+    // failure so the player gets ModdedHostModal and the dashboard counts it
+    // with the kicks. A BOOT timeout (the bot never finished starting) says
+    // nothing about the world, so it is left alone.
+    const moddedHost = (): boolean => {
+      if (game !== 'minecraft') return false;
+      try { return isModdedLanHost(opts.getLanHost?.()); } catch { return false; }
+    };
     const onWatchdog = (): void => {
       if (summonResolved) return;
       summonResolved = true;
-      const err: ErrorClass = 'BOT_START_TIMEOUT';
       // Derived from the actual constants so the diagnostic never lies about
       // how long the watchdog actually waited.
       const booting = watchdogPhase === 'boot';
+      const modded = !booting && moddedHost();
+      const err: ErrorClass = modded ? 'MODDED_HOST_REJECTED' : 'BOT_START_TIMEOUT';
       const timeoutMessage = booting
         ? `Bot did not finish booting within ${BOOT_TIMEOUT_MS / 1000}s of the fork ` +
           '(no init-ack and no terminal lifecycle error from the child).'
@@ -1229,13 +1276,16 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         errorMessage: timeoutMessage,
         stderrTail: tails.stderr,
         stdoutTail: tails.stdout,
+        ...(modded ? { reclassifiedFrom: 'BOT_START_TIMEOUT' } : {}),
       });
       sendStatus({
         kind: 'error',
         error: err,
         message: booting
           ? `Bot did not finish starting within ${BOOT_TIMEOUT_MS / 1000}s.`
-          : `Bot did not signal ready within ${SUMMON_TIMEOUT_MS / 1000}s.`,
+          : modded
+            ? `Sei did not get into this modded world within ${SUMMON_TIMEOUT_MS / 1000}s. Modded worlds often turn away players without their mods.`
+            : `Bot did not signal ready within ${SUMMON_TIMEOUT_MS / 1000}s.`,
         characterId,
       });
       summonReject(new Error(err));
@@ -1260,7 +1310,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     if (ctl.cancelled) ctl.cancel();
 
     port1.on('message', (e: { data: BotLifecycle | { type: 'vision-capability'; visionCapable: boolean } }) => {
-      const data = e.data;
+      let data = e.data;
       // A cancelled summon's child is being killed: nothing it says counts.
       if (cancelled) return;
       // Phase 15 (D-10/VIS-03): the bot pushes its active-provider vision
@@ -1377,6 +1427,17 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // specific error with a generic BOT_START_TIMEOUT message. Resolve
       // the promise immediately so bot:summon's IPC caller unblocks at the
       // moment we have actionable information, not 30s later.
+      // 260929: the bot's own connect guard timing out on a known modded host
+      // is the same modded-host failure as the ready watchdog above.
+      let reclassifiedFrom: string | undefined;
+      if (data.type === 'error' && !summonResolved && data.error === 'BOT_START_TIMEOUT' && moddedHost()) {
+        reclassifiedFrom = data.error;
+        data = { ...data, error: 'MODDED_HOST_REJECTED' };
+      }
+      // 260929: remember why the bot stopped itself (companion quit()).
+      if (data.type === 'summon-stopped' && typeof data.reason === 'string') {
+        session.selfStopReason = data.reason;
+      }
       if (data.type === 'error' && !summonResolved) {
         summonResolved = true;
         clearTimeout(summonTimer);
@@ -1392,6 +1453,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
             `Bot reported a ${String(data.error)} lifecycle error before summon-ready with no message text.`,
           stderrTail: tails.stderr,
           stdoutTail: tails.stdout,
+          ...(reclassifiedFrom ? { reclassifiedFrom } : {}),
         });
         summonReject(new Error(`${data.error}: ${data.message}`));
       }
@@ -1737,9 +1799,22 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
           // route to their own modals renderer-side. The terminal error also
           // closes the play-session bookkeeping in broadcastStatus; the idle
           // push below still clears the widget.
-          sendStatus({ kind: 'error', error: errorClass, message, characterId, midSession: true });
+          sendStatus({ kind: 'error', error: errorClass, message, characterId, midSession: true, endReason: 'crash' });
         }
-        sendStatus({ kind: 'idle', characterId });
+        // 260929: why it ended. A requested stop carries its caller's reason;
+        // otherwise the bot left by itself: quit() says so on summon-stopped,
+        // a nonzero code is the crash reported just above, and any other
+        // clean exit is 'bot_exit'. (A lifecycle error, e.g. a kick loop, has
+        // already closed the session with its own reason; this idle then
+        // changes nothing downstream.)
+        const endReason: SessionEndReason = session.stopRequested === true
+          ? (session.stopReason ?? 'user_stop')
+          : code != null && code !== 0
+            ? 'crash'
+            : session.selfStopReason === 'quit'
+              ? 'companion_quit'
+              : 'bot_exit';
+        sendStatus({ kind: 'idle', characterId, endReason });
       }
       // Resolve `exited` only AFTER the playtime write lands. _stop awaits
       // `exited` before emitting the idle status, and the renderer refreshes the
@@ -2020,8 +2095,8 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
 
   return {
     summon,
-    stop: (characterId?: string) =>
-      characterId ? _stop(characterId, STOP_TIMEOUT_MS) : _stopAll(STOP_TIMEOUT_MS),
+    stop: (characterId?: string, reason: StopReason = 'user_stop') =>
+      characterId ? _stop(characterId, STOP_TIMEOUT_MS, reason) : _stopAll(STOP_TIMEOUT_MS, reason),
     switchBackend: _switchBackend,
     getActiveId: () => {
       const first = sessions.keys().next();
@@ -2139,7 +2214,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     shutdown: async () => {
       let capTimer: ReturnType<typeof setTimeout> | undefined;
       const drained = await Promise.race([
-        _stopAll(SHUTDOWN_DRAIN_MS).then(() => true, () => true),
+        _stopAll(SHUTDOWN_DRAIN_MS, 'app_quit').then(() => true, () => true),
         new Promise<boolean>((r) => { capTimer = setTimeout(() => r(false), SHUTDOWN_HARD_CAP_MS); }),
       ]);
       clearTimeout(capTimer);

@@ -2703,6 +2703,35 @@ Rules that follow from the existing implementations:
 Current members: `bot_session_ended` (Minecraft), `chess_game_ended`,
 `voice_call_ended`, `draw_game_ended`, `backseat_ended`, `chat_session_ended`.
 
+**`bot_session_ended` says why (260929).** It used to carry no reason, so a
+player pressing Stop looked exactly like a kick loop, and 10 of 36 Minecraft
+users in a month had sub-minute sessions nobody could explain. It now carries
+`reason` (`user_stop`, `companion_quit`, `app_quit`, `account_switch`,
+`kicked`, `world_closed`, `disconnected`, `credits_depleted`, `rate_limited`,
+`crash`, `error`, `bot_exit`, `unknown`), plus `error_class` when it ended on
+an error, `kick_code` for a kick, and `duration_s` beside `duration_ms`. The
+supervisor stamps `endReason` (and `kickCode`) on the terminal BotStatus:
+`supervisor.stop(id, reason)` for stops, the bot's `summon-stopped` reason for
+a companion quit(), and the Minecraft runtime's `fail(message, {endReason,
+kickCode})` for post-spawn drops. `src/main/sessionEnd.ts` maps a status to
+props (pinned in `sessionEnd.test.ts`). `kick_code` comes from
+`kickReasonCode()` in `connect.js`: a vanilla `disconnect.*` key or a fixed
+code, never the host's kick text. A session that ended on an error also
+fires **`bot_session_failed`** (same props, `duration_s` only, not a playtime
+event), the post-join counterpart of `summon_failed`. App quit closes live
+sessions in `before-quit` BEFORE the analytics flush (`app_quit`); the
+drain's own idle statuses come after the flush and used to be lost.
+
+**Forge/NeoForge hosts are blocked before summon (260929).**
+`lanHostWarning()` returns `'forge'` for them (or for a ping carrying
+forgeData), and `LanHostWarningModal` renders a blocking variant with no
+"Summon anyway" that points at the Sei launcher profile. Quilt and Fabric
+with foreign mods keep the soft `'modded'` warning. A join TIMEOUT (ready
+phase, or the bot's connect guard) on any modded host is reported as
+`MODDED_HOST_REJECTED` with `reclassified_from: 'BOT_START_TIMEOUT'` on
+`summon_failed`, so the player gets ModdedHostModal instead of generic timeout
+copy. `character_summoned` carries `host_client`.
+
 **Text chat counts too (260801).** Chat was the last surface with no
 instrumentation at all, so playtime meant "everything except the thing people
 do most" and a user who only ever texted had an empty character list on the

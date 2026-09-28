@@ -82,6 +82,13 @@ export async function summonWithHostGate(
   host: LanHost | undefined,
 ): Promise<void> {
   const warning = lanHostWarning(host);
+  // 260929: a Forge/NeoForge host is a hard stop, not a heads-up. It is never
+  // acknowledged or suppressed ("Don't show this again" for the old modded
+  // warning does not cover it) and the modal has no "Summon anyway".
+  if (warning === 'forge' && host) {
+    useUiStore.getState().openModal({ kind: 'lan-host-warning', characterId: id, warning, host, fromChat });
+    return;
+  }
   if (warning && host && !acknowledgedHostWarnings.has(warning)) {
     let suppressed = false;
     if (warning === 'vanilla' || warning === 'modded') {

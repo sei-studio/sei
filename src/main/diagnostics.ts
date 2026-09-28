@@ -68,6 +68,12 @@ export interface SummonFailureInfo {
   backend?: 'local' | 'cloud-proxy' | null;
   /** 260926: boot-phase stamps for the attempt (see bootPhaseProps). */
   boot?: BootTimingInfo;
+  /**
+   * 260929: set when the supervisor reported this failure under a different
+   * class than the raw one, e.g. BOT_START_TIMEOUT on a modded host shipped
+   * as MODDED_HOST_REJECTED. Becomes `reclassified_from`.
+   */
+  reclassifiedFrom?: string;
 }
 
 /**
@@ -317,6 +323,7 @@ export function buildSummonDiagnostic(
     electron_version: process.versions.electron ?? null,
     node_version: process.versions.node ?? null,
   };
+  if (info.reclassifiedFrom) diag.reclassified_from = info.reclassifiedFrom;
   if (info.boot) Object.assign(diag, bootPhaseProps(info.boot));
   if (!omitsHeavyText(info.errorClass, info.phase)) {
     diag.error_message = redact(info.errorMessage ?? '').slice(0, ERROR_MESSAGE_CAP);

@@ -91,6 +91,48 @@ export function isModdedHostRejection(reason) {
 }
 
 /**
+ * Short, PII-free code for a server kick reason (260929), for the
+ * bot_session_ended analytics event. The raw text can be anything the host
+ * typed into /kick, so it never leaves the machine: only a vanilla-style
+ * translation key (stripped of its `multiplayer.disconnect.` prefix) or one of
+ * a fixed set of codes matched from well-known wordings. Everything else is
+ * 'other'.
+ *
+ * @param {unknown} reason  raw kick reason (string or chat component)
+ * @returns {string}  e.g. 'kicked', 'name_taken', 'modded', 'other'
+ */
+export function kickReasonCode(reason) {
+  if (reason == null) return 'other'
+  const keyOf = (k) => {
+    if (typeof k !== 'string') return null
+    const key = k.trim()
+    // Vanilla namespaces only: a free-form "word.word" could be anything.
+    if (!/^(multiplayer\.)?disconnect\.[a-z0-9_.]+$/i.test(key)) return null
+    return key.toLowerCase().replace(/^(multiplayer\.)?disconnect\./, '').slice(0, 40) || null
+  }
+  const fromKey = keyOf(typeof reason === 'object' ? reason.translate : reason)
+  if (fromKey) return fromKey
+  const text = extractReasonText(reason)
+  const keyText = keyOf(text)
+  if (keyText) return keyText
+  if (isModdedHostRejection(text)) return 'modded'
+  const r = text.toLowerCase()
+  if (r.includes('chat_validation') || r.includes('out_of_order_chat')) return 'chat_validation_failed'
+  if (r.includes('name_taken') || r.includes('another location') || r.includes('already playing') || r.includes('already connected')) return 'name_taken'
+  if (r.includes('whitelist') || r.includes('white-list') || r.includes('white list')) return 'not_whitelisted'
+  if (r.includes('banned')) return 'banned'
+  if (r.includes('server closed') || r.includes('shutting down') || r.includes('shutdown')) return 'server_shutdown'
+  if (r.includes('timed out') || r.includes('timeout')) return 'timeout'
+  if (r.includes('outdated') || r.includes('incompatible')) return 'version_mismatch'
+  if (r.includes('flying')) return 'flying'
+  if (/\bidl(e|ing)\b/.test(r)) return 'idling'
+  if (r.includes('spam')) return 'spam'
+  if (r.includes('kicked by an operator')) return 'kicked'
+  if (r.includes('multiplayer.disconnect.')) return keyOf(r.slice(r.indexOf('multiplayer.disconnect.')).split(/[^a-z0-9_.]/)[0]) ?? 'other'
+  return 'other'
+}
+
+/**
  * Plain-English translation of mineflayer disconnect reasons. Exposed for
  * the boot composer's status surface.
  */
@@ -559,7 +601,12 @@ export function createBotInstance({
     // The second argument is the structured half: onEnd's caller decides whether
     // to retry, and a modded-host rejection must NOT be retried (see
     // isModdedHostRejection).
-    try { onEnd?.(humanized, { modded: isModdedHostRejection(effective) }) } catch {}
+    // 260929: `kickCode` is set only when the server actually kicked us (the
+    // analytics end reason); a socket that died on its own carries null.
+    const kickCode = _lastKickReason != null && effective === _lastKickReason
+      ? kickReasonCode(_lastKickReason)
+      : null
+    try { onEnd?.(humanized, { modded: isModdedHostRejection(effective), kickCode }) } catch {}
   })
 
   // Expose the chat starter so the brain (which knows the orchestrator) can

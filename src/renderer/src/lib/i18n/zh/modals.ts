@@ -285,6 +285,17 @@ export const ZH_MODALS: Record<string, string> = {
     '如果加入失败，请尝试没有服务端模组的世界。',
   "Don't show this again": '不再显示',
   'Summon anyway': '仍然召唤',
+  // Forge/NeoForge block (260929)
+  "Sei can't join {loader} worlds": 'Sei 无法加入 {loader} 世界',
+  'Your world is hosted from {loader}. {name} joins as a normal Minecraft player, and {loader} worlds turn those players away, so the summon would fail. To play together, host your world from the Sei profile instead:':
+    '你的世界由 {loader} 开启。{name} 以普通 Minecraft 玩家身份加入，而 {loader} 世界会拒绝这类玩家，所以召唤会失败。想一起玩，请改用 Sei 配置开启你的世界：',
+  'Save and quit your world, then open the Minecraft Launcher.': '保存并退出你的世界，然后打开 Minecraft 启动器。',
+  'Pick the Sei profile (named "Sei" and a version number) and press Play. No Sei profile yet? Use Set up Sei profile below.':
+    '选择 Sei 配置（名称是“Sei”加版本号），然后点击“开始游戏”。还没有 Sei 配置？点击下方的“设置 Sei 配置”。',
+  'Open a world, choose Open to LAN, then press Launch in Sei again.': '打开一个世界，选择「对局域网开放」，然后回到 Sei 再次点击启动。',
+  'A world that needs {loader} mods may not open without them. If yours will not, make a new world in the Sei profile.':
+    '依赖 {loader} 模组的世界没有这些模组可能无法打开。如果打不开，请在 Sei 配置中新建一个世界。',
+  'Set up Sei profile': '设置 Sei 配置',
 
   // ── LanNotOpenModal ──
   "Couldn't reach your world": '无法连接到你的世界',
@@ -302,6 +313,8 @@ export const ZH_MODALS: Record<string, string> = {
 
   // ── ModdedHostModal ──
   'This world needs mods': '这个世界需要模组',
+  '{name} could not get into this world. It runs {loader} with other mods, and some mods only let in players who have them installed too.':
+    '{name} 没能进入这个世界。它运行的是带有其他模组的 {loader}，有些模组只允许同样安装了它们的玩家进入。',
   '{name} was turned away by this world. It runs Forge or NeoForge, and it only lets in players who have the same mods installed.':
     '{name} 被这个世界拒绝了。它运行的是 Forge 或 NeoForge，只允许装有相同模组的玩家加入。',
   'Open a world with no mods, or with Fabric and only client-side mods like minimaps.':

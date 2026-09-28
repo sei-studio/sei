@@ -119,7 +119,7 @@ export async function start(config, hooks = {}) {
     },
     // Task 4 — the bot called quit(): leave the game the same graceful way a
     // main-initiated stop would (drain, disconnect, exit → supervisor reaps).
-    onQuitRequested: () => { try { gracefulShutdown() } catch {} },
+    onQuitRequested: () => { try { gracefulShutdown('quit') } catch {} },
     // Voice calls (260705) — the bot called end_call(): ask main to hang up
     // the player's call (the bot stays in the game). The farewell say() was
     // already routed up before this fires, and the renderer drains its TTS
@@ -713,6 +713,9 @@ async function bootstrapWithInit(initData) {
           error: info?.error ?? 'BOT_START_TIMEOUT',
           message,
           ...(info?.retryAfterSeconds != null ? { retryAfterSeconds: info.retryAfterSeconds } : {}),
+          // 260929: why a live session ended (kick loop, world closed).
+          ...(info?.endReason ? { endReason: info.endReason } : {}),
+          ...(info?.kickCode ? { kickCode: info.kickCode } : {}),
         })
         // The bot can't recover on its own (initial connect exhausted, a live
         // session dropped, or spawn stalled). Run the same graceful shutdown
@@ -721,7 +724,7 @@ async function bootstrapWithInit(initData) {
         // chat), and the supervisor stops treating the row as live. Mirrors
         // onTerminalError; the 150ms delay lets the error lifecycle flush to
         // the renderer first.
-        setTimeout(() => { gracefulShutdown().catch(() => {}) }, 150)
+        setTimeout(() => { gracefulShutdown('error').catch(() => {}) }, 150)
       },
       // Phase 13: the brain calls this when the cloud proxy returns 402 and
       // the orchestrator latches into halted mode. Surface the depleted
@@ -739,7 +742,7 @@ async function bootstrapWithInit(initData) {
           // reset window and the GUI can show "come back after X".
           retryAfterSeconds: info?.retryAfterSeconds,
         })
-        setTimeout(() => { gracefulShutdown().catch(() => {}) }, 150)
+        setTimeout(() => { gracefulShutdown('error').catch(() => {}) }, 150)
       },
     })
     _running = _running_local
@@ -776,7 +779,12 @@ function emitVisionCapability() {
   console.log(`[lifecycle] ${JSON.stringify({ type: 'vision-capability', visionCapable })}`)
 }
 
-async function gracefulShutdown() {
+/**
+ * @param {'quit'|'stop'|'error'} [reason]  260929: rides the summon-stopped
+ *   lifecycle so main can tell a companion that quit() on its own from any
+ *   other clean exit.
+ */
+async function gracefulShutdown(reason = 'stop') {
   // Re-entry guard. Both the bot's own onTerminalError and the supervisor's
   // {type:'stop'} can drive shutdown concurrently (the daily-limit / depleted
   // backstop in botSupervisor.ts now actively drains the session on the same
@@ -801,7 +809,7 @@ async function gracefulShutdown() {
       ])
     }
   } catch {}
-  emitLifecycle({ type: 'summon-stopped' })
+  emitLifecycle({ type: 'summon-stopped', reason })
   // Give the lifecycle message a tick to flush before exiting
   setTimeout(() => process.exit(0), 100)
 }
@@ -865,7 +873,7 @@ if (process.parentPort) {
         try {
           const data = (e && e.data !== undefined) ? e.data : e
           if (data && data.type === 'stop') {
-            gracefulShutdown()
+            gracefulShutdown('stop')
           } else if (data && data.type === 'sei-chat') {
             // Task 4: the player messaged this bot through Sei chat while it is
             // in-game. Inject it into the brain as an out-of-band chat event so

@@ -125,8 +125,13 @@ export async function createRuntime(config, hooks) {
   let _reconnectAttempts = 0
 
   // Terminal failure → the composer emits the lifecycle error and shuts down.
-  const fail = (message) => {
-    try { onError({ error: classifyConnectError(message), message }) } catch (cbErr) {
+  // `end` (260929): {endReason, kickCode} for a post-spawn drop, so main can
+  // say WHY a live session ended (bot_session_ended.reason).
+  const fail = (message, end = null) => {
+    const extra = {}
+    if (end?.endReason) extra.endReason = end.endReason
+    if (end?.kickCode) extra.kickCode = end.kickCode
+    try { onError({ error: classifyConnectError(message), message, ...extra }) } catch (cbErr) {
       logger.warn(`onError hook threw: ${cbErr && cbErr.message}`)
     }
   }
@@ -254,7 +259,10 @@ export async function createRuntime(config, hooks) {
           _stopped = true
           logger.error(`[sei] Modded world rejected Sei (${humanizedReason}) — not retrying.`)
           try { onDisconnected({ reason: humanizedReason, willRetry: false }) } catch {}
-          fail(`MODDED_HOST_REJECTED: ${humanizedReason}.`)
+          fail(
+            `MODDED_HOST_REJECTED: ${humanizedReason}.`,
+            _readyFired ? { endReason: 'kicked', kickCode: 'modded' } : null,
+          )
           return
         }
 
@@ -326,6 +334,7 @@ export async function createRuntime(config, hooks) {
               fail(
                 `LAN_NOT_OPEN: The world kept kicking Sei (${humanizedReason}). ` +
                 `Try summoning again in a moment.`,
+                { endReason: 'kicked', kickCode: info?.kickCode ?? 'other' },
               )
               return
             }
@@ -339,6 +348,7 @@ export async function createRuntime(config, hooks) {
             fail(
               `LAN_NOT_OPEN: Lost connection to the LAN world (${humanizedReason}). ` +
               `Re-open the world to LAN in Minecraft and click Summon again.`,
+              { endReason: 'world_closed', kickCode: info?.kickCode ?? null },
             )
           })()
           return
