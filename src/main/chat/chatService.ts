@@ -12,7 +12,8 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type Anthropic from '@anthropic-ai/sdk';
 import type { ChatMessage, ChatOpenedOptions, ChatSendResult, LanState, SpokenLineContext } from '../../shared/ipc';
-import { forgeHostBlock, FORGE_HOST_BLOCKED } from '../../shared/ipc';
+import { forgeHostBlock, FORGE_HOST_BLOCKED, summonBlockedProps, type LanHost } from '../../shared/ipc';
+import { loadAnalytics } from '../lazyAnalytics';
 import type { GameId, WorldStates } from '../../shared/gameIpc';
 import { paths } from '../paths';
 import { loadConfig } from '../configStore';
@@ -1000,6 +1001,9 @@ async function sendChatMessageImpl(
     // back in") must keep looping for its "hopping back in" line, so the
     // double-goodbye break must NOT fire when a launch rode along.
     let launchCalled = false;
+    // 260929: summon_blocked fires once per turn even if the model calls
+    // launch() again after the Forge refusal in the same tool loop.
+    let blockedReported = false;
     // Game adapters (M0): which game the deferred summon joins ('minecraft'
     // unless the model named another self-launchable game).
     let launchGame: GameId = 'minecraft';
@@ -1157,6 +1161,15 @@ async function sendChatMessageImpl(
           const game = String((toolUse.input as { game?: string })?.game ?? 'minecraft');
           const result = resolveLaunch(game, args.characterId, deps);
           launch = result.launch;
+          // 260929: a Forge-host refusal never reaches the supervisor, so this
+          // is the one place the attempt is counted (not also summon_failed).
+          if (result.forgeHost && !blockedReported) {
+            blockedReported = true;
+            const props = summonBlockedProps(args.characterId, result.forgeHost, args.voiceCall === true ? 'voice' : 'chat');
+            void loadAnalytics()
+              .then((a) => a.capture('summon_blocked', props))
+              .catch(() => { /* analytics is never load-bearing */ });
+          }
           // Defer the real join — don't fire summon mid-loop (task 2).
           if (result.summon) {
             startSummon = true;
@@ -1860,7 +1873,14 @@ function resolveLaunch(
   game: string,
   characterId: string,
   deps: ChatDeps,
-): { note: string; launch: NonNullable<ChatSendResult['launch']>; summon: boolean; game: GameId } {
+): {
+  note: string;
+  launch: NonNullable<ChatSendResult['launch']>;
+  summon: boolean;
+  game: GameId;
+  /** Set when a Forge/NeoForge host refused the launch (for summon_blocked). */
+  forgeHost?: LanHost;
+} {
   // Game adapters (M0): validated against the catalog rows the companion may
   // start itself (selfLaunch && available). Minecraft keeps its exact path
   // below; another available game gates on its own WorldState.
@@ -1907,13 +1927,15 @@ function resolveLaunch(
   // button and the supervisor pre-gate (forgeHostBlock), evaluated on the
   // live host so it needs no earlier failure to kick in. Checked before the
   // retry guard so the companion always gets the specific reason.
-  const forge = forgeHostBlock(lan.kind === 'open' ? lan.host : undefined);
+  const lanHost = lan.kind === 'open' ? lan.host : undefined;
+  const forge = forgeHostBlock(lanHost);
   if (forge) {
     return {
       note: forgeBlockedNote(forge.loader),
       launch: { game, status: 'lan-not-open' },
       summon: false,
       game: 'minecraft',
+      forgeHost: lanHost,
     };
   }
   // 260828 retry-loop guard: the last summon was refused before it even forked

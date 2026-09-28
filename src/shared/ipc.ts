@@ -423,6 +423,34 @@ export function forgeHostBlockedMessage(loader: 'Forge' | 'NeoForge'): string {
   );
 }
 
+/** Where a blocked summon attempt came from, for `summon_blocked`. */
+export type SummonBlockedPath = 'button' | 'chat' | 'voice';
+
+/**
+ * Props for the `summon_blocked` analytics event (260929): one event per
+ * summon attempt that a Forge/NeoForge host stopped before anything ran, so
+ * the attempts stay visible now that they no longer fail. Built here so the
+ * renderer (Summon button) and main (chat/voice launch() tool) cannot drift.
+ * `reason` matches the `summon_failed` reason for the same block at the
+ * supervisor pre-gate, so the two can be summed without overlap: an attempt
+ * is counted by exactly one of them.
+ */
+export function summonBlockedProps(
+  characterId: string,
+  host: LanHost | undefined,
+  path: SummonBlockedPath,
+): Record<string, string> {
+  const block = forgeHostBlock(host);
+  return {
+    character_id: characterId,
+    game: 'minecraft',
+    reason: FORGE_HOST_BLOCKED,
+    loader: block?.loader ?? 'unknown',
+    host_client: host?.client ?? 'unknown',
+    path,
+  };
+}
+
 /**
  * Is this a Forge-family host, where a summon that TIMES OUT is best
  * explained by the loader refusing a vanilla client (260929)? Forge or

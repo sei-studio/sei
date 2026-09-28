@@ -26,7 +26,7 @@
 
 import { sei } from './ipcClient';
 import { effectiveMcUsername } from '@shared/characterSchema';
-import { lanHostWarning, type LanHost, type LanHostWarning } from '@shared/ipc';
+import { lanHostWarning, summonBlockedProps, type LanHost, type LanHostWarning } from '@shared/ipc';
 import type { GameId } from '@shared/gameIpc';
 import { useUiStore } from './stores/useUiStore';
 import { useDataStore } from './stores/useDataStore';
@@ -88,6 +88,10 @@ export async function summonWithHostGate(
   // Same decision as forgeHostBlock, the check main's pre-gate and the chat
   // launch() tool use; weak evidence lands in the soft 'modded' warning below.
   if (warning === 'forge' && host) {
+    // One summon_blocked per refused click (the chat and voice launch() tool
+    // fire their own in main; this path never reaches the supervisor, so the
+    // attempt is not also counted as a summon_failed).
+    try { sei.track('summon_blocked', summonBlockedProps(id, host, 'button')); } catch { /* analytics is never load-bearing */ }
     useUiStore.getState().openModal({ kind: 'lan-host-warning', characterId: id, warning, host, fromChat });
     return;
   }

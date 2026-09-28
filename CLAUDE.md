@@ -2736,7 +2736,16 @@ used by all three entry points: the Summon button (`lanHostWarning() ===
 'forge'` opens the blocking `LanHostWarningModal`, no "Summon anyway"), the
 chat `launch()` tool (`resolveLaunch` returns a relayable note and never
 summons) and the supervisor pre-gate (error `FORGE_HOST_BLOCKED`, backstop for
-the voice launch honors; `SEI_FORGE_HANDSHAKE=1` bypasses it). The retry guard
+the voice launch honors; `SEI_FORGE_HANDSHAKE=1` bypasses it). Each refused
+attempt is counted exactly once. The button and the `launch()` tool fire
+**`summon_blocked`** (`character_id`, `game`, `reason: 'FORGE_HOST_BLOCKED'`,
+`loader`, `host_client`, `path`: `button` / `chat` / `voice`, props built by
+`summonBlockedProps()` in shared/ipc.ts; the tool fires at most one per turn),
+and neither reaches the supervisor. A refusal at the supervisor pre-gate (the
+voice idle/react launch honors, or a stale renderer host) fires only the
+existing `summon_failed` with `summon_phase: 'pre_gate'` and `reason:
+'FORGE_HOST_BLOCKED'`. All Forge attempts = `summon_blocked` + that
+`summon_failed` slice. The retry guard
 block for that class is released as soon as the LAN host stops being a blocked
 Forge host. Quilt and Fabric with foreign mods keep the soft `'modded'`
 warning. A join TIMEOUT (ready phase, or the bot's connect guard) on a

@@ -4,11 +4,12 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-const { summonSpy, getConfigSpy } = vi.hoisted(() => ({
+const { summonSpy, getConfigSpy, trackSpy } = vi.hoisted(() => ({
   summonSpy: vi.fn(async () => {}),
+  trackSpy: vi.fn(),
   getConfigSpy: vi.fn(async () => ({ hide_modded_host_warning: true })),
 }));
-vi.mock('./ipcClient', () => ({ sei: { summon: summonSpy, getConfig: getConfigSpy } }));
+vi.mock('./ipcClient', () => ({ sei: { summon: summonSpy, getConfig: getConfigSpy, track: trackSpy } }));
 
 import { summonWithHostGate, acknowledgeHostWarning } from './summonFlow';
 import { useUiStore } from './stores/useUiStore';
@@ -19,6 +20,7 @@ const quilt: LanHost = { client: 'quilt', forgeModCount: null };
 
 beforeEach(() => {
   summonSpy.mockClear();
+  trackSpy.mockClear();
   useUiStore.getState().closeModal();
 });
 
@@ -28,6 +30,25 @@ describe('summonWithHostGate: Forge block', () => {
     await summonWithHostGate('c1', false, forge);
     expect(summonSpy).not.toHaveBeenCalled();
     expect(useUiStore.getState().modal).toMatchObject({ kind: 'lan-host-warning', warning: 'forge', characterId: 'c1' });
+  });
+
+  it('fires one summon_blocked per refused click, from the button path', async () => {
+    await summonWithHostGate('c1', false, forge);
+    expect(trackSpy).toHaveBeenCalledTimes(1);
+    expect(trackSpy).toHaveBeenCalledWith('summon_blocked', {
+      character_id: 'c1',
+      game: 'minecraft',
+      reason: 'FORGE_HOST_BLOCKED',
+      loader: 'NeoForge',
+      host_client: 'neoforge',
+      path: 'button',
+    });
+  });
+
+  it('does not fire summon_blocked on the soft paths', async () => {
+    await summonWithHostGate('c2', false, quilt);
+    await summonWithHostGate('c3', false, { client: 'forge', forgeModCount: null });
+    expect(trackSpy).not.toHaveBeenCalled();
   });
 
   it('Forge on weak evidence only (no ping data, no launch target) takes the soft path, not the block', async () => {
