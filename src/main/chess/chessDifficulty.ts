@@ -27,6 +27,11 @@ export const CHESS_DIFFICULTY = {
   minOffset: -600,
   /** Furthest above the persona Elo the offset may go. */
   maxOffset: 200,
+  /**
+   * A resign before the player has made this many moves is a way out of the
+   * game, not a result, and leaves the offset alone like an abandoned game.
+   */
+  minPlayerMovesForResign: 3,
   /** Absolute bounds, the same as ChessProfileSchema. */
   minElo: 400,
   maxElo: 2000,

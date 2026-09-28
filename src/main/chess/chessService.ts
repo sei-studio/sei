@@ -74,7 +74,13 @@ import { isCallActive } from '../voice/callState';
 import { surfaceLanguage } from '../../shared/chatLanguage';
 import { ensureModel, modelReady } from './modelStore';
 import { getOrCreateChessProfile, type ChessProfile } from './chessProfile';
-import { effectiveElo, readEloOffset, recordChessOutcome, type ChessOutcome } from './chessDifficulty';
+import {
+  CHESS_DIFFICULTY,
+  effectiveElo,
+  readEloOffset,
+  recordChessOutcome,
+  type ChessOutcome,
+} from './chessDifficulty';
 import { nudgeDueInMs } from './turnNudge';
 import { createChessLog, NULL_CHESS_LOG, type ChessLog } from './chessLog';
 import { loadAnalytics } from '../lazyAnalytics';
@@ -1237,7 +1243,8 @@ function endSession(
   })();
 
   // Adaptive strength (260929): a decided game steps this player's offset for
-  // the NEXT game against this character. Abandoned games and draws do not.
+  // the NEXT game against this character. Abandoned games, draws and an
+  // early resign (decidedOutcome) do not.
   // Tracked like the play row so an account switch drains it into the right
   // profile's config.
   const outcome = decidedOutcome(s, result);
@@ -1324,9 +1331,14 @@ function endStage(
   return playerMoveCount(s) === 0 ? 'waiting_first_move' : 'midgame';
 }
 
-/** The result from the player's side, or null for an abandoned game. */
+/**
+ * The result from the player's side for adaptive strength, or null when the
+ * game should not move it: abandoned, or resigned before the player made
+ * CHESS_DIFFICULTY.minPlayerMovesForResign moves (a quick exit, not a loss).
+ */
 function decidedOutcome(s: Session, result: ChessResult): ChessOutcome | null {
   if (result.reason === 'abandoned') return null;
+  if (result.reason === 'resign' && playerMoveCount(s) < CHESS_DIFFICULTY.minPlayerMovesForResign) return null;
   if (result.winner === null) return 'draw';
   return result.winner === s.playerColor ? 'player' : 'ai';
 }

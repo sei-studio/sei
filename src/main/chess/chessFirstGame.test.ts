@@ -266,20 +266,35 @@ describe('"your move" nudge (260929)', () => {
 });
 
 describe('adaptive strength (260929)', () => {
-  it('a player loss lowers the next game by a step; a win raises it by less', async () => {
+  /** The AI answers with these moves in order; the player plays `moves`. */
+  function scriptAi(replies: string[]): void {
+    let i = 0;
     createSpy.mockImplementation(async (params: { tools?: { name: string }[] }) => {
-      if (params.tools?.some((t) => t.name === 'play')) {
-        return { content: [{ type: 'tool_use', id: 'tu1', name: 'play', input: { move: 'e5' } }], usage: {} };
+      if (params.tools?.some((t) => t.name === 'play') && i < replies.length) {
+        return { content: [{ type: 'tool_use', id: `tu${i}`, name: 'play', input: { move: replies[i++] } }], usage: {} };
       }
       return { content: [], usage: {} };
     });
+  }
 
+  async function playOpening(moves: string[], replies: string[]): Promise<void> {
+    await waitFor(() => pushed.find((s) => s.status === 'active'));
+    for (let i = 0; i < moves.length; i++) {
+      await playerMove(CHAR, moves[i]);
+      if (i < replies.length) {
+        const san = replies[i];
+        const pending = await waitFor(() => pushed.find((s) => s.pendingAiMove?.san === san));
+        await ackReveal(CHAR, pending.pendingAiMove!.uci);
+      }
+    }
+  }
+
+  it('a player loss lowers the next game by a step; a win raises it by less', async () => {
+    scriptAi(['e5', 'Nc6']);
     const g1 = await startChess(CHAR, { playerColor: 'w' });
     expect(g1.aiElo).toBe(900);
-    await waitFor(() => pushed.find((s) => s.status === 'active'));
-    await playerMove(CHAR, 'e2e4');
-    const pending = await waitFor(() => pushed.find((s) => s.pendingAiMove?.san === 'e5'));
-    await ackReveal(CHAR, pending.pendingAiMove!.uci);
+    // Three player moves: a resign from here on is a real loss.
+    await playOpening(['e2e4', 'g1f3', 'f1c4'], ['e5', 'Nc6']);
     await resign(CHAR); // a player loss
     await waitFor(() => (cfg.current.chess_elo_offsets as Record<string, number> | undefined)?.[CHAR] === -100);
     await endChess(CHAR);
@@ -294,6 +309,17 @@ describe('adaptive strength (260929)', () => {
     await startChess(CHAR, { playerColor: 'w' });
     await waitFor(() => pushed.find((s) => s.status === 'active'));
     await endChess(CHAR);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(cfg.current.chess_elo_offsets).toBeUndefined();
+  });
+
+  it('a resign before the third player move leaves the strength alone', async () => {
+    scriptAi(['e5']);
+    await startChess(CHAR, { playerColor: 'w' });
+    await playOpening(['e2e4', 'g1f3'], ['e5']);
+    await resign(CHAR);
+    const ev = await waitFor(() => endedEvents()[0]);
+    expect(ev).toMatchObject({ reason: 'resign', outcome: 'ai', player_moves: 2 });
     await new Promise((r) => setTimeout(r, 50));
     expect(cfg.current.chess_elo_offsets).toBeUndefined();
   });

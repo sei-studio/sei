@@ -766,6 +766,8 @@ together" tiles. **Mutually exclusive with a Minecraft summon** per character.
     the persona Elo and 400-2000 absolute. Stored per character in the
     profile config (`chess_elo_offsets`, main-owned), never on the character.
     Only `source: 'auto'` profiles adapt; a hand-set Elo plays as set.
+    Draws, abandoned games and a resign before the player's third move
+    (`minPlayerMovesForResign`, a way out rather than a result) leave it.
     `ai_elo` is the effective Elo; `ai_elo_base` / `elo_offset` ride along.
 
 ## Draw! minigame (260727)
