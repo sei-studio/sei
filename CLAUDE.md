@@ -3218,7 +3218,12 @@ pins it at whatever percent it reached.
   and tests: a game ending in the gap (chess difficulty, the Draw! intro,
   playtime) was reverted by the stale copy. Renderer saves go through
   `saveConfigFromRenderer`; a new `UserConfig` key must be added to
-  `RENDERER_SETTABLE_KEYS` or `MAIN_OWNED_KEYS` (a test checks).
+  `RENDERER_SETTABLE_KEYS` or `MAIN_OWNED_KEYS` (a test checks). A writer
+  that awaits (network, a character copy) between reading and writing
+  captures `getActiveScope()` first and passes `updateConfig(fn, { scope })`,
+  or re-checks the scope and gives up; otherwise an account switch in the
+  gap lands its write in the next account (cloud default, library add, local
+  import, the sign-in reconcile sweep, which also stops when the scope moves).
 - **Native ABI mismatch** → `@electron/rebuild` / `install-app-deps` runs in
   `postinstall`. Test packaged builds on a clean machine.
 - **Bot ESM module type in packaged builds** → `src/bot/package.json` exists
