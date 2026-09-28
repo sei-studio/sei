@@ -2718,7 +2718,13 @@ props (pinned in `sessionEnd.test.ts`). `kick_code` comes from
 `kickReasonCode()` in `connect.js`: a vanilla `disconnect.*` key or a fixed
 code, never the host's kick text. A session that ended on an error also
 fires **`bot_session_failed`** (same props, `duration_s` only, not a playtime
-event), the post-join counterpart of `summon_failed`. App quit closes live
+event), the post-join counterpart of `summon_failed`. One overlap is kept on
+purpose (dashboards read it): a mid-session crash exit (nonzero exit code
+after summon-ready) fires BOTH `summon_failed` with `summon_phase:
+'mid_session'` AND `bot_session_failed` with `reason: 'crash'`. A query that
+adds the two to count failures must drop one of them, e.g. exclude
+`summon_phase = 'mid_session'` from `summon_failed`. Other post-join failures
+(kick loops, lifecycle errors) fire only `bot_session_failed`. App quit closes live
 sessions in `before-quit` BEFORE the analytics flush (`app_quit`); the
 drain's own idle statuses come after the flush and used to be lost. That
 flush runs before `supervisor.shutdown()`, so it is bounded
