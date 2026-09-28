@@ -42,6 +42,11 @@ import { IdTag } from './IdTag';
 import { useT } from '../lib/i18n';
 import styles from './ChatTopBar.module.css';
 
+/** A name that must not wrap mid-way: its spaces become non-breaking. */
+function keepWhole(name: string): string {
+  return name.replace(/ /g, '\u00a0');
+}
+
 export interface ChatTopBarProps {
   characterId: string;
   /** A game surface is open below the header (ChatScreen's own `gameOpen`).
@@ -201,14 +206,18 @@ export function ChatTopBar({ characterId, gameOpen = false }: ChatTopBarProps): 
                 <span className={styles.tipNew}>{t('NEW')}</span>
               </div>
               <p className={styles.tipTitle}>{t('Play games together')}</p>
-              {/* Two sentences, each its own balanced line block, so a long game
-                  name never leaves one word stranded on the last line. */}
+              {/* Each sentence starts its own line and wraps naturally. The game
+                  names are kept whole (non-breaking spaces), so a line never
+                  ends inside one, e.g. "Don't Starve / Together". */}
               <p className={styles.tipBody}>
                 <span className={styles.tipLine}>
                   {t('Play chess, Draw!, and Minecraft with {name}.', { name: companionName })}
                 </span>
                 <span className={styles.tipLine}>
-                  {t("New in beta: Stardew Valley and Don't Starve Together.")}
+                  {t('New in beta: {first} and {second}.', {
+                    first: keepWhole(t('Stardew Valley')),
+                    second: keepWhole(t("Don't Starve Together")),
+                  })}
                 </span>
               </p>
               <button type="button" className={styles.tipBtn} onClick={retireTip}>
