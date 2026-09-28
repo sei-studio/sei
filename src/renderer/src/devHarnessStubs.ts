@@ -26,6 +26,10 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
   // over a fixture plan snapshot that is at the wall with the reset 3 days out.
   // Add &lang=zh for the Chinese copy.
   const creditWallMode = (params.get('dashshot') ?? '') === 'creditwall' || (params.get('dashshot') ?? '') === 'mcprofile';
+  // ?dashshot=perms (260929): the OS permission cards. Every permission reads
+  // denied and the Screen Recording probe never succeeds, so the cards hold
+  // still; `platform` follows the part (mic-win is Windows).
+  const permsMode = (params.get('dashshot') ?? '') === 'perms';
   const now = Date.now();
   const chatRows = Array.from({ length: 24 }, (_, i) => ({
     id: `row-${i}`,
@@ -135,8 +139,17 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
     onGamePackProgress: () => () => undefined,
     wizardPromptShown: async () => ({ shown: true }),
     getWizardState: async () => ({ version: 1, hasRunOnce: false, enabledInstallIds: [], lastRunAt: null, lastSkinServerPort: null }),
+    ...(permsMode
+      ? {
+          platform: params.get('part') === 'mic-win' ? 'win32' : 'darwin',
+          permissionsStatus: async () => 'denied',
+          permissionsProbeScreen: async () => false,
+          permissionsTakeResume: async () => null,
+          track: () => undefined,
+        }
+      : {}),
   };
-  (window as unknown as { sei: Record<string, unknown> }).sei = chatMode || creditWallMode
+  (window as unknown as { sei: Record<string, unknown> }).sei = chatMode || creditWallMode || permsMode
     ? new Proxy(base, {
         get(target, key) {
           if (key in target) return target[key as string];

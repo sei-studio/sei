@@ -27,6 +27,11 @@
  * in-place start would leave the share running with nowhere to see it. This is
  * the same reasoning callLaunch gives for not counting a share as a game
  * surface.
+ *
+ * 260929: on macOS the picker checks Screen Recording before it lists
+ * anything, and when access is off it shows ScreenAccessGate in its place
+ * (why, Open Settings, a poll that comes back here on its own, and a restart
+ * offer). Windows lists straight away, as before.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -42,13 +47,16 @@ import { Button } from '../Button';
 import { Toggle } from '../Toggle';
 import { InfoTip } from '../InfoTip';
 import { useT } from '../../lib/i18n';
+import { ScreenAccessGate, screenAccess } from '../permissions/ScreenAccessGate';
 import styles from './ShareScreenModal.module.css';
 
 export interface ShareScreenModalProps {
   characterId: string;
+  /** Screenshot harness only: open on the Screen Recording step. */
+  initialAccess?: 'blocked-ask' | 'blocked-waiting' | 'blocked-restart';
 }
 
-export function ShareScreenModal({ characterId }: ShareScreenModalProps): React.ReactElement {
+export function ShareScreenModal({ characterId, initialAccess }: ShareScreenModalProps): React.ReactElement {
   const t = useT();
   const closeModal = useUiStore((s) => s.closeModal);
   const navigate = useUiStore((s) => s.navigate);
@@ -68,6 +76,11 @@ export function ShareScreenModal({ characterId }: ShareScreenModalProps): React.
     (s) => s.participants.includes(characterId) && s.status !== 'error',
   );
 
+  // macOS Screen Recording (260929): 'checking' until main has answered,
+  // 'blocked' shows ScreenAccessGate instead of the picker, 'ready' lists.
+  const [access, setAccess] = useState<'checking' | 'blocked' | 'ready'>(
+    initialAccess ? 'blocked' : 'checking',
+  );
   const [sources, setSources] = useState<BackseatSource[] | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -114,6 +127,18 @@ export function ShareScreenModal({ characterId }: ShareScreenModalProps): React.
   };
 
   useEffect(() => {
+    if (initialAccess) return;
+    let alive = true;
+    void screenAccess().then((ok) => {
+      if (alive) setAccess(ok ? 'ready' : 'blocked');
+    });
+    return () => {
+      alive = false;
+    };
+  }, [initialAccess]);
+
+  useEffect(() => {
+    if (access !== 'ready') return;
     let alive = true;
     void (async () => {
       try {
@@ -122,16 +147,16 @@ export function ShareScreenModal({ characterId }: ShareScreenModalProps): React.
       } catch {
         if (alive) {
           setSources([]);
-          setListError(
-            'Could not read your open windows. Check screen recording permission for Sei.',
-          );
+          setListError(t('Could not read your open windows. Check screen recording permission for Sei.'));
         }
       }
     })();
     return () => {
       alive = false;
     };
-  }, []);
+    // t is stable per language; the list is read once per grant.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [access]);
 
   const start = async (): Promise<void> => {
     const source = sources?.find((s) => s.id === selected);
@@ -178,6 +203,32 @@ export function ShareScreenModal({ characterId }: ShareScreenModalProps): React.
     setTab(next);
     setSelected(null);
   };
+
+  if (access === 'blocked') {
+    return (
+      <ModalShell
+        title={t('Show {name} your screen', { name: companionName })}
+        width={460}
+        onClose={() => {
+          void sei.permissionsClearResume().catch(() => {});
+          closeModal();
+        }}
+      >
+        <ScreenAccessGate
+          characterId={characterId}
+          onGranted={() => setAccess('ready')}
+          onCancel={closeModal}
+          initialStage={
+            initialAccess === 'blocked-restart'
+              ? 'restart'
+              : initialAccess === 'blocked-waiting'
+                ? 'waiting'
+                : 'ask'
+          }
+        />
+      </ModalShell>
+    );
+  }
 
   return (
     <ModalShell

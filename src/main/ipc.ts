@@ -62,6 +62,7 @@ import {
 } from './apiKeyStore';
 import { capture as trackAnalytics, getAnalyticsOptOut, setAnalyticsOptOut } from './analytics';
 import { blockedAutoSummon, clearSummonBlock } from './summonGuard';
+import { registerPermissionHandlers } from './permissions/permissionsService';
 import { setSupervisor as setAuthSupervisor } from './auth/authHandlers';
 import type { BotSupervisor } from './botSupervisor';
 
@@ -1545,6 +1546,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const draw = await import('./draw/drawService');
     await draw.endDraw(id);
   });
+
+  // ── OS permission flows (260929) ──────────────────────────────────────────
+  // Mic on first Call press, macOS Screen Recording before the share picker,
+  // Settings deep links from a fixed allowlist. See permissions/*.
+  registerPermissionHandlers();
 
   // ── Backseat (260728) ─────────────────────────────────────────────────────
   // Thin wrappers over src/main/backseat/backseatService (module state

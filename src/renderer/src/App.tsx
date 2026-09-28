@@ -96,10 +96,14 @@ import { SetNewPasswordModal } from './components/SetNewPasswordModal';
 import { MigrateLocalCharsModal } from './components/MigrateLocalCharsModal';
 import { ImportLocalProfileModal } from './components/ImportLocalProfileModal';
 import type { PeekLocalProfileResult } from '../../shared/ipc';
+import { usePermissionResume } from './lib/permissions/usePermissionResume';
 
 export function App(): React.ReactElement {
   const t = useT();
   const view = useUiStore((s) => s.view);
+  // 260929: after "Restart Sei and continue" (a permission grant macOS would
+  // only hand to a fresh process), reopen the share picker or the call.
+  usePermissionResume();
   // ui-A7: developer-console visibility toggle. Default OFF — LogsBar only
   // mounts when the Settings → Show developer console toggle is flipped.
   const devConsoleVisible = useUiStore((s) => s.devConsoleVisible);
