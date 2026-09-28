@@ -130,7 +130,10 @@ describe('the intro game (first Draw! game)', () => {
     const intro = start.chat.find((m) => m.system && /draws first/.test(m.text));
     expect(intro?.text).toContain('Type your guesses in the chat.');
     // Second person for the player, third person for the model.
-    expect(intro?.modelText).toMatch(/first game of Draw!, so you draw first/);
+    // No name set: the model hears "the player", never "they".
+    expect(intro?.modelText).toBe(
+      "This is the player's first game of Draw!, so you draw first and the player guesses.",
+    );
 
     await settle();
     expect(events('draw_game_started')[0]).toMatchObject({ intro: true, first_drawer: 'ai', rounds: 1 });
@@ -170,6 +173,13 @@ describe('the intro game (first Draw! game)', () => {
     const again = await newDrawGame(CHAR);
     expect(again.intro).toBeUndefined();
     expect(again.rounds).toBe(3);
+  });
+
+  it('names the player in the model line when their name is known', async () => {
+    cfg.current = { preferred_name: ' Mika ' };
+    const start = await startDraw(CHAR, 3);
+    const intro = start.chat.find((m) => m.system && /draws first/.test(m.text));
+    expect(intro?.modelText).toBe("This is Mika's first game of Draw!, so you draw first and Mika guesses.");
   });
 
   it('quitting the intro keeps the next game an intro', async () => {

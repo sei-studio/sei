@@ -142,12 +142,23 @@ export function selfLookNote(word: string, playerName: string): string {
  * The whole-game contract. Constant from the first turn to the last, so it
  * belongs in the cached system region.
  */
+/**
+ * The model-facing line for the intro game (260929): who goes first. Names
+ * the player (or "the player"), never "they", which the contract bans.
+ */
+export function introModelText(player: string): string {
+  return `This is ${player}'s first game of Draw!, so you draw first and ${player} guesses.`;
+}
+
 export function drawContractBlock(opts: {
   playerName: string;
   rounds: number;
   turnSeconds: number;
-  /** 260929: the player's first game, where the character draws first. */
-  intro?: boolean;
+  /**
+   * 260929: the player's first game, where the character draws first.
+   * `player` is their name, or "the player" when none is known.
+   */
+  intro?: { player: string };
 }): string {
   const { playerName, rounds, turnSeconds } = opts;
   return [
@@ -156,8 +167,8 @@ export function drawContractBlock(opts: {
       `The game is ${rounds} round${rounds === 1 ? '' : 's'}. Each round you both get a turn: one of you draws a secret word ` +
       `while the other guesses in chat. A turn lasts ${turnSeconds} seconds and ends early the moment the guesser says the word.` +
       (opts.intro
-        ? ` This is ${playerName}'s first game of Draw!, so you draw first and they guess, then they draw. ` +
-          'Keep your picture simple and clear so they can see how a turn works.'
+        ? ` ${introModelText(opts.intro.player)} Then ${opts.intro.player} draws. ` +
+          `Keep your picture simple and clear so ${opts.intro.player} can see how a turn works.`
         : ''),
     // 260729, live capture (web): the character told the player a wrong guess
     // was correct ("yes! that's it!") and then invented a round change,

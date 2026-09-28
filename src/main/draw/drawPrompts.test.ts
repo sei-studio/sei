@@ -5,6 +5,7 @@ import {
   buildGuessTurnBlock,
   buildTurnEndBlock,
   drawContractBlock,
+  introModelText,
   roundsRecap,
   turnEndLine,
 } from './drawPrompts';
@@ -156,11 +157,26 @@ describe('the game is the referee', () => {
   // 260929: the intro game flips the turn order; the model is told once, in
   // the cached contract, and a normal game's contract is unchanged.
   it('tells the character it draws first only in the intro game', () => {
-    const intro = drawContractBlock({ playerName: PLAYER, rounds: 1, turnSeconds: 180, intro: true });
-    expect(intro).toContain(`This is ${PLAYER}'s first game of Draw!, so you draw first`);
+    const intro = drawContractBlock({ playerName: PLAYER, rounds: 1, turnSeconds: 180, intro: { player: PLAYER } });
+    expect(intro).toContain(
+      `This is ${PLAYER}'s first game of Draw!, so you draw first and ${PLAYER} guesses. Then ${PLAYER} draws. ` +
+        `Keep your picture simple and clear so ${PLAYER} can see how a turn works.`,
+    );
     expect(intro).toContain('The game is 1 round.');
     const normal = drawContractBlock({ playerName: PLAYER, rounds: 3, turnSeconds: 180 });
     expect(normal).not.toContain('first game');
+  });
+
+  // 260929: the intro lines name the player, or say "the player", never "they".
+  it('names the player in the intro lines, with "the player" as the fallback', () => {
+    expect(introModelText(PLAYER)).toBe(
+      `This is ${PLAYER}'s first game of Draw!, so you draw first and ${PLAYER} guesses.`,
+    );
+    const anon = drawContractBlock({ playerName: 'You', rounds: 1, turnSeconds: 180, intro: { player: 'the player' } });
+    const line = anon.slice(anon.indexOf('This is the player'), anon.indexOf('how a turn works.'));
+    expect(line).toContain("the player's first game of Draw!, so you draw first and the player guesses.");
+    expect(line).not.toMatch(/\bthey\b/i);
+    expect(introModelText('the player')).not.toMatch(/\bthey\b/i);
   });
 
   it('restates on the drawing turn that every guess so far is wrong', () => {

@@ -111,6 +111,7 @@ import {
   buildGuessTurnBlock,
   buildTurnEndBlock,
   drawContractBlock,
+  introModelText,
   selfLookNote,
   turnClockLine,
   turnEndLine,
@@ -412,6 +413,8 @@ interface Session {
   finishing: Promise<void> | null;
   /** How the game was recorded (the first finishGame call), null while live. */
   finishedAs: 'completed' | 'abandoned' | 'credit_wall' | 'account_switch' | null;
+  /** How the model-facing intro lines name the player: their name, or "the player". */
+  introPlayer: string;
   playerName: string;
   aiName: string;
   /**
@@ -621,6 +624,7 @@ async function newSession(
     clock: clockNow(),
     finishing: null,
     finishedAs: null,
+    introPlayer: (config.preferred_name ?? '').trim() || 'the player',
     playerName: (config.preferred_name ?? '').trim() || 'You',
     aiName: character?.name ?? 'Companion',
     // 260730: the game runs in the character's language (word bank + the
@@ -1115,7 +1119,7 @@ function startDrawingPhase(s: Session): void {
       s.language === 'zh'
         ? `${s.aiName}先画，给你看看怎么玩。在聊天里打出你的猜测。`
         : `${s.aiName} draws first so you can see how it works. Type your guesses in the chat.`,
-      `This is ${s.playerName}'s first game of Draw!, so you draw first and they guess.`,
+      introModelText(s.introPlayer),
     );
   }
 
@@ -2225,7 +2229,7 @@ async function prepareCall(s: Session): Promise<{
       playerName: s.playerName,
       rounds: s.rounds,
       turnSeconds: Math.round(TURN_MS / 1000),
-      intro: s.intro,
+      intro: s.intro ? { player: s.introPlayer } : undefined,
     }),
   } as Parameters<typeof buildSystemBlocks>[0]) as unknown as Anthropic.TextBlockParam[];
 
