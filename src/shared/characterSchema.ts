@@ -961,6 +961,16 @@ export const UserConfigSchema = z.object({
    */
   total_playtime_backfilled: z.boolean().optional().default(false),
   /**
+   * Adaptive chess strength (260929), written by MAIN only (not in
+   * RENDERER_SETTABLE_KEYS). Sparse map of character id -> Elo offset applied
+   * on top of the character's own `metadata.chess.elo` for games against THIS
+   * profile's player: a step down after each player loss, a smaller step up
+   * after each win (src/main/chess/chessDifficulty.ts). It lives here and not
+   * on the character because metadata is cloud-synced verbatim, shared, and
+   * read-only on foreign characters, while this is about one player.
+   */
+  chess_elo_offsets: z.record(z.number().int()).optional(),
+  /**
    * 260703 procgen: first-sign-in questionnaire answers (see UserPreferencesSchema).
    * Local cache of the cloud `user_preferences` row; the cloud copy wins on
    * sign-in when both exist. Defaults to all-null (questionnaire pending).

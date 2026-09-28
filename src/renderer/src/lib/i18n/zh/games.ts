@@ -35,6 +35,7 @@ export const ZH_GAMES: Record<string, string> = {
   // 'The download failed...' moved to common.ts (shared with the W6 pack panels).
   'The chess brain failed to download. Check your connection and try again.':
     '国际象棋引擎下载失败。请检查网络后重试。',
+  "The chess brain couldn't start. Try again in a moment.": '国际象棋引擎无法启动。请稍后再试。',
   'Chess is not available in this build yet.': '此版本暂不支持国际象棋。',
   "The game couldn't start. Try again in a moment.": '对局无法开始。请稍后再试。',
 

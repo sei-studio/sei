@@ -239,8 +239,11 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
             {preparing ? (
               downloadFailed ? (
                 <>
+                  {/* 260929: main sends a code, never the raw error text. */}
                   <p className={styles.launchError}>
-                    {download?.error ?? t('The download failed. Check your connection and try again.')}
+                    {download?.error === 'engine_failed'
+                      ? t("The chess brain couldn't start. Try again in a moment.")
+                      : t('The chess brain failed to download. Check your connection and try again.')}
                   </p>
                   <Button kind="accent" size="md" onClick={() => void doStart(colorChoice)}>
                     {t('Try again')}

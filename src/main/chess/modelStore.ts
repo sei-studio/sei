@@ -95,15 +95,112 @@ export async function modelReady(): Promise<boolean> {
   return (await fileOk(DEV_MODEL)) || (await fileOk(modelPath()));
 }
 
-async function download(target: string, onProgress?: DownloadProgress): Promise<string> {
+/**
+ * Download budget (260929). The first-game download used to be a bare
+ * fetch() with no timeout: a stalled connection left the board in
+ * "preparing" forever, and a failure ended the game as a silent "abandoned"
+ * that looked exactly like a player quitting (10 of 35 chess games over 45
+ * days ended at 0 moves, some after minutes at the board). Now every attempt
+ * has a connect budget (until response headers) and a stall budget (no bytes
+ * for this long), and the source list is walked up to `attempts` times with
+ * a short pause between tries. Worst case before the panel shows its error:
+ * about attempts x connectTimeoutMs. A slow but moving download never times
+ * out; only silence does. Exported and mutable for tests.
+ */
+export const MODEL_DOWNLOAD = {
+  connectTimeoutMs: 20_000,
+  stallTimeoutMs: 30_000,
+  attempts: 3,
+  retryDelayMs: 2_000,
+};
+
+/** Why a download attempt failed. Shape only; safe for analytics classes. */
+export type ModelDownloadFailure = 'timeout' | 'network' | 'http' | 'size' | 'disk';
+
+export class ModelDownloadError extends Error {
+  constructor(
+    message: string,
+    readonly kind: ModelDownloadFailure,
+  ) {
+    super(message);
+    this.name = 'ModelDownloadError';
+  }
+}
+
+class AttemptTimeout extends Error {
+  constructor(what: string) {
+    super(what);
+    this.name = 'AttemptTimeout';
+  }
+}
+
+/** Reject as soon as `signal` aborts, even if `p` itself never settles. */
+function raceAbort<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+    p.then(
+      (v) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(v);
+      },
+      (e) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(e);
+      },
+    );
+  });
+}
+
+export interface DownloadModelOpts {
+  onProgress?: DownloadProgress;
+  /** Injected for tests; defaults to global fetch. */
+  fetchImpl?: typeof fetch;
+  /** Injected for tests; defaults to the published model size. */
+  expectedBytes?: number;
+  timing?: typeof MODEL_DOWNLOAD;
+}
+
+/**
+ * Walk `urls` round-robin for up to `timing.attempts` attempts. Resolves with
+ * `target` once a complete, correctly sized file is in place; throws a
+ * ModelDownloadError carrying the LAST failure's kind otherwise. Exported for
+ * tests; production goes through ensureModel.
+ */
+export async function downloadModelFile(
+  target: string,
+  urls: string[],
+  opts: DownloadModelOpts = {},
+): Promise<string> {
+  const timing = opts.timing ?? MODEL_DOWNLOAD;
+  const doFetch = opts.fetchImpl ?? fetch;
+  const expected = opts.expectedBytes ?? MODEL_BYTES;
   await mkdir(path.dirname(target), { recursive: true });
-  let lastErr: Error | null = null;
-  for (const url of await modelUrls()) {
+  if (urls.length === 0) throw new ModelDownloadError('chess model download failed: no sources', 'network');
+  let last: ModelDownloadError | null = null;
+  const attempts = Math.max(1, timing.attempts);
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (attempt > 0 && timing.retryDelayMs > 0) {
+      await new Promise((r) => setTimeout(r, timing.retryDelayMs));
+    }
+    const url = urls[attempt % urls.length];
+    const host = new URL(url).host;
     const tmp = `${target}.download`;
+    const ctrl = new AbortController();
+    let watchdog: NodeJS.Timeout | null = null;
+    const arm = (ms: number, what: string): void => {
+      if (watchdog) clearTimeout(watchdog);
+      watchdog = setTimeout(() => ctrl.abort(new AttemptTimeout(`${what} after ${ms}ms from ${host}`)), ms);
+    };
     try {
-      const res = await fetch(url);
-      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status} from ${new URL(url).host}`);
-      const total = Number(res.headers.get('content-length')) || MODEL_BYTES;
+      arm(timing.connectTimeoutMs, 'no response');
+      const res = await raceAbort(doFetch(url, { signal: ctrl.signal }), ctrl.signal);
+      if (!res.ok || !res.body) {
+        res.body?.cancel().catch(() => {});
+        throw new ModelDownloadError(`HTTP ${res.status} from ${host}`, 'http');
+      }
+      const total = Number(res.headers.get('content-length')) || expected;
       const out = createWriteStream(tmp);
       const hash = createHash('sha256');
       let received = 0;
@@ -111,34 +208,57 @@ async function download(target: string, onProgress?: DownloadProgress): Promise<
       const reader = res.body.getReader();
       try {
         for (;;) {
-          const { done, value } = await reader.read();
+          arm(timing.stallTimeoutMs, 'download stalled');
+          const { done, value } = await raceAbort(reader.read(), ctrl.signal);
           if (done) break;
           hash.update(value);
           received += value.length;
           await new Promise<void>((resolve, reject) => {
-            out.write(value, (err) => (err ? reject(err) : resolve()));
+            out.write(value, (err) => (err ? reject(new ModelDownloadError(err.message, 'disk')) : resolve()));
           });
           const pct = Math.min(99, Math.floor((received / total) * 100));
           if (pct !== lastPct) {
             lastPct = pct;
-            onProgress?.(pct);
+            opts.onProgress?.(pct);
           }
         }
       } finally {
+        if (watchdog) clearTimeout(watchdog);
+        reader.cancel().catch(() => {});
         await new Promise<void>((resolve) => out.end(() => resolve()));
       }
-      if (received !== MODEL_BYTES) {
-        throw new Error(`size mismatch: got ${received}, expected ${MODEL_BYTES}`);
+      if (received !== expected) {
+        throw new ModelDownloadError(`size mismatch: got ${received}, expected ${expected}`, 'size');
       }
-      await rename(tmp, target);
-      console.log(`[sei/chess] model downloaded from ${new URL(url).host} sha256=${hash.digest('hex').slice(0, 16)}…`);
-      onProgress?.(100);
+      try {
+        await rename(tmp, target);
+      } catch (err) {
+        throw new ModelDownloadError((err as Error).message, 'disk');
+      }
+      console.log(`[sei/chess] model downloaded from ${host} sha256=${hash.digest('hex').slice(0, 16)}…`);
+      opts.onProgress?.(100);
       return target;
     } catch (err) {
-      lastErr = err as Error;
-      console.warn(`[sei/chess] model download failed from ${url}: ${lastErr.message}`);
+      if (err instanceof ModelDownloadError) last = err;
+      else if (err instanceof AttemptTimeout || ctrl.signal.reason instanceof AttemptTimeout) {
+        last = new ModelDownloadError((ctrl.signal.reason as Error)?.message ?? (err as Error).message, 'timeout');
+      } else {
+        last = new ModelDownloadError((err as Error)?.message ?? String(err), 'network');
+      }
+      console.warn(
+        `[sei/chess] model download attempt ${attempt + 1}/${attempts} failed from ${host}: ${last.message}`,
+      );
       await unlink(tmp).catch(() => {});
+    } finally {
+      if (watchdog) clearTimeout(watchdog);
     }
   }
-  throw new Error(`chess model download failed: ${lastErr?.message ?? 'no sources'}`);
+  throw new ModelDownloadError(
+    `chess model download failed: ${last?.message ?? 'no sources'}`,
+    last?.kind ?? 'network',
+  );
+}
+
+async function download(target: string, onProgress?: DownloadProgress): Promise<string> {
+  return downloadModelFile(target, await modelUrls(), { onProgress });
 }

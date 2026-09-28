@@ -41,7 +41,7 @@ export interface ChessResult {
 }
 
 export type ChessGameStatus =
-  | 'preparing'   // engine warm-up: first-run model download in progress
+  | 'preparing'   // engine warm-up: first-run model download in progress (or failed, see ChessDownloadProgress)
   | 'active'
   | 'ended';
 
@@ -92,9 +92,17 @@ export interface ChessReplayData {
 
 export interface ChessDownloadProgress {
   characterId: string;
-  /** 0-100; -1 = failed (message in `error`). */
+  /**
+   * 0-100; -1 = failed. A failed warm-up keeps the game in 'preparing' (it
+   * is not ended), so the panel can show the error and retry via chessStart.
+   */
   pct: number;
-  error?: string;
+  /**
+   * Failure code when pct is -1 (260929; used to be the raw error message):
+   * 'download_failed' (the model never arrived: offline, timed out, bad
+   * file) or 'engine_failed' (it arrived but the engine would not load).
+   */
+  error?: 'download_failed' | 'engine_failed';
 }
 
 /** Typed error codes thrown by chessStart (surface as popups, not toasts). */
@@ -107,6 +115,7 @@ export const CHESS_ERR_DOWNLOAD_FAILED = 'CHESS_MODEL_DOWNLOAD_FAILED';
  *   chessStart(characterId: string, opts?: { playerColor?: 'w' | 'b' | 'random' }): Promise<ChessGameState>
  *     Starts (or resumes) the character's game. Rejects with
  *     CHESS_ERR_MC_ACTIVE when the character is summoned in Minecraft.
+ *     On a game whose engine warm-up failed, retries the warm-up.
  *   chessGetState(characterId: string): Promise<ChessGameState | null>
  *   chessMove(characterId: string, uci: string): Promise<{ ok: boolean; error?: string; state: ChessGameState }>
  *     Player move in UCI (e7e8q for promotions). ok:false = rejected
