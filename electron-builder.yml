@@ -514,10 +514,19 @@ win:
 #     copy after the per-user install lands, with one admin prompt.
 # allowToChangeInstallationDirectory is gone: electron-builder rejects it with
 # oneClick (it only exists for the assisted installer).
+#
+# The one-click window is a small progress banner (SpiderBanner) with no
+# sidebar or header bitmaps, so the stock blue assisted-installer art is gone
+# with the switch. Its only artwork is the header icon, set to the Sei mark
+# (build/installerHeaderIcon.ico, the app icon packed at 16-256 px). A fresh
+# install lands in %LOCALAPPDATA%\Programs\sei (lowercase: one-click per-user
+# uses the package name, not productName; Windows paths are case-insensitive
+# and existing installs keep their folder).
 nsis:
   oneClick: true
   perMachine: false                        # per-user install, no admin prompt
   include: build/installer.nsh
+  installerHeaderIcon: build/installerHeaderIcon.ico
 
 # Linux (AppImage) dropped 2026-06-20: the prismarine-viewer headless-gl native
 # dep won't build on the Linux runner and the target was untested anyway. Re-add a

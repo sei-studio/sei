@@ -252,8 +252,8 @@ jobs:
           }
           $logDir = Join-Path $userData 'logs'
           if (Test-Path $logDir) {
-            $latest = Get-ChildItem $logDir -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-            if ($latest) { "--- $($latest.Name) (install marker lines) ---"; Select-String -Path $latest.FullName -Pattern 'install marker|analytics' | Select-Object -First 10 | ForEach-Object { $_.Line } }
+            '--- app logs (install marker lines) ---'
+            Get-ChildItem $logDir -File -Recurse | Select-String -Pattern 'install marker|installer_first_launch' | Select-Object -First 10 | ForEach-Object { "$($_.Filename): $($_.Line)" }
           }
 
           if ($env:SCENARIO -ne 'fresh') {
@@ -269,3 +269,62 @@ jobs:
             exit 1
           }
           "PASS: $env:SCENARIO"
+
+  # What a person sees: the one-click installer run NON-silently on a clean
+  # runner, with a screenshot about every 1.5 s until it exits, and the time to
+  # its first visible window. The runner session is interactive enough for
+  # CopyFromScreen; if the frames come out black, the timing still stands.
+  ui:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - name: Download new installer
+        uses: actions/download-artifact@v4
+        with:
+          name: oneclick-installer
+          path: new
+
+      - name: Interactive one-click install with screenshots
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          New-Item -ItemType Directory -Force -Path shots | Out-Null
+          function Shot([string]$name) {
+            try {
+              $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+              $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+              $g = [System.Drawing.Graphics]::FromImage($bmp)
+              $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+              $bmp.Save((Join-Path shots "$name.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+              $g.Dispose(); $bmp.Dispose()
+            } catch { "screenshot failed: $_" }
+          }
+          $exe = (Resolve-Path new\Sei-win-x64.exe).Path
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          $p = Start-Process -FilePath $exe -PassThru
+          $firstWindow = $null
+          $i = 0
+          while (-not $p.HasExited -and $sw.Elapsed.TotalSeconds -lt 300) {
+            $p.Refresh()
+            if ($null -eq $firstWindow -and $p.MainWindowHandle -ne 0) {
+              $firstWindow = $sw.Elapsed.TotalSeconds
+              "first installer window after $([math]::Round($firstWindow, 1))s: '$($p.MainWindowTitle)'"
+            }
+            Shot ('{0:d3}-{1:n1}s' -f $i, $sw.Elapsed.TotalSeconds)
+            $i++
+            Start-Sleep -Milliseconds 1500
+          }
+          "installer exited: $($p.HasExited) code=$(if ($p.HasExited) { $p.ExitCode } else { 'n/a' }) after $([int]$sw.Elapsed.TotalSeconds)s"
+          Start-Sleep -Seconds 8
+          Shot 'zz-after-run'
+          $sei = Get-Process -Name 'Sei' -ErrorAction SilentlyContinue
+          "Sei running after install (runAfterFinish): $([bool]$sei)"
+          $sei | Stop-Process -Force -ErrorAction SilentlyContinue
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oneclick-ui-shots
+          path: shots
+          retention-days: 3
