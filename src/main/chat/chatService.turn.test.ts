@@ -18,11 +18,16 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { _setUserDataOverride, paths } from '../paths';
 
-const { createSpy, streamSpy, getCharacterSpy, patchCharacterSpy } = vi.hoisted(() => ({
+const { createSpy, streamSpy, getCharacterSpy, patchCharacterSpy, captureSpy } = vi.hoisted(() => ({
+  captureSpy: vi.fn(),
   createSpy: vi.fn(),
   streamSpy: vi.fn(),
   getCharacterSpy: vi.fn(),
   patchCharacterSpy: vi.fn(),
+}));
+vi.mock('../analytics', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../analytics')>()),
+  capture: captureSpy,
 }));
 vi.mock('./sdk', () => ({
   CHAT_TIMEOUT_MS: 30_000,
@@ -55,7 +60,8 @@ vi.mock('../llm/webSearchSettings', () => ({
 }));
 
 import type { ChatDeps } from './chatService';
-import { sendChatMessage, sendVoiceIdleTurn, sendCompanionVoiceTurn, cancelInflightTurn, CHAT_ABORTED } from './chatService';
+import type { LanHost } from '../../shared/ipc';
+import { sendChatMessage, sendLaunchFailedTurn, sendVoiceIdleTurn, sendCompanionVoiceTurn, cancelInflightTurn, CHAT_ABORTED } from './chatService';
 import { setCallActive } from '../voice/callState';
 import { readAll as chatStoreRead } from './chatStore';
 
@@ -92,6 +98,7 @@ beforeEach(async () => {
   );
   createSpy.mockReset();
   streamSpy.mockReset();
+  captureSpy.mockReset();
 });
 afterEach(async () => {
   _setUserDataOverride(null);
@@ -146,6 +153,106 @@ describe('sendChatMessage — parallel tool_use blocks', () => {
     expect(blocks).toHaveLength(1);
     expect(blocks[0].tool_use_id).toBe('tu_1');
     expect(result.launch).toEqual({ game: 'minecraft', status: 'lan-not-open' });
+  });
+
+  // 260929: the chat launch() path gets the same Forge hard stop as the
+  // Summon button (shared forgeHostBlock), as a plain note to relay.
+  const openLan = (host: LanHost | undefined): ChatDeps['getLanState'] => () => ({
+    kind: 'open',
+    port: 55555,
+    motd: 'World',
+    lastSeenAt: Date.now(),
+    host,
+  });
+  const blockedCalls = () => captureSpy.mock.calls.filter((c) => c[0] === 'summon_blocked');
+  const launchOnce = async (d: ChatDeps): Promise<{ note: string; result: Awaited<ReturnType<typeof sendChatMessage>> }> => {
+    createSpy
+      .mockResolvedValueOnce({ content: [{ type: 'tool_use', id: 'tu_1', name: 'launch', input: { game: 'minecraft' } }] })
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'ok' }] });
+    const result = await sendChatMessage({ characterId: CHAR, text: 'hop in' }, d);
+    const secondReq = createSpy.mock.calls[1][0] as { messages: Array<{ role: string; content: unknown }> };
+    const blocks = secondReq.messages[secondReq.messages.length - 1].content as Array<{ content: unknown }>;
+    return { note: JSON.stringify(blocks[0].content), result };
+  };
+
+  it.each([
+    ['Forge (status ping)', { client: 'forge', forgeModCount: 2 } as LanHost, 'Forge'],
+    ['NeoForge (launch target)', { client: 'neoforge', forgeModCount: null, forgeLaunchTarget: true } as LanHost, 'NeoForge'],
+  ])('launch() on a %s host refuses with a plain, relayable reason and never summons', async (_l, host, loader) => {
+    const d = { ...deps(), getLanState: openLan(host) };
+    const { note, result } = await launchOnce(d);
+    expect(note).toContain(`can't join ${loader} worlds`);
+    expect(note).toContain('Sei profile');
+    expect(note).toContain('do not retry');
+    expect(result.launch).toEqual({ game: 'minecraft', status: 'lan-not-open' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(d.summon).not.toHaveBeenCalled();
+    // Settle the fire-and-forget capture here so it cannot land in a later test.
+    await vi.waitFor(() => expect(blockedCalls()).toHaveLength(1));
+  });
+
+  it('a Forge refusal fires one summon_blocked (path chat), even if launch() is called twice in the turn', async () => {
+    const d = { ...deps(), getLanState: openLan({ client: 'forge', forgeModCount: 2 }) };
+    createSpy
+      .mockResolvedValueOnce({ content: [{ type: 'tool_use', id: 'tu_1', name: 'launch', input: { game: 'minecraft' } }] })
+      .mockResolvedValueOnce({ content: [{ type: 'tool_use', id: 'tu_2', name: 'launch', input: { game: 'minecraft' } }] })
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'ok' }] });
+    await sendChatMessage({ characterId: CHAR, text: 'hop in' }, d);
+    await vi.waitFor(() => expect(blockedCalls()).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(blockedCalls()).toHaveLength(1);
+    expect(blockedCalls()[0][1]).toEqual({
+      character_id: CHAR,
+      game: 'minecraft',
+      reason: 'FORGE_HOST_BLOCKED',
+      loader: 'Forge',
+      host_client: 'forge',
+      path: 'chat',
+    });
+  });
+
+  it('a Forge refusal on a voice turn is tagged path voice', async () => {
+    const d = { ...deps(), getLanState: openLan({ client: 'neoforge', forgeModCount: null, forgeLaunchTarget: true }) };
+    createSpy
+      .mockResolvedValueOnce({ content: [{ type: 'tool_use', id: 'tu_1', name: 'launch', input: { game: 'minecraft' } }] })
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'ok' }] });
+    await sendChatMessage({ characterId: CHAR, text: 'hop in', voiceCall: true }, d).catch(() => {});
+    await vi.waitFor(() => expect(blockedCalls()).toHaveLength(1));
+    expect(blockedCalls()[0][1]).toMatchObject({ path: 'voice', loader: 'NeoForge', host_client: 'neoforge' });
+  });
+
+  it('a launch that goes ahead fires no summon_blocked', async () => {
+    const d = { ...deps(), getLanState: openLan({ client: 'forge', forgeModCount: null }) };
+    await launchOnce(d);
+    await vi.waitFor(() => expect(d.summon).toHaveBeenCalledTimes(1));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(blockedCalls()).toHaveLength(0);
+  });
+
+  it.each([
+    ['vanilla', { client: 'vanilla', forgeModCount: null } as LanHost],
+    ["Sei's own Fabric profile", { client: 'fabric', forgeModCount: null, seiSkinMod: true, otherModCount: 0 } as LanHost],
+    ['Forge on weak evidence only', { client: 'forge', forgeModCount: null } as LanHost],
+  ])('launch() on a %s host still joins', async (_l, host) => {
+    const d = { ...deps(), getLanState: openLan(host) };
+    const { note, result } = await launchOnce(d);
+    expect(note).not.toContain("can't join");
+    expect(result.launch).toEqual({ game: 'minecraft', status: 'summoning' });
+    await vi.waitFor(() => expect(d.summon).toHaveBeenCalledTimes(1));
+  });
+
+  it('a Forge pre-gate refusal from a voice launch is relayed as the reason, without "try again"', async () => {
+    createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: "can't get into forge worlds, try the sei profile" }] });
+    await sendLaunchFailedTurn(
+      CHAR,
+      "FORGE_HOST_BLOCKED: Sei can't join Forge worlds. To play together, open the Sei profile in the Minecraft Launcher, load your world there, and open it to LAN.",
+    );
+    const req = createSpy.mock.calls[0][0] as { messages: Array<{ role: string; content: unknown }> };
+    const sent = JSON.stringify(req.messages[req.messages.length - 1].content);
+    expect(sent).toContain("Sei can't join Forge worlds");
+    expect(sent).toContain('Sei profile');
+    expect(sent).toContain('Do not offer to try again');
+    expect(sent).not.toContain('FORGE_HOST_BLOCKED');
   });
 
   it('does NOT run a second hop when quit rides with an already-spoken goodbye (double-goodbye guard)', async () => {

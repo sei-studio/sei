@@ -115,7 +115,7 @@ describe('summon reservation (issue #6)', () => {
     await stopping;
     // Failed attempt → nothing to stop; the idle push still clears the widget.
     // Game adapters (M0): every status is stamped with the session's game.
-    expect(sendStatusSpy).toHaveBeenCalledWith({ kind: 'idle', characterId: B, game: 'minecraft' });
+    expect(sendStatusSpy).toHaveBeenCalledWith({ kind: 'idle', characterId: B, game: 'minecraft', endReason: 'user_stop' });
   });
 
   it('a pending summon already holds its username — a same-name character is refused pre-fork', async () => {

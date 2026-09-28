@@ -31,7 +31,7 @@
  *     world DETECTION, not whether a companion has joined.
  */
 import type { LanHost, LanState } from '../shared/ipc';
-import { classifyCmdline, cmdlineForPid } from './hostClient';
+import { classifyCmdline, cmdlineForPid, hasForgeLaunchTarget } from './hostClient';
 import { inspectHostMods } from './hostSetup';
 import { listeningPorts, type ListeningPort } from './listeningPorts';
 import { mcPing, type McStatus } from './mcPing';
@@ -114,7 +114,13 @@ export function watchLan({ onUpdate }: WatchLanOptions): {
         client === 'fabric'
           ? await inspectHostMods(cmdline)
           : { seiSkinMod: false, otherModCount: null };
-      cached = { client, seiSkinMod: mods.seiSkinMod, otherModCount: mods.otherModCount };
+      cached = {
+        client,
+        seiSkinMod: mods.seiSkinMod,
+        otherModCount: mods.otherModCount,
+        // 260929: strong cmdline evidence for the Forge hard stop.
+        forgeLaunchTarget: hasForgeLaunchTarget(cmdline),
+      };
       if (hostCache.size >= HOST_CACHE_MAX) hostCache.clear();
       hostCache.set(key, cached);
     }

@@ -25,7 +25,7 @@ import { randomUUID } from 'node:crypto';
 import { closeSplashWindow, createMainWindow, createSplashWindow } from './windowChrome';
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { isAnalyticsActive, shutdownAnalytics, capture } from './analytics';
-import { notePreGateFailure, clearSummonBlock } from './summonGuard';
+import { notePreGateFailure, clearSummonBlock, clearSummonBlocksOfClass } from './summonGuard';
 import { createBotSupervisor, SUMMON_CANCELLED } from './botSupervisor';
 import { registerGameModule, getGameModule, listGameModules } from './games';
 import { createMinecraftGameModule } from './games/minecraft';
@@ -35,6 +35,7 @@ import type { GameId, WorldState, WorldStates } from '../shared/gameIpc';
 import { isCallActive, wasCallRecentlyActive, activeCallIds, clearAllCalls } from './voice/callState';
 import { initCallOverlay, closeCallOverlay } from './callOverlay';
 import { trackScopedWrite, isAccountTeardownActive } from './profile/scopeBarrier';
+import { sessionEndProps, isSessionFailure, type SessionEndProps } from './sessionEnd';
 import { formatPlayDuration, playSummaryText } from './chat/playSummary';
 import { initUpdater } from './updater';
 import { initNotices } from './notices';
@@ -50,7 +51,7 @@ import {
   publishGameDashboardSnapshot,
   clearGameDashboard,
 } from './games/gameDashboardService';
-import { IpcChannel, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type GenProgressEvent, type VisionCapability, type ChatMessage, type SpokenLineContext } from '../shared/ipc';
+import { IpcChannel, forgeHostBlock, FORGE_HOST_BLOCKED, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type GenProgressEvent, type VisionCapability, type ChatMessage, type SpokenLineContext } from '../shared/ipc';
 
 // Lock the app name early so app.getPath('userData') resolves to
 // "Sei" (packaged) or "Sei Dev" (electron-vite dev) — keeping dev state
@@ -201,6 +202,11 @@ function broadcastLan(state: LanState): void {
     (state.kind === 'open' ? ` (port=${state.port}, motd=${JSON.stringify(state.motd)})` : ''),
   );
   latestLanState = state;
+  // 260929: a Forge pre-gate refusal blocks automatic re-launches only while
+  // the world it was about is still up; release it once the host changes.
+  if (!forgeHostBlock(state.kind === 'open' ? state.host : undefined)) {
+    clearSummonBlocksOfClass(FORGE_HOST_BLOCKED);
+  }
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(IpcChannel.lan.state, state);
   }
@@ -385,6 +391,49 @@ function broadcastAction(
   }
 }
 
+/**
+ * Close a live play session: post the "played for X" row and fire
+ * `bot_session_ended`. The FIRST terminal status closes it (a kick loop's
+ * error, then the exit's idle, report once). 260929: carries `reason` (plus
+ * `error_class` / `kick_code`, see sessionEnd.ts) and `duration_s`; a session
+ * that ended on an error also fires `bot_session_failed`, the post-join
+ * counterpart of summon_failed. No-op when the session never went live.
+ */
+function closePlaySession(id: string, end: SessionEndProps, failed: boolean): void {
+  const started = playStartedAt.get(id);
+  if (started === undefined) return;
+  playStartedAt.delete(id);
+  const durationMs = Date.now() - started.at;
+  const durationS = Math.round(durationMs / 1000);
+  // Tracked (260926): an account switch stops the bots and then drains
+  // this, so the row lands in the outgoing account's transcript.
+  void trackScopedWrite(emitPlaySession(id, durationMs, started.game)).catch(() => {});
+  // One event name across games (the analytics dashboard sums playtime by
+  // event name, keyed on `duration_ms`); `game` is the split.
+  capture('bot_session_ended', {
+    character_id: id,
+    duration_ms: durationMs,
+    duration_s: durationS,
+    game: started.game,
+    ...end,
+  });
+  // Deliberately no duration_ms: not a playtime event (not in SESSION_EVENTS),
+  // and the ended event above already counts this time.
+  if (failed) {
+    capture('bot_session_failed', { character_id: id, duration_s: durationS, game: started.game, ...end });
+  }
+}
+
+/**
+ * 260929: app quit. analytics is flushed BEFORE the supervisor drains the
+ * bots (before-quit), so the drain's idle statuses used to close sessions
+ * into a shut-down client and a quit sent no bot_session_ended at all. Close
+ * every live session here first; the later idle finds nothing to close.
+ */
+function endAllPlaySessionsForQuit(): void {
+  for (const id of [...playStartedAt.keys()]) closePlaySession(id, { reason: 'app_quit' }, false);
+}
+
 function broadcastStatus(status: BotStatus): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(IpcChannel.bot.status, status);
@@ -426,25 +475,16 @@ function broadcastStatus(status: BotStatus): void {
       // where cold-boot time goes on successful summons too.
       const bootProps = pendingBootProps.get(id) ?? {};
       pendingBootProps.delete(id);
-      capture('character_summoned', { character_id: id, game, ...bootProps });
+      // 260929: which client hosted the world, so a Forge/modded join that
+      // does succeed shows up (summon_failed already carries host_client).
+      const hostProps =
+        game === 'minecraft'
+          ? { host_client: latestLanState.kind === 'open' ? latestLanState.host?.client ?? null : null }
+          : {};
+      capture('character_summoned', { character_id: id, game, ...bootProps, ...hostProps });
     }
   } else if (status.kind === 'error' || status.kind === 'idle') {
-    const started = playStartedAt.get(id);
-    if (started !== undefined) {
-      playStartedAt.delete(id);
-      const durationMs = Date.now() - started.at;
-      // Tracked (260926): an account switch stops the bots and then drains
-      // this, so the row lands in the outgoing account's transcript.
-      void trackScopedWrite(emitPlaySession(id, durationMs, started.game)).catch(() => {});
-      // One event name across games (the analytics dashboard sums playtime
-      // by event name); `game` is the split.
-      capture('bot_session_ended', {
-        character_id: id,
-        duration_ms: durationMs,
-        game: started.game,
-        ...(isAccountTeardownActive() ? { reason: 'account_switch' } : {}),
-      });
-    }
+    closePlaySession(id, sessionEndProps(status, { accountTeardown: isAccountTeardownActive() }), isSessionFailure(status));
     // 260720: the thin summon_failed capture that used to live here (terminal
     // error with no live session → character_id + reason) moved to the
     // supervisor's onSummonFailure wiring (see createBotSupervisor below),
@@ -824,6 +864,7 @@ async function bootstrap(): Promise<void> {
   supervisor = createBotSupervisor({
     getLanPort,
     getLanMotd,
+    getLanHost: () => (latestLanState.kind === 'open' ? latestLanState.host : undefined),
     sendStatus: broadcastStatus,
     // Phase 15 (D-10/VIS-03): forward the bot's vision-capability push to the
     // renderer over the dedicated vision:capability channel.
@@ -1314,6 +1355,7 @@ if (!gotLock) {
     // mid-conversation is the normal way a chat ends, and an event captured
     // after shutdownAnalytics() would never be sent.
     try { await (await import('./chat/chatSession')).endAllChatSessions(); } catch { /* best-effort */ }
+    try { endAllPlaySessionsForQuit(); } catch { /* best-effort */ }
     // Flush buffered analytics first so queued events survive the quit.
     try { await shutdownAnalytics(); } catch (err) { logger.warn(`analytics shutdown failed: ${(err as Error).message}`); }
     try { if (supervisor) await supervisor.shutdown(); } catch (err) { logger.warn(`supervisor shutdown failed: ${(err as Error).message}`); }

@@ -8,6 +8,7 @@ import {
   AUTO_RETRY_BLOCK_MS,
   notePreGateFailure,
   clearSummonBlock,
+  clearSummonBlocksOfClass,
   blockedAutoSummon,
   resetSummonGuardForTest,
 } from './summonGuard';
@@ -49,5 +50,15 @@ describe('summonGuard', () => {
     notePreGateFailure('char-1', 'LOCAL_NO_API_KEY', T0);
     notePreGateFailure('char-1', 'PREFERRED_NAME_MISSING', T0 + 60_000);
     expect(blockedAutoSummon('char-1', T0 + AUTO_RETRY_BLOCK_MS + 1)).toBe('PREFERRED_NAME_MISSING');
+  });
+
+  it('clears every block of one class and leaves the others (260929 Forge host changed)', () => {
+    notePreGateFailure('char-1', 'FORGE_HOST_BLOCKED', T0);
+    notePreGateFailure('char-2', 'FORGE_HOST_BLOCKED', T0);
+    notePreGateFailure('char-3', 'LOCAL_NO_API_KEY', T0);
+    clearSummonBlocksOfClass('FORGE_HOST_BLOCKED');
+    expect(blockedAutoSummon('char-1', T0 + 1)).toBeNull();
+    expect(blockedAutoSummon('char-2', T0 + 1)).toBeNull();
+    expect(blockedAutoSummon('char-3', T0 + 1)).toBe('LOCAL_NO_API_KEY');
   });
 });

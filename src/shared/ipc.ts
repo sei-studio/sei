@@ -98,6 +98,41 @@ export type Unsubscribe = () => void;
  * omitted the id because there was only ever one session; that ambiguity is no
  * longer safe.) The renderer keys `useDataStore.summons` by this id.
  */
+/**
+ * Why a LIVE game session ended (260929), for the `bot_session_ended` analytics
+ * event. Stamped by the supervisor on the terminal status (idle or error) when
+ * it can tell; src/main/sessionEnd.ts turns a terminal status into event props.
+ *   user_stop        the player pressed Stop / Disconnect in the app
+ *   companion_quit   the companion called quit() (in game or from chat)
+ *   app_quit         Sei was quitting
+ *   account_switch   sign-out / account swap tore the session down
+ *   kicked           the server kept kicking the bot (or a modded host did)
+ *   world_closed     the connection dropped and the world no longer answers
+ *   disconnected     the connection dropped; no finer evidence
+ *   credits_depleted / rate_limited   the cloud stopped the session
+ *   crash            the bot process died unexpectedly
+ *   error            any other terminal error (error_class carries it)
+ *   bot_exit         the bot process left cleanly with no stop and no error
+ *   unknown          a terminal status with no evidence either way
+ */
+export type SessionEndReason =
+  | 'user_stop'
+  | 'companion_quit'
+  | 'app_quit'
+  | 'account_switch'
+  | 'kicked'
+  | 'world_closed'
+  | 'disconnected'
+  | 'credits_depleted'
+  | 'rate_limited'
+  | 'crash'
+  | 'error'
+  | 'bot_exit'
+  | 'unknown';
+
+/** The subset of end reasons a caller can pass to `supervisor.stop()`. */
+export type StopReason = Extract<SessionEndReason, 'user_stop' | 'companion_quit' | 'app_quit' | 'account_switch'>;
+
 export type BotStatus = BotStatusBase & {
   /**
    * Game adapters (M0, 260908): which game this session is (or was) in.
@@ -108,7 +143,9 @@ export type BotStatus = BotStatusBase & {
 };
 
 type BotStatusBase =
-  | { kind: 'idle'; characterId: string }
+  // `endReason` (260929): why the session ended, when the supervisor knows.
+  // Analytics only; the renderer ignores it.
+  | { kind: 'idle'; characterId: string; endReason?: SessionEndReason }
   // 260926: stage 'starting' = the bot process is booting (cold boot can take
   // 20s+ on Windows); 'joining' = booted, connecting to the world. Optional so
   // older senders and tests stay valid; absent reads as 'starting'.
@@ -143,6 +180,17 @@ type BotStatusBase =
        * classes that have no dedicated surface.
        */
       midSession?: true;
+      /**
+       * 260929: why a LIVE session ended, when the bot could tell (a kick
+       * loop, a world that closed). Analytics only; see SessionEndReason.
+       */
+      endReason?: SessionEndReason;
+      /**
+       * 260929: short code for the server's kick reason ('kicked',
+       * 'name_taken', 'modded', 'other', ...). Never the raw kick text, which
+       * can carry a host-typed message. See kickReasonCode in connect.js.
+       */
+      kickCode?: string;
     };
 
 /**
@@ -231,8 +279,9 @@ export type LanState =
  * Best-effort classification of the Minecraft client hosting the open LAN
  * world (260709). Sei only speaks the vanilla protocol, so a modded or Lunar
  * host warrants a pre-summon disclaimer:
- *   - Forge/NeoForge/Fabric: client-side mods (minimaps etc.) are fine, but
- *     content mods make the integrated server refuse vanilla clients.
+ *   - Forge/NeoForge: the server refuses vanilla clients (260929: blocking).
+ *   - Fabric/Quilt: client-side mods (minimaps etc.) are fine, but content
+ *     mods make the integrated server refuse vanilla clients.
  *   - Lunar: joins fine, but Lunar loads no third-party mods, so the
  *     CustomSkinLoader pipeline can't show the companion's skin there.
  * Sources: the status-ping JSON (`forgeData` 1.13+ / `modinfo` 1.12-) and the
@@ -271,10 +320,21 @@ export interface LanHost {
    */
   seiSkinMod?: boolean;
   otherModCount?: number | null;
+  /**
+   * 260929 — the host command line names an explicit Forge/NeoForge launch
+   * target (`--launchTarget forgeclient`, `--fml.forgeVersion`, the FML
+   * tweaker, NeoForge's startup main class). Strong evidence, unlike the
+   * substring markers classifyCmdline uses, which can come from an instance
+   * name or install path. See hasForgeLaunchTarget in src/main/hostClient.ts.
+   */
+  forgeLaunchTarget?: boolean;
 }
 
-/** Which pre-summon disclaimer (if any) a detected host warrants. */
-export type LanHostWarning = 'vanilla' | 'modded' | 'lunar';
+/**
+ * Which pre-summon disclaimer (if any) a detected host warrants. 'forge' is
+ * the one BLOCKING kind (260929): the modal offers no "Summon anyway".
+ */
+export type LanHostWarning = 'vanilla' | 'modded' | 'lunar' | 'forge';
 
 /**
  * Pure decision: does this host classification warrant a pre-summon
@@ -284,9 +344,19 @@ export type LanHostWarning = 'vanilla' | 'modded' | 'lunar';
  *   - 'vanilla' → host runs plain vanilla Minecraft, i.e. WITHOUT Sei's
  *     Fabric skin setup: the companion joins fine but renders with a default
  *     Minecraft skin (CustomSkinLoader never runs).
- *   - 'modded'  → Forge/NeoForge/Quilt, or Fabric with mod jars BESIDES Sei's
- *     skin mod: content mods can make the world refuse the vanilla-protocol
- *     join.
+ *   - 'forge'   → Forge/NeoForge on STRONG evidence only: the ping's
+ *     forgeData / modinfo, or an explicit launch target on the host command
+ *     line (forgeLaunchTarget). A Forge/NeoForge classification from weaker
+ *     cmdline markers falls to 'modded' so a misread never locks anyone out.
+ *     BLOCKING (260929): in practice a Forge-family server rejects Sei's
+ *     vanilla-protocol client whatever its mod list (live, 09-22..28: Forge
+ *     1.12.2 to 1.21.11 with 0 to 4 mods, every summon kicked or timed out),
+ *     so "Summon anyway" only ever bought a failure of up to 30s. The Forge handshake in
+ *     src/bot/adapter/minecraft/forgeHandshake.js is an off-by-default spike.
+ *   - 'modded'  → Quilt, Forge/NeoForge on weak evidence only, or Fabric
+ *     with mod jars BESIDES Sei's skin mod:
+ *     server-side-only mods let a vanilla client in, content mods can make
+ *     the world refuse it, so this one keeps its "Summon anyway".
  *   - null      → silence. Notably: Fabric with only Sei's skin mod installed
  *     is OUR OWN skin setup, not "modded Minecraft" (the pre-260721 bug
  *     warned users about the very setup our wizard told them to install).
@@ -298,18 +368,103 @@ export function lanHostWarning(host: LanHost | undefined): LanHostWarning | null
   if (!host) return null;
   if (host.client === 'lunar') return 'lunar';
   if (host.client === 'vanilla') return 'vanilla';
-  if (host.client === 'forge' || host.client === 'neoforge' || host.client === 'quilt') {
-    return 'modded';
+  if (host.client === 'forge' || host.client === 'neoforge') {
+    // Hard-block only on strong evidence (260929): the ping's forgeData /
+    // modinfo, or an explicit launch target on the command line. A bare
+    // marker (e.g. "neoforge" in an instance path) could be a misread, so it
+    // gets the soft warning, which keeps "Summon anyway".
+    return hasStrongForgeEvidence(host) ? 'forge' : 'modded';
   }
+  if (host.client === 'quilt') return 'modded';
   if (host.client === 'fabric') {
     // Fabric is Sei's own loader. Warn only on positive evidence of mods
     // beyond our skin mod; otherwise stay silent (see doc comment above).
     if (host.otherModCount != null && host.otherModCount > 0) return 'modded';
     return null;
   }
-  // Cmdline classification failed but the ping itself carried Forge metadata.
-  if (host.forgeModCount != null) return 'modded';
+  // Cmdline classification failed, but the ping carried Forge metadata
+  // (forgeData / modinfo, which only Forge-family servers send) or the
+  // command line named a Forge launch target.
+  if (hasStrongForgeEvidence(host)) return 'forge';
   return null;
+}
+
+/** Strong Forge-family evidence: the status ping or an explicit launch target. */
+function hasStrongForgeEvidence(host: LanHost): boolean {
+  return host.forgeModCount != null || host.forgeLaunchTarget === true;
+}
+
+/** Error class for a summon refused because the host is Forge/NeoForge. */
+export const FORGE_HOST_BLOCKED = 'FORGE_HOST_BLOCKED';
+
+/**
+ * THE Forge/NeoForge hard-stop check (260929), shared by every summon entry
+ * point so they cannot drift: the renderer's Summon button (via
+ * lanHostWarning in summonFlow), the chat launch() tool (chatService
+ * resolveLaunch) and the supervisor's pre-gate (the backstop for the voice
+ * launch honors and anything else that calls summon directly). Returns the
+ * loader name for the copy, or null when the host is not blocked. Weak or
+ * ambiguous evidence is never blocked here; it gets the soft warning.
+ */
+export function forgeHostBlock(host: LanHost | undefined): { loader: 'Forge' | 'NeoForge' } | null {
+  if (!host || lanHostWarning(host) !== 'forge') return null;
+  return { loader: host.client === 'neoforge' ? 'NeoForge' : 'Forge' };
+}
+
+/**
+ * Plain-words explanation of the Forge block, for the error status and for
+ * the companion to relay to the player. No app jargon beyond the launcher
+ * profile name the setup wizard creates.
+ */
+export function forgeHostBlockedMessage(loader: 'Forge' | 'NeoForge'): string {
+  return (
+    `Sei can't join ${loader} worlds. ` +
+    'To play together, open the Sei profile in the Minecraft Launcher, load your world there, and open it to LAN.'
+  );
+}
+
+/** Where a blocked summon attempt came from, for `summon_blocked`. */
+export type SummonBlockedPath = 'button' | 'chat' | 'voice';
+
+/**
+ * Props for the `summon_blocked` analytics event (260929): one event per
+ * summon attempt that a Forge/NeoForge host stopped before anything ran, so
+ * the attempts stay visible now that they no longer fail. Built here so the
+ * renderer (Summon button) and main (chat/voice launch() tool) cannot drift.
+ * `reason` matches the `summon_failed` reason for the same block at the
+ * supervisor pre-gate, so the two can be summed without overlap: an attempt
+ * is counted by exactly one of them.
+ */
+export function summonBlockedProps(
+  characterId: string,
+  host: LanHost | undefined,
+  path: SummonBlockedPath,
+): Record<string, string> {
+  const block = forgeHostBlock(host);
+  return {
+    character_id: characterId,
+    game: 'minecraft',
+    reason: FORGE_HOST_BLOCKED,
+    loader: block?.loader ?? 'unknown',
+    host_client: host?.client ?? 'unknown',
+    path,
+  };
+}
+
+/**
+ * Is this a Forge-family host, where a summon that TIMES OUT is best
+ * explained by the loader refusing a vanilla client (260929)? Forge or
+ * NeoForge on any evidence (a weak-evidence host still summons, so its
+ * timeouts land here), or an unclassified host whose ping or command line
+ * showed Forge. Fabric with foreign mods and Quilt are NOT included: they
+ * often let a vanilla client in, so their timeouts stay generic
+ * BOT_START_TIMEOUTs. The supervisor uses it to report a join timeout as
+ * MODDED_HOST_REJECTED.
+ */
+export function isForgeFamilyLanHost(host: LanHost | undefined): boolean {
+  if (!host) return false;
+  if (host.client === 'forge' || host.client === 'neoforge') return true;
+  return lanHostWarning(host) === 'forge';
 }
 
 // ── In-app chat (Phase 18/19) ───────────────────────────────────────────────
@@ -727,7 +882,15 @@ export type BotLifecycle =
   | { type: 'init-ack' }
   | { type: 'connected' }
   | { type: 'disconnected'; reason?: string }
-  | { type: 'error'; error: ErrorClass; message: string; retryAfterSeconds?: number }
+  | {
+      type: 'error';
+      error: ErrorClass;
+      message: string;
+      retryAfterSeconds?: number;
+      /** 260929: set by the Minecraft runtime on a post-spawn terminal drop. */
+      endReason?: SessionEndReason;
+      kickCode?: string;
+    }
   | { type: 'chat'; from: string; text: string }
   /**
    * Current world action (Party redesign §2/§5): emitted when the brain
@@ -736,7 +899,8 @@ export type BotLifecycle =
    */
   | { type: 'action'; name: string | null; args?: Record<string, unknown> }
   | { type: 'summon-ready' }
-  | { type: 'summon-stopped' }
+  // 260929: `reason` 'quit' = the companion called quit() and left on its own.
+  | { type: 'summon-stopped'; reason?: 'quit' | 'stop' | 'error' }
   | { type: 'exit'; code: number | null };
 
 /** A main → renderer current-action push (bot:action). */

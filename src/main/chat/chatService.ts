@@ -12,6 +12,8 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type Anthropic from '@anthropic-ai/sdk';
 import type { ChatMessage, ChatOpenedOptions, ChatSendResult, LanState, SpokenLineContext } from '../../shared/ipc';
+import { forgeHostBlock, FORGE_HOST_BLOCKED, summonBlockedProps, type LanHost } from '../../shared/ipc';
+import { loadAnalytics } from '../lazyAnalytics';
 import type { GameId, WorldStates } from '../../shared/gameIpc';
 import { paths } from '../paths';
 import { loadConfig } from '../configStore';
@@ -999,6 +1001,9 @@ async function sendChatMessageImpl(
     // back in") must keep looping for its "hopping back in" line, so the
     // double-goodbye break must NOT fire when a launch rode along.
     let launchCalled = false;
+    // 260929: summon_blocked fires once per turn even if the model calls
+    // launch() again after the Forge refusal in the same tool loop.
+    let blockedReported = false;
     // Game adapters (M0): which game the deferred summon joins ('minecraft'
     // unless the model named another self-launchable game).
     let launchGame: GameId = 'minecraft';
@@ -1156,6 +1161,15 @@ async function sendChatMessageImpl(
           const game = String((toolUse.input as { game?: string })?.game ?? 'minecraft');
           const result = resolveLaunch(game, args.characterId, deps);
           launch = result.launch;
+          // 260929: a Forge-host refusal never reaches the supervisor, so this
+          // is the one place the attempt is counted (not also summon_failed).
+          if (result.forgeHost && !blockedReported) {
+            blockedReported = true;
+            const props = summonBlockedProps(args.characterId, result.forgeHost, args.voiceCall === true ? 'voice' : 'chat');
+            void loadAnalytics()
+              .then((a) => a.capture('summon_blocked', props))
+              .catch(() => { /* analytics is never load-bearing */ });
+          }
           // Defer the real join — don't fire summon mid-loop (task 2).
           if (result.summon) {
             startSummon = true;
@@ -1358,10 +1372,16 @@ async function sendLaunchFailedTurnImpl(
   // Keep the model-facing reason to a single sanitized line — the raw summon
   // error can carry a multi-line stderr tail.
   const shortReason = (reason || 'unknown error').split('\n')[0].slice(0, 200);
-  const note =
-    `[System note — not the player speaking: your attempt to join the Minecraft world just failed (${shortReason}). ` +
-    'You never made it in; you are NOT in the world, you are still here in chat. ' +
-    'Tell the player the join failed and that you can try again — one short line, in your own voice. Do not pretend you got in.]';
+  // 260929: the supervisor's Forge pre-gate (voice launch honors reach it).
+  // Retrying cannot help there, so relay the reason instead of "try again".
+  const forgePrefix = `${FORGE_HOST_BLOCKED}: `;
+  const note = shortReason.startsWith(forgePrefix)
+    ? '[System note, not the player speaking: you could not join the Minecraft world, and you are still here in chat. ' +
+      `The reason: ${shortReason.slice(forgePrefix.length)} ` +
+      'Tell the player that in your own words, in one or two short lines. Do not offer to try again in this world, and do not pretend you got in.]'
+    : `[System note — not the player speaking: your attempt to join the Minecraft world just failed (${shortReason}). ` +
+      'You never made it in; you are NOT in the world, you are still here in chat. ' +
+      'Tell the player the join failed and that you can try again — one short line, in your own voice. Do not pretend you got in.]';
   // Anthropic requires strict role alternation; fold the note into a trailing
   // user turn (e.g. the player typed something while the join was dying) rather
   // than appending a second user message.
@@ -1853,7 +1873,14 @@ function resolveLaunch(
   game: string,
   characterId: string,
   deps: ChatDeps,
-): { note: string; launch: NonNullable<ChatSendResult['launch']>; summon: boolean; game: GameId } {
+): {
+  note: string;
+  launch: NonNullable<ChatSendResult['launch']>;
+  summon: boolean;
+  game: GameId;
+  /** Set when a Forge/NeoForge host refused the launch (for summon_blocked). */
+  forgeHost?: LanHost;
+} {
   // Game adapters (M0): validated against the catalog rows the companion may
   // start itself (selfLaunch && available). Minecraft keeps its exact path
   // below; another available game gates on its own WorldState.
@@ -1895,6 +1922,22 @@ function resolveLaunch(
       game: gameId,
     };
   }
+  const lan = deps.getLanState();
+  // 260929: Forge/NeoForge host, a hard stop. Same shared check as the Summon
+  // button and the supervisor pre-gate (forgeHostBlock), evaluated on the
+  // live host so it needs no earlier failure to kick in. Checked before the
+  // retry guard so the companion always gets the specific reason.
+  const lanHost = lan.kind === 'open' ? lan.host : undefined;
+  const forge = forgeHostBlock(lanHost);
+  if (forge) {
+    return {
+      note: forgeBlockedNote(forge.loader),
+      launch: { game, status: 'lan-not-open' },
+      summon: false,
+      game: 'minecraft',
+      forgeHost: lanHost,
+    };
+  }
   // 260828 retry-loop guard: the last summon was refused before it even forked
   // (missing name, missing API key, depleted credits) and nothing the model can
   // do changes that. Refuse here and say so plainly, or the model re-calls
@@ -1911,7 +1954,6 @@ function resolveLaunch(
       game: 'minecraft',
     };
   }
-  const lan = deps.getLanState();
   if (lan.kind === 'open') {
     return {
       // The steering TEXT now lives in the thoughts module (the single seam a
@@ -1950,6 +1992,21 @@ function otherWorldStatus(deps: Pick<ChatDeps, 'getWorldStates'> | undefined): {
 }
 
 /**
+ * Model-facing note for a launch() refused because the player's world is
+ * hosted from Forge/NeoForge (260929). Plain words the companion can relay;
+ * tells it not to retry, since nothing changes until the player reopens the
+ * world from the Sei profile.
+ */
+function forgeBlockedNote(loader: 'Forge' | 'NeoForge'): string {
+  return (
+    `You cannot join: the player's Minecraft world is running ${loader}, and you can't join ${loader} worlds. ` +
+    'Calling launch again will not work, so do not retry in this conversation. ' +
+    `Tell the player in your own words, in one or two short lines, that you can't join ${loader} worlds, ` +
+    'and that if they open the Sei profile in the Minecraft Launcher, load their world there and open it to LAN, you can hop in.'
+  );
+}
+
+/**
  * Model-facing one-liner for a blocked launch (260828). Plain wording, no
  * app jargon: the model relays this to the player in its own voice. Only the
  * pre-gate classes that actually block get a specific line; anything else
@@ -1966,6 +2023,8 @@ function blockedReason(errorClass: string): string {
       return "this week's playtime credits are used up";
     case 'DAILY_LIMIT_REACHED':
       return 'the daily play limit was reached';
+    case 'FORGE_HOST_BLOCKED':
+      return "the world is running Forge or NeoForge, which you can't join; the player needs to open the Sei profile in the Minecraft Launcher and host the world from there";
     default:
       return 'a setup problem the player has to fix in the app first';
   }

@@ -97,7 +97,8 @@ export type Modal =
   | { kind: 'summon-conflict'; attemptedName: string; conflictName: string; username: string }
   // 260709 — pre-summon compatibility disclaimer. Shown once per session per
   // warning kind when the detected LAN host is modded (Forge/NeoForge/Fabric)
-  // or Lunar Client. Never blocks: "Summon anyway" resumes the summon.
+  // or Lunar Client. "Summon anyway" resumes the summon, except for the
+  // 'forge' warning (260929), which blocks and offers no summon at all.
   | {
       kind: 'lan-host-warning';
       characterId: string;

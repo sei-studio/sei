@@ -1366,7 +1366,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         onLaunchFailed: (id, reason) => deps.notifyLaunchFailed(id, reason),
         // Task 5 — the companion called quit() from chat: end the live session.
         leaveGame: (id) => {
-          void deps.supervisor.stop(id);
+          void deps.supervisor.stop(id, 'companion_quit');
         },
         // Voice streaming (260706): push each streamed sentence to the renderer
         // the instant it completes, so TTS starts on sentence 1.

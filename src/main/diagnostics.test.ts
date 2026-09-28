@@ -234,6 +234,31 @@ describe('buildSummonDiagnostic', () => {
   });
 });
 
+describe('buildSummonDiagnostic — reclassified_from (260929)', () => {
+  it('ships reclassified_from only when the supervisor reclassified the failure', () => {
+    const forgeLan: LanState = {
+      kind: 'open',
+      port: 55555,
+      motd: 'Modded',
+      lastSeenAt: 1,
+      host: { client: 'forge', forgeModCount: 4 },
+    };
+    const diag = buildSummonDiagnostic(
+      baseInfo({ phase: 'ready_timeout', errorClass: 'MODDED_HOST_REJECTED', reclassifiedFrom: 'BOT_START_TIMEOUT' }),
+      { lan: forgeLan, signedIn: false, packaged: true },
+    );
+    expect(diag).toMatchObject({
+      error_class: 'MODDED_HOST_REJECTED',
+      summon_phase: 'ready_timeout',
+      reclassified_from: 'BOT_START_TIMEOUT',
+      host_client: 'forge',
+      forge_mod_count: 4,
+    });
+    const plain = buildSummonDiagnostic(baseInfo(), { lan: null, signedIn: false, packaged: false });
+    expect('reclassified_from' in plain).toBe(false);
+  });
+});
+
 describe('buildSummonDiagnostic — phase-aware user-environment slimming', () => {
   const openLan: LanState = {
     kind: 'open',
