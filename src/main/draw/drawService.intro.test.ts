@@ -69,6 +69,7 @@ import {
   playerChat,
   receiveSnapshot,
   endDraw,
+  finishDrawEarly,
   __test,
 } from './drawService';
 import { INTRO_ROUNDS, TURN_MS, type DrawGameState } from '../../shared/drawIpc';
@@ -218,5 +219,25 @@ describe('draw_turn_ended on a quit', () => {
       strokes: 0,
     });
     expect(events('draw_turn_ended')[0].turn_ms).toBeGreaterThanOrEqual(30_000);
+  });
+});
+
+describe('an intro stopped at the credit wall', () => {
+  it('records the interrupted turn and keeps the intro for the next game', async () => {
+    await startDraw(CHAR, 3);
+    await vi.advanceTimersByTimeAsync(20_000);
+    const ended = finishDrawEarly(CHAR)!;
+    expect(ended.phase).toBe('gallery');
+    await settle();
+    expect(events('draw_turn_ended')).toEqual([
+      expect.objectContaining({ drawer: 'ai', phase: 'drawing', outcome: 'credit_wall', turn_number: 1 }),
+    ]);
+    expect(events('draw_game_ended')[0]).toMatchObject({ reason: 'credit_wall', intro: true });
+    expect(cfg.current.draw_intro_done).toBeUndefined();
+
+    // "Play again" from that gallery is still the intro, like the next launch.
+    const again = await newDrawGame(CHAR);
+    expect(again.intro).toBe(true);
+    expect(again.rounds).toBe(INTRO_ROUNDS);
   });
 });

@@ -772,16 +772,18 @@ exclusive with a Minecraft summon and with chess** per character (the shared
   round, and the CHARACTER draws first (`Session.firstDrawer`), with one
   system line telling the player to type guesses. Main decides it when the
   session is created and says so in `DrawGameState.intro`, so the setup copy
-  matches; Start keeps the setup screen's verdict and "Play again" after an
-  intro is always a normal game. Turn order lives in `turnOrder.ts`
+  matches; Start keeps the setup screen's verdict and "Play again" after a
+  completed intro is always a normal game (one that ended at the credit
+  wall is not completed, so the intro stays). Turn order lives in `turnOrder.ts`
   (`nextTurn` / `isLastTurn`): never test "the character just drew" for
   game over again. The contract block says the character goes first only
   in the intro.
 - **Turn analytics (260929).** `draw_turn_ended {round, rounds, turn_number,
   drawer, phase: pick|drawing, outcome: guessed|timeout|abandoned|
-  account_switch, turn_ms, strokes, guesser_lines, intro, paused}` fires
-  when a turn resolves AND for the turn that was live when the game was
-  quit (a `pick` row = the player never chose a word). `turn_ms` on a
+  account_switch|credit_wall, turn_ms, strokes, guesser_lines, intro,
+  paused}` fires when a turn resolves AND for the turn that was live when
+  the game was quit, switched away from or ended at the credit wall (a
+  `pick` row = the player never chose a word). `turn_ms` on a
   guessed turn is the guess latency. Not a session event (no `duration_ms`).
   `draw_game_started/_ended` also carry `intro` and `first_drawer`, and
   `_ended` the `phase` it stopped in.

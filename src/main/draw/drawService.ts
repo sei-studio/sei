@@ -410,6 +410,8 @@ interface Session {
   /** The one finishGame run (analytics + play row + fold). Set once: a game
    *  is recorded exactly once, and a later caller awaits the same run. */
   finishing: Promise<void> | null;
+  /** How the game was recorded (the first finishGame call), null while live. */
+  finishedAs: 'completed' | 'abandoned' | 'credit_wall' | 'account_switch' | null;
   playerName: string;
   aiName: string;
   /**
@@ -618,6 +620,7 @@ async function newSession(
     startedAt: Date.now(),
     clock: clockNow(),
     finishing: null,
+    finishedAs: null,
     playerName: (config.preferred_name ?? '').trim() || 'You',
     aiName: character?.name ?? 'Companion',
     // 260730: the game runs in the character's language (word bank + the
@@ -734,8 +737,10 @@ export async function newDrawGame(characterId: string): Promise<DrawGameState> {
   }
   // After the intro game the next one is a normal game at the normal length,
   // even if the config write marking the intro done has not landed yet.
+  // Only a COMPLETED intro counts: one that ended at the credit wall also
+  // lands in the gallery, but it does not mark the intro done.
   const s = await newSession(characterId, prev && !prev.intro ? prev.rounds : ROUNDS, {
-    intro: prev?.intro && prev.phase === 'gallery' ? false : undefined,
+    intro: prev?.intro && prev.finishedAs === 'completed' ? false : undefined,
   });
   if (!startGuard.stillValid()) throw accountSwitchingError();
   sessions.set(characterId, s);
@@ -878,6 +883,8 @@ export function finishDrawEarly(characterId: string): DrawGameState | null {
   if (!s) return null;
   if (s.phase === 'gallery' || s.round === 0) return toState(s);
   teardownTimers(s);
+  // The turn the wall interrupted (260929), before the phase flips below.
+  if (s.phase === 'pick' || s.phase === 'drawing') captureTurn(s, 'credit_wall');
   if (s.phase === 'drawing' && s.drawer && s.strokes.length > 0) {
     s.gallery.push({ round: s.round, drawer: s.drawer, word: s.word, strokes: s.strokes, guessed: false });
   }
@@ -968,6 +975,7 @@ function finishGame(
   // first call's promise, so a caller that awaits it (endDraw, the account
   // switch) still waits for the row to land.
   if (s.finishing) return s.finishing;
+  s.finishedAs = reason;
   // The turn that was live when the game stopped (260929): the abandonment
   // this whole event exists to measure is "quit during the first turn".
   if (reason === 'abandoned' || reason === 'account_switch') {
@@ -1209,14 +1217,14 @@ function advanceTurn(s: Session): void {
 /**
  * Per-turn analytics (260929): `draw_turn_ended`, fired when a turn resolves
  * (guessed / timeout) and for the turn that was live when a game was
- * abandoned. Shape only: who drew, how long it ran, how much happened, never
+ * abandoned, switched away from, or stopped at the credit wall. Shape only: who drew, how long it ran, how much happened, never
  * the word or the chat. `turn_ms` on a guessed turn IS the guess latency
  * (the character's when the player drew). A 'pick' phase row is a player who
  * never chose a word; its turn_ms is the time the choices were up.
  */
 function captureTurn(
   s: Session,
-  outcome: 'guessed' | 'timeout' | 'abandoned' | 'account_switch',
+  outcome: 'guessed' | 'timeout' | 'abandoned' | 'account_switch' | 'credit_wall',
 ): void {
   const drawer = s.drawer;
   if (!drawer) return;
