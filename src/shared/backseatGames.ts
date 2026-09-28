@@ -141,9 +141,10 @@ export const BACKSEAT_GAMES: readonly BackseatGameDef[] = [
     name: 'Roblox',
     tileName: 'Roblox (Backseat)',
     promptName: 'Roblox (by screen share)',
-    // Our own art, not Roblox's: a generic blocky figure in Sei's colors. The
-    // designer may replace it; keep the filename so nothing else changes.
-    image: './img/game-roblox.png',
+    // Official Roblox press-kit render ("Players on Roblox", about.roblox.com
+    // /press-kit, Renders & Artwork), cropped clear of its corner wordmark.
+    // The same file as the coming-soon tile's, and the intro popup reuses it.
+    image: './img/game-roblox.jpg',
     tileDescription:
       'Play any Roblox game while {name} watches your screen and talks with you on a voice call.',
     introCopy:
