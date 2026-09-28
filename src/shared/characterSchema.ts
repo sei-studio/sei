@@ -814,6 +814,14 @@ export const UserConfigSchema = z.object({
    */
   mc_setup_dismissed: z.boolean().optional(),
   /**
+   * Sei's auto-LAN Fabric mod in the "Sei <version>" launcher profiles
+   * (260929, src/main/mcAutoLan.ts): it opens a singleplayer world to LAN
+   * once it loads. Absent = on. False makes the startup sync and the setup
+   * wizard remove the jar from every Sei profile. No UI yet; a future
+   * Settings toggle writes it through config:save.
+   */
+  mc_auto_lan: z.boolean().optional(),
+  /**
    * In-flight tutorial (260730). The post-onboarding tour used to be
    * deliberately unpersisted, which meant a mid-tour quit silently dropped
    * the rest of the tour AND the one-shot unique-reveal "say hello" page.

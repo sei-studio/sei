@@ -777,6 +777,37 @@ async function bootstrap(): Promise<void> {
     }
   }
 
+  // 1e. Sei Auto LAN mod sync (260929). Players who built a "Sei <version>"
+  //     profile before this shipped get the auto-LAN mod on this launch
+  //     without re-running setup, and an app update that ships a new build of
+  //     it replaces the old jar. Only Sei's own profiles (gameDir under
+  //     <.minecraft>/sei) are touched; a profile whose jar is already current
+  //     is left alone. Fire-and-forget: never delays boot, never throws.
+  void (async () => {
+    try {
+      const { syncAutoLanForSeiProfiles, defaultAutoLanAssetsDir } = await import('./mcAutoLan');
+      const { scanMcInstalls } = await import('./mcInstallScan');
+      const { loadConfig } = await import('./configStore');
+      const enabled = await loadConfig().then((c) => c.mc_auto_lan !== false, () => true);
+      const installs = await scanMcInstalls();
+      const mcDirs = installs.filter((i) => i.kind === 'vanilla').map((i) => i.path);
+      if (mcDirs.length === 0) return;
+      const results = await syncAutoLanForSeiProfiles({
+        mcDirs,
+        assetsDir: await defaultAutoLanAssetsDir(),
+        enabled,
+      });
+      const changed = results.filter((r) => r.status !== 'current' && r.status !== 'absent');
+      if (changed.length > 0) {
+        logger.info(
+          `autolan sync: ${changed.map((r) => `${r.mcVersion}=${r.status}`).join(', ')}`,
+        );
+      }
+    } catch (err) {
+      logger.warn(`autolan sync failed: ${(err as Error).message}`);
+    }
+  })();
+
   // 1c. Microphone permission (voice calls, 260707). Electron's default
   //     permission handler DENIES `media` requests in a packaged app, so
   //     getUserMedia in the renderer would reject before macOS TCC is ever

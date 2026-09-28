@@ -1,0 +1,22 @@
+{
+	"schemaVersion": 1,
+	"id": "sei-autolan",
+	"version": "${version}",
+	"name": "Sei Auto LAN",
+	"description": "Opens your singleplayer world to LAN when it loads, so your Sei companion can join. Installed by the Sei app into its own Minecraft profile.",
+	"authors": ["Sei"],
+	"contact": {
+		"homepage": "https://sei.gg",
+		"sources": "https://github.com/sei-studio/sei"
+	},
+	"license": "MIT",
+	"environment": "client",
+	"mixins": [
+		"sei-autolan.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.12.0",
+		"minecraft": "${mc_range}",
+		"java": ">=${java}"
+	}
+}

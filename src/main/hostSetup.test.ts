@@ -68,6 +68,15 @@ describe('classifyModJars', () => {
     expect(classifyModJars([])).toEqual({ seiSkinMod: false, otherModCount: 0 });
   });
 
+  it('does not count Sei\'s own auto-LAN mod as a foreign mod (260929)', () => {
+    expect(
+      classifyModJars([
+        'CustomSkinLoader_Fabric-14.28.jar',
+        'sei-autolan-1.0.0+mc1.20.5-1.21.11.jar',
+      ]),
+    ).toEqual({ seiSkinMod: true, otherModCount: 0 });
+  });
+
   it('matches CSL name variants case-insensitively', () => {
     expect(classifyModJars(['customskinloader-fabric-14.20.jar'])).toEqual({
       seiSkinMod: true,

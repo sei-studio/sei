@@ -54,6 +54,7 @@ import { selectTargetMcVersion } from '../shared/mcSetup';
 import { installFabricLoader } from './fabricInstaller';
 import { downloadCustomSkinLoader, writeCustomSkinLoaderConfig } from './customSkinLoader';
 import { scanModJar } from './modScanner';
+import { AUTOLAN_JAR_RE } from './mcAutoLan';
 import {
   loadWizardState,
   saveWizardState,
@@ -645,6 +646,26 @@ async function processOneInstall(
     return;
   }
 
+  // ── Sei Auto LAN mod (260929, vanilla Sei profiles only) ──────────────
+  // Opens the world to LAN on load so the player never needs Esc > Open to
+  // LAN. Best-effort: it never fails the install (mcAutoLan never throws),
+  // and the manual Open to LAN path still works without it.
+  if (install.kind === 'vanilla' && seiGameDir) {
+    try {
+      const { installAutoLanMod, defaultAutoLanAssetsDir } = await import('./mcAutoLan');
+      const { loadConfig } = await import('./configStore');
+      const enabled = await loadConfig().then((c) => c.mc_auto_lan !== false, () => true);
+      await installAutoLanMod({
+        modsDir,
+        mcVersion,
+        assetsDir: await defaultAutoLanAssetsDir(),
+        enabled,
+      });
+    } catch (err) {
+      logger.warn(`wizard: autolan mod step failed for ${installId}: ${(err as Error).message}`);
+    }
+  }
+
   // ── Config write step ─────────────────────────────────────────────────
   onProgress({ installId, stage: 'config-writing' });
   try {
@@ -789,9 +810,11 @@ export async function runModLinkStage(args: RunModLinkStageArgs): Promise<{
     }
   }
 
-  // Candidate set: only .jar files, never the CSL JAR.
+  // Candidate set: only .jar files, never the CSL JAR or a copy of Sei's own
+  // auto-LAN mod (mcAutoLan places the right build itself; a second copy with
+  // the same mod id would stop Fabric from launching).
   const candidates = allEntries.filter(
-    (n) => n.toLowerCase().endsWith('.jar') && !CSL_JAR_REGEX.test(n),
+    (n) => n.toLowerCase().endsWith('.jar') && !CSL_JAR_REGEX.test(n) && !AUTOLAN_JAR_RE.test(n),
   );
 
   // Emit again with total now known.

@@ -1,0 +1,106 @@
+// Sei Auto LAN: one source tree, built once per Minecraft version range.
+//
+//   ./gradlew build -Pmc=1.21.1 [-Pcompat=v1_19] [-PmcRange='>=1.20.5 <1.22']
+//
+// Driven by scripts/build-minecraft-autolan-mod.mjs, which compiles this
+// project against every Minecraft release the mod covers, groups the releases
+// whose compiled jar references the same Minecraft members, and writes one jar
+// per group into assets/minecraft-autolan/.
+//
+// The source is written against Mojang's official names. Minecraft up to
+// 1.21.11 is obfuscated at runtime, so those builds use the remap plugin and
+// ship intermediary names (valid across every release that keeps the member).
+// 26.1 and newer are unobfuscated and ship the Mojang names as they are.
+
+plugins {
+	id 'net.fabricmc.fabric-loom' version "${loom_version}" apply false
+	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}" apply false
+}
+
+def mc = findProperty('mc')
+if (!mc) throw new GradleException('pass -Pmc=<minecraft version>, e.g. -Pmc=1.21.1')
+
+static int[] mcParts(String v) {
+	def p = v.tokenize('.').collect { it as int }
+	while (p.size() < 3) p << 0
+	return p as int[]
+}
+static int mcCompare(String a, String b) {
+	def x = mcParts(a), y = mcParts(b)
+	for (int i = 0; i < 3; i++) if (x[i] != y[i]) return x[i] <=> y[i]
+	return 0
+}
+
+// First unobfuscated release: no mappings, no remap.
+def unobfuscated = mcCompare(mc, '26.0') >= 0
+// The Java release each Minecraft line runs on. The jar targets the lowest one
+// in its range so it loads on every JVM the range's launcher ships.
+def javaRelease =
+	unobfuscated ? 25
+	: mcCompare(mc, '1.20.5') >= 0 ? 21
+	: mcCompare(mc, '1.18') >= 0 ? 17
+	: mcCompare(mc, '1.17') >= 0 ? 16
+	: 8
+// Small per-era shims (chat components, world settings). See README.md.
+def compat = findProperty('compat') ?: 'v1_19'
+def mcRange = findProperty('mcRange') ?: mc
+
+apply plugin: unobfuscated ? 'net.fabricmc.fabric-loom' : 'net.fabricmc.fabric-loom-remap'
+
+version = "${project.mod_version}+mc${mc}"
+group = project.maven_group
+base { archivesName = 'sei-autolan' }
+
+// Keep every Minecraft version's outputs apart so a matrix run can compare them.
+layout.buildDirectory = file("build/mc-${mc}")
+
+sourceSets {
+	main {
+		java { srcDir "compat/${compat}/java" }
+	}
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${mc}"
+	if (!unobfuscated) {
+		mappings loom.officialMojangMappings()
+	}
+	// Fabric Loader only. No Fabric API: the Sei profile does not install it.
+	if (unobfuscated) {
+		implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	} else {
+		modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	}
+}
+
+processResources {
+	def props = [
+		version     : project.version,
+		mc_range    : mcRange,
+		java        : javaRelease as String,
+		mixin_compat: "JAVA_${javaRelease}",
+	]
+	inputs.properties props
+	filesMatching(['fabric.mod.json', 'sei-autolan.mixins.json']) {
+		expand props
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	options.release = javaRelease
+	options.encoding = 'UTF-8'
+	// javac 21+ warns that release 8 is deprecated; the old Minecraft lines
+	// still run on Java 8, so the warning is expected.
+	options.compilerArgs << '-Xlint:-options'
+}
+
+jar {
+	from('LICENSE') { rename { 'LICENSE_sei-autolan' } }
+	// Reproducible bytes, so an unchanged source rebuilds to an unchanged jar.
+	preserveFileTimestamps = false
+	reproducibleFileOrder = true
+}
+tasks.matching { it.name == 'remapJar' }.configureEach {
+	preserveFileTimestamps = false
+	reproducibleFileOrder = true
+}

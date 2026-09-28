@@ -1,0 +1,12 @@
+{
+	"required": true,
+	"minVersion": "0.8",
+	"package": "gg.sei.autolan.mixin",
+	"compatibilityLevel": "${mixin_compat}",
+	"client": [
+		"MinecraftMixin"
+	],
+	"injectors": {
+		"defaultRequire": 0
+	}
+}

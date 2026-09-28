@@ -2,8 +2,10 @@
  * Sei skin-setup detector for a Fabric LAN host (260721).
  *
  * Sei's skin-setup wizard installs Fabric Loader itself (fabricInstaller.ts)
- * with an isolated gameDir at `<.minecraft>/sei/` and drops exactly one mod
- * into `<gameDir>/mods/`: the CustomSkinLoader jar (customSkinLoader.ts).
+ * with an isolated gameDir at `<.minecraft>/sei/` and drops its own mods
+ * into `<gameDir>/mods/`: the CustomSkinLoader jar (customSkinLoader.ts) and,
+ * since 260929, the sei-autolan jar (mcAutoLan.ts), which is ours too and so
+ * is never counted as an "other" mod.
  * The wizard may additionally hardlink the user's own version-compatible
  * mods into that dir (wizardStateStore LinkManifest), so "other jars in the
  * managed mods dir" is real evidence of mods beyond ours even on our own
@@ -45,6 +47,7 @@
  */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { AUTOLAN_JAR_RE } from './mcAutoLan';
 
 /** Result of inspecting the host's loaded-mods directory. */
 export interface HostModsInfo {
@@ -93,6 +96,7 @@ export function classifyModJars(entries: string[]): { seiSkinMod: boolean; other
   for (const name of entries) {
     if (!/\.jar$/i.test(name)) continue;
     if (CSL_JAR_RE.test(name)) seiSkinMod = true;
+    else if (AUTOLAN_JAR_RE.test(name)) continue;
     else otherModCount += 1;
   }
   return { seiSkinMod, otherModCount };

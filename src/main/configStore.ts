@@ -172,6 +172,8 @@ export const RENDERER_SETTABLE_KEYS: readonly (keyof UserConfig)[] = [
   'web_search_api_key',
   // 260909: "don't show again" on the Minecraft setup step (useMcSetupStore).
   'mc_setup_dismissed',
+  // 260929: auto-open-to-LAN mod in Sei profiles (mcAutoLan.ts). No UI yet.
+  'mc_auto_lan',
 ];
 
 /**

@@ -123,6 +123,10 @@ files:
   # Expect app.asar to drop from ~389MB to ~85MB, which also hands headroom back
   # to the dmg file-count sizing constraint described in the mac section below.
   - "!vendor/**"
+  # 260929: the autolan mod ships through extraResources, and its Gradle
+  # source (plus any local build/ and .gradle/ output) is not app code.
+  - "!assets/minecraft-autolan/**"
+  - "!native/minecraft-autolan-mod/**"
   # source maps + node_modules trim
   - "!**/*.map"
   - "!**/node_modules/*/{test,tests,__tests__,*.md,*.markdown,LICENSE*,license*}"
@@ -214,6 +218,14 @@ electronFuses:
 extraResources:
   - from: build/icon.png
     to: icon.png
+  # 260929: the Sei Auto LAN Fabric mod (native/minecraft-autolan-mod, built by
+  # scripts/build-minecraft-autolan-mod.mjs): one small jar per Minecraft range
+  # + manifest.json. src/main/mcAutoLan.ts copies the matching jar into each
+  # Sei launcher profile's mods folder. Outside the asar so it is a plain file
+  # on disk. Platform extraResources blocks (mac) are ADDED to this list, not
+  # substituted for it (app-builder-lib fileMatcher getFileMatchers).
+  - from: assets/minecraft-autolan
+    to: minecraft-autolan
 
 asarUnpack:
   - "src/bot/**/*"
@@ -328,6 +340,8 @@ mac:
     - "!logs/**"
     - "!memory/**"
     - "!ARCHITECTURE.md"
+    - "!assets/minecraft-autolan/**"
+    - "!native/minecraft-autolan-mod/**"
     - "!RELEASE-NOTES.md"
     - "!README.md"
     - "!CLAUDE.md"
@@ -449,6 +463,8 @@ win:
     - "!logs/**"
     - "!memory/**"
     - "!ARCHITECTURE.md"
+    - "!assets/minecraft-autolan/**"
+    - "!native/minecraft-autolan-mod/**"
     - "!RELEASE-NOTES.md"
     - "!README.md"
     - "!CLAUDE.md"
