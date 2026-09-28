@@ -77,6 +77,13 @@ export function normalizeStatus(raw: unknown): OsPermissionStatus {
  * (their titles are Sei's to read), but no other app's windows. So one window
  * that is not Sei's is proof of access.
  *
+ * It has to carry a TITLE. Since Catalina, CGWindowList still returns other
+ * apps' windows without the grant, only with kCGWindowName stripped, so a
+ * lister that keeps untitled on-screen windows would hand back entries with an
+ * empty name; counting those would skip the card and land the player in the
+ * blank picker this flow exists to replace. A granted Mac nearly always has
+ * some titled window open, and the status read covers a fresh process.
+ *
  * getMediaAccessStatus('screen') is not used for the negative: Electron reads
  * it through CGPreflightScreenCaptureAccess, which keeps answering "denied" for
  * the life of the process once it has said so, even after the user turns the
@@ -84,7 +91,9 @@ export function normalizeStatus(raw: unknown): OsPermissionStatus {
  */
 export const SEI_WINDOW_NAME = /^Sei($| [-—|])/;
 export function screenProbeSeesOtherApps(sources: ReadonlyArray<{ id: string; name: string }>): boolean {
-  return sources.some((s) => s.id.startsWith('window:') && !SEI_WINDOW_NAME.test(s.name));
+  return sources.some(
+    (s) => s.id.startsWith('window:') && s.name.trim() !== '' && !SEI_WINDOW_NAME.test(s.name),
+  );
 }
 
 // ── Resume flag ─────────────────────────────────────────────────────────────

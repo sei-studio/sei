@@ -121,6 +121,16 @@ describe('screenProbeSeesOtherApps', () => {
     expect(screenProbeSeesOtherApps([])).toBe(false);
   });
 
+  it('does not count untitled windows (other apps without the grant come back with no title)', () => {
+    expect(
+      screenProbeSeesOtherApps([
+        { id: 'window:12:0', name: 'Sei' },
+        { id: 'window:50:0', name: '' },
+        { id: 'window:51:0', name: '  ' },
+      ]),
+    ).toBe(false);
+  });
+
   it('is true once any other app window is listed', () => {
     expect(
       screenProbeSeesOtherApps([
