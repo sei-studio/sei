@@ -21,7 +21,7 @@ import { UserConfigSchema, type UserConfig } from '../shared/characterSchema';
 // allowJs:true in tsconfig.node.json lets TS resolve these .js modules at compile time.
 import { atomicWrite } from '../bot/brain/storage/atomicWrite.js';
 import { withFileLock } from '../bot/brain/storage/fileLock.js';
-import { paths } from './paths';
+import { paths, profileRootFor } from './paths';
 
 export const DEFAULT_CONFIG: UserConfig = UserConfigSchema.parse({});
 
@@ -77,12 +77,16 @@ export async function saveConfig(config: UserConfig): Promise<void> {
  *
  * Every main-process config write goes through here. The target path is
  * resolved when the call starts, so a write in flight across an account
- * switch lands in the profile it began in, never the next one.
+ * switch lands in the profile it began in, never the next one. A caller that
+ * awaits (network, disk) between deciding to write and calling this passes
+ * `opts.scope`, the profile it read, so the write cannot follow the switch.
  */
 export async function updateConfig(
   mutate: (current: UserConfig) => UserConfig,
+  opts?: { scope?: string },
 ): Promise<UserConfig> {
-  const target = paths.configPath();
+  const target =
+    opts?.scope !== undefined ? path.join(profileRootFor(opts.scope), 'config.json') : paths.configPath();
   await mkdir(path.dirname(target), { recursive: true });
   let next: UserConfig | undefined;
   await withFileLock(target, async () => {

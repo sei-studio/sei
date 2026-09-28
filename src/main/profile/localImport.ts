@@ -191,13 +191,18 @@ export async function importLocalProfileInto(
   let copiedOnboarding = false;
   const localCfg = await readLocalConfig();
   if (localCfg && (localCfg.mc_username || localCfg.preferred_name)) {
-    await updateConfig((targetCfg) => {
-      const patch: Partial<typeof targetCfg> = {};
-      if (!(targetCfg.mc_username ?? '').trim() && localCfg.mc_username) patch.mc_username = localCfg.mc_username;
-      if (!(targetCfg.preferred_name ?? '').trim() && localCfg.preferred_name) patch.preferred_name = localCfg.preferred_name;
-      copiedOnboarding = Object.keys(patch).length > 0;
-      return copiedOnboarding ? { ...targetCfg, ...patch } : targetCfg;
-    });
+    await updateConfig(
+      (targetCfg) => {
+        const patch: Partial<typeof targetCfg> = {};
+        if (!(targetCfg.mc_username ?? '').trim() && localCfg.mc_username) patch.mc_username = localCfg.mc_username;
+        if (!(targetCfg.preferred_name ?? '').trim() && localCfg.preferred_name) patch.preferred_name = localCfg.preferred_name;
+        copiedOnboarding = Object.keys(patch).length > 0;
+        return copiedOnboarding ? { ...targetCfg, ...patch } : targetCfg;
+      },
+      // The account being imported into, even if the scope moved during the
+      // character copy above.
+      { scope: targetScope },
+    );
   }
 
   logger.info(`imported ${imported.length} character(s) into ${targetScope}; onboarding copied: ${copiedOnboarding}`);

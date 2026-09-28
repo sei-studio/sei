@@ -77,6 +77,19 @@ describe('onAiBackendKindChanged', () => {
     expect(seen).toEqual(['cloud-proxy']);
   });
 
+  it('260929: a switch while the sign-in default is checking writes it to the profile it read', async () => {
+    const A = '11111111-1111-4111-8111-111111111111';
+    const B = '22222222-2222-4222-8222-222222222222';
+    setActiveScope(A);
+    const pending = applyCloudDefaultForSignIn();
+    setActiveScope(B); // the account changes while hasApiKey() is awaited
+    await pending;
+    expect(await getAiBackendKind()).toBe('local'); // B untouched
+    expect(seen).toEqual([]); // B is active: nothing to announce
+    setActiveScope(A);
+    expect(await getAiBackendKind()).toBe('cloud-proxy');
+  });
+
   it('a throwing listener never breaks the config write', async () => {
     onAiBackendKindChanged(() => {
       throw new Error('boom');

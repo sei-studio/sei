@@ -972,6 +972,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   //          someone else. Defaults follow the restoreDefault path above.
   ipcMain.handle(IpcChannel.chars.addToLibrary, async (_event, idArg: unknown): Promise<void> => {
     const id = IdSchema.parse(idArg);
+    const { getActiveScope } = await import('./paths');
+    const scope = getActiveScope();
     // 260703 procgen slot backstop — adding a World character occupies a Home
     // slot; refuse when the library is already full UNLESS it ALREADY occupies a
     // slot. "Already counted" must mirror the exact membership rule
@@ -1015,15 +1017,24 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
     const { ensureLocallyCached } = await import('./cloud/cacheOnDemand');
     await ensureLocallyCached(id);
+    // The slot check and the cache ran against `scope`; an account switch
+    // during the download must not add the character to the next account.
+    if (getActiveScope() !== scope) {
+      const { accountSwitchingError } = await import('./profile/scopeBarrier');
+      throw accountSwitchingError();
+    }
     const { updateConfig } = await import('./configStore');
     let wasAdded = false;
-    await updateConfig((cfg) => {
-      const added = new Set(cfg.added_world_ids ?? []);
-      if (added.has(id)) return cfg;
-      added.add(id);
-      wasAdded = true;
-      return { ...cfg, added_world_ids: Array.from(added) };
-    });
+    await updateConfig(
+      (cfg) => {
+        const added = new Set(cfg.added_world_ids ?? []);
+        if (added.has(id)) return cfg;
+        added.add(id);
+        wasAdded = true;
+        return { ...cfg, added_world_ids: Array.from(added) };
+      },
+      { scope },
+    );
     if (wasAdded) void (await import('./cloud/librarySync')).syncLibraryRoster('world-added');
   });
 

@@ -12,7 +12,7 @@
 import { safeStorage } from 'electron';
 import { readFile, writeFile, access, mkdir, unlink, rename } from 'node:fs/promises';
 import path from 'node:path';
-import { paths } from './paths';
+import { paths, getActiveScope, SCOPE_LOCAL } from './paths';
 import { loadConfig, updateConfig } from './configStore';
 
 /**
@@ -188,11 +188,12 @@ function notifyAiBackendKindChanged(kind: AiBackendKind): void {
  * cloud-proxy, stamped source:'default'.
  */
 export async function applyCloudDefaultForSignIn(): Promise<void> {
+  const scope = getActiveScope();
   const cfg = await loadConfig();
   if (cfg.ai_backend_kind_source === 'user') return; // explicit choice — keep it
   if ((cfg.ai_backend_kind ?? 'local') === 'local' && (await hasApiKey())) return; // legacy BYOK
   if (cfg.ai_backend_kind === 'cloud-proxy') return; // already there — no write
-  await writeCloudDefault();
+  await writeCloudDefault(scope);
 }
 
 /**
@@ -200,14 +201,20 @@ export async function applyCloudDefaultForSignIn(): Promise<void> {
  * that landed while the caller was checking (hasApiKey awaits) wins: the
  * default never stomps it.
  */
-async function writeCloudDefault(): Promise<void> {
+async function writeCloudDefault(scope: string): Promise<void> {
   let wrote = false;
-  await updateConfig((cur) => {
-    if (cur.ai_backend_kind_source === 'user') return cur;
-    wrote = true;
-    return { ...cur, ai_backend_kind: 'cloud-proxy', ai_backend_kind_source: 'default' };
-  });
-  if (wrote) notifyAiBackendKindChanged('cloud-proxy');
+  await updateConfig(
+    (cur) => {
+      if (cur.ai_backend_kind_source === 'user') return cur;
+      wrote = true;
+      return { ...cur, ai_backend_kind: 'cloud-proxy', ai_backend_kind_source: 'default' };
+    },
+    // The profile the checks read: a switch during hasApiKey() must not carry
+    // the default into the next account.
+    { scope },
+  );
+  // Listeners mirror the ACTIVE profile's kind; stay quiet if it moved.
+  if (wrote && getActiveScope() === scope) notifyAiBackendKindChanged('cloud-proxy');
 }
 
 /**
@@ -234,11 +241,11 @@ async function writeCloudDefault(): Promise<void> {
  * 260703) — an explicit BYOK pick must survive every launch, key or no key.
  */
 export async function ensureCloudDefaultForSignedIn(): Promise<void> {
-  const { getActiveScope, SCOPE_LOCAL } = await import('./paths');
-  if (getActiveScope() === SCOPE_LOCAL) return; // signed out → keep local
+  const scope = getActiveScope();
+  if (scope === SCOPE_LOCAL) return; // signed out → keep local
   const cfg = await loadConfig();
   if ((cfg.ai_backend_kind ?? 'local') !== 'local') return; // already cloud-proxy
   if (cfg.ai_backend_kind_source === 'user') return; // explicit choice — never override it
   if (await hasApiKey()) return; // a real BYOK choice — never override it
-  await writeCloudDefault();
+  await writeCloudDefault(scope);
 }
