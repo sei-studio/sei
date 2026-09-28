@@ -182,6 +182,36 @@ describe('the intro game (first Draw! game)', () => {
     expect(intro?.modelText).toBe("This is Mika's first game of Draw!, so you draw first and Mika guesses.");
   });
 
+  it('is done once the character turn has ended, even if the player quits their own turn', async () => {
+    await startDraw(CHAR, 3);
+    // The character's turn runs out with no right guess: the player has seen a whole turn.
+    await vi.advanceTimersByTimeAsync(TURN_MS + 10);
+    await settle();
+    expect(cfg.current.draw_intro_done).toBe(true);
+
+    // They leave during their own turn: the next game is still a normal one.
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(last()).toMatchObject({ phase: 'pick', drawer: 'player' });
+    await endDraw(CHAR);
+    await settle();
+    expect(events('draw_game_ended')[0]).toMatchObject({ reason: 'abandoned', intro: true });
+    const next = await openDraw(CHAR);
+    expect(next.intro).toBeUndefined();
+    expect(next.rounds).toBe(3);
+  });
+
+  it('play again after the character turn is a normal game even before the config write lands', async () => {
+    await startDraw(CHAR, 3);
+    await vi.advanceTimersByTimeAsync(TURN_MS + 10);
+    cfg.current = {}; // as if the write had not landed yet
+    await vi.advanceTimersByTimeAsync(5_000);
+    const ended = finishDrawEarly(CHAR)!;
+    expect(ended.phase).toBe('gallery');
+    const again = await newDrawGame(CHAR);
+    expect(again.intro).toBeUndefined();
+    expect(again.rounds).toBe(3);
+  });
+
   it('quitting the intro keeps the next game an intro', async () => {
     await startDraw(CHAR, 3);
     await endDraw(CHAR);

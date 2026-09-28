@@ -767,17 +767,22 @@ exclusive with a Minecraft summon and with chess** per character (the shared
   restarting in place, so the player lands somewhere they can stop.
 - **The intro game (260929).** Real usage: 12 of 18 games abandoned, 4 at 0
   turns about 70s into the player's own first drawing turn. So until a
-  player finishes one game (`UserConfig.draw_intro_done`, main-owned, set
-  when an intro game completes), the game is the intro: `INTRO_ROUNDS` (1)
-  round, and the CHARACTER draws first (`Session.firstDrawer`), with one
-  system line telling the player to type guesses. Main decides it when the
-  session is created and says so in `DrawGameState.intro`, so the setup copy
-  matches; Start keeps the setup screen's verdict and "Play again" after a
-  completed intro is always a normal game (one that ended at the credit
-  wall is not completed, so the intro stays). Turn order lives in `turnOrder.ts`
+  player has watched the character's intro turn end
+  (`UserConfig.draw_intro_done`, main-owned, set by `markIntroSeen` in
+  `endTurn` on a guess or timeout of the first drawer's turn, NOT on game
+  completion: quitting during their own turn after it still retires the
+  intro, else a player who always left there got the intro forever), the
+  game is the intro: `INTRO_ROUNDS` (1) round, and the CHARACTER draws first
+  (`Session.firstDrawer`), with one system line telling the player to type
+  guesses. Main decides it when the session is created and says so in
+  `DrawGameState.intro`, so the setup copy matches; Start keeps the setup
+  screen's verdict, and "Play again" or a Start after `Session.introSeen`
+  is always a normal game (a quit or the credit wall during the character's
+  turn leaves the intro in place). Turn order lives in `turnOrder.ts`
   (`nextTurn` / `isLastTurn`): never test "the character just drew" for
   game over again. The contract block says the character goes first only
-  in the intro.
+  in the intro. Model-facing intro text (`introModelText`) names the
+  player, or says "the player" when no name is set; never "they".
 - **Turn analytics (260929).** `draw_turn_ended {round, rounds, turn_number,
   drawer, phase: pick|drawing, outcome: guessed|timeout|abandoned|
   account_switch|credit_wall, turn_ms, strokes, guesser_lines, intro,

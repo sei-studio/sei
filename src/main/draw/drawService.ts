@@ -411,8 +411,12 @@ interface Session {
   /** The one finishGame run (analytics + play row + fold). Set once: a game
    *  is recorded exactly once, and a later caller awaits the same run. */
   finishing: Promise<void> | null;
-  /** How the game was recorded (the first finishGame call), null while live. */
-  finishedAs: 'completed' | 'abandoned' | 'credit_wall' | 'account_switch' | null;
+  /**
+   * The intro's opening turn (the character drawing) has ended, so the player
+   * has seen a whole turn. That is what retires the intro (260929), not
+   * finishing the game: quitting during their own turn after it still counts.
+   */
+  introSeen: boolean;
   /** How the model-facing intro lines name the player: their name, or "the player". */
   introPlayer: string;
   playerName: string;
@@ -623,7 +627,7 @@ async function newSession(
     startedAt: Date.now(),
     clock: clockNow(),
     finishing: null,
-    finishedAs: null,
+    introSeen: false,
     introPlayer: (config.preferred_name ?? '').trim() || 'the player',
     playerName: (config.preferred_name ?? '').trim() || 'You',
     aiName: character?.name ?? 'Companion',
@@ -690,7 +694,7 @@ export async function startDraw(characterId: string, rounds: number): Promise<Dr
   // The setup screen already told the player whether this is the intro game
   // (260929); Start keeps that promise rather than re-reading the config.
   const s = await newSession(characterId, clamped, {
-    intro: prev && prev.round === 0 ? prev.intro : undefined,
+    intro: prev && prev.round === 0 ? prev.intro : prev?.introSeen ? false : undefined,
   });
   if (!startGuard.stillValid()) throw accountSwitchingError();
   sessions.set(characterId, s);
@@ -741,10 +745,11 @@ export async function newDrawGame(characterId: string): Promise<DrawGameState> {
   }
   // After the intro game the next one is a normal game at the normal length,
   // even if the config write marking the intro done has not landed yet.
-  // Only a COMPLETED intro counts: one that ended at the credit wall also
-  // lands in the gallery, but it does not mark the intro done.
+  // Once the player has seen the intro's opening turn the next game is a
+  // normal one, even if the config write has not landed yet. An intro stopped
+  // before that (a quit, the credit wall) stays the intro.
   const s = await newSession(characterId, prev && !prev.intro ? prev.rounds : ROUNDS, {
-    intro: prev?.intro && prev.finishedAs === 'completed' ? false : undefined,
+    intro: prev?.introSeen ? false : undefined,
   });
   if (!startGuard.stillValid()) throw accountSwitchingError();
   sessions.set(characterId, s);
@@ -979,7 +984,6 @@ function finishGame(
   // first call's promise, so a caller that awaits it (endDraw, the account
   // switch) still waits for the row to land.
   if (s.finishing) return s.finishing;
-  s.finishedAs = reason;
   // The turn that was live when the game stopped (260929): the abandonment
   // this whole event exists to measure is "quit during the first turn".
   if (reason === 'abandoned' || reason === 'account_switch') {
@@ -1016,16 +1020,6 @@ async function recordFinishedGame(
       });
     } catch { /* analytics is never load-bearing */ }
   })();
-
-  // The intro is done once one is played through; the next game is normal.
-  if (reason === 'completed' && s.intro) {
-    try {
-      await updateConfig((cfg) => ({ ...cfg, draw_intro_done: true }));
-      log(s, 'intro game completed; later games are normal');
-    } catch (err) {
-      log(s, `could not record the intro as done: ${String(err)}`);
-    }
-  }
 
   // Nothing happened at all: leave no transcript row.
   if (turnsPlayed === 0) return;
@@ -1153,6 +1147,7 @@ function endTurn(s: Session, guessed: boolean): void {
     else s.scores.player += 1;
   }
   captureTurn(s, guessed ? 'guessed' : 'timeout');
+  if (s.intro && drawer === s.firstDrawer) markIntroSeen(s);
 
   s.gallery.push({
     round: s.round,
@@ -1216,6 +1211,28 @@ function advanceTurn(s: Session): void {
   log(s, `game over ${s.scores.player}-${s.scores.ai}`);
   push(s);
   void finishGame(s, 'completed');
+}
+
+/**
+ * The intro's opening turn ended (260929): the player has watched a whole
+ * turn, which is what the intro is for, so later games are normal ones even
+ * if they quit during their own turn next. Retiring it only on a finished
+ * game let a player who always left at their drawing turn get the one-round
+ * intro forever. Tracked so an account switch drains it into this profile.
+ */
+function markIntroSeen(s: Session): void {
+  if (!s.intro || s.introSeen) return;
+  s.introSeen = true;
+  void trackScopedWrite(
+    (async () => {
+      try {
+        await updateConfig((cfg) => ({ ...cfg, draw_intro_done: true }));
+        log(s, 'intro turn seen; later games are normal');
+      } catch (err) {
+        log(s, `could not record the intro as done: ${String(err)}`);
+      }
+    })(),
+  );
 }
 
 /**
