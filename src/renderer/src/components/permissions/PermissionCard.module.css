@@ -1,0 +1,64 @@
+/*
+ * OS permission cards (260929): the microphone card (MicAccessCard) and the
+ * Screen Recording step inside the share picker (ScreenAccessGate). Both are
+ * ModalShell bodies, so the shell owns the panel, the title and the footer.
+ */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.why {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--text);
+}
+
+.how {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.path {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.waiting {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin: var(--space-xs) 0 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: permission-wait 1.4s var(--ease) infinite;
+}
+
+@keyframes permission-wait {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot {
+    animation: none;
+  }
+}
