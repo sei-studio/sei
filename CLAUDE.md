@@ -743,6 +743,32 @@ together" tiles. **Mutually exclusive with a Minecraft summon** per character.
   ChatScreen, compressing chat to a narrow column.
 - **Packaging:** onnxruntime-node ships all-platform prebuilds; per-OS `files`
   excludes in `electron-builder.yml` drop the foreign ones.
+- **First-game friction (260929).** Real usage: 10 of 35 games ended at 0
+  moves (some after minutes at the board) and players won 2 of 16 decided
+  games. Four fixes, each with its own module and test:
+  - The model download (`modelStore.downloadModelFile`) has a connect budget
+    and a stall budget per attempt and walks the sources up to 3 times
+    (`MODEL_DOWNLOAD`). A failed warm-up no longer ends the game: it stays
+    `preparing` with `warmupError`, main pushes `pct: -1` with a CODE
+    (`download_failed` / `engine_failed`, never the raw message), the panel
+    shows friendly copy and Try again (`chessStart` on that game re-runs
+    `warmUp`), and `surface_error model_download_<kind>` records why.
+  - `chess_game_ended` carries `stage` (`downloading`, `download_failed`,
+    `engine_failed`, `waiting_first_move`, `midgame`), `player_moves` and
+    `nudges`, so a failed download no longer reads as a player quitting.
+  - One in-character "your move" nudge per player turn (`turnNudge.ts`):
+    after `nudgeFirstMoveMs` (20s) of quiet on the first move, or
+    `nudgeMoveMs` (120s) later on. Quiet counts from the later of the turn
+    start and the last chat line, so talking pushes it back. It rides the
+    session queue as `sei:nudge` and runs an idle turn with a nudge note.
+  - Adaptive strength (`chessDifficulty.ts`): a player loss drops that
+    character's next game 100 Elo, a win raises it 50, within -600/+200 of
+    the persona Elo and 400-2000 absolute. Stored per character in the
+    profile config (`chess_elo_offsets`, main-owned), never on the character.
+    Only `source: 'auto'` profiles adapt; a hand-set Elo plays as set.
+    Draws, abandoned games and a resign before the player's third move
+    (`minPlayerMovesForResign`, a way out rather than a result) leave it.
+    `ai_elo` is the effective Elo; `ai_elo_base` / `elo_offset` ride along.
 
 ## Draw! minigame (260727)
 

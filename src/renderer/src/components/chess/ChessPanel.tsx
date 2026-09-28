@@ -239,8 +239,11 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
             {preparing ? (
               downloadFailed ? (
                 <>
-                  <p className={styles.launchError}>
-                    {download?.error ?? t('The download failed. Check your connection and try again.')}
+                  {/* 260929: main sends a code, never the raw error text. */}
+                  <p className={styles.launchError} role="alert">
+                    {download?.error === 'engine_failed'
+                      ? t("The chess brain couldn't start. Try again in a moment.")
+                      : t('The chess brain failed to download. Check your connection and try again.')}
                   </p>
                   <Button kind="accent" size="md" onClick={() => void doStart(colorChoice)}>
                     {t('Try again')}
@@ -285,7 +288,11 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
                     </React.Fragment>
                   ))}
                 </div>
-                {startErr ? <p className={styles.launchError}>{startErr}</p> : null}
+                {startErr ? (
+                  <p className={styles.launchError} role="alert">
+                    {startErr}
+                  </p>
+                ) : null}
                 <Button
                   kind="accent"
                   size="md"
