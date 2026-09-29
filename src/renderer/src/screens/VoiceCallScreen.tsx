@@ -73,6 +73,9 @@ async function persistBackdropPref(characterId: string, on: boolean): Promise<vo
   }
 }
 
+/** How long the backdrop controls stay up once a call goes live (260929). */
+const CALL_INTRO_CHROME_MS = 5_000;
+
 /** How close to the bottom edge the pointer must be to reveal the controls. */
 const CHROME_PROXIMITY_PX = 132;
 
@@ -304,7 +307,23 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   // or has failed can always be hung up.
   const [nearBottom, setNearBottom] = useState(false);
   const [focusWithin, setFocusWithin] = useState(false);
-  const chromeRevealed = !backdropShown || nearBottom || focusWithin || status !== 'live';
+  // 260929: the bar also stays up for the first few seconds of a live call,
+  // so hang-up is seen once before it tucks away.
+  // Reopening a call that has run for a while (restore from minimize) starts
+  // hidden rather than flashing the bar.
+  const [introShown, setIntroShown] = useState(() => liveAt === null || Date.now() - liveAt < CALL_INTRO_CHROME_MS);
+  useEffect(() => {
+    if (liveAt === null) return;
+    const left = CALL_INTRO_CHROME_MS - (Date.now() - liveAt);
+    if (left <= 0) {
+      setIntroShown(false);
+      return;
+    }
+    setIntroShown(true);
+    const timer = window.setTimeout(() => setIntroShown(false), left);
+    return () => window.clearTimeout(timer);
+  }, [liveAt]);
+  const chromeRevealed = !backdropShown || nearBottom || focusWithin || introShown || status !== 'live';
   const onStagePointerMove = (e: React.PointerEvent<HTMLDivElement>): void => {
     if (!backdropShown) return;
     const rect = e.currentTarget.getBoundingClientRect();
