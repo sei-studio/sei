@@ -25,6 +25,9 @@
  *  13b. Extra files (a Finder .DS_Store) do not break the re-link: no zip
  *      request.
  *  14. getPackState reads a payload-less same-version install as missing.
+ *  15. A pack shipped in the app (bundledRoot, the Linux AppImage) is ready
+ *      with no request; one without its payload, or for another game, falls
+ *      through to the download path; no bundledRoot = unchanged behavior.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
@@ -421,6 +424,62 @@ describe('game packs: payload integrity (260924, empty v0.6.5-beta.1 DST pack)',
     await seedBeta1Install('f'.repeat(64), VERSION);
     configure();
     expect(await getPackState('dontstarve')).toEqual({ kind: 'missing' });
+  });
+});
+
+describe('game packs: bundled in the app (Linux AppImage)', () => {
+  async function seedBundled(dir: string, game: string, files: Record<string, string>) {
+    await mkdir(path.join(dir, game), { recursive: true });
+    await writeFile(path.join(dir, game, 'pack.json'), JSON.stringify({ game, version: VERSION, treeHash: 'b'.repeat(64) }));
+    for (const [rel, body] of Object.entries(files)) {
+      await mkdir(path.dirname(path.join(dir, game, rel)), { recursive: true });
+      await writeFile(path.join(dir, game, rel), body);
+    }
+  }
+  const MC_PAYLOAD = {
+    'node_modules/mineflayer/package.json': '{}',
+    'node_modules/minecraft-data/package.json': '{}',
+  };
+
+  it('Test 15a: a complete bundled pack is ready with no request and no store write', async () => {
+    const bundled = path.join(store, '_resources', 'game-packs');
+    await seedBundled(bundled, 'minecraft', MC_PAYLOAD);
+    configure(VERSION, { bundledRoot: bundled });
+    const root = path.join(bundled, 'minecraft');
+    expect(await getPackState('minecraft')).toEqual({ kind: 'ready', root });
+    expect(await ensurePack('minecraft')).toBe(root);
+    expect(served.requests).toEqual([]);
+    await expect(stat(path.join(store, 'minecraft'))).rejects.toBeTruthy();
+  });
+
+  it('Test 15b: a bundled pack without its payload falls through to the download', async () => {
+    const bundled = path.join(store, '_resources', 'game-packs');
+    await seedBundled(bundled, 'minecraft', { 'node_modules/mineflayer/package.json': '{}' });
+    const fx = await buildZip();
+    served.routes.set(`/mirror/game-packs-${VERSION}.json`, { status: 200, body: manifestFor(fx), type: 'application/json' });
+    served.routes.set(`/mirror/${FILE}`, { status: 200, body: fx.zip, type: 'application/zip' });
+    configure(VERSION, { bundledRoot: bundled });
+    expect(await getPackState('minecraft')).toEqual({ kind: 'missing' });
+    expect(await ensurePack('minecraft')).toBe(path.join(store, 'minecraft', VERSION));
+  });
+
+  it('Test 15c: a game with no bundled pack still downloads (Stardew/DST on Linux)', async () => {
+    const bundled = path.join(store, '_resources', 'game-packs');
+    await seedBundled(bundled, 'minecraft', MC_PAYLOAD);
+    const fx = await buildZip({ game: 'dontstarve', files: DST_FILES, treeHash: 'c'.repeat(64) });
+    const dst = `sei-pack-dontstarve-${VERSION}-any-any.zip`;
+    served.routes.set(`/mirror/game-packs-${VERSION}.json`, { status: 200, body: manifestFor(fx, VERSION, dst, 'dontstarve'), type: 'application/json' });
+    served.routes.set(`/mirror/${dst}`, { status: 200, body: fx.zip, type: 'application/zip' });
+    configure(VERSION, { bundledRoot: bundled });
+    expect(await ensurePack('dontstarve')).toBe(path.join(store, 'dontstarve', VERSION));
+  });
+
+  it('Test 15d: a pack.json naming another game is ignored', async () => {
+    const bundled = path.join(store, '_resources', 'game-packs');
+    await seedBundled(bundled, 'minecraft', MC_PAYLOAD);
+    await writeFile(path.join(bundled, 'minecraft', 'pack.json'), JSON.stringify({ game: 'stardew' }));
+    configure(VERSION, { bundledRoot: bundled });
+    expect(await getPackState('minecraft')).toEqual({ kind: 'missing' });
   });
 });
 

@@ -19,6 +19,10 @@
  *     `npm ci`, so the bot resolves them exactly as before. Set
  *     SEI_GAME_PACKS_DIR=<dir> to exercise the real download path in dev; the
  *     dir replaces <userData>/game-packs as the store root.
+ *   - A pack SHIPPED IN THE APP (`bundledRoot`, packaged Linux only: the
+ *     experimental AppImage bundles the Minecraft pack because no published
+ *     manifest has a linux one) wins over the store and the network when it
+ *     names the game and holds its required payload.
  *   - The manifest is fetched MIRROR FIRST (dl.sei.gg, bounded connect) then
  *     from the GitHub release; the zip the same way.
  *   - sha256 + size are verified on the downloaded zip before anything is
@@ -77,6 +81,15 @@ export interface GamePackEnv {
   fetch: typeof fetch;
   /** Stall watchdog for the zip body: no bytes for this long aborts the attempt. */
   stallMs: number;
+  /**
+   * Directory holding packs SHIPPED INSIDE the app (`<dir>/<game>/pack.json`
+   * + payload), consulted before the store and the network. Null everywhere
+   * except a packaged Linux build (the experimental AppImage, 260930): no
+   * published manifest carries a linux Minecraft pack, so that build bundles
+   * it under `<resources>/game-packs/` (electron-builder.yml `linux:`
+   * extraResources). mac and Windows keep the download path untouched.
+   */
+  bundledRoot: string | null;
 }
 
 function defaultEnv(): GamePackEnv {
@@ -96,6 +109,10 @@ function defaultEnv(): GamePackEnv {
     packSources: gamePackSources,
     fetch: (input, init) => fetch(input, init),
     stallMs: 30_000,
+    bundledRoot:
+      process.platform === 'linux' && a.isPackaged === true && typeof process.resourcesPath === 'string'
+        ? path.join(process.resourcesPath, 'game-packs')
+        : null,
   };
 }
 
@@ -163,6 +180,30 @@ async function readInstalled(e: GamePackEnv, game: GameId): Promise<InstalledRec
   }
 }
 
+/**
+ * The root of a pack shipped inside the app for this game, or null. It must
+ * name the game and hold its required payload; anything less falls through
+ * to the normal store + download path. Only the payload stats run here (it
+ * is on the per-summon path; the tree is read-only and was verified by the
+ * pack builder when the app was built).
+ */
+async function bundledPack(e: GamePackEnv, game: GameId): Promise<string | null> {
+  if (!e.bundledRoot) return null;
+  const root = path.join(e.bundledRoot, game);
+  try {
+    const pj = JSON.parse(await readFile(path.join(root, 'pack.json'), 'utf8')) as { game?: unknown };
+    if (pj.game !== game) return null;
+  } catch {
+    return null;
+  }
+  const missing = await missingPayload(root, game);
+  if (missing.length) {
+    console.warn(`[sei/game-packs] bundled ${game} pack is missing ${missing.join(', ')}; using the download path`);
+    return null;
+  }
+  return root;
+}
+
 async function writeInstalled(e: GamePackEnv, rec: InstalledRecord): Promise<void> {
   await mkdir(gameDir(e, rec.game), { recursive: true });
   await writeFile(installedPath(e, rec.game), JSON.stringify(rec, null, 2));
@@ -197,6 +238,8 @@ export function onGamePackState(cb: (game: GameId, state: GamePackState) => void
 export async function getPackState(game: GameId): Promise<GamePackState> {
   const e = env();
   if (!e.packaged) return { kind: 'ready', root: e.appRoot };
+  const bundled = await bundledPack(e, game);
+  if (bundled) return { kind: 'ready', root: bundled };
   const cur = live.get(game);
   if (cur && (cur.kind === 'downloading' || cur.kind === 'error')) return cur;
   const installed = await readInstalled(e, game);
@@ -226,6 +269,11 @@ const inflight = new Map<GameId, Promise<string>>();
 export async function ensurePack(game: GameId, opts: EnsurePackOptions = {}): Promise<string> {
   const e = env();
   if (!e.packaged) return e.appRoot;
+  const bundled = await bundledPack(e, game);
+  if (bundled) {
+    publish(game, { kind: 'ready', root: bundled });
+    return bundled;
+  }
   let job = inflight.get(game);
   if (!job) {
     job = install(e, game, opts).finally(() => inflight.delete(game));

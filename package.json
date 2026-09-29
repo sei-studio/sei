@@ -19,6 +19,7 @@
     "dist:mac": "electron-vite build && electron-builder --mac",
     "dist:win": "electron-vite build && electron-builder --win",
     "dist:linux": "electron-vite build && electron-builder --linux",
+    "dist:linux:experimental": "node scripts/build-linux-experimental.mjs",
     "build:packs": "node scripts/build-game-pack.mjs minecraft --out release/packs",
     "build:packs:manifest": "node scripts/build-game-pack-manifest.mjs release/packs --out release/packs",
     "check:packs": "node scripts/build-game-pack.mjs minecraft --dry-run && node scripts/build-game-pack.mjs stardew --dry-run",

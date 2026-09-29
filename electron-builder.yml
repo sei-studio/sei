@@ -531,9 +531,72 @@ nsis:
   include: build/installer.nsh
   installerHeaderIcon: build/installerHeaderIcon.ico
 
-# Linux (AppImage) dropped 2026-06-20: the prismarine-viewer headless-gl native
-# dep won't build on the Linux runner and the target was untested anyway. Re-add a
-# `linux:` block + the ubuntu matrix leg in release.yml if/when it's supported.
+# Linux (AppImage), EXPERIMENTAL (260930). Dropped 2026-06-20 because headless-gl
+# would not build on the Linux runner; it builds on an Ubuntu 24.04 x64 host now
+# (the vendored gl-8.1.6-cxx20 tarball), so this block is back for a hand-built,
+# untested-quality AppImage. release.yml still has NO linux leg: nothing here
+# runs in CI or changes a mac/win artifact (platform blocks only apply to their
+# own platform). Build it with `npm run dist:linux:experimental`
+# (scripts/build-linux-experimental.mjs), which stages the Minecraft game pack
+# first.
+#
+# The Minecraft game pack is BUNDLED, not downloaded: the published
+# game-packs-<version>.json manifests carry no linux Minecraft entry, so the
+# AppImage ships the staged pack under resources/game-packs/minecraft and
+# src/main/games/packs.ts (bundledRoot, packaged Linux only) uses it before the
+# store and the network. Stardew and DST packs are any-any and download as on
+# mac/win.
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+  artifactName: Sei-${version}-linux-${arch}.${ext}
+  category: Game
+  synopsis: AI gaming companion
+  description: Sei is an AI gaming companion that joins your Minecraft LAN world and plays alongside you.
+  # Same two-matcher rule as mac/win (see the note on the top-level files list).
+  files:
+    - "!vendor/**"
+    - "!packs/**"
+    - "!.planning/**"
+    - "!docs/**"
+    - "!demo/**"
+    - "!scripts/**"
+    - "!test/**"
+    - "!.claude/**"
+    - "!.github/**"
+    - "!logs/**"
+    - "!memory/**"
+    - "!ARCHITECTURE.md"
+    - "!RELEASE-NOTES.md"
+    - "!README.md"
+    - "!CLAUDE.md"
+    - "!tsconfig*.json"
+    - "!electron.vite.config.ts"
+    - "!config.json"
+    - "!config.example.json"
+    - "!.env*"
+    # Foreign-OS native prebuilds (onnxruntime-node for chess + whisper,
+    # sherpa-onnx for local voices), mirroring the mac/win sections.
+    - "!node_modules/onnxruntime-node/bin/napi-v3/{darwin,win32}/**"
+    - "!node_modules/onnxruntime-node/bin/napi-v3/linux/arm64/**"
+    - "!node_modules/cce-1/node_modules/onnxruntime-node/bin/napi-v6/{darwin,win32}/**"
+    - "!node_modules/cce-1/node_modules/onnxruntime-node/bin/napi-v6/linux/arm64/**"
+    - "!node_modules/sherpa-onnx-darwin-*/**"
+    - "!node_modules/sherpa-onnx-win-*/**"
+    # The linux onnxruntime prebuilds carry the CUDA and TensorRT execution
+    # providers (~595MB of the two copies). Nothing asks for a GPU provider
+    # (no executionProviders anywhere: CPU only, as on mac/win), and ORT loads
+    # a provider .so only when that provider is requested.
+    - "!node_modules/onnxruntime-node/bin/napi-v3/linux/x64/libonnxruntime_providers_{cuda,tensorrt}.so"
+    - "!node_modules/cce-1/node_modules/onnxruntime-node/bin/napi-v6/linux/x64/libonnxruntime_providers_{cuda,tensorrt}.so"
+  # The PARENT of the staged pack, not the pack itself: electron-builder's copy
+  # filter drops a node_modules/ that sits at the root of a `from` dir
+  # (app-builder-lib util/filter.js createFilter), which left a 12K pack
+  # holding pack.json alone. One level down it is copied.
+  extraResources:
+    - from: release/linux-bundled-packs
+      to: game-packs
 
 # D-63 REVERSED (quick/260604-uoy, 2026-06-04): auto-update is now IN scope.
 # The notify-and-redirect-to-website updater (updateChecker.ts + UpdateToast.tsx)
