@@ -11,7 +11,8 @@
  *
  * Launchers:
  *   - macOS: Minecraft.app in /Applications or ~/Applications, then the
- *     bundle id as a last resort.
+ *     bundle id as a last resort. Always launched with `/usr/bin/open -a` /
+ *     `-b`, never `shell.openPath` (see macOpenArgs).
  *   - Windows: the Microsoft Store / Xbox app launcher (the package Mojang's
  *     current installer also deploys) opened by its AppUserModelID through
  *     `explorer.exe shell:AppsFolder\...`, and the legacy
@@ -53,6 +54,8 @@ export const STORE_PACKAGE_FAMILY = 'Microsoft.4297127D64EC6_8wekyb3d8bbwe';
 export const STORE_LAUNCHER_AUMID = `${STORE_PACKAGE_FAMILY}!Minecraft`;
 /** macOS launcher bundle id, used only when no Minecraft.app is found. */
 export const MAC_LAUNCHER_BUNDLE_ID = 'com.mojang.minecraftlauncher';
+/** Absolute so a stripped PATH in a Finder-launched app cannot break it. */
+export const MAC_OPEN = '/usr/bin/open';
 
 const PROBE_TIMEOUT_MS = 5_000;
 
@@ -262,7 +265,31 @@ export function tasklistHasLauncher(csv: string): boolean {
   return /^"(MinecraftLauncher|Minecraft)\.exe"/im.test(csv);
 }
 
-async function openCandidate(c: LauncherCandidate): Promise<void> {
+/**
+ * `/usr/bin/open` arguments that launch a macOS candidate as an application.
+ *
+ * Opening the bundle path as a URL (Electron `shell.openPath` /
+ * `shell.openExternal`, NSWorkspace openURL, or a bare `open <path>`) treats
+ * the .app as a document, and LaunchServices then tries to modify the bundle
+ * from Sei's process. macOS gates that behind App Management
+ * (kTCCServiceSystemPolicyAppBundles): the write is denied and, on a Mac where
+ * Sei has no App Management decision yet, a "Sei was prevented from modifying
+ * apps on your Mac" notification appears. `open -a` / `open -b` launch the app
+ * without touching its bundle and make no such request (verified on macOS
+ * 26.4, 260929).
+ */
+export function macOpenArgs(c: LauncherCandidate): string[] {
+  return c.via === 'bundle-id' ? ['-b', c.target] : ['-a', c.target];
+}
+
+type RunFile = (file: string, args: string[]) => Promise<unknown>;
+const runFile: RunFile = (file, args) => execFile(file, args, { timeout: PROBE_TIMEOUT_MS });
+
+export async function openCandidate(c: LauncherCandidate, run: RunFile = runFile): Promise<void> {
+  if (c.kind === 'mac') {
+    await run(MAC_OPEN, macOpenArgs(c));
+    return;
+  }
   if (c.via === 'aumid') {
     // explorer.exe exits 1 even on success, so only a spawn failure counts.
     await new Promise<void>((resolve, reject) => {
@@ -271,10 +298,7 @@ async function openCandidate(c: LauncherCandidate): Promise<void> {
     });
     return;
   }
-  if (c.via === 'bundle-id') {
-    await execFile('open', ['-b', c.target], { timeout: PROBE_TIMEOUT_MS });
-    return;
-  }
+  // Windows legacy exe.
   const { shell } = await import('electron');
   const err = await shell.openPath(c.target);
   if (err) throw new Error(err);

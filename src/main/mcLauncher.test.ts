@@ -9,12 +9,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('electron', () => ({ app: { isPackaged: false }, shell: { openPath: vi.fn() } }));
+const { openPath } = vi.hoisted(() => ({ openPath: vi.fn(async () => '') }));
+vi.mock('electron', () => ({ app: { isPackaged: false }, shell: { openPath } }));
 vi.mock('./paths', () => ({ paths: { userData: () => os.tmpdir() } }));
 
 import {
   findSeiProfile,
   launcherCandidates,
+  MAC_OPEN,
+  macOpenArgs,
+  openCandidate,
   startMinecraft,
   STORE_LAUNCHER_AUMID,
   tasklistHasLauncher,
@@ -160,6 +164,45 @@ describe('launcherCandidates', () => {
 
   it('Linux (dev only) has no launcher to open', async () => {
     expect(await launcherCandidates(env('linux', []), null)).toEqual([]);
+  });
+});
+
+describe('openCandidate', () => {
+  it('macOS: launches the app with open -a / open -b, never shell.openPath', async () => {
+    // shell.openPath opens the bundle as a document, which makes macOS show
+    // "Sei was prevented from modifying apps on your Mac" (App Management).
+    const run = vi.fn(async () => undefined);
+    openPath.mockClear();
+    await openCandidate({ kind: 'mac', via: 'path', target: '/Applications/Minecraft.app' }, run);
+    await openCandidate({ kind: 'mac', via: 'bundle-id', target: 'com.mojang.minecraftlauncher' }, run);
+    expect(run.mock.calls).toEqual([
+      [MAC_OPEN, ['-a', '/Applications/Minecraft.app']],
+      [MAC_OPEN, ['-b', 'com.mojang.minecraftlauncher']],
+    ]);
+    expect(MAC_OPEN).toBe('/usr/bin/open');
+    expect(openPath).not.toHaveBeenCalled();
+  });
+
+  it('macOS: a failed open rejects so startMinecraft tries the next candidate', async () => {
+    const run = vi.fn(async () => {
+      throw new Error('Unable to find application named Minecraft');
+    });
+    await expect(openCandidate({ kind: 'mac', via: 'path', target: '/x/Minecraft.app' }, run)).rejects.toThrow(/Unable to find/);
+  });
+
+  it('macOpenArgs keeps a path with spaces as one argument', () => {
+    expect(macOpenArgs({ kind: 'mac', via: 'path', target: '/Applications/Minecraft Launcher.app' })).toEqual([
+      '-a',
+      '/Applications/Minecraft Launcher.app',
+    ]);
+  });
+
+  it('Windows legacy exe still goes through shell.openPath', async () => {
+    openPath.mockClear();
+    const run = vi.fn(async () => undefined);
+    await openCandidate({ kind: 'windows', via: 'path', target: 'C:\\Program Files\\Minecraft Launcher\\MinecraftLauncher.exe' }, run);
+    expect(openPath).toHaveBeenCalledTimes(1);
+    expect(run).not.toHaveBeenCalled();
   });
 });
 
