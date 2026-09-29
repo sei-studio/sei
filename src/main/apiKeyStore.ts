@@ -92,6 +92,35 @@ export function safeStorageBackendKind(): string {
   catch { return 'unknown'; }
 }
 
+/**
+ * Linux without a desktop secret store (no gnome-keyring / kwallet: a bare
+ * window manager, a headless box). Electron then selects the `basic_text`
+ * backend and (Electron 42, measured) isEncryptionAvailable() stays FALSE
+ * unless the app opts in, so saveApiKey threw KEYCHAIN_UNAVAILABLE and the
+ * session store SESSION_UNAVAILABLE: neither a BYOK key nor a cloud sign-in
+ * could be saved at all (measured 260930 on the experimental AppImage). The
+ * opt-in keeps the design this module always documented: basic_text is a
+ * hardcoded-key fallback, and the renderer shows KEYCHAIN_FALLBACK_PLAINTEXT
+ * (app:warnings). Call after `ready` (the backend is `unknown` before it).
+ * Linux only; returns whether the fallback was turned on. mac and Windows
+ * never reach the call (and Electron documents it as a no-op there).
+ */
+export function enableLinuxPlainTextFallback(
+  ss: Pick<typeof safeStorage, 'getSelectedStorageBackend' | 'setUsePlainTextEncryption'> = safeStorage,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  if (platform !== 'linux') return false;
+  let backend: string;
+  try {
+    backend = ss.getSelectedStorageBackend();
+  } catch {
+    return false;
+  }
+  if (backend !== 'basic_text' || typeof ss.setUsePlainTextEncryption !== 'function') return false;
+  ss.setUsePlainTextEncryption(true);
+  return true;
+}
+
 /* -------------------------------------------------------------------------- */
 /*  AI backend kind (Phase 13 — PROXY-11)                                     */
 /* -------------------------------------------------------------------------- */

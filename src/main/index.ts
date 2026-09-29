@@ -41,7 +41,7 @@ import { initUpdater } from './updater';
 import { initNotices } from './notices';
 import { createSkinServer, SKIN_SERVER_DEV_PORT } from './skinServer';
 import { runFirstLaunchMigration, runUuidRenameMigration, runDefaultsToWorldMigration } from './migration';
-import { safeStorageBackendKind } from './apiKeyStore';
+import { enableLinuxPlainTextFallback, safeStorageBackendKind } from './apiKeyStore';
 import { loadWizardState, saveWizardState } from './wizardStateStore';
 import { registerPortraitScheme, registerPortraitProtocol } from './portraitProtocol';
 import { cleanupRelocationLeftover } from './relocate';
@@ -1288,6 +1288,13 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
+    // Linux without a secret store: let safeStorage use its basic_text
+    // fallback so a key or a sign-in can be saved at all (no-op elsewhere,
+    // see apiKeyStore.enableLinuxPlainTextFallback).
+    if (process.platform === 'linux' && enableLinuxPlainTextFallback()) {
+      logger.warn('safeStorage: no OS secret store, using the basic_text fallback');
+    }
+
     // If a prior version's "Move to Applications" prompt moved us here from
     // ~/Downloads, trash the leftover copy now that we're running from
     // /Applications. The prompt itself was retired when the macOS download
