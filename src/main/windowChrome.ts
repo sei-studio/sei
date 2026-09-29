@@ -32,7 +32,10 @@ export function createMainWindow(opts: CreateMainWindowOptions): BrowserWindow {
     ? { titleBarStyle: 'hiddenInset' }
     : isWin
       ? { frame: false }
-      : {}; // Linux: native frame
+      : // Linux: native frame. The default File/Edit/View/Window menu bar
+        // hides (Alt shows it; its accelerators keep working), since no other
+        // platform shows one inside the window.
+        { autoHideMenuBar: true };
 
   // Same default on every platform. The Party redesign shortened the window
   // (1180×720, was ×760) and unlocked the floor (1000×560) — panels flex, so
