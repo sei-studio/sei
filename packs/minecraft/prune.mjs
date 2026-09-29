@@ -128,7 +128,16 @@ export const PRUNE_BY_PLATFORM = {
   // payload that binding.gyp copies into build/Release at compile time. Dead
   // weight anywhere but Windows.
   darwin: ['node_modules/gl/deps/**'],
-  linux: ['node_modules/gl/deps/**'],
+  // 260930 linux: canvas's prebuild bundles its own libstdc++.so.6 (GCC 8,
+  // GLIBCXX <= 3.4.25) beside canvas.node, loaded through its $ORIGIN rpath.
+  // The POV loader requires canvas BEFORE gl, so that old copy is the
+  // process's libstdc++ by the time gl's webgl.node (built on the host,
+  // GLIBCXX_3.4.32 on Ubuntu 24.04) loads, and gl fails with "version
+  // GLIBCXX_3.4.32 not found": vision off on every Linux session (measured
+  // on the experimental AppImage). canvas.node itself needs only
+  // GLIBCXX_3.4.21, which any system libstdc++ that can run Electron has, so
+  // drop the bundled copy and let both resolve the system one.
+  linux: ['node_modules/gl/deps/**', 'node_modules/canvas/build/Release/libstdc++.so.6'],
   win32: [],
 };
 
