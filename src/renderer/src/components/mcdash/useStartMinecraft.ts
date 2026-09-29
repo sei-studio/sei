@@ -78,6 +78,67 @@ export function startMinecraftNote(t: TFunction, res: StartMinecraftResult): Sta
   };
 }
 
+/**
+ * When to ask main whether the launcher (or a game it started) is still up
+ * after a successful Start Minecraft, in ms after the press (260929). A
+ * handful of one-shot process listings, then the hint clears. The v0.6.5
+ * smoke test had the launcher quit on its own "Unable to update the
+ * launcher" error while Sei kept saying "is opening... Press Play." forever.
+ */
+export const LAUNCHER_CHECK_MS: readonly number[] = [20_000, 40_000, 60_000, 90_000, 120_000];
+
+/** The hint once the launcher is gone without a game (see LAUNCHER_CHECK_MS). */
+export function launcherGoneNote(t: TFunction, profileName: string): StartNote {
+  return {
+    tone: 'warn',
+    text: t('Didn\'t see the launcher? Open the Minecraft Launcher, pick "{profile}" next to Play, and press Play.', {
+      profile: profileName,
+    }),
+  };
+}
+
+/**
+ * Runs the LAUNCHER_CHECK_MS checks after a successful press. `gone` fires
+ * once on a definite "not running" and ends the watch; if the launcher stays
+ * up (or the probe cannot tell) through every check, `timeout` fires so the
+ * "opening... Press Play" hint does not linger. With no probe (an older
+ * preload) only the timeout runs. Returns a cancel function.
+ */
+export function watchLauncher(
+  probe: (() => Promise<boolean | null>) | undefined,
+  on: { gone: () => void; timeout: () => void },
+): () => void {
+  let alive = true;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const cancel = (): void => {
+    alive = false;
+    clearTimeout(timer);
+  };
+  const lastMs = LAUNCHER_CHECK_MS[LAUNCHER_CHECK_MS.length - 1];
+  if (typeof probe !== 'function') {
+    timer = setTimeout(on.timeout, lastMs);
+    return cancel;
+  }
+  const check = (i: number, prevMs: number): void => {
+    if (i >= LAUNCHER_CHECK_MS.length) {
+      on.timeout();
+      return;
+    }
+    timer = setTimeout(() => {
+      void probe()
+        .catch(() => null)
+        .then((running) => {
+          if (!alive) return;
+          // Only a definite "not running" changes the hint; unsure keeps it.
+          if (running === false) on.gone();
+          else check(i + 1, LAUNCHER_CHECK_MS[i]);
+        });
+    }, LAUNCHER_CHECK_MS[i] - prevMs);
+  };
+  check(0, 0);
+  return cancel;
+}
+
 /** Press handler + the note to show under the button. */
 export function useStartMinecraft(): {
   busy: boolean;
@@ -88,13 +149,28 @@ export function useStartMinecraft(): {
   const scan = useMcSetupStore((s) => s.scan);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<StartNote | null>(null);
+  // The profile a successful press opened the launcher for; set = watching.
+  const [watching, setWatching] = useState<{ profile: string } | null>(null);
+  // useT hands back a new function every render; the checks must not restart
+  // on each one, so they read the translator through a ref.
+  const tRef = useRef(t);
+  tRef.current = t;
+  useEffect(() => {
+    if (!watching) return;
+    return watchLauncher(sei.minecraftRunning, {
+      gone: () => setNote(launcherGoneNote(tRef.current, watching.profile)),
+      timeout: () => setNote(null),
+    });
+  }, [watching]);
   const start = useCallback(
     async (mcVersion?: string | null) => {
       setBusy(true);
       setNote(null);
+      setWatching(null);
       try {
         const res = await sei.startMinecraft(mcVersion ? { mcVersion } : {});
         setNote(startMinecraftNote(t, res));
+        if (res.ok) setWatching({ profile: res.profileName });
         // The scan and main disagreed about the profile: re-scan so the
         // button turns back into Set up Sei profile.
         if (!res.ok && res.reason === 'no_profile') void scan();

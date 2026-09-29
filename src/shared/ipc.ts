@@ -2442,6 +2442,13 @@ export interface RendererApi {
    * newest supported one. Never throws; see StartMinecraftResult.
    */
   startMinecraft(args?: { mcVersion?: string }): Promise<StartMinecraftResult>;
+  /**
+   * Is the Minecraft Launcher, or a game it started, running (260929)? null
+   * when the probe cannot tell. Asked a few times after a Start Minecraft
+   * press so the hint can change when the launcher quit (e.g. its own
+   * "Unable to update the launcher" error). Never throws.
+   */
+  minecraftRunning(): Promise<boolean | null>;
   /** Returns the persisted wizard state (which installs are enabled, last setup timestamp, last skin server port). */
   getWizardState(): Promise<WizardState>;
   /**
@@ -3544,6 +3551,8 @@ export const IpcChannel = {
     promptShown: 'wizard:prompt-shown',
     // 260929: select the Sei profile + open the Minecraft Launcher.
     startMinecraft: 'wizard:start-minecraft',
+    // 260929: is the launcher (or a game it started) still running?
+    minecraftRunning: 'wizard:minecraft-running',
   },
   auth: {
     state: 'auth:state',

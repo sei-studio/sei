@@ -266,6 +266,52 @@ export function tasklistHasLauncher(csv: string): boolean {
 }
 
 /**
+ * macOS `pgrep -f` pattern for "the launcher, or a game it started": the
+ * launcher app itself, the vanilla client main class, Fabric's Knot (every
+ * Sei profile is Fabric) or the launcher's brand property on the java line.
+ * The launcher can close itself once the game starts, so the game counts.
+ */
+export const MAC_MINECRAFT_PGREP =
+  'Minecraft( Launcher)?\\.app/Contents/MacOS/|minecraft\\.launcher\\.brand|net\\.minecraft\\.client\\.main\\.Main|net\\.fabricmc\\.loader\\.impl\\.launch\\.knot\\.KnotClient';
+
+/**
+ * `tasklist` output with a launcher or a game it may have started. Windows
+ * shows no java arguments, so any javaw.exe counts: a false "running" only
+ * keeps the old hint, which is the safe side.
+ */
+export function tasklistHasLauncherOrGame(csv: string): boolean {
+  return tasklistHasLauncher(csv) || /^"javaw\.exe"/im.test(csv);
+}
+
+/**
+ * Best-effort, for the hint after Start Minecraft (260929): is the launcher
+ * (or a game it started) still running? null when the probe cannot tell
+ * (no pgrep / tasklist, a timeout, another platform), so the caller keeps
+ * what it already says. One process listing per call; the renderer asks a
+ * handful of times after a press, never on a loop.
+ */
+export async function isLauncherOrGameRunning(platform: NodeJS.Platform = process.platform): Promise<boolean | null> {
+  try {
+    if (platform === 'darwin') {
+      await execFile('/usr/bin/pgrep', ['-f', MAC_MINECRAFT_PGREP], { timeout: PROBE_TIMEOUT_MS });
+      return true; // pgrep exits 0 only on a match
+    }
+    if (platform === 'win32') {
+      const { stdout } = await execFile('tasklist', ['/FO', 'CSV', '/NH'], {
+        timeout: PROBE_TIMEOUT_MS,
+        windowsHide: true,
+        maxBuffer: 4 * 1024 * 1024,
+      });
+      return tasklistHasLauncherOrGame(stdout);
+    }
+  } catch (err) {
+    // pgrep: exit status 1 is "no process matched"; anything else is a failure.
+    if (platform === 'darwin' && (err as { code?: unknown }).code === 1) return false;
+  }
+  return null;
+}
+
+/**
  * `/usr/bin/open` arguments that launch a macOS candidate as an application.
  *
  * Opening the bundle path as a URL (Electron `shell.openPath` /

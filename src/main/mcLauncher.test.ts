@@ -21,7 +21,10 @@ import {
   openCandidate,
   startMinecraft,
   STORE_LAUNCHER_AUMID,
+  isLauncherOrGameRunning,
+  MAC_MINECRAFT_PGREP,
   tasklistHasLauncher,
+  tasklistHasLauncherOrGame,
   type LauncherEnv,
 } from './mcLauncher';
 
@@ -211,6 +214,28 @@ describe('tasklistHasLauncher', () => {
     expect(tasklistHasLauncher('"explorer.exe","1","Console","1","10 K"\r\n"MinecraftLauncher.exe","2","Console","1","9 K"')).toBe(true);
     expect(tasklistHasLauncher('"Minecraft.exe","3","Console","1","9 K"')).toBe(true);
     expect(tasklistHasLauncher('"javaw.exe","4","Console","1","9 K"\r\n"MinecraftServer.exe","5"')).toBe(false);
+  });
+});
+
+describe('launcher-or-game probe', () => {
+  it('on Windows counts the launcher or any javaw.exe, nothing else', () => {
+    expect(tasklistHasLauncherOrGame('"MinecraftLauncher.exe","2","Console","1","9 K"')).toBe(true);
+    expect(tasklistHasLauncherOrGame('"explorer.exe","1"\r\n"javaw.exe","4","Console","1","900 K"')).toBe(true);
+    expect(tasklistHasLauncherOrGame('"explorer.exe","1"\r\n"java.exe","4"\r\n"MinecraftServer.exe","5"')).toBe(false);
+  });
+
+  it('on macOS matches the launcher app and a Fabric or vanilla game, not unrelated java', () => {
+    const re = new RegExp(MAC_MINECRAFT_PGREP);
+    expect(re.test('/Applications/Minecraft.app/Contents/MacOS/launcher')).toBe(true);
+    expect(re.test('/Applications/Minecraft Launcher.app/Contents/MacOS/minecraft-launcher')).toBe(true);
+    expect(re.test('java -Dminecraft.launcher.brand=minecraft-launcher -cp x.jar net.fabricmc.loader.impl.launch.knot.KnotClient')).toBe(true);
+    expect(re.test('java -cp client.jar net.minecraft.client.main.Main --version 26.1')).toBe(true);
+    expect(re.test('java -jar /opt/server/fabric-server-launch.jar nogui')).toBe(false);
+    expect(re.test('/Applications/Sei.app/Contents/MacOS/Sei')).toBe(false);
+  });
+
+  it('cannot tell on other platforms', async () => {
+    expect(await isLauncherOrGameRunning('linux')).toBeNull();
   });
 });
 
