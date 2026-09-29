@@ -30,6 +30,8 @@
   position: relative;
   height: 100%;
   min-height: 0;
+  /* The compact rules below ask how tall THIS panel is (the game area). */
+  container-type: size;
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
@@ -56,9 +58,53 @@
    * scrollable range, which is what plain centering does to overflow. */
   justify-content: safe center;
   gap: 14px;
-  padding: var(--space-lg);
+  /* The bottom pad keeps the stack clear of GameSurface's chrome row (the
+   * phone chip / call cluster at the bottom center, 260929). */
+  padding: var(--space-lg) var(--space-lg) var(--game-chrome-h, 56px);
   text-align: center;
   overflow-y: auto;
+  /* When the stack is taller than the panel, what runs into the bottom band
+   * fades out instead of ending on a hard cut, so it reads as "more below"
+   * (scrolled to the end, the band is only the padding above). */
+  mask-image: linear-gradient(180deg, #000 calc(100% - 40px), transparent calc(100% - 8px));
+}
+
+/* Short game area (a ~720pt window puts the panel near 400px): tighten the
+ * stack so the survivor sheet stays in view (260929: its reason line was
+ * under the fold at the v0.6.5 sizes, with nothing saying it scrolled). */
+@container (max-height: 520px) {
+  .content {
+    gap: 8px;
+    padding-top: var(--space-md);
+  }
+
+  .title {
+    margin: 0;
+    font-size: 26px;
+  }
+
+  .btnBig {
+    padding: 7px 18px;
+    font-size: 19px;
+  }
+
+  .content .pack {
+    gap: var(--space-xs);
+    padding: var(--space-md) var(--space-md-plus);
+  }
+
+  .sheet {
+    gap: 4px;
+    padding: 8px 14px;
+  }
+}
+
+/* Shorter still: the art already says which game this is, so the title
+ * gives its line to the controls. */
+@container (max-height: 440px) {
+  .title {
+    display: none;
+  }
 }
 
 .title {

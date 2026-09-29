@@ -90,7 +90,7 @@ export function StardewLaunchPanel({ characterId }: StardewLaunchPanelProps): Re
       <div className={styles.scrim} aria-hidden="true" />
       <div className={styles.content}>
         <h2 className={styles.title}>Stardew Valley</h2>
-        <GamePackCard game="stardew" />
+        <GamePackCard game="stardew" className={styles.pack} />
         {win.mode ? (
           <SetupStepper
             key={win.mode}

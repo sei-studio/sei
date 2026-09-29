@@ -98,7 +98,12 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
     dstInstall: noop,
     dstLaunch: noop,
     dstOpenAppManagement: noop,
-    dstSurvivorGet: async () => ({ prefab: 'wickerbottom', source: 'auto', reason: 'She reads, and so do I.' }),
+    // A real-length reason (the v0.6.5 smoke test's ran three lines).
+    dstSurvivorGet: async () => ({
+      prefab: 'winona',
+      source: 'auto',
+      reason: "she's the only one who gets that being bad at games is actually fine, just make the tools work smarter, not harder, and let your teammate carry the rest.",
+    }),
     dstSurvivorSet: async () => ({ prefab: 'wickerbottom', source: 'user', reason: '' }),
     onDstInstallProgress: () => () => undefined,
     stardewInstallState: async () => ({
@@ -115,6 +120,9 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
       params.has('nolauncher')
         ? { ok: false, reason: 'no_launcher', profileName: 'Sei 26.1' }
         : { ok: true, profileName: 'Sei 26.1', mcVersion: '26.1', launcher: 'mac', alreadyOpen: false },
+    // `&launcherquit=1`: the launcher is gone by the first check, so the
+    // hint under Start Minecraft changes after 20 seconds.
+    minecraftRunning: async () => !params.has('launcherquit'),
     platform: params.get('platform') ?? 'darwin',
     worldCheckNow: async () => null,
     lanCheckNow: async () => ({ kind: 'closed' }),
@@ -134,7 +142,9 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
     }),
     saveConfig: noop,
     openExternal: noop,
-    gamePackState: async () => ({ kind: 'ready', root: '/r' }),
+    // `&pack=missing` (260929): the pack card's download offer, the tallest
+    // state a launch panel has.
+    gamePackState: async () => (params.get('pack') === 'missing' ? { kind: 'missing' } : { kind: 'ready', root: '/r' }),
     gamePackEnsure: async () => ({ kind: 'ready', root: '/r' }),
     onGamePackProgress: () => () => undefined,
     wizardPromptShown: async () => ({ shown: true }),

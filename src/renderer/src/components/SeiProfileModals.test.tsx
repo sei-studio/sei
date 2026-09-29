@@ -36,7 +36,7 @@ vi.mock('./mcdash/useMcSetupStore', async (orig) => {
 const { LanNotOpenModal } = await import('./LanNotOpenModal');
 const { UnsupportedVersionModal } = await import('./UnsupportedVersionModal');
 const { LanHostWarningModal } = await import('./LanHostWarningModal');
-const { startMinecraftNote } = await import('./mcdash/useStartMinecraft');
+const { startMinecraftNote, launcherGoneNote, watchLauncher, LAUNCHER_CHECK_MS } = await import('./mcdash/useStartMinecraft');
 const { t, useLangStore } = await import('../lib/i18n');
 
 const VANILLA: McInstall = {
@@ -140,6 +140,92 @@ describe('startMinecraftNote', () => {
     }
     useLangStore.getState().setLang('zh');
     expect(startMinecraftNote(t, { ok: false, reason: 'no_launcher', profileName: 'Sei 26.1' }).text).toContain('「Sei 26.1」');
+  });
+});
+
+describe('launcherGoneNote', () => {
+  it('tells the player to open the launcher themselves, in en and zh', () => {
+    useLangStore.getState().setLang('en');
+    const en = launcherGoneNote(t, 'Sei 26.1');
+    expect(en).toEqual({
+      tone: 'warn',
+      text: 'Didn\'t see the launcher? Open the Minecraft Launcher, pick "Sei 26.1" next to Play, and press Play.',
+    });
+    useLangStore.getState().setLang('zh');
+    const zh = launcherGoneNote(t, 'Sei 26.1').text;
+    expect(zh).toContain('「Sei 26.1」');
+    for (const text of [en.text, zh]) {
+      expect(text).not.toMatch(/\{\w+\}/);
+      expect(text).not.toContain('—');
+    }
+    useLangStore.getState().setLang('en');
+  });
+});
+
+describe('watchLauncher', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    return () => vi.useRealTimers();
+  });
+  const flush = async (ms: number): Promise<void> => {
+    await vi.advanceTimersByTimeAsync(ms);
+  };
+
+  it('stays quiet for 20s, then reports a launcher that is gone', async () => {
+    const probe = vi.fn(async () => false);
+    const on = { gone: vi.fn(), timeout: vi.fn() };
+    watchLauncher(probe, on);
+    await flush(LAUNCHER_CHECK_MS[0] - 1);
+    expect(probe).not.toHaveBeenCalled();
+    await flush(1);
+    expect(on.gone).toHaveBeenCalledTimes(1);
+    await flush(200_000);
+    expect(probe).toHaveBeenCalledTimes(1); // the watch ends once it is gone
+    expect(on.timeout).not.toHaveBeenCalled();
+  });
+
+  it('checks a handful of times while the launcher runs, then times the hint out', async () => {
+    const probe = vi.fn(async () => true);
+    const on = { gone: vi.fn(), timeout: vi.fn() };
+    watchLauncher(probe, on);
+    await flush(LAUNCHER_CHECK_MS[LAUNCHER_CHECK_MS.length - 1]);
+    expect(probe).toHaveBeenCalledTimes(LAUNCHER_CHECK_MS.length);
+    expect(on.timeout).toHaveBeenCalledTimes(1);
+    expect(on.gone).not.toHaveBeenCalled();
+    await flush(600_000);
+    expect(probe).toHaveBeenCalledTimes(LAUNCHER_CHECK_MS.length);
+  });
+
+  it('treats an unsure or failing probe as still running', async () => {
+    const answers: Array<boolean | null | Error> = [null, new Error('pgrep'), false];
+    const probe = vi.fn(async () => {
+      const a = answers.shift();
+      if (a instanceof Error) throw a;
+      return a ?? null;
+    });
+    const on = { gone: vi.fn(), timeout: vi.fn() };
+    watchLauncher(probe, on);
+    await flush(LAUNCHER_CHECK_MS[1]);
+    expect(on.gone).not.toHaveBeenCalled();
+    await flush(LAUNCHER_CHECK_MS[2] - LAUNCHER_CHECK_MS[1]);
+    expect(on.gone).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops on cancel, and only times out when there is no probe', async () => {
+    const probe = vi.fn(async () => false);
+    const on = { gone: vi.fn(), timeout: vi.fn() };
+    const cancel = watchLauncher(probe, on);
+    await flush(1_000);
+    cancel();
+    await flush(200_000);
+    expect(probe).not.toHaveBeenCalled();
+    expect(on.gone).not.toHaveBeenCalled();
+
+    const bare = { gone: vi.fn(), timeout: vi.fn() };
+    watchLauncher(undefined, bare);
+    await flush(LAUNCHER_CHECK_MS[LAUNCHER_CHECK_MS.length - 1]);
+    expect(bare.timeout).toHaveBeenCalledTimes(1);
+    expect(bare.gone).not.toHaveBeenCalled();
   });
 });
 

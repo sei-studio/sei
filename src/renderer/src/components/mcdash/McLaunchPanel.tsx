@@ -22,7 +22,8 @@
  *   version line      "Works with most Minecraft Java versions from 1.8 to
  *                     26.3." + "Which versions?" (260929), which opens a
  *                     small GUI window listing every joinable span, one
- *                     per slot (the inline list was a wall of numbers)
+ *                     per slot (the inline list was a wall of numbers),
+ *                     as a modal over the panel (McVersionsWindow)
  *   help link         "How do I set up launch?", only once the setup is
  *                     done: it reopens the same window on step 1, with
  *                     every step's live state, for anyone who wants to
@@ -93,27 +94,49 @@ const WINDOW_SKIN: StepperSkin = {
  * "Which versions?" (260929): every joinable span as a slot in the vanilla
  * dialog, so the gaps (1.9.0 to 1.9.2, 1.11, ...) are readable instead of
  * buried in one sentence. Derived from the same table as the short line.
+ *
+ * 260929 (v0.6.5 smoke test): it used to open IN the column under the version
+ * line, which at a 720pt window is below the panel's fold, so the link looked
+ * dead. It is now a small modal over the whole panel (the pause-menu
+ * darkening under the dialog), centered in what is visible: x, Esc, or a
+ * click outside the dialog closes it.
  */
 function McVersionsWindow({ onClose }: { onClose: () => void }): React.ReactElement {
   const t = useT();
   const spans = mcVersionSpanList(t);
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      onClose();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [onClose]);
   return (
-    <section className={styles.window} aria-label={t('Versions Sei can join')} data-slot="mc-versions">
-      <div className={styles.head}>
-        <span className={styles.stepTitle}>{t('Versions Sei can join')}</span>
-        <button type="button" className={styles.close} onClick={onClose} aria-label={t('Close')}>
-          ×
-        </button>
-      </div>
-      <ul className={styles.spans}>
-        {spans.map((span) => (
-          <li key={span} className={styles.span}>
-            {span}
-          </li>
-        ))}
-      </ul>
-      <span className={styles.sub}>{t('Versions not listed here will not work.')}</span>
-    </section>
+    <div
+      className={styles.overlay}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <section className={`${styles.window} ${styles.versionsWindow}`} role="dialog" aria-label={t('Versions Sei can join')} data-slot="mc-versions">
+        <div className={styles.head}>
+          <span className={styles.stepTitle}>{t('Versions Sei can join')}</span>
+          <button type="button" className={styles.close} onClick={onClose} aria-label={t('Close')} autoFocus>
+            ×
+          </button>
+        </div>
+        <ul className={styles.spans}>
+          {spans.map((span) => (
+            <li key={span} className={styles.span}>
+              {span}
+            </li>
+          ))}
+        </ul>
+        <span className={styles.sub}>{t('Versions not listed here will not work.')}</span>
+      </section>
+    </div>
   );
 }
 
@@ -144,6 +167,11 @@ export function McLaunchPanel({ characterId }: McLaunchPanelProps): React.ReactE
   const setup = useMcSetupSteps(STEP_SKIN);
   const win = useSetupWindow(setup.allDone);
   const [versionsOpen, setVersionsOpen] = React.useState(false);
+  const versionsLinkRef = React.useRef<HTMLButtonElement | null>(null);
+  const closeVersions = React.useCallback(() => {
+    setVersionsOpen(false);
+    versionsLinkRef.current?.focus();
+  }, []);
   // The short range needs its list beside it; an unrelated failure line
   // (credits, a crash) does not name versions, so it gets no link.
   const namesRange = !failReason || (summon?.kind === 'error' && summon.error === 'UNSUPPORTED_MC_VERSION');
@@ -151,8 +179,10 @@ export function McLaunchPanel({ characterId }: McLaunchPanelProps): React.ReactE
     <>
       {' '}
       <button
+        ref={versionsLinkRef}
         type="button"
         className={styles.inlineLink}
+        aria-haspopup="dialog"
         aria-expanded={versionsOpen}
         onClick={() => setVersionsOpen((v) => !v)}
       >
@@ -187,7 +217,7 @@ export function McLaunchPanel({ characterId }: McLaunchPanelProps): React.ReactE
         <h2 className={styles.title}>Minecraft</h2>
         {/* 260908 game packs: the Minecraft runtime is a download on first
             use; the card renders nothing once the pack is ready. */}
-        <GamePackCard game="minecraft" />
+        <GamePackCard game="minecraft" className={styles.pack} />
         {win.mode ? (
           <SetupStepper
             key={win.mode}
@@ -232,13 +262,13 @@ export function McLaunchPanel({ characterId }: McLaunchPanelProps): React.ReactE
             {versionsLink}
           </p>
         )}
-        {versionsOpen && namesRange ? <McVersionsWindow onClose={() => setVersionsOpen(false)} /> : null}
         {setup.complete && win.mode === null ? (
           <button type="button" className={styles.helpLink} onClick={win.openHelp}>
             {t('How do I set up launch?')}
           </button>
         ) : null}
       </div>
+      {versionsOpen && namesRange ? <McVersionsWindow onClose={closeVersions} /> : null}
     </div>
   );
 }

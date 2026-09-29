@@ -50,6 +50,8 @@ export const ZH_COMMON: Record<string, string> = {
   'No Sei profile found. Use Set up Sei profile first.': '没有找到 Sei 配置。请先点击「设置 Sei 配置」。',
   'Could not open the Minecraft Launcher. Open it yourself, pick "{profile}" next to Play, and press Play.':
     '无法打开 Minecraft 启动器。请手动打开它，在「开始游戏」旁选择「{profile}」，然后点击「开始游戏」。',
+  'Didn\'t see the launcher? Open the Minecraft Launcher, pick "{profile}" next to Play, and press Play.':
+    '没看到启动器？请打开 Minecraft 启动器，在「开始游戏」旁选择「{profile}」，然后点击「开始游戏」。',
   'Could not open the Minecraft Launcher. Open it yourself and pick the Sei profile next to Play.':
     '无法打开 Minecraft 启动器。请手动打开它，并在「开始游戏」旁选择 Sei 配置。',
   'Windows may ask whether Java can use the network. You can press Cancel. Sei joins your world from this computer, so it still works.':

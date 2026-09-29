@@ -2896,6 +2896,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return await startMinecraft({ mcVersion: args?.mcVersion });
   });
 
+  ipcMain.handle(IpcChannel.wizard.minecraftRunning, async () => {
+    const { isLauncherOrGameRunning } = await import('./mcLauncher');
+    return await isLauncherOrGameRunning();
+  });
+
   ipcMain.handle(IpcChannel.wizard.getState, async () => {
     const { loadWizardState } = await import('./wizardStateStore');
     return await loadWizardState();
