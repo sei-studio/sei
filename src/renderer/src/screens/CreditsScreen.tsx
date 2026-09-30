@@ -54,6 +54,7 @@ import { FeedbackRewardCard } from '../components/FeedbackRewardCard';
 import { FeedbackModal } from '../components/FeedbackModal';
 import { useNoticesStore } from '../lib/stores/useNoticesStore';
 import { formatRenewal } from '../lib/formatRenewal';
+import { useResetLine } from '../lib/useResetLine';
 import { TIER_ORDER, planCard, planName } from '../lib/planCatalog';
 import { t, useT } from '../lib/i18n';
 import styles from './CreditsScreen.module.css';
@@ -299,6 +300,13 @@ export function CreditsScreen(): React.ReactElement {
   const renewalText = formatRenewal(renewsAt);
   const endsText = formatRenewal(endsAt);
   const resetsIn = resetsAt ? formatResetsIn(resetsAt, nowMs) : '';
+  // 260926: at the wall, spell out when free play comes back, right above the
+  // plans and next to Top up. Re-evaluated on the 60s tick above. Gated on
+  // over_limit only: at 100% of the allowance with extra credits left the
+  // user can still play, so "resets in N days" would read as a wall that
+  // is not there.
+  const resetLine = useResetLine();
+  const showResetCallout = cloudMode && !snapshotFailed && overLimit && !!resetLine;
   const isSubscribed = plan !== 'free';
   // "To be cancelled": still on the paid tier but set to cancel at period end.
   const cancelScheduled = isSubscribed && subscriptionStatusRaw === 'cancelled';
@@ -405,6 +413,15 @@ export function CreditsScreen(): React.ReactElement {
           </div>
 
           <p className={styles.usageNote}>{t(CARRY_OVER_NOTE)}</p>
+
+          {showResetCallout ? (
+            <div className={styles.resetCallout} role="status">
+              <span className={styles.resetCalloutLine}>{resetLine}</span>
+              <span className={styles.resetCalloutHint}>
+                {t('To keep playing before then, top up or pick a plan below.')}
+              </span>
+            </div>
+          ) : null}
         </div>
 
         {/* Plans — Free / Quest / Party, current one highlighted. */}

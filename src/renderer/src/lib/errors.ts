@@ -14,6 +14,7 @@
  */
 import type { ErrorClass } from '@shared/errorClasses';
 import { t } from './i18n';
+import { MC_RANGE_VARS } from './mcVersions';
 
 /**
  * Plain-English error copy. Verbatim from UI-SPEC §"Plain-English error copy".
@@ -27,26 +28,43 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   // and reachable off to verify the one thing already known to be fine.
   // Retrying is the action that actually works (measured: it succeeded 21s
   // later on the same world), so lead with it.
-  BOT_START_TIMEOUT: "Couldn't finish joining your world in time. Press Summon to try again.",
+  BOT_START_TIMEOUT: "Couldn't finish joining your world in time. Press Launch to try again.",
   LAN_NOT_OPEN: "We can't see an open LAN world. In Minecraft, press Esc, choose Open to LAN, then click Start LAN World.",
   INVALID_API_KEY: "Your Anthropic API key was rejected. Open Settings → re-run onboarding to paste a fresh key.",
   RATE_LIMITED: "Anthropic is throttling requests. Wait a minute and try again.",
   NETWORK_OFFLINE: "No internet connection. Reconnect and try again.",
-  BOT_CRASH: "Sei stopped unexpectedly. Press Summon to restart.",
+  // 260916: the button this sits under says Launch, not Summon, and "stopped
+  // unexpectedly" read as a mid-game crash even when the companion never
+  // joined. Says which of the two happened.
+  BOT_CRASH: "Sei stopped before it could join your world. Press Launch to try again. If it keeps happening, the console at the bottom of the app has the reason.",
   LAN_UNAVAILABLE: "LAN auto-detect is blocked on this network. Try a home Wi-Fi network.",
   KEYCHAIN_LOCKED: "Couldn't read your saved API key from the system keychain. Re-run onboarding to re-save it.",
   KEYCHAIN_FALLBACK_PLAINTEXT: "Your system has no secret store. Sei will save your API key but it won't be hardware-protected.",
   NATIVE_MODULE_MISMATCH: "A bundled module didn't load. Reinstall Sei from the .dmg / .exe.",
-  // No hardcoded version range here: the real range comes from
-  // minecraft-protocol.supportedVersions in the bot's error text (surfaced by
-  // UnsupportedVersionModal), and a stale hardcode would lie to users.
-  UNSUPPORTED_MC_VERSION: "This world's Minecraft version is not supported yet. Open your world on a supported Java version and press Summon again.",
+  // 260926: names the exact range and the launcher steps. The old copy ("open
+  // your world on a supported Java version") named no version, and 19 people
+  // in 30 days hit it, mostly on 26.2 / 26.3. {versions} (every joinable
+  // version, from minecraft-protocol's table) and {recommended} (the version the
+  // setup wizard builds, where companion skins work) are filled at render time
+  // (errorCopyText), never hardcoded, so the numbers cannot go stale.
+  // 260929: {versions} became "most versions from {oldest} to {newest}"; the
+  // inline list was a wall of numbers. The exact list is behind "Which
+  // versions?" in the Minecraft panel and the routed modal.
+  // 260929 (R1c): points at the Sei profile the setup wizard builds (on
+  // {recommended}, with skins) instead of walking through a hand-made
+  // launcher installation; the routed modal carries the Start Minecraft /
+  // Set up Sei profile button.
+  UNSUPPORTED_MC_VERSION: "This world's Minecraft version is not supported yet. Sei works with most Minecraft Java versions from {oldest} to {newest}. Open the Sei profile in the Minecraft Launcher (it runs {recommended}, with companion skins), open or create a world there, open it to LAN, and press Launch again. No Sei profile yet? Set it up from the Minecraft screen in Sei.",
   // 260806: split out of LAN_NOT_OPEN. A Forge/NeoForge world that requires its
   // mods on the client kicks Sei every time, and the old copy sent the player to
   // re-open a world that was open and answering pings. Says what is actually
   // wrong and what actually works, and does NOT say "press Summon again":
   // retrying is the one thing guaranteed not to help here.
   MODDED_HOST_REJECTED: 'This world runs Forge or NeoForge and only lets in players who have its mods. Sei joins as a normal Minecraft client, so the world turns it away. Open a world without server-side mods, or use Fabric with client-only mods like minimaps.',
+  // 260929: refused before fork (Forge/NeoForge host on strong evidence). The
+  // routed modal (ForgeHostBlocked) carries the launcher steps; this is the
+  // one-line model-row copy.
+  FORGE_HOST_BLOCKED: "Sei can't join Forge or NeoForge worlds. Open the Sei profile in the Minecraft Launcher, open or create a world there, and open it to LAN.",
   // Skin pipeline + setup-wizard errors. Do NOT rephrase — the UI checker
   // matches these strings byte-for-byte against the spec.
   MOD_DOWNLOAD_FAILED: "Couldn't download CustomSkinLoader. Check your connection and try the setup again.",
@@ -58,7 +76,59 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   WIZARD_PERMISSION_DENIED: "Sei doesn't have permission to write to your Minecraft folder. Grant access and try again.",
   CLOUD_CREDITS_DEPLETED: "You've used this week's credits. Upgrade or top up on the plan screen, or switch to your own API key in Settings.",
   DAILY_LIMIT_REACHED: "Too many requests right now. Wait a little and try again.",
+  // 260828: pre-gate refusal — onboarding never captured a name. Previously
+  // surfaced as BOT_CRASH ("Sei stopped unexpectedly. Press Summon to restart."),
+  // which told users to retry the one thing that cannot work until they fix it.
+  // 260916: names the exact field. "Re-run onboarding" sent people back
+  // through the whole Sui scene for a one-line fix.
+  PREFERRED_NAME_MISSING: "Sei doesn't know your name yet. Open Settings, type it into the Name field, then press Launch again.",
+  // Game adapters (M0, 260908): game-neutral copy. The per-game setup modal
+  // adds the game's own steps; this is what the generic error modal shows.
+  GAME_WORLD_NOT_OPEN: "We can't see a game world to join. Open your world in the game, then press Play again.",
+  GAME_NOT_INSTALLED: "We couldn't find this game on your computer. Install it, then press Play again.",
+  GAME_INSTALL_FAILED: "Couldn't finish setting up the companion mod for this game. Make sure the game is closed, then try the setup again.",
+  GAME_NOT_ANSWERING: "The game is open but isn't answering. Make sure the Sei mod is enabled in the game, then press Play again.",
+  GAME_VERSION_UNSUPPORTED: "This game version isn't supported yet. Update the game to a supported version and press Play again.",
+  // 260908 game packs. The size mirrors GAME_PACKS.minecraft.sizeHintBytes
+  // (src/shared/gamePacks.ts); gamePacks.test.ts pins the two together.
+  GAME_PACK_DOWNLOAD_FAILED: "Couldn't download the support files this game needs (about 50 MB for Minecraft). Check your connection and press Play again. A retry usually works.",
+  // Don't Starve Together (game-adapters M2, 260908).
+  DST_SPAWN_FAILED: "Sei's helper answered, but no survivor appeared in your world. Make sure you are the host, then press Play again.",
+  DST_PORT_IN_USE: "Sei couldn't open its local port for Don't Starve Together. Change the discovery port in Settings, or close whatever is using it, and try again.",
+  DST_BODY_DIED: "Your companion's survivor died in the Constant. Press Play to summon them again.",
+  DST_ONE_COMPANION: "Don't Starve Together fits one companion at a time. Disconnect the companion already in your world, then press Play.",
+  // Stardew Valley (game-adapters M1, 260908).
+  STARDEW_FARMHAND_NO_MOD: "Someone in your farm doesn't have the Sei companion mod, so your companion can't appear for them. Ask them to install it, or play without them for now.",
+  SMAPI_INSTALL_FAILED: "Couldn't install SMAPI, the mod loader Stardew Valley needs. Make sure the game is closed and try the setup again, or install SMAPI from smapi.io and then re-run the setup.",
 };
+
+/**
+ * The translated copy for an error class, with every placeholder the table
+ * uses filled in (today the Minecraft version range). Prefer this over a bare
+ * `t(ERROR_COPY[cls])`, which would render `{recommended}` literally.
+ */
+export function errorCopyText(
+  cls: ErrorClass,
+  tr: (en: string, params?: Record<string, string | number>) => string = t,
+): string {
+  return tr(ERROR_COPY[cls] ?? ERROR_COPY.BOT_CRASH, MC_RANGE_VARS);
+}
+
+/**
+ * Strip Electron's IPC wrapper from a rejected `ipcRenderer.invoke` so main's
+ * user-facing copy shows clean. A main-side throw arrives as
+ * "Error invoking remote method 'chars:portrait-select': Error: Unknown
+ * portrait version." and the class name is whatever main threw
+ * (KnowledgeExtractError, Error, ...), so the second strip is class-agnostic.
+ * Use for surfaces that show main's message verbatim; structured errors that
+ * carry an ErrorClass go through ERROR_COPY instead.
+ */
+export function cleanIpcError(err: unknown): string {
+  const raw = (err as Error)?.message ?? String(err);
+  return raw
+    .replace(/^Error invoking remote method '[^']*':\s*/, '')
+    .replace(/^[A-Za-z]*Error:\s*/, '');
+}
 
 /**
  * Non-fatal warning copy (260518-o1k T8).
@@ -68,13 +138,14 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
  * tooltips on the done-step exclusion list. The user can proceed past
  * any of these; there is no "Continue blocked" semantic.
  *
- * Caller does the {version} interpolation inline:
- *   WARN_COPY.MC_VERSION_PRE_1_14.replace('{version}', install.mc_version!)
+ * Caller does the {version} / {latest} interpolation inline via t(); {latest}
+ * comes from minecraft-protocol's supportedVersions table so the named
+ * version can never go stale (the old copy hardcoded "1.21.x").
  */
 export const WARN_COPY = {
   MC_VERSION_PRE_1_14:
     'Detected MC {version}. Sei needs MC 1.14 or newer. ' +
-    'Pick a newer profile or switch to 1.21.x before continuing.',
+    'Pick a newer profile or switch to a supported version such as {latest} before continuing.',
   MOD_SCAN_PARSE_FAIL:
     "Couldn't read mod metadata, so this mod will be skipped. " +
     "If it's actually compatible, copy it into <install>/sei/mods/ manually.",
@@ -108,7 +179,7 @@ export function classifyRendererError(err: unknown): { class: ErrorClass; copy: 
     return { class: 'NETWORK_OFFLINE', copy: t(ERROR_COPY.NETWORK_OFFLINE) };
   }
   if (/unsupported_mc_version|unsupported.*version|version.*not.*support|incompatible.*version/i.test(lower)) {
-    return { class: 'UNSUPPORTED_MC_VERSION', copy: t(ERROR_COPY.UNSUPPORTED_MC_VERSION) };
+    return { class: 'UNSUPPORTED_MC_VERSION', copy: errorCopyText('UNSUPPORTED_MC_VERSION') };
   }
   // Before the LAN branch (260806): the modded-host kick text contains "kicked"
   // and often "connect" ("Please install Forge to connect"), so it would

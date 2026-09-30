@@ -20,7 +20,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { z } from 'zod';
 import { paths } from '../paths';
-import { buildChatSdk, CHAT_MODEL } from '../chat/sdk';
+import { CHAT_MODEL } from '../chat/sdk';
+import { buildLlmProvider } from '../llm';
 import { capKnowledgeText, sanitizeKnowledgeText, KNOWLEDGE_ENTRY_MAX_BYTES } from './extractText';
 
 /** Max stored entries per character. */
@@ -234,17 +235,15 @@ export async function compactKnowledge(characterId: string): Promise<KnowledgeEn
   const combined = await readKnowledgeForPromptUncapped(characterId, COMPACT_INPUT_MAX_BYTES);
   if (!combined) throw new Error('No knowledge to compact.');
 
-  const { client } = await buildChatSdk();
+  const llm = await buildLlmProvider();
   const run = (model: string) =>
-    client.messages.create(
-      {
-        model,
-        max_tokens: COMPACT_MAX_TOKENS,
-        system: COMPACT_SYSTEM,
-        messages: [{ role: 'user', content: `Knowledge files to compact:\n\n${combined}` }],
-      },
-      { timeout: COMPACT_TIMEOUT_MS },
-    );
+    llm.call({
+      model,
+      maxTokens: COMPACT_MAX_TOKENS,
+      system: COMPACT_SYSTEM,
+      messages: [{ role: 'user', content: `Knowledge files to compact:\n\n${combined}` }],
+      timeoutMs: COMPACT_TIMEOUT_MS,
+    });
   let res: Awaited<ReturnType<typeof run>>;
   try {
     res = await run(COMPACT_MODEL);

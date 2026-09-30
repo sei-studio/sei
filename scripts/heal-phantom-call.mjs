@@ -18,9 +18,10 @@
  * Usage (quit Sei first):
  *   node heal-phantom-call.mjs [--dry-run] [--auto] [--data-dir <path>]
  *
- * No Node installed? The Sei app carries one:
- *   macOS:   ELECTRON_RUN_AS_NODE=1 "/Applications/Sei.app/Contents/MacOS/Sei" heal-phantom-call.mjs
- *   Windows: set ELECTRON_RUN_AS_NODE=1 && "%LOCALAPPDATA%\Programs\Sei\Sei.exe" heal-phantom-call.mjs
+ * Needs Node.js (https://nodejs.org, any LTS). Sei builds after v0.6.5-beta.3
+ * disable Electron's RunAsNode fuse, so the installed app can no longer be
+ * borrowed as a Node runtime via ELECTRON_RUN_AS_NODE. Users without Node
+ * should use the in-app phantom-call repair instead (src/main/recovery).
  *
  * --dry-run  report only, change nothing
  * --auto     quarantine every auto-flagged session without asking per-session

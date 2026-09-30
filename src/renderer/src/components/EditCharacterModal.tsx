@@ -34,6 +34,7 @@ import { useT } from '../lib/i18n';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useChatStore } from '../lib/stores/useChatStore';
 import { useUiStore } from '../lib/stores/useUiStore';
+import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { Button } from './Button';
 import { ModalShell } from './ModalShell';
 import { PercentBar } from './PercentBar';
@@ -41,6 +42,7 @@ import { TextField } from './TextField';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ResetMemoryConfirmModal } from './ResetMemoryConfirmModal';
 import { PortraitImagePicker } from './PortraitImagePicker';
+import { PortraitVersionsModal } from './PortraitVersionsModal';
 import { SkinEditor } from './SkinEditor';
 import { VoicePicker } from './VoicePicker';
 import type { VoiceParams } from '../lib/voicePicker';
@@ -86,6 +88,8 @@ export function EditCharacterModal({
   const [name, setName] = useState<string>(character.name ?? '');
   const [description, setDescription] = useState<string>(character.description ?? '');
   const [portraitImage, setPortraitImage] = useState<string | null>(character.portrait_image);
+  // 260909: Card image versions + regenerate popup (stacked above this modal).
+  const [portraitVersionsOpen, setPortraitVersionsOpen] = useState(false);
   const [personaSource, setPersonaSource] = useState<string>(character.persona.source ?? '');
   const [personaExpanded, setPersonaExpanded] = useState<string>(character.persona.expanded ?? '');
   // Voice (260720): null = Auto (metadata.voiceId unset), 'none' = silent,
@@ -111,6 +115,24 @@ export function EditCharacterModal({
   // persistVoiceSettings). These hold the last-persisted values.
   const [savedVoiceId, setSavedVoiceId] = useState<string | null>(voiceId);
   const [savedVoiceParams, setSavedVoiceParams] = useState<VoiceParams>(voiceParams);
+
+  // W5 (260817, china-compat): local-TTS gate for the Voice section. When the
+  // user is BYOK with tts_engine 'local', the ElevenLabs voice picker and
+  // previews are hidden and only the pitch slider shows. The character's
+  // stored ElevenLabs voiceId stays untouched underneath (voiceId state is
+  // simply never changed while the picker is hidden), so cloud characters and
+  // a later engine switch keep their designated voice.
+  const aiBackendKind = useCreditsStore((s) => s.ai_backend_kind);
+  const [localTtsPref, setLocalTtsPref] = useState<boolean>(false);
+  useEffect(() => {
+    void sei
+      .getConfig()
+      .then((c) => setLocalTtsPref(c.tts_engine === 'local'))
+      .catch(() => {
+        /* non-fatal — default keeps the full picker */
+      });
+  }, []);
+  const localTtsMode = aiBackendKind === 'local' && localTtsPref;
 
   // ── Games: chess profile (260710). Auto-derived from the persona on the
   //    first game unless the user customizes it here (source 'user'). ─────
@@ -263,7 +285,18 @@ export function EditCharacterModal({
     setPortraitImage(ref);
     setError(null);
     try {
-      const persisted = await sei.saveCharacter({ ...character, portrait_image: ref }, { skipExpansion: true });
+      // Read the LATEST row first: applyPortrait / removePortrait in main just
+      // rewrote metadata (portrait_versions / portrait_active, 260909), and
+      // saving the stale `character` prop over it would drop those records.
+      //
+      // This renderer-side save looks redundant (main already saved the row
+      // when it applied the bytes) but is LOAD-BEARING for SHARED characters:
+      // applyPortrait calls the store-level saveCharacter, and the moderation
+      // gate on new portrait bytes runs only inside the chars:save IPC handler
+      // that sei.saveCharacter reaches. Dropping this call would publish an
+      // unmoderated image.
+      const latest = (await sei.getCharacter(character.id)) ?? character;
+      const persisted = await sei.saveCharacter({ ...latest, portrait_image: ref }, { skipExpansion: true });
       await refreshCharacter(character.id);
       onSaved?.(persisted);
     } catch (err) {
@@ -510,11 +543,19 @@ export function EditCharacterModal({
                 <>
                   <div className={styles.subSection}>
                     <label className={styles.label}>{t('Card image')}</label>
-                    <PortraitImagePicker
-                      characterId={character.id}
-                      value={portraitImage}
-                      onChange={(ref) => void persistPortrait(ref)}
-                    />
+                    <div className={styles.portraitRow}>
+                      <PortraitImagePicker
+                        characterId={character.id}
+                        value={portraitImage}
+                        onChange={(ref) => void persistPortrait(ref)}
+                      />
+                      {/* 260909: the editor only opens for characters the user
+                          owns, so the versions + regenerate popup is always
+                          available here (it gates sign-in itself). */}
+                      <Button kind="ghost" size="sm" onClick={() => setPortraitVersionsOpen(true)}>
+                        {t('Regenerate')}
+                      </Button>
+                    </div>
                   </div>
                   <div className={styles.subSection}>
                     <label className={styles.label}>{t('Skin')}</label>
@@ -528,13 +569,19 @@ export function EditCharacterModal({
                 <div className={styles.subSection}>
                   <label className={styles.label}>{t('Voice')}</label>
                   <p className={styles.paneHint}>
-                    {t('How they sound on voice calls. Changes save when you press Done.')}
+                    {localTtsMode
+                      ? t(
+                          'Local voices are on: Sei picks a local voice that matches this companion. Tune the pitch here. Their ElevenLabs voice is kept for when you switch back.',
+                        )
+                      : t('How they sound on voice calls. Changes save when you press Done.')}
                   </p>
                   <VoicePicker
                     value={voiceId}
                     onChange={setVoiceId}
                     params={voiceParams}
                     onParamsChange={setVoiceParams}
+                    localTtsMode={localTtsMode}
+                    previewCharacterId={character.id}
                   />
                 </div>
               ) : null}
@@ -844,6 +891,19 @@ export function EditCharacterModal({
           characterName={character.name}
           onCancel={() => setResetConfirmOpen(false)}
           onConfirm={() => void doResetMemory()}
+        />
+      ) : null}
+      {portraitVersionsOpen ? (
+        <PortraitVersionsModal
+          characterId={character.id}
+          characterName={character.name}
+          tier="stacked"
+          onClose={() => {
+            setPortraitVersionsOpen(false);
+            // The popup may have swapped the canonical bytes; the ref string
+            // is unchanged but the picker preview must repaint.
+            void refreshCharacter(character.id);
+          }}
         />
       ) : null}
     </>

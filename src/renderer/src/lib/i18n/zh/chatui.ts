@@ -61,10 +61,19 @@ export const ZH_CHATUI: Record<string, string> = {
 
   // Screen share (Backseat)
   'Backseat (beta)': 'Backseat（测试版）',
+  // Disabled-state tooltips (260907)
+  'End the Minecraft session to use Backseat': '结束 Minecraft 会话后才能使用 Backseat',
+  'End the Minecraft session to share your screen': '结束 Minecraft 会话后才能共享屏幕',
+  'Start a voice call to share your screen': '先开始语音通话才能共享屏幕',
+  // Vision gate (china-compat W9)
+  'Screen sharing needs a model that can see images. Your current model ({model}) does not support vision.':
+    '屏幕共享需要能看懂图像的模型。你当前的模型（{model}）不支持视觉能力。',
+  'Screen sharing needs a model that can see images. Your current model does not support vision.':
+    '屏幕共享需要能看懂图像的模型。你当前的模型不支持视觉能力。',
   'NEW': '新功能',
-  'Stream anything with Backseat (beta)': '用 Backseat（测试版）分享任何画面',
-  'Try streaming your game, watching a movie, or doomscrolling together!':
-    '试试分享你的游戏、一起看电影，或者一起刷视频！',
+  // One-time games tip under the header's games button (260929).
+  'New games added': '新增游戏',
+  '{first} and {second} are here. Play them with {name}.': '{first}和{second}来啦，和{name}一起玩吧。',
   'Show {name} your screen': '把你的屏幕分享给{name}',
   'Sound is shared too, so {name} can hear it.': '声音也会一起共享，{name} 能听到。',
   'Sharing starts a voice call.': '开始共享会同时发起语音通话。',
@@ -120,8 +129,38 @@ export const ZH_CHATUI: Record<string, string> = {
 
   // McLaunchPanel
   'Connecting...': '连接中...',
+  'Starting companion...': '正在启动伙伴...',
+  'Joining your world...': '正在进入你的世界...',
   'Launch': '启动',
   'How do I set up launch?': '如何设置启动？',
+  'Works with most Minecraft Java versions from {oldest} to {newest}.': '支持 {oldest} 至 {newest} 之间的大多数 Minecraft Java 版本。',
+  'Your open world is on Minecraft {version}, which Sei cannot join yet. Sei works with most Minecraft Java versions from {oldest} to {newest}.':
+    '你打开的世界是 Minecraft {version}，Sei 暂时无法加入。Sei 支持 {oldest} 至 {newest} 之间的大多数 Minecraft Java 版本。',
+  // "Which versions?" list (McLaunchPanel + UnsupportedVersionModal, 260929).
+  'Which versions?': '支持哪些版本？',
+  'Versions Sei can join': 'Sei 可以加入的版本',
+  'Versions not listed here will not work.': '未列出的版本无法使用。',
+  // Span inside the supported-version list ("1.19 to 1.21.11"), lib/mcVersions.
+  '{from} to {to}': '{from} 至 {to}',
+  // Minecraft setup steps on the launch panel (McSteps, 260909).
+  'Minecraft setup steps': 'Minecraft 设置步骤',
+  'Looking for Minecraft on this computer...': '正在这台电脑上查找 Minecraft…',
+  'Minecraft Java Edition is installed.': '已安装 Minecraft Java 版。',
+  'Install Minecraft Java Edition from minecraft.net, then check again.': '请从 minecraft.net 安装 Minecraft Java 版，然后重新检查。',
+  'Get Minecraft': '获取 Minecraft',
+  'Your Minecraft is Sei-ready: Fabric for {version} with companion skins. Pick the "Sei {version}" profile in the launcher.': '你的 Minecraft 已为 Sei 准备就绪：{version} 版 Fabric 和伙伴皮肤。请在启动器中选择“Sei {version}”配置。',
+  'Set up a Sei-ready Minecraft: a separate "Sei" profile in your launcher on a version Sei can join (up to {latest}), with Fabric and the companion-skin mod. One time, about a minute. Your own profile is not changed.':
+    '设置一个为 Sei 准备的 Minecraft：在启动器中新增一个独立的“Sei”配置，使用 Sei 能加入的版本（最高 {latest}），并装好 Fabric 和伙伴皮肤模组。只需一次，约一分钟。不会改动你自己的配置。',
+  'Minecraft Java Edition': 'Minecraft Java 版',
+  'A Sei-ready Minecraft': '为 Sei 准备的 Minecraft',
+  'A world open to LAN': '开放到局域网的世界',
+  'Set up': '设置',
+  'Do not show again': '不再显示',
+  'Your world is open to LAN.': '你的世界已开放到局域网。',
+  'Open a world to LAN:': '把世界开放到局域网：',
+  'Set up Minecraft for Sei': '为 Sei 设置 Minecraft',
+  'Sei adds a separate "Sei" profile to your Minecraft launcher: Fabric on a Minecraft version Sei can join, plus a small mod (CustomSkinLoader) so each companion shows their own skin and name in your world. Your own profile is not changed. Takes about a minute.':
+    'Sei 会在你的 Minecraft 启动器中新增一个独立的“Sei”配置：在 Sei 能加入的 Minecraft 版本上安装 Fabric，再加一个小模组（CustomSkinLoader），让每位伙伴在你的世界里显示自己的皮肤和名字。不会改动你自己的配置。约需一分钟。',
 
   // McInstallList / McInstallRow
   'Detected Minecraft installs': '检测到的 Minecraft 安装',
@@ -180,6 +219,12 @@ export const ZH_CHATUI: Record<string, string> = {
     '一起在永恒大陆求生。{name} 会采集、战斗，和你一起守着火堆熬过黑夜。',
   'A quiet co-working session. {name} keeps you company while you get things done.':
     '一段安静的共同工作时光。{name} 会在你做事时陪伴你。',
+  'Play any Roblox game while {name} watches your screen and talks with you on a voice call.':
+    '玩任意 Roblox 游戏，{name}会通过语音通话看着你的屏幕陪你聊天。',
   'Tell us what you want to play together. Suggestions go straight to the team.':
     '告诉我们你想一起玩什么。建议会直接送达团队。',
+  // Guided first moment (260926): the next-step card under the first greeting.
+  'Play chess now': '现在来下棋',
+  'Summon me in Minecraft': '叫我进 Minecraft',
+  'Call me': '给我打电话',
 };

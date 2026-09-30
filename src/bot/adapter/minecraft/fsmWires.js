@@ -34,6 +34,8 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
         username: payload.username,
         text: payload.message ?? payload.text ?? '',
         playerSpoke: !!payload.playerSpoke,
+        // 260925: a sibling AI's line (transcript labels it by name, not as the player).
+        fromCompanion: payload.fromCompanion === true,
         addressed: !!payload.addressed,
         nearby: payload.nearby !== false,  // chat.js only emits when at least one of player/addressed/nearby holds
         // 260618: when set, the brain records this line to history but does NOT

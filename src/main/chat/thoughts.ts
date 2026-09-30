@@ -102,3 +102,26 @@ export const THOUGHT_JOINING_GAME =
  */
 export const THOUGHT_JOINING_CALL =
   'You just joined a live voice call with the player. Greet them first, briefly, in your own voice.';
+
+/**
+ * The guided first moment (260926). Rides the first-meeting greeting when the
+ * chat was opened straight out of onboarding: the greeting should use what
+ * onboarding learned (the name, already in the system prompt) and end on ONE
+ * concrete thing to do together. The renderer draws the matching buttons under
+ * the greeting, so the line only has to make the offer. Chess is the default
+ * because it needs no install; Minecraft leads only when a LAN world is open.
+ * Folded AFTER THOUGHT_FIRST_MEETING in the same note, so its "end it by"
+ * instruction is the last thing the model reads.
+ */
+export function thoughtFirstMoment(primary: 'chess' | 'minecraft'): string {
+  const offer =
+    primary === 'minecraft'
+      ? 'End it by asking if they want you to join the Minecraft world they have open right now.'
+      : 'End it by inviting them to play a game of chess with you right now. Chess opens right here beside the chat and needs nothing installed.';
+  return (
+    'This human just finished setting up Sei, so this is their first time here. ' +
+    'If you know their name, use it. Keep the whole greeting short. ' +
+    `${offer} ` +
+    'A button to start it will appear under your message, so you do not need to explain where to click.'
+  );
+}

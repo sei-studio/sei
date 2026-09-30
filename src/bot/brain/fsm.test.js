@@ -325,3 +325,37 @@ describe('idle backoff across consecutive ticks (260730)', () => {
     vi.useRealTimers()
   })
 })
+
+// 260921 — quiet is measured from the END of the companion's turn.
+//
+// The idle timer used to count from the last event's ARRIVAL. At the agentic
+// 5s cadence it fired while the reply to that event was still generating (a
+// turn takes 4-8s), queued behind it, and dispatched the instant the turn
+// closed. Measured on a Stardew session: the idle turn opened 3 ms after the
+// reply's loop ended, before the reply's paced chat line had been sent, saw
+// the question as unanswered and answered it again with a different answer.
+describe('idle tick never fires into a turn that is still running (260921)', () => {
+  it('skips the tick while a dispatch is in flight and counts quiet from its end', async () => {
+    vi.useFakeTimers()
+    let release
+    const onDispatch = vi.fn((event) => {
+      if (event !== 'sei:chat_received') return undefined
+      return new Promise((resolve) => { release = resolve })
+    })
+    const q = createPriorityQueue({ onDispatch, idleFallbackMs: 1000 })
+    const idles = () => onDispatch.mock.calls.filter((c) => c[0] === 'sei:idle').length
+
+    q.enqueue(Priority.P1_CHAT, 'sei:chat_received', { playerSpoke: true })
+    await vi.advanceTimersByTimeAsync(3000)   // the reply turn runs for 3s, past the 1s cadence
+    expect(idles()).toBe(0)                   // nothing queued behind it
+
+    release()
+    await vi.advanceTimersByTimeAsync(500)    // 0.5s after the turn ended: still not quiet long enough
+    expect(idles()).toBe(0)
+    await vi.advanceTimersByTimeAsync(700)    // 1.2s after the turn ended
+    expect(idles()).toBe(1)
+
+    q.dispose()
+    vi.useRealTimers()
+  })
+})

@@ -26,6 +26,7 @@
 
 import { dbOf, pushEnv, type EnvSample, type MicEchoInfo } from './echoGate';
 import { createSttArbiter } from './sttArbiter';
+import { whisperMirrorFirst } from './mirrorPref';
 
 export type DictationStatus = 'loading-model' | 'ready' | 'error';
 
@@ -313,7 +314,8 @@ registerProcessor('sei-vad-capture', SeiVadCapture);
 `;
 
 export async function createDictation(opts: {
-  onUtterance: (text: string) => void;
+  /** `span` (260925): wall-clock bounds of the utterance's audio, when known. */
+  onUtterance: (text: string, span?: { t0: number; t1: number }) => void;
   onStatus: (status: DictationStatus, detail?: string) => void;
   /** CONFIRMED barge-in: a word was transcribed from speech that opened during
    * hold. The owner should stop companion playback — which releases the hold —
@@ -348,6 +350,16 @@ export async function createDictation(opts: {
    * cloud-only through the arbiter, bounded by CLOUD_ONLY_TIMEOUT_MS with no
    * local fallback — a failed/empty cloud pass drops the utterance. */
   localModel?: 'eager' | 'none';
+  /** 260816 SenseVoice: which engine serves the LOCAL leg when 'eager'.
+   * 'whisper' (default) is the in-renderer worker; 'sensevoice' skips the
+   * worker entirely and every local pass goes through `mainTranscribe`
+   * (main-side sherpa SenseVoice). The arbiter/race structure is unchanged —
+   * only the local transcriber swaps. */
+  localEngine?: 'whisper' | 'sensevoice';
+  /** 260816: main-side transcription for the 'sensevoice' engine. Must
+   * resolve transcript text; errors are treated as '' (the utterance falls
+   * to cloud, or drops, exactly like an empty Whisper result). */
+  mainTranscribe?: (audio: Float32Array) => Promise<string>;
   /** 'none' mode only: a cloud pass produced no transcript (unavailable,
    * transport error, timeout), so an utterance was dropped with nothing to
    * fall back on. Edge-fired ONCE per dictation session — the owner uses it
@@ -380,6 +392,11 @@ export async function createDictation(opts: {
   onMicReady?: () => void;
 }): Promise<Dictation> {
   const useLocalModel = (opts.localModel ?? 'eager') !== 'none';
+  // 260816: the SenseVoice engine runs in MAIN (sherpa), so no worker boots —
+  // the local leg of the arbiter race calls mainTranscribe instead.
+  const useSenseVoice =
+    useLocalModel && opts.localEngine === 'sensevoice' && typeof opts.mainTranscribe === 'function';
+  const useWorker = useLocalModel && !useSenseVoice;
   let nextId = 1;
   /** Delivery registry for ARBITRATED results, keyed by the id postTranscribe
    * returns — deleting an id (cancelEager) drops the eventual result. */
@@ -394,7 +411,7 @@ export async function createDictation(opts: {
   // connect without the download.)
   let worker: Worker | null = null;
   let ready: Promise<void> = Promise.resolve();
-  if (useLocalModel) {
+  if (useWorker) {
     opts.onStatus('loading-model');
     const w = new Worker(new URL('./whisperWorker.ts', import.meta.url), { type: 'module' });
     worker = w;
@@ -421,7 +438,7 @@ export async function createDictation(opts: {
         }
       };
     });
-    w.postMessage({ type: 'init', language: opts.language ?? 'en' });
+    w.postMessage({ type: 'init', language: opts.language ?? 'en', mirrorFirst: whisperMirrorFirst() });
   }
 
   let stream: MediaStream;
@@ -567,6 +584,14 @@ export async function createDictation(opts: {
   }
 
   function localTranscribe(audio: Float32Array): Promise<string> {
+    // SenseVoice engine (260816): the local leg is a main-process sherpa call.
+    // Errors resolve '' — the same shape as an empty Whisper result, so the
+    // arbiter's cloud-wait / drop behavior applies unchanged.
+    if (useSenseVoice) {
+      return (opts.mainTranscribe as (audio: Float32Array) => Promise<string>)(audio).catch(
+        () => '',
+      );
+    }
     const w = worker;
     if (!w) return Promise.resolve(''); // 'none' mode never calls this
     return new Promise((resolve) => {
@@ -660,7 +685,7 @@ export async function createDictation(opts: {
         console.log(`[sei/voice] echo-gate: dropped speaker echo — "${text.slice(0, 80)}"`);
         return;
       }
-      opts.onUtterance(text);
+      opts.onUtterance(text, { t0, t1 });
     };
     const check = opts.echoCheck;
     if (!check || !text) {

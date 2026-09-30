@@ -2,6 +2,8 @@
 // scripts/postinstall.mjs
 //
 // Unified postinstall for Sei. Order matters for the Phase 15 vision render path:
+//   0. patch-package: apply patches/*.patch to JS deps (Minecraft 26.2/26.3 support,
+//      see patches/README.md). Pure JS edits, no native code, so order vs. 1-3 is free.
 //   1. Apply gl/nan source patches (must precede any gl compile — see patch-vision-native.mjs).
 //   2. `electron-builder install-app-deps` — rebuilds ALL native deps against Electron's ABI.
 //   3. rebuild-vision-native.mjs — authoritative gl + canvas rebuild with the correct build
@@ -53,6 +55,13 @@ env.PKG_CONFIG_PATH = [
 // keep the direct exec (no shell) so the working build path is unchanged.
 const isWin = process.platform === 'win32';
 const run = (cmd, args) => execFileSync(cmd, args, { cwd: root, stdio: 'inherit', env, shell: isWin });
+
+// 0. JS dependency patches (patches/*.patch). Fails the install if a patch no longer
+// applies (e.g. a dep was bumped), so a build can never silently drop 26.x support.
+// --error-on-warn also fails on a version mismatch (a lockfile bump that leaves a
+// patch made for the old version applying to the new one).
+log('applying patch-package patches...');
+run('npx', ['patch-package', '--error-on-fail', '--error-on-warn']);
 
 // 1. Patch gl/nan sources before any compile.
 log('applying vision native source patches...');

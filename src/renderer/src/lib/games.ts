@@ -82,6 +82,16 @@ const TILES: Record<string, { image?: string; description: (companionName: strin
         { name },
       ),
   },
+  roblox: {
+    // Official Roblox press-kit render ("Players on Roblox", about.roblox.com
+    // /press-kit, Renders & Artwork), cropped clear of its corner wordmark.
+    image: './img/game-roblox.jpg',
+    description: (name) =>
+      t(
+        'Play any Roblox game while {name} watches your screen and talks with you on a voice call.',
+        { name },
+      ),
+  },
   focus: {
     image: './img/game-focus.jpg',
     description: (name) =>

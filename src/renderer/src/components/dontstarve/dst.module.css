@@ -1,0 +1,370 @@
+/* Don't Starve Together surfaces (game adapters M2, 260908). Tokens only;
+ * the "Summoning Terminal" look, no game-styled exception here. */
+
+/* ── launch panel (the survivor select lives in DstLaunchPanel.module.css
+ * since 260909; these remain for the settings + modal surfaces) ── */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  height: 100%;
+  padding: var(--space-lg);
+  overflow: auto;
+}
+
+.title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.hint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.cardBody {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  align-items: center;
+}
+
+.failLine {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--red);
+}
+
+.okLine {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ok);
+}
+
+.nameLine {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.survivorRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.survivorReason {
+  margin: 0;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-2);
+}
+
+.select {
+  padding: var(--space-xs) var(--space-sm);
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+}
+
+.select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ── dashboard ── */
+.dash {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  height: 100%;
+  padding: var(--space-md);
+  overflow: auto;
+}
+
+.dashHead {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.vitals {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-sm);
+}
+
+.vital {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.vitalLabel {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.vitalValue {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.bar {
+  height: 4px;
+  background: var(--bg-2);
+}
+
+.barFill {
+  height: 100%;
+  background: var(--accent);
+}
+
+.barFillLow {
+  height: 100%;
+  background: var(--red);
+}
+
+.clockRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.clockRow strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.invTitle {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.invList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.invItem {
+  padding: 2px var(--space-sm);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.invHeld {
+  border-color: var(--accent);
+}
+
+.location {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.waiting {
+  padding: var(--space-lg);
+  font-size: 13px;
+  color: var(--text-2);
+  text-align: center;
+}
+
+/* ── settings section rows ──
+   SettingsScreen's .row is label | value | control with .label at flex: 1
+   and min-width: 0. A long game-folder path and the port helper sentence
+   cannot shrink (min-width: auto on flex items), so the label collapsed to
+   nothing and the path painted over it. These rows size the label to its
+   content and let the value wrap instead. */
+.rowLabel {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--text);
+}
+
+.rowValue {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: right;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.pathValue {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.portHelper {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.portInput {
+  flex: 0 0 auto;
+  width: 8ch;
+  padding: var(--space-xs) var(--space-sm);
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+}
+
+.portInput:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ── setup steps (DstSteps, 260909) ──
+   The McSetupModal "open to LAN" list, with a state per step: done steps
+   read as a check in the accent, the current one keeps full text colour,
+   later ones recede. Same numbering, same widths. */
+.steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.step {
+  display: flex;
+  gap: var(--space-md);
+  align-items: baseline;
+}
+
+.stepNumber {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  width: 22px;
+  flex-shrink: 0;
+}
+
+.stepBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-width: 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.stepDone .stepBody {
+  color: var(--text-2);
+}
+
+.stepLater .stepNumber {
+  color: var(--muted);
+}
+
+.stepLater .stepBody {
+  color: var(--muted);
+}
+
+/* The token step skin (useDstSetupSteps in the setup modal): a quiet
+ * secondary line and a quiet text control. */
+.sub {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.link {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  color: var(--text-2);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.link:hover {
+  color: var(--text);
+}

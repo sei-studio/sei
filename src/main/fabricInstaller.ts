@@ -1,46 +1,51 @@
 /**
- * Fabric Loader headless installer.
+ * Fabric Loader setup for a vanilla `.minecraft`, without Java.
  *
- * Three-step flow:
- *   1. Locate a runnable Java executable. Probes Minecraft's bundled JRE
- *      FIRST (under `<mcDir>/runtime/java-runtime-gamma/...`)
- *      then falls back to system PATH. If neither exists, throws
- *      FABRIC_INSTALL_FAILED with a corrected error message pointing the
- *      user at the launcher's bundled-Java install path — NOT asking the
- *      user to install Java themselves.
- *   2. Resolve the latest stable installer + loader versions from
- *      meta.fabricmc.net (two 30s-timeout HTTPS calls). If
- *      `opts.loaderVersion` is supplied, the loader-list call is skipped.
- *   3. Download the installer JAR from maven.fabricmc.net (60s timeout,
- *      AbortSignal-propagated), validate the ZIP magic, then `execFile`
- *      java with the installer's `client` mode (90s timeout, AbortSignal
- *      propagated — SIGTERM on cancel). On non-zero exit, surface stderr
- *      tail in the thrown error so the wizard UI can show a useful trace.
+ * Normal path (R6, 260929): no installer jar, no Java.
+ *   1. Pick the newest stable loader for the Minecraft version from Fabric
+ *      meta (`/v2/versions/loader/<mc>`).
+ *   2. Fetch the launcher version JSON Fabric meta already builds for the
+ *      official launcher (`/v2/versions/loader/<mc>/<loader>/profile/json`).
+ *      It `inheritsFrom` the vanilla version, so the launcher downloads the
+ *      vanilla game (if missing) and every library on the first Play.
+ *   3. Write `versions/<id>/<id>.json` ourselves, prefetch the few Fabric
+ *      libraries best-effort (same as the Fabric installer does "in case the
+ *      launcher fails"), and write the Sei profile into the launcher profile
+ *      files (launcherProfiles.ts), selected via lastUsed.
+ *   This is byte-for-byte what fabric-installer's ClientInstaller does.
+ *
+ * Fallback, ONLY when every Fabric meta mirror is unreachable: download the
+ * installer jar and run it with Java (`client -noprofile`), then write the
+ * launcher profile the same way. That is the only path that needs Java, so
+ * a player without Java only ever hits it on a network failure.
  *
  * Cross-cutting:
  *   - Every external call has a wall-clock timeout per CLAUDE.md.
  *   - AbortSignal threads from opts.signal through every fetch + execFile
  *     so the IPC cancel aborts in-flight work.
- *   - `execFile` not `exec` — arguments are an array, no shell
- *     interpolation possible.
- *   - The installer writes the Fabric entry to `launcher_profiles.json`
- *     so the user can pick it from the Minecraft launcher's profile
- *     dropdown on next launch.
+ *   - `execFile` not `exec`: arguments are an array, no shell interpolation.
  *
  * Sources:
- *   - Fabric meta API: https://meta.fabricmc.net/v2/versions/installer
- *   - Fabric loader API: https://meta.fabricmc.net/v2/versions/loader/<mc-version>
- *   - Fabric installer Maven: https://maven.fabricmc.net/net/fabricmc/fabric-installer/<v>/fabric-installer-<v>.jar
- *   - src/main/mcInstallScan.ts (findBundledJava — bundled-JRE probe)
- *   - src/main/personaExpansion.ts (30s timeout pattern)
- *   - src/bot/brain/storage/atomicWrite.js (atomic launcher_profiles.json write)
+ *   - Fabric meta API: https://meta.fabricmc.net/v2/versions/loader/<mc>[/<loader>/profile/json]
+ *   - fabric-installer ClientInstaller / ProfileInstaller / Reference (mirrors)
+ *   - src/main/launcherProfiles.ts (launcher_profiles*.json read/write)
+ *   - src/main/mcInstallScan.ts (findBundledJava, bundled-JRE probe)
  */
 import { execFile as execFileCb } from 'node:child_process';
 import { promises as fs, constants as fsConstants, type Dirent } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { createHash } from 'node:crypto';
 import { atomicWrite } from '../bot/brain/storage/atomicWrite.js';
+import {
+  existingProfileFiles,
+  LAUNCHER_PROFILE_FILES,
+  readProfilesFile,
+  seiGameDirFor,
+  upsertSeiProfile,
+  writeProfilesFile,
+} from './launcherProfiles';
 import { findBundledJava } from './mcInstallScan';
 import { paths } from './paths';
 import type { McInstall } from '../shared/ipc';
@@ -53,11 +58,9 @@ const logger = {
 };
 
 const USER_AGENT = 'sei-electron/0.1.0';
-/** 30s for small JSON metadata responses. */
-const META_TIMEOUT_MS = 30_000;
 /** 60s for binary JAR downloads (installer JAR is ~300KB but slow links matter). */
 const DOWNLOAD_TIMEOUT_MS = 60_000;
-/** 90s for the `java -jar fabric-installer ...` exec — Fabric writes versions/<id>/ + libraries/ */
+/** 90s for the fallback `java -jar fabric-installer ...` exec. */
 const INSTALLER_EXEC_TIMEOUT_MS = 90_000;
 /** ZIP magic — first 4 bytes of every JAR file. */
 const ZIP_MAGIC = [0x50, 0x4B, 0x03, 0x04] as const;
@@ -95,34 +98,15 @@ function composedAbort(
   };
 }
 
-async function fetchJsonWithTimeout<T>(
-  url: string,
-  timeoutMs: number,
-  signal?: AbortSignal,
-): Promise<T> {
-  const { signal: composed, cleanup } = composedAbort(timeoutMs, signal);
-  try {
-    const r = await fetch(url, {
-      signal: composed,
-      headers: { 'user-agent': USER_AGENT, accept: 'application/json' },
-    });
-    if (!r.ok) {
-      throw new Error(`FABRIC_INSTALL_FAILED: ${url} responded ${r.status}`);
-    }
-    return (await r.json()) as T;
-  } finally {
-    cleanup();
-  }
-}
-
 async function fetchBytesWithTimeout(
   url: string,
   timeoutMs: number,
   signal?: AbortSignal,
+  fetchImpl: typeof fetch = fetch,
 ): Promise<Buffer> {
   const { signal: composed, cleanup } = composedAbort(timeoutMs, signal);
   try {
-    const r = await fetch(url, {
+    const r = await fetchImpl(url, {
       signal: composed,
       headers: { 'user-agent': USER_AGENT },
     });
@@ -295,70 +279,357 @@ async function findWindowsVendorJava(): Promise<string | null> {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Public: selectLatestFabricLoader                                           */
+/*  Fabric meta (mirrored)                                                     */
 /* -------------------------------------------------------------------------- */
 
-interface FabricInstallerMeta {
-  /** Installer build version, e.g. "1.0.1". */
-  version: string;
-  /** True if this is the recommended stable build. */
-  stable: boolean;
-  /** Download URL — present on modern API responses. */
-  url?: string;
-  maven?: string;
+/**
+ * Fabric's own mirror list (fabric-installer Reference.java). Each meta host
+ * pairs with the maven host of the same number.
+ */
+export const FABRIC_MIRRORS: ReadonlyArray<{ meta: string; maven: string }> = [
+  { meta: 'https://meta.fabricmc.net/', maven: 'https://maven.fabricmc.net/' },
+  { meta: 'https://meta2.fabricmc.net/', maven: 'https://maven2.fabricmc.net/' },
+  { meta: 'https://meta3.fabricmc.net/', maven: 'https://maven3.fabricmc.net/' },
+];
+
+/** Per-mirror timeout for the small meta JSON calls. */
+const META_MIRROR_TIMEOUT_MS = 15_000;
+/** Wall clock for the whole best-effort library prefetch. */
+const LIBRARY_PREFETCH_BUDGET_MS = 60_000;
+
+/**
+ * Every Fabric meta mirror failed at the network level (DNS, TLS, timeout,
+ * 5xx). This is the one condition that sends setup to the Java fallback.
+ */
+export class FabricMetaUnreachableError extends Error {
+  constructor(detail: string) {
+    super(`FABRIC_INSTALL_FAILED: could not reach Fabric servers (${detail})`);
+    this.name = 'FabricMetaUnreachableError';
+  }
 }
 
-interface FabricLoaderMeta {
-  loader: {
-    version: string;
-    stable: boolean;
-  };
-  intermediary: { version: string; stable: boolean };
-  launcherMeta: unknown;
+function cancelled(): Error {
+  return new Error('FABRIC_INSTALL_FAILED: cancelled');
 }
 
 /**
- * Resolve the recommended installer + loader versions from meta.fabricmc.net.
- * Picks the first `stable === true` entry (Fabric's meta API ships them
- * newest-first). Falls back to the first entry if none are marked stable
- * (transient state during release windows).
+ * GET `<mirror.meta><pathAndQuery>` from each mirror in turn. A 4xx answer is
+ * definitive (the version does not exist) and is thrown as-is; network
+ * failures and 5xx move to the next mirror; when all mirrors fail this way,
+ * throws FabricMetaUnreachableError.
  */
-export async function selectLatestFabricLoader(
+export async function fetchFabricMeta<T>(
+  pathAndQuery: string,
+  signal?: AbortSignal,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ data: T; mirror: { meta: string; maven: string } }> {
+  const failures: string[] = [];
+  for (const mirror of FABRIC_MIRRORS) {
+    if (signal?.aborted) throw cancelled();
+    const url = mirror.meta + pathAndQuery;
+    const { signal: composed, cleanup } = composedAbort(META_MIRROR_TIMEOUT_MS, signal);
+    let res: Response;
+    try {
+      res = await fetchImpl(url, {
+        signal: composed,
+        headers: { 'user-agent': USER_AGENT, accept: 'application/json' },
+      });
+    } catch (err) {
+      cleanup();
+      if (signal?.aborted) throw cancelled();
+      failures.push(`${new URL(url).host}: ${(err as Error).message}`);
+      continue;
+    }
+    try {
+      if (res.status >= 500 || res.status === 429) {
+        failures.push(`${new URL(url).host}: HTTP ${res.status}`);
+        continue;
+      }
+      if (!res.ok) {
+        const body = (await res.text().catch(() => '')).slice(0, 200).trim();
+        throw new Error(
+          `FABRIC_INSTALL_FAILED: Fabric meta ${pathAndQuery} responded ${res.status}${body ? `: ${body}` : ''}`,
+        );
+      }
+      let data: T;
+      try {
+        data = (await res.json()) as T;
+      } catch (err) {
+        if (signal?.aborted) throw cancelled();
+        // A captive portal or proxy page, not Fabric: try the next mirror.
+        failures.push(`${new URL(url).host}: bad JSON (${(err as Error).message})`);
+        continue;
+      }
+      return { data, mirror };
+    } finally {
+      cleanup();
+    }
+  }
+  throw new FabricMetaUnreachableError(failures.join('; '));
+}
+
+interface FabricLoaderMeta {
+  loader: { version: string; stable: boolean };
+}
+
+/**
+ * Newest stable Fabric Loader for a Minecraft version (meta lists newest
+ * first; falls back to the first entry when none is marked stable).
+ */
+export async function selectFabricLoaderVersion(
   mcVersion: string,
   signal?: AbortSignal,
-): Promise<{ installerVersion: string; loaderVersion: string }> {
-  // 1) Installer version
-  const installers = await fetchJsonWithTimeout<FabricInstallerMeta[]>(
-    'https://meta.fabricmc.net/v2/versions/installer',
-    META_TIMEOUT_MS,
-    signal,
-  );
-  if (!Array.isArray(installers) || installers.length === 0) {
-    throw new Error('FABRIC_INSTALL_FAILED: installer-list endpoint returned no versions');
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
+  let data: FabricLoaderMeta[];
+  try {
+    ({ data } = await fetchFabricMeta<FabricLoaderMeta[]>(
+      `v2/versions/loader/${encodeURIComponent(mcVersion)}`,
+      signal,
+      fetchImpl,
+    ));
+  } catch (err) {
+    // Meta answers 400 [] for a Minecraft version it does not know.
+    if (/ responded 4\d\d/.test((err as Error).message)) {
+      throw new Error(`FABRIC_INSTALL_FAILED: no Fabric Loader available for Minecraft ${mcVersion}`);
+    }
+    throw err;
   }
-  const installerPick = installers.find((i) => i?.stable === true) ?? installers[0];
-  if (!installerPick || typeof installerPick.version !== 'string') {
-    throw new Error('FABRIC_INSTALL_FAILED: installer-list entry missing version');
+  if (!Array.isArray(data) || data.length === 0) {
+    throw new Error(`FABRIC_INSTALL_FAILED: no Fabric Loader available for Minecraft ${mcVersion}`);
   }
-
-  // 2) Loader version, scoped to the requested MC version
-  const loaders = await fetchJsonWithTimeout<FabricLoaderMeta[]>(
-    `https://meta.fabricmc.net/v2/versions/loader/${encodeURIComponent(mcVersion)}`,
-    META_TIMEOUT_MS,
-    signal,
-  );
-  if (!Array.isArray(loaders) || loaders.length === 0) {
-    throw new Error(`FABRIC_INSTALL_FAILED: no Fabric Loader available for MC ${mcVersion}`);
-  }
-  const loaderPick = loaders.find((l) => l?.loader?.stable === true) ?? loaders[0];
-  if (!loaderPick?.loader?.version) {
+  const pick = data.find((l) => l?.loader?.stable === true) ?? data[0];
+  if (!pick?.loader?.version || typeof pick.loader.version !== 'string') {
     throw new Error('FABRIC_INSTALL_FAILED: loader-list entry missing version');
   }
+  return pick.loader.version;
+}
 
-  return {
-    installerVersion: installerPick.version,
-    loaderVersion: loaderPick.loader.version,
-  };
+/* -------------------------------------------------------------------------- */
+/*  Launcher version JSON                                                      */
+/* -------------------------------------------------------------------------- */
+
+export interface FabricLibrary {
+  name: string;
+  url?: string;
+  sha1?: string;
+  size?: number;
+  [key: string]: unknown;
+}
+
+export interface FabricLauncherProfileJson {
+  id: string;
+  inheritsFrom: string;
+  mainClass: string;
+  libraries: FabricLibrary[];
+  [key: string]: unknown;
+}
+
+/** The version id Fabric uses (and meta returns) for a loader + MC pair. */
+export function fabricVersionId(loaderVersion: string, mcVersion: string): string {
+  return `fabric-loader-${loaderVersion}-${mcVersion}`;
+}
+
+/**
+ * Check a meta profile JSON is the one we asked for before writing it into
+ * the player's versions/ dir. Throws FABRIC_INSTALL_FAILED on mismatch.
+ */
+export function validateFabricProfileJson(
+  json: unknown,
+  mcVersion: string,
+  loaderVersion: string,
+): FabricLauncherProfileJson {
+  const j = json as Partial<FabricLauncherProfileJson> | null;
+  const expectedId = fabricVersionId(loaderVersion, mcVersion);
+  const bad = (why: string) =>
+    new Error(`FABRIC_INSTALL_FAILED: Fabric meta returned an unexpected profile (${why})`);
+  if (!j || typeof j !== 'object' || Array.isArray(j)) throw bad('not an object');
+  if (j.id !== expectedId) throw bad(`id ${String(j.id)}, expected ${expectedId}`);
+  if (j.inheritsFrom !== mcVersion) throw bad(`inheritsFrom ${String(j.inheritsFrom)}`);
+  if (typeof j.mainClass !== 'string' || !j.mainClass) throw bad('no mainClass');
+  if (!Array.isArray(j.libraries) || j.libraries.length === 0) throw bad('no libraries');
+  for (const lib of j.libraries) {
+    if (!lib || typeof lib.name !== 'string' || lib.name.split(':').length < 3) {
+      throw bad('library without a maven name');
+    }
+  }
+  return j as FabricLauncherProfileJson;
+}
+
+/**
+ * Write `versions/<id>/<id>.json` atomically. Removes a stale `<id>.jar`
+ * like fabric-installer does (a zero-byte jar left by old installers makes
+ * the launcher skip the inherited vanilla jar).
+ */
+export async function writeFabricVersionJson(
+  mcDir: string,
+  profile: FabricLauncherProfileJson,
+): Promise<string> {
+  const dir = path.join(mcDir, 'versions', profile.id);
+  await fs.mkdir(dir, { recursive: true });
+  const file = path.join(dir, `${profile.id}.json`);
+  await atomicWriteText(file, JSON.stringify(profile, null, 2));
+  await fs.unlink(path.join(dir, `${profile.id}.jar`)).catch(() => {});
+  return file;
+}
+
+/** Relative maven path for `group:artifact:version`, as the launcher lays it out. */
+export function libraryRelativePath(name: string): string | null {
+  const parts = name.split(':');
+  if (parts.length < 3) return null;
+  const [group, artifact, version, classifier] = parts;
+  if (!group || !artifact || !version) return null;
+  const file = `${artifact}-${version}${classifier ? `-${classifier}` : ''}.jar`;
+  return [...group.split('.'), artifact, version, file].join('/');
+}
+
+/**
+ * Best-effort download of the profile's libraries into `<mcDir>/libraries`.
+ * The launcher fetches them on first Play anyway; this mirrors the Fabric
+ * installer so a flaky launcher download does not break the first launch.
+ * Never throws (except on cancel); returns how many files are in place.
+ */
+export async function prefetchFabricLibraries(
+  mcDir: string,
+  libraries: FabricLibrary[],
+  opts: { signal?: AbortSignal; fetchImpl?: typeof fetch; budgetMs?: number } = {},
+): Promise<{ ok: number; failed: number }> {
+  const fetchImpl = opts.fetchImpl ?? fetch;
+  const deadline = Date.now() + (opts.budgetMs ?? LIBRARY_PREFETCH_BUDGET_MS);
+  let ok = 0;
+  let failed = 0;
+  for (const lib of libraries) {
+    if (opts.signal?.aborted) throw cancelled();
+    const rel = libraryRelativePath(lib.name);
+    if (!rel) {
+      failed++;
+      continue;
+    }
+    const target = path.join(mcDir, 'libraries', ...rel.split('/'));
+    if (await libraryPresent(target, lib)) {
+      ok++;
+      continue;
+    }
+    const bases = uniq([
+      typeof lib.url === 'string' && lib.url ? withSlash(lib.url) : FABRIC_MIRRORS[0].maven,
+      ...FABRIC_MIRRORS.map((m) => m.maven),
+    ]);
+    let done = false;
+    for (const base of bases) {
+      const left = deadline - Date.now();
+      if (left <= 0) break;
+      try {
+        const bytes = await fetchBytesWithTimeout(
+          base + rel,
+          Math.min(DOWNLOAD_TIMEOUT_MS, left),
+          opts.signal,
+          fetchImpl,
+        );
+        if (!isZip(bytes)) throw new Error('not a jar');
+        if (typeof lib.sha1 === 'string' && sha1(bytes) !== lib.sha1.toLowerCase()) {
+          throw new Error('sha1 mismatch');
+        }
+        await fs.mkdir(path.dirname(target), { recursive: true });
+        await atomicWriteBytes(target, bytes);
+        done = true;
+        break;
+      } catch (err) {
+        if (opts.signal?.aborted) throw cancelled();
+        logger.warn(`fabricInstaller: prefetch ${lib.name} from ${base} failed: ${(err as Error).message}`);
+      }
+    }
+    if (done) ok++;
+    else failed++;
+  }
+  return { ok, failed };
+}
+
+async function libraryPresent(file: string, lib: FabricLibrary): Promise<boolean> {
+  try {
+    const bytes = await fs.readFile(file);
+    if (typeof lib.sha1 === 'string') return sha1(bytes) === lib.sha1.toLowerCase();
+    return isZip(bytes);
+  } catch {
+    return false;
+  }
+}
+
+function sha1(bytes: Buffer): string {
+  return createHash('sha1').update(bytes).digest('hex');
+}
+
+function isZip(bytes: Buffer): boolean {
+  return (
+    bytes.length >= 4 &&
+    bytes[0] === ZIP_MAGIC[0] &&
+    bytes[1] === ZIP_MAGIC[1] &&
+    bytes[2] === ZIP_MAGIC[2] &&
+    bytes[3] === ZIP_MAGIC[3]
+  );
+}
+
+function withSlash(u: string): string {
+  return u.endsWith('/') ? u : `${u}/`;
+}
+
+function uniq<T>(xs: T[]): T[] {
+  return [...new Set(xs)];
+}
+
+async function atomicWriteText(file: string, text: string): Promise<void> {
+  await atomicWrite(file, text);
+}
+
+async function atomicWriteBytes(file: string, bytes: Buffer): Promise<void> {
+  await atomicWrite(file, bytes);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Launcher profile entry                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Write the Sei profile into every launcher profile file in `mcDir`
+ * (creating launcher_profiles.json when there is none). Throws only when no
+ * file could be written; a single unreadable file is skipped with a warn.
+ */
+export async function writeSeiLauncherProfile(opts: {
+  mcDir: string;
+  mcVersion: string;
+  versionId: string;
+  profileName: string;
+  gameDir: string;
+  now?: Date;
+}): Promise<{ files: string[]; key: string }> {
+  const now = opts.now ?? new Date();
+  let files = await existingProfileFiles(opts.mcDir);
+  if (files.length === 0) files = [path.join(opts.mcDir, LAUNCHER_PROFILE_FILES[0])];
+  const written: string[] = [];
+  let key = '';
+  const errors: string[] = [];
+  for (const file of files) {
+    try {
+      const doc = (await readProfilesFile(file)) ?? { profiles: {}, settings: {}, version: 3 };
+      const res = upsertSeiProfile(doc, {
+        mcDir: opts.mcDir,
+        mcVersion: opts.mcVersion,
+        versionId: opts.versionId,
+        profileName: opts.profileName,
+        gameDir: opts.gameDir,
+        now,
+      });
+      await writeProfilesFile(file, res.doc);
+      written.push(file);
+      key ||= res.key;
+    } catch (err) {
+      errors.push(`${path.basename(file)}: ${(err as Error).message}`);
+      logger.warn(`fabricInstaller: could not write ${file}: ${(err as Error).message}`);
+    }
+  }
+  if (written.length === 0) {
+    throw new Error(`FABRIC_INSTALL_FAILED: could not write the launcher profile (${errors.join('; ')})`);
+  }
+  return { files: written, key };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -368,228 +639,226 @@ export async function selectLatestFabricLoader(
 export interface InstallFabricLoaderOpts {
   mcInstall: McInstall;
   mcVersion: string;
-  /** Override loader pick (skips the meta-API loader-list call). */
+  /** Override loader pick (skips the meta loader-list call). */
   loaderVersion?: string;
-  /** Progress callback — currently called at three milestones (0/30/90). */
+  /**
+   * 260916: one profile per Minecraft version. The launcher profile is
+   * named `profileName` (default "Sei") and pointed at
+   * `<.minecraft>/sei/<gameDirName>/` (default `<.minecraft>/sei/`, the
+   * pre-260916 single dir). Each version needs its own dir because Fabric
+   * loads every jar in mods/, and the skin mod is built per version.
+   */
+  profileName?: string;
+  gameDirName?: string;
+  /** Progress callback, 0..100. */
   onProgress?: (pct: number) => void;
   /** Threaded through from main's Map<sessionId, AbortController>. */
   signal?: AbortSignal;
+  /** Test seam. */
+  fetchImpl?: typeof fetch;
+  /** Test seam: the Java fallback (defaults to runJavaInstallerFallback). */
+  javaFallback?: typeof runJavaInstallerFallback;
 }
 
 /**
- * Download + headlessly run the Fabric installer against the given vanilla
- * `.minecraft` directory. The installer creates
- * `<mcDir>/versions/fabric-loader-<loaderVer>-<mcVer>/` and the
- * corresponding library JARs under `<mcDir>/libraries/`.
+ * Install Fabric Loader into a vanilla `.minecraft` and create the Sei
+ * launcher profile, selected so the launcher opens on it.
  *
- * Throws `FABRIC_INSTALL_FAILED: <reason>` on any failure — the message is
- * routed to ERROR_COPY[FABRIC_INSTALL_FAILED] by classifyRendererError.
+ * Throws `FABRIC_INSTALL_FAILED: <reason>`; the message is routed to
+ * ERROR_COPY[FABRIC_INSTALL_FAILED] by classifyRendererError.
  */
 export async function installFabricLoader(
   opts: InstallFabricLoaderOpts,
-): Promise<{ loaderVersion: string; seiGameDir: string }> {
+): Promise<{ loaderVersion: string; seiGameDir: string; via: 'meta' | 'java' }> {
   const { mcInstall, mcVersion, onProgress, signal } = opts;
+  const fetchImpl = opts.fetchImpl ?? fetch;
+  const profileName = opts.profileName ?? 'Sei';
+  const mcDir = mcInstall.path;
+  if (signal?.aborted) throw cancelled();
 
-  // Pre-flight: cancel check before any network IO.
-  if (signal?.aborted) {
-    throw new Error('FABRIC_INSTALL_FAILED: cancelled');
-  }
+  const seiGameDir = opts.gameDirName ? seiGameDirFor(mcDir, opts.gameDirName) : path.join(mcDir, 'sei');
 
-  // ── Java probe ────────────────────────────────────────────────────────
-  const javaPath = await findJavaExecutable(mcInstall);
-  if (!javaPath) {
-    throw new Error(
-      'FABRIC_INSTALL_FAILED: Java not found. Launch Minecraft once (vanilla profile) so it installs its bundled Java runtime, then re-run setup. If you installed Java yourself, restart Sei first so it can see the new install',
-    );
-  }
-
-  // ── Resolve versions ──────────────────────────────────────────────────
   let loaderVersion = opts.loaderVersion;
-  let installerVersion: string;
-  if (loaderVersion) {
-    // Still need the installer build; the user pinned the loader only.
-    const meta = await selectLatestFabricLoader(mcVersion, signal);
-    installerVersion = meta.installerVersion;
-  } else {
-    const meta = await selectLatestFabricLoader(mcVersion, signal);
-    installerVersion = meta.installerVersion;
-    loaderVersion = meta.loaderVersion;
-  }
-  onProgress?.(0);
-
-  // ── Download installer JAR ────────────────────────────────────────────
-  if (signal?.aborted) throw new Error('FABRIC_INSTALL_FAILED: cancelled');
-  const installerUrl = `https://maven.fabricmc.net/net/fabricmc/fabric-installer/${installerVersion}/fabric-installer-${installerVersion}.jar`;
-  const installerBytes = await fetchBytesWithTimeout(installerUrl, DOWNLOAD_TIMEOUT_MS, signal);
-  // ZIP magic check — JARs are ZIP archives.
-  if (
-    installerBytes.length < 4 ||
-    installerBytes[0] !== ZIP_MAGIC[0] ||
-    installerBytes[1] !== ZIP_MAGIC[1] ||
-    installerBytes[2] !== ZIP_MAGIC[2] ||
-    installerBytes[3] !== ZIP_MAGIC[3]
-  ) {
-    // PK ZIP magic 0x50, 0x4B, 0x03, 0x04 — installer download corrupt.
-    throw new Error('FABRIC_INSTALL_FAILED: downloaded installer is not a valid JAR');
-  }
-  onProgress?.(30);
-
-  // Write to <userData>/tmp/fabric-installer-<v>.jar
-  const tmpDir = path.join(paths.userData(), 'tmp');
-  await fs.mkdir(tmpDir, { recursive: true });
-  const installerJarPath = path.join(tmpDir, `fabric-installer-${installerVersion}.jar`);
-  await fs.writeFile(installerJarPath, installerBytes);
-
-  // ── Run installer ─────────────────────────────────────────────────────
-  if (signal?.aborted) {
-    // Cleanup tmp before throwing.
-    await fs.unlink(installerJarPath).catch(() => {});
-    throw new Error('FABRIC_INSTALL_FAILED: cancelled');
-  }
-
-  // execFile (NOT exec) — arguments are an array, no shell interpolation.
-  // The Fabric installer's `client` mode is fully headless:
-  //   -dir       game directory (vanilla .minecraft) to install into
-  //   -mcversion target MC version
-  //   -loader    pinned loader build
-  // The installer writes a profile entry into launcher_profiles.json so
-  // the Fabric build shows up in the Minecraft launcher's dropdown.
+  let via: 'meta' | 'java' = 'meta';
   try {
-    const { stdout, stderr } = await execFile(
-      javaPath,
-      [
-        '-jar',
-        installerJarPath,
-        'client',
-        '-dir',
-        mcInstall.path,
-        '-mcversion',
-        mcVersion,
-        '-loader',
-        loaderVersion,
-      ],
-      {
-        timeout: INSTALLER_EXEC_TIMEOUT_MS,
-        signal,
-        // Limit output buffer — installer prints ~50 lines.
-        maxBuffer: 1024 * 1024,
-      },
+    loaderVersion ??= await selectFabricLoaderVersion(mcVersion, signal, fetchImpl);
+    onProgress?.(10);
+    const { data } = await fetchFabricMeta<unknown>(
+      `v2/versions/loader/${encodeURIComponent(mcVersion)}/${encodeURIComponent(loaderVersion)}/profile/json`,
+      signal,
+      fetchImpl,
     );
-    if (stdout) logger.info(`fabricInstaller: stdout: ${stdout.trim().slice(0, 500)}`);
-    if (stderr) logger.warn(`fabricInstaller: stderr: ${stderr.trim().slice(0, 500)}`);
+    const profile = validateFabricProfileJson(data, mcVersion, loaderVersion);
+    onProgress?.(30);
+    await writeFabricVersionJson(mcDir, profile);
+    onProgress?.(40);
+    const pre = await prefetchFabricLibraries(mcDir, profile.libraries, { signal, fetchImpl });
+    logger.info(
+      `fabricInstaller: wrote ${profile.id} from meta; prefetched ${pre.ok}/${profile.libraries.length} libraries` +
+        (pre.failed ? ` (${pre.failed} left for the launcher)` : ''),
+    );
   } catch (err) {
-    // Cleanup best-effort.
-    await fs.unlink(installerJarPath).catch(() => {});
-    const e = err as NodeJS.ErrnoException & { code?: number | string; stderr?: string; killed?: boolean };
-    const stderrTail = typeof e.stderr === 'string' ? e.stderr.slice(-512).trim() : '';
-    if (e.killed && signal?.aborted) {
-      throw new Error('FABRIC_INSTALL_FAILED: cancelled');
-    }
-    if (e.killed) {
-      throw new Error(`FABRIC_INSTALL_FAILED: fabric installer exceeded ${INSTALLER_EXEC_TIMEOUT_MS}ms timeout`);
-    }
-    throw new Error(
-      `FABRIC_INSTALL_FAILED: fabric installer exited ${e.code ?? 'unknown'}${stderrTail ? `: ${stderrTail}` : ''}`,
-    );
+    if (!(err instanceof FabricMetaUnreachableError)) throw err;
+    logger.warn(`fabricInstaller: ${err.message}; trying the Java installer fallback`);
+    via = 'java';
+    const fallback = opts.javaFallback ?? runJavaInstallerFallback;
+    loaderVersion = await fallback({ mcInstall, mcVersion, loaderVersion, signal, cause: err });
   }
   onProgress?.(90);
 
-  // ── Post-install confirmation ─────────────────────────────────────────
-  const versionsDir = path.join(
-    mcInstall.path,
-    'versions',
-    `fabric-loader-${loaderVersion}-${mcVersion}`,
-  );
-  try {
-    const st = await fs.stat(versionsDir);
-    if (!st.isDirectory()) {
-      throw new Error('not a directory');
-    }
-  } catch (err) {
-    await fs.unlink(installerJarPath).catch(() => {});
+  // Isolated game dir (260518-o1k T4): Fabric loads every jar in mods/, so a
+  // shared <.minecraft>/mods with other-version mods would crash the launch.
+  await fs.mkdir(path.join(seiGameDir, 'mods'), { recursive: true });
+
+  const { files, key } = await writeSeiLauncherProfile({
+    mcDir,
+    mcVersion,
+    versionId: fabricVersionId(loaderVersion, mcVersion),
+    profileName,
+    gameDir: seiGameDir,
+  });
+  logger.info(`fabricInstaller: profile '${key}' written to ${files.map((f) => path.basename(f)).join(', ')}`);
+
+  onProgress?.(100);
+  return { loaderVersion, seiGameDir, via };
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Java installer fallback (meta unreachable only)                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Run fabric-installer with Java in `client -noprofile` mode (the profile is
+ * written by writeSeiLauncherProfile afterwards). Only reached when every
+ * Fabric meta mirror failed, so the installer (which also talks to Fabric
+ * meta, through its own network stack) is a second opinion, not the plan.
+ * Returns the loader version installed.
+ */
+export async function runJavaInstallerFallback(args: {
+  mcInstall: McInstall;
+  mcVersion: string;
+  loaderVersion?: string;
+  signal?: AbortSignal;
+  cause: FabricMetaUnreachableError;
+}): Promise<string> {
+  const { mcInstall, mcVersion, signal, cause } = args;
+  const javaPath = await findJavaExecutable(mcInstall);
+  if (!javaPath) {
+    // No Java and no Fabric servers: the fix is the network, not Java.
     throw new Error(
-      `FABRIC_INSTALL_FAILED: post-install version directory missing at ${versionsDir} (${(err as Error).message})`,
+      `FABRIC_INSTALL_FAILED: could not reach the Fabric servers. Check your internet connection and try again. (${cause.message})`,
     );
   }
 
-  // Cleanup installer JAR (best-effort — leaving it is harmless but noisy).
-  await fs.unlink(installerJarPath).catch(() => {});
-
-  // ── Set up the Sei gameDir (260518-o1k T4) ────────────────────────────
-  //
-  // Vanilla launcher profiles by default have NO `gameDir`, which means
-  // Fabric Loader loads every JAR in <.minecraft>/mods/ against the
-  // profile's MC version. If the user has mismatched-version mods sitting
-  // in that shared mods/ dir (the SkyHanni-1.8.9-with-Sei-1.21.4 repro
-  // case), the launch crashes. We give the Sei profile its own isolated
-  // gameDir at <.minecraft>/sei/ so it loads from there instead.
-  //
-  // Pre-create both the gameDir and its mods/ subdir before touching
-  // launcher_profiles.json. The Mojang launcher tolerates a missing
-  // gameDir (auto-creates) but explicit creation here is clearer + lets
-  // T5 drop the CSL JAR into a pre-existing path without race.
-  const seiGameDir = path.join(mcInstall.path, 'sei');
-  await fs.mkdir(seiGameDir, { recursive: true });
-  await fs.mkdir(path.join(seiGameDir, 'mods'), { recursive: true });
-
-  // Rename the profile entry the Fabric installer added to launcher_profiles.json
-  // ("fabric-loader-1.21.1" → "Sei") so it's obvious in the launcher dropdown
-  // which profile is the Sei one. ALSO set gameDir to the isolated sei dir
-  // so Fabric Loader doesn't load the shared mods/ folder.
-  //
-  // Best-effort: any failure here doesn't fail the install (the user can
-  // rename/set-gameDir themselves from the launcher).
-  //
-  // Profile-key tightening (T4): we now look for an EXACT match on
-  //   fabric-loader-<loaderVersion>-<mcVersion>
-  // which is the key the Fabric installer just wrote. Falls back to the
-  // previous prefix-match heuristic only if no exact match found, and
-  // logs a warn in that case so we can diagnose Fabric installer version
-  // drift.
-  try {
-    const profilesPath = path.join(mcInstall.path, 'launcher_profiles.json');
-    const raw = await fs.readFile(profilesPath, 'utf-8');
-    const parsed = JSON.parse(raw) as { profiles?: Record<string, { name?: string; gameDir?: string }> };
-    if (parsed.profiles) {
-      const expectedKey = `fabric-loader-${loaderVersion}-${mcVersion}`;
-      const exactProf = parsed.profiles[expectedKey];
-      if (exactProf) {
-        exactProf.name = 'Sei';
-        // Mojang launcher accepts both relative and absolute gameDir
-        // strings. We write the absolute path because it's unambiguous
-        // across launcher working-dir quirks (the launcher resolves
-        // relative paths against its own CWD which varies per OS).
-        exactProf.gameDir = seiGameDir;
-      } else {
-        // Fall back to the prefix-match heuristic and log so a future
-        // installer-version bump that changes the key shape is visible.
-        const presentKeys = Object.keys(parsed.profiles).slice(0, 6);
-        logger.warn(
-          `fabricInstaller: expected profile key '${expectedKey}' not found; ` +
-          `falling back to prefix match. Present keys (first 6): ${JSON.stringify(presentKeys)}`,
-        );
-        for (const [key, prof] of Object.entries(parsed.profiles)) {
-          if (
-            (key.startsWith('fabric-loader-') ||
-              (typeof prof.name === 'string' && prof.name.startsWith('fabric-loader-')))
-          ) {
-            prof.name = 'Sei';
-            prof.gameDir = seiGameDir;
-          }
-        }
-      }
-      // 260705: launcher_profiles.json is the ONE file Sei writes that Sei
-      // does NOT own — a torn write here destroys every launcher profile the
-      // user has, not just Sei's, so it must go through tmp+rename like every
-      // other config write in the codebase. Output stays byte-identical to
-      // the old writeFile (no house trailing newline — Mojang's file, Sei
-      // changes atomicity only).
-      await atomicWrite(profilesPath, JSON.stringify(parsed, null, 2));
+  // The installer jar is on the same maven hosts; any that answers will do.
+  const installerVersion = await resolveInstallerVersion(signal);
+  let bytes: Buffer | null = null;
+  const failures: string[] = [];
+  for (const m of FABRIC_MIRRORS) {
+    if (signal?.aborted) throw cancelled();
+    const url = `${m.maven}net/fabricmc/fabric-installer/${installerVersion}/fabric-installer-${installerVersion}.jar`;
+    try {
+      const b = await fetchBytesWithTimeout(url, DOWNLOAD_TIMEOUT_MS, signal);
+      if (!isZip(b)) throw new Error('not a jar');
+      bytes = b;
+      break;
+    } catch (err) {
+      if (signal?.aborted) throw cancelled();
+      failures.push(`${new URL(url).host}: ${(err as Error).message}`);
     }
-  } catch (err) {
-    logger.warn(`fabricInstaller: rename profile failed: ${(err as Error).message}`);
+  }
+  if (!bytes) {
+    throw new Error(
+      `FABRIC_INSTALL_FAILED: could not reach the Fabric servers. Check your internet connection and try again. (${failures.join('; ')})`,
+    );
   }
 
-  onProgress?.(100);
-  return { loaderVersion, seiGameDir };
+  const tmpDir = path.join(paths.userData(), 'tmp');
+  await fs.mkdir(tmpDir, { recursive: true });
+  const jar = path.join(tmpDir, `fabric-installer-${installerVersion}.jar`);
+  await fs.writeFile(jar, bytes);
+  const before = await fabricVersionDirs(mcInstall.path, mcVersion);
+  try {
+    const cli = ['-jar', jar, 'client', '-dir', mcInstall.path, '-mcversion', mcVersion, '-noprofile'];
+    if (args.loaderVersion) cli.push('-loader', args.loaderVersion);
+    const { stdout, stderr } = await execFile(javaPath, cli, {
+      timeout: INSTALLER_EXEC_TIMEOUT_MS,
+      signal,
+      maxBuffer: 1024 * 1024,
+    });
+    if (stdout) logger.info(`fabricInstaller: stdout: ${stdout.trim().slice(0, 500)}`);
+    if (stderr) logger.warn(`fabricInstaller: stderr: ${stderr.trim().slice(0, 500)}`);
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException & { code?: number | string; stderr?: string; killed?: boolean };
+    const tail = typeof e.stderr === 'string' ? e.stderr.slice(-512).trim() : '';
+    if (signal?.aborted) throw cancelled();
+    if (e.killed) {
+      throw new Error(`FABRIC_INSTALL_FAILED: fabric installer exceeded ${INSTALLER_EXEC_TIMEOUT_MS}ms timeout`);
+    }
+    throw new Error(`FABRIC_INSTALL_FAILED: fabric installer exited ${e.code ?? 'unknown'}${tail ? `: ${tail}` : ''}`);
+  } finally {
+    await fs.unlink(jar).catch(() => {});
+  }
+
+  if (args.loaderVersion) {
+    const dir = path.join(mcInstall.path, 'versions', fabricVersionId(args.loaderVersion, mcVersion));
+    if (!(await isDir(dir))) {
+      throw new Error(`FABRIC_INSTALL_FAILED: post-install version directory missing at ${dir}`);
+    }
+    return args.loaderVersion;
+  }
+  // No pinned loader: take the one the installer just created (or, when it
+  // was already there, the newest present for this MC version).
+  const after = await fabricVersionDirs(mcInstall.path, mcVersion);
+  const created = after.filter((d) => !before.includes(d));
+  const pick = (created.length ? created : after).sort(compareLoaderDirs).at(-1);
+  if (!pick) {
+    throw new Error(`FABRIC_INSTALL_FAILED: fabric installer did not create a version for ${mcVersion}`);
+  }
+  return pick.slice('fabric-loader-'.length, -(mcVersion.length + 1));
+}
+
+/** Installer build from meta if reachable, else a known-good pin. */
+async function resolveInstallerVersion(signal?: AbortSignal): Promise<string> {
+  try {
+    const { data } = await fetchFabricMeta<Array<{ version: string; stable: boolean }>>(
+      'v2/versions/installer',
+      signal,
+    );
+    const pick = Array.isArray(data) ? (data.find((i) => i?.stable) ?? data[0]) : undefined;
+    if (pick && typeof pick.version === 'string') return pick.version;
+  } catch (err) {
+    if (signal?.aborted) throw cancelled();
+  }
+  return FALLBACK_INSTALLER_VERSION;
+}
+
+/** Stable fabric-installer build as of 260929, used when meta is down. */
+const FALLBACK_INSTALLER_VERSION = '1.1.2';
+
+async function fabricVersionDirs(mcDir: string, mcVersion: string): Promise<string[]> {
+  try {
+    const entries = await fs.readdir(path.join(mcDir, 'versions'));
+    return entries.filter((e) => e.startsWith('fabric-loader-') && e.endsWith(`-${mcVersion}`));
+  } catch {
+    return [];
+  }
+}
+
+function compareLoaderDirs(a: string, b: string): number {
+  const na = a.split(/[.-]/).map((x) => Number(x) || 0);
+  const nb = b.split(/[.-]/).map((x) => Number(x) || 0);
+  for (let i = 0; i < Math.max(na.length, nb.length); i++) {
+    const d = (na[i] ?? 0) - (nb[i] ?? 0);
+    if (d) return d;
+  }
+  return 0;
+}
+
+async function isDir(p: string): Promise<boolean> {
+  try {
+    return (await fs.stat(p)).isDirectory();
+  } catch {
+    return false;
+  }
 }

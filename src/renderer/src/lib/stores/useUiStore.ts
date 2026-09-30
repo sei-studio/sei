@@ -12,6 +12,8 @@
 import { create } from 'zustand';
 import type { ThemeMode } from '../theme';
 import type { LanHost, LanHostWarning } from '@shared/ipc';
+import type { GameId } from '@shared/gameIpc';
+import type { ErrorClass } from '@shared/errorClasses';
 import type { AvatarMode, AvatarPrefs } from '@shared/characterSchema';
 
 export type View =
@@ -95,7 +97,8 @@ export type Modal =
   | { kind: 'summon-conflict'; attemptedName: string; conflictName: string; username: string }
   // 260709 — pre-summon compatibility disclaimer. Shown once per session per
   // warning kind when the detected LAN host is modded (Forge/NeoForge/Fabric)
-  // or Lunar Client. Never blocks: "Summon anyway" resumes the summon.
+  // or Lunar Client. "Summon anyway" resumes the summon, except for the
+  // 'forge' warning (260929), which blocks and offers no summon at all.
   | {
       kind: 'lan-host-warning';
       characterId: string;
@@ -123,6 +126,16 @@ export type Modal =
   // surface for its error class. Opened centrally from the onStatus
   // subscription; before this, a mid-session death showed nothing at all.
   | { kind: 'bot-crash'; characterId: string }
+  // Game adapters (M0, 260908) — the generic per-game setup window for a
+  // bot-backed game other than Minecraft (whose window is mc-setup). Opened by
+  // the generic summon flow when the game's world is not open; auto-resumes
+  // the pending summon when world:state flips open. The game agents fill the
+  // body (GameSetupModal is a placeholder in M0).
+  | { kind: 'game-setup'; game: GameId }
+  // Game adapters (M0) — a bot-backed game session failed with one of the
+  // game-neutral error classes (GAME_*). Generic popup carrying ERROR_COPY;
+  // Minecraft's classes keep their dedicated modals above.
+  | { kind: 'game-error'; game: GameId; characterId: string; error: ErrorClass; message: string }
   // Phase 18/19 — chat "Games" affordance: a tiled grid of supported games.
   // Per-game info is a hover-only popup inside the picker (no about modal).
   | { kind: 'games-picker'; characterId: string }
@@ -132,7 +145,7 @@ export type Modal =
   | {
       kind: 'cross-launch';
       characterId: string;
-      fromId: 'chess' | 'minecraft' | 'draw' | 'backseat';
+      fromId: 'chess' | 'minecraft' | 'draw' | 'backseat' | 'stardew' | 'dontstarve';
       fromName: string;
       toName: string;
     }
@@ -165,6 +178,12 @@ interface UiState {
    * too. Set alongside pendingSummonId; consumed + cleared by the resume.
    */
   pendingSummonReturnToChat: boolean;
+  /**
+   * Game adapters (M0): which game the pending summon (pendingSummonId) is
+   * for. 'minecraft' resumes through McSetupModal; any other game resumes
+   * through GameSetupModal when its world:state flips open.
+   */
+  pendingSummonGame: GameId;
   /** B3/B4 — IconRail compass + CharactersScreen tab persistence. */
   homeTab: HomeTab;
   /**
@@ -208,6 +227,21 @@ interface UiState {
    * VLM-backed bot reports true, so a non-VLM provider can never enable it.
    */
   visionCapable: boolean;
+  /**
+   * china-compat W1 — vision verdict of the ACTIVE chat backend, derived from
+   * config (provider + model through llmCatalog; cloud-proxy is always
+   * 'yes'). Fed by the `llm:capability` push + the capability-get seed in
+   * useDataStore.subscribeIpc. Deliberately separate from the bot-session
+   * `visionCapable` above; the W9 gates (Draw! tile, backseat entries) read
+   * THIS one and lock only on a confident 'no'.
+   */
+  llmVision: 'yes' | 'no' | 'unknown';
+  /**
+   * The active LOCAL model's id, riding the same llm:capability push, for the
+   * W9 gate copy ("Your current model ({model}) does not support vision.").
+   * null for cloud-proxy / Anthropic BYOK, where no gate ever locks.
+   */
+  llmModel: string | null;
   /**
    * Session-only flag: flips true the first time the user leaves the Home
    * screen — either by navigating to another view (character/settings/etc.)
@@ -307,6 +341,7 @@ interface UiState {
   closeModal: () => void;
   setThemeMode: (mode: ThemeMode) => void;
   setPendingSummon: (id: string | null) => void;
+  setPendingSummonGame: (game: GameId) => void;
   /** Task 6: record whether the pending summon should return to chat on resume. */
   setPendingSummonReturnToChat: (v: boolean) => void;
   setHomeTab: (tab: HomeTab) => void;
@@ -317,6 +352,9 @@ interface UiState {
   setChatPanelHidden: (v: boolean) => void;
   /** Phase 15 (D-10/VIS-03): set from the vision:capability push. */
   setVisionCapable: (v: boolean) => void;
+  /** china-compat W1: set from the llm:capability push/seed. */
+  setLlmVision: (v: 'yes' | 'no' | 'unknown') => void;
+  setLlmModel: (v: string | null) => void;
   /** Phase 18/19: record the chat a CharacterPage was opened from (or null). */
   setChatReturnId: (id: string | null) => void;
   /** #6: set the active call's mute state (shared by both call surfaces). */
@@ -353,6 +391,7 @@ export const useUiStore = create<UiState>((set) => ({
   themeMode: 'system',
   pendingSummonId: null,
   pendingSummonReturnToChat: false,
+  pendingSummonGame: 'minecraft',
   homeTab: 'home',
   devConsoleVisible: false,
   // Appearance & feel: default ON, matching UserConfig.realistic_typing's
@@ -365,6 +404,10 @@ export const useUiStore = create<UiState>((set) => ({
   // Phase 15 (D-10/VIS-03): fail-closed — false until a VLM-backed bot reports
   // capabilities.vision === true over the vision:capability push.
   visionCapable: false,
+  // 'unknown' until the seed/push lands; consumers treat unknown as usable
+  // (a wrong lock hides a feature silently, a wrong allow fails visibly).
+  llmVision: 'unknown',
+  llmModel: null,
   homeGreetingDismissed: false,
   chatReturnId: null,
   callMuted: false,
@@ -390,6 +433,7 @@ export const useUiStore = create<UiState>((set) => ({
   closeModal: () => set({ modal: null }),
   setThemeMode: (mode) => set({ themeMode: mode }),
   setPendingSummon: (id) => set({ pendingSummonId: id }),
+  setPendingSummonGame: (game) => set({ pendingSummonGame: game }),
   setPendingSummonReturnToChat: (v) => set({ pendingSummonReturnToChat: v }),
   // Switching to the World tab also counts as leaving Home.
   setHomeTab: (tab) =>
@@ -404,6 +448,8 @@ export const useUiStore = create<UiState>((set) => ({
   setAnalyticsOptOut: (v) => set({ analyticsOptOut: v }),
   setChatPanelHidden: (v) => set({ chatPanelHidden: v }),
   setVisionCapable: (v) => set({ visionCapable: v }),
+  setLlmVision: (v) => set({ llmVision: v }),
+  setLlmModel: (v) => set({ llmModel: v }),
   setChatReturnId: (id) => set({ chatReturnId: id }),
   setCallMuted: (muted) => set({ callMuted: muted }),
   setCallDeafened: (deafened) => set({ callDeafened: deafened }),

@@ -25,7 +25,6 @@ import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useChatStore } from '../lib/stores/useChatStore';
-import { useWizardStore } from '../lib/stores/useWizardStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { useDataStore } from '../lib/stores/useDataStore';
@@ -45,14 +44,32 @@ import { DmcaContactModal } from '../components/DmcaContactModal';
 import { ProviderSelect, type Provider } from '../components/ProviderSelect';
 import { PortraitImagePicker } from '../components/PortraitImagePicker';
 import { BackgroundImagePicker } from '../components/BackgroundImagePicker';
+import { DownloadConfirmModal, formatMb } from '../components/DownloadConfirmModal';
 import { InfoTip } from '../components/InfoTip';
 import { CopyIcon } from '../components/icons';
 import { useLangStore, useT, type UiLanguage } from '../lib/i18n';
+import { DEFAULT_MODELS } from '@shared/llmCatalog';
 import type { AvatarMode, UserConfig } from '@shared/characterSchema';
-import type { WizardState } from '@shared/ipc';
+import type { LlmListModelsResult, SpeechPackStatePush } from '@shared/ipc';
 import styles from './SettingsScreen.module.css';
+import { GamesSettingsGroup } from '../components/settings/GamesSettingsGroup';
 
 const API_KEY_BULLET_LEN = 24;
+
+/**
+ * W5 (china-compat, 260817; zh collapsed to one pack 260908): the local TTS
+ * voice packs offered in the Voice group, in display order. Two PACKS carry
+ * the four voices — each pack contains both the female and the male speaker,
+ * so each language is one download. Ids match src/main/speech/packs.ts (the
+ * renderer never imports main); the exact byte sizes arrive per pack on the
+ * speech:pack-status push.
+ */
+const TTS_PACK_ROWS: ReadonlyArray<{ id: string; label: string }> = [
+  { id: 'tts-en', label: 'English voices, female and male' },
+  { id: 'tts-zh', label: 'Chinese voices, female and male' },
+];
+
+const SENSEVOICE_PACK_ID = 'stt-sensevoice';
 
 /**
  * Theme swatches (260724): each theme renders as a circle split diagonally
@@ -182,6 +199,11 @@ export function SettingsScreen(): React.ReactElement {
   const [preferredDraft, setPreferredDraft] = useState<string>('');
   const [editingKey, setEditingKey] = useState<boolean>(false);
   const [keyDraft, setKeyDraft] = useState<string>('');
+  // 260909 Search: optional web search provider key. Same masked-editor
+  // pattern as the AI key row; lives in config.json (web_search_*), never in
+  // the keychain, because these keys are low-value and provider-scoped.
+  const [editingSearchKey, setEditingSearchKey] = useState<boolean>(false);
+  const [searchKeyDraft, setSearchKeyDraft] = useState<string>('');
   const [keyError, setKeyError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   // 260725 BYOK voice: ElevenLabs API key (TTS + Scribe recognition). Same
@@ -191,6 +213,31 @@ export function SettingsScreen(): React.ReactElement {
   const [editingElevenKey, setEditingElevenKey] = useState<boolean>(false);
   const [elevenKeyDraft, setElevenKeyDraft] = useState<string>('');
   const [elevenKeyError, setElevenKeyError] = useState<string | null>(null);
+
+  // ── W5 (china-compat, 260817): model picker + Test probe (local mode). ──
+  // The picker lists the selected provider's models live (llm:list-models,
+  // per-model vision verdicts + typed error tokens) and persists the choice
+  // to provider_config[provider].model — the exact field the main provider
+  // layer reads (resolveLocalModel) and the supervisor ships to the bot.
+  const [modelPickerOpen, setModelPickerOpen] = useState<boolean>(false);
+  const [modelList, setModelList] = useState<LlmListModelsResult | null>(null);
+  const [modelListLoading, setModelListLoading] = useState<boolean>(false);
+  // Test probe: idle → testing → last result. Cleared on provider/model moves.
+  const [testState, setTestState] = useState<
+    'idle' | 'testing' | { ok: true; latencyMs: number } | { ok: false; error: string }
+  >('idle');
+
+  // ── W5: local speech packs (TTS voices + SenseVoice STT). Seeded from
+  // speech:pack-status, kept live by the speech:pack-state push. ──
+  const [packStates, setPackStates] = useState<Record<string, SpeechPackStatePush>>({});
+  /** Pack awaiting the shared "Download? (XX MB)" confirm. `thenSensevoice`
+   * marks the STT flow: persist stt_engine once the download lands. */
+  const [pendingPack, setPendingPack] = useState<{
+    id: string;
+    name: string;
+    thenSensevoice?: boolean;
+  } | null>(null);
+  const [packError, setPackError] = useState<string | null>(null);
 
   // Phase 10 (D-11) — Account panel state. Modals + transient action statuses.
   const [signOutModalOpen, setSignOutModalOpen] = useState<boolean>(false);
@@ -262,6 +309,18 @@ export function SettingsScreen(): React.ReactElement {
       });
   }, [setDevConsoleVisible]);
 
+  // W5: seed the speech-pack snapshot and follow the push while mounted, so
+  // download progress renders live in the Voice group.
+  useEffect(() => {
+    void sei
+      .speechPackStatus()
+      .then(({ packs }) => setPackStates(packs))
+      .catch(() => {
+        /* non-fatal — pack rows just show no state until the first push */
+      });
+    return sei.onSpeechPackState(({ packs }) => setPackStates(packs));
+  }, []);
+
   // Updates section: load the current version once, and subscribe to updater
   // events while this screen is mounted so the inline status line reflects an
   // in-flight manual check. onUpdateAvailable here just flips the status to
@@ -321,6 +380,38 @@ export function SettingsScreen(): React.ReactElement {
     setKeyError(null);
   };
 
+  // 260909 Search group. 'auto' is the free keyless chain; the three keyed
+  // providers need a key from the user's own account. Switching provider
+  // keeps any stored key (a user toggling back to Auto to compare and then
+  // returning should not have to paste it again).
+  type SearchProvider = 'auto' | 'brave' | 'tavily' | 'serper';
+  const searchProvider: SearchProvider = ((): SearchProvider => {
+    const v = cfg?.web_search_provider;
+    return v === 'brave' || v === 'tavily' || v === 'serper' ? v : 'auto';
+  })();
+  const hasSearchKey = Boolean(cfg?.web_search_api_key);
+  const onChangeSearchProvider = async (next: SearchProvider): Promise<void> => {
+    if (!cfg || next === searchProvider) return;
+    await persistConfig({ ...cfg, web_search_provider: next });
+  };
+  const onSaveSearchKey = async (): Promise<void> => {
+    const key = searchKeyDraft.trim();
+    if (!cfg || !key) return;
+    await persistConfig({ ...cfg, web_search_api_key: key });
+    setEditingSearchKey(false);
+    setSearchKeyDraft('');
+  };
+  const onClearSearchKey = async (): Promise<void> => {
+    if (!cfg) return;
+    await persistConfig({ ...cfg, web_search_api_key: '' });
+    setEditingSearchKey(false);
+    setSearchKeyDraft('');
+  };
+  const onCancelSearchKey = (): void => {
+    setEditingSearchKey(false);
+    setSearchKeyDraft('');
+  };
+
   // 260725 BYOK voice: ElevenLabs key save/remove. Mirrors onSaveKey; the key
   // is write-only (never displayed back), presence drives the bullet readout.
   const onSaveElevenKey = async (): Promise<void> => {
@@ -363,8 +454,12 @@ export function SettingsScreen(): React.ReactElement {
 
   // 260725 BYOK voice recognition: Scribe (cloud, needs the ElevenLabs key)
   // vs local Whisper. Absent means 'scribe'; applies from the next call.
-  const sttEngine: 'scribe' | 'whisper' = cfg?.stt_engine ?? 'scribe';
-  const onSelectSttEngine = async (next: 'scribe' | 'whisper'): Promise<void> => {
+  // 260817 (W5): + SenseVoice — local like Whisper, main-side sherpa-onnx.
+  // Picking it while its pack is missing detours through the download confirm
+  // (persistSttEngine only runs once the pack is READY); scribe/whisper keep
+  // the exact pre-W5 write path.
+  const sttEngine: 'scribe' | 'whisper' | 'sensevoice' = cfg?.stt_engine ?? 'scribe';
+  const persistSttEngine = async (next: 'scribe' | 'whisper' | 'sensevoice'): Promise<void> => {
     if (!cfg || next === sttEngine) return;
     const updated: UserConfig = { ...cfg, stt_engine: next };
     setCfg(updated);
@@ -375,6 +470,125 @@ export function SettingsScreen(): React.ReactElement {
       console.error('[SettingsScreen] saveConfig (stt_engine) failed', err);
       setCfg(cfg);
       setSaveError(t('Failed to save. Try again.'));
+    }
+  };
+  const onSelectSttEngine = async (next: 'scribe' | 'whisper' | 'sensevoice'): Promise<void> => {
+    if (next === 'sensevoice' && packStates[SENSEVOICE_PACK_ID]?.state !== 'ready') {
+      setPendingPack({ id: SENSEVOICE_PACK_ID, name: t('SenseVoice'), thenSensevoice: true });
+      return;
+    }
+    await persistSttEngine(next);
+  };
+
+  // ── W5: TTS engine (Voice group, local mode). 'local' routes companion
+  // speech through the sherpa-onnx voice packs in main; the per-character
+  // ElevenLabs voiceId is KEPT untouched underneath (it still names gender
+  // for the local mapping, and a later switch back needs it). ──
+  const ttsEngine: 'elevenlabs' | 'local' = cfg?.tts_engine ?? 'elevenlabs';
+  const onSelectTtsEngine = async (next: 'elevenlabs' | 'local'): Promise<void> => {
+    if (!cfg || next === ttsEngine) return;
+    const updated: UserConfig = { ...cfg, tts_engine: next };
+    setCfg(updated);
+    try {
+      await sei.saveConfig(updated);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] saveConfig (tts_engine) failed', err);
+      setCfg(cfg);
+      setSaveError(t('Failed to save. Try again.'));
+    }
+  };
+
+  // ── W5: pack download/remove. Download resolves when the pack is READY;
+  // progress arrives on the speech:pack-state push the effect above follows.
+  const startPackDownload = async (packId: string, thenSensevoice: boolean): Promise<void> => {
+    setPendingPack(null);
+    setPackError(null);
+    try {
+      await sei.speechPackDownload({ packId });
+      if (thenSensevoice) await persistSttEngine('sensevoice');
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] speechPackDownload failed', err);
+      setPackError(t('Download failed. Check your connection and try again.'));
+    }
+  };
+  const onRemovePack = async (packId: string): Promise<void> => {
+    setPackError(null);
+    try {
+      await sei.speechPackRemove({ packId });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] speechPackRemove failed', err);
+      setPackError(t('Failed to uninstall. Try again.'));
+    }
+  };
+
+  // ── W5: model picker + Test probe handlers. ──
+  /** The model stored for a provider, or undefined when riding the default. */
+  const storedModelFor = (provider: Provider): string | undefined => {
+    const entry = (cfg?.provider_config as Record<string, unknown> | undefined)?.[provider];
+    const model =
+      entry && typeof entry === 'object' ? (entry as { model?: unknown }).model : undefined;
+    return typeof model === 'string' && model.trim() ? model.trim() : undefined;
+  };
+  /** Human string for a typed llm error token — every token gets a sentence. */
+  const llmErrorText = (token: string): string => {
+    if (token === 'no_api_key') return t('Add your API key first.');
+    if (token === 'unauthorized')
+      return t('The provider rejected your key. Check that it is correct and active.');
+    if (token === 'timeout') return t('Timed out. Check your connection and try again.');
+    if (token === 'network') return t('Could not reach the provider. Check your connection.');
+    if (token.startsWith('http_'))
+      return t('The provider returned an error (HTTP {status}).', { status: token.slice(5) });
+    return t('Something went wrong. Try again.');
+  };
+  const onOpenModelPicker = async (): Promise<void> => {
+    if (modelPickerOpen) {
+      setModelPickerOpen(false);
+      return;
+    }
+    setModelPickerOpen(true);
+    setModelListLoading(true);
+    setModelList(null);
+    try {
+      const res = await sei.llmListModels(currentProvider);
+      setModelList(res);
+    } catch {
+      setModelList({ models: [], error: 'unknown' });
+    } finally {
+      setModelListLoading(false);
+    }
+  };
+  const onPickModel = async (modelId: string): Promise<void> => {
+    if (!cfg) return;
+    const pc = { ...((cfg.provider_config as Record<string, unknown> | undefined) ?? {}) };
+    const prev = pc[currentProvider];
+    pc[currentProvider] = {
+      ...(prev && typeof prev === 'object' ? (prev as Record<string, unknown>) : {}),
+      model: modelId,
+    };
+    const updated: UserConfig = { ...cfg, provider_config: pc };
+    setCfg(updated);
+    setModelPickerOpen(false);
+    setTestState('idle');
+    try {
+      await sei.saveConfig(updated);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] saveConfig (provider model) failed', err);
+      setCfg(cfg);
+      setSaveError(t('Failed to save. Try again.'));
+    }
+  };
+  const onRunTest = async (): Promise<void> => {
+    if (testState === 'testing') return;
+    setTestState('testing');
+    try {
+      const res = await sei.llmTest(currentProvider, storedModelFor(currentProvider) ?? '');
+      setTestState(res);
+    } catch {
+      setTestState({ ok: false, error: 'unknown' });
     }
   };
 
@@ -459,6 +673,11 @@ export function SettingsScreen(): React.ReactElement {
       setEditingKey(true);
       setKeyDraft('');
       setKeyError(null);
+      // W5: a different vendor lists different models — drop the open picker
+      // and any stale probe result (the stored per-provider model persists).
+      setModelPickerOpen(false);
+      setModelList(null);
+      setTestState('idle');
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('[SettingsScreen] saveConfig (provider) failed', err);
@@ -605,10 +824,6 @@ export function SettingsScreen(): React.ReactElement {
     }
   };
 
-  const onSelectVisionMode = (mode: 'off' | 'on-demand' | 'continuous'): void => {
-    if (mode === (cfg?.vision_mode ?? 'on-demand')) return;
-    void writeVisionConfig({ vision_mode: mode });
-  };
 
   // ui-A9: "Reset all character memories" — open the confirm popup. The actual
   // wipe runs in runResetAllMemories once the user confirms.
@@ -649,20 +864,20 @@ export function SettingsScreen(): React.ReactElement {
 
   const isCloud = aiBackendKind === 'cloud-proxy';
   const backendSegValue: 'cloud' | 'mykey' = isCloud ? 'cloud' : 'mykey';
-  const visionMode = cfg?.vision_mode ?? 'on-demand';
 
-  // Version value: "v{x}" alone, or "v{x} · <status>" after a check.
-  const versionSuffix =
+  // Version value: "v{x}" alone, or "v{x} · <status>" after a check. The
+  // status word is color-coded (green ok / orange in progress / red failed).
+  const versionStatus: { text: string; cls: string } | null =
     updateStatus === 'checking'
-      ? ` · ${t('checking…')}`
+      ? { text: t('checking…'), cls: styles.statusWarn }
       : updateStatus === 'up-to-date'
-        ? ` · ${t('up to date')}`
+        ? { text: t('up to date'), cls: styles.statusOk }
         : updateStatus === 'available'
-          ? ` · ${t('update available')}`
+          ? { text: t('update available'), cls: styles.statusWarn }
           : updateStatus === 'error'
-            ? ` · ${t('check failed')}`
-            : '';
-  const versionValue = appVersion ? `v${appVersion}${versionSuffix}` : '–';
+            ? { text: t('check failed'), cls: styles.statusErr }
+            : null;
+  const versionValue = appVersion ? `v${appVersion}` : '–';
 
   // (The literal 'Reset all memories…' key below is what D-FIX.3 greps for.)
   const resetAllLabel = resetAllDone
@@ -859,6 +1074,12 @@ export function SettingsScreen(): React.ReactElement {
                   compact
                 />
               </div>
+              {/* Ollama is keyless (260915): no key row, no "Not set" warning —
+                  a local server authenticates nothing, so asking for a key
+                  read as a blocker to people setting up local models. */}
+              {currentProvider === 'ollama' ? (
+                <p className={styles.helper}>{t('Ollama runs on your computer and needs no API key.')}</p>
+              ) : (
               <div className={styles.row}>
                 <span className={styles.label}>{t('API key')}</span>
                 {editingKey ? (
@@ -881,7 +1102,9 @@ export function SettingsScreen(): React.ReactElement {
                   </span>
                 ) : (
                   <>
-                    <span className={styles.monoValue}>
+                    <span
+                      className={hasKey ? styles.monoValue : `${styles.monoValue} ${styles.statusWarn}`}
+                    >
                       {hasKey ? '•'.repeat(API_KEY_BULLET_LEN) : t('Not set')}
                     </span>
                     <Button kind="ghost" size="sm" onClick={() => setEditingKey(true)}>
@@ -890,109 +1113,312 @@ export function SettingsScreen(): React.ReactElement {
                   </>
                 )}
               </div>
-              {keyError ? <div className={styles.errorRow}>{keyError}</div> : null}
+              )}
+              {keyError && currentProvider !== 'ollama' ? <div className={styles.errorRow}>{keyError}</div> : null}
 
-              {/* ElevenLabs key (260725): powers voice on BYOK — TTS always,
-                  and Scribe recognition when selected below. Write-only, same
-                  UX as the API key row. */}
-              <div className={styles.row}>
-                <span className={styles.label}>
-                  {t('ElevenLabs key')}
-                  <InfoTip
-                    label={t('About the ElevenLabs key')}
-                    text={t(
-                      "sorry :( i'm working to support other voice models. for now, tts only supports elevenlabs.",
-                    )}
-                  />
-                </span>
-                {editingElevenKey ? (
-                  <span className={styles.editor}>
-                    <TextField
-                      value={elevenKeyDraft}
-                      onChange={setElevenKeyDraft}
-                      type="password"
-                      placeholder={t('Your ElevenLabs key')}
-                      autoFocus
-                      onEnter={() => void onSaveElevenKey()}
-                      aria-label={t('ElevenLabs key')}
-                    />
-                    <Button kind="primary" size="sm" onClick={() => void onSaveElevenKey()}>
-                      {t('Save')}
-                    </Button>
-                    <Button kind="quiet" size="sm" onClick={onCancelElevenKey}>
-                      {t('Cancel')}
-                    </Button>
-                  </span>
-                ) : (
-                  <>
+              {/* W5 (260817): model picker. Shown once the provider can list
+                  models (a saved key, or Ollama which needs none). Persists to
+                  provider_config[provider].model — what resolveLocalModel and
+                  the bot init payload read. */}
+              {hasKey || currentProvider === 'ollama' ? (
+                <>
+                  <div className={styles.row}>
+                    <span className={styles.label}>{t('Model')}</span>
                     <span className={styles.monoValue}>
-                      {hasElevenKey ? '•'.repeat(API_KEY_BULLET_LEN) : t('Not set')}
+                      {storedModelFor(currentProvider) ??
+                        `${DEFAULT_MODELS[currentProvider]} · ${t('default')}`}
                     </span>
-                    <Button kind="ghost" size="sm" onClick={() => setEditingElevenKey(true)}>
-                      {hasElevenKey ? t('Update') : t('Set')}
+                    <Button kind="ghost" size="sm" onClick={() => void onOpenModelPicker()}>
+                      {t('Choose model')}
                     </Button>
-                    {hasElevenKey ? (
-                      <Button kind="quiet" size="sm" onClick={() => void onRemoveElevenKey()}>
-                        {t('Remove')}
-                      </Button>
-                    ) : null}
-                  </>
-                )}
-              </div>
-              {elevenKeyError ? <div className={styles.errorRow}>{elevenKeyError}</div> : null}
+                  </div>
+                  {modelPickerOpen ? (
+                    <>
+                      {modelListLoading ? (
+                        <p className={styles.helper} role="status">
+                          {t('Loading models…')}
+                        </p>
+                      ) : modelList?.error ? (
+                        <p className={`${styles.helper} ${styles.helperError}`} role="alert">
+                          {llmErrorText(modelList.error)}
+                        </p>
+                      ) : (
+                        <>
+                          <div
+                            className={styles.modelList}
+                            role="listbox"
+                            aria-label={t('Model')}
+                          >
+                            {(modelList?.models ?? []).map((m) => (
+                              <button
+                                key={m.id}
+                                type="button"
+                                role="option"
+                                aria-selected={m.id === storedModelFor(currentProvider)}
+                                className={[
+                                  styles.modelRow,
+                                  m.id === storedModelFor(currentProvider)
+                                    ? styles.modelRowOn
+                                    : '',
+                                ]
+                                  .filter(Boolean)
+                                  .join(' ')}
+                                onClick={() => void onPickModel(m.id)}
+                              >
+                                <span className={styles.monoValue}>{m.id}</span>
+                                {m.vision === 'no' ? (
+                                  <span className={styles.modelMark}>{t('no vision')}</span>
+                                ) : null}
+                              </button>
+                            ))}
+                            {(modelList?.models ?? []).length === 0 ? (
+                              <p className={styles.helper}>{t('No models listed.')}</p>
+                            ) : null}
+                          </div>
+                          <p className={styles.helper}>
+                            {t(
+                              'Models marked "no vision" cannot see images. Screen sharing and Draw! need a model that can see images.',
+                            )}
+                          </p>
+                        </>
+                      )}
+                    </>
+                  ) : null}
 
-              {/* Voice recognition (260725): what transcribes your mic on
-                  calls. Applies from the next call. */}
-              <div className={styles.row}>
-                <span className={styles.label}>{t('Voice recognition')}</span>
-                <Seg
-                  aria-label={t('Voice recognition')}
-                  value={sttEngine}
-                  options={[
-                    { value: 'scribe', label: t('ElevenLabs Scribe') },
-                    { value: 'whisper', label: t('Local Whisper') },
-                  ]}
-                  onChange={(v) => void onSelectSttEngine(v)}
-                />
-              </div>
-              <p className={styles.helper}>
-                {sttEngine === 'whisper'
-                  ? t('Free and offline. Downloads a small model on first call.')
-                  : t('Better accuracy. Uses your ElevenLabs key.')}
-              </p>
+                  {/* W5: Test probe — a 1-token completion through the same
+                      layer every surface runs. DeepSeek can queue for up to a
+                      minute at peak, hence the spinner copy. */}
+                  <div className={styles.row}>
+                    <span className={styles.label}>{t('Connection')}</span>
+                    {testState === 'testing' ? (
+                      <span className={`${styles.monoValue} ${styles.statusWarn}`} role="status">
+                        {t('Testing…')}
+                      </span>
+                    ) : testState !== 'idle' && testState.ok ? (
+                      <span className={`${styles.monoValue} ${styles.statusOk}`} role="status">
+                        {t('Working. Replied in {s}s.', {
+                          s: (testState.latencyMs / 1000).toFixed(1),
+                        })}
+                      </span>
+                    ) : (
+                      <span className={styles.monoValue}>{'–'}</span>
+                    )}
+                    <Button
+                      kind="ghost"
+                      size="sm"
+                      disabled={testState === 'testing'}
+                      onClick={() => void onRunTest()}
+                    >
+                      {t('Test')}
+                    </Button>
+                  </div>
+                  {testState === 'testing' ? (
+                    <p className={styles.helper} role="status">
+                      {t('Testing your key and model. This can take up to a minute.')}
+                    </p>
+                  ) : null}
+                  {testState !== 'idle' && testState !== 'testing' && !testState.ok ? (
+                    <p className={`${styles.helper} ${styles.helperError}`} role="alert">
+                      {llmErrorText(testState.error)}
+                    </p>
+                  ) : null}
+                </>
+              ) : null}
             </>
           ) : null}
         </div>
 
-        {/* ── Minecraft ───────────────────────────────────────── */}
-        <div className={styles.group}>
-          <h3 className={styles.groupTitle}>{t('Minecraft') /* >Minecraft< */}</h3>
-          <SkinSetupRow />
-          {/* Looking (vision): Off / On-demand / Continuous. Every move writes
-              straight through. Continuous uses more of the weekly allowance;
-              that shows up on the plan screen's usage bar, never as a number
-              here. The mode explanation lives behind the (i) tip. */}
-          <div className={styles.row}>
-            <span className={styles.label}>
-              {t('Visual gameplay')}
-              <InfoTip
-                label={t('About visual gameplay')}
-                text={t(
-                  "Companions usually play from lightweight snapshots of the world, but can pull a full render of what's around them when they need to see it, for example when building or navigating.",
-                )}
+        {/* ── Voice (W5, 260817) — local (BYOK) mode only: TTS engine +
+            voice recognition. Cloud accounts keep their managed voice path
+            and never see this group. ─────────────────────────────────── */}
+        {aiBackendKind === 'local' ? (
+          <div className={styles.group}>
+            <h3 className={styles.groupTitle}>{t('Voice') /* >Voice< */}</h3>
+
+            {/* TTS engine: ElevenLabs (BYOK key) or the free local voices.
+                Persists tts_engine; companions KEEP their ElevenLabs voiceId
+                either way — local mode maps it to a local voice by gender and
+                chat language. */}
+            <div className={styles.row}>
+              <span className={styles.label}>
+                {t('Voices')}
+                <InfoTip
+                  label={t('About voice engines')}
+                  text={t(
+                    'What speaks your companions\' lines on calls. ElevenLabs uses your own key. Local voices run on this device and work offline.',
+                  )}
+                />
+              </span>
+              <Seg
+                aria-label={t('Voices')}
+                value={ttsEngine}
+                options={[
+                  { value: 'elevenlabs', label: t('ElevenLabs') },
+                  { value: 'local', label: t('Local') },
+                ]}
+                onChange={(v) => void onSelectTtsEngine(v)}
               />
-            </span>
-            <Seg
-              aria-label={t('Visual gameplay mode')}
-              value={visionMode}
-              options={[
-                { value: 'off', label: t('Off') },
-                { value: 'on-demand', label: t('On-demand') },
-                { value: 'continuous', label: t('Continuous') },
-              ]}
-              onChange={onSelectVisionMode}
-            />
+            </div>
+
+            {ttsEngine === 'elevenlabs' ? (
+              <>
+                {/* ElevenLabs key (260725, relocated here by W5): powers TTS
+                    and Scribe recognition. Write-only, same UX as the API key
+                    row. */}
+                <div className={styles.row}>
+                  <span className={styles.label}>
+                    {t('ElevenLabs key')}
+                    <InfoTip
+                      label={t('About the ElevenLabs key')}
+                      text={t(
+                        'ElevenLabs voices need your own ElevenLabs API key. No key? Switch to the local voices.',
+                      )}
+                    />
+                  </span>
+                  {editingElevenKey ? (
+                    <span className={styles.editor}>
+                      <TextField
+                        value={elevenKeyDraft}
+                        onChange={setElevenKeyDraft}
+                        type="password"
+                        placeholder={t('Your ElevenLabs key')}
+                        autoFocus
+                        onEnter={() => void onSaveElevenKey()}
+                        aria-label={t('ElevenLabs key')}
+                      />
+                      <Button kind="primary" size="sm" onClick={() => void onSaveElevenKey()}>
+                        {t('Save')}
+                      </Button>
+                      <Button kind="quiet" size="sm" onClick={onCancelElevenKey}>
+                        {t('Cancel')}
+                      </Button>
+                    </span>
+                  ) : (
+                    <>
+                      <span
+                        className={
+                          hasElevenKey ? styles.monoValue : `${styles.monoValue} ${styles.statusWarn}`
+                        }
+                      >
+                        {hasElevenKey ? '•'.repeat(API_KEY_BULLET_LEN) : t('Not set')}
+                      </span>
+                      <Button kind="ghost" size="sm" onClick={() => setEditingElevenKey(true)}>
+                        {hasElevenKey ? t('Update') : t('Set')}
+                      </Button>
+                      {hasElevenKey ? (
+                        <Button kind="quiet" size="sm" onClick={() => void onRemoveElevenKey()}>
+                          {t('Remove')}
+                        </Button>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+                {elevenKeyError ? <div className={styles.errorRow}>{elevenKeyError}</div> : null}
+                {/* Local backend + no ElevenLabs key: the cloud voice pool (and
+                    the "Let Sei pick" auto-assign) has nothing to play through.
+                    Say so here instead of letting companions go silent. */}
+                {!hasElevenKey ? (
+                  <p className={`${styles.helper} ${styles.statusWarn}`} role="alert">
+                    {t(
+                      'Not connected to Sei cloud or an ElevenLabs key. Custom voices will not play. Local voice packs still work.',
+                    )}
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <>
+                {/* Local voice packs: three downloads carry the four voices
+                    (the English pack holds both speakers). State rides the
+                    speech:pack-state push; sizes are the registry's exact
+                    bytes. */}
+                {TTS_PACK_ROWS.map((row) => {
+                  const st = packStates[row.id];
+                  return (
+                    <div className={styles.row} key={row.id}>
+                      <span className={styles.label}>{t(row.label)}</span>
+                      {st?.state === 'downloading' ? (
+                        <span className={`${styles.monoValue} ${styles.statusWarn}`} role="status">
+                          {t('Downloading… {pct}%', { pct: st.pct ?? 0 })}
+                        </span>
+                      ) : st?.state === 'ready' ? (
+                        <>
+                          <span className={`${styles.monoValue} ${styles.statusOk}`}>{t('Ready')}</span>
+                          <Button
+                            kind="quiet"
+                            size="sm"
+                            onClick={() => void onRemovePack(row.id)}
+                          >
+                            {t('Uninstall')}
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          kind="ghost"
+                          size="sm"
+                          disabled={!st}
+                          onClick={() => setPendingPack({ id: row.id, name: t(row.label) })}
+                        >
+                          {t('Download…')}
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
+                <p className={styles.helper}>
+                  {t(
+                    'Voices that run on this device. Each companion speaks with the one matching their voice and chat language.',
+                  )}
+                </p>
+              </>
+            )}
+
+            {/* Voice recognition (260725, relocated here by W5): what
+                transcribes your mic on calls. Applies from the next call.
+                W5 adds SenseVoice (free local model, strongest on Chinese);
+                picking it downloads the model first. */}
+            <div className={styles.row}>
+              <span className={styles.label}>{t('Voice recognition')}</span>
+              <Seg
+                aria-label={t('Voice recognition')}
+                value={sttEngine}
+                options={[
+                  { value: 'scribe', label: t('ElevenLabs Scribe') },
+                  { value: 'whisper', label: t('Local Whisper') },
+                  { value: 'sensevoice', label: t('SenseVoice') },
+                ]}
+                onChange={(v) => void onSelectSttEngine(v)}
+              />
+            </div>
+            {packStates[SENSEVOICE_PACK_ID]?.state === 'downloading' ? (
+              <p className={`${styles.helper} ${styles.statusWarn}`} role="status">
+                {t('Downloading SenseVoice… {pct}%', {
+                  pct: packStates[SENSEVOICE_PACK_ID]?.pct ?? 0,
+                })}
+              </p>
+            ) : (
+              <p className={styles.helper}>
+                {sttEngine === 'whisper'
+                  ? t('Offline. Downloads a small model on first call.')
+                  : sttEngine === 'sensevoice'
+                    ? t('Offline. Runs on this device. Strongest for Chinese; English is weaker.')
+                    : t('Better accuracy. Uses your ElevenLabs key.')}
+              </p>
+            )}
+            {packError ? (
+              <p className={`${styles.helper} ${styles.helperError}`} role="alert">
+                {packError}
+              </p>
+            ) : null}
           </div>
+        ) : null}
+
+        {/* ── Games (game adapters, 260908): ONE group for every registered
+            game. The left column picks the game, the right column shows its
+            rows (GamesSettingsGroup); Minecraft's rows are unchanged. Shown
+            in both cloud and local mode: none of it depends on the backend. ── */}
+        <div className={styles.group}>
+          <h3 className={styles.groupTitle}>{t('Games') /* >Games< */}</h3>
+          <GamesSettingsGroup config={cfg} writeConfig={writeVisionConfig} />
         </div>
 
         {/* ── Language (260730) — app UI language, its own section ── */}
@@ -1238,12 +1664,102 @@ export function SettingsScreen(): React.ReactElement {
           </div>
         </div>
 
+        {/* ── Search (260909) ─────────────────────────────────
+            Optional. Companions can look things up on the web through the
+            search / visit tools on every surface. The default is a free
+            keyless chain that needs no setup, so a normal user never opens
+            this group; it exists for the user whose network gets challenged
+            by the scrapers and who wants to plug in their own key. */}
+        <div className={styles.group}>
+          <h3 className={styles.groupTitle}>{t('Search')}</h3>
+          <p className={styles.helper}>
+            {t(
+              'Companions can look things up on the web while you chat or play. This works out of the box for free. Add your own search API key only if lookups keep failing.',
+            )}
+          </p>
+          <div className={styles.row}>
+            <span className={styles.label}>
+              {t('Search provider')}
+              <InfoTip
+                label={t('About search providers')}
+                text={t(
+                  'Auto uses free public search with no account. Brave, Tavily and Serper need an API key from their website; each has a free tier.',
+                )}
+              />
+            </span>
+            <Seg<SearchProvider>
+              aria-label={t('Search provider')}
+              value={searchProvider}
+              onChange={(v) => void onChangeSearchProvider(v)}
+              options={[
+                { value: 'auto', label: t('Auto (free)') },
+                { value: 'brave', label: 'Brave' },
+                { value: 'tavily', label: 'Tavily' },
+                { value: 'serper', label: 'Serper' },
+              ]}
+            />
+          </div>
+          {searchProvider !== 'auto' ? (
+            <div className={styles.row}>
+              <span className={styles.label}>{t('Search API key')}</span>
+              {editingSearchKey ? (
+                <span className={styles.editor}>
+                  <TextField
+                    value={searchKeyDraft}
+                    onChange={setSearchKeyDraft}
+                    type="password"
+                    placeholder={t('Paste your key')}
+                    autoFocus
+                    onEnter={() => void onSaveSearchKey()}
+                    aria-label={t('Search API key')}
+                  />
+                  <Button kind="primary" size="sm" onClick={() => void onSaveSearchKey()}>
+                    {t('Save')}
+                  </Button>
+                  <Button kind="quiet" size="sm" onClick={onCancelSearchKey}>
+                    {t('Cancel')}
+                  </Button>
+                </span>
+              ) : (
+                <>
+                  <span
+                    className={hasSearchKey ? styles.monoValue : `${styles.monoValue} ${styles.statusWarn}`}
+                  >
+                    {hasSearchKey ? '•'.repeat(API_KEY_BULLET_LEN) : t('Not set')}
+                  </span>
+                  <Button kind="ghost" size="sm" onClick={() => setEditingSearchKey(true)}>
+                    {hasSearchKey ? t('Update') : t('Set')}
+                  </Button>
+                  {hasSearchKey ? (
+                    <Button kind="quiet" size="sm" onClick={() => void onClearSearchKey()}>
+                      {t('Clear')}
+                    </Button>
+                  ) : null}
+                </>
+              )}
+            </div>
+          ) : null}
+          {searchProvider !== 'auto' && !hasSearchKey ? (
+            <p className={styles.helper}>
+              {t('Without a key, search falls back to the free providers.')}
+            </p>
+          ) : null}
+        </div>
+
         {/* ── About ───────────────────────────────────────────── */}
         <div className={styles.group}>
           <h3 className={styles.groupTitle}>{t('About') /* >About< */}</h3>
           <div className={styles.row}>
             <span className={styles.label}>{t('Version')}</span>
-            <span className={styles.value}>{versionValue}</span>
+            <span className={styles.value}>
+              {versionValue}
+              {appVersion && versionStatus ? (
+                <>
+                  {' · '}
+                  <span className={versionStatus.cls}>{versionStatus.text}</span>
+                </>
+              ) : null}
+            </span>
             <Button
               kind="ghost"
               size="sm"
@@ -1314,6 +1830,43 @@ export function SettingsScreen(): React.ReactElement {
               American Retirement Homes
             </button>{' '}
             {t('(CC licensed).')}
+          </p>
+          <p className={styles.helper}>
+            {t('Speech recognition: SenseVoice-Small by FunAudioLLM (Alibaba),')}{' '}
+            <button
+              type="button"
+              className={styles.creditLink}
+              onClick={() =>
+                void sei.openExternal(
+                  'https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE',
+                )
+              }
+            >
+              {t('FunASR Model License')}
+            </button>
+            {t('. English voice: trained on LibriTTS-R,')}{' '}
+            <button
+              type="button"
+              className={styles.creditLink}
+              onClick={() =>
+                void sei.openExternal('https://creativecommons.org/licenses/by/4.0/')
+              }
+            >
+              CC BY 4.0
+            </button>
+            {t(
+              ', via Piper; converted to ONNX. Chinese voice: trained on AISHELL-3 by Beijing Shell Shell Technology,',
+            )}{' '}
+            <button
+              type="button"
+              className={styles.creditLink}
+              onClick={() =>
+                void sei.openExternal('https://www.apache.org/licenses/LICENSE-2.0')
+              }
+            >
+              {t('Apache License 2.0')}
+            </button>
+            {t(', via icefall.')}
           </p>
         </div>
 
@@ -1426,53 +1979,20 @@ export function SettingsScreen(): React.ReactElement {
       {factoryResetOpen ? (
         <FactoryResetConfirmModal onCancel={() => setFactoryResetOpen(false)} />
       ) : null}
-    </div>
-  );
-}
-
-/**
- * SkinSetupRow — Minecraft skin setup wizard status row.
- *
- * "Run setup" / "Re-run setup" opens SetupWizardModal in re-entry mode. The
- * pill state (enabled-install count) refreshes whenever the wizard closes.
- */
-function SkinSetupRow(): React.ReactElement {
-  const t = useT();
-  const openWizard = useWizardStore((s) => s.openWizard);
-  // Re-read the persisted wizard state whenever the wizard CLOSES so a
-  // completed "Re-run setup" flips the label without reopening Settings.
-  const wizardOpen = useWizardStore((s) => s.open);
-  const [state, setState] = useState<WizardState | null>(null);
-
-  useEffect(() => {
-    // Skip while the wizard is open — the fetch would race its in-flight
-    // install. The effect re-runs when wizardOpen flips back to false.
-    if (wizardOpen) return;
-    let cancelled = false;
-    void sei.getWizardState().then((s) => {
-      if (!cancelled) setState(s);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [wizardOpen]);
-
-  const enabledCount = state?.enabledInstallIds.length ?? 0;
-
-  return (
-    <div className={styles.row}>
-      <span className={styles.label}>
-        {t('Custom skins')}
-        <InfoTip
-          label={t('About custom skins')}
-          text={t(
-            'Give your companion a Minecraft skin so it looks right in your world. This runs a quick one-time setup for your Minecraft install.',
-          )}
+      {/* W5: shared "Download? (XX MB)" confirm for voice packs + SenseVoice.
+          Size comes from the pack registry via the status push, never a
+          hardcoded number. */}
+      {pendingPack && packStates[pendingPack.id] ? (
+        <DownloadConfirmModal
+          name={pendingPack.name}
+          bytes={packStates[pendingPack.id].bytes}
+          onCancel={() => setPendingPack(null)}
+          onConfirm={() =>
+            void startPackDownload(pendingPack.id, pendingPack.thenSensevoice === true)
+          }
         />
-      </span>
-      <Button kind="ghost" size="sm" onClick={() => openWizard(true)}>
-        {enabledCount > 0 ? t('Re-run setup') : t('Run setup')}
-      </Button>
+      ) : null}
     </div>
   );
 }
+

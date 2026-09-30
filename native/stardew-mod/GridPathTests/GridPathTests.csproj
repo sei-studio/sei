@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Game-free tests for SeiCompanion/Body/GridPath.cs, the one piece of the
+    mod's movement that does not touch the game's assemblies, so it builds and
+    runs on any machine with the .NET SDK (the mod itself only builds where
+    Stardew Valley + SMAPI are installed):
+
+      dotnet run (project native/stardew-mod/GridPathTests)
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../SeiCompanion/Body/GridPath.cs" Link="GridPath.cs" />
+    <Compile Include="Program.cs" />
+  </ItemGroup>
+</Project>

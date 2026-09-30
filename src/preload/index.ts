@@ -13,6 +13,7 @@ import {
   type RendererApi,
   type BotStatus,
   type VisionCapability,
+  type LlmCapability,
   type LanState,
   type LogBatch,
   type WizardProgressEvent,
@@ -32,10 +33,32 @@ import {
   type AvatarManifest,
   type BotActionPush,
   type GenProgressEvent,
+  type WorldState,
+  type GameDashboardSnapshot,
 } from '../shared/ipc';
 
 const api: RendererApi = {
-  summon: (id) => ipcRenderer.invoke(IpcChannel.bot.summon, id),
+  // Game adapters (M0): {characterId, game} (main also still accepts a bare id).
+  summon: (id, game) => ipcRenderer.invoke(IpcChannel.bot.summon, { characterId: id, game: game ?? 'minecraft' }),
+  onWorldState(cb: (state: WorldState) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, state: WorldState): void => cb(state);
+    ipcRenderer.on(IpcChannel.world.state, handler);
+    return () => ipcRenderer.off(IpcChannel.world.state, handler);
+  },
+  getWorldStates: () => ipcRenderer.invoke(IpcChannel.world.get),
+  worldCheckNow: (game) => ipcRenderer.invoke(IpcChannel.world.checkNow, game),
+  gameDashboardGet: (characterId) => ipcRenderer.invoke(IpcChannel.gamedash.get, characterId),
+  gameDashboardSetWatching: (characterId, watching) =>
+    ipcRenderer.invoke(IpcChannel.gamedash.setWatching, { characterId, watching }),
+  onGameDashboardSnapshot(cb: (s: GameDashboardSnapshot) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, s: GameDashboardSnapshot): void => cb(s);
+    ipcRenderer.on(IpcChannel.gamedash.snapshot, handler);
+    return () => ipcRenderer.off(IpcChannel.gamedash.snapshot, handler);
+  },
+  gameSetPaused: (characterId, paused) =>
+    ipcRenderer.invoke(IpcChannel.gamedash.setPaused, { characterId, paused }),
+  gameSetMode: (characterId, mode) =>
+    ipcRenderer.invoke(IpcChannel.gamedash.setMode, { characterId, mode }),
   stop: (id) => ipcRenderer.invoke(IpcChannel.bot.stop, id),
 
   listCharacters: () => ipcRenderer.invoke(IpcChannel.chars.list),
@@ -63,6 +86,10 @@ const api: RendererApi = {
   // Phase 11 D-28 portrait pipeline.
   charsApplyPortrait: (args) => ipcRenderer.invoke(IpcChannel.chars.applyPortrait, args),
   charsRemovePortrait: (id) => ipcRenderer.invoke(IpcChannel.chars.removePortrait, id),
+  // 260909 — card-image versions + regeneration.
+  charsPortraitVersions: (id) => ipcRenderer.invoke(IpcChannel.chars.portraitVersions, id),
+  charsPortraitRegenerate: (id) => ipcRenderer.invoke(IpcChannel.chars.portraitRegenerate, id),
+  charsPortraitSelect: (args) => ipcRenderer.invoke(IpcChannel.chars.portraitSelect, args),
 
   // Phase 11 D-16 — public/private toggle.
   charsSetShared: (args) => ipcRenderer.invoke(IpcChannel.chars.setShared, args),
@@ -108,7 +135,7 @@ const api: RendererApi = {
   chatHistoryBefore: (characterId, beforeId) =>
     ipcRenderer.invoke(IpcChannel.chat.historyBefore, { characterId, beforeId }),
   chatSend: (args) => ipcRenderer.invoke(IpcChannel.chat.send, args),
-  chatOpened: (characterId) => ipcRenderer.invoke(IpcChannel.chat.opened, characterId),
+  chatOpened: (characterId, opts) => ipcRenderer.invoke(IpcChannel.chat.opened, characterId, opts),
   chatPreviews: () => ipcRenderer.invoke(IpcChannel.chat.previews),
   onChatMessage(cb: (push: ChatMessagePush) => void) {
     const handler = (_e: Electron.IpcRendererEvent, push: ChatMessagePush) => cb(push);
@@ -149,7 +176,18 @@ const api: RendererApi = {
     ipcRenderer.invoke(IpcChannel.draw.saveGallery, { characterId, pngDataUrl }),
   drawEnd: (characterId) => ipcRenderer.invoke(IpcChannel.draw.end, characterId),
   drawResume: (characterId) => ipcRenderer.invoke(IpcChannel.draw.resume, characterId),
+  drawFinish: (characterId) => ipcRenderer.invoke(IpcChannel.draw.finish, characterId),
 
+
+  // OS permission flows (260929) — see src/shared/permissionsIpc.ts.
+  permissionsStatus: (kind) => ipcRenderer.invoke(IpcChannel.permissions.status, kind),
+  permissionsRequestMic: () => ipcRenderer.invoke(IpcChannel.permissions.requestMic),
+  permissionsOpenSettings: (kind) => ipcRenderer.invoke(IpcChannel.permissions.openSettings, kind),
+  permissionsProbeScreen: () => ipcRenderer.invoke(IpcChannel.permissions.probeScreen),
+  permissionsArmResume: (resume) => ipcRenderer.invoke(IpcChannel.permissions.armResume, resume),
+  permissionsClearResume: () => ipcRenderer.invoke(IpcChannel.permissions.clearResume),
+  permissionsTakeResume: () => ipcRenderer.invoke(IpcChannel.permissions.takeResume),
+  permissionsRelaunch: (resume) => ipcRenderer.invoke(IpcChannel.permissions.relaunch, resume),
 
   // Backseat (260728) — see src/shared/backseatIpc.ts.
   backseatSources: () => ipcRenderer.invoke(IpcChannel.backseat.sources),
@@ -164,6 +202,7 @@ const api: RendererApi = {
     ipcRenderer.invoke(IpcChannel.backseat.shareLabel, sourceId),
   backseatInterrupt: (characterId) =>
     ipcRenderer.invoke(IpcChannel.backseat.interrupt, characterId),
+  backseatLineHeard: (args) => ipcRenderer.invoke(IpcChannel.backseat.lineHeard, args),
   backseatSetPaused: (characterId, paused) =>
     ipcRenderer.invoke(IpcChannel.backseat.setPaused, { characterId, paused }),
   backseatSaveClip: (characterId, requestId, webmBase64) =>
@@ -239,7 +278,51 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.voice.ttsChunk, handler);
     return () => ipcRenderer.off(IpcChannel.voice.ttsChunk, handler);
   },
+  onVoiceTtsNotice(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, push: Parameters<typeof cb>[0]) => cb(push);
+    ipcRenderer.on(IpcChannel.voice.ttsNotice, handler);
+    return () => ipcRenderer.off(IpcChannel.voice.ttsNotice, handler);
+  },
   voiceStt: (args) => ipcRenderer.invoke(IpcChannel.voice.stt, args),
+  // Stardew Valley (game-adapters M1, src/main/games/stardew)
+  stardewInstallState: () => ipcRenderer.invoke(IpcChannel.stardew.installState),
+  stardewInstall: () => ipcRenderer.invoke(IpcChannel.stardew.install),
+  stardewLaunch: () => ipcRenderer.invoke(IpcChannel.stardew.launch),
+  onStardewInstallProgress(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, ev: Parameters<typeof cb>[0]) => cb(ev);
+    ipcRenderer.on(IpcChannel.stardew.installProgress, handler);
+    return () => ipcRenderer.off(IpcChannel.stardew.installProgress, handler);
+  },
+  // Game packs (260908, src/main/games/packs.ts)
+  gamePackState: (game) => ipcRenderer.invoke(IpcChannel.game.packState, { game }),
+  gamePackEnsure: (game) => ipcRenderer.invoke(IpcChannel.game.packEnsure, { game }),
+  onGamePackProgress(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, push: Parameters<typeof cb>[0]) => cb(push);
+    ipcRenderer.on(IpcChannel.game.packProgress, handler);
+    return () => ipcRenderer.off(IpcChannel.game.packProgress, handler);
+  },
+  // Don't Starve Together (game-adapters M2, 260908; src/shared/dstIpc.ts)
+  dstInstallState: () => ipcRenderer.invoke(IpcChannel.dst.installState),
+  dstInstall: () => ipcRenderer.invoke(IpcChannel.dst.install),
+  dstLaunch: () => ipcRenderer.invoke(IpcChannel.dst.launch),
+  dstOpenAppManagement: () => ipcRenderer.invoke(IpcChannel.dst.openAppManagement),
+  dstSurvivorGet: (characterId) => ipcRenderer.invoke(IpcChannel.dst.survivorGet, characterId),
+  dstSurvivorSet: (characterId, prefab) => ipcRenderer.invoke(IpcChannel.dst.survivorSet, { characterId, prefab }),
+  onDstInstallProgress(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, state: Parameters<typeof cb>[0]) => cb(state);
+    ipcRenderer.on(IpcChannel.dst.installProgress, handler);
+    return () => ipcRenderer.off(IpcChannel.dst.installProgress, handler);
+  },
+  // Local speech packs + SenseVoice STT (260816, china-compat W3+W4)
+  speechPackStatus: () => ipcRenderer.invoke(IpcChannel.speech.packStatus),
+  speechPackDownload: (args) => ipcRenderer.invoke(IpcChannel.speech.packDownload, args),
+  speechPackRemove: (args) => ipcRenderer.invoke(IpcChannel.speech.packRemove, args),
+  onSpeechPackState(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, push: Parameters<typeof cb>[0]) => cb(push);
+    ipcRenderer.on(IpcChannel.speech.packState, handler);
+    return () => ipcRenderer.off(IpcChannel.speech.packState, handler);
+  },
+  speechSttTranscribe: (args) => ipcRenderer.invoke(IpcChannel.speech.sttTranscribe, args),
   voiceSttPrewarm: () => ipcRenderer.invoke(IpcChannel.voice.sttPrewarm),
   voiceCallSetActive: (args) => ipcRenderer.invoke(IpcChannel.voice.callState, args),
   voiceGreet: (characterId, peers) => ipcRenderer.invoke(IpcChannel.voice.greet, { characterId, peers: peers ?? [] }),
@@ -256,6 +339,7 @@ const api: RendererApi = {
   // Live2D avatar store + overlay window controls (260804)
   avatarImport: (characterId, zipBytes) =>
     ipcRenderer.invoke(IpcChannel.avatar.import, characterId, zipBytes),
+  avatarDownload: (characterId) => ipcRenderer.invoke(IpcChannel.avatar.download, characterId),
   avatarGet: (characterId) => ipcRenderer.invoke(IpcChannel.avatar.get, characterId),
   avatarRemove: (characterId) => ipcRenderer.invoke(IpcChannel.avatar.remove, characterId),
   avatarModelFiles: (characterId) => ipcRenderer.invoke(IpcChannel.avatar.modelFiles, characterId),
@@ -335,6 +419,8 @@ const api: RendererApi = {
   detectMcInstalls: () => ipcRenderer.invoke(IpcChannel.wizard.detectInstalls),
   runWizardInstall: (args) => ipcRenderer.invoke(IpcChannel.wizard.install, args),
   wizardCancel: (sessionId) => ipcRenderer.invoke(IpcChannel.wizard.cancel, sessionId),
+  startMinecraft: (args) => ipcRenderer.invoke(IpcChannel.wizard.startMinecraft, args ?? {}),
+  minecraftRunning: () => ipcRenderer.invoke(IpcChannel.wizard.minecraftRunning),
   getWizardState: () => ipcRenderer.invoke(IpcChannel.wizard.getState),
   wizardPromptShown: (action: 'get' | 'set') => ipcRenderer.invoke(IpcChannel.wizard.promptShown, action),
 
@@ -343,6 +429,7 @@ const api: RendererApi = {
   signUpPassword: (args) => ipcRenderer.invoke(IpcChannel.auth.signupPassword, args),
   signInGoogle: () => ipcRenderer.invoke(IpcChannel.auth.signinGoogle),
   cancelGoogle: () => ipcRenderer.invoke(IpcChannel.auth.cancelGoogle),
+  regionStatus: () => ipcRenderer.invoke(IpcChannel.region.status),
   signOut: () => ipcRenderer.invoke(IpcChannel.auth.signout),
   deleteAccount: () => ipcRenderer.invoke(IpcChannel.auth.deleteAccount),
   exportData: () => ipcRenderer.invoke(IpcChannel.auth.exportData),
@@ -429,6 +516,15 @@ const api: RendererApi = {
     const handler = (_e: Electron.IpcRendererEvent, cap: VisionCapability) => cb(cap);
     ipcRenderer.on(IpcChannel.vision.capability, handler);
     return () => ipcRenderer.off(IpcChannel.vision.capability, handler);
+  },
+  llmListModels: (provider: string) => ipcRenderer.invoke(IpcChannel.llm.listModels, { provider }),
+  llmTest: (provider: string, model: string) =>
+    ipcRenderer.invoke(IpcChannel.llm.test, { provider, model }),
+  getLlmCapability: () => ipcRenderer.invoke(IpcChannel.llm.capabilityGet),
+  onLlmCapability(cb: (cap: LlmCapability) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, cap: LlmCapability) => cb(cap);
+    ipcRenderer.on(IpcChannel.llm.capability, handler);
+    return () => ipcRenderer.off(IpcChannel.llm.capability, handler);
   },
   onLog(cb: (batch: LogBatch) => void) {
     const handler = (_e: Electron.IpcRendererEvent, batch: LogBatch) => cb(batch);
@@ -533,6 +629,11 @@ const api: RendererApi = {
     const handler = (_e: Electron.IpcRendererEvent, ev: ScopeChangedEvent) => cb(ev);
     ipcRenderer.on(IpcChannel.app.scopeChanged, handler);
     return () => ipcRenderer.off(IpcChannel.app.scopeChanged, handler);
+  },
+  onScopeEnding(cb: () => void) {
+    const handler = () => cb();
+    ipcRenderer.on(IpcChannel.app.scopeEnding, handler);
+    return () => ipcRenderer.off(IpcChannel.app.scopeEnding, handler);
   },
 
   // --- Onboarding chrome toggle (260728) ---

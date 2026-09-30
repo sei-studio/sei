@@ -97,6 +97,83 @@ export const MAX_COMPANION_SLOTS = 4;
  */
 export const MAX_CREATIONS_PER_DAY = 4;
 
+/**
+ * Portrait regeneration cap (260909). A character the user owns can have its
+ * card image regenerated at most this many times over its LIFETIME (the count
+ * lives in `metadata.portrait_regen_count` and rides the cloud row, so it
+ * follows the character across devices). Every generated version is kept on
+ * disk as a sidecar so the user can switch back at any time.
+ */
+export const MAX_PORTRAIT_REGENS = 3;
+
+/**
+ * `code` on the Error `addPortraitVersion` (portraitStore) throws when a
+ * 'regen' write would exceed MAX_PORTRAIT_REGENS, and the user copy for it.
+ * Defined once here (shared, no main-process imports) so the fast guard in
+ * `regeneratePortrait` and the store's authoritative refusal say the same
+ * thing.
+ */
+export const PORTRAIT_REGEN_LIMIT = 'PORTRAIT_REGEN_LIMIT';
+export const PORTRAIT_REGEN_LIMIT_COPY = 'No regenerations left for this character.';
+
+/**
+ * Soft cap on the number of portrait versions kept per character. Regens are
+ * bounded by MAX_PORTRAIT_REGENS (+1 for the original snapshot); manual
+ * uploads are not, so the oldest inactive upload is evicted past this many.
+ */
+export const MAX_PORTRAIT_VERSIONS = 8;
+
+/** Where a stored portrait version came from. */
+export type PortraitVersionSource = 'original' | 'regen' | 'upload';
+
+/** One entry of `metadata.portrait_versions` (sidecar `<uuid>-v<n>.png`). */
+export interface PortraitVersion {
+  /** Sidecar filename inside the portraits dir, e.g. '<uuid>-v2.png'. */
+  file: string;
+  /** ISO timestamp the version was stored. */
+  created_at: string;
+  source: PortraitVersionSource;
+}
+
+/** Sidecar filename for portrait version `n` of character `id`. */
+export function portraitVersionFile(characterId: string, n: number): string {
+  return `${characterId}-v${n}.png`;
+}
+
+/** Parse the version index out of a sidecar filename, or null. */
+export function portraitVersionIndex(characterId: string, file: string): number | null {
+  const m = new RegExp(`^${characterId}-v(\\d+)\\.png$`, 'i').exec(file);
+  return m ? Number(m[1]) : null;
+}
+
+/** Recorded portrait versions (defensively parsed from metadata). */
+export function portraitVersionsOf(c: Pick<Character, 'metadata'>): PortraitVersion[] {
+  const raw = (c.metadata as Record<string, unknown> | undefined)?.portrait_versions;
+  if (!Array.isArray(raw)) return [];
+  const out: PortraitVersion[] = [];
+  for (const v of raw) {
+    if (typeof v !== 'object' || v === null) continue;
+    const r = v as Record<string, unknown>;
+    if (typeof r.file !== 'string' || typeof r.created_at !== 'string') continue;
+    const source: PortraitVersionSource =
+      r.source === 'original' || r.source === 'regen' || r.source === 'upload' ? r.source : 'upload';
+    out.push({ file: r.file, created_at: r.created_at, source });
+  }
+  return out;
+}
+
+/** Filename of the version currently copied onto the canonical portrait, or null. */
+export function portraitActiveOf(c: Pick<Character, 'metadata'>): string | null {
+  const raw = (c.metadata as Record<string, unknown> | undefined)?.portrait_active;
+  return typeof raw === 'string' && raw.length > 0 ? raw : null;
+}
+
+/** Lifetime regeneration count (0 when never regenerated). */
+export function portraitRegenCountOf(c: Pick<Character, 'metadata'>): number {
+  const raw = (c.metadata as Record<string, unknown> | undefined)?.portrait_regen_count;
+  return typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0;
+}
+
 /** Server-assigned public tag: 4 chars, A-Z / 0-9 (cloud `characters.public_id`). */
 export const PUBLIC_ID_REGEX = /^[A-Z0-9]{4}$/;
 
@@ -278,6 +355,33 @@ export function effectiveMcUsername(c: Pick<Character, 'username' | 'name'>): st
 }
 
 /**
+ * Cloud-hosted avatar model descriptor (260819). Rides
+ * `character.metadata.avatar` as `{ url, size_bytes }`, stamped by the cloud
+ * side when the owner uploads a Live2D/rig zip (planned to work like the
+ * Minecraft skin flow: the zip lives in cloud storage, downloading it locally
+ * is optional). Metadata is `z.record(z.unknown())`, so this reader is the
+ * single validation point; absence or a malformed shape both mean "no cloud
+ * avatar" and the profile's Avatar tab falls back to local upload.
+ */
+export interface CloudAvatarRef {
+  /** https URL of the avatar zip in cloud storage. */
+  url: string;
+  /** Zip size in bytes (shown on the Download button). */
+  sizeBytes: number;
+}
+
+export function cloudAvatarOf(c: Pick<Character, 'metadata'>): CloudAvatarRef | null {
+  const raw = (c.metadata as Record<string, unknown> | undefined)?.avatar;
+  if (typeof raw !== 'object' || raw === null) return null;
+  const ref = raw as Record<string, unknown>;
+  if (typeof ref.url !== 'string' || !/^https:\/\//.test(ref.url)) return null;
+  if (typeof ref.size_bytes !== 'number' || !Number.isFinite(ref.size_bytes) || ref.size_bytes <= 0) {
+    return null;
+  }
+  return { url: ref.url, sizeBytes: ref.size_bytes };
+}
+
+/**
  * The SINGLE membership rule for "does this character occupy a Home companion
  * slot". Shared by the renderer's Home/IconRail filter (isHomeCharacter in
  * src/renderer/src/lib/homeLibrary.ts) AND the main-process slot counter
@@ -363,9 +467,17 @@ export const UserConfigSchema = z.object({
   // ui-A1: Phase 14 widened the LLM provider matrix to 13 backends — the
   // factory in src/bot/brain/llm/index.js (`SUPPORTED_PROVIDERS`) is the
   // canonical list. Anthropic remains the default for backward-compat with
-  // existing config.json files. The 10 OpenAI-compatible providers share a
+  // existing config.json files. The OpenAI-compatible providers share a
   // single adapter w/ provider-specific baseURL; gemini + ollama have their
   // own adapters.
+  //
+  // 260816 (china-compat): the PICKER list shrank to 8 — anthropic, openai,
+  // deepseek, qwen, gemini, grok, ollama, openrouter (SHOWN_PROVIDERS in
+  // src/shared/llmCatalog.ts). The enum deliberately keeps every legacy
+  // value: a config already set to a dropped provider (mistral, together,
+  // groq, fireworks, cerebras, perplexity) must keep parsing and working —
+  // the picker just stops OFFERING it unless it is the current selection.
+  // 'qwen' is new (DashScope OpenAI-compatible mode).
   provider: z
     .enum([
       'anthropic',
@@ -375,6 +487,7 @@ export const UserConfigSchema = z.object({
       'grok',
       'openrouter',
       'deepseek',
+      'qwen',
       'mistral',
       'together',
       'groq',
@@ -694,6 +807,13 @@ export const UserConfigSchema = z.object({
    */
   skin_setup_pending: z.boolean().optional().default(false),
   /**
+   * The player dismissed the "set up a Sei-ready Minecraft" step on the
+   * Minecraft launch panel (260909). The step otherwise shows on every open
+   * of the panel until an install is Sei-ready (shared/mcSetup.ts). Absent =
+   * never dismissed. Written by the renderer through config:save.
+   */
+  mc_setup_dismissed: z.boolean().optional(),
+  /**
    * In-flight tutorial (260730). The post-onboarding tour used to be
    * deliberately unpersisted, which meant a mid-tour quit silently dropped
    * the rest of the tour AND the one-shot unique-reveal "say hello" page.
@@ -775,6 +895,25 @@ export const UserConfigSchema = z.object({
    */
   feedback_reward_claimed: z.boolean().optional().default(false),
   /**
+   * Draw! intro game done (260929), written by MAIN only (not in
+   * RENDERER_SETTABLE_KEYS). Until a player finishes one Draw! game, the game
+   * is the short intro: one round with the companion drawing first, so they
+   * see how a turn works before they have to draw on the spot (12 of 18
+   * games were abandoned, 4 at 0 turns about 70s into the player's first
+   * drawing turn). Set when that intro game completes; absent = not yet.
+   */
+  draw_intro_done: z.boolean().optional(),
+  /**
+   * 260926 — "Your free play is back" launch banner. The weekly reset time
+   * (CreditsStatus.resets_at) remembered the last time an account was seen
+   * AT the credit wall, keyed by that account's user id because config.json
+   * is per profile, not per account, and survives switching accounts. null or
+   * absent otherwise. When a later launch finds the SAME account off the wall
+   * with this time passed, the banner shows once and this clears. See
+   * decideFreePlayBanner in src/shared/freePlayReset.ts.
+   */
+  free_play_wall: z.object({ user_id: z.string(), resets_at: z.string() }).nullable().optional(),
+  /**
    * Looking (vision) mode — how the companion sees the world:
    *   'off'        — never looks; plays from world data only. No look()/explore()
    *                  pictures and no automatic views.
@@ -802,6 +941,19 @@ export const UserConfigSchema = z.object({
     .optional()
     .default('on-demand'),
   /**
+   * 260909: web search for the AI (search / visit tools on every surface).
+   * 'auto' is the keyless DuckDuckGo -> Bing -> Wikipedia chain and needs no
+   * account. A keyed provider (brave / tavily / serper) is used only when
+   * web_search_api_key is set. Resolved by src/main/llm/webSearchSettings.ts,
+   * which also honors the SEI_SEARCH_PROVIDER / SEI_SEARCH_API_KEY env
+   * overrides for development. Edited from Settings > Search (the provider
+   * picker + key field); the env overrides win over the saved values. Both
+   * stay `.optional()` with NO default so the many renderer call sites that
+   * build a whole UserConfig literal keep typechecking; absence = 'auto'.
+   */
+  web_search_provider: z.enum(['auto', 'brave', 'tavily', 'serper', 'ddg', 'bing', 'wikipedia']).optional(),
+  web_search_api_key: z.string().optional(),
+  /**
    * Cumulative bot playtime for THIS profile, in ms, summed across every
    * character's session. Accumulated at session-end in botSupervisor (alongside
    * the per-character `playtime_ms`) so the total survives a character being
@@ -817,6 +969,16 @@ export const UserConfigSchema = z.object({
    * at startup; fresh installs set it true in onboarding (nothing to backfill).
    */
   total_playtime_backfilled: z.boolean().optional().default(false),
+  /**
+   * Adaptive chess strength (260929), written by MAIN only (not in
+   * RENDERER_SETTABLE_KEYS). Sparse map of character id -> Elo offset applied
+   * on top of the character's own `metadata.chess.elo` for games against THIS
+   * profile's player: a step down after each player loss, a smaller step up
+   * after each win (src/main/chess/chessDifficulty.ts). It lives here and not
+   * on the character because metadata is cloud-synced verbatim, shared, and
+   * read-only on foreign characters, while this is about one player.
+   */
+  chess_elo_offsets: z.record(z.number().int()).optional(),
   /**
    * 260703 procgen: first-sign-in questionnaire answers (see UserPreferencesSchema).
    * Local cache of the cloud `user_preferences` row; the cloud copy wins on
@@ -869,8 +1031,28 @@ export const UserConfigSchema = z.object({
    * worker only. Optional and NOT defaulted (absent ≡ 'scribe' semantics,
    * decided renderer-side) so the many manual UserConfig literals don't all
    * need to spell it out — same convention as chat_language.
+   *
+   * 260816 (china-compat): + 'sensevoice' — the local SenseVoice-small
+   * engine (zh-strong, CPU realtime; roughly half Whisper's Chinese error
+   * rate). Local like 'whisper', just a different model in the same worker
+   * seam. Cloud users never persist it, but the renderer's fallback policy
+   * PREFERS SenseVoice over Whisper for the local fallback model whenever
+   * ui_language is 'zh' (the one sanctioned cloud-behavior change in the
+   * china-compat stream; see sttPolicy.ts).
    */
-  stt_engine: z.enum(['scribe', 'whisper']).optional(),
+  stt_engine: z.enum(['scribe', 'whisper', 'sensevoice']).optional(),
+  /**
+   * 260816 local speech (china-compat W3+W4): which TTS engine speaks a
+   * companion's lines in local mode. 'local' routes synthesis through the
+   * sherpa-onnx voice packs in main (speech/) instead of ElevenLabs.
+   * Read ONLY when ai_backend_kind === 'local' — cloud accounts ignore it
+   * entirely. Optional and NOT defaulted (absent ≡ 'elevenlabs').
+   * Characters always KEEP their designated metadata.voiceId (an ElevenLabs
+   * pool id); the local engine maps that voice's gender + the conversation
+   * language to a local voice pack at synthesis time, and
+   * metadata.voicePitch still applies through the pitch shifter.
+   */
+  tts_engine: z.enum(['elevenlabs', 'local']).optional(),
   /**
    * 260725: cloud users' opt-in to the local Whisper fallback. Set true once
    * the user accepts the Whisper-install prompt after a Scribe failure, so
@@ -878,6 +1060,59 @@ export const UserConfigSchema = z.object({
    * and NOT defaulted (absent ≡ false) — same convention as analytics_opt_out.
    */
   stt_local_fallback: z.boolean().optional(),
+  /**
+   * DEPRECATED (260909), never read. Don't Starve Together discovery used to
+   * bind this one fixed port; it now binds the first free port of
+   * DST_DISCOVERY_PORTS and the helper mod probes the same list, so there is
+   * nothing to configure. Kept so a config written by the M2 build still
+   * parses.
+   */
+  dst_port: z.number().int().min(1024).max(65535).optional(),
+  /**
+   * Which survivor each character plays as in Don't Starve Together, SPARSE
+   * like call_backdrop: an absent character id means "not chosen yet" and
+   * the character picks on first launch (src/main/games/dontstarve/
+   * survivorPick.ts). `source: 'user'` marks a launch-panel override. Kept
+   * here and NOT in character.metadata (metadata cloud-syncs verbatim and is
+   * not editable on foreign characters). No `.default({})` on purpose.
+   */
+  dst_survivor: z
+    .record(
+      z.object({
+        prefab: z.string().min(1).max(32),
+        source: z.enum(['auto', 'user']).default('auto'),
+        reason: z.string().max(400).optional(),
+      }),
+    )
+    .optional(),
+  /**
+   * How each character looks in Stardew Valley (260921): the farmer
+   * customization knobs derived once per character by
+   * src/main/games/stardew/appearance.ts. SPARSE and outside
+   * character.metadata for the same reasons as dst_survivor. The row is
+   * deliberately LOOSE here (plain ints and strings): the strict, legend-bound
+   * check is StardewAppearanceSchema (src/shared/stardewAppearance.ts), run by
+   * the reader, so dropping an index from a legend re-derives one character
+   * instead of failing the whole config parse. No `.default({})` on purpose.
+   */
+  stardew_appearance: z
+    .record(
+      z.object({
+        gender: z.string().max(16),
+        skin: z.number().int(),
+        hair: z.number().int(),
+        hairColor: z.string().max(16),
+        eyeColor: z.string().max(16),
+        shirt: z.number().int(),
+        pants: z.number().int(),
+        pantsColor: z.string().max(16),
+        accessory: z.number().int(),
+        source: z.enum(['auto', 'user']).default('auto'),
+        /** Generator version (STARDEW_APPEARANCE_VERSION). Absent = 1, the text-only derivation. */
+        version: z.number().int().optional(),
+      }),
+    )
+    .optional(),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;

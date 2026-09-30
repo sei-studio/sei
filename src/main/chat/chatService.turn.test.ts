@@ -18,11 +18,16 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { _setUserDataOverride, paths } from '../paths';
 
-const { createSpy, streamSpy, getCharacterSpy, patchCharacterSpy } = vi.hoisted(() => ({
+const { createSpy, streamSpy, getCharacterSpy, patchCharacterSpy, captureSpy } = vi.hoisted(() => ({
+  captureSpy: vi.fn(),
   createSpy: vi.fn(),
   streamSpy: vi.fn(),
   getCharacterSpy: vi.fn(),
   patchCharacterSpy: vi.fn(),
+}));
+vi.mock('../analytics', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../analytics')>()),
+  capture: captureSpy,
 }));
 vi.mock('./sdk', () => ({
   CHAT_TIMEOUT_MS: 30_000,
@@ -38,10 +43,27 @@ vi.mock('../characterStore', () => ({
 vi.mock('../configStore', () => ({
   loadConfig: vi.fn(async () => ({ preferred_name: 'Player' })),
 }));
+// 260909: search()/visit() ride a per-character web session; stub it so the
+// hop loop is exercised with no network.
+const { webRuns } = vi.hoisted(() => ({ webRuns: [] as Array<{ name: string; input: unknown }> }));
+vi.mock('../llm/webSearchSettings', () => ({
+  resolveWebSearchSettings: () => ({ provider: 'auto', api_key: '' }),
+  getChatWebSession: () => ({
+    lastProvider: 'fake',
+    beginTurn() {},
+    async runTool(name: string, input: { query?: string; ref?: string }) {
+      webRuns.push({ name, input });
+      if (name === 'search') return { content: `results for "${input.query}":\na. Netherite Armor (minecraft.wiki) - strongest armor`, is_error: false };
+      return { content: `[${input.ref}] minecraft.wiki - Netherite Armor\nMade at a smithing table.`, is_error: false };
+    },
+  }),
+}));
 
 import type { ChatDeps } from './chatService';
-import { sendChatMessage, sendVoiceIdleTurn, sendCompanionVoiceTurn, cancelInflightTurn, CHAT_ABORTED } from './chatService';
+import type { LanHost } from '../../shared/ipc';
+import { sendChatMessage, sendLaunchFailedTurn, sendVoiceIdleTurn, sendCompanionVoiceTurn, cancelInflightTurn, CHAT_ABORTED } from './chatService';
 import { setCallActive } from '../voice/callState';
+import { readAll as chatStoreRead } from './chatStore';
 
 const CHAR = '55555555-5555-4555-8555-555555555555';
 let dir: string;
@@ -76,6 +98,7 @@ beforeEach(async () => {
   );
   createSpy.mockReset();
   streamSpy.mockReset();
+  captureSpy.mockReset();
 });
 afterEach(async () => {
   _setUserDataOverride(null);
@@ -132,6 +155,106 @@ describe('sendChatMessage — parallel tool_use blocks', () => {
     expect(result.launch).toEqual({ game: 'minecraft', status: 'lan-not-open' });
   });
 
+  // 260929: the chat launch() path gets the same Forge hard stop as the
+  // Summon button (shared forgeHostBlock), as a plain note to relay.
+  const openLan = (host: LanHost | undefined): ChatDeps['getLanState'] => () => ({
+    kind: 'open',
+    port: 55555,
+    motd: 'World',
+    lastSeenAt: Date.now(),
+    host,
+  });
+  const blockedCalls = () => captureSpy.mock.calls.filter((c) => c[0] === 'summon_blocked');
+  const launchOnce = async (d: ChatDeps): Promise<{ note: string; result: Awaited<ReturnType<typeof sendChatMessage>> }> => {
+    createSpy
+      .mockResolvedValueOnce({ content: [{ type: 'tool_use', id: 'tu_1', name: 'launch', input: { game: 'minecraft' } }] })
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'ok' }] });
+    const result = await sendChatMessage({ characterId: CHAR, text: 'hop in' }, d);
+    const secondReq = createSpy.mock.calls[1][0] as { messages: Array<{ role: string; content: unknown }> };
+    const blocks = secondReq.messages[secondReq.messages.length - 1].content as Array<{ content: unknown }>;
+    return { note: JSON.stringify(blocks[0].content), result };
+  };
+
+  it.each([
+    ['Forge (status ping)', { client: 'forge', forgeModCount: 2 } as LanHost, 'Forge'],
+    ['NeoForge (launch target)', { client: 'neoforge', forgeModCount: null, forgeLaunchTarget: true } as LanHost, 'NeoForge'],
+  ])('launch() on a %s host refuses with a plain, relayable reason and never summons', async (_l, host, loader) => {
+    const d = { ...deps(), getLanState: openLan(host) };
+    const { note, result } = await launchOnce(d);
+    expect(note).toContain(`can't join ${loader} worlds`);
+    expect(note).toContain('Sei profile');
+    expect(note).toContain('do not retry');
+    expect(result.launch).toEqual({ game: 'minecraft', status: 'lan-not-open' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(d.summon).not.toHaveBeenCalled();
+    // Settle the fire-and-forget capture here so it cannot land in a later test.
+    await vi.waitFor(() => expect(blockedCalls()).toHaveLength(1));
+  });
+
+  it('a Forge refusal fires one summon_blocked (path chat), even if launch() is called twice in the turn', async () => {
+    const d = { ...deps(), getLanState: openLan({ client: 'forge', forgeModCount: 2 }) };
+    createSpy
+      .mockResolvedValueOnce({ content: [{ type: 'tool_use', id: 'tu_1', name: 'launch', input: { game: 'minecraft' } }] })
+      .mockResolvedValueOnce({ content: [{ type: 'tool_use', id: 'tu_2', name: 'launch', input: { game: 'minecraft' } }] })
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'ok' }] });
+    await sendChatMessage({ characterId: CHAR, text: 'hop in' }, d);
+    await vi.waitFor(() => expect(blockedCalls()).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(blockedCalls()).toHaveLength(1);
+    expect(blockedCalls()[0][1]).toEqual({
+      character_id: CHAR,
+      game: 'minecraft',
+      reason: 'FORGE_HOST_BLOCKED',
+      loader: 'Forge',
+      host_client: 'forge',
+      path: 'chat',
+    });
+  });
+
+  it('a Forge refusal on a voice turn is tagged path voice', async () => {
+    const d = { ...deps(), getLanState: openLan({ client: 'neoforge', forgeModCount: null, forgeLaunchTarget: true }) };
+    createSpy
+      .mockResolvedValueOnce({ content: [{ type: 'tool_use', id: 'tu_1', name: 'launch', input: { game: 'minecraft' } }] })
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'ok' }] });
+    await sendChatMessage({ characterId: CHAR, text: 'hop in', voiceCall: true }, d).catch(() => {});
+    await vi.waitFor(() => expect(blockedCalls()).toHaveLength(1));
+    expect(blockedCalls()[0][1]).toMatchObject({ path: 'voice', loader: 'NeoForge', host_client: 'neoforge' });
+  });
+
+  it('a launch that goes ahead fires no summon_blocked', async () => {
+    const d = { ...deps(), getLanState: openLan({ client: 'forge', forgeModCount: null }) };
+    await launchOnce(d);
+    await vi.waitFor(() => expect(d.summon).toHaveBeenCalledTimes(1));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(blockedCalls()).toHaveLength(0);
+  });
+
+  it.each([
+    ['vanilla', { client: 'vanilla', forgeModCount: null } as LanHost],
+    ["Sei's own Fabric profile", { client: 'fabric', forgeModCount: null, seiSkinMod: true, otherModCount: 0 } as LanHost],
+    ['Forge on weak evidence only', { client: 'forge', forgeModCount: null } as LanHost],
+  ])('launch() on a %s host still joins', async (_l, host) => {
+    const d = { ...deps(), getLanState: openLan(host) };
+    const { note, result } = await launchOnce(d);
+    expect(note).not.toContain("can't join");
+    expect(result.launch).toEqual({ game: 'minecraft', status: 'summoning' });
+    await vi.waitFor(() => expect(d.summon).toHaveBeenCalledTimes(1));
+  });
+
+  it('a Forge pre-gate refusal from a voice launch is relayed as the reason, without "try again"', async () => {
+    createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: "can't get into forge worlds, try the sei profile" }] });
+    await sendLaunchFailedTurn(
+      CHAR,
+      "FORGE_HOST_BLOCKED: Sei can't join Forge worlds. To play together, open the Sei profile in the Minecraft Launcher, open or create a world there, and open it to LAN.",
+    );
+    const req = createSpy.mock.calls[0][0] as { messages: Array<{ role: string; content: unknown }> };
+    const sent = JSON.stringify(req.messages[req.messages.length - 1].content);
+    expect(sent).toContain("Sei can't join Forge worlds");
+    expect(sent).toContain('Sei profile');
+    expect(sent).toContain('Do not offer to try again');
+    expect(sent).not.toContain('FORGE_HOST_BLOCKED');
+  });
+
   it('does NOT run a second hop when quit rides with an already-spoken goodbye (double-goodbye guard)', async () => {
     // The model says its goodbye AND calls quit in one response. The old code ran
     // a second hop whose tool-note said "say goodbye if you have not already",
@@ -176,6 +299,214 @@ describe('sendChatMessage — parallel tool_use blocks', () => {
     const blocks = secondReq.messages[secondReq.messages.length - 1].content as Array<{ type: string; tool_use_id: string }>;
     expect(blocks.map((b) => b.tool_use_id)).toEqual(['tu_rem']);
     expect(result.replies.length).toBeGreaterThan(0);
+  });
+});
+
+describe('search() / visit() hop loop (260909)', () => {
+  it('answers search then visit with tool_results and keeps hopping until the model stops', async () => {
+    webRuns.length = 0;
+    createSpy
+      .mockResolvedValueOnce({
+        content: [
+          { type: 'text', text: 'lemme check.' },
+          { type: 'tool_use', id: 'tu_s', name: 'search', input: { query: 'netherite armor' } },
+        ],
+      })
+      .mockResolvedValueOnce({
+        content: [{ type: 'tool_use', id: 'tu_v', name: 'visit', input: { ref: 'a' } }],
+      })
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'smithing table, diamond gear plus an ingot.' }] });
+
+    const result = await sendChatMessage({ characterId: CHAR, text: 'how do i make netherite armor' }, deps());
+
+    expect(createSpy).toHaveBeenCalledTimes(3);
+    expect(webRuns.map((r) => r.name)).toEqual(['search', 'visit']);
+    // The Anthropic path offers the native server search plus our visit.
+    const firstReq = createSpy.mock.calls[0][0] as { tools: Array<{ name: string; type?: string }> };
+    expect(firstReq.tools.map((t) => t.name)).toEqual(expect.arrayContaining(['web_search', 'visit']));
+    expect(firstReq.tools.find((t) => t.name === 'web_search')?.type).toBe('web_search_20250305');
+    expect(firstReq.tools.map((t) => t.name)).not.toContain('search');
+    // The messages array is shared across hops (pushed in place), so inspect
+    // the final transcript: every tool_use was answered, in order, with the
+    // web result as the tool_result content.
+    const lastReq = createSpy.mock.calls[2][0] as { messages: Array<{ role: string; content: unknown }> };
+    const results = lastReq.messages
+      .flatMap((m) => (Array.isArray(m.content) ? (m.content as Array<{ type: string; tool_use_id?: string; content?: string }>) : []))
+      .filter((b) => b.type === 'tool_result');
+    expect(results.map((b) => b.tool_use_id)).toEqual(['tu_s', 'tu_v']);
+    expect(results[0].content).toContain('results for "netherite armor"');
+    expect(results[1].content).toContain('smithing table');
+    // The final reply is what reaches the player.
+    expect(result.replies.map((r) => r.text).join(' ')).toMatch(/smithing table/);
+  });
+});
+
+describe('a line beside search() lands before the lookup (260909)', () => {
+  it('pushes the same-hop text immediately and returns only the post-result reply', async () => {
+    webRuns.length = 0;
+    createSpy
+      .mockResolvedValueOnce({
+        content: [
+          { type: 'text', text: 'lemme check.' },
+          { type: 'tool_use', id: 'tu_s', name: 'search', input: { query: 'netherite armor' } },
+        ],
+      })
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'smithing table, diamond gear plus an ingot.' }] });
+
+    const pushed: string[] = [];
+    const d: ChatDeps = { ...deps(), emitReply: (_id, m) => { pushed.push(m.text); } };
+    const result = await sendChatMessage({ characterId: CHAR, text: 'how do i make netherite armor' }, d);
+
+    expect(pushed).toEqual(['lemme check']);
+    expect(result.replies.map((r) => r.text)).toEqual(['smithing table, diamond gear plus an ingot']);
+    // Both lines are in the transcript, in order.
+    const rows = await chatStoreRead(CHAR);
+    expect(rows.filter((r) => r.role === 'companion').map((r) => r.text)).toEqual([
+      'lemme check',
+      'smithing table, diamond gear plus an ingot',
+    ]);
+  });
+
+  it('a text-only final hop is not doubled by the empty-reply fallback', async () => {
+    webRuns.length = 0;
+    createSpy
+      .mockResolvedValueOnce({
+        content: [
+          { type: 'text', text: 'one sec, looking.' },
+          { type: 'tool_use', id: 'tu_s', name: 'search', input: { query: 'x' } },
+        ],
+      })
+      .mockResolvedValueOnce({ content: [] });
+    const pushed: string[] = [];
+    const d: ChatDeps = { ...deps(), emitReply: (_id, m) => { pushed.push(m.text); } };
+    const result = await sendChatMessage({ characterId: CHAR, text: 'look up x' }, d);
+    expect(pushed).toEqual(['one sec, looking']);
+    expect(result.replies).toEqual([]);
+  });
+});
+
+describe('native server-side web_search on the Anthropic path (260909)', () => {
+  const serverBlocks = [
+    { type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: { query: 'ucla chancellor' } },
+    { type: 'web_search_tool_result', tool_use_id: 'srvtoolu_1', content: [{ type: 'web_search_result', title: 'UCLA', url: 'https://ucla.edu', encrypted_content: 'x'.repeat(200) }] },
+  ];
+
+  it('pushes the pre-search line first and keeps only the post-search text as the reply', async () => {
+    createSpy.mockResolvedValueOnce({
+      stop_reason: 'end_turn',
+      content: [
+        { type: 'text', text: 'lemme check.' },
+        ...serverBlocks,
+        { type: 'text', text: "it's julio frenk." },
+      ],
+    });
+    const pushed: string[] = [];
+    const d: ChatDeps = { ...deps(), emitReply: (_id, m) => { pushed.push(m.text); } };
+    const result = await sendChatMessage({ characterId: CHAR, text: "who is ucla's chancellor" }, d);
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(pushed).toEqual(['lemme check']);
+    expect(result.replies.map((r) => r.text)).toEqual(["it's julio frenk"]);
+  });
+
+  it('resumes a pause_turn by sending the assistant content back verbatim', async () => {
+    createSpy
+      .mockResolvedValueOnce({ stop_reason: 'pause_turn', content: [{ type: 'text', text: 'one sec.' }, ...serverBlocks] })
+      .mockResolvedValueOnce({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'found it.' }] });
+    const result = await sendChatMessage({ characterId: CHAR, text: 'look it up' }, deps());
+    expect(createSpy).toHaveBeenCalledTimes(2);
+    const req2 = createSpy.mock.calls[1][0] as { messages: Array<{ role: string; content: unknown }> };
+    const last = req2.messages[req2.messages.length - 1];
+    expect(last.role).toBe('assistant');
+    expect(JSON.stringify(last.content)).toContain('web_search_tool_result');
+    expect(result.replies.map((r) => r.text)).toEqual(['found it']);
+  });
+});
+
+describe('server search + client visit in one response (260917)', () => {
+  const serverBlocks = [
+    { type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: { query: 'netherite armor' } },
+    { type: 'web_search_tool_result', tool_use_id: 'srvtoolu_1', content: [{ type: 'web_search_result', title: 'Netherite', url: 'https://minecraft.wiki/w/Netherite', encrypted_content: 'x'.repeat(200) }] },
+  ];
+
+  it('emits the pre-search line ONCE and the post-search line once, then answers', async () => {
+    webRuns.length = 0;
+    createSpy
+      .mockResolvedValueOnce({
+        stop_reason: 'tool_use',
+        content: [
+          { type: 'text', text: 'lemme check.' },
+          ...serverBlocks,
+          { type: 'text', text: 'opening the page.' },
+          { type: 'tool_use', id: 'tu_v', name: 'visit', input: { ref: 'a' } },
+        ],
+      })
+      .mockResolvedValueOnce({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'smithing table, ancient debris.' }] });
+    const pushed: string[] = [];
+    const d: ChatDeps = { ...deps(), emitReply: (_id, m) => { pushed.push(m.text); } };
+    const result = await sendChatMessage({ characterId: CHAR, text: 'how do i get netherite' }, d);
+    expect(createSpy).toHaveBeenCalledTimes(2);
+    expect(webRuns.map((r) => r.name)).toEqual(['visit']);
+    // The pre-search line must not be glued to, or repeated with, the line
+    // that followed the server search.
+    expect(pushed).toEqual(['lemme check', 'opening the page']);
+    expect(result.replies.map((r) => r.text)).toEqual(['smithing table, ancient debris']);
+    const rows = await chatStoreRead(CHAR);
+    const companion = rows.filter((r) => r.role === 'companion').map((r) => r.text);
+    expect(companion.filter((t) => t.startsWith('lemme check')).length).toBe(1);
+  });
+});
+
+describe('single-shot voice turns run an announced lookup (260917)', () => {
+  it('idle nudge: a search() tool_use gets ONE follow-up call and the answer is spoken after the announce', async () => {
+    setCallActive(CHAR, true);
+    webRuns.length = 0;
+    createSpy
+      .mockResolvedValueOnce({
+        stop_reason: 'tool_use',
+        content: [
+          { type: 'text', text: 'one sec, let me look that up.' },
+          { type: 'tool_use', id: 'tu_s', name: 'search', input: { query: 'netherite armor' } },
+        ],
+      })
+      .mockResolvedValueOnce({
+        stop_reason: 'tool_use',
+        content: [
+          { type: 'text', text: 'netherite is the strongest armor.' },
+          // A second lookup is NOT honored: the follow-up is bounded to one hop.
+          { type: 'tool_use', id: 'tu_v', name: 'visit', input: { ref: 'a' } },
+        ],
+      });
+    const result = await sendVoiceIdleTurn(CHAR, 60, [], { openWorldDetected: false });
+    expect(createSpy).toHaveBeenCalledTimes(2);
+    expect(webRuns.map((r) => r.name)).toEqual(['search']);
+    const req2 = createSpy.mock.calls[1][0] as { messages: Array<{ role: string; content: unknown }> };
+    const last = req2.messages[req2.messages.length - 1];
+    expect(last.role).toBe('user');
+    expect(JSON.stringify(last.content)).toContain('"tool_use_id":"tu_s"');
+    const spoken = result.messages.map((m) => m.text).join(' ');
+    expect(spoken).toContain('one sec, let me look that up');
+    expect(spoken).toContain('netherite is the strongest armor');
+  });
+
+  it('companion reaction: a pause_turn (server search ran long) is resumed once', async () => {
+    setCallActive(CHAR, true);
+    createSpy
+      .mockResolvedValueOnce({
+        stop_reason: 'pause_turn',
+        content: [
+          { type: 'text', text: 'hang on.' },
+          { type: 'server_tool_use', id: 'srvtoolu_2', name: 'web_search', input: { query: 'x' } },
+          { type: 'web_search_tool_result', tool_use_id: 'srvtoolu_2', content: [] },
+        ],
+      })
+      .mockResolvedValueOnce({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'found it, it is julio frenk.' }] });
+    const result = await sendCompanionVoiceTurn(CHAR, { speakerName: 'Sui', text: 'who runs ucla', peers: ['Sui'] });
+    expect(createSpy).toHaveBeenCalledTimes(2);
+    const req2 = createSpy.mock.calls[1][0] as { messages: Array<{ role: string; content: unknown }> };
+    expect(req2.messages[req2.messages.length - 1].role).toBe('assistant');
+    const spoken = result.map((m) => m.text).join(' ');
+    expect(spoken).toContain('hang on');
+    expect(spoken).toContain('julio frenk');
   });
 });
 

@@ -35,6 +35,7 @@ import React from 'react';
 import { useUiStore } from '../../lib/stores/useUiStore';
 import { useVoiceStore } from '../../lib/stores/useVoiceStore';
 import { useBackseatStore } from '../../lib/stores/useBackseatStore';
+import { useDataStore } from '../../lib/stores/useDataStore';
 import {
   MicIcon,
   MicOffIcon,
@@ -46,6 +47,7 @@ import {
   ScreenShareOffIcon,
 } from '../icons';
 import { useT } from '../../lib/i18n';
+import { visionBlocked, visionGateReason } from '../../lib/visionGate';
 import styles from './CallControls.module.css';
 
 export interface CallControlsProps {
@@ -91,6 +93,29 @@ export function CallControls({
   const stopSharing = useBackseatStore((s) => s.stopSharing);
   const sharing = sharingFor !== null;
   const shareTarget = participants[0];
+
+  // china-compat W9: backseat is an image surface, so a text-only local model
+  // disables the share pill with the reason as its tooltip. Only a confident
+  // 'no' locks ('unknown' stays usable; main's LLM_NO_VISION gate is the
+  // backstop). Stopping an already-running share is never blocked.
+  const shareVisionBlocked = visionBlocked(useUiStore((s) => s.llmVision));
+  const llmModel = useUiStore((s) => s.llmModel);
+  // A live Minecraft summon also disables the pill (260907): backseat and a
+  // summon are mutually exclusive (main refuses BACKSEAT_MC_SESSION_ACTIVE),
+  // so say so up front. Every disabled state carries its reason as the title.
+  const shareMcKind = useDataStore((s) =>
+    shareTarget ? s.summons[shareTarget]?.kind : undefined,
+  );
+  const shareMcActive = shareMcKind === 'online' || shareMcKind === 'connecting';
+  const shareReason = sharing
+    ? null
+    : shareVisionBlocked
+      ? visionGateReason(t, 'backseat', llmModel)
+      : shareMcActive
+        ? t('End the Minecraft session to share your screen')
+        : !shareTarget
+          ? t('Start a voice call to share your screen')
+          : null;
 
   const small = size === 'sm';
   const btn = small ? `${styles.pillBtn} ${styles.pillBtnSm}` : styles.pillBtn;
@@ -145,12 +170,15 @@ export function CallControls({
             void stopSharing();
             return;
           }
+          if (shareVisionBlocked || shareMcActive) return;
           if (shareTarget) openModal({ kind: 'share-screen', characterId: shareTarget });
         }}
-        disabled={!sharing && (!shareTarget || startingShare)}
+        disabled={
+          !sharing && (!shareTarget || startingShare || shareVisionBlocked || shareMcActive)
+        }
         aria-pressed={sharing}
-        aria-label={sharing ? t('Stop sharing your screen') : t('Share your screen')}
-        title={sharing ? t('Stop sharing') : t('Share your screen')}
+        aria-label={sharing ? t('Stop sharing your screen') : (shareReason ?? t('Share your screen'))}
+        title={sharing ? t('Stop sharing') : (shareReason ?? t('Share your screen'))}
       >
         {sharing ? <ScreenShareOffIcon size={iconPx} /> : <ScreenShareIcon size={iconPx} />}
       </button>

@@ -29,10 +29,12 @@ import {
   sanitizeEntryPath,
   buildSafePathMap,
   setAvatarAccessory,
+  parseRigSpec,
   MANIFEST_VERSION,
 } from './avatarStore';
 
 const REAL_ZIP = '/Users/ouen/Downloads/_雪熊企划_雪熊少女.zip';
+const REAL_RIG_ZIP = '/Users/ouen/slop/sei-studio/chibi-rig/chibi-rig-avatar.zip';
 
 let dir: string;
 
@@ -331,4 +333,143 @@ describe('setAvatarAccessory', () => {
   it('returns null when no avatar is imported', async () => {
     expect(await setAvatarAccessory('char-none', 'x', true)).toBeNull();
   });
+});
+
+describe('parseRigSpec', () => {
+  const valid = {
+    version: 1,
+    name: 'whale maid',
+    canvas: [2048, 2048],
+    layers: [
+      { id: 'back', src: 'back.png', z: 0, group: 'head', physics: { k: 40, c: 7 } },
+      { id: 'body', src: 'body.png', z: 1, sway: 0.15 },
+      {
+        id: 'eyes',
+        z: 3,
+        group: 'head',
+        box: [524, 812, 1236, 1076],
+        states: { open: 'eyes_open.png', closed: 'eyes_closed.png' },
+      },
+    ],
+  };
+
+  it('accepts a valid spec and preserves layer shape', () => {
+    const spec = parseRigSpec(valid);
+    expect(spec.canvas).toEqual([2048, 2048]);
+    expect(spec.name).toBe('whale maid');
+    expect(spec.layers).toHaveLength(3);
+    expect(spec.layers[0].physics).toEqual({ k: 40, c: 7 });
+    expect(spec.layers[2].states).toEqual({ open: 'eyes_open.png', closed: 'eyes_closed.png' });
+    expect(spec.layers[2].box).toEqual([524, 812, 1236, 1076]);
+  });
+
+  it('rejects bad canvases, empty layers, and shape violations', () => {
+    expect(() => parseRigSpec(null)).toThrow(/not an object/);
+    expect(() => parseRigSpec({ ...valid, canvas: [0, 2048] })).toThrow(/canvas/);
+    expect(() => parseRigSpec({ ...valid, layers: [] })).toThrow(/no layers/);
+    expect(() =>
+      parseRigSpec({ ...valid, layers: [{ id: 'a', z: 0 }] }),
+    ).toThrow(/neither src nor states/);
+    expect(() =>
+      parseRigSpec({
+        ...valid,
+        layers: [{ id: 'a', z: 0, states: { open: 'o.png', closed: 'c.png' } }],
+      }),
+    ).toThrow(/box/);
+    expect(() =>
+      parseRigSpec({
+        ...valid,
+        layers: [valid.layers[0], { ...valid.layers[1], id: 'back' }],
+      }),
+    ).toThrow(/duplicate/);
+    expect(() =>
+      parseRigSpec({ ...valid, layers: [{ ...valid.layers[0], physics: { k: 0, c: 1 } }] }),
+    ).toThrow(/physics/);
+  });
+});
+
+describe('importAvatarZip (rig)', () => {
+  function rigZip(opts?: { dropImage?: boolean }): Promise<Buffer> {
+    const zip = new JSZip();
+    zip.file(
+      'rig.json',
+      JSON.stringify({
+        version: 1,
+        name: 'whale maid',
+        canvas: [2048, 2048],
+        layers: [
+          { id: 'back', src: 'back.png', z: 0, group: 'head', physics: { k: 40, c: 7 } },
+          { id: 'body', src: 'body.png', z: 1, sway: 0.15 },
+          {
+            id: 'eyes',
+            z: 3,
+            group: 'head',
+            box: [524, 812, 1236, 1076],
+            states: { open: 'eyes_open.png', closed: 'eyes closed 图.png' },
+          },
+        ],
+      }),
+    );
+    zip.file('back.png', Buffer.from([1]));
+    zip.file('body.png', Buffer.from([2]));
+    zip.file('eyes_open.png', Buffer.from([3]));
+    if (!opts?.dropImage) zip.file('eyes closed 图.png', Buffer.from([4]));
+    return zip.generateAsync({ type: 'nodebuffer' });
+  }
+
+  it('imports a rig zip: kind flag, no expressions, refs rewritten ASCII-safe', async () => {
+    const manifest = await importAvatarZip('char-rig', await rigZip());
+    expect(manifest.kind).toBe('rig');
+    expect(manifest.name).toBe('whale maid');
+    expect(manifest.entry).toBe('rig.json');
+    expect(manifest.expressions).toEqual([]);
+    expect(manifest.emotions).toEqual({});
+
+    const files = await readAvatarModelFiles('char-rig');
+    for (const f of files) expect(encodeURI(f.path)).toBe(f.path);
+    const byPath = new Set(files.map((f) => f.path));
+    const spec = parseRigSpec(
+      JSON.parse(Buffer.from(files.find((f) => f.path === 'rig.json')!.bytes).toString('utf8')),
+    );
+    for (const l of spec.layers) {
+      if (l.src) expect(byPath.has(l.src)).toBe(true);
+      if (l.states) {
+        expect(byPath.has(l.states.open)).toBe(true);
+        expect(byPath.has(l.states.closed)).toBe(true);
+      }
+    }
+    // A rig manifest round-trips without triggering any heal.
+    expect((await getAvatarManifest('char-rig'))?.kind).toBe('rig');
+  });
+
+  it('rejects a rig referencing a missing image, keeping any previous store', async () => {
+    await importAvatarZip('char-rig2', await rigZip());
+    await expect(importAvatarZip('char-rig2', await rigZip({ dropImage: true }))).rejects.toThrow(
+      /missing image/,
+    );
+    expect((await getAvatarManifest('char-rig2'))?.kind).toBe('rig');
+  });
+});
+
+describe.skipIf(!existsSync(REAL_RIG_ZIP))('importAvatarZip (real chibi-rig zip)', () => {
+  it('imports the whale-maid rig end to end', async () => {
+    const manifest = await importAvatarZip('chibi-test', await readFile(REAL_RIG_ZIP));
+    expect(manifest.kind).toBe('rig');
+    expect(manifest.name).toBe('whale maid');
+    const files = await readAvatarModelFiles('chibi-test');
+    const byPath = new Map(files.map((f) => [f.path, f.bytes]));
+    const spec = parseRigSpec(
+      JSON.parse(Buffer.from(byPath.get(manifest.entry)!).toString('utf8')),
+    );
+    expect(spec.canvas).toEqual([2048, 2048]);
+    expect(spec.layers.filter((l) => l.states)).toHaveLength(2); // eyes + mouth
+    expect(spec.layers.filter((l) => l.physics)).toHaveLength(2); // back + front hair
+    for (const l of spec.layers) {
+      if (l.src) expect(byPath.has(l.src)).toBe(true);
+      if (l.states) {
+        expect(byPath.has(l.states.open)).toBe(true);
+        expect(byPath.has(l.states.closed)).toBe(true);
+      }
+    }
+  }, 30_000);
 });

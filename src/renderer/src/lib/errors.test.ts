@@ -15,8 +15,10 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { ERROR_COPY, classifyRendererError } from './errors';
+import { ERROR_COPY, classifyRendererError, cleanIpcError, errorCopyText } from './errors';
+import { supportedVersions } from 'minecraft-protocol/src/version.js';
 import { ALL_ERROR_CLASSES } from '@shared/errorClasses';
+import { WIZARD_MAX_MC } from '@shared/mcSetup';
 
 const NEOFORGE_KICK = 'This server has mods that require NeoForge to be installed on the client.';
 
@@ -68,6 +70,22 @@ describe('classifyRendererError — modded hosts', () => {
   });
 });
 
+describe('cleanIpcError', () => {
+  it('strips the invoke wrapper and the Error prefix', () => {
+    expect(
+      cleanIpcError(new Error("Error invoking remote method 'chars:portrait-select': Error: Unknown portrait version.")),
+    ).toBe('Unknown portrait version.');
+  });
+
+  it('strips any error class name, and leaves a plain message alone', () => {
+    expect(
+      cleanIpcError(new Error("Error invoking remote method 'knowledge:extract': KnowledgeExtractError: That file is empty.")),
+    ).toBe('That file is empty.');
+    expect(cleanIpcError(new Error('Character not found.'))).toBe('Character not found.');
+    expect(cleanIpcError('plain string')).toBe('plain string');
+  });
+});
+
 describe('ERROR_COPY', () => {
   it('has a row for every ErrorClass', () => {
     for (const cls of ALL_ERROR_CLASSES) {
@@ -87,5 +105,31 @@ describe('ERROR_COPY', () => {
   // so the copy must not suggest it.
   it('does not tell a modded-host user to press Summon again', () => {
     expect(ERROR_COPY.MODDED_HOST_REJECTED.toLowerCase()).not.toContain('summon again');
+  });
+
+  // 260926: the copy names the exact range (from minecraft-protocol's table)
+  // and the launcher path, and no placeholder ever renders literally.
+  // 260929 (R1c): the fix is the Sei profile, not a hand-made installation.
+  it('UNSUPPORTED_MC_VERSION names the supported range and points at the Sei profile', () => {
+    const copy = errorCopyText('UNSUPPORTED_MC_VERSION');
+    expect(copy).toContain(`to ${supportedVersions[supportedVersions.length - 1]}`);
+    expect(copy).toContain('Open the Sei profile');
+    expect(copy).not.toContain('New installation');
+    expect(copy).not.toContain('—');
+    for (const cls of ALL_ERROR_CLASSES) {
+      expect(errorCopyText(cls), `unfilled placeholder in ${cls}`).not.toMatch(/\{(oldest|newest|recommended|versions)\}/);
+    }
+  });
+
+  // 260926 (PR #26): the bot joins 26.2 / 26.3, but the skin mod only works on
+  // the wizard's version. The copy lists every joinable version and steers the
+  // launcher steps to the wizard's version, never to the protocol table's newest.
+  it('UNSUPPORTED_MC_VERSION lists 26.2 / 26.3 but recommends the skin-mod version', () => {
+    const copy = errorCopyText('UNSUPPORTED_MC_VERSION');
+    const newest = supportedVersions[supportedVersions.length - 1];
+    expect(newest).toBe('26.3');
+    expect(copy, copy).toContain(`to ${newest}`);
+    expect(copy).toContain(`it runs ${WIZARD_MAX_MC}, with companion skins`);
+    expect(copy).not.toContain(`runs ${newest}`);
   });
 });

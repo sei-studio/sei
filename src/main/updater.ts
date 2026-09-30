@@ -121,8 +121,48 @@ type AutoUpdater = {
   downloadUpdate: () => Promise<unknown>;
   quitAndInstall: (isSilent?: boolean, isForceRunAfter?: boolean) => void;
   on: (event: string, listener: (...args: unknown[]) => void) => void;
+  setFeedURL: (options: { provider: string; url: string; channel?: string }) => void;
 };
 let autoUpdater: AutoUpdater | null = null;
+
+/**
+ * 260816 (china-compat): mirror fallback feed. GitHub's release-asset CDN is
+ * unreliable from mainland China, so a failed check retries ONCE against the
+ * generic feed on dl.sei.gg, which .github/workflows/mirror-release.yml
+ * populates from every PUBLISHED release (all *.yml channels + artifacts,
+ * flat). One-way for the session: once the mirror feed answers, there is no
+ * reason to flap back, and a user whose GitHub route works never sees it.
+ * The generic provider derives the feed filename from `channel`
+ * (latest-mac.yml / beta-mac.yml), so the channel toggle re-arms it below.
+ */
+const MIRROR_FEED_URL = 'https://dl.sei.gg/updates';
+let mirrorFeedActive = false;
+
+function applyMirrorFeed(au: AutoUpdater): void {
+  au.setFeedURL({
+    provider: 'generic',
+    url: MIRROR_FEED_URL,
+    channel: allowPrerelease ? 'beta' : 'latest',
+  });
+}
+
+/**
+ * Retry a failed checkForUpdates against the mirror feed. Returns false when
+ * the mirror is already active (no second fallback exists) so callers just
+ * log the original failure.
+ */
+function retryOnMirror(au: AutoUpdater, why: string): boolean {
+  if (mirrorFeedActive) return false;
+  mirrorFeedActive = true;
+  logger.warn(`updater: check failed (${why}); retrying on mirror feed ${MIRROR_FEED_URL}`);
+  try {
+    applyMirrorFeed(au);
+  } catch (err) {
+    logger.warn(`updater: mirror feed setup failed (${(err as Error).message})`);
+    return false;
+  }
+  return true;
+}
 
 /**
  * The current update channel, mirrored onto `autoUpdater.allowPrerelease`.
@@ -179,6 +219,22 @@ let lastBackgroundCheckAt = 0;
 let backgroundCheckInFlight = false;
 /** True once the event-trigger listeners are attached (attach exactly once). */
 let eventsWired = false;
+/**
+ * True once an update has finished downloading and is installable on quit
+ * (260909). On Windows/Linux electron-updater's own quit hook installs it; on
+ * macOS the downloaded zip is handed to Squirrel.Mac, which installs a staged
+ * update when the PROCESS terminates. The macOS catch is that closing the last
+ * window does not terminate anything (the app stays resident in the dock), so
+ * index.ts reads this via isUpdateReadyToInstall() to quit for real when the
+ * last window closes and nothing is still running — otherwise the staged
+ * update is silently thrown away and re-downloaded next session.
+ */
+let updateReadyToInstall = false;
+
+/** Whether a downloaded update is waiting to install on the next real quit. */
+export function isUpdateReadyToInstall(): boolean {
+  return updateReadyToInstall;
+}
 
 /* -------------------------------------------------------------------------- */
 /*  version.json fetch (ported from updateChecker.ts)                          */
@@ -467,6 +523,7 @@ async function handleUpdateAvailable(info: unknown): Promise<void> {
  *     so the restart is theirs to trigger via app:update-install.
  */
 async function handleUpdateDownloaded(): Promise<void> {
+  updateReadyToInstall = true;
   const apply = mandatoryApply;
   if (apply === null) {
     // Optional consented flow.
@@ -491,6 +548,9 @@ async function handleUpdateDownloaded(): Promise<void> {
   // update still installs on the next quit via autoInstallOnAppQuit; the card
   // just adds a "Restart now" affordance.
   send(IpcChannel.app.updateDownloaded, { forced: false, onRestart: true });
+  // "next quit" means a real process quit: Cmd-Q, or the quit-on-last-window-
+  // close that index.ts adds on macOS when this update is ready. Closing the
+  // window alone never installed anything on macOS (260909).
   logger.info('updater: mandatory update downloaded; applies on next quit (pill offers restart now)');
 }
 
@@ -610,6 +670,16 @@ function maybeBackgroundCheck(reason: string): void {
     .catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
       logger.warn(`updater: background checkForUpdates failed (${message})`);
+      // Missing artifacts is a release-shape condition, not a network failure
+      // — the mirror carries the same release, so flipping onto it would
+      // strand a supported-region user there for nothing (260817, W10; the
+      // manual check path has always filtered this).
+      if (!isMissingReleaseArtifacts(err) && retryOnMirror(au, message)) {
+        return au.checkForUpdates().catch((err2: unknown) => {
+          logger.warn(`updater: mirror checkForUpdates failed (${(err2 as Error)?.message ?? err2})`);
+        });
+      }
+      return undefined;
     })
     .finally(() => {
       backgroundCheck = false;
@@ -658,6 +728,12 @@ export function initUpdater(deps: { getMainWindow: () => BrowserWindow | null })
       au.checkForUpdates().catch((err: unknown) => {
         const message = err instanceof Error ? err.message : String(err);
         logger.warn(`updater: startup checkForUpdates failed (${message})`);
+        // Same release-shape filter as the background path (260817, W10).
+        if (!isMissingReleaseArtifacts(err) && retryOnMirror(au, message)) {
+          au.checkForUpdates().catch((err2: unknown) => {
+            logger.warn(`updater: mirror checkForUpdates failed (${(err2 as Error)?.message ?? err2})`);
+          });
+        }
       });
     })();
   }
@@ -711,6 +787,14 @@ export async function checkForUpdatesManual(): Promise<void> {
     if (isMissingReleaseArtifacts(err)) {
       logger.warn(`updater: manual check found no installable release (${message})`);
       send(IpcChannel.app.updateNotAvailable);
+    } else if (retryOnMirror(au, message)) {
+      try {
+        await au.checkForUpdates();
+      } catch (err2) {
+        const message2 = (err2 as Error).message;
+        logger.warn(`updater: mirror checkForUpdates failed (${message2})`);
+        send(IpcChannel.app.updateError, message2);
+      }
     } else {
       logger.warn(`updater: manual checkForUpdates failed (${message})`);
       send(IpcChannel.app.updateError, message);
@@ -743,6 +827,17 @@ export function setUpdateChannel(advanced: boolean): void {
     return;
   }
   au.allowPrerelease = advanced;
+  // The generic mirror feed encodes the channel in its feed FILENAME
+  // (latest-mac.yml vs beta-mac.yml), so when the mirror is active the toggle
+  // must re-arm the feed URL too — allowPrerelease alone only affects the
+  // GitHub provider's release filtering.
+  if (mirrorFeedActive) {
+    try {
+      applyMirrorFeed(au);
+    } catch (err) {
+      logger.warn(`updater: mirror feed re-arm failed (${(err as Error).message})`);
+    }
+  }
   logger.info(`updater: channel = ${advanced ? 'beta (pre-releases included)' : 'stable only'}`);
   // Enabling may reveal a waiting beta. Route through the manual path so the
   // Settings status line gets its checking/available/not-available feedback,

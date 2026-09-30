@@ -7,18 +7,21 @@
  * read-modify-write: accumulation, non-positive no-ops, and field preservation.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, stat, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { _setUserDataOverride, paths } from './paths';
+import { _setUserDataOverride, paths, setActiveScope, profileRootFor } from './paths';
 import {
   addPlaytimeMs,
   backfillTotalPlaytimeOnce,
   loadConfig,
+  MAIN_OWNED_KEYS,
+  RENDERER_SETTABLE_KEYS,
   saveConfig,
   saveConfigFromRenderer,
+  updateConfig,
 } from './configStore';
-import { CharacterSchema } from '../shared/characterSchema';
+import { CharacterSchema, UserConfigSchema } from '../shared/characterSchema';
 
 const UUID_A = '11111111-1111-4111-8111-111111111111';
 const UUID_B = '22222222-2222-4222-8222-222222222222';
@@ -51,6 +54,7 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   _setUserDataOverride(null);
+  setActiveScope('local');
   await rm(tmp, { recursive: true, force: true });
 });
 
@@ -187,6 +191,62 @@ describe('saveConfigFromRenderer', () => {
     const cfg = await loadConfig();
     expect(cfg.ai_backend_kind).toBe('cloud-proxy');
     expect(cfg.preferred_name).toBe('Ouen');
+  });
+  it('260929: a stale renderer copy never reverts the game-end keys (chess difficulty, Draw! intro)', async () => {
+    const mountSnapshot = await loadConfig();
+    // A chess game and a Draw! intro end while Settings stays mounted.
+    await updateConfig((cfg) => ({ ...cfg, chess_elo_offsets: { [UUID_A]: -100 } }));
+    await updateConfig((cfg) => ({ ...cfg, draw_intro_done: true }));
+    await saveConfigFromRenderer({
+      ...mountSnapshot,
+      chess_elo_offsets: {},
+      draw_intro_done: false,
+      theme_mode: 'mint',
+    });
+    const cfg = await loadConfig();
+    expect(cfg.chess_elo_offsets).toEqual({ [UUID_A]: -100 });
+    expect(cfg.draw_intro_done).toBe(true);
+    expect(cfg.theme_mode).toBe('mint');
+  });
+
+  it('260929: the Minecraft setup dismissal (renderer-owned) persists', async () => {
+    await saveConfigFromRenderer({ ...(await loadConfig()), mc_setup_dismissed: true });
+    expect((await loadConfig()).mc_setup_dismissed).toBe(true);
+  });
+
+  it('every UserConfig key is either renderer-settable or main-owned, never both', () => {
+    const renderer = new Set<string>(RENDERER_SETTABLE_KEYS);
+    const main = new Set<string>(MAIN_OWNED_KEYS);
+    expect([...renderer].filter((k) => main.has(k))).toEqual([]);
+    expect([...renderer, ...main].sort()).toEqual(Object.keys(UserConfigSchema.shape).sort());
+  });
+});
+
+describe('updateConfig', () => {
+  it('260929: a mutate that changes nothing does not rewrite the file', async () => {
+    await saveConfig({ ...(await loadConfig()), preferred_name: 'Ouen' });
+    const old = new Date('2020-01-01T00:00:00Z');
+    await utimes(paths.configPath(), old, old);
+    const out = await updateConfig((cfg) => cfg);
+    expect(out.preferred_name).toBe('Ouen');
+    expect((await stat(paths.configPath())).mtimeMs).toBe(old.getTime());
+    // A real change still writes.
+    await updateConfig((cfg) => ({ ...cfg, preferred_name: 'Sui' }));
+    expect((await stat(paths.configPath())).mtimeMs).not.toBe(old.getTime());
+    expect((await loadConfig()).preferred_name).toBe('Sui');
+  });
+
+  it('260929: opts.scope writes the named profile, not the active one', async () => {
+    setActiveScope(UUID_B);
+    await updateConfig((cfg) => ({ ...cfg, preferred_name: 'A' }), { scope: UUID_A });
+    expect((await loadConfig()).preferred_name).toBe(''); // active (B) untouched
+    const raw = JSON.parse(await (await import('node:fs/promises')).readFile(
+      path.join(profileRootFor(UUID_A), 'config.json'),
+      'utf8',
+    ));
+    expect(raw.preferred_name).toBe('A');
+    setActiveScope(UUID_A);
+    expect((await loadConfig()).preferred_name).toBe('A');
   });
 });
 

@@ -49,9 +49,11 @@ import { useDataStore } from './useDataStore';
 import { useBackseatStore, backseatCapture } from './useBackseatStore';
 import { voicePitchRate } from '@shared/voicePitch';
 import { createAudioQueue, type AudioQueue, type TtsStreamHandle } from '../voice/audioQueue';
-import { t } from '../i18n';
+import { t, uiLanguage } from '../i18n';
+import { currentResetLine } from '../useResetLine';
 import { createDictation, type Dictation } from '../voice/dictation';
 import {
+  companionAudioGapMs,
   classifyScreenEcho,
   envelopeCorrelation,
   finalScreenEcho,
@@ -79,6 +81,20 @@ import {
   type StopFn,
 } from '../voice/callTones';
 import { warm as warmPitchBus } from '../voice/pitchBus';
+import { isPermissionRefusal, micPreflight } from '../permissions/permissionFlow';
+
+/**
+ * 260929: a call held up by microphone access. MicAccessCard (mounted in
+ * App.tsx, so it shows over any view) explains it, opens Settings, polls, and
+ * dials `characterId` again the moment access is on.
+ */
+export interface MicBlocked {
+  characterId: string;
+  /** macOS: Screen Time / MDM owns the setting; Settings cannot change it. */
+  restricted: boolean;
+  /** macOS says granted but the mic still refused: offer a restart. */
+  needsRestart: boolean;
+}
 
 export type CallStatus =
   | 'idle'
@@ -119,6 +135,14 @@ interface VoiceState {
   lastSpoken: string;
   /** Which companion said `lastSpoken` (caption attribution). */
   lastSpokenId: string | null;
+  /**
+   * 260908: system notice about the call's VOICE itself (voice unavailable,
+   * paused, spoken with a substitute local pack). Rendered as a notice-styled
+   * line, NEVER as companion speech — these used to ride `lastSpoken` and
+   * showed up in the caption as if the companion had said the bracket text.
+   * Empty = none; cleared on call start/end, replaced by newer notices.
+   */
+  callNotice: string;
   /** User-facing error copy when status === 'error'. */
   error: string | null;
   /** While connecting: model-download percentage ('43') or null. */
@@ -142,6 +166,11 @@ interface VoiceState {
    * scene that somehow never reports arrival cannot mute the call.
    */
   introHold: boolean;
+
+  /** 260929: set while a call is waiting on microphone access. */
+  micBlocked: MicBlocked | null;
+  /** Close the microphone card without dialing. */
+  dismissMicBlocked: () => void;
 
   /** Dial the first companion, OR add another to a call already open. */
   startCall: (characterId: string) => Promise<void>;
@@ -275,6 +304,15 @@ let session = 0;
 const liveSince = new Map<string, number>();
 /** TTS fetches in flight — the remote-end drain waits for these. */
 let pendingTts = 0;
+/**
+ * Local TTS is active for this call (260816, china-compat W3+W4): BYOK backend
+ * with tts_engine 'local'. Set from the same config read that feeds the STT
+ * policy at call start, reset at dial. While set, speakCompanionLine never
+ * takes the streaming path — local synthesis returns whole WAV clips, which
+ * cannot ride the audio/mpeg MSE pipeline; the blob path sniffs the container
+ * (audioQueue playBuffer) and plays them fine.
+ */
+let localTtsCall = false;
 /** Companion lines that arrived while the (first) call was still 'connecting'.
  * `seq` is the line's ORIGIN sequence resolved at buffer time (see
  * speakerOriginSeq), threaded through the flush into speakAndCapture. */
@@ -312,6 +350,7 @@ const ttsOrphans = new Map<string, Array<{ chunk?: ArrayBuffer; done?: boolean; 
 /** Module-level listener handles, torn down on HMR dispose (see module foot). */
 let unsubUiMirror: (() => void) | null = null;
 let offTtsChunk: (() => void) | null = null;
+let offTtsNotice: (() => void) | null = null;
 let offCallEnded: (() => void) | null = null;
 let offCreditsHardStop: (() => void) | null = null;
 
@@ -537,7 +576,12 @@ function friendlyError(err: unknown): string {
   // empty — the `name` is the reliable signal (NotAllowedError / NotFoundError).
   const name = (err as { name?: string })?.name ?? '';
   if (/VOICE_NO_SESSION/.test(msg)) return t('Sign in to use voice calls.');
-  if (/VOICE_NO_CREDITS/.test(msg)) return t("You've used this week's credits. Upgrade or top up to keep calling.");
+  if (/VOICE_NO_CREDITS/.test(msg)) {
+    // 260926: say when free play comes back, not just that it is gone.
+    const base = t("You've used this week's credits. Upgrade or top up to keep calling.");
+    const reset = currentResetLine();
+    return reset ? `${base}${uiLanguage() === 'zh' ? '' : ' '}${reset}` : base;
+  }
   // 260810: the daily dollar cap was retired 260724, so a voice 429 is the
   // burst rate gate — never claim a daily cap or a tomorrow reset.
   if (/VOICE_RATE_LIMITED/.test(msg)) return t('Too many requests right now. Wait a little and try again.');
@@ -551,13 +595,39 @@ function friendlyError(err: unknown): string {
     return t('No microphone was found. Connect one and try again.');
   }
   if (name === 'NotAllowedError' || /permission/i.test(msg)) {
-    // Windows has no per-app prompt for desktop apps: access is silently
-    // blocked by the OS privacy toggle, so name the exact switch (260709).
-    return sei.platform === 'win32'
-      ? t('Microphone access is blocked by Windows. In Settings, open Privacy & security > Microphone, turn on microphone access and "Let desktop apps access your microphone", then try again.')
-      : t('Microphone access was blocked. Allow it and try again.');
+    // 260929: the fix lives on MicAccessCard (why, Open Settings, and the call
+    // starts by itself once access is on), so this line only names the state.
+    return t('Microphone access is off for Sei.');
   }
   return t('Voice call failed to start. Try again in a moment.');
+}
+
+/** Which conversation-language family a local speech pack speaks (pack ids
+ * from src/main/speech/packs.ts). */
+function isZhPack(packId: string | undefined): boolean {
+  return packId === 'tts-zh';
+}
+
+/** Notice copy when NO installed local pack can speak (260908): the
+ * VOICE_PACK_MISSING sentinel carries the pack id matching the conversation
+ * language, so the notice names the exact download instead of a generic
+ * "the local voice pack". */
+function missingPackNotice(packId: string | undefined): string {
+  if (isZhPack(packId)) {
+    return t('[voice unavailable, download the Chinese voice pack in Settings]');
+  }
+  if (packId === 'tts-en') {
+    return t('[voice unavailable, download the English voice pack in Settings]');
+  }
+  return t('[voice unavailable, download the local voice pack in Settings]');
+}
+
+/** Notice copy when a line WAS spoken, but with a substitute pack because the
+ * language-matching one is not installed (260908, voice:tts-notice push). */
+function substitutePackNotice(push: { missingPackId: string; spokenPackId: string }): string {
+  return isZhPack(push.missingPackId)
+    ? t('[spoken with the English voice, download the Chinese voice pack in Settings for a better fit]')
+    : t('[spoken with the Chinese voice, download the English voice pack in Settings for a better fit]');
 }
 
 export const useVoiceStore = create<VoiceState>((set, get) => {
@@ -652,17 +722,33 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
 
     const surfaceTtsError = (msg: string): void => {
       if (session !== mySession) return;
-      // 260810: these captions are user-visible (they render verbatim in the
-      // call caption surfaces), so they go through t(). And a TTS 429 is the
-      // burst rate gate, not a daily cap (that cap was retired 260724).
+      // 260810: these lines are user-visible (they render in the call caption
+      // area), so they go through t(). And a TTS 429 is the burst rate gate,
+      // not a daily cap (that cap was retired 260724).
+      // 260908: they land in `callNotice`, NOT `lastSpoken` — a notice about
+      // the voice pipeline must render as a system line, never styled (or
+      // spoken by the overlay surfaces) as something the companion said.
       if (/VOICE_RATE_LIMITED/.test(msg)) {
-        set({ lastSpoken: t('[voice paused, too many requests right now]') });
+        set({ callNotice: t('[voice paused, too many requests right now]') });
       } else if (/VOICE_NO_CREDITS/.test(msg)) {
-        set({ lastSpoken: t('[voice paused, out of credits]') });
+        set({ callNotice: t('[voice paused, out of credits]') });
       } else if (/VOICE_NOT_IN_LIBRARY/.test(msg)) {
         // BYOK key + a curated-pool voice: every clip fails until they add the
         // voice to their own ElevenLabs library or pick another one (260726).
-        set({ lastSpoken: t('[voice unavailable, this voice is not in your ElevenLabs library]') });
+        set({ callNotice: t('[voice unavailable, this voice is not in your ElevenLabs library]') });
+      } else if (/VOICE_PACK_MISSING/.test(msg)) {
+        // Local TTS (260816): NO installed voice pack can speak this line
+        // (main already falls back to any installed pack, 260908). The
+        // sentinel carries the pack id that would fit the conversation
+        // language, so the notice can name the exact download. Never
+        // auto-downloaded mid-call; Settings owns the download prompt.
+        const packId = /VOICE_PACK_MISSING:([\w-]+)/.exec(msg)?.[1];
+        set({ callNotice: missingPackNotice(packId) });
+      } else if (/SPEECH_RUNTIME_FAILED/.test(msg)) {
+        // Local TTS (260817, W10): the sherpa-onnx runtime failed to load
+        // (e.g. a mac x64 build shipped without the platform package).
+        // Without this branch the companion is silently mute on every line.
+        set({ callNotice: t('[voice unavailable, local speech cannot run on this install]') });
       }
     };
     const settleTts = (): void => {
@@ -671,7 +757,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     };
 
     const canStream =
-      typeof sei.voiceTtsStream === 'function' && typeof sei.onVoiceTtsChunk === 'function';
+      typeof sei.voiceTtsStream === 'function' &&
+      typeof sei.onVoiceTtsChunk === 'function' &&
+      // Local TTS (260816): whole WAV clips only — see localTtsCall.
+      !localTtsCall;
     // 260726: a TINY line does not stream. Streaming exists to cut time-to-
     // first-audio on a long clip, and its cost is that playback starts on a
     // buffer that is still filling. On a clip of a few hundred ms there is
@@ -692,10 +781,19 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     // `turn` is queue bookkeeping (drop a superseded turn's unplayed lines),
     // never a synthesis parameter: main's TTS zod would strip it silently, but
     // splitting here keeps the request honest.
-    const { turn, ...ttsCtx } = ctx;
+    // `confirmId` (260925 backseat act) is bookkeeping too: main asks to hear
+    // whether THIS line (a "want me to ...?" control offer) played to its end,
+    // and the offer only becomes answerable once it did.
+    const { turn, confirmId, ...ttsCtx } = ctx;
+    const onDone = confirmId
+      ? (completed: boolean): void => {
+          void sei.backseatLineHeard?.({ characterId, confirmId, completed }).catch(() => {});
+        }
+      : undefined;
+    if (!queue) onDone?.(false);
     const worthStreaming = text.length >= STREAM_MIN_CHARS;
     if (canStream && worthStreaming && queue) {
-      const handle = queue.enqueueStream(characterId, text, pitchRateOf(characterId), { turn });
+      const handle = queue.enqueueStream(characterId, text, pitchRateOf(characterId), { turn, onDone });
       void sei
         .voiceTtsStream({ characterId, text, ...ttsCtx })
         .then(({ streamId }) => {
@@ -730,6 +828,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     const slot = queue?.enqueueStream(characterId, text, pitchRateOf(characterId), {
       blob: true,
       turn,
+      onDone,
     });
     void sei
       .voiceTts({ characterId, text, ...ttsCtx })
@@ -1194,7 +1293,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
   /** A player utterance arrived (from the mic). Barge-in already cleared the
    * audio queue; here we supersede any running chain, mirror the line to the
    * non-responders for context, and kick off the responder's turn. */
-  function dispatchUserTurn(text: string): void {
+  function dispatchUserTurn(text: string, span?: { t0: number; t1: number }): void {
     const parts = get().participants;
     if (!parts.length || get().status !== 'live') return;
     // Reject Whisper hallucinations (echo/breath/silence → "hhhhh", "you",
@@ -1253,7 +1352,13 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         // read as a spontaneous line from an older one.
         if (parts.length === 1) armTurnCapture(mySeq, id, 0);
         else speakerOriginSeq.set(id, mySeq);
-        void capture.sendUserTick(text).catch(() => {
+        // 260925 act: how close companion audio was, so main can refuse a
+        // "yes" to a control offer that may have been a companion's voice.
+        const now = Date.now();
+        const t0 = span?.t0 ?? now;
+        const t1 = span?.t1 ?? now;
+        const ttsGapMs = companionAudioGapMs(audibleLines, t0, t1);
+        void capture.sendUserTick(text, { ttsGapMs, t0, t1 }).catch(() => {
           /* a dropped tick is a missed answer, never a broken call */
         });
         continue;
@@ -1365,6 +1470,19 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     /* preload without streaming — buffered path covers it */
   }
 
+  // Substitute-pack notice (260908): the line played, but with a local voice
+  // pack that does not match the conversation language. A system notice, not
+  // companion speech — see callNotice.
+  try {
+    offTtsNotice =
+      sei.onVoiceTtsNotice?.((push) => {
+        if (!get().participants.length) return; // no call surface to show it on
+        set({ callNotice: substitutePackNotice(push) });
+      }) ?? null;
+  } catch {
+    /* preload without onVoiceTtsNotice — the line still plays, just unannotated */
+  }
+
   try {
     offCallEnded =
       sei.onVoiceCallEnded?.(({ characterId }) => requestRemoteEnd(characterId)) ?? null;
@@ -1391,6 +1509,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
   return {
     participants: [],
     callCharacterId: null,
+    micBlocked: null,
+    dismissMicBlocked: () => set({ micBlocked: null }),
     status: 'idle',
     speaking: false,
     speakingId: null,
@@ -1399,6 +1519,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     lastHeard: '',
     lastSpoken: '',
     lastSpokenId: null,
+    callNotice: '',
     error: null,
     connectingDetail: null,
     liveAt: null,
@@ -1452,13 +1573,32 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         lastHeard: '',
         lastSpoken: '',
         lastSpokenId: null,
+        callNotice: '',
         error: null,
         connectingDetail: null,
         liveAt: null,
         sttFallbackPrompt: false,
         inactivityPrompt: false,
         inactivitySecondsLeft: 0,
+        micBlocked: null,
       });
+
+      // Microphone access (260929), asked HERE, on the Call press and before
+      // anything rings, rather than at app boot. On macOS the first call is
+      // where the system prompt appears; a denial stops the dial and hands off
+      // to MicAccessCard, which dials again by itself once access is on.
+      const mic = await micPreflight();
+      if (session !== mySession) return;
+      if (mic !== 'ok') {
+        set({
+          participants: [],
+          callCharacterId: null,
+          status: 'error',
+          error: t('Microphone access is off for Sei.'),
+          micBlocked: { characterId, restricted: mic === 'restricted', needsRestart: false },
+        });
+        return;
+      }
 
       silenceDressing();
       // The ring waits for the MIC, not for the dial (260730). Opening a
@@ -1554,9 +1694,50 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       const callCfg = await sei.getConfig().catch(() => null);
       if (session !== mySession) return;
       const chatLanguage = callCfg?.chat_language ?? 'en';
+      // Local TTS route (260816): the same read decides how this call's clips
+      // are synthesized. See localTtsCall.
+      // 260908: BYOK on the ElevenLabs engine with NO key stored also counts —
+      // main falls back to any installed local voice pack there, and those
+      // clips are WAV, which cannot ride the streaming audio/mpeg pipeline.
+      // (A dev shell's SEI_TTS_DEV_KEY still routes ElevenLabs in main; the
+      // cost of counting it here is only whole-clip playback, dev-only.)
+      let elevenKeyPresent = false;
+      try {
+        elevenKeyPresent = (await sei.voiceElevenKeyStatus?.())?.present === true;
+      } catch {
+        /* status read failed → assume absent, which only costs streaming */
+      }
+      if (session !== mySession) return;
+      localTtsCall =
+        (callCfg?.ai_backend_kind ?? 'cloud-proxy') === 'local' &&
+        (callCfg?.tts_engine === 'local' || !elevenKeyPresent);
       // 260725: kind from the fresh config read (main truth), not the display
       // store — the store can be UNKNOWN (null) at call time.
-      const policy = sttPolicy(callCfg, callCfg?.ai_backend_kind ?? 'cloud-proxy');
+      // 260816 SenseVoice: the policy also reads whether the SenseVoice pack is
+      // on disk (best-effort — a failed status read just means Whisper, which
+      // is the model-missing rule anyway) and the app UI language.
+      let sensevoiceReady = false;
+      try {
+        const status = await sei.speechPackStatus?.();
+        sensevoiceReady = status?.packs?.['stt-sensevoice']?.state === 'ready';
+      } catch {
+        /* absent bridge / failed read → whisper behavior */
+      }
+      if (session !== mySession) return;
+      const policy = sttPolicy(callCfg, callCfg?.ai_backend_kind ?? 'cloud-proxy', {
+        uiLanguage: callCfg?.ui_language,
+        sensevoiceReady,
+      });
+      // The SenseVoice local leg: utterance PCM → main-side sherpa. Text comes
+      // back already normalized (main applies the same normalizeSttText as the
+      // cloud path).
+      const senseVoiceTranscribe = async (audio: Float32Array): Promise<string> => {
+        const res = await sei.speechSttTranscribe?.({
+          pcm: audio.buffer.slice(0, audio.byteLength) as ArrayBuffer,
+          sampleRate: 16000,
+        });
+        return res?.text ?? '';
+      };
 
       // Cloud STT (260724): race ElevenLabs Scribe against the local Whisper
       // worker for every utterance (dictation/sttArbiter own the policy; local
@@ -1607,6 +1788,11 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           // runs 'eager' (today's race). BYOK with stt_engine 'whisper' drops
           // cloudTranscribe entirely.
           localModel: policy.localModel,
+          // 260816: SenseVoice serves the local leg via main when the policy
+          // picked it (BYOK stt_engine 'sensevoice', or the zh-UI cloud
+          // fallback); the arbiter race itself is unchanged.
+          localEngine: policy.localEngine,
+          mainTranscribe: policy.localEngine === 'sensevoice' ? senseVoiceTranscribe : undefined,
           cloudTranscribe: policy.useCloud ? cloudTranscribe : undefined,
           onCloudSttFailure:
             policy.localModel === 'none'
@@ -1620,12 +1806,12 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
             if (session !== mySession) return;
             set({ connectingDetail: status === 'loading-model' && detail ? detail : null });
           },
-          onUtterance: (text) => {
+          onUtterance: (text, span) => {
             if (session !== mySession) return;
             const s = get();
             if (s.status !== 'live' || !s.participants.length) return;
             // The director handles addressing, mirroring, and the reply chain.
-            dispatchUserTurn(text);
+            dispatchUserTurn(text, span);
           },
           // Speakers-into-the-mic filter (260807): her own leaked TTS and the
           // shared screen's audio must not become "the player said ...".
@@ -1690,12 +1876,36 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         queue = null;
         silenceDressing();
         void sei.voiceCallSetActive({ characterId, active: false }).catch(() => {});
+        // Analytics (260828): the call pipeline failed to come up (mic denied,
+        // capture init, dictation boot). A superseded/ended session returned
+        // above, so this is a genuine failure, not a hang-up. Shape only: a
+        // fixed class token, never the error text the user sees.
+        sei.track('surface_error', {
+          surface: 'voice',
+          error_class: 'call_setup_failed',
+          character_id: characterId,
+        });
+        // A refused mic gets the card, not just a line of text (260929). If
+        // macOS already reports access as granted, the grant has not reached
+        // this process, so the card offers a restart instead of Settings.
+        let micBlocked: MicBlocked | null = null;
+        if (isPermissionRefusal(err)) {
+          const status = await sei.permissionsStatus('mic').catch(() => 'unknown');
+          if (session !== mySession) return;
+          micBlocked = {
+            characterId,
+            // Restricted means Screen Time / MDM, a macOS-only answer.
+            restricted: sei.platform === 'darwin' && status === 'restricted',
+            needsRestart: sei.platform === 'darwin' && status === 'granted',
+          };
+        }
         set({
           participants: [],
           callCharacterId: null,
           status: 'error',
           error: friendlyError(err),
           connectingDetail: null,
+          micBlocked,
         });
         return;
       }
@@ -1726,6 +1936,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // Connected: the stopwatch starts HERE, the moment we are actually ready.
       const now = Date.now();
       liveSince.set(characterId, now);
+      // Tell main the call is live (260926): it closes the call itself on an
+      // account switch and needs the same stopwatch start to time it.
+      void sei.voiceCallSetActive({ characterId, active: true, live: true }).catch(() => {});
       silenceDressing();
       if (!useUiStore.getState().callDeafened) {
         playConnectedChime();
@@ -1769,7 +1982,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       const joinerName = nameOf(characterId);
       set({ participants: [...s.participants, characterId] });
       liveSince.set(characterId, Date.now());
-      void sei.voiceCallSetActive({ characterId, active: true }).catch(() => {});
+      // A join is live the moment it lands (no ring), so open + live in one.
+      void sei.voiceCallSetActive({ characterId, active: true, live: true }).catch(() => {});
       // Tell the companions already on the call that someone joined, so they know
       // it is now a bigger room and act accordingly (their next turn's voicePeers
       // will include the newcomer, but this lands the fact in their transcript now).
@@ -1872,6 +2086,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         lastHeard: '',
         lastSpoken: '',
         lastSpokenId: null,
+        callNotice: '',
         error: null,
         connectingDetail: null,
         liveAt: null,
@@ -1879,6 +2094,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         introHold: false,
         inactivityPrompt: false,
         inactivitySecondsLeft: 0,
+        micBlocked: null,
       });
       useUiStore.getState().endCall();
     },
@@ -1946,6 +2162,7 @@ if (import.meta.hot) {
     }
     unsubUiMirror?.();
     offTtsChunk?.();
+    offTtsNotice?.();
     offCallEnded?.();
     offCreditsHardStop?.();
   });

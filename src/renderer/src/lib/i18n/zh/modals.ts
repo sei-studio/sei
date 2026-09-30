@@ -39,6 +39,9 @@ export const ZH_MODALS: Record<string, string> = {
   'Resets {when}': '将于 {when} 重置',
   'Got it': '知道了',
 
+  // ── OAuthInterstitialModal: W7 region gate heading (260816) ──
+  'Region not supported': '暂不支持您所在的地区',
+
   // ── CrossLaunchConfirmModal ──
   'Switch games': '切换游戏',
   '{from} is still running. End it and start {to}?':
@@ -77,6 +80,22 @@ export const ZH_MODALS: Record<string, string> = {
     '我们代理人的完整法定联系信息（姓名、邮寄地址、电话）已发布于美国版权局指定代理人公共目录以及我们的服务条款页面。',
   'Open USCO directory listing': '打开 USCO 目录条目',
   'Open Terms §7': '打开条款第 7 节',
+
+  // ── PortraitVersionsModal (260909 card-image versions + regenerate) ──
+  "{name}'s card image": '{name} 的卡片图片',
+  'Every version is kept on this device. Only the one you pick is shown to others.':
+    '每个版本都会保存在此设备上。只有你选中的版本会展示给其他人。',
+  'Current card image': '当前卡片图片',
+  'No card image yet': '还没有卡片图片',
+  'Stored versions': '已保存的版本',
+  'Original': '原图',
+  'v{n}': 'v{n}',
+  'Applying…': '应用中…',
+  'Sign in to regenerate.': '请登录后重新生成。',
+  'Drawing a new image. This can take up to a minute.': '正在绘制新图片，最多可能需要一分钟。',
+  'No regenerations left': '没有剩余的重新生成次数',
+  '1 regeneration left': '剩余 1 次重新生成',
+  '{n} regenerations left': '剩余 {n} 次重新生成',
 
   // ── EditCharacterModal ──
   'Edit companion': '编辑伙伴',
@@ -168,8 +187,8 @@ export const ZH_MODALS: Record<string, string> = {
   'What should we improve?': '我们应该改进什么？',
   'Daily feedback limit reached. Try again tomorrow.': '已达每日反馈上限，请明天再试。',
   'Sign in to submit feedback.': '请登录后提交反馈。',
-  'Feedback could not be sent. Check your connection and try again.':
-    '反馈发送失败。请检查网络连接后重试。',
+  'Feedback could not be sent. Your message is still here. Check your connection and press Submit to try again.':
+    '反馈发送失败。你的内容仍保留在这里。请检查网络连接，然后再次点击提交。',
   'Feedback sent': '反馈已发送',
   'Thank you. We read all comments within 24 hrs.':
     '谢谢！我们会在 24 小时内阅读所有留言。',
@@ -193,8 +212,6 @@ export const ZH_MODALS: Record<string, string> = {
   "Sei's servers are limiting requests right now, so your companion has to sit this one out. This does not use up any of your credits. You can try again in a little while.":
     'Sei 的服务器目前正在限制请求，你的伙伴只能先休息一下。这不会消耗你的任何积分。请稍后再试。',
   'Usage limit reached': '已达使用上限',
-  "You've used this week's allowance. It refreshes {when}. Upgrade for a bigger weekly allowance, or top up to keep playing now.":
-    '你已用完本周额度。额度将于 {when} 刷新。升级可获得更高的每周额度，或充值以立即继续游玩。',
   "You've used this week's allowance. Upgrade for a bigger weekly allowance, or top up to keep playing now.":
     '你已用完本周额度。升级可获得更高的每周额度，或充值以立即继续游玩。',
   'Top up': '充值',
@@ -268,6 +285,22 @@ export const ZH_MODALS: Record<string, string> = {
     '如果加入失败，请尝试没有服务端模组的世界。',
   "Don't show this again": '不再显示',
   'Summon anyway': '仍然召唤',
+  "Your world looks like it may be running {loader}. {name} can't join {loader} worlds, so if it is, the summon will fail.":
+    '你的世界似乎在运行 {loader}。{name} 无法加入 {loader} 世界，如果确实如此，召唤会失败。',
+  'If the join fails, host your world from the Sei profile in the Minecraft Launcher.':
+    '如果加入失败，请在 Minecraft 启动器中用 Sei 配置来开启你的世界。',
+  // Forge/NeoForge block (260929)
+  "Sei can't join {loader} worlds": 'Sei 无法加入 {loader} 世界',
+  'Your world is hosted from {loader}. {name} joins as a normal Minecraft player, and {loader} worlds turn those players away, so the summon would fail. To play together, host a world from the Sei profile instead:':
+    '你的世界由 {loader} 开启。{name} 以普通 Minecraft 玩家身份加入，而 {loader} 世界会拒绝这类玩家，所以召唤会失败。想一起玩，请改用 Sei 配置开启一个世界：',
+  'Save and quit your world.': '保存并退出你的世界。',
+  'Press Start Minecraft below. The launcher opens with the Sei profile selected. Press Play.':
+    '点击下方的「打开 Minecraft」。启动器会打开并选好 Sei 配置，点击「开始游戏」即可。',
+  'Press Set up Sei profile below. Sei adds a "Sei {version}" profile to your launcher in about a minute. Then open the launcher, pick that profile, and press Play.':
+    '点击下方的「设置 Sei 配置」。Sei 会在大约一分钟内为启动器添加「Sei {version}」配置。然后打开启动器，选择该配置，点击「开始游戏」。',
+  'Open or create a world, choose Open to LAN, then press Launch in Sei again.': '打开或创建一个世界，选择「对局域网开放」，然后回到 Sei 再次点击启动。',
+  'The Sei profile keeps its own worlds, apart from your other profiles. If its world list is empty, create a new world there.':
+    'Sei 配置有自己的世界，和你的其他配置分开。如果世界列表是空的，请在其中创建一个新世界。',
 
   // ── LanNotOpenModal ──
   "Couldn't reach your world": '无法连接到你的世界',
@@ -277,12 +310,16 @@ export const ZH_MODALS: Record<string, string> = {
   'Press Esc and choose Open to LAN.': '按 Esc，选择「对局域网开放」。',
   'Click Start LAN World.': '点击「创建局域网世界」。',
   'Return to Sei and try the summon again.': '回到 Sei，再次尝试召唤。',
-  'The world must be running on this computer or another computer on the same network. Once it is open to LAN, Sei finds it automatically.':
-    '世界必须运行在这台电脑或同一网络中的另一台电脑上。开放到局域网后，Sei 会自动找到它。',
+  'The world must be running on this computer. Once it is open to LAN, Sei finds it automatically.':
+    '世界必须运行在这台电脑上。开放到局域网后，Sei 会自动找到它。',
+  'Your world also needs a supported Minecraft Java version. Sei supports versions up to {latest}.':
+    '你的世界还需要运行受支持的 Minecraft Java 版本。Sei 支持最高到 {latest} 的版本。',
   'Try again': '再试一次',
 
   // ── ModdedHostModal ──
   'This world needs mods': '这个世界需要模组',
+  '{name} could not get into this world. It runs {loader} with other mods, and some mods only let in players who have them installed too.':
+    '{name} 没能进入这个世界。它运行的是带有其他模组的 {loader}，有些模组只允许同样安装了它们的玩家进入。',
   '{name} was turned away by this world. It runs Forge or NeoForge, and it only lets in players who have the same mods installed.':
     '{name} 被这个世界拒绝了。它运行的是 Forge 或 NeoForge，只允许装有相同模组的玩家加入。',
   'Open a world with no mods, or with Fabric and only client-side mods like minimaps.':
@@ -303,6 +340,8 @@ export const ZH_MODALS: Record<string, string> = {
   'Launch Minecraft and open your singleplayer world.': '启动 Minecraft，打开你的单人世界。',
   'Press ESC, then choose Open to LAN.': '按 ESC，选择「对局域网开放」。',
   'Return to Sei and press Launch.': '回到 Sei，按下启动。',
+  'Your world needs a supported Minecraft Java version. Sei supports versions up to {latest}.':
+    '你的世界需要运行受支持的 Minecraft Java 版本。Sei 支持最高到 {latest} 的版本。',
   'Searching for an open LAN world…': '正在搜索已开放的局域网世界…',
   'Companions have their own Minecraft skins, so they look right when they join your world. Seeing those skins in your game takes a quick one-time setup for your Minecraft install. You can also run it later from Settings under Custom skins.':
     '伙伴拥有自己的 Minecraft 皮肤，加入你的世界时才能显示正确的样子。要在游戏中看到这些皮肤，需要对你的 Minecraft 安装进行一次快速的一次性设置。你也可以稍后在设置的自定义皮肤中运行。',
@@ -380,6 +419,7 @@ export const ZH_MODALS: Record<string, string> = {
   'Violence or self harm': '暴力或自残',
   'Copyright infringement': '版权侵权',
   'Impersonation': '冒充他人',
+  'Inappropriate Live2D avatar': '不当的 Live2D 形象',
   'Spam or misleading': '垃圾信息或误导内容',
   'Other': '其他',
   'Daily report limit reached. Try again tomorrow.': '已达每日举报上限，请明天再试。',
@@ -430,8 +470,9 @@ export const ZH_MODALS: Record<string, string> = {
   'Back to settings': '返回设置',
   'Set up later': '以后再设置',
   'Begin': '开始',
-  "Sei can give each companion a custom skin and username inside your Minecraft world. We'll install a small mod (CustomSkinLoader) into your Minecraft profile. Takes about a minute.":
-    'Sei 可以让每位伙伴在你的 Minecraft 世界中拥有自定义皮肤和用户名。我们会向你的 Minecraft 配置安装一个小模组（CustomSkinLoader）。大约需要一分钟。',
+  'Sei adds a separate "Sei" profile to your Minecraft launcher: Fabric on a Minecraft version Sei can join, plus a small mod (CustomSkinLoader) so each companion shows their own skin and name in your world. Your own profile is not changed. Takes about a minute.':
+    'Sei 会在你的 Minecraft 启动器里添加一个单独的“Sei”配置：在 Sei 能加入的 Minecraft 版本上安装 Fabric，外加一个小模组（CustomSkinLoader），让每个伙伴在你的世界里显示自己的皮肤和名字。你自己的配置不会被改动。大约需要一分钟。',
+  'Adds a separate "Sei" profile on Minecraft {version}. Your own profiles are not changed.': '添加一个单独的“Sei”配置，使用 Minecraft {version}。你自己的配置不会被改动。',
   'Looking for Minecraft installs': '正在查找 Minecraft 安装',
   'Scanning your Minecraft launcher and CurseForge instances. This stays on your computer.':
     '正在扫描你的 Minecraft 启动器和 CurseForge 实例。这些操作只在你的电脑上进行。',
@@ -440,8 +481,12 @@ export const ZH_MODALS: Record<string, string> = {
   "Sei looked in the usual places and didn't find a Minecraft install. Install Minecraft from minecraft.net or the CurseForge app, then re-run this wizard from Settings.":
     'Sei 在常见位置查找后没有发现 Minecraft 安装。请从 minecraft.net 或 CurseForge 应用安装 Minecraft，然后从设置中重新运行此向导。',
   'Pick which installs to enable': '选择要启用的安装',
-  'Sei will install Fabric Loader and CustomSkinLoader into each install you select. Already-modded CurseForge instances get only the mod jar.':
-    'Sei 会向你选择的每个安装中安装 Fabric Loader 和 CustomSkinLoader。已装模组的 CurseForge 实例只会安装模组 jar。',
+  'Pick a Minecraft version for each launcher. Sei adds a separate "Sei <version>" profile there with Fabric and the companion-skin mod, and leaves your own profiles alone. Already-modded CurseForge instances get only the mod jar.':
+    '为每个启动器选择一个 Minecraft 版本。Sei 会在那里添加一个单独的“Sei <版本>”配置，附带 Fabric 和伙伴皮肤模组，不会改动你自己的配置。已经装好模组的 CurseForge 实例只会获得模组 jar。',
+  'Minecraft version for the Sei profile': 'Sei 配置使用的 Minecraft 版本',
+  '{version} (set up)': '{version}（已设置）',
+  'Sei profiles already in your launcher: {versions}. Picking another version adds one more; your own profiles are not changed.': '启动器里已有的 Sei 配置：{versions}。选择其他版本会再添加一个；你自己的配置不会被改动。',
+  'Adds a separate "Sei {version}" profile to your launcher. Your own profiles are not changed.': '会在你的启动器里添加一个单独的“Sei {version}”配置。你自己的配置不会被改动。',
   'Setting up your installs': '正在设置你的安装',
   "Downloading Fabric Loader and CustomSkinLoader. Don't close Minecraft if it's open.":
     '正在下载 Fabric Loader 和 CustomSkinLoader。如果 Minecraft 已打开，请不要关闭它。',
@@ -459,6 +504,8 @@ export const ZH_MODALS: Record<string, string> = {
     '部分安装未完成，但其余已就绪。打开 Minecraft，从启动器下拉菜单中选择 {profile} 配置并进入你的世界。你可以从设置中为其余安装重新运行设置。',
   'Open Minecraft, pick the {profile} profile from the launcher dropdown, and start your world. Companions will appear with their chosen skin and username.':
     '打开 Minecraft，从启动器下拉菜单中选择 {profile} 配置并进入你的世界。伙伴会以他们选择的皮肤和用户名出现。',
+  'Press Start Minecraft to open the launcher with the {profile} profile selected, then press Play and open your world. Companions will appear with their chosen skin and username.':
+    '点击「打开 Minecraft」，启动器会打开并选好 {profile} 配置。然后点击「开始游戏」并进入你的世界。伙伴会以他们选择的皮肤和用户名出现。',
   'Linked 1 mod.': '已关联 1 个模组。',
   'Linked {count} mods.': '已关联 {count} 个模组。',
   'Linked 1 mod, excluded {excluded} (wrong MC version or unreadable metadata).':
@@ -552,20 +599,12 @@ export const ZH_MODALS: Record<string, string> = {
   // ── UnsupportedVersionModal ──
   'Minecraft version not supported': '不支持的 Minecraft 版本',
   "{name} couldn't join.": '{name} 无法加入。',
-  'To switch to a supported version:': '切换到受支持版本的方法：',
-  'This world is running Minecraft {version}, which is not supported yet. Sei supports Java versions up to {latest}.':
-    '这个世界运行的是 Minecraft {version}，暂不支持。Sei 支持的 Java 版本最高为 {latest}。',
-  'This world runs a Minecraft version that is not supported yet. Sei supports Java versions up to {latest}.':
-    '这个世界运行的 Minecraft 版本暂不支持。Sei 支持的 Java 版本最高为 {latest}。',
-  'Open the Minecraft launcher and go to the Installations tab.':
-    '打开 Minecraft 启动器，进入「安装」选项卡。',
-  'Create or select an installation on {version} or another supported version.':
-    '创建或选择 {version} 或其他受支持版本的安装。',
-  'Open your world from that installation.': '从该安装打开你的世界。',
-  'Alternatively, run the skin setup in Sei settings. It installs our modded Fabric version of Minecraft, which is supported and shows character skins.':
-    '或者，在 Sei 设置中运行皮肤设置。它会安装我们的 Fabric 模组版 Minecraft，该版本受支持并能显示角色皮肤。',
-  'Minecraft may not open worlds saved on a newer version. If your world will not open, create a new world on the supported version and play there.':
-    'Minecraft 可能无法打开在更新版本中保存的世界。如果你的世界无法打开，请在受支持的版本上创建一个新世界游玩。',
+  'Play from the Sei profile instead. It runs {version}, with companion skins:':
+    '请改用 Sei 配置来玩。它运行 {version}，可显示伙伴皮肤：',
+  'This world is running Minecraft {version}, which Sei cannot join yet. Sei works with most Minecraft Java versions from {oldest} to {newest}.':
+    '这个世界运行的是 Minecraft {version}，Sei 暂时无法加入。Sei 支持 {oldest} 至 {newest} 之间的大多数 Minecraft Java 版本。',
+  'This world runs a Minecraft version Sei cannot join yet. Sei works with most Minecraft Java versions from {oldest} to {newest}.':
+    '这个世界的 Minecraft 版本 Sei 暂时无法加入。Sei 支持 {oldest} 至 {newest} 之间的大多数 Minecraft Java 版本。',
 
   // ── UpdatePopup ──
   'Update': '更新',
@@ -599,4 +638,9 @@ export const ZH_MODALS: Record<string, string> = {
     '恢复完成。所有被移除的内容都已保留备份。',
   'Something went wrong during cleanup. A backup was made first, so nothing is lost. Try again later.':
     '清理过程中出了点问题。已提前创建备份，数据不会丢失。请稍后重试。',
+  // 260926: the free-play-is-back launch banner (FreePlayBackBanner).
+  'Your free play is back. Your companions are ready when you are.':
+    '你的免费游玩已经恢复了，伙伴们随时等你回来。',
+  'Your weekly allowance is back. Your companions are ready when you are.':
+    '你的每周额度已经恢复了，伙伴们随时等你回来。',
 };

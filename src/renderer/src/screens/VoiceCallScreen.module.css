@@ -285,6 +285,17 @@
   color: var(--muted);
 }
 
+/* Voice-pipeline notice (260908): a system status line (pack missing,
+   substitute voice, paused). Styled like the app's other quiet status text,
+   deliberately apart from .captionCompanion so it never reads as speech. */
+.captionNotice {
+  margin: 0;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--muted);
+  max-width: 520px;
+}
+
 /* ── Cloud-STT fallback prompt (260725) ─────────────────────────────────────
    Non-blocking hint when cloud voice recognition fails on a model-less call:
    offer the local Whisper backup without interrupting the call. */
@@ -459,10 +470,16 @@
   }
 }
 
+/* 260929: the name + timer sit on the same fixed dark fill as the pills (a
+ * small rounded tag, the pills' radius), not bare on the art: bare, they
+ * landed on the character's legs and read as noise (v0.6.5 smoke test). */
 .artChromeText {
   display: flex;
   align-items: baseline;
   gap: var(--space-sm);
+  padding: 3px 12px 4px;
+  border-radius: 9px;
+  background: rgb(0 0 0 / 0.42);
 }
 
 /* Fixed white, for the same reason the pills go theme-independent on art: the

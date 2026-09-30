@@ -84,4 +84,15 @@ describe('CreditsScreen (in-place plan change)', () => {
     expect(body.length).toBeGreaterThan(0);
     expect(body.includes('—')).toBe(false);
   });
+
+  it('C.5: the free-play reset callout shows only when over_limit (260926)', () => {
+    // At 100% of the allowance with extra credits left the user can still
+    // play, so the callout must not key off the percentage.
+    const line = SRC.split('\n').find((l) => l.includes('const showResetCallout'));
+    expect(line).toBeDefined();
+    expect(line!.includes('overLimit')).toBe(true);
+    expect(line!.includes('atLimit')).toBe(false);
+    expect(line!.includes('!snapshotFailed')).toBe(true);
+    expect(SRC.includes('{showResetCallout ? (')).toBe(true);
+  });
 });

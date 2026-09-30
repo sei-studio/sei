@@ -9,16 +9,17 @@
 // `grep -r "from '../adapter" src/brain/`.
 
 import { createLlmProvider } from './llm/index.js'
+import { applyLlmSwitch } from '../llmInit.js'
 import { VISION_MESSAGES_PATH } from './anthropicClient.js'
 import { createTokenBucket } from './rateLimiter.js'
 import { createDebouncer, createThrottle } from './debounce.js'
 import { createChainTracker } from './chains.js'
 import { createLoop } from './loop.js'
 import {
-  BASELINE_INSTRUCTIONS,
+  UNIVERSAL_BASELINE,
   VOICE_CALL_PRIMER,
   PERSONALITY_TOOL_DESCRIPTIONS,
-  NUDGES,
+  adaptNudges,
   SPEAK_REMINDER,
   GREETING_HINT,
   renderPersona,
@@ -33,7 +34,8 @@ import {
 } from './prompts.js'
 import { buildAnthropicTools } from './schemaBridge.js'
 import { createInflightTracker, describeArgs } from './inflight.js'
-import { createConvoMemory } from './convoMemory.js'
+import { createConvoMemory, playerLabel } from './convoMemory.js'
+import { createLookupLog, extractServerLookup } from './lookups.js'
 import { logChatOut, logActionResult } from './log.js'
 import { errLine } from './errStrings.js'
 import { createMemoryLog, readMemoryForSeed } from './memory/memoryLog.js'
@@ -41,6 +43,8 @@ import { isSilenceFiller } from './silenceFiller.js'
 import { createHeartbeatLog, readHeartbeatForSeed } from './memory/heartbeat.js'
 import { createMemoryCompactor } from './memory/compactor.js'
 import { createWorldRegistry } from './memory/worlds.js'
+import { resolveAdapterCaps } from './adapterDefaults.js'
+import { createWebSession, electronFetchProvider, webToolsFor, isWebTool } from '../web/webTools.js'
 
 // Post-process say() text before it hits in-game chat. Safety-only:
 // whitespace collapse (chat is single-line) and force lowercase (hardcoded).
@@ -57,9 +61,8 @@ import { createWorldRegistry } from './memory/worlds.js'
 // and the texting-style sentence split below). Output shape is the model's job,
 // shaped by the prompt rules and the per-character persona, not by a code net.
 
-// Minecraft's chat packet caps a message at 256 characters (a vanilla server
-// kicks on more) and the count is UTF-16 code units, so the clip is too.
-const MC_CHAT_MAX_CHARS = 256
+// The in-world chat clip (Minecraft's 256-char packet cap) is now an adapter
+// member: contract v2 `chatMaxChars`, read as caps.chatMaxChars below.
 // Bound for the OTHER two delivery surfaces (app chat + voice call). The
 // 260725 change moved the old postProcessSay cap to the in-world send because
 // 256 chopped long spoken lines off mid-sentence audibly; it left these paths
@@ -289,6 +292,130 @@ export function shouldSuppressIdleSay({ triggerEvent, lastSelf, lastPlayer, now 
   return true
 }
 
+/**
+ * An EXACT repeat of something she already said, with nothing from the player
+ * in between (260921).
+ *
+ * Deliberately the narrowest possible test: every segment of the candidate
+ * must equal, after normalization, a line of hers that is newer than the
+ * player's last line. It cannot tell a reworded repeat from a new thought and
+ * does not try to (the 260731 lesson: a gate that guesses at similarity
+ * swallows answers and invitations); rewording is the prompt's and the
+ * scheduler's problem. It exists because the same sentence twice is never a
+ * new thought: live, "what question, i'm listening nya" went out twice 9s
+ * apart and "what did you figure out" twice in 21s, neither with a word from
+ * the player between them. Once the player speaks, saying the same words
+ * again is allowed (they may have asked twice).
+ *
+ * @param {Object} args
+ * @param {string[]} args.segments                  the candidate, split as it would be sent
+ * @param {Array<{at:number,text:string}>} args.selfLines
+ * @param {{at:number}|null} args.lastPlayer
+ * @param {number} [args.now=Date.now()]
+ * @param {number} [args.windowMs=120000]
+ * @returns {boolean} true = every segment is an exact repeat
+ */
+export function isExactRepeatSincePlayerSpoke({ segments, selfLines, lastPlayer, now = Date.now(), windowMs = 120_000 }) {
+  const { kept, dropped } = splitRepeatedSegments({ segments, selfLines, lastPlayer, now, windowMs })
+  return dropped.length > 0 && kept.length === 0
+}
+
+const normSegment = (t) => String(t ?? '').toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, ' ').replace(/\s+/g, ' ').trim()
+
+/**
+ * The same exact test, one SENTENCE at a time (260925).
+ *
+ * The whole-line version let a re-asked question through whenever it rode
+ * beside anything new. v0.6.5-beta.2 playtest: she asked "so what's the vibe,
+ * you wanna just plant these parsnips or you got something else in mind",
+ * her come() finished 8 s later, and the action-complete turn said "i'm here.
+ * so what's the vibe, ..." with the question word for word. "i'm here" was
+ * new, so the line went out whole, and the unanswered question was on screen
+ * twice. Now each segment that exactly repeats a line of hers newer than the
+ * player's last line is dropped and the rest is sent. Still exact match only,
+ * for the 260731 reason above.
+ *
+ * @returns {{ kept: string[], dropped: string[] }} the candidate's segments, in order
+ */
+export function splitRepeatedSegments({ segments, selfLines, lastPlayer, now = Date.now(), windowMs = 120_000 }) {
+  const all = (segments ?? []).map((s) => String(s ?? '').trim()).filter((s) => normSegment(s))
+  const since = Math.max(lastPlayer?.at ?? 0, now - windowMs)
+  const said = new Set((selfLines ?? []).filter(l => l && l.at > since).map(l => normSegment(l.text)))
+  if (said.size === 0) return { kept: all, dropped: [] }
+  const kept = []
+  const dropped = []
+  for (const seg of all) (said.has(normSegment(seg)) ? dropped : kept).push(seg)
+  return { kept, dropped }
+}
+
+/**
+ * Re-join the segments that survived splitRepeatedSegments into one say()
+ * line that splits back into exactly those segments: a segment that ends a
+ * sentence is followed by a space, anything else (it was cut at a dash) by
+ * an em dash, the other separator splitChatMessages breaks on.
+ */
+export function joinSegments(segments) {
+  let out = ''
+  for (const seg of segments) {
+    if (!out) out = seg
+    else out += (/[.?!。！？]$/.test(out) ? ' ' : ' — ') + seg
+  }
+  return out
+}
+
+/**
+ * How long a line the companion just said holds the floor before the next
+ * idle tick may fire (260921).
+ *
+ * This is SCHEDULING, not a gate on speech: nothing she decides to say is ever
+ * dropped by it. The agentic idle cadence is 5s, sized for resuming WORK after
+ * a finished step. Applied to conversation it is shorter than the time it
+ * takes a person to open the game's chat box and type a reply (measured on a
+ * Stardew session: the player's answers landed 3-15s after her line), so her
+ * question was followed by an idle turn before anyone could have answered it,
+ * and an idle turn is nudged to speak. That is where three greetings in forty
+ * seconds and three "morning" lines in seventeen came from. The window only
+ * applies while her line is the LAST thing said: once the player speaks, the
+ * normal cadence is back.
+ */
+export const REPLY_WINDOW_MS = 20_000
+
+/**
+ * Games whose idle timer honours REPLY_WINDOW_MS (adapter.gameName). Stardew
+ * only for now: the window was measured on a Stardew session, where the
+ * companion is mostly talking. In agentic Minecraft the 5s idle cadence is
+ * how she resumes her goal after a step, and holding it for 20s after every
+ * line she says slowed that down four-fold. DST keeps its old cadence too
+ * until a DST session shows it needs the hold.
+ */
+export const REPLY_WINDOW_GAMES = new Set(['Stardew Valley'])
+
+/** True when the reply-window floor-hold applies to this adapter's game. */
+export function replyWindowApplies(adapter) {
+  return typeof adapter?.gameName === 'string' && REPLY_WINDOW_GAMES.has(adapter.gameName)
+}
+
+/**
+ * Remaining floor-hold, in ms (0 = none). Pure; the orchestrator feeds it.
+ *
+ * @param {Object} args
+ * @param {{at:number}|null} args.lastSelf    last line the companion decided to say
+ * @param {{at:number}|null} args.lastPlayer  last line the player said
+ * @param {number} [args.sendDeadline=0]      when the last paced segment reaches chat
+ * @param {number} [args.now=Date.now()]
+ * @param {number} [args.windowMs=REPLY_WINDOW_MS]
+ */
+export function replyWindowRemainingMs({ lastSelf, lastPlayer, sendDeadline = 0, now = Date.now(), windowMs = REPLY_WINDOW_MS }) {
+  if (!(windowMs > 0)) return 0
+  if (!lastSelf || !lastSelf.at) return 0
+  // The player has spoken since: this is their floor now, not hers.
+  if (lastPlayer && lastPlayer.at >= lastSelf.at) return 0
+  // The window opens when the line is READABLE, which with a typing lead is
+  // later than when it was decided.
+  const spokenAt = Math.max(lastSelf.at, sendDeadline || 0)
+  return Math.max(0, spokenAt + windowMs - now)
+}
+
 // System prompt assembly: combined BASELINE_INSTRUCTIONS (game-agnostic,
 // brain/prompts.js) + adapter.actionRules() (game-specific, adapter/prompts.js).
 // Joined with a blank line so each side can be edited independently.
@@ -322,7 +449,15 @@ export function shouldSuppressIdleSay({ triggerEvent, lastSelf, lastPlayer, now 
 // → continueLoop=false → the loop ends (say is "silence" for loop purposes:
 // it speaks, but it never keeps the bot busy on its own — see the
 // `continueLoop = movementCalls.length > 0` gate in runIterations).
-const PERSONALITY_NAMES = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'follow', 'unfollow', 'end_loop', 'say', 'quit_game', 'end_call'])
+// Game-adapters M0 (260908): the follow/unfollow pair is no longer named here.
+// Contract v2 `backgroundActions` (Minecraft default { follow: 'unfollow' })
+// contributes the game's background-state actions; PERSONALITY_NAMES is built
+// per orchestrator as BRAIN_PERSONALITY_NAMES + those keys.
+// 260909: search / visit are deliberately NOT in this set. They are inline
+// (their tool_result fills synchronously, see INLINE_METADATA) but they count
+// as movementCalls, so `continueLoop` stays true and runIterations calls the
+// model again with the result in hand. That one property IS the search loop.
+const BRAIN_PERSONALITY_NAMES = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'end_loop', 'say', 'quit_game', 'end_call'])
 // Party redesign §2/§5: tool names that must NOT surface as a world-action verb
 // (the `onAction` presence hook). These are brain/personality tools with no
 // in-world motion — say (chat), remember/forget/end_loop (memory + loop
@@ -331,7 +466,7 @@ const PERSONALITY_NAMES = new Set(['remember', 'forget', 'setGoal', 'clearGoal',
 // (follow, goto, gather, dig, build, …) is a real world action and DOES emit.
 // Kept separate from PERSONALITY_NAMES so follow/unfollow still surface a verb
 // even though they're personality-tagged.
-const ACTION_VERB_SKIP = new Set(['say', 'remember', 'forget', 'end_loop', 'setGoal', 'clearGoal', 'quit_game', 'end_call'])
+const ACTION_VERB_SKIP = new Set(['say', 'remember', 'forget', 'end_loop', 'setGoal', 'clearGoal', 'quit_game', 'end_call', 'search', 'visit'])
 const BYTE_WARN_THRESHOLD = 100 * 1024  // Q3 sanity assert per Loop
 
 // 260516-0yw: action-tick interval. Exported via a module-level let so the
@@ -475,6 +610,11 @@ export async function composeSeedBlocks({
   adapter = null,
   recentPlayerChatText = null,
   yourRecentMessagesText = null,
+  // 260921: both sides as one chronological exchange. When given it REPLACES
+  // the two one-sided lists above (see convoMemory.formatConversationBlock).
+  recentConversationText = null,
+  // 260921: notes from earlier web lookups this session (lookups.js).
+  lookupsText = null,
   playerMessageText = null,
   companions = [],
   frontierText = '',
@@ -486,13 +626,23 @@ export async function composeSeedBlocks({
   const cuboidGrammarText = (typeof adapter?.cuboidGrammar === 'function')
     ? adapter.cuboidGrammar()
     : ''
-  const blocks = [
-    { type: 'text', name: 'seed_player', text: seedPlayerText },
-    // Cache breakpoint: seed_player + seed_cuboid_grammar are stable across
-    // loops in a session. Everything after re-bills per loop (memory is
-    // appended every loop so caching it would never hit).
-    { type: 'text', name: 'seed_cuboid_grammar', text: cuboidGrammarText, cache_control: { type: 'ephemeral' } },
-  ]
+  // Cache breakpoint: seed_player + seed_cuboid_grammar are stable across
+  // loops in a session. Everything after re-bills per loop (memory is
+  // appended every loop so caching it would never hit).
+  //
+  // 260909: an adapter without a cuboid grammar (Don't Starve Together,
+  // Stardew) used to get an EMPTY grammar block here, and Anthropic rejects
+  // an empty text block with a 400 ("text content blocks must be
+  // non-empty"), which the cloud proxy surfaced as a 502. Measured live on
+  // the first DST summon: the body spawned and every brain call failed. So
+  // the block is only sent when there is text, and the breakpoint moves up
+  // to seed_player when it is omitted.
+  const blocks = cuboidGrammarText
+    ? [
+        { type: 'text', name: 'seed_player', text: seedPlayerText },
+        { type: 'text', name: 'seed_cuboid_grammar', text: cuboidGrammarText, cache_control: { type: 'ephemeral' } },
+      ]
+    : [{ type: 'text', name: 'seed_player', text: seedPlayerText, cache_control: { type: 'ephemeral' } }]
   // Voice-call mode: the player has a live call open, so every say() line is
   // spoken aloud instead of typed into chat. The primer sits at the very START
   // of the turn (per the mode's contract — it must beat UNIVERSAL_BASELINE's
@@ -640,11 +790,18 @@ export async function composeSeedBlocks({
   if (companionsText) {
     blocks.push({ type: 'text', name: 'companions', text: companionsText })
   }
-  if (recentPlayerChatText) {
-    blocks.push({ type: 'text', name: 'recent_player_chat', text: recentPlayerChatText })
+  if (recentConversationText) {
+    blocks.push({ type: 'text', name: 'recent_conversation', text: recentConversationText })
+  } else {
+    if (recentPlayerChatText) {
+      blocks.push({ type: 'text', name: 'recent_player_chat', text: recentPlayerChatText })
+    }
+    if (yourRecentMessagesText) {
+      blocks.push({ type: 'text', name: 'your_recent_messages', text: yourRecentMessagesText })
+    }
   }
-  if (yourRecentMessagesText) {
-    blocks.push({ type: 'text', name: 'your_recent_messages', text: yourRecentMessagesText })
+  if (lookupsText) {
+    blocks.push({ type: 'text', name: 'lookups', text: lookupsText })
   }
   blocks.push({ type: 'text', name: 'event',    text: eventText })
   blocks.push({ type: 'text', name: 'snapshot', text: snapshotText })
@@ -685,8 +842,17 @@ export async function composeSeedBlocks({
  *   priority queue. Required when the brain runs in production; defaults
  *   to a no-op for test harnesses.
  */
-export function createOrchestrator({ adapter, config, logger = console, sessionState = null, playerStore = null, reenqueue = () => {}, onTerminalError = null, onAuthExpired = null, onSeiChatReply = null, onQuitRequested = null, onCallEndRequested = null, onAction = null, _anthropicOverride = null }) {
+export function createOrchestrator({ adapter, config, logger = console, sessionState = null, playerStore = null, reenqueue = () => {}, onTerminalError = null, onAuthExpired = null, onSeiChatReply = null, onQuitRequested = null, onCallEndRequested = null, onAction = null, _anthropicOverride = null, _webSessionOverride = null }) {
   if (!adapter) throw new Error('createOrchestrator: adapter required')
+  // Game-adapters M0 (260908): contract v2 members with Minecraft defaults.
+  // Every game-flavored string or name the brain used to hardcode is read
+  // through `caps` from here on (see brain/adapterDefaults.js).
+  const caps = resolveAdapterCaps(adapter, config)
+  const NUDGES = adaptNudges({ sessionEndClause: caps.sessionEndClause(), stuckNudges: caps.stuckNudges() })
+  const PERSONALITY_NAMES = new Set([...BRAIN_PERSONALITY_NAMES, ...Object.keys(caps.backgroundActions)])
+  // This bot's own in-game name, for roster filtering: the adapter config's
+  // username (set before login) beats adapter.botUsername (live, post-login).
+  const ownUsername = () => config?.adapter?.[config?.adapter?.kind ?? 'minecraft']?.username ?? adapter?.botUsername ?? null
   // 260618: roster of OTHER AI companion usernames in this world (multi-bot
   // sessions). Pushed from main via {type:'roster'} → brain.setCompanions →
   // setCompanions() below. Drives the snapshot pin/label, the companions seed
@@ -695,7 +861,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   let companions = []
   const setCompanions = (names) => {
     companions = Array.isArray(names)
-      ? names.filter(n => typeof n === 'string' && n.trim() && n !== config?.adapter?.minecraft?.username)
+      ? names.filter(n => typeof n === 'string' && n.trim() && n !== ownUsername())
       : []
   }
   // 260618: reactive JWT recovery. A cloud-proxy JWT can expire mid-session even
@@ -744,10 +910,38 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // this null. Phase 14: production path goes through `createLlmProvider`,
   // which selects an adapter from `config.llm.provider` (defaults to the
   // existing Anthropic path so configs that pre-date this phase are unchanged).
-  const anthropic = _anthropicOverride ?? createLlmProvider(config)
+  //
+  // `let` (not `const`) since 260828: setBackend rebuilds the provider
+  // through the factory when a mid-session backend switch changes the
+  // provider KIND (cloud→local onto a non-Anthropic provider, or a
+  // non-Anthropic local session going cloud). Every consumer reads
+  // `anthropic` through this closure per call, so the rebind is picked up by
+  // the next LLM call; an in-flight call keeps the instance it captured.
+  let anthropic = _anthropicOverride ?? createLlmProvider(config)
   // MEMORY.md store — long-term memory the LLM writes via remember() /
   // forget() and reads back in the seed turn each loop.
   const memoryLog = createMemoryLog({ path: config.memory.memory_md_path })
+  // 260909: one web session per brain. Holds the lettered result table (so a
+  // visit("b") from a later loop still resolves) and the per-loop budget.
+  const webCfg = config.web ?? {}
+  const webSession = _webSessionOverride ?? (webCfg.enabled === false ? null : createWebSession({
+    provider: webCfg.provider,
+    apiKey: webCfg.api_key,
+    logger,
+    // Chromium fetch from inside the utilityProcess (net.fetch is available
+    // there): Cloudflare-fronted wikis + DuckDuckGo answer, Node fetch is
+    // challenged. Falls back to Node fetch outside Electron (tests).
+    fetchProvider: electronFetchProvider,
+    // Every search also asks the game's own wiki directly, whether or not
+    // the query names the game (contract v2 `wikiHosts`; Minecraft Wiki by
+    // default, the Stardew / Don't Starve wikis for those adapters).
+    alwaysWikiHosts: caps.wikiHosts,
+    limits: {
+      maxResults: webCfg.max_results,
+      pageChars: webCfg.page_chars,
+      maxCallsPerTurn: webCfg.max_calls_per_loop,
+    },
+  }))
   // HEARTBEAT.md store — active goals / standing orders the LLM writes via
   // setGoal() / clearGoal() and reads back (with the proactiveness directive)
   // in the heartbeat seed block each loop. Gated on the configured path so
@@ -759,7 +953,14 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // Compactor: async Haiku-driven rewrite when MEMORY.md exceeds the
   // configured trigger size. Fired fire-and-forget after each successful
   // remember(); single-flight inside the compactor itself.
-  const memoryCompactor = createMemoryCompactor({ anthropic, memoryLog, config, logger })
+  // 260828: handed a forwarding facade, not the provider instance — the
+  // compactor destructures its deps once at construction, and a backend
+  // switch can REBIND `anthropic` (see setBackend). The facade keeps its
+  // calls routed through whatever provider is live at call time.
+  const memoryCompactor = createMemoryCompactor({
+    anthropic: { call: (req) => anthropic.call(req) },
+    memoryLog, config, logger,
+  })
   // World registry: assigns this session's world a stable number, segments
   // MEMORY.md by world, and feeds the current-world line into the snapshot so
   // the bot doesn't conflate progress/relationships across different worlds.
@@ -823,6 +1024,8 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // "do it" need player context; loopHistory keeps the bot from re-asking
   // questions or rediscovering tasks across cold-composed loops).
   const convoMemory = createConvoMemory()
+  // 260921: what she found on the web, kept across loops (see lookups.js).
+  const lookupLog = createLookupLog()
   // chains is a no-op shim (kept to preserve any stragglers referencing it).
   const chains = createChainTracker({ maxHops: config.llm.max_hops })
 
@@ -857,11 +1060,16 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       // path (260725 — the postProcessSay global cap moved here). clipChars,
       // not slice: a raw slice can cut an emoji in half and ship a lone
       // surrogate to chat.
-      const msg = clipChars(msgRaw, MC_CHAT_MAX_CHARS)
+      const msg = clipChars(msgRaw, caps.chatMaxChars)
+      // 260921: recorded NOW, when the line is decided, not inside send().
+      // With a typing lead the send fires 1-6s later, and every turn composed
+      // in that gap was blind to the line: an idle tick re-greeted over a
+      // greeting still in the queue, and re-answered a question whose answer
+      // was still being "typed" (with a different answer).
+      convoMemory.recentChat.pushSelf(config.persona.name, msg)
       const send = () => {
         logChatOut(msg)
         try { adapter.chat(msg) } catch {}
-        convoMemory.recentChat.pushSelf(config.persona.name, msg)
       }
       const at = leadMs + i * 550
       if (at <= 0) send()
@@ -878,7 +1086,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     if (config.chat_mode !== 'full') return
     const scratch = String(rawText ?? '').replace(/\s+/g, ' ').trim()
     if (!scratch) return
-    try { adapter.chat(clipChars(`[think] ${scratch}`, MC_CHAT_MAX_CHARS)) } catch {}
+    try { adapter.chat(clipChars(`[think] ${scratch}`, caps.chatMaxChars)) } catch {}
   }
 
   // 260617: emit a single say() tool call's line to chat. Shared by the
@@ -887,7 +1095,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // strips banned content (coordinates, stage directions); shouldSuppressLoopEndSay
   // dedups a loop_end turn that merely repeats the last spoken line.
   function _emitSayLine(loop, rawText) {
-    const line = postProcessSay(String(rawText ?? '').trim())
+    let line = postProcessSay(String(rawText ?? '').trim())
     if (!line) {
       lastActionResult = 'say: empty'
       // emitted:false — an empty say() does NOT consume the one-per-turn slot.
@@ -906,6 +1114,29 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       // the player-message silence guard (the line IS already in chat).
       loop._spokeThisLoop = true
       return { emitted: true, content: 'said (suppressed duplicate of your last line)' }
+    }
+    // 260921: the same sentence again, with nothing from the player between.
+    // 260925: checked per sentence, so a repeat riding beside something new
+    // ("i'm here. <the same question>") loses the repeat and keeps the rest.
+    // Split with 'deliberate' punctuation so a kept segment keeps its period
+    // for the re-join; the normal split below still applies the persona's.
+    const { kept: keptSegs, dropped: repeatSegs } = splitRepeatedSegments({
+      segments: splitChatMessages(line, 'deliberate'),
+      selfLines: convoMemory.recentChat._internal.selfLines,
+      lastPlayer: convoMemory.recentChat.lastPlayer?.() ?? null,
+    })
+    let repeatNote = ''
+    if (repeatSegs.length > 0 && keptSegs.length === 0) {
+      logger.info?.(`[sei/orch] exact repeat not sent (loop=${loop.id}): ${line.slice(0, 80)}`)
+      // The line IS in chat already, so the player-message silence guard and
+      // the one-say-per-turn slot both count it as spoken.
+      loop._spokeThisLoop = true
+      return { emitted: true, content: 'not sent: you already said exactly this and they have not answered it yet. Let it stand; do not reword it, and do not answer it for them. Wait for their reply.' }
+    }
+    if (repeatSegs.length > 0) {
+      logger.info?.(`[sei/orch] repeated sentence(s) dropped (loop=${loop.id}): ${repeatSegs.join(' | ').slice(0, 120)}`)
+      line = joinSegments(keptSegs)
+      repeatNote = ` Not sent, because you already said it and they have not answered yet: "${repeatSegs.join(' ')}". Do not reword it or answer it for them; wait for their reply.`
     }
     // 260730: unprompted-chatter floor. An idle tick may not talk over the
     // bot's own last line while the player has said nothing back. The
@@ -940,7 +1171,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // Voice-call mode extends this to EVERY say() line, whatever triggered the
     // turn: while a call is live, speech goes to the player's ear (TTS via the
     // chat surface) and in-game chat stays silent — that's the mode's contract.
-    if ((voiceCallActive || loop._triggerData?.seiChat) && typeof onSeiChatReply === 'function') {
+    if ((voiceCallActive || loop._triggerData?.seiChat || loop._seiChatFolded === true) && typeof onSeiChatReply === 'function') {
       // 260705: same texting-style split as in-world chat, so the app surface
       // obeys the character's punctuation register too (previously the whole
       // line shipped as one bubble with its periods intact). Sent in order,
@@ -970,7 +1201,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       }
 
       lastActionResult = 'said (sei chat)'
-      return { emitted: true, content: 'sent to chat' }
+      return { emitted: true, content: 'sent to chat' + repeatNote }
     }
     // "Realistic typing" (config.realistic_typing): delay the in-world line as if
     // the bot read the player's message and then typed the reply. Reading keys on
@@ -983,7 +1214,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       : 0
     emitChatMessages(line, leadMs)
     lastActionResult = 'said'
-    return { emitted: true, content: 'said' }
+    return { emitted: true, content: 'said' + repeatNote }
   }
 
   // 260617: emit EVERY say() tool call in the batch UP FRONT — before any
@@ -1254,7 +1485,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       // NOT for pausing an action (that's end_loop). Say a goodbye first.
       name: 'quit_game',
       description:
-        'Leave the Minecraft game and disconnect from the world, ending this play session. ' +
+        `Leave the ${caps.gameName} game and disconnect from the world, ending this play session. ` +
         'Use only when the player wants you to stop playing or log off, not to pause a task (use end_loop for that). ' +
         'You are playing in the player\'s LAN world, so you cannot stay on if they leave: if the player says they want to leave or stop playing, that means you will need to quit too and continue next time. ' +
         'Put your goodbye in the `farewell` field. It is spoken to chat for you as you leave, so do NOT also call say(). ' +
@@ -1327,9 +1558,12 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // 'off' by exploreAction's own mode check.)
     const visionOk = !!anthropic.capabilities?.vision && _visionMode() !== 'off'
     const movementTools = buildAnthropicTools(subRegistry, descMap)
-      .filter(t => visionOk || t.name !== 'look')
+      .filter(t => visionOk || !caps.visionActions.has(t.name))
     const seen = new Set(personalityTools.map(t => t.name))
     const merged = [...personalityTools]
+    // Anthropic sessions get the native server-side web_search (+ our visit);
+    // every other provider gets our search + visit. See webToolsFor.
+    if (webSession) for (const t of webToolsFor({ serverWebSearch: !!anthropic.capabilities?.serverWebSearch })) { merged.push(t); seen.add(t.name) }
     for (const t of movementTools) {
       if (!seen.has(t.name)) { merged.push(t); seen.add(t.name) }
     }
@@ -1347,7 +1581,10 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // session. This is the big static block that used to re-bill every loop.
     cachedSystemBlocks = anthropic.buildCachedSystem(
       [
-        BASELINE_INSTRUCTIONS,
+        // Contract v2: the game-surface half is adapter-declared
+        // (surfaceBaseline(), Minecraft default MINECRAFT_BASELINE). The
+        // composition is what BASELINE_INSTRUCTIONS used to be, byte for byte.
+        `${UNIVERSAL_BASELINE}\n\n${caps.surfaceBaseline()}`,
         renderPersona(config.persona),
         adapter.capabilityParagraph(),
         adapter.worldPrimer(),
@@ -1583,19 +1820,27 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // segments MEMORY.md by world, and caches the current world for the snapshot.
   async function noteSpawn() {
     if (!worldRegistry) return
-    let info = null
-    try { info = adapter.getWorldInfo?.() } catch { /* adapter may not implement it */ }
-    const sp = info?.spawnPoint
-    if (!sp) return // spawn point not known yet — skip; next session will catch it
-    const dim = info.dimension || 'overworld'
-    const fingerprint = `${dim}@${sp.x},${sp.y},${sp.z}`
-    const motd = (config.lan_motd && String(config.lan_motd).trim()) || ''
-    const label = motd || `spawn ${sp.x},${sp.z}`
+    // Contract v2: the adapter names the world (getWorldIdentity); the
+    // Minecraft default assembles dimension@spawn + config.world_label exactly
+    // as this function used to. null = not known yet — skip; next session
+    // will catch it.
+    let identity = null
+    try { identity = caps.getWorldIdentity() } catch { /* adapter may not implement it */ }
+    if (!identity || !identity.fingerprint) return
+    const fingerprint = String(identity.fingerprint)
+    const label = (identity.label && String(identity.label).trim()) || fingerprint
     try {
       await worldRegistry.resolveOnSpawn({ fingerprint, label })
     } catch (err) {
       logger.warn?.(`[sei/orch] world resolve failed: ${err.message}`)
     }
+  }
+
+  // 260725 pause contract: the tiny notice that replaces ALL game context
+  // while paused. Names the game through contract v2 gameName (lowercase, as
+  // the original 'your minecraft was paused' line was).
+  function pausedNotice() {
+    return `your ${caps.gameName.toLowerCase()} was paused by the player. only they can unpause it.`
   }
 
   // ─── Snapshot helper ────────────────────────────────────────────────
@@ -1605,7 +1850,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // (fresh seed, tool-result continuation, action tick) flows through, so
     // gating here guarantees it for every path at once. Deliberately tiny:
     // paused voice turns are uncached.
-    if (gamePaused) return 'your minecraft was paused by the player. only they can unpause it.'
+    if (gamePaused) return pausedNotice()
     try {
       const w = worldRegistry?.current?.() ?? null
       return snapshotComposer.next({
@@ -1715,7 +1960,8 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // extractPriorTask's "name arg" string; we key off the leading tool name.
   function stopToolForAction(actionLabel) {
     const name = actionLabel ? actionLabel.split(' ')[0] : null
-    return name === 'follow' ? 'unfollow' : 'end_loop'
+    // Contract v2 backgroundActions: { follow: 'unfollow' } for Minecraft.
+    return (name && caps.backgroundActions[name]) || 'end_loop'
   }
 
   // 260608-tik: unified mid-action interrupt text (Change 2). Every path that
@@ -1723,27 +1969,76 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // variant, repairAfterAbort, and the fold fallbacks) renders through this so
   // they read identically. The action is still considered live, so the framing
   // matches the silent action-tick monitor — it just carries the player's words.
-  function interruptTurnText(loop, chatText, who = null, teammate = false) {
-    const action = extractPriorTask(loop)
+  // 260925: how a mid-loop line's speaker is named in the turn text. A
+  // teammate keeps its own name; the human is "player (name)".
+  function speakerForTurn(who, teammate) {
+    if (!who) return null
+    const name = String(who)
+    if (teammate === true) return name
+    if (companions.some((c) => String(c).toLowerCase() === name.toLowerCase())) return name
+    return playerLabel(name)
+  }
+
+  function interruptTurnText(loop, chatText, who = null, teammate = false, unanswered = false) {
+    // 260921: "mid-action" only when something is actually running.
+    // extractPriorTask returns the last tool call in the history whether or
+    // not it has finished, so a line that landed BETWEEN actions (the gather
+    // had just completed; the next call was the one preempted) was framed
+    // "You're currently: gather. You are MID-ACTION, and the DEFAULT is to
+    // KEEP GOING". Measured: the model took that at its word, re-issued the
+    // gather, wrote its answer to the player's question in the private
+    // scratchpad and never called say(). A background action (follow) counts
+    // as running with no in_flight, because it outlives the call that
+    // started it and its stop tool is the one the player may be asking for.
+    const priorTask = extractPriorTask(loop)
+    const priorName = priorTask ? priorTask.split(' ')[0] : null
+    const action = (loop.inFlight || (priorName && caps.backgroundActions[priorName])) ? priorTask : null
     // 260703: a fresh player line resets the per-loop "have I spoken since
     // the player's latest message" flag — the silence backstop (scratchpad
     // salvage at end_loop) keys off it, and a say() from BEFORE this
     // interrupt doesn't count as answering it.
     if (chatText && String(chatText).trim()) {
       loop._spokeThisLoop = false
+      // 260921: a real line folded into a game-event loop IS owed a reply.
+      if (!teammate) loop._noReplyOwed = false
+      // 260921: the unanswered-line retry (see runIterations) re-presents the
+      // SAME line; only a genuinely new one re-arms it.
+      if (!unanswered) {
+        loop._lastPlayerLine = teammate ? null : { text: String(chatText), who: who ?? null }
+        loop._unansweredRetried = false
+        loop._unansweredNudgeText = null
+      }
       // 260708 (thought-leak fix): mid-call with a roster (or on a teammate's
       // call line), this line takes yield-allowed framing, so a silent end is
       // deliberate — flag the loop so the scratchpad salvage never speaks the
       // yield reasoning.
       loop._groupVoiceLine = voiceCallActive && (companions.length > 0 || teammate === true)
     }
+    // 260921: a mid-loop player line arrives with the conversation it belongs
+    // to. These turns used to carry the new line ALONE; the only transcript in
+    // the loop was the seed's, as old as the loop (90s and five player lines
+    // stale on the measured session), so "nothing" arrived without the "shake
+    // them and see what falls" it answered, and "answer my question" without a
+    // visible question. recordIncomingChat runs before the enqueue, so the
+    // block already ends on the line being delivered.
+    let convo = null
+    if (chatText && String(chatText).trim() && !teammate) {
+      try { convo = convoMemory.recentChat.formatConversationBlock() } catch {}
+    }
+    const convoLead = convo ? `${convo}\n\n` : ''
     // 260703: mid-loop interrupt turns carry the sticky greet hint too (no-op
     // once a say() line has reached chat this session).
-    return withGreetingHint(NUDGES.actionTurn({
+    // 260921: second delivery of a line the last turn left unspoken.
+    const unansweredLead = unanswered
+      ? 'Your last turn did NOT call say(), so they heard nothing back from you. Whatever you wrote in your text was private; it never reached them. Their line is still waiting:\n'
+      : ''
+    return convoLead + unansweredLead + withGreetingHint(NUDGES.actionTurn({
       action,
       stopTool: stopToolForAction(action),
       playerLine: chatText ?? '',
-      who: who ?? null,
+      // 260925: the human is named by role ("player (Sei) said"), since their
+      // chosen name can be the app's or a companion's (see playerLabel).
+      who: speakerForTurn(who, teammate),
       visionOff: _visionMode() === 'off',
       // 260708: while a call is live, player lines are voice and (with a
       // roster) take the group-addressing framing instead of mandatory-reply.
@@ -1779,7 +2074,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // the action, and a say()-only batch suspends on nothing. Its result is
   // actually pre-filled up front by emitSayCalls (so speech lands before any
   // action dispatches); the executeInlineMetadata `say` branch is a fallback.
-  const INLINE_METADATA = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'end_loop', 'say', 'quit_game', 'end_call'])
+  const INLINE_METADATA = new Set(['remember', 'forget', 'setGoal', 'clearGoal', 'end_loop', 'say', 'quit_game', 'end_call', 'search', 'visit'])
   function isInlineMetadata(name) {
     return INLINE_METADATA.has(name)
   }
@@ -1800,9 +2095,8 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // build + cuboid dig). Same onProgress channel as cuboid — no parallel
   // pattern, no invented config field (CONTEXT.md "Signal threading scope").
   function _buildExecOpts(name, args, execOpts, handle) {
-    const isProgressFlavored = name === 'build'
-      || name === 'gather'
-      || (name === 'dig' && args && args.to)
+    // Contract v2 progressActions (Minecraft default: build, gather, cuboid dig).
+    const isProgressFlavored = caps.isProgressAction(name, args)
     return isProgressFlavored
       ? { ...execOpts, onProgress: (p) => inflight.updateProgress(handle, p) }
       : execOpts
@@ -1832,7 +2126,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // call). Refuse without executing; the model gets a plain result string.
     if (gamePaused) {
       return {
-        promise: Promise.resolve('minecraft is paused by the player. you cannot act in the world until they unpause it.'),
+        promise: Promise.resolve(`${caps.gameName.toLowerCase()} is paused by the player. you cannot act in the world until they unpause it.`),
         abortController: new AbortController(),
         handle: null,
         startedAt: Date.now(),
@@ -2063,7 +2357,7 @@ function maybeWarnByteCap(loop, warned) {
         // race where a call started between enqueue and here, or there is no
         // in_flight to monitor (transient between-action window).
         if (currentLoop.inFlight && !currentLoop._llmCallInFlight && !currentLoop.isTerminal) {
-          await handleActionTick(currentLoop, { playerMessage: String(chatText), who, teammate: isTeammateVoiceChat })
+          await handleActionTick(currentLoop, { playerMessage: String(chatText), who, teammate: isTeammateVoiceChat, seiChat: data?.seiChat === true })
           return
         }
         // 260611: ACCUMULATE, don't overwrite — mirrors handlePreempt's
@@ -2080,6 +2374,9 @@ function maybeWarnByteCap(loop, warned) {
             // if any accumulated part came from the player, the player's
             // mandatory-reply framing wins.
             teammate: (prevText ? pendingInterrupt?.teammate === true : true) && isTeammateVoiceChat,
+            // 260910: any part typed in the Sei app keeps the reply on the app
+            // surface too (see the mirror gate in emitSay).
+            seiChat: pendingInterrupt?.seiChat === true || data?.seiChat === true,
           }
         }
         if (currentLoop.inFlight) {
@@ -2108,7 +2405,7 @@ function maybeWarnByteCap(loop, warned) {
         // loop. The priority queue runs P0 before P1, so the attack opens a
         // fresh loop first; the chat then arrives as a normal P1 dispatch.
         let preservedInterrupt = pendingInterrupt
-          ? { chatText: pendingInterrupt.chatText, who: pendingInterrupt.who ?? data?.who ?? 'player' }
+          ? { chatText: pendingInterrupt.chatText, who: pendingInterrupt.who ?? data?.who ?? 'player', seiChat: pendingInterrupt.seiChat === true }
           : null
         // 260708: a chat-TRIGGERED loop that has not completed a single
         // iteration is itself an undelivered player message — the attack
@@ -2196,13 +2493,11 @@ function maybeWarnByteCap(loop, warned) {
     // it back to 'sei:chat_received'; a natural action_complete sets it to
     // 'sei:action_complete'). Used by runIterations to decide R1-R4 gating.
     loop._currentIterationTrigger = event
-    // Track goTo cant_reach destinations seen this loop.
-    // Key: `${x}|${y}|${z}|${range}`. Value: count. On count >= 2 we inject a
-    // one-shot nudge referencing the SYSTEM_INSTRUCTIONS Pathfinder rule
-    // rather than letting the LLM keep retrying. Per-loop scope so a fresh
-    // dispatch starts clean.
-    loop._cantReachMap = new Map()
-    loop._cantReachNudgedKeys = new Set()
+    // Contract v2: per-loop scratch for the adapter's postProcessToolBatch
+    // (the Minecraft adapter keeps its goTo cant_reach dedup counters here,
+    // which used to be loop._cantReachMap / _cantReachNudgedKeys). Per-loop
+    // scope so a fresh dispatch starts clean.
+    loop._adapterBatchState = {}
     // Silent-iteration cadence counter for the progress-narration soft nudge.
     loop.iterationsSinceLastSay = 0
     loop._progressNudgeFired = false
@@ -2244,7 +2539,14 @@ function maybeWarnByteCap(loop, warned) {
         ? adapter.eventAddendum(event === 'idle' ? 'sei:idle' : event, data)
         : ''
       const isP1Event = event === 'player_chat' || event === 'sei:chat_received'
-      if (isP1Event) {
+      if (isP1Event && data?.gameEvent === true) {
+        // 260921: an adapter-raised notice (Stardew: a new day, 10 PM) that
+        // rides the chat channel for its priority. It is not a message: no
+        // speaker framing, no reply owed, and the end_loop scratchpad salvage
+        // must never speak the private reasoning of a turn that chose silence.
+        loop._noReplyOwed = true
+        eventText = `Event: game_event\n${String(data?.text ?? '').trim()}\nNobody said this to you; it is the game telling you something happened. Act on it if it changes what you should be doing. say() is optional here: speak only if you have something to say about it that you have not already said.`
+      } else if (isP1Event) {
         // 260616 (#2): surface the player's actual words as a dedicated
         // player_message block placed LAST in the turn (composeSeedBlocks), so
         // the model reads them right before replying — instead of a machine
@@ -2279,6 +2581,8 @@ function maybeWarnByteCap(loop, warned) {
             ? `your teammate ${speakerName} just said this on the voice call`
             : `your teammate ${speakerName} just spoke to you`)
           : isVoiceLine ? 'the player just said this on the voice call' : 'the player just spoke to you'
+        // 260921: kept for the unanswered-line retry (runIterations).
+        loop._lastPlayerLine = fromTeammate ? null : { text: String(data?.text ?? '').trim(), who: speakerName || null }
         playerMessageText = `${opener}${teammateVoice ? ':' : '. respond to THIS, not to the scene around you:'}\n"${String(data?.text ?? '').trim()}"\n` +
           (groupVoice
             ? voiceGroupGuidance(companions).trim() + ' Your text output is a private scratchpad the player can NEVER see; a reply that exists only in your text is silence to them; only say() reaches them.'
@@ -2315,7 +2619,7 @@ function maybeWarnByteCap(loop, warned) {
       eventText = `player just unpaused your game.${inflightLine}\n\n${eventText}`
     }
     if (data?.reason === 'just_connected_first_spawn' && !voiceCallActive) {
-      eventText += `\n\nFIRST CONTACT: you just spawned into your friend's world — this is the very first thing they will see from you this session. Before anything else, open with exactly ONE short in-character greeting via the say() tool (a hello, a tease, a boast — whatever fits your voice). Do NOT stay silent on this first tick and do NOT narrate the scene or your inventory; just greet them like you're glad (or smug) to be back, then you may start doing your own thing. If your memories above hold something relevant, work it into that greeting instead of a generic hello — anything the player said last time about themselves, about you, or about what they wanted to do in Minecraft (say("yo how'd the interview go?") beats say("back in business")). This is only a hint: if you have no memories or nothing fits, a plain greeting is completely fine — don't force it.`
+      eventText += `\n\nFIRST CONTACT: you just spawned into your friend's world — this is the very first thing they will see from you this session. Before anything else, open with exactly ONE short in-character greeting via the say() tool (a hello, a tease, a boast — whatever fits your voice). Do NOT stay silent on this first tick and do NOT narrate the scene or your inventory; just greet them like you're glad (or smug) to be back, then you may start doing your own thing. If your memories above hold something relevant, work it into that greeting instead of a generic hello — anything the player said last time about themselves, about you, or about what they wanted to do in ${caps.gameName} (say("yo how'd the interview go?") beats say("back in business")). This is only a hint: if you have no memories or nothing fits, a plain greeting is completely fine — don't force it.`
     }
     // 260618: refresh the progression view before composing the seed — latch
     // dimension milestones, detect whether the committed goal's milestone just
@@ -2338,7 +2642,7 @@ function maybeWarnByteCap(loop, warned) {
         ...(voiceCallActive
           ? [{ type: 'text', name: 'voice_call', text: `[voice call] ${VOICE_CALL_PRIMER}` }]
           : []),
-        { type: 'text', name: 'paused', text: 'your minecraft was paused by the player. only they can unpause it.' },
+        { type: 'text', name: 'paused', text: pausedNotice() },
         ...(playerMessageText
           ? [{ type: 'text', name: 'player_message', text: playerMessageText }]
           : [{ type: 'text', name: 'event', text: eventText }]),
@@ -2349,8 +2653,8 @@ function maybeWarnByteCap(loop, warned) {
         seedBlocks = await composeSeedBlocks({
           sessionState, playerStore, config, adapter,
           eventText, snapshotText: snapshotText(),
-          recentPlayerChatText: convoMemory.recentChat.formatPlayerBlock(),
-          yourRecentMessagesText: convoMemory.recentChat.formatSelfBlock(),
+          recentConversationText: convoMemory.recentChat.formatConversationBlock(),
+          lookupsText: lookupLog.formatBlock(),
           playerMessageText,
           companions,
           frontierText: progFrontierText,
@@ -2643,6 +2947,31 @@ function maybeWarnByteCap(loop, warned) {
    * this helper — single source of truth.
    */
   async function executeInlineMetadata(loop, use) {
+    if (isWebTool(use.name)) {
+      // 260909: search / visit. Inline (result fills now) but NOT a
+      // PERSONALITY_NAME, so the loop continues and the model reads the result
+      // on its next call. The fetch honors the loop's abort signal: a player
+      // line preempting mid-search cancels it like any other in-flight work.
+      if (!webSession) {
+        return { result: { type: 'tool_result', tool_use_id: use.id, content: `${use.name}: web access is off`, is_error: true }, terminate: false }
+      }
+      try {
+        const r = await webSession.runTool(use.name, use.input ?? {}, { signal: loop.abortController?.signal })
+        lastActionResult = r.is_error ? `${use.name} failed` : `${use.name} ok`
+        // 260921: note the query; the NEXT response (written with the result
+        // in view) is the conclusion the lookup log keeps.
+        if (!r.is_error && use.name === 'search' && use.input?.query) {
+          loop._pendingLookupQueries = [...(loop._pendingLookupQueries ?? []), String(use.input.query)]
+        }
+        logger.info?.(`[sei/orch] ${use.name}(${JSON.stringify(use.input ?? {}).slice(0, 120)}) -> ${r.is_error ? 'error' : `${r.content.length} chars`}${webSession.lastProvider ? ` via ${webSession.lastProvider}` : ''}`)
+        return { result: { type: 'tool_result', tool_use_id: use.id, content: r.content, is_error: !!r.is_error }, terminate: false }
+      } catch (err) {
+        if (loop.abortController?.signal?.aborted) throw err
+        lastActionResult = `${use.name} error`
+        logger.warn?.(`[sei/orch] ${use.name} failed: ${err?.message ?? err}`)
+        return { result: { type: 'tool_result', tool_use_id: use.id, content: `${use.name}: ${err?.message ?? 'failed'}`, is_error: true }, terminate: false }
+      }
+    }
     if (use.name === 'end_loop') {
       // 260514-ngj: end_loop replaces stop. Same inline-metadata shape —
       // fill the result slot synchronously and flag terminate=true so the
@@ -3044,6 +3373,7 @@ function maybeWarnByteCap(loop, warned) {
     if (pendingInterrupt && data.aborted) {
       // 260608-tik: unified mid-action interrupt framing (Change 2).
       extraEventText = interruptTurnText(loop, pendingInterrupt.chatText, pendingInterrupt.who, pendingInterrupt.teammate === true)
+      if (pendingInterrupt.seiChat === true) loop._seiChatFolded = true
       pendingInterrupt = null
       logger.info?.(`[sei/orch] action_complete + PLAYER INTERRUPT folded into loop=${loop.id}`)
       // 260514-ngj: the next iteration is driven by a PLAYER INTERRUPT —
@@ -3357,10 +3687,23 @@ function maybeWarnByteCap(loop, warned) {
     // switch (R2), or stop (end_loop/unfollow, R3).
     const playerMessage = (typeof data?.playerMessage === 'string') ? data.playerMessage : null
     const who = data?.who ?? null
+    // 260910: a line typed in the Sei app that lands mid-action is answered by
+    // say() inside THIS loop, whose own trigger was an idle tick, so the reply
+    // used to stay in the game's chat and the app showed nothing (Stardew,
+    // measured live). Remember the origin so the loop's lines mirror up.
+    if (playerMessage != null && data?.seiChat === true) loop._seiChatFolded = true
     // 260708: a teammate's call line rides the same machinery (observe wake);
     // its framing allows silence and the redrive below must not relabel it as
     // the player speaking.
     const teammate = data?.teammate === true
+    // 260921: the unanswered-line retry. Dropped when the reply has gone out
+    // in the meantime (the action finished first and its continuation spoke,
+    // or carried the nudge itself).
+    const unanswered = data?.unanswered === true
+    if (unanswered) {
+      if (loop._spokeThisLoop || !loop._unansweredNudgeText) return
+      loop._unansweredNudgeText = null
+    }
     const action = extractPriorTask(loop)
     // 260608-tik: the player-message variant renders through interruptTurnText,
     // the one chokepoint for mid-action interrupt turns — it resets
@@ -3370,7 +3713,7 @@ function maybeWarnByteCap(loop, warned) {
     // actionTurn shows elapsed and runs the agentic-follow review only when
     // playerLine == null — so only the silent monitor builds its own turn.
     const tickEventText = playerMessage != null
-      ? interruptTurnText(loop, playerMessage, who, teammate)
+      ? interruptTurnText(loop, playerMessage, who, teammate, unanswered)
       : withGreetingHint(NUDGES.actionTurn({
           action,
           stopTool: stopToolForAction(action),
@@ -3535,6 +3878,9 @@ function maybeWarnByteCap(loop, warned) {
    */
   async function runIterations(loop, byteWarn) {
     const cap = config.memory.iteration_cap
+    // 260909: the web budget is per LOOP, not per iteration: a fresh
+    // runIterations means a fresh trigger (chat / tick / resume).
+    if (webSession && !loop._webBudgetArmed) { webSession.beginTurn(); loop._webBudgetArmed = true }
 
     while (true) {
       // Cap check before the next call. cap <= 0 means unlimited (disabled) —
@@ -3641,6 +3987,20 @@ function maybeWarnByteCap(loop, warned) {
       // 260708: the trigger has now been seen and answered by at least one
       // model response — an attack teardown no longer needs to preserve it.
       loop._respondedOnce = true
+      // 260909: a server-side web search that ran long stops with
+      // `pause_turn`; the assistant content (kept intact above, server blocks
+      // included) goes back as-is and the model is called again to finish.
+      // Bounded by iteration_cap like everything else.
+      if (resp.stopReason === 'pause_turn') {
+        // 260921: the paused half carries the queries; the resumed half
+        // carries the conclusion. Hold the queries for the lookup log.
+        try {
+          const paused = extractServerLookup(resp.content)
+          if (paused?.queries.length) loop._pendingLookupQueries = [...(loop._pendingLookupQueries ?? []), ...paused.queries]
+        } catch {}
+        logger.info?.(`[sei/orch] pause_turn (server web search in flight) — resuming (loop=${loop.id})`)
+        continue
+      }
 
       // Track responses-received so the first-turn-say predicate doesn't have
       // to deal with the seed-vs-non-seed iterationCount divergence (seed
@@ -3668,6 +4028,27 @@ function maybeWarnByteCap(loop, warned) {
       // thanks for having me"). Stash this iteration's say flag so the terminal
       // tool dispatch (dispatchTool) can suppress its farewell.
       loop._saySpokenThisIteration = saySpokenThisTurn
+
+      // 260921: keep what a web lookup FOUND past the end of this loop (see
+      // lookups.js). Server-side search: queries and her conclusion ride this
+      // one response. Client search()/visit(): the queries were noted when the
+      // tool ran last iteration, and this response, the first one written with
+      // the results in view, is the conclusion (unless it searches again).
+      try {
+        const toldNow = String(toolUses.find(u => u.name === 'say')?.input?.text ?? '')
+        const server = extractServerLookup(resp.content)
+        const carried = loop._pendingLookupQueries ?? []
+        const searchingAgain = toolUses.some(u => u.name === 'search' || u.name === 'visit')
+        if (server) {
+          lookupLog.record({ queries: [...carried, ...server.queries], finding: server.finding, told: toldNow })
+          loop._pendingLookupQueries = null
+        } else if (carried.length > 0 && !searchingAgain) {
+          lookupLog.record({ queries: carried, finding: respText, told: toldNow })
+          loop._pendingLookupQueries = null
+        }
+      } catch (err) {
+        logger.debug?.(`[sei/orch] lookup log skipped: ${err?.message ?? err}`)
+      }
 
       // 260514-ngj: R1-R4 interrupt-response dispatcher. Keyed off the
       // CURRENT iteration's trigger (loop._currentIterationTrigger), NOT
@@ -3752,7 +4133,7 @@ function maybeWarnByteCap(loop, warned) {
       // silent") — salvaging it reads the bot's private thoughts over TTS to
       // the whole call (live failure, session 2026-07-08T17-58). Solo calls
       // and typed chat keep the backstop: there a reply is mandatory.
-      if (_p1Trigger && !loop._groupVoiceLine && !loop._spokeThisLoop && respText && toolUses.some(u => u.name === 'end_loop')) {
+      if (_p1Trigger && !loop._groupVoiceLine && !loop._noReplyOwed && !loop._spokeThisLoop && respText && toolUses.some(u => u.name === 'end_loop')) {
         logger.info?.(`[sei/orch] salvaging scratchpad as reply — player message was about to end unspoken (loop=${loop.id})`)
         try { _emitSayLine(loop, respText) } catch {}
       }
@@ -3763,6 +4144,31 @@ function maybeWarnByteCap(loop, warned) {
       // is {remember, forget, end_loop}; everything else suspends the
       // loop via startLongRunner (260514-gam universal-inflight).
       const newSuspendingTools = toolUses.filter(u => !isInlineMetadata(u.name))
+
+      // 260921: a player line answered with ACTIONS ONLY. The 260703 salvage
+      // above covers text + end_loop; this is its sibling: text + a world
+      // action, no say(). Measured: asked a question mid-chore, the model wrote
+      // "i'm not sure, but i think each world is its own farm" in its private
+      // text, called gather, and the loop carried on; the player waited 30s
+      // and typed "answer my question". The scratchpad is NOT salvaged here
+      // (on these turns it is usually reasoning about the chore, and speaking
+      // it would leak it). Instead the line is delivered ONCE more, flagged as
+      // unanswered: right away through the action-tick channel while the new
+      // action runs, or on the loop's next call if that comes first.
+      if (_p1Trigger && !loop._groupVoiceLine && !loop._noReplyOwed && !loop._spokeThisLoop &&
+          !hasEndLoop && !loop._unansweredRetried && loop._lastPlayerLine?.text) {
+        loop._unansweredRetried = true
+        const line = loop._lastPlayerLine
+        loop._unansweredNudgeText = `${line.who ? `${line.who} ` : 'The player '}said: "${line.text}". Your last turn did NOT call say(), so they heard nothing back from you. Whatever you wrote in your text was private; it never reached them. Answer them now with one short say(), in this turn, alongside whatever else you do (skip it only if their line truly needs no reply at all).`
+        logger.info?.(`[sei/orch] player line left unspoken (actions only) — re-delivering once (loop=${loop.id})`)
+        if (newSuspendingTools.length > 0) {
+          try {
+            reenqueue('sei:action_tick', { playerMessage: line.text, who: line.who, unanswered: true })
+          } catch (err) {
+            logger.warn?.(`[sei/orch] unanswered-line tick reenqueue failed: ${err.message}`)
+          }
+        }
+      }
 
       // 260616: a SILENT action_tick is a check-in, not an action channel. The
       // running long-runner stays in flight; the model may speak, stay silent,
@@ -3876,47 +4282,30 @@ function maybeWarnByteCap(loop, warned) {
       // same combined response — no separate movement layer.
       const movementCalls = toolUses.filter(u => !PERSONALITY_NAMES.has(u.name))
 
-      // Cap parallel dig calls at
-      // 1 per turn. The first dig executes; subsequent digs synthesize an
-      // abort result. Decided cap=1 over chopping-2-block-tree regression
-      // (RESEARCH A2): the 5-identical-dig and 7-way-dig storms outweigh the
-      // legit case; the LLM can re-issue dig next turn.
-      let _digSeen = false
-      const _digCapped = new Set()
-      for (const u of toolUses) {
-        if (u.name !== 'dig') continue
-        if (_digSeen) _digCapped.add(u.id)
-        else _digSeen = true
+      // Contract v2 prefilterToolBatch: the adapter names the tool_uses in
+      // this batch that must NOT execute and the result they get instead
+      // (Minecraft: the one-dig-per-turn cap and the same-turn follow +
+      // attackEntity collapse, see adapter/minecraft/toolBatch.js). Default:
+      // nothing. Errors degrade to "prefill nothing".
+      const _prefilled = new Map()
+      try {
+        for (const p of caps.prefilterToolBatch(toolUses) ?? []) {
+          if (p && p.id) _prefilled.set(p.id, p)
+        }
+      } catch (err) {
+        logger.warn?.(`[sei/orch] prefilterToolBatch threw: ${err?.message ?? err}`)
       }
-
-      // Same-turn follow + attackEntity collapse.
-      // combat.js startAttacking already auto-pursues moving mobs, so an
-      // explicit follow paired with attackEntity in the SAME tool batch is
-      // redundant — and historically produced "target gone" because follow
-      // resolves the entity reference before attack lands the first swing.
-      const _attackTargets = new Set(
-        toolUses
-          .filter(u => u.name === 'attackEntity')
-          .map(u => u.input?.target ?? u.input?.entity)
-          .filter(Boolean)
-      )
-      const _followNoop = new Set(
-        toolUses
-          .filter(u => u.name === 'follow' && _attackTargets.has(u.input?.entity ?? u.input?.target))
-          .map(u => u.id)
-      )
 
       // Collect tool_results in the SAME order as toolUses so pairing holds.
       const results = new Array(toolUses.length)
 
-      // 260514-gam: pre-fill the dig-cap and follow-noop placeholder results
+      // 260514-gam: pre-fill the adapter's prefiltered placeholder results
       // for the ENTIRE batch BEFORE the for-loop runs. Required so the
       // batched-queue serialization path (handleActionComplete drain) sees
       // these slots as already-filled — without this, a non-inline tool early
       // in the batch would dispatch and suspend, then the queue would still
-      // contain capped digs / follow-noops that handleActionComplete cannot
-      // resolve (the digCapped / followNoop sets live in this for-loop's
-      // closure only).
+      // contain prefiltered tools that handleActionComplete cannot resolve
+      // (the _prefilled map lives in this for-loop's closure only).
       for (let k = 0; k < toolUses.length; k++) {
         const uk = toolUses[k]
         if (sayResults.has(uk.id)) {
@@ -3924,19 +4313,13 @@ function maybeWarnByteCap(loop, warned) {
           // result so the dispatch loop skips it and the batched-queue drain
           // never enqueues it — speech is resolved before any action runs.
           results[k] = sayResults.get(uk.id)
-        } else if (_digCapped.has(uk.id)) {
+        } else if (_prefilled.has(uk.id)) {
+          const p = _prefilled.get(uk.id)
           results[k] = {
             type: 'tool_result',
             tool_use_id: uk.id,
-            content: 'aborted: only one dig per turn allowed; re-issue next turn or use {block:"<name>"} for repeat digs',
-            is_error: false,
-          }
-        } else if (_followNoop.has(uk.id)) {
-          results[k] = {
-            type: 'tool_result',
-            tool_use_id: uk.id,
-            content: 'already pursuing: combat reflex auto-pursues moving mobs; attackEntity alone is enough',
-            is_error: false,
+            content: String(p.content ?? ''),
+            is_error: p.is_error === true,
           }
         }
       }
@@ -4070,31 +4453,17 @@ function maybeWarnByteCap(loop, warned) {
       // tools fired (no movement) the LLM is done — terminal.
       const continueLoop = movementCalls.length > 0
 
-      // Per-loop cant_reach dedup. If the same goTo
-      // destination returned cant_reach twice in this loop and we have NOT
-      // already nudged for that key, append a one-shot reminder to the next
-      // user turn so the LLM follows the SYSTEM_INSTRUCTIONS Pathfinder rule
-      // (ask for help via say()) instead of silently retrying.
+      // Contract v2 postProcessToolBatch: the adapter reads the settled
+      // batch and may hand back a one-shot nudge for the next user turn
+      // (Minecraft: the per-loop goTo cant_reach dedup → cantReachNudge, see
+      // adapter/minecraft/toolBatch.js). Default: none.
       let cantReachNudge = null
-      for (let i = 0; i < toolUses.length; i++) {
-        const u = toolUses[i]
-        if (u.name !== 'goTo') continue
-        const r = results[i]
-        const content = typeof r?.content === 'string' ? r.content : ''
-        if (!content.startsWith('cant_reach')) continue
-        const x = u.input?.x, y = u.input?.y, z = u.input?.z, range = u.input?.range ?? 1
-        if (![x, y, z].every(n => Number.isFinite(n))) continue
-        const key = `${x}|${y}|${z}|${range}`
-        const prev = loop._cantReachMap.get(key) ?? 0
-        const next = prev + 1
-        loop._cantReachMap.set(key, next)
-        if (next >= 2 && !loop._cantReachNudgedKeys.has(key)) {
-          loop._cantReachNudgedKeys.add(key)
-          cantReachNudge = (typeof adapter.cantReachNudge === 'function')
-            ? adapter.cantReachNudge({ x, y, z, range })
-            : null
-          break
-        }
+      try {
+        const post = caps.postProcessToolBatch(toolUses, results, loop._adapterBatchState ?? (loop._adapterBatchState = {}))
+        const nudge = post?.nudge
+        cantReachNudge = (typeof nudge === 'string' && nudge.trim()) ? nudge : null
+      } catch (err) {
+        logger.warn?.(`[sei/orch] postProcessToolBatch threw: ${err?.message ?? err}`)
       }
 
       // Silent-iteration cadence. If the
@@ -4188,6 +4557,12 @@ function maybeWarnByteCap(loop, warned) {
     // through the raw response content so signatures/positions stay intact;
     // fall back to a synthesized array for callers / mocks without `content`.
     if (Array.isArray(resp.content) && resp.content.length > 0) {
+      // 260909: server web_search blocks (server_tool_use + the encrypted
+      // web_search_tool_result) stay in the loop history VERBATIM. The docs
+      // say a continuation whose encrypted_content is missing or modified is
+      // a 400, and this machine cannot reach Anthropic to test the "drop the
+      // whole pair" variant. The cost is bounded: a loop's history lives for
+      // one trigger, and chat rebuilds its transcript from text rows.
       return resp.content.map(b => {
         if (b.type === 'tool_use') return { type: 'tool_use', id: b.id, name: b.name, input: b.input }
         return b
@@ -4328,6 +4703,19 @@ function maybeWarnByteCap(loop, warned) {
       return null
     }
     const budget = config.anthropic.thinking_budget_tokens ?? 0
+    // 260921: the unanswered-line nudge (armed in runIterations) rides the
+    // loop's next call when that call comes before the retry tick does, eg
+    // the new action finished at once. Appended to the last USER turn, which
+    // is always what a call answers.
+    if (loop._unansweredNudgeText && !loop._spokeThisLoop) {
+      const msgs = loop._internal.messages
+      const lastMsg = msgs[msgs.length - 1]
+      if (lastMsg && lastMsg.role === 'user' && Array.isArray(lastMsg.content)) {
+        lastMsg.content.push({ type: 'text', name: 'unanswered', text: loop._unansweredNudgeText })
+        loop._currentIterationTrigger = 'sei:chat_received'
+      }
+    }
+    loop._unansweredNudgeText = null
     // Mark the window where an LLM call is genuinely in flight (the loop is
     // mid-iteration, parking the FSM dispatch thread). handlePreempt reads this
     // to decide whether a P0/P1 enqueue needs to abort the call to unblock the
@@ -4526,7 +4914,18 @@ function maybeWarnByteCap(loop, warned) {
     throttle: ingressThrottle,
     inflight,
     /** Record an incoming chat line in convoMemory (chat.js calls this). */
-    recordIncomingChat: (who, text) => convoMemory.recentChat.pushPlayer(who, text),
+    // opts.companion: a sibling AI's line; anything else is the human player's
+    // and is labelled by role in the transcript (convoMemory.playerLabel).
+    recordIncomingChat: (who, text, opts) => convoMemory.recentChat.pushPlayer(who, text, opts),
+    // 260921: the idle timer's floor-hold (see REPLY_WINDOW_MS). brain/index.js
+    // folds it into idleFallbackMs so the FSM needs no knowledge of speech.
+    // Stardew only (REPLY_WINDOW_GAMES): 0 elsewhere, so Minecraft's agentic
+    // cadence is unchanged.
+    replyWindowRemainingMs: () => !replyWindowApplies(adapter) ? 0 : replyWindowRemainingMs({
+      lastSelf: convoMemory.recentChat.lastSelf?.() ?? null,
+      lastPlayer: convoMemory.recentChat.lastPlayer?.() ?? null,
+      sendDeadline: _lastChatSendDeadline,
+    }),
     /**
      * 260618: update the roster of OTHER AI companion usernames in this world.
      * Called by brain.setCompanions ← src/bot/index.js's {type:'roster'} handler
@@ -4612,10 +5011,60 @@ function maybeWarnByteCap(loop, warned) {
     setAuthToken: (token) => { try { anthropic.setAuthToken(token) } catch {} },
     /**
      * WR-05 follow-up: live-swap the AI backend (cloud-proxy ↔ BYOK) on the
-     * running provider. Optional-chained because only the Anthropic provider
-     * implements setBackend; non-Anthropic providers no-op.
+     * running provider without a re-summon.
+     *
+     * 260828 rework: this used to delegate straight to the provider's own
+     * setBackend, which only the Anthropic provider implements — so a
+     * cloud→local switch DROPPED the configured non-Anthropic provider (the
+     * bot silently kept running Anthropic with stale defaults), and a local
+     * non-Anthropic session switching to cloud no-op'd entirely (kept
+     * routing BYOK). Now:
+     *   1. applyLlmSwitch folds the descriptor into the live config
+     *      (clears/sets cloudMode + api_key, reroutes config.llm) and
+     *      reports the provider kind now selected;
+     *   2. if the kind is unchanged-Anthropic and the model didn't move, the
+     *      existing client is flipped in place (anthropic.setBackend —
+     *      cheapest path, preserves the prompt-cache identity);
+     *   3. otherwise the provider is REBUILT through the factory and the
+     *      cached system blocks re-rendered (buildCachedSystem is
+     *      provider-specific).
+     * The dominant safety property (a visible switch to BYOK must stop
+     * routing through the paid cloud immediately) is preserved on a rebuild
+     * failure too: cloudMode is already cleared from config before the
+     * factory runs, and the fallback rebuild pins the plain Anthropic BYOK
+     * path (which never throws at construction) rather than keeping the old
+     * cloud-wired instance.
      */
-    setBackend: (backend) => { try { anthropic.setBackend?.(backend) } catch {} },
+    setBackend: (backend) => {
+      try {
+        const prevKind = config.llm?.provider ?? 'anthropic'
+        const prevModel = config.anthropic.model
+        const nextKind = applyLlmSwitch(config, backend)
+        if (nextKind === 'anthropic' && prevKind === 'anthropic' && config.anthropic.model === prevModel) {
+          // Same Anthropic client, new routing: in-place SDK rebuild.
+          anthropic.setBackend?.(backend)
+          return
+        }
+        try {
+          anthropic = createLlmProvider(config)
+        } catch (err) {
+          // e.g. the target provider requires an api_key the switch didn't
+          // carry (openaiCompat throws at construction). Never keep the old
+          // instance: it may still be wired to the cloud proxy. Pin the
+          // Anthropic BYOK path instead — calls fail visibly (401) until the
+          // user fixes their key and re-summons, matching the supervisor's
+          // documented advisory behavior.
+          logger.warn?.(`[sei/orch] setBackend: provider '${nextKind}' rebuild failed (${err?.message ?? err}) — falling back to anthropic`)
+          if (config.llm) config.llm.provider = 'anthropic'
+          anthropic = createLlmProvider(config)
+        }
+        try { rebuildPersonalitySystem() } catch (err) {
+          logger.warn?.(`[sei/orch] setBackend system rebuild failed: ${err?.message ?? err}`)
+        }
+      } catch (err) {
+        logger.warn?.(`[sei/orch] setBackend failed: ${err?.message ?? err}`)
+      }
+    },
     _internal: {
       personalityBucket,
       callPersonality,

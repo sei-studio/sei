@@ -25,6 +25,7 @@ import { CharacterSchema, CharacterIndexSchema, MAX_CREATIONS_PER_DAY, type Char
 import { atomicWrite } from '../bot/brain/storage/atomicWrite.js';
 import { withFileLock } from '../bot/brain/storage/fileLock.js';
 import { paths } from './paths';
+import { deletePortraitFiles } from './portraitFiles';
 import { expandPersona, fetchServerExpansionSystem, type ExpansionProgress } from './personaExpansion';
 import { characterLanguage } from '../shared/chatLanguage';
 import { loadApiKey, getAiBackendKind } from './apiKeyStore';
@@ -349,15 +350,23 @@ export async function expandAndSaveCharacter(
     // latest prompt without a client reship.
     expansionInput.cloudMode = { baseURL: `${PROXY_BASE_URL}/free/expand`, authToken: jwt };
   } else {
-    // 260703 hard guard: local (BYOK) expansion uses ONLY the on-disk key —
-    // never the Supabase JWT. A missing key fails with an actionable message
-    // (the IPC handler surfaces it verbatim) instead of a raw ENOENT.
-    try {
-      expansionInput.apiKey = await loadApiKey();
-    } catch {
-      throw new Error(
-        'persona expansion failed: local mode is on but no API key is saved. Add one in Settings, or switch to managed billing',
-      );
+    // china-compat W1: a non-Anthropic local provider expands through the LLM
+    // layer inside expandPersona, which loads its own key (and ollama needs
+    // none), so the Anthropic-key guard below applies only to the anthropic
+    // provider. localProviderKind never throws (config failures = anthropic).
+    const { localProviderKind } = await import('./llm');
+    const localKind = await localProviderKind();
+    if (localKind === 'anthropic') {
+      // 260703 hard guard: local (BYOK) expansion uses ONLY the on-disk key —
+      // never the Supabase JWT. A missing key fails with an actionable message
+      // (the IPC handler surfaces it verbatim) instead of a raw ENOENT.
+      try {
+        expansionInput.apiKey = await loadApiKey();
+      } catch {
+        throw new Error(
+          'persona expansion failed: local mode is on but no API key is saved. Add one in Settings, or switch to managed billing',
+        );
+      }
     }
     // BYOK calls Anthropic directly (bypassing the proxy), so it can't get the
     // server-injected prompt. Fetch the current server-owned system prompt so
@@ -443,14 +452,15 @@ export async function checkCreateQuota(): Promise<{
  */
 export async function recordCreation(): Promise<void> {
   try {
-    const { loadConfig, saveConfig } = await import('./configStore');
-    const config = await loadConfig();
-    const now = Date.now();
-    const kept = creationsInWindow(config.creation_times, now).map((t) =>
-      new Date(t).toISOString(),
-    );
-    kept.push(new Date(now).toISOString());
-    await saveConfig({ ...config, creation_times: kept });
+    const { updateConfig } = await import('./configStore');
+    await updateConfig((config) => {
+      const now = Date.now();
+      const kept = creationsInWindow(config.creation_times, now).map((t) =>
+        new Date(t).toISOString(),
+      );
+      kept.push(new Date(now).toISOString());
+      return { ...config, creation_times: kept };
+    });
   } catch (err) {
     logger.warn(`recordCreation failed: ${(err as Error).message}`);
   }
@@ -519,11 +529,13 @@ export async function deleteCharacter(id: string): Promise<void> {
   catch (err) {
     if (!err || (err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
-  // Remove optional portrait
+  // Remove optional portrait (legacy characters/<id>.png slot)
   try { await unlink(paths.characterPortraitPath(id)); }
   catch (err) {
     if (!err || (err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
+  // Remove the D-28 canonical portrait + every stored version sidecar (260909)
+  await deletePortraitFiles(id);
   // Remove memory dir recursively (idempotent)
   await rm(paths.memoryDir(id), { recursive: true, force: true });
   // Remove knowledge dir (260725; lives outside memoryDir so Reset memory

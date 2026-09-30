@@ -362,7 +362,7 @@ export async function feedbackSubmit(args: {
   claimReward?: boolean;
 }): Promise<
   | { ok: true; usage_reset: boolean; already_claimed: boolean }
-  | { ok: false; code: ProxyErrorCode }
+  | FeedbackSubmitFailure
 > {
   const session = await getSessionOrNull();
   if (!session) return { ok: false, code: PROXY_NO_SESSION };
@@ -387,11 +387,13 @@ export async function feedbackSubmit(args: {
     });
   } catch {
     clearTimeout(handle);
-    return { ok: false, code: PROXY_NETWORK };
+    // 260926: say WHY for the feedback_failed event. The 09-03 cert outage
+    // (TLS failure on every request) lost 7 submissions as bare "network".
+    return { ok: false, code: PROXY_NETWORK, reason: controller.signal.aborted ? 'timeout' : 'fetch_failed' };
   }
   clearTimeout(handle);
-  if (resp.status === 429) return { ok: false, code: PROXY_RATE_LIMITED };
-  if (!resp.ok) return { ok: false, code: PROXY_NETWORK };
+  if (resp.status === 429) return { ok: false, code: PROXY_RATE_LIMITED, status: 429 };
+  if (!resp.ok) return { ok: false, code: PROXY_NETWORK, status: resp.status, reason: 'http_error' };
 
   try {
     const body = (await resp.json()) as {
@@ -399,16 +401,28 @@ export async function feedbackSubmit(args: {
       usage_reset?: boolean;
       already_claimed?: boolean;
     };
-    if (body.ok !== true) return { ok: false, code: PROXY_NETWORK };
+    if (body.ok !== true) return { ok: false, code: PROXY_NETWORK, status: resp.status, reason: 'not_ok_body' };
     return {
       ok: true,
       usage_reset: body.usage_reset === true,
       already_claimed: body.already_claimed === true,
     };
   } catch {
-    return { ok: false, code: PROXY_NETWORK };
+    return { ok: false, code: PROXY_NETWORK, status: resp.status, reason: 'bad_body' };
   }
 }
+
+/**
+ * A failed feedback send. `status` is the HTTP status when the proxy answered;
+ * `reason` says which step failed (fetch_failed / timeout / http_error /
+ * not_ok_body / bad_body). Both ride on the feedback_failed analytics event.
+ */
+export type FeedbackSubmitFailure = {
+  ok: false;
+  code: ProxyErrorCode;
+  status?: number;
+  reason?: 'fetch_failed' | 'timeout' | 'http_error' | 'not_ok_body' | 'bad_body';
+};
 
 /**
  * 260706 — report a companion (proxy POST /report, reportDailyGate 20/day).

@@ -32,6 +32,7 @@ import { useT } from '../lib/i18n';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { resolvedScheme } from '../lib/theme';
 import { useDataStore } from '../lib/stores/useDataStore';
+import { useMcDashboardStore } from '../lib/stores/useMcDashboardStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useBrowseStore } from '../lib/stores/useBrowseStore';
 import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
@@ -142,6 +143,7 @@ function HomeGrid(): React.ReactElement {
   const recentlyDeletedIds = useDataStore((s) => s.recentlyDeletedIds);
   const summons = useDataStore((s) => s.summons);
   const actions = useDataStore((s) => s.actions);
+  const gameSnapshots = useMcDashboardStore((s) => s.gameSnapshots);
   const navigate = useUiStore((s) => s.navigate);
   const openModal = useUiStore((s) => s.openModal);
   const authState = useAuthStore((s) => s.state);
@@ -314,7 +316,12 @@ function HomeGrid(): React.ReactElement {
           let lastline: React.ReactNode = null;
           if (!isPlaceholder) {
             if (pres.category === 'in-game') {
-              const verb = actionVerb(actions[c.id]);
+              // Game adapters (M0): a non-Minecraft game's verb is its
+              // dashboard activity line; Minecraft keeps the verb table.
+              const verb = actionVerb(actions[c.id], {
+                game: summons[c.id]?.game ?? 'minecraft',
+                activity: gameSnapshots[c.id]?.activity ?? null,
+              });
               if (verb) lastline = verb;
             }
             if (lastline == null) {

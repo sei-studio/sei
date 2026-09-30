@@ -221,6 +221,27 @@ describe('voice-call early say emit (onSay streaming)', () => {
     expect(resp.toolUses[0]).toEqual({ id: 'tu_say', name: 'say', input: { text: 'hey player' } })
   })
 
+  it('a streamed server_tool_use (native web_search) gets its input parsed too', async () => {
+    const events = turnEvents()
+    events.splice(9, 0,
+      { type: 'content_block_start', index: 9, content_block: { type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search' } },
+      { type: 'content_block_delta', index: 9, delta: { type: 'input_json_delta', partial_json: '{"query":"minecraft ' } },
+      { type: 'content_block_delta', index: 9, delta: { type: 'input_json_delta', partial_json: 'fox"}' } },
+      { type: 'content_block_stop', index: 9 },
+    )
+    createMock.mockImplementation(() => streamOf(events))
+    const client = createAnthropicClient(makeConfig())
+
+    const onSay = vi.fn()
+    const resp = await client.call({ ...REQ, onSay })
+
+    const srv = resp.content.find((b) => b.type === 'server_tool_use')
+    expect(srv).toMatchObject({ id: 'srvtoolu_1', name: 'web_search', input: { query: 'minecraft fox' } })
+    // It is not a client tool call, and it never counts as a say.
+    expect(resp.toolUses.map((u) => u.name)).toEqual(['say', 'follow'])
+    expect(onSay).toHaveBeenCalledTimes(1)
+  })
+
   it('without onSay the plain non-streaming create is used', async () => {
     createMock.mockResolvedValueOnce({
       content: [{ type: 'text', text: 'fine.' }],

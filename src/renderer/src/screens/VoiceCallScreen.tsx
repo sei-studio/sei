@@ -73,6 +73,9 @@ async function persistBackdropPref(characterId: string, on: boolean): Promise<vo
   }
 }
 
+/** How long the backdrop controls stay up once a call goes live (260929). */
+const CALL_INTRO_CHROME_MS = 5_000;
+
 /** How close to the bottom edge the pointer must be to reveal the controls. */
 const CHROME_PROXIMITY_PX = 132;
 
@@ -111,6 +114,9 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   const reconnecting = useVoiceStore((s) => s.reconnecting);
   const lastHeard = useVoiceStore((s) => s.lastHeard);
   const lastSpoken = useVoiceStore((s) => s.lastSpoken);
+  // 260908: voice-pipeline notice (unavailable / substitute pack). A system
+  // line, styled apart from the companion caption so it never reads as speech.
+  const callNotice = useVoiceStore((s) => s.callNotice);
   const error = useVoiceStore((s) => s.error);
   const participants = useVoiceStore((s) => s.participants);
   const liveAt = useVoiceStore((s) => s.liveAt);
@@ -301,7 +307,23 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   // or has failed can always be hung up.
   const [nearBottom, setNearBottom] = useState(false);
   const [focusWithin, setFocusWithin] = useState(false);
-  const chromeRevealed = !backdropShown || nearBottom || focusWithin || status !== 'live';
+  // 260929: the bar also stays up for the first few seconds of a live call,
+  // so hang-up is seen once before it tucks away.
+  // Reopening a call that has run for a while (restore from minimize) starts
+  // hidden rather than flashing the bar.
+  const [introShown, setIntroShown] = useState(() => liveAt === null || Date.now() - liveAt < CALL_INTRO_CHROME_MS);
+  useEffect(() => {
+    if (liveAt === null) return;
+    const left = CALL_INTRO_CHROME_MS - (Date.now() - liveAt);
+    if (left <= 0) {
+      setIntroShown(false);
+      return;
+    }
+    setIntroShown(true);
+    const timer = window.setTimeout(() => setIntroShown(false), left);
+    return () => window.clearTimeout(timer);
+  }, [liveAt]);
+  const chromeRevealed = !backdropShown || nearBottom || focusWithin || introShown || status !== 'live';
   const onStagePointerMove = (e: React.PointerEvent<HTMLDivElement>): void => {
     if (!backdropShown) return;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -523,6 +545,13 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
                 {lastHeard ? <p className={styles.captionUser}>{t('You: {text}', { text: lastHeard })}</p> : null}
               </div>
             ) : null}
+            {/* Voice notice (260908): shown regardless of captions — it is a
+                status line about the call's voice, not a caption of speech. */}
+            {callNotice ? (
+              <p className={styles.captionNotice} role="status">
+                {callNotice}
+              </p>
+            ) : null}
 
             {/* The demoted call cluster: small round tiles, no names, the same
                 compact pills the in-game chrome row uses. */}
@@ -694,6 +723,21 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
             <p className={styles.captionUser}>{t('You: {text}', { text: lastHeard })}</p>
           ) : null}
         </div>
+      ) : null}
+
+      {/* Voice notice (260908): a status line about the call's voice (pack
+          missing / substitute voice / paused). Deliberately OUTSIDE the
+          captions gate — like the STT fallback prompt below, it is a system
+          notice, not a caption of anything the companion said. */}
+      {callNotice ? (
+        <p
+          className={
+            backdropShown ? `${styles.captionNotice} ${styles.captionsOnArt}` : styles.captionNotice
+          }
+          role="status"
+        >
+          {callNotice}
+        </p>
       ) : null}
 
       {/* Cloud-STT hiccup on a model-less call: a non-blocking offer to install

@@ -122,13 +122,24 @@
   color: var(--accent);
 }
 
+/* Disabled with a reason (W9 vision gate): dimmed, no hover accent, but the
+ * cursor still reaches it so the title tooltip can explain why. */
+.iconBtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.iconBtn:disabled:hover {
+  color: var(--text-2);
+}
+
 /* The surface this button opens is currently showing (phone on the call view). */
 .iconBtnActive {
   color: var(--accent);
 }
 
-/* ── One-time Backseat tip (260803) ─────────────────────────────────────────
- * A small card under the Backseat button with a tail pointing up at it. The
+/* ── One-time games tip (260929; was the Backseat tip, 260803) ──────────────
+ * A small card under the games button with a tail pointing up at it. The
  * header is the top of the window, so it can only hang downward, over the
  * message list.
  *
@@ -139,7 +150,7 @@
  * z-index 3). It stays far below the tutorial scrim (4000), which does not
  * matter in practice because the predicate hides the card while the tour runs.
  */
-.backseatWrap {
+.tipWrap {
   position: relative;
   display: inline-flex;
 }
@@ -168,7 +179,9 @@
 .tipTail {
   position: absolute;
   bottom: 100%;
-  right: 20px;
+  /* Centred under the 34px button: the card's right edge sits 8px past the
+   * button's, and absolute offsets start inside the 1px border. */
+  right: 19px;
   width: 10px;
   height: 10px;
   margin: 0 0 -6px 0;

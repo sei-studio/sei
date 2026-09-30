@@ -60,9 +60,14 @@ boundaries are load-bearing — respect them.
   sessions are fully independent. **Two bots may never share an in-game
   username** (the world kicks the second with `name_taken`), so `summon` refuses
   a colliding effective username before forking (the renderer pre-checks and
-  shows a popup; the supervisor is the authoritative backstop). Summon has a
-  hard **30s timeout** (`SUMMON_TIMEOUT_MS`); stop has a 10s timeout then
-  escalates to kill. The in-game username is `effectiveMcUsername(character)` in
+  shows a popup; the supervisor is the authoritative backstop). Summon has two
+  watchdogs: a **60s cold-boot budget** (`BOOT_TIMEOUT_MS`, fork to the bot's
+  `init-ack`) and then a **30s ready budget** (`SUMMON_TIMEOUT_MS`, `init-ack`
+  to `summon-ready`); stop has a 10s timeout then
+  escalates to kill. A stop during a PENDING summon cancels it instead: the
+  child is killed at once and the summon rejects with `SUMMON_CANCELLED`
+  (silent, no error status or diagnostic). App quit (`shutdown()`) is
+  hard-capped at 4s. The in-game username is `effectiveMcUsername(character)` in
   `src/shared/characterSchema.ts` (`character.username` ?? sanitized name).
 - IPC contracts and shared Zod schemas live in `src/shared` and are the single
   source of truth for both sides of the bridge.
@@ -154,8 +159,9 @@ coordinates — it calls registered tools only.
 - Minecraft action set: `src/bot/adapter/minecraft/registry.js` — **18 world
   actions** registered (follow/come/goto, dig, find, gather, build, place,
   equip, consume, sleep, container ops, etc.).
-- Plus **3 brain tools** wired by the orchestrator: `remember`, `forget`,
-  `end_loop`.
+- Plus the brain tools wired by the orchestrator: `remember`, `forget`,
+  `setGoal` / `clearGoal`, `end_loop`, `say`, `quit_game`, `end_call`, and
+  (260909) the web pair `search` / `visit` (below).
 
 **Speech (say() tool).** The LLM's **text output is a private scratchpad** — it
 is NOT sent to chat. The bot speaks only by calling the **`say` tool** (a
@@ -279,6 +285,88 @@ skeleton fight happened in complete silence and the player found out by asking
 "are u ok?"), and the mid-action check-in's blanket "call NO say()" now exempts
 taking damage.
 
+**Conversation continuity in the game brain (260921).** One 17-minute Stardew
+session (Lyra, 48 loops, 166 spoken lines) showed repeated lines while the
+player was silent, a question she "did not see", conflicting answers, and web
+searches the player never benefited from. None of it was fixed by filtering
+what she says; every cause was something her prompt did not contain or a turn
+that ran at the wrong time. The pieces, all in `src/bot/brain/` and pinned in
+`orchestrator.conversation.test.js`:
+
+- **Quiet is measured from the END of her turn** (`fsm.js`). The idle timer
+  counted from an event's ARRIVAL, so at the agentic 5 s cadence it fired while
+  the reply to that event was still generating (a turn takes 4-8 s), queued
+  behind it, and dispatched the instant the turn closed (measured: 3 ms after).
+  The timer callback now skips while a dispatch is in flight and `processNext`
+  re-arms it when the dispatch finishes.
+- **A line she just said holds the floor** (`REPLY_WINDOW_MS` 20 s,
+  `replyWindowRemainingMs`, folded into `idleFallbackMs` in `brain/index.js`).
+  This is SCHEDULING, not a gate: nothing she decides to say is dropped. 5 s is
+  sized for resuming work and is shorter than the time it takes to open the
+  game's chat and type (the player's replies landed 3-15 s after her lines), so
+  her question was followed by an idle turn nobody could have answered yet, and
+  an idle turn is nudged to speak. The window applies only while her line is
+  the last thing said, and opens when the PACED line is readable
+  (`_lastChatSendDeadline`), not when it was decided. Replayed over the session:
+  35 of its 40 idle turns would have been deferred.
+- **Her lines are recorded when DECIDED, not when the paced send fires**
+  (`emitChatMessages`). With realistic typing a line reaches chat 1-6 s after
+  the turn that wrote it, and a turn composed inside that gap did not know the
+  line existed. That is how "we can sell the stone and fiber at the shipping
+  bin" was followed 8 s later by "the rocks don't do much".
+- **One chronological transcript replaces the two one-sided lists**
+  (`convoMemory.formatConversationBlock`, seed block `recent_conversation`,
+  header `SEED_HEADERS.conversation`). Two lists hide the ORDER, and the order
+  is the information: a question followed by an unrelated line of hers looks
+  identical to an answered one. The same block now rides every mid-loop player
+  line (`interruptTurnText`); those turns used to carry the new line ALONE, with
+  the only transcript being the seed's, as old as the loop.
+- **"MID-ACTION, KEEP GOING" only when something is running.**
+  `extractPriorTask` returns the last tool call whether or not it finished, so a
+  line that landed between actions was told an action was still running. The
+  model re-issued the gather and wrote its answer in the private scratchpad.
+  `interruptTurnText` now keys on `loop.inFlight` (or a background action such
+  as follow).
+- **A player line answered with actions only is delivered once more**, flagged
+  as unanswered (`_unansweredRetried`, through the action-tick channel or the
+  loop's next call, whichever comes first). The scratchpad is NOT salvaged on
+  these turns: beside a world action it is usually reasoning about the chore.
+- **What a web lookup FOUND outlives its loop** (`lookups.js`, seed block
+  `lookups`). She searched in three separate turns inside 50 s (four billed
+  searches); no turn could see what the previous one found, so each re-derived
+  the answer in new words, and by the fourth the search text about multiplayer
+  cabins had become "your cabin's in a different spot than mine". The log keeps
+  the query, her own post-result conclusion and the line she told the player.
+  The baseline also now says WHEN to search (on her own, when unsure of a
+  factual answer): the server-side `web_search` tool is schema-less, so before
+  this nothing in the prompt said when, only that she could.
+- **A game event is not someone speaking** (`gameEvent: true` from the Stardew
+  adapter's `systemLine`). "A new day" was framed as a line spoken to her with
+  a mandatory reply, and was filed in the transcript as a speaker.
+- **The one text filter is an exact match**
+  (`isExactRepeatSincePlayerSpoke`): every segment equal, after normalization,
+  to a line of hers newer than the player's last line. It does not attempt
+  similarity, for the 260731 reason above. Since 260925 it works per SENTENCE
+  (`splitRepeatedSegments`): the v0.6.5-beta.2 Stardew session re-asked an
+  unanswered question as "i'm here. <the same question>", which the
+  whole-line check let through. Now the repeated sentence is dropped, the new
+  one is sent (`joinSegments` re-joins survivors so they split back the same),
+  and the say() result tells her what was held back and not to answer it
+  for the player.
+- **Speaker labels cannot collide with her name (260925).** Player lines in
+  the transcript read `player (<name>)` (`convoMemory.playerLabel`), sibling
+  companions keep their own name (`pushPlayer(..., {companion})`, fed from the
+  adapters' `fromCompanion`), and her own lines stay `you:`. The same session's
+  player went by "Sei", so the transcript said `Sei: ...` and the app framing
+  said "Sei typed this in the Sei app", and her scratchpad attributed her own
+  question to the player and answered it. The conversation header says a
+  question of hers that has not been answered is waiting on them.
+
+Not done, on purpose: no similarity dedupe, no cancelling of a queued line when
+the player speaks first (it is now in her transcript, so the reply that follows
+is coherent with it). Unverified live; the numbers above are a replay of the
+log's timing, not a new session.
+
 **Memory.** Per-character memory directory.
 - **Writes are LLM-driven:** the model calls `remember()` / `forget()` to
   maintain an append-only `MEMORY.md`; `PLAYER.md` tracks the other player.
@@ -324,11 +412,287 @@ questions) and the CharacterPage gear menu → Knowledge popup
 (`KnowledgeModal`, available for ALL characters). Prompt framing treats
 knowledge strictly as reference DATA, never instructions.
 
+**Portrait regenerate + versions (260909).** Owned characters (predicate:
+`!is_default && (!owner || owner === currentUserId)`, the CharacterPage
+`canShare` rule; `kind:'unique'` Awakened companions ARE owned even though
+`viewOnly` blocks their Edit modal) can regenerate the card image up to
+`MAX_PORTRAIT_REGENS` (3, lifetime, `characterSchema.ts`) and switch between
+every version. Only the version on display reaches the cloud.
+
+- **Storage:** versions are sidecar files `<uuid>-v<n>.png` in the portraits
+  dir (served as-is by `sei-portrait://`, filename gate already allows them),
+  recorded in `character.metadata.portrait_versions` / `portrait_active` /
+  `portrait_regen_count` (metadata rides the cloud row verbatim, no schema
+  migration). The first versioned write snapshots an existing canonical file
+  as v1 `'original'`; uploads via `PortraitImagePicker` are recorded as
+  `'upload'` versions (max `MAX_PORTRAIT_VERSIONS` 8, oldest inactive upload
+  evicted). **The list is reconciled against disk on every read** (260917):
+  the metadata syncs with the row but the sidecars do not, so on a second
+  device `portraitStore` lists only the recorded versions whose files exist,
+  treats a `portrait_active` it does not have as "the canonical is showing",
+  refuses to select a phantom ("Unknown portrait version", not ENOENT), and
+  snapshots that device's canonical before the first write that would
+  overwrite it.
+- **Selecting = copying onto the canonical file.** Cloud upload reads
+  `<uuid>.png` unconditionally (`syncQueue.ts`, `ipc.ts` moderation +
+  migration paths) and the storage object name is server-derived, so
+  `selectPortraitVersion` copies the sidecar's bytes onto the canonical file
+  through `applyPortrait`, which saves the character and enqueues the mirror.
+  The md5 `.uploaded.json` marker in `cloudCharacterClient` skips a re-upload
+  of bytes already in the cloud (switching back is free).
+- **Generation:** `regeneratePortrait()` in `uniqueGeneration.ts` reuses the
+  cast pipeline's private pieces (`assemblePortraitPrompt`,
+  `generatePortraitPng` KusArt-via-proxy, `zoomToCharacter`,
+  `toCompliantPortraitPng`, `resolveKusartStyleId`). Prompt source is the
+  stored soulcaster sheet when present, else name + description + persona
+  source. Needs a session JWT in every backend mode (the proxy route is
+  JWT-authed); signed-out returns `not_signed_in` and the modal disables the
+  button with "Sign in to regenerate." Per-character single-flight in
+  `ipc.ts` (a second call joins the in-flight promise, so there is no
+  `busy` result); typed results `not_signed_in | limit | not_found |
+  generation_failed | network`, the cap refusal carrying
+  `code = PORTRAIT_REGEN_LIMIT` (constant + copy in `characterSchema.ts`,
+  defined once). Injectable `generate` is the test seam
+  (`uniqueGeneration.regen.test.ts`).
+- **Cleanup:** `src/main/portraitFiles.ts` (`deletePortraitFiles`) removes
+  canonical + sidecars + the md5 marker, and is the ONE sweep run by character
+  delete, remove-from-library and `removePortrait` alike (removePortrait used
+  to unlink canonical + sidecars itself and leave the marker, so a later
+  re-upload of identical bytes looked already-uploaded); `_user.png` /
+  `_bg.png` never match.
+- **IPC:** `chars:portrait-versions`, `chars:portrait-regenerate`,
+  `chars:portrait-select` (uuid-gated; select also pins `file` to
+  `^<uuid>(-v\d+)?\.png$`). UI: `PortraitVersionsModal` from the
+  CharacterPage gear menu ("Card image", owned only) and a `Regenerate`
+  button beside the Appearance tab's picker. `bumpPortraitRef()` in
+  `portraitSrc.ts` cache-busts the canonical image after a swap.
+
 The bot has **one entry path** (`src/bot/index.js`): forked by Electron, it
 waits for an `init` message over the port. (The standalone `sei` CLI was
 removed 260722.)
 
+**Web search (260909).** Two backends, chosen per session by
+`webToolsFor()` in `src/bot/web/webTools.js`:
+
+- **Anthropic sessions (cloud proxy + Anthropic BYOK): Anthropic's own
+  server-side `web_search` tool** (`SERVER_WEB_SEARCH_TOOL`, type
+  `web_search_20250305`, the variant Haiku 4.5 supports, `max_uses` 3 per
+  request) plus our `visit`. The search runs INSIDE the response: the model
+  searches, reads, and answers in one turn; no scraping, no key, no
+  dependence on the user's network. The proxy forwards the body verbatim so
+  the tool passes through; each search is billed by Anthropic per search on
+  top of tokens (the proxy's ledger does not meter that yet). Two mechanics:
+  `stop_reason: 'pause_turn'` (a long search) is resumed by pushing the
+  assistant content back verbatim and calling again (bot `runIterations`,
+  chat hop loop); and the `server_tool_use` + `web_search_tool_result`
+  blocks stay in the loop history verbatim: the docs say a continuation
+  whose `encrypted_content` is missing or modified is a 400, and dropping
+  the whole pair is untested from this machine (region gate). The cost is
+  bounded to one loop; chat rebuilds its transcript from text rows. The bot's cached
+  tool prose skips schema-less server tools. On the blocking typed-chat path
+  the text written BEFORE the search ("lemme check") is pushed immediately and
+  only the post-search text is the reply (`splitTextAroundServerSearch`).
+- **Every other provider (OpenAI-compatible, Gemini, Ollama): our
+  `search()` / `visit()`**, below. Capability flag: bot
+  `anthropicProvider.CAPABILITIES.serverWebSearch`; main `llm.kind ===
+  'anthropic'`. The "Before searching, let the player know" line sits as
+  literal text in both baselines (promptLibrary.js must stay import-free for
+  the prompt-editor script) so the announce rule holds on either backend.
+
+**Client web search: `search()` / `visit()`.** Two tools the model can call
+on EVERY conversational surface, with ONE rule that makes the loop: the
+result comes back as an ordinary `tool_result` and the surface's existing tool
+loop calls the model again, until it stops calling tools. Nothing new was
+built for the loop itself.
+
+- **Core:** `src/bot/web/webTools.js`, no mineflayer import and no static
+  Electron import: its only Electron touch is the OPTIONAL dynamic
+  `import('electron')` inside `electronFetchProvider`, which fails soft under
+  plain Node, so the bot (raw ESM, asar-unpacked), main (bundled) and the
+  test runner all import it. `createWebSession()` is the only state: a lettered result table plus a
+  per-turn budget. Tool definitions (`SEARCH_TOOL` / `VISIT_TOOL`) are shared
+  verbatim by both sides so the model meets one contract.
+- **Context is the cost, so the model never sees a URL.** `search(query)`
+  returns up to 5 lines `a. Title (host) - snippet` (title 70 chars, snippet
+  150, ~250 tokens total); `visit(ref, page?)` takes a letter (or a raw URL)
+  and returns ~2400 chars of de-boilerplated text per part with a `part n/m`
+  header. Labels run a..z, aa.. and are session-wide, so a `visit("b")` on a
+  later turn still resolves. HTML→text is regex-only (`htmlToText`): drop
+  script/style/nav/header/footer/aside, prefer `<main>`/`<article>` when
+  substantial, block tags → newlines. The tag regex tolerates `>` inside
+  quoted attributes (Wikipedia's `data-mw` JSON leaked otherwise).
+- **Fetch through Chromium, not Node (260909, rebuilt on `net.request`
+  260917).** `electronFetchProvider()` resolves Electron's `net` lazily
+  (available in main AND in the bot's utilityProcess): browser TLS
+  fingerprint + OS proxy. Measured from this machine: minecraft.wiki,
+  valorant.fandom.com and html.duckduckgo.com all answer 200 under Chromium's
+  stack where Node's undici gets a 403 / bot challenge. The first cut used
+  `net.fetch` with redirects followed and the FINAL `res.url` gated, and that
+  was a hole: `net.fetch` returns a constructed Response whose `.url` is ''
+  (electron.d.ts documents `.url` as incorrect), so the gate compared '' to
+  the request URL and never ran, and `net.fetch` cannot do
+  `redirect: 'manual'` (no 'redirect' listener, so a manual redirect is
+  cancelled). A public URL that 302'd to 127.0.0.1 / 169.254.169.254 / a LAN
+  host had its body returned to the model. The provider is now
+  `createNetRequester(net)`: `net.request({redirect:'manual'})`, headers via
+  `setHeader`, POST body written, and in the `'redirect'` event the caller's
+  gate runs on the redirect URL and hops are counted against `maxRedirects`
+  BEFORE `followRedirect()` (which Electron requires to be called
+  synchronously); a failing gate aborts the request, so nothing past the
+  redirect is read. Body cap, timeout and the outer abort signal match the
+  Node path. `fetchCapped` stays the single entry and accepts either
+  transport (`{request}` or `{fetch, manualRedirects}`); a follow-mode fetch
+  whose `res.url` is EMPTY is refused as "unknown landing", never trusted as
+  same-origin. Plain Node (tests, scripts) keeps the manual-redirect loop.
+  Electron gotcha met while probing: an ESM entry that top-level-awaits
+  `app.whenReady()` deadlocks (ready is deferred until the module evaluates);
+  probe scripts must be CJS or use `.then`.
+- **Game wikis are asked DIRECTLY (260909).** `GAME_WIKIS` (webTools.js) maps
+  game names in the query to MediaWiki hosts (minecraft.wiki,
+  valorant.fandom.com, wiki.leagueoflegends.com, terraria.wiki.gg, ...).
+  `search()` runs `api.php?list=search` on each matched wiki (game name
+  stripped from the query) in parallel with the general chain and lists the
+  wiki hits FIRST: for a game question the wiki page IS the answer, and the
+  engines are the ones that hand back a storefront homepage. The bot passes
+  `alwaysWikiHosts: ['minecraft.wiki']` so an in-game "how do i tame a fox"
+  hits the Minecraft Wiki without saying "minecraft". `visit()` on a known
+  wiki host reads through `action=parse` (cleaner than the rendered page,
+  answers from any network; HTML fallback), and an unknown `/wiki/` host
+  behind a bot wall is retried through its `api.php`. Fextralife (Elden Ring)
+  is not MediaWiki and is deliberately absent. A DuckDuckGo challenge OR a
+  timeout arms a 90 s cooldown (`ddgBlockedUntil`) instead of re-asking a
+  rate-limited or blackholed engine; Bing has the same clock
+  (`bingBlockedUntil`, timeout-armed). Keyless search endpoints (the
+  DDG/Bing/Wikipedia chain and the wiki `list=search` calls) run on
+  `searchTimeoutMs` (4 s), since the chain is sequential and used to cost
+  `fetchTimeoutMs` per engine on a dead network; keyed APIs and `visit` keep
+  `fetchTimeoutMs` (8 s). Every engine fetch carries the turn's abort
+  signal (`searchCtx` injects it, so a provider cannot forget), and a search
+  preempted mid-flight throws rather than returning stale results.
+- **Providers: keyless by default.** `providerChain()` tries a keyed provider
+  first only when its key is present (Brave `X-Subscription-Token` GET,
+  Tavily `Bearer` POST, Serper `X-API-KEY` POST; request/response shapes
+  verified against each vendor's docs 260909), then the keyless chain
+  DuckDuckGo HTML → Bing HTML → Wikipedia API. The first provider that yields
+  a result wins; a challenge page, an empty scrape, or (scraped engines only)
+  a result set that shares fewer than two query words with any hit
+  (`looksRelevant`: Bing from this egress returned dictionary entries for
+  "latent" when asked about the Latent Space podcast) moves the chain on.
+  Wikipedia is the floor that always answers. Parsers are pinned on real
+  fixtures in `src/bot/web/fixtures/`. From a flagged egress (this dev
+  machine sits behind a shared proxy) DDG serves a bot challenge to curl but
+  answers Node fetch with browser headers; Cloudflare-walled sites
+  (minecraft.wiki, wikiHow) refuse `visit` and the tool says so
+  ("blocks automated readers. Try another result.") instead of inventing.
+- **Safety:** `assertPublicHttpUrl` gates the initial URL and every redirect
+  hop before it is followed (http(s) only, no credentials, no
+  loopback/link-local/RFC1918 literals, `.local`), 5 hops max. On the
+  Electron path that gate runs inside `net.request`'s `'redirect'` event
+  ahead of `followRedirect()` (`createNetRequester`); on the Node path it is
+  the manual loop in `fetchCapped` (`redirect: 'manual'`, one fetch per hop).
+  A follow-mode transport that cannot report where it landed (empty
+  `res.url`) is refused, not trusted. Bodies are streamed with a 1.5 MB cap
+  and an 8 s timeout (4 s for keyless search endpoints); the outer loop's
+  abort signal cancels an in-flight fetch on both paths. Non-text content
+  types are refused rather than dumped. Pinned in `webTools.test.js`: a
+  private-host redirect is aborted before its body is read, a public one is
+  followed with the final url recorded, and hops past `maxRedirects` reject.
+- **Bot brain wiring:** `search`/`visit` are in `INLINE_METADATA` (result
+  fills synchronously, no suspend) but deliberately NOT in
+  `PERSONALITY_NAMES`, so they count as `movementCalls` and `continueLoop`
+  stays true: `runIterations` calls the model again with the result. Also in
+  `ACTION_VERB_SKIP` (no presence verb). Budget is per LOOP
+  (`config.web.max_calls_per_loop`, default 6, armed once per `runIterations`
+  entry via `loop._webBudgetArmed`). `config.web` (`src/bot/config.js`) is
+  bridged from main as `init.webSearch = {provider, api_key}`;
+  `enabled:false` withholds both tools. `_webSessionOverride` on
+  `createOrchestrator` is the test seam (`orchestrator.webSearch.test.js`).
+- **A line beside the lookup is nudged, not required.** The tool
+  description ends with one short line, "Before searching, let the player
+  know", so a lookup is not a silent pause. In the game a `say()` in the same turn as `search()`
+  is emitted up front by `emitSayCalls` like a say beside a dig, and the loop
+  still continues. In typed chat the blocking path kept only the LAST hop's
+  text, so "lemme check" was dropped; now a hop with text AND a web tool call
+  persists + pushes that text immediately over `chat:message` (the renderer
+  queues pushed companion lines with its typing pacing) and the returned
+  replies carry only what came after the results. Voice already streams every
+  hop's sentences.
+- **Chat/voice wiring:** `chatService` offers both tools on every text and
+  voice list (greeting, companion and idle turns included, so the cached
+  tools+system prefix stays identical across turn kinds), dispatches them
+  from a per-character session (`getChatWebSession`, 1 h idle TTL, in
+  `src/main/llm/webSearchSettings.ts`), and `MAX_HOPS` went 3 → 6. Chess,
+  Draw! and backseat do NOT offer them (game turns, prompt-cache churn).
+  260917: the list is built in ONE place (`chatTools(llm, voice)`) so the
+  four voice turn kinds cannot drift, and the three SINGLE-SHOT voice turns
+  (greeting, companion reaction, idle nudge) no longer drop a lookup they
+  announced: `followUpWebTools` runs the response's web tool_uses (or resumes
+  a `pause_turn`) and makes exactly ONE follow-up call, bounded on purpose,
+  with the pre-search line spoken before the answer. Also fixed the same
+  day: when a server-side search and a client `visit()` rode ONE response
+  the pre-search line was pushed twice (the client-tool emit used the full
+  text instead of the already-split remainder), and `textOf` joins text
+  blocks with a space, not `''`.
+- **Settings:** the "Search" group in Settings (bottom, above About) is the
+  only UI: provider `Seg` (Auto (free) / Brave / Tavily / Serper) plus a
+  masked key editor shown only for a keyed provider. Persisted as
+  `UserConfig.web_search_provider` / `web_search_api_key` (both `.optional()`
+  with NO default so the renderer's whole-config literals keep typechecking;
+  absent = auto), plain in config.json like `provider_config` keys.
+  `resolveWebSearchSettings()` also honors `SEI_SEARCH_PROVIDER` /
+  `SEI_SEARCH_API_KEY` env overrides for development. A normal user never
+  opens the group: the keyless chain needs no setup.
+
 ---
+
+## Guided first moment (260926)
+
+A new player's first session ends in their companion's chat, with the
+companion greeting first and one concrete next step under the greeting. Before
+this, onboarding landed on Home: 24% of new installs never used any surface.
+
+- **Who gets it.** `firstMomentCompanion(res, suiId)` (`lib/firstMoment.ts`)
+  in `App.tsx` `handleOnboardComplete`, only on the `res.tutorial` branch (a
+  NEW player; the returning-user / `accountHasProfile` route passes
+  `tutorial:false` and never arms). The companion is the generated one, else
+  Sui. Every backend works: the greeting is the ordinary first-meeting turn on
+  `buildLlmProvider()`.
+- **Flow.** `useFirstMomentStore.arm(id)` starts a Minecraft install probe.
+  The tutorial still runs; its end (`TutorialOverlay.finish` ->
+  `enterFirstMoment()`) navigates to that companion's chat instead of Home.
+  `useChatStore.load()` on the empty transcript asks `greetingOptions` (waits
+  at most `MC_PROBE_WAIT_MS` for the probe) and passes
+  `chatOpened(id, {firstMoment: {primary}})`; main adds
+  `thoughtFirstMoment(primary)` after `THOUGHT_FIRST_MEETING`, so the greeting
+  (which already knows `preferred_name`) ends on the invitation. After the
+  whole greeting is revealed the store goes `ready` and `ChatScreen` renders
+  `FirstMomentCard` at the end of the message list (hidden while the tour is
+  active or a game is open). The full tour opens the chat at its say-hi step,
+  so the greeting can land mid-tour; the card waits for the tour to end.
+- **Buttons reuse existing paths.** Chess and Minecraft go through
+  `requestGameLaunch` + `openGame` (the Play together tiles), the call through
+  `startOrOpenCall`. Minecraft is offered only when a LAN world is open (then
+  it leads) or an install was detected; otherwise chess leads, with no install.
+  "Not now", any tile, or the player typing a message instead (`typed`)
+  retires the card for the session. Nothing persists; an account scope change
+  resets the store. LAN state is read from main at planning time (the state
+  main's greeting turn sees), falling back to the renderer's cached copy.
+- **Failure is silent.** An existing transcript, a chat already loaded this
+  app session (`already_loaded`), a message typed before the card was up
+  (`typed_first`), an empty greeting, a thrown greeting call or a planning
+  error settles the store as `failed`: the plain chat, no card, no error.
+  Main pushes the greeting's thoughts only after `prepareChatTurn` succeeds,
+  so a failed prep cannot leave "a button will appear" queued for the
+  player's first message. The one-time games tip is held back while the
+  moment is pending or showing (`shouldShowGamesTip.firstMomentLive`).
+- **Analytics (shape only, renderer `sei.track`):** `first_moment_shown
+  {primary, minecraft_offered, companion: sui|generated}`,
+  `first_moment_action {action: chess|minecraft|call|dismiss|typed, primary,
+  ms_since_shown}`, `first_moment_fallback {reason}`. Not session events, so
+  nothing to add to `SESSION_EVENTS`.
+- **Verify in a tab:** `?dashshot=chatfirst` (chess + Minecraft + call),
+  `&nomc=1` (chess + call), `&lan=1` (Minecraft leads). The harness greeting is
+  a stub; the live greeting's wording is the model's.
 
 ## Chess minigame (260710)
 
@@ -379,6 +743,32 @@ together" tiles. **Mutually exclusive with a Minecraft summon** per character.
   ChatScreen, compressing chat to a narrow column.
 - **Packaging:** onnxruntime-node ships all-platform prebuilds; per-OS `files`
   excludes in `electron-builder.yml` drop the foreign ones.
+- **First-game friction (260929).** Real usage: 10 of 35 games ended at 0
+  moves (some after minutes at the board) and players won 2 of 16 decided
+  games. Four fixes, each with its own module and test:
+  - The model download (`modelStore.downloadModelFile`) has a connect budget
+    and a stall budget per attempt and walks the sources up to 3 times
+    (`MODEL_DOWNLOAD`). A failed warm-up no longer ends the game: it stays
+    `preparing` with `warmupError`, main pushes `pct: -1` with a CODE
+    (`download_failed` / `engine_failed`, never the raw message), the panel
+    shows friendly copy and Try again (`chessStart` on that game re-runs
+    `warmUp`), and `surface_error model_download_<kind>` records why.
+  - `chess_game_ended` carries `stage` (`downloading`, `download_failed`,
+    `engine_failed`, `waiting_first_move`, `midgame`), `player_moves` and
+    `nudges`, so a failed download no longer reads as a player quitting.
+  - One in-character "your move" nudge per player turn (`turnNudge.ts`):
+    after `nudgeFirstMoveMs` (20s) of quiet on the first move, or
+    `nudgeMoveMs` (120s) later on. Quiet counts from the later of the turn
+    start and the last chat line, so talking pushes it back. It rides the
+    session queue as `sei:nudge` and runs an idle turn with a nudge note.
+  - Adaptive strength (`chessDifficulty.ts`): a player loss drops that
+    character's next game 100 Elo, a win raises it 50, within -600/+200 of
+    the persona Elo and 400-2000 absolute. Stored per character in the
+    profile config (`chess_elo_offsets`, main-owned), never on the character.
+    Only `source: 'auto'` profiles adapt; a hand-set Elo plays as set.
+    Draws, abandoned games and a resign before the player's third move
+    (`minPlayerMovesForResign`, a way out rather than a result) leave it.
+    `ai_elo` is the effective Elo; `ai_elo_base` / `elo_offset` ride along.
 
 ## Draw! minigame (260727)
 
@@ -386,7 +776,8 @@ Turn-based sketch guessing, launched from the "Play together" tiles. **Mutually
 exclusive with a Minecraft summon and with chess** per character (the shared
 `lib/gameLaunch.ts` gate).
 
-- **Shape:** always `ROUNDS` (3) rounds; the 1-5 setup chooser was removed
+- **Shape:** always `ROUNDS` (3) rounds (the intro game below is the one
+  exception); the 1-5 setup chooser was removed
   260728, since it is a choice nobody has the information to make before their
   first game and does not want to make again after it. MIN/MAX survive only as
   the bounds main clamps an incoming `drawStart` to. Each ROUND is two
@@ -400,6 +791,33 @@ exclusive with a Minecraft summon and with chess** per character (the shared
   word directly, so `wordChoices` in the pushed state never reveals anything it
   drew. "Play again" returns to the setup screen (`drawNewGame`) rather than
   restarting in place, so the player lands somewhere they can stop.
+- **The intro game (260929).** Real usage: 12 of 18 games abandoned, 4 at 0
+  turns about 70s into the player's own first drawing turn. So until a
+  player has watched the character's intro turn end
+  (`UserConfig.draw_intro_done`, main-owned, set by `markIntroSeen` in
+  `endTurn` on a guess or timeout of the first drawer's turn, NOT on game
+  completion: quitting during their own turn after it still retires the
+  intro, else a player who always left there got the intro forever), the
+  game is the intro: `INTRO_ROUNDS` (1) round, and the CHARACTER draws first
+  (`Session.firstDrawer`), with one system line telling the player to type
+  guesses. Main decides it when the session is created and says so in
+  `DrawGameState.intro`, so the setup copy matches; Start keeps the setup
+  screen's verdict, and "Play again" or a Start after `Session.introSeen`
+  is always a normal game (a quit or the credit wall during the character's
+  turn leaves the intro in place). Turn order lives in `turnOrder.ts`
+  (`nextTurn` / `isLastTurn`): never test "the character just drew" for
+  game over again. The contract block says the character goes first only
+  in the intro. Model-facing intro text (`introModelText`) names the
+  player, or says "the player" when no name is set; never "they".
+- **Turn analytics (260929).** `draw_turn_ended {round, rounds, turn_number,
+  drawer, phase: pick|drawing, outcome: guessed|timeout|abandoned|
+  account_switch|credit_wall, turn_ms, strokes, guesser_lines, intro,
+  paused}` fires when a turn resolves AND for the turn that was live when
+  the game was quit, switched away from or ended at the credit wall (a
+  `pick` row = the player never chose a word). `turn_ms` on a
+  guessed turn is the guess latency. Not a session event (no `duration_ms`).
+  `draw_game_started/_ended` also carry `intro` and `first_drawer`, and
+  `_ended` the `phase` it stopped in.
 - **The chat log is a PROMPT, and it used to leak (260728).** Every system line
   is replayed verbatim into the character's next call, so
   `"Round 1 of 3. Your turn to draw: horn."` did two things at once: handed the
@@ -820,6 +1238,14 @@ GONE; the overlay is AI-only. Design doc: `.planning/avatar-v06-260804.md`.
   window while Sei is not the active macOS app is an activation click — it
   raised the main Sei window and never reached the handle. Geometry persists in
   `UserConfig.avatar_overlay`, written by MAIN only (not renderer-settable).
+  **Every SETTLED bounds change is clamped fully inside the matched display's
+  work area** (`clampToWorkArea`, 260819: creation, display change, the resize
+  stream, move END; the caption window's move end matches) — geometry
+  persisted on a big monitor otherwise landed the window off-screen or bigger
+  than a small screen, and off-screen chrome on a click-through window is
+  unrecoverable by mouse. The move STREAM itself stays unclamped so a drag
+  can cross displays 1:1 under the pointer; persisted tile sizes keep their
+  requested values, so the full size comes back on a bigger monitor.
   `setContentProtection(true)` keeps the overlay out of every screen capture
   (including Sei's own backseat share), unless `UserConfig.avatar_in_captures`
   is on (260807) — the share picker's "Show avatar in screen recordings"
@@ -875,7 +1301,18 @@ GONE; the overlay is AI-only. Design doc: `.planning/avatar-v06-260804.md`.
 - **Live2D store** (`src/main/avatar/avatarStore.ts`): a model ZIP imports
   into `<profileRoot>/avatars/<id>/` (manifest.json + extracted tree),
   LOCAL-ONLY — nothing rides metadata, a character adopted elsewhere just
-  falls back to the portrait tile. Import NORMALIZES the stored model3.json
+  falls back to the portrait tile. **Cloud seam (260819, upload side not
+  built yet):** `cloudAvatarOf` in characterSchema reads an optional
+  `metadata.avatar = {url, size_bytes}` descriptor (https only; malformed =
+  null). When present and nothing is imported locally, the profile's Live2D
+  tab swaps the upload box for a user-uploaded-content disclaimer (many free
+  Live2D models forbid commercial use, so the copy must say Sei is not
+  affiliated + point at Report; 'live2d' is a report reason, mirrored in the
+  proxy's `REPORT_REASONS`) and a "Download (xx MB)" button — `avatar:
+  download` resolves the URL from the character row IN MAIN (the renderer
+  only names the character) and runs the fetched zip through the same import
+  pipeline. The upload state carries a give-credit-in-your-description line
+  for third-party avatars. Import NORMALIZES the stored model3.json
   because real VTuber exports ship expressions the settings never reference
   and sometimes no EyeBlink group (both measured on the first test model):
   it registers every `*.exp3.json`, ensures the EyeBlink group, maps
@@ -894,6 +1331,24 @@ GONE; the overlay is AI-only. Design doc: `.planning/avatar-v06-260804.md`.
   v1 store's on-disk tree so early imports heal in place.
   Delete/remove-from-library/profile-import handle the dir like
   `knowledge/`.
+- **Simple rig avatars (260817).** The same import flow accepts a second zip
+  kind: `rig.json` + aligned full-canvas PNG layers (the chibi-rig pipeline's
+  output, `~/slop/sei-studio/chibi-rig`), for characters without a real
+  Cubism model. Detection is by content — no model3.json with a Moc but a
+  rig.json present — and the manifest carries `kind: 'rig'` (absent =
+  'live2d'); `parseRigSpec` in avatarStore validates the spec and the same
+  ASCII-safe rename rewrites its refs. Rendering: hosts use
+  `lib/avatar/AvatarView.tsx` (picks by manifest kind), never Live2DView
+  directly; `lib/rig/RigView.tsx` is a 2d-canvas runtime implementing blink
+  (160 ms triangle), the same speaking/levelRef mouth drive as Live2D (two
+  open/closed patches with vertical squash), Live2DView's gaze
+  (wander/cursor alternation + constant-speed glide) mapped to a head-group
+  pixel translation, and damped spring followers for hair layers
+  (`physics: {k, c}` per layer — hair chases the head, overshoots,
+  re-converges at rest). Everything downstream (participant `live2d` flag,
+  lip-sync level arming, cursor polling, overlay camera) works unchanged
+  because the flag just means "has an imported avatar". Rigs have no
+  expressions, so emotion/accessory plumbing no-ops on them.
 - **Rendering** (`src/renderer/src/lib/live2d/`): pixi.js 7 +
   `pixi-live2d-display-lipsyncpatch` (cubism4), ALL dynamically imported.
   The proprietary Cubism 5 Core is fetched at build time by
@@ -1285,19 +1740,20 @@ The design and its measurements are committed at
   when the call reaches `live`. It cannot be inline: the ~40 MB voice module's
   install gate can hold the dial for minutes or refuse it. The arm carries a
   180 s deadline, is re-checked against the wall clock before firing (timers
-  lag across sleep), and is dropped on `status === 'error'`. A one-time
-  localStorage tip (`lib/backseatTipPref`) hangs under the CHAT HEADER's
-  Backseat button, tail pointing up at it. Not the call controls: those only
-  exist once you are on a call, and a notice about a feature is worth nothing to
-  someone already that far in. **"Got it" is the only thing that retires it.**
-  Sharing used to as well, on the reasoning that someone who found the feature
-  does not need telling; live, that silenced exactly the people the beta notice
-  was for, since anyone who used backseat in an earlier build wrote the flag on
-  their first share. **The key carries both a version and the PROFILE SCOPE**
-  (`user.id`, or `local`): localStorage is one bucket for the whole app and is
-  NOT moved when the scope changes, so without the scope a second account on the
-  same machine inherits the first's dismissal. Bumping the version re-announces
-  to everyone without anyone clearing storage by hand.
+  lag across sleep), and is dropped on `status === 'error'`. The one-time
+  "NEW" tip card that hung under the header's Backseat button moved to the
+  GAMES button on 260929 ("New games added", announcing Stardew Valley and
+  Don't Starve Together;
+  `lib/gamesTipPref`, new key `sei.gamesTipDone.v1.<scope>` so everyone sees it
+  once). Its rules carried over: **it retires only on "Got it" or a click on
+  the games button itself**, never on using a feature some other way (the
+  Backseat version once retired on any share, and that silenced exactly the
+  players who had used backseat in an earlier build and were owed the notice).
+  **The key carries both a version and the PROFILE SCOPE** (`user.id`, or
+  `local`): localStorage is one bucket for the whole app and is NOT moved when
+  the scope changes, so without the scope a second account on the same machine
+  inherits the first's dismissal. Bumping the version re-announces to everyone
+  without anyone clearing storage by hand.
 - **UI (260803, 260804).** Entry is the share pill in `CallControls`; the picker
   is `ShareScreenModal` (a `ModalShell`, **Window / Entire screen as two tabs**
   since 260804 — stacked sections put the screens below the fold behind however
@@ -1418,6 +1874,847 @@ that has never been through a signed mac `dist` — verify it with `codesign` on
 the first one. (4) `salienceGate.ts` and its `SEI_GATE_*` env knobs are parked
 unreferenced rather than deleted; either revive them or remove them.
 
+## Minecraft setup wizard: the target version (260916)
+
+> Superseded in part by the games branch (260916, same day): the wizard now builds
+> ONE "Sei <version>" profile PER version with a picker in the setup list, and
+> readiness is per profile (`sei_ready_versions`). The version rule below
+> (newest supported, never last-played) still holds; see "Minecraft's setup
+> step, and the detection bug" in the Game adapters section for the current shape.
+
+The skin-setup wizard builds a "Sei" Fabric profile in the vanilla launcher,
+and **the version it builds it for is the newest one in minecraft-protocol's
+`supportedVersions`**, never the launcher's last-played version
+(`selectTargetMcVersion` in `src/shared/mcSetup.ts`, the only place the rule
+lives; `src/shared/minecraft-protocol-version.d.ts` types the CJS table for
+main and renderer alike). It used to take the last-played version with a
+pinned 1.21.4 fallback only when that was unreadable, so once Minecraft 26.2
+shipped (June 2026) any machine that had played it got a Sei profile the bot
+could not join, and the version-not-supported popup pointed the player at the
+profile Sei had just made for them. Measured on the 260914 support case (a
+new user who spent 30 minutes on it and gave up), and on 6 of the 13 users
+who tried a summon that week. CurseForge instances keep their own version:
+they carry their own loader and cannot be moved. The scanner now reports
+every Fabric profile's version (`McInstall.fabric_mc_versions`) so readiness
+means Fabric for a JOINABLE version plus the skin mod, not "Fabric exists".
+When the protocol bump lands, the wizard follows it with no change here.
+
+Two more things from the same case, since they are why he never got in:
+
+- **The Anthropic key is required only when Anthropic is the provider.** The
+  bot's `ConfigSchema` used to refine the `anthropic` sub-object alone
+  ("api_key required unless cloudMode"), which cannot see `llm.provider`, so
+  the one keyless provider (Ollama) shipped an empty key and died on config
+  validation before pinging the world, on every summon and every Minecraft
+  version. Every other provider passed by accident (its vendor key was copied
+  into `anthropic.api_key`). Now a top-level `superRefine`, pinned in
+  `src/bot/llmInit.test.js` with the production shape (empty key). If a
+  provider ever goes quiet at fork time, check this first.
+- **"I've been here before" + a login with no account resumes the scene.**
+  Google sign-in creates the account on the spot, so the returning branch used
+  to complete a brand-new player as returning: no config written, no name, no
+  companion, and the first summon refused with "your name is missing".
+  260917: the route is decided by whether the profile HAS A NAME
+  (`accountHasProfile` reads `preferred_name` off `sei.getConfig()`; main
+  backfills it from the cloud profile before the scope flips, and only the
+  app's own setup ever writes that column), so a veteran on a second machine
+  reads as onboarded and a minutes-old Google sign-in does not. The two age
+  heuristics (`signedIntoFreshAccount` under 10 minutes, `signedIntoExistingAccount`
+  over 48 h) survive only as the fallback when that read fails. A returning
+  login with no profile sends the scene
+  to the `no-account` phase: Sui walks back in, says so, and re-asks the
+  new-here question. The boot sign-in variant has no scene to resume and
+  replays the full one. A password sign-in cannot tell "no account" from
+  "wrong password" (same server error), so that panel names the way out.
+
+## Game adapters: Stardew Valley + Don't Starve Together (260908)
+
+The companion can be launched into the player's own Stardew Valley farm or
+hosted Don't Starve Together world the way it is launched into a Minecraft
+LAN world. Design and research: `.planning/game-adapters-260908.md` (+
+`.planning/research/game-adapters-*-260908.md`, `dst-survivors-260908.md`).
+Both tiles are `available: true` in `src/shared/games.ts` (flipped 260908 so
+the user can run the live checklist from the app itself); the live checklist
+(plan section 5, M3, per game) is still owed, and neither game self-launches
+(`selfLaunch` off: each needs a player-run install pass first). Settings
+hosts every game under ONE "Games" group (`GamesSettingsGroup`: left column
+picks the game, right column shows that game's registered section).
+
+- **Neither game has a mineflayer.** DST has no headless client and Steam
+  allows one instance per account; a Stardew split-screen farmhand is
+  gamepad-only. So in both games the companion is a BODY spawned by a
+  Sei-owned mod inside the host's own game, visible to everyone in the world,
+  and driven by the existing Node brain over localhost. The brain is not
+  forked: `src/bot/brain/*` is one implementation and each game supplies an
+  adapter (contract v2 in `src/bot/brain/types.js`).
+- **Discovery in main, protocol in the bot**, like Minecraft (`lanWatcher`
+  vs `adapter/minecraft/connect.js`). `src/main/games/<game>/watcher.ts`
+  answers "is a world open"; `src/bot/adapter/<game>/runtime.js` speaks the
+  game protocol. No game protocol code in main.
+- **Reflexes live in the mod, decisions in the brain.** Retaliation,
+  fleeing below a health floor, eating, darkness, end-of-day sleep run in the
+  game process at frame rate (the Minecraft `behaviors/*` loops are the
+  precedent) and report through the same `sei:attacked` / `sei:survival`
+  event vocabulary. The LLM issues closed Zod-typed verbs; composite verbs
+  (`gather(kind, count)`) loop mod-side so one call does a job.
+
+**M0, the shared seams (all three games plug into these):**
+
+- Bot: the composer `src/bot/index.js` is game-agnostic and dynamic-imports
+  `src/bot/adapter/<kind>/runtime.js` (`botUsernameFor`, `adapterConfigFrom`,
+  `checkJoinTarget`, `createRuntime(config, hooks) -> RuntimeHandle`), so
+  mineflayer never loads for a non-Minecraft session. `adapter.kind` is
+  `z.enum(GAME_KINDS)` with a real sub-schema per game in `src/bot/config.js`.
+  Adapter contract v2 (`ADAPTER_INTERFACE_VERSION = 2`): every Minecraft name
+  that had leaked into the brain is now an optional adapter member with a
+  Minecraft default in `src/bot/brain/adapterDefaults.js` (`gameName`,
+  `chatMaxChars`, `backgroundActions`, `progressActions`, `visionActions`,
+  `prefilterToolBatch`/`postProcessToolBatch`, `surfaceBaseline`,
+  `sessionEndClause`, `stuckNudges`, `eventAddendum` as the ONLY source of
+  idle/attacked/survival/death prose, `getWorldIdentity`, `createTelemetry`,
+  `classifyConnectError`), plus the optional `onIdleNudge` handler (a P3 idle
+  tick with a named reason, ignored before the first spawn).
+  `src/bot/brain/systemBlocks.minecraft.test.js` pins the Minecraft cached
+  system prefix and tool list BYTE-FOR-BYTE against a fixture generated on the
+  pre-refactor tree; touch the brain and that test tells you whether the model
+  sees anything different.
+- Main: `src/main/games/index.ts` `GameModule` registry (`effectiveUsername`,
+  `collides`, `watcher`, `getJoinTarget`, `joinTargetMissingError`,
+  `install`), registered from `src/main/index.ts`. `botSupervisor.summon(id,
+  game)`; every `BotStatus` carries `game`; the play row, `bot_session_ended
+  {game}` and `foldIfDue` (which Minecraft had been missing) key on the
+  module. `src/shared/gameIpc.ts`: `GameId`, the `WorldState` and
+  `GameDashboardSnapshot` unions, `world:*` and `gamedash:*` channels
+  (`lan:*` / `mcdash:*` stay as Minecraft aliases). The chat-surface `launch`
+  tool takes a `game` validated against catalog rows with `selfLaunch &&
+  available`.
+- Renderer: `registerGameSurface`, `registerSummonFlow`, `BOT_ERROR_ROUTES`
+  by `(game, errorClass)`, `registerGameSettingsSection`,
+  `registerGameSetupModal`; each game's `register*.ts` is imported once from
+  `App.tsx`. `useMcDashboardStore.launch[id]` is the game whose launch panel
+  is open. The controls window + status strip are shared
+  (`mcdash/McDashControls.tsx`, `games/GameControlsWindow.tsx`), not copied.
+
+**Game packs (260908, the user's decision 1).** Adapter runtimes are
+DOWNLOADED on first use, Minecraft included: its deps (`minecraft-data`
+429 MB, `prismarine-viewer` 392 MB, `gl` 218 MB on disk) live in the npm
+workspace `packs/minecraft` which the root package does NOT depend on, so
+electron-builder's npm collector (`npm list --omit dev` from the root) leaves
+them out of the installer: measured 1.1 GB -> 706 MB app, 48 MB zip. Root
+`npm ci` still hoists them, so dev and vitest are unchanged.
+`scripts/build-game-pack.mjs <game> --platform --arch` builds
+`sei-pack-<game>-<version>-<platform>-<arch>.zip` (Minecraft per platform
+with natives rebuilt against Electron's ABI and the same texture prunes as
+`electron-builder.yml`; Stardew and DST as `any-any` asset packs carrying
+the game-side mod under `assets/`); `pack.json` carries a `treeHash` over
+sorted paths + contents so a re-download is skipped when the content did not
+change. The release workflow builds every pack beside the app and the release
+job writes ONE `game-packs-<version>.json` manifest (sha256 per zip);
+`mirror-release.yml` mirrors it all to `dl.sei.gg/updates/`. Client:
+`src/shared/gamePacks.ts` (descriptors, asset names, mirror-first URLs),
+`src/main/games/packs.ts` (`getPackState`, `ensurePack`: manifest, download
+with progress, sha256 verify, jszip extract with traversal rejection,
+`installed.json`, older versions pruned, single-flight; dev short-circuits
+to the repo root, `SEI_GAME_PACKS_DIR` exercises the real path in dev),
+`game:pack-*` IPC, `useGamePackStore` + `GamePackCard` in every launch
+panel. **A treeHash match is not proof of a usable pack (260924).**
+v0.6.5-beta.1 shipped a 745-byte DST pack: the builder hashed the staged
+mod under `assets/` but zipped only `pack.json node_modules`, and the
+client's extractor required `node_modules/`, which failed every Stardew
+install (no node_modules in an asset pack) with ENOENT. Now the builder
+zips every staged entry and re-reads each zip
+(`scripts/lib/gamePackVerify.mjs`: treeHash re-derived from the zip bytes,
+file count, the game's required payload), CI builds the two any-any packs
+for real on every push, and the client checks `GAME_PACKS[game].requiredPaths`
+(+ pack.json `files` on re-link and extract), so a payload-less install
+reads as missing and is downloaded again even when its treeHash matches. The supervisor awaits `ensurePack(game)` BEFORE `startedAtMs` so a
+multi-minute download never eats the 30 s summon deadline, and ships
+`packRoot` in the init payload; `src/bot/packLoader.js` registers a
+`module.register()` resolve hook (normal resolution first, pack second) plus
+NODE_PATH for the CJS `createRequire` path BEFORE the composer imports the
+runtime. **The composer's runtime import must stay dynamic**: a static
+import is hoisted past the hook. Two traps: the root `overrides` entry for
+`gl` must be the literal tarball spec (an override cannot reference a
+workspace dep), and a fresh worktree needs `npm install --ignore-scripts` to
+link `node_modules/@sei/*` before the pack builder's `npm list` sees the
+workspaces.
+
+**Stardew Valley (M1)** `native/stardew-mod/SeiCompanion/` (C#, net6.0,
+SMAPI >= 4.5, MIT; `PROTOCOL.md` beside it, mirrored in
+`src/shared/stardewIpc.ts`). Body = a vanilla `NPC` (the visible sprite,
+default placeholder art generated by `scripts/gen-stardew-placeholder-art.mjs`)
+paired with an invisible `BotFarmer : Farmer` shadow (Farmtronics pattern)
+that performs tool use, combat and placement through the game's own APIs;
+the shadow is NEVER added to `Game1.otherFarmers`. Decompile facts that
+shaped it, cited in code: `MeleeWeapon.DoDamage` returns early for a
+non-local farmer (combat goes through `location.damageMonster`),
+`Farmer.Money` throws for anyone but `Game1.player` (own wallet in
+`modData`), `Crop.harvest` hands items to `Game1.player` (re-implemented),
+`WarpPathfindingCache` ignores the Farm (own BFS over warps + doors),
+monsters target only `location.farmers` (contact damage is simulated by the
+reflex loop). Transport: `HttpListener` on `http://localhost:<port>/`,
+`GET /hello` unauthenticated for the watcher, `/ws?token=` NDJSON for the
+bot (every client dials `localhost`, not `127.0.0.1`, for Windows
+`HttpListener`). 20 verbs in `src/bot/adapter/stardew/registry.js`. Install
+(`src/main/games/stardew/install.ts`) ports SMAPI's GameScanner logic,
+downloads the SMAPI installer (mirror first), runs it `--install --no-prompt`,
+copies the mod from `<packRoot>/assets/stardew-mod/SeiCompanion`. The setup
+only runs while something is missing, so `launchStardew` calls
+`upgradeModIfNewer` before it starts the game (260925): when the pack's
+`manifest.json` Version is newer than the installed one it re-places the mod,
+keeping `config.json` (token + port). A game started through Steam instead
+keeps its old mod until the next launch from Sei. **Bump the manifest Version
+with every mod change** or installed copies never update. **The mod
+compiles only against the game's assemblies** (verified clean against
+1.6.15 + SMAPI 4.5.2 on this machine), so `assets/stardew-mod/` is a TRACKED
+build output the release packs with `--skip-build`; rebuild and commit it
+with any C# change. Verified live 260910 (see the Stardew live-test
+paragraph below): the SMAPI installer driven from Node on macOS, the NPC
+walking (with the barrier hop), fishing, tool swings, cross-map travel and
+the shop. Still unverified: combat in the mines (spring 5+), a farmhand.
+
+**Discovery has no setting (260909).** Main binds the first free port of
+`DST_DISCOVERY_PORTS` (27424..27428, `src/shared/dstIpc.ts`) and the mod
+probes the same list every beat until one answers `app: "sei"`, then sticks
+to it (three misses = probe again). The M2 build had one fixed port with a
+Settings row and a mod option that had to agree, which is a setup step a
+player cannot be asked for; `UserConfig.dst_port` survives as a dead field so
+old configs parse. The other two player steps the game itself forces are
+written into `DstSteps` (shown after the tile AND in the setup modal): the
+helper must be in the game BEFORE it starts (mods are indexed once, at game
+start, so `install.ts` reports `needsRestart` when the running game predates
+the helper files, from `ps`/CIM start times; a live heartbeat clears it), and
+a world must be hosted.
+
+**macOS: the DST helper installs with one in-app click (260925, measured).**
+The game's mods folder is `dontstarve_steam.app/Contents/mods/`, inside the
+app bundle, and it holds both `mods/sei/` and `modsettings.lua`. Since macOS
+13 writing into another app's bundle is gated: without a grant every write
+there from Sei is EPERM (the folder itself is owner-writable; the refusal is
+TCC). The binary hard-codes `../mods/` relative to its executable, so there is
+no other folder (research: `~/suisei/research/dst-mod-install-no-appmgmt-2026-09-25.md`).
+What works, measured on a signed v0.6.5-beta.2 with App Management OFF
+(`~/suisei/reports/dst-grant-test-260925/`):
+- **The Open panel grants the folder.** `dialog.showOpenDialog(win,
+  {defaultPath: modsDir, properties: ['openDirectory','treatPackageAsDirectory',
+  'createDirectory'], buttonLabel: 'Install helper', message})`; once the
+  player clicks the button with `mods` selected (it opens there, so one click),
+  macOS writes a `com.apple.macl` grant and Sei can mkdir, copy, delete,
+  rewrite `modsettings.lua` and write-temp-then-rename inside `mods`.
+  Choosing `dontstarve_steam.app` itself grants the whole bundle. Writes
+  outside the chosen folder stay EPERM. The grant survived a full quit and
+  relaunch of Sei; across a REBOOT or a DST UPDATE it is untested, which is
+  why the write is always tried first and the panel shown only on EPERM.
+- **Finder is exempt.** `tell application "Finder" to duplicate ... with
+  replacing`, sent through `/usr/bin/osascript` from Sei, shows one "Sei wants
+  access to control Finder" prompt and then works. A replaced file comes back
+  0644 with a fresh mtime. No automation entitlement: the event is sent by
+  osascript, and the test build had none. `NSAppleEventsUsageDescription` in
+  `mac.extendInfo` is only the prompt's explanation line.
+The flow (`installMod` + `grantAndInstall` + `finderInstall` in `install.ts`,
+the Electron half in `macGrant.ts`): a CLICK ("Add Sei's helper", "Try
+again", "Update helper", "Turn the helper back on"; `dst:install` passes a
+`MacGrant`) tries the plain install; on a darwin EPERM it shows the Open panel
+as a sheet on the Sei window, accepts only a realpath equal to `modsDir` or the
+`.app` (case-insensitive), re-shows it once with a hint for any other folder,
+and retries. Cancel means no: the one line plus "Try again", no Finder. A
+second wrong folder, a retry that still EPERMs, or a panel that threw goes
+to Finder: the mod and the new `modsettings.lua` are staged in a temp dir and
+duplicated in with replacing (a replaced folder is replaced whole, so an
+upgrade drops stale scripts), source file modes are put back where macOS
+allows (best effort), everything is read back, and the staging is removed.
+Only when both fail does `DstSteps` show the one App Management line plus
+"Try again". **Nothing without a click ever shows a dialog.** A game launch
+(`install.launch`) and the setup poll's re-enable run with no grant: a
+refused write counts as success when the helper is already current and
+enabled (the every-launch recopy is a refresh), otherwise the launch goes
+ahead with whatever helper is there and the module sets `grantNeeded` on the
+found state, so the helper step comes back with the button (cleared again
+when a later detection sees the helper current and enabled) (a disabled
+`modsettings.lua` shows as "Turn the helper back on" straight from detection).
+The error still PERSISTS as before: `useDstStore` skips the poll while an
+install is in flight and `mergeDetected` keeps an error until the helper is in
+the game. `dst:open-app-management` still exists, unused. Windows and Linux
+never take the grant path (their mods folder sits beside the exe; an EPERM
+there is a plain error). Unverified on a Mac as built: the whole flow end to
+end in a packaged build, the Finder "replace a folder whole" semantics, and
+grant persistence across a reboot or a DST update.
+
+**First live DST session (260909), and what it broke.** The end-to-end run
+(tile, helper, restart, Host Game, Launch, greeting, come, follow) works, and
+five things were wrong on the way that are worth knowing before the next
+adapter. (1) `composeSeedBlocks` sent an EMPTY `seed_cuboid_grammar` text
+block for any adapter without a cuboid grammar (DST, Stardew); Anthropic
+answers an empty text block with 400 and the cloud proxy surfaced it as a
+502, so the body spawned and every brain call failed. The block is now
+omitted and the cache breakpoint moves to `seed_player`. Suspect this shape
+first when a new surface's calls all fail while the same prompt works for
+Minecraft. (2) Goals were per character, not per game: the first DST turn
+read "reach stone pickaxe tier" out of `HEARTBEAT.md` and was told to pursue
+it. Non-Minecraft games now use `HEARTBEAT.<game>.md` (`src/bot/index.js`);
+Minecraft keeps the bare name so existing goals survive. (3) `come`/`follow`
+resolved the player only inside the 24-unit perception sweep, and "come here"
+is asked exactly when the body has wandered out of it (measured: 75 units,
+"no player nearby"). Both now fall back to the pinned player's USERID
+(`goto`/`follow` with `userid` in the mod, resolved against `AllPlayers`;
+`""` means nearest). (4) The mod's heartbeat rode `DoPeriodicTask`, which
+is sim time and stops on every server autopause (the survivor lobby, the
+pause menu), so Sei flapped the world open/closed; it is `DoStaticPeriodicTask`
+now. (5) `DisableLocalModWarning()` does NOT suppress the "Mods Installed"
+force-enable notice, which shows on EVERY launch until the player ticks
+"Don't show this again"; the step copy says to press "I understand". Also
+measured: the real menu path is Host Game (not Play, then Host), a saved
+world resumes through the survivor lobby, and DST DROPS all input while it
+is not the frontmost app (background computer-use clicks worked for the
+menus only because the game had focus; keystrokes never reached it), so a
+computer-use test has to `open` the app bundle first and can only talk to
+the companion through the Sei chat, which the brain frames as "NOT in the
+game with you" by design (the Minecraft framing; a player who IS the host
+gets the same wording).
+
+**Second live DST round (260909, later): pause, crash, second companion.**
+Verified: Pause holds the body still (a creature walked past a frozen
+Wickerbottom for 20 s), Resume and the Reactive/Proactive switch take,
+chop / pickup / goTo / come / gather / build (with a correct
+missing-ingredient result) all ran from one chat instruction, killing the
+game process stopped the bot inside 10 s with GAME_WORLD_NOT_OPEN and the
+"Try again" re-summoned into the resumed save, and a bot killed with SIGKILL
+raised the app's Connection lost modal. Left overnight, host AFK, the body
+DIED: dusk in the dark (Charlie), sanity to zero, then starvation; the
+death path itself worked (death event, memory write, DST_BODY_DIED, clean
+stop, play row written). ONE COMPANION PER WORLD is now enforced: the helper
+runs a single body and a second character's offer replaced the first
+through a link-reset race (Despawn posts "despawned" then drops the link;
+with `Net.Configure` called BEFORE `Companion.Summon` both landed on the new
+runtime, which quit, while the old one starved of heartbeats and quit too,
+leaving a brainless survivor). `GameModule.maxBodies = 1` +
+`DST_ONE_COMPANION` in the supervisor, and `DstLaunchPanel` names the
+occupant instead of offering Launch. The mod also gained a DEAD-RUNTIME
+WATCHDOG (`Net.DEAD_AFTER` consecutive transport failures -> `Net.onDead` ->
+Despawn "runtime gone", measured 4 s after a SIGKILL) and every Despawn step
+is pcall-guarded and logged, because the first watchdog despawn logged and
+still left a body standing (cause under investigation with the new logging).
+Computer-use notes for the next round: DST needs to be the frontmost app
+(`open` the bundle; Chrome steals focus back whenever the user browses), the
+first click on a DST widget only HOVERS it and the second fires (send single
+clicks twice, not a double-click), background screenshots of an unfocused
+DST are STALE frames, keystrokes never reach the game, offline mode cannot
+resume an online-created world (create a new one), and `client_log.txt` is
+rewritten per launch.
+
+**Every launch panel is a one-step setup window in the game's register
+(260909).** The three bot-backed games' pre-launch surfaces (`McLaunchPanel`,
+`StardewLaunchPanel`, `DstLaunchPanel`) share one shape, centered on the
+game art: title, pack card, an OPTIONAL setup window, the big button, the
+help link. The window is `components/games/SetupStepper.tsx`: it shows ONE
+step at a time (Step n of m, the step's copy and its one button, Back /
+Next, dots), so it is never taller than its tallest step and the big button
+stays in view under it. The first cut drew every step as a numbered list on
+the panel (McSteps, DstSteps) and the list pushed Launch below the fold of
+the game aside. The steps are DATA from a per-game hook
+(`useMcSetupSteps`, `useStardewSetupSteps`, `useDstSetupSteps`), each step
+carrying its live `done` flag, so the window always shows the current state
+rather than instructions, and the SAME hook feeds the token-styled setup
+MODAL (DstSetupBody still renders the whole list there). Two window modes:
+`setup` opens on the first step that is not done, FOLLOWS progress (a step
+completing moves it on) and closes itself once everything is done; `help`
+opens on step 1 for reading through. The panel's big button reads "Set up"
+until the ONE-TIME part is done (`complete`: Minecraft = Java found and a
+Sei-ready install or "Do not show again"; Stardew = `install.ready`; DST =
+the helper in the game), then "Launch"; under an open window on an
+unfinished setup it is a disabled "Launch", the goal. "How do I set up
+launch?" shows only once the setup is complete and reopens the same window
+in help mode. The per-session steps (a world open to LAN, a farm open, a
+hosted world) are the last step of each list; a Launch pressed without one
+still goes through the summon flow's own setup modal. Each panel paints the
+window and buttons in its game's register through `StepperSkin` +
+`StepSkin` (class maps + the game's button component): the vanilla
+Minecraft dialog and raised gray button in Monocraft (OFL, a face drawn
+after the game's typeface; Press Start 2P only works at label sizes), the
+Stardew wooden frame with the cream face in Pixelify Sans, the Don't Starve
+parchment sheet in Fredericka + Metamorphous, all as documented token
+exceptions in their own CSS modules. `.content` uses `justify-content: safe
+center` so a stack taller than the aside scrolls instead of clipping the
+title. Verify with `?dashshot=mclaunch|dstlaunch|stardewlaunch` (+`&ready=1`
+for the set-up state) on the dev server.
+
+**Minecraft's setup step, and the detection bug (260909).** Step 2 of the
+Minecraft list is what changed the product: the skin wizard used to be
+offered once at onboarding and once on the first Minecraft open, and a
+player who clicked past it had no way back but Settings. Now the step is
+offered on every open until an install is ready or the player presses "Do
+not show again" (`UserConfig.mc_setup_dismissed`; a ready install shows as
+done even after a dismissal). "Ready" is `shared/mcSetup.ts`
+`mcInstallReadyVersion`: a `versions/fabric-loader-<loader>-<mc>` profile
+for a version Sei's networking stack can join AND the companion-skin mod,
+so the scanner reports every Fabric profile's version
+(`McInstall.fabric_mc_versions`) and Fabric for a snapshot no longer counts.
+The VERSION half is what the wizard used to get wrong: it installed Fabric
+for whatever the launcher last ran (snapshots included) and fell back to a
+pinned 1.21.4 only when the version was unreadable, so once 26.2 shipped any
+machine that had played it got a Sei profile the bot could not join (the
+260914 support case: 6 of the 13 users who tried a summon that week hit the
+version popup on 26.2). **Since 260916 the launcher's last-played version is
+not an input at all.** `selectTargetMcVersion` (shared/mcSetup.ts, the only
+place the rule lives) takes the version the player picked in the setup
+list's row picker when Sei can join it, else the newest entry of
+minecraft-protocol's supported table; the hand-kept VERIFIED list is gone.
+**One "Sei <version>" profile per version**, each with its own game dir at
+`<.minecraft>/sei/<version>/` (the pre-260916 single profile used
+`<.minecraft>/sei/` and is left alone), because Fabric loads every jar in
+mods/ and the skin mod is built per version, so two versions cannot share
+one folder. Link manifests are keyed `installId@version` for the same
+reason. Readiness is per PROFILE: the scanner reads launcher_profiles.json
+and reports `McInstall.sei_ready_versions` (Fabric profiles whose own mods
+folder has the skin mod), falling back to the old whole-install rule only
+when that file is unreadable. The picker rides `runWizardInstall.mcVersions`
+(named in the main/ipc.ts zod or it is stripped). The bug: the
+first cut of `useMcSetupStore.scan` read `detectMcInstalls()` as a bare
+array while the bridge answers `{ installs }`, so every scan came back as
+"no Minecraft found" on a machine with a vanilla install and a Sei profile.
+The tests had stubbed the bridge with an array, which is why they passed;
+the harness stub and `McSteps.test.tsx` now use the real shape.
+
+**Stardew live test on this Mac (260910), and what it changed.** Run from
+the app with computer use on the dev Electron only (the game window was
+never granted, so a `DevCommands` gate in the mod's config.json unlocks
+developer frames: `newFarm` starts a game through the character menu with
+the intro skipped, `loadFarm` reloads a save from the title, `devSleep`
+ends the day through the bed path, `devTime` sets the clock, `devState` /
+`devDebris` / `devTiles` report state; the app never sets the flag). The
+game's `startup_preferences` was switched to windowed for the session (its
+borderless-fullscreen default put the Sei window on an unreachable Space).
+Findings, all fixed on `feat/game-adapters`:
+- SMAPI "installed" was `StardewModdingAPI.dll` alone; this Mac had the dll
+  (unpacked to compile the mod) with the vanilla launcher and no deps.json,
+  so the installer was skipped and the game started without SMAPI forever.
+  `smapiInstalledIn` requires the dll + `StardewModdingAPI.deps.json` + the
+  launch hook (`StardewModdingAPI.exe`; on macOS/Linux the `StardewValley`
+  script replaced by SMAPI's unix-launcher.sh, which runs
+  `./StardewModdingAPI`). `spawnGame` sets `SMAPI_NO_TERMINAL` so the
+  launcher does not open a Terminal window. A `require('../../paths')` in
+  the installer's temp-dir resolver broke inside the electron-vite bundle
+  ("Cannot find module"); it is a dynamic import now. The zip is 42 MB.
+- Every map exit carries the `NPCBarrier` tile property and both the NPC
+  pathfinder and the NPC's step collision honor it: the companion could not
+  leave the farm. `TryPath` searches as a farmer (the shadow) and drives
+  the NPC controller with that path; `BarrierHop` in Tick steps a stalled
+  body across (or off) an NPC-only tile. `IsWalkable` uses the same farmer
+  collision (the occupancy mask counted tilled soil as an obstacle).
+  `Router.Exits` adds buildings with an inside, or nothing routed home.
+- `Farmer.addItemToInventoryBool` refused every drop for the shadow (25
+  pieces of debris, nothing in the bag) and `Debris.collect` threw on the
+  cosmetic chunks: `TakeItem` manages the bag itself and `CollectDebris`
+  lifts the item out of OBJECT/RESOURCE/ARCHAEOLOGY debris.
+- A felled tree only finishes falling in the map's current-location update,
+  which runs for the host's map alone; with the host indoors the chop loop
+  swung to its cap (80 energy a tree, no wood). `ChopAt` ticks a falling
+  tree itself. This is the general shape of "the companion works on a map
+  the host is not on"; anything else that needs the location update
+  (debris landing, machines are fine, they run on the clock) owes the same.
+- Following undid every commanded door warp (the follow tick routed the
+  body back to the host inside); a commanded map change now clears the
+  follow target and says so. The observation is refreshed after every verb
+  so the turn after a warp reads the new map's coordinates. The owner line
+  names the host farmer, not the account's pinned name. Big stumps and
+  boulders are marked as needing an upgraded tool in the snapshot.
+- The heartbeat's "reachable next" list was EMPTY for Stardew, so the
+  companion asked the player what the move was three ways in a minute and
+  never acted. `observers/progression.json` is the first fortnight of a new
+  farm (patch, the chest seeds, 50 wood, forage, town, seeds at Pierre's, a
+  fish, the mines on spring 5, copper), each label an invitation with a part
+  for the player; predicates read the mod's new `farm` (whole-Farm counts)
+  and `host` blocks plus one-way latches from verb results. Latches live in
+  the adapter instance, so they reset on re-summon (owed: persist them
+  beside HEARTBEAT.stardew.md). The Stardew prompt gained a new-player rule
+  (one concrete step and your half of it, mechanics when relevant, controls
+  on request, stakes around the day's one big thing), a following rule, the
+  shipping bin, the player's crafting recipes and the first-spring calendar.
+- An app-typed line that lands mid-action was framed "NOT in the game with
+  you" (the Minecraft assumption) and its say() answer stayed in the game:
+  the framing is game-aware now and a loop that absorbed an app line
+  mirrors its lines to the app (`loop._seiChatFolded`).
+- The search branch is merged: every game bot also asks its own wiki
+  (contract v2 `wikiHosts`: stardewvalleywiki.com, dontstarve.wiki.gg).
+Verified live with the model: greeting, a committed project from the
+frontier, leaving the house, 45 pieces of debris cleared with drops, the
+dashboard strip; and by hand with a test body on the socket (the fastest
+loop, no model): debris, wood, forage lookup, farm to Pierre's and back with
+a purchase, till, plant, water, fish, chest take/put, sleep, a day end. Not
+yet verified: in-game typed chat and voice (no game window), pause/mode on
+Stardew, combat, a second companion, a farmhand.
+
+**Stardew follow + pathing (260925, mod 0.1.2, unverified in game).** From
+the v0.6.5-beta.2 playtest log (`~/suisei/reports/playtest-v065b2/`):
+- **Walks stalled INTO the player.** All six "stuck" results in the SMAPI log
+  had the next path tile equal to the player's tile with both collision
+  checks false. The game's path search (`PathFindController.findPath`, run
+  as the shadow farmer) never looks at farmers, while the NPC's step
+  collision refuses to walk into one, so any path across the player stalled
+  on the tile before it; `goTo` to the player's own coordinates could never
+  arrive. Now: `TryPath` detours with the mod's own 4-connected A*
+  (`Body/GridPath.cs`, pure, tested by `native/stardew-mod/GridPathTests`,
+  `dotnet run` with no game) when the game's path crosses a farmer tile,
+  keeping the game's path when no detour exists; `BarrierHop` steps THROUGH
+  a farmer after 1 s stalled (the doorway case); `WalkTo` treats a
+  farmer-occupied target as "next to it", drops farmer tiles from its goal
+  ring, re-paths (max 2) on a stall, and reports "arrived" when a stall
+  leaves it beside an adjacent-ok target; `come` takes one more leg when the
+  player walked on; the follow tick picks the free tile beside the player on
+  the body's side and counts stalls every tick (it counted 1 tick in 6-16).
+- **Follow was cleared for good by any commanded map change** (and by
+  bedtime/sleep), so "follow me, we're heading outside" died the moment the
+  model walked out first. Now a commanded trip to a map the player is not on
+  puts following ON HOLD (`SeiBody.FollowHoldAt`, obs `followHold`, snapshot
+  `follow_target: X (on hold ...)`), released when the player leaves that
+  map or reaches the body, which keeps the 260910 fix (no dragging back
+  through the door). Following survives the night (`Sleeping` pauses it).
+  The Stardew Following/Stuck rules in `prompts.js` say so, but ONLY when
+  the connected mod reports 0.1.2+ in its welcome/hello
+  (`adapter/stardew/modVersion.js`, `actionRules(modVersion)`,
+  `composeSnapshot({ modVersion })`); an older mod still ends follow on a
+  trip, so it gets `ACTION_RULES_LEGACY` and the bare follow name. Gate any
+  future prompt text that describes new mod behavior the same way: the app
+  ships before the Mac-built DLL.
+- Review follow-ups (same PR): a command aborts a background follow-travel
+  (it used to warp the body mid-purchase); stall counters (follow tick,
+  BarrierHop, WalkTo) skip ticks where `!Game1.shouldTimePass()` (a chest
+  menu teleported the body); follow-side `FreeTileNear(..., reachable: true)`
+  needs the tile within 2 x radius steps of the player (`GridPath.WithinSteps`,
+  never across a fence corner); detours are capped at
+  `GridPath.DetourBudget` (4x the game's path, 16..400 nodes); follow never
+  travels or warps into a festival, an event or a temporary map (`Temp`,
+  `IsTemporary` by reflection), it waits.
+- The mod source is at 0.1.2 but `assets/stardew-mod/` is still the OLD
+  build (its DLL even reports assembly 0.1.0): rebuild on a machine with the
+  game (`scripts/build-stardew-mod.sh`) and commit the output, which also
+  carries the 0.1.2 manifest. Do not bump the asset manifest by hand without
+  the DLL, or installs would record 0.1.2 with old code and never update.
+
+**Stardew chores + hand-off (260926, mod 0.1.3, unverified in game).** From
+the same playtest (goal: parsnips; she had no seeds, the host had 16, a 15-tile
+field was 15 till calls, and "water the crops" reached 20 tiles while the
+snapshot counted the whole farm). Audit: `~/suisei/reports/stardew-capability-audit-2026-09-26.md`.
+- **till a patch in one call** (every mod version): `till({x, y, width,
+  height})` up to `MAX_TILL_TILES` (40) is composed APP-side in
+  `registry.js` `tillPatch` from single-tile tills, serpentine order, stones
+  and grass skipped and named, energy / no hoe / abort / 4 unreachable tiles
+  in a row stop it, progress via `onProgress` ("- 6/15" in in_flight). The
+  mod's own interrupts (bedtime, retreating, knocked out, interrupted,
+  superseded, paused, aborted) also stop it: sending the next tile would
+  start a new command on top of the retreat or the walk home. The mod's
+  till refuses any tile with a terrain feature, bush or clump (0.1.3).
+- **Timeouts:** a farm-scope water/harvest gets a 15 min cap plus a 240 s
+  no-progress timeout (`commandTimeouts` in `client.js`, reset by each
+  `progress` frame); any `cmd` that times out is also CANCELLED in the mod.
+- **water / harvest `scope: "farm"`** (0.1.3): walk to the Farm and cover the
+  whole map (default 120, max 200). With no tile, water refills the can at
+  the nearest water (`Tools.NearestWater`, up to 3 refills) instead of
+  stopping at 40, and both step over up to 5 crops they cannot walk to.
+  Harvest stops at a full bag and leaves the crop in the ground
+  (`SeiBody.HasRoomFor`). An older mod gets `scope` dropped by the registry
+  and the chores line says its calls reach 20 tiles.
+- **ship / give** (0.1.3, `Actions/Shipping.cs`): ship walks to the farm's
+  shipping bin and drops produce (crops/forage/fish by default, or a named
+  item); give walks to the HOST and puts an item in their bag
+  (`addItemToInventoryBool`, host only: a farmhand's inventory lives on
+  their machine; nothing leaves her bag until the add has landed). Before these a harvest sat in the companion's bag.
+  `CHORES_VERBS` are hidden from `listActions` and refused by the registry
+  on an older mod.
+- **Proactive layer:** the snapshot gains a `chores:` line
+  (`farmChores`: dry / ready crops with the farm-wide call, ready machines,
+  produce to ship), the player line says what the host is holding and when
+  they are in a menu or cutscene (`host.holding/menu/inEvent`), the date line
+  carries tomorrow's forecast (`tomorrow`). The new-day notice now waits
+  (max `DAY_OBS_WAIT_MS`) for the new day's first observation and names the
+  morning's chores. `fsmWires` raises `onIdleNudge({reason:
+  'player_activity'})` when the host keeps a tool out for 3 s (once per
+  60 s, same activity once per 5 min, proactive mode only (tier 2, read
+  live from `config.persona.proactiveness`), never in a menu/event, off-map
+  or while the body is busy) and the idle addendum pitches "your half" of that
+  job (`ACTIVITY_SUGGESTIONS`).
+- Prompt text for all of it is gated on 0.1.3 (`ACTION_RULES_CHORES`,
+  `CAPABILITY_PARAGRAPH_CHORES`, `describeAction`); 0.1.2 keeps
+  `ACTION_RULES` (plus the till patch, which is app-side). Same rule as
+  0.1.2: `assets/stardew-mod/` is NOT rebuilt here; rebuild on the Mac and
+  commit, which also ships the 0.1.3 manifest. New game APIs used (compile
+  and verify on the Mac): `Item.canBeShipped`, `Object.sellToStorePrice`,
+  `Farm.buildings` + `ShippingBin`, `Farm.getShippingBin(..).Add`,
+  `Farmer.addItemToInventoryBool` on the host, `Farmer.CurrentItem`,
+  `Game1.eventUp`, `Game1.weatherForTomorrow`,
+  `GameLocation.getLargeTerrainFeatureAt`.
+
+**Stardew companions look like themselves (260921).** Every Stardew body used
+to be the one shared placeholder NPC sprite. It is now drawn as a FARMER
+dressed with the game's own character creator knobs: gender, skin, hairstyle,
+hair color, eye color, shirt, pants, pants color, accessory. No hat (not a
+creator knob, and it hides the hair).
+- **One LLM call per character, in main.**
+  `src/main/games/stardew/appearance.ts` follows `chessProfile.ts` (forced
+  tool call `set_stardew_appearance`, through `buildLlmProvider`, so cloud and
+  BYOK both work) and `survivorPick.ts` (injectable deps, persisted SPARSE in
+  `UserConfig.stardew_appearance[characterId]`, not in `character.metadata`,
+  which cloud-syncs verbatim and is not editable on a default such as Lyra).
+  Input is `gatherAppearanceText`: the soulcaster sheet's appearance block and
+  image prompt first, then the description, then the persona source (the
+  expanded persona only as a last resort). The character text sits between
+  `<character>` tags and the system prompt says it is data. Two deliberate
+  differences from the two precedents: a FAILED derivation is never persisted
+  (a stored fallback would make the character generic forever because of one
+  network error; the cost is at most one retry per summon), and the result is
+  salvaged FIELD BY FIELD (`coerceStardewAppearance`: a model that gets eight
+  knobs right and invents a shirt number still produced a usable look; fewer
+  than 5 valid fields counts as a failure).
+- **The legend is the feature.** The model cannot see the sprite sheets, so
+  `src/shared/stardewAppearance.ts` lists every ALLOWED index with a short
+  description of what it looks like, and the schema admits nothing else (42
+  hairstyles, 70 shirts, 24 skins, 4 pants, 13 accessories). Tool properties
+  are plain `integer` with the legend in the description, not JSON-schema
+  number enums, because not every provider accepts those; the Zod schema is
+  the gate. Ranges and the legend come from the game itself, not from a wiki:
+  the 1.6.15 assemblies were read with Mono.Cecil (`changeSkinColor` wraps at
+  0..23, `changeAccessory` at -1..29, shirts and pants are STRING item ids in
+  1.6), `Data/Shirts` and `Data/Pants` were unpacked and parsed (the creator's
+  own set is the rows with `CanChooseDuringCharacterCustomization`: shirts
+  "1000".."1111", pants "0".."3"), `Data/HairData` adds hairstyles 100..122 to
+  the sheet's 0..55, and the hair, shirt, accessory and pants sheets were
+  unpacked (the game's MonoGame LZX decoder, run from a scratch tool) and
+  looked at composited on the farmer body. The config row is deliberately
+  LOOSE in `characterSchema.ts`; the strict legend check runs in the reader,
+  so removing an index from a legend re-derives one character instead of
+  failing the whole config parse.
+- **Plumbing.** `GameModule.prepareJoin({characterId, character})` is a new
+  optional async seam. The supervisor awaits it beside `ensurePack`, BEFORE
+  `startedAtMs`, so it never comes out of the 30 s summon deadline, and merges
+  what it returns into the join target (`getJoinTarget` is synchronous and
+  does not know the character). Stardew's returns `{appearance}` from
+  `appearanceForSummon`: a stored look at once, else a first derivation
+  awaited for at most `APPEARANCE_SUMMON_WAIT_MS` (6 s), then the summon goes
+  ahead WITHOUT the field while the single-flight derivation finishes and
+  persists for next time. `adapterConfigFrom` copies it into `adapter.stardew`
+  (loose schema with `.catch(undefined)` in `src/bot/config.js`: looks must
+  never fail a bot config) and `runtime.js` adds it to the `spawn` frame, on
+  reconnect spawns too. The field is optional end to end and
+  `STARDEW_PROTOCOL_VERSION` is unchanged: an old mod ignores it, an old app
+  never sends it.
+- **The mod draws the shadow Farmer in the NPC's place, and the NPC stays the
+  body.** `Body/Appearance.cs` clamps the frame field by field against what
+  THE RUNNING GAME accepts (`Farmer.GetAllHairstyleIndices()`,
+  `Game1.shirtData` / `pantsData`), not against the app's legend, so the
+  legend can grow without a mod rebuild; then applies it through the game's
+  own `change*` methods, gender first (it swaps the base texture and re-applies
+  the shirt). `Body/BodyDraw.cs` is a Harmony PREFIX on
+  `NPC.draw(SpriteBatch, float)` that, for a registered body, calls
+  `FarmerRenderer.draw` with the shadow and skips the NPC's own draw. A prefix
+  rather than an SMAPI `Rendered*` event because the farmer has to be inside
+  the world's depth-sorted batch to pass behind trees; rather than an NPC
+  subclass because `location.characters` is a NetCollection of NPC. Rendering
+  the 16 walk frames into a sprite sheet was the fallback and was not needed.
+  The decompile facts above still hold: the shadow is in neither
+  `Game1.otherFarmers` nor `location.farmers`, and `BotFarmer.draw` stays a
+  no-op so there is one draw path. Load-bearing details: the farmer is drawn
+  16 px LOWER than the NPC position (an NPC's box is y+16..y+48, a farmer's
+  y..y+32, both draw feet at the box bottom, so without it the feet float
+  above the ground shadow and the collision box); depth is the NPC's own rule
+  (`StandingPixel.Y / 10000`); the ground shadow needs nothing because
+  `Game1.DrawWorld` draws character shadows separately from `NPC.draw`; the
+  tool-use hop still shows because `getLocalPosition` carries `yJumpOffset`;
+  emotes are kept by calling `npc.DrawEmote`. The shadow's `Update` never
+  runs, so `SeiBody.AnimateShadow` advances the walk cycle each tick from
+  whether the NPC moved (`FarmerSprite.animate(walkUp|Right|Down|Left, 16)`,
+  else `StopAnimation` + `faceDirection`), only on the host's current map
+  (FarmerSprite's footstep dust and sound are written for the map on screen),
+  and the paused branch of `Tick` refreshes `_lastPos` or the walk cycle would
+  run on the spot for the whole pause. Any failure (apply, animate, draw)
+  flips that body back to the placeholder sprite for good and logs once;
+  `FarmerLook: false` in the mod's config.json turns the whole thing off.
+  No appearance in the frame means the mod's neutral default farmer, which is
+  the ONLY default (main sends no field rather than a second copy of it).
+- **Dev frame:** `devAppearance` (same `DevCommands` gate) returns the clamped
+  request, the rejected fields, the values read back from the shadow farmer
+  and the sprite frame / facing / base texture. `scripts/fake-stardew-mod.mjs`
+  records the field and answers the same frame.
+- **Unverified (the game was not launched for this change):** that the farmer
+  actually draws in place and at the right height, the walk cycle in four
+  directions, depth sorting against trees and buildings, the look of each
+  legend entry on a dressed body in motion (the legend was written from the
+  sheets, some hair entries from silhouettes only), what a farmhand sees
+  (their game has no registry entry, so it should be the placeholder), and the
+  quality of the model's picks for real characters. Tool-use animations are
+  not implemented: a swing is still the NPC hop. Owed: a user override in the
+  launch panel (`source: 'user'` is already in the stored row and is kept
+  as is), and re-deriving when a character's description changes
+  (`clearAppearance` exists; nothing calls it yet).
+- **260925: the model sees the portrait, and the look is shared (v2).** The
+  v0.6.5-beta.2 playtest drew Sui with wild blue spikes and a bright purple
+  shirt. Root cause: the defaults have no description and no sheet, so the
+  model got the personality blurb ("tomboy gremlin") and invented a look; it
+  never saw the character. Now:
+  - The portrait goes in as an IMAGE when the active backend can see
+    (`activeLlmVision() === 'yes'`: cloud proxy, Anthropic BYOK, vision local
+    models), read from `paths.portraitPath(id)` (cache-on-demand puts a cloud
+    character's art there) or its https URL, and the prompt makes the picture
+    the truth. The options are one labelled MENU in the message
+    (`renderStardewAppearanceMenu`, hair grouped by length), and the tool call
+    starts with an `observed` sentence. `scripts/stardew-appearance-probe.ts`
+    runs v1 against v2 on the fixture portraits with the dev key. Measured
+    (Haiku 4.5, 3 runs each): Sui's hair went from 8 (wild spikes) every run to
+    a long style (115/24/110) in lavender every run; Lyra from a chin-length bob
+    to long brown hair and a black top with a white collar; Marv from grey skin
+    to red skin and bald, every run.
+  - **The look lives in the CLOUD** (`src/main/cloud/gameProfileClient.ts`,
+    table `character_game_profiles` + `POST /games/profile` in sei-proxy):
+    read under RLS, written only through the proxy, FIRST WRITE WINS, and the
+    response carries the stored row so a race loser adopts the winner's look.
+    Every user then gets the same Sui. Resolution: local `user` row (this
+    user's override) > cloud row at the current version (or the owner's cloud
+    `user` edit) > local `auto` row at the current version > a new derivation.
+    The config row is only a cache for when the cloud has no answer.
+  - A derivation is offered to the cloud only when it SAW the portrait, or the
+    character has no art at all: a blind text guess by a BYOK model without
+    vision stays local, so it cannot become everyone's look.
+  - `STARDEW_APPEARANCE_VERSION` (2) tags every row; older `auto` rows (every
+    v1 look already in a config) are ignored and redone, and the proxy lets a
+    higher version replace an `auto` row but never a `user` one.
+
+**Dashboards in the games' own registers (260909).** Both bot-backed
+dashboards are now DELIBERATE, CONTAINED EXCEPTIONS to the design tokens,
+under the same contract as `McDashboardPanel` (which the Stardew panel used
+to borrow wholesale, vanilla-gray windows and all): a game's live view
+should read like that game's HUD, not like a settings page. Each panel's
+CSS module declares its own palette on `.panel` and nothing outside the
+component references it.
+- `DstDashboardPanel` (+ `dstDashboard.ts`, pure + tested): ink ground,
+  aged-parchment sheets with burnt edges and hand-cut corners, the three
+  vitals as the HUD BADGES (dark ring, parchment face, the meter as coloured
+  liquid rising from the bottom, the organ icon on top, pulsing when low),
+  the CLOCK as the 16-segment day ring split day/dusk/night per season
+  (`DST_PHASE_SPLIT`; the mod reports the phase, not the segment, so the
+  whole phase is lit), body temperature with the game's freezing (<=0) and
+  overheating (>=70) bands, and the inventory bar as dark slots in rows of
+  15 with the equipped hand item in its own slot. Prefabs map to in-game
+  names (`dstItemLabel`). Fonts: Fredericka the Great for figures,
+  Metamorphous for labels (both OFL, DST-only).
+- `StardewDashboardPanel` (+ `stardewDashboard.ts`, pure + tested): the
+  wooden menu frame drawn in CSS (outline, wood band with highlight, inner
+  line, cream face), dark-plum text with the tan drop shadow in Pixelify
+  Sans (OFL, Stardew-only), ENERGY/HEALTH as the vertical HUD bars (green ->
+  yellow under a quarter -> red under a tenth), the DATE BOX (weekday from
+  the day number since day 1 is always Monday, weather + season icons, the
+  day dial from 6 AM to 2 AM, HUD-cased time, gold in its own box), and the
+  12 x 3 inventory with the held slot framed red.
+- **Several companions in one game share the dashboard (260909).** A
+  dashboard is mounted for ONE character, but Minecraft and Stardew run a
+  body per character, so the status strip became a STATUS ROW: this
+  companion's window first (titled with their name once there is company),
+  then one window per other companion online in the same game, each a
+  button that opens that companion's chat. Membership comes from
+  `useDataStore.summons` (same `game`, kind `online`), not from what is on
+  screen; the activity line needs that companion's telemetry, which main
+  samples only while WATCHED, so `useGameCompanions`
+  (`components/games/useGameCompanions.ts`) arms the watch flag for every
+  sibling while the dashboard is mounted and shows an ellipsis until the
+  first snapshot lands. All three dashboards use it (the Minecraft strip
+  grew `name` + `companions` props). DST is one body per world, so its row
+  never grows, but it rides the same code.
+- **The width is spent (260909).** Both game-styled bodies are CSS grids:
+  status row, then instruments, then inventory, with a PORTRAIT CARD in
+  the fourth column spanning rows 2-3 (the companion's own art via
+  `DashPortrait`, same seed + palette as the Home wall; name, survivor or
+  location, held item). Whatever width the fixed windows leave goes to the
+  face. The art is absolutely positioned inside its box so its canvas adds
+  no intrinsic height (otherwise the spanning card GREW the rows it spans:
+  measured, the first cut was a 700 px portrait). Under a container query
+  (`.panel` is `container-type: inline-size`; 1000 px DST, 900 px Stardew)
+  the card drops to a full-width row with the art on the left.
+- **The controls are ONE hook, `components/games/useGameControls.ts`**
+  (paused/mode/disconnect/hover hint + `GAME_CONTROL_DESCRIPTIONS`); each
+  game paints its own buttons. `GameControlsWindow` (the token-styled
+  generic version) rides the same hook and is now unused by any registered
+  game; keep it for a future game that has no register of its own.
+- **Verify in a browser tab, not a summon:** `?dashshot=1` (or
+  `?dashshot=dontstarve|stardew`) on the dev server renders both panels
+  over fixture snapshots (`components/games/DevDashShot.tsx`).
+  `lib/ipcClient.ts` captures `window.sei` at module evaluation, and
+  main.tsx's static import of App reaches it first, so the harness stubs
+  live in `devHarnessStubs.ts`, which MUST stay main.tsx's first import.
+  Render tests (`*DashboardPanel.test.tsx`) pin the meters, the clock, the
+  slots and the zh coverage; CSS-module class names are hashed under vitest,
+  so the tests count `data-slot` attributes rather than class names.
+
+**Don't Starve Together (M2)** `native/dst-mod/sei/` (Lua, MIT, server-only,
+`all_clients_require_mod = false`, luacheck clean; `PROTOCOL.md`, mirrored in
+`src/shared/dstIpc.ts`). Body = a vanilla survivor prefab spawned on the
+master sim with `scripts/brains/seibrain.lua` (FAtiMA-DST skeleton): safety
+layer first (run away under 35% health, find light at dusk, fight back when
+told, eat under 25% hunger), then the command slot. **Transport direction is
+inverted**: a mod can only reach out through `TheSim:QueryServer` to
+127.0.0.1 (Klei blocked third-party URLs in Jan 2025, hotfix 653007 carved
+localhost back out; no headers, bodies under ~20 KB), so main's watcher hosts
+a discovery port and answers the mod's 2 s heartbeat with a summon offer `{token, botPort, ...}` after the bot's
+runtime reports its ephemeral `node:http` port over a `dst-listen` port
+message; the mod then POSTs `/obs` at 3 Hz (delta-compressed, <= 8 KB) and
+polls `GET /cmd` with a 400 ms bounded hold (measure it against the
+undocumented QueryServer timeout on day one). 21 verbs. **The character picks
+her survivor** (user decision 3): `src/main/games/dontstarve/survivorPick.ts`
+is a one-off LLM call over the persona + the roster brief in
+`src/shared/dstSurvivors.ts` (15 eligible; Wes, Wonkey, Woodie, Wanda
+excluded, reasons in the brief), persisted sparse in
+`UserConfig.dst_survivor[characterId]`, user-overridable in the launch panel;
+the chosen survivor's perks ride the world primer, and each survivor's
+special needs (meat-only, vegetarian, souls, wetness, fire, frailty) are DATA
+read by both the BT and the primer, never branches. Install = mod copy into
+`<install>/mods/sei/` + `modsettings.lua` (`ForceEnableMod("sei")`,
+`DisableLocalModWarning()`), re-applied on every launch because game updates
+rewrite that file; the mod copy also runs on every launch, and when the
+pack's `modinfo.lua` version is newer the old `mods/sei/` is removed first
+(260925); launch = `steam://rungameid/322330`. Four spikes wait for
+the live checklist: a joiner with `all_clients_require_mod = false`,
+ownerless `inst:Remove()`, a caves-enabled host, the QueryServer hold.
+
+**DST helper 0.3.0: habits, alerts, frontier (260926).** Audit and headless
+results: `~/suisei/reports/dst-capability-audit-2026-09-26.md`. Three things
+worth knowing before touching the DST body:
+- **Combat never landed a hit before this.** `ChaseAndAttack` calls
+  `combat:TryAttack`, which only pushes `doattack`, and survivor stategraphs
+  have no handler for it (players swing through the ATTACK action).
+  `companion.lua` now translates `doattack` into a buffered ATTACK.
+- **Survival chores are habits in the mod** (`scripts/sei/reflexes.lua`):
+  dusk torch, night light, fire tending, gear-up, defending the player,
+  healing, food choice. They report `survival` events that do NOT wake the
+  brain (`fsmWires.js`); they surface as the snapshot's `your_habits` line.
+  The brain is woken by `observers/alerts.js` (starving with no food,
+  freezing, low health with nothing hostile near) and nudged at P3 (dusk with
+  no way to make light, low sanity, player hungry, season turning) only when
+  `persona.proactiveness` >= 1; passive characters see them in `heads_up`. The
+  prompt tells the model the habits cannot plan: keeping the makings on hand
+  is its job. `observers/progression.js` gives the heartbeat a frontier.
+- **Everything new gates on the helper's reported version**
+  (`modVersion.js`, `CAPS_MIN_MOD`). A world keeps the helper it started
+  with, so an older helper gets the old prompts, verbs and wake routing.
+  Bump `modinfo.lua` and `scripts/sei/version.lua` together (a test checks).
+- **"Am I lit" is ONE test**, `Reflexes.LitByOthers`: the engine light
+  (`TheSim:GetLightAtPoint`) at the body's feet with its own held lights
+  switched off for the reading, with hysteresis (0.2 in, 0.1 out). Light,
+  tool and gear habits all use it, so the torch and the axe cannot swap
+  every tick. In the dark a work command walks there with the torch and
+  refuses ("too dark to chop here") unless something else lights the spot.
+- **Sleeping lights light nothing.** Entities away from a real client sleep
+  (also in real play when the body is far from the host). `SetCanSleep(false)`
+  does not wake an entity that is already asleep, only one set in the frame
+  it spawns. So the equip listener keeps held lights awake, and
+  `Reflexes.KeepFiresAwake` respawns the flame of a burning fire near the
+  body awake (released at day or when she leaves). No light on the body.
+- **Habits never undo an explicit `equip`** (`Reflexes.Hold`/`CommandHeld`)
+  except dark with no light. Defend needs a `hostile` tag or a hit on the
+  player in the last 6 s, never shadow creatures. `give` needs an exact name.
+Headless testing (Linux dedicated server + `scripts/dst-headless-harness.mjs`)
+is in `native/dst-mod/sei/README.md`.
+
+**Credits:** every reused project is in the README Acknowledgements with its
+license (user decision 7); copied code carries a header credit and
+`native/<mod>/THIRD_PARTY_NOTICES.md`.
+
 ## Instrumenting a game or timed surface (REQUIRED)
 
 **Every new game, minigame, or timed surface MUST emit analytics before it
@@ -1449,12 +2746,76 @@ Rules that follow from the existing implementations:
 - Use a **lazy `await import('../analytics')` inside a fire-and-forget block**,
   so the module graph and the tests never depend on analytics being
   initialized. `capture()` is already a no-op when uninitialized or opted out.
+  260926: chess, Draw! and backseat go through `loadAnalytics()`
+  (`src/main/lazyAnalytics.ts`), one cached lazy import. Two separate
+  `import('../analytics')` calls in the same tick can resolve to different
+  instances under vitest mocking, so a mocked `capture` silently misses the
+  second event. Prefer it for new capture sites.
 - Then add the new `_ended` name to `SESSION_EVENTS` in the analytics repo
   (`~/slop/sei-studio/analytics/server.mjs`) and a label in `SURFACE_LABEL`
   (`public/app.js`). That is the only dashboard change needed.
 
 Current members: `bot_session_ended` (Minecraft), `chess_game_ended`,
 `voice_call_ended`, `draw_game_ended`, `backseat_ended`, `chat_session_ended`.
+
+**`bot_session_ended` says why (260929).** It used to carry no reason, so a
+player pressing Stop looked exactly like a kick loop, and 10 of 36 Minecraft
+users in a month had sub-minute sessions nobody could explain. It now carries
+`reason` (`user_stop`, `companion_quit`, `app_quit`, `account_switch`,
+`kicked`, `world_closed`, `disconnected`, `credits_depleted`, `rate_limited`,
+`crash`, `error`, `bot_exit`, `unknown`), plus `error_class` when it ended on
+an error, `kick_code` for a kick, and `duration_s` beside `duration_ms`. The
+supervisor stamps `endReason` (and `kickCode`) on the terminal BotStatus:
+`supervisor.stop(id, reason)` for stops, the bot's `summon-stopped` reason for
+a companion quit(), and the Minecraft runtime's `fail(message, {endReason,
+kickCode})` for post-spawn drops. `src/main/sessionEnd.ts` maps a status to
+props (pinned in `sessionEnd.test.ts`). `kick_code` comes from
+`kickReasonCode()` in `connect.js`: a vanilla `disconnect.*` key or a fixed
+code, never the host's kick text. A session that ended on an error also
+fires **`bot_session_failed`** (same props, `duration_s` only, not a playtime
+event), the post-join counterpart of `summon_failed`. One overlap is kept on
+purpose (dashboards read it): a mid-session crash exit (nonzero exit code
+after summon-ready) fires BOTH `summon_failed` with `summon_phase:
+'mid_session'` AND `bot_session_failed` with `reason: 'crash'`. A query that
+adds the two to count failures must drop one of them, e.g. exclude
+`summon_phase = 'mid_session'` from `summon_failed`. Other post-join failures
+(kick loops, lifecycle errors) fire only `bot_session_failed`. App quit closes live
+sessions in `before-quit` BEFORE the analytics flush (`app_quit`); the
+drain's own idle statuses come after the flush and used to be lost. That
+flush runs before `supervisor.shutdown()`, so it is bounded
+(`ANALYTICS_SHUTDOWN_TIMEOUT_MS`, 2.5s): posthog-node's own default is 30s,
+and with PostHog unreachable quit hung that long with the bot still in the
+world.
+
+**Forge/NeoForge hosts are blocked before summon (260929).** Only on STRONG
+evidence: the status ping's forgeData/modinfo (`forgeModCount != null`) or an
+explicit launch target on the host command line (`LanHost.forgeLaunchTarget`,
+`hasForgeLaunchTarget()` in hostClient.ts). Forge classified from a weak
+cmdline substring alone gets the soft `'modded'` warning so a misread never
+locks anyone out. The one check is `forgeHostBlock()` in `src/shared/ipc.ts`,
+used by all three entry points: the Summon button (`lanHostWarning() ===
+'forge'` opens the blocking `LanHostWarningModal`, no "Summon anyway"), the
+chat `launch()` tool (`resolveLaunch` returns a relayable note and never
+summons) and the supervisor pre-gate (error `FORGE_HOST_BLOCKED`, backstop for
+the voice launch honors; `SEI_FORGE_HANDSHAKE=1` bypasses it). Each refused
+attempt is counted exactly once. The button and the `launch()` tool fire
+**`summon_blocked`** (`character_id`, `game`, `reason: 'FORGE_HOST_BLOCKED'`,
+`loader`, `host_client`, `path`: `button` / `chat` / `voice`, props built by
+`summonBlockedProps()` in shared/ipc.ts; the tool fires at most one per turn),
+and neither reaches the supervisor. A refusal at the supervisor pre-gate (the
+voice idle/react launch honors, or a stale renderer host) fires only the
+existing `summon_failed` with `summon_phase: 'pre_gate'` and `reason:
+'FORGE_HOST_BLOCKED'`. All Forge attempts = `summon_blocked` + that
+`summon_failed` slice. The retry guard
+block for that class is released as soon as the LAN host stops being a blocked
+Forge host. Quilt and Fabric with foreign mods keep the soft `'modded'`
+warning. A join TIMEOUT (ready phase, or the bot's connect guard) on a
+Forge-family host (`isForgeFamilyLanHost()`: Forge/NeoForge on any evidence,
+or an unclassified host with Forge ping data) is reported as
+`MODDED_HOST_REJECTED` with `reclassified_from: 'BOT_START_TIMEOUT'` on
+`summon_failed`, so the player gets ModdedHostModal instead of generic timeout
+copy. Timeouts on Fabric with foreign mods and on Quilt stay plain
+`BOT_START_TIMEOUT`: those hosts often do let a vanilla client in. `character_summoned` carries `host_client`.
 
 **Text chat counts too (260801).** Chat was the last surface with no
 instrumentation at all, so playtime meant "everything except the thing people
@@ -1481,6 +2842,19 @@ which is written at character CREATION — so anyone using only the bundled
 defaults was invisible. Cached, not read per event (commonProps is sync);
 `setUiLanguage()` is refreshed from the `config:save` IPC handler, the single
 path both Settings and the onboarding Sui stage write it through.
+
+**`installer_first_launch` fires once per install (260926).** It carries
+`platform`, `arch`, `os_version`, `packaged`, `arm64_translation`, and on macOS
+`in_applications`, `translocated` and a coarse `app_location` enum
+(`applications`/`translocated`/`volume`/`downloads`/`other`, never a path).
+"Once" is the device-global `<userData>/install-marker.json`, created with an
+exclusive open by `noteLaunch()` as the FIRST step of `bootstrap()`
+(`src/main/firstLaunch.ts`). It cannot key on `analytics_install_id`: that id
+lives in the profile-scoped config, so a first sign-in would mint a new one.
+The marker step also probes for older Sei state (`PRIOR_STATE_ENTRIES`), so an
+existing install updating to the first build with this code is classified
+`upgrade` and sends nothing. Keep that list in sync if a new device-global
+file appears, and keep `noteLaunch()` ahead of anything that writes userData.
 
 ### The play row is ONE sentence, shared (260728)
 
@@ -1566,6 +2940,30 @@ State is `useUiStore.gameFullscreen`, and the rule for any NEW game surface is:
 
 The `windowFullscreenToggle` / `windowIsFullscreen` IPC still exists on the
 preload bridge but no renderer surface calls it.
+
+**The game/chat split (260917).** Three rules in `ChatScreen`:
+- A game DASHBOARD with no user-dragged split sizes the game area to its
+  content (`.gameFit`: `height: auto`, capped at the column minus a 200px
+  chat band), so the Stardew / DST / Minecraft dashboards never scroll
+  internally at a normal window height. The dashboards were laid out for the
+  full picture and at the old 62% default their `.body` grids hid the bottom
+  rows. Chess and the launch panels keep an explicit default, now
+  `min(72%, calc(100% - 240px))` (was 62% / 280px), because they paint
+  absolute art that needs a definite height. A dragged split turns the fit
+  off; double-click on the handle restores it.
+- The drag handle goes ALL THE WAY DOWN: fewer than `SPLIT_COLLAPSE_CHAT_PX`
+  (96px) of chat left snaps into the existing expanded state (the same one
+  the "V" toggles) instead of leaving a sliver, and dragging back up leaves
+  it. The old 220px chat floor is gone.
+- The composer dock is IN-FLOW below the message list, not floating over it.
+  The floating dock's window-coloured band went transparent over a custom app
+  background, so the conversation showed under and beside the message box;
+  in-flow, the list is clipped where the dock begins and the background can
+  still show through. `MiniTile` measures `[data-chat-composer]` by rect, so
+  it is unaffected.
+`?dashshot=chat|chatdst` mounts a dashboard inside the real ChatScreen (a
+Proxy over the stub bridge answers whatever the screen asks) for checking
+any of this in a plain tab.
 
 ## Directory map
 
@@ -1655,11 +3053,36 @@ Packaging is **electron-builder** (`electron-builder.yml`):
 - **macOS:** per-arch (`arm64`/`x64`) `dmg` + `zip`, `hardenedRuntime` +
   notarization (Apple Team ID from the `APPLE_TEAM_ID` env var). The `zip` is
   what electron-updater installs from; the `dmg` is manual download only.
-- **Windows:** NSIS x64, **unsigned** for v1 (SmartScreen "unknown publisher"
-  is accepted UX).
+- **Windows:** NSIS x64, ONE-CLICK per-user installer since 260929 (was the
+  assisted installer through v0.6.4). Upgrade safety from assisted installs and
+  the per-machine migration hook (`build/installer.nsh`) are documented above
+  the `nsis:` block in electron-builder.yml; `.github/workflows/nsis-upgrade-check.yml`
+  (manual dispatch) re-verifies them on windows-latest. Release builds are
+  signed through Azure Trusted Signing (the "unsigned for v1" note is stale).
 - **Linux:** AppImage (best-effort unsigned).
 - `postinstall` runs `electron-builder install-app-deps` to rebuild native
   modules against Electron's ABI.
+- **Version bumps:** run `npm install --package-lock-only` only where
+  `node_modules` is already installed. In a fresh worktree without it
+  (v0.6.5-beta.2) it looped through postinstall and stripped the `libc`
+  fields from the lockfile; after a bump, `git diff package-lock.json` should
+  show only the version lines.
+
+**No remote debugging in stable builds (260925).** The fuses
+(`electronFuses` in `electron-builder.yml`) turn off RunAsNode, NODE_OPTIONS and
+`--inspect`, but Chromium's `--remote-debugging-port` / `--remote-debugging-pipe`
+have no fuse: any local process could relaunch the signed app with CDP and drive
+the renderer (preload IPC + TCC grants). `src/main/remoteDebugGuard.ts`, the
+FIRST import of `src/main/index.ts`, calls `process.exit(1)` when a packaged
+build whose version has no prerelease tag sees `--remote-debugging-*`,
+`--inspect*`, `--debug-port` or `--js-flags` (argv scan plus
+`app.commandLine.hasSwitch`; pure policy in `remoteDebugPolicy.ts`). Packaged
+betas (`X.Y.Z-beta.N`) and dev are unaffected. Measured on Linux: Chromium
+opens the DevTools port only AFTER the main script has evaluated, so exiting
+there means the port never listens. Consequence: **installed-app CDP
+verification (`open -a Sei --args --remote-debugging-port=...`) only works on a
+beta**; a stable install quits immediately. Keep the guard the first import, and
+never `appendSwitch` a debugging switch in production code.
 
 Common scripts: `npm run dev` (electron-vite dev), `npm run build`,
 `npm run dist:mac` / `dist:win` / `dist:linux`.
@@ -1716,6 +3139,96 @@ pins it at whatever percent it reached.
   instead of sending the player to verify the one thing already known to be
   fine. Anything else nested inside a supervisor deadline owes the same
   treatment.
+- **The summon deadline used to include the bot's cold boot** → until 260926
+  the 30s watchdog started at `fork`, and a packaged Windows boot (module graph
+  plus Defender scanning every file it opens) measured 21-24s before
+  `createBot`, so the connect guard sat on its 5s floor and BOT_START_TIMEOUT
+  was the top Windows summon failure (14 people in 30 days). Now the boot has
+  its own 60s budget (`BOOT_TIMEOUT_MS`, phase `boot_timeout`) and the 30s
+  ready budget starts at `init-ack`; the bot starts the same budget on its side
+  from `readyBudgetMs` in the init payload. The status carries
+  `stage: 'starting' | 'joining'` so the launch button shows progress.
+  `src/bot/bootTiming.js` stamps each boot phase and main folds them into
+  `summon_failed` / `character_summoned` as flat `boot_<phase>_ms` props (ms
+  since fork) plus `boot_last_phase`. The biggest boot cost was the vision
+  stack: `visualize.js` statically imported the POV renderer, which loaded
+  native `gl`, `canvas`, `three` and prismarine-viewer (about 80% of the
+  runtime's bytes read at import) on every summon. It now loads lazily through
+  `render/povStackLoader.js`, warmed 6s after spawn only when the model can
+  take images. The loader must never hold the event loop for long (the bot is
+  in the world by then, and a blocked loop misses the server keep-alive and
+  gets kicked): it reads every file of the stack asynchronously first (so the
+  disk read and antivirus scan happen off the loop), then requires three,
+  canvas and gl one per event-loop turn, and logs its timings to the bot log.
+  A failed load is final for the session (a failed ESM import stays cached);
+  `look()` says so once in full. Keep heavy or native modules out of the
+  runtime's static import graph.
+- **Renderer caches outlive an account switch** → main re-points every
+  per-profile store on `app:scope-changed`, but a Zustand store keeps what it
+  already read, and the bundled defaults (Sui, Lyra, ...) share their UUIDs
+  across profiles. Until 260926 the next account opened the previous
+  account's chat transcript straight from `useChatStore`. `App.tsx` now calls
+  `resetAccountScopedState()` (`lib/scopeReset.ts`) first in its scope-changed
+  handler; the chat store also drops the results of any load / send / push
+  begun before the reset (`scopeEpoch`). Any NEW renderer cache keyed by
+  character id or holding account data must be cleared there.
+- **An account switch ends every live session first (260926)** →
+  `switchScopeForAuth` used to stop only the game bots, so a chess game, a
+  Draw! round, a backseat share and a voice call kept running under the
+  previous account (and authState has already applied the NEW JWT by then).
+  Now `endAccountSessions` (`src/main/profile/accountSessions.ts`) runs before
+  the scope moves: `endAllChess` / `endAllDraw` / `endAllBackseat`, main's
+  `endVoiceCallsForAccountSwitch` (index.ts, timed from the renderer's
+  `live:true` connect report; the renderer's late hang-up report is dropped
+  via `consumeClosedByMain`), `endAllChatSessions('account_switch')`, then
+  `app:scope-ending` to the renderer (`endLiveSurfaces` in `scopeReset.ts`:
+  hang up, stop capture, clear the game mirrors, go Home), then
+  `supervisor.stop()`. Every `_ended` event carries `reason: 'account_switch'`.
+  Closing rows are written fire-and-forget and resolve `paths.*` when they hit
+  the disk, so each is registered with `trackScopedWrite`
+  (`profile/scopeBarrier.ts`) and the switch `drainScopedWrites()` before it
+  re-points the scope. **A new surface with a closing row must track it and
+  add an `endAll*` to `endAccountSessions`.** While the teardown runs
+  `foldIfDue` defers (it would bill the new account), and a fold whose
+  summarizer straddles the switch is dropped rather than written into the
+  next account's bridge.
+  Guarantees around it (review, 260926):
+  - Switches are serialized (a promise chain in `profileScope.ts`; prev/next
+    scope are read inside it, same scope = no-op) and the whole teardown is
+    bounded by `withAccountTeardown` (10s ceiling): a hung end step never
+    keeps the scope from moving or leaves the fold deferred. The end promises
+    are tracked like rows, so the bounded drain is the only wait.
+  - From the moment a switch is requested until main has sent
+    `app:scope-changed`, session starts are refused (`beginSessionStart`,
+    error `ACCOUNT_SWITCHING`). A start whose awaits straddle a switch
+    re-checks `stillValid()` right before `sessions.set` and unwinds.
+    **A new session surface must take the same guard.** The renderer's
+    scope-changed reset does not end the live surfaces a second time after
+    `app:scope-ending` (that would orphan a session started in the new
+    account in the gap); `useBackseatStore.share` ends main's session if the
+    scope epoch changed under it.
+  - Chat turns are refused during a switch and tagged with the scope they
+    began in (`withScopedTurn`); a turn still running when the account
+    changes is aborted (`cancelAllInflightTurns`) and writes no transcript row,
+    MEMORY.md line or fold (`turnMayWrite` / `scopedTurnCurrent`). The
+    last_chatted stamp is not gated.
+  - A companion hang-up (`end_call`) whose renderer report has not arrived
+    is kept in `callState` (`endCallFromCompanion`) so the switch closes it
+    and writes its row in the old account; `applyCallReport` is the pure
+    composition the `voice:call-state` handler runs.
+- **A whole-config write reverts other writers (260929)** → every main-process
+  write of the profile `config.json` goes through `configStore.updateConfig`
+  (locked read-modify-write, path fixed when the call starts) and sets only
+  the keys that writer owns. `loadConfig()` then `saveConfig()` is for seeding
+  and tests: a game ending in the gap (chess difficulty, the Draw! intro,
+  playtime) was reverted by the stale copy. Renderer saves go through
+  `saveConfigFromRenderer`; a new `UserConfig` key must be added to
+  `RENDERER_SETTABLE_KEYS` or `MAIN_OWNED_KEYS` (a test checks). A writer
+  that awaits (network, a character copy) between reading and writing
+  captures `getActiveScope()` first and passes `updateConfig(fn, { scope })`,
+  or re-checks the scope and gives up; otherwise an account switch in the
+  gap lands its write in the next account (cloud default, library add, local
+  import, the sign-in reconcile sweep, which also stops when the scope moves).
 - **Native ABI mismatch** → `@electron/rebuild` / `install-app-deps` runs in
   `postinstall`. Test packaged builds on a clean machine.
 - **Bot ESM module type in packaged builds** → `src/bot/package.json` exists

@@ -15,7 +15,9 @@ export function createGeminiProvider(config, { fetchImpl = globalThis.fetch } = 
   const pcfg = config.llm?.providers?.gemini ?? {}
   const apiKey = pcfg.api_key ?? ''
   const baseURL = pcfg.base_url ?? 'https://generativelanguage.googleapis.com/v1beta'
-  const model = pcfg.model ?? 'gemini-2.0-flash'
+  // 260828: fallback mirrors llmCatalog.ts DEFAULT_MODELS.gemini (drift-tested
+  // in llmCatalogSync.test.js); a parsed config carries the Zod default anyway.
+  const model = pcfg.model ?? 'gemini-2.5-flash'
   const defaultTimeoutMs = config.anthropic?.timeout_ms ?? 20_000
 
   if (!apiKey) throw new Error(`gemini provider: api_key missing in llm.providers.gemini.api_key`)

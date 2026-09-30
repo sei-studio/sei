@@ -13,6 +13,11 @@
  * one action guaranteed not to work, and offering it is what produced the loop
  * in the first place. The actions offered are the two that actually resolve it.
  *
+ * 260929: also opened for a summon that TIMED OUT on a known modded host
+ * (the supervisor reports that as MODDED_HOST_REJECTED; before, it was a
+ * generic 30s timeout that said nothing about mods). A Fabric or Quilt host
+ * gets its own body sentence, since "runs Forge or NeoForge" would be wrong.
+ *
  * Opened centrally by the onStatus subscription in useDataStore.wireIpc,
  * mirroring LanNotOpenModal / UnsupportedVersionModal, so every summon entry
  * point is covered.
@@ -40,10 +45,19 @@ export function ModdedHostModal({ characterId }: ModdedHostModalProps): React.Re
   const closeModal = useUiStore((s) => s.closeModal);
   const rawName = useDataStore((s) => s.characters.find((c) => c.id === characterId)?.name ?? null);
   const name = rawName ?? t('Your companion');
+  const hostClient = useDataStore((s) => (s.lan.kind === 'open' ? s.lan.host?.client ?? null : null));
+  const fabricLike = hostClient === 'fabric' || hostClient === 'quilt';
   // Keep the <strong> around the name: translate with the {name} placeholder
   // intact, then split on it and re-insert the styled node.
-  const [bodyBefore, bodyAfter] = t(
-    '{name} was turned away by this world. It runs Forge or NeoForge, and it only lets in players who have the same mods installed.',
+  const [bodyBefore, bodyAfter] = (
+    fabricLike
+      ? t(
+          '{name} could not get into this world. It runs {loader} with other mods, and some mods only let in players who have them installed too.',
+          { loader: hostClient === 'quilt' ? 'Quilt' : 'Fabric' },
+        )
+      : t(
+          '{name} was turned away by this world. It runs Forge or NeoForge, and it only lets in players who have the same mods installed.',
+        )
   ).split('{name}');
   return (
     <ModalShell

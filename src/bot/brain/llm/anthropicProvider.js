@@ -5,7 +5,9 @@
 
 import { createAnthropicClient } from '../anthropicClient.js'
 
-const CAPABILITIES = { vision: true, cached: true, local: false }
+// serverWebSearch (260909): Anthropic's server-side web_search tool is offered
+// instead of the client search (src/bot/web/webTools.js webToolsFor).
+const CAPABILITIES = { vision: true, cached: true, local: false, serverWebSearch: true }
 
 export function createAnthropicProvider(config) {
   const client = createAnthropicClient(config)

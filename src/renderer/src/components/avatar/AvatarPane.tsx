@@ -12,14 +12,14 @@
  *    profile's avatars dir; nothing reaches the cloud.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import type { AvatarPrefs } from '@shared/characterSchema';
+import type { AvatarPrefs, CloudAvatarRef } from '@shared/characterSchema';
 import { useT } from '../../lib/i18n';
 import { sei } from '../../lib/ipcClient';
 import { useUiStore } from '../../lib/stores/useUiStore';
 import { useAvatarStore } from '../../lib/stores/useAvatarStore';
 import { Seg } from '../Seg';
 import { Toggle } from '../Toggle';
-import { Live2DView } from '../../lib/live2d/Live2DView';
+import { AvatarView } from '../../lib/avatar/AvatarView';
 import styles from './AvatarPane.module.css';
 
 /** Client-side mirror of avatarStore's zip cap (the server-side check is the
@@ -28,11 +28,18 @@ const ZIP_MAX_BYTES = 128 * 1024 * 1024;
 
 interface AvatarPaneProps {
   characterId: string;
+  /**
+   * Cloud-hosted avatar descriptor (cloudAvatarOf(character), 260819). When
+   * set and no local model is imported yet, the Live2D tab offers a Download
+   * button instead of the upload box: the avatar was uploaded by the
+   * character's creator and fetching the zip locally is optional.
+   */
+  cloudAvatar?: CloudAvatarRef | null;
 }
 
 type SubTab = 'static' | 'live2d';
 
-export function AvatarPane({ characterId }: AvatarPaneProps): React.ReactElement {
+export function AvatarPane({ characterId, cloudAvatar }: AvatarPaneProps): React.ReactElement {
   const t = useT();
   const prefs = useUiStore((s) => s.avatarPrefsByCharacter[characterId]);
   const setAvatarPrefsFor = useUiStore((s) => s.setAvatarPrefsFor);
@@ -50,6 +57,7 @@ export function AvatarPane({ characterId }: AvatarPaneProps): React.ReactElement
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [importing, setImporting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [previewStatus, setPreviewStatus] = useState<'loading' | 'ready' | 'error'>('loading');
 
@@ -96,10 +104,30 @@ export function AvatarPane({ characterId }: AvatarPaneProps): React.ReactElement
       // eslint-disable-next-line no-console
       console.error('[AvatarPane] import failed', err);
       setImportError(
-        t('Could not read that model. It needs a .model3.json, a .moc3 and its textures.'),
+        t(
+          'Could not read that model. It needs a .model3.json with its .moc3 and textures, or a rig.json with its layer images.',
+        ),
       );
     } finally {
       setImporting(false);
+    }
+  };
+
+  // Cloud avatar download (260819): main fetches metadata.avatar's zip and
+  // runs it through the same import pipeline as a local upload.
+  const onDownload = async (): Promise<void> => {
+    setImportError(null);
+    setDownloading(true);
+    try {
+      const imported = await sei.avatarDownload(characterId);
+      setManifest(characterId, imported);
+      setPreviewStatus('loading');
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[AvatarPane] download failed', err);
+      setImportError(t('Could not download the avatar. Check your connection and try again.'));
+    } finally {
+      setDownloading(false);
     }
   };
 
@@ -179,7 +207,7 @@ export function AvatarPane({ characterId }: AvatarPaneProps): React.ReactElement
           {manifest ? (
             <>
               <div className={styles.previewBox}>
-                <Live2DView
+                <AvatarView
                   characterId={characterId}
                   className={styles.preview}
                   onStatus={setPreviewStatus}
@@ -192,10 +220,12 @@ export function AvatarPane({ characterId }: AvatarPaneProps): React.ReactElement
                 ) : null}
               </div>
               <p className={styles.subHint}>
-                {t('{name}, {count} expressions', {
-                  name: manifest.name,
-                  count: String(manifest.expressions.length),
-                })}
+                {manifest.kind === 'rig'
+                  ? t('{name}, layered rig', { name: manifest.name })
+                  : t('{name}, {count} expressions', {
+                      name: manifest.name,
+                      count: String(manifest.expressions.length),
+                    })}
               </p>
               {(() => {
                 const emotionNames = new Set(Object.values(manifest.emotions ?? {}));
@@ -245,11 +275,40 @@ export function AvatarPane({ characterId }: AvatarPaneProps): React.ReactElement
                 </button>
               </div>
             </>
+          ) : cloudAvatar ? (
+            <>
+              {/* Downloader side: the zip was uploaded by the character's
+                  creator. Free-to-use Live2D models often forbid commercial
+                  use, so the framing must be explicit that this is
+                  user-uploaded content, not Sei's. */}
+              <p className={styles.hint}>
+                {t(
+                  'This avatar was uploaded by a user and is not affiliated with Sei. If it is inappropriate, please report this companion.',
+                )}
+              </p>
+              <div className={`${styles.uploadBox} ${styles.downloadBox}`}>
+                <button
+                  type="button"
+                  className={styles.btn}
+                  disabled={downloading}
+                  onClick={() => void onDownload()}
+                >
+                  {downloading
+                    ? t('Downloading...')
+                    : t('Download ({mb} MB)', {
+                        mb: String(Math.max(1, Math.round(cloudAvatar.sizeBytes / (1024 * 1024)))),
+                      })}
+                </button>
+                <span className={styles.uploadSub}>
+                  {t('Optional. The avatar shows on the floating overlay once downloaded.')}
+                </span>
+              </div>
+            </>
           ) : (
             <>
               <p className={styles.hint}>
                 {t(
-                  'Give this companion a Live2D body on the floating avatar. Import a Live2D model as a .zip: it should contain a .model3.json, a .moc3, textures, and optionally expressions.',
+                  'Give this companion a Live2D body on the floating avatar. Import a model as a .zip: either a Live2D model (.model3.json, .moc3, textures) or a simple layered rig (rig.json plus its layer images).',
                 )}
               </p>
               <button
@@ -265,6 +324,11 @@ export function AvatarPane({ characterId }: AvatarPaneProps): React.ReactElement
                   {t('The model stays on this computer. It is never uploaded.')}
                 </span>
               </button>
+              <p className={styles.subHint}>
+                {t(
+                  'If you are using a third-party avatar, please consider giving credit to the creator in your character description.',
+                )}
+              </p>
             </>
           )}
           {importError ? (

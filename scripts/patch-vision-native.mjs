@@ -11,6 +11,12 @@
 // Patches (see rebuild-vision-native.mjs header for the deep "why"):
 //   1. gl/binding.gyp: c++17 -> c++20 (Electron 42 V8 headers use C++20 concepts) + bump
 //      MACOSX_DEPLOYMENT_TARGET 10.8 -> 10.15.
+//      NOTE (260828): on Node 25+ (ABI 141) gl has NO prebuild, so its own install script
+//      (`prebuild-install || node-gyp rebuild`) compiles it DURING `npm ci`'s dependency
+//      phase — before this script can run. The gyp patch therefore also ships baked into
+//      the vendored tarball `vendor/gl-8.1.6-cxx20.tgz` (wired via package.json
+//      `overrides`), same three changes, webgl target only (a global CXXFLAGS override
+//      breaks the ANGLE build). patchGlGyp stays as a defensive no-op backstop.
 //   2. nan External::New / External::Value: append V8's kExternalPointerTypeTagDefault, which
 //      Electron 42's V8 made a REQUIRED arg and nan (<=2.27.0) has not adopted.
 //   3. nan TypedArrayContents: swap buffer->GetBackingStore()->Data() for buffer->Data().
@@ -23,12 +29,15 @@ import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from '
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+// Default: the repo root. Every patch function also takes an explicit root so
+// scripts/build-game-pack.mjs can patch a STAGED tree (a pack's own nan copy)
+// before rebuilding its natives (260908).
+const DEFAULT_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const TAG = 'v8::kExternalPointerTypeTagDefault';
 
 const log = (m) => console.log(`[patch-vision-native] ${m}`);
 
-export function patchGlGyp() {
+export function patchGlGyp(root = DEFAULT_ROOT) {
   const f = join(root, 'node_modules/gl/binding.gyp');
   if (!existsSync(f)) return log('gl not installed — skipping gyp patch');
   let s = readFileSync(f, 'utf8');
@@ -96,7 +105,7 @@ export function patchV8MsvcBuiltins(includeNodeDir) {
   log(`V8 MSVC shim: patched ${patched} header(s) using __builtin_frame_address (scanned ${scanned})`);
 }
 
-export function patchNanNew() {
+export function patchNanNew(root = DEFAULT_ROOT) {
   const f = join(root, 'node_modules/nan/nan_implementation_12_inl.h');
   if (!existsSync(f)) return log('nan not installed — skipping External::New patch');
   let s = readFileSync(f, 'utf8');
@@ -122,7 +131,7 @@ export function patchNanNew() {
   log(`patched ${count} nan External::New call site(s)`);
 }
 
-export function patchNanValue() {
+export function patchNanValue(root = DEFAULT_ROOT) {
   const f = join(root, 'node_modules/nan/nan_callbacks_12_inl.h');
   if (!existsSync(f)) return log('nan not installed — skipping External::Value patch');
   let s = readFileSync(f, 'utf8');
@@ -140,7 +149,7 @@ export function patchNanValue() {
 // EXPORTS it from the V8 lib — a strict linker (Windows MSVC) then fails with
 // LNK2019. macOS hides this behind dynamic_lookup, which is why the mac CI
 // missed it. The modern, exported replacement is ArrayBuffer::Data() (V8 11.4+).
-export function patchNanTypedArrayContents() {
+export function patchNanTypedArrayContents(root = DEFAULT_ROOT) {
   const f = join(root, 'node_modules/nan/nan_typedarray_contents.h');
   if (!existsSync(f)) return log('nan not installed — skipping TypedArrayContents patch');
   let s = readFileSync(f, 'utf8');
@@ -152,11 +161,11 @@ export function patchNanTypedArrayContents() {
   log(`patched ${count} nan TypedArrayContents GetBackingStore site(s)`);
 }
 
-export function applyAll() {
-  patchGlGyp();
-  patchNanNew();
-  patchNanValue();
-  patchNanTypedArrayContents();
+export function applyAll(root = DEFAULT_ROOT) {
+  patchGlGyp(root);
+  patchNanNew(root);
+  patchNanValue(root);
+  patchNanTypedArrayContents(root);
 }
 
 // Run directly (postinstall step 1)

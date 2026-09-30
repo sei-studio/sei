@@ -37,9 +37,10 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type Anthropic from '@anthropic-ai/sdk';
-import { raiseUsageLimitPopup } from '../chat/usageLimit';
+import { classifyUsageLimit, raiseUsageLimitPopup } from '../chat/usageLimit';
 import { Chess } from 'chess.js';
-import type { ChatMessage, ChatSendResult, LogBatch } from '../../shared/ipc';
+import type { ChatMessage, ChatSendResult, CreditsStatus, LogBatch } from '../../shared/ipc';
+import { quietCompanionNotice } from '../../shared/freePlayReset';
 import type {
   ChessColor,
   ChessDownloadProgress,
@@ -51,9 +52,11 @@ import { CHESS_ERR_MC_ACTIVE } from '../../shared/chessIpc';
 import { paths } from '../paths';
 import { loadConfig } from '../configStore';
 import { getCharacter } from '../characterStore';
-import { buildChatSdk, CHAT_TIMEOUT_MS } from '../chat/sdk';
+import { CHAT_TIMEOUT_MS } from '../chat/sdk';
+import { buildLlmProvider } from '../llm';
 import { buildSystemBlocks, clockNow, markLastMessageCached, REMEMBER_TOOL } from '../chat/chatPrompts';
 import { readChatContext, foldIfDue } from '../chat/continuity';
+import { accountSwitchingError, beginSessionStart, trackScopedWrite } from '../profile/scopeBarrier';
 import { playSummaryText } from '../chat/playSummary';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import {
@@ -71,7 +74,16 @@ import { isCallActive } from '../voice/callState';
 import { surfaceLanguage } from '../../shared/chatLanguage';
 import { ensureModel, modelReady } from './modelStore';
 import { getOrCreateChessProfile, type ChessProfile } from './chessProfile';
+import {
+  CHESS_DIFFICULTY,
+  effectiveElo,
+  readEloOffset,
+  recordChessOutcome,
+  type ChessOutcome,
+} from './chessDifficulty';
+import { nudgeDueInMs } from './turnNudge';
 import { createChessLog, NULL_CHESS_LOG, type ChessLog } from './chessLog';
+import { loadAnalytics } from '../lazyAnalytics';
 
 // ── deps + module state ──────────────────────────────────────────────────────
 
@@ -86,6 +98,30 @@ export interface ChessDeps {
    * Minecraft bot logs ride). Optional: tests run without it.
    */
   pushLog?: (batch: LogBatch) => void;
+  /**
+   * Credit-wall quiet mode (260926): the account's plan snapshot, read to date
+   * the quiet notice and to notice when a top up / reset lifted the wall.
+   * Optional: production reads proxyClient.creditsGet lazily; tests inject.
+   * null = unknown (signed out, read failed).
+   */
+  creditsSnapshot?: () => Promise<ChessCreditsSnapshot | null>;
+}
+
+/** The slice of CreditsStatus the quiet mode reads. */
+export type ChessCreditsSnapshot = Pick<
+  CreditsStatus,
+  'plan' | 'resets_at' | 'over_limit' | 'ai_backend_kind' | 'usage_pct' | 'extra_credits_total'
+>;
+
+/**
+ * Quiet-mode state a rematch inherits (review 260926): a walled player who
+ * plays again must not get a second popup, notice and analytics event.
+ */
+interface CreditWallCarry {
+  quiet: boolean;
+  noticeSent: boolean;
+  probeAt: number;
+  baseline: ChessCreditsSnapshot | null;
 }
 
 interface CandidateOut {
@@ -198,6 +234,51 @@ interface Session {
    * table talk as a live game.
    */
   spoke: boolean;
+  /**
+   * Credit-wall quiet mode (260926). Set when a turn 402s on the cloud
+   * allowance: from then on the ENGINE plays every move (the top sampled
+   * candidate, the same strength the character would have had) and no LLM
+   * turn runs at all, so the game keeps going instead of re-hitting the wall
+   * (and re-raising the popup) on every move. Lifted when a later snapshot
+   * says the wall is gone (top up, upgrade, weekly reset, switch to BYOK).
+   */
+  creditQuiet: boolean;
+  /** The one system notice explaining the quiet has been posted this game. */
+  creditNoticeSent: boolean;
+  /** Last time quiet mode re-checked the credits snapshot (throttle). */
+  creditProbeAt: number;
+  /**
+   * The credits snapshot read when quiet began (null = the read failed).
+   * Quiet only lifts when a later snapshot has really CHANGED against it
+   * (creditWallLifted): `over_limit` alone is not enough, because an account
+   * with a few extra credits left reads over_limit:false in my_plan while the
+   * proxy's worst-case reservation still 402s every turn.
+   */
+  creditBaseline: ChessCreditsSnapshot | null;
+  /**
+   * The character's own profile, before the per-player difficulty offset
+   * (260929). `profile.elo` is what this game actually plays at; this keeps
+   * the persona Elo the offset is stepped against when the game ends.
+   */
+  baseProfile: ChessProfile;
+  /** Offset applied this game (effective = base + offset, clamped). */
+  eloOffset: number;
+  /**
+   * Engine warm-up failed (260929): 'download' when the model never arrived,
+   * 'engine' when it did but the engine would not load. The session stays in
+   * 'preparing' so the panel shows the error and a retry instead of silently
+   * ending as 'abandoned', which is what a player quitting looks like.
+   */
+  warmupError: 'download' | 'engine' | null;
+  /** Warm-up running (a retry click while it runs is a no-op). */
+  warmingUp: boolean;
+  /** When the current player turn began (null while it is not their turn). */
+  playerTurnSince: number | null;
+  /** The one "your move" nudge for this player turn already went out. */
+  nudged: boolean;
+  /** Nudges this game (analytics shape). */
+  nudges: number;
+  nudgeTimer: NodeJS.Timeout | null;
 }
 
 /**
@@ -215,6 +296,22 @@ export const CHESS_TIMING = {
   idleMaxMs: 90_000,
   /** Idle cadence multiplier cap from consecutive silent ticks. */
   idleBackoffCap: 4,
+  /**
+   * "It's your move" nudge (260929): quiet time at the start of the player's
+   * turn before the companion says one line about it. Short for the first
+   * move (the new player who has not noticed they are White), long for later
+   * moves (real thinking is normal there). One nudge per player turn.
+   */
+  nudgeFirstMoveMs: 20_000,
+  nudgeMoveMs: 120_000,
+  /** How often quiet mode re-reads the credits snapshot to see if the wall lifted. */
+  creditProbeMs: 60_000,
+  /**
+   * Ceiling on one credits read. The read sits inside the move and chat
+   * dispatch, so a hung network must not stall the game: past this it counts
+   * as unknown (null), which keeps the companion quiet.
+   */
+  creditReadTimeoutMs: 4_000,
 };
 
 const sessions = new Map<string, Session>();
@@ -287,21 +384,36 @@ export function getChessState(characterId: string): ChessGameState | null {
 
 export async function startChess(
   characterId: string,
-  opts?: { playerColor?: 'w' | 'b' | 'random' },
+  opts?: {
+    playerColor?: 'w' | 'b' | 'random';
+    /** Internal: rematch() hands over the credit-wall quiet state. Never from IPC. */
+    creditWall?: CreditWallCarry;
+  },
 ): Promise<ChessGameState> {
   const d = requireDeps();
   if (d.isSummoned(characterId)) {
     throw new Error(`${CHESS_ERR_MC_ACTIVE}: disconnect the Minecraft session to play chess`);
   }
   const existing = sessions.get(characterId);
-  if (existing && existing.status !== 'ended') return snapshot(existing);
+  if (existing && existing.status !== 'ended') {
+    // "Try again" on a failed warm-up (260929): same game, warm up again.
+    if (existing.warmupError && !existing.warmingUp) void warmUp(existing);
+    return snapshot(existing);
+  }
   if (existing) void existing.log.close().catch(() => {});
+  // 260926: no session may start across an account switch (scopeBarrier).
+  const startGuard = beginSessionStart();
 
   const pick = opts?.playerColor ?? 'w';
   const playerColor: ChessColor =
     pick === 'random' ? (Math.random() < 0.5 ? 'w' : 'b') : pick;
 
-  const profile = await getOrCreateChessProfile(characterId);
+  const baseProfile = await getOrCreateChessProfile(characterId);
+  // Adaptive strength (260929): this player's running offset for this
+  // character, on top of the persona Elo. Everything downstream (engine,
+  // prompts, the Elo label, the replay row) reads the effective profile.
+  const eloOffset = await readEloOffset(characterId, baseProfile);
+  const profile: ChessProfile = { ...baseProfile, elo: effectiveElo(baseProfile.elo, eloOffset) };
   const s: Session = {
     gameId: randomUUID(),
     characterId,
@@ -332,13 +444,26 @@ export async function startChess(
     lastMacro: '',
     thinkingSince: null,
     spoke: false,
+    creditQuiet: opts?.creditWall?.quiet ?? false,
+    creditNoticeSent: opts?.creditWall?.noticeSent ?? false,
+    creditProbeAt: opts?.creditWall?.probeAt ?? 0,
+    creditBaseline: opts?.creditWall?.baseline ?? null,
+    baseProfile,
+    eloOffset,
+    warmupError: null,
+    warmingUp: false,
+    playerTurnSince: null,
+    nudged: false,
+    nudges: 0,
+    nudgeTimer: null,
   };
   try {
     s.log = await createChessLog(characterId, d.pushLog ?? (() => {}));
   } catch { /* logging is never load-bearing */ }
   s.log.line(
     `game start id=${s.gameId.slice(0, 8)} character=${characterId.slice(0, 8)} ` +
-      `player=${colorName(playerColor)} ai=${colorName(playerColor === 'w' ? 'b' : 'w')} elo=${profile.elo}`,
+      `player=${colorName(playerColor)} ai=${colorName(playerColor === 'w' ? 'b' : 'w')} elo=${profile.elo}` +
+      (profile.elo !== baseProfile.elo ? ` (persona ${baseProfile.elo}, adaptive ${eloOffset > 0 ? '+' : ''}${eloOffset})` : ''),
   );
   s.queue = createPriorityQueue({
     idleFallbackMs: () => sampleIdleDelayMs(s),
@@ -354,6 +479,14 @@ export async function startChess(
     },
     logger: console,
   }) as ChessQueue;
+  if (!startGuard.stillValid()) {
+    // An account switch began while the profile and log were loading: the
+    // switch has already ended every game, so this one must not appear now.
+    s.queue.dispose();
+    s.queue = null;
+    void s.log.close().catch(() => {});
+    throw accountSwitchingError();
+  }
   sessions.set(characterId, s);
   push(s);
 
@@ -363,35 +496,88 @@ export async function startChess(
   // capture() is a no-op when it is not. No board state, no chat, no persona.
   void (async () => {
     try {
-      const { capture } = await import('../analytics');
+      const { capture } = await loadAnalytics();
       capture('chess_game_started', {
         character_id: characterId,
         player_color: playerColor,
         ai_elo: profile.elo,
+        // 260929 adaptive strength: the persona Elo and this player's offset.
+        ai_elo_base: baseProfile.elo,
+        elo_offset: eloOffset,
         profile_source: profile.source,
+        engine_ready: s.status === 'active',
       });
     } catch { /* analytics is never load-bearing */ }
   })();
 
   // Warm the engine (first run downloads the model with progress pushes).
-  void (async () => {
-    try {
-      await ensureModel((pct) => d.pushDownload({ characterId, pct }));
-      await getEngine();
-      if (sessions.get(characterId) !== s || s.status === 'ended') return;
-      if (s.status === 'preparing') {
-        s.status = 'active';
-        push(s);
-      }
-      if (s.chess.turn() !== s.playerColor) enqueueYourMove(s);
-    } catch (err) {
-      console.error(`[sei/chess] engine warm-up failed: ${(err as Error).message}`);
-      d.pushDownload({ characterId, pct: -1, error: (err as Error).message });
-      endSession(s, { winner: null, reason: 'abandoned' }, { silent: true });
-    }
-  })();
+  void warmUp(s);
 
   return snapshot(s);
+}
+
+/**
+ * Engine warm-up: the first run downloads the model with progress pushes.
+ * On failure (260929) the game does NOT end: it stays in 'preparing' with
+ * `warmupError` set, the panel shows a friendly error and a Try again button
+ * (which lands back here through startChess), and a surface_error records
+ * why. Closing the panel from there still ends the game as abandoned, but
+ * chess_game_ended carries stage download_failed / engine_failed, so it no
+ * longer reads as a player walking away from the board.
+ */
+async function warmUp(s: Session): Promise<void> {
+  const d = requireDeps();
+  const { characterId } = s;
+  const retry = s.warmupError !== null;
+  s.warmingUp = true;
+  s.warmupError = null;
+  if (retry) s.log.line('engine warm-up: retrying');
+  // Clear any failure the panel still shows from an earlier attempt.
+  if (retry || s.status === 'preparing') d.pushDownload({ characterId, pct: 0 });
+  if (retry) push(s);
+  let stage: 'download' | 'engine' = 'download';
+  try {
+    await ensureModel((pct) => d.pushDownload({ characterId, pct }));
+    stage = 'engine';
+    await getEngine();
+    if (sessions.get(characterId) !== s || s.status === 'ended') return;
+    if (s.status === 'preparing') {
+      s.status = 'active';
+      push(s);
+    }
+    if (s.chess.turn() !== s.playerColor) enqueueYourMove(s);
+    else if (s.history.length === 0) startPlayerTurn(s);
+  } catch (err) {
+    const kind = (err as { kind?: string }).kind ?? 'unknown';
+    console.error(`[sei/chess] engine warm-up failed (${stage}, ${kind}): ${describeErr(err)}`);
+    s.log.line(`engine warm-up failed (${stage}, ${kind}): ${describeErr(err)}`);
+    void (async () => {
+      try {
+        const { captureSurfaceError } = await loadAnalytics();
+        captureSurfaceError(
+          'chess',
+          stage === 'download' ? `model_download_${kind}` : 'engine_load_failed',
+          characterId,
+        );
+      } catch { /* analytics is never load-bearing */ }
+    })();
+    if (sessions.get(characterId) !== s || s.status === 'ended') return;
+    if (s.history.length > 0) {
+      // Cannot happen on a first warm-up; a board already in play with no
+      // engine behind it has nothing to fall back to.
+      endSession(s, { winner: null, reason: 'abandoned' }, { silent: true, reason: 'engine_failed' });
+      return;
+    }
+    s.warmupError = stage;
+    s.status = 'preparing';
+    clearNudge(s);
+    s.playerTurnSince = null;
+    // The raw message stays in the logs; the panel shows its own copy.
+    d.pushDownload({ characterId, pct: -1, error: stage === 'download' ? 'download_failed' : 'engine_failed' });
+    push(s);
+  } finally {
+    s.warmingUp = false;
+  }
 }
 
 export async function playerMove(
@@ -419,6 +605,7 @@ export async function playerMove(
   s.history.push({ san, uci, fen: s.chess.fen() });
   recordPly(s, false);
   s.log.line(`player move ${san} (${uci}) fen=${s.chess.fen()}`);
+  endPlayerTurn(s);
   s.candidateCache = null;
   s.lastActivityAt = Date.now();
   s.idleStreak = 0;
@@ -477,6 +664,14 @@ export async function rematch(characterId: string): Promise<ChessGameState> {
   sessions.delete(characterId);
   return startChess(characterId, {
     playerColor: old.playerColor === 'w' ? 'b' : 'w',
+    // Still on the wall: the new game starts quiet, with no second popup,
+    // notice or credit_wall_degraded event (review 260926).
+    creditWall: {
+      quiet: old.creditQuiet,
+      noticeSent: old.creditNoticeSent,
+      probeAt: old.creditProbeAt,
+      baseline: old.creditBaseline,
+    },
   });
 }
 
@@ -627,6 +822,7 @@ async function dispatchChess(
     if (event === 'sei:your_move') await dispatchYourMove(s);
     else if (event === 'sei:chat_received') await dispatchChat(s, data?.nudge === true);
     else if (event === 'sei:idle') await dispatchIdle(s);
+    else if (event === 'sei:nudge') await dispatchNudge(s);
   } finally {
     // Idle re-arms itself (enqueues reset the timer; a dispatch does not).
     if (event === 'sei:idle') s.queue?.resetIdleTimer();
@@ -635,6 +831,17 @@ async function dispatchChess(
 
 async function dispatchYourMove(s: Session): Promise<void> {
   if (s.status !== 'active' || s.chess.turn() === s.playerColor) return;
+  // Credit wall (260926): the engine plays on alone, no LLM call at all.
+  if (await creditQuietHolds(s)) {
+    if (s.status !== 'active') return;
+    try {
+      await fallbackPlay(s, 'credit wall, companion quiet');
+    } catch (err2) {
+      console.error(`[sei/chess] quiet engine move failed: ${describeErr(err2)}`);
+      endSession(s, { winner: null, reason: 'abandoned' }, { silent: true });
+    }
+    return;
+  }
   // A transient transport failure (stale keep-alive socket, network blip)
   // gets one retry after a short pause; anything else, or a second failure,
   // falls back so the game never stalls.
@@ -651,11 +858,22 @@ async function dispatchYourMove(s: Session): Promise<void> {
       if ((err as Error).message === CHAT_ABORTED) return;
       console.error(`[sei/chess] AI turn failed (attempt ${attempt + 1}): ${describeErr(err)}`);
       s.log.line(`move turn failed (attempt ${attempt + 1}): ${describeErr(err)}`);
+      // Analytics (260828): the move turn's LLM call failed (aborts returned
+      // above). Even when the engine fallback below keeps the game alive, the
+      // failure itself was invisible before this. Shape only, never content.
+      void (async () => {
+        try {
+          const { captureSurfaceError, surfaceErrorClass } = await loadAnalytics();
+          captureSurfaceError('chess', `move_turn_${surfaceErrorClass(err)}`, s.characterId);
+        } catch { /* analytics is never load-bearing */ }
+      })();
       // Usage limit (260730): raise the popup, skip the retry (it would 402
       // again), and fall through to fallbackPlay — the ENGINE picks the move
-      // for free, so the game stays alive and playable; after a top up the
-      // next turn simply talks again. Nothing here ends the session.
-      const limited = await raiseUsageLimitPopup(err);
+      // for free, so the game stays alive and playable. 260926: a depleted
+      // allowance also latches quiet mode, so the following moves skip the LLM
+      // entirely (no 402 per move, no popup per move) and one chat notice
+      // says why. Nothing here ends the session.
+      const limited = await onTurnUsageLimit(s, err);
       if (!limited && attempt === 0 && isConnectionError(err)) {
         await new Promise((r) => setTimeout(r, 1500));
         if (s.status !== 'active') return;
@@ -663,7 +881,7 @@ async function dispatchYourMove(s: Session): Promise<void> {
       }
       // The game must never stall: fall back to the first candidate silently.
       try {
-        await fallbackPlay(s);
+        await fallbackPlay(s, limited === 'depleted' ? 'credit wall' : 'no valid play() from the model');
       } catch (err2) {
         console.error(`[sei/chess] fallback move failed: ${describeErr(err2)}`);
         endSession(s, { winner: null, reason: 'abandoned' }, { silent: true });
@@ -679,11 +897,22 @@ async function dispatchChat(s: Session, nudge: boolean): Promise<void> {
   const voiceCall = entries.some((e) => e.voiceCall) || isCallActive(s.characterId);
   let replies: ChatMessage[] = [];
   try {
-    replies = await runChessLlmTurn(s, { kind: 'chat-reply', voiceCall });
+    // Credit wall (260926): quiet mode answers nothing; the notice already
+    // told the player why.
+    if (!(await creditQuietHolds(s))) {
+      replies = await runChessLlmTurn(s, { kind: 'chat-reply', voiceCall });
+    }
   } catch (err) {
     if ((err as Error).message !== CHAT_ABORTED) {
-      void raiseUsageLimitPopup(err);
+      await onTurnUsageLimit(s, err);
       console.warn(`[sei/chess] chat reply failed: ${describeErr(err)}`);
+      // Analytics (260828): genuine reply failure (aborts excluded above).
+      void (async () => {
+        try {
+          const { captureSurfaceError, surfaceErrorClass } = await loadAnalytics();
+          captureSurfaceError('chess', `chat_turn_${surfaceErrorClass(err)}`, s.characterId);
+        } catch { /* analytics is never load-bearing */ }
+      })();
     }
   }
   // streamed: true — every reply line was already persisted AND pushed live
@@ -707,17 +936,112 @@ async function dispatchIdle(s: Session): Promise<void> {
   // Never chatter while a decided move is presenting (it would reset the
   // reveal's quiet gate). While deciding, the turn itself is about to speak.
   if (s.aiThinking) return;
+  if (await creditQuietHolds(s)) return;
   let replies: ChatMessage[] = [];
   try {
     replies = await runChessLlmTurn(s, { kind: 'idle', voiceCall: isCallActive(s.characterId) });
   } catch (err) {
     if ((err as Error).message !== CHAT_ABORTED) {
-      void raiseUsageLimitPopup(err);
+      await onTurnUsageLimit(s, err);
       console.warn(`[sei/chess] idle turn failed: ${describeErr(err)}`);
+      // Analytics (260828): genuine idle-turn failure (aborts excluded above).
+      void (async () => {
+        try {
+          const { captureSurfaceError, surfaceErrorClass } = await loadAnalytics();
+          captureSurfaceError('chess', `idle_turn_${surfaceErrorClass(err)}`, s.characterId);
+        } catch { /* analytics is never load-bearing */ }
+      })();
     }
     return;
   }
   s.idleStreak = replies.length === 0 ? s.idleStreak + 1 : 0;
+}
+
+// ── the "your move" nudge (260929) ──────────────────────────────────────────
+
+/** Moves the player has made this game (the history alternates from White). */
+function playerMoveCount(s: Session): number {
+  const n = s.history.length;
+  return s.playerColor === 'w' ? Math.ceil(n / 2) : Math.floor(n / 2);
+}
+
+/** It just became the player's turn: start the quiet clock for the nudge. */
+function startPlayerTurn(s: Session): void {
+  s.playerTurnSince = Date.now();
+  s.nudged = false;
+  armNudge(s);
+}
+
+/** The player moved: this turn's nudge is moot. */
+function endPlayerTurn(s: Session): void {
+  s.playerTurnSince = null;
+  s.nudged = false;
+  clearNudge(s);
+}
+
+function clearNudge(s: Session): void {
+  if (s.nudgeTimer) clearTimeout(s.nudgeTimer);
+  s.nudgeTimer = null;
+}
+
+function nudgeDue(s: Session): number | null {
+  return nudgeDueInMs(
+    {
+      now: Date.now(),
+      playerTurnSince: s.playerTurnSince,
+      lastActivityAt: s.lastActivityAt,
+      nudged: s.nudged,
+      firstMove: playerMoveCount(s) === 0,
+      // Credit-wall quiet runs no LLM turns at all, so there is nothing to wait for.
+      active: s.status === 'active' && s.chess.turn() === s.playerColor && !s.creditQuiet,
+      busy: s.aiThinking || !!s.hold || s.chatBuffer.length > 0,
+    },
+    CHESS_TIMING,
+  );
+}
+
+/**
+ * (Re)arm the nudge check. The timer only asks again; nudgeDue decides, so
+ * chat in the meantime pushes it back and a move cancels it.
+ */
+function armNudge(s: Session): void {
+  clearNudge(s);
+  const due = nudgeDue(s);
+  if (due === null) return;
+  s.nudgeTimer = setTimeout(() => {
+    s.nudgeTimer = null;
+    const now = nudgeDue(s);
+    if (now === null) return;
+    if (now > 0) {
+      armNudge(s);
+      return;
+    }
+    s.nudged = true;
+    s.queue?.enqueue(Priority.P3_IDLE, 'sei:nudge', {});
+  }, Math.max(0, due));
+}
+
+/**
+ * One in-character line that it is the player's move. Rides the same queue
+ * and turn runner as an idle tick (kind 'idle' with the nudge note), so it
+ * never overlaps a reply or a move decision.
+ */
+async function dispatchNudge(s: Session): Promise<void> {
+  if (s.status !== 'active' || s.chess.turn() !== s.playerColor) return;
+  if (s.aiThinking || s.hold || s.chatBuffer.length > 0) return;
+  if (await creditQuietHolds(s)) return;
+  s.nudges++;
+  s.log.line(`nudge: player idle ${Math.round((Date.now() - (s.playerTurnSince ?? Date.now())) / 1000)}s on move ${playerMoveCount(s) + 1}`);
+  try {
+    await runChessLlmTurn(s, { kind: 'idle', voiceCall: isCallActive(s.characterId), nudge: true });
+  } catch (err) {
+    if ((err as Error).message !== CHAT_ABORTED) {
+      await onTurnUsageLimit(s, err);
+      console.warn(`[sei/chess] nudge turn failed: ${describeErr(err)}`);
+    }
+  }
+  // A regular idle tick right behind the nudge would read as nagging.
+  s.queue?.resetIdleTimer();
 }
 
 function flushChatBuffer(s: Session): void {
@@ -833,7 +1157,7 @@ function commitAiMove(s: Session): void {
   if (s.drawOffer === 'player') s.drawOffer = null;
   push(s);
   s.queue?.resetIdleTimer();
-  checkGameOver(s);
+  if (!checkGameOver(s)) startPlayerTurn(s);
 }
 
 /** Natural (board) game-over detection after a committed move. */
@@ -857,11 +1181,22 @@ function checkGameOver(s: Session): boolean {
   return true;
 }
 
-function endSession(s: Session, result: ChessResult, opts?: { silent?: boolean }): void {
+function endSession(
+  s: Session,
+  result: ChessResult,
+  // `reason` overrides the analytics reason only (260926: 'account_switch');
+  // the game's own result, the replay row and the renderer keep `result`.
+  opts?: { silent?: boolean; reason?: string },
+): void {
   s.turnSeq++;
   try { s.turnCtrl?.abort(); } catch { /* already done */ }
   s.turnCtrl = null;
   clearHoldTimers(s);
+  clearNudge(s);
+  // Where the game was when it ended (260929), captured before the status
+  // flips: an abandoned game at 0 moves used to be one bucket, whether the
+  // engine never arrived, the player never moved, or they left mid-game.
+  const stage = endStage(s);
   s.hold = null;
   s.aiThinking = false;
   s.pendingAiMove = null;
@@ -885,20 +1220,41 @@ function endSession(s: Session, result: ChessResult, opts?: { silent?: boolean }
   // still spent); `reason` distinguishes them. See the games rule in CLAUDE.md.
   void (async () => {
     try {
-      const { capture } = await import('../analytics');
+      const { capture } = await loadAnalytics();
       capture('chess_game_ended', {
         character_id: s.characterId,
         duration_ms: durationMs,
         plies: s.history.length,
-        reason: result.reason,
+        reason: opts?.reason ?? result.reason,
         // 'player' | 'ai' | 'draw' — never the raw colour, which would need
         // playerColor to interpret.
         outcome: result.winner === null ? 'draw' : result.winner === s.playerColor ? 'player' : 'ai',
         ai_elo: s.profile.elo,
+        ai_elo_base: s.baseProfile.elo,
+        elo_offset: s.eloOffset,
         spoke: s.spoke,
+        // 260929: downloading | download_failed | engine_failed |
+        // waiting_first_move | midgame. See endStage.
+        stage,
+        player_moves: playerMoveCount(s),
+        nudges: s.nudges,
       });
     } catch { /* analytics is never load-bearing */ }
   })();
+
+  // Adaptive strength (260929): a decided game steps this player's offset for
+  // the NEXT game against this character. Abandoned games, draws and an
+  // early resign (decidedOutcome) do not.
+  // Tracked like the play row so an account switch drains it into the right
+  // profile's config.
+  const outcome = decidedOutcome(s, result);
+  if (outcome && outcome !== 'draw' && !opts?.reason) {
+    void trackScopedWrite(
+      recordChessOutcome(s.characterId, s.baseProfile, outcome).then((next) => {
+        if (next !== null) s.log.line(`difficulty: ${outcome === 'ai' ? 'player lost' : 'player won'}, next offset ${next}`);
+      }),
+    );
+  }
   // Transcript event ("You and X played chess. You won in N moves.") — same
   // shape the Minecraft/watch sessions append, rendered with the gamepad icon.
   // Abandoned games leave no row ONLY when nothing happened at all (no moves
@@ -907,12 +1263,16 @@ function endSession(s: Session, result: ChessResult, opts?: { silent?: boolean }
   // live game and resumes it ("the board's still waiting").
   if (result.reason !== 'abandoned' || s.history.length > 0 || s.spoke) {
     const plyCount = s.history.length;
-    void (async () => {
+    // Tracked (260926): an account switch drains this before it re-points the
+    // profile scope, so the row lands in THIS account's transcript.
+    void trackScopedWrite((async () => {
       let name = 'your companion';
+      let personaExpanded: string | undefined;
       let rowLanguage: 'zh' | undefined;
       try {
         const c = await getCharacter(s.characterId);
         if (c?.name) name = c.name;
+        personaExpanded = c?.persona?.expanded;
         const { characterLanguage } = await import('../../shared/chatLanguage');
         if (characterLanguage(c?.metadata) === 'zh') rowLanguage = 'zh';
       } catch { /* generic name */ }
@@ -939,16 +1299,48 @@ function endSession(s: Session, result: ChessResult, opts?: { silent?: boolean }
         await chatStore.appendMessage(s.characterId, ev);
         requireDeps().pushChatMessage(s.characterId, ev);
       } catch { /* best-effort */ }
-    })();
+      // Continuity OUT (CLAUDE.md contract): fold after the play row, like
+      // Draw! and backseat. A silent end runs no reaction turn, whose fold
+      // would otherwise have picked the row up. Not on the credit wall: the
+      // fold is an LLM call and would only 402; the next fold picks it up.
+      if (!s.creditQuiet) void foldIfDue(s.characterId, personaExpanded).catch(() => {});
+    })());
   }
 
-  if (!opts?.silent) {
+  // Credit wall (260926): a quiet companion does not react to the result
+  // either; that call would only 402.
+  if (!opts?.silent && !s.creditQuiet) {
     // No mechanical memory line for the result (260725): template writes read
     // as canned next to the character's own remember() notes, and the game-over
     // reaction turn below can remember() anything actually worth keeping.
     // Let the character react to the result in chat.
     void runChessLlmTurn(s, { kind: 'game-over', voiceCall: isCallActive(s.characterId) }).catch(() => {});
   }
+}
+
+/**
+ * The stage a game ended in, for chess_game_ended (260929). Call BEFORE the
+ * session's status is flipped to 'ended'.
+ */
+function endStage(
+  s: Session,
+): 'downloading' | 'download_failed' | 'engine_failed' | 'waiting_first_move' | 'midgame' {
+  if (s.warmupError === 'download') return 'download_failed';
+  if (s.warmupError === 'engine') return 'engine_failed';
+  if (s.status === 'preparing') return 'downloading';
+  return playerMoveCount(s) === 0 ? 'waiting_first_move' : 'midgame';
+}
+
+/**
+ * The result from the player's side for adaptive strength, or null when the
+ * game should not move it: abandoned, or resigned before the player made
+ * CHESS_DIFFICULTY.minPlayerMovesForResign moves (a quick exit, not a loss).
+ */
+function decidedOutcome(s: Session, result: ChessResult): ChessOutcome | null {
+  if (result.reason === 'abandoned') return null;
+  if (result.reason === 'resign' && playerMoveCount(s) < CHESS_DIFFICULTY.minPlayerMovesForResign) return null;
+  if (result.winner === null) return 'draw';
+  return result.winner === s.playerColor ? 'player' : 'ai';
 }
 
 /**
@@ -1007,12 +1399,159 @@ async function candidatesFor(s: Session): Promise<CandidateOut> {
   return out;
 }
 
-async function fallbackPlay(s: Session): Promise<void> {
+// ── credit-wall quiet mode (260926) ─────────────────────────────────────────
+
+async function readCreditsSnapshot(): Promise<ChessCreditsSnapshot | null> {
+  const read = (async (): Promise<ChessCreditsSnapshot | null> => {
+    const custom = deps?.creditsSnapshot;
+    if (custom) return await custom();
+    const { creditsGet } = await import('../cloud/proxyClient');
+    return await creditsGet();
+  })().catch(() => null);
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), CHESS_TIMING.creditReadTimeoutMs);
+  });
+  try {
+    return await Promise.race([read, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Has the wall really moved since quiet began? Pure; exported for the test.
+ * `over_limit:false` alone is deliberately NOT enough: my_plan reads false
+ * while a few extra credits remain, but the proxy reserves the worst case
+ * per call and still 402s, so trusting it re-woke the companion into a fresh
+ * 402 about once a minute. Lift on a real change instead: switched to a local
+ * key, allowance no longer spent, more extra credits than before, a new
+ * period, or a plan change. With no baseline (the read at the wall failed),
+ * only the unambiguous signals count.
+ */
+export function creditWallLifted(
+  baseline: ChessCreditsSnapshot | null,
+  snap: ChessCreditsSnapshot | null,
+): boolean {
+  if (!snap) return false;
+  if (snap.ai_backend_kind === 'local') return true;
+  if (snap.usage_pct < 100) return true;
+  if (!baseline) return false;
+  if (snap.extra_credits_total > baseline.extra_credits_total) return true;
+  if (snap.resets_at && snap.resets_at !== baseline.resets_at) return true;
+  if (snap.plan !== baseline.plan) return true;
+  return false;
+}
+
+/**
+ * A turn's LLM call failed. Raise the usage-limit popup when it is one (only
+ * ever the FIRST time per quiet stretch: later turns never reach the LLM) and
+ * latch quiet mode on a depleted allowance. Returns the usage-limit reason.
+ */
+async function onTurnUsageLimit(s: Session, err: unknown): Promise<'depleted' | 'rate_limited' | null> {
+  // The popup is raised ONCE per session (review 260926). After the first
+  // wall, a 402 (for instance right after a lift that proved premature)
+  // just goes quiet again: the player has already been told, and a popup
+  // every minute over a running game is the exit this change removes.
+  if (s.creditNoticeSent && classifyUsageLimit(err) === 'depleted') {
+    if (s.status === 'active') enterCreditQuiet(s);
+    return 'depleted';
+  }
+  const reason = await raiseUsageLimitPopup(err);
+  if (reason === 'depleted' && s.status === 'active') enterCreditQuiet(s);
+  return reason;
+}
+
+function enterCreditQuiet(s: Session): void {
+  if (s.creditQuiet) return;
+  s.creditQuiet = true;
+  s.creditProbeAt = Date.now();
+  s.log.line('credit wall: companion goes quiet, the engine plays on');
+  // The baseline the lift check compares against. Read in the background:
+  // until it lands the probe throttle keeps quiet anyway.
+  void readCreditsSnapshot().then((snap) => {
+    if (s.creditQuiet) s.creditBaseline = snap;
+  });
+  if (s.creditNoticeSent) return;
+  s.creditNoticeSent = true;
+  // Analytics: once per game, the first time the wall turns into quiet play.
+  void (async () => {
+    try {
+      const { capture } = await loadAnalytics();
+      capture('credit_wall_degraded', {
+        surface: 'chess',
+        character_id: s.characterId,
+        mode: 'engine_only',
+        plies: s.history.length,
+      });
+    } catch { /* analytics is never load-bearing */ }
+  })();
+  void postQuietNotice(s);
+}
+
+/**
+ * The one system line in the chat that explains the silence, dated when the
+ * reset time is known. Pushed live but NOT persisted: it describes this game
+ * only, and a persisted copy would be replayed into every later prompt.
+ * Wording follows the character's language, like every other game line.
+ */
+async function postQuietNotice(s: Session): Promise<void> {
+  let name = 'your companion';
+  let lang: 'en' | 'zh' = 'en';
+  try {
+    const c = await getCharacter(s.characterId);
+    if (c?.name) name = c.name;
+    const { characterLanguage } = await import('../../shared/chatLanguage');
+    if (characterLanguage(c?.metadata) === 'zh') lang = 'zh';
+  } catch { /* generic name */ }
+  const snap = await readCreditsSnapshot();
+  if (s.status === 'ended') return;
+  const msg: ChatMessage = {
+    id: randomUUID(),
+    role: 'system',
+    text: quietCompanionNotice({
+      name,
+      lang,
+      plan: snap?.plan,
+      resetsAt: snap?.resets_at,
+      nowMs: Date.now(),
+    }),
+    ts: Date.now(),
+  };
+  try {
+    requireDeps().pushChatMessage(s.characterId, msg);
+  } catch { /* best-effort */ }
+}
+
+/**
+ * True while quiet mode holds. Re-reads the credits snapshot at most every
+ * CHESS_TIMING.creditProbeMs and lifts the quiet when the wall is gone (or the
+ * user switched to their own key), so a top up mid-game brings the character
+ * back on the next turn. An unknown snapshot keeps it quiet: the cost of a
+ * wrong guess the other way is another 402.
+ */
+async function creditQuietHolds(s: Session): Promise<boolean> {
+  if (!s.creditQuiet) return false;
+  if (Date.now() - s.creditProbeAt < CHESS_TIMING.creditProbeMs) return true;
+  s.creditProbeAt = Date.now();
+  const snap = await readCreditsSnapshot();
+  if (creditWallLifted(s.creditBaseline, snap)) {
+    s.creditQuiet = false;
+    s.log.line('credit wall lifted: the companion talks again');
+    return false;
+  }
+  return true;
+}
+
+async function fallbackPlay(s: Session, why = 'no valid play() from the model'): Promise<void> {
   const { candidates } = await candidatesFor(s);
   if (s.status !== 'active') return;
+  // candidates[0] is the engine's top sampled candidate (Maia, Elo-tempered,
+  // with the blunder layers applied), so an engine-only move keeps the
+  // character's strength instead of jumping to Stockfish's best.
   const pick = candidates[0];
   if (!pick) throw new Error('no candidates');
-  s.log.line(`fallback: playing first candidate ${pick.san} (no valid play() from the model)`);
+  s.log.line(`fallback: playing first candidate ${pick.san} (${why})`);
   beginHold(s, { uci: pick.uci, san: pick.san }, []);
   await presentHold(s);
 }
@@ -1216,6 +1755,7 @@ async function buildChessTurnBlock(
   kind: TurnKind,
   playerName: string,
   quietSec?: number,
+  nudge = false,
 ): Promise<string> {
   const aiColor: ChessColor = s.playerColor === 'w' ? 'b' : 'w';
   const lines: string[] = [];
@@ -1280,6 +1820,22 @@ async function buildChessTurnBlock(
             : 'Game state: it is YOUR move, but first just reply to their message in text; the game will ask you to pick your move right after this reply. No tool call now.',
         );
       }
+    } else if (nudge) {
+      // 260929: the one "your move" nudge of this player turn (turnNudge.ts).
+      // Unlike a plain idle tick, a line is wanted here.
+      const sec = Math.max(1, Math.round(quietSec ?? 0));
+      lines.push(`It is ${playerName}'s move, and they have not moved or said anything for about ${sec} seconds.`);
+      if (playerMoveCount(s) === 0) {
+        lines.push(
+          `The game has just started. ${playerName} plays ${colorName(s.playerColor)}` +
+            (s.history.length === 0 ? ', so they move first.' : ', and it is their first move.') +
+            ' They may not have noticed that it is their turn.',
+        );
+      }
+      lines.push(
+        'Say ONE short line in your own voice to let them know it is their move. Keep it light. ' +
+          'Do not suggest a move and do not explain the rules unless they ask.',
+      );
     } else {
       const sec = Math.max(1, Math.round(quietSec ?? 0));
       lines.push(
@@ -1392,7 +1948,7 @@ async function readMemoryTail(id: string): Promise<string> {
  */
 async function runChessLlmTurn(
   s: Session,
-  opts: { kind: TurnKind; voiceCall: boolean },
+  opts: { kind: TurnKind; voiceCall: boolean; nudge?: boolean },
 ): Promise<ChatMessage[]> {
   const d = requireDeps();
   const character = await getCharacter(s.characterId);
@@ -1428,14 +1984,14 @@ async function runChessLlmTurn(
     // Session-pinned clock: keeps the system prefix byte-stable across a game.
     pinnedClock: s.clock,
   } as Parameters<typeof buildSystemBlocks>[0]);
-  const turnBlock = await buildChessTurnBlock(s, opts.kind, playerName, quietSec);
+  const turnBlock = await buildChessTurnBlock(s, opts.kind, playerName, quietSec, opts.nudge === true);
 
   // Per-turn session log: the compact context that was sent, every hop's
   // output and tool traffic, what was spoken vs suppressed, and timing. One
   // multi-line [chess:turn] event per LLM turn in file + dev console.
   const turnT0 = Date.now();
   const turnLog: string[] = [
-    `kind=${opts.kind} voiceCall=${opts.voiceCall} historyMsgs=${history.length} plies=${s.gameLog.length}`,
+    `kind=${opts.kind}${opts.nudge ? ' (nudge)' : ''} voiceCall=${opts.voiceCall} historyMsgs=${history.length} plies=${s.gameLog.length}`,
     '--- chess turn block sent ---',
     turnBlock,
     '--- turn ---',
@@ -1522,7 +2078,7 @@ async function runChessLlmTurn(
   };
 
   try {
-    const { client, model } = await buildChatSdk();
+    const llm = await buildLlmProvider();
     let played = false;
 
     for (let hop = 0; hop < CHESS_MAX_HOPS && !stale(); hop++) {
@@ -1532,20 +2088,18 @@ async function runChessLlmTurn(
       // invented "(it is your turn)" direction — and speak() faithfully
       // persisted and TTS'd all of it. Cutting generation at the other side's
       // line-start markers means the leak text is never produced at all.
-      const res = await client.messages.create(
-        {
-          model,
-          // Short by construction, not just by instruction: with a generous
-          // ceiling the model self-conditions on its own longest prior turn and
-          // creeps up a line each round (same failure the chat path caps at 200).
-          max_tokens: 160,
-          system,
-          tools,
-          stop_sequences: TRANSCRIPT_STOP_SEQUENCES,
-          messages: messages as never,
-        },
-        { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
-      );
+      const res = await llm.call({
+        // Short by construction, not just by instruction: with a generous
+        // ceiling the model self-conditions on its own longest prior turn and
+        // creeps up a line each round (same failure the chat path caps at 200).
+        maxTokens: 160,
+        system,
+        tools,
+        stopSequences: TRANSCRIPT_STOP_SEQUENCES,
+        messages,
+        timeoutMs: CHAT_TIMEOUT_MS,
+        signal: ctrl.signal,
+      });
       const u = res.usage;
       console.log(
         `[sei/chess] turn char=${s.characterId.slice(0, 8)} kind=${opts.kind} hop=${hop} ` +
@@ -1708,6 +2262,32 @@ function tryParseMove(s: Session, raw: string): { uci: string; san: string } | n
     return { uci: m.from + m.to + (m.promotion ?? ''), san: m.san };
   } catch {
     return null;
+  }
+}
+
+/**
+ * End every live game for an account switch (260926). Same choke point as
+ * every other exit (endSession: analytics with duration_ms, the play row),
+ * silent so no reaction turn runs under the incoming account's JWT, and the
+ * sessions are dropped so a late renderer chess:end for the old game is a
+ * no-op. The engine stays warm; it holds no account data.
+ */
+export function endAllChess(reason: string): void {
+  for (const s of [...sessions.values()]) {
+    if (s.status !== 'ended') {
+      endSession(s, { winner: null, reason: 'abandoned' }, { silent: true, reason });
+    } else {
+      // Already over; a game-over reaction turn may still be in flight.
+      s.turnSeq++;
+      try { s.turnCtrl?.abort(); } catch { /* already done */ }
+      s.turnCtrl = null;
+      clearHoldTimers(s);
+      flushChatBuffer(s);
+      s.queue?.dispose();
+      s.queue = null;
+    }
+    void s.log.close().catch(() => {});
+    sessions.delete(s.characterId);
   }
 }
 

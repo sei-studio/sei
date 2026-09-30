@@ -34,6 +34,9 @@ import { OnboardApp, type OnboardResult } from './onboard/OnboardApp';
 import { SuiPrefsScene } from './onboard/SuiPrefsScene';
 import { TutorialOverlay } from './components/tutorial/TutorialOverlay';
 import { useTutorialStore, type TutorialStep } from './lib/stores/useTutorialStore';
+import { useFirstMomentStore } from './lib/stores/useFirstMomentStore';
+import { firstMomentCompanion } from './lib/firstMoment';
+import { DEFAULT_CHARACTER_UUIDS } from '@shared/defaultCharacters';
 import { SkinSetupScreen } from './screens/SkinSetupScreen';
 import { CharactersScreen } from './screens/CharactersScreen';
 import { AwakenScreen } from './screens/AwakenScreen';
@@ -60,6 +63,13 @@ import { LanHostWarningModal } from './components/LanHostWarningModal';
 import { UnsupportedVersionModal } from './components/UnsupportedVersionModal';
 import { LanNotOpenModal } from './components/LanNotOpenModal';
 import { ModdedHostModal } from './components/ModdedHostModal';
+import { GameSetupModal } from './components/GameSetupModal';
+import { GameErrorModal } from './components/GameErrorModal';
+// Don't Starve Together (game-adapters M2, 260908): registers the DST launch
+// + dashboard panels, setup-modal body, summon flow and settings section.
+import './components/dontstarve/register';
+// Stardew Valley (game adapters M1): registers its panels, summon flow, error routes, settings group and setup modal.
+import './components/stardew/registerStardew';
 import { BotCrashModal } from './components/BotCrashModal';
 import { SetupWizardModal } from './components/SetupWizardModal';
 import { LogsBar } from './components/LogsBar';
@@ -69,6 +79,7 @@ import { NoticesInboxModal } from './components/NoticesInboxModal';
 import { RecoveryPrompt } from './components/recovery/RecoveryPrompt';
 import { useNoticesStore } from './lib/stores/useNoticesStore';
 import { Banner } from './components/Banner';
+import { FreePlayBackBanner } from './components/FreePlayBackBanner';
 import { ERROR_COPY } from './lib/errors';
 import * as authStore from './lib/stores/useAuthStore';
 const { useAuthStore } = authStore;
@@ -76,6 +87,7 @@ import { useSyncStore } from './lib/stores/useSyncStore';
 import { useCreditsStore } from './lib/stores/useCreditsStore';
 import { useCloudCharactersStore } from './lib/stores/useCloudCharactersStore';
 import { useLibraryStateStore } from './lib/stores/useLibraryStateStore';
+import { handleScopeEnding, resetAccountScopedState } from './lib/scopeReset';
 import { AuthChoiceScreen } from './screens/AuthChoiceScreen';
 import { AcceptToSModal } from './components/AcceptToSModal';
 import { OfflineRetryModal } from './components/OfflineRetryModal';
@@ -84,10 +96,14 @@ import { SetNewPasswordModal } from './components/SetNewPasswordModal';
 import { MigrateLocalCharsModal } from './components/MigrateLocalCharsModal';
 import { ImportLocalProfileModal } from './components/ImportLocalProfileModal';
 import type { PeekLocalProfileResult } from '../../shared/ipc';
+import { usePermissionResume } from './lib/permissions/usePermissionResume';
 
 export function App(): React.ReactElement {
   const t = useT();
   const view = useUiStore((s) => s.view);
+  // 260929: after "Restart Sei and continue" (a permission grant macOS would
+  // only hand to a fresh process), reopen the share picker or the call.
+  usePermissionResume();
   // ui-A7: developer-console visibility toggle. Default OFF — LogsBar only
   // mounts when the Settings → Show developer console toggle is flipped.
   const devConsoleVisible = useUiStore((s) => s.devConsoleVisible);
@@ -394,8 +410,19 @@ export function App(): React.ReactElement {
   //    This is what makes switching accounts "start fresh like a new install".
   //    Credits/cloud-id stores reset via their own authState-keyed effects
   //    above; this handles the local-file-backed stores + routing.
+  // 260926: main has ended the outgoing account's live sessions (chess, Draw!,
+  // backseat, calls, bots) and is about to switch scope. Drop our half now
+  // (hang up, stop capture, leave the game screen) instead of leaving a dead
+  // surface up until app:scope-changed, which can be seconds away.
+  useEffect(() => {
+    return sei.onScopeEnding?.(() => handleScopeEnding());
+  }, []);
+
   useEffect(() => {
     return sei.onScopeChanged((ev) => {
+      // Drop the previous account's in-memory data first (transcripts are
+      // keyed by character id, and the defaults share ids across profiles).
+      resetAccountScopedState();
       void (async () => {
         // Onboarding completion is keyed on preferred_name (the "Name" field);
         // the Minecraft-username step was retired from the GUI (260605).
@@ -768,6 +795,11 @@ export function App(): React.ReactElement {
         // modal over the tutorial (260729).
         void useAuthStore.getState().refreshTosStatus();
         if (res.tutorial) {
+          // The guided first moment (260926): a NEW player's tour ends in their
+          // companion's chat, greeted first, with a next step to click. Only
+          // this branch arms it; a returning sign-in never does.
+          const fm = firstMomentCompanion(res, DEFAULT_CHARACTER_UUIDS.sui);
+          if (fm) useFirstMomentStore.getState().arm(fm);
           useTutorialStore.getState().start(res.characterId);
           if (res.characterId) {
             // Land on the character reveal page (portrait + "Say hello"); the
@@ -930,6 +962,9 @@ export function App(): React.ReactElement {
               onDismiss={() => setWarnings((w) => ({ ...w, keychainDismissed: true }))}
             />
           ) : null}
+          {/* 260926: "Your free play is back", once, after the weekly reset
+              lifts a credit wall this profile hit. Cloud accounts only. */}
+          {authState.kind === 'signed_in' ? <FreePlayBackBanner /> : null}
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             {!railHidden ? <IconRail /> : null}
             {/*
@@ -1051,6 +1086,12 @@ export function App(): React.ReactElement {
           a different world, not a different setting. */}
       {modal?.kind === 'modded-host' ? <ModdedHostModal characterId={modal.characterId} /> : null}
       {modal?.kind === 'bot-crash' ? <BotCrashModal characterId={modal.characterId} /> : null}
+      {/* Game adapters (M0, 260908) — the generic per-game setup window and
+          the generic GAME_* error popup for the non-Minecraft bot games. */}
+      {modal?.kind === 'game-setup' ? <GameSetupModal game={modal.game} /> : null}
+      {modal?.kind === 'game-error' ? (
+        <GameErrorModal game={modal.game} characterId={modal.characterId} error={modal.error} message={modal.message} />
+      ) : null}
       {/* Phase 18/19 — chat "Play together" surface: the game picker grid
           (per-game info is a hover popup inside it). */}
       {modal?.kind === 'games-picker' ? (

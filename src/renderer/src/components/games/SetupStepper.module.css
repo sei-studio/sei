@@ -1,0 +1,169 @@
+/* SetupStepper — the default (token) skin of the one-step setup window, for
+ * a bot-backed game without a register of its own, plus the shared waiting
+ * line. The registered games (Minecraft, Stardew Valley, Don't Starve
+ * Together) pass their own skins from their launch-panel modules; only the
+ * waiting-dots animation is shared, coloured through `--sw-dot`. */
+
+.window {
+  width: min(520px, 100%);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  text-align: center;
+}
+
+.head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: 'count close' 'title close';
+  align-items: center;
+  column-gap: var(--space-sm);
+}
+
+.count {
+  grid-area: count;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.title {
+  grid-area: title;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.close {
+  grid-area: close;
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0 var(--space-xs);
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.close:hover {
+  color: var(--text);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.dots {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+}
+
+.dotDone {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.dotNow {
+  outline: 1px solid var(--text);
+  outline-offset: 1px;
+}
+
+.navBtn {
+  -webkit-appearance: none;
+  appearance: none;
+  border: 1px solid var(--border);
+  background: transparent;
+  padding: var(--space-xs) var(--space-sm);
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.navBtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* ── The waiting line, shared by every skin ── */
+.searching {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.searchDots {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.searchDots span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sw-dot, var(--accent));
+  display: block;
+  animation: swSearchPulse 1000ms ease-in-out infinite;
+}
+
+.searchDots span:nth-child(2) {
+  animation-delay: 200ms;
+}
+
+.searchDots span:nth-child(3) {
+  animation-delay: 400ms;
+}
+
+@keyframes swSearchPulse {
+  0%,
+  100% {
+    transform: scale(0.55);
+    opacity: 0.3;
+  }
+  40% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .searchDots span {
+    animation: none;
+    opacity: 0.75;
+  }
+}

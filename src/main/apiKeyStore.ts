@@ -12,8 +12,8 @@
 import { safeStorage } from 'electron';
 import { readFile, writeFile, access, mkdir, unlink, rename } from 'node:fs/promises';
 import path from 'node:path';
-import { paths } from './paths';
-import { loadConfig, saveConfig } from './configStore';
+import { paths, getActiveScope, SCOPE_LOCAL } from './paths';
+import { loadConfig, updateConfig } from './configStore';
 
 /**
  * Persist plaintext API key encrypted by OS keychain.
@@ -35,6 +35,21 @@ export async function saveApiKey(plaintext: string): Promise<void> {
   } catch (err) {
     try { await unlink(tmp); } catch {}
     throw err;
+  }
+}
+
+/**
+ * Delete the stored key outright (260817, china-compat W10). This is what a
+ * provider switch needs: hasApiKey() is file-existence based, so an encrypted
+ * empty string would still read as "a key is saved" and bypass the
+ * LOCAL_NO_API_KEY guard, sending the OLD vendor's key to the new provider.
+ * Missing file is success (idempotent).
+ */
+export async function clearApiKey(): Promise<void> {
+  try {
+    await unlink(paths.apiKeyPath());
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
 }
 
@@ -110,8 +125,9 @@ export async function getAiBackendKind(): Promise<AiBackendKind> {
 }
 
 /**
- * Persist the AI backend kind. Round-trips through configStore.saveConfig so
- * the Zod schema + atomic write + file-lock semantics are inherited.
+ * Persist the AI backend kind. A locked read-modify-write
+ * (configStore.updateConfig) that sets only these two keys, so a concurrent
+ * config write elsewhere is never reverted.
  *
  * 260703: also stamps `ai_backend_kind_source` so the sign-in cloud default
  * can tell an EXPLICIT user choice apart from a prior default write:
@@ -125,8 +141,7 @@ export async function setAiBackendKind(
   kind: AiBackendKind,
   source: 'default' | 'user' = 'user',
 ): Promise<void> {
-  const cfg = await loadConfig();
-  await saveConfig({ ...cfg, ai_backend_kind: kind, ai_backend_kind_source: source });
+  await updateConfig((cfg) => ({ ...cfg, ai_backend_kind: kind, ai_backend_kind_source: source }));
   notifyAiBackendKindChanged(kind);
 }
 
@@ -173,12 +188,33 @@ function notifyAiBackendKindChanged(kind: AiBackendKind): void {
  * cloud-proxy, stamped source:'default'.
  */
 export async function applyCloudDefaultForSignIn(): Promise<void> {
+  const scope = getActiveScope();
   const cfg = await loadConfig();
   if (cfg.ai_backend_kind_source === 'user') return; // explicit choice — keep it
   if ((cfg.ai_backend_kind ?? 'local') === 'local' && (await hasApiKey())) return; // legacy BYOK
   if (cfg.ai_backend_kind === 'cloud-proxy') return; // already there — no write
-  await saveConfig({ ...cfg, ai_backend_kind: 'cloud-proxy', ai_backend_kind_source: 'default' });
-  notifyAiBackendKindChanged('cloud-proxy');
+  await writeCloudDefault(scope);
+}
+
+/**
+ * The cloud default, written under the config lock. An explicit user choice
+ * that landed while the caller was checking (hasApiKey awaits) wins: the
+ * default never stomps it.
+ */
+async function writeCloudDefault(scope: string): Promise<void> {
+  let wrote = false;
+  await updateConfig(
+    (cur) => {
+      if (cur.ai_backend_kind_source === 'user') return cur;
+      wrote = true;
+      return { ...cur, ai_backend_kind: 'cloud-proxy', ai_backend_kind_source: 'default' };
+    },
+    // The profile the checks read: a switch during hasApiKey() must not carry
+    // the default into the next account.
+    { scope },
+  );
+  // Listeners mirror the ACTIVE profile's kind; stay quiet if it moved.
+  if (wrote && getActiveScope() === scope) notifyAiBackendKindChanged('cloud-proxy');
 }
 
 /**
@@ -205,12 +241,11 @@ export async function applyCloudDefaultForSignIn(): Promise<void> {
  * 260703) — an explicit BYOK pick must survive every launch, key or no key.
  */
 export async function ensureCloudDefaultForSignedIn(): Promise<void> {
-  const { getActiveScope, SCOPE_LOCAL } = await import('./paths');
-  if (getActiveScope() === SCOPE_LOCAL) return; // signed out → keep local
+  const scope = getActiveScope();
+  if (scope === SCOPE_LOCAL) return; // signed out → keep local
   const cfg = await loadConfig();
   if ((cfg.ai_backend_kind ?? 'local') !== 'local') return; // already cloud-proxy
   if (cfg.ai_backend_kind_source === 'user') return; // explicit choice — never override it
   if (await hasApiKey()) return; // a real BYOK choice — never override it
-  await saveConfig({ ...cfg, ai_backend_kind: 'cloud-proxy', ai_backend_kind_source: 'default' });
-  notifyAiBackendKindChanged('cloud-proxy');
+  await writeCloudDefault(scope);
 }

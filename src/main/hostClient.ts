@@ -6,7 +6,9 @@
  * (client-side mods are fine, content mods refuse vanilla joiners) or Lunar
  * Client (joins fine, but loads no mods, so CustomSkinLoader can't show the
  * companion's skin there). The renderer uses this to show a one-time
- * pre-summon disclaimer; nothing here ever blocks a summon.
+ * pre-summon disclaimer. Since 260929 a Forge/NeoForge host is a hard stop,
+ * but only on strong evidence (hasForgeLaunchTarget below, or the ping's
+ * forgeData); the substring markers here never block on their own.
  *
  * Detection is deliberately lightweight and local:
  *   - Sei is same-machine only, so the integrated server always runs inside a
@@ -63,6 +65,32 @@ export function classifyCmdline(cmdline: string): LanHostClient {
   // Vanilla main class, and no loader marker matched above.
   if (c.includes('net.minecraft.client.main.main')) return 'vanilla';
   return 'unknown';
+}
+
+/**
+ * Does the command line name an explicit Forge/NeoForge launch target (260929)?
+ * Pure, exported for tests. This is the STRONG cmdline signal the Forge hard
+ * stop requires (see lanHostWarning in src/shared/ipc.ts); classifyCmdline's
+ * substring markers alone only earn the soft warning, since an instance
+ * name or install path can carry "neoforge" or "minecraftforge" too.
+ * Matches only what a loader's launcher actually passes:
+ *   - `--launchTarget forgeclient | forge_client | fmlclient | neoforgeclient`
+ *     (modlauncher, Forge 1.13+ and NeoForge 20.x/21.x)
+ *   - `--fml.forgeVersion <v>` / `--fml.neoForgeVersion <v>`
+ *   - the legacy FML tweaker (`--tweakClass ...fml.common.launcher.FMLTweaker`,
+ *     Forge 1.7 to 1.12)
+ *   - NeoForge's own startup main class (`net.neoforged.fml.startup.*`)
+ * Windows command lines may quote each argument, hence the quote classes.
+ */
+export function hasForgeLaunchTarget(cmdline: string): boolean {
+  const c = cmdline.toLowerCase();
+  if (!c.trim()) return false;
+  return (
+    /--launchtarget["'\s=]+(?:neo)?(?:forge|fml)[a-z_]*client/.test(c) ||
+    /--fml\.(?:neo)?forgeversion\b/.test(c) ||
+    /(?:net\.minecraftforge|cpw\.mods)\.fml\.common\.launcher\.fmltweaker/.test(c) ||
+    /\bnet\.neoforged\.fml\.startup\./.test(c)
+  );
 }
 
 function run(cmd: string, args: string[]): Promise<string> {

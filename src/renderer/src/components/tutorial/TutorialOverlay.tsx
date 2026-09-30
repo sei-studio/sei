@@ -25,6 +25,7 @@ import { useUiStore } from '../../lib/stores/useUiStore';
 import { useDataStore } from '../../lib/stores/useDataStore';
 import { useTutorialStore, type TutorialStep } from '../../lib/stores/useTutorialStore';
 import { DEFAULT_CHARACTER_UUIDS } from '@shared/defaultCharacters';
+import { enterFirstMoment } from '../../lib/stores/useFirstMomentStore';
 import styles from './TutorialOverlay.module.css';
 
 /** The base sprites face LEFT, so the left corner uses the -flipped variants
@@ -234,6 +235,10 @@ export function TutorialOverlay(): React.ReactElement | null {
     setTimeout(() => {
       setClosing(false);
       end();
+      // A new player's tour hands off to their companion's chat (the guided
+      // first moment, 260926) instead of leaving them on Home. No-op unless
+      // App.tsx armed it at onboarding completion.
+      enterFirstMoment();
     }, 450);
   }, [closeModal, end]);
 

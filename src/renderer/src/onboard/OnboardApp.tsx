@@ -12,7 +12,11 @@
  * Flow branches:
  *   returning  → sign-in only → complete, no tutorial
  *   new+cloud  → questionnaire → sign up → ToS → generation → full tutorial
- *   new+local  → questionnaire → "continue locally" → provider+key → reduced
+ *   new+local  → questionnaire → "continue locally" → provider+key → model
+ *                (list + test) → STT choice → TTS choice → prefsSave + BYOK
+ *                generation → full tutorial (260817, china-compat W6 — the
+ *                local path gets the SAME arc as cloud; only portrait/skin
+ *                degrade to the procedural look while signed out)
  *   skip       → no questionnaire/generation → reduced tutorial
  *   generation failure is silent: reduced tutorial (spec: "see 18").
  *   new branch, but the sign-in lands on an EXISTING account (the "I already
@@ -31,13 +35,37 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
-import { t, useT } from '../lib/i18n';
+import { t, useT, uiLanguage } from '../lib/i18n';
 import { useEmailCode } from '../lib/useEmailCode';
 import { CodeInput } from '../components/CodeInput';
 import { OnboardScene, type SuiPose } from './OnboardScene';
 import { DEFAULT_CHARACTER_UUIDS } from '@shared/defaultCharacters';
-import type { AuthState, UniqueGender } from '@shared/ipc';
+import {
+  DEFAULT_MODELS,
+  PROVIDER_LABELS,
+  SHOWN_PROVIDERS,
+  modelVision,
+  type ProviderKind,
+} from '@shared/llmCatalog';
+import type { AuthState, SpeechPackStatePush, UniqueGender } from '@shared/ipc';
 import type { UserConfig } from '@shared/characterSchema';
+import {
+  SENSEVOICE_PACK_ID,
+  allPacksReady,
+  keyProbeConsequence,
+  keyProbeLine,
+  keyProbeTransport,
+  keyProbeVerdict,
+  llmTestErrorCopy,
+  mbLabel,
+  packsPct,
+  packsTotalBytes,
+  ttsPackIdsFor,
+  type KeyProbeVerdict,
+  type LocalSetupChoices,
+  type SttEngineChoice,
+  type TtsEngineChoice,
+} from './localSetup';
 import {
   ContinueHint,
   CornerControls,
@@ -80,6 +108,7 @@ type LineId =
   | 'dots'
   | 'ahh'
   | 'skippedThird'
+  | 'noAccount'
   | 'ready';
 
 const SCRIPT: Record<LineId, string> = {
@@ -87,6 +116,10 @@ const SCRIPT: Record<LineId, string> = {
   runPlace: 'I run this place. The Sei terminal, I mean.',
   newQ: 'Hmmmm... Are you new here?',
   welcomeBack: "Ah, welcome back. I'm not needed here then. Back to gaming I go!",
+  // 260916: the "No" answer signed into an account that did not exist yet
+  // (Google creates one on the spot). Sui comes back and asks again instead
+  // of letting a brand-new player land on Home with no name and no companion.
+  noAccount: "Wait, that login has no account yet. So you ARE new here! Let's try that again.",
   nameQ: "So! My name's Sui. What do I call you?",
   iSee: 'I see I see... {name}!',
   job: 'So, {name}, my job here is to help you meet other AI friends from my world.',
@@ -117,6 +150,7 @@ const HINT_LINES: LineId[] = [
   'allDone',
   'dots',
   'skippedThird',
+  'noAccount',
 ];
 
 /* ── Machine ─────────────────────────────────────────────────────────────── */
@@ -130,6 +164,7 @@ type Phase =
   | { k: 'setup' } // "setting up..." — config save + generation
   | { k: 'welcome-existing' } // new-user branch signed into an EXISTING account
   | { k: 'return' } // ground + Sui come back for the send-off
+  | { k: 'no-account' } // returning sign-in made a NEW account: Sui comes back to re-ask
   | { k: 'fade'; done?: boolean };
 
 interface Answers {
@@ -239,6 +274,7 @@ export function OnboardApp({
       setPhase((p) => {
         if (p.k === 'intro') return { k: 'line', id: 'hey' };
         if (p.k === 'return') return { k: 'line', id: 'ready' };
+        if (p.k === 'no-account') return { k: 'line', id: 'noAccount' };
         return p;
       });
     }, 1000);
@@ -369,8 +405,73 @@ export function OnboardApp({
     }
   }, [buildConfig]);
 
+  // ── Setup pipeline (local path, 260817 china-compat W6) ────────────────
+  // The FULL onboarding arc for BYOK users: same config-save + prefsSave +
+  // generation + full-tutorial shape as runCloudSetup, with the generation
+  // riding the user's own provider (main's local generateUnique path). Set by
+  // finishLocalSetup before entering the 'setup' phase; null means the setup
+  // phase belongs to the cloud path (which stays byte-identical).
+  const localChoicesRef = useRef<LocalSetupChoices | null>(null);
+
+  const runLocalSetup = useCallback(async () => {
+    const choices = localChoicesRef.current;
+    if (!choices) return;
+    const run = ++setupRunRef.current;
+    setSetupError(null);
+    const a = answersRef.current;
+    try {
+      // One config write carrying the whole wizard: backend, provider, the
+      // picked model (provider_config is where the llm layer reads it), and
+      // the OPTIONAL voice engines — absent keys stay unwritten, so "decide
+      // later" leaves Whisper-fallback STT / ElevenLabs TTS semantics. The
+      // API key itself was saved at the wizard's key step (llm:list-models
+      // needed it there).
+      await sei.saveConfig({
+        ...buildConfig('local', choices.provider as UserConfig['provider']),
+        provider_config: { [choices.provider]: { model: choices.model } },
+        ...(choices.stt ? { stt_engine: choices.stt } : {}),
+        ...(choices.tts ? { tts_engine: choices.tts } : {}),
+      });
+      if (!a.skipCreation) {
+        await sei.prefsSave({
+          companion_age_range: a.age,
+          art_style: a.art,
+          companion_dynamics: a.dynamics,
+        });
+      }
+      // Sui joins the party — best-effort, never blocks onboarding.
+      void sei
+        .charsAddToLibrary(DEFAULT_CHARACTER_UUIDS.sui)
+        .catch(() => {});
+      let characterId: string | null = null;
+      // skipGeneration: the key-step probe said the key is REJECTED and the
+      // user chose Continue anyway — don't spend the generation timeout on a
+      // call that cannot authenticate. Null characterId = reduced tutorial,
+      // the same landing as a silent generation failure.
+      if (!a.skipCreation && !choices.skipGeneration) {
+        try {
+          const res = await sei.generateUnique({
+            requestId: crypto.randomUUID(),
+            gender: a.gender,
+          });
+          if (res.ok) characterId = res.characterId;
+        } catch {
+          // Generation failure is silent — reduced tutorial (spec step 18).
+        }
+      }
+      if (run !== setupRunRef.current) return;
+      genCharacterIdRef.current = characterId;
+      sei.track('onboarding_completed');
+      setPhase({ k: 'return' });
+      setGroundIn(true);
+    } catch (err) {
+      if (run !== setupRunRef.current) return;
+      setSetupError((err as Error).message || t('Something went wrong.'));
+    }
+  }, [buildConfig]);
+
   useEffect(() => {
-    if (phase.k === 'setup') void runCloudSetup();
+    if (phase.k === 'setup') void (localChoicesRef.current ? runLocalSetup() : runCloudSetup());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase.k]);
 
@@ -414,7 +515,7 @@ export function OnboardApp({
   // Re-entering the scene for the send-off: ground slides in → Sui walks in
   // (onGroundIn/onSuiEntered above route 'return' to the 'ready' line).
   useEffect(() => {
-    if (phase.k === 'return' && !groundIn) setGroundIn(true);
+    if ((phase.k === 'return' || phase.k === 'no-account') && !groundIn) setGroundIn(true);
   }, [phase.k, groundIn]);
 
   // ── Talking pose follows the typewriter ────────────────────────────────
@@ -504,6 +605,10 @@ export function OnboardApp({
       case 'welcomeBack':
         walkOff('auth-returning');
         break;
+      case 'noAccount':
+        answersRef.current.returning = false;
+        goLine('newQ');
+        break;
       case 'nameQ':
         if (name.trim()) goLine('iSee');
         break;
@@ -575,6 +680,72 @@ export function OnboardApp({
     return false;
   }, []);
 
+  /**
+   * The returning branch signed into an account that was created by that very
+   * sign-in (260916). Google sign-in creates the account on the spot, so
+   * "I've been here before" + a Google login the player had never used with
+   * Sei used to complete as a returning user: no config written, no name, no
+   * companion, and the first summon refused with "your name is missing"
+   * (the 260914 support case). A minutes-old account is not a returning one.
+   */
+  const signedIntoFreshAccount = useCallback((): boolean => {
+    const a = authRef.current;
+    if (a.kind !== 'signed_in') return false;
+    const ageMs = Date.now() - Date.parse(a.user.createdAt);
+    return Number.isFinite(ageMs) && ageMs < 10 * 60_000;
+  }, []);
+
+  /** Returning sign-in that made a new account: back to the scene, re-ask.
+   * The boot sign-in variant has no scene to resume, so it replays the full
+   * one from the start (the same remount as its "I'm new here" link). */
+  const resumeAsNew = useCallback(() => {
+    if (startAtSignIn) {
+      onStartFresh?.();
+      return;
+    }
+    answersRef.current.returning = false;
+    setPhase({ k: 'no-account' });
+  }, [startAtSignIn, onStartFresh]);
+
+  /**
+   * 260917: the authoritative answer to "has this account set up before" is
+   * whether the profile has a name, not how old the account is. Main
+   * backfills preferred_name from the cloud profile before the scope flips
+   * (profileScope.ts), and only the app's own setup ever writes that column,
+   * so a veteran on a second machine reads as onboarded and a minutes-old
+   * Google sign-in with no profile does not. The two age heuristics above
+   * stay as the fallback for when the read fails (null = could not tell).
+   */
+  const accountHasProfile = useCallback(async (): Promise<boolean | null> => {
+    try {
+      const cfg = await sei.getConfig();
+      return Boolean((cfg.preferred_name ?? '').trim());
+    } catch {
+      return null;
+    }
+  }, []);
+
+  /** Route a signed-in user: setup (no profile yet) or done (has one). */
+  const routeAfterAuth = useCallback(
+    async (mode: 'new' | 'returning') => {
+      const has = await accountHasProfile();
+      if (mode === 'returning') {
+        const fresh = has === null ? signedIntoFreshAccount() : !has;
+        if (fresh) resumeAsNew();
+        else complete(false, null);
+      } else if (has === null ? signedIntoExistingAccount() : has) {
+        // They walked the new-user branch but signed into an account that
+        // already has a profile. Running setup here would clobber the
+        // profile's config and mint a new character on the account (260729):
+        // greet them instead and route as returning.
+        setPhase({ k: 'welcome-existing' });
+      } else {
+        setPhase({ k: 'setup' });
+      }
+    },
+    [accountHasProfile, complete, signedIntoExistingAccount, signedIntoFreshAccount, resumeAsNew],
+  );
+
   /** Post-auth continuation: ToS gate, then setup (new) or done (returning). */
   const [needsTos, setNeedsTos] = useState(false);
   const proceedingRef = useRef(false);
@@ -594,22 +765,12 @@ export function OnboardApp({
         } catch {
           /* offline ToS check: let the normal window's gate re-ask */
         }
-        if (mode === 'returning') {
-          complete(false, null);
-        } else if (signedIntoExistingAccount()) {
-          // They walked the new-user branch but signed into an account that
-          // already exists. Running setup here would clobber the profile's
-          // config and mint a new character on the account (260729) — greet
-          // them instead and route as returning.
-          setPhase({ k: 'welcome-existing' });
-        } else {
-          setPhase({ k: 'setup' });
-        }
+        await routeAfterAuth(mode);
       } finally {
         proceedingRef.current = false;
       }
     },
-    [complete, signedIntoExistingAccount],
+    [routeAfterAuth],
   );
 
   const agreeTos = useCallback(async () => {
@@ -620,10 +781,8 @@ export function OnboardApp({
     }
     setNeedsTos(false);
     const mode = phase.k === 'auth' ? phase.mode : 'new';
-    if (mode === 'returning') complete(false, null);
-    else if (signedIntoExistingAccount()) setPhase({ k: 'welcome-existing' });
-    else setPhase({ k: 'setup' });
-  }, [phase, complete, signedIntoExistingAccount]);
+    await routeAfterAuth(mode);
+  }, [phase, routeAfterAuth]);
 
   // Watch for the sign-in to land while the auth panel is up.
   useEffect(() => {
@@ -635,15 +794,13 @@ export function OnboardApp({
   }, [authTick, phase.k]);
 
   // ── Local path completion ──────────────────────────────────────────────
-  const finishLocalSetup = useCallback(async (provider: string, apiKey: string) => {
-    await sei.saveConfig(buildConfig('local', provider as UserConfig['provider']));
-    await sei.saveApiKey(apiKey.trim());
-    void sei.charsAddToLibrary(DEFAULT_CHARACTER_UUIDS.sui).catch(() => {});
-    sei.track('onboarding_completed');
-    genCharacterIdRef.current = null;
-    setPhase({ k: 'return' });
-    setGroundIn(true);
-  }, [buildConfig]);
+  // The wizard hands over its choices; the heavy lifting (config save,
+  // prefsSave, BYOK generation) runs in runLocalSetup under the same
+  // "Setting up..." surface the cloud path uses.
+  const finishLocalSetup = useCallback((choices: LocalSetupChoices) => {
+    localChoicesRef.current = choices;
+    setPhase({ k: 'setup' });
+  }, []);
 
   // ── Render ─────────────────────────────────────────────────────────────
   const showDialogue = phase.k === 'line';
@@ -722,7 +879,7 @@ export function OnboardApp({
         ) : null}
 
         {phase.k === 'local-setup' ? (
-          <LocalSetupPanel onDone={(prov, key) => void finishLocalSetup(prov, key)} />
+          <LocalSetupPanel onDone={finishLocalSetup} />
         ) : null}
 
         {phase.k === 'welcome-existing' ? (
@@ -737,7 +894,10 @@ export function OnboardApp({
           setupError ? (
             <div className={styles.panel}>
               <p className={styles.panelText}>{setupError}</p>
-              <button className={styles.pill} onClick={() => void runCloudSetup()}>
+              <button
+                className={styles.pill}
+                onClick={() => void (localChoicesRef.current ? runLocalSetup() : runCloudSetup())}
+              >
                 {tt('Try again')}
               </button>
             </div>
@@ -786,7 +946,7 @@ function LineControls(props: LineControlsProps): React.ReactElement | null {
       return (
         <div className={styles.choices}>
           <button className={styles.pill} onClick={() => goLine('nameQ')}>
-            {tt('Yes')}
+            {tt("Yes, I'm new")}
           </button>
           <button
             className={styles.pill}
@@ -795,7 +955,7 @@ function LineControls(props: LineControlsProps): React.ReactElement | null {
               goLine('welcomeBack');
             }}
           >
-            {tt('No')}
+            {tt('No, I have an account')}
           </button>
           <button className={styles.quietLink} onClick={() => goLine('runPlace')}>
             {tt('Back')}
@@ -972,6 +1132,25 @@ function AuthPanel(props: {
   const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
   const codeState = useEmailCode(codeSentTo);
   const [oauth, setOauth] = useState(false);
+  /**
+   * W7 region gate (260816). Pre-checked on mount over region:status so the
+   * blocking panel appears before a failed submit; the submit paths below
+   * also honor a main-side `region_blocked` refusal as the authoritative
+   * backstop. Fails open: a failed pre-check leaves the form usable.
+   */
+  const [regionBlocked, setRegionBlocked] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    sei.regionStatus().then(
+      (s) => {
+        if (!cancelled && s.blocked) setRegionBlocked(true);
+      },
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const years = useMemo(() => {
     const y = now.getFullYear();
@@ -998,12 +1177,24 @@ function AuthPanel(props: {
           dobMonth,
           dobDay,
         });
-        if (!res.ok) setError(res.message);
-        else if (res.requiresVerification) setCodeSentTo(email.trim());
+        if (!res.ok) {
+          // W7: main refused on region; swap to the blocking panel (its copy
+          // is translated locally) instead of the inline error line.
+          if (res.code === 'region_blocked') setRegionBlocked(true);
+          else setError(res.message);
+        } else if (res.requiresVerification) setCodeSentTo(email.trim());
         // A session lands via the auth push; OnboardApp proceeds from there.
       } else {
         const res = await sei.signInPassword({ email: email.trim(), password });
-        if (!res.ok) setError(res.message);
+        if (!res.ok) {
+          if (res.code === 'region_blocked') setRegionBlocked(true);
+          // A wrong password and a nonexistent account are the same error
+          // from the server. On the returning panel, say the second one
+          // out loud and name the way out (260916).
+          else if (res.code === 'invalid_credentials' && mode === 'returning' && props.onStartFresh)
+            setError(`${res.message} ${t('No account with that email yet? Press "I\'m new here" below.')}`);
+          else setError(res.message);
+        }
         // Right password, address never confirmed. Main has already sent a
         // fresh code (260804); show the panel rather than sitting on the form.
         else if (res.needsVerification) setCodeSentTo(email.trim());
@@ -1048,6 +1239,23 @@ function AuthPanel(props: {
         </p>
         <button className={styles.pill} onClick={props.onAgreeTos}>
           {tt('I agree')}
+        </button>
+      </div>
+    );
+  }
+
+  // W7 region gate (260816) — cloud accounts are unavailable here; steer to
+  // the local-setup path. Placed AFTER the needsTos branch on purpose: that
+  // branch serves an already-signed-in user, and existing sessions are never
+  // gated.
+  if (regionBlocked) {
+    return (
+      <div className={styles.panel}>
+        <p className={styles.panelText}>
+          {tt('Our servers do not currently support your region. Please continue with local mode.')}
+        </p>
+        <button className={`${styles.pill} ${styles.pillWide}`} onClick={props.onLocal}>
+          {tt('Use my own API key')}
         </button>
       </div>
     );
@@ -1119,7 +1327,7 @@ function AuthPanel(props: {
     );
   }
 
-  if (oauth) return <GoogleWaitPanel onDone={() => setOauth(false)} />;
+  if (oauth) return <GoogleWaitPanel onDone={() => setOauth(false)} onLocal={props.onLocal} />;
 
   return (
     <div className={styles.panel}>
@@ -1269,7 +1477,7 @@ function AuthPanel(props: {
         </button>
       ) : null}
       <button className={styles.quietLink} onClick={props.onLocal}>
-        {tt('Continue locally with my own API key')}
+        {tt('Use my own API key')}
       </button>
     </div>
   );
@@ -1279,9 +1487,15 @@ function AuthPanel(props: {
  * Google sign-in flow while the player finishes it in the system browser.
  * On success (or an explicit cancel) it just dismisses itself — the session
  * lands via the auth push and OnboardApp proceeds from there. */
-function GoogleWaitPanel(props: { onDone: () => void }): React.ReactElement {
+function GoogleWaitPanel(props: {
+  onDone: () => void;
+  /** W7 region gate: route to the local-setup path when main refuses on region. */
+  onLocal?: () => void;
+}): React.ReactElement {
   const tt = useT();
   const [error, setError] = useState<string | null>(null);
+  // W7 region gate (260816) — main refused before opening the browser.
+  const [regionBlocked, setRegionBlocked] = useState(false);
   const startedRef = useRef(false);
   const inFlightRef = useRef(false);
 
@@ -1293,6 +1507,7 @@ function GoogleWaitPanel(props: { onDone: () => void }): React.ReactElement {
       (res) => {
         inFlightRef.current = false;
         if (res.ok || res.reason === 'user_cancelled') props.onDone();
+        else if (res.reason === 'region_blocked') setRegionBlocked(true);
         else setError(res.message || t("Sign-in didn't finish. Try again."));
       },
       () => {
@@ -1318,6 +1533,26 @@ function GoogleWaitPanel(props: { onDone: () => void }): React.ReactElement {
     }
     props.onDone();
   };
+
+  // W7 region gate — no "Try again": the verdict is cached, retrying cannot
+  // change it. Offer the local path in the scene's own vocabulary.
+  if (regionBlocked) {
+    return (
+      <div className={styles.panel}>
+        <p className={styles.panelText}>
+          {tt('Our servers do not currently support your region. Please continue with local mode.')}
+        </p>
+        {props.onLocal ? (
+          <button className={`${styles.pill} ${styles.pillWide}`} onClick={props.onLocal}>
+            {tt('Use my own API key')}
+          </button>
+        ) : null}
+        <button className={styles.quietLink} onClick={props.onDone}>
+          {tt('Back')}
+        </button>
+      </div>
+    );
+  }
 
   if (error !== null) {
     return (
@@ -1346,36 +1581,492 @@ function GoogleWaitPanel(props: { onDone: () => void }): React.ReactElement {
   );
 }
 
-/* ── Local (BYOK) setup panel ────────────────────────────────────────────── */
+/* ── Local (BYOK) setup wizard ───────────────────────────────────────────── */
 
-const PROVIDERS: Array<{ value: string; label: string }> = [
-  { value: 'anthropic', label: 'Anthropic' },
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'gemini', label: 'Gemini' },
-  { value: 'ollama', label: 'Ollama' },
-  { value: 'grok', label: 'Grok' },
-  { value: 'openrouter', label: 'OpenRouter' },
-  { value: 'deepseek', label: 'DeepSeek' },
-  { value: 'mistral', label: 'Mistral' },
-  { value: 'together', label: 'Together' },
-  { value: 'groq', label: 'Groq' },
-  { value: 'fireworks', label: 'Fireworks' },
-  { value: 'cerebras', label: 'Cerebras' },
-  { value: 'perplexity', label: 'Perplexity' },
-];
+// 260816 (china-compat): the offered set comes from the shared catalog (8
+// providers; SHOWN_PROVIDERS in src/shared/llmCatalog.ts).
+const PROVIDERS: Array<{ value: string; label: string }> = SHOWN_PROVIDERS.map((id) => ({
+  value: id,
+  label: PROVIDER_LABELS[id],
+}));
 
-function LocalSetupPanel(props: { onDone: (provider: string, key: string) => void }): React.ReactElement {
+/**
+ * 260817 (china-compat W6): the local path is a four-step wizard in the
+ * scene's own panel vocabulary — provider + key, model (live list + Test),
+ * STT choice, TTS choice. The API key saves at the key→model transition
+ * because llm:list-models / llm:test read it from the main-side store;
+ * everything else rides component state and lands in ONE config write inside
+ * runLocalSetup via onDone. Both voice steps are optional: "Decide later"
+ * leaves the engine fields absent (Whisper-fallback STT semantics,
+ * ElevenLabs TTS semantics), matching Settings' vocabulary later.
+ */
+function LocalSetupPanel(props: { onDone: (choices: LocalSetupChoices) => void }): React.ReactElement {
   const tt = useT();
-  const [provider, setProvider] = useState('anthropic');
+  const [step, setStep] = useState<'key' | 'model' | 'stt' | 'tts'>('key');
+  const [provider, setProvider] = useState<ProviderKind>('anthropic');
   const [key, setKey] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const submit = async (): Promise<void> => {
-    if (!key.trim() || busy) return;
+  const [model, setModel] = useState<string>(DEFAULT_MODELS.anthropic);
+  const sttRef = useRef<SttEngineChoice | undefined>(undefined);
+  // ElevenLabs key presence — shared by the Scribe and ElevenLabs-voices
+  // options so the key is asked for at most once across both steps.
+  const [elKeySaved, setElKeySaved] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    sei.voiceElevenKeyStatus().then(
+      (s) => {
+        if (!cancelled && s.present) setElKeySaved(true);
+      },
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Ollama runs locally and authenticates nothing — the key is optional there
+  // and skipped from the save; every other provider requires one.
+  const keyOk = key.trim() !== '' || provider === 'ollama';
+
+  // Key-step probe (260817): Continue verifies the key BEFORE the wizard
+  // moves on, so a rejected key is caught while the fix is one paste away
+  // instead of surfacing as a silently reduced tutorial. Only a definite
+  // verdict interrupts; ambiguous errors pass through to the model step's
+  // Test. An IPC failure reads as "could not check" = unreachable.
+  const [probe, setProbe] = useState<Exclude<KeyProbeVerdict, 'ok'> | null>(null);
+  // Armed by "Continue anyway" on a REJECTED key; cleared whenever the key is
+  // re-submitted so a fixed key gets its companion back.
+  const skipGenRef = useRef(false);
+  const probeKey = async (): Promise<KeyProbeVerdict> => {
+    try {
+      if (keyProbeTransport(provider) === 'test') {
+        const r = await sei.llmTest(provider, DEFAULT_MODELS[provider] ?? '');
+        return keyProbeVerdict(provider, r.ok ? null : r.error);
+      }
+      const r = await sei.llmListModels(provider);
+      return keyProbeVerdict(provider, r.error ?? null);
+    } catch {
+      return 'unreachable';
+    }
+  };
+
+  const submitKey = async (): Promise<void> => {
+    if (busy || !keyOk) return;
     setBusy(true);
     setError(null);
     try {
-      props.onDone(provider, key);
+      if (key.trim()) await sei.saveApiKey(key.trim());
+      skipGenRef.current = false;
+      const verdict = await probeKey();
+      if (verdict === 'ok') {
+        setModel(DEFAULT_MODELS[provider] ?? '');
+        setStep('model');
+      } else {
+        setProbe(verdict);
+      }
+    } catch (err) {
+      setError((err as Error).message || t('Something went wrong.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (step === 'key' && probe) {
+    return (
+      <div className={styles.panel}>
+        <p className={styles.panelText}>{tt(keyProbeLine(provider, probe))}</p>
+        <p className={styles.panelNote}>{tt(keyProbeConsequence(probe))}</p>
+        <div className={styles.choices}>
+          <button className={styles.pill} onClick={() => setProbe(null)}>
+            {tt('Back')}
+          </button>
+          <button
+            className={styles.pill}
+            onClick={() => {
+              if (probe === 'rejected') skipGenRef.current = true;
+              setProbe(null);
+              setModel(DEFAULT_MODELS[provider] ?? '');
+              setStep('model');
+            }}
+          >
+            {tt('Continue anyway')}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === 'key') {
+    return (
+      <div className={styles.panel}>
+        <p className={styles.panelText}>
+          {provider === 'ollama'
+            ? tt('Pick your model provider.')
+            : tt('Pick your model provider and paste your API key.')}
+        </p>
+        <select
+          className={styles.fieldSelect}
+          value={provider}
+          onChange={(e) => {
+            const next = e.target.value as ProviderKind;
+            setProvider(next);
+            // Keyless provider (260915): a key pasted for a previous pick must
+            // not ride along into the Ollama save.
+            if (next === 'ollama') setKey('');
+          }}
+          aria-label={tt('Model provider')}
+        >
+          {PROVIDERS.map((p) => (
+            <option key={p.value} value={p.value}>
+              {tt(p.label)}
+            </option>
+          ))}
+        </select>
+        {provider === 'ollama' ? (
+          <p className={styles.panelNote}>{tt('Ollama runs on your computer and needs no API key.')}</p>
+        ) : (
+          <input
+            className={styles.field}
+            type="password"
+            value={key}
+            placeholder="sk-..."
+            onChange={(e) => setKey(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void submitKey();
+            }}
+            aria-label={tt('API key')}
+          />
+        )}
+        {busy ? <p className={styles.panelNote}>{tt('Checking your key...')}</p> : null}
+        {error ? (
+          <p className={styles.panelError} role="alert">
+            {error}
+          </p>
+        ) : null}
+        <button
+          className={`${styles.pill} ${styles.pillWide}`}
+          disabled={!keyOk || busy}
+          onClick={() => void submitKey()}
+        >
+          {tt('Continue')}
+        </button>
+      </div>
+    );
+  }
+
+  if (step === 'model') {
+    return (
+      <ModelStep
+        provider={provider}
+        model={model}
+        setModel={setModel}
+        onBack={() => setStep('key')}
+        onNext={() => setStep('stt')}
+      />
+    );
+  }
+
+  if (step === 'stt') {
+    return (
+      <SttStep
+        elKeySaved={elKeySaved}
+        onElKeySaved={() => setElKeySaved(true)}
+        onPick={(stt) => {
+          sttRef.current = stt;
+          setStep('tts');
+        }}
+        onBack={() => setStep('model')}
+      />
+    );
+  }
+
+  return (
+    <TtsStep
+      elKeySaved={elKeySaved}
+      onElKeySaved={() => setElKeySaved(true)}
+      onPick={(tts) =>
+        props.onDone({
+          provider,
+          model: model.trim(),
+          ...(sttRef.current ? { stt: sttRef.current } : {}),
+          ...(tts ? { tts } : {}),
+          ...(skipGenRef.current ? { skipGeneration: true } : {}),
+        })
+      }
+      onBack={() => setStep('stt')}
+    />
+  );
+}
+
+/**
+ * Model selection + Test. The list is live (llm:list-models with the key
+ * saved one step earlier); on any listing failure the step degrades to a
+ * free-text model id primed with the catalog default, so an offline or
+ * unlistable provider never blocks the wizard. Non-vision models get a short
+ * hint because two whole surfaces (screen sharing, Draw!) need vision.
+ */
+function ModelStep(props: {
+  provider: ProviderKind;
+  model: string;
+  setModel: (m: string) => void;
+  onBack: () => void;
+  onNext: () => void;
+}): React.ReactElement {
+  const tt = useT();
+  const { provider, model, setModel } = props;
+  // null = loading. An empty array = listing failed → free-text fallback.
+  const [models, setModels] = useState<Array<{ id: string; vision: 'yes' | 'no' | 'unknown' }> | null>(
+    null,
+  );
+  useEffect(() => {
+    let cancelled = false;
+    sei.llmListModels(provider).then(
+      (r) => {
+        if (!cancelled) setModels(r.error || r.models.length === 0 ? [] : r.models);
+      },
+      () => {
+        if (!cancelled) setModels([]);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [provider]);
+
+  type TestState = { k: 'idle' } | { k: 'busy' } | { k: 'ok'; seconds: string } | { k: 'err'; copy: string };
+  const [test, setTest] = useState<TestState>({ k: 'idle' });
+  const pickModel = (m: string): void => {
+    setModel(m);
+    setTest({ k: 'idle' }); // a verdict is per-model; changing it stales the old one
+  };
+  const runTest = async (): Promise<void> => {
+    if (test.k === 'busy' || !model.trim()) return;
+    setTest({ k: 'busy' });
+    try {
+      const r = await sei.llmTest(provider, model.trim());
+      setTest(
+        r.ok
+          ? { k: 'ok', seconds: (r.latencyMs / 1000).toFixed(1) }
+          : { k: 'err', copy: llmTestErrorCopy(r.error) },
+      );
+    } catch {
+      setTest({ k: 'err', copy: llmTestErrorCopy('unknown') });
+    }
+  };
+
+  // Keep the current pick selectable even when the live list omits it (the
+  // catalog default may not appear in /models on every provider).
+  const options =
+    models && models.length > 0
+      ? models.some((m) => m.id === model)
+        ? models
+        : [{ id: model, vision: modelVision(provider, model) }, ...models]
+      : null;
+  const vision = options?.find((m) => m.id === model)?.vision ?? modelVision(provider, model);
+
+  return (
+    <div className={styles.panel}>
+      <p className={styles.panelText}>{tt('Pick the model your companions will think with.')}</p>
+      {models === null ? (
+        <p className={styles.panelNote}>{tt('Loading the model list...')}</p>
+      ) : options ? (
+        <select
+          className={styles.fieldSelect}
+          value={model}
+          onChange={(e) => pickModel(e.target.value)}
+          aria-label={tt('Model')}
+        >
+          {options.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.id}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <>
+          <input
+            className={styles.field}
+            value={model}
+            onChange={(e) => pickModel(e.target.value)}
+            aria-label={tt('Model')}
+          />
+          <p className={styles.panelNote}>
+            {tt("Couldn't load the model list. Keep the suggested model or type a model id.")}
+          </p>
+        </>
+      )}
+      {vision === 'no' ? (
+        <p className={styles.panelNote}>
+          {tt('This model cannot see images. Screen sharing and Draw! need a vision model.')}
+        </p>
+      ) : null}
+      {test.k === 'busy' ? (
+        <p className={styles.panelNote}>
+          {provider === 'deepseek'
+            ? tt('Testing... DeepSeek can take up to a minute to answer.')
+            : tt('Testing...')}
+        </p>
+      ) : test.k === 'ok' ? (
+        <p className={styles.panelNote}>{tt('Connection works ({seconds}s).', { seconds: test.seconds })}</p>
+      ) : test.k === 'err' ? (
+        <p className={styles.panelError} role="alert">
+          {tt(test.copy)}
+        </p>
+      ) : null}
+      <div className={styles.choices}>
+        <button className={styles.pill} disabled={test.k === 'busy' || !model.trim()} onClick={() => void runTest()}>
+          {tt('Test')}
+        </button>
+        {/* Continue stays live during a slow test — the test is optional. */}
+        <button className={styles.pill} disabled={!model.trim()} onClick={props.onNext}>
+          {tt('Continue')}
+        </button>
+      </div>
+      <button className={styles.quietLink} onClick={props.onBack}>
+        {tt('Back')}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * STT choice — how companions hear the player on voice calls. Scribe needs
+ * the ElevenLabs key (asked inline, once, shared with the TTS step);
+ * SenseVoice needs its pack downloaded; Whisper downloads itself on first
+ * use through the existing renderer worker, so it needs nothing here.
+ */
+function SttStep(props: {
+  elKeySaved: boolean;
+  onElKeySaved: () => void;
+  onPick: (stt: SttEngineChoice | undefined) => void;
+  onBack: () => void;
+}): React.ReactElement {
+  const tt = useT();
+  const [sub, setSub] = useState<'pick' | 'elkey' | 'download'>('pick');
+  if (sub === 'elkey') {
+    return (
+      <ElKeyPanel
+        onSaved={() => {
+          props.onElKeySaved();
+          props.onPick('scribe');
+        }}
+        onBack={() => setSub('pick')}
+      />
+    );
+  }
+  if (sub === 'download') {
+    return (
+      <PackDownloadPanel
+        packIds={[SENSEVOICE_PACK_ID]}
+        title={tt('SenseVoice runs on your computer.')}
+        onDone={() => props.onPick('sensevoice')}
+        onBack={() => setSub('pick')}
+      />
+    );
+  }
+  return (
+    <div className={styles.panel}>
+      <p className={styles.panelText}>{tt('Voice calls: how should companions hear you?')}</p>
+      <div className={styles.choicesCol}>
+        <button
+          className={styles.pill}
+          onClick={() => (props.elKeySaved ? props.onPick('scribe') : setSub('elkey'))}
+        >
+          {tt('ElevenLabs Scribe (your ElevenLabs key)')}
+        </button>
+        <button className={styles.pill} onClick={() => props.onPick('whisper')}>
+          {tt('Whisper')}
+        </button>
+        <button className={styles.pill} onClick={() => setSub('download')}>
+          {tt('SenseVoice (best for Chinese)')}
+        </button>
+      </div>
+      <p className={styles.panelNote}>{tt('These options run on your computer. Whisper downloads itself on first use.')}</p>
+      <button className={styles.quietLink} onClick={() => props.onPick(undefined)}>
+        {tt('Decide later')}
+      </button>
+      <button className={styles.quietLink} onClick={props.onBack}>
+        {tt('Back')}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * TTS choice — how companions speak. Picking local voices downloads the pack
+ * for the current UI language (one pack per language, both genders via
+ * speaker ids). Characters keep their ElevenLabs voiceId either way; local
+ * synthesis maps it to a gendered local voice at call time.
+ */
+function TtsStep(props: {
+  elKeySaved: boolean;
+  onElKeySaved: () => void;
+  onPick: (tts: TtsEngineChoice | undefined) => void;
+  onBack: () => void;
+}): React.ReactElement {
+  const tt = useT();
+  const [sub, setSub] = useState<'pick' | 'elkey' | 'download'>('pick');
+  if (sub === 'elkey') {
+    return (
+      <ElKeyPanel
+        onSaved={() => {
+          props.onElKeySaved();
+          props.onPick('elevenlabs');
+        }}
+        onBack={() => setSub('pick')}
+      />
+    );
+  }
+  if (sub === 'download') {
+    return (
+      <PackDownloadPanel
+        packIds={ttsPackIdsFor(uiLanguage())}
+        title={tt('Local voices run on your computer.')}
+        onDone={() => props.onPick('local')}
+        onBack={() => setSub('pick')}
+      />
+    );
+  }
+  return (
+    <div className={styles.panel}>
+      <p className={styles.panelText}>{tt('And how should companions speak?')}</p>
+      <div className={styles.choicesCol}>
+        <button
+          className={styles.pill}
+          onClick={() => (props.elKeySaved ? props.onPick('elevenlabs') : setSub('elkey'))}
+        >
+          {tt('ElevenLabs voices (your ElevenLabs key)')}
+        </button>
+        <button className={styles.pill} onClick={() => setSub('download')}>
+          {tt('Local voices')}
+        </button>
+      </div>
+      <button className={styles.quietLink} onClick={() => props.onPick(undefined)}>
+        {tt('Decide later')}
+      </button>
+      <button className={styles.quietLink} onClick={props.onBack}>
+        {tt('Back')}
+      </button>
+    </div>
+  );
+}
+
+/** ElevenLabs key entry, shared by the Scribe and ElevenLabs-voices options.
+ * The key never comes back to the renderer; main stores it encrypted
+ * (voice:eleven-key-set). */
+function ElKeyPanel(props: { onSaved: () => void; onBack: () => void }): React.ReactElement {
+  const tt = useT();
+  const [key, setKey] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const save = async (): Promise<void> => {
+    if (busy || key.trim().length < 8) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await sei.voiceElevenKeySet({ key: key.trim() });
+      props.onSaved();
     } catch (err) {
       setError((err as Error).message || t('Something went wrong.'));
       setBusy(false);
@@ -1383,37 +2074,142 @@ function LocalSetupPanel(props: { onDone: (provider: string, key: string) => voi
   };
   return (
     <div className={styles.panel}>
-      <p className={styles.panelText}>{tt('Pick your model provider and paste your API key.')}</p>
-      <select
-        className={styles.fieldSelect}
-        value={provider}
-        onChange={(e) => setProvider(e.target.value)}
-        aria-label={tt('Model provider')}
-      >
-        {PROVIDERS.map((p) => (
-          <option key={p.value} value={p.value}>
-            {p.label}
-          </option>
-        ))}
-      </select>
+      <p className={styles.panelText}>
+        {tt('Paste your ElevenLabs API key. It powers Scribe recognition and ElevenLabs voices.')}
+      </p>
       <input
         className={styles.field}
         type="password"
         value={key}
-        placeholder="sk-..."
+        placeholder="xi-..."
         onChange={(e) => setKey(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') void submit();
+          if (e.key === 'Enter') void save();
         }}
-        aria-label={tt('API key')}
+        aria-label={tt('ElevenLabs API key')}
       />
       {error ? (
         <p className={styles.panelError} role="alert">
           {error}
         </p>
       ) : null}
-      <button className={`${styles.pill} ${styles.pillWide}`} disabled={!key.trim() || busy} onClick={() => void submit()}>
-        {tt('Done')}
+      <button
+        className={`${styles.pill} ${styles.pillWide}`}
+        disabled={key.trim().length < 8 || busy}
+        onClick={() => void save()}
+      >
+        {tt('Save')}
+      </button>
+      <button className={styles.quietLink} onClick={props.onBack}>
+        {tt('Back')}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Confirm-then-download for one or more speech packs. The confirm names the
+ * EXACT archive cost, read off speech:pack-status (main's pack registry is
+ * the single source of truth for sizes — the renderer hardcodes nothing).
+ * The download runs in MAIN, so "Continue" is available the moment it
+ * starts: leaving the panel does not cancel it, and a failed download just
+ * leaves the pack absent — the first call then surfaces the typed
+ * VOICE_PACK_MISSING caption pointing at the Settings download.
+ * Already-downloaded packs (a re-run of onboarding) skip straight through.
+ */
+function PackDownloadPanel(props: {
+  packIds: string[];
+  /** One translated line naming what this download is. */
+  title: string;
+  onDone: () => void;
+  onBack: () => void;
+}): React.ReactElement {
+  const tt = useT();
+  const { packIds } = props;
+  const [packs, setPacks] = useState<Record<string, SpeechPackStatePush> | null>(null);
+  const [started, setStarted] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const doneRef = useRef(false);
+  const finish = useCallback((): void => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    props.onDone();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    sei.speechPackStatus().then(
+      (s) => {
+        if (!cancelled) setPacks(s.packs);
+      },
+      () => undefined,
+    );
+    const off = sei.onSpeechPackState((push) => setPacks(push.packs));
+    return () => {
+      cancelled = true;
+      off();
+    };
+  }, []);
+  const ready = allPacksReady(packIds, packs);
+  useEffect(() => {
+    if (started && ready) finish();
+  }, [started, ready, finish]);
+  const start = (): void => {
+    setStarted(true);
+    setFailed(false);
+    void Promise.all(packIds.map((packId) => sei.speechPackDownload({ packId }))).catch(() => {
+      setFailed(true);
+    });
+  };
+
+  if (!started) {
+    const totalBytes = packsTotalBytes(packIds, packs);
+    return (
+      <div className={styles.panel}>
+        <p className={styles.panelText}>{props.title}</p>
+        {ready ? (
+          <button className={`${styles.pill} ${styles.pillWide}`} onClick={finish}>
+            {tt('Already downloaded. Continue')}
+          </button>
+        ) : (
+          <button
+            className={`${styles.pill} ${styles.pillWide}`}
+            disabled={totalBytes === null}
+            onClick={start}
+          >
+            {totalBytes === null
+              ? tt('Checking...')
+              : tt('Download? ({mb} MB)', { mb: mbLabel(totalBytes) })}
+          </button>
+        )}
+        <button className={styles.quietLink} onClick={props.onBack}>
+          {tt('Back')}
+        </button>
+      </div>
+    );
+  }
+
+  const pct = packsPct(packIds, packs);
+  return (
+    <div className={styles.panel}>
+      <p className={styles.panelText}>{tt('Downloading... {pct}%', { pct })}</p>
+      <div className={styles.progress}>
+        <div className={styles.progressFillDet} style={{ width: `${pct}%` }} />
+      </div>
+      {failed ? (
+        <>
+          <p className={styles.panelError} role="alert">
+            {tt('The download failed. Check your connection and try again.')}
+          </p>
+          <button className={`${styles.pill} ${styles.pillWide}`} onClick={start}>
+            {tt('Try again')}
+          </button>
+        </>
+      ) : (
+        <p className={styles.panelNote}>{tt('You can keep going; it finishes in the background.')}</p>
+      )}
+      <button className={styles.quietLink} onClick={finish}>
+        {tt('Continue')}
       </button>
     </div>
   );

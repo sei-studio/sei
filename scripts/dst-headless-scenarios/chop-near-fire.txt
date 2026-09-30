@@ -1,0 +1,32 @@
+# Headless DST scenario for scripts/dst-headless-harness.mjs (see
+# native/dst-mod/sei/README.md, "Headless testing"). Needs the stand-in
+# player STEVE (userid KU_test) spawned from the console first. Lines tagged
+# [test] print to the server log; read them there.
+# ===== review fix 1: chop near a campfire at night, no torch/axe swap loop =====
+lua TheWorld:PushEvent("ms_setclocksegs",{day=0,dusk=0,night=16}); TheWorld:PushEvent("ms_setphase","night"); for _,v in pairs(Ents) do if v.prefab=="campfire" or v.prefab=="spider" then v:Remove() end end; local c=require("sei/companion").inst; c.components.health:SetInvincible(true); rawset(_G,"EQ",{}); c:ListenForEvent("equip", function(_,d) table.insert(EQ, d.item.prefab); print("[test] equip", d.item.prefab, string.format("%.1f",GetTime())) end); local i=c.components.inventory; i:GiveItem(SpawnPrefab("axe")); i:GiveItem(SpawnPrefab("torch")); print("[test] setup night")
+tool unfollow {}
+wait 12000
+lua local c=require("sei/companion").inst; local x,y,z=c.Transform:GetWorldPosition(); local n=0; for _,v in ipairs(TheSim:FindEntities(x,y,z,22,{"CHOP_workable"})) do v:Remove(); n=n+1 end; local f=SpawnPrefab("campfire"); f.Transform:SetPosition(x+1,0,z); f.components.fueled:SetPercent(0.12); rawset(_G,"FA",f); print("[test] cleared trees", n, "fire", f.GUID)
+wait 3000
+lua local c=require("sei/companion").inst; local R=require("sei/reflexes"); local fx,_,fz=FA.Transform:GetWorldPosition(); local s=""; local dark,edge=nil,nil; for k=2,40 do local d=k*0.5; local v=TheSim:GetLightAtPoint(fx+d,0,fz); s=s..string.format(" %.1f:%.2f",d,v); if edge==nil and v<0.19 and v>0.11 then edge=d end; if dark==nil and v<0.03 then dark=d end end; rawset(_G,"DDARK",dark); rawset(_G,"DEDGE",edge); print("[test] light profile from fire (lvl "..FA.components.burnable.fxchildren[1].components.firefx.level..")"..s); print("[test] dark from", dark, "edge at", edge, "body lit", R.LitByOthers(c))
+# A1: the tree is outside the firelight. Expect: torch in hand, chop refused, no loop.
+lua local fx,_,fz=FA.Transform:GetWorldPosition(); local t=SpawnPrefab("evergreen"); t.Transform:SetPosition(fx+DDARK+1.5,0,fz); rawset(_G,"TA",t); rawset(_G,"EQ",{}); print("[test] A1 dark tree at", DDARK+1.5, "m from the fire")
+tool chop {"target":"evergreen"}
+wait 6000
+lua local c=require("sei/companion").inst; local h=c.components.inventory:GetEquippedItem(EQUIPSLOTS.HANDS); print("[test] A1 equips", #EQ, table.concat(EQ, ","), "hands", h and h.prefab, "inlight", c.LightWatcher:IsInLight(), "tree chopped", not TA:HasTag("CHOP_workable"))
+# A2: the tree at the edge of the light (between the two thresholds), walking out of the light.
+lua TA:Remove(); local c=require("sei/companion").inst; local i=c.components.inventory; local h=i:GetEquippedItem(EQUIPSLOTS.HANDS); if h then i:GiveItem(i:Unequip(EQUIPSLOTS.HANDS)) end; local fx,_,fz=FA.Transform:GetWorldPosition(); c.Transform:SetPosition(fx+1,0,fz+1); local t=SpawnPrefab("evergreen"); t.Transform:SetPosition(fx+DEDGE+1,0,fz); rawset(_G,"TB",t); print("[test] A2 edge tree at", DEDGE+1, "m; body by the fire")
+wait 2000
+lua rawset(_G,"EQ",{}); print("[test] A2 go")
+tool chop {"target":"evergreen"}
+wait 4000
+lua local c=require("sei/companion").inst; local h=c.components.inventory:GetEquippedItem(EQUIPSLOTS.HANDS); local R=require("sei/reflexes"); print("[test] A2 equips", #EQ, table.concat(EQ, ","), "hands", h and h.prefab, "light here", string.format("%.3f", R.LightFromOthers(c)), "lit", R.LitByOthers(c), "tree chopped", not TB:HasTag("CHOP_workable"))
+# A3: the reviewer's case: a tree 5 m from the (fed) campfire.
+lua TB:Remove(); FA.components.fueled:SetPercent(0.5); local c=require("sei/companion").inst; local fx,_,fz=FA.Transform:GetWorldPosition(); c.Transform:SetPosition(fx+1,0,fz+1); local t=SpawnPrefab("evergreen"); t.Transform:SetPosition(fx+5,0,fz); rawset(_G,"TC",t); rawset(_G,"EQ",{}); print("[test] A3 tree 5 m from the fire")
+wait 1500
+tool chop {"target":"evergreen"}
+wait 4000
+lua local c=require("sei/companion").inst; local h=c.components.inventory:GetEquippedItem(EQUIPSLOTS.HANDS); local R=require("sei/reflexes"); print("[test] A3 equips", #EQ, table.concat(EQ, ","), "hands", h and h.prefab, "light here", string.format("%.3f", R.LightFromOthers(c)), "tree chopped", not TC:HasTag("CHOP_workable"))
+lua TC:Remove(); FA:Remove(); TheWorld:PushEvent("ms_setclocksegs",{day=8,dusk=6,night=2}); TheWorld:PushEvent("ms_setphase","day"); print("[test] A done")
+events
+quit

@@ -1,8 +1,8 @@
 /** Filled by the localization sweep. See ../zh.ts for the dictionary rules. */
 export const ZH_MISC: Record<string, string> = {
   // ── lib/errors.ts (ERROR_COPY / WARN_COPY / fallback) ──────────────────
-  "Couldn't finish joining your world in time. Press Summon to try again.":
-    '未能及时加入你的世界。请再次点击召唤重试。',
+  "Couldn't finish joining your world in time. Press Launch to try again.":
+    '未能及时加入你的世界。请再次点击启动重试。',
   "We can't see an open LAN world. In Minecraft, press Esc, choose Open to LAN, then click Start LAN World.":
     '没有检测到开放的局域网世界。在 Minecraft 中按 Esc，选择「对局域网开放」，然后点击「创建局域网世界」。',
   'Your Anthropic API key was rejected. Open Settings → re-run onboarding to paste a fresh key.':
@@ -10,7 +10,8 @@ export const ZH_MISC: Record<string, string> = {
   'Anthropic is throttling requests. Wait a minute and try again.':
     'Anthropic 正在限流请求。请稍等一分钟再试。',
   'No internet connection. Reconnect and try again.': '没有网络连接。请重新联网后再试。',
-  'Sei stopped unexpectedly. Press Summon to restart.': 'Sei 意外停止了。点击召唤以重新启动。',
+  'Sei stopped before it could join your world. Press Launch to try again. If it keeps happening, the console at the bottom of the app has the reason.':
+    'Sei 在加入你的世界之前停止了。点击启动重试。如果反复出现，应用底部的控制台里有原因。',
   'LAN auto-detect is blocked on this network. Try a home Wi-Fi network.':
     '当前网络阻止了局域网自动发现。请尝试家用 Wi-Fi 网络。',
   "Couldn't read your saved API key from the system keychain. Re-run onboarding to re-save it.":
@@ -19,14 +20,18 @@ export const ZH_MISC: Record<string, string> = {
     '你的系统没有安全存储。Sei 会保存你的 API 密钥，但它不会受到硬件保护。',
   "A bundled module didn't load. Reinstall Sei from the .dmg / .exe.":
     '有一个内置模块加载失败。请通过 .dmg / .exe 重新安装 Sei。',
-  "This world's Minecraft version is not supported yet. Open your world on a supported Java version and press Summon again.":
-    '暂不支持这个世界的 Minecraft 版本。请用受支持的 Java 版打开你的世界，然后再次点击召唤。',
+  "This world's Minecraft version is not supported yet. Sei works with most Minecraft Java versions from {oldest} to {newest}. Open the Sei profile in the Minecraft Launcher (it runs {recommended}, with companion skins), open or create a world there, open it to LAN, and press Launch again. No Sei profile yet? Set it up from the Minecraft screen in Sei.":
+    '暂不支持这个世界的 Minecraft 版本。Sei 支持 {oldest} 至 {newest} 之间的大多数 Minecraft Java 版本。请在 Minecraft 启动器中打开 Sei 配置（运行 {recommended}，可显示伙伴皮肤），在其中打开或创建一个世界并对局域网开放，然后再次点击启动。还没有 Sei 配置？请在 Sei 的 Minecraft 页面中设置。',
   'This world runs Forge or NeoForge and only lets in players who have its mods. Sei joins as a normal Minecraft client, so the world turns it away. Open a world without server-side mods, or use Fabric with client-only mods like minimaps.':
     '这个世界运行的是 Forge 或 NeoForge，只允许装有相同模组的玩家加入。Sei 以普通 Minecraft 客户端身份加入，因此会被拒之门外。请打开一个没有服务端模组的世界，或改用 Fabric 搭配小地图这类纯客户端模组。',
+  "Sei can't join Forge or NeoForge worlds. Open the Sei profile in the Minecraft Launcher, open or create a world there, and open it to LAN.":
+    'Sei 无法加入 Forge 或 NeoForge 世界。请在 Minecraft 启动器中打开 Sei 配置，在其中打开或创建一个世界，并对局域网开放。',
   "Couldn't download CustomSkinLoader. Check your connection and try the setup again.":
     '无法下载 CustomSkinLoader。请检查网络连接后重新运行设置。',
   "Couldn't install Fabric Loader. Make sure Minecraft is closed, then try the setup again.":
     '无法安装 Fabric Loader。请确认 Minecraft 已关闭，然后重新运行设置。',
+  "Couldn't download the Minecraft support files (about 50 MB). Check your connection and press Summon again. A retry usually works.":
+    '无法下载 Minecraft 支持文件（约 50 MB）。请检查网络连接后再次点击召唤。通常重试一次即可。',
   "We couldn't find any Minecraft installs. Install Minecraft, then re-run setup from Settings.":
     '没有找到任何 Minecraft 安装。请先安装 Minecraft，再从设置中重新运行设置向导。',
   "Couldn't look up that username on Mojang. Check the spelling and your connection.":
@@ -37,11 +42,26 @@ export const ZH_MISC: Record<string, string> = {
     'Sei 无法保留用于提供皮肤的本地端口。请重启 Sei 后再试。',
   "Sei doesn't have permission to write to your Minecraft folder. Grant access and try again.":
     'Sei 没有写入你的 Minecraft 文件夹的权限。请授予访问权限后再试。',
+  // Game adapters (M0, 260908): game-neutral ERROR_COPY rows.
+  "We can't see a game world to join. Open your world in the game, then press Play again.":
+    '没有检测到可加入的游戏世界。请在游戏中打开你的世界，然后再次点击「一起玩」。',
+  "We couldn't find this game on your computer. Install it, then press Play again.":
+    '在你的电脑上没有找到这个游戏。请先安装，然后再次点击「一起玩」。',
+  "Couldn't finish setting up the companion mod for this game. Make sure the game is closed, then try the setup again.":
+    '无法完成这个游戏的伙伴模组设置。请确认游戏已关闭，然后重新运行设置。',
+  "The game is open but isn't answering. Make sure the Sei mod is enabled in the game, then press Play again.":
+    '游戏已打开但没有响应。请确认游戏中已启用 Sei 模组，然后再次点击「一起玩」。',
+  "This game version isn't supported yet. Update the game to a supported version and press Play again.":
+    '暂不支持这个游戏版本。请把游戏更新到受支持的版本，然后再次点击「一起玩」。',
+  "Couldn't download the files this game needs. Check your connection and press Play again.":
+    '无法下载这个游戏所需的文件。请检查网络连接，然后再次点击「一起玩」。',
   "You've used this week's credits. Upgrade or top up on the plan screen, or switch to your own API key in Settings.":
     '本周的额度已用完。你可以在方案页面升级或充值，或在设置中切换为自己的 API 密钥。',
   'Too many requests right now. Wait a little and try again.': '当前请求过多。请稍等片刻再试。',
-  'Detected MC {version}. Sei needs MC 1.14 or newer. Pick a newer profile or switch to 1.21.x before continuing.':
-    '检测到 MC {version}。Sei 需要 MC 1.14 或更新版本。请选择更新的配置，或切换到 1.21.x 后再继续。',
+  "Sei doesn't know your name yet. Open Settings, type it into the Name field, then press Launch again.":
+    'Sei 还不知道你的名字。打开设置，在“名字”一栏填写，然后再次点击启动。',
+  'Detected MC {version}. Sei needs MC 1.14 or newer. Pick a newer profile or switch to a supported version such as {latest} before continuing.':
+    '检测到 MC {version}。Sei 需要 MC 1.14 或更新版本。请选择更新的配置，或切换到 {latest} 等受支持的版本后再继续。',
   "Couldn't read mod metadata, so this mod will be skipped. If it's actually compatible, copy it into <install>/sei/mods/ manually.":
     '无法读取模组元数据，此模组将被跳过。如果它其实兼容，请手动将其复制到 <install>/sei/mods/ 中。',
   'Something went wrong. {detail}Try again.': '出了点问题。{detail}请重试。',
@@ -92,14 +112,60 @@ export const ZH_MISC: Record<string, string> = {
   '[voice paused, out of credits]': '[语音已暂停，额度已用完]',
   '[voice unavailable, this voice is not in your ElevenLabs library]':
     '[语音不可用，这个声音不在你的 ElevenLabs 声音库中]',
+  // 260816 local speech: the sherpa voice pack for this call is not downloaded.
+  '[voice unavailable, download the local voice pack in Settings]':
+    '[语音不可用，请在设置中下载本地语音包]',
+  // 260908: the sentinel now names WHICH pack fits the conversation language,
+  // and a line spoken with a substitute pack gets its own notice.
+  '[voice unavailable, download the Chinese voice pack in Settings]':
+    '[语音不可用，请在设置中下载中文语音包]',
+  '[voice unavailable, download the English voice pack in Settings]':
+    '[语音不可用，请在设置中下载英文语音包]',
+  '[spoken with the English voice, download the Chinese voice pack in Settings for a better fit]':
+    '[已用英文语音代读，在设置中下载中文语音包效果更好]',
+  '[spoken with the Chinese voice, download the English voice pack in Settings for a better fit]':
+    '[已用中文语音代读，在设置中下载英文语音包效果更好]',
+  // 260817 W10: sherpa-onnx itself failed to load (e.g. a build without the
+  // platform package). Without this caption the companion is silently mute.
+  '[voice unavailable, local speech cannot run on this install]':
+    '[语音不可用，本地语音无法在此安装上运行]',
+  // Backseat share errors (useBackseatStore) — these bypassed t() until 260817.
+  'They are in your Minecraft world right now. End that first.':
+    '他们现在正在你的 Minecraft 世界里。请先结束那边。',
+  'Could not start sharing. Try picking a different window.':
+    '无法开始共享。试试选择其他窗口。',
+  'Could not read that window.': '无法读取那个窗口。',
   'Voice service is not available right now.': '语音服务暂时不可用。',
   'This voice is not in your ElevenLabs library. Add it there, or pick a different voice.':
     '这个声音不在你的 ElevenLabs 声音库中。请先在那里添加它，或选择其他声音。',
   'No microphone was found. Connect one and try again.': '没有找到麦克风。请连接后重试。',
-  'Microphone access is blocked by Windows. In Settings, open Privacy & security > Microphone, turn on microphone access and "Let desktop apps access your microphone", then try again.':
-    '麦克风访问被 Windows 阻止。请在系统设置中打开「隐私和安全性 > 麦克风」，开启麦克风访问以及「允许桌面应用访问你的麦克风」，然后重试。',
-  'Microphone access was blocked. Allow it and try again.': '麦克风访问被拒绝。请允许后重试。',
+  'Microphone access is off for Sei.': 'Sei 的麦克风权限已关闭。',
   'Voice call failed to start. Try again in a moment.': '语音通话启动失败。请稍后再试。',
+
+  // ── OS permission cards (MicAccessCard / ScreenAccessGate, 260929) ────
+  'Turn on your microphone': '开启麦克风',
+  'Restart Sei to use your microphone': '重启 Sei 以使用麦克风',
+  'Sei needs your microphone so {name} can hear you.': 'Sei 需要使用麦克风，{name} 才能听到你说话。',
+  'In System Settings, open Privacy & Security > Microphone and turn on Sei.':
+    '在「系统设置」中打开「隐私与安全性 > 麦克风」，然后开启 Sei。',
+  'In Settings, turn on Microphone access and Let desktop apps access your microphone.':
+    '在「设置」中开启「麦克风访问权限」和「允许桌面应用访问你的麦克风」。',
+  'Microphone unavailable': '麦克风不可用',
+  'Your microphone is locked by Screen Time or a device policy on this Mac.':
+    '这台 Mac 的麦克风已被「屏幕使用时间」或设备管理策略锁定。',
+  'The call starts on its own once access is on.': '权限开启后，通话会自动开始。',
+  'Microphone access is on, but Sei needs a restart to use it.': '麦克风权限已开启，但 Sei 需要重启才能使用。',
+  'Restart Sei and call': '重启 Sei 并通话',
+  'Open Settings': '打开设置',
+  'Sei needs Screen Recording permission to see your screen.': 'Sei 需要「屏幕录制」权限才能看到你的屏幕。',
+  'In System Settings, open Privacy & Security > Screen Recording and turn on Sei.':
+    '在「系统设置」中打开「隐私与安全性 > 屏幕录制」，然后开启 Sei。',
+  'Your windows show up here once access is on.': '权限开启后，你的窗口会显示在这里。',
+  'I turned it on': '我已开启',
+  'macOS sometimes needs Sei to restart before it can see the screen.': 'macOS 有时需要重启 Sei 才能看到屏幕。',
+  'Restart Sei and continue': '重启 Sei 并继续',
+  'Could not read your open windows. Check screen recording permission for Sei.':
+    '无法读取你打开的窗口。请检查 Sei 的屏幕录制权限。',
 
   // ── Call inactivity watchdog (CallInactivityPopup, 260810) ─────────────
   'Are you still there?': '你还在吗？',
@@ -158,8 +224,8 @@ export const ZH_MISC: Record<string, string> = {
   // ── FeedbackRewardCard ─────────────────────────────────────────────────
   'Daily feedback limit reached. Try again tomorrow.': '已达到今日反馈上限。请明天再试。',
   'Sign in to submit feedback.': '请登录后提交反馈。',
-  'Feedback could not be sent. Check your connection and try again.':
-    '反馈发送失败。请检查网络连接后重试。',
+  'Feedback could not be sent. Your message is still here. Check your connection and press Submit to try again.':
+    '反馈发送失败。你的内容仍保留在这里。请检查网络连接，然后再次点击提交。',
   "This week's credits are reset. Thank you for the feedback.":
     '本周额度已重置。感谢你的反馈。',
   'Feedback sent. The reward was already claimed on this account.':
@@ -250,6 +316,12 @@ export const ZH_MISC: Record<string, string> = {
   'Pitch': '音高',
   'Reset': '重置',
   'Higher or lower voice. Speaking pace stays the same.': '声音更高或更低。语速保持不变。',
+  'Higher or lower voice. Speaking pace stays the same. Press play to hear it.':
+    '声音更高或更低。语速保持不变。按播放试听。',
+  'Hear the pitch': '试听音高',
+  'Stop the pitch sample': '停止试听',
+  'Download a voice pack in Settings to hear a sample.': '先在设置中下载语音包，才能试听。',
+  'Local speech cannot run on this install.': '本地语音无法在此安装上运行。',
   'Calmness': '平稳度',
   'Higher is steadier and more even. Lower is more dramatic.':
     '越高越平稳均匀，越低越富有戏剧性。',

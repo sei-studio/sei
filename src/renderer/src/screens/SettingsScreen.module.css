@@ -41,13 +41,13 @@
   border-bottom: 1px solid var(--border);
 }
 
-/* Profile portrait + name field — same hairline rhythm, taller for the avatar. */
+/* Profile portrait + name field — taller for the avatar; no hairline, the
+   group is a single row so a rule under it reads as clutter (260907). */
 .profileRow {
   display: flex;
   align-items: center;
   gap: var(--space-md);
   padding: var(--space-md) 0;
-  border-bottom: 1px solid var(--border);
 }
 
 .profileName {
@@ -123,6 +123,20 @@
 }
 
 .helperError {
+  color: var(--red);
+}
+
+/* Status-word colors for settings status texts (Ready / Downloading / Not set /
+   test + update results). Text color only; layout stays whatever hosts it. */
+.statusOk {
+  color: var(--green);
+}
+
+.statusWarn {
+  color: var(--warn);
+}
+
+.statusErr {
   color: var(--red);
 }
 
@@ -235,4 +249,136 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── W5 (260817, china-compat): inline model picker list ─────────────────
+   Opens under the Model row; a bounded scroll of full-width option rows in
+   the mono register the row's value uses. Non-vision models carry a small
+   red-tinted mark on the right. */
+.modelList {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  margin-top: var(--space-xs);
+}
+
+.modelRow {
+  -webkit-appearance: none;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  padding: var(--space-sm) var(--space-md);
+  text-align: left;
+  cursor: pointer;
+}
+
+.modelRow:last-child {
+  border-bottom: none;
+}
+
+.modelRow:hover {
+  background: var(--accent-soft);
+}
+
+.modelRowOn {
+  background: var(--accent-soft);
+}
+
+.modelRowOn .monoValue {
+  color: var(--accent-text);
+}
+
+.modelMark {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--red);
+  white-space: nowrap;
+}
+
+/* Games group (260908): the left column picks a game, the right shows its
+   rows. The list is a vertical version of the profile tabs (accent edge on
+   the active entry instead of an underline); the pane reuses .row, so the
+   hairline rhythm is the same as every other group. Stacks under 560px. */
+.gamesLayout {
+  display: grid;
+  grid-template-columns: minmax(150px, 190px) minmax(0, 1fr);
+  gap: 0 var(--space-lg);
+  align-items: start;
+}
+
+.gamesNav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-right: 1px solid var(--border);
+  padding: var(--space-xs) var(--space-md) var(--space-xs) 0;
+  position: sticky;
+  top: 0;
+}
+
+.gamesNavItem,
+.gamesNavItemOn {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-left: 2px solid transparent;
+  padding: var(--space-sm) var(--space-md);
+  text-align: left;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 140ms ease, background 140ms ease;
+}
+
+.gamesNavItem:hover {
+  color: var(--text-2);
+}
+
+.gamesNavItemOn {
+  color: var(--text);
+  border-left-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.gamesNavItem:focus-visible,
+.gamesNavItemOn:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.gamesPane {
+  min-width: 0;
+}
+
+@media (max-width: 560px) {
+  .gamesLayout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .gamesNav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 0 0 var(--space-xs);
+    position: static;
+  }
+  .gamesNavItem,
+  .gamesNavItemOn {
+    border-left: 0;
+    border-bottom: 2px solid transparent;
+  }
+  .gamesNavItemOn {
+    border-bottom-color: var(--accent);
+  }
 }

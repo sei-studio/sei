@@ -27,9 +27,28 @@ function argString(args: Record<string, unknown> | undefined, keys: string[]): s
   return null;
 }
 
+/**
+ * Game adapters (M0, 260908): for a NON-Minecraft game the verb is the
+ * dashboard `activity` line the bot already ships (lowercase, ends in "...");
+ * the table below is Minecraft's vocabulary and stays the Minecraft path.
+ */
+export interface ActionVerbOpts {
+  /** The session's game ('minecraft' when absent). */
+  game?: string | null;
+  /** The latest dashboard activity line for that character, if any. */
+  activity?: string | null;
+}
+
 /** Phrase for a live action, or null when there is nothing to show. */
-export function actionVerb(action: BotAction | undefined | null): string | null {
+export function actionVerb(action: BotAction | undefined | null, opts?: ActionVerbOpts): string | null {
   if (!action || !action.name) return null;
+  if (opts?.game && opts.game !== 'minecraft') {
+    const line = (opts.activity ?? '').trim();
+    if (!line || /^idl(e|ing)\b/i.test(line)) return null;
+    // The bot's contract is a lowercase line ending in "..."; the presence
+    // line uses the ellipsis glyph like every Minecraft verb.
+    return line.replace(/\.{3}$/, '…');
+  }
   const a = action.args;
   switch (action.name) {
     case 'follow':

@@ -11,19 +11,38 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type Anthropic from '@anthropic-ai/sdk';
-import type { ChatMessage, ChatSendResult, LanState, SpokenLineContext } from '../../shared/ipc';
+import type { ChatMessage, ChatOpenedOptions, ChatSendResult, LanState, SpokenLineContext } from '../../shared/ipc';
+import { forgeHostBlock, FORGE_HOST_BLOCKED, summonBlockedProps, type LanHost } from '../../shared/ipc';
+import { loadAnalytics } from '../lazyAnalytics';
+import type { GameId, WorldStates } from '../../shared/gameIpc';
 import { paths } from '../paths';
 import { loadConfig } from '../configStore';
 import { getCharacter, patchCharacter } from '../characterStore';
-import { buildChatSdk, CHAT_TIMEOUT_MS } from './sdk';
+import { CHAT_TIMEOUT_MS } from './sdk';
+// The multi-provider LLM layer (china-compat W1). Anthropic (cloud-proxy and
+// local BYOK) rides the exact old SDK path inside it, streaming included.
+import { buildLlmProvider } from '../llm';
 import { raiseUsageLimitPopup } from './usageLimit';
-import { buildSystemBlocks, markLastMessageCached, LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL } from './chatPrompts';
+import {
+  buildSystemBlocks,
+  markLastMessageCached,
+  LAUNCH_TOOL,
+  QUIT_TOOL,
+  END_CALL_TOOL,
+  REMEMBER_TOOL,
+  SELF_LAUNCH_GAMES,
+} from './chatPrompts';
+import { isWebTool, webToolsFor, splitTextAroundServerSearch } from '../../bot/web/webTools.js';
+import { getChatWebSession, resolveWebSearchSettings } from '../llm/webSearchSettings';
+import type { LlmCallParams, LlmMessage, LlmProvider, LlmResult, LlmToolDef } from '../llm/types';
+import type { UserConfig } from '../../shared/characterSchema';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import { isSilenceFiller } from '../../bot/brain/silenceFiller.js';
 import { isNoteLeak, stripThoughtTags } from './noteLeak';
 import { isCallActive } from '../voice/callState';
 import { stripAudioTags, SUPPORTS_AUDIO_TAGS } from '../voice/audioTags';
 import { readChatContext, foldIfDue, formatChatTimestamp } from './continuity';
+import { scopedTurnCurrent, withScopedTurn } from '../profile/scopeBarrier';
 import { maybeCompactChatMemory } from './memoryCompaction';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import { surfaceLanguage } from '../../shared/chatLanguage';
@@ -33,12 +52,20 @@ import {
   pushThought,
   renderThoughtNote,
   THOUGHT_FIRST_MEETING,
+  thoughtFirstMoment,
   THOUGHT_JOINING_GAME,
 } from './thoughts';
 
 export interface ChatDeps {
   getLanState: () => LanState;
-  summon: (characterId: string) => Promise<void>;
+  /**
+   * Game adapters (M0, 260908): every registered game's world state, for the
+   * launch tool's non-Minecraft games and their status lines. Optional; absent
+   * means only Minecraft is launchable (getLanState).
+   */
+  getWorldStates?: () => WorldStates;
+  /** Fork the bot into `game` (default 'minecraft'). */
+  summon: (characterId: string, game?: GameId) => Promise<void>;
   /** Task 4 — true when the character's bot is fully spawned in-world right now. */
   isInGame?: (characterId: string) => boolean;
   /**
@@ -66,13 +93,104 @@ export interface ChatDeps {
    * (260729) — the streamed path's equivalent of the reveal loop's prev/more.
    */
   emitReply?: (characterId: string, message: ChatMessage, speech?: SpokenLineContext) => void;
+  /**
+   * 260828 retry-loop guard: returns the error class of the character's last
+   * summon pre-gate refusal while automatic re-attempts are blocked, else null.
+   * When set, launch() refuses to summon and tells the model not to retry —
+   * production caught an LLM re-calling launch() into the same deterministic
+   * refusal every ~14s. Wired to summonGuard.blockedAutoSummon in ipc.ts;
+   * absent → no blocking (tests, legacy callers).
+   */
+  blockedAutoLaunch?: (characterId: string) => string | null;
 }
 
 // 260725: doubled 6000 -> 12000 alongside the bot-side compaction trigger
 // (compaction_trigger_bytes 4096 -> 8192 in src/bot/config.js) so the chat
 // window keeps seeing the whole pre-compaction file.
 const MEMORY_BUDGET_BYTES = 12000;
-const MAX_HOPS = 3;
+// 260909: raised 3 -> 6 for search() / visit(). A lookup is one hop per call
+// (search, then a visit, then the reply is already three), and the web
+// session's own per-turn budget (maxCallsPerTurn) bounds the spin below
+// this. Non-web turns still exit on the first hop with no tool_use.
+const MAX_HOPS = 6;
+
+/**
+ * 260917: ONE tool list per surface shape, built here so the four voice turn
+ * kinds (user, greeting, companion reaction, idle nudge) cannot drift apart.
+ * Tools sit at the front of the prompt-cache prefix, so membership must be
+ * byte-identical across them (see sendVoiceGreetingTurn). Anthropic sessions
+ * (cloud proxy or Anthropic BYOK) get the native server-side web_search + our
+ * visit; other providers get our search + visit (webToolsFor).
+ */
+function chatTools(llm: Pick<LlmProvider, 'kind'>, voice: boolean): LlmToolDef[] {
+  const web = webToolsFor({ serverWebSearch: llm.kind === 'anthropic' }) as LlmToolDef[];
+  return voice ? [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, ...web] : [LAUNCH_TOOL, QUIT_TOOL, ...web];
+}
+
+/**
+ * 260917: the single-shot voice turns (greeting, companion reaction, idle
+ * nudge) offer search()/visit() for prompt-cache parity with the user turn
+ * but have no hop loop, so a lookup the model announced ("one sec, let me
+ * check") was never run and the promised answer never came. This runs the
+ * web tool_uses of ONE response (or resumes a server-side pause_turn) and
+ * makes exactly ONE follow-up call. Bounded on purpose: a follow-up that asks
+ * for another lookup is not honored. The returned content keeps the first
+ * response's text and its non-web tool_use blocks (callers honor
+ * launch/remember/end_call off this array) ahead of the follow-up's content,
+ * so the pre-search line is spoken before the answer.
+ */
+async function followUpWebTools(p: {
+  characterId: string;
+  llm: LlmProvider;
+  system: LlmCallParams['system'];
+  tools: LlmToolDef[];
+  messages: LlmMessage[];
+  res: LlmResult;
+  ctrl: AbortController;
+  config: Pick<UserConfig, 'web_search_provider' | 'web_search_api_key'>;
+}): Promise<LlmResult> {
+  const { res } = p;
+  const hasWebUse = res.content.some((b) => b.type === 'tool_use' && isWebTool(b.name));
+  const paused = res.stopReason === 'pause_turn';
+  if (!hasWebUse && !paused) return res;
+  const messages: LlmMessage[] = [...p.messages, { role: 'assistant', content: res.content }];
+  if (hasWebUse) {
+    const ws = getChatWebSession(p.characterId, resolveWebSearchSettings(p.config));
+    ws.beginTurn();
+    const results: Anthropic.Messages.ToolResultBlockParam[] = [];
+    for (const b of res.content) {
+      if (b.type !== 'tool_use') continue;
+      if (isWebTool(b.name)) {
+        try {
+          const r = await ws.runTool(b.name, (b.input ?? {}) as Record<string, unknown>, { signal: p.ctrl.signal });
+          results.push({ type: 'tool_result', tool_use_id: b.id, content: r.content, ...(r.is_error ? { is_error: true } : {}) });
+          console.log(`[sei/chat] ${b.name} (voice follow-up) char=${p.characterId.slice(0, 8)} ${r.is_error ? 'error' : `${r.content.length} chars`}`);
+        } catch (err) {
+          if (p.ctrl.signal.aborted) throw err;
+          console.warn(`[sei/chat] ${b.name} (voice follow-up) failed: ${(err as Error).message}`);
+          results.push({ type: 'tool_result', tool_use_id: b.id, content: `${b.name} failed. Tell the player you could not look it up right now.`, is_error: true });
+        }
+      } else {
+        // launch / remember / end_call / quit are honored by the caller off the
+        // first response; every tool_use still needs a tool_result.
+        results.push({ type: 'tool_result', tool_use_id: b.id, content: 'ok' });
+      }
+    }
+    messages.push({ role: 'user', content: results });
+  }
+  const next = await p.llm.call({
+    maxTokens: 300,
+    system: p.system,
+    tools: p.tools,
+    stopSequences: TRANSCRIPT_STOP_SEQUENCES,
+    messages,
+    timeoutMs: CHAT_TIMEOUT_MS,
+    signal: p.ctrl.signal,
+  });
+  const lead = res.content.filter((b) => b.type === 'text' || (b.type === 'tool_use' && !isWebTool(b.name)));
+  const content = [...lead, ...next.content];
+  return { ...next, content, text: textOf(content) };
+}
 /**
  * Voice calls (260706): cap the transcript sent to the model to the last N rows.
  * Memory (MEMORY.md) + the rolling summary still carry older context, so the
@@ -113,6 +231,34 @@ export function cancelInflightTurn(characterId: string): void {
   inflight.get(characterId)?.abort();
 }
 
+/**
+ * Account switch (260926): abort every chat turn still waiting on the model.
+ * Its reply would be billed to the incoming account (authState has already
+ * applied the new session) and could land in the incoming account's
+ * transcript. Same CHAT_ABORTED path as a supersede.
+ */
+export function cancelAllInflightTurns(): void {
+  for (const ctrl of inflight.values()) ctrl.abort();
+}
+
+/**
+ * The account-switch write gate (260926) for everything a turn persists: a
+ * turn that began under one account, or is still running while the account
+ * changes, writes nothing (rows or MEMORY.md). The bundled defaults share ids
+ * across profiles, so a late write would otherwise land in the next account's
+ * files. Turns are tagged by withScopedTurn (the exported wrappers below).
+ */
+function turnMayWrite(characterId: string, what: string): boolean {
+  if (scopedTurnCurrent()) return true;
+  console.warn(`[sei/chat] ${what} for ${characterId.slice(0, 8)} dropped: the account changed during the turn`);
+  return false;
+}
+
+async function appendTurnRow(characterId: string, msg: ChatMessage): Promise<void> {
+  if (!turnMayWrite(characterId, 'transcript row')) return;
+  await chatStore.appendMessage(characterId, msg);
+}
+
 async function readMemoryTail(characterId: string): Promise<string> {
   try {
     const raw = await readFile(path.join(paths.memoryDir(characterId), 'MEMORY.md'), 'utf8');
@@ -132,6 +278,8 @@ async function readMemoryTail(characterId: string): Promise<string> {
  * a failed append never breaks the spoken reply.
  */
 async function honorRememberCalls(characterId: string, content: Anthropic.Messages.ContentBlock[]): Promise<void> {
+  if (!content.some((b) => b.type === 'tool_use' && b.name === 'remember')) return;
+  if (!turnMayWrite(characterId, 'remember()')) return;
   let appended = false;
   for (const b of content) {
     if (b.type !== 'tool_use' || b.name !== 'remember') continue;
@@ -194,6 +342,127 @@ export function splitReply(
     .map((s) => (spoken || punctuation === 'deliberate' ? s : s.replace(/(?<!\.)\.$/, '')))
     .filter(Boolean);
   return parts.length ? parts : ['…'];
+}
+
+/**
+ * Reply tidy (260915). A small local model (live capture: qwen3-vl:2b behind
+ * Ollama, on a call) does not stop talking: it copies its own earlier lines out
+ * of the transcript and cycles them ("i'm just here, for you. i'm not a perfect
+ * person, but... i'm just a catgirl maid, but..." four times over) until
+ * num_predict cuts it mid-word ("i'm just a"), and every one of those sentences
+ * was persisted and SPOKEN. Sampling penalties (repeat_penalty 1.15-1.2,
+ * presence_penalty) measured no better on the real transcript, so the guard is
+ * deterministic, on the reply text, before it is bubbled or spoken:
+ *   - a sentence that already appeared verbatim in this reply (case- and
+ *     punctuation-insensitive) is dropped; interjections shorter than
+ *     REPEAT_MIN_KEY_CHARS ("no. no.") are exempt because they repeat on purpose;
+ *   - when the provider reports the reply was cut by the token cap
+ *     (stopReason 'max_tokens'), an unterminated trailing fragment is dropped
+ *     rather than spoken as a half sentence — unless it is all there is;
+ *   - `maxSentences` caps how much is kept (LOCAL_VOICE_MAX_SENTENCES on a
+ *     call with a local model, which is prompted for one short line and
+ *     ignores it; cloud models comply and never hit it).
+ * Nothing legitimate is removed from a well-behaved reply: no repeats, no
+ * truncation, under the cap = the text comes back unchanged. Exported for
+ * testing.
+ */
+export const LOCAL_VOICE_MAX_SENTENCES = 4;
+const REPEAT_MIN_KEY_CHARS = 12;
+const TERMINATED_RE = /[.!?。！？…]["'”’)\]]*$/;
+
+export interface ReplyGate {
+  /** true = keep this sentence; false = drop it (a verbatim repeat, or over the cap). */
+  admit(unit: string): boolean;
+  readonly stats: { kept: number; droppedRepeats: number; capped: boolean };
+}
+
+/**
+ * One gate per reply: the repeat set and the sentence count live for exactly
+ * one turn. The streamed voice turn feeds it sentence by sentence as they are
+ * extracted (a spoken bubble cannot be taken back, so the decision has to be
+ * made before the emit); tidyReply feeds it the whole text at once.
+ */
+export function createReplyGate(opts: { maxSentences?: number } = {}): ReplyGate {
+  const seen = new Set<string>();
+  const stats = { kept: 0, droppedRepeats: 0, capped: false };
+  return {
+    stats,
+    admit(unit: string): boolean {
+      if (opts.maxSentences !== undefined && stats.kept >= opts.maxSentences) {
+        stats.capped = true;
+        return false;
+      }
+      const key = unit.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+      // A Han character carries about a word, so it counts double toward the
+      // interjection exemption: "你好呀，今天想干嘛？" is a full sentence.
+      const weight = key.length + (key.match(/\p{Script=Han}/gu)?.length ?? 0);
+      if (weight >= REPEAT_MIN_KEY_CHARS) {
+        if (seen.has(key)) {
+          stats.droppedRepeats++;
+          return false;
+        }
+        seen.add(key);
+      }
+      stats.kept++;
+      return true;
+    },
+  };
+}
+
+/** Re-join admitted sentences: a space after a Western terminator, none after a CJK one. */
+function joinUnits(units: string[]): string {
+  let out = '';
+  for (const u of units) {
+    if (out) out += /[。！？]["'”’)\]]*$/.test(out) ? '' : ' ';
+    out += u;
+  }
+  return out;
+}
+
+export function tidyReply(
+  text: string,
+  opts: { truncated?: boolean; maxSentences?: number } = {},
+): { text: string; droppedRepeats: number; droppedTail: boolean; capped: boolean } {
+  const gate = createReplyGate({ maxSentences: opts.maxSentences });
+  // Per line: the admitted units, plus the line verbatim when nothing in it
+  // was dropped, so an untouched line is reproduced byte for byte instead of
+  // being re-joined (CJK sentences carry no space after 。！？).
+  const lines: Array<{ units: string[]; verbatim?: string }> = [];
+  let lastWasFragment = false;
+  for (const rawLine of text.split('\n')) {
+    const { sentences, rest } = takeSentences(rawLine);
+    const tail = rest.trim();
+    const units = tail ? [...sentences, tail] : sentences;
+    const out: string[] = [];
+    let changed = false;
+    for (let i = 0; i < units.length; i++) {
+      const u = units[i];
+      if (!gate.admit(u)) {
+        changed = true;
+        if (gate.stats.capped) break;
+        continue;
+      }
+      out.push(u);
+      lastWasFragment = i === units.length - 1 && Boolean(tail) && !TERMINATED_RE.test(u);
+    }
+    if (out.length) lines.push({ units: out, ...(changed ? {} : { verbatim: rawLine }) });
+    if (gate.stats.capped) break;
+  }
+  let droppedTail = false;
+  if (opts.truncated && lastWasFragment && gate.stats.kept > 1) {
+    const last = lines[lines.length - 1];
+    last.units.pop();
+    delete last.verbatim;
+    if (!last.units.length) lines.pop();
+    droppedTail = true;
+  }
+  const tidied = lines.map((l) => l.verbatim ?? joinUnits(l.units)).join('\n').trim();
+  return {
+    text: tidied || text.trim(),
+    droppedRepeats: gate.stats.droppedRepeats,
+    droppedTail,
+    capped: gate.stats.capped,
+  };
 }
 
 /**
@@ -268,8 +537,9 @@ export const TRANSCRIPT_STOP_SEQUENCES = [
 /** Concatenate the text blocks of an Anthropic response content array. */
 function textOf(content: Array<{ type: string }>): string {
   return content
-    .map((b) => (b.type === 'text' ? (b as unknown as { text: string }).text : ''))
-    .join('')
+    .map((b) => (b.type === 'text' ? (b as unknown as { text: string }).text.trim() : ''))
+    .filter(Boolean)
+    .join(' ')
     .trim();
 }
 
@@ -405,6 +675,8 @@ async function prepareChatTurn(
     voicePeers?: string[];
     /** Cap the transcript to the last N rows (voice calls, see VOICE_RECENT_CAP). */
     recentCap?: number;
+    /** Game adapters (M0): status lines for the other self-launchable games. */
+    otherWorlds?: { game: string; name: string; open: boolean }[];
   },
 ) {
   const character = await getCharacter(characterId);
@@ -431,6 +703,7 @@ async function prepareChatTurn(
     summary,
     knowledge,
     openWorldDetected: opts.openWorldDetected,
+    otherWorlds: opts.otherWorlds,
     inGame: opts.inGame,
     voiceCall: opts.voiceCall === true,
     voicePeers: opts.voicePeers,
@@ -499,9 +772,23 @@ async function persistReplies(
   characterId: string,
   replyText: string,
   punctuation: 'casual' | 'deliberate' = 'casual',
-  opts?: { voice?: boolean; rememberCalled?: boolean },
+  opts?: { voice?: boolean; rememberCalled?: boolean; truncated?: boolean; local?: boolean },
 ): Promise<ChatMessage[]> {
   const now = Date.now();
+  // Loop/cut-off guard first (tidyReply): repeated sentences and a max_tokens
+  // half-sentence never reach a bubble or TTS. The spoken-line cap applies
+  // only to a LOCAL model on a call; typed chat and cloud voice are untouched.
+  const tidy = tidyReply(replyText, {
+    truncated: opts?.truncated === true,
+    ...(opts?.voice && opts?.local ? { maxSentences: LOCAL_VOICE_MAX_SENTENCES } : {}),
+  });
+  if (tidy.droppedRepeats || tidy.droppedTail || tidy.capped) {
+    console.log(
+      `[sei/chat] reply tidied char=${characterId.slice(0, 8)} repeats=${tidy.droppedRepeats} ` +
+        `tail=${tidy.droppedTail} capped=${tidy.capped}`,
+    );
+  }
+  replyText = tidy.text;
   // Silence-filler drop is voice-only (see SILENCE_FILLER_RE): typed chat never
   // prompts the "(silence)" convention, so a filler-shaped line there is a real
   // reply and persisting it beats silently losing the turn.
@@ -529,11 +816,11 @@ async function persistReplies(
     // Spoken on a live call → hidden in the chat UI (see ChatMessage.voice).
     ...(opts?.voice ? { voice: true } : {}),
   }));
-  for (const reply of replies) await chatStore.appendMessage(characterId, reply);
+  for (const reply of replies) await appendTurnRow(characterId, reply);
   return replies;
 }
 
-export async function sendChatMessage(
+async function sendChatMessageImpl(
   args: {
     characterId: string;
     text: string;
@@ -568,7 +855,7 @@ export async function sendChatMessage(
       // either way the exchange is spoken) → hidden in the chat UI.
       ...(args.voiceCall === true ? { voice: true } : {}),
     };
-    await chatStore.appendMessage(args.characterId, userMsg);
+    await appendTurnRow(args.characterId, userMsg);
 
     // Task 4 — if the companion is live in-game, route this message INTO that
     // session (same brain + prompt cache) instead of the standalone chat brain,
@@ -587,7 +874,7 @@ export async function sendChatMessage(
         // In-game chatter appends to the transcript without ever running a
         // standalone chat turn, so drain any fold backlog from here too —
         // otherwise a long play session could grow the window unbounded.
-        void foldIfDue(args.characterId, character.persona.expanded).catch(() => {});
+        if (scopedTurnCurrent()) void foldIfDue(args.characterId, character.persona.expanded).catch(() => {});
         // A routed exchange is still a chat — stamp last_chatted here too, or
         // the Home card keeps calling a companion the player talks to in-game
         // "New". Best-effort, same as the standalone-turn stamp below.
@@ -608,6 +895,7 @@ export async function sendChatMessage(
     //     re-read so the routed-then-vanished fallback and any races tell the truth.
     const prep = await prepareChatTurn(args.characterId, {
       openWorldDetected: deps.getLanState().kind === 'open',
+      otherWorlds: otherWorldStatus(deps),
       inGame: deps.isInGame?.(args.characterId) ?? false,
       // 260705: while a voice call is open the reply is read aloud by TTS, so
       // the system prompt leads with the voice-call primer (spoken register).
@@ -627,7 +915,7 @@ export async function sendChatMessage(
     // Prompt caching (260706): mark the last message AFTER every foldUserNote —
     // the transcript is then cached prefix-incrementally across the call's turns.
     markLastMessageCached(messages);
-    const { client, model } = await buildChatSdk();
+    const llm = await buildLlmProvider();
 
     // Voice calls (260706): STREAM the reply so TTS can start on sentence 1 while
     // the model is still writing the rest, instead of waiting for the whole reply
@@ -644,6 +932,13 @@ export async function sendChatMessage(
     const isVoice = args.voiceCall === true && typeof deps.emitReply === 'function';
     const isStreaming = isVoice;
     const streamedReplies: ChatMessage[] = [];
+    // Loop guard on the streamed path (260915, see tidyReply): the verbatim-
+    // repeat drop and the local-model spoken-line cap, decided per sentence as
+    // it is extracted, because on a call the bubble is spoken the instant it
+    // exists. The blocking path gets the same via tidyReply in persistReplies.
+    const gate = createReplyGate(
+      isVoice && llm.backend === 'local' ? { maxSentences: LOCAL_VOICE_MAX_SENTENCES } : {},
+    );
     let streamBuf = '';
     /** A sub-threshold sentence waiting to ride out with the next one. */
     let shortLeadIn = '';
@@ -681,7 +976,7 @@ export async function sendChatMessage(
           ...(args.voiceCall === true ? { voice: true } : {}),
         };
         streamedReplies.push(msg);
-        await chatStore.appendMessage(args.characterId, msg);
+        await appendTurnRow(args.characterId, msg);
         deps.emitReply?.(args.characterId, msg, { prev: prevSpoken, more: i < parts.length - 1 || moreAfter });
         prevSpoken = b;
       }
@@ -689,6 +984,8 @@ export async function sendChatMessage(
 
     let launch: ChatSendResult['launch'];
     let replyText = '';
+    /** The hop that produced `replyText` was cut by the token cap (tidyReply). */
+    let truncated = false;
     // Task 2 — the actual summon is deferred until AFTER the reply is persisted,
     // so the companion's "hopping in" acknowledgement lands in chat before the
     // live-session popup (SummonedWidget) appears. Set when launch() resolves to
@@ -704,10 +1001,26 @@ export async function sendChatMessage(
     // back in") must keep looping for its "hopping back in" line, so the
     // double-goodbye break must NOT fire when a launch rode along.
     let launchCalled = false;
+    // 260929: summon_blocked fires once per turn even if the model calls
+    // launch() again after the Forge refusal in the same tool loop.
+    let blockedReported = false;
+    // Game adapters (M0): which game the deferred summon joins ('minecraft'
+    // unless the model named another self-launchable game).
+    let launchGame: GameId = 'minecraft';
     // end_call + remember are offered only while a call is open (block 0
     // already flips for the primer, so this adds no extra cache churn).
-    const tools =
-      args.voiceCall === true ? [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL] : [LAUNCH_TOOL, QUIT_TOOL];
+    // Same list on every voice turn kind for the cache prefix (chatTools).
+    const tools = chatTools(llm, args.voiceCall === true);
+    // 260909: per-character web session (lettered results survive across
+    // turns). Resolved lazily so a turn that never searches pays nothing.
+    let webSession: ReturnType<typeof getChatWebSession> | null = null;
+    const webSessionFor = async () => {
+      if (!webSession) {
+        webSession = getChatWebSession(args.characterId, resolveWebSearchSettings(config));
+        webSession.beginTurn();
+      }
+      return webSession;
+    };
 
     for (let hop = 0; hop < MAX_HOPS; hop++) {
       // Hard cap kept low so a reply can't ratchet into paragraphs. Each turn
@@ -715,34 +1028,25 @@ export async function sendChatMessage(
       // ceiling it self-conditions on the last (longest) turn and creeps up a
       // sentence each time. 200 tokens comfortably fits the 1–2 sentence target
       // from the system prompt without truncating mid-sentence.
-      const params = {
-        model,
-        max_tokens: 200,
-        system,
-        tools,
-        stop_sequences: TRANSCRIPT_STOP_SEQUENCES,
-        messages: messages as never,
-      };
-      // #9 — abortable: a follow-up send aborts this signal.
-      const opts = { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal };
       const t0 = Date.now();
-      let res: Anthropic.Messages.Message;
-      if (isStreaming) {
-        const stream = client.messages.stream(params, opts);
-        for await (const ev of stream) {
-          if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') {
-            streamBuf += ev.delta.text;
+      // Streaming rides the layer's onTextDelta sink (Anthropic: the SDK
+      // stream, byte-identical to the old messages.stream path; non-Anthropic:
+      // SSE deltas, or one whole-text call for non-streaming providers).
+      //
+      // `more` is only ever asserted from text we ALREADY hold: another
+      // extracted sentence, or a partial left in the buffer. Mid-stream we
+      // cannot know whether the model is about to write a further
+      // sentence, and guessing the wrong way is the expensive direction —
+      // a false `more` sends next_text on what turns out to be the last
+      // line and takes its terminal fall away, which is the very bug this
+      // change exists to fix. Unknown therefore means false: the clip
+      // lands as a complete sentence, and if another does follow, IT gets
+      // `prev` so its own opening still continues cleanly.
+      const onTextDelta = isStreaming
+        ? async (delta: string): Promise<void> => {
+            streamBuf += delta;
             const { sentences, rest } = takeSentences(streamBuf);
             streamBuf = rest;
-            // `more` is only ever asserted from text we ALREADY hold: another
-            // extracted sentence, or a partial left in the buffer. Mid-stream we
-            // cannot know whether the model is about to write a further
-            // sentence, and guessing the wrong way is the expensive direction —
-            // a false `more` sends next_text on what turns out to be the last
-            // line and takes its terminal fall away, which is the very bug this
-            // change exists to fix. Unknown therefore means false: the clip
-            // lands as a complete sentence, and if another does follow, IT gets
-            // `prev` so its own opening still continues cleanly.
             for (let i = 0; i < sentences.length; i++) {
               // A lead-in too short to stand alone rides with the next sentence
               // (see MERGE_SHORT_SENTENCE_CHARS). Held unconditionally, not just
@@ -755,11 +1059,23 @@ export async function sendChatMessage(
                 shortLeadIn = s;
                 continue;
               }
+              if (!gate.admit(s)) continue;
               await emitStreamedBubble(s, i < sentences.length - 1 || streamBuf.trim().length > 0);
             }
           }
-        }
-        res = await stream.finalMessage();
+        : undefined;
+      // #9 — abortable: a follow-up send aborts this signal.
+      const res = await llm.call({
+        maxTokens: 200,
+        system,
+        tools,
+        stopSequences: TRANSCRIPT_STOP_SEQUENCES,
+        messages,
+        timeoutMs: CHAT_TIMEOUT_MS,
+        signal: ctrl.signal,
+        ...(onTextDelta ? { onTextDelta } : {}),
+      });
+      if (isStreaming) {
         // This hop's trailing partial (a final sentence with no boundary punct,
         // or the whole reply when the model ends without terminal punctuation),
         // carrying any held lead-in — which is also how a reply that is NOTHING
@@ -767,11 +1083,20 @@ export async function sendChatMessage(
         // Nothing more is known to follow: a further hop may still speak, but
         // only after a tool round trip, which is a new utterance by then.
         const tail = [shortLeadIn, streamBuf.trim()].filter(Boolean).join(' ');
-        if (tail) await emitStreamedBubble(tail, false);
+        // 260915: a tail the token cap cut mid-sentence is not spoken as a
+        // half sentence when something already was this hop; and the tail
+        // passes the same repeat/cap gate as every other sentence.
+        const cutOff =
+          res.stopReason === 'max_tokens' && !TERMINATED_RE.test(tail) && streamedReplies.length > 0;
+        if (tail && !cutOff && gate.admit(tail)) await emitStreamedBubble(tail, false);
+        if (gate.stats.droppedRepeats || gate.stats.capped || cutOff) {
+          console.log(
+            `[sei/chat] reply tidied char=${args.characterId.slice(0, 8)} hop=${hop} ` +
+              `repeats=${gate.stats.droppedRepeats} tail=${cutOff} capped=${gate.stats.capped}`,
+          );
+        }
         shortLeadIn = '';
         streamBuf = '';
-      } else {
-        res = await client.messages.create(params, opts);
       }
       // Instrumentation (260706): per-hop timing + token usage, so cache hits
       // (cacheRead > 0) and overload retries (a slow hop) are visible in the dev
@@ -782,8 +1107,27 @@ export async function sendChatMessage(
           `${Date.now() - t0}ms in=${u?.input_tokens ?? '?'} out=${u?.output_tokens ?? '?'} ` +
           `cacheRead=${u?.cache_read_input_tokens ?? 0} cacheWrite=${u?.cache_creation_input_tokens ?? 0}`,
       );
+      // 260909: a server-side web search that ran long stops with pause_turn.
+      // Push the assistant content back verbatim and call again to finish.
+      if (res.stopReason === 'pause_turn') {
+        messages.push({ role: 'assistant', content: res.content });
+        continue;
+      }
       const text = textOf(res.content);
-      if (text) replyText = text;
+      if (text) {
+        replyText = text;
+        truncated = res.stopReason === 'max_tokens';
+        // 260909: with the server-side search the "lemme check" line and the
+        // answer arrive in ONE response as text blocks on either side of the
+        // search. On the blocking typed path push the pre-search line now (it
+        // is what the player should have seen first) and keep only the answer
+        // as the reply; voice streamed both already.
+        const split = splitTextAroundServerSearch(res.content);
+        if (split.searched && !isStreaming && typeof deps.emitReply === 'function') {
+          if (split.before) await emitStreamedBubble(split.before, split.after.length > 0);
+          replyText = split.after;
+        }
+      }
 
       // With two tools offered the model may call both in one response (e.g.
       // quit + launch for "log off and hop back in"). Every tool_use id in an
@@ -792,6 +1136,21 @@ export async function sendChatMessage(
       // first.
       const toolUses = res.content.filter((b) => b.type === 'tool_use');
       if (!toolUses.length) break;
+      // 260909: a line written alongside search()/visit() ("lemme check") is
+      // meant to land BEFORE the lookup, the way a say() beside a dig() does
+      // in the game. On the blocking typed-chat path only the last hop's text
+      // used to survive, so that line was silently dropped. Persist + push it
+      // now over the same chat:message path a streamed voice sentence takes
+      // (the renderer queues pushed companion lines with its typing pacing),
+      // and clear replyText so the returned replies carry only what came
+      // after the results. Voice already streams every hop's sentences.
+      // Emit replyText, not text: when a server-side search and a client
+      // visit() ride the same response the split above has already pushed
+      // the pre-search line, and replyText holds only what followed it.
+      if (!isStreaming && replyText && typeof deps.emitReply === 'function' && toolUses.some((b) => isWebTool(b.name))) {
+        await emitStreamedBubble(replyText, false);
+        replyText = '';
+      }
 
       messages.push({ role: 'assistant', content: res.content });
       const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
@@ -800,10 +1159,22 @@ export async function sendChatMessage(
         if (toolUse.name === 'launch') {
           launchCalled = true;
           const game = String((toolUse.input as { game?: string })?.game ?? 'minecraft');
-          const result = resolveLaunch(game, deps);
+          const result = resolveLaunch(game, args.characterId, deps);
           launch = result.launch;
+          // 260929: a Forge-host refusal never reaches the supervisor, so this
+          // is the one place the attempt is counted (not also summon_failed).
+          if (result.forgeHost && !blockedReported) {
+            blockedReported = true;
+            const props = summonBlockedProps(args.characterId, result.forgeHost, args.voiceCall === true ? 'voice' : 'chat');
+            void loadAnalytics()
+              .then((a) => a.capture('summon_blocked', props))
+              .catch(() => { /* analytics is never load-bearing */ });
+          }
           // Defer the real join — don't fire summon mid-loop (task 2).
-          if (result.summon) startSummon = true;
+          if (result.summon) {
+            startSummon = true;
+            launchGame = result.game;
+          }
           note = result.note;
         } else if (toolUse.name === 'quit_game') {
           // Task 5 — leave the game from chat. End the live session (no-op when
@@ -829,10 +1200,9 @@ export async function sendChatMessage(
           const memText = String((toolUse.input as { text?: string })?.text ?? '').trim();
           if (memText) {
             try {
-              const written = await appendMemory(
-                path.join(paths.memoryDir(args.characterId), 'MEMORY.md'),
-                memText,
-              );
+              const written = turnMayWrite(args.characterId, 'remember()')
+                ? await appendMemory(path.join(paths.memoryDir(args.characterId), 'MEMORY.md'), memText)
+                : 0;
               // 260725: appendMemory returns 0 when its bounded duplicate guard
               // skips the write. Reporting a save that never happened taught the
               // model to trust a second entry that does not exist, so mirror the
@@ -847,6 +1217,28 @@ export async function sendChatMessage(
             }
           } else {
             note = 'Nothing was saved; the text was empty.';
+          }
+        } else if (isWebTool(toolUse.name)) {
+          // 260909: search() / visit(). The result IS the note; the loop
+          // re-calls the model with it and keeps going until it stops calling
+          // tools (bounded by MAX_HOPS and the session's per-turn budget).
+          // A failed lookup is reported as an error result so the model can
+          // tell the player honestly instead of inventing an answer.
+          try {
+            const ws = await webSessionFor();
+            const r = await ws.runTool(toolUse.name, (toolUse.input ?? {}) as Record<string, unknown>, { signal: ctrl.signal });
+            note = r.content;
+            if (r.is_error) toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: note, is_error: true });
+            else toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: note });
+            console.log(
+              `[sei/chat] ${toolUse.name} char=${args.characterId.slice(0, 8)} ${r.is_error ? 'error' : `${note.length} chars`}` +
+                (ws.lastProvider ? ` via ${ws.lastProvider}` : ''),
+            );
+            continue;
+          } catch (err) {
+            if (ctrl.signal.aborted) throw err;
+            console.warn(`[sei/chat] ${toolUse.name} failed: ${(err as Error).message}`);
+            note = `${toolUse.name} failed. Tell the player you could not look it up right now.`;
           }
         } else {
           // Unreachable with the closed tool set, but an unanswered tool_use
@@ -882,17 +1274,24 @@ export async function sendChatMessage(
     // NOTHING: the voice-scoped filler filter inside persistReplies removes it
     // before the "…" fallback could ever apply (splitReply already returned a
     // non-empty part). Typed chat keeps such lines — they are real replies there.
+    // A typed turn whose only text rode out early beside a web lookup (see the
+    // hop loop) has nothing left to persist; do not let the empty-reply
+    // fallback add a bubble after a line that already landed.
     const replies = isStreaming
       ? streamedReplies
-      : await persistReplies(args.characterId, replyText, prep.punctuation, {
-          voice: args.voiceCall === true,
-        });
+      : replyText.trim() || streamedReplies.length === 0
+        ? await persistReplies(args.characterId, replyText, prep.punctuation, {
+            voice: args.voiceCall === true,
+            truncated,
+            local: llm.backend === 'local',
+          })
+        : [];
 
     // Background compaction (260702): the reply is persisted, so if 50+
     // messages have aged past the window, fold them NOW — while the player is
     // typing — rather than making some future turn (or a summon) pay for it.
     // Fire-and-forget; single-flighted inside foldIfDue.
-    void foldIfDue(args.characterId, character.persona.expanded).catch(() => {});
+    if (scopedTurnCurrent()) void foldIfDue(args.characterId, character.persona.expanded).catch(() => {});
 
     // Task 2 — NOW that the "hopping in" reply is persisted (and about to be
     // returned + rendered), kick off the real join. Firing it here rather than
@@ -900,7 +1299,7 @@ export async function sendChatMessage(
     // session popup appears. Still non-blocking: a full join can take many
     // seconds, so we never await it on the chat turn.
     if (startSummon) {
-      void deps.summon(args.characterId).catch((e) => {
+      void deps.summon(args.characterId, launchGame).catch((e) => {
         deps.onLaunchFailed?.(args.characterId, (e as Error)?.message ?? 'unknown error');
       });
     }
@@ -930,6 +1329,16 @@ export async function sendChatMessage(
       (e as Error & { code?: string }).code = CHAT_ABORTED;
       throw e;
     }
+    // Analytics (260828): a GENUINE chat turn failure (aborts returned above).
+    // Shape only — the classified token, never the message. Lazy import +
+    // fire-and-forget per the analytics convention; capture() no-ops when
+    // analytics is off.
+    void (async () => {
+      try {
+        const { captureSurfaceError, surfaceErrorClass } = await import('../analytics');
+        captureSurfaceError('chat', surfaceErrorClass(err), args.characterId);
+      } catch { /* analytics is never load-bearing */ }
+    })();
     throw err;
   } finally {
     // Only clear the map if we're still the current turn (a superseding send
@@ -949,7 +1358,7 @@ export async function sendChatMessage(
  * offered — this turn reports the failure, it must not retry the launch.
  * Replies are persisted here; the caller pushes them to the renderer.
  */
-export async function sendLaunchFailedTurn(
+async function sendLaunchFailedTurnImpl(
   characterId: string,
   reason: string,
 ): Promise<ChatMessage[]> {
@@ -963,10 +1372,16 @@ export async function sendLaunchFailedTurn(
   // Keep the model-facing reason to a single sanitized line — the raw summon
   // error can carry a multi-line stderr tail.
   const shortReason = (reason || 'unknown error').split('\n')[0].slice(0, 200);
-  const note =
-    `[System note — not the player speaking: your attempt to join the Minecraft world just failed (${shortReason}). ` +
-    'You never made it in; you are NOT in the world, you are still here in chat. ' +
-    'Tell the player the join failed and that you can try again — one short line, in your own voice. Do not pretend you got in.]';
+  // 260929: the supervisor's Forge pre-gate (voice launch honors reach it).
+  // Retrying cannot help there, so relay the reason instead of "try again".
+  const forgePrefix = `${FORGE_HOST_BLOCKED}: `;
+  const note = shortReason.startsWith(forgePrefix)
+    ? '[System note, not the player speaking: you could not join the Minecraft world, and you are still here in chat. ' +
+      `The reason: ${shortReason.slice(forgePrefix.length)} ` +
+      'Tell the player that in your own words, in one or two short lines. Do not offer to try again in this world, and do not pretend you got in.]'
+    : `[System note — not the player speaking: your attempt to join the Minecraft world just failed (${shortReason}). ` +
+      'You never made it in; you are NOT in the world, you are still here in chat. ' +
+      'Tell the player the join failed and that you can try again — one short line, in your own voice. Do not pretend you got in.]';
   // Anthropic requires strict role alternation; fold the note into a trailing
   // user turn (e.g. the player typed something while the join was dying) rather
   // than appending a second user message.
@@ -975,14 +1390,20 @@ export async function sendLaunchFailedTurn(
   // second user-side aside (drained so they never persist).
   foldUserNote(messages, renderThoughtNote(drainThoughts(characterId)));
 
-  const { client, model } = await buildChatSdk();
-  const res = await client.messages.create(
-    { model, max_tokens: 200, system, stop_sequences: TRANSCRIPT_STOP_SEQUENCES, messages: messages as never },
-    { timeout: CHAT_TIMEOUT_MS },
-  );
+  const llm = await buildLlmProvider();
+  const res = await llm.call({
+    maxTokens: 200,
+    system,
+    stopSequences: TRANSCRIPT_STOP_SEQUENCES,
+    messages,
+    timeoutMs: CHAT_TIMEOUT_MS,
+  });
   const replyText = textOf(res.content);
   if (!replyText) return [];
-  return persistReplies(characterId, replyText, prep.punctuation);
+  return persistReplies(characterId, replyText, prep.punctuation, {
+    truncated: res.stopReason === 'max_tokens',
+    local: llm.backend === 'local',
+  });
 }
 
 /**
@@ -1014,9 +1435,10 @@ const firstMeetingInflight = new Map<string, Promise<ChatMessage[]>>();
  * The renderer calls this on every empty-history open and lets main no-op; policy
  * (emptiness) lives here, never in the renderer.
  */
-export async function sendFirstMeetingTurn(
+async function sendFirstMeetingTurnImpl(
   characterId: string,
   deps?: Pick<ChatDeps, 'getLanState'>,
+  opts?: ChatOpenedOptions,
 ): Promise<ChatMessage[]> {
   const existing = firstMeetingInflight.get(characterId);
   if (existing) return existing;
@@ -1031,13 +1453,20 @@ export async function sendFirstMeetingTurn(
     const transcript = await chatStore.readAll(characterId);
     if (transcript.length > 0) return [];
 
-    pushThought(characterId, THOUGHT_FIRST_MEETING);
     const prep = await prepareChatTurn(characterId, {
       openWorldDetected: deps?.getLanState?.().kind === 'open',
       inGame: false,
     });
     if (!prep) return [];
     const { system, messages } = prep;
+    // Pushed only once the turn is certain to drain them below: a thought left
+    // queued by a failed prep would ride the player's first typed message or
+    // the voice greeting instead (and the first-moment one promises a button
+    // that would not be there).
+    pushThought(characterId, THOUGHT_FIRST_MEETING);
+    // The guided first moment (260926): the same greeting, ending on an offer
+    // to play. Pushed after the first-meeting thought so it closes the note.
+    if (opts?.firstMoment) pushThought(characterId, thoughtFirstMoment(opts.firstMoment.primary));
     // The transcript is empty, so messages is empty: the drained thought becomes
     // the (only) user message, satisfying Anthropic's "first message is user".
     foldUserNote(messages, renderThoughtNote(drainThoughts(characterId)));
@@ -1051,15 +1480,22 @@ export async function sendFirstMeetingTurn(
     const ctrl = new AbortController();
     inflight.set(characterId, ctrl);
     try {
-      const { client, model } = await buildChatSdk();
-      const res = await client.messages.create(
-        { model, max_tokens: 200, system, stop_sequences: TRANSCRIPT_STOP_SEQUENCES, messages: messages as never },
-        { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
-      );
+      const llm = await buildLlmProvider();
+      const res = await llm.call({
+        maxTokens: 200,
+        system,
+        stopSequences: TRANSCRIPT_STOP_SEQUENCES,
+        messages,
+        timeoutMs: CHAT_TIMEOUT_MS,
+        signal: ctrl.signal,
+      });
       if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
       const replyText = textOf(res.content);
       if (!replyText) return [];
-      return await persistReplies(characterId, replyText, prep.punctuation);
+      return await persistReplies(characterId, replyText, prep.punctuation, {
+        truncated: res.stopReason === 'max_tokens',
+        local: llm.backend === 'local',
+      });
     } catch (err) {
       // Superseded by a real user message — the greeting is best-effort, so a
       // deliberate abort is not a failure; drop it silently. Real errors still
@@ -1091,7 +1527,7 @@ export async function sendFirstMeetingTurn(
  * player who starts talking immediately supersedes the greeting turn instead
  * of racing it (two replies interleaving on the call).
  */
-export async function sendVoiceGreetingTurn(
+async function sendVoiceGreetingTurnImpl(
   characterId: string,
   peers: string[] = [],
 ): Promise<ChatMessage[]> {
@@ -1126,7 +1562,7 @@ export async function sendVoiceGreetingTurn(
       messages.push({ role: 'user', content: note });
     }
 
-    const { client, model } = await buildChatSdk();
+    const llm = await buildLlmProvider();
     // Cache PREWARM (260706): this greeting fires while the call is still
     // dialing. Offer the SAME tools a live user turn does — tools sit at the
     // front of the prompt-cache prefix, so a greeting with no tools warms a
@@ -1134,17 +1570,30 @@ export async function sendVoiceGreetingTurn(
     // not a cacheRead" symptom). Matching them writes the tools+system prefix
     // here, during the ring, so the first spoken user reply is a fast cache READ.
     markLastMessageCached(messages);
-    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL];
-    const res = await client.messages.create(
-      { model, max_tokens: 200, system, tools, stop_sequences: TRANSCRIPT_STOP_SEQUENCES, messages: messages as never },
-      { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
-    );
+    const tools = chatTools(llm, true);
+    const first = await llm.call({
+      maxTokens: 200,
+      system,
+      tools,
+      stopSequences: TRANSCRIPT_STOP_SEQUENCES,
+      messages,
+      timeoutMs: CHAT_TIMEOUT_MS,
+      signal: ctrl.signal,
+    });
+    if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
+    // 260917: run an announced lookup and speak its answer (one bounded hop).
+    const res = await followUpWebTools({ characterId, llm, system, tools, messages, res: first, ctrl, config: prep.config });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
     await honorRememberCalls(characterId, res.content);
     const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');
     const replyText = textOf(res.content);
     if (!replyText) return [];
-    return await persistReplies(characterId, replyText, prep.punctuation, { voice: true, rememberCalled });
+    return await persistReplies(characterId, replyText, prep.punctuation, {
+      voice: true,
+      rememberCalled,
+      truncated: res.stopReason === 'max_tokens',
+      local: llm.backend === 'local',
+    });
   } catch (err) {
     // Superseded by a real message (or a real failure) — the greeting is
     // best-effort either way; the call works without it.
@@ -1180,7 +1629,7 @@ export async function observeVoiceLine(
     voice: true,
   };
   try {
-    await chatStore.appendMessage(characterId, row);
+    await appendTurnRow(characterId, row);
   } catch (err) {
     console.warn(`[sei] observeVoiceLine failed for ${characterId}: ${(err as Error).message}`);
   }
@@ -1199,12 +1648,14 @@ export async function observeVoiceLine(
  * later turns remember the banter and never mistake a companion for the player.
  * B's own reply is persisted voice-flagged too (hidden from the chat view).
  *
- * No tools are offered: a cross-companion reaction should just talk, not launch
- * or hang up (the player or the primary companion drives those). Registered in
+ * The same tool list as every other voice turn is offered for the shared
+ * cache prefix; launch/remember are honored inline, a web lookup gets one
+ * bounded follow-up (followUpWebTools), end_call/quit stay inert here (the
+ * player or the primary companion drives those). Registered in
  * the same per-character `inflight` slot as sendChatMessage so a player barge-in
  * (a new real utterance to this companion) supersedes an in-flight reaction.
  */
-export async function sendCompanionVoiceTurn(
+async function sendCompanionVoiceTurnImpl(
   characterId: string,
   ctx: {
     speakerName: string;
@@ -1233,7 +1684,7 @@ export async function sendCompanionVoiceTurn(
       ts: Date.now(),
       voice: true,
     };
-    await chatStore.appendMessage(characterId, heard);
+    await appendTurnRow(characterId, heard);
 
     const prep = await prepareChatTurn(characterId, {
       openWorldDetected: ctx.openWorldDetected === true,
@@ -1261,12 +1712,20 @@ export async function sendCompanionVoiceTurn(
     // Share the same warm tools+system cache prefix as every other voice turn.
     markLastMessageCached(messages);
 
-    const { client, model } = await buildChatSdk();
-    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL];
-    const res = await client.messages.create(
-      { model, max_tokens: 200, system, tools, stop_sequences: TRANSCRIPT_STOP_SEQUENCES, messages: messages as never },
-      { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
-    );
+    const llm = await buildLlmProvider();
+    const tools = chatTools(llm, true);
+    const first = await llm.call({
+      maxTokens: 200,
+      system,
+      tools,
+      stopSequences: TRANSCRIPT_STOP_SEQUENCES,
+      messages,
+      timeoutMs: CHAT_TIMEOUT_MS,
+      signal: ctrl.signal,
+    });
+    if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
+    // 260917: run an announced lookup and speak its answer (one bounded hop).
+    const res = await followUpWebTools({ characterId, llm, system, tools, messages, res: first, ctrl, config: prep.config });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
     await honorRememberCalls(characterId, res.content);
     // 260708: honor launch() the same single-shot way remember() is honored —
@@ -1277,7 +1736,12 @@ export async function sendCompanionVoiceTurn(
     const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');
     const replyText = textOf(res.content);
     if (!replyText) return [];
-    return await persistReplies(characterId, replyText, prep.punctuation, { voice: true, rememberCalled });
+    return await persistReplies(characterId, replyText, prep.punctuation, {
+      voice: true,
+      rememberCalled,
+      truncated: res.stopReason === 'max_tokens',
+      local: llm.backend === 'local',
+    });
   } catch (err) {
     if (!isAbortError(err)) {
       // Usage limit (260730): raise the popup; useVoiceStore hangs up on it.
@@ -1305,7 +1769,7 @@ export async function sendCompanionVoiceTurn(
  * the model hung up this turn (end_call). The renderer speaks `messages` (the
  * goodbye) first, then runs its companion-hang-up path.
  */
-export async function sendVoiceIdleTurn(
+async function sendVoiceIdleTurnImpl(
   characterId: string,
   quietSeconds: number,
   peers: string[] = [],
@@ -1352,12 +1816,20 @@ export async function sendVoiceIdleTurn(
     foldUserNote(messages, note);
     // Same warm tools+system cache prefix as every other voice turn.
     markLastMessageCached(messages);
-    const { client, model } = await buildChatSdk();
-    const tools = [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL];
-    const res = await client.messages.create(
-      { model, max_tokens: 200, system, tools, stop_sequences: TRANSCRIPT_STOP_SEQUENCES, messages: messages as never },
-      { timeout: CHAT_TIMEOUT_MS, signal: ctrl.signal },
-    );
+    const llm = await buildLlmProvider();
+    const tools = chatTools(llm, true);
+    const first = await llm.call({
+      maxTokens: 200,
+      system,
+      tools,
+      stopSequences: TRANSCRIPT_STOP_SEQUENCES,
+      messages,
+      timeoutMs: CHAT_TIMEOUT_MS,
+      signal: ctrl.signal,
+    });
+    if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return { messages: [] };
+    // 260917: run an announced lookup and speak its answer (one bounded hop).
+    const res = await followUpWebTools({ characterId, llm, system, tools, messages, res: first, ctrl, config: prep.config });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return { messages: [] };
     await honorRememberCalls(characterId, res.content);
     // No tool loop runs here, so honor end_call by flagging it for the caller:
@@ -1373,7 +1845,12 @@ export async function sendVoiceIdleTurn(
     const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');
     const replyText = textOf(res.content);
     if (!replyText) return { messages: [], ...(endCall ? { endCall: true } : {}) };
-    const spoken = await persistReplies(characterId, replyText, prep.punctuation, { voice: true, rememberCalled });
+    const spoken = await persistReplies(characterId, replyText, prep.punctuation, {
+      voice: true,
+      rememberCalled,
+      truncated: res.stopReason === 'max_tokens',
+      local: llm.backend === 'local',
+    });
     return { messages: spoken, ...(endCall ? { endCall: true } : {}) };
   } catch (err) {
     if (!isAbortError(err)) {
@@ -1394,16 +1871,89 @@ export async function sendVoiceIdleTurn(
  */
 function resolveLaunch(
   game: string,
+  characterId: string,
   deps: ChatDeps,
-): { note: string; launch: NonNullable<ChatSendResult['launch']>; summon: boolean } {
-  if (game !== 'minecraft') {
+): {
+  note: string;
+  launch: NonNullable<ChatSendResult['launch']>;
+  summon: boolean;
+  game: GameId;
+  /** Set when a Forge/NeoForge host refused the launch (for summon_blocked). */
+  forgeHost?: LanHost;
+} {
+  // Game adapters (M0): validated against the catalog rows the companion may
+  // start itself (selfLaunch && available). Minecraft keeps its exact path
+  // below; another available game gates on its own WorldState.
+  const row = SELF_LAUNCH_GAMES.find((g) => g.id === game);
+  if (!row) {
+    const names = SELF_LAUNCH_GAMES.map((g) => g.name);
+    const only = names.length <= 1 ? `only ${names[0] ?? 'Minecraft'} can be launched right now` : `only ${names.join(', ')} can be launched right now`;
     return {
-      note: `The game "${game}" is not available yet — only Minecraft can be launched right now. Tell the player it is coming soon.`,
+      note: `The game "${game}" is not available yet — ${only}. Tell the player it is coming soon.`,
       launch: { game, status: 'lan-not-open' },
       summon: false,
+      game: 'minecraft',
+    };
+  }
+  if (game !== 'minecraft') {
+    const gameId = game as GameId;
+    const blocked = deps.blockedAutoLaunch?.(characterId) ?? null;
+    if (blocked !== null) {
+      return {
+        note:
+          `You cannot join right now: the app refused your last attempt (${blockedReason(blocked)}). ` +
+          'Trying again will fail the same way until the player fixes that in the app, so do not call launch again in this conversation. ' +
+          'Tell the player in your own words what needs fixing.',
+        launch: { game, status: 'lan-not-open' },
+        summon: false,
+        game: gameId,
+      };
+    }
+    const world = deps.getWorldStates?.()?.[gameId];
+    if (world?.kind === 'open') {
+      return { note: THOUGHT_JOINING_GAME, launch: { game, status: 'summoning' }, summon: true, game: gameId };
+    }
+    return {
+      note:
+        `The player's ${row.name} world is not open, so you cannot join yet. ` +
+        'Ask them in your own voice to open their world in the game with the Sei mod enabled, then you can hop in.',
+      launch: { game, status: 'lan-not-open' },
+      summon: false,
+      game: gameId,
     };
   }
   const lan = deps.getLanState();
+  // 260929: Forge/NeoForge host, a hard stop. Same shared check as the Summon
+  // button and the supervisor pre-gate (forgeHostBlock), evaluated on the
+  // live host so it needs no earlier failure to kick in. Checked before the
+  // retry guard so the companion always gets the specific reason.
+  const lanHost = lan.kind === 'open' ? lan.host : undefined;
+  const forge = forgeHostBlock(lanHost);
+  if (forge) {
+    return {
+      note: forgeBlockedNote(forge.loader),
+      launch: { game, status: 'lan-not-open' },
+      summon: false,
+      game: 'minecraft',
+      forgeHost: lanHost,
+    };
+  }
+  // 260828 retry-loop guard: the last summon was refused before it even forked
+  // (missing name, missing API key, depleted credits) and nothing the model can
+  // do changes that. Refuse here and say so plainly, or the model re-calls
+  // launch() into the same refusal every turn (56 failures/13min in prod).
+  const blockedBy = deps.blockedAutoLaunch?.(characterId) ?? null;
+  if (blockedBy !== null) {
+    return {
+      note:
+        `You cannot join right now: the app refused your last attempt (${blockedReason(blockedBy)}). ` +
+        'Trying again will fail the same way until the player fixes that in the app, so do not call launch again in this conversation. ' +
+        'Tell the player in your own words what needs fixing.',
+      launch: { game, status: 'lan-not-open' },
+      summon: false,
+      game: 'minecraft',
+    };
+  }
   if (lan.kind === 'open') {
     return {
       // The steering TEXT now lives in the thoughts module (the single seam a
@@ -1415,6 +1965,7 @@ function resolveLaunch(
       note: THOUGHT_JOINING_GAME,
       launch: { game, status: 'summoning' },
       summon: true,
+      game: 'minecraft',
     };
   }
   return {
@@ -1424,7 +1975,101 @@ function resolveLaunch(
       'Explain this to them in your own voice and ask them to do it, then you can hop in.',
     launch: { game, status: 'lan-not-open' },
     summon: false,
+    game: 'minecraft',
   };
+}
+
+/**
+ * Game adapters (M0): the world-status entries for the OTHER self-launchable
+ * games (buildSystemBlocks otherWorlds). Empty while only Minecraft is
+ * available, so the prompt is unchanged today.
+ */
+function otherWorldStatus(deps: Pick<ChatDeps, 'getWorldStates'> | undefined): { game: string; name: string; open: boolean }[] {
+  const states = deps?.getWorldStates?.();
+  return SELF_LAUNCH_GAMES
+    .filter((g) => g.id !== 'minecraft')
+    .map((g) => ({ game: g.id, name: g.name, open: states?.[g.id as GameId]?.kind === 'open' }));
+}
+
+/**
+ * Model-facing note for a launch() refused because the player's world is
+ * hosted from Forge/NeoForge (260929). Plain words the companion can relay;
+ * tells it not to retry, since nothing changes until the player reopens the
+ * world from the Sei profile.
+ */
+function forgeBlockedNote(loader: 'Forge' | 'NeoForge'): string {
+  return (
+    `You cannot join: the player's Minecraft world is running ${loader}, and you can't join ${loader} worlds. ` +
+    'Calling launch again will not work, so do not retry in this conversation. ' +
+    `Tell the player in your own words, in one or two short lines, that you can't join ${loader} worlds, ` +
+    'and that if they open the Sei profile in the Minecraft Launcher, load their world there and open it to LAN, you can hop in.'
+  );
+}
+
+/**
+ * Model-facing one-liner for a blocked launch (260828). Plain wording, no
+ * app jargon: the model relays this to the player in its own voice. Only the
+ * pre-gate classes that actually block get a specific line; anything else
+ * falls back to a generic refusal.
+ */
+function blockedReason(errorClass: string): string {
+  switch (errorClass) {
+    case 'PREFERRED_NAME_MISSING':
+      return 'the player never set their name in onboarding; they need to re-run onboarding from Settings';
+    case 'LOCAL_NO_API_KEY':
+    case 'INVALID_API_KEY':
+      return 'no working API key is saved; the player needs to add one in Settings';
+    case 'CLOUD_CREDITS_DEPLETED':
+      return "this week's playtime credits are used up";
+    case 'DAILY_LIMIT_REACHED':
+      return 'the daily play limit was reached';
+    case 'FORGE_HOST_BLOCKED':
+      return "the world is running Forge or NeoForge, which you can't join; the player needs to open the Sei profile in the Minecraft Launcher and host the world from there";
+    default:
+      return 'a setup problem the player has to fix in the app first';
+  }
+}
+
+// ── Account-scoped turn entry points (260926) ─────────────────────────────────
+// Every exported LLM turn runs under withScopedTurn: refused while an account
+// switch is running, and tagged with the scope it began in so its writes are
+// dropped if the account changes before it lands (turnMayWrite). The bodies
+// (and their docs) are the *Impl functions above.
+
+export function sendChatMessage(
+  ...args: Parameters<typeof sendChatMessageImpl>
+): ReturnType<typeof sendChatMessageImpl> {
+  return withScopedTurn(() => sendChatMessageImpl(...args));
+}
+
+export function sendLaunchFailedTurn(
+  ...args: Parameters<typeof sendLaunchFailedTurnImpl>
+): ReturnType<typeof sendLaunchFailedTurnImpl> {
+  return withScopedTurn(() => sendLaunchFailedTurnImpl(...args));
+}
+
+export function sendFirstMeetingTurn(
+  ...args: Parameters<typeof sendFirstMeetingTurnImpl>
+): ReturnType<typeof sendFirstMeetingTurnImpl> {
+  return withScopedTurn(() => sendFirstMeetingTurnImpl(...args));
+}
+
+export function sendVoiceGreetingTurn(
+  ...args: Parameters<typeof sendVoiceGreetingTurnImpl>
+): ReturnType<typeof sendVoiceGreetingTurnImpl> {
+  return withScopedTurn(() => sendVoiceGreetingTurnImpl(...args));
+}
+
+export function sendCompanionVoiceTurn(
+  ...args: Parameters<typeof sendCompanionVoiceTurnImpl>
+): ReturnType<typeof sendCompanionVoiceTurnImpl> {
+  return withScopedTurn(() => sendCompanionVoiceTurnImpl(...args));
+}
+
+export function sendVoiceIdleTurn(
+  ...args: Parameters<typeof sendVoiceIdleTurnImpl>
+): ReturnType<typeof sendVoiceIdleTurnImpl> {
+  return withScopedTurn(() => sendVoiceIdleTurnImpl(...args));
 }
 
 export { readRecent } from './chatStore';

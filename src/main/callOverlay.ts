@@ -168,6 +168,25 @@ function windowSize(count: number): { width: number; height: number } {
 }
 
 /**
+ * Clamp bounds fully inside the work area of the display they (mostly) sit on
+ * (260819). Geometry persisted on a big monitor can land off-screen, or come
+ * out BIGGER than the screen, after a display change — and off-screen chrome
+ * is unrecoverable: the window is click-through outside the button column, so
+ * a move/edit button past the screen edge can never be hovered again. Size is
+ * capped to the work area and the origin pulled in so every edge stays
+ * visible. Matching (not primary) keeps a window deliberately placed on a
+ * secondary display on that display.
+ */
+function clampToWorkArea(bounds: Electron.Rectangle): Electron.Rectangle {
+  const area = screen.getDisplayMatching(bounds).workArea;
+  const width = Math.min(bounds.width, area.width);
+  const height = Math.min(bounds.height, area.height);
+  const x = Math.min(Math.max(bounds.x, area.x), area.x + area.width - width);
+  const y = Math.min(Math.max(bounds.y, area.y), area.y + area.height - height);
+  return { x, y, width, height };
+}
+
+/**
  * Bounds sized to `count` tiles: at the stored (dragged) position clamped into
  * the work area, or pinned bottom-right of the primary display when the user
  * has never moved it. With a stored position the RIGHT edge stays fixed as the
@@ -177,16 +196,14 @@ function desiredBounds(count: number): Electron.Rectangle {
   const area = screen.getPrimaryDisplay().workArea;
   const { width, height } = windowSize(count);
   if (storedPos) {
-    const x = Math.min(Math.max(storedPos.x, area.x), area.x + area.width - width);
-    const y = Math.min(Math.max(storedPos.y, area.y), area.y + area.height - height);
-    return { width, height, x, y };
+    return clampToWorkArea({ width, height, x: storedPos.x, y: storedPos.y });
   }
-  return {
+  return clampToWorkArea({
     width,
     height,
     x: area.x + area.width - width - MARGIN,
     y: area.y + area.height - height - MARGIN,
-  };
+  });
 }
 
 function setBoundsProgrammatic(bounds: Electron.Rectangle): void {
@@ -497,7 +514,13 @@ export function moveAvatarOverlay(phase: 'start' | 'move' | 'end', dx: number, d
     return;
   }
   moveStartPos = null;
-  storedPos = { x: b.x, y: b.y };
+  // Settle fully on-screen: the stream itself is unclamped (a drag must be
+  // able to cross displays 1:1 under the pointer), but the RESTING place may
+  // not leave any chrome past a screen edge — an off-screen button column is
+  // unreachable forever on a click-through window.
+  const settled = clampToWorkArea(b);
+  if (settled.x !== b.x || settled.y !== b.y) setBoundsProgrammatic(settled);
+  storedPos = { x: settled.x, y: settled.y };
   persistGeometry();
 }
 
@@ -574,7 +597,11 @@ export async function resizeOverlay(
       : anchor === 'bl' || anchor === 'br'
         ? prev.y + prev.height - height
         : prev.y;
-  const bounds = { x, y, width, height };
+  // Clamped so a corner drag can never push the opposite edge (and the chrome
+  // on it) past the screen, and a huge persisted tile is capped to the
+  // display it is on. tileSize/tileWidth keep the requested values: on a
+  // bigger monitor the full size comes back.
+  const bounds = clampToWorkArea({ x, y, width, height });
   setBoundsProgrammatic(bounds);
   if (commit) {
     storedPos = { x: bounds.x, y: bounds.y };

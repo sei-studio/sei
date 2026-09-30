@@ -38,7 +38,7 @@ export function isGameSurfaceOpen(characterId: string): boolean {
   if (isChessOpen(useChessStore.getState(), characterId)) return true;
   if (useDataStore.getState().summons[characterId]?.kind === 'online') return true;
   if (isDrawActive(useDrawStore.getState(), characterId)) return true;
-  return useMcDashboardStore.getState().launch[characterId] === true;
+  return useMcDashboardStore.getState().launch[characterId] != null;
 }
 
 /**

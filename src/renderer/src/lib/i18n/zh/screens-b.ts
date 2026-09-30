@@ -57,8 +57,8 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'Voice recognition': '语音识别',
   'ElevenLabs Scribe': 'ElevenLabs Scribe',
   'Local Whisper': '本地 Whisper',
-  'Free and offline. Downloads a small model on first call.':
-    '免费且离线。首次通话时会下载一个小模型。',
+  'Offline. Downloads a small model on first call.':
+    '离线运行。首次通话时会下载一个小模型。',
   'Better accuracy. Uses your ElevenLabs key.': '识别更准确。使用你的 ElevenLabs 密钥。',
   'Minecraft': 'Minecraft',
   'Custom skins': '自定义皮肤',
@@ -121,6 +121,19 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'update available': '有可用更新',
   'check failed': '检查失败',
   'Advanced updates': '抢先更新',
+  // 260909 Search group
+  'Search': '搜索',
+  'Companions can look things up on the web while you chat or play. This works out of the box for free. Add your own search API key only if lookups keep failing.':
+    '伙伴在聊天或游戏时可以上网查资料。默认免费可用，无需设置。只有在查询经常失败时，才需要添加你自己的搜索 API 密钥。',
+  'About search providers': '关于搜索提供方',
+  'Auto uses free public search with no account. Brave, Tavily and Serper need an API key from their website; each has a free tier.':
+    '自动模式使用免费的公共搜索，无需账户。Brave、Tavily 和 Serper 需要在其官网申请 API 密钥，均有免费额度。',
+  'Search provider': '搜索提供方',
+  'Auto (free)': '自动（免费）',
+  'Search API key': '搜索 API 密钥',
+  'Paste your key': '粘贴你的密钥',
+  'Clear': '清除',
+  'Without a key, search falls back to the free providers.': '未设置密钥时，搜索会回退到免费提供方。',
   'About advanced updates': '关于抢先更新',
   'Get beta releases early, before they roll out to everyone. Betas are less tested and may have rough edges. Leave this off for the stable version.':
     '在向所有人推送之前抢先获得测试版。测试版测试较少，可能不够完善。想用稳定版就保持关闭。',
@@ -131,6 +144,14 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'Photo credits: Minecraft artwork by Mojang Studios. Movie night photo by':
     '图片来源：Minecraft 美术作品来自 Mojang Studios。电影之夜照片来自',
   '(CC licensed).': '（CC 许可）。',
+  'Speech recognition: SenseVoice-Small by FunAudioLLM (Alibaba),':
+    '语音识别：SenseVoice-Small，来自 FunAudioLLM（阿里巴巴），',
+  'FunASR Model License': 'FunASR 模型许可证',
+  '. English voice: trained on LibriTTS-R,': '。英文语音：基于 LibriTTS-R 训练，',
+  ', via Piper; converted to ONNX. Chinese voice: trained on AISHELL-3 by Beijing Shell Shell Technology,':
+    '，经由 Piper；已转换为 ONNX。中文语音：基于北京希尔贝壳科技的 AISHELL-3 训练，',
+  'Apache License 2.0': 'Apache 2.0 许可证',
+  ', via icefall.': '，经由 icefall。',
   'Danger': '危险操作',
   'Reset all companion memories': '重置所有伙伴的记忆',
   'All memories reset': '已重置所有记忆',
@@ -163,6 +184,9 @@ export const ZH_SCREENS_B: Record<string, string> = {
   '{name} plan': '{name} 套餐',
   "Couldn't check your account. Refresh to try again.": '无法查询你的账户。请刷新重试。',
   'Resets in {time}': '{time} 后重置',
+  // 260926: under the free-play reset line when the allowance is spent.
+  'To keep playing before then, top up or pick a plan below.':
+    '想在那之前继续玩，可以充值或在下方选择套餐。',
   'Extra credits': '额外额度',
   '{used}/{total} credits used': '已使用 {used}/{total} 额度',
   'Top up': '充值',

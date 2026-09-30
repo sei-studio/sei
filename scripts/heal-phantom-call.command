@@ -11,13 +11,12 @@ fi
 if command -v node >/dev/null 2>&1; then
   node "$SCRIPT" "$@"
 else
-  SEI="/Applications/Sei.app/Contents/MacOS/Sei"
-  if [ ! -x "$SEI" ]; then
-    echo "Neither Node.js nor the Sei app was found. Install Sei to /Applications first."
-    read -r -p "Press Enter to close." _
-    exit 1
-  fi
-  ELECTRON_RUN_AS_NODE=1 "$SEI" "$SCRIPT" "$@"
+  # Sei's packaged binary has the RunAsNode fuse off (electron-builder.yml
+  # electronFuses), so it can no longer stand in for Node here.
+  echo "Node.js was not found. Install it from https://nodejs.org (any LTS),"
+  echo "or use the phantom-call repair inside Sei instead."
+  read -r -p "Press Enter to close." _
+  exit 1
 fi
 echo
 read -r -p "Finished. Press Enter to close this window." _

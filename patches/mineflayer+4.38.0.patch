@@ -1,0 +1,281 @@
+diff --git a/node_modules/mineflayer/lib/playerActionIds.js b/node_modules/mineflayer/lib/playerActionIds.js
+new file mode 100644
+index 0000000..9895747
+--- /dev/null
++++ b/node_modules/mineflayer/lib/playerActionIds.js
+@@ -0,0 +1,13 @@
++// ids of ServerboundPlayerActionPacket's action enum (`block_dig` status). 26.3 inserted
++// CHANGE_DESTROY_DIRECTION at id 1, shifting every later action up by one.
++module.exports = { getPlayerActionIds }
++
++function getPlayerActionIds (bot) {
++  const shifted = bot.supportFeature('playerActionHasChangeDestroyDirection')
++  return {
++    start: 0,
++    abort: shifted ? 2 : 1,
++    finish: shifted ? 3 : 2,
++    releaseUseItem: shifted ? 6 : 5
++  }
++}
+diff --git a/node_modules/mineflayer/lib/plugins/digging.js b/node_modules/mineflayer/lib/plugins/digging.js
+index 5ae5552..2092631 100644
+--- a/node_modules/mineflayer/lib/plugins/digging.js
++++ b/node_modules/mineflayer/lib/plugins/digging.js
+@@ -2,10 +2,12 @@ const { performance } = require('perf_hooks')
+ const { createDoneTask, createTask } = require('../promise_utils')
+ const BlockFaces = require('prismarine-world').iterators.BlockFace
+ const { Vec3 } = require('vec3')
++const { getPlayerActionIds } = require('../playerActionIds')
+ 
+ module.exports = inject
+ 
+ function inject (bot) {
++  const digStatus = getPlayerActionIds(bot)
+   let swingInterval = null
+   let waitTimeout = null
+ 
+@@ -128,7 +130,7 @@ function inject (bot) {
+ 
+     diggingTask = createTask()
+     bot._client.write('block_dig', {
+-      status: 0, // start digging
++      status: digStatus.start,
+       location: block.position,
+       face: bot.targetDigFace // default face is 1 (top)
+     })
+@@ -147,7 +149,7 @@ function inject (bot) {
+       waitTimeout = null
+       if (bot.targetDigBlock) {
+         bot._client.write('block_dig', {
+-          status: 2, // finish digging
++          status: digStatus.finish,
+           location: bot.targetDigBlock.position,
+           face: bot.targetDigFace // always the same as the start face
+         })
+@@ -176,7 +178,7 @@ function inject (bot) {
+       swingInterval = null
+       waitTimeout = null
+       bot._client.write('block_dig', {
+-        status: 1, // cancel digging
++        status: digStatus.abort,
+         location: bot.targetDigBlock.position,
+         face: cancellationDiggingFace
+       })
+diff --git a/node_modules/mineflayer/lib/plugins/entities.js b/node_modules/mineflayer/lib/plugins/entities.js
+index 696d7e9..7ac5860 100644
+--- a/node_modules/mineflayer/lib/plugins/entities.js
++++ b/node_modules/mineflayer/lib/plugins/entities.js
+@@ -298,14 +298,34 @@ function inject (bot) {
+     })
+   })
+ 
++  // 26.3+ replaced the flat dX/dY/dZ fields on rel_entity_move / entity_move_look with a
++  // `move: { onGround, steps }` field (see the `entityDelta` protodef type in
++  // node-minecraft-protocol): normally a single { dX, dY, dZ, ticks: 0 } step (the old flat
++  // format), but when the server batched several ticks' worth of movement into one packet it's
++  // several chained steps, each relative to the position produced by the previous one. Applying
++  // them in order (rather than only the first/last) is required to end up at the right final
++  // position -- dropping steps causes entities to visibly drift/jump the more ticks get batched.
++  // Pre-26.3 protocol versions never have `packet.move`; they still carry the flat dX/dY/dZ
++  // fields directly, so normalize both shapes down to a single steps array here.
++  function entityDeltaSteps (packet) {
++    if (packet.move) return packet.move.steps
++    return [{ dX: packet.dX, dY: packet.dY, dZ: packet.dZ }]
++  }
++
++  function applyEntityDeltaSteps (entity, steps) {
++    let scale = null
++    if (bot.supportFeature('fixedPointDelta')) scale = 32
++    else if (bot.supportFeature('fixedPointDelta128')) scale = 128 * 32
++    if (scale === null) return
++    for (const step of steps) {
++      entity.position.translate(step.dX / scale, step.dY / scale, step.dZ / scale)
++    }
++  }
++
+   bot._client.on('rel_entity_move', (packet) => {
+     // entity relative move
+     const entity = fetchEntity(packet.entityId)
+-    if (bot.supportFeature('fixedPointDelta')) {
+-      entity.position.translate(packet.dX / 32, packet.dY / 32, packet.dZ / 32)
+-    } else if (bot.supportFeature('fixedPointDelta128')) {
+-      entity.position.translate(packet.dX / (128 * 32), packet.dY / (128 * 32), packet.dZ / (128 * 32))
+-    }
++    applyEntityDeltaSteps(entity, entityDeltaSteps(packet))
+     bot.emit('entityMoved', entity)
+   })
+ 
+@@ -320,11 +340,7 @@ function inject (bot) {
+   bot._client.on('entity_move_look', (packet) => {
+     // entity look and relative move
+     const entity = fetchEntity(packet.entityId)
+-    if (bot.supportFeature('fixedPointDelta')) {
+-      entity.position.translate(packet.dX / 32, packet.dY / 32, packet.dZ / 32)
+-    } else if (bot.supportFeature('fixedPointDelta128')) {
+-      entity.position.translate(packet.dX / (128 * 32), packet.dY / (128 * 32), packet.dZ / (128 * 32))
+-    }
++    applyEntityDeltaSteps(entity, entityDeltaSteps(packet))
+     entity.yaw = conv.fromNotchianYawByte(packet.yaw)
+     entity.pitch = conv.fromNotchianPitchByte(packet.pitch)
+     bot.emit('entityMoved', entity)
+@@ -347,8 +363,22 @@ function inject (bot) {
+   // 1.21.3 - merges the packets above
+   bot._client.on('sync_entity_position', (packet) => {
+     const entity = fetchEntity(packet.entityId)
+-    entity.position.set(packet.x, packet.y, packet.z)
+-    entity.velocity.set(packet.dx, packet.dy, packet.dz)
++    if (packet.positionType === 'stepped') {
++      // 26.3+: `position` is a PositionPath -- a list of absolute {x,y,z} steps (plus a
++      // tickOffset used for client-side interpolation timing) instead of one flat position.
++      // Apply every step in order so the entity ends up at the true final position rather
++      // than snapping straight from wherever it last was to only the last step.
++      for (const step of packet.steps) {
++        entity.position.set(step.x, step.y, step.z)
++      }
++    } else if (packet.positionType === 'linear') {
++      // 26.3+: Linear PositionPath -- a single absolute position, no velocity field anymore.
++      entity.position.set(packet.x, packet.y, packet.z)
++    } else {
++      // Pre-26.3: flat x/y/z plus a dx/dy/dz velocity.
++      entity.position.set(packet.x, packet.y, packet.z)
++      entity.velocity.set(packet.dx, packet.dy, packet.dz)
++    }
+     entity.yaw = conv.fromNotchianYaw(packet.yaw)
+     entity.pitch = conv.fromNotchianPitch(packet.pitch)
+     bot.emit('entityMoved', entity)
+diff --git a/node_modules/mineflayer/lib/plugins/inventory.js b/node_modules/mineflayer/lib/plugins/inventory.js
+index 264b5d6..b824b79 100644
+--- a/node_modules/mineflayer/lib/plugins/inventory.js
++++ b/node_modules/mineflayer/lib/plugins/inventory.js
+@@ -1,6 +1,7 @@
+ const assert = require('assert')
+ const { Vec3 } = require('vec3')
+ const { once, sleep, createDoneTask, createTask, withTimeout } = require('../promise_utils')
++const { getPlayerActionIds } = require('../playerActionIds')
+ const { toNotchianYaw, toNotchianPitch } = require('../conversions')
+ 
+ module.exports = inject
+@@ -144,7 +145,7 @@ function inject (bot, { hideErrors }) {
+ 
+   function deactivateItem () {
+     const body = {
+-      status: 5,
++      status: getPlayerActionIds(bot).releaseUseItem,
+       location: new Vec3(0, 0, 0),
+       face: 5
+     }
+diff --git a/node_modules/mineflayer/lib/plugins/physics.js b/node_modules/mineflayer/lib/plugins/physics.js
+index cecae69..34e4b52 100644
+--- a/node_modules/mineflayer/lib/plugins/physics.js
++++ b/node_modules/mineflayer/lib/plugins/physics.js
+@@ -20,6 +20,7 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+   const physics = Physics(bot.registry, world)
+ 
+   const positionUpdateSentEveryTick = bot.supportFeature('positionUpdateSentEveryTick')
++  const hasClientTickEndPacket = bot.supportFeature('clientTickEndPacket')
+ 
+   bot.jumpQueued = false
+   bot.jumpTicks = 0 // autojump cooldown
+@@ -38,6 +39,8 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+   let doPhysicsTimer = null
+   let lastPhysicsFrameTime = null
+   let shouldUsePhysics = false
++  // The server rejects a second position-bearing move packet until it has seen a tick_end.
++  let positionSentSinceTickEnd = false
+   bot.physicsEnabled = physicsEnabled ?? true
+   let deadTicks = 21
+ 
+@@ -76,6 +79,11 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+   }
+ 
+   function tickPhysics (now) {
++    runPhysicsTick(now)
++    sendTickEnd()
++  }
++
++  function runPhysicsTick (now) {
+     if (!bot.entity?.position || !Number.isFinite(bot.entity.position.x)) return // entity not ready
+     if (bot.blockAt(bot.entity.position) == null) return // check if chunk is unloaded
+     if (bot.physicsEnabled && shouldUsePhysics) {
+@@ -88,6 +96,18 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+     }
+   }
+ 
++  function sendTickEnd () {
++    if (!hasClientTickEndPacket || bot._client.state !== 'play') return
++    positionSentSinceTickEnd = false
++    bot._client.write('tick_end', {})
++  }
++
++  function beforePositionPacket () {
++    // Position packets sent outside the tick loop (e.g. the forced-move reply to a teleport)
++    // can land in the same server tick as the next one; close the tick between them.
++    if (positionSentSinceTickEnd) sendTickEnd()
++  }
++
+   // remove this when 'physicTick' is removed
+   bot.on('newListener', (name) => {
+     if (name === 'physicTick') console.warn('Mineflayer detected that you are using a deprecated event (physicTick)! Please use this event (physicsTick) instead.')
+@@ -107,7 +127,10 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+     lastSent.z = position.z
+     lastSent.onGround = onGround
+     lastSent.flags = { onGround, hasHorizontalCollision: undefined } // 1.21.3+
++    lastSent.time = performance.now()
++    beforePositionPacket()
+     bot._client.write('position', lastSent)
++    positionSentSinceTickEnd = true
+     bot.emit('move', oldPos)
+   }
+ 
+@@ -133,7 +156,18 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+     lastSent.pitch = pitch
+     lastSent.onGround = onGround
+     lastSent.flags = { onGround, hasHorizontalCollision: undefined } // 1.21.3+
++    // Found live-testing against a 26.3 Realm: this function is also called
++    // directly by the forced-move (teleport) packet handler, bypassing
++    // updatePosition()'s own `lastSent.time = now`. That left lastSent.time
++    // stale, so updatePosition's "send a position update every second even
++    // if unchanged" check fired on the very next tick regardless, producing
++    // a redundant position/position_look packet with identical coordinates
++    // moments after every forced move. Harmless on older servers, but 26.3
++    // kicks it as "multiplayer.disconnect.invalid_player_movement".
++    lastSent.time = performance.now()
++    beforePositionPacket()
+     bot._client.write('position_look', lastSent)
++    positionSentSinceTickEnd = true
+     bot.emit('move', oldPos)
+   }
+ 
+@@ -418,7 +452,21 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+     bot.entity.onGround = false
+ 
+     if (bot.supportFeature('teleportUsesOwnPacket')) {
+-      bot._client.write('teleport_confirm', { teleportId: packet.teleportId })
++      // 26.3+ (protocol 777): Mojang widened accept_teleportation to echo back
++      // the resolved position/rotation being confirmed, not just the id -
++      // found live-testing against a 26.3 Realm, where the server kicked the
++      // bot with "Failed to decode packet 'serverbound/minecraft:accept_teleportation'"
++      // because only teleportId was being sent. Older servers ignore the extra
++      // fields being present in the outgoing struct since minecraft-data only
++      // serializes fields it defines for the running protocol version.
++      bot._client.write('teleport_confirm', {
++        teleportId: packet.teleportId,
++        x: pos.x,
++        y: pos.y,
++        z: pos.z,
++        yRot: newYaw,
++        xRot: newPitch
++      })
+     }
+ 
+     // After death/respawn, delay the forced position_look response.
+diff --git a/node_modules/mineflayer/lib/version.js b/node_modules/mineflayer/lib/version.js
+index 7cfaa69..f4054dd 100644
+--- a/node_modules/mineflayer/lib/version.js
++++ b/node_modules/mineflayer/lib/version.js
+@@ -1,4 +1,4 @@
+-const testedVersions = ['1.8.8', '1.9.4', '1.10.2', '1.11.2', '1.12.2', '1.13.2', '1.14.4', '1.15.2', '1.16.5', '1.17.1', '1.18.2', '1.19', '1.19.2', '1.19.3', '1.19.4', '1.20.1', '1.20.2', '1.20.4', '1.20.6', '1.21.1', '1.21.3', '1.21.4', '1.21.5', '1.21.6', '1.21.8', '1.21.9', '1.21.11', '26.1']
++const testedVersions = ['1.8.8', '1.9.4', '1.10.2', '1.11.2', '1.12.2', '1.13.2', '1.14.4', '1.15.2', '1.16.5', '1.17.1', '1.18.2', '1.19', '1.19.2', '1.19.3', '1.19.4', '1.20.1', '1.20.2', '1.20.4', '1.20.6', '1.21.1', '1.21.3', '1.21.4', '1.21.5', '1.21.6', '1.21.8', '1.21.9', '1.21.11', '26.1', '26.2', '26.3']
+ module.exports = {
+ 
+   testedVersions,

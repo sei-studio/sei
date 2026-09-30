@@ -1,0 +1,27 @@
+/* Placeholder game panels (game adapters M0). Colors/spacing from tokens.css;
+ * font sizes follow the existing modal copy (LanNotOpenModal.module.css). */
+.panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  height: 100%;
+  padding: var(--space-lg);
+  text-align: center;
+}
+
+.title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.hint {
+  margin: 0;
+  max-width: 36ch;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+}

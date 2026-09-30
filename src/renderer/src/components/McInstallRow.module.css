@@ -111,3 +111,30 @@
   line-height: 1.45;
   margin-top: var(--space-xs);
 }
+
+/* 260916: per-launcher Minecraft version picker (vanilla rows). A native
+ * select styled to the tokens; it lives inside the clickable row, so the
+ * wrapper stops the row's toggle on click. */
+.versionRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.versionLabel {
+  white-space: nowrap;
+}
+
+.versionSelect {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-1);
+  background: var(--surface-2, var(--bg-2));
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 2px var(--space-xs);
+}

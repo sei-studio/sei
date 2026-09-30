@@ -391,6 +391,34 @@ describe('composeSeedBlocks — player_message block (260616 #2)', () => {
   })
 })
 
+// ─────────── empty cuboid grammar (260909, first DST summon) ───────────
+
+describe('composeSeedBlocks — adapters without a cuboid grammar', () => {
+  const baseArgs = {
+    sessionState: { playerData: () => ({}) },
+    playerStore: { formatPlayerSeedBlock: () => 'PLAYER' },
+    config: { memory: {} },
+    eventText: 'Event: sei:idle',
+    snapshotText: 'you: Wickerbottom',
+  }
+
+  it('sends no seed_cuboid_grammar block when the adapter has no grammar (an empty text block is a 400 upstream)', async () => {
+    const blocks = await composeSeedBlocks({ ...baseArgs, adapter: {} })
+    expect(blocks.some((b) => b.name === 'seed_cuboid_grammar')).toBe(false)
+    expect(blocks.every((b) => b.text.length > 0)).toBe(true)
+    const player = blocks.find((b) => b.name === 'seed_player')
+    expect(player.cache_control).toEqual({ type: 'ephemeral' })
+  })
+
+  it('keeps the grammar block (and its breakpoint) when the adapter provides one', async () => {
+    const blocks = await composeSeedBlocks({ ...baseArgs, adapter: { cuboidGrammar: () => 'GRAMMAR' } })
+    const grammar = blocks.find((b) => b.name === 'seed_cuboid_grammar')
+    expect(grammar.text).toBe('GRAMMAR')
+    expect(grammar.cache_control).toEqual({ type: 'ephemeral' })
+    expect(blocks.find((b) => b.name === 'seed_player').cache_control).toBeUndefined()
+  })
+})
+
 // ──────────────── say() as a real tool (260617) ────────────────
 //
 // say() was promoted from a parsed text convention (extractSay) to a registered

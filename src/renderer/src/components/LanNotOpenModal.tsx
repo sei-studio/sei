@@ -9,16 +9,31 @@
  * (mirrors UnsupportedVersionModal) so every summon entry point is covered.
  * "Try again" re-runs the normal summon flow: if the world is still closed it
  * lands on the searching LanModal, which auto-resumes once LAN opens.
+ * 260929: "Start Minecraft" (when a Sei profile exists) opens the launcher on
+ * it. The steps stay launcher-neutral so they still read right for a player
+ * on their own profile, and for a Sei profile that opens to LAN by itself.
  */
 
 import React from 'react';
+// The ceiling comes from minecraft-protocol's table via lib/mcVersions (the
+// same table the bot enforces), so it can never drift from what Sei joins.
+import { MC_NEWEST_JOINABLE } from '../lib/mcVersions';
 import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { attemptSummon } from '../lib/summonFlow';
+import { useFirewallHint, useSeiProfileAction } from './mcdash/useStartMinecraft';
 import styles from './LanNotOpenModal.module.css';
+
+/**
+ * Newest Minecraft Java version Sei can join, from the same joinable list the
+ * "Which versions?" control shows (lib/mcVersions). 260929: this used to be
+ * the setup wizard's target (26.1), so the hint said "up to 26.1" while Sei
+ * joins 26.2 / 26.3; the wizard version is named where the Sei profile is.
+ */
+const LATEST_SUPPORTED: string = MC_NEWEST_JOINABLE;
 
 const STEPS: readonly string[] = [
   'Open your world in Minecraft Java.',
@@ -36,6 +51,8 @@ export function LanNotOpenModal({ characterId }: LanNotOpenModalProps): React.Re
   const closeModal = useUiStore((s) => s.closeModal);
   const rawName = useDataStore((s) => s.characters.find((c) => c.id === characterId)?.name ?? null);
   const name = rawName ?? t('Your companion');
+  const action = useSeiProfileAction();
+  const firewallHint = useFirewallHint();
   const onTryAgain = (): void => {
     closeModal();
     void attemptSummon(characterId);
@@ -67,14 +84,28 @@ export function LanNotOpenModal({ characterId }: LanNotOpenModalProps): React.Re
         ))}
       </ol>
       <p className={styles.hint}>
-        {t(
-          'The world must be running on this computer or another computer on the same network. Once it is open to LAN, Sei finds it automatically.',
-        )}
+        {t('The world must be running on this computer. Once it is open to LAN, Sei finds it automatically.')}
       </p>
+      {firewallHint ? <p className={styles.hint}>{firewallHint}</p> : null}
+      <p className={styles.hint}>
+        {t('Your world also needs a supported Minecraft Java version. Sei supports versions up to {latest}.', {
+          latest: LATEST_SUPPORTED,
+        })}
+      </p>
+      {action.note ? (
+        <p className={styles.note} role="status" data-tone={action.note.tone}>
+          {action.note.text}
+        </p>
+      ) : null}
       <ModalFooter>
         <Button kind="quiet" size="md" onClick={closeModal}>
           {t('Close')}
         </Button>
+        {action.ready ? (
+          <Button kind="ghost" size="md" disabled={action.busy} onClick={action.onClick}>
+            {action.label}
+          </Button>
+        ) : null}
         <Button kind="primary" size="md" onClick={onTryAgain}>
           {t('Try again')}
         </Button>

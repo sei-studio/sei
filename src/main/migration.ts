@@ -253,7 +253,16 @@ export async function runDefaultsToWorldMigration(): Promise<void> {
   const needsHeal = chars.filter(
     (c) =>
       defaultIds.has(c.id) &&
-      (c.is_default === true || c.kind !== 'custom' || c.owner !== DEFAULT_CHARACTERS_OWNER),
+      (c.is_default === true ||
+        c.kind !== 'custom' ||
+        c.owner !== DEFAULT_CHARACTERS_OWNER ||
+        // (c) a legacy bundled portrait ref ('./img/sui.png' etc). Those
+        // renderer assets were DELETED when the bundle baseline was removed
+        // (5d1261b), so the ref can never load again: Home cards and the
+        // IconRail rendered blank off it (260907 report). Null the ref (the
+        // procedural sprite takes over) and bust the refresh watermark so the
+        // next open re-adopts the cloud portrait via refreshFromCloud.
+        (typeof c.portrait_image === 'string' && c.portrait_image.startsWith('./'))),
   );
   if (needsHeal.length) {
     logger.info(`defaults→world migration: healing ${needsHeal.length} default(s)`);
@@ -262,6 +271,8 @@ export async function runDefaultsToWorldMigration(): Promise<void> {
   let anyFailed = false;
   for (const c of needsHeal) {
     const wasDefault = c.is_default === true;
+    const staleBundledPortrait =
+      typeof c.portrait_image === 'string' && c.portrait_image.startsWith('./');
     try {
       await saveCharacterRaw({
         ...c,
@@ -273,10 +284,16 @@ export async function runDefaultsToWorldMigration(): Promise<void> {
         // Force public ONLY on the initial is_default→World conversion; a later
         // repair (kind/owner) must preserve whatever share state the user chose.
         shared: wasDefault ? true : c.shared,
+        // Dead bundled asset ref → null (procedural sprite until the cloud
+        // portrait is re-adopted on next open). See the needsHeal comment.
+        portrait_image: staleBundledPortrait ? null : c.portrait_image,
         // Bust the refresh watermark on the initial conversion so
         // refreshFromCloud adopts the authoritative cloud persona/art; a repair
         // leaves it so we don't force a re-pull that could revert a local edit.
-        cloud_updated_at: wasDefault ? null : (c.cloud_updated_at ?? null),
+        // A stale-portrait heal busts it too: without that, an up-to-date
+        // watermark keeps refreshFromCloud from ever re-adopting the portrait.
+        cloud_updated_at:
+          wasDefault || staleBundledPortrait ? null : (c.cloud_updated_at ?? null),
       });
       logger.info(`defaults→world migration: healed ${c.name} (${c.id})`);
     } catch (err) {

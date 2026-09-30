@@ -23,6 +23,8 @@ import {
   type ExpansionProgressEvent,
   type GenProgressEvent,
   type GenerateUniqueResult,
+  type PortraitRegenResult,
+  type PortraitVersionsState,
   type PrefsGetResult,
   type BrowseEntry,
   type CreditsStatus,
@@ -34,8 +36,10 @@ import {
   type ChatMessage,
   type SpokenLineContext,
 } from '../shared/ipc';
+import { GAME_IDS, isGameId, type GameId, type WorldState, type WorldStates } from '../shared/gameIpc';
 import { CharacterSchema, UserConfigSchema, UserPreferencesSchema, MAX_COMPANION_SLOTS, type Character, type UserConfig } from '../shared/characterSchema';
-import { loadConfig, saveConfig } from './configStore';
+import { SHOWN_PROVIDERS, GRANDFATHERED_PROVIDERS, type ProviderKind } from '../shared/llmCatalog';
+import { loadConfig } from './configStore';
 import { DEFAULT_CHARACTER_UUIDS } from './defaultCharacters';
 import { listCharacters, getCharacter, expandAndSaveCharacter, saveCharacter, deleteCharacter, resetMemoryForCharacter, checkCreateQuota, recordCreation } from './characterStore';
 import {
@@ -57,6 +61,8 @@ import {
   onAiBackendKindChanged,
 } from './apiKeyStore';
 import { capture as trackAnalytics, getAnalyticsOptOut, setAnalyticsOptOut } from './analytics';
+import { blockedAutoSummon, clearSummonBlock } from './summonGuard';
+import { registerPermissionHandlers } from './permissions/permissionsService';
 import { setSupervisor as setAuthSupervisor } from './auth/authHandlers';
 import type { BotSupervisor } from './botSupervisor';
 
@@ -164,6 +170,13 @@ export interface IpcHandlerDeps {
    */
   checkLanNow?: () => Promise<LanState>;
   /**
+   * Game adapters (M0, 260908): every registered game's world state (the
+   * world:get snapshot) and a fresh per-game detection pass (world:check-now).
+   * Optional for older wiring; absent means only Minecraft (via getLanState).
+   */
+  getWorldStates?: () => WorldStates;
+  worldCheckNow?: (game: GameId) => Promise<WorldState>;
+  /**
    * Current per-character bot statuses (snapshot). The `bot:status` channel
    * only PUSHES on transitions, so a freshly-(re)subscribed renderer pulls
    * this to seed its summons map — otherwise a session that went online
@@ -217,7 +230,6 @@ const IdSchema = z.string().regex(
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
   { message: 'characterId must be a UUID' },
 );
-const PlaintextSchema = z.string().min(1);
 
 /**
  * 260703 procgen — thrown when a CREATE (chars:save of a new id) or a
@@ -326,6 +338,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   if (!kindPushWired) {
     kindPushWired = true;
     onAiBackendKindChanged((kind) => emitAiBackendKindChanged(kind));
+    // A backend flip changes the active LLM's vision verdict (cloud-proxy is
+    // always 'yes'); keep the llm:capability mirror current alongside.
+    onAiBackendKindChanged(() => {
+      void (async () => {
+        const { pushLlmCapability } = await import('./llm/capability');
+        await pushLlmCapability();
+      })();
+    });
   }
   /**
    * Ensure the cloud row + portrait Storage object exist for `characterId`
@@ -664,9 +684,22 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   };
 
   // Bot supervision
-  ipcMain.handle(IpcChannel.bot.summon, async (_event, idArg: unknown) => {
-    const id = IdSchema.parse(idArg);
-    await deps.supervisor.summon(id);
+  // Game adapters (M0): the payload is {characterId, game?}; a bare id string
+  // (older preload) is still accepted and means Minecraft.
+  const SummonArgSchema = z.union([
+    IdSchema,
+    z.object({ characterId: IdSchema, game: z.enum(GAME_IDS as unknown as [GameId, ...GameId[]]).optional() }),
+  ]);
+  ipcMain.handle(IpcChannel.bot.summon, async (_event, argRaw: unknown) => {
+    const arg = SummonArgSchema.parse(argRaw);
+    const id = typeof arg === 'string' ? arg : arg.characterId;
+    const game: GameId = typeof arg === 'string' ? 'minecraft' : (arg.game ?? 'minecraft');
+    // 260828: this handler is the USER-ACTION summon path (the renderer's
+    // Summon button and every popup retry go through it). A manual attempt is
+    // never blocked — it clears any pre-gate auto-retry block so the automatic
+    // paths (launch() tool, voice launch honors) get a fresh chance too.
+    clearSummonBlock(id);
+    await deps.supervisor.summon(id, game);
   });
   ipcMain.handle(IpcChannel.bot.stop, async (_event, idArg: unknown) => {
     // Multi-summon: `stop(id)` drains one session; `stop()` (no id) drains all.
@@ -694,6 +727,25 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     } catch {
       return deps.getLanState();
     }
+  });
+
+  // Game adapters (M0): the per-game world union. world:get seeds a freshly
+  // loaded renderer (world:state only pushes on change); world:check-now is
+  // the generic summon flow's live-truth gate. With no world wiring (older
+  // main) Minecraft's state is derived from getLanState.
+  ipcMain.handle(IpcChannel.world.get, async (): Promise<WorldStates> => {
+    return deps.getWorldStates?.() ?? { minecraft: { game: 'minecraft', ...deps.getLanState() } };
+  });
+  ipcMain.handle(IpcChannel.world.checkNow, async (_event, gameArg: unknown): Promise<WorldState> => {
+    const game: GameId = isGameId(gameArg) ? gameArg : 'minecraft';
+    try {
+      if (deps.worldCheckNow) return await deps.worldCheckNow(game);
+      if (game === 'minecraft') return { game, ...((await deps.checkLanNow?.()) ?? deps.getLanState()) };
+    } catch {
+      /* fall through to the cached snapshot */
+    }
+    const cached = deps.getWorldStates?.()[game];
+    return cached ?? (game === 'minecraft' ? { game, ...deps.getLanState() } : { game, kind: 'unavailable' });
   });
 
   // Character CRUD
@@ -872,13 +924,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       // UserConfig.added_default_ids (they live in the World tab otherwise),
       // so "remove from library" strips the id from that list. The legacy
       // removed_default_ids field is no longer consulted anywhere.
-      const { loadConfig, saveConfig } = await import('./configStore');
-      const cfg = await loadConfig();
-      const added = (cfg.added_default_ids ?? []).filter((x) => x !== id);
-      if (added.length !== (cfg.added_default_ids ?? []).length) {
-        await saveConfig({ ...cfg, added_default_ids: added });
-        void (await import('./cloud/librarySync')).syncLibraryRoster('default-removed');
-      }
+      const { updateConfig } = await import('./configStore');
+      let removed = false;
+      await updateConfig((cfg) => {
+        const added = (cfg.added_default_ids ?? []).filter((x) => x !== id);
+        removed = added.length !== (cfg.added_default_ids ?? []).length;
+        return removed ? { ...cfg, added_default_ids: added } : cfg;
+      });
+      if (removed) void (await import('./cloud/librarySync')).syncLibraryRoster('default-removed');
       return;
     }
     await deleteCharacter(id);
@@ -890,7 +943,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     if (!char.is_default) {
       throw new Error('Only default characters can be restored.');
     }
-    const { loadConfig, saveConfig } = await import('./configStore');
+    const { loadConfig, updateConfig } = await import('./configStore');
     const cfg = await loadConfig();
     // 260703 procgen slot backstop — re-adding a default to Home occupies a
     // slot; refuse when the library is already full UNLESS this default is
@@ -903,8 +956,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // default writes it into added_default_ids (the set HomeGrid/IconRail and
     // the slot guard above actually read).
     if (!alreadyOnHome) {
-      const added = [...(cfg.added_default_ids ?? []), id];
-      await saveConfig({ ...cfg, added_default_ids: added });
+      await updateConfig((cur) =>
+        (cur.added_default_ids ?? []).includes(id)
+          ? cur
+          : { ...cur, added_default_ids: [...(cur.added_default_ids ?? []), id] },
+      );
       void (await import('./cloud/librarySync')).syncLibraryRoster('default-invited');
     }
   });
@@ -917,6 +973,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   //          someone else. Defaults follow the restoreDefault path above.
   ipcMain.handle(IpcChannel.chars.addToLibrary, async (_event, idArg: unknown): Promise<void> => {
     const id = IdSchema.parse(idArg);
+    const { getActiveScope } = await import('./paths');
+    const scope = getActiveScope();
     // 260703 procgen slot backstop — adding a World character occupies a Home
     // slot; refuse when the library is already full UNLESS it ALREADY occupies a
     // slot. "Already counted" must mirror the exact membership rule
@@ -960,14 +1018,25 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
     const { ensureLocallyCached } = await import('./cloud/cacheOnDemand');
     await ensureLocallyCached(id);
-    const { loadConfig, saveConfig } = await import('./configStore');
-    const cfg = await loadConfig();
-    const added = new Set(cfg.added_world_ids ?? []);
-    if (!added.has(id)) {
-      added.add(id);
-      await saveConfig({ ...cfg, added_world_ids: Array.from(added) });
-      void (await import('./cloud/librarySync')).syncLibraryRoster('world-added');
+    // The slot check and the cache ran against `scope`; an account switch
+    // during the download must not add the character to the next account.
+    if (getActiveScope() !== scope) {
+      const { accountSwitchingError } = await import('./profile/scopeBarrier');
+      throw accountSwitchingError();
     }
+    const { updateConfig } = await import('./configStore');
+    let wasAdded = false;
+    await updateConfig(
+      (cfg) => {
+        const added = new Set(cfg.added_world_ids ?? []);
+        if (added.has(id)) return cfg;
+        added.add(id);
+        wasAdded = true;
+        return { ...cfg, added_world_ids: Array.from(added) };
+      },
+      { scope },
+    );
+    if (wasAdded) void (await import('./cloud/librarySync')).syncLibraryRoster('world-added');
   });
 
   // Remove a foreign-owned World character from the user's library. Two
@@ -981,13 +1050,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     if (deps.supervisor.isActive(id)) {
       throw new Error('Cannot remove the currently summoned character. Stop first.');
     }
-    const { loadConfig, saveConfig } = await import('./configStore');
-    const cfg = await loadConfig();
-    const added = (cfg.added_world_ids ?? []).filter((x) => x !== id);
-    if (added.length !== (cfg.added_world_ids ?? []).length) {
-      await saveConfig({ ...cfg, added_world_ids: added });
-      void (await import('./cloud/librarySync')).syncLibraryRoster('world-removed');
-    }
+    const { updateConfig } = await import('./configStore');
+    let removed = false;
+    await updateConfig((cfg) => {
+      const added = (cfg.added_world_ids ?? []).filter((x) => x !== id);
+      removed = added.length !== (cfg.added_world_ids ?? []).length;
+      return removed ? { ...cfg, added_world_ids: added } : cfg;
+    });
+    if (removed) void (await import('./cloud/librarySync')).syncLibraryRoster('world-removed');
     // Wipe local cache files via the same hand-rolled deletion the reconcile
     // sweep uses (skips the cloud-mirror enqueue inside characterStore.
     // deleteCharacter that would 403 against RLS for a foreign-owned row).
@@ -1006,6 +1076,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         }
       }
     }
+    // D-28 canonical portrait + stored version sidecars (260909).
+    await (await import('./portraitFiles')).deletePortraitFiles(id);
     try {
       await rm(paths.memoryDir(id), { recursive: true, force: true });
     } catch (err) {
@@ -1156,6 +1228,48 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     await removePortrait(id);
   });
 
+  // 260909 — card-image versions + regeneration. characterId is UUID-gated
+  // (path-traversal defense, same as applyPortrait); the version `file` is
+  // additionally pinned to `<that uuid>-v<n>.png` before it touches a path.
+  ipcMain.handle(IpcChannel.chars.portraitVersions, async (_event, idArg: unknown): Promise<PortraitVersionsState> => {
+    const id = z.string().uuid().parse(idArg);
+    const { getPortraitVersions } = await import('./portraitStore');
+    return await getPortraitVersions(id);
+  });
+  ipcMain.handle(IpcChannel.chars.portraitSelect, async (_event, argsRaw: unknown): Promise<PortraitVersionsState> => {
+    const args = z.object({
+      characterId: z.string().uuid(),
+      file: z.string().min(1).max(80),
+    }).parse(argsRaw);
+    const allowed = new RegExp(`^${args.characterId}(?:-v\\d+)?\\.png$`, 'i');
+    if (!allowed.test(args.file)) throw new Error('Unknown portrait version.');
+    const { selectPortraitVersion } = await import('./portraitStore');
+    return await selectPortraitVersion(args);
+  });
+  // SINGLE-FLIGHT per character: a double click (or StrictMode double effect)
+  // must not burn two of the three lifetime regenerations. A second call while
+  // one is running joins the in-flight promise.
+  const portraitRegenInflight = new Map<string, Promise<PortraitRegenResult>>();
+  ipcMain.handle(IpcChannel.chars.portraitRegenerate, (_event, idArg: unknown): Promise<PortraitRegenResult> => {
+    const id = z.string().uuid().parse(idArg);
+    const running = portraitRegenInflight.get(id);
+    if (running) return running;
+    const promise = (async (): Promise<PortraitRegenResult> => {
+      try {
+        const { regeneratePortrait } = await import('./uniqueGeneration');
+        return await regeneratePortrait({ characterId: id });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[sei] chars:portrait-regenerate unexpected throw: ${message}`);
+        return { ok: false, code: 'generation_failed', message };
+      } finally {
+        portraitRegenInflight.delete(id);
+      }
+    })();
+    portraitRegenInflight.set(id, promise);
+    return promise;
+  });
+
   // ── In-app chat (Phase 18/19) ─────────────────────────────────────────────
   // The chat LLM call runs entirely in main (mirrors personaExpansion) — no
   // forked bot. `chat:send` may run the launch tool, which consults the live
@@ -1259,7 +1373,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       { characterId: args.characterId, text: args.text, replyTo: args.replyTo, voiceCall: inCall, voicePeers: args.voicePeers },
       {
         getLanState: deps.getLanState,
-        summon: (id) => deps.supervisor.summon(id),
+        getWorldStates: deps.getWorldStates,
+        summon: (id, game) => deps.supervisor.summon(id, game),
+        // 260828 retry-loop guard: launch() refuses (and tells the model not
+        // to retry) while a summon pre-gate refusal is still standing.
+        blockedAutoLaunch: (id) => blockedAutoSummon(id),
         // Task 4 — when the character is already in-game (spawned), route this
         // message into that live session instead of the standalone chat brain.
         isInGame: (id) => deps.isSessionOnline(id),
@@ -1267,7 +1385,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         onLaunchFailed: (id, reason) => deps.notifyLaunchFailed(id, reason),
         // Task 5 — the companion called quit() from chat: end the live session.
         leaveGame: (id) => {
-          void deps.supervisor.stop(id);
+          void deps.supervisor.stop(id, 'companion_quit');
         },
         // Voice streaming (260706): push each streamed sentence to the renderer
         // the instant it completes, so TTS starts on sentence 1.
@@ -1418,11 +1536,21 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const draw = await import('./draw/drawService');
     draw.resumeDraw(id);
   });
+  ipcMain.handle(IpcChannel.draw.finish, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const draw = await import('./draw/drawService');
+    return draw.finishDrawEarly(id);
+  });
   ipcMain.handle(IpcChannel.draw.end, async (_event, idArg: unknown) => {
     const id = IdSchema.parse(idArg);
     const draw = await import('./draw/drawService');
     await draw.endDraw(id);
   });
+
+  // ── OS permission flows (260929) ──────────────────────────────────────────
+  // Mic on first Call press, macOS Screen Recording before the share picker,
+  // Settings deep links from a fixed allowlist. See permissions/*.
+  registerPermissionHandlers();
 
   // ── Backseat (260728) ─────────────────────────────────────────────────────
   // Thin wrappers over src/main/backseat/backseatService (module state
@@ -1490,6 +1618,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         sinceSwitchS: z.number().min(0).max(3600).optional(),
         transcript: z.string().max(4000).optional(),
         shareLabel: z.string().max(200).optional(),
+        // 260925 act: the line came from the mic; how close companion audio was.
+        mic: z
+          .object({
+            ttsGapMs: z.number().min(0).max(86_400_000).nullable(),
+            shareVoice: z.boolean().nullable().optional(),
+          })
+          .optional(),
       })
       .parse(tickRaw);
     const backseat = await import('./backseat/backseatService');
@@ -1525,6 +1660,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const id = IdSchema.parse(idArg);
     const backseat = await import('./backseat/backseatService');
     backseat.interruptBackseat(id);
+  });
+  ipcMain.handle(IpcChannel.backseat.lineHeard, async (_event, argsRaw: unknown) => {
+    const args = z.object({ characterId: IdSchema, confirmId: z.string().max(100), completed: z.boolean() }).parse(argsRaw);
+    const backseat = await import('./backseat/backseatService');
+    backseat.backseatLineHeard(args.characterId, args.confirmId, args.completed);
   });
   ipcMain.handle(IpcChannel.backseat.setPaused, async (_event, argsRaw: unknown) => {
     const args = z.object({ characterId: IdSchema, paused: z.boolean() }).parse(argsRaw);
@@ -1589,11 +1729,52 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return deps.supervisor.setGameMode(args.characterId, args.mode);
   });
 
+  // ── Generic game dashboard (game adapters M0, 260908) ─────────────────────
+  // The gamedash:* set the two new games use. Same supervisor port messages
+  // as mcdash:* (dashboard-watch / game-pause / game-mode are game-agnostic);
+  // only the snapshot store differs (src/main/games/gameDashboardService).
+  ipcMain.handle(IpcChannel.gamedash.get, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    if (!deps.supervisor.isActive(id)) return null;
+    const { getGameDashboardSnapshot } = await import('./games/gameDashboardService');
+    return getGameDashboardSnapshot(id);
+  });
+  ipcMain.handle(IpcChannel.gamedash.setWatching, async (_event, argsRaw: unknown) => {
+    const args = z.object({ characterId: IdSchema, watching: z.boolean() }).parse(argsRaw);
+    deps.supervisor.setDashboardWatch(args.characterId, args.watching);
+  });
+  ipcMain.handle(IpcChannel.gamedash.setPaused, async (_event, argsRaw: unknown) => {
+    const args = z.object({ characterId: IdSchema, paused: z.boolean() }).parse(argsRaw);
+    return deps.supervisor.setGamePaused(args.characterId, args.paused);
+  });
+  ipcMain.handle(IpcChannel.gamedash.setMode, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ characterId: IdSchema, mode: z.enum(['reactive', 'proactive']) })
+      .parse(argsRaw);
+    return deps.supervisor.setGameMode(args.characterId, args.mode);
+  });
+
   // ── Voice calls (260705) ──────────────────────────────────────────────────
   // TTS synthesis (proxy passthrough; the ElevenLabs key never reaches the
   // renderer or the repo) + the call open/hang-up toggle. The toggle records
   // main-side state (idle-chat prompts read it) and forwards the mode into a
   // live game session so say() reroutes to the call.
+  // Substitute-pack notices (260908): local TTS spoke a line with a voice
+  // pack that does not match the conversation language (the matching one is
+  // not downloaded). Forwarded to every window so the call UI can show a
+  // system notice naming the better-fitting download. Wired lazily like the
+  // speech pack push below.
+  let ttsNoticeWired = false;
+  const wireTtsNotice = async (): Promise<void> => {
+    if (ttsNoticeWired) return;
+    ttsNoticeWired = true;
+    const { onTtsNotice } = await import('./voice/tts');
+    onTtsNotice((notice) => {
+      for (const w of BrowserWindow.getAllWindows()) {
+        if (!w.isDestroyed()) w.webContents.send(IpcChannel.voice.ttsNotice, notice);
+      }
+    });
+  };
   ipcMain.handle(IpcChannel.voice.tts, async (_event, argsRaw: unknown): Promise<ArrayBuffer> => {
     const args = z
       .object({
@@ -1603,6 +1784,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         prev: z.string().max(4000).optional(),
       })
       .parse(argsRaw);
+    await wireTtsNotice();
     const { voiceTts } = await import('./voice/tts');
     return await voiceTts(args);
   });
@@ -1619,6 +1801,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         prev: z.string().max(4000).optional(),
       })
       .parse(argsRaw);
+    await wireTtsNotice();
     const { voiceTtsStream } = await import('./voice/tts');
     const sender = event.sender;
     return await voiceTtsStream(args, (ev) => {
@@ -1664,6 +1847,206 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     prewarmTts();
   });
 
+  // ── Game packs (260908) ───────────────────────────────────────────────────
+  // A game adapter's runtime node_modules, downloaded on first use into
+  // <userData>/game-packs/<game>/. Contract: src/shared/gamePacks.ts; store:
+  // src/main/games/packs.ts. The push carries the whole state object, and the
+  // renderer reads every field of it, so keep the zod schema below in step
+  // with GamePackState (zod strips undeclared keys silently).
+  // Every game with a pack (src/shared/gamePacks.ts); the renderer's pack
+  // card asks for each GAME_ID at boot.
+  const GameIdSchema = z.enum(['minecraft', 'stardew', 'dontstarve']);
+  let gamePackPushWired = false;
+  const wireGamePackPush = async (): Promise<void> => {
+    if (gamePackPushWired) return;
+    gamePackPushWired = true;
+    const { onGamePackState } = await import('./games/packs');
+    onGamePackState((game, state) => {
+      for (const w of BrowserWindow.getAllWindows()) {
+        if (!w.isDestroyed()) w.webContents.send(IpcChannel.game.packProgress, { game, state });
+      }
+    });
+  };
+  ipcMain.handle(IpcChannel.game.packState, async (_event, argsRaw: unknown) => {
+    const args = z.object({ game: GameIdSchema }).parse(argsRaw);
+    await wireGamePackPush();
+    const { getPackState } = await import('./games/packs');
+    return getPackState(args.game);
+  });
+  ipcMain.handle(IpcChannel.game.packEnsure, async (_event, argsRaw: unknown) => {
+    const args = z.object({ game: GameIdSchema }).parse(argsRaw);
+    await wireGamePackPush();
+    const { ensurePack, getPackState } = await import('./games/packs');
+    try {
+      const root = await ensurePack(args.game);
+      return { kind: 'ready', root };
+    } catch {
+      // The store already published the error state; hand it back so the
+      // card renders the retry without a second round trip.
+      return getPackState(args.game);
+    }
+  });
+
+  // ── Don't Starve Together (game-adapters M2, 260908) ─────────────────────
+  // Install detection + the mod copy, the Steam launch, the per-character
+  // survivor pick, and the discovery port. Everything goes through the
+  // registered DST GameModule (src/main/games/dontstarve); the renderer
+  // never names a path. Contract: src/shared/dstIpc.ts.
+  const dstModule = async () => {
+    const { getGameModule } = await import('./games');
+    const mod = getGameModule('dontstarve') as import('./games/dontstarve').DstGameModule | null;
+    if (!mod) throw new Error("Don't Starve Together support is not available in this build.");
+    return mod;
+  };
+  ipcMain.handle(IpcChannel.dst.installState, async () => {
+    const mod = await dstModule();
+    return mod.getInstallState();
+  });
+  // dst:install is only ever a click in the renderer, so on macOS it carries
+  // the one-click grant (260925): when the game bundle refuses the write,
+  // the Open panel appears as a sheet on the window that asked, then the
+  // Finder copy. A game launch (dst:launch) never passes one.
+  ipcMain.handle(IpcChannel.dst.install, async (event) => {
+    const mod = await dstModule();
+    let grant: import('./games/dontstarve/install').MacGrant | undefined;
+    if (process.platform === 'darwin') {
+      const { createMacGrant } = await import('./games/dontstarve/macGrant');
+      const language = await loadConfig().then((c) => (c.ui_language === 'zh' ? 'zh' : 'en') as 'en' | 'zh', () => 'en' as const);
+      grant = createMacGrant({ window: BrowserWindow.fromWebContents(event.sender), language });
+    }
+    return mod.runInstall(
+      (state) => {
+        for (const w of BrowserWindow.getAllWindows()) {
+          if (!w.isDestroyed()) w.webContents.send(IpcChannel.dst.installProgress, state);
+        }
+      },
+      { grant },
+    );
+  });
+  ipcMain.handle(IpcChannel.dst.launch, async (): Promise<void> => {
+    const mod = await dstModule();
+    await mod.install?.launch();
+  });
+  // macOS App Management (260909): the mods folder is inside the game's app
+  // bundle, so the copy needs this permission. A fixed pane URL, not a
+  // renderer-supplied one, which is why it bypasses the https-only
+  // external-URL validator.
+  ipcMain.handle(IpcChannel.dst.openAppManagement, async (): Promise<void> => {
+    if (process.platform !== 'darwin') return;
+    const { shell } = await import('electron');
+    await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_AppBundles');
+  });
+  ipcMain.handle(IpcChannel.dst.survivorGet, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { getOrPickSurvivor } = await import('./games/dontstarve/survivorPick');
+    return getOrPickSurvivor(id);
+  });
+  ipcMain.handle(IpcChannel.dst.survivorSet, async (_event, argsRaw: unknown) => {
+    const { DstSurvivorSetSchema } = await import('../shared/dstIpc');
+    const args = DstSurvivorSetSchema.parse(argsRaw);
+    IdSchema.parse(args.characterId);
+    const { setSurvivor } = await import('./games/dontstarve/survivorPick');
+    return setSurvivor(args.characterId, args.prefab);
+  });
+
+  // ── Stardew Valley install / launch (game-adapters M1, 260908) ───────────
+  // src/main/games/stardew: detection is a fresh pass each call (cheap: a
+  // few stats); the install is single-flight and streams its stages on the
+  // stardew:install-progress push; a failure rejects with the ErrorClass
+  // prefix the renderer maps through ERROR_COPY.
+  let stardewInstallInFlight: Promise<unknown> | null = null;
+  ipcMain.handle(IpcChannel.stardew.installState, async () => {
+    const { detectStardew } = await import('./games/stardew/install');
+    return detectStardew();
+  });
+  ipcMain.handle(IpcChannel.stardew.install, async () => {
+    if (stardewInstallInFlight) return stardewInstallInFlight;
+    const { installStardew } = await import('./games/stardew/install');
+    stardewInstallInFlight = installStardew({
+      onProgress: (ev) => {
+        for (const w of BrowserWindow.getAllWindows()) {
+          if (!w.isDestroyed()) w.webContents.send(IpcChannel.stardew.installProgress, ev);
+        }
+      },
+    }).finally(() => {
+      stardewInstallInFlight = null;
+      // The watcher reads the port from the freshly written config on its
+      // next pass; nudge it so the launch panel flips without the 3 s wait.
+      void deps.worldCheckNow?.('stardew').catch(() => {});
+    });
+    return stardewInstallInFlight;
+  });
+  ipcMain.handle(IpcChannel.stardew.launch, async () => {
+    const { launchStardew } = await import('./games/stardew/launch');
+    return launchStardew();
+  });
+
+  // ── Local speech (260816, china-compat W3+W4) ─────────────────────────────
+  // sherpa-onnx model packs (local TTS voices + SenseVoice STT), downloaded
+  // on demand into <userData>/speech-models/. Contract: src/main/speech/index.ts.
+  // Everything the renderer reads is named in the schemas here — zod strips
+  // undeclared keys silently (the backseat gridSmall lesson).
+  const SpeechPackIdSchema = z.enum(['tts-en', 'tts-zh', 'stt-sensevoice']);
+  let speechPushWired = false;
+  const wireSpeechPush = async (): Promise<void> => {
+    if (speechPushWired) return;
+    speechPushWired = true;
+    const { onPackStates } = await import('./speech');
+    onPackStates((packs) => {
+      for (const w of BrowserWindow.getAllWindows()) {
+        if (!w.isDestroyed()) w.webContents.send(IpcChannel.speech.packState, { packs });
+      }
+    });
+  };
+  ipcMain.handle(IpcChannel.speech.packStatus, async () => {
+    await wireSpeechPush();
+    const { packStatus } = await import('./speech');
+    return { packs: await packStatus() };
+  });
+  ipcMain.handle(IpcChannel.speech.packDownload, async (_event, argsRaw: unknown): Promise<void> => {
+    const args = z.object({ packId: SpeechPackIdSchema }).parse(argsRaw);
+    await wireSpeechPush();
+    const { downloadPack } = await import('./speech');
+    await downloadPack(args.packId);
+  });
+  ipcMain.handle(IpcChannel.speech.packRemove, async (_event, argsRaw: unknown): Promise<void> => {
+    const args = z.object({ packId: SpeechPackIdSchema }).parse(argsRaw);
+    await wireSpeechPush();
+    const { removePack } = await import('./speech');
+    await removePack(args.packId);
+  });
+  // SenseVoice dictation transcription (renderer VAD-cut utterance → text).
+  // Same PCM bound as voice:stt; language rides back for the auto-switch the
+  // renderer's caller feeds (main-side noteDetectedLanguage stays Scribe-only:
+  // SenseVoice's tag is per-model, not a calibrated probability).
+  ipcMain.handle(
+    IpcChannel.speech.sttTranscribe,
+    async (_event, argsRaw: unknown): Promise<{ text: string; language?: string }> => {
+      const args = z
+        .object({
+          pcm: z.instanceof(ArrayBuffer).refine((b) => b.byteLength > 0 && b.byteLength <= 2_000_000),
+          sampleRate: z.number().int().min(8_000).max(48_000),
+        })
+        .parse(argsRaw);
+      const { transcribeLocal } = await import('./speech');
+      const { normalizeSttText } = await import('./voice/stt');
+      // Constrain SenseVoice's decode language to the conversation language
+      // (260907): full auto-detect on this build drifts English speech into
+      // Chinese. Best-effort — a failed config read falls back to auto-detect
+      // rather than blocking the transcription.
+      let chatLanguage: string | undefined;
+      try {
+        const { loadConfig } = await import('./configStore');
+        const { clampChatLanguage } = await import('../shared/chatLanguage');
+        chatLanguage = clampChatLanguage((await loadConfig()).chat_language);
+      } catch {
+        /* auto-detect */
+      }
+      const res = await transcribeLocal(new Float32Array(args.pcm), args.sampleRate, chatLanguage);
+      return { text: normalizeSttText(res.text), ...(res.language ? { language: res.language } : {}) };
+    },
+  );
+
   ipcMain.handle(IpcChannel.voice.callState, async (_event, argsRaw: unknown): Promise<void> => {
     const args = z
       .object({
@@ -1673,14 +2056,17 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         // the "You and X called for Y" row. Absent → the call never connected
         // (dial error), so nothing is logged.
         connectedMs: z.number().int().nonnegative().optional(),
+        // Connect report (260926): the call went live. See markCallLive.
+        live: z.boolean().optional(),
       })
       .parse(argsRaw);
-    const { setCallActive } = await import('./voice/callState');
-    setCallActive(args.characterId, args.active);
-    deps.supervisor.setVoiceCall(args.characterId, args.active);
-    if (!args.active && typeof args.connectedMs === 'number' && args.connectedMs > 0) {
-      deps.notifyCallEnded?.(args.characterId, args.connectedMs);
-    }
+    // The state transition and its account-switch cases live in callState
+    // (applyCallReport, 260926); this handler applies the side effects.
+    const { applyCallReport } = await import('./voice/callState');
+    const fx = applyCallReport(args);
+    if (fx.voiceCall !== null) deps.supervisor.setVoiceCall(args.characterId, fx.voiceCall);
+    if (fx.endedMs !== null) deps.notifyCallEnded?.(args.characterId, fx.endedMs);
+    if (!fx.stamp) return;
     // Presence (260707): a call is a real interaction, so stamp last_chatted at
     // BOTH edges. Game sessions and text chat already drive the "online" dot;
     // a call previously only did when the player happened to speak a turn (that
@@ -1711,10 +2097,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // 260708: hand the turn live LAN truth + a launch honor (see the
     // voice.companionTurn handler below for the full story).
     const idleWorldOpen = deps.getLanState().kind === 'open';
+    // 260828 retry-loop guard: after a pre-gate refusal, this automatic launch
+    // honor stays off until the user acts (or the block ages out) — otherwise
+    // each nudge re-runs the doomed summon and re-fails (see summonGuard.ts).
+    const idleLaunchable = idleWorldOpen && blockedAutoSummon(args.characterId) === null;
     return await sendVoiceIdleTurn(args.characterId, args.quietSeconds, args.peers, {
       awaitingAnswer: args.awaitingAnswer,
       openWorldDetected: idleWorldOpen,
-      onLaunch: idleWorldOpen
+      onLaunch: idleLaunchable
         ? () => {
             void deps.supervisor.summon(args.characterId).catch((e) => {
               deps.notifyLaunchFailed(args.characterId, (e as Error)?.message ?? 'unknown error');
@@ -1761,13 +2151,15 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // a single-shot turn with no tool loop). Pass live LAN truth and honor
     // launch() the way chat:send does, gated on the world actually being open.
     const reactWorldOpen = deps.getLanState().kind === 'open';
+    // 260828 retry-loop guard — same as the idle-nudge honor above.
+    const reactLaunchable = reactWorldOpen && blockedAutoSummon(args.characterId) === null;
     return await sendCompanionVoiceTurn(args.characterId, {
       speakerName: args.speakerName,
       text: args.text,
       peers: args.peers,
       depth: args.depth,
       openWorldDetected: reactWorldOpen,
-      onLaunch: reactWorldOpen
+      onLaunch: reactLaunchable
         ? () => {
             void deps.supervisor.summon(args.characterId).catch((e) => {
               deps.notifyLaunchFailed(args.characterId, (e as Error)?.message ?? 'unknown error');
@@ -1853,6 +2245,25 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
     const bytes = zipArg instanceof ArrayBuffer ? Buffer.from(zipArg) : Buffer.from(zipArg.buffer, zipArg.byteOffset, zipArg.byteLength);
     const { importAvatarZip, AVATAR_ZIP_MAX_BYTES } = await import('./avatar/avatarStore');
+    if (bytes.byteLength > AVATAR_ZIP_MAX_BYTES) throw new Error('avatar zip too large');
+    return importAvatarZip(id, bytes);
+  });
+
+  // Cloud avatar download (260819): main resolves the URL from the character
+  // row's metadata.avatar itself — the renderer only names the character, so
+  // this handler can never be pointed at an arbitrary URL. The fetched zip
+  // rides the exact same import/normalization pipeline as a local upload.
+  ipcMain.handle(IpcChannel.avatar.download, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { getCharacter } = await import('./characterStore');
+    const { cloudAvatarOf } = await import('../shared/characterSchema');
+    const character = await getCharacter(id);
+    const ref = character ? cloudAvatarOf(character) : null;
+    if (!ref) throw new Error('character has no cloud avatar');
+    const { importAvatarZip, AVATAR_ZIP_MAX_BYTES } = await import('./avatar/avatarStore');
+    const res = await fetch(ref.url);
+    if (!res.ok) throw new Error(`avatar download failed: ${res.status}`);
+    const bytes = Buffer.from(await res.arrayBuffer());
     if (bytes.byteLength > AVATAR_ZIP_MAX_BYTES) throw new Error('avatar zip too large');
     return importAvatarZip(id, bytes);
   });
@@ -2038,10 +2449,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // preview, never a bad upstream request. `pitch` was dropped from the
     // payload at 260731 (it is applied at playback now) and zod strips unknown
     // keys, so a renderer still sending it is a no-op rather than an error.
+    // 260915: `voiceId` is optional and `characterId` is new, both for the
+    // local-TTS sample (voicePreviewTts derives the local voice from the
+    // companion, so a picker at "Auto" can still play one).
     const args = z
       .object({
-        voiceId: z.string().min(1).max(64),
+        voiceId: z.string().min(1).max(64).optional(),
         calmness: z.number().finite().optional(),
+        characterId: z.string().min(1).max(64).optional(),
       })
       .parse(argsRaw);
     const { voicePreviewTts } = await import('./voice/tts');
@@ -2078,11 +2493,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // empty transcript, never chatted) and returns any greeting replies. A fresh
   // world-detection pass first so the greeting's prompt reflects live LAN truth,
   // same as chat:send.
-  ipcMain.handle(IpcChannel.chat.opened, async (_event, idArg: unknown): Promise<ChatMessage[]> => {
+  // `firstMoment` (260926): the guided first moment after onboarding; the
+  // greeting also ends on an offer to play `primary`. A malformed options arg
+  // degrades to a plain greeting rather than failing the open.
+  const ChatOpenedOptsSchema = z
+    .object({ firstMoment: z.object({ primary: z.enum(['chess', 'minecraft']) }).optional() })
+    .optional();
+  ipcMain.handle(IpcChannel.chat.opened, async (_event, idArg: unknown, optsArg?: unknown): Promise<ChatMessage[]> => {
     const id = IdSchema.parse(idArg);
+    const parsedOpts = ChatOpenedOptsSchema.safeParse(optsArg);
+    const opts = parsedOpts.success ? parsedOpts.data : undefined;
     const { sendFirstMeetingTurn } = await import('./chat/chatService');
     try { await deps.refreshLanState?.(); } catch { /* greeting proceeds on cache */ }
-    return await sendFirstMeetingTurn(id, { getLanState: deps.getLanState });
+    return await sendFirstMeetingTurn(id, { getLanState: deps.getLanState }, opts);
   });
 
   ipcMain.handle(IpcChannel.chat.previews, async (): Promise<Record<string, ChatPreview>> => {
@@ -2439,6 +2862,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       sessionId: z.string().min(1),
       installIds: z.array(z.string().min(1)).min(1),
       skinServerBaseUrl: z.string().url(),
+      // 260916: per-install version pick. Named here or it is STRIPPED
+      // (zod drops undeclared keys silently; the backseat gridSmall lesson).
+      mcVersions: z.record(z.string().min(1), z.string().min(1)).optional(),
     }).parse(argsRaw);
     const { runWizardInstall } = await import('./wizard');
     return await runWizardInstall({
@@ -2459,6 +2885,20 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const { abortWizardSession } = await import('./wizard');
     abortWizardSession(sessionId);
     return;
+  });
+
+  ipcMain.handle(IpcChannel.wizard.startMinecraft, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ mcVersion: z.string().min(1).max(32).optional() })
+      .optional()
+      .parse(argsRaw ?? {});
+    const { startMinecraft } = await import('./mcLauncher');
+    return await startMinecraft({ mcVersion: args?.mcVersion });
+  });
+
+  ipcMain.handle(IpcChannel.wizard.minecraftRunning, async () => {
+    const { isLauncherOrGameRunning } = await import('./mcLauncher');
+    return await isLauncherOrGameRunning();
   });
 
   ipcMain.handle(IpcChannel.wizard.getState, async () => {
@@ -2483,6 +2923,15 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       const { setUiLanguage } = await import('./analytics');
       setUiLanguage(cfg.ui_language);
     }
+    // Provider/model changes move the active LLM's vision verdict; mirror it
+    // to the renderer (ai_backend_kind never rides a renderer save, so the
+    // backend-flip listener above covers that axis).
+    if ('provider' in (cfgArg as Record<string, unknown>) || 'provider_config' in (cfgArg as Record<string, unknown>)) {
+      void (async () => {
+        const { pushLlmCapability } = await import('./llm/capability');
+        await pushLlmCapability();
+      })();
+    }
     // Content protection is a main-owned window flag, so a saved change has to
     // be pushed onto the live overlay windows or it only takes effect the next
     // time they are created. Both windows follow the one setting.
@@ -2506,11 +2955,45 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
   });
   ipcMain.handle(IpcChannel.config.saveApiKey, async (_event, plaintextArg: unknown): Promise<void> => {
-    const plaintext = PlaintextSchema.parse(plaintextArg);
+    // '' means CLEAR (260817, china-compat W10). SettingsScreen has always
+    // called saveApiKey('') on a provider switch, but the old min(1) schema
+    // rejected it and the renderer's best-effort catch swallowed the throw —
+    // so the previous vendor's key silently stayed on disk and was sent to
+    // the new provider. Clearing must UNLINK, not store an encrypted empty
+    // string: hasApiKey() is file-existence based.
+    const plaintext = z.string().parse(plaintextArg);
+    if (plaintext === '') {
+      const { clearApiKey } = await import('./apiKeyStore');
+      await clearApiKey();
+      return;
+    }
     await saveApiKey(plaintext);
   });
   ipcMain.handle(IpcChannel.config.hasApiKey, async (): Promise<boolean> => {
     return await hasApiKey();
+  });
+
+  // === china-compat W1: multi-provider LLM layer surface ===
+  // Provider values are the FULL catalog (grandfathered included) so a legacy
+  // config's picker row can still list/test its own provider.
+  const LlmProviderArgSchema = z.object({
+    provider: z.enum(
+      [...SHOWN_PROVIDERS, ...GRANDFATHERED_PROVIDERS] as [ProviderKind, ...ProviderKind[]],
+    ),
+  });
+  ipcMain.handle(IpcChannel.llm.listModels, async (_event, argsRaw: unknown) => {
+    const { provider } = LlmProviderArgSchema.parse(argsRaw);
+    const { listProviderModels } = await import('./llm/listModels');
+    return await listProviderModels(provider);
+  });
+  ipcMain.handle(IpcChannel.llm.test, async (_event, argsRaw: unknown) => {
+    const args = LlmProviderArgSchema.extend({ model: z.string().max(200).default('') }).parse(argsRaw);
+    const { testProvider } = await import('./llm/listModels');
+    return await testProvider(args.provider, args.model);
+  });
+  ipcMain.handle(IpcChannel.llm.capabilityGet, async () => {
+    const { currentLlmCapability } = await import('./llm/capability');
+    return await currentLlmCapability();
   });
 
   // === Product analytics (260707) ===
@@ -2773,6 +3256,22 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const { updatePassword } = await import('./auth/authHandlers');
     return await updatePassword(args);
   });
+  // === Region gate (W7, 260816) ===
+  // region:status {} -> { loc, blocked }: the renderer's pre-check so the
+  // blocking popup on AuthPanel / SignInModal can appear before a failed
+  // submit. Advisory only — the authoritative gate is the check inside
+  // signInWithPassword / signUpWithPassword / signInWithGoogle. The reply is
+  // parsed through RegionStatusZ so every field the renderer reads is
+  // declared (the gridSmall lesson, applied outbound).
+  ipcMain.handle(IpcChannel.region.status, async () => {
+    const RegionStatusZ = z.object({
+      loc: z.string().length(2).nullable(),
+      blocked: z.boolean(),
+    });
+    const { getRegionStatus } = await import('./regionDetect');
+    return RegionStatusZ.parse(await getRegionStatus());
+  });
+
   // 260603 anti-abuse — store a renderer-solved Turnstile/hCaptcha token for the
   // next signup. Inert until bot-protection is enabled (see auth/captcha.ts).
   ipcMain.handle(IpcChannel.auth.setCaptchaToken, async (_e, tokenRaw: unknown) => {
@@ -3473,9 +3972,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.feedback.submit, async (_e, argsRaw: unknown) => {
     const parsed = FeedbackSubmitArgsSchema.parse(argsRaw);
     const { feedbackSubmit } = await import('./cloud/proxyClient');
-    const res = await feedbackSubmit(parsed);
-    trackAnalytics('feedback_submitted');
-    return res;
+    const { submitFeedbackTracked } = await import('./feedbackSubmit');
+    // 260926: feedback_submitted only on success, feedback_failed otherwise
+    // (it used to fire on every call, so lost sends counted as received).
+    return submitFeedbackTracked(parsed, { submit: feedbackSubmit, track: trackAnalytics });
   });
 
   // feedback:report — 260706. Proxy POST /report (20/day per user).

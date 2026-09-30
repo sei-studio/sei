@@ -330,6 +330,9 @@ describe('runDefaultsToWorldMigration', () => {
       kind: 'custom',
       shared: false,
       cloud_updated_at: '2026-06-01T00:00:00.000Z',
+      // Healthy (cloud-cached) portrait ref: a './img/…' ref would itself
+      // trigger the stale-bundled-portrait heal (tested below).
+      portrait_image: `${DEFAULT_CHARACTER_UUIDS.sui}.png`,
     });
     await seedIndex([DEFAULT_CHARACTER_UUIDS.sui]);
 
@@ -338,6 +341,31 @@ describe('runDefaultsToWorldMigration', () => {
     const sui = (await listCharacters()).find((c) => c.id === DEFAULT_CHARACTER_UUIDS.sui)!;
     expect(sui.shared).toBe(false); // NOT re-forced to public
     expect(sui.cloud_updated_at).toBe('2026-06-01T00:00:00.000Z'); // watermark not busted
+  });
+
+  it('heals a legacy bundled portrait ref (./img/…) even on an otherwise-final default', async () => {
+    // The bundled portrait assets were deleted with the bundle baseline
+    // (5d1261b), so a leftover './img/sui.png' ref can never load again —
+    // Home cards and the IconRail rendered blank off it. The heal nulls the
+    // ref (procedural sprite takes over) and busts the watermark so the next
+    // open re-adopts the cloud portrait.
+    await seedChar({
+      ...defaultChar(DEFAULT_CHARACTER_UUIDS.sui, 'Sui', 'sui'),
+      is_default: false,
+      owner: DEFAULT_CHARACTERS_OWNER,
+      kind: 'custom',
+      shared: false,
+      cloud_updated_at: '2026-06-01T00:00:00.000Z',
+      portrait_image: './img/sui.png',
+    });
+    await seedIndex([DEFAULT_CHARACTER_UUIDS.sui]);
+
+    await runDefaultsToWorldMigration();
+
+    const sui = (await listCharacters()).find((c) => c.id === DEFAULT_CHARACTER_UUIDS.sui)!;
+    expect(sui.portrait_image ?? null).toBeNull(); // dead ref cleared
+    expect(sui.cloud_updated_at ?? null).toBeNull(); // watermark busted → re-adopt on next open
+    expect(sui.shared).toBe(false); // repair still preserves the share choice
   });
 
   it('fresh install (no local defaults) just flips the marker', async () => {

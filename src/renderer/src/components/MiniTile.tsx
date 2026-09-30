@@ -155,7 +155,7 @@ export function MiniTile(): React.ReactElement | null {
     (isChessOpen(chessState, viewedId) ||
       isChessReplayOpen(chessState, viewedId) ||
       summons[viewedId]?.kind === 'online' ||
-      mcLaunch[viewedId] === true);
+      mcLaunch[viewedId] != null);
   // A game surface on view already shows the call cluster in its own chrome
   // row (GameSurface in chat, GameChromeRow on the Draw! route), so the call
   // tile would only duplicate it on top of the game's chat column.

@@ -1,0 +1,371 @@
+name: NSIS Upgrade Check
+
+# Manual check for the Windows installer (260929, one-click switch). Builds this
+# branch's one-click NSIS installer UNSIGNED, then on clean windows-latest
+# runners installs the current STABLE release the way real users did, writes a
+# marker into userData, and runs the new installer over the top with the exact
+# arguments electron-updater passes (--updated /S --force-run). It asserts one
+# Apps & features entry, the same install folder, an intact userData marker,
+# and that the upgraded Sei.exe starts. It also prints the Authenticode
+# signature of the stable installer and app (SmartScreen evidence).
+#
+# Scenarios (the old ASSISTED installer's reachable choices):
+#   peruser-default  per-user, default folder (%LOCALAPPDATA%\Programs\Sei)
+#   peruser-custom   per-user, a folder the user picked (with a space in it)
+#   permachine       "Anyone who uses this computer": HKLM + Program Files,
+#                    removed by build/installer.nsh customInstall. The new
+#                    installer runs NON-silent here (--updated --force-run, the
+#                    in-app "restart to update" path), because customInstall
+#                    skips the cleanup in silent mode. Asserts the HKCU
+#                    try-once marker is set afterwards.
+#   permachine-silent  same install, new installer with /S (update on quit):
+#                    the per-machine copy must be LEFT alone and the marker
+#                    left unset, so the attempt waits for an interactive run
+#   permachine-tried   same install, marker pre-set (cleanup already tried
+#                    once, say a declined UAC prompt): the non-silent run must
+#                    not try again
+#   fresh            no prior install: checks the default one-click location and
+#                    that the install marker reads 'fresh' (installer_first_launch)
+#
+# Runner caveat: GitHub's Windows runners are admin with UAC off, so the admin
+# prompt a real per-machine user sees for the old uninstaller cannot appear here.
+#
+# Run it from the Actions tab (workflow_dispatch), or push to a nsischeck/**
+# branch. It never publishes anything.
+on:
+  push:
+    branches: ['nsischeck/**']
+  workflow_dispatch:
+    inputs:
+      stable_tag:
+        description: 'Stable release to upgrade from'
+        required: false
+        default: 'v0.6.4'
+
+permissions:
+  contents: read
+
+env:
+  STABLE_TAG: ${{ inputs.stable_tag || 'v0.6.4' }}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Setup Python (distutils for headless-gl native build)
+        uses: actions/setup-python@v5
+        id: setup-python
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        env:
+          npm_config_python: ${{ steps.setup-python.outputs.python-path }}
+        run: npm ci
+
+      - name: Build unsigned one-click installer
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        shell: bash
+        run: |
+          npx electron-vite build
+          npx electron-builder --win nsis --x64 --publish never
+          ls -la release/
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: oneclick-installer
+          path: release/Sei-win-x64.exe
+          retention-days: 3
+
+  upgrade:
+    needs: build
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [peruser-default, peruser-custom, permachine, permachine-silent, permachine-tried, fresh]
+    steps:
+      - name: Download new installer
+        uses: actions/download-artifact@v4
+        with:
+          name: oneclick-installer
+          path: new
+
+      - name: Download stable installer
+        if: matrix.scenario != 'fresh'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh release download $env:STABLE_TAG -R $env:GITHUB_REPOSITORY -p 'Sei-win-x64.exe' -D old
+          Get-ChildItem old
+
+      - name: Signature of the stable installer (SmartScreen evidence)
+        if: matrix.scenario == 'peruser-default'
+        shell: pwsh
+        run: |
+          $sig = Get-AuthenticodeSignature old\Sei-win-x64.exe
+          $sig | Format-List Status, StatusMessage, SignatureType, IsOSBinary
+          if ($sig.SignerCertificate) {
+            $sig.SignerCertificate | Format-List Subject, Issuer, Thumbprint, NotBefore, NotAfter
+          }
+          if ($sig.TimeStamperCertificate) {
+            'Timestamper:'
+            $sig.TimeStamperCertificate | Format-List Subject, Issuer, NotAfter
+          } else { 'No timestamp countersignature.' }
+
+      - name: Run the upgrade check
+        shell: pwsh
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $failures = @()
+
+          function Get-SeiEntries {
+            $roots = @(
+              'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+              'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+              'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
+            )
+            foreach ($r in $roots) {
+              if (-not (Test-Path $r)) { continue }
+              Get-ChildItem $r | ForEach-Object {
+                $p = Get-ItemProperty $_.PSPath
+                if ($p.DisplayName -like 'Sei*') {
+                  [pscustomobject]@{ Root = $r; Key = $_.PSChildName; DisplayName = $p.DisplayName; Version = $p.DisplayVersion; Uninstall = $p.UninstallString }
+                }
+              }
+            }
+          }
+          function Get-InstallLocation([string]$guid) {
+            foreach ($hive in 'HKCU:', 'HKLM:') {
+              $k = "$hive\Software\$guid"
+              if (Test-Path $k) { $v = (Get-ItemProperty $k).InstallLocation; if ($v) { return "$hive $v" } }
+            }
+            return $null
+          }
+          function Show-State([string]$label) {
+            Write-Host "===== $label ====="
+            $e = @(Get-SeiEntries)
+            Write-Host ($e | Format-Table -AutoSize | Out-String -Width 400)
+            foreach ($x in $e) { Write-Host "InstallLocation[$($x.Key)]: $(Get-InstallLocation $x.Key)" }
+            Write-Host "userData: $env:APPDATA\Sei exists=$(Test-Path "$env:APPDATA\Sei")"
+          }
+          function Stop-Sei { Get-Process -Name 'Sei' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2 }
+          function Test-Launch([string]$exe, [int]$seconds) {
+            Stop-Sei
+            $p = Start-Process -FilePath $exe -PassThru
+            Start-Sleep -Seconds $seconds
+            $alive = -not $p.HasExited
+            $code = if ($alive) { 'running' } else { $p.ExitCode }
+            Stop-Sei
+            return @($alive, $code)
+          }
+
+          $userData = Join-Path $env:APPDATA 'Sei'
+          $marker = Join-Path $userData 'upgrade-check-marker.txt'
+          $token = [guid]::NewGuid().ToString()
+
+          if ($env:SCENARIO -ne 'fresh') {
+            $old = (Resolve-Path old\Sei-win-x64.exe).Path
+            switch ($env:SCENARIO) {
+              'peruser-default' { $instArgs = @('/S') }
+              'peruser-custom'  { $instArgs = @('/S', '/D=C:\Games\My Sei') }
+              { $_ -like 'permachine*' } { $instArgs = @('/S', '/allusers') }
+            }
+            "Installing $env:STABLE_TAG with: $($instArgs -join ' ')"
+            $p = Start-Process -FilePath $old -ArgumentList $instArgs -Wait -PassThru
+            "old installer exit: $($p.ExitCode)"
+            Show-State "after $env:STABLE_TAG install"
+            $before = @(Get-SeiEntries)
+            if ($before.Count -ne 1) { $failures += "expected 1 entry after the stable install, got $($before.Count)" }
+            $oldLoc = if ($before.Count -ge 1) { Get-InstallLocation $before[0].Key } else { $null }
+            $oldExe = Join-Path (($oldLoc -split ' ', 2)[1]) 'Sei.exe'
+            "old exe: $oldExe"
+            'Signature of the installed stable app exe:'
+            $osig = Get-AuthenticodeSignature $oldExe
+            $osig | Format-List Status, StatusMessage, SignatureType
+            if ($osig.SignerCertificate) { $osig.SignerCertificate | Format-List Subject, Issuer, NotBefore, NotAfter }
+            if ($osig.TimeStamperCertificate) { 'Timestamper:'; $osig.TimeStamperCertificate | Format-List Subject, Issuer } else { 'No timestamp countersignature.' }
+            $r = Test-Launch $oldExe 25
+            "old app launch: alive=$($r[0]) code=$($r[1])"
+            New-Item -ItemType Directory -Force -Path $userData | Out-Null
+            Set-Content -Path $marker -Value $token
+            'userData contents before upgrade:'
+            Get-ChildItem $userData | Select-Object Name, Length, LastWriteTime | Format-Table -AutoSize | Out-String -Width 300
+          } else {
+            $before = @()
+            $oldLoc = $null
+          }
+
+          # HKCU try-once marker for the legacy all-users cleanup (installer.nsh).
+          $migKey = 'HKCU:\Software\Sei\Installer'
+          function Get-CleanupTried { if (Test-Path $migKey) { (Get-ItemProperty $migKey).LegacyAllUsersCleanupTried } else { $null } }
+          if ($env:SCENARIO -eq 'permachine-tried') {
+            New-Item -Path $migKey -Force | Out-Null
+            New-ItemProperty -Path $migKey -Name LegacyAllUsersCleanupTried -Value '1' -PropertyType String -Force | Out-Null
+          }
+          $keepsLegacy = $env:SCENARIO -in @('permachine-silent', 'permachine-tried')
+
+          $new = (Resolve-Path new\Sei-win-x64.exe).Path
+          $newArgs = switch -Wildcard ($env:SCENARIO) {
+            'fresh'             { @('/S') }
+            'permachine'        { @('--updated', '--force-run') }
+            'permachine-tried'  { @('--updated', '--force-run') }
+            default             { @('--updated', '/S', '--force-run') }
+          }
+          "Running the one-click installer with: $($newArgs -join ' ')"
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          $p = Start-Process -FilePath $new -ArgumentList $newArgs -Wait -PassThru
+          "new installer exit: $($p.ExitCode) after $([int]$sw.Elapsed.TotalSeconds)s"
+          if ($p.ExitCode -ne 0) { $failures += "new installer exit code $($p.ExitCode)" }
+          Start-Sleep -Seconds 5
+          Stop-Sei
+
+          Show-State 'after one-click install'
+          $after = @(Get-SeiEntries)
+          $hklm = @($after | Where-Object { $_.Root -like 'HKLM*' })
+          $hkcu = @($after | Where-Object { $_.Root -like 'HKCU*' })
+          if ($keepsLegacy) {
+            # The per-machine copy must be left in place (and no UAC attempted).
+            if ($hkcu.Count -ne 1) { $failures += "expected 1 HKCU entry, got $($hkcu.Count)" }
+            if ($hklm.Count -ne 1) { $failures += "expected the HKLM entry to be kept, got $($hklm.Count)" }
+          } else {
+            if ($after.Count -ne 1) { $failures += "expected exactly 1 Apps & features entry, got $($after.Count)" }
+            if ($hklm.Count -ne 0) { $failures += 'an HKLM (per-machine) entry is still registered' }
+          }
+          if ($before.Count -ge 1 -and $hkcu.Count -ge 1 -and $before[0].Key -ne $hkcu[0].Key) {
+            $failures += "uninstall key changed: $($before[0].Key) -> $($hkcu[0].Key)"
+          }
+          $tried = Get-CleanupTried
+          "LegacyAllUsersCleanupTried: '$tried'"
+          $expectTried = $env:SCENARIO -in @('permachine', 'permachine-tried')
+          if ($expectTried -and $tried -ne '1') { $failures += 'try-once marker not set' }
+          if (-not $expectTried -and $tried) { $failures += "try-once marker set unexpectedly ('$tried')" }
+          # Get-InstallLocation reads HKCU first, i.e. the new per-user install.
+          $newLoc = if ($hkcu.Count -ge 1) { Get-InstallLocation $hkcu[0].Key } else { $null }
+          "install location before: $oldLoc"
+          "install location after:  $newLoc"
+          if ($env:SCENARIO -like 'peruser-*' -and $oldLoc -ne $newLoc) { $failures += 'per-user install location changed' }
+          if ($env:SCENARIO -eq 'permachine') {
+            $pf = Join-Path $env:ProgramFiles 'Sei'
+            "Program Files\Sei exists: $(Test-Path $pf)"
+            if (Test-Path (Join-Path $pf 'Sei.exe')) { $failures += 'the per-machine copy is still in Program Files' }
+          }
+          if ($keepsLegacy) {
+            $pf = Join-Path $env:ProgramFiles 'Sei'
+            if (-not (Test-Path (Join-Path $pf 'Sei.exe'))) { $failures += 'the per-machine copy was removed although cleanup should have been skipped' }
+          }
+          'Shortcuts:'
+          foreach ($d in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('CommonDesktopDirectory'), (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'), (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs'))) {
+            Get-ChildItem -Path $d -Filter 'Sei*.lnk' -ErrorAction SilentlyContinue | ForEach-Object { "  $($_.FullName)" }
+          }
+
+          if ($env:SCENARIO -ne 'fresh') {
+            if (-not (Test-Path $marker)) { $failures += 'userData marker is gone' }
+            elseif ((Get-Content $marker -Raw).Trim() -ne $token) { $failures += 'userData marker content changed' }
+            else { 'userData marker intact' }
+          }
+
+          $exe = Join-Path (($newLoc -split ' ', 2)[1]) 'Sei.exe'
+          "new exe: $exe"
+          $r = Test-Launch $exe 30
+          "upgraded app launch: alive=$($r[0]) code=$($r[1])"
+          if (-not $r[0]) { $failures += "Sei.exe exited early with code $($r[1])" }
+
+          $im = Join-Path $userData 'install-marker.json'
+          if (Test-Path $im) { 'install-marker.json:'; Get-Content $im -Raw } else { 'install-marker.json missing' }
+          $expectKind = if ($env:SCENARIO -eq 'fresh') { 'fresh' } else { 'upgrade' }
+          if (-not (Test-Path $im) -or -not ((Get-Content $im -Raw) -match "`"kind`":\s*`"$expectKind`"")) {
+            $failures += "install-marker.json kind is not '$expectKind'"
+          }
+          $logDir = Join-Path $userData 'logs'
+          if (Test-Path $logDir) {
+            '--- app logs (install marker lines) ---'
+            Get-ChildItem $logDir -File -Recurse | Select-String -Pattern 'install marker|installer_first_launch' | Select-Object -First 10 | ForEach-Object { "$($_.Filename): $($_.Line)" }
+          }
+
+          if ($env:SCENARIO -ne 'fresh') {
+            'Signature of the installed app exe:'
+            $sig = Get-AuthenticodeSignature $exe
+            $sig | Format-List Status, StatusMessage
+          }
+
+          if ($failures.Count -gt 0) {
+            '::group::FAILURES'
+            $failures | ForEach-Object { "::error::$_" }
+            '::endgroup::'
+            exit 1
+          }
+          "PASS: $env:SCENARIO"
+
+  # What a person sees: the one-click installer run NON-silently on a clean
+  # runner, with a screenshot about every 1.5 s until it exits, and the time to
+  # its first visible window. The runner session is interactive enough for
+  # CopyFromScreen; if the frames come out black, the timing still stands.
+  ui:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - name: Download new installer
+        uses: actions/download-artifact@v4
+        with:
+          name: oneclick-installer
+          path: new
+
+      - name: Interactive one-click install with screenshots
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          New-Item -ItemType Directory -Force -Path shots | Out-Null
+          function Shot([string]$name) {
+            try {
+              $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+              $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+              $g = [System.Drawing.Graphics]::FromImage($bmp)
+              $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+              $bmp.Save((Join-Path shots "$name.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+              $g.Dispose(); $bmp.Dispose()
+            } catch { "screenshot failed: $_" }
+          }
+          $exe = (Resolve-Path new\Sei-win-x64.exe).Path
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          $p = Start-Process -FilePath $exe -PassThru
+          $firstWindow = $null
+          $i = 0
+          while (-not $p.HasExited -and $sw.Elapsed.TotalSeconds -lt 300) {
+            $p.Refresh()
+            if ($null -eq $firstWindow -and $p.MainWindowHandle -ne 0) {
+              $firstWindow = $sw.Elapsed.TotalSeconds
+              "first installer window after $([math]::Round($firstWindow, 1))s: '$($p.MainWindowTitle)'"
+            }
+            Shot ('{0:d3}-{1:n1}s' -f $i, $sw.Elapsed.TotalSeconds)
+            $i++
+            Start-Sleep -Milliseconds 1500
+          }
+          "installer exited: $($p.HasExited) code=$(if ($p.HasExited) { $p.ExitCode } else { 'n/a' }) after $([int]$sw.Elapsed.TotalSeconds)s"
+          Start-Sleep -Seconds 8
+          Shot 'zz-after-run'
+          $sei = Get-Process -Name 'Sei' -ErrorAction SilentlyContinue
+          "Sei running after install (runAfterFinish): $([bool]$sei)"
+          $sei | Stop-Process -Force -ErrorAction SilentlyContinue
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oneclick-ui-shots
+          path: shots
+          retention-days: 3

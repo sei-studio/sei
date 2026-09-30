@@ -41,7 +41,7 @@ import { sei } from './lib/ipcClient';
 import { portraitSrc } from './lib/portraitSrc';
 import { pickPalette } from './lib/portraitPalettes';
 import { PixelPortrait } from './components/PixelPortrait';
-import { Live2DView } from './lib/live2d/Live2DView';
+import { AvatarView } from './lib/avatar/AvatarView';
 import styles from './CallOverlay.module.css';
 
 /** Chrome layout — MUST match callOverlay.ts PAD_TOP/PAD_X/GAP and the .stage
@@ -362,7 +362,7 @@ export function CallOverlay(): React.ReactElement | null {
                 onWheel={editing ? onTileWheel(p.id) : undefined}
                 onPointerDown={editing ? (e) => beginTilePan(e, p.id) : undefined}
               >
-                <Live2DView
+                <AvatarView
                   characterId={p.id}
                   speaking={speaking}
                   levelRef={levelRefFor(p.id)}

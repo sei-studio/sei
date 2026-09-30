@@ -17,6 +17,7 @@
 import { z } from 'zod';
 import type {
   Character,
+  PortraitVersion,
   PrefQuestion,
   Skin,
   SkinSource,
@@ -25,6 +26,7 @@ import type {
   UserPreferencesPatch,
 } from './characterSchema';
 import type { ErrorClass } from './errorClasses';
+import type { RegionStatus } from './regionGate';
 export type { ErrorClass } from './errorClasses';
 import type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
 export type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
@@ -54,7 +56,17 @@ export type {
   BackseatState,
   BackseatTick,
 } from './backseatIpc';
+import type { OsPermissionKind, OsPermissionStatus, PermissionResume } from './permissionsIpc';
+export type { OsPermissionKind, OsPermissionStatus, PermissionResume } from './permissionsIpc';
 import type { McDashboardSnapshot, McDashboardSnapshotPush } from './mcDashboardIpc';
+import type { GameId, WorldState, WorldStates, GameDashboardSnapshot } from './gameIpc';
+import { StardewIpcChannel, type StardewInstallState, type StardewInstallProgressEvent, type StardewLaunchResult } from './stardewIpc';
+import { GameIpcChannel } from './gameIpc';
+export type { GameId, WorldState, WorldStates, GameDashboardSnapshot } from './gameIpc';
+import type { GamePackProgressPush, GamePackState } from './gamePacks';
+import type { DstInstallState, DstSurvivorPick } from './dstIpc';
+import { DstChannel } from './dstIpc';
+export type { GamePackProgressPush, GamePackState } from './gamePacks';
 export type {
   McDashboardSnapshot,
   McDashboardSnapshotPush,
@@ -88,9 +100,58 @@ export type Unsubscribe = () => void;
  * omitted the id because there was only ever one session; that ambiguity is no
  * longer safe.) The renderer keys `useDataStore.summons` by this id.
  */
-export type BotStatus =
-  | { kind: 'idle'; characterId: string }
-  | { kind: 'connecting'; characterId: string }
+/**
+ * Why a LIVE game session ended (260929), for the `bot_session_ended` analytics
+ * event. Stamped by the supervisor on the terminal status (idle or error) when
+ * it can tell; src/main/sessionEnd.ts turns a terminal status into event props.
+ *   user_stop        the player pressed Stop / Disconnect in the app
+ *   companion_quit   the companion called quit() (in game or from chat)
+ *   app_quit         Sei was quitting
+ *   account_switch   sign-out / account swap tore the session down
+ *   kicked           the server kept kicking the bot (or a modded host did)
+ *   world_closed     the connection dropped and the world no longer answers
+ *   disconnected     the connection dropped; no finer evidence
+ *   credits_depleted / rate_limited   the cloud stopped the session
+ *   crash            the bot process died unexpectedly
+ *   error            any other terminal error (error_class carries it)
+ *   bot_exit         the bot process left cleanly with no stop and no error
+ *   unknown          a terminal status with no evidence either way
+ */
+export type SessionEndReason =
+  | 'user_stop'
+  | 'companion_quit'
+  | 'app_quit'
+  | 'account_switch'
+  | 'kicked'
+  | 'world_closed'
+  | 'disconnected'
+  | 'credits_depleted'
+  | 'rate_limited'
+  | 'crash'
+  | 'error'
+  | 'bot_exit'
+  | 'unknown';
+
+/** The subset of end reasons a caller can pass to `supervisor.stop()`. */
+export type StopReason = Extract<SessionEndReason, 'user_stop' | 'companion_quit' | 'app_quit' | 'account_switch'>;
+
+export type BotStatus = BotStatusBase & {
+  /**
+   * Game adapters (M0, 260908): which game this session is (or was) in.
+   * Stamped by the supervisor on every status it emits; absent only on
+   * statuses from a main older than this field (treat as 'minecraft').
+   */
+  game?: GameId;
+};
+
+type BotStatusBase =
+  // `endReason` (260929): why the session ended, when the supervisor knows.
+  // Analytics only; the renderer ignores it.
+  | { kind: 'idle'; characterId: string; endReason?: SessionEndReason }
+  // 260926: stage 'starting' = the bot process is booting (cold boot can take
+  // 20s+ on Windows); 'joining' = booted, connecting to the world. Optional so
+  // older senders and tests stay valid; absent reads as 'starting'.
+  | { kind: 'connecting'; characterId: string; stage?: 'starting' | 'joining' }
   // `startedAtMs` is the epoch ms when this session's clock started (main and
   // renderer share the system clock). The renderer derives a LIVE uptime from
   // it (Date.now() - startedAtMs) so the status line counts up even though main
@@ -121,6 +182,17 @@ export type BotStatus =
        * classes that have no dedicated surface.
        */
       midSession?: true;
+      /**
+       * 260929: why a LIVE session ended, when the bot could tell (a kick
+       * loop, a world that closed). Analytics only; see SessionEndReason.
+       */
+      endReason?: SessionEndReason;
+      /**
+       * 260929: short code for the server's kick reason ('kicked',
+       * 'name_taken', 'modded', 'other', ...). Never the raw kick text, which
+       * can carry a host-typed message. See kickReasonCode in connect.js.
+       */
+      kickCode?: string;
     };
 
 /**
@@ -141,6 +213,37 @@ export type BotStatus =
 export interface VisionCapability {
   visionCapable: boolean;
 }
+
+/**
+ * china-compat W1 — vision capability of the ACTIVE chat backend, derived
+ * from CONFIG (backend kind + provider + model through the shared
+ * llmCatalog), not from a live bot session. Pushed main→renderer over
+ * `llm:capability` on config changes and backend switches, seeded by the
+ * `llm:capability-get` pull. Renderer holds it as useUiStore.llmVision
+ * ('yes' | 'no' | 'unknown'); gating of the image surfaces (Draw! tile,
+ * backseat entry points) is W9 — this is only the signal. Distinct from
+ * VisionCapability above, which is the BOT-session-scoped push.
+ */
+export interface LlmCapability {
+  vision: 'yes' | 'no' | 'unknown';
+  /**
+   * The active LOCAL model's display id, for the W9 gate copy ("Your current
+   * model ({model}) does not support vision."). null for cloud-proxy and for
+   * Anthropic BYOK (both always vision-capable, so no gate ever needs it).
+   */
+  model: string | null;
+}
+
+/** llm:list-models — live model listing with the user's own key. `error` is a
+ * typed token ('no_api_key' | 'unauthorized' | 'timeout' | 'network' |
+ * 'http_<status>' | 'unknown'), never a raw message. */
+export interface LlmListModelsResult {
+  models: Array<{ id: string; vision: 'yes' | 'no' | 'unknown' }>;
+  error?: string;
+}
+
+/** llm:test — a 1-token probe through the main-process provider layer. */
+export type LlmTestResult = { ok: true; latencyMs: number } | { ok: false; error: string };
 
 /**
  * LAN world-detection status from the loopback watcher.
@@ -178,8 +281,9 @@ export type LanState =
  * Best-effort classification of the Minecraft client hosting the open LAN
  * world (260709). Sei only speaks the vanilla protocol, so a modded or Lunar
  * host warrants a pre-summon disclaimer:
- *   - Forge/NeoForge/Fabric: client-side mods (minimaps etc.) are fine, but
- *     content mods make the integrated server refuse vanilla clients.
+ *   - Forge/NeoForge: the server refuses vanilla clients (260929: blocking).
+ *   - Fabric/Quilt: client-side mods (minimaps etc.) are fine, but content
+ *     mods make the integrated server refuse vanilla clients.
  *   - Lunar: joins fine, but Lunar loads no third-party mods, so the
  *     CustomSkinLoader pipeline can't show the companion's skin there.
  * Sources: the status-ping JSON (`forgeData` 1.13+ / `modinfo` 1.12-) and the
@@ -218,10 +322,21 @@ export interface LanHost {
    */
   seiSkinMod?: boolean;
   otherModCount?: number | null;
+  /**
+   * 260929 — the host command line names an explicit Forge/NeoForge launch
+   * target (`--launchTarget forgeclient`, `--fml.forgeVersion`, the FML
+   * tweaker, NeoForge's startup main class). Strong evidence, unlike the
+   * substring markers classifyCmdline uses, which can come from an instance
+   * name or install path. See hasForgeLaunchTarget in src/main/hostClient.ts.
+   */
+  forgeLaunchTarget?: boolean;
 }
 
-/** Which pre-summon disclaimer (if any) a detected host warrants. */
-export type LanHostWarning = 'vanilla' | 'modded' | 'lunar';
+/**
+ * Which pre-summon disclaimer (if any) a detected host warrants. 'forge' is
+ * the one BLOCKING kind (260929): the modal offers no "Summon anyway".
+ */
+export type LanHostWarning = 'vanilla' | 'modded' | 'lunar' | 'forge';
 
 /**
  * Pure decision: does this host classification warrant a pre-summon
@@ -231,9 +346,19 @@ export type LanHostWarning = 'vanilla' | 'modded' | 'lunar';
  *   - 'vanilla' → host runs plain vanilla Minecraft, i.e. WITHOUT Sei's
  *     Fabric skin setup: the companion joins fine but renders with a default
  *     Minecraft skin (CustomSkinLoader never runs).
- *   - 'modded'  → Forge/NeoForge/Quilt, or Fabric with mod jars BESIDES Sei's
- *     skin mod: content mods can make the world refuse the vanilla-protocol
- *     join.
+ *   - 'forge'   → Forge/NeoForge on STRONG evidence only: the ping's
+ *     forgeData / modinfo, or an explicit launch target on the host command
+ *     line (forgeLaunchTarget). A Forge/NeoForge classification from weaker
+ *     cmdline markers falls to 'modded' so a misread never locks anyone out.
+ *     BLOCKING (260929): in practice a Forge-family server rejects Sei's
+ *     vanilla-protocol client whatever its mod list (live, 09-22..28: Forge
+ *     1.12.2 to 1.21.11 with 0 to 4 mods, every summon kicked or timed out),
+ *     so "Summon anyway" only ever bought a failure of up to 30s. The Forge handshake in
+ *     src/bot/adapter/minecraft/forgeHandshake.js is an off-by-default spike.
+ *   - 'modded'  → Quilt, Forge/NeoForge on weak evidence only, or Fabric
+ *     with mod jars BESIDES Sei's skin mod:
+ *     server-side-only mods let a vanilla client in, content mods can make
+ *     the world refuse it, so this one keeps its "Summon anyway".
  *   - null      → silence. Notably: Fabric with only Sei's skin mod installed
  *     is OUR OWN skin setup, not "modded Minecraft" (the pre-260721 bug
  *     warned users about the very setup our wizard told them to install).
@@ -245,18 +370,103 @@ export function lanHostWarning(host: LanHost | undefined): LanHostWarning | null
   if (!host) return null;
   if (host.client === 'lunar') return 'lunar';
   if (host.client === 'vanilla') return 'vanilla';
-  if (host.client === 'forge' || host.client === 'neoforge' || host.client === 'quilt') {
-    return 'modded';
+  if (host.client === 'forge' || host.client === 'neoforge') {
+    // Hard-block only on strong evidence (260929): the ping's forgeData /
+    // modinfo, or an explicit launch target on the command line. A bare
+    // marker (e.g. "neoforge" in an instance path) could be a misread, so it
+    // gets the soft warning, which keeps "Summon anyway".
+    return hasStrongForgeEvidence(host) ? 'forge' : 'modded';
   }
+  if (host.client === 'quilt') return 'modded';
   if (host.client === 'fabric') {
     // Fabric is Sei's own loader. Warn only on positive evidence of mods
     // beyond our skin mod; otherwise stay silent (see doc comment above).
     if (host.otherModCount != null && host.otherModCount > 0) return 'modded';
     return null;
   }
-  // Cmdline classification failed but the ping itself carried Forge metadata.
-  if (host.forgeModCount != null) return 'modded';
+  // Cmdline classification failed, but the ping carried Forge metadata
+  // (forgeData / modinfo, which only Forge-family servers send) or the
+  // command line named a Forge launch target.
+  if (hasStrongForgeEvidence(host)) return 'forge';
   return null;
+}
+
+/** Strong Forge-family evidence: the status ping or an explicit launch target. */
+function hasStrongForgeEvidence(host: LanHost): boolean {
+  return host.forgeModCount != null || host.forgeLaunchTarget === true;
+}
+
+/** Error class for a summon refused because the host is Forge/NeoForge. */
+export const FORGE_HOST_BLOCKED = 'FORGE_HOST_BLOCKED';
+
+/**
+ * THE Forge/NeoForge hard-stop check (260929), shared by every summon entry
+ * point so they cannot drift: the renderer's Summon button (via
+ * lanHostWarning in summonFlow), the chat launch() tool (chatService
+ * resolveLaunch) and the supervisor's pre-gate (the backstop for the voice
+ * launch honors and anything else that calls summon directly). Returns the
+ * loader name for the copy, or null when the host is not blocked. Weak or
+ * ambiguous evidence is never blocked here; it gets the soft warning.
+ */
+export function forgeHostBlock(host: LanHost | undefined): { loader: 'Forge' | 'NeoForge' } | null {
+  if (!host || lanHostWarning(host) !== 'forge') return null;
+  return { loader: host.client === 'neoforge' ? 'NeoForge' : 'Forge' };
+}
+
+/**
+ * Plain-words explanation of the Forge block, for the error status and for
+ * the companion to relay to the player. No app jargon beyond the launcher
+ * profile name the setup wizard creates.
+ */
+export function forgeHostBlockedMessage(loader: 'Forge' | 'NeoForge'): string {
+  return (
+    `Sei can't join ${loader} worlds. ` +
+    'To play together, open the Sei profile in the Minecraft Launcher, open or create a world there, and open it to LAN.'
+  );
+}
+
+/** Where a blocked summon attempt came from, for `summon_blocked`. */
+export type SummonBlockedPath = 'button' | 'chat' | 'voice';
+
+/**
+ * Props for the `summon_blocked` analytics event (260929): one event per
+ * summon attempt that a Forge/NeoForge host stopped before anything ran, so
+ * the attempts stay visible now that they no longer fail. Built here so the
+ * renderer (Summon button) and main (chat/voice launch() tool) cannot drift.
+ * `reason` matches the `summon_failed` reason for the same block at the
+ * supervisor pre-gate, so the two can be summed without overlap: an attempt
+ * is counted by exactly one of them.
+ */
+export function summonBlockedProps(
+  characterId: string,
+  host: LanHost | undefined,
+  path: SummonBlockedPath,
+): Record<string, string> {
+  const block = forgeHostBlock(host);
+  return {
+    character_id: characterId,
+    game: 'minecraft',
+    reason: FORGE_HOST_BLOCKED,
+    loader: block?.loader ?? 'unknown',
+    host_client: host?.client ?? 'unknown',
+    path,
+  };
+}
+
+/**
+ * Is this a Forge-family host, where a summon that TIMES OUT is best
+ * explained by the loader refusing a vanilla client (260929)? Forge or
+ * NeoForge on any evidence (a weak-evidence host still summons, so its
+ * timeouts land here), or an unclassified host whose ping or command line
+ * showed Forge. Fabric with foreign mods and Quilt are NOT included: they
+ * often let a vanilla client in, so their timeouts stay generic
+ * BOT_START_TIMEOUTs. The supervisor uses it to report a join timeout as
+ * MODDED_HOST_REJECTED.
+ */
+export function isForgeFamilyLanHost(host: LanHost | undefined): boolean {
+  if (!host) return false;
+  if (host.client === 'forge' || host.client === 'neoforge') return true;
+  return lanHostWarning(host) === 'forge';
 }
 
 // ── In-app chat (Phase 18/19) ───────────────────────────────────────────────
@@ -389,6 +599,32 @@ export interface VoiceTtsChunkPush {
   error?: string;
 }
 
+/** One voice:tts-notice push (260908): local TTS spoke a line with a
+ * SUBSTITUTE voice pack because the pack matching the line's language (the
+ * conversation language, or the line's own script when it is predominantly
+ * Chinese) is not installed. The line still plays; the call UI shows a system
+ * notice naming the better-fitting download. Pack ids from
+ * src/main/speech/packs.ts ('tts-en' | 'tts-zh'). */
+export interface VoiceTtsNoticePush {
+  characterId: string;
+  /** Pack that would fit the conversation language but is not installed. */
+  missingPackId: string;
+  /** Pack the line was actually spoken with. */
+  spokenPackId: string;
+}
+
+/**
+ * One speech pack's state in speech:pack-status / speech:pack-state pushes
+ * (260816 local speech — sherpa-onnx model packs, src/main/speech/).
+ */
+export interface SpeechPackStatePush {
+  state: 'absent' | 'downloading' | 'ready';
+  /** Download progress in whole percents, present only while downloading. */
+  pct?: number;
+  /** Archive size in bytes (the download cost to show in prompts). */
+  bytes: number;
+}
+
 /**
  * The closed emotion vocabulary the avatar system speaks (260804). Import maps
  * a model's expression files onto these by filename keywords; at speech time
@@ -414,6 +650,11 @@ export interface AvatarManifest {
   /** Store format version (2 = ASCII-safe stored paths; v1 stores are lazily
    * re-normalized by main on read). */
   version: number;
+  /** Which model format this store holds (260817). Absent = 'live2d' (every
+   * store predating the field is a Cubism model). 'rig' = a simple layered
+   * rig: a rig.json + aligned PNG layers, rendered by RigView instead of the
+   * Cubism pipeline. */
+  kind?: 'live2d' | 'rig';
   /** Display name (derived from the model3.json filename). */
   name: string;
   /** Relative path of the (normalized) .model3.json entry file. */
@@ -441,6 +682,40 @@ export interface AvatarModelFile {
   /** Posix-style path relative to the avatar dir (matches model3.json refs). */
   path: string;
   bytes: Uint8Array;
+}
+
+/**
+ * One layer of a simple rig avatar (260817). All pixel values are in the
+ * rig's own canvas coordinates; layers are full-canvas images aligned by
+ * construction, except `states` patches which draw at `box`.
+ */
+export interface AvatarRigLayer {
+  id: string;
+  /** Draw order, ascending. */
+  z: number;
+  /** Always-drawn image path, relative to rig.json's directory. */
+  src?: string;
+  /** Two-state patch (blink/talk): image paths relative to rig.json. */
+  states?: { open: string; closed: string };
+  /** [x0, y0, x1, y1] patch placement for a `states` layer. */
+  box?: [number, number, number, number];
+  /** 'head' layers translate with the head sway target directly. */
+  group?: string;
+  /** Fraction of head motion applied to a non-head layer (default 0). */
+  sway?: number;
+  /** Damped spring follower toward the head target (hair): stiffness k,
+   * damping c — the layer lags, overshoots, and re-converges at rest. */
+  physics?: { k: number; c: number };
+}
+
+/** rig.json — the entry file of a 'rig'-kind avatar zip (260817). */
+export interface AvatarRigSpec {
+  version?: number;
+  /** Display name for the manifest; falls back to the entry directory. */
+  name?: string;
+  /** [width, height] of the rig canvas every full layer matches. */
+  canvas: [number, number];
+  layers: AvatarRigLayer[];
 }
 
 /** One tile on the always-on-top avatar overlay (260706 as the call overlay;
@@ -526,6 +801,27 @@ export interface SpokenLineContext {
    * it before the synthesis call); untagged lines are never dropped.
    */
   turn?: string;
+  /**
+   * 260925 backseat act: report back whether THIS line was heard in full.
+   * Set on a control offer ("want me to ...?"): the offer only becomes
+   * answerable once the renderer says the clip played to its end
+   * (backseatLineHeard, completed=true). A clip cut off by a barge-in,
+   * superseded, deafened, or never synthesized reports completed=false.
+   * Never sent to TTS.
+   */
+  confirmId?: string;
+}
+
+/**
+ * The first game the guided first moment offers (260926). Chess needs no
+ * install, so it is the default; Minecraft leads only when a LAN world is
+ * already open.
+ */
+export type FirstMomentGame = 'chess' | 'minecraft';
+
+/** Options for `chatOpened` (see RendererApi.chatOpened). */
+export interface ChatOpenedOptions {
+  firstMoment?: { primary: FirstMomentGame };
 }
 
 /** A main → renderer chat push (bot reply while in-game, or a system line). */
@@ -588,7 +884,15 @@ export type BotLifecycle =
   | { type: 'init-ack' }
   | { type: 'connected' }
   | { type: 'disconnected'; reason?: string }
-  | { type: 'error'; error: ErrorClass; message: string; retryAfterSeconds?: number }
+  | {
+      type: 'error';
+      error: ErrorClass;
+      message: string;
+      retryAfterSeconds?: number;
+      /** 260929: set by the Minecraft runtime on a post-spawn terminal drop. */
+      endReason?: SessionEndReason;
+      kickCode?: string;
+    }
   | { type: 'chat'; from: string; text: string }
   /**
    * Current world action (Party redesign §2/§5): emitted when the brain
@@ -597,7 +901,8 @@ export type BotLifecycle =
    */
   | { type: 'action'; name: string | null; args?: Record<string, unknown> }
   | { type: 'summon-ready' }
-  | { type: 'summon-stopped' }
+  // 260929: `reason` 'quit' = the companion called quit() and left on its own.
+  | { type: 'summon-stopped'; reason?: 'quit' | 'stop' | 'error' }
   | { type: 'exit'; code: number | null };
 
 /** A main → renderer current-action push (bot:action). */
@@ -645,6 +950,21 @@ export interface McInstall {
   mc_version: string | null;
   loader: 'fabric' | 'forge' | null;
   loader_version: string | null;
+  /**
+   * Every Minecraft version a `versions/fabric-loader-<loader>-<mc>` profile
+   * exists for (260909). Vanilla installs only; CurseForge instances carry
+   * one loader per instance and report []. Optional so a renderer can read
+   * records from an older main; see shared/mcSetup.ts for the readiness rule.
+   */
+  fabric_mc_versions?: string[];
+  /**
+   * Versions whose launcher profile (`fabric-loader-<loader>-<mc>`) has the
+   * skin mod in ITS OWN mods folder (260916). The wizard builds one
+   * "Sei <version>" profile per version at `<.minecraft>/sei/<version>/`, so
+   * readiness is per profile; see shared/mcSetup.ts. Absent when
+   * launcher_profiles.json could not be read.
+   */
+  sei_ready_versions?: string[];
   csl_installed: boolean;
   csl_version: string | null;
   /** True when persisted wizard state previously enabled Sei here. */
@@ -660,6 +980,31 @@ export interface McInstall {
   compatibility: 'full' | 'limited';
 }
 
+/** Which Minecraft Launcher build Start Minecraft opened. */
+export type MinecraftLauncherKind = 'mac' | 'windows' | 'windows-store';
+
+/**
+ * Result of startMinecraft (260929): the Sei profile was selected in the
+ * launcher (lastUsed = now) and the launcher was opened. The player still
+ * presses Play. `alreadyOpen`: the launcher was running, so it keeps its own
+ * selection and the player has to pick the profile next to Play.
+ */
+export type StartMinecraftResult =
+  | {
+      ok: true;
+      profileName: string;
+      mcVersion: string;
+      launcher: MinecraftLauncherKind;
+      alreadyOpen: boolean;
+    }
+  | {
+      ok: false;
+      /** no_profile: no Sei-ready profile. no_launcher / launch_failed: the profile is selected but the launcher did not open. */
+      reason: 'no_profile' | 'no_launcher' | 'launch_failed';
+      profileName?: string;
+      detail?: string;
+    };
+
 /** Per-install install result returned from runWizardInstall. */
 export interface WizardInstallResult {
   installId: string;
@@ -668,6 +1013,8 @@ export interface WizardInstallResult {
   message?: string;
   installedFabricVersion?: string;
   installedCslVersion?: string;
+  /** Vanilla-only (260916): the Minecraft version the "Sei <version>" profile was built for. */
+  installedMcVersion?: string;
   /**
    * Vanilla-only (260518-o1k T6). Summary of the mod-link pass that ran
    * between the Fabric install and the CSL config write. Absent for
@@ -793,6 +1140,41 @@ export type GenerateUniqueResult =
       message: string;
     };
 
+/* ── Portrait versions + regeneration (260909) ──────────────────────────── */
+
+/**
+ * Snapshot of a character's stored card-image versions. `versions` are the
+ * sidecar files `<uuid>-v<n>.png` recorded in metadata.portrait_versions (an
+ * unversioned canonical portrait is surfaced as a single virtual 'original'
+ * entry whose file is the canonical '<uuid>.png'); `active` is the file whose
+ * bytes currently sit on the canonical portrait (the only bytes that are
+ * mirrored to the cloud). `regenCount` / `regenLimit` drive the remaining
+ * regenerations copy (MAX_PORTRAIT_REGENS).
+ */
+export interface PortraitVersionsState {
+  versions: PortraitVersion[];
+  active: string | null;
+  regenCount: number;
+  regenLimit: number;
+}
+
+/**
+ * Result of chars:portrait-regenerate. Never throws for expected failures:
+ *  - not_signed_in     image generation rides the proxy (JWT-authed) in every
+ *                      backend mode, so a signed-out user cannot regenerate
+ *  - limit             MAX_PORTRAIT_REGENS reached for this character
+ *  - not_found         no such character
+ *  - busy              a regeneration for this character is already running
+ *  - network / generation_failed   the KusArt round trip failed
+ */
+export type PortraitRegenResult =
+  | { ok: true; state: PortraitVersionsState }
+  | {
+      ok: false;
+      code: 'not_signed_in' | 'limit' | 'not_found' | 'generation_failed' | 'network';
+      message: string;
+    };
+
 /**
  * Pipeline stages, in rough order. 'portrait' and 'persona' run in parallel;
  * 'skin' follows 'portrait' (img2skin). Renderer shows these as ritual copy
@@ -862,7 +1244,10 @@ export type AuthState =
  */
 export type SignInResult =
   | { ok: true; needsVerification?: boolean }
-  | { ok: false; code: 'invalid_credentials' | 'invalid_email' | 'network' | 'rate_limited'; message: string };
+  // 260816 W7 region gate — `region_blocked` is returned BEFORE any Supabase
+  // call when the detected IP region is unsupported by Anthropic or Polar
+  // (see src/shared/regionGate.ts). Detection fails open: unknown = allowed.
+  | { ok: false; code: 'invalid_credentials' | 'invalid_email' | 'network' | 'rate_limited' | 'region_blocked'; message: string };
 
 export type SignUpResult =
   | { ok: true; requiresVerification: boolean }
@@ -884,6 +1269,9 @@ export type SignUpResult =
   // signups never hits it.
   | { ok: false; code: 'weak_password' | 'invalid_email' | 'network' | 'under_13'; message: string }
   | { ok: false; code: 'cooldown'; message: string; retryAfterMs: number }
+  // 260816 W7 region gate — returned BEFORE any Supabase call (before even the
+  // COPPA/cooldown pre-checks) when the detected IP region is unsupported.
+  | { ok: false; code: 'region_blocked'; message: string }
   // 260729: NO LONGER PRODUCED. The 260605 honest already-registered surface
   // leaked account existence to anyone typing an address into signup, so an
   // already-registered email now silently sends a password-reset link and
@@ -894,7 +1282,9 @@ export type SignUpResult =
 
 export type OAuthResult =
   | { ok: true }
-  | { ok: false; reason: 'user_cancelled' | 'timeout' | 'browser_closed' | 'google_rejected' | 'exchange_failed' | 'port_collision' | 'network'; message: string };
+  // 260816 W7 region gate — `region_blocked` is returned BEFORE the browser
+  // opens when the detected IP region is unsupported (fail open on unknown).
+  | { ok: false; reason: 'user_cancelled' | 'timeout' | 'browser_closed' | 'google_rejected' | 'exchange_failed' | 'port_collision' | 'network' | 'region_blocked'; message: string };
 
 export type DeleteAccountResult =
   | { ok: true }
@@ -1270,8 +1660,36 @@ export interface RendererApi {
   // Bot supervision (request/response with timeouts — main enforces).
   // `stop(id)` stops one summoned character; `stop()` (no id) stops every
   // active session (used by sign-out / account-swap teardown).
-  summon(characterId: string): Promise<void>;
+  summon(characterId: string, game?: GameId): Promise<void>;
   stop(characterId?: string): Promise<void>;
+
+  // Game adapters (M0, 260908) — the game-neutral world + dashboard surface.
+  // See src/shared/gameIpc.ts. Minecraft keeps onLan/getLanState/lanCheckNow
+  // and the mcDashboard* members; these carry the per-game unions.
+  onWorldState(cb: (state: WorldState) => void): Unsubscribe;
+  getWorldStates(): Promise<WorldStates>;
+  worldCheckNow(game: GameId): Promise<WorldState>;
+  gameDashboardGet(characterId: string): Promise<GameDashboardSnapshot | null>;
+  gameDashboardSetWatching(characterId: string, watching: boolean): Promise<void>;
+  onGameDashboardSnapshot(cb: (s: GameDashboardSnapshot) => void): Unsubscribe;
+  gameSetPaused(characterId: string, paused: boolean): Promise<boolean>;
+  gameSetMode(characterId: string, mode: McGameMode): Promise<boolean>;
+
+  // Don't Starve Together (game-adapters M2, 260908) — see src/shared/dstIpc.ts.
+  /** Detect the game + helper mod (re-applies modsettings.lua when found). */
+  dstInstallState(): Promise<DstInstallState>;
+  /** Copy the helper mod from the game pack into the game and force-enable it. */
+  dstInstall(): Promise<DstInstallState>;
+  /** Open steam://rungameid/322330 (after re-applying the enable). */
+  dstLaunch(): Promise<void>;
+  /** macOS only: open System Settings > Privacy & Security > App Management (260909). */
+  dstOpenAppManagement(): Promise<void>;
+  /** The character's survivor, derived by the character on first use. */
+  dstSurvivorGet(characterId: string): Promise<DstSurvivorPick>;
+  /** Override (prefab) or forget (null) the survivor pick. */
+  dstSurvivorSet(characterId: string, prefab: string | null): Promise<DstSurvivorPick>;
+  /** Push: install progress while dstInstall runs. */
+  onDstInstallProgress(cb: (state: DstInstallState) => void): Unsubscribe;
 
   // Character CRUD
   listCharacters(): Promise<Character[]>;
@@ -1319,6 +1737,19 @@ export interface RendererApi {
   charsApplyPortrait(args: { characterId: string; bytesBase64: string; format: 'png' | 'jpeg' | 'webp' }): Promise<string>;
   /** Clear portrait_image and delete the on-disk file (ENOENT-tolerant). */
   charsRemovePortrait(characterId: string): Promise<void>;
+
+  // 260909 — card-image versions + regeneration (owned characters only).
+  /** List the stored portrait versions + which one is active. */
+  charsPortraitVersions(characterId: string): Promise<PortraitVersionsState>;
+  /**
+   * Generate a new portrait from the character's sheet / persona, store it as
+   * the next sidecar version and make it active (copied onto the canonical
+   * portrait, which triggers the cloud mirror). ~10-60s. Single-flight per
+   * character in main; never throws for expected failures.
+   */
+  charsPortraitRegenerate(characterId: string): Promise<PortraitRegenResult>;
+  /** Make a stored version the active portrait (copies its bytes onto the canonical file). */
+  charsPortraitSelect(args: { characterId: string; file: string }): Promise<PortraitVersionsState>;
 
   // Phase 11 D-16 — toggle public/private visibility of a character. Refuses
   // when the character is a bundled default. Triggers the standard cloud-mirror
@@ -1443,6 +1874,14 @@ export interface RendererApi {
    * stores it under the profile's avatars dir; returns the manifest.
    */
   avatarImport(characterId: string, zipBytes: ArrayBuffer): Promise<AvatarManifest>;
+  /**
+   * Download the character's CLOUD-hosted avatar zip (metadata.avatar, see
+   * cloudAvatarOf in characterSchema) and import it into the local store —
+   * same pipeline as avatarImport, but main resolves the URL itself from the
+   * character row (the renderer never picks what main fetches). Throws when
+   * the character has no cloud avatar or the download/import fails.
+   */
+  avatarDownload(characterId: string): Promise<AvatarManifest>;
   /** The character's imported avatar manifest, or null. */
   avatarGet(characterId: string): Promise<AvatarManifest | null>;
   /** Delete the character's imported Live2D model. */
@@ -1545,8 +1984,13 @@ export interface RendererApi {
    * a first-meeting greeting fires (any companion kind, empty transcript, never
    * chatted) and returns any greeting replies to append; returns [] otherwise.
    * Safe to call on every empty-history open — main no-ops when ineligible.
+   *
+   * `opts.firstMoment` (260926): this open is the guided first moment right
+   * after onboarding, so the greeting also ends by inviting the player to the
+   * given game (the renderer shows the matching buttons under it). Ignored
+   * when the greeting itself is ineligible.
    */
-  chatOpened(characterId: string): Promise<ChatMessage[]>;
+  chatOpened(characterId: string, opts?: ChatOpenedOptions): Promise<ChatMessage[]>;
   /**
    * Last chat line per character (Party redesign §2) — the roster "lastline"
    * preview without loading full transcripts. Keys are character ids; missing
@@ -1606,9 +2050,35 @@ export interface RendererApi {
   drawEnd(characterId: string): Promise<void>;
   /** Resume a game paused by a usage limit (260730): re-arms the turn clock. */
   drawResume(characterId: string): Promise<void>;
+  /**
+   * End a game paused on the credit wall (260926): straight to the gallery
+   * with the drawings so far, recorded as reason 'credit_wall'.
+   */
+  drawFinish(characterId: string): Promise<DrawGameState | null>;
   onDrawState(cb: (state: DrawGameState) => void): Unsubscribe;
   onDrawAiStroke(cb: (s: DrawAiStroke) => void): Unsubscribe;
   onDrawSnapshotRequest(cb: (r: DrawSnapshotRequest) => void): Unsubscribe;
+
+  // --- OS permission flows (260929) --- see src/shared/permissionsIpc.ts.
+  /** Current OS access status for the microphone or (macOS) Screen Recording. */
+  permissionsStatus(kind: OsPermissionKind): Promise<OsPermissionStatus>;
+  /** macOS: show the system mic prompt if never answered. True when granted. */
+  permissionsRequestMic(): Promise<boolean>;
+  /** Open the OS Settings page for this permission. False when there is none. */
+  permissionsOpenSettings(kind: OsPermissionKind): Promise<boolean>;
+  /** macOS: re-list sources to see whether Screen Recording is on now. */
+  permissionsProbeScreen(): Promise<boolean>;
+  /**
+   * Remember to reopen the share picker if Sei restarts in the next few
+   * minutes. Main refuses kind 'call' here: a call resume dials on boot, so
+   * only permissionsRelaunch (the player's restart click) may write one.
+   */
+  permissionsArmResume(resume: PermissionResume): Promise<void>;
+  permissionsClearResume(): Promise<void>;
+  /** One-shot read of the resume flag at boot (null when none or expired). */
+  permissionsTakeResume(): Promise<PermissionResume | null>;
+  /** "Restart Sei and continue": arm the resume flag, then relaunch. */
+  permissionsRelaunch(resume: PermissionResume): Promise<void>;
 
   // --- Backseat (260728) --- see src/shared/backseatIpc.ts for the tick
   // model, the image-grid geometry and the authority split. The renderer owns
@@ -1635,6 +2105,8 @@ export interface RendererApi {
   backseatShareLabel(sourceId: string): Promise<string | null>;
   /** Abort the in-flight backseat turn (the player barged in over it). */
   backseatInterrupt(characterId: string): Promise<void>;
+  /** 260925 act: whether the line pushed with SpokenLineContext.confirmId played to its end. */
+  backseatLineHeard(args: { characterId: string; confirmId: string; completed: boolean }): Promise<void>;
   backseatSetPaused(characterId: string, paused: boolean): Promise<void>;
   /** Answer to a backseat:clip-request; null when no segment was available. */
   backseatSaveClip(characterId: string, requestId: string, webmBase64: string | null): Promise<void>;
@@ -1655,6 +2127,37 @@ export interface RendererApi {
   mcDashboardSetWatching(characterId: string, watching: boolean): Promise<void>;
   /** Telemetry pushes (~every 2s while watching, plus on action change). */
   onMcDashboardSnapshot(cb: (s: McDashboardSnapshotPush) => void): Unsubscribe;
+
+  // --- Game packs (260908) --- see src/shared/gamePacks.ts for the contract
+  // and src/main/games/packs.ts for the store. A game adapter's runtime
+  // (Minecraft: mineflayer, minecraft-data, prismarine-viewer, gl, ...) is a
+  // download on first use, not part of the installer.
+  /** Current state of one game's pack (never touches the network). */
+  gamePackState(game: GameId): Promise<GamePackState>;
+  /**
+   * Start (or join) the download + install of one game's pack. Resolves with
+   * the state once the job settles (`ready`, or `error` carrying
+   * GAME_PACK_DOWNLOAD_FAILED); never rejects on a download failure so the
+   * card can render the retry from the returned state. Progress arrives on
+   * onGamePackProgress while it runs.
+   */
+  gamePackEnsure(game: GameId): Promise<GamePackState>;
+  /** Push: every state change of any game's pack (downloading ticks, ready, error). */
+  onGamePackProgress(cb: (push: GamePackProgressPush) => void): Unsubscribe;
+
+  // --- Stardew Valley (game-adapters M1, 260908) --- src/shared/stardewIpc.ts
+  /** Fresh detection: game folder, SMAPI, the Sei companion mod, its config. */
+  stardewInstallState(): Promise<StardewInstallState>;
+  /**
+   * Install SMAPI (downloaded from its GitHub release at install time) and
+   * place the companion mod; progress arrives on onStardewInstallProgress.
+   * Rejects with an Error whose message starts with the ErrorClass
+   * (GAME_NOT_INSTALLED / SMAPI_INSTALL_FAILED / GAME_INSTALL_FAILED).
+   */
+  stardewInstall(): Promise<StardewInstallState>;
+  /** Start the game through SMAPI (no-op with a message when it is already running). */
+  stardewLaunch(): Promise<StardewLaunchResult>;
+  onStardewInstallProgress(cb: (ev: StardewInstallProgressEvent) => void): Unsubscribe;
   /**
    * 260725 play/pause: freeze/resume the in-game brain. Paused: no game LLM
    * calls, in-flight actions abort-frozen; on a live voice call only voice
@@ -1695,6 +2198,8 @@ export interface RendererApi {
   voiceTtsStream(args: { characterId: string; text: string; more?: boolean; prev?: string }): Promise<{ streamId: string }>;
   /** Chunks/completions for voiceTtsStream (one subscription, ids multiplex). */
   onVoiceTtsChunk(cb: (push: VoiceTtsChunkPush) => void): Unsubscribe;
+  /** Local TTS spoke with a substitute voice pack (260908) — see VoiceTtsNoticePush. */
+  onVoiceTtsNotice(cb: (push: VoiceTtsNoticePush) => void): Unsubscribe;
   /**
    * Cloud speech-to-text (260724): transcribe one call utterance via
    * ElevenLabs Scribe (a resolved ElevenLabs key direct — dev env key or the
@@ -1723,6 +2228,32 @@ export interface RendererApi {
     { text: string } | { unavailable: true; reason?: 'no-credentials' | 'upstream' }
   >;
   /**
+   * Local speech packs (260816, china-compat W3+W4) — sherpa-onnx models for
+   * local TTS (en+zh voice packs) and SenseVoice STT, downloaded on demand
+   * into <userData>/speech-models/. Contract doc: src/main/speech/index.ts.
+   * States: 'absent' | 'downloading' (pct present) | 'ready'; `bytes` is the
+   * archive download size for the "Download? (XX MB)" prompt.
+   */
+  speechPackStatus(): Promise<{ packs: Record<string, SpeechPackStatePush> }>;
+  /** Download one pack (single-flight; mirror-first). Resolves when READY;
+   * rejects with SPEECH_DOWNLOAD_FAILED on failure. Progress arrives on
+   * onSpeechPackState pushes. */
+  speechPackDownload(args: { packId: string }): Promise<void>;
+  /** Remove one downloaded pack from disk. */
+  speechPackRemove(args: { packId: string }): Promise<void>;
+  /** Push: full pack-state snapshot, fired on every state/progress change. */
+  onSpeechPackState(cb: (push: { packs: Record<string, SpeechPackStatePush> }) => void): Unsubscribe;
+  /**
+   * Local SenseVoice STT (260816): transcribe one dictation utterance in main.
+   * `pcm` is raw Float32 mono audio at `sampleRate` (the dictation pipeline
+   * produces 16kHz). Rejects with VOICE_PACK_MISSING:stt-sensevoice when the
+   * model is not downloaded — the caller falls back to Whisper behavior.
+   */
+  speechSttTranscribe(args: {
+    pcm: ArrayBuffer;
+    sampleRate: number;
+  }): Promise<{ text: string; language?: string }>;
+  /**
    * Fire-and-forget connection prewarm for the voice upstreams (260724).
    * Called the moment the player's mic speech OPENS so the TCP+TLS handshake
    * to the proxy/ElevenLabs origin overlaps the utterance itself, and the
@@ -1741,8 +2272,18 @@ export interface RendererApi {
    * renderer-measured. When present and >0, main posts the "You and X called
    * for Y" system row to the chat transcript. Omitted when the call never
    * connected (error before live) so a failed dial never logs a call.
+   *
+   * `live` (active:true only, 260926): the call just CONNECTED, the moment
+   * the renderer's stopwatch starts. Main stamps it so it can close the call
+   * itself on an account switch with the same duration the renderer would
+   * have reported. A group join reports active+live in one call.
    */
-  voiceCallSetActive(args: { characterId: string; active: boolean; connectedMs?: number }): Promise<void>;
+  voiceCallSetActive(args: {
+    characterId: string;
+    active: boolean;
+    connectedMs?: number;
+    live?: boolean;
+  }): Promise<void>;
   /**
    * The call pipeline just went LIVE — ask the companion to speak first (like
    * greeting on spawn). In-game sessions get a {type:'voice-call-greet'} port
@@ -1810,8 +2351,13 @@ export interface RendererApi {
    * it is applied locally at playback (renderer lib/voice/pitchBus.ts) and
    * changes nothing about the synthesized bytes, so sending it would only
    * fragment the preview cache.
+   *
+   * Local TTS (260915): under `tts_engine: 'local'` the sample is a WAV from
+   * the local voice pack. `characterId` lets main pick the SAME local voice a
+   * call would (gender from the companion's resolved voiceId), so the pitch
+   * slider in Edit companion has something to play; `voiceId` may be omitted.
    */
-  voicePreview(args: { voiceId: string; calmness?: number }): Promise<ArrayBuffer>;
+  voicePreview(args: { voiceId?: string; calmness?: number; characterId?: string }): Promise<ArrayBuffer>;
   /**
    * Whether voice samples can synthesize right now (signed-in session, a dev
    * TTS key, or a stored BYOK ElevenLabs key). The picker disables sample
@@ -1874,12 +2420,35 @@ export interface RendererApi {
    * Install Fabric Loader (vanilla) and/or drop CustomSkinLoader into each selected install. Emits progress via onWizardProgress.
    * `sessionId` is a renderer-generated opaque id (e.g. crypto.randomUUID()) that lets a subsequent wizardCancel(sessionId) abort THIS install run.
    */
-  runWizardInstall(args: { sessionId: string; installIds: string[]; skinServerBaseUrl: string }): Promise<{ results: WizardInstallResult[] }>;
+  runWizardInstall(args: {
+    sessionId: string;
+    installIds: string[];
+    skinServerBaseUrl: string;
+    /**
+     * installId → Minecraft version the player picked for that vanilla
+     * launcher (260916). Absent or unjoinable → the newest supported version
+     * (shared/mcSetup.ts selectTargetMcVersion). Ignored for CurseForge.
+     */
+    mcVersions?: Record<string, string>;
+  }): Promise<{ results: WizardInstallResult[] }>;
   /**
    * Abort an in-flight runWizardInstall by sessionId. Main holds a Map<sessionId, AbortController>;
    * this resolves immediately after firing .abort() — the in-flight runWizardInstall promise then rejects.
    */
   wizardCancel(sessionId: string): Promise<void>;
+  /**
+   * Select the Sei profile in the Minecraft Launcher and open the launcher
+   * (260929). `mcVersion` picks that version's Sei profile; absent = the
+   * newest supported one. Never throws; see StartMinecraftResult.
+   */
+  startMinecraft(args?: { mcVersion?: string }): Promise<StartMinecraftResult>;
+  /**
+   * Is the Minecraft Launcher, or a game it started, running (260929)? null
+   * when the probe cannot tell. Asked a few times after a Start Minecraft
+   * press so the hint can change when the launcher quit (e.g. its own
+   * "Unable to update the launcher" error). Never throws.
+   */
+  minecraftRunning(): Promise<boolean | null>;
   /** Returns the persisted wizard state (which installs are enabled, last setup timestamp, last skin server port). */
   getWizardState(): Promise<WizardState>;
   /**
@@ -1912,6 +2481,14 @@ export interface RendererApi {
   }): Promise<SignUpResult>;
   signInGoogle(): Promise<OAuthResult>;
   cancelGoogle(): Promise<void>;
+  /**
+   * 260816 W7 region gate — cached region verdict for the renderer's
+   * pre-check, so the AuthPanel / SignInModal blocking popup can appear
+   * immediately instead of after a failed submit. Purely advisory: the
+   * MAIN-side check inside the auth handlers remains the authoritative gate.
+   * Fails open — a detection failure reports { loc: null, blocked: false }.
+   */
+  regionStatus(): Promise<RegionStatus>;
   signOut(): Promise<void>;
   deleteAccount(): Promise<DeleteAccountResult>;
   exportData(): Promise<ExportDataResult>;
@@ -2087,7 +2664,7 @@ export interface RendererApi {
    */
   feedbackSubmit: (args: { body: string; email?: string; claimReward?: boolean }) => Promise<
     | { ok: true; usage_reset: boolean; already_claimed: boolean }
-    | { ok: false; code: string }
+    | { ok: false; code: string; status?: number; reason?: string }
   >;
   /**
    * 260706 — report a companion (POST /report, 20/day per user). Reasons are
@@ -2142,6 +2719,18 @@ export interface RendererApi {
    * so the 15-05 Settings auto-render toggle can gate its disabled state.
    */
   onVisionCapability(cb: (cap: VisionCapability) => void): Unsubscribe;
+  /**
+   * china-compat W1 — list the selected provider's models with the user's own
+   * key (typed error token on failure, never a throw) and probe a
+   * provider+model with a 1-token completion through the main LLM layer.
+   */
+  llmListModels(provider: string): Promise<LlmListModelsResult>;
+  llmTest(provider: string, model: string): Promise<LlmTestResult>;
+  /** Pull the current config-derived LLM vision capability (seed; the
+   * llm:capability push keeps it current afterwards). */
+  getLlmCapability(): Promise<LlmCapability>;
+  /** Subscribe to `llm:capability` pushes (config/backends changes). */
+  onLlmCapability(cb: (cap: LlmCapability) => void): Unsubscribe;
   onLog(cb: (batch: LogBatch) => void): Unsubscribe;
   onLan(cb: (state: LanState) => void): Unsubscribe;
   /** Pull the current LAN state (snapshot). Used to seed a freshly-loaded
@@ -2282,6 +2871,15 @@ export interface RendererApi {
    * its stores + routing in response (260603 per-profile partitioning).
    */
   onScopeChanged(cb: (ev: ScopeChangedEvent) => void): Unsubscribe;
+  /**
+   * Fires at the START of an account scope change (260926), once main has
+   * ended the outgoing account's live sessions (chess, Draw!, backseat, calls,
+   * game bots) and before it switches the data scope. The renderer drops its
+   * half of those surfaces at once (hangs up the call without speaking,
+   * stops screen capture, clears the game mirrors) rather than leaving them
+   * live until app:scope-changed, which can be seconds later.
+   */
+  onScopeEnding(cb: () => void): Unsubscribe;
   /* ── Unique-companion generation (260703 procgen) ─────────────────────── */
   /**
    * Run the full unique-companion pipeline (cloud mode + signed-in only):
@@ -2469,7 +3067,11 @@ export interface RecoveryRepairResult {
 /* -------------------------------------------------------------------------- */
 
 export const IpcChannel = {
+  // Game adapters (M0, 260908): world:* + gamedash:* (src/shared/gameIpc.ts).
+  world: GameIpcChannel.world,
+  gamedash: GameIpcChannel.gamedash,
   bot: {
+    /** Invoke: {characterId, game?} (a bare characterId string is still accepted). */
     summon: 'bot:summon',
     stop: 'bot:stop',
     status: 'bot:status',
@@ -2489,6 +3091,18 @@ export const IpcChannel = {
    */
   vision: {
     capability: 'vision:capability',
+  },
+  /**
+   * china-compat W1 — the main-process multi-provider LLM layer's renderer
+   * surface: live model listing + 1-token test for the Settings picker, and
+   * the config-derived vision capability of the active chat backend
+   * (push on change + pull to seed, the lan.state/lan.get pattern).
+   */
+  llm: {
+    listModels: 'llm:list-models',
+    test: 'llm:test',
+    capability: 'llm:capability',
+    capabilityGet: 'llm:capability-get',
   },
   lan: {
     state: 'lan:state',
@@ -2518,6 +3132,11 @@ export const IpcChannel = {
     // atomic-writes to <userData>/portraits/<uuid>.png.
     applyPortrait: 'chars:apply-portrait',
     removePortrait: 'chars:remove-portrait',
+    // 260909 — card-image versions: sidecars <uuid>-v<n>.png next to the
+    // canonical <uuid>.png; select copies a sidecar onto the canonical file.
+    portraitVersions: 'chars:portrait-versions',
+    portraitRegenerate: 'chars:portrait-regenerate',
+    portraitSelect: 'chars:portrait-select',
     // Phase 11 D-16 — toggle a character's `shared` flag (public listing
     // visibility). Defaults are rejected by the handler. Triggers the
     // standard cloud-mirror upsert via saveCharacter.
@@ -2647,6 +3266,8 @@ export const IpcChannel = {
     end: 'draw:end',
     /** Invoke: resume after a usage-limit pause (260730). */
     resume: 'draw:resume',
+    /** Invoke: end a credit-wall-paused game into the gallery (260926). */
+    finish: 'draw:finish',
     /** Push: full DrawGameState on every change. */
     state: 'draw:state',
     /** Push: DrawAiStroke, one per stroke the character draws. */
@@ -2674,6 +3295,8 @@ export const IpcChannel = {
     shareLabel: 'backseat:share-label',
     /** Abort the in-flight turn: the player started talking over it. */
     interrupt: 'backseat:interrupt',
+    /** 260925 act: a confirmId line finished playing (or was cut off). */
+    lineHeard: 'backseat:line-heard',
     /** Push: raw tap PCM to the overlay renderer (ArrayBuffer payload). */
     pcm: 'backseat:pcm',
     /** Push: full BackseatState on every change. */
@@ -2682,6 +3305,19 @@ export const IpcChannel = {
     line: 'backseat:line',
     /** Push: main asking the renderer to harvest the rolling clip buffer. */
     clipRequest: 'backseat:clip-request',
+  },
+  // OS permission flows (260929) — microphone for calls, Screen Recording for
+  // screen share on macOS. See src/shared/permissionsIpc.ts.
+  permissions: {
+    status: 'permissions:status',
+    requestMic: 'permissions:request-mic',
+    /** Opens a System Settings / ms-settings page from a fixed allowlist. */
+    openSettings: 'permissions:open-settings',
+    probeScreen: 'permissions:probe-screen',
+    armResume: 'permissions:arm-resume',
+    clearResume: 'permissions:clear-resume',
+    takeResume: 'permissions:take-resume',
+    relaunch: 'permissions:relaunch',
   },
   // Minecraft dashboard (260721) — bot telemetry surfaced while summoned.
   // Protocol details in src/shared/mcDashboardIpc.ts.
@@ -2695,6 +3331,19 @@ export const IpcChannel = {
     /** Invoke: 260725 runtime game mode ({characterId, mode} → boolean). */
     setMode: 'mcdash:set-mode',
   },
+  /** Stardew Valley install / launch (game-adapters M1, src/main/games/stardew). */
+  stardew: StardewIpcChannel,
+  /** Game packs (260908, src/main/games/packs.ts). */
+  game: {
+    /** Invoke: {game} → GamePackState (disk + live state only, no network). */
+    packState: 'game:pack-state',
+    /** Invoke: {game} → GamePackState once the download/install job settles. */
+    packEnsure: 'game:pack-ensure',
+    /** Push (main → renderer): GamePackProgressPush on every state change. */
+    packProgress: 'game:pack-progress',
+  },
+  /** Don't Starve Together (game-adapters M2, 260908; src/shared/dstIpc.ts). */
+  dst: DstChannel,
   voice: {
     /** Invoke: synthesize a spoken line ({characterId, text} → ArrayBuffer of audio/mpeg). */
     tts: 'voice:tts',
@@ -2702,6 +3351,8 @@ export const IpcChannel = {
     ttsStream: 'voice:tts-stream',
     /** Push (main → renderer): VoiceTtsChunkPush — ordered audio chunks for a ttsStream. */
     ttsChunk: 'voice:tts-chunk',
+    /** Push (main → renderer): VoiceTtsNoticePush — local TTS substitute-pack notice (260908). */
+    ttsNotice: 'voice:tts-notice',
     /** Invoke: cloud STT for one call utterance ({pcm, language?} → {text} | {unavailable}). */
     stt: 'voice:stt',
     /** Invoke: prewarm the voice upstream connection (fired at mic speech open). */
@@ -2735,9 +3386,25 @@ export const IpcChannel = {
     /** Invoke: is a BYOK ElevenLabs key stored? → {present} (260725). */
     elevenKeyStatus: 'voice:eleven-key-status',
   },
+  /** Local speech packs + SenseVoice STT (260816, src/main/speech/). */
+  speech: {
+    /** Invoke: current pack states → { packs: Record<packId, SpeechPackStatePush> }. */
+    packStatus: 'speech:pack-status',
+    /** Invoke: download one pack ({packId}); resolves when ready. */
+    packDownload: 'speech:pack-download',
+    /** Invoke: remove one downloaded pack ({packId}). */
+    packRemove: 'speech:pack-remove',
+    /** Push (main → renderer): full pack-state snapshot on every change. */
+    packState: 'speech:pack-state',
+    /** Invoke: SenseVoice transcription ({pcm, sampleRate} → {text, language?}). */
+    sttTranscribe: 'speech:stt-transcribe',
+  },
   avatar: {
     /** Invoke: import a Live2D model zip for a character → AvatarManifest. */
     import: 'avatar:import',
+    /** Invoke: fetch + import the character's cloud-hosted avatar zip
+     * (metadata.avatar) → AvatarManifest. */
+    download: 'avatar:download',
     /** Invoke: the character's avatar manifest → AvatarManifest | null. */
     get: 'avatar:get',
     /** Invoke: delete the character's imported Live2D model. */
@@ -2829,6 +3496,10 @@ export const IpcChannel = {
     // new profile is initialized + bot stopped. The renderer re-bootstraps
     // (reloads config + characters, re-routes to onboarding-or-home) on it.
     scopeChanged: 'app:scope-changed',
+    // 260926: main pushes this at the START of a scope change, after it has
+    // ended the outgoing account's live sessions, so the renderer tears down
+    // its call / capture / game UI at once instead of at scope-changed.
+    scopeEnding: 'app:scope-ending',
     // Phase 11 plan 12 — main-side validated launcher of OS browser for
     // ToS / Privacy links from the renderer. The renderer can't call
     // shell.openExternal directly (contextIsolation), and we don't want to
@@ -2878,6 +3549,10 @@ export const IpcChannel = {
     // ('get') / persist ('set') a profile-scoped flag so the prompt fires at
     // most once per account.
     promptShown: 'wizard:prompt-shown',
+    // 260929: select the Sei profile + open the Minecraft Launcher.
+    startMinecraft: 'wizard:start-minecraft',
+    // 260929: is the launcher (or a game it started) still running?
+    minecraftRunning: 'wizard:minecraft-running',
   },
   auth: {
     state: 'auth:state',
@@ -2899,6 +3574,11 @@ export const IpcChannel = {
     // 260603 anti-abuse — renderer hands a solved Turnstile/hCaptcha token to
     // main before signup (inert until bot-protection is enabled). See captcha.ts.
     setCaptchaToken: 'auth:set-captcha-token',
+  },
+  // 260816 W7 region gate — renderer pre-check of the cached region verdict.
+  // {} -> { loc: string|null, blocked: boolean } (see shared/regionGate.ts).
+  region: {
+    status: 'region:status',
   },
   // Phase 11 — cloud-sync queue surface. status is request/response; retry is
   // request/response (force-retry a failed op); statusUpdate is a one-way

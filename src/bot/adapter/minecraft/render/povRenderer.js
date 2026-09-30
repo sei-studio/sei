@@ -34,6 +34,7 @@ import { writeFile, rename } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { skyColorForTime } from './skyColor.js'
 import { installTextureFallback } from './textureFallback.js'
+import { loadMeshlineWithViewerThree } from './meshlineThree.js'
 
 const require = createRequire(import.meta.url)
 
@@ -64,6 +65,9 @@ installTextureFallback(pvRequire, { warn: (m) => console.log(m) })
 // node-canvas-webgl exposes createCanvas from its /lib subpath (the package's own headless
 // example imports 'node-canvas-webgl/lib').
 const { createCanvas } = require('node-canvas-webgl/lib')
+// 260926: must precede the viewer require (primitives.js loads three.meshline,
+// which cannot find `three` in the game pack). See meshlineThree.js.
+loadMeshlineWithViewerThree(pvRequire)
 const { Viewer, WorldView } = require('prismarine-viewer/viewer')
 
 // ── Texture-atlas presence guard (260803) ───────────────────────────────────

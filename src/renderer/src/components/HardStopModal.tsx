@@ -48,7 +48,7 @@ import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
-import { formatRenewal } from '../lib/formatRenewal';
+import { useResetLine } from '../lib/useResetLine';
 import styles from './HardStopModal.module.css';
 
 /**
@@ -83,7 +83,10 @@ export function HardStopModal(): React.ReactElement | null {
   const hardStopActive = useCreditsStore((s) => s.hardStopActive);
   const hardStopReason = useCreditsStore((s) => s.hardStopReason);
   const overLimit = useCreditsStore((s) => s.over_limit);
-  const resetsAt = useCreditsStore((s) => s.resets_at);
+  // 260926: "Free play resets in 3 days (Wednesday, Sep 30)." The wall is a
+  // pause, not an exit, and this is the line that says so. null (omitted)
+  // when the snapshot carries no reset time.
+  const resetLine = useResetLine();
   const rateLimitedUntil = useCreditsStore((s) => s.rateLimitedUntil);
   const snapshotFailed = useCreditsStore((s) => s.snapshotFailed);
   const refresh = useCreditsStore((s) => s.refresh);
@@ -182,23 +185,17 @@ export function HardStopModal(): React.ReactElement | null {
     navigate({ kind: 'credits' });
   };
 
-  const resetsText = formatRenewal(resetsAt);
-
   return (
     // Click-outside intentionally does NOT dismiss (scrimClose omitted) — Close,
     // the CTAs, and ESC are the deliberate dismiss paths. Base tier: the consent
     // gate and the top up modal stack above this at 1100.
     <ModalShell title={t('Usage limit reached')} width={440} onClose={acknowledgeHardStop}>
       <p className={styles.body}>
-        {resetsText
-          ? t(
-              "You've used this week's allowance. It refreshes {when}. Upgrade for a bigger weekly allowance, or top up to keep playing now.",
-              { when: resetsText },
-            )
-          : t(
-              "You've used this week's allowance. Upgrade for a bigger weekly allowance, or top up to keep playing now.",
-            )}
+        {t(
+          "You've used this week's allowance. Upgrade for a bigger weekly allowance, or top up to keep playing now.",
+        )}
       </p>
+      {resetLine ? <p className={`${styles.body} ${styles.resetLine}`}>{resetLine}</p> : null}
       <ModalFooter>
         <Button kind="quiet" size="md" onClick={acknowledgeHardStop}>
           {t('Close')}

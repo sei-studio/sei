@@ -32,6 +32,8 @@ const ItemSchema = z.object({
 
 // The map payload is size^2 bytes -> ceil(n/3)*4 base64 chars; 33x33 = 1452.
 const RawSnapshotSchema = z.object({
+  // Game adapters (M0): the bot tags its snapshots; absent = an older bot.
+  game: z.literal('minecraft').optional(),
   ts: z.number().finite(),
   dimension: z.string().max(32).default('overworld'),
   pos: z.object({ x: z.number().finite(), y: z.number().finite(), z: z.number().finite() }),
@@ -59,7 +61,7 @@ export function initMcDashboardService(d: McDashboardDeps): void {
 export function publishMcDashboardSnapshot(characterId: string, raw: unknown): void {
   const parsed = RawSnapshotSchema.safeParse(raw);
   if (!parsed.success) return;
-  const snapshot: McDashboardSnapshot = { characterId, ...parsed.data };
+  const snapshot: McDashboardSnapshot = { ...parsed.data, game: 'minecraft', characterId };
   latest.set(characterId, snapshot);
   deps?.pushSnapshot(snapshot);
 }

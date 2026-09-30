@@ -120,15 +120,26 @@ export const ZH_SCREENS_A: Record<string, string> = {
   'Always bright': '始终明亮',
   'Always bright keeps the picture lit and turns off the talking indicator.':
     '始终明亮会让画面保持亮起，并关闭说话指示。',
-  'Give this companion a Live2D body on the floating avatar. Import a Live2D model as a .zip: it should contain a .model3.json, a .moc3, textures, and optionally expressions.':
-    '为这位伙伴的悬浮形象加上 Live2D 身体。导入 .zip 格式的 Live2D 模型：需要包含 .model3.json、.moc3、贴图，以及可选的表情文件。',
+  'Give this companion a Live2D body on the floating avatar. Import a model as a .zip: either a Live2D model (.model3.json, .moc3, textures) or a simple layered rig (rig.json plus its layer images).':
+    '为这位伙伴的悬浮形象加上 Live2D 身体。导入 .zip 格式的模型：可以是 Live2D 模型（.model3.json、.moc3、贴图），也可以是简单的分层立绘（rig.json 加上图层图片）。',
   'Upload Live2D model (.zip)': '上传 Live2D 模型（.zip）',
   'The model stays on this computer. It is never uploaded.':
     '模型只保存在这台电脑上，不会被上传。',
+  'If you are using a third-party avatar, please consider giving credit to the creator in your character description.':
+    '如果你使用的是第三方形象，请考虑在角色描述中注明原作者。',
+  'This avatar was uploaded by a user and is not affiliated with Sei. If it is inappropriate, please report this companion.':
+    '这个形象由用户上传，与 Sei 无关。如果内容不当，请举报这位伙伴。',
+  'Download ({mb} MB)': '下载（{mb} MB）',
+  'Downloading...': '下载中...',
+  'Optional. The avatar shows on the floating overlay once downloaded.':
+    '可选。下载后形象会显示在悬浮窗上。',
+  'Could not download the avatar. Check your connection and try again.':
+    '无法下载形象。请检查网络后重试。',
   'That file is not a .zip archive.': '这个文件不是 .zip 压缩包。',
   'That archive is too large.': '这个压缩包太大了。',
-  'Could not read that model. It needs a .model3.json, a .moc3 and its textures.':
-    '无法读取这个模型。它需要 .model3.json、.moc3 和对应的贴图。',
+  'Could not read that model. It needs a .model3.json with its .moc3 and textures, or a rig.json with its layer images.':
+    '无法读取这个模型。它需要 .model3.json（含 .moc3 和贴图），或 rig.json（含图层图片）。',
+  '{name}, layered rig': '{name}，分层立绘',
   'Importing...': '导入中...',
   'Loading model...': '加载模型中...',
   'This model could not be rendered.': '这个模型无法渲染。',

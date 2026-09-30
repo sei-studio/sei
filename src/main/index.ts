@@ -16,16 +16,26 @@
  *   - RESEARCH §Pitfall 5 (everything behind app.whenReady)
  *   - CONTEXT D-15, D-21, D-32, project constraints
  */
+// MUST stay the first import: refuses --remote-debugging-* / --inspect* /
+// --js-flags in packaged stable builds before anything else evaluates.
+import './remoteDebugGuard';
 import { app, BrowserWindow, session, systemPreferences } from 'electron';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { closeSplashWindow, createMainWindow, createSplashWindow } from './windowChrome';
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { isAnalyticsActive, shutdownAnalytics, capture } from './analytics';
-import { watchLan } from './lanWatcher';
-import { createBotSupervisor } from './botSupervisor';
+import { notePreGateFailure, clearSummonBlock, clearSummonBlocksOfClass } from './summonGuard';
+import { createBotSupervisor, SUMMON_CANCELLED } from './botSupervisor';
+import { registerGameModule, getGameModule, listGameModules } from './games';
+import { createMinecraftGameModule } from './games/minecraft';
+import { createDontStarveGameModule } from './games/dontstarve';
+import { createStardewGameModule } from './games/stardew';
+import type { GameId, WorldState, WorldStates } from '../shared/gameIpc';
 import { isCallActive, wasCallRecentlyActive, activeCallIds, clearAllCalls } from './voice/callState';
 import { initCallOverlay, closeCallOverlay } from './callOverlay';
+import { trackScopedWrite, isAccountTeardownActive } from './profile/scopeBarrier';
+import { sessionEndProps, isSessionFailure, type SessionEndProps } from './sessionEnd';
 import { formatPlayDuration, playSummaryText } from './chat/playSummary';
 import { initUpdater } from './updater';
 import { initNotices } from './notices';
@@ -35,12 +45,13 @@ import { safeStorageBackendKind } from './apiKeyStore';
 import { loadWizardState, saveWizardState } from './wizardStateStore';
 import { registerPortraitScheme, registerPortraitProtocol } from './portraitProtocol';
 import { cleanupRelocationLeftover } from './relocate';
+import { initMcDashboardService } from './mcDashboard/mcDashboardService';
 import {
-  initMcDashboardService,
-  publishMcDashboardSnapshot,
-  clearMcDashboard,
-} from './mcDashboard/mcDashboardService';
-import { IpcChannel, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type GenProgressEvent, type VisionCapability, type ChatMessage, type SpokenLineContext } from '../shared/ipc';
+  initGameDashboardService,
+  publishGameDashboardSnapshot,
+  clearGameDashboard,
+} from './games/gameDashboardService';
+import { IpcChannel, forgeHostBlock, FORGE_HOST_BLOCKED, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type GenProgressEvent, type VisionCapability, type ChatMessage, type SpokenLineContext } from '../shared/ipc';
 
 // Lock the app name early so app.getPath('userData') resolves to
 // "Sei" (packaged) or "Sei Dev" (electron-vite dev) — keeping dev state
@@ -86,7 +97,22 @@ let mainWindow: BrowserWindow | null = null;
 // first paints (or by the failsafe timer).
 let splashWindow: BrowserWindow | null = null;
 let latestLanState: LanState = { kind: 'closed' };
-let lanWatcherHandle: ReturnType<typeof watchLan> | null = null;
+// Game adapters (M0, 260908): the Minecraft GameModule wraps the LAN watcher;
+// latestLanState is kept in sync from its world:state pushes for the callers
+// (diagnostics, the chat surface) that still read the Minecraft-shaped state.
+const minecraftModule = createMinecraftGameModule();
+registerGameModule(minecraftModule);
+// Don't Starve Together (game-adapters M2, 260908): the discovery listener
+// + install + summon handoff module. Its watcher binds the fixed loopback
+// port when the watchers start below; `GAME_CATALOG.available` stays false
+// until the live checklist passes, so registering here lights no tile.
+const dontstarveModule = createDontStarveGameModule();
+registerGameModule(dontstarveModule);
+// Stardew Valley (game-adapters M1, 260908): hello watcher + install/launch.
+// Registering does not light the picker tile (GAME_CATALOG.available flips
+// after the live checklist).
+registerGameModule(createStardewGameModule({ logger }));
+let watchersRunning = false;
 let supervisor: ReturnType<typeof createBotSupervisor> | null = null;
 // Loopback HTTP server serving persona skin PNGs to
 // CustomSkinLoader on the host's MC client. Bound on boot (port 0 → OS-chosen
@@ -112,6 +138,17 @@ function rendererTarget(): string {
     return process.env.ELECTRON_RENDERER_URL;
   }
   return path.join(__dirname, '../renderer/index.html');
+}
+
+/** Account switch (260926): close every open call from main (see accountSwitchCalls.ts). */
+async function endVoiceCallsForAccountSwitch(reason: string): Promise<void> {
+  const { endCallsForAccountSwitch } = await import('./voice/accountSwitchCalls');
+  await endCallsForAccountSwitch(reason, {
+    setVoiceCall: (id, onCall) => supervisor?.setVoiceCall(id, onCall),
+    closeOverlay: closeCallOverlay,
+    capture,
+    emitCallSession,
+  });
 }
 
 /**
@@ -146,6 +183,9 @@ function wireMainWindowEvents(win: BrowserWindow): void {
   win.webContents.on('did-finish-load', () => {
     if (!win.isDestroyed()) {
       win.webContents.send(IpcChannel.lan.state, latestLanState);
+      for (const mod of listGameModules()) {
+        win.webContents.send(IpcChannel.world.state, mod.getWorldState());
+      }
     }
   });
   win.webContents.on('did-navigate', sweepVoiceCalls);
@@ -162,8 +202,46 @@ function broadcastLan(state: LanState): void {
     (state.kind === 'open' ? ` (port=${state.port}, motd=${JSON.stringify(state.motd)})` : ''),
   );
   latestLanState = state;
+  // 260929: a Forge pre-gate refusal blocks automatic re-launches only while
+  // the world it was about is still up; release it once the host changes.
+  if (!forgeHostBlock(state.kind === 'open' ? state.host : undefined)) {
+    clearSummonBlocksOfClass(FORGE_HOST_BLOCKED);
+  }
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(IpcChannel.lan.state, state);
+  }
+}
+
+/**
+ * Game adapters (M0): every game module's watcher pushes here. Minecraft's
+ * state also feeds the legacy lan:state channel (one release as an alias);
+ * every game rides world:state.
+ */
+function broadcastWorld(state: WorldState): void {
+  if (state.game === 'minecraft') {
+    const { game: _g, ...lan } = state;
+    broadcastLan(lan as LanState);
+  } else {
+    console.log(`[sei/world] ${state.game} world ${state.kind}`);
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(IpcChannel.world.state, state);
+  }
+}
+
+function worldStates(): WorldStates {
+  const out: WorldStates = {};
+  for (const mod of listGameModules()) out[mod.id] = mod.getWorldState();
+  return out;
+}
+
+async function worldCheckNow(game: GameId): Promise<WorldState> {
+  const mod = getGameModule(game);
+  if (!mod) return { game, kind: 'unavailable' } as WorldState;
+  try {
+    return await mod.watcher.checkNow();
+  } catch {
+    return mod.getWorldState();
   }
 }
 
@@ -204,32 +282,48 @@ async function appendChatMessage(characterId: string, message: ChatMessage): Pro
   pushChatMessage(characterId, message);
 }
 
-// Play-session tracking: when a bot goes online we stamp the moment; when it
-// leaves (idle/error) we post a Discord-style "You and X played Minecraft for Y"
-// system row into that character's chat transcript. First-online wins so a
-// mid-session backend-switch re-emit doesn't reset the clock.
-const playStartedAt = new Map<string, number>();
+// Play-session tracking: when a bot goes online we stamp the moment (and the
+// game); when it leaves (idle/error) we post a Discord-style "You and X played
+// <game> for Y" system row into that character's chat transcript. First-online
+// wins so a mid-session backend-switch re-emit doesn't reset the clock.
+const playStartedAt = new Map<string, { at: number; game: GameId }>();
+/** 260926: boot-phase props of the last summon-ready, consumed by the first-online capture. */
+const pendingBootProps = new Map<string, Record<string, number | string | null>>();
 
-/** Post the "You and <name> played Minecraft for <duration>" system row. */
-async function emitPlaySession(characterId: string, durationMs: number): Promise<void> {
+/** Post the "You and <name> played <game> for <duration>" system row, then
+ *  fire the rolling-summary fold like every other game surface does. */
+async function emitPlaySession(characterId: string, durationMs: number, game: GameId): Promise<void> {
   let name = 'your companion';
   let rowLanguage: 'zh' | undefined;
+  let personaExpanded: string | undefined;
   try {
     const { getCharacter } = await import('./characterStore');
     const c = await getCharacter(characterId);
     if (c?.name) name = c.name;
+    personaExpanded = c?.persona?.expanded;
     const { characterLanguage } = await import('../shared/chatLanguage');
     if (characterLanguage(c?.metadata) === 'zh') rowLanguage = 'zh';
   } catch {
     /* fall back to the generic name */
   }
+  // The game's proper name comes from its module (Minecraft: 'Minecraft').
+  const gameName = getGameModule(game)?.displayName ?? (game === 'minecraft' ? 'Minecraft' : game);
   await appendChatMessage(characterId, {
     id: randomUUID(),
     role: 'system',
-    text: playSummaryText(name, 'Minecraft', durationMs, rowLanguage),
+    text: playSummaryText(name, gameName, durationMs, rowLanguage),
     ts: Date.now(),
-    event: { kind: 'play', game: 'minecraft', durationMs },
+    event: { kind: 'play', game, durationMs },
   });
+  // Continuity OUT (CLAUDE.md contract): chess/draw/backseat fold after their
+  // play row; the bot session was the one surface that never did, so its rows
+  // only reached the rolling summary on the chat surface's next fold.
+  try {
+    const { foldIfDue } = await import('./chat/continuity');
+    void foldIfDue(characterId, personaExpanded).catch(() => {});
+  } catch {
+    /* best-effort */
+  }
 }
 
 /** Voice calls (260705): post the "You and <name> called for <duration>" row.
@@ -267,8 +361,10 @@ async function emitCallSession(characterId: string, durationMs: number): Promise
 function endVoiceCallFromCompanion(characterId: string): void {
   void (async () => {
     try {
-      const { setCallActive } = await import('./voice/callState');
-      setCallActive(characterId, false);
+      // 260926: remembered until the renderer's report posts the row, so an
+      // account switch in between can still close it in the right account.
+      const { endCallFromCompanion } = await import('./voice/callState');
+      endCallFromCompanion(characterId);
     } catch { /* state module unavailable — renderer teardown still proceeds */ }
   })();
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -295,6 +391,49 @@ function broadcastAction(
   }
 }
 
+/**
+ * Close a live play session: post the "played for X" row and fire
+ * `bot_session_ended`. The FIRST terminal status closes it (a kick loop's
+ * error, then the exit's idle, report once). 260929: carries `reason` (plus
+ * `error_class` / `kick_code`, see sessionEnd.ts) and `duration_s`; a session
+ * that ended on an error also fires `bot_session_failed`, the post-join
+ * counterpart of summon_failed. No-op when the session never went live.
+ */
+function closePlaySession(id: string, end: SessionEndProps, failed: boolean): void {
+  const started = playStartedAt.get(id);
+  if (started === undefined) return;
+  playStartedAt.delete(id);
+  const durationMs = Date.now() - started.at;
+  const durationS = Math.round(durationMs / 1000);
+  // Tracked (260926): an account switch stops the bots and then drains
+  // this, so the row lands in the outgoing account's transcript.
+  void trackScopedWrite(emitPlaySession(id, durationMs, started.game)).catch(() => {});
+  // One event name across games (the analytics dashboard sums playtime by
+  // event name, keyed on `duration_ms`); `game` is the split.
+  capture('bot_session_ended', {
+    character_id: id,
+    duration_ms: durationMs,
+    duration_s: durationS,
+    game: started.game,
+    ...end,
+  });
+  // Deliberately no duration_ms: not a playtime event (not in SESSION_EVENTS),
+  // and the ended event above already counts this time.
+  if (failed) {
+    capture('bot_session_failed', { character_id: id, duration_s: durationS, game: started.game, ...end });
+  }
+}
+
+/**
+ * 260929: app quit. analytics is flushed BEFORE the supervisor drains the
+ * bots (before-quit), so the drain's idle statuses used to close sessions
+ * into a shut-down client and a quit sent no bot_session_ended at all. Close
+ * every live session here first; the later idle finds nothing to close.
+ */
+function endAllPlaySessionsForQuit(): void {
+  for (const id of [...playStartedAt.keys()]) closePlaySession(id, { reason: 'app_quit' }, false);
+}
+
 function broadcastStatus(status: BotStatus): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(IpcChannel.bot.status, status);
@@ -314,9 +453,9 @@ function broadcastStatus(status: BotStatus): void {
   // upserts (renderer keeps showing the error over the still-live session).
   if (status.kind === 'idle') currentStatuses.delete(id);
   else currentStatuses.set(id, status);
-  // Minecraft dashboard (260721): the session is gone — drop the cached
-  // telemetry so a later summon never hydrates a stale snapshot.
-  if (status.kind === 'idle') clearMcDashboard(id);
+  // Dashboard (260721): the session is gone — drop the cached telemetry so a
+  // later summon never hydrates a stale snapshot (every game's cache).
+  if (status.kind === 'idle') clearGameDashboard(id);
   if (transientError) return;
   // Track online-ness for chat routing (only route to a spawned bot).
   if (status.kind === 'online') onlineIds.add(id);
@@ -324,19 +463,28 @@ function broadcastStatus(status: BotStatus): void {
   // Play-session bookkeeping: stamp first-online, and on the terminal
   // idle/error post a "played for X" row (only if the bot was actually live).
   if (status.kind === 'online') {
+    // 260828: a successful summon proves the pre-gate condition is gone —
+    // release the auto-retry block (see summonGuard.ts).
+    clearSummonBlock(id);
     if (!playStartedAt.has(id)) {
-      playStartedAt.set(id, Date.now());
+      const game: GameId = status.game ?? 'minecraft';
+      playStartedAt.set(id, { at: Date.now(), game });
       // Analytics (260707): first-online is the "bot reached the world" signal.
-      capture('character_summoned', { character_id: id });
+      // 260926: the attempt's boot-phase breakdown (supervisor onSummonReady,
+      // which fires just before this 'online' status), so dashboards can see
+      // where cold-boot time goes on successful summons too.
+      const bootProps = pendingBootProps.get(id) ?? {};
+      pendingBootProps.delete(id);
+      // 260929: which client hosted the world, so a Forge/modded join that
+      // does succeed shows up (summon_failed already carries host_client).
+      const hostProps =
+        game === 'minecraft'
+          ? { host_client: latestLanState.kind === 'open' ? latestLanState.host?.client ?? null : null }
+          : {};
+      capture('character_summoned', { character_id: id, game, ...bootProps, ...hostProps });
     }
   } else if (status.kind === 'error' || status.kind === 'idle') {
-    const startedAt = playStartedAt.get(id);
-    if (startedAt !== undefined) {
-      playStartedAt.delete(id);
-      const durationMs = Date.now() - startedAt;
-      void emitPlaySession(id, durationMs);
-      capture('bot_session_ended', { character_id: id, duration_ms: durationMs });
-    }
+    closePlaySession(id, sessionEndProps(status, { accountTeardown: isAccountTeardownActive() }), isSessionFailure(status));
     // 260720: the thin summon_failed capture that used to live here (terminal
     // error with no live session → character_id + reason) moved to the
     // supervisor's onSummonFailure wiring (see createBotSupervisor below),
@@ -400,6 +548,20 @@ function getLanMotd(): string | null {
 }
 
 async function bootstrap(): Promise<void> {
+  // 0-pre. Install marker (260926). MUST be the first thing bootstrap does:
+  //        it tells a fresh install from an existing one by probing for Sei
+  //        state under userData, which every later step starts creating. The
+  //        installer_first_launch event itself fires after analytics init
+  //        (step 5b-ii). Never throws. See firstLaunch.ts.
+  try {
+    const { noteLaunch } = await import('./firstLaunch');
+    const { paths } = await import('./paths');
+    const kind = noteLaunch(paths.userData(), app.getVersion());
+    if (kind !== 'seen') logger.info(`install marker: ${kind}`);
+  } catch (err) {
+    logger.warn(`install marker failed: ${(err as Error).message}`);
+  }
+
   // 0. Auth foundation — wire safeStorage-backed session storage into the
   //    Supabase client BEFORE any auth IPC handler can call getClient().
   //    This is the only legal point in the lifecycle to call setStorageAdapter
@@ -472,6 +634,14 @@ async function bootstrap(): Promise<void> {
   // a no-op on a fresh install that has no is_default files.
   try { await runDefaultsToWorldMigration(); }
   catch (err) { logger.warn(`defaults→world migration failed: ${(err as Error).message}`); }
+
+  // 1b-4. First-launch UI language detection (260816, china-compat): a
+  // Chinese system locale switches the UI to zh, once, only while the user
+  // has never chosen a language. See localeDetect.ts for the exact rule.
+  {
+    const { applyLocaleDetection } = await import('./localeDetect');
+    await applyLocaleDetection();
+  }
 
   // 1b-3. Cloud-default self-heal. The signed-in→cloud default is written on the
   // sign-in TRANSITION only; a session-restore launch re-points the scope at
@@ -610,11 +780,15 @@ async function bootstrap(): Promise<void> {
   // 1c. Microphone permission (voice calls, 260707). Electron's default
   //     permission handler DENIES `media` requests in a packaged app, so
   //     getUserMedia in the renderer would reject before macOS TCC is ever
-  //     consulted. Grant mic (and the check) for our own renderer content, and
-  //     on macOS proactively trigger the OS prompt so the "allow microphone"
-  //     dialog appears at a sane time rather than mid-call. Pairs with the
-  //     NSMicrophoneUsageDescription + audio-input entitlement in the packaged
-  //     build (see electron-builder.yml / build/entitlements.mac.plist).
+  //     consulted. Grant mic (and the check) for our own renderer content.
+  //     Pairs with the NSMicrophoneUsageDescription + audio-input entitlement
+  //     in the packaged build (see electron-builder.yml /
+  //     build/entitlements.mac.plist).
+  //     260929: the macOS "allow microphone" prompt is no longer raised here at
+  //     boot, where it arrived before the player knew why Sei wanted a mic. It
+  //     is asked on the first Call press instead (permissions/permissionsService
+  //     requestMic, called from the voice store's startCall), and a denial gets
+  //     a card with an Open Settings button (MicAccessCard).
   //     `clipboard-sanitized-write` must stay in the allowlist: installing these
   //     handlers replaces Electron's grant-all default, so without it every
   //     navigator.clipboard.writeText (all copy buttons) rejects with
@@ -629,21 +803,13 @@ async function bootstrap(): Promise<void> {
       cb(allowMedia(permission));
     });
     session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowMedia(permission));
-    if (process.platform === 'darwin') {
-      try {
-        if (systemPreferences.getMediaAccessStatus('microphone') !== 'granted') {
-          void systemPreferences.askForMediaAccess('microphone').catch(() => {});
-        }
-      } catch {
-        /* older Electron / non-mac path — getUserMedia still prompts on first use */
-      }
-    } else if (process.platform === 'win32') {
+    if (process.platform === 'win32') {
       // 260709 — Windows never shows a per-app mic prompt for desktop apps:
       // getUserMedia either works silently or fails because the OS privacy
       // toggle ("Let desktop apps access your microphone") is off. There is
       // no askForMediaAccess on Windows, so we can only read the status and
-      // leave a loud diagnostic; the renderer's call-error copy tells the
-      // user which Settings page fixes it.
+      // leave a loud diagnostic; the renderer's MicAccessCard opens the
+      // Settings page that fixes it.
       try {
         const micStatus = systemPreferences.getMediaAccessStatus('microphone');
         if (micStatus !== 'granted') {
@@ -685,16 +851,16 @@ async function bootstrap(): Promise<void> {
   // target so it can load the overlay-mode bundle.
   initCallOverlay({ preloadPath: preloadPath(), rendererUrlOrPath: rendererTarget() });
 
-  // 3. LAN watcher (D-21 — single instance for the whole app session)
-  lanWatcherHandle = watchLan({
-    onUpdate: broadcastLan,
-    staleMs: 3000,
-  });
+  // 3. World watchers (D-21 — single instance per game for the whole app
+  // session). Minecraft's is the LAN watcher behind its GameModule.
+  for (const mod of listGameModules()) mod.watcher.start({ onUpdate: broadcastWorld });
+  watchersRunning = true;
 
   // 4. Bot supervisor
   supervisor = createBotSupervisor({
     getLanPort,
     getLanMotd,
+    getLanHost: () => (latestLanState.kind === 'open' ? latestLanState.host : undefined),
     sendStatus: broadcastStatus,
     // Phase 15 (D-10/VIS-03): forward the bot's vision-capability push to the
     // renderer over the dedicated vision:capability channel.
@@ -719,9 +885,10 @@ async function bootstrap(): Promise<void> {
     },
     // Party redesign §2/§5 — the live bot's current world action (verb line).
     onBotAction: broadcastAction,
-    // Minecraft dashboard (260721) — telemetry snapshots from the live bot.
-    // The service validates (Zod), caches the latest, and pushes mcdash:snapshot.
-    onDashboard: publishMcDashboardSnapshot,
+    // Dashboard (260721) — telemetry snapshots from the live bot, dispatched
+    // on snapshot.game (Minecraft → mcDashboardService → mcdash:snapshot;
+    // other games → gamedash:snapshot). Validated before the renderer sees it.
+    onDashboard: publishGameDashboardSnapshot,
     sendLog: broadcastLog,
     // Hand the skin server's baseUrl into each bot init payload.
     // Closure-via-getter so a later restart of the skin server (port-drift
@@ -753,21 +920,39 @@ async function bootstrap(): Promise<void> {
     // phase, exit code, redacted stderr/stdout tails, and MC/world context.
     // Note summon_phase == 'mid_session' rows are post-summon crashes; filter
     // them out of summon-failure-rate insights.
+    // 260926: stash the boot breakdown for the character_summoned capture in
+    // broadcastStatus (the 'online' status follows synchronously).
+    onSummonReady: (characterId, bootProps) => {
+      pendingBootProps.set(characterId, bootProps);
+    },
     onSummonFailure: (info) => {
+      // 260828 retry-loop guard: a pre-gate refusal is deterministic — arm the
+      // auto-retry block so the launch() tool and the voice launch honors stop
+      // re-attempting it (manual Summon clicks clear it; see summonGuard.ts).
+      // Synchronous and before the async capture so the block is armed even if
+      // analytics is disabled or the dynamic imports fail.
+      if (info.phase === 'pre_gate') notePreGateFailure(info.characterId, info.errorClass);
       void (async () => {
         try {
           const { buildSummonDiagnostic } = await import('./diagnostics');
-          const { captureDiagnostic, isSignedInAnalytics } = await import('./analytics');
+          const { captureDiagnosticThrottled, isSignedInAnalytics } = await import('./analytics');
           const diag = buildSummonDiagnostic(info, {
             lan: latestLanState,
             signedIn: isSignedInAnalytics(),
             packaged: app.isPackaged,
           });
-          captureDiagnostic('summon_failed', {
-            character_id: info.characterId,
-            reason: info.errorClass,
-            ...diag,
-          });
+          // 260828: identical consecutive failures (same character + class +
+          // phase) collapse to one event per window, carrying repeat_count, so
+          // a retry loop cannot flood the dashboard (56 events/13min incident).
+          captureDiagnosticThrottled(
+            'summon_failed',
+            `${info.characterId}:${info.errorClass}:${info.phase}`,
+            {
+              character_id: info.characterId,
+              reason: info.errorClass,
+              ...diag,
+            },
+          );
         } catch (err) {
           logger.warn(`summon diagnostic capture failed: ${(err as Error).message}`);
         }
@@ -781,7 +966,11 @@ async function bootstrap(): Promise<void> {
   //     supervisor + window before initAuthState can fire an auth event.
   {
     const { initProfileScope } = await import('./profile/profileScope');
-    initProfileScope({ supervisor, getMainWindow: () => mainWindow });
+    initProfileScope({
+      supervisor,
+      getMainWindow: () => mainWindow,
+      endVoiceCalls: endVoiceCallsForAccountSwitch,
+    });
   }
 
   // Chess minigame (260710): module-state deps for src/main/chess/chessService.
@@ -866,6 +1055,14 @@ async function bootstrap(): Promise<void> {
       }
     },
   });
+  // Game adapters (M0): the generic dashboard push for the non-Minecraft games.
+  initGameDashboardService({
+    pushSnapshot: (s) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(IpcChannel.gamedash.snapshot, s);
+      }
+    },
+  });
 
   // 5. IPC handlers
   registerIpcHandlers({
@@ -891,7 +1088,7 @@ async function bootstrap(): Promise<void> {
     // the 2s poll window, and the stale 'closed' had Marv insisting an open
     // world was "not broadcasting".
     refreshLanState: async () => {
-      try { await lanWatcherHandle?.checkNow(); } catch { /* best-effort */ }
+      try { await minecraftModule.watcher.checkNow(); } catch { /* best-effort */ }
     },
     // 260703: like refreshLanState but RETURNS the fresh state — backs the
     // `lan:check-now` channel the summon click awaits. checkNow's emit path
@@ -900,11 +1097,16 @@ async function bootstrap(): Promise<void> {
     // cached snapshot on error.
     checkLanNow: async () => {
       try {
-        return (await lanWatcherHandle?.checkNow()) ?? latestLanState;
+        const fresh = await minecraftModule.watcher.checkNow();
+        const { game: _g, ...lan } = fresh;
+        return lan as LanState;
       } catch {
         return latestLanState;
       }
     },
+    // Game adapters (M0): the per-game world snapshot + fresh check.
+    getWorldStates: worldStates,
+    worldCheckNow,
     // Snapshot pull for the renderer's summons map (see broadcastStatus).
     getBotStatuses: () => [...currentStatuses.values()],
     // Task 4 — only route chat into a bot that's fully spawned in-world.
@@ -916,6 +1118,8 @@ async function bootstrap(): Promise<void> {
     // push the replies live. No canned system row (task 7) — the companion
     // reports the failure in its own words.
     notifyLaunchFailed: (id, reason) => {
+      // 260926: a stop cancelled the join. The player did that on purpose.
+      if (reason.startsWith(SUMMON_CANCELLED)) return;
       void (async () => {
         try {
           const { sendLaunchFailedTurn } = await import('./chat/chatService');
@@ -929,7 +1133,7 @@ async function bootstrap(): Promise<void> {
     // Voice calls (260705): a live call ended — post the "You and X called for
     // Y" system row (renderer supplies how long audio actually flowed).
     notifyCallEnded: (id, connectedMs) => {
-      void emitCallSession(id, connectedMs);
+      void trackScopedWrite(emitCallSession(id, connectedMs)).catch(() => {});
       // Analytics (260728): calls are playtime too. `connectedMs` is the time
       // audio actually flowed (the renderer only reports it for calls that
       // connected), so a failed call contributes nothing. Same `duration_ms`
@@ -980,6 +1184,12 @@ async function bootstrap(): Promise<void> {
   try {
     const { initAnalytics, capture } = await import('./analytics');
     await initAnalytics();
+    // Once per install (260926): platform, arch, OS version and, on macOS,
+    // whether Sei runs from /Applications or translocated. Shape only.
+    const { takeInstallerFirstLaunch, installerFirstLaunchProps, currentFirstLaunchEnv } = await import('./firstLaunch');
+    if (takeInstallerFirstLaunch()) {
+      capture('installer_first_launch', installerFirstLaunchProps(currentFirstLaunchEnv()));
+    }
     capture('app_opened');
   } catch (err) {
     logger.warn(`analytics init failed: ${(err as Error).message}`);
@@ -1110,16 +1320,38 @@ if (!gotLock) {
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
       app.quit();
+      return;
     }
+    // macOS stays resident when the last window closes — which meant a
+    // downloaded update NEVER installed for anyone who "closed and reopened
+    // the app" (260909): Squirrel.Mac applies a staged update on process
+    // TERMINATION, and closing the window terminates nothing, so the staged
+    // update was thrown away and re-downloaded every session while the app
+    // kept running the old version. When an update is ready and no bot
+    // session is live (a call or game dies with the window), the closed last
+    // window is the end of the session in every way that matters: quit for
+    // real, Squirrel installs, and the next open launches the new version.
+    void (async () => {
+      try {
+        const { isUpdateReadyToInstall } = await import('./updater');
+        if (!isUpdateReadyToInstall()) return;
+        if (supervisor && supervisor.getActiveIds().length > 0) return;
+        logger.info('update ready and last window closed: quitting so it installs');
+        app.quit();
+      } catch {
+        /* stay resident — the pill's restart still installs */
+      }
+    })();
   });
 
   app.on('before-quit', async (e) => {
-    if (!supervisor && !lanWatcherHandle && !skinServer && !loopbackAuthServer && !isAnalyticsActive()) return; // already shut down
+    if (!supervisor && !watchersRunning && !skinServer && !loopbackAuthServer && !isAnalyticsActive()) return; // already shut down
     e.preventDefault();
     // Close any open text-chat session BEFORE the flush below — quitting
     // mid-conversation is the normal way a chat ends, and an event captured
     // after shutdownAnalytics() would never be sent.
     try { await (await import('./chat/chatSession')).endAllChatSessions(); } catch { /* best-effort */ }
+    try { endAllPlaySessionsForQuit(); } catch { /* best-effort */ }
     // Flush buffered analytics first so queued events survive the quit.
     try { await shutdownAnalytics(); } catch (err) { logger.warn(`analytics shutdown failed: ${(err as Error).message}`); }
     try { if (supervisor) await supervisor.shutdown(); } catch (err) { logger.warn(`supervisor shutdown failed: ${(err as Error).message}`); }
@@ -1127,14 +1359,14 @@ if (!gotLock) {
     try { (await import('./chess/chessService')).shutdownChess(); } catch { /* best-effort */ }
     // Draw!: clear turn timers and abort any in-flight guess/draw call.
     try { (await import('./draw/drawService')).shutdownDraw(); } catch { /* best-effort */ }
-    try { if (lanWatcherHandle) lanWatcherHandle.stop(); } catch { /* best-effort */ }
+    try { for (const mod of listGameModules()) mod.watcher.stop(); } catch { /* best-effort */ }
     // Close the skin server's TCP listener so the port is
     // freed promptly. server.close drains in-flight requests before resolving.
     try { if (skinServer) await skinServer.stop(); } catch { /* best-effort */ }
     // Same for the auth loopback callback server — release port 54321.
     try { if (loopbackAuthServer) await loopbackAuthServer.stop(); } catch { /* best-effort */ }
     supervisor = null;
-    lanWatcherHandle = null;
+    watchersRunning = false;
     skinServer = null;
     loopbackAuthServer = null;
     app.exit(0);

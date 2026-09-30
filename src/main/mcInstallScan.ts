@@ -37,6 +37,12 @@
  *     `runtime/java-runtime-gamma/<platform-tag>/...` structure probed)
  *   - the removed bot CLI (platform-branched home-dir pattern, 260722)
  */
+import {
+  LAUNCHER_PROFILE_FILES,
+  listFabricProfiles,
+  readProfilesFile,
+  type LauncherProfilesDoc,
+} from './launcherProfiles';
 import crypto from 'node:crypto';
 import { promises as fs, constants as fsConstants } from 'node:fs';
 import os from 'node:os';
@@ -80,7 +86,7 @@ function appData(opts?: ScanOpts): string {
  * Candidate vanilla `.minecraft` directories. Returns ALL possible paths
  * (typically one per platform); the caller stats each and skips ENOENT.
  */
-function vanillaPaths(opts?: ScanOpts): string[] {
+export function vanillaPaths(opts?: ScanOpts): string[] {
   const p = platform(opts);
   if (p === 'darwin') {
     return [path.join(homeDir(opts), 'Library', 'Application Support', 'minecraft')];
@@ -171,7 +177,7 @@ function idFor(kind: 'vanilla' | 'curseforge' | 'lunar', absPath: string): strin
  * Vanilla launcher creates `fabric-loader-<loaderVer>-<mcVer>/` when Fabric
  * is installed against a given MC version. Example: `fabric-loader-0.16.5-1.20.1`.
  */
-async function detectFabricLoader(mcDir: string): Promise<{ loaderVersion: string } | null> {
+async function detectFabricLoader(mcDir: string): Promise<{ loaderVersion: string; mcVersions: string[] } | null> {
   const versionsDir = path.join(mcDir, 'versions');
   let entries: string[];
   try {
@@ -183,13 +189,58 @@ async function detectFabricLoader(mcDir: string): Promise<{ loaderVersion: strin
     return null;
   }
   // Match `fabric-loader-<loaderVer>-<mcVer>`. loaderVer is x.y.z (semver),
-  // mcVer is x.y or x.y.z. We capture loaderVer in group 1.
+  // mcVer is x.y or x.y.z. Every profile counts (260909): the launch panel
+  // needs to know whether ANY of them is for a version Sei can join, not
+  // just that Fabric exists somewhere in the folder.
   const re = /^fabric-loader-(\d+\.\d+\.\d+)-(\d+\.\d+(?:\.\d+)?)$/;
+  let loaderVersion: string | null = null;
+  const mcVersions: string[] = [];
   for (const name of entries) {
     const m = re.exec(name);
-    if (m) return { loaderVersion: m[1] };
+    if (!m) continue;
+    loaderVersion ??= m[1];
+    if (!mcVersions.includes(m[2])) mcVersions.push(m[2]);
   }
-  return null;
+  return loaderVersion ? { loaderVersion, mcVersions } : null;
+}
+
+/**
+ * Which Fabric profiles in `launcher_profiles.json` carry the skin mod in
+ * their OWN mods folder (260916). The wizard builds one "Sei <version>"
+ * profile per version, each with its own game dir (`<.minecraft>/sei/<v>/`;
+ * the pre-260916 single profile used `<.minecraft>/sei/`), so "the mod is
+ * somewhere on this install" no longer says which versions are playable.
+ * A profile with no gameDir loads the shared `<.minecraft>/mods/`.
+ * Returns null when the launcher file cannot be read (caller falls back to
+ * the whole-install rule).
+ */
+async function detectSeiProfiles(
+  mcDir: string,
+): Promise<{ ready: string[]; csl: { installed: boolean; version: string | null } } | null> {
+  // Both launcher builds share .minecraft: the Microsoft Store / Xbox app
+  // launcher keeps its installations in launcher_profiles_microsoft_store.json.
+  const docs: LauncherProfilesDoc[] = [];
+  for (const name of LAUNCHER_PROFILE_FILES) {
+    try {
+      const doc = await readProfilesFile(path.join(mcDir, name));
+      if (doc) docs.push(doc);
+    } catch {
+      /* unreadable file: skip it */
+    }
+  }
+  if (docs.length === 0) return null;
+  const ready: string[] = [];
+  let csl: { installed: boolean; version: string | null } = { installed: false, version: null };
+  for (const doc of docs) {
+    for (const prof of listFabricProfiles(doc, mcDir)) {
+      if (ready.includes(prof.mcVersion) && csl.installed) continue;
+      const found = await detectCustomSkinLoader(path.join(prof.gameDir, 'mods'));
+      if (!found.installed) continue;
+      if (!ready.includes(prof.mcVersion)) ready.push(prof.mcVersion);
+      if (!csl.installed) csl = found;
+    }
+  }
+  return { ready, csl };
 }
 
 /**
@@ -197,7 +248,7 @@ async function detectFabricLoader(mcDir: string): Promise<{ loaderVersion: strin
  * from filename) if a matching JAR is present, else null. ENOENT on the mods
  * dir means the loader hasn't created it yet — return null (not installed).
  */
-async function detectCustomSkinLoader(
+export async function detectCustomSkinLoader(
   modsDir: string,
 ): Promise<{ installed: boolean; version: string | null }> {
   let entries: string[];
@@ -391,7 +442,14 @@ export async function scanMcInstalls(opts?: ScanOpts): Promise<McInstall[]> {
       // install, which surfaced a false "1 install needs update" in Settings
       // right after a successful skin setup. Check the isolated gameDir first,
       // then fall back to the legacy shared mods dir for pre-isolation setups.
-      let csl = await detectCustomSkinLoader(path.join(vp, 'sei', 'mods'));
+      // 260916: one game dir per "Sei <version>" profile, so ask the
+      // launcher file which profiles actually carry the mod, then fall back
+      // to the two historical locations for csl_installed.
+      const seiProfiles = await detectSeiProfiles(vp);
+      let csl = seiProfiles?.csl ?? { installed: false, version: null };
+      if (!csl.installed) {
+        csl = await detectCustomSkinLoader(path.join(vp, 'sei', 'mods'));
+      }
       if (!csl.installed) {
         csl = await detectCustomSkinLoader(path.join(vp, 'mods'));
       }
@@ -403,6 +461,8 @@ export async function scanMcInstalls(opts?: ScanOpts): Promise<McInstall[]> {
         mc_version,
         loader: fabric ? 'fabric' : null,
         loader_version: fabric?.loaderVersion ?? null,
+        fabric_mc_versions: fabric?.mcVersions ?? [],
+        ...(seiProfiles ? { sei_ready_versions: seiProfiles.ready } : {}),
         csl_installed: csl.installed,
         csl_version: csl.version,
         sei_enabled: enabledSet.has(id),

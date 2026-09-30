@@ -25,6 +25,7 @@ import { startSurvival } from './behaviors/survival.js'
 import { applyWorldPause } from './behaviors/pause.js'
 import { installFaceOnDig } from './behaviors/face.js'
 import { forgeHandshakeEnabled, installForgeHandshake, sampleWorldNames } from './forgeHandshake.js'
+import { markBoot } from '../../bootTiming.js'
 
 /**
  * Extract human-readable text from mineflayer kick/disconnect reasons,
@@ -88,6 +89,86 @@ export function isModdedHostRejection(reason) {
   if (/\bmods?\b/.test(r) && /\brequires?\b|\binstall(ed)?\b/.test(r)) return true
   return false
 }
+
+/**
+ * Short, PII-free code for a server kick reason (260929), for the
+ * bot_session_ended analytics event. The raw text can be anything the host
+ * typed into /kick, so it never leaves the machine: only a vanilla-style
+ * translation key (stripped of its `multiplayer.disconnect.` prefix) or one of
+ * a fixed set of codes matched from well-known wordings. Everything else is
+ * 'other'.
+ *
+ * A key is trusted only from a chat component's `translate` field, which the
+ * game's code writes (a typed /kick reason arrives as literal text). A key
+ * found in TEXT (a plain string, a `text` field, or a substring) must be one
+ * of VANILLA_KICK_KEYS, or a host could type "disconnect.<anything>" and have
+ * it copied into analytics.
+ *
+ * @param {unknown} reason  raw kick reason (string or chat component)
+ * @returns {string}  e.g. 'kicked', 'name_taken', 'modded', 'other'
+ */
+export function kickReasonCode(reason) {
+  if (reason == null) return 'other'
+  const keyOf = (k, trusted) => {
+    if (typeof k !== 'string') return null
+    const key = k.trim()
+    // Vanilla namespaces only: a free-form "word.word" could be anything.
+    if (!/^(multiplayer\.)?disconnect\.[a-z0-9_.]+$/i.test(key)) return null
+    const code = key.toLowerCase().replace(/^(multiplayer\.)?disconnect\./, '').slice(0, 40)
+    if (!code) return null
+    return trusted || VANILLA_KICK_KEYS.has(code) ? code : null
+  }
+  // Pre-1.20.3 servers send the reason as a JSON string; newer ones as an NBT
+  // compound ({type, value: {translate: {value}}}). Read either shape.
+  let component = reason
+  if (typeof reason === 'string' && /^\s*\{/.test(reason)) {
+    try { component = JSON.parse(reason) } catch { component = reason }
+  }
+  const translate = typeof component === 'object' && component !== null
+    ? (typeof component.translate === 'string' ? component.translate : component.value?.translate?.value)
+    : undefined
+  const fromKey = keyOf(translate, true)
+  if (fromKey) return fromKey
+  const text = extractReasonText(component)
+  const keyText = keyOf(text, false)
+  if (keyText) return keyText
+  if (isModdedHostRejection(text)) return 'modded'
+  const r = text.toLowerCase()
+  if (r.includes('chat_validation') || r.includes('out_of_order_chat')) return 'chat_validation_failed'
+  if (r.includes('name_taken') || r.includes('another location') || r.includes('already playing') || r.includes('already connected')) return 'name_taken'
+  if (r.includes('whitelist') || r.includes('white-list') || r.includes('white list')) return 'not_whitelisted'
+  if (r.includes('banned')) return 'banned'
+  if (r.includes('server closed') || r.includes('shutting down') || r.includes('shutdown')) return 'server_shutdown'
+  if (r.includes('timed out') || r.includes('timeout')) return 'timeout'
+  if (r.includes('outdated') || r.includes('incompatible')) return 'version_mismatch'
+  if (r.includes('flying')) return 'flying'
+  if (/\bidl(e|ing)\b/.test(r)) return 'idling'
+  if (r.includes('spam')) return 'spam'
+  if (r.includes('kicked by an operator')) return 'kicked'
+  if (r.includes('multiplayer.disconnect.')) return keyOf(r.slice(r.indexOf('multiplayer.disconnect.')).split(/[^a-z0-9_.]/)[0], false) ?? 'other'
+  return 'other'
+}
+
+/**
+ * Vanilla kick translation keys (en_us.json, 1.8 to 1.21), with the
+ * `multiplayer.disconnect.` / `disconnect.` prefix removed and lowercased.
+ * Only these may be read out of free text by kickReasonCode.
+ */
+const VANILLA_KICK_KEYS = new Set([
+  'authservers_down', 'bad_chat_index', 'banned', 'banned.expiration', 'banned.reason',
+  'banned_ip.expiration', 'banned_ip.reason', 'chat_validation_failed', 'duplicate_login',
+  'expired_public_key', 'flying', 'generic', 'idling', 'illegal_characters', 'incompatible',
+  'invalid_entity_attacked', 'invalid_packet', 'invalid_player_data', 'invalid_player_movement',
+  'invalid_public_key_signature', 'invalid_vehicle_movement', 'ip_banned', 'kicked',
+  'missing_public_key', 'missing_tags', 'name_taken', 'not_whitelisted', 'out_of_order_chat',
+  'outdated_client', 'outdated_server', 'server_full', 'server_shutdown', 'slow_login',
+  'too_many_pending_chats', 'transfers_disabled', 'unexpected_query_response', 'unsigned_chat',
+  'unverified_username',
+  // disconnect.*
+  'closed', 'disconnected', 'endofstream', 'exceeded_packet_rate', 'genericreason',
+  'ignoring_status_request', 'loginfailed', 'loginfailedinfo', 'lost', 'overflow',
+  'packeterror', 'quitting', 'spam', 'timeout', 'unknownhost',
+])
 
 /**
  * Plain-English translation of mineflayer disconnect reasons. Exposed for
@@ -171,7 +252,7 @@ function connectTimeoutFor(summonDeadlineAt, now = Date.now()) {
   return Math.max(MIN_CONNECT_TIMEOUT_MS, Math.min(CONNECT_TIMEOUT_MS, remaining))
 }
 
-export const __testables = { connectTimeoutFor, CONNECT_TIMEOUT_MS, REPORT_MARGIN_MS, MIN_CONNECT_TIMEOUT_MS }
+export const __testables = { connectTimeoutFor, CONNECT_TIMEOUT_MS, REPORT_MARGIN_MS, MIN_CONNECT_TIMEOUT_MS, resolveSupportedVersion, supportedVersionForProtocol }
 
 // Wall-clock budget for the pre-connect status ping (resolveServerVersion).
 // Short — a LAN status query on localhost answers in well under a second; if it
@@ -238,6 +319,63 @@ function pingWithTimeout(options, timeoutMs) {
 }
 
 /**
+ * The versions Sei can join, as players should read them (260926): every
+ * release from mineflayer's 1.8 floor that resolveSupportedVersion accepts
+ * (named in the protocol table, or speaking a supported entry's protocol),
+ * with consecutive releases collapsed to "a to b" so the gaps stay visible:
+ * "1.8 to 1.8.9, 1.9.3, 1.9.4, ..., 1.19 to 1.21.11, 26.1 to 26.1.2".
+ * Mirrors joinableMcVersions() + formatMcVersionList() in
+ * src/shared/mcSetup.ts, which the renderer uses for the same sentence;
+ * connect.version.test.js pins the two to the same output.
+ *
+ * @param {readonly string[]} [versions]  minecraft-protocol's supportedVersions
+ * @param {ReadonlyArray<{minecraftVersion:string, version:number, usesNetty?:boolean}>} [rows]
+ *   minecraft-data's pc protocol table
+ */
+export function supportedRangeText(versions = supportedVersions, rows = pcProtocolRows()) {
+  const parts = (v) => v.split('.').map((n) => parseInt(n, 10) || 0)
+  const cmp = (a, b) => {
+    const pa = parts(a)
+    const pb = parts(b)
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const d = (pa[i] ?? 0) - (pb[i] ?? 0)
+      if (d !== 0) return d
+    }
+    return 0
+  }
+  const isRelease = (v) => /^\d+\.\d+(?:\.\d+)?$/.test(v) && cmp(v, '1.8') >= 0
+  const protocolOf = new Map()
+  for (const r of rows) {
+    if (r.usesNetty === false) continue
+    if (!protocolOf.has(r.minecraftVersion)) protocolOf.set(r.minecraftVersion, r.version)
+  }
+  const supportedProtocols = new Set(versions.map((v) => protocolOf.get(v)).filter((p) => p !== undefined))
+  const releases = [...new Set([...protocolOf.keys()].filter(isRelease))]
+  const ok = new Set(releases.filter((v) => versions.includes(v) || supportedProtocols.has(protocolOf.get(v))))
+  for (const v of versions) if (isRelease(v)) ok.add(v)
+  if (ok.size === 0) return 'no versions'
+  const order = [...new Set([...releases, ...ok])].sort(cmp)
+  const runs = []
+  let run = []
+  for (const v of order) {
+    if (ok.has(v)) run.push(v)
+    else if (run.length) { runs.push(run); run = [] }
+  }
+  if (run.length) runs.push(run)
+  return runs.map((r) => (r.length >= 3 ? `${r[0]} to ${r[r.length - 1]}` : r.join(', '))).join(', ')
+}
+
+/** minecraft-data's pc protocol table as flat rows; [] if it will not load. */
+function pcProtocolRows() {
+  try {
+    const byProtocol = minecraftData.postNettyVersionsByProtocolVersion?.pc ?? {}
+    return Object.values(byProtocol).flat()
+  } catch {
+    return []
+  }
+}
+
+/**
  * Status-ping the LAN server and resolve the Minecraft version Sei should
  * connect with, bounded to what our networking deps actually implement. The
  * Electron path passes `version: 'auto'`; this resolves it to an EXPLICIT
@@ -263,8 +401,8 @@ export async function resolveServerVersion({ host, port, timeoutMs = PING_TIMEOU
     const reported = name || (typeof protocol === 'number' ? `protocol ${protocol}` : 'an unknown version')
     const err = new Error(
       `UNSUPPORTED_MC_VERSION: This world is running Minecraft ${reported}, which Sei can't join yet. ` +
-      `Sei supports Java ${supportedVersions[0]}–${supportedVersions[supportedVersions.length - 1]}. ` +
-      `Switch your world to a supported version and click Summon again.`,
+      `Sei supports Minecraft Java ${supportedRangeText()}. ` +
+      `Open your world from a launcher installation on a supported version and press Launch again.`,
     )
     err.code = 'UNSUPPORTED_MC_VERSION'
     throw err
@@ -313,7 +451,12 @@ export function createBotInstance({
   // mineflayer auto-detects when version is omitted/undefined.
   if (version && version !== 'auto') botOpts.version = version
 
+  // 260926 boot timing: createBot synchronously loads the version's
+  // minecraft-data registry (large JSON), so it gets its own phase.
+  markBoot('create_bot')
   const bot = createBot(botOpts)
+  markBoot('bot_created')
+  try { bot.once('login', () => markBoot('login')) } catch {}
 
   // Forge/NeoForge handshake SPIKE (260806). Off unless SEI_FORGE_HANDSHAKE=1.
   // Must be installed here, immediately after createBot and before the socket
@@ -390,6 +533,7 @@ export function createBotInstance({
     logger.info?.(`[sei] Connected to ${host}:${port} as ${username}`)
     if (!_spawned) {
       _spawned = true
+      markBoot('spawn')
       _clearConnectTimer()
       safeStart('loadPlugin(pathfinder)', () => bot.loadPlugin(pathfinder))
       // Face-what-you-break (260708): wrap bot.dig AFTER the pathfinder loads
@@ -495,7 +639,12 @@ export function createBotInstance({
     // The second argument is the structured half: onEnd's caller decides whether
     // to retry, and a modded-host rejection must NOT be retried (see
     // isModdedHostRejection).
-    try { onEnd?.(humanized, { modded: isModdedHostRejection(effective) }) } catch {}
+    // 260929: `kickCode` is set only when the server actually kicked us (the
+    // analytics end reason); a socket that died on its own carries null.
+    const kickCode = _lastKickReason != null && effective === _lastKickReason
+      ? kickReasonCode(_lastKickReason)
+      : null
+    try { onEnd?.(humanized, { modded: isModdedHostRejection(effective), kickCode }) } catch {}
   })
 
   // Expose the chat starter so the brain (which knows the orchestrator) can

@@ -38,6 +38,7 @@ import { getCurrentAuthState, transitionToLocal } from './authState';
 import { callEdgeFunction } from './edgeFunctionClient';
 import { buildExport } from './exportBuilder';
 import { getSupabaseUrl, getSupabaseAnonKey } from '../env';
+import { REGION_BLOCKED, REGION_BLOCKED_COPY } from '../../shared/regionGate';
 import type { BotSupervisor } from '../botSupervisor';
 
 // Inline logger (matches main/* convention — each module owns its own logger).
@@ -332,6 +333,35 @@ function classifySignUpError(message: string): SignUpResult {
   return { ok: true, requiresVerification: true };
 }
 
+/**
+ * W7 region gate (260816) — true when cloud auth must be refused because the
+ * detected IP region is unsupported by Anthropic or Polar (see
+ * src/shared/regionGate.ts for the blocklist and its sources).
+ *
+ * Checked at the TOP of signInWithPassword / signUpWithPassword /
+ * signInWithGoogle, before any Supabase call and before the signup
+ * pre-checks (COPPA, cooldown, signup-guard). Deliberately NOT checked
+ * anywhere else: session restore, sign-out, ToS, verification/reset flows
+ * and everything for already-signed-in users stay ungated.
+ *
+ * FAILS OPEN twice over: regionDetect resolves 'unknown' (= allowed) on any
+ * detection failure, and this wrapper additionally swallows an import or
+ * unexpected throw as 'allowed'. The renderer's `region:status` pre-check
+ * usually shows the popup before a submit ever reaches here; this is the
+ * authoritative backstop.
+ */
+async function isCloudAuthRegionBlocked(): Promise<boolean> {
+  try {
+    // Lazy import matches the ipc.ts convention (cycle-safe at module init)
+    // and keeps tests free to vi.mock '../regionDetect'.
+    const { getRegionStatus } = await import('../regionDetect');
+    return (await getRegionStatus()).blocked;
+  } catch (err) {
+    logger.warn(`region gate check failed, failing open: ${(err as Error).message}`);
+    return false;
+  }
+}
+
 // Internal shape we receive from Supabase auth methods we care about. Kept
 // loose-typed so the timeout-fallback object validates without importing
 // Supabase's full AuthResponse type into the union.
@@ -348,6 +378,10 @@ function isEmailNotConfirmed(message: string): boolean {
 
 /** Email/password sign-in. Plan 04. */
 export async function signInWithPassword(args: { email: string; password: string }): Promise<SignInResult> {
+  // W7 region gate (260816) — refuse before any Supabase call. Fails open.
+  if (await isCloudAuthRegionBlocked()) {
+    return { ok: false, code: REGION_BLOCKED, message: REGION_BLOCKED_COPY };
+  }
   const supabase = getClient();
   try {
     const result = await withTimeout(
@@ -438,6 +472,13 @@ export async function signUpWithPassword(args: {
   dobMonth: number;
   dobDay: number;
 }): Promise<SignUpResult> {
+  // W7 region gate (260816) — refuse before EVERYTHING: no Supabase call, no
+  // cooldown recording, no signup-guard hit for a region we cannot serve.
+  // Fails open on any detection failure.
+  if (await isCloudAuthRegionBlocked()) {
+    return { ok: false, code: REGION_BLOCKED, message: REGION_BLOCKED_COPY };
+  }
+
   // F-10 (quick/260525-usc) — COPPA age gate. Compute age from the
   // self-attested DOB triple via wall-clock today. The DOB itself is NEVER
   // logged, NEVER passed to Supabase, NEVER persisted in any form. We store
@@ -604,6 +645,10 @@ export async function signUpWithPassword(args: {
 let oauthController: AbortController | null = null;
 
 export async function signInWithGoogle(): Promise<OAuthResult> {
+  // W7 region gate (260816) — refuse before the browser ever opens. Fails open.
+  if (await isCloudAuthRegionBlocked()) {
+    return { ok: false, reason: REGION_BLOCKED, message: REGION_BLOCKED_COPY };
+  }
   // If a previous attempt is still in flight (user double-clicked), abort it
   // before starting a new one. The old loopback handler will resolve with
   // reason:'user_cancelled' and its server will close in its own finally.
@@ -651,8 +696,11 @@ export async function cancelGoogle(): Promise<void> {
  */
 export async function signOut(): Promise<void> {
   // D-09 + T-10-06-09: stop the bot first so its final request flushes under
-  // the still-valid JWT.
-  await stopBotIfActive('signOut');
+  // the still-valid JWT. Inside the account teardown (260926) so the session
+  // is recorded as ended by the account switch this sign-out starts; the
+  // switch itself ends every other surface (profile/accountSessions.ts).
+  const { withAccountTeardown } = await import('../profile/scopeBarrier');
+  await withAccountTeardown(() => stopBotIfActive('signOut'));
   try {
     await getClient().auth.signOut();
   } catch (err) {
@@ -691,8 +739,13 @@ export async function deleteAccount(): Promise<DeleteAccountResult> {
   // T-10-06-09's "stop bot before clearing session" invariant applies here
   // too. Without this, the running bot continues with a soon-to-be-invalid
   // JWT until its next action (which will 401-cascade in Phase 13). User
-  // has already confirmed via DeleteAccountModal, no re-prompt.
-  await stopBotIfActive('deleteAccount');
+  // has already confirmed via DeleteAccountModal, no re-prompt. Inside the
+  // account teardown (260926) so bot_session_ended carries the reason, as on
+  // sign-out; the scope switch that follows ends every other surface.
+  {
+    const { withAccountTeardown } = await import('../profile/scopeBarrier');
+    await withAccountTeardown(() => stopBotIfActive('deleteAccount'));
+  }
   const res = await callEdgeFunction('delete-me', {
     jwt: session.access_token,
     method: 'POST',

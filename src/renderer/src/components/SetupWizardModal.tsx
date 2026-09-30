@@ -30,11 +30,18 @@ import { StatusPill } from './StatusPill';
 import { ModalShell } from './ModalShell';
 import { WizardStepShell } from './WizardStepShell';
 import { McInstallList } from './McInstallList';
+// Dependency-free CJS data module (deep import on purpose, see
+// UnsupportedVersionModal): the same table the bot's networking stack
+// enforces, so the picker can only offer versions Sei can join.
+import { supportedVersions } from 'minecraft-protocol/src/version.js';
+import { installableMcVersions } from '@shared/mcSetup';
 import { InstallProgressList } from './InstallProgressList';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useWizardStore, type WizardStep } from '../lib/stores/useWizardStore';
 import { WARN_COPY } from '../lib/errors';
 import styles from './SetupWizardModal.module.css';
+import noteStyles from './LanNotOpenModal.module.css';
+import { useStartMinecraft } from './mcdash/useStartMinecraft';
 
 export function SetupWizardModal(): React.ReactElement | null {
   const t = useT();
@@ -145,7 +152,7 @@ function WelcomeStep(): React.ReactElement {
   return (
     <WizardStepShell
       stepNumber={null}
-      heading={t('Set up Minecraft skins')}
+      heading={t('Set up Minecraft for Sei')}
       footer={
         <>
           {isReentry ? (
@@ -170,7 +177,7 @@ function WelcomeStep(): React.ReactElement {
     >
       <p>
         {t(
-          "Sei can give each companion a custom skin and username inside your Minecraft world. We'll install a small mod (CustomSkinLoader) into your Minecraft profile. Takes about a minute.",
+          "Sei adds a separate \"Sei\" profile to your Minecraft launcher: Fabric on a Minecraft version Sei can join, plus a small mod (CustomSkinLoader) so each companion shows their own skin and name in your world. Your own profile is not changed. Takes about a minute.",
         )}
       </p>
     </WizardStepShell>
@@ -245,8 +252,12 @@ function PickInstallsStep(): React.ReactElement {
   const installs = useWizardStore((s) => s.installs);
   const selectedIds = useWizardStore((s) => s.selectedIds);
   const toggleSelected = useWizardStore((s) => s.toggleSelected);
+  const versionByInstall = useWizardStore((s) => s.versionByInstall);
+  const setInstallVersion = useWizardStore((s) => s.setInstallVersion);
   const gotoStep = useWizardStore((s) => s.gotoStep);
   const runInstall = useWizardStore((s) => s.runInstall);
+  // Newest first; the default pick (no entry in versionByInstall) is [0].
+  const versionOptions = React.useMemo(() => installableMcVersions(supportedVersions), []);
   return (
     <WizardStepShell
       stepNumber={2}
@@ -269,13 +280,16 @@ function PickInstallsStep(): React.ReactElement {
     >
       <p>
         {t(
-          'Sei will install Fabric Loader and CustomSkinLoader into each install you select. Already-modded CurseForge instances get only the mod jar.',
+          'Pick a Minecraft version for each launcher. Sei adds a separate "Sei <version>" profile there with Fabric and the companion-skin mod, and leaves your own profiles alone. Already-modded CurseForge instances get only the mod jar.',
         )}
       </p>
       <McInstallList
         installs={installs}
         selectedIds={selectedIds}
         onToggle={toggleSelected}
+        versionOptions={versionOptions}
+        versionByInstall={versionByInstall}
+        onVersionChange={setInstallVersion}
       />
     </WizardStepShell>
   );
@@ -388,18 +402,23 @@ function DoneStep(): React.ReactElement {
   // failed result as a partial outcome (empty results + an error = a total
   // failure that still routed here). Only an all-ok run earns the green pill.
   const anyFailed = error != null || results.some((r) => !r.ok);
+  // 260929: a vanilla launcher got its "Sei <version>" profile, so offer to
+  // open the launcher on it (CurseForge instances start from their own app).
+  const builtVanilla = results.find(
+    (r) => r.ok && r.installedMcVersion && installs.find((i) => i.id === r.installId)?.kind === 'vanilla',
+  );
+  const launcher = useStartMinecraft();
 
-  // Derive a representative profile name for the body copy. For vanilla installs
-  // the launcher shows a "fabric-loader-{loaderVersion}-{mcVersion}" profile; for
-  // CurseForge instances the launcher shows the instance name directly.
+  // Derive a representative profile name for the body copy. For vanilla
+  // installs the installer names the profile "Sei <version>" (260916; it
+  // used to be quoted here as fabric-loader-<loader>-<mc>, a name the
+  // launcher never showed); CurseForge instances show the instance name.
   const profileName = (() => {
     const first = installs.find((i) => selectedIds.has(i.id));
     if (!first) return 'your modded';
     if (first.kind === 'vanilla') {
-      const lv = first.loader_version ?? '';
-      const mv = first.mc_version ?? '';
-      if (lv && mv) return `fabric-loader-${lv}-${mv}`;
-      return 'Fabric Loader';
+      const built = results.find((r) => r.installId === first.id)?.installedMcVersion;
+      return `"Sei ${built ?? installableMcVersions(supportedVersions)[0] ?? ''}"`.replace(/ "$/, '"');
     }
     return first.label;
   })();
@@ -423,9 +442,21 @@ function DoneStep(): React.ReactElement {
       footer={
         <>
           <span />
-          <Button kind="accent" size="md" onClick={closeWizard}>
-            {t('Finish setup')}
-          </Button>
+          <span className={styles.doneActions}>
+            {builtVanilla ? (
+              <Button
+                kind="ghost"
+                size="md"
+                disabled={launcher.busy}
+                onClick={() => void launcher.start(builtVanilla.installedMcVersion)}
+              >
+                {t('Start Minecraft')}
+              </Button>
+            ) : null}
+            <Button kind="accent" size="md" onClick={closeWizard}>
+              {t('Finish setup')}
+            </Button>
+          </span>
         </>
       }
     >
@@ -442,11 +473,21 @@ function DoneStep(): React.ReactElement {
               "Some installs didn't finish, but the rest are ready. Open Minecraft, pick the {profile} profile from the launcher dropdown, and start your world. You can re-run setup for the others from Settings.",
               { profile: profileName },
             )
-          : t(
-              'Open Minecraft, pick the {profile} profile from the launcher dropdown, and start your world. Companions will appear with their chosen skin and username.',
-              { profile: profileName },
-            )}
+          : builtVanilla
+            ? t(
+                'Press Start Minecraft to open the launcher with the {profile} profile selected, then press Play and open your world. Companions will appear with their chosen skin and username.',
+                { profile: profileName },
+              )
+            : t(
+                'Open Minecraft, pick the {profile} profile from the launcher dropdown, and start your world. Companions will appear with their chosen skin and username.',
+                { profile: profileName },
+              )}
       </p>
+      {launcher.note ? (
+        <p className={noteStyles.note} role="status" data-tone={launcher.note.tone}>
+          {launcher.note.text}
+        </p>
+      ) : null}
 
       {summaries.length > 0 ? (
         <div className={styles.modLinkSummary}>

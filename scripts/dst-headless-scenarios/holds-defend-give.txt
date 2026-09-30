@@ -1,0 +1,67 @@
+# Headless DST scenario for scripts/dst-headless-harness.mjs (see
+# native/dst-mod/sei/README.md, "Headless testing"). Needs the stand-in
+# player STEVE (userid KU_test) spawned from the console first. Lines tagged
+# [test] print to the server log; read them there.
+# ===== review fixes 260926: one "am I lit" test, awake lights, holds, defend =====
+lua TheWorld:PushEvent("ms_setclocksegs",{day=8,dusk=6,night=2}); TheWorld:PushEvent("ms_setphase","day"); for _,v in pairs(Ents) do if v.prefab=="campfire" or v.prefab=="spider" or v.prefab=="evergreen" and v.sei_test then v:Remove() end end; local c=require("sei/companion").inst; c.components.health:SetInvincible(true); rawset(_G,"EQ",{}); c:ListenForEvent("equip", function(_,d) table.insert(EQ, d.item.prefab); print("[test] equip", d.item.prefab, string.format("%.1f",GetTime())) end); print("[test] setup")
+tool unfollow {}
+# --- B. a fire that is already asleep, far from the host: woken once the body is beside it ---
+lua TheWorld:PushEvent("ms_setclocksegs",{day=0,dusk=0,night=16}); TheWorld:PushEvent("ms_setphase","night"); local c=require("sei/companion").inst; local i=c.components.inventory; local h=i:Unequip(EQUIPSLOTS.HANDS); if h then h:Remove() end; for _,it in pairs(i.itemslots) do if it.prefab=="torch" then it:Remove() end end; local x,y,z=c.Transform:GetWorldPosition(); local f=SpawnPrefab("campfire"); f.Transform:SetPosition(x+50,0,z); f.components.fueled:SetPercent(1); rawset(_G,"FB",f); print("[test] B far fire", f.GUID)
+wait 12000
+lua local fx=FB.components.burnable.fxchildren[1]; print("[test] B far fire light awake (expect false)", fx.components.firefx.light.entity:IsAwake())
+lua local c=require("sei/companion").inst; local x,y,z=FB.Transform:GetWorldPosition(); c.Transform:SetPosition(x+2,0,z); print("[test] B body moved beside it")
+wait 3000
+lua local c=require("sei/companion").inst; local fx=FB.components.burnable.fxchildren[1]; local R=require("sei/reflexes"); print("[test] B fire light awake", fx.components.firefx.light.entity:IsAwake(), "inlight", c.LightWatcher:IsInLight(), "needs light", R.NeedsLight(c), "body Light on", c.Light:IsEnabled())
+lua local c=require("sei/companion").inst; local x,y,z=FB.Transform:GetWorldPosition(); c.Transform:SetPosition(x+45,0,z); print("[test] B body walked away")
+wait 2000
+lua local c=require("sei/companion").inst; local n=0; for _ in pairs(c.sei.wokeFires or {}) do n=n+1 end; print("[test] B fires still held awake", n)
+# --- B2. a torch from the bag at night, alone: its own light works, no body glow, none while paused ---
+lua local c=require("sei/companion").inst; c.components.inventory:GiveItem(SpawnPrefab("torch")); print("[test] B2 torch in bag")
+wait 6000
+lua local c=require("sei/companion").inst; local h=c.components.inventory:GetEquippedItem(EQUIPSLOTS.HANDS); print("[test] B2 hands", h and h.prefab, "torch light awake", h and h.fires and h.fires[1]._light.entity:IsAwake(), "inlight", c.LightWatcher:IsInLight(), "body Light on", c.Light:IsEnabled())
+lua local c=require("sei/companion").inst; c.sei.paused=true; print("[test] B2 paused")
+wait 3000
+lua local c=require("sei/companion").inst; print("[test] B2 paused body Light on", c.Light:IsEnabled()); c.sei.paused=false
+# --- C. what the LLM equipped stays: a torch by day, a spear at dusk ---
+lua TheWorld:PushEvent("ms_setclocksegs",{day=8,dusk=6,night=2}); TheWorld:PushEvent("ms_setphase","day"); print("[test] C day")
+wait 3000
+lua local c=require("sei/companion").inst; local h=c.components.inventory:GetEquippedItem(EQUIPSLOTS.HANDS); print("[test] C after dawn hands (habit stows)", h and h.prefab)
+tool equip {"item":"torch"}
+wait 4000
+lua local c=require("sei/companion").inst; local h=c.components.inventory:GetEquippedItem(EQUIPSLOTS.HANDS); print("[test] C LLM torch by day, hands", h and h.prefab)
+lua local c=require("sei/companion").inst; c.components.inventory:GiveItem(SpawnPrefab("spear")); TheWorld:PushEvent("ms_setphase","dusk"); print("[test] C dusk")
+wait 1500
+tool equip {"item":"spear"}
+wait 4000
+lua local c=require("sei/companion").inst; local h=c.components.inventory:GetEquippedItem(EQUIPSLOTS.HANDS); print("[test] C LLM spear at dusk, hands", h and h.prefab)
+lua TheWorld:PushEvent("ms_setphase","night"); print("[test] C night, no fire")
+wait 5000
+lua local c=require("sei/companion").inst; local h=c.components.inventory:GetEquippedItem(EQUIPSLOTS.HANDS); print("[test] C dark emergency hands", h and h.prefab, "inlight", c.LightWatcher:IsInLight())
+# --- D. defend only against real threats ---
+lua TheWorld:PushEvent("ms_setphase","day"); local c=require("sei/companion").inst; local x,y,z=STEVE.Transform:GetWorldPosition(); c.Transform:SetPosition(x+3,0,z); c.components.combat:SetTarget(nil); print("[test] D by Steve")
+tool follow {}
+wait 2000
+lua local x,y,z=STEVE.Transform:GetWorldPosition(); local p=SpawnPrefab("pigman"); p.Transform:SetPosition(x+5,0,z+2); p.components.combat:SetTarget(STEVE); rawset(_G,"PIG",p); local s=SpawnPrefab("crawlinghorror"); s.Transform:SetPosition(x-4,0,z); s.components.combat:SetTarget(STEVE); rawset(_G,"SHADOW",s); print("[test] D pig + shadow target Steve")
+wait 1500
+lua local c=require("sei/companion").inst; local t=c.components.combat.target; print("[test] D target (expect nil)", t and t.prefab)
+lua STEVE.components.combat.lastattacker=PIG; STEVE.components.combat.lastwasattackedtime=GetTime(); PIG.components.combat:SetTarget(STEVE); print("[test] D pig hit Steve")
+wait 1500
+lua local c=require("sei/companion").inst; local t=c.components.combat.target; print("[test] D target after the hit", t and t.prefab)
+lua PIG:Remove(); SHADOW:Remove(); local c=require("sei/companion").inst; c.components.combat:SetTarget(nil); print("[test] D cleared")
+# --- E. give needs an exact name ---
+lua require("sei/companion").inst.components.inventory:GiveItem(SpawnPrefab("berries")); STEVE.name="Steve"
+wait 1500
+tool give {"item":"berries","player":"Ste"}
+tool give {"item":"berries","player":"steve"}
+# --- C2. the dark overrides an LLM-held spear ---
+lua TheWorld:PushEvent("ms_setclocksegs",{day=8,dusk=6,night=2}); TheWorld:PushEvent("ms_setphase","dusk"); for _,v in pairs(Ents) do if v.prefab=="campfire" then v:Remove() end end; local c=require("sei/companion").inst; c.components.health:SetInvincible(true); local i=c.components.inventory; i:GiveItem(SpawnPrefab("spear")); i:GiveItem(SpawnPrefab("torch")); print("[test] C2 dusk, spear + torch in bag")
+tool unfollow {}
+wait 1500
+tool equip {"item":"spear"}
+wait 4000
+lua local c=require("sei/companion").inst; local h=c.components.inventory:GetEquippedItem(EQUIPSLOTS.HANDS); print("[test] C2 dusk hands (expect spear)", h and h.prefab)
+lua TheWorld:PushEvent("ms_setclocksegs",{day=0,dusk=0,night=16}); TheWorld:PushEvent("ms_setphase","night"); print("[test] C2 night")
+wait 14000
+lua local c=require("sei/companion").inst; local h=c.components.inventory:GetEquippedItem(EQUIPSLOTS.HANDS); print("[test] C2 dark emergency hands (expect torch)", h and h.prefab, "inlight", c.LightWatcher:IsInLight())
+lua TheWorld:PushEvent("ms_setclocksegs",{day=8,dusk=6,night=2}); TheWorld:PushEvent("ms_setphase","day")
+quit

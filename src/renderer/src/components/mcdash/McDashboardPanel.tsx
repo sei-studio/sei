@@ -34,6 +34,8 @@ import { useMcDashLifecycle } from './useMcDashLifecycle';
 import { McDashMinimap } from './McDashMinimap';
 import { McDashAvatar } from './McDashAvatar';
 import { HeartsRow, FoodRow } from './McDashVitals';
+import { McDashStatusStrip, McDashControls } from './McDashControls';
+import { useGameCompanions } from '../games/useGameCompanions';
 import { useSkinServerBase, extractMcVersion, mcItemIconUrl, mcSkinUrl } from './mcAssetSource';
 import { effectiveMcUsername } from '@shared/characterSchema';
 import type { McDashItem } from '@shared/mcDashboardIpc';
@@ -56,11 +58,6 @@ function itemLabel(name: string): string {
   return name
     .replace(/_/g, ' ')
     .replace(/\b[a-z]/g, (c) => c.toUpperCase());
-}
-
-/** "gathering oak logs..." → "Gathering oak logs...". */
-function sentenceCase(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 /**
@@ -118,14 +115,6 @@ function prettyDimension(d: string): string {
   return 'Overworld';
 }
 
-/** Hover copy for the control buttons (260725). No em dashes: user copy. */
-const CONTROL_DESCRIPTIONS: Record<string, string> = {
-  pause: 'Freezes your companion in the game. They stand still and stop thinking until you unpress it.',
-  reactive: 'The AI follows simple instructions. Does not act without your command. Costs less usage.',
-  proactive: 'The AI plays Minecraft alongside you. Can act without your command. Costs more usage.',
-  disconnect: 'Your companion leaves the world. You can launch them back in whenever you want.',
-};
-
 /**
  * Minimap edge, in px. Matched to the inventory grid (9 slots x 36px) so the
  * map window reads as the same size as the inventory window beside it.
@@ -143,6 +132,7 @@ export function McDashboardPanel({ characterId }: McDashboardPanelProps): React.
   const assetBase = useSkinServerBase();
   const t = useT();
   const name = character?.name ?? t('Companion');
+  const companions = useGameCompanions(characterId, 'minecraft');
 
   // 260725 runtime controls: absent entry == the per-summon defaults
   // (unpaused, proactive). Never persisted; the store drops the entry when
@@ -159,20 +149,11 @@ export function McDashboardPanel({ characterId }: McDashboardPanelProps): React.
    */
   const disconnect = (): void => {
     useDataStore.getState().setStatus({ kind: 'idle', characterId });
-    useMcDashboardStore.getState().setLaunch(characterId, true);
+    useMcDashboardStore.getState().setLaunch(characterId, 'minecraft');
     void sei.stop(characterId).catch(() => {
       // The session is already gone / the port dropped; the UI is correct.
     });
   };
-
-  // Which control button's description shows in the caption area (hover/focus).
-  const [controlHint, setControlHint] = useState<string | null>(null);
-  const hintHandlers = (key: string): Record<string, () => void> => ({
-    onMouseEnter: () => setControlHint(key),
-    onMouseLeave: () => setControlHint(null),
-    onFocus: () => setControlHint(key),
-    onBlur: () => setControlHint(null),
-  });
 
   // Texture version rides the LAN world's reported MC version; main snaps it
   // to the closest bundled texture folder (newest when unknown).
@@ -195,13 +176,9 @@ export function McDashboardPanel({ characterId }: McDashboardPanelProps): React.
         <div className={styles.body}>
           {/* ── Status window (260725): full-width strip translating what the
               AI is doing right now (activityLabel in the bot: "gathering oak
-              logs...", "thinking", "idling"; "paused" is renderer state). ── */}
-          <section className={`${styles.dialog} ${styles.statusDialog}`} aria-label={t('Status')}>
-            <span className={styles.statusTitle}>{t('Status')}</span>
-            <span className={styles.statusText} aria-live="polite">
-              {paused ? t('Paused') : sentenceCase(snapshot.activity || 'idling')}
-            </span>
-          </section>
+              logs...", "thinking", "idling"; "paused" is renderer state).
+              Shared with the other games' dashboards (McDashControls). ── */}
+          <McDashStatusStrip activity={snapshot.activity} paused={paused} name={name} companions={companions} />
 
           {/* ── Inventory dialog (the classic light-gray window) ── */}
           <section className={styles.dialog} aria-label={t("{name}'s inventory", { name })}>
@@ -259,55 +236,17 @@ export function McDashboardPanel({ characterId }: McDashboardPanelProps): React.
             </div>
           </section>
 
-          {/* ── Controls window (260725): the pause toggle (pressed-in bevel
-              while paused, like a vanilla toggle) over the two runtime play
-              modes under a "Mode" subtitle. Mode is never persisted: every
-              summon starts proactive. The caption under the buttons shows the
-              hovered/focused button's description. ── */}
-          <section
-            className={`${styles.dialog} ${styles.controlsDialog}`}
-            aria-label={t('Companion controls')}
-          >
-            <button
-              type="button"
-              className={paused ? `${styles.mcButton} ${styles.mcButtonOn}` : styles.mcButton}
-              aria-pressed={paused}
-              onClick={() => storeSetPaused(characterId, !paused)}
-              {...hintHandlers('pause')}
-            >
-              {t('Pause')}
-            </button>
-            <div className={styles.invTitle}>{t('Mode')}</div>
-            <button
-              type="button"
-              className={mode === 'reactive' ? `${styles.mcButton} ${styles.mcButtonOn}` : styles.mcButton}
-              aria-pressed={mode === 'reactive'}
-              onClick={() => storeSetMode(characterId, 'reactive')}
-              {...hintHandlers('reactive')}
-            >
-              {t('Reactive')}
-            </button>
-            <button
-              type="button"
-              className={mode === 'proactive' ? `${styles.mcButton} ${styles.mcButtonOn}` : styles.mcButton}
-              aria-pressed={mode === 'proactive'}
-              onClick={() => storeSetMode(characterId, 'proactive')}
-              {...hintHandlers('proactive')}
-            >
-              {t('Proactive')}
-            </button>
-            <div className={styles.controlsHint} aria-live="polite">
-              {controlHint ? t(CONTROL_DESCRIPTIONS[controlHint]) : ''}
-            </div>
-            <button
-              type="button"
-              className={`${styles.mcButton} ${styles.disconnectBtn}`}
-              onClick={disconnect}
-              {...hintHandlers('disconnect')}
-            >
-              {t('Disconnect')}
-            </button>
-          </section>
+          {/* ── Controls window (260725): pause toggle, runtime play mode,
+              Disconnect. Shared with the other games' dashboards
+              (McDashControls); mode is never persisted. ── */}
+          <McDashControls
+            paused={paused}
+            mode={mode}
+            onPause={(next) => storeSetPaused(characterId, next)}
+            onMode={(next) => storeSetMode(characterId, next)}
+            onDisconnect={disconnect}
+            gameName="Minecraft"
+          />
         </div>
       ) : (
         <div className={styles.waiting}>{t('Waiting for {name}...', { name })}</div>

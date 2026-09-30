@@ -120,6 +120,14 @@
   }
 }
 
+/* Muted version-guidance line under the steps; mirrors LanNotOpenModal's .hint. */
+.hint {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 0;
+}
+
 .skinBody {
   margin: 0;
   font-family: var(--sans);

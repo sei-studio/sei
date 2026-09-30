@@ -27,23 +27,10 @@ import { ProviderSelect, type Provider } from './ProviderSelect';
 import { TextField } from './TextField';
 import styles from './ApiKeySetupModal.module.css';
 
-// Mirrors OnboardingScreen's step-3 label map so the key prompt names the
-// selected provider ("Paste your Anthropic API key").
-const PROVIDER_LABELS: Record<Provider, string> = {
-  anthropic: 'Anthropic',
-  openai: 'OpenAI',
-  gemini: 'Gemini',
-  ollama: 'Ollama',
-  grok: 'Grok',
-  openrouter: 'OpenRouter',
-  deepseek: 'DeepSeek',
-  mistral: 'Mistral',
-  together: 'Together',
-  groq: 'Groq',
-  fireworks: 'Fireworks',
-  cerebras: 'Cerebras',
-  perplexity: 'Perplexity',
-};
+// 260816 (china-compat): labels come from the shared catalog so the key
+// prompt names the selected provider ("Paste your Anthropic API key") and
+// stays in sync with the picker's offered list.
+import { PROVIDER_LABELS } from '@shared/llmCatalog';
 
 export interface ApiKeySetupModalProps {
   /** Close without switching — returns to the hard-stop modal. */
@@ -78,7 +65,9 @@ export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps
 
   const save = async (): Promise<void> => {
     const key = apiKey.trim();
-    if (!key) {
+    // 260817 W10: ollama is keyless — an empty key is valid for it (matches
+    // Settings and the onboarding wizards).
+    if (!key && provider !== 'ollama') {
       setError(t('API key cannot be empty.'));
       return;
     }
@@ -95,7 +84,7 @@ export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps
         provider,
         provider_config: cfg.provider_config ?? {},
       });
-      await sei.saveApiKey(key);
+      if (key) await sei.saveApiKey(key);
       await sei.proxyConfigure('local');
       onComplete();
     } catch {
@@ -104,8 +93,11 @@ export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps
     }
   };
 
-  const providerLabel = PROVIDER_LABELS[provider] ?? 'API';
-  const canSave = apiKey.trim() !== '' && !saving;
+  const providerLabel = t(PROVIDER_LABELS[provider] ?? 'API');
+  // Ollama is keyless (260915): Save was disabled for it because the field
+  // had to be non-empty, so the modal could never switch to a local model.
+  const keyless = provider === 'ollama';
+  const canSave = (apiKey.trim() !== '' || keyless) && !saving;
 
   return (
     <ModalShell title={t('Use your own API key')} tier="stacked" onClose={onCancel} escClose={false}>
@@ -113,6 +105,9 @@ export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps
         {t('Pick a provider and paste a key. Sei runs on your key instead of playtime.')}
       </p>
       <ProviderSelect value={provider} onChange={setProvider} compact />
+      {keyless ? (
+        <p className={styles.body}>{t('Ollama runs on your computer and needs no API key.')}</p>
+      ) : (
       <div className={styles.keyField}>
         <span className={styles.fieldLabel}>
           {t('Paste your {provider} API key', { provider: providerLabel })}
@@ -134,6 +129,7 @@ export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps
           aria-invalid={!!error}
         />
       </div>
+      )}
       {error ? <p className={styles.error}>{error}</p> : null}
       <ModalFooter>
         <Button kind="quiet" disabled={saving} onClick={onCancel}>

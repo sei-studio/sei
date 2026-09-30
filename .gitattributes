@@ -1,0 +1,2 @@
+# patch-package diffs must apply byte-exact on Windows runners (core.autocrlf=true).
+patches/*.patch -text

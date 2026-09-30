@@ -13,6 +13,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useT } from '../lib/i18n';
+import { cleanIpcError } from '../lib/errors';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { KnowledgeDropZone } from './KnowledgeDropZone';
@@ -32,14 +33,6 @@ type FormState =
   | { mode: 'add' }
   | { mode: 'edit'; entryId: string };
 
-/** Strip Electron's IPC wrapper so main's user-facing copy shows clean. */
-function cleanError(err: unknown): string {
-  const raw = (err as Error)?.message ?? String(err);
-  return raw
-    .replace(/^Error invoking remote method '[^']*':\s*/, '')
-    .replace(/^(KnowledgeExtractError|Error):\s*/, '');
-}
-
 export function KnowledgeModal({
   characterId,
   characterName,
@@ -58,7 +51,7 @@ export function KnowledgeModal({
     try {
       setEntries(await sei.knowledgeList(characterId));
     } catch (err) {
-      setError(cleanError(err));
+      setError(cleanIpcError(err));
     }
   }, [characterId]);
 
@@ -75,7 +68,7 @@ export function KnowledgeModal({
       await sei.knowledgeAdd(characterId, { title: file.title, content: file.content, source: 'upload' });
       await refresh();
     } catch (err) {
-      setError(cleanError(err));
+      setError(cleanIpcError(err));
     }
   };
 
@@ -97,7 +90,7 @@ export function KnowledgeModal({
       setFormContent(res.content);
       setForm({ mode: 'edit', entryId });
     } catch (err) {
-      setError(cleanError(err));
+      setError(cleanIpcError(err));
     }
   };
 
@@ -114,7 +107,7 @@ export function KnowledgeModal({
       setForm(null);
       await refresh();
     } catch (err) {
-      setError(cleanError(err));
+      setError(cleanIpcError(err));
     } finally {
       setFormBusy(false);
     }
@@ -131,7 +124,7 @@ export function KnowledgeModal({
       await sei.knowledgeDelete(characterId, entryId);
       await refresh();
     } catch (err) {
-      setError(cleanError(err));
+      setError(cleanIpcError(err));
     }
   };
 

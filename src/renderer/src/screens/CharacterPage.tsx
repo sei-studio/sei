@@ -40,6 +40,7 @@ import { AvatarPane } from '../components/avatar/AvatarPane';
 import { ResetMemoryConfirmModal } from '../components/ResetMemoryConfirmModal';
 import { UnbindConfirmModal } from '../components/UnbindConfirmModal';
 import { KnowledgeModal } from '../components/KnowledgeModal';
+import { PortraitVersionsModal } from '../components/PortraitVersionsModal';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 import { ReportCompanionModal } from '../components/ReportCompanionModal';
 import { formatDate } from '../lib/formatDate';
@@ -48,6 +49,7 @@ import { BackIcon, GearIcon, RotateIcon, FullscreenIcon } from '../components/ic
 import { pickPalette } from '../lib/portraitPalettes';
 import { portraitSrc } from '../lib/portraitSrc';
 import type { Character } from '@shared/characterSchema';
+import { cloudAvatarOf } from '@shared/characterSchema';
 import styles from './CharacterPage.module.css';
 
 function fmtMs(ms: number): string {
@@ -150,6 +152,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   // 260725 Knowledge popup — available for every character.
   const [knowledgeOpen, setKnowledgeOpen] = useState<boolean>(false);
+  // 260909 Card image popup (versions + regenerate) — owned characters only.
+  const [cardImageOpen, setCardImageOpen] = useState<boolean>(false);
   const settingsRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!settingsOpen) return;
@@ -612,8 +616,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
         </div>
 
         {tab === 'avatar' ? (
-          <div className={styles.pane}>
-            <AvatarPane characterId={character.id} />
+          <div className={`${styles.pane} ${styles.paneScroll}`}>
+            <AvatarPane characterId={character.id} cloudAvatar={cloudAvatarOf(character)} />
           </div>
         ) : tab === 'description' ? (
           <div className={styles.pane}>
@@ -807,6 +811,19 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                     >
                       {t('Knowledge')}
                     </button>
+                    {canShare ? (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className={styles.settingsItem}
+                        onClick={() => {
+                          setSettingsOpen(false);
+                          setCardImageOpen(true);
+                        }}
+                      >
+                        {t('Card image')}
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       role="menuitem"
@@ -857,6 +874,13 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           characterId={character.id}
           characterName={character.name}
           onClose={() => setKnowledgeOpen(false)}
+        />
+      ) : null}
+      {cardImageOpen ? (
+        <PortraitVersionsModal
+          characterId={character.id}
+          characterName={character.name}
+          onClose={() => setCardImageOpen(false)}
         />
       ) : null}
       {resetConfirmOpen ? (

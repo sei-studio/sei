@@ -6,7 +6,7 @@
  * (searching=true, via summonFlow.proceedSummon). Two tabs:
  *
  *  - 'world' (default): the open-to-LAN steps with the live world-detection
- *    pill. The "searching for an open LAN world" animation appears ONLY in
+ *    pill, and Start Minecraft (260929) when a Sei profile exists. The "searching for an open LAN world" animation appears ONLY in
  *    the launch-blocked path (searching=true); the plain help window shows
  *    the same steps without it.
  *  - 'skin': brief pointer to skin setup, with a button that opens the skin
@@ -22,6 +22,9 @@
  */
 
 import React, { useEffect, useState } from 'react';
+// The ceiling comes from minecraft-protocol's table via lib/mcVersions (the
+// same table the bot enforces), so it can never drift from what Sei joins.
+import { MC_NEWEST_JOINABLE } from '../lib/mcVersions';
 import { useT } from '../lib/i18n';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useUiStore } from '../lib/stores/useUiStore';
@@ -31,6 +34,16 @@ import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { StatusPill, type StatusPillTone } from './StatusPill';
 import styles from './McSetupModal.module.css';
+import noteStyles from './LanNotOpenModal.module.css';
+import { useFirewallHint, useSeiProfileAction } from './mcdash/useStartMinecraft';
+
+/**
+ * Newest Minecraft Java version Sei can join, from the same joinable list the
+ * "Which versions?" control shows (lib/mcVersions). 260929: this used to be
+ * the setup wizard's target (26.1), so the hint said "up to 26.1" while Sei
+ * joins 26.2 / 26.3; the wizard version is named where the Sei profile is.
+ */
+const LATEST_SUPPORTED: string = MC_NEWEST_JOINABLE;
 
 const STEPS: readonly string[] = [
   'Launch Minecraft and open your singleplayer world.',
@@ -71,6 +84,8 @@ export function McSetupModal({ tab: initialTab, searching }: McSetupModalProps):
   const returnToChat = useUiStore((s) => s.pendingSummonReturnToChat);
   const setPendingSummonReturnToChat = useUiStore((s) => s.setPendingSummonReturnToChat);
   const openWizard = useWizardStore((s) => s.openWizard);
+  const action = useSeiProfileAction();
+  const firewallHint = useFirewallHint();
 
   // ── Auto-resume on open world (D-56) ────────────────────────────────────
   useEffect(() => {
@@ -152,6 +167,17 @@ export function McSetupModal({ tab: initialTab, searching }: McSetupModalProps):
               </li>
             ))}
           </ol>
+          <p className={styles.hint}>
+            {t('Your world needs a supported Minecraft Java version. Sei supports versions up to {latest}.', {
+              latest: LATEST_SUPPORTED,
+            })}
+          </p>
+          {firewallHint ? <p className={styles.hint}>{firewallHint}</p> : null}
+          {action.note ? (
+            <p className={noteStyles.note} role="status" data-tone={action.note.tone}>
+              {action.note.text}
+            </p>
+          ) : null}
           {searching ? (
             <div className={styles.searching}>
               <span className={styles.searchDots} aria-hidden="true">
@@ -179,6 +205,11 @@ export function McSetupModal({ tab: initialTab, searching }: McSetupModalProps):
       )}
 
       <ModalFooter>
+        {tab === 'world' && action.ready && lan.kind !== 'open' ? (
+          <Button kind="ghost" size="md" disabled={action.busy} onClick={action.onClick}>
+            {action.label}
+          </Button>
+        ) : null}
         <Button kind="primary" size="md" onClick={onClose}>
           {t('Close')}
         </Button>

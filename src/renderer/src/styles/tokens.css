@@ -103,11 +103,16 @@
   --muted: #7d92ab;
   --muted-2: #a7b6c8;
 
-  --accent: #7fb0ff;
-  --accent-strong: #4f8fef;   /* deeper periwinkle — hover / high-contrast text */
-  --accent-soft: rgba(127, 176, 255, 0.18);
-  --accent-text: #ffffff;     /* white text on the periwinkle fill (e.g. Summon CTA) */
-  --acc: 127 176 255;
+  /* 260929: the accent is a deeper, calmer blue than the #7fb0ff chrome
+     (was the same #7fb0ff, hover #4f8fef): white button text on #7fb0ff was
+     2.2:1 and the step numbers / selected labels on white the same. Now
+     4.9:1 for both (WCAG AA). The rail, top strip, --elbow and --heading
+     keep the periwinkle, so the theme still reads as ice. */
+  --accent: #3f6fc4;
+  --accent-strong: #335da6;   /* deeper still — hover / high-contrast text (6.5:1 on white) */
+  --accent-soft: rgba(63, 111, 196, 0.14);
+  --accent-text: #ffffff;     /* white text on the accent fill (e.g. Summon CTA) */
+  --acc: 63 111 196;
   --acc-c: rgb(var(--acc));
 
   --green: #18a85c;           /* fresh spring green — complements periwinkle */
@@ -153,11 +158,11 @@
   --text-2: #586273;
   --muted: #7d92ab;
   --muted-2: #a7b6c8;
-  --accent: #7fb0ff;
-  --accent-strong: #4f8fef;
-  --accent-soft: rgba(127, 176, 255, 0.18);
+  --accent: #3f6fc4;
+  --accent-strong: #335da6;
+  --accent-soft: rgba(63, 111, 196, 0.14);
   --accent-text: #ffffff;
-  --acc: 127 176 255;
+  --acc: 63 111 196;
   --green: #18a85c;
   --red: #d94f3a;
   --red-strong: #b83f2c;
@@ -219,13 +224,16 @@
   --muted: #82807a;
   --muted-2: #56544e;
 
-  --accent: #7fb0ff;
-  --accent-strong: #9cc4ff;
-  --accent-soft: rgba(127, 176, 255, 0.16);
+  /* 260929: a slightly deeper, less saturated periwinkle (was #7fb0ff, hover
+     #9cc4ff), which glared on the dark popups. Still AA everywhere it is
+     used: the dark button text on it is 6.5:1, it on --bg2 6.7:1. */
+  --accent: #6c9ae0;
+  --accent-strong: #86ade8;
+  --accent-soft: rgba(108, 154, 224, 0.16);
   /* Text/icon on an accent fill — the mockup hardcodes #1a1206 on the CTA
      regardless of accent hue; near-black on the periwinkle fill. */
   --accent-text: #1a1206;
-  --acc: 127 176 255;
+  --acc: 108 154 224;
   --acc-c: rgb(var(--acc));
 
   --green: #78c878;

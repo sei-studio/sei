@@ -567,3 +567,13 @@ the discovering plan (per executor scope-boundary rule).
   reset email it triggers opens SetNewPasswordModal.
 - **Severity:** Blocking. Ship the dashboard change and the client together.
 - **Owner:** anyone with project-owner access to the Supabase dashboard.
+- **Update (2026-08-10): APPLIED**, via the management API (`PATCH
+  /v1/projects/{ref}/config/auth`), with one deliberate deviation: both
+  templates render the `{{ .Token }}` code FIRST and keep a
+  `{{ .ConfirmationURL }}` link below it ("If your version of Sei asks you to
+  check your inbox for a link instead..."), because stable v0.5.x clients are
+  still link-flow and a code-only email would strand their signups. Remove the
+  link line once stable ships the code panel. `mailer_otp_length` was also
+  corrected 8 → 6 to match `CodeInput`'s default. Verified live: a real signup
+  received the 6-digit code email (test user deleted afterwards). The redirect
+  config was left untouched per the note above.

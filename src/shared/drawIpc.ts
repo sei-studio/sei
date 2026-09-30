@@ -1,9 +1,11 @@
 /**
  * Draw! minigame: shared renderer <-> main contract (260727).
  *
- * A turn-based sketch-guessing game. One game per character, N rounds (1-5,
- * chosen on the setup screen). Each ROUND is two TURNS: the player draws while
- * the character guesses, then the character draws while the player guesses.
+ * A turn-based sketch-guessing game. One game per character, ROUNDS rounds
+ * (INTRO_ROUNDS for a player's first game). Each ROUND is two TURNS: the
+ * player draws while the character guesses, then the character draws while
+ * the player guesses. In the intro game the order is flipped: the character
+ * draws first, so the player sees a turn before they have to draw.
  * Every turn is capped at TURN_MS (3 minutes) and ends early the moment the
  * guesser says the word.
  *
@@ -48,6 +50,17 @@ export const CANVAS_H = 700;
 export const ROUNDS = 3;
 export const MIN_ROUNDS = 1;
 export const MAX_ROUNDS = 5;
+
+/**
+ * A player's first game (260929) is the INTRO: this many rounds, with the
+ * character drawing first. Real usage had 12 of 18 games abandoned, 4 of them
+ * at 0 turns about 70 seconds into the player's own first drawing turn: the
+ * player always drew first, on the spot, for up to three minutes, before ever
+ * seeing a turn played. Main decides it (UserConfig.draw_intro_done) and
+ * says so in DrawGameState.intro; whatever round count the renderer asks for
+ * is overridden for the intro game.
+ */
+export const INTRO_ROUNDS = 1;
 
 /** Words offered to the player before each of their drawing turns. */
 export const WORD_CHOICES = 3;
@@ -162,6 +175,12 @@ export interface DrawGameState {
    */
   paused?: boolean;
   pausedRemainingMs?: number;
+  /**
+   * Why it paused (260926). 'depleted' = the weekly credit wall: the paused
+   * card carries the free-play reset date and offers draw:finish (end the
+   * game, keep the drawings) next to Resume. Absent on older mains.
+   */
+  pausedReason?: 'depleted' | 'rate_limited';
   /** Committed strokes for the current turn (see the ai-stroke note above). */
   strokes: DrawStroke[];
   /**
@@ -179,6 +198,12 @@ export interface DrawGameState {
   /** Display names for the chat column and the gallery headings. */
   playerName: string;
   aiName: string;
+  /**
+   * The player's first game (260929): INTRO_ROUNDS long, and the character
+   * draws first in every round. Set from the setup screen on, so the setup
+   * copy can say so before Start. Absent on older mains = a normal game.
+   */
+  intro?: boolean;
 }
 
 /**
@@ -208,6 +233,15 @@ export interface DrawSnapshotRequest {
 
 /** Typed error codes thrown by drawStart (surface as popups, not toasts). */
 export const DRAW_ERR_MC_ACTIVE = 'DRAW_MC_SESSION_ACTIVE';
+
+/**
+ * china-compat W9: the active local LLM cannot see images, so a game whose
+ * every turn is a canvas snapshot cannot run. The renderer gates the picker
+ * tile on useUiStore.llmVision; this token is the main-side backstop's
+ * message prefix (error `code` does not survive the IPC boundary, so the
+ * renderer matches the message).
+ */
+export const DRAW_ERR_NO_VISION = 'DRAW_LLM_NO_VISION';
 
 /**
  * window.sei surface (implemented in src/preload/index.ts):

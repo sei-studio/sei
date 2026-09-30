@@ -627,3 +627,39 @@ describe('cancelSubscription', () => {
     expect(shell.openExternal).not.toHaveBeenCalled();
   });
 });
+
+// 260926: a failed feedback send reports which step failed and the HTTP
+// status, for the feedback_failed analytics event.
+describe('feedbackSubmit', () => {
+  it('ok on a 200 with ok:true', async () => {
+    signIn();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, usage_reset: true }) }));
+    const { feedbackSubmit } = await import('./proxyClient');
+    expect(await feedbackSubmit({ body: 'hi' })).toEqual({ ok: true, usage_reset: true, already_claimed: false });
+    vi.unstubAllGlobals();
+  });
+
+  it('carries the HTTP status on a 5xx', async () => {
+    signIn();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 525, json: async () => ({}) }));
+    const { feedbackSubmit } = await import('./proxyClient');
+    expect(await feedbackSubmit({ body: 'hi' })).toEqual({ ok: false, code: 'PROXY_NETWORK', status: 525, reason: 'http_error' });
+    vi.unstubAllGlobals();
+  });
+
+  it('names a fetch failure (TLS / DNS / offline)', async () => {
+    signIn();
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')));
+    const { feedbackSubmit } = await import('./proxyClient');
+    expect(await feedbackSubmit({ body: 'hi' })).toEqual({ ok: false, code: 'PROXY_NETWORK', reason: 'fetch_failed' });
+    vi.unstubAllGlobals();
+  });
+
+  it('429 stays PROXY_RATE_LIMITED', async () => {
+    signIn();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 429, json: async () => ({}) }));
+    const { feedbackSubmit } = await import('./proxyClient');
+    expect(await feedbackSubmit({ body: 'hi' })).toEqual({ ok: false, code: 'PROXY_RATE_LIMITED', status: 429 });
+    vi.unstubAllGlobals();
+  });
+});

@@ -56,8 +56,10 @@ describe('IconRail (B3 Discord-style sidebar)', () => {
     expect(source.includes('PixelPortrait')).toBe(true);
     expect(source.includes('avatarCluster')).toBe(true);
     expect(source.includes('size={40}')).toBe(true);
-    // <img> path for portrait_image fallback
-    expect(source.includes('portraitImage ?')).toBe(true);
+    // <img> path for portrait_image, with the broken-image fallback to the
+    // procedural sprite (260907: a dead ref must never render a blank circle).
+    expect(source.includes('portraitImage && !imgFailed ?')).toBe(true);
+    expect(source.includes('onError={() => setImgFailed(true)}')).toBe(true);
   });
 
   it('Test 4: dormant + socket navigates to awaken', () => {

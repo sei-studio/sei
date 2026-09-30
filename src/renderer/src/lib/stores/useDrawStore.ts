@@ -13,13 +13,16 @@
  */
 
 import { create } from 'zustand';
-import type {
-  DrawAiStroke,
-  DrawGameState,
-  DrawSnapshotRequest,
-  DrawStroke,
+import {
+  DRAW_ERR_NO_VISION,
+  type DrawAiStroke,
+  type DrawGameState,
+  type DrawSnapshotRequest,
+  type DrawStroke,
 } from '@shared/drawIpc';
 import { t } from '../i18n';
+import { visionGateReason } from '../visionGate';
+import { useUiStore } from './useUiStore';
 
 /** Narrow local view of the draw members on window.sei. Single cast point. */
 interface DrawApi {
@@ -35,6 +38,7 @@ interface DrawApi {
   drawSaveGallery(characterId: string, pngDataUrl: string): Promise<string>;
   drawEnd(characterId: string): Promise<void>;
   drawResume(characterId: string): Promise<void>;
+  drawFinish(characterId: string): Promise<DrawGameState | null>;
   onDrawState(cb: (s: DrawGameState) => void): () => void;
   onDrawAiStroke(cb: (s: DrawAiStroke) => void): () => void;
   onDrawSnapshotRequest(cb: (r: DrawSnapshotRequest) => void): () => void;
@@ -68,7 +72,14 @@ export interface DrawStoreState {
   saveGallery: (characterId: string, pngDataUrl: string) => Promise<string | null>;
   /** Resume a game paused by the usage limit; state comes back on the push. */
   resume: (characterId: string) => void;
+  /** End a credit-wall-paused game into the gallery, drawings kept (260926). */
+  finishEarly: (characterId: string) => void;
   end: (characterId: string) => Promise<void>;
+  /**
+   * Account switch (260926): forget every game without calling main, which
+   * already ended them (and recorded them) for the outgoing account.
+   */
+  resetForScope: () => void;
 }
 
 /** Push unsubscriber, torn down on HMR dispose (see useChessStore). */
@@ -116,7 +127,14 @@ export const useDrawStore = create<DrawStoreState>((set, get) => {
         applyState(state);
         set((s) => ({ error: { ...s.error, [characterId]: null } }));
       } catch (err) {
-        set((s) => ({ error: { ...s.error, [characterId]: (err as Error).message } }));
+        const msg = (err as Error).message ?? '';
+        // Main's authoritative vision backstop (china-compat W9): the picker
+        // tile is gated too, but an already-open setup screen can outlive a
+        // model switch. Localize the token to the shared gate copy.
+        const text = msg.includes(DRAW_ERR_NO_VISION)
+          ? visionGateReason(t, 'draw', useUiStore.getState().llmModel)
+          : msg;
+        set((s) => ({ error: { ...s.error, [characterId]: text } }));
       } finally {
         set((s) => ({ starting: { ...s.starting, [characterId]: false } }));
       }
@@ -172,6 +190,13 @@ export const useDrawStore = create<DrawStoreState>((set, get) => {
     resume: (characterId) => {
       void drawApi().drawResume?.(characterId)?.catch?.(() => {});
     },
+
+    finishEarly: (characterId) => {
+      // The state push that follows moves the screen to the gallery.
+      void drawApi().drawFinish?.(characterId)?.catch?.(() => {});
+    },
+
+    resetForScope: () => set({ games: {}, starting: {}, error: {}, savedTo: {} }),
 
     end: async (characterId) => {
       set((s) => {

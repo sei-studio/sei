@@ -57,7 +57,18 @@ let asr: Asr | null = null;
  * language tokens), a language pin for the multilingual model. */
 let asrOptions: AsrOptions = {};
 
-async function init(language: string): Promise<void> {
+/**
+ * Model download hosts, tried in order (260816, china-compat). Hugging Face
+ * is hard-blocked in mainland China, so the same q8 file set is mirrored at
+ * dl.sei.gg/hf in transformers.js's own {model}/resolve/{revision} layout
+ * (scripts/mirror-assets.mjs) and callers pass mirrorFirst=true when the
+ * region check says HF is unreachable. Once files are in the browser Cache
+ * API the host never matters again.
+ */
+const HOST_HF = 'https://huggingface.co';
+const HOST_MIRROR = 'https://dl.sei.gg/hf';
+
+async function init(language: string, mirrorFirst: boolean): Promise<void> {
   const multilingual = language !== 'en';
   const model = multilingual ? MODEL_MULTILINGUAL : MODEL_EN;
   asrOptions = multilingual ? { language, task: 'transcribe' } : {};
@@ -104,11 +115,25 @@ async function init(language: string): Promise<void> {
   // transcribes correctly. tiny.en/base on wasm are fast enough for
   // utterance-sized clips; revisit webgpu with fp32/fp16 dtypes if latency
   // ever matters more.
-  asr = (await pipeline('automatic-speech-recognition', model, {
-    device: 'wasm',
-    dtype: 'q8',
-    progress_callback: reportProgress,
-  })) as unknown as Asr;
+  const hosts = mirrorFirst ? [HOST_MIRROR, HOST_HF] : [HOST_HF, HOST_MIRROR];
+  let lastErr: unknown = null;
+  for (const host of hosts) {
+    env.remoteHost = host;
+    try {
+      asr = (await pipeline('automatic-speech-recognition', model, {
+        device: 'wasm',
+        dtype: 'q8',
+        progress_callback: reportProgress,
+      })) as unknown as Asr;
+      return;
+    } catch (err) {
+      lastErr = err;
+      // Reset the aggregate so the second host's progress starts honest.
+      files.clear();
+      lastPct = 0;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 }
 
 /**
@@ -153,11 +178,17 @@ function cleanTranscript(raw: string): string {
 }
 
 self.onmessage = (e: MessageEvent) => {
-  const msg = e.data as { type: string; id?: number; audio?: Float32Array; language?: string };
+  const msg = e.data as {
+    type: string;
+    id?: number;
+    audio?: Float32Array;
+    language?: string;
+    mirrorFirst?: boolean;
+  };
   if (msg.type === 'init') {
     const language =
       typeof msg.language === 'string' && KNOWN_LANGUAGES.has(msg.language) ? msg.language : 'en';
-    void init(language)
+    void init(language, msg.mirrorFirst === true)
       .then(() => self.postMessage({ type: 'ready' }))
       .catch((err: unknown) =>
         self.postMessage({ type: 'init-error', message: (err as Error)?.message ?? String(err) }),

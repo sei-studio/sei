@@ -118,12 +118,108 @@ const MinecraftAdapterSchema = z.object({
   player_stagger_ms: z.number().int().min(0).default(350),
 })
 
-const AdapterSchema = z.object({
-  kind: z.literal('minecraft').default('minecraft'),
-  minecraft: MinecraftAdapterSchema,
+// Stardew Valley (M1, 260908): the loopback link to the SMAPI mod
+// (native/stardew-mod/PROTOCOL.md). Built by adapter/stardew/runtime.js
+// adapterConfigFrom from main's StardewJoinTarget {port, token, label}.
+const StardewAdapterSchema = z.object({
+  host: z.string().default('localhost'),
+  port: z.number().int().min(1).max(65535).optional(),
+  // The per-install secret the mod's config.json carries; the WebSocket
+  // upgrade is refused without it.
+  token: z.string().default(''),
+  // The companion's in-game display name (persona name, sanitised).
+  username: z.string().min(1),
+  reconnect_delay_ms: z.number().int().min(0).default(3000),
+  // 260921: how the companion looks as a farmer, forwarded verbatim in the
+  // spawn frame. Deliberately LOOSE here: main validated it against the
+  // legend-bound schema (src/shared/stardewAppearance.ts, which this process
+  // cannot import) and the mod clamps every field against the game, so a
+  // second strict copy would only be a third place to keep in step. `.catch`
+  // drops a malformed block instead of failing the whole bot config: looks
+  // must never be the reason a summon dies.
+  appearance: z.object({
+    gender: z.string(),
+    skin: z.number().int(),
+    hair: z.number().int(),
+    hairColor: z.string(),
+    eyeColor: z.string(),
+    shirt: z.number().int(),
+    pants: z.number().int(),
+    pantsColor: z.string(),
+    accessory: z.number().int(),
+  }).optional().catch(undefined),
 })
 
-export const ConfigSchema = z.object({
+// Game adapters (M0, 260908). `kind` selects which runtime the composer
+// (src/bot/index.js) dynamic-imports from src/bot/adapter/<kind>/runtime.js;
+// only that game's sub-tree is required. `dontstarve` is a passthrough
+// PLACEHOLDER until its adapter lands. Keep the member list in sync with
+// GAME_KINDS below and GameId in src/shared/gameIpc.ts.
+export const GAME_KINDS = ['minecraft', 'stardew', 'dontstarve']
+
+// Don't Starve Together (game-adapters M2, 260908). Built by
+// src/bot/adapter/dontstarve/runtime.js adapterConfigFrom from main's
+// DstJoinTarget (src/shared/dstIpc.ts): the world identity (session id +
+// label), who to spawn beside, the survivor prefab + its primer paragraph,
+// and the announce toggle. The runtime's own loopback listener is ephemeral
+// (port 0) and reported back to main, so no port lives here.
+export const DontStarveAdapterSchema = z.object({
+  username: z.string().min(1).max(32),
+  session: z.string().default(''),
+  label: z.string().default(''),
+  day: z.number().int().nonnegative().default(1),
+  season: z.string().default(''),
+  phase: z.string().default(''),
+  caves: z.boolean().default(false),
+  nearUserid: z.string().default(''),
+  nearName: z.string().default(''),
+  prefab: z.string().min(1).max(32).default('wilson'),
+  survivorBrief: z.string().default(''),
+  announce: z.boolean().default(true),
+  /** Wait for the mod's `spawned` after the runtime starts listening. */
+  spawn_timeout_ms: z.number().int().min(1000).default(25_000),
+  /** No mod traffic for this long after spawn = the world is gone. */
+  heartbeat_loss_ms: z.number().int().min(1000).default(10_000),
+  /** Bounded long-poll hold for GET /cmd (measured against QueryServer on day one). */
+  cmd_hold_ms: z.number().int().min(0).max(5000).default(400),
+  /** After a death, how long the brain gets to react before the session ends. */
+  death_grace_ms: z.number().int().min(0).default(8_000),
+})
+
+const AdapterSchema = z.object({
+  kind: z.enum(GAME_KINDS).default('minecraft'),
+  minecraft: MinecraftAdapterSchema.optional(),
+  stardew: StardewAdapterSchema.optional(),
+  dontstarve: DontStarveAdapterSchema.optional(),
+}).superRefine((a, ctx) => {
+  if (a.kind === 'dontstarve' && !a.dontstarve) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['dontstarve'], message: 'adapter.dontstarve is required when adapter.kind is "dontstarve"' })
+  }
+  // A Minecraft session still REQUIRES its block (unchanged contract: the
+  // old schema made `minecraft` mandatory, so a Minecraft config without it
+  // must keep failing to parse instead of silently booting a bodiless bot).
+  if (a.kind === 'minecraft' && !a.minecraft) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['minecraft'], message: 'adapter.minecraft is required when adapter.kind is "minecraft"' })
+  }
+  if (a.kind === 'stardew' && !a.stardew) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['stardew'], message: 'adapter.stardew is required when adapter.kind is "stardew"' })
+  }
+})
+
+// The full set of provider kinds the bot factory can run (see
+// src/bot/brain/llm/index.js SUPPORTED_PROVIDERS — same members). Exported so
+// the init-payload mapper (llmInit.js) can validate a provider shipped by main
+// without importing the whole schema. Deliberately duplicated from
+// src/shared/llmCatalog.ts — this process cannot import shared TS; llmCatalog
+// stays the documented source of truth for what the UI OFFERS (its
+// SHOWN_PROVIDERS is a subset of this list; the rest are grandfathered).
+export const LLM_PROVIDER_KINDS = [
+  'anthropic', 'openai', 'gemini', 'grok', 'openrouter', 'ollama',
+  'deepseek', 'qwen', 'mistral', 'together', 'groq', 'fireworks',
+  'cerebras', 'perplexity',
+]
+
+const ConfigObjectSchema = z.object({
   // chat_mode: 'chat' (default) — only `say()` lines reach Minecraft chat.
   // 'full' — assistant `text` (private scratch) ALSO reaches chat with a
   // `[think] ` prefix so the player can watch the bot's reasoning in real
@@ -146,10 +242,12 @@ export const ConfigSchema = z.object({
   // (this process cannot import that TS module).
   chat_language: z.enum(['en', 'zh', 'ja', 'ko', 'fr', 'es']).default('en'),
   player_username: z.string(),
-  // LAN world MOTD (level name) from discovery, used as a human label for the
-  // world registry / MEMORY.md section headers. Optional — falls back to spawn
-  // coords when absent (e.g. the broadcast carried no MOTD).
-  lan_motd: z.string().nullable().default(null),
+  // Human label for the world this session joins (Minecraft: the LAN MOTD /
+  // level name; Stardew: the farm name; DST: the cluster name), used by the
+  // world registry / MEMORY.md section headers. Optional — the adapter's
+  // getWorldIdentity() falls back to its own label when absent. 260908: was
+  // `lan_motd`; the legacy key is hoisted into this one at parse time below.
+  world_label: z.string().nullable().default(null),
   // Friendly name the LLM addresses the player by. Substituted in chat events
   // and convo memory in place of the raw MC username so the bot never speaks
   // the player's gamertag. Falls back to player_username when empty.
@@ -211,10 +309,11 @@ export const ConfigSchema = z.object({
       baseURL: z.string().url(),
       authToken: z.string().min(1),
     }).optional(),
-  }).refine(
-    (a) => a.cloudMode != null || (a.api_key != null && a.api_key.length > 0),
-    { message: 'anthropic.api_key is required when cloudMode is not set' },
-  ),
+    // The "api_key required unless cloudMode" invariant is enforced at the
+    // ConfigSchema level (superRefine at the bottom of the file), because it
+    // also depends on llm.provider: a keyless provider (Ollama) has nothing to
+    // put here, and a sub-object refine cannot see its sibling.
+  }),
   llm: z.object({
     rate_limit_per_min: z.number().int().min(1).default(30),
     debounce_ms: z.number().int().min(0).default(500),
@@ -227,23 +326,40 @@ export const ConfigSchema = z.object({
     // Phase 14: which provider services the bot loop. Defaults to 'anthropic'
     // so configs predating this phase still boot unchanged. The Anthropic
     // path also covers the Sei cloud proxy (`anthropic.cloudMode`).
-    provider: z.enum([
-      'anthropic', 'openai', 'gemini', 'grok', 'openrouter', 'ollama',
-      'deepseek', 'mistral', 'together', 'groq', 'fireworks',
-      'cerebras', 'perplexity',
-    ]).default('anthropic'),
+    //
+    // 260816 (china-compat): + 'qwen'. Grandfathering is a UI concern —
+    // mistral/together/groq/fireworks/cerebras/perplexity are no longer
+    // OFFERED by the picker (src/shared/llmCatalog.ts SHOWN_PROVIDERS) but
+    // stay in this enum and in the factory so a config already set to one
+    // keeps working. Do not remove them here.
+    provider: z.enum(LLM_PROVIDER_KINDS).default('anthropic'),
     // Per-provider config. Only the active provider's block is required to
     // be populated; the others can stay default-empty.
+    //
+    // 260828: the default model strings below MIRROR src/shared/llmCatalog.ts
+    // DEFAULT_MODELS — the single source of truth (this process cannot import
+    // shared TS, so the values are duplicated by hand). They had drifted
+    // (gpt-4o-mini vs gpt-5-mini, grok-2-latest vs grok-4, gemini-2.0 vs 2.5,
+    // and openrouter's 'anthropic/claude-haiku-4-5' — the dash form is not a
+    // real OpenRouter slug). src/bot/llmCatalogSync.test.js asserts the two
+    // tables agree so they cannot drift again; change models in the catalog
+    // FIRST, then here. (qwen deliberately stays 'qwen-plus' in both — an old
+    // plan said qwen3-max, superseded.)
     providers: z.object({
-      openai:     z.object({ api_key: z.string().default(''), model: z.string().default('gpt-4o-mini'),                                       base_url: z.string().url().optional() }).default({}),
-      gemini:     z.object({ api_key: z.string().default(''), model: z.string().default('gemini-2.0-flash'),                                  base_url: z.string().url().optional() }).default({}),
-      grok:       z.object({ api_key: z.string().default(''), model: z.string().default('grok-2-latest'),                                     base_url: z.string().url().optional() }).default({}),
-      openrouter: z.object({ api_key: z.string().default(''), model: z.string().default('anthropic/claude-haiku-4-5'),                        base_url: z.string().url().optional() }).default({}),
-      deepseek:   z.object({ api_key: z.string().default(''), model: z.string().default('deepseek-chat'),                                     base_url: z.string().url().optional() }).default({}),
-      mistral:    z.object({ api_key: z.string().default(''), model: z.string().default('mistral-small-latest'),                              base_url: z.string().url().optional() }).default({}),
-      together:   z.object({ api_key: z.string().default(''), model: z.string().default('meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo'),       base_url: z.string().url().optional() }).default({}),
+      openai:     z.object({ api_key: z.string().default(''), model: z.string().default('gpt-5-mini'),                                        base_url: z.string().url().optional() }).default({}),
+      gemini:     z.object({ api_key: z.string().default(''), model: z.string().default('gemini-2.5-flash'),                                  base_url: z.string().url().optional() }).default({}),
+      grok:       z.object({ api_key: z.string().default(''), model: z.string().default('grok-4'),                                            base_url: z.string().url().optional() }).default({}),
+      openrouter: z.object({ api_key: z.string().default(''), model: z.string().default('anthropic/claude-haiku-4.5'),                        base_url: z.string().url().optional() }).default({}),
+      // 260816: 'deepseek-chat' alias discontinued 2026-07-24 → deepseek-v4-flash.
+      deepseek:   z.object({ api_key: z.string().default(''), model: z.string().default('deepseek-v4-flash'),                                 base_url: z.string().url().optional() }).default({}),
+      // 260816: Alibaba DashScope compatible mode. Default base URL lives in
+      // the factory (src/bot/brain/llm/index.js BASE_URLS → the CN endpoint);
+      // international accounts override base_url via provider_config.
+      qwen:       z.object({ api_key: z.string().default(''), model: z.string().default('qwen-plus'),                                         base_url: z.string().url().optional() }).default({}),
+      mistral:    z.object({ api_key: z.string().default(''), model: z.string().default('mistral-large-latest'),                              base_url: z.string().url().optional() }).default({}),
+      together:   z.object({ api_key: z.string().default(''), model: z.string().default('meta-llama/Llama-3.3-70B-Instruct-Turbo'),           base_url: z.string().url().optional() }).default({}),
       groq:       z.object({ api_key: z.string().default(''), model: z.string().default('llama-3.3-70b-versatile'),                           base_url: z.string().url().optional() }).default({}),
-      fireworks:  z.object({ api_key: z.string().default(''), model: z.string().default('accounts/fireworks/models/llama-v3p3-70b-instruct'), base_url: z.string().url().optional() }).default({}),
+      fireworks:  z.object({ api_key: z.string().default(''), model: z.string().default('accounts/fireworks/models/llama-v3p1-70b-instruct'), base_url: z.string().url().optional() }).default({}),
       cerebras:   z.object({ api_key: z.string().default(''), model: z.string().default('llama-3.3-70b'),                                     base_url: z.string().url().optional() }).default({}),
       perplexity: z.object({ api_key: z.string().default(''), model: z.string().default('sonar'),                                              base_url: z.string().url().optional() }).default({}),
       ollama:     z.object({ model: z.string().default('llama3.1'),                                                                            base_url: z.string().default('http://localhost:11434') }).default({}),
@@ -315,8 +431,58 @@ export const ConfigSchema = z.object({
     image_quality: z.number().min(0.1).max(1).default(0.4),          // "image quality" (D-03)
     resolution_px: z.number().int().min(64).max(512).default(256),   // D-03 ~256; VIS-06 ≤512 HARD CEILING
   }).default({}),
+  // 260909: web access for the brain (search + visit tools, src/bot/web).
+  // `enabled:false` withholds both tools from the tool list entirely.
+  // `provider`/`api_key` are bridged from UserConfig.web_search_* by the
+  // supervisor (init.webSearch); the defaults are keyless ('auto' = the
+  // DuckDuckGo -> Bing -> Wikipedia chain). Every field defaults so an
+  // absent block parses.
+  web: z.object({
+    enabled: z.boolean().default(true),
+    provider: z.enum(['auto', 'brave', 'tavily', 'serper', 'ddg', 'bing', 'wikipedia']).default('auto'),
+    api_key: z.string().default(''),
+    max_results: z.number().int().min(1).max(10).default(5),
+    page_chars: z.number().int().min(500).max(20000).default(2400),
+    // Per-LOOP budget (search + visit combined). The tool loop re-calls the
+    // model after every result, so this is the only thing bounding a curious
+    // model's spin besides iteration_cap.
+    max_calls_per_loop: z.number().int().min(0).default(6),
+  }).default({}),
   adapter: AdapterSchema,
+}).superRefine((cfg, ctx) => {
+  // 260916: the Anthropic key is required only when the Anthropic path is
+  // what will actually be called: BYOK with llm.provider 'anthropic' and no
+  // cloudMode. It used to be a refine on the `anthropic` sub-object alone,
+  // which could not see llm.provider, so a session on the one keyless
+  // provider (Ollama) shipped anthropic.api_key '' and died here before the
+  // bot ever pinged the world ("Config validation failed" on every summon,
+  // every Minecraft version; the 260914 support case). Other providers only
+  // passed by accident: their vendor key was copied into anthropic.api_key.
+  const a = cfg.anthropic
+  if (a.cloudMode != null) return
+  if (cfg.llm.provider !== 'anthropic') return
+  if (a.api_key != null && a.api_key.length > 0) return
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: ['anthropic'],
+    message: 'anthropic.api_key is required when cloudMode is not set',
+  })
 })
+
+/**
+ * Legacy key hoist (260908): `lan_motd` was renamed `world_label` when the
+ * bot went multi-game. Accepted as an alias for one release so a config.json
+ * or an older main's init mapping still parses; an explicit `world_label`
+ * wins. Applied in a preprocess so ConfigSchema.parse stays the single entry.
+ */
+function hoistLegacyWorldLabel(raw) {
+  if (!raw || typeof raw !== 'object') return raw
+  if (raw.world_label !== undefined || raw.lan_motd === undefined) return raw
+  const { lan_motd, ...rest } = raw
+  return { ...rest, world_label: lan_motd }
+}
+
+export const ConfigSchema = z.preprocess(hoistLegacyWorldLabel, ConfigObjectSchema)
 
 /**
  * Hoist legacy top-level minecraft fields into adapter.minecraft.* if the
@@ -357,7 +523,7 @@ export function loadConfig(path = './config.json', overrides = {}) {
     raw.adapter.minecraft = { ...raw.adapter.minecraft, port: overrides.port }
   }
   if (overrides.motd != null && String(overrides.motd).trim()) {
-    raw.lan_motd = String(overrides.motd).trim()
+    raw.world_label = String(overrides.motd).trim()
   }
   return ConfigSchema.parse(raw)
 }

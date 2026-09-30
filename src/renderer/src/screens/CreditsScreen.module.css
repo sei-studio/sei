@@ -147,6 +147,29 @@
   margin: -6px 0 0;
 }
 
+/* 260926: the credit wall's pause line ("Free play resets in 3 days
+   (Wednesday, Sep 30).") shown only while the allowance is spent. */
+.resetCallout {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  font-family: var(--sans);
+}
+
+.resetCalloutLine {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.resetCalloutHint {
+  font-size: 12px;
+  color: var(--muted-2);
+}
+
 /* ── Plans: three solid tier cards (260725) ───────────────────── */
 .plans {
   display: flex;

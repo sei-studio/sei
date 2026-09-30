@@ -232,8 +232,16 @@
 
 /* ── Status window (260725): full-width strip above the other dialogs,
  * carrying the live "what is the AI doing" line. ── */
-.statusDialog {
+.statusRow {
   flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.statusDialog {
+  flex: 1 1 240px;
+  min-width: 0;
   flex-direction: row;
   align-items: baseline;
   gap: 12px;
@@ -253,6 +261,24 @@
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+}
+
+/* Another companion's window: the same dialog, but a button that opens
+ * their chat. Font and colors are inherited from the panel, not the UA. */
+.statusPeer {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.statusPeer:hover {
+  background: #d2d2d2;
+}
+
+.statusPeer:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: -5px;
 }
 
 /* ── Controls window (260725): play/pause + reactive/proactive. ── */

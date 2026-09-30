@@ -42,6 +42,9 @@ import { create } from 'zustand';
 import type { BackseatSource, BackseatState } from '../../../../shared/backseatIpc';
 import { startCapture, stopCapture, type CaptureHandle } from '../backseat/captureController';
 import { sei } from '../ipcClient';
+import { t } from '../i18n';
+import { visionGateReason } from '../visionGate';
+import { useUiStore } from './useUiStore';
 
 /**
  * How long an armed share waits for its call. The voice-module download alone
@@ -94,6 +97,13 @@ interface BackseatStore {
   end: (characterId: string) => Promise<void>;
   /** Reconcile against main, e.g. after a reload. */
   refresh: (characterId: string) => Promise<void>;
+  /**
+   * Account switch (260926): stop capture and forget every session and any
+   * armed share, WITHOUT backseat:end. Main already ended the sessions (and
+   * wrote their rows) for the outgoing account; a share still starting is
+   * abandoned when it resolves.
+   */
+  resetForScope: () => void;
 }
 
 /** The live capture, held outside the store: it is a handle with methods, not
@@ -108,6 +118,10 @@ let offLine: (() => void) | null = null;
 /** Deadline timer for the armed share. Held outside the store for the same
  *  reason `capture` is: it is a handle, not something anyone renders. */
 let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Bumped by resetForScope: a share() begun under the previous account sees
+ *  it changed across its awaits and unwinds instead of landing. */
+let scopeEpoch = 0;
 
 /** The armed-grid + send path, for whoever is showing the share UI. */
 export function backseatCapture(): CaptureHandle | null {
@@ -146,6 +160,7 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
 
     share: async (characterId, source) => {
       if (get().starting) return false;
+      const epoch = scopeEpoch;
       set({ starting: true, error: null });
       // Order matters: main registers the session first, so a start it refuses
       // (a live Minecraft summon) never leaves a capture running with nothing
@@ -153,24 +168,46 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
       try {
         await sei.backseatStart(characterId, source.id, source.name, 'voice');
       } catch (err) {
+        // Refused because the account is changing (ACCOUNT_SWITCHING), or it
+        // changed while main answered: resetForScope already reset the store.
+        if (epoch !== scopeEpoch) return false;
         const msg = (err as Error).message ?? '';
         set({
           starting: false,
           error: msg.includes('BACKSEAT_MC_SESSION_ACTIVE')
-            ? 'They are in your Minecraft world right now. End that first.'
-            : 'Could not start sharing. Try picking a different window.',
+            ? t('They are in your Minecraft world right now. End that first.')
+            : // Main's authoritative vision backstop (china-compat W9). The
+              // entry points are gated in the renderer too, but a pending
+              // share armed before a model switch can still land here.
+              msg.includes('LLM_NO_VISION')
+              ? visionGateReason(t, 'backseat', useUiStore.getState().llmModel)
+              : t('Could not start sharing. Try picking a different window.'),
         });
         return false;
       }
+      if (epoch !== scopeEpoch) {
+        // The account changed after main accepted the session. Main's switch
+        // ends its sessions itself; ending it here too covers a session that
+        // registered after that sweep. A no-op when it is already gone.
+        void sei.backseatEnd(characterId).catch(() => {});
+        return false;
+      }
       try {
-        capture = await startCapture(characterId, source.id, source.name);
+        const started = await startCapture(characterId, source.id, source.name);
+        if (epoch !== scopeEpoch) {
+          // The account changed while capture was coming up.
+          stopCapture();
+          void sei.backseatEnd(characterId).catch(() => {});
+          return false;
+        }
+        capture = started;
       } catch (err) {
         // Capture failed after main accepted the session, so unwind it rather
         // than leaving a session with no pictures.
         void sei.backseatEnd(characterId).catch(() => {});
         set({
           starting: false,
-          error: (err as Error).message || 'Could not read that window.',
+          error: (err as Error).message || t('Could not read that window.'),
         });
         return false;
       }
@@ -251,6 +288,23 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
       } catch {
         /* already ended */
       }
+    },
+
+    resetForScope: () => {
+      scopeEpoch += 1;
+      if (pendingTimer) clearTimeout(pendingTimer);
+      pendingTimer = null;
+      stopCapture();
+      capture = null;
+      set({
+        active: {},
+        sharingFor: null,
+        stream: null,
+        sourceName: null,
+        starting: false,
+        error: null,
+        pendingShare: null,
+      });
     },
 
     refresh: async (characterId) => {

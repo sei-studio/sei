@@ -9,3 +9,11 @@
   color: var(--text-2);
   margin: 0;
 }
+
+/* 260926: the "Free play resets in N days (...)" line, set apart from the
+   body so the answer to "when can I play again" is the thing you read. */
+.resetLine {
+  margin-top: 10px;
+  color: var(--text);
+  font-weight: 600;
+}

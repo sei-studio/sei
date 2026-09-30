@@ -7,9 +7,11 @@ const baseConfig = {
 }
 
 describe('createLlmProvider', () => {
-  it('lists all 13 supported providers', () => {
+  it('lists all 14 supported providers (incl. qwen and the grandfathered set)', () => {
+    // 260816: qwen added; mistral/together/groq/fireworks/cerebras/perplexity
+    // are grandfathered (hidden from the picker, still run here).
     expect(SUPPORTED_PROVIDERS).toEqual([
-      'anthropic', 'openai', 'grok', 'openrouter', 'deepseek',
+      'anthropic', 'openai', 'grok', 'openrouter', 'deepseek', 'qwen',
       'mistral', 'together', 'groq', 'fireworks', 'cerebras', 'perplexity',
       'gemini', 'ollama',
     ])
@@ -18,13 +20,13 @@ describe('createLlmProvider', () => {
   it('defaults to anthropic when llm.provider missing', () => {
     const p = createLlmProvider({ anthropic: baseConfig.anthropic })
     expect(p.kind).toBe('anthropic')
-    expect(p.capabilities).toEqual({ vision: true, cached: true, local: false })
+    expect(p.capabilities).toEqual({ vision: true, cached: true, local: false, serverWebSearch: true })
     expect(typeof p.call).toBe('function')
     expect(typeof p.buildCachedSystem).toBe('function')
     expect(typeof p.setAuthToken).toBe('function')
   })
 
-  for (const kind of ['openai', 'grok', 'openrouter', 'deepseek', 'mistral', 'together', 'groq', 'fireworks', 'cerebras', 'perplexity']) {
+  for (const kind of ['openai', 'grok', 'openrouter', 'deepseek', 'qwen', 'mistral', 'together', 'groq', 'fireworks', 'cerebras', 'perplexity']) {
     it(`returns openai-compat provider for kind=${kind}`, () => {
       const p = createLlmProvider({
         anthropic: baseConfig.anthropic,
@@ -109,6 +111,82 @@ describe('openai-compat provider call', () => {
     expect(out.toolUses).toEqual([{ id: 'c1', name: 'go', input: { x: 1 } }])
   })
 
+  it('qwen targets the DashScope compatible-mode base URL with default model qwen-plus', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] }),
+    }))
+    const p = createLlmProvider({
+      anthropic: baseConfig.anthropic,
+      llm: { provider: 'qwen', providers: { qwen: { api_key: 'qk' } } },
+    }, { fetchImpl })
+    expect(p.model).toBe('qwen-plus')
+    expect(p.capabilities).toEqual({ vision: false, cached: false, local: false })
+    await p.call({ systemBlocks: [], tools: [], messages: [{ role: 'user', content: 'hi' }] })
+    expect(fetchImpl.mock.calls[0][0]).toBe('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions')
+  })
+
+  it('deepseek defaults to deepseek-v4-flash, sends thinking:disabled, and never sends tool_choice', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] }),
+    }))
+    const p = createLlmProvider({
+      anthropic: baseConfig.anthropic,
+      llm: { provider: 'deepseek', providers: { deepseek: { api_key: 'dk' } } },
+    }, { fetchImpl })
+    expect(p.model).toBe('deepseek-v4-flash')
+    await p.call({
+      systemBlocks: [{ type: 'text', text: 's' }],
+      tools: [{ name: 'go', description: 'move', input_schema: { type: 'object', properties: {} } }],
+      messages: [{ role: 'user', content: 'hi' }],
+    })
+    const body = JSON.parse(fetchImpl.mock.calls[0][1].body)
+    expect(body.thinking).toEqual({ type: 'disabled' })
+    expect('tool_choice' in body).toBe(false)
+  })
+
+  it('non-deepseek providers do not get the thinking extra', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] }),
+    }))
+    const p = createLlmProvider({
+      anthropic: baseConfig.anthropic,
+      llm: { provider: 'openai', providers: { openai: { api_key: 'k', model: 'm' } } },
+    }, { fetchImpl })
+    await p.call({ systemBlocks: [], tools: [], messages: [] })
+    const body = JSON.parse(fetchImpl.mock.calls[0][1].body)
+    expect('thinking' in body).toBe(false)
+  })
+
+  it('deepseek floors the request timeout at 60s (no fast abort at CN peak queueing)', async () => {
+    const timeoutSpy = vi.spyOn(globalThis, 'setTimeout')
+    try {
+      const fetchImpl = vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] }),
+      }))
+      const ds = createLlmProvider({
+        anthropic: baseConfig.anthropic,
+        llm: { provider: 'deepseek', providers: { deepseek: { api_key: 'dk' } } },
+      }, { fetchImpl })
+      await ds.call({ systemBlocks: [], tools: [], messages: [], timeoutMs: 20_000 })
+      const dsDelay = timeoutSpy.mock.calls.at(-1)[1]
+      expect(dsDelay).toBe(60_000)
+
+      const oa = createLlmProvider({
+        anthropic: baseConfig.anthropic,
+        llm: { provider: 'openai', providers: { openai: { api_key: 'k', model: 'm' } } },
+      }, { fetchImpl })
+      await oa.call({ systemBlocks: [], tools: [], messages: [], timeoutMs: 20_000 })
+      const oaDelay = timeoutSpy.mock.calls.at(-1)[1]
+      expect(oaDelay).toBe(20_000)
+    } finally {
+      timeoutSpy.mockRestore()
+    }
+  })
+
   it('throws with status code embedded on non-2xx', async () => {
     const fetchImpl = vi.fn(async () => ({
       ok: false, status: 429, text: async () => 'rate limited',
@@ -141,6 +219,9 @@ describe('ollama provider call', () => {
     expect(fetchImpl.mock.calls[0][0]).toBe('http://localhost:11434/api/chat')
     const body = JSON.parse(fetchImpl.mock.calls[0][1].body)
     expect(body.stream).toBe(false)
+    // 260915: thinking is switched off on the wire so qwen3/deepseek-r1-class
+    // models cannot spend the whole num_predict budget in message.thinking.
+    expect(body.think).toBe(false)
     expect(out.text).toBe('hi')
     expect(out.toolUses).toEqual([{ id: expect.stringMatching(/^toolu_/), name: 'go', input: { x: 1 } }])
     expect(out.usage).toEqual({ prompt_tokens: 5, completion_tokens: 7 })

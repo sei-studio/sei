@@ -65,8 +65,11 @@ import {
   CANVAS_H,
   CANVAS_W,
   DRAW_ERR_MC_ACTIVE,
+  DRAW_ERR_NO_VISION,
+  INTRO_ROUNDS,
   MAX_ROUNDS,
   MIN_ROUNDS,
+  ROUNDS,
   TURN_MS,
   WORD_CHOICES,
   type DrawAiStroke,
@@ -79,11 +82,13 @@ import {
   type DrawStroke,
 } from '../../shared/drawIpc';
 import { paths } from '../paths';
-import { loadConfig } from '../configStore';
+import { loadConfig, updateConfig } from '../configStore';
 import { getCharacter } from '../characterStore';
-import { buildChatSdk, CHAT_TIMEOUT_MS } from '../chat/sdk';
+import { CHAT_TIMEOUT_MS } from '../chat/sdk';
+import { activeLlmVision, buildLlmProvider, type LlmProvider } from '../llm';
 import { buildSystemBlocks, clockNow, REMEMBER_TOOL } from '../chat/chatPrompts';
 import { readChatContext, foldIfDue } from '../chat/continuity';
+import { accountSwitchingError, beginSessionStart, trackScopedWrite } from '../profile/scopeBarrier';
 import { playSummaryText } from '../chat/playSummary';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import { splitReply } from '../chat/chatService';
@@ -95,6 +100,8 @@ import { pickWords } from './wordBank';
 import { findWordMatch, matchesWord, saysWord } from './guessMatch';
 import { guessGate } from './guessSchedule';
 import { humanizeStroke } from './strokeHumanize';
+import { isLastTurn, nextTurn, otherRole } from './turnOrder';
+import { loadAnalytics } from '../lazyAnalytics';
 import {
   CLEAR_TOOL,
   MAX_AI_STROKES,
@@ -104,6 +111,7 @@ import {
   buildGuessTurnBlock,
   buildTurnEndBlock,
   drawContractBlock,
+  introModelText,
   selfLookNote,
   turnClockLine,
   turnEndLine,
@@ -380,6 +388,14 @@ interface Session {
    */
   paused: boolean;
   pausedRemainingMs: number;
+  /**
+   * Why the game paused (260926): 'depleted' is the weekly credit wall, where
+   * the paused card also carries the reset date and an "end game, keep the
+   * drawings" way out; 'rate_limited' is a short proxy throttle.
+   */
+  pausedReason: 'depleted' | 'rate_limited' | null;
+  /** credit_wall_degraded already fired for this session (once per game). */
+  creditWallReported: boolean;
   guess: GuessSched;
   draw: DrawRun;
   /** In-flight turn-end reaction call, so teardown can abort it. */
@@ -392,10 +408,29 @@ interface Session {
    * prefix and re-bills the whole cached thread on every minute rollover.
    */
   clock: string;
-  /** finishGame has already run for this session; it must never run twice. */
-  finished: boolean;
+  /** The one finishGame run (analytics + play row + fold). Set once: a game
+   *  is recorded exactly once, and a later caller awaits the same run. */
+  finishing: Promise<void> | null;
+  /**
+   * The intro's opening turn (the character drawing) has ended, so the player
+   * has seen a whole turn. That is what retires the intro (260929), not
+   * finishing the game: quitting during their own turn after it still counts.
+   */
+  introSeen: boolean;
+  /** How the model-facing intro lines name the player: their name, or "the player". */
+  introPlayer: string;
   playerName: string;
   aiName: string;
+  /**
+   * The player's first game (260929): INTRO_ROUNDS long, character first.
+   * Fixed when the session is created, so the setup screen and the game it
+   * starts agree.
+   */
+  intro: boolean;
+  /** Who draws first in every round: the player, or the character in the intro. */
+  firstDrawer: DrawRole;
+  /** When the player's word choices went up (turn analytics for the pick phase). */
+  pickShownAt: number;
 }
 
 const sessions = new Map<string, Session>();
@@ -440,7 +475,13 @@ function toState(s: Session): DrawGameState {
     word: visibleWord(s),
     wordChoices: s.phase === 'pick' ? s.wordChoices : [],
     turnEndsAt: s.phase === 'drawing' ? s.turnEndsAt : null,
-    ...(s.paused ? { paused: true, pausedRemainingMs: s.pausedRemainingMs } : {}),
+    ...(s.paused
+      ? {
+          paused: true,
+          pausedRemainingMs: s.pausedRemainingMs,
+          ...(s.pausedReason ? { pausedReason: s.pausedReason } : {}),
+        }
+      : {}),
     strokes: s.strokes,
     clearSeq: s.clearSeq,
     chat: s.chat,
@@ -448,6 +489,7 @@ function toState(s: Session): DrawGameState {
     gallery: s.gallery,
     playerName: s.playerName,
     aiName: s.aiName,
+    ...(s.intro ? { intro: true } : {}),
   };
 }
 
@@ -540,16 +582,24 @@ function wordSlipLine(s: Session, who: DrawRole): void {
 
 // ── lifecycle ────────────────────────────────────────────────────────────────
 
-async function newSession(characterId: string, rounds = 3): Promise<Session> {
+async function newSession(
+  characterId: string,
+  rounds = ROUNDS,
+  opts?: {
+    /** Force intro on/off; undefined = decide from the profile config. */
+    intro?: boolean;
+  },
+): Promise<Session> {
   const character = await getCharacter(characterId);
   const config = await loadConfig();
+  const intro = opts?.intro ?? config.draw_intro_done !== true;
   return {
     gameId: randomUUID(),
     characterId,
     phase: 'setup',
     // Carried across "play again" so the setup screen opens on the length the
     // player last chose rather than resetting to the default every time.
-    rounds,
+    rounds: intro ? INTRO_ROUNDS : rounds,
     round: 0,
     drawer: null,
     pool: [],
@@ -569,17 +619,24 @@ async function newSession(characterId: string, rounds = 3): Promise<Session> {
     gapTimer: null,
     paused: false,
     pausedRemainingMs: 0,
+    pausedReason: null,
+    creditWallReported: false,
     guess: freshGuess(),
     draw: freshDraw(),
     endCtrl: null,
     startedAt: Date.now(),
     clock: clockNow(),
-    finished: false,
+    finishing: null,
+    introSeen: false,
+    introPlayer: (config.preferred_name ?? '').trim() || 'the player',
     playerName: (config.preferred_name ?? '').trim() || 'You',
     aiName: character?.name ?? 'Companion',
     // 260730: the game runs in the character's language (word bank + the
     // language directive buildSystemBlocks already gets). null = English.
     language: characterLanguage(character?.metadata) ?? null,
+    intro,
+    firstDrawer: intro ? 'ai' : 'player',
+    pickShownAt: 0,
   };
 }
 
@@ -592,7 +649,10 @@ export async function openDraw(characterId: string): Promise<DrawGameState> {
   }
   let s = sessions.get(characterId);
   if (!s) {
+    // 260926: no session may start across an account switch (scopeBarrier).
+    const startGuard = beginSessionStart();
     s = await newSession(characterId);
+    if (!startGuard.stillValid()) throw accountSwitchingError();
     sessions.set(characterId, s);
   }
   push(s);
@@ -606,6 +666,21 @@ export async function startDraw(characterId: string, rounds: number): Promise<Dr
     err.code = DRAW_ERR_MC_ACTIVE;
     throw err;
   }
+  // Vision hard gate (china-compat W9): every Draw! turn shows the model a
+  // canvas snapshot, so a text-only model (deepseek, qwen-plus, ...) cannot
+  // play at all. The renderer gates the picker tile too; this is the
+  // authoritative backstop, same philosophy as backseat's LLM_NO_VISION and
+  // the summon username collision. 'unknown' is allowed through on purpose: a
+  // wrong refusal silently hides the game, a wrong allow fails visibly.
+  if ((await activeLlmVision()) === 'no') {
+    const err = new Error(
+      `${DRAW_ERR_NO_VISION}: the selected model cannot see images, so Draw! is unavailable. Pick a vision-capable model in Settings.`,
+    ) as Error & { code?: string };
+    err.code = DRAW_ERR_NO_VISION;
+    throw err;
+  }
+  // 260926: no session may start across an account switch (scopeBarrier).
+  const startGuard = beginSessionStart();
   // A fresh game every start, so a replay never inherits the previous scores.
   // A previous game still mid-play is abandoned properly rather than dropped,
   // or its playtime would never be reported.
@@ -616,7 +691,12 @@ export async function startDraw(characterId: string, rounds: number): Promise<Dr
     if (prev.round > 0) await finishGame(prev, prev.phase === 'gallery' ? 'completed' : 'abandoned');
   }
   const clamped = Math.max(MIN_ROUNDS, Math.min(MAX_ROUNDS, Math.round(rounds) || 1));
-  const s = await newSession(characterId, clamped);
+  // The setup screen already told the player whether this is the intro game
+  // (260929); Start keeps that promise rather than re-reading the config.
+  const s = await newSession(characterId, clamped, {
+    intro: prev && prev.round === 0 ? prev.intro : prev?.introSeen ? false : undefined,
+  });
+  if (!startGuard.stillValid()) throw accountSwitchingError();
   sessions.set(characterId, s);
 
   // One word for each of the character's turns, WORD_CHOICES for each of the
@@ -624,16 +704,21 @@ export async function startDraw(characterId: string, rounds: number): Promise<Dr
   s.pool = pickWords(s.rounds * (1 + WORD_CHOICES), s.language ?? undefined);
   s.round = 1;
   s.startedAt = Date.now();
-  log(s, `game start rounds=${s.rounds}`);
+  log(s, `game start rounds=${s.rounds}${s.intro ? ' intro (character draws first)' : ''}`);
 
   void (async () => {
     try {
-      const { capture } = await import('../analytics');
-      capture('draw_game_started', { character_id: characterId, rounds: s.rounds });
+      const { capture } = await loadAnalytics();
+      capture('draw_game_started', {
+        character_id: characterId,
+        rounds: s.rounds,
+        intro: s.intro,
+        first_drawer: s.firstDrawer,
+      });
     } catch { /* analytics is never load-bearing */ }
   })();
 
-  beginTurn(s, 'player');
+  beginTurn(s, s.firstDrawer);
   return toState(s);
 }
 
@@ -651,13 +736,22 @@ export async function newDrawGame(characterId: string): Promise<DrawGameState> {
     err.code = DRAW_ERR_MC_ACTIVE;
     throw err;
   }
+  const startGuard = beginSessionStart();
   const prev = sessions.get(characterId);
   if (prev) {
     teardownTimers(prev);
     prev.turnKey = randomUUID();
     if (prev.round > 0) await finishGame(prev, prev.phase === 'gallery' ? 'completed' : 'abandoned');
   }
-  const s = await newSession(characterId, prev?.rounds ?? 3);
+  // After the intro game the next one is a normal game at the normal length,
+  // even if the config write marking the intro done has not landed yet.
+  // Once the player has seen the intro's opening turn the next game is a
+  // normal one, even if the config write has not landed yet. An intro stopped
+  // before that (a quit, the credit wall) stays the intro.
+  const s = await newSession(characterId, prev && !prev.intro ? prev.rounds : ROUNDS, {
+    intro: prev?.introSeen ? false : undefined,
+  });
+  if (!startGuard.stillValid()) throw accountSwitchingError();
   sessions.set(characterId, s);
   push(s);
   return toState(s);
@@ -727,14 +821,31 @@ export async function endDraw(characterId: string): Promise<void> {
  * Only a live 'drawing' phase pauses — a turn-end reaction failure just
  * costs the reaction line.
  */
-function pauseForUsageLimit(s: Session): void {
+function pauseForUsageLimit(s: Session, reason: 'depleted' | 'rate_limited'): void {
   if (s.paused || s.phase !== 'drawing') return;
   s.paused = true;
+  s.pausedReason = reason;
   s.pausedRemainingMs = Math.max(10_000, s.turnEndsAt - Date.now());
   if (s.turnTimer) { clearTimeout(s.turnTimer); s.turnTimer = null; }
   if (s.poll) { clearInterval(s.poll); s.poll = null; }
   s.guess.ctrl?.abort();
-  log(s, `usage-limit pause: ${Math.round(s.pausedRemainingMs / 1000)}s of the turn latched`);
+  log(s, `usage-limit pause (${reason}): ${Math.round(s.pausedRemainingMs / 1000)}s of the turn latched`);
+  if (reason === 'depleted' && !s.creditWallReported) {
+    // Analytics (260926): the credit wall turned into a pause, not an error.
+    // Once per game; the renderer's paused card carries the reset date.
+    s.creditWallReported = true;
+    void (async () => {
+      try {
+        const { capture } = await loadAnalytics();
+        capture('credit_wall_degraded', {
+          surface: 'draw',
+          character_id: s.characterId,
+          mode: 'paused',
+          round: s.round,
+        });
+      } catch { /* analytics is never load-bearing */ }
+    })();
+  }
   push(s);
 }
 
@@ -748,6 +859,7 @@ export function resumeDraw(characterId: string): void {
   const s = sessions.get(characterId);
   if (!s || !s.paused) return;
   s.paused = false;
+  s.pausedReason = null;
   s.turnStartedAt = Date.now() - (TURN_MS - s.pausedRemainingMs);
   s.turnEndsAt = Date.now() + s.pausedRemainingMs;
   const key = s.turnKey;
@@ -764,6 +876,38 @@ export function resumeDraw(characterId: string): void {
   }
   log(s, 'usage-limit pause resumed');
   push(s);
+}
+
+/**
+ * "End game" from the credit-wall pause (draw:finish, 260926). The game cannot
+ * go on without the character's model calls, so instead of leaving it frozen
+ * (or throwing the player out) it ends the way a finished game does: straight
+ * to the gallery with every drawing made so far, the interrupted turn
+ * included when it had anything on the page, so it can still be saved. The
+ * row is recorded as reason 'credit_wall', not 'abandoned': the player did
+ * not walk away, the allowance ran out. No-op outside a live game.
+ */
+export function finishDrawEarly(characterId: string): DrawGameState | null {
+  const s = sessions.get(characterId);
+  if (!s) return null;
+  if (s.phase === 'gallery' || s.round === 0) return toState(s);
+  teardownTimers(s);
+  // The turn the wall interrupted (260929), before the phase flips below.
+  if (s.phase === 'pick' || s.phase === 'drawing') captureTurn(s, 'credit_wall');
+  if (s.phase === 'drawing' && s.drawer && s.strokes.length > 0) {
+    s.gallery.push({ round: s.round, drawer: s.drawer, word: s.word, strokes: s.strokes, guessed: false });
+  }
+  s.turnKey = randomUUID();
+  s.paused = false;
+  s.pausedReason = null;
+  s.phase = 'gallery';
+  s.drawer = null;
+  s.word = '';
+  s.wordChoices = [];
+  log(s, `game ended at the credit wall ${s.scores.player}-${s.scores.ai}`);
+  push(s);
+  void finishGame(s, 'credit_wall');
+  return toState(s);
 }
 
 /**
@@ -798,6 +942,26 @@ export async function saveGallery(characterId: string, pngDataUrl: string): Prom
   return file;
 }
 
+/**
+ * End every game for an account switch (260926). Same choke point as a
+ * player closing the game (finishGame: analytics with duration_ms, the play
+ * row, the fold), recorded with `reason` instead of 'abandoned'. A finished
+ * game in the gallery was already recorded; awaiting it here still drains a
+ * row write that is in flight. Resolves once every row has landed.
+ */
+export async function endAllDraw(reason: 'account_switch'): Promise<void> {
+  const ending: Promise<void>[] = [];
+  for (const s of [...sessions.values()]) {
+    teardownTimers(s);
+    sessions.delete(s.characterId);
+    s.turnKey = randomUUID();
+    if (s.round > 0) ending.push(finishGame(s, s.phase === 'gallery' ? 'completed' : reason));
+  }
+  // Nothing in flight can ever answer a snapshot request now.
+  snapshotWaiters.clear();
+  await Promise.all(ending);
+}
+
 export function shutdownDraw(): void {
   for (const s of sessions.values()) teardownTimers(s);
   sessions.clear();
@@ -810,18 +974,37 @@ export function shutdownDraw(): void {
  * Minecraft, chess, calls and this (see the games rule in CLAUDE.md). Fired
  * for abandoned games too: that time was still spent.
  */
-async function finishGame(s: Session, reason: 'completed' | 'abandoned'): Promise<void> {
+function finishGame(
+  s: Session,
+  reason: 'completed' | 'abandoned' | 'credit_wall' | 'account_switch',
+): Promise<void> {
   // A completed game finishes when the last turn resolves, and AGAIN when the
   // player closes the gallery. Without this guard that is two draw_game_ended
-  // events and two transcript rows for one game.
-  if (s.finished) return;
-  s.finished = true;
+  // events and two transcript rows for one game. The second call gets the
+  // first call's promise, so a caller that awaits it (endDraw, the account
+  // switch) still waits for the row to land.
+  if (s.finishing) return s.finishing;
+  // The turn that was live when the game stopped (260929): the abandonment
+  // this whole event exists to measure is "quit during the first turn".
+  if (reason === 'abandoned' || reason === 'account_switch') {
+    if (s.phase === 'pick' || s.phase === 'drawing') captureTurn(s, reason);
+  }
+  // Tracked (260926): an account switch drains this before it re-points the
+  // profile scope, so the row lands in THIS account's transcript.
+  s.finishing = trackScopedWrite(recordFinishedGame(s, reason));
+  return s.finishing;
+}
+
+async function recordFinishedGame(
+  s: Session,
+  reason: 'completed' | 'abandoned' | 'credit_wall' | 'account_switch',
+): Promise<void> {
   const durationMs = Date.now() - s.startedAt;
   const turnsPlayed = s.gallery.length;
 
   void (async () => {
     try {
-      const { capture } = await import('../analytics');
+      const { capture } = await loadAnalytics();
       capture('draw_game_ended', {
         character_id: s.characterId,
         duration_ms: durationMs,
@@ -830,6 +1013,10 @@ async function finishGame(s: Session, reason: 'completed' | 'abandoned'): Promis
         turns_played: turnsPlayed,
         player_score: s.scores.player,
         ai_score: s.scores.ai,
+        // 260929: the intro game, who opened each round, and where it stopped.
+        intro: s.intro,
+        first_drawer: s.firstDrawer,
+        phase: s.phase,
       });
     } catch { /* analytics is never load-bearing */ }
   })();
@@ -885,6 +1072,7 @@ function beginTurn(s: Session, drawer: DrawRole): void {
   }
 
   s.phase = 'pick';
+  s.pickShownAt = Date.now();
   s.wordChoices = s.pool.splice(0, WORD_CHOICES);
   log(s, `pick round=${s.round} choices=${s.wordChoices.join('/')}`);
   push(s);
@@ -917,6 +1105,17 @@ function startDrawingPhase(s: Session): void {
       ? `Round ${s.round} of ${s.rounds}. ${s.playerName} draws, you guess.`
       : `Round ${s.round} of ${s.rounds}. You draw, ${s.playerName} guesses.`,
   );
+  // The intro game's opening turn (260929): say once, plainly, what the player
+  // is looking at and what to do. Second person, so it carries a modelText.
+  if (s.intro && drawer === 'ai' && s.gallery.length === 0) {
+    systemLine(
+      s,
+      s.language === 'zh'
+        ? `${s.aiName}先画，给你看看怎么玩。在聊天里打出你的猜测。`
+        : `${s.aiName} draws first so you can see how it works. Type your guesses in the chat.`,
+      introModelText(s.introPlayer),
+    );
+  }
 
   const key = s.turnKey;
   s.turnTimer = setTimeout(() => {
@@ -947,6 +1146,8 @@ function endTurn(s: Session, guessed: boolean): void {
     if (drawer === 'player') s.scores.ai += 1;
     else s.scores.player += 1;
   }
+  captureTurn(s, guessed ? 'guessed' : 'timeout');
+  if (s.intro && drawer === s.firstDrawer) markIntroSeen(s);
 
   s.gallery.push({
     round: s.round,
@@ -981,7 +1182,7 @@ function endTurn(s: Session, guessed: boolean): void {
   // reads as the character talking about the wrong picture.
   const key = s.turnKey;
   const startedAt = Date.now();
-  const gameOver = drawer === 'ai' && s.round >= s.rounds;
+  const gameOver = isLastTurn({ drawer, firstDrawer: s.firstDrawer, round: s.round, rounds: s.rounds });
   void runTurnEndReaction(s, key, { drawer, guessed, winningLine, gameOver }).finally(() => {
     if (sessions.get(s.characterId) !== s || s.turnKey !== key || s.phase !== 'turn-end') return;
     const floor = gameOver ? GAME_END_MIN_PAUSE_MS : TURN_END_MIN_PAUSE_MS;
@@ -991,24 +1192,88 @@ function endTurn(s: Session, guessed: boolean): void {
 }
 
 function advanceTurn(s: Session): void {
-  const wasDrawer = s.drawer;
-  if (wasDrawer === 'player') {
-    // Same round, roles swap.
-    beginTurn(s, 'ai');
+  const next = nextTurn({
+    drawer: s.drawer ?? otherRole(s.firstDrawer),
+    firstDrawer: s.firstDrawer,
+    round: s.round,
+    rounds: s.rounds,
+  });
+  if (next.kind === 'turn') {
+    // Same round with roles swapped, or the next round's opener.
+    s.round = next.round;
+    beginTurn(s, next.drawer);
     return;
   }
-  if (s.round >= s.rounds) {
-    s.phase = 'gallery';
-    s.drawer = null;
-    s.word = '';
-    teardownTimers(s);
-    log(s, `game over ${s.scores.player}-${s.scores.ai}`);
-    push(s);
-    void finishGame(s, 'completed');
-    return;
-  }
-  s.round += 1;
-  beginTurn(s, 'player');
+  s.phase = 'gallery';
+  s.drawer = null;
+  s.word = '';
+  teardownTimers(s);
+  log(s, `game over ${s.scores.player}-${s.scores.ai}`);
+  push(s);
+  void finishGame(s, 'completed');
+}
+
+/**
+ * The intro's opening turn ended (260929): the player has watched a whole
+ * turn, which is what the intro is for, so later games are normal ones even
+ * if they quit during their own turn next. Retiring it only on a finished
+ * game let a player who always left at their drawing turn get the one-round
+ * intro forever. Tracked so an account switch drains it into this profile.
+ */
+function markIntroSeen(s: Session): void {
+  if (!s.intro || s.introSeen) return;
+  s.introSeen = true;
+  void trackScopedWrite(
+    (async () => {
+      try {
+        await updateConfig((cfg) => ({ ...cfg, draw_intro_done: true }));
+        log(s, 'intro turn seen; later games are normal');
+      } catch (err) {
+        log(s, `could not record the intro as done: ${String(err)}`);
+      }
+    })(),
+  );
+}
+
+/**
+ * Per-turn analytics (260929): `draw_turn_ended`, fired when a turn resolves
+ * (guessed / timeout) and for the turn that was live when a game was
+ * abandoned, switched away from, or stopped at the credit wall. Shape only: who drew, how long it ran, how much happened, never
+ * the word or the chat. `turn_ms` on a guessed turn IS the guess latency
+ * (the character's when the player drew). A 'pick' phase row is a player who
+ * never chose a word; its turn_ms is the time the choices were up.
+ */
+function captureTurn(
+  s: Session,
+  outcome: 'guessed' | 'timeout' | 'abandoned' | 'account_switch' | 'credit_wall',
+): void {
+  const drawer = s.drawer;
+  if (!drawer) return;
+  const picking = s.phase === 'pick';
+  const since = picking ? s.pickShownAt : s.turnStartedAt;
+  const guesser = otherRole(drawer);
+  const props = {
+    character_id: s.characterId,
+    round: s.round,
+    rounds: s.rounds,
+    turn_number: s.gallery.length + 1,
+    drawer,
+    phase: picking ? 'pick' : 'drawing',
+    outcome,
+    turn_ms: since > 0 ? Math.max(0, Date.now() - since) : 0,
+    strokes: picking ? 0 : s.strokes.length,
+    guesser_lines: picking
+      ? 0
+      : s.chat.filter((m) => !m.system && m.from === guesser && m.at >= s.turnStartedAt).length,
+    intro: s.intro,
+    paused: s.paused,
+  };
+  void (async () => {
+    try {
+      const { capture } = await loadAnalytics();
+      capture('draw_turn_ended', props);
+    } catch { /* analytics is never load-bearing */ }
+  })();
 }
 
 // ── player intents ───────────────────────────────────────────────────────────
@@ -1253,7 +1518,19 @@ async function dispatchGuess(s: Session): Promise<void> {
     log(s, `guess failed: ${String(err)}`);
     // A failed call must not swallow what the player said.
     s.guess.pendingPlayerChat.unshift(...said);
-    if (await raiseUsageLimitPopup(err)) pauseForUsageLimit(s);
+    {
+      const limit = await raiseUsageLimitPopup(err);
+      if (limit) pauseForUsageLimit(s, limit);
+    }
+    // Analytics (260828): genuine guess-turn failure. Abort-shaped errors
+    // (turn end, teardown) are user-initiated ends and never emit.
+    void (async () => {
+      try {
+        const { captureSurfaceError, surfaceErrorClass } = await loadAnalytics();
+        const cls = surfaceErrorClass(err);
+        if (cls !== 'aborted') captureSurfaceError('draw', `guess_turn_${cls}`, s.characterId);
+      } catch { /* analytics is never load-bearing */ }
+    })();
   } finally {
     s.guess.inFlight = false;
     s.guess.lastCompletedAt = Date.now();
@@ -1266,7 +1543,7 @@ async function runGuessCall(
   key: string,
   opts: { said: string[]; unchanged: boolean },
 ): Promise<string[]> {
-  const { system, sdk, punctuation } = await prepareCall(s);
+  const { system, llm, punctuation } = await prepareCall(s);
   if (s.turnKey !== key) return [];
 
   const turnChat = chatSinceTurnStart(s);
@@ -1288,27 +1565,24 @@ async function runGuessCall(
   s.guess.ctrl = ctrl;
   const timeout = setTimeout(() => ctrl.abort(), CHAT_TIMEOUT_MS);
   try {
-    const res = await sdk.client.messages.create(
-      {
-        model: sdk.model,
-        max_tokens: 200,
-        system,
-        tools: GUESS_TOOLS,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'image',
-                source: { type: 'base64', media_type: 'image/png', data: imageBase64 },
-              },
-              { type: 'text', text: block },
-            ],
-          },
-        ],
-      },
-      { signal: ctrl.signal },
-    );
+    const res = await llm.call({
+      maxTokens: 200,
+      system,
+      tools: GUESS_TOOLS,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: { type: 'base64', media_type: 'image/png', data: imageBase64 },
+            },
+            { type: 'text', text: block },
+          ],
+        },
+      ],
+      signal: ctrl.signal,
+    });
     // A guessing turn is single-shot, so a remember() here is honored inline
     // rather than answered with a tool_result.
     await honorRememberCalls(s, res.content);
@@ -1346,7 +1620,7 @@ async function runTurnEndReaction(
   ctx: { drawer: DrawRole; guessed: boolean; winningLine: string | null; gameOver: boolean },
 ): Promise<void> {
   try {
-    const { system, sdk, punctuation } = await prepareCall(s);
+    const { system, llm, punctuation } = await prepareCall(s);
     if (s.turnKey !== key || s.phase !== 'turn-end') return;
 
     const turnChat = chatSinceTurnStart(s);
@@ -1371,16 +1645,13 @@ async function runTurnEndReaction(
     s.endCtrl = ctrl;
     const timeout = setTimeout(() => ctrl.abort(), TURN_END_TIMEOUT_MS);
     try {
-      const res = await sdk.client.messages.create(
-        {
-          model: sdk.model,
-          max_tokens: 200,
-          system,
-          tools: GUESS_TOOLS,
-          messages: [{ role: 'user', content: block }],
-        },
-        { signal: ctrl.signal },
-      );
+      const res = await llm.call({
+        maxTokens: 200,
+        system,
+        tools: GUESS_TOOLS,
+        messages: [{ role: 'user', content: block }],
+        signal: ctrl.signal,
+      });
       if (s.turnKey !== key || s.phase !== 'turn-end') return;
       await honorRememberCalls(s, res.content);
 
@@ -1404,6 +1675,14 @@ async function runTurnEndReaction(
   } catch (err) {
     log(s, `turn-end reaction failed: ${String(err)}`);
     void raiseUsageLimitPopup(err);
+    // Analytics (260828): genuine turn-end reaction failure; aborts never emit.
+    void (async () => {
+      try {
+        const { captureSurfaceError, surfaceErrorClass } = await loadAnalytics();
+        const cls = surfaceErrorClass(err);
+        if (cls !== 'aborted') captureSurfaceError('draw', `turn_end_${cls}`, s.characterId);
+      } catch { /* analytics is never load-bearing */ }
+    })();
   }
 }
 
@@ -1502,7 +1781,18 @@ async function runDrawTurn(s: Session): Promise<void> {
     }
   } catch (err) {
     log(s, `draw turn failed: ${String(err)}`);
-    if (await raiseUsageLimitPopup(err)) pauseForUsageLimit(s);
+    {
+      const limit = await raiseUsageLimitPopup(err);
+      if (limit) pauseForUsageLimit(s, limit);
+    }
+    // Analytics (260828): genuine drawing-turn failure; aborts never emit.
+    void (async () => {
+      try {
+        const { captureSurfaceError, surfaceErrorClass } = await loadAnalytics();
+        const cls = surfaceErrorClass(err);
+        if (cls !== 'aborted') captureSurfaceError('draw', `draw_turn_${cls}`, s.characterId);
+      } catch { /* analytics is never load-bearing */ }
+    })();
   } finally {
     s.draw.running = false;
     // A line that landed while the last hop was closing out still deserves an
@@ -1556,7 +1846,7 @@ function markThreadCached(thread: Anthropic.MessageParam[]): void {
  * the stream, so playback starts while the model is still deciding the rest.
  */
 async function runDrawCall(s: Session, key: string): Promise<boolean> {
-  const { system, sdk, punctuation } = await prepareCall(s);
+  const { system, llm, punctuation } = await prepareCall(s);
   if (s.turnKey !== key) return false;
 
   // Forced restart (260729): the player has thrown enough wrong lines at this
@@ -1824,32 +2114,20 @@ async function runDrawCall(s: Session, key: string): Promise<boolean> {
   };
 
   try {
-    const stream = sdk.client.messages.stream(
-      {
-        model: sdk.model,
-        max_tokens: 4000,
-        system,
-        tools: DRAW_TOOLS,
-        messages: s.draw.thread,
-      },
-      { signal: ctrl.signal },
-    );
     // Blocks are released as they complete, so the first stroke can be on the
-    // player's canvas long before the model finishes the picture.
-    //
-    // Dedupe is by COUNT, not by object identity: the blocks handed to the
-    // event and the blocks on the final accumulated message are not
-    // guaranteed to be the same references, and an identity Set would then
-    // emit every stroke twice. Events arrive in content order, so the count of
-    // events already handled is exactly the prefix of final.content to skip.
-    let emitted = 0;
-    stream.on('contentBlock', (b) => {
-      emitted += 1;
-      emitBlock(b as Anthropic.ContentBlock);
+    // player's canvas long before the model finishes the picture. The layer
+    // owns the stream: on Anthropic each contentBlock event fires as it
+    // completes (with the count-based dedupe against the final message this
+    // site used to do itself); on non-Anthropic providers every synthesized
+    // block arrives when the response lands, so strokes reveal per hop.
+    const final = await llm.call({
+      maxTokens: 4000,
+      system,
+      tools: DRAW_TOOLS,
+      messages: s.draw.thread as never,
+      signal: ctrl.signal,
+      onContentBlock: emitBlock,
     });
-    const final = await stream.finalMessage();
-    // Anything the event did not deliver (an SDK path that does not emit it).
-    for (let i = emitted; i < final.content.length; i++) emitBlock(final.content[i]);
     // Flush the held chat lines now that every pen block of the hop has been
     // pushed: their playback barriers queue behind the whole hop's strokes.
     if (s.turnKey === key && s.phase === 'drawing' && (heldLines.length > 0 || heldSlipped)) {
@@ -1930,7 +2208,7 @@ async function readMemoryTail(id: string): Promise<string> {
  */
 async function prepareCall(s: Session): Promise<{
   system: Anthropic.TextBlockParam[];
-  sdk: Awaited<ReturnType<typeof buildChatSdk>>;
+  llm: LlmProvider;
   punctuation: 'casual' | 'deliberate';
 }> {
   const character = await getCharacter(s.characterId);
@@ -1968,12 +2246,13 @@ async function prepareCall(s: Session): Promise<{
       playerName: s.playerName,
       rounds: s.rounds,
       turnSeconds: Math.round(TURN_MS / 1000),
+      intro: s.intro ? { player: s.introPlayer } : undefined,
     }),
   } as Parameters<typeof buildSystemBlocks>[0]) as unknown as Anthropic.TextBlockParam[];
 
-  const sdk = await buildChatSdk();
-  return { system, sdk, punctuation };
+  const llm = await buildLlmProvider();
+  return { system, llm, punctuation };
 }
 
 /** Test seam: drive a tick by hand, without the interval. */
-export const __test = { tickGuessScheduler, sessions };
+export const __test = { tickGuessScheduler, dispatchGuess, sessions };

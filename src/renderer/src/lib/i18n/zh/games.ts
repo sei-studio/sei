@@ -1,8 +1,22 @@
 /** Game surfaces (chess + Draw!). See ../zh.ts for the dictionary rules. */
 export const ZH_GAMES: Record<string, string> = {
+  // ── Game packs (260908, components/games/GamePackCard) ───────────────────
+  'Download {name} support (about {size})': '下载 {name} 支持文件（约 {size}）',
+  'Download ({size})': '下载（{size}）',
+  'Playing {name} together needs a one-time download. It is stored on this device and only downloads again after an update that needs a newer version.':
+    '一起玩 {name} 需要一次性下载支持文件。文件会保存在这台设备上，只有更新后需要新版本时才会再次下载。',
+  'Downloading {name} support…': '正在下载 {name} 支持文件…',
+  '{name} support download, {pct} percent': '{name} 支持文件下载进度 {pct}%',
+  '{received} of {total}': '{received} / {total}',
+  "Couldn't download {name} support": '无法下载 {name} 支持文件',
   // ── Mini tile (bottom-right return tile) ──────────────────────────────────
   'Back to game': '返回游戏',
   'Draw!': '你画我猜！',
+  // ── Vision gate (china-compat W9) ─────────────────────────────────────────
+  'Draw! needs a model that can see images. Your current model ({model}) does not support vision.':
+    '你画我猜需要能看懂图像的模型。你当前的模型（{model}）不支持视觉能力。',
+  'Draw! needs a model that can see images. Your current model does not support vision.':
+    '你画我猜需要能看懂图像的模型。你当前的模型不支持视觉能力。',
   // ── Chess: launch screen ──────────────────────────────────────────────────
   'Chess': '国际象棋',
   'Chess with {name}': '与{name}下棋',
@@ -18,9 +32,10 @@ export const ZH_GAMES: Record<string, string> = {
   'Try again': '再试一次',
   'Setting up the chess brain (one-time download).': '正在准备国际象棋引擎（仅需下载一次）。',
   'Chess engine download progress': '国际象棋引擎下载进度',
-  'The download failed. Check your connection and try again.': '下载失败。请检查网络后重试。',
+  // 'The download failed...' moved to common.ts (shared with the W6 pack panels).
   'The chess brain failed to download. Check your connection and try again.':
     '国际象棋引擎下载失败。请检查网络后重试。',
+  "The chess brain couldn't start. Try again in a moment.": '国际象棋引擎无法启动。请稍后再试。',
   'Chess is not available in this build yet.': '此版本暂不支持国际象棋。',
   "The game couldn't start. Try again in a moment.": '对局无法开始。请稍后再试。',
 
@@ -85,6 +100,7 @@ export const ZH_GAMES: Record<string, string> = {
   'A hand-drawn crown': '一顶手绘的王冠',
   'A hand-drawn horse': '一匹手绘的马',
   'Take turns drawing and guessing. Three rounds.': '轮流画画和猜词。一共三轮。',
+  '{name} draws first, you guess. Then it is your turn. One quick round.': '{name}先画，你来猜。然后轮到你画。只玩一轮。',
   'Start!': '开始！',
   'Starting...': '正在开始...',
   'Leave Draw!': '退出你画我猜',
@@ -99,6 +115,12 @@ export const ZH_GAMES: Record<string, string> = {
   'game paused': '游戏已暂停',
   'usage limit reached. top up or wait, then resume: the turn picks up right where it stopped.':
     '已达到用量上限。充值或稍等片刻后继续：回合会从停下的地方接着进行。',
+  // 260926: the credit-wall variant of the pause card. The reset line between
+  // these two comes from src/shared/freePlayReset.ts.
+  "you're out of playtime for now, so {name} can't draw or guess.":
+    '你的游玩时间暂时用完了，{name}现在没法画画或猜词。',
+  'top up and resume, or end the game and keep your drawings.':
+    '充值后可以继续，也可以现在结束游戏并保留你们的画。',
   // Shared with CreditsScreen's resume-plan button, so the value must fit
   // both "resume the paused game" and "resume the plan".
   'Resume': '恢复',
@@ -122,4 +144,26 @@ export const ZH_GAMES: Record<string, string> = {
   // the caller so the composer can put the highlighter behind the word alone,
   // and {a} is the English article, which Chinese simply drops.
   'according to {name}, this is {a} {word}.': '据{name}说，这是{word}。',
+
+  // ── Game adapters (M0, 260908): generic bot-backed game surfaces ─────────
+  // components/games/GenericGamePanels.tsx
+  'Your world is open. Press Play to bring your companion in.': '你的世界已经打开。点击「一起玩」让伙伴加入。',
+  'Open your world in {game} first, then press Play.': '请先在 {game} 中打开你的世界，然后点击「一起玩」。',
+  'Playing': '游戏中',
+  // screens/ChatScreen.tsx (per-game aside label)
+  '{game} dashboard': '{game} 面板',
+  // components/GameSetupModal.tsx
+  'Open your {game} world': '打开你的 {game} 世界',
+  'Sei could not find an open {game} world. Open your world in the game with the Sei mod enabled; your companion joins as soon as it appears.':
+    'Sei 没有找到已打开的 {game} 世界。请在游戏中启用 Sei 模组并打开你的世界，伙伴会在世界出现后立即加入。',
+  'Sei keeps looking while this window is open.': '这个窗口打开期间，Sei 会持续查找。',
+  // components/GameErrorModal.tsx
+  "{name} couldn't join {game}": '{name}无法加入 {game}',
+  // The one-step setup window on the launch panels (components/games/SetupStepper.tsx, 260909).
+  'Step {n} of {m}': '第 {n} 步，共 {m} 步',
+  'Waiting for your farm...': '等待你的农场…',
+  // Game dashboards, companions in the same world (260909).
+  "Open {name}'s chat": '打开{name}的聊天',
+  'Holding {item}': '手持{item}',
+  'Empty hands': '空手',
 };
