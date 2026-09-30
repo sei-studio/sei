@@ -265,6 +265,7 @@ export function ShareScreenModal({
       >
         <ScreenAccessGate
           characterId={characterId}
+          game={game}
           onGranted={() => setAccess('ready')}
           onCancel={closeModal}
           initialStage={

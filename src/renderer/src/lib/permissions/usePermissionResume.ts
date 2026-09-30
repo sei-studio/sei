@@ -55,11 +55,12 @@ export function usePermissionResume(): void {
       pending.current = null;
       return;
     }
-    const { characterId, kind } = p.resume;
+    const { characterId } = p.resume;
     if (!useDataStore.getState().characters.some((c) => c.id === characterId)) return;
     pending.current = null;
-    if (kind === 'share-screen') {
-      useUiStore.getState().openModal({ kind: 'share-screen', characterId });
+    if (p.resume.kind === 'share-screen') {
+      const { game } = p.resume;
+      useUiStore.getState().openModal({ kind: 'share-screen', characterId, ...(game ? { game } : {}) });
     } else {
       startOrOpenCall(characterId);
     }

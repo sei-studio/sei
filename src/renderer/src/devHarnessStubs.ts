@@ -95,6 +95,9 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
     ...(robloxMode
       ? {
           track: () => undefined,
+          // The share picker checks Screen Recording first on macOS; the
+          // harness has it granted (?dashshot=perms&part=screen shows the gate).
+          permissionsStatus: async () => 'granted',
           backseatGameResolve: async (_g: string, input: string) =>
             dev.__seiDevRobloxResolve
               ? dev.__seiDevRobloxResolve(input)

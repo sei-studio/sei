@@ -28,6 +28,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { sei } from '../../lib/ipcClient';
 import { useT } from '../../lib/i18n';
 import { openPermissionSettings, trackPermission } from '../../lib/permissions/permissionFlow';
+import type { BackseatGameSelection } from '@shared/backseatGames';
 import { restartOfferDue } from '../../lib/permissions/accessPoller';
 import { Button } from '../Button';
 import { ModalFooter } from '../ModalShell';
@@ -48,11 +49,14 @@ export async function screenAccess(platform: string = sei.platform): Promise<boo
 
 export function ScreenAccessGate({
   characterId,
+  game,
   onGranted,
   onCancel,
   initialStage = 'ask',
 }: {
   characterId: string;
+  /** The backseat game the share came from, so a restart reopens it too. */
+  game?: BackseatGameSelection;
   onGranted: () => void;
   onCancel: () => void;
   /** Screenshot harness only: start on a later stage. */
@@ -88,7 +92,7 @@ export function ScreenAccessGate({
 
   const openSettings = (): void => {
     setOpened(true);
-    void sei.permissionsArmResume({ kind: 'share-screen', characterId }).catch(() => {});
+    void sei.permissionsArmResume({ kind: 'share-screen', characterId, ...(game ? { game } : {}) }).catch(() => {});
     void openPermissionSettings('screen');
   };
 
@@ -98,7 +102,7 @@ export function ScreenAccessGate({
   };
 
   const restart = (): void => {
-    void sei.permissionsRelaunch({ kind: 'share-screen', characterId }).catch(() => {});
+    void sei.permissionsRelaunch({ kind: 'share-screen', characterId, ...(game ? { game } : {}) }).catch(() => {});
   };
 
   return (
