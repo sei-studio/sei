@@ -81,6 +81,20 @@ import {
   type StopFn,
 } from '../voice/callTones';
 import { warm as warmPitchBus } from '../voice/pitchBus';
+import { isPermissionRefusal, micPreflight } from '../permissions/permissionFlow';
+
+/**
+ * 260929: a call held up by microphone access. MicAccessCard (mounted in
+ * App.tsx, so it shows over any view) explains it, opens Settings, polls, and
+ * dials `characterId` again the moment access is on.
+ */
+export interface MicBlocked {
+  characterId: string;
+  /** macOS: Screen Time / MDM owns the setting; Settings cannot change it. */
+  restricted: boolean;
+  /** macOS says granted but the mic still refused: offer a restart. */
+  needsRestart: boolean;
+}
 
 export type CallStatus =
   | 'idle'
@@ -152,6 +166,11 @@ interface VoiceState {
    * scene that somehow never reports arrival cannot mute the call.
    */
   introHold: boolean;
+
+  /** 260929: set while a call is waiting on microphone access. */
+  micBlocked: MicBlocked | null;
+  /** Close the microphone card without dialing. */
+  dismissMicBlocked: () => void;
 
   /** Dial the first companion, OR add another to a call already open. */
   startCall: (characterId: string) => Promise<void>;
@@ -576,11 +595,9 @@ function friendlyError(err: unknown): string {
     return t('No microphone was found. Connect one and try again.');
   }
   if (name === 'NotAllowedError' || /permission/i.test(msg)) {
-    // Windows has no per-app prompt for desktop apps: access is silently
-    // blocked by the OS privacy toggle, so name the exact switch (260709).
-    return sei.platform === 'win32'
-      ? t('Microphone access is blocked by Windows. In Settings, open Privacy & security > Microphone, turn on microphone access and "Let desktop apps access your microphone", then try again.')
-      : t('Microphone access was blocked. Allow it and try again.');
+    // 260929: the fix lives on MicAccessCard (why, Open Settings, and the call
+    // starts by itself once access is on), so this line only names the state.
+    return t('Microphone access is off for Sei.');
   }
   return t('Voice call failed to start. Try again in a moment.');
 }
@@ -1492,6 +1509,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
   return {
     participants: [],
     callCharacterId: null,
+    micBlocked: null,
+    dismissMicBlocked: () => set({ micBlocked: null }),
     status: 'idle',
     speaking: false,
     speakingId: null,
@@ -1561,7 +1580,25 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         sttFallbackPrompt: false,
         inactivityPrompt: false,
         inactivitySecondsLeft: 0,
+        micBlocked: null,
       });
+
+      // Microphone access (260929), asked HERE, on the Call press and before
+      // anything rings, rather than at app boot. On macOS the first call is
+      // where the system prompt appears; a denial stops the dial and hands off
+      // to MicAccessCard, which dials again by itself once access is on.
+      const mic = await micPreflight();
+      if (session !== mySession) return;
+      if (mic !== 'ok') {
+        set({
+          participants: [],
+          callCharacterId: null,
+          status: 'error',
+          error: t('Microphone access is off for Sei.'),
+          micBlocked: { characterId, restricted: mic === 'restricted', needsRestart: false },
+        });
+        return;
+      }
 
       silenceDressing();
       // The ring waits for the MIC, not for the dial (260730). Opening a
@@ -1848,12 +1885,27 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           error_class: 'call_setup_failed',
           character_id: characterId,
         });
+        // A refused mic gets the card, not just a line of text (260929). If
+        // macOS already reports access as granted, the grant has not reached
+        // this process, so the card offers a restart instead of Settings.
+        let micBlocked: MicBlocked | null = null;
+        if (isPermissionRefusal(err)) {
+          const status = await sei.permissionsStatus('mic').catch(() => 'unknown');
+          if (session !== mySession) return;
+          micBlocked = {
+            characterId,
+            // Restricted means Screen Time / MDM, a macOS-only answer.
+            restricted: sei.platform === 'darwin' && status === 'restricted',
+            needsRestart: sei.platform === 'darwin' && status === 'granted',
+          };
+        }
         set({
           participants: [],
           callCharacterId: null,
           status: 'error',
           error: friendlyError(err),
           connectingDetail: null,
+          micBlocked,
         });
         return;
       }
@@ -2042,6 +2094,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         introHold: false,
         inactivityPrompt: false,
         inactivitySecondsLeft: 0,
+        micBlocked: null,
       });
       useUiStore.getState().endCall();
     },

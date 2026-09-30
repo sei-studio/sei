@@ -183,18 +183,38 @@ describe('useMcSetupSteps + McLaunchPanel', () => {
   // 260926: the panel states the supported range before the first Launch,
   // and warns when the open world is already known to be too new.
   it('Test 9: the panel names the supported range and flags a too-new world', async () => {
+    // 260929: a short range plus "Which versions?" (the inline list was a
+    // wall of numbers); the list itself is not in the closed panel.
     const plain = await renderPanel({ installs: [VANILLA], dismissed: true });
-    expect(plain).toContain('Works with Minecraft Java 1.20, 1.20.1, 1.21.4, 26.1 to 26.1.2.');
+    expect(plain).toContain('Works with most Minecraft Java versions from 1.20 to 26.1.2.');
+    expect(plain).toContain('>Which versions?</button>');
+    expect(plain).not.toContain('26.1 to 26.1.2');
     const tooNew = await renderPanel({ installs: [VANILLA], dismissed: true, lanOpen: true, lanVersion: '26.2' });
     expect(tooNew).toContain('Your open world is on Minecraft 26.2');
-    expect(tooNew).toContain('1.21.4, 26.1 to 26.1.2');
+    expect(tooNew).toContain('from 1.20 to 26.1.2.');
+    expect(tooNew).toContain('>Which versions?</button>');
     const ok = await renderPanel({ installs: [VANILLA], dismissed: true, lanOpen: true, lanVersion: '1.21.4' });
     expect(ok).not.toContain('Your open world is on');
   });
 
+  // 260929 (R1b): with a Sei-ready install the world step and the panel offer
+  // Start Minecraft; not before setup, and not once a world is open.
+  it('Test 10: Start Minecraft appears once a Sei profile exists and no world is open', async () => {
+    const ready = { ...VANILLA, loader: 'fabric' as const, fabric_mc_versions: ['1.21.4'], csl_installed: true };
+    const steps = await renderSteps({ installs: [ready] });
+    expect(steps).toContain('data-step="world"');
+    expect(steps).toContain('>Start Minecraft<');
+    const panel = await renderPanel({ installs: [ready] });
+    expect(panel).toContain('>Start Minecraft<');
+    expect(panel).toContain('>Launch<');
+    expect(await renderPanel({ installs: [ready], lanOpen: true, lanVersion: '1.21.4' })).not.toContain('Start Minecraft');
+    expect(await renderPanel({ installs: [VANILLA] })).not.toContain('Start Minecraft');
+    expect(await renderPanel({ installs: [VANILLA], dismissed: true })).not.toContain('Start Minecraft');
+  });
+
   it('Test 8: every t() key has a zh entry and no em dash', async () => {
     const all: string[] = [];
-    for (const file of ['McSteps.tsx', 'McLaunchPanel.tsx']) {
+    for (const file of ['McSteps.tsx', 'McLaunchPanel.tsx', 'useStartMinecraft.ts']) {
       const src = readFileSync(resolve(__dirname, file), 'utf8');
       all.push(...[...src.matchAll(/\bt\(\s*'((?:[^'\\]|\\.)*)'/g)].map((m) => m[1].replace(/\\'/g, "'")));
       all.push(...[...src.matchAll(/\bt\(\s*"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]));

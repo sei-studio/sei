@@ -179,6 +179,16 @@ const api: RendererApi = {
   drawFinish: (characterId) => ipcRenderer.invoke(IpcChannel.draw.finish, characterId),
 
 
+  // OS permission flows (260929) — see src/shared/permissionsIpc.ts.
+  permissionsStatus: (kind) => ipcRenderer.invoke(IpcChannel.permissions.status, kind),
+  permissionsRequestMic: () => ipcRenderer.invoke(IpcChannel.permissions.requestMic),
+  permissionsOpenSettings: (kind) => ipcRenderer.invoke(IpcChannel.permissions.openSettings, kind),
+  permissionsProbeScreen: () => ipcRenderer.invoke(IpcChannel.permissions.probeScreen),
+  permissionsArmResume: (resume) => ipcRenderer.invoke(IpcChannel.permissions.armResume, resume),
+  permissionsClearResume: () => ipcRenderer.invoke(IpcChannel.permissions.clearResume),
+  permissionsTakeResume: () => ipcRenderer.invoke(IpcChannel.permissions.takeResume),
+  permissionsRelaunch: (resume) => ipcRenderer.invoke(IpcChannel.permissions.relaunch, resume),
+
   // Backseat (260728) — see src/shared/backseatIpc.ts.
   backseatSources: () => ipcRenderer.invoke(IpcChannel.backseat.sources),
   backseatStart: (characterId, sourceId, sourceName, mode, game) =>
@@ -420,6 +430,8 @@ const api: RendererApi = {
   detectMcInstalls: () => ipcRenderer.invoke(IpcChannel.wizard.detectInstalls),
   runWizardInstall: (args) => ipcRenderer.invoke(IpcChannel.wizard.install, args),
   wizardCancel: (sessionId) => ipcRenderer.invoke(IpcChannel.wizard.cancel, sessionId),
+  startMinecraft: (args) => ipcRenderer.invoke(IpcChannel.wizard.startMinecraft, args ?? {}),
+  minecraftRunning: () => ipcRenderer.invoke(IpcChannel.wizard.minecraftRunning),
   getWizardState: () => ipcRenderer.invoke(IpcChannel.wizard.getState),
   wizardPromptShown: (action: 'get' | 'set') => ipcRenderer.invoke(IpcChannel.wizard.promptShown, action),
 

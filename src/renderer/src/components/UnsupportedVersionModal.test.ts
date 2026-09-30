@@ -17,12 +17,22 @@ describe('UnsupportedVersionModal copy (260926)', () => {
     expect(reportedVersion('garbage')).toBeNull();
   });
 
-  it('names the world version and the exact supported range', () => {
+  it('names the world version and the supported range, short', () => {
     useLangStore.getState().setLang('en');
     const body = humanBody(BOT_MSG, null);
     expect(body).toContain('Minecraft 26.2');
-    expect(body).toContain(`to ${NEWEST}`);
+    expect(body).toContain(`from 1.8 to ${NEWEST}.`);
+    // 260929: the exact list lives behind "Which versions?", not in the body.
+    expect(body).not.toContain('1.8.9');
     expect(body).not.toContain('{');
+  });
+
+  it('the "Which versions?" list covers 1.8 to the newest, one span per entry', async () => {
+    const { mcVersionSpanList } = await import('../lib/mcVersions');
+    const spans = mcVersionSpanList();
+    expect(spans[0]).toMatch(/^1\.8 to 1\.8\.9$/);
+    expect(spans[spans.length - 1]).toMatch(new RegExp(`${NEWEST.replace(/\./g, '\\.')}$`));
+    for (const s of spans) expect(s.split(' to ').length).toBeLessThanOrEqual(2);
   });
 
   it('falls back to the LAN-detected version, then to no version', () => {

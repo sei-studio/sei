@@ -15,6 +15,8 @@
  *      show again" (UserConfig.mc_setup_dismissed); a ready install shows
  *      as done even after a dismissal.
  *   3. A world open to LAN, with the in-game steps and the waiting line.
+ *      With a Sei-ready install it also offers Start Minecraft (260929),
+ *      which opens the launcher on the Sei profile.
  *
  * `complete` is the ONE-TIME part (1 and 2, or 2 dismissed): it is what
  * flips the panel's button from "Set up" to "Launch" and reveals the
@@ -30,17 +32,23 @@
 import React, { useEffect } from 'react';
 import { supportedVersions } from 'minecraft-protocol/src/version.js';
 import { useT } from '../../lib/i18n';
+import { MC_NEWEST_JOINABLE } from '../../lib/mcVersions';
 import { sei } from '../../lib/ipcClient';
 import { useDataStore } from '../../lib/stores/useDataStore';
 import { useWizardStore } from '../../lib/stores/useWizardStore';
 import { SearchingLine, type SetupStep, type StepSkin } from '../games/SetupStepper';
 import { useMcSetupStore, selectReadyVersion } from './useMcSetupStore';
+import { useFirewallHint, useStartMinecraft } from './useStartMinecraft';
 
 const POLL_MS = 10_000;
 const GET_MINECRAFT_URL = 'https://www.minecraft.net/download';
 
-/** Highest Minecraft Java version Sei's networking stack can join. */
-const LATEST_SUPPORTED: string = supportedVersions[supportedVersions.length - 1];
+/**
+ * Newest Minecraft Java version Sei can join (260929: the sorted joinable
+ * list's end, shared with every other "up to" line, not the table's last
+ * entry, whose order is not a contract).
+ */
+const LATEST_SUPPORTED: string = MC_NEWEST_JOINABLE;
 
 const LAN_STEPS: readonly string[] = [
   'Launch Minecraft and open your singleplayer world.',
@@ -70,6 +78,8 @@ export function useMcSetupSteps(skin: StepSkin): McSetup {
   const lan = useDataStore((s) => s.lan);
   const worldOpen = lan.kind === 'open';
   const { Button } = skin;
+  const launcher = useStartMinecraft();
+  const firewallHint = useFirewallHint();
 
   const readyVersion = selectReadyVersion(installs, supportedVersions);
   const found = installs == null ? null : installs.length > 0;
@@ -147,6 +157,15 @@ export function useMcSetupSteps(skin: StepSkin): McSetup {
           <span key={step} className={skin.sub}>{t(step)}</span>
         ))}
         <span className={skin.sub}>{t('Your world needs a supported Minecraft Java version. Sei supports versions up to {latest}.', { latest: LATEST_SUPPORTED })}</span>
+        {firewallHint ? <span className={skin.sub}>{firewallHint}</span> : null}
+        {installDone ? (
+          <div className={skin.actions}>
+            <Button kind="primary" disabled={launcher.busy} onClick={() => void launcher.start(readyVersion)}>
+              {t('Start Minecraft')}
+            </Button>
+          </div>
+        ) : null}
+        {launcher.note ? <span className={skin.sub} role="status">{launcher.note.text}</span> : null}
         {found ? <SearchingLine label={t('Waiting for your world...')} className={skin.sub} /> : null}
       </>
     ),

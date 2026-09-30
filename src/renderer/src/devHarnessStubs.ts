@@ -25,7 +25,7 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
   // popup, Credits screen callout, Draw! paused card, free-play-back banner)
   // over a fixture plan snapshot that is at the wall with the reset 3 days out.
   // Add &lang=zh for the Chinese copy.
-  const creditWallMode = (params.get('dashshot') ?? '') === 'creditwall';
+  const creditWallMode = (params.get('dashshot') ?? '') === 'creditwall' || (params.get('dashshot') ?? '') === 'mcprofile';
   // ?dashshot=roblox (260929): the backseat game tile flow. The lookups call
   // through to functions a screenshot driver exposed (backed by the real
   // main-side Roblox client), else answer from a small fixture.
@@ -57,6 +57,10 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
       return '';
     }
   };
+  // ?dashshot=perms (260929): the OS permission cards. Every permission reads
+  // denied and the Screen Recording probe never succeeds, so the cards hold
+  // still; `platform` follows the part (mic-win is Windows).
+  const permsMode = (params.get('dashshot') ?? '') === 'perms';
   const now = Date.now();
   const chatRows = Array.from({ length: 24 }, (_, i) => ({
     id: `row-${i}`,
@@ -133,7 +137,7 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
       installs: noMc ? [] : [
         {
           id: 'v1', kind: 'vanilla', label: 'Vanilla Launcher', path: '/Users/you/Library/Application Support/minecraft', mc_version: '26.1',
-          loader: ready ? 'fabric' : null, loader_version: ready ? '0.19.3' : null, fabric_mc_versions: ready ? ['1.21.1'] : [],
+          loader: ready ? 'fabric' : null, loader_version: ready ? '0.19.5' : null, fabric_mc_versions: ready ? ['26.1'] : [],
           csl_installed: ready, csl_version: ready ? '14.28' : null, sei_enabled: ready, compatibility: 'full',
         },
       ],
@@ -145,7 +149,12 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
     dstInstall: noop,
     dstLaunch: noop,
     dstOpenAppManagement: noop,
-    dstSurvivorGet: async () => ({ prefab: 'wickerbottom', source: 'auto', reason: 'She reads, and so do I.' }),
+    // A real-length reason (the v0.6.5 smoke test's ran three lines).
+    dstSurvivorGet: async () => ({
+      prefab: 'winona',
+      source: 'auto',
+      reason: "she's the only one who gets that being bad at games is actually fine, just make the tools work smarter, not harder, and let your teammate carry the rest.",
+    }),
     dstSurvivorSet: async () => ({ prefab: 'wickerbottom', source: 'user', reason: '' }),
     onDstInstallProgress: () => () => undefined,
     stardewInstallState: async () => ({
@@ -157,6 +166,15 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
     stardewInstall: noop,
     stardewLaunch: async () => ({ launched: true, via: 'launcher' }),
     onStardewInstallProgress: () => () => undefined,
+    // 260929: Start Minecraft. `&nolauncher=1` answers the fallback line.
+    startMinecraft: async () =>
+      params.has('nolauncher')
+        ? { ok: false, reason: 'no_launcher', profileName: 'Sei 26.1' }
+        : { ok: true, profileName: 'Sei 26.1', mcVersion: '26.1', launcher: 'mac', alreadyOpen: false },
+    // `&launcherquit=1`: the launcher is gone by the first check, so the
+    // hint under Start Minecraft changes after 20 seconds.
+    minecraftRunning: async () => !params.has('launcherquit'),
+    platform: params.get('platform') ?? 'darwin',
     worldCheckNow: async () => null,
     lanCheckNow: async () => ({ kind: 'closed' }),
     getConfig: async () => ({}),
@@ -175,13 +193,24 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
     }),
     saveConfig: noop,
     openExternal: noop,
-    gamePackState: async () => ({ kind: 'ready', root: '/r' }),
+    // `&pack=missing` (260929): the pack card's download offer, the tallest
+    // state a launch panel has.
+    gamePackState: async () => (params.get('pack') === 'missing' ? { kind: 'missing' } : { kind: 'ready', root: '/r' }),
     gamePackEnsure: async () => ({ kind: 'ready', root: '/r' }),
     onGamePackProgress: () => () => undefined,
     wizardPromptShown: async () => ({ shown: true }),
     getWizardState: async () => ({ version: 1, hasRunOnce: false, enabledInstallIds: [], lastRunAt: null, lastSkinServerPort: null }),
+    ...(permsMode
+      ? {
+          platform: params.get('part') === 'mic-win' ? 'win32' : 'darwin',
+          permissionsStatus: async () => 'denied',
+          permissionsProbeScreen: async () => false,
+          permissionsTakeResume: async () => null,
+          track: () => undefined,
+        }
+      : {}),
   };
-  (window as unknown as { sei: Record<string, unknown> }).sei = chatMode || creditWallMode || robloxMode
+  (window as unknown as { sei: Record<string, unknown> }).sei = chatMode || creditWallMode || robloxMode || permsMode
     ? new Proxy(base, {
         get(target, key) {
           if (key in target) return target[key as string];

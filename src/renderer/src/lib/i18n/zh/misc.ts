@@ -20,12 +20,12 @@ export const ZH_MISC: Record<string, string> = {
     '你的系统没有安全存储。Sei 会保存你的 API 密钥，但它不会受到硬件保护。',
   "A bundled module didn't load. Reinstall Sei from the .dmg / .exe.":
     '有一个内置模块加载失败。请通过 .dmg / .exe 重新安装 Sei。',
-  "This world's Minecraft version is not supported yet. Sei works with Minecraft Java {versions}. For companion skins, use {recommended}: in the Minecraft Launcher, go to Installations, click New installation, pick {recommended} as the version, then open your world from it and press Launch again.":
-    '暂不支持这个世界的 Minecraft 版本。Sei 支持 Minecraft Java 版 {versions}。如需显示伙伴皮肤，请使用 {recommended}：在 Minecraft 启动器中进入「安装」，点击「新建安装」，将版本选为 {recommended}，然后用它打开你的世界，再次点击启动。',
+  "This world's Minecraft version is not supported yet. Sei works with most Minecraft Java versions from {oldest} to {newest}. Open the Sei profile in the Minecraft Launcher (it runs {recommended}, with companion skins), open or create a world there, open it to LAN, and press Launch again. No Sei profile yet? Set it up from the Minecraft screen in Sei.":
+    '暂不支持这个世界的 Minecraft 版本。Sei 支持 {oldest} 至 {newest} 之间的大多数 Minecraft Java 版本。请在 Minecraft 启动器中打开 Sei 配置（运行 {recommended}，可显示伙伴皮肤），在其中打开或创建一个世界并对局域网开放，然后再次点击启动。还没有 Sei 配置？请在 Sei 的 Minecraft 页面中设置。',
   'This world runs Forge or NeoForge and only lets in players who have its mods. Sei joins as a normal Minecraft client, so the world turns it away. Open a world without server-side mods, or use Fabric with client-only mods like minimaps.':
     '这个世界运行的是 Forge 或 NeoForge，只允许装有相同模组的玩家加入。Sei 以普通 Minecraft 客户端身份加入，因此会被拒之门外。请打开一个没有服务端模组的世界，或改用 Fabric 搭配小地图这类纯客户端模组。',
-  "Sei can't join Forge or NeoForge worlds. Open the Sei profile in the Minecraft Launcher, load your world there, and open it to LAN.":
-    'Sei 无法加入 Forge 或 NeoForge 世界。请在 Minecraft 启动器中打开 Sei 配置，在其中载入你的世界，并对局域网开放。',
+  "Sei can't join Forge or NeoForge worlds. Open the Sei profile in the Minecraft Launcher, open or create a world there, and open it to LAN.":
+    'Sei 无法加入 Forge 或 NeoForge 世界。请在 Minecraft 启动器中打开 Sei 配置，在其中打开或创建一个世界，并对局域网开放。',
   "Couldn't download CustomSkinLoader. Check your connection and try the setup again.":
     '无法下载 CustomSkinLoader。请检查网络连接后重新运行设置。',
   "Couldn't install Fabric Loader. Make sure Minecraft is closed, then try the setup again.":
@@ -139,10 +139,33 @@ export const ZH_MISC: Record<string, string> = {
   'This voice is not in your ElevenLabs library. Add it there, or pick a different voice.':
     '这个声音不在你的 ElevenLabs 声音库中。请先在那里添加它，或选择其他声音。',
   'No microphone was found. Connect one and try again.': '没有找到麦克风。请连接后重试。',
-  'Microphone access is blocked by Windows. In Settings, open Privacy & security > Microphone, turn on microphone access and "Let desktop apps access your microphone", then try again.':
-    '麦克风访问被 Windows 阻止。请在系统设置中打开「隐私和安全性 > 麦克风」，开启麦克风访问以及「允许桌面应用访问你的麦克风」，然后重试。',
-  'Microphone access was blocked. Allow it and try again.': '麦克风访问被拒绝。请允许后重试。',
+  'Microphone access is off for Sei.': 'Sei 的麦克风权限已关闭。',
   'Voice call failed to start. Try again in a moment.': '语音通话启动失败。请稍后再试。',
+
+  // ── OS permission cards (MicAccessCard / ScreenAccessGate, 260929) ────
+  'Turn on your microphone': '开启麦克风',
+  'Restart Sei to use your microphone': '重启 Sei 以使用麦克风',
+  'Sei needs your microphone so {name} can hear you.': 'Sei 需要使用麦克风，{name} 才能听到你说话。',
+  'In System Settings, open Privacy & Security > Microphone and turn on Sei.':
+    '在「系统设置」中打开「隐私与安全性 > 麦克风」，然后开启 Sei。',
+  'In Settings, turn on Microphone access and Let desktop apps access your microphone.':
+    '在「设置」中开启「麦克风访问权限」和「允许桌面应用访问你的麦克风」。',
+  'Microphone unavailable': '麦克风不可用',
+  'Your microphone is locked by Screen Time or a device policy on this Mac.':
+    '这台 Mac 的麦克风已被「屏幕使用时间」或设备管理策略锁定。',
+  'The call starts on its own once access is on.': '权限开启后，通话会自动开始。',
+  'Microphone access is on, but Sei needs a restart to use it.': '麦克风权限已开启，但 Sei 需要重启才能使用。',
+  'Restart Sei and call': '重启 Sei 并通话',
+  'Open Settings': '打开设置',
+  'Sei needs Screen Recording permission to see your screen.': 'Sei 需要「屏幕录制」权限才能看到你的屏幕。',
+  'In System Settings, open Privacy & Security > Screen Recording and turn on Sei.':
+    '在「系统设置」中打开「隐私与安全性 > 屏幕录制」，然后开启 Sei。',
+  'Your windows show up here once access is on.': '权限开启后，你的窗口会显示在这里。',
+  'I turned it on': '我已开启',
+  'macOS sometimes needs Sei to restart before it can see the screen.': 'macOS 有时需要重启 Sei 才能看到屏幕。',
+  'Restart Sei and continue': '重启 Sei 并继续',
+  'Could not read your open windows. Check screen recording permission for Sei.':
+    '无法读取你打开的窗口。请检查 Sei 的屏幕录制权限。',
 
   // ── Call inactivity watchdog (CallInactivityPopup, 260810) ─────────────
   'Are you still there?': '你还在吗？',

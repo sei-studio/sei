@@ -282,14 +282,17 @@ mac:
   # stall. The texture tree now ships in the downloadable Minecraft game pack,
   # which is never code-signed as part of the app, so the entry is gone. If a
   # future pack asset lands back inside the app bundle, bring it back.)
-  # macOS 15+/26 Local Network privacy. Declaring NSLocalNetworkUsageDescription
-  # makes the system show the "allow Sei to find devices on your local network"
-  # prompt and list Sei under System Settings → Privacy & Security → Local
-  # Network. WITHOUT it the packaged app (a distinct TCC identity from the dev
-  # Electron binary) silently cannot receive Minecraft's open-to-LAN multicast
-  # beacon — the world is detected by `npm run dev` but shows "not connected" in
-  # the packaged build. Works together with the multicast entitlement in
-  # build/entitlements.mac.plist.
+  # macOS 15+/26 Local Network privacy: NSLocalNetworkUsageDescription (in
+  # extendInfo below) is the text macOS would show in an "allow Sei to find
+  # devices on your local network" prompt. Since the loopback LAN watcher
+  # (260624, src/main/lanWatcher.ts) Sei no longer listens for Minecraft's
+  # multicast beacon: it finds an open-to-LAN world by scanning the listening
+  # ports on 127.0.0.1 and pinging them, and the companion joins over
+  # 127.0.0.1 too. Loopback is not gated by Local Network privacy, so this
+  # prompt is not expected to appear for Minecraft. The key stays as a
+  # harmless fallback string in case anything else ever touches the LAN; the
+  # multicast entitlement is NOT in the plist (it blocks launch without a
+  # provisioning profile).
   # 260710 chess: drop the linux + windows onnxruntime prebuilds from mac builds
   # (~76MB saved; both mac arches stay because arm64+x64 build in one job).
   # 260728 dmg: the prismarine-viewer texture prune that made the dmg
@@ -492,10 +495,41 @@ win:
   signtoolOptions:
     publisherName: null
 
+# 260929 one-click installer (outside-app-steps R2b). The assisted installer
+# was Welcome, install mode, Choose folder, Install, Finish: 3 to 4 clicks
+# before the app ever ran, on the platform that is 93% of installs. One-click
+# is a progress bar that launches Sei when done (runAfterFinish defaults on).
+#
+# Upgrade safety for installs made by the ASSISTED installer (v0.6.4 and
+# earlier), verified on windows-latest (.github/workflows/nsis-upgrade-check.yml):
+#   - The uninstall key is Software\Microsoft\Windows\CurrentVersion\Uninstall\
+#     <APP_GUID>, and APP_GUID is a UUIDv5 of appId (LOCKED), not of the
+#     installer mode, so the one-click installer finds and replaces the old
+#     entry: one Apps & features row, never two.
+#   - A per-user install in a folder the user picked keeps that folder:
+#     multiUser.nsh reuses HKCU Software\<APP_GUID> InstallLocation. Only a
+#     FRESH install gets the default %LOCALAPPDATA%\Programs\sei.
+#   - userData is %APPDATA%\Sei in every mode and the old uninstaller runs with
+#     /KEEP_APP_DATA --updated, so settings, characters and the session stay.
+#   - The one case the stock one-click installer misses is a PER-MACHINE
+#     install ("Anyone who uses this computer" on the old install-mode page,
+#     HKLM + Program Files). build/installer.nsh (customInstall) removes that
+#     copy after the per-user install lands, with one admin prompt.
+# allowToChangeInstallationDirectory is gone: electron-builder rejects it with
+# oneClick (it only exists for the assisted installer).
+#
+# The one-click window is a small progress banner (SpiderBanner) with no
+# sidebar or header bitmaps, so the stock blue assisted-installer art is gone
+# with the switch. Its only artwork is the header icon, set to the Sei mark
+# (build/installerHeaderIcon.ico, the app icon packed at 16-256 px). A fresh
+# install lands in %LOCALAPPDATA%\Programs\sei (lowercase: one-click per-user
+# uses the package name, not productName; Windows paths are case-insensitive
+# and existing installs keep their folder).
 nsis:
-  oneClick: false                          # show Welcome / Choose Path
-  perMachine: false                        # per-user install — no admin prompt
-  allowToChangeInstallationDirectory: true
+  oneClick: true
+  perMachine: false                        # per-user install, no admin prompt
+  include: build/installer.nsh
+  installerHeaderIcon: build/installerHeaderIcon.ico
 
 # Linux (AppImage) dropped 2026-06-20: the prismarine-viewer headless-gl native
 # dep won't build on the Linux runner and the target was untested anyway. Re-add a

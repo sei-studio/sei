@@ -9,43 +9,42 @@
  *
  * The body names the world's version (parsed from the bot's error text, else
  * the LAN watcher's ping) and the exact supported range from
- * minecraft-protocol's table, followed by numbered launcher steps (mirroring
- * LanNotOpenModal) for making an installation on a supported version. 260926:
- * the body used to be the bot's raw English sentence, so it was never
+ * minecraft-protocol's table, followed by steps that point at the Sei
+ * profile (260929, R1c): the setup wizard's "Sei <version>" launcher profile
+ * is on a version Sei joins, with companion skins, so the fix is "open the
+ * Sei profile", with one button: Start Minecraft when the profile exists,
+ * else Set up Sei profile (opens the wizard). The earlier copy walked the
+ * player through building a launcher installation by hand.
+ * 260926: the body used to be the bot's raw English sentence, so it was never
  * translated.
- * Dismiss-only; the user resolves it by opening a world on a supported
- * version. Modeled on SummonConflictModal.
+ * Modeled on SummonConflictModal.
  */
 
 import React from 'react';
 import { t as tr, useT } from '../lib/i18n';
-import { MC_RECOMMENDED, mcRangeVars } from '../lib/mcVersions';
+import { MC_RANGE_VARS, MC_RECOMMENDED, mcVersionSpanList } from '../lib/mcVersions';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import styles from './UnsupportedVersionModal.module.css';
+import noteStyles from './LanNotOpenModal.module.css';
+import { useSeiProfileAction } from './mcdash/useStartMinecraft';
 
 /**
- * The version the launcher steps point at: the one the setup wizard builds
+ * The version the Sei profile runs: the one the setup wizard builds
  * (lib/mcVersions MC_RECOMMENDED, capped by WIZARD_MAX_MC), so this copy never
  * names a version the wizard would not build or where skins do not work. The
- * body's {versions} list still names every version Sei can join (incl. newer
- * ones like 26.2 / 26.3).
+ * body's range still reaches the newest version Sei can join (incl. newer
+ * ones like 26.2 / 26.3), and "Which versions?" lists every one.
  */
 const RECOMMENDED: string = MC_RECOMMENDED;
 
-// Rendered through t(step, { version }). The {version} placeholder is filled
-// at display time so the step copy stays a stable dictionary key. 260926:
-// spells out the launcher's own path (Installations, New installation,
-// Version) since the old "create or select an installation" left players
-// guessing where the version is chosen.
-const STEPS: readonly string[] = [
-  'Open the Minecraft Launcher and go to the Installations tab.',
-  'Click New installation, pick release {version} in the Version list, then click Create.',
-  'Press Play on that installation, open your world, then choose Open to LAN.',
-  'Return to Sei and press Launch again.',
-];
+// Step 2 depends on whether a Sei profile exists; the others are shared.
+const STEP_QUIT = 'Save and quit your world.';
+const STEP_START = 'Press Start Minecraft below. The launcher opens with the Sei profile selected. Press Play.';
+const STEP_SETUP = 'Press Set up Sei profile below. Sei adds a "Sei {version}" profile to your launcher in about a minute. Then open the launcher, pick that profile, and press Play.';
+const STEP_LAN = 'Open or create a world, choose Open to LAN, then press Launch in Sei again.';
 
 export interface UnsupportedVersionModalProps {
   characterId: string;
@@ -63,16 +62,21 @@ export function reportedVersion(message: string): string | null {
   return m ? m[1].trim() : null;
 }
 
-/** The body sentence: which version the world runs and what Sei supports. */
+/**
+ * The body sentence: which version the world runs and what Sei supports.
+ * 260929: the supported set is the short "most versions from {oldest} to
+ * {newest}"; the exact list (with its gaps) is the "Which versions?"
+ * disclosure below the body, one span per chip.
+ */
 export function humanBody(message: string, detectedVersion: string | null): string {
   const version = reportedVersion(message) ?? detectedVersion;
   if (version) {
-    return tr('This world is running Minecraft {version}, which Sei cannot join yet. Sei works with Minecraft Java {versions}.', {
-      ...mcRangeVars(tr),
+    return tr('This world is running Minecraft {version}, which Sei cannot join yet. Sei works with most Minecraft Java versions from {oldest} to {newest}.', {
+      ...MC_RANGE_VARS,
       version,
     });
   }
-  return tr('This world runs a Minecraft version Sei cannot join yet. Sei works with Minecraft Java {versions}.', mcRangeVars(tr));
+  return tr('This world runs a Minecraft version Sei cannot join yet. Sei works with most Minecraft Java versions from {oldest} to {newest}.', MC_RANGE_VARS);
 }
 
 export function UnsupportedVersionModal({
@@ -91,6 +95,8 @@ export function UnsupportedVersionModal({
   // Keep the <strong> around the name: translate with the {name} placeholder
   // intact, then split on it and re-insert the styled node.
   const [joinBefore, joinAfter] = t("{name} couldn't join.").split('{name}');
+  const action = useSeiProfileAction({ onBeforeSetup: closeModal });
+  const steps = [STEP_QUIT, action.ready ? STEP_START : STEP_SETUP, STEP_LAN];
   return (
     <ModalShell
       title={t('Minecraft version not supported')}
@@ -102,11 +108,23 @@ export function UnsupportedVersionModal({
       <p className={styles.body}>
         {joinBefore}
         <strong>{name}</strong>
-        {joinAfter} {humanBody(message, detectedVersion)}{' '}
-        {t('To switch to {version}, where companion skins work:', { version: RECOMMENDED })}
+        {joinAfter} {humanBody(message, detectedVersion)}
+      </p>
+      <details className={styles.versions}>
+        <summary className={styles.versionsSummary}>{t('Which versions?')}</summary>
+        <ul className={styles.spans} aria-label={t('Versions Sei can join')}>
+          {mcVersionSpanList(t).map((span) => (
+            <li key={span} className={styles.span}>
+              {span}
+            </li>
+          ))}
+        </ul>
+      </details>
+      <p className={styles.body}>
+        {t('Play from the Sei profile instead. It runs {version}, with companion skins:', { version: RECOMMENDED })}
       </p>
       <ol className={styles.steps}>
-        {STEPS.map((step, i) => (
+        {steps.map((step, i) => (
           <li key={i} className={styles.step}>
             <span className={styles.stepNumber}>{String(i + 1).padStart(2, '0')}</span>
             <span className={styles.stepBody}>{t(step, { version: RECOMMENDED })}</span>
@@ -115,18 +133,23 @@ export function UnsupportedVersionModal({
       </ol>
       <p className={styles.hint}>
         {t(
-          'Alternatively, run the skin setup in Sei settings. It installs our modded Fabric version of Minecraft, which is supported and shows character skins.',
+          'The Sei profile keeps its own worlds, apart from your other profiles. If its world list is empty, create a new world there.',
         )}
       </p>
-      <p className={styles.hint}>
-        {t(
-          'Minecraft may not open worlds saved on a newer version. If your world will not open, create a new world on the supported version and play there.',
-        )}
-      </p>
+      {action.note ? (
+        <p className={noteStyles.note} role="status" data-tone={action.note.tone}>
+          {action.note.text}
+        </p>
+      ) : null}
       <ModalFooter>
-        <Button kind="accent" size="md" onClick={closeModal}>
-          {t('Got it')}
+        <Button kind="quiet" size="md" onClick={closeModal}>
+          {t('Close')}
         </Button>
+        {action.known ? (
+          <Button kind="accent" size="md" disabled={action.busy} onClick={action.onClick}>
+            {action.label}
+          </Button>
+        ) : null}
       </ModalFooter>
     </ModalShell>
   );

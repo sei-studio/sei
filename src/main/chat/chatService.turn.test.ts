@@ -245,7 +245,7 @@ describe('sendChatMessage — parallel tool_use blocks', () => {
     createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: "can't get into forge worlds, try the sei profile" }] });
     await sendLaunchFailedTurn(
       CHAR,
-      "FORGE_HOST_BLOCKED: Sei can't join Forge worlds. To play together, open the Sei profile in the Minecraft Launcher, load your world there, and open it to LAN.",
+      "FORGE_HOST_BLOCKED: Sei can't join Forge worlds. To play together, open the Sei profile in the Minecraft Launcher, open or create a world there, and open it to LAN.",
     );
     const req = createSpy.mock.calls[0][0] as { messages: Array<{ role: string; content: unknown }> };
     const sent = JSON.stringify(req.messages[req.messages.length - 1].content);

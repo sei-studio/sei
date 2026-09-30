@@ -37,6 +37,12 @@
  *     `runtime/java-runtime-gamma/<platform-tag>/...` structure probed)
  *   - the removed bot CLI (platform-branched home-dir pattern, 260722)
  */
+import {
+  LAUNCHER_PROFILE_FILES,
+  listFabricProfiles,
+  readProfilesFile,
+  type LauncherProfilesDoc,
+} from './launcherProfiles';
 import crypto from 'node:crypto';
 import { promises as fs, constants as fsConstants } from 'node:fs';
 import os from 'node:os';
@@ -80,7 +86,7 @@ function appData(opts?: ScanOpts): string {
  * Candidate vanilla `.minecraft` directories. Returns ALL possible paths
  * (typically one per platform); the caller stats each and skips ENOENT.
  */
-function vanillaPaths(opts?: ScanOpts): string[] {
+export function vanillaPaths(opts?: ScanOpts): string[] {
   const p = platform(opts);
   if (p === 'darwin') {
     return [path.join(homeDir(opts), 'Library', 'Application Support', 'minecraft')];
@@ -211,28 +217,28 @@ async function detectFabricLoader(mcDir: string): Promise<{ loaderVersion: strin
 async function detectSeiProfiles(
   mcDir: string,
 ): Promise<{ ready: string[]; csl: { installed: boolean; version: string | null } } | null> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(await fs.readFile(path.join(mcDir, 'launcher_profiles.json'), 'utf8'));
-  } catch {
-    return null;
+  // Both launcher builds share .minecraft: the Microsoft Store / Xbox app
+  // launcher keeps its installations in launcher_profiles_microsoft_store.json.
+  const docs: LauncherProfilesDoc[] = [];
+  for (const name of LAUNCHER_PROFILE_FILES) {
+    try {
+      const doc = await readProfilesFile(path.join(mcDir, name));
+      if (doc) docs.push(doc);
+    } catch {
+      /* unreadable file: skip it */
+    }
   }
-  const profiles = (parsed as { profiles?: unknown })?.profiles;
-  if (!profiles || typeof profiles !== 'object') return null;
-  const re = /^fabric-loader-\d+\.\d+\.\d+-(\d+\.\d+(?:\.\d+)?)$/;
+  if (docs.length === 0) return null;
   const ready: string[] = [];
   let csl: { installed: boolean; version: string | null } = { installed: false, version: null };
-  for (const entry of Object.values(profiles as Record<string, unknown>)) {
-    if (!entry || typeof entry !== 'object') continue;
-    const e = entry as { lastVersionId?: unknown; gameDir?: unknown };
-    const m = typeof e.lastVersionId === 'string' ? re.exec(e.lastVersionId) : null;
-    if (!m) continue;
-    const gameDir =
-      typeof e.gameDir === 'string' && e.gameDir.trim() ? path.resolve(mcDir, e.gameDir) : mcDir;
-    const found = await detectCustomSkinLoader(path.join(gameDir, 'mods'));
-    if (!found.installed) continue;
-    if (!ready.includes(m[1])) ready.push(m[1]);
-    if (!csl.installed) csl = found;
+  for (const doc of docs) {
+    for (const prof of listFabricProfiles(doc, mcDir)) {
+      if (ready.includes(prof.mcVersion) && csl.installed) continue;
+      const found = await detectCustomSkinLoader(path.join(prof.gameDir, 'mods'));
+      if (!found.installed) continue;
+      if (!ready.includes(prof.mcVersion)) ready.push(prof.mcVersion);
+      if (!csl.installed) csl = found;
+    }
   }
   return { ready, csl };
 }
@@ -242,7 +248,7 @@ async function detectSeiProfiles(
  * from filename) if a matching JAR is present, else null. ENOENT on the mods
  * dir means the loader hasn't created it yet — return null (not installed).
  */
-async function detectCustomSkinLoader(
+export async function detectCustomSkinLoader(
   modsDir: string,
 ): Promise<{ installed: boolean; version: string | null }> {
   let entries: string[];

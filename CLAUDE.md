@@ -3077,8 +3077,12 @@ Packaging is **electron-builder** (`electron-builder.yml`):
 - **macOS:** per-arch (`arm64`/`x64`) `dmg` + `zip`, `hardenedRuntime` +
   notarization (Apple Team ID from the `APPLE_TEAM_ID` env var). The `zip` is
   what electron-updater installs from; the `dmg` is manual download only.
-- **Windows:** NSIS x64, **unsigned** for v1 (SmartScreen "unknown publisher"
-  is accepted UX).
+- **Windows:** NSIS x64, ONE-CLICK per-user installer since 260929 (was the
+  assisted installer through v0.6.4). Upgrade safety from assisted installs and
+  the per-machine migration hook (`build/installer.nsh`) are documented above
+  the `nsis:` block in electron-builder.yml; `.github/workflows/nsis-upgrade-check.yml`
+  (manual dispatch) re-verifies them on windows-latest. Release builds are
+  signed through Azure Trusted Signing (the "unsigned for v1" note is stale).
 - **Linux:** AppImage (best-effort unsigned).
 - `postinstall` runs `electron-builder install-app-deps` to rebuild native
   modules against Electron's ABI.

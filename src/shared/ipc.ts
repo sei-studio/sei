@@ -66,6 +66,8 @@ export type {
   BackseatGameResolveResult,
   BackseatGameSelection,
 } from './backseatGames';
+import type { OsPermissionKind, OsPermissionStatus, PermissionResume } from './permissionsIpc';
+export type { OsPermissionKind, OsPermissionStatus, PermissionResume } from './permissionsIpc';
 import type { McDashboardSnapshot, McDashboardSnapshotPush } from './mcDashboardIpc';
 import type { GameId, WorldState, WorldStates, GameDashboardSnapshot } from './gameIpc';
 import { StardewIpcChannel, type StardewInstallState, type StardewInstallProgressEvent, type StardewLaunchResult } from './stardewIpc';
@@ -429,7 +431,7 @@ export function forgeHostBlock(host: LanHost | undefined): { loader: 'Forge' | '
 export function forgeHostBlockedMessage(loader: 'Forge' | 'NeoForge'): string {
   return (
     `Sei can't join ${loader} worlds. ` +
-    'To play together, open the Sei profile in the Minecraft Launcher, load your world there, and open it to LAN.'
+    'To play together, open the Sei profile in the Minecraft Launcher, open or create a world there, and open it to LAN.'
   );
 }
 
@@ -987,6 +989,31 @@ export interface McInstall {
    */
   compatibility: 'full' | 'limited';
 }
+
+/** Which Minecraft Launcher build Start Minecraft opened. */
+export type MinecraftLauncherKind = 'mac' | 'windows' | 'windows-store';
+
+/**
+ * Result of startMinecraft (260929): the Sei profile was selected in the
+ * launcher (lastUsed = now) and the launcher was opened. The player still
+ * presses Play. `alreadyOpen`: the launcher was running, so it keeps its own
+ * selection and the player has to pick the profile next to Play.
+ */
+export type StartMinecraftResult =
+  | {
+      ok: true;
+      profileName: string;
+      mcVersion: string;
+      launcher: MinecraftLauncherKind;
+      alreadyOpen: boolean;
+    }
+  | {
+      ok: false;
+      /** no_profile: no Sei-ready profile. no_launcher / launch_failed: the profile is selected but the launcher did not open. */
+      reason: 'no_profile' | 'no_launcher' | 'launch_failed';
+      profileName?: string;
+      detail?: string;
+    };
 
 /** Per-install install result returned from runWizardInstall. */
 export interface WizardInstallResult {
@@ -2042,6 +2069,27 @@ export interface RendererApi {
   onDrawAiStroke(cb: (s: DrawAiStroke) => void): Unsubscribe;
   onDrawSnapshotRequest(cb: (r: DrawSnapshotRequest) => void): Unsubscribe;
 
+  // --- OS permission flows (260929) --- see src/shared/permissionsIpc.ts.
+  /** Current OS access status for the microphone or (macOS) Screen Recording. */
+  permissionsStatus(kind: OsPermissionKind): Promise<OsPermissionStatus>;
+  /** macOS: show the system mic prompt if never answered. True when granted. */
+  permissionsRequestMic(): Promise<boolean>;
+  /** Open the OS Settings page for this permission. False when there is none. */
+  permissionsOpenSettings(kind: OsPermissionKind): Promise<boolean>;
+  /** macOS: re-list sources to see whether Screen Recording is on now. */
+  permissionsProbeScreen(): Promise<boolean>;
+  /**
+   * Remember to reopen the share picker if Sei restarts in the next few
+   * minutes. Main refuses kind 'call' here: a call resume dials on boot, so
+   * only permissionsRelaunch (the player's restart click) may write one.
+   */
+  permissionsArmResume(resume: PermissionResume): Promise<void>;
+  permissionsClearResume(): Promise<void>;
+  /** One-shot read of the resume flag at boot (null when none or expired). */
+  permissionsTakeResume(): Promise<PermissionResume | null>;
+  /** "Restart Sei and continue": arm the resume flag, then relaunch. */
+  permissionsRelaunch(resume: PermissionResume): Promise<void>;
+
   // --- Backseat (260728) --- see src/shared/backseatIpc.ts for the tick
   // model, the image-grid geometry and the authority split. The renderer owns
   // capture; every model call happens in main.
@@ -2408,6 +2456,19 @@ export interface RendererApi {
    * this resolves immediately after firing .abort() — the in-flight runWizardInstall promise then rejects.
    */
   wizardCancel(sessionId: string): Promise<void>;
+  /**
+   * Select the Sei profile in the Minecraft Launcher and open the launcher
+   * (260929). `mcVersion` picks that version's Sei profile; absent = the
+   * newest supported one. Never throws; see StartMinecraftResult.
+   */
+  startMinecraft(args?: { mcVersion?: string }): Promise<StartMinecraftResult>;
+  /**
+   * Is the Minecraft Launcher, or a game it started, running (260929)? null
+   * when the probe cannot tell. Asked a few times after a Start Minecraft
+   * press so the hint can change when the launcher quit (e.g. its own
+   * "Unable to update the launcher" error). Never throws.
+   */
+  minecraftRunning(): Promise<boolean | null>;
   /** Returns the persisted wizard state (which installs are enabled, last setup timestamp, last skin server port). */
   getWizardState(): Promise<WizardState>;
   /**
@@ -3269,6 +3330,19 @@ export const IpcChannel = {
     gamePopular: 'backseat:game-popular',
     gameDetails: 'backseat:game-details',
   },
+  // OS permission flows (260929) — microphone for calls, Screen Recording for
+  // screen share on macOS. See src/shared/permissionsIpc.ts.
+  permissions: {
+    status: 'permissions:status',
+    requestMic: 'permissions:request-mic',
+    /** Opens a System Settings / ms-settings page from a fixed allowlist. */
+    openSettings: 'permissions:open-settings',
+    probeScreen: 'permissions:probe-screen',
+    armResume: 'permissions:arm-resume',
+    clearResume: 'permissions:clear-resume',
+    takeResume: 'permissions:take-resume',
+    relaunch: 'permissions:relaunch',
+  },
   // Minecraft dashboard (260721) — bot telemetry surfaced while summoned.
   // Protocol details in src/shared/mcDashboardIpc.ts.
   mcdash: {
@@ -3499,6 +3573,10 @@ export const IpcChannel = {
     // ('get') / persist ('set') a profile-scoped flag so the prompt fires at
     // most once per account.
     promptShown: 'wizard:prompt-shown',
+    // 260929: select the Sei profile + open the Minecraft Launcher.
+    startMinecraft: 'wizard:start-minecraft',
+    // 260929: is the launcher (or a game it started) still running?
+    minecraftRunning: 'wizard:minecraft-running',
   },
   auth: {
     state: 'auth:state',

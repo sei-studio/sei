@@ -62,6 +62,7 @@ import {
 } from './apiKeyStore';
 import { capture as trackAnalytics, getAnalyticsOptOut, setAnalyticsOptOut } from './analytics';
 import { blockedAutoSummon, clearSummonBlock } from './summonGuard';
+import { registerPermissionHandlers } from './permissions/permissionsService';
 import { setSupervisor as setAuthSupervisor } from './auth/authHandlers';
 import type { BotSupervisor } from './botSupervisor';
 
@@ -1553,6 +1554,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     await draw.endDraw(id);
   });
 
+  // ── OS permission flows (260929) ──────────────────────────────────────────
+  // Mic on first Call press, macOS Screen Recording before the share picker,
+  // Settings deep links from a fixed allowlist. See permissions/*.
+  registerPermissionHandlers();
+
   // ── Backseat (260728) ─────────────────────────────────────────────────────
   // Thin wrappers over src/main/backseat/backseatService (module state
   // initialized in main/index.ts). The grid payloads are large but bounded:
@@ -2913,6 +2919,20 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const { abortWizardSession } = await import('./wizard');
     abortWizardSession(sessionId);
     return;
+  });
+
+  ipcMain.handle(IpcChannel.wizard.startMinecraft, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ mcVersion: z.string().min(1).max(32).optional() })
+      .optional()
+      .parse(argsRaw ?? {});
+    const { startMinecraft } = await import('./mcLauncher');
+    return await startMinecraft({ mcVersion: args?.mcVersion });
+  });
+
+  ipcMain.handle(IpcChannel.wizard.minecraftRunning, async () => {
+    const { isLauncherOrGameRunning } = await import('./mcLauncher');
+    return await isLauncherOrGameRunning();
   });
 
   ipcMain.handle(IpcChannel.wizard.getState, async () => {

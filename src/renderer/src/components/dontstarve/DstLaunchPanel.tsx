@@ -123,7 +123,7 @@ export function DstLaunchPanel({ characterId }: DstLaunchPanelProps): React.Reac
       <div className={styles.scrim} aria-hidden="true" />
       <div className={styles.content}>
         <h2 className={styles.title}>{GAME_NAME}</h2>
-        <GamePackCard game="dontstarve" />
+        <GamePackCard game="dontstarve" className={styles.pack} />
         {win.mode ? (
           <SetupStepper
             key={win.mode}

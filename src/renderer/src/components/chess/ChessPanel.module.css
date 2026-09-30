@@ -423,17 +423,25 @@
   white-space: nowrap;
 }
 
-/* ── Result, centered (text over the scene; only the buttons take input) ── */
+/* ── Result, centered (only the buttons take input) ──
+ * 260929: on a card now, the app's popup surface (ModalShell's panel: --bg2,
+ * the pop shadow, no frame). Straight on the board the title's red and the
+ * grey detail line sat on light and dark squares alike and were hard to
+ * read (v0.6.5 smoke test). */
 .hudResult {
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  max-width: min(320px, 86%);
+  max-width: min(360px, 86%);
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--space-md);
+  padding: 20px 28px;
+  background: var(--bg2);
+  box-shadow: var(--shadow-pop);
 }
 
 .result {
@@ -442,19 +450,19 @@
 
 .resultTitle {
   font-family: var(--display);
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 600;
   letter-spacing: 0.06em;
-  color: var(--scene-ink);
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85);
+  color: var(--text);
 }
 
 .resultWin .resultTitle {
   color: var(--green);
 }
 
+/* --red-strong: the readable red on the card in both schemes. */
 .resultLoss .resultTitle {
-  color: var(--red);
+  color: var(--red-strong);
 }
 
 .resultDraw .resultTitle {
@@ -463,9 +471,9 @@
 
 .resultDetail {
   font-family: var(--sans);
-  font-size: 13px;
-  color: var(--scene-ink);
-  text-shadow: var(--scene-text-shadow);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text-2);
   margin-top: 2px;
 }
 
