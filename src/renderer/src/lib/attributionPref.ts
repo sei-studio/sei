@@ -27,6 +27,7 @@ export const ATTRIBUTION_ASKED_KEY = 'sei.attributionAsked.v1';
 export const ATTRIBUTION_OPTIONS: Array<{ value: AttributionSource; label: string }> = [
   { value: 'google_search', label: 'Google search' },
   { value: 'youtube_creator', label: 'YouTube or a creator' },
+  { value: 'ad', label: 'An ad' },
   { value: 'reddit', label: 'Reddit' },
   { value: 'ai_assistant', label: 'ChatGPT or another AI' },
   { value: 'friend', label: 'A friend' },

@@ -25,6 +25,7 @@ export const ZH_ONBOARD: Record<string, string> = {
   'Quick one before we start. Where did you hear about Sei?': '开始之前问一句。你是从哪里知道 Sei 的呀？',
   'Google search': 'Google 搜索',
   'YouTube or a creator': 'YouTube 或博主',
+  'An ad': '广告',
   'Reddit': 'Reddit',
   'ChatGPT or another AI': 'ChatGPT 或其他 AI',
   'A friend': '朋友推荐',

@@ -18,6 +18,7 @@ export const ATTRIBUTION_PERSON_PROP = 'attribution_source';
 export const ATTRIBUTION_SOURCES = [
   'google_search',
   'youtube_creator',
+  'ad',
   'reddit',
   'ai_assistant',
   'friend',
