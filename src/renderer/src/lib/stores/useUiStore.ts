@@ -13,6 +13,7 @@ import { create } from 'zustand';
 import type { ThemeMode } from '../theme';
 import type { LanHost, LanHostWarning } from '@shared/ipc';
 import type { GameId } from '@shared/gameIpc';
+import type { BackseatGameSelection } from '@shared/backseatGames';
 import type { ErrorClass } from '@shared/errorClasses';
 import type { AvatarMode, AvatarPrefs } from '@shared/characterSchema';
 
@@ -151,7 +152,11 @@ export type Modal =
     }
   // 260803 — the screen-share source picker, opened from the call controls.
   // Not a games-picker panel any more: sharing is a call feature, not a game.
-  | { kind: 'share-screen'; characterId: string };
+  // 260929: `game` when it was reached from a backseat game tile (Roblox).
+  | { kind: 'share-screen'; characterId: string; game?: BackseatGameSelection }
+  // 260929 — a backseat game tile: the one-time intro, then the optional
+  // "which game are you playing?" step, then the share picker above.
+  | { kind: 'backseat-game'; characterId: string; gameId: string };
 
 /**
  * B4 — which tab CharactersScreen should open on. The compass icon in the

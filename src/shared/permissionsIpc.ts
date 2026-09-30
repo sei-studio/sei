@@ -9,6 +9,8 @@
  * must not become a general-purpose opener.
  */
 
+import type { BackseatGameSelection } from './backseatGames';
+
 /** Which OS permission a flow is about. */
 export type OsPermissionKind = 'mic' | 'screen';
 
@@ -24,7 +26,9 @@ export type OsPermissionStatus = 'granted' | 'denied' | 'restricted' | 'not-dete
  * macOS's own "Quit & Reopen" button restarts Sei too), taken once at boot.
  */
 export type PermissionResume =
-  | { kind: 'share-screen'; characterId: string }
+  // `game`: the share came from a backseat game tile (Roblox), so the reopened
+  // picker preselects the game's window and the share keeps its prompt context.
+  | { kind: 'share-screen'; characterId: string; game?: BackseatGameSelection }
   | { kind: 'call'; characterId: string };
 
 /** A resume flag older than this is ignored: the player has moved on. */

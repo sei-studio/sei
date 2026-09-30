@@ -56,6 +56,16 @@ export type {
   BackseatState,
   BackseatTick,
 } from './backseatIpc';
+import type {
+  BackseatGameInfo,
+  BackseatGameResolveResult,
+  BackseatGameSelection,
+} from './backseatGames';
+export type {
+  BackseatGameInfo,
+  BackseatGameResolveResult,
+  BackseatGameSelection,
+} from './backseatGames';
 import type { OsPermissionKind, OsPermissionStatus, PermissionResume } from './permissionsIpc';
 export type { OsPermissionKind, OsPermissionStatus, PermissionResume } from './permissionsIpc';
 import type { McDashboardSnapshot, McDashboardSnapshotPush } from './mcDashboardIpc';
@@ -2085,13 +2095,23 @@ export interface RendererApi {
   // capture; every model call happens in main.
   /** Shareable windows and screens for the source picker. */
   backseatSources(): Promise<BackseatSource[]>;
-  /** Begin watching. Rejects with BACKSEAT_ERR_MC_ACTIVE while summoned. */
+  /** Begin watching. Rejects with BACKSEAT_ERR_MC_ACTIVE while summoned.
+   *  `game` (260929): set when the share came from a backseat game tile;
+   *  main looks the game up itself and adds it to the prompt. */
   backseatStart(
     characterId: string,
     sourceId: string,
     sourceName: string,
     mode: BackseatMode,
+    game?: BackseatGameSelection,
   ): Promise<BackseatState>;
+  /** 260929: a pasted game link (one game) or a search (a list). Never rejects
+   *  for a lookup failure; that is a typed result. */
+  backseatGameResolve(gameId: string, input: string): Promise<BackseatGameResolveResult>;
+  /** 260929: popular experiences for the pick step (live, cached). */
+  backseatGamePopular(gameId: string): Promise<BackseatGameInfo[]>;
+  /** 260929: full details for one experience, or null. */
+  backseatGameDetails(gameId: string, universeId: number): Promise<BackseatGameInfo | null>;
   backseatGetState(characterId: string): Promise<BackseatState | null>;
   /** Raise a tick. Main decides whether it becomes a spoken line. */
   backseatTick(tick: BackseatTick): Promise<void>;
@@ -3305,6 +3325,10 @@ export const IpcChannel = {
     line: 'backseat:line',
     /** Push: main asking the renderer to harvest the rolling clip buffer. */
     clipRequest: 'backseat:clip-request',
+    /** 260929 backseat games: the "which game are you playing?" step. */
+    gameResolve: 'backseat:game-resolve',
+    gamePopular: 'backseat:game-popular',
+    gameDetails: 'backseat:game-details',
   },
   // OS permission flows (260929) — microphone for calls, Screen Recording for
   // screen share on macOS. See src/shared/permissionsIpc.ts.

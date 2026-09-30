@@ -21,6 +21,7 @@ import { attemptSummon } from '../lib/summonFlow';
 import { openGame, requestGameLaunch, isBotGame, type LaunchGameId } from '../lib/gameLaunch';
 import { GAMES, type GameDef } from '../lib/games';
 import { visionBlocked, visionGateReason } from '../lib/visionGate';
+import { isBackseatGameId } from '@shared/backseatGames';
 import { MCBlock, GamepadIcon, InfoIcon, PlusIcon } from './icons';
 import { FeedbackModal } from './FeedbackModal';
 import { useT } from '../lib/i18n';
@@ -57,7 +58,12 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
   const llmVision = useUiStore((s) => s.llmVision);
   const llmModel = useUiStore((s) => s.llmModel);
   const drawVisionLocked = visionBlocked(llmVision);
-  const isVisionLocked = (g: GameDef): boolean => g.id === 'draw' && drawVisionLocked;
+  // 260929: a backseat game tile (Roblox) is a screen share, so it locks the
+  // same way, with the screen-sharing reason.
+  const isVisionLocked = (g: GameDef): boolean =>
+    (g.id === 'draw' || isBackseatGameId(g.id)) && drawVisionLocked;
+  const lockReason = (g: GameDef): string =>
+    visionGateReason(t, isBackseatGameId(g.id) ? 'backseat' : 'draw', llmModel);
 
   // ── Hover-only info popup ─────────────────────────────────────────────
   const [popup, setPopup] = useState<InfoPopup | null>(null);
@@ -139,6 +145,17 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
       requestGameLaunch(characterId, { id, name: g.name }, () => openGame(characterId, id));
       return;
     }
+    // 260929 backseat games (Roblox): not a surface of their own but a way
+    // into the screen share, through the one-time intro and the optional
+    // "which game" step (BackseatGameModal). Gated like a share, because a
+    // share cannot run beside a Minecraft summon.
+    if (isBackseatGameId(g.id)) {
+      closeModal();
+      requestGameLaunch(characterId, { id: 'backseat', name: t(g.name) }, () =>
+        openModal({ kind: 'backseat-game', characterId, gameId: g.id }),
+      );
+      return;
+    }
     // Fallback for any future summon-launched game.
     void attemptSummon(characterId);
     closeModal();
@@ -184,7 +201,7 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
                   className={styles.tileMain}
                   disabled={!g.available || visionLocked}
                   aria-disabled={!g.available || visionLocked}
-                  aria-label={visionLocked ? visionGateReason(t, 'draw', llmModel) : undefined}
+                  aria-label={visionLocked ? lockReason(g) : undefined}
                   onClick={() => onPlay(g)}
                 >
                   {g.image ? null : (
@@ -235,7 +252,7 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
             <span className={styles.infoPopTitle}>{t(popup.game.name)}</span>
             <p className={styles.infoPopText}>
               {isVisionLocked(popup.game)
-                ? visionGateReason(t, 'draw', llmModel)
+                ? lockReason(popup.game)
                 : popup.game.description(companionName)}
             </p>
           </div>
