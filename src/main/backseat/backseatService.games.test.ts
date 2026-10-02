@@ -8,7 +8,8 @@
  *     after the contract, so it is inside the cached prefix;
  *   - web tools are added for game sessions only, the same array every tick;
  *   - a client search() tool_use is run and answered with exactly ONE
- *     follow-up call, and the lead text is kept;
+ *     follow-up call, and the lead text is spoken before the lookup runs;
+ *   - the text before a server search is spoken while the response streams;
  *   - an ordinary share is unchanged (no game block, no web tools).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -16,9 +17,13 @@ import { MIN_SPEAK_GAP_MS, type BackseatTick } from '../../shared/backseatIpc';
 
 const h = vi.hoisted(() => ({
   requests: [] as Array<{ tools?: Array<{ name: string }>; messages?: unknown[] }>,
+  /** What had been spoken when each request was made / each server search block arrived. */
+  saidAtRequest: [] as string[][],
+  saidAtSearch: [] as string[][],
   replies: [] as Array<{ content: unknown[] }>,
   extraStable: [] as Array<string | undefined>,
   said: [] as string[],
+  msgs: [] as Array<{ text: string; lookup?: { queries: string[] } }>,
   llmKind: 'anthropic' as string,
   webRuns: [] as Array<[string, unknown]>,
   resolved: [] as unknown[],
@@ -37,9 +42,23 @@ vi.mock('../llm', () => ({
   buildLlmProvider: async () => ({
     kind: h.llmKind,
     model: 'test',
-    call: async (req: { tools?: Array<{ name: string }>; messages?: unknown[] }) => {
+    call: async (req: {
+      tools?: Array<{ name: string }>;
+      messages?: unknown[];
+      onContentBlock?: (b: unknown) => void;
+    }) => {
       h.requests.push(req);
+      h.saidAtRequest.push([...h.said]);
       const r = h.replies.shift() ?? { content: [{ type: 'text', text: 'ok' }] };
+      // Stream the blocks like the Anthropic adapter does, with the search
+      // itself taking time after its server_tool_use block.
+      for (const b of r.content as Array<{ type: string }>) {
+        req.onContentBlock?.(b);
+        if (b.type === 'server_tool_use') {
+          for (let i = 0; i < 5; i++) await new Promise((res) => setTimeout(res, 0));
+          h.saidAtSearch.push([...h.said]);
+        }
+      }
       const text = (r.content as Array<{ type: string; text?: string }>)
         .filter((b) => b.type === 'text')
         .map((b) => b.text)
@@ -159,15 +178,21 @@ describe('a backseat session started from a game tile', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(now);
     h.requests.length = 0;
+    h.saidAtRequest.length = 0;
+    h.saidAtSearch.length = 0;
     h.replies.length = 0;
     h.extraStable.length = 0;
     h.said.length = 0;
+    h.msgs.length = 0;
     h.webRuns.length = 0;
     h.resolved.length = 0;
     h.llmKind = 'anthropic';
     initBackseatService({
       pushChatMessage: (_c, m) => {
-        if (m.role === 'companion') h.said.push(m.text);
+        if (m.role === 'companion') {
+          h.said.push(m.text);
+          h.msgs.push(m);
+        }
       },
       pushState: () => {},
       pushLine: () => {},
@@ -203,7 +228,7 @@ describe('a backseat session started from a game tile', () => {
     expect(h.extraStable[1]).toBe(stable);
   });
 
-  it('runs a client search() once and speaks the answer', async () => {
+  it('runs a client search() once, speaking the lead before the lookup and the answer after', async () => {
     h.llmKind = 'openai';
     await startBackseat(CH, 'window:1:0', 'Roblox', 'text' as never, { gameId: 'roblox' });
     h.replies.push({
@@ -216,15 +241,17 @@ describe('a backseat session started from a game tile', () => {
     await tick('user', 'how do i get a house');
     expect(h.webRuns).toEqual([['search', { query: 'brookhaven house roblox' }]]);
     expect(h.requests).toHaveLength(2);
-    // The lead would reach the player together with the answer, so only the
-    // answer is spoken (261003).
-    expect(h.said).toEqual(['you buy one from the house menu.']);
+    // The lead went out before the follow-up call, the answer after it.
+    expect(h.saidAtRequest[1]).toEqual(['let me check.']);
+    expect(h.said).toEqual(['let me check.', 'you buy one from the house menu.']);
+    // The answer row records the lookup it came from; the lead row does not.
+    expect(h.msgs.map((m) => m.lookup)).toEqual([undefined, { queries: ['brookhaven house roblox'] }]);
     // No game picked: the block says so instead of fencing nothing.
     expect(h.extraStable[0]).toMatch(/did not say which Roblox game/);
     expect(h.extraStable[0]).not.toContain('<game_page>');
   });
 
-  it('speaks a cited answer after a server search as one line, without the lead', async () => {
+  it('speaks the line before a server search while it runs, then the cited answer as one line', async () => {
     await startBackseat(CH, 'window:1:0', 'Roblox', 'text' as never, { gameId: 'roblox', universeId: 1686885941 });
     // Shape of a real Haiku reply (261003): the lead, the search, then the
     // answer cut into blocks at each cited span.
@@ -241,10 +268,16 @@ describe('a backseat session started from a game tile', () => {
     });
     await tick('user', 'how do i get a house');
     expect(h.requests).toHaveLength(1);
-    expect(h.said).toEqual(["Press M, click Houses, then Claim. They're all free, so just grab one"]);
+    // The lead was out while the search was still running.
+    expect(h.saidAtSearch[0]).toEqual(['let me check how that works']);
+    expect(h.said).toEqual([
+      'let me check how that works',
+      "Press M, click Houses, then Claim. They're all free, so just grab one",
+    ]);
+    expect(h.msgs[1].lookup).toEqual({ queries: ['brookhaven house'] });
   });
 
-  it('keeps the lead line when the lookup produced no answer text', async () => {
+  it('speaks the lead line once when the lookup produced no answer text', async () => {
     h.llmKind = 'openai';
     await startBackseat(CH, 'window:1:0', 'Roblox', 'text' as never, { gameId: 'roblox' });
     h.replies.push({

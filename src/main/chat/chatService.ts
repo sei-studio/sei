@@ -584,6 +584,18 @@ export function toMessages(history: ChatMessage[]): Array<{ role: 'user' | 'assi
         content = `(replying to ${who}: "${m.replyTo.text}")\n${m.text}`;
       }
       role = m.role === 'companion' ? 'assistant' : 'user';
+      // 261003b: a line spoken from a real web lookup gets the lookup in front
+      // of it, as a user-side note between the line before the search and the
+      // answer, the way the results arrived. Without it a real lookup and a
+      // "let me check" followed by a made-up answer looked the same in
+      // history, and the model copied the made-up shape.
+      const queries = role === 'assistant' ? (m.lookup?.queries ?? []).filter((q) => typeof q === 'string' && q.trim()) : [];
+      if (queries.length) {
+        const note = `[results of your web search for ${queries.map((q) => `"${q.trim()}"`).join(', ')} came back here]`;
+        const prev = out[out.length - 1];
+        if (prev && prev.role === 'user' && typeof prev.content === 'string') prev.content = `${prev.content}\n${note}`;
+        else out.push({ role: 'user', content: note });
+      }
       // 260703: stamp USER messages with their send time so the model can feel
       // gaps (overnight silence vs rapid-fire). Assistant turns stay unstamped —
       // stamping the model's own prior output teaches it to emit timestamps.

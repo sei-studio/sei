@@ -274,7 +274,7 @@ export const SEARCH_TOOL_DESCRIPTION =
   'Call visit(ref) with a result letter to read the page itself. Search results are private to you; tell the player what you learned in your own words. ' +
   'Name the game in the query ("valorant vandal damage", "minecraft tame fox"): known game wikis are searched directly. ' +
   'For anything recent (latest version, patch notes, current holder of a role) visit a result; snippets can be stale. ' +
-  'If you tell the player you are checking, do it in the same turn as the search (a say() beside it in the game, your reply text in chat).'
+  'Before you search, tell the player in a few words of your own that you are checking, in the same turn as the search (a say() beside it in the game, your reply text in chat).'
 
 export const VISIT_TOOL_DESCRIPTION =
   'Read a web page as plain text, one page of text at a time. Pass the letter of a search result (for example "b"), or a full URL. ' +
