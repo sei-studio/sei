@@ -23,7 +23,8 @@ import {
   replyTextOf,
   mergeFollowUpContent,
   splitTextAroundServerSearch,
-  unrunServerSearchIds,
+  runServerSearch,
+  botWebTools,
 } from './webTools.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -652,15 +653,82 @@ describe('reply text around a server search (261003)', () => {
   })
 })
 
-describe('unrunServerSearchIds (261003)', () => {
-  it('names a server_tool_use with no result and ignores answered ones', () => {
-    expect([...unrunServerSearchIds([
-      { type: 'server_tool_use', id: 'a', name: 'web_search', input: {} },
-      { type: 'web_search_tool_result', tool_use_id: 'a', content: [] },
-      { type: 'tool_use', id: 's', name: 'say', input: {} },
-      { type: 'server_tool_use', id: 'b', name: 'web_search', input: {} },
-    ])]).toEqual(['b'])
-    expect(unrunServerSearchIds(null).size).toBe(0)
+describe('bot search: search(query, line) + nested server search (261003c)', () => {
+  const nestedResponse = (extra = {}) => ({
+    text: '',
+    toolUses: [],
+    stopReason: 'end_turn',
+    usage: { input_tokens: 1200, output_tokens: 80, server_tool_use: { web_search_requests: 1 } },
+    content: [
+      { type: 'text', text: 'I will search for that.' },
+      { type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: { query: 'q' } },
+      { type: 'web_search_tool_result', tool_use_id: 'srvtoolu_1', content: [
+        { type: 'web_search_result', title: 'Other page', url: 'https://example.com/other', encrypted_content: 'x' },
+        { type: 'web_search_result', title: 'Fox', url: 'https://minecraft.wiki/w/Fox', encrypted_content: 'x' },
+      ] },
+      { type: 'text', text: 'Foxes cannot be tamed directly; ', citations: [{ type: 'web_search_result_location', url: 'https://minecraft.wiki/w/Fox', title: 'Fox' }] },
+      { type: 'text', text: 'breed two with <cite index="1-2">sweet berries</cite> and the baby trusts you.' },
+    ],
+    ...extra,
+  })
+
+  it('botWebTools: line is required beside query', () => {
+    const [search, visit] = botWebTools()
+    expect(search.name).toBe('search')
+    expect(search.input_schema.required).toEqual(['query', 'line'])
+    expect(visit.name).toBe('visit')
+  })
+
+  it('runServerSearch: offers only web_search, keeps the text after the last result, cited sources first', async () => {
+    const calls = []
+    const r = await runServerSearch({ call: async (req) => { calls.push(req); return nestedResponse() }, query: 'minecraft tame fox' })
+    expect(calls[0].tools).toHaveLength(1)
+    expect(calls[0].tools[0].type).toBe('web_search_20250305')
+    expect(calls[0].messages[0].content[0].text).toContain('minecraft tame fox')
+    expect(r.findings).toBe('Foxes cannot be tamed directly; breed two with sweet berries and the baby trusts you.')
+    expect(r.sources.map((x) => x.url)).toEqual(['https://minecraft.wiki/w/Fox', 'https://example.com/other'])
+    expect(r.searches).toBe(1)
+    expect(r.usage.input_tokens).toBe(1200)
+  })
+
+  it('runServerSearch: resumes pause_turn and throws when nothing came back', async () => {
+    let n = 0
+    const r = await runServerSearch({
+      call: async (req) => {
+        n += 1
+        if (n === 1) return { content: [{ type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: {} }], stopReason: 'pause_turn', usage: {} }
+        expect(req.messages[req.messages.length - 1].role).toBe('assistant')
+        return nestedResponse()
+      },
+      query: 'q',
+    })
+    expect(n).toBe(2)
+    expect(r.findings).toContain('sweet berries')
+    await expect(runServerSearch({ call: async () => ({ content: [], stopReason: 'end_turn' }), query: 'q' })).rejects.toThrow(/no findings/)
+  })
+
+  it('session search with a server search: findings plus lettered sources that visit() resolves', async () => {
+    const s = createWebSession({ fetchImpl: scriptedFetch({}) })
+    const r = await s.runTool('search', { query: 'minecraft tame fox', line: 'one sec' }, {
+      serverSearch: (q, opts) => runServerSearch({ call: async () => nestedResponse(), query: q, signal: opts.signal }),
+    })
+    expect(r.is_error).toBe(false)
+    expect(r.content).toContain('found for "minecraft tame fox":')
+    expect(r.content).toContain('sweet berries')
+    expect(r.content).toMatch(/a\. Fox \(minecraft\.wiki\)/)
+    expect(s.refs.get('a').url).toBe('https://minecraft.wiki/w/Fox')
+    expect(s.lastProvider).toBe('anthropic')
+    expect(s.lastServerSearch.findings).toContain('sweet berries')
+  })
+
+  it('session search falls back to the engine chain when the server search fails', async () => {
+    const fetchImpl = scriptedFetch({ 'bing.com': fakeResponse({ body: fixture('bing.html') }) })
+    const s = createWebSession({ fetchImpl, provider: 'bing' })
+    const r = await s.search('craft', { serverSearch: async () => { throw new Error('proxy 500') } })
+    expect(r.is_error).toBe(false)
+    expect(r.content).toMatch(/^results for "craft":/)
+    expect(s.lastProvider).toBe('bing')
+    expect(s.lastServerSearch).toBeNull()
   })
 })
 
