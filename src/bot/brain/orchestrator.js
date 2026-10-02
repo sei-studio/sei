@@ -44,11 +44,7 @@ import { createHeartbeatLog, readHeartbeatForSeed } from './memory/heartbeat.js'
 import { createMemoryCompactor } from './memory/compactor.js'
 import { createWorldRegistry } from './memory/worlds.js'
 import { resolveAdapterCaps } from './adapterDefaults.js'
-import { createWebSession, electronFetchProvider, webToolsFor, isWebTool, unrunServerSearchIds } from '../web/webTools.js'
-
-// 261003b: how many responses in a row may end with a web_search that did not
-// run (written beside a say()) before the loop stops re-asking for it.
-const MAX_UNRUN_SEARCH_STREAK = 2
+import { createWebSession, electronFetchProvider, botWebTools, isWebTool, runServerSearch } from '../web/webTools.js'
 
 // Post-process say() text before it hits in-game chat. Safety-only:
 // whitespace collapse (chat is single-line) and force lowercase (hardcoded).
@@ -1234,7 +1230,18 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   function emitSayCalls(loop, toolUses) {
     const out = new Map()
     let spoken = false
+    loop._searchLineSpoken = false
     for (const u of toolUses ?? []) {
+      // 261003c: search(query, line). `line` is what she says while she
+      // looks, written by the model like any say(), so it goes through the
+      // same pipeline and the same one-line-per-turn cap. The lookup itself
+      // runs later in the batch (executeInlineMetadata).
+      if (u.name === 'search' && webSession) {
+        if (spoken) continue
+        const r = _emitSayLine(loop, u.input?.line)
+        if (r.emitted) { spoken = true; loop._searchLineSpoken = true }
+        continue
+      }
       if (u.name !== 'say') continue
       // 260724 voice latency: this say() was already emitted mid-stream by the
       // callPersonality onSay hook (loop._earlySay) — reuse its result so the
@@ -1569,9 +1576,10 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       .filter(t => visionOk || !caps.visionActions.has(t.name))
     const seen = new Set(personalityTools.map(t => t.name))
     const merged = [...personalityTools]
-    // Anthropic sessions get the native server-side web_search (+ our visit);
-    // every other provider gets our search + visit. See webToolsFor.
-    if (webSession) for (const t of webToolsFor({ serverWebSearch: !!anthropic.capabilities?.serverWebSearch })) { merged.push(t); seen.add(t.name) }
+    // 261003c: search(query, line) + visit on every provider. On Anthropic
+    // sessions the search itself runs as a nested server web_search request
+    // (executeInlineMetadata), never as a server tool in this loop.
+    if (webSession) for (const t of botWebTools()) { merged.push(t); seen.add(t.name) }
     for (const t of movementTools) {
       if (!seen.has(t.name)) { merged.push(t); seen.add(t.name) }
     }
@@ -2964,8 +2972,21 @@ function maybeWarnByteCap(loop, warned) {
         return { result: { type: 'tool_result', tool_use_id: use.id, content: `${use.name}: web access is off`, is_error: true }, terminate: false }
       }
       try {
-        const r = await webSession.runTool(use.name, use.input ?? {}, { signal: loop.abortController?.signal })
+        // 261003c: on Anthropic sessions (cloud and Anthropic BYOK) the
+        // search runs as its own request with the server web_search tool and
+        // comes back as findings; the engine chain is the fallback and the
+        // path for every other provider.
+        const serverSearch = use.name === 'search' && anthropic.capabilities?.serverWebSearch
+          ? (query, { signal }) => runServerSearch({ call: (req) => anthropic.call(req), query, signal })
+          : null
+        const r = await webSession.runTool(use.name, use.input ?? {}, { signal: loop.abortController?.signal, serverSearch })
         lastActionResult = r.is_error ? `${use.name} failed` : `${use.name} ok`
+        const server = use.name === 'search' ? webSession.lastServerSearch : null
+        if (server) {
+          const u = server.usage ?? {}
+          logger.info?.(`[sei/web] server search ${JSON.stringify(String(use.input?.query ?? '').slice(0, 80))}: ${server.ms}ms, ${server.searches} search(es), in ${u.input_tokens ?? 0} (cache read ${u.cache_read_input_tokens ?? 0}) / out ${u.output_tokens ?? 0} tokens, ${server.sources?.length ?? 0} sources`)
+          loop._pendingLookupFindings = [...(loop._pendingLookupFindings ?? []), server.findings]
+        }
         // 260921: note the query; the NEXT response (written with the result
         // in view) is the conclusion the lookup log keeps.
         if (!r.is_error && use.name === 'search' && use.input?.query) {
@@ -3990,24 +4011,6 @@ function maybeWarnByteCap(loop, warned) {
         return
       }
 
-      // 261003b: the normal shape of a lookup is a say() ("lemme check") and
-      // a web_search in the same response. The say() goes out at once
-      // (emitSayCalls), but the response stops at that client tool call, so
-      // the server search in it never ran. Drop the unanswered
-      // server_tool_use from history (a continuation carrying it is
-      // malformed) and keep the loop going so the next call runs the search
-      // and says the answer. Bounded by consecutive repeats, not once per
-      // loop: a second question later in the same loop gets the same path.
-      const unrunSearch = resp.stopReason !== 'pause_turn' && Array.isArray(resp.content)
-        ? unrunServerSearchIds(resp.content)
-        : new Set()
-      loop._unrunSearchStreak = unrunSearch.size > 0 ? (loop._unrunSearchStreak ?? 0) + 1 : 0
-      const runSearchNext = unrunSearch.size > 0 && loop._unrunSearchStreak <= MAX_UNRUN_SEARCH_STREAK
-      if (unrunSearch.size > 0) {
-        logger.info?.(`[sei/orch] web_search beside a client tool call has not run${runSearchNext ? '; running it next turn' : '; giving up (repeated)'} (loop=${loop.id})`)
-        resp = { ...resp, content: resp.content.filter(b => !(b?.type === 'server_tool_use' && unrunSearch.has(b.id))) }
-      }
-
       // Append assistant turn raw (preserves tool_use blocks 1:1)
       loop.appendAssistant(buildAssistantContent(resp))
       // 260708: the trigger has now been seen and answered by at least one
@@ -4047,7 +4050,7 @@ function maybeWarnByteCap(loop, warned) {
       const respText = (resp.text ?? '').trim()
       if (respText) emitThinkIfFull(respText)
       const sayResults = emitSayCalls(loop, toolUses)
-      const saySpokenThisTurn = sayResults.size > 0
+      const saySpokenThisTurn = sayResults.size > 0 || loop._searchLineSpoken === true
       // Double-goodbye guard (260706): a quit()/end_call() farewell must not
       // fire when the same response already called say() — otherwise the two
       // goodbyes land back-to-back ("aight catch you later" + "later ouen,
@@ -4069,8 +4072,12 @@ function maybeWarnByteCap(loop, warned) {
           lookupLog.record({ queries: [...carried, ...server.queries], finding: server.finding, told: toldNow })
           loop._pendingLookupQueries = null
         } else if (carried.length > 0 && !searchingAgain) {
-          lookupLog.record({ queries: carried, finding: respText, told: toldNow })
+          // 261003c: the nested server search's findings are the finding;
+          // her own scratchpad is the fallback (engine chain lookups).
+          const found = (loop._pendingLookupFindings ?? []).join(' ').trim()
+          lookupLog.record({ queries: carried, finding: found || respText, told: toldNow })
           loop._pendingLookupQueries = null
+          loop._pendingLookupFindings = null
         }
       } catch (err) {
         logger.debug?.(`[sei/orch] lookup log skipped: ${err?.message ?? err}`)
@@ -4477,7 +4484,7 @@ function maybeWarnByteCap(loop, warned) {
 
       // Determine whether to continue or terminate. If only personality-only
       // tools fired (no movement) the LLM is done — terminal.
-      const continueLoop = movementCalls.length > 0 || runSearchNext
+      const continueLoop = movementCalls.length > 0
 
       // Contract v2 postProcessToolBatch: the adapter reads the settled
       // batch and may hand back a one-shot nudge for the next user turn
@@ -4506,7 +4513,7 @@ function maybeWarnByteCap(loop, warned) {
       // cant_reach nudge wins over silence nudge — both
       // happen at "things are not progressing" but cant_reach is the proximate
       // cause and the LLM needs the specific instruction.
-      const finalNudgeText = (runSearchNext ? NUDGES.searchNotRun : null) ?? cantReachNudge ?? silenceNudgeText
+      const finalNudgeText = cantReachNudge ?? silenceNudgeText
 
       loop.appendToolResults(results, {
         snapshot: snapshotText(),

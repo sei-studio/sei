@@ -305,6 +305,53 @@ export const VISIT_TOOL = Object.freeze({
   },
 })
 
+/*
+ * 261003c: the game bot's search (Minecraft, Stardew, DST). A say() and
+ * Anthropic's server web_search in one response could not both happen: the
+ * response stops at the client say() and the search never runs, so the bot
+ * either searched in silence or said "lemme check" and nothing else (lead
+ * line before the search in 18-62% of turns, measured 261003). Here the
+ * words said while looking are a REQUIRED field of the search call itself:
+ * the orchestrator speaks `line` through the normal say() pipeline, runs the
+ * lookup (Anthropic's server search in a nested request on Anthropic
+ * sessions, the client engine chain elsewhere), and returns the findings as
+ * the tool result. Backseat and desktop chat keep webToolsFor.
+ */
+export function botSearchDescription(today = new Date()) {
+  // The date is here because nothing else in the bot's prompt carries it:
+  // without it the bot wrote "newest minecraft update 2024" from its training
+  // cutoff and got that year's answer (261003c QA). Anthropic's server
+  // web_search used to supply it. Changes once a day, so the tool list's
+  // cache rebuilds at most daily.
+  const date = today.toISOString().slice(0, 10)
+  return 'Look something up on the web. Use it on your own, right away, whenever the player asks something factual you are not sure of, or anything about a recent update or what is true right now. ' +
+    'Put a few words in your own voice in line, like you would say to a friend while you check; they hear it the moment you call this, while the search runs. ' +
+    'You get back what was found and a few lettered sources; visit(ref) with a letter reads that page in full. ' +
+    'What you find is private to you: tell the player the answer in your own words with say() once it is back. ' +
+    `Name the game in the query ("minecraft tame fox"). Today is ${date}, so for the newest or current state of something, search for it as of ${date.slice(0, 4)}.`
+}
+
+/** The game bot's search tool (see the note above botSearchDescription). */
+export function botSearchTool(today = new Date()) {
+  return {
+    name: 'search',
+    description: botSearchDescription(today),
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', minLength: 1, description: 'What to search for, as you would type it into a search engine.' },
+        line: { type: 'string', minLength: 1, description: 'A few words you say out loud to the player while you look, in your own voice.' },
+      },
+      required: ['query', 'line'],
+    },
+  }
+}
+
+/** The game bot's web tools on every provider (see botSearchTool). */
+export function botWebTools(today = new Date()) {
+  return [botSearchTool(today), VISIT_TOOL]
+}
+
 export const WEB_TOOLS = Object.freeze([SEARCH_TOOL, VISIT_TOOL])
 export const WEB_TOOL_NAMES = new Set(['search', 'visit'])
 
@@ -321,16 +368,68 @@ export const WEB_TOOL_NAMES = new Set(['search', 'visit'])
 export const SERVER_WEB_SEARCH_TOOL = Object.freeze({ type: 'web_search_20250305', name: 'web_search', max_uses: 3 })
 
 /**
- * Ids of server-side searches the model asked for that never ran (261003).
- * A response that calls a client tool (say) and then web_search ends at the
- * client tool: the server_tool_use is in the content but there is no
- * web_search_tool_result for it. Not meaningful on pause_turn, where the
- * search is still running and the content must go back as is.
+ * System text for the nested lookup. Carries today's date: the bot writes
+ * queries from its training cutoff ("newest minecraft update 2024", 261003c
+ * QA) and a searcher without the date answered with that year's update.
  */
-export function unrunServerSearchIds(content) {
-  const blocks = Array.isArray(content) ? content : []
-  const answered = new Set(blocks.filter((b) => b?.type === 'web_search_tool_result').map((b) => b.tool_use_id))
-  return new Set(blocks.filter((b) => b?.type === 'server_tool_use' && !answered.has(b.id)).map((b) => b.id))
+export function serverSearchSystem(today = new Date()) {
+  const date = today.toISOString().slice(0, 10)
+  return `Today is ${date}. You look things up on the web for a game companion who is in the middle of talking with a player. ` +
+    'Search right away for what is asked, then write what you found in one to three short plain sentences: the facts that answer it, ' +
+    'with the numbers, names and dates that matter. For the newest or current state of something, answer with what is true as of today. ' +
+    'If the sources disagree or do not answer it, say that. Write only the findings.'
+}
+
+/**
+ * 261003c: one lookup through Anthropic's server web_search, as its own
+ * request (same provider, same model as the bot's loop). Returns concise
+ * findings plus the sources behind them, or throws when nothing usable came
+ * back (the caller falls back to the client chain). `call` is the provider's
+ * call(); `pause_turn` (a long server search) is resumed up to twice.
+ *
+ * @returns {Promise<{findings: string, sources: Array<{url:string,title:string}>, usage: object, ms: number, searches: number}>}
+ */
+export async function runServerSearch({ call, query, signal, timeoutMs = 20_000, maxTokens = 300 }) {
+  const t0 = Date.now()
+  const messages = [{ role: 'user', content: [{ type: 'text', text: `Look up: ${query}` }] }]
+  const content = []
+  const usage = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, web_search_requests: 0 }
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const resp = await call({
+      systemBlocks: [{ type: 'text', text: serverSearchSystem() }],
+      tools: [{ ...SERVER_WEB_SEARCH_TOOL, max_uses: 2 }],
+      messages,
+      signal,
+      timeoutMs,
+      maxTokens,
+    })
+    const u = resp?.usage ?? {}
+    for (const k of ['input_tokens', 'output_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens']) usage[k] += Number(u[k]) || 0
+    usage.web_search_requests += Number(u.server_tool_use?.web_search_requests) || 0
+    const blocks = Array.isArray(resp?.content) ? resp.content : []
+    content.push(...blocks)
+    if (resp?.stopReason !== 'pause_turn') break
+    messages.push({ role: 'assistant', content: blocks })
+  }
+  // The findings are the text after the last search result; text before it
+  // is the model announcing the search.
+  let lastResult = -1
+  content.forEach((b, i) => { if (b?.type === 'web_search_tool_result') lastResult = i })
+  const findings = replyTextOf(content.slice(lastResult + 1), ' ').replace(/<\/?cite\b[^>]*>/gi, '').replace(/\s+/g, ' ').trim()
+  if (!findings) throw new Error('server search returned no findings')
+  // Sources: the ones the findings cite first, then the rest of the results.
+  const seen = new Set()
+  const sources = []
+  const add = (url, title) => {
+    if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return
+    const key = url.replace(/[#?].*$/, '').replace(/\/$/, '').toLowerCase()
+    if (seen.has(key)) return
+    seen.add(key)
+    sources.push({ url, title: String(title ?? '') })
+  }
+  for (const b of content.slice(lastResult + 1)) for (const c of Array.isArray(b?.citations) ? b.citations : []) add(c?.url, c?.title)
+  for (const b of content) if (b?.type === 'web_search_tool_result' && Array.isArray(b.content)) for (const r of b.content) add(r?.url, r?.title)
+  return { findings, sources: sources.slice(0, 4), usage, ms: Date.now() - t0, searches: usage.web_search_requests }
 }
 
 export function isServerWebBlock(type) {
@@ -398,11 +497,8 @@ export function mergeFollowUpContent(lead, next) {
 // The when-to-search cue lives as literal text in each surface baseline
 // (promptLibrary.js CHAT_BASELINE / MINECRAFT_BASELINE, the Stardew and DST
 // adapter baselines): promptLibrary.js must stay import-free for
-// scripts/lib/promptLibraryEdit. In the game baselines the cue says search
-// FIRST: with Anthropic's server web_search a say() before the search ends
-// the response at the say (the search block after it never runs, measured
-// 261003), and a say()-only turn ends the loop, so "let me check" was the
-// whole answer.
+// scripts/lib/promptLibraryEdit. The game bots speak their checking line
+// through search(line) (BOT_SEARCH_TOOL).
 
 // ---------------------------------------------------------------------------
 // Text helpers
@@ -848,6 +944,9 @@ export function createWebSession({ fetchImpl, fetchProvider = null, manualRedire
   const refs = new Map() // label -> { url, title, host }
   let callsThisTurn = 0
   let lastProvider = null
+  // The last search's server-search result ({ findings, usage, ms, ... }), or
+  // null when it went through the engine chain.
+  let lastServerSearch = null
   // A DuckDuckGo challenge means this address is being rate-limited; asking
   // again a few seconds later only extends it. Skip DDG for a while. A
   // TIMEOUT arms the same cooldown (260917): a network that blackholes the
@@ -943,9 +1042,42 @@ export function createWebSession({ fetchImpl, fetchProvider = null, manualRedire
     return []
   }
 
-  async function search(query, { signal } = {}) {
+  /**
+   * 261003c: a lookup through a server search (the bot's nested Anthropic
+   * web_search, see runServerSearch). Null when it failed, so the caller
+   * falls back to the client chain; an abort is rethrown.
+   */
+  async function viaServerSearch(serverSearch, q, signal) {
+    try {
+      const r = await serverSearch(q, { signal })
+      if (signal?.aborted) throw signal.reason ?? new Error('aborted')
+      lastProvider = 'anthropic'
+      lastServerSearch = r
+      const lines = (r.sources ?? []).map((src) => {
+        const label = addRef(src)
+        const host = hostOf(src.url)
+        return `${label}. ${clip(src.title || host || src.url, L.titleChars)}${host ? ` (${host})` : ''}`
+      })
+      return { content: `found for "${q}":\n${r.findings}${lines.length ? `\nsources:\n${lines.join('\n')}` : ''}`, is_error: false }
+    } catch (err) {
+      if (signal?.aborted) throw err
+      logger?.warn?.(`[sei/web] server search failed, using the engine chain: ${err?.message ?? err}`)
+      return null
+    }
+  }
+
+  /**
+   * @param {any} query
+   * @param {{ signal?: AbortSignal, serverSearch?: ((q: string, o: { signal?: AbortSignal }) => Promise<any>) | null }} [opts]
+   */
+  async function search(query, { signal, serverSearch = null } = {}) {
     const q = String(query ?? '').trim().replace(/\s+/g, ' ').slice(0, 200)
     if (!q) return { content: 'search: empty query', is_error: true }
+    lastServerSearch = null
+    if (typeof serverSearch === 'function') {
+      const viaServer = await viaServerSearch(serverSearch, q, signal)
+      if (viaServer) return viaServer
+    }
     const errors = []
     // Wikis named by the query (plus the surface's standing wikis) are asked
     // directly, in parallel with the general engines. Their hits come first:
@@ -1098,14 +1230,20 @@ export function createWebSession({ fetchImpl, fetchProvider = null, manualRedire
    * One entry point for every surface: dispatch a tool_use by name and get
    * back { content, is_error } ready to wrap in a tool_result block. Enforces
    * the per-turn budget so a curious model cannot spin the loop forever.
+   * `serverSearch` (261003c, game bot on Anthropic) runs a search through
+   * runServerSearch instead of the engine chain.
+   *
+   * @param {string} name
+   * @param {any} input
+   * @param {{ signal?: AbortSignal, serverSearch?: ((q: string, o: { signal?: AbortSignal }) => Promise<any>) | null }} [opts]
    */
-  async function runTool(name, input, { signal } = {}) {
+  async function runTool(name, input, { signal, serverSearch = null } = {}) {
     if (!WEB_TOOL_NAMES.has(name)) throw new Error(`webSession.runTool: not a web tool: ${name}`)
     if (overBudget()) {
       return { content: `${name}: no more web lookups this turn. Answer with what you have.`, is_error: true }
     }
     callsThisTurn++
-    if (name === 'search') return search(input?.query, { signal })
+    if (name === 'search') return search(input?.query, { signal, serverSearch })
     return visit(input?.ref, { page: input?.page, signal })
   }
 
@@ -1118,6 +1256,7 @@ export function createWebSession({ fetchImpl, fetchProvider = null, manualRedire
     overBudget,
     refs,
     get lastProvider() { return lastProvider },
+    get lastServerSearch() { return lastServerSearch },
     get ddgBlockedUntil() { return ddgBlockedUntil },
     get bingBlockedUntil() { return bingBlockedUntil },
     get callsThisTurn() { return callsThisTurn },
