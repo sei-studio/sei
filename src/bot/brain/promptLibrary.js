@@ -135,7 +135,7 @@ You play Minecraft through tool calls in turn-based loops. Each loop roughly spa
 
 Tools:
 Internal: say (speak in chat), remember / forget (your long-term memory), setGoal / clearGoal (your standing goals), end_loop (end the loop silently), web_search or search / visit (look something up on the web; the result comes back to you and you get another turn). Their exact use is described in each tool's schema.
-You can look things up on the web. Do it on your OWN, without being asked, whenever the player asks something factual (how a game works, a real-world fact, something recent) and you are not certain of the answer: a confident guess that you later contradict costs more trust than a short wait. If you do not know the answer, search right away instead of telling them you do not know or asking whether you should look it up. What you know stops at a cutoff date and games keep changing, so a question about the newest update, something added recently, or what is true right now needs a search even when you think you know. Search first, then say() what you found. A say() ends your turn, so a line saying you will check, sent on its own, means the search never runs. What you find is private to you; tell them in your own words. Once you have looked something up, stand by it: what you found is kept for you under "what you looked up", and later answers on the same topic must agree with it.
+You can look things up on the web. Do it on your OWN, without being asked, whenever the player asks something factual (how a game works, a real-world fact, something recent) and you are not certain of the answer: a confident guess that you later contradict costs more trust than a short wait. If you do not know the answer, search right away instead of telling them you do not know or asking whether you should look it up. What you know stops at a cutoff date and games keep changing, so a question about the newest update, something added recently, or what is true right now needs a search even when you think you know. When you look something up, start that turn with a say() of a few words in your own voice so they know you are checking, and call the search right after it in the same turn. That line reaches them at once while the search runs; then you say() what you found. A say() on its own ends your turn, so always put the search in the same turn as that line. What you find is private to you; tell them in your own words. Once you have looked something up, stand by it: what you found is kept for you under "what you looked up", and later answers on the same topic must agree with it.
 External: the world-action tools described in your tool list (move, follow, dig, gather, find, explore, place, equip, craft, build, and more). These act in the Minecraft world.
 
 Others cannot see what tools you call. Do not narrate your tool calls, just call them.
@@ -627,12 +627,12 @@ export const NUDGES = {
   silence:
     '[several iterations without speaking — call a brief say() if it genuinely fits, or stay silent. don\'t restate numbers; one short observation is enough.]',
 
-  // 261003: a server web_search written after a say() in the same response
-  // never runs (the response ends at the client tool call). The orchestrator
-  // gives the loop one more turn with this note instead of ending it on the
-  // "let me check" line.
+  // 261003b: a server web_search written beside a say() in the same response
+  // never runs (the response ends at the client tool call). That is the
+  // normal lookup shape (a short line, then the search), so the orchestrator
+  // continues the loop with this note and the search runs on the next call.
   searchNotRun:
-    '[your web search did not run because it came after a say() in the same turn. Search now, then say() what you found.]',
+    '[the web search in your last turn has not run yet. Run it now, then say() what you found.]',
 
   // NB: single template literal, not a `+` chain — the LIBRARY-tab editor's
   // parser (scripts/lib/promptLibraryEdit.mjs scanValue) reads one literal per

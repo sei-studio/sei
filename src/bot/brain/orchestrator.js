@@ -46,6 +46,10 @@ import { createWorldRegistry } from './memory/worlds.js'
 import { resolveAdapterCaps } from './adapterDefaults.js'
 import { createWebSession, electronFetchProvider, webToolsFor, isWebTool, unrunServerSearchIds } from '../web/webTools.js'
 
+// 261003b: how many responses in a row may end with a web_search that did not
+// run (written beside a say()) before the loop stops re-asking for it.
+const MAX_UNRUN_SEARCH_STREAK = 2
+
 // Post-process say() text before it hits in-game chat. Safety-only:
 // whitespace collapse (chat is single-line) and force lowercase (hardcoded).
 // Length and shape are the model's job, enforced via the prompt rules
@@ -3986,18 +3990,21 @@ function maybeWarnByteCap(loop, warned) {
         return
       }
 
-      // 261003: a web_search the model wrote after a say() in this same
-      // response never ran (the response stops at the client tool call). Drop
-      // the unanswered server_tool_use from history (a continuation carrying
-      // it is malformed) and give the loop one more turn to run the search,
-      // instead of ending it on the say()'s "let me check".
+      // 261003b: the normal shape of a lookup is a say() ("lemme check") and
+      // a web_search in the same response. The say() goes out at once
+      // (emitSayCalls), but the response stops at that client tool call, so
+      // the server search in it never ran. Drop the unanswered
+      // server_tool_use from history (a continuation carrying it is
+      // malformed) and keep the loop going so the next call runs the search
+      // and says the answer. Bounded by consecutive repeats, not once per
+      // loop: a second question later in the same loop gets the same path.
       const unrunSearch = resp.stopReason !== 'pause_turn' && Array.isArray(resp.content)
         ? unrunServerSearchIds(resp.content)
         : new Set()
-      const retrySearch = unrunSearch.size > 0 && !loop._searchRetried
-      if (retrySearch) loop._searchRetried = true
+      loop._unrunSearchStreak = unrunSearch.size > 0 ? (loop._unrunSearchStreak ?? 0) + 1 : 0
+      const runSearchNext = unrunSearch.size > 0 && loop._unrunSearchStreak <= MAX_UNRUN_SEARCH_STREAK
       if (unrunSearch.size > 0) {
-        logger.info?.(`[sei/orch] web_search after say() did not run${retrySearch ? ', retrying once' : ''} (loop=${loop.id})`)
+        logger.info?.(`[sei/orch] web_search beside a client tool call has not run${runSearchNext ? '; running it next turn' : '; giving up (repeated)'} (loop=${loop.id})`)
         resp = { ...resp, content: resp.content.filter(b => !(b?.type === 'server_tool_use' && unrunSearch.has(b.id))) }
       }
 
@@ -4470,7 +4477,7 @@ function maybeWarnByteCap(loop, warned) {
 
       // Determine whether to continue or terminate. If only personality-only
       // tools fired (no movement) the LLM is done — terminal.
-      const continueLoop = movementCalls.length > 0 || retrySearch
+      const continueLoop = movementCalls.length > 0 || runSearchNext
 
       // Contract v2 postProcessToolBatch: the adapter reads the settled
       // batch and may hand back a one-shot nudge for the next user turn
@@ -4499,7 +4506,7 @@ function maybeWarnByteCap(loop, warned) {
       // cant_reach nudge wins over silence nudge — both
       // happen at "things are not progressing" but cant_reach is the proximate
       // cause and the LLM needs the specific instruction.
-      const finalNudgeText = (retrySearch ? NUDGES.searchNotRun : null) ?? cantReachNudge ?? silenceNudgeText
+      const finalNudgeText = (runSearchNext ? NUDGES.searchNotRun : null) ?? cantReachNudge ?? silenceNudgeText
 
       loop.appendToolResults(results, {
         snapshot: snapshotText(),

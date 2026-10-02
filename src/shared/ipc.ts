@@ -533,6 +533,14 @@ export interface ChatMessage {
    */
   clip?: { path: string; reason: string };
   /**
+   * 261003b: set on the first companion line spoken from the results of a web
+   * lookup (backseat game sessions), with the queries that ran. The chat brain
+   * (toMessages) shows the results arriving before that line, so a lookup the
+   * companion really did reads differently in its history from a "let me
+   * check" it only wrote. Not rendered in the UI.
+   */
+  lookup?: { queries: string[] };
+  /**
    * Set on a `system` row that records a finished play session, so the UI can
    * render it with the game icon (Discord-style "You and X played Minecraft for
    * Y"). `text` carries the human-readable line; `event` carries the structured

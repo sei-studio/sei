@@ -262,7 +262,7 @@ describe('renderBackseatGameBlock', () => {
     // 261003: things that change over time get a search even when the model
     // thinks it knows; the answer comes from the search with no lead line.
     expect(block).toMatch(/changes over time.*search even when you think you know/);
-    expect(block).toMatch(/Search first and answer from what you found/);
+    expect(block).toMatch(/Before you search, write a short line in your own words/);
   });
 
   it('is plain model text: no em dashes outside the creator fields', () => {

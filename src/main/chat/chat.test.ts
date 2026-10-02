@@ -225,6 +225,27 @@ describe('toMessages — every row flows through the same-role merge (Finding 1)
     assertAlternates(out);
   });
 
+  it('shows the results of a real lookup arriving between the checking line and the answer (261003b)', () => {
+    const out = toMessages([
+      user('u1', 1000, 'any codes that work'),
+      companion('c1', 2000, 'ooh let me check'),
+      { ...companion('c2', 3000, 'EASTEREXP gives 2x exp'), lookup: { queries: ['blox fruits codes'] } },
+      companion('c3', 3001, 'grab it fast'),
+    ]);
+    expect(out.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant']);
+    expect(out[1].content).toBe('ooh let me check');
+    expect(out[2].content).toBe('[results of your web search for "blox fruits codes" came back here]');
+    expect(out[3].content).toBe('EASTEREXP gives 2x exp\ngrab it fast');
+    assertAlternates(out);
+    // Answered with no line before the search: the note joins the player's turn.
+    const direct = toMessages([
+      user('u1', 1000, 'any codes'),
+      { ...companion('c1', 2000, 'EASTEREXP'), lookup: { queries: ['codes'] } },
+    ]);
+    expect(direct.map((m) => m.role)).toEqual(['user', 'assistant']);
+    expect(direct[0].content).toMatch(/any codes\n\[results of your web search for "codes" came back here\]$/);
+  });
+
   it('a play row between companion and user turns keeps strict alternation', () => {
     const out = toMessages([
       user('u1', 1000, 'lets play'),

@@ -825,8 +825,10 @@ async function onCreditWall(s: Session, err: unknown, fromUser: boolean): Promis
  * (a follow-up that asks for another is not honored). Any other tool_use in
  * the first response (remember, save_clip, control) gets a plain "ok" result
  * so the request is well-formed, and stays in the returned content so the
- * caller still honors it. The first response's text leads, so a "let me
- * check" is spoken before the answer. Everything else returns `res` as is.
+ * caller still honors it. The first response's text is the line before the
+ * lookup ("let me check"): it goes to `onLead` BEFORE the lookup runs, so the
+ * player hears it during the wait, and the returned content leaves it out so
+ * it is not spoken twice. Everything else returns `res` as is.
  */
 async function followUpWebLookup(p: {
   s: Session;
@@ -836,6 +838,8 @@ async function followUpWebLookup(p: {
   messages: LlmMessage[];
   res: LlmResult;
   ctrl: AbortController;
+  /** Speak the first response's text now, before the client lookup runs. */
+  onLead: (text: string) => void;
 }): Promise<LlmResult> {
   const { res, s } = p;
   const webUses = res.content.filter(
@@ -845,6 +849,8 @@ async function followUpWebLookup(p: {
   if (!webUses.length && !paused) return res;
   const messages: LlmMessage[] = [...p.messages, { role: 'assistant', content: res.content }];
   if (webUses.length) {
+    const leadText = replyTextOf(res.content, '\n');
+    if (leadText) p.onLead(leadText);
     const ws = getChatWebSession(s.characterId, resolveWebSearchSettings(await loadConfig()));
     ws.beginTurn();
     const results: Anthropic.Messages.ToolResultBlockParam[] = [];
@@ -881,29 +887,26 @@ async function followUpWebLookup(p: {
     timeoutMs: CHAT_TIMEOUT_MS,
     signal: p.ctrl.signal,
   });
-  // The first response's text is the "let me check" lead. It reaches the
-  // player at the same moment as the answer (a backseat turn is not
-  // streamed), so it is dropped when there is an answer (see answerText).
-  // Its non-web tool calls stay so the caller still honors them.
-  const leadTools = res.content.filter((b) => b.type === 'tool_use' && !isWebTool(b.name));
-  const answered = replyTextOf(next.content, '\n').length > 0;
-  const lead = answered ? leadTools : res.content.filter((b) => b.type === 'text' || leadTools.includes(b as never));
-  const content = mergeFollowUpContent(lead, next.content) as typeof next.content;
+  // Client lookup: the first response's text was already spoken through
+  // onLead, so only its non-web tool calls stay (the caller still honors
+  // them). A resumed server search keeps the whole first response: its text
+  // before the search was spoken while streaming, and runTurn skips exactly
+  // that part (textAfterLead).
+  const first = webUses.length
+    ? res.content.filter((b) => b.type === 'tool_use' && !isWebTool(b.name))
+    : res.content;
+  const content = mergeFollowUpContent(first, next.content) as typeof next.content;
   return { ...next, content, text: replyTextOf(content, '\n') };
 }
 
 /**
- * The reply to speak (261003). After a server-side search only the text from
- * the search on is the answer; the "let me check" written before it arrives in
- * the same response, so it is never heard before the wait, only before the
- * answer. It is dropped, and with it the pattern the model copied from its
- * own history ("let me check" followed by an answer it never looked up). Kept
- * when the search produced no text.
+ * The text still to speak once the response is complete (261003b). When the
+ * line written before a server-side search was already spoken during the
+ * stream, the rest starts at that search; otherwise it is all of it.
  */
-function answerText(content: LlmResult['content']): string {
-  const at = content.findIndex((b) => b.type === 'server_tool_use');
-  const after = at >= 0 ? replyTextOf(content.slice(at), '\n') : '';
-  return after || replyTextOf(content, '\n');
+function textAfterLead(content: LlmResult['content'], leadSpoken: boolean): string {
+  const at = leadSpoken ? content.findIndex((b) => b.type === 'server_tool_use') : -1;
+  return replyTextOf(at >= 0 ? content.slice(at) : content, '\n');
 }
 
 async function runTurn(
@@ -1019,6 +1022,30 @@ async function runTurn(
   ];
   messages.push({ role: 'user', content: content as never });
 
+  // 261003b: the line the model writes before a lookup ("let me check") is
+  // spoken as soon as it exists, so the player hears it during the wait and
+  // the answer follows as its own line. Server search: the text blocks that
+  // completed before the first server_tool_use block, delivered while the
+  // response streams. Client search: the first response's text, before
+  // followUpWebLookup runs the tool. Both turns share one turn tag so the
+  // renderer's audio queue never drops the lead in favour of the answer.
+  const turnTag = randomUUID();
+  const punctuation = character.metadata?.punctuation === 'deliberate' ? 'deliberate' : 'casual';
+  let leadSpoken = false;
+  let leadEmit: Promise<void> = Promise.resolve();
+  const speakLead = (text: string, blocks: ReadonlyArray<{ type: string; name?: string }>): void => {
+    if (leadSpoken || ctrl.signal.aborted || s.inflight !== ctrl) return;
+    const rememberCalled = blocks.some((b) => b.type === 'tool_use' && b.name === 'remember');
+    const parts = spokenParts(s, tick.kind, stripDashes(text), punctuation, rememberCalled);
+    if (!parts.length) return;
+    leadSpoken = true;
+    s.lastSpokeAt = Date.now();
+    slog(s, `turn ${tick.kind}: said ${parts.length} line(s) before the lookup`);
+    leadEmit = emitCompanionLines(s, parts, voiceCall, null, undefined, { turnTag });
+  };
+  const streamed: Anthropic.Messages.ContentBlock[] = [];
+  const webSearchOffered = tools.some((t) => t.name === 'web_search');
+
   const first = await llm.call({
     // Two short lines. A cap this low is itself a register control: it is
     // hard to write a paragraph in 160 tokens. 260804: a tick the player
@@ -1031,10 +1058,24 @@ async function runTurn(
     messages,
     timeoutMs: CHAT_TIMEOUT_MS,
     signal: ctrl.signal,
+    ...(webSearchOffered
+      ? {
+          onContentBlock: (b: Anthropic.Messages.ContentBlock) => {
+            if (b.type === 'server_tool_use' && !streamed.some((x) => x.type === 'server_tool_use')) {
+              const lead = replyTextOf(streamed, '\n');
+              if (lead) speakLead(lead, streamed);
+            }
+            streamed.push(b);
+          },
+        }
+      : {}),
   });
   if (ctrl.signal.aborted || s.inflight !== ctrl) return;
   // 260929: a game session's lookup (web tools) gets exactly one follow-up.
-  const res = await followUpWebLookup({ s, llm, system, tools, messages, res: first, ctrl });
+  const res = await followUpWebLookup({
+    s, llm, system, tools, messages, res: first, ctrl,
+    onLead: (text) => speakLead(text, first.content),
+  });
   if (ctrl.signal.aborted || s.inflight !== ctrl) return;
 
   // The cache layout above is only worth anything if it hits, and the only way
@@ -1089,7 +1130,7 @@ async function runTurn(
   // replyTextOf, not a newline join (261003): an answer after a server-side
   // search comes back as one text block per cited span, cut mid-sentence, and
   // a newline join spoke ". They're all free" as its own line.
-  const replyText = stripDashes(answerText(res.content));
+  const replyText = stripDashes(textAfterLead(res.content, leadSpoken));
 
   // 260802: silence is no longer an outcome the prompts offer, so reaching here
   // means the model ignored an explicit instruction (or returned nothing at
@@ -1098,6 +1139,11 @@ async function runTurn(
   // rather than the expected path — if this line shows up often in a session
   // log, the contract is not landing and the fix is the prompt, not the parse.
   if ((!replyText || isSilenceFiller(replyText)) && !offerLine) {
+    if (leadSpoken) {
+      slog(s, `turn ${tick.kind}: no answer after the lookup`);
+      await leadEmit;
+      return;
+    }
     slog(
       s,
       `turn ${tick.kind}: NO LINE despite always-speak` +
@@ -1135,30 +1181,63 @@ async function runTurn(
   // "remember sei's ...") and everything here is spoken verbatim. The tool
   // call itself was honored above; only the leaked note is dropped.
   const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');
-  const parts: string[] = [];
-  const punctuation = character.metadata?.punctuation === 'deliberate' ? 'deliberate' : 'casual';
-  const replyParts = replyText && !isSilenceFiller(replyText) ? splitReply(replyText, punctuation) : [];
-  for (const raw of replyParts) {
-    // stripThoughtTags before the empty check: a part that was ONLY the model's
-    // pseudo-XML ("</final_thought>", spoken and captioned live 260807) strips
-    // to nothing and drops here.
-    const t = stripThoughtTags(raw);
-    if (!t || isSilenceFiller(t)) continue;
-    if (isNoteLeak(t, rememberCalled)) {
-      slog(s, `turn ${tick.kind}: note leak dropped ("${t.slice(0, 60)}")`);
-      continue;
-    }
-    parts.push(t);
-  }
+  const parts = spokenParts(s, tick.kind, replyText, punctuation, rememberCalled);
+  // The queries this turn's answer came from (server web_search, or a client
+  // search() in the first response), recorded on the answer's first line.
+  const queries = [...first.content, ...res.content]
+    .filter(
+      (b): b is Anthropic.Messages.ToolUseBlock =>
+        (b.type === 'server_tool_use' && b.name === 'web_search') || (b.type === 'tool_use' && b.name === 'search'),
+    )
+    .map((b) => String((b.input as { query?: unknown } | null)?.query ?? '').trim())
+    .filter((q, i, a) => q && a.indexOf(q) === i);
   // The offer is composed from the literal goal, not left to the model, so
   // the player says yes to exactly what would run.
   if (offer) parts.push(offer.line);
+  // The lead (if any) is persisted and pushed before the answer.
+  await leadEmit;
   if (!parts.length) return;
   slog(s, `turn ${tick.kind}: said ${parts.length} line(s)${clip ? ' + clip' : ''}`);
 
   // Awaited, as before the act spike: the lines are persisted before this
   // turn ends and the next one reads the transcript.
-  await emitCompanionLines(s, parts, voiceCall, clip, offer ? { index: parts.length - 1, id: offer.id } : undefined);
+  await emitCompanionLines(
+    s,
+    parts,
+    voiceCall,
+    clip,
+    offer ? { index: parts.length - 1, id: offer.id } : undefined,
+    { turnTag, ...(queries.length ? { lookup: { queries } } : {}) },
+  );
+}
+
+/**
+ * The reply text split into the parts that are spoken. Drops only what is not
+ * speech: an empty part, a "(silence)" filler, the model's pseudo-XML thought
+ * tags, and a remember() note that slipped into the text (noteLeak.ts).
+ */
+function spokenParts(
+  s: Session,
+  kind: BackseatTick['kind'],
+  text: string,
+  punctuation: 'deliberate' | 'casual',
+  rememberCalled: boolean,
+): string[] {
+  const parts: string[] = [];
+  const raw = text && !isSilenceFiller(text) ? splitReply(text, punctuation) : [];
+  for (const r of raw) {
+    // stripThoughtTags before the empty check: a part that was ONLY the model's
+    // pseudo-XML ("</final_thought>", spoken and captioned live 260807) strips
+    // to nothing and drops here.
+    const t = stripThoughtTags(r);
+    if (!t || isSilenceFiller(t)) continue;
+    if (isNoteLeak(t, rememberCalled)) {
+      slog(s, `turn ${kind}: note leak dropped ("${t.slice(0, 60)}")`);
+      continue;
+    }
+    parts.push(t);
+  }
+  return parts;
 }
 
 /**
@@ -1177,6 +1256,12 @@ function emitCompanionLines(
    * then is it answerable; in text it is answerable once it is shown.
    */
   confirm?: { index: number; id: string },
+  opts: {
+    /** Share one turn tag across several emits of the same turn (lead + answer). */
+    turnTag?: string;
+    /** The web lookup the first part was spoken from (ChatMessage.lookup). */
+    lookup?: { queries: string[] };
+  } = {},
 ): Promise<void> {
   return (async () => {
     const d = requireDeps();
@@ -1187,7 +1272,7 @@ function emitCompanionLines(
     // behind the screen every turn. The tag lets the renderer's audio queue drop
     // the OLD turn's unplayed parts the moment a NEW turn's first line arrives —
     // the clip already playing finishes its sentence, then playback jumps to now.
-    const turnTag = randomUUID();
+    const turnTag = opts.turnTag ?? randomUUID();
     for (let i = 0; i < parts.length; i++) {
       const msg: ChatMessage = {
         id: randomUUID(),
@@ -1199,6 +1284,7 @@ function emitCompanionLines(
         ...(voiceCall ? { voice: true } : {}),
         // The clip rides on the last part so it renders under the whole thought.
         ...(clip && i === parts.length - 1 ? { clip } : {}),
+        ...(opts.lookup && i === 0 ? { lookup: opts.lookup } : {}),
       };
       await chatStore.appendMessage(s.characterId, msg);
       // The offer line goes out now: from here it can block a repeat and be

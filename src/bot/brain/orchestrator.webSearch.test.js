@@ -200,7 +200,7 @@ describe('search() / visit() loop in the game brain (260909)', () => {
     expect(JSON.stringify(visitTurn.content)).toContain('web_search_tool_result')
   })
 
-  it('a web_search written after a say() did not run: the loop gets one more turn to search (261003)', async () => {
+  it('a say() with a web_search beside it: the line goes out and the next call runs the search (261003b)', async () => {
     _setTickIntervalForTests(10_000_000)
     // Measured shape: the response stops at the client say(); the
     // server_tool_use after it has no web_search_tool_result.
@@ -230,10 +230,35 @@ describe('search() / visit() loop in the game brain (260909)', () => {
     expect(provider.calls.length).toBe(2)
     const second = JSON.stringify(provider.calls[1].messages)
     expect(second).not.toContain('srvtoolu_x')
-    expect(second).toContain('did not run')
+    expect(second).toContain('has not run yet')
     const spoken = adapter.chat.mock.calls.map((c) => c[0]).join(' | ')
     expect(spoken).toContain('one sec, checking')
     expect(spoken).toContain('ominous vaults in trial chambers')
+    expect(spoken.indexOf('one sec, checking')).toBeLessThan(spoken.indexOf('ominous vaults'))
+  })
+
+  it('stops re-asking for an unrun web_search after two responses in a row (261003b)', async () => {
+    _setTickIntervalForTests(10_000_000)
+    const turn = (n) => ({
+      text: '',
+      content: [
+        { type: 'tool_use', id: `s${n}`, name: 'say', input: { text: `checking ${n}` } },
+        { type: 'server_tool_use', id: `srvtoolu_${n}`, name: 'web_search', input: { query: 'q' } },
+      ],
+      toolUses: [{ id: `s${n}`, name: 'say', input: { text: `checking ${n}` } }],
+      stopReason: 'tool_use',
+    })
+    const provider = makeProvider([turn(1), turn(2), turn(3), turn(4)])
+    provider.capabilities = { vision: true, cached: true, local: false, serverWebSearch: true }
+    const orch = createOrchestrator({
+      adapter: makeAdapter(),
+      config: makeConfig(),
+      reenqueue: () => {},
+      _anthropicOverride: provider,
+      _webSessionOverride: makeWebSession(),
+    })
+    await orch.handleDispatch('sei:chat_received', chat('whats new in minecraft'))
+    expect(provider.calls.length).toBe(3)
   })
 
   it('withholds the tools and answers with an error when web access is disabled', async () => {
