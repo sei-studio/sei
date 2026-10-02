@@ -10,9 +10,11 @@
  * Only the world is faked: a fixed snapshot, actions resolve "done", and
  * say() lines are captured instead of going to Minecraft chat.
  *
- * SEI_QA_KIND=client hides Anthropic's server web_search so the bot gets our
- * client search()/visit() chain (what a non-Anthropic BYOK user gets), with
- * Node fetch since this runs outside Electron.
+ * The bot's search(query, line) runs as a nested Anthropic server web_search
+ * request (261003c); those requests are recorded per turn as `nested`.
+ * SEI_QA_KIND=client turns that off so search() goes through our engine
+ * chain (what a non-Anthropic BYOK user gets), with Node fetch since this
+ * runs outside Electron.
  */
 import { describe, it } from 'vitest';
 import { mkdtemp, readFile, writeFile, mkdir } from 'node:fs/promises';
@@ -54,6 +56,7 @@ function testKey(): string {
   return process.env.ANTHROPIC_API_KEY || readFileSync(path.join(homedir(), '.sei-dev', 'anthropic-test-key'), 'utf8').trim();
 }
 
+type Usage = { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number; server_tool_use?: { web_search_requests?: number } };
 type Block = { type: string; name?: string; input?: { query?: string; ref?: string; text?: string }; text?: string; citations?: unknown[] };
 
 async function runOnce(run: number, char: { name: string; persona: { expanded: string } }): Promise<unknown> {
@@ -84,7 +87,11 @@ async function runOnce(run: number, char: { name: string; persona: { expanded: s
   const said: string[] = [];
   const saidAt: number[] = [];
   const logs: string[] = [];
-  const responses: Array<{ ms: number; end: number; content: Block[]; stop: string | null }> = [];
+  const responses: Array<{ ms: number; end: number; content: Block[]; stop: string | null; usage: Usage }> = [];
+  // 261003c: the bot's search tool makes its own request with Anthropic's
+  // server web_search (tools = only that). Kept apart from the loop's
+  // responses so the timing metrics stay about what the player hears.
+  const nested: Array<{ ms: number; usage: Usage }> = [];
   const bot = { chat() {}, username: char.name, players: {}, on() {}, off() {}, removeListener() {}, once() {} };
   const real = createMinecraftAdapter({ bot, config, visionEnabled: false });
   const adapter = {
@@ -96,10 +103,12 @@ async function runOnce(run: number, char: { name: string; persona: { expanded: s
   };
   const p = createLlmProvider(config);
   const provider = {
-    call: async (args: unknown) => {
+    call: async (args: { tools?: Array<{ type?: string }> }) => {
       const t0 = Date.now();
       const r = await p.call(args);
-      responses.push({ ms: Date.now() - t0, end: Date.now(), content: (r.content ?? []) as Block[], stop: r.stopReason ?? null });
+      const isNested = Array.isArray(args?.tools) && args.tools.length > 0 && args.tools.every((t) => String(t?.type ?? '').startsWith('web_search'));
+      if (isNested) nested.push({ ms: Date.now() - t0, usage: r.usage ?? {} });
+      else responses.push({ ms: Date.now() - t0, end: Date.now(), content: (r.content ?? []) as Block[], stop: r.stopReason ?? null, usage: r.usage ?? {} });
       return r;
     },
     buildCachedSystem: p.buildCachedSystem,
@@ -118,6 +127,7 @@ async function runOnce(run: number, char: { name: string; persona: { expanded: s
   const turns: unknown[] = [];
   for (const t of convo.turns) {
     responses.length = 0;
+    nested.length = 0;
     said.length = 0;
     saidAt.length = 0;
     logs.length = 0;
@@ -140,6 +150,8 @@ async function runOnce(run: number, char: { name: string; persona: { expanded: s
       player: t.text, label: t.label, qid: t.qid ?? null,
       searched: ran > 0, asked: queries.length, ran, queries, visits, tools,
       calls: responses.length, stops: responses.map((r) => r.stop), ms,
+      usage: responses.map((r) => r.usage),
+      nested: nested.map((n) => ({ ms: n.ms, usage: n.usage })),
       said: [...said],
       // ms from the start of the turn; a line before the last response ended
       // went out before the answer was ready (a lead line).
