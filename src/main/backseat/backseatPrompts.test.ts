@@ -259,6 +259,10 @@ describe('renderBackseatGameBlock', () => {
     expect(block).not.toContain('<game_page>');
     expect(block).toMatch(/did not say which Roblox game/);
     expect(block).toMatch(/LOOKING THINGS UP\. .*search the web for it with the game's name/);
+    // 261003: things that change over time get a search even when the model
+    // thinks it knows; the answer comes from the search with no lead line.
+    expect(block).toMatch(/changes over time.*search even when you think you know/);
+    expect(block).toMatch(/Search first and answer from what you found/);
   });
 
   it('is plain model text: no em dashes outside the creator fields', () => {

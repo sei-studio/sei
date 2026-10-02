@@ -71,7 +71,7 @@ import {
 } from './backseatPrompts';
 import { resolveGameContext } from './games';
 import type { BackseatGameDef, BackseatGameInfo, BackseatGameSelection } from '../../shared/backseatGames';
-import { isWebTool, webToolsFor } from '../../bot/web/webTools.js';
+import { isWebTool, webToolsFor, replyTextOf, mergeFollowUpContent } from '../../bot/web/webTools.js';
 import { getChatWebSession, resolveWebSearchSettings } from '../llm/webSearchSettings';
 import type { LlmMessage, LlmProvider, LlmResult, LlmToolDef } from '../llm/types';
 import { createBackseatLog, NULL_BACKSEAT_LOG, type BackseatLog } from './backseatLog';
@@ -881,14 +881,29 @@ async function followUpWebLookup(p: {
     timeoutMs: CHAT_TIMEOUT_MS,
     signal: p.ctrl.signal,
   });
-  const lead = res.content.filter((b) => b.type === 'text' || (b.type === 'tool_use' && !isWebTool(b.name)));
-  const content = [...lead, ...next.content];
-  const text = content
-    .filter((b): b is Anthropic.Messages.TextBlock => b.type === 'text')
-    .map((b) => b.text)
-    .join(' ')
-    .trim();
-  return { ...next, content, text };
+  // The first response's text is the "let me check" lead. It reaches the
+  // player at the same moment as the answer (a backseat turn is not
+  // streamed), so it is dropped when there is an answer (see answerText).
+  // Its non-web tool calls stay so the caller still honors them.
+  const leadTools = res.content.filter((b) => b.type === 'tool_use' && !isWebTool(b.name));
+  const answered = replyTextOf(next.content, '\n').length > 0;
+  const lead = answered ? leadTools : res.content.filter((b) => b.type === 'text' || leadTools.includes(b as never));
+  const content = mergeFollowUpContent(lead, next.content) as typeof next.content;
+  return { ...next, content, text: replyTextOf(content, '\n') };
+}
+
+/**
+ * The reply to speak (261003). After a server-side search only the text from
+ * the search on is the answer; the "let me check" written before it arrives in
+ * the same response, so it is never heard before the wait, only before the
+ * answer. It is dropped, and with it the pattern the model copied from its
+ * own history ("let me check" followed by an answer it never looked up). Kept
+ * when the search produced no text.
+ */
+function answerText(content: LlmResult['content']): string {
+  const at = content.findIndex((b) => b.type === 'server_tool_use');
+  const after = at >= 0 ? replyTextOf(content.slice(at), '\n') : '';
+  return after || replyTextOf(content, '\n');
 }
 
 async function runTurn(
@@ -1071,12 +1086,10 @@ async function runTurn(
   // stripDashes because asking did not work: the contract has forbidden em
   // dashes since 260802 and the model still writes them in most lines, and
   // these lines are spoken aloud where a dash has no sound.
-  const replyText = stripDashes(
-    res.content
-      .filter((b): b is Anthropic.Messages.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('\n'),
-  );
+  // replyTextOf, not a newline join (261003): an answer after a server-side
+  // search comes back as one text block per cited span, cut mid-sentence, and
+  // a newline join spoke ". They're all free" as its own line.
+  const replyText = stripDashes(answerText(res.content));
 
   // 260802: silence is no longer an outcome the prompts offer, so reaching here
   // means the model ignored an explicit instruction (or returned nothing at

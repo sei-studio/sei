@@ -32,7 +32,7 @@ import {
   REMEMBER_TOOL,
   SELF_LAUNCH_GAMES,
 } from './chatPrompts';
-import { isWebTool, webToolsFor, splitTextAroundServerSearch } from '../../bot/web/webTools.js';
+import { isWebTool, webToolsFor, splitTextAroundServerSearch, replyTextOf, mergeFollowUpContent } from '../../bot/web/webTools.js';
 import { getChatWebSession, resolveWebSearchSettings } from '../llm/webSearchSettings';
 import type { LlmCallParams, LlmMessage, LlmProvider, LlmResult, LlmToolDef } from '../llm/types';
 import type { UserConfig } from '../../shared/characterSchema';
@@ -188,7 +188,7 @@ async function followUpWebTools(p: {
     signal: p.ctrl.signal,
   });
   const lead = res.content.filter((b) => b.type === 'text' || (b.type === 'tool_use' && !isWebTool(b.name)));
-  const content = [...lead, ...next.content];
+  const content = mergeFollowUpContent(lead, next.content) as typeof next.content;
   return { ...next, content, text: textOf(content) };
 }
 /**
@@ -534,13 +534,13 @@ export const TRANSCRIPT_STOP_SEQUENCES = [
   '\n(game)',
 ];
 
-/** Concatenate the text blocks of an Anthropic response content array. */
+/**
+ * The text of an Anthropic response content array. Adjacent text blocks are
+ * one run (a cited answer after a web search is split into several blocks
+ * mid-sentence); runs on either side of a non-text block join with a space.
+ */
 function textOf(content: Array<{ type: string }>): string {
-  return content
-    .map((b) => (b.type === 'text' ? (b as unknown as { text: string }).text.trim() : ''))
-    .filter(Boolean)
-    .join(' ')
-    .trim();
+  return replyTextOf(content, ' ');
 }
 
 /**

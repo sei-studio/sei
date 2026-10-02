@@ -214,6 +214,13 @@ export const GAME_WIKIS = Object.freeze([
   { name: 'Bulbapedia', host: 'bulbapedia.bulbagarden.net', articlePath: '/wiki/', apiPath: '/w/api.php', match: /\bpok[eé]mon\b/i },
   { name: 'Zelda Wiki', host: 'zeldawiki.wiki', articlePath: '/wiki/', apiPath: '/api.php', match: /\bzelda\b|\btears of the kingdom\b|\bbreath of the wild\b/i },
   { name: 'Factorio Wiki', host: 'wiki.factorio.com', articlePath: '/', apiPath: '/api.php', match: /\bfactorio\b/i },
+  // The biggest Roblox experiences have their own wikis (261003, each api.php
+  // checked to answer). Listed before the platform wiki so a game question
+  // reads the game's wiki first.
+  { name: 'Blox Fruits Wiki', host: 'blox-fruits.fandom.com', articlePath: '/wiki/', apiPath: '/api.php', match: /\bblox ?fruits?\b/i },
+  { name: 'Grow a Garden Wiki', host: 'growagarden.fandom.com', articlePath: '/wiki/', apiPath: '/api.php', match: /\bgrow a garden\b/i },
+  { name: 'Adopt Me! Wiki', host: 'adoptme.fandom.com', articlePath: '/wiki/', apiPath: '/api.php', match: /\badopt me\b/i },
+  { name: 'Brookhaven Wiki', host: 'brookhaven.fandom.com', articlePath: '/wiki/', apiPath: '/api.php', match: /\bbrookhaven\b/i },
   { name: 'Roblox Wiki', host: 'roblox.fandom.com', articlePath: '/wiki/', apiPath: '/api.php', match: /\broblox\b/i },
   { name: 'Counter-Strike Wiki', host: 'counterstrike.fandom.com', articlePath: '/wiki/', apiPath: '/api.php', match: /\bcounter-?strike\b|\bcs2\b|\bcs:?go\b/i },
   { name: 'Overwatch Wiki', host: 'overwatch.fandom.com', articlePath: '/wiki/', apiPath: '/api.php', match: /\boverwatch\b/i },
@@ -267,7 +274,7 @@ export const SEARCH_TOOL_DESCRIPTION =
   'Call visit(ref) with a result letter to read the page itself. Search results are private to you; tell the player what you learned in your own words. ' +
   'Name the game in the query ("valorant vandal damage", "minecraft tame fox"): known game wikis are searched directly. ' +
   'For anything recent (latest version, patch notes, current holder of a role) visit a result; snippets can be stale. ' +
-  'Before searching, let the player know (say() in the game, your reply text in chat).'
+  'If you tell the player you are checking, do it in the same turn as the search (a say() beside it in the game, your reply text in chat).'
 
 export const VISIT_TOOL_DESCRIPTION =
   'Read a web page as plain text, one page of text at a time. Pass the letter of a search result (for example "b"), or a full URL. ' +
@@ -313,6 +320,19 @@ export const WEB_TOOL_NAMES = new Set(['search', 'visit'])
  */
 export const SERVER_WEB_SEARCH_TOOL = Object.freeze({ type: 'web_search_20250305', name: 'web_search', max_uses: 3 })
 
+/**
+ * Ids of server-side searches the model asked for that never ran (261003).
+ * A response that calls a client tool (say) and then web_search ends at the
+ * client tool: the server_tool_use is in the content but there is no
+ * web_search_tool_result for it. Not meaningful on pause_turn, where the
+ * search is still running and the content must go back as is.
+ */
+export function unrunServerSearchIds(content) {
+  const blocks = Array.isArray(content) ? content : []
+  const answered = new Set(blocks.filter((b) => b?.type === 'web_search_tool_result').map((b) => b.tool_use_id))
+  return new Set(blocks.filter((b) => b?.type === 'server_tool_use' && !answered.has(b.id)).map((b) => b.id))
+}
+
 export function isServerWebBlock(type) {
   return type === 'server_tool_use' || type === 'web_search_tool_result'
 }
@@ -330,14 +350,59 @@ export function webToolsFor({ serverWebSearch }) {
 export function splitTextAroundServerSearch(content) {
   const blocks = Array.isArray(content) ? content : []
   const first = blocks.findIndex((b) => b?.type === 'server_tool_use')
-  const textOf = (arr) => arr.filter((b) => b?.type === 'text' && typeof b.text === 'string').map((b) => b.text.trim()).filter(Boolean).join(' ').trim()
+  const textOf = (arr) => replyTextOf(arr, ' ')
   if (first < 0) return { before: '', after: textOf(blocks), searched: false }
   return { before: textOf(blocks.slice(0, first)), after: textOf(blocks.slice(first)), searched: true }
 }
 
-// The "Before searching, let the player know" cue lives as literal text in
-// both surface baselines (promptLibrary.js CHAT_BASELINE / MINECRAFT_BASELINE):
-// that module must stay import-free for scripts/lib/promptLibraryEdit.
+/**
+ * The text of a response, for speaking or showing (261003). An answer written
+ * after a server-side search arrives as several text blocks because each
+ * cited span is its own block: "Press M, click Houses, then Claim" (cited),
+ * ". They're all free" , ", so you're just grabbing one". Those pieces are
+ * one sentence and must be glued back exactly as written; joining them with a
+ * newline made every piece its own chat bubble / spoken part. So consecutive
+ * text blocks concatenate as is, and only a non-text block between them (the
+ * search itself, a tool call) separates runs, joined with `gap`.
+ */
+export function replyTextOf(content, gap = '\n') {
+  const runs = []
+  let cur = null
+  for (const b of Array.isArray(content) ? content : []) {
+    if (b?.type === 'text' && typeof b.text === 'string') {
+      cur = (cur ?? '') + b.text
+      continue
+    }
+    if (cur !== null) runs.push(cur)
+    cur = null
+  }
+  if (cur !== null) runs.push(cur)
+  return runs.map((s) => s.trim()).filter(Boolean).join(gap)
+}
+
+/**
+ * Merge a follow-up call's content after the first response's lead blocks
+ * (the "let me check" line and any non-web tool calls). The two came from
+ * separate responses, so when a lead text block would sit right against the
+ * follow-up's first text block, the lead gets a trailing newline: replyTextOf
+ * glues adjacent text blocks, and these two are separate lines.
+ */
+export function mergeFollowUpContent(lead, next) {
+  const a = Array.isArray(lead) ? [...lead] : []
+  const b = Array.isArray(next) ? next : []
+  const last = a[a.length - 1]
+  if (last?.type === 'text' && b[0]?.type === 'text') a[a.length - 1] = { ...last, text: `${last.text}\n` }
+  return [...a, ...b]
+}
+
+// The when-to-search cue lives as literal text in each surface baseline
+// (promptLibrary.js CHAT_BASELINE / MINECRAFT_BASELINE, the Stardew and DST
+// adapter baselines): promptLibrary.js must stay import-free for
+// scripts/lib/promptLibraryEdit. In the game baselines the cue says search
+// FIRST: with Anthropic's server web_search a say() before the search ends
+// the response at the say (the search block after it never runs, measured
+// 261003), and a say()-only turn ends the loop, so "let me check" was the
+// whole answer.
 
 // ---------------------------------------------------------------------------
 // Text helpers
@@ -636,7 +701,12 @@ const providers = {
   },
 
   async bing(q, ctx) {
-    const { res, text } = await ctx.get(`https://www.bing.com/search?q=${encodeURIComponent(q)}&setlang=en`, {
+    // cc/mkt pin the US English market (261003): from a non-US egress (the
+    // Tokyo dev box) `setlang` alone got results for a different query in the
+    // local market (Japanese pages for "crafter recipe", travel pages for
+    // "adopt me mega neon"); with them 8 of 8 probe queries came back on
+    // topic. adlt=strict because many players are kids.
+    const { res, text } = await ctx.get(`https://www.bing.com/search?q=${encodeURIComponent(q)}&setlang=en&cc=US&mkt=en-US&adlt=strict`, {
       headers: { 'User-Agent': BROWSER_UA, Accept: 'text/html', 'Accept-Language': 'en-US,en;q=0.9' },
     })
     if (!res.ok) throw new Error(`bing http ${res.status}`)
@@ -719,7 +789,7 @@ export function parseBingHtml(html) {
  * miss and the chain moves on. Stop words are ignored so "who is Shawn Wang"
  * is judged on shawn + wang.
  */
-const STOP_WORDS = new Set(['who', 'what', 'when', 'where', 'why', 'how', 'the', 'and', 'for', 'are', 'was', 'were', 'does', 'did', 'this', 'that', 'with', 'from', 'about', 'into', 'you', 'your', 'can', 'will', 'has', 'have', 'had', 'not', 'but', 'his', 'her', 'its', 'their', 'them', 'they', 'she', 'him', 'best', 'top', 'get', 'make', 'much', 'many', 'any', 'all', 'more', 'most', 'some', 'there', 'than', 'then', 'out', 'over'])
+const STOP_WORDS = new Set(['who', 'what', 'when', 'where', 'why', 'how', 'the', 'and', 'for', 'are', 'was', 'were', 'does', 'did', 'this', 'that', 'with', 'from', 'about', 'into', 'you', 'your', 'can', 'will', 'has', 'have', 'had', 'not', 'but', 'his', 'her', 'its', 'their', 'them', 'they', 'she', 'him', 'best', 'top', 'get', 'make', 'much', 'many', 'any', 'all', 'more', 'most', 'some', 'there', 'than', 'then', 'out', 'over', 'whats', 'hows', 'wheres', 'which', 'should'])
 export function looksRelevant(results, query) {
   const words = [...new Set(String(query).toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? [])].filter((w) => !STOP_WORDS.has(w))
   if (words.length < 2) return results.length > 0

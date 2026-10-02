@@ -200,6 +200,42 @@ describe('search() / visit() loop in the game brain (260909)', () => {
     expect(JSON.stringify(visitTurn.content)).toContain('web_search_tool_result')
   })
 
+  it('a web_search written after a say() did not run: the loop gets one more turn to search (261003)', async () => {
+    _setTickIntervalForTests(10_000_000)
+    // Measured shape: the response stops at the client say(); the
+    // server_tool_use after it has no web_search_tool_result.
+    const sayUse = { type: 'tool_use', id: 's1', name: 'say', input: { text: 'one sec, checking' } }
+    const unrun = { type: 'server_tool_use', id: 'srvtoolu_x', name: 'web_search', input: { query: 'heavy core mace' } }
+    const ran = [
+      { type: 'server_tool_use', id: 'srvtoolu_y', name: 'web_search', input: { query: 'heavy core mace' } },
+      { type: 'web_search_tool_result', tool_use_id: 'srvtoolu_y', content: [] },
+    ]
+    const answer = { type: 'tool_use', id: 's2', name: 'say', input: { text: 'ominous vaults in trial chambers' } }
+    const provider = makeProvider([
+      { text: '', content: [sayUse, unrun], toolUses: [{ id: 's1', name: 'say', input: sayUse.input }], stopReason: 'tool_use' },
+      { text: '', content: [...ran, answer], toolUses: [{ id: 's2', name: 'say', input: answer.input }], stopReason: 'tool_use' },
+      { text: '', toolUses: [{ id: 's3', name: 'say', input: { text: 'never reached' } }] },
+    ])
+    provider.capabilities = { vision: true, cached: true, local: false, serverWebSearch: true }
+    const adapter = makeAdapter()
+    const orch = createOrchestrator({
+      adapter,
+      config: makeConfig(),
+      reenqueue: () => {},
+      _anthropicOverride: provider,
+      _webSessionOverride: makeWebSession(),
+    })
+    await orch.handleDispatch('sei:chat_received', chat('how do i get a heavy core'))
+    // Two calls: the say()-only turn did not end the loop, the searched one did.
+    expect(provider.calls.length).toBe(2)
+    const second = JSON.stringify(provider.calls[1].messages)
+    expect(second).not.toContain('srvtoolu_x')
+    expect(second).toContain('did not run')
+    const spoken = adapter.chat.mock.calls.map((c) => c[0]).join(' | ')
+    expect(spoken).toContain('one sec, checking')
+    expect(spoken).toContain('ominous vaults in trial chambers')
+  })
+
   it('withholds the tools and answers with an error when web access is disabled', async () => {
     _setTickIntervalForTests(10_000_000)
     const provider = makeProvider([
