@@ -38,7 +38,7 @@ const words = s => (s.match(/\S+/g) ?? []).length
 const pct = (a, b) => b ? `${a}/${b} (${Math.round(100 * a / b)}%)` : '-'
 for (const f of files) {
   const runs = JSON.parse(fs.readFileSync(f, 'utf8'))
-  const c = { must: 0, mustHit: 0, no: 0, noOver: 0, either: 0, eitherSearched: 0, judged: 0, ok: 0, partial: 0, wrong: 0, none: 0, promise: 0, leadSpoken: 0, fragments: 0, leak: 0, empty: 0, long: 0, answered: 0, lat: [], latS: [] }
+  const c = { must: 0, mustHit: 0, no: 0, noOver: 0, either: 0, eitherSearched: 0, judged: 0, ok: 0, partial: 0, wrong: 0, none: 0, promise: 0, leadSpoken: 0, fragments: 0, leak: 0, searchTurns: 0, leadFirst: 0, leadNoSearch: 0, fake: 0, first: [], answerAt: [], empty: 0, long: 0, answered: 0, lat: [], latS: [] }
   const lines = []
   for (const r of runs) for (const t of r.turns) {
     if (t.label === 'start') continue
@@ -53,15 +53,40 @@ for (const f of files) {
     if (t.label === 'either') { c.either++; if (t.searched) c.eitherSearched++ }
     let v = '-'
     if (t.qid && JUDGE[t.qid]) { v = JUDGE[t.qid](s); c.judged++; c[v]++ }
-    if (!t.searched && PROMISE.test(said)) c.promise++
+    if (!t.searched && PROMISE.test(said)) {
+      c.promise++
+      // a checking line with an answer after it but no search: a fake lookup;
+      // with nothing after it: a lead line the search never followed
+      const after = said.slice(said.search(PROMISE)).replace(PROMISE, '')
+      if (words(after) >= 6) c.fake++
+      else c.leadNoSearch++
+    } else if (!t.searched && FAKE_CODES.test(said)) c.fake++
+    // timing (harness 261003b+): saidAt = ms from turn start per line,
+    // respEnd = ms when each model response finished
+    if (t.searched && t.saidAt && t.respEnd?.length && t.saidAt.length) {
+      const lastEnd = Math.max(...t.respEnd)
+      c.searchTurns++
+      if (t.saidAt.some(a => a < lastEnd)) c.leadFirst++
+      c.first.push(Math.min(...t.saidAt))
+      const ans = t.saidAt.filter(a => a >= lastEnd)
+      if (ans.length) c.answerAt.push(Math.min(...ans))
+    }
     // a "let me check" spoken together with the answer it was waiting for
-    if (t.searched && PROMISE.test(said)) c.leadSpoken++
+    // (with timing: a checking line that went out only once the answer was
+    // ready; without timing, any checking phrase on a search turn)
+    if (t.searched && t.saidAt && t.respEnd?.length) {
+      const lastEnd = Math.max(...t.respEnd)
+      if (t.said.some((x, i) => PROMISE.test(x) && t.saidAt[i] >= lastEnd)) c.leadSpoken++
+    } else if (t.searched && PROMISE.test(said)) c.leadSpoken++
     // a cited answer split mid-sentence into separately spoken lines
     c.fragments += t.said.filter(x => /^[,.;:]/.test(x.trim())).length
     if (LEAK.test(said)) c.leak++
     if (!said.trim()) c.empty++
     const limit = r.convo === 'MC' ? 20 : 50
-    if (said.trim()) { c.answered++; if (words(said) > limit) c.long++ }
+    // length of the answer, not counting a checking line sent before it
+    const lastEnd = t.saidAt && t.respEnd?.length ? Math.max(...t.respEnd) : -Infinity
+    const answer = t.saidAt ? t.said.filter((_, i) => t.saidAt[i] >= lastEnd).join(' ') : said
+    if (said.trim()) { c.answered++; if (words(answer) > limit) c.long++ }
     ;(t.searched ? c.latS : c.lat).push(t.ms)
     lines.push(`${r.convo}#${r.run} ${t.label.padEnd(6)} ${(t.qid ?? '').padEnd(4)} ${t.searched ? 'S' : '-'} ${v.padEnd(7)} ${said.slice(0, 140)}`)
   }
@@ -71,5 +96,7 @@ for (const f of files) {
   console.log(`  answers correct: ${pct(c.ok, c.judged)} partial ${c.partial} wrong ${c.wrong} no-answer ${c.none}`)
   console.log(`  announced-but-never-searched: ${c.promise} | "checking" spoken with the answer: ${c.leadSpoken} | split fragments: ${c.fragments} | meta/markup leaks: ${c.leak} | empty replies: ${c.empty} | too long: ${pct(c.long, c.answered)}`)
   console.log(`  median latency: search turns ${med(c.latS)} ms, other turns ${med(c.lat)} ms`)
+  if (c.searchTurns) console.log(`  search turns: line spoken before the answer was ready ${pct(c.leadFirst, c.searchTurns)} | first line at ${med(c.first)} ms | answer at ${med(c.answerAt)} ms (medians)`)
+  console.log(`  checking line with no search after it: ${c.leadNoSearch} | fake lookups (checking line + answer, or invented codes, no search): ${c.fake}`)
   if (VERBOSE) for (const l of lines) console.log('   ' + l)
 }

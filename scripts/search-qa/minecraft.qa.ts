@@ -82,15 +82,16 @@ async function runOnce(run: number, char: { name: string; persona: { expanded: s
   });
 
   const said: string[] = [];
+  const saidAt: number[] = [];
   const logs: string[] = [];
-  const responses: Array<{ ms: number; content: Block[]; stop: string | null }> = [];
+  const responses: Array<{ ms: number; end: number; content: Block[]; stop: string | null }> = [];
   const bot = { chat() {}, username: char.name, players: {}, on() {}, off() {}, removeListener() {}, once() {} };
   const real = createMinecraftAdapter({ bot, config, visionEnabled: false });
   const adapter = {
     ...real,
     createSnapshotComposer: () => ({ next: () => SNAPSHOT }),
     executeAction: async () => 'done',
-    chat: (msg: string) => { said.push(msg); },
+    chat: (msg: string) => { said.push(msg); saidAt.push(Date.now()); },
     closeAnySessions: async () => {},
   };
   const p = createLlmProvider(config);
@@ -98,7 +99,7 @@ async function runOnce(run: number, char: { name: string; persona: { expanded: s
     call: async (args: unknown) => {
       const t0 = Date.now();
       const r = await p.call(args);
-      responses.push({ ms: Date.now() - t0, content: (r.content ?? []) as Block[], stop: r.stopReason ?? null });
+      responses.push({ ms: Date.now() - t0, end: Date.now(), content: (r.content ?? []) as Block[], stop: r.stopReason ?? null });
       return r;
     },
     buildCachedSystem: p.buildCachedSystem,
@@ -118,6 +119,7 @@ async function runOnce(run: number, char: { name: string; persona: { expanded: s
   for (const t of convo.turns) {
     responses.length = 0;
     said.length = 0;
+    saidAt.length = 0;
     logs.length = 0;
     const t0 = Date.now();
     await orch.handleDispatch('sei:chat_received', { text: t.text, username: PLAYER, playerSpoke: true, ts: Date.now() });
@@ -139,6 +141,10 @@ async function runOnce(run: number, char: { name: string; persona: { expanded: s
       searched: ran > 0, asked: queries.length, ran, queries, visits, tools,
       calls: responses.length, stops: responses.map((r) => r.stop), ms,
       said: [...said],
+      // ms from the start of the turn; a line before the last response ended
+      // went out before the answer was ready (a lead line).
+      saidAt: saidAt.map((x) => x - t0),
+      respEnd: responses.map((r) => r.end - t0),
       scratch: all.filter((b) => b.type === 'text').map((b) => b.text).join(' | ').slice(0, 600),
       logs: [...logs].slice(0, 20),
     });

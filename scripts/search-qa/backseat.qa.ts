@@ -28,6 +28,7 @@ import path from 'node:path';
 const H = vi.hoisted(() => ({
   responses: [] as Array<{ at: number; ms: number; content: unknown[]; stop: string | null; usage: unknown }>,
   said: [] as string[],
+  saidAt: [] as number[],
   logs: [] as string[],
 }));
 
@@ -132,6 +133,7 @@ async function runConvo(c: Convo, run: number): Promise<unknown> {
   for (const t of [{ text: '', label: 'start' as const, kind: 'start' as const }, ...c.turns.map((x) => ({ ...x, kind: 'user' as const }))]) {
     H.responses.length = 0;
     H.said.length = 0;
+    H.saidAt.length = 0;
     H.logs.length = 0;
     now = Date.now();
     const t0 = Date.now();
@@ -157,6 +159,11 @@ async function runConvo(c: Convo, run: number): Promise<unknown> {
       stops: H.responses.map((r) => r.stop),
       ms,
       said: [...H.said],
+      // When each line was pushed and when each model response finished, in
+      // ms from the start of the turn. A line pushed before the LAST response
+      // finished went out before the answer was ready (a lead line).
+      saidAt: H.saidAt.map((x) => x - t0),
+      respEnd: H.responses.map((r) => r.at + r.ms - t0),
       logs: H.logs.filter((l) => /web|search|visit|NO LINE|failed|game:/i.test(l)),
       blocks: all.map((b) => {
         const x = b as { type: string; text?: string; citations?: unknown[] };
@@ -173,7 +180,10 @@ describe('search QA: backseat', () => {
   it('runs the conversations', async () => {
     initBackseatService({
       pushChatMessage: (_c, m) => {
-        if (m.role === 'companion') H.said.push(m.text);
+        if (m.role === 'companion') {
+          H.said.push(m.text);
+          H.saidAt.push(Date.now());
+        }
       },
       pushState: () => {},
       pushLine: () => {},
