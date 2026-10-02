@@ -20,6 +20,10 @@ import {
   clip,
   createNetRequester,
   WEB_TOOLS,
+  replyTextOf,
+  mergeFollowUpContent,
+  splitTextAroundServerSearch,
+  unrunServerSearchIds,
 } from './webTools.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -148,6 +152,8 @@ describe('labels + urls', () => {
     expect(looksRelevant([{ title: 'LATENT Definition & Meaning', snippet: 'present and capable of emerging' }], 'Latent Space podcast hosts')).toBe(false)
     expect(looksRelevant([{ title: 'Latent Space: The AI Engineer Podcast', snippet: 'swyx and Alessio' }], 'Latent Space podcast hosts')).toBe(true)
     expect(looksRelevant([{ title: 'anything', snippet: '' }], 'swyx')).toBe(true) // one-word query: no gate
+    // 261003: question words are not content words ("whats" failed every engine).
+    expect(looksRelevant([{ title: 'Blox Fruits tier list', snippet: 'the best fruit' }], 'whats the best fruit blox fruits')).toBe(true)
     // Stop words do not count: a name query is judged on the name.
     expect(looksRelevant([{ title: 'Shawn Hatosy', snippet: 'American actor' }, { title: 'Wang Cong', snippet: 'boxer' }], 'who is Shawn Wang')).toBe(false)
     expect(looksRelevant([{ title: 'Shawn Wang (swyx)', snippet: 'writer' }], 'who is Shawn Wang')).toBe(true)
@@ -193,6 +199,11 @@ describe('session', () => {
     expect(r.content).not.toContain('http')
     expect(r.content.length).toBeLessThan(1200)
     expect(s.refs.get('a').url).toBe('https://www.craft.do/')
+    // 261003: Bing is pinned to the US English market (a non-US egress got
+    // another market's results for the same words).
+    const bingUrl = fetchImpl.calls.find((c) => c.url.includes('bing.com')).url
+    expect(bingUrl).toContain('mkt=en-US')
+    expect(bingUrl).toContain('cc=US')
   })
 
   it('search reports failure when every provider fails', async () => {
@@ -600,5 +611,64 @@ describe('search cancellation + engine cooldowns (260917)', () => {
     const v = await s.visit('https://page.example/')
     expect(v.is_error).toBe(false)
     expect(v.content).toContain('slow but fine page')
+  })
+})
+
+describe('reply text around a server search (261003)', () => {
+  const cite = [{ type: 'web_search_result_location', url: 'https://example.com' }]
+  const reply = [
+    { type: 'text', text: 'lemme check' },
+    { type: 'server_tool_use', id: 's1', name: 'web_search', input: { query: 'q' } },
+    { type: 'web_search_tool_result', tool_use_id: 's1', content: [] },
+    { type: 'text', text: 'Press M, then Claim', citations: cite },
+    { type: 'text', text: ". They're free" },
+    { type: 'text', text: ', so grab one', citations: cite },
+  ]
+
+  it('glues cited fragments back into one sentence and splits runs at non-text blocks', () => {
+    expect(replyTextOf(reply, '\n')).toBe("lemme check\nPress M, then Claim. They're free, so grab one")
+    expect(replyTextOf(reply, ' ')).toBe("lemme check Press M, then Claim. They're free, so grab one")
+    expect(replyTextOf([], '\n')).toBe('')
+    expect(replyTextOf([{ type: 'text', text: '  ' }, { type: 'tool_use', id: 't', name: 'say', input: {} }])).toBe('')
+  })
+
+  it('splitTextAroundServerSearch keeps the answer as written', () => {
+    expect(splitTextAroundServerSearch(reply)).toEqual({
+      before: 'lemme check',
+      after: "Press M, then Claim. They're free, so grab one",
+      searched: true,
+    })
+  })
+
+  it('mergeFollowUpContent keeps the lead and the follow-up as separate lines', () => {
+    const lead = [{ type: 'text', text: 'one sec' }]
+    const next = [{ type: 'text', text: 'it is free' }]
+    const merged = mergeFollowUpContent(lead, next)
+    expect(replyTextOf(merged, '\n')).toBe('one sec\nit is free')
+    expect(lead[0].text).toBe('one sec')
+    // A tool block between them already separates the runs.
+    const withTool = mergeFollowUpContent([...lead, { type: 'tool_use', id: 'r', name: 'remember', input: {} }], next)
+    expect(replyTextOf(withTool, '\n')).toBe('one sec\nit is free')
+  })
+})
+
+describe('unrunServerSearchIds (261003)', () => {
+  it('names a server_tool_use with no result and ignores answered ones', () => {
+    expect([...unrunServerSearchIds([
+      { type: 'server_tool_use', id: 'a', name: 'web_search', input: {} },
+      { type: 'web_search_tool_result', tool_use_id: 'a', content: [] },
+      { type: 'tool_use', id: 's', name: 'say', input: {} },
+      { type: 'server_tool_use', id: 'b', name: 'web_search', input: {} },
+    ])]).toEqual(['b'])
+    expect(unrunServerSearchIds(null).size).toBe(0)
+  })
+})
+
+describe('Roblox experience wikis (261003)', () => {
+  it('a game question reads the game wiki before the platform wiki', () => {
+    expect(wikisForQuery('blox fruits codes roblox').map((w) => w.host).slice(0, 2)).toEqual(['blox-fruits.fandom.com', 'roblox.fandom.com'])
+    expect(wikisForQuery('grow a garden newest update')[0].host).toBe('growagarden.fandom.com')
+    expect(wikisForQuery('adopt me mega neon')[0].host).toBe('adoptme.fandom.com')
+    expect(wikisForQuery('brookhaven rp house')[0].host).toBe('brookhaven.fandom.com')
   })
 })

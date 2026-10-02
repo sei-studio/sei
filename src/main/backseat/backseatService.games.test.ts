@@ -59,7 +59,7 @@ vi.mock('../chat/chatPrompts', () => ({
 vi.mock('../chat/chatService', () => ({
   toMessages: () => [],
   isSilenceFiller: (t: string) => t.trim() === '(silence)',
-  splitReply: (t: string) => [t],
+  splitReply: (t: string) => t.split(/\n+/),
 }));
 vi.mock('../chat/noteLeak', () => ({ isNoteLeak: () => false, stripThoughtTags: (t: string) => t }));
 vi.mock('../chat/continuity', () => ({ readChatContext: async () => ({ summary: '', history: [] }), foldIfDue: async () => {} }));
@@ -203,7 +203,7 @@ describe('a backseat session started from a game tile', () => {
     expect(h.extraStable[1]).toBe(stable);
   });
 
-  it('runs a client search() once and speaks the lead line plus the answer', async () => {
+  it('runs a client search() once and speaks the answer', async () => {
     h.llmKind = 'openai';
     await startBackseat(CH, 'window:1:0', 'Roblox', 'text' as never, { gameId: 'roblox' });
     h.replies.push({
@@ -216,11 +216,46 @@ describe('a backseat session started from a game tile', () => {
     await tick('user', 'how do i get a house');
     expect(h.webRuns).toEqual([['search', { query: 'brookhaven house roblox' }]]);
     expect(h.requests).toHaveLength(2);
-    expect(h.said.join(' ')).toContain('let me check.');
-    expect(h.said.join(' ')).toContain('you buy one from the house menu.');
+    // The lead would reach the player together with the answer, so only the
+    // answer is spoken (261003).
+    expect(h.said).toEqual(['you buy one from the house menu.']);
     // No game picked: the block says so instead of fencing nothing.
     expect(h.extraStable[0]).toMatch(/did not say which Roblox game/);
     expect(h.extraStable[0]).not.toContain('<game_page>');
+  });
+
+  it('speaks a cited answer after a server search as one line, without the lead', async () => {
+    await startBackseat(CH, 'window:1:0', 'Roblox', 'text' as never, { gameId: 'roblox', universeId: 1686885941 });
+    // Shape of a real Haiku reply (261003): the lead, the search, then the
+    // answer cut into blocks at each cited span.
+    const cite = [{ type: 'web_search_result_location', url: 'https://example.com', title: 'x', cited_text: 'y', encrypted_index: 'z' }];
+    h.replies.push({
+      content: [
+        { type: 'text', text: 'let me check how that works' },
+        { type: 'server_tool_use', id: 's1', name: 'web_search', input: { query: 'brookhaven house' } },
+        { type: 'web_search_tool_result', tool_use_id: 's1', content: [] },
+        { type: 'text', text: 'Press M, click Houses, then Claim', citations: cite },
+        { type: 'text', text: ". They're all free" },
+        { type: 'text', text: ', so just grab one', citations: cite },
+      ],
+    });
+    await tick('user', 'how do i get a house');
+    expect(h.requests).toHaveLength(1);
+    expect(h.said).toEqual(["Press M, click Houses, then Claim. They're all free, so just grab one"]);
+  });
+
+  it('keeps the lead line when the lookup produced no answer text', async () => {
+    h.llmKind = 'openai';
+    await startBackseat(CH, 'window:1:0', 'Roblox', 'text' as never, { gameId: 'roblox' });
+    h.replies.push({
+      content: [
+        { type: 'text', text: 'hm let me see' },
+        { type: 'tool_use', id: 'w1', name: 'search', input: { query: 'brookhaven house roblox' } },
+      ],
+    });
+    h.replies.push({ content: [] });
+    await tick('user', 'how do i get a house');
+    expect(h.said).toEqual(['hm let me see']);
   });
 
   it('leaves an ordinary share unchanged', async () => {

@@ -313,9 +313,15 @@ export function renderBackseatGameBlock(
   }
   if (opts.canSearch) {
     parts.push(
-      'LOOKING THINGS UP. When they ask how something in this game works, where to go or what to do ' +
-        'next, and you are not sure, search the web for it with the game\'s name in the query, then ' +
-        'answer in a sentence or two from what you found. Only search when they ask for help.',
+      'LOOKING THINGS UP. When they ask how something in this game works, where to go, what to do ' +
+        'next or anything else about the game, and you are not sure, search the web for it with the ' +
+        'game\'s name in the query, then answer in a sentence or two from what you found. When they ask ' +
+        'you something you do not know, search instead of guessing or telling them you do not know. ' +
+        'Games like this update often and may be newer than what you know, so for anything that ' +
+        'changes over time, such as codes, updates, events, or what is best or most popular right ' +
+        'now, search even when you think you know. Search first and answer from what you found, with ' +
+        'no line about checking before it. Search only to answer something they asked; reacting to ' +
+        'the screen or chatting does not need a search.',
     );
   }
   return parts.join('\n\n');

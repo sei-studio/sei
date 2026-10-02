@@ -44,7 +44,7 @@ import { createHeartbeatLog, readHeartbeatForSeed } from './memory/heartbeat.js'
 import { createMemoryCompactor } from './memory/compactor.js'
 import { createWorldRegistry } from './memory/worlds.js'
 import { resolveAdapterCaps } from './adapterDefaults.js'
-import { createWebSession, electronFetchProvider, webToolsFor, isWebTool } from '../web/webTools.js'
+import { createWebSession, electronFetchProvider, webToolsFor, isWebTool, unrunServerSearchIds } from '../web/webTools.js'
 
 // Post-process say() text before it hits in-game chat. Safety-only:
 // whitespace collapse (chat is single-line) and force lowercase (hardcoded).
@@ -122,6 +122,10 @@ export function postProcessSay(s) {
     // BREAK (so it never ships), and the voice-call single-line path
     // normalizes it to a plain hyphen.
     .replace(/\*/g, '')
+    // 261003: after a server web_search the model can wrap quoted sentences
+    // in the say() text with the API's citation markup
+    // (<cite index="2-7">...</cite>). Keep the words, drop the tags.
+    .replace(/<\/?cite\b[^>]*>/gi, '')
     .replace(/\s+/g, ' ')
     .trim()
   if (!normalized) return ''
@@ -3982,6 +3986,21 @@ function maybeWarnByteCap(loop, warned) {
         return
       }
 
+      // 261003: a web_search the model wrote after a say() in this same
+      // response never ran (the response stops at the client tool call). Drop
+      // the unanswered server_tool_use from history (a continuation carrying
+      // it is malformed) and give the loop one more turn to run the search,
+      // instead of ending it on the say()'s "let me check".
+      const unrunSearch = resp.stopReason !== 'pause_turn' && Array.isArray(resp.content)
+        ? unrunServerSearchIds(resp.content)
+        : new Set()
+      const retrySearch = unrunSearch.size > 0 && !loop._searchRetried
+      if (retrySearch) loop._searchRetried = true
+      if (unrunSearch.size > 0) {
+        logger.info?.(`[sei/orch] web_search after say() did not run${retrySearch ? ', retrying once' : ''} (loop=${loop.id})`)
+        resp = { ...resp, content: resp.content.filter(b => !(b?.type === 'server_tool_use' && unrunSearch.has(b.id))) }
+      }
+
       // Append assistant turn raw (preserves tool_use blocks 1:1)
       loop.appendAssistant(buildAssistantContent(resp))
       // 260708: the trigger has now been seen and answered by at least one
@@ -4451,7 +4470,7 @@ function maybeWarnByteCap(loop, warned) {
 
       // Determine whether to continue or terminate. If only personality-only
       // tools fired (no movement) the LLM is done — terminal.
-      const continueLoop = movementCalls.length > 0
+      const continueLoop = movementCalls.length > 0 || retrySearch
 
       // Contract v2 postProcessToolBatch: the adapter reads the settled
       // batch and may hand back a one-shot nudge for the next user turn
@@ -4480,7 +4499,7 @@ function maybeWarnByteCap(loop, warned) {
       // cant_reach nudge wins over silence nudge — both
       // happen at "things are not progressing" but cant_reach is the proximate
       // cause and the LLM needs the specific instruction.
-      const finalNudgeText = cantReachNudge ?? silenceNudgeText
+      const finalNudgeText = (retrySearch ? NUDGES.searchNotRun : null) ?? cantReachNudge ?? silenceNudgeText
 
       loop.appendToolResults(results, {
         snapshot: snapshotText(),
