@@ -141,9 +141,11 @@ export const BACKSEAT_GAMES: readonly BackseatGameDef[] = [
     name: 'Roblox',
     tileName: 'Roblox (Backseat)',
     promptName: 'Roblox (by screen share)',
-    // Official Roblox press-kit render ("Players on Roblox", about.roblox.com
-    // /press-kit, Renders & Artwork), cropped clear of its corner wordmark.
-    // The same file as the coming-soon tile's, and the intro popup reuses it.
+    // Original Sei art (261003): Sui watching a generic obby on a monitor,
+    // generated from her own sprites. It replaced the Roblox press-kit render,
+    // which Roblox's brand guidelines do not allow in a commercial product.
+    // Keep it free of Roblox marks, avatars and experience art. The intro
+    // popup reuses it.
     image: './img/game-roblox.jpg',
     tileDescription:
       'Play any Roblox game while {name} watches your screen and talks with you on a voice call.',
