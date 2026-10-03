@@ -32,7 +32,7 @@ import {
   REMEMBER_TOOL,
   SELF_LAUNCH_GAMES,
 } from './chatPrompts';
-import { isWebTool, webToolsFor, splitTextAroundServerSearch } from '../../bot/web/webTools.js';
+import { isWebTool, webToolsFor, splitTextAroundServerSearch, replyTextOf, mergeFollowUpContent } from '../../bot/web/webTools.js';
 import { getChatWebSession, resolveWebSearchSettings } from '../llm/webSearchSettings';
 import type { LlmCallParams, LlmMessage, LlmProvider, LlmResult, LlmToolDef } from '../llm/types';
 import type { UserConfig } from '../../shared/characterSchema';
@@ -188,7 +188,7 @@ async function followUpWebTools(p: {
     signal: p.ctrl.signal,
   });
   const lead = res.content.filter((b) => b.type === 'text' || (b.type === 'tool_use' && !isWebTool(b.name)));
-  const content = [...lead, ...next.content];
+  const content = mergeFollowUpContent(lead, next.content) as typeof next.content;
   return { ...next, content, text: textOf(content) };
 }
 /**
@@ -534,13 +534,13 @@ export const TRANSCRIPT_STOP_SEQUENCES = [
   '\n(game)',
 ];
 
-/** Concatenate the text blocks of an Anthropic response content array. */
+/**
+ * The text of an Anthropic response content array. Adjacent text blocks are
+ * one run (a cited answer after a web search is split into several blocks
+ * mid-sentence); runs on either side of a non-text block join with a space.
+ */
 function textOf(content: Array<{ type: string }>): string {
-  return content
-    .map((b) => (b.type === 'text' ? (b as unknown as { text: string }).text.trim() : ''))
-    .filter(Boolean)
-    .join(' ')
-    .trim();
+  return replyTextOf(content, ' ');
 }
 
 /**
@@ -584,6 +584,18 @@ export function toMessages(history: ChatMessage[]): Array<{ role: 'user' | 'assi
         content = `(replying to ${who}: "${m.replyTo.text}")\n${m.text}`;
       }
       role = m.role === 'companion' ? 'assistant' : 'user';
+      // 261003b: a line spoken from a real web lookup gets the lookup in front
+      // of it, as a user-side note between the line before the search and the
+      // answer, the way the results arrived. Without it a real lookup and a
+      // "let me check" followed by a made-up answer looked the same in
+      // history, and the model copied the made-up shape.
+      const queries = role === 'assistant' ? (m.lookup?.queries ?? []).filter((q) => typeof q === 'string' && q.trim()) : [];
+      if (queries.length) {
+        const note = `[results of your web search for ${queries.map((q) => `"${q.trim()}"`).join(', ')} came back here]`;
+        const prev = out[out.length - 1];
+        if (prev && prev.role === 'user' && typeof prev.content === 'string') prev.content = `${prev.content}\n${note}`;
+        else out.push({ role: 'user', content: note });
+      }
       // 260703: stamp USER messages with their send time so the model can feel
       // gaps (overnight silence vs rapid-fire). Assistant turns stay unstamped —
       // stamping the model's own prior output teaches it to emit timestamps.

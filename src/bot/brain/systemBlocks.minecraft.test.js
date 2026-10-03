@@ -41,7 +41,14 @@ const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), '__fixtu
 describe('Minecraft cached system prefix + tool list are byte-identical to the pinned fixture', () => {
   it('matches __fixtures__/minecraftSystemBlocks.json', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'sei-sysblocks-'))
-    const actual = await buildMinecraftSystemFixture(dir)
+    // 261003c: the search tool's description carries today's date; pin it.
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-03T12:00:00Z') })
+    let actual
+    try {
+      actual = await buildMinecraftSystemFixture(dir)
+    } finally {
+      vi.useRealTimers()
+    }
     if (process.env.SEI_WRITE_SYSBLOCKS_FIXTURE === '1') {
       writeFileSync(FIXTURE, JSON.stringify(actual, null, 2) + '\n')
     }

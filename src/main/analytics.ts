@@ -24,6 +24,7 @@ import { randomUUID } from 'node:crypto';
 import { PostHog } from 'posthog-node';
 import { loadConfig, updateConfig } from './configStore';
 import { getAiBackendKind, onAiBackendKindChanged } from './apiKeyStore';
+import { ATTRIBUTION_EVENT, ATTRIBUTION_PERSON_PROP, isAttributionSource } from '../shared/attribution';
 
 const logger = {
   info: (m: string) => console.log(`[sei] ${m}`),
@@ -177,6 +178,20 @@ function distinctId(): string {
 }
 
 /**
+ * Person properties derived from a (sanitized) event, 261001. Renderer props
+ * can never carry `$set` themselves (sanitize drops objects and `$` keys), so
+ * the few answers that should segment every later event are mapped here from
+ * a closed enum. Today that is only the onboarding attribution answer:
+ * `$set_once`, so the first answer on a person wins, and a skip sets nothing.
+ */
+export function personPropsFor(event: string, props: Record<string, unknown>): Record<string, unknown> {
+  if (event === ATTRIBUTION_EVENT && isAttributionSource(props.source)) {
+    return { $set_once: { [ATTRIBUTION_PERSON_PROP]: props.source } };
+  }
+  return {};
+}
+
+/**
  * Capture an event. No-op when analytics is disabled or opted out. Safe to call
  * from anywhere in main; never throws.
  */
@@ -185,10 +200,11 @@ export function capture(event: string, props?: Record<string, unknown>): void {
   const id = distinctId();
   if (!id) return;
   try {
+    const clean = sanitize(props);
     client.capture({
       distinctId: id,
       event,
-      properties: { ...commonProps(), ...sanitize(props) },
+      properties: { ...commonProps(), ...clean, ...personPropsFor(event, clean) },
     });
   } catch (err) {
     logger.warn(`analytics: capture(${event}) failed: ${(err as Error).message}`);

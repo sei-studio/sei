@@ -20,6 +20,11 @@ import {
   clip,
   createNetRequester,
   WEB_TOOLS,
+  replyTextOf,
+  mergeFollowUpContent,
+  splitTextAroundServerSearch,
+  runServerSearch,
+  botWebTools,
 } from './webTools.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -148,6 +153,8 @@ describe('labels + urls', () => {
     expect(looksRelevant([{ title: 'LATENT Definition & Meaning', snippet: 'present and capable of emerging' }], 'Latent Space podcast hosts')).toBe(false)
     expect(looksRelevant([{ title: 'Latent Space: The AI Engineer Podcast', snippet: 'swyx and Alessio' }], 'Latent Space podcast hosts')).toBe(true)
     expect(looksRelevant([{ title: 'anything', snippet: '' }], 'swyx')).toBe(true) // one-word query: no gate
+    // 261003: question words are not content words ("whats" failed every engine).
+    expect(looksRelevant([{ title: 'Blox Fruits tier list', snippet: 'the best fruit' }], 'whats the best fruit blox fruits')).toBe(true)
     // Stop words do not count: a name query is judged on the name.
     expect(looksRelevant([{ title: 'Shawn Hatosy', snippet: 'American actor' }, { title: 'Wang Cong', snippet: 'boxer' }], 'who is Shawn Wang')).toBe(false)
     expect(looksRelevant([{ title: 'Shawn Wang (swyx)', snippet: 'writer' }], 'who is Shawn Wang')).toBe(true)
@@ -193,6 +200,11 @@ describe('session', () => {
     expect(r.content).not.toContain('http')
     expect(r.content.length).toBeLessThan(1200)
     expect(s.refs.get('a').url).toBe('https://www.craft.do/')
+    // 261003: Bing is pinned to the US English market (a non-US egress got
+    // another market's results for the same words).
+    const bingUrl = fetchImpl.calls.find((c) => c.url.includes('bing.com')).url
+    expect(bingUrl).toContain('mkt=en-US')
+    expect(bingUrl).toContain('cc=US')
   })
 
   it('search reports failure when every provider fails', async () => {
@@ -600,5 +612,131 @@ describe('search cancellation + engine cooldowns (260917)', () => {
     const v = await s.visit('https://page.example/')
     expect(v.is_error).toBe(false)
     expect(v.content).toContain('slow but fine page')
+  })
+})
+
+describe('reply text around a server search (261003)', () => {
+  const cite = [{ type: 'web_search_result_location', url: 'https://example.com' }]
+  const reply = [
+    { type: 'text', text: 'lemme check' },
+    { type: 'server_tool_use', id: 's1', name: 'web_search', input: { query: 'q' } },
+    { type: 'web_search_tool_result', tool_use_id: 's1', content: [] },
+    { type: 'text', text: 'Press M, then Claim', citations: cite },
+    { type: 'text', text: ". They're free" },
+    { type: 'text', text: ', so grab one', citations: cite },
+  ]
+
+  it('glues cited fragments back into one sentence and splits runs at non-text blocks', () => {
+    expect(replyTextOf(reply, '\n')).toBe("lemme check\nPress M, then Claim. They're free, so grab one")
+    expect(replyTextOf(reply, ' ')).toBe("lemme check Press M, then Claim. They're free, so grab one")
+    expect(replyTextOf([], '\n')).toBe('')
+    expect(replyTextOf([{ type: 'text', text: '  ' }, { type: 'tool_use', id: 't', name: 'say', input: {} }])).toBe('')
+  })
+
+  it('splitTextAroundServerSearch keeps the answer as written', () => {
+    expect(splitTextAroundServerSearch(reply)).toEqual({
+      before: 'lemme check',
+      after: "Press M, then Claim. They're free, so grab one",
+      searched: true,
+    })
+  })
+
+  it('mergeFollowUpContent keeps the lead and the follow-up as separate lines', () => {
+    const lead = [{ type: 'text', text: 'one sec' }]
+    const next = [{ type: 'text', text: 'it is free' }]
+    const merged = mergeFollowUpContent(lead, next)
+    expect(replyTextOf(merged, '\n')).toBe('one sec\nit is free')
+    expect(lead[0].text).toBe('one sec')
+    // A tool block between them already separates the runs.
+    const withTool = mergeFollowUpContent([...lead, { type: 'tool_use', id: 'r', name: 'remember', input: {} }], next)
+    expect(replyTextOf(withTool, '\n')).toBe('one sec\nit is free')
+  })
+})
+
+describe('bot search: search(query, line) + nested server search (261003c)', () => {
+  const nestedResponse = (extra = {}) => ({
+    text: '',
+    toolUses: [],
+    stopReason: 'end_turn',
+    usage: { input_tokens: 1200, output_tokens: 80, server_tool_use: { web_search_requests: 1 } },
+    content: [
+      { type: 'text', text: 'I will search for that.' },
+      { type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: { query: 'q' } },
+      { type: 'web_search_tool_result', tool_use_id: 'srvtoolu_1', content: [
+        { type: 'web_search_result', title: 'Other page', url: 'https://example.com/other', encrypted_content: 'x' },
+        { type: 'web_search_result', title: 'Fox', url: 'https://minecraft.wiki/w/Fox', encrypted_content: 'x' },
+      ] },
+      { type: 'text', text: 'Foxes cannot be tamed directly; ', citations: [{ type: 'web_search_result_location', url: 'https://minecraft.wiki/w/Fox', title: 'Fox' }] },
+      { type: 'text', text: 'breed two with <cite index="1-2">sweet berries</cite> and the baby trusts you.' },
+    ],
+    ...extra,
+  })
+
+  it('botWebTools: line is required beside query', () => {
+    const [search, visit] = botWebTools()
+    expect(search.name).toBe('search')
+    expect(search.input_schema.required).toEqual(['query', 'line'])
+    expect(visit.name).toBe('visit')
+  })
+
+  it('runServerSearch: offers only web_search, keeps the text after the last result, cited sources first', async () => {
+    const calls = []
+    const r = await runServerSearch({ call: async (req) => { calls.push(req); return nestedResponse() }, query: 'minecraft tame fox' })
+    expect(calls[0].tools).toHaveLength(1)
+    expect(calls[0].tools[0].type).toBe('web_search_20250305')
+    expect(calls[0].messages[0].content[0].text).toContain('minecraft tame fox')
+    expect(r.findings).toBe('Foxes cannot be tamed directly; breed two with sweet berries and the baby trusts you.')
+    expect(r.sources.map((x) => x.url)).toEqual(['https://minecraft.wiki/w/Fox', 'https://example.com/other'])
+    expect(r.searches).toBe(1)
+    expect(r.usage.input_tokens).toBe(1200)
+  })
+
+  it('runServerSearch: resumes pause_turn and throws when nothing came back', async () => {
+    let n = 0
+    const r = await runServerSearch({
+      call: async (req) => {
+        n += 1
+        if (n === 1) return { content: [{ type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: {} }], stopReason: 'pause_turn', usage: {} }
+        expect(req.messages[req.messages.length - 1].role).toBe('assistant')
+        return nestedResponse()
+      },
+      query: 'q',
+    })
+    expect(n).toBe(2)
+    expect(r.findings).toContain('sweet berries')
+    await expect(runServerSearch({ call: async () => ({ content: [], stopReason: 'end_turn' }), query: 'q' })).rejects.toThrow(/no findings/)
+  })
+
+  it('session search with a server search: findings plus lettered sources that visit() resolves', async () => {
+    const s = createWebSession({ fetchImpl: scriptedFetch({}) })
+    const r = await s.runTool('search', { query: 'minecraft tame fox', line: 'one sec' }, {
+      serverSearch: (q, opts) => runServerSearch({ call: async () => nestedResponse(), query: q, signal: opts.signal }),
+    })
+    expect(r.is_error).toBe(false)
+    expect(r.content).toContain('found for "minecraft tame fox":')
+    expect(r.content).toContain('sweet berries')
+    expect(r.content).toMatch(/a\. Fox \(minecraft\.wiki\)/)
+    expect(s.refs.get('a').url).toBe('https://minecraft.wiki/w/Fox')
+    expect(s.lastProvider).toBe('anthropic')
+    expect(s.lastServerSearch.findings).toContain('sweet berries')
+  })
+
+  it('session search falls back to the engine chain when the server search fails', async () => {
+    const fetchImpl = scriptedFetch({ 'bing.com': fakeResponse({ body: fixture('bing.html') }) })
+    const s = createWebSession({ fetchImpl, provider: 'bing' })
+    const r = await s.search('craft', { serverSearch: async () => { throw new Error('proxy 500') } })
+    expect(r.is_error).toBe(false)
+    expect(r.content).toMatch(/^results for "craft":/)
+    expect(s.lastProvider).toBe('bing')
+    expect(s.lastServerSearch).toBeNull()
+  })
+})
+
+describe('Roblox experience wikis (261003)', () => {
+  it('a game question reads the game wiki before the platform wiki', () => {
+    expect(wikisForQuery('blox fruits codes roblox').map((w) => w.host).slice(0, 2)).toEqual(['blox-fruits.fandom.com', 'roblox.fandom.com'])
+    expect(wikisForQuery('grow a garden newest update')[0].host).toBe('growagarden.fandom.com')
+    expect(wikisForQuery('adopt me mega neon')[0].host).toBe('adoptme.fandom.com')
+    expect(wikisForQuery('brookhaven rp house')[0].host).toBe('brookhaven.fandom.com')
   })
 })

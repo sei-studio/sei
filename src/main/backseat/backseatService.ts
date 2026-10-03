@@ -62,7 +62,18 @@ import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memor
 import * as chatStore from '../chat/chatStore';
 import { classifyUsageLimit, raiseUsageLimitPopup } from '../chat/usageLimit';
 import type { LogBatch } from '../../shared/ipc';
-import { BACKSEAT_CONTRACT, SAVE_CLIP_TOOL, stripDashes, tickNote } from './backseatPrompts';
+import {
+  BACKSEAT_CONTRACT,
+  SAVE_CLIP_TOOL,
+  renderBackseatGameBlock,
+  stripDashes,
+  tickNote,
+} from './backseatPrompts';
+import { resolveGameContext } from './games';
+import type { BackseatGameDef, BackseatGameInfo, BackseatGameSelection } from '../../shared/backseatGames';
+import { isWebTool, webToolsFor, replyTextOf, mergeFollowUpContent } from '../../bot/web/webTools.js';
+import { getChatWebSession, resolveWebSearchSettings } from '../llm/webSearchSettings';
+import type { LlmMessage, LlmProvider, LlmResult, LlmToolDef } from '../llm/types';
 import { createBackseatLog, NULL_BACKSEAT_LOG, type BackseatLog } from './backseatLog';
 import { actFlagFromEnv, CONTROL_TOOL, controlCall, controlEventNote } from '../computerUse/controlTool';
 import { ControlGate, type ControlOrigin } from '../computerUse/controlPolicy';
@@ -99,6 +110,29 @@ const BACKSEAT_PROACTIVENESS = 1;
  */
 const TOOLS_BASE = [SAVE_CLIP_TOOL, REMEMBER_TOOL];
 const TOOLS_WITH_CONTROL = [SAVE_CLIP_TOOL, REMEMBER_TOOL, CONTROL_TOOL];
+
+/**
+ * 260929: a session started from a backseat GAME tile (Roblox) also offers
+ * web search, so "how do I get to the second sea" can be answered. The same
+ * pair chat uses (webToolsFor): Anthropic's server-side web_search + visit on
+ * an Anthropic backend, our search() + visit() elsewhere. Only game sessions:
+ * the tool array is fixed per session (it heads the cached prefix) and an
+ * ordinary share keeps exactly the array it had. Flip this to false to ship
+ * the game tiles without search if it measurably costs lines (see "Attaching
+ * TOOLS suppresses speech" in CLAUDE.md).
+ */
+export const GAME_SESSION_WEB_SEARCH = true;
+
+/** The tool array for one turn of a session. Stable for the session: the
+ *  provider kind only changes if the player switches backends mid-share. */
+export function sessionTools(
+  s: Pick<Session, 'controlOffered' | 'game'>,
+  llmKind: string,
+): LlmToolDef[] {
+  const base = (s.controlOffered ? TOOLS_WITH_CONTROL : TOOLS_BASE) as LlmToolDef[];
+  if (!s.game || !GAME_SESSION_WEB_SEARCH) return base;
+  return [...base, ...(webToolsFor({ serverWebSearch: llmKind === 'anthropic' }) as LlmToolDef[])];
+}
 
 export interface BackseatDeps {
   /** `speech` (260806): set on a voice-mode reply's per-part pushes — prosody
@@ -185,6 +219,12 @@ interface Session {
   creditWallUntil: number;
   /** The first wall of this session raised the popup and the analytics event. */
   creditWallReported: boolean;
+  /**
+   * 260929: set when the share was started from a backseat game tile (Roblox):
+   * the registry entry plus the picked experience, when there is one. Fixed
+   * for the session, so its prompt block never moves the cached prefix.
+   */
+  game: { def: BackseatGameDef; game: BackseatGameInfo | null } | null;
 }
 
 /** How long screen ticks rest after a 402 before one tries again (260926). */
@@ -245,6 +285,7 @@ export async function startBackseat(
   sourceId: string,
   sourceName: string,
   mode: BackseatMode,
+  gameSel?: BackseatGameSelection,
 ): Promise<BackseatState> {
   // 260926: no session may start across an account switch (scopeBarrier).
   const startGuard = beginSessionStart();
@@ -262,8 +303,13 @@ export async function startBackseat(
     );
   }
 
-  const character = await getCharacter(characterId);
-  const log = await createBackseatLog(characterId, deps?.pushLog ?? (() => {}));
+  // The game's details were fetched by the pick step, so this is normally a
+  // cache hit; resolveGameContext caps a miss so the share never waits long.
+  const [character, log, game] = await Promise.all([
+    getCharacter(characterId),
+    createBackseatLog(characterId, deps?.pushLog ?? (() => {})),
+    resolveGameContext(gameSel).catch(() => null),
+  ]);
   const control = actFlagFromEnv()
     ? (await import('../computerUse/actSession')).controlAvailability(sourceId)
     : ({ ok: false, why: 'flag_off' } as const);
@@ -292,6 +338,7 @@ export async function startBackseat(
     control: new ControlGate(),
     creditWallUntil: 0,
     creditWallReported: false,
+    game,
   };
   if (!startGuard.stillValid()) {
     void log.close().catch(() => {});
@@ -299,6 +346,17 @@ export async function startBackseat(
   }
   sessions.set(characterId, s);
   slog(s, `session start: mode=${mode}, source="${sourceName}"`);
+  if (game) {
+    slog(
+      s,
+      `game: ${game.def.id}` +
+        (game.game
+          ? ` "${game.game.name}" (universe ${game.game.universeId})`
+          : gameSel?.universeId
+            ? ` (universe ${gameSel.universeId}, details unavailable)`
+            : ' (no specific game)'),
+    );
+  }
   if (actFlagFromEnv()) slog(s, control.ok ? 'control: offered (window share)' : `control: not offered (${control.why})`);
   // 260803: main no longer opens a window here. The renderer starts capture
   // itself right after this resolves (useBackseatStore.share), which is what
@@ -319,6 +377,11 @@ export async function startBackseat(
         character_id: characterId,
         mode,
         source_kind: sourceId.startsWith('screen:') ? 'screen' : 'window',
+        // 260929: which backseat game tile started it, if any. Shape only:
+        // the id, never the game's name.
+        ...(game
+          ? { game: game.def.id, has_specific_game: !!gameSel?.universeId }
+          : {}),
       });
     } catch {
       /* analytics is never load-bearing */
@@ -394,6 +457,7 @@ async function endBackseatSession(characterId: string, reason?: string): Promise
         duration_ms: durationMs,
         mode: s.state.mode,
         lines: lineCount,
+        ...(s.game ? { game: s.game.def.id } : {}),
         ...(reason ? { reason } : {}),
       });
     } catch {
@@ -409,13 +473,16 @@ async function endBackseatSession(characterId: string, reason?: string): Promise
     // window name is deliberately dropped with the rest of the detail; what
     // survives is that the two of them spent the time together.
     const character = await getCharacter(characterId);
+    // 260929: a session from a game tile remembers the GAME ("played Roblox"),
+    // which is what the two of them did; "Backseat" is only how.
+    const played = s.game?.def.name ?? 'Backseat';
     const row: ChatMessage = {
       id: randomUUID(),
       role: 'system',
       ts: Date.now(),
       text: playSummaryText(
         character?.name ?? 'your companion',
-        'Backseat',
+        played,
         durationMs,
         // The row is PERSISTED transcript content, so it is written in the
         // language the two of them talk in, not the current UI language.
@@ -425,7 +492,7 @@ async function endBackseatSession(characterId: string, reason?: string): Promise
           ? 'zh'
           : undefined,
       ),
-      event: { kind: 'play', game: 'Backseat', durationMs },
+      event: { kind: 'play', game: played, durationMs },
     };
     await chatStore.appendMessage(characterId, row);
     requireDeps().pushChatMessage(characterId, row);
@@ -750,6 +817,98 @@ async function onCreditWall(s: Session, err: unknown, fromUser: boolean): Promis
   } catch { /* analytics is never load-bearing */ }
 }
 
+/**
+ * 260929: the bounded web follow-up for a game session, modelled on chat's
+ * followUpWebTools. Backseat turns are single-shot, so a client search()/
+ * visit() the model asked for, or a server-side search that stopped with
+ * pause_turn, gets ONE more call with the results and no further lookups
+ * (a follow-up that asks for another is not honored). Any other tool_use in
+ * the first response (remember, save_clip, control) gets a plain "ok" result
+ * so the request is well-formed, and stays in the returned content so the
+ * caller still honors it. The first response's text is the line before the
+ * lookup ("let me check"): it goes to `onLead` BEFORE the lookup runs, so the
+ * player hears it during the wait, and the returned content leaves it out so
+ * it is not spoken twice. Everything else returns `res` as is.
+ */
+async function followUpWebLookup(p: {
+  s: Session;
+  llm: LlmProvider;
+  system: ReturnType<typeof buildSystemBlocks>;
+  tools: LlmToolDef[];
+  messages: LlmMessage[];
+  res: LlmResult;
+  ctrl: AbortController;
+  /** Speak the first response's text now, before the client lookup runs. */
+  onLead: (text: string) => void;
+}): Promise<LlmResult> {
+  const { res, s } = p;
+  const webUses = res.content.filter(
+    (b): b is Anthropic.Messages.ToolUseBlock => b.type === 'tool_use' && isWebTool(b.name),
+  );
+  const paused = res.stopReason === 'pause_turn';
+  if (!webUses.length && !paused) return res;
+  const messages: LlmMessage[] = [...p.messages, { role: 'assistant', content: res.content }];
+  if (webUses.length) {
+    const leadText = replyTextOf(res.content, '\n');
+    if (leadText) p.onLead(leadText);
+    const ws = getChatWebSession(s.characterId, resolveWebSearchSettings(await loadConfig()));
+    ws.beginTurn();
+    const results: Anthropic.Messages.ToolResultBlockParam[] = [];
+    for (const b of res.content) {
+      if (b.type !== 'tool_use') continue;
+      if (!isWebTool(b.name)) {
+        results.push({ type: 'tool_result', tool_use_id: b.id, content: 'ok' });
+        continue;
+      }
+      try {
+        const r = await ws.runTool(b.name, (b.input ?? {}) as Record<string, unknown>, { signal: p.ctrl.signal });
+        results.push({ type: 'tool_result', tool_use_id: b.id, content: r.content, ...(r.is_error ? { is_error: true } : {}) });
+        slog(s, `${b.name}: ${r.is_error ? 'error' : `${r.content.length} chars`}`);
+      } catch (err) {
+        if (p.ctrl.signal.aborted) throw err;
+        slog(s, `${b.name} failed: ${(err as Error).message}`, true);
+        results.push({
+          type: 'tool_result',
+          tool_use_id: b.id,
+          content: `${b.name} failed. Tell the player you could not look it up right now.`,
+          is_error: true,
+        });
+      }
+    }
+    messages.push({ role: 'user', content: results });
+  } else {
+    slog(s, 'web search paused the turn; resuming once');
+  }
+  const next = await p.llm.call({
+    maxTokens: 400,
+    system: p.system,
+    tools: p.tools,
+    messages,
+    timeoutMs: CHAT_TIMEOUT_MS,
+    signal: p.ctrl.signal,
+  });
+  // Client lookup: the first response's text was already spoken through
+  // onLead, so only its non-web tool calls stay (the caller still honors
+  // them). A resumed server search keeps the whole first response: its text
+  // before the search was spoken while streaming, and runTurn skips exactly
+  // that part (textAfterLead).
+  const first = webUses.length
+    ? res.content.filter((b) => b.type === 'tool_use' && !isWebTool(b.name))
+    : res.content;
+  const content = mergeFollowUpContent(first, next.content) as typeof next.content;
+  return { ...next, content, text: replyTextOf(content, '\n') };
+}
+
+/**
+ * The text still to speak once the response is complete (261003b). When the
+ * line written before a server-side search was already spoken during the
+ * stream, the rest starts at that search; otherwise it is all of it.
+ */
+function textAfterLead(content: LlmResult['content'], leadSpoken: boolean): string {
+  const at = leadSpoken ? content.findIndex((b) => b.type === 'server_tool_use') : -1;
+  return replyTextOf(at >= 0 ? content.slice(at) : content, '\n');
+}
+
 async function runTurn(
   s: Session,
   tick: BackseatTick,
@@ -772,6 +931,8 @@ async function runTurn(
   ]);
 
   const voiceCall = requireDeps().isCallActive?.(s.characterId) === true;
+  const llm = await buildLlmProvider();
+  const tools = sessionTools(s, llm.kind);
   const system = buildSystemBlocks({
     persona: character.persona,
     name: character.name,
@@ -791,7 +952,13 @@ async function runTurn(
     language: surfaceLanguage(character.metadata, config.chat_language),
     // The whole-session contract rides inside the cached region, so the grid
     // explanation and the register are written once and read every tick.
-    extraStable: BACKSEAT_CONTRACT,
+    // 260929: a game tile's block (knowledge + the picked experience) rides
+    // with it; fixed for the session, so it never moves the prefix.
+    extraStable: s.game
+      ? `${BACKSEAT_CONTRACT}\n\n${renderBackseatGameBlock(s.game.def, s.game.game, {
+          canSearch: tools.some((t) => isWebTool(t.name) || t.name === 'web_search'),
+        })}`
+      : BACKSEAT_CONTRACT,
   } as Parameters<typeof buildSystemBlocks>[0]);
 
   // Verbatim window, anchored rather than sliding (see Session.historyAnchor).
@@ -855,8 +1022,31 @@ async function runTurn(
   ];
   messages.push({ role: 'user', content: content as never });
 
-  const llm = await buildLlmProvider();
-  const res = await llm.call({
+  // 261003b: the line the model writes before a lookup ("let me check") is
+  // spoken as soon as it exists, so the player hears it during the wait and
+  // the answer follows as its own line. Server search: the text blocks that
+  // completed before the first server_tool_use block, delivered while the
+  // response streams. Client search: the first response's text, before
+  // followUpWebLookup runs the tool. Both turns share one turn tag so the
+  // renderer's audio queue never drops the lead in favour of the answer.
+  const turnTag = randomUUID();
+  const punctuation = character.metadata?.punctuation === 'deliberate' ? 'deliberate' : 'casual';
+  let leadSpoken = false;
+  let leadEmit: Promise<void> = Promise.resolve();
+  const speakLead = (text: string, blocks: ReadonlyArray<{ type: string; name?: string }>): void => {
+    if (leadSpoken || ctrl.signal.aborted || s.inflight !== ctrl) return;
+    const rememberCalled = blocks.some((b) => b.type === 'tool_use' && b.name === 'remember');
+    const parts = spokenParts(s, tick.kind, stripDashes(text), punctuation, rememberCalled);
+    if (!parts.length) return;
+    leadSpoken = true;
+    s.lastSpokeAt = Date.now();
+    slog(s, `turn ${tick.kind}: said ${parts.length} line(s) before the lookup`);
+    leadEmit = emitCompanionLines(s, parts, voiceCall, null, undefined, { turnTag });
+  };
+  const streamed: Anthropic.Messages.ContentBlock[] = [];
+  const webSearchOffered = tools.some((t) => t.name === 'web_search');
+
+  const first = await llm.call({
     // Two short lines. A cap this low is itself a register control: it is
     // hard to write a paragraph in 160 tokens. 260804: a tick the player
     // SPOKE gets room for a real answer, because this is now the only turn
@@ -864,17 +1054,34 @@ async function runTurn(
     // a second, screenless one alongside it.
     maxTokens: tick.kind === 'user' ? 400 : 160,
     system,
-    tools: s.controlOffered ? TOOLS_WITH_CONTROL : TOOLS_BASE,
+    tools,
     messages,
     timeoutMs: CHAT_TIMEOUT_MS,
     signal: ctrl.signal,
+    ...(webSearchOffered
+      ? {
+          onContentBlock: (b: Anthropic.Messages.ContentBlock) => {
+            if (b.type === 'server_tool_use' && !streamed.some((x) => x.type === 'server_tool_use')) {
+              const lead = replyTextOf(streamed, '\n');
+              if (lead) speakLead(lead, streamed);
+            }
+            streamed.push(b);
+          },
+        }
+      : {}),
+  });
+  if (ctrl.signal.aborted || s.inflight !== ctrl) return;
+  // 260929: a game session's lookup (web tools) gets exactly one follow-up.
+  const res = await followUpWebLookup({
+    s, llm, system, tools, messages, res: first, ctrl,
+    onLead: (text) => speakLead(text, first.content),
   });
   if (ctrl.signal.aborted || s.inflight !== ctrl) return;
 
   // The cache layout above is only worth anything if it hits, and the only way
   // to know is to read it back. cacheRead should dominate within a session;
   // cacheWrite staying high tick after tick means the prefix is churning.
-  const u = res.usage as unknown as {
+  const u = first.usage as unknown as {
     input_tokens?: number;
     cache_read_input_tokens?: number;
     cache_creation_input_tokens?: number;
@@ -920,12 +1127,10 @@ async function runTurn(
   // stripDashes because asking did not work: the contract has forbidden em
   // dashes since 260802 and the model still writes them in most lines, and
   // these lines are spoken aloud where a dash has no sound.
-  const replyText = stripDashes(
-    res.content
-      .filter((b): b is Anthropic.Messages.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('\n'),
-  );
+  // replyTextOf, not a newline join (261003): an answer after a server-side
+  // search comes back as one text block per cited span, cut mid-sentence, and
+  // a newline join spoke ". They're all free" as its own line.
+  const replyText = stripDashes(textAfterLead(res.content, leadSpoken));
 
   // 260802: silence is no longer an outcome the prompts offer, so reaching here
   // means the model ignored an explicit instruction (or returned nothing at
@@ -934,6 +1139,11 @@ async function runTurn(
   // rather than the expected path — if this line shows up often in a session
   // log, the contract is not landing and the fix is the prompt, not the parse.
   if ((!replyText || isSilenceFiller(replyText)) && !offerLine) {
+    if (leadSpoken) {
+      slog(s, `turn ${tick.kind}: no answer after the lookup`);
+      await leadEmit;
+      return;
+    }
     slog(
       s,
       `turn ${tick.kind}: NO LINE despite always-speak` +
@@ -971,30 +1181,63 @@ async function runTurn(
   // "remember sei's ...") and everything here is spoken verbatim. The tool
   // call itself was honored above; only the leaked note is dropped.
   const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');
-  const parts: string[] = [];
-  const punctuation = character.metadata?.punctuation === 'deliberate' ? 'deliberate' : 'casual';
-  const replyParts = replyText && !isSilenceFiller(replyText) ? splitReply(replyText, punctuation) : [];
-  for (const raw of replyParts) {
-    // stripThoughtTags before the empty check: a part that was ONLY the model's
-    // pseudo-XML ("</final_thought>", spoken and captioned live 260807) strips
-    // to nothing and drops here.
-    const t = stripThoughtTags(raw);
-    if (!t || isSilenceFiller(t)) continue;
-    if (isNoteLeak(t, rememberCalled)) {
-      slog(s, `turn ${tick.kind}: note leak dropped ("${t.slice(0, 60)}")`);
-      continue;
-    }
-    parts.push(t);
-  }
+  const parts = spokenParts(s, tick.kind, replyText, punctuation, rememberCalled);
+  // The queries this turn's answer came from (server web_search, or a client
+  // search() in the first response), recorded on the answer's first line.
+  const queries = [...first.content, ...res.content]
+    .filter(
+      (b): b is Anthropic.Messages.ToolUseBlock =>
+        (b.type === 'server_tool_use' && b.name === 'web_search') || (b.type === 'tool_use' && b.name === 'search'),
+    )
+    .map((b) => String((b.input as { query?: unknown } | null)?.query ?? '').trim())
+    .filter((q, i, a) => q && a.indexOf(q) === i);
   // The offer is composed from the literal goal, not left to the model, so
   // the player says yes to exactly what would run.
   if (offer) parts.push(offer.line);
+  // The lead (if any) is persisted and pushed before the answer.
+  await leadEmit;
   if (!parts.length) return;
   slog(s, `turn ${tick.kind}: said ${parts.length} line(s)${clip ? ' + clip' : ''}`);
 
   // Awaited, as before the act spike: the lines are persisted before this
   // turn ends and the next one reads the transcript.
-  await emitCompanionLines(s, parts, voiceCall, clip, offer ? { index: parts.length - 1, id: offer.id } : undefined);
+  await emitCompanionLines(
+    s,
+    parts,
+    voiceCall,
+    clip,
+    offer ? { index: parts.length - 1, id: offer.id } : undefined,
+    { turnTag, ...(queries.length ? { lookup: { queries } } : {}) },
+  );
+}
+
+/**
+ * The reply text split into the parts that are spoken. Drops only what is not
+ * speech: an empty part, a "(silence)" filler, the model's pseudo-XML thought
+ * tags, and a remember() note that slipped into the text (noteLeak.ts).
+ */
+function spokenParts(
+  s: Session,
+  kind: BackseatTick['kind'],
+  text: string,
+  punctuation: 'deliberate' | 'casual',
+  rememberCalled: boolean,
+): string[] {
+  const parts: string[] = [];
+  const raw = text && !isSilenceFiller(text) ? splitReply(text, punctuation) : [];
+  for (const r of raw) {
+    // stripThoughtTags before the empty check: a part that was ONLY the model's
+    // pseudo-XML ("</final_thought>", spoken and captioned live 260807) strips
+    // to nothing and drops here.
+    const t = stripThoughtTags(r);
+    if (!t || isSilenceFiller(t)) continue;
+    if (isNoteLeak(t, rememberCalled)) {
+      slog(s, `turn ${kind}: note leak dropped ("${t.slice(0, 60)}")`);
+      continue;
+    }
+    parts.push(t);
+  }
+  return parts;
 }
 
 /**
@@ -1013,6 +1256,12 @@ function emitCompanionLines(
    * then is it answerable; in text it is answerable once it is shown.
    */
   confirm?: { index: number; id: string },
+  opts: {
+    /** Share one turn tag across several emits of the same turn (lead + answer). */
+    turnTag?: string;
+    /** The web lookup the first part was spoken from (ChatMessage.lookup). */
+    lookup?: { queries: string[] };
+  } = {},
 ): Promise<void> {
   return (async () => {
     const d = requireDeps();
@@ -1023,7 +1272,7 @@ function emitCompanionLines(
     // behind the screen every turn. The tag lets the renderer's audio queue drop
     // the OLD turn's unplayed parts the moment a NEW turn's first line arrives —
     // the clip already playing finishes its sentence, then playback jumps to now.
-    const turnTag = randomUUID();
+    const turnTag = opts.turnTag ?? randomUUID();
     for (let i = 0; i < parts.length; i++) {
       const msg: ChatMessage = {
         id: randomUUID(),
@@ -1035,6 +1284,7 @@ function emitCompanionLines(
         ...(voiceCall ? { voice: true } : {}),
         // The clip rides on the last part so it renders under the whole thought.
         ...(clip && i === parts.length - 1 ? { clip } : {}),
+        ...(opts.lookup && i === 0 ? { lookup: opts.lookup } : {}),
       };
       await chatStore.appendMessage(s.characterId, msg);
       // The offer line goes out now: from here it can block a repeat and be

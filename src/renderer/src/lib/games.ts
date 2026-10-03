@@ -19,6 +19,7 @@
  */
 
 import { GAME_CATALOG } from '@shared/games';
+import { BACKSEAT_GAMES } from '@shared/backseatGames';
 import { t } from './i18n';
 
 export interface GameDef {
@@ -82,16 +83,15 @@ const TILES: Record<string, { image?: string; description: (companionName: strin
         { name },
       ),
   },
-  roblox: {
-    // Official Roblox press-kit render ("Players on Roblox", about.roblox.com
-    // /press-kit, Renders & Artwork), cropped clear of its corner wordmark.
-    image: './img/game-roblox.jpg',
-    description: (name) =>
-      t(
-        'Play any Roblox game while {name} watches your screen and talks with you on a voice call.',
-        { name },
-      ),
-  },
+  // Backseat games (260929): tiles derived from the registry, so a new one
+  // (Valorant) needs no entry here. Their copy is translated by its English
+  // text like every other description.
+  ...Object.fromEntries(
+    BACKSEAT_GAMES.map((g) => [
+      g.id,
+      { image: g.image, description: (name: string) => t(g.tileDescription, { name }) },
+    ]),
+  ),
   focus: {
     image: './img/game-focus.jpg',
     description: (name) =>

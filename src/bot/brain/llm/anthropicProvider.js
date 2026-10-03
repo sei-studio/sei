@@ -5,8 +5,10 @@
 
 import { createAnthropicClient } from '../anthropicClient.js'
 
-// serverWebSearch (260909): Anthropic's server-side web_search tool is offered
-// instead of the client search (src/bot/web/webTools.js webToolsFor).
+// serverWebSearch (260909): the provider can run Anthropic's server-side
+// web_search. Chat and Backseat offer it as a tool (webTools.js webToolsFor);
+// the game bot runs it as a nested lookup behind search(query, line)
+// (webTools.js runServerSearch, 261003c).
 const CAPABILITIES = { vision: true, cached: true, local: false, serverWebSearch: true }
 
 export function createAnthropicProvider(config) {

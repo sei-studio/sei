@@ -147,3 +147,22 @@ describe('OnboardApp: key-step probe (260817)', () => {
     expect(src).toContain('Checking your key...');
   });
 });
+
+describe('OnboardApp: attribution question (261001)', () => {
+  it('is its own line, asked after the name and only when this machine has not been asked', () => {
+    expect(src).toContain("heardQ: 'Quick one before we start. Where did you hear about Sei?'");
+    expect(src).toContain("goLine(shouldAskAttribution() ? 'heardQ' : 'job')");
+  });
+  it('is marked as asked when shown, not when answered', () => {
+    expect(src).toContain("if (line === 'heardQ') markAttributionAsked();");
+  });
+  it('never blocks: every option and Skip go on to job, and a background click does not skip it', () => {
+    const ctl = src.slice(src.indexOf("case 'heardQ': {"), src.indexOf("case 'job':\n      return ("));
+    expect(ctl).toContain('ATTRIBUTION_OPTIONS.map');
+    expect(ctl).toContain('sei.track(ev.event, ev.props)');
+    expect(ctl).toContain("goLine('job')");
+    expect(ctl).toContain("onClick={() => answer(null)}");
+    expect(ctl).toContain("tt('Skip')");
+    expect(src).toMatch(/!\['newQ', 'nameQ', 'heardQ',/);
+  });
+});

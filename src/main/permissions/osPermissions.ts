@@ -17,6 +17,7 @@ import {
   type OsPermissionStatus,
   type PermissionResume,
 } from '../../shared/permissionsIpc';
+import type { BackseatGameSelection } from '../../shared/backseatGames';
 
 export const SETTINGS_URLS = {
   /** macOS 13 Ventura and later (System Settings). */
@@ -106,13 +107,30 @@ interface ResumeFile {
 }
 
 const ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+/** Same shape main's backseatStart schema accepts (BackseatGameSelectionSchema). */
+const GAME_ID_RE = /^[a-z0-9_-]{1,40}$/;
+
+/** A backseat game selection riding a share-screen resume, or undefined. */
+function parseResumeGame(raw: unknown): BackseatGameSelection | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const g = raw as { gameId?: unknown; universeId?: unknown };
+  if (typeof g.gameId !== 'string' || !GAME_ID_RE.test(g.gameId)) return undefined;
+  const uid = g.universeId;
+  if (uid === undefined) return { gameId: g.gameId };
+  if (typeof uid !== 'number' || !Number.isSafeInteger(uid) || uid <= 0) return { gameId: g.gameId };
+  return { gameId: g.gameId, universeId: uid };
+}
 
 /** Validate a resume payload from the renderer or from disk. */
 export function parseResume(raw: unknown): PermissionResume | null {
   if (!raw || typeof raw !== 'object') return null;
-  const r = raw as { kind?: unknown; characterId?: unknown };
+  const r = raw as { kind?: unknown; characterId?: unknown; game?: unknown };
   if (r.kind !== 'share-screen' && r.kind !== 'call') return null;
   if (typeof r.characterId !== 'string' || !ID_RE.test(r.characterId)) return null;
+  if (r.kind === 'share-screen') {
+    const game = parseResumeGame(r.game);
+    return game ? { kind: 'share-screen', characterId: r.characterId, game } : { kind: 'share-screen', characterId: r.characterId };
+  }
   return { kind: r.kind, characterId: r.characterId };
 }
 

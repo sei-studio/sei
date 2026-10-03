@@ -166,4 +166,30 @@ export const ZH_GAMES: Record<string, string> = {
   "Open {name}'s chat": '打开{name}的聊天',
   'Holding {item}': '手持{item}',
   'Empty hands': '空手',
+  // ── Backseat games (260929, Roblox tile: BackseatGameModal) ───────────────
+  'Roblox (Backseat)': 'Roblox（Backseat）',
+  'Roblox': 'Roblox',
+  'Play any Roblox game while {name} watches your screen and talks with you on a voice call.':
+    '玩任意 Roblox 游戏，{name}会通过语音通话看着你的屏幕陪你聊天。',
+  'Roblox is available via Backseat: your companion can watch you play through your screen.':
+    'Roblox 通过 Backseat 支持：你的伙伴可以通过屏幕共享看你玩。',
+  'Which {game} game are you playing?': '你在玩哪个 {game} 游戏？',
+  'Optional. {name} will know a bit about it before you start.':
+    '可选。开始前{name}会先了解一下这个游戏。',
+  'Paste a {game} link or search by name': '粘贴 {game} 链接，或按名称搜索',
+  'Popular right now': '当前热门',
+  'Results': '搜索结果',
+  'Skip': '跳过',
+  'by {creator}': '作者：{creator}',
+  '{count} playing': '{count} 人在玩',
+  'That link is not a {game} game link. Copy the link from the game page.':
+    '这不是 {game} 游戏链接。请从游戏页面复制链接。',
+  'Could not find that game. Check the link and try again.': '找不到这个游戏。请检查链接后重试。',
+  'Could not reach {game} right now. You can skip this and play anyway.':
+    '暂时无法连接 {game}。你可以跳过这一步直接开始玩。',
+  '{game} search is busy right now, so these are matches from popular games. Pasting the game link always works.':
+    '{game} 搜索目前繁忙，以下是热门游戏中的匹配结果。粘贴游戏链接始终可用。',
+  'No games found. Try pasting the game link instead.': '没有找到游戏。试试粘贴游戏链接。',
+  'Could not load popular games. You can still paste a link.': '无法加载热门游戏。你仍然可以粘贴链接。',
+  'Open {game} and its window will show up here.': '打开 {game}，它的窗口就会出现在这里。',
 };

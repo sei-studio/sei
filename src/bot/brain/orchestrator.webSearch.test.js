@@ -156,48 +156,122 @@ describe('search() / visit() loop in the game brain (260909)', () => {
     expect(second).toContain('results for \\"netherite armor\\"')
   })
 
-  it('an Anthropic provider gets the native server web_search (+ visit), resumes pause_turn, and keeps the server blocks verbatim in history', async () => {
+  it('an Anthropic provider gets search(query, line) + visit: the line is spoken, then a nested server web_search runs, then the answer (261003c)', async () => {
     _setTickIntervalForTests(10_000_000)
-    const serverBlocks = [
-      { type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: { query: 'netherite' } },
-      { type: 'web_search_tool_result', tool_use_id: 'srvtoolu_1', content: [{ type: 'web_search_result', title: 'Netherite', url: 'https://minecraft.wiki/w/Netherite', encrypted_content: 'x'.repeat(100) }] },
-    ]
+    const order = []
+    const nested = []
+    const loopCalls = []
+    const provider = {
+      buildCachedSystem: (blocks) => blocks,
+      setAuthToken() {},
+      setBackend() {},
+      capabilities: { vision: true, cached: true, local: false, serverWebSearch: true },
+      async call(args) {
+        // The nested lookup offers ONLY the server search tool.
+        if (args.tools?.length === 1 && args.tools[0].type === 'web_search_20250305') {
+          nested.push(args)
+          order.push('nested')
+          return {
+            text: '',
+            toolUses: [],
+            stopReason: 'end_turn',
+            usage: { input_tokens: 900, output_tokens: 60, server_tool_use: { web_search_requests: 1 } },
+            content: [
+              { type: 'text', text: 'Searching.' },
+              { type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: { query: 'heavy core mace' } },
+              { type: 'web_search_tool_result', tool_use_id: 'srvtoolu_1', content: [{ type: 'web_search_result', title: 'Heavy Core', url: 'https://minecraft.wiki/w/Heavy_Core', encrypted_content: 'x' }] },
+              { type: 'text', text: 'Heavy cores drop from ', citations: [{ type: 'web_search_result_location', url: 'https://minecraft.wiki/w/Heavy_Core', title: 'Heavy Core' }] },
+              { type: 'text', text: 'ominous vaults in trial chambers.' },
+            ],
+          }
+        }
+        loopCalls.push(args)
+        order.push(`loop${loopCalls.length}`)
+        if (loopCalls.length === 1) {
+          return { text: '', toolUses: [{ id: 't1', name: 'search', input: { query: 'heavy core mace', line: 'ooh one sec, checking' } }], stopReason: 'tool_use' }
+        }
+        return { text: '', toolUses: [{ id: 's2', name: 'say', input: { text: 'ominous vaults in trial chambers' } }], stopReason: 'tool_use' }
+      },
+    }
+    const adapter = makeAdapter()
+    adapter.chat = vi.fn((line) => order.push(`said:${line}`))
+    const web = makeWebSession()
+    web.runTool = async (name, input, opts = {}) => {
+      web.runs.push({ name, input, hasSignal: !!opts.signal })
+      const r = await opts.serverSearch(input.query, { signal: opts.signal })
+      web.lastServerSearch = r
+      return { content: `found for "${input.query}":\n${r.findings}`, is_error: false }
+    }
+    const orch = createOrchestrator({
+      adapter,
+      config: makeConfig(),
+      reenqueue: () => {},
+      _anthropicOverride: provider,
+      _webSessionOverride: web,
+    })
+    await orch.handleDispatch('sei:chat_received', chat('how do i get a heavy core'))
+
+    const tools = loopCalls[0].tools
+    const names = tools.map((t) => t.name)
+    expect(names).toContain('search')
+    expect(names).toContain('visit')
+    expect(names).not.toContain('web_search')
+    expect(tools.find((t) => t.name === 'search').input_schema.required).toEqual(['query', 'line'])
+    // Line first, then the lookup, then the answer.
+    expect(order).toEqual(['loop1', 'said:ooh one sec, checking', 'nested', 'loop2', 'said:ominous vaults in trial chambers'])
+    expect(nested[0].messages[0].content[0].text).toContain('heavy core mace')
+    // The loop gets the findings as the search's tool_result.
+    const second = JSON.stringify(loopCalls[1].messages)
+    expect(second).toContain('"tool_use_id":"t1"')
+    expect(second).toContain('Heavy cores drop from ominous vaults in trial chambers.')
+    expect(second).not.toContain('web_search_tool_result')
+  })
+
+  it('a say() and a search line in the same turn: one line per turn, the search still runs (261003c)', async () => {
+    _setTickIntervalForTests(10_000_000)
     const provider = makeProvider([
-      { text: 'checking', content: [{ type: 'text', text: 'checking' }, ...serverBlocks], toolUses: [], stopReason: 'pause_turn' },
-      // Search done; an inline visit() keeps the loop alive so a THIRD call
-      // shows what history looks like after the searched turn ended.
-      { text: 'ok', content: [{ type: 'text', text: 'ok' }, ...serverBlocks, { type: 'tool_use', id: 'v1', name: 'visit', input: { ref: 'https://minecraft.wiki/w/Netherite' } }], toolUses: [{ id: 'v1', name: 'visit', input: { ref: 'https://minecraft.wiki/w/Netherite' } }], stopReason: 'end_turn' },
-      { text: 'done', toolUses: [{ id: 's1', name: 'say', input: { text: 'smithing table plus an ingot' } }] },
+      { text: '', toolUses: [
+        { id: 's1', name: 'say', input: { text: 'hmm good question' } },
+        { id: 't1', name: 'search', input: { query: 'netherite armor', line: 'lemme check' } },
+      ] },
+      { text: '', toolUses: [{ id: 's2', name: 'say', input: { text: 'smithing table plus an ingot' } }] },
     ])
-    provider.capabilities = { vision: true, cached: true, local: false, serverWebSearch: true }
+    const adapter = makeAdapter()
     const web = makeWebSession()
     const orch = createOrchestrator({
-      adapter: makeAdapter(),
+      adapter,
       config: makeConfig(),
       reenqueue: () => {},
       _anthropicOverride: provider,
       _webSessionOverride: web,
     })
     await orch.handleDispatch('sei:chat_received', chat('how do i make netherite armor'))
-    const names = provider.calls[0].tools.map((t) => t.name)
-    expect(names).toContain('web_search')
-    expect(names).toContain('visit')
-    expect(names).not.toContain('search')
-    expect(provider.calls[0].tools.find((t) => t.name === 'web_search').type).toBe('web_search_20250305')
-    // pause_turn resumed: the second call carries the paused content verbatim.
-    expect(provider.calls.length).toBe(3)
-    const second = provider.calls[1].messages
-    const lastMsg = second[second.length - 1]
-    expect(lastMsg.role).toBe('assistant')
-    expect(JSON.stringify(lastMsg.content)).toContain('web_search_tool_result')
-    // Our client search never ran; visit did.
-    expect(web.runs.map((r) => r.name)).toEqual(['visit'])
-    // The searched turn goes back verbatim (encrypted_content included, as
-    // the docs require) alongside the visit tool_use.
-    const third = provider.calls[2].messages
-    const visitTurn = third.find((m) => m.role === 'assistant' && JSON.stringify(m.content).includes('"visit"'))
-    expect(visitTurn).toBeTruthy()
-    expect(JSON.stringify(visitTurn.content)).toContain('web_search_tool_result')
+    expect(web.runs.map((r) => r.name)).toEqual(['search'])
+    const spoken = adapter.chat.mock.calls.map((c) => c[0])
+    expect(spoken).toEqual(['hmm good question', 'smithing table plus an ingot'])
+  })
+
+  it('a non-Anthropic provider: the line is spoken and the engine chain runs (no server search) (261003c)', async () => {
+    _setTickIntervalForTests(10_000_000)
+    const provider = makeProvider([
+      { text: '', toolUses: [{ id: 't1', name: 'search', input: { query: 'netherite armor', line: 'one sec' } }] },
+      { text: '', toolUses: [{ id: 's2', name: 'say', input: { text: 'smithing table plus an ingot' } }] },
+    ])
+    const adapter = makeAdapter()
+    const web = makeWebSession()
+    let serverSearchOffered = null
+    const runTool = web.runTool
+    web.runTool = async (name, input, opts = {}) => { serverSearchOffered = opts.serverSearch ?? null; return runTool(name, input, opts) }
+    const orch = createOrchestrator({
+      adapter,
+      config: makeConfig(),
+      reenqueue: () => {},
+      _anthropicOverride: provider,
+      _webSessionOverride: web,
+    })
+    await orch.handleDispatch('sei:chat_received', chat('how do i make netherite armor'))
+    expect(serverSearchOffered).toBeNull()
+    expect(adapter.chat.mock.calls.map((c) => c[0])).toEqual(['one sec', 'smithing table plus an ingot'])
   })
 
   it('withholds the tools and answers with an error when web access is disabled', async () => {

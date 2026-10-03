@@ -86,6 +86,13 @@ import {
   type ArtStyle,
   type Dynamic,
 } from './suiQuestions';
+import {
+  ATTRIBUTION_OPTIONS,
+  attributionEvent,
+  markAttributionAsked,
+  shouldAskAttribution,
+} from '../lib/attributionPref';
+import type { AttributionSource } from '@shared/attribution';
 import styles from './onboard.module.css';
 
 /* ── Script ──────────────────────────────────────────────────────────────── */
@@ -97,6 +104,7 @@ type LineId =
   | 'welcomeBack'
   | 'nameQ'
   | 'iSee'
+  | 'heardQ'
   | 'job'
   | 'skipConfirm'
   | 'fiveQs'
@@ -122,6 +130,8 @@ const SCRIPT: Record<LineId, string> = {
   noAccount: "Wait, that login has no account yet. So you ARE new here! Let's try that again.",
   nameQ: "So! My name's Sui. What do I call you?",
   iSee: 'I see I see... {name}!',
+  // 261001: one-tap attribution, asked once per machine (lib/attributionPref).
+  heardQ: 'Quick one before we start. Where did you hear about Sei?',
   job: 'So, {name}, my job here is to help you meet other AI friends from my world.',
   skipConfirm: 'Aww, really? I was going to find a companion just for you. You wanna skip it?',
   fiveQs:
@@ -613,7 +623,9 @@ export function OnboardApp({
         if (name.trim()) goLine('iSee');
         break;
       case 'iSee':
-        goLine('job');
+        // The attribution question is optional and asked once per machine;
+        // after it (or on any later onboarding) the script goes on to 'job'.
+        goLine(shouldAskAttribution() ? 'heardQ' : 'job');
         break;
       case 'job':
         goLine('fiveQs');
@@ -643,6 +655,11 @@ export function OnboardApp({
 
   // Enter advances any line that advances on click.
   useEnterAdvances(advance);
+
+  // Marked when SHOWN, so a quit on this line does not ask again next launch.
+  useEffect(() => {
+    if (line === 'heardQ') markAttributionAsked();
+  }, [line]);
 
   // ── Auth phase: already signed in? (relaunch mid-onboarding) ───────────
   useEffect(() => {
@@ -806,7 +823,7 @@ export function OnboardApp({
   const showDialogue = phase.k === 'line';
   const clickAdvances =
     line !== null &&
-    !['newQ', 'nameQ', 'job', 'skipConfirm', 'qDyn', 'qAge', 'qArt', 'qGender', 'ahh'].includes(line);
+    !['newQ', 'nameQ', 'heardQ', 'job', 'skipConfirm', 'qDyn', 'qAge', 'qArt', 'qGender', 'ahh'].includes(line);
 
   return (
     <div className={styles.root}>
@@ -982,6 +999,26 @@ function LineControls(props: LineControlsProps): React.ReactElement | null {
           </button>
         </div>
       );
+    case 'heardQ': {
+      // Never blocks: every option and Skip lead straight on to 'job'.
+      const answer = (source: AttributionSource | null): void => {
+        const ev = attributionEvent(source);
+        sei.track(ev.event, ev.props);
+        goLine('job');
+      };
+      return (
+        <div className={styles.choices}>
+          {ATTRIBUTION_OPTIONS.map((o) => (
+            <button key={o.value} className={styles.pill} onClick={() => answer(o.value)}>
+              {tt(o.label)}
+            </button>
+          ))}
+          <button className={styles.quietLink} onClick={() => answer(null)}>
+            {tt('Skip')}
+          </button>
+        </div>
+      );
+    }
     case 'job':
       return (
         <div className={styles.choices}>

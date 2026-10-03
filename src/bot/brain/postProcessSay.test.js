@@ -219,3 +219,9 @@ describe('splitChatMessages — texting-style split (no content filter)', () => 
     expect(splitChatMessages('走吧。')).toEqual(['走吧。'])
   })
 })
+
+describe('postProcessSay citation markup (261003)', () => {
+  it('drops <cite> tags the model copied from a web search and keeps the words', () => {
+    expect(postProcessSay('<cite index="2-7,2-8">ominous vaults only</cite>, 7.5% a vault')).toBe('ominous vaults only, 7.5% a vault')
+  })
+})

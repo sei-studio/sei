@@ -215,4 +215,29 @@ describe('resume flag', () => {
     expect(parseResume(null)).toBeNull();
     expect(parseResume('share-screen')).toBeNull();
   });
+
+  it('a share resume keeps its backseat game across the restart (260929)', () => {
+    const game = { gameId: 'roblox', universeId: 1686885941 };
+    writeResume(dir, { kind: 'share-screen', characterId: CHAR, game }, 1_000);
+    expect(takeResume(dir, 2_000)).toEqual({ kind: 'share-screen', characterId: CHAR, game });
+    expect(parseArmableResume({ kind: 'share-screen', characterId: CHAR, game: { gameId: 'roblox' } })).toEqual({
+      kind: 'share-screen',
+      characterId: CHAR,
+      game: { gameId: 'roblox' },
+    });
+  });
+
+  it('drops a malformed game and never puts one on a call resume', () => {
+    expect(parseResume({ kind: 'share-screen', characterId: CHAR, game: { gameId: 'Rob lox!' } })).toEqual({
+      kind: 'share-screen',
+      characterId: CHAR,
+    });
+    expect(
+      parseResume({ kind: 'share-screen', characterId: CHAR, game: { gameId: 'roblox', universeId: -3, extra: 'x' } }),
+    ).toEqual({ kind: 'share-screen', characterId: CHAR, game: { gameId: 'roblox' } });
+    expect(parseResume({ kind: 'call', characterId: CHAR, game: { gameId: 'roblox' } })).toEqual({
+      kind: 'call',
+      characterId: CHAR,
+    });
+  });
 });

@@ -34,7 +34,7 @@
  * offer). Windows lists straight away, as before.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { sei } from '../../lib/ipcClient';
 import { useBackseatStore } from '../../lib/stores/useBackseatStore';
 import { useUiStore } from '../../lib/stores/useUiStore';
@@ -42,6 +42,11 @@ import { useVoiceStore } from '../../lib/stores/useVoiceStore';
 import { useDataStore } from '../../lib/stores/useDataStore';
 import { isGameSurfaceOpen } from '../../lib/callLaunch';
 import type { BackseatSource } from '../../../../shared/backseatIpc';
+import {
+  backseatGame,
+  pickHintedSource,
+  type BackseatGameSelection,
+} from '../../../../shared/backseatGames';
 import { ModalShell, ModalFooter } from '../ModalShell';
 import { Button } from '../Button';
 import { Toggle } from '../Toggle';
@@ -52,11 +57,28 @@ import styles from './ShareScreenModal.module.css';
 
 export interface ShareScreenModalProps {
   characterId: string;
+  /**
+   * 260929: set when the share came from a backseat game tile (Roblox). The
+   * game's own window is preselected when it is open, the picker keeps looking
+   * for it for a while when it is not, and the selection rides the share into
+   * main, which adds the game's knowledge to the prompt. Nothing else about
+   * the picker changes.
+   */
+  game?: BackseatGameSelection;
   /** Screenshot harness only: open on the Screen Recording step. */
   initialAccess?: 'blocked-ask' | 'blocked-waiting' | 'blocked-restart';
 }
 
-export function ShareScreenModal({ characterId, initialAccess }: ShareScreenModalProps): React.ReactElement {
+/** While a game's window is not open yet, how often the picker looks again,
+ *  and for how long. The player is usually starting the game right now. */
+const HINT_POLL_MS = 3_000;
+const HINT_POLL_MAX_MS = 120_000;
+
+export function ShareScreenModal({
+  characterId,
+  game,
+  initialAccess,
+}: ShareScreenModalProps): React.ReactElement {
   const t = useT();
   const closeModal = useUiStore((s) => s.closeModal);
   const navigate = useUiStore((s) => s.navigate);
@@ -84,6 +106,10 @@ export function ShareScreenModal({ characterId, initialAccess }: ShareScreenModa
   const [sources, setSources] = useState<BackseatSource[] | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
+  const gameDef = backseatGame(game?.gameId);
+  // Once the player picks something themselves the hint never overrides it.
+  const userPicked = useRef(false);
+  const [hintFound, setHintFound] = useState(false);
   // Two tabs rather than two stacked sections (260804). The window list is as
   // long as the player has windows open, so the one or two screens underneath
   // it were below the fold and effectively hidden. Windows lead because they
@@ -140,21 +166,43 @@ export function ShareScreenModal({ characterId, initialAccess }: ShareScreenModa
   useEffect(() => {
     if (access !== 'ready') return;
     let alive = true;
-    void (async () => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const openedAt = Date.now();
+    const load = async (): Promise<void> => {
       try {
         const list = await sei.backseatSources();
-        if (alive) setSources(list);
+        if (!alive) return;
+        setSources(list);
+        if (!gameDef) return;
+        const hit = pickHintedSource(list, gameDef.windowNames);
+        if (hit) {
+          setHintFound(true);
+          if (!userPicked.current) {
+            setTab('window');
+            setSelected(hit.id);
+          }
+          return;
+        }
+        // Not open yet: look again while the player has not picked anything
+        // else, bounded so a picker left open does not enumerate forever.
+        if (!userPicked.current && Date.now() - openedAt < HINT_POLL_MAX_MS) {
+          timer = setTimeout(() => void load(), HINT_POLL_MS);
+        }
       } catch {
         if (alive) {
-          setSources([]);
+          setSources((prev) => prev ?? []);
           setListError(t('Could not read your open windows. Check screen recording permission for Sei.'));
         }
       }
-    })();
+    };
+    void load();
     return () => {
       alive = false;
+      if (timer) clearTimeout(timer);
     };
-    // t is stable per language; the list is read once per grant.
+    // t is stable per language and gameDef is derived from a prop that never
+    // changes for a mounted modal; the list (and the hint poll) runs once per
+    // grant, so it starts only after Screen Recording access is 'ready'.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [access]);
 
@@ -165,14 +213,14 @@ export function ShareScreenModal({ characterId, initialAccess }: ShareScreenModa
       // Cold start: there is nothing to attach the capture to yet. Arm it and
       // go dial. Closing first keeps the picker from sitting over the call
       // view's install gate.
-      armPendingShare(characterId, source);
+      armPendingShare(characterId, source, game);
       closeModal();
       navigate({ kind: 'voice-call', characterId });
       return;
     }
     // The store owns the failure message, so a refused start leaves this modal
     // open with the reason on it rather than closing over a dead session.
-    if (!(await share(characterId, source))) return;
+    if (!(await share(characterId, source, game))) return;
     closeModal();
     // A live call can be reached from three places, and only one of them can
     // draw the shared picture. The rule is the same one callLaunch uses: go to
@@ -200,6 +248,7 @@ export function ShareScreenModal({ characterId, initialAccess }: ShareScreenModa
   // source the player can no longer see.
   const pickTab = (next: 'window' | 'screen'): void => {
     if (next === tab) return;
+    userPicked.current = true;
     setTab(next);
     setSelected(null);
   };
@@ -216,6 +265,7 @@ export function ShareScreenModal({ characterId, initialAccess }: ShareScreenModa
       >
         <ScreenAccessGate
           characterId={characterId}
+          game={game}
           onGranted={() => setAccess('ready')}
           onCancel={closeModal}
           initialStage={
@@ -246,6 +296,11 @@ export function ShareScreenModal({ characterId, initialAccess }: ShareScreenModa
           {t('Sound is shared too, so {name} can hear it.', { name: companionName })}
           {!onCall ? ` ${t('Sharing starts a voice call.')}` : ''}
         </p>
+        {gameDef && !hintFound && sources !== null ? (
+          <p className={styles.sub}>
+            {t('Open {game} and its window will show up here.', { game: gameDef.name })}
+          </p>
+        ) : null}
 
         <div className={styles.tabs} role="tablist">
           <button
@@ -284,7 +339,10 @@ export function ShareScreenModal({ characterId, initialAccess }: ShareScreenModa
                   key={s.id}
                   source={s}
                   selected={selected === s.id}
-                  onPick={() => setSelected(s.id)}
+                  onPick={() => {
+                    userPicked.current = true;
+                    setSelected(s.id);
+                  }}
                 />
               ))}
             </div>

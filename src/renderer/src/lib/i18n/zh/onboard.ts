@@ -21,6 +21,14 @@ export const ZH_ONBOARD: Record<string, string> = {
     '啊，欢迎回来～那就没我什么事啦，我打游戏去咯！',
   "So! My name's Sui. What do I call you?": '好啦！我叫 Sui。你呢？我该怎么叫你呀？',
   'I see I see... {name}!': '哦哦，原来如此原来如此……{name}！',
+  // 261001: the one-tap attribution question (lib/attributionPref).
+  'Quick one before we start. Where did you hear about Sei?': '开始之前问一句。你是从哪里知道 Sei 的呀？',
+  'Google search': 'Google 搜索',
+  'YouTube or a creator': 'YouTube 或博主',
+  'An ad': '广告',
+  'Reddit': 'Reddit',
+  'ChatGPT or another AI': 'ChatGPT 或其他 AI',
+  'A friend': '朋友推荐',
   'So, {name}, my job here is to help you meet other AI friends from my world.':
     '那个呢，{name}，我的任务就是带你认识我们世界里的其他 AI 朋友！',
   'Aww, really? I was going to find a companion just for you. You wanna skip it?':

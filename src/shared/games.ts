@@ -18,6 +18,8 @@
  * describing Draw! to it would be paid for on every cached turn for no gain.
  */
 
+import { BACKSEAT_GAMES } from './backseatGames';
+
 export interface GameCatalogEntry {
   id: string;
   /** Proper name, shown in the picker and spoken by the companion. */
@@ -31,6 +33,14 @@ export interface GameCatalogEntry {
    * a chess board she has no tool for.
    */
   selfLaunch?: boolean;
+  /**
+   * 260929: a BACKSEAT game (src/shared/backseatGames.ts). The companion does
+   * not join it; the player plays and shares the window. The picker routes
+   * its tile into the share flow instead of a launch.
+   */
+  backseat?: boolean;
+  /** The name the # GAMES prompt line uses, when it differs from the tile's. */
+  promptName?: string;
 }
 
 /** Order is the picker's tile order. */
@@ -47,9 +57,17 @@ export const GAME_CATALOG: GameCatalogEntry[] = [
   // install pass (SMAPI / the DST helper mod) that only the player can run.
   { id: 'stardew', name: 'Stardew Valley', available: true },
   { id: 'dontstarve', name: "Don't Starve Together", available: true },
-  // 260929: Roblox is a SOON tile like Focus until its screen-share (backseat)
-  // flow ships, which turns this row into a live tile.
-  { id: 'roblox', name: 'Roblox', available: false },
+  // 260929: backseat games, derived from their registry so adding one there is
+  // all it takes. The 260803 rule above still holds for the share button
+  // itself; these tiles are GAMES the player plays while the companion
+  // watches, and they are here because players ask for them by name.
+  ...BACKSEAT_GAMES.map((g) => ({
+    id: g.id,
+    name: g.tileName,
+    available: true,
+    backseat: true,
+    promptName: g.promptName,
+  })),
   { id: 'focus', name: 'Focus', available: false },
 ];
 
@@ -61,7 +79,8 @@ export const GAME_CATALOG: GameCatalogEntry[] = [
  * actually being asked. They are marked as not out so it never offers one.
  */
 export function renderGamesDirective(): string {
-  const named = (list: GameCatalogEntry[]): string => list.map((g) => g.name).join(', ');
+  const named = (list: GameCatalogEntry[]): string =>
+    list.map((g) => g.promptName ?? g.name).join(', ');
   const live = GAME_CATALOG.filter((g) => g.available);
   const soon = GAME_CATALOG.filter((g) => !g.available);
   const mine = live.filter((g) => g.selfLaunch);
