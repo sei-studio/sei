@@ -60,6 +60,7 @@ import { startCapture, stopCapture, type CaptureHandle } from '../backseat/captu
 import { sei } from '../ipcClient';
 import { t } from '../i18n';
 import { visionGateReason } from '../visionGate';
+import { useDataStore } from './useDataStore';
 import { useUiStore } from './useUiStore';
 
 /**
@@ -319,7 +320,11 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
         set({
           starting: false,
           error: msg.includes('BACKSEAT_MC_SESSION_ACTIVE')
-            ? t('They are in your Minecraft world right now. End that first.')
+            ? t('{name} is in your Minecraft world right now. End that session first.', {
+                name:
+                  useDataStore.getState().characters.find((c) => c.id === characterId)?.name ??
+                  t('Your companion'),
+              })
             : // Main's authoritative vision backstop (china-compat W9). The
               // entry points are gated in the renderer too, but a pending
               // share armed before a model switch can still land here.

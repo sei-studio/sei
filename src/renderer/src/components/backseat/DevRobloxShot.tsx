@@ -52,7 +52,7 @@ function seed(): void {
         resumed: params.has('resumed'),
         stalled,
       },
-      error: stalled ? 'They are in your Minecraft world right now. End that first.' : null,
+      error: stalled ? 'Sui is in your Minecraft world right now. End that session first.' : null,
     });
   }
   try {
