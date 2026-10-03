@@ -51,7 +51,7 @@ describe('resolveOutcome', () => {
       results: r,
       mood: { kind: 'results', fallback: false },
     });
-    expect(resolveOutcome({ kind: 'results', results: r, fallback: true }).mood).toEqual({
+    expect(resolveOutcome({ kind: 'results', results: r, fallback: 'rate_limited' }).mood).toEqual({
       kind: 'results',
       fallback: true,
     });
