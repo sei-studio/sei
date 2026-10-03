@@ -7,6 +7,8 @@
  *   intro   the one-time intro popup (the pref is cleared first)
  *   pick    the "which Roblox game" step (the pref is set first)
  *   share   the share picker with the Roblox window preselected
+ *   waiting the call's share area waiting for Roblox to open (261004);
+ *           &resumed=1 after the window closed, &stalled=1 after failed starts
  *
  * Add `&lang=zh` for the Chinese copy. window.sei is stubbed by
  * devHarnessStubs.ts; its backseat game lookups call through to
@@ -20,6 +22,9 @@ import { useLangStore } from '../../lib/i18n';
 import { GamesPickerModal } from '../GamesPickerModal';
 import { BackseatGameModal } from './BackseatGameModal';
 import { ShareScreenModal } from './ShareScreenModal';
+import { useVoiceStore } from '../../lib/stores/useVoiceStore';
+import { useBackseatStore } from '../../lib/stores/useBackseatStore';
+import { VoiceCallScreen } from '../../screens/VoiceCallScreen';
 
 const CHAR = 'dashshot-roblox';
 const INTRO_KEY = 'sei.backseatGameIntro.v1.roblox.local';
@@ -35,6 +40,21 @@ function seed(): void {
   }));
   // A vision-capable model, so the tile is not locked.
   useUiStore.setState({ llmVision: 'yes' } as never);
+  if (params.get('part') === 'waiting') {
+    // Live call, and the auto-share watch set straight into the store (no
+    // polling): the waiting card is what the call shows.
+    useVoiceStore.setState({ participants: [CHAR], status: 'live', liveAt: Date.now() - 12_000 } as never);
+    const stalled = params.has('stalled');
+    useBackseatStore.setState({
+      watch: {
+        characterId: CHAR,
+        game: { gameId: 'roblox', universeId: 1686885941 },
+        resumed: params.has('resumed'),
+        stalled,
+      },
+      error: stalled ? 'They are in your Minecraft world right now. End that first.' : null,
+    });
+  }
   try {
     if (params.get('part') === 'intro') localStorage.removeItem(INTRO_KEY);
     else localStorage.setItem(INTRO_KEY, '1');
@@ -65,6 +85,16 @@ export function DevRobloxShot(): React.ReactElement {
     return true;
   });
   void started;
+  if (part === 'waiting') {
+    return (
+      <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', background: 'var(--window)' }}>
+        <VoiceCallScreen characterId={CHAR} />
+        {modal?.kind === 'share-screen' ? (
+          <ShareScreenModal characterId={modal.characterId} game={modal.game} manual={modal.manual} />
+        ) : null}
+      </div>
+    );
+  }
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'var(--window)' }}>
       {modal?.kind === 'games-picker' ? <GamesPickerModal characterId={modal.characterId} /> : null}

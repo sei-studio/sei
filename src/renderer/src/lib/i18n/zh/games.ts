@@ -173,23 +173,29 @@ export const ZH_GAMES: Record<string, string> = {
     '玩任意 Roblox 游戏，{name}会通过语音通话看着你的屏幕陪你聊天。',
   'Roblox is available via Backseat: your companion can watch you play through your screen.':
     'Roblox 通过 Backseat 支持：你的伙伴可以通过屏幕共享看你玩。',
-  'Which {game} game are you playing?': '你在玩哪个 {game} 游戏？',
-  'Optional. {name} will know a bit about it before you start.':
-    '可选。开始前{name}会先了解一下这个游戏。',
-  'Paste a {game} link or search by name': '粘贴 {game} 链接，或按名称搜索',
-  'Popular right now': '当前热门',
-  'Results': '搜索结果',
+  // The pick step, redesigned 261004: the companion asks, the cards answer.
+  'What are we playing?': '我们玩什么？',
+  'Hmm, let me look...': '嗯，我找找看…',
+  '{game} search is busy. Any of these?': '{game} 搜索有点忙。是这些里的吗？',
+  'Any of these?': '是这些里的吗？',
+  "Can't find that one. Try pasting the game's link?": '没找到这个。试试粘贴游戏链接？',
+  "That's not a {game} game link.": '这不是 {game} 游戏链接哦。',
+  "Hmm, that game doesn't seem to exist.": '嗯，这个游戏好像不存在。',
+  "I can't reach {game} right now. We can just skip this!": '现在连不上 {game}。直接跳过也可以！',
+  "I can't load games right now. Paste a link or just skip!": '现在加载不了游戏。粘贴链接，或者直接跳过吧！',
+  "Ooh, {game}! Let's go.": '哦，{game}！出发吧。',
+  'Search or paste a link': '搜索或粘贴链接',
+  'Search {game} games or paste a link': '搜索 {game} 游戏或粘贴链接',
   'Skip': '跳过',
   'by {creator}': '作者：{creator}',
   '{count} playing': '{count} 人在玩',
-  'That link is not a {game} game link. Copy the link from the game page.':
-    '这不是 {game} 游戏链接。请从游戏页面复制链接。',
-  'Could not find that game. Check the link and try again.': '找不到这个游戏。请检查链接后重试。',
-  'Could not reach {game} right now. You can skip this and play anyway.':
-    '暂时无法连接 {game}。你可以跳过这一步直接开始玩。',
-  '{game} search is busy right now, so these are matches from popular games. Pasting the game link always works.':
-    '{game} 搜索目前繁忙，以下是热门游戏中的匹配结果。粘贴游戏链接始终可用。',
-  'No games found. Try pasting the game link instead.': '没有找到游戏。试试粘贴游戏链接。',
-  'Could not load popular games. You can still paste a link.': '无法加载热门游戏。你仍然可以粘贴链接。',
+  // The auto-share wait on the call (261004, ShareWaiting).
+  "Hop in, I'll be watching!": '进游戏吧，我看着呢！',
+  "Hop back in, I'm still here.": '回来继续玩吧，我还在。',
+  "Hmm, I couldn't start watching.": '嗯，我没能开始看。',
+  'Waiting for {game}': '等待 {game}',
+  'Share something else': '共享其他内容',
+  'Could not start sharing.': '无法开始共享。',
+  'your game': '你的游戏',
   'Open {game} and its window will show up here.': '打开 {game}，它的窗口就会出现在这里。',
 };

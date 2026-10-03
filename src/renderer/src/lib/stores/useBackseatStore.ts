@@ -36,11 +36,26 @@
  * mounted on every view, so a player who navigates away mid-dial still gets the
  * share they asked for). The arm carries a deadline and self-clears, because
  * the common ending for this state is a call that never happens.
+ *
+ * 261004: the AUTO-SHARE WATCH. A backseat game with `autoShare` (Roblox)
+ * skips the share picker: opening it means "I am about to play this, watch
+ * it". So instead of a picked source the store holds a watch, which looks for
+ * the game's window every few seconds and shares it as soon as it is up. While
+ * nothing is found the call shows a waiting card. When the shared window goes
+ * away (the player quit, or Roblox restarted to switch servers) the OS ends
+ * the track, the session ends as it always did, and the watch goes back to
+ * waiting instead of leaving a dead share. A cold start arms a pending share
+ * with no source, which starts the watch once the call is live. The watch
+ * ends with the share toggle, the call, or "share something else".
  */
 
 import { create } from 'zustand';
 import type { BackseatSource, BackseatState } from '../../../../shared/backseatIpc';
-import type { BackseatGameSelection } from '../../../../shared/backseatGames';
+import {
+  backseatGame,
+  pickHintedSource,
+  type BackseatGameSelection,
+} from '../../../../shared/backseatGames';
 import { startCapture, stopCapture, type CaptureHandle } from '../backseat/captureController';
 import { sei } from '../ipcClient';
 import { t } from '../i18n';
@@ -57,10 +72,20 @@ import { useUiStore } from './useUiStore';
  */
 export const PENDING_SHARE_TTL_MS = 180_000;
 
+/** How often the auto-share watch looks for the game's window. */
+export const WATCH_POLL_MS = 2_500;
+/** A window has to still be there on the next look before it is shared, so a
+ *  launcher or splash window that flashes up and closes is not grabbed. */
+export const WATCH_SETTLE_MS = 1_500;
+/** After this many failed starts in a row the watch stops retrying and leaves
+ *  the reason on the waiting card. */
+export const WATCH_MAX_FAILURES = 3;
+
 /** A share the player asked for before there was a call to put it on. */
 export interface PendingShare {
   characterId: string;
-  source: BackseatSource;
+  /** null (261004): no source yet, start the auto-share watch for `game`. */
+  source: BackseatSource | null;
   /** Set when the share came from a backseat game tile (260929). */
   game?: BackseatGameSelection;
   /** Epoch ms after which this must not fire. */
@@ -82,6 +107,18 @@ interface BackseatStore {
   error: string | null;
   /** A share waiting for its call to go live; null when nothing is armed. */
   pendingShare: PendingShare | null;
+  /**
+   * The auto-share watch (261004), set while a game's window is being waited
+   * for or shared on its own. `resumed` once its window has closed at least
+   * once (the waiting card says "hop back in"). `stalled` means it gave up
+   * retrying after failed starts; `error` says why.
+   */
+  watch: {
+    characterId: string;
+    game: BackseatGameSelection;
+    resumed: boolean;
+    stalled: boolean;
+  } | null;
 
   /** Start sharing `source` with `characterId`. Throws nothing: failures land
    *  in `error` so the picker can stay open and let them try another window. */
@@ -90,12 +127,17 @@ interface BackseatStore {
     source: BackseatSource,
     game?: BackseatGameSelection,
   ) => Promise<boolean>;
-  /** Remember a share to start once a call with `characterId` goes live. */
+  /** Remember a share to start once a call with `characterId` goes live.
+   *  A null source arms the auto-share watch for `game` instead. */
   armPendingShare: (
     characterId: string,
-    source: BackseatSource,
+    source: BackseatSource | null,
     game?: BackseatGameSelection,
   ) => void;
+  /** Wait for `game`'s window and share it whenever it is open (261004). */
+  startWatch: (characterId: string, game: BackseatGameSelection) => void;
+  /** Stop waiting for the window. A share already running keeps going. */
+  stopWatch: () => void;
   /** Drop the armed share (call failed, deadline passed, or it just fired). */
   clearPendingShare: () => void;
   /** Start the armed share if it is still valid. Returns whether it started. */
@@ -134,12 +176,102 @@ let pendingTimer: ReturnType<typeof setTimeout> | null = null;
  *  it changed across its awaits and unwinds instead of landing. */
 let scopeEpoch = 0;
 
+/** The watch's next look, and what it saw last time (for the settle check). */
+let watchTimer: ReturnType<typeof setTimeout> | null = null;
+let watchSeen: string | null = null;
+let watchFailures = 0;
+/** Bumped by every startWatch/stopWatch, so a look still in flight can tell
+ *  its watch was replaced or stopped while it awaited. */
+let watchGen = 0;
+
+function clearWatchTimer(): void {
+  if (watchTimer) clearTimeout(watchTimer);
+  watchTimer = null;
+}
+
 /** The armed-grid + send path, for whoever is showing the share UI. */
 export function backseatCapture(): CaptureHandle | null {
   return capture;
 }
 
 export const useBackseatStore = create<BackseatStore>((set, get) => {
+  const scheduleWatch = (delay: number = WATCH_POLL_MS): void => {
+    clearWatchTimer();
+    watchTimer = setTimeout(() => void watchTick(), delay);
+  };
+
+  /** One look for the watched game's window; shares it once it has settled. */
+  const watchTick = async (): Promise<void> => {
+    watchTimer = null;
+    const w = get().watch;
+    const gen = watchGen;
+    if (!w || w.stalled) return;
+    // A capture is running (or coming up): its end puts the watch back on.
+    if (get().sharingFor || get().starting) return;
+    const def = backseatGame(w.game.gameId);
+    if (!def) {
+      get().stopWatch();
+      return;
+    }
+    let list: BackseatSource[] = [];
+    try {
+      list = await sei.backseatSources({ thumbnails: false });
+    } catch {
+      /* the next look tries again */
+    }
+    if (watchGen !== gen) return;
+    // Windows come front to back, so with several game windows open the
+    // frontmost one, the one being played, wins.
+    const hit = pickHintedSource(list, def.windowNames);
+    if (!hit) {
+      watchSeen = null;
+      scheduleWatch();
+      return;
+    }
+    if (watchSeen !== hit.id) {
+      watchSeen = hit.id;
+      scheduleWatch(WATCH_SETTLE_MS);
+      return;
+    }
+    watchSeen = null;
+    const ok = await get().share(w.characterId, hit, w.game);
+    if (watchGen !== gen) {
+      // Stopped (or replaced) while the capture was coming up: a share that
+      // landed anyway belongs to a watch nobody wants any more.
+      if (ok && get().watch === null) void get().stopSharing();
+      return;
+    }
+    if (ok) {
+      watchFailures = 0;
+      return;
+    }
+    watchFailures += 1;
+    if (watchFailures >= WATCH_MAX_FAILURES) {
+      const cur = get().watch;
+      if (cur) set({ watch: { ...cur, stalled: true } });
+      return;
+    }
+    scheduleWatch(WATCH_POLL_MS * 2);
+  };
+
+  /** The OS ended the shared track: the window closed. Main's session was
+   *  already ended by the capture controller. */
+  const onCaptureEnded = (characterId: string, handle: () => CaptureHandle | null): void => {
+    if (capture !== handle()) return;
+    capture = null;
+    set((s) => {
+      const next = { ...s.active };
+      delete next[characterId];
+      return { sharingFor: null, stream: null, sourceName: null, active: next };
+    });
+    // Paused, not over: wait for the game to come back.
+    const w = get().watch;
+    if (w?.characterId === characterId) {
+      set({ watch: { ...w, resumed: true } });
+      scheduleWatch();
+    }
+  };
+
   try {
     offState =
       sei.onBackseatState?.((s: BackseatState) => {
@@ -168,6 +300,7 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
     starting: false,
     error: null,
     pendingShare: null,
+    watch: null,
 
     share: async (characterId, source, game) => {
       if (get().starting) return false;
@@ -204,7 +337,11 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
         return false;
       }
       try {
-        const started = await startCapture(characterId, source.id, source.name);
+        let mine: CaptureHandle | null = null;
+        const started = await startCapture(characterId, source.id, source.name, {
+          onEnded: () => onCaptureEnded(characterId, () => mine),
+        });
+        mine = started;
         if (epoch !== scopeEpoch) {
           // The account changed while capture was coming up.
           stopCapture();
@@ -260,10 +397,35 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
       // an arm still readable while share() awaits would fire a second time.
       get().clearPendingShare();
       if (expired) return false;
+      if (!pending.source) {
+        if (!pending.game) return false;
+        get().startWatch(pending.characterId, pending.game);
+        return true;
+      }
       return get().share(pending.characterId, pending.source, pending.game);
     },
 
+    startWatch: (characterId, game) => {
+      watchGen += 1;
+      clearWatchTimer();
+      watchSeen = null;
+      watchFailures = 0;
+      set({ watch: { characterId, game, resumed: false, stalled: false }, error: null });
+      void watchTick();
+    },
+
+    stopWatch: () => {
+      watchGen += 1;
+      clearWatchTimer();
+      watchSeen = null;
+      watchFailures = 0;
+      if (get().watch) set({ watch: null });
+    },
+
     stopSharing: async () => {
+      // The share toggle means "stop showing them my screen", which includes
+      // waiting to show it.
+      get().stopWatch();
       const characterId = get().sharingFor;
       capture = null;
       stopCapture();
@@ -305,9 +467,14 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
       scopeEpoch += 1;
       if (pendingTimer) clearTimeout(pendingTimer);
       pendingTimer = null;
+      watchGen += 1;
+      clearWatchTimer();
+      watchSeen = null;
+      watchFailures = 0;
       stopCapture();
       capture = null;
       set({
+        watch: null,
         active: {},
         sharingFor: null,
         stream: null,
@@ -344,5 +511,6 @@ if (import.meta.hot) {
     offLine = null;
     if (pendingTimer) clearTimeout(pendingTimer);
     pendingTimer = null;
+    clearWatchTimer();
   });
 }

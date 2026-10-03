@@ -153,7 +153,7 @@ export type Modal =
   // 260803 — the screen-share source picker, opened from the call controls.
   // Not a games-picker panel any more: sharing is a call feature, not a game.
   // 260929: `game` when it was reached from a backseat game tile (Roblox).
-  | { kind: 'share-screen'; characterId: string; game?: BackseatGameSelection }
+  | { kind: 'share-screen'; characterId: string; game?: BackseatGameSelection; manual?: boolean }
   // 260929 — a backseat game tile: the one-time intro, then the optional
   // "which game are you playing?" step, then the share picker above.
   | { kind: 'backseat-game'; characterId: string; gameId: string };

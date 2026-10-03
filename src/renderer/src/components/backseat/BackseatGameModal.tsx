@@ -6,21 +6,31 @@
  *
  *   1. INTRO, once per game per account (backseatGamePref): the tile leads
  *      into a screen share, and a player who clicked "Roblox" expecting the
- *      companion to join their game needs to be told that before a window
- *      picker appears. Either button retires it.
- *   2. PICK, when the game has a lookup provider: "which game are you
- *      playing?" by pasted link or search, with a popular list underneath.
- *      Entirely optional (Skip). What was picked crosses to main as ids only;
- *      main fetches the details itself and puts them in the prompt.
+ *      companion to join their game needs to be told that first. Either
+ *      button retires it.
+ *   2. PICK, when the game has a lookup provider: "what are we playing?",
+ *      asked by the companion. Entirely optional (skip). What was picked
+ *      crosses to main as ids only; main fetches the details itself and puts
+ *      them in the prompt.
  *
- * Then it hands over to ShareScreenModal with the selection, which preselects
- * the game's window and passes the selection into the share. From there the
- * flow is the normal backseat share, unchanged.
+ * Then it hands over to ShareScreenModal with the selection. For a game with
+ * `autoShare` that is not a picker any more (261004): it checks Screen
+ * Recording, then starts the call and WAITS for the game's window, capturing
+ * it on its own (useBackseatStore.startWatch).
  *
- * Search is run on submit only (Enter or the Search button), never per
- * keystroke: Roblox's search endpoint allows about one request a minute per
- * address, and main answers from the popular list when it is rate limited.
- * A pasted link is the reliable path and the copy says so.
+ * 261004 redesign of PICK (Shawn: "too much text and corporate, not
+ * immersive"). The companion asks in their own voice (CompanionLine), the
+ * games are a grid of big 16:9 screenshots, and tapping one picks it and moves
+ * straight on: no Continue button, no description card. The companion reacts
+ * to the pick for a beat while the modal leaves, which is the transition into
+ * the call. Every state (searching, no results, offline, bad link) is the
+ * companion's line rather than a grey sentence.
+ *
+ * Search is run on Enter only, never per keystroke: Roblox's search endpoint
+ * allows about one request a minute per address, so as-you-type search would
+ * spend that minute on "jai" and answer "jailbreak" from the fallback pool.
+ * A pasted link resolves the moment it is pasted (no rate limit there) and
+ * counts as picking that game.
  *
  * Analytics: `backseat_game_selected {game, has_specific_game, source}` where
  * source is link | search | popular | skip. The typed text is never sent;
@@ -43,8 +53,9 @@ import {
 } from '../../../../shared/backseatGames';
 import { ModalShell, ModalFooter } from '../ModalShell';
 import { Button } from '../Button';
-import { TextField } from '../TextField';
+import { CloseIcon, SearchIcon } from '../icons';
 import { useT } from '../../lib/i18n';
+import { CompanionLine, prefersReducedMotion } from './CompanionLine';
 import styles from './BackseatGameModal.module.css';
 
 export interface BackseatGameModalProps {
@@ -54,8 +65,9 @@ export interface BackseatGameModalProps {
 
 type Step = 'intro' | 'pick';
 
-/** Where the list under the search box came from. */
-type ListKind = 'popular' | 'results';
+/** How long the companion's reaction to a pick plays before the hand-over. */
+export const PICK_BEAT_MS = 700;
+const PICK_BEAT_REDUCED_MS = 250;
 
 export function BackseatGameModal({
   characterId,
@@ -65,15 +77,14 @@ export function BackseatGameModal({
   const def = backseatGame(gameId);
   const closeModal = useUiStore((s) => s.closeModal);
   const openModal = useUiStore((s) => s.openModal);
-  const companionName =
-    useDataStore((s) => s.characters.find((c) => c.id === characterId)?.name) ??
-    t('Your companion');
+  const character = useDataStore((s) => s.characters.find((c) => c.id === characterId)) ?? null;
+  const companionName = character?.name ?? t('Your companion');
 
   const [step, setStep] = useState<Step>(() =>
     backseatGameIntroSeen(gameId) ? 'pick' : 'intro',
   );
 
-  /** Hand over to the share picker. Stops a share already running for this
+  /** Hand over to the share step. Stops a share already running for this
    *  companion first: the new one replaces it, and main would end the old
    *  session anyway, but the renderer's capture must not be left running. */
   const proceed = async (
@@ -136,6 +147,7 @@ export function BackseatGameModal({
     <PickStep
       gameId={def.id}
       gameName={def.name}
+      character={character}
       companionName={companionName}
       onClose={closeModal}
       onDone={(picked, source) => void proceed(picked, source)}
@@ -143,15 +155,27 @@ export function BackseatGameModal({
   );
 }
 
-function PickStep({
+/** What the companion is saying, which is also the step's whole state line. */
+export type Mood =
+  | { kind: 'ask' }
+  | { kind: 'searching' }
+  | { kind: 'results'; fallback: boolean }
+  | { kind: 'none' }
+  | { kind: 'error'; code: 'bad_link' | 'not_found' | 'network' }
+  | { kind: 'offline' }
+  | { kind: 'picked'; name: string };
+
+export function PickStep({
   gameId,
   gameName,
+  character,
   companionName,
   onClose,
   onDone,
 }: {
   gameId: string;
   gameName: string;
+  character: { id: string; name: string; portrait_image?: string | null } | null;
   companionName: string;
   onClose: () => void;
   onDone: (picked: BackseatGameInfo | null, source: BackseatGameSource) => void;
@@ -161,22 +185,31 @@ function PickStep({
   const [busy, setBusy] = useState(false);
   const [popular, setPopular] = useState<BackseatGameInfo[] | null>(null);
   const [results, setResults] = useState<BackseatGameInfo[] | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [picked, setPicked] = useState<{ game: BackseatGameInfo; source: BackseatGameSource } | null>(
-    null,
-  );
+  const [mood, setMood] = useState<Mood>({ kind: 'ask' });
+  const [picked, setPicked] = useState<number | null>(null);
+  const [leaving, setLeaving] = useState(false);
   // The latest request wins: a slow search must not overwrite a newer one.
   const seq = useRef(0);
+  const doneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (doneTimer.current) clearTimeout(doneTimer.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     let alive = true;
     void (async () => {
       try {
         const list = await sei.backseatGamePopular(gameId);
-        if (alive) setPopular(list);
+        if (!alive) return;
+        setPopular(list);
+        if (list.length === 0) setMood((m) => (m.kind === 'ask' ? { kind: 'offline' } : m));
       } catch {
-        if (alive) setPopular([]);
+        if (!alive) return;
+        setPopular([]);
+        setMood((m) => (m.kind === 'ask' ? { kind: 'offline' } : m));
       }
     })();
     return () => {
@@ -184,34 +217,28 @@ function PickStep({
     };
   }, [gameId]);
 
-  /** Pick a game and fill in its details (genre, description) in place. */
+  /** Pick a game: the companion reacts, then the step hands over. */
   const pick = (game: BackseatGameInfo, source: BackseatGameSource): void => {
-    setPicked({ game, source });
-    if (game.genre !== undefined || game.description !== undefined) return;
-    const id = ++seq.current;
-    void (async () => {
-      try {
-        const full = await sei.backseatGameDetails(gameId, game.universeId);
-        if (full && id === seq.current) {
-          setPicked((cur) =>
-            cur && cur.game.universeId === full.universeId
-              ? { game: { ...cur.game, ...full, iconUrl: full.iconUrl ?? cur.game.iconUrl }, source }
-              : cur,
-          );
-        }
-      } catch {
-        /* the card just shows what it has */
-      }
-    })();
+    if (picked !== null) return;
+    seq.current += 1; // a search still in flight must not land over the pick
+    setPicked(game.universeId);
+    setMood({ kind: 'picked', name: game.name });
+    // Warm main's details cache for the session prompt; it looks the game up
+    // itself at start either way, so a failure here changes nothing.
+    void sei.backseatGameDetails(gameId, game.universeId).catch(() => null);
+    const beat = prefersReducedMotion() ? PICK_BEAT_REDUCED_MS : PICK_BEAT_MS;
+    doneTimer.current = setTimeout(() => {
+      setLeaving(true);
+      doneTimer.current = setTimeout(() => onDone(game, source), prefersReducedMotion() ? 0 : 180);
+    }, beat);
   };
 
-  const submit = async (): Promise<void> => {
-    const input = query.trim();
-    if (!input || busy) return;
+  const submit = async (raw?: string): Promise<void> => {
+    const input = (raw ?? query).trim();
+    if (!input || picked !== null) return;
     const id = ++seq.current;
     setBusy(true);
-    setError(null);
-    setNote(null);
+    setMood({ kind: 'searching' });
     let res: BackseatGameResolveResult;
     try {
       res = await sei.backseatGameResolve(gameId, input);
@@ -220,193 +247,248 @@ function PickStep({
     }
     if (id !== seq.current) return;
     setBusy(false);
-    if (res.kind === 'game') {
-      setResults(null);
-      pick(res.game, 'link');
+    const out = resolveOutcome(res);
+    if (out.pick) {
+      setResults([out.pick]);
+      pick(out.pick, 'link');
       return;
     }
-    if (res.kind === 'error') {
-      setError(
-        res.code === 'bad_link'
-          ? t('That link is not a {game} game link. Copy the link from the game page.', {
-              game: gameName,
-            })
-          : res.code === 'not_found'
-            ? t('Could not find that game. Check the link and try again.')
-            : t('Could not reach {game} right now. You can skip this and play anyway.', {
-                game: gameName,
-              }),
-      );
-      return;
-    }
-    setResults(res.results);
-    if (res.fallback) {
-      setNote(
-        t(
-          '{game} search is busy right now, so these are matches from popular games. Pasting the game link always works.',
-          { game: gameName },
-        ),
-      );
-    }
+    if (out.results !== undefined) setResults(out.results);
+    setMood(out.mood);
   };
 
-  const listKind: ListKind = results ? 'results' : 'popular';
+  const clear = (): void => {
+    seq.current += 1;
+    setQuery('');
+    setBusy(false);
+    setResults(null);
+    setMood(popular && popular.length === 0 ? { kind: 'offline' } : { kind: 'ask' });
+  };
+
+  const line = moodLine(mood, t, gameName);
+
   const list = results ?? popular;
-  const linkish = looksLikeLink(query);
+  const fromResults = results !== null;
 
   return (
     <ModalShell
-      title={t('Which {game} game are you playing?', { game: gameName })}
-      width={520}
+      title={null}
+      width={760}
+      scrimClose
       onClose={onClose}
+      panelClassName={`${styles.panel} ${leaving ? styles.leaving : ''}`}
+      aria-label={t('What are we playing?')}
     >
-      <div className={styles.root}>
-        <p className={styles.sub}>
-          {t('Optional. {name} will know a bit about it before you start.', {
-            name: companionName,
-          })}
-        </p>
-
-        {picked ? (
-          <div className={styles.picked}>
-            <GameIcon game={picked.game} large />
-            <div className={styles.pickedBody}>
-              <span className={styles.pickedName}>{picked.game.name}</span>
-              <span className={styles.meta}>
-                {[
-                  picked.game.creator ? t('by {creator}', { creator: picked.game.creator }) : null,
-                  picked.game.genre ?? null,
-                  picked.game.playing !== undefined
-                    ? t('{count} playing', { count: compact(picked.game.playing) })
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </span>
-              {picked.game.description ? (
-                <span className={styles.pickedDesc}>{picked.game.description}</span>
-              ) : null}
-            </div>
-            <Button kind="quiet" size="sm" onClick={() => setPicked(null)}>
-              {t('Change')}
-            </Button>
-          </div>
-        ) : (
-          <>
-            <div className={styles.searchRow}>
-              <div className={styles.field}>
-                <TextField
-                  value={query}
-                  onChange={(v) => {
-                    setQuery(v);
-                    if (!v.trim()) {
-                      setResults(null);
-                      setNote(null);
-                      setError(null);
-                    }
-                  }}
-                  onEnter={() => void submit()}
-                  placeholder={t('Paste a {game} link or search by name', { game: gameName })}
-                  aria-label={t('Paste a {game} link or search by name', { game: gameName })}
-                  autoFocus
-                />
-              </div>
-              <Button
-                kind="ghost"
-                size="md"
-                onClick={() => void submit()}
-                disabled={!query.trim() || busy}
-              >
-                {busy ? t('Searching...') : linkish ? t('Look up') : t('Search')}
-              </Button>
-            </div>
-
-            {error ? <p className={styles.error}>{error}</p> : null}
-            {note ? <p className={styles.note}>{note}</p> : null}
-
-            <div className={styles.listHead}>
-              {listKind === 'results' ? t('Results') : t('Popular right now')}
-            </div>
-            <div className={styles.list}>
-              {list === null ? (
-                <p className={styles.empty}>{t('Loading...')}</p>
-              ) : list.length === 0 ? (
-                <p className={styles.empty}>
-                  {listKind === 'results'
-                    ? t('No games found. Try pasting the game link instead.')
-                    : t('Could not load popular games. You can still paste a link.')}
-                </p>
-              ) : (
-                list.map((g) => (
-                  <button
-                    key={g.universeId}
-                    type="button"
-                    className={styles.row}
-                    onClick={() => pick(g, listKind === 'results' ? 'search' : 'popular')}
-                  >
-                    <GameIcon game={g} />
-                    <span className={styles.rowBody}>
-                      <span className={styles.rowName}>{g.name}</span>
-                      <span className={styles.meta}>
-                        {[
-                          g.creator ? t('by {creator}', { creator: g.creator }) : null,
-                          g.playing !== undefined
-                            ? t('{count} playing', { count: compact(g.playing) })
-                            : null,
-                        ]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </span>
-                    </span>
-                  </button>
-                ))
-              )}
-            </div>
-          </>
-        )}
+      <div className={styles.head}>
+        <CompanionLine
+          character={character}
+          name={companionName}
+          line={line}
+          size={60}
+        />
       </div>
-      <ModalFooter>
-        <Button kind="quiet" size="md" onClick={() => onDone(null, 'skip')}>
-          {t('Skip')}
-        </Button>
-        <Button
-          size="md"
-          disabled={!picked}
-          onClick={() => picked && onDone(picked.game, picked.source)}
+
+      <form
+        className={styles.pill}
+        role="search"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+      >
+        <SearchIcon size={17} />
+        <input
+          className={styles.pillInput}
+          value={query}
+          onChange={(e) => {
+            const v = e.target.value;
+            setQuery(v);
+            if (!v.trim()) clear();
+          }}
+          onPaste={(e) => {
+            // A pasted game link is the whole answer: resolve it right away.
+            const pasted = e.clipboardData.getData('text');
+            if (looksLikeLink(pasted)) {
+              e.preventDefault();
+              setQuery(pasted.trim());
+              void submit(pasted);
+            }
+          }}
+          placeholder={t('Search or paste a link')}
+          aria-label={t('Search {game} games or paste a link', { game: gameName })}
+          spellCheck={false}
+          autoFocus
+          disabled={picked !== null}
+        />
+        {busy ? (
+          <span className={styles.spinner} aria-hidden="true" />
+        ) : query ? (
+          <button type="button" className={styles.pillClear} onClick={clear} aria-label={t('Clear')}>
+            <CloseIcon size={15} />
+          </button>
+        ) : null}
+      </form>
+
+      <div className={`${styles.grid} ${busy ? styles.gridBusy : ''}`} aria-busy={list === null || busy}>
+        {list === null
+          ? Array.from({ length: 8 }, (_, i) => <span key={i} className={styles.skeleton} />)
+          : list.length === 0
+            ? // Nothing to show (offline): an empty shelf keeps the step's
+              // shape, and the companion's line says what to do instead.
+              Array.from({ length: 8 }, (_, i) => (
+                <span key={i} className={styles.ghost} aria-hidden="true" />
+              ))
+            : list.map((g, i) => (
+              <GameCard
+                key={g.universeId}
+                game={g}
+                index={i}
+                state={picked === null ? 'idle' : picked === g.universeId ? 'picked' : 'dimmed'}
+                onPick={() => pick(g, fromResults ? 'search' : 'popular')}
+              />
+            ))}
+      </div>
+
+      <div className={styles.foot}>
+        <button
+          type="button"
+          className={styles.skip}
+          onClick={() => onDone(null, 'skip')}
+          disabled={picked !== null}
         >
-          {t('Continue')}
-        </Button>
-      </ModalFooter>
+          {t('Skip')}
+        </button>
+      </div>
     </ModalShell>
   );
 }
 
-function GameIcon({
+/**
+ * What a search or link lookup does to the step. A resolved link is a pick.
+ * An error keeps whatever cards were showing. No results also keeps the
+ * popular games up (results: null), so there is still something to tap while
+ * the companion suggests pasting a link.
+ */
+export function resolveOutcome(res: BackseatGameResolveResult): {
+  pick?: BackseatGameInfo;
+  /** undefined = leave the cards as they are. */
+  results?: BackseatGameInfo[] | null;
+  mood: Mood;
+} {
+  if (res.kind === 'game') return { pick: res.game, mood: { kind: 'picked', name: res.game.name } };
+  if (res.kind === 'error') return { mood: { kind: 'error', code: res.code } };
+  if (res.results.length === 0) return { results: null, mood: { kind: 'none' } };
+  return { results: res.results, mood: { kind: 'results', fallback: !!res.fallback } };
+}
+
+/** The companion's line for a mood. Short, in their voice, no em dashes. */
+export function moodLine(
+  mood: Mood,
+  t: (en: string, params?: Record<string, string | number>) => string,
+  gameName: string,
+): string {
+  switch (mood.kind) {
+    case 'ask':
+      return t('What are we playing?');
+    case 'searching':
+      return t('Hmm, let me look...');
+    case 'results':
+      return mood.fallback
+        ? t('{game} search is busy. Any of these?', { game: gameName })
+        : t('Any of these?');
+    case 'none':
+      return t("Can't find that one. Try pasting the game's link?");
+    case 'error':
+      return mood.code === 'bad_link'
+        ? t("That's not a {game} game link.", { game: gameName })
+        : mood.code === 'not_found'
+          ? t("Hmm, that game doesn't seem to exist.")
+          : t("I can't reach {game} right now. We can just skip this!", { game: gameName });
+    case 'offline':
+      return t("I can't load games right now. Paste a link or just skip!");
+    case 'picked':
+      return t("Ooh, {game}! Let's go.", { game: mood.name });
+  }
+}
+
+/** One game: its 16:9 screenshot, its name over it, players online. */
+function GameCard({
   game,
-  large,
+  index,
+  state,
+  onPick,
 }: {
   game: BackseatGameInfo;
-  large?: boolean;
+  index: number;
+  state: 'idle' | 'picked' | 'dimmed';
+  onPick: () => void;
 }): React.ReactElement {
-  const [failed, setFailed] = useState(false);
-  const cls = `${styles.icon} ${large ? styles.iconLarge : ''}`;
-  if (!game.iconUrl || failed) {
-    return (
-      <span className={`${cls} ${styles.iconBlank}`} aria-hidden="true">
-        {game.name.slice(0, 1).toUpperCase()}
-      </span>
-    );
-  }
+  const t = useT();
+  const [thumbFailed, setThumbFailed] = useState(false);
+  const [iconFailed, setIconFailed] = useState(false);
+  const thumb = !thumbFailed ? game.thumbnailUrl : undefined;
+  const icon = !iconFailed ? game.iconUrl : undefined;
+  const count = game.playing !== undefined && game.playing > 0 ? compact(game.playing) : null;
   return (
-    <img
-      className={cls}
-      src={game.iconUrl}
-      alt=""
-      draggable={false}
-      loading="lazy"
-      onError={() => setFailed(true)}
-    />
+    <button
+      type="button"
+      className={[
+        styles.card,
+        state === 'picked' ? styles.cardPicked : '',
+        state === 'dimmed' ? styles.cardDimmed : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      style={{ animationDelay: `${Math.min(index, 11) * 35}ms` }}
+      onClick={onPick}
+      disabled={state !== 'idle'}
+      aria-label={count ? `${game.name}, ${t('{count} playing', { count })}` : game.name}
+    >
+      <span className={styles.art}>
+        {thumb ? (
+          <img
+            className={styles.thumb}
+            src={thumb}
+            alt=""
+            draggable={false}
+            loading="lazy"
+            onError={() => setThumbFailed(true)}
+          />
+        ) : icon ? (
+          // No screenshot: the square icon, blurred to fill behind itself.
+          <>
+            <img className={styles.iconFill} src={icon} alt="" draggable={false} aria-hidden="true" />
+            <img
+              className={styles.iconMid}
+              src={icon}
+              alt=""
+              draggable={false}
+              onError={() => setIconFailed(true)}
+            />
+          </>
+        ) : (
+          <span className={styles.blank} style={{ ['--hue' as string]: String(hue(game.name)) }}>
+            {Array.from(game.name.replace(/^[^\p{L}\p{N}]+/u, ''))[0]?.toUpperCase() ?? '?'}
+          </span>
+        )}
+      </span>
+      <span className={styles.shade} aria-hidden="true" />
+      {count ? (
+        <span className={styles.count} aria-hidden="true">
+          <span className={styles.liveDot} />
+          {count}
+        </span>
+      ) : null}
+      <span className={styles.name}>{game.name}</span>
+    </button>
   );
+}
+
+/** A stable hue per name, for the placeholder card. */
+function hue(name: string): number {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+  return h;
 }
 
 /** 1234 -> "1.2K", 1234567 -> "1.2M". Numbers only, so no translation. */

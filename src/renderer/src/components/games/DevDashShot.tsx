@@ -12,7 +12,7 @@
  *     http://localhost:5173/?dashshot=dstlaunch    the Don't Starve Together launch panel
  *     http://localhost:5173/?dashshot=stardewlaunch  the Stardew Valley launch panel
  *     http://localhost:5173/?dashshot=creditwall&part=modal|credits|draw|banner  the credit wall surfaces (DevCreditWallShot)
- *     http://localhost:5173/?dashshot=roblox&part=picker|intro|pick|share  the Roblox backseat tile flow (DevRobloxShot)
+ *     http://localhost:5173/?dashshot=roblox&part=picker|intro|pick|share|waiting  the Roblox backseat tile flow (DevRobloxShot)
  *     http://localhost:5173/?dashshot=mcprofile&part=lan|unsupported|forge|setup|done  the Sei profile / Start Minecraft surfaces (DevMcProfileShot)
  *     http://localhost:5173/?dashshot=chatfirst    the guided first moment (260926) in the real ChatScreen
  *     http://localhost:5173/?dashshot=perms&part=mic|screen|...  the OS permission cards (DevPermsShot, 260929)
@@ -216,7 +216,7 @@ seed();
 export function DevDashShot({ which }: { which: string }): React.ReactElement {
   // ?dashshot=creditwall&part=modal|credits|draw|banner (260926).
   if (which === 'creditwall') return <DevCreditWallShot />;
-  // ?dashshot=roblox&part=picker|intro|pick|share (260929).
+  // ?dashshot=roblox&part=picker|intro|pick|share|waiting (260929, waiting 261004).
   if (which === 'roblox') return <DevRobloxShot />;
   // ?dashshot=mcprofile&part=... (260929).
   if (which === 'mcprofile') return <DevMcProfileShot />;

@@ -52,6 +52,13 @@ export interface BackseatGameDef {
   knowledge: string;
   /** Optional provider for the "pick your game" step. */
   lookup?: BackseatGameLookupKind;
+  /**
+   * 261004: skip the share picker. Opening this game assumes the player is
+   * sharing the game itself, so the session waits for its window (see
+   * windowNames) and starts capturing it on its own, pausing again whenever
+   * the window closes. The picker stays one tap away for anything else.
+   */
+  autoShare?: boolean;
 }
 
 /**
@@ -76,6 +83,9 @@ export interface BackseatGameInfo {
   playing?: number;
   /** Icon URL on Roblox's CDN (rbxcdn), when one resolved. */
   iconUrl?: string;
+  /** A 16:9 screenshot on Roblox's CDN (rbxcdn), when one resolved. The pick
+   *  step's cards lead with it; the icon is the fallback. */
+  thumbnailUrl?: string;
   /** Present once full details were fetched (link paste, or on select). */
   genre?: string;
   description?: string;
@@ -154,6 +164,7 @@ export const BACKSEAT_GAMES: readonly BackseatGameDef[] = [
     windowNames: ['Roblox', 'Roblox Player'],
     knowledge: ROBLOX_KNOWLEDGE,
     lookup: 'roblox',
+    autoShare: true,
   },
 ];
 

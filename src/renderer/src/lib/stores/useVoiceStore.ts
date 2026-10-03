@@ -2002,6 +2002,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       const s = get();
       if (!s.participants.includes(characterId)) return;
       const next = s.participants.filter((id) => id !== characterId);
+      if (useBackseatStore.getState().watch?.characterId === characterId) {
+        useBackseatStore.getState().stopWatch();
+      }
       // A membership change is a barge point: cancel any in-flight companion chain
       // so the departing companion's queued reaction can't still fire (the
       // "she left but kept talking in the background" bug), and so a chain that
@@ -2039,6 +2042,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     endCall: () => {
       const { participants } = get();
       session += 1;
+      // A share waiting for its game's window (261004) belongs to this call:
+      // the window opening after the call is over must not start one.
+      useBackseatStore.getState().stopWatch();
       directorSeq++; // cancel any running companion chain (bump + clear travel together)
       clearTurnCapture();
       speakerOriginSeq.clear();

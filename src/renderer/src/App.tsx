@@ -1101,7 +1101,7 @@ export function App(): React.ReactElement {
       {/* 260803 — the screen-share source picker, opened from the call
           controls' share button (the games-picker tile is gone). */}
       {modal?.kind === 'share-screen' ? (
-        <ShareScreenModal characterId={modal.characterId} game={modal.game} />
+        <ShareScreenModal characterId={modal.characterId} game={modal.game} manual={modal.manual} />
       ) : null}
       {/* 260929 — a backseat game tile (Roblox): intro + pick-your-game. */}
       {modal?.kind === 'backseat-game' ? (
