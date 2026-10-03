@@ -30,9 +30,26 @@ interface LangState {
   setLang: (lang: UiLanguage) => void;
 }
 
+/** Mirror the UI language onto <html lang>. Without it the page stays
+ *  lang="en" and the browser picks its CJK fallback font by guesswork (on
+ *  Linux and Windows often a Japanese face: centered full-width punctuation,
+ *  "什么 ？" with a gap, and Japanese glyph forms for some Han characters). */
+function applyDocumentLang(lang: UiLanguage): void {
+  try {
+    if (typeof document !== 'undefined' && document.documentElement) {
+      document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+    }
+  } catch {
+    /* no DOM (tests) */
+  }
+}
+
 export const useLangStore = create<LangState>((set) => ({
   lang: 'en',
-  setLang: (lang) => set({ lang }),
+  setLang: (lang) => {
+    applyDocumentLang(lang);
+    set({ lang });
+  },
 }));
 
 function translate(lang: UiLanguage, en: string, params?: Record<string, string | number>): string {

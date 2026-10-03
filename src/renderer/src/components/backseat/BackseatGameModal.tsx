@@ -22,8 +22,9 @@
  * immersive"). The companion asks in their own voice (CompanionLine), the
  * games are a grid of big 16:9 screenshots, and tapping one picks it and moves
  * straight on: no Continue button, no description card. The companion reacts
- * to the pick for a beat while the modal leaves, which is the transition into
- * the call. Every state (searching, no results, offline, bad link) is the
+ * to the pick, and the modal leaves only once that line has fully typed and
+ * been up for a beat (createPickHandoff), which is the transition into the
+ * call. Every state (searching, no results, offline, bad link) is the
  * companion's line rather than a grey sentence.
  *
  * Search is run on Enter only, never per keystroke: Roblox's search endpoint
@@ -56,6 +57,7 @@ import { Button } from '../Button';
 import { CloseIcon, SearchIcon } from '../icons';
 import { useT } from '../../lib/i18n';
 import { CompanionLine, prefersReducedMotion } from './CompanionLine';
+import { cleanGameTitle, endsWithPunctuation, spokenGameName } from './gameTitle';
 import styles from './BackseatGameModal.module.css';
 
 export interface BackseatGameModalProps {
@@ -65,9 +67,50 @@ export interface BackseatGameModalProps {
 
 type Step = 'intro' | 'pick';
 
-/** How long the companion's reaction to a pick plays before the hand-over. */
-export const PICK_BEAT_MS = 700;
-const PICK_BEAT_REDUCED_MS = 250;
+/** After the pick line has fully typed, it stays up this long before the
+ *  step leaves, so it is read whole (also the beat with reduced motion, where
+ *  the line appears at once). */
+export const PICK_READ_MS = 600;
+/** The panel's fade-out (.leaving) before the share step takes over. */
+const LEAVE_MS = 180;
+/** Backstop: the step leaves by now even if the line never reports typed (a
+ *  throttled background window). Far above the longest pick line, which
+ *  spokenGameName bounds; a test pins that. */
+export const PICK_HANDOFF_MAX_MS = 4000;
+
+/**
+ * The pick hand-over: leave once `line` is fully on screen (CompanionLine's
+ * onTyped) plus PICK_READ_MS, never before; PICK_HANDOFF_MAX_MS at the latest.
+ */
+export function createPickHandoff(
+  line: string,
+  onLeave: () => void,
+): { typed: (l: string) => void; cancel: () => void } {
+  let read: ReturnType<typeof setTimeout> | null = null;
+  let gone = false;
+  const leave = (): void => {
+    if (gone) return;
+    gone = true;
+    cancel();
+    onLeave();
+  };
+  const cap = setTimeout(leave, PICK_HANDOFF_MAX_MS);
+  function cancel(): void {
+    clearTimeout(cap);
+    if (read) clearTimeout(read);
+    read = null;
+  }
+  return {
+    typed: (l) => {
+      if (gone || read || l !== line) return;
+      read = setTimeout(leave, PICK_READ_MS);
+    },
+    cancel: () => {
+      gone = true;
+      cancel();
+    },
+  };
+}
 
 export function BackseatGameModal({
   characterId,
@@ -190,9 +233,11 @@ export function PickStep({
   const [leaving, setLeaving] = useState(false);
   // The latest request wins: a slow search must not overwrite a newer one.
   const seq = useRef(0);
+  const handoff = useRef<ReturnType<typeof createPickHandoff> | null>(null);
   const doneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
+      handoff.current?.cancel();
       if (doneTimer.current) clearTimeout(doneTimer.current);
     },
     [],
@@ -217,20 +262,22 @@ export function PickStep({
     };
   }, [gameId]);
 
-  /** Pick a game: the companion reacts, then the step hands over. */
+  /** Pick a game: the companion reacts, and once that line has fully typed
+   *  and been up for a beat, the step hands over (createPickHandoff). */
   const pick = (game: BackseatGameInfo, source: BackseatGameSource): void => {
     if (picked !== null) return;
     seq.current += 1; // a search still in flight must not land over the pick
+    const pickedMood: Mood = { kind: 'picked', name: game.name };
     setPicked(game.universeId);
-    setMood({ kind: 'picked', name: game.name });
+    setBusy(false);
+    setMood(pickedMood);
     // Warm main's details cache for the session prompt; it looks the game up
     // itself at start either way, so a failure here changes nothing.
     void sei.backseatGameDetails(gameId, game.universeId).catch(() => null);
-    const beat = prefersReducedMotion() ? PICK_BEAT_REDUCED_MS : PICK_BEAT_MS;
-    doneTimer.current = setTimeout(() => {
+    handoff.current = createPickHandoff(moodLine(pickedMood, t, gameName), () => {
       setLeaving(true);
-      doneTimer.current = setTimeout(() => onDone(game, source), prefersReducedMotion() ? 0 : 180);
-    }, beat);
+      doneTimer.current = setTimeout(() => onDone(game, source), prefersReducedMotion() ? 0 : LEAVE_MS);
+    });
   };
 
   const submit = async (raw?: string): Promise<void> => {
@@ -285,6 +332,7 @@ export function PickStep({
           name={companionName}
           line={line}
           size={60}
+          onTyped={(l) => handoff.current?.typed(l)}
         />
       </div>
 
@@ -406,8 +454,14 @@ export function moodLine(
           : t("I can't reach {game} right now. We can just skip this!", { game: gameName });
     case 'offline':
       return t("I can't load games right now. Paste a link or just skip!");
-    case 'picked':
-      return t("Ooh, {game}! Let's go.", { game: mood.name });
+    case 'picked': {
+      // Said the way a person would: no store tags or emoji, never "!!".
+      const game = spokenGameName(mood.name);
+      if (game === null) return t("Ooh, nice pick! Let's go.");
+      return endsWithPunctuation(game)
+        ? t("Ooh, {game} Let's go.", { game })
+        : t("Ooh, {game}! Let's go.", { game });
+    }
   }
 }
 
@@ -429,6 +483,9 @@ function GameCard({
   const thumb = !thumbFailed ? game.thumbnailUrl : undefined;
   const icon = !iconFailed ? game.iconUrl : undefined;
   const count = game.playing !== undefined && game.playing > 0 ? compact(game.playing) : null;
+  // The caption drops the store tags and emoji ("[🎃] Adopt Me!" reads
+  // "Adopt Me!"); the full store title stays in the hover tooltip.
+  const name = cleanGameTitle(game.name);
   return (
     <button
       type="button"
@@ -442,7 +499,8 @@ function GameCard({
       style={{ animationDelay: `${Math.min(index, 11) * 35}ms` }}
       onClick={onPick}
       disabled={state !== 'idle'}
-      aria-label={count ? `${game.name}, ${t('{count} playing', { count })}` : game.name}
+      title={game.name !== name ? game.name : undefined}
+      aria-label={count ? `${name}, ${t('{count} playing', { count })}` : name}
     >
       <span className={styles.art}>
         {thumb ? (
@@ -468,7 +526,7 @@ function GameCard({
           </>
         ) : (
           <span className={styles.blank} style={{ ['--hue' as string]: String(hue(game.name)) }}>
-            {Array.from(game.name.replace(/^[^\p{L}\p{N}]+/u, ''))[0]?.toUpperCase() ?? '?'}
+            {Array.from(name.replace(/^[^\p{L}\p{N}]+/u, ''))[0]?.toUpperCase() ?? '?'}
           </span>
         )}
       </span>
@@ -479,7 +537,7 @@ function GameCard({
           {count}
         </span>
       ) : null}
-      <span className={styles.name}>{game.name}</span>
+      <span className={styles.name}>{name}</span>
     </button>
   );
 }

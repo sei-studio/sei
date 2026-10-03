@@ -12,10 +12,11 @@
  * never see a half-typed string.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { PixelPortrait } from '../PixelPortrait';
 import { pickPalette } from '../../lib/portraitPalettes';
 import { resolvedScheme } from '../../lib/theme';
+import { LineTyper, type TyperFrame } from './lineTyper';
 import styles from './CompanionLine.module.css';
 
 export interface CompanionLineProps {
@@ -28,10 +29,9 @@ export interface CompanionLineProps {
   /** 'row' puts the bubble beside the portrait; 'stack' centers it above. */
   layout?: 'row' | 'stack';
   className?: string;
+  /** Called with each line once it is fully on screen. */
+  onTyped?: (line: string) => void;
 }
-
-/** ms per character while a line types out. */
-const TYPE_MS = 22;
 
 export function prefersReducedMotion(): boolean {
   try {
@@ -41,26 +41,34 @@ export function prefersReducedMotion(): boolean {
   }
 }
 
-/** The line as typed so far. Restarts whenever the line changes. */
-function useTyped(text: string): string {
-  const [n, setN] = useState(() => (prefersReducedMotion() ? text.length : 0));
+/** The line on screen and how much of it has typed. See LineTyper for the
+ *  rules (a typing line is never replaced; onTyped fires once it is whole). */
+function useTypedLine(line: string, onTyped?: (line: string) => void): TyperFrame {
+  const [frame, setFrame] = useState<TyperFrame>(() => ({
+    line,
+    n: prefersReducedMotion() ? Array.from(line).length : 0,
+  }));
+  const onTypedRef = useRef(onTyped);
   useEffect(() => {
-    if (prefersReducedMotion()) {
-      setN(text.length);
-      return;
-    }
-    setN(0);
-    // Array.from so an emoji or a CJK character counts as one step.
-    const total = Array.from(text).length;
-    let i = 0;
-    const timer = window.setInterval(() => {
-      i += 1;
-      setN(i);
-      if (i >= total) window.clearInterval(timer);
-    }, TYPE_MS);
-    return () => window.clearInterval(timer);
-  }, [text]);
-  return Array.from(text).slice(0, n).join('');
+    onTypedRef.current = onTyped;
+  }, [onTyped]);
+  const typer = useRef<LineTyper | null>(null);
+  useEffect(() => {
+    const ty = new LineTyper({
+      reduced: prefersReducedMotion(),
+      onFrame: setFrame,
+      onTyped: (l) => onTypedRef.current?.(l),
+    });
+    typer.current = ty;
+    return () => {
+      ty.dispose();
+      typer.current = null;
+    };
+  }, []);
+  useEffect(() => {
+    typer.current?.say(line);
+  }, [line]);
+  return frame;
 }
 
 export function CompanionLine({
@@ -70,8 +78,12 @@ export function CompanionLine({
   size = 64,
   layout = 'row',
   className,
+  onTyped,
 }: CompanionLineProps): React.ReactElement {
-  const typed = useTyped(line);
+  const frame = useTypedLine(line, onTyped);
+  const chars = Array.from(frame.line);
+  const typed = chars.slice(0, frame.n).join('');
+  const untyped = chars.slice(frame.n).join('');
   const seed = character ? character.id + character.name : name;
   const palette = pickPalette(seed, resolvedScheme());
   return (
@@ -89,16 +101,14 @@ export function CompanionLine({
           style={{ width: '100%', height: '100%' }}
         />
       </span>
-      <p key={line} className={styles.bubble} role="status" aria-live="polite">
-        <span className={styles.srOnly}>{line}</span>
-        {/* The typed copy is decoration over a reserved box: the invisible
-            full line holds the bubble's final size, so it never grows while
-            typing and the layout around it never jumps. */}
-        <span className={styles.sizer} aria-hidden="true">
-          {line}
-        </span>
-        <span className={styles.typed} aria-hidden="true">
+      <p key={frame.line} className={styles.bubble} role="status" aria-live="polite">
+        <span className={styles.srOnly}>{frame.line}</span>
+        {/* The whole line is laid out from the first frame, the part not yet
+            typed just invisible, so the bubble holds its final size and a word
+            never jumps to the next line halfway through typing. */}
+        <span aria-hidden="true">
           {typed}
+          <span className={styles.untyped}>{untyped}</span>
         </span>
       </p>
     </div>

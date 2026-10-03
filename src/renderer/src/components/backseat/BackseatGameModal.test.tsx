@@ -26,7 +26,9 @@ import type { BackseatGameInfo } from '../../../../shared/backseatGames';
   documentElement: { getAttribute: () => 'dark' },
 };
 
-const { PickStep, resolveOutcome, moodLine } = await import('./BackseatGameModal');
+const { PickStep, resolveOutcome, moodLine, createPickHandoff, PICK_READ_MS, PICK_HANDOFF_MAX_MS } =
+  await import('./BackseatGameModal');
+const { LineTyper, HOLD_MS, typingMs } = await import('./lineTyper');
 const { handOffAutoShare } = await import('./ShareScreenModal');
 const { useBackseatStore } = await import('../../lib/stores/useBackseatStore');
 const { useUiStore } = await import('../../lib/stores/useUiStore');
@@ -83,6 +85,8 @@ describe('the companion lines', () => {
     { kind: 'error', code: 'network' },
     { kind: 'offline' },
     { kind: 'picked', name: 'Jailbreak' },
+    { kind: 'picked', name: '[🎃] Adopt Me!' },
+    { kind: 'picked', name: 'An Extremely Long Roblox Game Title With No Subtitle Anywhere' },
   ] as const;
 
   it('every state has a short line, translated, with no em dashes', () => {
@@ -96,8 +100,23 @@ describe('the companion lines', () => {
     }
   });
 
-  it('reacts to the pick by name', () => {
-    expect(moodLine({ kind: 'picked', name: 'Adopt Me!' }, en, 'Roblox')).toBe("Ooh, Adopt Me!! Let's go.");
+  it('reacts to the pick by name, said the way a person would', () => {
+    const said = (name: string): string => moodLine({ kind: 'picked', name }, en, 'Roblox');
+    expect(said('Jailbreak')).toBe("Ooh, Jailbreak! Let's go.");
+    // No store tags or emoji, and never a second "!".
+    expect(said('[🎃] Adopt Me!')).toBe("Ooh, Adopt Me! Let's go.");
+    expect(said('Brookhaven 🏡RP')).toBe("Ooh, Brookhaven RP! Let's go.");
+    expect(said('[SKY ASSASSIN] Jujutsu Shenanigans')).toBe("Ooh, Jujutsu Shenanigans! Let's go.");
+    expect(said("🎃 Dandy's World [ALPHA]")).toBe("Ooh, Dandy's World! Let's go.");
+    expect(said('Who Is It?')).toBe("Ooh, Who Is It? Let's go.");
+    // Too long to say: the line skips the name rather than reading out a paragraph.
+    expect(said('An Extremely Long Roblox Game Title With No Subtitle Anywhere')).toBe("Ooh, nice pick! Let's go.");
+  });
+
+  it('zh never doubles the punctuation either', () => {
+    const zh = (s: string, p?: Record<string, string | number>): string => en(ZH[s] ?? s, p);
+    expect(moodLine({ kind: 'picked', name: 'Jailbreak' }, zh, 'Roblox')).toBe('哦，Jailbreak！出发吧。');
+    expect(moodLine({ kind: 'picked', name: '[🎃] Adopt Me!' }, zh, 'Roblox')).toBe('哦，Adopt Me! 出发吧。');
   });
 
   it('the waiting card lines are translated too', () => {
@@ -169,5 +188,82 @@ describe('handOffAutoShare', () => {
     expect(useUiStore.getState().view).toEqual({ kind: 'voice-call', characterId: 'c1' });
     useBackseatStore.getState().stopWatch();
     vi.useRealTimers();
+  });
+});
+
+describe('the pick hand-over never cuts the line off', () => {
+  /** The pick step's wiring: CompanionLine's typer reports typed lines to the
+   *  hand-over, exactly as PickStep does. Returns when the step left and what
+   *  was on screen at that moment. */
+  function run(opts: { reduced: boolean; before?: string; beforeMs?: number; name: string }) {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    let shown = { line: '', n: 0 };
+    let typedAt = -1;
+    let left: { at: number; shown: { line: string; n: number } } | null = null;
+    const picked = moodLine({ kind: 'picked', name: opts.name }, en, 'Roblox');
+    const handoff = createPickHandoff(picked, () => {
+      left = { at: Date.now(), shown: { ...shown } };
+    });
+    const typer = new LineTyper({
+      reduced: opts.reduced,
+      onFrame: (f) => (shown = f),
+      onTyped: (l) => {
+        if (l === picked) typedAt = Date.now();
+        handoff.typed(l);
+      },
+    });
+    if (opts.before) {
+      typer.say(opts.before);
+      vi.advanceTimersByTime(opts.beforeMs ?? 0);
+    }
+    const pickedAt = Date.now();
+    typer.say(picked);
+    // Step a millisecond at a time so the exact leave moment is caught.
+    for (let i = 0; i < PICK_HANDOFF_MAX_MS + 100 && !left; i++) vi.advanceTimersByTime(1);
+    typer.dispose();
+    vi.useRealTimers();
+    return { picked, pickedAt, typedAt, left: left as { at: number; shown: { line: string; n: number } } | null };
+  }
+
+  for (const name of ['Brookhaven 🏡RP', '[SKY ASSASSIN] Jujutsu Shenanigans', '[🎃] Adopt Me!', 'x'.repeat(300)]) {
+    it(`leaves only after "${name.slice(0, 40)}" is fully typed and read`, () => {
+      const r = run({ reduced: false, name });
+      expect(r.left).not.toBeNull();
+      expect(r.left!.shown).toEqual({ line: r.picked, n: Array.from(r.picked).length });
+      expect(r.typedAt).toBeGreaterThanOrEqual(r.pickedAt + typingMs(r.picked));
+      expect(r.left!.at - r.typedAt).toBeGreaterThanOrEqual(PICK_READ_MS);
+      // Left on the line, not on the backstop.
+      expect(r.left!.at).toBeLessThan(PICK_HANDOFF_MAX_MS);
+    });
+  }
+
+  it('waits out a line that was still typing when the card was tapped', () => {
+    const before = "Can't find that one. Try pasting the game's link?";
+    const r = run({ reduced: false, before, beforeMs: 50, name: 'Brookhaven 🏡RP' });
+    expect(r.left!.shown).toEqual({ line: r.picked, n: Array.from(r.picked).length });
+    expect(r.typedAt).toBeGreaterThanOrEqual(typingMs(before) + HOLD_MS + typingMs(r.picked));
+    expect(r.left!.at - r.typedAt).toBeGreaterThanOrEqual(PICK_READ_MS);
+  });
+
+  it('reduced motion: the line is whole at once, then a short read beat', () => {
+    const r = run({ reduced: true, name: 'Brookhaven 🏡RP' });
+    expect(r.left!.shown.n).toBe(Array.from(r.picked).length);
+    expect(r.left!.at - r.typedAt).toBe(PICK_READ_MS);
+  });
+
+  it('the backstop sits above the slowest possible pick line', () => {
+    // Worst case: the longest pick line, queued behind the longest other line.
+    const lines = [
+      'What are we playing?',
+      'Hmm, let me look...',
+      'Roblox search is busy. Any of these?',
+      "Can't find that one. Try pasting the game's link?",
+      "I can't reach Roblox right now. We can just skip this!",
+      "I can't load games right now. Paste a link or just skip!",
+    ];
+    const longestOther = Math.max(...lines.map(typingMs));
+    const longestPick = typingMs(moodLine({ kind: 'picked', name: 'W'.repeat(32) }, en, 'Roblox'));
+    expect(longestOther + HOLD_MS + longestPick + PICK_READ_MS).toBeLessThan(PICK_HANDOFF_MAX_MS);
   });
 });

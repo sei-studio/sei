@@ -184,6 +184,9 @@ export const ZH_GAMES: Record<string, string> = {
   "I can't reach {game} right now. We can just skip this!": '现在连不上 {game}。直接跳过也可以！',
   "I can't load games right now. Paste a link or just skip!": '现在加载不了游戏。粘贴链接，或者直接跳过吧！',
   "Ooh, {game}! Let's go.": '哦，{game}！出发吧。',
+  // {game} already ends in its own ! or ? ("Adopt Me!"), so no second one.
+  "Ooh, {game} Let's go.": '哦，{game} 出发吧。',
+  "Ooh, nice pick! Let's go.": '哦，选得好！出发吧。',
   'Search or paste a link': '搜索或粘贴链接',
   'Search {game} games or paste a link': '搜索 {game} 游戏或粘贴链接',
   'Skip': '跳过',

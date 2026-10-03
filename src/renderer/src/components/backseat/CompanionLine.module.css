@@ -33,7 +33,10 @@
   position: relative;
   margin: 0;
   min-width: 0;
-  max-width: 460px;
+  /* Wide enough that every line of the pick step fits on one row (so the
+     search pill and grid below never shift when the line changes); a longer
+     line wraps, balanced so it never leaves one word alone. */
+  max-width: 560px;
   padding: 10px 18px 11px;
   border-radius: 18px;
   border-bottom-left-radius: 4px;
@@ -42,11 +45,14 @@
   font-family: 'Architects Daughter', 'Comic Sans MS', cursive;
   font-size: 20px;
   line-height: 1.35;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
   box-shadow: 0 6px 22px rgba(0, 0, 0, 0.28);
   animation: pop 320ms var(--ease-pop) both;
 }
 
 .stack .bubble {
+  max-width: 460px;
   border-bottom-left-radius: 18px;
 }
 
@@ -58,15 +64,15 @@
   box-shadow: 0 4px 14px rgba(34, 60, 110, 0.12);
 }
 
-/* The invisible full line reserves the bubble's final size; the typed copy
-   is laid over it. */
-.sizer {
-  visibility: hidden;
+/* Stacked on the call screen, the share area is already that sky tint, so
+   the bubble goes back to white to stand off it. */
+:root[data-scheme='light'] .stack .bubble {
+  background: var(--surface-2);
 }
 
-.typed {
-  position: absolute;
-  inset: 10px 18px 11px;
+/* The part of the line not typed yet: laid out, not shown. */
+.untyped {
+  visibility: hidden;
 }
 
 .srOnly {
