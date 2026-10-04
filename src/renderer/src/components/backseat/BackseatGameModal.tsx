@@ -8,24 +8,22 @@
  *      into a screen share, and a player who clicked "Roblox" expecting the
  *      companion to join their game needs to be told that first. Either
  *      button retires it.
- *   2. PICK, when the game has a lookup provider: "what are we playing?",
- *      asked by the companion. Entirely optional (skip). What was picked
- *      crosses to main as ids only; main fetches the details itself and puts
- *      them in the prompt.
+ *   2. PICK, when the game has a lookup provider: which game you are about
+ *      to play. Entirely optional (skip). What was picked crosses to main as
+ *      ids only; main fetches the details itself and puts them in the prompt.
  *
  * Then it hands over to ShareScreenModal with the selection. For a game with
  * `autoShare` that is not a picker any more (261004): it checks Screen
  * Recording, then starts the call and WAITS for the game's window, capturing
  * it on its own (useBackseatStore.startWatch).
  *
- * 261004 redesign of PICK (Shawn: "too much text and corporate, not
- * immersive"). The companion asks in their own voice (CompanionLine), the
- * games are a grid of big 16:9 screenshots, and tapping one picks it and moves
- * straight on: no Continue button, no description card. The companion reacts
- * to the pick, and the modal leaves only once that line has fully typed and
- * been up for a beat (createPickHandoff), which is the transition into the
- * call. Every state (searching, no results, offline, bad link) is the
- * companion's line rather than a grey sentence.
+ * PICK (261004 redesign, Shawn: "too much text and corporate"; then 261004
+ * again: "remove the profile pic and message line, just put play Roblox").
+ * A plain "Play Roblox" title, a search pill, and the games as a grid of big
+ * 16:9 screenshots. Tapping one picks it: the card lights up for a beat and
+ * the step moves straight on, with no Continue button and no description.
+ * No results, a bad link and being offline are one plain line in the grid
+ * area; search results need no header.
  *
  * Search is run on Enter only, never per keystroke: Roblox's search endpoint
  * allows about one request a minute per address, so as-you-type search would
@@ -41,7 +39,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { sei } from '../../lib/ipcClient';
 import { useUiStore } from '../../lib/stores/useUiStore';
-import { useDataStore } from '../../lib/stores/useDataStore';
 import { useBackseatStore } from '../../lib/stores/useBackseatStore';
 import { backseatGameIntroSeen, markBackseatGameIntroSeen } from '../../lib/backseatGamePref';
 import {
@@ -56,8 +53,8 @@ import { ModalShell, ModalFooter } from '../ModalShell';
 import { Button } from '../Button';
 import { CloseIcon, SearchIcon } from '../icons';
 import { useT } from '../../lib/i18n';
-import { CompanionLine, prefersReducedMotion } from './CompanionLine';
-import { cleanGameTitle, endsWithPunctuation, spokenGameName } from './gameTitle';
+import { prefersReducedMotion } from './CompanionLine';
+import { cleanGameTitle } from './gameTitle';
 import styles from './BackseatGameModal.module.css';
 
 export interface BackseatGameModalProps {
@@ -67,49 +64,18 @@ export interface BackseatGameModalProps {
 
 type Step = 'intro' | 'pick';
 
-/** After the pick line has fully typed, it stays up this long before the
- *  step leaves, so it is read whole (also the beat with reduced motion, where
- *  the line appears at once). */
-export const PICK_READ_MS = 600;
+/** How long the tapped card stays highlighted before the step leaves. */
+export const PICK_HIGHLIGHT_MS = 400;
+/** The same beat with reduced motion: no lift, so only the ring needs seeing. */
+export const PICK_HIGHLIGHT_REDUCED_MS = 150;
 /** The panel's fade-out (.leaving) before the share step takes over. */
 const LEAVE_MS = 180;
-/** Backstop: the step leaves by now even if the line never reports typed (a
- *  throttled background window). Far above the longest pick line, which
- *  spokenGameName bounds; a test pins that. */
-export const PICK_HANDOFF_MAX_MS = 4000;
 
-/**
- * The pick hand-over: leave once `line` is fully on screen (CompanionLine's
- * onTyped) plus PICK_READ_MS, never before; PICK_HANDOFF_MAX_MS at the latest.
- */
-export function createPickHandoff(
-  line: string,
-  onLeave: () => void,
-): { typed: (l: string) => void; cancel: () => void } {
-  let read: ReturnType<typeof setTimeout> | null = null;
-  let gone = false;
-  const leave = (): void => {
-    if (gone) return;
-    gone = true;
-    cancel();
-    onLeave();
-  };
-  const cap = setTimeout(leave, PICK_HANDOFF_MAX_MS);
-  function cancel(): void {
-    clearTimeout(cap);
-    if (read) clearTimeout(read);
-    read = null;
-  }
-  return {
-    typed: (l) => {
-      if (gone || read || l !== line) return;
-      read = setTimeout(leave, PICK_READ_MS);
-    },
-    cancel: () => {
-      gone = true;
-      cancel();
-    },
-  };
+/** From the tap to the hand-over: the highlight, then the panel's fade. */
+export function pickHandoffMs(reduced: boolean): { highlight: number; leave: number } {
+  return reduced
+    ? { highlight: PICK_HIGHLIGHT_REDUCED_MS, leave: 0 }
+    : { highlight: PICK_HIGHLIGHT_MS, leave: LEAVE_MS };
 }
 
 export function BackseatGameModal({
@@ -120,8 +86,6 @@ export function BackseatGameModal({
   const def = backseatGame(gameId);
   const closeModal = useUiStore((s) => s.closeModal);
   const openModal = useUiStore((s) => s.openModal);
-  const character = useDataStore((s) => s.characters.find((c) => c.id === characterId)) ?? null;
-  const companionName = character?.name ?? t('Your companion');
 
   const [step, setStep] = useState<Step>(() =>
     backseatGameIntroSeen(gameId) ? 'pick' : 'intro',
@@ -189,37 +153,28 @@ export function BackseatGameModal({
   return (
     <PickStep
       gameId={def.id}
-      gameName={def.name}
-      character={character}
-      companionName={companionName}
+      gameName={t(def.name)}
       onClose={closeModal}
       onDone={(picked, source) => void proceed(picked, source)}
     />
   );
 }
 
-/** What the companion is saying, which is also the step's whole state line. */
-export type Mood =
-  | { kind: 'ask' }
-  | { kind: 'searching' }
-  | { kind: 'results'; fallback: boolean }
+/** What the grid area says instead of cards. null = show the cards. */
+export type Notice =
   | { kind: 'none' }
   | { kind: 'error'; code: 'bad_link' | 'not_found' | 'network' }
-  | { kind: 'offline' }
-  | { kind: 'picked'; name: string };
+  | { kind: 'offline' };
 
 export function PickStep({
   gameId,
   gameName,
-  character,
-  companionName,
   onClose,
   onDone,
 }: {
   gameId: string;
+  /** The game's display name, already translated. */
   gameName: string;
-  character: { id: string; name: string; portrait_image?: string | null } | null;
-  companionName: string;
   onClose: () => void;
   onDone: (picked: BackseatGameInfo | null, source: BackseatGameSource) => void;
 }): React.ReactElement {
@@ -228,20 +183,13 @@ export function PickStep({
   const [busy, setBusy] = useState(false);
   const [popular, setPopular] = useState<BackseatGameInfo[] | null>(null);
   const [results, setResults] = useState<BackseatGameInfo[] | null>(null);
-  const [mood, setMood] = useState<Mood>({ kind: 'ask' });
+  const [notice, setNotice] = useState<Notice | null>(null);
   const [picked, setPicked] = useState<number | null>(null);
   const [leaving, setLeaving] = useState(false);
   // The latest request wins: a slow search must not overwrite a newer one.
   const seq = useRef(0);
-  const handoff = useRef<ReturnType<typeof createPickHandoff> | null>(null);
-  const doneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      handoff.current?.cancel();
-      if (doneTimer.current) clearTimeout(doneTimer.current);
-    },
-    [],
-  );
+  const timers = useRef<Array<ReturnType<typeof setTimeout>>>([]);
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
   useEffect(() => {
     let alive = true;
@@ -250,11 +198,11 @@ export function PickStep({
         const list = await sei.backseatGamePopular(gameId);
         if (!alive) return;
         setPopular(list);
-        if (list.length === 0) setMood((m) => (m.kind === 'ask' ? { kind: 'offline' } : m));
+        if (list.length === 0) setNotice((n) => n ?? { kind: 'offline' });
       } catch {
         if (!alive) return;
         setPopular([]);
-        setMood((m) => (m.kind === 'ask' ? { kind: 'offline' } : m));
+        setNotice((n) => n ?? { kind: 'offline' });
       }
     })();
     return () => {
@@ -262,22 +210,23 @@ export function PickStep({
     };
   }, [gameId]);
 
-  /** Pick a game: the companion reacts, and once that line has fully typed
-   *  and been up for a beat, the step hands over (createPickHandoff). */
+  /** Pick a game: its card lights up for a beat, then the step hands over. */
   const pick = (game: BackseatGameInfo, source: BackseatGameSource): void => {
     if (picked !== null) return;
     seq.current += 1; // a search still in flight must not land over the pick
-    const pickedMood: Mood = { kind: 'picked', name: game.name };
     setPicked(game.universeId);
     setBusy(false);
-    setMood(pickedMood);
+    setNotice(null);
     // Warm main's details cache for the session prompt; it looks the game up
     // itself at start either way, so a failure here changes nothing.
     void sei.backseatGameDetails(gameId, game.universeId).catch(() => null);
-    handoff.current = createPickHandoff(moodLine(pickedMood, t, gameName), () => {
-      setLeaving(true);
-      doneTimer.current = setTimeout(() => onDone(game, source), prefersReducedMotion() ? 0 : LEAVE_MS);
-    });
+    const ms = pickHandoffMs(prefersReducedMotion());
+    timers.current.push(
+      setTimeout(() => {
+        setLeaving(true);
+        timers.current.push(setTimeout(() => onDone(game, source), ms.leave));
+      }, ms.highlight),
+    );
   };
 
   const submit = async (raw?: string): Promise<void> => {
@@ -285,7 +234,6 @@ export function PickStep({
     if (!input || picked !== null) return;
     const id = ++seq.current;
     setBusy(true);
-    setMood({ kind: 'searching' });
     let res: BackseatGameResolveResult;
     try {
       res = await sei.backseatGameResolve(gameId, input);
@@ -301,7 +249,7 @@ export function PickStep({
       return;
     }
     if (out.results !== undefined) setResults(out.results);
-    setMood(out.mood);
+    setNotice(out.notice);
   };
 
   const clear = (): void => {
@@ -309,33 +257,21 @@ export function PickStep({
     setQuery('');
     setBusy(false);
     setResults(null);
-    setMood(popular && popular.length === 0 ? { kind: 'offline' } : { kind: 'ask' });
+    setNotice(popular && popular.length === 0 ? { kind: 'offline' } : null);
   };
-
-  const line = moodLine(mood, t, gameName);
 
   const list = results ?? popular;
   const fromResults = results !== null;
+  const message = notice ? noticeLine(notice, t, gameName) : null;
 
   return (
     <ModalShell
-      title={null}
+      title={t('Play {game}', { game: gameName })}
       width={760}
       scrimClose
       onClose={onClose}
       panelClassName={`${styles.panel} ${leaving ? styles.leaving : ''}`}
-      aria-label={t('What are we playing?')}
     >
-      <div className={styles.head}>
-        <CompanionLine
-          character={character}
-          name={companionName}
-          line={line}
-          size={60}
-          onTyped={(l) => handoff.current?.typed(l)}
-        />
-      </div>
-
       <form
         className={styles.pill}
         role="search"
@@ -377,24 +313,34 @@ export function PickStep({
         ) : null}
       </form>
 
-      <div className={`${styles.grid} ${busy ? styles.gridBusy : ''}`} aria-busy={list === null || busy}>
-        {list === null
-          ? Array.from({ length: 8 }, (_, i) => <span key={i} className={styles.skeleton} />)
-          : list.length === 0
-            ? // Nothing to show (offline): an empty shelf keeps the step's
-              // shape, and the companion's line says what to do instead.
+      <div className={`${styles.gridWrap} ${busy ? styles.gridBusy : ''}`}>
+        <div
+          className={styles.grid}
+          aria-busy={(list === null && !message) || busy}
+        >
+          {message
+            ? // Nothing to tap: empty slots keep the step's shape, and the
+              // line over them says why.
               Array.from({ length: 8 }, (_, i) => (
-                <span key={i} className={styles.ghost} aria-hidden="true" />
+                <span key={i} className={styles.slot} aria-hidden="true" />
               ))
-            : list.map((g, i) => (
-              <GameCard
-                key={g.universeId}
-                game={g}
-                index={i}
-                state={picked === null ? 'idle' : picked === g.universeId ? 'picked' : 'dimmed'}
-                onPick={() => pick(g, fromResults ? 'search' : 'popular')}
-              />
-            ))}
+            : list === null || list.length === 0
+              ? Array.from({ length: 8 }, (_, i) => <span key={i} className={styles.skeleton} />)
+              : list.map((g, i) => (
+                <GameCard
+                  key={g.universeId}
+                  game={g}
+                  index={i}
+                  state={picked === null ? 'idle' : picked === g.universeId ? 'picked' : 'dimmed'}
+                  onPick={() => pick(g, fromResults ? 'search' : 'popular')}
+                />
+              ))}
+        </div>
+        {message ? (
+          <p className={styles.notice} role="status">
+            {message}
+          </p>
+        ) : null}
       </div>
 
       <div className={styles.foot}>
@@ -413,55 +359,38 @@ export function PickStep({
 
 /**
  * What a search or link lookup does to the step. A resolved link is a pick.
- * An error keeps whatever cards were showing. No results also keeps the
- * popular games up (results: null), so there is still something to tap while
- * the companion suggests pasting a link.
+ * Results replace the cards. No results and errors put a line in the grid
+ * area (clearing the search brings the popular games back).
  */
 export function resolveOutcome(res: BackseatGameResolveResult): {
   pick?: BackseatGameInfo;
   /** undefined = leave the cards as they are. */
   results?: BackseatGameInfo[] | null;
-  mood: Mood;
+  notice: Notice | null;
 } {
-  if (res.kind === 'game') return { pick: res.game, mood: { kind: 'picked', name: res.game.name } };
-  if (res.kind === 'error') return { mood: { kind: 'error', code: res.code } };
-  if (res.results.length === 0) return { results: null, mood: { kind: 'none' } };
-  return { results: res.results, mood: { kind: 'results', fallback: !!res.fallback } };
+  if (res.kind === 'game') return { pick: res.game, notice: null };
+  if (res.kind === 'error') return { notice: { kind: 'error', code: res.code } };
+  if (res.results.length === 0) return { results: null, notice: { kind: 'none' } };
+  return { results: res.results, notice: null };
 }
 
-/** The companion's line for a mood. Short, in their voice, no em dashes. */
-export function moodLine(
-  mood: Mood,
+/** The grid area's line when there are no cards. Short and plain. */
+export function noticeLine(
+  notice: Notice,
   t: (en: string, params?: Record<string, string | number>) => string,
   gameName: string,
 ): string {
-  switch (mood.kind) {
-    case 'ask':
-      return t('What are we playing?');
-    case 'searching':
-      return t('Hmm, let me look...');
-    case 'results':
-      return mood.fallback
-        ? t('{game} search is busy. Any of these?', { game: gameName })
-        : t('Any of these?');
+  switch (notice.kind) {
     case 'none':
-      return t("Can't find that one. Try pasting the game's link?");
+      return t("No games found. Try pasting the game's link.");
     case 'error':
-      return mood.code === 'bad_link'
+      return notice.code === 'bad_link'
         ? t("That's not a {game} game link.", { game: gameName })
-        : mood.code === 'not_found'
-          ? t("Hmm, that game doesn't seem to exist.")
-          : t("I can't reach {game} right now. We can just skip this!", { game: gameName });
+        : notice.code === 'not_found'
+          ? t("Couldn't find that game.")
+          : t("Can't reach {game} right now.", { game: gameName });
     case 'offline':
-      return t("I can't load games right now. Paste a link or just skip!");
-    case 'picked': {
-      // Said the way a person would: no store tags or emoji, never "!!".
-      const game = spokenGameName(mood.name);
-      if (game === null) return t("Ooh, nice pick! Let's go.");
-      return endsWithPunctuation(game)
-        ? t("Ooh, {game} Let's go.", { game })
-        : t("Ooh, {game}! Let's go.", { game });
-    }
+      return t("Can't reach {game} right now.", { game: gameName });
   }
 }
 

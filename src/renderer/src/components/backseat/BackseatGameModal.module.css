@@ -30,12 +30,13 @@
 }
 
 /* ── Pick (261004) ─────────────────────────────────────────────────────────
- * The companion asks, a pill takes a name or a link, and the games are big
- * 16:9 cards: tap one and you are in. Cards follow the games picker's tiles
- * (sharp, borderless, full-bleed art under a bottom scrim, white name). */
+ * The shell's own title ("Play Roblox"), a pill that takes a name or a link,
+ * and the games as big 16:9 cards: tap one and you are in. Cards follow the
+ * games picker's tiles (sharp, borderless, full-bleed art under a bottom
+ * scrim, white name). */
 
 .panel {
-  /* The grid scrolls; the head, pill and skip stay put. */
+  /* The grid scrolls; the title, pill and skip stay put. */
   overflow: hidden;
   padding: 22px 22px 14px;
   gap: 14px;
@@ -45,12 +46,6 @@
 .leaving {
   opacity: 0;
   transform: translateY(-6px) scale(0.985);
-}
-
-.head {
-  display: flex;
-  align-items: center;
-  min-height: 64px;
 }
 
 /* ── Search pill ── */
@@ -129,6 +124,16 @@
 
 /* ── Grid ── */
 
+/* The grid plus the line laid over it when there are no cards. */
+.gridWrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  transition: opacity 160ms var(--ease);
+}
+
 .grid {
   flex: 1 1 auto;
   min-height: 0;
@@ -142,7 +147,6 @@
      clip. The negative margin keeps the cards flush with the pill. */
   padding: 10px 8px 8px;
   margin: -10px -8px 0;
-  transition: opacity 160ms var(--ease);
 }
 
 .gridBusy {
@@ -161,10 +165,28 @@
   animation: shimmer 1.3s ease-in-out infinite;
 }
 
-.ghost {
+/* An empty card slot: holds the grid's shape (so the panel keeps its size)
+   while the notice says why there are no cards. Drawn as nothing, so the
+   line sits in clean space rather than across card edges. */
+.slot {
   aspect-ratio: 16 / 9;
-  background: var(--surface-2);
-  opacity: 0.45;
+}
+
+/* No results, a bad link, offline: one plain line centered in the empty
+   grid area, in the app's empty-state register (muted 14px). */
+.notice {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0 24px;
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.4;
+  text-align: center;
+  color: var(--muted);
 }
 
 @keyframes shimmer {

@@ -1,9 +1,8 @@
 /**
  * CompanionLine (261004): the companion saying one short line, with their
- * portrait beside a speech bubble. It fronts the backseat game flow (the
- * Roblox "what are we playing?" step and the "hop in, i'll be watching" wait
- * on the call), so those screens read as the companion talking to you rather
- * than as a form.
+ * portrait and a speech bubble. It fronts the "hop in, i'll be watching"
+ * wait on the call (ShareWaiting), so that screen reads as the companion
+ * talking to you rather than as a form.
  *
  * The bubble borrows the tutorial's speech bubble and the handwritten face the
  * onboarding reserves for a companion's own words. Each new line types itself

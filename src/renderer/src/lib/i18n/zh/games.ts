@@ -173,24 +173,15 @@ export const ZH_GAMES: Record<string, string> = {
     '玩任意 Roblox 游戏，{name}会通过语音通话看着你的屏幕陪你聊天。',
   'Roblox is available via Backseat: your companion can watch you play through your screen.':
     'Roblox 通过 Backseat 支持：你的伙伴可以通过屏幕共享看你玩。',
-  // The pick step, redesigned 261004: the companion asks, the cards answer.
-  'What are we playing?': '我们玩什么？',
-  'Hmm, let me look...': '嗯，我找找看…',
-  '{game} search is busy. Any of these?': '{game} 搜索有点忙。是这些里的吗？',
-  'Any of these?': '是这些里的吗？',
-  "Can't find that one. Try pasting the game's link?": '没找到这个。试试粘贴游戏链接？',
-  "That's not a {game} game link.": '这不是 {game} 游戏链接哦。',
-  "Hmm, that game doesn't seem to exist.": '嗯，这个游戏好像不存在。',
-  "I can't reach {game} right now. We can just skip this!": '现在连不上 {game}。直接跳过也可以！',
-  "I can't load games right now. Paste a link or just skip!": '现在加载不了游戏。粘贴链接，或者直接跳过吧！',
-  "Ooh, {game}! Let's go.": '哦，{game}！出发吧。',
-  // {game} already ends in its own ! or ? ("Adopt Me!"), so no second one.
-  "Ooh, {game} Let's go.": '哦，{game} 出发吧。',
-  "Ooh, nice pick! Let's go.": '哦，选得好！出发吧。',
+  // The pick step (261004): a plain title, the cards, one line when there are none.
+  'Play {game}': '玩 {game}',
+  "No games found. Try pasting the game's link.": '没有找到游戏。试试粘贴游戏链接。',
+  "That's not a {game} game link.": '这不是 {game} 游戏链接。',
+  "Couldn't find that game.": '找不到这个游戏。',
+  "Can't reach {game} right now.": '现在连不上 {game}。',
   'Search or paste a link': '搜索或粘贴链接',
   'Search {game} games or paste a link': '搜索 {game} 游戏或粘贴链接',
   'Skip': '跳过',
-  'by {creator}': '作者：{creator}',
   '{count} playing': '{count} 人在玩',
   // The auto-share wait on the call (261004, ShareWaiting).
   "Hop in, I'll be watching!": '进游戏吧，我看着呢！',

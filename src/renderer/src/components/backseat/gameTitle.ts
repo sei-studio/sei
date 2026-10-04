@@ -1,11 +1,10 @@
 /**
- * Roblox game titles as people would say them (261004).
+ * Roblox game titles, cleaned for display (261004).
  *
  * Roblox titles carry marketing tags: "[🎃] Adopt Me!", "[SKY ASSASSIN]
  * Jujutsu Shenanigans", "Brookhaven 🏡RP", "🎃 Dandy's World [ALPHA]". Those
- * are fine on the store page and wrong in the companion's mouth ("Ooh,
- * [🎃] Adopt Me!! Let's go."). This cleans the DATA title for display; it
- * never touches anything the model says.
+ * are fine on the store page and noise on a card caption. This cleans the
+ * DATA title for display; it never touches anything the model says.
  */
 
 /** Emoji and their glue (ZWJ, variation selectors, skin tones, flags). */
@@ -37,26 +36,4 @@ export function cleanGameTitle(raw: string): string {
   }
   s = s.replace(EDGE_SEP, '').replace(/\s+/gu, ' ').trim();
   return /[\p{L}\p{N}]/u.test(s) ? s : raw.trim();
-}
-
-/** Longest name the companion says in a line, in characters. */
-export const SPOKEN_NAME_MAX = 32;
-
-/**
- * The name for the companion's spoken line, or null when even the cleaned
- * title is too long to say naturally (the line then skips the name). A long
- * title with a subtitle is cut to its main part: "Ninja Legends 2: Rebirth"
- * would be said as "Ninja Legends 2".
- */
-export function spokenGameName(raw: string): string | null {
-  const clean = cleanGameTitle(raw);
-  if (Array.from(clean).length <= SPOKEN_NAME_MAX) return clean;
-  const main = clean.split(/\s*(?::|\s[-–—|]\s)\s*/u)[0]?.trim() ?? '';
-  const len = Array.from(main).length;
-  return len >= 3 && len <= SPOKEN_NAME_MAX ? main : null;
-}
-
-/** True when the name already ends a sentence ("Adopt Me!"). */
-export function endsWithPunctuation(name: string): boolean {
-  return /[!?.！？。…]$/u.test(name);
 }

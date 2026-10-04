@@ -2,9 +2,8 @@
  * LineTyper (261004): types a companion line out, one character at a time,
  * and never cuts a line off.
  *
- * Shawn caught the pick step leaving on "Ooh, Brookhaven 🏡RP! Le": the
- * hand-over ran on a fixed beat that was shorter than the line. So the rules
- * here are:
+ * Shawn caught a line cut off mid-word ("Ooh, Brookhaven 🏡RP! Le") when a
+ * screen left on a fixed beat shorter than the line. So the rules here are:
  *
  *   - A line that is still typing is never replaced. A newer line waits until
  *     it has finished, then stays up for HOLD_MS so it can be read, and only
@@ -13,7 +12,7 @@
  *   - Progress is measured in elapsed time, not in timer ticks, so a busy
  *     frame does not stretch the line and its end is predictable.
  *   - `onTyped(line)` fires when a line is fully on screen. Anything that
- *     leaves after a line (the pick hand-over) waits for that.
+ *     leaves after a line waits for that.
  *
  * Framework-free so it can be tested without a DOM; CompanionLine wraps it.
  */
