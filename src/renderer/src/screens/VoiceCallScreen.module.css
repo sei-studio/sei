@@ -548,6 +548,16 @@
   display: block;
 }
 
+/* 261004: the same box while an auto-share waits for its game's window. Not
+   a letterboxed picture yet, so it takes the theme's surface and a dashed
+   edge: the place where the game will appear. */
+.shareWaiting {
+  background:
+    radial-gradient(ellipse at 50% 40%, var(--accent-soft), transparent 65%),
+    var(--surface);
+  border-style: dashed;
+}
+
 /* What is being shared, over the top-left corner of the picture. */
 .shareLabel {
   position: absolute;

@@ -1,0 +1,89 @@
+/* ShareWaiting (261004): the share area while the game's window is awaited.
+ * Sits inside VoiceCallScreen's .share box, centered. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: var(--space-lg);
+  max-width: 520px;
+  text-align: center;
+  animation: fade-up 320ms var(--ease-pop) both;
+}
+
+.status {
+  margin: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+.dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 4px;
+}
+
+.dots span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: seiDot 1100ms ease-in-out infinite;
+}
+
+.dots span:nth-child(2) {
+  animation-delay: 160ms;
+}
+
+.dots span:nth-child(3) {
+  animation-delay: 320ms;
+}
+
+.error {
+  margin: 0;
+  max-width: 380px;
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-md);
+}
+
+.link {
+  border: none;
+  background: transparent;
+  padding: 4px 8px;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 120ms var(--ease);
+}
+
+.link:hover,
+.link:focus-visible {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root,
+  .dots span {
+    animation: none;
+  }
+}

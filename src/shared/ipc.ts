@@ -2101,8 +2101,10 @@ export interface RendererApi {
   // --- Backseat (260728) --- see src/shared/backseatIpc.ts for the tick
   // model, the image-grid geometry and the authority split. The renderer owns
   // capture; every model call happens in main.
-  /** Shareable windows and screens for the source picker. */
-  backseatSources(): Promise<BackseatSource[]>;
+  /** Shareable windows and screens for the source picker. `thumbnails:
+   *  false` (261004) skips the bitmaps, for the auto-share watch, which only
+   *  needs the titles and asks every few seconds. */
+  backseatSources(opts?: { thumbnails?: boolean }): Promise<BackseatSource[]>;
   /** Begin watching. Rejects with BACKSEAT_ERR_MC_ACTIVE while summoned.
    *  `game` (260929): set when the share came from a backseat game tile;
    *  main looks the game up itself and adds it to the prompt. */

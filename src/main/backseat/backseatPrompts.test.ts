@@ -229,6 +229,19 @@ describe('renderBackseatGameBlock', () => {
     expect(block).not.toContain('LOOKING THINGS UP');
   });
 
+  it('opens with a baseline that makes other players, chat and respawns ordinary', () => {
+    const block = renderBackseatGameBlock(def, null, { canSearch: false });
+    expect(block).toMatch(/other avatars you see are almost always other real players/);
+    expect(block).toMatch(/do not point them out as if they were unusual/);
+    expect(block).toMatch(/usually NPCs/);
+    expect(block).toMatch(/middle of the screen with the camera behind it/);
+    expect(block).toMatch(/never addressed to you/);
+    expect(block).toMatch(/respawns at a spawn point/);
+    // The safety rules stay in the baseline.
+    expect(block).toMatch(/Never push them to spend Robux/);
+    expect(block).toMatch(/tell them it is a scam/);
+  });
+
   it('keeps creator text from closing the fence or opening a tag', () => {
     const block = renderBackseatGameBlock(
       def,

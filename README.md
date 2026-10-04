@@ -47,7 +47,7 @@ Sei ([sei.gg](https://sei.gg)) is a desktop app for macOS and Windows. You pick 
 - **Don't Starve Together:** your companion joins the world you host as a survivor it picks itself. It gathers, builds, keeps the fire going, fights, and warns you about danger.
 - **Chess:** play a game against your companion. Its strength comes from a chess engine and adapts to how you play. It talks while you play.
 - **Draw!:** take turns sketching and guessing with your companion.
-- **Roblox:** coming soon.
+- **Roblox (Backseat):** your companion watches your screen while you play. Tell it which Roblox game you are in and it knows a bit about it, comments as you go, and looks things up when you ask. It does not play inside Roblox.
 
 **Everywhere**
 

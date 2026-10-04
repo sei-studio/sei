@@ -32,6 +32,13 @@
  * anything, and when access is off it shows ScreenAccessGate in its place
  * (why, Open Settings, a poll that comes back here on its own, and a restart
  * offer). Windows lists straight away, as before.
+ *
+ * 261004: AUTO-SHARE. For a backseat game with `autoShare` (Roblox) there is
+ * no picker at all: once Screen Recording is fine, this hands the call an
+ * auto-share watch (useBackseatStore) that waits for the game's window and
+ * shares it by itself, and closes. The call view shows the waiting card. Its
+ * "share something else" reopens this with `manual`, which is the picker as
+ * it always was.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -67,6 +74,9 @@ export interface ShareScreenModalProps {
   game?: BackseatGameSelection;
   /** Screenshot harness only: open on the Screen Recording step. */
   initialAccess?: 'blocked-ask' | 'blocked-waiting' | 'blocked-restart';
+  /** 261004: show the picker even for an auto-share game ("share something
+   *  else"). */
+  manual?: boolean;
 }
 
 /** While a game's window is not open yet, how often the picker looks again,
@@ -78,7 +88,8 @@ export function ShareScreenModal({
   characterId,
   game,
   initialAccess,
-}: ShareScreenModalProps): React.ReactElement {
+  manual,
+}: ShareScreenModalProps): React.ReactElement | null {
   const t = useT();
   const closeModal = useUiStore((s) => s.closeModal);
   const navigate = useUiStore((s) => s.navigate);
@@ -107,6 +118,7 @@ export function ShareScreenModal({
   const [selected, setSelected] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const gameDef = backseatGame(game?.gameId);
+  const auto = !!(game && gameDef?.autoShare && !manual);
   // Once the player picks something themselves the hint never overrides it.
   const userPicked = useRef(false);
   const [hintFound, setHintFound] = useState(false);
@@ -163,8 +175,18 @@ export function ShareScreenModal({
     };
   }, [initialAccess]);
 
+  // Auto-share: with access settled there is nothing to pick. Hand the call a
+  // watch for the game's window (armed for later when there is no call yet,
+  // the same way a picked share is) and get out of the way.
   useEffect(() => {
-    if (access !== 'ready') return;
+    if (!auto || !game || access !== 'ready') return;
+    handOffAutoShare(characterId, game, onCall);
+    // Runs once, when access settles; the props never change for a mounted modal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [access]);
+
+  useEffect(() => {
+    if (access !== 'ready' || auto) return;
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const openedAt = Date.now();
@@ -252,6 +274,9 @@ export function ShareScreenModal({
     setTab(next);
     setSelected(null);
   };
+
+  // Auto-share shows nothing of its own unless Screen Recording needs asking.
+  if (auto && access !== 'blocked') return null;
 
   if (access === 'blocked') {
     return (
@@ -382,6 +407,33 @@ export function ShareScreenModal({
       </ModalFooter>
     </ModalShell>
   );
+}
+
+/**
+ * The auto-share hand-off (261004): close the picker and give the call a watch
+ * for the game's window. With no call yet the watch is armed like any cold
+ * share (a pending share with no source) and the player is taken to the call;
+ * on a call it starts now, and the player is taken to the call view unless
+ * they are on a game surface, by the same rule a picked share follows.
+ */
+export function handOffAutoShare(
+  characterId: string,
+  game: BackseatGameSelection,
+  onCall: boolean,
+): void {
+  const ui = useUiStore.getState();
+  ui.closeModal();
+  const bs = useBackseatStore.getState();
+  if (!onCall) {
+    bs.armPendingShare(characterId, null, game);
+    ui.navigate({ kind: 'voice-call', characterId });
+    return;
+  }
+  bs.startWatch(characterId, game);
+  const now = useUiStore.getState();
+  if (now.view.kind !== 'voice-call' && !isGameSurfaceOpen(characterId)) {
+    now.navigate({ kind: 'voice-call', characterId });
+  }
 }
 
 function SourceTile({

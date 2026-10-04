@@ -190,7 +190,8 @@ const api: RendererApi = {
   permissionsRelaunch: (resume) => ipcRenderer.invoke(IpcChannel.permissions.relaunch, resume),
 
   // Backseat (260728) — see src/shared/backseatIpc.ts.
-  backseatSources: () => ipcRenderer.invoke(IpcChannel.backseat.sources),
+  backseatSources: (opts?: { thumbnails?: boolean }) =>
+    ipcRenderer.invoke(IpcChannel.backseat.sources, opts),
   backseatStart: (characterId, sourceId, sourceName, mode, game) =>
     ipcRenderer.invoke(IpcChannel.backseat.start, {
       characterId,

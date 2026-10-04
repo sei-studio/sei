@@ -10,6 +10,8 @@
  *                      {"universeId": n} (null for a place that does not exist)
  *   details            games.roblox.com/v1/games?universeIds=a,b
  *   icons              thumbnails.roblox.com/v1/games/icons?universeIds=a,b&size=150x150
+ *   thumbnails         thumbnails.roblox.com/v1/games/multiget/thumbnails?universeIds=a,b
+ *                      (16:9 screenshots, 480x270 webp; the pick step's card art)
  *   popular            apis.roblox.com/explore-api/v1/get-sorts  (120 req/min;
  *                      the "top-playing-now" sort is the live popular list)
  *   search             apis.roblox.com/search-api/omni-search?searchQuery=..
@@ -44,6 +46,9 @@ export const ROBLOX_ENDPOINTS = {
   icons: (ids: number[]) =>
     `https://thumbnails.roblox.com/v1/games/icons?universeIds=${ids.join(',')}` +
     '&returnPolicy=PlaceHolder&size=150x150&format=Png&isCircular=false',
+  thumbnails: (ids: number[]) =>
+    `https://thumbnails.roblox.com/v1/games/multiget/thumbnails?universeIds=${ids.join(',')}` +
+    '&countPerUniverse=1&defaults=true&size=480x270&format=Webp&isCircular=false',
   sorts: (sessionId: string) =>
     `https://apis.roblox.com/explore-api/v1/get-sorts?sessionId=${sessionId}`,
   search: (query: string, sessionId: string) =>
@@ -211,10 +216,27 @@ export function parseIcons(body: unknown): Map<number, string> {
   for (const d of data as Json[]) {
     const id = posInt(d.targetId);
     const url = str(d.imageUrl);
-    // Only Roblox's own CDN: the renderer loads this straight into an <img>.
-    if (id && url && d.state === 'Completed' && /^https:\/\/[a-z0-9.-]+\.rbxcdn\.com\//i.test(url)) {
+    if (id && url && d.state === 'Completed' && RBXCDN.test(url)) {
       out.set(id, url);
     }
+  }
+  return out;
+}
+
+/** Roblox's own CDN only: the renderer loads these straight into an <img>. */
+const RBXCDN = /^https:\/\/[a-z0-9.-]+\.rbxcdn\.com\//i;
+
+/** Parse multiget thumbnails into universeId -> the first 16:9 screenshot. */
+export function parseThumbnails(body: unknown): Map<number, string> {
+  const out = new Map<number, string>();
+  const data = (body as Json | null)?.data;
+  if (!Array.isArray(data)) return out;
+  for (const d of data as Json[]) {
+    const id = posInt(d.universeId);
+    const thumbs = Array.isArray(d.thumbnails) ? (d.thumbnails as Json[]) : [];
+    const first = thumbs.find((t) => t.state === 'Completed');
+    const url = str(first?.imageUrl);
+    if (id && url && RBXCDN.test(url)) out.set(id, url);
   }
   return out;
 }
@@ -251,6 +273,7 @@ export function createRobloxClient(deps: RobloxClientDeps = {}): RobloxClient {
 
   const details = new Map<number, { at: number; game: BackseatGameInfo }>();
   const icons = new Map<number, { at: number; url: string }>();
+  const thumbs = new Map<number, { at: number; url: string }>();
   const universeOf = new Map<number, number>();
   const searches = new Map<string, { at: number; results: BackseatGameInfo[] }>();
   let sorts: { at: number; ok: boolean; popular: BackseatGameInfo[]; pool: BackseatGameInfo[] } | null = null;
@@ -270,26 +293,46 @@ export function createRobloxClient(deps: RobloxClientDeps = {}): RobloxClient {
     }
   }
 
-  /** Icons for games that lack one, in one batched call. Best effort. */
+  /**
+   * Art for games that lack it, best effort: the square icon and the 16:9
+   * screenshot the pick step's cards lead with. One batched call each, run
+   * side by side; a failure of either just leaves that field empty.
+   */
   async function withIcons(games: BackseatGameInfo[]): Promise<BackseatGameInfo[]> {
     const t = now();
-    const missing = games
-      .map((g) => g.universeId)
-      .filter((id) => {
-        const hit = icons.get(id);
-        return !hit || t - hit.at > DETAILS_TTL_MS;
-      });
-    if (missing.length) {
+    const stale = (cache: Map<number, { at: number; url: string }>): number[] =>
+      games
+        .map((g) => g.universeId)
+        .filter((id) => {
+          const hit = cache.get(id);
+          return !hit || t - hit.at > DETAILS_TTL_MS;
+        })
+        .slice(0, 30);
+    const fill = async (
+      cache: Map<number, { at: number; url: string }>,
+      url: (ids: number[]) => string,
+      parse: (body: unknown) => Map<number, string>,
+    ): Promise<void> => {
+      const missing = stale(cache);
+      if (!missing.length) return;
       try {
-        const got = parseIcons(await getJson(ROBLOX_ENDPOINTS.icons(missing.slice(0, 30))));
-        for (const [id, url] of got) icons.set(id, { at: t, url });
+        for (const [id, u] of parse(await getJson(url(missing)))) cache.set(id, { at: t, url: u });
       } catch {
-        /* no icons is fine; the row shows a placeholder */
+        /* no art is fine; the card shows a placeholder */
       }
-    }
+    };
+    await Promise.all([
+      fill(icons, ROBLOX_ENDPOINTS.icons, parseIcons),
+      fill(thumbs, ROBLOX_ENDPOINTS.thumbnails, parseThumbnails),
+    ]);
     return games.map((g) => {
       const icon = icons.get(g.universeId)?.url;
-      return icon && !g.iconUrl ? { ...g, iconUrl: icon } : g;
+      const thumb = thumbs.get(g.universeId)?.url;
+      return {
+        ...g,
+        ...(icon && !g.iconUrl ? { iconUrl: icon } : {}),
+        ...(thumb && !g.thumbnailUrl ? { thumbnailUrl: thumb } : {}),
+      };
     });
   }
 

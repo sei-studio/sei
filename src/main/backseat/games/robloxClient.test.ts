@@ -23,6 +23,7 @@ import {
   parseIcons,
   parseSearch,
   parseSorts,
+  parseThumbnails,
 } from './robloxClient';
 
 const fx = (name: string): unknown =>
@@ -32,6 +33,7 @@ const SORTS = fx('roblox-sorts.json');
 const SEARCH = fx('roblox-search.json');
 const GAMES = fx('roblox-games.json');
 const ICONS = fx('roblox-icons.json');
+const THUMBS = fx('roblox-thumbnails.json');
 const PLACE = fx('roblox-place-universe.json');
 const PLACE_MISSING = fx('roblox-place-missing.json');
 
@@ -59,7 +61,8 @@ function roblox(opts: { search?: () => Route; sorts?: () => Route; place?: () =>
     if (url.includes('/universes/v1/places/4924922222/universe')) return opts.place?.() ?? { body: PLACE };
     if (url.includes('/universes/v1/places/')) return { body: PLACE_MISSING };
     if (url.includes('games.roblox.com/v1/games?')) return { body: GAMES };
-    if (url.includes('thumbnails.roblox.com')) return { body: ICONS };
+    if (url.includes('thumbnails.roblox.com/v1/games/multiget/thumbnails')) return { body: THUMBS };
+    if (url.includes('thumbnails.roblox.com/v1/games/icons')) return { body: ICONS };
     if (url.includes('explore-api')) return opts.sorts?.() ?? { body: SORTS };
     if (url.includes('omni-search')) return opts.search?.() ?? { body: SEARCH };
     return { status: 404 };
@@ -118,6 +121,21 @@ describe('parsers (real response shapes)', () => {
     // The pool is the union, deduplicated (Slayers 2 is in two sorts).
     expect(pool.length).toBeGreaterThan(popular.length);
     expect(new Set(pool.map((g) => g.universeId)).size).toBe(pool.length);
+  });
+
+  it('takes the first completed 16:9 thumbnail per game, Roblox CDN only', () => {
+    const thumbs = parseThumbnails(THUMBS);
+    expect(thumbs.get(1686885941)).toMatch(/^https:\/\/tr\.rbxcdn\.com\/.*\/480\/270\//);
+    expect(thumbs.size).toBe(3);
+    const odd = parseThumbnails({
+      data: [
+        { universeId: 1, thumbnails: [{ state: 'Blocked', imageUrl: 'https://tr.rbxcdn.com/x' }] },
+        { universeId: 2, thumbnails: [{ state: 'Completed', imageUrl: 'https://evil.example.com/x' }] },
+        { universeId: 3, thumbnails: [] },
+      ],
+    });
+    expect(odd.size).toBe(0);
+    expect(parseThumbnails(null).size).toBe(0);
   });
 
   it('accepts icons only from Roblox CDN and only when completed', () => {
@@ -242,6 +260,7 @@ describe('createRobloxClient', () => {
     expect(list.length).toBeGreaterThan(0);
     expect(list.map((g) => g.name)).toContain('Brookhaven 🏡RP');
     expect(list.find((g) => g.universeId === 1686885941)?.iconUrl).toMatch(/rbxcdn/);
+    expect(list.find((g) => g.universeId === 1686885941)?.thumbnailUrl).toMatch(/rbxcdn.*480\/270/);
 
     const down = createRobloxClient({ fetch: roblox({ sorts: () => ({ status: 503 }) }).f });
     const fallback = await down.popular();
