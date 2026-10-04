@@ -379,6 +379,12 @@ export async function startCapture(
   characterId: string,
   sourceId: string,
   sourceName: string,
+  opts: {
+    /** 261004: the shared window went away (the OS ended the track), after
+     *  the session was ended and capture torn down. The store uses it to
+     *  clear its share state, and the auto-share watch to wait again. */
+    onEnded?: () => void;
+  } = {},
 ): Promise<CaptureHandle> {
   stopCapture();
   const { stream, audioSource } = await openStream(sourceId);
@@ -838,8 +844,12 @@ export async function startCapture(
   // Sharing can also be revoked from the OS ("Stop sharing"), which just ends
   // the track. Treat it as the player ending the session.
   videoTrack.addEventListener('ended', () => {
+    // Ours stopping the track (handle.stop) also lands here; only a track the
+    // OS ended, with this capture still the live one, is the window going away.
+    if (stopped) return;
     void sei.backseatEnd(characterId).catch(() => {});
-    stopCapture();
+    handle.stop();
+    opts.onEnded?.();
   });
 
   const handle: CaptureHandle = {

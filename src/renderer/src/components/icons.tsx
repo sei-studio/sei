@@ -67,6 +67,39 @@ export const PlusIcon: React.FC<IconProps> = ({ size = 18 }) => (
   </svg>
 );
 
+/** SearchIcon — magnifier, for search fields (261004, the Roblox pick step). */
+export const SearchIcon: React.FC<IconProps> = ({ size = 18 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <circle cx="11" cy="11" r="6.5" />
+    <path d="M16 16l4.5 4.5" />
+  </svg>
+);
+
+/** CloseIcon — a plain x, for clearing a field. */
+export const CloseIcon: React.FC<IconProps> = ({ size = 18 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M6 6l12 12M18 6L6 18" />
+  </svg>
+);
+
 /**
  * PricingIcon — wallet/credit glyph whose inner rect fills bottom-up based on
  * `remainingPct` (0..100). Inherits theme color via `currentColor`.

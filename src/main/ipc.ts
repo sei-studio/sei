@@ -1563,12 +1563,16 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // Thin wrappers over src/main/backseat/backseatService (module state
   // initialized in main/index.ts). The grid payloads are large but bounded:
   // a 1204x1008 JPEG is ~150 KB, ~200 KB as a base64 data URL.
-  ipcMain.handle(IpcChannel.backseat.sources, async () => {
+  ipcMain.handle(IpcChannel.backseat.sources, async (_event, optsRaw: unknown) => {
+    // 261004: the auto-share watch polls this for titles only, so it asks for
+    // no bitmaps (zero-size thumbnails cost nothing, see shareLabel.ts).
+    const opts = z.object({ thumbnails: z.boolean().optional() }).optional().parse(optsRaw);
+    const thumbs = opts?.thumbnails !== false;
     const { desktopCapturer } = await import('electron');
     const sources = await desktopCapturer.getSources({
       types: ['window', 'screen'],
-      thumbnailSize: { width: 320, height: 180 },
-      fetchWindowIcons: true,
+      thumbnailSize: thumbs ? { width: 320, height: 180 } : { width: 0, height: 0 },
+      fetchWindowIcons: thumbs,
     });
     return sources
       // Sei's own windows are never useful to share and sharing the picker
@@ -1578,8 +1582,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         id: s.id,
         name: s.name,
         kind: s.id.startsWith('screen:') ? ('screen' as const) : ('window' as const),
-        thumbnail: s.thumbnail.toDataURL(),
-        ...(s.appIcon ? { appIcon: s.appIcon.toDataURL() } : {}),
+        thumbnail: thumbs ? s.thumbnail.toDataURL() : '',
+        ...(thumbs && s.appIcon ? { appIcon: s.appIcon.toDataURL() } : {}),
       }));
   });
   ipcMain.handle(IpcChannel.backseat.start, async (_event, argsRaw: unknown) => {

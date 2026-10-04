@@ -91,7 +91,10 @@ export function CallControls({
   const sharingFor = useBackseatStore((s) => s.sharingFor);
   const startingShare = useBackseatStore((s) => s.starting);
   const stopSharing = useBackseatStore((s) => s.stopSharing);
-  const sharing = sharingFor !== null;
+  // Waiting for a game's window to share (261004) counts as sharing here: the
+  // toggle is lit and pressing it stops the wait.
+  const watching = useBackseatStore((s) => s.watch !== null);
+  const sharing = sharingFor !== null || watching;
   const shareTarget = participants[0];
 
   // china-compat W9: backseat is an image surface, so a text-only local model

@@ -78,7 +78,7 @@ describe('useBackseatStore pending share', () => {
 
     const pending = useBackseatStore.getState().pendingShare;
     expect(pending?.characterId).toBe('char-a');
-    expect(pending?.source.id).toBe('win-1');
+    expect(pending?.source?.id).toBe('win-1');
     expect(backseatStartMock).not.toHaveBeenCalled();
     expect(startCaptureMock).not.toHaveBeenCalled();
   });
@@ -162,10 +162,10 @@ describe('useBackseatStore pending share', () => {
     vi.advanceTimersByTime(PENDING_SHARE_TTL_MS - 5);
     useBackseatStore.getState().armPendingShare('char-a', source('win-2'));
 
-    expect(useBackseatStore.getState().pendingShare?.source.id).toBe('win-2');
+    expect(useBackseatStore.getState().pendingShare?.source?.id).toBe('win-2');
     // The FIRST arm's timer would land here; it must not clear the second.
     vi.advanceTimersByTime(10);
-    expect(useBackseatStore.getState().pendingShare?.source.id).toBe('win-2');
+    expect(useBackseatStore.getState().pendingShare?.source?.id).toBe('win-2');
 
     vi.advanceTimersByTime(PENDING_SHARE_TTL_MS);
     expect(useBackseatStore.getState().pendingShare).toBeNull();
@@ -261,5 +261,182 @@ describe('useBackseatStore share() across an account switch', () => {
     expect(await useBackseatStore.getState().share('char-a', source('win-1'))).toBe(true);
     expect(backseatEndMock).not.toHaveBeenCalled();
     expect(useBackseatStore.getState().sharingFor).toBe('char-a');
+  });
+});
+
+/**
+ * The auto-share watch (261004): a Roblox backseat session skips the share
+ * picker and waits for the Roblox window, sharing it by itself, and waiting
+ * again when it closes. Every one of these failures is silent in the app (a
+ * share that never starts, starts twice, or keeps restarting after the
+ * player said stop), so the lifecycle is pinned here.
+ */
+describe('useBackseatStore auto-share watch', () => {
+  const ROBLOX = { gameId: 'roblox', universeId: 1686885941 };
+  let windows: BackseatSource[];
+  let sourcesMock: ReturnType<typeof vi.fn>;
+
+  function win(id: string, name: string): BackseatSource {
+    return { id, name, kind: 'window', thumbnail: '' };
+  }
+
+  beforeEach(() => {
+    windows = [win('w:1', 'Notes')];
+    sourcesMock = vi.fn(async () => windows);
+    (window as unknown as { sei: Record<string, unknown> }).sei.backseatSources = sourcesMock;
+  });
+
+  /** Run the watch's timers far enough for a look plus the settle look. */
+  async function settle(ms = 0): Promise<void> {
+    await vi.advanceTimersByTimeAsync(ms);
+  }
+
+  it('waits while the game is not open, then shares its window once it has settled', async () => {
+    const { useBackseatStore, WATCH_POLL_MS, WATCH_SETTLE_MS } = await loadStore();
+    useBackseatStore.getState().startWatch('char-a', ROBLOX);
+    await settle(WATCH_POLL_MS * 3);
+
+    expect(sourcesMock).toHaveBeenCalled();
+    // Titles only: the watch never asks for thumbnails.
+    expect(sourcesMock).toHaveBeenCalledWith({ thumbnails: false });
+    expect(backseatStartMock).not.toHaveBeenCalled();
+    expect(useBackseatStore.getState().watch?.characterId).toBe('char-a');
+
+    windows = [win('w:9', 'Roblox'), ...windows];
+    await settle(WATCH_POLL_MS);
+    // Seen once: not shared yet (a launcher window can flash up and close).
+    expect(backseatStartMock).not.toHaveBeenCalled();
+    await settle(WATCH_SETTLE_MS);
+
+    expect(backseatStartMock).toHaveBeenCalledTimes(1);
+    expect(backseatStartMock).toHaveBeenCalledWith('char-a', 'w:9', 'Roblox', 'voice', ROBLOX);
+    expect(useBackseatStore.getState().sharingFor).toBe('char-a');
+    // Still watching, so a closed window means waiting again, not the end.
+    expect(useBackseatStore.getState().watch).not.toBeNull();
+  });
+
+  it('picks the frontmost game window and never a browser tab about the game', async () => {
+    const { useBackseatStore, WATCH_SETTLE_MS } = await loadStore();
+    windows = [
+      win('w:1', 'Brookhaven - Roblox - Google Chrome'),
+      win('w:2', 'Roblox'),
+      win('w:3', 'Roblox'),
+    ];
+    useBackseatStore.getState().startWatch('char-a', ROBLOX);
+    await settle(WATCH_SETTLE_MS + 10);
+    expect(backseatStartMock).toHaveBeenCalledWith('char-a', 'w:2', 'Roblox', 'voice', ROBLOX);
+  });
+
+  it('a closed game window pauses the share and waits for the game to come back', async () => {
+    const { useBackseatStore, WATCH_POLL_MS, WATCH_SETTLE_MS } = await loadStore();
+    windows = [win('w:9', 'Roblox')];
+    useBackseatStore.getState().startWatch('char-a', ROBLOX);
+    await settle(WATCH_SETTLE_MS + 10);
+    expect(useBackseatStore.getState().sharingFor).toBe('char-a');
+
+    // The OS ends the track when the window closes; the capture controller
+    // ends main's session and reports it.
+    windows = [];
+    const opts = startCaptureMock.mock.calls[0][3] as { onEnded: () => void };
+    opts.onEnded();
+
+    const st = useBackseatStore.getState();
+    expect(st.sharingFor).toBeNull();
+    expect(st.stream).toBeNull();
+    expect(st.active['char-a']).toBeUndefined();
+    expect(st.watch?.resumed).toBe(true);
+
+    await settle(WATCH_POLL_MS * 2);
+    expect(backseatStartMock).toHaveBeenCalledTimes(1);
+
+    windows = [win('w:12', 'Roblox')];
+    await settle(WATCH_POLL_MS + WATCH_SETTLE_MS + 10);
+    expect(backseatStartMock).toHaveBeenCalledTimes(2);
+    expect(backseatStartMock).toHaveBeenLastCalledWith('char-a', 'w:12', 'Roblox', 'voice', ROBLOX);
+    expect(useBackseatStore.getState().sharingFor).toBe('char-a');
+  });
+
+  it('a stale capture ending does not clear a newer share', async () => {
+    const { useBackseatStore } = await loadStore();
+    startCaptureMock.mockResolvedValueOnce({ stream: { id: 'one' }, noteSpoke: () => {} });
+    startCaptureMock.mockResolvedValueOnce({ stream: { id: 'two' }, noteSpoke: () => {} });
+    await useBackseatStore.getState().share('char-a', win('w:1', 'Notes'));
+    await useBackseatStore.getState().share('char-a', win('w:2', 'Other'));
+    (startCaptureMock.mock.calls[0][3] as { onEnded: () => void }).onEnded();
+    expect(useBackseatStore.getState().stream).toEqual({ id: 'two' });
+  });
+
+  it('the share toggle stops the wait too, and nothing starts later', async () => {
+    const { useBackseatStore, WATCH_POLL_MS } = await loadStore();
+    useBackseatStore.getState().startWatch('char-a', ROBLOX);
+    await settle(WATCH_POLL_MS);
+    await useBackseatStore.getState().stopSharing();
+    expect(useBackseatStore.getState().watch).toBeNull();
+
+    const looks = sourcesMock.mock.calls.length;
+    windows = [win('w:9', 'Roblox')];
+    await settle(WATCH_POLL_MS * 5);
+    expect(sourcesMock.mock.calls.length).toBe(looks);
+    expect(backseatStartMock).not.toHaveBeenCalled();
+  });
+
+  it('a cold start arms the watch, which begins when the call goes live', async () => {
+    const { useBackseatStore, WATCH_SETTLE_MS } = await loadStore();
+    windows = [win('w:9', 'Roblox')];
+    useBackseatStore.getState().armPendingShare('char-a', null, ROBLOX);
+    expect(useBackseatStore.getState().watch).toBeNull();
+    expect(sourcesMock).not.toHaveBeenCalled();
+
+    await expect(useBackseatStore.getState().consumePendingShare('char-a')).resolves.toBe(true);
+    expect(useBackseatStore.getState().pendingShare).toBeNull();
+    expect(useBackseatStore.getState().watch?.game).toEqual(ROBLOX);
+    await settle(WATCH_SETTLE_MS + 10);
+    expect(backseatStartMock).toHaveBeenCalledWith('char-a', 'w:9', 'Roblox', 'voice', ROBLOX);
+  });
+
+  it('stops retrying after repeated failed starts and keeps the reason', async () => {
+    const { useBackseatStore, WATCH_POLL_MS, WATCH_MAX_FAILURES } = await loadStore();
+    backseatStartMock.mockRejectedValue(new Error('BACKSEAT_MC_SESSION_ACTIVE'));
+    windows = [win('w:9', 'Roblox')];
+    useBackseatStore.getState().startWatch('char-a', ROBLOX);
+    await settle(WATCH_POLL_MS * 20);
+
+    expect(backseatStartMock).toHaveBeenCalledTimes(WATCH_MAX_FAILURES);
+    expect(useBackseatStore.getState().watch?.stalled).toBe(true);
+    expect(useBackseatStore.getState().error).toMatch(/Minecraft/);
+
+    // "Try again" is a fresh watch.
+    backseatStartMock.mockResolvedValue(undefined);
+    useBackseatStore.getState().startWatch('char-a', ROBLOX);
+    expect(useBackseatStore.getState().error).toBeNull();
+    await settle(WATCH_POLL_MS * 2);
+    expect(useBackseatStore.getState().sharingFor).toBe('char-a');
+  });
+
+  it('a share that lands after the watch was stopped is undone', async () => {
+    const { useBackseatStore, WATCH_SETTLE_MS } = await loadStore();
+    let started!: (v: unknown) => void;
+    startCaptureMock.mockImplementationOnce(() => new Promise((r) => (started = r)));
+    windows = [win('w:9', 'Roblox')];
+    useBackseatStore.getState().startWatch('char-a', ROBLOX);
+    await settle(WATCH_SETTLE_MS + 10);
+    expect(startCaptureMock).toHaveBeenCalledTimes(1);
+
+    useBackseatStore.getState().stopWatch();
+    started({ stream: { id: 'late' }, noteSpoke: () => {} });
+    await settle(0);
+
+    expect(useBackseatStore.getState().sharingFor).toBeNull();
+    expect(backseatEndMock).toHaveBeenCalledWith('char-a');
+  });
+
+  it('an account switch forgets the watch', async () => {
+    const { useBackseatStore, WATCH_POLL_MS } = await loadStore();
+    useBackseatStore.getState().startWatch('char-a', ROBLOX);
+    useBackseatStore.getState().resetForScope();
+    expect(useBackseatStore.getState().watch).toBeNull();
+    const looks = sourcesMock.mock.calls.length;
+    await settle(WATCH_POLL_MS * 4);
+    expect(sourcesMock.mock.calls.length).toBe(looks);
   });
 });

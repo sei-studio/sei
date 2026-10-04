@@ -27,6 +27,7 @@ import { resolvedScheme } from '../lib/theme';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { useBackseatStore } from '../lib/stores/useBackseatStore';
+import { ShareWaiting } from '../components/backseat/ShareWaiting';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
 import { isHomeCharacter } from '../lib/homeLibrary';
@@ -250,7 +251,13 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   // people shrink to a strip under it, the same demotion the game surfaces do.
   const shareStream = useBackseatStore((s) => s.stream);
   const shareSourceName = useBackseatStore((s) => s.sourceName);
-  const sharing = shareStream !== null;
+  // 261004: an auto-share watch waiting for its game's window holds the same
+  // place the picture will take, with the waiting card in it.
+  const shareWatch = useBackseatStore((s) => s.watch);
+  const shareError = useBackseatStore((s) => s.error);
+  const waitingShare =
+    !shareStream && shareWatch && participants.includes(shareWatch.characterId) ? shareWatch : null;
+  const sharing = shareStream !== null || waitingShare !== null;
   const videoRef = useRef<HTMLVideoElement | null>(null);
   useEffect(() => {
     const el = videoRef.current;
@@ -529,13 +536,25 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
         {sharing ? (
           <>
             {/* The shared picture is the content now. */}
-            <div className={styles.share}>
-              <video ref={videoRef} className={styles.shareVideo} autoPlay muted playsInline />
-              <span className={styles.shareLabel}>
-                <span className={styles.shareDot} aria-hidden="true" />
-                {t('Sharing {what}', { what: shareSourceName ?? t('your screen') })}
-              </span>
-            </div>
+            {waitingShare ? (
+              <div className={`${styles.share} ${styles.shareWaiting}`}>
+                <ShareWaiting
+                  characterId={waitingShare.characterId}
+                  game={waitingShare.game}
+                  resumed={waitingShare.resumed}
+                  stalled={waitingShare.stalled}
+                  error={shareError}
+                />
+              </div>
+            ) : (
+              <div className={styles.share}>
+                <video ref={videoRef} className={styles.shareVideo} autoPlay muted playsInline />
+                <span className={styles.shareLabel}>
+                  <span className={styles.shareDot} aria-hidden="true" />
+                  {t('Sharing {what}', { what: shareSourceName ?? t('your screen') })}
+                </span>
+              </div>
+            )}
 
             {/* Captions stay available while sharing: with the avatars this
                 small, they are the only visible trace of what was said. */}

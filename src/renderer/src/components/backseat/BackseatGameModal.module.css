@@ -29,172 +29,421 @@
   color: var(--text-2);
 }
 
-/* ── Pick ──────────────────────────────────────────────────────────────── */
+/* ── Pick (261004) ─────────────────────────────────────────────────────────
+ * The shell's own title ("Play Roblox"), a pill that takes a name or a link,
+ * and the games as big 16:9 cards: tap one and you are in. Cards follow the
+ * games picker's tiles (sharp, borderless, full-bleed art under a bottom
+ * scrim, white name). */
 
-.root {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-  min-height: 0;
-  max-height: 68vh;
+.panel {
+  /* The grid scrolls; the title, pill and skip stay put. */
+  overflow: hidden;
+  padding: 22px 22px 14px;
+  gap: 14px;
+  transition: opacity 180ms var(--ease), transform 180ms var(--ease);
 }
 
-.sub {
-  margin: var(--space-xs) 0 0;
-  font-family: var(--sans);
-  font-size: 13px;
-  color: var(--muted);
+.leaving {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.985);
 }
 
-.searchRow {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-sm);
-}
+/* ── Search pill ── */
 
-.field {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.error {
-  margin: 0;
-  font-family: var(--sans);
-  font-size: 12px;
-  color: var(--red);
-}
-
-.note {
-  margin: 0;
-  font-family: var(--sans);
-  font-size: 12px;
-  color: var(--warn);
-}
-
-.listHead {
-  margin-top: var(--space-xs);
-  font-family: var(--sans);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.list {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-  padding-right: var(--space-xs);
-}
-
-.empty {
-  margin: var(--space-lg) 0;
-  text-align: center;
-  font-family: var(--sans);
-  font-size: 13px;
-  color: var(--muted);
-}
-
-.row {
+.pill {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
-  padding: var(--space-xs) var(--space-sm);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md, 8px);
-  background: var(--surface-2);
-  cursor: pointer;
-  text-align: left;
-  transition: border-color 120ms var(--ease);
-}
-
-.row:hover,
-.row:focus-visible {
-  border-color: var(--accent);
-  outline: none;
-}
-
-.rowBody,
-.pickedBody {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  flex: 1 1 auto;
-}
-
-.rowName,
-.pickedName {
-  font-family: var(--sans);
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.meta {
-  font-family: var(--sans);
-  font-size: 12px;
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.picked {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-md);
-  padding: var(--space-sm);
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-md, 8px);
-  background: var(--surface-2);
-  box-shadow: 0 0 0 2px var(--accent-soft);
-}
-
-.pickedName {
-  font-size: 16px;
-  white-space: normal;
-}
-
-.pickedDesc {
-  margin-top: var(--space-xs);
-  font-family: var(--sans);
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--text-2);
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  white-space: pre-line;
-}
-
-.icon {
-  flex: 0 0 auto;
-  width: 40px;
+  gap: 10px;
   height: 40px;
-  border-radius: var(--radius-sm, 6px);
-  object-fit: cover;
-  background: var(--bg4);
+  padding: 0 8px 0 14px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  box-shadow: inset 0 0 0 1px transparent;
+  transition: box-shadow 140ms var(--ease), color 140ms var(--ease);
 }
 
-.iconLarge {
-  width: 72px;
-  height: 72px;
+.pill:focus-within {
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1.5px var(--accent), 0 0 0 4px var(--accent-soft);
 }
 
-.iconBlank {
+.pillInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.pillInput::placeholder {
+  color: var(--muted);
+}
+
+.pillClear {
+  flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--display);
-  font-size: 18px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
   color: var(--muted);
+  cursor: pointer;
+  transition: background 120ms var(--ease), color 120ms var(--ease);
+}
+
+.pillClear:hover,
+.pillClear:focus-visible {
+  background: var(--accent-soft);
+  color: var(--text);
+  outline: none;
+}
+
+.spinner {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  border-radius: 50%;
+  border: 2px solid var(--accent-soft);
+  border-top-color: var(--accent);
+  animation: spin 700ms linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Grid ── */
+
+/* The grid plus the line laid over it when there are no cards. */
+.gridWrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  transition: opacity 160ms var(--ease);
+}
+
+.grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
+  align-content: start;
+  gap: 12px;
+  /* Room for the hover lift and the picked card (lifted 3px, scaled 1.04,
+     3px ring: up to ~9px past its edge), which the scroll box would otherwise
+     clip. The negative margin keeps the cards flush with the pill. */
+  padding: 10px 8px 8px;
+  margin: -10px -8px 0;
+}
+
+.gridBusy {
+  opacity: 0.55;
+}
+
+.skeleton {
+  aspect-ratio: 16 / 9;
+  background: linear-gradient(
+    100deg,
+    var(--surface-2) 30%,
+    var(--accent-soft) 50%,
+    var(--surface-2) 70%
+  );
+  background-size: 300% 100%;
+  animation: shimmer 1.3s ease-in-out infinite;
+}
+
+/* An empty card slot: holds the grid's shape (so the panel keeps its size)
+   while the notice says why there are no cards. Drawn as nothing, so the
+   line sits in clean space rather than across card edges. */
+.slot {
+  aspect-ratio: 16 / 9;
+}
+
+/* No results, a bad link, offline: one plain line centered in the empty
+   grid area, in the app's empty-state register (muted 14px). */
+.notice {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0 24px;
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.4;
+  text-align: center;
+  color: var(--muted);
+}
+
+@keyframes shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+
+.card {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 9;
+  padding: 0;
+  border: none;
+  overflow: hidden;
+  background: var(--surface-2);
+  color: #fff;
+  cursor: pointer;
+  text-align: left;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  animation: card-in 300ms var(--ease-pop) both;
+  transition:
+    transform 160ms var(--ease-pop),
+    box-shadow 160ms var(--ease),
+    opacity 220ms var(--ease),
+    filter 220ms var(--ease);
+}
+
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+
+.card:not(:disabled):hover,
+.card:focus-visible {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.32), 0 0 0 2px var(--accent);
+  outline: none;
+}
+
+.card:not(:disabled):active {
+  transform: translateY(-1px) scale(0.98);
+}
+
+.card:disabled {
+  cursor: default;
+}
+
+.cardPicked {
+  /* Wins over the entrance animation's transform. */
+  animation: none;
+  transform: translateY(-3px) scale(1.04);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.36), 0 0 0 3px var(--accent);
+  z-index: 1;
+}
+
+.cardDimmed {
+  animation: none;
+  opacity: 0.35;
+  filter: saturate(0.4);
+}
+
+.art {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 260ms var(--ease);
+}
+
+.card:not(:disabled):hover .thumb,
+.cardPicked .thumb {
+  transform: scale(1.06);
+}
+
+/* No screenshot: the square icon centered on a blurred copy of itself. */
+.iconFill {
+  position: absolute;
+  inset: -20%;
+  width: 140%;
+  height: 140%;
+  object-fit: cover;
+  filter: blur(18px) saturate(1.3) brightness(0.8);
+}
+
+.iconMid {
+  position: absolute;
+  top: 12%;
+  left: 50%;
+  height: 58%;
+  aspect-ratio: 1;
+  transform: translateX(-50%);
+  object-fit: cover;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+/* Nothing at all: a tinted block with the first letter. */
+.blank {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 14%;
+  background: linear-gradient(
+    135deg,
+    hsl(var(--hue) 55% 42%),
+    hsl(calc(var(--hue) + 40) 60% 30%)
+  );
+  font-family: var(--display);
+  font-size: 34px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.shade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* Eased so a two-line title still sits on dark: thumbnails often carry
+     their own big art text right where the caption goes. */
+  background: linear-gradient(
+    180deg,
+    rgba(6, 6, 8, 0) 36%,
+    rgba(6, 6, 8, 0.5) 64%,
+    rgba(6, 6, 8, 0.9) 100%
+  );
+}
+
+.name {
+  position: absolute;
+  left: 9px;
+  right: 9px;
+  bottom: 7px;
+  font-family: var(--display);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.count {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px 2px 6px;
+  border-radius: 999px;
+  /* Near-solid, blurred behind, with a hairline edge: the corner of a
+     thumbnail is often its own title art ("CRAFT UNITS"), and the count has
+     to read over it. */
+  background: rgba(6, 6, 8, 0.82);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 1px 4px rgba(0, 0, 0, 0.35);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+
+.liveDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green, #4ade80);
+}
+
+/* ── Skip ── */
+
+.foot {
+  display: flex;
+  justify-content: center;
+}
+
+.skip {
+  border: none;
+  background: transparent;
+  padding: 4px 12px;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 120ms var(--ease);
+}
+
+.skip:hover:not(:disabled),
+.skip:focus-visible {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  outline: none;
+}
+
+.skip:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Light themes: --surface-2 is the panel's own white, so the pill would
+   vanish once it loses focus; it takes the theme's soft tint instead. */
+:root[data-scheme='light'] .pill {
+  background: var(--bg4);
+}
+
+/* Light themes: the white panel needs a softer card shadow. */
+:root[data-scheme='light'] .card {
+  box-shadow: 0 1px 3px rgba(34, 60, 110, 0.16);
+}
+
+:root[data-scheme='light'] .card:not(:disabled):hover,
+:root[data-scheme='light'] .card:focus-visible {
+  box-shadow: 0 10px 22px rgba(34, 60, 110, 0.2), 0 0 0 2px var(--accent);
+}
+
+:root[data-scheme='light'] .cardPicked {
+  box-shadow: 0 12px 26px rgba(34, 60, 110, 0.24), 0 0 0 3px var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .skeleton,
+  .spinner {
+    animation: none;
+  }
+
+  .panel,
+  .card,
+  .thumb {
+    transition: none;
+  }
+
+  .card:not(:disabled):hover,
+  .card:focus-visible,
+  .cardPicked,
+  .card:not(:disabled):hover .thumb,
+  .cardPicked .thumb {
+    transform: none;
+  }
 }
