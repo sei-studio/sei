@@ -51,7 +51,7 @@ Sei ([sei.gg](https://sei.gg)) is a desktop app for macOS and Windows. You pick 
 
 **Everywhere**
 
-- **Voice calls:** solo or group calls in more than 70 languages, during a game or on their own.
+- **Voice calls:** solo or group calls in English, Chinese, Japanese, Korean, French, or Spanish, during a game or on their own.
 - **Backseat:** share your screen on a call and your companion watches and talks about what you are doing.
 - **Long-term memory:** companions remember you across chats, calls, and games.
 - **Knowledge import:** add text files (memories from another platform, facts about you) that a companion always knows.
