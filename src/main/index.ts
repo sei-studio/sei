@@ -38,7 +38,7 @@ import { trackScopedWrite, isAccountTeardownActive } from './profile/scopeBarrie
 import { sessionEndProps, isSessionFailure, type SessionEndProps } from './sessionEnd';
 import { formatPlayDuration, playSummaryText } from './chat/playSummary';
 import { initUpdater, installDownloadedUpdate, isUpdateReadyToInstall } from './updater';
-import { attachCloseToTray, initTray, shouldStartHidden } from './tray/trayController';
+import { applyAppUserModelId, attachCloseToTray, initTray, isTrayShown, shouldStartHidden } from './tray/trayController';
 import { noteCreditWallHit } from './tray/wallHook';
 import { loadAnalytics } from './lazyAnalytics';
 import { initNotices } from './notices';
@@ -1281,6 +1281,7 @@ async function bootstrap(): Promise<void> {
       showMainWindow: openMainWindow,
       isUpdateReady: isUpdateReadyToInstall,
       installUpdate: installDownloadedUpdate,
+      hasLiveBotSessions: () => (supervisor?.getActiveIds().length ?? 0) > 0,
       capture: (event, props) => {
         void loadAnalytics()
           .then((m) => m.capture(event, props))
@@ -1289,6 +1290,12 @@ async function bootstrap(): Promise<void> {
     });
   } catch (err) {
     logger.warn(`tray init failed: ${(err as Error).message}`);
+  }
+  // A hidden login launch whose tray icon could not be created (a missing
+  // icon file, a tray-less shell) would leave no window and no icon: show it.
+  if (startHidden && !isTrayShown()) {
+    logger.warn('hidden launch without a tray icon: showing the window');
+    openMainWindow();
   }
 
   // 6. Linux fallback warning (RESEARCH Pitfall 3)
@@ -1345,6 +1352,11 @@ if (!gotLock) {
     // cycle to consume in-flight sentinels from pre-dmg installs. Best-effort,
     // never blocks. See relocate.ts.
     cleanupRelocationLeftover();
+
+    // Windows: the process AppUserModelID must match the Start menu shortcut
+    // (electron-builder NSIS sets it to the appId, com.sei.app) for toasts to
+    // show and to group under Sei. Before any window exists (261005).
+    applyAppUserModelId();
 
     // Startup splash (260728): the white Sei logo, up before any heavy
     // bootstrap work, closed when the main window first paints. The failsafe

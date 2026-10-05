@@ -37,6 +37,11 @@ export interface TrayState {
   open_at_login: boolean;
   /** The one-time credit-wall prompt was shown. */
   wall_prompt_seen: boolean;
+  /**
+   * Sei itself registered the OS login item. Only then does it ever remove
+   * one, so a login item the user added by hand survives (macOS 12).
+   */
+  login_item_registered: boolean;
   /** The wall to notify about when it resets, or null. */
   wall: StoredWall | null;
   /** resets_at of the last reset already notified (or deliberately skipped): once per reset. */
@@ -47,6 +52,7 @@ export const DEFAULT_TRAY_STATE: TrayState = {
   enabled: false,
   open_at_login: false,
   wall_prompt_seen: false,
+  login_item_registered: false,
   wall: null,
   notified_for: null,
 };
@@ -68,6 +74,7 @@ export function coerceTrayState(raw: unknown): TrayState {
     enabled: o.enabled === true,
     open_at_login: o.open_at_login === true,
     wall_prompt_seen: o.wall_prompt_seen === true,
+    login_item_registered: o.login_item_registered === true,
     wall,
     notified_for: typeof o.notified_for === 'string' && o.notified_for ? o.notified_for : null,
   };

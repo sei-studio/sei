@@ -4,9 +4,12 @@
  * Opt-in, off by default (Settings > Background, or one click on the credit
  * wall's prompt). While it is on:
  *   - closing the main window HIDES it instead of quitting (Windows) or
- *     destroying it (macOS); live sessions keep running, the way a chat app
- *     in the tray keeps its call. Quit from the icon's menu (or Cmd+Q) ends
- *     everything through the normal before-quit chain.
+ *     destroying it (macOS). Minecraft and other game bots keep running;
+ *     a voice call and a Backseat share end (the renderer is told over
+ *     tray:hidden and runs the ordinary hang-up), since nobody can see them.
+ *     With an update downloaded and no bot running, the close quits instead
+ *     so the update installs (the 260909 rule). Quit from the icon's menu
+ *     (or Cmd+Q) ends everything through the normal before-quit chain.
  *   - a menu bar icon (macOS, template image) / tray icon (Windows) offers
  *     Open Sei, a status line when free play is paused, Restart to update
  *     when one is staged, and Quit Sei.
@@ -52,6 +55,8 @@ export interface TrayDeps {
   showMainWindow: () => void;
   isUpdateReady: () => boolean;
   installUpdate: () => void;
+  /** A game bot session is live (it keeps running in the tray). */
+  hasLiveBotSessions: () => boolean;
   capture: (event: string, props?: Record<string, unknown>) => void;
 }
 
@@ -86,6 +91,45 @@ export function isCloseToTrayActive(): boolean {
   return !quitting && tray !== null && isTraySupported() && getTrayState().enabled;
 }
 
+/** Whether the tray icon exists right now (creation can fail, e.g. a missing icon). */
+export function isTrayShown(): boolean {
+  return tray !== null;
+}
+
+/** True once a real quit has begun (before-quit, quit-for-update, OS session end). */
+export function isQuitting(): boolean {
+  return quitting;
+}
+
+/**
+ * An update is downloaded and nothing would be lost by quitting: closing the
+ * window is then the end of the session, so quit and let
+ * autoInstallOnAppQuit install it (the 260909 window-all-closed rule, which
+ * close-to-tray would otherwise bypass forever). A live bot keeps the tray
+ * behaviour; the menu's "Restart to update" is there for that case.
+ */
+function shouldQuitForUpdate(): boolean {
+  try {
+    return !!deps && deps.isUpdateReady() && !deps.hasLiveBotSessions();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Windows toasts need the process AppUserModelID to match the Start menu
+ * shortcut's, which electron-builder's NSIS target sets to the appId. Call
+ * from whenReady before any window exists. No-op elsewhere. Never throws.
+ */
+export function applyAppUserModelId(platform: NodeJS.Platform = process.platform): void {
+  if (platform !== 'win32') return;
+  try {
+    app.setAppUserModelId(APP_USER_MODEL_ID);
+  } catch {
+    /* toasts may not show; nothing else depends on it */
+  }
+}
+
 /**
  * Intercept the main window's close while the tray is active. A fullscreen
  * window on macOS is taken out of fullscreen first (hiding it in place leaves
@@ -95,6 +139,19 @@ export function attachCloseToTray(win: BrowserWindow): void {
   win.on('close', (e) => {
     if (!isCloseToTrayActive()) return;
     e.preventDefault();
+    if (shouldQuitForUpdate()) {
+      logger.info('update ready and no bot running: quitting so it installs');
+      quitting = true;
+      app.quit();
+      return;
+    }
+    try {
+      // The call and the screen share live in the renderer, which keeps
+      // running while hidden: tell it to hang up before it disappears.
+      if (!win.webContents.isDestroyed()) win.webContents.send(IpcChannel.tray.hidden);
+    } catch {
+      /* the renderer is gone; nothing of it is still running */
+    }
     try {
       if (process.platform === 'darwin' && win.isFullScreen()) {
         win.once('leave-full-screen', () => {
@@ -213,7 +270,23 @@ function destroyTray(): void {
   if (win && !win.isDestroyed() && !win.isVisible()) deps?.showMainWindow();
 }
 
-/** Point the OS login item at the current setting. Packaged builds only. */
+function setLoginItem(on: boolean): void {
+  if (process.platform === 'win32') {
+    app.setLoginItemSettings({ openAtLogin: on, path: process.execPath, args: [HIDDEN_ARG] });
+  } else {
+    // openAsHidden only works before macOS 13; on 13+ the launch is
+    // recognised through wasOpenedAtLogin instead (shouldStartHidden).
+    app.setLoginItemSettings({ openAtLogin: on, openAsHidden: on });
+  }
+}
+
+/**
+ * Point the OS login item at the current setting. Packaged builds only.
+ * Sei only ever REMOVES a login item it registered itself
+ * (`login_item_registered`): on macOS 12 the item is the app's one entry in
+ * Login Items, so an unconditional openAtLogin:false on every launch would
+ * delete one the user added by hand.
+ */
 function applyLoginItem(s: TrayState): void {
   if (!isTraySupported()) return;
   const want = s.enabled && s.open_at_login;
@@ -222,16 +295,29 @@ function applyLoginItem(s: TrayState): void {
     logger.info(`login item (dev, not applied): ${want ? 'on' : 'off'}`);
     return;
   }
+  if (!want && !s.login_item_registered) return;
   try {
-    if (process.platform === 'win32') {
-      app.setLoginItemSettings({ openAtLogin: want, path: process.execPath, args: [HIDDEN_ARG] });
-    } else {
-      // openAsHidden only works before macOS 13; on 13+ the launch is
-      // recognised through wasOpenedAtLogin instead (shouldStartHidden).
-      app.setLoginItemSettings({ openAtLogin: want, openAsHidden: want });
+    setLoginItem(want);
+    if (want !== s.login_item_registered) {
+      void updateTrayState((cur) => ({ ...cur, login_item_registered: want }));
     }
   } catch (err) {
     logger.warn(`login item failed: ${(err as Error).message}`);
+  }
+}
+
+/**
+ * Factory reset: remove the login item Sei registered, BEFORE the wipe takes
+ * tray-settings.json (and with it the only record that it was ours).
+ * Never throws.
+ */
+export function unregisterLoginItemForReset(): void {
+  try {
+    if (!isTraySupported() || !app.isPackaged) return;
+    if (!getTrayState().login_item_registered) return;
+    setLoginItem(false);
+  } catch (err) {
+    logger.warn(`login item removal failed: ${(err as Error).message}`);
   }
 }
 
@@ -429,13 +515,9 @@ export function initTray(d: TrayDeps): void {
         /* no native updater in this build */
       });
   }
-  if (process.platform === 'win32') {
-    try {
-      app.setAppUserModelId(APP_USER_MODEL_ID);
-    } catch {
-      /* toasts may not show; nothing else depends on it */
-    }
-  }
+  // Normally already set in whenReady; repeated here for a caller that did
+  // not (idempotent).
+  applyAppUserModelId();
 
   notifier = createRefillNotifier({
     getState: getTrayState,

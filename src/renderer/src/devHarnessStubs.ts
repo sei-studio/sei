@@ -224,6 +224,7 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
       return { ...trayView };
     },
     trayMarkWallPromptSeen: noop,
+    onTrayHidden: () => () => undefined,
     track: () => undefined,
     wizardPromptShown: async () => ({ shown: true }),
     getWizardState: async () => ({ version: 1, hasRunOnce: false, enabledInstallIds: [], lastRunAt: null, lastSkinServerPort: null }),

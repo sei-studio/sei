@@ -193,6 +193,11 @@ const api: RendererApi = {
   trayGetSettings: () => ipcRenderer.invoke(IpcChannel.tray.get),
   traySetSettings: (args) => ipcRenderer.invoke(IpcChannel.tray.set, args),
   trayMarkWallPromptSeen: () => ipcRenderer.invoke(IpcChannel.tray.markWallPromptSeen),
+  onTrayHidden(cb: () => void) {
+    const handler = () => cb();
+    ipcRenderer.on(IpcChannel.tray.hidden, handler);
+    return () => ipcRenderer.off(IpcChannel.tray.hidden, handler);
+  },
 
   // Backseat (260728) — see src/shared/backseatIpc.ts.
   backseatSources: (opts?: { thumbnails?: boolean }) =>

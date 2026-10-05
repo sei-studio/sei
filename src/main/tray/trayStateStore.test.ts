@@ -50,9 +50,11 @@ describe('trayStateStore (261005)', () => {
       enabled: false,
       open_at_login: true,
       wall_prompt_seen: true,
+      login_item_registered: false,
       wall: { user_id: 'u1', resets_at: '2026-10-08T00:00:00Z' },
       notified_for: null,
     });
+    expect(coerceTrayState({ login_item_registered: true }).login_item_registered).toBe(true);
     expect(coerceTrayState({ wall: { user_id: '', resets_at: 'x' } }).wall).toBeNull();
   });
 
