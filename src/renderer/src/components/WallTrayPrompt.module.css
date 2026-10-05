@@ -1,0 +1,31 @@
+/* WallTrayPrompt (261005): the one-time "keep Sei in your menu bar" offer
+   inside the credit wall. A quiet bordered panel under the reset line. */
+
+.card {
+  margin-top: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.text {
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  margin: 0;
+}
+
+.error {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+  margin: var(--space-xs) 0 0;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}

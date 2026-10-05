@@ -91,6 +91,14 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
       },
     ];
   };
+  const trayParam = params.get('tray') ?? '';
+  const trayView = {
+    supported: trayParam !== 'unsupported',
+    enabled: trayParam === 'on' || trayParam === 'approval',
+    openAtLogin: trayParam === 'approval',
+    loginNeedsApproval: trayParam === 'approval',
+    wallPromptSeen: trayParam === 'seen',
+  };
   const base: Record<string, unknown> = {
     ...(robloxMode
       ? {
@@ -201,6 +209,23 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
     gamePackState: async () => (params.get('pack') === 'missing' ? { kind: 'missing' } : { kind: 'ready', root: '/r' }),
     gamePackEnsure: async () => ({ kind: 'ready', root: '/r' }),
     onGamePackProgress: () => () => undefined,
+    // Menu bar / tray setting (261005). `&tray=on` has the setting on,
+    // `&tray=seen` has the credit-wall offer already shown, `&tray=approval`
+    // has login-at-start on but waiting for macOS approval, and
+    // `&tray=unsupported` is Linux (the group and the offer both hide).
+    // `&tray=fail` makes turning it on fail. Saves update the fixture.
+    trayGetSettings: async () => ({ ...trayView }),
+    traySetSettings: async (args: { enabled?: boolean; openAtLogin?: boolean }) => {
+      await new Promise((r) => setTimeout(r, 250));
+      if (trayParam === 'fail') return null;
+      if (typeof args.enabled === 'boolean') trayView.enabled = args.enabled;
+      if (typeof args.openAtLogin === 'boolean') trayView.openAtLogin = args.openAtLogin;
+      if (!trayView.enabled) trayView.openAtLogin = false;
+      return { ...trayView };
+    },
+    trayMarkWallPromptSeen: noop,
+    onTrayHidden: () => () => undefined,
+    track: () => undefined,
     wizardPromptShown: async () => ({ shown: true }),
     getWizardState: async () => ({ version: 1, hasRunOnce: false, enabledInstallIds: [], lastRunAt: null, lastSkinServerPort: null }),
     ...(permsMode

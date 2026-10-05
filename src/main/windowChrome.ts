@@ -15,6 +15,9 @@ export interface CreateMainWindowOptions {
    * never appears while the logo is still on screen. Errors never block the
    * show. */
   beforeFirstShow?: () => Promise<void>;
+  /** Login launch with "keep Sei in the menu bar / tray" on (261005): load the
+   * renderer but leave the window hidden; the tray icon's Open Sei shows it. */
+  startHidden?: boolean;
 }
 
 export function createMainWindow(opts: CreateMainWindowOptions): BrowserWindow {
@@ -92,6 +95,10 @@ export function createMainWindow(opts: CreateMainWindowOptions): BrowserWindow {
         win.webContents.openDevTools({ mode: 'detach' });
       }
     };
+    if (opts.startHidden) {
+      if (opts.beforeFirstShow) void opts.beforeFirstShow().catch(() => {});
+      return;
+    }
     if (opts.beforeFirstShow) opts.beforeFirstShow().then(reveal, reveal);
     else reveal();
   });

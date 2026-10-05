@@ -3885,6 +3885,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         try { (await import('./chess/chessService')).shutdownChess(); } catch { /* best-effort */ }
         try { (await import('./draw/drawService')).shutdownDraw(); } catch { /* best-effort */ }
         try { await (await import('./backseat/backseatService')).clearAllBackseat(); } catch { /* best-effort */ }
+        // The wipe takes tray-settings.json, the only record that Sei
+        // registered a login item (261005): remove it first.
+        try { (await import('./tray/trayController')).unregisterLoginItemForReset(); } catch { /* best-effort */ }
       },
     });
   });

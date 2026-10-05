@@ -68,6 +68,8 @@ export type {
 } from './backseatGames';
 import type { OsPermissionKind, OsPermissionStatus, PermissionResume } from './permissionsIpc';
 export type { OsPermissionKind, OsPermissionStatus, PermissionResume } from './permissionsIpc';
+import type { TraySettingsView, TraySetArgs } from './trayIpc';
+export type { TraySettingsView, TraySetArgs, TraySettingSource } from './trayIpc';
 import type { McDashboardSnapshot, McDashboardSnapshotPush } from './mcDashboardIpc';
 import type { GameId, WorldState, WorldStates, GameDashboardSnapshot } from './gameIpc';
 import { StardewIpcChannel, type StardewInstallState, type StardewInstallProgressEvent, type StardewLaunchResult } from './stardewIpc';
@@ -2098,6 +2100,16 @@ export interface RendererApi {
   /** "Restart Sei and continue": arm the resume flag, then relaunch. */
   permissionsRelaunch(resume: PermissionResume): Promise<void>;
 
+  // --- Menu bar / tray + refill notification (261005) --- see src/shared/trayIpc.ts.
+  /** Current tray setting, platform support and login-item state. */
+  trayGetSettings(): Promise<TraySettingsView>;
+  /** Change the tray setting and/or the login item. Returns the new state. */
+  traySetSettings(args: TraySetArgs): Promise<TraySettingsView>;
+  /** Record that the one-time credit-wall prompt was shown (never shown again). */
+  trayMarkWallPromptSeen(): Promise<void>;
+  /** Push: the main window was hidden to the tray (end the call and screen capture). */
+  onTrayHidden(cb: () => void): Unsubscribe;
+
   // --- Backseat (260728) --- see src/shared/backseatIpc.ts for the tick
   // model, the image-grid geometry and the authority split. The renderer owns
   // capture; every model call happens in main.
@@ -3339,6 +3351,15 @@ export const IpcChannel = {
     gameResolve: 'backseat:game-resolve',
     gamePopular: 'backseat:game-popular',
     gameDetails: 'backseat:game-details',
+  },
+  // Menu bar / tray + refill notification (261005). See src/shared/trayIpc.ts.
+  tray: {
+    get: 'tray:get',
+    set: 'tray:set',
+    markWallPromptSeen: 'tray:mark-wall-prompt-seen',
+    // main -> renderer push: the window was just hidden to the tray, so end
+    // the voice call and screen capture (they would keep running unseen).
+    hidden: 'tray:hidden',
   },
   // OS permission flows (260929) — microphone for calls, Screen Recording for
   // screen share on macOS. See src/shared/permissionsIpc.ts.

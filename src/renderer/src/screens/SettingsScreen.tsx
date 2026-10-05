@@ -53,6 +53,7 @@ import type { AvatarMode, UserConfig } from '@shared/characterSchema';
 import type { LlmListModelsResult, SpeechPackStatePush } from '@shared/ipc';
 import styles from './SettingsScreen.module.css';
 import { GamesSettingsGroup } from '../components/settings/GamesSettingsGroup';
+import { TraySettingsGroup } from '../components/settings/TraySettingsGroup';
 
 const API_KEY_BULLET_LEN = 24;
 
@@ -1663,6 +1664,11 @@ export function SettingsScreen(): React.ReactElement {
             />
           </div>
         </div>
+
+        {/* ── Menu bar / system tray (261005) ─────────────────
+            Opt-in close-to-tray + login item, so the companion can post a
+            "free play is back" notification. Hidden where unsupported. */}
+        <TraySettingsGroup />
 
         {/* ── Search (260909) ─────────────────────────────────
             Optional. Companions can look things up on the web through the
