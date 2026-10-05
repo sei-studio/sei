@@ -77,6 +77,20 @@ describe('pre-init queue', () => {
     expect(captureSpy).not.toHaveBeenCalled();
   });
 
+  it('drops held events when the opt-out flag could not be read', async () => {
+    // A prior good read leaves optedOut false in module state, so only the
+    // unknown-consent guard can keep the held event from going out.
+    cfg.value = { analytics_install_id: 'install-0000', analytics_opt_out: false };
+    await initAnalytics();
+    await shutdownAnalytics();
+    _resetPreInitForTests(false);
+    const { updateConfig } = await import('./configStore');
+    vi.mocked(updateConfig).mockRejectedValueOnce(new Error('EACCES'));
+    capture('onboarding_step', { step: 'intro', action: 'view' });
+    await initAnalytics();
+    expect(captureSpy).not.toHaveBeenCalled();
+  });
+
   it('is bounded', async () => {
     cfg.value = { analytics_install_id: 'install-0000', analytics_opt_out: false };
     for (let i = 0; i < 500; i++) capture('onboarding_step', { i });
@@ -123,6 +137,10 @@ describe('app_quit', () => {
     await initAnalytics();
     captureAppQuit();
     expect(calls()[0].properties).toMatchObject({ last_surface: 'none' });
+    // Once per process: a re-entered before-quit sends nothing more.
+    captureAppQuit();
+    expect(calls()).toHaveLength(1);
+    _resetPreInitForTests(true);
     capture('draw_game_started', {});
     noteSurface(null);
     captureAppQuit();

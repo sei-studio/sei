@@ -71,6 +71,9 @@ let profileOnboarded = true;
  * is configured and the user has not opted out; otherwise they are dropped.
  */
 let initDone = false;
+/** The opt-out flag was actually read from config. If that read failed, the
+ * user's choice is unknown, so the held events are dropped, never replayed. */
+let consentRead = false;
 const PRE_INIT_MAX = 200;
 const preInitQueue: Array<{ event: string; props?: Record<string, unknown>; at: number }> = [];
 
@@ -81,6 +84,8 @@ const preInitQueue: Array<{ event: string; props?: Record<string, unknown>; at: 
  */
 let lastSurface: string | null = null;
 const sessionStartedAt = Date.now();
+/** app_quit already sent this process (captureAppQuit is once-only). */
+let appQuitCaptured = false;
 
 /** True once a usable ingestion key is configured (not the placeholder). */
 function keyConfigured(): boolean {
@@ -117,6 +122,7 @@ async function initAnalyticsInner(): Promise<void> {
     });
     installId = next.analytics_install_id ?? '';
     optedOut = next.analytics_opt_out === true;
+    consentRead = true;
     setUiLanguage(next.ui_language);
     setProfileOnboarded(next.preferred_name);
   } catch (err) {
@@ -284,14 +290,17 @@ function send(event: string, props: Record<string, unknown> | undefined, at?: nu
 
 function replayPreInit(): void {
   const held = preInitQueue.splice(0);
+  if (!consentRead) return;
   for (const e of held) send(e.event, e.props, e.at);
 }
 
 /** Test seam: the pre-init state back to a fresh process. */
 export function _resetPreInitForTests(done = false): void {
   initDone = done;
+  consentRead = false;
   preInitQueue.length = 0;
   lastSurface = null;
+  appQuitCaptured = false;
 }
 
 /** Event name → product surface, for app_quit.last_surface. null = not a surface event. */
@@ -318,6 +327,11 @@ export function noteSurface(surface: string | null): void {
  * start, so an update relaunch is its own session.
  */
 export function captureAppQuit(now: number = Date.now()): void {
+  // Once per process: before-quit can fire again while the async teardown is
+  // still running (a second Cmd+Q, quitAndInstall's own quit after the
+  // window-all-closed one), and each run would send another app_quit.
+  if (appQuitCaptured) return;
+  appQuitCaptured = true;
   capture('app_quit', { session_ms: Math.max(0, now - sessionStartedAt), last_surface: lastSurface ?? 'none' });
 }
 
