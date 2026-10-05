@@ -334,7 +334,11 @@ async function setSettings(raw: unknown): Promise<TraySettingsView> {
 async function fetchRefillStatus(): Promise<RefillStatus | null> {
   try {
     const { getClient } = await import('../auth/supabaseClient');
-    const { data } = await getClient().auth.getSession();
+    const { data, error } = await getClient().auth.getSession();
+    // An expired JWT whose refresh failed (no network yet on wake or at a
+    // login launch) comes back as session null WITH an error. That is a failed
+    // read (retry), not a signed-out user (hold without re-arming).
+    if (error) throw error;
     const userId = data.session?.user?.id ?? null;
     if (!userId) return { userId: null, cloud: false, over_limit: false, plan: 'free', resets_at: '' };
     const { creditsGet } = await import('../cloud/proxyClient');
