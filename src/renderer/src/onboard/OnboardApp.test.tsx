@@ -31,11 +31,13 @@ const src = readFileSync(resolve(__dirname, 'OnboardApp.tsx'), 'utf-8');
 
 describe('OnboardApp W6: cloud path untouched', () => {
   it('runCloudSetup keeps its exact save/prefs/generate arc', () => {
-    const cloud = src.slice(src.indexOf('runCloudSetup = useCallback'), src.indexOf('}, [buildConfig]);'));
+    const cloud = src.slice(src.indexOf('runCloudSetup = useCallback'), src.indexOf('}, [buildConfig, trackCompleted]);'));
     expect(cloud).toContain("saveConfig(buildConfig('cloud-proxy'))");
     expect(cloud).toContain('prefsSave');
     expect(cloud).toContain('generateUnique');
-    expect(cloud).toContain("track('onboarding_completed')");
+    // 261005: counted at the config save, not after generation.
+    expect(cloud).toContain("trackCompleted(a.skipCreation ? 'skip' : 'new')");
+    expect(cloud.indexOf('trackCompleted(')).toBeLessThan(cloud.indexOf('generateUnique'));
     expect(cloud).toContain("setPhase({ k: 'return' })");
   });
   it('the setup phase dispatches to the cloud path when no local choices are armed', () => {
@@ -67,7 +69,8 @@ describe('OnboardApp W6: local path restored (full onboarding)', () => {
     expect(local).toContain('...(choices.tts ? { tts_engine: choices.tts } : {})');
   });
   it('still tracks onboarding_completed and honors skipCreation', () => {
-    expect(local).toContain("track('onboarding_completed')");
+    expect(local).toContain("trackCompleted('byok')");
+    expect(local.indexOf('trackCompleted(')).toBeLessThan(local.indexOf('generateUnique'));
     expect(local).toContain('skipCreation');
   });
 });
@@ -164,5 +167,38 @@ describe('OnboardApp: attribution question (261001)', () => {
     expect(ctl).toContain("onClick={() => answer(null)}");
     expect(ctl).toContain("tt('Skip')");
     expect(src).toMatch(/!\['newQ', 'nameQ', 'heardQ',/);
+  });
+});
+
+describe('OnboardApp 261005: onboarding_completed fires on every completion', () => {
+  it('is sent from one helper, once, and never for the boot sign-in variant', () => {
+    const helper = src.slice(src.indexOf('const trackCompleted = useCallback'), src.indexOf('/** Fade + hand off to App.'));
+    expect(helper).toContain("sei.track('onboarding_completed'");
+    expect(helper).toContain('if (startAtSignIn || completedTrackedRef.current) return;');
+    expect(src.match(/sei\.track\('onboarding_completed'/g)).toHaveLength(1);
+  });
+  it('welcome-existing and both returning completions report it', () => {
+    expect(src).toContain("trackCompleted('existing');\n        complete(false, null);");
+    expect(src.match(/trackCompleted\('returning'\);\n\s*complete\(false, null\);/g)).toHaveLength(2);
+  });
+  it('every complete(false, null) in the scene is preceded by a trackCompleted', () => {
+    const calls = src.split('complete(false, null)').length - 1;
+    const tracked = (src.match(/trackCompleted\('(existing|returning)'\);\n\s*complete\(false, null\)/g) ?? []).length;
+    expect(tracked).toBe(calls);
+  });
+});
+
+describe('OnboardApp 261005: step analytics', () => {
+  it('feeds the phase-derived step key to the tracker', () => {
+    expect(src).toContain('stepTrackerRef.current?.enter(stepKey);');
+    expect(src).toContain("stepTrackerRef.current?.finish('complete');");
+    expect(src).toContain("stepTrackerRef.current?.abandon('left_view')");
+  });
+  it('marks the skip buttons', () => {
+    const ctl = src.slice(src.indexOf('function LineControls('), src.indexOf('/* ── Auth panel'));
+    expect(ctl.match(/markStep\('skip'\)/g)).toHaveLength(3);
+  });
+  it('the boot sign-in variant is not tracked', () => {
+    expect(src).toContain('if (!startAtSignIn && stepTrackerRef.current === null)');
   });
 });

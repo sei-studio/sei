@@ -31,6 +31,7 @@ import { previewCacheKey, readCachedPreview, writeCachedPreview } from './previe
 import { NO_VOICE_ID } from '../../shared/voiceIds';
 import { resolveElevenLabsRoute, type ElevenLabsRoute } from './elevenLabsKeyStore';
 import type { SpeechPackId } from '../speech/packs';
+import { noteCreditWall } from '../creditWall';
 
 const PROXY_BASE_URL = process.env.SEI_PROXY_URL ?? 'https://api.sei.gg';
 const ELEVENLABS_TTS_MODEL = 'eleven_flash_v2_5';
@@ -414,7 +415,12 @@ async function fetchAudio(
   if (!res.ok) {
     clearTimeout(timeout);
     const text = await res.text().catch(() => '');
-    if (res.status === 402) throw new Error('VOICE_NO_CREDITS: playtime balance exhausted');
+    if (res.status === 402) {
+      // 261005: the proxy's ledger is out. A direct (own ElevenLabs key) 402 is
+      // the user's own account, not Sei's credit wall.
+      if (!direct) noteCreditWall({ reason: 'depleted' }, { surface: 'voice', trigger: 'tts' });
+      throw new Error('VOICE_NO_CREDITS: playtime balance exhausted');
+    }
     if (res.status === 429) throw new Error('VOICE_RATE_LIMITED: daily usage cap reached');
     if (res.status === 503) throw new Error('VOICE_NOT_CONFIGURED: voice service unavailable');
     // Direct route only: the user's own account has no such voice (see
@@ -683,7 +689,11 @@ export async function voiceTtsStream(
   if (!res.ok || !res.body) {
     clearTimeout(timeout);
     const bodyText = await res.text().catch(() => '');
-    if (res.status === 402) throw new Error('VOICE_NO_CREDITS: playtime balance exhausted');
+    if (res.status === 402) {
+      // 261005: see fetchAudio; only the proxy route is Sei's credit wall.
+      if (route.kind !== 'direct') noteCreditWall({ reason: 'depleted' }, { surface: 'voice', trigger: 'tts' });
+      throw new Error('VOICE_NO_CREDITS: playtime balance exhausted');
+    }
     if (res.status === 429) throw new Error('VOICE_RATE_LIMITED: daily usage cap reached');
     if (res.status === 503) throw new Error('VOICE_NOT_CONFIGURED: voice service unavailable');
     // Direct route only (see fetchAudio / VOICE_NOT_IN_LIBRARY).

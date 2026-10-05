@@ -24,7 +24,8 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { closeSplashWindow, createMainWindow, createSplashWindow } from './windowChrome';
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
-import { isAnalyticsActive, shutdownAnalytics, capture } from './analytics';
+import { isAnalyticsActive, shutdownAnalytics, capture, captureAppQuit, noteSurface } from './analytics';
+import { reportOnboardingAbandoned } from './onboardingFunnel';
 import { notePreGateFailure, clearSummonBlock, clearSummonBlocksOfClass } from './summonGuard';
 import { createBotSupervisor, SUMMON_CANCELLED } from './botSupervisor';
 import { registerGameModule, getGameModule, listGameModules } from './games';
@@ -547,6 +548,22 @@ function getLanMotd(): string | null {
   return latestLanState.kind === 'open' ? latestLanState.motd : null;
 }
 
+/** Upper bound on ending the game surfaces at quit (their rows hit the disk). */
+const QUIT_SURFACE_END_TIMEOUT_MS = 1500;
+
+/**
+ * End chess, Draw! and backseat for a quit so each sends its `_ended` event
+ * (reason 'app_quit') before the analytics flush. Bounded; never throws.
+ */
+async function endGameSurfacesForQuit(): Promise<void> {
+  const ends = Promise.allSettled([
+    (async () => (await import('./chess/chessService')).endAllChess('app_quit'))(),
+    (async () => (await import('./draw/drawService')).endAllDraw('app_quit'))(),
+    (async () => (await import('./backseat/backseatService')).endAllBackseat('app_quit'))(),
+  ]);
+  await Promise.race([ends, new Promise((resolve) => setTimeout(resolve, QUIT_SURFACE_END_TIMEOUT_MS))]);
+}
+
 async function bootstrap(): Promise<void> {
   // 0-pre. Install marker (260926). MUST be the first thing bootstrap does:
   //        it tells a fresh install from an existing one by probing for Sei
@@ -558,6 +575,10 @@ async function bootstrap(): Promise<void> {
     const { paths } = await import('./paths');
     const kind = noteLaunch(paths.userData(), app.getVersion());
     if (kind !== 'seen') logger.info(`install marker: ${kind}`);
+    // 261005: install age for credit_wall_hit.ms_since_install.
+    const { readInstalledAt } = await import('./firstLaunch');
+    const { setInstalledAt } = await import('./creditWall');
+    setInstalledAt(readInstalledAt(paths.userData()));
   } catch (err) {
     logger.warn(`install marker failed: ${(err as Error).message}`);
   }
@@ -1146,6 +1167,7 @@ async function bootstrap(): Promise<void> {
     // idle character runs a standalone greeting turn whose replies are pushed
     // (and spoken by the renderer's TTS hook).
     greetVoiceCall: (id, peers = []) => {
+      noteSurface('voice'); // 261005: app_quit.last_surface
       // A solo in-game session greets over the port (say() routes to the call).
       // On a group call we always run the standalone greeting turn so the joiner
       // can name the room — the in-game greet path has no group framing.
@@ -1322,6 +1344,8 @@ if (!gotLock) {
       app.quit();
       return;
     }
+    // 261005: the app stays resident but the onboarding view is gone.
+    reportOnboardingAbandoned('window_closed', capture);
     // macOS stays resident when the last window closes — which meant a
     // downloaded update NEVER installed for anyone who "closed and reopened
     // the app" (260909): Squirrel.Mac applies a staged update on process
@@ -1347,11 +1371,19 @@ if (!gotLock) {
   app.on('before-quit', async (e) => {
     if (!supervisor && !watchersRunning && !skinServer && !loopbackAuthServer && !isAnalyticsActive()) return; // already shut down
     e.preventDefault();
+    // 261005: app_quit {session_ms, last_surface}, and an onboarding that
+    // was still on screen. Both before the flush below.
+    try { captureAppQuit(); } catch { /* best-effort */ }
+    reportOnboardingAbandoned('quit', capture);
     // Close any open text-chat session BEFORE the flush below — quitting
     // mid-conversation is the normal way a chat ends, and an event captured
     // after shutdownAnalytics() would never be sent.
     try { await (await import('./chat/chatSession')).endAllChatSessions(); } catch { /* best-effort */ }
     try { endAllPlaySessionsForQuit(); } catch { /* best-effort */ }
+    // 261005: end chess, Draw! and backseat BEFORE the flush too. They used to
+    // be shut down after it (and backseat not at all), so their *_ended events
+    // were lost on every quit. Bounded: their closing rows write to disk.
+    await endGameSurfacesForQuit();
     // Flush buffered analytics first so queued events survive the quit.
     try { await shutdownAnalytics(); } catch (err) { logger.warn(`analytics shutdown failed: ${(err as Error).message}`); }
     try { if (supervisor) await supervisor.shutdown(); } catch (err) { logger.warn(`supervisor shutdown failed: ${(err as Error).message}`); }

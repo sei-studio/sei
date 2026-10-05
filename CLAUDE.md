@@ -2880,6 +2880,35 @@ existing install updating to the first build with this code is classified
 `upgrade` and sends nothing. Keep that list in sync if a new device-global
 file appears, and keep `noteLaunch()` ahead of anything that writes userData.
 
+**Retention events (261005).** From the retention analysis
+(`~/suisei/reports/retention-2026-10-05.md`):
+- `credit_wall_hit` (`src/main/creditWall.ts`) fires from `emitCreditsHardStop`
+  (every popup path: chat, voice, chess, Draw!, backseat via
+  `raiseUsageLimitPopup(err, surface)`, the bot's pre-flight gate and
+  mid-session walls via the supervisor) and from the proxy-route TTS/STT 402s,
+  which never raise the popup. One event per wall: keyed by `reason`, a burst
+  collapses while repeats are under 10 minutes apart. A new hard-stop path
+  passes its `CreditWallContext`. `allowance_used_micro` is `usage_pct` of the
+  plan allowance (1% resolution; the client cannot read the ledger sum).
+  `credit_wall_action {action, reason, ms_open}` is the modal's answer.
+- `onboarding_step {step, index, action: view|complete|skip|back, ms_in_step,
+  path, skipped_creation}` per OnboardApp screen (`onboard/onboardSteps.ts`;
+  not the boot sign-in variant). A new screen or button that skips needs a
+  step name in `ONBOARD_STEPS` and, for a skip, `markStep('skip')`.
+  `onboarding_abandoned` comes from the renderer on unmount (`left_view`) and
+  from main at quit / last-window-close (`src/main/onboardingFunnel.ts`, fed
+  by the analytics:track handler).
+- `onboarding_completed {path: new|skip|byok|existing|returning}` fires once,
+  at the config save that writes `preferred_name` (not after generation) and
+  on the welcome-existing and returning completions. Events captured before
+  `initAnalytics()` resolves are queued and replayed (`analytics.ts`); they
+  used to be dropped.
+- `app_quit {session_ms, last_surface}` first in before-quit; chess, Draw! and
+  backseat now end (reason `app_quit`) BEFORE the flush.
+- `update_installed {from, to, via}` from `runWhatsNewCheck`.
+- `backend` reads `'unset'` until the profile has a `preferred_name` on the
+  default `local` kind.
+
 ### The play row is ONE sentence, shared (260728)
 
 `src/main/chat/playSummary.ts` owns it, and every game surface calls it:

@@ -58,6 +58,8 @@ export function noteChatMessage(characterId: string): void {
       clearTimeout(live.timer);
       live.lastAt = now;
       live.messages += 1;
+      // 261005: app_quit.last_surface (a continuing session has no event).
+      void import('../analytics').then((a) => a.noteSurface('chat')).catch(() => {});
       live.timer = setTimeout(() => void endChatSession(characterId, 'idle'), IDLE_TIMEOUT_MS);
       // A pending timer must never hold the app open at quit.
       live.timer.unref?.();

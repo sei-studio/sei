@@ -39,6 +39,13 @@ import { t, useT, uiLanguage } from '../lib/i18n';
 import { useEmailCode } from '../lib/useEmailCode';
 import { CodeInput } from '../components/CodeInput';
 import { OnboardScene, type SuiPose } from './OnboardScene';
+import {
+  OnboardStepTracker,
+  stepFor,
+  type AuthSubStep,
+  type LocalSubStep,
+  type OnboardStepAction,
+} from './onboardSteps';
 import { DEFAULT_CHARACTER_UUIDS } from '@shared/defaultCharacters';
 import {
   DEFAULT_MODELS,
@@ -316,12 +323,61 @@ export function OnboardApp({
     setGroundIn(true);
   }, []);
 
+  // ── Step analytics (261005) ────────────────────────────────────────────
+  // onboarding_step per screen (see onboardSteps.ts). Not for the boot
+  // sign-in variant: that is an onboarded profile signing in, not onboarding.
+  const stepTrackerRef = useRef<OnboardStepTracker | null>(null);
+  /** Set once the new branch chose "use my own API key". */
+  const byokRef = useRef(false);
+  const onboardPath = useCallback(
+    (): string => (answersRef.current.returning ? 'returning' : byokRef.current ? 'byok' : 'new'),
+    [],
+  );
+  if (!startAtSignIn && stepTrackerRef.current === null) {
+    stepTrackerRef.current = new OnboardStepTracker(
+      (event, props) => sei.track(event, props),
+      () => Date.now(),
+      () => ({ path: onboardPath(), skipped_creation: answersRef.current.skipCreation }),
+    );
+  }
+  const markStep = useCallback((action: Exclude<OnboardStepAction, 'view'>) => {
+    stepTrackerRef.current?.mark(action);
+  }, []);
+
+  /**
+   * `onboarding_completed`, exactly once per mount (261005). It used to fire
+   * only at the very END of runCloudSetup / runLocalSetup, after companion
+   * generation (which can take minutes), and nowhere on the welcome-existing
+   * or returning completions; 9 of 16 installs in the 261005 window had no
+   * such event. It now fires as soon as the profile counts as onboarded (the
+   * config save that writes preferred_name: a quit after that point relaunches
+   * to Home) and on every other completion. `path`: new | skip | byok |
+   * existing | returning.
+   */
+  const completedTrackedRef = useRef(false);
+  const trackCompleted = useCallback(
+    (path: 'new' | 'skip' | 'byok' | 'existing' | 'returning') => {
+      if (startAtSignIn || completedTrackedRef.current) return;
+      completedTrackedRef.current = true;
+      const tracker = stepTrackerRef.current;
+      sei.track('onboarding_completed', {
+        path,
+        skipped_creation: answersRef.current.skipCreation,
+        ms_in_onboarding: tracker ? tracker.msInOnboarding() : null,
+        steps_viewed: tracker ? tracker.stepsViewed : null,
+      });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- constant prop
+    [],
+  );
+
   /** Fade + hand off to App. Fires exactly once. */
   const completedRef = useRef(false);
   const complete = useCallback(
     (tutorial: boolean, characterId: string | null) => {
       if (completedRef.current) return;
       completedRef.current = true;
+      stepTrackerRef.current?.finish('complete');
       setPhase({ k: 'fade' });
       setTimeout(() => onComplete({ tutorial, characterId }), 950);
     },
@@ -381,6 +437,9 @@ export function OnboardApp({
     const a = answersRef.current;
     try {
       await sei.saveConfig(buildConfig('cloud-proxy'));
+      // Onboarded from here on (preferred_name is written): count it now, not
+      // after generation, or a quit during "Setting up..." loses the event.
+      trackCompleted(a.skipCreation ? 'skip' : 'new');
       if (!a.skipCreation) {
         await sei.prefsSave({
           companion_age_range: a.age,
@@ -406,14 +465,13 @@ export function OnboardApp({
       }
       if (run !== setupRunRef.current) return;
       genCharacterIdRef.current = characterId;
-      sei.track('onboarding_completed');
       setPhase({ k: 'return' });
       setGroundIn(true);
     } catch (err) {
       if (run !== setupRunRef.current) return;
       setSetupError((err as Error).message || t('Something went wrong.'));
     }
-  }, [buildConfig]);
+  }, [buildConfig, trackCompleted]);
 
   // ── Setup pipeline (local path, 260817 china-compat W6) ────────────────
   // The FULL onboarding arc for BYOK users: same config-save + prefsSave +
@@ -442,6 +500,7 @@ export function OnboardApp({
         ...(choices.stt ? { stt_engine: choices.stt } : {}),
         ...(choices.tts ? { tts_engine: choices.tts } : {}),
       });
+      trackCompleted('byok');
       if (!a.skipCreation) {
         await sei.prefsSave({
           companion_age_range: a.age,
@@ -471,14 +530,13 @@ export function OnboardApp({
       }
       if (run !== setupRunRef.current) return;
       genCharacterIdRef.current = characterId;
-      sei.track('onboarding_completed');
       setPhase({ k: 'return' });
       setGroundIn(true);
     } catch (err) {
       if (run !== setupRunRef.current) return;
       setSetupError((err as Error).message || t('Something went wrong.'));
     }
-  }, [buildConfig]);
+  }, [buildConfig, trackCompleted]);
 
   useEffect(() => {
     if (phase.k === 'setup') void (localChoicesRef.current ? runLocalSetup() : runCloudSetup());
@@ -515,12 +573,15 @@ export function OnboardApp({
         }
       }
       await held;
-      if (!cancelled) complete(false, null);
+      if (!cancelled) {
+        trackCompleted('existing');
+        complete(false, null);
+      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [phase.k, complete]);
+  }, [phase.k, complete, trackCompleted]);
 
   // Re-entering the scene for the send-off: ground slides in → Sui walks in
   // (onGroundIn/onSuiEntered above route 'return' to the 'ready' line).
@@ -617,6 +678,7 @@ export function OnboardApp({
         break;
       case 'noAccount':
         answersRef.current.returning = false;
+        markStep('complete'); // forward, though are_you_new sorts earlier
         goLine('newQ');
         break;
       case 'nameQ':
@@ -651,7 +713,7 @@ export function OnboardApp({
       default:
         break;
     }
-  }, [line, tw, name, goLine, walkOff, complete]);
+  }, [line, tw, name, goLine, walkOff, complete, markStep]);
 
   // Enter advances any line that advances on click.
   useEnterAdvances(advance);
@@ -749,7 +811,10 @@ export function OnboardApp({
       if (mode === 'returning') {
         const fresh = has === null ? signedIntoFreshAccount() : !has;
         if (fresh) resumeAsNew();
-        else complete(false, null);
+        else {
+          trackCompleted('returning');
+          complete(false, null);
+        }
       } else if (has === null ? signedIntoExistingAccount() : has) {
         // They walked the new-user branch but signed into an account that
         // already has a profile. Running setup here would clobber the
@@ -760,11 +825,14 @@ export function OnboardApp({
         setPhase({ k: 'setup' });
       }
     },
-    [accountHasProfile, complete, signedIntoExistingAccount, signedIntoFreshAccount, resumeAsNew],
+    [accountHasProfile, complete, signedIntoExistingAccount, signedIntoFreshAccount, resumeAsNew, trackCompleted],
   );
 
   /** Post-auth continuation: ToS gate, then setup (new) or done (returning). */
   const [needsTos, setNeedsTos] = useState(false);
+  /** Step analytics only: ToS agreed and routing is in flight, so the panel
+   * flashing back to the form is not a step of its own (261005). */
+  const [tosAgreed, setTosAgreed] = useState(false);
   const proceedingRef = useRef(false);
   const proceedAfterAuth = useCallback(
     async (mode: 'new' | 'returning') => {
@@ -796,6 +864,7 @@ export function OnboardApp({
     } catch {
       /* recorded again by the normal window's gate if this failed */
     }
+    setTosAgreed(true);
     setNeedsTos(false);
     const mode = phase.k === 'auth' ? phase.mode : 'new';
     await routeAfterAuth(mode);
@@ -817,6 +886,40 @@ export function OnboardApp({
   const finishLocalSetup = useCallback((choices: LocalSetupChoices) => {
     localChoicesRef.current = choices;
     setPhase({ k: 'setup' });
+  }, []);
+
+  // ── Step analytics wiring (261005) ─────────────────────────────────────
+  const [authSub, setAuthSub] = useState<AuthSubStep>('form');
+  const [localSub, setLocalSub] = useState<LocalSubStep>('key');
+  // A remounted panel starts on its first screen; forget the last visit's.
+  useEffect(() => {
+    if (phase.k !== 'auth') {
+      setAuthSub('form');
+      setTosAgreed(false);
+    }
+    if (phase.k !== 'local-setup') setLocalSub('key');
+  }, [phase.k]);
+  const stepKey = stepFor(phase, {
+    needsTos: needsTos || tosAgreed,
+    auth: authSub,
+    local: localSub,
+    setupError: setupError !== null,
+  });
+  useEffect(() => {
+    stepTrackerRef.current?.enter(stepKey);
+  }, [stepKey]);
+  // Leaving the view before completing (App navigated away) = abandoned. The
+  // check is deferred a tick so StrictMode's dev-only unmount/remount does not
+  // count. A QUIT never runs this; main reports that (onboardingFunnel.ts).
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      setTimeout(() => {
+        if (!mountedRef.current) stepTrackerRef.current?.abandon('left_view');
+      }, 0);
+    };
   }, []);
 
   // ── Render ─────────────────────────────────────────────────────────────
@@ -859,6 +962,7 @@ export function OnboardApp({
               goLine={goLine}
               advance={advance}
               walkOff={walkOff}
+              markStep={markStep}
             /> : null}
           </div>
         ) : null}
@@ -867,6 +971,7 @@ export function OnboardApp({
           <AuthPanel
             mode={phase.mode}
             needsTos={needsTos}
+            onSubStep={setAuthSub}
             onIntent={(i) => {
               authIntentRef.current = i;
             }}
@@ -886,8 +991,10 @@ export function OnboardApp({
                 // A returning local player needs no re-setup; the normal
                 // window routes them (home, or legacy onboarding if their
                 // profile is incomplete).
+                trackCompleted('returning');
                 complete(false, null);
               } else {
+                byokRef.current = true;
                 answersRef.current.skipCreation = answersRef.current.skipCreation || false;
                 setPhase({ k: 'local-setup' });
               }
@@ -896,7 +1003,11 @@ export function OnboardApp({
         ) : null}
 
         {phase.k === 'local-setup' ? (
-          <LocalSetupPanel onDone={finishLocalSetup} />
+          <LocalSetupPanel
+            onDone={finishLocalSetup}
+            onSubStep={setLocalSub}
+            onDecideLater={() => markStep('skip')}
+          />
         ) : null}
 
         {phase.k === 'welcome-existing' ? (
@@ -913,7 +1024,10 @@ export function OnboardApp({
               <p className={styles.panelText}>{setupError}</p>
               <button
                 className={styles.pill}
-                onClick={() => void (localChoicesRef.current ? runLocalSetup() : runCloudSetup())}
+                onClick={() => {
+                  markStep('complete'); // a retry moves forward, though setup sorts earlier
+                  void (localChoicesRef.current ? runLocalSetup() : runCloudSetup());
+                }}
               >
                 {tt('Try again')}
               </button>
@@ -952,10 +1066,12 @@ interface LineControlsProps {
   goLine: (id: LineId) => void;
   advance: () => void;
   walkOff: (to: 'auth-new' | 'auth-returning') => void;
+  /** Step analytics: how the current step is being left (261005). */
+  markStep: (action: Exclude<OnboardStepAction, 'view'>) => void;
 }
 
 function LineControls(props: LineControlsProps): React.ReactElement | null {
-  const { line, name, setName, answersRef, goLine, advance, walkOff } = props;
+  const { line, name, setName, answersRef, goLine, advance, walkOff, markStep } = props;
   const tt = useT();
 
   switch (line) {
@@ -1004,6 +1120,7 @@ function LineControls(props: LineControlsProps): React.ReactElement | null {
       const answer = (source: AttributionSource | null): void => {
         const ev = attributionEvent(source);
         sei.track(ev.event, ev.props);
+        if (source === null) markStep('skip');
         goLine('job');
       };
       return (
@@ -1025,7 +1142,13 @@ function LineControls(props: LineControlsProps): React.ReactElement | null {
           <button className={styles.pill} onClick={advance}>
             {tt('Sounds fun')}
           </button>
-          <button className={styles.quietLink} onClick={() => goLine('skipConfirm')}>
+          <button
+            className={styles.quietLink}
+            onClick={() => {
+              markStep('skip');
+              goLine('skipConfirm');
+            }}
+          >
             {tt('Not interested')}
           </button>
         </div>
@@ -1037,6 +1160,7 @@ function LineControls(props: LineControlsProps): React.ReactElement | null {
             className={styles.pill}
             onClick={() => {
               answersRef.current.skipCreation = true;
+              markStep('skip');
               walkOff('auth-new');
             }}
           >
@@ -1139,6 +1263,8 @@ function AuthPanel(props: {
   onIntent: (intent: 'signup' | 'signin' | 'oauth') => void;
   onAgreeTos: () => void;
   onLocal: () => void;
+  /** Step analytics (261005): which of the panel's screens is showing. */
+  onSubStep?: (sub: AuthSubStep) => void;
   /** Returning panels only: "I'm new here" — replay the full Sui scene so a
    * new person can reach account creation (the returning panel deliberately
    * has no sign-up form). The boot signin variant remounts via App; the
@@ -1176,6 +1302,12 @@ function AuthPanel(props: {
    * backstop. Fails open: a failed pre-check leaves the form usable.
    */
   const [regionBlocked, setRegionBlocked] = useState(false);
+  const { onSubStep } = props;
+  useEffect(() => {
+    onSubStep?.(
+      regionBlocked ? 'region_blocked' : codeSentTo !== null ? 'code' : oauth ? 'oauth_wait' : 'form',
+    );
+  }, [onSubStep, regionBlocked, codeSentTo, oauth]);
   useEffect(() => {
     let cancelled = false;
     sei.regionStatus().then(
@@ -1637,9 +1769,18 @@ const PROVIDERS: Array<{ value: string; label: string }> = SHOWN_PROVIDERS.map((
  * leaves the engine fields absent (Whisper-fallback STT semantics,
  * ElevenLabs TTS semantics), matching Settings' vocabulary later.
  */
-function LocalSetupPanel(props: { onDone: (choices: LocalSetupChoices) => void }): React.ReactElement {
+function LocalSetupPanel(props: {
+  onDone: (choices: LocalSetupChoices) => void;
+  /** Step analytics (261005): the wizard step showing, and a "Decide later". */
+  onSubStep?: (step: LocalSubStep) => void;
+  onDecideLater?: () => void;
+}): React.ReactElement {
   const tt = useT();
   const [step, setStep] = useState<'key' | 'model' | 'stt' | 'tts'>('key');
+  const { onSubStep } = props;
+  useEffect(() => {
+    onSubStep?.(step);
+  }, [onSubStep, step]);
   const [provider, setProvider] = useState<ProviderKind>('anthropic');
   const [key, setKey] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1811,6 +1952,7 @@ function LocalSetupPanel(props: { onDone: (choices: LocalSetupChoices) => void }
         onElKeySaved={() => setElKeySaved(true)}
         onPick={(stt) => {
           sttRef.current = stt;
+          if (!stt) props.onDecideLater?.();
           setStep('tts');
         }}
         onBack={() => setStep('model')}
@@ -1822,15 +1964,16 @@ function LocalSetupPanel(props: { onDone: (choices: LocalSetupChoices) => void }
     <TtsStep
       elKeySaved={elKeySaved}
       onElKeySaved={() => setElKeySaved(true)}
-      onPick={(tts) =>
+      onPick={(tts) => {
+        if (!tts) props.onDecideLater?.();
         props.onDone({
           provider,
           model: model.trim(),
           ...(sttRef.current ? { stt: sttRef.current } : {}),
           ...(tts ? { tts } : {}),
           ...(skipGenRef.current ? { skipGeneration: true } : {}),
-        })
-      }
+        });
+      }}
       onBack={() => setStep('stt')}
     />
   );

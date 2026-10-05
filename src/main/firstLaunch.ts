@@ -30,7 +30,7 @@
  * no-ingestion-key build are respected there.
  */
 import { app } from 'electron';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -81,6 +81,27 @@ export function recordLaunch(userDataDir: string, appVersion: string, now: Date 
     if ((err as NodeJS.ErrnoException).code === 'EEXIST') return 'seen';
     console.warn(`[sei] install marker: ${(err as Error).message}`);
     return 'unrecorded';
+  }
+}
+
+/**
+ * When this install first launched (ms epoch), from the marker, for the
+ * `ms_since_install` analytics props (261005). Only a 'fresh' marker counts:
+ * an 'upgrade' marker records when the first marker-writing BUILD ran on an
+ * older install, not when the user installed Sei, so it reads as unknown
+ * (null) rather than as a misleadingly young install. Never throws.
+ */
+export function readInstalledAt(userDataDir: string): number | null {
+  try {
+    const raw = JSON.parse(readFileSync(path.join(userDataDir, INSTALL_MARKER_FILE), 'utf8')) as {
+      kind?: unknown;
+      first_launch_at?: unknown;
+    };
+    if (raw.kind !== 'fresh' || typeof raw.first_launch_at !== 'string') return null;
+    const ms = Date.parse(raw.first_launch_at);
+    return Number.isFinite(ms) ? ms : null;
+  } catch {
+    return null;
   }
 }
 

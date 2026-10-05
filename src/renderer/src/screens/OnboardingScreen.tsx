@@ -237,7 +237,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         // inside her meet scene, at the moment it is actually needed.
         // Analytics (260707): onboarding finished (fresh profile completing
         // the name/setup flow), the activation entry point.
-        sei.track('onboarding_completed');
+        sei.track('onboarding_completed', { path: 'legacy' });
         // Straight to home. Per-game setup (Minecraft skins) now runs the
         // first time that game is opened from the Play together tiles.
         setHomeTab('home');
