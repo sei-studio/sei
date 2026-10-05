@@ -305,6 +305,8 @@ export function _resetPreInitForTests(done = false): void {
 
 /** Event name → product surface, for app_quit.last_surface. null = not a surface event. */
 export function surfaceForEvent(event: string): string | null {
+  // *_ended events often fire from timers (idle chat close), not from the user.
+  if (event.endsWith('_ended')) return null;
   if (event.startsWith('chat_') || event.startsWith('first_moment_')) return 'chat';
   if (event.startsWith('voice_call_')) return 'voice';
   if (event.startsWith('chess_')) return 'chess';

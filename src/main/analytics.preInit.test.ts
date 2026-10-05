@@ -125,7 +125,9 @@ describe('app_quit', () => {
   it('maps event names to surfaces', () => {
     expect(surfaceForEvent('chess_game_started')).toBe('chess');
     expect(surfaceForEvent('character_summoned')).toBe('game');
-    expect(surfaceForEvent('voice_call_ended')).toBe('voice');
+    expect(surfaceForEvent('voice_call_started')).toBe('voice');
+    expect(surfaceForEvent('voice_call_ended')).toBeNull();
+    expect(surfaceForEvent('chat_session_ended')).toBeNull();
     expect(surfaceForEvent('app_opened')).toBeNull();
   });
 
