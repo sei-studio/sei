@@ -16,6 +16,7 @@
  * bot path uses, so the one HardStopModal serves every surface.
  */
 import { getAiBackendKind } from '../apiKeyStore';
+import { noteCreditWallHit } from '../tray/wallHook';
 
 export type UsageLimitReason = 'depleted' | 'rate_limited';
 
@@ -77,6 +78,8 @@ export async function raiseUsageLimitPopup(err: unknown): Promise<UsageLimitReas
         ? { reason: 'rate_limited', retry_after_seconds: retryAfterSeconds(err) ?? 60 }
         : { reason: 'depleted' },
     );
+    // Refill notification (261005): remember the wall for "free play is back".
+    if (reason === 'depleted') noteCreditWallHit();
     return reason;
   } catch {
     return null;

@@ -189,6 +189,11 @@ const api: RendererApi = {
   permissionsTakeResume: () => ipcRenderer.invoke(IpcChannel.permissions.takeResume),
   permissionsRelaunch: (resume) => ipcRenderer.invoke(IpcChannel.permissions.relaunch, resume),
 
+  // Menu bar / tray + refill notification (261005) — see src/shared/trayIpc.ts.
+  trayGetSettings: () => ipcRenderer.invoke(IpcChannel.tray.get),
+  traySetSettings: (args) => ipcRenderer.invoke(IpcChannel.tray.set, args),
+  trayMarkWallPromptSeen: () => ipcRenderer.invoke(IpcChannel.tray.markWallPromptSeen),
+
   // Backseat (260728) — see src/shared/backseatIpc.ts.
   backseatSources: (opts?: { thumbnails?: boolean }) =>
     ipcRenderer.invoke(IpcChannel.backseat.sources, opts),

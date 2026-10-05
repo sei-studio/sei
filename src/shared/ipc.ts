@@ -68,6 +68,8 @@ export type {
 } from './backseatGames';
 import type { OsPermissionKind, OsPermissionStatus, PermissionResume } from './permissionsIpc';
 export type { OsPermissionKind, OsPermissionStatus, PermissionResume } from './permissionsIpc';
+import type { TraySettingsView, TraySetArgs } from './trayIpc';
+export type { TraySettingsView, TraySetArgs, TraySettingSource } from './trayIpc';
 import type { McDashboardSnapshot, McDashboardSnapshotPush } from './mcDashboardIpc';
 import type { GameId, WorldState, WorldStates, GameDashboardSnapshot } from './gameIpc';
 import { StardewIpcChannel, type StardewInstallState, type StardewInstallProgressEvent, type StardewLaunchResult } from './stardewIpc';
@@ -2098,6 +2100,14 @@ export interface RendererApi {
   /** "Restart Sei and continue": arm the resume flag, then relaunch. */
   permissionsRelaunch(resume: PermissionResume): Promise<void>;
 
+  // --- Menu bar / tray + refill notification (261005) --- see src/shared/trayIpc.ts.
+  /** Current tray setting, platform support and login-item state. */
+  trayGetSettings(): Promise<TraySettingsView>;
+  /** Change the tray setting and/or the login item. Returns the new state. */
+  traySetSettings(args: TraySetArgs): Promise<TraySettingsView>;
+  /** Record that the one-time credit-wall prompt was shown (never shown again). */
+  trayMarkWallPromptSeen(): Promise<void>;
+
   // --- Backseat (260728) --- see src/shared/backseatIpc.ts for the tick
   // model, the image-grid geometry and the authority split. The renderer owns
   // capture; every model call happens in main.
@@ -3342,6 +3352,12 @@ export const IpcChannel = {
   },
   // OS permission flows (260929) — microphone for calls, Screen Recording for
   // screen share on macOS. See src/shared/permissionsIpc.ts.
+  // Menu bar / tray + refill notification (261005). See src/shared/trayIpc.ts.
+  tray: {
+    get: 'tray:get',
+    set: 'tray:set',
+    markWallPromptSeen: 'tray:mark-wall-prompt-seen',
+  },
   permissions: {
     status: 'permissions:status',
     requestMic: 'permissions:request-mic',

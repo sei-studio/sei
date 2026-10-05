@@ -643,4 +643,25 @@ export const ZH_MODALS: Record<string, string> = {
     '你的免费游玩已经恢复了，伙伴们随时等你回来。',
   'Your weekly allowance is back. Your companions are ready when you are.':
     '你的每周额度已经恢复了，伙伴们随时等你回来。',
+
+  // ── WallTrayPrompt (credit wall, 261005) ──
+  'Want a heads-up when free play is back? Keep Sei in your menu bar.':
+    '想在免费游玩恢复时收到提醒吗？让 Sei 留在菜单栏里。',
+  'Want a heads-up when your allowance is back? Keep Sei in your menu bar.':
+    '想在额度恢复时收到提醒吗？让 Sei 留在菜单栏里。',
+  'Want a heads-up when free play is back? Keep Sei in your system tray.':
+    '想在免费游玩恢复时收到提醒吗？让 Sei 留在系统托盘里。',
+  'Want a heads-up when your allowance is back? Keep Sei in your system tray.':
+    '想在额度恢复时收到提醒吗？让 Sei 留在系统托盘里。',
+  'No thanks': '不用了',
+  'Turn it on': '打开',
+  "You're set. Sei will stay in your menu bar and let you know when free play is back.":
+    '好了。Sei 会留在菜单栏里，免费游玩恢复时会提醒你。',
+  "You're set. Sei will stay in your menu bar and let you know when your allowance is back.":
+    '好了。Sei 会留在菜单栏里，额度恢复时会提醒你。',
+  "You're set. Sei will stay in your system tray and let you know when free play is back.":
+    '好了。Sei 会留在系统托盘里，免费游玩恢复时会提醒你。',
+  "You're set. Sei will stay in your system tray and let you know when your allowance is back.":
+    '好了。Sei 会留在系统托盘里，额度恢复时会提醒你。',
+  "That didn't work. You can turn it on in Settings.": '没能打开。你可以在设置中打开它。',
 };

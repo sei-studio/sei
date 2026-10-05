@@ -37,7 +37,10 @@ import { initCallOverlay, closeCallOverlay } from './callOverlay';
 import { trackScopedWrite, isAccountTeardownActive } from './profile/scopeBarrier';
 import { sessionEndProps, isSessionFailure, type SessionEndProps } from './sessionEnd';
 import { formatPlayDuration, playSummaryText } from './chat/playSummary';
-import { initUpdater } from './updater';
+import { initUpdater, installDownloadedUpdate, isUpdateReadyToInstall } from './updater';
+import { attachCloseToTray, initTray, shouldStartHidden } from './tray/trayController';
+import { noteCreditWallHit } from './tray/wallHook';
+import { loadAnalytics } from './lazyAnalytics';
 import { initNotices } from './notices';
 import { createSkinServer, SKIN_SERVER_DEV_PORT } from './skinServer';
 import { runFirstLaunchMigration, runUuidRenameMigration, runDefaultsToWorldMigration } from './migration';
@@ -93,6 +96,9 @@ const logger = {
 };
 
 let mainWindow: BrowserWindow | null = null;
+// Login launch with "keep Sei in the menu bar / tray" on (261005): the first
+// bootstrap loads the window hidden. Consumed once; any later window shows.
+let startHiddenLaunch = false;
 // Startup splash (260728) — shown from whenReady, closed when the main window
 // first paints (or by the failsafe timer).
 let splashWindow: BrowserWindow | null = null;
@@ -179,6 +185,8 @@ function wireMainWindowEvents(win: BrowserWindow): void {
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
   });
+  // Menu bar / tray setting on: the close button hides instead (261005).
+  attachCloseToTray(win);
   // Replay latest LAN state on did-finish-load so freshly-loaded renderer is in sync.
   win.webContents.on('did-finish-load', () => {
     if (!win.isDestroyed()) {
@@ -829,9 +837,12 @@ async function bootstrap(): Promise<void> {
   //    Attach the sei-portrait:// request handler first so the renderer can
   //    resolve <img src="sei-portrait://…"> the moment it loads.
   registerPortraitProtocol();
+  const startHidden = startHiddenLaunch;
+  startHiddenLaunch = false;
   mainWindow = createMainWindow({
     preloadPath: preloadPath(),
     indexHtmlUrlOrPath: rendererTarget(),
+    startHidden,
     // Startup splash (260728): once the main window is ready, close the splash
     // immediately (no fade, 260729) before the first show — the two never
     // overlap. The failsafe timer in whenReady covers a bootstrap that never
@@ -906,7 +917,12 @@ async function bootstrap(): Promise<void> {
         return false;
       }
     },
-    emitHardStop: emitCreditsHardStop,
+    emitHardStop: (info) => {
+      emitCreditsHardStop(info);
+      // Refill notification (261005): remember the wall so "free play is
+      // back" can fire when it resets.
+      if (info.reason === 'depleted') noteCreditWallHit();
+    },
     // Voice calls (260705): lets summon-ready re-apply an open call to a bot
     // that spawned mid-call (launch()-from-a-call handoff).
     isVoiceCallActive: isCallActive,
@@ -1190,7 +1206,7 @@ async function bootstrap(): Promise<void> {
     if (takeInstallerFirstLaunch()) {
       capture('installer_first_launch', installerFirstLaunchProps(currentFirstLaunchEnv()));
     }
-    capture('app_opened');
+    capture('app_opened', startHidden ? { hidden_launch: true } : undefined);
   } catch (err) {
     logger.warn(`analytics init failed: ${(err as Error).message}`);
   }
@@ -1257,6 +1273,24 @@ async function bootstrap(): Promise<void> {
   initNotices({ getMainWindow: () => mainWindow });
   initUpdater({ getMainWindow: () => mainWindow });
 
+  // Menu bar / tray + "free play is back" notification (261005). Off by
+  // default; a no-op on Linux. Never throws.
+  try {
+    initTray({
+      getMainWindow: () => mainWindow,
+      showMainWindow: openMainWindow,
+      isUpdateReady: isUpdateReadyToInstall,
+      installUpdate: installDownloadedUpdate,
+      capture: (event, props) => {
+        void loadAnalytics()
+          .then((m) => m.capture(event, props))
+          .catch(() => {});
+      },
+    });
+  } catch (err) {
+    logger.warn(`tray init failed: ${(err as Error).message}`);
+  }
+
   // 6. Linux fallback warning (RESEARCH Pitfall 3)
   if (process.platform === 'linux' && safeStorageBackendKind() === 'basic_text') {
     logger.warn(
@@ -1275,16 +1309,32 @@ async function bootstrap(): Promise<void> {
 // content, never arbitrary web pages. Must be set before app ready.
 app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer');
 
+/**
+ * Bring the main window forward: show it if it is hidden in the tray, restore
+ * it if minimized, focus it. With no window at all, run bootstrap again.
+ */
+function openMainWindow(): void {
+  const win = mainWindow;
+  if (!win || win.isDestroyed()) {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      bootstrap().catch((err) => logger.error(`re-bootstrap failed: ${(err as Error).message}`));
+    }
+    return;
+  }
+  if (win.isMinimized()) win.restore();
+  if (!win.isVisible()) win.show();
+  if (process.platform === 'darwin') app.focus({ steal: true });
+  win.focus();
+}
+
 // Single-instance lock — second launch focuses existing window
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
+    // Also the way back to a window hidden in the tray: open Sei again.
+    if (mainWindow) openMainWindow();
   });
 
   app.whenReady().then(() => {
@@ -1299,11 +1349,16 @@ if (!gotLock) {
     // Startup splash (260728): the white Sei logo, up before any heavy
     // bootstrap work, closed when the main window first paints. The failsafe
     // timer covers a bootstrap that errors before showing a window.
-    splashWindow = createSplashWindow();
-    setTimeout(() => {
-      if (splashWindow && !splashWindow.isDestroyed()) closeSplashWindow(splashWindow);
-      splashWindow = null;
-    }, 15_000);
+    // A login launch with the menu bar / tray setting on starts hidden: no
+    // splash, no window, just the icon (261005).
+    startHiddenLaunch = shouldStartHidden(process.argv);
+    if (!startHiddenLaunch) {
+      splashWindow = createSplashWindow();
+      setTimeout(() => {
+        if (splashWindow && !splashWindow.isDestroyed()) closeSplashWindow(splashWindow);
+        splashWindow = null;
+      }, 15_000);
+    }
 
     bootstrap().catch((err) => {
       logger.error(`bootstrap failed: ${(err as Error).message}`);
@@ -1313,6 +1368,9 @@ if (!gotLock) {
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0 && mainWindow === null) {
         bootstrap().catch((err) => logger.error(`re-bootstrap failed: ${(err as Error).message}`));
+      } else if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+        // Dock click while the window is hidden in the menu bar (261005).
+        openMainWindow();
       }
     });
   });
