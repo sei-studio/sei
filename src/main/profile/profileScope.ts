@@ -235,6 +235,9 @@ async function runScopeSwitch(userId: string | null): Promise<void> {
   } catch (err) {
     console.warn(`[sei] profileScope: backend-kind broadcast failed: ${(err as Error).message}`);
   }
+  // 261005: the analytics `backend` property reads 'unset' until the ACTIVE
+  // profile has a name, and the scope just moved. Fire-and-forget.
+  void import('../analytics').then((a) => a.refreshProfileOnboarded()).catch(() => {});
 
   // 3.95 Same reasoning for the llm:capability mirror: the scope switch moves
   //      the ACTIVE config (and with it the vision verdict) without any

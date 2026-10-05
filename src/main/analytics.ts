@@ -54,6 +54,33 @@ let optedOut = false;
 let backendKind: 'local' | 'cloud-proxy' = 'local';
 let signedInUserId: string | null = null;
 let appVersion = '0.0.0';
+/**
+ * 261005: whether the active profile has finished onboarding (has a
+ * preferred_name). Until it has, `backend` reads 'unset' rather than the
+ * schema default 'local': before this, every pre-onboarding event (and every
+ * install that never finished onboarding) was counted as a BYOK user.
+ */
+let profileOnboarded = true;
+
+/**
+ * Pre-init queue (261005). initAnalytics runs late in bootstrap (after the
+ * IPC handlers and the auth restore, which can wait on a network refresh),
+ * and the renderer is already showing onboarding by then, so its first
+ * events used to hit a null client and vanish. They are held here, bounded,
+ * and replayed with their original timestamps once init knows whether a key
+ * is configured and the user has not opted out; otherwise they are dropped.
+ */
+let initDone = false;
+const PRE_INIT_MAX = 200;
+const preInitQueue: Array<{ event: string; props?: Record<string, unknown>; at: number }> = [];
+
+/**
+ * 261005: the product surface of the most recent activity, for `app_quit`.
+ * Fed from event names in capture() plus noteSurface() for activity that has
+ * no event of its own (a chat message, a call going live).
+ */
+let lastSurface: string | null = null;
+const sessionStartedAt = Date.now();
 
 /** True once a usable ingestion key is configured (not the placeholder). */
 function keyConfigured(): boolean {
@@ -66,6 +93,15 @@ function keyConfigured(): boolean {
  * reachable. Never throws — analytics must never block startup.
  */
 export async function initAnalytics(): Promise<void> {
+  try {
+    await initAnalyticsInner();
+  } finally {
+    initDone = true;
+    replayPreInit();
+  }
+}
+
+async function initAnalyticsInner(): Promise<void> {
   try {
     appVersion = app.getVersion();
   } catch {
@@ -82,6 +118,7 @@ export async function initAnalytics(): Promise<void> {
     installId = next.analytics_install_id ?? '';
     optedOut = next.analytics_opt_out === true;
     setUiLanguage(next.ui_language);
+    setProfileOnboarded(next.preferred_name);
   } catch (err) {
     logger.warn(`analytics: config init failed: ${(err as Error).message}`);
   }
@@ -130,21 +167,41 @@ export function setUiLanguage(lang: string | undefined | null): void {
   uiLanguage = lang === 'zh' ? 'zh' : 'en';
 }
 
+/** Refresh the cached onboarded flag from a profile's preferred_name. */
+export function setProfileOnboarded(preferredName: string | undefined | null): void {
+  profileOnboarded = typeof preferredName === 'string' && preferredName.trim() !== '';
+}
+
+/** Re-read it from the active profile's config (after a scope switch). Never throws. */
+export async function refreshProfileOnboarded(): Promise<void> {
+  try {
+    setProfileOnboarded((await loadConfig()).preferred_name);
+  } catch {
+    /* keep the cached value */
+  }
+}
+
+/** The `backend` property: 'unset' until the profile is onboarded on the default kind. */
+export function backendProp(kind: 'local' | 'cloud-proxy', onboarded: boolean): 'local' | 'cloud-proxy' | 'unset' {
+  return !onboarded && kind === 'local' ? 'unset' : kind;
+}
+
 /** Properties attached to every event. All non-PII, all enum/scalar. */
 function commonProps(): Record<string, unknown> {
+  const backend = backendProp(backendKind, profileOnboarded);
   return {
     client: CLIENT_TAG,
     app_version: appVersion,
     os: process.platform,
     arch: process.arch,
     os_release: os.release(),
-    backend: backendKind,
+    backend,
     is_cloud: backendKind === 'cloud-proxy',
     ui_language: uiLanguage,
     // Keep the person profile's latest platform/version/backend/language up to
     // date, so "how many users run the app in Chinese" is one person query
     // rather than a scan over events.
-    $set: { client: CLIENT_TAG, app_version: appVersion, os: process.platform, backend: backendKind, ui_language: uiLanguage },
+    $set: { client: CLIENT_TAG, app_version: appVersion, os: process.platform, backend, ui_language: uiLanguage },
   };
 }
 
@@ -196,6 +253,19 @@ export function personPropsFor(event: string, props: Record<string, unknown>): R
  * from anywhere in main; never throws.
  */
 export function capture(event: string, props?: Record<string, unknown>): void {
+  noteSurface(surfaceForEvent(event));
+  if (!initDone) {
+    // Opt-out is not known yet: hold, never send. Dropped if init finds the
+    // user opted out or no key (replayPreInit).
+    if (preInitQueue.length < PRE_INIT_MAX) {
+      preInitQueue.push({ event, props: props ? { ...props } : undefined, at: Date.now() });
+    }
+    return;
+  }
+  send(event, props);
+}
+
+function send(event: string, props: Record<string, unknown> | undefined, at?: number): void {
   if (!client || optedOut) return;
   const id = distinctId();
   if (!id) return;
@@ -205,10 +275,50 @@ export function capture(event: string, props?: Record<string, unknown>): void {
       distinctId: id,
       event,
       properties: { ...commonProps(), ...clean, ...personPropsFor(event, clean) },
+      ...(at !== undefined ? { timestamp: new Date(at) } : {}),
     });
   } catch (err) {
     logger.warn(`analytics: capture(${event}) failed: ${(err as Error).message}`);
   }
+}
+
+function replayPreInit(): void {
+  const held = preInitQueue.splice(0);
+  for (const e of held) send(e.event, e.props, e.at);
+}
+
+/** Test seam: the pre-init state back to a fresh process. */
+export function _resetPreInitForTests(done = false): void {
+  initDone = done;
+  preInitQueue.length = 0;
+  lastSurface = null;
+}
+
+/** Event name → product surface, for app_quit.last_surface. null = not a surface event. */
+export function surfaceForEvent(event: string): string | null {
+  if (event.startsWith('chat_') || event.startsWith('first_moment_')) return 'chat';
+  if (event.startsWith('voice_call_')) return 'voice';
+  if (event.startsWith('chess_')) return 'chess';
+  if (event.startsWith('draw_')) return 'draw';
+  if (event.startsWith('backseat_')) return 'backseat';
+  if (event === 'character_summoned' || event.startsWith('bot_session_') || event.startsWith('summon_')) return 'game';
+  if (event.startsWith('onboarding_')) return 'onboarding';
+  if (event === 'pricing_viewed' || event === 'checkout_opened' || event === 'credit_wall_action') return 'credits';
+  return null;
+}
+
+/** Record activity on a surface that has no event of its own. */
+export function noteSurface(surface: string | null): void {
+  if (surface) lastSurface = surface;
+}
+
+/**
+ * `app_quit {session_ms, last_surface}` (261005). Captured first thing in
+ * before-quit, ahead of the flush. `session_ms` counts from this process's
+ * start, so an update relaunch is its own session.
+ */
+export function captureAppQuit(now: number = Date.now()): void {
+  capture('app_quit', { session_ms: Math.max(0, now - sessionStartedAt), last_surface: lastSurface ?? 'none' });
 }
 
 /**

@@ -37,6 +37,7 @@ import {
   type StopReason,
 } from '../shared/ipc';
 import { effectiveMcUsername, type Character } from '../shared/characterSchema';
+import type { CreditWallContext } from './creditWall';
 import { isGameId, type GameId } from '../shared/gameIpc';
 import { getGameModule, type GameModule } from './games';
 import { clampChatLanguage } from '../shared/chatLanguage';
@@ -372,7 +373,7 @@ export interface BotSupervisorOptions {
    * gate refuses a summon, so the user sees the upgrade / top up surface
    * instead of a bot that joins and does nothing.
    */
-  emitHardStop: (info: CreditsHardStopEvent) => void;
+  emitHardStop: (info: CreditsHardStopEvent, ctx?: CreditWallContext) => void;
   /**
    * Voice calls (260705): is a voice call currently open for this character?
    * Read on summon-ready so a bot that spawns MID-call (the launch()-from-a-
@@ -895,6 +896,17 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // only way here is a double-fire) — never fork a duplicate child for it.
     if (sessions.has(characterId)) return;
 
+    // 261005: credit_wall_hit context for a wall the live session runs into.
+    const wallCtx = (): CreditWallContext => {
+      let inCall: boolean | undefined;
+      try {
+        inCall = opts.isVoiceCallActive ? opts.isVoiceCallActive(characterId) : undefined;
+      } catch {
+        inCall = undefined;
+      }
+      return { surface: 'game', trigger: 'session', game, ...(inCall !== undefined ? { inCall } : {}) };
+    };
+
     const module = resolveGameModule(game);
     if (!module) throw new Error(`GAME_NOT_INSTALLED: no game module registered for ${game}`);
 
@@ -977,7 +989,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         logger.warn(
           '[sei/sup] summon blocked: weekly limit reached with no extra credits — raising popup, not forking the bot',
         );
-        opts.emitHardStop({ reason: 'depleted' });
+        opts.emitHardStop({ reason: 'depleted' }, { surface: 'game', trigger: 'summon_gate', game });
         sendStatus({ kind: 'idle', characterId });
         throw new Error('CLOUD_CREDITS_DEPLETED');
       }
@@ -1486,7 +1498,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // (sets hardStopActive=true); fires whether or not the summon resolved.
       if (data.type === 'error' && data.error === 'CLOUD_CREDITS_DEPLETED') {
         logger.warn('[sei/sup] bot hit the limit mid-session — raising the hard-stop popup');
-        opts.emitHardStop({ reason: 'depleted' });
+        opts.emitHardStop({ reason: 'depleted' }, wallCtx());
         // The bot latches halted and self-exits, but that self-shutdown is
         // best-effort: if its gracefulShutdown stalls (a hung brain.stop /
         // adapter teardown, or a delayed process.exit in the utilityProcess),
@@ -1507,7 +1519,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
             ? data.retryAfterSeconds
             : 86_400;
         logger.warn(`[sei/sup] bot was rate limited for ${sec}s — raising the popup`);
-        opts.emitHardStop({ reason: 'rate_limited', retry_after_seconds: sec });
+        opts.emitHardStop({ reason: 'rate_limited', retry_after_seconds: sec }, wallCtx());
         // Same backstop as the depleted path above: the bot is supposed to
         // leave the world on its own, but a stalled self-shutdown would leave
         // the avatar frozen in-game (still connected). Authoritatively drain

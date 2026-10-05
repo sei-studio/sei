@@ -47,6 +47,7 @@
  */
 import { getClient } from '../auth/supabaseClient';
 import { resolveElevenLabsRoute } from './elevenLabsKeyStore';
+import { noteCreditWall } from '../creditWall';
 
 const PROXY_BASE_URL = process.env.SEI_PROXY_URL ?? 'https://api.sei.gg';
 const ELEVENLABS_STT_MODEL = 'scribe_v1';
@@ -190,7 +191,7 @@ function isDailyCap429(res: Response, body: string): boolean {
   }
 }
 
-async function fetchTranscript(url: string, init: RequestInit): Promise<UpstreamTranscript> {
+async function fetchTranscript(url: string, init: RequestInit, viaProxy = false): Promise<UpstreamTranscript> {
   const ctrl = new AbortController();
   // The deadline covers the BODY too (260726). Clearing it once headers landed
   // left res.json() unguarded, and the arbiter's local-empty branch awaits this
@@ -211,6 +212,8 @@ async function fetchTranscript(url: string, init: RequestInit): Promise<Upstream
       // (auth, balance, unconfigured service) — tell the renderer to stop
       // probing instead of paying a failed round-trip per utterance. 429 is
       // terminal ONLY when it is the daily cap (see isDailyCap429).
+      // 261005: a proxy 402 is Sei's credit wall (credit_wall_hit).
+      if (viaProxy && res.status === 402) noteCreditWall({ reason: 'depleted' }, { surface: 'voice', trigger: 'stt' });
       if ([401, 402, 403, 503].includes(res.status)) throw new SttUnavailable();
       if (res.status === 429 && isDailyCap429(res, body)) throw new SttUnavailable();
       console.warn(`[sei/voice] stt upstream ${res.status}: ${body.slice(0, 200)}`);
@@ -297,7 +300,7 @@ export async function voiceStt(args: {
       method: 'POST',
       headers: { Authorization: `Bearer ${jwt}`, 'content-type': 'audio/wav' },
       body: wav,
-    });
+    }, true);
     const normalized = normalizeSttText(up.text);
     logSttResult(up, normalized, startedAt);
     return { ...up, text: normalized };
