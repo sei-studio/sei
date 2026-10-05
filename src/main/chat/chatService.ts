@@ -1333,7 +1333,7 @@ async function sendChatMessageImpl(
   } catch (err) {
     // Usage limit (260730): a 402/429 from the proxy raises the HardStopModal
     // instead of hiding behind the generic "sorry" fallback.
-    void raiseUsageLimitPopup(err);
+    void raiseUsageLimitPopup(err, args.voiceCall === true ? 'voice' : 'chat');
     // Interrupt/supersede surfaces as a typed sentinel so the renderer can tell
     // it apart from a real failure (and NOT show the "sorry" fallback).
     if (isAbortError(err) || ctrl.signal.aborted || superseded()) {
@@ -1610,7 +1610,7 @@ async function sendVoiceGreetingTurnImpl(
     // Superseded by a real message (or a real failure) — the greeting is
     // best-effort either way; the call works without it.
     if (!isAbortError(err)) {
-      void raiseUsageLimitPopup(err);
+      void raiseUsageLimitPopup(err, 'voice');
       console.warn(`[sei] voice greeting turn failed: ${(err as Error).message}`);
     }
     return [];
@@ -1757,7 +1757,7 @@ async function sendCompanionVoiceTurnImpl(
   } catch (err) {
     if (!isAbortError(err)) {
       // Usage limit (260730): raise the popup; useVoiceStore hangs up on it.
-      void raiseUsageLimitPopup(err);
+      void raiseUsageLimitPopup(err, 'voice');
       console.warn(`[sei] companion voice turn failed: ${(err as Error).message}`);
     }
     return [];
@@ -1866,7 +1866,7 @@ async function sendVoiceIdleTurnImpl(
     return { messages: spoken, ...(endCall ? { endCall: true } : {}) };
   } catch (err) {
     if (!isAbortError(err)) {
-      void raiseUsageLimitPopup(err);
+      void raiseUsageLimitPopup(err, 'voice');
       console.warn(`[sei] voice idle turn failed: ${(err as Error).message}`);
     }
     return { messages: [] };

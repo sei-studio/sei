@@ -1457,7 +1457,7 @@ async function onTurnUsageLimit(s: Session, err: unknown): Promise<'depleted' | 
     if (s.status === 'active') enterCreditQuiet(s);
     return 'depleted';
   }
-  const reason = await raiseUsageLimitPopup(err);
+  const reason = await raiseUsageLimitPopup(err, 'chess');
   if (reason === 'depleted' && s.status === 'active') enterCreditQuiet(s);
   return reason;
 }

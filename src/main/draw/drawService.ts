@@ -949,7 +949,7 @@ export async function saveGallery(characterId: string, pngDataUrl: string): Prom
  * game in the gallery was already recorded; awaiting it here still drains a
  * row write that is in flight. Resolves once every row has landed.
  */
-export async function endAllDraw(reason: 'account_switch'): Promise<void> {
+export async function endAllDraw(reason: 'account_switch' | 'app_quit'): Promise<void> {
   const ending: Promise<void>[] = [];
   for (const s of [...sessions.values()]) {
     teardownTimers(s);
@@ -976,7 +976,7 @@ export function shutdownDraw(): void {
  */
 function finishGame(
   s: Session,
-  reason: 'completed' | 'abandoned' | 'credit_wall' | 'account_switch',
+  reason: 'completed' | 'abandoned' | 'credit_wall' | 'account_switch' | 'app_quit',
 ): Promise<void> {
   // A completed game finishes when the last turn resolves, and AGAIN when the
   // player closes the gallery. Without this guard that is two draw_game_ended
@@ -986,7 +986,7 @@ function finishGame(
   if (s.finishing) return s.finishing;
   // The turn that was live when the game stopped (260929): the abandonment
   // this whole event exists to measure is "quit during the first turn".
-  if (reason === 'abandoned' || reason === 'account_switch') {
+  if (reason === 'abandoned' || reason === 'account_switch' || reason === 'app_quit') {
     if (s.phase === 'pick' || s.phase === 'drawing') captureTurn(s, reason);
   }
   // Tracked (260926): an account switch drains this before it re-points the
@@ -997,7 +997,7 @@ function finishGame(
 
 async function recordFinishedGame(
   s: Session,
-  reason: 'completed' | 'abandoned' | 'credit_wall' | 'account_switch',
+  reason: 'completed' | 'abandoned' | 'credit_wall' | 'account_switch' | 'app_quit',
 ): Promise<void> {
   const durationMs = Date.now() - s.startedAt;
   const turnsPlayed = s.gallery.length;
@@ -1245,7 +1245,7 @@ function markIntroSeen(s: Session): void {
  */
 function captureTurn(
   s: Session,
-  outcome: 'guessed' | 'timeout' | 'abandoned' | 'account_switch' | 'credit_wall',
+  outcome: 'guessed' | 'timeout' | 'abandoned' | 'account_switch' | 'credit_wall' | 'app_quit',
 ): void {
   const drawer = s.drawer;
   if (!drawer) return;
@@ -1519,7 +1519,7 @@ async function dispatchGuess(s: Session): Promise<void> {
     // A failed call must not swallow what the player said.
     s.guess.pendingPlayerChat.unshift(...said);
     {
-      const limit = await raiseUsageLimitPopup(err);
+      const limit = await raiseUsageLimitPopup(err, 'draw');
       if (limit) pauseForUsageLimit(s, limit);
     }
     // Analytics (260828): genuine guess-turn failure. Abort-shaped errors
@@ -1674,7 +1674,7 @@ async function runTurnEndReaction(
     }
   } catch (err) {
     log(s, `turn-end reaction failed: ${String(err)}`);
-    void raiseUsageLimitPopup(err);
+    void raiseUsageLimitPopup(err, 'draw');
     // Analytics (260828): genuine turn-end reaction failure; aborts never emit.
     void (async () => {
       try {
@@ -1782,7 +1782,7 @@ async function runDrawTurn(s: Session): Promise<void> {
   } catch (err) {
     log(s, `draw turn failed: ${String(err)}`);
     {
-      const limit = await raiseUsageLimitPopup(err);
+      const limit = await raiseUsageLimitPopup(err, 'draw');
       if (limit) pauseForUsageLimit(s, limit);
     }
     // Analytics (260828): genuine drawing-turn failure; aborts never emit.

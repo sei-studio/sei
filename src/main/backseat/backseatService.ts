@@ -803,7 +803,7 @@ async function onCreditWall(s: Session, err: unknown, fromUser: boolean): Promis
   if (classifyUsageLimit(err) !== 'depleted') return;
   s.creditWallUntil = Date.now() + CREDIT_WALL_BACKOFF_MS;
   if (s.creditWallReported && !fromUser) return;
-  const reason = await raiseUsageLimitPopup(err);
+  const reason = await raiseUsageLimitPopup(err, 'backseat');
   if (reason !== 'depleted' || s.creditWallReported) return;
   s.creditWallReported = true;
   slog(s, 'credit wall: screen ticks rest, the player can still talk');

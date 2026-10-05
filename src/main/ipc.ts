@@ -62,6 +62,8 @@ import {
 } from './apiKeyStore';
 import { capture as trackAnalytics, getAnalyticsOptOut, setAnalyticsOptOut } from './analytics';
 import { blockedAutoSummon, clearSummonBlock } from './summonGuard';
+import { noteCreditWall, type CreditWallContext } from './creditWall';
+import { observeOnboardingEvent } from './onboardingFunnel';
 import { registerPermissionHandlers } from './permissions/permissionsService';
 import { setSupervisor as setAuthSupervisor } from './auth/authHandlers';
 import type { BotSupervisor } from './botSupervisor';
@@ -2961,6 +2963,12 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       const { setUiLanguage } = await import('./analytics');
       setUiLanguage(cfg.ui_language);
     }
+    // 261005: `backend` reads 'unset' until the profile has a name (the
+    // onboarding setup writes it through here).
+    if ('preferred_name' in (cfgArg as Record<string, unknown>)) {
+      const { setProfileOnboarded } = await import('./analytics');
+      setProfileOnboarded(cfg.preferred_name);
+    }
     // Provider/model changes move the active LLM's vision verdict; mirror it
     // to the renderer (ai_backend_kind never rides a renderer save, so the
     // backend-flip listener above covers that axis).
@@ -3047,6 +3055,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     try {
       const { event, props } = TrackArgsSchema.parse(raw);
       trackAnalytics(event, props);
+      // 261005: remember where onboarding is, so a quit can report it.
+      observeOnboardingEvent(event, props);
     } catch {
       /* malformed track payload — drop silently, analytics must never disrupt */
     }
@@ -4082,7 +4092,9 @@ export function emitCreditsStatusUpdate(status: CreditsStatus): void {
  * 402 branch (weekly allowance spent, no extra credits) and from the rate-bucket
  * 503 branch (D-51). The renderer surfaces the HardStopModal in response.
  */
-export function emitCreditsHardStop(info: CreditsHardStopEvent): void {
+export function emitCreditsHardStop(info: CreditsHardStopEvent, ctx?: CreditWallContext): void {
+  // 261005: one `credit_wall_hit` per wall occurrence (deduped in creditWall).
+  noteCreditWall(info, ctx ?? { surface: 'unknown' });
   for (const w of BrowserWindow.getAllWindows()) {
     if (!w.isDestroyed()) w.webContents.send(IpcChannel.credits.hardStop, info);
   }

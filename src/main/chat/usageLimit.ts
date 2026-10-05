@@ -16,6 +16,7 @@
  * bot path uses, so the one HardStopModal serves every surface.
  */
 import { getAiBackendKind } from '../apiKeyStore';
+import type { CreditWallSurface } from '../creditWall';
 import { noteCreditWallHit } from '../tray/wallHook';
 
 export type UsageLimitReason = 'depleted' | 'rate_limited';
@@ -60,8 +61,12 @@ export function retryAfterSeconds(err: unknown): number | undefined {
 /**
  * If `err` is a cloud usage-limit failure, raise the HardStopModal in every
  * renderer window and return the reason; otherwise return null. Never throws.
+ * `surface` names who hit the wall for the `credit_wall_hit` event (261005).
  */
-export async function raiseUsageLimitPopup(err: unknown): Promise<UsageLimitReason | null> {
+export async function raiseUsageLimitPopup(
+  err: unknown,
+  surface: CreditWallSurface = 'unknown',
+): Promise<UsageLimitReason | null> {
   const reason = classifyUsageLimit(err);
   if (!reason) return null;
   try {
@@ -77,6 +82,7 @@ export async function raiseUsageLimitPopup(err: unknown): Promise<UsageLimitReas
       reason === 'rate_limited'
         ? { reason: 'rate_limited', retry_after_seconds: retryAfterSeconds(err) ?? 60 }
         : { reason: 'depleted' },
+      { surface, trigger: 'llm' },
     );
     // Refill notification (261005): remember the wall for "free play is back".
     if (reason === 'depleted') noteCreditWallHit();
