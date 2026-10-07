@@ -20,6 +20,7 @@ describe('ADAPTER_DEFAULTS (Minecraft values)', () => {
     expect(ADAPTER_DEFAULTS.progressActions('goTo', {})).toBe(false)
     expect(ADAPTER_DEFAULTS.classifyConnectError('UNSUPPORTED_MC_VERSION: 1.7')).toBe('UNSUPPORTED_MC_VERSION')
     expect(ADAPTER_DEFAULTS.classifyConnectError('MODDED_HOST_REJECTED: forge')).toBe('MODDED_HOST_REJECTED')
+    expect(ADAPTER_DEFAULTS.classifyConnectError('ONLINE_MODE_REJECTED: x')).toBe('ONLINE_MODE_REJECTED')
     expect(ADAPTER_DEFAULTS.classifyConnectError('LAN_NOT_OPEN: gone')).toBe('LAN_NOT_OPEN')
     expect(ADAPTER_DEFAULTS.classifyConnectError('spawn never landed')).toBe('BOT_START_TIMEOUT')
   })

@@ -54,6 +54,7 @@ function errorEndReason(status: Extract<BotStatus, { kind: 'error' }>): SessionE
     case 'DAILY_LIMIT_REACHED':
       return 'rate_limited';
     case 'MODDED_HOST_REJECTED':
+    case 'ONLINE_MODE_REJECTED':
       return 'kicked';
     case 'LAN_NOT_OPEN':
       return 'disconnected';
@@ -80,7 +81,9 @@ export function sessionEndProps(
         ? status.kickCode
         : status.error === 'MODDED_HOST_REJECTED'
           ? 'modded'
-          : undefined;
+          : status.error === 'ONLINE_MODE_REJECTED'
+            ? 'unverified_username'
+            : undefined;
     if (kick) props.kick_code = kick;
     return props;
   }

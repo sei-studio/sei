@@ -91,6 +91,121 @@ export function isModdedHostRejection(reason) {
 }
 
 /**
+ * Undo the 1.20.3+ NBT tagging ({type:'compound', value:{text:{type:'string',
+ * value:'...'}}}) so a kick component reads like JSON chat again. Lists of
+ * compounds carry their elements as bare maps of tagged values.
+ */
+function unwrapNbt(node) {
+  if (node == null || typeof node !== 'object') return node
+  if (typeof node.type === 'string' && 'value' in node) {
+    const { type, value } = node
+    if (type === 'compound' && value && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, unwrapNbt(v)]))
+    }
+    if (type === 'list' && value && typeof value === 'object') {
+      const items = Array.isArray(value.value) ? value.value : []
+      if (value.type === 'compound') {
+        return items.map((el) => Object.fromEntries(Object.entries(el ?? {}).map(([k, v]) => [k, unwrapNbt(v)])))
+      }
+      return items.map(unwrapNbt)
+    }
+    return value
+  }
+  return node
+}
+
+/**
+ * A kick reason as the plain text a player would read, in reading order
+ * (a component's own text, then its `extra` children). Accepts a JSON chat
+ * component, the NBT-tagged shape newer servers send, or a JSON string of
+ * either. extractReasonText stops at the first non-empty field, which is
+ * right for the one-line humanized copy but drops everything the Fabric
+ * registry-sync kick says after "This server requires " (261007).
+ *
+ * @param {unknown} reason
+ * @returns {string}
+ */
+export function kickPlainText(reason) {
+  let c = reason
+  if (typeof c === 'string') {
+    if (!/^\s*[[{]/.test(c)) return c
+    try { c = JSON.parse(c) } catch { return c }
+  }
+  c = unwrapNbt(c)
+  const walk = (n, depth) => {
+    if (depth > 12 || n == null) return ''
+    if (typeof n === 'string') return n
+    if (typeof n !== 'object') return String(n)
+    if (Array.isArray(n)) return n.map((x) => walk(x, depth + 1)).join('')
+    const own = typeof n.text === 'string' ? n.text
+      : typeof n[''] === 'string' ? n['']
+        : typeof n.translate === 'string' ? n.translate : ''
+    const extra = Array.isArray(n.extra) ? n.extra.map((x) => walk(x, depth + 1)).join('') : ''
+    return own + extra
+  }
+  return walk(c, 0)
+}
+
+/**
+ * The mod namespaces a Fabric registry-sync kick names (261007). Fabric API
+ * turns away a client without Fabric when the world registered content from
+ * mods, and lists the namespaces it thinks are responsible:
+ *   "This server requires Fabric Loader and Fabric API installed on your
+ *    client! The following registry entry namespaces may be related:
+ *    xaerominimap xaeroworldmap ..."
+ * Seen live 260927-261006 with xaerominimap/xaeroworldmap (twice, two
+ * people), effortlessbuilding, swordthrow/throwablespears. Naming them is the
+ * actionable part: the player can remove exactly those from the profile.
+ * Older wording "requires the following mods: a, b" is read too.
+ *
+ * @param {unknown} reason  raw kick reason
+ * @returns {string[]}  up to 6 namespaces, [] when none are named
+ */
+export function fabricKickNamespaces(reason) {
+  const text = kickPlainText(reason)
+  const m = text.match(/namespaces may be related:([\s\S]*?)(?:contact the server|$)/i) ??
+    text.match(/requires the following mods?:([\s\S]*?)(?:contact the server|$)/i)
+  if (!m) return []
+  const names = m[1].split(/[\s,]+/).map((s) => s.trim()).filter((s) => /^[a-z0-9_.-]{2,64}$/.test(s))
+  return [...new Set(names)].slice(0, 6)
+}
+
+/**
+ * Was this a Fabric (or Quilt) content-mod rejection rather than Forge's?
+ * Decides which copy the player gets: "runs Forge or NeoForge" is wrong for
+ * the Fabric registry-sync kick, which was 4 of the 8 modded rejections in
+ * the 30 days to 261006, including both on 0.6.7.
+ */
+function isFabricFamilyRejection(text) {
+  const r = text.toLowerCase()
+  if (/\bfml\b|neoforge|\bforge\b/.test(r)) return false
+  return r.includes('fabric') || /\bquilt\b/.test(r)
+}
+
+/**
+ * Did the world refuse Sei because it checks Minecraft accounts (online mode)?
+ *
+ * Sei joins in offline mode. A world opened with vanilla Open to LAN lets that
+ * through: the integrated server runs the session check, and when it fails it
+ * logs "Failed to verify username but will let them in anyway!" because
+ * isSingleplayer() is true (verified in the 26.1 client bytecode,
+ * ServerLoginPacketListenerImpl$1). Only a host that is NOT a plain
+ * integrated server sends multiplayer.disconnect.unverified_username: a
+ * dedicated server with online-mode=true, or a LAN/hosting mod that enforces
+ * online mode. Like a modded host this is a permanent property of the world,
+ * so retrying cannot help (261007: two people, three summons, each retried
+ * 3x and reported as "Re-open the world to LAN" while it was open).
+ *
+ * @param {unknown} reason  raw kick reason
+ * @returns {boolean}
+ */
+export function isOnlineModeRejection(reason) {
+  if (!reason) return false
+  if (kickReasonCode(reason) === 'unverified_username') return true
+  return /failed to verify username/i.test(kickPlainText(reason))
+}
+
+/**
  * Short, PII-free code for a server kick reason (260929), for the
  * bot_session_ended analytics event. The raw text can be anything the host
  * typed into /kick, so it never leaves the machine: only a vanilla-style
@@ -181,7 +296,20 @@ export function humanizeReason(reason) {
   // Modded-server rejections FIRST (260709): the wordings can contain 'connect'
   // ("Please install Forge to connect"), so this must precede that check.
   if (isModdedHostRejection(text)) {
+    const plain = kickPlainText(reason)
+    if (isFabricFamilyRejection(plain)) {
+      const mods = fabricKickNamespaces(reason)
+      return 'This world runs Fabric with mods that add content, and it only lets in players who have those mods. ' +
+        'Sei joins as a vanilla client, so the world turns it away' +
+        (mods.length ? `. The mods it names: ${mods.join(', ')}` : '')
+    }
     return 'This world runs Forge or NeoForge and only lets in players who have its mods. Sei joins as a vanilla client, so the world turns it away'
+  }
+  // 261007: online-mode host. Before the connectivity branch, and named,
+  // because the raw text ("multiplayer.disconnect.unverified_username") was
+  // being shown to the player verbatim inside a "Re-open the world to LAN" hint.
+  if (isOnlineModeRejection(reason)) {
+    return 'This world checks Minecraft accounts (online mode), and Sei joins without one, so the world turns it away'
   }
   // Chat-signing rejection (260710): the server refused one of OUR chat
   // packets (seen live as multiplayer.disconnect.chat_validation_failed on
@@ -644,7 +772,15 @@ export function createBotInstance({
     const kickCode = _lastKickReason != null && effective === _lastKickReason
       ? kickReasonCode(_lastKickReason)
       : null
-    try { onEnd?.(humanized, { modded: isModdedHostRejection(effective), kickCode }) } catch {}
+    // 261007: `onlineMode` is the same kind of permanent refusal as `modded`
+    // (the host checks accounts), so the caller fails fast on it too.
+    try {
+      onEnd?.(humanized, {
+        modded: isModdedHostRejection(effective),
+        onlineMode: isOnlineModeRejection(effective),
+        kickCode,
+      })
+    } catch {}
   })
 
   // Expose the chat starter so the brain (which knows the orchestrator) can

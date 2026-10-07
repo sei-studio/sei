@@ -192,6 +192,10 @@ function classifyChildError(err: unknown): ErrorClass {
   if (/invalid.*api.*key|401|unauthorized|x-api-key|authentication_error/i.test(lower)) return 'INVALID_API_KEY';
   if (/429|rate.?limit|throttl/i.test(lower)) return 'RATE_LIMITED';
   if (/enotfound|enetunreach|getaddrinfo|fetch failed/i.test(lower)) return 'NETWORK_OFFLINE';
+  // Online-mode rejection (261007) BEFORE the LAN branch: the kick is
+  // "multiplayer.disconnect.unverified_username", which the LAN branch below
+  // would claim on "disconnect". Mirrors isOnlineModeRejection in connect.js.
+  if (/online_mode_rejected|unverified_username|failed to verify username/i.test(lower)) return 'ONLINE_MODE_REJECTED';
   // Modded-host rejection BEFORE the LAN branch (260806): the kick text contains
   // "kicked" and often "connect", so it used to be smeared into LAN_NOT_OPEN and
   // the player was told to re-open a world that was open the whole time. Mirrors
