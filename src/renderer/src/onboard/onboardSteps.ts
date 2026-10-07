@@ -46,6 +46,7 @@ export const ONBOARD_STEPS = [
   'auth_region_blocked',
   'auth_tos',
   'no_account',
+  'no_profile',
   'local_key',
   'local_model',
   'local_stt',
@@ -81,6 +82,7 @@ export const LINE_STEPS: Record<string, OnboardStep> = {
   ahh: 'ahh',
   skippedThird: 'skipped_third',
   noAccount: 'no_account',
+  noProfile: 'no_profile',
   ready: 'ready',
 };
 

@@ -202,3 +202,21 @@ describe('OnboardApp 261005: step analytics', () => {
     expect(src).toContain('if (!startAtSignIn && stepTrackerRef.current === null)');
   });
 });
+
+describe('OnboardApp 261007: returning-panel local mode on an unset-up computer', () => {
+  const onLocal = src.slice(src.indexOf('onLocal={() => {'), src.indexOf("setPhase({ k: 'local-setup' });"));
+  it('checks the local profile before completing as a returning player', () => {
+    expect(onLocal).toContain("if (returningLocalRoute(await accountHasProfile()) === 'set-up') {");
+    expect(onLocal.indexOf("resumeAsNew('noProfile')")).toBeLessThan(onLocal.indexOf('complete(false, null)'));
+  });
+  it('Sui comes back with the noProfile line and goes straight to the name', () => {
+    expect(src).toContain("if (p.k === 'no-account') return { k: 'line', id: p.line };");
+    const adv = src.slice(src.indexOf("case 'noProfile':"), src.indexOf("case 'nameQ':"));
+    expect(adv).toContain('answersRef.current.returning = false;');
+    expect(adv).toContain("goLine('nameQ');");
+  });
+  it('the new line advances on click and gets the continue hint', () => {
+    const hints = src.slice(src.indexOf('const HINT_LINES'), src.indexOf('/* ── Machine'));
+    expect(hints).toContain("'noProfile'");
+  });
+});
