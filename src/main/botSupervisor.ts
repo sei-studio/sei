@@ -66,8 +66,15 @@ const SUMMON_TIMEOUT_MS = 30_000;
  * graph, the game runtime import, config parse). Generous on purpose: a slow
  * machine that is still booting is shown "Starting companion..." instead of a
  * failure. Only a boot that never finishes trips it.
+ *
+ * 261007: 60s -> 90s. Healthy cold Windows summons on 0.6.5+ measured
+ * runtime_loaded at 39.5s and 46.8s (spawn 50.8s / 56.7s), so 60s left about
+ * 13s of slack, and one 0.6.7 Windows boot ran out of it inside the runtime
+ * import (pack_loader_ready at 21.6s, still loading at 60s); that install's
+ * next summon booted in 21s. A boot that is slow but finishing should be
+ * shown "Starting companion...", not failed.
  */
-const BOOT_TIMEOUT_MS = 60_000;
+const BOOT_TIMEOUT_MS = 90_000;
 const STOP_TIMEOUT_MS = 10_000;
 /**
  * 260926: app quit. The per-bot drain gets this long before the kill
@@ -185,6 +192,10 @@ function classifyChildError(err: unknown): ErrorClass {
   if (/invalid.*api.*key|401|unauthorized|x-api-key|authentication_error/i.test(lower)) return 'INVALID_API_KEY';
   if (/429|rate.?limit|throttl/i.test(lower)) return 'RATE_LIMITED';
   if (/enotfound|enetunreach|getaddrinfo|fetch failed/i.test(lower)) return 'NETWORK_OFFLINE';
+  // Online-mode rejection (261007) BEFORE the LAN branch: the kick is
+  // "multiplayer.disconnect.unverified_username", which the LAN branch below
+  // would claim on "disconnect". Mirrors isOnlineModeRejection in connect.js.
+  if (/online_mode_rejected|unverified_username|failed to verify username/i.test(lower)) return 'ONLINE_MODE_REJECTED';
   // Modded-host rejection BEFORE the LAN branch (260806): the kick text contains
   // "kicked" and often "connect", so it used to be smeared into LAN_NOT_OPEN and
   // the player was told to re-open a world that was open the whole time. Mirrors

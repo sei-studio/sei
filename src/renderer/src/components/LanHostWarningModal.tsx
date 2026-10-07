@@ -257,11 +257,11 @@ function LanHostWarningPrompt({
             {richText(
               hasMods
                 ? t(
-                    'Your world is running {loader} with {count} mods. {name} joins as a vanilla player: client-side mods like minimaps are fine, but mods that add new blocks or items may stop {name} from joining.',
+                    "Your world is running {loader} with {count} mods. {name} joins as a vanilla player: performance and shader mods are fine, but mods that add new blocks or items, and some map mods like Xaero's, may stop {name} from joining.",
                     { loader: t(loaderLabel(host)), count: modCount as number },
                   )
                 : t(
-                    'Your world is running {loader}. {name} joins as a vanilla player: client-side mods like minimaps are fine, but mods that add new blocks or items may stop {name} from joining.',
+                    "Your world is running {loader}. {name} joins as a vanilla player: performance and shader mods are fine, but mods that add new blocks or items, and some map mods like Xaero's, may stop {name} from joining.",
                     { loader: t(loaderLabel(host)) },
                   ),
               strongName,

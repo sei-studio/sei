@@ -23,6 +23,11 @@ export type ErrorClass =
   | 'NATIVE_MODULE_MISMATCH'
   | 'UNSUPPORTED_MC_VERSION'
   | 'MODDED_HOST_REJECTED'
+  // 261007: the world kicked the bot with multiplayer.disconnect.unverified_username.
+  // A plain Open-to-LAN world lets offline clients in, so this is a dedicated
+  // server with online-mode=true or a mod that enforces it. Used to fall
+  // through to LAN_NOT_OPEN ("re-open the world") after three retries.
+  | 'ONLINE_MODE_REJECTED'
   // 260929: summon refused before fork because the LAN host is Forge/NeoForge
   // on strong evidence (forgeHostBlock in shared/ipc.ts). Distinct from
   // MODDED_HOST_REJECTED, which is a join the world actually turned away.
@@ -88,6 +93,7 @@ export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'NATIVE_MODULE_MISMATCH',
   'UNSUPPORTED_MC_VERSION',
   'MODDED_HOST_REJECTED',
+  'ONLINE_MODE_REJECTED',
   'FORGE_HOST_BLOCKED',
   // Skin + setup-wizard surfaces
   'MOD_DOWNLOAD_FAILED',

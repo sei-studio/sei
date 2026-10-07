@@ -5,7 +5,14 @@
 // chat_validation_failed, which also gets its own specific copy now).
 
 import { describe, it, expect } from 'vitest'
-import { humanizeReason, isModdedHostRejection, kickReasonCode } from './connect.js'
+import {
+  humanizeReason,
+  isModdedHostRejection,
+  kickReasonCode,
+  kickPlainText,
+  fabricKickNamespaces,
+  isOnlineModeRejection,
+} from './connect.js'
 
 // 260806. A NeoForge 1.20.1 world kicked one user's summon five times in four
 // minutes; every attempt surfaced as LAN_NOT_OPEN ("we can't see an open LAN
@@ -133,5 +140,65 @@ describe('kickReasonCode', () => {
     expect(
       kickReasonCode({ type: 'compound', value: { translate: { type: 'string', value: 'multiplayer.disconnect.name_taken' } } }),
     ).toBe('name_taken')
+  })
+})
+
+// 261007: the Fabric API registry-sync kick exactly as a 0.6.7 user's bot
+// logged it (1.21.11, NBT-tagged chat component; the mods it names are Xaero's
+// Minimap and World Map). The old copy called this world "Forge or NeoForge".
+const FABRIC_KICK_NBT = {"type":"compound","value":{"extra":{"type":"list","value":{"type":"compound","value":[{"color":{"type":"string","value":"green"},"text":{"type":"string","value":"Fabric Loader and Fabric API"}},{"":{"type":"string","value":" installed on your client!"}},{"":{"type":"string","value":"\n"}},{"extra":{"type":"list","value":{"type":"compound","value":[{"color":{"type":"string","value":"yellow"},"text":{"type":"string","value":"xaerominimap"}},{"":{"type":"string","value":"\n"}},{"color":{"type":"string","value":"yellow"},"text":{"type":"string","value":"xaeroworldmap"}},{"":{"type":"string","value":"\n"}}]}},"text":{"type":"string","value":"The following registry entry namespaces may be related:\n\n"}},{"":{"type":"string","value":"\n"}},{"":{"type":"string","value":"\n"}},{"color":{"type":"string","value":"gold"},"text":{"type":"string","value":"Contact the server's administrator for more information!"}}]}},"text":{"type":"string","value":"This server requires "}}}
+
+describe('Fabric registry-sync kick (261007)', () => {
+  it('flattens the NBT component in reading order', () => {
+    const text = kickPlainText(FABRIC_KICK_NBT)
+    expect(text.startsWith('This server requires Fabric Loader and Fabric API installed on your client!')).toBe(true)
+    expect(text).toContain('xaerominimap')
+    expect(text).toContain("Contact the server's administrator")
+  })
+
+  it('reads the named mod namespaces, from the object or its JSON string', () => {
+    expect(fabricKickNamespaces(FABRIC_KICK_NBT)).toEqual(['xaerominimap', 'xaeroworldmap'])
+    expect(fabricKickNamespaces(JSON.stringify(FABRIC_KICK_NBT))).toEqual(['xaerominimap', 'xaeroworldmap'])
+    expect(fabricKickNamespaces('You are banned')).toEqual([])
+  })
+
+  it('says Fabric (not Forge) and names the mods', () => {
+    const h = humanizeReason(FABRIC_KICK_NBT)
+    expect(h).toMatch(/runs Fabric/)
+    expect(h).not.toMatch(/forge/i)
+    expect(h).toContain('The mods it names: xaerominimap, xaeroworldmap')
+    expect(isModdedHostRejection(FABRIC_KICK_NBT)).toBe(true)
+    expect(kickReasonCode(FABRIC_KICK_NBT)).toBe('modded')
+  })
+
+  it('keeps the Forge copy for a Forge kick', () => {
+    expect(humanizeReason('This server has mods that require Forge to be installed on the client.')).toMatch(/forge or neoforge/i)
+  })
+})
+
+// 261007: vanilla Open to LAN lets an offline client in ("Failed to verify
+// username but will let them in anyway"), so this kick means a server with
+// online-mode on. It used to retry three times and end as LAN_NOT_OPEN, with
+// the raw translate key in the message.
+describe('isOnlineModeRejection (261007)', () => {
+  const KEY = 'multiplayer.disconnect.unverified_username'
+  it('catches the vanilla key as a JSON string, an object and plain text', () => {
+    expect(isOnlineModeRejection(JSON.stringify({ translate: KEY }))).toBe(true)
+    expect(isOnlineModeRejection({ translate: KEY })).toBe(true)
+    expect(isOnlineModeRejection('Failed to verify username!')).toBe(true)
+  })
+
+  it('does not fire on other kicks', () => {
+    expect(isOnlineModeRejection(JSON.stringify({ translate: 'multiplayer.disconnect.name_taken' }))).toBe(false)
+    expect(isOnlineModeRejection('You are banned')).toBe(false)
+    expect(isOnlineModeRejection(FABRIC_KICK_NBT)).toBe(false)
+  })
+
+  it('humanizes to the online-mode copy, never the LAN hint or the raw key', () => {
+    const h = humanizeReason(JSON.stringify({ translate: KEY }))
+    expect(h).toMatch(/online mode/)
+    expect(h).not.toMatch(/could not reach/i)
+    expect(h).not.toContain('multiplayer.disconnect')
+    expect(kickReasonCode({ translate: KEY })).toBe('unverified_username')
   })
 })

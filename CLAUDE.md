@@ -61,7 +61,7 @@ boundaries are load-bearing — respect them.
   username** (the world kicks the second with `name_taken`), so `summon` refuses
   a colliding effective username before forking (the renderer pre-checks and
   shows a popup; the supervisor is the authoritative backstop). Summon has two
-  watchdogs: a **60s cold-boot budget** (`BOOT_TIMEOUT_MS`, fork to the bot's
+  watchdogs: a **90s cold-boot budget** (`BOOT_TIMEOUT_MS`, fork to the bot's
   `init-ack`) and then a **30s ready budget** (`SUMMON_TIMEOUT_MS`, `init-ack`
   to `summon-ready`); stop has a 10s timeout then
   escalates to kill. A stop during a PENDING summon cancels it instead: the
@@ -2841,6 +2841,20 @@ or an unclassified host with Forge ping data) is reported as
 copy. Timeouts on Fabric with foreign mods and on Quilt stay plain
 `BOT_START_TIMEOUT`: those hosts often do let a vanilla client in. `character_summoned` carries `host_client`.
 
+**Online-mode and Fabric kicks (261007).** A plain Open to LAN world lets
+an offline client in (the integrated server logs "Failed to verify username
+but will let them in anyway"), so a `multiplayer.disconnect.unverified_username`
+kick means a server with online-mode on or a mod that enforces it. connect.js
+`isOnlineModeRejection` flags it, and runtime.js fails on the FIRST kick as
+`ONLINE_MODE_REJECTED` (kick_code `unverified_username`), routed to the
+generic game-error popup with the server.properties / LAN-mod fix. It used to
+retry three times and end as LAN_NOT_OPEN. The Fabric API registry-sync kick
+("requires Fabric Loader and Fabric API ... namespaces may be related") is
+humanized as Fabric, not Forge, and names the mods (`fabricKickNamespaces`);
+ModdedHostModal reads both back from the status message. Xaero's Minimap and
+World Map were the named mods in both 0.6.7 cases, so no copy may call
+minimaps safe.
+
 **Text chat counts too (260801).** Chat was the last surface with no
 instrumentation at all, so playtime meant "everything except the thing people
 do most" and a user who only ever texted had an empty character list on the
@@ -3197,7 +3211,7 @@ pins it at whatever percent it reached.
   plus Defender scanning every file it opens) measured 21-24s before
   `createBot`, so the connect guard sat on its 5s floor and BOT_START_TIMEOUT
   was the top Windows summon failure (14 people in 30 days). Now the boot has
-  its own 60s budget (`BOOT_TIMEOUT_MS`, phase `boot_timeout`) and the 30s
+  its own budget (`BOOT_TIMEOUT_MS`, 60s, 90s since 261007; phase `boot_timeout`) and the 30s
   ready budget starts at `init-ack`; the bot starts the same budget on its side
   from `readyBudgetMs` in the init payload. The status carries
   `stage: 'starting' | 'joining'` so the launch button shows progress.

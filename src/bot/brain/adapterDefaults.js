@@ -45,7 +45,8 @@ export const ADAPTER_DEFAULTS = Object.freeze({
   // A dropped live session and an exhausted initial-connect retry both arrive
   // tagged "LAN_NOT_OPEN:"; an unsupported world version is
   // "UNSUPPORTED_MC_VERSION:"; a Forge/NeoForge world that turns a vanilla
-  // client away is "MODDED_HOST_REJECTED:"; a silent spawn stall (connect.js's
+  // client away is "MODDED_HOST_REJECTED:"; an online-mode world is
+  // "ONLINE_MODE_REJECTED:" (261007); a silent spawn stall (connect.js's
   // wall-clock guard) is a BOT_START_TIMEOUT.
   classifyConnectError: (message) => {
     const m = String(message ?? '')
@@ -53,9 +54,11 @@ export const ADAPTER_DEFAULTS = Object.freeze({
       ? 'UNSUPPORTED_MC_VERSION'
       : m.startsWith('MODDED_HOST_REJECTED')
         ? 'MODDED_HOST_REJECTED'
-        : m.startsWith('LAN_NOT_OPEN')
-          ? 'LAN_NOT_OPEN'
-          : 'BOT_START_TIMEOUT'
+        : m.startsWith('ONLINE_MODE_REJECTED')
+          ? 'ONLINE_MODE_REJECTED'
+          : m.startsWith('LAN_NOT_OPEN')
+            ? 'LAN_NOT_OPEN'
+            : 'BOT_START_TIMEOUT'
   },
 })
 

@@ -1092,7 +1092,7 @@ export function App(): React.ReactElement {
       {/* 260806 — the world runs Forge/NeoForge and requires its mods on the
           client, so it kicks Sei. Split out of lan-not-open: the resolution is
           a different world, not a different setting. */}
-      {modal?.kind === 'modded-host' ? <ModdedHostModal characterId={modal.characterId} /> : null}
+      {modal?.kind === 'modded-host' ? <ModdedHostModal characterId={modal.characterId} message={modal.message} /> : null}
       {modal?.kind === 'bot-crash' ? <BotCrashModal characterId={modal.characterId} /> : null}
       {/* Game adapters (M0, 260908) — the generic per-game setup window and
           the generic GAME_* error popup for the non-Minecraft bot games. */}

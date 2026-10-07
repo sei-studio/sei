@@ -276,10 +276,10 @@ export const ZH_MODALS: Record<string, string> = {
     '你的世界运行的是未安装 Sei 皮肤模组的原版 Minecraft。{name} 可以正常加入并游玩，但会以默认 Minecraft 皮肤显示。',
   'To see custom skins, run skin setup (Settings) and host the world from the Sei profile.':
     '要显示自定义皮肤，请运行皮肤设置（在设置中），并从 Sei 配置启动世界。',
-  'Your world is running {loader} with {count} mods. {name} joins as a vanilla player: client-side mods like minimaps are fine, but mods that add new blocks or items may stop {name} from joining.':
-    '你的世界运行的是 {loader}，共 {count} 个模组。{name} 会以原版玩家身份加入：小地图等客户端模组没有问题，但添加新方块或物品的模组可能会导致 {name} 无法加入。',
-  'Your world is running {loader}. {name} joins as a vanilla player: client-side mods like minimaps are fine, but mods that add new blocks or items may stop {name} from joining.':
-    '你的世界运行的是 {loader}。{name} 会以原版玩家身份加入：小地图等客户端模组没有问题，但添加新方块或物品的模组可能会导致 {name} 无法加入。',
+  "Your world is running {loader} with {count} mods. {name} joins as a vanilla player: performance and shader mods are fine, but mods that add new blocks or items, and some map mods like Xaero's, may stop {name} from joining.":
+    '你的世界运行的是 {loader}，共 {count} 个模组。{name} 会以原版玩家身份加入：性能和光影模组没有问题，但添加新方块或物品的模组，以及 Xaero 等部分地图模组，可能会导致 {name} 无法加入。',
+  "Your world is running {loader}. {name} joins as a vanilla player: performance and shader mods are fine, but mods that add new blocks or items, and some map mods like Xaero's, may stop {name} from joining.":
+    '你的世界运行的是 {loader}。{name} 会以原版玩家身份加入：性能和光影模组没有问题，但添加新方块或物品的模组，以及 Xaero 等部分地图模组，可能会导致 {name} 无法加入。',
   'a mod loader': '模组加载器',
   'If the join fails, try a world without server-side mods.':
     '如果加入失败，请尝试没有服务端模组的世界。',
@@ -322,8 +322,11 @@ export const ZH_MODALS: Record<string, string> = {
     '{name} 没能进入这个世界。它运行的是带有其他模组的 {loader}，有些模组只允许同样安装了它们的玩家进入。',
   '{name} was turned away by this world. It runs Forge or NeoForge, and it only lets in players who have the same mods installed.':
     '{name} 被这个世界拒绝了。它运行的是 Forge 或 NeoForge，只允许装有相同模组的玩家加入。',
-  'Open a world with no mods, or with Fabric and only client-side mods like minimaps.':
-    '打开一个没有模组的世界，或使用 Fabric 搭配小地图这类纯客户端模组。',
+  'Open a world from the Sei profile in the Minecraft Launcher, open it to LAN, and press Launch again.':
+    '在 Minecraft 启动器中用 Sei 配置打开一个世界，对局域网开放，然后再次点击启动。',
+  "Or play this world without the mods that add content. Map mods count too: Xaero's Minimap and World Map make a world require them.":
+    '或者在不加载那些添加内容的模组的情况下玩这个世界。地图模组也算在内：Xaero 小地图和世界地图会让世界要求玩家也安装它们。',
+  'The world asked for these mods: {mods}.': '这个世界要求安装这些模组：{mods}。',
   'If you host the modded world yourself, Sei can join it once the mods are not required on the client.':
     '如果这个模组世界是你自己开的，只要模组不再要求客户端安装，Sei 就能加入。',
   'Sei joins as a normal Minecraft client, so it cannot load a world that requires mods. Your world stays exactly as it is, Sei just cannot get in.':

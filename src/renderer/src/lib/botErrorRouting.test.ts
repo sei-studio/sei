@@ -8,7 +8,17 @@ describe('modalForBotStatus', () => {
   it('keeps the Minecraft table (unsupported version, LAN not open, modded host)', () => {
     expect(modalForBotStatus(err('UNSUPPORTED_MC_VERSION'))).toEqual({ kind: 'unsupported-version', characterId: 'c1', message: 'm' });
     expect(modalForBotStatus(err('LAN_NOT_OPEN', { game: 'minecraft' }))).toEqual({ kind: 'lan-not-open', characterId: 'c1' });
-    expect(modalForBotStatus(err('MODDED_HOST_REJECTED'))).toEqual({ kind: 'modded-host', characterId: 'c1' });
+    expect(modalForBotStatus(err('MODDED_HOST_REJECTED'))).toEqual({ kind: 'modded-host', characterId: 'c1', message: 'm' });
+  });
+
+  it('opens the generic popup for an online-mode rejection, without the prefixed message (261007)', () => {
+    expect(modalForBotStatus(err('ONLINE_MODE_REJECTED', { message: 'ONLINE_MODE_REJECTED: x.' }))).toEqual({
+      kind: 'game-error',
+      game: 'minecraft',
+      characterId: 'c1',
+      error: 'ONLINE_MODE_REJECTED',
+      message: '',
+    });
   });
 
   it('opens the blocking Forge modal for a supervisor Forge pre-gate refusal (260929)', () => {

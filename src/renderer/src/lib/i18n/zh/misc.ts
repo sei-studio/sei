@@ -22,8 +22,10 @@ export const ZH_MISC: Record<string, string> = {
     '有一个内置模块加载失败。请通过 .dmg / .exe 重新安装 Sei。',
   "This world's Minecraft version is not supported yet. Sei works with most Minecraft Java versions from {oldest} to {newest}. Open the Sei profile in the Minecraft Launcher (it runs {recommended}, with companion skins), open or create a world there, open it to LAN, and press Launch again. No Sei profile yet? Set it up from the Minecraft screen in Sei.":
     '暂不支持这个世界的 Minecraft 版本。Sei 支持 {oldest} 至 {newest} 之间的大多数 Minecraft Java 版本。请在 Minecraft 启动器中打开 Sei 配置（运行 {recommended}，可显示伙伴皮肤），在其中打开或创建一个世界并对局域网开放，然后再次点击启动。还没有 Sei 配置？请在 Sei 的 Minecraft 页面中设置。',
-  'This world runs Forge or NeoForge and only lets in players who have its mods. Sei joins as a normal Minecraft client, so the world turns it away. Open a world without server-side mods, or use Fabric with client-only mods like minimaps.':
-    '这个世界运行的是 Forge 或 NeoForge，只允许装有相同模组的玩家加入。Sei 以普通 Minecraft 客户端身份加入，因此会被拒之门外。请打开一个没有服务端模组的世界，或改用 Fabric 搭配小地图这类纯客户端模组。',
+  "This world runs mods that every player must also have installed, so it turns Sei's normal Minecraft client away. Map mods can count too, like Xaero's Minimap. Open a world from the Sei profile in the Minecraft Launcher, open it to LAN, and press Launch again.":
+    '这个世界运行的模组要求每位玩家也安装，因此会拒绝 Sei 的普通 Minecraft 客户端。地图模组也可能如此，比如 Xaero 小地图。请在 Minecraft 启动器中用 Sei 配置打开一个世界，对局域网开放，然后再次点击启动。',
+  "This world checks Minecraft accounts (online mode), and Sei joins without one, so the world turns it away. If it is a server you run, set online-mode=false in server.properties and restart it. If a mod opened the world to LAN, turn off its online mode option, or use Minecraft's own Open to LAN instead.":
+    '这个世界会验证 Minecraft 账号（正版验证模式），而 Sei 不使用账号加入，因此被拒绝。如果这是你自己运行的服务器，请在 server.properties 中设置 online-mode=false 并重启服务器。如果是某个模组把世界开放到局域网，请关闭该模组的正版验证选项，或改用 Minecraft 自带的「对局域网开放」。',
   "Sei can't join Forge or NeoForge worlds. Open the Sei profile in the Minecraft Launcher, open or create a world there, and open it to LAN.":
     'Sei 无法加入 Forge 或 NeoForge 世界。请在 Minecraft 启动器中打开 Sei 配置，在其中打开或创建一个世界，并对局域网开放。',
   "Couldn't download CustomSkinLoader. Check your connection and try the setup again.":

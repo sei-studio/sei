@@ -74,6 +74,11 @@ describe('sessionEndProps', () => {
     expect(r('CLOUD_CREDITS_DEPLETED').reason).toBe('credits_depleted');
     expect(r('DAILY_LIMIT_REACHED').reason).toBe('rate_limited');
     expect(r('MODDED_HOST_REJECTED')).toEqual({ reason: 'kicked', error_class: 'MODDED_HOST_REJECTED', kick_code: 'modded' });
+    expect(r('ONLINE_MODE_REJECTED')).toEqual({
+      reason: 'kicked',
+      error_class: 'ONLINE_MODE_REJECTED',
+      kick_code: 'unverified_username',
+    });
     expect(r('LAN_NOT_OPEN').reason).toBe('disconnected');
     expect(r('BOT_CRASH').reason).toBe('crash');
     expect(r('INVALID_API_KEY').reason).toBe('error');

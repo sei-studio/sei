@@ -317,7 +317,7 @@ describe('join timeout on a Forge-family host (260929)', () => {
 
   it('a BOOT timeout says nothing about the world and is never reclassified', async () => {
     const { p, onSummonFailure } = await startSummon(() => WEAK_FORGE);
-    await vi.advanceTimersByTimeAsync(61_000);
+    await vi.advanceTimersByTimeAsync(91_000); // past BOOT_TIMEOUT_MS (90s since 261007)
     await expect(p).rejects.toThrow('BOT_START_TIMEOUT');
     expect(onSummonFailure.mock.calls[0][0]).toMatchObject({ phase: 'boot_timeout', errorClass: 'BOT_START_TIMEOUT' });
   });
