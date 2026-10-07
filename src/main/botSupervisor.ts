@@ -66,8 +66,15 @@ const SUMMON_TIMEOUT_MS = 30_000;
  * graph, the game runtime import, config parse). Generous on purpose: a slow
  * machine that is still booting is shown "Starting companion..." instead of a
  * failure. Only a boot that never finishes trips it.
+ *
+ * 261007: 60s -> 90s. Healthy cold Windows summons on 0.6.5+ measured
+ * runtime_loaded at 39.5s and 46.8s (spawn 50.8s / 56.7s), so 60s left about
+ * 13s of slack, and one 0.6.7 Windows boot ran out of it inside the runtime
+ * import (pack_loader_ready at 21.6s, still loading at 60s); that install's
+ * next summon booted in 21s. A boot that is slow but finishing should be
+ * shown "Starting companion...", not failed.
  */
-const BOOT_TIMEOUT_MS = 60_000;
+const BOOT_TIMEOUT_MS = 90_000;
 const STOP_TIMEOUT_MS = 10_000;
 /**
  * 260926: app quit. The per-bot drain gets this long before the kill

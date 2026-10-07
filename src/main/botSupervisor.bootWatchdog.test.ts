@@ -1,5 +1,5 @@
 /**
- * 260926: the summon watchdog is split in two. A 60s cold-boot budget runs
+ * 260926: the summon watchdog is split in two. A 90s (60s until 261007) cold-boot budget runs
  * from fork to the bot's init-ack, then the 30s ready budget runs from
  * init-ack to summon-ready. Before this, one 30s clock started at fork and a
  * 21-24s Windows cold boot left the join about 5s (BOT_START_TIMEOUT, the top
@@ -196,14 +196,14 @@ describe('summon watchdog: cold-boot budget, then ready budget (260926)', () => 
     expect(statuses.some((s) => s.kind === 'online')).toBe(true);
   });
 
-  it('a boot that never finishes fails at 60s as boot_timeout, with the phases it reached', async () => {
+  it('a boot that never finishes fails at 90s as boot_timeout, with the phases it reached', async () => {
     const { p, fake, statuses, onSummonFailure } = await startSummon();
     const forkAt = fake.forkAt();
     fake.emitPortMessage({
       type: 'boot-timing',
       marks: { process_start: forkAt + 300, modules_loaded: forkAt + 9_000 },
     });
-    await vi.advanceTimersByTimeAsync(59_000);
+    await vi.advanceTimersByTimeAsync(89_000);
     expect(onSummonFailure).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1_500);
 
@@ -212,7 +212,7 @@ describe('summon watchdog: cold-boot budget, then ready budget (260926)', () => 
     const info = onSummonFailure.mock.calls[0][0] as SummonFailureInfo;
     expect(info.phase).toBe('boot_timeout');
     expect(info.errorClass).toBe('BOT_START_TIMEOUT');
-    expect(info.errorMessage).toContain('60s');
+    expect(info.errorMessage).toContain('90s');
     expect(info.boot?.forkAtMs).toBe(forkAt);
     expect(info.boot?.marks).toEqual({ process_start: forkAt + 300, modules_loaded: forkAt + 9_000 });
     expect(statuses.at(-1)).toMatchObject({ kind: 'error', error: 'BOT_START_TIMEOUT' });

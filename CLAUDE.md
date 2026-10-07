@@ -61,7 +61,7 @@ boundaries are load-bearing — respect them.
   username** (the world kicks the second with `name_taken`), so `summon` refuses
   a colliding effective username before forking (the renderer pre-checks and
   shows a popup; the supervisor is the authoritative backstop). Summon has two
-  watchdogs: a **60s cold-boot budget** (`BOOT_TIMEOUT_MS`, fork to the bot's
+  watchdogs: a **90s cold-boot budget** (`BOOT_TIMEOUT_MS`, fork to the bot's
   `init-ack`) and then a **30s ready budget** (`SUMMON_TIMEOUT_MS`, `init-ack`
   to `summon-ready`); stop has a 10s timeout then
   escalates to kill. A stop during a PENDING summon cancels it instead: the
@@ -3197,7 +3197,7 @@ pins it at whatever percent it reached.
   plus Defender scanning every file it opens) measured 21-24s before
   `createBot`, so the connect guard sat on its 5s floor and BOT_START_TIMEOUT
   was the top Windows summon failure (14 people in 30 days). Now the boot has
-  its own 60s budget (`BOOT_TIMEOUT_MS`, phase `boot_timeout`) and the 30s
+  its own budget (`BOOT_TIMEOUT_MS`, 60s, 90s since 261007; phase `boot_timeout`) and the 30s
   ready budget starts at `init-ack`; the bot starts the same budget on its side
   from `readyBudgetMs` in the init payload. The status carries
   `stage: 'starting' | 'joining'` so the launch button shows progress.
