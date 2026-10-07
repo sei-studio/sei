@@ -15,6 +15,7 @@ import {
   mbLabel,
   packsPct,
   packsTotalBytes,
+  returningLocalRoute,
   ttsPackIdsFor,
 } from './localSetup';
 import { ZH } from '../lib/i18n/zh';
@@ -196,5 +197,18 @@ describe('zh coverage of the wizard strings', () => {
     for (const [k, v] of Object.entries(ZH)) {
       expect(v.includes('—'), `em dash in zh value for "${k}"`).toBe(false);
     }
+  });
+});
+
+describe('returningLocalRoute (261007)', () => {
+  it('sends a computer with no set-up profile into setup instead of an empty Home', () => {
+    expect(returningLocalRoute(false)).toBe('set-up');
+  });
+  it('a set-up profile goes Home, and an unreadable config keeps the old Home route', () => {
+    expect(returningLocalRoute(true)).toBe('home');
+    expect(returningLocalRoute(null)).toBe('home');
+  });
+  it('the line Sui comes back with is translated', () => {
+    expect(ZH["Wait, Sei hasn't been set up on this computer yet. Let's do that first!"]).toBeTruthy();
   });
 });

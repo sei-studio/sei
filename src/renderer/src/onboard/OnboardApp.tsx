@@ -67,6 +67,7 @@ import {
   mbLabel,
   packsPct,
   packsTotalBytes,
+  returningLocalRoute,
   ttsPackIdsFor,
   type KeyProbeVerdict,
   type LocalSetupChoices,
@@ -124,6 +125,7 @@ type LineId =
   | 'ahh'
   | 'skippedThird'
   | 'noAccount'
+  | 'noProfile'
   | 'ready';
 
 const SCRIPT: Record<LineId, string> = {
@@ -135,6 +137,10 @@ const SCRIPT: Record<LineId, string> = {
   // (Google creates one on the spot). Sui comes back and asks again instead
   // of letting a brand-new player land on Home with no name and no companion.
   noAccount: "Wait, that login has no account yet. So you ARE new here! Let's try that again.",
+  // 261007: the "No" answer, then "Use my own API key", on a computer where
+  // Sei was never set up. There is nothing to return to, so Sui comes back
+  // and sets them up instead of dropping them on an empty Home.
+  noProfile: "Wait, Sei hasn't been set up on this computer yet. Let's do that first!",
   nameQ: "So! My name's Sui. What do I call you?",
   iSee: 'I see I see... {name}!',
   // 261001: one-tap attribution, asked once per machine (lib/attributionPref).
@@ -168,6 +174,7 @@ const HINT_LINES: LineId[] = [
   'dots',
   'skippedThird',
   'noAccount',
+  'noProfile',
 ];
 
 /* ── Machine ─────────────────────────────────────────────────────────────── */
@@ -181,7 +188,10 @@ type Phase =
   | { k: 'setup' } // "setting up..." — config save + generation
   | { k: 'welcome-existing' } // new-user branch signed into an EXISTING account
   | { k: 'return' } // ground + Sui come back for the send-off
-  | { k: 'no-account' } // returning sign-in made a NEW account: Sui comes back to re-ask
+  // Sui comes back to re-ask: a returning sign-in made a NEW account
+  // ('noAccount'), or "Use my own API key" on the returning branch found no
+  // profile on this computer ('noProfile', 261007).
+  | { k: 'no-account'; line: 'noAccount' | 'noProfile' }
   | { k: 'fade'; done?: boolean };
 
 interface Answers {
@@ -291,7 +301,7 @@ export function OnboardApp({
       setPhase((p) => {
         if (p.k === 'intro') return { k: 'line', id: 'hey' };
         if (p.k === 'return') return { k: 'line', id: 'ready' };
-        if (p.k === 'no-account') return { k: 'line', id: 'noAccount' };
+        if (p.k === 'no-account') return { k: 'line', id: p.line };
         return p;
       });
     }, 1000);
@@ -681,6 +691,13 @@ export function OnboardApp({
         markStep('complete'); // forward, though are_you_new sorts earlier
         goLine('newQ');
         break;
+      case 'noProfile':
+        // Straight to the name: they already answered "are you new" once,
+        // and asking again could loop them back here.
+        answersRef.current.returning = false;
+        markStep('complete'); // forward, though name sorts earlier
+        goLine('nameQ');
+        break;
       case 'nameQ':
         if (name.trim()) goLine('iSee');
         break;
@@ -774,17 +791,22 @@ export function OnboardApp({
     return Number.isFinite(ageMs) && ageMs < 10 * 60_000;
   }, []);
 
-  /** Returning sign-in that made a new account: back to the scene, re-ask.
-   * The boot sign-in variant has no scene to resume, so it replays the full
-   * one from the start (the same remount as its "I'm new here" link). */
-  const resumeAsNew = useCallback(() => {
-    if (startAtSignIn) {
-      onStartFresh?.();
-      return;
-    }
-    answersRef.current.returning = false;
-    setPhase({ k: 'no-account' });
-  }, [startAtSignIn, onStartFresh]);
+  /** Returning branch that turned out to have nothing to return to (a sign-in
+   * that made a new account, or local mode on a computer with no profile):
+   * back to the scene, re-ask. The boot sign-in variant has no scene to
+   * resume, so it replays the full one from the start (the same remount as
+   * its "I'm new here" link). */
+  const resumeAsNew = useCallback(
+    (line: 'noAccount' | 'noProfile' = 'noAccount') => {
+      if (startAtSignIn) {
+        onStartFresh?.();
+        return;
+      }
+      answersRef.current.returning = false;
+      setPhase({ k: 'no-account', line });
+    },
+    [startAtSignIn, onStartFresh],
+  );
 
   /**
    * 260917: the authoritative answer to "has this account set up before" is
@@ -988,11 +1010,20 @@ export function OnboardApp({
             onAgreeTos={() => void agreeTos()}
             onLocal={() => {
               if (phase.mode === 'returning') {
-                // A returning local player needs no re-setup; the normal
-                // window routes them (home, or legacy onboarding if their
-                // profile is incomplete).
-                trackCompleted('returning');
-                complete(false, null);
+                // A returning local player needs no re-setup and goes
+                // straight Home. But only a profile that was set up here is
+                // returning (261007): a first launch that answered "No, I
+                // have an account" and then "Use my own API key" used to land
+                // on an empty Home with no name, no key and no companion,
+                // which nothing routes them out of. Those are set up instead.
+                void (async () => {
+                  if (returningLocalRoute(await accountHasProfile()) === 'set-up') {
+                    resumeAsNew('noProfile');
+                    return;
+                  }
+                  trackCompleted('returning');
+                  complete(false, null);
+                })();
               } else {
                 byokRef.current = true;
                 answersRef.current.skipCreation = answersRef.current.skipCreation || false;

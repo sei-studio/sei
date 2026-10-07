@@ -169,3 +169,17 @@ export function llmTestErrorCopy(token: string): string {
       return 'The test failed. Check the model name and your key.';
   }
 }
+
+/**
+ * "Use my own API key" on the RETURNING sign-in panel (261007). A returning
+ * local player goes straight Home, but "returning" is only true when this
+ * computer's local profile was set up before (it has a preferred_name). A
+ * first launch that answered "No, I have an account" has no profile, and
+ * completing would land it on an empty Home: no name, no key, no companion.
+ * `hasProfile` is OnboardApp's accountHasProfile(): null means the config read
+ * failed, which keeps the old behaviour (go Home) rather than replaying the
+ * scene for a player who may well be set up.
+ */
+export function returningLocalRoute(hasProfile: boolean | null): 'home' | 'set-up' {
+  return hasProfile === false ? 'set-up' : 'home';
+}
