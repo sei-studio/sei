@@ -2320,3 +2320,17 @@ export async function shutdownChess(): Promise<void> {
     enginePromise = null;
   }
 }
+
+/**
+ * Probe seam (scripts/game-sim-probe.ts, 261008): the chess prompt builders and
+ * tool array exactly as the live turn uses them, so an offline model probe can
+ * assemble a real chess turn without an Electron session. Read-only use; not
+ * part of the service API.
+ */
+export const __chessPromptProbe = {
+  CHESS_TOOLS,
+  chessContractBlock,
+  buildChessTurnBlock,
+  buildGameThread,
+  recordPly,
+};
