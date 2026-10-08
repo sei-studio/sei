@@ -226,7 +226,36 @@ export const BACKSEAT_CONTRACT = [
     'repeating yourself even in new words. Once you have ' +
     'reacted to what is on screen it is old news; build on what they said back, or take the ' +
     'conversation somewhere new, and never re-open a question they already answered.',
+
+  // 261008: memory bleed. The probe's Minecraft look came back as "is this a
+  // crime against chess players?" (a chess memory), and Stardew idles pulled
+  // the Minecraft cabin plan. Memory is useful here, but only when it is about
+  // the thing on screen.
+  'YOUR MEMORIES. Your notes about the player are there so you know them, not as material for every ' +
+    'line. While you watch, bring a memory up only when the screen or what they just said is about the ' +
+    'same thing: the same game, the same show, the same plan. A memory about something else, like a ' +
+    'different game you played together, stays out of a line about this screen.',
 ].join('\n\n');
+
+/**
+ * 261008: the length rule, restated at the end of every per-tick note except
+ * the player's own (a real question gets a real answer). The contract states
+ * it once, in the cached block, and Haiku 5.5 read it loosely: its lines ran
+ * 30-47 words against the rule's twenty. Recency is what holds it.
+ */
+export const LINE_LENGTH_REMINDER =
+  'Say one sentence of under twenty words, then stop. Skip what you can both see and go straight to what you think or want to ask.';
+
+/**
+ * max_tokens for a Backseat turn. A tick the player SPOKE gets room for a real
+ * answer (this is the only turn they get). Every other tick is one short line,
+ * and the cap is part of how that holds: about 30 tokens of speech plus room
+ * for a remember() or save_clip() call. 261008: 160 -> 100, as a backstop
+ * under the restated length rule (LINE_LENGTH_REMINDER).
+ */
+export function backseatMaxTokens(kind: BackseatTickKind): number {
+  return kind === 'user' ? 400 : 100;
+}
 
 // ── Backseat games (260929) ──────────────────────────────────────────────
 
@@ -479,7 +508,7 @@ export function tickNote(args: {
       'you are here, or ask what you are about to watch, or say what you think of what you can ' +
       'already see. Do not describe the picture back to them and do not thank them for sharing. ' +
       'There is very little history behind this look, so keep it to what is on screen and to them. ' +
-      'Do not mention this note.]'
+      `${LINE_LENGTH_REMINDER} Do not mention this note.]`
     );
   }
 
@@ -506,7 +535,7 @@ export function tickNote(args: {
       `${ago}, and they have stayed on it since. Everything you can see is the new thing; at most ` +
       `the oldest frame catches the tail of what came before, and that is gone now. React to what ` +
       `is in front of you both NOW. Do not mention the old thing, and do not remark on the switch ` +
-      `itself, they are the one who made it.${prev}${extras} ${gap} Do not mention this note.]`
+      `itself, they are the one who made it.${prev}${extras} ${gap} ${LINE_LENGTH_REMINDER} Do not mention this note.]`
     );
   }
 
@@ -523,7 +552,7 @@ export function tickNote(args: {
       `[System note, not the player speaking: ${what}, so something probably just happened. ` +
       `Here are the last few seconds.${prev} Work out what it was, then say your piece about it ` +
       `rather than describing it back to them.${extras} If it turns out to be nothing, say ` +
-      `something about where they are instead. ${gap} Do not mention this note.]`
+      `something about where they are instead. ${gap} ${LINE_LENGTH_REMINDER} Do not mention this note.]`
     );
   }
 
@@ -542,6 +571,6 @@ export function tickNote(args: {
     `at their screen. Here are the last few seconds.${prev} Read them to work out where they are ` +
     'and what is going on, then say the thing you want to say about it. Do not report the change ' +
     `back to them, they were there for it.${extras} If nothing has moved since your last look, ` +
-    `talk about the situation itself, or about them. ${gap} Do not mention this note.]`
+    `talk about the situation itself, or about them. ${gap} ${LINE_LENGTH_REMINDER} Do not mention this note.]`
   );
 }

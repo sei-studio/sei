@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   BACKSEAT_CONTRACT,
+  backseatMaxTokens,
   fenceSafe,
+  LINE_LENGTH_REMINDER,
   GAME_DESCRIPTION_MAX,
   renderBackseatGameBlock,
   stripDashes,
@@ -283,3 +285,40 @@ describe('renderBackseatGameBlock', () => {
     expect(block).not.toMatch(/—/);
   });
 });
+
+/**
+ * 261008: Haiku 5.5 ran 30-47 words a line when the length rule lived only in
+ * the cached contract. Every look the player did not start restates it at the
+ * end of its note; the player's own turn does not (a real question gets a
+ * real answer), and the token cap follows the same split.
+ */
+describe('the length rule on every look (261008)', () => {
+  const base = { secondsSinceLastLine: 30, sourceName: 'Game' } as const;
+
+  it('ends every non-user note with the length rule, right before the closing line', () => {
+    const notes = [
+      tickNote({ ...base, kind: 'start' }),
+      tickNote({ ...base, kind: 'idle' }),
+      tickNote({ ...base, kind: 'jolt', joltReason: 'gain' }),
+      tickNote({ ...base, kind: 'jolt', joltReason: 'color' }),
+      tickNote({ ...base, kind: 'jolt', joltReason: 'switch', sinceSwitchS: 5 }),
+    ];
+    for (const n of notes) expect(n).toContain(`${LINE_LENGTH_REMINDER} Do not mention this note.]`);
+    expect(LINE_LENGTH_REMINDER).toMatch(/under twenty words/);
+  });
+
+  it('leaves the player\'s own turn without it', () => {
+    expect(tickNote({ ...base, kind: 'user' })).not.toContain(LINE_LENGTH_REMINDER);
+  });
+
+  it('caps a look at 100 tokens and a player turn at 400', () => {
+    expect(backseatMaxTokens('user')).toBe(400);
+    for (const k of ['start', 'idle', 'jolt'] as const) expect(backseatMaxTokens(k)).toBe(100);
+  });
+
+  it('keeps memories to the thing on screen', () => {
+    expect(BACKSEAT_CONTRACT).toContain('YOUR MEMORIES.');
+    expect(BACKSEAT_CONTRACT).not.toMatch(/[—–]/);
+  });
+});
+

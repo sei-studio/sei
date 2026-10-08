@@ -975,7 +975,7 @@ ${['Continue', 'New Game', 'Load Game', 'Settings', 'Quit'].map((t, i) => `<rect
         });
         const image = (data: string) => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } });
         messages.push({ role: 'user', content: [...(prev ? [image(prev)] : []), image(cur), { type: 'text', text: b.kind === 'user' ? `${note}\n\n${b.text ?? ''}` : note }] });
-        const res = await streamCall(arm, { system, tools, messages }, b.kind === 'user' ? 400 : 160);
+        const res = await streamCall(arm, { system, tools, messages }, bsPrompts.backseatMaxTokens(b.kind));
         const raw = textOf(res.content);
         const spoken: string[] = [];
         const dropped: string[] = [];
