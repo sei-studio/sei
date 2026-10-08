@@ -149,8 +149,13 @@ by `llm.provider` in `src/bot/config.js`:
 ## Bot / LLM internals (`src/bot`)
 
 **Single-layer brain.** One LLM call combines reasoning *and* action dispatch —
-there is no separate planner/dispatcher. Default model `claude-haiku-4-5`, **20s
-timeout** (`anthropic.timeout_ms`).
+there is no separate planner/dispatcher. Default model `claude-haiku-5-5`
+(`COMPANION_MODEL` in `src/shared/llmCatalog.ts`, mirrored in `src/bot/config.js`),
+**20s timeout** (`anthropic.timeout_ms`). Haiku 5 turns adaptive thinking ON
+when a request has no `thinking` field and rejects temperature, fixed thinking
+budgets and prefill, so every request builder runs
+`applyAnthropicModelDefaults` (`src/bot/brain/llm/anthropicModelDefaults.js`),
+which sends `thinking: {type: 'disabled'}` and strips those fields (261008).
 
 **Closed, Zod-typed action registry.** The LLM never writes code or raw
 coordinates — it calls registered tools only.

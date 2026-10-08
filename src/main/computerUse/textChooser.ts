@@ -1,5 +1,5 @@
 /**
- * 260925 backseat act: the default TEXT chooser. Claude Haiku 4.5 in text
+ * 260925 backseat act: the default TEXT chooser. Claude Haiku (COMPANION_MODEL; 4.5 until 261008, now 5.5) in text
  * mode over perception's state and numbered options, with the same contract
  * as JevChooser: state text + options -> index (+ probs).
  *
@@ -19,12 +19,13 @@
  * both, perception always lists DONE, and after a `type` step it lists
  * "press Return to submit what was just typed" first.
  */
+import { COMPANION_MODEL } from '../../shared/llmCatalog';
 import type { LlmToolDef } from '../llm/types';
 import type { Choice, ChooseState, Chooser, HistoryEntry } from './chooser';
 import { formatOptions, type ActOption } from './perception';
 import { historyText, type LlmCall } from './visionChooser';
 
-export const TEXT_CHOOSER_MODEL = 'claude-haiku-4-5';
+export const TEXT_CHOOSER_MODEL = COMPANION_MODEL;
 
 export const TEXT_CHOOSER_SYSTEM = `You pick the next action for an assistant that is using someone's Mac for them. You get their goal, the steps taken so far, a description of the screen read from its accessibility tree and on-screen text, and a numbered list of options. Pick the one option that best moves the goal forward.
 - First check whether the screen already shows the goal is achieved. If it does, pick DONE.

@@ -12,6 +12,7 @@
  */
 import Anthropic from '@anthropic-ai/sdk';
 import { getAiBackendKind, hasApiKey, loadApiKey } from '../apiKeyStore';
+import { COMPANION_MODEL } from '../../shared/llmCatalog';
 
 /**
  * 260703 hard guard: message prefix for the "local mode, no key" failure. The
@@ -23,8 +24,8 @@ export const LOCAL_NO_API_KEY = 'LOCAL_NO_API_KEY';
 
 const PROXY_BASE_URL = process.env.SEI_PROXY_URL ?? 'https://api.sei.gg';
 
-/** Family alias → latest Haiku 4.5 snapshot. Matches the bot + persona expander. */
-export const CHAT_MODEL = 'claude-haiku-4-5';
+/** The companion model (src/shared/llmCatalog.ts COMPANION_MODEL), same as the bot's default. */
+export const CHAT_MODEL = COMPANION_MODEL;
 export const CHAT_TIMEOUT_MS = 30_000;
 
 export interface ChatSdk {
