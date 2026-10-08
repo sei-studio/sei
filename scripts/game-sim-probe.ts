@@ -42,6 +42,12 @@
  *
  * Usage: npx tsx scripts/game-sim-probe.ts [--reps 3] [--arms h45,h55off]
  *        [--surface minecraft] [--scene M_FOLLOW] [--out /tmp/x.jsonl]
+ *        [--bs-variant ./variant.ts]
+ *
+ * --bs-variant loads a module that may export contract(orig), tickNote(args,
+ * orig) and maxTokens(kind, orig) to try Backseat prompt wordings without
+ * editing the app source. Backseat runs also print the word distribution of
+ * the lines on looks the player did not start (median, p90, over 20 words).
  */
 import { register } from 'node:module';
 import { mkdtempSync, readFileSync, writeFileSync, appendFileSync, mkdirSync } from 'node:fs';
@@ -69,6 +75,8 @@ const ARMS: Record<string, { model: string; extra: Record<string, unknown>; labe
   h45: { model: 'claude-haiku-4-5', extra: {}, label: 'Haiku 4.5' },
   h55off: { model: 'claude-haiku-5-5', extra: { thinking: { type: 'disabled' } }, label: 'Haiku 5.5, thinking disabled' },
   h55: { model: 'claude-haiku-5-5', extra: {}, label: 'Haiku 5.5, no thinking param (adaptive default)' },
+  h55think: { model: 'claude-haiku-5-5', extra: { thinking: { type: 'adaptive' }, output_config: { effort: 'low' } }, label: 'Haiku 5.5, adaptive thinking, effort low' },
+  h55low: { model: 'claude-haiku-5-5', extra: { thinking: { type: 'disabled' }, output_config: { effort: 'low' } }, label: 'Haiku 5.5, thinking disabled, effort low' },
 };
 
 const argv = process.argv.slice(2);
@@ -82,6 +90,7 @@ const ONLY_SCENE = flag('--scene');
 const ARM_KEYS = (flag('--arms') ?? 'h45,h55off').split(',').filter((k) => ARMS[k]);
 const OUT = flag('--out') ?? join(tmpdir(), `game-sim-${Date.now()}.jsonl`);
 const ART_DIR = flag('--art') ?? join(dirname(OUT), 'game-sim-art');
+const BS_VARIANT = flag('--bs-variant');
 
 function resolveApiKey(): string | undefined {
   if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
@@ -899,6 +908,19 @@ ${['Continue', 'New Game', 'Load Game', 'Settings', 'Quit'].map((t, i) => `<rect
 <text x="1260" y="705" font-family="DejaVu Sans, sans-serif" font-size="18" fill="#9fb0c4" text-anchor="end">Last save: Chapter II, The Flooded Library</text>
 </svg>`;
   const menuFrame = () => sharp(Buffer.from(MENU_SVG)).png().toBuffer();
+  // Real Stardew frames from the v0.6.5-beta.2 playtest (game window only):
+  // a farmer walking from a tree stump to a pond on a sandy farm, Tue 2,
+  // 1:20-1:30 pm, 516 gold, another farmer (blue hair) at the right edge.
+  const sdFrame = (i: number) => sharp(readFileSync(join(root, `scripts/fixtures/backseat/stardew-farm-${i}.jpg`))).toBuffer();
+  // DST key art in the in-game style: a walled vegetable garden with giant
+  // crops, a scarecrow, a weighing scale on each side, four survivors and a
+  // red bird. Nothing hostile, daylight.
+  const dstSrc = readFileSync(join(root, 'src/renderer/public/img/game-dontstarve.jpg'));
+  const dstFrame = (dx: number) => sharp(dstSrc).extract({ left: 40 + dx, top: 20, width: 1840, height: 1040 }).toBuffer();
+  // A code editor with a README open (not a game at all).
+  const codeFrame = () => sharp(readFileSync(join(root, 'src/renderer/public/img/game-focus.jpg'))).toBuffer();
+  /** Things the probe's memory holds (a Minecraft cabin plan, chess wins) that do not belong in a line about another screen. */
+  const MEMORY_BLEED = /\b(chess|smug|cabin|river)\b/i;
 
   const ROBLOX_DEF = backseatGame('roblox');
   if (!ROBLOX_DEF) throw new Error('roblox backseat def missing');
@@ -910,6 +932,8 @@ ${['Continue', 'New Game', 'Load Game', 'Settings', 'Quit'].map((t, i) => `<rect
     note: string;
     game: boolean;
     kind: 'start' | 'user' | 'idle' | 'jolt';
+    joltReason?: 'gain' | 'color' | 'switch';
+    sinceSwitchS?: number;
     frames: () => Promise<Buffer[]>;
     prevFrames?: () => Promise<Buffer[]>;
     secondsSincePrevGrid?: number;
@@ -945,7 +969,29 @@ ${['Continue', 'New Game', 'Load Game', 'Settings', 'Quit'].map((t, i) => `<rect
       history: [{ role: 'companion', text: 'ooh skybound. is chapter two the one with the flooded library?' }],
       check: (sp) => (/\b(you just|just (clicked|loaded|started|picked|opened))\b/i.test(sp.join(' ')) ? 'invented-change?' : null),
     },
+    B_STARDEW: {
+      note: 'real Stardew frames, farmer walks past a stump to a pond: grounded line, no invented fishing/crops/weather', game: false, kind: 'idle',
+      frames: async () => [await sdFrame(1), await sdFrame(2), await sdFrame(3)], frameAges: [3, 1.5, 0.1875], shareLabel: 'Stardew Valley', secondsSinceLastLine: 30,
+      prevFrames: async () => [await sdFrame(1)], secondsSincePrevGrid: 30,
+      history: [{ role: 'companion', text: 'okay farm tour. where are we even planting stuff' }, { role: 'user', text: 'idk yet' }],
+      check: (sp) => (/\b(fish(ing)?|rod|cast|caught|rain(ing)?|night|chickens?|cows?|parsnips?|planted)\b/i.test(sp.join(' ')) ? 'invented-activity?' : null),
+    },
+    B_DST: {
+      note: 'Don\'t Starve Together first look at a garden with giant crops: grounded opener, no invented danger', game: false, kind: 'start',
+      frames: async () => [await dstFrame(0), await dstFrame(6)], frameAges: [0.75, 0.1875], shareLabel: 'Don\'t Starve Together', secondsSinceLastLine: null,
+      check: (sp) => (/\b(hounds?|spiders?|night(fall)?|dark(ness)?|winter|dying|starving|monsters?|boss)\b/i.test(sp.join(' ')) ? 'invented-danger?' : null),
+    },
+    B_CODE: {
+      note: 'switch to a code editor with a README open: grounded, not a game, no invented bug', game: false, kind: 'jolt', joltReason: 'switch', sinceSwitchS: 7,
+      frames: async () => [await codeFrame()], frameAges: [0], shareLabel: 'README.md - sei - Visual Studio Code', secondsSinceLastLine: 40,
+      history: [{ role: 'companion', text: 'you are not seriously bridging over that with dirt' }, { role: 'user', text: 'lol ok one sec' }],
+      check: (sp) => (/\b(bug|error|crash(ed|ing)?|compil(e|ing)|broken|red squiggl)/i.test(sp.join(' ')) ? 'invented-problem?' : null),
+    },
   };
+  const bsVariant: { contract?: (orig: string) => string; tickNote?: (args: any, orig: typeof bsPrompts.tickNote) => string; maxTokens?: (kind: string, orig: number) => number } | null =
+    BS_VARIANT ? await import(BS_VARIANT.startsWith('/') ? BS_VARIANT : join(process.cwd(), BS_VARIANT)) : null;
+  const bsContract = bsVariant?.contract ? bsVariant.contract(bsPrompts.BACKSEAT_CONTRACT) : bsPrompts.BACKSEAT_CONTRACT;
+  if (BS_VARIANT) console.log(`backseat variant: ${BS_VARIANT}`);
   for (const [id, b] of Object.entries(bsScenes)) {
     let grids: Promise<{ cur: string; prev: string | null }> | null = null;
     SCENES[id] = {
@@ -960,8 +1006,8 @@ ${['Continue', 'New Game', 'Load Game', 'Settings', 'Quit'].map((t, i) => `<rect
         const baseTools = [bsPrompts.SAVE_CLIP_TOOL, REMEMBER_TOOL];
         const tools: any[] = b.game ? [...baseTools, ...webToolsFor({ serverWebSearch: true })] : baseTools;
         const extraStable = b.game
-          ? `${bsPrompts.BACKSEAT_CONTRACT}\n\n${bsPrompts.renderBackseatGameBlock(ROBLOX_DEF, OBBY_INFO as any, { canSearch: tools.some((t) => isWebTool(t.name) || t.name === 'web_search') })}`
-          : bsPrompts.BACKSEAT_CONTRACT;
+          ? `${bsContract}\n\n${bsPrompts.renderBackseatGameBlock(ROBLOX_DEF, OBBY_INFO as any, { canSearch: tools.some((t) => isWebTool(t.name) || t.name === 'web_search') })}`
+          : bsContract;
         const system = buildSystemBlocks({
           persona: SUI, name: 'Sui', preferredName: 'Ouen', proactiveness: 1, punctuation: 'casual', memory: MEMORY, summary: '', knowledge: '',
           openWorldDetected: false, inGame: false, voiceCall: true, language: 'en', extraStable,
@@ -969,13 +1015,15 @@ ${['Continue', 'New Game', 'Load Game', 'Settings', 'Quit'].map((t, i) => `<rect
         const t0 = Date.now() - 120_000;
         const messages = toMessages((b.history ?? []).map((h, i) => ({ id: `h${i}`, role: h.role, text: h.text, ts: t0 + i * 10_000, voice: true })));
         if (messages.length) markMessageCached(messages, messages.length - 1);
-        const note = bsPrompts.tickNote({
-          kind: b.kind, secondsSinceLastLine: b.secondsSinceLastLine, sourceName: b.shareLabel, shareLabel: b.shareLabel, frameAges: b.frameAges,
-          secondsSincePrevGrid: prev ? b.secondsSincePrevGrid : undefined,
-        });
+        const noteArgs = {
+          kind: b.kind, joltReason: b.joltReason, sinceSwitchS: b.sinceSwitchS, secondsSinceLastLine: b.secondsSinceLastLine, sourceName: b.shareLabel,
+          shareLabel: b.shareLabel, frameAges: b.frameAges, secondsSincePrevGrid: prev ? b.secondsSincePrevGrid : undefined,
+        };
+        const note = bsVariant?.tickNote ? bsVariant.tickNote(noteArgs, bsPrompts.tickNote) : bsPrompts.tickNote(noteArgs);
+        const maxTokens = bsVariant?.maxTokens ? bsVariant.maxTokens(b.kind, bsPrompts.backseatMaxTokens(b.kind)) : bsPrompts.backseatMaxTokens(b.kind);
         const image = (data: string) => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } });
         messages.push({ role: 'user', content: [...(prev ? [image(prev)] : []), image(cur), { type: 'text', text: b.kind === 'user' ? `${note}\n\n${b.text ?? ''}` : note }] });
-        const res = await streamCall(arm, { system, tools, messages }, bsPrompts.backseatMaxTokens(b.kind));
+        const res = await streamCall(arm, { system, tools, messages }, maxTokens);
         const raw = textOf(res.content);
         const spoken: string[] = [];
         const dropped: string[] = [];
@@ -989,9 +1037,10 @@ ${['Continue', 'New Game', 'Load Game', 'Settings', 'Quit'].map((t, i) => `<rect
           spoken.push(t);
         }
         const issues: string[] = [];
-        if (!spoken.length) issues.push('silent');
+        if (!spoken.length) issues.push(isSilenceFiller(stripped) ? 'silence-token' : 'silent');
         if (dropped.length) issues.push('note-leak');
         const total = words(spoken.join(' '));
+        if (MEMORY_BLEED.test(spoken.join(' ')) && !(id === 'B_MC' && !/\bchess\b/i.test(spoken.join(' ')))) issues.push('memory-bleed?');
         if (b.kind !== 'user' && total > 30) issues.push(`long(${total}w)`);
         if (/\b(frames?|grid|screenshots?|images?)\b/i.test(spoken.join(' '))) issues.push('mentions-frames');
         if (META_SPOKEN.test(spoken.join(' '))) issues.push('meta-spoken');
@@ -1002,7 +1051,7 @@ ${['Continue', 'New Game', 'Load Game', 'Settings', 'Quit'].map((t, i) => `<rect
         const extra = b.check?.(spoken);
         if (extra) issues.push(extra);
         const searches = res.content.filter((x) => x.type === 'server_tool_use').length;
-        return { calls: [res], spoken, tools: tu, rawText: raw, dropped, issues, facts: { words: total, webSearches: searches } };
+        return { calls: [res], spoken, tools: tu, rawText: raw, dropped, issues, facts: { words: total, kind: b.kind, sentences: spoken.join(' ').split(/(?<=[.!?])\s+/).filter(Boolean).length, webSearches: searches } };
       },
     };
   }
@@ -1017,6 +1066,8 @@ ${['Continue', 'New Game', 'Load Game', 'Settings', 'Quit'].map((t, i) => `<rect
   const newStat = (): Stat => ({ n: 0, pass: 0, ttft: [], say: [], total: [], prompt: [], cw: [], cr: [], out: [], cost: [], warm: [], issues: {}, errors: 0 });
   const stats: Record<string, Record<string, Stat>> = {};
   const scenePass: Record<string, Record<string, [number, number]>> = {};
+  /** Backseat: words per line on looks the player did not start, per arm. */
+  const bsWords: Record<string, number[]> = {};
   for (const [id, sc] of scenes) {
     console.log(`\n== [${sc.surface}] ${id}: ${sc.note}`);
     for (let r = 0; r < REPS; r++) {
@@ -1054,6 +1105,7 @@ ${['Continue', 'New Game', 'Load Game', 'Settings', 'Quit'].map((t, i) => `<rect
         st.n++; sp[1]++;
         if (!out.issues.length) { st.pass++; sp[0]++; }
         for (const i of out.issues) st.issues[i.split('(')[0].split(':')[0]] = (st.issues[i.split('(')[0].split(':')[0]] ?? 0) + 1;
+        if (sc.surface === 'backseat' && out.facts.kind !== 'user') (bsWords[arm] ??= []).push(Number(out.facts.words ?? 0));
         if (first.ttftMs != null) st.ttft.push(first.ttftMs);
         if (first.sayMs != null) st.say.push(first.sayMs);
         st.total.push(totalMs);
@@ -1107,6 +1159,13 @@ ${['Continue', 'New Game', 'Load Game', 'Settings', 'Quit'].map((t, i) => `<rect
   }
   console.log('\n== per-scene pass');
   for (const [id, byArm] of Object.entries(scenePass)) console.log(`${id.padEnd(12)} ${ARM_KEYS.map((a) => `${a}=${byArm[a]?.[0] ?? 0}/${byArm[a]?.[1] ?? 0}`).join('  ')}`);
+  if (Object.keys(bsWords).length) {
+    console.log('\n== backseat words per line (looks the player did not start)');
+    const pct = (a: number[], q: number) => [...a].sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(q * a.length))];
+    for (const [arm, w] of Object.entries(bsWords)) {
+      console.log(`${arm.padEnd(8)} n=${w.length} median=${pct(w, 0.5)} p90=${pct(w, 0.9)} max=${Math.max(...w)} over20=${w.filter((x) => x > 20).length} over30=${w.filter((x) => x > 30).length}  [${[...w].sort((x, y) => x - y).join(' ')}]`);
+    }
+  }
   const spent = Object.values(stats).flatMap((byArm) => Object.entries(byArm).map(([, s]) => s.cost.reduce((x, y) => x + y, 0))).reduce((x, y) => x + y, 0);
   console.log(`\napi errors: ${apiErrors.length}`);
   for (const e of apiErrors) console.log(`  ${e.arm} ${e.scene} ${e.status ?? ''} ${e.message.slice(0, 200)}`);
