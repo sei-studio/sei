@@ -227,3 +227,20 @@ B_OBBY_ASK: both arms gave a sensible timing answer.
 5. **Not 5.5-specific.** The survivor-pick reason runs long on both models. Cap it in code (first sentence, 200 characters) or tighten "One sentence" to "under 20 words".
 
 The chat and voice prompt files are being tuned on `feat/haiku-5-5-voice` and were not touched.
+
+## After the fixes (feat/haiku-5-5-all, 2026-10-08)
+
+Fixes 1-3 above were applied (thinking disabled centrally, chess turn-block reminder plus case-insensitive notation filter, Backseat per-tick length reminder plus max_tokens 100 on non-user ticks). Same probe, 3 reps per scene, both arms on the final code ($0.46):
+
+| surface | 4.5 before | 4.5 after | 5.5 before | 5.5 after |
+|---|---|---|---|---|
+| minecraft | 19/24 | 23/24 | 24/24 | 24/24 |
+| stardew | 15/18 | 12/18 | 18/18 | 18/18 |
+| dontstarve | 8/15 | 7/15 | 11/15 | 11/15 |
+| chess | 11/15 | 10/15 | 5/15 | 13/15 |
+| draw | 12/12 | 12/12 | 12/12 | 12/12 |
+| backseat | 11/12 | 12/12 | 4/12 | 9/12 |
+
+Minecraft, Stardew and DST prompts were not changed, so their 4.5 swings are run-to-run noise. Backseat on 5.5 is still below 4.5: its misses are all length (31-39 words, usually two sentences that open by restating the screen). Four reminder wordings were tried; none got it past about 10/16.
+
+remember-eval (`scripts/remember-eval.ts --reps 3`): 4.5 89% (64/72), 5.5 with thinking off 86% (62/72).
