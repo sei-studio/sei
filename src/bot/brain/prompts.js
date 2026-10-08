@@ -27,6 +27,10 @@ export {
   ACTION_STUCK_NUDGE_NOVISION,
   SESSION_END_CLAUSE,
   MEMORY_GOAL_CUE,
+  NEXT_TIME_FIELD,
+  NEXT_TIME_GOODBYE,
+  NEXT_TIME_SPOKEN,
+  NEXT_TIME_GREETING,
   // Render functions (interpolate runtime values into the prompt text).
   renderPersona,
   renderProactivenessDirective,

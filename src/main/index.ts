@@ -37,6 +37,7 @@ import { isCallActive, wasCallRecentlyActive, activeCallIds, clearAllCalls } fro
 import { initCallOverlay, closeCallOverlay } from './callOverlay';
 import { trackScopedWrite, isAccountTeardownActive } from './profile/scopeBarrier';
 import { sessionEndProps, isSessionFailure, type SessionEndProps } from './sessionEnd';
+import { consumeGoodbye, gameEndHookProps, callEndHookProps } from './sessionGoodbye';
 import { formatPlayDuration, playSummaryText } from './chat/playSummary';
 import { initUpdater, installDownloadedUpdate, isUpdateReadyToInstall } from './updater';
 import { applyAppUserModelId, attachCloseToTray, initTray, isTrayShown, shouldStartHidden } from './tray/trayController';
@@ -425,6 +426,8 @@ function closePlaySession(id: string, end: SessionEndProps, failed: boolean): vo
     duration_s: durationS,
     game: started.game,
     ...end,
+    // 261008: did the companion's goodbye set up a next session (retention).
+    ...gameEndHookProps(consumeGoodbye(id, 'game')),
   });
   // Deliberately no duration_ms: not a playtime event (not in SESSION_EVENTS),
   // and the ended event above already counts this time.
@@ -1176,7 +1179,12 @@ async function bootstrap(): Promise<void> {
       // connected), so a failed call contributes nothing. Same `duration_ms`
       // key as bot_session_ended / chess_game_ended so the dashboard can sum
       // all three. See the games rule in CLAUDE.md.
-      capture('voice_call_ended', { character_id: id, duration_ms: connectedMs });
+      // 261008: + whether the companion hung up and left a next-time hook.
+      capture('voice_call_ended', {
+        character_id: id,
+        duration_ms: connectedMs,
+        ...callEndHookProps(consumeGoodbye(id, 'call')),
+      });
     },
     // Voice calls (260705): the call went live — companion greets first. An
     // in-game session takes it over the port (say() routes into the call); an

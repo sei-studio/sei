@@ -592,6 +592,30 @@ export const SEED_HEADERS = {
     'Your memory — what you have chosen to remember across sessions:',
 }
 
+// 261008: the "next time" hook on a goodbye (retention fix 2(c)). Every
+// goodbye tool (game quit_game + end_call, chat-surface quit_game + end_call)
+// carries an optional `next_time` field. The model fills it only when there
+// is something real to come back to, works it into its own goodbye, and the
+// host saves it to MEMORY.md so the next session's greeting can pick it up.
+// The field (not the spoken line) is what analytics counts, so nothing the
+// model says is ever parsed. Lives in the tool definitions, which ride the
+// cached prefix, so it adds nothing to per-turn input.
+export const NEXT_TIME_FIELD =
+  'Optional. Fill this only when there is something real to pick up next session: a goal you have not finished, something you two were in the middle of, or a plan from your memory. Write it in a few words, like "finish the roof". It is saved to your memory so you can bring it up next time. Leave it out when there is nothing like that, and never make one up.'
+
+export const NEXT_TIME_GOODBYE =
+  'If you fill next_time, work that next step into your goodbye in your own words, the way a friend would say "next time we finish the roof". If you leave it out, just say a normal goodbye.'
+
+// 261008: what the next session's greeting is told about a saved hook. The
+// line is written by nextStep.js (nextStepMemoryLine) and read back from
+// MEMORY.md like any other memory.
+// Chat surface only: there the goodbye is the reply text, not a tool field, so
+// the model tends to say the next step and skip the field (probe 261008, 1/3).
+export const NEXT_TIME_SPOKEN =
+  'When your goodbye brings up something to pick up next time, also put it in next_time so it gets saved.'
+export const NEXT_TIME_GREETING =
+  'If your memory has a "Plan for next time" entry from the last time you said goodbye, you can bring it up.'
+
 // 260703: session-end vs task-stop disambiguation. Haiku was following the
 // per-turn addenda below (which only ever named end_loop/stopTool) over the
 // quit tool's own description, so a player saying "bye"/"cya" got a goodbye

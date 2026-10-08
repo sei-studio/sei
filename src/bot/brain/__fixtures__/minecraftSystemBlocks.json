@@ -113,7 +113,11 @@
           "properties": {
             "farewell": {
               "type": "string",
-              "description": "Your goodbye line, spoken to chat as you log off. Short, in your own voice, and it must agree that you are leaving."
+              "description": "Your goodbye line, spoken to chat as you log off. Short, in your own voice, and it must agree that you are leaving. If you fill next_time, work that next step into your goodbye in your own words, the way a friend would say \"next time we finish the roof\". If you leave it out, just say a normal goodbye."
+            },
+            "next_time": {
+              "type": "string",
+              "description": "Optional. Fill this only when there is something real to pick up next session: a goal you have not finished, something you two were in the middle of, or a plan from your memory. Write it in a few words, like \"finish the roof\". It is saved to your memory so you can bring it up next time. Leave it out when there is nothing like that, and never make one up."
             }
           },
           "additionalProperties": false
@@ -127,7 +131,11 @@
           "properties": {
             "farewell": {
               "type": "string",
-              "description": "Your goodbye line, spoken into the call as it ends. Short, in your own voice."
+              "description": "Your goodbye line, spoken into the call as it ends. Short, in your own voice. If you fill next_time, work that next step into your goodbye in your own words, the way a friend would say \"next time we finish the roof\". If you leave it out, just say a normal goodbye."
+            },
+            "next_time": {
+              "type": "string",
+              "description": "Optional. Fill this only when there is something real to pick up next session: a goal you have not finished, something you two were in the middle of, or a plan from your memory. Write it in a few words, like \"finish the roof\". It is saved to your memory so you can bring it up next time. Leave it out when there is nothing like that, and never make one up."
             }
           },
           "additionalProperties": false
@@ -1090,7 +1098,11 @@
           "properties": {
             "farewell": {
               "type": "string",
-              "description": "Your goodbye line, spoken to chat as you log off. Short, in your own voice, and it must agree that you are leaving."
+              "description": "Your goodbye line, spoken to chat as you log off. Short, in your own voice, and it must agree that you are leaving. If you fill next_time, work that next step into your goodbye in your own words, the way a friend would say \"next time we finish the roof\". If you leave it out, just say a normal goodbye."
+            },
+            "next_time": {
+              "type": "string",
+              "description": "Optional. Fill this only when there is something real to pick up next session: a goal you have not finished, something you two were in the middle of, or a plan from your memory. Write it in a few words, like \"finish the roof\". It is saved to your memory so you can bring it up next time. Leave it out when there is nothing like that, and never make one up."
             }
           },
           "additionalProperties": false
@@ -1104,7 +1116,11 @@
           "properties": {
             "farewell": {
               "type": "string",
-              "description": "Your goodbye line, spoken into the call as it ends. Short, in your own voice."
+              "description": "Your goodbye line, spoken into the call as it ends. Short, in your own voice. If you fill next_time, work that next step into your goodbye in your own words, the way a friend would say \"next time we finish the roof\". If you leave it out, just say a normal goodbye."
+            },
+            "next_time": {
+              "type": "string",
+              "description": "Optional. Fill this only when there is something real to pick up next session: a goal you have not finished, something you two were in the middle of, or a plan from your memory. Write it in a few words, like \"finish the roof\". It is saved to your memory so you can bring it up next time. Leave it out when there is nothing like that, and never make one up."
             }
           },
           "additionalProperties": false
@@ -2066,7 +2082,11 @@
           "properties": {
             "farewell": {
               "type": "string",
-              "description": "Your goodbye line, spoken to chat as you log off. Short, in your own voice, and it must agree that you are leaving."
+              "description": "Your goodbye line, spoken to chat as you log off. Short, in your own voice, and it must agree that you are leaving. If you fill next_time, work that next step into your goodbye in your own words, the way a friend would say \"next time we finish the roof\". If you leave it out, just say a normal goodbye."
+            },
+            "next_time": {
+              "type": "string",
+              "description": "Optional. Fill this only when there is something real to pick up next session: a goal you have not finished, something you two were in the middle of, or a plan from your memory. Write it in a few words, like \"finish the roof\". It is saved to your memory so you can bring it up next time. Leave it out when there is nothing like that, and never make one up."
             }
           },
           "additionalProperties": false
@@ -2080,7 +2100,11 @@
           "properties": {
             "farewell": {
               "type": "string",
-              "description": "Your goodbye line, spoken into the call as it ends. Short, in your own voice."
+              "description": "Your goodbye line, spoken into the call as it ends. Short, in your own voice. If you fill next_time, work that next step into your goodbye in your own words, the way a friend would say \"next time we finish the roof\". If you leave it out, just say a normal goodbye."
+            },
+            "next_time": {
+              "type": "string",
+              "description": "Optional. Fill this only when there is something real to pick up next session: a goal you have not finished, something you two were in the middle of, or a plan from your memory. Write it in a few words, like \"finish the roof\". It is saved to your memory so you can bring it up next time. Leave it out when there is nothing like that, and never make one up."
             }
           },
           "additionalProperties": false
