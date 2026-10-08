@@ -49,6 +49,26 @@ function toResult(res: { content: unknown[]; usage?: unknown; stop_reason?: stri
   };
 }
 
+/**
+ * 261008: Haiku 5.x turns adaptive thinking ON when the request says nothing
+ * (Haiku 4.5 had no thinking unless asked). Every caller of this layer sizes
+ * max_tokens for a spoken or chat reply (200-300), and with thinking on, 5.5
+ * spent that budget thinking and stopped at max_tokens on 63-100% of chat and
+ * voice turns in scripts/remember-eval.ts, often leaving an empty remember({}).
+ * So a Haiku 5 request with no thinking field gets thinking disabled, which
+ * matches what 4.5 does. A caller that wants thinking passes it in
+ * anthropicExtra, and that wins. Other models are left untouched (Sonnet 5
+ * callers keep their current behavior). Haiku 5 also rejects temperature,
+ * top_p and top_k with a 400; nothing on this path sends them.
+ */
+export function applyModelDefaults(params: Record<string, unknown>): Record<string, unknown> {
+  const model = typeof params.model === 'string' ? params.model : '';
+  if (/^claude-haiku-5/.test(model) && params.thinking === undefined) {
+    params.thinking = { type: 'disabled' };
+  }
+  return params;
+}
+
 export async function createAnthropicProvider(backend: LlmBackend): Promise<LlmProvider> {
   // Fresh per build (every call site already rebuilds per turn), so a
   // cloud<->local switch or JWT rotation is picked up exactly as before.
@@ -69,6 +89,7 @@ export async function createAnthropicProvider(backend: LlmBackend): Promise<LlmP
     if (p.toolChoice !== undefined) params.tool_choice = p.toolChoice;
     if (p.stopSequences !== undefined) params.stop_sequences = p.stopSequences;
     if (p.anthropicExtra) Object.assign(params, p.anthropicExtra);
+    applyModelDefaults(params);
     const opts: Record<string, unknown> = {};
     if (p.timeoutMs !== undefined) opts.timeout = p.timeoutMs;
     if (p.signal !== undefined) opts.signal = p.signal;
