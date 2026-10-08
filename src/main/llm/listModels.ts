@@ -11,6 +11,7 @@
  */
 import Anthropic from '@anthropic-ai/sdk';
 import {
+  DEFAULT_MODELS,
   OPENAI_COMPAT_BASE_URLS,
   modelVision,
   type ProviderKind,
@@ -19,6 +20,7 @@ import {
 import { hasApiKey, loadApiKey } from '../apiKeyStore';
 import { loadConfig } from '../configStore';
 import { buildLocalProviderFor, resolveLocalModel } from './index';
+import { applyAnthropicModelDefaults } from '../../bot/brain/llm/anthropicModelDefaults.js';
 
 const LIST_TIMEOUT_MS = 10_000;
 
@@ -120,10 +122,14 @@ export async function testProvider(provider: ProviderKind, model: string): Promi
       if (!(await hasApiKey())) return { ok: false, error: 'no_api_key' };
       const client = new Anthropic({ apiKey: await loadApiKey(), maxRetries: 0 });
       const t0 = Date.now();
-      await client.messages.create(
-        { model: model || 'claude-haiku-4-5', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] },
-        { timeout: LIST_TIMEOUT_MS },
-      );
+      // Same request rules as every surface (Haiku 5: thinking disabled), so
+      // the 1-token probe tests what the app will actually send.
+      const body = applyAnthropicModelDefaults({
+        model: model || DEFAULT_MODELS.anthropic,
+        max_tokens: 1,
+        messages: [{ role: 'user', content: 'hi' }],
+      }) as unknown as Anthropic.MessageCreateParamsNonStreaming;
+      await client.messages.create(body, { timeout: LIST_TIMEOUT_MS });
       return { ok: true, latencyMs: Date.now() - t0 };
     }
     const cfg = await loadConfig();

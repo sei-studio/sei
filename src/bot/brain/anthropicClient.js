@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { logHaikuQuery, logHaikuResponse, logHaikuError } from './log.js'
+import { applyAnthropicModelDefaults } from './llm/anthropicModelDefaults.js'
 
 /**
  * Per-call URL path for the proxy's explicit-vision route (15-02, VIS-07/D-09).
@@ -222,6 +223,11 @@ export function createAnthropicClient(config) {
       messages: _messages,
     }
     if (thinking) req.thinking = thinking
+    // 261008: Haiku 5 thinks by default and rejects a fixed thinking budget,
+    // sampling params and prefill. This is the one request builder for every
+    // bot-process call (game brains, in-game voice, the compactor), so the
+    // rules are applied here (see anthropicModelDefaults.js).
+    applyAnthropicModelDefaults(req)
 
     // 260607: bound the TOTAL wall-clock of this call across the SDK's internal
     // retries. The SDK `timeout` is PER-ATTEMPT, so maxRetries×timeout (+backoff)

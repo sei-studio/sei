@@ -99,9 +99,22 @@ export const OPENAI_COMPAT_BASE_URLS: Partial<Record<ProviderKind, string>> = {
 
 export const QWEN_INTL_BASE_URL = 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1';
 
+/**
+ * The Anthropic model every companion surface runs on: game brains, typed
+ * chat, voice calls, Backseat, chess, Draw!, the one-off utility calls, and
+ * the BYOK Anthropic default. 261008: Haiku 4.5 -> Haiku 5.5 (about 7-9x
+ * cheaper a turn, equal or better on the measured surfaces; see
+ * docs/haiku55-game-sim-2026-10-08.md). Haiku 5 requests always go out with
+ * thinking disabled (src/bot/brain/llm/anthropicModelDefaults.js). The bot
+ * cannot import this file at runtime; its default in src/bot/config.js mirrors
+ * it and src/bot/llmCatalogSync.test.js keeps the two equal. Sonnet uses
+ * (persona expansion, folds, compaction) are separate constants.
+ */
+export const COMPANION_MODEL = 'claude-haiku-5-5';
+
 /** Default model per provider when the user has not picked one. */
 export const DEFAULT_MODELS: Record<ProviderKind, string> = {
-  anthropic: 'claude-haiku-4-5',
+  anthropic: COMPANION_MODEL,
   openai: 'gpt-5-mini',
   deepseek: 'deepseek-v4-flash',
   qwen: 'qwen-plus',

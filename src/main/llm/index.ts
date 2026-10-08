@@ -14,6 +14,7 @@
  *     whatever provider is selected (Settings wipes it on provider switch).
  */
 import {
+  COMPANION_MODEL,
   DEFAULT_MODELS,
   OPENAI_COMPAT_BASE_URLS,
   modelVision,
@@ -55,7 +56,7 @@ function providerConfigEntry(cfg: UserConfig, kind: ProviderKind): ProviderConfi
 
 /** The model a local provider kind would run, per config + catalog defaults. */
 export function resolveLocalModel(cfg: UserConfig, kind: ProviderKind): string {
-  return providerConfigEntry(cfg, kind).model ?? DEFAULT_MODELS[kind] ?? 'claude-haiku-4-5';
+  return providerConfigEntry(cfg, kind).model ?? DEFAULT_MODELS[kind] ?? COMPANION_MODEL;
 }
 
 /**

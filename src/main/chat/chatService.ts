@@ -26,10 +26,7 @@ import { raiseUsageLimitPopup } from './usageLimit';
 import {
   buildSystemBlocks,
   markLastMessageCached,
-  LAUNCH_TOOL,
-  QUIT_TOOL,
-  END_CALL_TOOL,
-  REMEMBER_TOOL,
+  chatSurfaceTools,
   SELF_LAUNCH_GAMES,
 } from './chatPrompts';
 import { isWebTool, webToolsFor, splitTextAroundServerSearch, replyTextOf, mergeFollowUpContent } from '../../bot/web/webTools.js';
@@ -127,7 +124,7 @@ const MAX_HOPS = 6;
  */
 function chatTools(llm: Pick<LlmProvider, 'kind'>, voice: boolean): LlmToolDef[] {
   const web = webToolsFor({ serverWebSearch: llm.kind === 'anthropic' }) as LlmToolDef[];
-  return voice ? [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, ...web] : [LAUNCH_TOOL, QUIT_TOOL, ...web];
+  return chatSurfaceTools(voice, web) as LlmToolDef[];
 }
 
 /**
@@ -747,6 +744,9 @@ async function prepareChatTurn(
     // 260730: a character created under the Chinese UI carries
     // metadata.language, which pins its surfaces regardless of auto-detect.
     language: surfaceLanguage(character.metadata, config.chat_language),
+    // 261008: every chat and voice turn offers remember() (chatSurfaceTools),
+    // so the status block carries the per-turn memory check.
+    memoryGuide: true,
   });
   // Voice: only the last N rows go to the model (VOICE_RECENT_CAP). Slice the raw
   // transcript BEFORE toMessages so role-merge + first-must-be-user still hold.

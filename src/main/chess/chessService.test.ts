@@ -85,6 +85,8 @@ import {
   shutdownChess,
   hasChessCoordinates,
   CHESS_TIMING,
+  SQUARE_NAMES_REMINDER,
+  __chessPromptProbe,
 } from './chessService';
 
 const CHAR = '66666666-6666-4666-8666-666666666666';
@@ -914,6 +916,50 @@ describe('continuity, caching and the coordinate ban (260724)', () => {
     expect(said).toContain('your knight has been annoying me all game');
   });
 
+  // 261008: the coordinate ban, restated as the last line of the volatile turn
+  // block on move and reply turns (Haiku 5.5 named squares in 7 of 15 probe
+  // lines when the ban lived only in the cached contract). A plain idle tick
+  // puts it just before its closing permission to stay quiet (next test).
+  it('ends every turn block with the plain-words reminder', async () => {
+    // Snapshot the last message when the call is made: the turn loop appends
+    // the assistant turn and tool results to the same array afterwards.
+    const tails: string[] = [];
+    createSpy.mockImplementation(async (params: PromptParams) => {
+      const msgs = (params.messages ?? []) as Array<{ content: unknown }>;
+      const last = msgs[msgs.length - 1].content;
+      const tail = typeof last === 'string' ? last : (last as Array<{ text?: string }>).map((b) => b.text ?? '').join('\n');
+      tails.push(tail);
+      const m = /^1\. (\S+):/m.exec(tail.slice(Math.max(0, tail.indexOf('The moves you are considering'))));
+      if (tail.includes('The moves you are considering') && m) {
+        return { content: [{ type: 'tool_use', id: `t${tails.length}`, name: 'play', input: { move: m[1] } }], usage: {} };
+      }
+      return { content: [{ type: 'text', text: 'yo' }], usage: {} };
+    });
+    await startChess(CHAR, { playerColor: 'w' });
+    await handlePlayerChat({ characterId: CHAR, text: 'hey' });
+    await playerMove(CHAR, 'e2e4');
+    const p = await waitFor(() => pushed.find((st) => st.pendingAiMove));
+    await ackReveal(CHAR, p.pendingAiMove!.uci);
+    expect(tails.some((t) => t.includes('The moves you are considering'))).toBe(true);
+    expect(tails.some((t) => t.includes('Reply to their message') || t.includes('just reply to their message'))).toBe(true);
+    for (const t of tails) expect(t.trimEnd().endsWith(SQUARE_NAMES_REMINDER)).toBe(true);
+    // The reminder itself must survive the filter it describes.
+    expect(hasChessCoordinates(SQUARE_NAMES_REMINDER)).toBe(false);
+  });
+
+  it('ends a plain idle tick on the permission to stay quiet, after the reminder', async () => {
+    const chess = new Chess();
+    const s = {
+      chess, playerColor: 'w', history: [], hold: null, drawOffer: null, lastMacro: '', gameLog: [],
+    } as unknown as Parameters<typeof __chessPromptProbe.buildChessTurnBlock>[0];
+    const idle = await __chessPromptProbe.buildChessTurnBlock(s, 'idle', 'Ouen', 30, false);
+    expect(idle).toContain(SQUARE_NAMES_REMINDER);
+    expect(idle.indexOf(SQUARE_NAMES_REMINDER)).toBeLessThan(idle.indexOf('A message is OPTIONAL here'));
+    expect(idle.trimEnd().endsWith('do not write a line about staying quiet.')).toBe(true);
+    const nudge = await __chessPromptProbe.buildChessTurnBlock(s, 'idle', 'Ouen', 30, true);
+    expect(nudge.trimEnd().endsWith(SQUARE_NAMES_REMINDER)).toBe(true);
+  });
+
   it('caps a turn at a couple of bubbles even when the model writes five', async () => {
     createSpy.mockResolvedValue({
       content: [{ type: 'text', text: 'one\ntwo\nthree\nfour\nfive' }],
@@ -932,6 +978,28 @@ describe('hasChessCoordinates', () => {
       'O-O then', '0-0-0 lol', 'the pawn on d5 is dead', 'Rae1', 'e8=Q#',
     ]) {
       expect(hasChessCoordinates(t), t).toBe(true);
+    }
+  });
+
+  // 261008: models also type SAN lowercase. A lowercase piece letter glued to
+  // the square hid it from the word-boundary check, so "nf6 was me thinking
+  // about it way too late" (a live Haiku 5.5 game-over line) was spoken.
+  it('catches lowercase SAN, lowercase castling and a capitalised pawn capture', () => {
+    for (const t of [
+      'nf6 was me thinking about it way too late', 'nxf6', 'qxd5+ and you are done', 'nbd7', 'kxe2', 'rxe1#',
+      'exd5', 'e8=q', 'bxc4', 'o-o then', 'o-o-o lol', 'O-o', '(nf6)', 'nf6, really',
+      'Exd5 hurt', 'Nf6!?',
+    ]) {
+      expect(hasChessCoordinates(t), t).toBe(true);
+    }
+  });
+
+  it('still leaves ordinary words and capitalised non-squares alone', () => {
+    for (const t of [
+      'be right back', 'A1 steak sauce', 'watching F1 later', 'Box of chocolates', 'nb that was rough',
+      'knights are weird', 'okay rook time',
+    ]) {
+      expect(hasChessCoordinates(t), t).toBe(false);
     }
   });
 

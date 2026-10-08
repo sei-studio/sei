@@ -65,6 +65,7 @@ import type { LogBatch } from '../../shared/ipc';
 import {
   BACKSEAT_CONTRACT,
   SAVE_CLIP_TOOL,
+  backseatMaxTokens,
   renderBackseatGameBlock,
   stripDashes,
   tickNote,
@@ -1047,12 +1048,13 @@ async function runTurn(
   const webSearchOffered = tools.some((t) => t.name === 'web_search');
 
   const first = await llm.call({
-    // Two short lines. A cap this low is itself a register control: it is
-    // hard to write a paragraph in 160 tokens. 260804: a tick the player
+    // One short line. A cap this low is itself a register control: it is
+    // hard to write a paragraph in 100 tokens (backseatMaxTokens; 160 until
+    // 261008, when Haiku 5.5 ran 30-47 words a line). 260804: a tick the player
     // SPOKE gets room for a real answer, because this is now the only turn
     // they get — the director routes their utterance here rather than running
     // a second, screenless one alongside it.
-    maxTokens: tick.kind === 'user' ? 400 : 160,
+    maxTokens: backseatMaxTokens(tick.kind),
     system,
     tools,
     messages,

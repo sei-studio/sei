@@ -37,6 +37,7 @@ import { stat } from 'node:fs/promises';
 import { paths } from '../paths';
 import { buildLlmProvider } from '../llm';
 import { createMemoryCompactor } from '../../bot/brain/memory/compactor.js';
+import { COMPANION_MODEL } from '../../shared/llmCatalog';
 
 /**
  * Trigger threshold, deliberately 4x the bot's 8192.
@@ -102,7 +103,7 @@ const chatAnthropicAdapter = {
       // test files mock './sdk' with just { buildChatSdk }, and a static
       // named import of CHAT_MODEL here would break their module graphs.
       const sdkMod = (await import('./sdk')) as { CHAT_MODEL?: string };
-      const fallbackModel = sdkMod.CHAT_MODEL ?? 'claude-haiku-4-5';
+      const fallbackModel = sdkMod.CHAT_MODEL ?? COMPANION_MODEL;
       console.warn(`[sei] compaction model ${opts.model} rejected (${msg}); compacting with ${fallbackModel}`);
       res = await run(fallbackModel);
     }
