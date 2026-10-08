@@ -51,6 +51,7 @@ import { loadConfig as loadUserConfig } from './configStore'; // UserConfig for 
 import { paths } from './paths';
 import { createLogRouter, type LogRouter } from './logRouter';
 import { bootPhaseProps, type SummonFailureInfo, type SummonPhase } from './diagnostics';
+import { noteCompanionGoodbye } from './sessionGoodbye';
 
 /**
  * The READY budget: from the bot reporting "booted" (its init-ack) to
@@ -1380,6 +1381,8 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // Voice calls (260705): the in-game bot called end_call() — hang up the
       // player's call (the bot stays in the game). Not a BotStatus event.
       if ((data as { type?: string }).type === 'call-end') {
+        // 261008: voice_call_ended reads this back (sessionGoodbye.ts).
+        noteCompanionGoodbye(characterId, 'call', (data as { nextStepHook?: boolean }).nextStepHook === true);
         opts.onCallEndRequested?.(characterId);
         return;
       }
@@ -1479,6 +1482,9 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // 260929: remember why the bot stopped itself (companion quit()).
       if (data.type === 'summon-stopped' && typeof data.reason === 'string') {
         session.selfStopReason = data.reason;
+        // 261008: a companion quit() says whether its goodbye left a next_time
+        // hook; bot_session_ended reads it back (sessionGoodbye.ts).
+        if (data.reason === 'quit') noteCompanionGoodbye(characterId, 'game', data.nextStepHook === true);
       }
       if (data.type === 'error' && !summonResolved) {
         summonResolved = true;

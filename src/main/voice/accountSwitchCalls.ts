@@ -13,6 +13,7 @@
  */
 import { closeAllCallsFromMain } from './callState';
 import { trackScopedWrite } from '../profile/scopeBarrier';
+import { consumeGoodbye, callEndHookProps } from '../sessionGoodbye';
 
 export interface AccountSwitchCallDeps {
   /** Supervisor: the bot's chat mode (on a call or not). */
@@ -40,7 +41,12 @@ export async function endCallsForAccountSwitch(reason: string, deps: AccountSwit
     }
     // Never connected: no row and no event, the renderer's own rule.
     if (connectedMs === null || connectedMs <= 0) continue;
-    deps.capture('voice_call_ended', { character_id: characterId, duration_ms: connectedMs, reason });
+    deps.capture('voice_call_ended', {
+      character_id: characterId,
+      duration_ms: connectedMs,
+      reason,
+      ...callEndHookProps(consumeGoodbye(characterId, 'call')),
+    });
     writes.push(
       trackScopedWrite(deps.emitCallSession(characterId, connectedMs)).catch((err) => {
         console.warn(`[sei] account switch: call row for ${characterId} failed: ${(err as Error).message}`);

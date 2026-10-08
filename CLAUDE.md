@@ -2811,6 +2811,21 @@ flush runs before `supervisor.shutdown()`, so it is bounded
 and with PostHog unreachable quit hung that long with the bot still in the
 world.
 
+**Goodbyes can set up the next session (261008, retention fix 2(c)).** Every
+goodbye tool (bot `quit_game` / `end_call`, chat-surface `quit_game` /
+`end_call`) takes an optional `next_time` field (prompt text in
+promptLibrary `NEXT_TIME_FIELD` / `NEXT_TIME_GOODBYE` / `NEXT_TIME_SPOKEN`).
+The model works the step into its own goodbye; the host only saves the
+field to MEMORY.md as `Plan for next time: <step>` (`src/bot/brain/nextStep.js`,
+bot `saveNextStep`, chat `honorNextStep`), and the next greeting (bot FIRST
+CONTACT, voice-call greeting note) is told it may bring it up
+(`NEXT_TIME_GREETING`). No extra LLM call. Analytics are booleans only:
+`bot_session_ended.next_step_hook`, `voice_call_ended.next_step_hook` and
+`ended_by_companion`. The goodbye and the end event come from different
+processes, so `src/main/sessionGoodbye.ts` holds a short-lived note between
+them. A player Stop, player hang-up or world close has no companion goodbye
+and reports `false`.
+
 **Forge/NeoForge hosts are blocked before summon (260929).** Only on STRONG
 evidence: the status ping's forgeData/modinfo (`forgeModCount != null`) or an
 explicit launch target on the host command line (`LanHost.forgeLaunchTarget`,

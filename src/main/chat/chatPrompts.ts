@@ -24,6 +24,9 @@ import {
   renderPunctuationDirective,
   VOICE_PUNCTUATION_DIRECTIVE,
   renderLanguageDirective,
+  NEXT_TIME_FIELD,
+  NEXT_TIME_GOODBYE,
+  NEXT_TIME_SPOKEN,
 } from '../../bot/brain/promptLibrary.js';
 import type { ChatLanguage } from '../../shared/chatLanguage';
 import { audioTagDirective } from '../voice/audioTags';
@@ -501,10 +504,14 @@ export const END_CALL_TOOL = {
     'Hang up the live voice call with the player. ' +
     'Use it when the conversation is clearly over or the player asks you to hang up. ' +
     'Say a short goodbye in the same turn; it is spoken aloud before the call ends. ' +
-    'You cannot start calls, only end them; after hanging up you can still be reached in text chat.',
+    NEXT_TIME_GOODBYE +
+    ' ' +
+    NEXT_TIME_SPOKEN +
+    ' You cannot start calls, only end them; after hanging up you can still be reached in text chat.',
   input_schema: {
     type: 'object' as const,
-    properties: {},
+    // 261008: retention hook, saved to MEMORY.md (chatService honorNextStep).
+    properties: { next_time: { type: 'string', description: NEXT_TIME_FIELD } },
     required: [] as string[],
   },
 };
@@ -515,10 +522,14 @@ export const QUIT_TOOL = {
     'Leave the Minecraft world and log off, ending your current play session. ' +
     'ONLY call this if you are currently in the player\'s world and they ask you to stop playing, leave, or log off. ' +
     'Do NOT call it if you are not in a world right now, and not just to pause; you have no world to leave then. ' +
-    'Say goodbye in the same turn before calling it. You can still be reached here in chat afterward.',
+    'Say goodbye in the same turn before calling it. ' +
+    NEXT_TIME_GOODBYE +
+    ' ' +
+    NEXT_TIME_SPOKEN +
+    ' You can still be reached here in chat afterward.',
   input_schema: {
     type: 'object' as const,
-    properties: {},
+    properties: { next_time: { type: 'string', description: NEXT_TIME_FIELD } },
     required: [] as string[],
   },
 };
