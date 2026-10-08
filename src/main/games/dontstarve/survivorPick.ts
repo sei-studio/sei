@@ -29,7 +29,14 @@ export interface SurvivorPickDeps {
   log?: (msg: string) => void;
 }
 
-const PICK_TOOL = {
+/** Exported for the offline model probe (scripts/game-sim-probe.ts). */
+export const PICK_SYSTEM =
+  'You map a game companion character to the Don\'t Starve Together survivor they would choose to play as. ' +
+  'Read the persona, then the roster (every eligible survivor with stats, perks and downsides), and pick the one whose ' +
+  'strengths and quirks fit the character: temperament, what they enjoy, how they treat others, what they would find funny to be. ' +
+  'Do not default to Wilson unless the persona is genuinely plain. Call pick_survivor exactly once.';
+
+export const PICK_TOOL = {
   name: 'pick_survivor',
   description: 'Choose which Don\'t Starve Together survivor this character plays as.',
   input_schema: {
@@ -56,11 +63,7 @@ export async function llmPick(args: { name: string; persona: string; roster: str
   const llm = await buildLlmProvider();
   const res = await llm.call({
     maxTokens: 300,
-    system:
-      'You map a game companion character to the Don\'t Starve Together survivor they would choose to play as. ' +
-      'Read the persona, then the roster (every eligible survivor with stats, perks and downsides), and pick the one whose ' +
-      'strengths and quirks fit the character: temperament, what they enjoy, how they treat others, what they would find funny to be. ' +
-      'Do not default to Wilson unless the persona is genuinely plain. Call pick_survivor exactly once.',
+    system: PICK_SYSTEM,
     tools: [PICK_TOOL],
     toolChoice: { type: 'tool', name: 'pick_survivor' },
     messages: [
