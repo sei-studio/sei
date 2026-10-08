@@ -295,7 +295,7 @@ describe('renderBackseatGameBlock', () => {
 describe('the length rule on every look (261008)', () => {
   const base = { secondsSinceLastLine: 30, sourceName: 'Game' } as const;
 
-  it('ends every non-user note with the length rule, right before the closing line', () => {
+  it('ends every non-user note with the length rule, as the last thing read', () => {
     const notes = [
       tickNote({ ...base, kind: 'start' }),
       tickNote({ ...base, kind: 'idle' }),
@@ -303,12 +303,23 @@ describe('the length rule on every look (261008)', () => {
       tickNote({ ...base, kind: 'jolt', joltReason: 'color' }),
       tickNote({ ...base, kind: 'jolt', joltReason: 'switch', sinceSwitchS: 5 }),
     ];
-    for (const n of notes) expect(n).toContain(`${LINE_LENGTH_REMINDER} Do not mention this note.]`);
-    expect(LINE_LENGTH_REMINDER).toMatch(/under twenty words/);
+    for (const n of notes) expect(n.endsWith(`Do not mention this note. ${LINE_LENGTH_REMINDER}]`)).toBe(true);
+    // 261009: "under twenty words" left Haiku 5.5 at a median of 30. The
+    // reason (spoken over their game) plus a low number is what moved it.
+    expect(LINE_LENGTH_REMINDER).toMatch(/under ten words/);
+    expect(LINE_LENGTH_REMINDER).toMatch(/spoken out loud/);
+    expect(LINE_LENGTH_REMINDER).not.toMatch(/[—–;]/);
   });
 
-  it('leaves the player\'s own turn without it', () => {
-    expect(tickNote({ ...base, kind: 'user' })).not.toContain(LINE_LENGTH_REMINDER);
+  it('leaves the player\'s own turn without it, and has it talk about the screen, not frames', () => {
+    const n = tickNote({ ...base, kind: 'user' });
+    expect(n).not.toContain(LINE_LENGTH_REMINDER);
+    expect(n).toContain('talking about it as their screen, never as frames or images');
+  });
+
+  it('tells the contract the player can already see the screen (261009)', () => {
+    expect(BACKSEAT_CONTRACT).toContain('They can see the screen too');
+    expect(BACKSEAT_CONTRACT).not.toContain('under twenty words');
   });
 
   it('caps a look at 100 tokens and a player turn at 400', () => {

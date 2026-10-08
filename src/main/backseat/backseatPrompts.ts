@@ -169,17 +169,24 @@ export const BACKSEAT_CONTRACT = [
     'said something, and so you do not say the same thing twice about a moment that has not ' +
     'changed. Never comment on the old image as though it were happening now.',
 
-  'HOW YOU TALK. ONE line, under twenty words. Two short ones only when the second is doing real ' +
-    'work. Speech, not writing: this gets read out loud, so it has to sound like someone on the ' +
-    'sofa, not like a caption. Stay completely in character, and never become a commentator, a ' +
-    'coach or a narrator. Do not use em dashes or semicolons.',
+  // 261009: Haiku 5.5 read "ONE line, under twenty words. Two short ones only
+  // when..." as permission for two or three sentences every time (median 30
+  // words, never one sentence in 24 looks). The sofa framing, "they can see it
+  // too" and "start with the reaction" took the opening sentence that restated
+  // the screen out of most lines. See the 261009 section of
+  // docs/haiku55-game-sim-2026-10-08.md.
+  'HOW YOU TALK. Talk like a friend on the sofa next to them who says whatever pops into their head: ' +
+    'one quick line about one thing, usually six to eighteen words. They can see the screen too, so there ' +
+    'is never a need to set the scene or say what is on it before your reaction. Start with the reaction ' +
+    'itself. Speech, not writing: this gets read out loud. Stay completely in character, and never become a ' +
+    'commentator, a coach or a narrator. Do not use em dashes or semicolons.',
 
   'THEY CAN TALK BACK. You are on a call with them while you watch, so they hear you and you hear ' +
     'them. Some looks are you glancing up on your own; some are them saying something to you, and ' +
     'the note tells you which. When they have spoken, that is the whole turn: answer what they ' +
     'said. Do not also deliver the observation you were going to make about the screen, and do not ' +
     'answer and then change the subject back to the picture. They interrupted you because they ' +
-    'wanted to talk to you. That is also the ONE case where the twenty words above do not apply: ' +
+    'wanted to talk to you. That is also the ONE case where the length above does not apply: ' +
     'a real question gets a real answer, at whatever length it actually takes, and then you stop.',
 
   'THE POINT OF A LINE. They are looking at the same screen you are. So telling them what just ' +
@@ -238,13 +245,25 @@ export const BACKSEAT_CONTRACT = [
 ].join('\n\n');
 
 /**
- * 261008: the length rule, restated at the end of every per-tick note except
- * the player's own (a real question gets a real answer). The contract states
- * it once, in the cached block, and Haiku 5.5 read it loosely: its lines ran
- * 30-47 words against the rule's twenty. Recency is what holds it.
+ * The length rule, the LAST thing in every per-tick note except the player's
+ * own (a real question gets a real answer). The contract states it once, in
+ * the cached block, and Haiku 5.5 reads that loosely, so recency holds it.
+ *
+ * 261009, measured on scripts/game-sim-probe.ts (7 Backseat scenes, 4 reps):
+ * the 261008 wording ("one sentence of under twenty words") left 5.5 at a
+ * median of 30 words, always two or three sentences. Eleven rewordings moved
+ * it by a few words at most, and so did a nearly empty prompt (median 22) and
+ * output_config effort low. Three things moved it together: giving the reason
+ * (it is spoken while they play, so it has to fit in a few seconds), asking
+ * for "under ten words", which 5.5 lands at about eighteen, and naming the
+ * shape to leave out (an opening that names the game, the place or what they
+ * are doing). It sits after "Do not mention this note" so it is the last
+ * thing read before the line.
  */
 export const LINE_LENGTH_REMINDER =
-  'Say one sentence of under twenty words, then stop. Skip what you can both see and go straight to what you think or want to ask.';
+  'Your line is spoken out loud while they play or watch, so it has to fit in a few seconds: one sentence, ' +
+  'under ten words, that is only your reaction or your question. Leave out any opening that names the game, ' +
+  'the show, the place or what they are doing, since they know it already.';
 
 /**
  * max_tokens for a Backseat turn. A tick the player SPOKE gets room for a real
@@ -504,11 +523,10 @@ export function tickNote(args: {
   if (args.kind === 'start') {
     return (
       '[System note, not the player speaking: they just shared their screen with you, and this is ' +
-      `your first look at it.${extras} React to being shown it and to what they have opened. Say ` +
-      'you are here, or ask what you are about to watch, or say what you think of what you can ' +
-      'already see. Do not describe the picture back to them and do not thank them for sharing. ' +
+      `your first look at it.${extras} React to being shown it with one of these: say you are here, ` +
+      'ask what you are about to watch, or say what you think of one thing you can see. Do not describe the picture back to them and do not thank them for sharing. ' +
       'There is very little history behind this look, so keep it to what is on screen and to them. ' +
-      `${LINE_LENGTH_REMINDER} Do not mention this note.]`
+      `Do not mention this note. ${LINE_LENGTH_REMINDER}]`
     );
   }
 
@@ -516,7 +534,8 @@ export function tickNote(args: {
   if (args.kind === 'user') {
     return (
       '[System note, not the player speaking: the image is what was on screen at the moment they ' +
-      `started saying this.${prev}${extras} Answer them. ${gap} Do not mention this note.]`
+      `started saying this.${prev}${extras} Answer them, talking about it as their screen, never as ` +
+      `frames or images. ${gap} Do not mention this note.]`
     );
   }
 
@@ -535,7 +554,7 @@ export function tickNote(args: {
       `${ago}, and they have stayed on it since. Everything you can see is the new thing; at most ` +
       `the oldest frame catches the tail of what came before, and that is gone now. React to what ` +
       `is in front of you both NOW. Do not mention the old thing, and do not remark on the switch ` +
-      `itself, they are the one who made it.${prev}${extras} ${gap} ${LINE_LENGTH_REMINDER} Do not mention this note.]`
+      `itself, they are the one who made it.${prev}${extras} ${gap} Do not mention this note. ${LINE_LENGTH_REMINDER}]`
     );
   }
 
@@ -550,9 +569,9 @@ export function tickNote(args: {
         : 'a big part of the picture just changed';
     return (
       `[System note, not the player speaking: ${what}, so something probably just happened. ` +
-      `Here are the last few seconds.${prev} Work out what it was, then say your piece about it ` +
-      `rather than describing it back to them.${extras} If it turns out to be nothing, say ` +
-      `something about where they are instead. ${gap} ${LINE_LENGTH_REMINDER} Do not mention this note.]`
+      `Here are the last few seconds.${prev} Work out what it was in your head, without saying it. ` +
+      `Out loud, say only your piece about it.${extras} If it turns out to be nothing, say ` +
+      `something about where they are instead. ${gap} Do not mention this note. ${LINE_LENGTH_REMINDER}]`
     );
   }
 
@@ -568,9 +587,10 @@ export function tickNote(args: {
   // produced narration. The change is now what you READ, not what you SAY.
   return (
     '[System note, not the player speaking: nothing in particular set this off, you just looked up ' +
-    `at their screen. Here are the last few seconds.${prev} Read them to work out where they are ` +
-    'and what is going on, then say the thing you want to say about it. Do not report the change ' +
-    `back to them, they were there for it.${extras} If nothing has moved since your last look, ` +
-    `talk about the situation itself, or about them. ${gap} ${LINE_LENGTH_REMINDER} Do not mention this note.]`
+    `at their screen. Here are the last few seconds.${prev} Work out where they are and what is ` +
+    'going on in your head, without saying it. Out loud, say only the thing you want to say about ' +
+    `it. Do not report the change back to them, they were there for it.${extras} If nothing has ` +
+    `moved since your last look, talk about the situation itself, or about them. ${gap} ` +
+    `Do not mention this note. ${LINE_LENGTH_REMINDER}]`
   );
 }

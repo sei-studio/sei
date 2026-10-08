@@ -244,3 +244,76 @@ Fixes 1-3 above were applied (thinking disabled centrally, chess turn-block remi
 Minecraft, Stardew and DST prompts were not changed, so their 4.5 swings are run-to-run noise. Backseat on 5.5 is still below 4.5: its misses are all length (31-39 words, usually two sentences that open by restating the screen). Four reminder wordings were tried; none got it past about 10/16.
 
 remember-eval (`scripts/remember-eval.ts --reps 3`): 4.5 89% (64/72), 5.5 with thinking off 86% (62/72).
+
+## Backseat prompt restructure for 5.5 (2026-10-09)
+
+Goal: get 5.5 to one short spoken line per look, grounded in what is clearly on screen, without hurting 4.5. No hardcoding or trimming of the model's text, and `max_tokens` stays at 100 for looks and 400 for player turns (no line hit the cap in any run below).
+
+**Scenes.** The probe now has 7 Backseat scenes. Five are the existing ones (obby first look, obby question, Minecraft nether bridge, static menu). Three are new:
+- `B_STARDEW`: real frames from the v0.6.5-beta.2 playtest (`scripts/fixtures/backseat/stardew-farm-{1,2,3}.jpg`, game window only), a farmer walking past a stump to a pond. It flags invented fishing, crops or weather.
+- `B_DST`: first look at the DST key art (a walled garden with giant crops, daylight). It flags invented danger.
+- `B_CODE`: a switch jolt onto VS Code with a README open. It flags an invented bug, and checks for memory bleed (chess, cabin, river).
+
+The probe gained `--bs-variant ./variant.ts` (override contract, tickNote, maxTokens without editing source), a words-per-line distribution, and `h55low` / `h55think` arms.
+
+**Result** (5.5: 4 reps, so 28 turns and 24 looks the player did not start; 4.5: 2 reps, so 14 turns and 12 looks):
+
+| | 5.5 before | 5.5 after | 4.5 before | 4.5 after |
+|---|---|---|---|---|
+| probe pass | 17/28 | 23/28 | 13/14 | 13/14 |
+| words per look, median / p90 / max | 30 / 35 / 44 | 19 / 23 / 26 | 16 / 20 / 21 | 11 / 14 / 17 |
+| looks over 30 words | 10 | 0 | 0 | 0 |
+| sentences per look, mean | 2.33 (none single) | 1.96 | 1.33 | 1.08 |
+| grounding errors (hand-checked) | 3 | 3 | 0 | 0 |
+| memory bleed | 0 | 0 | 0 | 0 |
+| silence | 0 | 0 | 0 | 0 |
+
+- **5.5 after, remaining probe fails.** These are all regex flags that a human would pass:
+  - three Stardew lines suggest fishing in the pond ("you gonna fish in there or just stare at it");
+  - "smug watermelons" on DST trips the memory regex;
+  - "the main menu again?" trips the menu flag.
+- **Grounding errors** were judged by hand. Before, 5.5 put lava under the Minecraft dirt bridge 3 times; the frame shows fog and a few orange specks. After, it did that 2 times, and once asked whether the Stardew pond was new ("did you dig that out?"). 4.5's only probe fail, before and after, is a hyphen used as a dash in a player-turn answer.
+
+**What changed** (`src/main/backseat/backseatPrompts.ts`):
+- **HOW YOU TALK** now reads: "Talk like a friend on the sofa next to them who says whatever pops into their head: one quick line about one thing, usually six to eighteen words. They can see the screen too, so there is never a need to set the scene or say what is on it before your reaction. Start with the reaction itself."
+- **End of every look note.** The note now ends "Do not mention this note." and then `LINE_LENGTH_REMINDER`: "Your line is spoken out loud while they play or watch, so it has to fit in a few seconds: one sentence, under ten words, that is only your reaction or your question. Leave out any opening that names the game, the show, the place or what they are doing, since they know it already."
+- **Idle and jolt notes.** "Work out where they are and what is going on in your head, without saying it. Out loud, say only the thing you want to say about it."
+- **Start note.** It offers the three openers as "one of these" rather than a list the model tried to cover in full.
+- **Player turn.** "Answer them, talking about it as their screen, never as frames or images." It still has no length rule.
+
+**What did not work (5.5, 24 looks each):**
+- **Rewording the contract barely moves length.** Neither of these got the median under 27:
+  - a sofa framing with "they can see it too";
+  - a "clearly visible, ask when unsure" paragraph.
+
+  The visibility paragraph also made the player-turn answers talk about "the frames", so it was dropped.
+- **Example lines don't help enough.** A few short lines in the contract gave median 27 and 19/28. They are also against the no-canned-lines direction, so they are not shipped.
+- **A near-empty prompt** (ablation) still gave median 22. So the long contract is not what makes the lines long. 5.5 simply writes an orienting sentence and then a reaction.
+- **Effort and thinking.**
+  - `output_config.effort: 'low'` gave median 29 on the old prompt and 27 on a new one.
+  - Adaptive thinking gave median 23, but adds about 0.7 s to the time to first token.
+  - Neither is shipped.
+- **Prompt shapes that backfired.**
+  - Per-sentence word caps gave median 33.
+  - A private `<look>` tag ran into `max_tokens`.
+  - Putting the reason inside the contract instead of the note caused 7 "(silence)" replies in 28 turns.
+- **What moved it** was the end of the note, combining three things:
+  - the reason the line must be short (it is spoken over the game);
+  - a low number ("under ten words", which 5.5 lands at about 18);
+  - naming the opening to leave out.
+
+  The new notes with the old contract gave median 21. Adding the HOW YOU TALK rewrite gave 18 to 19.
+
+**Sample 5.5 lines after:**
+- "Ooh, Pastel Sky Obby, those spinning bars look evil. Are you about to jump the lava or what?" (the lava is in the game's description)
+- "Wait, is that Marv down there with a little dirt bridge over lava? Bold choice Ouen"
+- "Wait, you're already in chapter two and you're just sitting on the menu? Hit Continue, I want to see the drowned spires"
+- "Oh a farm, the carrots and pumpkins look huge, how are you doing that?"
+- "Wait, you're in a code editor now? Are you actually building something or just reading the readme?"
+
+**Risks to watch in a live session:**
+- **"Wait," openers.** 5.5 opened 14 of 24 looks with "Wait," (6 before). Each probe turn is independent, so this does not show whether REPEATING YOURSELF, which already names "opening a line the way your last one opened", breaks the habit across a real conversation.
+- **5.5 is still mostly two short sentences.** They are a reaction plus a question, about as long as 4.5's lines were before this change.
+- **4.5 got shorter too** (median 16 to 11). The lines are still in character.
+
+Spend for this round: about $0.40.
