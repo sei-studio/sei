@@ -1629,12 +1629,19 @@ const TURN_TIMEOUT_MS = 90_000;
  * The bare-square alternative is what does most of the work: every SAN move
  * ends in a destination square, so "Nf3" is caught by its own "f3" tail.
  *
+ * 261008: the piece letter, the promotion piece and castling are matched in
+ * either case, because models also type SAN lowercase ("nf6", "qxd5+",
+ * "o-o"), and a lowercase piece letter glued to the square hid the square from
+ * the word-boundary check, so those lines were spoken. A capitalised pawn
+ * capture at the start of a sentence ("Exd5") is caught too. File letters stay
+ * lowercase otherwise, so "A1" or "F1" in ordinary talk is not a square.
+ *
  * False positives are possible in casual texting ("b4" for "before") and are
  * accepted: the cost is one dropped bubble, and she has plenty else to say.
  * Exported for testing.
  */
 const CHESS_COORD_RE =
-  /(?<![A-Za-z0-9])(?:[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[KQRBN])?[+#]?|[O0]-[O0](?:-[O0])?)(?![A-Za-z0-9])/;
+  /(?<![A-Za-z0-9])(?:(?:[KQRBNkqrbn]|[A-H](?=x))?[a-h]?[1-8]?x?[a-h][1-8](?:=[KQRBNkqrbn])?[+#]?|[Oo0]-[Oo0](?:-[Oo0])?)(?![A-Za-z0-9])/;
 
 export function hasChessCoordinates(text: string): boolean {
   return CHESS_COORD_RE.test(text);
@@ -1746,6 +1753,26 @@ function chessContractBlock(s: Session, playerName: string): string {
 }
 
 /**
+ * 261008: the table-talk rules, repeated at the end of every turn block. The
+ * contract states them once, in the cached system prefix, and Haiku 5.5 read
+ * them loosely: 7 of 15 lines in the game-sim probe named a square ("off g5",
+ * "the h5 diagonal", "your knight on c3"), the filter dropped them and she went
+ * silent, and the lines that survived ran long and opened with "ok". Restating
+ * the rules last, next to the line she is about to write, is the fix; the
+ * filter itself is unchanged. The game record she reads names squares on
+ * purpose (it is what keeps her grounded), so the reminder says that record is
+ * for following the game, not for quoting. It also repeats that she talks only
+ * about moves that were actually played, so pointing at pieces in words never
+ * turns into describing moves that did not happen.
+ */
+export const SQUARE_NAMES_REMINDER =
+  'If you say something, keep it to one short line, the length of a text message, and start with the reaction itself, never with "ok" or "okay". ' +
+  'The move records above use square names and notation so you can follow the game; they are for you, not for saying out loud. ' +
+  'When you talk about a move or a piece, say it in plain words, like "your knight came out", "my bishop" or "the pawn next to my king". ' +
+  'A spoken line with a square name or a notation move in it is thrown away and they never hear it. ' +
+  'Only talk about moves that were actually played.';
+
+/**
  * The VOLATILE half: what is true on the board right now, and what this turn is
  * for. Appended as the LAST user message (after the cache breakpoint), never to
  * the system array — see BuildSystemArgs.extraStable for why that matters.
@@ -1773,6 +1800,7 @@ async function buildChessTurnBlock(
       'React to the result in ONE short line, two at the very most, in character. ' +
         'Say something about how the game actually went, not a generic sign-off. No tools this turn.',
     );
+    lines.push(SQUARE_NAMES_REMINDER);
     return lines.join('\n\n');
   }
 
@@ -1842,11 +1870,6 @@ async function buildChessTurnBlock(
         `Nothing has happened for about ${sec} seconds. ${playerName} is thinking about their move.`,
       );
       if (s.hold) holdLines();
-      lines.push(
-        'A message is OPTIONAL here, and most of the time the right answer is none. Say something only if you have ONE ' +
-          'specific line worth saying out loud right now: something about the position, something about them, a needle, ' +
-          'a real mood. If it would be filler, reply with nothing at all.',
-      );
     }
     if (s.drawOffer === 'player') {
       lines.push(
@@ -1854,6 +1877,17 @@ async function buildChessTurnBlock(
       );
     }
     if (s.chess.isCheck()) lines.push(`${colorName(s.chess.turn())} is in check.`);
+    lines.push(SQUARE_NAMES_REMINDER);
+    // A plain idle tick ends on the permission to stay quiet, after the
+    // speech rules: with the rules last, Haiku 5.5 read them as a cue to speak
+    // and wrote lines like "Nothing to say yet, ..." instead of nothing.
+    if (kind === 'idle' && !nudge) {
+      lines.push(
+        'A message is OPTIONAL here, and most of the time the right answer is none. Say something only if you have ONE ' +
+          'specific line worth saying out loud right now: something about the position, something about them, a needle, ' +
+          'a real mood. If it would be filler, reply with nothing at all. An empty reply is how you stay quiet, so do not write a line about staying quiet.',
+      );
+    }
     return lines.join('\n\n');
   }
 
@@ -1895,6 +1929,7 @@ async function buildChessTurnBlock(
       'short line as plain text BEFORE calling play(). ' +
       'Never reveal or describe the move you are about to play: the board announces it for you.',
   );
+  lines.push(SQUARE_NAMES_REMINDER);
   return lines.join('\n\n');
 }
 
