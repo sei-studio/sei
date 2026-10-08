@@ -148,7 +148,36 @@ export interface BuildSystemArgs {
    * byte-stable for the whole game. Ignored for surface 'chat'.
    */
   pinnedClock?: string;
+  /**
+   * 261008: the chat surface offers CHAT_REMEMBER_TOOL, so the status block
+   * ends with CHAT_MEMORY_CHECK. Set by chatService only: backseat,
+   * chess and Draw! offer the plain REMEMBER_TOOL under their own contracts.
+   */
+  memoryGuide?: boolean;
 }
+
+/**
+ * 261008: the per-turn memory check, appended to the status block (the LAST
+ * system text before the transcript) on the chat surface. Measured with
+ * scripts/remember-eval.ts: with the save rules only in the remember()
+ * description, or in a # MEMORY paragraph in block 0, Haiku 5.5 still skipped
+ * a fact the player gave inside a story about something else (an exam they
+ * were stressed about, their dog barking at the mailman) and every plan made
+ * a few turns before a goodbye. Asked afterwards, it said it "was focused on
+ * replying to the stress". The check sits where the model reads it last, and
+ * it frames the emotional moment as the reason to save, not a distraction.
+ * The goodbye sentence asks for a look back over the whole conversation:
+ * "including one from earlier, when they are leaving" kept 5.5 at 33% on
+ * plans-before-goodbye, the look-back wording reached 92% (4.5 at 100% both).
+ * Static text, so it costs tokens but no cache miss.
+ */
+export const CHAT_MEMORY_CHECK =
+  'Memory check: when the player shares what is going on in their life, especially something stressful, exciting or annoying, that is exactly what a friend remembers and asks about later. ' +
+  'If their last message holds anything you would want to know next week, even as a side detail, call remember() with it in this turn, after your reply: ' +
+  'a name of someone or a pet, where they live or work, an exam or trip or other event coming up, something they love or hate, a request about how you talk to them or what to avoid, ' +
+  'or a plan you two agreed on. ' +
+  'When they say goodbye, look back over this conversation: anything above that you would want next time and have not saved yet (a plan for tomorrow, something they told you) goes into remember() now, since this conversation will be gone. ' +
+  'If there is nothing like that, just reply.';
 
 /**
  * Multi-companion voice (260706): the group-call awareness note, added to block
@@ -357,7 +386,8 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
               ? `\nWorld status: an open ${w.name} world is detected, so you could join it if asked (launch with game "${w.game}"). Only call launch when the player clearly asks you to play or join right now.`
               : `\nWorld status: no open ${w.name} world is detected, so launch with game "${w.game}" would fail. Do not call launch for it; if they want to play ${w.name}, ask them to open their world in the game first.`,
           )
-          .join(''),
+          .join('') +
+        (args.memoryGuide ? `\n${CHAT_MEMORY_CHECK}` : ''),
   });
 
   // Prompt caching (260706): re-sending the full memory + summary uncached every
@@ -557,6 +587,40 @@ export const REMEMBER_TOOL = {
     required: ['text'],
   },
 };
+
+/**
+ * 261008: remember() as the chat and voice surfaces offer it. Same name and
+ * schema as REMEMBER_TOOL (chatService dispatches by name), with a description
+ * that says WHAT is worth saving. Measured with scripts/remember-eval.ts on
+ * the base description: Haiku 4.5 saved 58% of the facts and plans worth
+ * keeping and Haiku 5.5 33%; 5.5 kept an agreed plan through a goodbye 3/9.
+ * The two things the base text never said were that the conversation itself
+ * does not carry over, and that plans and promises count. Chat-only on
+ * purpose: backseat, chess and Draw! keep REMEMBER_TOOL, whose description
+ * was tuned against backseat's measured speech suppression (backseatPrompts).
+ */
+export const CHAT_REMEMBER_TOOL = {
+  name: 'remember',
+  description:
+    'Save one line to your long-term memory. Only what you save here carries over: next session you will not have this conversation, just your memory. It loads at the start of every future session, in chat and in the game. ' +
+    'If you would want to know it next week, save it now, in the same turn they say it, even when they only mention it on the way to something else. ' +
+    'That covers facts about the player and their life (people and pets by name, where they live, their work or school, an upcoming event and its date), what they like and dislike, lasting rules for how you act with them, and plans or promises the two of you agreed on. ' +
+    'When they are saying goodbye and a plan from this conversation is not saved yet, save it then. ' +
+    'Things that only matter right now, and things your memory already has, need no line. ' +
+    "Write one short line about one thing, in your own voice, keeping specifics like names and dates. It is private: the player never sees it, so do not tell them you are saving it, just carry on the conversation. " +
+    'Your text output is what you SAY to the player: never write the memory, a note, or a plan there.',
+  input_schema: REMEMBER_TOOL.input_schema,
+};
+
+/**
+ * The chat surface's tool list, in the order the model sees it. One place so
+ * chatService (every text and voice turn kind) and the remember() eval
+ * (scripts/remember-eval.ts) send exactly the same list. `web` is whatever
+ * webToolsFor() returns for the provider; it always goes last.
+ */
+export function chatSurfaceTools<T>(voice: boolean, web: T[]): Array<T | typeof LAUNCH_TOOL | typeof CHAT_REMEMBER_TOOL | typeof END_CALL_TOOL> {
+  return voice ? [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, CHAT_REMEMBER_TOOL, ...web] : [LAUNCH_TOOL, QUIT_TOOL, CHAT_REMEMBER_TOOL, ...web];
+}
 
 // Silence on voice calls (260707): there is deliberately NO silence tool.
 // Models cannot produce an empty reply, but they DO reliably write literal
