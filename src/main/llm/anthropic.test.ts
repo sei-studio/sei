@@ -6,9 +6,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const create = vi.fn(async (_req: unknown, _opts?: unknown) => ({ content: [{ type: 'text', text: 'hi' }], stop_reason: 'end_turn' }));
+const stream = vi.fn((_req: unknown, _opts?: unknown) => ({
+  async *[Symbol.asyncIterator]() {},
+  on: () => undefined,
+  finalMessage: async () => ({ content: [{ type: 'text', text: 'hi' }], stop_reason: 'end_turn' }),
+}));
 let sdkModel = 'claude-haiku-4-5';
 vi.mock('../chat/sdk', () => ({
-  buildChatSdk: async () => ({ client: { messages: { create } }, model: sdkModel }),
+  buildChatSdk: async () => ({ client: { messages: { create, stream } }, model: sdkModel }),
 }));
 
 import { applyModelDefaults, createAnthropicProvider } from './anthropic';
@@ -30,7 +35,10 @@ describe('applyModelDefaults', () => {
 });
 
 describe('createAnthropicProvider request shape', () => {
-  beforeEach(() => create.mockClear());
+  beforeEach(() => {
+    create.mockClear();
+    stream.mockClear();
+  });
 
   it('sends thinking disabled when the session model is Haiku 5', async () => {
     sdkModel = 'claude-haiku-5-5';
@@ -51,5 +59,25 @@ describe('createAnthropicProvider request shape', () => {
     const provider = await createAnthropicProvider('cloud' as never);
     await provider.call({ model: 'claude-haiku-5-5', maxTokens: 300, messages: [{ role: 'user', content: 'hey' }] } as never);
     expect(create.mock.calls[0][0]).toMatchObject({ thinking: { type: 'disabled' } });
+  });
+
+  it('sends thinking disabled on the streaming path (Draw!, Backseat lookups)', async () => {
+    sdkModel = 'claude-haiku-5-5';
+    const provider = await createAnthropicProvider('cloud' as never);
+    await provider.call({ maxTokens: 160, messages: [{ role: 'user', content: 'hey' }], onContentBlock: () => {} } as never);
+    expect(stream.mock.calls[0][0]).toMatchObject({ model: 'claude-haiku-5-5', thinking: { type: 'disabled' } });
+  });
+
+  it('never sends a fixed thinking budget or sampling params to Haiku 5', async () => {
+    sdkModel = 'claude-haiku-5-5';
+    const provider = await createAnthropicProvider('cloud' as never);
+    await provider.call({
+      maxTokens: 300,
+      messages: [{ role: 'user', content: 'hey' }],
+      anthropicExtra: { thinking: { type: 'enabled', budget_tokens: 1024 }, temperature: 0 },
+    } as never);
+    const req = create.mock.calls[0][0] as Record<string, unknown>;
+    expect(req.thinking).toEqual({ type: 'disabled' });
+    expect(req).not.toHaveProperty('temperature');
   });
 });
