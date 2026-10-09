@@ -20,10 +20,12 @@ import {
   OPENAI_COMPAT_BASE_URLS,
   SHOWN_PROVIDERS,
   GRANDFATHERED_PROVIDERS,
+  ollamaVisionHeuristic as catalogOllamaVision,
 } from '../shared/llmCatalog'
 import { ConfigSchema, LLM_PROVIDER_KINDS } from './config.js'
 import { BASE_URLS } from './brain/llm/index.js'
 import { COMPAT_DEFAULT_MODELS } from './brain/llm/openaiCompatProvider.js'
+import { ollamaVisionHeuristic as botOllamaVision } from './brain/llm/ollamaProvider.js'
 
 // Minimal ConfigSchema-valid raw config (BYOK shape).
 const parsed = ConfigSchema.parse({
@@ -71,5 +73,15 @@ describe('bot mirrors of src/shared/llmCatalog.ts (no-drift)', () => {
 
   it('factory BASE_URLS equal catalog OPENAI_COMPAT_BASE_URLS', () => {
     expect(BASE_URLS).toEqual(OPENAI_COMPAT_BASE_URLS)
+  })
+
+  it('the bot Ollama vision heuristic equals the catalog one (261010)', () => {
+    const names = [
+      'qwen2.5vl:3b', 'qwen3-vl:2b-instruct', 'gemma3', 'gemma3:4b', 'gemma3:1b', 'gemma3:270m', 'gemma4:e4b',
+      'llama3.2-vision', 'llama4:scout', 'llava', 'bakllava', 'moondream', 'minicpm-v', 'granite3.2-vision',
+      'mistral-small3.1', 'ministral-3:8b', 'deepseek-ocr', 'internvl3', 'llama3.1', 'qwen2.5:0.5b', 'qwen3:1.7b',
+      'gpt-oss:20b', 'hf.co/x/y-GGUF:Q4_K_M', 'someone/llava-x:latest', '',
+    ]
+    for (const n of names) expect(`${n}:${botOllamaVision(n)}`).toBe(`${n}:${catalogOllamaVision(n)}`)
   })
 })

@@ -180,13 +180,44 @@ export function modelVision(provider: ProviderKind, model: string): VisionVerdic
       return 'unknown';
     }
     case 'ollama':
-      if (/llava|vision|-vl|moondream|bakllava|minicpm-v/.test(m)) return 'yes';
-      return 'no';
+      return ollamaVisionHeuristic(m);
     default:
       // Grandfathered providers: the bot's capability table said no vision
       // for groq/cerebras/perplexity; mistral/together depend on the model.
       return 'unknown';
   }
+}
+
+/**
+ * Ollama vision by model NAME, the fallback for when Ollama's own answer
+ * (POST /api/show `capabilities`, read by src/main/llm/ollamaCapabilities.ts
+ * and the bot's ollamaProvider.js) is unavailable: Ollama not running yet, or
+ * a build too old to report capabilities.
+ *
+ * 261010: this used to end in `return 'no'` over a stale list, so popular
+ * vision models (qwen2.5vl, gemma3, gemma4, llama4, mistral-small3.x) were
+ * judged blind and Draw!/backseat were locked for them. A name we do not
+ * recognize is now 'unknown' (allowed through, fails visibly if wrong); only
+ * a positive match says 'yes', and only /api/show ever says a confident 'no'
+ * for a full-size model. Tags are user-chosen, so this stays a best guess.
+ * The bot mirrors it in src/bot/brain/llm/ollamaProvider.js
+ * (llmCatalogSync.test.js keeps the two equal).
+ */
+export function ollamaVisionHeuristic(model: string): VisionVerdict {
+  const m = (model || '').toLowerCase().trim();
+  const colon = m.lastIndexOf(':');
+  const name = colon > m.lastIndexOf('/') && colon >= 0 ? m.slice(0, colon) : m;
+  const tag = name === m ? '' : m.slice(colon + 1);
+  // gemma3: the 270m and 1b sizes are text-only, every larger size sees.
+  if (/(^|\/)gemma-?3$/.test(name)) return /^(270m|1b)\b/.test(tag) ? 'no' : 'yes';
+  if (
+    /llava|moondream|minicpm-v|vision|vl\b|internvl|llama4|gemma-?4|mistral-small-?3\.[12]|ministral-3|deepseek-ocr/.test(
+      name,
+    )
+  ) {
+    return 'yes';
+  }
+  return 'unknown';
 }
 
 /**

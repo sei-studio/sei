@@ -6,7 +6,13 @@
  * thinking diagnostic, stop-sequence mapping, and tool_calls normalization.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { createOllamaProvider, effectiveTimeoutMs, LOCAL_TIMEOUT_FLOOR_MS } from './ollama';
+import {
+  createOllamaProvider,
+  effectiveTimeoutMs,
+  flattenToolTurns,
+  LOCAL_TIMEOUT_FLOOR_MS,
+  NO_TOOLS_MODELS,
+} from './ollama';
 
 function jsonResponse(payload: unknown): Response {
   return {
@@ -18,7 +24,17 @@ function jsonResponse(payload: unknown): Response {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  NO_TOOLS_MODELS.clear();
 });
+
+function errorResponse(status: number, payload: unknown): Response {
+  return {
+    ok: false,
+    status,
+    json: async () => payload,
+    text: async () => JSON.stringify(payload),
+  } as unknown as Response;
+}
 
 describe('effectiveTimeoutMs', () => {
   it('raises a cloud-sized caller timeout to the local floor', () => {
@@ -87,5 +103,78 @@ describe('createOllamaProvider', () => {
     const res = await p.call(params);
     expect(res.toolUses).toEqual([{ id: expect.stringMatching(/^toolu_/), name: 'remember', input: { text: 'likes cats' } }]);
     expect(res.stopReason).toBe('tool_use');
+  });
+});
+
+// 261010 ("Ollama vision models all not working").
+describe('createOllamaProvider: images and tool-less vision models', () => {
+  const IMG = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'data:image/png;base64,QUJD' } };
+  const tools = [{ name: 'remember', description: 'save', input_schema: { type: 'object', properties: {} } }];
+
+  it('sends an image as `images` on a string-content message (not OpenAI image_url parts)', async () => {
+    const fetchImpl = vi.fn(async (_url: string, _init: { body: string }) => jsonResponse({ message: { role: 'assistant', content: 'a red circle' }, done_reason: 'stop' }));
+    const p = createOllamaProvider({ model: 'qwen2.5vl:3b', fetchImpl: fetchImpl as unknown as typeof fetch });
+    const res = await p.call({ maxTokens: 50, messages: [{ role: 'user', content: [IMG, { type: 'text', text: 'what is it?' }] }] as never });
+    const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(body.messages).toEqual([{ role: 'user', content: 'what is it?', images: ['QUJD'] }]);
+    expect(JSON.stringify(body)).not.toContain('image_url');
+    expect(res.text).toBe('a red circle');
+  });
+
+  it('retries once without tools when Ollama says the model does not support tools, and remembers it', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetchImpl = vi
+      .fn(async (_url: string, init: { body: string }) => {
+        const body = JSON.parse(init.body);
+        return body.tools
+          ? errorResponse(400, { error: 'registry.ollama.ai/library/qwen2.5vl:3b does not support tools' })
+          : jsonResponse({ message: { role: 'assistant', content: 'nice drawing' }, done_reason: 'stop' });
+      });
+    const p = createOllamaProvider({ model: 'qwen2.5vl:3b', fetchImpl: fetchImpl as unknown as typeof fetch });
+    const call = { maxTokens: 50, tools, messages: [{ role: 'user', content: [IMG] }] } as never;
+    const res = await p.call(call);
+    expect(res.text).toBe('nice drawing');
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetchImpl.mock.calls[1][1].body).tools).toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
+    // A second provider instance (another surface) skips the doomed request.
+    const p2 = createOllamaProvider({ model: 'qwen2.5vl:3b', fetchImpl: fetchImpl as unknown as typeof fetch });
+    await p2.call(call);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(JSON.parse(fetchImpl.mock.calls[2][1].body).tools).toBeUndefined();
+  });
+
+  it('a forced tool on a tool-less model still lands through the JSON fallback', async () => {
+    const fetchImpl = vi.fn(async (_url: string, init: { body: string }) =>
+      JSON.parse(init.body).tools
+        ? errorResponse(400, { error: 'm does not support tools' })
+        : jsonResponse({ message: { role: 'assistant', content: '{"guess": "cat"}' }, done_reason: 'stop' }),
+    );
+    const p = createOllamaProvider({ model: 'm', fetchImpl: fetchImpl as unknown as typeof fetch });
+    const res = await p.call({ maxTokens: 50, tools, toolChoice: { type: 'tool', name: 'remember' }, messages: [{ role: 'user', content: 'go' }] } as never);
+    expect(res.toolUses).toEqual([{ id: expect.any(String), name: 'remember', input: { guess: 'cat' } }]);
+  });
+
+  it('does not retry other 400s', async () => {
+    const fetchImpl = vi.fn(async () => errorResponse(400, { error: 'Multimodal data provided, but model does not support multimodal requests.' }));
+    const p = createOllamaProvider({ model: 'qwen2.5:0.5b', fetchImpl: fetchImpl as unknown as typeof fetch });
+    await expect(p.call({ maxTokens: 50, tools, messages: [{ role: 'user', content: [IMG] }] } as never)).rejects.toThrow(
+      /ollama API 400: .*does not support multimodal/,
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('flattenToolTurns folds tool calls and results into text for a tool-less template', () => {
+    expect(
+      flattenToolTurns([
+        { role: 'assistant', content: '', tool_calls: [{ function: { name: 'pen', arguments: { n: 1 } } }] },
+        { role: 'tool', content: 'drawn', tool_name: 'pen' },
+        { role: 'user', content: 'hi', images: ['A'] },
+      ]),
+    ).toEqual([
+      { role: 'assistant', content: '(called pen {"n":1})' },
+      { role: 'user', content: '(pen result) drawn' },
+      { role: 'user', content: 'hi', images: ['A'] },
+    ]);
   });
 });
