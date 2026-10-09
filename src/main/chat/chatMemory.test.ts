@@ -13,7 +13,9 @@ import {
   REMEMBER_TOOL,
   END_CALL_TOOL,
   LAUNCH_TOOL,
+  VOICE_CALL_TEXT_LINE,
 } from './chatPrompts';
+import { VOICE_CALL_PRIMER, VOICE_CALL_PRIMER_BASE, VOICE_CALL_SAY_FIRST } from '../../bot/brain/promptLibrary.js';
 
 const WEB = [{ name: 'search' }];
 
@@ -79,5 +81,66 @@ describe('memory check in the status block', () => {
   it('is plain text with no em-dashes', () => {
     expect(CHAT_MEMORY_CHECK).not.toMatch(/—/);
     expect(CHAT_REMEMBER_TOOL.description).not.toMatch(/—/);
+  });
+});
+
+/**
+ * 261010: a surface can add one line to the memory block's header. Backseat
+ * uses it to say the notes are real-life facts, not things on the screen.
+ */
+describe('memoryNote', () => {
+  const memText = (bs: Array<{ text: string }>) => bs.find((b) => b.text.includes('What you remember'))?.text ?? '';
+
+  it('adds the note to the memory header, ahead of the notes', () => {
+    const t = memText(blocks({ memory: '- Ouen has a dog called Mochi.', memoryNote: 'These are real-life facts.' }));
+    expect(t).toContain('These are real-life facts.');
+    expect(t.indexOf('These are real-life facts.')).toBeLessThan(t.indexOf('Mochi'));
+  });
+
+  it('leaves the header unchanged when no surface passes one', () => {
+    const a = memText(blocks({ memory: '- note' }));
+    const b = memText(blocks({ memory: '- note', memoryNote: '  ' }));
+    expect(a).toBe(b);
+    expect(a).not.toContain('undefined');
+  });
+});
+
+/**
+ * 261010: Backseat always speaks on a look, so it can leave the voice-call
+ * primer's (silence) option out. Every other surface keeps it.
+ */
+describe('allowSilence', () => {
+  const head = (over: Record<string, unknown>) => blocks({ voiceCall: true, ...over })[0].text as string;
+
+  it('offers (silence) on a voice call by default', () => {
+    expect(head({})).toContain('reply with exactly (silence)');
+  });
+
+  it('leaves it out when the surface says a reply is always due', () => {
+    const t = head({ allowSilence: false });
+    expect(t).toContain('[voice call]');
+    expect(t).not.toContain('You do not have to answer every line');
+    expect(t).not.toContain('reply with exactly (silence) and nothing else');
+  });
+});
+
+/**
+ * 261010: Backseat's reply text is the spoken line and it has no say() tool,
+ * so the primer's say()-first sentence is swapped there. Everyone else keeps
+ * the primer exactly as it was.
+ */
+describe('voiceSpeech', () => {
+  const head = (over: Record<string, unknown>) => blocks({ voiceCall: true, ...over })[0].text as string;
+
+  it('keeps the say()-first primer by default', () => {
+    expect(head({})).toContain(VOICE_CALL_PRIMER);
+    expect(VOICE_CALL_PRIMER).toBe(VOICE_CALL_PRIMER_BASE + VOICE_CALL_SAY_FIRST);
+  });
+
+  it('tells a text surface its text is the line, with no say()', () => {
+    const t = head({ voiceSpeech: 'text' });
+    expect(t).toContain(VOICE_CALL_PRIMER_BASE);
+    expect(t).toContain(VOICE_CALL_TEXT_LINE);
+    expect(t).not.toContain(VOICE_CALL_SAY_FIRST);
   });
 });

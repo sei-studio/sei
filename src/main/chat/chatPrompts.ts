@@ -19,6 +19,7 @@ import {
   CHAT_BASELINE,
   GAME_SURFACE_BASELINE,
   VOICE_CALL_PRIMER,
+  VOICE_CALL_PRIMER_BASE,
   renderPersona,
   renderChatProactivenessDirective,
   renderPunctuationDirective,
@@ -97,6 +98,20 @@ export interface BuildSystemArgs {
    */
   voiceCall?: boolean;
   /**
+   * 261010: false leaves the voice-call primer's (silence) option out. Backseat
+   * always speaks on a look, and Haiku 5.5 took the offer on its first look
+   * anyway (the start tick came back as (silence) in 5 of 9 live replays).
+   * Default true.
+   */
+  allowSilence?: boolean;
+  /**
+   * 261010: how a voice-call line reaches the player. 'say' (default) keeps
+   * VOICE_CALL_PRIMER as it is. 'text' is for a surface whose plain reply text
+   * IS the spoken line and that offers no say() tool (Backseat): the primer's
+   * say()-first sentence is swapped for VOICE_CALL_TEXT_LINE.
+   */
+  voiceSpeech?: 'say' | 'text';
+  /**
    * Multi-companion voice (260706): the OTHER companions' names on the same
    * call. When present (and voiceCall), block 0 gains a group-call note so the
    * model knows it is not alone on the line, that lines prefixed with a name in
@@ -126,6 +141,12 @@ export interface BuildSystemArgs {
    * Anything volatile belongs in the messages tail, not here.
    */
   extraStable?: string;
+  /**
+   * 261010: one surface-specific line added to the header of the memory
+   * block. Backseat uses it to label the notes as real-life facts, so a pet
+   * or a person in them is not mapped onto what is on the watched screen.
+   */
+  memoryNote?: string;
   /**
    * 260725: user-provided Knowledge (knowledgeStore.readKnowledgeForPrompt) —
    * files the user uploaded (imported memories from other platforms, facts
@@ -235,6 +256,11 @@ function formatNow(): string {
  * boundary (ephemeral marker on the persona block) keeps baseline+persona cached
  * across turns. Memory + summary re-bill but are small.
  */
+/** The delivery sentence for voiceSpeech 'text' (see BuildSystemArgs). */
+export const VOICE_CALL_TEXT_LINE =
+  'The player is waiting on a live line, so answer fast. The text you write is spoken aloud as your line, ' +
+  'so write only the line itself, with no tool call needed to speak it.';
+
 export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
   // Block 0 — being identity (every surface) + the chat surface contract. Same
   // UNIVERSAL_BASELINE the game brain caches, so the character is continuous.
@@ -253,13 +279,15 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
     type: 'text',
     text:
       (args.voiceCall
-        ? `[voice call] ${VOICE_CALL_PRIMER} ` +
-          // Chat-surface only (the game brain stays quiet by not calling say()).
-          'You do not have to answer every line: if the last thing said does not need a reply from you, reply with exactly (silence) and nothing else. It is never shown or spoken; it just ends your turn quietly. ' +
-          // 260725: Marv answered "Okay, bye." with (silence) and the call sat
-          // open in dead air until the player gave up and hung up. A farewell
-          // is the one line that must never be left hanging.
-          'One exception: when the player is saying goodbye or ending the call, never reply with (silence). Say a short goodbye back, and if the conversation is clearly over, hang up with end_call.\n\n'
+        ? `[voice call] ${args.voiceSpeech === 'text' ? VOICE_CALL_PRIMER_BASE + VOICE_CALL_TEXT_LINE : VOICE_CALL_PRIMER} ` +
+          (args.allowSilence === false
+            ? '\n\n'
+            : // Chat-surface only (the game brain stays quiet by not calling say()).
+              'You do not have to answer every line: if the last thing said does not need a reply from you, reply with exactly (silence) and nothing else. It is never shown or spoken; it just ends your turn quietly. ' +
+              // 260725: Marv answered "Okay, bye." with (silence) and the call sat
+              // open in dead air until the player gave up and hung up. A farewell
+              // is the one line that must never be left hanging.
+              'One exception: when the player is saying goodbye or ending the call, never reply with (silence). Say a short goodbye back, and if the conversation is clearly over, hang up with end_call.\n\n')
         : '') +
       (inGroupCall ? `[group call] ${groupCallNote(args.voicePeers as string[])}\n\n` : '') +
       `${UNIVERSAL_BASELINE}\n\n${isGame ? GAME_SURFACE_BASELINE : CHAT_BASELINE}\n\n` +
@@ -329,6 +357,7 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
       text:
         'What you remember about the player and your time together (from chat and from playing). ' +
         'These are your own past notes — bring relevant ones up naturally, do not list them. ' +
+        (args.memoryNote?.trim() ? `${args.memoryNote.trim()} ` : '') +
         'Each note starts with when you wrote it: check that against today\'s date before treating it as ' +
         'current — a note from weeks ago is an old thread ("that trip a couple weeks back"), not something ' +
         'that just happened:\n\n' +

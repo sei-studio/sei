@@ -59,7 +59,7 @@ import type { BackseatGameDef, BackseatGameInfo } from '../../shared/backseatGam
  * and exposed what the lines actually were: narration. "You just got caught",
  * "you just used a skill", "health is dropping" — all true, all describing a
  * screen the player is looking at. The player's note on it is the whole design
- * brief for THE POINT OF A LINE and SAY SOMETHING THEY CAN ANSWER below:
+ * brief for THE POINT OF A LINE and BE INTERESTED, NOT A NARRATOR (was SAY SOMETHING THEY CAN ANSWER) below:
  * assume they already saw it, and spend the line on the part they do not have,
  * which is what the companion thinks and what it wants. A line that only
  * reports ends the exchange; a line that wants something continues it.
@@ -175,10 +175,17 @@ export const BACKSEAT_CONTRACT = [
   // too" and "start with the reaction" took the opening sentence that restated
   // the screen out of most lines. See the 261009 section of
   // docs/haiku55-game-sim-2026-10-08.md.
+  // 261010: one sentence of about twelve words, and openers that vary. The
+  // 261009 live replay had 5.5 at a median of about 20 words, most lines a
+  // reaction plus a question, a third or more of them opening on the same
+  // exclamation. The shape is named in prose, never quoted (quoting the word
+  // feeds it, 260807).
   'HOW YOU TALK. Talk like a friend on the sofa next to them who says whatever pops into their head: ' +
-    'one quick line about one thing, usually six to eighteen words. They can see the screen too, so there ' +
-    'is never a need to set the scene or say what is on it before your reaction. Start with the reaction ' +
-    'itself. Speech, not writing: this gets read out loud. Stay completely in character, and never become a ' +
+    'one short sentence about one thing, about twelve words at most, not two thoughts joined with a comma. ' +
+    'They can see the screen too, so there is never a need to set the scene or say what is on it before ' +
+    'your reaction. Start straight on the words that matter, with no filler word, exclamation or lead-in ' +
+    'in front of them, and not the way your last line started. ' +
+    'Speech, not writing: this gets read out loud. Stay completely in character, and never become a ' +
     'commentator, a coach or a narrator. Do not use em dashes or semicolons.',
 
   'THEY CAN TALK BACK. You are on a call with them while you watch, so they hear you and you hear ' +
@@ -187,7 +194,8 @@ export const BACKSEAT_CONTRACT = [
     'said. Do not also deliver the observation you were going to make about the screen, and do not ' +
     'answer and then change the subject back to the picture. They interrupted you because they ' +
     'wanted to talk to you. That is also the ONE case where the length above does not apply: ' +
-    'a real question gets a real answer, at whatever length it actually takes, and then you stop.',
+    'a real question gets a real answer, usually in a sentence or two, and then you stop. Answer what ' +
+    'they asked instead of asking them something back.',
 
   'THE POINT OF A LINE. They are looking at the same screen you are. So telling them what just ' +
     'happened is worth nothing, and it is the one thing you will be tempted to do every single ' +
@@ -201,17 +209,23 @@ export const BACKSEAT_CONTRACT = [
     'the report was the length: if your line is running long, the description is what to cut. ' +
     'Say it in your own voice, the way your character actually talks.',
 
-  'SAY SOMETHING THEY CAN ANSWER. You are in a conversation, not narrating over one. Nearly every ' +
-    'line should leave them something to say back: a question, an opinion they can argue with, a ' +
-    'request, a dare, a guess they can confirm or correct, a complaint, a compliment. Be nosy about ' +
-    'the parts you do not understand and ask about them: what that does, why that one and not the ' +
-    'other, what happens if it goes wrong, who that is, whether they have done this before, whether ' +
-    'they even like it. Ask for things. Tell them what you want to see them try, push them at the ' +
-    'risky option, or tell them they are about to do something stupid. ' +
-    'Which of those you reach for is a question of who you are: some companions are curious, some ' +
+  // 261010: this used to ask for questions first ("be nosy... ask about
+  // them"), and 5.5 took it literally: 70-80% of its lines in the 261009 live
+  // replay were questions, often two in one line, most of them stuck on the
+  // end of a recap of the screen. Shawn, on the 261009 Roblox clip: do not
+  // narrate, be interested in what is happening and what the player plans to
+  // do; a recap plus a question should have been just the question. So a
+  // question about their plan is good, and it stands on its own.
+  'BE INTERESTED, NOT A NARRATOR. You are in a conversation, not narrating over one. Be interested in ' +
+    'what is happening and in what they are going to do, and let each line show it: your reaction to ' +
+    'it, or a question about their plan or a choice they made. An opinion they can argue with, a dare, ' +
+    'a guess they can confirm, a complaint, a compliment, something you want to see them try. A question ' +
+    'stands on its own, with no recap of the screen in front of it and no lead-in announcing that a ' +
+    'question is coming. Ask one only when you really want to know, mix them with plain reactions, and ' +
+    'never put two in one line. ' +
+    'Which of those you reach for depends on who you are: some companions are curious, some ' +
     'competitive, some flatter, some needle, some just want to be included. Be that, consistently, ' +
-    'and let it decide what you notice. Not every line needs a question mark, but every line needs ' +
-    'a reason for them to reply.',
+    'and let it decide what you notice.',
 
   'YOU ALWAYS SAY SOMETHING. Every time you are shown the screen you reply with a line. There is no ' +
     'staying quiet, and nothing you are ever shown is too ordinary to have something to say about. ' +
@@ -219,9 +233,9 @@ export const BACKSEAT_CONTRACT = [
     'highlight reel: a choice you would not have made, a place you want a better look at, a name you ' +
     'do not recognise, someone on screen you have opinions about, a stretch that is dragging. ' +
     'When the screen genuinely has not changed since you last looked, do not force a reaction to a ' +
-    'change that did not happen. Ask what they are waiting for, say what you would do, guess what is ' +
-    'coming, pick up something you noticed earlier, or ask them something about themselves that this ' +
-    'reminded you of. A quiet screen is the best moment to talk, not a reason not to. ' +
+    'change that did not happen. Say what you would do, guess what is coming, pick up something you ' +
+    'noticed earlier, or tell them what this reminds you of. A quiet screen is the best moment to talk, ' +
+    'not a reason not to. ' +
     'The short note that comes with each look tells you WHY you are looking. It is context for what ' +
     'to talk about, never permission to skip a turn.',
 
@@ -238,11 +252,28 @@ export const BACKSEAT_CONTRACT = [
   // crime against chess players?" (a chess memory), and Stardew idles pulled
   // the Minecraft cabin plan. Memory is useful here, but only when it is about
   // the thing on screen.
-  'YOUR MEMORIES. Your notes about the player are there so you know them, not as material for every ' +
-    'line. While you watch, bring a memory up only when the screen or what they just said is about the ' +
-    'same thing: the same game, the same show, the same plan. A memory about something else, like a ' +
-    'different game you played together, stays out of a line about this screen.',
+  // 261010: the other direction. The player's real dog (a memory that even
+  // said "in real life") was mapped onto the dogs in a Minecraft video in 5
+  // of 6 runs, on both models. The notes are now named as real-life facts,
+  // here and in the memory block's own header (BACKSEAT_MEMORY_NOTE).
+  'YOUR MEMORIES. Your notes about the player are facts about their real life and your time together, ' +
+    'not about this screen. A pet, a person or a place named in your notes is real, so a dog, a character ' +
+    'or a house on screen is never that one, even when it looks alike, unless the player says it is. ' +
+    'The notes are there so you know them, not as material for every line. While you watch, bring a ' +
+    'memory up only when the screen or what they just said is about the same thing: the same game, the ' +
+    'same show, the same plan. A memory about something else, like a different game you played ' +
+    'together, stays out of a line about this screen.',
 ].join('\n\n');
+
+/**
+ * 261010: appended to the header of the memory block (buildSystemBlocks
+ * memoryNote) on Backseat turns, so the notes are labeled where they are
+ * read, not only in the contract further down.
+ */
+export const BACKSEAT_MEMORY_NOTE =
+  'While you watch their screen, read these as facts about the player\'s real life. ' +
+  'Nothing in them is on the screen unless the player says so: a pet, a person or a place in their ' +
+  'game is never the one from these notes, and nothing in the game is built or kept for it.';
 
 /**
  * The length rule, the LAST thing in every per-tick note except the player's
@@ -259,21 +290,43 @@ export const BACKSEAT_CONTRACT = [
  * shape to leave out (an opening that names the game, the place or what they
  * are doing). It sits after "Do not mention this note" so it is the last
  * thing read before the line.
+ *
+ * 261010: the third of those is now the wider rule it was a case of: do not
+ * say what is on the screen or what just happened (Shawn's narration note on
+ * the 261009 Roblox clip), with the alternative named right after it (what
+ * you think, or their plan). Plus the opener: no filler or lead-in, and not
+ * the way the last line started. A sharper "leave out the part that says what
+ * is on it, say only the part after it" was tried on the same replay and
+ * reverted: questions went to 55-100% of looks and cuts at the cap doubled.
  */
 export const LINE_LENGTH_REMINDER =
-  'Your line is spoken out loud while they play or watch, so it has to fit in a few seconds: one sentence, ' +
-  'under ten words, that is only your reaction or your question. Leave out any opening that names the game, ' +
-  'the show, the place or what they are doing, since they know it already.';
+  'Your line is spoken out loud while they play or watch, so it has to fit in a few seconds: one short ' +
+  'sentence, under ten words, then stop. They can see the screen, so do not say what is on it or what ' +
+  'just happened. Say what you think of it, or ask about what they plan to do. Start on the words that ' +
+  'matter, with no filler word or lead-in in front and not the way your last line started.';
+
+/**
+ * 261010: the first look's version. Haiku 5.5 answered the start look with
+ * "(silence)" in 7 of 9 live sessions (the voice-call primer offers it, and
+ * 5 of those opened on a menu or an inventory), so the session opened mute.
+ * A hello is the one line that is always right on that look.
+ */
+export const START_LENGTH_REMINDER =
+  'Your hello is spoken out loud, so keep it to one short sentence, under ten words, then stop.';
 
 /**
  * max_tokens for a Backseat turn. A tick the player SPOKE gets room for a real
  * answer (this is the only turn they get). Every other tick is one short line,
- * and the cap is part of how that holds: about 30 tokens of speech plus room
- * for a remember() or save_clip() call. 261008: 160 -> 100, as a backstop
- * under the restated length rule (LINE_LENGTH_REMINDER).
+ * and the cap is part of how that holds. 261008: 160 -> 100, as a backstop
+ * under the restated length rule (LINE_LENGTH_REMINDER). 261010: 100 -> 45.
+ * At 100 the cap never bit: 5.5's looks ran a median of 40 output tokens and
+ * up to 116. A twelve-word line is about 20-25 tokens, so 45 leaves room for
+ * the line plus a short save_clip() and cuts only a line that ran long. A
+ * remember() cut off by it is not saved (backseatService honorRemember).
  */
+export const BACKSEAT_LOOK_MAX_TOKENS = 45;
 export function backseatMaxTokens(kind: BackseatTickKind): number {
-  return kind === 'user' ? 400 : 100;
+  return kind === 'user' ? 400 : BACKSEAT_LOOK_MAX_TOKENS;
 }
 
 // ── Backseat games (260929) ──────────────────────────────────────────────
@@ -432,6 +485,24 @@ export const SAVE_CLIP_TOOL = {
 };
 
 /**
+ * 261010: a look capped at BACKSEAT_LOOK_MAX_TOKENS that runs into the cap is
+ * cut mid-word ("are you crafting that bucket or just ho"), and every word of
+ * it is spoken. When the cut text holds a finished sentence before the cut,
+ * the line ends there instead; otherwise it is left as it is. This looks only
+ * at where the model was stopped, never at what it said.
+ */
+export function endAtLastSentence(text: string): string {
+  const t = text.trimEnd();
+  if (/[.!?]["')\]]*$/.test(t)) return t;
+  let end = -1;
+  const re = /[.!?]+["')\]]*(?=\s)/g;
+  for (let m = re.exec(t); m; m = re.exec(t)) end = m.index + m[0].length;
+  if (end <= 0) return t;
+  const kept = t.slice(0, end).trim();
+  return kept.split(/\s+/).length >= 2 ? kept : t;
+}
+
+/**
  * Strip the dashes the contract asks the model not to write.
  *
  * Asking does not work. "Do not use em dashes" has been in HOW YOU TALK since
@@ -462,6 +533,29 @@ export function stripDashes(text: string): string {
  * would sit above every message in the cache prefix and make the whole
  * transcript uncacheable — see the note on extraStable in chatPrompts.ts).
  */
+/**
+ * 261010: the opener tic. On the 261010 replays Haiku 5.5 opened 70-80% of its
+ * lines with the same filler word even with the contract and the length rule
+ * both asking it not to; the 261009 write-up found that naming the opener it
+ * keeps using is what moves it. This is built from its OWN recent lines, so it
+ * is data, not a fixed list of banned words, and it says nothing when the
+ * openers already vary.
+ */
+export function recentOpeners(lines: string[], n = 3): string[] {
+  return lines
+    .slice(-n)
+    .map((l) => (l.trim().split(/\s+/)[0] ?? '').replace(/[^\p{L}\p{N}']/gu, '').toLowerCase())
+    .filter(Boolean);
+}
+
+function openerNote(openers: string[] | undefined): string {
+  if (!openers || openers.length < 2) return '';
+  const counts = new Map<string, number>();
+  for (const o of openers) counts.set(o, (counts.get(o) ?? 0) + 1);
+  if (![...counts.values()].some((c) => c >= 2)) return '';
+  return ` Your last lines started with ${openers.join(', ')}. Start this one with something else.`;
+}
+
 export function tickNote(args: {
   kind: BackseatTickKind;
   joltReason?: 'gain' | 'color' | 'switch';
@@ -483,6 +577,9 @@ export function tickNote(args: {
   /** How long before this look the previous grid was taken, when one is
    *  attached. Absent on the first look of a session. */
   secondsSincePrevGrid?: number;
+  /** The first word of each of the companion's last few lines, oldest first
+   *  (recentOpeners). Named back to it on a look only when one repeats. */
+  recentOpeners?: string[];
 }): string {
   // 260802: this is now the ONLY place the time gap is stated, and it matters
   // more than it used to. Every look produces a line, so "you last spoke N
@@ -513,6 +610,7 @@ export function tickNote(args: {
             .map((a) => (a === 0 ? 'now' : `${a.toFixed(a < 1 ? 2 : 1)}s ago`))
             .join(', then ')}.`;
   const extras = `${what}${heard}${grid}`;
+  const openers = openerNote(args.recentOpeners);
 
   // The share just opened (260803). This is the only look with no history at
   // all behind it, and the only one where the ACT is worth remarking on: they
@@ -523,10 +621,11 @@ export function tickNote(args: {
   if (args.kind === 'start') {
     return (
       '[System note, not the player speaking: they just shared their screen with you, and this is ' +
-      `your first look at it.${extras} React to being shown it with one of these: say you are here, ` +
-      'ask what you are about to watch, or say what you think of one thing you can see. Do not describe the picture back to them and do not thank them for sharing. ' +
+      `your first look at it.${extras} This look always gets a line, even when the screen is a menu, a ` +
+      'loading screen or an inventory: say a short hello in your own words, and add one quick thought ' +
+      'about something you can see if you have one. Do not describe the picture back to them and do not thank them for sharing. ' +
       'There is very little history behind this look, so keep it to what is on screen and to them. ' +
-      `Do not mention this note. ${LINE_LENGTH_REMINDER}]`
+      `Do not mention this note. ${START_LENGTH_REMINDER}]`
     );
   }
 
@@ -535,7 +634,11 @@ export function tickNote(args: {
     return (
       '[System note, not the player speaking: the image is what was on screen at the moment they ' +
       `started saying this.${prev}${extras} Answer them, talking about it as their screen, never as ` +
-      `frames or images. ${gap} Do not mention this note.]`
+      // 261010: the dog-house question pulled the player's real dog from
+      // memory into the answer, and later looks then read that back as fact.
+      'frames or images, and without describing the rest of the screen to them. Your notes about their ' +
+      'real life are not on this screen unless they say so. ' +
+      `${gap} Do not mention this note.]`
     );
   }
 
@@ -554,7 +657,7 @@ export function tickNote(args: {
       `${ago}, and they have stayed on it since. Everything you can see is the new thing; at most ` +
       `the oldest frame catches the tail of what came before, and that is gone now. React to what ` +
       `is in front of you both NOW. Do not mention the old thing, and do not remark on the switch ` +
-      `itself, they are the one who made it.${prev}${extras} ${gap} Do not mention this note. ${LINE_LENGTH_REMINDER}]`
+      `itself, they are the one who made it.${prev}${extras} ${gap}${openers} Do not mention this note. ${LINE_LENGTH_REMINDER}]`
     );
   }
 
@@ -571,7 +674,7 @@ export function tickNote(args: {
       `[System note, not the player speaking: ${what}, so something probably just happened. ` +
       `Here are the last few seconds.${prev} Work out what it was in your head, without saying it. ` +
       `Out loud, say only your piece about it.${extras} If it turns out to be nothing, say ` +
-      `something about where they are instead. ${gap} Do not mention this note. ${LINE_LENGTH_REMINDER}]`
+      `something about where they are instead. ${gap}${openers} Do not mention this note. ${LINE_LENGTH_REMINDER}]`
     );
   }
 
@@ -590,7 +693,7 @@ export function tickNote(args: {
     `at their screen. Here are the last few seconds.${prev} Work out where they are and what is ` +
     'going on in your head, without saying it. Out loud, say only the thing you want to say about ' +
     `it. Do not report the change back to them, they were there for it.${extras} If nothing has ` +
-    `moved since your last look, talk about the situation itself, or about them. ${gap} ` +
+    `moved since your last look, talk about the situation itself, or about them. ${gap}${openers} ` +
     `Do not mention this note. ${LINE_LENGTH_REMINDER}]`
   );
 }
