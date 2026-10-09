@@ -4055,6 +4055,22 @@ function maybeWarnByteCap(loop, warned) {
           }
           return
         }
+        // 261010: a local Ollama model that cannot do this job at all (no
+        // tool support, or not pulled). Every turn would fail identically and
+        // the companion just stood there mute; stop with a plain reason the
+        // launch panel shows (ERROR_COPY) instead.
+        if (err && (err.code === 'OLLAMA_MODEL_NO_TOOLS' || err.code === 'OLLAMA_MODEL_MISSING')) {
+          _halted = true
+          logger.warn?.(`[sei/orch] ${err.message} — stopping the session`)
+          if (typeof onTerminalError === 'function') {
+            try {
+              onTerminalError({ error: err.code, message: err.message })
+            } catch (cbErr) {
+              logger.warn?.(`[sei/orch] onTerminalError callback threw: ${cbErr && cbErr.message}`)
+            }
+          }
+          return
+        }
         throw err
       }
       if (!resp) {

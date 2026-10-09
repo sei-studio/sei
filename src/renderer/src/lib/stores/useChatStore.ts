@@ -149,6 +149,15 @@ export function isLlmTimeout(err: unknown): boolean {
   return /LLM_TIMEOUT/.test(String((err as { message?: string })?.message ?? err));
 }
 
+/**
+ * 261010: Ollama is not running, or the picked model is not pulled (tagged in
+ * main/llm/ollama.ts). A retry cannot fix either, so these get their own line
+ * like LOCAL_NO_API_KEY instead of a voice-call retry.
+ */
+export function isOllamaSetupError(err: unknown): boolean {
+  return /OLLAMA_UNREACHABLE|OLLAMA_MODEL_MISSING/.test(String((err as { message?: string })?.message ?? err));
+}
+
 /** The companion line shown when a chat turn fails for real. */
 export function chatFailureLine(err: unknown): string {
   if (isLocalNoApiKey(err)) {
@@ -156,6 +165,14 @@ export function chatFailureLine(err: unknown): string {
   }
   if (isLlmTimeout(err)) {
     return 'sorry, the model took too long to answer. try again, or pick a faster model in Settings.';
+  }
+  // 261010: local Ollama setup problems, tagged in main/llm/ollama.ts.
+  const msg = String((err as { message?: string })?.message ?? err);
+  if (/OLLAMA_UNREACHABLE/.test(msg)) {
+    return "i can't reach Ollama. make sure the Ollama app is running, then try again.";
+  }
+  if (/OLLAMA_MODEL_MISSING/.test(msg)) {
+    return "Ollama doesn't have the model picked in Settings. download it in Ollama or pick another model.";
   }
   return "sorry, i couldn't reply just now. try again in a moment?";
 }
@@ -622,7 +639,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       // retry cannot conjure a missing API key. Neither do model timeouts
       // (260926): the local deadline is 120s, so a retry is two more silent
       // minutes on the same model.
-      if (!isLocalNoApiKey(err) && !isLlmTimeout(err) && notifyTurnFailed(characterId)) {
+      if (!isLocalNoApiKey(err) && !isLlmTimeout(err) && !isOllamaSetupError(err) && notifyTurnFailed(characterId)) {
         put((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
         return null;
       }

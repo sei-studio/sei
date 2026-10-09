@@ -107,6 +107,11 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   DST_ONE_COMPANION: "Don't Starve Together fits one companion at a time. Disconnect the companion already in your world, then press Play.",
   // Stardew Valley (game-adapters M1, 260908).
   STARDEW_FARMHAND_NO_MOD: "Someone in your farm doesn't have the Sei companion mod, so your companion can't appear for them. Ask them to install it, or play without them for now.",
+  // 261010: local Ollama backend. Before these, a model that could not run the
+  // game brain joined the world and then never said or did anything.
+  OLLAMA_NOT_RUNNING: "Sei can't reach Ollama. Start the Ollama app, check the Ollama address in Settings, then press Launch again.",
+  OLLAMA_MODEL_MISSING: "Ollama doesn't have the model picked in Settings. Download it in Ollama (ollama pull followed by the model name) or pick another model, then press Launch again.",
+  OLLAMA_MODEL_NO_TOOLS: "This Ollama model can't use tools, and your companion needs them to talk and act in games. Pick a model with tool support in Settings, like qwen3 or qwen3-vl, then press Launch again.",
   SMAPI_INSTALL_FAILED: "Couldn't install SMAPI, the mod loader Stardew Valley needs. Make sure the game is closed and try the setup again, or install SMAPI from smapi.io and then re-run the setup.",
 };
 

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createLlmProvider, SUPPORTED_PROVIDERS } from './index.js'
+import { clearOllamaContextState, neededNumCtx } from './ollamaContext.js'
+import { LOCAL_TIMEOUT_FLOOR_MS } from './ollamaProvider.js'
 
 const baseConfig = {
   anthropic: { api_key: 'sk-fake', model: 'claude-haiku-4-5', timeout_ms: 20_000 },
@@ -282,6 +284,87 @@ describe('ollama provider vision', () => {
     const body = JSON.parse(chatCall[1].body)
     expect(body.messages[1]).toEqual({ role: 'user', content: 'what do you see?', images: ['AAAA'] })
     expect(out.text).toBe('a red circle')
+  })
+})
+
+// 261010: "works a short while then craps itself" / "anything bigger flat
+// out does not work". Ollama ran the ~12k-token Minecraft prompt in its 4096
+// default window (front silently dropped), turns were aborted at the 12s
+// cloud budget and dropped without a retry, and a model with no tools or one
+// never pulled left the companion mute.
+describe('ollama provider robustness', () => {
+  const cfg = (model = 'qwen3:4b') => ({
+    anthropic: { ...baseConfig.anthropic, timeout_ms: 12_000 },
+    llm: { provider: 'ollama', providers: { ollama: { base_url: 'http://localhost:11434', model } } },
+  })
+  const sys = [{ type: 'text', text: 'x'.repeat(42_000) }]
+  const route = (chat) => vi.fn(async (url, init) => {
+    if (url.endsWith('/api/show')) return { ok: true, json: async () => ({ capabilities: ['completion', 'tools'] }) }
+    if (url.endsWith('/api/ps')) return { ok: true, json: async () => ({ models: [] }) }
+    return chat(url, init)
+  })
+  const okChat = async () => ({ ok: true, json: async () => ({ message: { role: 'assistant', content: 'hi' }, done_reason: 'stop' }) })
+
+  it('sends a num_ctx big enough for the whole prompt', async () => {
+    clearOllamaContextState()
+    const fetchImpl = route(okChat)
+    const p = createLlmProvider(cfg(), { fetchImpl })
+    await p.call({ systemBlocks: sys, tools: [], messages: [{ role: 'user', content: 'hi' }], maxTokens: 1024 })
+    const body = JSON.parse(fetchImpl.mock.calls.find(c => c[0].endsWith('/api/chat'))[1].body)
+    // 42k chars of system is about 9-12k tokens: far past Ollama's 4096 default.
+    expect(body.options.num_ctx).toBeGreaterThanOrEqual(16_384)
+    expect(body.options.num_ctx % 4096).toBe(0)
+    expect(body.options.num_ctx).toBeLessThanOrEqual(neededNumCtx(1e9, 1024))
+  })
+
+  it('a slow local turn gets the local floor, not the 12s cloud budget, and times out as a retryable timeout', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetchImpl = route((_url, init) => new Promise((_res, rej) => {
+        init.signal.addEventListener('abort', () => rej(Object.assign(new Error('aborted'), { name: 'AbortError' })))
+      }))
+      const p = createLlmProvider(cfg(), { fetchImpl })
+      const pending = p.call({ systemBlocks: [{ type: 'text', text: 's' }], tools: [], messages: [{ role: 'user', content: 'hi' }], timeoutMs: 12_000 }).catch(e => e)
+      await vi.advanceTimersByTimeAsync(12_000)
+      let settled = false
+      pending.then(() => { settled = true })
+      await vi.advanceTimersByTimeAsync(1)
+      expect(settled).toBe(false) // still waiting at 12s
+      await vi.advanceTimersByTimeAsync(LOCAL_TIMEOUT_FLOOR_MS)
+      const err = await pending
+      expect(err.name).toBe('AbortError')
+      expect(err.isTimeout).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a caller abort is NOT tagged as a timeout', async () => {
+    const ctl = new AbortController()
+    const fetchImpl = route((_url, init) => new Promise((_res, rej) => {
+      init.signal.addEventListener('abort', () => rej(Object.assign(new Error('aborted'), { name: 'AbortError' })))
+      setTimeout(() => ctl.abort(), 1)
+    }))
+    const p = createLlmProvider(cfg(), { fetchImpl })
+    const err = await p.call({ systemBlocks: [], tools: [], messages: [{ role: 'user', content: 'hi' }], signal: ctl.signal }).catch(e => e)
+    expect(err.name).toBe('AbortError')
+    expect(err.isTimeout).toBeUndefined()
+  })
+
+  it('"does not support tools" becomes OLLAMA_MODEL_NO_TOOLS', async () => {
+    const fetchImpl = route(async () => ({ ok: false, status: 400, text: async () => '{"error":"registry.ollama.ai/library/gemma3:12b does not support tools"}' }))
+    const p = createLlmProvider(cfg('gemma3:12b'), { fetchImpl })
+    const err = await p.call({ systemBlocks: [], tools: [{ name: 'say', description: 'd', input_schema: { type: 'object', properties: {} } }], messages: [{ role: 'user', content: 'hi' }] }).catch(e => e)
+    expect(err.code).toBe('OLLAMA_MODEL_NO_TOOLS')
+  })
+
+  it('a 404 model-not-found becomes OLLAMA_MODEL_MISSING; a refused connection OLLAMA_UNREACHABLE', async () => {
+    const missing = createLlmProvider(cfg('qwen3:14b'), { fetchImpl: route(async () => ({ ok: false, status: 404, text: async () => '{"error":"model \'qwen3:14b\' not found"}' })) })
+    expect((await missing.call({ systemBlocks: [], tools: [], messages: [{ role: 'user', content: 'hi' }] }).catch(e => e)).code).toBe('OLLAMA_MODEL_MISSING')
+    const down = createLlmProvider(cfg(), { fetchImpl: route(async () => { throw Object.assign(new TypeError('fetch failed'), { cause: new Error('connect ECONNREFUSED') }) }) })
+    const err = await down.call({ systemBlocks: [], tools: [], messages: [{ role: 'user', content: 'hi' }] }).catch(e => e)
+    expect(err.code).toBe('OLLAMA_UNREACHABLE')
+    expect(err.message).toContain('ECONNREFUSED')
   })
 })
 

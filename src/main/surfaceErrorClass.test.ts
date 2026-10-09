@@ -82,7 +82,8 @@ describe('surfaceErrorClass: Ollama', () => {
       });
     });
     const err = await errorOf(createOllamaProvider({ model: 'm', baseUrl: `http://127.0.0.1:${port}` }).call(params));
-    expect(String((err as Error).message)).toBe('fetch failed');
+    // 261010: tagged for the chat line, with the undici cause chain kept.
+    expect(String((err as Error).message)).toMatch(/^OLLAMA_UNREACHABLE: /);
     expect(surfaceErrorClass(err)).toBe('connection_refused');
   });
 });
@@ -174,6 +175,10 @@ describe('surfaceErrorClass: transport codes and our own sentinels', () => {
   it('maps the no-key and no-base-URL sentinels', () => {
     expect(surfaceErrorClass(new Error('LOCAL_NO_API_KEY: Local mode is on but no API key is saved.'))).toBe('no_api_key');
     expect(surfaceErrorClass(new Error("LLM provider 'openrouter' has no base URL configured."))).toBe('config');
+  });
+  it('maps the tagged Ollama setup errors (261010)', () => {
+    expect(surfaceErrorClass(new Error('OLLAMA_MODEL_MISSING: Ollama has no model named qwen3:14b.'))).toBe('model_not_found');
+    expect(surfaceErrorClass(new Error("OLLAMA_UNREACHABLE: couldn't reach Ollama at http://localhost:11434 (fetch failed)."))).toBe('connection_refused');
   });
   it('a provider deadline is timeout, even though its fetch was aborted', () => {
     expect(surfaceErrorClass(new LlmTimeoutError('ollama', 120_000))).toBe('timeout');

@@ -60,6 +60,12 @@ export const ZH_MISC: Record<string, string> = {
   "You've used this week's credits. Upgrade or top up on the plan screen, or switch to your own API key in Settings.":
     '本周的额度已用完。你可以在方案页面升级或充值，或在设置中切换为自己的 API 密钥。',
   'Too many requests right now. Wait a little and try again.': '当前请求过多。请稍等片刻再试。',
+  "Sei can't reach Ollama. Start the Ollama app, check the Ollama address in Settings, then press Launch again.":
+    'Sei 连接不到 Ollama。请启动 Ollama 应用，并在设置中检查 Ollama 地址，然后再次点击启动。',
+  "Ollama doesn't have the model picked in Settings. Download it in Ollama (ollama pull followed by the model name) or pick another model, then press Launch again.":
+    'Ollama 里没有设置中选择的模型。请在 Ollama 中下载它（ollama pull 加上模型名），或换一个模型，然后再次点击启动。',
+  "This Ollama model can't use tools, and your companion needs them to talk and act in games. Pick a model with tool support in Settings, like qwen3 or qwen3-vl, then press Launch again.":
+    '这个 Ollama 模型不支持工具调用，而你的伙伴在游戏里说话和行动都需要它。请在设置中选择支持工具的模型，例如 qwen3 或 qwen3-vl，然后再次点击启动。',
   "Sei doesn't know your name yet. Open Settings, type it into the Name field, then press Launch again.":
     'Sei 还不知道你的名字。打开设置，在“名字”一栏填写，然后再次点击启动。',
   'Detected MC {version}. Sei needs MC 1.14 or newer. Pick a newer profile or switch to a supported version such as {latest} before continuing.':

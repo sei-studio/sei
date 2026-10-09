@@ -361,6 +361,46 @@ describe('daily play limit (daily_dollar 429)', () => {
   })
 })
 
+// ──────────── unusable local Ollama model — 261010 ────────────
+
+describe('unusable Ollama model (no tools / not pulled)', () => {
+  function coded(code) {
+    return () => {
+      const e = new Error(`${code}: gemma3:12b does not support tools`)
+      e.code = code
+      throw e
+    }
+  }
+
+  for (const code of ['OLLAMA_MODEL_NO_TOOLS', 'OLLAMA_MODEL_MISSING']) {
+    it(`${code} stops the session with that class instead of a mute companion`, async () => {
+      const { adapter } = makeAdapter()
+      const onTerminalError = vi.fn()
+      const provider = makeProvider([coded(code), { text: 'never reached', toolUses: [] }])
+      const orch = createOrchestrator({
+        adapter, config: makeConfig(), reenqueue: () => {}, onTerminalError, _anthropicOverride: provider,
+      })
+      await orch.handleDispatch('sei:chat_received', chat('hi'))
+      expect(onTerminalError).toHaveBeenCalledTimes(1)
+      expect(onTerminalError.mock.calls[0][0]).toMatchObject({ error: code })
+      // Halted: a later event makes no further model call.
+      await orch.handleDispatch('sei:chat_received', chat('hello?'))
+      expect(provider.calls.length).toBe(1)
+    })
+  }
+
+  it('an unreachable Ollama is NOT terminal (it may just be restarting)', async () => {
+    const { adapter } = makeAdapter()
+    const onTerminalError = vi.fn()
+    const provider = makeProvider([coded('OLLAMA_UNREACHABLE')])
+    const orch = createOrchestrator({
+      adapter, config: makeConfig(), reenqueue: () => {}, onTerminalError, _anthropicOverride: provider,
+    })
+    await orch.handleDispatch('sei:chat_received', chat('hi'))
+    expect(onTerminalError).not.toHaveBeenCalled()
+  })
+})
+
 // ──────────── #2: player message surfaced LAST (highest salience) ────────────
 
 describe('composeSeedBlocks — player_message block (260616 #2)', () => {

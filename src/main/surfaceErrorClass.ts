@@ -173,6 +173,9 @@ export function surfaceErrorClass(err: unknown): SurfaceErrorClass {
   // the token stable for any caller that does not.
   if (name === 'AbortError' || name === 'APIUserAbortError' || /abort/.test(msg)) return 'aborted';
   if (msg.includes('local_no_api_key')) return 'no_api_key';
+  // 261010: main/llm/ollama.ts tags these two setup failures.
+  if (msg.includes('ollama_model_missing')) return 'model_not_found';
+  if (msg.includes('ollama_unreachable')) return 'connection_refused';
   if (/has no base url configured/.test(msg)) return 'config';
 
   // Transport, from the undici cause chain first (the message is just

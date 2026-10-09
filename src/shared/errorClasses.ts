@@ -78,7 +78,13 @@ export type ErrorClass =
   // custom-sprite NPC, so the mod refuses to spawn; SMAPI's own installer
   // failing is a different fix from the mod copy failing.
   | 'STARDEW_FARMHAND_NO_MOD'
-  | 'SMAPI_INSTALL_FAILED';
+  | 'SMAPI_INSTALL_FAILED'
+  // 261010: local Ollama backend problems that used to leave the companion
+  // silently mute in-game. Checked before the bot joins (botSupervisor) and
+  // again by the brain mid-session (orchestrator.js).
+  | 'OLLAMA_NOT_RUNNING'
+  | 'OLLAMA_MODEL_MISSING'
+  | 'OLLAMA_MODEL_NO_TOOLS';
 
 export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'BOT_START_TIMEOUT',
@@ -118,4 +124,7 @@ export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'DST_ONE_COMPANION',
   'STARDEW_FARMHAND_NO_MOD',
   'SMAPI_INSTALL_FAILED',
+  'OLLAMA_NOT_RUNNING',
+  'OLLAMA_MODEL_MISSING',
+  'OLLAMA_MODEL_NO_TOOLS',
 ]);

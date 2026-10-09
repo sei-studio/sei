@@ -14,6 +14,7 @@
  * later.
  */
 import { modelVision, type VisionVerdict } from '../../shared/llmCatalog';
+import { OLLAMA_MODEL_NOT_FOUND_RE } from './ollama';
 
 const SHOW_TIMEOUT_MS = 3_000;
 const CACHE_TTL_MS = 60_000;
@@ -65,4 +66,58 @@ export async function ollamaModelVision(
   fetchImpl?: typeof fetch,
 ): Promise<VisionVerdict> {
   return (await probeOllamaVision(baseUrl, model, fetchImpl)) ?? modelVision('ollama', model);
+}
+
+export type OllamaGameProblem = {
+  error: 'OLLAMA_NOT_RUNNING' | 'OLLAMA_MODEL_MISSING' | 'OLLAMA_MODEL_NO_TOOLS';
+  message: string;
+};
+
+/**
+ * Can this Ollama model run a game companion? Asked before the bot joins a
+ * world (261010). The game brain needs tool calling (speech itself is the
+ * say() tool), and a model without it, a model that was never pulled, or an
+ * Ollama that is not running used to join the world and then stay mute with
+ * nothing on screen. Fails OPEN (null) whenever the answer is unclear: a slow
+ * /api/show, an error status other than 404, or an Ollama too old to report
+ * capabilities.
+ */
+export async function checkOllamaForGame(
+  baseUrl: string,
+  model: string,
+  fetchImpl: typeof fetch = globalThis.fetch,
+): Promise<OllamaGameProblem | null> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, SHOW_TIMEOUT_MS);
+  try {
+    let resp: Response;
+    try {
+      resp = await fetchImpl(`${baseUrl}/api/show`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ model }),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      if (timedOut) return null;
+      const why = err instanceof Error ? (err.cause instanceof Error ? err.cause.message : err.message) : String(err);
+      return { error: 'OLLAMA_NOT_RUNNING', message: `Couldn't reach Ollama at ${baseUrl} (${why}).` };
+    }
+    if (resp.status === 404 && OLLAMA_MODEL_NOT_FOUND_RE.test(await resp.text().catch(() => ''))) {
+      return { error: 'OLLAMA_MODEL_MISSING', message: `Ollama has no model named ${model}. Run "ollama pull ${model}".` };
+    }
+    if (!resp.ok) return null;
+    const data = (await resp.json().catch(() => null)) as { capabilities?: unknown } | null;
+    if (!Array.isArray(data?.capabilities)) return null;
+    if (!data.capabilities.includes('tools')) {
+      return { error: 'OLLAMA_MODEL_NO_TOOLS', message: `${model} does not support tools, which the game companion needs.` };
+    }
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }

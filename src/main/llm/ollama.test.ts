@@ -6,6 +6,14 @@
  * thinking diagnostic, stop-sequence mapping, and tool_calls normalization.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
+
+// num_ctx sizing has its own tests (ollamaContext.test.ts); here it is pinned
+// so the fetch mocks below only ever see /api/chat.
+const { chooseNumCtx } = vi.hoisted(() => ({ chooseNumCtx: vi.fn(async () => 16384) }));
+vi.mock('./ollamaContext', async (orig) => ({
+  ...(await orig<typeof import('./ollamaContext')>()),
+  chooseOllamaNumCtx: chooseNumCtx,
+}));
 import {
   createOllamaProvider,
   effectiveTimeoutMs,
@@ -60,10 +68,15 @@ describe('createOllamaProvider', () => {
     const res = await p.call(params);
     expect(fetchImpl.mock.calls[0][0]).toBe('http://localhost:11434/api/chat');
     const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    // 261010: a context window sized to the prompt rides every request.
+    expect(body.options.num_ctx).toBe(16384);
+    expect(chooseNumCtx).toHaveBeenCalledWith(
+      expect.objectContaining({ baseUrl: 'http://localhost:11434', model: 'qwen3:1.7b', maxTokens: 200 }),
+    );
     expect(body.model).toBe('qwen3:1.7b');
     expect(body.stream).toBe(false);
     expect(body.think).toBe(false);
-    expect(body.options).toEqual({ num_predict: 200, stop: ['\nHuman:', '\nPlayer:'] });
+    expect(body.options).toEqual({ num_ctx: 16384, num_predict: 200, stop: ['\nHuman:', '\nPlayer:'] });
     expect(res.text).toBe('hi there');
     expect(res.stopReason).toBe('end_turn');
   });
@@ -176,5 +189,40 @@ describe('createOllamaProvider: images and tool-less vision models', () => {
       { role: 'user', content: '(pen result) drawn' },
       { role: 'user', content: 'hi', images: ['A'] },
     ]);
+  });
+});
+
+// 261010: setup failures used to reach the user as a generic "couldn't reply".
+describe('createOllamaProvider: setup errors are tagged', () => {
+  const params = { maxTokens: 50, system: 's', messages: [{ role: 'user' as const, content: 'hi' }] };
+
+  it('a refused connection becomes OLLAMA_UNREACHABLE with the cause kept', async () => {
+    const refused = Object.assign(new TypeError('fetch failed'), {
+      cause: Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:11434'), { code: 'ECONNREFUSED' }),
+    });
+    const p = createOllamaProvider({ model: 'qwen3:4b', fetchImpl: (async () => { throw refused; }) as unknown as typeof fetch });
+    const err = (await p.call(params).catch((e) => e)) as Error;
+    expect(err.message).toMatch(/^OLLAMA_UNREACHABLE: couldn't reach Ollama at http:\/\/localhost:11434 \(connect ECONNREFUSED/);
+    expect(err.cause).toBe(refused);
+  });
+
+  it('a caller cancel stays an abort, not "unreachable"', async () => {
+    const ctl = new AbortController();
+    const fetchImpl = vi.fn(async (_u: string, init: { signal: AbortSignal }) => {
+      ctl.abort();
+      const e = new Error('This operation was aborted');
+      e.name = 'AbortError';
+      expect(init.signal.aborted).toBe(true);
+      throw e;
+    });
+    const p = createOllamaProvider({ model: 'qwen3:4b', fetchImpl: fetchImpl as unknown as typeof fetch });
+    const err = (await p.call({ ...params, signal: ctl.signal }).catch((e) => e)) as Error;
+    expect(err.name).toBe('AbortError');
+  });
+
+  it('a 404 "model not found" becomes OLLAMA_MODEL_MISSING naming the model', async () => {
+    const fetchImpl = vi.fn(async () => errorResponse(404, { error: 'model "qwen3:14b" not found, try pulling it first' }));
+    const p = createOllamaProvider({ model: 'qwen3:14b', fetchImpl: fetchImpl as unknown as typeof fetch });
+    await expect(p.call(params)).rejects.toThrow(/^OLLAMA_MODEL_MISSING: Ollama has no model named qwen3:14b/);
   });
 });
