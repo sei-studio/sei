@@ -31,8 +31,8 @@ export function anthropicToOpenAIMessages(messages, systemText) {
       // in OpenAI's protocol. Any text blocks coalesce into one user message.
       // VIS-02: an `image` block (provider-neutral {type:'image',source:{...}})
       // becomes an `image_url` data-URL part. When any image is present the
-      // user message MUST use the multimodal ARRAY content form — OpenAI/Ollama
-      // reject an image on a plain-string content, and an image NEVER rides a
+      // user message MUST use the multimodal ARRAY content form — OpenAI
+      // rejects an image on a plain-string content, and an image NEVER rides a
       // {role:'tool'} result message (Pitfall 4).
       const textParts = []
       const imageParts = []
@@ -81,6 +81,76 @@ export function anthropicToOpenAIMessages(messages, systemText) {
         }
       }
       const m = { role: 'assistant', content: textParts.join('') || null }
+      if (toolCalls.length > 0) m.tool_calls = toolCalls
+      out.push(m)
+    }
+  }
+  return out
+}
+
+// ─── Anthropic messages → Ollama native /api/chat messages ────────────
+//
+// 261010: the native route is NOT the OpenAI shape (mirror of
+// src/main/llm/messageMappers.ts anthropicToOllamaMessages; both 400'd on
+// Ollama 0.40 with the OpenAI mapper):
+//   - `content` must be a STRING; images ride `images: [<bare base64>]` on the
+//     message (a `data:` prefix is rejected, so it is stripped).
+//   - assistant `tool_calls[].function.arguments` must be an OBJECT, not the
+//     OpenAI JSON string, or every hop after the first tool call fails.
+// Tool results become {role:'tool', content, tool_name}. An image nested in a
+// tool_result is lifted onto the user message that follows (never on a tool
+// message, Pitfall 4).
+export function stripDataUrl(data) {
+  return String(data).replace(/^data:[^;,]*;base64,/, '')
+}
+
+export function anthropicToOllamaMessages(messages, systemText) {
+  const idToName = new Map()
+  for (const msg of messages) {
+    if (msg.role !== 'assistant' || !Array.isArray(msg.content)) continue
+    for (const blk of msg.content) {
+      if (blk?.type === 'tool_use' && blk.id && blk.name) idToName.set(blk.id, blk.name)
+    }
+  }
+  const out = []
+  if (systemText) out.push({ role: 'system', content: systemText })
+  for (const msg of messages) {
+    const blocks = Array.isArray(msg.content) ? msg.content : [{ type: 'text', text: String(msg.content ?? '') }]
+    if (msg.role === 'user') {
+      const textParts = []
+      const images = []
+      for (const blk of blocks) {
+        if (!blk) continue
+        if (blk.type === 'text') textParts.push(blk.text ?? '')
+        else if (blk.type === 'image' && typeof blk.source?.data === 'string') images.push(stripDataUrl(blk.source.data))
+        else if (blk.type === 'tool_result') {
+          let content
+          if (typeof blk.content === 'string') content = blk.content
+          else if (Array.isArray(blk.content)) {
+            for (const b of blk.content) {
+              if (b?.type === 'image' && typeof b.source?.data === 'string') images.push(stripDataUrl(b.source.data))
+            }
+            content = blk.content.filter(b => b?.type === 'text').map(b => b.text ?? '').join('\n')
+          } else content = JSON.stringify(blk.content ?? '')
+          const name = idToName.get(blk.tool_use_id) ?? blk.tool_use_name
+          out.push({ role: 'tool', content, ...(name ? { tool_name: name } : {}) })
+        }
+      }
+      if (textParts.length > 0 || images.length > 0) {
+        out.push({ role: 'user', content: textParts.join('\n\n'), ...(images.length ? { images } : {}) })
+      }
+    } else if (msg.role === 'assistant') {
+      const textParts = []
+      const toolCalls = []
+      for (const blk of blocks) {
+        if (!blk) continue
+        if (blk.type === 'text') textParts.push(blk.text ?? '')
+        else if (blk.type === 'tool_use') {
+          const args = blk.input && typeof blk.input === 'object' ? blk.input : {}
+          toolCalls.push({ function: { name: blk.name, arguments: args } })
+        }
+      }
+      const m = { role: 'assistant', content: textParts.join('') }
       if (toolCalls.length > 0) m.tool_calls = toolCalls
       out.push(m)
     }

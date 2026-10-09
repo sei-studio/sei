@@ -216,8 +216,10 @@ describe('ollama provider call', () => {
       llm: { provider: 'ollama', providers: { ollama: { base_url: 'http://localhost:11434', model: 'llama3.1' } } },
     }, { fetchImpl })
     const out = await p.call({ systemBlocks: [{ type: 'text', text: 's' }], tools: [], messages: [{ role: 'user', content: 'hi' }] })
-    expect(fetchImpl.mock.calls[0][0]).toBe('http://localhost:11434/api/chat')
-    const body = JSON.parse(fetchImpl.mock.calls[0][1].body)
+    // The provider's own /api/show capability probe (261010) also rides fetchImpl.
+    const chatCall = fetchImpl.mock.calls.find(c => c[0].endsWith('/api/chat'))
+    expect(chatCall[0]).toBe('http://localhost:11434/api/chat')
+    const body = JSON.parse(chatCall[1].body)
     expect(body.stream).toBe(false)
     // 260915: thinking is switched off on the wire so qwen3/deepseek-r1-class
     // models cannot spend the whole num_predict budget in message.thinking.
@@ -225,6 +227,61 @@ describe('ollama provider call', () => {
     expect(out.text).toBe('hi')
     expect(out.toolUses).toEqual([{ id: expect.stringMatching(/^toolu_/), name: 'go', input: { x: 1 } }])
     expect(out.usage).toEqual({ prompt_tokens: 5, completion_tokens: 7 })
+  })
+})
+
+// 261010 ("Ollama vision models all not working"): vision used to be
+// hard-coded false for every Ollama model, and images went out in the OpenAI
+// array shape that /api/chat rejects.
+describe('ollama provider vision', () => {
+  const ollamaCfg = (model) => ({
+    anthropic: baseConfig.anthropic,
+    llm: { provider: 'ollama', providers: { ollama: { base_url: 'http://localhost:11434', model } } },
+  })
+  const routed = (show) => vi.fn(async (url, init) => {
+    if (url.endsWith('/api/show')) {
+      if (show instanceof Error) throw show
+      return { ok: true, json: async () => show }
+    }
+    return { ok: true, json: async () => ({ message: { role: 'assistant', content: 'a red circle' }, done_reason: 'stop' }), _body: init?.body }
+  })
+
+  it('takes vision from /api/show capabilities', async () => {
+    const fetchImpl = routed({ capabilities: ['completion', 'vision'] })
+    const p = createLlmProvider(ollamaCfg('my-custom-model'), { fetchImpl })
+    expect(p.capabilities.vision).toBe(false) // name unknown until Ollama answers
+    expect(await p.visionReady).toBe(true)
+    expect(p.capabilities.vision).toBe(true)
+    const show = fetchImpl.mock.calls.find(c => c[0].endsWith('/api/show'))
+    expect(JSON.parse(show[1].body)).toEqual({ model: 'my-custom-model' })
+  })
+
+  it('a model Ollama reports without vision stays blind even if the name looks like a VLM', async () => {
+    const p = createLlmProvider(ollamaCfg('llava-but-not-really'), { fetchImpl: routed({ capabilities: ['completion'] }) })
+    expect(p.capabilities.vision).toBe(true)
+    expect(await p.visionReady).toBe(false)
+  })
+
+  it('falls back to the name when Ollama cannot answer', async () => {
+    const down = new Error('ECONNREFUSED')
+    const p1 = createLlmProvider(ollamaCfg('qwen2.5vl:3b'), { fetchImpl: routed(down) })
+    expect(await p1.visionReady).toBe(true)
+    const p2 = createLlmProvider(ollamaCfg('llama3.1'), { fetchImpl: routed(down) })
+    expect(await p2.visionReady).toBe(false)
+  })
+
+  it('sends a frame as `images` on the native route', async () => {
+    const fetchImpl = routed({ capabilities: ['vision'] })
+    const p = createLlmProvider(ollamaCfg('qwen2.5vl:3b'), { fetchImpl })
+    const out = await p.call({
+      systemBlocks: [{ type: 'text', text: 's' }],
+      tools: [],
+      messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'AAAA' } }, { type: 'text', text: 'what do you see?' }] }],
+    })
+    const chatCall = fetchImpl.mock.calls.find(c => c[0].endsWith('/api/chat'))
+    const body = JSON.parse(chatCall[1].body)
+    expect(body.messages[1]).toEqual({ role: 'user', content: 'what do you see?', images: ['AAAA'] })
+    expect(out.text).toBe('a red circle')
   })
 })
 

@@ -3,7 +3,8 @@
  *
  * listProviderModels: live model listing with the user's own key — Anthropic
  * GET /v1/models, the OpenAI-compat set GET {base}/models, Gemini ListModels,
- * Ollama GET /api/tags — merged with the catalog's modelVision verdicts.
+ * Ollama GET /api/tags — merged with the catalog's modelVision verdicts
+ * (Ollama: each model's own /api/show capabilities, heuristic as fallback).
  * 10s timeout; typed error strings, never a raw throw.
  *
  * testProvider: a 1-token "hi" completion through the layer itself, so what
@@ -20,6 +21,7 @@ import {
 import { hasApiKey, loadApiKey } from '../apiKeyStore';
 import { loadConfig } from '../configStore';
 import { buildLocalProviderFor, resolveLocalModel } from './index';
+import { ollamaModelVision } from './ollamaCapabilities';
 import { applyAnthropicModelDefaults } from '../../bot/brain/llm/anthropicModelDefaults.js';
 
 const LIST_TIMEOUT_MS = 10_000;
@@ -78,6 +80,10 @@ export async function listProviderModels(provider: ProviderKind): Promise<ListMo
       const base = (await providerBaseUrl(provider)) ?? 'http://localhost:11434';
       const data = (await fetchJson(`${base}/api/tags`, {})) as { models?: Array<{ name?: string }> };
       ids = (data?.models ?? []).map((m) => m?.name ?? '').filter(Boolean);
+      // Per-model verdicts from Ollama itself (/api/show capabilities), name
+      // heuristic only where it cannot answer. All local, in parallel.
+      const models = await Promise.all(ids.map(async (id) => ({ id, vision: await ollamaModelVision(base, id) })));
+      return { models };
     } else if (provider === 'gemini') {
       if (!(await hasApiKey())) return { models: [], error: 'no_api_key' };
       const key = await loadApiKey();

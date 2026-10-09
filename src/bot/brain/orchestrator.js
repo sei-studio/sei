@@ -1646,6 +1646,24 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   }
   rebuildPersonalitySystem()
 
+  // 261010: an Ollama provider settles its vision capability asynchronously
+  // (/api/show). The cached system prefix lists the tools combinedToolsFor()
+  // offered at build time, so when the answer flips look() in or out, rebuild
+  // it once so the prose and the tools array agree. A provider replaced in the
+  // meantime (setBackend) is ignored.
+  function rebuildOnVisionSettle(provider) {
+    if (!provider?.visionReady) return
+    const before = provider.capabilities?.vision === true
+    Promise.resolve(provider.visionReady).then(() => {
+      if (anthropic !== provider) return
+      if ((provider.capabilities?.vision === true) === before) return
+      try { rebuildPersonalitySystem() } catch (err) {
+        logger.warn?.(`[sei/orch] vision-settle system rebuild failed: ${err?.message ?? err}`)
+      }
+    }).catch(() => {})
+  }
+  rebuildOnVisionSettle(anthropic)
+
   // Last result string from any registry.execute() this orchestrator has performed.
   // Fed back into the next personality turn via composeSnapshot's lastActionResult.
   let lastActionResult = null
@@ -5070,6 +5088,13 @@ function maybeWarnByteCap(loop, warned) {
      */
     visionCapable: () => { try { return anthropic.capabilities?.vision === true } catch { return false } },
     /**
+     * 261010: resolves once the active provider's vision capability is
+     * settled. Only Ollama has an async answer (its /api/show probe); every
+     * other provider's capability is static, so this resolves at once. Never
+     * rejects.
+     */
+    visionReady: () => Promise.resolve(anthropic?.visionReady).catch(() => {}),
+    /**
      * Phase 13-15 (PROXY-07): push a refreshed JWT into the live Anthropic
      * SDK for cloud-proxy mode. No-op when cloudMode is not active. Called
      * by brain.setAuthToken → src/bot/index.js's parentPort message handler.
@@ -5127,6 +5152,7 @@ function maybeWarnByteCap(loop, warned) {
         try { rebuildPersonalitySystem() } catch (err) {
           logger.warn?.(`[sei/orch] setBackend system rebuild failed: ${err?.message ?? err}`)
         }
+        rebuildOnVisionSettle(anthropic)
       } catch (err) {
         logger.warn?.(`[sei/orch] setBackend failed: ${err?.message ?? err}`)
       }

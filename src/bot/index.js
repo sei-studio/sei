@@ -277,6 +277,10 @@ export async function start(config, hooks = {}) {
     visionCapable() {
       try { return _brain?.visionCapable?.() === true } catch { return false }
     },
+    /** 261010: settles when visionCapable() is final (Ollama asks /api/show). */
+    visionReady() {
+      try { return Promise.resolve(_brain?.visionReady?.()).catch(() => {}) } catch { return Promise.resolve() }
+    },
     /**
      * Dashboard (260721): the renderer's visibility flag, forwarded from the
      * parentPort {type:'dashboard-watch'} handler. NOT a brain passthrough —
@@ -771,7 +775,11 @@ async function bootstrapWithInit(initData) {
  * closed (visionCapable:false) when the brain hasn't started or can't report.
  * Idempotent — safe to call on summon-ready and again on a backend switch.
  */
-function emitVisionCapability() {
+async function emitVisionCapability() {
+  // 261010: an Ollama provider learns its vision capability from /api/show a
+  // few ms after construction; wait for it (bounded by the probe's own 3s
+  // timeout) so the push does not report the pre-probe name guess.
+  try { await _running?.visionReady?.() } catch {}
   let visionCapable = false
   try { visionCapable = _running?.visionCapable?.() === true } catch { visionCapable = false }
   if (initPort) {

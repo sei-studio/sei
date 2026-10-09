@@ -7,6 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   anthropicToGeminiContents,
+  anthropicToOllamaMessages,
   anthropicToOpenAIMessages,
   anthropicToolsToGeminiTools,
   anthropicToolsToOpenAITools,
@@ -19,6 +20,7 @@ import {
   openAIToolCallsToUses,
   parseToolJsonFallback,
   sanitizeForGemini,
+  stripDataUrl,
   synthesizeContent,
   textOfContent,
   toolChoiceToOpenAI,
@@ -241,5 +243,90 @@ describe('forced-tool JSON fallback', () => {
 
   it('the prompt note names the tool', () => {
     expect(forcedToolPromptNote('set_chess_profile')).toContain('"set_chess_profile"');
+  });
+});
+
+// 261010 ("Ollama vision models all not working"): the native /api/chat route
+// takes STRING content with images in a separate `images` field, and OBJECT
+// tool arguments. The OpenAI shape it used to get was a 400 on Ollama 0.40 for
+// every image call and every request after a tool call.
+describe('anthropicToOllamaMessages', () => {
+  const IMG = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } };
+
+  it('puts images in `images` as bare base64 and keeps content a string', () => {
+    const out = anthropicToOllamaMessages(
+      [{ role: 'user', content: [IMG, { type: 'text', text: 'what is this?' }] } as never],
+      'sys',
+    );
+    expect(out).toEqual([
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: 'what is this?', images: ['AAAA'] },
+    ]);
+  });
+
+  it('strips a data: URL prefix (Ollama rejects it as illegal base64)', () => {
+    const out = anthropicToOllamaMessages(
+      [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'data:image/jpeg;base64,BBBB' } }] } as never],
+      '',
+    );
+    expect(out).toEqual([{ role: 'user', content: '', images: ['BBBB'] }]);
+    expect(stripDataUrl('data:image/png;base64,CCCC')).toBe('CCCC');
+    expect(stripDataUrl('CCCC')).toBe('CCCC');
+  });
+
+  it('never emits array content anywhere', () => {
+    const out = anthropicToOllamaMessages(
+      [
+        { role: 'user', content: [{ type: 'text', text: 'a' }, IMG, IMG] },
+        { role: 'assistant', content: [{ type: 'text', text: 'b' }] },
+      ] as never,
+      'sys',
+    );
+    for (const m of out) expect(typeof m.content).toBe('string');
+    expect(out[1].images).toEqual(['AAAA', 'AAAA']);
+  });
+
+  it('sends tool_call arguments as an OBJECT and names tool results', () => {
+    const out = anthropicToOllamaMessages(
+      [
+        { role: 'user', content: 'time?' },
+        { role: 'assistant', content: [{ type: 'text', text: 'checking' }, { type: 'tool_use', id: 'tu_1', name: 'get_time', input: { tz: 'UTC' } }] },
+        { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu_1', content: '12:00' }] },
+      ] as never,
+      '',
+    );
+    expect(out[1]).toEqual({
+      role: 'assistant',
+      content: 'checking',
+      tool_calls: [{ function: { name: 'get_time', arguments: { tz: 'UTC' } } }],
+    });
+    expect(typeof (out[1].tool_calls as Array<{ function: { arguments: unknown } }>)[0].function.arguments).toBe('object');
+    expect(out[2]).toEqual({ role: 'tool', content: '12:00', tool_name: 'get_time' });
+  });
+
+  it('keeps images off tool messages: a sibling or nested image rides the user message after the results', () => {
+    const out = anthropicToOllamaMessages(
+      [
+        { role: 'assistant', content: [{ type: 'tool_use', id: 'tu_1', name: 'look', input: {} }] },
+        {
+          role: 'user',
+          content: [
+            { type: 'tool_result', tool_use_id: 'tu_1', content: [{ type: 'text', text: 'here' }, IMG] },
+            { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'DDDD' } },
+          ],
+        },
+      ] as never,
+      '',
+    );
+    expect(out[1]).toEqual({ role: 'tool', content: 'here', tool_name: 'look' });
+    expect(out[2]).toEqual({ role: 'user', content: '', images: ['AAAA', 'DDDD'] });
+  });
+
+  it('leaves no null content on a tool-only assistant turn', () => {
+    const out = anthropicToOllamaMessages(
+      [{ role: 'assistant', content: [{ type: 'tool_use', id: 't', name: 'say', input: { text: 'hi' } }] }] as never,
+      '',
+    );
+    expect(out[0].content).toBe('');
   });
 });

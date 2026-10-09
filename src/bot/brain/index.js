@@ -574,5 +574,7 @@ export async function start({ config, adapter, logger = console, onTerminalError
      * Fail-closed: false if the orchestrator/provider can't report it.
      */
     visionCapable: () => { try { return orchestrator.visionCapable?.() === true } catch { return false } },
+    /** 261010: settles when visionCapable() is final (Ollama's /api/show probe). */
+    visionReady: () => { try { return Promise.resolve(orchestrator.visionReady?.()).catch(() => {}) } catch { return Promise.resolve() } },
   }
 }

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   flattenSystemBlocks,
+  anthropicToOllamaMessages,
   anthropicToOpenAIMessages,
   anthropicToolsToOpenAITools,
   openAIResponseToAnthropic,
@@ -177,7 +178,7 @@ describe('Gemini mappers', () => {
 describe('image block translation (VIS-02)', () => {
   const IMG = { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'AAAA' } }
 
-  describe('OpenAI/Ollama (anthropicToOpenAIMessages)', () => {
+  describe('OpenAI (anthropicToOpenAIMessages)', () => {
     it('emits an ARRAY-form user message with an image_url data-URL when an image is present', () => {
       const out = anthropicToOpenAIMessages([
         { role: 'user', content: [
@@ -273,6 +274,39 @@ describe('image block translation (VIS-02)', () => {
       const imgTurn = out.find(m => m.parts?.some(p => p.inline_data))
       expect(imgTurn).toBeDefined()
       expect(imgTurn.parts[0].inline_data).toEqual({ mime_type: 'image/jpeg', data: 'AAAA' })
+    })
+  })
+
+  // 261010: Ollama's native /api/chat is NOT the OpenAI shape. The array
+  // content form above is a 400 there ("cannot unmarshal array into ...
+  // content of type string"), which is why every Ollama image call failed.
+  describe('Ollama (anthropicToOllamaMessages)', () => {
+    it('puts the image in `images` as bare base64 on a string-content user message', () => {
+      const out = anthropicToOllamaMessages([
+        { role: 'user', content: [{ type: 'text', text: 'what do you see?' }, IMG] },
+      ], 'sys')
+      expect(out).toEqual([
+        { role: 'system', content: 'sys' },
+        { role: 'user', content: 'what do you see?', images: ['AAAA'] },
+      ])
+      expect(JSON.stringify(out)).not.toContain('image_url')
+    })
+
+    it('strips a data: URL prefix', () => {
+      const out = anthropicToOllamaMessages([
+        { role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'data:image/png;base64,BBBB' } }] },
+      ], '')
+      expect(out).toEqual([{ role: 'user', content: '', images: ['BBBB'] }])
+    })
+
+    it('tool calls carry OBJECT arguments; results are role:tool with tool_name and no image', () => {
+      const out = anthropicToOllamaMessages([
+        { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_1', name: 'look', input: { yaw: 90 } }] },
+        { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'ok' }, IMG] },
+      ], '')
+      expect(out[0]).toEqual({ role: 'assistant', content: '', tool_calls: [{ function: { name: 'look', arguments: { yaw: 90 } } }] })
+      expect(out[1]).toEqual({ role: 'tool', content: 'ok', tool_name: 'look' })
+      expect(out[2]).toEqual({ role: 'user', content: '', images: ['AAAA'] })
     })
   })
 })
