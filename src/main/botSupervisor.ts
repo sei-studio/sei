@@ -42,6 +42,8 @@ import { isGameId, type GameId } from '../shared/gameIpc';
 import { getGameModule, type GameModule } from './games';
 import { clampChatLanguage } from '../shared/chatLanguage';
 import { buildLlmInitSection, type LlmInitSection } from './llmInitSection';
+import { checkOllamaForGame } from './llm/ollamaCapabilities';
+import { OLLAMA_DEFAULT_BASE_URL } from './llm/ollama';
 import { resolveWebSearchSettings } from './llm/webSearchSettings';
 import { getCharacter, patchCharacter } from './characterStore';
 import { loadApiKey, hasApiKey, getAiBackendKind, type AiBackendKind } from './apiKeyStore';
@@ -1095,6 +1097,23 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       };
       sendStatus(status);
       throw new Error('PREFERRED_NAME_MISSING');
+    }
+
+    // 261010: a local Ollama model must be able to run the game brain before
+    // the bot joins. Ollama not running, a model never pulled, or a model with
+    // no tool support (gemma3, llava, qwen2.5vl, ...) used to join the world
+    // and then stand there mute for the whole session. Fails open when Ollama's
+    // answer is unclear (checkOllamaForGame).
+    if (llmInit?.provider === 'ollama') {
+      const problem = await checkOllamaForGame(
+        llmInit.base_url ?? OLLAMA_DEFAULT_BASE_URL,
+        llmInit.model ?? '',
+      );
+      if (problem) {
+        logger.warn(`[sei/sup] summon blocked: ${problem.error}: ${problem.message}`);
+        sendStatus({ kind: 'error', error: problem.error, message: problem.message, characterId });
+        throw new Error(`${problem.error}: ${problem.message}`);
+      }
     }
 
     // Game adapters (M0): the game module says what the bot needs to join

@@ -9,6 +9,34 @@ import {
   anthropicToOllamaMessages,
   anthropicToolsToOpenAITools,
 } from './messageMappers.js'
+import { chooseOllamaNumCtx, estimateOllamaPromptTokens } from './ollamaContext.js'
+
+/**
+ * Local floor for one call (261010), same value as src/main/llm/ollama.ts
+ * LOCAL_TIMEOUT_FLOOR_MS. The orchestrator budgets a turn at
+ * anthropic.timeout_ms (12s), sized for a cloud API. A local model's first
+ * turn includes loading it into memory and evaluating a ~12k-token prompt, and
+ * a model that does not fit in VRAM runs partly on the CPU, so every turn of a
+ * larger model was aborted at 12s and dropped without a word: "anything bigger
+ * flat out does not work". A player chat or an attack still cuts a slow call
+ * short through the caller's signal.
+ */
+export const LOCAL_TIMEOUT_FLOOR_MS = 120_000
+
+/**
+ * Error codes the orchestrator turns into a clear user-facing stop instead of
+ * a silent dead loop (261010). Both are permanent for this model: every turn
+ * would fail the same way.
+ */
+export const OLLAMA_MODEL_NO_TOOLS = 'OLLAMA_MODEL_NO_TOOLS'
+export const OLLAMA_MODEL_MISSING = 'OLLAMA_MODEL_MISSING'
+export const OLLAMA_UNREACHABLE = 'OLLAMA_UNREACHABLE'
+
+function codedError(code, message) {
+  const e = new Error(`${code}: ${message}`)
+  e.code = code
+  return e
+}
 
 /**
  * Ollama vision by model NAME. MIRRORS ollamaVisionHeuristic in
@@ -95,6 +123,16 @@ export function createOllamaProvider(config, { fetchImpl = globalThis.fetch } = 
     }
     const t = anthropicToolsToOpenAITools(tools)
     if (t) body.tools = t
+    // Context window sized to the prompt (261010, ollamaContext.js). Without
+    // it Ollama ran 4096 tokens and cut the front of the ~12k-token Minecraft
+    // prompt: persona, rules and tool definitions.
+    body.options.num_ctx = await chooseOllamaNumCtx({
+      baseURL,
+      model,
+      promptTokens: estimateOllamaPromptTokens(body),
+      maxTokens,
+      fetchImpl,
+    })
 
     const controller = new AbortController()
     const onParentAbort = () => controller.abort()
@@ -102,7 +140,9 @@ export function createOllamaProvider(config, { fetchImpl = globalThis.fetch } = 
       if (signal.aborted) controller.abort()
       else signal.addEventListener('abort', onParentAbort, { once: true })
     }
-    const timer = setTimeout(() => controller.abort(), timeoutMs ?? defaultTimeoutMs)
+    const budgetMs = Math.max(timeoutMs ?? defaultTimeoutMs, LOCAL_TIMEOUT_FLOOR_MS)
+    let timedOut = false
+    const timer = setTimeout(() => { timedOut = true; controller.abort() }, budgetMs)
     let resp
     try {
       resp = await fetchImpl(`${baseURL}/api/chat`, {
@@ -111,12 +151,35 @@ export function createOllamaProvider(config, { fetchImpl = globalThis.fetch } = 
         body: JSON.stringify(body),
         signal: controller.signal,
       })
+    } catch (err) {
+      // Same shape anthropicClient gives a blown budget: an AbortError with
+      // isTimeout, so runIterations retries the turn once instead of silently
+      // dropping it as if a preempt had cancelled it.
+      if (timedOut && !signal?.aborted) {
+        const e = new Error(`ollama call exceeded ${budgetMs}ms budget (model ${model} too slow to load or answer)`)
+        e.name = 'AbortError'
+        e.isTimeout = true
+        throw e
+      }
+      if (err?.name === 'AbortError' || signal?.aborted) throw err
+      const why = err?.cause?.message ?? err?.message ?? String(err)
+      throw codedError(OLLAMA_UNREACHABLE, `couldn't reach Ollama at ${baseURL} (${why})`)
     } finally {
       clearTimeout(timer)
       if (signal) signal.removeEventListener('abort', onParentAbort)
     }
     if (!resp.ok) {
       const text = await resp.text().catch(() => '')
+      // Many Ollama models (gemma3, llava, qwen2.5vl, llama3.2-vision, ...)
+      // have no tool support and Ollama refuses the whole request. The game
+      // brain cannot run without tools (speech itself is the say() tool), so
+      // this is a permanent, explainable stop, not a retry (261010).
+      if (resp.status === 400 && /does not support tools/i.test(text)) {
+        throw codedError(OLLAMA_MODEL_NO_TOOLS, `${model} does not support tools`)
+      }
+      if (resp.status === 404 && /model[^\n]{0,120}not found|try pulling/i.test(text)) {
+        throw codedError(OLLAMA_MODEL_MISSING, `Ollama has no model named ${model}`)
+      }
       throw new Error(`ollama API ${resp.status}: ${text.slice(0, 500)}`)
     }
     const data = await resp.json()

@@ -4,7 +4,7 @@
  * judge qwen2.5vl / gemma3 / llama4 blind and lock Draw! and backseat.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { clearOllamaVisionCache, ollamaModelVision, probeOllamaVision } from './ollamaCapabilities';
+import { checkOllamaForGame, clearOllamaVisionCache, ollamaModelVision, probeOllamaVision } from './ollamaCapabilities';
 
 function showResponse(payload: unknown, ok = true): Response {
   return { ok, status: ok ? 200 : 404, json: async () => payload } as unknown as Response;
@@ -59,5 +59,42 @@ describe('ollamaModelVision', () => {
     expect(await ollamaModelVision('http://h:1', 'qwen2.5vl:3b', down)).toBe('yes');
     expect(await ollamaModelVision('http://h:1', 'gemma3:4b', down)).toBe('yes');
     expect(await ollamaModelVision('http://h:1', 'llama3.1:8b', down)).toBe('unknown');
+  });
+});
+
+// 261010: before a game companion joins, the Ollama model must be able to run
+// the game brain (tools), exist, and Ollama must be up.
+describe('checkOllamaForGame', () => {
+  const ok = (payload: unknown, status = 200): Response =>
+    ({ ok: status < 400, status, json: async () => payload, text: async () => JSON.stringify(payload) }) as unknown as Response;
+
+  it('a model with tools passes', async () => {
+    const f = (async () => ok({ capabilities: ['completion', 'tools', 'thinking'] })) as unknown as typeof fetch;
+    expect(await checkOllamaForGame('http://h', 'qwen3:4b', f)).toBeNull();
+  });
+
+  it('a vision model without tools is refused with OLLAMA_MODEL_NO_TOOLS', async () => {
+    const f = (async () => ok({ capabilities: ['completion', 'vision'] })) as unknown as typeof fetch;
+    expect(await checkOllamaForGame('http://h', 'gemma3:12b', f)).toMatchObject({ error: 'OLLAMA_MODEL_NO_TOOLS' });
+  });
+
+  it('a model that was never pulled is OLLAMA_MODEL_MISSING', async () => {
+    const f = (async () => ok({ error: "model 'qwen3:14b' not found" }, 404)) as unknown as typeof fetch;
+    expect(await checkOllamaForGame('http://h', 'qwen3:14b', f)).toMatchObject({ error: 'OLLAMA_MODEL_MISSING' });
+  });
+
+  it('a bare "404 page not found" (wrong address, not a missing model) fails open', async () => {
+    const f = (async () => ({ ok: false, status: 404, text: async () => '404 page not found' })) as unknown as typeof fetch;
+    expect(await checkOllamaForGame('http://h', 'qwen3:4b', f)).toBeNull();
+  });
+
+  it('a refused connection is OLLAMA_NOT_RUNNING', async () => {
+    const f = (async () => { throw Object.assign(new TypeError('fetch failed'), { cause: new Error('connect ECONNREFUSED') }); }) as unknown as typeof fetch;
+    expect(await checkOllamaForGame('http://h', 'qwen3:4b', f)).toMatchObject({ error: 'OLLAMA_NOT_RUNNING', message: expect.stringContaining('ECONNREFUSED') });
+  });
+
+  it('fails open when the answer is unclear (old Ollama, server error)', async () => {
+    expect(await checkOllamaForGame('http://h', 'm', (async () => ok({ details: {} })) as unknown as typeof fetch)).toBeNull();
+    expect(await checkOllamaForGame('http://h', 'm', (async () => ok({}, 500)) as unknown as typeof fetch)).toBeNull();
   });
 });
