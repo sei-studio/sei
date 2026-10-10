@@ -260,6 +260,16 @@ describe('useChatStore.send: model timeout vs user cancel (260926)', () => {
     expect(chatFailureLine(ipcError('Error: LOCAL_NO_API_KEY'))).toMatch(/no API key/);
     expect(chatFailureLine(ipcError('Error: 500 upstream'))).toMatch(/couldn't reply/);
   });
+
+  it('chatFailureLine names the Ollama setup problem (261010)', async () => {
+    const { chatFailureLine, isOllamaSetupError } = await import('./useChatStore');
+    const down = ipcError("Error: OLLAMA_UNREACHABLE: couldn't reach Ollama at http://localhost:11434 (connect ECONNREFUSED)");
+    const missing = ipcError('Error: OLLAMA_MODEL_MISSING: Ollama has no model named qwen3:14b.');
+    expect(chatFailureLine(down)).toMatch(/can't reach Ollama/);
+    expect(chatFailureLine(missing)).toMatch(/doesn't have the model/);
+    expect(isOllamaSetupError(down) && isOllamaSetupError(missing)).toBe(true);
+    expect(isOllamaSetupError(ipcError('Error: 500 upstream'))).toBe(false);
+  });
 });
 
 /**

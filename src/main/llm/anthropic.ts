@@ -17,6 +17,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { buildChatSdk } from '../chat/sdk';
 import type { LlmBackend, LlmCallParams, LlmProvider, LlmResult, LlmToolUse } from './types';
 import { textOfContent } from './messageMappers';
+import { applyAnthropicModelDefaults } from '../../bot/brain/llm/anthropicModelDefaults.js';
 
 type ClientLike = {
   messages: {
@@ -49,6 +50,21 @@ function toResult(res: { content: unknown[]; usage?: unknown; stop_reason?: stri
   };
 }
 
+/**
+ * 261008: Haiku 5.x turns adaptive thinking ON when the request says nothing
+ * (Haiku 4.5 had no thinking unless asked). Every caller of this layer sizes
+ * max_tokens for a spoken or chat reply (160-400), and with thinking on, 5.5
+ * spent that budget thinking and stopped at max_tokens on 63-100% of chat and
+ * voice turns in scripts/remember-eval.ts, often leaving an empty remember({}).
+ * The rules (thinking disabled unless the caller asked for adaptive, no fixed
+ * budget, no temperature/top_p/top_k, no assistant prefill) live in the bot's
+ * anthropicModelDefaults.js so the bot process and main apply the same ones.
+ * Other models are left untouched (Sonnet 5 callers keep their behavior).
+ */
+export function applyModelDefaults(params: Record<string, unknown>): Record<string, unknown> {
+  return applyAnthropicModelDefaults(params) as Record<string, unknown>;
+}
+
 export async function createAnthropicProvider(backend: LlmBackend): Promise<LlmProvider> {
   // Fresh per build (every call site already rebuilds per turn), so a
   // cloud<->local switch or JWT rotation is picked up exactly as before.
@@ -69,6 +85,7 @@ export async function createAnthropicProvider(backend: LlmBackend): Promise<LlmP
     if (p.toolChoice !== undefined) params.tool_choice = p.toolChoice;
     if (p.stopSequences !== undefined) params.stop_sequences = p.stopSequences;
     if (p.anthropicExtra) Object.assign(params, p.anthropicExtra);
+    applyModelDefaults(params);
     const opts: Record<string, unknown> = {};
     if (p.timeoutMs !== undefined) opts.timeout = p.timeoutMs;
     if (p.signal !== undefined) opts.signal = p.signal;

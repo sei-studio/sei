@@ -37,10 +37,13 @@ import {
   type StopReason,
 } from '../shared/ipc';
 import { effectiveMcUsername, type Character } from '../shared/characterSchema';
+import type { CreditWallContext } from './creditWall';
 import { isGameId, type GameId } from '../shared/gameIpc';
 import { getGameModule, type GameModule } from './games';
 import { clampChatLanguage } from '../shared/chatLanguage';
 import { buildLlmInitSection, type LlmInitSection } from './llmInitSection';
+import { checkOllamaForGame } from './llm/ollamaCapabilities';
+import { OLLAMA_DEFAULT_BASE_URL } from './llm/ollama';
 import { resolveWebSearchSettings } from './llm/webSearchSettings';
 import { getCharacter, patchCharacter } from './characterStore';
 import { loadApiKey, hasApiKey, getAiBackendKind, type AiBackendKind } from './apiKeyStore';
@@ -50,6 +53,7 @@ import { loadConfig as loadUserConfig } from './configStore'; // UserConfig for 
 import { paths } from './paths';
 import { createLogRouter, type LogRouter } from './logRouter';
 import { bootPhaseProps, type SummonFailureInfo, type SummonPhase } from './diagnostics';
+import { noteCompanionGoodbye } from './sessionGoodbye';
 
 /**
  * The READY budget: from the bot reporting "booted" (its init-ack) to
@@ -65,8 +69,15 @@ const SUMMON_TIMEOUT_MS = 30_000;
  * graph, the game runtime import, config parse). Generous on purpose: a slow
  * machine that is still booting is shown "Starting companion..." instead of a
  * failure. Only a boot that never finishes trips it.
+ *
+ * 261007: 60s -> 90s. Healthy cold Windows summons on 0.6.5+ measured
+ * runtime_loaded at 39.5s and 46.8s (spawn 50.8s / 56.7s), so 60s left about
+ * 13s of slack, and one 0.6.7 Windows boot ran out of it inside the runtime
+ * import (pack_loader_ready at 21.6s, still loading at 60s); that install's
+ * next summon booted in 21s. A boot that is slow but finishing should be
+ * shown "Starting companion...", not failed.
  */
-const BOOT_TIMEOUT_MS = 60_000;
+const BOOT_TIMEOUT_MS = 90_000;
 const STOP_TIMEOUT_MS = 10_000;
 /**
  * 260926: app quit. The per-bot drain gets this long before the kill
@@ -184,6 +195,10 @@ function classifyChildError(err: unknown): ErrorClass {
   if (/invalid.*api.*key|401|unauthorized|x-api-key|authentication_error/i.test(lower)) return 'INVALID_API_KEY';
   if (/429|rate.?limit|throttl/i.test(lower)) return 'RATE_LIMITED';
   if (/enotfound|enetunreach|getaddrinfo|fetch failed/i.test(lower)) return 'NETWORK_OFFLINE';
+  // Online-mode rejection (261007) BEFORE the LAN branch: the kick is
+  // "multiplayer.disconnect.unverified_username", which the LAN branch below
+  // would claim on "disconnect". Mirrors isOnlineModeRejection in connect.js.
+  if (/online_mode_rejected|unverified_username|failed to verify username/i.test(lower)) return 'ONLINE_MODE_REJECTED';
   // Modded-host rejection BEFORE the LAN branch (260806): the kick text contains
   // "kicked" and often "connect", so it used to be smeared into LAN_NOT_OPEN and
   // the player was told to re-open a world that was open the whole time. Mirrors
@@ -372,7 +387,7 @@ export interface BotSupervisorOptions {
    * gate refuses a summon, so the user sees the upgrade / top up surface
    * instead of a bot that joins and does nothing.
    */
-  emitHardStop: (info: CreditsHardStopEvent) => void;
+  emitHardStop: (info: CreditsHardStopEvent, ctx?: CreditWallContext) => void;
   /**
    * Voice calls (260705): is a voice call currently open for this character?
    * Read on summon-ready so a bot that spawns MID-call (the launch()-from-a-
@@ -895,6 +910,17 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // only way here is a double-fire) — never fork a duplicate child for it.
     if (sessions.has(characterId)) return;
 
+    // 261005: credit_wall_hit context for a wall the live session runs into.
+    const wallCtx = (): CreditWallContext => {
+      let inCall: boolean | undefined;
+      try {
+        inCall = opts.isVoiceCallActive ? opts.isVoiceCallActive(characterId) : undefined;
+      } catch {
+        inCall = undefined;
+      }
+      return { surface: 'game', trigger: 'session', game, ...(inCall !== undefined ? { inCall } : {}) };
+    };
+
     const module = resolveGameModule(game);
     if (!module) throw new Error(`GAME_NOT_INSTALLED: no game module registered for ${game}`);
 
@@ -977,7 +1003,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         logger.warn(
           '[sei/sup] summon blocked: weekly limit reached with no extra credits — raising popup, not forking the bot',
         );
-        opts.emitHardStop({ reason: 'depleted' });
+        opts.emitHardStop({ reason: 'depleted' }, { surface: 'game', trigger: 'summon_gate', game });
         sendStatus({ kind: 'idle', characterId });
         throw new Error('CLOUD_CREDITS_DEPLETED');
       }
@@ -1071,6 +1097,23 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       };
       sendStatus(status);
       throw new Error('PREFERRED_NAME_MISSING');
+    }
+
+    // 261010: a local Ollama model must be able to run the game brain before
+    // the bot joins. Ollama not running, a model never pulled, or a model with
+    // no tool support (gemma3, llava, qwen2.5vl, ...) used to join the world
+    // and then stand there mute for the whole session. Fails open when Ollama's
+    // answer is unclear (checkOllamaForGame).
+    if (llmInit?.provider === 'ollama') {
+      const problem = await checkOllamaForGame(
+        llmInit.base_url ?? OLLAMA_DEFAULT_BASE_URL,
+        llmInit.model ?? '',
+      );
+      if (problem) {
+        logger.warn(`[sei/sup] summon blocked: ${problem.error}: ${problem.message}`);
+        sendStatus({ kind: 'error', error: problem.error, message: problem.message, characterId });
+        throw new Error(`${problem.error}: ${problem.message}`);
+      }
     }
 
     // Game adapters (M0): the game module says what the bot needs to join
@@ -1357,6 +1400,8 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // Voice calls (260705): the in-game bot called end_call() — hang up the
       // player's call (the bot stays in the game). Not a BotStatus event.
       if ((data as { type?: string }).type === 'call-end') {
+        // 261008: voice_call_ended reads this back (sessionGoodbye.ts).
+        noteCompanionGoodbye(characterId, 'call', (data as { nextStepHook?: boolean }).nextStepHook === true);
         opts.onCallEndRequested?.(characterId);
         return;
       }
@@ -1456,6 +1501,9 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // 260929: remember why the bot stopped itself (companion quit()).
       if (data.type === 'summon-stopped' && typeof data.reason === 'string') {
         session.selfStopReason = data.reason;
+        // 261008: a companion quit() says whether its goodbye left a next_time
+        // hook; bot_session_ended reads it back (sessionGoodbye.ts).
+        if (data.reason === 'quit') noteCompanionGoodbye(characterId, 'game', data.nextStepHook === true);
       }
       if (data.type === 'error' && !summonResolved) {
         summonResolved = true;
@@ -1486,7 +1534,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // (sets hardStopActive=true); fires whether or not the summon resolved.
       if (data.type === 'error' && data.error === 'CLOUD_CREDITS_DEPLETED') {
         logger.warn('[sei/sup] bot hit the limit mid-session — raising the hard-stop popup');
-        opts.emitHardStop({ reason: 'depleted' });
+        opts.emitHardStop({ reason: 'depleted' }, wallCtx());
         // The bot latches halted and self-exits, but that self-shutdown is
         // best-effort: if its gracefulShutdown stalls (a hung brain.stop /
         // adapter teardown, or a delayed process.exit in the utilityProcess),
@@ -1507,7 +1555,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
             ? data.retryAfterSeconds
             : 86_400;
         logger.warn(`[sei/sup] bot was rate limited for ${sec}s — raising the popup`);
-        opts.emitHardStop({ reason: 'rate_limited', retry_after_seconds: sec });
+        opts.emitHardStop({ reason: 'rate_limited', retry_after_seconds: sec }, wallCtx());
         // Same backstop as the depleted path above: the bot is supposed to
         // leave the world on its own, but a stalled self-shutdown would leave
         // the avatar frozen in-game (still connected). Authoritatively drain

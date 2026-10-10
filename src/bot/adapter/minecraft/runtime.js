@@ -266,6 +266,24 @@ export async function createRuntime(config, hooks) {
           return
         }
 
+        // ONLINE-MODE HOST (261007): terminal on the first kick, same reasoning
+        // as the modded branch. A plain Open-to-LAN world lets an offline
+        // client in ("Failed to verify username but will let them in anyway"),
+        // so `multiplayer.disconnect.unverified_username` means a dedicated
+        // server with online-mode=true or a mod that enforces it. Every retry
+        // earns the same kick, and the fall-through below ended in
+        // LAN_NOT_OPEN ("Re-open the world to LAN") for a world that was open.
+        if (info?.onlineMode) {
+          _stopped = true
+          logger.error(`[sei] Online-mode world rejected Sei (${humanizedReason}) — not retrying.`)
+          try { onDisconnected({ reason: humanizedReason, willRetry: false }) } catch {}
+          fail(
+            `ONLINE_MODE_REJECTED: ${humanizedReason}.`,
+            _readyFired ? { endReason: 'kicked', kickCode: 'unverified_username' } : null,
+          )
+          return
+        }
+
         // POST-SPAWN drop: the bot was in the world and the socket closed.
         // Historically this was ALWAYS terminal ("the player closed the
         // world"), because the old unconditional reconnect had two bugs:

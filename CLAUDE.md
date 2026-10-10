@@ -61,7 +61,7 @@ boundaries are load-bearing — respect them.
   username** (the world kicks the second with `name_taken`), so `summon` refuses
   a colliding effective username before forking (the renderer pre-checks and
   shows a popup; the supervisor is the authoritative backstop). Summon has two
-  watchdogs: a **60s cold-boot budget** (`BOOT_TIMEOUT_MS`, fork to the bot's
+  watchdogs: a **90s cold-boot budget** (`BOOT_TIMEOUT_MS`, fork to the bot's
   `init-ack`) and then a **30s ready budget** (`SUMMON_TIMEOUT_MS`, `init-ack`
   to `summon-ready`); stop has a 10s timeout then
   escalates to kill. A stop during a PENDING summon cancels it instead: the
@@ -149,8 +149,13 @@ by `llm.provider` in `src/bot/config.js`:
 ## Bot / LLM internals (`src/bot`)
 
 **Single-layer brain.** One LLM call combines reasoning *and* action dispatch —
-there is no separate planner/dispatcher. Default model `claude-haiku-4-5`, **20s
-timeout** (`anthropic.timeout_ms`).
+there is no separate planner/dispatcher. Default model `claude-haiku-5-5`
+(`COMPANION_MODEL` in `src/shared/llmCatalog.ts`, mirrored in `src/bot/config.js`),
+**20s timeout** (`anthropic.timeout_ms`). Haiku 5 turns adaptive thinking ON
+when a request has no `thinking` field and rejects temperature, fixed thinking
+budgets and prefill, so every request builder runs
+`applyAnthropicModelDefaults` (`src/bot/brain/llm/anthropicModelDefaults.js`),
+which sends `thinking: {type: 'disabled'}` and strips those fields (261008).
 
 **Closed, Zod-typed action registry.** The LLM never writes code or raw
 coordinates — it calls registered tools only.
@@ -1882,6 +1887,53 @@ The design and its measurements are committed at
 - **Tool-array policy:** ONE array for every tick kind (chess-style). Ticks are
   6-8 s apart, well inside the cache TTL, so per-tick-kind arrays would
   invalidate the prefix almost every turn for nothing.
+- **Haiku 5.5 tuning (261010, branch fix/backseat-haiku55).** From the 261009
+  live replay (`scripts/backseat-live-replay.ts` + `backseat-live-report.ts`,
+  3 real videos, report under `~/suisei/reports/backseat-live-2026-10-*`):
+  - **Turn claim.** `handleTick` claims `s.inflight` right after `-> turn`,
+    BEFORE the player-row write and the act/control awaits
+    (`prepareAndRunTurn`). A jolt landing in that await used to start a
+    second, concurrent turn. Pinned in `backseatService.inflight.test.ts`.
+  - **Start silence had two causes.** The voice-call primer offers
+    `(silence)` (Backseat now passes `allowSilence: false`) and ends with
+    "make say() the FIRST tool call". Backseat has no say tool, and on the
+    first look (no text lines in history yet) 5.5 called one anyway, so the
+    reply text was empty. Backseat passes `voiceSpeech: 'text'`, which swaps
+    that sentence for `VOICE_CALL_TEXT_LINE`. `VOICE_CALL_PRIMER` itself is
+    unchanged (`= VOICE_CALL_PRIMER_BASE + VOICE_CALL_SAY_FIRST`). Typed chat
+    voice calls have the same mismatch and are untouched.
+  - **Narration and timing (Shawn).** React to what is IN the picture (the
+    place, the boss, the build). Do not read it back: no stats, timers,
+    items or stage numbers. Ask about plans only when the next few seconds
+    will not answer them. Because lines are heard seconds late, a question
+    about a quick action arrives already answered (REACT TO WHAT YOU SEE,
+    NOT A NARRATOR + YOU ARE HEARD A FEW SECONDS LATE). These live in the
+    contract AND at the end of every look note (`LINE_LENGTH_REMINDER`),
+    because 5.5 follows the note's ending and reads the contract loosely.
+    Do not stream LLM text into TTS (Shawn's call).
+  - **Latency (261010).** The renderer's `look()` runs the STT flush
+    (up to `STT_FLUSH_WAIT_MS`) BEFORE compositing the grid, so the newest
+    frame is not already 1.2+ s old when the tick leaves. On a call, main
+    prewarms TTS (`prewarmSpeech` dep) as soon as a turn is claimed.
+  - **Staleness gate (261010).** A line she said on her own carries
+    `SpokenLineContext.ambientCapturedAt`; a reply to the player never does.
+    `staleGate.ts` asks `staleLineVerdict` both when the line arrives
+    (before TTS) and at the audio-queue playhead (`opts.stale`). It drops
+    the line when it is >= `STALE_LINE_AGE_MS` (5 s) past its frame AND the
+    screen moved >= `STALE_SCENE_DELTA` (0.35 blockMaxDelta). The second
+    number comes from the 32x18 thumbnails the worker posts every 500 ms
+    (`sceneChangeSince`). It is timing-only and every drop is logged
+    `[backseat] stale line dropped`.
+  - **Openers.** `recentOpeners` feeds the first words of her last 3 lines
+    into jolt/idle notes ONLY when one repeats. This is data about her own
+    lines, not a fixed ban list. A static "vary your opener" did not move 5.5.
+  - **Memory.** `buildSystemBlocks({ memoryNote })` labels the notes as
+    real-life facts (`BACKSEAT_MEMORY_NOTE`). The contract and the user note
+    say the same. A remember() cut off at max_tokens is not saved.
+  - **Look cap 100 -> 45 tokens** (`BACKSEAT_LOOK_MAX_TOKENS`). Prompting
+    moves 5.5's length only a little, so the cap still bites on about 1 look
+    in 14. A cut line ends at its last finished sentence (`endAtLastSentence`,
+    positional, not content-based). User turns stay at 400.
 
 **Extracted:** the screen-watching half is mirrored as a public standalone repo
 at `sei-studio/backseat` (AGPL-3.0) with a plain-language architecture README.
@@ -2811,6 +2863,21 @@ flush runs before `supervisor.shutdown()`, so it is bounded
 and with PostHog unreachable quit hung that long with the bot still in the
 world.
 
+**Goodbyes can set up the next session (261008, retention fix 2(c)).** Every
+goodbye tool (bot `quit_game` / `end_call`, chat-surface `quit_game` /
+`end_call`) takes an optional `next_time` field (prompt text in
+promptLibrary `NEXT_TIME_FIELD` / `NEXT_TIME_GOODBYE` / `NEXT_TIME_SPOKEN`).
+The model works the step into its own goodbye; the host only saves the
+field to MEMORY.md as `Plan for next time: <step>` (`src/bot/brain/nextStep.js`,
+bot `saveNextStep`, chat `honorNextStep`), and the next greeting (bot FIRST
+CONTACT, voice-call greeting note) is told it may bring it up
+(`NEXT_TIME_GREETING`). No extra LLM call. Analytics are booleans only:
+`bot_session_ended.next_step_hook`, `voice_call_ended.next_step_hook` and
+`ended_by_companion`. The goodbye and the end event come from different
+processes, so `src/main/sessionGoodbye.ts` holds a short-lived note between
+them. A player Stop, player hang-up or world close has no companion goodbye
+and reports `false`.
+
 **Forge/NeoForge hosts are blocked before summon (260929).** Only on STRONG
 evidence: the status ping's forgeData/modinfo (`forgeModCount != null`) or an
 explicit launch target on the host command line (`LanHost.forgeLaunchTarget`,
@@ -2840,6 +2907,20 @@ or an unclassified host with Forge ping data) is reported as
 `summon_failed`, so the player gets ModdedHostModal instead of generic timeout
 copy. Timeouts on Fabric with foreign mods and on Quilt stay plain
 `BOT_START_TIMEOUT`: those hosts often do let a vanilla client in. `character_summoned` carries `host_client`.
+
+**Online-mode and Fabric kicks (261007).** A plain Open to LAN world lets
+an offline client in (the integrated server logs "Failed to verify username
+but will let them in anyway"), so a `multiplayer.disconnect.unverified_username`
+kick means a server with online-mode on or a mod that enforces it. connect.js
+`isOnlineModeRejection` flags it, and runtime.js fails on the FIRST kick as
+`ONLINE_MODE_REJECTED` (kick_code `unverified_username`), routed to the
+generic game-error popup with the server.properties / LAN-mod fix. It used to
+retry three times and end as LAN_NOT_OPEN. The Fabric API registry-sync kick
+("requires Fabric Loader and Fabric API ... namespaces may be related") is
+humanized as Fabric, not Forge, and names the mods (`fabricKickNamespaces`);
+ModdedHostModal reads both back from the status message. Xaero's Minimap and
+World Map were the named mods in both 0.6.7 cases, so no copy may call
+minimaps safe.
 
 **Text chat counts too (260801).** Chat was the last surface with no
 instrumentation at all, so playtime meant "everything except the thing people
@@ -2879,6 +2960,35 @@ The marker step also probes for older Sei state (`PRIOR_STATE_ENTRIES`), so an
 existing install updating to the first build with this code is classified
 `upgrade` and sends nothing. Keep that list in sync if a new device-global
 file appears, and keep `noteLaunch()` ahead of anything that writes userData.
+
+**Retention events (261005).** From the retention analysis
+(`~/suisei/reports/retention-2026-10-05.md`):
+- `credit_wall_hit` (`src/main/creditWall.ts`) fires from `emitCreditsHardStop`
+  (every popup path: chat, voice, chess, Draw!, backseat via
+  `raiseUsageLimitPopup(err, surface)`, the bot's pre-flight gate and
+  mid-session walls via the supervisor) and from the proxy-route TTS/STT 402s,
+  which never raise the popup. One event per wall: keyed by `reason`, a burst
+  collapses while repeats are under 10 minutes apart. A new hard-stop path
+  passes its `CreditWallContext`. `allowance_used_micro` is `usage_pct` of the
+  plan allowance (1% resolution; the client cannot read the ledger sum).
+  `credit_wall_action {action, reason, ms_open}` is the modal's answer.
+- `onboarding_step {step, index, action: view|complete|skip|back, ms_in_step,
+  path, skipped_creation}` per OnboardApp screen (`onboard/onboardSteps.ts`;
+  not the boot sign-in variant). A new screen or button that skips needs a
+  step name in `ONBOARD_STEPS` and, for a skip, `markStep('skip')`.
+  `onboarding_abandoned` comes from the renderer on unmount (`left_view`) and
+  from main at quit / last-window-close (`src/main/onboardingFunnel.ts`, fed
+  by the analytics:track handler).
+- `onboarding_completed {path: new|skip|byok|existing|returning}` fires once,
+  at the config save that writes `preferred_name` (not after generation) and
+  on the welcome-existing and returning completions. Events captured before
+  `initAnalytics()` resolves are queued and replayed (`analytics.ts`); they
+  used to be dropped.
+- `app_quit {session_ms, last_surface}` first in before-quit; chess, Draw! and
+  backseat now end (reason `app_quit`) BEFORE the flush.
+- `update_installed {from, to, via}` from `runWhatsNewCheck`.
+- `backend` reads `'unset'` until the profile has a `preferred_name` on the
+  default `local` kind.
 
 ### The play row is ONE sentence, shared (260728)
 
@@ -3168,7 +3278,7 @@ pins it at whatever percent it reached.
   plus Defender scanning every file it opens) measured 21-24s before
   `createBot`, so the connect guard sat on its 5s floor and BOT_START_TIMEOUT
   was the top Windows summon failure (14 people in 30 days). Now the boot has
-  its own 60s budget (`BOOT_TIMEOUT_MS`, phase `boot_timeout`) and the 30s
+  its own budget (`BOOT_TIMEOUT_MS`, 60s, 90s since 261007; phase `boot_timeout`) and the 30s
   ready budget starts at `init-ack`; the bot starts the same budget on its side
   from `readyBudgetMs` in the init payload. The status carries
   `stage: 'starting' | 'joining'` so the launch button shows progress.

@@ -24,7 +24,8 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { closeSplashWindow, createMainWindow, createSplashWindow } from './windowChrome';
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
-import { isAnalyticsActive, shutdownAnalytics, capture } from './analytics';
+import { isAnalyticsActive, shutdownAnalytics, capture, captureAppQuit, noteSurface } from './analytics';
+import { reportOnboardingAbandoned } from './onboardingFunnel';
 import { notePreGateFailure, clearSummonBlock, clearSummonBlocksOfClass } from './summonGuard';
 import { createBotSupervisor, SUMMON_CANCELLED } from './botSupervisor';
 import { registerGameModule, getGameModule, listGameModules } from './games';
@@ -36,6 +37,7 @@ import { isCallActive, wasCallRecentlyActive, activeCallIds, clearAllCalls } fro
 import { initCallOverlay, closeCallOverlay } from './callOverlay';
 import { trackScopedWrite, isAccountTeardownActive } from './profile/scopeBarrier';
 import { sessionEndProps, isSessionFailure, type SessionEndProps } from './sessionEnd';
+import { consumeGoodbye, gameEndHookProps, callEndHookProps } from './sessionGoodbye';
 import { formatPlayDuration, playSummaryText } from './chat/playSummary';
 import { initUpdater } from './updater';
 import { initNotices } from './notices';
@@ -45,6 +47,7 @@ import { safeStorageBackendKind } from './apiKeyStore';
 import { loadWizardState, saveWizardState } from './wizardStateStore';
 import { registerPortraitScheme, registerPortraitProtocol } from './portraitProtocol';
 import { cleanupRelocationLeftover } from './relocate';
+import { cleanupLegacyTraySettings } from './legacyTrayCleanup';
 import { initMcDashboardService } from './mcDashboard/mcDashboardService';
 import {
   initGameDashboardService,
@@ -416,6 +419,8 @@ function closePlaySession(id: string, end: SessionEndProps, failed: boolean): vo
     duration_s: durationS,
     game: started.game,
     ...end,
+    // 261008: did the companion's goodbye set up a next session (retention).
+    ...gameEndHookProps(consumeGoodbye(id, 'game')),
   });
   // Deliberately no duration_ms: not a playtime event (not in SESSION_EVENTS),
   // and the ended event above already counts this time.
@@ -547,6 +552,22 @@ function getLanMotd(): string | null {
   return latestLanState.kind === 'open' ? latestLanState.motd : null;
 }
 
+/** Upper bound on ending the game surfaces at quit (their rows hit the disk). */
+const QUIT_SURFACE_END_TIMEOUT_MS = 1500;
+
+/**
+ * End chess, Draw! and backseat for a quit so each sends its `_ended` event
+ * (reason 'app_quit') before the analytics flush. Bounded; never throws.
+ */
+async function endGameSurfacesForQuit(): Promise<void> {
+  const ends = Promise.allSettled([
+    (async () => (await import('./chess/chessService')).endAllChess('app_quit'))(),
+    (async () => (await import('./draw/drawService')).endAllDraw('app_quit'))(),
+    (async () => (await import('./backseat/backseatService')).endAllBackseat('app_quit'))(),
+  ]);
+  await Promise.race([ends, new Promise((resolve) => setTimeout(resolve, QUIT_SURFACE_END_TIMEOUT_MS))]);
+}
+
 async function bootstrap(): Promise<void> {
   // 0-pre. Install marker (260926). MUST be the first thing bootstrap does:
   //        it tells a fresh install from an existing one by probing for Sei
@@ -558,6 +579,10 @@ async function bootstrap(): Promise<void> {
     const { paths } = await import('./paths');
     const kind = noteLaunch(paths.userData(), app.getVersion());
     if (kind !== 'seen') logger.info(`install marker: ${kind}`);
+    // 261005: install age for credit_wall_hit.ms_since_install.
+    const { readInstalledAt } = await import('./firstLaunch');
+    const { setInstalledAt } = await import('./creditWall');
+    setInstalledAt(readInstalledAt(paths.userData()));
   } catch (err) {
     logger.warn(`install marker failed: ${(err as Error).message}`);
   }
@@ -1044,6 +1069,7 @@ async function bootstrap(): Promise<void> {
       // Session logs ride the same batched channel as bot/chess/draw logs, so
       // the in-app developer console (LogsBar) shows [backseat] lines live.
       pushLog: broadcastLog,
+      prewarmSpeech: () => void import('./voice/tts').then((m) => m.prewarmTts()).catch(() => {}),
     });
   }
 
@@ -1139,13 +1165,19 @@ async function bootstrap(): Promise<void> {
       // connected), so a failed call contributes nothing. Same `duration_ms`
       // key as bot_session_ended / chess_game_ended so the dashboard can sum
       // all three. See the games rule in CLAUDE.md.
-      capture('voice_call_ended', { character_id: id, duration_ms: connectedMs });
+      // 261008: + whether the companion hung up and left a next-time hook.
+      capture('voice_call_ended', {
+        character_id: id,
+        duration_ms: connectedMs,
+        ...callEndHookProps(consumeGoodbye(id, 'call')),
+      });
     },
     // Voice calls (260705): the call went live — companion greets first. An
     // in-game session takes it over the port (say() routes into the call); an
     // idle character runs a standalone greeting turn whose replies are pushed
     // (and spoken by the renderer's TTS hook).
     greetVoiceCall: (id, peers = []) => {
+      noteSurface('voice'); // 261005: app_quit.last_surface
       // A solo in-game session greets over the port (say() routes to the call).
       // On a group call we always run the standalone greeting turn so the joiner
       // can name the room — the in-game greet path has no group framing.
@@ -1296,6 +1328,10 @@ if (!gotLock) {
     // never blocks. See relocate.ts.
     cleanupRelocationLeftover();
 
+    // The menu bar / tray mode from 0.6.8-beta.1/2 is gone: drop its settings
+    // file and the login item it may have registered. See legacyTrayCleanup.ts.
+    cleanupLegacyTraySettings();
+
     // Startup splash (260728): the white Sei logo, up before any heavy
     // bootstrap work, closed when the main window first paints. The failsafe
     // timer covers a bootstrap that errors before showing a window.
@@ -1322,6 +1358,8 @@ if (!gotLock) {
       app.quit();
       return;
     }
+    // 261005: the app stays resident but the onboarding view is gone.
+    reportOnboardingAbandoned('window_closed', capture);
     // macOS stays resident when the last window closes — which meant a
     // downloaded update NEVER installed for anyone who "closed and reopened
     // the app" (260909): Squirrel.Mac applies a staged update on process
@@ -1347,11 +1385,19 @@ if (!gotLock) {
   app.on('before-quit', async (e) => {
     if (!supervisor && !watchersRunning && !skinServer && !loopbackAuthServer && !isAnalyticsActive()) return; // already shut down
     e.preventDefault();
+    // 261005: app_quit {session_ms, last_surface}, and an onboarding that
+    // was still on screen. Both before the flush below.
+    try { captureAppQuit(); } catch { /* best-effort */ }
+    reportOnboardingAbandoned('quit', capture);
     // Close any open text-chat session BEFORE the flush below — quitting
     // mid-conversation is the normal way a chat ends, and an event captured
     // after shutdownAnalytics() would never be sent.
     try { await (await import('./chat/chatSession')).endAllChatSessions(); } catch { /* best-effort */ }
     try { endAllPlaySessionsForQuit(); } catch { /* best-effort */ }
+    // 261005: end chess, Draw! and backseat BEFORE the flush too. They used to
+    // be shut down after it (and backseat not at all), so their *_ended events
+    // were lost on every quit. Bounded: their closing rows write to disk.
+    await endGameSurfacesForQuit();
     // Flush buffered analytics first so queued events survive the quit.
     try { await shutdownAnalytics(); } catch (err) { logger.warn(`analytics shutdown failed: ${(err as Error).message}`); }
     try { if (supervisor) await supervisor.shutdown(); } catch (err) { logger.warn(`supervisor shutdown failed: ${(err as Error).message}`); }

@@ -1,7 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import {
   BACKSEAT_CONTRACT,
+  BACKSEAT_LOOK_MAX_TOKENS,
+  BACKSEAT_MEMORY_NOTE,
+  backseatMaxTokens,
+  endAtLastSentence,
+  recentOpeners,
   fenceSafe,
+  LINE_LENGTH_REMINDER,
+  START_LENGTH_REMINDER,
   GAME_DESCRIPTION_MAX,
   renderBackseatGameBlock,
   stripDashes,
@@ -281,5 +288,180 @@ describe('renderBackseatGameBlock', () => {
   it('is plain model text: no em dashes outside the creator fields', () => {
     const block = renderBackseatGameBlock(def, null, { canSearch: true });
     expect(block).not.toMatch(/—/);
+  });
+});
+
+/**
+ * 261008: Haiku 5.5 ran 30-47 words a line when the length rule lived only in
+ * the cached contract. Every look the player did not start restates it at the
+ * end of its note; the player's own turn does not (a real question gets a
+ * real answer), and the token cap follows the same split.
+ */
+describe('the length rule on every look (261008)', () => {
+  const base = { secondsSinceLastLine: 30, sourceName: 'Game' } as const;
+
+  it('ends every non-user note with the length rule, as the last thing read', () => {
+    const notes = [
+      tickNote({ ...base, kind: 'idle' }),
+      tickNote({ ...base, kind: 'jolt', joltReason: 'gain' }),
+      tickNote({ ...base, kind: 'jolt', joltReason: 'color' }),
+      tickNote({ ...base, kind: 'jolt', joltReason: 'switch', sinceSwitchS: 5 }),
+    ];
+    for (const n of notes) expect(n.endsWith(`Do not mention this note. ${LINE_LENGTH_REMINDER}]`)).toBe(true);
+    // The first look ends on its own version: a hello, still short.
+    const start = tickNote({ ...base, kind: 'start' });
+    expect(start.endsWith(`Do not mention this note. ${START_LENGTH_REMINDER}]`)).toBe(true);
+    expect(START_LENGTH_REMINDER).toMatch(/under ten words/);
+    expect(START_LENGTH_REMINDER).not.toMatch(/[—–;]/);
+    // 261009: "under twenty words" left Haiku 5.5 at a median of 30. The
+    // reason (spoken over their game) plus a low number is what moved it.
+    expect(LINE_LENGTH_REMINDER).toMatch(/under ten words/);
+    expect(LINE_LENGTH_REMINDER).toMatch(/spoken out loud/);
+    expect(LINE_LENGTH_REMINDER).not.toMatch(/[—–;]/);
+  });
+
+  it('leaves the player\'s own turn without it, and has it talk about the screen, not frames', () => {
+    const n = tickNote({ ...base, kind: 'user' });
+    expect(n).not.toContain(LINE_LENGTH_REMINDER);
+    expect(n).toContain('talking about it as their screen, never as frames or images');
+  });
+
+  it('tells the contract the player can already see the screen (261009)', () => {
+    expect(BACKSEAT_CONTRACT).toContain('They can see the screen too');
+    expect(BACKSEAT_CONTRACT).not.toContain('under twenty words');
+  });
+
+  it('caps a look at 45 tokens and a player turn at 400 (261010)', () => {
+    expect(BACKSEAT_LOOK_MAX_TOKENS).toBe(45);
+    expect(backseatMaxTokens('user')).toBe(400);
+    for (const k of ['start', 'idle', 'jolt'] as const) expect(backseatMaxTokens(k)).toBe(45);
+  });
+
+  it('keeps memories to the thing on screen', () => {
+    expect(BACKSEAT_CONTRACT).toContain('YOUR MEMORIES.');
+    expect(BACKSEAT_CONTRACT).not.toMatch(/[—–]/);
+  });
+});
+
+/**
+ * 261010: the Haiku 5.5 live replay of 261009. Lines ran about 20 words with
+ * a question in 70-80% of them, the first look was silent in 7 of 9 sessions,
+ * and the player's real dog was found in a Minecraft video in 5 of 6 runs.
+ */
+describe('Haiku 5.5 tuning (261010)', () => {
+  const base = { secondsSinceLastLine: 30, sourceName: 'Game' } as const;
+
+  it('asks for one short sentence and a varied opener', () => {
+    expect(BACKSEAT_CONTRACT).toContain('one short sentence about one thing, about twelve words at most');
+    expect(BACKSEAT_CONTRACT).toContain('not two thoughts joined with a comma');
+    expect(BACKSEAT_CONTRACT).toContain('no filler word, exclamation or lead-in');
+    expect(LINE_LENGTH_REMINDER).toContain('not the way your last line started');
+  });
+
+  it('asks for reactions to the picture, not narration, on every look (Shawn, 261010)', () => {
+    expect(BACKSEAT_CONTRACT).toContain('REACT TO WHAT YOU SEE, NOT A NARRATOR.');
+    expect(BACKSEAT_CONTRACT).toContain('Say what you think of it, not what it is');
+    expect(BACKSEAT_CONTRACT).toContain('numbers, timers, stats, items or which stage it is, is narrating');
+    expect(BACKSEAT_CONTRACT).toContain('check whether the screen will show the answer in the next few seconds');
+    expect(BACKSEAT_CONTRACT).toContain('something bigger that the screen will not show soon');
+    expect(BACKSEAT_CONTRACT).toContain('with no recap of the screen in front of it');
+    expect(BACKSEAT_CONTRACT).toContain('never two in one line');
+    expect(BACKSEAT_CONTRACT).not.toContain('Be nosy');
+    expect(LINE_LENGTH_REMINDER).toContain('Your first words are what you think or feel about the screen');
+    expect(LINE_LENGTH_REMINDER).toContain('Only ask something if the screen will not show the answer');
+    expect(tickNote({ ...base, kind: 'user' })).toContain('without describing the rest of the screen');
+  });
+
+  it('opens the session with a hello, even on a menu', () => {
+    const n = tickNote({ ...base, kind: 'start' });
+    expect(n).toContain('This look always gets a line');
+    expect(n).toContain('say a short hello in your own words');
+    expect(n).not.toMatch(/[—–]/);
+  });
+
+  it('labels memories as real-life facts, in the contract and the memory header', () => {
+    expect(BACKSEAT_CONTRACT).toContain('facts about their real life');
+    expect(BACKSEAT_CONTRACT).toContain('unless the player says it is');
+    expect(BACKSEAT_MEMORY_NOTE).toContain("facts about the player's real life");
+    expect(BACKSEAT_MEMORY_NOTE).not.toMatch(/[—–;]/);
+    expect(tickNote({ ...base, kind: 'user' })).toContain('Your notes about their real life are not on this screen');
+  });
+
+  it('keeps a player question free to run longer than a look', () => {
+    const n = tickNote({ ...base, kind: 'user' });
+    expect(n).not.toContain(LINE_LENGTH_REMINDER);
+    expect(n).not.toContain(START_LENGTH_REMINDER);
+    expect(backseatMaxTokens('user')).toBeGreaterThan(BACKSEAT_LOOK_MAX_TOKENS * 5);
+  });
+
+  it('names her own recent openers back to her on every look once there are two', () => {
+    expect(recentOpeners(['old line', 'Ok the boss is huge', 'ok, nice dodge', 'Ouen that hurt'])).toEqual(['ok', 'ok', 'ouen']);
+    const rep = tickNote({ ...base, kind: 'jolt', joltReason: 'gain', recentOpeners: ['ok', 'ok', 'ouen'] });
+    expect(rep).toContain('Your last lines started with ok, ok, ouen. Start this one with a different word.');
+    expect(rep.endsWith(`Do not mention this note. ${LINE_LENGTH_REMINDER}]`)).toBe(true);
+    const idle = tickNote({ ...base, kind: 'idle', recentOpeners: ['ok', 'ok'] });
+    expect(idle).toContain('Your last lines started with ok, ok.');
+    // 261010: also when they vary (5.5 alternated one favourite with others).
+    const varied = tickNote({ ...base, kind: 'idle', recentOpeners: ['ok', 'that', 'nice'] });
+    expect(varied).toContain('Your last lines started with ok, that, nice.');
+    expect(tickNote({ ...base, kind: 'idle', recentOpeners: ['ok'] })).not.toContain('Your last lines started');
+    // The player's own turn and the first look never carry it.
+    expect(tickNote({ ...base, kind: 'user', recentOpeners: ['ok', 'ok'] })).not.toContain('Your last lines started');
+    expect(tickNote({ ...base, kind: 'start', recentOpeners: ['ok', 'ok'] })).not.toContain('Your last lines started');
+  });
+});
+
+describe('endAtLastSentence (261010)', () => {
+  it('ends a cut line at its last finished sentence', () => {
+    expect(endAtLastSentence('Green carpet for the dog bed, nehehe. Wait, are you crafting that bucket or just ho')).toBe(
+      'Green carpet for the dog bed, nehehe.',
+    );
+    expect(endAtLastSentence('Margit is down to a sliver! Dodge the next one or yo')).toBe('Margit is down to a sliver!');
+  });
+
+  it('leaves a line alone when it already ends, or has nowhere earlier to end', () => {
+    expect(endAtLastSentence('That boss is huge.')).toBe('That boss is huge.');
+    expect(endAtLastSentence('the sand cube thing just got a whole new life and the green')).toBe(
+      'the sand cube thing just got a whole new life and the green',
+    );
+    // A one-word sentence is not worth keeping on its own.
+    expect(endAtLastSentence('Ok. the sand cube thing just got a whole')).toBe('Ok. the sand cube thing just got a whole');
+  });
+
+  it('does not split on a decimal or a mid-word dot', () => {
+    expect(endAtLastSentence('version 1.21 looks great and the')).toBe('version 1.21 looks great and the');
+  });
+});
+
+/**
+ * 261010: Shawn, on the replays: every comment lands in retrospect. The line
+ * is heard seconds after the frame, so a question about a quick action
+ * arrives with its answer already on screen.
+ */
+describe('heard a few seconds late (261010)', () => {
+  it('tells the contract the line lands late, and what to talk about instead', () => {
+    expect(BACKSEAT_CONTRACT).toContain('YOU ARE HEARD A FEW SECONDS LATE.');
+    expect(BACKSEAT_CONTRACT).toContain('React to what will still be on screen when you are heard');
+    expect(BACKSEAT_CONTRACT).not.toContain('a choice they made');
+  });
+
+  it('repeats it as the last thing on every look', () => {
+    expect(LINE_LENGTH_REMINDER).toContain('in the next few seconds');
+    expect(LINE_LENGTH_REMINDER).not.toMatch(/[—–;]/);
+  });
+
+  it('keeps most lines statements and leads with her take, not the screen', () => {
+    expect(BACKSEAT_CONTRACT).toContain('Most of your lines are one of those and do not ask anything.');
+    expect(BACKSEAT_CONTRACT).toContain('Do not start a line by saying where they are or what they are doing');
+    // The example pairs come from games outside the replay set: lines from
+    // the replay footage itself were copied nearly word for word (261010).
+    expect(BACKSEAT_CONTRACT).toContain('each from a different game');
+    expect(BACKSEAT_CONTRACT).toContain('Do not reuse their words or their endings');
+    expect(BACKSEAT_CONTRACT).not.toMatch(/[—–]/);
+    expect(LINE_LENGTH_REMINDER).toContain('not any number, label or counter');
+    expect(LINE_LENGTH_REMINDER).toContain('A sound like wait or ooh in front of a description is still a description.');
+    expect(
+      tickNote({ secondsSinceLastLine: 30, sourceName: 'Game', kind: 'jolt', joltReason: 'gain' }),
+    ).toContain('say what you think of where they are instead');
   });
 });

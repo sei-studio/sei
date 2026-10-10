@@ -119,12 +119,14 @@ export async function start(config, hooks = {}) {
     },
     // Task 4 — the bot called quit(): leave the game the same graceful way a
     // main-initiated stop would (drain, disconnect, exit → supervisor reaps).
-    onQuitRequested: () => { try { gracefulShutdown('quit') } catch {} },
+    // 261008: `nextStepHook` = the quit carried a next_time hook (already
+    // saved to MEMORY.md); it rides summon-stopped for bot_session_ended.
+    onQuitRequested: (info) => { try { gracefulShutdown('quit', { nextStepHook: info?.nextStepHook === true }) } catch {} },
     // Voice calls (260705) — the bot called end_call(): ask main to hang up
     // the player's call (the bot stays in the game). The farewell say() was
     // already routed up before this fires, and the renderer drains its TTS
     // queue before tearing the call down.
-    onCallEndRequested: () => emitLifecycle({ type: 'call-end' }),
+    onCallEndRequested: (info) => emitLifecycle({ type: 'call-end', nextStepHook: info?.nextStepHook === true }),
   })
 
   _runtime = await mod.createRuntime(config, {
@@ -274,6 +276,10 @@ export async function start(config, hooks = {}) {
      */
     visionCapable() {
       try { return _brain?.visionCapable?.() === true } catch { return false }
+    },
+    /** 261010: settles when visionCapable() is final (Ollama asks /api/show). */
+    visionReady() {
+      try { return Promise.resolve(_brain?.visionReady?.()).catch(() => {}) } catch { return Promise.resolve() }
     },
     /**
      * Dashboard (260721): the renderer's visibility flag, forwarded from the
@@ -769,7 +775,11 @@ async function bootstrapWithInit(initData) {
  * closed (visionCapable:false) when the brain hasn't started or can't report.
  * Idempotent — safe to call on summon-ready and again on a backend switch.
  */
-function emitVisionCapability() {
+async function emitVisionCapability() {
+  // 261010: an Ollama provider learns its vision capability from /api/show a
+  // few ms after construction; wait for it (bounded by the probe's own 3s
+  // timeout) so the push does not report the pre-probe name guess.
+  try { await _running?.visionReady?.() } catch {}
   let visionCapable = false
   try { visionCapable = _running?.visionCapable?.() === true } catch { visionCapable = false }
   if (initPort) {
@@ -784,7 +794,7 @@ function emitVisionCapability() {
  *   lifecycle so main can tell a companion that quit() on its own from any
  *   other clean exit.
  */
-async function gracefulShutdown(reason = 'stop') {
+async function gracefulShutdown(reason = 'stop', { nextStepHook = false } = {}) {
   // Re-entry guard. Both the bot's own onTerminalError and the supervisor's
   // {type:'stop'} can drive shutdown concurrently (the daily-limit / depleted
   // backstop in botSupervisor.ts now actively drains the session on the same
@@ -809,7 +819,7 @@ async function gracefulShutdown(reason = 'stop') {
       ])
     }
   } catch {}
-  emitLifecycle({ type: 'summon-stopped', reason })
+  emitLifecycle({ type: 'summon-stopped', reason, ...(nextStepHook ? { nextStepHook: true } : {}) })
   // Give the lifecycle message a tick to flush before exiting
   setTimeout(() => process.exit(0), 100)
 }

@@ -49,6 +49,7 @@ import { useUiStore } from '../lib/stores/useUiStore';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { useResetLine } from '../lib/useResetLine';
+import { sei } from '../lib/ipcClient';
 import styles from './HardStopModal.module.css';
 
 /**
@@ -78,6 +79,23 @@ export function formatRetryWhen(untilMs: number | null, nowMs: number): string {
   });
 }
 
+/**
+ * 261005: what the player did at the wall (`credit_wall_action`). The wall
+ * itself is `credit_wall_hit`, fired in main; this is the other half of the
+ * funnel (close vs top up vs upgrade). Shape only. Never throws.
+ */
+function trackWallAction(action: 'close' | 'topup' | 'upgrade', reason: string | null, openedAt: number): void {
+  try {
+    sei.track('credit_wall_action', {
+      action,
+      reason: reason ?? 'unknown',
+      ms_open: Math.max(0, Date.now() - openedAt),
+    });
+  } catch {
+    /* analytics is never load-bearing */
+  }
+}
+
 export function HardStopModal(): React.ReactElement | null {
   const t = useT();
   const hardStopActive = useCreditsStore((s) => s.hardStopActive);
@@ -97,6 +115,16 @@ export function HardStopModal(): React.ReactElement | null {
   // A rate limit is a time window: no billing change clears it, so it never
   // takes part in the over_limit refresh/latch/auto-dismiss machinery below.
   const isRateLimited = hardStopReason === 'rate_limited';
+
+  // When this wall's modal opened, for credit_wall_action.ms_open.
+  const [openedAt, setOpenedAt] = useState(() => Date.now());
+  useEffect(() => {
+    if (hardStopActive) setOpenedAt(Date.now());
+  }, [hardStopActive]);
+  const closeTracked = (): void => {
+    trackWallAction('close', hardStopReason, openedAt);
+    acknowledgeHardStop();
+  };
 
   // ESC dismissal is owned by ModalShell (escClose default true → onClose).
 
@@ -151,7 +179,7 @@ export function HardStopModal(): React.ReactElement | null {
     // retry time, and a single Close. No billing CTAs.
     const retryWhen = formatRetryWhen(rateLimitedUntil, Date.now());
     return (
-      <ModalShell title={t('Too many requests')} width={440} onClose={acknowledgeHardStop}>
+      <ModalShell title={t('Too many requests')} width={440} onClose={closeTracked}>
         <p className={styles.body}>
           {retryWhen
             ? t(
@@ -163,7 +191,7 @@ export function HardStopModal(): React.ReactElement | null {
               )}
         </p>
         <ModalFooter>
-          <Button kind="primary" size="md" onClick={acknowledgeHardStop}>
+          <Button kind="primary" size="md" onClick={closeTracked}>
             {t('Close')}
           </Button>
         </ModalFooter>
@@ -174,12 +202,14 @@ export function HardStopModal(): React.ReactElement | null {
   // Dismiss the popup THEN route to the plan screen — otherwise this modal
   // (mounted at the App root) would keep covering it.
   const handleUpgrade = (): void => {
+    trackWallAction('upgrade', hardStopReason, openedAt);
     acknowledgeHardStop();
     navigate({ kind: 'credits' });
   };
 
   // Same destination, but the plan screen opens the packages on arrival.
   const handleTopUp = (): void => {
+    trackWallAction('topup', hardStopReason, openedAt);
     requestTopUp();
     acknowledgeHardStop();
     navigate({ kind: 'credits' });
@@ -189,7 +219,7 @@ export function HardStopModal(): React.ReactElement | null {
     // Click-outside intentionally does NOT dismiss (scrimClose omitted) — Close,
     // the CTAs, and ESC are the deliberate dismiss paths. Base tier: the consent
     // gate and the top up modal stack above this at 1100.
-    <ModalShell title={t('Usage limit reached')} width={440} onClose={acknowledgeHardStop}>
+    <ModalShell title={t('Usage limit reached')} width={440} onClose={closeTracked}>
       <p className={styles.body}>
         {t(
           "You've used this week's allowance. Upgrade for a bigger weekly allowance, or top up to keep playing now.",
@@ -197,7 +227,7 @@ export function HardStopModal(): React.ReactElement | null {
       </p>
       {resetLine ? <p className={`${styles.body} ${styles.resetLine}`}>{resetLine}</p> : null}
       <ModalFooter>
-        <Button kind="quiet" size="md" onClick={acknowledgeHardStop}>
+        <Button kind="quiet" size="md" onClick={closeTracked}>
           {t('Close')}
         </Button>
         <Button kind="ghost" size="md" onClick={handleTopUp}>

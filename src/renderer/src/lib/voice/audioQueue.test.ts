@@ -332,3 +332,46 @@ describe('audioQueue per-clip completion (260925 act offers)', () => {
     expect(done.mock.calls).toEqual([[false]]);
   });
 });
+
+/**
+ * 261010 backseat staleness gate: a clip may carry a check that runs once, as
+ * it reaches the playhead. True drops it unplayed; the queue moves on.
+ */
+describe('audioQueue playhead stale check (261010)', () => {
+  function clip(q: ReturnType<typeof createAudioQueue>, text: string, stale?: () => boolean, onDone?: (c: boolean) => void) {
+    const h = q.enqueueStream('sui', text, 1, { blob: true, ...(stale ? { stale } : {}), ...(onDone ? { onDone } : {}) });
+    h.push(new ArrayBuffer(8));
+    h.end();
+    return h;
+  }
+  const said = (onSpeak: ReturnType<typeof vi.fn>) => {
+    const texts = onSpeak.mock.calls.filter((c) => c[0] === true).map((c) => c[2] as string | undefined);
+    return texts.filter((t, i) => i === 0 || t !== texts[i - 1]);
+  };
+
+  it('drops a clip whose check says stale when it reaches the playhead, and plays the next', () => {
+    const onSpeak = vi.fn();
+    const q = createAudioQueue(onSpeak);
+    let late = false;
+    const checked = vi.fn(() => late);
+    const done = vi.fn();
+    clip(q, 'still talking.');
+    const playing = FakeAudio.instances.at(-1)!;
+    clip(q, 'that ladder looks fun.', checked, done);
+    clip(q, 'next one.');
+    // Not asked while queued: only at the playhead.
+    expect(checked).not.toHaveBeenCalled();
+    late = true;
+    playing.dispatch('ended');
+    expect(checked).toHaveBeenCalledTimes(1);
+    expect(done.mock.calls).toEqual([[false]]);
+    expect(said(onSpeak)).toEqual(['still talking.', 'next one.']);
+  });
+
+  it('plays a clip whose check says fresh', () => {
+    const onSpeak = vi.fn();
+    const q = createAudioQueue(onSpeak);
+    clip(q, 'fresh line.', () => false);
+    expect(said(onSpeak)).toEqual(['fresh line.']);
+  });
+});

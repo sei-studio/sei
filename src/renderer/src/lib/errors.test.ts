@@ -107,6 +107,25 @@ describe('ERROR_COPY', () => {
     expect(ERROR_COPY.MODDED_HOST_REJECTED.toLowerCase()).not.toContain('summon again');
   });
 
+  // 261007: Fabric worlds were half of the rejections, and the minimap the old
+  // copy recommended was the mod those worlds required.
+  it('MODDED_HOST_REJECTED is not Forge-only and does not recommend minimaps', () => {
+    expect(ERROR_COPY.MODDED_HOST_REJECTED).not.toMatch(/forge/i);
+    expect(ERROR_COPY.MODDED_HOST_REJECTED).not.toMatch(/minimaps? (are|is) fine|client-only mods like minimaps/i);
+    expect(ERROR_COPY.MODDED_HOST_REJECTED).toContain('Sei profile');
+  });
+
+  it('classifies an online-mode kick before the LAN branch (261007)', () => {
+    for (const msg of [
+      'ONLINE_MODE_REJECTED: This world checks Minecraft accounts (online mode).',
+      'Kicked: multiplayer.disconnect.unverified_username',
+      'Failed to verify username!',
+    ]) {
+      expect(classifyRendererError(new Error(msg)).class).toBe('ONLINE_MODE_REJECTED');
+    }
+    expect(ERROR_COPY.ONLINE_MODE_REJECTED).toContain('online-mode=false');
+  });
+
   // 260926: the copy names the exact range (from minecraft-protocol's table)
   // and the launcher path, and no placeholder ever renders literally.
   // 260929 (R1c): the fix is the Sei profile, not a hand-made installation.

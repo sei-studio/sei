@@ -828,6 +828,15 @@ export interface SpokenLineContext {
    * Never sent to TTS.
    */
   confirmId?: string;
+  /**
+   * 261010 backseat staleness gate: the capture time of the newest frame the
+   * line was written from (BackseatTick.capturedAt). Set only on a backseat
+   * line the companion said on her own (start, idle, jolt), never on a reply
+   * to the player. The renderer drops such a line instead of playing it when
+   * it is both old and the screen has moved on (staleLineVerdict). Never sent
+   * to TTS.
+   */
+  ambientCapturedAt?: number;
 }
 
 /**
@@ -920,7 +929,8 @@ export type BotLifecycle =
   | { type: 'action'; name: string | null; args?: Record<string, unknown> }
   | { type: 'summon-ready' }
   // 260929: `reason` 'quit' = the companion called quit() and left on its own.
-  | { type: 'summon-stopped'; reason?: 'quit' | 'stop' | 'error' }
+  // 261008: `nextStepHook` = that quit's goodbye carried a next_time hook.
+  | { type: 'summon-stopped'; reason?: 'quit' | 'stop' | 'error'; nextStepHook?: boolean }
   | { type: 'exit'; code: number | null };
 
 /** A main → renderer current-action push (bot:action). */

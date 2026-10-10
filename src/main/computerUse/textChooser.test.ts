@@ -89,6 +89,8 @@ describe('parseTextChoice', () => {
 describe('TextChooser', () => {
   const signal = new AbortController().signal;
 
+  // The provider layer disables thinking for Haiku 5 (anthropicModelDefaults.js),
+  // so the chooser itself still sends no thinking setting.
   it('forces the choose tool on Haiku, without touching thinking', async () => {
     const call = vi.fn(async (_p: LlmCallParams) => res([{ name: 'choose', input: { index: 2, confidence: 0.8 } }]));
     const c = new TextChooser({ call, anthropic: true });
@@ -96,7 +98,7 @@ describe('TextChooser', () => {
     expect(c.textOnly).toBe(true);
     const out = await c.choose(state, options, [], signal);
     const p = call.mock.calls[0]![0];
-    expect(p.model).toBe('claude-haiku-4-5');
+    expect(p.model).toBe('claude-haiku-5-5');
     expect(p.toolChoice).toEqual({ type: 'tool', name: 'choose' });
     expect(p.tools!.map((t) => t.name)).toEqual(['choose']);
     expect(p.anthropicExtra).toBeUndefined();

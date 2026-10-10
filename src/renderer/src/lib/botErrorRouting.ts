@@ -28,7 +28,19 @@ const MINECRAFT_ROUTES: Partial<Record<ErrorClass, Route>> = {
   LAN_NOT_OPEN: (s) => ({ kind: 'lan-not-open', characterId: s.characterId }),
   // 260806 — a Forge/NeoForge world that requires its mods client-side
   // needs its own surface: the resolution is a different world.
-  MODDED_HOST_REJECTED: (s) => ({ kind: 'modded-host', characterId: s.characterId }),
+  MODDED_HOST_REJECTED: (s) => ({ kind: 'modded-host', characterId: s.characterId, message: s.message }),
+  // 261007 — the world checks Minecraft accounts (online mode). Used to retry
+  // three times and land on LAN_NOT_OPEN's "open to LAN" steps for a world
+  // that was open. The generic popup carries ERROR_COPY (the fix is a server
+  // or mod setting) and a Try again for after the player changes it. The
+  // message is dropped: it repeats the copy with the class prefix on it.
+  ONLINE_MODE_REJECTED: (s, game) => ({
+    kind: 'game-error',
+    game,
+    characterId: s.characterId,
+    error: s.error,
+    message: '',
+  }),
   // 260929 — the supervisor's Forge pre-gate refused the summon (a path that
   // skipped the renderer's host gate, e.g. a voice-call launch). Same blocking
   // surface the Summon button shows. The status carries only the message, so

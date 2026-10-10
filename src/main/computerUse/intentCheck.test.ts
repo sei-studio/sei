@@ -26,7 +26,7 @@ describe('createIntentCheck', () => {
     expect(await check('can you turn on dark mode', 'turn on dark mode', new AbortController().signal)).toBe(true);
     expect(f.seen).toHaveLength(1);
     const p = f.seen[0]!;
-    expect(p.model).toBe('claude-haiku-4-5');
+    expect(p.model).toBe('claude-haiku-5-5');
     expect(p.system).toBe(INTENT_SYSTEM);
     expect(p.tools).toBeUndefined();
     expect(p.messages).toEqual([{ role: 'user', content: intentPrompt('can you turn on dark mode', 'turn on dark mode') }]);

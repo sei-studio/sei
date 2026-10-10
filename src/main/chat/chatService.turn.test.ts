@@ -300,6 +300,27 @@ describe('sendChatMessage — parallel tool_use blocks', () => {
     expect(blocks.map((b) => b.tool_use_id)).toEqual(['tu_rem']);
     expect(result.replies.length).toBeGreaterThan(0);
   });
+
+  it('typed chat (261008) offers remember() and writes it to MEMORY.md too', async () => {
+    createSpy
+      .mockResolvedValueOnce({
+        content: [
+          { type: 'text', text: 'happy early birthday then.' },
+          { type: 'tool_use', id: 'tu_rem2', name: 'remember', input: { text: "ouen's birthday is November 14th" } },
+        ],
+      })
+      .mockResolvedValueOnce({ content: [] });
+
+    const result = await sendChatMessage({ characterId: CHAR, text: 'my birthday is nov 14 btw' }, deps());
+
+    const firstReq = createSpy.mock.calls[0][0] as { tools: Array<{ name: string }>; system: Array<{ text: string }> };
+    expect(firstReq.tools.map((t) => t.name)).toContain('remember');
+    expect(firstReq.tools.map((t) => t.name)).not.toContain('end_call');
+    expect(firstReq.system[firstReq.system.length - 1].text).toContain('Memory check:');
+    const mem = await readFile(path.join(paths.memoryDir(CHAR), 'MEMORY.md'), 'utf8');
+    expect(mem).toContain("ouen's birthday is November 14th");
+    expect(result.replies.map((r) => r.text).join(' ')).toContain('happy early birthday');
+  });
 });
 
 describe('search() / visit() hop loop (260909)', () => {

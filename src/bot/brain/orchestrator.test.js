@@ -361,6 +361,46 @@ describe('daily play limit (daily_dollar 429)', () => {
   })
 })
 
+// ──────────── unusable local Ollama model — 261010 ────────────
+
+describe('unusable Ollama model (no tools / not pulled)', () => {
+  function coded(code) {
+    return () => {
+      const e = new Error(`${code}: gemma3:12b does not support tools`)
+      e.code = code
+      throw e
+    }
+  }
+
+  for (const code of ['OLLAMA_MODEL_NO_TOOLS', 'OLLAMA_MODEL_MISSING']) {
+    it(`${code} stops the session with that class instead of a mute companion`, async () => {
+      const { adapter } = makeAdapter()
+      const onTerminalError = vi.fn()
+      const provider = makeProvider([coded(code), { text: 'never reached', toolUses: [] }])
+      const orch = createOrchestrator({
+        adapter, config: makeConfig(), reenqueue: () => {}, onTerminalError, _anthropicOverride: provider,
+      })
+      await orch.handleDispatch('sei:chat_received', chat('hi'))
+      expect(onTerminalError).toHaveBeenCalledTimes(1)
+      expect(onTerminalError.mock.calls[0][0]).toMatchObject({ error: code })
+      // Halted: a later event makes no further model call.
+      await orch.handleDispatch('sei:chat_received', chat('hello?'))
+      expect(provider.calls.length).toBe(1)
+    })
+  }
+
+  it('an unreachable Ollama is NOT terminal (it may just be restarting)', async () => {
+    const { adapter } = makeAdapter()
+    const onTerminalError = vi.fn()
+    const provider = makeProvider([coded('OLLAMA_UNREACHABLE')])
+    const orch = createOrchestrator({
+      adapter, config: makeConfig(), reenqueue: () => {}, onTerminalError, _anthropicOverride: provider,
+    })
+    await orch.handleDispatch('sei:chat_received', chat('hi'))
+    expect(onTerminalError).not.toHaveBeenCalled()
+  })
+})
+
 // ──────────── #2: player message surfaced LAST (highest salience) ────────────
 
 describe('composeSeedBlocks — player_message block (260616 #2)', () => {
@@ -842,5 +882,96 @@ describe('memory-tool hoist at batch split (260708)', () => {
     expect(captured.executed).toContain('follow')
     const md = await fs.readFile(config.memory.memory_md_path, 'utf8')
     expect(md).toContain('sei wants a house for the two of us')
+  })
+})
+
+// ──────────── next-time hook on goodbyes (261008) ────────────
+//
+// Retention fix 2(c): quit_game / end_call take an optional next_time field.
+// When the model fills it, the step is saved to MEMORY.md (where the next
+// greeting reads it) and the host is told a hook was left, which is all
+// bot_session_ended / voice_call_ended record. The farewell is untouched.
+
+describe('next_time hook on goodbye tools (261008)', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('both goodbye tools offer next_time', async () => {
+    let tools = null
+    const provider = { ...makeProvider([{ text: '', toolUses: [] }]), buildCachedSystem: (blocks, t) => { tools = t; return blocks } }
+    const { adapter } = makeAdapter()
+    createOrchestrator({ adapter, config: makeConfig(), reenqueue: () => {}, _anthropicOverride: provider })
+    for (const name of ['quit_game', 'end_call']) {
+      const tool = tools.find((t) => t.name === name)
+      expect(tool.input_schema.properties.next_time.type).toBe('string')
+      expect(tool.input_schema.required ?? []).not.toContain('next_time')
+    }
+  })
+
+  it('quit_game with next_time saves the plan to memory and reports the hook', async () => {
+    vi.useFakeTimers()
+    _setTickIntervalForTests(10_000_000)
+    const config = makeConfig()
+    const provider = makeProvider([
+      { text: '', toolUses: [{ id: 'q1', name: 'quit_game', input: { farewell: 'cya, next time we finish the roof', next_time: '  finish the\n cabin roof ' } }] },
+    ])
+    const onQuitRequested = vi.fn()
+    const { adapter } = makeAdapter()
+    const orch = createOrchestrator({ adapter, config, reenqueue: () => {}, onQuitRequested, _anthropicOverride: provider })
+    await orch.handleDispatch('sei:chat_received', chat('gtg, bye'))
+
+    const md = await fs.readFile(config.memory.memory_md_path, 'utf8')
+    expect(md).toContain('Plan for next time: finish the cabin roof')
+    // The model's own farewell is spoken as written.
+    expect(adapter.chat).toHaveBeenCalledWith('cya, next time we finish the roof')
+    await vi.advanceTimersByTimeAsync(11_000)
+    expect(onQuitRequested).toHaveBeenCalledWith({ nextStepHook: true })
+  })
+
+  it('quit_game without next_time writes nothing and reports no hook', async () => {
+    vi.useFakeTimers()
+    _setTickIntervalForTests(10_000_000)
+    const config = makeConfig()
+    const provider = makeProvider([
+      { text: '', toolUses: [{ id: 'q1', name: 'quit_game', input: { farewell: 'cya', next_time: '   ' } }] },
+    ])
+    const onQuitRequested = vi.fn()
+    const { adapter } = makeAdapter()
+    const orch = createOrchestrator({ adapter, config, reenqueue: () => {}, onQuitRequested, _anthropicOverride: provider })
+    await orch.handleDispatch('sei:chat_received', chat('bye'))
+
+    const md = await fs.readFile(config.memory.memory_md_path, 'utf8').catch(() => '')
+    expect(md).not.toContain('Plan for next time')
+    await vi.advanceTimersByTimeAsync(11_000)
+    expect(onQuitRequested).toHaveBeenCalledWith({ nextStepHook: false })
+  })
+
+  it('end_call with next_time saves the plan and reports the hook', async () => {
+    _setTickIntervalForTests(10_000_000)
+    const config = makeConfig()
+    const provider = makeProvider([
+      { text: '', toolUses: [{ id: 'e1', name: 'end_call', input: { farewell: 'night, village hunt tomorrow', next_time: 'find a village for beds' } }] },
+      { text: '', toolUses: [] },
+    ])
+    const onCallEndRequested = vi.fn()
+    const { adapter } = makeAdapter()
+    const orch = createOrchestrator({ adapter, config, reenqueue: () => {}, onCallEndRequested, _anthropicOverride: provider })
+    orch.setVoiceCall(true)
+    await orch.handleDispatch('sei:chat_received', { ...chat('night sui'), voice: true })
+
+    const md = await fs.readFile(config.memory.memory_md_path, 'utf8')
+    expect(md).toContain('Plan for next time: find a village for beds')
+    expect(onCallEndRequested).toHaveBeenCalledWith({ nextStepHook: true })
+  })
+
+  it('the first-spawn greeting is told about a saved plan', async () => {
+    _setTickIntervalForTests(10_000_000)
+    const { adapter } = makeAdapter()
+    const provider = makeProvider([{ text: '', toolUses: [] }])
+    const orch = createOrchestrator({ adapter, config: makeConfig(), reenqueue: () => {}, _anthropicOverride: provider })
+    await orch.handleDispatch('sei:idle', { reason: 'just_connected_first_spawn', quietMs: 0 })
+    const turn = JSON.stringify(provider.calls[0].messages ?? provider.calls[0])
+    expect(turn).toContain('Plan for next time')
   })
 })

@@ -60,7 +60,15 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   // re-open a world that was open and answering pings. Says what is actually
   // wrong and what actually works, and does NOT say "press Summon again":
   // retrying is the one thing guaranteed not to help here.
-  MODDED_HOST_REJECTED: 'This world runs Forge or NeoForge and only lets in players who have its mods. Sei joins as a normal Minecraft client, so the world turns it away. Open a world without server-side mods, or use Fabric with client-only mods like minimaps.',
+  // 261007: no longer says "Forge or NeoForge" only, or recommends minimaps:
+  // half of the rejections in the 30 days to 261006 were Fabric worlds, and
+  // both on 0.6.7 named Xaero's Minimap and World Map as the required mods.
+  MODDED_HOST_REJECTED: "This world runs mods that every player must also have installed, so it turns Sei's normal Minecraft client away. Map mods can count too, like Xaero's Minimap. Open a world from the Sei profile in the Minecraft Launcher, open it to LAN, and press Launch again.",
+  // 261007: kicked with multiplayer.disconnect.unverified_username. A plain
+  // Open to LAN world lets Sei in without an account, so this is a server
+  // with online-mode on, or a mod that turns it on. Retrying does not help
+  // until the setting changes.
+  ONLINE_MODE_REJECTED: "This world checks Minecraft accounts (online mode), and Sei joins without one, so the world turns it away. If it is a server you run, set online-mode=false in server.properties and restart it. If a mod opened the world to LAN, turn off its online mode option, or use Minecraft's own Open to LAN instead.",
   // 260929: refused before fork (Forge/NeoForge host on strong evidence). The
   // routed modal (ForgeHostBlocked) carries the launcher steps; this is the
   // one-line model-row copy.
@@ -99,6 +107,11 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   DST_ONE_COMPANION: "Don't Starve Together fits one companion at a time. Disconnect the companion already in your world, then press Play.",
   // Stardew Valley (game-adapters M1, 260908).
   STARDEW_FARMHAND_NO_MOD: "Someone in your farm doesn't have the Sei companion mod, so your companion can't appear for them. Ask them to install it, or play without them for now.",
+  // 261010: local Ollama backend. Before these, a model that could not run the
+  // game brain joined the world and then never said or did anything.
+  OLLAMA_NOT_RUNNING: "Sei can't reach Ollama. Start the Ollama app, check the Ollama address in Settings, then press Launch again.",
+  OLLAMA_MODEL_MISSING: "Ollama doesn't have the model picked in Settings. Download it in Ollama (ollama pull followed by the model name) or pick another model, then press Launch again.",
+  OLLAMA_MODEL_NO_TOOLS: "This Ollama model can't use tools, and your companion needs them to talk and act in games. Pick a model with tool support in Settings, like qwen3 or qwen3-vl, then press Launch again.",
   SMAPI_INSTALL_FAILED: "Couldn't install SMAPI, the mod loader Stardew Valley needs. Make sure the game is closed and try the setup again, or install SMAPI from smapi.io and then re-run the setup.",
 };
 
@@ -180,6 +193,11 @@ export function classifyRendererError(err: unknown): { class: ErrorClass; copy: 
   }
   if (/unsupported_mc_version|unsupported.*version|version.*not.*support|incompatible.*version/i.test(lower)) {
     return { class: 'UNSUPPORTED_MC_VERSION', copy: errorCopyText('UNSUPPORTED_MC_VERSION') };
+  }
+  // 261007: online-mode kick, also before the LAN branch ("disconnect" would
+  // not match it, but "kicked" in a wrapped message would).
+  if (/online_mode_rejected|unverified_username|failed to verify username/i.test(lower)) {
+    return { class: 'ONLINE_MODE_REJECTED', copy: t(ERROR_COPY.ONLINE_MODE_REJECTED) };
   }
   // Before the LAN branch (260806): the modded-host kick text contains "kicked"
   // and often "connect" ("Please install Forge to connect"), so it would

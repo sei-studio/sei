@@ -14,6 +14,7 @@
  *     whatever provider is selected (Settings wipes it on provider switch).
  */
 import {
+  COMPANION_MODEL,
   DEFAULT_MODELS,
   OPENAI_COMPAT_BASE_URLS,
   modelVision,
@@ -27,6 +28,7 @@ import { createAnthropicProvider } from './anthropic';
 import { createOpenAICompatProvider } from './openaiCompat';
 import { createGeminiProvider } from './gemini';
 import { createOllamaProvider, OLLAMA_DEFAULT_BASE_URL } from './ollama';
+import { ollamaModelVision } from './ollamaCapabilities';
 import type { LlmProvider } from './types';
 
 export type { LlmCallParams, LlmProvider, LlmResult, LlmToolUse, LlmUsage } from './types';
@@ -55,7 +57,7 @@ function providerConfigEntry(cfg: UserConfig, kind: ProviderKind): ProviderConfi
 
 /** The model a local provider kind would run, per config + catalog defaults. */
 export function resolveLocalModel(cfg: UserConfig, kind: ProviderKind): string {
-  return providerConfigEntry(cfg, kind).model ?? DEFAULT_MODELS[kind] ?? 'claude-haiku-4-5';
+  return providerConfigEntry(cfg, kind).model ?? DEFAULT_MODELS[kind] ?? COMPANION_MODEL;
 }
 
 /**
@@ -119,8 +121,8 @@ export async function buildLlmProvider(): Promise<LlmProvider> {
 }
 
 /**
- * Vision capability of the ACTIVE chat backend, computed from config alone —
- * no key required, never throws. cloud-proxy → 'yes' (Haiku sees). Feeds the
+ * Vision capability of the ACTIVE chat backend, computed from config (plus,
+ * for Ollama, a local /api/show probe) — no key required, never throws. cloud-proxy → 'yes' (Haiku sees). Feeds the
  * llm:capability push and the backseat session-start hard gate.
  */
 export async function activeLlmVision(): Promise<VisionVerdict> {
@@ -130,7 +132,13 @@ export async function activeLlmVision(): Promise<VisionVerdict> {
     const cfg = await loadConfig();
     const kind = (cfg.provider ?? 'anthropic') as ProviderKind;
     if (kind === 'anthropic') return 'yes';
-    return modelVision(kind, resolveLocalModel(cfg, kind));
+    const model = resolveLocalModel(cfg, kind);
+    // Ollama can tell us itself (/api/show capabilities); a name heuristic
+    // judged qwen2.5vl/gemma3/llama4 blind and locked Draw!/backseat (261010).
+    if (kind === 'ollama') {
+      return await ollamaModelVision(providerConfigEntry(cfg, kind).base_url ?? OLLAMA_DEFAULT_BASE_URL, model);
+    }
+    return modelVision(kind, model);
   } catch {
     return 'unknown';
   }

@@ -16,6 +16,8 @@ export const ZH_ONBOARD: Record<string, string> = {
   'No, I have an account': '不是，我已经有账号了',
   "Wait, that login has no account yet. So you ARE new here! Let's try that again.":
     '等等，这个登录还没有账号。所以你就是新来的！我们再来一次。',
+  "Wait, Sei hasn't been set up on this computer yet. Let's do that first!":
+    '等等，这台电脑上还没设置过 Sei 呢。我们先来设置一下吧！',
   'No account with that email yet? Press "I\'m new here" below.': '这个邮箱还没有账号？点击下方的“我是新来的”。',
   "Ah, welcome back. I'm not needed here then. Back to gaming I go!":
     '啊，欢迎回来～那就没我什么事啦，我打游戏去咯！',

@@ -97,7 +97,19 @@ You can see the game. So can they. Do not describe the state of it back to them,
 //     ends.
 // =============================================================================
 
-export const VOICE_CALL_PRIMER =
+// 260724 voice latency: speech is streamed out the moment the say() block
+// completes, so the earlier say() appears in the turn, the sooner the player
+// hears it. Scratchpad text and trailing tool calls generate AFTER the line
+// is already playing.
+// 261010: split out of VOICE_CALL_PRIMER (which is unchanged) so a surface
+// with no say() tool can swap it. Backseat speaks its plain text, and on its
+// first look Haiku 5.5 followed this sentence and called a say() tool that
+// does not exist there, leaving the session's opening line empty.
+export const VOICE_CALL_SAY_FIRST =
+  'The player is waiting on a live line, so answer fast: keep any private text output to a few words at most, and when you speak, make say() the FIRST tool call of the turn, before any other tool.'
+
+/** Everything in the voice-call primer except how the line is delivered (261010). */
+export const VOICE_CALL_PRIMER_BASE =
   'You are on a LIVE VOICE CALL with the player right now, talking out loud in real time, like a phone call. ' +
   'This is NOT a text conversation: you are not texting, typing, or messaging, you are speaking, and everything you say is spoken aloud to them the instant you say it. ' +
   'Talk the way you actually would out loud: no shorthand like "lmao" or "brb", no emoji, no abbreviations or written-only flourishes you would not say out loud, and never refer to this as texting or messaging or to "typing" or "sending" anything. ' +
@@ -106,7 +118,7 @@ export const VOICE_CALL_PRIMER =
   'A different language is NOT a transcription error: if the player speaks to you in another language, they really did, so answer them in that language instead of doubting it or sticking to your usual one. ' +
   'You can hang up with end_call() when the conversation is clearly over or the player asks you to, saying a short goodbye in the same turn. You cannot start calls; only the player can call you. ' +
   'If the player says they want to just chat, just talk, or hang out instead of playing, that means KEEP the call going, never hang up. If they mean you should stop playing the game, leave the game with quit_game() and keep talking on the call: leaving the game does not end the call. ' +
-  'The player often calls with no particular reason, just to hang out, so do not ask why they called or open with "what\'s up". Bring up something you know about them from your memory or your past conversations, ask how something they mentioned went, or just chat. When they tell you something about themselves or their life, save it with remember() in the same turn. ' +
+  'The player often calls with no particular reason, just to hang out, so do not ask why they called or open with "what\'s up". Bring up something you know about them from your memory or your past conversations, ask how something they mentioned went, or just chat. When they tell you something about themselves or their life, or the two of you agree on a plan, save it with remember() in the same turn. ' +
   // 260803: both sentences below come from a live session. The companion had no
   // idea what a short video feed was and kept asking why the player was "just
   // scrolling" and why they moved on from clips, so the shapes a share can take
@@ -115,12 +127,11 @@ export const VOICE_CALL_PRIMER =
   // way to start a share or a game itself, so a flat stretch of call is only
   // fixable by asking.
   'The player can also show you their screen while you talk, and it is usually one of a few things: a game they are playing, something they are working on, a film or a video you watch together, or a feed of short videos they scroll through. A short video feed, like Instagram Reels or TikTok or Shorts, is unrelated clips a few seconds to a minute long, swiped one after the next, so the screen becoming something completely different every few seconds is just how it works, not a decision they made that you should ask about. ' +
-  'If you run out of things to talk about, ask them to do something with you: play one of the games, or share their screen so you can watch along with whatever they are doing. ' +
-  // 260724 voice latency: speech is streamed out the moment the say() block
-  // completes, so the earlier say() appears in the turn, the sooner the player
-  // hears it. Scratchpad text and trailing tool calls generate AFTER the line
-  // is already playing.
-  'The player is waiting on a live line, so answer fast: keep any private text output to a few words at most, and when you speak, make say() the FIRST tool call of the turn, before any other tool.'
+  'If you run out of things to talk about, ask them to do something with you: play one of the games, or share their screen so you can watch along with whatever they are doing. '
+
+/** The voice-call primer with the say()-first sentence, for surfaces that speak through say(). */
+export const VOICE_CALL_PRIMER = VOICE_CALL_PRIMER_BASE + VOICE_CALL_SAY_FIRST
+
 
 // =============================================================================
 // 3. MINECRAFT SURFACE
@@ -591,6 +602,30 @@ export const SEED_HEADERS = {
   memory:
     'Your memory — what you have chosen to remember across sessions:',
 }
+
+// 261008: the "next time" hook on a goodbye (retention fix 2(c)). Every
+// goodbye tool (game quit_game + end_call, chat-surface quit_game + end_call)
+// carries an optional `next_time` field. The model fills it only when there
+// is something real to come back to, works it into its own goodbye, and the
+// host saves it to MEMORY.md so the next session's greeting can pick it up.
+// The field (not the spoken line) is what analytics counts, so nothing the
+// model says is ever parsed. Lives in the tool definitions, which ride the
+// cached prefix, so it adds nothing to per-turn input.
+export const NEXT_TIME_FIELD =
+  'Optional. Fill this only when there is something real to pick up next session: a goal you have not finished, something you two were in the middle of, or a plan from your memory. Write it in a few words, like "finish the roof". It is saved to your memory so you can bring it up next time. Leave it out when there is nothing like that, and never make one up.'
+
+export const NEXT_TIME_GOODBYE =
+  'If you fill next_time, work that next step into your goodbye in your own words, the way a friend would say "next time we finish the roof". If you leave it out, just say a normal goodbye.'
+
+// 261008: what the next session's greeting is told about a saved hook. The
+// line is written by nextStep.js (nextStepMemoryLine) and read back from
+// MEMORY.md like any other memory.
+// Chat surface only: there the goodbye is the reply text, not a tool field, so
+// the model tends to say the next step and skip the field (probe 261008, 1/3).
+export const NEXT_TIME_SPOKEN =
+  'When your goodbye brings up something to pick up next time, also put it in next_time so it gets saved.'
+export const NEXT_TIME_GREETING =
+  'If your memory has a "Plan for next time" entry from the last time you said goodbye, you can bring it up.'
 
 // 260703: session-end vs task-stop disambiguation. Haiku was following the
 // per-turn addenda below (which only ever named end_loop/stopTool) over the

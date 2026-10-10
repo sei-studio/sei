@@ -39,7 +39,7 @@ import type { LanState } from '../shared/ipc';
  *   - 'connect'       → the bot ran and reported a structured lifecycle error
  *                       before summon-ready (MC connect refused, bad version...).
  *   - 'boot_timeout'  → the bot never finished booting (no init-ack) within
- *                       the 60s cold-boot budget (260926).
+ *                       the cold-boot budget (260926; 90s since 261007).
  *   - 'ready_timeout' → the bot booted but did not reach summon-ready within
  *                       the 30s ready budget, which starts at init-ack.
  *   - 'mid_session'   → the bot WAS live and crashed (nonzero exit, no stop

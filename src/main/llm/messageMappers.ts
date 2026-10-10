@@ -110,6 +110,85 @@ export function anthropicToOpenAIMessages(
   return out;
 }
 
+// ── Anthropic messages → Ollama native /api/chat messages ─────────────────
+//
+// 261010: Ollama's NATIVE route is not the OpenAI shape, and reusing the
+// OpenAI mapper broke it in two ways (both 400 on Ollama 0.40):
+//   - images: `content` must be a STRING; pictures ride a separate
+//     `images: [<bare base64>]` field on the message. The OpenAI array form
+//     (text + image_url parts) failed with "cannot unmarshal array into ...
+//     messages.content of type string", so every image call on every surface
+//     (Draw!, backseat, act, Stardew portrait) errored. A `data:` prefix on a
+//     base64 string is also rejected ("illegal base64 data"), so it is
+//     stripped here.
+//   - tool calls: `function.arguments` must be an OBJECT; the OpenAI JSON
+//     string form failed with "Value looks like object, but can't find closing
+//     '}' symbol" on any request carrying an earlier tool call.
+// Tool results are {role:'tool', content, tool_name} (tool_name from the
+// matching tool_use); an image nested inside a tool_result is lifted onto the
+// user message that follows.
+export function stripDataUrl(data: string): string {
+  return data.replace(/^data:[^;,]*;base64,/, '');
+}
+
+export function anthropicToOllamaMessages(
+  messages: LlmMessage[],
+  systemText: string,
+): Array<Record<string, unknown>> {
+  const idToName = new Map<string, string>();
+  for (const msg of messages) {
+    if (msg.role !== 'assistant') continue;
+    for (const blk of Array.isArray(msg.content) ? (msg.content as AnyBlock[]) : []) {
+      if (blk?.type === 'tool_use' && blk.id && blk.name) idToName.set(blk.id, blk.name);
+    }
+  }
+  const out: Array<Record<string, unknown>> = [];
+  if (systemText) out.push({ role: 'system', content: systemText });
+  for (const msg of messages) {
+    const blocks = contentBlocks(msg.content);
+    if (msg.role === 'user') {
+      const textParts: string[] = [];
+      const images: string[] = [];
+      for (const blk of blocks) {
+        if (!blk) continue;
+        if (blk.type === 'text') textParts.push(blk.text ?? '');
+        else if (blk.type === 'image' && typeof blk.source?.data === 'string') images.push(stripDataUrl(blk.source.data));
+        else if (blk.type === 'tool_result') {
+          let content: string;
+          if (typeof blk.content === 'string') content = blk.content;
+          else if (Array.isArray(blk.content)) {
+            const inner = blk.content as AnyBlock[];
+            for (const b of inner) {
+              if (b?.type === 'image' && typeof b.source?.data === 'string') images.push(stripDataUrl(b.source.data));
+            }
+            content = inner.filter((b) => b?.type === 'text').map((b) => b.text ?? '').join('\n');
+          } else content = JSON.stringify(blk.content ?? '');
+          const name = idToName.get(blk.tool_use_id ?? '');
+          out.push({ role: 'tool', content, ...(name ? { tool_name: name } : {}) });
+        }
+      }
+      if (textParts.length > 0 || images.length > 0) {
+        out.push({ role: 'user', content: textParts.join('\n\n'), ...(images.length ? { images } : {}) });
+      }
+    } else if (msg.role === 'assistant') {
+      const textParts: string[] = [];
+      const toolCalls: Array<Record<string, unknown>> = [];
+      for (const blk of blocks) {
+        if (!blk) continue;
+        if (blk.type === 'text') textParts.push(blk.text ?? '');
+        else if (blk.type === 'tool_use') {
+          const args = blk.input && typeof blk.input === 'object' ? blk.input : {};
+          toolCalls.push({ function: { name: blk.name, arguments: args } });
+        }
+      }
+      const m: Record<string, unknown> = { role: 'assistant', content: textParts.join('') };
+      if (toolCalls.length > 0) m.tool_calls = toolCalls;
+      out.push(m);
+    }
+  }
+  return out;
+}
+
 export function anthropicToolsToOpenAITools(
   tools: LlmToolDef[] | undefined,
 ): Array<Record<string, unknown>> | undefined {

@@ -65,6 +65,8 @@ describe('endCallsForAccountSwitch', () => {
       character_id: 'sui',
       duration_ms: 30_000,
       reason: 'account_switch',
+      next_step_hook: false,
+      ended_by_companion: false,
     });
     expect(d.emitCallSession).toHaveBeenCalledWith('sui', 30_000);
     expect(pendingScopedWrites()).toBe(1);

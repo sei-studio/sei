@@ -26,10 +26,7 @@ import { raiseUsageLimitPopup } from './usageLimit';
 import {
   buildSystemBlocks,
   markLastMessageCached,
-  LAUNCH_TOOL,
-  QUIT_TOOL,
-  END_CALL_TOOL,
-  REMEMBER_TOOL,
+  chatSurfaceTools,
   SELF_LAUNCH_GAMES,
 } from './chatPrompts';
 import { isWebTool, webToolsFor, splitTextAroundServerSearch, replyTextOf, mergeFollowUpContent } from '../../bot/web/webTools.js';
@@ -38,6 +35,9 @@ import type { LlmCallParams, LlmMessage, LlmProvider, LlmResult, LlmToolDef } fr
 import type { UserConfig } from '../../shared/characterSchema';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import { isSilenceFiller } from '../../bot/brain/silenceFiller.js';
+import { normalizeNextStep, nextStepMemoryLine } from '../../bot/brain/nextStep.js';
+import { NEXT_TIME_GREETING } from '../../bot/brain/promptLibrary.js';
+import { noteCompanionGoodbye } from '../sessionGoodbye';
 import { isNoteLeak, stripThoughtTags } from './noteLeak';
 import { isCallActive } from '../voice/callState';
 import { stripAudioTags, SUPPORTS_AUDIO_TAGS } from '../voice/audioTags';
@@ -124,7 +124,7 @@ const MAX_HOPS = 6;
  */
 function chatTools(llm: Pick<LlmProvider, 'kind'>, voice: boolean): LlmToolDef[] {
   const web = webToolsFor({ serverWebSearch: llm.kind === 'anthropic' }) as LlmToolDef[];
-  return voice ? [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL, ...web] : [LAUNCH_TOOL, QUIT_TOOL, ...web];
+  return chatSurfaceTools(voice, web) as LlmToolDef[];
 }
 
 /**
@@ -296,6 +296,26 @@ async function honorRememberCalls(characterId: string, content: Anthropic.Messag
   // fold, so without this hook their remember() writes would never trigger
   // the chat-side compaction check. Fire-and-forget, cheap under threshold.
   if (appended) void maybeCompactChatMemory(characterId).catch(() => {});
+}
+
+/**
+ * 261008: a goodbye tool's optional `next_time` hook (quit_game / end_call,
+ * retention fix 2(c)). The model works the next step into its own goodbye;
+ * this only saves the FIELD to the shared MEMORY.md (the next greeting on any
+ * surface reads it back) and reports whether one was given, for the
+ * session's _ended event. Best-effort: a failed write never breaks the turn.
+ */
+async function honorNextStep(characterId: string, input: unknown): Promise<boolean> {
+  const step = normalizeNextStep((input as { next_time?: unknown } | null)?.next_time);
+  if (!step) return false;
+  if (!turnMayWrite(characterId, 'next_time')) return true;
+  try {
+    const written = await appendMemory(path.join(paths.memoryDir(characterId), 'MEMORY.md'), nextStepMemoryLine(step));
+    if (written > 0) void maybeCompactChatMemory(characterId).catch(() => {});
+  } catch (err) {
+    console.warn(`[sei] next_time append failed: ${(err as Error).message}`);
+  }
+  return true;
 }
 
 /**
@@ -724,6 +744,9 @@ async function prepareChatTurn(
     // 260730: a character created under the Chinese UI carries
     // metadata.language, which pins its surfaces regardless of auto-detect.
     language: surfaceLanguage(character.metadata, config.chat_language),
+    // 261008: every chat and voice turn offers remember() (chatSurfaceTools),
+    // so the status block carries the per-turn memory check.
+    memoryGuide: true,
   });
   // Voice: only the last N rows go to the model (VOICE_RECENT_CAP). Slice the raw
   // transcript BEFORE toMessages so role-merge + first-must-be-user still hold.
@@ -1192,6 +1215,10 @@ async function sendChatMessageImpl(
           // Task 5 — leave the game from chat. End the live session (no-op when
           // none is live) and tell the model it has logged off.
           quitCalled = true;
+          // 261008: only a live world has a session for bot_session_ended to
+          // close; otherwise the note would wait for an unrelated one.
+          const nextStepHook = await honorNextStep(args.characterId, toolUse.input);
+          if (deps.isInGame?.(args.characterId)) noteCompanionGoodbye(args.characterId, 'game', nextStepHook);
           deps.leaveGame?.(args.characterId);
           note =
             'You have left the Minecraft world and logged off. You are back in chat only now — ' +
@@ -1200,6 +1227,7 @@ async function sendChatMessageImpl(
           // Voice calls (260705) — hang up. The actual teardown is renderer-side
           // (it must finish speaking the goodbye first), so just flag the result.
           endCallRequested = true;
+          noteCompanionGoodbye(args.characterId, 'call', await honorNextStep(args.characterId, toolUse.input));
           note =
             'You are hanging up the call — it ends right after this turn. ' +
             'If you have not said goodbye yet, say it now (it is still spoken aloud). ' +
@@ -1333,7 +1361,7 @@ async function sendChatMessageImpl(
   } catch (err) {
     // Usage limit (260730): a 402/429 from the proxy raises the HardStopModal
     // instead of hiding behind the generic "sorry" fallback.
-    void raiseUsageLimitPopup(err);
+    void raiseUsageLimitPopup(err, args.voiceCall === true ? 'voice' : 'chat');
     // Interrupt/supersede surfaces as a typed sentinel so the renderer can tell
     // it apart from a real failure (and NOT show the "sorry" fallback).
     if (isAbortError(err) || ctrl.signal.aborted || superseded()) {
@@ -1566,7 +1594,7 @@ async function sendVoiceGreetingTurnImpl(
           'and the line is live now. Greet them first, like answering the phone: one short line, ' +
           'in your own voice. They often call with no particular reason, just to hang out, so do not ' +
           'ask why they called or what is up. You can bring up something you remember about them, ' +
-          'or just say hi. Do not mention this note.]';
+          `or just say hi. ${NEXT_TIME_GREETING} Do not mention this note.]`;
     const last = messages[messages.length - 1];
     if (last && last.role === 'user' && typeof last.content === 'string') {
       last.content = `${last.content}\n${note}`;
@@ -1610,7 +1638,7 @@ async function sendVoiceGreetingTurnImpl(
     // Superseded by a real message (or a real failure) — the greeting is
     // best-effort either way; the call works without it.
     if (!isAbortError(err)) {
-      void raiseUsageLimitPopup(err);
+      void raiseUsageLimitPopup(err, 'voice');
       console.warn(`[sei] voice greeting turn failed: ${(err as Error).message}`);
     }
     return [];
@@ -1757,7 +1785,7 @@ async function sendCompanionVoiceTurnImpl(
   } catch (err) {
     if (!isAbortError(err)) {
       // Usage limit (260730): raise the popup; useVoiceStore hangs up on it.
-      void raiseUsageLimitPopup(err);
+      void raiseUsageLimitPopup(err, 'voice');
       console.warn(`[sei] companion voice turn failed: ${(err as Error).message}`);
     }
     return [];
@@ -1853,7 +1881,11 @@ async function sendVoiceIdleTurnImpl(
     if (opts.onLaunch && res.content.some((b) => b.type === 'tool_use' && b.name === 'launch')) {
       try { opts.onLaunch(); } catch { /* best-effort — the reply still lands */ }
     }
-    const endCall = res.content.some((b) => b.type === 'tool_use' && b.name === 'end_call');
+    const endCallUse = res.content.find((b) => b.type === 'tool_use' && b.name === 'end_call');
+    const endCall = endCallUse !== undefined;
+    if (endCallUse && endCallUse.type === 'tool_use') {
+      noteCompanionGoodbye(characterId, 'call', await honorNextStep(characterId, endCallUse.input));
+    }
     const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');
     const replyText = textOf(res.content);
     if (!replyText) return { messages: [], ...(endCall ? { endCall: true } : {}) };
@@ -1866,7 +1898,7 @@ async function sendVoiceIdleTurnImpl(
     return { messages: spoken, ...(endCall ? { endCall: true } : {}) };
   } catch (err) {
     if (!isAbortError(err)) {
-      void raiseUsageLimitPopup(err);
+      void raiseUsageLimitPopup(err, 'voice');
       console.warn(`[sei] voice idle turn failed: ${(err as Error).message}`);
     }
     return { messages: [] };
@@ -2035,6 +2067,12 @@ function blockedReason(errorClass: string): string {
       return "this week's playtime credits are used up";
     case 'DAILY_LIMIT_REACHED':
       return 'the daily play limit was reached';
+    case 'OLLAMA_NOT_RUNNING':
+      return 'the Ollama app is not running; the player needs to start it';
+    case 'OLLAMA_MODEL_MISSING':
+      return 'the Ollama model picked in Settings is not downloaded; the player needs to pull it in Ollama or pick another model';
+    case 'OLLAMA_MODEL_NO_TOOLS':
+      return 'the Ollama model picked in Settings cannot use tools, which you need to play games; the player needs to pick one that can, like qwen3, in Settings';
     case 'FORGE_HOST_BLOCKED':
       return "the world is running Forge or NeoForge, which you can't join; the player needs to open the Sei profile in the Minecraft Launcher and host the world from there";
     default:

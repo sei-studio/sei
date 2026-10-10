@@ -224,7 +224,7 @@ async function buildChoosers(system: string): Promise<{
 
 /**
  * The text chooser, by config (SEI_ACT_TEXT_CHOOSER):
- *   haiku (default) - Haiku 4.5 in text mode through the same call (cloud proxy);
+ *   haiku (default) - the companion Haiku (TEXT_CHOOSER_MODEL) in text mode through the same call (cloud proxy);
  *   jev             - TypeSafe Jev, needs SEI_JEV_API_KEY (else none);
  *   local           - seam for an on-device scorer, not implemented (none);
  *   none            - every step on vision (also SEI_ACT_CHOOSER=vision).

@@ -288,7 +288,10 @@ const ConfigObjectSchema = z.object({
     // `apiKey: null` (anthropicClient.js buildSdkOptions). BYOK callers still
     // need a non-empty key. The cross-field invariant is enforced via .refine.
     api_key: z.string().default(''),                                        // required by .refine when cloudMode absent
-    model: z.string().default('claude-haiku-4-5'),                          // family alias → latest Haiku 4.5 snapshot (no dated pin to drift; see personaExpansion.ts EXPANSION_MODEL)
+    // 261008: Haiku 5.5. Mirrors src/shared/llmCatalog.ts COMPANION_MODEL
+    // (llmCatalogSync.test.js keeps them equal). anthropicClient sends Haiku 5
+    // requests with thinking disabled (llm/anthropicModelDefaults.js).
+    model: z.string().default('claude-haiku-5-5'),
     // 260610: 20s → 12s. This budget is the player-visible worst-case
     // silence when the backend misbehaves (healthy calls run 1-3s; a slow
     // first call with a full cache write plus anthropicClient's one capped

@@ -610,6 +610,18 @@ async function runWhatsNewCheck(): Promise<void> {
     return;
   }
 
+  // 261005: `update_installed {from, to}`. An update relaunch otherwise only
+  // shows up as another app_opened, which inflates "any event" retention.
+  // lastSeenVersion is absent on a fresh install (nothing was updated).
+  if (state.lastSeenVersion && state.lastSeenVersion !== cur) {
+    const from = state.lastSeenVersion;
+    const viaApp = Boolean(state.pending && state.pending.version === cur);
+    void import('./lazyAnalytics')
+      .then(({ loadAnalytics }) => loadAnalytics())
+      .then(({ capture }) => capture('update_installed', { from, to: cur, via: viaApp ? 'in_app' : 'other' }))
+      .catch(() => {});
+  }
+
   let shown = false;
   if (state.pending && state.pending.version === cur) {
     pendingWhatsNew = { version: cur, changelog: state.pending.changelog };

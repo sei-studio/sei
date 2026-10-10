@@ -19,11 +19,15 @@ import {
   CHAT_BASELINE,
   GAME_SURFACE_BASELINE,
   VOICE_CALL_PRIMER,
+  VOICE_CALL_PRIMER_BASE,
   renderPersona,
   renderChatProactivenessDirective,
   renderPunctuationDirective,
   VOICE_PUNCTUATION_DIRECTIVE,
   renderLanguageDirective,
+  NEXT_TIME_FIELD,
+  NEXT_TIME_GOODBYE,
+  NEXT_TIME_SPOKEN,
 } from '../../bot/brain/promptLibrary.js';
 import type { ChatLanguage } from '../../shared/chatLanguage';
 import { audioTagDirective } from '../voice/audioTags';
@@ -94,6 +98,20 @@ export interface BuildSystemArgs {
    */
   voiceCall?: boolean;
   /**
+   * 261010: false leaves the voice-call primer's (silence) option out. Backseat
+   * always speaks on a look, and Haiku 5.5 took the offer on its first look
+   * anyway (the start tick came back as (silence) in 5 of 9 live replays).
+   * Default true.
+   */
+  allowSilence?: boolean;
+  /**
+   * 261010: how a voice-call line reaches the player. 'say' (default) keeps
+   * VOICE_CALL_PRIMER as it is. 'text' is for a surface whose plain reply text
+   * IS the spoken line and that offers no say() tool (Backseat): the primer's
+   * say()-first sentence is swapped for VOICE_CALL_TEXT_LINE.
+   */
+  voiceSpeech?: 'say' | 'text';
+  /**
    * Multi-companion voice (260706): the OTHER companions' names on the same
    * call. When present (and voiceCall), block 0 gains a group-call note so the
    * model knows it is not alone on the line, that lines prefixed with a name in
@@ -124,6 +142,12 @@ export interface BuildSystemArgs {
    */
   extraStable?: string;
   /**
+   * 261010: one surface-specific line added to the header of the memory
+   * block. Backseat uses it to label the notes as real-life facts, so a pet
+   * or a person in them is not mapped onto what is on the watched screen.
+   */
+  memoryNote?: string;
+  /**
    * 260725: user-provided Knowledge (knowledgeStore.readKnowledgeForPrompt) —
    * files the user uploaded (imported memories from other platforms, facts
    * about themselves) that the companion should just KNOW without asking.
@@ -145,7 +169,36 @@ export interface BuildSystemArgs {
    * byte-stable for the whole game. Ignored for surface 'chat'.
    */
   pinnedClock?: string;
+  /**
+   * 261008: the chat surface offers CHAT_REMEMBER_TOOL, so the status block
+   * ends with CHAT_MEMORY_CHECK. Set by chatService only: backseat,
+   * chess and Draw! offer the plain REMEMBER_TOOL under their own contracts.
+   */
+  memoryGuide?: boolean;
 }
+
+/**
+ * 261008: the per-turn memory check, appended to the status block (the LAST
+ * system text before the transcript) on the chat surface. Measured with
+ * scripts/remember-eval.ts: with the save rules only in the remember()
+ * description, or in a # MEMORY paragraph in block 0, Haiku 5.5 still skipped
+ * a fact the player gave inside a story about something else (an exam they
+ * were stressed about, their dog barking at the mailman) and every plan made
+ * a few turns before a goodbye. Asked afterwards, it said it "was focused on
+ * replying to the stress". The check sits where the model reads it last, and
+ * it frames the emotional moment as the reason to save, not a distraction.
+ * The goodbye sentence asks for a look back over the whole conversation:
+ * "including one from earlier, when they are leaving" kept 5.5 at 33% on
+ * plans-before-goodbye, the look-back wording reached 92% (4.5 at 100% both).
+ * Static text, so it costs tokens but no cache miss.
+ */
+export const CHAT_MEMORY_CHECK =
+  'Memory check: when the player shares what is going on in their life, especially something stressful, exciting or annoying, that is exactly what a friend remembers and asks about later. ' +
+  'If their last message holds anything you would want to know next week, even as a side detail, call remember() with it in this turn, after your reply: ' +
+  'a name of someone or a pet, where they live or work, an exam or trip or other event coming up, something they love or hate, a request about how you talk to them or what to avoid, ' +
+  'or a plan you two agreed on. ' +
+  'When they say goodbye, look back over this conversation: anything above that you would want next time and have not saved yet (a plan for tomorrow, something they told you) goes into remember() now, since this conversation will be gone. ' +
+  'If there is nothing like that, just reply.';
 
 /**
  * Multi-companion voice (260706): the group-call awareness note, added to block
@@ -203,6 +256,11 @@ function formatNow(): string {
  * boundary (ephemeral marker on the persona block) keeps baseline+persona cached
  * across turns. Memory + summary re-bill but are small.
  */
+/** The delivery sentence for voiceSpeech 'text' (see BuildSystemArgs). */
+export const VOICE_CALL_TEXT_LINE =
+  'The player is waiting on a live line, so answer fast. The text you write is spoken aloud as your line, ' +
+  'so write only the line itself, with no tool call needed to speak it.';
+
 export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
   // Block 0 — being identity (every surface) + the chat surface contract. Same
   // UNIVERSAL_BASELINE the game brain caches, so the character is continuous.
@@ -221,13 +279,15 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
     type: 'text',
     text:
       (args.voiceCall
-        ? `[voice call] ${VOICE_CALL_PRIMER} ` +
-          // Chat-surface only (the game brain stays quiet by not calling say()).
-          'You do not have to answer every line: if the last thing said does not need a reply from you, reply with exactly (silence) and nothing else. It is never shown or spoken; it just ends your turn quietly. ' +
-          // 260725: Marv answered "Okay, bye." with (silence) and the call sat
-          // open in dead air until the player gave up and hung up. A farewell
-          // is the one line that must never be left hanging.
-          'One exception: when the player is saying goodbye or ending the call, never reply with (silence). Say a short goodbye back, and if the conversation is clearly over, hang up with end_call.\n\n'
+        ? `[voice call] ${args.voiceSpeech === 'text' ? VOICE_CALL_PRIMER_BASE + VOICE_CALL_TEXT_LINE : VOICE_CALL_PRIMER} ` +
+          (args.allowSilence === false
+            ? '\n\n'
+            : // Chat-surface only (the game brain stays quiet by not calling say()).
+              'You do not have to answer every line: if the last thing said does not need a reply from you, reply with exactly (silence) and nothing else. It is never shown or spoken; it just ends your turn quietly. ' +
+              // 260725: Marv answered "Okay, bye." with (silence) and the call sat
+              // open in dead air until the player gave up and hung up. A farewell
+              // is the one line that must never be left hanging.
+              'One exception: when the player is saying goodbye or ending the call, never reply with (silence). Say a short goodbye back, and if the conversation is clearly over, hang up with end_call.\n\n')
         : '') +
       (inGroupCall ? `[group call] ${groupCallNote(args.voicePeers as string[])}\n\n` : '') +
       `${UNIVERSAL_BASELINE}\n\n${isGame ? GAME_SURFACE_BASELINE : CHAT_BASELINE}\n\n` +
@@ -297,6 +357,7 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
       text:
         'What you remember about the player and your time together (from chat and from playing). ' +
         'These are your own past notes — bring relevant ones up naturally, do not list them. ' +
+        (args.memoryNote?.trim() ? `${args.memoryNote.trim()} ` : '') +
         'Each note starts with when you wrote it: check that against today\'s date before treating it as ' +
         'current — a note from weeks ago is an old thread ("that trip a couple weeks back"), not something ' +
         'that just happened:\n\n' +
@@ -354,7 +415,8 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
               ? `\nWorld status: an open ${w.name} world is detected, so you could join it if asked (launch with game "${w.game}"). Only call launch when the player clearly asks you to play or join right now.`
               : `\nWorld status: no open ${w.name} world is detected, so launch with game "${w.game}" would fail. Do not call launch for it; if they want to play ${w.name}, ask them to open their world in the game first.`,
           )
-          .join(''),
+          .join('') +
+        (args.memoryGuide ? `\n${CHAT_MEMORY_CHECK}` : ''),
   });
 
   // Prompt caching (260706): re-sending the full memory + summary uncached every
@@ -501,10 +563,14 @@ export const END_CALL_TOOL = {
     'Hang up the live voice call with the player. ' +
     'Use it when the conversation is clearly over or the player asks you to hang up. ' +
     'Say a short goodbye in the same turn; it is spoken aloud before the call ends. ' +
-    'You cannot start calls, only end them; after hanging up you can still be reached in text chat.',
+    NEXT_TIME_GOODBYE +
+    ' ' +
+    NEXT_TIME_SPOKEN +
+    ' You cannot start calls, only end them; after hanging up you can still be reached in text chat.',
   input_schema: {
     type: 'object' as const,
-    properties: {},
+    // 261008: retention hook, saved to MEMORY.md (chatService honorNextStep).
+    properties: { next_time: { type: 'string', description: NEXT_TIME_FIELD } },
     required: [] as string[],
   },
 };
@@ -515,10 +581,14 @@ export const QUIT_TOOL = {
     'Leave the Minecraft world and log off, ending your current play session. ' +
     'ONLY call this if you are currently in the player\'s world and they ask you to stop playing, leave, or log off. ' +
     'Do NOT call it if you are not in a world right now, and not just to pause; you have no world to leave then. ' +
-    'Say goodbye in the same turn before calling it. You can still be reached here in chat afterward.',
+    'Say goodbye in the same turn before calling it. ' +
+    NEXT_TIME_GOODBYE +
+    ' ' +
+    NEXT_TIME_SPOKEN +
+    ' You can still be reached here in chat afterward.',
   input_schema: {
     type: 'object' as const,
-    properties: {},
+    properties: { next_time: { type: 'string', description: NEXT_TIME_FIELD } },
     required: [] as string[],
   },
 };
@@ -546,6 +616,40 @@ export const REMEMBER_TOOL = {
     required: ['text'],
   },
 };
+
+/**
+ * 261008: remember() as the chat and voice surfaces offer it. Same name and
+ * schema as REMEMBER_TOOL (chatService dispatches by name), with a description
+ * that says WHAT is worth saving. Measured with scripts/remember-eval.ts on
+ * the base description: Haiku 4.5 saved 58% of the facts and plans worth
+ * keeping and Haiku 5.5 33%; 5.5 kept an agreed plan through a goodbye 3/9.
+ * The two things the base text never said were that the conversation itself
+ * does not carry over, and that plans and promises count. Chat-only on
+ * purpose: backseat, chess and Draw! keep REMEMBER_TOOL, whose description
+ * was tuned against backseat's measured speech suppression (backseatPrompts).
+ */
+export const CHAT_REMEMBER_TOOL = {
+  name: 'remember',
+  description:
+    'Save one line to your long-term memory. Only what you save here carries over: next session you will not have this conversation, just your memory. It loads at the start of every future session, in chat and in the game. ' +
+    'If you would want to know it next week, save it now, in the same turn they say it, even when they only mention it on the way to something else. ' +
+    'That covers facts about the player and their life (people and pets by name, where they live, their work or school, an upcoming event and its date), what they like and dislike, lasting rules for how you act with them, and plans or promises the two of you agreed on. ' +
+    'When they are saying goodbye and a plan from this conversation is not saved yet, save it then. ' +
+    'Things that only matter right now, and things your memory already has, need no line. ' +
+    "Write one short line about one thing, in your own voice, keeping specifics like names and dates. It is private: the player never sees it, so do not tell them you are saving it, just carry on the conversation. " +
+    'Your text output is what you SAY to the player: never write the memory, a note, or a plan there.',
+  input_schema: REMEMBER_TOOL.input_schema,
+};
+
+/**
+ * The chat surface's tool list, in the order the model sees it. One place so
+ * chatService (every text and voice turn kind) and the remember() eval
+ * (scripts/remember-eval.ts) send exactly the same list. `web` is whatever
+ * webToolsFor() returns for the provider; it always goes last.
+ */
+export function chatSurfaceTools<T>(voice: boolean, web: T[]): Array<T | typeof LAUNCH_TOOL | typeof CHAT_REMEMBER_TOOL | typeof END_CALL_TOOL> {
+  return voice ? [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, CHAT_REMEMBER_TOOL, ...web] : [LAUNCH_TOOL, QUIT_TOOL, CHAT_REMEMBER_TOOL, ...web];
+}
 
 // Silence on voice calls (260707): there is deliberately NO silence tool.
 // Models cannot produce an empty reply, but they DO reliably write literal

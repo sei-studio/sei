@@ -489,6 +489,41 @@ export type BackseatTickKind = 'user' | 'start' | 'jolt' | 'idle';
  */
 export const START_LOOK_MS = 1_800;
 
+// ── Staleness gate (261010) ───────────────────────────────────────────────
+//
+// Shawn: every comment lands in retrospect. A line about the screen is heard
+// a few seconds after the frame it was written from (replay: about 2.8 s to
+// line-ready, plus TTS), and longer when it queues behind a clip still
+// playing. A line the companion said on her own (never a reply to the player)
+// is dropped right before playback when it is BOTH older than
+// STALE_LINE_AGE_MS since its newest frame AND the screen now differs from
+// that frame by at least STALE_SCENE_DELTA (blockMaxDelta on the 32x18
+// thumbnails, 0..1). This is a timing gate: it never reads the line.
+//
+// The delta floor was measured on the three 261009 replay videos: active
+// gameplay alone puts blockMaxDelta at a median 0.19-0.26 over 5 s (p75
+// 0.26-0.36, p90 0.33-0.46), so 0.35 means "changed more than play normally
+// does in that time", i.e. a cut, a new area, a menu.
+
+/** A line younger than this always plays. */
+export const STALE_LINE_AGE_MS = 5_000;
+/** How different the screen must be from the line's frame to drop it. */
+export const STALE_SCENE_DELTA = 0.35;
+/** How often the capture worker hands the renderer a thumbnail for the gate. */
+export const SCENE_THUMB_INTERVAL_MS = 500;
+
+/**
+ * True when an ambient backseat line should be dropped instead of played.
+ * `sceneDelta` is null when there is nothing to compare against (capture
+ * stopped, or the line's frame has aged out of the thumbnail history); then
+ * only a line older than the whole history (BUFFER_MS) is dropped.
+ */
+export function staleLineVerdict(ageMs: number, sceneDelta: number | null): boolean {
+  if (ageMs < STALE_LINE_AGE_MS) return false;
+  if (sceneDelta === null) return ageMs >= BUFFER_MS;
+  return sceneDelta >= STALE_SCENE_DELTA;
+}
+
 /**
  * One unit of work sent renderer -> main. `grid` is a JPEG data URL of the
  * composited grid; `text` is the player's line on a 'user' tick.

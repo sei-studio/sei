@@ -23,6 +23,11 @@ export type ErrorClass =
   | 'NATIVE_MODULE_MISMATCH'
   | 'UNSUPPORTED_MC_VERSION'
   | 'MODDED_HOST_REJECTED'
+  // 261007: the world kicked the bot with multiplayer.disconnect.unverified_username.
+  // A plain Open-to-LAN world lets offline clients in, so this is a dedicated
+  // server with online-mode=true or a mod that enforces it. Used to fall
+  // through to LAN_NOT_OPEN ("re-open the world") after three retries.
+  | 'ONLINE_MODE_REJECTED'
   // 260929: summon refused before fork because the LAN host is Forge/NeoForge
   // on strong evidence (forgeHostBlock in shared/ipc.ts). Distinct from
   // MODDED_HOST_REJECTED, which is a join the world actually turned away.
@@ -73,7 +78,13 @@ export type ErrorClass =
   // custom-sprite NPC, so the mod refuses to spawn; SMAPI's own installer
   // failing is a different fix from the mod copy failing.
   | 'STARDEW_FARMHAND_NO_MOD'
-  | 'SMAPI_INSTALL_FAILED';
+  | 'SMAPI_INSTALL_FAILED'
+  // 261010: local Ollama backend problems that used to leave the companion
+  // silently mute in-game. Checked before the bot joins (botSupervisor) and
+  // again by the brain mid-session (orchestrator.js).
+  | 'OLLAMA_NOT_RUNNING'
+  | 'OLLAMA_MODEL_MISSING'
+  | 'OLLAMA_MODEL_NO_TOOLS';
 
 export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'BOT_START_TIMEOUT',
@@ -88,6 +99,7 @@ export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'NATIVE_MODULE_MISMATCH',
   'UNSUPPORTED_MC_VERSION',
   'MODDED_HOST_REJECTED',
+  'ONLINE_MODE_REJECTED',
   'FORGE_HOST_BLOCKED',
   // Skin + setup-wizard surfaces
   'MOD_DOWNLOAD_FAILED',
@@ -112,4 +124,7 @@ export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'DST_ONE_COMPANION',
   'STARDEW_FARMHAND_NO_MOD',
   'SMAPI_INSTALL_FAILED',
+  'OLLAMA_NOT_RUNNING',
+  'OLLAMA_MODEL_MISSING',
+  'OLLAMA_MODEL_NO_TOOLS',
 ]);

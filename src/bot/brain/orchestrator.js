@@ -31,7 +31,11 @@ import {
   renderCompanions,
   voiceGroupGuidance,
   teammateVoiceGuidance,
+  NEXT_TIME_FIELD,
+  NEXT_TIME_GOODBYE,
+  NEXT_TIME_GREETING,
 } from './prompts.js'
+import { normalizeNextStep, nextStepMemoryLine } from './nextStep.js'
 import { buildAnthropicTools } from './schemaBridge.js'
 import { createInflightTracker, describeArgs } from './inflight.js'
 import { createConvoMemory, playerLabel } from './convoMemory.js'
@@ -1517,8 +1521,11 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
           // say as you log off" cannot claim to stay.
           farewell: {
             type: 'string',
-            description: 'Your goodbye line, spoken to chat as you log off. Short, in your own voice, and it must agree that you are leaving.',
+            description: 'Your goodbye line, spoken to chat as you log off. Short, in your own voice, and it must agree that you are leaving. ' + NEXT_TIME_GOODBYE,
           },
+          // 261008: retention hook. Saved to MEMORY.md for the next greeting;
+          // its presence (never its text) is what bot_session_ended counts.
+          next_time: { type: 'string', description: NEXT_TIME_FIELD },
         },
         additionalProperties: false,
       },
@@ -1541,8 +1548,9 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
         properties: {
           farewell: {
             type: 'string',
-            description: 'Your goodbye line, spoken into the call as it ends. Short, in your own voice.',
+            description: 'Your goodbye line, spoken into the call as it ends. Short, in your own voice. ' + NEXT_TIME_GOODBYE,
           },
+          next_time: { type: 'string', description: NEXT_TIME_FIELD },
         },
         additionalProperties: false,
       },
@@ -1637,6 +1645,24 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     )
   }
   rebuildPersonalitySystem()
+
+  // 261010: an Ollama provider settles its vision capability asynchronously
+  // (/api/show). The cached system prefix lists the tools combinedToolsFor()
+  // offered at build time, so when the answer flips look() in or out, rebuild
+  // it once so the prose and the tools array agree. A provider replaced in the
+  // meantime (setBackend) is ignored.
+  function rebuildOnVisionSettle(provider) {
+    if (!provider?.visionReady) return
+    const before = provider.capabilities?.vision === true
+    Promise.resolve(provider.visionReady).then(() => {
+      if (anthropic !== provider) return
+      if ((provider.capabilities?.vision === true) === before) return
+      try { rebuildPersonalitySystem() } catch (err) {
+        logger.warn?.(`[sei/orch] vision-settle system rebuild failed: ${err?.message ?? err}`)
+      }
+    }).catch(() => {})
+  }
+  rebuildOnVisionSettle(anthropic)
 
   // Last result string from any registry.execute() this orchestrator has performed.
   // Fed back into the next personality turn via composeSnapshot's lastActionResult.
@@ -2635,7 +2661,7 @@ function maybeWarnByteCap(loop, warned) {
       eventText = `player just unpaused your game.${inflightLine}\n\n${eventText}`
     }
     if (data?.reason === 'just_connected_first_spawn' && !voiceCallActive) {
-      eventText += `\n\nFIRST CONTACT: you just spawned into your friend's world — this is the very first thing they will see from you this session. Before anything else, open with exactly ONE short in-character greeting via the say() tool (a hello, a tease, a boast — whatever fits your voice). Do NOT stay silent on this first tick and do NOT narrate the scene or your inventory; just greet them like you're glad (or smug) to be back, then you may start doing your own thing. If your memories above hold something relevant, work it into that greeting instead of a generic hello — anything the player said last time about themselves, about you, or about what they wanted to do in ${caps.gameName} (say("yo how'd the interview go?") beats say("back in business")). This is only a hint: if you have no memories or nothing fits, a plain greeting is completely fine — don't force it.`
+      eventText += `\n\nFIRST CONTACT: you just spawned into your friend's world — this is the very first thing they will see from you this session. Before anything else, open with exactly ONE short in-character greeting via the say() tool (a hello, a tease, a boast — whatever fits your voice). Do NOT stay silent on this first tick and do NOT narrate the scene or your inventory; just greet them like you're glad (or smug) to be back, then you may start doing your own thing. If your memories above hold something relevant, work it into that greeting instead of a generic hello — anything the player said last time about themselves, about you, or about what they wanted to do in ${caps.gameName} (say("yo how'd the interview go?") beats say("back in business")). ${NEXT_TIME_GREETING} This is only a hint: if you have no memories or nothing fits, a plain greeting is completely fine — don't force it.`
     }
     // 260618: refresh the progression view before composing the seed — latch
     // dimension milestones, detect whether the committed goal's milestone just
@@ -2952,6 +2978,27 @@ function maybeWarnByteCap(loop, warned) {
     logger.debug?.(`[sei/orch] terminateLoop loop=${loop.id} reason=${reason}`)
   }
 
+  // 261008: a goodbye tool's optional next_time hook (retention fix 2(c)).
+  // Saved to MEMORY.md as one entry so the next session's greeting, on any
+  // surface, reads it back like any memory. Returns whether the model gave
+  // one, which is all the host reports (bot_session_ended / voice_call_ended
+  // next_step_hook). The farewell itself is the model's own line, untouched.
+  async function saveNextStep(raw) {
+    const step = normalizeNextStep(raw)
+    if (!step) return false
+    try {
+      const written = await memoryLog.append(nextStepMemoryLine(step), new Date())
+      if (written) {
+        memoryCompactor.maybeCompact().catch(err =>
+          logger.warn?.(`[sei/orch] memoryCompactor.maybeCompact failed: ${err?.message ?? err}`))
+      }
+      logger.info?.(`[sei/orch] next-time hook saved (${step.length} chars)`)
+    } catch (err) {
+      logger.warn?.(`[sei/orch] next-time hook save failed: ${err?.message ?? err}`)
+    }
+    return true
+  }
+
   /**
    * 260514-gam: execute an INLINE_METADATA tool (remember / forget / end_loop)
    * synchronously and produce its tool_result block. Pure-metadata —
@@ -3043,8 +3090,11 @@ function maybeWarnByteCap(loop, warned) {
       if (farewell && !loop._saySpokenThisIteration) {
         try { _emitSayLine(loop, farewell) } catch {}
       }
+      // Awaited before the (deferred) teardown below, so the entry is on disk
+      // before the process exits.
+      const nextStepHook = await saveNextStep(use.input?.next_time)
       const fireQuit = () => {
-        try { onQuitRequested?.() } catch (err) { logger.warn?.(`[sei/orch] onQuitRequested failed: ${err?.message ?? err}`) }
+        try { onQuitRequested?.({ nextStepHook }) } catch (err) { logger.warn?.(`[sei/orch] onQuitRequested failed: ${err?.message ?? err}`) }
       }
       const waitMs = Math.min(10_000, Math.max(0, _lastChatSendDeadline - Date.now()) + 250)
       if (waitMs > 250) logger.info?.(`[sei/orch] quit deferred ${waitMs}ms so the goodbye finishes sending`)
@@ -3069,7 +3119,8 @@ function maybeWarnByteCap(loop, warned) {
         try { _emitSayLine(loop, farewell) } catch {}
       }
       lastActionResult = 'ended call'
-      try { onCallEndRequested?.() } catch (err) { logger.warn?.(`[sei/orch] onCallEndRequested failed: ${err?.message ?? err}`) }
+      const nextStepHook = await saveNextStep(use.input?.next_time)
+      try { onCallEndRequested?.({ nextStepHook }) } catch (err) { logger.warn?.(`[sei/orch] onCallEndRequested failed: ${err?.message ?? err}`) }
       return { result: { type: 'tool_result', tool_use_id: use.id, content: 'call ended — you are still in the game', is_error: false }, terminate: false }
     }
     if (use.name === 'say') {
@@ -3998,6 +4049,22 @@ function maybeWarnByteCap(loop, warned) {
                 error: 'CLOUD_CREDITS_DEPLETED',
                 message: 'Out of cloud credits — top up or switch to your own API key.',
               })
+            } catch (cbErr) {
+              logger.warn?.(`[sei/orch] onTerminalError callback threw: ${cbErr && cbErr.message}`)
+            }
+          }
+          return
+        }
+        // 261010: a local Ollama model that cannot do this job at all (no
+        // tool support, or not pulled). Every turn would fail identically and
+        // the companion just stood there mute; stop with a plain reason the
+        // launch panel shows (ERROR_COPY) instead.
+        if (err && (err.code === 'OLLAMA_MODEL_NO_TOOLS' || err.code === 'OLLAMA_MODEL_MISSING')) {
+          _halted = true
+          logger.warn?.(`[sei/orch] ${err.message} — stopping the session`)
+          if (typeof onTerminalError === 'function') {
+            try {
+              onTerminalError({ error: err.code, message: err.message })
             } catch (cbErr) {
               logger.warn?.(`[sei/orch] onTerminalError callback threw: ${cbErr && cbErr.message}`)
             }
@@ -5037,6 +5104,13 @@ function maybeWarnByteCap(loop, warned) {
      */
     visionCapable: () => { try { return anthropic.capabilities?.vision === true } catch { return false } },
     /**
+     * 261010: resolves once the active provider's vision capability is
+     * settled. Only Ollama has an async answer (its /api/show probe); every
+     * other provider's capability is static, so this resolves at once. Never
+     * rejects.
+     */
+    visionReady: () => Promise.resolve(anthropic?.visionReady).catch(() => {}),
+    /**
      * Phase 13-15 (PROXY-07): push a refreshed JWT into the live Anthropic
      * SDK for cloud-proxy mode. No-op when cloudMode is not active. Called
      * by brain.setAuthToken → src/bot/index.js's parentPort message handler.
@@ -5094,6 +5168,7 @@ function maybeWarnByteCap(loop, warned) {
         try { rebuildPersonalitySystem() } catch (err) {
           logger.warn?.(`[sei/orch] setBackend system rebuild failed: ${err?.message ?? err}`)
         }
+        rebuildOnVisionSettle(anthropic)
       } catch (err) {
         logger.warn?.(`[sei/orch] setBackend failed: ${err?.message ?? err}`)
       }

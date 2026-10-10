@@ -19,7 +19,9 @@ Companions that play your games with you, talk on voice, and remember you.
 
 ---
 
-Sei ([sei.gg](https://sei.gg)) is a desktop app for macOS and Windows. You pick a companion, then chat, call, and play games together. Sei can match you with companions, you can make your own, or you can import one you already talk to on another platform. Each companion has its own personality and a long-term memory that follows it from game to game.
+Sei ([sei.gg](https://sei.gg)) is an AI gaming companion app for macOS and Windows. You pick a companion, then chat, call, and play games together. In Minecraft (Java Edition), Stardew Valley, and Don't Starve Together the companion joins your game as a second player. In the app you can play chess and Draw! with it. With Backseat, it watches you play any other game, including Roblox, and talks with you about it. Sei can match you with companions, you can make your own, or you can import one you already talk to on another platform. Each companion has its own personality and a long-term memory that follows it from game to game.
+
+<sub>Not an official Roblox product. Not affiliated with, sponsored, or endorsed by Roblox Corporation. Roblox is a trademark of Roblox Corporation.</sub>
 
 <div align="center">
 
@@ -45,14 +47,14 @@ Sei ([sei.gg](https://sei.gg)) is a desktop app for macOS and Windows. You pick 
 - **Minecraft (Java Edition):** your companion joins your world opened to LAN as its own player, with its own skin. It follows, mines, gathers, crafts, builds, fights, and can see what is around it. More than one companion can join the same world.
 - **Stardew Valley:** your companion comes to your farm. It farms, clears land, waters and harvests, ships produce, fishes, and hands you items.
 - **Don't Starve Together:** your companion joins the world you host as a survivor it picks itself. It gathers, builds, keeps the fire going, fights, and warns you about danger.
-- **Chess:** play a game against your companion. Its strength comes from a chess engine and adapts to how you play. It talks while you play.
-- **Draw!:** take turns sketching and guessing with your companion.
+- **Chess:** play untimed games against your companion on a 3D board. Its human-like moves come from the Maia-3 model at 400 to 2000 Elo, and its strength adapts to how you play. It talks while you play.
+- **Draw!:** take turns sketching and guessing words with your companion. A web version with Sui is free at [sei.gg/draw](https://sei.gg/draw).
 - **Roblox (Backseat):** your companion watches your screen while you play. Tell it which Roblox game you are in and it knows a bit about it, comments as you go, and looks things up when you ask. It does not play inside Roblox.
 
 **Everywhere**
 
-- **Voice calls:** solo or group calls in more than 70 languages, during a game or on their own.
-- **Backseat:** share your screen on a call and your companion watches and talks about what you are doing.
+- **Voice calls:** solo or group calls in English, Chinese, Japanese, Korean, French, or Spanish, during a game or on their own.
+- **Backseat (beta):** share a window or your whole screen on a call and your companion watches any game with you and talks about it. No mods or per-game setup.
 - **Long-term memory:** companions remember you across chats, calls, and games.
 - **Knowledge import:** add text files (memories from another platform, facts about you) that a companion always knows.
 - **Avatar overlay:** an always-on-top window with your companion's portrait or an imported Live2D model.

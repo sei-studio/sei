@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createLlmProvider, SUPPORTED_PROVIDERS } from './index.js'
+import { clearOllamaContextState, neededNumCtx } from './ollamaContext.js'
+import { LOCAL_TIMEOUT_FLOOR_MS } from './ollamaProvider.js'
 
 const baseConfig = {
   anthropic: { api_key: 'sk-fake', model: 'claude-haiku-4-5', timeout_ms: 20_000 },
@@ -216,8 +218,10 @@ describe('ollama provider call', () => {
       llm: { provider: 'ollama', providers: { ollama: { base_url: 'http://localhost:11434', model: 'llama3.1' } } },
     }, { fetchImpl })
     const out = await p.call({ systemBlocks: [{ type: 'text', text: 's' }], tools: [], messages: [{ role: 'user', content: 'hi' }] })
-    expect(fetchImpl.mock.calls[0][0]).toBe('http://localhost:11434/api/chat')
-    const body = JSON.parse(fetchImpl.mock.calls[0][1].body)
+    // The provider's own /api/show capability probe (261010) also rides fetchImpl.
+    const chatCall = fetchImpl.mock.calls.find(c => c[0].endsWith('/api/chat'))
+    expect(chatCall[0]).toBe('http://localhost:11434/api/chat')
+    const body = JSON.parse(chatCall[1].body)
     expect(body.stream).toBe(false)
     // 260915: thinking is switched off on the wire so qwen3/deepseek-r1-class
     // models cannot spend the whole num_predict budget in message.thinking.
@@ -225,6 +229,142 @@ describe('ollama provider call', () => {
     expect(out.text).toBe('hi')
     expect(out.toolUses).toEqual([{ id: expect.stringMatching(/^toolu_/), name: 'go', input: { x: 1 } }])
     expect(out.usage).toEqual({ prompt_tokens: 5, completion_tokens: 7 })
+  })
+})
+
+// 261010 ("Ollama vision models all not working"): vision used to be
+// hard-coded false for every Ollama model, and images went out in the OpenAI
+// array shape that /api/chat rejects.
+describe('ollama provider vision', () => {
+  const ollamaCfg = (model) => ({
+    anthropic: baseConfig.anthropic,
+    llm: { provider: 'ollama', providers: { ollama: { base_url: 'http://localhost:11434', model } } },
+  })
+  const routed = (show) => vi.fn(async (url, init) => {
+    if (url.endsWith('/api/show')) {
+      if (show instanceof Error) throw show
+      return { ok: true, json: async () => show }
+    }
+    return { ok: true, json: async () => ({ message: { role: 'assistant', content: 'a red circle' }, done_reason: 'stop' }), _body: init?.body }
+  })
+
+  it('takes vision from /api/show capabilities', async () => {
+    const fetchImpl = routed({ capabilities: ['completion', 'vision'] })
+    const p = createLlmProvider(ollamaCfg('my-custom-model'), { fetchImpl })
+    expect(p.capabilities.vision).toBe(false) // name unknown until Ollama answers
+    expect(await p.visionReady).toBe(true)
+    expect(p.capabilities.vision).toBe(true)
+    const show = fetchImpl.mock.calls.find(c => c[0].endsWith('/api/show'))
+    expect(JSON.parse(show[1].body)).toEqual({ model: 'my-custom-model' })
+  })
+
+  it('a model Ollama reports without vision stays blind even if the name looks like a VLM', async () => {
+    const p = createLlmProvider(ollamaCfg('llava-but-not-really'), { fetchImpl: routed({ capabilities: ['completion'] }) })
+    expect(p.capabilities.vision).toBe(true)
+    expect(await p.visionReady).toBe(false)
+  })
+
+  it('falls back to the name when Ollama cannot answer', async () => {
+    const down = new Error('ECONNREFUSED')
+    const p1 = createLlmProvider(ollamaCfg('qwen2.5vl:3b'), { fetchImpl: routed(down) })
+    expect(await p1.visionReady).toBe(true)
+    const p2 = createLlmProvider(ollamaCfg('llama3.1'), { fetchImpl: routed(down) })
+    expect(await p2.visionReady).toBe(false)
+  })
+
+  it('sends a frame as `images` on the native route', async () => {
+    const fetchImpl = routed({ capabilities: ['vision'] })
+    const p = createLlmProvider(ollamaCfg('qwen2.5vl:3b'), { fetchImpl })
+    const out = await p.call({
+      systemBlocks: [{ type: 'text', text: 's' }],
+      tools: [],
+      messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'AAAA' } }, { type: 'text', text: 'what do you see?' }] }],
+    })
+    const chatCall = fetchImpl.mock.calls.find(c => c[0].endsWith('/api/chat'))
+    const body = JSON.parse(chatCall[1].body)
+    expect(body.messages[1]).toEqual({ role: 'user', content: 'what do you see?', images: ['AAAA'] })
+    expect(out.text).toBe('a red circle')
+  })
+})
+
+// 261010: "works a short while then craps itself" / "anything bigger flat
+// out does not work". Ollama ran the ~12k-token Minecraft prompt in its 4096
+// default window (front silently dropped), turns were aborted at the 12s
+// cloud budget and dropped without a retry, and a model with no tools or one
+// never pulled left the companion mute.
+describe('ollama provider robustness', () => {
+  const cfg = (model = 'qwen3:4b') => ({
+    anthropic: { ...baseConfig.anthropic, timeout_ms: 12_000 },
+    llm: { provider: 'ollama', providers: { ollama: { base_url: 'http://localhost:11434', model } } },
+  })
+  const sys = [{ type: 'text', text: 'x'.repeat(42_000) }]
+  const route = (chat) => vi.fn(async (url, init) => {
+    if (url.endsWith('/api/show')) return { ok: true, json: async () => ({ capabilities: ['completion', 'tools'] }) }
+    if (url.endsWith('/api/ps')) return { ok: true, json: async () => ({ models: [] }) }
+    return chat(url, init)
+  })
+  const okChat = async () => ({ ok: true, json: async () => ({ message: { role: 'assistant', content: 'hi' }, done_reason: 'stop' }) })
+
+  it('sends a num_ctx big enough for the whole prompt', async () => {
+    clearOllamaContextState()
+    const fetchImpl = route(okChat)
+    const p = createLlmProvider(cfg(), { fetchImpl })
+    await p.call({ systemBlocks: sys, tools: [], messages: [{ role: 'user', content: 'hi' }], maxTokens: 1024 })
+    const body = JSON.parse(fetchImpl.mock.calls.find(c => c[0].endsWith('/api/chat'))[1].body)
+    // 42k chars of system is about 9-12k tokens: far past Ollama's 4096 default.
+    expect(body.options.num_ctx).toBeGreaterThanOrEqual(16_384)
+    expect(body.options.num_ctx % 4096).toBe(0)
+    expect(body.options.num_ctx).toBeLessThanOrEqual(neededNumCtx(1e9, 1024))
+  })
+
+  it('a slow local turn gets the local floor, not the 12s cloud budget, and times out as a retryable timeout', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetchImpl = route((_url, init) => new Promise((_res, rej) => {
+        init.signal.addEventListener('abort', () => rej(Object.assign(new Error('aborted'), { name: 'AbortError' })))
+      }))
+      const p = createLlmProvider(cfg(), { fetchImpl })
+      const pending = p.call({ systemBlocks: [{ type: 'text', text: 's' }], tools: [], messages: [{ role: 'user', content: 'hi' }], timeoutMs: 12_000 }).catch(e => e)
+      await vi.advanceTimersByTimeAsync(12_000)
+      let settled = false
+      pending.then(() => { settled = true })
+      await vi.advanceTimersByTimeAsync(1)
+      expect(settled).toBe(false) // still waiting at 12s
+      await vi.advanceTimersByTimeAsync(LOCAL_TIMEOUT_FLOOR_MS)
+      const err = await pending
+      expect(err.name).toBe('AbortError')
+      expect(err.isTimeout).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a caller abort is NOT tagged as a timeout', async () => {
+    const ctl = new AbortController()
+    const fetchImpl = route((_url, init) => new Promise((_res, rej) => {
+      init.signal.addEventListener('abort', () => rej(Object.assign(new Error('aborted'), { name: 'AbortError' })))
+      setTimeout(() => ctl.abort(), 1)
+    }))
+    const p = createLlmProvider(cfg(), { fetchImpl })
+    const err = await p.call({ systemBlocks: [], tools: [], messages: [{ role: 'user', content: 'hi' }], signal: ctl.signal }).catch(e => e)
+    expect(err.name).toBe('AbortError')
+    expect(err.isTimeout).toBeUndefined()
+  })
+
+  it('"does not support tools" becomes OLLAMA_MODEL_NO_TOOLS', async () => {
+    const fetchImpl = route(async () => ({ ok: false, status: 400, text: async () => '{"error":"registry.ollama.ai/library/gemma3:12b does not support tools"}' }))
+    const p = createLlmProvider(cfg('gemma3:12b'), { fetchImpl })
+    const err = await p.call({ systemBlocks: [], tools: [{ name: 'say', description: 'd', input_schema: { type: 'object', properties: {} } }], messages: [{ role: 'user', content: 'hi' }] }).catch(e => e)
+    expect(err.code).toBe('OLLAMA_MODEL_NO_TOOLS')
+  })
+
+  it('a 404 model-not-found becomes OLLAMA_MODEL_MISSING; a refused connection OLLAMA_UNREACHABLE', async () => {
+    const missing = createLlmProvider(cfg('qwen3:14b'), { fetchImpl: route(async () => ({ ok: false, status: 404, text: async () => '{"error":"model \'qwen3:14b\' not found"}' })) })
+    expect((await missing.call({ systemBlocks: [], tools: [], messages: [{ role: 'user', content: 'hi' }] }).catch(e => e)).code).toBe('OLLAMA_MODEL_MISSING')
+    const down = createLlmProvider(cfg(), { fetchImpl: route(async () => { throw Object.assign(new TypeError('fetch failed'), { cause: new Error('connect ECONNREFUSED') }) }) })
+    const err = await down.call({ systemBlocks: [], tools: [], messages: [{ role: 'user', content: 'hi' }] }).catch(e => e)
+    expect(err.code).toBe('OLLAMA_UNREACHABLE')
+    expect(err.message).toContain('ECONNREFUSED')
   })
 })
 
