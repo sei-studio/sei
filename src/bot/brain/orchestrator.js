@@ -49,6 +49,7 @@ import { createMemoryCompactor } from './memory/compactor.js'
 import { createWorldRegistry } from './memory/worlds.js'
 import { resolveAdapterCaps } from './adapterDefaults.js'
 import { createWebSession, electronFetchProvider, botWebTools, isWebTool, runServerSearch } from '../web/webTools.js'
+import { sessionActionStats } from './actionStats.js'
 
 // Post-process say() text before it hits in-game chat. Safety-only:
 // whitespace collapse (chat is single-line) and force lowercase (hardcoded).
@@ -1109,6 +1110,9 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       // emitted:false — an empty say() does NOT consume the one-per-turn slot.
       return { emitted: false, content: 'say: nothing sent (empty after cleanup)' }
     }
+    // 261011: telemetry — the companion answered (a deduped repeat below still
+    // means the line is in chat). Counts only; the text is never recorded.
+    try { sessionActionStats.noteReply() } catch {}
     const lastSelf = convoMemory.recentChat.lastSelf?.() ?? null
     const suppressed = shouldSuppressLoopEndSay({
       triggerEvent: loop._triggerEvent,
@@ -4118,6 +4122,7 @@ function maybeWarnByteCap(loop, warned) {
       if (respText) emitThinkIfFull(respText)
       const sayResults = emitSayCalls(loop, toolUses)
       const saySpokenThisTurn = sayResults.size > 0 || loop._searchLineSpoken === true
+      try { sessionActionStats.noteLlmTurn({ said: saySpokenThisTurn }) } catch {}
       // Double-goodbye guard (260706): a quit()/end_call() farewell must not
       // fire when the same response already called say() — otherwise the two
       // goodbyes land back-to-back ("aight catch you later" + "later ouen,
@@ -4888,6 +4893,15 @@ function maybeWarnByteCap(loop, warned) {
       // 260611: a successful call resets the rate-limit redrive budget.
       _redriveStreak = 0
       return resp
+    } catch (err) {
+      // 261011: LLM error telemetry by class (brain/actionStats.js). A preempt
+      // abort is not an error; a wall-clock budget timeout is.
+      try {
+        if (err?.isTimeout === true || !(err?.name === 'AbortError' || signal?.aborted)) {
+          sessionActionStats.noteLlmError(err)
+        }
+      } catch {}
+      throw err
     } finally {
       loop._llmCallInFlight = false
       // One-shot: consumed by this call, never by the next one.

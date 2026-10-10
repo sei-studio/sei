@@ -359,6 +359,13 @@ export interface BotSupervisorOptions {
    * before it crosses to the renderer. Optional — undefined no-ops.
    */
   onDashboard?: (characterId: string, snapshot: unknown) => void;
+  /**
+   * 261011: cumulative per-action outcome counters from the live Minecraft bot
+   * ({type:'action-stats'} port message, every ~15s while changing plus once
+   * before any terminal lifecycle). Forwarded RAW; mcActionTelemetry.ts
+   * validates. Optional — undefined no-ops.
+   */
+  onActionStats?: (characterId: string, stats: unknown) => void;
   /** Forward to renderer via webContents.send('bot:log:batch', batch). Batched. */
   sendLog: (batch: LogBatch) => void;
   /**
@@ -1418,6 +1425,11 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // it. Not a BotStatus event — return before lifecycleToStatus.
       if ((data as { type?: string }).type === 'dashboard') {
         opts.onDashboard?.(characterId, (data as { snapshot?: unknown }).snapshot);
+        return;
+      }
+      // 261011: action-outcome telemetry snapshot. Not a BotStatus event.
+      if ((data as { type?: string }).type === 'action-stats') {
+        try { opts.onActionStats?.(characterId, (data as { stats?: unknown }).stats); } catch { /* telemetry never breaks the session */ }
         return;
       }
       // Don't Starve Together (game-adapters M2, 260908): the bot's loopback

@@ -54,7 +54,8 @@ import {
   publishGameDashboardSnapshot,
   clearGameDashboard,
 } from './games/gameDashboardService';
-import { IpcChannel, forgeHostBlock, FORGE_HOST_BLOCKED, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type GenProgressEvent, type VisionCapability, type ChatMessage, type SpokenLineContext } from '../shared/ipc';
+import { createMcSessionReporter } from './mcActionTelemetry';
+import { IpcChannel, lanHostWarning, forgeHostBlock, FORGE_HOST_BLOCKED, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type GenProgressEvent, type VisionCapability, type ChatMessage, type SpokenLineContext } from '../shared/ipc';
 
 // Lock the app name early so app.getPath('userData') resolves to
 // "Sei" (packaged) or "Sei Dev" (electron-vite dev) — keeping dev state
@@ -290,6 +291,8 @@ async function appendChatMessage(characterId: string, message: ChatMessage): Pro
 // <game> for Y" system row into that character's chat transcript. First-online
 // wins so a mid-session backend-switch re-emit doesn't reset the clock.
 const playStartedAt = new Map<string, { at: number; game: GameId }>();
+/** 261011: Minecraft per-action outcome telemetry (mcActionTelemetry.ts). */
+const mcSessionReporter = createMcSessionReporter(capture);
 /** 260926: boot-phase props of the last summon-ready, consumed by the first-online capture. */
 const pendingBootProps = new Map<string, Record<string, number | string | null>>();
 
@@ -411,6 +414,11 @@ function closePlaySession(id: string, end: SessionEndProps, failed: boolean): vo
   // Tracked (260926): an account switch stops the bots and then drains
   // this, so the row lands in the outgoing account's transcript.
   void trackScopedWrite(emitPlaySession(id, durationMs, started.game)).catch(() => {});
+  // 261011: Minecraft per-action outcome telemetry. This function runs once
+  // per live session for every end path (stop, quit(), kick/error, crash exit,
+  // app quit, account switch), so mc_session_actions goes out exactly once;
+  // its compact summary also rides on bot_session_ended.
+  const actionSummary = started.game === 'minecraft' ? mcSessionReporter.close(id, end.reason) : {};
   // One event name across games (the analytics dashboard sums playtime by
   // event name, keyed on `duration_ms`); `game` is the split.
   capture('bot_session_ended', {
@@ -418,6 +426,7 @@ function closePlaySession(id: string, end: SessionEndProps, failed: boolean): vo
     duration_ms: durationMs,
     duration_s: durationS,
     game: started.game,
+    ...actionSummary,
     ...end,
     // 261008: did the companion's goodbye set up a next session (retention).
     ...gameEndHookProps(consumeGoodbye(id, 'game')),
@@ -474,6 +483,14 @@ function broadcastStatus(status: BotStatus): void {
     if (!playStartedAt.has(id)) {
       const game: GameId = status.game ?? 'minecraft';
       playStartedAt.set(id, { at: Date.now(), game });
+      if (game === 'minecraft') {
+        const lanHost = latestLanState.kind === 'open' ? latestLanState.host : undefined;
+        const hostWarning = lanHostWarning(lanHost);
+        mcSessionReporter.online(id, {
+          hostClient: lanHost?.client ?? null,
+          modded: hostWarning === 'modded' || hostWarning === 'forge',
+        });
+      }
       // Analytics (260707): first-online is the "bot reached the world" signal.
       // 260926: the attempt's boot-phase breakdown (supervisor onSummonReady,
       // which fires just before this 'online' status), so dashboards can see
@@ -490,6 +507,9 @@ function broadcastStatus(status: BotStatus): void {
     }
   } else if (status.kind === 'error' || status.kind === 'idle') {
     closePlaySession(id, sessionEndProps(status, { accountTeardown: isAccountTeardownActive() }), isSessionFailure(status));
+    // 261011: a summon that never went live leaves no session to report; drop
+    // any snapshot it posted so it cannot leak into the next session.
+    mcSessionReporter.settled(id);
     // 260720: the thin summon_failed capture that used to live here (terminal
     // error with no live session → character_id + reason) moved to the
     // supervisor's onSummonFailure wiring (see createBotSupervisor below),
@@ -914,6 +934,7 @@ async function bootstrap(): Promise<void> {
     // on snapshot.game (Minecraft → mcDashboardService → mcdash:snapshot;
     // other games → gamedash:snapshot). Validated before the renderer sees it.
     onDashboard: publishGameDashboardSnapshot,
+    onActionStats: (characterId, stats) => mcSessionReporter.stats(characterId, stats),
     sendLog: broadcastLog,
     // Hand the skin server's baseUrl into each bot init payload.
     // Closure-via-getter so a later restart of the skin server (port-drift
