@@ -1305,6 +1305,18 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // What was in flight when the pause landed (e.g. "gather(oak_log)"), so the
   // unpause tick can offer to continue it. Cleared once consumed.
   let pausedInflightNote = null
+  // 261011: the live post-teardown drain (see drainPendingToolsOnTeardown), or
+  // null. Held here so every "stop what you are doing" path can reach its
+  // controller: abortActive (stop, pause), a new world action, and a new
+  // player chat / attack / death (abortDrain below). It used to run on a fresh
+  // AbortController nobody kept, so none of those could halt it.
+  let drainRun = null
+  // Events teardownLoop itself re-enqueues (the attack re-fire, a preserved or
+  // undelivered player line). They are the SAME event that caused the teardown
+  // (or one that predates the drained batch), not a new preempt, so they must
+  // not cancel the drain that teardown just started. Identity-keyed: the FSM
+  // passes the data object through untouched.
+  const drainSpared = new WeakSet()
   // 260703: sticky greeting. The full FIRST CONTACT block rides only the first
   // idle tick (reason:'just_connected_first_spawn'); when that loop is preempted
   // (attack, chat) before the model replies, the greet instruction is gone and
@@ -2178,6 +2190,11 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
         startedAt: Date.now(),
       }
     }
+    // 261011: a fresh turn acting in the world supersedes whatever is left of
+    // the previous turn's drained batch. Two bodies of work steering one bot
+    // (two pathfinder goals, a dig and a goTo) is the "runs alongside the new
+    // turn" failure.
+    abortDrain('superseded by a new action')
     const handle = inflight.start({ name, args })
     // Party redesign §2/§5: this is the single world-tool dispatch path. Surface
     // the action as a presence verb — but only for real world tools, never for
@@ -2286,6 +2303,14 @@ function maybeWarnByteCap(loop, warned) {
     const { isPlayerChat } = classifyChatEvent(event, data)
     const isIdle     = event === 'idle' || event === 'sei:idle'
 
+    // 261011: a NEW player line, attack or death preempts whatever is left of
+    // a previous turn's drained batch, exactly as it preempts a live action.
+    // Events teardownLoop re-fired itself (drainSpared) are not new.
+    if ((isPlayerChat || event === 'sei:attacked' || event === 'sei:death') &&
+        !(data && typeof data === 'object' && drainSpared.has(data))) {
+      abortDrain(isPlayerChat ? 'player spoke' : event === 'sei:death' ? 'died' : 'attacked')
+    }
+
     // Defense-in-depth idle gate (D-39): the FSM should already prevent this,
     // but if an idle tick races into the orchestrator while a Loop is active,
     // drop it.
@@ -2378,6 +2403,9 @@ function maybeWarnByteCap(loop, warned) {
         if (currentLoop.isTerminal || currentLoop._terminated) {
           const zombie = currentLoop
           logger.warn?.(`[sei/orch] player chat arrived on terminal loop ${zombie.id} — tearing down and re-dispatching`)
+          // The player spoke after this batch was committed: that is a new
+          // preempt, so the stranded tools are dropped, not drained.
+          zombie._dropPendingOnTeardown = 'player spoke'
           terminateLoop(zombie, 'chat-on-terminal-loop')
           await teardownLoop(zombie)
           return handleDispatch(event, data, signal)
@@ -2505,6 +2533,9 @@ function maybeWarnByteCap(loop, warned) {
           try { dyingLoop.inFlight.abortController.abort() } catch {}
         }
         try { dyingLoop.abortController.abort() } catch {}
+        // 261011: the bot respawned elsewhere and dropped its items, so the
+        // dying turn's queued actions are stale. Drop them instead of draining.
+        dyingLoop._dropPendingOnTeardown = 'died'
         terminateLoop(dyingLoop, 'death-preempt')
         await teardownLoop(dyingLoop)
         try { reenqueue('sei:death', data, 1 /* Priority.P1_CHAT */) } catch (err) {
@@ -2808,14 +2839,25 @@ function maybeWarnByteCap(loop, warned) {
    * suspend (260708 — a queued remember() used to die here), and
    * end_loop/quit/end_call are loop-control for a loop that no longer exists.
    *
-   * Reason-agnostic on purpose: the same drain is correct whether the teardown
-   * came from an error/timeout/terminal death (the incident's now-also-prevented
-   * root cause) or a P0-attack preempt — arming the armor the model just called
-   * for is, if anything, MORE desirable the instant you take a hit. The fresh
-   * loop the attack reseeds is a separate concern; equips don't move the bot and
-   * are effectively idempotent, so a rare overlap is a harmless no-op. Execution
-   * is sequential + detached so a slow action can't hold up teardown and two
-   * equips can't race; each action's own wall-clock timeout still bounds it.
+   * The drain survives the teardown that started it, including a P0-attack
+   * preempt: arming the armor the model just called for is, if anything, MORE
+   * desirable the instant you take a hit (the re-fired attack is in
+   * drainSpared). Execution is sequential + detached so a slow action can't
+   * hold up teardown and two equips can't race; each action's own wall-clock
+   * timeout still bounds it.
+   *
+   * 261011: it is NOT unstoppable. The run lives in `drainRun` with its own
+   * controller, and abortDrain() cancels the running tool and drops the rest
+   * on: stop / pause (abortActive), a new world action (startLongRunner), and
+   * a NEW player chat, attack or death. Each tool also passes the pause gate
+   * and is registered with the inflight tracker, so the snapshot's in_flight
+   * line and the pause note see it. Before this, the drain ran on a throwaway
+   * AbortController: stop, pause and preempts could not halt a drained goTo or
+   * gather, and it kept running alongside the new turn.
+   *
+   * `loop._dropPendingOnTeardown` (a reason string) skips the drain entirely:
+   * set by teardowns whose cause makes the batch stale before it starts (a
+   * death; a player line that arrived on a zombie loop).
    */
   function drainPendingToolsOnTeardown(loop) {
     const queue = loop?._pendingToolUses
@@ -2826,22 +2868,75 @@ function maybeWarnByteCap(loop, warned) {
     const worldTools = queue.filter(e => e && e.use && !isInlineMetadata(e.use.name))
     if (worldTools.length === 0) return
     const names = worldTools.map(e => e.use.name).join(', ')
+    if (loop._dropPendingOnTeardown) {
+      logger.info?.(`[sei/orch] loop ${loop.id} tore down mid-batch (${loop._dropPendingOnTeardown}) — dropping ${worldTools.length} undispatched tool(s) [${names}]`)
+      return
+    }
+    if (gamePaused) {
+      logger.info?.(`[sei/orch] loop ${loop.id} tore down mid-batch while paused — dropping ${worldTools.length} undispatched tool(s) [${names}]`)
+      return
+    }
     logger.warn?.(`[sei/orch] loop ${loop.id} tore down mid-batch with ${worldTools.length} undispatched tool(s) [${names}] — draining directly (no LLM) so the player's ordered actions still happen`)
+    // A drain still running from an earlier teardown is older work than this
+    // batch; this turn supersedes it.
+    abortDrain('superseded by a newer drained batch')
     // Surface the drain in the snapshot line too, so the next loop's model sees
     // that these actions were finished after the turn ended rather than dropped.
-    lastActionResult = `finishing queued actions after the turn ended: ${names}`
+    const banner = `finishing queued actions after the turn ended: ${names}`
+    lastActionResult = banner
+    const controller = new AbortController()
+    const run = { controller, loopId: loop.id, reason: null }
+    drainRun = run
     void (async () => {
-      for (const entry of worldTools) {
-        try {
-          const r = await registry.execute(entry.use.name, entry.use.input, null, {
-            ...config, signal: new AbortController().signal,
-          })
-          try { logActionResult(entry.use.name, r) } catch {}
-        } catch (err) {
-          logger.warn?.(`[sei/orch] post-teardown drain ${entry.use.name} failed: ${err?.message ?? err}`)
+      // Index of the first tool that did not run to completion (or length).
+      let cutFrom = worldTools.length
+      try {
+        for (let i = 0; i < worldTools.length; i++) {
+          // Pause gate: the same refusal startLongRunner applies. setGamePaused
+          // also aborts the run, this covers a pause that landed between tools.
+          if (controller.signal.aborted || gamePaused) { cutFrom = i; break }
+          const entry = worldTools[i]
+          const handle = inflight.start({ name: entry.use.name, args: entry.use.input })
+          try {
+            const r = await registry.execute(entry.use.name, entry.use.input, null, {
+              ...config, signal: controller.signal,
+            })
+            try { logActionResult(entry.use.name, r) } catch {}
+          } catch (err) {
+            logger.warn?.(`[sei/orch] post-teardown drain ${entry.use.name} failed: ${err?.message ?? err}`)
+          } finally {
+            inflight.end(handle)
+          }
+          // Aborted mid-tool: this one was cut short, drop it and the rest.
+          if (controller.signal.aborted) { cutFrom = i; break }
+        }
+      } finally {
+        if (drainRun === run) drainRun = null
+      }
+      if (cutFrom < worldTools.length) {
+        const cut = worldTools.slice(cutFrom).map(e => e.use.name)
+        logger.info?.(`[sei/orch] post-teardown drain (loop=${run.loopId}) stopped (${run.reason ?? (gamePaused ? 'paused' : 'aborted')}) — not finished: [${cut.join(', ')}]`)
+        // Only correct OUR banner; a newer turn's result line wins.
+        if (lastActionResult === banner) {
+          lastActionResult = `stopped the queued actions left from the last turn (${run.reason ?? 'interrupted'}): ${cut.join(', ')}`
         }
       }
     })()
+  }
+
+  /**
+   * 261011: cancel the live post-teardown drain, if any: aborts the running
+   * tool's signal (the registry/behaviors see it exactly like an in_flight
+   * abort, so actionStats records aborted_by_preempt) and the loop above
+   * drops the remaining tools. Idempotent. Returns true if it aborted a run.
+   */
+  function abortDrain(reason) {
+    const run = drainRun
+    if (!run || run.controller.signal.aborted) return false
+    run.reason = reason
+    logger.info?.(`[sei/orch] aborting post-teardown drain (loop=${run.loopId}): ${reason}`)
+    try { run.controller.abort() } catch {}
+    return true
   }
 
   /**
@@ -2917,12 +3012,14 @@ function maybeWarnByteCap(loop, warned) {
       const pi = pendingInterrupt
       pendingInterrupt = null
       try {
-        reenqueue('sei:chat_received', {
+        const redo = {
           username: pi.who,
           text: pi.chatText,
           message: pi.chatText,
           playerSpoke: true,
-        }, 1 /* Priority.P1_CHAT */)
+        }
+        drainSpared.add(redo)
+        reenqueue('sei:chat_received', redo, 1 /* Priority.P1_CHAT */)
         logger.info?.(`[sei/orch] undelivered player chat re-enqueued at teardown: ${pi.chatText.slice(0, 64)}`)
       } catch (err) {
         logger.warn?.(`[sei/orch] undelivered-chat re-enqueue failed: ${err.message}`)
@@ -2943,12 +3040,13 @@ function maybeWarnByteCap(loop, warned) {
       // attackedPriority(); kept as a literal because reenqueue takes a raw
       // priority and orchestrator.js does not import from fsm.js.
       const refirePriority = pa.data?.attackerKind === 'reflex' ? 1 /* P1_CHAT */ : 0 /* P0_SAFETY */
+      if (pa.data && typeof pa.data === 'object') drainSpared.add(pa.data)
       try { reenqueue('sei:attacked', pa.data, refirePriority) } catch (err) {
         logger.warn?.(`[sei/orch] sei:attacked re-enqueue failed: ${err.message}`)
       }
       if (pa.preservedInterrupt) {
         try {
-          reenqueue('sei:chat_received', {
+          const preserved = {
             username: pa.preservedInterrupt.who,
             text: pa.preservedInterrupt.chatText,
             message: pa.preservedInterrupt.chatText,
@@ -2957,7 +3055,10 @@ function maybeWarnByteCap(loop, warned) {
             // so its late reply still goes to the call / chat surface.
             ...(pa.preservedInterrupt.seiChat === true ? { seiChat: true } : {}),
             ...(pa.preservedInterrupt.voice === true ? { voice: true } : {}),
-          }, 1 /* Priority.P1_CHAT */)
+          }
+          // Spoken before the drained batch was cut loose: not a new preempt.
+          drainSpared.add(preserved)
+          reenqueue('sei:chat_received', preserved, 1 /* Priority.P1_CHAT */)
           logger.info?.(`[sei/orch] preserved interrupt re-enqueued: ${pa.preservedInterrupt.chatText.slice(0, 64)}`)
         } catch (err) {
           logger.warn?.(`[sei/orch] preserved interrupt re-enqueue failed: ${err.message}`)
@@ -4964,6 +5065,9 @@ function maybeWarnByteCap(loop, warned) {
         teammate: (prevText ? pendingInterrupt?.teammate === true : true) && data?.playerSpoke === false,
       }
       try { loop.abortController.abort() } catch {}
+      // Claimed events never reach handleDispatch, so its drain preempt check
+      // would miss this line.
+      if (!(data && typeof data === 'object' && drainSpared.has(data))) abortDrain('player spoke')
       return true
     }
     if (event === 'sei:attacked') {
@@ -5005,7 +5109,10 @@ function maybeWarnByteCap(loop, warned) {
    * The resulting sei:action_complete re-enqueue is dropped by the FSM (stop
    * calls queue.dispose() first, flipping `disposed`). Idempotent + defensive.
    */
-  function abortActive() {
+  function abortActive(reason = 'stopped') {
+    // 261011: the post-teardown drain runs outside any loop (often with
+    // currentLoop null), so it is cancelled before the loop check.
+    abortDrain(reason)
     const loop = currentLoop
     if (!loop) return
     try {
@@ -5072,7 +5179,7 @@ function maybeWarnByteCap(loop, warned) {
           const cur = inflight.current()
           pausedInflightNote = cur ? `${cur.name}(${describeArgs(cur.name, cur.args)})` : null
         } catch { pausedInflightNote = null }
-        try { abortActive() } catch {}
+        try { abortActive('paused') } catch {}
         emitActionVerb(null)
       } else {
         const note = pausedInflightNote
