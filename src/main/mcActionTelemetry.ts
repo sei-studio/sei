@@ -15,11 +15,13 @@
  *
  * Privacy: the snapshot is re-validated here (the bot is a separate process).
  * Only counts, durations and closed enums survive; action names must be
- * registry-style identifiers, model id / MC version pass a strict charset.
+ * registry-style identifiers, MC version passes a strict charset, and a
+ * model id is reported only when it is a public catalog name (else 'custom').
  * No chat text, names, coordinates or persona ever reach this module. The
  * analytics opt-out is enforced by capture() itself.
  */
 import { z } from 'zod';
+import { DEFAULT_MODELS } from '../shared/llmCatalog';
 
 export const MC_SESSION_ACTIONS_EVENT = 'mc_session_actions';
 /** Per-action keys are emitted for at most this many actions (most attempted first). */
@@ -97,6 +99,25 @@ function cleanString(v: unknown, re: RegExp, max: number): string | null {
   return re.test(s) ? s : null;
 }
 
+/**
+ * A model id is reported only when it is a public catalog name. On the cloud
+ * the proxy model is ours; a BYOK model comes from the user's own provider
+ * list, which can hold names the user chose (Ollama tags they created, OpenAI
+ * fine-tunes `ft:<base>:<org>:<suffix>:<id>`, HF paths with a username), so
+ * anything other than an Anthropic id or the provider default becomes 'custom'.
+ */
+export function reportableModelId(
+  kind: unknown,
+  provider: string | null,
+  model: string | null,
+): string | null {
+  if (model === null) return null;
+  if (kind === 'cloud') return model;
+  if (provider === 'anthropic' && /^claude-[a-z0-9.-]+$/.test(model)) return model;
+  if (provider && (DEFAULT_MODELS as Record<string, string>)[provider] === model) return model;
+  return 'custom';
+}
+
 export interface McSessionContext {
   characterId: string;
   durationMs: number;
@@ -129,7 +150,11 @@ export function mcSessionActionsProps(
   const kind = meta.provider_kind;
   out.provider_kind = kind === 'cloud' || kind === 'byok' || kind === 'ollama' ? kind : null;
   out.llm_provider = cleanString(meta.llm_provider, /^[a-z]{2,20}$/, 20);
-  out.model_id = cleanString(meta.model_id, /^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/, 80);
+  out.model_id = reportableModelId(
+    out.provider_kind,
+    out.llm_provider,
+    cleanString(meta.model_id, /^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/, 80),
+  );
   out.mc_version = cleanString(meta.mc_version, /^\d+\.\d+(\.\d+)?([-.][A-Za-z0-9.]+)?$/, 20);
 
   // Per-action rows, validated; ranked by attempts so the cap keeps the busiest.
@@ -249,6 +274,11 @@ export function createMcSessionReporter(capture: CaptureFn, now: () => number = 
   const live = new Map<string, { at: number; hostClient: string | null; modded: boolean }>();
   return {
     stats(characterId: string, raw: unknown): void {
+      // Snapshots are cumulative per bot process, so one that lands outside a
+      // live session (a late flush after close, a pre-spawn post) carries
+      // nothing a later in-session one will not, and storing it is the only
+      // way a stale snapshot could be reported for the NEXT session.
+      if (!live.has(characterId)) return;
       store.put(characterId, raw);
     },
     online(characterId: string, host: { hostClient: string | null; modded: boolean }): void {

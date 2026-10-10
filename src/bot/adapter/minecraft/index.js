@@ -99,7 +99,12 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false, act
         bot._seiActionActive = Math.max(0, (bot._seiActionActive ?? 1) - 1)
         try {
           const reason = classifyActionOutcome({ result, error, aborted: execConfig.signal?.aborted === true })
-          actionStats?.recordAction(name, Date.now() - startedAt, reason)
+          // Only registered names are recorded: `name` is the model's tool_use
+          // name, and a hallucinated one (any provider can emit a tool name it
+          // was not offered) is model-written text that must not become an
+          // analytics property key.
+          const statName = registry.schema(name) ? name : 'other'
+          actionStats?.recordAction(statName, Date.now() - startedAt, reason)
         } catch {}
       }
     },

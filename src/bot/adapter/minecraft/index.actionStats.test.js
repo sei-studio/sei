@@ -44,7 +44,10 @@ describe('adapter.executeAction records action outcomes', () => {
   it('a thrown error is recorded and still rethrown', async () => {
     const { adapter, actionStats, bot } = setup()
     await expect(adapter.executeAction('noSuchAction', {})).rejects.toThrow(/Unknown action/)
-    expect(actionStats.snapshot().actions.noSuchAction).toMatchObject({ n: 1, fail: 1, reasons: { bad_args: 1 } })
+    // An unregistered (model-invented) name is bucketed, never recorded verbatim.
+    const acts = actionStats.snapshot().actions
+    expect(acts.noSuchAction).toBeUndefined()
+    expect(acts.other).toMatchObject({ n: 1, fail: 1, reasons: { bad_args: 1 } })
     expect(bot._seiActionActive).toBe(0)
   })
 

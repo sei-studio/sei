@@ -5,6 +5,7 @@ import {
   createMcSessionReporter,
   mcSessionActionsProps,
   parseActionStats,
+  reportableModelId,
   sessionEndActionSummary,
   MAX_ACTIONS,
   MC_SESSION_ACTIONS_EVENT,
@@ -123,7 +124,7 @@ describe('mcSessionActionsProps', () => {
     expect(props.mc_version).toBeNull();
     expect(props.provider_kind).toBeNull();
     expect(props.llm_provider).toBeNull();
-    expect(props.model_id).toBe('qwen3:4b');
+    expect(props.model_id).toBe('custom');
     expect(props.llm_turns).toBe(0);
     expect(props.unanswered).toBe(0);
     expect(props).not.toHaveProperty('chat');
@@ -272,5 +273,32 @@ describe('mc_session_actions flushes exactly once on every end path', () => {
     h.terminal('a', 'user_stop');
     expect(h.events()).toHaveLength(1);
     expect(h.events()[0]).toMatchObject({ session_minutes: 2 });
+  });
+
+  it('a snapshot that lands after the session closed never reaches the next one', () => {
+    const h = harness();
+    h.online('a');
+    h.stats('a', snap({ counters: { llm_turns: 7 } }));
+    h.terminal('a', 'user_stop');
+    // A late flush with no terminal status after it (e.g. a timer tick between
+    // summon-stopped and exit, delivered after the idle).
+    h.stats('a', snap({ counters: { llm_turns: 99 } }));
+    h.online('a');
+    h.terminal('a', 'crash');
+    expect(h.events()).toHaveLength(2);
+    expect(h.events()[1]).toMatchObject({ stats_missing: true });
+  });
+});
+
+describe('reportableModelId', () => {
+  it('keeps public catalog ids and buckets user-chosen ones', () => {
+    expect(reportableModelId('cloud', 'anthropic', 'claude-haiku-5-5')).toBe('claude-haiku-5-5');
+    expect(reportableModelId('byok', 'anthropic', 'claude-sonnet-4-5')).toBe('claude-sonnet-4-5');
+    expect(reportableModelId('byok', 'openai', 'gpt-5-mini')).toBe('gpt-5-mini');
+    expect(reportableModelId('ollama', 'ollama', 'llama3.1')).toBe('llama3.1');
+    expect(reportableModelId('byok', 'openai', 'ft:gpt-4o:acme-corp:sarah:abc123')).toBe('custom');
+    expect(reportableModelId('ollama', 'ollama', 'my-girlfriend-v2:latest')).toBe('custom');
+    expect(reportableModelId('byok', 'openrouter', 'someuser/private-model')).toBe('custom');
+    expect(reportableModelId('byok', 'openai', null)).toBeNull();
   });
 });
