@@ -333,23 +333,4 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'They’re waiting in your party.': '他们正在你的队伍中等你。',
   'Go home': '回到主页',
   'Say hello': '打个招呼',
-
-  // ── Settings: menu bar / system tray group (261005) ──
-  'Menu bar': '菜单栏',
-  'System tray': '系统托盘',
-  'Keep Sei running in the menu bar': '让 Sei 在菜单栏中保持运行',
-  'Keep Sei running in the system tray': '让 Sei 在系统托盘中保持运行',
-  'About keeping Sei running': '关于让 Sei 保持运行',
-  'Closing the window keeps Sei running in the menu bar, so your companion can tell you when free play is back. Quit from the menu bar icon.':
-    '关闭窗口后 Sei 会继续在菜单栏中运行，免费游玩恢复时你的伙伴可以提醒你。要退出，请点菜单栏图标。',
-  'Closing the window keeps Sei running in the system tray, so your companion can tell you when free play is back. Quit from the tray icon.':
-    '关闭窗口后 Sei 会继续在系统托盘中运行，免费游玩恢复时你的伙伴可以提醒你。要退出，请点托盘图标。',
-  'Start Sei when I log in': '登录电脑时启动 Sei',
-  'About starting Sei at login': '关于登录时启动 Sei',
-  'Sei opens quietly in the menu bar when you log in, without a window.':
-    '登录电脑时，Sei 会在菜单栏中静默启动，不打开窗口。',
-  'Sei opens quietly in the system tray when you log in, without a window.':
-    '登录电脑时，Sei 会在系统托盘中静默启动，不打开窗口。',
-  'macOS needs your OK for this. Turn Sei on in System Settings, General, Login Items.':
-    '这需要 macOS 的许可。请在「系统设置」>「通用」>「登录项」中打开 Sei。',
 };

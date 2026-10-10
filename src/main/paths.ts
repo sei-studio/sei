@@ -112,12 +112,6 @@ export const paths = {
   // announcement to the INSTALL, delivered on the same cadence as the update
   // check, and must not re-announce itself on every account switch.
   noticesStatePath: () => path.join(userDataRoot(), 'notices.json'),
-  // Menu bar / tray setting + the refill-notification bookkeeping (261005).
-  // DEVICE-GLOBAL: the close-to-tray behaviour and the OS login item belong
-  // to the install, and the file is read synchronously at launch (before any
-  // profile scope exists) to decide whether a login launch starts hidden.
-  // The remembered wall inside it is keyed by account id.
-  traySettingsPath: () => path.join(userDataRoot(), 'tray-settings.json'),
   // 260603: one-shot marker that the global→profile partition has run for
   // this install. Device-global (the partition is a one-time layout upgrade).
   partitionMarkerPath: () => path.join(userDataRoot(), 'profiles-partitioned.json'),
