@@ -85,7 +85,7 @@ import { paths } from '../paths';
 import { loadConfig, updateConfig } from '../configStore';
 import { getCharacter } from '../characterStore';
 import { CHAT_TIMEOUT_MS } from '../chat/sdk';
-import { activeLlmVision, buildLlmProvider, type LlmProvider } from '../llm';
+import { activeLlmVision, buildLlmProvider, providerTimeoutMs, type LlmProvider } from '../llm';
 import { buildSystemBlocks, clockNow, REMEMBER_TOOL } from '../chat/chatPrompts';
 import { readChatContext, foldIfDue } from '../chat/continuity';
 import { accountSwitchingError, beginSessionStart, trackScopedWrite } from '../profile/scopeBarrier';
@@ -1563,7 +1563,8 @@ async function runGuessCall(
 
   const ctrl = new AbortController();
   s.guess.ctrl = ctrl;
-  const timeout = setTimeout(() => ctrl.abort(), CHAT_TIMEOUT_MS);
+  // providerTimeoutMs: a local model gets its provider's floor (261011).
+  const timeout = setTimeout(() => ctrl.abort(), providerTimeoutMs(llm, CHAT_TIMEOUT_MS));
   try {
     const res = await llm.call({
       maxTokens: 200,
@@ -2009,7 +2010,7 @@ async function runDrawCall(s: Session, key: string): Promise<boolean> {
 
   const ctrl = new AbortController();
   s.draw.ctrl = ctrl;
-  const timeout = setTimeout(() => ctrl.abort(), CHAT_TIMEOUT_MS * 2);
+  const timeout = setTimeout(() => ctrl.abort(), providerTimeoutMs(llm, CHAT_TIMEOUT_MS * 2));
 
   let toolCalls = 0;
   let cleared = false;

@@ -25,9 +25,9 @@ import type { UserConfig } from '../../shared/characterSchema';
 import { getAiBackendKind, hasApiKey, loadApiKey } from '../apiKeyStore';
 import { loadConfig } from '../configStore';
 import { createAnthropicProvider } from './anthropic';
-import { createOpenAICompatProvider } from './openaiCompat';
+import { createOpenAICompatProvider, effectiveTimeoutMs as openaiCompatTimeoutMs } from './openaiCompat';
 import { createGeminiProvider } from './gemini';
-import { createOllamaProvider, OLLAMA_DEFAULT_BASE_URL } from './ollama';
+import { createOllamaProvider, effectiveTimeoutMs as ollamaTimeoutMs, OLLAMA_DEFAULT_BASE_URL } from './ollama';
 import { ollamaModelVision } from './ollamaCapabilities';
 import type { LlmProvider } from './types';
 
@@ -161,4 +161,19 @@ export async function activeLlmModelLabel(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * The deadline a caller should put on its OWN abort timer for one `provider`
+ * request (261011). Providers apply a floor to `timeoutMs` (Ollama 120s for a
+ * cold local load + full prompt eval, DeepSeek's first-token floor), but a
+ * caller that aborts through its own AbortController after a fixed delay
+ * (Draw! guessed at 30s and drew at 60s) bypassed those floors, so on local
+ * hardware every Draw! call was cut off before the model answered. Cloud and
+ * Anthropic BYOK keep `ms` unchanged.
+ */
+export function providerTimeoutMs(provider: Pick<LlmProvider, 'kind'>, ms: number): number {
+  if (provider.kind === 'ollama') return ollamaTimeoutMs(ms);
+  if (provider.kind === 'anthropic' || provider.kind === 'gemini') return ms;
+  return openaiCompatTimeoutMs(provider.kind as ProviderKind, ms);
 }
