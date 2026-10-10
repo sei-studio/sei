@@ -214,14 +214,6 @@ electronFuses:
 extraResources:
   - from: build/icon.png
     to: icon.png
-  # 261005: menu bar / system tray icons (trayController.ts loads them from
-  # <resources>/tray). trayTemplate*.png is the macOS monochrome template
-  # (@2x picked up by name), tray.ico the Windows one. The .svg sources stay out.
-  - from: build/tray
-    to: tray
-    filter:
-      - "*.png"
-      - "*.ico"
 
 asarUnpack:
   - "src/bot/**/*"

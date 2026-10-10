@@ -47,7 +47,6 @@ import { t as tr, useT } from '../lib/i18n';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { Button } from './Button';
-import { WallTrayPrompt } from './WallTrayPrompt';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { useResetLine } from '../lib/useResetLine';
 import { sei } from '../lib/ipcClient';
@@ -227,8 +226,6 @@ export function HardStopModal(): React.ReactElement | null {
         )}
       </p>
       {resetLine ? <p className={`${styles.body} ${styles.resetLine}`}>{resetLine}</p> : null}
-      {/* One-time "keep Sei in your menu bar" offer (261005); renders nothing once seen or unsupported. */}
-      <WallTrayPrompt />
       <ModalFooter>
         <Button kind="quiet" size="md" onClick={closeTracked}>
           {t('Close')}

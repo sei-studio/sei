@@ -17,7 +17,6 @@
  */
 import { getAiBackendKind } from '../apiKeyStore';
 import type { CreditWallSurface } from '../creditWall';
-import { noteCreditWallHit } from '../tray/wallHook';
 
 export type UsageLimitReason = 'depleted' | 'rate_limited';
 
@@ -84,8 +83,6 @@ export async function raiseUsageLimitPopup(
         : { reason: 'depleted' },
       { surface, trigger: 'llm' },
     );
-    // Refill notification (261005): remember the wall for "free play is back".
-    if (reason === 'depleted') noteCreditWallHit();
     return reason;
   } catch {
     return null;

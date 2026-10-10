@@ -89,7 +89,6 @@ import { useCreditsStore } from './lib/stores/useCreditsStore';
 import { useCloudCharactersStore } from './lib/stores/useCloudCharactersStore';
 import { useLibraryStateStore } from './lib/stores/useLibraryStateStore';
 import { handleScopeEnding, resetAccountScopedState } from './lib/scopeReset';
-import { endCallSurfacesForTrayHide } from './lib/trayHide';
 import { AuthChoiceScreen } from './screens/AuthChoiceScreen';
 import { AcceptToSModal } from './components/AcceptToSModal';
 import { OfflineRetryModal } from './components/OfflineRetryModal';
@@ -418,12 +417,6 @@ export function App(): React.ReactElement {
   // surface up until app:scope-changed, which can be seconds away.
   useEffect(() => {
     return sei.onScopeEnding?.(() => handleScopeEnding());
-  }, []);
-
-  // 261005: closing the window with the menu bar / tray setting on hides it;
-  // a voice call and a screen share must not carry on unseen.
-  useEffect(() => {
-    return sei.onTrayHidden?.(() => endCallSurfacesForTrayHide());
   }, []);
 
   useEffect(() => {

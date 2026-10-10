@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0.3 0.3 2.6 2.6">
-  <!-- Sei logomark (the 4 bars of build/icon.svg) as a macOS menu bar template: black on transparent. -->
-  <g fill="#000000">
-    <rect x="0.5291667" y="1.0583333" width="1.0583333" height="0.52916664"/>
-    <rect x="1.5875" y="1.5875001" width="1.0583333" height="0.52916664"/>
-    <rect x="1.3229166" y="0.79375011" width="1.0583333" height="0.52916664"/>
-    <rect x="0.79375005" y="1.8520834" width="1.0583333" height="0.52916664"/>
-  </g>
-</svg>
