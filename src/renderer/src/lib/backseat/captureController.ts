@@ -21,6 +21,7 @@
 
 import { sei } from '../ipcClient';
 import {
+  BUFFER_MS,
   CLIP_MS,
   CLIPS_ENABLED,
   CAPTURE_FPS,
@@ -38,6 +39,7 @@ import {
 import { pushEnv, shareVoiceDuring, SHARE_VOICE_LEAD_MS, type EnvSample } from '../voice/echoGate';
 import { downmixInterleaved, resampleMono, rmsDb } from './pcm';
 import { createSttStream, type SttStream } from './sttStream';
+import { blockMaxDelta } from './signals';
 import { createSwitchDwell } from './switchDwell';
 
 /**
@@ -119,6 +121,12 @@ export interface CaptureHandle {
    *  flush wait a tick uses) so an ambiguous echoProbe can be re-asked with
    *  the words that were still being transcribed. */
   echoFlush: () => Promise<void>;
+  /**
+   * 261010 staleness gate: how far the screen has moved since `at` (a line's
+   * frame time), as blockMaxDelta between the thumbnails nearest `at` and
+   * now (0..1). Null when there is no thumbnail within a second of `at`.
+   */
+  sceneChangeSince: (at: number) => number | null;
 }
 
 let active: CaptureHandle | null = null;
@@ -444,13 +452,12 @@ export async function startCapture(
       }, gapLeft + 250);
       return;
     }
-    const grid = await composite();
+    const { grid, transcript } = await look();
     if (!grid) {
       console.warn('[backseat] switch tick dropped: no grid from worker');
       return;
     }
     if (paused || stopped) return;
-    const transcript = await tickTranscript();
     await sendTick('jolt', grid, {
       joltReason: 'switch',
       sinceSwitchS: Math.round(sinceChangeMs / 100) / 10,
@@ -628,6 +635,22 @@ export async function startCapture(
     });
   };
 
+  /**
+   * 261010: one look the companion takes on its own (start, idle, jolt): the
+   * bounded STT flush FIRST, then the grid. It used to be the other way round
+   * ("the grid and the transcript describe the same window"), which shipped a
+   * grid already as old as the flush, up to STT_FLUSH_WAIT_MS (1.2 s); the
+   * 261010 replay measured the newest frame at 1.4 s old when the tick left.
+   * Every second of that is a second later the line lands after what it is
+   * about. The transcript now ends where the flush began, a second or so
+   * before the newest frame, and the next look picks up what it missed. The
+   * player's own tick keeps its latched grid (the moment they began talking).
+   */
+  const look = async (): Promise<{ grid: Grid | null; transcript: string | undefined }> => {
+    const transcript = await tickTranscript();
+    return { grid: await composite(), transcript };
+  };
+
   let paused = false;
   let stopped = false;
   /** Grid latched when the player began speaking or typing. */
@@ -670,8 +693,21 @@ export async function startCapture(
     }
   };
 
+  // 261010 staleness gate: the worker's twice-a-second thumbnails, newest
+  // last, kept as long as the frame ring (BUFFER_MS).
+  const sceneThumbs: Array<{ at: number; thumb: Uint8ClampedArray }> = [];
+  const sceneChangeSince = (at: number): number | null => {
+    const newest = sceneThumbs[sceneThumbs.length - 1];
+    if (!newest) return null;
+    let best: { at: number; thumb: Uint8ClampedArray } | null = null;
+    for (const t of sceneThumbs) if (!best || Math.abs(t.at - at) < Math.abs(best.at - at)) best = t;
+    if (!best || Math.abs(best.at - at) > 1_000) return null;
+    return blockMaxDelta(best.thumb, newest.thumb);
+  };
+
   worker.onmessage = (e: MessageEvent): void => {
     const msg = e.data as
+      | { type: 'thumb'; at: number; thumb: Uint8ClampedArray }
       | { type: 'grid'; requestId: string; grid: Grid | null }
       | {
           type: 'jolt';
@@ -692,6 +728,11 @@ export async function startCapture(
           colorThr: number | null;
           samples: number;
         };
+    if (msg.type === 'thumb') {
+      sceneThumbs.push({ at: msg.at, thumb: msg.thumb });
+      while (sceneThumbs.length && msg.at - sceneThumbs[0].at > BUFFER_MS) sceneThumbs.shift();
+      return;
+    }
     if (msg.type === 'grid') {
       const resolve = pendingGrids.get(msg.requestId);
       if (resolve) {
@@ -726,13 +767,12 @@ export async function startCapture(
         return;
       }
       void (async () => {
-        const grid = await composite();
+        // On a gain jolt the transcript is literally what the loud thing said.
+        const { grid, transcript } = await look();
         if (!grid) {
           console.warn('[backseat] jolt tick dropped: no grid from worker');
           return;
         }
-        // On a gain jolt the transcript is literally what the loud thing said.
-        const transcript = await tickTranscript();
         await sendTick('jolt', grid, {
           joltReason: msg.reason,
           transcript,
@@ -768,17 +808,12 @@ export async function startCapture(
       idleBusy = true;
       void (async () => {
         try {
-          const grid = await composite();
+          const { grid, transcript } = await look();
           if (!grid) {
             // Capture is not producing frames; there is nothing to look at.
             console.warn('[backseat] idle look skipped: no grid from worker (ring empty?)');
             return;
           }
-          if (paused || stopped) return;
-          // The grid and the transcript describe the same window: composite
-          // first, then the bounded STT flush (the spec's "wait a few
-          // milliseconds longer for the stt to catch up").
-          const transcript = await tickTranscript();
           if (paused || stopped) return;
           await sendTick('idle', grid, { transcript });
         } catch {
@@ -811,13 +846,13 @@ export async function startCapture(
     if (paused || stopped) return;
     void (async () => {
       try {
-        const grid = await composite();
+        const { grid, transcript } = await look();
         if (!grid) {
           console.warn('[backseat] opening look skipped: no grid yet');
           return;
         }
         if (paused || stopped) return;
-        await sendTick('start', grid, { transcript: await tickTranscript() });
+        await sendTick('start', grid, { transcript });
       } catch {
         /* a missed opening line is not a broken session */
       }
@@ -854,6 +889,7 @@ export async function startCapture(
 
   const handle: CaptureHandle = {
     stream,
+    sceneChangeSince,
     stop: () => {
       if (stopped) return;
       stopped = true;

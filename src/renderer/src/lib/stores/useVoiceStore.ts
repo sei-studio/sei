@@ -47,6 +47,7 @@ import { useDataStore } from './useDataStore';
 // turn to is already running one with the screen attached. One-way — the
 // backseat store knows nothing about calls.
 import { useBackseatStore, backseatCapture } from './useBackseatStore';
+import { createStaleGate } from '../backseat/staleGate';
 import { voicePitchRate } from '@shared/voicePitch';
 import { createAudioQueue, type AudioQueue, type TtsStreamHandle } from '../voice/audioQueue';
 import { t, uiLanguage } from '../i18n';
@@ -522,6 +523,15 @@ function asParticipants(ids: string[]): Participant[] {
 /** Pitch shift for a companion's TTS clips, as a frequency multiplier (1 = as
  * recorded). Applied locally at playback and pace-preserving, so synthesis is
  * asked for nothing (see shared/voicePitch.ts, lib/voice/pitchBus.ts). */
+/** 261010: the backseat staleness gate for one ambient line (staleGate.ts).
+ *  With no capture running there is nothing to compare, so only a line older
+ *  than the whole thumbnail history is dropped. */
+function staleGate(text: string, capturedAt: number): (when: 'arrival' | 'playhead') => boolean {
+  return createStaleGate(text, capturedAt, {
+    sceneChangeSince: (at) => backseatCapture()?.sceneChangeSince(at) ?? null,
+  });
+}
+
 function pitchRateOf(characterId: string): number {
   const character = useDataStore.getState().characters.find((c) => c.id === characterId);
   return voicePitchRate(character ?? { id: characterId, metadata: {} });
@@ -784,16 +794,28 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     // `confirmId` (260925 backseat act) is bookkeeping too: main asks to hear
     // whether THIS line (a "want me to ...?" control offer) played to its end,
     // and the offer only becomes answerable once it did.
-    const { turn, confirmId, ...ttsCtx } = ctx;
+    // `ambientCapturedAt` (261010) is the staleness gate's input, never sent.
+    const { turn, confirmId, ambientCapturedAt, ...ttsCtx } = ctx;
+    const stale = ambientCapturedAt !== undefined ? staleGate(text, ambientCapturedAt) : undefined;
     const onDone = confirmId
       ? (completed: boolean): void => {
           void sei.backseatLineHeard?.({ characterId, confirmId, completed }).catch(() => {});
         }
       : undefined;
     if (!queue) onDone?.(false);
+    // Already stale on arrival (it sat behind a slow turn): never synthesized.
+    if (stale?.('arrival')) {
+      onDone?.(false);
+      settleTts();
+      return;
+    }
     const worthStreaming = text.length >= STREAM_MIN_CHARS;
     if (canStream && worthStreaming && queue) {
-      const handle = queue.enqueueStream(characterId, text, pitchRateOf(characterId), { turn, onDone });
+      const handle = queue.enqueueStream(characterId, text, pitchRateOf(characterId), {
+        turn,
+        onDone,
+        ...(stale ? { stale: () => stale('playhead') } : {}),
+      });
       void sei
         .voiceTtsStream({ characterId, text, ...ttsCtx })
         .then(({ streamId }) => {
@@ -829,6 +851,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       blob: true,
       turn,
       onDone,
+      ...(stale ? { stale: () => stale('playhead') } : {}),
     });
     void sei
       .voiceTts({ characterId, text, ...ttsCtx })

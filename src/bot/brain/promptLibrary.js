@@ -97,7 +97,19 @@ You can see the game. So can they. Do not describe the state of it back to them,
 //     ends.
 // =============================================================================
 
-export const VOICE_CALL_PRIMER =
+// 260724 voice latency: speech is streamed out the moment the say() block
+// completes, so the earlier say() appears in the turn, the sooner the player
+// hears it. Scratchpad text and trailing tool calls generate AFTER the line
+// is already playing.
+// 261010: split out of VOICE_CALL_PRIMER (which is unchanged) so a surface
+// with no say() tool can swap it. Backseat speaks its plain text, and on its
+// first look Haiku 5.5 followed this sentence and called a say() tool that
+// does not exist there, leaving the session's opening line empty.
+export const VOICE_CALL_SAY_FIRST =
+  'The player is waiting on a live line, so answer fast: keep any private text output to a few words at most, and when you speak, make say() the FIRST tool call of the turn, before any other tool.'
+
+/** Everything in the voice-call primer except how the line is delivered (261010). */
+export const VOICE_CALL_PRIMER_BASE =
   'You are on a LIVE VOICE CALL with the player right now, talking out loud in real time, like a phone call. ' +
   'This is NOT a text conversation: you are not texting, typing, or messaging, you are speaking, and everything you say is spoken aloud to them the instant you say it. ' +
   'Talk the way you actually would out loud: no shorthand like "lmao" or "brb", no emoji, no abbreviations or written-only flourishes you would not say out loud, and never refer to this as texting or messaging or to "typing" or "sending" anything. ' +
@@ -115,12 +127,11 @@ export const VOICE_CALL_PRIMER =
   // way to start a share or a game itself, so a flat stretch of call is only
   // fixable by asking.
   'The player can also show you their screen while you talk, and it is usually one of a few things: a game they are playing, something they are working on, a film or a video you watch together, or a feed of short videos they scroll through. A short video feed, like Instagram Reels or TikTok or Shorts, is unrelated clips a few seconds to a minute long, swiped one after the next, so the screen becoming something completely different every few seconds is just how it works, not a decision they made that you should ask about. ' +
-  'If you run out of things to talk about, ask them to do something with you: play one of the games, or share their screen so you can watch along with whatever they are doing. ' +
-  // 260724 voice latency: speech is streamed out the moment the say() block
-  // completes, so the earlier say() appears in the turn, the sooner the player
-  // hears it. Scratchpad text and trailing tool calls generate AFTER the line
-  // is already playing.
-  'The player is waiting on a live line, so answer fast: keep any private text output to a few words at most, and when you speak, make say() the FIRST tool call of the turn, before any other tool.'
+  'If you run out of things to talk about, ask them to do something with you: play one of the games, or share their screen so you can watch along with whatever they are doing. '
+
+/** The voice-call primer with the say()-first sentence, for surfaces that speak through say(). */
+export const VOICE_CALL_PRIMER = VOICE_CALL_PRIMER_BASE + VOICE_CALL_SAY_FIRST
+
 
 // =============================================================================
 // 3. MINECRAFT SURFACE

@@ -1887,6 +1887,53 @@ The design and its measurements are committed at
 - **Tool-array policy:** ONE array for every tick kind (chess-style). Ticks are
   6-8 s apart, well inside the cache TTL, so per-tick-kind arrays would
   invalidate the prefix almost every turn for nothing.
+- **Haiku 5.5 tuning (261010, branch fix/backseat-haiku55).** From the 261009
+  live replay (`scripts/backseat-live-replay.ts` + `backseat-live-report.ts`,
+  3 real videos, report under `~/suisei/reports/backseat-live-2026-10-*`):
+  - **Turn claim.** `handleTick` claims `s.inflight` right after `-> turn`,
+    BEFORE the player-row write and the act/control awaits
+    (`prepareAndRunTurn`). A jolt landing in that await used to start a
+    second, concurrent turn. Pinned in `backseatService.inflight.test.ts`.
+  - **Start silence had two causes.** The voice-call primer offers
+    `(silence)` (Backseat now passes `allowSilence: false`) and ends with
+    "make say() the FIRST tool call". Backseat has no say tool, and on the
+    first look (no text lines in history yet) 5.5 called one anyway, so the
+    reply text was empty. Backseat passes `voiceSpeech: 'text'`, which swaps
+    that sentence for `VOICE_CALL_TEXT_LINE`. `VOICE_CALL_PRIMER` itself is
+    unchanged (`= VOICE_CALL_PRIMER_BASE + VOICE_CALL_SAY_FIRST`). Typed chat
+    voice calls have the same mismatch and are untouched.
+  - **Narration and timing (Shawn).** React to what is IN the picture (the
+    place, the boss, the build). Do not read it back: no stats, timers,
+    items or stage numbers. Ask about plans only when the next few seconds
+    will not answer them. Because lines are heard seconds late, a question
+    about a quick action arrives already answered (REACT TO WHAT YOU SEE,
+    NOT A NARRATOR + YOU ARE HEARD A FEW SECONDS LATE). These live in the
+    contract AND at the end of every look note (`LINE_LENGTH_REMINDER`),
+    because 5.5 follows the note's ending and reads the contract loosely.
+    Do not stream LLM text into TTS (Shawn's call).
+  - **Latency (261010).** The renderer's `look()` runs the STT flush
+    (up to `STT_FLUSH_WAIT_MS`) BEFORE compositing the grid, so the newest
+    frame is not already 1.2+ s old when the tick leaves. On a call, main
+    prewarms TTS (`prewarmSpeech` dep) as soon as a turn is claimed.
+  - **Staleness gate (261010).** A line she said on her own carries
+    `SpokenLineContext.ambientCapturedAt`; a reply to the player never does.
+    `staleGate.ts` asks `staleLineVerdict` both when the line arrives
+    (before TTS) and at the audio-queue playhead (`opts.stale`). It drops
+    the line when it is >= `STALE_LINE_AGE_MS` (5 s) past its frame AND the
+    screen moved >= `STALE_SCENE_DELTA` (0.35 blockMaxDelta). The second
+    number comes from the 32x18 thumbnails the worker posts every 500 ms
+    (`sceneChangeSince`). It is timing-only and every drop is logged
+    `[backseat] stale line dropped`.
+  - **Openers.** `recentOpeners` feeds the first words of her last 3 lines
+    into jolt/idle notes ONLY when one repeats. This is data about her own
+    lines, not a fixed ban list. A static "vary your opener" did not move 5.5.
+  - **Memory.** `buildSystemBlocks({ memoryNote })` labels the notes as
+    real-life facts (`BACKSEAT_MEMORY_NOTE`). The contract and the user note
+    say the same. A remember() cut off at max_tokens is not saved.
+  - **Look cap 100 -> 45 tokens** (`BACKSEAT_LOOK_MAX_TOKENS`). Prompting
+    moves 5.5's length only a little, so the cap still bites on about 1 look
+    in 14. A cut line ends at its last finished sentence (`endAtLastSentence`,
+    positional, not content-based). User turns stay at 400.
 
 **Extracted:** the screen-watching half is mirrored as a public standalone repo
 at `sei-studio/backseat` (AGPL-3.0) with a plain-language architecture README.

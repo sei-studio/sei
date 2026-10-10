@@ -64,8 +64,11 @@ import { classifyUsageLimit, raiseUsageLimitPopup } from '../chat/usageLimit';
 import type { LogBatch } from '../../shared/ipc';
 import {
   BACKSEAT_CONTRACT,
+  BACKSEAT_MEMORY_NOTE,
   SAVE_CLIP_TOOL,
+  endAtLastSentence,
   backseatMaxTokens,
+  recentOpeners,
   renderBackseatGameBlock,
   stripDashes,
   tickNote,
@@ -152,6 +155,10 @@ export interface BackseatDeps {
   /** Batched log lines into the in-app developer console (LogsBar), same
    *  pipeline as bot/chess/draw logs. */
   pushLog?: (batch: LogBatch) => void;
+  /** 261010: warm the TTS connection (voice/tts prewarmTts, self-throttled)
+   *  while the model is still writing, so the line's TTS request does not pay
+   *  for a cold connection after it. Only called on a voice call. */
+  prewarmSpeech?: () => void;
 }
 
 interface Session {
@@ -625,11 +632,20 @@ async function honorRemember(
   s: Session,
   content: Anthropic.Messages.ContentBlock[],
   fromUserTick: boolean,
+  cutOff = false,
 ): Promise<void> {
   for (const b of content) {
     if (b.type !== 'tool_use' || b.name !== 'remember') continue;
     const text = String((b.input as { text?: string })?.text ?? '').trim();
     if (!text) continue;
+    // 261010: a look is capped at a few dozen tokens (backseatMaxTokens), so a
+    // remember() written after the line can be cut off mid-input. The last
+    // block of a max_tokens stop is the one that was cut; saving it would
+    // write half a sentence into MEMORY.md.
+    if (cutOff && b === content[content.length - 1]) {
+      slog(s, `remember() cut off at max_tokens, not saved ("${text.slice(0, 60)}")`);
+      continue;
+    }
     if (!fromUserTick && Date.now() - s.lastRememberAt < REMEMBER_COOLDOWN_MS) {
       slog(s, `remember() throttled ("${text.slice(0, 60)}")`);
       continue;
@@ -691,6 +707,55 @@ export async function handleTick(tick: BackseatTick): Promise<void> {
   }
   slog(s, `tick ${label} -> turn`);
   void dumpGridForDev(tick.kind, tick.grid);
+
+  // Claim the turn NOW, before the turn's own awaits (261010). It used to come
+  // after the player's line was persisted and the act/control checks ran, so
+  // a jolt that landed during those awaits saw no turn in flight and started
+  // a second one: a paid call that the user turn then discarded, or, when
+  // the jolt's call won the race, a screen line spoken ahead of the answer
+  // (4 of 18 runs in the 261009 live replay). Everything below runs under
+  // this claim, so a lower tick is dropped and a higher one preempts it.
+  const ctrl = new AbortController();
+  s.inflight = ctrl;
+  s.inflightKind = tick.kind;
+  // 261010: the line will be spoken about 1.5 s from now; warm TTS meanwhile.
+  if (requireDeps().isCallActive?.(s.characterId) === true) requireDeps().prewarmSpeech?.();
+  try {
+    await prepareAndRunTurn(s, tick, ctrl, { isUser, label, acting });
+  } catch (err) {
+    const e = err as { name?: string; message?: string };
+    if (e?.name !== 'AbortError' && !/abort/i.test(e?.message ?? '')) {
+      slog(s, `turn failed: ${e?.message}`, true);
+      // Analytics (260828): genuine backseat turn failure (aborts excluded
+      // above). Shape only, never the message.
+      void (async () => {
+        try {
+          const { captureSurfaceError, surfaceErrorClass } = await loadAnalytics();
+          captureSurfaceError('backseat', `turn_${surfaceErrorClass(err)}`, s.characterId);
+        } catch { /* analytics is never load-bearing */ }
+      })();
+      void onCreditWall(s, err, isUser);
+    }
+  } finally {
+    if (s.inflight === ctrl) {
+      s.inflight = null;
+      s.inflightKind = null;
+    }
+  }
+}
+
+/**
+ * The part of handleTick that runs under the turn claim: persist the player's
+ * line, settle a pending control offer, then run the model turn. Split out so
+ * the claim and its release wrap every await in one try/finally.
+ */
+async function prepareAndRunTurn(
+  s: Session,
+  tick: BackseatTick,
+  ctrl: AbortController,
+  t: { isUser: boolean; label: string; acting: boolean },
+): Promise<void> {
+  const { isUser, label, acting } = t;
 
   // The player's typed line is real conversation: persist it to the shared
   // chat thread (so the main window shows it and the NEXT turn's history has
@@ -767,31 +832,11 @@ export async function handleTick(tick: BackseatTick): Promise<void> {
   }
   const extraNote = notes.length ? notes.join('\n\n') : undefined;
 
-  const ctrl = new AbortController();
-  s.inflight = ctrl;
-  s.inflightKind = tick.kind;
-  try {
-    await runTurn(s, tick, ctrl, { extraNote, confirmedThisTurn, offer: reoffer });
-  } catch (err) {
-    const e = err as { name?: string; message?: string };
-    if (e?.name !== 'AbortError' && !/abort/i.test(e?.message ?? '')) {
-      slog(s, `turn failed: ${e?.message}`, true);
-      // Analytics (260828): genuine backseat turn failure (aborts excluded
-      // above). Shape only, never the message.
-      void (async () => {
-        try {
-          const { captureSurfaceError, surfaceErrorClass } = await loadAnalytics();
-          captureSurfaceError('backseat', `turn_${surfaceErrorClass(err)}`, s.characterId);
-        } catch { /* analytics is never load-bearing */ }
-      })();
-      void onCreditWall(s, err, isUser);
-    }
-  } finally {
-    if (s.inflight === ctrl) {
-      s.inflight = null;
-      s.inflightKind = null;
-    }
-  }
+  // A barge-in or a higher tick may have taken the turn during the awaits
+  // above; the player's line is persisted either way, so the turn that won
+  // reads it from history.
+  if (ctrl.signal.aborted || s.inflight !== ctrl) return;
+  await runTurn(s, tick, ctrl, { extraNote, confirmedThisTurn, offer: reoffer });
 }
 
 /**
@@ -947,10 +992,17 @@ async function runTurn(
     openWorldDetected: false,
     inGame: false,
     voiceCall,
+    // 261010: a look always gets a line, so the call's (silence) option is
+    // not offered here (runTurn still logs one if it comes back anyway).
+    allowSilence: false,
+    // 261010: the reply text is the line; there is no say() tool here.
+    voiceSpeech: 'text',
     // A character pinned to a language speaks it on EVERY surface, so this
     // reads the pin first and falls back to the auto-detected conversation
     // language, the same as chat, voice, chess and Draw!.
     language: surfaceLanguage(character.metadata, config.chat_language),
+    // 261010: the notes are about the player's real life, not the screen.
+    memoryNote: BACKSEAT_MEMORY_NOTE,
     // The whole-session contract rides inside the cached region, so the grid
     // explanation and the register are written once and read every tick.
     // 260929: a game tile's block (knowledge + the picked experience) rides
@@ -1009,6 +1061,7 @@ async function runTurn(
     shareLabel: tick.shareLabel,
     frameAges: tick.frameAges,
     secondsSincePrevGrid: prev ? prevAge / 1000 : undefined,
+    recentOpeners: recentOpeners(history.filter((m) => m.role === 'companion').map((m) => m.text)),
   });
   const note = opts.extraNote ? `${baseNote}\n\n${opts.extraNote}` : baseNote;
   const strip = (d: string): string => d.replace(/^data:image\/\w+;base64,/, '');
@@ -1031,6 +1084,8 @@ async function runTurn(
   // followUpWebLookup runs the tool. Both turns share one turn tag so the
   // renderer's audio queue never drops the lead in favour of the answer.
   const turnTag = randomUUID();
+  // 261010 staleness gate: lines she said on her own carry their frame time.
+  const ambientCapturedAt = tick.kind === 'user' ? undefined : tick.capturedAt;
   const punctuation = character.metadata?.punctuation === 'deliberate' ? 'deliberate' : 'casual';
   let leadSpoken = false;
   let leadEmit: Promise<void> = Promise.resolve();
@@ -1042,7 +1097,7 @@ async function runTurn(
     leadSpoken = true;
     s.lastSpokeAt = Date.now();
     slog(s, `turn ${tick.kind}: said ${parts.length} line(s) before the lookup`);
-    leadEmit = emitCompanionLines(s, parts, voiceCall, null, undefined, { turnTag });
+    leadEmit = emitCompanionLines(s, parts, voiceCall, null, undefined, { turnTag, ambientCapturedAt });
   };
   const streamed: Anthropic.Messages.ContentBlock[] = [];
   const webSearchOffered = tools.some((t) => t.name === 'web_search');
@@ -1094,7 +1149,12 @@ async function runTurn(
       `cacheWrite=${u?.cache_creation_input_tokens ?? 0}`,
   );
 
-  await honorRemember(s, res.content, tick.kind === 'user');
+  // 261010: a look that ran into its token cap is logged, so a session log
+  // shows how often the cap (not the model) ended a line.
+  const cutOff = res.stopReason === 'max_tokens';
+  if (cutOff) slog(s, `turn ${tick.kind}: stopped at max_tokens (${backseatMaxTokens(tick.kind)})`);
+
+  await honorRemember(s, res.content, tick.kind === 'user', cutOff);
 
   // 260925 act spike: control({goal}) is async. The run starts in the
   // background (replacing any running one) and this turn's own line is still
@@ -1132,7 +1192,12 @@ async function runTurn(
   // replyTextOf, not a newline join (261003): an answer after a server-side
   // search comes back as one text block per cited span, cut mid-sentence, and
   // a newline join spoke ". They're all free" as its own line.
-  const replyText = stripDashes(textAfterLead(res.content, leadSpoken));
+  const fullText = stripDashes(textAfterLead(res.content, leadSpoken));
+  // 261010: a line cut at the look cap ends at its last finished sentence.
+  const replyText = cutOff ? endAtLastSentence(fullText) : fullText;
+  if (cutOff && replyText !== fullText.trimEnd()) {
+    slog(s, `turn ${tick.kind}: cut line ended at its last sentence ("${fullText.slice(replyText.length).trim().slice(0, 40)}" dropped)`);
+  }
 
   // 260802: silence is no longer an outcome the prompts offer, so reaching here
   // means the model ignored an explicit instruction (or returned nothing at
@@ -1149,7 +1214,9 @@ async function runTurn(
     slog(
       s,
       `turn ${tick.kind}: NO LINE despite always-speak` +
-        (replyText ? ` ("${replyText.slice(0, 60)}")` : ' (empty reply)'),
+        (replyText
+          ? ` ("${replyText.slice(0, 60)}")`
+          : ` (empty reply: ${res.content.map((b) => (b.type === 'tool_use' ? `tool_use ${b.name}` : b.type)).join(', ') || 'no blocks'})`),
     );
     s.clipCooldownUntil = 0;
     return;
@@ -1199,7 +1266,13 @@ async function runTurn(
   // The lead (if any) is persisted and pushed before the answer.
   await leadEmit;
   if (!parts.length) return;
-  slog(s, `turn ${tick.kind}: said ${parts.length} line(s)${clip ? ' + clip' : ''}`);
+  // 261010: how stale the line is before TTS even starts (newest grid frame ->
+  // line ready), so a live log shows the timing Shawn hears as retrospective.
+  slog(
+    s,
+    `turn ${tick.kind}: said ${parts.length} line(s)${clip ? ' + clip' : ''}, ` +
+      `${Math.max(0, Date.now() - tick.capturedAt)}ms after the newest frame`,
+  );
 
   // Awaited, as before the act spike: the lines are persisted before this
   // turn ends and the next one reads the transcript.
@@ -1209,7 +1282,7 @@ async function runTurn(
     voiceCall,
     clip,
     offer ? { index: parts.length - 1, id: offer.id } : undefined,
-    { turnTag, ...(queries.length ? { lookup: { queries } } : {}) },
+    { turnTag, ambientCapturedAt, ...(queries.length ? { lookup: { queries } } : {}) },
   );
 }
 
@@ -1263,6 +1336,8 @@ function emitCompanionLines(
     turnTag?: string;
     /** The web lookup the first part was spoken from (ChatMessage.lookup). */
     lookup?: { queries: string[] };
+    /** 261010: set on a line she said on her own; see SpokenLineContext. */
+    ambientCapturedAt?: number;
   } = {},
 ): Promise<void> {
   return (async () => {
@@ -1304,6 +1379,7 @@ function emitCompanionLines(
               ...(i < parts.length - 1 ? { more: true } : {}),
               turn: turnTag,
               ...(confirm && confirm.index === i ? { confirmId: confirm.id } : {}),
+              ...(opts.ambientCapturedAt !== undefined ? { ambientCapturedAt: opts.ambientCapturedAt } : {}),
             }
           : undefined,
       );
