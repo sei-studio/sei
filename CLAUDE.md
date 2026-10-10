@@ -1902,12 +1902,28 @@ The design and its measurements are committed at
     that sentence for `VOICE_CALL_TEXT_LINE`. `VOICE_CALL_PRIMER` itself is
     unchanged (`= VOICE_CALL_PRIMER_BASE + VOICE_CALL_SAY_FIRST`). Typed chat
     voice calls have the same mismatch and are untouched.
-  - **Narration (Shawn).** Do not read the screen back; be interested in
-    what is happening and what they plan to do. A question about their plan
-    stands alone, with no recap or lead-in. This lives in the contract (BE
-    INTERESTED, NOT A NARRATOR) AND at the end of every look note
-    (`LINE_LENGTH_REMINDER`), because 5.5 follows the note's ending and
-    reads the contract loosely.
+  - **Narration and timing (Shawn).** React to what is IN the picture (the
+    place, the boss, the build). Do not read it back: no stats, timers,
+    items or stage numbers. Ask about plans only when the next few seconds
+    will not answer them. Because lines are heard seconds late, a question
+    about a quick action arrives already answered (REACT TO WHAT YOU SEE,
+    NOT A NARRATOR + YOU ARE HEARD A FEW SECONDS LATE). These live in the
+    contract AND at the end of every look note (`LINE_LENGTH_REMINDER`),
+    because 5.5 follows the note's ending and reads the contract loosely.
+    Do not stream LLM text into TTS (Shawn's call).
+  - **Latency (261010).** The renderer's `look()` runs the STT flush
+    (up to `STT_FLUSH_WAIT_MS`) BEFORE compositing the grid, so the newest
+    frame is not already 1.2+ s old when the tick leaves. On a call, main
+    prewarms TTS (`prewarmSpeech` dep) as soon as a turn is claimed.
+  - **Staleness gate (261010).** A line she said on her own carries
+    `SpokenLineContext.ambientCapturedAt`; a reply to the player never does.
+    `staleGate.ts` asks `staleLineVerdict` both when the line arrives
+    (before TTS) and at the audio-queue playhead (`opts.stale`). It drops
+    the line when it is >= `STALE_LINE_AGE_MS` (5 s) past its frame AND the
+    screen moved >= `STALE_SCENE_DELTA` (0.35 blockMaxDelta). The second
+    number comes from the 32x18 thumbnails the worker posts every 500 ms
+    (`sceneChangeSince`). It is timing-only and every drop is logged
+    `[backseat] stale line dropped`.
   - **Openers.** `recentOpeners` feeds the first words of her last 3 lines
     into jolt/idle notes ONLY when one repeats. This is data about her own
     lines, not a fixed ban list. A static "vary your opener" did not move 5.5.

@@ -56,6 +56,7 @@ import {
   JOLT_COLOR_MAD,
   JOLT_GAIN_DB,
   JOLT_REFRACTORY_MS,
+  SCENE_THUMB_INTERVAL_MS,
 } from '../../../../shared/backseatIpc';
 import {
   baselineGain,
@@ -138,6 +139,8 @@ let encodes = 0;
  */
 const STATS_INTERVAL_MS = 10_000;
 let lastStatsAt = 0;
+/** 261010: last thumbnail handed to the renderer for the staleness gate. */
+let lastSceneThumbAt = 0;
 let statsFramesSeen = 0;
 let statsEncodes = 0;
 
@@ -256,6 +259,14 @@ async function onFrame(frame: VideoFrame): Promise<void> {
   if (now - lastSampleAt >= SAMPLE_INTERVAL_MS) {
     lastSampleAt = now;
     sample(now, thumb);
+  }
+  // 261010: a 2.3 KB thumbnail twice a second, so the renderer can tell at
+  // playback time how far the screen has moved from a line's frame without a
+  // round trip (the audio queue's check is synchronous).
+  if (now - lastSceneThumbAt >= SCENE_THUMB_INTERVAL_MS) {
+    lastSceneThumbAt = now;
+    const copy = new Uint8ClampedArray(thumb);
+    self.postMessage({ type: 'thumb', at: now, thumb: copy }, { transfer: [copy.buffer] });
   }
 
   const fired = decideJolt(jolt, now, thumb, JOLT_THRESHOLDS);

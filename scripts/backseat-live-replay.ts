@@ -384,6 +384,12 @@ async function run(prepDir: string, outDir: string): Promise<void> {
     return text || undefined;
   }
 
+  // captureController.look (261010): the STT flush first, then the grid.
+  async function look(): Promise<{ grid: any; transcript: string | undefined }> {
+    const transcript = await tickTranscript();
+    return { grid: await composite(), transcript };
+  }
+
   const characterId = character.id;
   const shareLabel = label;
   async function sendTick(kind: 'start' | 'idle' | 'jolt' | 'user', grid: any, extra: Record<string, unknown> = {}): Promise<void> {
@@ -424,9 +430,8 @@ async function run(prepDir: string, outDir: string): Promise<void> {
       idleBusy = true;
       void (async () => {
         try {
-          const grid = await composite();
+          const { grid, transcript } = await look();
           if (!grid) return;
-          const transcript = await tickTranscript();
           await sendTick('idle', grid, { transcript });
         } finally {
           idleBusy = false;
@@ -446,9 +451,8 @@ async function run(prepDir: string, outDir: string): Promise<void> {
       switchDeferTimer = setTimeout(() => void fireSwitch(sinceChangeMs + gapLeft), gapLeft + 250);
       return;
     }
-    const grid = await composite();
+    const { grid, transcript } = await look();
     if (!grid) return;
-    const transcript = await tickTranscript();
     await sendTick('jolt', grid, { joltReason: 'switch', sinceSwitchS: Math.round(sinceChangeMs / 100) / 10, transcript });
   }
   const switchDwell = createSwitchDwell({ dwellMs: ipc.SWITCH_DWELL_MS, onFire: (ms) => void fireSwitch(ms) });
@@ -457,6 +461,10 @@ async function run(prepDir: string, outDir: string): Promise<void> {
     lastSpokeLocalAt = Date.now();
     scheduleIdle();
   };
+
+  const total = meta.nThumbs;
+  /** Assumed TTS time to first audio for the simulated staleness gate. */
+  const TTS_FIRST_AUDIO_MS = 800;
 
   // ── service deps (the IPC bridge in the app) ──
   const lines: Array<Record<string, unknown>> = [];
@@ -467,7 +475,7 @@ async function run(prepDir: string, outDir: string): Promise<void> {
   // came right before the line, not simply the most recently started one.
   const turnStart = new Map<string, number>();
   svc.initBackseatService({
-    pushChatMessage: (_id, message) => {
+    pushChatMessage: (_id, message, speech) => {
       if (message.role === 'user') return;
       // Attributed to the turn whose result was just logged (see turnStart).
       const rec = {
@@ -477,8 +485,20 @@ async function run(prepDir: string, outDir: string): Promise<void> {
         tickVt: lastTurn ? vt(lastTurn.at) : null,
         latencyMs: lastTurn ? Date.now() - lastTurn.at : null,
       };
-      lines.push(rec);
-      ev({ type: 'line', ...rec });
+      // 261010: what the renderer's staleness gate would do at the playhead,
+      // assuming TTS_FIRST_AUDIO_MS of synthesis and no queue (the replay has
+      // neither TTS nor an audio queue, so this is a floor on its drops).
+      let gate: Record<string, unknown> | undefined;
+      const capAt = (speech as { ambientCapturedAt?: number } | undefined)?.ambientCapturedAt;
+      if (capAt !== undefined) {
+        const playAt = Date.now() + TTS_FIRST_AUDIO_MS;
+        const fr = (wall: number) => Math.min(total - 1, Math.max(0, Math.round(((wall - t0) / 1000) * FPS)));
+        const delta = sig.blockMaxDelta(thumbAt(fr(capAt)), thumbAt(fr(playAt)));
+        const ageMs = playAt - capAt;
+        gate = { ageMs, delta: Math.round(delta * 1000) / 1000, drop: ipc.staleLineVerdict(ageMs, delta) };
+      }
+      lines.push({ ...rec, ...(gate ? { gate } : {}) });
+      ev({ type: 'line', ...rec, ...(gate ? { gate } : {}) });
     },
     pushState: () => {},
     pushLine: (_id, line) => {
@@ -514,7 +534,6 @@ async function run(prepDir: string, outDir: string): Promise<void> {
 
   // ── go: real time ──
   t0 = Date.now();
-  const total = meta.nThumbs;
   const frameLoop = setInterval(() => {
     const nowV = Date.now() - t0;
     maxLagMs = Math.max(maxLagMs, nowV - (frame * 1000) / FPS);
@@ -537,9 +556,8 @@ async function run(prepDir: string, outDir: string): Promise<void> {
           switchDwell.change();
         } else {
           void (async () => {
-            const grid = await composite();
+            const { grid, transcript } = await look();
             if (!grid) return;
-            const transcript = await tickTranscript();
             await sendTick('jolt', grid, { joltReason: fired, transcript });
           })();
         }
@@ -551,8 +569,8 @@ async function run(prepDir: string, outDir: string): Promise<void> {
   scheduleIdle();
   setTimeout(() => {
     void (async () => {
-      const grid = await composite();
-      if (grid) await sendTick('start', grid, { transcript: await tickTranscript() });
+      const { grid, transcript } = await look();
+      if (grid) await sendTick('start', grid, { transcript });
     })();
   }, ipc.START_LOOK_MS);
 

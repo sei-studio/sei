@@ -29,7 +29,7 @@ import { mkdirSync, readFileSync, readdirSync, existsSync, writeFileSync, statSy
 import { join } from 'node:path'
 
 type Ev = Record<string, any> & { vt: number; type: string }
-type Line = { vt: number; text: string; kind: string; tickVt: number; latencyMs: number | null }
+type Line = { vt: number; text: string; kind: string; tickVt: number; latencyMs: number | null; gate?: { ageMs: number; delta: number; drop: boolean } }
 
 const ARM_TAG: Record<string, string> = { '55': '5.5', '45': '4.5' }
 const USER_TICK_DELAY_S = 2.5 // captureController latches the grid at question time, sends 2.5 s later
@@ -72,6 +72,18 @@ const BLEED_RE = /\bmochi\b/i
 // hit". It over- and under-counts; summary.md hand-checks a sample.
 const NARR_RE = /\b(you'?re|you are|they'?re|he'?s|she'?s)\s+(now\s+|already\s+|just\s+|still\s+)?(in|on|at|inside|running|walking|climbing|standing|heading|going|getting|back|fighting|chopping|building|walking)\b|\b(that'?s|there'?s|this is)\s+(a|an|the)\b|\bstage \d+\b|\b(just|now)\s+(got|hit|used|died|took|landed)\b/i
 const narrates = (s: string) => NARR_RE.test(s)
+// 261010 (Shawn: every comment is in retrospect). Two rough proxies, on
+// non-player lines only:
+//  - retrospective: a past-tense question about what just happened
+//    ("did you grab it?", "you already used it?", "have you ...?").
+//  - moment: a question about a quick action the next second settles ("are
+//    you gonna grab/climb/use/jump ...?"). By the time it is heard, the
+//    player has usually done it or not.
+const RETRO_RE = /\b(did|have|had)\s+(you|ya|u|he|she|they|it|that|we)\b[^?]*\?|\b(you|u)\s+(already|just)\s+\w+[^?]*\?/i
+const MOMENT_VERBS = '(grab|use|take|climb|jump|hit|dodge|press|pick|skip|go for|run|try|heal|finish|make|land|get|climb|press|open|use it)'
+const MOMENT_RE = new RegExp(`\\b(gonna|going to|about to|you going for|are you)\\b[^?]*\\b${MOMENT_VERBS}\\b[^?]*\\?`, 'i')
+const retro = (s: string) => RETRO_RE.test(s)
+const moment = (s: string) => !RETRO_RE.test(s) && MOMENT_RE.test(s)
 // The start tick spoke = some line came from the 'start' turn.
 const startSpoke = (lines: Line[]) => lines.some((l) => l.kind === 'start')
 
@@ -95,6 +107,40 @@ function loadRun(dir: string) {
   const meta: Record<string, any> = events.find((e) => e.type === 'meta') ?? {}
   const end = events.find((e) => e.type === 'end')
   return { events, lines, meta, durationS: end?.vt ?? 170 }
+}
+
+/**
+ * 261010: where the seconds go between the newest frame a look was shown and
+ * the line coming back, per line. Video time = wall time in the replay.
+ *  frameAge  newest grid frame -> tick sent (capture + grid build + dwell)
+ *  apiMs     the model call for that turn
+ *  overhead  tick sent -> line, minus apiMs (main-process awaits before and
+ *            after the call)
+ *  toLine    newest frame -> line ready to speak (TTS and playback come after
+ *            this and are not in the replay)
+ *  momentAge the middle of the grid -> line: the "moment" a jolt grid shows
+ */
+function lineLatency(run: ReturnType<typeof loadRun>) {
+  const ticks = run.events.filter((e) => e.type === 'tick')
+  const api = run.events.filter((e) => e.type === 'api')
+  return run.lines.map((l) => {
+    const t = [...ticks].reverse().find((e) => e.vt <= l.tickVt + 0.01 && e.kind === (l.kind === 'user' ? 'user' : e.kind))
+    const cells: number[] = t?.cellsVt ?? []
+    const newest = cells.length ? cells[cells.length - 1] : null
+    const mid = cells.length ? cells[Math.floor((cells.length - 1) / 2)] : null
+    const call = [...api].reverse().find((a) => a.vt <= l.vt + 0.01 && a.vt >= l.tickVt - 0.01)
+    const lineMs = Math.round((l.vt - l.tickVt) * 1000)
+    return {
+      kind: l.kind,
+      frameAgeMs: newest != null && t ? Math.round((t.vt - newest) * 1000) : null,
+      apiMs: call?.ms ?? null,
+      ttfbMs: call?.ttfbMs ?? null,
+      overheadMs: call ? lineMs - call.ms : null,
+      toLineMs: newest != null ? Math.round((l.vt - newest) * 1000) : null,
+      momentAgeMs: mid != null ? Math.round((l.vt - mid) * 1000) : null,
+      outTokens: call?.usage?.output_tokens ?? null,
+    }
+  })
 }
 
 function runMetrics(name: string, run: ReturnType<typeof loadRun>) {
@@ -142,6 +188,9 @@ function runMetrics(name: string, run: ReturnType<typeof loadRun>) {
     containsQuestionNonUser: nonUser.filter((l) => l.text.includes('?')).length,
     distinctOpeners: opCounts.size,
     narrationNonUser: nonUser.filter((l) => narrates(l.text)).length,
+    retroNonUser: nonUser.filter((l) => retro(l.text)).length,
+    momentNonUser: nonUser.filter((l) => moment(l.text)).length,
+    latency: lineLatency(run).filter((x) => x.kind !== 'user'),
     greetedAtStart: startSpoke(said),
     bleedLines: said.filter((l) => BLEED_RE.test(l.text)).map((l) => ({ vt: l.vt, kind: l.kind, text: l.text })),
     maxTokensStops: api.filter((a) => a.stopReason === 'max_tokens').length,
@@ -282,6 +331,16 @@ function main() {
       containsQuestionShareNonUser: pooledNU.length ? pooledNU.filter((l) => l.text.includes('?')).length / pooledNU.length : 0,
       greetedAtStart: ms.filter((m) => m.greetedAtStart).length,
       narrationShareNonUser: pooledNU.length ? pooledNU.filter((l) => narrates(l.text)).length / pooledNU.length : 0,
+      gateDrops: pooledNU.filter((l) => l.gate?.drop).length,
+      gateChecked: pooledNU.filter((l) => l.gate).length,
+      retroShareNonUser: pooledNU.length ? pooledNU.filter((l) => retro(l.text)).length / pooledNU.length : 0,
+      momentShareNonUser: pooledNU.length ? pooledNU.filter((l) => moment(l.text)).length / pooledNU.length : 0,
+      lat: (() => {
+        const xs = ms.flatMap((m) => m.latency)
+        const med = (k: keyof (typeof xs)[number]) => median(xs.map((x) => x[k] as number | null).filter((v): v is number => v != null))
+        const p90 = (k: keyof (typeof xs)[number]) => quantile(xs.map((x) => x[k] as number | null).filter((v): v is number => v != null), 0.9)
+        return { frameAge: med('frameAgeMs'), api: med('apiMs'), apiP90: p90('apiMs'), overhead: med('overheadMs'), toLine: med('toLineMs'), toLineP90: p90('toLineMs'), momentAge: med('momentAgeMs') }
+      })(),
       bleedLines: ms.reduce((s, m) => s + m.bleedLines.length, 0),
       maxTokensStopsLook: ms.reduce((s, m) => s + m.maxTokensStopsLook, 0),
       outTokensMedian: median(g.runs.flatMap((n) => runs.get(n)!.events.filter((e) => e.type === 'api').map((e) => e.usage?.output_tokens ?? NaN)).filter(Number.isFinite)),
@@ -308,7 +367,17 @@ function main() {
     ...agg.map((a) => `| ${a.video} | ${ARM_TAG[a.arm] ?? a.arm} | ${fmt(a.linesPerMin, 2)} (${a.linesPerMinRange.map((x) => x.toFixed(1)).join('-')}) | ${fmt(a.wordsMedian)} / ${fmt(a.wordsP90)} | ${fmt(a.wordsMedianNonUser)} / ${fmt(a.wordsP90NonUser)} | ${(a.waitOpenerShare * 100).toFixed(0)}% | ${(a.endsWithQuestionShare * 100).toFixed(0)}% | ${a.silenceReplies} | ${fmt(a.apiMsMedian)} / ${fmt(a.apiMsP90)} | ${fmt(a.answerWaitMedianS, 1)} | $${a.cost.toFixed(3)} |`),
     '', `Total API spend across ${all.length} runs: $${totalCost.toFixed(3)}`, '',
   ].join('\n')
-  writeFileSync(join(outDir, 'metrics-table.md'), table)
+  const latTable = [
+    '',
+    'Latency, non-player lines (ms, median; replay has no TTS/playback):',
+    '',
+    '| video | model | newest frame -> tick sent | model call (p90) | other main-process time | newest frame -> line ready (p90) | grid middle -> line ready | retrospective "?" | moment-action "?" | gate drops (sim, no queue) |',
+    '|---|---|---|---|---|---|---|---|---|---|',
+    ...agg.map((a) => `| ${a.video} | ${ARM_TAG[a.arm] ?? a.arm} | ${fmt(a.lat.frameAge)} | ${fmt(a.lat.api)} (${fmt(a.lat.apiP90)}) | ${fmt(a.lat.overhead)} | ${fmt(a.lat.toLine)} (${fmt(a.lat.toLineP90)}) | ${fmt(a.lat.momentAge)} | ${(a.retroShareNonUser * 100).toFixed(0)}% | ${(a.momentShareNonUser * 100).toFixed(0)}% | ${a.gateChecked ? `${a.gateDrops}/${a.gateChecked}` : '-'} |`),
+    '',
+  ].join('\n')
+  writeFileSync(join(outDir, 'metrics-table.md'), table + latTable)
+  console.log(latTable)
   console.log(table)
 
   if (typeof flags.badge === 'string') badgeSuffix = ` ${flags.badge}`

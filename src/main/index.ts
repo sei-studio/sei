@@ -1084,6 +1084,7 @@ async function bootstrap(): Promise<void> {
       // Session logs ride the same batched channel as bot/chess/draw logs, so
       // the in-app developer console (LogsBar) shows [backseat] lines live.
       pushLog: broadcastLog,
+      prewarmSpeech: () => void import('./voice/tts').then((m) => m.prewarmTts()).catch(() => {}),
     });
   }
 

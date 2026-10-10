@@ -76,7 +76,14 @@ export interface AudioQueue {
     characterId: string,
     text?: string,
     rate?: number,
-    opts?: { blob?: boolean; turn?: string; onDone?: (completed: boolean) => void },
+    opts?: {
+      blob?: boolean;
+      turn?: string;
+      onDone?: (completed: boolean) => void;
+      /** 261010: asked once, as this clip reaches the playhead; true drops it
+       *  unplayed (onDone(false)). The backseat staleness gate. */
+      stale?: () => boolean;
+    },
   ): TtsStreamHandle;
   /** True while a clip is playing (or queued clips remain). */
   speaking(): boolean;
@@ -122,6 +129,8 @@ type StreamItem = {
   onEnd: (() => void) | null;
   /** Once-only completion report (see enqueueStream's opts.onDone). */
   onDone: ((completed: boolean) => void) | null;
+  /** Playhead check (see enqueueStream's opts.stale). */
+  stale: (() => boolean) | null;
 };
 
 /** Wrap a completion callback so only its first call counts. */
@@ -477,6 +486,10 @@ export function createAudioQueue(
     else if (item.dropped || (item.failed && item.chunks.length === 0)) {
       item.onDone?.(false);
       playNext();
+    } else if (item.stale?.()) {
+      item.dropped = true;
+      item.onDone?.(false);
+      playNext();
     } else playStream(item);
   }
 
@@ -624,6 +637,7 @@ export function createAudioQueue(
         onChunk: null,
         onEnd: null,
         onDone: once(opts?.onDone),
+        stale: opts?.stale ?? null,
       };
       const handle: TtsStreamHandle = {
         push(chunk) {

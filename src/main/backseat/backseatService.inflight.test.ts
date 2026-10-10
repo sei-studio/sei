@@ -14,6 +14,8 @@ const h = vi.hoisted(() => ({
   said: [] as string[],
   appendGate: null as null | { promise: Promise<void>; release: () => void },
   appended: [] as string[],
+  speech: [] as Array<{ text: string; ambientCapturedAt?: number }>,
+  prewarms: 0,
 }));
 
 vi.mock('electron', () => ({ app: { isPackaged: true, getPath: () => '/tmp' } }));
@@ -101,9 +103,15 @@ describe('backseat turn claim (261010)', () => {
     h.said.length = 0;
     h.appended.length = 0;
     h.appendGate = null;
+    h.speech.length = 0;
+    h.prewarms = 0;
     initBackseatService({
-      pushChatMessage: (_c, m) => {
+      pushChatMessage: (_c, m, speech) => {
         if (m.role === 'companion') h.said.push(m.text);
+        if (m.role === 'companion') h.speech.push({ text: m.text, ambientCapturedAt: speech?.ambientCapturedAt });
+      },
+      prewarmSpeech: () => {
+        h.prewarms++;
       },
       pushState: () => {},
       pushLine: () => {},
@@ -171,5 +179,21 @@ describe('backseat turn claim (261010)', () => {
     await tick('jolt');
     await flush();
     expect(h.calls).toEqual(['user', 'screen']);
+  });
+
+  // 261010: the staleness gate's input and the TTS prewarm.
+  it('tags lines she said on her own with their frame time, never a reply, and prewarms TTS', async () => {
+    await startBackseat(CH, 'window:1:0', 'Game', 'voice');
+    await tick('user', 'hi');
+    await flush();
+    now += MIN_SPEAK_GAP_MS + 1_000;
+    vi.setSystemTime(now);
+    await tick('jolt');
+    await flush();
+    expect(h.speech).toEqual([
+      { text: 'user line', ambientCapturedAt: undefined },
+      { text: 'screen line', ambientCapturedAt: now },
+    ]);
+    expect(h.prewarms).toBe(2);
   });
 });

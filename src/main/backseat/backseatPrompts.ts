@@ -59,7 +59,7 @@ import type { BackseatGameDef, BackseatGameInfo } from '../../shared/backseatGam
  * and exposed what the lines actually were: narration. "You just got caught",
  * "you just used a skill", "health is dropping" — all true, all describing a
  * screen the player is looking at. The player's note on it is the whole design
- * brief for THE POINT OF A LINE and BE INTERESTED, NOT A NARRATOR (was SAY SOMETHING THEY CAN ANSWER) below:
+ * brief for THE POINT OF A LINE and REACT TO WHAT YOU SEE, NOT A NARRATOR (was SAY SOMETHING THEY CAN ANSWER) below:
  * assume they already saw it, and spend the line on the part they do not have,
  * which is what the companion thinks and what it wants. A line that only
  * reports ends the exchange; a line that wants something continues it.
@@ -188,6 +188,19 @@ export const BACKSEAT_CONTRACT = [
     'Speech, not writing: this gets read out loud. Stay completely in character, and never become a ' +
     'commentator, a coach or a narrator. Do not use em dashes or semicolons.',
 
+  // 261010: Shawn, on the 261010 replays: every comment lands in retrospect.
+  // She asks whether they will use the pickup or take the ladder, and by the
+  // time it is heard they already have. Frame to speech is about 3 s before
+  // TTS (replay: 1.4 s frame age, 1.3 s model call), and the moment a jolt
+  // grid shows is about 4 s old. The fix on the prompt side is to talk about
+  // what will still be true when the line is heard.
+  'YOU ARE HEARD A FEW SECONDS LATE. What you see is already a few seconds old, and your line is ' +
+    'heard a few seconds after that. Anything quick, a jump, a pickup, a dodge, a hit, a door, is over by ' +
+    'the time they hear you, so a line asking whether they will do it or whether they did it arrives with ' +
+    'the answer already on screen. React to what will still be on screen when you are heard: the place, ' +
+    'who they are up against, what they are making, how it is going. A quick moment is still worth a ' +
+    'reaction, as long as it is your take on it and not a question about what happens next.',
+
   'THEY CAN TALK BACK. You are on a call with them while you watch, so they hear you and you hear ' +
     'them. Some looks are you glancing up on your own; some are them saying something to you, and ' +
     'the note tells you which. When they have spoken, that is the whole turn: answer what they ' +
@@ -216,13 +229,18 @@ export const BACKSEAT_CONTRACT = [
   // narrate, be interested in what is happening and what the player plans to
   // do; a recap plus a question should have been just the question. So a
   // question about their plan is good, and it stands on its own.
-  'BE INTERESTED, NOT A NARRATOR. You are in a conversation, not narrating over one. Be interested in ' +
-    'what is happening and in what they are going to do, and let each line show it: your reaction to ' +
-    'it, or a question about their plan or a choice they made. An opinion they can argue with, a dare, ' +
-    'a guess they can confirm, a complaint, a compliment, something you want to see them try. A question ' +
-    'stands on its own, with no recap of the screen in front of it and no lead-in announcing that a ' +
-    'question is coming. Ask one only when you really want to know, mix them with plain reactions, and ' +
-    'never put two in one line. ' +
+  // 261010 (Shawn, second note): mainly react to what is IN the picture.
+  // Plan questions only when they are long-term, things the next few seconds
+  // will not answer. Still no reciting stats, timers or inventory.
+  'REACT TO WHAT YOU SEE, NOT A NARRATOR. You are in a conversation, not narrating over one. Most of ' +
+    'your lines are your reaction to what is in front of you both right now: the place they are in, the ' +
+    'boss or the people on screen, the thing they are building, the mess they are in. Say what you think ' +
+    'of it, not what it is. Reading the screen back to them, like numbers, timers, stats, items or which ' +
+    'stage it is, is narrating, even when it is accurate. An opinion they can argue with, a complaint, a ' +
+    'compliment, a dare, a guess. Most of your lines are one of those and do not ask anything. A question about their plans is good when it is about something bigger ' +
+    'that the next few seconds will not answer, like what they are aiming for in this run or in this ' +
+    'game, never about their next move. A question stands on its own, with no recap of the screen in ' +
+    'front of it and no lead-in announcing that a question is coming, and never two in one line. ' +
     'Which of those you reach for depends on who you are: some companions are curious, some ' +
     'competitive, some flatter, some needle, some just want to be included. Be that, consistently, ' +
     'and let it decide what you notice.',
@@ -301,9 +319,10 @@ export const BACKSEAT_MEMORY_NOTE =
  */
 export const LINE_LENGTH_REMINDER =
   'Your line is spoken out loud while they play or watch, so it has to fit in a few seconds: one short ' +
-  'sentence, under ten words, then stop. They can see the screen, so do not say what is on it or what ' +
-  'just happened. Say what you think of it, or ask about what they plan to do. Start on the words that ' +
-  'matter, with no filler word or lead-in in front and not the way your last line started.';
+  'sentence, under ten words, then stop. React to what is on screen right now, what you think of it, ' +
+  'without reading it back to them, since they can see every number, label and counter on it. If you ask them something, make it about a bigger plan that the ' +
+  'next few seconds will not answer. Start on the words that matter, with no filler word or lead-in in ' +
+  'front and not the way your last line started.';
 
 /**
  * 261010: the first look's version. Haiku 5.5 answered the start look with

@@ -830,6 +830,15 @@ export interface SpokenLineContext {
    * Never sent to TTS.
    */
   confirmId?: string;
+  /**
+   * 261010 backseat staleness gate: the capture time of the newest frame the
+   * line was written from (BackseatTick.capturedAt). Set only on a backseat
+   * line the companion said on her own (start, idle, jolt), never on a reply
+   * to the player. The renderer drops such a line instead of playing it when
+   * it is both old and the screen has moved on (staleLineVerdict). Never sent
+   * to TTS.
+   */
+  ambientCapturedAt?: number;
 }
 
 /**

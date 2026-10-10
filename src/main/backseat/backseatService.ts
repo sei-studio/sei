@@ -155,6 +155,10 @@ export interface BackseatDeps {
   /** Batched log lines into the in-app developer console (LogsBar), same
    *  pipeline as bot/chess/draw logs. */
   pushLog?: (batch: LogBatch) => void;
+  /** 261010: warm the TTS connection (voice/tts prewarmTts, self-throttled)
+   *  while the model is still writing, so the line's TTS request does not pay
+   *  for a cold connection after it. Only called on a voice call. */
+  prewarmSpeech?: () => void;
 }
 
 interface Session {
@@ -714,6 +718,8 @@ export async function handleTick(tick: BackseatTick): Promise<void> {
   const ctrl = new AbortController();
   s.inflight = ctrl;
   s.inflightKind = tick.kind;
+  // 261010: the line will be spoken about 1.5 s from now; warm TTS meanwhile.
+  if (requireDeps().isCallActive?.(s.characterId) === true) requireDeps().prewarmSpeech?.();
   try {
     await prepareAndRunTurn(s, tick, ctrl, { isUser, label, acting });
   } catch (err) {
@@ -1078,6 +1084,8 @@ async function runTurn(
   // followUpWebLookup runs the tool. Both turns share one turn tag so the
   // renderer's audio queue never drops the lead in favour of the answer.
   const turnTag = randomUUID();
+  // 261010 staleness gate: lines she said on her own carry their frame time.
+  const ambientCapturedAt = tick.kind === 'user' ? undefined : tick.capturedAt;
   const punctuation = character.metadata?.punctuation === 'deliberate' ? 'deliberate' : 'casual';
   let leadSpoken = false;
   let leadEmit: Promise<void> = Promise.resolve();
@@ -1089,7 +1097,7 @@ async function runTurn(
     leadSpoken = true;
     s.lastSpokeAt = Date.now();
     slog(s, `turn ${tick.kind}: said ${parts.length} line(s) before the lookup`);
-    leadEmit = emitCompanionLines(s, parts, voiceCall, null, undefined, { turnTag });
+    leadEmit = emitCompanionLines(s, parts, voiceCall, null, undefined, { turnTag, ambientCapturedAt });
   };
   const streamed: Anthropic.Messages.ContentBlock[] = [];
   const webSearchOffered = tools.some((t) => t.name === 'web_search');
@@ -1258,7 +1266,13 @@ async function runTurn(
   // The lead (if any) is persisted and pushed before the answer.
   await leadEmit;
   if (!parts.length) return;
-  slog(s, `turn ${tick.kind}: said ${parts.length} line(s)${clip ? ' + clip' : ''}`);
+  // 261010: how stale the line is before TTS even starts (newest grid frame ->
+  // line ready), so a live log shows the timing Shawn hears as retrospective.
+  slog(
+    s,
+    `turn ${tick.kind}: said ${parts.length} line(s)${clip ? ' + clip' : ''}, ` +
+      `${Math.max(0, Date.now() - tick.capturedAt)}ms after the newest frame`,
+  );
 
   // Awaited, as before the act spike: the lines are persisted before this
   // turn ends and the next one reads the transcript.
@@ -1268,7 +1282,7 @@ async function runTurn(
     voiceCall,
     clip,
     offer ? { index: parts.length - 1, id: offer.id } : undefined,
-    { turnTag, ...(queries.length ? { lookup: { queries } } : {}) },
+    { turnTag, ambientCapturedAt, ...(queries.length ? { lookup: { queries } } : {}) },
   );
 }
 
@@ -1322,6 +1336,8 @@ function emitCompanionLines(
     turnTag?: string;
     /** The web lookup the first part was spoken from (ChatMessage.lookup). */
     lookup?: { queries: string[] };
+    /** 261010: set on a line she said on her own; see SpokenLineContext. */
+    ambientCapturedAt?: number;
   } = {},
 ): Promise<void> {
   return (async () => {
@@ -1363,6 +1379,7 @@ function emitCompanionLines(
               ...(i < parts.length - 1 ? { more: true } : {}),
               turn: turnTag,
               ...(confirm && confirm.index === i ? { confirmId: confirm.id } : {}),
+              ...(opts.ambientCapturedAt !== undefined ? { ambientCapturedAt: opts.ambientCapturedAt } : {}),
             }
           : undefined,
       );

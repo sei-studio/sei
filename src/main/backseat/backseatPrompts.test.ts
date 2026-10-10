@@ -358,14 +358,17 @@ describe('Haiku 5.5 tuning (261010)', () => {
     expect(LINE_LENGTH_REMINDER).toContain('not the way your last line started');
   });
 
-  it('asks for interest, not narration, on every look (Shawn, 261010)', () => {
-    expect(BACKSEAT_CONTRACT).toContain('BE INTERESTED, NOT A NARRATOR.');
-    expect(BACKSEAT_CONTRACT).toContain('a question about their plan or a choice they made');
+  it('asks for reactions to the picture, not narration, on every look (Shawn, 261010)', () => {
+    expect(BACKSEAT_CONTRACT).toContain('REACT TO WHAT YOU SEE, NOT A NARRATOR.');
+    expect(BACKSEAT_CONTRACT).toContain('Say what you think of it, not what it is');
+    expect(BACKSEAT_CONTRACT).toContain('numbers, timers, stats, items or which stage it is, is narrating');
+    expect(BACKSEAT_CONTRACT).toContain('the next few seconds will not answer');
+    expect(BACKSEAT_CONTRACT).toContain('never about their next move');
     expect(BACKSEAT_CONTRACT).toContain('with no recap of the screen in front of it');
-    expect(BACKSEAT_CONTRACT).toContain('never put two in one line');
+    expect(BACKSEAT_CONTRACT).toContain('never two in one line');
     expect(BACKSEAT_CONTRACT).not.toContain('Be nosy');
-    expect(LINE_LENGTH_REMINDER).toContain('do not say what is on it or what just happened');
-    expect(LINE_LENGTH_REMINDER).toContain('ask about what they plan to do');
+    expect(LINE_LENGTH_REMINDER).toContain('React to what is on screen right now');
+    expect(LINE_LENGTH_REMINDER).toContain('a bigger plan that the next few seconds will not answer');
     expect(tickNote({ ...base, kind: 'user' })).toContain('without describing the rest of the screen');
   });
 
@@ -425,5 +428,28 @@ describe('endAtLastSentence (261010)', () => {
 
   it('does not split on a decimal or a mid-word dot', () => {
     expect(endAtLastSentence('version 1.21 looks great and the')).toBe('version 1.21 looks great and the');
+  });
+});
+
+/**
+ * 261010: Shawn, on the replays: every comment lands in retrospect. The line
+ * is heard seconds after the frame, so a question about a quick action
+ * arrives with its answer already on screen.
+ */
+describe('heard a few seconds late (261010)', () => {
+  it('tells the contract the line lands late, and what to talk about instead', () => {
+    expect(BACKSEAT_CONTRACT).toContain('YOU ARE HEARD A FEW SECONDS LATE.');
+    expect(BACKSEAT_CONTRACT).toContain('React to what will still be on screen when you are heard');
+    expect(BACKSEAT_CONTRACT).not.toContain('a choice they made');
+  });
+
+  it('repeats it as the last thing on every look', () => {
+    expect(LINE_LENGTH_REMINDER).toContain('the next few seconds will not answer');
+    expect(LINE_LENGTH_REMINDER).not.toMatch(/[—–;]/);
+  });
+
+  it('keeps most lines statements and off the on-screen counters', () => {
+    expect(BACKSEAT_CONTRACT).toContain('Most of your lines are one of those and do not ask anything.');
+    expect(LINE_LENGTH_REMINDER).toContain('they can see every number, label and counter on it');
   });
 });
