@@ -362,13 +362,13 @@ describe('Haiku 5.5 tuning (261010)', () => {
     expect(BACKSEAT_CONTRACT).toContain('REACT TO WHAT YOU SEE, NOT A NARRATOR.');
     expect(BACKSEAT_CONTRACT).toContain('Say what you think of it, not what it is');
     expect(BACKSEAT_CONTRACT).toContain('numbers, timers, stats, items or which stage it is, is narrating');
-    expect(BACKSEAT_CONTRACT).toContain('the next few seconds will not answer');
-    expect(BACKSEAT_CONTRACT).toContain('never about their next move');
+    expect(BACKSEAT_CONTRACT).toContain('check whether the screen will show the answer in the next few seconds');
+    expect(BACKSEAT_CONTRACT).toContain('something bigger that the screen will not show soon');
     expect(BACKSEAT_CONTRACT).toContain('with no recap of the screen in front of it');
     expect(BACKSEAT_CONTRACT).toContain('never two in one line');
     expect(BACKSEAT_CONTRACT).not.toContain('Be nosy');
-    expect(LINE_LENGTH_REMINDER).toContain('React to what is on screen right now');
-    expect(LINE_LENGTH_REMINDER).toContain('a bigger plan that the next few seconds will not answer');
+    expect(LINE_LENGTH_REMINDER).toContain('Your first words are what you think or feel about the screen');
+    expect(LINE_LENGTH_REMINDER).toContain('Only ask something if the screen will not show the answer');
     expect(tickNote({ ...base, kind: 'user' })).toContain('without describing the rest of the screen');
   });
 
@@ -394,15 +394,17 @@ describe('Haiku 5.5 tuning (261010)', () => {
     expect(backseatMaxTokens('user')).toBeGreaterThan(BACKSEAT_LOOK_MAX_TOKENS * 5);
   });
 
-  it('names her own repeated opener back to her, and only when it repeats', () => {
+  it('names her own recent openers back to her on every look once there are two', () => {
     expect(recentOpeners(['old line', 'Ok the boss is huge', 'ok, nice dodge', 'Ouen that hurt'])).toEqual(['ok', 'ok', 'ouen']);
     const rep = tickNote({ ...base, kind: 'jolt', joltReason: 'gain', recentOpeners: ['ok', 'ok', 'ouen'] });
-    expect(rep).toContain('Your last lines started with ok, ok, ouen. Start this one with something else.');
+    expect(rep).toContain('Your last lines started with ok, ok, ouen. Start this one with a different word.');
     expect(rep.endsWith(`Do not mention this note. ${LINE_LENGTH_REMINDER}]`)).toBe(true);
     const idle = tickNote({ ...base, kind: 'idle', recentOpeners: ['ok', 'ok'] });
     expect(idle).toContain('Your last lines started with ok, ok.');
+    // 261010: also when they vary (5.5 alternated one favourite with others).
     const varied = tickNote({ ...base, kind: 'idle', recentOpeners: ['ok', 'that', 'nice'] });
-    expect(varied).not.toContain('Your last lines started');
+    expect(varied).toContain('Your last lines started with ok, that, nice.');
+    expect(tickNote({ ...base, kind: 'idle', recentOpeners: ['ok'] })).not.toContain('Your last lines started');
     // The player's own turn and the first look never carry it.
     expect(tickNote({ ...base, kind: 'user', recentOpeners: ['ok', 'ok'] })).not.toContain('Your last lines started');
     expect(tickNote({ ...base, kind: 'start', recentOpeners: ['ok', 'ok'] })).not.toContain('Your last lines started');
@@ -444,12 +446,22 @@ describe('heard a few seconds late (261010)', () => {
   });
 
   it('repeats it as the last thing on every look', () => {
-    expect(LINE_LENGTH_REMINDER).toContain('the next few seconds will not answer');
+    expect(LINE_LENGTH_REMINDER).toContain('in the next few seconds');
     expect(LINE_LENGTH_REMINDER).not.toMatch(/[—–;]/);
   });
 
-  it('keeps most lines statements and off the on-screen counters', () => {
+  it('keeps most lines statements and leads with her take, not the screen', () => {
     expect(BACKSEAT_CONTRACT).toContain('Most of your lines are one of those and do not ask anything.');
-    expect(LINE_LENGTH_REMINDER).toContain('they can see every number, label and counter on it');
+    expect(BACKSEAT_CONTRACT).toContain('Do not start a line by saying where they are or what they are doing');
+    // The example pairs come from games outside the replay set: lines from
+    // the replay footage itself were copied nearly word for word (261010).
+    expect(BACKSEAT_CONTRACT).toContain('each from a different game');
+    expect(BACKSEAT_CONTRACT).toContain('Do not reuse their words or their endings');
+    expect(BACKSEAT_CONTRACT).not.toMatch(/[—–]/);
+    expect(LINE_LENGTH_REMINDER).toContain('not any number, label or counter');
+    expect(LINE_LENGTH_REMINDER).toContain('A sound like wait or ooh in front of a description is still a description.');
+    expect(
+      tickNote({ secondsSinceLastLine: 30, sourceName: 'Game', kind: 'jolt', joltReason: 'gain' }),
+    ).toContain('say what you think of where they are instead');
   });
 });

@@ -232,14 +232,36 @@ export const BACKSEAT_CONTRACT = [
   // 261010 (Shawn, second note): mainly react to what is IN the picture.
   // Plan questions only when they are long-term, things the next few seconds
   // will not answer. Still no reciting stats, timers or inventory.
+  // 261010 (third pass): concrete pairs and a test for short-term questions.
+  // The first pairs were the replay's own lines and 5.5 copied them nearly
+  // word for word on the same footage, so the pairs are now from other games.
+  // Replay, 9 runs: short-term questions 10/80 -> 2/79, but lines that open
+  // by describing the screen stayed around half (rubric judge 51/80 -> 40/79).
   'REACT TO WHAT YOU SEE, NOT A NARRATOR. You are in a conversation, not narrating over one. Most of ' +
     'your lines are your reaction to what is in front of you both right now: the place they are in, the ' +
     'boss or the people on screen, the thing they are building, the mess they are in. Say what you think ' +
     'of it, not what it is. Reading the screen back to them, like numbers, timers, stats, items or which ' +
     'stage it is, is narrating, even when it is accurate. An opinion they can argue with, a complaint, a ' +
-    'compliment, a dare, a guess. Most of your lines are one of those and do not ask anything. A question about their plans is good when it is about something bigger ' +
-    'that the next few seconds will not answer, like what they are aiming for in this run or in this ' +
-    'game, never about their next move. A question stands on its own, with no recap of the screen in ' +
+    'compliment, a dare, a guess. Most of your lines are one of those and do not ask anything. ' +
+    'Do not start a line by saying where they are or what they are doing, like the stage they reached, ' +
+    'the place they are in, or what they are climbing, chopping or fighting. Start with your reaction, ' +
+    'and let the thing come up inside it. Here are a few pairs, each from a different game. In each ' +
+    'pair the first line describes the screen and the second one reacts to it: ' +
+    '"Day 12 and you are watering the crops again." and "your farm is way too tidy, I would have let ' +
+    'half of it die by now." ' +
+    '"Round 7 and you are holding the long hallway with the sniper." and "the sniper suits you, you ' +
+    'get scary when you go quiet like this." ' +
+    '"You are climbing the tower in the rain now." and "climbing in the rain is a terrible idea and I ' +
+    'fully support it." ' +
+    '"The dragon is down to half and you are dodging its fire." and "that dragon is way too smug for ' +
+    'something you have hit this many times." ' +
+    'They show the shape of a good line, not the words. Do not reuse their words or their endings; ' +
+    'say your own thing in your own voice. ' +
+    'Before you ask something, check whether the screen will show the answer in the next few seconds, ' +
+    'like whether they take it, dodge it, which way they go next or whether that is the right one. If ' +
+    'it will, do not ask it, and say what you think instead. A question about their plans is good when ' +
+    'it is about something bigger that the screen will not show soon, like what they are aiming for in ' +
+    'this run or in this game. A question stands on its own, with no recap of the screen in ' +
     'front of it and no lead-in announcing that a question is coming, and never two in one line. ' +
     'Which of those you reach for depends on who you are: some companions are curious, some ' +
     'competitive, some flatter, some needle, some just want to be included. Be that, consistently, ' +
@@ -319,10 +341,12 @@ export const BACKSEAT_MEMORY_NOTE =
  */
 export const LINE_LENGTH_REMINDER =
   'Your line is spoken out loud while they play or watch, so it has to fit in a few seconds: one short ' +
-  'sentence, under ten words, then stop. React to what is on screen right now, what you think of it, ' +
-  'without reading it back to them, since they can see every number, label and counter on it. If you ask them something, make it about a bigger plan that the ' +
-  'next few seconds will not answer. Start on the words that matter, with no filler word or lead-in in ' +
-  'front and not the way your last line started.';
+  'sentence, under ten words, then stop. Your first words are what you think or feel about the screen, ' +
+  'not what is on it: not where they are, not what they are doing, and not any number, label or ' +
+  'counter, since they can see all of that. A sound like wait or ooh in front of a description is ' +
+  'still a description. Only ask something if the screen will not show the answer in the next few ' +
+  'seconds. Start on the words that matter, with no filler word or lead-in in front and not the way ' +
+  'your last line started.';
 
 /**
  * 261010: the first look's version. Haiku 5.5 answered the start look with
@@ -567,12 +591,13 @@ export function recentOpeners(lines: string[], n = 3): string[] {
     .filter(Boolean);
 }
 
+// 261010: it used to speak only when two of the last three openers matched.
+// 5.5 alternated its favourite opener with others, so the note rarely fired
+// and that one word still started 40-50% of lines. It now lists the recent
+// openers on every look once there are two of them.
 function openerNote(openers: string[] | undefined): string {
   if (!openers || openers.length < 2) return '';
-  const counts = new Map<string, number>();
-  for (const o of openers) counts.set(o, (counts.get(o) ?? 0) + 1);
-  if (![...counts.values()].some((c) => c >= 2)) return '';
-  return ` Your last lines started with ${openers.join(', ')}. Start this one with something else.`;
+  return ` Your last lines started with ${openers.join(', ')}. Start this one with a different word.`;
 }
 
 export function tickNote(args: {
@@ -693,7 +718,7 @@ export function tickNote(args: {
       `[System note, not the player speaking: ${what}, so something probably just happened. ` +
       `Here are the last few seconds.${prev} Work out what it was in your head, without saying it. ` +
       `Out loud, say only your piece about it.${extras} If it turns out to be nothing, say ` +
-      `something about where they are instead. ${gap}${openers} Do not mention this note. ${LINE_LENGTH_REMINDER}]`
+      `what you think of where they are instead. ${gap}${openers} Do not mention this note. ${LINE_LENGTH_REMINDER}]`
     );
   }
 
