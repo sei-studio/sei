@@ -18,6 +18,7 @@ import { createSessionState } from './sessionState.js'
 import { loadPlayer, savePlayer, formatPlayerSeedBlock } from './memory/player.js'
 import { Priority, createPriorityQueue, attackedPriority } from './fsm.js'
 import { idleCadenceMs } from './prompts.js'
+import { sessionActionStats } from './actionStats.js'
 
 const REQUIRED_ADAPTER_MEMBERS = [
   'listActions', 'getActionSchema', 'getActionDescription', 'executeAction',
@@ -267,6 +268,11 @@ export async function start({ config, adapter, logger = console, onTerminalError
       // chat.js set the flag; honoring it here keeps the line in history while
       // skipping the wake (the "only goes in chat history" behavior).
       if (evt.suppressInterrupt) return
+      // 261011: a real player line this bot should answer starts the
+      // unanswered-chat clock (brain/actionStats.js). Counts only.
+      if (evt.playerSpoke === true && !evt.gameEvent) {
+        try { sessionActionStats.notePlayerChat() } catch {}
+      }
       // Enqueue with the adapter-compatible payload shape (chat.js produced
       // { username, message, addressed, playerSpoke }; the priority queue's
       // player-chat preemption keys on `data.playerSpoke === true`, so we
@@ -400,6 +406,7 @@ export async function start({ config, adapter, logger = console, onTerminalError
       if (!raw) return
       const who = String(from || 'The player')
       try { orchestrator.recordIncomingChat?.(who, raw, { companion: false }) } catch {}
+      try { sessionActionStats.notePlayerChat({ voice: voice === true }) } catch {}
       // 260708: a live voice-call utterance while the bot is in-game is NOT an
       // out-of-band text message, and the old framing ("NOT in the game with
       // you right now") was factually wrong on every line of a play-while-

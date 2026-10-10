@@ -15,6 +15,7 @@ import { prefilterToolBatch, postProcessToolBatch } from './toolBatch.js'
 import { classifyConnectError } from './errors.js'
 import { createDashboardTelemetry } from './dashboard/telemetry.js'
 import { createDefaultRegistry } from './registry.js'
+import { sessionActionStats, classifyActionOutcome } from '../../brain/actionStats.js'
 import { createSnapshotComposer } from './observers/snapshot.js'
 import { getProgression as readProgression } from './observers/progression.js'
 import { setWorldPaused } from './behaviors/pause.js'
@@ -46,7 +47,7 @@ import {
  *   is the authoritative belt-and-suspenders gate (VIS-03).
  * @returns {import('../../brain/types.js').Adapter}
  */
-export function createMinecraftAdapter({ bot, config, visionEnabled = false }) {
+export function createMinecraftAdapter({ bot, config, visionEnabled = false, actionStats = sessionActionStats }) {
   if (!bot) throw new Error('createMinecraftAdapter: bot required')
   if (!config) throw new Error('createMinecraftAdapter: config required')
 
@@ -83,10 +84,28 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false }) {
       // follow's persistent trailing runs OUTSIDE execute (background tick),
       // so follow keeps its gaze pitch-tracking.
       bot._seiActionActive = (bot._seiActionActive ?? 0) + 1
+      // 261011: aggregate outcome telemetry (brain/actionStats.js). Counts and
+      // a closed failure class only; the result text never leaves this frame.
+      const startedAt = Date.now()
+      try { actionStats?.noteActionStarted() } catch {}
+      let result, error
       try {
-        return await registry.execute(name, args, bot, execConfig)
+        result = await registry.execute(name, args, bot, execConfig)
+        return result
+      } catch (err) {
+        error = err ?? new Error('unknown')
+        throw err
       } finally {
         bot._seiActionActive = Math.max(0, (bot._seiActionActive ?? 1) - 1)
+        try {
+          const reason = classifyActionOutcome({ result, error, aborted: execConfig.signal?.aborted === true })
+          // Only registered names are recorded: `name` is the model's tool_use
+          // name, and a hallucinated one (any provider can emit a tool name it
+          // was not offered) is model-written text that must not become an
+          // analytics property key.
+          const statName = registry.schema(name) ? name : 'other'
+          actionStats?.recordAction(statName, Date.now() - startedAt, reason)
+        } catch {}
       }
     },
 

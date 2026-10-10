@@ -26,6 +26,7 @@ import { applyWorldPause } from './behaviors/pause.js'
 import { installFaceOnDig } from './behaviors/face.js'
 import { forgeHandshakeEnabled, installForgeHandshake, sampleWorldNames } from './forgeHandshake.js'
 import { markBoot } from '../../bootTiming.js'
+import { sessionActionStats } from '../../brain/actionStats.js'
 
 /**
  * Extract human-readable text from mineflayer kick/disconnect reasons,
@@ -662,6 +663,8 @@ export function createBotInstance({
     if (!_spawned) {
       _spawned = true
       markBoot('spawn')
+      // 261011: session telemetry (brain/actionStats.js) — protocol version only.
+      try { sessionActionStats.setMeta({ mc_version: typeof bot.version === 'string' ? bot.version : null }) } catch {}
       _clearConnectTimer()
       safeStart('loadPlugin(pathfinder)', () => bot.loadPlugin(pathfinder))
       // Face-what-you-break (260708): wrap bot.dig AFTER the pathfinder loads
@@ -701,6 +704,7 @@ export function createBotInstance({
 
   bot.on('death', () => {
     logger.info?.('[sei] Sei died — respawning...')
+    try { sessionActionStats.noteDeath() } catch {}
     // Snapshot the death position BEFORE bot.respawn() teleports the entity
     // back to world spawn — that's where everything the bot was carrying
     // dropped, so the brain needs it to tell the player where to recover their

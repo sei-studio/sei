@@ -1,4 +1,5 @@
 import pkg from 'mineflayer-pathfinder'
+import { sessionActionStats } from '../../../brain/actionStats.js'
 const { pathfinder, Movements, goals } = pkg
 
 let _bot = null
@@ -138,6 +139,8 @@ export function startFollow(bot, config) {
       _lastProgressAt = t
       _stuck = null
     } else if (t - _lastProgressAt >= STUCK_MS) {
+      // 261011: count each fresh stuck episode once (telemetry).
+      if (!_stuck) { try { sessionActionStats.noteStuck() } catch {} }
       _stuck = {
         stuckSec: Math.round((t - _lastProgressAt) / 1000),
         dist: Math.round(dist),

@@ -33,6 +33,7 @@ import { ConfigSchema, GAME_KINDS } from './config.js'
 import { applyLlmInit } from './llmInit.js'
 import { preparePackLoader } from './packLoader.js'
 import { start as startBrain } from './brain/index.js'
+import { sessionActionStats, llmMetaFromConfig } from './brain/actionStats.js'
 
 // 260926: the static graph above (config, zod, the brain, the LLM SDKs) is
 // evaluated by now. See bootTiming.js for the phase list.
@@ -314,11 +315,40 @@ function requestJwtRefresh() {
 }
 let _shuttingDown = false   // re-entry guard for gracefulShutdown
 
+/**
+ * 261011: Minecraft action-outcome telemetry (brain/actionStats.js). The bot
+ * posts a cumulative snapshot as {type:'action-stats'} every
+ * ACTION_STATS_FLUSH_MS while something changed, and once more right before
+ * any terminal lifecycle (error / summon-stopped), so main holds the final
+ * numbers when it closes the play session. A hard kill or native crash loses
+ * at most one interval. Raw port message, no stdout mirror (nothing in it is
+ * useful in the rolling log). Main ships ONE event per session.
+ */
+const ACTION_STATS_FLUSH_MS = 15_000
+let _actionStatsEnabled = false
+let _actionStatsTimer = null
+function postActionStats({ force = false } = {}) {
+  if (!_actionStatsEnabled || !initPort) return
+  try {
+    if (!force && !sessionActionStats.isDirty()) return
+    initPort.postMessage({ type: 'action-stats', stats: sessionActionStats.snapshot() })
+  } catch {}
+}
+function startActionStats(config) {
+  _actionStatsEnabled = true
+  sessionActionStats.setMetaProvider(() => llmMetaFromConfig(config))
+  _actionStatsTimer = setInterval(() => postActionStats(), ACTION_STATS_FLUSH_MS)
+  _actionStatsTimer.unref?.()
+}
+
 function emitLifecycle(payload) {
   // payload conforms to BotLifecycle (src/shared/ipc.ts):
   //   {type:'init-ack'} | {type:'connected'} | {type:'disconnected', reason?}
   // | {type:'error', error:ErrorClass, message} | {type:'chat', from, text}
   // | {type:'summon-ready'} | {type:'summon-stopped'} | {type:'exit', code}
+  // 261011: the final telemetry snapshot must reach main BEFORE the status
+  // that closes the play session (same port, so ordering holds).
+  if (payload?.type === 'error' || payload?.type === 'summon-stopped') postActionStats({ force: true })
   if (initPort) {
     try { initPort.postMessage(payload) } catch {}
   }
@@ -603,6 +633,9 @@ async function bootstrapWithInit(initData) {
     })
     return
   }
+
+  // 261011: per-action outcome telemetry (Minecraft only; see postActionStats).
+  if (game === 'minecraft') startActionStats(config)
 
   // 260618: stash the initial companion roster on the (mutable) parsed config
   // so chat.js — which runs without an orchestrator handle — can read it to skip
