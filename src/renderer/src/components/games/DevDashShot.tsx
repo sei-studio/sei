@@ -23,6 +23,7 @@
  *     http://localhost:5173/?dashshot=chatchess    a finished chess game (the result card) inside the real ChatScreen
  *     http://localhost:5173/?dashshot=chatcall     a live call with Sui on her scene (VoiceCallScreen, backdrop mode)
  *     http://localhost:5173/?dashshot=home&step=plan|call|untagged|goal|long|none  the Home wall with the "up next" strip (261013);
+ *                                                  (&name=Marv&text=...&surface=game|call: a given plan for that companion, 261014)
  *                                                  sei.track calls land on window.__seiDevTrack
  *     http://localhost:5173/?dashshot=chatui&part=chat|picker|settings  the rail + a screen, for theme/accent checks
  *                                                  (&lang=zh on any of these for the Chinese copy)
@@ -216,11 +217,18 @@ function seed(): void {
     const now = Date.now();
     useDataStore.setState({
       summons: {},
-      characters: [
-        { id: 'dashshot-home-sui', name: 'Sui', portrait_image: './img/onboard/sui-stand.png', last_chatted: new Date(now - 20 * 3_600_000).toISOString() },
-        { id: 'dashshot-home-marv', name: 'Marv', last_chatted: new Date(now - 50 * 3_600_000).toISOString() },
-        { id: 'dashshot-home-lyra', name: 'Lyra', last_chatted: new Date(now - 90 * 3_600_000).toISOString() },
-      ] as unknown as ReturnType<typeof useDataStore.getState>['characters'],
+      // &name=<companion> (261014): that companion first (the one the strip
+      // is for), then the default trio minus a duplicate. Only Sui has a
+      // bundled portrait; the others get their pixel portrait.
+      characters: [params.get('name') || 'Sui', 'Sui', 'Marv', 'Lyra']
+        .filter((n, i, all) => all.findIndex((m) => m.toLowerCase() === n.toLowerCase()) === i)
+        .slice(0, 3)
+        .map((name, i) => ({
+          id: `dashshot-home-${name.toLowerCase()}`,
+          name,
+          ...(name === 'Sui' ? { portrait_image: './img/onboard/sui-stand.png' } : {}),
+          last_chatted: new Date(now - [20, 50, 90][i] * 3_600_000).toISOString(),
+        })) as unknown as ReturnType<typeof useDataStore.getState>['characters'],
     });
   }
   if (params.get('dashshot') === 'chatfirst') {

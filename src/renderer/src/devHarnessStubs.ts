@@ -227,8 +227,14 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
             const id = ids[0];
             if (!id || kind === 'none') return {};
             const at = Date.now() - 20 * 3_600_000;
-            const card =
-              kind === 'goal'
+            // &text= (261014): a given plan text, for rendering real
+            // generated plans (scripts/next-step-examples.ts); &surface=call
+            // makes it a call plan, anything else a Minecraft plan.
+            const given = params.get('text');
+            const surface = params.get('surface') === 'call' ? 'call' : 'game';
+            const card = given
+              ? { source: 'plan', text: given, surface, game: surface === 'game' ? 'minecraft' : null }
+              : kind === 'goal'
                 ? { source: 'goal', text: 'Get iron tools together', surface: 'game', game: 'minecraft' }
                 : kind === 'call'
                   ? { source: 'plan', text: 'Ask how the job interview went', surface: 'call', game: null }
