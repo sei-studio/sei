@@ -142,8 +142,11 @@ export function createVelopackAutoUpdater(): VelopackAutoUpdater | null {
   }
 
   // Update on quit: hand the downloaded package to Update.exe, which applies it
-  // after this process exits, silently and without reopening Sei.
-  app.on('will-quit', () => {
+  // after this process exits, silently and without reopening Sei. 'quit', not
+  // 'will-quit': Sei's before-quit chain ends in app.exit(0), which skips
+  // will-quit but still emits quit (electron-updater hooks quit for the same
+  // reason). Run 40994110388 never applied on quit with will-quit.
+  app.on('quit', () => {
     if (self.autoInstallOnAppQuit) {
       try {
         launchApply(false);
@@ -151,7 +154,7 @@ export function createVelopackAutoUpdater(): VelopackAutoUpdater | null {
         velopackLog(`apply on quit failed: ${(err as Error).message}`);
       }
     }
-    spikeMark('will-quit');
+    spikeMark('quit');
   });
 
   return self;

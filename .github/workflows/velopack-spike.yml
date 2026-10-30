@@ -322,8 +322,12 @@ jobs:
           Layout 'after startup-apply -> 0.6.92'
           # 3) update on quit, 0.6.92 -> 0.6.93, no reopen
           Run-Path 'quit' '0.6.93' $false 'quit'
-          Start-Sleep -Seconds 5
+          $w = [Diagnostics.Stopwatch]::StartNew()
+          while ((Get-Process -Name 'Update' -ErrorAction SilentlyContinue) -and $w.Elapsed.TotalSeconds -lt 120) { Start-Sleep -Milliseconds 250 }
+          Start-Sleep -Seconds 2
           Layout 'after quit -> 0.6.93'
+          $qv = ([xml](Get-Content "$root\current\sq.version")).package.metadata.version
+          if ($qv -ne '0.6.93') { $failures += "update on quit did not apply (current is $qv)" } else { 'update on quit applied: current is 0.6.93' }
           # 4) a plain launch of the updated app, for the baseline launch time
           Stop-Sei
           Remove-Item $spike -ErrorAction SilentlyContinue
