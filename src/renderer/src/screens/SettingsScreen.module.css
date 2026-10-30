@@ -1,7 +1,7 @@
 /* SettingsScreen.module.css — "Party" restyle.
  * Centered 780px column, Oswald group headers (sentence case), label|value|control
  * rows with hairline bottom borders. Seg + Toggle primitives own their own CSS.
- * Source: .planning/design/UI-REDESIGN-PARTY.md §4.7; mockup .set-col / .set-row.
+ * Source: docs/design/UI-REDESIGN-PARTY.md §4.7; mockup .set-col / .set-row.
  */
 
 /* Scroll body — fills the surface; the column centers within it. */

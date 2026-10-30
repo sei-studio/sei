@@ -31,6 +31,13 @@ if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('ches
   // 260803: the `?backseat=1` branch is gone with the backseat overlay window.
   // Screen sharing is a call feature now and its capture runs in THIS window;
   // see lib/stores/useBackseatStore.ts for why that is safe.
+} else if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('facepack')) {
+  // Dev-only facepack preview (261028, desktop companion pilot):
+  // http://localhost:5173/?facepack=1 (see DevFacepackPreview for params), or
+  // main's dev-flag preview window. Lazy import keeps it out of prod bundles.
+  void import('./components/DevFacepackPreview').then(({ DevFacepackPreview }) => {
+    root.render(<DevFacepackPreview />);
+  });
 } else if (new URLSearchParams(window.location.search).has('overlay')) {
   document.documentElement.style.background = 'transparent';
   document.body.style.background = 'transparent';

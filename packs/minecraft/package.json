@@ -2,7 +2,7 @@
   "name": "@sei/pack-minecraft",
   "version": "0.0.0",
   "private": true,
-  "description": "Runtime dependencies of the Minecraft game adapter (src/bot/adapter/minecraft). Downloaded on first use as a game pack, never bundled in the installer. See scripts/build-game-pack.mjs and .planning/game-adapters-260908.md section 2.5.",
+  "description": "Runtime dependencies of the Minecraft game adapter (src/bot/adapter/minecraft). Downloaded on first use as a game pack, never bundled in the installer. See scripts/build-game-pack.mjs and docs/design/game-adapters-260908.md section 2.5.",
   "dependencies": {
     "gl": "file:../../vendor/gl-8.1.6-cxx20.tgz",
     "minecraft-data": "^3.114.0",

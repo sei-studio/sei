@@ -1,0 +1,1307 @@
+diff --git a/src/bins/src/commands/apply.rs b/src/bins/src/commands/apply.rs
+index cf259743..a317110f 100644
+--- a/src/bins/src/commands/apply.rs
++++ b/src/bins/src/commands/apply.rs
+@@ -1,7 +1,10 @@
+ use crate::shared::{self, OperationWait};
+ use anyhow::{bail, Result};
+ use std::{ffi::OsString, path::PathBuf};
+-use velopack::{constants, locator, locator::VelopackLocator};
++use velopack::{locator, locator::VelopackLocator};
++// SEI PATCH: only the non-Windows restart paths use it now
++#[cfg(not(target_os = "windows"))]
++use velopack::constants;
+ 
+ #[cfg(target_os = "linux")]
+ use super::apply_linux_impl::apply_package_impl;
+@@ -29,6 +32,14 @@ pub fn apply(
+     exe_args: Option<Vec<OsString>>,
+     hook_mode: HookRunMode,
+ ) -> Result<VelopackLocator> {
++    // SEI PATCH: Sei, launched while this apply runs, sees this marker and leaves a relaunch request instead
++    #[cfg(target_os = "windows")]
++    let _applying = super::sei_fast::mark_applying(locator);
++    #[cfg(target_os = "windows")]
++    if restart && hook_mode == HookRunMode::None {
++        super::sei_fast::request_early_start(exe_args.clone());
++    }
++
+     shared::operation_wait(wait);
+ 
+     let packages_dir = locator.get_packages_dir();
+@@ -49,12 +60,36 @@ pub fn apply(
+                         applied_locator.get_manifest_version_full_string()
+                     );
+                     // if successful, we want to restart the new version of the app, which could have different metadata
++                    #[cfg(target_os = "windows")]
++                    {
++                        // SEI PATCH: the app may already be running (started right after the swap)
++                        if restart && !super::sei_fast::already_started() {
++                            super::sei_fast::start_tracked(&applied_locator, exe_args)?;
++                        }
++                        super::sei_fast::after_apply(&applied_locator, restart);
++                    }
++                    #[cfg(not(target_os = "windows"))]
+                     if restart {
+                         shared::start_package(&applied_locator, exe_args, Some(constants::HOOK_ENV_RESTART))?;
+                     }
+                     Ok(applied_locator)
+                 }
+                 Err(e) => {
++                    #[cfg(target_os = "windows")]
++                    {
++                        // SEI PATCH: say so briefly, then open the version that is still installed
++                        error!("Error applying package: {}", e);
++                        crate::windows::sei_overlay::show_error(std::time::Duration::from_millis(2500));
++                        if restart && !super::sei_fast::already_started() {
++                            if let Err(e2) = super::sei_fast::start_tracked(locator, exe_args) {
++                                error!("Could not start the previous version: {}", e2);
++                                crate::windows::sei_overlay::close_now();
++                            }
++                        } else {
++                            crate::windows::sei_overlay::close_now();
++                        }
++                    }
++                    #[cfg(not(target_os = "windows"))]
+                     if restart {
+                         shared::start_package(locator, exe_args, Some(constants::HOOK_ENV_RESTART))?;
+                     }
+@@ -63,6 +98,11 @@ pub fn apply(
+             }
+         }
+         None => {
++            #[cfg(target_os = "windows")]
++            if restart {
++                super::sei_fast::start_tracked(locator, exe_args)?;
++            }
++            #[cfg(not(target_os = "windows"))]
+             if restart {
+                 shared::start_package(locator, exe_args, Some(constants::HOOK_ENV_RESTART))?;
+             }
+diff --git a/src/bins/src/commands/apply_windows_impl.rs b/src/bins/src/commands/apply_windows_impl.rs
+index 81bd6e69..3a765c86 100644
+--- a/src/bins/src/commands/apply_windows_impl.rs
++++ b/src/bins/src/commands/apply_windows_impl.rs
+@@ -32,16 +32,18 @@ fn remove_temp_dirs(update_succeeded: bool, temp_path_new: &Path, temp_path_old:
+ 
+ /// Moves the current dir to temp_path_old and then temp_path_new into its place.
+ /// If the second move fails, the old version is moved back.
+-fn replace_current_dir(current_dir: &Path, temp_path_old: &Path, temp_path_new: &Path, retry_delay_ms: i32) -> Result<()> {
++/// SEI PATCH: `retry_scale` multiplies the retry counts, so a shorter delay keeps the same total budget (a 1 s
++/// delay added up to a second to every restart that met a file still held by the exiting app).
++fn replace_current_dir(current_dir: &Path, temp_path_old: &Path, temp_path_new: &Path, retry_delay_ms: i32, retry_scale: i32) -> Result<()> {
+     info!("Backing up current dir to {:?}", temp_path_old);
+-    shared::retry_io_ex(|| fs::rename(current_dir, temp_path_old), retry_delay_ms, 10)
++    super::sei_fast::retry_rename(current_dir, temp_path_old, retry_delay_ms, 10 * retry_scale)
+         .context("Unable to start the update, because one or more running processes prevented it. Try again later, or if the issue persists, restart your computer.")?;
+ 
+     info!("Replacing current dir with {:?}", temp_path_new);
+-    if let Err(e) = shared::retry_io_ex(|| fs::rename(temp_path_new, current_dir), retry_delay_ms, 30) {
++    if let Err(e) = super::sei_fast::retry_rename(temp_path_new, current_dir, retry_delay_ms, 30 * retry_scale) {
+         // restore the old version, otherwise the cleanup would delete the only copy of the app
+         error!("Failed to replace current dir ({}), restoring the previous version...", e);
+-        if let Err(e2) = shared::retry_io_ex(|| fs::rename(temp_path_old, current_dir), retry_delay_ms, 10) {
++        if let Err(e2) = shared::retry_io_ex(|| fs::rename(temp_path_old, current_dir), retry_delay_ms, 10 * retry_scale) {
+             error!("Failed to restore the previous version ({}), it is still in {:?}", e2, temp_path_old);
+             return Err(e).context(
+                 "Unable to complete the update, and the app was left in a broken state. You may need to re-install or repair this application manually.",
+@@ -138,7 +140,9 @@ pub fn apply_package_impl(old_locator: &VelopackLocator, package: &PathBuf, hook
+     }
+ 
+     let current_dir = old_locator.get_current_bin_dir();
+-    let temp_path_new = old_locator.get_temp_dir_rand16();
++    // SEI PATCH: use the copy `Update.exe stage` extracted while the app was running, when it is intact
++    let staged = super::sei_fast::take_staged(old_locator, package, &new_version.to_string(), &bundle);
++    let temp_path_new = staged.clone().unwrap_or_else(|| old_locator.get_temp_dir_rand16());
+     let temp_path_old = old_locator.get_temp_dir_rand16();
+ 
+     // open a dialog showing progress...
+@@ -146,16 +150,23 @@ pub fn apply_package_impl(old_locator: &VelopackLocator, package: &PathBuf, hook
+ 
+     let action: Result<()> = (|| {
+         // first, extract the update to temp_path_new
+-        fs::create_dir_all(&temp_path_new)?;
+-        bundle
+-            .extract_lib_contents_to_path(&temp_path_new, |p| {
+-                reporter.set_progress(p);
+-            })
+-            .map_err(|e| {
+-                warn!("Deleting package {:?} to prevent update loop: {}", package, e);
+-                let _ = fs::remove_file(package);
+-                e
+-            })?;
++        if staged.is_none() {
++            let sw = std::time::Instant::now();
++            crate::windows::sei_overlay::set_phase(crate::windows::sei_overlay::Phase::Extracting);
++            fs::create_dir_all(&temp_path_new)?;
++            bundle
++                .extract_lib_contents_to_path(&temp_path_new, |p| {
++                    reporter.set_progress(p);
++                    crate::windows::sei_overlay::set_progress(p);
++                })
++                .map_err(|e| {
++                    warn!("Deleting package {:?} to prevent update loop: {}", package, e);
++                    let _ = fs::remove_file(package);
++                    e
++                })?;
++            info!("Extracted the package in {}ms", sw.elapsed().as_millis());
++        }
++        crate::windows::sei_overlay::set_phase(crate::windows::sei_overlay::Phase::Swapping);
+ 
+         reporter.set_indeterminate();
+ 
+@@ -169,7 +180,12 @@ pub fn apply_package_impl(old_locator: &VelopackLocator, package: &PathBuf, hook
+         // third, we try _REALLY HARD_ to stop the package
+         let _ = shared::force_stop_package(&root_path);
+         // fourth, we move the current dir to temp_path_old, and fifth, we move temp_path_new into its place
+-        replace_current_dir(&current_dir, &temp_path_old, &temp_path_new, 1000)?;
++        let sw = std::time::Instant::now();
++        replace_current_dir(&current_dir, &temp_path_old, &temp_path_new, 100, 10)?;
++        info!("Swapped the current dir in {}ms", sw.elapsed().as_millis());
++
++        // SEI PATCH: start the new version now; the rest of the apply is bookkeeping
++        super::sei_fast::on_swapped(&new_locator);
+ 
+         // from this point on, we're past the point of no return and should not bail
+         // sixth, we write the uninstall entry
+@@ -276,7 +292,7 @@ mod tests {
+         make_app_dir(&current, "old");
+         make_app_dir(&tmp_new, "new");
+ 
+-        replace_current_dir(&current, &tmp_old, &tmp_new, 10).unwrap();
++        replace_current_dir(&current, &tmp_old, &tmp_new, 10, 1).unwrap();
+ 
+         assert_eq!(fs::read_to_string(current.join("sq.version")).unwrap(), "new");
+         assert_eq!(fs::read_to_string(tmp_old.join("sq.version")).unwrap(), "old");
+@@ -294,7 +310,7 @@ mod tests {
+         make_app_dir(&current, "old");
+         // tmp_new does not exist, so the second rename fails
+ 
+-        assert!(replace_current_dir(&current, &tmp_old, &tmp_new, 10).is_err());
++        assert!(replace_current_dir(&current, &tmp_old, &tmp_new, 10, 1).is_err());
+         assert_eq!(fs::read_to_string(current.join("sq.version")).unwrap(), "old");
+         assert!(!tmp_old.exists());
+ 
+@@ -312,7 +328,7 @@ mod tests {
+         // an open file inside tmp_new blocks renaming it, as when antivirus scans the extracted files
+         let locked = fs::File::open(tmp_new.join("sq.version")).unwrap();
+ 
+-        assert!(replace_current_dir(&current, &tmp_old, &tmp_new, 10).is_err());
++        assert!(replace_current_dir(&current, &tmp_old, &tmp_new, 10, 1).is_err());
+         assert_eq!(fs::read_to_string(current.join("sq.version")).unwrap(), "old");
+         assert!(!tmp_old.exists());
+ 
+diff --git a/src/bins/src/commands/mod.rs b/src/bins/src/commands/mod.rs
+index 29d9b652..ad11d597 100644
+--- a/src/bins/src/commands/mod.rs
++++ b/src/bins/src/commands/mod.rs
+@@ -13,6 +13,8 @@ mod apply_linux_impl;
+ mod apply_osx_impl;
+ #[cfg(target_os = "windows")]
+ mod apply_windows_impl;
++#[cfg(target_os = "windows")]
++pub mod sei_fast;
+ 
+ #[cfg(target_os = "windows")]
+ mod start_windows_impl;
+diff --git a/src/bins/src/commands/sei_fast.rs b/src/bins/src/commands/sei_fast.rs
+new file mode 100644
+index 00000000..3e9307d6
+--- /dev/null
++++ b/src/bins/src/commands/sei_fast.rs
+@@ -0,0 +1,407 @@
++//! SEI PATCH (not upstream Velopack): fast apply.
++//!
++//! Stock `apply` extracts the whole package (744 MB / 6,400 files for Sei) AFTER the app has exited, which is the
++//! ~20 s blank gap of an in-app restart. This module moves that work to while the app is still running:
++//!
++//!   `Update.exe stage --package <nupkg>` (started by Sei right after a download, at below-normal CPU priority) extracts
++//!   the package to `<packages>\SeiStaged\v<version>.partial`, renames it to `v<version>` when complete and writes
++//!   `v<version>.ok` with the package's name and size. A kill at any point leaves no `.ok`, so the copy is ignored
++//!   and cleaned up by the next stage.
++//!
++//!   `apply` then calls `take_staged`: when the `.ok` marker matches the package being applied and every file is
++//!   present with the right size, the staged folder is renamed into `current` instead of extracting. Anything
++//!   else falls back to the stock extraction, so a missing or broken staged copy only costs time.
++//!
++//! With `--noHooks` (Sei handles no Velopack hooks) the restarted app is also started right after the swap, before
++//! the uninstall-entry, shortcut and old-folder cleanup, which then runs at background priority.
++//!
++//! Also here: the `applying.pid` marker (Sei, launched during an apply, sees it and leaves instead of blocking the
++//! swap) and the `relaunch` request it leaves behind, which a no-restart apply honours when it is done.
++
++use crate::windows::sei_overlay::{self, Phase};
++use anyhow::{anyhow, bail, Result};
++use std::{
++    collections::HashMap,
++    ffi::OsString,
++    fs,
++    path::{Path, PathBuf},
++    sync::Mutex,
++    time::{Duration, Instant},
++};
++use velopack::{bundle, bundle::BundleZip, constants, locator::VelopackLocator, lockfile::LockFile, process, wide_strings::string_to_wide};
++use ::windows::Win32::{
++    Foundation::FreeLibrary,
++    Storage::FileSystem::GetDiskFreeSpaceExW,
++    System::LibraryLoader::{LoadLibraryExW, LOAD_LIBRARY_AS_DATAFILE, LOAD_LIBRARY_AS_IMAGE_RESOURCE},
++    System::ProcessStatus::EnumProcesses,
++    System::Threading::{GetCurrentProcess, SetPriorityClass, BELOW_NORMAL_PRIORITY_CLASS, PROCESS_MODE_BACKGROUND_BEGIN},
++};
++
++pub const STAGE_DIR: &str = "SeiStaged";
++/// Free space left on the volume after staging. Below this, staging is skipped (stock apply still works).
++const DISK_MARGIN: u64 = 1024 * 1024 * 1024;
++
++lazy_static! {
++    /// Some(args): start the app right after the swap (set by apply when restarting without hooks).
++    static ref EARLY_START: Mutex<Option<Option<Vec<OsString>>>> = Mutex::new(None);
++    static ref STARTED_PID: Mutex<Option<u32>> = Mutex::new(None);
++}
++
++pub fn stage_root(locator: &VelopackLocator) -> PathBuf {
++    locator.get_packages_dir().join(STAGE_DIR)
++}
++
++fn final_dir(root: &Path, version: &str) -> PathBuf {
++    root.join(format!("v{}", version))
++}
++
++fn partial_dir(root: &Path, version: &str) -> PathBuf {
++    root.join(format!("v{}.partial", version))
++}
++
++fn marker_file(root: &Path, version: &str) -> PathBuf {
++    root.join(format!("v{}.ok", version))
++}
++
++fn package_identity(package: &Path) -> Result<String> {
++    let name = package.file_name().ok_or_else(|| anyhow!("package path has no file name"))?.to_string_lossy().to_string();
++    let size = fs::metadata(package)?.len();
++    Ok(format!("{}|{}", name, size))
++}
++
++/// Below-normal CPU priority with normal I/O, for the stage. Background mode (very low I/O priority) made a
++/// 744 MB extraction take 90-160 s on a CI runner against ~12 s at normal priority, long enough that a user who
++/// restarts soon after the download would usually miss the staged copy.
++pub fn set_stage_priority() {
++    unsafe {
++        if let Err(e) = SetPriorityClass(GetCurrentProcess(), BELOW_NORMAL_PRIORITY_CLASS) {
++            warn!("Could not lower the priority: {}", e);
++        }
++    }
++}
++
++/// Low CPU, I/O and memory priority for the rest of this process.
++pub fn set_background_priority() {
++    unsafe {
++        if let Err(e) = SetPriorityClass(GetCurrentProcess(), PROCESS_MODE_BACKGROUND_BEGIN) {
++            warn!("Could not enter background mode: {}", e);
++        }
++    }
++}
++
++fn free_bytes(path: &Path) -> Option<u64> {
++    let wide = string_to_wide(path);
++    let mut free: u64 = 0;
++    unsafe { GetDiskFreeSpaceExW(wide.as_pcwstr(), Some(&mut free), None, None) }.ok().map(|_| free)
++}
++
++fn write_result(root: &Path, line: &str) {
++    info!("Stage result: {}", line);
++    let _ = fs::write(root.join("last-result.txt"), line);
++}
++
++fn expected_files(bundle: &BundleZip) -> Result<HashMap<String, u64>> {
++    let mut map = HashMap::new();
++    for (rel, size) in bundle.get_lib_contents_sizes()? {
++        map.insert(rel, size); // later entries win, as they do on disk
++    }
++    Ok(map)
++}
++
++fn verify_tree(dir: &Path, expected: &HashMap<String, u64>) -> Result<()> {
++    for (rel, size) in expected {
++        let p = dir.join(rel.replace('/', "\\"));
++        let md = fs::symlink_metadata(&p).map_err(|e| anyhow!("{:?}: {}", p, e))?;
++        if *size != u64::MAX && md.len() != *size {
++            bail!("{:?} is {} bytes, expected {}", p, md.len(), size);
++        }
++    }
++    Ok(())
++}
++
++fn remove_any(p: &Path) {
++    let r = if p.is_dir() { remove_dir_all::remove_dir_all(p) } else { fs::remove_file(p) };
++    if let Err(e) = r {
++        warn!("Could not remove {:?}: {}", p, e);
++    }
++}
++
++/// Removes everything in the stage root except the lock, the last result and `keep` (and its marker).
++fn clean_root(root: &Path, keep_version: Option<&str>) {
++    let Ok(entries) = fs::read_dir(root) else { return };
++    let keep: Vec<String> = keep_version.map(|v| vec![format!("v{}", v), format!("v{}.ok", v)]).unwrap_or_default();
++    for entry in entries.flatten() {
++        let name = entry.file_name().to_string_lossy().to_string();
++        if name == ".lock" || name == "last-result.txt" || name == "applying.pid" || name == "relaunch" || keep.contains(&name) {
++            continue;
++        }
++        info!("Removing stale staged item {:?}", entry.path());
++        remove_any(&entry.path());
++    }
++}
++
++/// `Update.exe stage --package <nupkg>`.
++pub fn stage(locator: &VelopackLocator, package: &Path) -> Result<()> {
++    set_stage_priority();
++    let sw = Instant::now();
++    let root = stage_root(locator);
++    fs::create_dir_all(&root)?;
++    let _lock = LockFile::try_acquire_lock(root.join(".lock")).map_err(|e| anyhow!("another stage is running ({})", e))?;
++
++    let mut bundle = bundle::load_bundle_from_file(package)?;
++    let manifest = bundle.read_manifest()?;
++    let version = manifest.version.to_string();
++    if manifest.version <= locator.get_manifest_version() {
++        write_result(&root, &format!("skipped {}: not newer than the installed {}", version, locator.get_manifest_version()));
++        bail!("package {} is not newer than the installed version", version);
++    }
++    let identity = package_identity(package)?;
++    let expected = expected_files(&bundle)?;
++    let dir = final_dir(&root, &version);
++    let marker = marker_file(&root, &version);
++
++    if dir.is_dir() && fs::read_to_string(&marker).map(|m| m.trim() == identity).unwrap_or(false) && verify_tree(&dir, &expected).is_ok() {
++        clean_root(&root, Some(&version));
++        write_result(&root, &format!("ok {} already staged", version));
++        return Ok(());
++    }
++
++    clean_root(&root, None);
++
++    let needed: u64 = expected.values().filter(|s| **s != u64::MAX).sum();
++    if let Some(free) = free_bytes(&root) {
++        if free < needed + DISK_MARGIN {
++            write_result(
++                &root,
++                &format!("skipped {}: low disk, {} MB free, staging needs {} MB plus {} MB margin", version, free >> 20, needed >> 20, DISK_MARGIN >> 20),
++            );
++            bail!("not enough free disk space to stage");
++        }
++    }
++
++    let partial = partial_dir(&root, &version);
++    fs::create_dir_all(&partial)?;
++    info!("Staging {} ({} files, {} MB) into {:?}", version, expected.len(), needed >> 20, partial);
++    if let Err(e) = bundle.extract_lib_contents_to_path(&partial, |_| {}) {
++        write_result(&root, &format!("failed {}: extract: {}", version, e));
++        remove_any(&partial);
++        bail!("extract failed: {}", e);
++    }
++    let extracted_ms = sw.elapsed().as_millis();
++    if let Err(e) = verify_tree(&partial, &expected) {
++        write_result(&root, &format!("failed {}: verify: {}", version, e));
++        remove_any(&partial);
++        bail!("staged copy failed verification: {}", e);
++    }
++    fs::rename(&partial, &dir)?;
++    fs::write(&marker, &identity)?;
++    let prewarm_ms = prewarm_images(&dir);
++    write_result(
++        &root,
++        &format!("ok {} staged in {} ms (extract {} ms, prewarm {} ms)", version, sw.elapsed().as_millis(), extracted_ms, prewarm_ms),
++    );
++    Ok(())
++}
++
++/// Maps every top-level .exe and .dll of the staged copy as an image once and unmaps it. Creating an image section
++/// for a fresh file reads and checks the whole file (and is where on-execute antivirus scans happen); Windows keeps
++/// that section cached with the file, and a folder rename does not change the file, so the CreateProcess of the
++/// restarted app no longer pays for it inside the restart. Best effort: nothing here can fail the stage.
++fn prewarm_images(dir: &Path) -> u128 {
++    let sw = Instant::now();
++    let Ok(entries) = fs::read_dir(dir) else { return 0 };
++    let mut n = 0;
++    for entry in entries.flatten() {
++        let path = entry.path();
++        let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase());
++        if !matches!(ext.as_deref(), Some("exe") | Some("dll")) {
++            continue;
++        }
++        let wide = string_to_wide(&path);
++        unsafe {
++            if let Ok(module) = LoadLibraryExW(wide.as_pcwstr(), None, LOAD_LIBRARY_AS_IMAGE_RESOURCE | LOAD_LIBRARY_AS_DATAFILE) {
++                let _ = FreeLibrary(module);
++                n += 1;
++            }
++        }
++    }
++    let ms = sw.elapsed().as_millis();
++    info!("Prewarmed {} images in {} ms", n, ms);
++    ms
++}
++
++fn pid_running(pid: u32) -> Option<bool> {
++    let mut pids = vec![0u32; 16384];
++    let mut needed = 0u32;
++    unsafe { EnumProcesses(pids.as_mut_ptr(), (pids.len() * 4) as u32, &mut needed).ok()? };
++    let n = (needed as usize / 4).min(pids.len());
++    Some(pids[..n].contains(&pid))
++}
++
++/// Waits until `pid` is no longer in the process list (no process handle needed). False on timeout.
++pub fn wait_pid_gone(pid: u32, timeout: Duration) -> bool {
++    let sw = Instant::now();
++    loop {
++        match pid_running(pid) {
++            Some(false) => {
++                info!("Process {} exited ({} ms after the wait started)", pid, sw.elapsed().as_millis());
++                return true;
++            }
++            None => {
++                warn!("Could not list processes; not waiting for {}", pid);
++                return false;
++            }
++            Some(true) => {}
++        }
++        if sw.elapsed() >= timeout {
++            warn!("Process {} still running after {} ms. Continuing...", pid, sw.elapsed().as_millis());
++            return false;
++        }
++        std::thread::sleep(Duration::from_millis(50));
++    }
++}
++
++/// `fs::rename` with retries, logging the first failure and the outcome instead of every attempt.
++pub fn retry_rename(from: &Path, to: &Path, delay_ms: i32, count: i32) -> std::io::Result<()> {
++    let sw = Instant::now();
++    // The destination's folder may not exist yet: with a staged copy nothing creates packages\VelopackTemp
++    // (upstream made it while extracting the package there), and a rename into a missing folder fails with
++    // os error 3 on every retry. Seen on a Full-only update (no delta was ever applied on that install).
++    if let Some(parent) = to.parent() {
++        let _ = fs::create_dir_all(parent);
++    }
++    let mut res = fs::rename(from, to);
++    if let Err(e) = &res {
++        warn!("Rename {:?} failed ({}), retrying every {} ms up to {} times", from, e, delay_ms, count);
++    } else {
++        return res;
++    }
++    for i in 0..count {
++        std::thread::sleep(Duration::from_millis(delay_ms.max(0) as u64));
++        res = fs::rename(from, to);
++        if res.is_ok() {
++            info!("Rename {:?} succeeded on retry {} after {} ms", from, i + 1, sw.elapsed().as_millis());
++            return res;
++        }
++    }
++    if let Err(e) = &res {
++        warn!("Rename {:?} still failing after {} ms: {}", from, sw.elapsed().as_millis(), e);
++    }
++    res
++}
++
++/// The staged copy of `package`, if it is complete and intact. Its marker is removed: a copy is used once.
++pub fn take_staged(locator: &VelopackLocator, package: &Path, version: &str, bundle: &BundleZip) -> Option<PathBuf> {
++    let sw = Instant::now();
++    let root = stage_root(locator);
++    let dir = final_dir(&root, version);
++    let marker = marker_file(&root, version);
++    if !dir.is_dir() || !marker.is_file() {
++        info!("No staged copy of {} (looked in {:?})", version, dir);
++        return None;
++    }
++    let identity = package_identity(package).ok()?;
++    let found = fs::read_to_string(&marker).unwrap_or_default();
++    if found.trim() != identity {
++        warn!("Staged copy of {} is for {:?}, not {:?}; not using it", version, found.trim(), identity);
++        return None;
++    }
++    let expected = match expected_files(bundle) {
++        Ok(e) => e,
++        Err(e) => {
++            warn!("Could not list package files ({}); not using the staged copy", e);
++            return None;
++        }
++    };
++    if let Err(e) = verify_tree(&dir, &expected) {
++        warn!("Staged copy of {} is incomplete ({}); extracting instead", version, e);
++        let _ = fs::remove_file(&marker);
++        return None;
++    }
++    let _ = fs::remove_file(&marker);
++    info!("Using staged copy {:?} ({} files verified in {} ms)", dir, expected.len(), sw.elapsed().as_millis());
++    Some(dir)
++}
++
++/// Asks apply to start the app as soon as `current` holds the new version.
++pub fn request_early_start(exe_args: Option<Vec<OsString>>) {
++    if let Ok(mut g) = EARLY_START.lock() {
++        *g = Some(exe_args);
++    }
++}
++
++pub fn already_started() -> bool {
++    STARTED_PID.lock().map(|g| g.is_some()).unwrap_or(false)
++}
++
++/// Starts the app (with the restart marker), then closes the overlay once it shows a window.
++pub fn start_tracked(locator: &VelopackLocator, exe_args: Option<Vec<OsString>>) -> Result<u32> {
++    let current = locator.get_current_bin_dir();
++    let exe = locator.get_main_exe_path();
++    if !exe.exists() {
++        bail!("Unable to find executable to start: '{:?}'", exe);
++    }
++    let mut env = HashMap::new();
++    env.insert(constants::HOOK_ENV_RESTART.to_string(), "true".to_string());
++    let sw = Instant::now();
++    let handle = process::run_process(&exe, exe_args.unwrap_or_default(), Some(&current), true, Some(env))?;
++    let pid = handle.pid();
++    info!("Started {:?} (pid {}, CreateProcess {} ms)", exe, pid, sw.elapsed().as_millis());
++    if let Ok(mut g) = STARTED_PID.lock() {
++        *g = Some(pid);
++    }
++    sei_overlay::set_phase(Phase::Started);
++    sei_overlay::close_when_window_visible(pid, Duration::from_secs(20));
++    Ok(pid)
++}
++
++/// Called by apply right after `current` was replaced.
++pub fn on_swapped(new_locator: &VelopackLocator) {
++    let args = EARLY_START.lock().ok().and_then(|mut g| g.take());
++    if let Some(args) = args {
++        match start_tracked(new_locator, args) {
++            Ok(_) => set_background_priority(),
++            Err(e) => warn!("Early start failed ({}); apply will start the app at the end", e),
++        }
++    }
++}
++
++/// Removes `applying.pid` when dropped.
++pub struct ApplyingMarker(PathBuf);
++
++impl Drop for ApplyingMarker {
++    fn drop(&mut self) {
++        let _ = fs::remove_file(&self.0);
++    }
++}
++
++pub fn mark_applying(locator: &VelopackLocator) -> Option<ApplyingMarker> {
++    let root = stage_root(locator);
++    fs::create_dir_all(&root).ok()?;
++    let path = root.join("applying.pid");
++    fs::write(&path, format!("{}", std::process::id())).ok()?;
++    Some(ApplyingMarker(path))
++}
++
++/// After apply: start the app if Sei was launched during a no-restart apply (it leaves `relaunch` and exits), and
++/// drop staged leftovers of other versions.
++pub fn after_apply(locator: &VelopackLocator, restarted: bool) {
++    let root = stage_root(locator);
++    let relaunch = root.join("relaunch");
++    // a launch that saw applying.pid a moment before we finished may still be writing its request
++    std::thread::sleep(Duration::from_millis(250));
++    if relaunch.exists() {
++        let _ = fs::remove_file(&relaunch);
++        if !restarted && !already_started() {
++            info!("Sei was launched during the apply, starting it now");
++            if let Err(e) = start_tracked(locator, None) {
++                warn!("Could not start Sei after the apply: {}", e);
++            }
++        }
++    }
++    // a stage started by the restarted app (an even newer version) holds the lock; leave its work alone
++    match LockFile::try_acquire_lock(root.join(".lock")) {
++        Ok(_lock) => clean_root(&root, None),
++        Err(_) => info!("A stage is running, not cleaning {:?}", root),
++    }
++}
+diff --git a/src/bins/src/shared/util_common.rs b/src/bins/src/shared/util_common.rs
+index e832f965..a3afa6a9 100644
+--- a/src/bins/src/shared/util_common.rs
++++ b/src/bins/src/shared/util_common.rs
+@@ -15,6 +15,10 @@ pub fn operation_wait(wait: OperationWait) {
+     if let OperationWait::WaitPid(pid) = wait {
+         if let Err(e) = process::wait_for_pid_to_exit(pid, Some(Duration::from_secs(60))) {
+             warn!("Failed to wait for process ({}) to exit ({}). Continuing...", pid, e);
++            // SEI PATCH: opening Sei's main process is denied (measured on every run), so the stock wait returned at
++            // once and the swap raced the exiting app. Watch the process list instead, which needs no handle.
++            #[cfg(target_os = "windows")]
++            crate::commands::sei_fast::wait_pid_gone(pid, Duration::from_secs(60));
+         }
+     } else if let OperationWait::WaitParent = wait {
+         if let Err(e) = process::wait_for_parent_to_exit(Some(Duration::from_secs(60))) {
+diff --git a/src/bins/src/update.rs b/src/bins/src/update.rs
+index f6869e46..7dfab306 100644
+--- a/src/bins/src/update.rs
++++ b/src/bins/src/update.rs
+@@ -27,8 +27,14 @@ fn root_command() -> Command {
+         .arg(arg!(-w --wait "Wait for the parent process to terminate before applying the update").hide(true))
+         .arg(arg!(--waitPid <PID> "Wait for the specified process to terminate before applying the update").value_parser(value_parser!(u32)))
+         .arg(arg!(-p --package <FILE> "Update package to apply").value_parser(value_parser!(PathBuf)))
++        .arg(arg!(--noHooks "SEI PATCH: run no app hooks, and start the app as soon as the new version is in place"))
++        .arg(arg!(--seiOverlay <DIR> "SEI PATCH: show the update overlay described by <DIR>/overlay.txt").value_parser(value_parser!(PathBuf)))
+         .arg(arg!([EXE_ARGS] "Arguments to pass to the started executable. Must be preceded by '--'.").required(false).last(true).num_args(0..).value_parser(value_parser!(OsString)))
+     )
++    .subcommand(Command::new("stage")
++        .about("SEI PATCH: extracts a downloaded package next to the app, so a later apply only swaps folders")
++        .arg(arg!(-p --package <FILE> "Update package to stage").required(true).value_parser(value_parser!(PathBuf)))
++    )
+     .subcommand(Command::new("start")
+         .about("Starts the currently installed version of the application")
+         .arg(arg!(-a --args <ARGS> "Legacy args format").aliases(vec!["processStartArgs", "process-start-args"]).hide(true).allow_hyphen_values(true).num_args(1).value_parser(value_parser!(OsString)))
+@@ -214,6 +220,8 @@ fn main_inner() -> Result<()> {
+         "update-self" => update_self(location_context, subcommand_matches).map_err(|e| anyhow!("Update-self error: {}", e)),
+         "start" => start(location_context, subcommand_matches).map_err(|e| anyhow!("Start error: {}", e)),
+         "apply" => apply(location_context, subcommand_matches).map_err(|e| anyhow!("Apply error: {}", e)),
++        #[cfg(target_os = "windows")]
++        "stage" => stage(location_context, subcommand_matches).map_err(|e| anyhow!("Stage error: {}", e)),
+         "patch" => patch(location_context, subcommand_matches).map_err(|e| anyhow!("Patch error: {}", e)),
+         _ => bail!("Unknown subcommand '{subcommand}'. Try `--help` for more information."),
+     };
+@@ -279,12 +287,41 @@ fn apply(context: LocationContext, matches: &ArgMatches) -> Result<()> {
+     info!("    Package: {:?}", package);
+     info!("    Exe Args: {:?}", exe_args);
+ 
++    let no_hooks = get_flag_or_false(matches, "noHooks");
++    let hook_mode = if no_hooks { commands::HookRunMode::None } else { commands::HookRunMode::All };
++    info!("    No Hooks: {:?}", no_hooks);
++
++    // SEI PATCH: put the overlay up before waiting for the app to exit, so it covers the whole gap
++    #[cfg(target_os = "windows")]
++    if let Some(dir) = matches.try_get_one::<PathBuf>("seiOverlay").unwrap_or(None) {
++        info!("    Overlay: {:?}", dir);
++        if windows::sei_overlay::start(dir) {
++            info!("Update overlay is on screen");
++        }
++    }
++
++    let result = (|| -> Result<()> {
++        let locator = auto_locate_app_manifest(context)?;
++        // Note: lock is NOT acquired here. It's acquired inside apply_package_impl
++        // AFTER the self-elevation check, to avoid deadlock when the non-elevated
++        // parent spawns an elevated child (both would try to lock the same file).
++        let _ = commands::apply(&locator, restart, wait, package, exe_args, hook_mode)?;
++        Ok(())
++    })();
++
++    // keep the overlay until the restarted app shows its own window (bounded)
++    #[cfg(target_os = "windows")]
++    windows::sei_overlay::join(std::time::Duration::from_secs(25));
++    result
++}
++
++#[cfg(target_os = "windows")]
++fn stage(context: LocationContext, matches: &ArgMatches) -> Result<()> {
++    let package = matches.get_one::<PathBuf>("package").ok_or_else(|| anyhow!("--package is required"))?;
++    info!("Command: Stage");
++    info!("    Package: {:?}", package);
+     let locator = auto_locate_app_manifest(context)?;
+-    // Note: lock is NOT acquired here. It's acquired inside apply_package_impl
+-    // AFTER the self-elevation check, to avoid deadlock when the non-elevated
+-    // parent spawns an elevated child (both would try to lock the same file).
+-    let _ = commands::apply(&locator, restart, wait, package, exe_args, commands::HookRunMode::All)?;
+-    Ok(())
++    commands::sei_fast::stage(&locator, package)
+ }
+ 
+ fn get_start_args(matches: &ArgMatches) -> (OperationWait, Option<&OsString>, Option<&OsString>, Option<Vec<OsString>>) {
+diff --git a/src/bins/src/windows/mod.rs b/src/bins/src/windows/mod.rs
+index 0251f585..cde649f9 100644
+--- a/src/bins/src/windows/mod.rs
++++ b/src/bins/src/windows/mod.rs
+@@ -4,6 +4,7 @@ pub mod mitigate;
+ pub mod prerequisite;
+ pub mod runtimes;
+ pub mod splash;
++pub mod sei_overlay;
+ 
+ pub mod registry;
+ pub mod webview2;
+diff --git a/src/bins/src/windows/sei_overlay.rs b/src/bins/src/windows/sei_overlay.rs
+new file mode 100644
+index 00000000..db424947
+--- /dev/null
++++ b/src/bins/src/windows/sei_overlay.rs
+@@ -0,0 +1,529 @@
++//! SEI PATCH (not upstream Velopack): the "Updating" overlay shown while Update.exe applies an update.
++//!
++//! Sei renders every frame itself (its own launch splash plus a short status line, as PNGs at physical pixel size)
++//! into a folder and passes it as `apply --seiOverlay <dir>`. This module only shows them: a borderless,
++//! click-through, topmost layered window at the position Sei asked for. It is shown before Update.exe waits for Sei
++//! to exit, so it sits on top of Sei's identical in-app splash and the hand-off is invisible, and it closes once the
++//! restarted Sei has a visible window of its own.
++//!
++//! `<dir>/overlay.txt` is `key=value` lines:
++//!   x, y          top-left corner in physical pixels
++//!   slowAfterMs   when to start showing a time estimate instead of the plain frame
++//!   frame.<name>  a PNG in <dir>. Names: `updating` (required), `error`, `eta-<seconds>` buckets, `eta-long`.
++//! Once the window is on screen this module writes `<dir>/shown`, which Sei waits for before it quits.
++
++use anyhow::{anyhow, bail, Result};
++use image::ImageReader;
++use std::{
++    cell::RefCell,
++    collections::HashMap,
++    fs,
++    io::Cursor,
++    path::{Path, PathBuf},
++    sync::{
++        atomic::{AtomicBool, AtomicI32, AtomicU64, AtomicU8, Ordering},
++        mpsc, Mutex,
++    },
++    thread,
++    time::{Duration, Instant},
++};
++use velopack::wide_strings::string_to_wide;
++use windows::{
++    core::BOOL,
++    Win32::{
++        Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM},
++        Graphics::Gdi::*,
++        System::LibraryLoader::GetModuleHandleW,
++        UI::WindowsAndMessaging::*,
++    },
++};
++
++/// Where the apply is. Drives which frame shows once the update is slower than expected.
++#[derive(Clone, Copy, PartialEq, Eq, Debug)]
++#[repr(u8)]
++pub enum Phase {
++    /// Waiting for Sei to exit, loading the package, checking prerequisites.
++    Waiting = 0,
++    /// No staged copy: extracting the full package (progress via `set_progress`).
++    Extracting = 1,
++    /// Renaming folders (may retry while something holds a file open).
++    Swapping = 2,
++    /// The new (or, after a failure, the old) Sei has been started.
++    Started = 3,
++    /// The update failed; the old version is about to be started.
++    Failed = 4,
++}
++
++static PHASE: AtomicU8 = AtomicU8::new(0);
++static PROGRESS: AtomicI32 = AtomicI32::new(-1);
++static EXTRACT_START_MS: AtomicU64 = AtomicU64::new(0);
++static ACTIVE: AtomicBool = AtomicBool::new(false);
++
++lazy_static! {
++    static ref STARTED_AT: Mutex<Option<Instant>> = Mutex::new(None);
++    static ref CLOSE_TX: Mutex<Option<mpsc::Sender<()>>> = Mutex::new(None);
++    static ref THREADS: Mutex<Vec<thread::JoinHandle<()>>> = Mutex::new(Vec::new());
++}
++
++fn now_ms() -> u64 {
++    STARTED_AT.lock().ok().and_then(|g| g.map(|t| t.elapsed().as_millis() as u64)).unwrap_or(0)
++}
++
++pub fn set_phase(phase: Phase) {
++    if phase == Phase::Extracting && PHASE.load(Ordering::SeqCst) != Phase::Extracting as u8 {
++        EXTRACT_START_MS.store(now_ms(), Ordering::SeqCst);
++        PROGRESS.store(0, Ordering::SeqCst);
++    }
++    PHASE.store(phase as u8, Ordering::SeqCst);
++}
++
++pub fn set_progress(progress: i16) {
++    PROGRESS.store(progress as i32, Ordering::SeqCst);
++}
++
++/// True while the overlay window is up.
++pub fn is_active() -> bool {
++    ACTIVE.load(Ordering::SeqCst)
++}
++
++struct Spec {
++    x: i32,
++    y: i32,
++    slow_after: Duration,
++    files: HashMap<String, PathBuf>,
++}
++
++fn read_spec(dir: &Path) -> Result<Spec> {
++    let text = fs::read_to_string(dir.join("overlay.txt"))?;
++    let mut x = None;
++    let mut y = None;
++    let mut slow_after = Duration::from_millis(8000);
++    let mut files = HashMap::new();
++    for line in text.lines() {
++        let line = line.trim();
++        let Some((k, v)) = line.split_once('=') else { continue };
++        let (k, v) = (k.trim(), v.trim());
++        match k {
++            "x" => x = v.parse::<i32>().ok(),
++            "y" => y = v.parse::<i32>().ok(),
++            "slowAfterMs" => {
++                if let Ok(ms) = v.parse::<u64>() {
++                    slow_after = Duration::from_millis(ms);
++                }
++            }
++            _ => {
++                if let Some(name) = k.strip_prefix("frame.") {
++                    // only plain file names inside <dir>
++                    if !v.is_empty() && !v.contains(['/', '\\', ':']) && !v.contains("..") {
++                        files.insert(name.to_string(), dir.join(v));
++                    }
++                }
++            }
++        }
++    }
++    if !files.contains_key("updating") {
++        bail!("overlay.txt has no frame.updating");
++    }
++    Ok(Spec {
++        x: x.ok_or_else(|| anyhow!("overlay.txt has no x"))?,
++        y: y.ok_or_else(|| anyhow!("overlay.txt has no y"))?,
++        slow_after,
++        files,
++    })
++}
++
++/// RGBA (straight) to BGRA premultiplied, as UpdateLayeredWindow with AC_SRC_ALPHA expects.
++fn to_premultiplied_bgra(pixels: &mut [u8]) {
++    for px in pixels.chunks_exact_mut(4) {
++        let (r, g, b, a) = (px[0] as u32, px[1] as u32, px[2] as u32, px[3] as u32);
++        px[0] = ((b * a + 127) / 255) as u8;
++        px[1] = ((g * a + 127) / 255) as u8;
++        px[2] = ((r * a + 127) / 255) as u8;
++        px[3] = a as u8;
++    }
++}
++
++struct Frame {
++    name: String,
++    w: i32,
++    h: i32,
++    bgra: Vec<u8>,
++}
++
++fn load_frames(spec: &Spec) -> Result<Vec<Frame>> {
++    let mut frames = Vec::new();
++    // `updating` first: index 0 is the frame shown at start.
++    let mut names: Vec<&String> = spec.files.keys().collect();
++    names.sort_by_key(|n| if n.as_str() == "updating" { 0 } else { 1 });
++    for name in names {
++        let path = &spec.files[name];
++        let bytes = match fs::read(path) {
++            Ok(b) => b,
++            Err(e) => {
++                warn!("Overlay frame {:?} unreadable: {}", path, e);
++                continue;
++            }
++        };
++        let img = match ImageReader::new(Cursor::new(bytes)).with_guessed_format().map_err(|e| anyhow!(e)).and_then(|r| r.decode().map_err(|e| anyhow!(e))) {
++            Ok(i) => i.into_rgba8(),
++            Err(e) => {
++                warn!("Overlay frame {:?} undecodable: {}", path, e);
++                continue;
++            }
++        };
++        let (w, h) = (img.width() as i32, img.height() as i32);
++        let mut bgra = img.into_vec();
++        to_premultiplied_bgra(&mut bgra);
++        frames.push(Frame { name: name.clone(), w, h, bgra });
++    }
++    if frames.first().map(|f| f.name.as_str()) != Some("updating") {
++        bail!("overlay frame 'updating' could not be loaded");
++    }
++    Ok(frames)
++}
++
++/// Chooses the frame for the current moment. `shown` is the frame index on screen.
++struct Picker {
++    slow_after: Duration,
++    updating: usize,
++    error: Option<usize>,
++    /// (bucket seconds, frame index), ascending.
++    etas: Vec<(u64, usize)>,
++    long: Option<usize>,
++    last_change: Option<Instant>,
++}
++
++impl Picker {
++    fn new(frames: &[Frame], slow_after: Duration) -> Self {
++        let mut etas = Vec::new();
++        let mut long = None;
++        let mut error = None;
++        for (i, f) in frames.iter().enumerate() {
++            if f.name == "error" {
++                error = Some(i);
++            } else if f.name == "eta-long" {
++                long = Some(i);
++            } else if let Some(s) = f.name.strip_prefix("eta-").and_then(|s| s.parse::<u64>().ok()) {
++                etas.push((s, i));
++            }
++        }
++        etas.sort();
++        Picker { slow_after, updating: 0, error, etas, long, last_change: None }
++    }
++
++    fn estimate_secs(&self, elapsed_ms: u64) -> u64 {
++        let phase = PHASE.load(Ordering::SeqCst);
++        if phase == Phase::Extracting as u8 {
++            let p = PROGRESS.load(Ordering::SeqCst).clamp(0, 100) as u64;
++            let since = elapsed_ms.saturating_sub(EXTRACT_START_MS.load(Ordering::SeqCst));
++            if p >= 3 {
++                // remaining extraction plus a few seconds for the swap and the start
++                return since * (100 - p) / p / 1000 + 4;
++            }
++            return 30;
++        }
++        // waiting for Sei to exit or retrying a locked rename: usually seconds
++        10
++    }
++
++    fn pick(&mut self, shown: usize) -> usize {
++        let phase = PHASE.load(Ordering::SeqCst);
++        if phase == Phase::Failed as u8 {
++            return self.error.unwrap_or(self.updating);
++        }
++        let elapsed_ms = now_ms();
++        if phase == Phase::Started as u8 || Duration::from_millis(elapsed_ms) < self.slow_after || (self.etas.is_empty() && self.long.is_none()) {
++            return if shown == self.updating || phase != Phase::Started as u8 { self.updating } else { shown };
++        }
++        let eta = self.estimate_secs(elapsed_ms);
++        let want = self.etas.iter().find(|(s, _)| *s >= eta).map(|(_, i)| *i).or(self.long).unwrap_or(self.updating);
++        if want == shown {
++            return shown;
++        }
++        // hysteresis: an estimate changes at most every 2 s, so it never flickers between two buckets
++        if let Some(t) = self.last_change {
++            if t.elapsed() < Duration::from_secs(2) {
++                return shown;
++            }
++        }
++        self.last_change = Some(Instant::now());
++        want
++    }
++}
++
++struct Win {
++    hwnd: HWND,
++    x: i32,
++    y: i32,
++    hdc_mem: HDC,
++    bitmaps: Vec<(HBITMAP, i32, i32)>,
++    shown: usize,
++    picker: Picker,
++    close_rx: mpsc::Receiver<()>,
++}
++
++thread_local! {
++    static WIN: RefCell<Option<Win>> = const { RefCell::new(None) };
++}
++
++const BLEND: BLENDFUNCTION = BLENDFUNCTION {
++    BlendOp: AC_SRC_OVER as u8,
++    BlendFlags: 0,
++    SourceConstantAlpha: 255,
++    AlphaFormat: AC_SRC_ALPHA as u8,
++};
++const TMR_TICK: usize = 7;
++
++impl Win {
++    unsafe fn present(&mut self, idx: usize) {
++        let Some(&(bmp, w, h)) = self.bitmaps.get(idx) else { return };
++        let old = SelectObject(self.hdc_mem, bmp.into());
++        let size = SIZE { cx: w, cy: h };
++        let pt_src = POINT { x: 0, y: 0 };
++        let pt_dst = POINT { x: self.x, y: self.y };
++        let _ = UpdateLayeredWindow(
++            self.hwnd,
++            None,
++            Some(&pt_dst),
++            Some(&size),
++            Some(self.hdc_mem),
++            Some(&pt_src),
++            COLORREF(0),
++            Some(&BLEND),
++            ULW_ALPHA,
++        );
++        let _ = SelectObject(self.hdc_mem, old);
++        if idx != self.shown {
++            info!("Overlay frame -> {}", idx);
++        }
++        self.shown = idx;
++    }
++
++    unsafe fn tick(&mut self) {
++        if self.close_rx.try_recv().is_ok() {
++            let _ = PostMessageW(Some(self.hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
++            return;
++        }
++        let next = self.picker.pick(self.shown);
++        if next != self.shown {
++            self.present(next);
++        }
++    }
++}
++
++unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
++    match msg {
++        WM_TIMER => {
++            WIN.with(|w| {
++                if let Ok(mut w) = w.try_borrow_mut() {
++                    if let Some(w) = w.as_mut() {
++                        w.tick();
++                    }
++                }
++            });
++            LRESULT(0)
++        }
++        WM_DESTROY => {
++            PostQuitMessage(0);
++            LRESULT(0)
++        }
++        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
++    }
++}
++
++unsafe fn run_window(spec: Spec, frames: Vec<Frame>, dir: PathBuf, close_rx: mpsc::Receiver<()>, ready_tx: mpsc::Sender<bool>) -> Result<()> {
++    let class_name = string_to_wide("SeiUpdateOverlay");
++    let title = string_to_wide("Sei");
++    let h_instance: HINSTANCE = GetModuleHandleW(None)?.into();
++    let wc = WNDCLASSEXW {
++        cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
++        lpfnWndProc: Some(wnd_proc),
++        hInstance: h_instance,
++        hCursor: LoadCursorW(None, IDC_ARROW)?,
++        lpszClassName: class_name.as_pcwstr(),
++        ..Default::default()
++    };
++    if RegisterClassExW(&wc) == 0 {
++        let err = std::io::Error::last_os_error();
++        if err.raw_os_error() != Some(1410) {
++            bail!("RegisterClassExW failed: {:?}", err);
++        }
++    }
++    let (w0, h0) = (frames[0].w, frames[0].h);
++    let hwnd = CreateWindowExW(
++        WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT,
++        class_name.as_pcwstr(),
++        title.as_pcwstr(),
++        WS_POPUP,
++        spec.x,
++        spec.y,
++        w0,
++        h0,
++        None,
++        None,
++        Some(h_instance),
++        None,
++    )?;
++
++    let hdc_screen = GetDC(None);
++    let hdc_mem = CreateCompatibleDC(Some(hdc_screen));
++    let _ = ReleaseDC(None, hdc_screen);
++    let bitmaps: Vec<(HBITMAP, i32, i32)> =
++        frames.iter().map(|f| (CreateBitmap(f.w, f.h, 1, 32, Some(f.bgra.as_ptr() as *const _)), f.w, f.h)).collect();
++    let picker = Picker::new(&frames, spec.slow_after);
++    drop(frames);
++
++    let mut win = Win { hwnd, x: spec.x, y: spec.y, hdc_mem, bitmaps, shown: usize::MAX, picker, close_rx };
++    win.present(0);
++    let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
++    WIN.with(|w| *w.borrow_mut() = Some(win));
++    let _ = SetTimer(Some(hwnd), TMR_TICK, 100, None);
++    ACTIVE.store(true, Ordering::SeqCst);
++    let _ = fs::write(dir.join("shown"), b"1");
++    info!("Overlay shown at {},{} ({}x{})", spec.x, spec.y, w0, h0);
++    let _ = ready_tx.send(true);
++
++    let mut msg = MSG::default();
++    while GetMessageW(&mut msg, None, 0, 0).as_bool() {
++        let _ = TranslateMessage(&msg);
++        DispatchMessageW(&msg);
++    }
++
++    ACTIVE.store(false, Ordering::SeqCst);
++    WIN.with(|w| {
++        if let Some(win) = w.borrow_mut().take() {
++            for (bmp, _, _) in win.bitmaps {
++                let _ = DeleteObject(bmp.into());
++            }
++            let _ = DeleteDC(win.hdc_mem);
++        }
++    });
++    info!("Overlay closed");
++    Ok(())
++}
++
++/// Shows the overlay described by `<dir>/overlay.txt`. Returns once it is on screen (or failed), so the caller can
++/// rely on it covering the gap from here on. Never fails the update: any problem just means no overlay.
++pub fn start(dir: &Path) -> bool {
++    let spec = match read_spec(dir) {
++        Ok(s) => s,
++        Err(e) => {
++            warn!("No update overlay ({}): {:?}", dir.display(), e);
++            return false;
++        }
++    };
++    let frames = match load_frames(&spec) {
++        Ok(f) => f,
++        Err(e) => {
++            warn!("No update overlay, frames failed to load: {:?}", e);
++            return false;
++        }
++    };
++    if let Ok(mut g) = STARTED_AT.lock() {
++        *g = Some(Instant::now());
++    }
++    let (close_tx, close_rx) = mpsc::channel::<()>();
++    let (ready_tx, ready_rx) = mpsc::channel::<bool>();
++    if let Ok(mut g) = CLOSE_TX.lock() {
++        *g = Some(close_tx);
++    }
++    let dir = dir.to_path_buf();
++    let fail_tx = ready_tx.clone();
++    let handle = thread::spawn(move || {
++        if let Err(e) = unsafe { run_window(spec, frames, dir, close_rx, ready_tx) } {
++            error!("Update overlay failed: {:?}", e);
++            let _ = fail_tx.send(false);
++        }
++    });
++    if let Ok(mut t) = THREADS.lock() {
++        t.push(handle);
++    }
++    ready_rx.recv_timeout(Duration::from_secs(3)).unwrap_or(false)
++}
++
++pub fn close_now() {
++    if let Ok(g) = CLOSE_TX.lock() {
++        if let Some(tx) = g.as_ref() {
++            let _ = tx.send(());
++        }
++    }
++}
++
++struct FindCtx {
++    pid: u32,
++    found: bool,
++}
++
++unsafe extern "system" fn enum_cb(hwnd: HWND, lparam: LPARAM) -> BOOL {
++    let ctx = &mut *(lparam.0 as *mut FindCtx);
++    let mut pid: u32 = 0;
++    let _ = GetWindowThreadProcessId(hwnd, Some(&mut pid));
++    if pid == ctx.pid && IsWindowVisible(hwnd).as_bool() {
++        let mut rc = RECT::default();
++        if GetWindowRect(hwnd, &mut rc).is_ok() && rc.right - rc.left > 1 && rc.bottom - rc.top > 1 {
++            ctx.found = true;
++            return BOOL(0);
++        }
++    }
++    BOOL(1)
++}
++
++/// True when the process has a visible, non-empty top-level window.
++pub fn has_visible_window(pid: u32) -> bool {
++    let mut ctx = FindCtx { pid, found: false };
++    unsafe {
++        let _ = EnumWindows(Some(enum_cb), LPARAM(&mut ctx as *mut FindCtx as isize));
++    }
++    ctx.found
++}
++
++/// Closes the overlay once `pid` shows a window (Sei's own splash, which looks the same), or after `timeout`.
++/// Runs on its own thread so the slow cleanup after a swap never keeps the overlay over the restarted app.
++pub fn close_when_window_visible(pid: u32, timeout: Duration) {
++    if !is_active() {
++        return;
++    }
++    let handle = thread::spawn(move || {
++        let sw = Instant::now();
++        while sw.elapsed() < timeout {
++            if has_visible_window(pid) {
++                info!("Restarted app (pid {}) shows a window after {}ms, closing the overlay", pid, sw.elapsed().as_millis());
++                // let the compositor put the new window on screen before the overlay goes
++                thread::sleep(Duration::from_millis(150));
++                close_now();
++                return;
++            }
++            thread::sleep(Duration::from_millis(50));
++        }
++        warn!("Restarted app (pid {}) showed no window within {}s, closing the overlay", pid, timeout.as_secs());
++        close_now();
++    });
++    if let Ok(mut t) = THREADS.lock() {
++        t.push(handle);
++    }
++}
++
++/// Shows the error frame for `hold`, then returns (the caller starts the old version next).
++pub fn show_error(hold: Duration) {
++    set_phase(Phase::Failed);
++    if is_active() {
++        thread::sleep(hold);
++    }
++}
++
++/// Waits (bounded) for the overlay and its closer to finish before the process exits: exiting early would drop the
++/// overlay before the restarted app is on screen.
++pub fn join(timeout: Duration) {
++    let sw = Instant::now();
++    loop {
++        let pending = THREADS.lock().map(|t| t.iter().any(|h| !h.is_finished())).unwrap_or(false);
++        if !pending || sw.elapsed() > timeout {
++            break;
++        }
++        thread::sleep(Duration::from_millis(50));
++    }
++    if is_active() {
++        close_now();
++        thread::sleep(Duration::from_millis(200));
++    }
++}
+diff --git a/src/lib-rust/src/bundle.rs b/src/lib-rust/src/bundle.rs
+index 8fc92cc3..ddc0dde4 100644
+--- a/src/lib-rust/src/bundle.rs
++++ b/src/lib-rust/src/bundle.rs
+@@ -296,6 +296,46 @@ impl BundleZip<'_> {
+         Ok(())
+     }
+ 
++    /// SEI PATCH (not upstream): the files `extract_lib_contents_to_path` writes, as (path relative to the target
++    /// folder with '/' separators, size in bytes). Symlinks are listed with size `u64::MAX` (not size-checked).
++    /// Used to check a staged copy of the app before it replaces `current`, and to size the disk-space check.
++    #[cfg(not(target_os = "linux"))]
++    pub fn get_lib_contents_sizes(&self) -> Result<Vec<(String, u64)>, Error> {
++        let re = Regex::new(r"lib[\\\/][^\\\/]*[\\\/]").unwrap();
++        let stub_regex = Regex::new("_ExecutionStub.exe$").unwrap();
++        let symlink_regex = Regex::new(".__symlink$").unwrap();
++        let updater_idx = self.find_zip_file(|name| name.ends_with("Squirrel.exe"));
++        let nuspec_idx = self.find_zip_file(|name| name.ends_with(".nuspec"));
++        let mut out = Vec::new();
++        let mut archive = self.zip.borrow_mut();
++        // extract_lib_contents_to_path writes the nuspec as sq.version FIRST, so a lib entry of the same name
++        // (newer packages carry one) overwrites it: callers must let later entries win.
++        #[cfg(target_os = "windows")]
++        if let Some(n) = nuspec_idx {
++            out.push(("sq.version".to_string(), archive.by_index(n)?.size()));
++        }
++        for i in 0..archive.len() {
++            let file = archive.by_index(i)?;
++            let key = file.name()?.into_owned();
++            let size = file.size();
++            if Some(i) == updater_idx || !re.is_match(&key) || key.ends_with('/') || key.ends_with('\\') {
++                continue;
++            }
++            let rel = re.replace(&key, "").to_string();
++            if symlink_regex.is_match(&rel) {
++                out.push((symlink_regex.replace(&rel, "").to_string(), u64::MAX));
++                continue;
++            }
++            if stub_regex.is_match(&rel) {
++                continue;
++            }
++            out.push((rel.replace('\\', "/"), size));
++        }
++        #[cfg(not(target_os = "windows"))]
++        let _ = nuspec_idx;
++        Ok(out)
++    }
++
+     #[cfg(not(target_os = "linux"))]
+     pub fn extract_lib_contents_to_path<P: AsRef<Path>, F: Fn(i16)>(&self, current_path: P, progress: F) -> Result<(), Error> {
+         let current_path = current_path.as_ref();

@@ -61,3 +61,32 @@
   font-size: 12px;
   color: var(--accent-text);
 }
+
+/* 261029: the wrapper Settings scrolls to and flashes for view.focus (the
+   startup popup's chatgpt-plan action). A tint that fades, no outline: the
+   rows keep their own hairlines and nothing shifts. */
+.focusTarget {
+  border-radius: 10px;
+}
+
+.focusPulse {
+  animation: chatgpt-focus-pulse 2400ms ease-out;
+}
+
+@keyframes chatgpt-focus-pulse {
+  0%,
+  35% {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 10px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .focusPulse {
+    animation-duration: 1ms;
+  }
+}

@@ -37,7 +37,16 @@ const TOKEN_MARGIN_MS = 2 * 60_000
 // The plan's efficient tier; main normally ships the account catalog's pick.
 export const CHATGPT_DEFAULT_MODEL = 'gpt-6-luna'
 
-const CAPABILITIES = { vision: true, cached: true, local: false }
+// toolSteps: the model treats each function call as one step of its turn
+// and expects the call's output back before the turn is over (the OpenAI
+// tool loop: the turn ends with a response that calls nothing). Measured in
+// the quality eval (261029, gpt-6-luna at low effort): an order was answered
+// with say() alone ("on my way", "on your six", "yep, coal run") and the
+// action was meant for the next step, but the orchestrator ended the loop on
+// a say()-only turn, so the action never ran (8 of 9 off order lines). With
+// this flag the orchestrator sends those outputs back once and lets the
+// model take its next step (see talkOnlyNextStepFor in orchestrator.js).
+const CAPABILITIES = { vision: true, cached: true, local: false, toolSteps: true }
 
 export function createChatgptProvider(config, { fetchImpl = globalThis.fetch, url = RESPONSES_URL, now = () => Date.now() } = {}) {
   const pcfg = config.llm?.providers?.chatgpt ?? {}

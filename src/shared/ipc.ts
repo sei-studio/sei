@@ -14,6 +14,7 @@
  *   - UI-SPEC §Defaults (channel naming)
  */
 
+import type { FaceCue, FacepackDevInfo, FacepackManifest } from './facepack';
 import { z } from 'zod';
 import type {
   Character,
@@ -26,9 +27,12 @@ import type {
   UserPreferencesPatch,
 } from './characterSchema';
 import type { ErrorClass } from './errorClasses';
+import type { OverlayPointerSample } from './overlayPointer';
 import type { ChatgptSignInResult, ChatgptSignOutResult, ChatgptStatus } from './chatgptPlan';
 import type { RegionStatus } from './regionGate';
+import type { PopupAction } from './popupActions';
 import type { BackseatEndReasonArg, BackseatStartTrigger, CallEndReason } from './callEndReasons';
+import type { CallInterruptCounts } from './callInterrupts';
 export type { ErrorClass } from './errorClasses';
 import type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
 export type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
@@ -852,6 +856,9 @@ export interface CallOverlayState {
   cameras?: Record<string, AvatarCamera>;
   /** MAIN-enriched: the caption overlay window is enabled. */
   captionsOn?: boolean;
+  /** 261031: the app's UI language, so the overlay's button tooltips follow
+   * it (the overlay window never boots the App that hydrates the store). */
+  lang?: 'en' | 'zh';
 }
 
 /**
@@ -1348,6 +1355,26 @@ export type AuthState =
   | { kind: 'signed_in'; user: AuthUser };
 
 /**
+ * 261029 (login lock on restart): main's auth state read on demand, for a
+ * renderer that must route before main's first `auth:state` push can be relied
+ * on. `scopeReady` is true when the data scope already matches `state` and no
+ * switch is pending, so no `app:scope-changed` push is still owed for it.
+ * Main answers only after it has loaded the persisted session.
+ */
+export interface AuthSnapshot {
+  state: AuthState;
+  scopeReady: boolean;
+  /** Main has finished loading the persisted session (false = answered on its time bound). */
+  loaded: boolean;
+  /**
+   * The active profile scope: the account's lowercased user id, or 'local'.
+   * Lets a caller check the profile is the account it expects, not just that
+   * the scope agrees with whatever main's state is right now.
+   */
+  scope: string;
+}
+
+/**
  * `needsVerification` (260804, PIN migration): Supabase refused the sign-in with
  * `email_not_confirmed`. Per D-04 this is NOT an error — the account exists and
  * the password was right — so it stays on the `ok: true` side. But under the
@@ -1665,6 +1692,17 @@ export interface CreditsStatus {
   ends_at: string | null;
   subscription_status_raw: 'active' | 'cancelled' | 'expired' | 'past_due' | null;
   ai_backend_kind: 'local' | 'cloud-proxy';
+  /**
+   * 261028: this period's weekly allowance and the usage counted against it,
+   * in µ$ (my_plan.allowance_micro / allowance_used_micro, the exact figures
+   * behind usage_pct). The allowance is the account's EFFECTIVE one: a change
+   * to plan_config applies from each account's next weekly period, so on the
+   * 261027 free cut ($0.50 -> $0.15) an account mid-week keeps 500000 until
+   * its reset while the pricing catalog already says $0.15. Absent when
+   * signed out or when the view predates the columns.
+   */
+  allowance_micro?: number;
+  allowance_used_micro?: number;
   /**
    * Whether the once-per-account feedback reward is still claimable, read from
    * `usage_periods.feedback_reset_at` (null there = unclaimed). `null` here
@@ -2103,6 +2141,20 @@ export interface RendererApi {
    * focusController's frame). Main polls only while a Live2D tile shows; the
    * gaze cursor-follow mode treats a stale feed as "wander instead". */
   onAvatarOverlayCursor(cb: (pt: { x: number; y: number }) => void): Unsubscribe;
+  /** Overlay window only (261029): subscribe to the polled pointer in
+   * window-local DIPs ({inside, x, y}; see shared/overlayPointer.ts). Main
+   * polls whenever the overlay is up, for every tile kind, so hover chrome
+   * (the edit pencil) works even where the OS does not forward mouse moves
+   * into the click-through window. Pushed every tick while inside, once on
+   * leaving. */
+  onAvatarOverlayPointer?(cb: (sample: OverlayPointerSample) => void): Unsubscribe;
+  // ── Facepack pilot (261028, dev flag only; see src/main/facepack/) ──
+  facepackInfo?(): Promise<FacepackDevInfo>;
+  facepackManifest?(id: string): Promise<FacepackManifest | null>;
+  facepackFile?(id: string, path: string): Promise<Uint8Array | null>;
+  facepackForCharacter?(characterId: string): Promise<string | null>;
+  facepackOpenPreview?(): Promise<boolean>;
+  onFaceCue?(cb: (cue: FaceCue) => void): Unsubscribe;
   /**
    * Overlay window only (260806): stream a character's tile camera (zoom +
    * pan within the tile) while edit-mode wheel/drag adjusts it; `commit`
@@ -2123,6 +2175,11 @@ export interface RendererApi {
   avatarOverlayMuteToggle(): Promise<void>;
   /** Main window: subscribe to overlay mute presses relayed by main. */
   onAvatarMuteRequest(cb: () => void): Unsubscribe;
+  /** Overlay window only (261030): the interrupt button — main relays to the
+   * main window, which runs useVoiceStore.interrupt (the barge-in cut). */
+  avatarOverlayInterrupt(): Promise<void>;
+  /** Main window: subscribe to overlay interrupt presses relayed by main. */
+  onAvatarInterruptRequest(cb: () => void): Unsubscribe;
   /** Overlay window only: toggle the caption overlay window → new enabled. */
   avatarOverlayCaptionsToggle(): Promise<boolean>;
   /** Caption window only: corner-resize stream/commit (anchor = the corner
@@ -2477,6 +2534,9 @@ export interface RendererApi {
     live?: boolean;
     /** Hang-up only (261023): why the call ended, for voice_call_ended. */
     reason?: CallEndReason;
+    /** Hang-up only (261030): this companion's interrupt counts for
+     *  voice_call_ended (shared/callInterrupts.ts). */
+    interrupts?: CallInterruptCounts;
   }): Promise<void>;
   /**
    * The call pipeline just went LIVE — ask the companion to speak first (like
@@ -2775,6 +2835,12 @@ export interface RendererApi {
    */
   setCaptchaToken(token: string | null): Promise<void>;
   onAuthState(cb: (state: AuthState) => void): Unsubscribe;
+  /**
+   * 261029: main's current auth state and whether the data scope already
+   * follows it. Resolves once main has loaded the persisted session (bounded).
+   * The boot routing reads this instead of trusting the store's default.
+   */
+  authSnapshot(): Promise<AuthSnapshot>;
 
   // --- ToS / Privacy gate (Phase 11 plan 12) ---
   /** Whether the signed-in user has accepted the current TOS_VERSION + PRIVACY_VERSION. */
@@ -3087,6 +3153,13 @@ export interface RendererApi {
    */
   onStartupPopupEscape(cb: () => void): Unsubscribe;
   /**
+   * An action link (https://sei.gg/popup/_action/<name>) was clicked in the
+   * popup page (261029). Main has already cancelled the navigation and
+   * checked the name against POPUP_ACTIONS (src/shared/popupActions.ts); the
+   * renderer re-checks it, closes the popup and runs the action.
+   */
+  onStartupPopupAction(cb: (action: PopupAction) => void): Unsubscribe;
+  /**
    * Host OS platform (`process.platform`), read once in preload and exposed as
    * a plain value so the renderer can branch its window chrome WITHOUT an async
    * round-trip. Used by MacosWindow to render custom min/max/close controls on
@@ -3201,6 +3274,13 @@ export interface ScopeChangedEvent {
   scope: string;
   /** Why the scope changed — drives renderer copy/telemetry only. */
   reason: 'sign-in' | 'sign-out' | 'switch';
+  /**
+   * 261029: the session was already signed in (restored at launch, or brought
+   * back by a token refresh after the boot read missed it). The scope still
+   * moves and the renderer still reloads, but nobody just signed in, so no
+   * sign-in prompts (the local-import offer) follow it.
+   */
+  restored?: boolean;
 }
 
 /** Result of inspecting the `local` profile for importable data (260603). */
@@ -3763,6 +3843,9 @@ export const IpcChannel = {
     /** Push (main → overlay window): polled cursor position normalized to
      * [-1, 1] around the window center, for gaze cursor-follow. */
     overlayCursorState: 'avatar:overlay-cursor-state',
+    /** Push (main → overlay window): polled pointer in window-local DIPs
+     * ({inside, x, y}), the OS-independent hover source for the chrome. */
+    overlayPointerState: 'avatar:overlay-pointer-state',
     /** Invoke (overlay window → main): per-character camera (character zoom +
      * pan WITHIN the tile) stream/commit ({id, zoom, x, y, commit?}). */
     overlayCamera: 'avatar:overlay-camera',
@@ -3774,6 +3857,11 @@ export const IpcChannel = {
     /** Push (main → main window): relay of the overlay mute press; the main
      * window flips useUiStore.callMuted (the mic's single source of truth). */
     muteRequest: 'avatar:mute-request',
+    /** Invoke (overlay window → main, 261030): the interrupt button. */
+    overlayInterrupt: 'avatar:overlay-interrupt',
+    /** Push (main → main window): relay of the overlay interrupt press; the
+     * main window runs useVoiceStore.interrupt. */
+    interruptRequest: 'avatar:interrupt-request',
     /** Invoke (overlay window → main): toggle the caption overlay → enabled. */
     overlayCaptions: 'avatar:overlay-captions',
     /** Invoke (caption window → main): corner-resize stream/commit
@@ -3820,6 +3908,7 @@ export const IpcChannel = {
     startupPopupGet: 'app:startup-popup-get',       // pull owed popup (race-proof)
     startupPopupLoaded: 'app:startup-popup-loaded', // frame loaded: verify + record shown
     startupPopupEscape: 'app:startup-popup-escape', // push: Esc pressed inside the popup frame
+    startupPopupAction: 'app:startup-popup-action', // push: an allow-listed action link was clicked
     // 260603 per-profile partitioning: main pushes this AFTER the active
     // account scope has switched (sign-in / sign-out / account swap) and the
     // new profile is initialized + bot stopped. The renderer re-bootstraps
@@ -3887,6 +3976,8 @@ export const IpcChannel = {
   },
   auth: {
     state: 'auth:state',
+    // 261029: request/response read of the auth state + scope readiness.
+    snapshot: 'auth:snapshot',
     signinPassword: 'auth:signin-password',
     signupPassword: 'auth:signup-password',
     signinGoogle: 'auth:signin-google',
@@ -4034,6 +4125,22 @@ export const IpcChannel = {
     scan: 'recovery:scan',
     repair: 'recovery:repair',
     dismiss: 'recovery:dismiss',
+  },
+  // 261028 — desktop companion facepack pilot (src/main/facepack/). Every
+  // handler answers "disabled" unless unpackaged + SEI_FACEPACK_DIR.
+  facepack: {
+    /** Invoke: FacepackDevInfo (dev flag + the packs in the dev dir). */
+    info: 'facepack:info',
+    /** Invoke: a pack's facepack.json (id) → FacepackManifest | null. */
+    manifest: 'facepack:manifest',
+    /** Invoke: one pack file ({id, path}) → Uint8Array | null. */
+    file: 'facepack:file',
+    /** Invoke: the pack id for a character (by name) → string | null. */
+    forCharacter: 'facepack:for-character',
+    /** Invoke: open the dev preview window → boolean. */
+    openPreview: 'facepack:open-preview',
+    /** Push (main → every window): a FaceCue. */
+    cue: 'facepack:cue',
   },
 } as const;
 

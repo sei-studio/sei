@@ -30,11 +30,11 @@ import type {
   UpdatePasswordResult,
 } from '../../shared/ipc';
 import { IpcChannel } from '../../shared/ipc';
-import { getClient } from './supabaseClient';
+import { dropSessionLocally, getClient } from './supabaseClient';
 import { LOOPBACK_CALLBACK_URL } from './loopbackCallback';
 import { markRecoveryRequested } from './recoveryFlag';
 import { startGoogleOAuth } from './loopbackPkce';
-import { getCurrentAuthState, transitionToLocal } from './authState';
+import { getCurrentAuthState, noteUserSignOut, transitionToLocal } from './authState';
 import { callEdgeFunction } from './edgeFunctionClient';
 import { buildExport } from './exportBuilder';
 import { getSupabaseUrl, getSupabaseAnonKey } from '../env';
@@ -701,11 +701,23 @@ export async function signOut(): Promise<void> {
   // switch itself ends every other surface (profile/accountSessions.ts).
   const { withAccountTeardown } = await import('../profile/scopeBarrier');
   await withAccountTeardown(() => stopBotIfActive('signOut'));
+  noteUserSignOut();
+  let failure: string | null = null;
   try {
-    await getClient().auth.signOut();
+    // 261029: supabase-js reports a failed logout (offline, auth server down)
+    // in the RESULT and does not throw, and then it keeps the stored session:
+    // the sign-out did nothing, and the next launch signed straight back in.
+    const { error } = await getClient().auth.signOut();
+    if (error) failure = error.message;
   } catch (err) {
-    // T-10-06-02: never strand the renderer mid-signout. Force local state.
-    logger.warn(`signOut: supabase.auth.signOut failed: ${(err as Error).message}`);
+    failure = (err as Error).message;
+  }
+  if (failure !== null) {
+    // T-10-06-02: never strand the renderer mid-signout. Sign out on this
+    // device without the server (clears the stored session and emits
+    // SIGNED_OUT), then force local state in case nothing else did.
+    logger.warn(`signOut: supabase.auth.signOut failed, signing out locally: ${failure}`);
+    await dropSessionLocally({ client: getClient() });
     transitionToLocal();
   }
 }
@@ -753,12 +765,17 @@ export async function deleteAccount(): Promise<DeleteAccountResult> {
   if (res.ok) {
     // Deletion succeeded server-side; clear local session so the renderer
     // drops to AuthChoice via the SIGNED_OUT event (D-12 success state).
+    noteUserSignOut();
     try {
-      await supabase.auth.signOut();
+      const { error } = await supabase.auth.signOut();
+      // 261029: a failed logout comes back in the result and keeps the
+      // stored session; the account is gone, so drop it on this device.
+      if (error) await dropSessionLocally({ client: supabase });
     } catch (err) {
       // Best-effort — the account is gone; even if signOut fails locally,
       // the user's next API call will 401 and Supabase will SIGNED_OUT.
       logger.warn(`deleteAccount: post-delete signOut failed: ${(err as Error).message}`);
+      await dropSessionLocally({ client: supabase });
     }
     return { ok: true };
   }

@@ -1,5 +1,5 @@
 /* Summoning-Terminal modal: sharp corners, one accent, mono micro-labels.
-   See .planning/UI-DESIGN-SYSTEM.md. No border-radius anywhere (D-28). */
+   See docs/design/UI-DESIGN-SYSTEM.md. No border-radius anywhere (D-28). */
 
 /* ModalShell panel override: the wide two-column editor. ModalShell owns the
    scrim, surface, border, shadow and mount animation; this only reshapes the

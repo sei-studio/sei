@@ -139,4 +139,24 @@ describe('summon reservation (issue #6)', () => {
     releaseA(mkChar(A, 'Sui')); // same effective in-game name as pending B
     await expect(summonA).rejects.toThrow('SUMMON_USERNAME_CONFLICT');
   });
+
+  it('261027: "Sofía" and "Sofia" (no usernames) now share an in-game name and are refused', async () => {
+    const sup = makeSupervisor();
+    const named = (id: string, name: string): unknown => ({ ...(mkChar(id, name) as object), username: null });
+    let releaseA!: (c: unknown) => void;
+    getCharacterSpy.mockImplementation((id: string) =>
+      id === A
+        ? new Promise((r) => { releaseA = r; })
+        : Promise.resolve(named(B, 'Sofia')),
+    );
+    getAiBackendKindSpy.mockImplementation(() => new Promise(() => { /* park */ }));
+
+    const summonA = sup.summon(A);
+    summonA.catch(() => { /* asserted below */ });
+    sup.summon(B).catch(() => { /* parked forever; supervisor discarded */ });
+    await vi.waitFor(() => expect(getAiBackendKindSpy).toHaveBeenCalledTimes(1));
+
+    releaseA(named(A, 'Sofía')); // folds to Sofia (it used to be "Sofa")
+    await expect(summonA).rejects.toThrow('SUMMON_USERNAME_CONFLICT: Sofia');
+  });
 });

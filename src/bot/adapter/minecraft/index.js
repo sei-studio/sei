@@ -21,6 +21,7 @@ import { getProgression as readProgression } from './observers/progression.js'
 import { setWorldPaused } from './behaviors/pause.js'
 import { continueAttack } from './behaviors/attack.js'
 import { staleAttackerText } from './observers/staleAttacker.js'
+import { withWeaponState } from './observers/weaponState.js'
 import { minecraftVocabulary } from './vocabulary.js'
 import { closeContainerSession } from './behaviors/container.js'
 import { closeFurnaceSession } from './behaviors/furnace.js'
@@ -176,7 +177,8 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false, act
     cuboidGrammar,
     // 261019: an attack event whose mob died or left view before this turn
     // gets plain "it is gone" text instead of "attack it now".
-    eventAddendum: (event, data) => staleAttackerText(bot, event, data) ?? eventAddendum(event, data, config?.vision?.mode),
+    // 261030: a mob-fight event says so when she owns no weapon.
+    eventAddendum: (event, data) => staleAttackerText(bot, event, data) ?? eventAddendum(event, withWeaponState(bot, event, data), config?.vision?.mode),
     cantReachNudge,
     // 261013: item, block and mob names for the brain's repeat note
     // (vocabulary.js), so it never names the job as a habit.
@@ -282,6 +284,13 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false, act
     // give hands items over; its success line starts "gave N item to ...".
     handOverResult: (name, resultText) =>
       name === 'give' ? /^gave \d/.test(String(resultText ?? '')) : null,
+    // 261026 (pass 28): what that give handed over, for the transcript's
+    // hand-over line (behaviors/give.js writes this success line).
+    handOverDetail: (name, resultText) => {
+      if (name !== 'give') return null
+      const m = /^gave (\d+) (\S+) to (.+?), tossed/.exec(String(resultText ?? ''))
+      return m ? { item: m[2], n: Number(m[1]), to: m[3] } : null
+    },
     surfaceBaseline: () => MINECRAFT_BASELINE,
     sessionEndClause: () => SESSION_END_CLAUSE,
     stuckNudges: () => ({ vision: ACTION_STUCK_NUDGE_VISION, noVision: ACTION_STUCK_NUDGE_NOVISION }),

@@ -13,9 +13,10 @@
  *
  * Privacy: `redact()` is the load-bearing gate. Everything that leaves the
  * machine through this path is scrubbed of home-directory paths, API keys,
- * JWT-shaped tokens, and chat/prompt log content BEFORE capture. The analytics
- * side (`captureDiagnostic`) only enforces length caps — redaction happens
- * here, once, and is unit-tested (diagnostics.test.ts).
+ * tokens, emails, IP addresses, Minecraft player names and chat/prompt log
+ * content BEFORE capture. The analytics side (`captureDiagnostic`) runs it
+ * again as a backstop and enforces length caps; unit-tested in
+ * diagnostics.test.ts.
  *
  * Also owns `pruneLogsDir` — startup pruning of the previously-unbounded
  * `<userData>/logs` directory (log-hygiene quick win, same 260720 work).
@@ -74,6 +75,11 @@ export interface SummonFailureInfo {
    * as MODDED_HOST_REJECTED. Becomes `reclassified_from`.
    */
   reclassifiedFrom?: string;
+  /**
+   * 261031: the bot's in-game name for this attempt, when known. redact()
+   * turns it into `[bot]` so the tails still say which lines were ours.
+   */
+  botName?: string;
 }
 
 /**
@@ -148,9 +154,11 @@ export interface SummonDiagnosticContext {
 
 /** Post-redaction cap for error_message (PostHog prop budget). */
 const ERROR_MESSAGE_CAP = 2048;
-/** Post-redaction cap per tail — keeps the END (most recent output). Must not
- *  exceed the analytics-side DIAG_LONG_TEXT_CAP (8KB). */
-const TAIL_CAP = 8192;
+/** Post-redaction cap per tail — keeps the END (most recent output, where the
+ *  crash is). 261031: 8KB → 2KB per the PostHog audit; the crash trace fits,
+ *  the older log lines that mostly carried names and addresses do not. Must
+ *  not exceed the analytics-side DIAG_LONG_TEXT_CAP. */
+const TAIL_CAP = 2048;
 
 /**
  * Log tags whose lines/blocks carry conversation or prompt content
@@ -225,30 +233,153 @@ function stripContentLines(text: string): string {
   return out.join('\n');
 }
 
+/** Minecraft username charset (1-16 chars). */
+const MC_NAME = '[A-Za-z0-9_]{1,16}';
+const UUID_RE_SRC = '[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}';
+
+/**
+ * Provider API keys by prefix: OpenAI (sk-, sk-proj-, sk-svcacct-), Anthropic
+ * (sk-ant-), DeepSeek (sk-), OpenRouter (sk-or-v1-), ElevenLabs (sk_), Groq
+ * (gsk_), xAI (xai-), Google (AIza), plus Perplexity/Replicate/HF/GitHub
+ * lookalikes. The 16+ char body keeps short words like "sk-1" out.
+ */
+const PROVIDER_KEY_RE =
+  /(?<![A-Za-z0-9])(?:sk-ant-|sk-proj-|sk-svcacct-|sk-admin-|sk-or-(?:v1-)?|sk-|sk_|gsk_|xai-|pplx-|r8_|hf_|gh[pousr]_|AIza)[A-Za-z0-9_-]{16,}/g;
+/** `Bearer <token>` in headers, curl dumps and error bodies. */
+const BEARER_RE = /\b(Bearer)\s+(?!\[redacted\])[A-Za-z0-9._~+/=-]{6,}/gi;
+/**
+ * `key=v`, `api_key: v`, `"token":"v"`, `?key=v&...`, `xi-api-key: v`,
+ * `OPENAI_API_KEY=v`. The name must stand alone (not after `_`, so `API_KEY`
+ * never matches as plain `key`) and end right before the separator, so
+ * `max_tokens: 5` and `tokens=5` do not match. A quoted value is taken whole.
+ * Our `LOCAL_NO_API_KEY: <why>` sentinel is therefore left readable.
+ */
+const SECRET_KV_RE =
+  /(?<![A-Za-z0-9_])(["']?)((?:x-|xi-)?api[_-]?key|apikey|access[_-]?token|refresh[_-]?token|id[_-]?token|auth[_-]?token|token|secret|client[_-]?secret|password|passwd|key)\1(\s*[:=]\s*)(?!\[redacted\])(?:"[^"\n]*"|'[^'\n]*'|[^\s"'&,;}\])]+)/gi;
+/** Env-style `OPENAI_API_KEY=v`, `GROQ_API_KEY="v"`, `HF_TOKEN=v` (`=` only). */
+const ENV_SECRET_RE = /\b([A-Z0-9_]*(?:API_KEY|_KEY|_TOKEN|_SECRET|_PASSWORD))=(?!\[redacted\])(?:"[^"\n]*"|'[^'\n]*'|[^\s"'&,;}\])]+)/g;
+const JWT_RE = /\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g;
+const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
+
+const OCTET = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)';
+/**
+ * Dotted quads. Not preceded by a digit, dot or `v` and not followed by
+ * `[.]digit`, so 3-part versions (1.21.1) never match and a 4-part one only
+ * when it reads like an address. Loopback/unspecified stay (not personal, and
+ * "ECONNREFUSED 127.0.0.1:25565" is the diagnosis).
+ */
+const IPV4_RE = new RegExp(`(?<![\\d.vV])${OCTET}(?:\\.${OCTET}){3}(?!\\.?\\d)`, 'g');
+const H16 = '[0-9A-Fa-f]{1,4}';
+/**
+ * IPv6: the full 8-group form, or a compressed form with groups on both sides
+ * of `::` (fe80::1c2b:3d4e, 2001:db8::1), optional %zone. Clock times
+ * (12:34:56) never have 8 groups or `::`.
+ */
+const IPV6_RE = new RegExp(
+  `(?<![0-9A-Za-z:])(?:${H16}(?::${H16}){7}|(?:${H16}:){1,6}(?::${H16}){1,6})(?:%[0-9A-Za-z]+)?(?![0-9A-Za-z])`,
+  'g',
+);
+const KEEP_IPS = new Set(['127.0.0.1', '0.0.0.0', '255.255.255.255']);
+
+/** Escape a literal for use inside a RegExp. */
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Replace whole-word (MC-name boundary) occurrences of `word`, case-insensitive. */
+function replaceWord(s: string, word: string, to: string): string {
+  if (!word || word.length < 3) return s;
+  return s.replace(new RegExp(`(?<![A-Za-z0-9_])${escapeRe(word)}(?![A-Za-z0-9_])`, 'gi'), to);
+}
+
+function localUsername(): string {
+  try {
+    return os.userInfo().username ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export interface RedactOptions {
+  /**
+   * Our bot's in-game name for this session. Its occurrences become `[bot]`
+   * (not `[player]`) so a trace still says which lines were ours, without
+   * shipping the name itself.
+   */
+  botName?: string;
+}
+
+/**
+ * Minecraft player names where the line format reveals them (vanilla server
+ * log, chat, our bot's own key=value logs). Every match becomes `[player]`.
+ */
+function redactPlayerNames(s: string): string {
+  // Chat prefix: "<Steve> hi", "[CHAT] <Steve> hi". Not "at Object.<anonymous> (".
+  s = s.replace(new RegExp(`(^|[\\s\\]:])<(?!anonymous>)${MC_NAME}>(?= )`, 'gm'), '$1<[player]>');
+  // "UUID of player Steve is 069a79f4-..."
+  s = s.replace(new RegExp(`UUID of player ${MC_NAME}( is ${UUID_RE_SRC})?`, 'g'), (_m, id?: string) =>
+    id ? 'UUID of player [player] is [uuid]' : 'UUID of player [player]',
+  );
+  // "Steve joined the game", "Steve[/192.168.1.5:5123] logged in", "Steve lost connection"...
+  s = s.replace(
+    new RegExp(
+      `(?<![A-Za-z0-9_])${MC_NAME}(?= (?:joined the game|left the game|lost connection|logged in with entity id|has made the advancement|has completed the challenge|has reached the goal)|\\[/)`,
+      'g',
+    ),
+    '[player]',
+  );
+  // Our logs: "username=Steve", "player: Steve", "uuid=069a...".
+  s = s.replace(
+    new RegExp(`\\b(username|user_name|mc_username|player_?name|playerName|player|sender)(\\s*[=:]\\s*["']?)${MC_NAME}(?![A-Za-z0-9_])`, 'g'),
+    '$1$2[player]',
+  );
+  s = s.replace(new RegExp(`\\b(uuid)(\\s*[=:]\\s*["']?)${UUID_RE_SRC}`, 'gi'), '$1$2[uuid]');
+  return s;
+}
+
 /**
  * Scrub a text blob of everything person- or secret-shaped before it can leave
- * the machine:
+ * the machine. THE redaction function for every analytics payload that carries
+ * free text (logs, error messages, stack traces); captureDiagnostic runs it
+ * again as a backstop. Removes:
  *   1. chat/prompt log content (see stripContentLines);
- *   2. Anthropic API keys (`sk-ant-...`) and JWT-shaped tokens (`eyJx.y.z`);
- *   3. home-directory paths → `~` (the actual homedir string plus generic
- *      /Users/<name>, /home/<name>, C:\Users\<name> patterns, so stack traces
- *      recorded on OTHER machines redact too).
- * Idempotent and never throws. Exported for tests and any future diagnostic
- * surface (crash reporter, Sentry P1).
+ *   2. API keys for every provider we support, `Bearer`/`Basic` tokens,
+ *      `key=`/`api_key=`/`token=`-style query and JSON values, JWTs;
+ *   3. emails;
+ *   4. home-directory paths → `~` (this machine's homedir plus generic
+ *      /Users/<name>, /home/<name>, C:\Users\<name> on any machine) and this
+ *      machine's account name anywhere else;
+ *   5. IPv4/IPv6 addresses, LAN included (loopback kept), versions untouched;
+ *   6. Minecraft player names where the line format reveals them; our bot's
+ *      own name becomes `[bot]`.
+ * Idempotent and never throws.
  */
-export function redact(text: string): string {
+export function redact(text: string, opts: RedactOptions = {}): string {
   if (!text) return '';
   let s = stripContentLines(text);
-  // Secrets before paths — a key inside a path segment must not survive.
-  s = s.replace(/sk-ant-\S+/g, '[redacted]');
-  s = s.replace(/\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[redacted]');
+  // Secrets before paths: a key inside a path segment must not survive.
+  s = s.replace(/sk-ant-\S+/g, '[redacted]'); // any length: Anthropic is the BYOK default
+  s = s.replace(JWT_RE, '[redacted]');
+  s = s.replace(PROVIDER_KEY_RE, '[redacted]');
+  s = s.replace(BEARER_RE, '$1 [redacted]');
+  s = s.replace(SECRET_KV_RE, '$1$2$1$3[redacted]');
+  s = s.replace(ENV_SECRET_RE, '$1=[redacted]');
+  s = s.replace(EMAIL_RE, '[email]');
   // The real home directory of THIS machine (covers unusual homes like /var/x).
   const home = os.homedir();
   if (home && home.length > 1) s = s.split(home).join('~');
   // Generic per-user roots (any machine's traces, e.g. paths baked into a
   // dependency's sourcemap). Replaces `/Users/<name>` → `~`, keeping the rest.
+  // Windows first (C:\Users\x, JSON-escaped C:\\Users\\x, C:/Users/x); its
+  // account names may contain spaces ("Jane Doe").
+  s = s.replace(/[A-Za-z]:(?:\\{1,2}|\/)Users(?:\\{1,2}|\/)[^\\/:'"\n]+/gi, '~');
   s = s.replace(/\/(?:Users|home)\/[^/\\\s:'"]+/g, '~');
-  s = s.replace(/[A-Za-z]:\\Users\\[^\\/\s:'"]+/g, '~');
+  // This machine's account name outside a path (e.g. "user=alice", "DESKTOP-1\alice").
+  s = replaceWord(s, localUsername(), '[user]');
+  s = s.replace(IPV4_RE, (ip) => (KEEP_IPS.has(ip) || ip.startsWith('127.') ? ip : '[ip]'));
+  s = s.replace(IPV6_RE, '[ip]');
+  if (opts.botName) s = replaceWord(s, opts.botName.trim(), '[bot]');
+  s = redactPlayerNames(s);
   return s;
 }
 
@@ -326,10 +457,12 @@ export function buildSummonDiagnostic(
   if (info.reclassifiedFrom) diag.reclassified_from = info.reclassifiedFrom;
   if (info.boot) Object.assign(diag, bootPhaseProps(info.boot));
   if (!omitsHeavyText(info.errorClass, info.phase)) {
-    diag.error_message = redact(info.errorMessage ?? '').slice(0, ERROR_MESSAGE_CAP);
-    // Keep the END of each tail — the crash is at the bottom.
-    diag.stderr_tail = redact(info.stderrTail ?? '').slice(-TAIL_CAP);
-    diag.stdout_tail = redact(info.stdoutTail ?? '').slice(-TAIL_CAP);
+    const r = { botName: info.botName };
+    diag.error_message = redact(info.errorMessage ?? '', r).slice(0, ERROR_MESSAGE_CAP);
+    // Keep the END of each tail — the crash is at the bottom. Redact first so
+    // the cut can never split a secret into an unrecognizable fragment.
+    diag.stderr_tail = redact(info.stderrTail ?? '', r).slice(-TAIL_CAP);
+    diag.stdout_tail = redact(info.stdoutTail ?? '', r).slice(-TAIL_CAP);
   }
   return diag;
 }

@@ -641,6 +641,9 @@ export const ZH_MODALS: Record<string, string> = {
     'Sei 会关闭并重新打开来完成更新，你的伙伴正在做的事会因此中断。',
   'Restart and update': '重启并更新',
   'Updated to Sei {version}': '已更新到 Sei {version}',
+  // 261030: Windows-only, before the ~100 s NSIS install.
+  'Updating takes about a minute on Windows. Sei reopens by itself.':
+    '在 Windows 上更新大约需要一分钟，完成后 Sei 会自动重新打开。',
 
   // ── RecoveryPrompt (260810 phantom-call recovery) ──
   'Is your companion acting weird?': '你的伙伴是不是不太对劲？',

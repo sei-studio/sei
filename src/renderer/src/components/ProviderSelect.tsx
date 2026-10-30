@@ -11,7 +11,7 @@
  * it is the CURRENT value it appears as the selected option (appended at the
  * end), but it is never offered otherwise.
  *
- * Styling follows .planning/UI-DESIGN-SYSTEM.md: the trigger mirrors the
+ * Styling follows docs/design/UI-DESIGN-SYSTEM.md: the trigger mirrors the
  * `ghost` Button / input (faint fill, --border-strong, mono uppercase tracked
  * label, accent on hover/focus); the menu is the modal/menu surface. Sharp
  * corners, one accent, no decorative per-provider color.

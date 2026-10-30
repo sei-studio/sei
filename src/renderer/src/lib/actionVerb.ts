@@ -7,7 +7,7 @@
  * "adventuring…" so a new tool never breaks the UI. Returning null means
  * "show nothing" (momentary or invisible actions).
  *
- * Source: .planning/design/UI-REDESIGN-PARTY.md §2.
+ * Source: docs/design/UI-REDESIGN-PARTY.md §2.
  */
 
 import { t } from './i18n';

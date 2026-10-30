@@ -4,6 +4,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createRequire } from 'module'
+import { EventEmitter } from 'events'
 import {
   openFurnaceAction,
   smeltInputAction,
@@ -19,17 +20,18 @@ const mcData = require('minecraft-data')(VERSION)
 const id = (name) => mcData.itemsByName[name].id
 
 function makeFurnace({ output = null, input = null, fuel = null, windowItems = null } = {}) {
-  const f = {
+  // An EventEmitter like mineflayer's window, so tests can emit 'close'.
+  const f = Object.assign(new EventEmitter(), {
     slots: { input, fuel, output },
     putInput: vi.fn(async () => {}),
     putFuel: vi.fn(async () => {}),
-    takeOutput: vi.fn(async () => f.slots.output),
+    takeOutput: vi.fn(async () => { const o = f.slots.output; f.slots.output = null; return o }),
     takeInput: vi.fn(async () => { const it = f.slots.input; f.slots.input = null; return it }),
     inputItem: () => f.slots.input,
     fuelItem: () => f.slots.fuel,
     outputItem: () => f.slots.output,
     close: vi.fn(async () => {}),
-  }
+  })
   if (windowItems) f.items = () => windowItems
   return f
 }
@@ -230,6 +232,161 @@ describe('takeSmeltedAction', () => {
       furnace.slots.output = { name: 'iron_ingot', count: 1 }
       furnace.slots.input = { name: 'raw_iron', count: 2 }
       await vi.advanceTimersByTimeAsync(500)
+      // 261026: it keeps collecting while the rest cooks.
+      furnace.slots.output = { name: 'iron_ingot', count: 2 }
+      furnace.slots.input = null
+      await vi.advanceTimersByTimeAsync(500)
+      expect(await p).toBe('took 3 iron_ingot')
+      expect(furnace.takeOutput).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // 261026 (quality pass 28): smelt_iron failed 2/5 when one ingot came out,
+  // the rest was "still cooking", and the next turn walked off.
+  it('stops collecting at the batch deadline and says what is still cooking', async () => {
+    vi.useFakeTimers()
+    try {
+      const furnace = makeFurnace({ output: { name: 'iron_ingot', count: 1 }, input: { name: 'raw_iron', count: 5 }, fuel: { name: 'coal', count: 1 } })
+      furnace.fuel = 0.9
+      await openFurnaceAction({ block: 'furnace' }, makeBot({ furnace }), {})
+      const p = takeSmeltedAction({}, makeBot({ furnace }), { takeSmelted_batch_ms: 20_000 })
+      await vi.advanceTimersByTimeAsync(10_000)
+      furnace.slots.output = { name: 'iron_ingot', count: 1 }
+      furnace.slots.input = { name: 'raw_iron', count: 4 }
+      await vi.advanceTimersByTimeAsync(11_000)
+      expect(await p).toBe('took 2 iron_ingot (4 raw_iron still cooking)')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reports what it took when stopped mid-batch', async () => {
+    vi.useFakeTimers()
+    try {
+      const furnace = makeFurnace({ output: { name: 'iron_ingot', count: 1 }, input: { name: 'raw_iron', count: 2 }, fuel: { name: 'coal', count: 1 } })
+      furnace.fuel = 0.9
+      await openFurnaceAction({ block: 'furnace' }, makeBot({ furnace }), {})
+      const ac = new AbortController()
+      const p = takeSmeltedAction({}, makeBot({ furnace }), { signal: ac.signal })
+      await vi.advanceTimersByTimeAsync(2000)
+      ac.abort()
+      await vi.advanceTimersByTimeAsync(10)
+      expect(await p).toBe('took 1 iron_ingot before stopping (2 raw_iron still cooking)')
+      expect(furnace.close).toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // 261026 (pass 28 review): the tail is read from the final state, so fuel
+  // running out mid-batch is not reported as "still cooking".
+  it('says the rest is not cooking when the fuel runs out mid-batch', async () => {
+    vi.useFakeTimers()
+    try {
+      const furnace = makeFurnace({ output: { name: 'iron_ingot', count: 1 }, input: { name: 'raw_iron', count: 3 } })
+      furnace.fuel = 0.9
+      await openFurnaceAction({ block: 'furnace' }, makeBot({ furnace }), {})
+      const p = takeSmeltedAction({}, makeBot({ furnace }), {})
+      await vi.advanceTimersByTimeAsync(1000)
+      furnace.fuel = 0
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(await p).toBe('took 1 iron_ingot; 3 raw_iron is left in the input but the furnace is not cooking (no fuel)')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // A broken or out-of-reach furnace closes its window and its slots freeze,
+  // so "cooking" would read true until the deadline.
+  it('stops at once when the furnace window closes mid-batch', async () => {
+    vi.useFakeTimers()
+    try {
+      const furnace = makeFurnace({ output: { name: 'iron_ingot', count: 1 }, input: { name: 'raw_iron', count: 3 }, fuel: { name: 'coal', count: 1 } })
+      furnace.fuel = 0.9
+      await openFurnaceAction({ block: 'furnace' }, makeBot({ furnace }), {})
+      const p = takeSmeltedAction({}, makeBot({ furnace }), {})
+      await vi.advanceTimersByTimeAsync(1000)
+      furnace.emit('close')
+      await vi.advanceTimersByTimeAsync(600)
+      expect(await p).toBe('took 1 iron_ingot, then the furnace closed (broken or out of reach), so nothing more was collected')
+      expect(furnace.listenerCount('close')).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('says the furnace closed when it closes before the first item', async () => {
+    vi.useFakeTimers()
+    try {
+      const furnace = makeFurnace({ input: { name: 'raw_iron', count: 3 }, fuel: { name: 'coal', count: 1 } })
+      furnace.fuel = 0.9
+      await openFurnaceAction({ block: 'furnace' }, makeBot({ furnace }), {})
+      const p = takeSmeltedAction({}, makeBot({ furnace }), {})
+      await vi.advanceTimersByTimeAsync(1000)
+      furnace.emit('close')
+      await vi.advanceTimersByTimeAsync(600)
+      expect(await p).toBe('the furnace closed (broken or out of reach) before anything was smelted')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('answers a stop at once while a take is still pending', async () => {
+    vi.useFakeTimers()
+    try {
+      const furnace = makeFurnace({ output: { name: 'iron_ingot', count: 1 }, input: { name: 'raw_iron', count: 2 }, fuel: { name: 'coal', count: 1 } })
+      furnace.fuel = 0.9
+      const firstTake = furnace.takeOutput
+      furnace.takeOutput = vi.fn(() => (furnace.takeOutput.mock.calls.length === 1 ? firstTake() : new Promise(() => {})))
+      await openFurnaceAction({ block: 'furnace' }, makeBot({ furnace }), {})
+      const ac = new AbortController()
+      const p = takeSmeltedAction({}, makeBot({ furnace }), { signal: ac.signal })
+      await vi.advanceTimersByTimeAsync(1000)
+      furnace.slots.output = { name: 'iron_ingot', count: 1 }
+      await vi.advanceTimersByTimeAsync(600)
+      expect(furnace.takeOutput).toHaveBeenCalledTimes(2)
+      ac.abort()
+      await vi.advanceTimersByTimeAsync(10)
+      expect(await p).toBe('took 1 iron_ingot before stopping (2 raw_iron still cooking)')
+      expect(furnace.close).toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('says an item is still in the output slot when a take mid-batch times out', async () => {
+    vi.useFakeTimers()
+    try {
+      const furnace = makeFurnace({ output: { name: 'iron_ingot', count: 1 }, input: { name: 'raw_iron', count: 2 }, fuel: { name: 'coal', count: 1 } })
+      furnace.fuel = 0.9
+      const firstTake = furnace.takeOutput
+      furnace.takeOutput = vi.fn(() => (furnace.takeOutput.mock.calls.length === 1 ? firstTake() : new Promise(() => {})))
+      await openFurnaceAction({ block: 'furnace' }, makeBot({ furnace }), {})
+      const p = takeSmeltedAction({ timeout_ms: 2000 }, makeBot({ furnace }), {})
+      await vi.advanceTimersByTimeAsync(1000)
+      furnace.slots.output = { name: 'iron_ingot', count: 1 }
+      await vi.advanceTimersByTimeAsync(3000)
+      expect(await p).toBe('took 1 iron_ingot; 1 iron_ingot is still in the output slot, taking it did not go through (2 raw_iron still cooking)')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('counts the wait for the first item against the one call budget', async () => {
+    vi.useFakeTimers()
+    try {
+      const furnace = makeFurnace({ input: { name: 'raw_iron', count: 3 }, fuel: { name: 'coal', count: 1 } })
+      furnace.fuel = 0.9
+      await openFurnaceAction({ block: 'furnace' }, makeBot({ furnace }), {})
+      let done = false
+      const p = takeSmeltedAction({}, makeBot({ furnace }), { takeSmelted_batch_ms: 6000 }).then((r) => { done = true; return r })
+      await vi.advanceTimersByTimeAsync(5000)
+      furnace.slots.output = { name: 'iron_ingot', count: 1 }
+      furnace.slots.input = { name: 'raw_iron', count: 2 }
+      await vi.advanceTimersByTimeAsync(1600)
+      expect(done).toBe(true)
       expect(await p).toBe('took 1 iron_ingot (2 raw_iron still cooking)')
     } finally {
       vi.useRealTimers()
@@ -290,7 +447,8 @@ describe('what is left cooking', () => {
     furnace.slots.output = { name: 'iron_ingot', count: 1 }
     furnace.slots.input = { name: 'raw_iron', count: 2 }
     furnace.takeOutput = vi.fn(async () => { const o = furnace.slots.output; furnace.slots.output = null; return o })
-    expect(await takeSmeltedAction({}, bot, {})).toBe('took 1 iron_ingot (2 raw_iron still cooking)')
+    // No fuel in this mock, so the rest is not cooking and the result says so.
+    expect(await takeSmeltedAction({}, bot, {})).toBe('took 1 iron_ingot; 2 raw_iron is left in the input but the furnace is not cooking (no fuel)')
     expect(bot._seiFurnaceCooking).toMatchObject({ input: '2 raw_iron', output: null })
 
     furnace.slots.output = { name: 'iron_ingot', count: 2 }

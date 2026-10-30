@@ -1,5 +1,5 @@
 /* ProviderSelect — a select control + popover menu in the "Summoning Terminal"
- * vocabulary (see .planning/UI-DESIGN-SYSTEM.md). The trigger mirrors the
+ * vocabulary (see docs/design/UI-DESIGN-SYSTEM.md). The trigger mirrors the
  * `ghost` Button / §196 input: faint fill, --border-strong, mono uppercase
  * tracked label, lights to --accent on hover/focus. The menu follows the modal
  * surface pattern (--surface + --border-strong + --shadow-pop). Sharp corners,

@@ -25,13 +25,14 @@
  * Source:
  *   - src/renderer/src/components/AutoRenewalConsentModal.tsx (modal template)
  *   - src/renderer/src/components/Button.tsx / PercentBar.tsx (reused primitives)
- *   - .planning/quick/260604-uoy-... PLAN.md Task 6
+ *   - docs/design/in-app-updater-260604.md Task 6
  */
 import React from 'react';
 import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { stripDuplicateTitleHeading } from '../lib/changelog';
+import { WINDOWS_UPDATE_NOTE, showsWindowsUpdateNote } from '../lib/stores/useUpdateStore';
 import styles from './UpdatePopup.module.css';
 
 /** The discriminated state the popup renders. */
@@ -46,6 +47,12 @@ export interface UpdatePopupProps {
   onUpdateNow?: () => void;
   /** Dismiss a dismissable state (Later / Got it). Omitted for forced. */
   onDismiss?: () => void;
+  /**
+   * Host OS (`process.platform`). On Windows the forced restart adds the
+   * "takes about a minute, Sei reopens by itself" line (261030); main waits
+   * FORCED_RESTART_DELAY_MS (3.5 s) before quitAndInstall, so it is read.
+   */
+  platform?: string;
 }
 
 /**
@@ -97,7 +104,7 @@ function renderChangelog(text: string): React.ReactNode {
   return out;
 }
 
-export function UpdatePopup({ state, onUpdateNow, onDismiss }: UpdatePopupProps): React.ReactElement {
+export function UpdatePopup({ state, onUpdateNow, onDismiss, platform }: UpdatePopupProps): React.ReactElement {
   const t = useT();
   const dismissable = state.kind === 'available-optional' || state.kind === 'whats-new';
 
@@ -139,7 +146,14 @@ export function UpdatePopup({ state, onUpdateNow, onDismiss }: UpdatePopupProps)
 
     case 'forced':
       title = t('Update ready');
-      body = <p className={styles.body}>{t('Applying the update. Sei will restart in a moment…')}</p>;
+      body = (
+        <>
+          <p className={styles.body}>{t('Applying the update. Sei will restart in a moment…')}</p>
+          {showsWindowsUpdateNote(platform) ? (
+            <p className={`${styles.body} ${styles.note}`}>{t(WINDOWS_UPDATE_NOTE)}</p>
+          ) : null}
+        </>
+      );
       break;
 
     case 'whats-new':

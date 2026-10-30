@@ -15,7 +15,12 @@
  *     downloading  a background download is running (consented or mandatory)
  *     ready        an update is on disk; it installs on the next quit anyway,
  *                  the button lets the user restart into it now
- *     restarting   the user clicked; main is quitting into the installer
+ *     restarting   the user clicked; main is quitting into the installer.
+ *                  On Windows the "takes about a minute, Sei reopens by
+ *                  itself" note shows next to the button while main starts
+ *                  Sei's update progress window (or, when that window cannot
+ *                  start, holds the stock installer back about 3 s so the
+ *                  note can be read; src/main/windowsUpdateInstall.ts).
  *   toast          one-shot confirmation after an accepted update relaunched
  */
 
@@ -39,6 +44,18 @@ export interface UpdatedToastState {
  * back so the user is not left looking at a spinner forever.
  */
 export const RESTART_STUCK_MS = 20_000;
+
+/**
+ * The Windows-only expectation line, shown by the restarting rail button, its
+ * restart confirm and the forced-restart popup. i18n key = the English copy
+ * (zh entry in lib/i18n/zh/modals.ts).
+ */
+export const WINDOWS_UPDATE_NOTE = 'Updating takes about a minute on Windows. Sei reopens by itself.';
+
+/** Whether this platform shows WINDOWS_UPDATE_NOTE. */
+export function showsWindowsUpdateNote(platform: string | undefined): boolean {
+  return platform === 'win32';
+}
 
 interface UpdateStore {
   rail: UpdateRailState | null;
@@ -94,6 +111,8 @@ export const useUpdateStore = create<UpdateStore>((set, get) => ({
       const now = get().rail;
       if (now && now.kind === 'restarting') set({ rail: { kind: 'ready', version: now.version } });
     }, RESTART_STUCK_MS);
+    // Windows: main may take a few seconds before it quits (the progress
+    // window starting, or the note hold); RESTART_STUCK_MS covers it.
     void Promise.resolve()
       .then(() => sei.installUpdate())
       .catch(() => {
@@ -107,5 +126,7 @@ export const useUpdateStore = create<UpdateStore>((set, get) => ({
 }));
 
 if (import.meta.hot) {
-  import.meta.hot.dispose(() => clearStuckTimer());
+  import.meta.hot.dispose(() => {
+    clearStuckTimer();
+  });
 }

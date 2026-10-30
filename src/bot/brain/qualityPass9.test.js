@@ -212,10 +212,16 @@ describe('orchestrator: an action that finishes during a mid-action turn', () =>
   })
 
   it('still ends the loop on stop', async () => {
-    const { orch, provider, drain } = await raceSetup(turn(say('s2', 'ok stopping'), { id: 't1', name: 'stop', input: {} }))
+    // 261024 (pass 26): "hows it going" did not ask for a stop, so the stop
+    // gets one more call (stopThenNext) before the loop ends.
+    const { orch, provider, drain } = await raceSetup(
+      turn(say('s2', 'ok stopping'), { id: 't1', name: 'stop', input: {} }),
+      [turn({ id: 'e9', name: 'end_loop', input: {} })],
+    )
     await drain()
     expect(orch.currentLoop).toBeNull()
-    expect(provider.calls.length).toBe(2)
+    expect(provider.calls.length).toBe(3)
+    expect(lastUserText(provider.calls[2])).toContain('You stopped what you were doing')
   })
 
   it('does not wait when the turn started a new action', async () => {

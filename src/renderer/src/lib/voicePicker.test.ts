@@ -139,6 +139,16 @@ describe('own ElevenLabs voices', () => {
     expect(ownVoicePickFor(NO_VOICE_ID, list)).toBeNull();
   });
 
+  it('ownVoicePickFor never marks a Sei pool voice, even when the own list holds a copy (261024)', () => {
+    const josh = 'NXaTw4ifg0LAguvKuIwZ'; // pool Josh
+    const list = [own(josh, { name: 'Sei — Josh', gender: 'male', category: 'professional' }), own('Own1')];
+    expect(ownVoicePickFor(josh, list)).toBeNull();
+    expect(ownVoicePickFor('EXAVITQu4vr4xnSDxMaL', [own('EXAVITQu4vr4xnSDxMaL')])).toBeNull(); // legacy Sarah
+    expect(applyVoicePick({ voiceId: josh, voiceOwn: { name: 'Sei — Josh' } }, josh, ownVoicePickFor(josh, list))).toEqual({
+      voiceId: josh,
+    });
+  });
+
   it('a pick from the own tab persists the same voiceId path a pool pick does', () => {
     const id = 'aBcDeFgHiJkLmNoPqRsT';
     const list = [own(id, { name: 'My Clone', gender: 'female' })];
@@ -196,6 +206,8 @@ describe('own ElevenLabs voices', () => {
     const list = [own('Own1')];
     expect(defaultVoiceTab('Own1', groups, list)).toBe(OWN_TAB_KEY);
     expect(defaultVoiceTab('m1', groups, list)).toBe('male');
+    // a pool voice the own list also holds opens its pool tab (261024)
+    expect(defaultVoiceTab('m1', groups, [own('m1'), own('Own1')])).toBe('male');
     // Auto / unknown: the own tab when it has voices, else the first group
     expect(defaultVoiceTab(null, groups, list)).toBe(OWN_TAB_KEY);
     expect(defaultVoiceTab(null, groups, [])).toBe('female');

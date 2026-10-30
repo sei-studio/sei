@@ -14,7 +14,7 @@
  * Dollar amounts on this screen are limited to the plan cards (the top up
  * packages live in TopUpModal). Plan cards carry positioning copy only —
  * never credit amounts (260725).
- * Source: .planning/design/UI-REDESIGN-PARTY.md §4.8 + the 260725 sketch.
+ * Source: docs/design/UI-REDESIGN-PARTY.md §4.8 + the 260725 sketch.
  */
 
 .root {

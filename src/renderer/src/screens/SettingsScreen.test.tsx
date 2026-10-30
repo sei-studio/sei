@@ -493,18 +493,20 @@ describe('261023 settings tidy: web search tab + compact ChatGPT plan row', () =
     expect(credits).not.toContain('ChatGPT plan, separate from Sei plans');
     expect(credits).not.toContain('Have ChatGPT Plus or Pro?');
     expect(credits).toContain("navigate({ kind: 'settings', useChatgptPlan: true })");
-    expect(readFileSync(USE_UI_STORE_TS, 'utf8')).toContain("{ kind: 'settings'; useChatgptPlan?: boolean }");
+    expect(readFileSync(USE_UI_STORE_TS, 'utf8')).toContain("{ kind: 'settings'; useChatgptPlan?: boolean; focus?: 'chatgpt-plan' }");
   });
 
   it('Settings runs the intent once through the normal switch paths, then clears it', () => {
     const at = settings.indexOf('const chatgptPlanIntent');
     expect(at).toBeGreaterThan(-1);
     const body = settings.slice(at, at + 1200);
-    // Waits for a signed-in plan and a known backend before acting.
-    expect(body).toContain('chatgptReady(chatgptStatus)');
-    expect(body).toContain("aiBackendKind !== 'cloud-proxy' && aiBackendKind !== 'local'");
-    // Clears the flag so a re-render does not re-open the confirm.
-    expect(body).toContain("useUiStore.setState({ view: { kind: 'settings' } })");
+    // Waits only while config, plan status or backend are loading (the
+    // decision itself is chatgptPlanIntentStep, tested in its own file).
+    expect(body).toContain('chatgptPlanIntentStep(!!cfg, chatgptStatus, aiBackendKind)');
+    expect(body).toContain("if (step === 'wait') return;");
+    // Clears the flag before anything else, so it never fires later: not
+    // even when the plan turned out not to be ready ('drop').
+    expect(body).toMatch(/if \(step === 'wait'\) return;\s*useUiStore\.setState\(\{ view: \{ kind: 'settings' \} \}\);\s*if \(step === 'drop'\) return;/);
     // Cloud: the same confirm modal as this screen's own button. Local: provider pick.
     expect(body).toContain("setSwitchVia('chatgpt')");
     expect(body).toContain("setPendingSwitch('local')");

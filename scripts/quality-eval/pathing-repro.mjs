@@ -43,6 +43,10 @@
 //                   moves 20 blocks: is she still trailing them?
 //   death_recover   she dies 15 blocks from spawn with a sword and bread,
 //                   respawns, then goTo the death spot + pickup
+//   dig_name_6m     261025: dig({block:"granite"}) 6 blocks off, one call
+//   dig_raised_5m   dig a granite on a 3-high pillar 5 blocks off, one call
+//   craft_second_pickaxe craft a wooden pickaxe with one already in the bag
+//                   and the parts only as planks and logs
 //   beach_hole_a/b/c the combat_night holes on the natural beach: goTo from
 //                   where she was stuck. natural: no arena, so run these
 //                   alone right after the reset (--cases beach_hole_a,...)
@@ -251,6 +255,50 @@ const CASES = {
       await sleep(1500)
       const n = await itemCount(ctx.bot, '#minecraft:logs')
       return { result: r.result, ms: Date.now() - t0, logs: n, success: n >= 3 }
+    },
+  },
+  // 261025 (pass 27): one model-style dig({block}) of a block out of reach.
+  // Base: "out of range" (dig never walked). Head: walks, digs, says what
+  // reached the inventory. success = the drop is in her inventory after ONE
+  // call, with no goTo or pickup.
+  dig_name_6m: {
+    world: [`setblock ${S.x + 6} ${Y} ${S.z + 1} granite`],
+    give: ['stone_pickaxe'],
+    async run(ctx) {
+      const t0 = Date.now()
+      const d = await ctx.exec('dig', { block: 'granite' }, { timeoutMs: 40000 })
+      const ms = Date.now() - t0
+      await sleep(1000)
+      const n = await itemCount(ctx.bot, 'granite')
+      return { result: d.result, ms, granite: n, success: n >= 1 }
+    },
+  },
+  dig_raised_5m: {
+    // On top of a 3-high stone pillar, 5 east: reachable from beside the
+    // pillar (eyes to block), not from where she stands.
+    world: [`fill ${S.x + 5} ${Y} ${S.z} ${S.x + 5} ${Y + 2} ${S.z} stone`, `setblock ${S.x + 5} ${Y + 3} ${S.z} granite`],
+    give: ['stone_pickaxe'],
+    async run(ctx) {
+      const t0 = Date.now()
+      const d = await ctx.exec('dig', { x: S.x + 5, y: Y + 3, z: S.z }, { timeoutMs: 40000 })
+      const ms = Date.now() - t0
+      await sleep(1000)
+      const n = await itemCount(ctx.bot, 'granite')
+      return { result: d.result, ms, granite: n, success: n >= 1 }
+    },
+  },
+  craft_second_pickaxe: {
+    // The pass26 gather_craft-01-A bag: 3 planks, 3 logs, one wooden pickaxe
+    // already. Base: "need 2 more stick". success = two pickaxes.
+    world: [`setblock ${S.x + 1} ${Y} ${S.z + 1} crafting_table`],
+    give: ['oak_planks 3', 'oak_log 3', 'wooden_pickaxe 1'],
+    async run(ctx) {
+      const t0 = Date.now()
+      const c = await ctx.exec('craft', { item: 'wooden_pickaxe', count: 1 }, { timeoutMs: 30000 })
+      const ms = Date.now() - t0
+      await sleep(800)
+      const n = await itemCount(ctx.bot, 'wooden_pickaxe')
+      return { result: c.result, ms, pickaxes: n, success: n >= 2 }
     },
   },
 }

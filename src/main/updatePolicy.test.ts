@@ -7,6 +7,9 @@
  *     optional (the skipped patch rides inside the minor).
  *   - isPatchOnlyBump: forward patch-only true; minor/major/equal/down false.
  *   - normalizeApply: 'now' passes through; everything else → 'on-restart'.
+ *   - applyMinSupported / parseMinSupported (261031): below the feed's
+ *     minSupported an optional update is mandatory; at or above it, or with a
+ *     missing/garbage value, the level is unchanged.
  *   - shouldShowWhatsNew: patch-only forward bump only.
  *   - isMissingReleaseArtifacts: a feed entry with no installable build behind
  *     it (draft release's tag, tag ahead of its build) reads as "no update",
@@ -14,10 +17,12 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  applyMinSupported,
   deriveLevel,
   isMissingReleaseArtifacts,
   isPatchOnlyBump,
   normalizeApply,
+  parseMinSupported,
   shouldShowWhatsNew,
 } from './updatePolicy';
 
@@ -181,5 +186,54 @@ describe('isMissingReleaseArtifacts', () => {
     expect(isMissingReleaseArtifacts(undefined)).toBe(false);
     expect(isMissingReleaseArtifacts({})).toBe(false);
     expect(isMissingReleaseArtifacts(42)).toBe(false);
+  });
+});
+
+describe('applyMinSupported (feed minSupported, 261031)', () => {
+  it('makes an optional update mandatory below minSupported', () => {
+    expect(deriveLevel('0.6.11', '0.7.0')).toBe('optional');
+    expect(applyMinSupported('optional', '0.6.11', '0.7.0')).toBe('mandatory');
+    expect(applyMinSupported('optional', '0.6.4', '0.6.11')).toBe('mandatory');
+    expect(applyMinSupported('optional', '0.6.11', 'v0.7.0')).toBe('mandatory');
+  });
+
+  it('leaves the level alone at or above minSupported', () => {
+    expect(applyMinSupported('optional', '0.7.0', '0.7.0')).toBe('optional');
+    expect(applyMinSupported('optional', '0.7.1', '0.7.0')).toBe('optional');
+    expect(applyMinSupported('optional', '0.6.11', '0.6.11')).toBe('optional');
+  });
+
+  it('never turns "none" into an update and keeps mandatory mandatory', () => {
+    expect(applyMinSupported('none', '0.6.11', '0.7.0')).toBe('none');
+    expect(applyMinSupported('mandatory', '0.6.10', '0.6.11')).toBe('mandatory');
+    expect(applyMinSupported('mandatory', '0.6.11', '0.6.0')).toBe('mandatory');
+  });
+
+  it('changes nothing for a missing, invalid or unparsable minSupported', () => {
+    for (const bad of [undefined, null, '', 'latest', '0.7', '7', 'v', '0.7.0.1', 'abc 0.7.0', 70, true, {}, ['0.7.0']]) {
+      expect(applyMinSupported('optional', '0.6.11', bad)).toBe('optional');
+    }
+    expect(applyMinSupported('optional', 'garbage', '0.7.0')).toBe('optional');
+    expect(applyMinSupported('optional', '', '0.7.0')).toBe('optional');
+  });
+
+  it('orders prereleases by semver, as deriveLevel does', () => {
+    // A beta of the floor version is below it.
+    expect(applyMinSupported('optional', '0.7.0-beta.2', '0.7.0')).toBe('mandatory');
+    // A beta newer than a stable floor is not.
+    expect(applyMinSupported('optional', '0.7.1-beta.1', '0.7.0')).toBe('optional');
+    // A prerelease floor: earlier betas are below it, later ones are not.
+    expect(applyMinSupported('optional', '0.7.0-beta.1', '0.7.0-beta.3')).toBe('mandatory');
+    expect(applyMinSupported('optional', '0.7.0-beta.3', '0.7.0-beta.3')).toBe('optional');
+    expect(applyMinSupported('optional', 'v0.6.11', '0.7.0')).toBe('mandatory');
+  });
+
+  it('parseMinSupported is strict', () => {
+    expect(parseMinSupported('0.7.0')).toBe('0.7.0');
+    expect(parseMinSupported(' v0.7.0 ')).toBe('0.7.0');
+    expect(parseMinSupported('0.7.0-beta.1')).toBe('0.7.0-beta.1');
+    expect(parseMinSupported('0.7')).toBeNull();
+    expect(parseMinSupported('>=0.7.0')).toBeNull();
+    expect(parseMinSupported(7)).toBeNull();
   });
 });

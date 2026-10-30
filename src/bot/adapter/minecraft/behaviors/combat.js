@@ -3,7 +3,7 @@ import { pauseFollow, startFollow } from './follow.js'
 import { pursuitMovements } from './attack.js'
 import { createThrottle } from '../../../brain/debounce.js'
 import { HOSTILE_MOBS, NO_MELEE_DEFEND, NO_AUTO_ENGAGE } from './hostiles.js'
-import { equipBestWeapon, keepWeaponInHand } from './weaponSelect.js'
+import { equipBestWeapon, keepWeaponInHand, lostWeaponUnarmed } from './weaponSelect.js'
 import { noteCombat } from './autoEat.js'
 import { ownerHealth } from '../observers/snapshot.js'
 import { isDeadEntity, trackEntityDeaths } from '../observers/entities.js'
@@ -183,9 +183,16 @@ export function startCombat(bot, config) {
       payload.engaged = actionTarget === target.id
       payload.actionOnIt = actionTarget === target.id
     }
+    // 261030 (quality pass 31): not after a death took her weapon. Bare
+    // hands do 1 damage a swing, and in the combat_night eval this chase and
+    // the turns that followed it killed her again and again once a first
+    // death had dropped her sword (13 of 18 deaths in two runs). A bot that
+    // never had a weapon still punches to pull aggro (the 260730 design).
+    // The event still fires, and the turn is told why (index.js).
     const canMelee =
       actionTarget == null &&
       defendOwner &&
+      !lostWeaponUnarmed(bot) &&
       !bot._seiPaused &&
       !NO_MELEE_DEFEND.has(target.name) &&
       !bot._seiReflexActive && !bot._seiSurvivalActive && !bot._seiCriticalRetreat &&
@@ -502,7 +509,10 @@ export function startCombat(bot, config) {
     // still fires so the LLM can react verbally). The 250ms attack loop only
     // faces + swings (no movement controls), so it does not walk off the stagger
     // knockback above; reflex.js circle-strafes the opponent for positioning.
-    if (!isPlayer || bot._seiPvp) {
+    // 261030 (pass 31): after a death took her weapon the turn is told to get
+    // away, and this loop turning her to the mob every 250ms fought that
+    // advice. A bot that never had one still swings back.
+    if ((!isPlayer || bot._seiPvp) && !(!isPlayer && lostWeaponUnarmed(bot))) {
       if (_target?.id !== target.id) {
         // 261019 (pass 19): pause the trail but keep who she follows.
         // stopFollow() here forgot the follow target on every mob hit.

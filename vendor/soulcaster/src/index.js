@@ -34,8 +34,10 @@ import {
 } from './tables.js';
 import { VOICES, SEED_VOICE_TAGS } from './voices.js';
 import { buildSystemPrompt, buildUserPrompt, buildRetrySuffix } from './prompt.js';
+import { drawNameCandidates } from './drawNames.js';
 
 export { VOICES, SEED_VOICE_TAGS, VOICE_TAGS } from './voices.js';
+export { NAME_POOL, drawNameCandidates, nameMatchesCandidates, normalizeName, buildExcludeSet } from './drawNames.js';
 
 export {
   AGE_RANGES,
@@ -478,20 +480,45 @@ function parseAndValidate(rawText) {
 // characters — excluded from the voice roll so roster voices rarely collide.
 // `dynamic` (optional): a DYNAMICS key — the relationship the user ranked for
 // this cast ("a partner in crime", "someone who looks after you", ...).
-export async function castSoul({ gender, userProfile = null, dynamic = null, takenVoiceIds = [], llm, rng = Math.random } = {}) {
+// excludeNames: names never to offer as candidates (public characters).
+// avoidNames: names to avoid unless the pool runs dry (the caller's library).
+// Name candidates use crypto randomness, not `rng`, so a seeded roll still
+// gets fresh names (nameRng exists for tests only).
+export async function castSoul({
+  gender,
+  userProfile = null,
+  dynamic = null,
+  takenVoiceIds = [],
+  excludeNames = [],
+  avoidNames = [],
+  llm,
+  rng = Math.random,
+  nameRng,
+} = {}) {
   if (typeof llm !== 'function') {
     throw new SoulcasterError('castSoul requires an `llm` function: async ({ system, user, maxTokens }) => string');
   }
 
   const rolled = rollFields({ gender, userProfile, dynamic, takenVoiceIds, rng });
   const system = buildSystemPrompt();
-  const baseUser = buildUserPrompt({ gender, userProfile, rolled });
+  // Each attempt draws fresh candidates, matching the cloud /free/soulcast
+  // path (the proxy draws per request, and the retry is a new request).
+  const draw = () =>
+    drawNameCandidates({
+      heritage: rolled.heritage,
+      gender,
+      exclude: excludeNames,
+      softExclude: avoidNames,
+      rng: nameRng,
+    });
 
   let lastError = null;
   let lastRaw = null;
 
   // Attempt 1, then a single retry with the validation error appended.
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    const nameCandidates = draw();
+    const baseUser = buildUserPrompt({ gender, userProfile, rolled, nameCandidates });
     const user = attempt === 0 ? baseUser : baseUser + buildRetrySuffix(lastError);
     let raw;
     try {
@@ -519,7 +546,7 @@ export async function castSoul({ gender, userProfile = null, dynamic = null, tak
       // field; stamp it so the sheet carries the TTS voice without any chance
       // of model drift.
       res.sheet.voice_id = rolled.voice.id;
-      return { sheet: res.sheet, rolled };
+      return { sheet: res.sheet, rolled, nameCandidates };
     }
     lastError = res.error;
   }

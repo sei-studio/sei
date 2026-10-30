@@ -1,2 +1,4 @@
 # patch-package diffs must apply byte-exact on Windows runners (core.autocrlf=true).
 patches/*.patch -text
+# Sei's Velopack patch applies byte for byte (.github/actions/velopack-tools).
+build/velopack/*.patch -text

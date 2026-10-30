@@ -63,6 +63,10 @@ import { paths } from './paths';
 import { createLogRouter, type LogRouter } from './logRouter';
 import { bootPhaseProps, type SummonFailureInfo, type SummonPhase } from './diagnostics';
 import { goodbyeGame, noteCompanionGoodbye } from './sessionGoodbye';
+import { facesEnabled } from './facepack/facepackDev';
+import { emitFaceCue } from './facepack/faceEvents';
+import { resolveExpression, type FacePalette } from '../bot/brain/faceExpressions.js';
+import { facePaletteForCharacterName } from './facepack/facepackStore';
 
 /**
  * The READY budget: from the bot reporting "booted" (its init-ack) to
@@ -139,6 +143,9 @@ interface SummonControl {
  * is correct: no supervisor, no bot process.
  */
 let summonProbe: ((characterId: string) => boolean) | null = null;
+
+/** 261028 facepack pilot: each live bot's face palette (set at init, dev flag only). */
+const facePalettes = new Map<string, FacePalette | null>();
 export function isCharacterSummoned(characterId: string): boolean {
   return summonProbe?.(characterId) ?? false;
 }
@@ -890,6 +897,8 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
   interface FailureReporter {
     /** Set once the backend kind is read, so even pre-fork failures carry it. */
     backend: AiBackendKind | null;
+    /** 261031: the bot's in-game name, once resolved; redacted to `[bot]`. */
+    botName: string | null;
     /**
      * 260926: set at fork. `marks` is read live from the session at fire
      * time, so a failure carries every phase the bot reached.
@@ -912,6 +921,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     let fired = false;
     const reporter: FailureReporter = {
       backend: null,
+      botName: null,
       boot: null,
       fire(partial) {
         if (fired) return;
@@ -928,6 +938,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
             ...(partial.reclassifiedFrom ? { reclassifiedFrom: partial.reclassifiedFrom } : {}),
             durationMs: Date.now() - startedAtMs,
             backend: reporter.backend,
+            ...(reporter.botName ? { botName: reporter.botName } : {}),
             boot: reporter.boot
               ? { attemptStartMs: startedAtMs, forkAtMs: reporter.boot.forkAtMs, marks: reporter.boot.marks() ?? {} }
               : undefined,
@@ -976,6 +987,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // module owns the naming rule and the collision test (Minecraft: compared
     // case-insensitively to match MC's username handling).
     const username = module.effectiveUsername(character);
+    reporter.botName = username;
     // 260909: some games seat ONE companion per world (Don't Starve Together's
     // helper runs a single body; a second offer replaced the first and, via a
     // link-reset race, left a brainless survivor standing). Refuse a second
@@ -1374,8 +1386,8 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // the renderer only saw "Bot exited before summon-ready (code=1)" with
     // no signal about which require()/throw blew up). 260720: raised 4KB→16KB
     // so the failed-summon diagnostic (onSummonFailure) keeps enough context
-    // to survive redaction + the analytics 8KB per-field cap with the actual
-    // crash still in frame.
+    // to survive redaction + the analytics per-field cap (2KB since 261031)
+    // with the actual crash still in frame.
     const buffers = { stdout: '', stderr: '' };
     const tails = { stdout: '', stderr: '' };
     const TAIL_MAX = 16_384;
@@ -1510,6 +1522,15 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // a BotStatus event, so return before lifecycleToStatus.
       if (data.type === 'chat') {
         opts.onBotChat?.(characterId, (data as { text?: string }).text ?? '');
+        return;
+      }
+      // 261028 facepack pilot: say()'s `expression` (dev flag only). Not a
+      // BotStatus event.
+      if ((data as { type?: string }).type === 'face') {
+        // The bot already mapped it through the character's palette; map
+        // again with the same palette so a palette-only name (smirk) is kept.
+        const expression = resolveExpression((data as { expression?: unknown }).expression, facePalettes.get(characterId) ?? null);
+        if (expression) emitFaceCue({ characterId, expression, at: 'start', text: null });
         return;
       }
       // Voice calls (260705): the in-game bot called end_call() — hang up the
@@ -1751,12 +1772,15 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
           nextStepPlanP,
           new Promise<undefined>((r) => setTimeout(() => r(undefined), 1_000)),
         ]);
+        // 261028 facepack pilot: the character's pack palette (dev flag only).
+        const facePalette = facesEnabled() ? await facePaletteForCharacterName(character.name).catch(() => null) : null;
+        if (facesEnabled()) facePalettes.set(characterId, facePalette);
         // Ship mc_username, preferred_name, and skinServerBaseUrl so the bot
         // can satisfy ConfigSchema, seed player_username for player-recognition
         // without disk reads, and log the skin server URL for verification.
         // The bot itself never hits the skin server — the consumer is the host
         // MC client via CustomSkinLoader. character.username is preferred over
-        // sanitizeMcName(character.name) so each persona connects under its
+        // the folded display name (effectiveMcUsername) so each persona connects under its
         // own in-game name.
         try {
           child.postMessage(
@@ -1845,6 +1869,9 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
               // bot skips its cold FIRST CONTACT greeting (which would otherwise
               // double the standalone launch reply). Deterministic; no race.
               voiceCallActive: opts.isVoiceCallActive?.(characterId) ?? false,
+              // 261028 facepack pilot: say() `expression` param (dev flag only;
+              // omitted otherwise so the init payload is unchanged).
+              ...(facesEnabled() ? { faces: true, ...(facePalette ? { facePalette } : {}) } : {}),
               // 261014: the open plan for the FIRST CONTACT greeting (null = none).
               nextStepPlan: nextStepPlan === undefined ? undefined : (nextStepPlan?.text ?? null),
               // 261020: true = that plan is not tied to this game (talk, not a task).

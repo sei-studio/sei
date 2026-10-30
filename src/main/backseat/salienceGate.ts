@@ -13,7 +13,7 @@
  *
  * A randomised timer (nextIdleDelayMs) does the same job for free and, unlike a
  * gate, cannot be wrong in a way that is invisible. See
- * .planning/backseat-v2-260801.md for the full numbers.
+ * docs/design/backseat-v2-260801.md for the full numbers.
  *
  * The file stays because the measurement apparatus around it (logprob reading
  * on DeepInfra, the quantile window) is the expensive part to rebuild, and

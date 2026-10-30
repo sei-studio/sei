@@ -58,13 +58,20 @@ export async function initJwtBridge(supervisor: BotSupervisor): Promise<void> {
   supervisorRef = supervisor;
   const supabase = getClient();
 
-  // Push the initial token immediately so supervisor.updateJwt has a value
-  // before the first summon. getSession() reads from the storage adapter
-  // (sessionStore) which was wired by bootstrap before getClient() was first
-  // invoked.
-  const { data } = await supabase.auth.getSession();
-  const initialAccessToken: string | null = data?.session?.access_token ?? null;
-  supervisor.updateJwt(initialAccessToken);
+  // Push the initial token so supervisor.updateJwt has a value before the
+  // first summon. 261029: NOT awaited. getSession() refreshes an expired token
+  // and first waits for supabase-js's startup refresh, ~51 s offline, and the
+  // bootstrap steps after this one (the loopback auth-callback server among
+  // them) used to wait with it. Applied only if no auth event has delivered a
+  // token first (INITIAL_SESSION carries the same answer), so a late result
+  // never overwrites a newer one.
+  let eventSeen = false;
+  void supabase.auth
+    .getSession()
+    .then(({ data }) => {
+      if (!eventSeen && supervisorRef === supervisor) supervisor.updateJwt(data?.session?.access_token ?? null);
+    })
+    .catch(() => { /* the auth events below deliver the token */ });
 
   // CRITICAL (260617 expired_jwt incident): `autoRefreshToken: true` is NOT
   // self-starting outside a browser. supabase-js only arms its refresh ticker
@@ -81,9 +88,13 @@ export async function initJwtBridge(supervisor: BotSupervisor): Promise<void> {
   // (~5 min before expiry; default JWT lifetime 1h). Without forwarding
   // here, a long-running bot would carry a stale JWT until the next sign-in.
   const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+    eventSeen = true;
     if (!supervisorRef) return;
     switch (event) {
       case 'SIGNED_IN':
+      // A password-reset session arrives as PASSWORD_RECOVERY with no
+      // SIGNED_IN (verifyOtp type 'recovery'), and it is a sign-in too (261029).
+      case 'PASSWORD_RECOVERY':
         // A fresh sign-in (re)arms the refresh ticker — a prior SIGNED_OUT may
         // have stopped it.
         startAutoRefreshSafely();
@@ -97,9 +108,6 @@ export async function initJwtBridge(supervisor: BotSupervisor): Promise<void> {
       case 'SIGNED_OUT':
         void supabase_stopAutoRefresh();
         supervisorRef.updateJwt(null);
-        break;
-      case 'PASSWORD_RECOVERY':
-        // No-op in Phase 10 (no recovery flow shipped).
         break;
     }
   });

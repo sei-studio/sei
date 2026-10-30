@@ -6,6 +6,7 @@
 import { describe, it, expect } from 'vitest'
 import { Vec3 } from 'vec3'
 import { giveAction, resolveRecipient, HAND_RANGE, TOSS_RANGE } from './give.js'
+import { createMinecraftAdapter } from '../index.js'
 
 function makeBot({ at = new Vec3(0, 64, 0), player = new Vec3(2, 64, 0), inv = [{ name: 'coal', count: 8 }], players } = {}) {
   const items = inv.map((i) => ({ ...i }))
@@ -186,5 +187,17 @@ describe('resolveRecipient', () => {
     const bot = { username: 'Sui', players }
     expect(resolveRecipient(bot, 'lyra', cfg)?.username).toBe('Lyra')
     expect(resolveRecipient({ username: 'Sui', players: { SSk1tz: players.SSk1tz } }, 'Marv', cfg)).toBeNull()
+  })
+})
+
+// 261026 (pass 28 review): the hand-over ledger reads give's own success
+// line, so the parser is checked against what giveAction really returns.
+describe('give result feeds the hand-over ledger', () => {
+  it('parses a real giveAction success line', async () => {
+    const { bot, items } = makeBot({ inv: [{ name: 'crafting_table', count: 1 }, { name: 'oak_log', count: 7 }] })
+    const r = await giveAction({ item: 'oak_log', count: 6 }, bot, cfg, deps(bot, items))
+    expect(r).toMatch(/^gave 6 oak_log to Alex/)
+    const adapter = createMinecraftAdapter({ bot: {}, config: {} })
+    expect(adapter.handOverDetail('give', r)).toEqual({ item: 'oak_log', n: 6, to: 'Alex' })
   })
 })

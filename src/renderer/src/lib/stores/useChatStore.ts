@@ -198,7 +198,7 @@ export function chatFailureLine(err: unknown): string {
     return "i can't reply: your ChatGPT sign-in needs attention. continue with ChatGPT in Settings to fix it.";
   }
   if (/CHATGPT_NOT_ELIGIBLE/.test(msg)) {
-    return "i can't reply: this ChatGPT account can't be used here. try another account or AI option in Settings.";
+    return "i can't reply: this ChatGPT account can't be used here (it needs Plus or Pro). try another account or AI option in Settings.";
   }
   if (/CHATGPT_FORBIDDEN/.test(msg)) {
     return "i can't reply: ChatGPT plan use isn't available here right now, maybe because of your region or plan. pick another AI option in Settings.";

@@ -16,8 +16,13 @@
  *
  * Interaction model (260804; view/edit split 260805; per-region 260806): the
  * window is click-through by DEFAULT (`setIgnoreMouseEvents(true, {forward:
- * true})` — `forward` keeps mousemove flowing to the page so hover chrome
- * works; Windows/macOS only, Linux stays display-only). The overlay renderer
+ * true})` — `forward` keeps mousemove flowing to the page on Windows/macOS).
+ * Forwarding is not enough on its own: Linux has none, and it did not reach
+ * the page on a user's Live2D setup (261028), which left the pencil, the only
+ * way into edit mode, unreachable. So main ALSO polls the global cursor while
+ * the window is up and pushes it in window-local coordinates
+ * (`avatar:overlay-pointer-state`, shared/overlayPointer.ts); the renderer
+ * ORs that with DOM hover. The overlay renderer
  * asks for real clicks (`setOverlayInteractive`) only while the pointer is
  * over the CHROME BUTTON COLUMN (so clicks over the character land on
  * whatever is under her, like the caption window) and for the whole of edit
@@ -36,6 +41,11 @@
 import { BrowserWindow, screen, app } from 'electron';
 import { IpcChannel, type AvatarCamera, type CallOverlayState } from '../shared/ipc';
 import { loadConfig, updateConfig } from './configStore';
+import {
+  samplePointer,
+  shouldPushPointer,
+  type OverlayPointerSample,
+} from '../shared/overlayPointer';
 import {
   closeCaptionOverlay,
   hydrateCaptionConfig,
@@ -98,9 +108,13 @@ let movePersistTimer: ReturnType<typeof setTimeout> | null = null;
 let applyingBounds = false;
 /** Window origin at the start of a hold-to-drag move stream. */
 let moveStartPos: { x: number; y: number } | null = null;
-/** Cursor poll for gaze cursor-follow (armed only while a Live2D tile shows). */
+/** Cursor poll (armed while the window is up): the hover source for the
+ * chrome on every tile kind, plus gaze cursor-follow for Live2D/rig tiles. */
 let cursorTimer: ReturnType<typeof setInterval> | null = null;
 const CURSOR_POLL_MS = 120;
+/** Last window-local pointer sample pushed (null = none since the window
+ * came up), so a cursor resting elsewhere costs one push, not one per tick. */
+let lastPointer: OverlayPointerSample | null = null;
 
 export function initCallOverlay(config: OverlayConfig): void {
   cfg = config;
@@ -254,8 +268,9 @@ function pushState(): void {
 }
 
 /** Default mouse policy: click-through, but keep forwarding pointer movement
- * to the page so hover chrome can appear (forward: Windows/macOS only; on
- * Linux the overlay is simply display-only). */
+ * to the page so hover chrome can appear at once where the OS supports it
+ * (forward: Windows/macOS only). The cursor poll's pointer feed is the
+ * backstop everywhere, Linux included. */
 function applyDefaultMousePolicy(win: BrowserWindow): void {
   win.setIgnoreMouseEvents(true, { forward: true });
 }
@@ -525,17 +540,30 @@ export function moveAvatarOverlay(phase: 'start' | 'move' | 'end', dx: number, d
 }
 
 /**
- * Gaze cursor-follow feed (260806): while a Live2D tile is showing, poll the
- * global cursor (`screen.getCursorScreenPoint`, cheap) and push it to the
- * overlay window normalized to [-1, 1] around the window's center (x right,
- * y UP — the focusController's frame), scaled by the half-extent of the
- * display the window sits on. The renderer alternates its gaze between this
- * and the idle wander; a feed that stops (window gone) just means wander.
+ * One cursor poll tick (`screen.getCursorScreenPoint`, cheap), two feeds:
+ *
+ * - POINTER (261029, every tile kind): the cursor in window-local DIPs,
+ *   pushed every tick while it is inside the window and once on leaving
+ *   (`shouldPushPointer`). This is the OS-independent hover source for the
+ *   chrome column: the renderer shows the pencil from it and asks for real
+ *   clicks when it lands on the buttons, so edit mode is reachable even
+ *   where mouse forwarding never reaches the page.
+ * - GAZE (260806, only while a Live2D/rig tile shows): the cursor normalized
+ *   to [-1, 1] around the window's center (x right, y UP — the
+ *   focusController's frame), scaled by the half-extent of the display the
+ *   window sits on. The renderer alternates its gaze between this and the
+ *   idle wander; a feed that stops (window gone) just means wander.
  */
 function pushCursorSample(): void {
   if (!overlayWin || overlayWin.isDestroyed()) return;
   try {
     const pt = screen.getCursorScreenPoint();
+    const sample = samplePointer(pt, overlayWin.getContentBounds());
+    if (shouldPushPointer(lastPointer, sample)) {
+      overlayWin.webContents.send(IpcChannel.avatar.overlayPointerState, sample);
+    }
+    lastPointer = sample;
+    if (!lastState?.participants.some((p) => p.live2d === true)) return;
     const b = overlayWin.getBounds();
     const disp = screen.getDisplayMatching(b).bounds;
     const halfW = Math.max(1, disp.width / 2);
@@ -548,16 +576,18 @@ function pushCursorSample(): void {
   }
 }
 
-/** Arm/disarm the cursor poll to match "window up AND a Live2D tile shown". */
+/** Arm/disarm the cursor poll to match "overlay window up" (any tile kind:
+ * the pointer feed is what makes the chrome reachable). */
 function reconcileCursorPoll(): void {
-  const wants =
-    !!overlayWin &&
-    !overlayWin.isDestroyed() &&
-    !!lastState?.participants.some((p) => p.live2d === true);
-  if (wants && !cursorTimer) cursorTimer = setInterval(pushCursorSample, CURSOR_POLL_MS);
+  const wants = !!overlayWin && !overlayWin.isDestroyed();
+  if (wants && !cursorTimer) {
+    lastPointer = null;
+    cursorTimer = setInterval(pushCursorSample, CURSOR_POLL_MS);
+  }
   if (!wants && cursorTimer) {
     clearInterval(cursorTimer);
     cursorTimer = null;
+    lastPointer = null;
   }
 }
 
@@ -626,6 +656,7 @@ export function closeCallOverlay(): void {
     clearInterval(cursorTimer);
     cursorTimer = null;
   }
+  lastPointer = null;
   moveStartPos = null;
   if (overlayWin && !overlayWin.isDestroyed()) overlayWin.destroy();
   overlayWin = null;

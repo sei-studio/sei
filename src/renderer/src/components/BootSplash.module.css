@@ -1,0 +1,32 @@
+/* 261029: the startup splash's look (the Sei wordmark, centered, fading in;
+   windowChrome.createSplashWindow) inside the main window, for the boot
+   routing's wait. The splash floats a white logo on the desktop; here it sits
+   on the app background, so it takes the text color. The fade starts after a
+   short delay, so an ordinary launch that routes at once shows nothing. */
+.root {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--desktop);
+  color: var(--text);
+}
+
+.mark {
+  opacity: 0;
+  animation: bootSplashIn 800ms ease 200ms forwards;
+}
+
+@keyframes bootSplashIn {
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mark {
+    animation: none;
+    opacity: 1;
+  }
+}

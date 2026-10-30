@@ -85,7 +85,7 @@ function assertAdapter(adapter) {
  * @param {{info?:Function,warn?:Function,error?:Function,debug?:Function}} [args.logger]
  * @returns {Promise<{ stop: () => Promise<void> }>}
  */
-export async function start({ config, adapter, logger = console, onTerminalError = null, onAuthExpired = null, onSeiChatReply = null, onQuitRequested = null, onCallEndRequested = null, onAction = null }) {
+export async function start({ config, adapter, logger = console, onTerminalError = null, onAuthExpired = null, onSeiChatReply = null, onQuitRequested = null, onCallEndRequested = null, onAction = null, onFace = null }) {
   assertAdapter(adapter)
 
   // ── Memory layer ────────────────────────────────────────────────────
@@ -206,6 +206,8 @@ export async function start({ config, adapter, logger = console, onTerminalError
     onCallEndRequested,
     // Party redesign §2/§5 — current world-action verb emitter (or null clear).
     onAction,
+    // 261028 facepack pilot: say() `expression` cue (dev flag only).
+    onFace,
   })
 
   // ── Build the priority queue with the orchestrator's handleDispatch ─

@@ -66,6 +66,11 @@ describe('sharedVoiceMetadataToSave (publish step)', () => {
     expect(sharedVoiceMetadataToSave({ voiceId: 'pFZP5JQG7iQjIQuC4Bku' }, 'mal1x0000000000000000')).toBeNull();
     expect(sharedVoiceMetadataToSave(undefined, 'mal1x0000000000000000')).toBeNull();
   });
+
+  it('a pool voice with a stale own-voice tag needs no "Others will hear" write (261024)', () => {
+    const stale = { voiceId: 'NXaTw4ifg0LAguvKuIwZ', voiceOwn: { name: 'Sei — Josh', gender: 'male' } };
+    expect(sharedVoiceMetadataToSave(stale, 'mal1x0000000000000000')).toBeNull();
+  });
 });
 
 describe('labels and groups', () => {

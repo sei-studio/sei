@@ -18,6 +18,7 @@
  * sei:death with the position and the last real hit.
  */
 import { logChatIn } from '../../../brain/log.js'
+import { foldLatin } from '../../../names.js'
 
 const STOP_VERBS = new Set(['stop', 'halt', 'cancel', 'nevermind', 'never mind'])
 
@@ -74,11 +75,15 @@ function forceCancelBody(bot) {
 // [A-Za-z0-9_], so we require the name not be glued to other name characters —
 // "sui" matches "sui go" and "hey sui!" but NOT "suit" or "result". Used to tell
 // whether a message is aimed at this bot or at one of its sibling companions.
+// 261027: the message is accent-folded first (the name already is, see
+// src/bot/names.js), so "hey sofía" reaches the bot that joined as "Sofia".
 function mentionsName(message, name) {
   if (!name) return false
-  const esc = String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  try { return new RegExp(`(^|[^a-z0-9_])${esc}([^a-z0-9_]|$)`, 'i').test(String(message)) }
-  catch { return String(message).toLowerCase().includes(String(name).toLowerCase()) }
+  const text = foldLatin(String(message))
+  const want = foldLatin(String(name))
+  const esc = want.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  try { return new RegExp(`(^|[^a-z0-9_])${esc}([^a-z0-9_]|$)`, 'i').test(text) }
+  catch { return text.toLowerCase().includes(want.toLowerCase()) }
 }
 
 export function startChat(bot, config, orchestrator = null) {

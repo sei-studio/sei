@@ -42,7 +42,11 @@ import { callGreetingNote } from '../../bot/brain/promptLibrary.js';
 import { noteCompanionGoodbye, type NextStepHookResult } from '../sessionGoodbye';
 import { isNoteLeak, stripThoughtTags } from './noteLeak';
 import { isCallActive } from '../voice/callState';
-import { stripAudioTags, SUPPORTS_AUDIO_TAGS } from '../voice/audioTags';
+import { splitReplyParts, type ReplyPart } from './replyParts';
+import type { FacePalette } from '../../bot/brain/faceExpressions.js';
+import { emitReplyFaces } from '../facepack/faceEvents';
+import { facesEnabled } from '../facepack/facepackDev';
+import { facePaletteForCharacterName } from '../facepack/facepackStore';
 import { readChatContext, foldIfDue } from './continuity';
 import { toMessages, voiceWindowStart } from './transcript';
 import { scopedTurnCurrent, withScopedTurn } from '../profile/scopeBarrier';
@@ -387,26 +391,12 @@ export function splitReply(
   punctuation: 'casual' | 'deliberate' = 'casual',
   spoken = false,
 ): string[] {
-  const parts = text
-    .split(/\n+/)
-    .map((s) => s.trim())
-    // Bracketed stage directions never reach a bubble (260730). They are not a
-    // thing the model is offered — the shipped TTS model reads `[laughs]` aloud
-    // as a word instead of performing it, so audioTags.ts keeps the vocabulary
-    // switched off — but models write them unprompted, and on a call the SAME
-    // text is the caption and the clip. Removed here so a stray one cannot be
-    // read on screen, and again at the synthesis boundary so it cannot be
-    // spoken (speechTextFor), the same belt-and-braces as the markdown strip.
-    .map((s) => stripAudioTags(s, SUPPORTS_AUDIO_TAGS))
-    // 260705: casual texters (the default) drop a single trailing period per
-    // bubble — how people actually text. ONLY a lone period: an ellipsis
-    // ("hm...") carries tone and is kept, and ? / ! always stay. 'deliberate'
-    // characters (character.metadata.punctuation) keep their full stops.
-    // Mirrors splitChatMessages in src/bot/brain/orchestrator.js.
-    .map((s) => (spoken || punctuation === 'deliberate' ? s : s.replace(/(?<!\.)\.$/, '')))
-    .filter(Boolean);
-  return parts.length ? parts : ['…'];
+  return splitReplyParts(text, punctuation, spoken).map((p) => p.text);
 }
+
+// splitReplyParts / ReplyPart live in ./replyParts (pure, so offline
+// harnesses run the exact split); re-exported for existing importers.
+export { splitReplyParts, type ReplyPart };
 
 /**
  * Reply tidy (260915). A small local model (live capture: qwen3-vl:2b behind
@@ -689,6 +679,11 @@ async function prepareChatTurn(
   // Same source the bot uses (character.metadata.punctuation), so the character
   // texts with the same register in-app as in-game.
   const punctuation = clampPunctuation(character.metadata?.punctuation);
+  // 261028 facepack pilot: the character's pack palette (dev flag only; null
+  // otherwise, and with no pack). The prompt offers every character the same
+  // faces; the palette maps a face the pack lacks to its nearest when the
+  // reply's tags are read.
+  const facePalette = facesEnabled() ? await facePaletteForCharacterName(character.name).catch(() => null) : null;
   const system = buildSystemBlocks({
     persona: character.persona,
     name: character.name,
@@ -718,6 +713,8 @@ async function prepareChatTurn(
     // clockNote below), so a minute rollover no longer re-writes the cached
     // transcript.
     clockInTail: opts.voiceCall === true,
+    // 261028 facepack pilot: dev flag only (unpackaged + SEI_FACEPACK_DIR).
+    faceGuide: facesEnabled(),
   });
   // Voice: only the recent rows go to the model (VOICE_RECENT_CAP, stepped by
   // VOICE_WINDOW_STEP so the cached transcript prefix holds across turns; see
@@ -729,7 +726,7 @@ async function prepareChatTurn(
   const messages = toMessages(windowed);
   // Voice calls append this after markLastMessageCached (appendUncachedTail).
   const clockNote = opts.voiceCall === true ? clockTailNote() : '';
-  return { character, config, system, messages, punctuation, clockNote };
+  return { character, config, system, messages, punctuation, clockNote, facePalette };
 }
 
 /**
@@ -780,6 +777,13 @@ export function stripPeerImpersonation(text: string): string {
     .trim();
 }
 
+/** The character's face palette for the tag reader; null unless the facepack dev flag is on. */
+async function facePaletteFor(characterId: string): Promise<FacePalette | null> {
+  if (!facesEnabled()) return null;
+  const c = await getCharacter(characterId).catch(() => null);
+  return c ? facePaletteForCharacterName(c.name).catch(() => null) : null;
+}
+
 async function persistReplies(
   characterId: string,
   replyText: string,
@@ -808,26 +812,30 @@ async function persistReplies(
   // The note-leak gate (260807, noteLeak.ts) is voice-scoped the same way:
   // spoken lines are the ones a leaked scratchpad note ruins, and
   // `rememberCalled` (a remember tool_use rode this turn) arms its second tier.
-  const parts = splitReply(replyText, punctuation, opts?.voice === true);
-  const replies: ChatMessage[] = (opts?.voice
+  // 261028: parts carry the face cues read off each bubble (facepack pilot);
+  // the text pipeline below is unchanged.
+  const parts = splitReplyParts(replyText, punctuation, opts?.voice === true, await facePaletteFor(characterId));
+  const kept = opts?.voice
     ? parts
-        .map(stripPeerImpersonation)
-        .map(stripThoughtTags)
-        .filter((text) => text && !isSilenceFiller(text))
-        .filter((text) => {
-          if (!isNoteLeak(text, opts?.rememberCalled === true)) return true;
-          console.warn(`[sei] voice note leak dropped ("${text.slice(0, 60)}")`);
+        .map((p) => ({ ...p, text: stripThoughtTags(stripPeerImpersonation(p.text)) }))
+        .filter((p) => p.text && !isSilenceFiller(p.text))
+        .filter((p) => {
+          if (!isNoteLeak(p.text, opts?.rememberCalled === true)) return true;
+          console.warn(`[sei] voice note leak dropped ("${p.text.slice(0, 60)}")`);
           return false;
         })
-    : parts)
-    .map((text, i) => ({
+    : parts;
+  const replies: ChatMessage[] = kept.map((p, i) => ({
     id: randomUUID(),
     role: 'companion',
-    text,
+    text: p.text,
     ts: now + i,
     // Spoken on a live call → hidden in the chat UI (see ChatMessage.voice).
     ...(opts?.voice ? { voice: true } : {}),
   }));
+  // Face cues go out BEFORE the replies return, so the renderer holds them
+  // when the bubble is shown or its clip starts. No-op with the flag off.
+  if (facesEnabled()) replies.forEach((r, i) => emitReplyFaces(characterId, r, kept[i].face));
   for (const reply of replies) await appendTurnRow(characterId, reply);
   return replies;
 }
@@ -973,14 +981,14 @@ async function sendChatMessageImpl(
       // convention, so a filler-shaped line there is a real reply. Resolved up
       // front, not inside the loop, because `more` needs to know which of these
       // is genuinely the last one going out.
-      const parts = splitReply(raw, prep.punctuation, isVoice)
-        .map((b) => (isVoice ? stripThoughtTags(stripPeerImpersonation(b)) : b))
+      const parts = splitReplyParts(raw, prep.punctuation, isVoice, prep.facePalette)
+        .map((p) => (isVoice ? { ...p, text: stripThoughtTags(stripPeerImpersonation(p.text)) } : p))
         // Note-leak first tier only ("character note:" / "note to self"): a
         // streamed sentence can go out before the turn's tool_use blocks have
         // arrived, so the remember-aware second tier cannot apply here.
-        .filter((b) => b && !(isVoice && (isSilenceFiller(b) || isNoteLeak(b, false))));
+        .filter((p) => p.text && !(isVoice && (isSilenceFiller(p.text) || isNoteLeak(p.text, false))));
       for (let i = 0; i < parts.length; i++) {
-        const b = parts[i];
+        const b = parts[i].text;
         const msg: ChatMessage = {
           id: randomUUID(),
           role: 'companion',
@@ -991,6 +999,8 @@ async function sendChatMessageImpl(
         };
         streamedReplies.push(msg);
         await appendTurnRow(args.characterId, msg);
+        // Facepack pilot: the cue lands before the bubble it belongs to.
+        if (facesEnabled()) emitReplyFaces(args.characterId, msg, parts[i].face);
         deps.emitReply?.(args.characterId, msg, { prev: prevSpoken, more: i < parts.length - 1 || moreAfter });
         prevSpoken = b;
       }
@@ -2096,7 +2106,7 @@ function blockedReason(errorClass: string): string {
     case 'CHATGPT_AUTH_REJECTED':
       return 'the ChatGPT sign-in needs attention; the player needs to sign in with ChatGPT again in Settings';
     case 'CHATGPT_NOT_ELIGIBLE':
-      return "this ChatGPT account can't be used here; the player needs another account or AI option in Settings";
+      return "this ChatGPT account can't be used here (ChatGPT plan use needs Plus or Pro); the player needs another account or AI option in Settings";
     case 'CHATGPT_FORBIDDEN':
       return "ChatGPT plan use isn't available here right now, likely a region or plan restriction; the player needs another AI option in Settings";
     case 'CHATGPT_REQUEST_REJECTED':

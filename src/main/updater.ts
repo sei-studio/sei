@@ -32,19 +32,29 @@
  *   - src/main/updatePolicy.ts (pure level/apply derivation)
  *   - src/main/updateStateStore.ts (device-global pending/lastSeen persistence)
  */
+import { existsSync } from 'node:fs';
 import { app, net, powerMonitor, type BrowserWindow } from 'electron';
 import { IpcChannel, type WhatsNewEvent } from '../shared/ipc';
 import {
+  applyMinSupported,
   deriveLevel,
   isMissingReleaseArtifacts,
   normalizeApply,
+  parseMinSupported,
   shouldShowWhatsNew,
   type ApplyTiming,
 } from './updatePolicy';
-import { loadUpdateState, saveUpdateState } from './updateStateStore';
+import {
+  INSTALL_HISTORY_MAX,
+  loadUpdateState,
+  measuredInstallSeconds,
+  saveUpdateState,
+} from './updateStateStore';
 import { restartInstallArgs } from './updateInstall';
 import { refreshNotices } from './notices';
 import { updaterLog } from './updaterLog';
+import { ciMark, velopackInstalled } from './velopackBoot';
+import { createVelopackAutoUpdater } from './velopackUpdater';
 
 // Tees to the console AND <userData>/logs/updater.log. Was console-only until
 // 260803, which is why a week of failed Windows updates left no trace on disk
@@ -100,6 +110,8 @@ interface VersionPolicy {
   apply: ApplyTiming;
   changelog: string | null;
   downloadUrl: string;
+  /** Installs below this version must update (mandatory); null = no floor. */
+  minSupported: string | null;
 }
 
 /** Module singleton — set once by initUpdater. */
@@ -111,6 +123,13 @@ let wired = false;
 type AutoUpdater = {
   autoDownload: boolean;
   autoInstallOnAppQuit: boolean;
+  /**
+   * Relaunch after a NON-silent quitAndInstall. electron-updater ignores the
+   * isForceRunAfter argument unless isSilent is true and passes this instead
+   * (BaseUpdater.quitAndInstall), so the Windows "Update Sei" restart
+   * (restartInstallArgs = [false, true]) reopens Sei only while it is true.
+   */
+  autoRunAppAfterInstall: boolean;
   /** When true, GitHub pre-releases are eligible (the beta channel). */
   allowPrerelease: boolean;
   /**
@@ -122,6 +141,8 @@ type AutoUpdater = {
   checkForUpdates: () => Promise<unknown>;
   downloadUpdate: () => Promise<unknown>;
   quitAndInstall: (isSilent?: boolean, isForceRunAfter?: boolean) => void;
+  /** BaseUpdater: the downloaded installer file, null before a download. */
+  readonly installerPath?: string | null;
   on: (event: string, listener: (...args: unknown[]) => void) => void;
   setFeedURL: (options: { provider: string; url: string; channel?: string }) => void;
 };
@@ -240,10 +261,29 @@ let eventsWired = false;
  * update is silently thrown away and re-downloaded next session.
  */
 let updateReadyToInstall = false;
+/** Version of the downloaded update (shown small in the Windows progress window). */
+let downloadedVersion = '';
 
 /** Whether a downloaded update is waiting to install on the next real quit. */
 export function isUpdateReadyToInstall(): boolean {
   return updateReadyToInstall;
+}
+
+/**
+ * Windows NSIS -> Velopack migration (261030, velopackMigration.ts). Once the
+ * Velopack copy is installed beside this NSIS one, electron-updater stops: an
+ * NSIS update applied on quit would rewrite the old copy and its shortcuts.
+ * The sidebar's "Update Sei" button then restarts into the Velopack copy.
+ */
+let migrationRestart: (() => void) | null = null;
+
+export function handOffUpdatesToMigration(restart: () => void, version: string): void {
+  migrationRestart = restart;
+  if (autoUpdater) autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater = null;
+  updateReadyToInstall = false;
+  logger.info(`updater: Velopack ${version} installed beside this copy; electron-updater stopped`);
+  send(IpcChannel.app.updateDownloaded, { forced: false, onRestart: true, version });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -298,6 +338,7 @@ function fetchPolicyFrom(url: string): Promise<VersionPolicy | null> {
             changelog,
             downloadUrl:
               typeof json.downloadUrl === 'string' ? json.downloadUrl : 'https://sei.gg/',
+            minSupported: parseMinSupported(json.minSupported),
           });
         } catch {
           resolve(null);
@@ -364,11 +405,21 @@ function ensureAutoUpdater(): AutoUpdater | null {
     logger.info('updater disabled in dev (autoUpdater not loaded — unpackaged)');
     return null;
   }
+  if (migrationRestart) return null;
   if (autoUpdater && wired) return autoUpdater;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const mod = require('electron-updater') as { autoUpdater: AutoUpdater };
-    autoUpdater = mod.autoUpdater;
+    // Windows (261030): a Velopack install updates through Velopack; an NSIS
+    // install (and macOS) keeps electron-updater, so one build serves both
+    // while NSIS users migrate.
+    const velo = process.platform === 'win32' && velopackInstalled() ? createVelopackAutoUpdater() : null;
+    if (velo) {
+      logger.info('updater: Velopack install detected, using the Velopack UpdateManager');
+      autoUpdater = velo;
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const mod = require('electron-updater') as { autoUpdater: AutoUpdater };
+      autoUpdater = mod.autoUpdater;
+    }
   } catch (err) {
     logger.warn(`updater: failed to load electron-updater (${(err as Error).message})`);
     autoUpdater = null;
@@ -386,6 +437,10 @@ function ensureAutoUpdater(): AutoUpdater | null {
   // updates on the next quit by default (mandatory on-restart timing).
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
+  // The library default, pinned (261030): the Windows in-app restart is a
+  // non-silent install, which relaunches Sei only through this flag (see
+  // updateInstall.ts). The update-on-quit run never relaunches either way.
+  autoUpdater.autoRunAppAfterInstall = true;
   // Channel: stable-only unless the user opted into advanced updates. Seeded
   // from config by initUpdater before this runs; setUpdateChannel flips it live.
   autoUpdater.allowPrerelease = allowPrerelease;
@@ -447,7 +502,8 @@ function ensureAutoUpdater(): AutoUpdater | null {
 
 /**
  * Handle electron-updater's `update-available`. Derives the level from semver,
- * fetches the version.json policy (changelog + apply), and branches:
+ * fetches the version.json policy (changelog + apply + minSupported, which
+ * raises optional to mandatory below it), and branches:
  *   - optional → push app:update-available (no download yet).
  *   - mandatory → downloadUpdate() silently + stash the pending changelog;
  *     the actual install timing is decided in handleUpdateDownloaded.
@@ -464,8 +520,8 @@ async function handleUpdateAvailable(info: unknown): Promise<void> {
       ? (info as { version: string }).version
       : '';
   const currentVersion = app.getVersion();
-  const level = deriveLevel(currentVersion, latestVersion);
-  if (level === 'none') {
+  const semverLevel = deriveLevel(currentVersion, latestVersion);
+  if (semverLevel === 'none') {
     // electron-updater thinks newer, our policy says no (downgrade/equal/
     // unparseable) — treat as up to date (silently for a background check).
     if (!fromBackground) send(IpcChannel.app.updateNotAvailable);
@@ -485,6 +541,12 @@ async function handleUpdateAvailable(info: unknown): Promise<void> {
   //     mid-session. Reserve it for updates worth interrupting a live game or
   //     call for; everything else ships as on-restart.
   const apply = policy?.apply ?? 'on-restart';
+  // minSupported (261031): an install below the feed's floor takes even a
+  // minor/major update the mandatory way. Same apply timing as a patch.
+  const level = applyMinSupported(semverLevel, currentVersion, policy?.minSupported);
+  if (level !== semverLevel) {
+    logger.info(`updater: ${currentVersion} is below minSupported ${policy?.minSupported}; ${latestVersion} is mandatory`);
+  }
 
   if (level === 'optional') {
     mandatoryApply = null;
@@ -499,8 +561,9 @@ async function handleUpdateAvailable(info: unknown): Promise<void> {
     return;
   }
 
-  // mandatory (patch-only) → silent download. Stash the changelog so it can be
-  // shown on the next launch (on-restart) or right after the forced restart.
+  // mandatory (patch-only, or below minSupported) → silent download. Stash
+  // the changelog so it can be shown on the next launch (on-restart) or right
+  // after the forced restart.
   mandatoryApply = apply;
   try {
     const state = await loadUpdateState();
@@ -539,6 +602,25 @@ async function handleUpdateAvailable(info: unknown): Promise<void> {
  */
 async function handleUpdateDownloaded(version?: string): Promise<void> {
   updateReadyToInstall = true;
+  if (typeof version === 'string') downloadedVersion = version;
+  // CI harness (velopack-update.yml): nobody clicks "Update Sei" on a runner.
+  // SEI_VELOPACK_CI_TRIGGER names a file the harness creates when it is ready
+  // (recording, file locks in place); without it the action runs at once.
+  if (process.env.SEI_VELOPACK_CI === '1') {
+    const mode = process.env.SEI_VELOPACK_CI_MODE ?? 'restart';
+    ciMark('downloaded', { target: version, mode });
+    const trigger = process.env.SEI_VELOPACK_CI_TRIGGER;
+    if (trigger) {
+      while (!existsSync(trigger)) await new Promise((r) => setTimeout(r, 100));
+      ciMark('triggered', { mode });
+    }
+    if (mode === 'quit') {
+      app.quit(); // the quit handler hands the package to Update.exe, no relaunch
+    } else if (mode === 'restart') {
+      void installDownloadedUpdate();
+    } // 'download-only': CI kills the process, the next launch applies it
+    return;
+  }
   const apply = mandatoryApply;
   if (apply === null) {
     // Optional consented flow.
@@ -549,11 +631,8 @@ async function handleUpdateDownloaded(version?: string): Promise<void> {
   if (apply === 'now') {
     send(IpcChannel.app.updateDownloaded, { forced: true, version });
     setTimeout(() => {
-      try {
-        autoUpdater?.quitAndInstall(...restartInstallArgs(process.platform));
-      } catch (err) {
-        logger.warn(`updater: forced quitAndInstall failed (${(err as Error).message})`);
-      }
+      const au = autoUpdater;
+      if (au) void restartIntoUpdate(au, 0);
     }, FORCED_RESTART_DELAY_MS);
     return;
   }
@@ -628,12 +707,28 @@ async function runWhatsNewCheck(): Promise<void> {
   // 261005: `update_installed {from, to}`. An update relaunch otherwise only
   // shows up as another app_opened, which inflates "any event" retention.
   // lastSeenVersion is absent on a fresh install (nothing was updated).
+  // 261030: a timed Windows restart-to-update becomes one install-time sample
+  // (it sizes the next progress window's estimate) and rides update_installed.
+  const installSec = measuredInstallSeconds(state.installTiming, cur, Date.now());
+  const progressWindow = state.installTiming?.progressWindow;
+  const installSeconds =
+    installSec === null
+      ? state.installSeconds
+      : [...(state.installSeconds ?? []), installSec].slice(-INSTALL_HISTORY_MAX);
+  if (installSec !== null) {
+    logger.info(`updater: restart-to-update took ${installSec} s (progress window: ${progressWindow === true})`);
+  }
+
   if (state.lastSeenVersion && state.lastSeenVersion !== cur) {
     const from = state.lastSeenVersion;
     const viaApp = Boolean(state.pending && state.pending.version === cur);
+    const timing =
+      installSec === null ? {} : { install_s: installSec, progress_window: progressWindow === true };
     void import('./lazyAnalytics')
       .then(({ loadAnalytics }) => loadAnalytics())
-      .then(({ capture }) => capture('update_installed', { from, to: cur, via: viaApp ? 'in_app' : 'other' }))
+      .then(({ capture }) =>
+        capture('update_installed', { from, to: cur, via: viaApp ? 'in_app' : 'other', ...timing }),
+      )
       .catch(() => {});
   }
 
@@ -662,6 +757,10 @@ async function runWhatsNewCheck(): Promise<void> {
       // Clear pending once shown (or if it was for a different version — a
       // stale stash from an aborted update should not linger).
       pending: shown ? null : state.pending && state.pending.version === cur ? null : state.pending,
+      // The timing is consumed on every launch: a relaunch at the SAME version
+      // means that install did not land, and it must not count later.
+      installTiming: null,
+      ...(installSeconds && installSeconds.length > 0 ? { installSeconds } : {}),
     });
   } catch (err) {
     logger.warn(`updater: what's-new save failed (${(err as Error).message})`);
@@ -724,7 +823,6 @@ function maybeBackgroundCheck(reason: string): void {
  */
 export function initUpdater(deps: { getMainWindow: () => BrowserWindow | null }): void {
   getMainWindow = deps.getMainWindow;
-
   // Flow D — what's-new on launch (skipped in dev internally). Memoized so the
   // renderer's pull (getPendingWhatsNew) shares this one computation.
   void ensureWhatsNewComputed();
@@ -908,16 +1006,59 @@ export async function downloadAcceptedUpdate(): Promise<void> {
 }
 
 /**
- * Quit and install a downloaded update (the sidebar "Update Sei" button). On
- * Windows this runs the installer silently and relaunches Sei when it is done
- * (see updateInstall.ts for the exact installer arguments). No-op in dev.
+ * Restart into the downloaded update. macOS: quitAndInstall() as always.
+ * Windows NSIS (261030): Sei's own progress window first, then the silent
+ * installer under it; the stock installer window when that window cannot
+ * start (windowsUpdateInstall.ts). Windows Velopack: quitAndInstall() is the
+ * Velopack update screen, no progress window. `minHoldMs` = how long after
+ * the call the stock installer may start at the earliest (the renderer's
+ * restart note stays readable that long).
  */
-export function installDownloadedUpdate(): void {
-  const au = ensureAutoUpdater();
-  if (!au) return;
+async function restartIntoUpdate(au: AutoUpdater, minHoldMs: number): Promise<void> {
+  // A Velopack install (velopackUpdater.ts) has its own update screen and no
+  // NSIS installer to watch: its quitAndInstall is the whole restart.
+  if (process.platform === 'win32' && !velopackInstalled()) {
+    try {
+      const { installWithProgressWindow } = await import('./windowsUpdateInstall');
+      await installWithProgressWindow({
+        quitAndInstall: (...args) => au.quitAndInstall(...args),
+        installerPath: au.installerPath,
+        version: downloadedVersion,
+        minHoldMs,
+      });
+      return;
+    } catch (err) {
+      // Only a failed module load lands here (the installer path never throws).
+      logger.warn(`updater: progress window path failed (${(err as Error).message})`);
+    }
+  }
   try {
     au.quitAndInstall(...restartInstallArgs(process.platform));
   } catch (err) {
     logger.warn(`updater: quitAndInstall failed (${(err as Error).message})`);
   }
+}
+
+/**
+ * How long the Windows restart note stays up before the STOCK installer
+ * window replaces Sei (fallback path only; Sei's own progress window goes up
+ * as soon as it is ready). Was a renderer-side hold before 261030.
+ */
+const WINDOWS_RESTART_NOTE_MS = 3_000;
+
+/**
+ * Quit and install a downloaded update (the sidebar "Update Sei" button). On
+ * Windows Sei's own progress window covers the install and Sei reopens when
+ * it is done (see restartIntoUpdate and updateInstall.ts). No-op in dev.
+ */
+export async function installDownloadedUpdate(): Promise<void> {
+  // NSIS -> Velopack migration: the Velopack copy is installed and
+  // electron-updater is stopped, so the button restarts into that copy.
+  if (migrationRestart) {
+    migrationRestart();
+    return;
+  }
+  const au = ensureAutoUpdater();
+  if (!au) return;
+  await restartIntoUpdate(au, WINDOWS_RESTART_NOTE_MS);
 }

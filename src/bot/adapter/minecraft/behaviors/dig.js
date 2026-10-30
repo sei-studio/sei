@@ -208,7 +208,9 @@ export async function digAction(args, bot, config) {
         // block past the body). Under a tree the walk may not break anything
         // (it would start chopping the trunk); a stone or ore drop sits in the
         // hole it left and the walk may dig its way in (dropWalkOpts).
-        const r = await goTo(bot, dropPos.x, ly, dropPos.z, 1, PICKUP_TIMEOUT_MS, undefined, dropWalkOpts(blockName))
+        // 261025: with the action's signal, so a stop ends this walk too
+        // instead of leaving the pathfinder walking for up to 3s.
+        const r = await goTo(bot, dropPos.x, ly, dropPos.z, 1, PICKUP_TIMEOUT_MS, signal, dropWalkOpts(blockName))
         if (r !== 'reached') pickupNote = ' (pickup walk did not reach)'
       } catch {}
       return `dug ${blockName}${pickupNote}${harvest ? '' : harvestNote(blockName)}`

@@ -29,6 +29,26 @@
 # GitHub channel, cut or re-publish a beta after any stable release (see the
 # beta-feed-ordering rule) or mirror beta clients idle on the stale entry.
 #
+# Velopack (Windows, 261030): the release's Velopack files (packages, Setup,
+# releases.<channel>.json, setup.<channel>.json; scripts/velopack-pack.mjs) go
+# to velopack/ instead, through scripts/velopack-mirror.mjs: packages and the
+# Setup first (immutable), then the channel index MERGED with what the bucket
+# already lists (a GitHub release carries only its own version), then
+# setup.<channel>.json, which never moves backwards. The legacy loop below
+# skips them.
+#
+# dry_run reads the live bucket and prints every write instead of making it
+# (the legacy loop is skipped). velopack_prefix (velopack-<name>) points the
+# Velopack half at a scratch feed and skips the legacy loop too. release.yml's
+# dry run calls this with `artifact`, its own build artifact, in place of a
+# published release.
+#
+# A manual dispatch defaults to dry_run AND velopack_only (261031): the usual
+# reason to dispatch is re-running a Velopack mirror GitHub cancelled (see the
+# velopack job), and re-mirroring an OLDER tag into updates/ would roll the
+# electron-updater mirror back. Untick velopack_only only to backfill a
+# release that was never mirrored at all.
+#
 # No-op until the three R2_* secrets exist (create an R2 API token scoped to
 # the bucket; account id is in the dashboard URL). The step fails loudly if
 # only some are set, silently skips if none are.
@@ -42,6 +62,27 @@ on:
       tag:
         description: 'Release tag to mirror (e.g. v0.7.0)'
         required: true
+      dry_run:
+        description: 'Read the bucket and print every write without making it (untick to really mirror)'
+        type: boolean
+        default: true
+      velopack_prefix:
+        description: 'Velopack feed prefix (velopack = the real feed; velopack-<name> = scratch, legacy loop skipped)'
+        type: string
+        default: velopack
+      velopack_only:
+        description: 'Only the Velopack feed (re-run after a cancelled velopack job; never re-mirror an older tag into updates/)'
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      tag: { type: string, required: true }
+      dry_run: { type: boolean, default: true }
+      velopack_prefix: { type: string, default: velopack }
+      artifact:
+        description: 'Name of an artifact of the calling run to mirror instead of a published release'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -49,25 +90,45 @@ permissions:
 jobs:
   mirror:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # No concurrency group here: the electron-updater mirror must never be
+    # the run GitHub cancels (see the velopack job).
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      channel: ${{ steps.tag.outputs.channel }}
+      prefix: ${{ steps.tag.outputs.prefix }}
     steps:
       - name: Resolve tag + channel
         id: tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EVENT_TAG: ${{ github.event.release.tag_name }}
-          INPUT_TAG: ${{ github.event.inputs.tag }}
+          INPUT_TAG: ${{ inputs.tag }}
+          ARTIFACT: ${{ inputs.artifact }}
+          PREFIX: ${{ inputs.velopack_prefix || 'velopack' }}
         run: |
+          set -euo pipefail
           tag="${EVENT_TAG:-$INPUT_TAG}"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          # Channel from the release's own prerelease flag (covers the
-          # workflow_dispatch backfill too, where the event carries none).
-          pre=$(gh release view "$tag" --repo "${{ github.repository }}" \
-            --json isPrerelease --jq .isPrerelease)
-          if [ "$pre" = "true" ]; then channel=beta; else channel=stable; fi
+          if ! [[ "$PREFIX" =~ ^velopack(-[a-z0-9-]+)?$ ]]; then
+            echo "::error::velopack_prefix must be velopack or velopack-<name>, got '$PREFIX'"; exit 1
+          fi
+          echo "prefix=$PREFIX" >> "$GITHUB_OUTPUT"
+          if [ -n "$ARTIFACT" ]; then
+            # A build artifact has no release to ask; the tag says it.
+            if [[ "$tag" == *-* ]]; then channel=beta; else channel=stable; fi
+          else
+            # Channel from the release's own prerelease flag (covers the
+            # workflow_dispatch backfill too, where the event carries none).
+            pre=$(gh release view "$tag" --repo "${{ github.repository }}" \
+              --json isPrerelease --jq .isPrerelease)
+            if [ "$pre" = "true" ]; then channel=beta; else channel=stable; fi
+          fi
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
           echo "Mirroring $tag as channel=$channel"
 
       - name: Download release assets
+        if: inputs.artifact == '' && inputs.velopack_only != true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -76,13 +137,23 @@ jobs:
             --repo "${{ github.repository }}" --dir assets
           ls -la assets/
 
+      - name: Download the build artifact
+        if: inputs.artifact != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.artifact }}
+          path: assets
+
       - name: Upload to R2
+        if: inputs.velopack_only != true
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
           CHANNEL: ${{ steps.tag.outputs.channel }}
+          DRY_RUN: ${{ inputs.dry_run || false }}
+          PREFIX: ${{ steps.tag.outputs.prefix }}
         run: |
           if [ -z "$R2_ACCOUNT_ID" ] && [ -z "$AWS_ACCESS_KEY_ID" ]; then
             echo "R2 secrets not configured; skipping mirror upload."
@@ -93,13 +164,21 @@ jobs:
             exit 1
           fi
           endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          if [ "$DRY_RUN" = true ] || [ "$PREFIX" != velopack ]; then
+            echo "dry run or scratch prefix: the electron-updater mirror (updates/) is skipped"
+            exit 0
+          fi
           shopt -s nullglob
           # Artifacts into the channel dir FIRST, feed ymls flat LAST: a
           # client that reads a new yml before its artifacts exist would 404
           # the download; artifacts-first makes the swap atomic from the
           # updater's point of view.
           for f in assets/*; do
-            case "$f" in *.yml) continue;; esac
+            case "$(basename "$f")" in
+              *.yml) continue;;
+              # Velopack's files go to velopack/ (next step), not updates/.
+              *.nupkg|releases.*.json|setup.*.json|Sei-*-Setup.exe) continue;;
+            esac
             aws s3 cp "$f" "s3://sei-dl/updates/$CHANNEL/$(basename "$f")" --endpoint-url "$endpoint"
           done
           # Point every artifact ref in the ymls at the channel dir. Rewrites
@@ -121,3 +200,68 @@ jobs:
             fi
           done
           echo "Mirrored ${{ steps.tag.outputs.tag }} ($CHANNEL) to r2://sei-dl/updates/"
+
+  velopack:
+    # The Velopack half, in its own job so only it waits in the feed's
+    # concurrency group. GitHub keeps ONE pending run per group: a third run
+    # (another publish, or a velopack-rollout.yml change) queued while one runs
+    # and one waits CANCELS the waiting one. A cancelled run here leaves that
+    # release out of the Velopack feed (the electron-updater mirror above is
+    # unaffected); re-dispatch this workflow with its tag and dry_run unticked.
+    # Every write is idempotent (packages are immutable, the index merges), so
+    # a re-run is always safe. See docs/design/velopack-runbook.md.
+    needs: mirror
+    if: ${{ !cancelled() && needs.mirror.outputs.tag != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # One writer at a time per Velopack feed, shared with velopack-rollout.yml.
+    concurrency:
+      group: velopack-feed-${{ inputs.velopack_prefix || 'velopack' }}${{ inputs.dry_run && '-dry' || '' }}
+      cancel-in-progress: false
+    steps:
+      - name: Download the Velopack release assets
+        if: inputs.artifact == ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.mirror.outputs.tag }}
+        run: |
+          mkdir -p assets
+          gh release download "$TAG" --repo "${{ github.repository }}" --dir assets \
+            --pattern '*.nupkg' --pattern 'releases.*.json' --pattern 'setup.*.json' --pattern 'Sei-*-Setup.exe' \
+            || echo "no Velopack assets on $TAG"
+          ls -la assets/
+
+      - name: Download the build artifact
+        if: inputs.artifact != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.artifact }}
+          path: assets
+
+      - name: Checkout (Velopack mirror script)
+        uses: actions/checkout@v6
+        with:
+          path: src
+          sparse-checkout: |
+            scripts/lib
+            scripts/velopack-mirror.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: Mirror the Velopack feed
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          TAG: ${{ needs.mirror.outputs.tag }}
+          DRY_RUN: ${{ inputs.dry_run || false }}
+          PREFIX: ${{ needs.mirror.outputs.prefix }}
+        run: |
+          set -euo pipefail
+          if [ -z "$R2_ACCOUNT_ID" ] && [ -z "$AWS_ACCESS_KEY_ID" ]; then
+            echo "R2 secrets not configured; skipping the Velopack mirror."
+            exit 0
+          fi
+          args=(--assets assets --tag "$TAG" --store "s3://sei-dl/$PREFIX" --endpoint "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com")
+          if [ "$DRY_RUN" = true ]; then args+=(--dry-run); echo "DRY RUN: nothing is written"; fi
+          node src/scripts/velopack-mirror.mjs "${args[@]}"

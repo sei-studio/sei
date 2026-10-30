@@ -1,7 +1,7 @@
 /* global.css — base resets, terminal wallpaper, HUD overlays, sharp-edges policy,
  * and the small set of utility classes shared across components.
  *
- * Source: .planning/UI-DESIGN-SYSTEM.md (the "Summoning Terminal" aesthetic,
+ * Source: docs/design/UI-DESIGN-SYSTEM.md (the "Summoning Terminal" aesthetic,
  * ported from the sei-gui-improved mockup: hud.jsx global CSS + ui.jsx).
  * Renderer-wide styles only. Per-component visuals live in *.module.css.
  */
@@ -81,7 +81,7 @@ textarea {
  * Utility classes — the mockup's shared "HUD primitive" vocabulary. Use
  * these for tracked labels / mono numerics / condensed display headers so
  * new UI stays visually consistent without re-deriving the type ramp.
- * (See .planning/UI-DESIGN-SYSTEM.md §Typography + §Utility classes.)
+ * (See docs/design/UI-DESIGN-SYSTEM.md §Typography + §Utility classes.)
  * ───────────────────────────────────────────────────────────────────── */
 
 /* Mono micro-label — the workhorse caption (mockup .label). Regular case,

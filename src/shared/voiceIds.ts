@@ -1,3 +1,5 @@
+import { isPoolVoiceId } from './poolVoiceIds';
+
 /**
  * Shared voice-id sentinels (260720).
  *
@@ -52,9 +54,14 @@ export function isWellFormedVoiceId(id: unknown): id is string {
 }
 
 /** The own-voice marker on a character's metadata, or null when the stored
- * voice is not an own-account pick (pool voice, Auto, No voice, malformed). */
+ * voice is not an own-account pick (pool voice, Auto, No voice, malformed).
+ * A Sei pool (or legacy) id is never an own voice, even with a marker beside
+ * it (261024): v0.6.9 stamped the marker on pool voices picked while the
+ * user's ElevenLabs library held a copy of them ("Sei — Josh"), and those
+ * stale markers must read as a plain pool voice everywhere. */
 export function ownVoiceOf(metadata: Record<string, unknown> | undefined | null): OwnVoicePick | null {
   if (!metadata || !isWellFormedVoiceId(metadata.voiceId)) return null;
+  if (isPoolVoiceId(metadata.voiceId)) return null;
   const raw = metadata[OWN_VOICE_KEY];
   if (!raw || typeof raw !== 'object') return null;
   const { name, gender } = raw as { name?: unknown; gender?: unknown };
@@ -70,7 +77,8 @@ export function ownVoiceOf(metadata: Record<string, unknown> | undefined | null)
  * `voiceId` null = Auto (key removed), NO_VOICE_ID = silent, else a pinned
  * voice. `own` is set only for an own-account pick; any other selection
  * clears the marker, so switching back to a Sei voice can never leave a stale
- * own-voice flag that would shield a pool id from the normal rules.
+ * own-voice flag that would shield a pool id from the normal rules. A pool
+ * id never takes the marker, even when a caller passes one (261024).
  */
 export function applyVoicePick(
   metadata: Record<string, unknown> | undefined | null,
@@ -80,7 +88,7 @@ export function applyVoicePick(
   const next: Record<string, unknown> = { ...(metadata ?? {}) };
   if (voiceId === null) delete next.voiceId;
   else next.voiceId = voiceId;
-  if (own && voiceId !== null && isWellFormedVoiceId(voiceId) && own.name.trim()) {
+  if (own && voiceId !== null && isWellFormedVoiceId(voiceId) && !isPoolVoiceId(voiceId) && own.name.trim()) {
     next[OWN_VOICE_KEY] = {
       name: own.name.slice(0, 100),
       ...(own.gender ? { gender: own.gender.slice(0, 20) } : {}),

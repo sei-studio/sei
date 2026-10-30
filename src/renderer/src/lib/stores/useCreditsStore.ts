@@ -35,7 +35,6 @@
  * multiple times.
  *
  * Sources:
- *   - .planning/quick/260724-sub-weekly-subscription-model/SPEC.md (§4 contract)
  *   - src/renderer/src/lib/stores/useSyncStore.ts (template — push-seq guard)
  *   - src/shared/ipc.ts (CreditsStatus, CreditsHardStopEvent contract)
  */

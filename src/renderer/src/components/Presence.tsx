@@ -3,7 +3,7 @@
  * five presence categories with their canonical colors so every surface
  * (party wall, chat panel, profile, widgets) stays identical.
  *
- * Source: .planning/design/UI-REDESIGN-PARTY.md §2.
+ * Source: docs/design/UI-REDESIGN-PARTY.md §2.
  */
 
 import React from 'react';

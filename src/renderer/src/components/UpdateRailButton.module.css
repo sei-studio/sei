@@ -141,6 +141,32 @@
   margin: 0;
 }
 
+.confirmNote {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-2);
+  margin: var(--space-sm) 0 0;
+}
+
+/* Windows restarting note (261030): sits beside the button at the foot of the
+ * rail, in the rail tooltip's surface (left: 84px = rail width + gap), but
+ * wraps, since it is a sentence and stays up until Sei quits. */
+.restartNote {
+  position: fixed;
+  left: 84px;
+  bottom: var(--space-md);
+  max-width: 260px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.4;
+  padding: var(--space-sm) var(--space-md);
+  pointer-events: none;
+  z-index: 9999;
+  box-shadow: var(--shadow-pop);
+}
+
 @keyframes update-sheen {
   0% {
     transform: translateX(-110%);

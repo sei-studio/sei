@@ -25,7 +25,7 @@
  * handles the procedural fallback); the user avatar is their profile picture
  * (sei.userGetProfile), falling back to a generic glyph.
  *
- * Source: .planning/design/UI-REDESIGN-PARTY.md §4.5.
+ * Source: docs/design/UI-REDESIGN-PARTY.md §4.5.
  */
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';

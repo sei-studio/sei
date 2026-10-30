@@ -1,0 +1,116 @@
+# Velopack rollout switches on dl.sei.gg (261030). Two kinds, one file each,
+# next to the Windows Velopack feed (scripts/lib/velopackRollout.mjs):
+#
+#   update     rollout.<channel>.json {version, percent}
+#              Holds <version> back from every install outside the first
+#              <percent> buckets (install id hashed with the version). Other
+#              versions, and percent 100, reach everyone. The version must
+#              already be in the feed (mirror-release.yml puts it there).
+#   migration  migration.<channel>.json {percent, epoch}
+#              NSIS installs (v0.7.0 and later) in the first <percent> buckets
+#              move themselves to Velopack. No file or 0 = nobody moves. Raise
+#              the epoch to give installs that gave up after three failed
+#              tries three more.
+#
+# Channels: win (stable) and beta. Clients read the files with a 60 s cache,
+# so a change lands within about a minute of the run.
+#
+# dry_run (the default) reads the live feed, checks the change, and prints the
+# file it would write without writing it. prefix exists for a scratch feed
+# (velopack-<name>); the real feed is `velopack`.
+name: Velopack rollout
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Channel: win (stable) or beta'
+        type: choice
+        options: [win, beta]
+        default: win
+      kind:
+        description: 'update = staged rollout of one version; migration = NSIS -> Velopack switch'
+        type: choice
+        options: [update, migration]
+        default: update
+      version:
+        description: 'Version to stage (kind update only), e.g. 0.7.1'
+        type: string
+        default: ''
+      percent:
+        description: 'Percent of installs, 0-100'
+        type: string
+        required: true
+      epoch:
+        description: 'Migration epoch (kind migration; empty keeps the current one)'
+        type: string
+        default: ''
+      dry_run:
+        description: 'Print the change without writing it'
+        type: boolean
+        default: true
+      prefix:
+        description: 'Feed prefix in the bucket (velopack = the real feed)'
+        type: string
+        default: velopack
+  workflow_call:
+    inputs:
+      channel: { type: string, default: win }
+      kind: { type: string, default: update }
+      version: { type: string, default: '' }
+      percent: { type: string, required: true }
+      epoch: { type: string, default: '' }
+      dry_run: { type: boolean, default: true }
+      prefix: { type: string, default: velopack }
+
+permissions:
+  contents: read
+
+jobs:
+  set:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # One writer at a time per feed, shared with mirror-release.yml.
+    concurrency:
+      group: velopack-feed-${{ inputs.prefix }}${{ inputs.dry_run && '-dry' || '' }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            scripts/lib
+            scripts/velopack-rollout.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: Set ${{ inputs.kind }} on ${{ inputs.channel }}
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          CHANNEL: ${{ inputs.channel }}
+          KIND: ${{ inputs.kind }}
+          VERSION: ${{ inputs.version }}
+          PERCENT: ${{ inputs.percent }}
+          EPOCH: ${{ inputs.epoch }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          PREFIX: ${{ inputs.prefix }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$PREFIX" =~ ^velopack(-[a-z0-9-]+)?$ ]]; then
+            echo "::error::prefix must be velopack or velopack-<name>, got '$PREFIX'"; exit 1
+          fi
+          if [ -z "$R2_ACCOUNT_ID" ] || [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+            echo "::error::R2_ACCOUNT_ID, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY must all be set"; exit 1
+          fi
+          args=(--store "s3://sei-dl/$PREFIX" --endpoint "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+                --channel "$CHANNEL" --kind "$KIND" --percent "$PERCENT")
+          if [ -n "$VERSION" ]; then args+=(--version "$VERSION"); fi
+          if [ -n "$EPOCH" ]; then args+=(--epoch "$EPOCH"); fi
+          if [ "$DRY_RUN" = true ]; then args+=(--dry-run); echo "DRY RUN: nothing is written"; fi
+          node scripts/velopack-rollout.mjs "${args[@]}"
+          if [ "$DRY_RUN" != true ]; then
+            file=$([ "$KIND" = update ] && echo rollout || echo migration).$CHANNEL.json
+            echo "--- https://dl.sei.gg/$PREFIX/$file (may be cached up to 60 s)"
+            curl -fsS "https://dl.sei.gg/$PREFIX/$file?nocache=$(date +%s)" || true
+          fi

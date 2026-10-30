@@ -89,6 +89,214 @@ describe('redact — secrets', () => {
   });
 });
 
+describe('redact — provider keys and tokens (261031)', () => {
+  // Fake keys in each provider's real shape and length.
+  const KEYS: Array<[string, string]> = [
+    ['OpenAI legacy', 'sk-' + 'a1B2c3D4e5F6g7H8i9J0'.repeat(2) + 'kLmNoPqR'],
+    ['OpenAI project', 'sk-proj-' + 'Ab12Cd34Ef56Gh78Ij90_Kl-Mn'.repeat(5)],
+    ['Anthropic', 'sk-ant-api03-' + 'Zz9Yy8Xx7Ww6Vv5Uu4'.repeat(5) + '-AA'],
+    ['Google', 'AIzaSyD' + '3fGhJkLmNoPqRsTuVwXyZ0123456789'],
+    ['DeepSeek', 'sk-' + '0123456789abcdef0123456789abcdef'],
+    ['OpenRouter', 'sk-or-v1-' + '0123456789abcdef'.repeat(4)],
+    ['xAI', 'xai-' + 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789'.repeat(2)],
+    ['Groq', 'gsk_' + 'aBcDeFgHiJkLmNoPqRsTuVwXyZ'.repeat(2)],
+    ['ElevenLabs', 'sk_' + '0123456789abcdef'.repeat(3)],
+  ];
+
+  for (const [name, key] of KEYS) {
+    it(`redacts a ${name} key inside a realistic error`, () => {
+      const out = redact(
+        `[sei/llm] request failed: 401 {"error":{"message":"Incorrect API key provided: ${key}. You can find your API key at https://platform.example.com/account/api-keys."}}`,
+      );
+      expect(out).not.toContain(key);
+      expect(out).not.toContain(key.slice(-12));
+      expect(out).toContain('Incorrect API key provided: [redacted]');
+      expect(out).toContain('You can find your API key');
+    });
+  }
+
+  it('redacts Bearer tokens that are not JWTs', () => {
+    const out = redact('> GET /v1/models\n> Authorization: Bearer ollama-local-9f8e7d6c5b4a\n< 403 Forbidden');
+    expect(out).toContain('Authorization: Bearer [redacted]');
+    expect(out).not.toContain('9f8e7d6c5b4a');
+  });
+
+  it('redacts key=, api_key=, token= query and JSON values', () => {
+    const out = redact(
+      [
+        'GET https://generativelanguage.googleapis.com/v1beta/models?key=abc123secretvalue&alt=sse failed',
+        'POST /tts?api_key=el-legacy-0123456789abcdef0123456789abcdef&voice=x',
+        'body: {"model":"x","api_key":"my local key","temperature":0.7}',
+        "config: { token: 'tok_live_abcdef', retries: 3 }",
+        'xi-api-key: 0123456789abcdef0123456789abcdef',
+        'env OPENAI_API_KEY=whatever-it-is',
+      ].join('\n'),
+    );
+    for (const secret of ['abc123secretvalue', 'el-legacy', 'my local key', 'tok_live_abcdef', '0123456789abcdef', 'whatever-it-is']) {
+      expect(out).not.toContain(secret);
+    }
+    expect(out).toContain('?key=[redacted]&alt=sse failed');
+    expect(out).toContain('"api_key":[redacted],"temperature":0.7');
+    expect(out).toContain('retries: 3');
+  });
+
+  it('redacts a bare JWT (Supabase access token in a URL)', () => {
+    const jwt = 'eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJhYmMiLCJlbWFpbCI6ImFAYi5jbyJ9.c2lnbmF0dXJlLXNpZw';
+    const out = redact(`wss://api.sei.gg/realtime?access_token=${jwt}&vsn=1 closed 1006`);
+    expect(out).not.toContain('eyJ');
+    expect(out).toContain('closed 1006');
+  });
+
+  it('leaves our error sentinels readable', () => {
+    const msg = 'LOCAL_NO_API_KEY: Local mode is on but no API key is saved. CHATGPT_TOKEN_TIMEOUT: main did not answer';
+    expect(redact(msg)).toBe(msg);
+  });
+
+  it('leaves token counts and unrelated words alone', () => {
+    const line = '[sei/llm] usage input_tokens=1234 output_tokens: 56 max_tokens=1024 tokens=99 monkey=3 task-runner-sk-1';
+    expect(redact(line)).toBe(line);
+  });
+});
+
+describe('redact — emails, IPs, usernames in paths (261031)', () => {
+  it('redacts emails', () => {
+    const out = redact('[sei/auth] refresh failed for shawn.test+sei@example.co.uk (session_rejected)');
+    expect(out).toBe('[sei/auth] refresh failed for [email] (session_rejected)');
+  });
+
+  it('redacts LAN and public IPv4 addresses, keeps ports and loopback', () => {
+    const out = redact(
+      [
+        '[sei] Connected to 192.168.1.23:52817 as Sui',
+        'Error: connect ETIMEDOUT 10.0.0.5:25565',
+        'Error: connect ECONNREFUSED 127.0.0.1:25565',
+        'lan watcher: announce from /172.16.254.1 motd="New World"',
+        'resolved api.sei.gg -> 203.0.113.77',
+      ].join('\n'),
+    );
+    expect(out).toContain('Connected to [ip]:52817');
+    expect(out).toContain('ETIMEDOUT [ip]:25565');
+    expect(out).toContain('ECONNREFUSED 127.0.0.1:25565');
+    expect(out).toContain('from /[ip] motd');
+    expect(out).toContain('api.sei.gg -> [ip]');
+    for (const ip of ['192.168.1.23', '10.0.0.5', '172.16.254.1', '203.0.113.77']) expect(out).not.toContain(ip);
+  });
+
+  it('redacts IPv6 addresses (link-local with zone, compressed, full), keeps ::1', () => {
+    const out = redact(
+      [
+        'udp recv from fe80::1c2b:3d4e:5f60:7a8b%en0 port 4445',
+        'connect EHOSTUNREACH [2001:db8::42]:25565',
+        'peer 2001:0db8:85a3:0000:0000:8a2e:0370:7334 dropped',
+        'bound [::1]:25565',
+      ].join('\n'),
+    );
+    expect(out).toContain('udp recv from [ip] port 4445');
+    expect(out).toContain('EHOSTUNREACH [[ip]]:25565');
+    expect(out).toContain('peer [ip] dropped');
+    expect(out).toContain('bound [::1]:25565');
+    expect(out).not.toMatch(/fe80|2001:/);
+  });
+
+  it('redacts usernames in Windows and macOS paths, including JSON-escaped and forward-slash forms', () => {
+    const out = redact(
+      [
+        'ENOENT: no such file, open \'C:\\Users\\Jane Doe\\AppData\\Roaming\\.minecraft\\logs\\latest.log\'',
+        '{"path":"C:\\\\Users\\\\jdoe\\\\AppData\\\\Local\\\\Sei\\\\app.log"}',
+        'at file:///C:/Users/jdoe/AppData/Local/Programs/Sei/resources/app.asar/out/main/index.js:10:5',
+        'at /Users/jane.doe/Library/Application Support/minecraft/versions/1.21.1/1.21.1.json',
+      ].join('\n'),
+    );
+    expect(out).not.toMatch(/jdoe|Jane|jane\.doe/);
+    expect(out).toContain('~\\AppData\\Roaming\\.minecraft');
+    expect(out).toContain('~\\\\AppData\\\\Local');
+    expect(out).toContain('file:///~/AppData/Local/Programs/Sei');
+    expect(out).toContain('~/Library/Application Support/minecraft/versions/1.21.1/1.21.1.json');
+  });
+
+  it("redacts this machine's account name outside a path", () => {
+    const user = os.userInfo().username;
+    if (user.length < 3) return;
+    const out = redact(`spawn failed: EACCES (uid=501 user=${user})`);
+    expect(out).toBe('spawn failed: EACCES (uid=501 user=[user])');
+  });
+});
+
+describe('redact — Minecraft player names (261031)', () => {
+  it('redacts names in vanilla server and chat log lines', () => {
+    const out = redact(
+      [
+        '[12:01:02] [User Authenticator #1/INFO]: UUID of player Notch_2011 is 069a79f4-44e9-4726-a5be-fca90e38aaf5',
+        '[12:01:02] [Server thread/INFO]: Notch_2011[/192.168.1.40:51544] logged in with entity id 312 at (12.5, 64.0, -33.5)',
+        '[12:01:02] [Server thread/INFO]: Notch_2011 joined the game',
+        '[12:01:09] [Server thread/INFO]: <Notch_2011> come here',
+        '[12:01:10] [Render thread/INFO]: [CHAT] <xX_Steve_Xx> lol',
+        '[12:05:00] [Server thread/INFO]: Notch_2011 has made the advancement [Stone Age]',
+        '[12:06:00] [Server thread/INFO]: xX_Steve_Xx lost connection: Disconnected',
+        '[12:06:00] [Server thread/INFO]: xX_Steve_Xx left the game',
+      ].join('\n'),
+    );
+    expect(out).not.toMatch(/Notch_2011|xX_Steve_Xx|069a79f4/);
+    expect(out).toContain('UUID of player [player] is [uuid]');
+    expect(out).toContain('[player][/[ip]:51544] logged in with entity id 312 at (12.5, 64.0, -33.5)');
+    expect(out).toContain('[player] joined the game');
+    expect(out).toContain('<[player]> come here');
+    expect(out).toContain('[CHAT] <[player]> lol');
+    expect(out).toContain('[player] has made the advancement [Stone Age]');
+    expect(out).toContain('[player] lost connection: Disconnected');
+    expect(out).toContain('[player] left the game');
+  });
+
+  it("redacts names in our bot's own key=value logs", () => {
+    const out = redact(
+      '[sei/session] start uuid=069a79f4-44e9-4726-a5be-fca90e38aaf5 username=Notch_2011 session_count=4 path=returning',
+    );
+    expect(out).toBe('[sei/session] start uuid=[uuid] username=[player] session_count=4 path=returning');
+  });
+
+  it("turns the bot's own name into [bot] and other names into [player]", () => {
+    const out = redact(
+      ['[sei] Connected to 192.168.1.23:52817 as Sui', '[Server thread/INFO]: Sui joined the game', '<Steve> hi Sui'].join('\n'),
+      { botName: 'Sui' },
+    );
+    expect(out).toBe(['[sei] Connected to [ip]:52817 as [bot]', '[Server thread/INFO]: [bot] joined the game', '<[player]> hi [bot]'].join('\n'));
+  });
+
+  it('keeps stack-trace frames like <anonymous> intact', () => {
+    const line = '    at Object.<anonymous> (~/x.js:1:1)\n    at new Promise (<anonymous>)';
+    expect(redact(line)).toBe(line);
+  });
+});
+
+describe('redact — negative cases and idempotence (261031)', () => {
+  it('leaves versions, coordinates, timestamps and plumbing intact', () => {
+    const text = [
+      '[12:34:56.789] [act!] goto(x=-120, y=64, z=310.5) dist=12.25',
+      'Minecraft 1.21.1 protocol 767, fabric-loader 0.16.5, node v20.18.1, electron 33.2.0',
+      'version 1.20.4 detected; mineflayer@4.23.0 prismarine-chunk@1.36.0',
+      '2026-10-31T12:34:56.789Z boot_spawn_ms=4512 exit code=1 signal=null',
+      'chunk (12, -4) section 3 at 0x7ffd5e8c',
+      'Error: Cannot find module \'./brain/fsm.js\' (node:internal/modules/cjs/loader:1228:15)',
+    ].join('\n');
+    expect(redact(text)).toBe(text);
+  });
+
+  it('is idempotent on an already-redacted tail', () => {
+    const raw = [
+      '<Steve> hi',
+      'Steve joined the game',
+      'UUID of player Steve is 069a79f4-44e9-4726-a5be-fca90e38aaf5',
+      'Authorization: Bearer abcdefghijkl',
+      '{"api_key":"x y z"} key=abc',
+      'from 192.168.0.2 and fe80::1 to a@b.io',
+      'at C:\\Users\\bob\\x.js',
+    ].join('\n');
+    const once = redact(raw, { botName: 'Sui' });
+    expect(redact(once)).toBe(once);
+    expect(redact(once, { botName: 'Sui' })).toBe(once);
+  });
+});
+
 describe('redact — chat/prompt content stripping', () => {
   const block = (tag: string, body: string[]): string =>
     [`[12:34:56.789] [${tag}] begin`, ...body, `[12:34:56.789] [${tag}] end`].join('\n');
@@ -195,7 +403,7 @@ describe('buildSummonDiagnostic', () => {
     expect(diag2.mc_version).toBeNull();
   });
 
-  it('caps error_message at ~2KB and tails at 8KB keeping the tail END', () => {
+  it('caps error_message at ~2KB and tails at 2KB keeping the tail END', () => {
     const diag = buildSummonDiagnostic(
       baseInfo({
         errorMessage: 'M'.repeat(5000),
@@ -205,7 +413,7 @@ describe('buildSummonDiagnostic', () => {
       { lan: null, signedIn: false, packaged: false },
     );
     expect((diag.error_message as string).length).toBe(2048);
-    expect((diag.stderr_tail as string).length).toBe(8192);
+    expect((diag.stderr_tail as string).length).toBe(2048);
     expect(diag.stderr_tail as string).toMatch(/THE-CRASH-LINE$/);
     expect(diag.stdout_tail as string).toMatch(/LAST-STDOUT$/);
   });
@@ -223,6 +431,30 @@ describe('buildSummonDiagnostic', () => {
     expect(diag.stderr_tail as string).not.toContain('sk-ant');
     expect(diag.stderr_tail as string).not.toContain(HOME);
     expect(diag.exit_code).toBe(1);
+  });
+
+  it('scrubs names, IPs and keys from a realistic mid-session crash, keeps the crash line (261031)', () => {
+    const stdout = [
+      '[12:00:01.000] [log] [sei/session] start uuid=069a79f4-44e9-4726-a5be-fca90e38aaf5 username=Notch_2011 session_count=4',
+      '[12:00:01.100] [log] [sei] Connected to 192.168.1.23:52817 as Lyra',
+      '[12:00:05.000] [log] Notch_2011 joined the game',
+      ...Array.from({ length: 60 }, (_, i) => `[12:00:${String(10 + (i % 50)).padStart(2, '0')}.000] [act!] goto(x=${i}, y=64, z=-${i})`),
+      'TypeError: Cannot read properties of undefined (reading \'position\') at C:\\Users\\Jane Doe\\AppData\\Local\\Programs\\Sei\\bot.js:1:1',
+    ].join('\n');
+    const diag = buildSummonDiagnostic(
+      baseInfo({
+        phase: 'mid_session',
+        botName: 'Lyra',
+        errorMessage: 'Bot exited (code=1) groq said: invalid key gsk_aBcDeFgHiJkLmNoPqRsTuVwXyZaBcDeFgHiJ',
+        stdoutTail: stdout,
+      }),
+      { lan: null, signedIn: false, packaged: true },
+    );
+    const tail = diag.stdout_tail as string;
+    expect(tail.length).toBeLessThanOrEqual(2048);
+    expect(tail).not.toMatch(/Notch_2011|Lyra|192\.168|Jane/);
+    expect(tail).toMatch(/TypeError: Cannot read properties of undefined \(reading 'position'\) at ~\\AppData/);
+    expect(diag.error_message).toBe('Bot exited (code=1) groq said: invalid key [redacted]');
   });
 
   it('defaults exit_code to null when absent', () => {

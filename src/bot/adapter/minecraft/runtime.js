@@ -28,6 +28,7 @@
 import { createBotInstance, resolveServerVersion } from './connect.js'
 import { createMinecraftAdapter } from './index.js'
 import { classifyConnectError } from './errors.js'
+import { mcUsernameFromName } from '../../names.js'
 import { bootMarks, markBoot } from '../../bootTiming.js'
 import { configurePovStackLoader, loadPovStack } from './render/povStackLoader.js'
 
@@ -35,14 +36,15 @@ import { configurePovStackLoader, loadPovStack } from './render/povStackLoader.j
  * The bot's MC login name must NOT collide with the LAN host's own player
  * (else the server kicks with multiplayer.disconnect.name_taken). Prefer the
  * per-persona character.username (CharacterSchema already enforces the MC
- * regex + 16-char cap); else the persona name sanitized to MC's username
- * constraints: [A-Za-z0-9_], ≤16 chars, non-empty, 'Sei' as the last resort.
- * MIRROR: src/shared/characterSchema.ts effectiveMcUsername() — keep in sync.
+ * regex + 16-char cap); else the persona name with accented letters folded
+ * ("Sofía" -> "Sofia") and sanitized to MC's username constraints:
+ * [A-Za-z0-9_], ≤16 chars, non-empty, 'Sei' as the last resort. The rule is
+ * src/bot/names.js mcUsernameFromName, which src/shared/characterSchema.ts
+ * effectiveMcUsername() calls too, so main and the bot cannot drift.
  */
 export function botUsernameFor(character) {
   if (typeof character?.username === 'string' && character.username.trim()) return character.username.trim()
-  const cleaned = String(character?.name || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 16)
-  return cleaned || 'Sei'
+  return mcUsernameFromName(character?.name || '')
 }
 
 /**

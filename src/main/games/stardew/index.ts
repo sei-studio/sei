@@ -13,6 +13,7 @@ import type { GameModule, GameJoinContext } from '../index';
 import { detectStardew, installStardew, readModConfig, type StardewInstallEnv } from './install';
 import { launchStardew } from './launch';
 import { createStardewWatcher, STARDEW_POLL_INTERVAL_MS } from './watcher';
+import { stardewNameFromRaw } from '../../../bot/names.js';
 
 /**
  * The companion's in-game display name. MIRROR of botUsernameFor in
@@ -22,8 +23,7 @@ import { createStardewWatcher, STARDEW_POLL_INTERVAL_MS } from './watcher';
  */
 export function effectiveStardewName(c: Pick<Character, 'username' | 'name'>): string {
   const raw = (c.username ?? '').trim() || String(c.name || '');
-  const cleaned = raw.replace(/[^A-Za-z0-9_ \-]/g, '').trim().slice(0, 24);
-  return cleaned || 'Sei';
+  return stardewNameFromRaw(raw);
 }
 
 export interface StardewModuleOpts {

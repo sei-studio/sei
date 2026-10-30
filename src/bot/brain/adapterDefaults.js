@@ -46,6 +46,9 @@ export const ADAPTER_DEFAULTS = Object.freeze({
   fightActions: Object.freeze(['attackEntity']),
   // 261015: no hand-over action, so a clearGoal never waits on one.
   handOverResult: () => null,
+  // 261026 (pass 28): no hand-over details, so the transcript carries no
+  // hand-over line (it could not tell what was given).
+  handOverDetail: null,
   surfaceBaseline: () => MINECRAFT_BASELINE,
   sessionEndClause: () => SESSION_END_CLAUSE,
   // The mid-action check-in's "path is not working" instruction. With Looking
@@ -117,6 +120,7 @@ export function resolveAdapterCaps(adapter, config) {
     continueRunningAction: pick('continueRunningAction'),
     fightActions: new Set(pick('fightActions')),
     handOverResult: pick('handOverResult'),
+    handOverDetail: pick('handOverDetail'),
     surfaceBaseline: pick('surfaceBaseline'),
     sessionEndClause: pick('sessionEndClause'),
     stuckNudges: pick('stuckNudges'),

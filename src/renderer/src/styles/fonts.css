@@ -1,7 +1,7 @@
 /* fonts.css — self-hosted @font-face declarations (D-05 — no CDN).
  * Files live in src/renderer/public/fonts/, served at /fonts/<file>.woff2 by Vite.
  *
- * Type system (see .planning/UI-DESIGN-SYSTEM.md §Typography):
+ * Type system (see docs/design/UI-DESIGN-SYSTEM.md §Typography):
  *   Oswald          — condensed display headers (--display)
  *   Rajdhani        — UI body / sans (--sans)
  *   JetBrains Mono  — tracked uppercase labels + numerics (--mono)

@@ -11,7 +11,7 @@
  * the feedback form (same submit path as the Playtime screen's form).
  * Scrim-click / ESC closes (ESC hides the popup first when one is showing).
  *
- * Source: .planning/design/app-chat-and-memory.md §5 (GamesPickerModal) + R7.
+ * Source: docs/design/app-chat-and-memory.md §5 (GamesPickerModal) + R7.
  */
 
 import React, { useEffect, useRef, useState } from 'react';

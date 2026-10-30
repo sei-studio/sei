@@ -1,6 +1,6 @@
 /* AwakenScreen.module.css — mockup view-awaken (.awaken-head / .awaken-body /
  * .matched / .side-origins), tokens only.
- * Source: .planning/design/UI-REDESIGN-PARTY.md §4.3. */
+ * Source: docs/design/UI-REDESIGN-PARTY.md §4.3. */
 
 .root {
   display: flex;

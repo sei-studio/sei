@@ -252,7 +252,15 @@ export function createSessionEventLog({ capacity = SESSION_EVENT_CAPACITY, now =
   /** @type {Array<{at:number, lastAt:number, text:string, again:string|null, key:string|null, n:number}>} */
   const entries = []
 
-  function record(text, { key = null, windowMs = 0, again = null } = {}) {
+  /**
+   * `foldIf(entry)` (261026, pass 28): a repeat folds only when this also
+   * returns true. A folded entry keeps its FIRST time, so folding across a
+   * line someone said moves the newer result above that line. Measured in
+   * the work_session convo: a gather of 8 logs and one of 4 logs, 44s and
+   * eleven lines apart, read "gathered 4/4 oak_log, more than once" above
+   * her "on it, 5 in the bag already".
+   */
+  function record(text, { key = null, windowMs = 0, again = null, foldIf = null } = {}) {
     const t = clip(text)
     if (!t) return false
     const at = now()
@@ -260,7 +268,9 @@ export function createSessionEventLog({ capacity = SESSION_EVENT_CAPACITY, now =
       for (let i = entries.length - 1; i >= 0; i--) {
         const e = entries[i]
         if (e.key !== key) continue
-        if (at - e.lastAt <= windowMs) {
+        let mayFold = true
+        if (typeof foldIf === 'function') { try { mayFold = !!foldIf(e) } catch { mayFold = false } }
+        if (mayFold && at - e.lastAt <= windowMs) {
           e.n += 1
           e.lastAt = at
           // Numbers are blanked in action keys, so keep the newest wording
@@ -286,4 +296,71 @@ export function createSessionEventLog({ capacity = SESSION_EVENT_CAPACITY, now =
   }
 
   return { record, list, get size() { return entries.length }, _internal: { entries } }
+}
+
+function joinAnd(parts) {
+  return parts.length <= 1 ? (parts[0] ?? '') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
+}
+
+function addCount(map, item, n) {
+  map.set(item, (map.get(item) ?? 0) + n)
+}
+
+/**
+ * 261026 (quality pass 28): what changed hands this session, kept for the
+ * whole session and shown as the last line of the conversation transcript.
+ *
+ * In the scripted convos 8 of 17 off lines were false claims about who made,
+ * gave or holds what: "i just made you a table AND a pickaxe" (she crafted
+ * both into her own inventory and gave only 6 logs), "you still hand me
+ * bread" (nothing was ever handed to her). Her prompt held "game: you used
+ * craft: crafted 1 wooden_pickaxe" right after the player's "make a crafting
+ * table", and a give line only while it stayed in the 12-line event ring.
+ * Nothing said where the crafted items went, or that nothing else had been
+ * handed over. The ledger is that record: every give that went through
+ * (from the adapter's handOverDetail) and every item that came into her
+ * inventory without an action of hers (handed to her or picked up). Pure.
+ */
+export function createHandOverLedger() {
+  /** @type {Map<string, Map<string, number>>} recipient -> item -> count */
+  const given = new Map()
+  /** @type {Map<string, number>} */
+  const received = new Map()
+
+  /** @param {{item: string, n: number, to?: string|null}|null|undefined} h */
+  function gave(h) {
+    if (!h || typeof h.item !== 'string' || !h.item || !Number.isFinite(h.n) || h.n <= 0) return
+    const to = String(h.to ?? '').trim()
+    if (!given.has(to)) given.set(to, new Map())
+    addCount(given.get(to), h.item, h.n)
+  }
+
+  /** @param {Array<{item: string, n: number}>} gains */
+  function receivedItems(gains) {
+    for (const g of Array.isArray(gains) ? gains : []) {
+      if (g && typeof g.item === 'string' && g.item && Number.isFinite(g.n) && g.n > 0) addCount(received, g.item, g.n)
+    }
+  }
+
+  /**
+   * @param {{ label?: (name: string) => string }} [opts] label: how the
+   *   transcript names a player (convoMemory.playerLabel), so the recipient
+   *   reads the same as their lines and a player named like her stays them.
+   */
+  function describe({ label = (name) => name } = {}) {
+    const list = (m) => joinAnd([...m].map(([item, n]) => `${n} ${item}`))
+    const who = (to) => {
+      if (!to) return 'the player'
+      try { return String(label(to) || to) } catch { return to }
+    }
+    const out = given.size
+      ? `you gave ${joinAnd([...given].map(([to, items]) => `${who(to)} ${list(items)}`))}.`
+      : 'you have not given anything to anyone.'
+    const inn = received.size
+      ? ` ${list(received)} came into your inventory without an action of yours (handed to you or picked up).`
+      : ''
+    return `Handed over this session: ${out}${inn} Everything else you crafted, gathered or picked up went into your own inventory and is still yours unless you used it up, placed it or dropped it. The inventory in your snapshot is yours; you cannot see what the player carries.`
+  }
+
+  return { gave, received: receivedItems, describe }
 }

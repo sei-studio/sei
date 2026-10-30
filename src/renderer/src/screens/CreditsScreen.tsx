@@ -40,7 +40,6 @@
  * carries percentages, credit counts and dates only.
  *
  * Sources:
- *   - .planning/quick/260724-sub-weekly-subscription-model/SPEC.md
  *   - src/renderer/src/lib/stores/useCreditsStore.ts (selectors + actions)
  */
 
@@ -582,7 +581,7 @@ export function CreditsScreen(): React.ReactElement {
                 <InfoTip label={t('About the ChatGPT plan')} text={chatgptPlanDisclosure(t)} />
               </span>
               <span className={styles.planBlurb}>
-                {t('Works on every Sei plan, including Free.')}{' '}
+                {t('Works with your ChatGPT Plus or Pro account.')}{' '}
                 <button
                   type="button"
                   className={styles.planFeatureLink}

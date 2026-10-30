@@ -19,11 +19,18 @@
 // MUST stay the first import: refuses --remote-debugging-* / --inspect* /
 // --js-flags in packaged stable builds before anything else evaluates.
 import './remoteDebugGuard';
+// Windows: Velopack hooks must run before the rest of main
+// evaluates; see velopackBoot.ts.
+import './velopackBoot';
+// Windows NSIS -> Velopack migration: its early boot must run before the
+// single-instance lock below; see velopackMigration.ts.
+import { scheduleVelopackMigration } from './velopackMigration';
 import { app, BrowserWindow, net, session, systemPreferences } from 'electron';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { closeSplashWindow, createMainWindow, createSplashWindow } from './windowChrome';
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
+import { registerFacepackIpc } from './facepack/facepackIpc';
 import { isAnalyticsActive, shutdownAnalytics, capture, captureAppQuit, noteSurface } from './analytics';
 import { reportOnboardingAbandoned } from './onboardingFunnel';
 import { notePreGateFailure, clearSummonBlock, clearSummonBlocksOfClass } from './summonGuard';
@@ -38,6 +45,7 @@ import { initCallOverlay, closeCallOverlay } from './callOverlay';
 import { trackScopedWrite, isAccountTeardownActive } from './profile/scopeBarrier';
 import { sessionEndProps, isSessionFailure, type SessionEndProps } from './sessionEnd';
 import { consumeGoodbye, gameEndHookProps, callEndHookProps, goodbyePlanPlace } from './sessionGoodbye';
+import { callInterruptProps } from '../shared/callInterrupts';
 import { endCallsForAccountSwitch } from './voice/accountSwitchCalls';
 import {
   bindPlayerEndRuntime,
@@ -60,7 +68,8 @@ import {
   runPendingQuitNextSteps,
 } from './quitNextStep';
 import { formatPlayDuration, playSummaryText } from './chat/playSummary';
-import { initUpdater } from './updater';
+import { handOffUpdatesToMigration, initUpdater, isUpdateReadyToInstall } from './updater';
+import { applyPendingAtLaunch, updateSplashStatusForLaunch } from './velopackUpdater';
 import { initNotices } from './notices';
 import { installPopupFrameGuards } from './popupFrameGuards';
 import { createSkinServer, SKIN_SERVER_DEV_PORT } from './skinServer';
@@ -769,22 +778,19 @@ async function bootstrap(): Promise<void> {
 
   // 0a. Per-profile partitioning (260603) — determine the active scope from
   //     the persisted Supabase session BEFORE any per-account store is read or
-  //     written. getSession() reads the storage adapter wired above and makes
-  //     no network call in supabase-js v2. Signed in at boot → the account's
-  //     UUID profile owns the existing data; signed out → the anonymous
-  //     'local' profile. The auth-event subscription (step 5b) re-points the
-  //     scope on any later sign-in/out/swap.
+  //     written. Signed in at boot → the account's UUID profile owns the
+  //     existing data; signed out → the anonymous 'local' profile. The
+  //     auth-event subscription (step 5b) re-points the scope on any later
+  //     sign-in/out/swap, and initAuthState moves it when its own session
+  //     load disagrees with this one.
+  //     261029: read the stored session directly. getSession() is NOT a
+  //     storage-only read: it refreshes an expired access token over the
+  //     network (the usual state after a restart), and a refresh that failed
+  //     here set 'local' under a session initAuthState then restored, which
+  //     locked the user on the sign-in panel (see persistedSessionUserId).
   {
-    const { setActiveScope } = await import('./paths');
-    let bootScope: string | null = null;
-    try {
-      const { getClient } = await import('./auth/supabaseClient');
-      const { data: { session } } = await getClient().auth.getSession();
-      bootScope = session?.user?.id ?? null;
-    } catch (err) {
-      logger.warn(`boot scope detection failed, defaulting to local: ${(err as Error).message}`);
-    }
-    setActiveScope(bootScope);
+    const { applyBootScope } = await import('./auth/bootScope');
+    const bootScope = await applyBootScope({ warn: (m) => logger.warn(m) });
     logger.info(`active profile scope: ${bootScope ?? 'local'}`);
   }
 
@@ -1294,6 +1300,9 @@ async function bootstrap(): Promise<void> {
     },
   });
 
+  // 261028 facepack pilot (dev flag only; handlers answer "disabled" otherwise).
+  registerFacepackIpc({ preloadPath: preloadPath(), rendererTarget });
+
   // 5. IPC handlers
   registerIpcHandlers({
     supervisor,
@@ -1365,7 +1374,7 @@ async function bootstrap(): Promise<void> {
     },
     // Voice calls (260705): a live call ended — post the "You and X called for
     // Y" system row (renderer supplies how long audio actually flowed).
-    notifyCallEnded: (id, connectedMs, reason) => {
+    notifyCallEnded: (id, connectedMs, reason, interrupts) => {
       void trackScopedWrite(emitCallSession(id, connectedMs)).catch(() => {});
       // Analytics (260728): calls are playtime too. `connectedMs` is the time
       // audio actually flowed (the renderer only reports it for calls that
@@ -1380,6 +1389,10 @@ async function bootstrap(): Promise<void> {
         // 261023: why it ended (callEndReasons.ts), from the renderer's report.
         reason,
         ...callEndHookProps(goodbye),
+        // 261030: duck / cut / echo-rejected / manual interrupt counts. Only
+        // the renderer's hang-up carries them; a call main closes itself (quit,
+        // account switch) has none and leaves them out rather than send zeros.
+        ...(interrupts ? callInterruptProps(interrupts) : {}),
       });
       // 261013 (T119): the companion's hang-up left a plan; it came from a call.
       if (goodbye.nextStepHook) {
@@ -1508,7 +1521,7 @@ async function bootstrap(): Promise<void> {
   //
   //     NOTE: the Supabase project's Site URL (or Additional Redirect URLs)
   //     must include http://localhost:54321/auth/callback for the email link
-  //     to point here. See .planning/phases/10-auth-foundation/deferred-items.md.
+  //     to point here.
   //
   //     Bind failure is non-fatal: the user can still sign in (the session
   //     IPC handlers work), but verification emails will keep redirecting
@@ -1535,6 +1548,7 @@ async function bootstrap(): Promise<void> {
   // leg of the shared cadence.
   initNotices({ getMainWindow: () => mainWindow });
   initUpdater({ getMainWindow: () => mainWindow });
+  scheduleVelopackMigration({ isUpdateReady: isUpdateReadyToInstall, handOff: handOffUpdatesToMigration });
 
   // 5d. 261013 (T120): run the "next time" check for sessions the last quit
   //     ended, once auth and the token refresh have settled. Fire and forget;
@@ -1581,16 +1595,25 @@ if (!gotLock) {
     // Startup splash (260728): the white Sei logo, up before any heavy
     // bootstrap work, closed when the main window first paints. The failsafe
     // timer covers a bootstrap that errors before showing a window.
-    splashWindow = createSplashWindow();
+    // Windows, right after Update.exe restarted Sei (261030): the same splash
+    // with "Updating…" under it, matching the update overlay it replaces.
+    splashWindow = createSplashWindow({ status: updateSplashStatusForLaunch() });
     setTimeout(() => {
       if (splashWindow && !splashWindow.isDestroyed()) closeSplashWindow(splashWindow);
       splashWindow = null;
     }, 15_000);
 
-    bootstrap().catch((err) => {
-      logger.error(`bootstrap failed: ${(err as Error).message}`);
-      app.exit(1);
-    });
+    // Windows: an update that was downloaded and staged but never applied
+    // (Sei was killed) is applied now, behind the splash, instead of booting.
+    void applyPendingAtLaunch(splashWindow)
+      .catch(() => false)
+      .then((applying) => {
+        if (applying) return;
+        bootstrap().catch((err) => {
+          logger.error(`bootstrap failed: ${(err as Error).message}`);
+          app.exit(1);
+        });
+      });
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0 && mainWindow === null) {

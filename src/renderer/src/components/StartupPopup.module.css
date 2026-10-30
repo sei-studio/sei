@@ -6,13 +6,22 @@
  *
  * The card has no chrome of its own: the page IS the content (usually one
  * image on a transparent page), so a panel colour or shadow around it would
- * frame empty space whenever the image does not fill the box. The X sits on
- * the card's top-right corner, outside the page. */
+ * frame empty space whenever the image does not fill the box.
+ *
+ * The X (261029) sits INSIDE the card's top-right corner, layered over the
+ * page: renderer UI above the iframe, so it works whatever the page draws.
+ * A small translucent dark disc keeps it visible on a light or busy picture;
+ * no border line (buttons here never draw one). Fixed colours rather than
+ * theme tokens on purpose: it sits on the page's art, not on the app's
+ * surface, so a light theme's light button would vanish on a light page
+ * (the same reasoning as CallControls' onArt variant). */
 
 .scrim {
   position: fixed;
   inset: 0;
-  z-index: 1100;
+  /* ModalShell's base tier: dialogs raised later (ToS, import offer, hard
+     stop, update) land on top of the popup, not under it. */
+  z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -53,26 +62,43 @@
 
 .close {
   position: absolute;
-  top: calc(-1 * var(--space-md) - 18px);
-  right: calc(-1 * var(--space-md) - 18px);
+  top: 14px;
+  right: 14px;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   border: none;
   border-radius: 50%;
-  background: var(--bg2);
-  color: var(--text);
-  box-shadow: var(--shadow-pop);
+  background: rgba(4, 7, 15, 0.55);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  color: #fff;
   cursor: pointer;
+  transition: background 120ms var(--ease), transform 120ms var(--ease);
 }
 
 .close:hover {
-  background: var(--bg3);
+  background: rgba(4, 7, 15, 0.8);
+  transform: scale(1.06);
+}
+
+.close:active {
+  transform: scale(0.96);
 }
 
 .close:focus-visible {
-  outline: 1px solid var(--accent);
+  outline: 2px solid #fff;
   outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .close {
+    transition: none;
+  }
+  .close:hover,
+  .close:active {
+    transform: none;
+  }
 }

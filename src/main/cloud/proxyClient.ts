@@ -37,7 +37,7 @@
  *     `my_plan` view — so allowances can be retuned without a client release.
  *
  * Source:
- *   - .planning/quick/260724-sub-weekly-subscription-model/SPEC.md (§4 contract)
+ *   - The weekly-subscription contract (`CreditsStatus` in src/shared/ipc.ts).
  *   - Polar migration (2026-06): checkout/portal sessions are proxy-minted
  *
  * Related: `src/main/auth/edgeFunctionClient.ts` (POST wrapper with timeout),
@@ -132,9 +132,11 @@ export async function creditsGet(): Promise<CreditsStatus> {
   const [planRow, rewardRow, kind] = await Promise.all([
     supabase
       .from('my_plan')
-      .select(
-        'plan,usage_pct,over_limit,resets_at,extra_credits_used,extra_credits_total,renews_at,ends_at,subscription_status_raw',
-      )
+      // '*' rather than a column list: allowance_micro / allowance_used_micro
+      // were appended to the view on 261028, and naming them would fail the
+      // whole snapshot against a database without them. Unknown columns are
+      // ignored below.
+      .select('*')
       .maybeSingle(),
     // 260726: the server is the authority on whether the once-per-account
     // feedback reward is still there. `usage_periods` is RLS SELECT-own, so
@@ -156,7 +158,12 @@ export async function creditsGet(): Promise<CreditsStatus> {
   if (planRow.error) {
     throw new Error(`my_plan read failed: ${planRow.error.message}`);
   }
-  const row = (planRow.data ?? {}) as Partial<CreditsStatus>;
+  const row = (planRow.data ?? {}) as Partial<Omit<CreditsStatus, 'allowance_micro' | 'allowance_used_micro'>> & {
+    allowance_micro?: unknown;
+    allowance_used_micro?: unknown;
+  };
+  const allowanceMicro = toMicroOrNull(row.allowance_micro);
+  const allowanceUsedMicro = toMicroOrNull(row.allowance_used_micro);
   const tier: PlanTier =
     row.plan === 'quest' || row.plan === 'party' ? row.plan : 'free';
 
@@ -173,6 +180,8 @@ export async function creditsGet(): Promise<CreditsStatus> {
     ends_at: row.ends_at ?? null,
     subscription_status_raw: row.subscription_status_raw ?? null,
     ai_backend_kind: kind,
+    ...(allowanceMicro !== null ? { allowance_micro: allowanceMicro } : {}),
+    ...(allowanceUsedMicro !== null ? { allowance_used_micro: allowanceUsedMicro } : {}),
     // No row yet (never spent anything) still means unclaimed: the RPC calls
     // ensure_usage_period first, so the claim would create the row and succeed.
     feedback_reward_available: rewardRow.error
@@ -186,6 +195,14 @@ function clampPct(n: unknown): number {
   const v = typeof n === 'string' ? Number(n) : n;
   if (typeof v !== 'number' || !Number.isFinite(v)) return 0;
   return Math.max(0, Math.min(100, Math.round(v)));
+}
+
+/** Non-negative integer µ$ amount, or null when the column is absent or junk.
+ * Postgres bigints can arrive as strings. */
+function toMicroOrNull(n: unknown): number | null {
+  const v = typeof n === 'string' && n.trim() !== '' ? Number(n) : n;
+  if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+  return Math.max(0, Math.round(v));
 }
 
 /** Non-negative integer credit count. Postgres bigints can arrive as strings. */

@@ -69,3 +69,7 @@ mirror-out/
 # with the game and commit the result whenever native/stardew-mod changes.
 native/stardew-mod/**/bin/
 native/stardew-mod/**/obj/
+
+# Local planning scratch (the old GSD tree, removed 261030). Durable design
+# docs go in docs/design/.
+.planning/

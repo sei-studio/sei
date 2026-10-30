@@ -110,6 +110,20 @@ describe('creditWallProps', () => {
     expect(p.ms_since_install).toBe(0);
   });
 
+  it('prefers the snapshot\'s exact allowance usage and ships the allowance', () => {
+    const p = creditWallProps({
+      info: { reason: 'depleted' },
+      ctx: { surface: 'chat', trigger: 'llm' },
+      now,
+      installedAt: now - HOUR,
+      snapshot: snapshot({ usage_pct: 100, allowance_micro: 500_000, allowance_used_micro: 503_210 }),
+      allowanceMicro: 500_000,
+      repeatsBefore: 0,
+      wallSeq: 1,
+    });
+    expect(p).toMatchObject({ allowance_micro: 500_000, allowance_used_micro: 503_210, usage_pct: 100 });
+  });
+
   it('carries game context and the rate-limit window', () => {
     const p = creditWallProps({
       info: { reason: 'rate_limited', retry_after_seconds: 120 },
@@ -182,6 +196,26 @@ describe('createCreditWallReporter', () => {
     await r.note({ reason: 'depleted' }, { surface: 'game', trigger: 'summon_gate', game: 'minecraft' });
     expect(d.captured).toHaveLength(2);
     expect(d.captured[1][1]).toMatchObject({ surface: 'game', repeats_before: 2, wall_seq: 2, game: 'minecraft' });
+  });
+
+  // 261028: a grandfathered free account walls at its old $0.50 while the
+  // catalog already says $0.15. The event must report the allowance it had.
+  it('uses the snapshot\'s effective allowance over the catalog', async () => {
+    const d = deps({
+      readSnapshot: vi.fn(async () => snapshot({ allowance_micro: 500_000, allowance_used_micro: 500_400 })),
+      allowanceMicroFor: vi.fn(async () => 150_000),
+    });
+    const r = createCreditWallReporter(d);
+    await r.note({ reason: 'depleted' }, { surface: 'chat', trigger: 'llm' });
+    expect(d.captured[0][1]).toMatchObject({ allowance_micro: 500_000, allowance_used_micro: 500_400 });
+    expect(d.allowanceMicroFor).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the catalog allowance when the snapshot has none', async () => {
+    const d = deps({ allowanceMicroFor: vi.fn(async () => 150_000) });
+    const r = createCreditWallReporter(d);
+    await r.note({ reason: 'depleted' }, { surface: 'chat', trigger: 'llm' });
+    expect(d.captured[0][1]).toMatchObject({ allowance_micro: 150_000, allowance_used_micro: 150_000 });
   });
 
   it('a failed account read still ships the event', async () => {

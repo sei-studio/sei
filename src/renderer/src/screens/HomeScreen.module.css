@@ -2,7 +2,7 @@
  * Full-height flex panels, one per companion slot (MAX_COMPANION_SLOTS).
  * Hover/focus expands a panel and reveals the lastline + action row; empty
  * slots are dormant panels with the gathering-pixels mark.
- * Source: .planning/design/UI-REDESIGN-PARTY.md §4.2; mockup .panels/.panel. */
+ * Source: docs/design/UI-REDESIGN-PARTY.md §4.2; mockup .panels/.panel. */
 
 .root {
   display: flex;

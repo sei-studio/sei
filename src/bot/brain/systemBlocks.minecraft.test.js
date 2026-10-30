@@ -34,7 +34,8 @@ vi.mock('../adapter/minecraft/behaviors/visualize.js', () => ({
   captureFrame: vi.fn(async () => ({ ok: true, mediaType: 'image/jpeg', dataBase64: 'AAAA' })),
 }))
 
-import { buildMinecraftSystemFixture } from './systemBlocks.minecraft.build.js'
+import { buildMinecraftSystemFixture, buildMinecraftFacesCapture } from './systemBlocks.minecraft.build.js'
+import { FACE_OFFERED_NAMES } from './faceExpressions.js'
 
 const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), '__fixtures__', 'minecraftSystemBlocks.json')
 
@@ -65,5 +66,34 @@ describe('Minecraft cached system prefix + tool list are byte-identical to the p
       expect(actual[variant].tools, `${variant}: tools`).toEqual(expected[variant].tools)
     }
     expect(Object.keys(actual).sort()).toEqual(Object.keys(expected).sort())
+  })
+})
+
+// 261028 facepack pilot: the dev face flag (config._seiFaces, set by main only
+// when unpackaged with SEI_FACEPACK_DIR) adds ONE optional say() parameter
+// and nothing else. With it absent the pin above is the production proof.
+describe('facepack dev flag', () => {
+  it('adds only an optional expression enum to say()', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'sei-sysblocks-faces-'))
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-03T12:00:00Z') })
+    let base, faces
+    try {
+      base = (await buildMinecraftSystemFixture(dir)).base
+      faces = await buildMinecraftFacesCapture(dir)
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(faces.blocks).toEqual(base.blocks)
+    expect(faces.tools.map((t) => t.name)).toEqual(base.tools.map((t) => t.name))
+    const say = faces.tools.find((t) => t.name === 'say')
+    const baseSay = base.tools.find((t) => t.name === 'say')
+    expect(baseSay.input_schema.properties.expression).toBeUndefined()
+    expect(say.input_schema.properties.expression.enum).toEqual([...FACE_OFFERED_NAMES])
+    expect(say.input_schema.required).toEqual(['text'])
+    const strip = (t) => {
+      const { expression: _e, ...rest } = t.input_schema.properties
+      return { ...t, input_schema: { ...t.input_schema, properties: rest } }
+    }
+    expect(faces.tools.map(strip)).toEqual(base.tools)
   })
 })

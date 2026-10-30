@@ -127,3 +127,42 @@ describe('readSkinPng — local match only, no bundled-default fallback', () => 
     expect(await readSkinPng({ username: 'Nova', listCharacters: async () => [c] })).toBeNull();
   });
 });
+
+describe('readSkinPng — accented names (261027)', () => {
+  const upload = { source: 'upload' as const, mojang_username: null, png_sha256: 'x', applied_at: null };
+
+  async function cacheBytes(id: string, bytes: Buffer): Promise<void> {
+    await mkdir(path.join(h.userData, 'skins'), { recursive: true });
+    await writeFile(path.join(h.userData, 'skins', `${id}.png`), bytes);
+  }
+
+  it('serves Sofía under the folded login name the bot now joins as', async () => {
+    const c = mkChar({ name: 'Sofía', skin: upload });
+    await cacheSkin(c.id);
+    expect(await readSkinPng({ username: 'Sofia', listCharacters: async () => [c] })).not.toBeNull();
+    expect(await readSkinPng({ username: 'sofia', listCharacters: async () => [c] })).not.toBeNull();
+  });
+
+  it('still answers the pre-fold name ("Sofa") for the same character', async () => {
+    const c = mkChar({ name: 'Sofía', skin: upload });
+    await cacheSkin(c.id);
+    const bytes = await readSkinPng({ username: 'Sofa', listCharacters: async () => [c] });
+    expect(bytes!.equals(SKIN_BYTES)).toBe(true);
+  });
+
+  it('a character really named Sofa wins over the legacy alias', async () => {
+    const sofia = mkChar({ id: '22222222-2222-2222-2222-222222222222', name: 'Sofía', skin: upload });
+    const sofa = mkChar({ id: '33333333-3333-3333-3333-333333333333', name: 'Sofa', skin: upload });
+    await cacheBytes(sofia.id, Buffer.from('sofia-skin'));
+    await cacheBytes(sofa.id, Buffer.from('sofa-skin'));
+    const list = async () => [sofia, sofa];
+    expect((await readSkinPng({ username: 'Sofa', listCharacters: list }))!.toString()).toBe('sofa-skin');
+    expect((await readSkinPng({ username: 'Sofia', listCharacters: list }))!.toString()).toBe('sofia-skin');
+  });
+
+  it('leaves a CJK name exactly as before (falls back to Sei)', async () => {
+    const c = mkChar({ name: '诗诗', skin: upload });
+    await cacheSkin(c.id);
+    expect(await readSkinPng({ username: 'Sei', listCharacters: async () => [c] })).not.toBeNull();
+  });
+});

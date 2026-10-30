@@ -9,6 +9,7 @@
  *     &art=<url>[,<url>...]    the portrait(s); a dev-server path works, e.g.
  *                              /@fs/<repo>/demo/fixtures/portraits/sui.png
  *     &name=<name>[,<name>...] the matching names (default Sui, Marv, Lyra)
+ *     &backdrop=0              (part=call) the avatar tiles, not the backdrop
  *
  * Used to measure name legibility on light and dark portraits in both
  * schemes. window.sei is the generic Proxy stub from devHarnessStubs.ts.
@@ -59,7 +60,10 @@ function seed(): void {
   (window as unknown as { sei: Record<string, unknown> }).sei.getCharacter = async (id: string) =>
     useDataStore.getState().characters.find((c) => c.id === id) ?? null;
   if (params.get('part') === 'call') {
-    useUiStore.setState({ callBackdropByCharacter: { [ART_IDS[0]]: true } });
+    // &backdrop=0 opens the avatar-tiles view instead of the backdrop.
+    useUiStore.setState({
+      callBackdropByCharacter: { [ART_IDS[0]]: params.get('backdrop') !== '0' },
+    });
     // Live this instant, so the chrome bar shows its first-seconds reveal.
     useVoiceStore.setState({ participants: [ART_IDS[0]], status: 'live', liveAt: Date.now() });
   }

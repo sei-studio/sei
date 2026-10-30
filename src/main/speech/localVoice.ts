@@ -6,7 +6,7 @@
  * only what a local voice can express: GENDER. The pool metadata (soulcaster
  * VOICES) carries gender for current voices; the 260707-curated legacy ids get
  * a static gender table here (transcribed from the section comments in
- * voice/voiceAssign.ts LEGACY_VOICE_IDS — that set is closed history, so a
+ * shared/poolVoiceIds.ts LEGACY_VOICE_IDS — that set is closed history, so a
  * table cannot drift).
  *
  * (gender, conversation language) → one of four local voice slots, served by
@@ -36,7 +36,7 @@
  *
  * Only en and zh have local voices. Any other conversation language falls back
  * to the ENGLISH voice (it will read non-Latin text poorly; local TTS scope is
- * en+zh by decision — see .planning/china-compat-v07-260816.md W3+W4).
+ * en+zh by decision, from the 260816 china-compat stream).
  */
 import { VOICES } from 'soulcaster';
 import type { SpeechPackId } from './packs';
@@ -70,7 +70,7 @@ export const LOCAL_VOICE_SPEC: Record<LocalVoiceId, LocalVoiceSpec> = {
 };
 
 /**
- * Gender of the 260707-curated legacy pool ids (voiceAssign LEGACY_VOICE_IDS).
+ * Gender of the 260707-curated legacy pool ids (shared/poolVoiceIds.ts LEGACY_VOICE_IDS).
  * Closed set; transcribed from that module's section comments.
  */
 const LEGACY_VOICE_GENDER: Record<string, VoiceGender> = {

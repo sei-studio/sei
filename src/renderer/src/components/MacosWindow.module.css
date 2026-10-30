@@ -1,6 +1,6 @@
 /* MacosWindow.module.css — terminal window chrome.
  *
- * Source: .planning/UI-DESIGN-SYSTEM.md §Window shell + D-32 (real macOS
+ * Source: docs/design/UI-DESIGN-SYSTEM.md §Window shell + D-32 (real macOS
  * traffic lights — no fake ones). Full-bleed dark; the vignette/grain live
  * in the .hud-overlays layer (global.css), mounted by MacosWindow.tsx.
  */

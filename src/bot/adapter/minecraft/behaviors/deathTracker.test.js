@@ -59,6 +59,8 @@ describe('trackDeaths', () => {
     expect(p.pos).toEqual({ x: 10, y: 64, z: -4 })
     expect(p.lost).toEqual([{ item: 'bread', n: 5 }, { item: 'stone_sword', n: 1 }])
     expect(p.keptAll).toBe(false)
+    // 261030 (pass 31): the dropped sword is remembered (weaponSelect lostWeaponUnarmed).
+    expect(bot._seiLostWeapon).toMatchObject({ weapon: 'stone_sword' })
     expect(Number.isFinite(p.diedAt)).toBe(true)
     // The fallback timer does not report it a second time.
     vi.advanceTimersByTime(10_000)
@@ -78,6 +80,7 @@ describe('trackDeaths', () => {
     bot.emit('spawn')
     vi.advanceTimersByTime(600)
     expect(death.mock.calls[0][0]).toMatchObject({ lost: [], keptAll: true })
+    expect(bot._seiLostWeapon ?? null).toBe(null)
   })
 
   it('reports anyway when no respawn spawn arrives, and carries a fresh game death message', () => {

@@ -8,7 +8,7 @@
  * pay nothing.
  *
  * Liveliness model (AIRI-informed, own constants — see
- * .planning/avatar-v06-260804.md):
+ * docs/design/avatar-v06-260804.md):
  *  - Breath/sway + blink come FREE from the Cubism SDK on a motionless model
  *    (import guarantees the EyeBlink group exists), physics on top.
  *  - Gaze (260806): alternates between WANDER (correlated random targets on

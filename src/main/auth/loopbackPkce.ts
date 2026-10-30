@@ -22,7 +22,8 @@
  *   - 10-RESEARCH §Pattern 2 (FULL code template — copied verbatim with
  *     opts.abortSignal integration added).
  *   - 10-RESEARCH §Pitfall A1 (exchange-in-main avoids #17722/#27181).
- *   - .planning/research/PITFALLS.md §Pitfall 4 (embedded-window OAuth incompat).
+ *   - Embedded-window OAuth is incompatible with Google sign-in, hence the
+ *     system browser + loopback redirect.
  *   - Google native-app guide: https://developers.google.com/identity/protocols/oauth2/native-app
  *   - RFC 8252 §7.3 (loopback accepts any port).
  *   - src/main/skinServer.ts (127.0.0.1 + port-0 idiom — same shape).

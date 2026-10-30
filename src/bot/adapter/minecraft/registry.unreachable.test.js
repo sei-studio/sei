@@ -171,24 +171,52 @@ describe('goTo and dig mark unreachable blocks (261015)', () => {
     digMock.mockResolvedValueOnce('out of range (5.7m, need ≤4.5) for oak_log @4,71,0')
     await reg.execute('dig', { x: 4, y: 71, z: 0 }, bot, {})
     expect(isUnreachable(bot, { x: 4, y: 71, z: 0 })).toBe(true)
+    // 261025: the dig walks first; a walk that timed out far away says
+    // nothing about the block.
+    goToMock.mockResolvedValueOnce('timeout')
     digMock.mockResolvedValueOnce('out of range (29.6m, need ≤4.5) for iron_ore @30,65,0')
-    await reg.execute('dig', { x: 30, y: 65, z: 0 }, bot, {})
+    const r = await reg.execute('dig', { x: 30, y: 65, z: 0 }, bot, {})
     expect(isUnreachable(bot, { x: 30, y: 65, z: 0 })).toBe(false)
+    expect(r).toMatch(/the walk toward it ended: timeout/)
   })
 
-  it('an out-of-range dig 5-8m off at her own level does not mark it (dig never walked there)', async () => {
+  it('dig walks into reach before digging, and an out-of-range dig after that walk marks the block (261025)', async () => {
     const reg = createDefaultRegistry()
     const { bot } = makeBot([[6, 65, 0, 'coal_ore'], [0, 66, 7, 'oak_log']])
+    goToMock.mockClear()
     digMock.mockResolvedValueOnce('out of range (5.6m, need ≤4.5) for coal_ore @6,65,0')
     await reg.execute('dig', { block: 'coal_ore' }, bot, {})
-    expect(isUnreachable(bot, { x: 6, y: 65, z: 0 })).toBe(false)
-    digMock.mockResolvedValueOnce('out of range (7.4m, need ≤4.5) for oak_log @0,66,7')
-    await reg.execute('dig', { x: 0, y: 66, z: 7 }, bot, {})
-    expect(isUnreachable(bot, { x: 0, y: 66, z: 7 })).toBe(false)
+    expect(goToMock).toHaveBeenCalledTimes(1)
+    expect(goToMock.mock.calls[0].slice(1, 4)).toEqual([6, 65, 0])
+    expect(goToMock.mock.calls[0][7]).toMatchObject({ reach: 4.2 })
+    expect(digMock).toHaveBeenLastCalledWith({ x: 6, y: 65, z: 0 }, bot, expect.anything())
+    expect(isUnreachable(bot, { x: 6, y: 65, z: 0 })).toBe(true)
     // Under the block (a log on the ledge right above her) still marks it.
     digMock.mockResolvedValueOnce('out of range (5.1m, need ≤4.5) for oak_log @1,67,0 — unreachable — try build to Y=67')
-    await reg.execute('dig', { block: 'oak_log' }, bot, {})
-    expect(isUnreachable(bot, { x: 1, y: 67, z: 0 })).toBe(true)
+    const { bot: bot2 } = makeBot([[1, 67, 0, 'oak_log']])
+    await reg.execute('dig', { block: 'oak_log' }, bot2, {})
+    expect(isUnreachable(bot2, { x: 1, y: 67, z: 0 })).toBe(true)
+  })
+
+  it('a dig within reach does not walk (261025)', async () => {
+    const reg = createDefaultRegistry()
+    const { bot } = makeBot([[2, 65, 0, 'coal_ore']])
+    goToMock.mockClear()
+    digMock.mockResolvedValueOnce('dug coal_ore')
+    await reg.execute('dig', { x: 2, y: 65, z: 0 }, bot, {})
+    expect(goToMock).not.toHaveBeenCalled()
+  })
+
+  it('a dig by name skips a block she could not reach a moment ago (261025)', async () => {
+    const reg = createDefaultRegistry()
+    const { bot } = makeBot([[2, 65, 0, 'coal_ore'], [3, 65, 2, 'coal_ore']])
+    noteUnreachable(bot, { x: 2, y: 65, z: 0 }, 'out of reach')
+    digMock.mockResolvedValueOnce('dug coal_ore')
+    await reg.execute('dig', { block: 'coal_ore' }, bot, {})
+    expect(digMock).toHaveBeenLastCalledWith({ x: 3, y: 65, z: 2 }, bot, expect.anything())
+    noteUnreachable(bot, { x: 3, y: 65, z: 2 }, 'out of reach')
+    const r = await reg.execute('dig', { block: 'coal_ore' }, bot, {})
+    expect(r).toMatch(/could not reach in the last few minutes/)
   })
 
   it('a respawn or a dimension change forgets every unreachable block', async () => {

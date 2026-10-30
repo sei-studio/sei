@@ -9,7 +9,7 @@
  * z-index tiers (keep to these three):
  *   1000 base (default) · 1100 stacked-above · 1200 recovery.
  *
- * Source: .planning/design/UI-REDESIGN-PARTY.md §1 (ModalShell).
+ * Source: docs/design/UI-REDESIGN-PARTY.md §1 (ModalShell).
  */
 
 import React, { useEffect } from 'react';

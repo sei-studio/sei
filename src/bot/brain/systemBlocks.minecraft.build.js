@@ -57,3 +57,14 @@ export async function buildMinecraftSystemFixture(memDir) {
     visionOff: capture(visionOff, bot),
   }
 }
+
+/**
+ * 261028 facepack pilot: the same base session with main's dev face flag on
+ * (config._seiFaces), for the test that pins what the flag adds.
+ */
+export async function buildMinecraftFacesCapture(memDir) {
+  const bot = { chat() {}, username: 'Sui', players: {}, on() {}, off() {}, removeListener() {}, once() {} }
+  const faces = ConfigSchema.parse(rawConfig(memDir))
+  faces._seiFaces = true
+  return capture(faces, bot)
+}

@@ -95,4 +95,20 @@ describe('chat.js multi-agent addressing', () => {
     solo.emit('chat', 'Ouen', 'marv get going')
     expect(soloEvents[0].suppressInterrupt).toBe(false)
   })
+
+  it('accented spellings address the folded login name (261027)', () => {
+    // Sofía joins as "Sofia" and Björn as "Bjorn"; players type the accents.
+    const sofia = makeBot('Sofia')
+    const ev = capture(sofia)
+    startChat(sofia, { player_display_name: 'Ouen', _seiCompanions: ['Bjorn'] }, null)
+    sofia.emit('chat', 'Ouen', 'sofía come here')
+    expect(ev[0].addressed).toBe(true)
+    expect(ev[0].suppressInterrupt).toBe(false)
+    sofia.emit('chat', 'Ouen', 'björn go mine')
+    expect(ev[1].addressed).toBe(false)
+    expect(ev[1].suppressInterrupt).toBe(true)
+    // A folded letter is still a name character: no false whole-word match.
+    sofia.emit('chat', 'Ouen', 'sofiaé')
+    expect(ev[2].addressed).toBe(false)
+  })
 })

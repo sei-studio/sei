@@ -9,6 +9,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { EventEmitter } from 'node:events'
 import pkg from 'mineflayer-pathfinder'
 import { startCombat } from './combat.js'
+import { noteLostWeapon } from './weaponSelect.js'
 import { startFollow, stopFollow, pauseFollow } from './follow.js'
 
 const { goals } = pkg
@@ -96,5 +97,36 @@ describe('retaliation keeps the walk and the follow target', () => {
     bot.emit('entityHurt', bot.entity, bot._zombie)
     vi.advanceTimersByTime(600)
     expect(bot.look).toHaveBeenCalled()
+  })
+})
+
+// 261030 (quality pass 31): after a death took her weapon the turn says get
+// away, and the 250ms swing-back loop turning her to the mob fought it. A bot
+// that never had a weapon keeps swinging back (dev).
+describe('own-hit swing-back after a death took her weapon', () => {
+  it('never had a weapon: swings back as on dev', () => {
+    vi.useFakeTimers()
+    const bot = makeBot()
+    startCombat(bot, cfg)
+    bot.emit('entityHurt', bot.entity, bot._zombie)
+    vi.advanceTimersByTime(300)
+    expect(pauseFollow).toHaveBeenCalledTimes(1)
+    expect(bot.look).toHaveBeenCalled()
+  })
+
+  it('lost her weapon on death: the hit is reported, no swing-back, the trail is kept', () => {
+    vi.useFakeTimers()
+    const bot = makeBot()
+    noteLostWeapon(bot, [{ item: 'iron_sword', n: 1 }])
+    const seen = []
+    bot.on('sei:attacked', (p) => seen.push(p))
+    startCombat(bot, cfg)
+    bot.emit('entityHurt', bot.entity, bot._zombie)
+    vi.advanceTimersByTime(1500)
+    expect(seen).toHaveLength(1)
+    expect(seen[0].attackerKind).toBe('hostile_mob')
+    expect(pauseFollow).not.toHaveBeenCalled()
+    expect(bot.look).not.toHaveBeenCalled()
+    expect(bot.attack).not.toHaveBeenCalled()
   })
 })

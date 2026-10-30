@@ -6,7 +6,7 @@
  * - palette[2..5] → body/head sprite tiers (deterministically picked per cell).
  *
  * Sources:
- * - First 6 palettes ported VERBATIM from .planning/.../design/project/app.jsx
+ * - First 6 palettes ported VERBATIM from the v0.1 design mockup app.jsx
  *   (`finishAddCharacter` palettes array, lines 135–142).
  * - Palette index 6 is the SUI default character's palette (app.jsx line 28),
  *   added so default Sui's portrait reproduces the prototype's sprite when the

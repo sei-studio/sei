@@ -10,16 +10,24 @@ import type { UpdateRailState } from '../lib/stores/useUpdateStore';
 
 vi.mock('../lib/ipcClient', () => ({ sei: {} }));
 const update: { rail: UpdateRailState | null; restart: () => void } = { rail: null, restart: () => undefined };
-vi.mock('../lib/stores/useUpdateStore', () => ({
-  useUpdateStore: Object.assign((sel: (s: typeof update) => unknown) => sel(update), { getState: () => update }),
-}));
+vi.mock('../lib/stores/useUpdateStore', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../lib/stores/useUpdateStore')>();
+  return {
+    ...real,
+    useUpdateStore: Object.assign((sel: (s: typeof update) => unknown) => sel(update), { getState: () => update }),
+  };
+});
 
 const { UpdateRailButton, liveSessionForRestart } = await import('./UpdateRailButton');
+const { ZH } = await import('../lib/i18n/zh');
+const { WINDOWS_UPDATE_NOTE } = await import('../lib/stores/useUpdateStore');
 
-const render = (rail: UpdateRailState | null): string => {
+const render = (rail: UpdateRailState | null, platform?: string): string => {
   update.rail = rail;
-  return renderToStaticMarkup(<UpdateRailButton />);
+  return renderToStaticMarkup(<UpdateRailButton platform={platform} />);
 };
+
+const WIN_NOTE = 'Updating takes about a minute on Windows. Sei reopens by itself.';
 
 describe('UpdateRailButton', () => {
   it('renders nothing without an update', () => {
@@ -45,6 +53,28 @@ describe('UpdateRailButton', () => {
     const html = render({ kind: 'restarting', version: '0.7.0' });
     expect(html).toContain('disabled');
     expect(html).toContain('Restarting');
+  });
+
+  it('on Windows says the update takes about a minute while restarting (261030)', () => {
+    const html = render({ kind: 'restarting', version: '0.7.0' }, 'win32');
+    expect(html).toContain(WIN_NOTE);
+    expect(html).toContain('role="status"');
+  });
+
+  it('keeps macOS without the Windows note', () => {
+    expect(render({ kind: 'restarting', version: '0.7.0' }, 'darwin')).not.toContain(WIN_NOTE);
+    expect(render({ kind: 'ready', version: '0.7.0' }, 'darwin')).not.toContain(WIN_NOTE);
+  });
+
+  it('shows no note before the click', () => {
+    expect(render({ kind: 'ready', version: '0.7.0' }, 'win32')).not.toContain(WIN_NOTE);
+  });
+
+  it('has a zh translation for the Windows note', () => {
+    // SSR reads the language store's initial (en) snapshot, so check the
+    // dictionary the zh UI looks the key up in.
+    expect(WINDOWS_UPDATE_NOTE).toBe(WIN_NOTE);
+    expect(ZH[WIN_NOTE]).toContain('大约需要一分钟');
   });
 });
 

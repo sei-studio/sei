@@ -16,6 +16,9 @@ import {
 } from './voiceIds';
 
 const OWN_ID = 'aBcDeFgHiJkLmNoPqRsT';
+// Sei pool voices: Josh (current pool) and Sarah (legacy, 260707 cut).
+const POOL_JOSH = 'NXaTw4ifg0LAguvKuIwZ';
+const LEGACY_SARAH = 'EXAVITQu4vr4xnSDxMaL';
 
 describe('isWellFormedVoiceId', () => {
   it('accepts ElevenLabs-style ids and rejects junk and sentinels', () => {
@@ -115,5 +118,29 @@ describe('voice for others (voiceShared)', () => {
     expect(sharedVoiceIdOf({ [SHARED_VOICE_KEY]: 7 })).toBeNull();
     expect(sharedVoiceIdOf({ [SHARED_VOICE_KEY]: '../x' })).toBeNull();
     expect(sharedVoiceIdOf(undefined)).toBeNull();
+  });
+});
+
+// 261024: v0.6.9 tagged a pool voice as an own voice when the user's
+// ElevenLabs library held a copy of it ("Sei — Josh").
+describe('a pool voice is never an own voice', () => {
+  it('ownVoiceOf ignores a stale marker beside a pool or legacy id', () => {
+    expect(ownVoiceOf({ voiceId: POOL_JOSH, voiceOwn: { name: 'Sei — Josh', gender: 'male' } })).toBeNull();
+    expect(ownVoiceOf({ voiceId: LEGACY_SARAH, voiceOwn: { name: 'Sarah' } })).toBeNull();
+    expect(ownVoiceOf({ voiceId: OWN_ID, voiceOwn: { name: 'Mine' } })).toEqual({ name: 'Mine' });
+  });
+
+  it('applyVoicePick never stamps the marker on a pool id', () => {
+    expect(applyVoicePick({}, POOL_JOSH, { name: 'Sei — Josh', gender: 'male' })).toEqual({ voiceId: POOL_JOSH });
+  });
+
+  it('re-saving a stale-tagged pool voice clears the marker and the voice for others', () => {
+    const stale = { voiceId: POOL_JOSH, [OWN_VOICE_KEY]: { name: 'Sei — Josh' }, [SHARED_VOICE_KEY]: 'SOYHLrjzK2X1ezoPC6cr' };
+    expect(applyVoicePick(stale, POOL_JOSH, ownVoiceOf(stale))).toEqual({ voiceId: POOL_JOSH });
+  });
+
+  it('applySharedVoicePick ignores a stale-tagged pool voice', () => {
+    const stale = { voiceId: POOL_JOSH, [OWN_VOICE_KEY]: { name: 'Sei — Josh' } };
+    expect(applySharedVoicePick(stale, 'SOYHLrjzK2X1ezoPC6cr')[SHARED_VOICE_KEY]).toBeUndefined();
   });
 });

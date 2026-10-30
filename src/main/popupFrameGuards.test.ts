@@ -50,14 +50,25 @@ type Listener = (...args: unknown[]) => void;
 function fakeWindow() {
   const listeners = new Map<string, Listener>();
   const sent: string[] = [];
+  /** Every send with its arguments. */
+  const sentArgs: unknown[][] = [];
   let openHandler: ((d: { url: string }) => { action: string }) | null = null;
-  const mainFrame = { url: 'http://localhost:5173/' };
+  const mainFrame = {
+    url: 'http://localhost:5173/',
+    /** The window's frames, main frame first (Electron's framesInSubtree). */
+    framesInSubtree: [] as { url: string }[],
+  };
+  mainFrame.framesInSubtree = [mainFrame];
   const wc = {
     id: 7,
     mainFrame,
     focusedFrame: mainFrame as { url: string } | null,
+    isDestroyed: () => false,
     on: (ev: string, fn: Listener) => listeners.set(ev, fn),
-    send: (ch: string) => sent.push(ch),
+    send: (ch: string, ...args: unknown[]) => {
+      sent.push(ch);
+      sentArgs.push([ch, ...args]);
+    },
     setWindowOpenHandler: (fn: typeof openHandler) => {
       openHandler = fn;
     },
@@ -66,6 +77,11 @@ function fakeWindow() {
     win: { webContents: wc } as never,
     wc,
     sent,
+    sentArgs,
+    /** Put a committed popup page in a subframe (or take it away). */
+    setPopupFrame: (url: string | null) => {
+      mainFrame.framesInSubtree = url ? [mainFrame, { url }] : [mainFrame];
+    },
     emit: (ev: string, ...args: unknown[]) => listeners.get(ev)?.(...args),
     open: (url: string) => openHandler?.({ url }),
   };
@@ -159,6 +175,98 @@ describe('subframe navigation lock', () => {
     const on = nav('https://sei.gg/popup/other');
     emit('will-redirect', on);
     expect(on.preventDefault).not.toHaveBeenCalled();
+  });
+});
+
+describe('action links', () => {
+  const ACTION = 'https://sei.gg/popup/_action/chatgpt-plan';
+  const nav = (url: string, from = POPUP) => ({
+    url,
+    isMainFrame: false,
+    frame: { url: from },
+    preventDefault: vi.fn(),
+  });
+
+  it('a click in the popup frame is cancelled and sent to the renderer, never the browser', async () => {
+    const { emit, sentArgs } = await setup();
+    const d = nav(ACTION);
+    emit('will-frame-navigate', d);
+    expect(d.preventDefault).toHaveBeenCalled();
+    expect(sentArgs).toEqual([['app:startup-popup-action', 'chatgpt-plan']]);
+    await Promise.resolve();
+    expect(h.opened).toEqual([]);
+  });
+
+  it('ignores the query and hash: the action takes no parameters', async () => {
+    const { emit, sentArgs } = await setup();
+    emit('will-frame-navigate', nav(`${ACTION}?account=x#y`));
+    expect(sentArgs).toEqual([['app:startup-popup-action', 'chatgpt-plan']]);
+  });
+
+  it('drops an unknown action: cancelled, nothing sent, no browser tab', async () => {
+    const { emit, sent } = await setup();
+    for (const url of [
+      'https://sei.gg/popup/_action/delete-everything',
+      'https://sei.gg/popup/_action/',
+      'https://sei.gg/popup/_action/chatgpt-plan/extra',
+    ]) {
+      const d = nav(url);
+      emit('will-frame-navigate', d);
+      expect(d.preventDefault).toHaveBeenCalled();
+    }
+    expect(sent).toEqual([]);
+    await Promise.resolve();
+    expect(h.opened).toEqual([]);
+  });
+
+  it('ignores an action from a frame that is not showing a popup page', async () => {
+    const { emit, sent } = await setup();
+    for (const from of ['', 'about:blank', 'https://example.com/', 'https://sei.gg/pricing']) {
+      const d = nav(ACTION, from);
+      emit('will-frame-navigate', d);
+      expect(d.preventDefault).toHaveBeenCalled();
+    }
+    emit('will-frame-navigate', { url: ACTION, isMainFrame: false, frame: null, preventDefault: vi.fn() });
+    expect(sent).toEqual([]);
+    await Promise.resolve();
+    expect(h.opened).toEqual([]);
+  });
+
+  it('only the real popup host counts: a look-alike action url is an ordinary link', async () => {
+    const { emit, sent } = await setup();
+    const d = nav('https://sei.gg.evil.example/popup/_action/chatgpt-plan');
+    emit('will-frame-navigate', d);
+    expect(d.preventDefault).toHaveBeenCalled();
+    expect(sent).toEqual([]);
+    await Promise.resolve();
+    expect(h.opened).toEqual(['https://sei.gg.evil.example/popup/_action/chatgpt-plan']);
+  });
+
+  it('target=_blank: runs only while a popup page is committed in a subframe', async () => {
+    const { open, sentArgs, setPopupFrame } = await setup();
+    // No popup frame in the window: dropped.
+    expect(open(ACTION)).toEqual({ action: 'deny' });
+    expect(sentArgs).toEqual([]);
+    // A non-popup subframe does not count either.
+    setPopupFrame('https://example.com/');
+    expect(open(ACTION)).toEqual({ action: 'deny' });
+    expect(sentArgs).toEqual([]);
+    setPopupFrame(POPUP);
+    expect(open(ACTION)).toEqual({ action: 'deny' });
+    expect(sentArgs).toEqual([['app:startup-popup-action', 'chatgpt-plan']]);
+    // An unknown name is still dropped with a popup up.
+    expect(open('https://sei.gg/popup/_action/nope')).toEqual({ action: 'deny' });
+    expect(sentArgs).toHaveLength(1);
+    await Promise.resolve();
+    expect(h.opened).toEqual([]);
+  });
+
+  it('a redirect to an action url is cancelled (an action is never a page)', async () => {
+    const { emit, sent } = await setup();
+    const d = nav(ACTION);
+    emit('will-redirect', d);
+    expect(d.preventDefault).toHaveBeenCalled();
+    expect(sent).toEqual([]);
   });
 });
 

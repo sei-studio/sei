@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { mcUsernameFromName } from '../bot/names.js';
 
 /**
  * 260516-0yw: persona is now an object with `source` (user's short blurb,
@@ -64,7 +65,7 @@ export type Skin = z.infer<typeof SkinSchema>;
  *
  * `skin` (SkinSchema) + `username` (per-persona MC in-game name): `username`
  * is null by default so existing bot connect logic
- * (`sanitizeMcName(character.name)` in src/bot/index.js) keeps working until
+ * (`effectiveMcUsername` below: the name with accents folded) keeps working until
  * the user sets one in the SkinEditor. Regex `^[A-Za-z0-9_]+$` + 16-char cap
  * match Minecraft's username constraints.
  */
@@ -340,9 +341,11 @@ export function missingPrefQuestions(profile: UserPreferences | null | undefined
 
 /**
  * The in-game Minecraft username a summoned bot connects under: the per-persona
- * `username` when set, else the persona `name` sanitized to MC's constraints
- * ([A-Za-z0-9_], ≤16 chars, non-empty → 'Sei'). Mirrors the bot's own
- * derivation in src/bot/index.js (`sanitizeMcName`) so callers in main and
+ * `username` when set, else the persona `name` with accented Latin letters
+ * folded to plain ones ("Sofía" -> "Sofia", 261027) and then sanitized to MC's
+ * constraints ([A-Za-z0-9_], ≤16 chars, non-empty → 'Sei'). The derivation is
+ * src/bot/names.js `mcUsernameFromName`, the same function the bot's
+ * botUsernameFor (adapter/minecraft/runtime.js) calls, so callers in main and
  * renderer compute the SAME name the bot will actually use — used by the
  * multi-summon duplicate-name guard (two bots can't share a username; the
  * server kicks the second with `multiplayer.disconnect.name_taken`).
@@ -350,8 +353,7 @@ export function missingPrefQuestions(profile: UserPreferences | null | undefined
 export function effectiveMcUsername(c: Pick<Character, 'username' | 'name'>): string {
   const u = (c.username ?? '').trim();
   if (u) return u;
-  const cleaned = String(c.name || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 16);
-  return cleaned || 'Sei';
+  return mcUsernameFromName(c.name);
 }
 
 /**

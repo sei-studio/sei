@@ -6,14 +6,20 @@
  * "Restart now" / "Later" that was easy to dismiss and forget; now it is a
  * full-width, high-contrast block at the foot of the rail that stays until
  * the update is installed. One click restarts into the new version (on
- * Windows the installer runs silently and reopens Sei, see
- * src/main/updateInstall.ts).
+ * Windows the installer shows its small "Installing, please wait" window and
+ * reopens Sei, see src/main/updateInstall.ts).
  *
  *   downloading  quiet: a hairline progress bar, no click target. Downloads
  *                stay background work (a mandatory patch download was never
  *                asked for, so it must not shout).
  *   ready        the gradient button.
- *   restarting   same button, spinning icon, disabled.
+ *   restarting   same button, spinning icon, disabled. On Windows a note
+ *                beside it says the update takes about a minute and Sei
+ *                reopens by itself (261030); Sei's own update progress
+ *                window then covers the install (src/main/
+ *                windowsUpdateInstall.ts). The Windows install takes ~100 s
+ *                against ~12 s on macOS, and a window that just vanishes for
+ *                that long reads as a crash.
  *
  * A click while a call, a Minecraft companion, or a game is live asks first,
  * because the restart ends it. Otherwise it restarts straight away.
@@ -21,7 +27,8 @@
 import React, { useState } from 'react';
 import type { DrawGameState } from '@shared/drawIpc';
 import { useT } from '../lib/i18n';
-import { useUpdateStore } from '../lib/stores/useUpdateStore';
+import { sei } from '../lib/ipcClient';
+import { WINDOWS_UPDATE_NOTE, showsWindowsUpdateNote, useUpdateStore } from '../lib/stores/useUpdateStore';
 import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useChessStore } from '../lib/stores/useChessStore';
@@ -58,10 +65,13 @@ export function liveSessionForRestart(s: LiveSessionInputs): LiveSession {
 export interface UpdateRailButtonProps {
   /** The rail's shared floating tooltip (label + y anchor), when hosted there. */
   setHover?: (s: { label: string; y: number } | null) => void;
+  /** Host OS (`process.platform`); defaults to the preload's. Tests pass it. */
+  platform?: string;
 }
 
-export function UpdateRailButton({ setHover }: UpdateRailButtonProps): React.ReactElement | null {
+export function UpdateRailButton({ setHover, platform }: UpdateRailButtonProps): React.ReactElement | null {
   const t = useT();
+  const winNote = showsWindowsUpdateNote(platform ?? sei.platform);
   const rail = useUpdateStore((s) => s.rail);
   const restart = useUpdateStore((s) => s.restart);
   const callStatus = useVoiceStore((s) => s.status);
@@ -133,6 +143,12 @@ export function UpdateRailButton({ setHover }: UpdateRailButtonProps): React.Rea
         <span className={styles.label}>{restarting ? t('Restarting') : t('Update Sei')}</span>
       </button>
 
+      {restarting && winNote ? (
+        <div className={styles.restartNote} role="status">
+          {t(WINDOWS_UPDATE_NOTE)}
+        </div>
+      ) : null}
+
       {confirm ? (
         <ModalShell title={t('Restart to update?')} onClose={() => setConfirm(null)} scrimClose>
           <p className={styles.confirmBody}>
@@ -140,6 +156,7 @@ export function UpdateRailButton({ setHover }: UpdateRailButtonProps): React.Rea
               ? t('Sei closes and reopens to finish the update, which ends your call.')
               : t('Sei closes and reopens to finish the update, which ends what your companions are doing right now.')}
           </p>
+          {winNote ? <p className={styles.confirmNote}>{t(WINDOWS_UPDATE_NOTE)}</p> : null}
           <ModalFooter>
             <Button kind="quiet" size="md" onClick={() => setConfirm(null)}>
               {t('Not now')}

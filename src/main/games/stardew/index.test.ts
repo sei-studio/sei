@@ -12,6 +12,9 @@ describe('stardew game module', () => {
     expect(effectiveStardewName({ name: 'Sui', username: null })).toBe('Sui');
     expect(effectiveStardewName({ name: 'Marv!!', username: '' })).toBe('Marv');
     expect(effectiveStardewName({ name: '', username: '' })).toBe('Sei');
+    expect(effectiveStardewName({ name: 'Martín Salazar', username: null })).toBe('Martin Salazar');
+    expect(effectiveStardewName({ name: 'Lucía', username: '' })).toBe('Lucia');
+    expect(effectiveStardewName({ name: '晨辉 (Chénhuī)', username: null })).toBe('Chenhui');
     const mod = createStardewGameModule();
     expect(mod.id).toBe('stardew');
     expect(mod.displayName).toBe('Stardew Valley');

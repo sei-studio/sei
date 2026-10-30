@@ -254,6 +254,11 @@
  *   A clearGoal in the same turn as a hand-over runs only after every
  *   hand-over in that turn returned true (261015). Minecraft: give.
  *   Default: no hand-over action.
+ * @property {(name: string, resultText: string) => ({item: string, n: number, to: string|null} | null)} [handOverDetail]
+ *   What a hand-over that went through gave and to whom, or null (not a
+ *   hand-over, or it failed). When the adapter has it, the conversation
+ *   transcript ends on the session's hand-over line (261026). Minecraft:
+ *   give's "gave N item to NAME, ...". Default: absent, no hand-over line.
  * @property {() => string}                                                [surfaceBaseline]
  *   The game-surface half of the cached system block [0]. The brain composes
  *   `${UNIVERSAL_BASELINE}\n\n${surfaceBaseline()}`. Default MINECRAFT_BASELINE.

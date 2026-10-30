@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CharacterSchema, UserConfigSchema, cloudAvatarOf } from './characterSchema';
+import { CharacterSchema, UserConfigSchema, cloudAvatarOf, effectiveMcUsername } from './characterSchema';
 
 /**
  * Plan 11-03 Task 1 — Schema contract tests for the UUID identity model,
@@ -170,5 +170,25 @@ describe('cloudAvatarOf', () => {
     expect(
       cloudAvatarOf({ metadata: { avatar: { url: 'file:///etc/passwd', size_bytes: 100 } } }),
     ).toBeNull();
+  });
+});
+
+describe('effectiveMcUsername — accented names fold, never drop (261027)', () => {
+  it('replaces accented letters with plain ones', () => {
+    expect(effectiveMcUsername({ username: null, name: 'Sofía' })).toBe('Sofia');
+    expect(effectiveMcUsername({ username: null, name: 'Lucía' })).toBe('Lucia');
+    expect(effectiveMcUsername({ username: null, name: 'Élodie' })).toBe('Elodie');
+    expect(effectiveMcUsername({ username: null, name: 'Søren Straße' })).toBe('SorenStrasse');
+  });
+
+  it('an explicit username still wins, untouched', () => {
+    expect(effectiveMcUsername({ username: 'Sofa_1', name: 'Sofía' })).toBe('Sofa_1');
+    expect(effectiveMcUsername({ username: '  Nova  ', name: 'Élodie' })).toBe('Nova');
+  });
+
+  it('non-Latin names behave as before', () => {
+    expect(effectiveMcUsername({ username: null, name: '诗诗' })).toBe('Sei');
+    expect(effectiveMcUsername({ username: null, name: 'Йордан' })).toBe('Sei');
+    expect(effectiveMcUsername({ username: null, name: '민지 (Min-ji)' })).toBe('Minji');
   });
 });

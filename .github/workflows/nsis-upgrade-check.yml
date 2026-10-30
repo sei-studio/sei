@@ -9,16 +9,22 @@ name: NSIS Upgrade Check
 # starts. It also prints the Authenticode signature of the stable installer and
 # app (SmartScreen evidence).
 #
-# The two update paths and their arguments (261023, src/main/updateInstall.ts):
-#   in-app "Update Sei"  quitAndInstall(true, true) = --updated /S --force-run
-#                        no installer window, Sei must REOPEN by itself
-#   update on quit       autoInstallOnAppQuit       = --updated /S
+# The two update paths and their arguments (src/main/updateInstall.ts):
+#   in-app "Update Sei"  quitAndInstall(false, true) = --updated --force-run
+#                        (261030; it was --updated /S --force-run from 261023)
+#                        the one-click "Installing, please wait" progress
+#                        window MUST show, with nothing to click, and Sei must
+#                        REOPEN by itself
+#   update on quit       autoInstallOnAppQuit        = --updated /S
 #                        no installer window, Sei must NOT reopen
-# Every upgrade run watches for visible windows from anything but Sei itself
-# (the old one-click banner, a wizard page, an error box) and fails on one,
-# and times how long the user waits from the installer starting to Sei
-# being back ("relaunched after Ns"), which is the blank gap a real user sits
-# through after clicking Update Sei.
+# Every upgrade run watches for visible windows. On the in-app path the
+# installer's own window is expected (time to first window = how long the user
+# sees nothing), but a window from any other process fails the run, and so
+# does any enabled button inside the installer's windows (UI Automation): the
+# progress banner has none, so a button means an error box, a "close Sei" box
+# or a wizard page. On the update-on-quit path any window fails. Each run also
+# times the installer start to Sei being back ("relaunched after Ns").
+# peruser-default uploads screenshots of the in-app path (oneclick-upgrade-shots).
 #
 # Scenarios (the old ASSISTED installer's reachable choices):
 #   peruser-default  per-user, default folder (%LOCALAPPDATA%\Programs\Sei),
@@ -32,8 +38,8 @@ name: NSIS Upgrade Check
 #   peruser-quit     per-user, update on quit: must not reopen Sei
 #   permachine       "Anyone who uses this computer": HKLM + Program Files,
 #                    removed by build/installer.nsh customInstall on the in-app
-#                    restart (silent, but --force-run marks it as user-started).
-#                    Asserts the HKCU try-once marker is set afterwards.
+#                    restart (not silent, so user-started; --force-run would
+#                    also count). Asserts the HKCU try-once marker is set.
 #   permachine-silent  same install, update on quit (--updated /S, no
 #                    --force-run): the per-machine copy must be LEFT alone and
 #                    the marker left unset, so the attempt waits for an
@@ -47,6 +53,28 @@ name: NSIS Upgrade Check
 # Runner caveat: GitHub's Windows runners are admin with UAC off, so the admin
 # prompt a real per-machine user sees for the old uninstaller cannot appear here.
 #
+# Sei's own update progress window (261030, src/main/updateProgressHelper.ts,
+# resources/update-progress/update-progress.ps1), recorded as VIDEO
+# (ffmpeg gdigrab) plus stills, by scripts/ci/update-progress-check.ps1:
+#   progress-upgrade  the real path: the stable release installed and running,
+#                     the window started through the real launcher
+#                     (scripts/ci/update-progress-launch.ts), then this branch's
+#                     installer with `--updated /S --force-run` under it, the
+#                     arguments of quitAndInstall(true, true). Asserts the window
+#                     is up inside the ready budget (12 s, 20 s once WPF loaded),
+#                     no installer window, Sei back, the window gone once Sei's
+#                     window shows, the bundled fonts in use, the window in the
+#                     bottom-right corner of the work area. Artifact update-progress-upgrade.
+#   progress-preview  stand-in installer and Sei (compiled on the runner, no
+#                     build needed), one run per theme/language, one with
+#                     animations off (reduced motion), one running past its
+#                     estimate ("taking longer"), and `blocked`: a machine
+#                     ExecutionPolicy (what a Group Policy sets) must make the
+#                     launcher report not-ready fast, i.e. the stock installer
+#                     window fallback. Artifacts update-progress-<variant>.
+# Dispatch with suite=progress to run only these (and the build), or
+# suite=preview for progress-preview alone (no build, a few minutes).
+#
 # Run it from the Actions tab (workflow_dispatch), or push to a nsischeck/**
 # branch. It never publishes anything.
 on:
@@ -58,6 +86,12 @@ on:
         description: 'Stable release to upgrade from'
         required: false
         default: 'v0.6.4'
+      suite:
+        description: 'all = every scenario; progress = only the update progress window jobs; preview = only the stand-in progress previews (no build)'
+        required: false
+        default: 'all'
+        type: choice
+        options: [all, progress, preview]
 
 permissions:
   contents: read
@@ -67,6 +101,7 @@ env:
 
 jobs:
   build:
+    if: inputs.suite != 'preview'
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -107,6 +142,7 @@ jobs:
 
   upgrade:
     needs: build
+    if: inputs.suite != 'progress' && inputs.suite != 'preview'
     runs-on: windows-latest
     timeout-minutes: 30
     strategy:
@@ -242,14 +278,56 @@ jobs:
           $keepsLegacy = $env:SCENARIO -in @('permachine-silent', 'permachine-tried')
 
           $new = (Resolve-Path new\Sei-win-x64.exe).Path
-          # in-app "Update Sei" = --updated /S --force-run; update on quit = --updated /S
+          # in-app "Update Sei" = --updated --force-run (progress window); update on quit = --updated /S
           $newArgs = switch -Wildcard ($env:SCENARIO) {
             'fresh'             { @('/S') }
             'peruser-quit'      { @('--updated', '/S') }
             'permachine-silent' { @('--updated', '/S') }
-            default             { @('--updated', '/S', '--force-run') }
+            default             { @('--updated', '--force-run') }
           }
           $expectRelaunch = $newArgs -contains '--force-run'
+          $expectWindow = $newArgs -notcontains '/S'
+
+          # Enabled, on-screen buttons in the installer's top-level windows,
+          # title-bar buttons excluded. The one-click progress banner has no
+          # buttons; an NSIS message box or wizard page does.
+          Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+          $uia = [System.Windows.Automation.AutomationElement]
+          $btnCond = New-Object System.Windows.Automation.PropertyCondition($uia::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
+          $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+          $script:uiaWindowsSeen = 0
+          function Get-InstallerButtons([int]$procId) {
+            $found = @()
+            try {
+              $pc = New-Object System.Windows.Automation.PropertyCondition($uia::ProcessIdProperty, $procId)
+              $wins = $uia::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $pc)
+              $script:uiaWindowsSeen = [math]::Max($script:uiaWindowsSeen, $wins.Count)
+              foreach ($w in $wins) {
+                foreach ($b in $w.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond)) {
+                  $parent = $walker.GetParent($b)
+                  if ($parent -and $parent.Current.ControlType -eq [System.Windows.Automation.ControlType]::TitleBar) { continue }
+                  if (-not $b.Current.IsOffscreen -and $b.Current.IsEnabled) { $found += "'$($w.Current.Name)' button '$($b.Current.Name)'" }
+                }
+              }
+            } catch { }
+            return $found
+          }
+          $shotDir = Join-Path $env:GITHUB_WORKSPACE 'shots'
+          $takeShots = $env:SCENARIO -eq 'peruser-default'
+          if ($takeShots) {
+            Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+            New-Item -ItemType Directory -Force -Path $shotDir | Out-Null
+          }
+          function Shot([string]$name) {
+            try {
+              $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+              $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+              $g = [System.Drawing.Graphics]::FromImage($bmp)
+              $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+              $bmp.Save((Join-Path $shotDir "$name.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+              $g.Dispose(); $bmp.Dispose()
+            } catch { "screenshot failed: $_" }
+          }
 
           if ($env:SCENARIO -eq 'peruser-running') {
             # Leave the old Sei running into the install, as the in-app restart
@@ -267,18 +345,38 @@ jobs:
           $sw = [Diagnostics.Stopwatch]::StartNew()
           $p = Start-Process -FilePath $new -ArgumentList $newArgs -PassThru
           $null = $p.Handle  # cache the handle, or ExitCode reads empty without -Wait
-          # Watch for (1) any visible window that is not Sei itself, and (2) Sei
-          # coming back, until the installer is done and the relaunch window
-          # (60s after it exits) has passed.
+          # Watch for (1) any visible window that is not Sei itself (split into
+          # the installer's own and everything else), (2) buttons in the
+          # installer's windows, and (3) Sei coming back, until the installer
+          # is done and the relaunch window (60s after it exits) has passed.
           $windows = @{}
+          $installerWindowAt = $null
+          $buttons = @{}
           $relaunchAt = $null
           $exitedAt = $null
+          $nextShot = 0
+          $shotIndex = 0
           while ($true) {
             Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and $_.ProcessName -ne 'Sei' } | ForEach-Object {
               $title = $_.MainWindowTitle
-              if ($title -match 'Sei|Setup|Install|Uninstall' -and -not $windows.ContainsKey("$($_.ProcessName): $title")) {
+              if ($_.Id -eq $p.Id) {
+                if ($null -eq $installerWindowAt) {
+                  $installerWindowAt = $sw.Elapsed.TotalSeconds
+                  "installer window after $([math]::Round($installerWindowAt, 1))s: '$title'"
+                }
+              } elseif ($title -match 'Sei|Setup|Install|Uninstall' -and -not $windows.ContainsKey("$($_.ProcessName): $title")) {
                 $windows["$($_.ProcessName): $title"] = [math]::Round($sw.Elapsed.TotalSeconds, 1)
               }
+            }
+            if (-not $p.HasExited) {
+              foreach ($b in (Get-InstallerButtons $p.Id)) {
+                if (-not $buttons.ContainsKey($b)) { $buttons[$b] = [math]::Round($sw.Elapsed.TotalSeconds, 1) }
+              }
+            }
+            if ($takeShots -and $null -eq $exitedAt -and $sw.Elapsed.TotalSeconds -ge $nextShot -and $shotIndex -lt 60) {
+              Shot ('{0:d3}-{1:n1}s' -f $shotIndex, $sw.Elapsed.TotalSeconds)
+              $shotIndex++
+              $nextShot = $sw.Elapsed.TotalSeconds + 3
             }
             if ($null -eq $relaunchAt) {
               $back = Get-Process -Name 'Sei' -ErrorAction SilentlyContinue | Where-Object { try { $_.StartTime -gt $installStart } catch { $false } }
@@ -294,11 +392,22 @@ jobs:
           if ($null -ne $relaunchAt) { "Sei relaunched after $([int]$relaunchAt)s (installer start to new Sei process)" } else { 'Sei did not relaunch' }
           if ($expectRelaunch -and $null -eq $relaunchAt) { $failures += 'Sei did not reopen after an in-app restart (--force-run)' }
           if (-not $expectRelaunch -and $env:SCENARIO -ne 'fresh' -and $null -ne $relaunchAt) { $failures += 'Sei reopened after an update-on-quit install' }
+          if ($takeShots) { Shot 'zz-after-relaunch' }
           if ($windows.Count -gt 0) {
-            'Visible windows during the install:'
+            'Visible windows from other processes during the install:'
             $windows.GetEnumerator() | ForEach-Object { "  $($_.Key) at $($_.Value)s" }
-            if ($env:SCENARIO -ne 'fresh') { $failures += "a window showed during a silent update: $($windows.Keys -join '; ')" }
-          } else { 'No installer window during the install.' }
+            if ($env:SCENARIO -ne 'fresh') { $failures += "a window from another process showed during the update: $($windows.Keys -join '; ')" }
+          } else { 'No window from another process during the install.' }
+          "UI Automation saw up to $script:uiaWindowsSeen installer top-level window(s)"
+          if ($buttons.Count -gt 0) {
+            'Buttons in the installer windows:'
+            $buttons.GetEnumerator() | ForEach-Object { "  $($_.Key) at $($_.Value)s" }
+            $failures += "the installer showed something to click: $($buttons.Keys -join '; ')"
+          } else { 'No buttons in the installer windows.' }
+          if ($null -ne $installerWindowAt) {
+            if ($expectWindow) { "progress window up after $([math]::Round($installerWindowAt, 1))s (the gap with nothing on screen)" }
+            elseif ($env:SCENARIO -ne 'fresh') { $failures += "the installer showed a window during a silent update-on-quit run" }
+          } elseif ($expectWindow) { $failures += 'no installer progress window during the in-app update' }
           if ($env:SCENARIO -eq 'peruser-running' -and -not $running.HasExited) { $failures += 'the old Sei was still running after the install' }
           Start-Sleep -Seconds 3
           Stop-Sei
@@ -380,12 +489,22 @@ jobs:
           }
           "PASS: $env:SCENARIO"
 
+      - name: Upload in-app update screenshots
+        if: always() && matrix.scenario == 'peruser-default'
+        uses: actions/upload-artifact@v4
+        with:
+          name: oneclick-upgrade-shots
+          path: shots
+          if-no-files-found: ignore
+          retention-days: 3
+
   # What a person sees: the one-click installer run NON-silently on a clean
   # runner, with a screenshot about every 1.5 s until it exits, and the time to
   # its first visible window. The runner session is interactive enough for
   # CopyFromScreen; if the frames come out black, the timing still stands.
   ui:
     needs: build
+    if: inputs.suite != 'progress' && inputs.suite != 'preview'
     runs-on: windows-latest
     steps:
       - name: Download new installer
@@ -438,3 +557,110 @@ jobs:
           name: oneclick-ui-shots
           path: shots
           retention-days: 3
+
+  # Sei's update progress window over the real installer (see the header).
+  progress-upgrade:
+    needs: build
+    if: inputs.suite != 'preview'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Bundle the launcher driver
+        shell: bash
+        run: npx --yes esbuild@0.25.12 scripts/ci/update-progress-launch.ts --bundle --platform=node --outfile=upl.cjs
+
+      - name: Install ffmpeg
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { choco install ffmpeg -y --no-progress | Select-Object -Last 3 }
+          ffmpeg -hide_banner -version | Select-Object -First 1
+
+      - name: Download new installer
+        uses: actions/download-artifact@v4
+        with:
+          name: oneclick-installer
+          path: new
+
+      # From the newest one-click stable (STABLE_TAG is the old assisted
+      # installer, for the migration scenarios above): the in-app update only
+      # ever runs from a one-click install.
+      - name: Download stable installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = gh release list -R $env:GITHUB_REPOSITORY --exclude-drafts --exclude-pre-releases -L 1 --json tagName -q '.[0].tagName'
+          "upgrading from $tag"
+          gh release download $tag -R $env:GITHUB_REPOSITORY -p 'Sei-win-x64.exe' -D old
+
+      - name: Update under the progress window (recorded)
+        shell: powershell
+        run: |
+          & .\scripts\ci\update-progress-check.ps1 -Mode upgrade -Theme midnight -Lang en -NewInstaller new\Sei-win-x64.exe -OldInstaller old\Sei-win-x64.exe -OutDir progress-out
+          exit $LASTEXITCODE
+
+      - name: Upload video and stills
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: update-progress-upgrade
+          path: progress-out
+          if-no-files-found: ignore
+          retention-days: 7
+
+  progress-preview:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { variant: midnight-en, theme: midnight, lang: en, seconds: 100, history: '', reduced: false, blocked: false }
+          - { variant: ice-zh, theme: ice, lang: zh, seconds: 60, history: '60', reduced: false, blocked: false }
+          - { variant: acorn-en-reduced-motion, theme: acorn, lang: en, seconds: 50, history: '50', reduced: true, blocked: false }
+          - { variant: mint-zh-late, theme: mint, lang: zh, seconds: 90, history: '45', reduced: false, blocked: false }
+          - { variant: blocked-fallback, theme: midnight, lang: en, seconds: 30, history: '', reduced: false, blocked: true }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Bundle the launcher driver
+        shell: bash
+        run: npx --yes esbuild@0.25.12 scripts/ci/update-progress-launch.ts --bundle --platform=node --outfile=upl.cjs
+
+      - name: Install ffmpeg
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { choco install ffmpeg -y --no-progress | Select-Object -Last 3 }
+          ffmpeg -hide_banner -version | Select-Object -First 1
+
+      - name: Progress window over a stand-in install (recorded)
+        shell: powershell
+        run: |
+          $a = @{ Mode = 'preview'; Theme = '${{ matrix.theme }}'; Lang = '${{ matrix.lang }}'; FakeInstallSeconds = ${{ matrix.seconds }}; History = '${{ matrix.history }}'; OutDir = 'progress-out' }
+          if ('${{ matrix.reduced }}' -eq 'true') { $a.ReducedMotion = $true }
+          if ('${{ matrix.blocked }}' -eq 'true') { $a.Blocked = $true }
+          & .\scripts\ci\update-progress-check.ps1 @a
+          exit $LASTEXITCODE
+
+      - name: Upload video and stills
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: update-progress-${{ matrix.variant }}
+          path: progress-out
+          if-no-files-found: ignore
+          retention-days: 7

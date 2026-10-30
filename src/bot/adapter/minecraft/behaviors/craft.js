@@ -1,7 +1,7 @@
 // src/bot/adapter/minecraft/behaviors/craft.js
 //
 // craft(item, n) — craft N of a product item using mineflayer's built-in recipe
-// API. Decisions in .planning/quick/260617-qhs CONTEXT.md:
+// API. Decisions in docs/design/craft-tool-260617.md:
 //   - n is the number of the PRODUCT desired. Many recipes batch (1 log → 4
 //     planks), so we craft ceil(n / batchSize) repetitions (may overshoot to the
 //     batch boundary), capped by available materials, and report the ACTUAL
@@ -18,6 +18,7 @@ import { reason } from '../../../brain/errStrings.js'
 import { detectCraftingTable, maxRepetitions } from '../observers/craftable.js'
 import { recordOwnStation } from '../observers/ownStations.js'
 import { goTo } from './pathfind.js'
+import { digReachDistance, DIG_REACH } from './dig.js'
 import { liveInventoryItems, liveCount, hasLiveInventory, waitInventoryQuiet } from '../observers/liveInventory.js'
 
 export const CRAFT_TIMEOUT_MS = 8000
@@ -303,6 +304,13 @@ export async function craftAction(args, bot, config) {
       const walk = await goTo(bot, p.x, p.y, p.z, 2, TABLE_WALK_TIMEOUT_MS, signal, { reach: 3.5 })
       if (walk === 'aborted' || signal?.aborted) return 'aborted'
       tableBlock = detectCraftingTable(bot)
+      // 261025 (pass 27): detectCraftingTable measures from the feet (4m), the
+      // walk from the eyes. A walk that "reached" a table on a ledge or in a
+      // dip could still fail the feet test; the table is usable from the eyes.
+      if (!tableBlock && digReachDistance(bot, p) <= DIG_REACH) {
+        const live = bot.blockAt?.(p)
+        if (live?.name === 'crafting_table') tableBlock = live
+      }
       if (!tableBlock) {
         return `can't craft ${item}: it needs a crafting table, and the walk to the one at ${p.x},${p.y},${p.z} did not get there (${walk})`
       }
@@ -316,7 +324,14 @@ export async function craftAction(args, bot, config) {
   let partsMade = []
   if (!recipes || recipes.length === 0) {
     // Not craftable from the bag as is: make the parts first if they fit.
-    const steps = planParts(bot, itemId, want, inventoryById(bot), MAX_PART_DEPTH + 1, tableBlock != null)
+    // 261025 (pass 27): the plan is for `want` MORE of the item, so the copies
+    // already in the bag must not count. Counting them made the top step
+    // "already have it" and dropped the part steps it needed: with a wooden
+    // pickaxe in the bag, a second one came back "need 2 more stick" while
+    // the planks for the sticks were right there.
+    const planInv = inventoryById(bot)
+    planInv.set(itemId, 0)
+    const steps = planParts(bot, itemId, want, planInv, MAX_PART_DEPTH + 1, tableBlock != null)
     if (!steps || steps.length < 2 || steps.length > PART_MAX_STEPS) {
       return explainNoRecipe(bot, itemId, item, tableBlock != null)
     }

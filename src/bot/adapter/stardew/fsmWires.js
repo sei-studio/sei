@@ -22,6 +22,7 @@
 //                                rate-limited, see ACTIVITY_*.
 
 import { MORNING_CHORES, MORNING_RAIN } from './prompts.js'
+import { foldLatin } from '../../names.js'
 
 /** How long a new-day notice waits for the new day's first observation. */
 export const DAY_OBS_WAIT_MS = 3_000
@@ -74,14 +75,17 @@ export function morningText(obs) {
 }
 
 const NAME_RE_CACHE = new Map()
+// 261027: the text and the name are accent-folded first, so "martín ven"
+// addresses a companion whose in-game name is "Martin".
 function mentions(text, name) {
+  name = foldLatin(name)
   if (!name) return false
   let re = NAME_RE_CACHE.get(name)
   if (!re) {
     re = new RegExp(`(^|[^a-z0-9])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`, 'i')
     NAME_RE_CACHE.set(name, re)
   }
-  return re.test(String(text ?? ''))
+  return re.test(foldLatin(text))
 }
 
 /**

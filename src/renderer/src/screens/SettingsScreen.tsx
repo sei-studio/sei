@@ -18,7 +18,7 @@
  *  - Reset-all iterates the character list; resend-verification / export /
  *    update-check state machines unchanged; all modal opens unchanged.
  *
- * Source: .planning/design/UI-REDESIGN-PARTY.md §1 + §4.7.
+ * Source: docs/design/UI-REDESIGN-PARTY.md §1 + §4.7.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -55,9 +55,11 @@ import styles from './SettingsScreen.module.css';
 import { GamesSettingsGroup } from '../components/settings/GamesSettingsGroup';
 import { SearchSettingsSection } from '../components/settings/SearchSettingsSection';
 import { LocalImportRow } from '../components/settings/LocalImportRow';
-import { ChatgptPlanSettings } from '../components/ChatgptPlanSettings';
+import { FacepackDevRow } from '../components/settings/FacepackDevRow';
+import { ChatgptPlanSettings, revealChatgptPlanRows } from '../components/ChatgptPlanSettings';
 import { ChatgptLinkRow } from '../components/settings/ChatgptLinkRow';
 import { chatgptReady, useChatgptStore } from '../lib/stores/useChatgptStore';
+import { chatgptPlanIntentStep } from '../lib/chatgptPlanIntent';
 import { pickDefaultChatgptModel } from '@shared/chatgptPlan';
 import { elevenKeySettingMode } from '../lib/voicePicker';
 
@@ -753,12 +755,16 @@ export function SettingsScreen(): React.ReactElement {
   // this screen's own button: the cloud -> local confirm (billing changes), or
   // just the provider pick when already on the local backend. Handled once;
   // the flag is cleared so a re-render or a later visit does not re-open it.
+  // 261029: cleared too when the plan turns out not to be ready (plan use
+  // declined at sign-in), so it can never wait around and fire later.
   const chatgptPlanIntent = useUiStore((s) => s.view.kind === 'settings' && s.view.useChatgptPlan === true);
   useEffect(() => {
-    if (!chatgptPlanIntent || !cfg || !chatgptReady(chatgptStatus)) return;
-    if (aiBackendKind !== 'cloud-proxy' && aiBackendKind !== 'local') return;
+    if (!chatgptPlanIntent) return;
+    const step = chatgptPlanIntentStep(!!cfg, chatgptStatus, aiBackendKind);
+    if (step === 'wait') return;
     useUiStore.setState({ view: { kind: 'settings' } });
-    if (aiBackendKind === 'cloud-proxy') {
+    if (step === 'drop') return;
+    if (step === 'confirm-cloud') {
       setSwitchVia('chatgpt');
       setPendingSwitch('local');
     } else {
@@ -767,6 +773,17 @@ export function SettingsScreen(): React.ReactElement {
     // onChangeProvider closes over cfg, which is a dependency already.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatgptPlanIntent, cfg, chatgptStatus, aiBackendKind]);
+
+  // 261029: view.focus (the startup popup's chatgpt-plan action) scrolls to
+  // the ChatGPT plan rows and flashes them. Cleared at once, keeping any
+  // useChatgptPlan intent, so a later visit does not scroll again.
+  const focusTarget = useUiStore((s) => (s.view.kind === 'settings' ? s.view.focus ?? null : null));
+  useEffect(() => {
+    if (!focusTarget) return;
+    const v = useUiStore.getState().view;
+    if (v.kind === 'settings') useUiStore.setState({ view: { ...v, focus: undefined } });
+    if (focusTarget === 'chatgpt-plan') revealChatgptPlanRows();
+  }, [focusTarget]);
 
   // ui-A7: persist developer-console toggle. Update zustand FIRST so the UI
   // reacts immediately, then write through (roll back on failure).
@@ -1080,13 +1097,17 @@ export function SettingsScreen(): React.ReactElement {
             </div>
 
             {/* 261023: the own-key (local profile) import, for a player who
-                said "Not now" to the offer. Hidden when there is nothing. */}
+                said "Not now" to the offer. Hidden when there is nothing.
+                261024: worded apart from the upload row below. This one
+                MOVES companions made before signing in (the signed-out
+                profile) into this account; that one UPLOADS this account's
+                companions that are not in the cloud yet. */}
             <LocalImportRow accountId={authState.user.id} />
 
             <div className={styles.row}>
-              <span className={styles.label}>{t('Migrate local companions')}</span>
+              <span className={styles.label}>{t('Upload companions to the cloud')}</span>
               <Button kind="ghost" size="sm" onClick={() => setMigrateModalOpen(true)}>
-                {t('Migrate')}
+                {t('Upload')}
               </Button>
             </div>
 
@@ -1895,6 +1916,8 @@ export function SettingsScreen(): React.ReactElement {
             </button>
             {t(', via icefall.')}
           </p>
+          {/* 261028 facepack pilot: renders nothing unless the dev flag is on. */}
+          <FacepackDevRow />
         </div>
 
         {/* ── Danger ──────────────────────────────────────────── */}

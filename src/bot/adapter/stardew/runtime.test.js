@@ -57,6 +57,11 @@ describe('stardew runtime helpers', () => {
     expect(botUsernameFor({ name: 'Sui!' })).toBe('Sui')
     expect(botUsernameFor({ username: 'Marv_2', name: 'x' })).toBe('Marv_2')
     expect(botUsernameFor({})).toBe('Sei')
+    // 261027: accented letters are folded, not deleted; other scripts as before.
+    expect(botUsernameFor({ name: 'Martín Salazar' })).toBe('Martin Salazar')
+    expect(botUsernameFor({ name: 'Søren-Åke Straße' })).toBe('Soren-Ake Strasse')
+    expect(botUsernameFor({ name: '晨辉' })).toBe('Sei')
+    expect(botUsernameFor({ name: 'ßßßßßßßßßßßßß' })).toBe('ssssssssssssssssssssssss')
     expect(adapterConfigFrom({ joinTarget: { port: 1, token: 't' }, botUsername: 'Sui' })).toEqual({ host: 'localhost', port: 1, token: 't', username: 'Sui' })
     expect(checkJoinTarget(null)?.error).toBe('GAME_WORLD_NOT_OPEN')
     expect(checkJoinTarget({ port: 1 })?.error).toBe('GAME_WORLD_NOT_OPEN')

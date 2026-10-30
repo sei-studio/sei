@@ -23,7 +23,7 @@
  *
  * Sources:
  *   - src/main/wizardStateStore.ts (atomic-write + lock + coerce pattern)
- *   - .planning/quick/260604-uoy-... PLAN.md Task 3 + Flow D
+ *   - docs/design/in-app-updater-260604.md Task 3 + Flow D
  */
 import { readFile, mkdir } from 'node:fs/promises';
 import { atomicWrite } from '../bot/brain/storage/atomicWrite.js';
@@ -59,7 +59,33 @@ export interface UpdateState {
   lastSeenVersion: string | null;
   /** Stashed mandatory-update changelog awaiting display; null when none. */
   pending: PendingWhatsNew | null;
+  /**
+   * Windows (261030): an in-app restart-to-update that is under way. Set just
+   * before quitAndInstall, consumed by the next launch's what's-new check,
+   * which turns it into one `installSeconds` sample. Optional so older files
+   * and callers stay valid; absent/null = none.
+   */
+  installTiming?: InstallTiming | null;
+  /**
+   * Windows (261030): this machine's last measured restart-to-update times in
+   * seconds (click to the new version running), newest last, at most
+   * INSTALL_HISTORY_MAX. Feeds the progress window's estimate.
+   */
+  installSeconds?: number[];
 }
+
+/** An in-app install that started (see UpdateState.installTiming). */
+export interface InstallTiming {
+  /** Epoch ms when the user (or the forced restart) started the install. */
+  startedAt: number;
+  /** app.getVersion() that started it. */
+  fromVersion: string;
+  /** True when Sei's own progress window covered it (false = stock banner). */
+  progressWindow?: boolean;
+}
+
+/** How many install-time samples are kept. */
+export const INSTALL_HISTORY_MAX = 5;
 
 /** Canonical defaults for a fresh install (or a corrupted-state recovery). */
 function defaults(): UpdateState {
@@ -90,6 +116,23 @@ function coercePending(raw: unknown): PendingWhatsNew | null {
     : { version: obj.version, changelog: obj.changelog };
 }
 
+function coerceInstallTiming(raw: unknown): InstallTiming | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const obj = raw as Record<string, unknown>;
+  if (typeof obj.startedAt !== 'number' || !Number.isFinite(obj.startedAt)) return null;
+  if (typeof obj.fromVersion !== 'string' || obj.fromVersion.length === 0) return null;
+  const out: InstallTiming = { startedAt: obj.startedAt, fromVersion: obj.fromVersion };
+  if (typeof obj.progressWindow === 'boolean') out.progressWindow = obj.progressWindow;
+  return out;
+}
+
+function coerceInstallSeconds(raw: unknown): number[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((n): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0 && n < 24 * 3600)
+    .slice(-INSTALL_HISTORY_MAX);
+}
+
 /**
  * Coerce an arbitrary JSON-parsed value into a valid UpdateState, falling back
  * to defaults for any field that isn't strictly typed correctly. Defensive —
@@ -104,11 +147,34 @@ function coerce(raw: unknown): UpdateState {
       ? obj.lastSeenVersion
       : null;
 
-  return {
+  const out: UpdateState = {
     version: SCHEMA_VERSION,
     lastSeenVersion,
     pending: coercePending(obj.pending),
   };
+  const timing = coerceInstallTiming(obj.installTiming);
+  if (timing) out.installTiming = timing;
+  const history = coerceInstallSeconds(obj.installSeconds);
+  if (history.length > 0) out.installSeconds = history;
+  return out;
+}
+
+/**
+ * The next launch's half of an install timing (pure). When the running
+ * version differs from the one that started a timed install, and the gap is
+ * plausible (under 30 minutes: anything longer was not a straight install,
+ * e.g. the machine slept or the user reopened Sei by hand much later), returns
+ * the measured seconds. Otherwise null.
+ */
+export function measuredInstallSeconds(
+  timing: InstallTiming | null | undefined,
+  currentVersion: string,
+  now: number,
+): number | null {
+  if (!timing || timing.fromVersion === currentVersion) return null;
+  const sec = (now - timing.startedAt) / 1000;
+  if (!(sec > 0) || sec > 30 * 60) return null;
+  return Math.round(sec);
 }
 
 /**

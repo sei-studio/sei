@@ -7,7 +7,7 @@
 //     -> { toolUses: [{id,name,input}], text, content, usage, stopReason }
 //   buildCachedSystem(staticBlocks, tools) -> systemBlocks
 //   setAuthToken(token): void   (no-op outside Anthropic cloud-proxy mode)
-//   capabilities: { vision, cached, local }
+//   capabilities: { vision, cached, local, toolSteps? }  (toolSteps: see chatgptProvider.js)
 //   model: string
 
 import { createAnthropicProvider } from './anthropicProvider.js'

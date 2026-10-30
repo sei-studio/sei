@@ -30,7 +30,7 @@ export function LocalImportRowView({
   if (!hasImportableLeftovers(peek)) return null;
   return (
     <div className={styles.row}>
-      <span className={styles.label}>{t('Bring companions from this computer')}</span>
+      <span className={styles.label}>{t('Companions from before you signed in')}</span>
       <Button kind="ghost" size="sm" onClick={onOpen}>
         {t('Bring over')}
       </Button>

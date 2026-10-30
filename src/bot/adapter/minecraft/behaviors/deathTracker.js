@@ -44,6 +44,8 @@ export function lostItems(before, after) {
   return out.sort((a, b) => b.n - a.n)
 }
 
+import { noteLostWeapon } from './weaponSelect.js'
+
 const OWN_DEATH_TEXT_MS = 10_000
 
 /**
@@ -84,6 +86,8 @@ export function trackDeaths(bot, opts = {}) {
     try { bot.off?.('spawn', p.onSpawn) } catch {}
     const now = inventoryTally(bot)
     const lost = lostItems(p.carried, now)
+    // 261030 (pass 31): remember a dropped weapon (weaponSelect lostWeaponUnarmed).
+    try { noteLostWeapon(bot, lost) } catch {}
     const ownText = bot._seiOwnDeathText
     const deathText = ownText && Date.now() - ownText.at <= OWN_DEATH_TEXT_MS ? ownText.text : null
     const payload = {

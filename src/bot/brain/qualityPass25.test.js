@@ -126,7 +126,8 @@ describe('next_time texts follow progress', () => {
     expect(NEXT_TIME_FIELD).toContain('Write it in a few words that match how far it really got.')
     expect(NEXT_TIME_FIELD).toContain('A goal you wrote down but never worked on, like one marked not started yet, is something to start or try, like "start the roof".')
     expect(NEXT_TIME_FIELD).toContain('Say finish or keep going only for something you actually worked on, like "finish the roof" once part of it is built.')
-    expect(NEXT_TIME_GOODBYE).toContain('"next time I\'ll start on the roof" or "next time we finish the roof", whichever matches how far it got')
+    // 261024 (pass 26): start/finish by progress, I/we by whose plan it is.
+    expect(NEXT_TIME_GOODBYE).toContain('"next time I\'ll start on the roof" or "next time we finish the roof": start or finish by how far it got, and I or we by whose plan it is')
     expect(NEXT_TIME_FOR_PLAYER_FIELD).toContain('"Start the cabin roof", "Finish the cabin roof"')
   })
 

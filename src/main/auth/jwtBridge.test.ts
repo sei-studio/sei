@@ -57,6 +57,27 @@ describe('jwtBridge', () => {
     expect(sup.updateJwt).toHaveBeenCalledWith('jwt-initial');
   });
 
+  it('does not hold startup on getSession() (261029: ~51 s offline)', async () => {
+    let answer: (v: unknown) => void = () => {};
+    getSessionMock.mockReturnValue(new Promise((r) => (answer = r)));
+    let cb: ((event: string, session: { access_token: string } | null) => void) | undefined;
+    onAuthStateChangeMock.mockImplementation((fn) => {
+      cb = fn as typeof cb;
+      return { data: { subscription: { unsubscribe: vi.fn() } } };
+    });
+    const sup = makeSupervisorStub();
+    let done = false;
+    void initJwtBridge(sup).then(() => (done = true));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(done).toBe(true);
+    // A token from an auth event first; the late getSession() answer must not overwrite it.
+    cb?.('TOKEN_REFRESHED', { access_token: 'jwt-event' });
+    answer({ data: { session: { access_token: 'jwt-stale' } } });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sup.updateJwt).toHaveBeenLastCalledWith('jwt-event');
+    expect(sup.updateJwt).not.toHaveBeenCalledWith('jwt-stale');
+  });
+
   it('pushes new JWT on TOKEN_REFRESHED (Pitfall A4)', async () => {
     getSessionMock.mockResolvedValue({ data: { session: null } });
     let cb: ((event: string, session: { access_token: string } | null) => void) | undefined;
@@ -90,6 +111,22 @@ describe('jwtBridge', () => {
     expect(stopAutoRefreshMock).toHaveBeenCalled();
     cb?.('SIGNED_IN', { access_token: 'jwt-new' });
     expect(startAutoRefreshMock).toHaveBeenCalled();
+  });
+
+  it('a password-reset session (PASSWORD_RECOVERY) re-arms the ticker and pushes its JWT', async () => {
+    getSessionMock.mockResolvedValue({ data: { session: null } });
+    let cb: ((event: string, session: { access_token: string } | null) => void) | undefined;
+    onAuthStateChangeMock.mockImplementation((fn) => {
+      cb = fn as typeof cb;
+      return { data: { subscription: { unsubscribe: vi.fn() } } };
+    });
+    const sup = makeSupervisorStub();
+    await initJwtBridge(sup);
+    cb?.('SIGNED_OUT', null);
+    startAutoRefreshMock.mockClear();
+    cb?.('PASSWORD_RECOVERY', { access_token: 'jwt-recovery' });
+    expect(startAutoRefreshMock).toHaveBeenCalled();
+    expect(sup.updateJwt).toHaveBeenLastCalledWith('jwt-recovery');
   });
 
   it('pushes null on SIGNED_OUT', async () => {

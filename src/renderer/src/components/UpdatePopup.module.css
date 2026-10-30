@@ -11,6 +11,10 @@
   line-height: 1.45;
 }
 
+.body.note {
+  margin-top: var(--space-sm);
+}
+
 /* Changelog block — scrolls if a long release notes blob is handed in. */
 .changelog {
   max-height: 320px;

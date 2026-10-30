@@ -57,7 +57,9 @@ export type View =
   // useChatgptPlan (261023): opened from the Credits page's ChatGPT plan row
   // after its sign-in; Settings runs the "Use ChatGPT plan" switch (with the
   // cloud confirm) once, on arrival.
-  | { kind: 'settings'; useChatgptPlan?: boolean }
+  // focus (261029): scroll to and briefly highlight one row on arrival (the
+  // startup popup's chatgpt-plan action). Cleared once handled.
+  | { kind: 'settings'; useChatgptPlan?: boolean; focus?: 'chatgpt-plan' }
   | { kind: 'credits' }
   | { kind: 'coming-soon' }
   // 260703 procgen — the "unique companion" (system-generated) flow. Both are

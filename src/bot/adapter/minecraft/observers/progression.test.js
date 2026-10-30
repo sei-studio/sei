@@ -193,6 +193,16 @@ describe('nextMilestone walker (D-07)', () => {
     expect(nm.action.length).toBeGreaterThan(0)
   })
 
+  it('the furnace step says to mine stone, since no world block is cobblestone', () => {
+    // 261029 (pass 30): "mine 8 cobblestone" went into her goal text, and
+    // holding a stone pickaxe she told the player she was "stuck on
+    // cobblestone" and asked for "a spare pickaxe to dig stone with".
+    const nm = nextMilestone({ items: { stone_pickaxe: 1 }, pickaxeTier: 2, dim: 'overworld' })
+    expect(nm.node.id).toBe('furnace')
+    expect(nm.action).toMatch(/^mine stone for cobblestone/)
+    expect(nm.action).not.toMatch(/mine \d+ cobblestone/)
+  })
+
   it('returns { node: null, action: null } when the game is complete', () => {
     const nm = nextMilestone({ items: {}, pickaxeTier: 0, dim: 'the_end', flags: { entered_end: true, killed_dragon: true } })
     expect(nm.node).toBe(null)

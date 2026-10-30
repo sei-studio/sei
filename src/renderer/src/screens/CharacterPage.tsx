@@ -16,7 +16,7 @@
  * already online) and never reflects game state. The public/private share
  * toggle sits in its own box under the stat boxes on the Description tab.
  *
- * Source: .planning/design/UI-REDESIGN-PARTY.md §4.6.
+ * Source: docs/design/UI-REDESIGN-PARTY.md §4.6.
  */
 
 import React, { useEffect, useRef, useState } from 'react';

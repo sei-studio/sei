@@ -171,6 +171,30 @@ export function textOverlap(micText: string, refText: string): number {
   return hit / mic.length;
 }
 
+/**
+ * 261030: the screen transcript with the companion's own words taken out.
+ *
+ * On Windows the share's audio is the desktop loopback, which records the
+ * whole system mix, so her TTS is transcribed into the screen ring alongside
+ * the game. The mic check already compared the utterance against her lines
+ * verbatim and found it was NOT her (SELF_ECHO_OVERLAP); counting those same
+ * words again as "the screen said it" condemned exactly the player who talks
+ * back over her with a word of her line ("wait", "no", "the castle?"), and
+ * the barge was retracted so she carried on. Removing every token that her
+ * audible lines contain leaves the evidence that is really the game's. A game
+ * line that shares a word with hers loses that word too, which only ever
+ * tips the verdict toward the player: the asymmetry this gate is built on.
+ */
+export function stripOwnWords(refText: string, ownTexts: readonly string[]): string {
+  if (!ownTexts.length || !refText) return refText;
+  const own = new Set<string>();
+  for (const t of ownTexts) for (const tok of normalizeTokens(t)) own.add(tok);
+  if (!own.size) return refText;
+  return normalizeTokens(refText)
+    .filter((tok) => !own.has(tok))
+    .join(' ');
+}
+
 /** Nearest-sample lookup onto a uniform grid; gaps read as the floor. Assumes
  *  `samples` is chronological (both producers push in arrival order). */
 function sampleGrid(samples: EnvSample[], startT: number, n: number): number[] {

@@ -15,7 +15,7 @@
     "procedure": "stone pickaxe: mine cobblestone w/ wooden pickaxe -> stone_pickaxe at table",
     "recipe": { "cobblestone": 3, "stick": 2 }, "station": "crafting_table" },
   { "id": "furnace",         "kind": "get",    "label": "make a furnace",                      "key": "furnace",         "needs": ["stone_pickaxe"],               "goal": { "have": "furnace" },
-    "next_action": "mine 8 cobblestone and craft a furnace at the table",
+    "next_action": "mine stone for cobblestone, then craft the furnace",
     "procedure": "furnace: 8 cobblestone -> furnace at crafting_table",
     "recipe": { "cobblestone": 8 }, "station": "crafting_table" },
   { "id": "iron_pickaxe",    "kind": "get",    "label": "get an iron pickaxe",                 "key": "iron pickaxe",    "needs": ["stone_pickaxe", "furnace"],    "goal": { "pickaxe": 3 },

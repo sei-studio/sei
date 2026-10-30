@@ -21,6 +21,11 @@
  * `compact` (261023, the Credits page): the same row without the settings
  * row chrome; the caller supplies the heading line and the Learn more link.
  *
+ * The non-compact rows sit in one wrapper marked
+ * `data-settings-focus="chatgpt-plan"` (261029): Settings scrolls to it and
+ * flashes it when opened with view.focus (the startup popup's chatgpt-plan
+ * action, lib/popupActions.ts).
+ *
  * Tokens never reach the renderer; this reads account summaries from
  * useChatgptStore only. The model picker below it is SettingsScreen's own.
  */
@@ -68,21 +73,51 @@ export function signInFailureText(reason: ChatgptSignInFailure, t: (s: string) =
  */
 export function chatgptPlanDisclosure(t: (s: string) => string): string {
   return `${t('Complete eligible AI requests in this app with usage included in your ChatGPT plan or credits balance.')} ${t(
-    "Works on every Sei plan, including Free. Usage counts toward your ChatGPT plan, not Sei's subscription or credits.",
+    "Works with your ChatGPT Plus or Pro account. Usage counts toward your ChatGPT plan, not Sei's subscription or credits.",
   )}`;
 }
 
-export function ChatgptPlanSettings({
-  active,
-  onUsePlan,
-  compact = false,
-}: {
+/**
+ * Scroll the ChatGPT plan rows into view and flash them (Settings with
+ * view.focus = 'chatgpt-plan'). The rows render once Settings has read the
+ * config, so this waits for them for a moment; gives up quietly.
+ */
+export function revealChatgptPlanRows(waitMs = 3000): void {
+  const deadline = Date.now() + waitMs;
+  const tick = (): void => {
+    const el = document.querySelector<HTMLElement>('[data-settings-focus="chatgpt-plan"]');
+    if (!el) {
+      if (Date.now() < deadline) window.setTimeout(tick, 100);
+      return;
+    }
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    el.classList.remove(styles.focusPulse);
+    // Restart the animation when the class was already there.
+    void el.offsetWidth;
+    el.classList.add(styles.focusPulse);
+    window.setTimeout(() => el.classList.remove(styles.focusPulse), 2600);
+  };
+  tick();
+}
+
+interface ChatgptPlanSettingsProps {
   active: boolean;
   /** Switch the provider to the ChatGPT plan (after a sign-in, or when one exists). */
   onUsePlan: () => Promise<void> | void;
   /** The bare action (button + notices), for a surface that draws its own row. */
   compact?: boolean;
-}): React.ReactElement {
+}
+
+export function ChatgptPlanSettings(props: ChatgptPlanSettingsProps): React.ReactElement {
+  if (props.compact) return <ChatgptPlanRows {...props} />;
+  return (
+    <div data-settings-focus="chatgpt-plan" className={styles.focusTarget}>
+      <ChatgptPlanRows {...props} />
+    </div>
+  );
+}
+
+function ChatgptPlanRows({ active, onUsePlan, compact = false }: ChatgptPlanSettingsProps): React.ReactElement {
   const t = useT();
   const status = useChatgptStore((s) => s.status);
   const signInError = useChatgptStore((s) => s.signInError);
@@ -285,7 +320,7 @@ export function ChatgptPlanSettings({
         ? t("ChatGPT didn't accept Sei's last request, so ChatGPT requests are paused.")
         : code === 'CHATGPT_FORBIDDEN'
           ? t("ChatGPT plan use isn't available here right now. It may be limited in your region or by your plan.")
-          : t("This ChatGPT account can't use its plan in Sei right now. Try another account, or pick another provider.");
+          : t("This ChatGPT account can't use its plan in Sei right now. Plan use needs ChatGPT Plus or Pro. Try another account, or pick another provider.");
     return (
       <div className={settings.row}>
         <span className={`${settings.label} ${settings.statusWarn}`} role="alert">

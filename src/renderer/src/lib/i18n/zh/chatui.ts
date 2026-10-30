@@ -47,17 +47,20 @@ export const ZH_CHATUI: Record<string, string> = {
   'Game': '游戏',
   'What game should we add?': '你希望我们加入什么游戏？',
 
-  // CallControls
+  // CallControls + the desktop overlay's chrome buttons
   'Mute': '静音',
   'Unmute': '取消静音',
   'Deafen': '拒听',
   'Undeafen': '取消拒听',
   'Show the scene': '显示场景',
   'Show the call view': '显示通话界面',
-  'Share your screen': '共享你的屏幕',
   'Stop sharing': '停止共享',
-  'Stop sharing your screen': '停止共享你的屏幕',
-  'Hang up': '挂断',
+  'Interrupt': '打断',
+  'Share screen': '共享屏幕',
+  'Leave call': '离开通话',
+  'Show captions': '显示字幕',
+  'Hide captions': '隐藏字幕',
+  'Hold to move': '按住拖动',
 
   // Screen share (Backseat)
   'Backseat (beta)': 'Backseat（测试版）',

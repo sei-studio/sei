@@ -1265,11 +1265,19 @@ companion). The field is OPTIONAL with no default;
 **read it only through `effectiveAvatarMode`** (characterSchema), which folds
 the deprecated `call_overlay_enabled` boolean (`true` → `'activity'`) so old
 configs keep their overlay without a migration. The player's own tile is
-GONE; the overlay is AI-only. Design doc: `.planning/avatar-v06-260804.md`.
+GONE; the overlay is AI-only. Design doc: `docs/design/avatar-v06-260804.md`.
 
 - **Window** (`src/main/callOverlay.ts`): click-through by default with
   `setIgnoreMouseEvents(true, {forward: true})` so hover still reaches the
-  page (forward is Win/mac only; Linux stays display-only). Interaction is
+  page where the OS forwards (Win/mac only). Hover ALSO comes from main's
+  cursor poll (261029): it pushes the pointer in window-local DIPs over
+  `avatar:overlay-pointer-state` (every sample while inside, one on leave),
+  and the renderer ORs it with DOM hover (`overlayChromeVisible`) and
+  hit-tests the button column (`pointerOverRect`) to request clicks, all in
+  `src/shared/overlayPointer.ts`. Never gate the chrome on DOM hover alone:
+  the 261028 report (Live2D user, pencil never appeared) was forwarding not
+  reaching the page, and the pencil is the only way into edit mode; Linux
+  had no pencil at all before this. Interaction is
   split into VIEW and EDIT modes (260805; camera rework + per-region
   interactivity 260806): view cannot resize — hover shows the chrome buttons
   bottom-right, raised one button height off the bottom edge (pencil with
@@ -1435,8 +1443,10 @@ GONE; the overlay is AI-only. Design doc: `.planning/avatar-v06-260804.md`.
   wander keeps the 2.6-7.5 s saccade cadence with correlated small steps +
   rare larger glances (full-range jumps every few hundred ms read as
   TWITCHING, the 260805 report); cursor-follow rides main's cheap
-  `screen.getCursorScreenPoint()` poll (120 ms, armed only while a Live2D
-  tile shows), pushed normalized around the window center over
+  `screen.getCursorScreenPoint()` poll (120 ms, armed whenever the overlay
+  window is up since 261029 because it also feeds hover; the gaze push
+  below is still sent only while a Live2D tile shows), pushed normalized
+  around the window center over
   `avatar:overlay-cursor-state` — only the overlay window receives it, so
   the profile preview just wanders. **The focusController is fed a per-frame
   GLIDING target with `instant=true`, never a stepped one** — the SDK's
@@ -1513,7 +1523,7 @@ and standing in your world at once. Lines go to the SAME chat thread and the
 same memory as every other surface.
 
 The design and its measurements are committed at
-`.planning/backseat-v2-260801.md`. **Read that before changing anything here.**
+`docs/design/backseat-v2-260801.md`. **Read that before changing anything here.**
 
 - **Authority split.** The renderer owns pixels and sound: `getDisplayMedia`,
   the ring buffer, grid compositing, the rolling clip recorders, local STT, and
@@ -2114,8 +2124,8 @@ Two more things from the same case, since they are why he never got in:
 
 The companion can be launched into the player's own Stardew Valley farm or
 hosted Don't Starve Together world the way it is launched into a Minecraft
-LAN world. Design and research: `.planning/game-adapters-260908.md` (+
-`.planning/research/game-adapters-*-260908.md`, `dst-survivors-260908.md`).
+LAN world. Design and research: `docs/design/game-adapters-260908.md` (+
+`docs/design/research/game-adapters-*-260908.md`, `dst-survivors-260908.md`).
 Both tiles are `available: true` in `src/shared/games.ts` (flipped 260908 so
 the user can run the live checklist from the app itself); the live checklist
 (plan section 5, M3, per game) is still owed, and neither game self-launches
@@ -3520,7 +3530,12 @@ feed (`publish: github`, `sei-studio/sei`). It is loaded **only behind
 `app.isPackaged`** — `autoUpdater` throws when unpackaged, so dev runs the pure
 policy functions only. A side-channel `GET https://sei.gg/version.json` carries
 `{ version, apply, changelog }` to decide ask-first vs silent install. On macOS
-updates install from the zip artifact.
+updates install from the zip artifact. Semver alone sets the level (patch =
+mandatory, minor/major = optional, `updatePolicy.ts`), except that an optional
+`minSupported` in the policy feed (version.json, and version-beta.json for
+beta users) makes the update mandatory for installs below it
+(`applyMinSupported`, 261031); missing or invalid = no effect, timing still
+from `apply`. Velopack installs share this path.
 
 **The download never blocks the app (260801).** Two renderer surfaces, split by
 whether the state needs a decision right now: `UpdatePopup` is the modal (the
@@ -3545,27 +3560,72 @@ downloading, a `--green` to `--accent-strong` block when ready, a spinner while
 restarting. It replaced the corner `UpdatePill`, which was easy to dismiss and
 forget. A click while a call, a companion bot, chess, a screen share or a
 Draw! turn is live confirms first (`liveSessionForRestart`). The install args
-come from `src/main/updateInstall.ts` (`restartInstallArgs`): on Windows
-`quitAndInstall(true, true)`, which NsisUpdater turns into
-`--updated /S --force-run`, so no installer window appears and the one-click
-installer reopens Sei when it is done (the old bare `quitAndInstall()` was
-`--updated --force-run`: it also reopened Sei, but showed the "Installing,
-please wait" banner meanwhile). macOS ignores the args (Squirrel relaunches).
-The update-on-quit run stays `--updated /S` with no relaunch.
-`build/installer.nsh` tells the two silent runs apart by `--force-run`: the
-one-time legacy per-machine cleanup (a UAC prompt) runs on the in-app restart
-but never on the quit run. `.github/workflows/nsis-upgrade-check.yml` covers
-both paths (relaunch or not, no visible installer window, the timing). An
+come from `src/main/updateInstall.ts` (`restartInstallArgs`). macOS ignores
+them (Squirrel relaunches). The update-on-quit run stays `--updated /S` with
+no relaunch. `build/installer.nsh` tells the silent runs apart by
+`--force-run`: the one-time legacy per-machine cleanup (a UAC prompt) runs on
+the in-app restart but never on the quit run.
+
+**Windows restart = Sei's own update progress window (261030, corner 261031).**
+The install re-unpacks the whole app (median ~104 s for real users), and with
+nothing on screen people thought Sei had crashed. On win32 `restartIntoUpdate`
+in updater.ts (both "Update Sei" and the forced `apply:'now'` restart) calls
+`installWithProgressWindow` (`src/main/windowsUpdateInstall.ts`):
+`updateProgressHelper.ts` copies `resources/update-progress/` (a Windows
+PowerShell 5.1 + WPF script, bundled Oswald/Rajdhani fonts, logo) to a private
+`%TEMP%` folder and starts it in two stages (stage 1 is Sei's child and only
+starts the detached window process, which escapes node's kill-on-close job).
+Everything the window says, its theme (from `theme_mode`), language (en/zh)
+and its time-based bar curve (estimate from past `installSeconds`, the
+download counted as the first 40%) come from a `config.json` built and
+unit-tested in TypeScript; the script only plays it back and watches the
+installer process, the new Sei process and its first window, then sprints to
+100% and fades out. Once the window reports `ready` (first frame, within
+12 s, 20 s if WPF already loaded) Sei quits with `quitAndInstall(true, true)`
+= `--updated /S --force-run`, so no installer window shows under it. No
+`ready` (Group Policy blocks scripts, Constrained Language Mode, a slow
+machine) = the stock path, `quitAndInstall(false, true)` = `--updated
+--force-run`, the one-click "Installing, please wait" banner. The window sits
+in the **bottom-right corner of the primary display's work area** (above the
+taskbar, the card 16 px in from the edges; Shawn, 261031) so the user can keep
+using the computer, is topmost only for its first 4 s (while Sei's own window
+is going away), is draggable, and if no Sei comes back it starts `Sei.exe`
+itself, then says so and closes on a click or after a minute (hard cap 15
+min). The script must stay ASCII (PS 5.1 reads BOM-less scripts in the ANSI
+code page); non-English text arrives through config.json. CI:
+`nsis-upgrade-check.yml` `suite=progress` runs the real upgrade under the
+window, `suite=preview` (no build, a few minutes) records each theme/language
+over a stand-in installer and asserts the corner placement; stills and video
+are the artifacts. An
+An
 accepted OPTIONAL download stashes `pending` with `brief: true`, so the
 relaunch shows the small `UpdatedToast` ("Updated to Sei X" plus the first
 changelog bullet, `topChangelogLine`) instead of reopening the changelog the
 user already read; mandatory updates keep the full what's-new modal.
 
+**Windows moves to Velopack (v0.7.0, 261030).** macOS stays on
+electron-updater. Through v0.7.x every Windows release ships BOTH the NSIS
+installer (the sei.gg download and the electron-updater feed) and Velopack
+files mirrored to `dl.sei.gg/velopack`; NSIS installs move to Velopack only
+when `migration.<channel>.json` says so. `src/main/updater.ts` picks
+`velopackUpdater.ts` when the running copy was installed by Velopack. A
+Velopack update or migration Setup is applied only after its sha256 matches
+the feed AND Windows reports it Authenticode Valid and signed by the
+`WIN_PUBLISHER_NAME` baked in at build (`SEI_WIN_PUBLISHER`,
+`velopackVerify.ts`; unsigned builds skip the check), and only while the
+rollout file on dl.sei.gg allows it (an unreadable one holds the update).
+Release steps, the asset counts for publishing the draft, the three-part kill
+switch (update rollout to 0, the GitHub release back to draft, migration to
+0), rollback-by-rolling-forward, the users' way out of a broken Velopack copy,
+re-running a cancelled mirror, and the one-time move of the workflows to
+`main` are in **`docs/design/velopack-runbook.md`**. Read it before any
+Windows release.
+
 ### Startup popup (261027, replaced the notices inbox)
 
 One operator page from sei.gg shown once per install, set by the optional
 `popup` field of `https://sei.gg/notices.json`:
-`{ id, url, minVersion?, maxVersion?, until?, width?, height? }`. Clients up to
+`{ id, url, minVersion?, maxVersion?, until?, width?, height?, skipIf? }`. Clients up to
 0.6.9 read only `notices` and ignore it; new clients no longer show `notices`
 (the Playtime "Inbox" button and `NoticesInboxModal` are gone). How to publish
 one is in the website repo's `README-popup.md`.
@@ -3574,6 +3634,19 @@ one is in the website repo's `README-popup.md`.
   `https://sei.gg/popup/...` (no credentials, no other host/port/scheme);
   a bad version, date or url drops the popup (fail closed); `width`/`height`
   count only as an in-bounds pair, else the page is 70% of the window.
+  `skipIf` (261029) names a condition from `POPUP_SKIP_CONDITIONS`
+  (today only `"chatgpt-connected"`: the active ChatGPT account is signed in
+  with plan usage, checked in `notices.ts` `skipConditionHolds`) under which
+  the install does not need the popup; it is re-checked at every hand-out and
+  in the loaded handler, and a skipped popup is not recorded. A `skipIf`
+  this build does not know drops the popup (fail closed). That does NOT
+  cover older builds: v0.6.10 (the first with the popup) ignores unknown
+  keys, so it shows the popup without the skip and opens action links in
+  the browser. **A popup that uses `skipIf` or an action link must set
+  `minVersion` to the first release that ships them (0.7.0, or
+  `0.7.0-beta.0` to include betas: semver ranks `0.7.0-beta.N` below
+  `0.7.0`), and the fallback page at each action URL must be live on sei.gg
+  before the feed entry is.**
 - **Feed + show-once:** `src/main/notices.ts` refreshes on the updater
   cadence (startup, focus, resume, 30 min, manual check) and in dev too. An
   unreachable, unparseable or non-object feed keeps the last state (never
@@ -3589,13 +3662,60 @@ one is in the website repo's `README-popup.md`.
   preload). Loaded hidden, revealed only after main's 2xx check. Waits for a
   calm screen (`popupUiReady`: home/character/awaken/settings/credits/
   coming-soon, no modal, tour, first moment, call, game or share). Closes on
-  the X, Esc or a click outside the page.
+  the X (inside the page's top-right corner on a translucent dark disc since
+  261029, fixed colours because it sits on the page's art), Esc (ignored
+  while another dialog is open on top) or a click outside the page. z 1000
+  (ModalShell base, was 1100), and App.tsx mounts it BEFORE every dialog
+  (the `modal?.kind` group, the setup wizard, ToS, import offer, migrate,
+  hard stop, update, recovery), so a dialog that appears after it lands on
+  top of it. Keep it first if you add dialogs.
+- **Never in a first-run session (261029, `lib/firstRunSession.ts`).** A
+  session that shows the Sui onboarding scene, the tour or the first moment,
+  or boots with a saved unfinished tour (`tutorial_state`, read before the
+  first look because boot routing can put Home up before it resumes the
+  tour), holds the popup until the next launch. The calm-screen check alone
+  had gaps: a tour ending without a first moment lands on a calm Home, so
+  does the first Home visit after the first-moment card. The popup stays
+  owed (never recorded), so nothing is lost.
+- **Action links (261029, `src/shared/popupActions.ts`).** A popup button
+  that does something in the app is a plain link to
+  `https://sei.gg/popup/_action/<name>` (a page with `<base target="_blank">`
+  routes it through `setWindowOpenHandler`, otherwise `will-frame-navigate`).
+  Main cancels it (nothing is fetched), checks the name against
+  `POPUP_ACTIONS` and that it came from the committed popup frame (the
+  navigating frame shows a popup page, or, for window.open, a popup page is
+  committed in some subframe), and pushes it on `app:startup-popup-action`.
+  The renderer closes the popup and runs `runPopupAction`
+  (`lib/popupActions.ts`), which checks the name again. Unknown names and
+  action URLs from any other frame are dropped (no browser tab either); an
+  action URL is never an allowed popup page. Actions take NO parameters from
+  the URL. A followed link is not proof of a click (a meta refresh or a
+  `Refresh` header navigates the script-less page too), so the renderer
+  takes actions only while the popup is shown and not in its first
+  `POPUP_ACTION_ARM_MS` (500 ms, `armShownPopup` in
+  `lib/startupPopup.ts`); popup pages must not use a refresh. One action
+  runs at a time (`runPopupAction`'s in-flight latch), so a double click
+  starts one browser sign-in. `chatgpt-plan` opens Settings scrolled to the
+  ChatGPT plan row (`view.focus: 'chatgpt-plan'`, a short highlight) and
+  does what the row's own button would: start "Continue with ChatGPT" (then
+  the "Use ChatGPT plan" switch with its cloud -> local confirm, only if
+  plan use really came back on), sign in again with `enablePlan` for an
+  account signed in with plan use declined (a plain sign-in re-approves
+  without the plan scope), run the switch for an account already signed in,
+  or only show the row when the plan is in use or a sign-in is running. The
+  `view.useChatgptPlan` switch intent is one-shot
+  (`lib/chatgptPlanIntent.ts`): Settings drops it when the plan is not
+  ready rather than waiting, so it cannot fire later. Clients older than the action open the URL in the
+  browser, so sei.gg must serve a fallback page at each action URL saying
+  where the feature is in the app. Adding an action = the name, a renderer
+  case, a test, and that fallback page.
 - **Main guards** (`src/main/popupFrameGuards.ts`): EVERY subframe of the
   main window is navigation-locked to the popup allow-list; any other link
   opens in the default browser through `assertSafeExternalUrl` (only when
-  the navigating frame is showing a popup page, i.e. a link click; a nested
+  the navigating frame is showing a popup page, i.e. following a link; a nested
   `<iframe>` embed's first load is cancelled silently), and
-  `setWindowOpenHandler` denies all child windows the same way. A future
+  `setWindowOpenHandler` denies all child windows the same way (action links
+  excepted, above). A future
   feature that embeds another iframe in the main window must extend this
   allow-list deliberately. sei.gg sends `X-Frame-Options: SAMEORIGIN`, so the
   header (and CSP `frame-ancestors`) is dropped for allowed popup URLs loaded
@@ -3655,6 +3775,48 @@ one is in the website repo's `README-popup.md`.
   A failed load is final for the session (a failed ESM import stays cached);
   `look()` says so once in full. Keep heavy or native modules out of the
   runtime's static import graph.
+- **The data scope follows the auth STATE, not the auth event (261029)** →
+  "restarting locks me on the login page". After a restart the stored access
+  token has usually expired, and `auth.getSession()` is NOT a storage-only
+  read: it refreshes over the network. Step 0a of `main/index.ts` used it to
+  pick the boot scope, so a refresh that failed there (offline for a moment,
+  a 5xx) set `'local'` while initAuthState's own getSession() succeeded, and
+  the subscription only switched scopes when the user CHANGED between two
+  events. Result: signed in, scope `local`, no `app:scope-changed` push, and
+  the onboarding sign-in panel (which waits for one) stuck for good; signing
+  in again was a same-user SIGNED_IN, a no-op. Now step 0a reads the stored
+  session without a refresh (`persistedSessionUserId`), `followAuthScope` in
+  authState.ts moves the scope whenever it disagrees with the state (init,
+  every event, `transitionToLocal`; `restored` = no sign-in side effects and
+  no import offer), and the renderer routes on `sei.authSnapshot()` (state +
+  `scopeReady`, `lib/authBoot.ts`) instead of the store's `local` default;
+  OnboardApp also confirms readiness through it, so a missed push cannot
+  strand the panel. Pinned by `loginLockOnRestart.test.ts` on the real
+  supabase-js client. Anything that decides routing from auth must not
+  assume it saw every push.
+  Review follow-up (261029): offline, `getSession()` takes ~51 s (startup
+  refresh backoff, then a second refresh in `__loadSession`), so
+  initAuthState no longer awaits it at all. Its first state comes from the
+  stored session (`readPersistedSession`, `applyBootScope` in
+  `auth/bootScope.ts` for step 0a), it subscribes before any network, and
+  supabase-js's own load corrects it through the subscription. An
+  INITIAL_SESSION with no session while the stored one is still there means
+  the load failed for a network reason: the session is kept (a refused one
+  is removed by supabase-js and arrives as SIGNED_OUT). A "real" sign-in is a
+  SIGNED_IN (or PASSWORD_RECOVERY: a reset session never arrives as
+  SIGNED_IN) with an access token this process has not seen; only it owes the
+  sign-in steps (`signInStepsOwed`), which run once even when the scope
+  already matched; follow-ups of a superseded or failed move are skipped
+  (`scopeRequestSeq`). The renderer never routes on a `loaded:false`
+  snapshot (`lib/bootRoute.ts`, polls up to 90 s behind `BootSplash`), and
+  the onboarding panel only accepts a scope push or snapshot naming ITS
+  account (`lib/signInScopeGate.ts`). `signOut()` returns `{error}` offline
+  and keeps the session in storage even with `scope:'local'`, so sign-out
+  paths call `dropSessionLocally` (which stops the refresh ticker when even
+  the local sign-out fails). A sign-out the user did not ask for is captured
+  as `signed_out` with `reason: 'session_rejected'` (`noteUserSignOut`
+  marks the user's own). Auth requests have a 15 s fetch timeout
+  (`withAuthRequestTimeout`), the profile move's network steps 15 s each.
 - **Renderer caches outlive an account switch** → main re-points every
   per-profile store on `app:scope-changed`, but a Zustand store keeps what it
   already read, and the bundled defaults (Sui, Lyra, ...) share their UUIDs
@@ -3767,9 +3929,12 @@ one is in the website repo's `README-popup.md`.
 
 ---
 
-## GSD planning
+## Design docs
 
-This project uses the GSD planning system; artifacts live in `.planning/`.
-Start with `.planning/STATE.md` (current state) and `.planning/ROADMAP.md`
-(phases) before picking up cross-cutting work. Commit planning docs alongside
-the code they describe.
+Durable design docs that code comments point at live in `docs/design/` (UI
+design system, Party redesign, chat + memory, backseat v2, avatar v0.6, game
+adapters, in-app updater, craft tool). The old GSD `.planning/` tree (phase
+plans, roadmaps, one-off experiment output) was removed on 261030; it is in
+git history if you need it. The repo is public: keep pricing, cost and margin
+numbers, security write-ups, personal paths and other internal notes out of
+it.

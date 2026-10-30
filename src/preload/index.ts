@@ -8,6 +8,7 @@
  * fabric-installer.
  */
 import { contextBridge, ipcRenderer } from 'electron';
+import type { FaceCue } from '../shared/facepack';
 import {
   IpcChannel,
   type RendererApi,
@@ -37,6 +38,8 @@ import {
   type GameDashboardSnapshot,
 } from '../shared/ipc';
 import type { ChatgptStatus } from '../shared/chatgptPlan';
+import type { OverlayPointerSample } from '../shared/overlayPointer';
+import type { PopupAction } from '../shared/popupActions';
 
 const api: RendererApi = {
   // Game adapters (M0): {characterId, game} (main also still accepts a bare id).
@@ -390,6 +393,22 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.avatar.overlayCursorState, handler);
     return () => ipcRenderer.off(IpcChannel.avatar.overlayCursorState, handler);
   },
+  onAvatarOverlayPointer(cb: (sample: OverlayPointerSample) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, sample: OverlayPointerSample) => cb(sample);
+    ipcRenderer.on(IpcChannel.avatar.overlayPointerState, handler);
+    return () => ipcRenderer.off(IpcChannel.avatar.overlayPointerState, handler);
+  },
+  // Facepack pilot (261028): main answers "disabled" unless the dev flag is on.
+  facepackInfo: () => ipcRenderer.invoke(IpcChannel.facepack.info),
+  facepackManifest: (id) => ipcRenderer.invoke(IpcChannel.facepack.manifest, id),
+  facepackFile: (id, path) => ipcRenderer.invoke(IpcChannel.facepack.file, { id, path }),
+  facepackForCharacter: (characterId) => ipcRenderer.invoke(IpcChannel.facepack.forCharacter, characterId),
+  facepackOpenPreview: () => ipcRenderer.invoke(IpcChannel.facepack.openPreview),
+  onFaceCue(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, cue: FaceCue) => cb(cue);
+    ipcRenderer.on(IpcChannel.facepack.cue, handler);
+    return () => ipcRenderer.off(IpcChannel.facepack.cue, handler);
+  },
   avatarOverlayCamera: (args) => ipcRenderer.invoke(IpcChannel.avatar.overlayCamera, args),
   avatarOverlayEditing: (editing) => ipcRenderer.invoke(IpcChannel.avatar.overlayEditing, editing),
   avatarOverlayMuteToggle: () => ipcRenderer.invoke(IpcChannel.avatar.overlayMute),
@@ -397,6 +416,12 @@ const api: RendererApi = {
     const handler = () => cb();
     ipcRenderer.on(IpcChannel.avatar.muteRequest, handler);
     return () => ipcRenderer.off(IpcChannel.avatar.muteRequest, handler);
+  },
+  avatarOverlayInterrupt: () => ipcRenderer.invoke(IpcChannel.avatar.overlayInterrupt),
+  onAvatarInterruptRequest(cb: () => void) {
+    const handler = () => cb();
+    ipcRenderer.on(IpcChannel.avatar.interruptRequest, handler);
+    return () => ipcRenderer.off(IpcChannel.avatar.interruptRequest, handler);
   },
   avatarOverlayCaptionsToggle: () => ipcRenderer.invoke(IpcChannel.avatar.overlayCaptions),
   avatarCaptionResize: (args) => ipcRenderer.invoke(IpcChannel.avatar.captionResize, args),
@@ -472,6 +497,8 @@ const api: RendererApi = {
   updatePassword: (args) => ipcRenderer.invoke(IpcChannel.auth.updatePassword, args),
   setCaptchaToken: (token: string | null) =>
     ipcRenderer.invoke(IpcChannel.auth.setCaptchaToken, token),
+
+  authSnapshot: () => ipcRenderer.invoke(IpcChannel.auth.snapshot),
 
   onAuthState(cb: (state: AuthState) => void) {
     const handler = (_e: Electron.IpcRendererEvent, state: AuthState) => cb(state);
@@ -660,6 +687,11 @@ const api: RendererApi = {
     const handler = (): void => cb();
     ipcRenderer.on(IpcChannel.app.startupPopupEscape, handler);
     return () => ipcRenderer.off(IpcChannel.app.startupPopupEscape, handler);
+  },
+  onStartupPopupAction(cb: (action: PopupAction) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, action: PopupAction) => cb(action);
+    ipcRenderer.on(IpcChannel.app.startupPopupAction, handler);
+    return () => ipcRenderer.off(IpcChannel.app.startupPopupAction, handler);
   },
 
   // --- Window chrome (frameless custom titlebar on Windows/Linux) ---

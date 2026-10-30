@@ -30,6 +30,8 @@ export const LIBRARY_LAYOUT = [
     // PROSE lives in these string constants (the functions just fill {tokens}).
     ['ATTACKED_ADDENDUM_PVP', 'Attacked framing (PvP off)'],
     ['ATTACKED_ADDENDUM_MOB', 'Attacked framing (mob)'],
+    ['ATTACKED_UNARMED_THEN', 'Attacked framing (mob, no weapon): advice'],
+    ['DEFEND_UNARMED_TEXT', 'Defend framing (no weapon)'],
     ['REFLEX_ADDENDUM_TEXT', 'Reflex warning'],
     ['REFLEX_NOTICED_YES', 'Reflex · noticed you'],
     ['REFLEX_NOTICED_NO', 'Reflex · not noticed'],

@@ -5,7 +5,7 @@
 // Builds one GAME PACK (260908, game-adapters M0b): the zip a packaged app
 // downloads on first use so a game adapter's heavy runtime never ships in the
 // installer. Contract + naming: src/shared/gamePacks.ts. Client:
-// src/main/games/packs.ts. Design: .planning/game-adapters-260908.md 2.5.
+// src/main/games/packs.ts. Design: docs/design/game-adapters-260908.md 2.5.
 //
 // What it does, in order:
 //   1. Resolves the PRODUCTION dependency closure of the `packs/<game>` npm

@@ -7,8 +7,11 @@ import {
   PopupFrameTracker,
   coerceStartupPopup,
   isAllowedPopupUrl,
+  popupActionFromUrl,
   popupToShow,
+  routeSubframeNavigation,
 } from './startupPopup';
+import { POPUP_ACTIONS, isPopupAction } from '../shared/popupActions';
 
 const NOW = Date.parse('2026-10-27T12:00:00Z');
 const ctx = { appVersion: '0.6.10', now: NOW };
@@ -51,6 +54,72 @@ describe('isAllowedPopupUrl', () => {
   });
 });
 
+describe('popup actions', () => {
+  const ACTION = 'https://sei.gg/popup/_action/chatgpt-plan';
+  const PAGE = 'https://sei.gg/popup/261101-siwc';
+
+  it('the allow-list is exactly the shipped actions', () => {
+    expect([...POPUP_ACTIONS]).toEqual(['chatgpt-plan']);
+    expect(isPopupAction('chatgpt-plan')).toBe(true);
+    for (const v of ['', 'ChatGPT-plan', 'chatgpt-plan ', 'nope', null, undefined, 7, {}]) {
+      expect(isPopupAction(v)).toBe(false);
+    }
+  });
+
+  it('reads the action name off the url, ignoring query and hash', () => {
+    expect(popupActionFromUrl(ACTION)).toBe('chatgpt-plan');
+    expect(popupActionFromUrl(`${ACTION}?x=1#y`)).toBe('chatgpt-plan');
+    expect(popupActionFromUrl(`${DEV}/popup/_action/chatgpt-plan`, [DEV])).toBe('chatgpt-plan');
+  });
+
+  it('an action url with a name off the list is unknown', () => {
+    expect(popupActionFromUrl('https://sei.gg/popup/_action/nope')).toBe('unknown');
+    expect(popupActionFromUrl('https://sei.gg/popup/_action/')).toBe('unknown');
+    expect(popupActionFromUrl(`${ACTION}/more`)).toBe('unknown');
+    expect(popupActionFromUrl(`${ACTION}/`)).toBe('unknown');
+  });
+
+  it('only sei.gg (or a dev origin in dev) has action urls', () => {
+    for (const url of [
+      PAGE,
+      'https://sei.gg/_action/chatgpt-plan',
+      'http://sei.gg/popup/_action/chatgpt-plan',
+      'https://sei.gg:8443/popup/_action/chatgpt-plan',
+      'https://www.sei.gg/popup/_action/chatgpt-plan',
+      'https://user@sei.gg/popup/_action/chatgpt-plan',
+      'https://evil.example/popup/_action/chatgpt-plan',
+      `${DEV}/popup/_action/chatgpt-plan`,
+      'not a url',
+    ]) {
+      expect(popupActionFromUrl(url)).toBeNull();
+    }
+  });
+
+  it('an action url is never a page the frame may load', () => {
+    expect(isAllowedPopupUrl(ACTION)).toBe(false);
+    expect(isAllowedPopupUrl('https://sei.gg/popup/_action/nope')).toBe(false);
+    expect(isAllowedPopupUrl(`${DEV}/popup/_action/chatgpt-plan`, [DEV])).toBe(false);
+  });
+
+  it('routes a known action only when the navigating frame shows a popup page', () => {
+    expect(routeSubframeNavigation(ACTION, PAGE)).toEqual({ kind: 'action', action: 'chatgpt-plan' });
+    for (const from of ['', 'about:blank', 'https://example.com/', 'https://sei.gg/', ACTION]) {
+      expect(routeSubframeNavigation(ACTION, from)).toEqual({ kind: 'block' });
+    }
+  });
+
+  it('blocks an unknown action, even from the popup page', () => {
+    expect(routeSubframeNavigation('https://sei.gg/popup/_action/nope', PAGE)).toEqual({ kind: 'block' });
+  });
+
+  it('routes pages and ordinary links as before', () => {
+    expect(routeSubframeNavigation(PAGE, '')).toEqual({ kind: 'allow' });
+    expect(routeSubframeNavigation('about:blank', '')).toEqual({ kind: 'allow' });
+    expect(routeSubframeNavigation('https://sei.gg/pricing', PAGE)).toEqual({ kind: 'external' });
+    expect(routeSubframeNavigation('https://sei.gg/pricing', '')).toEqual({ kind: 'block' });
+  });
+});
+
 describe('coerceStartupPopup', () => {
   const base = { id: 'p1', url: 'https://sei.gg/popup/p1' };
 
@@ -68,6 +137,16 @@ describe('coerceStartupPopup', () => {
     expect(coerceStartupPopup({ id: 7, url: base.url }, ctx)).toBeNull();
     expect(coerceStartupPopup({ id: 'x'.repeat(201), url: base.url }, ctx)).toBeNull();
     expect(coerceStartupPopup({ id: 'p1' }, ctx)).toBeNull();
+  });
+
+  it('keeps a known skipIf and drops a popup with an unknown one (fail closed)', () => {
+    expect(coerceStartupPopup({ ...base, skipIf: 'chatgpt-connected' }, ctx)).toEqual({
+      ...base,
+      skipIf: 'chatgpt-connected',
+    });
+    expect(coerceStartupPopup({ ...base, skipIf: 'signed-in' }, ctx)).toBeNull();
+    expect(coerceStartupPopup({ ...base, skipIf: 7 }, ctx)).toBeNull();
+    expect(coerceStartupPopup({ ...base, skipIf: null }, ctx)).toBeNull();
   });
 
   it('trims the id', () => {
@@ -146,6 +225,16 @@ describe('popupToShow', () => {
 
   it('a new id is owed even after an older one was shown', () => {
     expect(popupToShow({ ...p, id: 'p2' }, ['p1'])).not.toBeNull();
+  });
+
+  it('is not owed while its skipIf condition holds', () => {
+    const skip = { ...p, skipIf: 'chatgpt-connected' as const };
+    expect(popupToShow(skip, [], () => true)).toBeNull();
+    expect(popupToShow(skip, [], () => false)).toBe(skip);
+    // No condition named: the check is never consulted.
+    expect(popupToShow(p, [], () => true)).toBe(p);
+    // Default: nothing holds.
+    expect(popupToShow(skip, [])).toBe(skip);
   });
 });
 

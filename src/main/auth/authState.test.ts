@@ -23,6 +23,7 @@ vi.mock('./tosGate', () => ({
 // ---- Mock supabaseClient (260606 — validateSessionOrSignOut) -------------
 const getUserMock = vi.fn();
 const signOutMock = vi.fn().mockResolvedValue({ error: null });
+const dropSessionLocallyMock = vi.fn(async (..._a: unknown[]) => {});
 vi.mock('./supabaseClient', () => ({
   getClient: () => ({
     auth: {
@@ -30,6 +31,8 @@ vi.mock('./supabaseClient', () => ({
       signOut: (...args: unknown[]) => signOutMock(...args),
     },
   }),
+  dropSessionLocally: (...a: unknown[]) => dropSessionLocallyMock(...a),
+  readPersistedSession: async () => null,
 }));
 
 // Imported AFTER the mock so isCloudWriteAllowed resolves the stub.
@@ -168,6 +171,19 @@ describe('validateSessionOrSignOut (260606 — auto sign-out of a dead session)'
     getUserMock.mockResolvedValue({ data: { user: null }, error: { status: 403 } });
     signOutMock.mockRejectedValue(new Error('network'));
     await validateSessionOrSignOut();
+    expect(getCurrentAuthState()).toEqual({ kind: 'local' });
+    expect(dropSessionLocallyMock).toHaveBeenCalled();
+  });
+
+  it('drops the stored session when signOut reports an error instead of throwing', async () => {
+    // supabase-js returns { error } on a network failure and keeps the session
+    // in storage, so the next launch would come back signed in.
+    transitionToSignedIn(makeUser());
+    dropSessionLocallyMock.mockClear();
+    getUserMock.mockResolvedValue({ data: { user: null }, error: { status: 403 } });
+    signOutMock.mockResolvedValue({ error: new Error('fetch failed') });
+    await validateSessionOrSignOut();
+    expect(dropSessionLocallyMock).toHaveBeenCalledTimes(1);
     expect(getCurrentAuthState()).toEqual({ kind: 'local' });
   });
 

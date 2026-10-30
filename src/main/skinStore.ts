@@ -33,6 +33,7 @@ import crypto from 'node:crypto';
 // allowJs:true in tsconfig.node.json lets TS resolve these .js modules.
 import { atomicWrite } from '../bot/brain/storage/atomicWrite.js';
 import { withFileLock } from '../bot/brain/storage/fileLock.js';
+import { legacyMcUsernameFromName, mcUsernameFromName } from '../bot/names.js';
 import { paths } from './paths';
 import { getCharacter, saveCharacter } from './characterStore';
 import { SKIN_PENDING_KEY, type Character, type Skin, type SkinSource } from '../shared/characterSchema';
@@ -73,7 +74,7 @@ export async function resolveSkinPng(character: Character): Promise<Buffer | nul
  * `username` argument semantics:
  *   - undefined → leave the persisted username untouched (skin-only update)
  *   - null      → leave the persisted username untouched (renderer sentinel for "no change")
- *   - '' (empty string after trim) → clear the username (fall back to sanitizeMcName of persona name)
+ *   - '' (empty string after trim) → clear the username (fall back to effectiveMcUsername: the folded persona name)
  *   - any other string → set as the per-persona MC username (CharacterSchema.parse
  *     inside saveCharacter validates the regex `^[A-Za-z0-9_]+$` + length 1-16)
  *
@@ -226,10 +227,15 @@ function withSkinPending(
  *
  * Username match strategy (loose, on purpose):
  *   1. Case-insensitive match on `character.username` (the per-persona field)
- *   2. Case-insensitive sanitized-name fallback (`sanitizeMcName(character.name)`)
- *      so a renderer that hasn't wired character.username yet still resolves the
- *      right character on first launch — mirrors src/bot/index.js's
- *      sanitizeMcName.
+ *   2. Case-insensitive derived-name fallback (`mcUsernameFromName(character.name)`,
+ *      the name a character with no username logs in as, accents folded) so a
+ *      renderer that hasn't wired character.username yet still resolves the
+ *      right character on first launch.
+ *   3. 261027 alias: the name the OLD rule derived (accents deleted, "Sofa"
+ *      for "Sofía"), tried only when nothing matched 1 or 2, so a request
+ *      under a pre-fold name (a CSL client or preview still holding it) still
+ *      gets the character's skin. Skins are stored by character id, so the
+ *      rename moves no file; this only keeps the old URL answering.
  *
  * 260707: no bundled-default fallback. sui/lyra/marv are ordinary public
  * characters; when one isn't cached locally yet, this returns null and the skin
@@ -241,17 +247,21 @@ export async function readSkinPng(args: {
   listCharacters: () => Promise<Character[]>;
 }): Promise<Buffer | null> {
   const all = await args.listCharacters();
-  const sanitize = (s: string): string => String(s || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 16) || 'Sei';
   // Case-insensitive comparison — MC usernames preserve case in display but
   // upstream CSL/preview consumers occasionally lowercase the slug. The skin
   // server's URL regex (skinServer.ts) restricts the path to [A-Za-z0-9_]{1,16}
-  // so this is a pure case-fold compare; no Unicode normalization needed.
+  // so this is a pure case-fold compare on the request side; the character
+  // side is folded by mcUsernameFromName.
   const wantLower = args.username.toLowerCase();
-  const match = all.find(
-    (c) =>
-      (c.username && c.username.toLowerCase() === wantLower) ||
-      sanitize(c.name).toLowerCase() === wantLower,
-  );
+  const match =
+    all.find(
+      (c) =>
+        (c.username && c.username.toLowerCase() === wantLower) ||
+        mcUsernameFromName(c.name).toLowerCase() === wantLower,
+    ) ??
+    // Only after every current name missed: a real character named "Sofa"
+    // keeps its own skin even while "Sofía" (old name Sofa) exists.
+    all.find((c) => legacyMcUsernameFromName(c.name).toLowerCase() === wantLower);
   if (match) return await resolveSkinPng(match);
   return null;
 }

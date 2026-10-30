@@ -24,9 +24,13 @@
  * (`repeats_before`).
  *
  * Shape only: enums, counts and durations. No character id, no message text.
- * `allowance_used_micro` is derived from the account snapshot (`usage_pct` of
- * the plan's weekly allowance), so it has 1% resolution and caps at the
- * allowance; the client cannot read the ledger's exact micro-dollar sum.
+ * `allowance_micro` is the account's EFFECTIVE allowance for this period and
+ * `allowance_used_micro` the exact usage against it, both from my_plan
+ * (261028). A plan_config change applies from each account's next period, so
+ * the pricing catalog's weekly_credits is wrong for an account mid-week at a
+ * cutover (the 261027 free cut: $0.15 in the catalog, $0.50 until its reset).
+ * The catalog, and `usage_pct` x catalog allowance (1% resolution, capped at
+ * the allowance), remain the fallback against a view without those columns.
  */
 import type { CreditsHardStopEvent, CreditsStatus } from '../shared/ipc';
 
@@ -89,7 +93,8 @@ export interface CreditWallPropsInput {
   installedAt: number | null;
   /** Account snapshot read right after the wall; null when the read failed. */
   snapshot: CreditsStatus | null;
-  /** The plan's weekly allowance in µ$; null when the catalog is unknown. */
+  /** This period's weekly allowance in µ$ (snapshot, else the plan's catalog
+   * figure); null when neither is known. */
   allowanceMicro: number | null;
   repeatsBefore: number;
   /** 1 for the first wall shipped this app run, 2 for the next, ... */
@@ -106,8 +111,13 @@ export function creditWallProps(input: CreditWallPropsInput): Record<string, Sca
     reason: info.reason,
     surface: ctx.surface,
     ms_since_install: installedAt !== null && now >= installedAt ? now - installedAt : null,
+    allowance_micro: allowanceMicro,
     allowance_used_micro:
-      snapshot && allowanceMicro !== null ? Math.round((snapshot.usage_pct / 100) * allowanceMicro) : null,
+      snapshot && typeof snapshot.allowance_used_micro === 'number'
+        ? snapshot.allowance_used_micro
+        : snapshot && allowanceMicro !== null
+          ? Math.round((snapshot.usage_pct / 100) * allowanceMicro)
+          : null,
     usage_pct: snapshot ? snapshot.usage_pct : null,
     // One decimal: "back in 0.3 h" and "back in 151.2 h" are both answers.
     resets_in_h: Number.isFinite(resetsAt) ? Math.max(0, Math.round((resetsAt - now) / 360_000) / 10) : null,
@@ -129,7 +139,8 @@ export interface CreditWallDeps {
   now: () => number;
   installedAt: () => number | null;
   readSnapshot: () => Promise<CreditsStatus | null>;
-  /** Weekly allowance (µ$) for a plan tier, or null when unknown. */
+  /** Catalog weekly allowance (µ$) for a plan tier, or null when unknown.
+   * Only consulted when the snapshot has no allowance_micro. */
   allowanceMicroFor: (plan: CreditsStatus['plan']) => Promise<number | null>;
   capture: (event: string, props: Record<string, Scalar>) => void | Promise<void>;
 }
@@ -167,7 +178,9 @@ export function createCreditWallReporter(deps: CreditWallDeps, quietMs: number =
         // reading of the account: report unknown rather than "0% used".
         if (snapshot && !snapshot.resets_at) snapshot = null;
         let allowanceMicro: number | null = null;
-        if (snapshot) {
+        if (snapshot && typeof snapshot.allowance_micro === 'number') {
+          allowanceMicro = snapshot.allowance_micro;
+        } else if (snapshot) {
           try {
             allowanceMicro = await deps.allowanceMicroFor(snapshot.plan);
           } catch {

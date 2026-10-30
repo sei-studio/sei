@@ -46,8 +46,16 @@ export const CHATGPT_PREFERRED_PORT = 1455;
 
 /** Where users review app usage and limits (UI/UX guidelines). */
 export const CHATGPT_USAGE_URL = 'https://chatgpt.com/settings/usage';
-/** Where the per-plan "Learn more" link points (UI/UX guidelines). */
-export const CHATGPT_HELP_URL = 'https://help.openai.com';
+/**
+ * Where the Credits page "Learn more" link (next to "Use your ChatGPT plan")
+ * points. OpenAI's UI/UX guidelines say to "Link Learn more to the OpenAI
+ * Help Center for guidance on ChatGPT plan usage"
+ * (developers.openai.com/siwc/ui-ux-guidelines). 261027 (Shawn: the bare
+ * help.openai.com homepage is useless): the Help Center article on exactly
+ * this, "Using your ChatGPT plan in other apps and sites".
+ */
+export const CHATGPT_HELP_URL =
+  'https://help.openai.com/en/articles/20001542-using-your-chatgpt-plan-in-other-apps-and-sites';
 
 /** Static fallback model when the account catalog cannot be read. */
 export const CHATGPT_FALLBACK_MODEL = 'gpt-6-luna';

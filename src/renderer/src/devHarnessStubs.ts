@@ -393,4 +393,21 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
     : base;
 }
 
+// ?facepack=1 (261028): the facepack dev preview in a plain browser tab. It
+// reads packs over HTTP (urlPackSource), so the bridge only has to answer
+// the view's optional subscriptions: everything is an async undefined, every
+// on* an unsubscribe.
+if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.search).has('facepack')) {
+  const noop = async (): Promise<undefined> => undefined;
+  (window as unknown as { sei: unknown }).sei = new Proxy(
+    {},
+    {
+      get(_t, key) {
+        if (typeof key === 'string' && key.startsWith('on')) return () => () => undefined;
+        return noop;
+      },
+    },
+  );
+}
+
 export {};

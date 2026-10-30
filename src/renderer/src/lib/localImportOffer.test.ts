@@ -57,6 +57,11 @@ describe('localImportOfferTiming', () => {
     expect(localImportOfferTiming('switch', false)).toBe('none');
     expect(localImportOfferTiming('switch', true)).toBe('none');
   });
+
+  it('never offers when the session was restored at launch, not signed into (261029)', () => {
+    expect(localImportOfferTiming('sign-in', false, true)).toBe('none');
+    expect(localImportOfferTiming('sign-in', true, true)).toBe('none');
+  });
 });
 
 const SUI = 'bbf5b66f-2f0f-4918-a953-a2cf66d5a586';

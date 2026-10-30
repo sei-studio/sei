@@ -1031,9 +1031,14 @@ async function castSoulLocal(args: {
   dynamic: CompanionDynamic;
   userProfile: unknown;
   takenVoiceIds: string[];
+  /** Names in the local library, avoided as name candidates. */
+  libraryNames: string[];
   signal: AbortSignal;
 }): Promise<{ sheet: Sheet }> {
   const { castSoul } = await import('soulcaster');
+  // Public names are never offered as candidates (the cloud path does the same
+  // server-side). Best-effort: signed-out or offline just means no exclusions.
+  const publicNames = await fetchPublicCharacterNames(args.signal);
   const { buildLlmProvider } = await import('./llm');
   // Built once per cast, fresh from config (provider + provider_config.model).
   const provider = await buildLlmProvider();
@@ -1052,9 +1057,68 @@ async function castSoulLocal(args: {
     dynamic: args.dynamic,
     userProfile: args.userProfile,
     takenVoiceIds: args.takenVoiceIds,
+    excludeNames: publicNames,
+    avoidNames: args.libraryNames,
     llm,
   });
   return { sheet: sheet as unknown as Sheet };
+}
+
+const PUBLIC_NAMES_TIMEOUT_MS = 3000;
+
+/**
+ * Names of every publicly shared character, for the BYOK name-candidate draw.
+ * Shared rows are readable with the anon key (the Browse listing relies on the
+ * same characters_select_own_or_shared policy), so this works signed out too.
+ *
+ * Uses its own session-less client: the app's shared client would run
+ * auth.getSession() first, and a token refresh there can retry for ~30s. The
+ * read also races a hard timer, so a cast waits at most
+ * PUBLIC_NAMES_TIMEOUT_MS here. Any error, timeout or abort returns [].
+ */
+async function fetchPublicCharacterNames(signal?: AbortSignal): Promise<string[]> {
+  if (signal?.aborted) return [];
+  const ctrl = new AbortController();
+  const onAbort = (): void => ctrl.abort();
+  signal?.addEventListener('abort', onAbort, { once: true });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<string[]>((resolve) => {
+    timer = setTimeout(() => {
+      ctrl.abort();
+      resolve([]);
+    }, PUBLIC_NAMES_TIMEOUT_MS);
+  });
+  const aborted = new Promise<string[]>((resolve) => {
+    ctrl.signal.addEventListener('abort', () => resolve([]), { once: true });
+  });
+  const read = (async (): Promise<string[]> => {
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+      const { getSupabaseUrl, getSupabaseAnonKey } = await import('./env');
+      const sb = createClient(getSupabaseUrl(), getSupabaseAnonKey(), {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+      const { data, error } = await sb
+        .from('characters')
+        .select('name')
+        .eq('shared', true)
+        .order('name')
+        .limit(1000) // PostgREST max-rows cap; prod has a few dozen shared rows
+        .abortSignal(ctrl.signal);
+      if (error || !Array.isArray(data)) return [];
+      return data
+        .map((r) => (r as { name?: unknown }).name)
+        .filter((n): n is string => typeof n === 'string' && n.trim() !== '');
+    } catch {
+      return [];
+    }
+  })();
+  try {
+    return await Promise.race([read, timeout, aborted]);
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
+  }
 }
 
 /**
@@ -1413,13 +1477,19 @@ async function runPipeline(args: {
     // Voice roll (260705): exclude voices the library already uses so a
     // roster's companions rarely share a voice. Best-effort — an unreadable
     // library just means no exclusions.
+    // Library names feed the local (BYOK) name draw the same way: avoid
+    // handing one user two companions with the same name. The cloud proxy
+    // reads the owner's names itself.
     let takenVoiceIds: string[] = [];
+    let libraryNames: string[] = [];
     try {
       const { listCharacters } = await import('./characterStore');
       const { assignedVoiceId } = await import('./voice/voiceAssign');
-      takenVoiceIds = (await listCharacters())
+      const library = await listCharacters();
+      takenVoiceIds = library
         .map((c) => assignedVoiceId(c))
         .filter((v): v is string => v !== null);
+      libraryNames = library.map((c) => c.name).filter((n): n is string => typeof n === 'string' && n !== '');
     } catch {}
     const { sheet: cast } =
       backendKind === 'cloud-proxy'
@@ -1436,6 +1506,7 @@ async function runPipeline(args: {
             dynamic,
             userProfile: config.user_profile ?? null,
             takenVoiceIds,
+            libraryNames,
             signal,
           });
     sheet = cast;

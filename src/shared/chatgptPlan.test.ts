@@ -4,7 +4,7 @@
  * API key (seen live on 261017).
  */
 import { describe, expect, it } from 'vitest';
-import { isResponsesChatModelId, parseChatgptModels, pickDefaultChatgptModel, pickReasoningEffort } from './chatgptPlan';
+import { CHATGPT_HELP_URL, isResponsesChatModelId, parseChatgptModels, pickDefaultChatgptModel, pickReasoningEffort } from './chatgptPlan';
 
 describe('parseChatgptModels', () => {
   it('plan catalog: keeps visibility "list" in server order', () => {
@@ -51,5 +51,13 @@ describe('pickReasoningEffort', () => {
   it('prefers low (gpt-6-luna accepts none/low/medium/high/xhigh/max, not minimal)', () => {
     expect(pickReasoningEffort(['none', 'low', 'medium', 'high', 'xhigh', 'max'])).toBe('low');
     expect(pickReasoningEffort([])).toBeNull();
+  });
+});
+
+describe('CHATGPT_HELP_URL', () => {
+  it('opens the specific Help Center article, not the help.openai.com homepage', () => {
+    const url = new URL(CHATGPT_HELP_URL);
+    expect(url.hostname).toBe('help.openai.com');
+    expect(url.pathname).toMatch(/^\/en\/articles\/20001542-using-your-chatgpt-plan-in-other-apps-and-sites$/);
   });
 });

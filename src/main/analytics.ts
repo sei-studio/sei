@@ -23,6 +23,7 @@ import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { PostHog } from 'posthog-node';
 import { loadConfig, updateConfig } from './configStore';
+import { redact } from './diagnostics';
 import { getAiBackendKind, onAiBackendKindChanged } from './apiKeyStore';
 import {
   ATTRIBUTION_DETAIL_EVENT,
@@ -352,11 +353,12 @@ export function captureAppQuit(now: number = Date.now()): void {
 /**
  * Diagnostic long-text allowlist (260720): the ONLY keys allowed past
  * sanitize()'s 200-char truncation, and only via captureDiagnostic(). Callers
- * MUST pre-redact these fields (diagnostics.redact strips home paths, API
- * keys, JWTs, and chat/prompt log content) — this layer only enforces length.
+ * should pre-redact these fields with diagnostics.redact (it knows the bot's
+ * name); 261031: this layer runs redact() again as a backstop, so no free text
+ * reaches PostHog unscrubbed, then caps the length (2KB since 261031, was 8KB).
  */
 const DIAG_LONG_TEXT_KEYS: readonly string[] = ['stderr_tail', 'stdout_tail', 'error_message'];
-const DIAG_LONG_TEXT_CAP = 8192;
+const DIAG_LONG_TEXT_CAP = 2048;
 
 /**
  * sanitize() plus the diagnostic long-text allowlist. Exported for tests.
@@ -370,7 +372,8 @@ export function sanitizeDiagnostic(props?: Record<string, unknown>): Record<stri
   for (const k of DIAG_LONG_TEXT_KEYS) {
     const v = props[k];
     if (typeof v === 'string') {
-      out[k] = k.endsWith('_tail') ? v.slice(-DIAG_LONG_TEXT_CAP) : v.slice(0, DIAG_LONG_TEXT_CAP);
+      const clean = redact(v);
+      out[k] = k.endsWith('_tail') ? clean.slice(-DIAG_LONG_TEXT_CAP) : clean.slice(0, DIAG_LONG_TEXT_CAP);
     }
   }
   return out;
@@ -379,8 +382,8 @@ export function sanitizeDiagnostic(props?: Record<string, unknown>): Record<stri
 /**
  * Capture a diagnostic event carrying pre-redacted long text (failed-summon
  * stderr/stdout tails + error message, 260720). Identical opt-out and
- * missing-key gating to capture(); the only difference is the allowlisted
- * per-field 8KB cap above. Never throws.
+ * missing-key gating to capture(); the only difference is the allowlisted,
+ * redacted, per-field 2KB long text above. Never throws.
  */
 export function captureDiagnostic(event: string, props?: Record<string, unknown>): void {
   if (!client || optedOut) return;

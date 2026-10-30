@@ -24,8 +24,24 @@
  *     the frame stays where it is. A frame with no popup page committed (a
  *     nested <iframe> embed's first load) is cancelled without opening the
  *     browser. Redirects off the allow-list are cancelled;
+ *   - actions (261029): a link to https://sei.gg/popup/_action/<name> is a
+ *     button that does something in the app (src/shared/popupActions.ts).
+ *     Followed from the committed popup frame, the navigation is cancelled
+ *     (no request is made) and the name goes to the renderer over
+ *     `app:startup-popup-action`; the renderer closes the popup and runs it,
+ *     unless the popup is not shown yet or was revealed under
+ *     POPUP_ACTION_ARM_MS ago (a meta refresh or Refresh header can reach an
+ *     action URL with no click).
+ *     An unknown name, or an action URL from any other frame, is dropped:
+ *     nothing runs and no browser tab opens. Routing is the pure
+ *     routeSubframeNavigation in startupPopup.ts;
  *   - window.open / target=_blank: denied for the whole main window (nothing
- *     in the app opens child windows), the URL goes to the default browser;
+ *     in the app opens child windows), the URL goes to the default browser.
+ *     An action link with target=_blank (the popup pages set
+ *     <base target="_blank">) arrives here instead of will-frame-navigate,
+ *     with no frame attached; it runs only while a popup page is committed in
+ *     a subframe, since that page is the only content in the window that is
+ *     not the app's own renderer (which never opens windows);
  *   - framing: sei.gg sends X-Frame-Options: SAMEORIGIN on every page, which
  *     would block the frame inside the app. The header (and a CSP
  *     frame-ancestors) is dropped for allowed popup URLs loaded as a subframe
@@ -39,7 +55,14 @@ import { session, shell, type BrowserWindow } from 'electron';
 import { IpcChannel } from '../shared/ipc';
 import { assertSafeExternalUrl } from './lib/externalUrlValidator';
 import { isPopupFrameUrl, popupDevOrigins } from './notices';
-import { POPUP_ORIGIN, POPUP_PATH_PREFIX, PopupFrameTracker } from './startupPopup';
+import {
+  POPUP_ORIGIN,
+  POPUP_PATH_PREFIX,
+  PopupFrameTracker,
+  popupActionFromUrl,
+  routeSubframeNavigation,
+} from './startupPopup';
+import type { PopupAction } from '../shared/popupActions';
 
 const logger = {
   info: (m: string) => console.log(`[sei] ${m}`),
@@ -71,22 +94,37 @@ function stripFrameAncestors(value: string): string | null {
 export function installPopupFrameGuards(win: BrowserWindow): void {
   const wc = win.webContents;
 
+  const runAction = (action: PopupAction): void => {
+    logger.info(`popup: action ${action}`);
+    if (!wc.isDestroyed()) wc.send(IpcChannel.app.startupPopupAction, action);
+  };
+
   wc.setWindowOpenHandler(({ url }) => {
-    openExternally(url);
+    const action = popupActionFromUrl(url, popupDevOrigins());
+    if (action === null) {
+      openExternally(url);
+    } else if (action !== 'unknown' && popupPageCommitted(wc)) {
+      runAction(action);
+    } else {
+      logger.info(`popup: dropped action link ${url.slice(0, 80)}`);
+    }
     return { action: 'deny' };
   });
 
   wc.on('will-frame-navigate', (details) => {
     if (details.isMainFrame) return;
-    if (details.url === 'about:blank' || isPopupFrameUrl(details.url)) return;
-    details.preventDefault();
-    // Only a frame that is showing a popup page is following a link (a
-    // sandboxed page with no scripts navigates only on a click). A frame with
+    // Only a frame that is showing a popup page is following a link. That is
+    // a click, or a meta refresh / Refresh header (the page runs no scripts,
+    // but those still navigate it with no click), which is why the renderer
+    // ignores an action that lands right after the reveal. A frame with
     // nothing committed yet is a nested <iframe> starting its first load (an
-    // embed on the page): cancel it without opening the browser, or every
-    // load of that popup would pop a browser tab with no click.
-    const from = details.frame?.url ?? '';
-    if (isPopupFrameUrl(from)) openExternally(details.url);
+    // embed on the page): it is cancelled without opening the browser, or
+    // every load of that popup would pop a browser tab with no click.
+    const route = routeSubframeNavigation(details.url, details.frame?.url ?? '', popupDevOrigins());
+    if (route.kind === 'allow') return;
+    details.preventDefault();
+    if (route.kind === 'action') runAction(route.action);
+    else if (route.kind === 'external') openExternally(details.url);
     else logger.info(`popup: blocked frame load ${details.url.slice(0, 80)}`);
   });
 
@@ -138,6 +176,15 @@ export function installPopupFrameGuards(win: BrowserWindow): void {
     }
     callback({ responseHeaders: headers });
   });
+}
+
+/** Whether some subframe of the window has a popup page committed. */
+function popupPageCommitted(wc: BrowserWindow['webContents']): boolean {
+  try {
+    return wc.mainFrame.framesInSubtree.some((f) => f !== wc.mainFrame && isPopupFrameUrl(f.url));
+  } catch {
+    return false;
+  }
 }
 
 /**

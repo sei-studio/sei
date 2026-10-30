@@ -239,6 +239,83 @@ const DUCK_CONFIRM_MS = 120;
  *  either failed or is slower than the feature can wait for, and the decision
  *  falls back to energy: still loud means still talking. */
 const BARGE_SUSPECT_MAX_MS = 1800;
+/** 261030: once the confirming pass HAS come back with a word and only the
+ *  echo gate is still deciding whose word it was, the energy deadline above
+ *  no longer applies. The gate's slow path waits one bounded screen-STT flush
+ *  (~1.2 s), which on top of a cloud STT round trip routinely ran past 1.8 s
+ *  during a share, and the energy fallback then threw the player's words away
+ *  whenever that one frame happened to sit under the stiff bar (a pause
+ *  between words, or simply a loud game). This is the outer bound for the
+ *  gate's answer, after which the old energy rule decides as before. */
+const BARGE_ECHO_WAIT_MAX_MS = 4000;
+/**
+ * 261030: the noise-floor term of both barge bars is capped at this while a
+ * screen share is live (BARGE_ABS_MIN / BARGE_NOISE_FACTOR, so the term can
+ * never exceed the absolute minimum).
+ *
+ * Why: AEC removes only Sei's own TTS from the mic. Game audio played on
+ * speakers reaches the mic untouched, and the noise floor (adapted between her
+ * lines) climbs to the game's level. Both bars are >= 5x that floor, so over a
+ * loud game a normal voice never crossed either, and interrupting her was
+ * impossible (0.6.10 Windows report: "It doesnt let me interrupt it", during a
+ * Roblox share). The measured hold residue already contains the game AND her
+ * echo, because it is sampled while she plays, so it keeps carrying the margin
+ * over both (speech must clear 1.6x of it to duck, 2.5x to commit on energy).
+ * The cap only removes the floor's extra 5x on top; the floor itself still
+ * counts at the residue's factors (see bargeBars). The bars never drop below
+ * what a quiet room gives with the same residue, so TTS echo false triggers
+ * are no more likely than with the same speakers in a quiet room. What a share's game sound may
+ * now trip is the DUCK, which stage two retracts unless STT hears a word that
+ * the echo gate does not trace back to the screen.
+ */
+const SHARE_NOISE_FLOOR_CAP = BARGE_ABS_MIN / BARGE_NOISE_FACTOR;
+
+export interface BargeLevels {
+  /** Adaptive room noise floor (EMA over frames outside speech and hold). */
+  noiseFloor: number;
+  /** EMA of what reaches the mic while the companion plays. */
+  holdResidue: number;
+  /** A screen share is live, so other apps' audio may be in the room. */
+  shareActive: boolean;
+}
+
+/**
+ * The two barge bars for one frame under hold (pure, tested). `duck` opens
+ * stage one; `commit` is the sustained-energy fallback's bar. See
+ * SHARE_NOISE_FLOOR_CAP for what the share changes and why.
+ */
+export function bargeBars(l: BargeLevels): { duck: number; commit: number } {
+  if (!l.shareActive) {
+    const floorTerm = l.noiseFloor * BARGE_NOISE_FACTOR;
+    return {
+      duck: Math.max(DUCK_ABS_MIN, floorTerm, l.holdResidue * DUCK_RESIDUE_FACTOR),
+      commit: Math.max(BARGE_ABS_MIN, floorTerm, l.holdResidue * BARGE_RESIDUE_FACTOR),
+    };
+  }
+  // During a share the floor stops being multiplied by 5 and is treated like
+  // the residue instead: both measure what the room sounds like without the
+  // player, and the floor is the fresher of the two at the start of a line (it
+  // adapted to the game in the gap, while the residue still holds the last
+  // line's level). Without this the first loud frame of every line ducked her.
+  const floorTerm = Math.min(l.noiseFloor, SHARE_NOISE_FLOOR_CAP) * BARGE_NOISE_FACTOR;
+  const room = Math.max(l.holdResidue, l.noiseFloor);
+  return {
+    duck: Math.max(DUCK_ABS_MIN, floorTerm, room * DUCK_RESIDUE_FACTOR),
+    commit: Math.max(BARGE_ABS_MIN, floorTerm, room * BARGE_RESIDUE_FACTOR),
+  };
+}
+
+/** The energy bar the unanswered-duck deadline decides on (no floor term, as
+ *  before 261030). Exported for the tests. */
+export function bargeDeadlineBar(holdResidue: number): number {
+  return Math.max(BARGE_ABS_MIN, holdResidue * BARGE_RESIDUE_FACTOR);
+}
+
+/** Why a provisional barge was retracted (261030 diagnostics). 'echo' = the
+ *  echo gate traced the confirming words to the speakers; 'no_word' = no word
+ *  came back (or the energy fallback decided against it); 'cancelled' = the
+ *  utterance was abandoned (mute, teardown, a hold transition). */
+export type BargeAbortReason = 'echo' | 'no_word' | 'cancelled';
 
 /**
  * Does a transcript contain a word the player actually said?
@@ -330,7 +407,7 @@ export async function createDictation(opts: {
   onBargeSuspect?: () => void;
   /** The provisional barge-in was not speech. Bring playback back up. Only ever
    * fires after onBargeSuspect and never after onBargeIn. */
-  onBargeAbort?: () => void;
+  onBargeAbort?: (reason: BargeAbortReason) => void;
   /** Fires true when the player's live mic speech opens and false when it ends —
    * drives the "you're talking" ring on the caller's own avatar (same lit ring
    * the companions get while speaking). Edge-emitted, so it only fires on change. */
@@ -381,6 +458,13 @@ export async function createDictation(opts: {
    * absence both mean "not echo".
    */
   echoCheck?: (info: MicEchoInfo) => boolean | Promise<boolean>;
+  /**
+   * 261030: whether a screen share is live right now. Read per frame under
+   * hold; while true the barge bars stop scaling with the room noise floor
+   * past a quiet-room level (SHARE_NOISE_FLOOR_CAP), because the floor is
+   * then mostly the game's own audio.
+   */
+  shareActive?: () => boolean;
   /**
    * The mic stream is open (260730). Fires once, as soon as getUserMedia
    * resolves and BEFORE the model load below, because opening a mic with
@@ -571,7 +655,7 @@ export async function createDictation(opts: {
    * which is also true of every utterance that began outside hold — those were
    * never in doubt.
    */
-  let suspect: { since: number; asked: boolean } | null = null;
+  let suspect: { since: number; asked: boolean; answered: boolean } | null = null;
   /** EMA of the echo residue reaching the mic while companion audio plays —
    * the basis of the adaptive barge bar (see BARGE_RESIDUE_FACTOR). Carries
    * across clips: the playback device and volume don't change mid-call. */
@@ -693,7 +777,7 @@ export async function createDictation(opts: {
     // does not double-fire.
     if (suspect) {
       suspect = null;
-      opts.onBargeAbort?.();
+      opts.onBargeAbort?.('cancelled');
     }
     emitSpeech(false);
   }
@@ -717,7 +801,7 @@ export async function createDictation(opts: {
     const finish = (echo: boolean): void => {
       if (wasSuspect) {
         if (hasSpokenWord(text) && !echo) opts.onBargeIn?.();
-        else opts.onBargeAbort?.();
+        else opts.onBargeAbort?.(echo && hasSpokenWord(text) ? 'echo' : 'no_word');
       }
       if (!text) return;
       if (echo) {
@@ -762,7 +846,7 @@ export async function createDictation(opts: {
         inflight.delete(pendingEager.id);
       }
       // Too short to be a word at all, so it was a transient: un-duck.
-      if (wasSuspect) opts.onBargeAbort?.();
+      if (wasSuspect) opts.onBargeAbort?.('no_word');
       return;
     }
     if (pendingEager) {
@@ -790,7 +874,7 @@ export async function createDictation(opts: {
   function confirmBarge(rms: number): void {
     const s = suspect;
     if (!s) return;
-    const settle = (real: boolean): void => {
+    const settle = (real: boolean, why: BargeAbortReason = 'no_word'): void => {
       if (suspect !== s) return; // superseded (utterance ended, mute, teardown)
       suspect = null;
       if (real) {
@@ -800,15 +884,19 @@ export async function createDictation(opts: {
       // Not speech. Retract the duck and go back to listening under hold — the
       // frames collected are discarded rather than transcribed again, because
       // the pass that just ran already read them and found nothing.
-      opts.onBargeAbort?.();
+      opts.onBargeAbort?.(why);
       resetUtterance();
     };
 
-    if (performance.now() - s.since >= BARGE_SUSPECT_MAX_MS) {
+    // 261030: a pass that came back with a word is waiting on the echo gate,
+    // not on transcription, so it gets the gate's longer bound (see
+    // BARGE_ECHO_WAIT_MAX_MS) instead of being decided on one frame's energy.
+    const deadline = s.answered ? BARGE_ECHO_WAIT_MAX_MS : BARGE_SUSPECT_MAX_MS;
+    if (performance.now() - s.since >= deadline) {
       // Transcription never answered. Decide on energy: the level bar here is
       // the stiff one, so still being over it after nearly two seconds is a
       // person talking, not a transient.
-      settle(rms >= Math.max(BARGE_ABS_MIN, holdResidue * BARGE_RESIDUE_FACTOR));
+      settle(rms >= bargeDeadlineBar(holdResidue));
       return;
     }
     if (s.asked || speechMsOf(utterance) < BARGE_WORD_MS) return;
@@ -835,8 +923,9 @@ export async function createDictation(opts: {
           settle(true);
           return;
         }
+        s.answered = true;
         void Promise.resolve(check({ text, t0, t1, envelope: env, purpose: 'barge' })).then(
-          (echo) => settle(!echo),
+          (echo) => settle(!echo, 'echo'),
           () => settle(true),
         );
       },
@@ -893,7 +982,8 @@ export async function createDictation(opts: {
       preRoll.push(frame.slice());
       if (preRoll.length > PRE_ROLL_FRAMES) preRoll.shift();
       const inGrace = performance.now() - holdSince < graceMs;
-      const bar = Math.max(BARGE_ABS_MIN, noiseFloor * BARGE_NOISE_FACTOR, holdResidue * BARGE_RESIDUE_FACTOR);
+      const bars = bargeBars({ noiseFloor, holdResidue, shareActive: opts.shareActive?.() === true });
+      const bar = bars.commit;
       if (rms > holdPeakRms) {
         holdPeakRms = rms;
         holdPeakBar = bar;
@@ -918,12 +1008,7 @@ export async function createDictation(opts: {
       // uninterruptible, which on short lines is the whole clip. A false duck
       // caused by a clip's own onset is retracted a few hundred milliseconds
       // later by the transcription, and the player hears a wobble at worst.
-      const duckBar = Math.max(
-        DUCK_ABS_MIN,
-        noiseFloor * BARGE_NOISE_FACTOR,
-        holdResidue * DUCK_RESIDUE_FACTOR,
-      );
-      if (rms >= duckBar) {
+      if (rms >= bars.duck) {
         duckRunMs += frameMs;
         if (duckRunMs >= DUCK_CONFIRM_MS) {
           duckRunMs = 0;
@@ -932,7 +1017,7 @@ export async function createDictation(opts: {
           // below collects frames, and `suspect` is what marks the collection
           // as unconfirmed.
           openSpeech(frameMs);
-          suspect = { since: performance.now(), asked: false };
+          suspect = { since: performance.now(), asked: false, answered: false };
           opts.onBargeSuspect?.();
           return;
         }

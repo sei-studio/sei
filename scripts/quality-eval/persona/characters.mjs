@@ -4,6 +4,7 @@
 // array, as the Supabase query returned it.
 import fs from 'node:fs'
 import path from 'node:path'
+import { foldLatin } from '../../../src/bot/names.js'
 
 export const DEFAULT_CHARS = ['sui', 'lyra', 'marv', 'red', 'roger']
 
@@ -23,10 +24,11 @@ export const TICS = {
 }
 
 // Mirror of effectiveMcUsername (src/shared/characterSchema.ts): the in-game
-// name is character.username, else the display name sanitized to MC rules.
+// name is character.username, else the display name, accents folded, sanitized
+// to MC rules. The eval pads names under 3 characters for its local server.
 function mcName(row) {
   if (row.username) return row.username
-  const s = String(row.name ?? '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 16)
+  const s = foldLatin(row.name ?? '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 16)
   return s.length >= 3 ? s : `${s}_sei`.slice(0, 16)
 }
 

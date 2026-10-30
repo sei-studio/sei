@@ -37,13 +37,13 @@ const render = (p: PeekLocalProfileResult | null): string =>
 describe('LocalImportRowView', () => {
   it('shows with local companions', () => {
     const html = render(peek({ migratableCharacterIds: ['own'], hasData: true, hasCompanionData: true }));
-    expect(html).toContain('Bring companions from this computer');
+    expect(html).toContain('Companions from before you signed in');
     expect(html).toContain('Bring over');
   });
 
   it('shows with memories alone', () => {
     expect(render(peek({ memoryOnlyCharacterIds: ['own'], hasData: true, hasCompanionData: true }))).toContain(
-      'Bring companions from this computer',
+      'Companions from before you signed in',
     );
   });
 
@@ -56,7 +56,7 @@ describe('LocalImportRowView', () => {
   });
 
   it('has zh translations', () => {
-    expect(ZH['Bring companions from this computer']).toBeTruthy();
+    expect(ZH['Companions from before you signed in']).toBeTruthy();
     expect(ZH['Bring over']).toBeTruthy();
   });
 });

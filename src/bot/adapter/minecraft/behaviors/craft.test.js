@@ -155,6 +155,40 @@ describe('craftAction', () => {
   })
 })
 
+describe('craft with a copy already in the bag (261025)', () => {
+  // Eval: inventory oak_planks 3, oak_log 3, wooden_pickaxe 1, and craft
+  // wooden_pickaxe answered "need 2 more stick" in 23ms. The plan counted the
+  // pickaxe she already had, so it made no parts.
+  const T = { name: 'crafting_table' }
+  const bag = (o) => Object.entries(o).map(([name, count]) => ({ name, count }))
+
+  it('makes the sticks it needs for a second pickaxe', async () => {
+    const bot = makeBot({ items: bag({ oak_planks: 3, oak_log: 3, wooden_pickaxe: 1 }), table: T })
+    const res = await craftAction({ item: 'wooden_pickaxe', count: 1 }, bot, {})
+    expect(res).toBe('crafted 1 wooden_pickaxe, made 4 oak_planks, 4 stick for it first')
+  })
+
+  it('makes the planks it needs for a second pickaxe', async () => {
+    const bot = makeBot({ items: bag({ stick: 4, oak_log: 9, oak_planks: 1, wooden_pickaxe: 1 }), table: T })
+    const res = await craftAction({ item: 'wooden_pickaxe', count: 1 }, bot, {})
+    expect(res).toBe('crafted 1 wooden_pickaxe, made 4 oak_planks for it first')
+  })
+})
+
+describe('the table the walk reached (261025)', () => {
+  it('uses a table within reach of her eyes when the feet test misses it', async () => {
+    const bot = makeBot({ items: [{ name: 'oak_planks', count: 8 }] })
+    const table = { name: 'crafting_table', position: { x: 3, y: 66, z: 0 } }
+    // The feet-based detection (4m) never sees it; the walk radius does.
+    bot.findBlock = ({ maxDistance }) => (maxDistance >= 16 ? table : null)
+    bot.blockAt = (p) => (p.x === 3 && p.y === 66 && p.z === 0 ? table : null)
+    bot.entity.position = { x: 0.5, y: 64, z: 0.5 }
+    goTo.mockImplementationOnce(async () => 'reached')
+    const res = await craftAction({ item: 'chest', count: 1 }, bot, {})
+    expect(res).toMatch(/^crafted 1 chest/)
+  })
+})
+
 describe('placeNote (261011)', () => {
   it('says a crafted station is still in the bag', () => {
     expect(placeNote('furnace')).toContain('not placed yet (placeBlock furnace')

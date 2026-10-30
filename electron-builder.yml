@@ -1,6 +1,4 @@
 # electron-builder.yml — Phase 4 final.
-# Source: .planning/phases/04-electron-gui-packaging/04-RESEARCH.md §"Code Examples §3 + §4"
-#         + §"Resolved During Plan-Phase" Q1, Q2, Q3.
 #
 # appId is LOCKED for v1. Any future change strands every existing user's
 # safeStorage Keychain entry on macOS and Windows DPAPI scope on Windows —
@@ -68,7 +66,6 @@ files:
   # the cleanest evidence that these two matchers are genuinely separate.
   - "!demo/**"
   - "!ARCHITECTURE.md"
-  - "!RELEASE-NOTES.md"
   - "!README.md"
   - "!CLAUDE.md"
   # tooling / CI / git
@@ -331,7 +328,6 @@ mac:
     - "!logs/**"
     - "!memory/**"
     - "!ARCHITECTURE.md"
-    - "!RELEASE-NOTES.md"
     - "!README.md"
     - "!CLAUDE.md"
     - "!tsconfig*.json"
@@ -352,6 +348,10 @@ mac:
     # (same situation as cce-1's arm64-only darwin prebuild).
     - "!node_modules/sherpa-onnx-linux-*/**"
     - "!node_modules/sherpa-onnx-win-*/**"
+    # Velopack (261030) is Windows-only (velopackBoot.ts loads it behind
+    # win32): its six native addons (~21MB) would otherwise ship unpacked and
+    # be code-signed on every mac build.
+    - "!node_modules/velopack/**"
     # 260908: the prismarine-viewer texture prune (and the 1.16.4 entity-texture
     # exception, 260806) moved to packs/minecraft/prune.mjs with the Minecraft
     # game pack. prismarine-viewer is not in the app tree any more.
@@ -452,7 +452,6 @@ win:
     - "!logs/**"
     - "!memory/**"
     - "!ARCHITECTURE.md"
-    - "!RELEASE-NOTES.md"
     - "!README.md"
     - "!CLAUDE.md"
     - "!tsconfig*.json"
@@ -469,6 +468,9 @@ win:
     - "!node_modules/sherpa-onnx-darwin-*/**"
     - "!node_modules/sherpa-onnx-linux-*/**"
     - "!node_modules/sherpa-onnx-win-ia32/**"
+    # Velopack (Windows updates, 261030): only the win x64 addon ships.
+    - "!node_modules/velopack/lib/native/velopack_nodeffi_{linux,osx}*"
+    - "!node_modules/velopack/lib/native/velopack_nodeffi_win_{arm64,x86}*"
     # 260908: the prismarine-viewer texture prune (and the 1.16.4 entity-texture
     # exception, 260806) moved to packs/minecraft/prune.mjs with the Minecraft
     # game pack. prismarine-viewer is not in the app tree any more.
@@ -494,6 +496,14 @@ win:
   # workflow's "Verify Windows update signature contract" step enforces it.
   signtoolOptions:
     publisherName: null
+  # 261030 update progress window: the PowerShell/WPF script, its fonts (OFL,
+  # licenses beside them), the wordmark and the icon. src/main/
+  # updateProgressHelper.ts copies them to %TEMP% and runs them from there
+  # during an in-app update, so nothing holds a handle in the install folder
+  # while the installer replaces it. Merged with the top-level extraResources.
+  extraResources:
+    - from: resources/update-progress
+      to: update-progress
 
 # 260929 one-click installer (outside-app-steps R2b). The assisted installer
 # was Welcome, install mode, Choose folder, Install, Finish: 3 to 4 clicks
@@ -539,4 +549,4 @@ nsis:
 # The notify-and-redirect-to-website updater (updateChecker.ts + UpdateToast.tsx)
 # was replaced by a real in-app electron-updater that downloads + installs in
 # place over the GitHub Releases channel (see `publish:` above). userData is
-# never touched by an update. See .planning/quick/260604-uoy-* for the design.
+# never touched by an update. See docs/design/in-app-updater-260604.md for the design.

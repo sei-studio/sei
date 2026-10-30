@@ -335,6 +335,12 @@ describe('orchestrator: a player line while nothing runs', () => {
     expect(turn).toContain('can you get wood')
     expect(turn).toContain(NUDGES.replyWhileIdle)
     expect(turn).not.toContain('keeps the current action going')
+    // 261029 (pass 30): it comes once, right after the closing "Answer it
+    // with say().", not up in the event hints.
+    const at = turn.indexOf(NUDGES.replyWhileIdle)
+    expect(turn.indexOf(NUDGES.replyWhileIdle, at + 1)).toBe(-1)
+    expect(at).toBeGreaterThan(turn.indexOf('Answer it with say().'))
+    expect(at).toBeGreaterThan(turn.indexOf('can you get wood'))
   })
 
   it('a fresh loop opened while an earlier loop\'s action still runs says the reply keeps it going', async () => {

@@ -42,7 +42,7 @@
  * every 6 s whether the grid was interesting. It is gone. Measured on real
  * footage it had a strong yes-bias, and the narration-novelty scheme meant to
  * replace it carried 0.037 of real signal against 0.25 of resampling noise
- * (.planning/backseat-v2-260801.md). A dice roll is cheaper and no worse, and
+ * (docs/design/backseat-v2-260801.md). A dice roll is cheaper and no worse, and
  * unlike a gate it cannot be wrong in a way that is invisible.
  *
  * Both text mode and voice mode use the SAME chat thread and the same

@@ -5,10 +5,13 @@
  *
  * Shawn, 261023: the old buttons were small (Button size sm, ~26px) and hard
  * to aim at, which adds friction right where someone is trying to pay. So the
- * primary is full width, 44-48px tall, filled with a soft accent gradient, and
- * answers the pointer: a light sweep and a lift on hover, a press-down on
- * click, an arrow that nudges forward. Reduced motion keeps the colour change
- * and drops the movement. Sharp corners like every Button (D-28).
+ * primary is full width, 44-48px tall, a flat fill of its own brighter
+ * --plan-cta tone (261027: no top highlight, no dark gradient band, no
+ * shadow) with the old Summon button's travelling glint looping across it
+ * every 1.8s (261027), and answers the pointer: a
+ * step toward --accent-strong and a lift on hover, a press-down on click, an
+ * arrow that nudges forward. Reduced motion keeps the colour change and drops
+ * the movement and the glint. Sharp corners like every Button (D-28).
  *
  * `secondary` is the quiet sibling at the SAME height (Downgrade, Current
  * plan, Top up beside Upgrade), so the cards' buttons line up and only one
@@ -18,7 +21,7 @@
  * checkout logic moves.
  */
 
-import React from 'react';
+import React, { useLayoutEffect, useRef } from 'react';
 import { ArrowIcon } from './icons';
 import styles from './PlanButton.module.css';
 
@@ -49,8 +52,23 @@ export function PlanButton({
   ...rest
 }: PlanButtonProps): React.ReactElement {
   const cls = [styles.button, styles[kind], styles[size]].join(' ');
+  const ref = useRef<HTMLButtonElement>(null);
+  // Every glint on screen sweeps at the same moment (Shawn, 261027). A CSS
+  // animation starts when its element mounts or is re-enabled, so a button
+  // that appears later (the usage-limit popup over the plan cards, a card
+  // that turns primary when the plan loads) would run out of step. Pinning
+  // the glint's start to the document timeline's zero puts them all on one
+  // shared phase; the duration (and --flux) still come from the CSS.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || typeof el.getAnimations !== 'function') return;
+    for (const a of el.getAnimations({ subtree: true })) {
+      if (a instanceof CSSAnimation && a.animationName.includes('plan-glint')) a.startTime = 0;
+    }
+  }, [kind, disabled]);
   return (
     <button
+      ref={ref}
       type="button"
       className={cls}
       onClick={onClick}

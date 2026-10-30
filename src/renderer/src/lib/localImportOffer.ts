@@ -30,8 +30,12 @@ export function shouldOfferLocalImport(
 export function localImportOfferTiming(
   reason: ScopeChangedEvent['reason'],
   inOnboarding: boolean,
+  restored = false,
 ): 'now' | 'after-onboarding' | 'none' {
   if (reason !== 'sign-in') return 'none';
+  // 261029: a session restored at launch is not a sign-in (the one-time boot
+  // offer covers accounts that never saw the sign-in one).
+  if (restored) return 'none';
   return inOnboarding ? 'after-onboarding' : 'now';
 }
 

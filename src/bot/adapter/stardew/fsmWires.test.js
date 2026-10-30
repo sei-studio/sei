@@ -29,6 +29,19 @@ describe('stardew fsm wires', () => {
     expect(h.onChat).toHaveBeenCalledTimes(3)
   })
 
+  it('matches names through accents (261027): "martín" addresses Martin, "björn" is a sibling', () => {
+    const c = fakeClient()
+    const h = handlers()
+    const dispose = wireStardewEvents(c, h, { botName: 'Martin Salazar', companions: () => ['Bjorn'] })
+    c.emit('chat', { from: 'Ouen', text: 'martín salazar ven aquí', sameLocation: true })
+    expect(h.onChat).toHaveBeenLastCalledWith(expect.objectContaining({ addressed: true, suppressInterrupt: false }))
+    c.emit('chat', { from: 'Ouen', text: 'björn water the crops', sameLocation: true })
+    expect(h.onChat).toHaveBeenLastCalledWith(expect.objectContaining({ addressed: false, suppressInterrupt: true }))
+    c.emit('chat', { from: 'Ouen', text: 'martin salazaré', sameLocation: true })
+    expect(h.onChat).toHaveBeenLastCalledWith(expect.objectContaining({ addressed: false }))
+    dispose()
+  })
+
   it('maps damaged to a mob hit, a retreating hit to a reflex, and survival kinds', () => {
     const c = fakeClient()
     const h = handlers()

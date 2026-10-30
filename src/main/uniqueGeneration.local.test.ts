@@ -36,6 +36,23 @@ describe('local sheet + persona routing (W6)', () => {
     expect(fn).toContain('buildLlmProvider');
     expect(fn).toContain('castSoul({');
   });
+  it('castSoulLocal excludes public names and avoids library names in the name draw', () => {
+    const fn = src.slice(src.indexOf('async function castSoulLocal'), src.indexOf('async function postSoulcast'));
+    expect(fn).toContain('excludeNames: publicNames');
+    expect(fn).toContain('avoidNames: args.libraryNames');
+    expect(fn).toContain('fetchPublicCharacterNames(args.signal)');
+    expect(src).toContain('libraryNames,');
+  });
+  it('public names come from a session-less anon client raced against a hard timer', () => {
+    const fn = src.slice(src.indexOf('async function fetchPublicCharacterNames'));
+    const body = fn.slice(0, fn.indexOf('\n}\n'));
+    expect(body).toContain('persistSession: false, autoRefreshToken: false');
+    expect(body).not.toContain('getClient()');
+    expect(body).toContain(".eq('shared', true)");
+    expect(body).toContain(".order('name')");
+    expect(body).toContain('Promise.race([read, timeout, aborted])');
+    expect(body).toContain('PUBLIC_NAMES_TIMEOUT_MS');
+  });
   it('the local persona branch passes the anthropic key explicitly and fetches the server prompt best-effort', () => {
     const persona = src.slice(src.indexOf('const personaBranch'), src.indexOf('Promise.allSettled'));
     expect(persona).toContain('localProviderKind');

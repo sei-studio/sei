@@ -3,7 +3,7 @@
  * active option gets accent-soft fill + accent text. Replaces aria-pressed
  * ghost-button groups (theme, backend, vision mode).
  *
- * Source: .planning/design/UI-REDESIGN-PARTY.md §1.
+ * Source: docs/design/UI-REDESIGN-PARTY.md §1.
  */
 
 import React from 'react';

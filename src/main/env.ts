@@ -27,6 +27,8 @@ declare global {
     readonly env: {
       readonly SUPABASE_URL?: string;
       readonly SUPABASE_ANON_KEY?: string;
+      /** WIN_PUBLISHER_NAME of a signed Windows release, '' otherwise (velopackVerify.ts). */
+      readonly SEI_WIN_PUBLISHER?: string;
     };
   }
 }

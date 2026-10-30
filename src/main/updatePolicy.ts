@@ -20,7 +20,12 @@
  * mandatory/silent path triggers ONLY when major.minor are equal and only the
  * patch component moved forward.
  *
- * Source: .planning/quick/260604-uoy-... PLAN.md "Locked design".
+ * One feed override (261031): the policy feed's `minSupported` (version.json /
+ * version-beta.json) marks every install below it as needing the update, so
+ * an `optional` level becomes `mandatory` there (see applyMinSupported). It
+ * never creates an update that semver says is not there.
+ *
+ * Source: docs/design/in-app-updater-260604.md "Locked design".
  */
 import semver from 'semver';
 
@@ -80,6 +85,35 @@ export function deriveLevel(current: string, latest: string): UpdateLevel {
   if (level === 'patch') return 'mandatory';
   if (level === 'major' || level === 'minor') return 'optional';
   return 'none';
+}
+
+/**
+ * The policy feed's `minSupported` as a strict semver string (a leading `v`
+ * allowed), or null when it is absent or not a valid version. Strict on
+ * purpose: unlike `clean`, nothing is coerced, so a malformed value can never
+ * turn an update mandatory.
+ */
+export function parseMinSupported(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const v = raw.trim().replace(/^v/i, '');
+  return semver.valid(v) ? v : null;
+}
+
+/**
+ * The level after the feed's `minSupported` (261031): an `optional` update
+ * becomes `mandatory` when the installed `current` is strictly below
+ * `minSupported` (semver order, so 0.7.0-beta.2 is below 0.7.0). Every other
+ * case returns `level` unchanged: `none` stays `none` (there is still nothing
+ * newer to install), `mandatory` stays `mandatory`, and a missing or invalid
+ * `minSupported` or `current` changes nothing. Only flips optional to
+ * mandatory; the apply timing still comes from the feed's `apply`.
+ */
+export function applyMinSupported(level: UpdateLevel, current: string, minSupported: unknown): UpdateLevel {
+  if (level !== 'optional') return level;
+  const min = parseMinSupported(minSupported);
+  const cur = clean(current);
+  if (!min || !cur) return level;
+  return semver.lt(cur, min) ? 'mandatory' : level;
 }
 
 /**

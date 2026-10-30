@@ -123,7 +123,7 @@ export const paths = {
   // ── Anti-abuse / DDOS-guard (260603) — DEVICE-GLOBAL by design ────────────
   // These describe the MACHINE, not any signed-in account, so they MUST stay
   // in the device-global tier and survive account switches / sign-outs — never
-  // under profiles/<scope>/. See .planning/security/ABUSE-GUARD-PLAN.md §6/§9.
+  // under profiles/<scope>/.
 
   // Random, locally-generated UUID v4 (NOT hardware fingerprinting, NOT PII)
   // backing the device-global trial-claim gate (one trial per device OR per

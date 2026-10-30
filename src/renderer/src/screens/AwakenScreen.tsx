@@ -14,7 +14,7 @@
  *     CreationLimitModal when blocked, else the add-character wizard.
  *   - Invite from World → Home's World tab.
  *
- * Source: .planning/design/UI-REDESIGN-PARTY.md §4.3; mockup view-awaken.
+ * Source: docs/design/UI-REDESIGN-PARTY.md §4.3; mockup view-awaken.
  */
 
 import React, { useEffect, useState } from 'react';

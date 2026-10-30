@@ -48,7 +48,7 @@ export interface RegionStatus {
  * Compiled 2026-08-16 from three sources:
  *
  *   1. The china-compat stream decision: mainland China + Hong Kong + Macao
- *      (.planning/china-compat-v07-260816.md).
+ *      (260816).
  *   2. The complement of Anthropic's published supported-countries list —
  *      https://www.anthropic.com/supported-countries (retrieved 2026-08-16).
  *      Every sovereign state and listed region NOT on that page appears

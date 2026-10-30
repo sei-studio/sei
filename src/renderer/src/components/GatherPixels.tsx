@@ -4,7 +4,7 @@
  * everything disperses, and the next pattern in the cycle rebuilds. Used by
  * dormant party slots and the Awaken "Be matched" hero.
  *
- * Source: .planning/design/UI-REDESIGN-PARTY.md §1; mockup GPX_PATTERNS.
+ * Source: docs/design/UI-REDESIGN-PARTY.md §1; mockup GPX_PATTERNS.
  */
 
 import React, { useEffect, useState } from 'react';

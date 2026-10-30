@@ -25,7 +25,10 @@ import { staleAttackerAddendum } from '../../../brain/promptLibrary.js'
 export function staleAttackerText(bot, event, data) {
   if (event !== 'sei:attacked' || !data || typeof data !== 'object') return null
   const kind = data.attackerKind
-  if (kind !== 'mob' && kind !== 'defend' && kind !== 'reflex') return null
+  // 261030 (pass 31): her own hits arrive as 'hostile_mob' (combat.js), which
+  // this check used to skip, so a hit by a mob that died before the turn
+  // still read "... hit you" and she attacked a dead mob.
+  if (kind !== 'mob' && kind !== 'hostile_mob' && kind !== 'other' && kind !== 'defend' && kind !== 'reflex') return null
   if (data.survivalKind) return null
   const mob = data.attacker
   if (!mob || typeof mob !== 'object' || mob.username || mob.type === 'player') return null

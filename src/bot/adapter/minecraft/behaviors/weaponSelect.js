@@ -81,3 +81,50 @@ export function keepWeaponInHand(bot) {
   equipBestWeapon(bot).catch(() => {}).finally(() => { bot._seiWeaponEquipping = false })
   return true
 }
+
+// 261030 (quality pass 31): "she lost her weapon when she died and has not
+// got one back". In the combat_night eval a first death dropped her sword,
+// and the fight texts, the automatic defend and the swing-back kept her
+// fighting with 1-damage fists until she died again (13 of 18 deaths in the
+// two worst runs). Only that case changes behavior: a player who never had a
+// weapon (the early game, wooden pickaxe only) keeps the dev fight texts and
+// the automatic defend, which pulls aggro off a low-health player with a
+// punch. deathTracker sets the mark when the drop held a weapon; it clears
+// when she owns a weapon again or after LOST_WEAPON_MS (the drops despawn
+// after 5 minutes, and a night is about 7).
+export const LOST_WEAPON_MS = 10 * 60_000
+
+/** The best weapon in a death's lost list ([{item, n}]), or null. */
+export function bestLostWeapon(lost) {
+  let best = null
+  let bestScore = 0
+  for (const l of Array.isArray(lost) ? lost : []) {
+    const s = weaponScore(l?.item)
+    if (s > bestScore) { bestScore = s; best = l.item }
+  }
+  return best
+}
+
+/**
+ * Mark the bot when a death dropped a weapon. A death while still marked
+ * (she died again before getting one back) restarts the window. Returns the
+ * weapon or null.
+ */
+export function noteLostWeapon(bot, lost, now = Date.now()) {
+  if (!bot) return null
+  const weapon = bestLostWeapon(lost)
+  if (weapon) bot._seiLostWeapon = { weapon, at: now }
+  else if (lostWeaponUnarmed(bot, now)) bot._seiLostWeapon = { ...bot._seiLostWeapon, at: now }
+  return weapon
+}
+
+/** True while she lost a weapon on death and owns none again. */
+export function lostWeaponUnarmed(bot, now = Date.now()) {
+  const mark = bot?._seiLostWeapon
+  if (!mark) return false
+  if (!(now - mark.at < LOST_WEAPON_MS) || chooseWeapon(bot) != null) {
+    bot._seiLostWeapon = null
+    return false
+  }
+  return true
+}

@@ -27,6 +27,12 @@
  * (popupFrameGuards.ts). The id is recorded in `popupShownIds` at that moment,
  * so a popup that failed to load (offline, 404) is tried again next time.
  *
+ * SKIP — a popup with `skipIf` is not owed while its condition holds on this
+ * install (skipConditionHolds below). It is checked on every hand-out and in
+ * the `app:startup-popup-loaded` handler, so a user who connects ChatGPT while
+ * the page loads is not shown "Sign in with ChatGPT". A skipped popup is not
+ * recorded as shown.
+ *
  * Runs in dev too. In dev only, SEI_NOTICES_URL overrides the feed URL, and
  * popup pages on that URL's origin are allowed (for local testing).
  *
@@ -41,6 +47,7 @@ import {
   coerceStartupPopup,
   isAllowedPopupUrl,
   popupToShow,
+  type PopupSkipCondition,
   type StartupPopup,
 } from './startupPopup';
 
@@ -211,11 +218,38 @@ export async function refreshNotices(reason: string): Promise<void> {
 }
 
 /**
+ * Whether a popup's `skipIf` condition holds on this install right now. A
+ * check that throws counts as "does not hold" (the popup shows), since a
+ * broken check must not hide an announcement from everyone.
+ */
+async function skipConditionHolds(cond: PopupSkipCondition): Promise<boolean> {
+  try {
+    switch (cond) {
+      case 'chatgpt-connected': {
+        // Same test as the renderer's chatgptReady(): the active account is
+        // signed in with plan usage on. Lazy: the plan module is only loaded
+        // when a popup asks.
+        const { chatgptSession } = await import('./chatgptPlan');
+        const s = await chatgptSession().status();
+        const active = s.accounts.find((a) => a.id === s.activeId);
+        return !!active && active.signedIn && active.planEnabled;
+      }
+      default:
+        return false;
+    }
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Renderer pull (`app:startup-popup-get`): the popup this install still owes,
  * or null. No network; the refresh cadence owns fetching.
  */
 export async function getStartupPopup(): Promise<StartupPopupInfo | null> {
-  return mutate((state) => popupToShow(feedPopup, state.popupShownIds));
+  const popup = feedPopup;
+  const skip = popup?.skipIf ? await skipConditionHolds(popup.skipIf) : false;
+  return mutate((state) => popupToShow(popup, state.popupShownIds, () => skip));
 }
 
 /**

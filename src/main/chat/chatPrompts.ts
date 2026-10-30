@@ -33,6 +33,7 @@ import {
 } from '../../bot/brain/promptLibrary.js';
 import type { ChatLanguage } from '../../shared/chatLanguage';
 import { audioTagDirective } from '../voice/audioTags';
+import { FACE_PROMPT } from '../../bot/brain/faceExpressions.js';
 import { renderGamesDirective, GAME_CATALOG, type GameCatalogEntry } from '../../shared/games';
 
 export interface BuildSystemArgs {
@@ -99,6 +100,12 @@ export interface BuildSystemArgs {
    * cached block once per call open/close, which is the honest cache price.
    */
   voiceCall?: boolean;
+  /**
+   * 261028 facepack pilot: add the # FACE block (leading [expression] tags)
+   * to the persona block. Only ever true while the dev flag is on
+   * (main/facepack/facepackDev.ts), so production prompts are unchanged.
+   */
+  faceGuide?: boolean;
   /**
    * 261010: false leaves the voice-call primer's (silence) option out. Backseat
    * always speaks on a look, and Haiku 5.5 took the offer on its first look
@@ -373,6 +380,9 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
     const tags = audioTagDirective();
     if (tags) personaParts.push(tags);
   }
+  // Facepack pilot (261028): static per session, so it rides the cached
+  // persona block. Dev flag only.
+  if (args.faceGuide === true) personaParts.push(FACE_PROMPT);
   blocks.push({ type: 'text', text: personaParts.join('\n\n') });
 
   // 260725 Knowledge — user-uploaded reference material. Sits between persona

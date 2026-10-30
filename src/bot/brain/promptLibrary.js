@@ -261,7 +261,7 @@ export const ACTION_DESCRIPTIONS = {
     'Toggle PvP spar mode: `{enabled:true}` when the player asks to spar/fight/duel/PvP you, `{enabled:false}` when they ask to stop. While ON you may attackEntity the player and hit back when they hit you; while OFF (the default) you never attack or retaliate against the player. If they named a weapon for the duel ("stick fight", "fists only"), equip exactly that item first — a stick fight means holding a stick, not a sword. Turn it OFF the moment they call it off.',
 
   dig:
-    'Break a block: `{block:"<name>"}` for the nearest of that type, `{x,y,z}` for an exact cell, or `{x,y,z, to:{x,y,z}}` for a cuboid (<=256, top-down). Use gather for whole trees / ore / N of one block. The best tool you own is equipped automatically before every swing, so never call equip first; if you own nothing that can harvest the block the result says so and you need to craft the right pickaxe.',
+    'Break a block: `{block:"<name>"}` for the nearest of that type, `{x,y,z}` for an exact cell, or `{x,y,z, to:{x,y,z}}` for a cuboid (<=256, top-down). It walks into reach on its own, so you do not need goTo first, and the result says whether the drop reached your inventory. Use gather for whole trees / ore / N of one block. The best tool you own is equipped automatically before every swing, so never call equip first; if you own nothing that can harvest the block the result says so and you need to craft the right pickaxe.',
 
   gather:
     'Bulk-mine one block type in one call: `{name:"<term>"}` (loose category or exact id) or an `{x,y,z}` anchor, `{count:N}` how many (default 16, max 64). Runs to completion before your next turn. Equips the best tool you own automatically, per block.',
@@ -294,13 +294,13 @@ export const ACTION_DESCRIPTIONS = {
     'Add fuel to the OPEN furnace: `{item, count?}` (1-64) — coal/charcoal usually, planks/logs in a pinch. A furnace cooks only with BOTH an input (smeltInput) and fuel.',
 
   takeSmelted:
-    'Take the finished output from the OPEN furnace. No args. While the furnace is cooking it waits up to about 10 seconds for the first item; if nothing is ready the result says what is in each slot.',
+    'Take the finished output from the OPEN furnace. No args. While the furnace is cooking it waits up to about 10 seconds for the first item, then keeps collecting until the input is used up (up to about 45 seconds in all); if nothing is ready the result says what is in each slot.',
 
   dropItem:
     'Drop `count` of an item on the ground where you stand. To hand something to the player, use give instead.',
 
   give:
-    'Hand items to the player: `{item, count?}` (default: all you have of it). Walks over to them first when they are more than a few blocks away, faces them, and tosses the items at their feet. Giving something to them always takes this call; until it runs, the items stay in your inventory.',
+    'Hand items to the player: `{item, count?}` (default: all you have of it). Walks over to them first when they are more than a few blocks away, faces them, and tosses the items at their feet. Giving something to them always takes this call; until it runs, the items stay in your inventory. One call hands over one kind of item, so to hand over two kinds, call give once for each in the same turn.',
 
   pickup:
     'Walk over dropped items near you so they land in your inventory: `{item?:"<id>", maxDistance?:1-32}` (default 16). Without `item` it collects every drop in range, closest first. The result lists what actually reached your inventory. Use it to get your things back after you die or to collect mob drops.',
@@ -345,11 +345,23 @@ function fillTemplate (text, vars) {
 export const ATTACKED_ADDENDUM_PVP = `Interrupted — {label} hit you. You won't hit back automatically (PvP is off) — if you wish to fight back, call setPvp({enabled:true}) and attackEntity them in the same turn; otherwise respond in character.`
 export const ATTACKED_ADDENDUM_PVP_ON = `Interrupted — {label} hit you, and you're in a PvP spar (PvP is on). Hit back with attackEntity, keep moving, and trash-talk in character. Call setPvp({enabled:false}) if they say stop.`
 export const ATTACKED_ADDENDUM_MOB = `Interrupted — {label} hit you. TELL THE PLAYER, right now in this same turn, with one short line that lets them know you are in a fight. Make it your reaction to the fight, with the attitude your persona has in one, in your own words: the player should hear who you are, not a readout of the mob, your health or what you are doing about it. They cannot see your health bar and they are not necessarily looking at you, so a fight you go quiet through is a fight they never knew happened — being asked "are you ok?" afterwards means you got this wrong. Say it even mid-swing, and say it again if it turns bad (you drop low, more arrive). Then: your reflexes swing back on their own if you stand your ground — but you do NOT have to take this fight: if you'd rather not (low health, a crowd, night), disengage instead with explore() away from it, goTo() somewhere safer, or follow() the player, and call for help if you want it.`
-export const ATTACKED_ADDENDUM = (label, kind, pvp = false) => {
+// 261030 (quality pass 31): the same hit after a death took her weapon and she
+// has not got one back (never-had-one keeps the text above). Bare hands do
+// 1 damage a swing; in the combat_night eval, after a first death took her
+// sword, "you do NOT have to take this fight" still read as an offer, and she
+// fought bare-handed and died again (13 of 18 deaths in two runs came unarmed).
+// The text is the mob framing above up to its " Then:" advice, with this advice
+// in its place (so the reaction half is edited in one place).
+export const ATTACKED_UNARMED_THEN = ` Then: you lost your weapon when you died, so your swings do 1 damage and most mobs take about 20 of them while each of their hits costs you 2 or 3 health. Unless the player asks you to fight it, do not stand and fight it: get away from it with follow() on the player or goTo() somewhere away from it, and tell them you have no weapon.`
+export const attackedMobUnarmed = () => {
+  const cut = ATTACKED_ADDENDUM_MOB.indexOf(' Then:')
+  return (cut >= 0 ? ATTACKED_ADDENDUM_MOB.slice(0, cut) : ATTACKED_ADDENDUM_MOB) + ATTACKED_UNARMED_THEN
+}
+export const ATTACKED_ADDENDUM = (label, kind, pvp = false, unarmed = false) => {
   const isPlayer = kind === 'player' || kind === 'players'
   const tmpl = isPlayer
     ? (pvp ? ATTACKED_ADDENDUM_PVP_ON : ATTACKED_ADDENDUM_PVP)
-    : ATTACKED_ADDENDUM_MOB
+    : (unarmed ? attackedMobUnarmed() : ATTACKED_ADDENDUM_MOB)
   return fillTemplate(tmpl, { label })
 }
 
@@ -407,6 +419,14 @@ export const DEFEND_ADDENDUM_THREAT = `{closing} {owner}: the nearest is {ownerD
 // In the protect_player eval this used the ENGAGED wording, and she called
 // attackEntity on it again, which aborted the chase and started it over.
 export const DEFEND_ADDENDUM_ACTION = `{owner} is being hit by {label}{dist}, the mob your attackEntity is already going after. Let it run; calling attackEntity on it again only restarts the chase. Say one short line so they know you are coming.`
+// 261030 (quality pass 31): the threat and held turns after a death took her
+// weapon and she has none again (a bot that never had one keeps the dev text).
+// Both said to attackEntity the mob, and after a death took her sword she ran at
+// it bare-handed (the river drowned in the combat_night eval) and died again.
+// `data.unarmed` is set when the turn is written (adapter eventAddendum).
+export const DEFEND_UNARMED_TEXT = `You lost your weapon when you died, so your swings do 1 damage and most mobs take about 20 of them, and a fight like that usually ends with you dead. Unless they ask you to fight it, do not attackEntity it. Say one short line that tells them you have no weapon, and get away from it together (follow them, or goTo somewhere away from it), or place a block between them and it.`
+export const DEFEND_ADDENDUM_THREAT_UNARMED = `{closing} {owner}: the nearest is {ownerDist} blocks from them and {dist} blocks from you.{hp} ` + DEFEND_UNARMED_TEXT
+export const DEFEND_ADDENDUM_HELD_UNARMED = `{owner} is being hit by {label}{dist}. ` + DEFEND_UNARMED_TEXT
 export const DEFEND_ADDENDUM = (label, data) => {
   // Number(null) is 0, so test the raw value before coercing — a missing
   // distance must drop the clause, not claim the mob is on top of us.
@@ -421,9 +441,10 @@ export const DEFEND_ADDENDUM = (label, data) => {
     const closing = n > 1 ? `${n} hostiles are closing in on` : `A ${label} is closing in on`
     const od = typeof data?.ownerDistance === 'number' ? data.ownerDistance : '?'
     const hp = hpKnown ? ` ${fillTemplate(DEFEND_OWNER_HP_CLAUSE, { hp: hpRaw })}` : ''
-    return fillTemplate(DEFEND_ADDENDUM_THREAT, { closing, owner, ownerDist: od, dist: Number.isFinite(d) ? d : '?', hp })
+    return fillTemplate(data?.unarmed ? DEFEND_ADDENDUM_THREAT_UNARMED : DEFEND_ADDENDUM_THREAT, { closing, owner, ownerDist: od, dist: Number.isFinite(d) ? d : '?', hp })
   }
-  const tpl = data?.actionOnIt ? DEFEND_ADDENDUM_ACTION : data?.engaged ? DEFEND_ADDENDUM_ENGAGED : DEFEND_ADDENDUM_HELD
+  const held = data?.unarmed ? DEFEND_ADDENDUM_HELD_UNARMED : DEFEND_ADDENDUM_HELD
+  const tpl = data?.actionOnIt ? DEFEND_ADDENDUM_ACTION : data?.engaged ? DEFEND_ADDENDUM_ENGAGED : held
   let text = fillTemplate(tpl, { label, dist, owner })
   const others = typeof data?.othersOnOwner === 'number' ? data.othersOnOwner : 0
   if (data?.engaged && !data?.actionOnIt && others > 0) {
@@ -632,8 +653,8 @@ export const EXPANSION_SYSTEM = [
   '',
   'Write EXACTLY these four markdown sections, in order, each beginning with its header line verbatim (including the leading `# `):',
   '',
-  '1. `# CORE` - name, gender, age, and a one-line distillation of who they are. This is the section restated at the tail of every turn to hold the character steady, so keep it the tight essence of the personality. If the name matches a known franchise character (e.g. Pikachu, Goku), let that context inform who they are and how they talk.',
-  '2. `# VOICE` - their speech patterns and rhythm (formal? rambling? internet slangy?), their vocabulary and references, what they say versus what they actually mean, and what makes them go quiet. Include a few example one-line phrases (each on its own line) for greeting and for reactions such as being thanked, offended, and commanded. Each sample line must be short, plain, in-character, address the other person as "you" (never their name as a subject, never third person), contain no asterisk emote or parenthetical status, and use no emdash or endash. If the character is deferential or servile by design, frame that deference as a person\'s personality, never as a support script.',
+  '1. `# CORE` - name, gender, age, and a one-line distillation of who they are. This is the section restated at the tail of every turn to hold the character steady, so keep it the tight essence of the personality: who they are, what they care about, and how they stand toward other people. Keep catchphrases, pet names for the other person and verbal tics out of this section; they belong in VOICE. If the name matches a known franchise character (e.g. Pikachu, Goku), let that context inform who they are and how they talk.',
+  '2. `# VOICE` - their speech patterns and rhythm (formal? rambling? internet slangy?), their vocabulary and references, what they say versus what they actually mean, and what makes them go quiet. Include a few example one-line phrases (each on its own line) for greeting and for reactions such as being thanked, offended, and commanded. Each sample line must be short, plain, in-character, address the other person as "you" (never their name as a subject, never third person), contain no asterisk emote or parenthetical status, and use no emdash or endash. If the character is deferential or servile by design, frame that deference as a person\'s personality, never as a support script. If the character has a catchphrase, a pet name for the other person, a sound they add to lines, or a favorite subject, mention it once as something rare and say which moments bring it out. Keep it out of the sample lines: a habit that appears in a sample line gets copied into nearly every reply. Let the sample lines show the character sounding like themselves through attitude and word choice.',
   '3. `# EXTERNAL` - what others see first: how they present themselves and behave around people - in casual conversation, working alongside someone, competing, and under conflict. This is personality and social presentation, NOT how active or self-directed they are (that is a runtime setting, not part of the personality text).',
   '4. `# INTERNAL` - their top three values, and what they need from others. Guidance they interpret in the moment, not a fixed checklist.',
   '',
@@ -662,9 +683,11 @@ export const SEED_HEADERS = {
   // and rides every mid-loop player line. 261014 (pass 7b): it also holds the
   // session's "game:" lines (sessionEvents.js), and the recall rule: asked
   // what the player was scared of, she answered "you hid behind me" from her
-  // own "stay behind me".
+  // own "stay behind me". 261026 (pass 28): offers and the player's own
+  // actions ("i'll keep the box warm" for a box she only offered; "you still
+  // hit the zombie with me" when she killed it alone).
   conversation:
-    'Your recent conversation with the player, oldest first. Lines marked "you:" are lines YOU already said out loud; they are not new input. Lines marked "player" are the person you are playing with, with the name they go by in brackets; that name can be the same as yours or the app\'s, and it is still them, never you. Lines marked "game:" are things that happened in the game, written down as they happened; nobody said them. When they ask about something from earlier in this session, answer from these lines and say only what they show. A line of yours shows only what you said: if you told them to do something, that does not mean they did it. If what they ask about is not in here or in your memory, say you are not sure instead of filling in details. Read the transcript as one exchange before you speak: see which of their questions you actually answered and what you told them, and keep your next line consistent with your earlier ones (if you now think an earlier line of yours was wrong, say so plainly instead of quietly giving a different answer). If they asked something and none of your later lines answers it, that question is still open, even if you have talked about other things since. If YOU asked them something and they have not replied, it is waiting on them: do not answer it yourself. If your next line would repeat OR just reword one of your own lines, especially a question or offer they have not answered yet, stay SILENT instead; rephrasing an unanswered line is still spam. When you do reply, answer what they just said and leave out what you already told them above: where you are, what you have, your plan, a joke or bit you already made. A reply does not need a status update tacked on. Say you are doing something, or about to, only if it is running right now (an in_flight line in your snapshot) or you call it in this same turn; a goal or a plan you mentioned is not running until you call its action.',
+    'Your recent conversation with the player, oldest first. Lines marked "you:" are lines YOU already said out loud; they are not new input. Lines marked "player" are the person you are playing with, with the name they go by in brackets; that name can be the same as yours or the app\'s, and it is still them, never you. Lines marked "game:" are things that happened in the game, written down as they happened; nobody said them. When they ask about something from earlier in this session, answer from these lines and say only what they show. A line of yours shows only what you said: if you told them to do something, that does not mean they did it, and if you offered or planned to do something and no game: line or your snapshot shows that it happened, say you are not sure it did. The game: lines record what you did and what happened around you, not what the player did, so do not say they helped you, fought, built or gave you something unless a line shows it. If what they ask about is not in here or in your memory, say you are not sure instead of filling in details. Read the transcript as one exchange before you speak: see which of their questions you actually answered and what you told them, and keep your next line consistent with your earlier ones (if you now think an earlier line of yours was wrong, say so plainly instead of quietly giving a different answer). If they asked something and none of your later lines answers it, that question is still open, even if you have talked about other things since. If YOU asked them something and they have not replied, it is waiting on them: do not answer it yourself. If your next line would repeat OR just reword one of your own lines, especially a question or offer they have not answered yet, stay SILENT instead; rephrasing an unanswered line is still spam. When you do reply, answer what they just said and leave out what you already told them above: where you are, what you have, your plan, a joke or bit you already made. A reply does not need a status update tacked on. Say you are doing something, or about to, only if it is running right now (an in_flight line in your snapshot) or you call it in this same turn; a goal or a plan you mentioned is not running until you call its action.',
   memory:
     'Your memory — what you have chosen to remember across sessions:',
 }
@@ -696,8 +719,27 @@ export const NEXT_TIME_FOR_PLAYER_FIELD =
 export const NEXT_TIME_GAME_FIELD =
   'Fill this whenever you fill next_time: the game the step is played in, one of Minecraft, Stardew Valley or Don\'t Starve Together, or none when it is not about playing one of them. Decide it from the step itself, not from where you are now: you may be talking about one game while you are in another, or on a call.'
 
+// 261024 (pass 26): start or finish follows how far it got, I or we follows
+// whose plan it is. The two examples used to differ on both at once, and
+// "whichever matches how far it got" made "we" read as the word for
+// progress (see NEXT_TIME_OWN_PLAN).
 export const NEXT_TIME_GOODBYE =
-  'If you fill next_time, work that next step into your goodbye in your own words, the way a friend would say "next time I\'ll start on the roof" or "next time we finish the roof", whichever matches how far it got. If you leave it out, just say a normal goodbye.'
+  'If you fill next_time, work that next step into your goodbye in your own words, the way a friend would say "next time I\'ll start on the roof" or "next time we finish the roof": start or finish by how far it got, and I or we by whose plan it is. If you leave it out, just say a normal goodbye.'
+
+// 261024 (pass 26): game goodbyes only (bot quit_game / end_call). In the
+// 261023 compare every night_social goodbye pulled the player into her own
+// goal, set on her first spawn and never brought up with them: "come back
+// and we'll start the iron thing", "stone pickaxe is still on the list so
+// come back for it", next_time "finish the wood to iron kit with alex".
+// The heartbeat already says which goals are hers and which are player
+// tasks; nothing said what that means for a goodbye.
+// pass26-probe, 16 runs per case: her own goal said as shared in 9 of 48
+// goodbyes on dev, 4 of 48 with this. The agreed-plan control (bye_together)
+// went 14 to 12 of 16, the misses neutral ("walls look good, door is next").
+// A softer wording without the "no we" list kept the control at 14 but put
+// her own goal back into 8 of 48.
+export const NEXT_TIME_OWN_PLAN =
+  'Whose plan the next step is decides how you say it. A plan is shared when the player proposed it, asked for it or said yes to it in the conversation, even if you wrote it down as your own goal: say we for it, like "next time we finish the roof". A goal you came up with yourself that they never took up is yours alone: say it as yours in the farewell and in next_time, like "next time I\'ll go find iron", with no we, no their name, and no asking them to come back for it or help with it.'
 
 // 261008: what the next session's greeting is told about a saved hook. The
 // line is written by nextStep.js (nextStepMemoryLine) and read back from
@@ -969,6 +1011,11 @@ export const NUDGES = {
     return `${who || 'the player'}'s task "${clipNote(task)}" is still in your heartbeat. Since they asked for it, they said ${list.join(' and then ')}. If that calls it off or changes it, call clearGoal on it, and in this same turn still do what they asked for now, such as going to them if they asked you to come over.`
   },
 
+  // 261029: added to the say() output when a talk-only turn gets its next
+  // step on a step-wise provider (orchestrator talkOnlyNextStepFor, ChatGPT
+  // plan only). Without it the model read the plain "said" as a cue to keep
+  // talking and sent a second line on plain replies.
+  talkOnlyNextStep: `They heard it. If your line promised to do something, call that action now. If not, your turn is done, so call nothing.`,
   // 261015 (quality pass 8): the one extra call after a turn whose only work
   // was a new setGoal (orchestrator goalNotStartedNudgeFor). setGoal is a
   // memory write, so that turn started nothing while her say() often said
@@ -978,6 +1025,13 @@ export const NUDGES = {
   // unanswered-line nudge follows it and asks for the say(), so this one
   // says nothing about speaking.
   goalNotStartedReplyOwed: `Your goal is written down, but writing it down does not start any work. If you are starting on it now, call the action for its first step. If it waits until later, call end_loop.`,
+
+  // 261024 (pass 26): the one extra call after a stop with no new action, on
+  // a player line that did not ask her to stop (orchestrator
+  // stopWantsNextCall). "actually forget the logs, just meet me over here"
+  // got stop + say("on my way") and no move; the loop ended there and the
+  // idle tick after it moved her and said the line a second time.
+  stopThenNext: ({ stopped, spoke } = {}) => `You stopped ${stopped ? `the ${stopped} action` : 'what you were doing'}, and nothing is running now. If their line also asked you to do something, like come to them, call that action now.${spoke ? ' You already answered them with say() just now, so do not call say() again.' : ''} If it asked for nothing more, call end_loop.`,
 
   // 261012: closes the reply text of a player line (idle and mid-action).
   // The same rule in the conversation header did not hold on its own: in the
@@ -1657,7 +1711,9 @@ export function eventAddendum(event, data, visionMode = 'on-demand') {
     if (kind === 'defend') return DEFEND_ADDENDUM(label, data)
     // combat.js stamps `pvp` (the live bot._seiPvp) onto the payload so a hit
     // from a player picks "hit back" (PvP on) vs "can't hit back" (PvP off).
-    return entry(label, kind, !!data?.pvp)
+    // 261030: `unarmed` (lost a weapon on death, none again) is set by the minecraft adapter when
+    // the turn is written, and picks the get-away wording for a mob hit.
+    return entry(label, kind, !!data?.pvp, data?.unarmed === true)
   }
   return entry ?? ''
 }

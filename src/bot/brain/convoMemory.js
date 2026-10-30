@@ -24,7 +24,7 @@
  */
 
 import { SEED_HEADERS } from './prompts.js'
-import { createSessionEventLog } from './sessionEvents.js'
+import { createSessionEventLog, createHandOverLedger } from './sessionEvents.js'
 
 const RECENT_CHAT_CAPACITY = 40
 const RECENT_CHAT_LINE_TRUNC = 240
@@ -92,17 +92,23 @@ function fmtAgo(now, at) {
 }
 
 /**
- * @param {{ onLine?: (who: 'player'|'you'|'other', text: string) => void }} [opts]
+ * @param {{ onLine?: (who: 'player'|'you'|'other', text: string) => void, trackHandOvers?: boolean }} [opts]
  *   onLine (261011): every recorded line is also handed here, for the
  *   session digest main reads after a player-ended session (sessionDigest.js).
+ *   trackHandOvers (261026): the game reports its hand-overs (the adapter's
+ *   handOverDetail), so the transcript ends on the session's hand-over line.
+ *   Off for a game that does not, where "you have not given anything" could
+ *   be false.
  */
-export function createConvoMemory({ onLine = null } = {}) {
+export function createConvoMemory({ onLine = null, trackHandOvers = false } = {}) {
   const playerLines = []
   const selfLines = []
   // 261014: what happened in the game, rendered into the same transcript as
   // "game:" lines (sessionEvents.js). Never a speaker: the say() gates and
   // "has the player spoken since" read only the two rings above.
   const events = createSessionEventLog()
+  // 261026 (pass 28): what changed hands this session (sessionEvents.js).
+  const handOvers = createHandOverLedger()
   const tap = (who, text) => {
     if (typeof onLine !== 'function') return
     try { onLine(who, text) } catch {}
@@ -188,7 +194,10 @@ export function createConvoMemory({ onLine = null } = {}) {
     const happened = events.list().map((e) => ({ at: e.at, line: `[${fmtAgo(now, e.at)}] game: ${e.text}` }))
     const all = [...spoken.map((x, i) => ({ ...x, o: 0, i })), ...happened.map((x, i) => ({ ...x, o: 1, i }))]
       .sort((a, b) => (a.at - b.at) || (a.o - b.o) || (a.i - b.i))
-    return `${SEED_HEADERS.conversation}\n${all.map((x) => x.line).join('\n')}`
+    // 261026 (pass 28): the hand-over line closes the record. It covers the
+    // whole session, so it is not placed in time order.
+    const tail = trackHandOvers ? `\n${handOvers.describe({ label: playerLabel })}` : ''
+    return `${SEED_HEADERS.conversation}\n${all.map((x) => x.line).join('\n')}${tail}`
   }
 
   /**
@@ -208,6 +217,10 @@ export function createConvoMemory({ onLine = null } = {}) {
       formatSelfBlock,
       formatConversationBlock,
       pushEvent,
+      // 261026 (pass 28): a give that went through, and items that came in
+      // without an action of hers.
+      noteGiven: (h) => handOvers.gave(h),
+      noteReceived: (gains) => handOvers.received(gains),
       lastSelf: () => selfLines.length > 0 ? selfLines[selfLines.length - 1] : null,
       // 260730: the pair of these two answers "has the player said anything
       // since I last spoke?", which is what separates a reply from talking to
@@ -221,7 +234,7 @@ export function createConvoMemory({ onLine = null } = {}) {
       get playerSize() { return playerLines.length },
       get selfSize() { return selfLines.length },
       get eventSize() { return events.size },
-      _internal: { playerLines, selfLines, events },
+      _internal: { playerLines, selfLines, events, handOvers },
     },
   }
 }

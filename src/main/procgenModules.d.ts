@@ -21,9 +21,15 @@ declare module 'soulcaster' {
     /** ElevenLabs voice ids already used by the caller's other characters —
      * excluded from the Stage 1 voice roll so roster voices rarely collide. */
     takenVoiceIds?: string[];
+    /** Names never offered as name candidates (public characters). */
+    excludeNames?: string[];
+    /** Names avoided unless the pool runs dry (the caller's own library). */
+    avoidNames?: string[];
     llm: (a: SoulcasterLlmArgs) => Promise<string>;
     rng?: () => number;
-  }): Promise<{ sheet: unknown; rolled: unknown }>;
+    /** Test-only override for the crypto-random name draw. */
+    nameRng?: (maxExclusive: number) => number;
+  }): Promise<{ sheet: unknown; rolled: unknown; nameCandidates: string[] }>;
   export function rollFields(args?: unknown): {
     combat: unknown;
     heritage: string;

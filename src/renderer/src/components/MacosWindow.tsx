@@ -16,7 +16,7 @@
  *
  * Mounts the HUD overlay layers (grain + vignette) once, above all content.
  *
- * Source: .planning/UI-DESIGN-SYSTEM.md §Window shell; mockup ui.jsx titlebar.
+ * Source: docs/design/UI-DESIGN-SYSTEM.md §Window shell; mockup ui.jsx titlebar.
  */
 
 import React, { useEffect, useState } from 'react';

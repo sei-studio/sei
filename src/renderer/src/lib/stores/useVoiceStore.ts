@@ -63,9 +63,12 @@ import {
   MIN_ECHO_TOKENS,
   normalizeTokens,
   SELF_ECHO_OVERLAP,
+  stripOwnWords,
   textOverlap,
   type MicEchoInfo,
 } from '../voice/echoGate';
+import { createInterruptStats } from '../voice/interruptStats';
+import type { CallInterruptCounts } from '@shared/callInterrupts';
 import { sttPolicy } from '../voice/sttPolicy';
 import {
   decideInactivity,
@@ -187,6 +190,10 @@ interface VoiceState {
   /** Hang up the whole call. `reason` (261023) is why, for voice_call_ended
    *  and for the share the call takes with it (callEndReasons.ts). */
   endCall: (reason?: CallEndReason) => void;
+  /** 261030: the manual interrupt (the call-controls hand pill and the
+   *  overlay's button). The same cut a confirmed voice barge-in makes: stop the audio,
+   *  cancel the line being generated, abort a pending backseat line. */
+  interrupt: () => void;
   /** Accept the local-backup offer: persists stt_local_fallback = true and
    * starts the model download now; the fallback applies from the NEXT call. */
   acceptSttFallback: () => Promise<void>;
@@ -268,9 +275,18 @@ async function micEchoCheck(info: MicEchoInfo): Promise<boolean> {
   // 2. The shared screen's sound.
   const cap = backseatCapture();
   if (!cap?.echoProbe) return false;
+  // 261030: a Windows loopback share records HER voice too, so her words sit
+  // in the screen transcript. Step 1 just ruled this utterance is not her
+  // line; her words must not then condemn it a second time as "the screen".
+  // The window is wider than step 1's because the probe's transcript spans
+  // whole 3 s Whisper chunks plus its own 1.5 s margin.
+  const ownTexts = cap.echoRefHasOwnAudio
+    ? audibleLines.filter((l) => l.t0 <= t1 + 1_500 && (!l.t1 || l.t1 >= t0 - 4_500)).map((l) => l.text)
+    : [];
+  const screenWords = (transcript: string): string => stripOwnWords(transcript, ownTexts);
   const probe = cap.echoProbe(t0, t1);
   const corr = envelopeCorrelation(envelope, probe.envelope, t0, t1);
-  const overlap = textOverlap(text, probe.transcript);
+  const overlap = textOverlap(text, screenWords(probe.transcript));
   const verdict = classifyScreenEcho({
     corr,
     overlap,
@@ -291,7 +307,7 @@ async function micEchoCheck(info: MicEchoInfo): Promise<boolean> {
   // for a barge the companion is already ducked while this runs.
   await cap.echoFlush();
   const again = cap.echoProbe(t0, t1);
-  const o2 = textOverlap(text, again.transcript);
+  const o2 = textOverlap(text, screenWords(again.transcript));
   const echo = finalScreenEcho({
     corr,
     overlap: o2,
@@ -307,6 +323,12 @@ async function micEchoCheck(info: MicEchoInfo): Promise<boolean> {
 }
 /** Session token — guards async completions from a superseded/ended call. */
 let session = 0;
+/** 261030: interrupt diagnostics for voice_call_ended (interruptStats.ts). */
+const interruptStats = createInterruptStats();
+/** A companion's slice of the interrupt counts, for its hang-up report. */
+function interruptsFor(characterId: string): { interrupts: CallInterruptCounts } {
+  return { interrupts: interruptStats.take(characterId) };
+}
 /** When each participant's audio went live — basis for their connectedMs row. */
 const liveSince = new Map<string, number>();
 /** TTS fetches in flight — the remote-end drain waits for these. */
@@ -1318,6 +1340,37 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
    * the "Are you still there?" popup if it is up. Companion speech NEVER calls
    * this — a companion keeping itself alive is the failure mode the watchdog
    * exists for (the 260809 unattended-call flood). */
+  /**
+   * Cut the companions off (261030: extracted from onBargeIn so the manual
+   * interrupt runs the SAME path). Stops the audio, cancels the turn being
+   * generated, and aborts a pending backseat line.
+   */
+  function cutCompanions(): void {
+    // The player spoke over the companions: cut playback AND cancel any
+    // in-flight banter chain right now. Bumping the director sequence
+    // here (not waiting for the utterance to finish transcribing) is what
+    // makes two-bot banter interruptible — otherwise the chain kept
+    // generating and re-queuing lines while the player talked, so they
+    // never actually went quiet (the "not interruptible with two bots"
+    // report). dispatchUserTurn bumps the sequence again and starts the
+    // responder; a junk/echo barge-in just leaves the floor to the player.
+    directorSeq++;
+    clearTurnCapture();
+    queue?.clear();
+    // The caption follows the voice (260806): an interrupted line's
+    // caption must vanish WITH the audio, not page on through its
+    // remaining chunks and linger. lastSpoken is only read by the
+    // caption/overlay surfaces, so clearing it here cannot affect the
+    // transcript or the turn itself.
+    set({ lastSpoken: '', lastSpokenId: null });
+    // Kill the screen-share turn too. Clearing the queue only silences
+    // what is already synthesised; a backseat turn still generating
+    // would land its line a second later, which reads as the companion
+    // carrying on with the sentence she was interrupted in.
+    const sharing = useBackseatStore.getState().sharingFor;
+    if (sharing) void sei.backseatInterrupt?.(sharing).catch(() => {});
+  }
+
   function noteCallActivity(): void {
     inactivityLastActivityAt = Date.now();
     if (inactivityPromptAt !== null || get().inactivityPrompt) {
@@ -1636,6 +1689,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       lastReactorId = null;
       const dialStart = Date.now();
       liveSince.clear();
+      interruptStats.reset();
       pendingTts = 0;
       pendingCompanionLines = [];
       remoteEndAt = null;
@@ -1908,38 +1962,22 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           // is only the bookkeeping that follows a confirmed word.
           onBargeSuspect: () => {
             if (session !== mySession) return;
+            interruptStats.note('ducks');
             queue?.duck(true);
           },
-          onBargeAbort: () => {
+          onBargeAbort: (reason) => {
             if (session !== mySession) return;
+            if (reason === 'echo') interruptStats.note('echo_rejected');
             queue?.duck(false);
           },
           onBargeIn: () => {
-            // The player spoke over the companions: cut playback AND cancel any
-            // in-flight banter chain right now. Bumping the director sequence
-            // here (not waiting for the utterance to finish transcribing) is what
-            // makes two-bot banter interruptible — otherwise the chain kept
-            // generating and re-queuing lines while the player talked, so they
-            // never actually went quiet (the "not interruptible with two bots"
-            // report). dispatchUserTurn bumps the sequence again and starts the
-            // responder; a junk/echo barge-in just leaves the floor to the player.
             if (session !== mySession) return;
-            directorSeq++;
-            clearTurnCapture();
-            queue?.clear();
-            // The caption follows the voice (260806): an interrupted line's
-            // caption must vanish WITH the audio, not page on through its
-            // remaining chunks and linger. lastSpoken is only read by the
-            // caption/overlay surfaces, so clearing it here cannot affect the
-            // transcript or the turn itself.
-            set({ lastSpoken: '', lastSpokenId: null });
-            // Kill the screen-share turn too. Clearing the queue only silences
-            // what is already synthesised; a backseat turn still generating
-            // would land its line a second later, which reads as the companion
-            // carrying on with the sentence she was interrupted in.
-            const sharing = useBackseatStore.getState().sharingFor;
-            if (sharing) void sei.backseatInterrupt?.(sharing).catch(() => {});
+            interruptStats.note('cuts');
+            cutCompanions();
           },
+          // 261030: during a share the room floor is mostly the game's audio,
+          // so the barge bars stop scaling with it (dictation.ts bargeBars).
+          shareActive: () => useBackseatStore.getState().sharingFor !== null,
           onSpeechActive: (active) => {
             // Light the caller's own avatar ring while they talk (same ring the
             // companions get). Muted → never lit, even if a frame leaks through.
@@ -2028,6 +2066,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // Connected: the stopwatch starts HERE, the moment we are actually ready.
       const now = Date.now();
       liveSince.set(characterId, now);
+      interruptStats.join(characterId);
       // Tell main the call is live (260926): it closes the call itself on an
       // account switch and needs the same stopwatch start to time it.
       void sei.voiceCallSetActive({ characterId, active: true, live: true }).catch(() => {});
@@ -2074,6 +2113,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       const joinerName = nameOf(characterId);
       set({ participants: [...s.participants, characterId] });
       liveSince.set(characterId, Date.now());
+      interruptStats.join(characterId);
       // A join is live the moment it lands (no ring), so open + live in one.
       void sei.voiceCallSetActive({ characterId, active: true, live: true }).catch(() => {});
       // Tell the companions already on the call that someone joined, so they know
@@ -2126,7 +2166,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         .voiceCallSetActive({
           characterId,
           active: false,
-          ...(since !== undefined ? { connectedMs: Date.now() - since } : {}),
+          ...(since !== undefined ? { connectedMs: Date.now() - since, ...interruptsFor(characterId) } : {}),
           reason,
         })
         .catch(() => {});
@@ -2178,7 +2218,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           .voiceCallSetActive({
             characterId: id,
             active: false,
-            ...(since !== undefined ? { connectedMs: now - since } : {}),
+            ...(since !== undefined ? { connectedMs: now - since, ...interruptsFor(id) } : {}),
             reason,
           })
           .catch(() => {});
@@ -2212,6 +2252,13 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         micBlocked: null,
       });
       useUiStore.getState().endCall();
+    },
+
+    interrupt: () => {
+      const s = get();
+      if (s.status !== 'live' || !s.participants.length) return;
+      interruptStats.note('manual');
+      cutCompanions();
     },
 
     // 260725: the cloud-STT backup-model offer (see sttFallbackPrompt).

@@ -93,6 +93,9 @@ import { useCreditsStore } from './lib/stores/useCreditsStore';
 import { useCloudCharactersStore } from './lib/stores/useCloudCharactersStore';
 import { useLibraryStateStore } from './lib/stores/useLibraryStateStore';
 import { handleScopeEnding, resetAccountScopedState } from './lib/scopeReset';
+import { waitForAuthScope } from './lib/authBoot';
+import { resolveBootRoute } from './lib/bootRoute';
+import { BootSplash } from './components/BootSplash';
 import { AuthChoiceScreen } from './screens/AuthChoiceScreen';
 import { AcceptToSModal } from './components/AcceptToSModal';
 import { OfflineRetryModal } from './components/OfflineRetryModal';
@@ -197,6 +200,9 @@ export function App(): React.ReactElement {
   // A sign-in landed while the first-run scene was up: offer the import when
   // the scene hands off (handleOnboardComplete).
   const importAfterOnboardRef = useRef(false);
+  // 261029: app:scope-changed pushes seen. The boot routing reads the profile
+  // again when one landed while it was deciding.
+  const scopeChangesRef = useRef(0);
   // RESEARCH §Pitfall 3 — Linux-only basic_text safeStorage warning. Main
   // computes this from `apiKeyStore.safeStorageBackendKind()` and exposes it via the
   // app:warnings IPC. The keychain banner (api_key.bin) is dismissed for the
@@ -559,6 +565,7 @@ export function App(): React.ReactElement {
 
   useEffect(() => {
     return sei.onScopeChanged((ev) => {
+      scopeChangesRef.current += 1;
       // Drop the previous account's in-memory data first (transcripts are
       // keyed by character id, and the defaults share ids across profiles).
       resetAccountScopedState();
@@ -606,6 +613,19 @@ export function App(): React.ReactElement {
         // Replace the previous profile's character list + library state.
         try { await useDataStore.getState().loadCharacters(); } catch { /* empty-state */ }
         try { await useLibraryStateStore.getState().refresh(); } catch { /* no hidden defaults */ }
+        // 261029 review: the boot routing has not picked the first view yet.
+        // It owns that choice (it reads the profile again when a scope change
+        // landed under it), so this handler only reloads data; routing here
+        // too raced it (sign-in panel vs home).
+        if (useUiStore.getState().view.kind === 'loading') {
+          if (ev.reason !== 'sign-out') {
+            try {
+              useCreditsStore.getState().reset();
+              await useCreditsStore.getState().init();
+            } catch { /* keep last */ }
+          }
+          return;
+        }
         // Sign-out (account → local): straight to the scene's sign-in panel
         // (260729; replaced AuthChoice here). Same signin variant as the boot
         // route below — a signing-out user usually just wants to switch
@@ -640,7 +660,11 @@ export function App(): React.ReactElement {
         // from the scene's own panel, and the scene continues into setup +
         // generation itself. The data reloads above still ran. 261023: the
         // local-import offer waits for the scene's hand-off.
-        const offerTiming = localImportOfferTiming(ev.reason, useUiStore.getState().view.kind === 'onboard');
+        const offerTiming = localImportOfferTiming(
+          ev.reason,
+          useUiStore.getState().view.kind === 'onboard',
+          ev.restored === true,
+        );
         if (offerTiming === 'after-onboarding') {
           importAfterOnboardRef.current = true;
           return;
@@ -760,6 +784,7 @@ export function App(): React.ReactElement {
 
   useEffect(() => {
     let cancelled = false;
+    const scopeChangesAtStart = scopeChangesRef.current;
     void (async () => {
       // Tracks whether the active profile has completed onboarding (has a
       // preferred_name). Drives the signed-in routing decision below so a
@@ -770,67 +795,73 @@ export function App(): React.ReactElement {
       // resume-to-skin-setup routing below (set on onboarding submit, cleared
       // when the user finishes/skips the SkinSetupScreen).
       let skinPending = false;
-      // Load persisted config + theme
-      try {
-        const cfg = await sei.getConfig();
-        if (cancelled) return;
-        onboardedName = (cfg.preferred_name ?? '').trim();
-        skinPending = cfg.skin_setup_pending === true;
-        // Default to the midnight "Summoning Terminal" theme on fresh
-        // installs; legacy 'dark'/'light' values are clamped to the new names.
-        const mode = clampThemeMode(cfg.theme_mode ?? 'midnight');
-        setThemeMode(mode);
-        applyTheme(mode);
-        // App UI language (260730): hydrate before the first localized render.
-        useLangStore.getState().setLang(cfg.ui_language === 'zh' ? 'zh' : 'en');
-        // ui-A7: seed the developer-console visibility from persisted config
-        // BEFORE the first render of any view that mounts LogsBar — the
-        // gate below reads useUiStore.devConsoleVisible directly.
-        if (typeof cfg.dev_console_visible === 'boolean') {
-          useUiStore.getState().setDevConsoleVisible(cfg.dev_console_visible);
+      // 261029: hydrate from the active profile. Runs again below when the
+      // data scope was still moving to the signed-in account at first read.
+      const hydrate = async (): Promise<boolean> => {
+        // Load persisted config + theme
+        try {
+          const cfg = await sei.getConfig();
+          if (cancelled) return false;
+          onboardedName = (cfg.preferred_name ?? '').trim();
+          skinPending = cfg.skin_setup_pending === true;
+          // Default to the midnight "Summoning Terminal" theme on fresh
+          // installs; legacy 'dark'/'light' values are clamped to the new names.
+          const mode = clampThemeMode(cfg.theme_mode ?? 'midnight');
+          setThemeMode(mode);
+          applyTheme(mode);
+          // App UI language (260730): hydrate before the first localized render.
+          useLangStore.getState().setLang(cfg.ui_language === 'zh' ? 'zh' : 'en');
+          // ui-A7: seed the developer-console visibility from persisted config
+          // BEFORE the first render of any view that mounts LogsBar — the
+          // gate below reads useUiStore.devConsoleVisible directly.
+          if (typeof cfg.dev_console_visible === 'boolean') {
+            useUiStore.getState().setDevConsoleVisible(cfg.dev_console_visible);
+          }
+          // Appearance & feel: seed the "Realistic typing" pacing toggle before
+          // first render (default ON when the field is absent).
+          useUiStore.getState().setRealisticTyping(cfg.realistic_typing !== false);
+          // Appearance & feel: call captions (default OFF when absent).
+          useUiStore.getState().setCallCaptions(cfg.call_captions === true);
+          // Appearance & feel: avatar overlay mode (default OFF when absent;
+          // folds in the deprecated call_overlay_enabled) + per-character prefs.
+          useUiStore.getState().setAvatarMode(effectiveAvatarMode(cfg));
+          useUiStore.getState().setAvatarPrefs(cfg.avatar_prefs ?? {});
+          // Conversation starters on quiet calls (default ON when absent).
+          useUiStore.getState().setConvoStartersEnabled(cfg.call_convo_starters !== false);
+          // Per-character call backdrop mode (sparse: absent = never chosen).
+          useUiStore.getState().setCallBackdropPrefs(cfg.call_backdrop ?? {});
+          // Sticky chat side-panel visibility (default shown).
+          useUiStore.getState().setChatPanelHidden(cfg.chat_panel_hidden === true);
+          // Product analytics opt-out (default OFF = analytics on). Without this
+          // seed the store's `false` default made the Settings toggle show ON
+          // even when the profile's config.json had analytics_opt_out: true
+          // (the scope-changed handler hydrated it, the initial bootstrap
+          // didn't) — fix 260720.
+          useUiStore.getState().setAnalyticsOptOut(cfg.analytics_opt_out === true);
+          // Custom app background (Theme section, 260724).
+          useUiStore.getState().setBackgroundImage(cfg.background_image ?? null);
+          useUiStore.getState().setBackgroundOpacity(cfg.background_opacity ?? 0.5);
+          useUiStore.getState().setBackgroundBrightness(cfg.background_brightness ?? 1);
+        } catch {
+          // Defaults already applied (themeMode='system' from store)
         }
-        // Appearance & feel: seed the "Realistic typing" pacing toggle before
-        // first render (default ON when the field is absent).
-        useUiStore.getState().setRealisticTyping(cfg.realistic_typing !== false);
-        // Appearance & feel: call captions (default OFF when absent).
-        useUiStore.getState().setCallCaptions(cfg.call_captions === true);
-        // Appearance & feel: avatar overlay mode (default OFF when absent;
-        // folds in the deprecated call_overlay_enabled) + per-character prefs.
-        useUiStore.getState().setAvatarMode(effectiveAvatarMode(cfg));
-        useUiStore.getState().setAvatarPrefs(cfg.avatar_prefs ?? {});
-        // Conversation starters on quiet calls (default ON when absent).
-        useUiStore.getState().setConvoStartersEnabled(cfg.call_convo_starters !== false);
-        // Per-character call backdrop mode (sparse: absent = never chosen).
-        useUiStore.getState().setCallBackdropPrefs(cfg.call_backdrop ?? {});
-        // Sticky chat side-panel visibility (default shown).
-        useUiStore.getState().setChatPanelHidden(cfg.chat_panel_hidden === true);
-        // Product analytics opt-out (default OFF = analytics on). Without this
-        // seed the store's `false` default made the Settings toggle show ON
-        // even when the profile's config.json had analytics_opt_out: true
-        // (the scope-changed handler hydrated it, the initial bootstrap
-        // didn't) — fix 260720.
-        useUiStore.getState().setAnalyticsOptOut(cfg.analytics_opt_out === true);
-        // Custom app background (Theme section, 260724).
-        useUiStore.getState().setBackgroundImage(cfg.background_image ?? null);
-        useUiStore.getState().setBackgroundOpacity(cfg.background_opacity ?? 0.5);
-        useUiStore.getState().setBackgroundBrightness(cfg.background_brightness ?? 1);
-      } catch {
-        // Defaults already applied (themeMode='system' from store)
-      }
 
-      // Load character list (best-effort — empty array if rejection)
-      try {
-        await useDataStore.getState().loadCharacters();
-      } catch {
-        // Stores stay empty; screens render the empty-state.
-      }
+        // Load character list (best-effort — empty array if rejection)
+        try {
+          await useDataStore.getState().loadCharacters();
+        } catch {
+          // Stores stay empty; screens render the empty-state.
+        }
 
-      // Seed the library-state store (removed_default_ids). Best-effort.
-      try {
-        await useLibraryStateStore.getState().refresh();
-      } catch {
-        // Empty Set is a safe default — no defaults hidden.
-      }
+        // Seed the library-state store (removed_default_ids). Best-effort.
+        try {
+          await useLibraryStateStore.getState().refresh();
+        } catch {
+          // Empty Set is a safe default — no defaults hidden.
+        }
+        return !cancelled;
+      };
+      if (!(await hydrate())) return;
 
       // Startup warnings (Linux basic_text safeStorage fallback). Best-effort.
       try {
@@ -855,40 +886,47 @@ export function App(): React.ReactElement {
       //   no session, api_key.bin OK → AuthChoice; Continue Locally → home
       //   no session, no api_key.bin → AuthChoice; Continue Locally → onboarding
       //
-      // We read the renderer's mirror of AuthState (useAuthStore). Main pushes
-      // the initial AuthState during initAuthState bootstrap, replayed on every
-      // did-finish-load — by the time this effect resolves after the awaited
-      // config + character load above, the value is correct.
+      // The auth state comes from main's snapshot below (261029). The store's
+      // mirror alone was not enough: it defaults to `local` and main's first
+      // push can land after this point, which routed a signed-in user to the
+      // sign-in panel.
       //
       // B5: the LoadingScreen wallclock floor was removed. The renderer routes
       // straight to the initial view; the boot pulse is gone.
       if (cancelled) return;
-      const currentAuth = useAuthStore.getState().state;
-      if (currentAuth.kind === 'signed_in') {
-        // 260603: a signed-in account that hasn't onboarded yet (no
-        // preferred_name in its profile) is a fresh account → the Sui
-        // onboarding scene (260728; it skips its sign-in step when a session
-        // is already live). Onboarded-but-skin-pending → resume the dedicated
-        // skin-setup step. Otherwise home, on the Home tab.
-        if (!onboardedName) {
-          navigate({ kind: 'onboard' });
-        } else if (skinPending) {
-          navigate({ kind: 'skin-setup' });
-        } else if (await resumeSavedTutorial()) {
-          // Quit mid-tutorial last time: back to the same step and screen.
-        } else {
+      // 261029: route on MAIN's auth state (lib/bootRoute.ts). It waits for
+      // main's first state (never routing on its unloaded `local` default)
+      // and for a scope switch already under way, then reads the profile
+      // again if it may have moved. The splash stays up meanwhile.
+      const dest = await resolveBootRoute({
+        waitForScope: () => waitForAuthScope({ isCancelled: () => cancelled }),
+        applyAuthState: authStore.applyAuthState,
+        currentAuth: () => useAuthStore.getState().state,
+        rehydrate: hydrate,
+        scopeChangedSinceHydrate: () => scopeChangesRef.current !== scopeChangesAtStart,
+        profile: () => ({ onboardedName, skinPending }),
+        isCancelled: () => cancelled,
+      });
+      if (dest === null) return;
+      if (dest === 'home') {
+        // Signed in and onboarded: a tour quit mid-way resumes at its step,
+        // else home on the Home tab.
+        if (!(await resumeSavedTutorial())) {
           useUiStore.getState().setHomeTab('home');
           navigate({ kind: 'home' });
         }
-      } else if (!onboardedName) {
-        // Fresh install (nothing configured on the local profile) → the Sui
-        // onboarding scene, which owns sign-in/sign-up/continue-locally.
-        navigate({ kind: 'onboard' });
-      } else {
+      } else if (dest === 'skin-setup') {
+        navigate({ kind: 'skin-setup' });
+      } else if (dest === 'signin') {
         // Signed-out profile that HAS onboarded: the scene mounted directly
         // at its sign-in panel (260729; replaced AuthChoice). No cutscene —
         // a local BYOK launch stays one "Continue locally" click.
         navigate({ kind: 'onboard', signin: true });
+      } else {
+        // A fresh install, or a signed-in account that has not onboarded yet
+        // (260603): the Sui onboarding scene (260728), which skips its
+        // sign-in step when a session is already live.
+        navigate({ kind: 'onboard' });
       }
     })();
     return () => {
@@ -929,7 +967,10 @@ export function App(): React.ReactElement {
     if (authState.kind === 'signed_in' && prev !== null && prev !== 'signed_in') {
       setHomeTab('home');
     }
-    if (authState.kind === 'signed_in' && (view.kind === 'auth-choice' || view.kind === 'loading')) {
+    // 261029 review: not from 'loading'. The boot routing picks the first
+    // view (it waits for main's state), and jumping home from here raced it:
+    // a signed-in account with no profile yet belongs in onboarding.
+    if (authState.kind === 'signed_in' && view.kind === 'auth-choice') {
       navigate({ kind: 'home' });
     } else if (
       authState.kind === 'local' &&
@@ -1006,10 +1047,10 @@ export function App(): React.ReactElement {
   );
 
   // B5: LoadingScreen is gone — the renderer routes directly to the initial
-  // view in the bootstrap effect above. The 'loading' view variant is a
-  // transient state before that effect resolves; render nothing for a frame
-  // rather than mounting the prior boot pulse.
-  if (view.kind === 'loading') return <></>;
+  // view in the bootstrap effect above. 261029 review: 'loading' can last
+  // (the boot waits for main's auth state), and an empty fragment was a blank
+  // window once the startup splash had closed, so it shows the splash's look.
+  if (view.kind === 'loading') return <BootSplash />;
 
   // 260603 / 261023: the own-key (local) import offer. Rendered on the
   // first-run scene too, because a sign-in made there is offered when the
@@ -1252,6 +1293,12 @@ export function App(): React.ReactElement {
       {/* Task 4 — drives the always-on-top call overlay window (renders nothing;
           pushes call state to main, which owns the overlay window). */}
       <CallOverlayPusher />
+      {/* Startup popup (261027, replaced the notices inbox). Self-mounting:
+          renders nothing until main reports an unshown popup, then waits for a
+          calm screen and shows only once the page has really loaded. Mounted
+          before every dialog (261029): same z tier, so a dialog opened over it
+          comes later in the DOM and lands on top. */}
+      <StartupPopup isCalm={popupCalm} />
       {modal?.kind === 'mc-setup' ? (
         <McSetupModal tab={modal.tab} searching={modal.searching} />
       ) : null}
@@ -1322,6 +1369,7 @@ export function App(): React.ReactElement {
       {updatePopup ? (
         <UpdatePopup
           state={updatePopup}
+          platform={sei.platform}
           onUpdateNow={() => {
             // Consent to download the optional update. The modal closes right
             // away and the sidebar progress bar takes over at 0%, so the user
@@ -1334,10 +1382,6 @@ export function App(): React.ReactElement {
         />
       ) : null}
       <UpdatedToast />
-      {/* Startup popup (261027, replaced the notices inbox). Self-mounting:
-          renders nothing until main reports an unshown popup, then waits for a
-          calm screen and shows only once the page has really loaded. */}
-      <StartupPopup isCalm={popupCalm} />
       {/* 260810 — phantom-call recovery. Self-mounting: renders null until a
           scan (app mount / after a call or share ends) flags a phantom-call
           session that has not been dismissed. */}

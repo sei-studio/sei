@@ -104,22 +104,6 @@ type Mode = 'idle' | 'applying';
 
 const REMOVE_CONFIRM_WINDOW_MS = 4000;
 
-/**
- * Mirror of src/bot/index.js sanitizeMcName for the renderer's preview-URL path.
- * The skin server routes /skins/<name>.png by the sanitized name when
- * the persona has no character.username set — we use the same algorithm here so
- * the preview URL matches what CustomSkinLoader will actually ask for.
- *
- * Mojang username constraints: [A-Za-z0-9_], ≤16 chars, non-empty (falls back
- * to 'Sei' if the persona name reduces to empty after sanitization).
- */
-function sanitizeMcName(name: string): string {
-  const cleaned = String(name || '')
-    .replace(/[^A-Za-z0-9_]/g, '')
-    .slice(0, 16);
-  return cleaned || 'Sei';
-}
-
 /** MC username regex — matches CharacterSchema.username constraint. */
 const MC_NAME_RE = /^[A-Za-z0-9_]{0,16}$/;
 
@@ -253,7 +237,9 @@ export function SkinEditor({
     // preview by hitting the local skin server with the bot's effective
     // username. The server returns a transparent PNG for unknown personas;
     // skinview3d still renders it (Steve-shaped silhouette).
-    const serverName = usernameDraft.trim() || character.username || sanitizeMcName(character.name);
+    // The name CustomSkinLoader will ask for: the bot's derivation
+    // (effectiveMcUsername, accents folded) when no username is set.
+    const serverName = usernameDraft.trim() || effectiveMcUsername(character);
     const cacheBust = character.skin.png_sha256 ?? String(Date.now());
     setPreviewUrl(`${baseUrl}/skins/${encodeURIComponent(serverName)}.png?sha=${cacheBust}`);
   }, [character.username, character.skin, baseUrl, usernameDraft, stagedPng, character.name]);

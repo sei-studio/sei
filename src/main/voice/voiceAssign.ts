@@ -22,68 +22,9 @@ import {
   sharedVoiceIdOf,
   type OwnVoicePick,
 } from '../../shared/voiceIds';
+import { POOL_VOICE_IDS, isPoolVoiceId } from '../../shared/poolVoiceIds';
 import { listCharacters, saveCharacter } from '../characterStore';
 import { getCurrentAuthState } from '../auth/authState';
-
-const VOICE_IDS = new Set((VOICES as Array<{ id: string }>).map((v) => v.id));
-
-/**
- * Voice ids removed from the assignment pool on 260707, when the soulcaster
- * table was curated down to use_case 'characters_animation' (64 → 25; the full
- * entries live in vendor/soulcaster/src/voices.js git history). They are still
- * valid on the ElevenLabs account — the cut was for NEW assignments only — so
- * existing characters keep them and their voice never silently changes:
- * without this set, assignedVoiceId would reject the persisted id and
- * resolveVoiceId would re-roll, persist, and cloud-sync a different voice.
- * New assignments never draw from here; rollVoice only sees VOICES.
- *
- * 260725: the five neutral voices cut in the 260707 curation (River, Sammy,
- * Riley, Ramona, Aaron) rejoined the pool as the neutral section of VOICES,
- * so they were removed from this set — membership in both would be
- * contradictory (this set is for voices REMOVED from the pool).
- */
-const LEGACY_VOICE_IDS = new Set([
-  // female / young
-  'EXAVITQu4vr4xnSDxMaL', // Sarah
-  'FGY2WhTYpPnrIDTdsKH5', // Laura
-  'cgSgspJ2msm6clMCkdW9', // Jessica
-  'tpS5zOAgWUiQMhzYbG2h', // Sapphire
-  'm0MqfGOWTAfVVEaz4KxX', // Alexandra
-  'MJqcNjMbvfGUxatGjPcI', // Daisy
-  'Y0G5nEDw2qHnUHGmtoM9', // Boo
-  // female / adult
-  'Xb7hH8MSUJpSbSDYk0k2', // Alice
-  'XrExE9yKIg1WjnnlVkGX', // Matilda
-  'hpp4J3VqNfWAUOO0d1Us', // Bella
-  'pFZP5JQG7iQjIQuC4Bku', // Lily
-  'FF59babHL8N8gfTgtBMT', // Jodi
-  'DIS307HFaAvJZzq496qM', // Cecilia
-  'vHMylH8q68M5Wk9WkVr1', // Claudia
-  'u6a6bRv82Zfi9NzoIqvt', // Lia
-  // female / elder
-  'xIzR6egd3S3LJZbVW0c1', // Margaret
-  '2qQJWjw5XdG80GreshqG', // Eleanor
-  'wGcFBfKz5yUQqhqr0mVy', // Maria
-  // male / young
-  'IKne3meq5aSn9XLyUdCD', // Charlie
-  'TX3LPaxmHKxFdv7VOQHJ', // Liam
-  'bIHbv24MWmeRgasZH58o', // Will
-  // male / adult
-  'CwhRBWXzGAHq8TQ4Fs17', // Roger
-  'JBFqnCBsd6RMkjVDRZzb', // George
-  'cjVigY5qzO86Huf0OWal', // Eric
-  'iP95p4xoKVk53GoZ742B', // Chris
-  'nPczCjzI2devNBz1zQrb', // Brian
-  'onwK4e9ZLuTAKqWW03F9', // Daniel
-  'pNInz6obpgDQGcFmaJgB', // Adam
-  'enzbGixeo55iqn1QxbbC', // Jon
-  'pCL8Ua4MoAGISUaDmw69', // Miller
-  // male / elder
-  'pqHfZKP75CvOlQylNhV4', // Bill
-  'PerZoH0r6nxBZXCoIPpv', // Michael
-  'UzI1NsMEV3ni5JRkRSls', // Alistair
-  'RcEmXcISaHUgHOU4uNTz', // Hansi
-]);
 
 /** FNV-1a over the character id — a stable 32-bit seed for the fallback roll. */
 function seedFrom(id: string): number {
@@ -164,7 +105,7 @@ export function personaVoiceHints(personaText: string): {
 export function assignedVoiceId(character: Character): string | null {
   const v = character.metadata?.voiceId;
   if (typeof v !== 'string') return null;
-  if (VOICE_IDS.has(v) || LEGACY_VOICE_IDS.has(v)) return v;
+  if (isPoolVoiceId(v)) return v;
   return ownVoiceOf(character.metadata) && ownVoiceHonored(character) ? v : null;
 }
 
@@ -200,7 +141,7 @@ export function ownVoiceHonored(character: Pick<Character, 'owner' | 'is_default
  */
 function isBorrowedOwnVoice(character: Character): boolean {
   const v = character.metadata?.voiceId;
-  if (typeof v !== 'string' || VOICE_IDS.has(v) || LEGACY_VOICE_IDS.has(v)) return false;
+  if (typeof v !== 'string' || isPoolVoiceId(v)) return false;
   return ownVoiceOf(character.metadata) !== null && !ownVoiceHonored(character);
 }
 
@@ -212,7 +153,7 @@ function isBorrowedOwnVoice(character: Character): boolean {
  */
 export function ownVoicePickOf(character: Character): OwnVoicePick | null {
   const v = character.metadata?.voiceId;
-  if (typeof v === 'string' && (VOICE_IDS.has(v) || LEGACY_VOICE_IDS.has(v))) return null;
+  if (isPoolVoiceId(v)) return null;
   // Someone else's own voice is not an own voice HERE: it speaks through the
   // borrowed pool voice resolveVoiceId returns, like any pool voice.
   if (!ownVoiceHonored(character)) return null;
@@ -222,11 +163,11 @@ export function ownVoicePickOf(character: Character): OwnVoicePick | null {
 /**
  * True when `id` is a curated-pool or legacy voice (defense at the IPC
  * boundary — still a closed allowlist, never an arbitrary id). Legacy ids
- * must pass so previewing an existing companion's voice keeps working.
+ * must pass so previewing an existing companion's voice keeps working. The
+ * set itself lives in shared/poolVoiceIds.ts so the renderer reads the same
+ * one (261024).
  */
-export function isPoolVoiceId(id: string): boolean {
-  return VOICE_IDS.has(id) || LEGACY_VOICE_IDS.has(id);
-}
+export { isPoolVoiceId };
 
 /**
  * The curated voice pool, renderer-safe (voice-picker UI, 260705). Strips the
@@ -298,7 +239,7 @@ export function closeSharedVoiceId(character: Character, ownGender?: string | nu
  */
 export function sharedVoiceIdFor(character: Pick<Character, 'metadata'>): string | null {
   const id = sharedVoiceIdOf(character.metadata);
-  return id && VOICE_IDS.has(id) ? id : null;
+  return id && POOL_VOICE_IDS.has(id) ? id : null;
 }
 
 /**

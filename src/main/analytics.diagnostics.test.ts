@@ -1,7 +1,7 @@
 /**
  * 260720 — captureDiagnostic / sanitizeDiagnostic: the long-text allowlist
  * that lets pre-redacted stderr/stdout tails + error_message past sanitize()'s
- * 200-char truncation (8KB per-field cap), with the same gating as capture().
+ * 200-char truncation (2KB per-field cap since 261031, was 8KB), with the same gating as capture().
  *
  * The analytics module is a singleton, so the tests run in file order:
  * pre-init gating first, then initAnalytics with a mocked PostHog client.
@@ -43,20 +43,29 @@ import {
 } from './analytics';
 
 describe('sanitizeDiagnostic (pure)', () => {
-  it('lets allowlisted long-text keys through up to 8KB, tails keep the END', () => {
+  it('lets allowlisted long-text keys through up to 2KB, tails keep the END', () => {
     const out = sanitizeDiagnostic({
       stderr_tail: 'A'.repeat(10_000) + 'CRASH',
       stdout_tail: 'short out',
       error_message: 'E'.repeat(9_000),
       other_string: 'B'.repeat(500),
     });
-    expect((out.stderr_tail as string).length).toBe(8192);
+    expect((out.stderr_tail as string).length).toBe(2048);
     expect(out.stderr_tail as string).toMatch(/CRASH$/);
     expect(out.stdout_tail).toBe('short out');
-    expect((out.error_message as string).length).toBe(8192);
+    expect((out.error_message as string).length).toBe(2048);
     expect(out.error_message as string).toMatch(/^E/); // head kept for messages
     // Non-allowlisted strings still get the standard 200-char truncation.
     expect((out.other_string as string).length).toBe(200);
+  });
+
+  it('redacts the long-text keys again as a backstop (261031)', () => {
+    const out = sanitizeDiagnostic({
+      stderr_tail: '[Server thread/INFO]: Steve joined the game\nconnect ECONNREFUSED 192.168.1.23:25565',
+      error_message: 'OpenAI 401: sk-proj-AbCdEfGh1234567890IjKlMnOp is invalid',
+    });
+    expect(out.stderr_tail).toBe('[Server thread/INFO]: [player] joined the game\nconnect ECONNREFUSED [ip]:25565');
+    expect(out.error_message).toBe('OpenAI 401: [redacted] is invalid');
   });
 
   it('keeps the standard sanitize() rules for everything else', () => {
@@ -89,7 +98,7 @@ describe('captureDiagnostic gating + capture', () => {
 
   it('captures with common props and full-length tails after init', async () => {
     await initAnalytics();
-    const tail = 'T'.repeat(4000) + ' the-crash';
+    const tail = 'T'.repeat(1500) + ' the-crash';
     captureDiagnostic('summon_failed', {
       character_id: 'char-1',
       error_class: 'BOT_CRASH',

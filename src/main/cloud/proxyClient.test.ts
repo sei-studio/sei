@@ -203,6 +203,29 @@ describe('creditsGet', () => {
     expect(res.ai_backend_kind).toBe('cloud-proxy');
   });
 
+  // 261028: the effective allowance (grandfathered accounts keep the old one
+  // until their reset) comes from my_plan, not the pricing catalog.
+  it('passes my_plan allowance_micro / allowance_used_micro through as numbers', async () => {
+    signIn();
+    state.plan = planRow({ usage_pct: 30, allowance_micro: '500000', allowance_used_micro: 150123 });
+
+    const { creditsGet } = await import('./proxyClient');
+    const res = await creditsGet();
+    expect(res.allowance_micro).toBe(500000);
+    expect(res.allowance_used_micro).toBe(150123);
+  });
+
+  it('omits the allowance fields when the view has no such columns', async () => {
+    signIn();
+    state.plan = planRow();
+
+    const { creditsGet } = await import('./proxyClient');
+    const res = await creditsGet();
+    expect(res).not.toHaveProperty('allowance_micro');
+    expect(res).not.toHaveProperty('allowance_used_micro');
+    expect(res.plan).toBe('free');
+  });
+
   // 260726: the feedback banner is gated on the SERVER, not the per-profile
   // config mirror. A fresh profile (or a re-onboard, which writes the local
   // flag false) used to re-offer a reward the account had already spent.

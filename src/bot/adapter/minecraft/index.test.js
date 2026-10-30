@@ -117,3 +117,25 @@ describe('look registration through the production construction shape', () => {
     expect(src).toMatch(/createMinecraftAdapter\(\{\s*bot:\s*_bot,\s*config,\s*visionEnabled:\s*true\s*\}\)/)
   })
 })
+
+// 261030 (quality pass 31): the adapter's eventAddendum is where the unarmed
+// flag is read (withWeaponState), live when the turn is written. Armed turns
+// and a bot that never had a weapon must get the dev text unchanged.
+describe('adapter.eventAddendum reads the weapon state when the turn is written', () => {
+  it('after a death took her weapon it picks the get-away text, a picked-up sword flips it back', async () => {
+    const { ATTACKED_ADDENDUM_MOB, attackedMobUnarmed } = await import('../../brain/promptLibrary.js')
+    let items = []
+    const bot = { chat: vi.fn(), username: 'sei', players: {}, inventory: { items: () => items } }
+    const adapter = createMinecraftAdapter({ bot, config: { adapter: { minecraft: {} } } })
+    const data = { attackerLabel: 'zombie', attackerKind: 'hostile_mob' }
+    // Never had a weapon: the dev text.
+    expect(adapter.eventAddendum('sei:attacked', data)).toBe(ATTACKED_ADDENDUM_MOB.replace('{label}', 'zombie'))
+    // A death dropped her sword (deathTracker sets this mark).
+    const { noteLostWeapon } = await import('./behaviors/weaponSelect.js')
+    noteLostWeapon(bot, [{ item: 'stone_sword', n: 1 }])
+    expect(adapter.eventAddendum('sei:attacked', data)).toBe(attackedMobUnarmed().replace('{label}', 'zombie'))
+    items = [{ name: 'stone_sword', count: 1 }]
+    expect(adapter.eventAddendum('sei:attacked', data)).toBe(ATTACKED_ADDENDUM_MOB.replace('{label}', 'zombie'))
+    expect(data.unarmed).toBeUndefined()
+  })
+})

@@ -12,18 +12,19 @@
 import { createStardewClient, fetchHello } from './client.js'
 import { createStardewAdapter } from './index.js'
 import { classifyConnectError } from './errors.js'
+import { stardewNameFromRaw } from '../../names.js'
 
 /**
  * The companion's in-game name. The mod sanitises it again; here the persona
  * name is kept readable (spaces allowed, 24 chars) since it is a display
- * name, not a login. Falls back to 'Sei'.
+ * name, not a login; accented letters are folded to plain ones (261027,
+ * names.js stardewNameFromRaw). Falls back to 'Sei'.
  */
 export function botUsernameFor(character) {
   const raw = typeof character?.username === 'string' && character.username.trim()
     ? character.username.trim()
     : String(character?.name || '')
-  const cleaned = raw.replace(/[^A-Za-z0-9_ \-]/g, '').trim().slice(0, 24)
-  return cleaned || 'Sei'
+  return stardewNameFromRaw(raw)
 }
 
 /**

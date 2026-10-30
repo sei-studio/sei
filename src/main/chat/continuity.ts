@@ -1,5 +1,5 @@
 /**
- * Cross-surface continuity bridge (design: .planning/design/app-chat-and-memory.md §4).
+ * Cross-surface continuity bridge (design: docs/design/app-chat-and-memory.md §4).
  *
  * Three tiers carry memory across the chat and Minecraft surfaces:
  *   1. MEMORY.md — durable, shared, already compacted (read directly by both).

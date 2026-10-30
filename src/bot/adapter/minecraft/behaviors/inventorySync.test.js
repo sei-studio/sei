@@ -200,7 +200,7 @@ describe('furnace slot ops check the item moved', () => {
     const { bot } = furnaceBot({ fuelSticks: true, takeSticks: true })
     expect(await openFurnaceAction({ block: 'furnace' }, bot, {})).toMatch(/^opened furnace/)
     expect(await addFuelAction({ item: 'coal', count: 1 }, bot, {})).toBe('added 1 coal fuel')
-    expect(await takeSmeltedAction({}, bot, {})).toBe('took 2 iron_ingot (3 raw_iron still cooking)')
+    expect(await takeSmeltedAction({}, bot, { takeSmelted_batch_ms: 0 })).toBe('took 2 iron_ingot (3 raw_iron still cooking)')
   })
 
   it('addFuel and takeSmelted say so when the server undid them', async () => {

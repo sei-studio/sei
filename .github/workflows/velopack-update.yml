@@ -1,0 +1,322 @@
+name: Velopack Windows update
+
+# Windows updates on Velopack with Sei's fast apply (261030). Builds the
+# patched Update.exe (build/velopack/README.md), packs this branch twice as
+# Velopack releases (0.6.90 and 0.6.91, unsigned, never published) with the
+# release scripts (scripts/velopack-pack.mjs + velopack-mirror.mjs into a
+# local feed folder), and runs on clean windows-latest runners:
+#   scenarios  every update scenario (scripts/velopack-ci/scenario.ps1); each
+#              uploads its marks, logs, numbers and a video with a silent
+#              audio track
+#   migrate    the NSIS -> Velopack migration from a real old NSIS release
+#              (scripts/velopack-ci/migrate.ps1)
+#   authenticode  the signature check updates must pass (velopackSignature.ts)
+#              against signed, unsigned, tampered and someone-else-signed files
+#              and packages, and the real CI package (scripts/velopack-ci/
+#              authenticode.ps1)
+#   rollout-dry-run  velopack-rollout.yml itself, as a dry run against R2
+# Nothing here writes to dl.sei.gg or a GitHub release.
+on:
+  push:
+    branches: ['feat/velopack-windows', 'dev', 'release/**']
+    paths:
+      - '.github/workflows/velopack-update.yml'
+      - 'build/velopack/**'
+      - 'scripts/velopack-ci/**'
+      - 'scripts/velopack-*.mjs'
+      - 'scripts/lib/velopack*.mjs'
+      - '.github/actions/velopack-tools/**'
+      - '.github/workflows/velopack-rollout.yml'
+      - '.github/workflows/mirror-release.yml'
+      - '.github/workflows/release.yml'
+      - 'src/main/velopack*.ts'
+      - 'src/main/winPowerShell.ts'
+      - 'electron.vite.config.ts'
+      - 'src/main/updater.ts'
+      - 'src/main/windowChrome.ts'
+      - 'src/main/index.ts'
+      - 'electron-builder.yml'
+      - 'package.json'
+  workflow_dispatch:
+    inputs:
+      scenarios:
+        description: 'Comma-separated scenarios (empty = all)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: velopack-update-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: actionlint
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
+          ./actionlint -color -shellcheck= .github/workflows/*.yml
+      - name: Parse the CI scripts
+        shell: pwsh
+        run: |
+          $bad = $false
+          foreach ($f in 'scenario.ps1', 'migrate.ps1', 'testsign.ps1', 'authenticode.ps1') {
+            $errs = $null
+            [System.Management.Automation.Language.Parser]::ParseFile("$PWD/scripts/velopack-ci/$f", [ref]$null, [ref]$errs) | Out-Null
+            if ($errs) { $bad = $true; $errs | ForEach-Object { Write-Host "::error::${f} line $($_.Extent.StartLineNumber): $($_.Message)" } } else { Write-Host "$f parses" }
+          }
+          if ($bad) { exit 1 }
+      - name: Syntax-check the release scripts
+        run: for f in scripts/velopack-*.mjs scripts/lib/velopack*.mjs scripts/velopack-ci/*.mjs; do node --check "$f"; done
+
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 100
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Setup Python (distutils for headless-gl native build)
+        uses: actions/setup-python@v5
+        id: setup-python
+        with:
+          python-version: '3.11'
+
+      - name: Velopack tools (patched Update.exe + vpk)
+        uses: ./.github/actions/velopack-tools
+
+      - name: Install dependencies
+        env:
+          npm_config_python: ${{ steps.setup-python.outputs.python-path }}
+        run: npm ci
+
+      - name: Build and pack 0.6.90 and 0.6.91
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          # CI builds must not send product analytics (analytics.ts keyConfigured).
+          POSTHOG_KEY: phc_REPLACE_WITH_ci_disabled
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Outputs live OUTSIDE the checkout: electron-builder packs "**/*".
+          OUT="$(cygpath -m "$RUNNER_TEMP")/vpout"; mkdir -p "$OUT/vp" "$OUT/nsis" "$OUT/timing"
+          npx electron-vite build
+          if grep -rqF phc_srnfn2HQ dist/main; then echo "::error::the production PostHog key is in a CI build"; exit 1; fi
+          for v in 0.6.90 0.6.91; do
+            npm pkg set version=$v
+            rm -rf release/win-unpacked
+            t0=$(date +%s)
+            npx electron-builder --win dir --x64 --publish never > "$OUT/timing/eb-$v.log" 2>&1 || { tail -50 "$OUT/timing/eb-$v.log"; exit 1; }
+            t1=$(date +%s)
+            if [ "$v" = 0.6.90 ]; then
+              # The first Velopack release of a feed: stable only, no delta.
+              node scripts/velopack-pack.mjs --version $v --app release/win-unpacked --out "$OUT/pack-$v" --channels win
+            else
+              # Channels and the delta base come from the feed, as in release.yml.
+              node scripts/velopack-pack.mjs --version $v --app release/win-unpacked --out "$OUT/pack-$v" --prev-feed "dir:$OUT/vp"
+            fi
+            t2=$(date +%s)
+            node scripts/velopack-mirror.mjs --assets "$OUT/pack-$v/upload" --tag v$v --store "dir:$OUT/vp"
+            if [ "$v" = 0.6.90 ]; then
+              # The NSIS installer of the same build, for the migration scenarios.
+              npx electron-builder --win nsis --x64 --prepackaged release/win-unpacked --publish never > "$OUT/timing/nsis-$v.log" 2>&1 || { tail -50 "$OUT/timing/nsis-$v.log"; exit 1; }
+              mv release/Sei-win-x64.exe "$OUT/nsis/Sei-$v-nsis.exe"
+            fi
+            cp "$OUT"/pack-$v/vpk-*.log "$OUT/timing/" 2>/dev/null || true
+            echo "$v electron-builder-dir=$((t1-t0))s velopack-pack=$((t2-t1))s" | tee -a "$OUT/timing/summary.txt"
+            rm -rf "$OUT/pack-$v"
+          done
+          echo "win-unpacked: $(find release/win-unpacked -type f | wc -l) files, $(du -sb release/win-unpacked | cut -f1) bytes" | tee -a "$OUT/timing/summary.txt"
+          find "$OUT/vp" "$OUT/nsis" -type f -printf '%10s %p\n' | sort -k2 | tee -a "$OUT/timing/summary.txt"
+          for f in releases.win.json releases.beta.json setup.win.json setup.beta.json; do echo "--- $f"; cat "$OUT/vp/$f"; done
+          # The feed the client reads, as the release scripts left it.
+          node -e '
+            const fs = require("fs"), d = process.argv[1];
+            const j = (f) => JSON.parse(fs.readFileSync(d + "/" + f, "utf8"));
+            const win = j("releases.win.json").Assets.map((a) => a.Version + "/" + a.Type).sort().join(" ");
+            const beta = j("releases.beta.json").Assets.map((a) => a.Version + "/" + a.Type).sort().join(" ");
+            const fail = (m) => { console.log("::error::" + m); process.exit(1); };
+            if (win !== "0.6.90/Full 0.6.91/Delta 0.6.91/Full") fail("releases.win.json lists " + win);
+            if (beta !== "0.6.91/Full") fail("releases.beta.json lists " + beta);
+            if (j("setup.win.json").version !== "0.6.91" || j("setup.beta.json").version !== "0.6.91") fail("setup manifests are not at 0.6.91");
+            for (const f of ["setup/v0.6.90/Sei-win-Setup.exe", "setup/v0.6.91/Sei-win-Setup.exe", "setup/v0.6.91/Sei-beta-Setup.exe", "Sei-0.6.91-beta-full.nupkg"])
+              if (!fs.existsSync(d + "/" + f)) fail("missing " + f);
+            console.log("feed OK");
+          ' "$OUT/vp"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: velopack-feed
+          # The beta channel is checked above; no scenario installs it.
+          path: |
+            ${{ runner.temp }}/vpout/vp
+            ${{ runner.temp }}/vpout/nsis
+            !${{ runner.temp }}/vpout/vp/*-beta-*.nupkg
+            !${{ runner.temp }}/vpout/vp/setup/*/Sei-beta-Setup.exe
+          retention-days: 7
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: velopack-build-timing
+          path: ${{ runner.temp }}/vpout/timing
+          retention-days: 7
+
+  migrate:
+    needs: [lint, build]
+    runs-on: windows-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [peruser-default, peruser-custom, peruser-unicode, permachine, setup-killed, sig-reject, nsis-newer]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            scripts/velopack-ci
+            scripts/lib
+            scripts/velopack-rollout.mjs
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: velopack-feed
+          path: feed
+
+      - name: Download the old NSIS release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        # v0.6.10 is a one-click per-user installer and ignores /allusers.
+        # Per-machine installs in the field come from the older assisted
+        # installers, so that case starts from v0.6.4.
+        run: |
+          $tag = if ('${{ matrix.case }}' -eq 'permachine') { 'v0.6.4' } else { 'v0.6.10' }
+          "old NSIS release: $tag"
+          gh release download $tag -R $env:GITHUB_REPOSITORY -p 'Sei-win-x64.exe' -D old
+
+      - name: Migrate (${{ matrix.case }})
+        shell: pwsh
+        run: ./scripts/velopack-ci/migrate.ps1 -Case '${{ matrix.case }}' -Feed feed -Old old -Out out
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: migrate-${{ matrix.case }}
+          path: out
+          retention-days: 14
+
+  authenticode:
+    needs: [lint, build]
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /package.json
+            scripts/velopack-ci
+            src/main/velopackSignature.ts
+            src/main/winPowerShell.ts
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: velopack-feed
+          path: feed
+
+      - name: Authenticode cases
+        # Windows PowerShell 5.1: the PKI cmdlets, and the PowerShell Sei runs
+        # the check in.
+        shell: powershell
+        run: ./scripts/velopack-ci/authenticode.ps1 -Feed feed
+
+  rollout-dry-run:
+    needs: lint
+    uses: ./.github/workflows/velopack-rollout.yml
+    with:
+      channel: win
+      kind: migration
+      percent: '0'
+      dry_run: true
+    secrets: inherit
+
+  scenarios:
+    needs: [lint, build]
+    runs-on: windows-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - restart
+          - restart-defender-off
+          - restart-norec
+          - restart-unstaged
+          - rollback-swap1
+          - rollback-swap2
+          - launch-during-apply
+          - quit
+          - next-launch
+          - low-disk
+          - rollout
+          - sig-reject
+          - sig-accept
+          - restart-spawn-fail
+          - session-end
+    steps:
+      - name: Skip unless selected
+        id: sel
+        shell: bash
+        run: |
+          s="${{ github.event.inputs.scenarios }}"
+          if [ -z "$s" ] || [[ ",$s," == *",${{ matrix.scenario }},"* ]]; then echo "run=1" >> "$GITHUB_OUTPUT"; else echo "run=0" >> "$GITHUB_OUTPUT"; fi
+
+      - if: steps.sel.outputs.run == '1'
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: scripts/velopack-ci
+
+      - if: steps.sel.outputs.run == '1'
+        uses: actions/download-artifact@v4
+        with:
+          name: velopack-feed
+          path: feed
+
+      - name: ffmpeg (screen recording)
+        if: steps.sel.outputs.run == '1' && matrix.scenario != 'restart-norec'
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'ffmpeg.zip'
+          Invoke-WebRequest 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip' -OutFile $zip
+          Expand-Archive $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'ffmpeg')
+          $bin = (Get-ChildItem (Join-Path $env:RUNNER_TEMP 'ffmpeg') -Recurse -Filter ffmpeg.exe | Select-Object -First 1).DirectoryName
+          Add-Content $env:GITHUB_PATH $bin
+
+      - name: Run ${{ matrix.scenario }}
+        if: steps.sel.outputs.run == '1'
+        shell: pwsh
+        run: ./scripts/velopack-ci/scenario.ps1 -Scenario '${{ matrix.scenario }}' -Feed feed -Out out
+
+      - if: always() && steps.sel.outputs.run == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: scenario-${{ matrix.scenario }}
+          path: out
+          retention-days: 14

@@ -1,5 +1,5 @@
 /**
- * Presence model (Party redesign, .planning/design/UI-REDESIGN-PARTY.md §2).
+ * Presence model (Party redesign, docs/design/UI-REDESIGN-PARTY.md §2).
  *
  * Five categories, computed from live summon state + last interaction:
  *   in-game    — bot is online in the player's world ("In your world")

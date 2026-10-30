@@ -17,7 +17,7 @@ import { gatherAction } from './behaviors/mineVein.js'
 import { getHealedPos } from './observers/posHealer.js'
 import { setFollowTarget, getFollowTargetLabel } from './behaviors/follow.js'
 import { resolveEntity } from './observers/targeting.js'
-import { digAction } from './behaviors/dig.js'
+import { digToolAction } from './behaviors/digTool.js'
 import { exploreAction } from './behaviors/explore.js'
 import { buildAction } from './behaviors/build.js'
 import { shelterAction } from './behaviors/shelter.js'
@@ -180,12 +180,9 @@ const BURIED_PENALTY_M = 12
 // Each block more than DEPTH_FREE_M below her adds this much.
 const DEPTH_FREE_M = 3
 const DEPTH_PENALTY_PER_M = 1.5
-// An out-of-range dig from within this distance means she stood by the block
-// and still could not reach it.
+// A walk that timed out farther than this from its target says nothing about
+// whether the target can be reached.
 const UNREACHABLE_NEAR_M = 8
-// A dig out of range with the block within this horizontal distance means
-// she stands under it: walking closer would not have helped.
-const DIG_UNDER_H = 2
 
 const FACES = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
 function isExposed(bot, p) {
@@ -452,23 +449,10 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
 
   // 261015: a dig that is out of reach while she stands right by the block
   // (a log up a cliff, ore behind a ledge) marks it unreachable, so the next
-  // find or gather picks another one. dig never walks, so "out of range" on
-  // its own only means she did not walk there first. 261016 review: mark it
-  // only when standing next to it could not have helped: she is roughly under
-  // the block, or it is more than 2 blocks above her feet.
-  registry.register('dig', DigSchema, async (args, bot, config) => {
-    const r = await digAction(args, bot, config)
-    if (args?.to == null && typeof r === 'string' && r.startsWith('out of range')) {
-      const m = r.match(/^out of range \(([\d.]+)m.*@(-?\d+),(-?\d+),(-?\d+)/)
-      const p = bot.entity?.position
-      if (m && p && Number(m[1]) <= UNREACHABLE_NEAR_M) {
-        const pos = { x: Number(m[2]), y: Number(m[3]), z: Number(m[4]) }
-        const horiz = Math.hypot(pos.x + 0.5 - p.x, pos.z + 0.5 - p.z)
-        if (horiz <= DIG_UNDER_H || pos.y > Math.floor(p.y + 0.01) + 2) noteUnreachable(bot, pos, 'out of reach')
-      }
-    }
-    return r
-  })
+  // find or gather picks another one. 261025 (pass 27): the dig tool now walks
+  // into reach first and says what reached her inventory (digTool.js), so an
+  // "out of range" after that walk is the unreachable signal.
+  registry.register('dig', DigSchema, (args, bot, config) => digToolAction(args, bot, config))
 
   // `explore`: short directional hop to load new terrain when a target is
   // unreachable or there's nothing nearby. Walks `blocks` (default 16) in a

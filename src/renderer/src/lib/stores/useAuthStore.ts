@@ -191,39 +191,46 @@ async function consumeShareIntent(): Promise<void> {
 }
 
 /**
- * Subscribe once to main's auth:state push. Returns the unsubscribe function
- * so App.tsx can clean up on unmount (in practice App is never unmounted
- * during the app lifetime, but the cleanup keeps the contract honest under
- * Strict-Mode double-invoke).
+ * Apply an auth state from main (push or 261029 snapshot read) with the
+ * transition side effects. Idempotent for a repeat of the current kind, so the
+ * boot snapshot and the push it races can both land.
  *
  * Phase 11 D-26 side-effect: every transition into `signed_in` triggers
  * refreshTosStatus() so App.tsx can decide whether to mount the blocking
  * AcceptToSModal. Every transition into `local` clears tosAccepted back to
  * null (a signed-out user has no acceptance state to surface).
  */
+export function applyAuthState(s: AuthState): void {
+  const store = useAuthStore.getState();
+  const prevKind = store.state.kind;
+  store._setState(s);
+  if (s.kind === 'signed_in' && prevKind !== 'signed_in') {
+    // Refresh ToS status first; if accepted, refreshTosStatus chains into
+    // consumeShareIntent() so the Plan 11-15 upgrade-to-share UX fires
+    // automatically after sign-in.
+    void store.refreshTosStatus();
+  } else if (s.kind === 'local' && prevKind !== 'local') {
+    // T-11-15-02 mitigation: clear any pending share intent on sign-out so
+    // it can't leak across sessions (e.g. user A toggles share while signed
+    // out, signs in as user B — the intent would otherwise point at user A's
+    // local character id). Also drop any stale recovery-prompt flag.
+    useAuthStore.setState({
+      tosAccepted: null,
+      tosCheckFailed: false,
+      pendingShareIntent: null,
+      passwordRecovery: false,
+    });
+  }
+}
+
+/**
+ * Subscribe once to main's auth:state push. Returns the unsubscribe function
+ * so App.tsx can clean up on unmount (in practice App is never unmounted
+ * during the app lifetime, but the cleanup keeps the contract honest under
+ * Strict-Mode double-invoke). Transition side effects: applyAuthState.
+ */
 export function subscribeAuthState(): () => void {
-  const unsubState = sei.onAuthState((s) => {
-    const store = useAuthStore.getState();
-    const prevKind = store.state.kind;
-    store._setState(s);
-    if (s.kind === 'signed_in' && prevKind !== 'signed_in') {
-      // Refresh ToS status first; if accepted, refreshTosStatus chains into
-      // consumeShareIntent() so the Plan 11-15 upgrade-to-share UX fires
-      // automatically after sign-in.
-      void store.refreshTosStatus();
-    } else if (s.kind === 'local' && prevKind !== 'local') {
-      // T-11-15-02 mitigation: clear any pending share intent on sign-out so
-      // it can't leak across sessions (e.g. user A toggles share while signed
-      // out, signs in as user B — the intent would otherwise point at user A's
-      // local character id). Also drop any stale recovery-prompt flag.
-      useAuthStore.setState({
-        tosAccepted: null,
-        tosCheckFailed: false,
-        pendingShareIntent: null,
-        passwordRecovery: false,
-      });
-    }
-  });
+  const unsubState = sei.onAuthState((s) => applyAuthState(s));
   // Password-reset link landed a recovery session — surface SetNewPasswordModal.
   // The recovery exchange in main also fired SIGNED_IN, so onAuthState above has
   // already routed the user into the app; this just raises the new-password

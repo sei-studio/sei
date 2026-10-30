@@ -20,6 +20,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { z } from 'zod'
+import { NUDGES } from './promptLibrary.js'
 import {
   createOrchestrator,
   _setTickIntervalForTests,
@@ -731,7 +732,8 @@ describe('the player line in the seed turn (261017)', () => {
     await orch.handleDispatch('sei:chat_received', chat('cool'))
     const msg = blockText(provider.calls[0], 'player_message')
     // After the instructions, labelled as in the transcript, never quoted.
-    expect(msg.endsWith('\n\nTheir line, player (newb): cool\nAnswer it with say().')).toBe(true)
+    // 261029 (pass 30): nothing runs here, so the idle sentence follows it.
+    expect(msg.endsWith(`\n\nTheir line, player (newb): cool\nAnswer it with say(). ${NUDGES.replyWhileIdle}`)).toBe(true)
     expect(msg).not.toContain('"cool"')
     expect(msg).toContain('do not repeat it back to them')
   })

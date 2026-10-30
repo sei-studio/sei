@@ -1,7 +1,0 @@
-/* Fonts are loaded in src/fonts.ts via FontFace + staticFile(). */
-
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}

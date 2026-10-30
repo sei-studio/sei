@@ -114,7 +114,7 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   OLLAMA_MODEL_NO_TOOLS: "This Ollama model can't use tools, and your companion needs them to talk and act in games. Pick a model with tool support in Settings, like qwen3 or qwen3-vl, then press Launch again.",
   // 261017 (issue #46): ChatGPT plan.
   CHATGPT_USAGE_LIMIT: "You've reached your ChatGPT plan's usage limit. Check Manage usage in ChatGPT to see when it resets, or switch to another AI option in Settings.",
-  CHATGPT_NOT_ELIGIBLE: "This ChatGPT account can't use its plan in Sei. Sign in with a different account, or pick another AI option in Settings.",
+  CHATGPT_NOT_ELIGIBLE: "This ChatGPT account can't use its plan in Sei. Plan use needs ChatGPT Plus or Pro. Sign in with a different account, or pick another AI option in Settings.",
   CHATGPT_FORBIDDEN: "ChatGPT plan use isn't available here right now. It may be limited in your region or by your plan. Pick another AI option in Settings.",
   CHATGPT_AUTH_REJECTED: "ChatGPT didn't accept Sei's sign-in, even after renewing it. Continue with ChatGPT in Settings to sign in again.",
   CHATGPT_REQUEST_REJECTED: "ChatGPT didn't accept the request Sei sent, so your companion stopped. Try again, or pick another AI option in Settings.",

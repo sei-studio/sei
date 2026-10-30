@@ -2,7 +2,7 @@
  * Toggle — the pill switch (mockup .toggle). 34×19, knob slides, accent when
  * on. Replaces On/Off button pairs across Settings and the share toggle.
  *
- * Source: .planning/design/UI-REDESIGN-PARTY.md §1.
+ * Source: docs/design/UI-REDESIGN-PARTY.md §1.
  */
 
 import React from 'react';

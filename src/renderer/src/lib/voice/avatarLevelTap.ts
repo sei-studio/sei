@@ -20,6 +20,8 @@
 import type { RendererApi } from '@shared/ipc';
 import { sharedContext } from './voiceAudio';
 import { pitchSourceFor } from './pitchBus';
+import type { LevelSample } from '../facepack/animation';
+import { levelFromTimeDomain, sampleAnalyser } from '../facepack/levelBands';
 
 /** Lazy bridge access: audioQueue's tests import this module in a bare node
  * env where `window` (and window.sei) does not exist — ipcClient's module-
@@ -38,13 +40,27 @@ export function setAvatarLevelTapEnabled(on: boolean): void {
 }
 
 /**
+ * In-window level + band listeners (261028, facepack pilot): a FacepackView
+ * in THIS window picks mouth shapes from them. Empty unless the facepack dev
+ * flag mounted one, so with no listener the tap behaves exactly as before.
+ */
+type LocalSink = (characterId: string, sample: LevelSample | null) => void;
+const localSinks = new Set<LocalSink>();
+
+/** Subscribe to clip samples ({level, low, high}; null = the clip ended). */
+export function subscribeClipLevels(fn: LocalSink): () => void {
+  localSinks.add(fn);
+  return () => localSinks.delete(fn);
+}
+
+/**
  * Start sampling `el`'s output as `characterId`'s mouth level. Returns a
  * teardown to run with the clip's other cleanup, or null when tapping is
  * disabled or impossible (callers need no fallback — the overlay tile
  * pseudo-envelopes on its own).
  */
 export function tapClipLevel(el: HTMLAudioElement, characterId: string): (() => void) | null {
-  if (!enabled) return null;
+  if (!enabled && localSinks.size === 0) return null;
   const ctx = sharedContext();
   // A suspended context would SILENCE any element we route through it; only
   // tap when audio is genuinely flowing through this context already (calls).
@@ -73,14 +89,20 @@ export function tapClipLevel(el: HTMLAudioElement, characterId: string): (() => 
   }
 
   const data = new Float32Array(analyser.fftSize);
+  const freq = new Float32Array(analyser.frequencyBinCount);
   const timer = setInterval(() => {
-    analyser.getFloatTimeDomainData(data);
-    let sum = 0;
-    for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
     // Same shape as the lipsync fork's envelope: sqrt(meanSquare * 20),
     // which lands speech in a usable 0..1 band without a noise gate.
-    const level = Math.min(1, Math.sqrt((sum / data.length) * 20));
-    void seiApi()?.avatarOverlayLevel?.(characterId, level).catch(() => {});
+    let level: number;
+    if (localSinks.size > 0) {
+      const sample = sampleAnalyser(analyser, { time: data, freq });
+      level = sample.level;
+      for (const fn of localSinks) fn(characterId, sample);
+    } else {
+      analyser.getFloatTimeDomainData(data);
+      level = levelFromTimeDomain(data);
+    }
+    if (enabled) void seiApi()?.avatarOverlayLevel?.(characterId, level).catch(() => {});
   }, SAMPLE_MS);
 
   return () => {
@@ -96,6 +118,7 @@ export function tapClipLevel(el: HTMLAudioElement, characterId: string): (() => 
       /* ditto */
     }
     // Leave the mouth closed rather than frozen on the last sample.
-    void seiApi()?.avatarOverlayLevel?.(characterId, 0).catch(() => {});
+    if (enabled) void seiApi()?.avatarOverlayLevel?.(characterId, 0).catch(() => {});
+    for (const fn of localSinks) fn(characterId, null);
   };
 }

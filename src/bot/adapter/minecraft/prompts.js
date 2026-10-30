@@ -31,6 +31,7 @@ export {
 } from '../../brain/promptLibrary.js'
 
 import { eventAddendum as baseEventAddendum } from '../../brain/promptLibrary.js'
+import { weaponScore } from './behaviors/weaponSelect.js'
 
 // ── Death event framing (sei:death) ──────────────────────────────────────
 // This prose lives HERE rather than in promptLibrary.js's EVENT_GUIDANCE (where
@@ -92,10 +93,21 @@ function deathCauseSentence(data) {
   return ` The last thing that hit you was ${la.label} (${when}), so that is almost certainly what killed you.`
 }
 
+// 261030 (quality pass 31): a death that dropped her weapon. Told only "your
+// health and food are full again", she fought the next mob bare-handed and
+// died again (combat_night eval: 13 of 18 deaths in the two worst runs came
+// after an earlier death had taken her sword).
+export const DEATH_LOST_WEAPON =
+  ' That includes your {weapon}, so you have no weapon until you get it back: your swings do 1 damage, so keep out of fights and stay close to the player.'
+
 function lostSentence(data) {
   const list = formatLostItems(data?.lost)
   if (list) {
-    return ` Everything you were carrying dropped: ${list}. You do not have any of it now, so you cannot eat, equip, place or give those items until you pick them back up; your inventory in the snapshot is what you really have.`
+    const weapon = (Array.isArray(data?.lost) ? data.lost : [])
+      .filter((r) => r && typeof r.item === 'string' && weaponScore(r.item) > 0)
+      .sort((a, b) => weaponScore(b.item) - weaponScore(a.item))[0]?.item
+    const lostWeapon = weapon ? DEATH_LOST_WEAPON.replace('{weapon}', weapon) : ''
+    return ` Everything you were carrying dropped: ${list}. You do not have any of it now, so you cannot eat, equip, place or give those items until you pick them back up; your inventory in the snapshot is what you really have.${lostWeapon}`
   }
   // Older adapters (and a death whose inventory could not be read) carry no list.
   return ' Everything you were carrying dropped where you died; your inventory in the snapshot is what you really have now.'

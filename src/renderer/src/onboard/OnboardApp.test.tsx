@@ -274,3 +274,36 @@ describe('OnboardApp: the scene never waits on transitionend alone (261012)', ()
     expect(src).not.toMatch(/sei\.track\('onboarding_intro/);
   });
 });
+
+describe('OnboardApp 261029: the sign-in panel never waits on a push it missed', () => {
+  it('starts from the store, not from a hard-coded local', () => {
+    expect(src).toContain('useRef<AuthState>(useAuthStore.getState().state)');
+    expect(src).not.toContain("useRef<AuthState>({ kind: 'local' })");
+  });
+  // The rules themselves (which push or snapshot counts for which account)
+  // are behavior-tested in lib/signInScopeGate.test.ts; OnboardApp cannot be
+  // mounted with effects here (no DOM in this test setup). These pin the
+  // wiring: every signal goes through the gate, and nothing else marks the
+  // profile ready.
+  it('routes both pushes and the mount-time check through the sign-in scope gate', () => {
+    const plumbing = src.slice(src.indexOf('const scopeGateRef = useRef'), src.indexOf('// ── Scene choreography'));
+    expect(plumbing).toContain('createSignInScopeGate({');
+    expect(plumbing).toContain('readSnapshot: readAuthSnapshot');
+    expect(plumbing).toContain('sei.onAuthState((s) => gate.onAuth(s))');
+    expect(plumbing).toContain('sei.onScopeChanged((ev) => gate.onScopeChanged(ev))');
+    expect(plumbing).toContain('gate.confirm();');
+    expect(plumbing).toContain('gate.dispose();');
+  });
+  it('only the gate sets the profile ready (review 261029: a move onto A is not a sign-in as B)', () => {
+    expect(src).not.toContain("ev.reason !== 'sign-out'");
+    expect(src).not.toMatch(/scopeReadyRef\.current = true/);
+  });
+  it('a session restored at boot asks the gate instead of proceeding on the auth state alone', () => {
+    const effect = src.slice(src.indexOf("if (authRef.current.kind === 'signed_in' && phase.mode === 'new') {"));
+    const body = effect.slice(0, effect.indexOf('}, [phase.k]);'));
+    expect(body).toContain('scopeGateRef.current?.confirm();');
+    expect(body).not.toContain('proceedAfterAuth');
+    // The sign-in watch proceeds once the gate says ready.
+    expect(src).toContain("if (authRef.current.kind === 'signed_in' && scopeReadyRef.current) {");
+  });
+});

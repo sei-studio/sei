@@ -420,8 +420,8 @@ export const ZH_MISC: Record<string, string> = {
   // ── 261017 (issue #46): ChatGPT plan ERROR_COPY rows ──────────────────
   "You've reached your ChatGPT plan's usage limit. Check Manage usage in ChatGPT to see when it resets, or switch to another AI option in Settings.":
     '你已达到 ChatGPT 套餐的用量上限。在 ChatGPT 的「管理用量」中查看何时重置，或在设置中换用其他 AI 选项。',
-  "This ChatGPT account can't use its plan in Sei. Sign in with a different account, or pick another AI option in Settings.":
-    '这个 ChatGPT 账户无法在 Sei 中使用其套餐。请换一个账户登录，或在设置中选择其他 AI 选项。',
+  "This ChatGPT account can't use its plan in Sei. Plan use needs ChatGPT Plus or Pro. Sign in with a different account, or pick another AI option in Settings.":
+    '这个 ChatGPT 账户无法在 Sei 中使用其套餐。套餐用量需要 ChatGPT Plus 或 Pro。请换一个账户登录，或在设置中选择其他 AI 选项。',
   "ChatGPT plan use isn't available here right now. It may be limited in your region or by your plan. Pick another AI option in Settings.":
     '目前无法在这里使用 ChatGPT 套餐，可能受你所在地区或套餐的限制。请在设置中选择其他 AI 选项。',
   "ChatGPT didn't accept Sei's sign-in, even after renewing it. Continue with ChatGPT in Settings to sign in again.":

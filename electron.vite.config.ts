@@ -23,6 +23,10 @@ export default defineConfig(({ mode }) => {
       // public-by-design (RLS is the security gate). See .env.example.
       'import.meta.env.SUPABASE_URL': JSON.stringify(env.SUPABASE_URL ?? ''),
       'import.meta.env.SUPABASE_ANON_KEY': JSON.stringify(env.SUPABASE_ANON_KEY ?? ''),
+      // 261031: the publisher Windows updates on Velopack must be Authenticode
+      // signed by (velopackVerify.ts). release.yml exports it only when Azure
+      // signing is fully configured; unset = an unsigned build, check off.
+      'import.meta.env.SEI_WIN_PUBLISHER': JSON.stringify(env.SEI_WIN_PUBLISHER ?? ''),
       // Phase 13 — proxy host. Read at main-process module load via
       // process.env.* (proxyClient.ts, botSupervisor.ts). Checkout + portal
       // sessions are minted server-side by the proxy (Polar migration 2026-06),

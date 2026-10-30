@@ -7,6 +7,9 @@
   "exports": {
     ".": "./src/index.js"
   },
+  "engines": {
+    "node": ">=19"
+  },
   "bin": {
     "soulcaster": "src/cli.js"
   },

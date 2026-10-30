@@ -17,6 +17,7 @@
 import type { OwnVoiceInfo, OwnVoiceList, VoiceInfo } from '@shared/ipc';
 import { NO_VOICE_ID, applyVoicePick, type OwnVoicePick } from '@shared/voiceIds';
 import { CHAT_LANGUAGE_CODES } from '@shared/chatLanguage';
+import { isPoolVoiceId } from '@shared/poolVoiceIds';
 
 export { NO_VOICE_ID, applyVoicePick };
 export type { OwnVoicePick };
@@ -126,9 +127,12 @@ export const OWN_TAB_KEY = 'own';
 export type VoiceTabKey = VoiceGroup['key'] | typeof OWN_TAB_KEY;
 
 /** The marker to persist when `id` is picked from the own-voice list, or null
- * for any other selection (pool voice, Auto, No voice). */
+ * for any other selection (pool voice, Auto, No voice). A Sei pool id is
+ * never an own voice even when the user's ElevenLabs library lists it (Sei's
+ * pool voices can sit in an ElevenLabs library as copies, "Sei — Josh"), so
+ * re-picking a pool voice never tags it (261024). */
 export function ownVoicePickFor(id: VoiceSelection, own: OwnVoiceInfo[]): OwnVoicePick | null {
-  if (id === null) return null;
+  if (id === null || isPoolVoiceId(id)) return null;
   const v = own.find((x) => x.id === id);
   if (!v) return null;
   return { name: v.name, ...(v.gender ? { gender: v.gender } : {}) };
@@ -196,15 +200,17 @@ export function elevenKeyHintShown(hasKey: boolean | null, localTtsMode: boolean
 }
 
 /** Default tab: the tab holding the selection, else the own tab when it has
- * voices (a user who brought a key came for those), else the first group. */
+ * voices (a user who brought a key came for those), else the first group. A
+ * pool voice opens its gender tab even when the own list also holds a copy of
+ * it (261024), since it is saved as a pool voice. */
 export function defaultVoiceTab(
   value: VoiceSelection,
   groups: VoiceGroup[],
   own: OwnVoiceInfo[] | null,
 ): VoiceTabKey | null {
-  if (own && value !== null && own.some((v) => v.id === value)) return OWN_TAB_KEY;
   const g = groups.find((x) => x.voices.some((v) => v.id === value));
   if (g) return g.key;
+  if (own && value !== null && own.some((v) => v.id === value)) return OWN_TAB_KEY;
   if (own && own.length > 0) return OWN_TAB_KEY;
   return groups[0]?.key ?? (own ? OWN_TAB_KEY : null);
 }

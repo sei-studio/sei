@@ -35,15 +35,27 @@
 ;   (autoInstallOnAppQuit), and a UAC prompt after the user closed Sei would
 ;   come out of nowhere. That run leaves the marker unset, so the one attempt
 ;   happens on the next run the user started on purpose:
-;     - the in-app "Update Sei" restart. Since 261023 it is silent too
-;       (quitAndInstall(true, true) = `--updated /S --force-run`, see
-;       src/main/updateInstall.ts), so `--force-run` is what tells it apart
-;       from the quit run: the user just clicked, and Sei reopens after.
+;     - the in-app "Update Sei" restart. Since 261030 it runs under Sei's
+;       own progress window, silent (`--updated /S --force-run`, see
+;       src/main/windowsUpdateInstall.ts), or, when that window cannot start,
+;       with the stock one-click banner (`--updated --force-run`). Either way
+;       `--force-run` is what tells it apart from the quit run: the user just
+;       clicked, and Sei reopens after. The admin prompt appears over it.
 ;     - a manual install from sei.gg (not silent).
 ;   So: silent AND no --force-run means skip.
 ;
 ; The registry keys are the same ones the old installer wrote: APP_GUID is
 ; derived from the appId (com.sei.app, LOCKED), not from the installer mode.
+
+; 261030: no "verifying installer: N%" dialog. NSIS shows it while it CRCs a
+; large installer (Sei's is about 220 MB, 1-2 s), even under /S, so it popped up
+; in the middle of the screen during the silent in-app update, the one run that
+; must show only Sei's progress window (measured on windows-latest by
+; nsis-upgrade-check.yml progress-upgrade). The check is redundant for every
+; signed build: electron-updater verifies the update's sha512 and Authenticode
+; signature before running it, and Windows checks the signature, which covers
+; the whole file, before a downloaded installer runs.
+CRCCheck off
 
 !define SEI_MIGRATION_KEY "Software\Sei\Installer"
 ; FileFunc (GetParameters / GetOptions) is already included by electron-builder's

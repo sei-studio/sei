@@ -3,7 +3,7 @@
 // Per-tick "what can I craft right now" enumeration, surfaced in the world
 // snapshot and shared with the craft() behavior.
 //
-// Design (locked in .planning/quick/260617-qhs CONTEXT.md):
+// Design (locked in docs/design/craft-tool-260617.md):
 //   - Built on mineflayer's recipe API — no extra dependency.
 //       bot.recipesFor(id, meta, minCount, tableBlock): recipes craftable given
 //       CURRENT inventory. tableBlock=null ⇒ 2×2 inventory grid only; a table
