@@ -75,7 +75,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p vp setup timing
+          # Outputs live OUTSIDE the checkout: electron-builder packs "**/*", so
+          # vp/ or setup/ in the repo root ended up inside the next app.asar
+          # (run 40987590643: app.asar > 2 GB, zstd delta failed).
+          OUT="$(cygpath -m "$RUNNER_TEMP")/vpout"; mkdir -p "$OUT/vp" "$OUT/setup" "$OUT/timing"
           npx electron-vite build
           disk() { echo "disk ($1): $(df -h / /d 2>/dev/null | tail -n +2 | awk '{print $NF" free="$4}' | tr '\n' ' ')"; }
           disk start
@@ -83,40 +86,41 @@ jobs:
             npm pkg set version=$v
             rm -rf release/win-unpacked
             t0=$(date +%s)
-            npx electron-builder --win dir --x64 --publish never > "timing/eb-$v.log" 2>&1 || { tail -50 "timing/eb-$v.log"; exit 1; }
+            npx electron-builder --win dir --x64 --publish never > "$OUT/timing/eb-$v.log" 2>&1 || { tail -50 "$OUT/timing/eb-$v.log"; exit 1; }
             t1=$(date +%s)
             pack() {
               vpk pack -u Sei -v $v -p release/win-unpacked -e Sei.exe \
                 --packTitle Sei --packAuthors Sei --channel win \
                 --icon build/installerHeaderIcon.ico --aumid com.sei.app \
-                --splashImage build/icon.png --skipVeloAppCheck -o vp --skip-updates > "timing/vpk-$v$1.log" 2>&1
+                --splashImage build/icon.png --skipVeloAppCheck -o "$OUT/vp" --skip-updates > "$OUT/timing/vpk-$v$1.log" 2>&1
             }
             if ! pack ''; then
-              echo "::warning::vpk pack $v failed once; log tail:"; tail -60 "timing/vpk-$v.log"; disk failure
-              rm -f vp/Sei-$v-* vp/*Setup.exe vp/*Portable.zip
-              pack '-retry' || { echo "vpk pack $v failed again:"; tail -60 "timing/vpk-$v-retry.log"; exit 1; }
+              echo "::warning::vpk pack $v failed once; log tail:"; tail -60 "$OUT/timing/vpk-$v.log"; disk failure
+              rm -f "$OUT"/vp/Sei-$v-* "$OUT"/vp/*Setup.exe "$OUT"/vp/*Portable.zip
+              pack '-retry' || { echo "vpk pack $v failed again:"; tail -60 "$OUT/timing/vpk-$v-retry.log"; exit 1; }
             fi
-            grep -E -i "delta|warn|error|complete" "timing/vpk-$v.log" || true
+            grep -E -i "delta|warn|error|complete" "$OUT/timing/vpk-$v.log" || true
             t2=$(date +%s)
-            rm -f vp/*Portable.zip
+            rm -f "$OUT"/vp/*Portable.zip
             disk "after $v"
-            mv vp/Sei-win-Setup.exe "setup/Sei-$v-Setup.exe"
-            echo "$v electron-builder-dir=$((t1-t0))s vpk-pack=$((t2-t1))s" | tee -a timing/summary.txt
+            mv "$OUT/vp/Sei-win-Setup.exe" "$OUT/setup/Sei-$v-Setup.exe"
+            echo "$v electron-builder-dir=$((t1-t0))s vpk-pack=$((t2-t1))s" | tee -a "$OUT/timing/summary.txt"
             if [ "$v" = 0.6.90 ]; then
-              echo "win-unpacked: $(find release/win-unpacked -type f | wc -l) files, $(du -sb release/win-unpacked | cut -f1) bytes" | tee -a timing/summary.txt
+              echo "win-unpacked: $(find release/win-unpacked -type f | wc -l) files, $(du -sb release/win-unpacked | cut -f1) bytes" | tee -a "$OUT/timing/summary.txt"
             fi
           done
-          rm -f vp/*Portable.zip
-          ls -la vp setup | tee -a timing/summary.txt
-          cat vp/releases.win.json
+          rm -f "$OUT"/vp/*Portable.zip
+          ls -la "$OUT/vp" "$OUT/setup" | tee -a "$OUT/timing/summary.txt"
+          cat "$OUT/vp/releases.win.json"
+          ls -la release/win-unpacked/resources/ | tee -a "$OUT/timing/summary.txt"
 
       - name: Upload feed
         uses: actions/upload-artifact@v4
         with:
           name: velopack-feed
           path: |
-            vp
-            setup
+            ${{ runner.temp }}/vpout/vp
+            ${{ runner.temp }}/vpout/setup
           retention-days: 3
 
       - name: Upload build timing
@@ -124,7 +128,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: velopack-build-timing
-          path: timing
+          path: ${{ runner.temp }}/vpout/timing
           retention-days: 3
 
   update:
