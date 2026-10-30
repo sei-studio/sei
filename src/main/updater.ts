@@ -45,6 +45,8 @@ import { loadUpdateState, saveUpdateState } from './updateStateStore';
 import { restartInstallArgs } from './updateInstall';
 import { refreshNotices } from './notices';
 import { updaterLog } from './updaterLog';
+import { spikeMark, velopackInstalled } from './velopackBoot';
+import { createVelopackAutoUpdater } from './velopackUpdater';
 
 // Tees to the console AND <userData>/logs/updater.log. Was console-only until
 // 260803, which is why a week of failed Windows updates left no trace on disk
@@ -366,9 +368,18 @@ function ensureAutoUpdater(): AutoUpdater | null {
   }
   if (autoUpdater && wired) return autoUpdater;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const mod = require('electron-updater') as { autoUpdater: AutoUpdater };
-    autoUpdater = mod.autoUpdater;
+    // SPIKE (spike/velopack): a Velopack install updates through Velopack;
+    // an NSIS install (and macOS) keeps electron-updater, so one build serves
+    // both while users migrate.
+    const velo = process.platform === 'win32' && velopackInstalled() ? createVelopackAutoUpdater() : null;
+    if (velo) {
+      logger.info('updater: Velopack install detected, using the Velopack UpdateManager');
+      autoUpdater = velo;
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const mod = require('electron-updater') as { autoUpdater: AutoUpdater };
+      autoUpdater = mod.autoUpdater;
+    }
   } catch (err) {
     logger.warn(`updater: failed to load electron-updater (${(err as Error).message})`);
     autoUpdater = null;
@@ -539,6 +550,17 @@ async function handleUpdateAvailable(info: unknown): Promise<void> {
  */
 async function handleUpdateDownloaded(version?: string): Promise<void> {
   updateReadyToInstall = true;
+  // SPIKE harness: CI has nobody to click "Update Sei", so restart at once.
+  if (process.env.SEI_VELOPACK_SPIKE === '1') {
+    const mode = process.env.SEI_VELOPACK_SPIKE_MODE ?? 'restart';
+    spikeMark('downloaded', { target: version, mode });
+    if (mode === 'quit') {
+      app.quit(); // will-quit hands the package to Update.exe, no relaunch
+    } else if (mode === 'restart') {
+      installDownloadedUpdate();
+    } // 'download-only': CI kills the process, the next launch applies it
+    return;
+  }
   const apply = mandatoryApply;
   if (apply === null) {
     // Optional consented flow.
@@ -724,6 +746,18 @@ function maybeBackgroundCheck(reason: string): void {
  */
 export function initUpdater(deps: { getMainWindow: () => BrowserWindow | null }): void {
   getMainWindow = deps.getMainWindow;
+  if (process.env.SEI_VELOPACK_SPIKE === '1') {
+    // SPIKE harness: time each window to its first paint-ready moment.
+    let n = 0;
+    app.on('browser-window-created', (_e, win) => {
+      const idx = n++;
+      spikeMark('window-created', { idx });
+      win.once('ready-to-show', () => spikeMark('window-ready-to-show', { idx }));
+      win.webContents.once('did-finish-load', () =>
+        spikeMark('window-loaded', { idx, url: win.webContents.getURL().slice(0, 80) }),
+      );
+    });
+  }
 
   // Flow D — what's-new on launch (skipped in dev internally). Memoized so the
   // renderer's pull (getPendingWhatsNew) shares this one computation.

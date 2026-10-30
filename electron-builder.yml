@@ -469,6 +469,9 @@ win:
     - "!node_modules/sherpa-onnx-darwin-*/**"
     - "!node_modules/sherpa-onnx-linux-*/**"
     - "!node_modules/sherpa-onnx-win-ia32/**"
+    # SPIKE (spike/velopack): only the win x64 Velopack addon ships.
+    - "!node_modules/velopack/lib/native/velopack_nodeffi_{linux,osx}*"
+    - "!node_modules/velopack/lib/native/velopack_nodeffi_win_{arm64,x86}*"
     # 260908: the prismarine-viewer texture prune (and the 1.16.4 entity-texture
     # exception, 260806) moved to packs/minecraft/prune.mjs with the Minecraft
     # game pack. prismarine-viewer is not in the app tree any more.

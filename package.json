@@ -58,6 +58,7 @@
     "skinview3d": "3.4.2",
     "soulcaster": "file:./vendor/soulcaster",
     "three": "^0.185.1",
+    "velopack": "1.2.161",
     "yauzl": "^3.3.0",
     "zod": "^3.22.4",
     "zod-to-json-schema": "^3.25.2",

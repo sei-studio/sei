@@ -19,6 +19,9 @@
 // MUST stay the first import: refuses --remote-debugging-* / --inspect* /
 // --js-flags in packaged stable builds before anything else evaluates.
 import './remoteDebugGuard';
+// SPIKE (spike/velopack): Velopack hooks must run before the rest of main
+// evaluates; see velopackBoot.ts.
+import './velopackBoot';
 import { app, BrowserWindow, net, session, systemPreferences } from 'electron';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';

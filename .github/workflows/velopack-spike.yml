@@ -1,0 +1,493 @@
+name: Velopack Spike
+
+# SPIKE (spike/velopack, 261030). Can Windows updates move from NSIS +
+# electron-updater to Velopack? Builds this branch four times as Velopack
+# packages (0.6.90 .. 0.6.93, unsigned, never published), then on clean
+# windows-latest runners:
+#
+#   update   install 0.6.90 with Setup.exe, then measure the three update paths
+#            the app would use:
+#              restart       in-app "Update Sei": download (delta) in the
+#                            background, quit, Update.exe applies, Sei reopens
+#              startup-apply downloaded but never applied (killed), so the
+#                            next launch applies it (Velopack's own dialog)
+#              quit          update on quit: applied silently, no reopen
+#            plus disk use before / during / after, the install layout,
+#            shortcuts, the uninstall entry, and uninstall.
+#   migrate  install the real v0.6.10 NSIS release, then move it to Velopack
+#            the way the migration design proposes (silent Setup.exe, retarget
+#            pins, silent NSIS uninstall that keeps app data and shortcuts),
+#            and check that user data, shortcuts and Apps & features come out
+#            right. One scenario kills Setup.exe midway to prove the NSIS copy
+#            survives a failed migration.
+#
+# Comparable numbers for today's NSIS path come from nsis-upgrade-check.yml on
+# the same runner image ("relaunched after Ns").
+on:
+  push:
+    branches: ['spike/velopack']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VPK_VERSION: '1.2.161'
+  NSIS_TAG: 'v0.6.10'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Setup Python (distutils for headless-gl native build)
+        uses: actions/setup-python@v5
+        id: setup-python
+        with:
+          python-version: '3.11'
+
+      - name: Setup .NET (vpk)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install vpk
+        shell: bash
+        run: dotnet tool install -g vpk --version "$VPK_VERSION" && vpk --help | head -3
+
+      - name: Install dependencies
+        env:
+          npm_config_python: ${{ steps.setup-python.outputs.python-path }}
+        run: npm ci
+
+      - name: Build four Velopack releases
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p vp setup timing
+          npx electron-vite build
+          for v in 0.6.90 0.6.91 0.6.92 0.6.93; do
+            npm pkg set version=$v
+            t0=$(date +%s)
+            npx electron-builder --win dir --x64 --publish never > "timing/eb-$v.log" 2>&1 || { tail -50 "timing/eb-$v.log"; exit 1; }
+            t1=$(date +%s)
+            vpk pack -u Sei -v $v -p release/win-unpacked -e Sei.exe \
+              --packTitle Sei --packAuthors Sei --channel win \
+              --icon build/installerHeaderIcon.ico --aumid com.sei.app \
+              --splashImage build/icon.png --skipVeloAppCheck -o vp --skip-updates 2>&1 | tee "timing/vpk-$v.log" | grep -E -i "delta|warn|error|complete" || true
+            t2=$(date +%s)
+            mv vp/Sei-win-Setup.exe "setup/Sei-$v-Setup.exe"
+            echo "$v electron-builder-dir=$((t1-t0))s vpk-pack=$((t2-t1))s" | tee -a timing/summary.txt
+            if [ "$v" = 0.6.90 ]; then
+              echo "win-unpacked: $(find release/win-unpacked -type f | wc -l) files, $(du -sb release/win-unpacked | cut -f1) bytes" | tee -a timing/summary.txt
+            fi
+          done
+          rm -f vp/*Portable.zip
+          ls -la vp setup | tee -a timing/summary.txt
+          cat vp/releases.win.json
+
+      - name: Upload feed
+        uses: actions/upload-artifact@v4
+        with:
+          name: velopack-feed
+          path: |
+            vp
+            setup
+          retention-days: 3
+
+      - name: Upload build timing
+        uses: actions/upload-artifact@v4
+        with:
+          name: velopack-build-timing
+          path: timing
+          retention-days: 3
+
+  update:
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - name: Download feed
+        uses: actions/download-artifact@v4
+        with:
+          name: velopack-feed
+          path: feed
+
+      - name: Install, update three ways, uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $failures = @()
+          New-Item -ItemType Directory -Force -Path shots, out | Out-Null
+          function Shot([string]$name) {
+            try {
+              $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+              $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+              $g = [System.Drawing.Graphics]::FromImage($bmp)
+              $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+              $bmp.Save((Join-Path shots "$name.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+              $g.Dispose(); $bmp.Dispose()
+            } catch { "screenshot failed: $_" }
+          }
+          function FreeMB { [math]::Round((Get-PSDrive C).Free / 1MB) }
+          function DirMB([string]$p) { if (Test-Path $p) { [math]::Round(((Get-ChildItem $p -Recurse -File -Force -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum) / 1MB, 1) } else { 0 } }
+          function Stop-Sei { Get-Process -Name 'Sei' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2 }
+          function Layout([string]$label) {
+            Write-Host "===== layout: $label ====="
+            Get-ChildItem $root -Force | ForEach-Object { "  {0,-40} {1,10} MB" -f $_.Name, $(if ($_.PSIsContainer) { DirMB $_.FullName } else { [math]::Round($_.Length / 1MB, 1) }) }
+            if (Test-Path "$root\packages") { Get-ChildItem "$root\packages" -Force | ForEach-Object { "  packages\{0,-40} {1,10} MB" -f $_.Name, [math]::Round($_.Length / 1MB, 1) } }
+            if (Test-Path "$root\current\sq.version") { "  current version: " + ([xml](Get-Content "$root\current\sq.version")).package.metadata.version }
+            "  free disk: $(FreeMB) MB"
+          }
+          function Events { if (Test-Path $spike) { Get-Content $spike | ForEach-Object { $_ | ConvertFrom-Json } } else { @() } }
+          function SeiProcs { @(Get-Process -Name 'Sei' -ErrorAction SilentlyContinue) }
+
+          $root = Join-Path $env:LOCALAPPDATA 'Sei'
+          $userData = Join-Path $env:APPDATA 'Sei'
+          $spike = Join-Path $userData 'velopack-spike.jsonl'
+          $feed = (Resolve-Path feed\vp).Path
+
+          '--- runner ---'
+          try { Get-MpComputerStatus | Format-List RealTimeProtectionEnabled, AntivirusEnabled, OnAccessProtectionEnabled } catch { "Defender status unavailable: $_" }
+          Get-CimInstance Win32_Processor | Format-List Name, NumberOfLogicalProcessors
+          "free disk at start: $(FreeMB) MB"
+
+          # ---------------------------------------------------------------- install
+          $setup = (Resolve-Path feed\setup\Sei-0.6.90-Setup.exe).Path
+          "Setup.exe size: $([math]::Round((Get-Item $setup).Length / 1MB, 1)) MB"
+          $sig = Get-AuthenticodeSignature $setup; "Setup.exe signature: $($sig.Status)"
+          $free0 = FreeMB
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          $p = Start-Process -FilePath $setup -PassThru
+          $null = $p.Handle
+          $i = 0; $firstSei = $null; $setupExit = $null
+          while ($sw.Elapsed.TotalSeconds -lt 180) {
+            if ($null -eq $setupExit -and $p.HasExited) { $setupExit = $sw.Elapsed.TotalSeconds }
+            if ($null -eq $firstSei) {
+              $w = SeiProcs | Where-Object { $_.MainWindowHandle -ne 0 }
+              if ($w) { $firstSei = $sw.Elapsed.TotalSeconds }
+            }
+            if ($i -lt 40) { Shot ('install-{0:d2}-{1:n1}s' -f $i, $sw.Elapsed.TotalSeconds); $i++ }
+            if ($null -ne $setupExit -and $null -ne $firstSei -and $sw.Elapsed.TotalSeconds -gt $firstSei + 6) { break }
+            Start-Sleep -Milliseconds 700
+          }
+          "INSTALL: Setup.exe exit=$($p.ExitCode) after $([math]::Round($setupExit,1))s; first Sei window after $([math]::Round($firstSei,1))s"
+          Stop-Sei
+          Layout 'after install of 0.6.90'
+          $installMB = $free0 - (FreeMB)
+          "INSTALL disk used: $installMB MB"
+          '--- uninstall entry ---'
+          Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' | ForEach-Object { $q = Get-ItemProperty $_.PSPath; if ($q.DisplayName -like 'Sei*') { $q | Format-List PSChildName, DisplayName, DisplayVersion, Publisher, InstallLocation, UninstallString, QuietUninstallString, EstimatedSize, DisplayIcon } }
+          '--- shortcuts ---'
+          $wsh = New-Object -ComObject WScript.Shell
+          foreach ($d in @([Environment]::GetFolderPath('Desktop'), (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'))) {
+            Get-ChildItem -Path $d -Filter 'Sei*.lnk' -Recurse -ErrorAction SilentlyContinue | ForEach-Object { "  $($_.FullName) -> $($wsh.CreateShortcut($_.FullName).TargetPath)" }
+          }
+          if (-not (Test-Path "$root\current\Sei.exe")) { $failures += 'current\Sei.exe missing after install' }
+
+          New-Item -ItemType Directory -Force -Path $userData | Out-Null
+          $marker = Join-Path $userData 'velopack-spike-marker.txt'
+          $token = [guid]::NewGuid().ToString(); Set-Content $marker $token
+
+          # ---------------------------------------------------------------- feed server
+          $srv = Start-Process -FilePath python -ArgumentList '-m', 'http.server', '8765', '--bind', '127.0.0.1', '--directory', $feed -PassThru -WindowStyle Hidden
+          Start-Sleep -Seconds 3
+          $env:SEI_VELOPACK_SPIKE = '1'
+          $env:SEI_VELOPACK_FEED = 'http://127.0.0.1:8765'
+
+          function Run-Path([string]$mode, [string]$target, [bool]$expectRelaunch, [string]$shotPrefix) {
+            Write-Host "################ $mode -> $target ################"
+            Stop-Sei
+            Remove-Item $spike -ErrorAction SilentlyContinue
+            $env:SEI_VELOPACK_SPIKE_MODE = $mode
+            $exe = Join-Path $root 'current\Sei.exe'
+            $freeStart = FreeMB
+            $minFree = $freeStart
+            $sw = [Diagnostics.Stopwatch]::StartNew()
+            $old = Start-Process -FilePath $exe -PassThru
+            $null = $old.Handle
+            $oldExit = $null; $applyAt = $null; $newPid = $null; $newWin = $null; $updExit = $null; $shots = 0
+            $updSeen = $false
+            while ($sw.Elapsed.TotalSeconds -lt 300) {
+              $f = FreeMB; if ($f -lt $minFree) { $minFree = $f }
+              $ev = @(Events)
+              if ($null -eq $applyAt) {
+                $a = $ev | Where-Object { $_.ev -eq 'apply-launch' -or ($mode -eq 'download-only' -and $_.ev -eq 'downloaded') } | Select-Object -First 1
+                if ($a) { $applyAt = $sw.Elapsed.TotalSeconds }
+              }
+              if ($null -ne $applyAt -and $shots -lt 45) { Shot ('{0}-{1:d2}-{2:n1}s' -f $shotPrefix, $shots, ($sw.Elapsed.TotalSeconds - $applyAt)); $shots++ }
+              if ($null -eq $oldExit -and $old.HasExited) { $oldExit = $sw.Elapsed.TotalSeconds }
+              $u = @(Get-Process -Name 'Update' -ErrorAction SilentlyContinue)
+              if ($u.Count -gt 0) { $updSeen = $true } elseif ($updSeen -and $null -eq $updExit) { $updExit = $sw.Elapsed.TotalSeconds }
+              if ($mode -eq 'download-only' -and $null -ne $applyAt) { break }
+              $loaded = $ev | Where-Object { $_.ev -eq 'window-loaded' -and $_.version -eq $target } | Select-Object -First 1
+              if ($loaded) { $newWin = $sw.Elapsed.TotalSeconds; Start-Sleep -Seconds 4; Shot "$shotPrefix-zz-loaded"; break }
+              if (-not $expectRelaunch -and $null -ne $oldExit -and $null -ne $updExit) { break }
+              if ($null -ne $oldExit -and $sw.Elapsed.TotalSeconds -gt $oldExit + 120) { break }
+              Start-Sleep -Milliseconds 250
+            }
+            $ev = @(Events)
+            $ev | ForEach-Object { "  ev {0,-22} t={1} pid={2} v={3} {4}" -f $_.ev, $_.t, $_.pid, $_.version, (($_ | Select-Object * -ExcludeProperty ev, t, pid, version | ConvertTo-Json -Compress -Depth 4)) }
+            function T([string]$name, [string]$ver) { ($ev | Where-Object { $_.ev -eq $name -and (-not $ver -or $_.version -eq $ver) } | Select-Object -First 1).t }
+            $tStart = T 'check-start' ''; $tDl0 = T 'download-start' ''; $tDl1 = T 'download-done' ''; $tApply = T 'apply-launch' ''
+            $tBoot = T 'boot' $target; $tWin = T 'window-created' $target; $tRts = T 'window-ready-to-show' $target; $tLoad = T 'window-loaded' $target
+            $res = [ordered]@{
+              mode = $mode; target = $target
+              check_to_download_done_s = if ($tStart -and $tDl1) { ($tDl1 - $tStart) / 1000 } else { $null }
+              download_and_reconstruct_s = if ($tDl0 -and $tDl1) { ($tDl1 - $tDl0) / 1000 } else { $null }
+              apply_click_to_old_exit_s = if ($null -ne $oldExit -and $null -ne $applyAt) { [math]::Round($oldExit - $applyAt, 1) } else { $null }
+              apply_click_to_new_boot_s = if ($tApply -and $tBoot) { ($tBoot - $tApply) / 1000 } else { $null }
+              apply_click_to_first_window_s = if ($tApply -and $tWin) { ($tWin - $tApply) / 1000 } else { $null }
+              apply_click_to_window_ready_s = if ($tApply -and $tRts) { ($tRts - $tApply) / 1000 } else { $null }
+              apply_click_to_window_loaded_s = if ($tApply -and $tLoad) { ($tLoad - $tApply) / 1000 } else { $null }
+              update_exe_done_after_apply_s = if ($null -ne $updExit -and $null -ne $applyAt) { [math]::Round($updExit - $applyAt, 1) } else { $null }
+              free_disk_start_mb = $freeStart; free_disk_min_mb = $minFree; peak_extra_disk_mb = $freeStart - $minFree; free_disk_end_mb = (FreeMB)
+              relaunched = [bool]$tBoot
+            }
+            Write-Host ("RESULT " + ($res | ConvertTo-Json -Compress))
+            $res | ConvertTo-Json | Set-Content "out\result-$mode-$target.json"
+            if ($expectRelaunch -and -not $tLoad) { $script:failures += "$mode -> $target did not reopen Sei" }
+            if (-not $expectRelaunch -and $tBoot) { $script:failures += "$mode -> $target reopened Sei" }
+            Layout "after $mode -> $target"
+          }
+
+          # 1) in-app restart, 0.6.90 -> 0.6.91 (delta)
+          Run-Path 'restart' '0.6.91' $true 'restart'
+          # 2) download only, killed before apply; next launch applies 0.6.92 on startup
+          Run-Path 'download-only' '0.6.92' $false 'dl'
+          Stop-Sei
+          Layout 'after download-only (pending in packages)'
+          Remove-Item $spike -ErrorAction SilentlyContinue
+          $env:SEI_VELOPACK_SPIKE_MODE = 'none'
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          $tLaunch = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+          $p = Start-Process -FilePath (Join-Path $root 'current\Sei.exe') -PassThru
+          $k = 0; $minFree = FreeMB
+          while ($sw.Elapsed.TotalSeconds -lt 180) {
+            $f = FreeMB; if ($f -lt $minFree) { $minFree = $f }
+            if ($k -lt 40) { Shot ('startup-apply-{0:d2}-{1:n1}s' -f $k, $sw.Elapsed.TotalSeconds); $k++ }
+            $l = @(Events) | Where-Object { $_.ev -eq 'window-loaded' -and $_.version -eq '0.6.92' } | Select-Object -First 1
+            if ($l) { break }
+            Start-Sleep -Milliseconds 500
+          }
+          $ev = @(Events); $ev | ForEach-Object { "  ev {0,-22} t={1} pid={2} v={3}" -f $_.ev, $_.t, $_.pid, $_.version }
+          $b = ($ev | Where-Object { $_.ev -eq 'boot' -and $_.version -eq '0.6.92' } | Select-Object -First 1).t
+          $l = ($ev | Where-Object { $_.ev -eq 'window-loaded' -and $_.version -eq '0.6.92' } | Select-Object -First 1).t
+          $res = [ordered]@{ mode = 'startup-apply'; target = '0.6.92'; launch_to_new_boot_s = if ($b) { ($b - $tLaunch) / 1000 } else { $null }; launch_to_window_loaded_s = if ($l) { ($l - $tLaunch) / 1000 } else { $null } }
+          Write-Host ("RESULT " + ($res | ConvertTo-Json -Compress))
+          if (-not $l) { $failures += 'startup apply of 0.6.92 did not reach a loaded window' }
+          Layout 'after startup-apply -> 0.6.92'
+          # 3) update on quit, 0.6.92 -> 0.6.93, no reopen
+          Run-Path 'quit' '0.6.93' $false 'quit'
+          Start-Sleep -Seconds 5
+          Layout 'after quit -> 0.6.93'
+          # 4) a plain launch of the updated app, for the baseline launch time
+          Stop-Sei
+          Remove-Item $spike -ErrorAction SilentlyContinue
+          $env:SEI_VELOPACK_SPIKE_MODE = 'none'
+          $tLaunch = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+          $p = Start-Process -FilePath (Join-Path $root 'current\Sei.exe') -PassThru
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          while ($sw.Elapsed.TotalSeconds -lt 90) {
+            $l = @(Events) | Where-Object { $_.ev -eq 'window-loaded' } | Select-Object -First 1
+            if ($l) { break }
+            Start-Sleep -Milliseconds 250
+          }
+          $ev = @(Events)
+          $b = ($ev | Where-Object { $_.ev -eq 'boot' } | Select-Object -First 1)
+          $w = ($ev | Where-Object { $_.ev -eq 'window-created' } | Select-Object -First 1).t
+          $l = ($ev | Where-Object { $_.ev -eq 'window-loaded' } | Select-Object -First 1).t
+          "RESULT " + (@{ mode = 'plain-launch'; version = $b.version; launch_to_boot_s = ($b.t - $tLaunch) / 1000; launch_to_first_window_s = ($w - $tLaunch) / 1000; launch_to_window_loaded_s = ($l - $tLaunch) / 1000 } | ConvertTo-Json -Compress)
+          if ($b.version -ne '0.6.93') { $failures += "plain launch runs $($b.version), not 0.6.93" }
+          Shot 'plain-launch-0.6.93'
+          Stop-Sei
+
+          if ((Get-Content $marker -Raw).Trim() -ne $token) { $failures += 'userData marker changed' } else { 'userData marker intact after three updates' }
+
+          '--- Velopack logs ---'
+          Get-ChildItem $root -Filter '*.log' -Recurse -ErrorAction SilentlyContinue | ForEach-Object { "### $($_.FullName)"; Get-Content $_.FullName -Tail 150 }
+          Get-ChildItem (Join-Path $userData 'logs') -Filter 'velopack.log' -ErrorAction SilentlyContinue | ForEach-Object { "### $($_.FullName)"; Get-Content $_.FullName -Tail 60 }
+          Get-ChildItem (Join-Path $userData 'logs') -Filter 'updater.log' -ErrorAction SilentlyContinue | ForEach-Object { "### $($_.FullName)"; Get-Content $_.FullName -Tail 60 }
+          Copy-Item (Join-Path $env:LOCALAPPDATA 'Sei\*.log') out -ErrorAction SilentlyContinue
+
+          # ---------------------------------------------------------------- uninstall
+          $entry = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' | ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -like 'Sei*' } | Select-Object -First 1
+          "UninstallString: $($entry.UninstallString)"
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          $u = Start-Process -FilePath (Join-Path $root 'Update.exe') -ArgumentList '--uninstall', '--silent' -PassThru
+          $u.WaitForExit(180000) | Out-Null
+          "UNINSTALL: exit=$($u.ExitCode) after $([math]::Round($sw.Elapsed.TotalSeconds,1))s"
+          Start-Sleep -Seconds 5
+          "root exists after uninstall: $(Test-Path $root)"
+          if (Test-Path $root) { Get-ChildItem $root -Force | ForEach-Object { "  left: $($_.Name)" } }
+          $left = @(Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' | ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -like 'Sei*' })
+          "uninstall entries left: $($left.Count)"
+          if ($left.Count -ne 0) { $failures += 'uninstall entry left behind' }
+          if (-not (Test-Path $marker)) { $failures += 'uninstall deleted userData (%APPDATA%\Sei)' } else { 'userData kept by uninstall' }
+          "free disk after uninstall: $(FreeMB) MB"
+          $srv | Stop-Process -Force -ErrorAction SilentlyContinue
+
+          if ($failures.Count -gt 0) { $failures | ForEach-Object { "::error::$_" }; exit 1 }
+          'PASS: update'
+
+      - name: Upload screenshots and results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: velopack-update-shots
+          path: |
+            shots
+            out
+          retention-days: 3
+
+  migrate:
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [peruser-default, peruser-custom, permachine, setup-killed]
+    steps:
+      - name: Download feed
+        uses: actions/download-artifact@v4
+        with:
+          name: velopack-feed
+          path: feed
+
+      - name: Download the NSIS release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: gh release download $env:NSIS_TAG -R $env:GITHUB_REPOSITORY -p 'Sei-win-x64.exe' -D old
+
+      - name: Migrate NSIS -> Velopack
+        shell: pwsh
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $failures = @()
+          function Stop-Sei { Get-Process -Name 'Sei' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2 }
+          function Entries {
+            foreach ($r in 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall', 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall') {
+              if (Test-Path $r) { Get-ChildItem $r | ForEach-Object { $q = Get-ItemProperty $_.PSPath; if ($q.DisplayName -like 'Sei*') { [pscustomobject]@{ Root = $r.Substring(0,4); Key = $_.PSChildName; Name = $q.DisplayName; Version = $q.DisplayVersion; Uninstall = $q.UninstallString } } } }
+            }
+          }
+          $wsh = New-Object -ComObject WScript.Shell
+          $pinDir = Join-Path $env:APPDATA 'Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar'
+          function Links {
+            foreach ($d in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('CommonDesktopDirectory'), (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'), (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs'), $pinDir)) {
+              Get-ChildItem -Path $d -Filter 'Sei*.lnk' -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{ Path = $_.FullName; Target = $wsh.CreateShortcut($_.FullName).TargetPath } }
+            }
+          }
+          function State([string]$label) {
+            Write-Host "===== $label ====="
+            Write-Host (Entries | Format-Table -AutoSize | Out-String -Width 400)
+            Write-Host (Links | Format-Table -AutoSize | Out-String -Width 400)
+          }
+
+          $userData = Join-Path $env:APPDATA 'Sei'
+          $root = Join-Path $env:LOCALAPPDATA 'Sei'
+          # 1) a real v0.6.10 NSIS install, the way users have it
+          $instArgs = switch ($env:SCENARIO) { 'peruser-custom' { @('/S', '/D=C:\Games\My Sei') } 'permachine' { @('/S', '/allusers') } default { @('/S') } }
+          $p = Start-Process -FilePath (Resolve-Path old\Sei-win-x64.exe).Path -ArgumentList $instArgs -PassThru
+          if (-not $p.WaitForExit(300000)) { throw 'NSIS install timed out' }
+          Stop-Sei
+          $nsis = @(Entries)[0]
+          $nsisDir = switch ($env:SCENARIO) { 'peruser-custom' { 'C:\Games\My Sei' } 'permachine' { Join-Path $env:ProgramFiles 'Sei' } default { Join-Path $env:LOCALAPPDATA 'Programs\sei' } }
+          "NSIS dir: $nsisDir exists=$(Test-Path "$nsisDir\Sei.exe")"
+          $p = Start-Process -FilePath "$nsisDir\Sei.exe" -PassThru; Start-Sleep -Seconds 25; Stop-Sei
+          New-Item -ItemType Directory -Force -Path $userData | Out-Null
+          $marker = Join-Path $userData 'migration-marker.txt'; $token = [guid]::NewGuid().ToString(); Set-Content $marker $token
+          # A taskbar pin, as the file Explorer writes for one.
+          New-Item -ItemType Directory -Force -Path $pinDir | Out-Null
+          $pin = $wsh.CreateShortcut((Join-Path $pinDir 'Sei.lnk')); $pin.TargetPath = "$nsisDir\Sei.exe"; $pin.WorkingDirectory = $nsisDir; $pin.Save()
+          State 'NSIS v0.6.10 installed'
+
+          # 2) Velopack Setup.exe, silent (no app start). In the app this runs in the
+          #    background while the NSIS copy keeps running.
+          $setup = (Resolve-Path feed\setup\Sei-0.6.90-Setup.exe).Path
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          $s = Start-Process -FilePath $setup -ArgumentList '--silent' -PassThru
+          $null = $s.Handle
+          if ($env:SCENARIO -eq 'setup-killed') {
+            Start-Sleep -Seconds 4
+            "killing Setup.exe after 4s (simulated failure midway)"
+            $s | Stop-Process -Force
+            Get-Process -Name 'Setup','Update' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+            "velopack current\Sei.exe exists: $(Test-Path "$root\current\Sei.exe")  sq.version: $(Test-Path "$root\current\sq.version")"
+            State 'after the killed Setup.exe'
+            # The migration only proceeds when the Velopack install is complete,
+            # so the NSIS copy must still be whole and runnable.
+            $p = Start-Process -FilePath "$nsisDir\Sei.exe" -PassThru; Start-Sleep -Seconds 20
+            $alive = -not $p.HasExited; Stop-Sei
+            "NSIS Sei still launches: $alive"
+            if (-not $alive) { $failures += 'NSIS copy broken after a failed migration' }
+            # retry, as the next launch would
+            $sw.Restart()
+            $s = Start-Process -FilePath $setup -ArgumentList '--silent' -PassThru
+          }
+          $s.WaitForExit(300000) | Out-Null
+          "SETUP silent: exit=$($s.ExitCode) after $([math]::Round($sw.Elapsed.TotalSeconds,1))s"
+          $ok = (Test-Path "$root\current\Sei.exe") -and (Test-Path "$root\current\sq.version") -and $s.ExitCode -eq 0
+          if (-not $ok) { $failures += 'Velopack install incomplete'; }
+          State 'after Velopack Setup (both installed)'
+
+          # 3) retarget pins that point at the NSIS exe
+          Get-ChildItem $pinDir -Filter '*.lnk' -ErrorAction SilentlyContinue | ForEach-Object {
+            $l = $wsh.CreateShortcut($_.FullName)
+            if ($l.TargetPath -and $l.TargetPath.StartsWith($nsisDir, [StringComparison]::OrdinalIgnoreCase)) {
+              $l.TargetPath = "$root\current\Sei.exe"; $l.WorkingDirectory = "$root\current"; $l.Save(); "retargeted pin $($_.Name)"
+            }
+          }
+
+          # 4) remove the NSIS copy, keeping app data and shortcuts
+          $sw.Restart()
+          $un = Join-Path $nsisDir 'Uninstall Sei.exe'
+          # Per-user NSIS shortcuts sit at the same paths Velopack just wrote
+          # (Desktop\Sei.lnk, Start Menu\Programs\Sei.lnk), so they are kept.
+          # A per-machine install's all-users shortcuts are its own: remove them.
+          $unArgs = @('/S', '--updated', '/KEEP_APP_DATA')
+          if ($env:SCENARIO -eq 'permachine') { $unArgs += '/allusers' } else { $unArgs += '--keep-shortcuts' }
+          $tmp = Join-Path $env:TEMP 'sei-nsis-uninstaller.exe'; Copy-Item $un $tmp -Force
+          $u = Start-Process -FilePath $tmp -ArgumentList ($unArgs + "_?=$nsisDir") -PassThru
+          $u.WaitForExit(300000) | Out-Null
+          Remove-Item -LiteralPath $nsisDir -Recurse -Force -ErrorAction SilentlyContinue
+          "NSIS uninstall: exit=$($u.ExitCode) after $([math]::Round($sw.Elapsed.TotalSeconds,1))s; dir left: $(Test-Path $nsisDir)"
+          State 'after NSIS uninstall'
+
+          # 5) Velopack Sei: same user data, one Apps & features entry, links point at it
+          $env:SEI_VELOPACK_SPIKE = '1'; $env:SEI_VELOPACK_SPIKE_MODE = 'none'; $env:SEI_VELOPACK_FEED = (Resolve-Path feed\vp).Path
+          $tLaunch = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+          $p = Start-Process -FilePath "$root\current\Sei.exe" -PassThru; Start-Sleep -Seconds 30
+          $alive = -not $p.HasExited; Stop-Sei
+          "Velopack Sei alive after 30s: $alive"
+          $spike = Join-Path $userData 'velopack-spike.jsonl'
+          if (Test-Path $spike) { Get-Content $spike }
+          $boot = if (Test-Path $spike) { Get-Content $spike | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.ev -eq 'boot' } | Select-Object -First 1 } else { $null }
+          if (-not $boot -or -not $boot.velopackInstalled) { $failures += 'migrated Sei does not see itself as a Velopack install' }
+          $e = @(Entries)
+          if ($e.Count -ne 1 -or $e[0].Key -ne 'Sei') { $failures += "expected exactly the Velopack Apps & features entry, got: $(($e | ForEach-Object { $_.Key }) -join ', ')" }
+          foreach ($l in @(Links)) { if (-not $l.Target.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { $failures += "shortcut $($l.Path) points at $($l.Target)" } }
+          if (@(Links | Where-Object { $_.Path -like '*Desktop*' }).Count -lt 1) { $failures += 'no desktop shortcut after migration' }
+          if ((Get-Content $marker -Raw).Trim() -ne $token) { $failures += 'userData marker lost' } else { 'userData marker intact' }
+          $im = Join-Path $userData 'install-marker.json'; if (Test-Path $im) { 'install-marker.json:'; Get-Content $im -Raw }
+          if (Test-Path (Join-Path $env:LOCALAPPDATA 'Programs\sei')) { 'leftover %LOCALAPPDATA%\Programs\sei:'; Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Programs\sei') -Force | Select-Object -First 10 | ForEach-Object { "  $($_.Name)" } }
+          if (Test-Path (Join-Path $userData 'logs\updater.log')) { Get-Content (Join-Path $userData 'logs\updater.log') -Tail 20 }
+
+          if ($failures.Count -gt 0) { $failures | ForEach-Object { "::error::$_" }; exit 1 }
+          "PASS: $env:SCENARIO"
