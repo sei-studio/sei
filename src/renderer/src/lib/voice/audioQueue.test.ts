@@ -14,6 +14,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createAudioQueue } from './audioQueue';
+import { createSentenceTts } from './sentenceTts';
 
 class FakeAudio {
   static instances: FakeAudio[] = [];
@@ -70,6 +71,36 @@ function playingQueue() {
   expect(el.paused).toBe(false);
   return { q, el, onSpeak };
 }
+
+describe('Kokoro sentences through the real audio queue', () => {
+  it('plays and captions sentence one before sentence two finishes, then clears pending synthesis', async () => {
+    const audible = vi.fn();
+    const q = createAudioQueue(vi.fn(), audible);
+    let resolveSecond!: (buf: ArrayBuffer) => void;
+    const second = new Promise<ArrayBuffer>((resolve) => { resolveSecond = resolve; });
+    const synthesize = vi.fn().mockResolvedValueOnce(new TextEncoder().encode('RIFFtest').buffer)
+      .mockReturnValueOnce(second);
+    const heard = vi.fn();
+    const speak = createSentenceTts(q, synthesize, () => true);
+    const generation = speak({ characterId: 'sui', text: 'Hello Marco. Second sentence. Third sentence.' }, {
+      rate: 1, onDone: heard, onError: vi.fn(),
+    });
+    for (let i = 0; i < 12; i++) await Promise.resolve();
+    const first = FakeAudio.instances.at(-1)!;
+    expect(first.src).toBe('blob:fake');
+    expect(first.paused).toBe(false);
+    first.dispatch('playing');
+    expect(audible).toHaveBeenCalledWith('sui', 'Hello Marco.');
+    expect(synthesize).toHaveBeenCalledTimes(2);
+    q.clear();
+    resolveSecond(new TextEncoder().encode('RIFFlate').buffer);
+    await generation;
+    expect(q.speaking()).toBe(false);
+    expect(synthesize).toHaveBeenCalledTimes(2);
+    expect(heard).toHaveBeenCalledExactlyOnceWith(false);
+    q.stop();
+  });
+});
 
 describe('audioQueue barge-in fade', () => {
   it('clear() flips the queue idle immediately but fades the clip before pausing it', async () => {

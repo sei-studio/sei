@@ -1072,7 +1072,9 @@ export const UserConfigSchema = z.object({
    * language to a local voice pack at synthesis time, and
    * metadata.voicePitch still applies through the pitch shifter.
    */
-  tts_engine: z.enum(['elevenlabs', 'local']).optional(),
+  tts_engine: z.enum(['elevenlabs', 'local', 'kokoro']).optional(),
+  /** Legacy preview field; only used to migrate the engine, never to pin a voice. */
+  local_tts_voice: z.enum(['auto', 'af_heart', 'if_sara']).optional(),
   /**
    * 260725: cloud users' opt-in to the local Whisper fallback. Set true once
    * the user accepts the Whisper-install prompt after a Scribe failure, so

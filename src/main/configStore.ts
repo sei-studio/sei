@@ -166,6 +166,7 @@ export const RENDERER_SETTABLE_KEYS: readonly (keyof UserConfig)[] = [
   'stt_engine',
   'stt_local_fallback',
   'tts_engine',
+  'local_tts_voice',
   'ui_language',
   // 260909: Settings > Games & search > Web search (provider + optional key).
   'web_search_provider',

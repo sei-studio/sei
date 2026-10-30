@@ -2052,7 +2052,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // on demand into <userData>/speech-models/. Contract: src/main/speech/index.ts.
   // Everything the renderer reads is named in the schemas here — zod strips
   // undeclared keys silently (the backseat gridSmall lesson).
-  const SpeechPackIdSchema = z.enum(['tts-en', 'tts-zh', 'stt-sensevoice']);
+  const SpeechPackIdSchema = z.enum(['tts-en', 'tts-zh', 'tts-kokoro', 'stt-sensevoice']);
   let speechPushWired = false;
   const wireSpeechPush = async (): Promise<void> => {
     if (speechPushWired) return;

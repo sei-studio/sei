@@ -52,6 +52,8 @@ import { createStaleGate } from '../backseat/staleGate';
 import { voicePitchRate } from '@shared/voicePitch';
 import type { VoiceTtsNoticePush } from '@shared/ipc';
 import { createAudioQueue, type AudioQueue, type TtsStreamHandle } from '../voice/audioQueue';
+import { createSentenceTts } from '../voice/sentenceTts';
+import { selectedTtsEngine } from '@shared/ttsEngine';
 import { t, uiLanguage } from '../i18n';
 import { currentResetLine } from '../useResetLine';
 import { createDictation, type Dictation } from '../voice/dictation';
@@ -342,6 +344,8 @@ let pendingTts = 0;
  * (audioQueue playBuffer) and plays them fine.
  */
 let localTtsCall = false;
+let kokoroTtsCall = false;
+let sentenceTts: ReturnType<typeof createSentenceTts> | null = null;
 /** Companion lines that arrived while the (first) call was still 'connecting'.
  * `seq` is the line's ORIGIN sequence resolved at buffer time (see
  * speakerOriginSeq), threaded through the flush into speakAndCapture. */
@@ -675,6 +679,7 @@ function missingPackNotice(packId: string | undefined): string {
   if (isZhPack(packId)) {
     return t('[voice unavailable, download the Chinese voice pack in Settings]');
   }
+  if (packId === 'tts-kokoro') return t('[voice unavailable, download the Kokoro voice pack in Settings]');
   if (packId === 'tts-en') {
     return t('[voice unavailable, download the English voice pack in Settings]');
   }
@@ -842,6 +847,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       }
     };
     const settleTts = (): void => {
+      if (session !== mySession) return;
       pendingTts = Math.max(0, pendingTts - 1);
       maybeFinishRemoteEnd();
     };
@@ -887,6 +893,16 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     if (stale?.('arrival')) {
       onDone?.(false);
       settleTts();
+      return;
+    }
+    if (kokoroTtsCall && sentenceTts && queue) {
+      void sentenceTts({ characterId, text, ...ttsCtx }, {
+        rate: pitchRateOf(characterId),
+        turn,
+        onDone,
+        stale: stale ? () => stale('playhead') : undefined,
+        onError: (error) => surfaceTtsError(String((error as Error)?.message ?? '')),
+      }).finally(settleTts);
       return;
     }
     const worthStreaming = text.length >= STREAM_MIN_CHARS;
@@ -1821,6 +1837,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         },
       );
       queue.setOutputMuted(useUiStore.getState().callDeafened);
+      sentenceTts = createSentenceTts(queue, (request) => sei.voiceTts(request), () => session === mySession);
 
       // 260709: conversation language — picks the local Whisper model
       // (English-only tiny.en vs multilingual base) and pins its decode
@@ -1849,7 +1866,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       if (session !== mySession) return;
       localTtsCall =
         (callCfg?.ai_backend_kind ?? 'cloud-proxy') === 'local' &&
-        (callCfg?.tts_engine === 'local' || !elevenKeyPresent);
+        (selectedTtsEngine(callCfg ?? {}) !== 'elevenlabs' || !elevenKeyPresent);
+      kokoroTtsCall =
+        (callCfg?.ai_backend_kind ?? 'cloud-proxy') === 'local' &&
+        selectedTtsEngine(callCfg ?? {}) === 'kokoro';
       // 260725: kind from the fresh config read (main truth), not the display
       // store — the store can be UNKNOWN (null) at call time.
       // 260816 SenseVoice: the policy also reads whether the SenseVoice pack is

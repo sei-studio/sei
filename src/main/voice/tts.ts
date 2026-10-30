@@ -35,6 +35,7 @@ import { createHash } from 'node:crypto';
 import { getClient } from '../auth/supabaseClient';
 import { getCharacter } from '../characterStore';
 import { loadConfig } from '../configStore';
+import { selectedTtsEngine } from '../../shared/ttsEngine';
 import { voiceStabilityFor } from '../../shared/voicePitch';
 import type { Character } from '../../shared/characterSchema';
 import { characterLanguage, clampChatLanguage, type ChatLanguage } from '../../shared/chatLanguage';
@@ -338,7 +339,8 @@ async function localTtsSelected(): Promise<boolean> {
   try {
     const { getAiBackendKind } = await import('../apiKeyStore');
     if ((await getAiBackendKind()) !== 'local') return false;
-    return (await loadConfig()).tts_engine === 'local';
+    const engine = selectedTtsEngine(await loadConfig());
+    return engine === 'local' || engine === 'kokoro';
   } catch {
     return false;
   }
@@ -518,12 +520,20 @@ async function synthesizeLocalClip(
   genderHint?: string,
 ): Promise<ArrayBuffer> {
   const speech = await import('../speech');
+  const effLanguage = speech.detectSpokenLanguage(text, language);
+  const gender = speech.voiceGenderFor(voiceId, genderHint);
+  if (selectedTtsEngine(await loadConfig()) === 'kokoro') {
+    const voice = speech.pickKokoroVoice(gender, effLanguage);
+    if (voice) {
+      const { samples, sampleRate } = await speech.synthesizeKokoro(text, voice);
+      const { encodeWav } = await import('./stt');
+      return encodeWav(samples, sampleRate);
+    }
+  }
   const ready: SpeechPackId[] = [];
   for (const id of speech.SPEECH_PACK_IDS) {
     if (id.startsWith('tts-') && (await speech.packReady(id))) ready.push(id);
   }
-  const effLanguage = speech.detectSpokenLanguage(text, language);
-  const gender = speech.voiceGenderFor(voiceId, genderHint);
   const pick = speech.pickLocalVoice(gender, effLanguage, ready);
   if (!pick) {
     throw speech.packMissingError(
@@ -1051,8 +1061,14 @@ export async function voicePreviewTts(args: {
         genderHint = ownVoicePickOf(character)?.gender;
       }
     }
-    const localText = speechTextFor(line, language) || line;
-    return await synthesizeLocalClip(localText, voiceId ?? '', language, args.characterId ?? '', genderHint);
+    const character = args.characterId ? await getCharacter(args.characterId) : null;
+    if (character?.metadata?.voiceId === NO_VOICE_ID) {
+      throw new Error('VOICE_DISABLED: this companion has no voice');
+    }
+    const previewLanguage = characterLanguage(character?.metadata) ?? language;
+    const sampleLine = PREVIEW_LINES[previewLanguage];
+    const localText = speechTextFor(sampleLine, previewLanguage) || sampleLine;
+    return await synthesizeLocalClip(localText, voiceId ?? '', previewLanguage, args.characterId ?? '', genderHint);
   }
   const voiceId = args.voiceId ?? '';
   // Closed allowlist: the curated pool, or (261019) a voice in the user's

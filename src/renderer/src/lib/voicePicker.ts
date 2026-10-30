@@ -227,7 +227,7 @@ export function defaultVoiceTab(
  */
 export function elevenKeySettingMode(
   backend: 'local' | 'cloud-proxy' | null | undefined,
-  ttsEngine: 'elevenlabs' | 'local',
+  ttsEngine: 'elevenlabs' | 'local' | 'kokoro',
 ): 'byok' | 'cloud-optional' | 'hidden' {
   if (backend === 'cloud-proxy') return 'cloud-optional';
   if (backend === 'local' && ttsEngine === 'elevenlabs') return 'byok';

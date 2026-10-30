@@ -30,6 +30,7 @@
  * mid-call.
  */
 import path from 'node:path';
+import { kokoroConfig, KOKORO_VOICES, type KokoroVoice } from './kokoro';
 import { existsSync } from 'node:fs';
 import { bundleRequire } from '../bundleRequire';
 import { LOCAL_VOICE_SPEC, type LocalVoiceId } from './localVoice';
@@ -161,6 +162,24 @@ export async function synthesizeLocal(
   );
   if (!audio.samples || audio.samples.length === 0) {
     throw new Error('VOICE_TTS_FAILED: local synthesis produced no audio');
+  }
+  return { samples: audio.samples, sampleRate: audio.sampleRate };
+}
+
+/** One engine per phonemizer language: do not mutate a shared engine mid-call. */
+const kokoroEngines = new Map<string, Promise<TtsEngine>>();
+export async function synthesizeKokoro(text: string, voice: KokoroVoice) {
+  if (!(await packReady('tts-kokoro'))) throw packMissingError('tts-kokoro');
+  const spec = KOKORO_VOICES[voice];
+  let engine = kokoroEngines.get(spec.lang);
+  if (!engine) {
+    engine = loadSherpa().OfflineTts.createAsync(kokoroConfig(packModelDir('tts-kokoro'), voice)) as Promise<TtsEngine>;
+    kokoroEngines.set(spec.lang, engine);
+    engine.catch(() => kokoroEngines.delete(spec.lang));
+  }
+  const audio = await (await engine).generateAsync({ text, sid: spec.sid, speed: spec.rate, enableExternalBuffer: false });
+  if (!audio.samples?.length || !Number.isFinite(audio.sampleRate) || audio.sampleRate <= 0) {
+    throw new Error('VOICE_TTS_FAILED: Kokoro produced no usable audio');
   }
   return { samples: audio.samples, sampleRate: audio.sampleRate };
 }
