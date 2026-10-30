@@ -77,16 +77,29 @@ jobs:
           set -euo pipefail
           mkdir -p vp setup timing
           npx electron-vite build
+          disk() { echo "disk ($1): $(df -h / /d 2>/dev/null | tail -n +2 | awk '{print $NF" free="$4}' | tr '\n' ' ')"; }
+          disk start
           for v in 0.6.90 0.6.91 0.6.92 0.6.93; do
             npm pkg set version=$v
+            rm -rf release/win-unpacked
             t0=$(date +%s)
             npx electron-builder --win dir --x64 --publish never > "timing/eb-$v.log" 2>&1 || { tail -50 "timing/eb-$v.log"; exit 1; }
             t1=$(date +%s)
-            vpk pack -u Sei -v $v -p release/win-unpacked -e Sei.exe \
-              --packTitle Sei --packAuthors Sei --channel win \
-              --icon build/installerHeaderIcon.ico --aumid com.sei.app \
-              --splashImage build/icon.png --skipVeloAppCheck -o vp --skip-updates 2>&1 | tee "timing/vpk-$v.log" | grep -E -i "delta|warn|error|complete" || true
+            pack() {
+              vpk pack -u Sei -v $v -p release/win-unpacked -e Sei.exe \
+                --packTitle Sei --packAuthors Sei --channel win \
+                --icon build/installerHeaderIcon.ico --aumid com.sei.app \
+                --splashImage build/icon.png --skipVeloAppCheck -o vp --skip-updates > "timing/vpk-$v$1.log" 2>&1
+            }
+            if ! pack ''; then
+              echo "::warning::vpk pack $v failed once; log tail:"; tail -60 "timing/vpk-$v.log"; disk failure
+              rm -f vp/Sei-$v-* vp/*Setup.exe vp/*Portable.zip
+              pack '-retry' || { echo "vpk pack $v failed again:"; tail -60 "timing/vpk-$v-retry.log"; exit 1; }
+            fi
+            grep -E -i "delta|warn|error|complete" "timing/vpk-$v.log" || true
             t2=$(date +%s)
+            rm -f vp/*Portable.zip
+            disk "after $v"
             mv vp/Sei-win-Setup.exe "setup/Sei-$v-Setup.exe"
             echo "$v electron-builder-dir=$((t1-t0))s vpk-pack=$((t2-t1))s" | tee -a timing/summary.txt
             if [ "$v" = 0.6.90 ]; then
@@ -107,6 +120,7 @@ jobs:
           retention-days: 3
 
       - name: Upload build timing
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: velopack-build-timing
