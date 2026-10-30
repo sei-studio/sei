@@ -220,16 +220,29 @@ jobs:
           $token = [guid]::NewGuid().ToString(); Set-Content $marker $token
 
           # ---------------------------------------------------------------- feed server
-          $srv = Start-Process -FilePath python -ArgumentList '-m', 'http.server', '8765', '--bind', '127.0.0.1', '--directory', $feed -PassThru -WindowStyle Hidden
+          # One feed per step, each listing releases only up to its target, so
+          # every step is a single-version update (the full feed would jump
+          # 0.6.90 straight to 0.6.93; run 40990091094).
+          $steps = Join-Path (Get-Location) 'steps'
+          $all = Get-Content (Join-Path $feed 'releases.win.json') -Raw | ConvertFrom-Json
+          foreach ($t in '0.6.91', '0.6.92', '0.6.93') {
+            $d = Join-Path $steps $t; New-Item -ItemType Directory -Force -Path $d | Out-Null
+            $keep = @($all.Assets | Where-Object { [version]$_.Version -le [version]$t })
+            foreach ($a in $keep) { New-Item -ItemType HardLink -Path (Join-Path $d $a.FileName) -Target (Join-Path $feed $a.FileName) | Out-Null }
+            $copy = $all.PSObject.Copy(); $copy.Assets = $keep
+            $copy | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $d 'releases.win.json') -Encoding utf8
+            "feed step $t -> $(($keep | ForEach-Object { "$($_.Version)/$($_.Type)" }) -join ', ')"
+          }
+          $srv = Start-Process -FilePath python -ArgumentList '-m', 'http.server', '8765', '--bind', '127.0.0.1', '--directory', $steps -PassThru -WindowStyle Hidden
           Start-Sleep -Seconds 3
           $env:SEI_VELOPACK_SPIKE = '1'
-          $env:SEI_VELOPACK_FEED = 'http://127.0.0.1:8765'
 
           function Run-Path([string]$mode, [string]$target, [bool]$expectRelaunch, [string]$shotPrefix) {
             Write-Host "################ $mode -> $target ################"
             Stop-Sei
             Remove-Item $spike -ErrorAction SilentlyContinue
             $env:SEI_VELOPACK_SPIKE_MODE = $mode
+            $env:SEI_VELOPACK_FEED = "http://127.0.0.1:8765/$target"
             $exe = Join-Path $root 'current\Sei.exe'
             $freeStart = FreeMB
             $minFree = $freeStart
@@ -245,7 +258,7 @@ jobs:
                 $a = $ev | Where-Object { $_.ev -eq 'apply-launch' -or ($mode -eq 'download-only' -and $_.ev -eq 'downloaded') } | Select-Object -First 1
                 if ($a) { $applyAt = $sw.Elapsed.TotalSeconds }
               }
-              if ($null -ne $applyAt -and $shots -lt 45) { Shot ('{0}-{1:d2}-{2:n1}s' -f $shotPrefix, $shots, ($sw.Elapsed.TotalSeconds - $applyAt)); $shots++ }
+              if ($null -ne $applyAt -and $shots -lt 80) { Shot ('{0}-{1:d2}-{2:n1}s' -f $shotPrefix, $shots, ($sw.Elapsed.TotalSeconds - $applyAt)); $shots++ }
               if ($null -eq $oldExit -and $old.HasExited) { $oldExit = $sw.Elapsed.TotalSeconds }
               $u = @(Get-Process -Name 'Update' -ErrorAction SilentlyContinue)
               if ($u.Count -gt 0) { $updSeen = $true } elseif ($updSeen -and $null -eq $updExit) { $updExit = $sw.Elapsed.TotalSeconds }
@@ -389,7 +402,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
-        run: gh release download $env:NSIS_TAG -R $env:GITHUB_REPOSITORY -p 'Sei-win-x64.exe' -D old
+        # v0.6.10 is a one-click per-user installer and ignores /allusers (run
+        # 40990091094). Per-machine installs in the field come from the older
+        # assisted installers, so that scenario starts from v0.6.4.
+        run: |
+          $tag = if ('${{ matrix.scenario }}' -eq 'permachine') { 'v0.6.4' } else { $env:NSIS_TAG }
+          "NSIS source release: $tag"
+          gh release download $tag -R $env:GITHUB_REPOSITORY -p 'Sei-win-x64.exe' -D old
 
       - name: Migrate NSIS -> Velopack
         shell: pwsh
@@ -425,7 +444,10 @@ jobs:
           if (-not $p.WaitForExit(300000)) { throw 'NSIS install timed out' }
           Stop-Sei
           $nsis = @(Entries)[0]
-          $nsisDir = switch ($env:SCENARIO) { 'peruser-custom' { 'C:\Games\My Sei' } 'permachine' { Join-Path $env:ProgramFiles 'Sei' } default { Join-Path $env:LOCALAPPDATA 'Programs\sei' } }
+          # Where NSIS actually put it, from its Apps & features entry.
+          if (-not $nsis) { throw 'no NSIS uninstall entry after the install' }
+          $nsisDir = Split-Path -Parent ([regex]::Match($nsis.Uninstall, '^"([^"]+)"').Groups[1].Value)
+          "NSIS entry: $($nsis.Root) $($nsis.Key) $($nsis.Version)"
           "NSIS dir: $nsisDir exists=$(Test-Path "$nsisDir\Sei.exe")"
           $p = Start-Process -FilePath "$nsisDir\Sei.exe" -PassThru; Start-Sleep -Seconds 25; Stop-Sei
           New-Item -ItemType Directory -Force -Path $userData | Out-Null

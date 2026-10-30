@@ -101,6 +101,20 @@ export function spikeMark(ev: string, extra: Record<string, unknown> = {}): void
   }
 }
 
+if (process.env.SEI_VELOPACK_SPIKE === '1') {
+  // SPIKE harness: time each window to its first paint-ready moment. Registered
+  // at import time, before index.ts creates the main window.
+  let n = 0;
+  app.on('browser-window-created', (_e, win) => {
+    const idx = n++;
+    spikeMark('window-created', { idx });
+    win.once('ready-to-show', () => spikeMark('window-ready-to-show', { idx }));
+    win.webContents.once('did-finish-load', () =>
+      spikeMark('window-loaded', { idx, url: win.webContents.getURL().slice(0, 80) }),
+    );
+  });
+}
+
 if (process.platform === 'win32' && app.isPackaged) {
   try {
     mod = bundleRequire()('velopack') as VelopackModule;

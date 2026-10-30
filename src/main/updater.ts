@@ -746,19 +746,6 @@ function maybeBackgroundCheck(reason: string): void {
  */
 export function initUpdater(deps: { getMainWindow: () => BrowserWindow | null }): void {
   getMainWindow = deps.getMainWindow;
-  if (process.env.SEI_VELOPACK_SPIKE === '1') {
-    // SPIKE harness: time each window to its first paint-ready moment.
-    let n = 0;
-    app.on('browser-window-created', (_e, win) => {
-      const idx = n++;
-      spikeMark('window-created', { idx });
-      win.once('ready-to-show', () => spikeMark('window-ready-to-show', { idx }));
-      win.webContents.once('did-finish-load', () =>
-        spikeMark('window-loaded', { idx, url: win.webContents.getURL().slice(0, 80) }),
-      );
-    });
-  }
-
   // Flow D — what's-new on launch (skipped in dev internally). Memoized so the
   // renderer's pull (getPendingWhatsNew) shares this one computation.
   void ensureWhatsNewComputed();
