@@ -1,11 +1,11 @@
 /**
  * 261031 (T278): analytics.ts end to end with posthog-node mocked (nothing
  * leaves the machine): dev/test-build suppression, the device id as the
- * anonymous distinct_id (persisted across launches in userData), the
- * one-time alias of the legacy install id, property enrichment on every
- * event, the plan property and checkout_completed.
+ * anonymous distinct_id (persisted across launches in userData), property
+ * enrichment on every event, the plan property and checkout_completed. The
+ * alias / identify sequence is analytics.identity.test.ts.
  */
-import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -63,17 +63,14 @@ function lastCapture(): { distinctId: string; event: string; properties: Record<
   return h.capture.mock.calls.at(-1)![0];
 }
 
-beforeEach(async () => {
-  // identifyUser's alias is fire-and-forget (it reads the aliases file
-  // first): let a previous test's land before the mocks are cleared.
-  await new Promise((r) => setTimeout(r, 30));
+beforeEach(() => {
   userData = mkdtempSync(path.join(os.tmpdir(), 'sei-analytics-'));
   h.ctor.mockClear();
   h.capture.mockClear();
   h.alias.mockClear();
   h.identify.mockClear();
   h.app.isPackaged = true;
-  h.cfg.value = { analytics_install_id: 'install-legacy-1', analytics_opt_out: false, preferred_name: 'Sam' };
+  h.cfg.value = { analytics_opt_out: false, preferred_name: 'Sam' };
   vi.stubEnv('SEI_ANALYTICS_DEV', '');
   vi.stubEnv('SEI_RELEASE_CHANNEL', 'sei-channel=stable');
 });
@@ -141,23 +138,12 @@ describe('device id', () => {
     expect(lastCapture().properties.$session_id).not.toBe(first.properties.$session_id);
   });
 
-  it('aliases the legacy install id into the device id once per device', async () => {
-    await launch();
-    expect(h.alias).toHaveBeenCalledTimes(1);
-    const { distinctId, alias } = h.alias.mock.calls[0][0] as { distinctId: string; alias: string };
-    expect(alias).toBe('install-legacy-1');
-    expect(distinctId).toMatch(/^[0-9a-f]{32}$/);
-    expect(existsSync(path.join(userData, 'analytics-aliases.json'))).toBe(true);
-    await launch();
-    expect(h.alias).toHaveBeenCalledTimes(1);
-  });
-
   it('after sign-in the account is the distinct_id and device_id stays a property', async () => {
     const a = await launch();
     a.capture('app_opened');
     const deviceId = lastCapture().distinctId;
     a.identifyUser('user-123');
-    await vi.waitFor(() => expect(h.alias).toHaveBeenCalledWith({ distinctId: 'user-123', alias: deviceId }));
+    expect(h.alias).toHaveBeenCalledWith({ distinctId: 'user-123', alias: deviceId });
     a.capture('chat_session_started');
     expect(lastCapture().distinctId).toBe('user-123');
     expect(lastCapture().properties.device_id).toBe(deviceId);
@@ -214,7 +200,7 @@ describe('plan and checkout_completed', () => {
   it('a tier rise after a checkout_opened is one checkout_completed, shape only', async () => {
     const a = await launch();
     a.identifyUser('user-1');
-    a.notePlanSnapshot('user-1', 'free', 0, 1_000);
+    a.notePlanSnapshot('user-1', 'free', 0, { now: 1_000 });
     a.capture('checkout_opened', { kind: 'quest' });
     a.notePlanSnapshot('user-1', 'quest', 0);
     const done = h.capture.mock.calls.map((c) => c[0]).filter((c) => c.event === 'checkout_completed');
@@ -228,6 +214,29 @@ describe('plan and checkout_completed', () => {
     });
     a.notePlanSnapshot('user-1', 'quest', 0);
     expect(h.capture.mock.calls.filter((c) => c[0].event === 'checkout_completed')).toHaveLength(1);
+  });
+
+  it('a read older than one already applied is dropped (overlapping creditsGet calls)', async () => {
+    const a = await launch();
+    a.identifyUser('user-1');
+    a.notePlanSnapshot('user-1', 'free', 0, { seq: 1 });
+    a.notePlanSnapshot('user-1', 'free', 500, { seq: 3 });
+    // seq 2 started before seq 3 but resolved after it: stale, ignored.
+    a.notePlanSnapshot('user-1', 'free', 0, { seq: 2 });
+    a.notePlanSnapshot('user-1', 'free', 500, { seq: 4 });
+    const done = h.capture.mock.calls.map((c) => c[0]).filter((c) => c.event === 'checkout_completed');
+    expect(done).toHaveLength(1);
+    expect(done[0].properties).toMatchObject({ kind: 'topup', credits_added: 500, checkout_opened_this_session: false });
+  });
+
+  it('past_due back to active is not a checkout', async () => {
+    const a = await launch();
+    a.identifyUser('user-1');
+    a.notePlanSnapshot('user-1', 'free', 0, { status: 'past_due', seq: 1 });
+    a.notePlanSnapshot('user-1', 'quest', 0, { status: 'active', seq: 2 });
+    expect(h.capture.mock.calls.filter((c) => c[0].event === 'checkout_completed')).toHaveLength(0);
+    a.capture('x_event');
+    expect(lastCapture().properties.plan).toBe('quest');
   });
 
   it("another account's snapshot neither sets the plan nor counts as a purchase", async () => {

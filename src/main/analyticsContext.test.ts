@@ -155,4 +155,17 @@ describe('detectPurchase', () => {
     expect(detectPurchase(snap('quest', 600), snap('quest', 600))).toBeNull();
     expect(detectPurchase(snap('quest', 600), snap('quest', 100))).toBeNull();
   });
+
+  it('a tier rise out of past_due or unpaid is a recovered payment, not a purchase', () => {
+    const failing = (status: string) => ({ ...snap('free'), status });
+    expect(detectPurchase(failing('past_due'), { ...snap('quest'), status: 'active' })).toBeNull();
+    expect(detectPurchase(failing('unpaid'), { ...snap('quest'), status: 'active' })).toBeNull();
+    // An expired subscription bought again is a new one.
+    expect(detectPurchase(failing('expired'), { ...snap('quest'), status: 'active' })).toMatchObject({ kind: 'subscription' });
+    // A top-up during past_due still counts.
+    expect(detectPurchase({ ...failing('past_due'), extraTotal: 0 }, { ...snap('free', 500), status: 'past_due' })).toMatchObject({
+      kind: 'topup',
+      credits_added: 500,
+    });
+  });
 });

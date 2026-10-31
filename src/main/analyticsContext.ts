@@ -179,6 +179,8 @@ export interface PlanSnapshot {
   plan: PlanTierProp;
   /** Extra (top-up) credits granted in total, display credits. */
   extraTotal: number;
+  /** my_plan.subscription_status_raw at this read (null = none / unknown). */
+  status?: string | null;
 }
 
 export interface DetectedPurchase {
@@ -199,11 +201,15 @@ const TIER_RANK: Record<PlanTierProp, number> = { free: 0, quest: 1, party: 2 };
  * (a focus refresh after the browser checkout), so this is "the app learned
  * of a completed purchase", not the payment itself. The first snapshot of a
  * process or of an account has no baseline and never counts. A downgrade or a
- * renewal is not a purchase.
+ * renewal is not a purchase, and neither is a tier rise out of past_due /
+ * unpaid: entitled_tier reads 'free' while a payment is failing, so the
+ * retried payment that makes it 'active' again would read as a new
+ * subscription.
  */
 export function detectPurchase(prev: PlanSnapshot | null, next: PlanSnapshot): DetectedPurchase | null {
   if (!prev || prev.userId !== next.userId) return null;
   if (TIER_RANK[next.plan] > TIER_RANK[prev.plan]) {
+    if (prev.status === 'past_due' || prev.status === 'unpaid') return null;
     return { kind: prev.plan === 'free' ? 'subscription' : 'upgrade', tier: next.plan, from_tier: prev.plan };
   }
   const added = Math.round(next.extraTotal - prev.extraTotal);

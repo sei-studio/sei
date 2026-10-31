@@ -91,6 +91,9 @@ async function getSessionOrNull(): Promise<{ jwt: string; userId: string } | nul
  * The renderer should not mount the plan surface anyway when
  * ai_backend_kind === 'local' (D-57).
  */
+/** Per-process order of creditsGet reads, for analytics.notePlanSnapshot (261031). */
+let creditsReadSeq = 0;
+
 export async function creditsGet(): Promise<CreditsStatus> {
   // 260703: report the REAL persisted backend kind, not a hardcoded 'local'.
   // This snapshot is the renderer's sole source for the ACCOUNT MODE surface
@@ -129,6 +132,9 @@ export async function creditsGet(): Promise<CreditsStatus> {
   // caller (auth.uid() = null) and returns no row, so the screen would paint a
   // signed-in account as a brand-new free one.
   const supabase = getAuthedClient(session.jwt);
+  // Taken before the reads: analytics drops a snapshot older than one it
+  // already applied (two overlapping reads can resolve out of order).
+  const readSeq = ++creditsReadSeq;
   const [planRow, rewardRow, kind] = await Promise.all([
     supabase
       .from('my_plan')
@@ -171,7 +177,12 @@ export async function creditsGet(): Promise<CreditsStatus> {
   const extraTotal = toCount(row.extra_credits_total);
   void import('../lazyAnalytics')
     .then(({ loadAnalytics }) => loadAnalytics())
-    .then((a) => a.notePlanSnapshot(session.userId, tier, extraTotal))
+    .then((a) =>
+      a.notePlanSnapshot(session.userId, tier, extraTotal, {
+        status: typeof row.subscription_status_raw === 'string' ? row.subscription_status_raw : null,
+        seq: readSeq,
+      }),
+    )
     .catch(() => {});
 
   return {

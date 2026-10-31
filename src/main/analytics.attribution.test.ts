@@ -17,7 +17,8 @@ const { captureSpy } = vi.hoisted(() => ({ captureSpy: vi.fn() }));
 vi.mock('electron', () => ({
   app: { getVersion: () => '9.9.9' },
 }));
-// 261031: anonymous events go out under the hashed device id.
+// 261031: the device id; a profile that already has an install id (as here)
+// keeps that install id as its anonymous distinct_id.
 vi.mock('./auth/deviceId', () => ({ getDeviceId: async () => 'device-raw-0000' }));
 vi.mock('posthog-node', () => ({
   PostHog: class {
@@ -39,7 +40,6 @@ vi.mock('./apiKeyStore', () => ({
 }));
 
 import { capture, initAnalytics, personPropsFor } from './analytics';
-import { analyticsDeviceId } from './analyticsContext';
 import {
   ATTRIBUTION_DETAIL_EVENT,
   ATTRIBUTION_DETAILS,
@@ -93,7 +93,7 @@ describe('capture() with the attribution event', () => {
     expect(captureSpy).toHaveBeenCalledTimes(1);
     const arg = captureSpy.mock.calls[0][0];
     expect(arg.event).toBe('onboarding_attribution');
-    expect(arg.distinctId).toBe(analyticsDeviceId('device-raw-0000'));
+    expect(arg.distinctId).toBe('install-0000');
     expect(arg.properties.source).toBe('youtube_creator');
     expect(arg.properties.$set_once).toEqual({ attribution_source: 'youtube_creator' });
     // The common $set rides alongside, untouched.

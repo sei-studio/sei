@@ -11,17 +11,22 @@
  * Minecraft usernames, or emails. `sanitize()` is a backstop that drops
  * free-form objects and truncates strings on every renderer-supplied payload.
  *
- * Identity: `distinctId` is the Supabase user id when signed in, else the
- * anonymous DEVICE id (261031, T278): a salted hash of the device-global
- * `<userData>/device-id.json` (analyticsContext.analyticsDeviceId), so a
- * device stays one person across profiles and sign-outs. Before 261031 the
- * anonymous id was the per-profile `config.analytics_install_id`; the first
- * launch with this code aliases that id into the device id (once, recorded in
- * `<userData>/analytics-aliases.json`) so an anonymous install's history is
- * not orphaned. On sign-in `identifyUser()` alias()es the device id (and the
- * legacy install id) into the account. `device_id` rides on every event, so
- * devices stay countable after sign-in. Only a signed-up user (who passed the
- * ephemeral COPPA 13+ gate) is ever identified by account id.
+ * Identity (261031, T278, reworked after review): `distinctId` is the
+ * Supabase user id when signed in, else the anonymous id: the profile's
+ * EXISTING `config.analytics_install_id` when it has one (every install from
+ * before 261031), else the hashed device id (analyticsContext.analyticsDeviceId
+ * of `<userData>/device-id.json`). A new install id is minted only when the
+ * device id cannot be read. Nothing is aliased at init. On sign-in
+ * `identifyUser()` sends alias(userId <- anonymous id) then identify(userId),
+ * the same flow as before 261031: the anonymous id is only ever the `alias`
+ * argument and never identified, so PostHog merges its (unidentified) person
+ * into the account's, new or existing. Never alias two ids that could both be
+ * identified persons, and never pass an anonymous id as alias()'s distinctId:
+ * PostHog then marks it identified and refuses every later merge of it, which
+ * orphans day-0 events (installer_first_launch, onboarding) from the account.
+ * `device_id` rides on every event as a property, so devices stay countable
+ * whatever the distinct id. Only a signed-up user (who passed the ephemeral
+ * COPPA 13+ gate) is ever identified by account id.
  *
  * Send gate (261031): nothing leaves an unpackaged (dev) or test build unless
  * SEI_ANALYTICS_DEV=1 is set at runtime; see analyticsContext.ts for how the
@@ -32,6 +37,7 @@
 import { app } from 'electron';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { PostHog } from 'posthog-node';
 import { loadConfig, updateConfig } from './configStore';
 import { redact } from './diagnostics';
@@ -114,6 +120,8 @@ let planTier: PlanTierProp | null = null;
 let lastPlanSnapshot: PlanSnapshot | null = null;
 /** When this process last sent checkout_opened (ms epoch), for checkout_completed. */
 let checkoutOpenedAt: number | null = null;
+/** The `seq` of the newest credits read applied, so a slower, older read is dropped. */
+let lastPlanSeq: number | null = null;
 
 /**
  * Pre-init queue (261005). initAnalytics runs late in bootstrap (after the
@@ -146,8 +154,8 @@ function keyConfigured(): boolean {
 }
 
 /**
- * Initialize the client, mint/read the anonymous install id, and cache the
- * opt-out flag + backend kind. Call once from bootstrap() after config is
+ * Initialize the client, read the anonymous id (install id or device id),
+ * and cache the opt-out flag + backend kind. Call once from bootstrap() after config is
  * reachable. Never throws — analytics must never block startup.
  */
 export async function initAnalytics(): Promise<void> {
@@ -172,7 +180,7 @@ async function initAnalyticsInner(): Promise<void> {
   }
   channel = resolveChannel({ packaged: packagedBuild, baked: bakedChannel(), version: appVersion });
   // The device-global id (auth/deviceId.ts), hashed: never the raw id, which
-  // gates trial claims. A failure leaves the per-profile install id in use.
+  // gates trial claims. A failure falls back to a per-profile install id.
   try {
     const { getDeviceId } = await import('./auth/deviceId');
     const raw = await getDeviceId();
@@ -181,10 +189,12 @@ async function initAnalyticsInner(): Promise<void> {
   } catch {
     /* fall back to the install id */
   }
-  // Seed the anonymous install id + read the opt-out flag under the file lock.
+  // Read the existing anonymous install id + the opt-out flag under the file
+  // lock. A profile without an install id gets none (the device id is its
+  // anonymous id), unless the device id could not be read.
   try {
     const next = await updateConfig((cfg) => {
-      if (!cfg.analytics_install_id) {
+      if (!cfg.analytics_install_id && !deviceId) {
         return { ...cfg, analytics_install_id: randomUUID() };
       }
       return cfg;
@@ -198,6 +208,8 @@ async function initAnalyticsInner(): Promise<void> {
   } catch (err) {
     logger.warn(`analytics: config init failed: ${(err as Error).message}`);
   }
+  // Before the client exists, so a restored sign-in racing init is guarded.
+  await loadMergedInto();
   // Subscribe BEFORE the initial read so a config write that lands between
   // the two can't be missed; apiKeyStore fires this for every ai_backend_kind
   // writer (explicit switch, sign-in cloud default, boot self-heal).
@@ -231,60 +243,52 @@ async function initAnalyticsInner(): Promise<void> {
     logger.warn(`analytics: client init failed: ${(err as Error).message}`);
     client = null;
   }
-  // The first launch with the device id: fold this profile's old anonymous
-  // install id into it, so an install that never signed in keeps its
-  // history. A signed-in profile's install id was aliased into the account
-  // at sign-in already (and PostHog refuses to merge an identified person).
-  if (client && !optedOut && !signedInUserId && installId && deviceId) {
-    await aliasOnce(deviceId, installId);
-  }
-}
-
-/** `<userData>/analytics-aliases.json`: the alias pairs already sent from this device. */
-const ALIASES_FILE = 'analytics-aliases.json';
-const ALIASES_MAX = 50;
-
-async function aliasesFile(): Promise<string | null> {
-  try {
-    const { paths } = await import('./paths');
-    const { default: nodePath } = await import('node:path');
-    return nodePath.join(paths.userData(), ALIASES_FILE);
-  } catch {
-    return null;
-  }
+  // No alias here (see the header): the anonymous id must stay mergeable
+  // into an account at sign-in.
 }
 
 /**
- * client.alias(distinctId <- alias), at most once per pair per device. A
- * pair that cannot be recorded is still sent (PostHog dedupes a repeat).
+ * `<userData>/analytics-identity.json`: {anonymous id: the account it was
+ * aliased into}. Device-global, like the device id. Once an anonymous id is
+ * merged into account A its person IS A's (identified), so aliasing it into a
+ * second account B on the same device would either be refused or, for a new
+ * B, add B's id to A's person and merge two accounts. identifyUser skips the
+ * alias then and only identifies B.
  */
-async function aliasOnce(target: string, alias: string): Promise<void> {
-  if (!client || !target || !alias || target === alias) return;
-  const key = `${target}<${alias}`;
-  const file = await aliasesFile();
-  let done: string[] = [];
-  if (file) {
-    try {
-      const { readFile } = await import('node:fs/promises');
-      const parsed: unknown = JSON.parse(await readFile(file, 'utf8'));
-      if (Array.isArray(parsed)) done = parsed.filter((x): x is string => typeof x === 'string');
-    } catch {
-      /* no file yet */
-    }
-  }
-  if (done.includes(key)) return;
+const IDENTITY_FILE = 'analytics-identity.json';
+const IDENTITY_MAX = 20;
+let identityFile: string | null = null;
+let mergedInto: Record<string, string> = {};
+
+async function loadMergedInto(): Promise<void> {
   try {
-    client.alias({ distinctId: target, alias });
-  } catch (err) {
-    logger.warn(`analytics: alias failed: ${(err as Error).message}`);
+    const { paths } = await import('./paths');
+    const { default: nodePath } = await import('node:path');
+    identityFile = nodePath.join(paths.userData(), IDENTITY_FILE);
+  } catch {
+    identityFile = null;
     return;
   }
-  if (!file) return;
   try {
-    const { writeFile } = await import('node:fs/promises');
-    await writeFile(file, JSON.stringify([...done, key].slice(-ALIASES_MAX)), 'utf8');
+    const parsed: unknown = JSON.parse(readFileSync(identityFile, 'utf8'));
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      for (const [k, v] of Object.entries(parsed)) if (typeof v === 'string') mergedInto[k] = v;
+    }
   } catch {
-    /* best effort */
+    /* no file yet */
+  }
+}
+
+/** Record anon -> userId (sync: identifyUser is sync and the next sign-in may follow at once). */
+function recordMergedInto(anon: string, userId: string): void {
+  mergedInto[anon] = userId;
+  if (!identityFile) return;
+  try {
+    const keys = Object.keys(mergedInto);
+    if (keys.length > IDENTITY_MAX) for (const k of keys.slice(0, keys.length - IDENTITY_MAX)) delete mergedInto[k];
+    writeFileSync(identityFile, JSON.stringify(mergedInto), 'utf8');
+  } catch {
+    /* best effort: the in-memory record still guards this process */
   }
 }
 
@@ -315,17 +319,36 @@ export function noteAnalyticsConfig(cfg: {
  * the previous snapshot of the same account, sends `checkout_completed`
  * (analyticsContext.detectPurchase). `plan` reads 'none' while signed out and
  * 'unknown' until the first snapshot of a sign-in. A snapshot for an account
- * that is no longer the signed-in one (a read that raced a switch) is ignored.
+ * that is no longer the signed-in one (a read that raced a switch) is ignored,
+ * and so is a read older than one already applied (`seq`, taken by creditsGet
+ * before its network read: two overlapping reads can resolve out of order).
+ * `status` is the subscription status the read saw; a tier rise out of
+ * past_due/unpaid is a recovered payment, not a purchase (detectPurchase).
  * Never throws.
  */
-export function notePlanSnapshot(userId: string, plan: PlanTierProp, extraTotal: number, now: number = Date.now()): void {
+export function notePlanSnapshot(
+  userId: string,
+  plan: PlanTierProp,
+  extraTotal: number,
+  opts: { status?: string | null; seq?: number; now?: number } = {},
+): void {
   try {
     if (signedInUserId && userId !== signedInUserId) return;
+    if (typeof opts.seq === 'number') {
+      if (lastPlanSeq !== null && opts.seq <= lastPlanSeq) return;
+      lastPlanSeq = opts.seq;
+    }
     planTier = plan;
-    const next: PlanSnapshot = { userId, plan, extraTotal: Number.isFinite(extraTotal) ? extraTotal : 0 };
+    const next: PlanSnapshot = {
+      userId,
+      plan,
+      extraTotal: Number.isFinite(extraTotal) ? extraTotal : 0,
+      status: typeof opts.status === 'string' ? opts.status : null,
+    };
     const bought = detectPurchase(lastPlanSnapshot, next);
     lastPlanSnapshot = next;
     if (!bought) return;
+    const now = opts.now ?? Date.now();
     capture('checkout_completed', {
       ...bought,
       checkout_opened_this_session: checkoutOpenedAt !== null,
@@ -418,7 +441,7 @@ function commonProps(): Record<string, unknown> {
       ui_language: uiLanguage,
       channel,
       ai_provider: provider.ai_provider,
-      // Only a known tier: signed-out events land on the device id, which a
+      // Only a known tier: signed-out events land on the anonymous id, which a
       // sign-in merged into the account's person, so 'none' would overwrite
       // the account's real plan.
       ...(plan === 'free' || plan === 'quest' || plan === 'party' ? { plan } : {}),
@@ -452,8 +475,16 @@ function sanitize(props?: Record<string, unknown>): Record<string, unknown> {
   return out;
 }
 
+/**
+ * The anonymous distinct id: the profile's pre-261031 install id when it has
+ * one, else the device id. Only ever the `alias` argument of alias().
+ */
+function anonymousId(): string {
+  return installId || deviceId;
+}
+
 function distinctId(): string {
-  return signedInUserId ?? (deviceId || installId);
+  return signedInUserId ?? anonymousId();
 }
 
 /**
@@ -525,6 +556,7 @@ export function _resetPreInitForTests(done = false): void {
   signedInUserId = null;
   planTier = null;
   lastPlanSnapshot = null;
+  lastPlanSeq = null;
   checkoutOpenedAt = null;
 }
 
@@ -740,9 +772,14 @@ export function isSignedInAnalytics(): boolean {
 }
 
 /**
- * Attach subsequent events to a signed-in cloud account. Aliases the
- * pre-sign-in anonymous install id into the account so its activity is not
- * orphaned, then identifies. Idempotent-ish (PostHog dedupes aliases).
+ * Attach subsequent events to a signed-in cloud account: alias(userId <-
+ * anonymous id), then identify(userId). The anonymous id's person was never
+ * identified, so PostHog merges it into the account's person whether that
+ * account is new or already has one. A repeat (every restored launch) is a
+ * no-op server-side. An anonymous id this device already merged into
+ * ANOTHER account (a second account signing in on one device) is not aliased
+ * again: that would merge the two accounts' persons (see IDENTITY_FILE). The
+ * device's later signed-out events stay with the first account.
  */
 export function identifyUser(userId: string): void {
   // A snapshot read for this same account before identify (boot restore) keeps.
@@ -753,8 +790,11 @@ export function identifyUser(userId: string): void {
   signedInUserId = userId;
   if (!client || optedOut) return;
   try {
-    if (installId && installId !== userId) {
-      client.alias({ distinctId: userId, alias: installId });
+    const anon = anonymousId();
+    const owner = anon ? mergedInto[anon] : undefined;
+    if (anon && anon !== userId && (owner === undefined || owner === userId)) {
+      client.alias({ distinctId: userId, alias: anon });
+      if (owner === undefined) recordMergedInto(anon, userId);
     }
     client.identify({
       distinctId: userId,
@@ -769,12 +809,9 @@ export function identifyUser(userId: string): void {
   } catch (err) {
     logger.warn(`analytics: identify failed: ${(err as Error).message}`);
   }
-  // 261031: the device's anonymous activity (onboarding before sign-in) joins
-  // the account. Once per device and account.
-  if (deviceId) void aliasOnce(userId, deviceId).catch(() => {});
 }
 
-/** Detach from the signed-in account (sign-out) — revert to the anonymous device id. */
+/** Detach from the signed-in account (sign-out) — revert to the anonymous id. */
 export function resetUser(): void {
   signedInUserId = null;
   planTier = null;
