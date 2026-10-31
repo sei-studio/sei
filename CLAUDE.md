@@ -1888,8 +1888,9 @@ The design and its measurements are committed at
   of threshold tuning across three separate "cannot interrupt her" / "she cuts
   herself off" reports never resolved that conflict, because it is structural:
   energy cannot tell a cough from a word, and a cleared queue cannot be undone.
-  Sustained energy survives only as a slow fallback (`BARGE_CONFIRM_MS`, now
-  1400 ms) for when transcription cannot answer at all. `hasSpokenWord` is
+  Sustained energy survived as a slow fallback (`BARGE_CONFIRM_MS`, 1400 ms)
+  for when transcription cannot answer at all, until 261101 (word-only, see
+  below): nothing but a confirmed word stops her now. `hasSpokenWord` is
   stricter than the finished-utterance junk filter — it runs on 400 ms of audio
   where every engine invents — and it is **scoped to Latin script for the
   repeated-letter rule**, because 等等 is a word and rejecting it would make
@@ -1922,7 +1923,7 @@ The design and its measurements are committed at
   (`learnFalseDuck`), which ends the re-duck-on-resume loop a loud game
   otherwise causes; text judged not an interrupt is never dispatched; an
   utterance open when her clip becomes audible ends at her onset. The energy
-  deadline needs most post-duck frames voiced. `voice_call_ended` gained
+  deadline needed most post-duck frames voiced (261101: it only retracts). `voice_call_ended` gained
   `interrupt_no_voice` / `interrupt_no_word`. Pinned by
   `dictation.bargeEvidence.test.ts` (scene rig: tagged frames, a Whisper-like
   STT mock, her line paused by the duck). Short words (review, same day):
@@ -1976,6 +1977,24 @@ The design and its measurements are committed at
   as voice after the pass, so the immediate path does not apply; a voice bar
   relative to the trigger level reached 2.5 s in the replay but can split a
   player who keeps talking more quietly, and is not in.
+  Word-only (261101, `fix/bargein-word-only`): Shawn would rather have no
+  interrupt than a false one, so nothing but a confirmed word stops her. The
+  two energy commits are gone: the sustained run over the bar
+  (`BARGE_CONFIRM_MS`) and the unanswered-duck deadline's energy verdict.
+  The deadline (`BARGE_SUSPECT_MAX_MS`, or `BARGE_ECHO_WAIT_MAX_MS` once a
+  word is waiting on the echo gate) only retracts the duck; a pass, or a gate
+  answer, that arrives after it with a word the gate clears is delivered as
+  an ordinary turn (`retracted = 'late'`), and that retraction does not
+  teach the bar. Replay (Scribe, paired, 900 ms round trip): identical to
+  the commit before it, because neither energy path ever fired there. At a
+  2.5 s round trip the energy deadline was the whole false-cut problem
+  (about two-thirds of a false cut a minute with nobody talking, all
+  energy), and word-only removes all of them; the cost is that a longer
+  interruption stops her about half as often (the rest reach her as a turn
+  after her line, a few are lost) and short words a little less often.
+  With no cloud pass and no local model there is no barge-in at all. A
+  player who keeps talking through a retraction can re-duck her and have
+  their sentence arrive as two turns.
 - **The echo gate: speakers into the mic (260807).** On speakers at max volume
   the mic hears THREE voices, and two of them used to become "the player".
   Measured across two live Instagram sessions: reel dialogue was transcribed
