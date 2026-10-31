@@ -174,6 +174,17 @@ jobs:
           # beta; a dry run or a manual run stays unbaked, which the app reads
           # as a test build and sends no analytics from.
           if [ "$DRY_RUN" != true ] && [ "$GITHUB_REF_TYPE" = tag ]; then
+            # The app reads a beta bake with a non-beta version (or a stable
+            # bake with a beta version) as 'test' and sends nothing, so a tag
+            # and package.json that disagree fail here, before the build.
+            pkg_version=$(node -p "require('./package.json').version")
+            tag_beta=false; pkg_beta=false
+            case "$GITHUB_REF_NAME" in *-beta.*) tag_beta=true ;; esac
+            case "$pkg_version" in *-beta.*) pkg_beta=true ;; esac
+            if [ "$tag_beta" != "$pkg_beta" ]; then
+              echo "::error::tag $GITHUB_REF_NAME and package.json version $pkg_version disagree on -beta.: this release would send no analytics"
+              exit 1
+            fi
             case "$GITHUB_REF_NAME" in
               *-beta*) export SEI_RELEASE_CHANNEL="sei-channel=beta" ;;
               *-*) export SEI_RELEASE_CHANNEL= ;;
