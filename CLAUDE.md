@@ -1950,9 +1950,32 @@ The design and its measurements are committed at
   and a burst word Scribe was unsure of (`burstWordUnsure`: its least
   confident word's logprob, `minWordLogprob` from main's voiceStt, relayed
   by the proxy as `min_word_logprob`) or in a script the call does not use
-  (`burstWordOffScript`, Latin-script calls only) is no word. Voiced passes
-  are unchanged. Unknown confidence (an older proxy, local Whisper) keeps
-  the old rule.
+  (`burstWordOffScript`) is no word. Voiced passes are unchanged. Unknown
+  confidence (an older proxy, local Whisper) keeps the old rule. The script
+  test (review, same day) drops only Han, kana and Hangul, and only on a
+  Latin-script call: those are the scripts the invented words came in, and
+  the call language is often a guess. It is `burstLanguageFor`:
+  chat_language, else a Chinese UI, else the OS locale's language. The UI
+  is only en/zh, so before the OS step every Japanese, Korean, Russian or
+  Arabic player with no chat_language was judged as English and their
+  short words were dropped.
+  The committed turn (review, same day): a committed barge's utterance is
+  trimmed to where the first confirming pass read from, so the turn she
+  hears never opens with the pre-roll of her own echo ("I found... Hold
+  on"). When the pass came back a word and nothing voiced followed the
+  audio it read, that word is the turn, delivered at the cut (`commitTurn`,
+  a closed barge through `settleDelivery`) and the utterance closed. Over a
+  loud game share the end of speech waited for silence the game does not
+  leave, so a "hold on" used to reach her 4.5 to 7.7 s after it stopped
+  her. A player still talking takes the old path and arrives whole at end
+  of speech; when that long transcript comes back with no word (a game
+  burying the phrase: "Hold on" read as "[footsteps thudding]"), the word
+  that cut her is sent instead. Replay (Scribe, paired): late-turn p90 over
+  games 6.0 -> 5.0 s, no turn with her words, no false cuts, catch rate and
+  STT calls unchanged. Most late turns left are a game loud enough to count
+  as voice after the pass, so the immediate path does not apply; a voice bar
+  relative to the trigger level reached 2.5 s in the replay but can split a
+  player who keeps talking more quietly, and is not in.
 - **The echo gate: speakers into the mic (260807).** On speakers at max volume
   the mic hears THREE voices, and two of them used to become "the player".
   Measured across two live Instagram sessions: reel dialogue was transcribed

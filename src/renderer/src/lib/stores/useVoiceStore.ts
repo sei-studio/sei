@@ -54,7 +54,7 @@ import type { VoiceTtsNoticePush } from '@shared/ipc';
 import { createAudioQueue, type AudioQueue, type TtsStreamHandle } from '../voice/audioQueue';
 import { t, uiLanguage } from '../i18n';
 import { currentResetLine } from '../useResetLine';
-import { cloudPassText, createDictation, type Dictation } from '../voice/dictation';
+import { burstLanguageFor, cloudPassText, createDictation, type Dictation } from '../voice/dictation';
 import type { SttHint } from '../voice/sttArbiter';
 import {
   companionAudioGapMs,
@@ -1926,7 +1926,11 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       try {
         dictation = await createDictation({
           language: chatLanguage,
-          burstLanguage: callCfg?.chat_language ?? (callCfg?.ui_language === 'zh' ? 'zh' : 'en'),
+          burstLanguage: burstLanguageFor(
+            callCfg?.chat_language,
+            callCfg?.ui_language,
+            typeof navigator !== 'undefined' ? navigator.language : undefined,
+          ),
           // Output path settled — safe to schedule the ring (see ringNow).
           onMicReady: () => {
             window.clearTimeout(ringFallback);

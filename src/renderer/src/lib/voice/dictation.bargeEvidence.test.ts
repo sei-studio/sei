@@ -21,6 +21,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   bargeVoiceBar,
+  burstLanguageFor,
   burstWordOffScript,
   burstWordUnsure,
   cloudPassText,
@@ -214,6 +215,8 @@ interface SceneOpts {
   stt?: (audio: Float32Array) => SttAnswer;
   /** The conversation language (createDictation's `language`). */
   language?: string;
+  /** createDictation's `burstLanguage` (what the voice store derives). */
+  burstLanguage?: string;
   /** Runs after each frame is fed (mute toggles and the like). */
   onFrame?: (i: number, d: { setMuted(m: boolean): void }) => void;
   /** Share of her echo still in the frame after the duck (the queue's 60 ms
@@ -230,6 +233,9 @@ interface SceneResult {
   cuts: number;
   aborts: BargeAbortReason[];
   utterances: string[];
+  /** The frame each utterance was delivered on, and each cut fired on. */
+  utteranceAt: number[];
+  cutAt: number[];
   sttCalls: number;
   /** STT calls made between each duck and the end of its decision. */
   callsPerDuck: number[];
@@ -248,6 +254,8 @@ async function runScene(o: SceneOpts): Promise<SceneResult> {
     cuts: 0,
     aborts: [],
     utterances: [],
+    utteranceAt: [],
+    cutAt: [],
     sttCalls: 0,
     callsPerDuck: [],
     sttAudio: [],
@@ -269,6 +277,7 @@ async function runScene(o: SceneOpts): Promise<SceneResult> {
   const dictation = await createDictation({
     localModel: 'none',
     language: o.language,
+    burstLanguage: o.burstLanguage,
     cloudTranscribe: (audio, hint) => {
       if (process.env.DEBUG_SCENE) process.stderr.write(`#${frameNo} stt ${JSON.stringify(tagsIn(audio))} n=${audio.length / FRAME}\n`);
       res.sttCalls += 1;
@@ -283,6 +292,7 @@ async function runScene(o: SceneOpts): Promise<SceneResult> {
     },
     onUtterance: (text) => {
       res.utterances.push(text);
+      res.utteranceAt.push(frameNo);
     },
     onStatus: () => {},
     onBargeSuspect: () => {
@@ -301,6 +311,7 @@ async function runScene(o: SceneOpts): Promise<SceneResult> {
     },
     onBargeIn: () => {
       res.cuts += 1;
+      res.cutAt.push(frameNo);
       closeDuck();
       paused = false;
       lineLeft = 0; // queue.clear(): her line is gone
@@ -824,14 +835,142 @@ describe('burst word helpers (261101)', () => {
     expect(cloudPassText({ text: 'No' }, { burst: true })).toBe('No');
   });
 
-  it('burstWordOffScript: no Latin letter on a Latin-script call', () => {
+  it('burstWordOffScript: Han, kana or Hangul with no Latin letter on a Latin-script call', () => {
     expect(burstWordOffScript('你好', undefined)).toBe(true);
     expect(burstWordOffScript('いいの', 'en')).toBe(true);
     expect(burstWordOffScript('听吗？', 'fr')).toBe(true);
+    expect(burstWordOffScript('잠깐', 'en')).toBe(true);
     expect(burstWordOffScript('Stop', 'en')).toBe(false);
     expect(burstWordOffScript('¡Para!', 'es')).toBe(false);
     expect(burstWordOffScript('等等', 'zh')).toBe(false);
     expect(burstWordOffScript('stop', 'ja')).toBe(false);
+    expect(burstWordOffScript('待って', 'ja')).toBe(false);
+    // Other scripts are kept even when the call looks English: the call
+    // language can be a guess, and Scribe's invented words were never these.
+    expect(burstWordOffScript('стоп', 'en')).toBe(false);
+    expect(burstWordOffScript('стоп', 'ru')).toBe(false);
+    expect(burstWordOffScript('قف', 'en')).toBe(false);
+  });
+
+  it('burstLanguageFor: chat_language, then a Chinese UI, then the OS locale', () => {
+    expect(burstLanguageFor('fr', 'zh', 'ja-JP')).toBe('fr');
+    expect(burstLanguageFor(undefined, 'zh', 'en-US')).toBe('zh');
+    expect(burstLanguageFor(undefined, 'en', 'ja-JP')).toBe('ja');
+    expect(burstLanguageFor(undefined, 'en', 'ko')).toBe('ko');
+    expect(burstLanguageFor(undefined, 'en', 'RU-ru')).toBe('ru');
+    expect(burstLanguageFor(undefined, 'en', 'en-GB')).toBe('en');
+    expect(burstLanguageFor(undefined, undefined, '')).toBe('en');
+    expect(burstLanguageFor(undefined, undefined, undefined)).toBe('en');
+  });
+});
+
+describe('burst words in the player\'s own language (261101 review)', () => {
+  // A two-frame word after her grace window: a burst, judged by script.
+  const quietBurst = (word: string) => ({
+    share: false,
+    room: () => QUIET,
+    echo: 0.01,
+    lineFrames: 80,
+    gapFrames: 300,
+    totalFrames: 140,
+    player: (i: number) => (i === 40 || i === 41 ? VOICE : 0),
+    stt: scribeLike(word),
+  });
+
+  it('a Japanese player with no chat_language yet: "待って" cuts her and reaches her', async () => {
+    const r = await runScene({ ...quietBurst('待って'), burstLanguage: burstLanguageFor(undefined, 'en', 'ja-JP') });
+    expect(r.cuts).toBe(1);
+    expect(r.utterances).toEqual(['待って']);
+  });
+
+  it('a Russian player: "стоп" cuts her, on a Russian call or one judged English', async () => {
+    for (const lang of [burstLanguageFor(undefined, 'en', 'ru-RU'), 'en']) {
+      const r = await runScene({ ...quietBurst('стоп'), burstLanguage: lang });
+      expect(r.cuts, lang).toBe(1);
+      expect(r.utterances, lang).toEqual(['стоп']);
+    }
+  });
+
+  it('on an English call an echo burst that came back as "你好" is still no word', async () => {
+    const r = await runScene({
+      share: false,
+      room: () => QUIET,
+      echo: (i: number) => (i % 23 === 0 || i % 23 === 1 ? 0.16 : 0.08),
+      duckTail: 0.7,
+      lineFrames: 60,
+      gapFrames: 25,
+      totalFrames: 600,
+      burstLanguage: burstLanguageFor(undefined, 'en', 'en-US'),
+      stt: scribeLike('stop', { invent: '你好', sure: false }),
+    });
+    expect(r.sttCalls).toBeGreaterThan(0);
+    expect(r.cuts).toBe(0);
+    expect(r.utterances).toEqual([]);
+  });
+});
+
+describe('the turn a barge commits (261101 review)', () => {
+  // A share whose game keeps the mic over the end-of-speech level but under
+  // the voice bar after the player's word, for five seconds: the shape that
+  // held "hold on" back 4.5 to 7.7 s in the replay, because the utterance
+  // only ended when the game went quiet.
+  const busyGame = (from: number) => (i: number) => (i >= from && i < from + 40 ? 0.012 + 0.004 * (i % 3) / 2 : QUIET);
+
+  it('"hold on" over a loud game is delivered within a second of the cut, once', async () => {
+    const r = await runScene({
+      share: true,
+      room: busyGame(43),
+      echo: 0.01,
+      lineFrames: 80,
+      gapFrames: 300,
+      totalFrames: 140,
+      player: (i) => (i >= 40 && i < 43 ? VOICE : 0),
+      stt: shortWordLike('hold on'),
+    });
+    expect(r.cuts).toBe(1);
+    expect(r.utterances).toEqual(['hold on']);
+    expect(r.utteranceAt[0] - r.cutAt[0]).toBeLessThanOrEqual(Math.ceil(1000 / FRAME_MS));
+    // Nothing after it transcribed her or the player a second time.
+    expect(r.sttAudio.slice(1).every((t) => t.player === 0)).toBe(true);
+  });
+
+  it('"wait, go get the iron first" arrives whole when the player keeps talking, without her pre-roll', async () => {
+    const said = 'wait, go get the iron first';
+    const r = await runScene({
+      share: true,
+      room: busyGame(60),
+      echo: 0.01,
+      lineFrames: 80,
+      gapFrames: 300,
+      totalFrames: 160,
+      player: (i) => (i >= 40 && i < 60 ? VOICE * (i % 4 === 3 ? 0.6 : 1) : 0),
+      stt: whisperLike(said),
+    });
+    expect(r.cuts).toBe(1);
+    expect(r.utterances).toEqual([said]);
+    // The transcription that became her turn held none of her echo: the
+    // utterance was trimmed to where the confirming pass read from.
+    const last = r.sttAudio[r.sttAudio.length - 1];
+    expect(last.player).toBeGreaterThanOrEqual(10);
+    expect(last.echo).toBe(0);
+  });
+
+  it('when the whole utterance comes back with no word, the word that cut her is sent, once', async () => {
+    // The game buries the phrase in seconds of its own sound: the pass heard
+    // "hold on", the long transcript only the game.
+    const r = await runScene({
+      share: true,
+      room: busyGame(60),
+      echo: 0.01,
+      lineFrames: 80,
+      gapFrames: 300,
+      totalFrames: 160,
+      player: (i) => (i >= 40 && i < 60 ? VOICE : 0),
+      stt: (audio) => (audio.length / FRAME <= 6 ? 'hold on' : ''),
+    });
+    expect(r.cuts).toBe(1);
+    expect(r.sttCalls).toBe(2);
+    expect(r.utterances).toEqual(['hold on']);
   });
 });
 

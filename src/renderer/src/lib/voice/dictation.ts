@@ -491,16 +491,38 @@ export function cloudPassText(res: { text: string; minWordLogprob?: number }, hi
 const LATIN_LANGUAGES = new Set(['en', 'fr', 'es']);
 
 /**
+ * The language a call's burst words are judged against (261101). chat_language
+ * when the player set one; otherwise the UI's Chinese, else the OS locale's
+ * language. The UI is only en/zh, so without the OS step a Japanese, Korean,
+ * Russian or Arabic speaker with no chat_language read as an English call.
+ */
+export function burstLanguageFor(
+  chatLanguage: string | undefined,
+  uiLanguage: string | undefined,
+  osLocale: string | undefined,
+): string {
+  if (chatLanguage) return chatLanguage;
+  if (uiLanguage === 'zh') return 'zh';
+  const os = (osLocale ?? '').split('-')[0].toLowerCase();
+  return os || 'en';
+}
+
+/**
  * A burst word in a script the conversation does not use (261101): on an
  * English call a trigger frame of her echo came back from Scribe as "你好"
  * or "いいの", because Scribe guesses the language of each clip and a few
- * hundred ms of a syllable is anything. A player who stops her on an English
- * call says it in Latin letters. Only Latin-script conversations are judged:
- * code-switching into English on a Chinese call is ordinary.
+ * hundred ms of a syllable is anything. Only Latin-script conversations are
+ * judged (code-switching into English on a Chinese call is ordinary), and
+ * only Han, kana and Hangul are dropped: those are the scripts the invented
+ * words came back in. The call language can be a guess (chat_language unset
+ * falls back to the OS locale), so a Russian "стоп" or a Greek word on a call
+ * that looks English is kept; a short real word is worth more than one rare
+ * invented one.
  */
+const CJK_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
 export function burstWordOffScript(text: string, language: string | undefined): boolean {
   if (!LATIN_LANGUAGES.has(language ?? 'en')) return false;
-  return !/\p{Script=Latin}/u.test(text);
+  return CJK_SCRIPT.test(text) && !/\p{Script=Latin}/u.test(text);
 }
 
 /**
@@ -604,9 +626,10 @@ export async function createDictation(opts: {
    * multilingual model with that decode language pinned (whisperWorker.ts). */
   language?: string;
   /** 261101: the language a barge BURST word is expected in
-   * (burstWordOffScript). Defaults to `language`. The voice store passes the
-   * UI language when no conversation language has been detected yet, so a
-   * Chinese UI with no voice history is not judged as English. */
+   * (burstWordOffScript). Defaults to `language`. The voice store passes
+   * burstLanguageFor(chat_language, UI language, OS locale), so a player with
+   * no conversation language yet is judged by their OS language, not as
+   * English. */
   burstLanguage?: string;
   /** 260724: cloud STT (ElevenLabs Scribe via main). When present, every
    * utterance races this against the local worker (see sttArbiter.ts —
@@ -878,6 +901,12 @@ export async function createDictation(opts: {
      *  the energy deadline gave up on the pass, so its answer is still owed to
      *  the player as an ordinary turn (see settleDelivery). */
     retracted?: 'late' | 'cancelled';
+    /** Where the FIRST pass read from (a second pass moves askFrom on). A
+     *  committed barge's utterance is trimmed to it (commitTurn). */
+    firstAskFrom?: number;
+    /** The latest pass's window and contour, for delivering its answer as
+     *  the player's turn the moment the barge commits. */
+    passWindow?: { t0: number; t1: number; env: EnvSample[] };
   };
   /** Running length over the lower DUCK bar, which is what opens stage one. */
   let duckRunMs = 0;
@@ -893,6 +922,9 @@ export async function createDictation(opts: {
    *  (BARGE_ECHO_WAIT_MAX_MS from the flush): past it the duck is retracted
    *  and the transcript, when it comes, is an ordinary utterance. */
   type BargeVerdict = { voiced: boolean; open: boolean; since: number; trig: number };
+  /** A committed barge whose player kept talking: the word its pass read,
+   *  held for that utterance's flush (commitTurn, orCommitted). */
+  let committedWord: string | null = null;
   let flushedBarge: BargeVerdict | null = null;
   /** EMA of the echo residue reaching the mic while companion audio plays —
    * the basis of the adaptive barge bar (see BARGE_RESIDUE_FACTOR). Carries
@@ -1008,6 +1040,7 @@ export async function createDictation(opts: {
   }
 
   function resetUtterance(): void {
+    committedWord = null;
     inSpeech = false;
     silenceMs = 0;
     speechMs = 0;
@@ -1045,6 +1078,7 @@ export async function createDictation(opts: {
     t1: number,
     env: EnvSample[],
     barge: BargeVerdict | null,
+    echoCleared = false,
   ): void {
     const finish = (echo: boolean): void => {
       // A barge whose wait ran out (or whose duck a newer barge took over) is
@@ -1088,7 +1122,10 @@ export async function createDictation(opts: {
       opts.onUtterance(text, { t0, t1 });
     };
     const check = opts.echoCheck;
-    if (!check || !text) {
+    // echoCleared: the echo gate already judged this exact text and window
+    // (a committed barge's confirming pass), so asking again would only add
+    // its screen-STT wait in front of the player's turn.
+    if (!check || !text || echoCleared) {
       finish(false);
       return;
     }
@@ -1119,7 +1156,9 @@ export async function createDictation(opts: {
     const t1 = Date.now();
     const t0 = t1 - speechMsOf(frames) - 150;
     const env = envWindow(t0, t1);
-    const deliver = (text: string): void => settleDelivery(text, t0, t1, env, barge);
+    const fallback = s ? null : committedWord;
+    committedWord = null;
+    const deliver = (text: string): void => settleDelivery(orCommitted(text, fallback), t0, t1, env, barge);
     inSpeech = false;
     silenceMs = 0;
     speechMs = 0;
@@ -1130,6 +1169,8 @@ export async function createDictation(opts: {
         pendingEager.cancelled = true;
         inflight.delete(pendingEager.id);
       }
+      // A committed barge's word still reaches her (see commitTurn).
+      if (fallback) deliver('');
       // Too short to be a word at all, so it was a transient: un-duck.
       if (barge && s) {
         barge.open = false;
@@ -1164,6 +1205,65 @@ export async function createDictation(opts: {
       return;
     }
     postTranscribe(frames, deliver);
+  }
+
+  /**
+   * A barge just committed: what happens to the utterance it opened (261101).
+   *
+   * Before this the utterance simply ran on to its end of speech and was then
+   * transcribed whole, pre-roll included. Two things were wrong with that.
+   * The pre-roll is her own echo from before the duck, so the turn could open
+   * with her words ("I found... Hold on"). And over a loud game share the end
+   * of speech waits for silence the game does not leave, so a two-word "hold
+   * on" reached her 4.5 to 7.7 s after it had already stopped her.
+   *
+   * So the utterance is trimmed to where the first confirming pass read from
+   * (the frame after the trigger, or the trigger itself for a burst). Trimming
+   * to the trigger frame for every duck was tried and is worse: that frame
+   * still carries her echo, and in the replay "Hey, I... Stop it" was then
+   * condemned whole by the echo gate. When the pass's answer
+   * is a word and nothing voiced has followed the audio it read, that answer
+   * IS the turn: it is delivered now, as a closed barge through
+   * settleDelivery, and the utterance is closed. A player who is still
+   * talking (voiced frames after the pass) keeps today's path, so a long
+   * "wait, go get the iron first" arrives whole at its end of speech, and the
+   * pass's word stands in if that transcript comes back with none.
+   *
+   * `echoCleared`: the echo gate already passed this text (or there is no
+   * gate). A commit decided another way (the energy deadline while the gate
+   * was still out, a gate that threw) has its text judged again on delivery.
+   */
+  function commitTurn(s: Suspect, echoCleared: boolean): void {
+    const from = s.firstAskFrom ?? s.askFrom;
+    if (from > 0) {
+      utterance = utterance.slice(from);
+      speechMs = speechMsOf(utterance);
+    }
+    const text = s.passText;
+    const w = s.passWindow;
+    if (text === undefined || !w || !isBargeWord(text)) return;
+    if (s.voicedSinceAsk > 0) {
+      // Still talking: the whole utterance is the turn. Its transcript can
+      // come back with no word when a game buries a short phrase in seconds
+      // of its own sound (the replay: "Hold on" read as "[footsteps]"), and
+      // she has already stopped for that word, so it stands in.
+      if (echoCleared) committedWord = text;
+      return;
+    }
+    // The pass has answered, so neither its waiter nor a late retraction can
+    // deliver it again (both are reached only while it is still out), and the
+    // utterance is closed here so no flush transcribes the same words twice.
+    s.passWaiter = undefined;
+    resetUtterance();
+    settleDelivery(text, w.t0, w.t1, w.env, { voiced: true, open: false, since: s.since, trig: s.trig }, echoCleared);
+  }
+
+  /** The final transcript of a committed barge's utterance, or the word that
+   *  committed it when that transcript has no word (see commitTurn). */
+  function orCommitted(text: string, word: string | null): string {
+    if (word === null || isBargeWord(text)) return text;
+    console.log(`[sei/voice] barge: utterance came back with no word, sending the word that cut her — "${word.slice(0, 40)}"`);
+    return word;
   }
 
   /** What settleDelivery needs to know about a still-open barge. */
@@ -1208,12 +1308,13 @@ export async function createDictation(opts: {
   function confirmBarge(rms: number): void {
     const s = suspect;
     if (!s) return;
-    const settle = (real: boolean, why: BargeAbortReason = 'no_word'): void => {
+    const settle = (real: boolean, why: BargeAbortReason = 'no_word', echoCleared = false): void => {
       if (suspect !== s) return; // superseded (utterance ended, mute, teardown)
       suspect = null;
       if (real) {
         holdBarged = true;
         opts.onBargeIn?.();
+        commitTurn(s, echoCleared);
         return;
       }
       // Not speech. Retract the duck and go back to listening under hold — the
@@ -1284,12 +1385,14 @@ export async function createDictation(opts: {
     const shortWord = s.voiced < VOICE_MIN_FRAMES;
     if (shortWord ? counted < VOICE_WINDOW_FRAMES : speechMsOf(heard) < BARGE_WORD_MS) return;
     s.asked = true;
+    s.firstAskFrom ??= s.askFrom;
     s.askEnd = utterance.length;
     s.voicedSinceAsk = 0;
     s.passText = undefined;
     const t1 = Date.now();
     const t0 = t1 - speechMsOf(heard) - 150;
     const env = envWindow(t0, t1);
+    s.passWindow = { t0, t1, env };
     // Copied, because the utterance keeps growing while this runs and the
     // arbiter transfers what it is given.
     postTranscribe(
@@ -1335,12 +1438,12 @@ export async function createDictation(opts: {
         // suspect guard handles the answer arriving stale.
         const check = opts.echoCheck;
         if (!check) {
-          settle(true);
+          settle(true, 'no_word', true);
           return;
         }
         s.answered = true;
         void Promise.resolve(check({ text, t0, t1, envelope: env, purpose: 'barge' })).then(
-          (echo) => settle(!echo, 'echo'),
+          (echo) => settle(!echo, 'echo', true),
           () => settle(true),
         );
       },
@@ -1560,9 +1663,10 @@ export async function createDictation(opts: {
             // is taken over BEFORE resetUtterance so its abort doesn't un-duck
             // a genuine interruption first.
             const barge = bargeOf(suspect);
+            const fallback = suspect ? null : committedWord;
             suspect = null;
             resetUtterance();
-            settleDelivery(text, t0, t1, env, barge);
+            settleDelivery(orCommitted(text, fallback), t0, t1, env, barge);
           }
         });
         eager = e;
