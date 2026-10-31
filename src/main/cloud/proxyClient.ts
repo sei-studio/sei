@@ -166,6 +166,13 @@ export async function creditsGet(): Promise<CreditsStatus> {
   const allowanceUsedMicro = toMicroOrNull(row.allowance_used_micro);
   const tier: PlanTier =
     row.plan === 'quest' || row.plan === 'party' ? row.plan : 'free';
+  // 261031 (T278): the `plan` analytics property and checkout_completed
+  // (a tier or top-up change since the last snapshot). Fire-and-forget.
+  const extraTotal = toCount(row.extra_credits_total);
+  void import('../lazyAnalytics')
+    .then(({ loadAnalytics }) => loadAnalytics())
+    .then((a) => a.notePlanSnapshot(session.userId, tier, extraTotal))
+    .catch(() => {});
 
   return {
     plan: tier,

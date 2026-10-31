@@ -169,6 +169,20 @@ jobs:
           # builder's CI default publishes on a tag or onto an existing draft).
           if [ "$DRY_RUN" = true ]; then extra+=( --publish never ); fi
 
+          # 261031 (T278): bake the release channel (electron.vite.config.ts,
+          # src/main/analyticsContext.ts). Only a real tag build is stable or
+          # beta; a dry run or a manual run stays unbaked, which the app reads
+          # as a test build and sends no analytics from.
+          if [ "$DRY_RUN" != true ] && [ "$GITHUB_REF_TYPE" = tag ]; then
+            case "$GITHUB_REF_NAME" in
+              *-beta*) export SEI_RELEASE_CHANNEL="sei-channel=beta" ;;
+              *-*) export SEI_RELEASE_CHANNEL= ;;
+              *) export SEI_RELEASE_CHANNEL="sei-channel=stable" ;;
+            esac
+          else
+            export SEI_RELEASE_CHANNEL=
+          fi
+
           npm run ${{ matrix.build_cmd }} -- "${extra[@]}"
 
           if [ -n "$SEI_WIN_PUBLISHER" ]; then
@@ -179,6 +193,16 @@ jobs:
               exit 1
             fi
             echo "Velopack signature check baked in for publisher '$SEI_WIN_PUBLISHER'"
+          fi
+
+          if [ -n "$SEI_RELEASE_CHANNEL" ]; then
+            # A release whose bundle lacks the channel would send no analytics
+            # at all: fail it here rather than find out from an empty dashboard.
+            if ! grep -rqF -- "$SEI_RELEASE_CHANNEL" dist/main; then
+              echo "::error::SEI_RELEASE_CHANNEL '$SEI_RELEASE_CHANNEL' is not in dist/main: this release would send no analytics"
+              exit 1
+            fi
+            echo "Release channel baked in: $SEI_RELEASE_CHANNEL"
           fi
 
       - name: Build game packs

@@ -7,12 +7,19 @@
  * pre-init gating first, then initAnalytics with a mocked PostHog client.
  */
 import { describe, it, expect, vi } from 'vitest';
+// 261031: tests run unpackaged (channel 'dev'), which sends nothing unless
+// SEI_ANALYTICS_DEV is set (analyticsContext.ts send gate).
+vi.hoisted(() => {
+  process.env.SEI_ANALYTICS_DEV = '1';
+});
 
 const { captureSpy } = vi.hoisted(() => ({ captureSpy: vi.fn() }));
 
 vi.mock('electron', () => ({
   app: { getVersion: () => '9.9.9' },
 }));
+// 261031: anonymous events go out under the hashed device id.
+vi.mock('./auth/deviceId', () => ({ getDeviceId: async () => 'device-raw-0000' }));
 vi.mock('posthog-node', () => ({
   PostHog: class {
     capture = captureSpy;
@@ -41,6 +48,7 @@ import {
   identifyUser,
   resetUser,
 } from './analytics';
+import { analyticsDeviceId } from './analyticsContext';
 
 describe('sanitizeDiagnostic (pure)', () => {
   it('lets allowlisted long-text keys through up to 2KB, tails keep the END', () => {
@@ -111,7 +119,7 @@ describe('captureDiagnostic gating + capture', () => {
       properties: Record<string, unknown>;
     };
     expect(arg.event).toBe('summon_failed');
-    expect(arg.distinctId).toBe('install-0000');
+    expect(arg.distinctId).toBe(analyticsDeviceId('device-raw-0000'));
     expect(arg.properties.client).toBe('desktop-app');
     expect(arg.properties.error_class).toBe('BOT_CRASH');
     expect(arg.properties.stderr_tail).toBe(tail); // NOT truncated to 200

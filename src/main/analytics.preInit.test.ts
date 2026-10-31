@@ -5,6 +5,11 @@
  * property before onboarding and `app_quit.last_surface`.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+// 261031: tests run unpackaged (channel 'dev'), which sends nothing unless
+// SEI_ANALYTICS_DEV is set (analyticsContext.ts send gate).
+vi.hoisted(() => {
+  process.env.SEI_ANALYTICS_DEV = '1';
+});
 
 const { captureSpy, cfg } = vi.hoisted(() => ({
   captureSpy: vi.fn(),
