@@ -153,7 +153,7 @@ describe('redact — provider keys and tokens (261031)', () => {
   });
 
   it('leaves token counts and unrelated words alone', () => {
-    const line = '[sei/llm] usage input_tokens=1234 output_tokens: 56 max_tokens=1024 tokens=99 monkey=3 task-runner-sk-1';
+    const line = '[sei/llm] usage input_tokens=1234 output_tokens: 56 max_tokens=1024 tokens=99 monkey=3 task-queue-sk-1';
     expect(redact(line)).toBe(line);
   });
 });
