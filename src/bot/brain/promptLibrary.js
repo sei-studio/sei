@@ -978,6 +978,18 @@ export const NUDGES = {
     return `While it ran, the player said ${quoted.slice(0, -1).join(', ')} and then ${quoted[quoted.length - 1]}, and you answered without starting anything. If one of them asked you to do something you have not started, start it now, before your own plan.`
   },
 
+  // 261031 (quality pass 32): the completion turn of a walk that reached the
+  // player, when lines she acted on are still open (orchestrator
+  // arrivalAskText). Without it the arrival turn carried only "reached Alex"
+  // and the newest order, and 9 of 24 errands sessions that never handed the
+  // coal over had her standing next to the player with it in her bag.
+  arrivedAsks: ({ who, lines }) => {
+    const list = (Array.isArray(lines) ? lines : [lines]).map((l) => `"${clipNote(l, 120)}"`).filter((l) => l !== '""')
+    const name = who || 'the player'
+    const asked = list.length <= 1 ? `they asked you ${list[0] ?? ''}` : `they asked you ${list.slice(0, -1).join(', ')} and then ${list[list.length - 1]}`
+    return `You are next to ${name} now. Since you last handed them anything, ${asked}. If one of those asks is for something you are carrying, hand it over with give now, unless they called it off since.`
+  },
+
   // 261018 (quality pass 15): the line the snapshot carries after she
   // stopped (stop or unfollow, nothing new started) in answer to a player
   // line. She decides from their words whether it was a request to stay; the
