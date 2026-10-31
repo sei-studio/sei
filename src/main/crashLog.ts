@@ -103,20 +103,32 @@ export function appendCrashLog(dir: string, entry: CrashEntry, maxBytes: number 
   }
 }
 
-/** Normalize an error into name / message / stack strings. */
+/**
+ * Raw error text kept before scrubbing. redact() and the fingerprint run
+ * synchronously inside the process error handlers, so a rejection carrying a
+ * multi-megabyte message (a response body, a stringified object) must not
+ * cost the main thread a full regex pass over all of it. Twice the entry cap.
+ */
+export const ERROR_TEXT_MAX_CHARS = 2 * CRASH_ENTRY_MAX_CHARS;
+
+function capText(s: string): string {
+  return s.length > ERROR_TEXT_MAX_CHARS ? s.slice(0, ERROR_TEXT_MAX_CHARS) : s;
+}
+
+/** Normalize an error into name / message / stack strings, each bounded to ERROR_TEXT_MAX_CHARS. */
 export function errorParts(err: unknown): { name: string; message: string; stack: string } {
   if (err instanceof Error) {
-    return { name: err.name || 'Error', message: String(err.message ?? ''), stack: String(err.stack ?? '') };
+    return { name: err.name || 'Error', message: capText(String(err.message ?? '')), stack: capText(String(err.stack ?? '')) };
   }
   if (err && typeof err === 'object') {
     const o = err as { name?: unknown; message?: unknown; stack?: unknown };
     return {
       name: typeof o.name === 'string' ? o.name : 'NonError',
-      message: typeof o.message === 'string' ? o.message : safeString(err),
-      stack: typeof o.stack === 'string' ? o.stack : '',
+      message: capText(typeof o.message === 'string' ? o.message : safeString(err)),
+      stack: capText(typeof o.stack === 'string' ? o.stack : ''),
     };
   }
-  return { name: typeof err === 'string' ? 'StringError' : 'NonError', message: safeString(err), stack: '' };
+  return { name: typeof err === 'string' ? 'StringError' : 'NonError', message: capText(safeString(err)), stack: '' };
 }
 
 function safeString(v: unknown): string {

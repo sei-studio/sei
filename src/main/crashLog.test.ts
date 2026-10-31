@@ -7,6 +7,7 @@ import {
   CRASH_ENTRY_MAX_CHARS,
   CRASH_LOG_FILE,
   CRASH_LOG_ROTATED,
+  ERROR_TEXT_MAX_CHARS,
   appendCrashLog,
   cleanErrorName,
   errorParts,
@@ -72,6 +73,17 @@ describe('error helpers', () => {
     const circular: Record<string, unknown> = {};
     circular.self = circular;
     expect(() => errorParts(circular)).not.toThrow();
+  });
+
+  it('errorParts bounds huge messages and stacks before anything scrubs them', () => {
+    const huge = 'x'.repeat(5_000_000);
+    const e = new Error(huge);
+    e.stack = `Error: ${huge}`;
+    const parts = errorParts(e);
+    expect(parts.message.length).toBe(ERROR_TEXT_MAX_CHARS);
+    expect(parts.stack.length).toBe(ERROR_TEXT_MAX_CHARS);
+    expect(errorParts(huge).message.length).toBe(ERROR_TEXT_MAX_CHARS);
+    expect(errorParts({ blob: huge }).message.length).toBe(ERROR_TEXT_MAX_CHARS);
   });
 
   it('cleanErrorName only passes identifiers', () => {

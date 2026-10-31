@@ -90,9 +90,10 @@ export function readPreviousSession(file: string): PreviousSession {
 
 export function writeMarker(file: string, marker: SessionMarker): boolean {
   const tmp = path.join(path.dirname(file), `.${path.basename(file)}.tmp.${process.pid}`);
+  const body = JSON.stringify(marker);
   try {
     mkdirSync(path.dirname(file), { recursive: true });
-    writeFileSync(tmp, JSON.stringify(marker), 'utf8');
+    writeFileSync(tmp, body, 'utf8');
     renameSync(tmp, file);
     return true;
   } catch {
@@ -101,7 +102,16 @@ export function writeMarker(file: string, marker: SessionMarker): boolean {
     } catch {
       /* ignore */
     }
-    return false;
+    // On Windows a rename over a file an antivirus or indexer has open fails
+    // with EPERM/EBUSY. A lost `closed` write would read as a crash next
+    // launch, so write in place instead: a write torn by dying right here
+    // parses as 'none', never as 'unclean'.
+    try {
+      writeFileSync(file, body, 'utf8');
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 
