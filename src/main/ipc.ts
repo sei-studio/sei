@@ -2806,10 +2806,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         bytes = Buffer.from(await res.arrayBuffer());
       } else if (ref.includes('/')) {
         // Bundled default portrait ('./img/x.png'): the file ships with the
-        // renderer build (out/renderer when packaged, public/ in dev).
+        // renderer build (dist/renderer when packaged, public/ in dev).
         const rel = ref.replace(/^\.\//, '');
         const base = app.isPackaged
-          ? path.join(app.getAppPath(), 'out', 'renderer')
+          ? path.join(app.getAppPath(), 'dist', 'renderer')
           : path.join(app.getAppPath(), 'src', 'renderer', 'public');
         bytes = await readFile(path.join(base, rel));
       } else {
