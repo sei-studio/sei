@@ -196,7 +196,8 @@ async function runScopeSwitch(userId: string | null, restored: boolean): Promise
         const { fetchMyProfileName } = await import('../cloud/cloudCharacterClient');
         // 261029: bounded. It reads the session first (a token refresh
         // offline), and a hung move holds every switch queued behind it.
-        const cloudName = await withinStepTimeout('cloud name backfill', fetchMyProfileName(), null);
+        // T283 review: only this account's name (the session may be another's).
+        const cloudName = await withinStepTimeout('cloud name backfill', fetchMyProfileName(nextScope), null);
         if (cloudName) {
           await updateConfig((cur) =>
             (cur.preferred_name ?? '').trim() ? cur : { ...cur, preferred_name: cloudName },
