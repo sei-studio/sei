@@ -42,6 +42,7 @@ import {
   updaterWindow,
 } from './bootContext';
 import { safeModeForced, type SafeModeReason } from './bootGuard';
+import { noteLaunch } from './firstLaunch';
 import { flushUpdatePushes, initUpdater } from './updater';
 import { applyPendingAtLaunch } from './velopackUpdater';
 import { openSafeModeWindow, safeModeWindow } from './safeMode/safeModeWindow';
@@ -114,8 +115,13 @@ async function start(): Promise<void> {
     return;
   }
 
-  // Normal mode. The updater goes first on ready; the app's own ready handler
-  // (registered by the import below) runs after it.
+  // Normal mode. Classify the install first (firstLaunch.ts probes userData
+  // for older Sei state, and the early updater's what's-new check writes
+  // update-state.json, one of the probed files). bootstrap() calls it again
+  // and gets the same answer. Never throws.
+  noteLaunch(app.getPath('userData'), app.getVersion());
+  // The updater goes first on ready; the app's own ready handler (registered
+  // by the import below) runs after it.
   void app.whenReady().then(() => {
     try {
       initUpdater({
