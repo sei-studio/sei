@@ -53,6 +53,9 @@ export const PRIOR_STATE_ENTRIES: readonly string[] = [
   'device-id.json',              // trial-claim device id
   'migration-uuid-rename.json',  // slug→UUID migration marker
   'notices.json',                // notices inbox state
+  // NOT session.json (crashReporting's session marker) or logs/: they are
+  // written at whenReady, BEFORE noteLaunch, on a fresh install too, so
+  // listing them would turn every fresh install into an 'upgrade'.
 ];
 
 export type LaunchKind = 'fresh' | 'upgrade' | 'seen' | 'unrecorded';

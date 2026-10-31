@@ -33,6 +33,7 @@ import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { registerFacepackIpc } from './facepack/facepackIpc';
 import { isAnalyticsActive, shutdownAnalytics, capture, captureAppQuit, noteSurface } from './analytics';
 import { reportOnboardingAbandoned } from './onboardingFunnel';
+import { initCrashReporting, appOpenedCrashProps } from './crashReporting';
 import { notePreGateFailure, clearSummonBlock, clearSummonBlocksOfClass } from './summonGuard';
 import { createBotSupervisor, SUMMON_CANCELLED } from './botSupervisor';
 import { registerGameModule, getGameModule, listGameModules } from './games';
@@ -1481,7 +1482,8 @@ async function bootstrap(): Promise<void> {
     if (takeInstallerFirstLaunch()) {
       capture('installer_first_launch', installerFirstLaunchProps(currentFirstLaunchEnv()));
     }
-    capture('app_opened');
+    // prev_exit / prev_version: how the previous session ended (crashReporting.ts).
+    capture('app_opened', appOpenedCrashProps());
   } catch (err) {
     logger.warn(`analytics init failed: ${(err as Error).message}`);
   }
@@ -1580,6 +1582,11 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
+    // 261031 (T278): crash, hang and unclean-exit reporting. First, so the
+    // session marker and the handlers cover everything after it. Synchronous,
+    // never throws. See crashReporting.ts.
+    initCrashReporting();
+
     // If a prior version's "Move to Applications" prompt moved us here from
     // ~/Downloads, trash the leftover copy now that we're running from
     // /Applications. The prompt itself was retired when the macOS download
