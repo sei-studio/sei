@@ -120,8 +120,8 @@ const PRE_ROLL_FRAMES = 3;
 // raised voice held above it for the full BARGE_CONFIRM_MS run. 0.03 keeps
 // ~8 dB over a quiet room floor; the 260726 transient problem is guarded by
 // the level gate AND the 400ms sustained-run gate together, so the duration
-// gate carries more of the load now. If in-ear transients chop clips again,
-// raise BARGE_CONFIRM_MS before re-raising this.
+// gate carries more of the load now. (261101: that run gate is gone; this
+// bar now only bounds the residue calibration, see bargeBars.)
 const BARGE_ABS_MIN = 0.03;
 const BARGE_NOISE_FACTOR = 5; // bar is also ≥ noiseFloor * this
 // Lowered 3 -> 2.5 (260728, same laptop report): on open speakers the residue
@@ -181,12 +181,9 @@ const BARGE_REGRACE_MS = 150;
 // breath or a click is one or two frames and now always resets the run; real
 // speech holds. Pairs with the BARGE_ABS_MIN raise above — level gate first,
 // duration gate second, so a transient has to be both loud AND sustained.
-// Raised 400 -> 1400 (260804), and it is no longer the main path. Read the
-// block below first: sustained energy is now the FALLBACK that fires when
-// transcription cannot answer, so it is tuned to be slow and certain rather
-// than fast and occasionally wrong. 1400ms is eleven consecutive over-bar
-// frames, which no burst of speaker echo has ever produced.
-const BARGE_CONFIRM_MS = 1400;
+// Raised 400 -> 1400 (260804), when sustained energy became the FALLBACK for
+// a transcription that could not answer. Removed (261101, word-only): no
+// energy test stops her any more, see "Word-only" below.
 
 /**
  * ── Barge-in, two stages (260804) ────────────────────────────────────────
@@ -214,6 +211,18 @@ const BARGE_CONFIRM_MS = 1400;
  *      companion's own echo: all transcribe to nothing or to junk, and the clip
  *      comes back up as though nothing happened.
  *
+ * Word-only (261101). Nothing but a confirmed word stops her. There used to
+ * be two energy commits for a transcription that could not answer: a
+ * sustained run over the bar (BARGE_CONFIRM_MS, 1400 ms) and a deadline that
+ * judged the frames since the duck on energy (BARGE_SUSPECT_MAX_MS). Both
+ * could cut her on a loud game or her own echo with no word anywhere, and
+ * Shawn would rather have no interrupt than a false one. Now the deadline
+ * only retracts the duck: she carries on, and a pass that later comes back
+ * with a word the echo gate clears is delivered as the player's turn (the
+ * 'late' path). Cost: when STT is slower than the deadline the player does
+ * not stop her at all, their word reaches her after her line instead; with no
+ * cloud pass and no local model there is no barge-in.
+ *
  * So the trigger is dictation, not gain, which is the whole point: what decides
  * whether the companion stops talking is now whether the player SAID something.
  *
@@ -229,7 +238,7 @@ const BARGE_CONFIRM_MS = 1400;
  *  to hold one short word ("wait", "no", "hey") — Whisper on less than this
  *  hallucinates, which is the same floor MIN_UTTERANCE_MS exists for. */
 const BARGE_WORD_MS = 400;
-/** Level bar for the DUCK, against BARGE_ABS_MIN's for the commit fallback.
+/** Level bar for the DUCK, against BARGE_ABS_MIN's for the residue bar.
  *  ~-34 dBFS: under a quiet word at a laptop mic, over a still room. */
 const DUCK_ABS_MIN = 0.02;
 /** Duck bar is also this multiple of the measured echo residue, against
@@ -239,17 +248,19 @@ const DUCK_RESIDUE_FACTOR = 1.6;
  *  this stage is that it happens before anything can be confirmed. */
 const DUCK_CONFIRM_MS = 120;
 /** How long a duck may stay unconfirmed. Past this the transcription has
- *  either failed or is slower than the feature can wait for, and the decision
- *  falls back to energy: still loud means still talking. */
+ *  either failed or is slower than the feature can wait for, and the duck is
+ *  retracted (261101, word-only: it used to fall back to energy, still loud
+ *  meaning still talking, which cut her on loud games with no word). */
 const BARGE_SUSPECT_MAX_MS = 1800;
 /** 261030: once the confirming pass HAS come back with a word and only the
- *  echo gate is still deciding whose word it was, the energy deadline above
- *  no longer applies. The gate's slow path waits one bounded screen-STT flush
+ *  echo gate is still deciding whose word it was, the deadline above no
+ *  longer applies. The gate's slow path waits one bounded screen-STT flush
  *  (~1.2 s), which on top of a cloud STT round trip routinely ran past 1.8 s
  *  during a share, and the energy fallback then threw the player's words away
  *  whenever that one frame happened to sit under the stiff bar (a pause
  *  between words, or simply a loud game). This is the outer bound for the
- *  gate's answer, after which the old energy rule decides as before. */
+ *  gate's answer, after which the duck is retracted and a word the gate
+ *  then clears is delivered late as the player's turn. */
 const BARGE_ECHO_WAIT_MAX_MS = 4000;
 /**
  * 261030: the noise-floor term of both barge bars is capped at this while a
@@ -263,7 +274,7 @@ const BARGE_ECHO_WAIT_MAX_MS = 4000;
  * impossible (0.6.10 Windows report: "It doesnt let me interrupt it", during a
  * Roblox share). The measured hold residue already contains the game AND her
  * echo, because it is sampled while she plays, so it keeps carrying the margin
- * over both (speech must clear 1.6x of it to duck, 2.5x to commit on energy).
+ * over both (speech must clear 1.6x of it to duck; 2.5x was the energy commit's).
  * The cap only removes the floor's extra 5x on top; the floor itself still
  * counts at the residue's factors (see bargeBars). The bars never drop below
  * what a quiet room gives with the same residue, so TTS echo false triggers
@@ -310,8 +321,7 @@ const SHARE_NOISE_FLOOR_CAP = BARGE_ABS_MIN / BARGE_NOISE_FACTOR;
  *     after the trigger (at the trigger itself after a clean duck), and
  *     commits only on a word that also passes the utterance junk filter and
  *     the echo gate.
- *   - The energy deadline needs most of the post-duck frames voiced, not one
- *     loud frame.
+ *   - No energy test commits (261101, word-only): the deadline retracts.
  *   - A pass that found no word gets ONE more pass over the audio after it
  *     when a voice kept going while it was out: the player who starts talking
  *     during a duck that something else opened is still heard.
@@ -333,7 +343,7 @@ const SHARE_NOISE_FLOOR_CAP = BARGE_ABS_MIN / BARGE_NOISE_FACTOR;
  *     the trigger may be her own onset) still needs a voice after it, and is
  *     retracted for free without one.
  *   - Nothing transcribed is thrown away silently: a pass that answers after
- *     the energy deadline gave up on it, or after a finished barge's wait ran
+ *     the deadline gave up on it, or after a finished barge's wait ran
  *     out, still reaches her as an ordinary turn when it is a word the echo
  *     gate does not trace to her (settleDelivery).
  *   - Every retraction resumes her inside a fresh FULL grace window
@@ -383,9 +393,6 @@ const VOICE_SKIP_FRAMES = 1;
 const VOICE_WINDOW_FRAMES = 3;
 /** Voiced frames needed inside that window before any transcription runs. */
 const VOICE_MIN_FRAMES = 1;
-/** Share of post-duck frames over the voice bar the energy deadline needs
- *  (the fallback for a transcription that never answered). */
-const BARGE_DEADLINE_VOICED = 0.6;
 /** Voiced frames heard while the confirming pass was out that earn one more
  *  pass when the first found no word (~250 ms of a voice still going). */
 const BARGE_REASK_VOICED = 2;
@@ -403,7 +410,8 @@ export interface BargeLevels {
 
 /**
  * The two barge bars for one frame under hold (pure, tested). `duck` opens
- * stage one; `commit` is the sustained-energy fallback's bar. See
+ * stage one; `commit` was the sustained-energy fallback's bar (removed
+ * 261101) and still decides which frames the echo residue learns from. See
  * SHARE_NOISE_FLOOR_CAP for what the share changes and why.
  */
 export function bargeBars(l: BargeLevels): { duck: number; commit: number } {
@@ -427,12 +435,6 @@ export function bargeBars(l: BargeLevels): { duck: number; commit: number } {
   };
 }
 
-/** The energy bar the unanswered-duck deadline decides on (no floor term, as
- *  before 261030). Exported for the tests. */
-export function bargeDeadlineBar(holdResidue: number): number {
-  return Math.max(BARGE_ABS_MIN, holdResidue * BARGE_RESIDUE_FACTOR);
-}
-
 /**
  * The level a frame AFTER a duck must reach to count as the player's voice
  * (261031, pure, tested): the duck bar with her echo residue taken out, since
@@ -445,7 +447,7 @@ export function bargeVoiceBar(l: BargeLevels): number {
 
 /** Why a provisional barge was retracted (261030 diagnostics). 'echo' = the
  *  echo gate traced the confirming words to the speakers; 'no_word' = no word
- *  came back (or the energy fallback decided against it); 'no_voice' (261031)
+ *  came back (or none came back before the deadline); 'no_voice' (261031)
  *  = nothing voice-like followed the duck, so no transcription ran at all;
  *  'cancelled' = the utterance was abandoned (mute, teardown, a hold
  *  transition). */
@@ -859,9 +861,6 @@ export async function createDictation(opts: {
   let holdPeakRms = 0;
   let holdPeakBar = 0;
   let holdBarged = false;
-  /** Running length of continuous over-the-barge-bar energy during hold; the
-   * fallback commit fires once this clears BARGE_CONFIRM_MS (see there). */
-  let bargeRunMs = 0;
   type Suspect = {
     since: number;
     asked: boolean;
@@ -898,7 +897,7 @@ export async function createDictation(opts: {
     passText?: string;
     passWaiter?: (text: string) => void;
     /** How the duck was retracted while its pass was still out: 'late' means
-     *  the energy deadline gave up on the pass, so its answer is still owed to
+     *  the deadline gave up on the pass, so its answer is still owed to
      *  the player as an ordinary turn (see settleDelivery). */
     retracted?: 'late' | 'cancelled';
     /** Where the FIRST pass read from (a second pass moves askFrom on). A
@@ -1111,7 +1110,7 @@ export async function createDictation(opts: {
         return;
       }
       // A barge decided without its transcript (its wait ran out, a newer duck
-      // took it over, or the energy deadline gave up on the pass) arrives here
+      // took it over, or the deadline gave up on the pass) arrives here
       // late. It is delivered as the player's turn, but only on the same terms
       // as a commit: a word the junk filter keeps, already echo-checked as a
       // barge above (her own words condemn from two tokens, not three).
@@ -1230,8 +1229,8 @@ export async function createDictation(opts: {
    * pass's word stands in if that transcript comes back with none.
    *
    * `echoCleared`: the echo gate already passed this text (or there is no
-   * gate). A commit decided another way (the energy deadline while the gate
-   * was still out, a gate that threw) has its text judged again on delivery.
+   * gate). A commit decided another way (a gate that threw) has its text
+   * judged again on delivery.
    */
   function commitTurn(s: Suspect, echoCleared: boolean): void {
     const from = s.firstAskFrom ?? s.askFrom;
@@ -1308,7 +1307,7 @@ export async function createDictation(opts: {
   function confirmBarge(rms: number): void {
     const s = suspect;
     if (!s) return;
-    const settle = (real: boolean, why: BargeAbortReason = 'no_word', echoCleared = false): void => {
+    const settle = (real: boolean, why: BargeAbortReason = 'no_word', echoCleared = false, learn = true): void => {
       if (suspect !== s) return; // superseded (utterance ended, mute, teardown)
       suspect = null;
       if (real) {
@@ -1324,7 +1323,7 @@ export async function createDictation(opts: {
       // died on its own ('no_voice') says nothing about the room's steady
       // level, and learning from its peak would make a quiet player unable to
       // duck her after a few game hits.
-      if (why === 'echo' || (why === 'no_word' && s.asked)) learnFalseDuck(s.trig);
+      if (learn && (why === 'echo' || (why === 'no_word' && s.asked))) learnFalseDuck(s.trig);
       // The retraction resumes her mid-line. On loud speakers every resumed
       // frame used to re-duck her (one frame of audio, then a ~0.5 s pause,
       // for a whole line), and with a learned bar the first resumed frame
@@ -1356,14 +1355,13 @@ export async function createDictation(opts: {
     // BARGE_ECHO_WAIT_MAX_MS) instead of being decided on one frame's energy.
     const deadline = s.answered ? BARGE_ECHO_WAIT_MAX_MS : BARGE_SUSPECT_MAX_MS;
     if (performance.now() - s.since >= deadline) {
-      // Transcription never answered. Decide on energy, over everything heard
-      // since the duck (261031: it used to be the one frame that happened to
-      // land on the deadline, which a single game hit could win).
-      const real = counted > 0 && s.voiced / counted >= BARGE_DEADLINE_VOICED;
-      // A pass still out is owed to the player: its answer, if it is a word,
-      // arrives as an ordinary turn instead of being dropped with the duck.
-      if (!real && s.asked && s.passText === undefined) s.retracted = 'late';
-      settle(real);
+      // Transcription (or the echo gate on its word) never answered. Word-only
+      // (261101): energy no longer decides, the duck is retracted and she
+      // carries on. A pass still out is owed to the player: its answer, if it
+      // is a word, arrives as an ordinary turn instead of being dropped with
+      // the duck. Nothing was learned about the room, so the bar stays put.
+      if (s.asked && (s.passText === undefined || s.answered)) s.retracted = 'late';
+      settle(false, 'no_word', false, false);
       return;
     }
     // 261031: no voice after the duck = a blip, or her own onset. Retracted
@@ -1407,7 +1405,7 @@ export async function createDictation(opts: {
           const w = s.passWaiter;
           s.passWaiter = undefined;
           if (w) w(text);
-          // The energy deadline retracted the duck before this answered, and
+          // The deadline retracted the duck before this answered, and
           // the player's word is still unheard: deliver it as an ordinary turn
           // through the same checks a commit would face (a closed barge).
           else if (s.retracted === 'late') {
@@ -1442,9 +1440,26 @@ export async function createDictation(opts: {
           return;
         }
         s.answered = true;
+        // The gate can outlast the deadline (a share's screen-STT flush): the
+        // duck is then already retracted, and a word it clears is the player's
+        // turn, delivered late like an unanswered pass's.
+        const lateTurn = (echoCleared: boolean): void =>
+          settleDelivery(text, t0, t1, env, { voiced: true, open: false, since: s.since, trig: s.trig }, echoCleared);
         void Promise.resolve(check({ text, t0, t1, envelope: env, purpose: 'barge' })).then(
-          (echo) => settle(!echo, 'echo', true),
-          () => settle(true),
+          (echo) => {
+            if (suspect !== s) {
+              if (!echo && s.retracted === 'late') lateTurn(true);
+              return;
+            }
+            settle(!echo, 'echo', true);
+          },
+          () => {
+            if (suspect !== s) {
+              if (s.retracted === 'late') lateTurn(false); // judged again on delivery
+              return;
+            }
+            settle(true);
+          },
         );
       },
       // A burst pass asks the cloud leg to judge how sure Scribe was
@@ -1537,7 +1552,8 @@ export async function createDictation(opts: {
       // crossings — that early audio is almost always the clip's own onset
       // echoing back before AEC converges, not the player barging in.
       //
-      // 260804: the grace applies only to the sustained-energy FALLBACK. Stage
+      // 260804: the grace applied only to the sustained-energy fallback
+      // (removed 261101); it now only steers the residue and `clean`. Stage
       // one is allowed to duck during it, because a duck is reversible and the
       // window was itself a bug: for its first 600ms every clip was completely
       // uninterruptible, which on short lines is the whole clip. A false duck
@@ -1547,7 +1563,6 @@ export async function createDictation(opts: {
         duckRunMs += frameMs;
         if (duckRunMs >= DUCK_CONFIRM_MS) {
           duckRunMs = 0;
-          bargeRunMs = 0;
           // Open the utterance for real: from here the normal in-speech path
           // below collects frames, and `suspect` is what marks the collection
           // as unconfirmed.
@@ -1583,23 +1598,8 @@ export async function createDictation(opts: {
       } else {
         duckRunMs = 0;
       }
-      // Sustained-energy fallback. It exists for the case transcription cannot
-      // serve: no local model AND a cloud pass that is slow or failing. Slower
-      // and stiffer than the duck by design — see BARGE_CONFIRM_MS.
-      const overBar = rms >= bar && !inGrace;
-      if (overBar) {
-        bargeRunMs += frameMs;
-        if (bargeRunMs >= BARGE_CONFIRM_MS) {
-          bargeRunMs = 0;
-          duckRunMs = 0;
-          suspect = null;
-          holdBarged = true;
-          openSpeech(frameMs);
-          opts.onBargeIn?.();
-        }
-      } else {
-        bargeRunMs = 0;
-      }
+      // No sustained-energy commit here any more (261101, word-only): a run
+      // of loud frames ducks her above, and only a word confirms the duck.
       return;
     }
 
@@ -1737,7 +1737,6 @@ export async function createDictation(opts: {
       graceMs = holdRunArmed ? BARGE_REGRACE_MS : BARGE_GRACE_MS;
       holdRunArmed = true;
       holdSince = performance.now();
-      bargeRunMs = 0;
       duckRunMs = 0;
       // 261031: an utterance that opened before her audio (a game hit in the
       // gap, or the player already talking) would collect her voice from here
