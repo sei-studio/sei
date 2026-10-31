@@ -3232,6 +3232,65 @@ defaults was invisible. Cached, not read per event (commonProps is sync);
 `setUiLanguage()` is refreshed from the `config:save` IPC handler, the single
 path both Settings and the onboarding Sui stage write it through.
 
+**Build, device and provider facts on every event; dev builds send nothing
+(261031, T278).** `commonProps()` also stamps `channel` (`stable`/`beta`/
+`test`/`dev`), `packaged`, `device_id`, `rollout_bucket`, `$session_id` (a
+UUIDv7 per process), `ai_provider` (`cloud`/`chatgpt`/`byok`/`ollama`/`unset`),
+`llm_provider`, `model_family` (closed enum, never the model name) and `plan`
+(`free`/`quest`/`party`, `none` signed out, `unknown` before the first credits
+read). Rules in `src/main/analyticsContext.ts` (pure, tested):
+- The channel is baked: release.yml exports `SEI_RELEASE_CHANNEL=sei-channel=
+  stable|beta` on a tag build only (and fails the build if `dist/main` lacks
+  it); `electron.vite.config.ts` defines it. Unpackaged = `dev`; any other
+  packaged build (local `dist:*`, spike or dry-run workflows) = `test`; a
+  prerelease version can never read `stable`.
+- **Send gate:** `initAnalytics` creates no client unless the channel is
+  stable or beta, or `SEI_ANALYTICS_DEV=1` is set at runtime. Tests that need a
+  live (mocked) client set it in `vi.hoisted`.
+- **Identity:** the anonymous `distinct_id` is `device_id`, a salted sha256 of
+  the device-global `device-id.json` id (never the raw id: it gates trials).
+  The old per-profile `analytics_install_id` is aliased into it once
+  (`<userData>/analytics-aliases.json`); sign-in aliases the device id into the
+  account, and `device_id` stays a property after identify.
+- `checkout_completed {kind: subscription|upgrade|topup, tier, from_tier,
+  credits_added?, checkout_opened_this_session}` fires when two credits
+  snapshots of the same account in a row show a higher tier or more top-up
+  credits (`notePlanSnapshot`, fed by `proxyClient.creditsGet`). It is what the
+  app learned, not the payment; Supabase ledger stays the source of truth.
+  `plan_changed` fires on a successful change only.
+- Watch together: `backseat_started`/`_ended` carry `game` (the tile id, or a
+  game matched from the shared window title against the closed list in
+  `backseat/watchedGame.ts`, `game_source: tile|title`) and `watched_kind`
+  (`game`/`video`/`browser`/`other`/`unknown`). The title never ships.
+- `summon_failed` carries `game`, and redact() also scrubs the player's own
+  `mc_username` / `preferred_name` (`RedactOptions.playerNames`).
+
+**Crash reporting (261031, T278, `src/main/crashReporting.ts`).** No Sentry,
+no minidump upload. `initCrashReporting()` runs first in whenReady:
+- `<userData>/session.json` is written `open` at launch (heartbeat every 60s,
+  plus the surface in use and a hung-window flag) and rewritten `closed` on
+  before-quit/quit, `os_shutdown` on Windows `session-end` or powerMonitor
+  `shutdown`. The next launch reads it before writing its own: still `open` =
+  unclean exit, reported as `app_unclean_exit {prev_session_id, prev_version,
+  prev_channel, prev_uptime_ms, prev_surface, prev_renderer_unresponsive,
+  prev_crash_kind}`. `app_opened` carries `prev_exit` (`clean`/`unclean`/
+  `os_shutdown`/`none`) and `prev_version`. Do NOT add session.json to
+  `PRIOR_STATE_ENTRIES`: it exists before noteLaunch on a fresh install.
+- `app_crash {kind: main_uncaught|renderer_gone|child_gone, process_type,
+  reason, exit_code, page, service, error_name, fingerprint, top_frame,
+  surface, uptime_ms}`, `app_error` (main unhandled rejection, same shape) and
+  `app_hang {page, duration_ms, recovered}` (window `unresponsive` until
+  `responsive` or closed). Once per signature, at most 20 per process.
+  Companion-bot exits are left to `summon_failed`/`bot_session_failed`.
+  Installing the process handlers replaces Electron's error dialog: the app
+  keeps running, as it did after the dialog.
+- `<userData>/logs/crash/crash.log` holds the scrubbed message + stack
+  (`crashLog.ts`, redact() + the player's names), rotated to `crash.1.log` at
+  256 KB, 8 KB per entry, 5 repeats per signature. A subdirectory, so
+  `pruneLogsDir` never deletes it. Events carry no message or stack text.
+- Crash-free sessions per version: `~/suisei/reports/retention-2026-10-05-
+  queries/crashfree.mjs`.
+
 **`installer_first_launch` fires once per install (260926).** It carries
 `platform`, `arch`, `os_version`, `packaged`, `arm64_translation`, and on macOS
 `in_applications`, `translocated` and a coarse `app_location` enum
