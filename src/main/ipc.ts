@@ -3077,6 +3077,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.config.get, async (): Promise<UserConfig> => {
     return await loadConfig();
   });
+  ipcMain.handle(IpcChannel.config.profileState, async () => {
+    const { readProfileSetupState } = await import('./profileSetupState');
+    return await readProfileSetupState();
+  });
   ipcMain.handle(IpcChannel.config.save, async (_event, cfgArg: unknown): Promise<void> => {
     const cfg = UserConfigSchema.parse(cfgArg);
     // 260725: renderer saves are wholesale (stale-copy hazard) and must never

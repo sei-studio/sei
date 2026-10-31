@@ -35,6 +35,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { profileSetUp } from '../lib/profileSetUp';
 import { readAuthSnapshot } from '../lib/authBoot';
 import { createSignInScopeGate, type SignInScopeGate } from '../lib/signInScopeGate';
 import { useAuthStore } from '../lib/stores/useAuthStore';
@@ -980,7 +981,10 @@ export function OnboardApp({
   const accountHasProfile = useCallback(async (): Promise<boolean | null> => {
     try {
       const cfg = await sei.getConfig();
-      return Boolean((cfg.preferred_name ?? '').trim());
+      if ((cfg.preferred_name ?? '').trim()) return true;
+      // T283: a profile set up before whose settings were recovered to
+      // defaults has no name and is still not a new one.
+      return (await profileSetUp(cfg.preferred_name)).setUp;
     } catch {
       return null;
     }

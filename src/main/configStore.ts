@@ -15,7 +15,7 @@
  * — never read the raw field on UserConfig directly so the default
  * fall-through stays inside one helper.
  */
-import { readFile, mkdir, readdir, rename, unlink } from 'node:fs/promises';
+import { readFile, mkdir, readdir, rename, unlink, open } from 'node:fs/promises';
 import path from 'node:path';
 import { UserConfigSchema, type UserConfig } from '../shared/characterSchema';
 // ESM imports of existing brain JS helpers (.js extension required under nodenext-style resolution).
@@ -42,6 +42,17 @@ export const DEFAULT_CONFIG: UserConfig = UserConfigSchema.parse({});
 //     then restored from the backup when that parses, else rebuilt from the
 //     identity keys that can still be read out of the damaged text (name,
 //     backend, roster, analytics choices), else defaults. Nothing is deleted.
+//   - T283: with the backup also unreadable, the newest quarantined copy that
+//     parses comes before the identity keys, and those are read from the
+//     damaged text, the backup and the quarantined copies. A config that is
+//     MISSING while a backup or quarantined copy exists (a restore that never
+//     landed) is recovered the same way instead of reading as defaults.
+//   - T283: a recovery that cannot be written back (read-only folder, disk
+//     full) is held in memory for the process: reads serve it (no second
+//     quarantine, one report), saves update it and retry the disk.
+//   - T283: "recovered to defaults" is not "new user". configShowsPriorSetup
+//     tells the renderer a profile was set up before when its config has no
+//     name, so it is not sent to onboarding.
 //   - A file that parses but has invalid fields keeps every valid field; each
 //     invalid one falls back to its default ("salvaged").
 //   - Unknown keys (written by a newer Sei) are kept on every write, and so
@@ -73,7 +84,7 @@ export const QUARANTINE_PREFIX = 'config.corrupt-';
 export const RESET_PREFIX = 'config.before-reset-';
 export const QUARANTINE_KEEP = 3;
 
-export type ConfigRecoveryKind = 'salvaged' | 'restored_backup' | 'reset_defaults';
+export type ConfigRecoveryKind = 'salvaged' | 'restored_backup' | 'restored_quarantine' | 'reset_defaults';
 
 export interface ConfigRecoveryEvent {
   kind: ConfigRecoveryKind;
@@ -97,6 +108,22 @@ const salvageReported = new Set<string>();
  * process, not on every read.
  */
 const stuckReported = new Set<string>();
+
+/**
+ * Settings this process holds in memory because they could not be written
+ * (T283): a recovery whose restore write failed (read-only folder, disk
+ * full), or a later save to such a target. Every read is served from here,
+ * so the damaged file is not recovered (or quarantined) again, and every
+ * write retries the disk and drops the entry once it lands.
+ */
+interface HeldConfig {
+  parsed: ParsedConfig;
+  /** The damaged file is still at the target (it could not be quarantined). */
+  damagedInPlace: boolean;
+}
+const heldConfigs = new Map<string, HeldConfig>();
+/** Targets this process recovered from damage or loss (not salvage). */
+const recoveredTargets = new Set<string>();
 
 function noteRecovery(e: ConfigRecoveryEvent): void {
   if (e.kind === 'salvaged') {
@@ -138,6 +165,13 @@ export function _resetConfigRecoveryForTests(): void {
   recoveryListeners.clear();
   salvageReported.clear();
   stuckReported.clear();
+  heldConfigs.clear();
+  recoveredTargets.clear();
+}
+
+/** TEST-ONLY: whether `target` is currently served from memory. */
+export function _isConfigHeldForTests(target: string): boolean {
+  return heldConfigs.has(target);
 }
 
 function isPlainObject(x: unknown): x is Record<string, unknown> {
@@ -331,50 +365,148 @@ async function moveAside(target: string, prefix: string, now: number): Promise<s
   return dest;
 }
 
+/** Write `text` beside `target` as `<prefix><stamp>.json` (durable), keeping the newest few. Throws when it cannot. */
+async function copyAside(target: string, text: string, prefix: string, now: number): Promise<string> {
+  const dir = path.dirname(target);
+  const dest = path.join(dir, `${prefix}${stampForFile(now)}.json`);
+  await writeFileDurable(dest, text);
+  await pruneByPrefix(dir, prefix, QUARANTINE_KEEP);
+  return dest;
+}
+
 function backupPath(target: string): string {
   return target + CONFIG_BACKUP_SUFFIX;
 }
 
+async function readTextOrNull(file: string): Promise<string | null> {
+  try {
+    return await readFile(file, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+/** Quarantined copies of `target`, newest first (the stamp sorts as text). */
+async function quarantinedCopies(target: string): Promise<string[]> {
+  const dir = path.dirname(target);
+  try {
+    return (await readdir(dir))
+      .filter((n) => n.startsWith(QUARANTINE_PREFIX))
+      .sort()
+      .reverse()
+      .map((n) => path.join(dir, n));
+  } catch {
+    return [];
+  }
+}
+
 /**
- * Recover a config whose text does not parse. MUST run under the file lock.
- * Order: quarantine the damaged file, restore the backup, else rebuild from
- * the identity keys still readable in the damaged text, else defaults.
+ * A missing config with a backup or a quarantined copy beside it was lost,
+ * not never written: a damaged file was moved aside and the restore did not
+ * land (disk full, a crash in between). Such a read recovers instead of
+ * serving defaults (T283).
  */
-async function recoverDamaged(target: string, damagedText: string): Promise<ParsedConfig> {
+async function hasRecoverySource(target: string): Promise<boolean> {
+  const bakName = path.basename(backupPath(target));
+  try {
+    return (await readdir(path.dirname(target))).some((n) => n === bakName || n.startsWith(QUARANTINE_PREFIX));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Recover a config whose text does not parse (`damagedText`), or that is
+ * missing while a backup or quarantined copy exists (`damagedText` null).
+ * MUST run under the file lock. Order (T283):
+ *   1. quarantine the damaged file (nothing is deleted),
+ *   2. the backup, when it parses,
+ *   3. else the newest quarantined copy that parses,
+ *   4. else the identity keys still readable in the damaged text, the backup
+ *      and the quarantined copies (newest first, first value wins),
+ *   5. else defaults.
+ * The result is written back when there is something to write. When that
+ * write fails, or there was nothing to write, the result is held in memory
+ * for the rest of the process: reads are served from it and the next save
+ * retries the disk, so the damage is recovered and reported once, not on
+ * every read.
+ */
+async function recoverConfig(target: string, damagedText: string | null): Promise<ParsedConfig> {
   const now = Date.now();
-  const moved = (await moveAside(target, QUARANTINE_PREFIX, now)) !== null;
-  let wrote = false;
-  // The damaged file is still in place: the next read recovers it again.
-  const report = (e: ConfigRecoveryEvent): void => {
-    const stuck = !moved && !wrote;
-    if (!stuck) {
-      stuckReported.delete(target);
-    } else {
-      if (stuckReported.has(target)) return;
-      stuckReported.add(target);
-      console.warn(`[sei] config recovery could not be saved (folder not writable?); serving it from memory`);
-    }
-    noteRecovery(e);
-  };
-  let bakText: string | null = null;
-  try { bakText = await readFile(backupPath(target), 'utf8'); } catch { /* no backup */ }
+  let movedTo: string | null = null;
+  if (damagedText !== null) movedTo = await moveAside(target, QUARANTINE_PREFIX, now);
+  const damagedInPlace = damagedText !== null && movedTo === null;
+
+  let parsed: ParsedConfig | null = null;
+  let toWrite: string | null = null;
+  let event: ConfigRecoveryEvent | null = null;
+
+  const bakText = await readTextOrNull(backupPath(target));
   const bakObj = bakText !== null ? parseObjectText(bakText) : null;
   if (bakObj && bakText !== null) {
-    const parsed = parseConfigLenient(bakObj);
-    try { await writeFileDurable(target, bakText); wrote = true; } catch { /* served from memory; next write retries */ }
-    report({ kind: 'restored_backup', file: target, at: now });
+    parsed = parseConfigLenient(bakObj);
+    toWrite = bakText;
+    event = { kind: 'restored_backup', file: target, at: now };
+  }
+
+  const quarantineTexts: string[] = [];
+  if (!parsed) {
+    for (const file of await quarantinedCopies(target)) {
+      if (file === movedTo) continue; // the text we just found damaged
+      const text = await readTextOrNull(file);
+      if (text === null) continue;
+      const obj = parseObjectText(text);
+      if (obj) {
+        parsed = parseConfigLenient(obj);
+        toWrite = text;
+        event = { kind: 'restored_quarantine', file: target, at: now };
+        break;
+      }
+      quarantineTexts.push(text);
+    }
+  }
+
+  if (!parsed) {
+    const identity: Record<string, unknown> = {};
+    for (const text of [damagedText, bakText, ...quarantineTexts]) {
+      if (text === null) continue;
+      for (const [key, value] of Object.entries(extractIdentityKeys(text))) {
+        if (!(key in identity)) identity[key] = value;
+      }
+    }
+    const keptIdentity = Object.keys(identity).length > 0;
+    // Validated identity only: whatever failed its schema is dropped, not written.
+    parsed = { config: parseConfigLenient(identity).config, raw: {}, salvaged: [] };
+    toWrite = keptIdentity ? serializeConfig(parsed.config, null) : null;
+    event = { kind: 'reset_defaults', file: target, keptIdentity, at: now };
+  }
+
+  const report: ConfigRecoveryEvent = event ?? { kind: 'reset_defaults', file: target, keptIdentity: false, at: now };
+  let wrote = false;
+  if (toWrite !== null) {
+    try {
+      await writeFileDurable(target, toWrite);
+      wrote = true;
+    } catch {
+      /* held in memory below; the next save retries */
+    }
+  }
+  recoveredTargets.add(target);
+  if (wrote) {
+    heldConfigs.delete(target);
+    stuckReported.delete(target);
+    noteRecovery(report);
     return parsed;
   }
-  const identity = extractIdentityKeys(damagedText);
-  const keptIdentity = Object.keys(identity).length > 0;
-  const parsed = parseConfigLenient(identity);
-  // Validated identity only: whatever failed its schema is dropped, not written.
-  const clean: ParsedConfig = { config: parsed.config, raw: {}, salvaged: [] };
-  if (keptIdentity) {
-    try { await writeFileDurable(target, serializeConfig(clean.config, null)); wrote = true; } catch { /* next write retries */ }
+  heldConfigs.set(target, { parsed, damagedInPlace });
+  if (!stuckReported.has(target)) {
+    stuckReported.add(target);
+    if (toWrite !== null) {
+      console.warn(`[sei] config recovery could not be saved (folder not writable or disk full?); serving it from memory`);
+    }
+    noteRecovery(report);
   }
-  report({ kind: 'reset_defaults', file: target, keptIdentity, at: now });
-  return clean;
+  return parsed;
 }
 
 interface ConfigRead {
@@ -384,27 +516,43 @@ interface ConfigRead {
   text: string | null;
   /** The text on disk parsed as a JSON object (a valid file the backup may copy). */
   validText: boolean;
+  /** Served from memory (heldConfigs): the disk does not have it yet. */
+  held?: boolean;
 }
 
 /**
  * Read + parse the config at `target`. `locked` = the caller holds the file
  * lock, so damage can be recovered in place; unlocked callers get null back
- * for a damaged file and retry under the lock.
+ * for a damaged (or lost) file and retry under the lock.
  */
 async function readConfigAt(target: string, locked: boolean): Promise<ConfigRead | null> {
+  const held = heldConfigs.get(target);
+  const heldRead = (h: HeldConfig): ConfigRead => ({ parsed: h.parsed, text: null, validText: false, held: true });
   let text: string;
   try {
     text = await readFile(target, 'utf8');
   } catch (err: unknown) {
+    if (held) return heldRead(held);
     if (err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+      if (await hasRecoverySource(target)) {
+        if (!locked) return null;
+        return { parsed: await recoverConfig(target, null), text: null, validText: false, held: heldConfigs.has(target) };
+      }
       return { parsed: { config: { ...DEFAULT_CONFIG }, raw: {}, salvaged: [] }, text: null, validText: false };
     }
     throw err;
   }
   const obj = parseObjectText(text);
+  if (held) {
+    // A valid file showed up (written by hand, or by another process): the
+    // disk wins over what this process held. Otherwise keep serving memory.
+    if (!obj) return heldRead(held);
+    heldConfigs.delete(target);
+    stuckReported.delete(target);
+  }
   if (!obj) {
     if (!locked) return null;
-    return { parsed: await recoverDamaged(target, text), text: null, validText: false };
+    return { parsed: await recoverConfig(target, text), text: null, validText: false, held: heldConfigs.has(target) };
   }
   const parsed = parseConfigLenient(obj);
   if (parsed.salvaged.length > 0) {
@@ -421,17 +569,43 @@ async function readConfigRecovering(target: string): Promise<ParsedConfig> {
 }
 
 /**
+ * Write `text` over `target` (under the lock). For a target held in memory
+ * (T283) this is the retry: a damaged file still in place is quarantined
+ * first (once; it was never moved), a landed write drops the hold, and a
+ * failed one keeps `next` in memory instead of throwing, so the session goes
+ * on with the setting and the next save tries again.
+ */
+async function writeTextLocked(target: string, text: string, next: ParsedConfig, read: ConfigRead): Promise<void> {
+  const held = read.held ? heldConfigs.get(target) : undefined;
+  if (held?.damagedInPlace) {
+    if ((await moveAside(target, QUARANTINE_PREFIX, Date.now())) !== null) held.damagedInPlace = false;
+  }
+  try {
+    await writeFileDurable(target, text);
+  } catch (err) {
+    if (!held) throw err;
+    heldConfigs.set(target, { parsed: next, damagedInPlace: held.damagedInPlace });
+    return;
+  }
+  if (held) {
+    heldConfigs.delete(target);
+    stuckReported.delete(target);
+    console.warn(`[sei] config held in memory is saved again`);
+  }
+}
+
+/**
  * Write `next` over `target` (under the lock): unknown keys kept, the
  * previous valid file copied to the backup first, durable. Skips the write
- * when nothing changed.
+ * when nothing changed (never for a held config: the disk does not have it).
  */
 async function writeConfigLocked(target: string, next: UserConfig, read: ConfigRead): Promise<void> {
   const text = serializeConfig(next, read.parsed);
-  if (text === read.text) return;
+  if (!read.held && text === read.text) return;
   if (read.validText && read.text !== null) {
     try { await writeFileDurable(backupPath(target), read.text); } catch { /* the main write still goes ahead */ }
   }
-  await writeFileDurable(target, text);
+  await writeTextLocked(target, text, { config: next, raw: read.parsed.raw, salvaged: read.parsed.salvaged }, read);
 }
 
 /**
@@ -443,6 +617,97 @@ async function writeConfigLocked(target: string, next: UserConfig, read: ConfigR
  */
 export async function loadConfig(): Promise<UserConfig> {
   return (await readConfigRecovering(paths.configPath())).config;
+}
+
+function hasName(v: unknown): boolean {
+  return typeof v === 'string' && v.trim().length > 0;
+}
+
+/**
+ * Whether a chat transcript holds a line the player or the companion said
+ * (not only `system` play/call rows). A closing play row can be appended
+ * after a factory reset wiped the profile (chess and call ends race the
+ * wipe and mkdir the memory dir back), and that alone is no evidence of
+ * setup. Reads the first 64 KB only.
+ */
+async function transcriptHasConversation(file: string): Promise<boolean> {
+  let text = '';
+  try {
+    const fh = await open(file, 'r');
+    try {
+      const buf = Buffer.alloc(64 * 1024);
+      const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
+      text = buf.subarray(0, bytesRead).toString('utf8');
+    } finally {
+      await fh.close();
+    }
+  } catch {
+    return false;
+  }
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const row = JSON.parse(line) as { role?: unknown } | null;
+      if (row && (row.role === 'user' || row.role === 'companion')) return true;
+    } catch {
+      /* a partial last line, or junk */
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether this profile was set up before, judged WITHOUT the name in its
+ * config (T283). Onboarding is keyed on `preferred_name`, and a config
+ * recovered to defaults has none, so the renderer asks this before it sends a
+ * profile with no name to onboarding. True when any of:
+ *   - this process recovered the profile's config from damage or loss,
+ *   - a quarantined (`config.corrupt-*`) copy is on disk,
+ *   - the backup (`config.json.bak`) or a pre-reset copy names the player,
+ *   - a companion has memories (`memory/<id>/MEMORY.md`) or a chat transcript
+ *     with a line the player or companion said (`chat.jsonl`; system play
+ *     rows alone do not count): those are only written after onboarding.
+ * A fresh install (and an onboarding left half way, which writes a config
+ * and its backup but no name) has none of these. Never throws.
+ */
+export async function configShowsPriorSetup(opts?: { scope?: string }): Promise<boolean> {
+  const target =
+    opts?.scope !== undefined ? path.join(profileRootFor(opts.scope), 'config.json') : paths.configPath();
+  if (recoveredTargets.has(target)) return true;
+  const dir = path.dirname(target);
+  let names: string[] = [];
+  try {
+    names = await readdir(dir);
+  } catch {
+    return false;
+  }
+  if (names.some((n) => n.startsWith(QUARANTINE_PREFIX))) return true;
+  // A backup or pre-reset copy counts only when it names the player. Safe-mode
+  // Reset runs on EVERY profile (a fresh install that crashed twice on start,
+  // a signed-in user's never-used local profile), so a pre-reset copy on its
+  // own is no evidence of setup, and the reset keeps preferred_name anyway.
+  const namedCopies = names
+    .filter((n) => n === path.basename(backupPath(target)) || n.startsWith(RESET_PREFIX))
+    .map((n) => path.join(dir, n));
+  for (const file of namedCopies) {
+    const text = await readTextOrNull(file);
+    if (text === null) continue;
+    const obj = parseObjectText(text);
+    if (hasName(obj ? obj.preferred_name : extractIdentityKeys(text).preferred_name)) return true;
+  }
+  if (names.includes('memory')) {
+    let ids: string[] = [];
+    try { ids = await readdir(path.join(dir, 'memory')); } catch { /* none */ }
+    for (const id of ids) {
+      let files: string[] = [];
+      try { files = await readdir(path.join(dir, 'memory', id)); } catch { continue; }
+      if (files.includes('MEMORY.md')) return true;
+      if (files.includes('chat.jsonl') && (await transcriptHasConversation(path.join(dir, 'memory', id, 'chat.jsonl')))) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 /**
@@ -546,8 +811,14 @@ export async function resetConfigKeepingIdentity(opts?: { scope?: string }): Pro
       if (v !== undefined) kept[key] = v;
     }
     const next = UserConfigSchema.parse(kept);
-    if (read.text !== null) await moveAside(target, RESET_PREFIX, Date.now());
+    // T283: COPY the old file aside, then replace it, so config.json is never
+    // missing in between (a move followed by a failed write left no file, and
+    // the next start read defaults). A copy that fails stops the reset: the
+    // old file is never replaced without its copy.
+    if (read.text !== null) await copyAside(target, read.text, RESET_PREFIX, Date.now());
     await writeFileDurable(target, serializeConfig(next, null));
+    heldConfigs.delete(target);
+    stuckReported.delete(target);
   });
 }
 

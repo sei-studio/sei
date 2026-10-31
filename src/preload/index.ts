@@ -125,6 +125,7 @@ const api: RendererApi = {
   },
 
   getConfig: () => ipcRenderer.invoke(IpcChannel.config.get),
+  configProfileState: () => ipcRenderer.invoke(IpcChannel.config.profileState),
   saveConfig: (c) => ipcRenderer.invoke(IpcChannel.config.save, c),
   saveApiKey: (plaintext) => ipcRenderer.invoke(IpcChannel.config.saveApiKey, plaintext),
   hasApiKey: () => ipcRenderer.invoke(IpcChannel.config.hasApiKey),
