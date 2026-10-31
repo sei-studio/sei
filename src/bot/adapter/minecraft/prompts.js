@@ -31,7 +31,7 @@ export {
 } from '../../brain/promptLibrary.js'
 
 import { eventAddendum as baseEventAddendum } from '../../brain/promptLibrary.js'
-import { weaponScore } from './behaviors/weaponSelect.js'
+import { weaponScore, dimLabel } from './behaviors/weaponSelect.js'
 
 // ── Death event framing (sei:death) ──────────────────────────────────────
 // This prose lives HERE rather than in promptLibrary.js's EVENT_GUIDANCE (where
@@ -111,7 +111,7 @@ export const DEATH_LOST_WEAPON =
 // one still lies on the ground (deathTracker earlierWeapon). The death turn
 // said "nothing dropped" and she forgot it.
 export const DEATH_EARLIER_WEAPON =
-  ' Your {weapon} from an earlier death is still on the ground near {x},{y},{z} ({dist} blocks from you) for about {minutes} more minutes, and you have no weapon until you get it back.'
+  ' Your {weapon} from an earlier death is still on the ground{dim} near {x},{y},{z}{dist} for about {minutes} more minutes, and you have no weapon until you get it back.'
 // 261031 (quality pass 33): the count of recent deaths (deathTracker
 // recentDeaths), so a fifth death does not read like the first one.
 export const DEATH_RECENT_COUNT = ' You have died {count} times in the last {minutes} minutes.'
@@ -130,10 +130,13 @@ function earlierWeaponSentence(data) {
   if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) {
     return ` Your ${w.weapon} from an earlier death is still on the ground where you died then, and you have no weapon until you get it back.`
   }
+  // 261031 (pass 33 review): a drop in another dimension has no distance
+  // from her; it names the dimension instead of "(? blocks from you)".
   return DEATH_EARLIER_WEAPON
     .replace('{weapon}', w.weapon)
+    .replace('{dim}', typeof w.otherDim === 'string' ? ` in ${dimLabel(w.otherDim)}` : '')
     .replace('{x}', String(p.x)).replace('{y}', String(p.y)).replace('{z}', String(p.z))
-    .replace('{dist}', Number.isFinite(w.dist) ? String(w.dist) : '?')
+    .replace('{dist}', Number.isFinite(w.dist) ? ` (${w.dist} blocks from you)` : '')
     .replace('{minutes}', String(w.minutesLeft))
 }
 

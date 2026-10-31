@@ -171,6 +171,19 @@ describe('lostWeaponLine (the snapshot weapon: line)', () => {
     noteLostWeapon(b, [{ item: 'iron_sword', n: 1 }], 120_000, { x: 20, y: 64, z: 0 })
     expect(lostWeaponDrop(b, 121_000)).toMatchObject({ weapon: 'iron_sword', pos: { x: 20, y: 64, z: 0 }, minutesLeft: 5 })
   })
+  // 261031 (pass 33 review): a Nether death respawns her in the Overworld.
+  it('a drop in another dimension has no distance or pickup advice', () => {
+    const b = { ...bot({ x: 0, y: 64, z: 0 }), game: { dimension: 'the_nether' } }
+    noteLostWeapon(b, [{ item: 'stone_sword', n: 1 }], 0, { x: 100, y: 40, z: 5 }, 'minecraft:the_nether')
+    expect(lostWeaponDrop(b, 1000)).toMatchObject({ dist: 103 })
+    expect(lostWeaponDrop(b, 1000).otherDim).toBeUndefined()
+    b.game.dimension = 'overworld'
+    expect(lostWeaponDrop(b, 1000)).toMatchObject({ dist: null, otherDim: 'the_nether' })
+    expect(lostWeaponLine(b, 1000)).toBe('weapon: none. Your stone_sword is on the ground where you died in the Nether @100,40,5 for about 5 more minutes. You are not in that dimension now, so you cannot pick it up from here.')
+    const t = deathAddendum({ pos: { x: 1, y: 2, z: 3 }, lost: [], earlierWeapon: lostWeaponDrop(b, 1000) })
+    expect(t).toMatch(/Your stone_sword from an earlier death is still on the ground in the Nether near 100,40,5 for about 5 more minutes/)
+    expect(t).not.toMatch(/\?/)
+  })
   it('clears once she owns a weapon again', () => {
     const items = []
     const b = { entity: { position: { x: 0, y: 64, z: 0 } }, inventory: { items: () => items } }

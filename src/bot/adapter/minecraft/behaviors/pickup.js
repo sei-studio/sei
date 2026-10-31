@@ -11,9 +11,13 @@
 import { goTo as realGoTo, dropWalkOpts } from './pathfind.js'
 import { droppedItemName } from '../observers/entities.js'
 import { givenDropFor } from '../observers/givenDrops.js'
+import { lostWeaponDrop } from './weaponSelect.js'
 
 const MAX_ITEMS = 10
 const WALK_MS = 4000
+// 261031 (pass 33 review): she walks about 4 blocks a second (no sprint), so
+// a 4s walk ended short of drops 16 to 32 blocks away ("could not pick up").
+const WALK_MS_PER_BLOCK = 280
 const SETTLE_MS = 300
 const ABOVE_LIMIT = 3
 
@@ -65,6 +69,17 @@ export async function pickupAction(args, bot, config, _deps) {
   // 261017 (pass 14): items she tossed to the player stay theirs.
   const left = new Map()
   let skipped = null // { d, pos, above } nearest drop out of range or too high
+  // 261031 (pass 33 review): picking up the weapon a death took. The player
+  // in the same fight often dropped the same sword next to hers; pickup took
+  // both and the bread lying with the second, and she kept them. Go for the
+  // drop nearest her own death spot and stop once one is in her inventory.
+  let ownWeapon = null // { pos } when `want` is the weapon her death dropped
+  if (want) {
+    try {
+      const d = lostWeaponDrop(bot)
+      if (d && d.weapon === want) ownWeapon = { pos: d.pos && !d.otherDim ? d.pos : null }
+    } catch { /* plain pickup */ }
+  }
 
   for (let i = 0; i < MAX_ITEMS; i++) {
     if (signal?.aborted) break
@@ -93,7 +108,10 @@ export async function pickupAction(args, bot, config, _deps) {
         if (!left.has(e.id)) left.set(e.id, given)
         continue
       }
-      if (d < bestD) { bestD = d; best = e }
+      const rank = ownWeapon?.pos
+        ? Math.hypot(e.position.x - ownWeapon.pos.x, e.position.y - ownWeapon.pos.y, e.position.z - ownWeapon.pos.z)
+        : d
+      if (rank < bestD) { bestD = rank; best = e }
     }
     if (!best) break
     seen++
@@ -104,9 +122,11 @@ export async function pickupAction(args, bot, config, _deps) {
     const it = droppedItemName(best)
     // 261019 (pass 19): resume, so a mob hit on the way does not end the
     // walk to the drop.
-    await goTo(bot, Math.floor(best.position.x), Math.floor(best.position.y), Math.floor(best.position.z), 0, WALK_MS, signal, { ...dropWalkOpts(it?.name), resume: true })
+    const walkMs = Math.max(WALK_MS, 1500 + Math.ceil(best.position.distanceTo(here) * WALK_MS_PER_BLOCK))
+    await goTo(bot, Math.floor(best.position.x), Math.floor(best.position.y), Math.floor(best.position.z), 0, walkMs, signal, { ...dropWalkOpts(it?.name), resume: true })
     if (signal?.aborted) break
     await sleep(SETTLE_MS)
+    if (ownWeapon && (inventoryCounts(bot)?.get(want) ?? 0) > (before?.get(want) ?? 0)) break
   }
 
   const got = gained(before, inventoryCounts(bot))

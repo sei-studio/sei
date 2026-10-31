@@ -6,6 +6,7 @@
 import { describe, it, expect } from 'vitest'
 import { Vec3 } from 'vec3'
 import { pickupAction } from './pickup.js'
+import { noteLostWeapon } from './weaponSelect.js'
 
 function dropEntity(id, name, x, y, z, count = 1) {
   return {
@@ -117,5 +118,35 @@ describe('pickup when the item is already in the inventory (261019)', () => {
     const { bot, goTo } = makeBot([], [{ name: 'stone_sword', count: 1 }])
     const res = await pickupAction({ item: 'stone_sword', maxDistance: 4 }, bot, {}, deps(goTo))
     expect(res).toBe('no stone_sword on the ground within 4m; you already have 1 stone_sword in your inventory')
+  })
+
+  // 261031 (pass 33 review): after a death took her sword, the player's own
+  // sword (and bread) lying closer is left alone.
+  it('takes her own lost weapon, nearest her death spot, and stops there', async () => {
+    const { bot, goTo, walked } = makeBot([
+      dropEntity(1, 'stone_sword', 3, 64, 0), // the player's, closer to her
+      dropEntity(2, 'bread', 3, 64, 0),
+      dropEntity(3, 'stone_sword', 12, 64, 0), // hers
+    ])
+    noteLostWeapon(bot, [{ item: 'stone_sword', n: 1 }], Date.now(), { x: 12, y: 64, z: 0 })
+    const res = await pickupAction({ item: 'stone_sword', maxDistance: 32 }, bot, {}, deps(goTo))
+    expect(walked).toEqual([[12, 64, 0]])
+    expect(res).toBe('picked up 1 stone_sword')
+  })
+
+  it('outside the lost-weapon state a named pickup still takes every match', async () => {
+    const { bot, goTo, walked } = makeBot([dropEntity(1, 'stone_sword', 3, 64, 0), dropEntity(3, 'stone_sword', 12, 64, 0)])
+    const res = await pickupAction({ item: 'stone_sword', maxDistance: 32 }, bot, {}, deps(goTo))
+    expect(walked).toEqual([[3, 64, 0], [12, 64, 0]])
+    expect(res).toBe('picked up 2 stone_sword')
+  })
+
+  it('gives a far drop enough time to walk to', async () => {
+    const times = []
+    const { bot, goTo } = makeBot([dropEntity(1, 'stick', 2, 64, 0), dropEntity(2, 'stick', 30, 64, 0)])
+    const timed = async (b, x, y, z, r, ms, ...rest) => { times.push(ms); return goTo(b, x, y, z, r, ms, ...rest) }
+    await pickupAction({ maxDistance: 32 }, bot, {}, deps(timed))
+    expect(times[0]).toBe(4000)
+    expect(times[1]).toBeGreaterThanOrEqual(1500 + 27 * 280)
   })
 })

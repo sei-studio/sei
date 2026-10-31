@@ -78,7 +78,7 @@ export function trackDeaths(bot, opts = {}) {
     carried = inventoryTally(bot)
   }
 
-  let pending = null // { pos, carried, diedAt, timers[] }
+  let pending = null // { pos, dim, carried, diedAt, timers[] }
   let recentDeaths = [] // diedAt of the deaths reported in the last RECENT_DEATHS_MS
 
   function report() {
@@ -92,7 +92,7 @@ export function trackDeaths(bot, opts = {}) {
     // 261030 (pass 31): remember a dropped weapon (weaponSelect lostWeaponUnarmed).
     // 261031 (pass 33): with the spot it dropped at.
     let lostWeapon = null
-    try { lostWeapon = noteLostWeapon(bot, lost, Date.now(), p.pos) } catch {}
+    try { lostWeapon = noteLostWeapon(bot, lost, Date.now(), p.pos, p.dim) } catch {}
     // 261031 (pass 33): a death that dropped no weapon while an earlier one
     // still lies on the ground. The death turn said "nothing dropped, carry
     // on", and she forgot the sword a few blocks away.
@@ -133,10 +133,14 @@ export function trackDeaths(bot, opts = {}) {
         pos = { x: Math.round(q.x), y: Math.round(q.y), z: Math.round(q.z) }
       }
     } catch { /* pos stays null */ }
+    // The dimension she died in, read before the respawn moves her (a
+    // Nether death respawns in the Overworld).
+    let dim = null
+    try { dim = bot.game?.dimension ?? null } catch { /* dim stays null */ }
     const live = inventoryTally(bot)
     const had = live.size > 0 ? live : carried
     if (pending) { for (const t of pending.timers) clearTimeout(t); try { bot.off?.('spawn', pending.onSpawn) } catch {} }
-    const p = { pos, carried: had, diedAt: Date.now(), timers: [], onSpawn: null }
+    const p = { pos, dim, carried: had, diedAt: Date.now(), timers: [], onSpawn: null }
     p.onSpawn = () => {
       if (pending !== p) return
       p.timers.push(setTimeout(report, settleMs))
