@@ -1134,8 +1134,8 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // errands sessions (10-20..10-30). Without it, nothing kept the errand: on
   // the turn her walk reached the player she started the next order or her
   // own plan with the coal still in her bag (9 of the 24 sessions where the
-  // coal never reached them). The turn her walk to the player ends quotes
-  // these lines (arrivalAskText). toPlayer: the line only got a walk to the
+  // coal never reached them). While one is open, the turn her walk to the
+  // player ends gets a hand-over note (arrivalAskText). toPlayer: the line only got a walk to the
   // player or follow ("meet me over here"), so it asks for nothing to hand
   // over. Cleared by a give that lands, a plain stop, or age. Only for games
   // that report their hand-overs (caps.handOverDetail).
@@ -1209,18 +1209,19 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     const toPlayer = uses.every((u) => aimsAtPlayer(u.input) && !isHandOver(u.name))
     openAsks = [...openAsks.filter((a) => a.line !== text), { at: Date.now(), who: who ?? null, line: text, toPlayer }].slice(-OPEN_ASK_MAX)
   }
-  // The completion turn of a walk that reached the player: the asks to look
-  // at before anything else, or '' when none could want a hand-over.
+  // The completion turn of a walk that reached the player: the hand-over
+  // note, or '' when no open line could want a hand-over.
   function arrivalAskText(data) {
     if (!openAsks.length || data?.aborted || data?.name !== 'goTo' || !aimsAtPlayer(data?.input)) return ''
     if (!/^reached\b/.test(String(data?.result ?? ''))) return ''
-    // A held or just-cleared player task has its own hand-over note
-    // (taskNoteText); this one must not argue with it.
-    if (taskHolds.size || clearedTasks.some((c) => Date.now() - c.at < CLEARED_TASK_MS)) return ''
+    // A held player task has its own note (taskNoteText). A cleared one does
+    // not stop this note: the coal asked for before a called-off log run
+    // still has to be handed over (errands-02-B, pass 32 compare).
+    if (taskHolds.size) return ''
     openAsks = openAsks.filter((a) => Date.now() - a.at < OPEN_ASK_MS)
     if (!openAsks.some((a) => !a.toPlayer)) return ''
     const who = openAsks.at(-1).who || config?.player_display_name || config?.player_username || null
-    return NUDGES.arrivedAsks({ who, lines: openAsks.map((a) => a.line) })
+    return NUDGES.arrivedAsks({ who })
   }
   function noteTaskStarted(name, args) {
     if (ACTION_VERB_SKIP.has(name)) return

@@ -4,8 +4,8 @@
 // when no player task was in her heartbeat (92 of 140 sessions).
 //  - Player lines she answered with a world action stay open until a
 //    hand-over lands, a plain stop, or age.
-//  - The completion turn of a goTo that reached the player quotes them, when
-//    one of them asked for more than her company.
+//  - The completion turn of a goTo that reached the player gets a hand-over
+//    note while one of them asked for more than her company.
 
 import os from 'node:os'
 import path from 'node:path'
@@ -17,16 +17,11 @@ import { createOrchestrator, _setTickIntervalForTests } from './orchestrator.js'
 afterEach(() => { vi.restoreAllMocks() })
 
 describe('NUDGES.arrivedAsks', () => {
-  it('quotes one ask', () => {
-    const t = NUDGES.arrivedAsks({ who: 'Alex', lines: ['grab me some coal and bring it back'] })
-    expect(t).toBe('You are next to Alex now. Since you last handed them anything, they asked you "grab me some coal and bring it back". If one of those asks is for something you are carrying, hand it over with give now, unless they called it off since.')
-  })
-
-  it('lists several in order and falls back to the player', () => {
-    const t = NUDGES.arrivedAsks({ who: null, lines: ['get coal', 'meet me here'] })
+  it('names the player and both outcomes, and quotes nothing', () => {
+    expect(NUDGES.arrivedAsks({ who: 'Alex' })).toBe('You are next to Alex now. Look back at what they asked you for: anything they still want that you are carrying reaches them only through give, and anything they called off stays with you.')
+    const t = NUDGES.arrivedAsks({ who: null })
     expect(t).toContain('You are next to the player now.')
-    expect(t).toContain('they asked you "get coal" and then "meet me here".')
-    expect(t).not.toMatch(/—/)
+    expect(t).not.toMatch(/—|"/)
   })
 })
 
@@ -132,7 +127,7 @@ function setup(script, adapterOpts) {
 }
 
 describe('orchestrator: open asks on arrival', () => {
-  it('quotes the errand when her walk back reaches the player', async () => {
+  it('notes the hand-over when her walk back reaches the player', async () => {
     const { provider, send } = setup([
       turn(say('s1', 'on it'), act('a1', 'gather', { item: 'coal', count: 6 })),
       turn(act('a2', 'goTo', { player: 'Steve' })),
@@ -142,7 +137,6 @@ describe('orchestrator: open asks on arrival', () => {
     const after = allText(provider.calls[2])
     expect(after).toContain('reached Steve')
     expect(after).toContain(ARRIVED)
-    expect(after).toContain('\\"grab me some coal and bring it back\\"')
     // Only the arrival turn carries it.
     expect(allText(provider.calls[1])).not.toContain(ARRIVED)
   })
@@ -207,7 +201,7 @@ describe('orchestrator: open asks on arrival', () => {
     expect(allText(arrivals.at(-1))).not.toContain(ARRIVED)
   })
 
-  it('keeps the errand through a later "meet me" and quotes both', async () => {
+  it('keeps the errand open through a later "meet me"', async () => {
     const { send, arrivalCalls } = setup([
       turn(say('s1', 'on it'), act('a1', 'gather', { item: 'coal', count: 6 })),
       turn(act('e1', 'end_loop')),
@@ -218,8 +212,6 @@ describe('orchestrator: open asks on arrival', () => {
     await send('meet me over here')
     const arrivals = arrivalCalls()
     expect(arrivals.length).toBeGreaterThan(0)
-    const t = allText(arrivals.at(-1))
-    expect(t).toContain(ARRIVED)
-    expect(t).toContain('\\"grab me some coal\\" and then \\"meet me over here\\"')
+    expect(allText(arrivals.at(-1))).toContain(ARRIVED)
   })
 })

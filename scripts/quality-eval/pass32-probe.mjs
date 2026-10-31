@@ -15,9 +15,18 @@
 //   meet_me_calloff   coal in the bag, then a log run, then "forget the logs,
 //                     just meet me over here" (stubbed stop + walk). ok =
 //                     coal given and no logs given.
-// Control:
+// From the 10-31 compare (pass32 v1 handed called-off logs over):
+//   calloff_walk      logs gathered, walking over, the call-off lands during
+//                     the walk (errands-06-B). ok = no logs given.
+//   calloff_after_give  coal handed over, log run called off with a stubbed
+//                     stop + walk (errands-04-B). ok = no logs given.
+//   cleared_logs_goal coal in the bag, the log run's player goal cleared on
+//                     the call-off (errands-02-B). ok = coal given, no logs.
+// Controls:
 //   come_here         nothing asked for; "come here", she arrives with her
 //                     own coal. ok = nothing given.
+//   come_here_busy    her own furnace project, small talk answered while she
+//                     works, then "come here". ok = nothing given.
 //
 //   ELECTRON_RUN_AS_NODE=1 npx electron scripts/quality-eval/pass32-probe.mjs \
 //     --out DIR [--root TREE] [--reps 8] [--cases a,b]
@@ -122,12 +131,13 @@ const COAL_RUN = (t) => ({ t, player: COAL_ASK, uses: [
   ['say', { text: 'six coal, heading back' }],
   ['goTo', { player: PLAYER, range: 2 }, { hold: true }],
 ] })
+const COAL_INV = [['stone_pickaxe', 1], ['coal', 6], ['cobblestone', 4]]
 const arrive = (t, inv) => [
   { t, release: { ...AFTER, invs: { goTo: inv } }, live: true },
   { t: t + 14, release: AFTER, live: true },
 ]
 const gaveItem = (r, re) => r.acts.some((a) => a.name === 'give' && re.test(String(a.args?.item ?? '')))
-const COAL_INV = [['stone_pickaxe', 1], ['coal', 6], ['cobblestone', 4]]
+const DOCK_GOAL = "Get 8 logs for Alex's dock. Done when 8 logs are handed to Alex via give."
 const CASES = {
   arrive_no_goal: {
     world: { inv: [['stone_pickaxe', 1]], owner: FAR },
@@ -163,6 +173,96 @@ const CASES = {
       const logs = gaveItem(r, /log|plank/)
       return { ok: coal && !logs, coal, logs }
     },
+  },
+  // From the 10-31 compare (errands-06-B): the logs gathered with no goal,
+  // walking over to hand them over, and the call-off lands during the walk
+  // with no answer yet. ok = no logs given.
+  calloff_walk: {
+    world: { inv: [['stone_pickaxe', 1]], owner: FAR },
+    steps: [HELLO,
+      { t: 20, player: 'get me like 8 logs, i wanna build a dock', uses: [
+        ['say', { text: 'logs for a dock, on it' }],
+        ['gather', { name: 'oak_log', count: 8 }, { result: 'gathered 8/8 oak_log', inv: [['stone_pickaxe', 1], ['oak_log', 8]] }],
+      ], then: [
+        ['say', { text: 'eight logs, bringing them over' }],
+        ['goTo', { player: PLAYER, range: 2 }, { hold: true }],
+      ] },
+      { t: 40, player: 'actually forget the logs, just meet me over here' },
+      ...arrive(43, [['stone_pickaxe', 1], ['oak_log', 8]])],
+    judge: (r) => ({ ok: !gaveItem(r, /log|plank/), logs: gaveItem(r, /log|plank/) }),
+  },
+  // errands-04-B: the coal was handed over already; the log run is called
+  // off (stubbed stop + walk). ok = no logs given.
+  calloff_after_give: {
+    world: { inv: [['stone_pickaxe', 1]], owner: FAR },
+    steps: [HELLO,
+      { t: 20, player: COAL_ASK, uses: [
+        ['say', { text: 'coal for torches, on it' }],
+        ['gather', { name: 'coal_ore', count: 6 }, { result: 'gathered 6/6 coal (mined from coal_ore)', inv: COAL_INV }],
+      ], then: [['give', { item: 'coal', count: 6, player: PLAYER }, { result: 'gave 6 coal to Alex, tossed at their feet; you have 0 coal left', inv: [['stone_pickaxe', 1], ['cobblestone', 4]] }]] },
+      { t: 40, player: 'get me like 8 logs, i wanna build a dock', uses: [
+        ['say', { text: 'logs too? ok, you owe me' }],
+        ['gather', { name: 'oak_log', count: 8 }, { hold: true, progress: { name: 'oak_log', count: 8, before: 0 } }],
+      ] },
+      { t: 60, player: 'actually forget the logs, just meet me over here', uses: [
+        ['stop', {}],
+        ['say', { text: 'ok, no logs. coming to you' }],
+        ['goTo', { player: PLAYER, range: 2 }, { hold: true }],
+      ] },
+      ...arrive(72, [['stone_pickaxe', 1], ['cobblestone', 4], ['oak_log', 4]])],
+    judge: (r) => ({ ok: !gaveItem(r, /log|plank/), logs: gaveItem(r, /log|plank/) }),
+  },
+  // errands-02-B: the coal is in her bag with no goal, the log run had a
+  // player goal and it is cleared on the call-off. ok = coal given, no logs.
+  cleared_logs_goal: {
+    world: { inv: [['stone_pickaxe', 1]], owner: FAR },
+    steps: [HELLO,
+      { t: 20, player: COAL_ASK, uses: [
+        ['say', { text: 'coal for torches, on it' }],
+        ['gather', { name: 'coal_ore', count: 6 }, { result: 'gathered 6/6 coal (mined from coal_ore)', inv: COAL_INV }],
+      ], then: [['say', { text: 'six coal in the bag' }]] },
+      { t: 40, player: 'get me like 8 logs, i wanna build a dock', uses: [
+        ['say', { text: 'logs too? ok, you owe me' }],
+        ['setGoal', { text: DOCK_GOAL, for_player: true }],
+        ['gather', { name: 'oak_log', count: 8 }, { hold: true, progress: { name: 'oak_log', count: 8, before: 0 } }],
+      ] },
+      { t: 60, player: 'actually forget the logs, just meet me over here', uses: [
+        ['clearGoal', { text: DOCK_GOAL }],
+        ['stop', {}],
+        ['say', { text: 'ok, no logs. coming to you' }],
+        ['goTo', { player: PLAYER, range: 2 }, { hold: true }],
+      ] },
+      ...arrive(72, [...COAL_INV, ['oak_log', 3]])],
+    judge: (r) => {
+      const coal = gaveItem(r, /coal/)
+      const logs = gaveItem(r, /log|plank/)
+      return { ok: coal && !logs, coal, logs }
+    },
+  },
+  // Control: her own project, small talk answered while she works, then
+  // "come here". ok = nothing given.
+  come_here_busy: {
+    world: { inv: [['stone_pickaxe', 1]], owner: FAR },
+    steps: [
+      { t: 0, idle: true, uses: [
+        ['say', { text: 'hey alex. i want a furnace, so stone first' }],
+        ['setGoal', { text: 'Make a furnace. Done when I have a furnace.' }],
+        ['gather', { name: 'stone', count: 8 }, { hold: true, progress: { name: 'cobblestone', count: 8, before: 0 } }],
+      ] },
+      { t: 15, player: 'btw do u like caves or nah', uses: [['say', { text: 'caves are great until something hisses' }]] },
+      { t: 30, release: { result: 'gathered 8/8 cobblestone (mined from stone)', inv: [['stone_pickaxe', 1], ['cobblestone', 8], ['coal', 3]] }, uses: [
+        ['gather', { name: 'coal_ore', count: 3 }, { result: 'gathered 3/3 coal (mined from coal_ore)', inv: [['stone_pickaxe', 1], ['cobblestone', 8], ['coal', 3]] }],
+      ] },
+      { t: 40, player: 'hows it going', uses: [
+        ['say', { text: 'good, stone and coal done' }],
+        ['gather', { name: 'stone', count: 4 }, { result: 'gathered 4/4 cobblestone (mined from stone)', inv: [['stone_pickaxe', 1], ['cobblestone', 12], ['coal', 3]] }],
+      ] },
+      { t: 55, player: 'come here', uses: [
+        ['say', { text: 'coming, hold on' }],
+        ['goTo', { player: PLAYER, range: 2 }, { hold: true }],
+      ] },
+      ...arrive(64, [['stone_pickaxe', 1], ['cobblestone', 12], ['coal', 3]])],
+    judge: (r) => ({ ok: !r.acts.some((a) => a.name === 'give'), gave: r.acts.some((a) => a.name === 'give') }),
   },
   come_here: {
     world: { inv: COAL_INV, owner: FAR },

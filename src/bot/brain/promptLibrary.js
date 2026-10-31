@@ -979,16 +979,14 @@ export const NUDGES = {
   },
 
   // 261031 (quality pass 32): the completion turn of a walk that reached the
-  // player, when lines she acted on are still open (orchestrator
-  // arrivalAskText). Without it the arrival turn carried only "reached Alex"
-  // and the newest order, and 9 of 24 errands sessions that never handed the
-  // coal over had her standing next to the player with it in her bag.
-  arrivedAsks: ({ who, lines }) => {
-    const list = (Array.isArray(lines) ? lines : [lines]).map((l) => `"${clipNote(l, 120)}"`).filter((l) => l !== '""')
-    const name = who || 'the player'
-    const asked = list.length <= 1 ? `they asked you ${list[0] ?? ''}` : `they asked you ${list.slice(0, -1).join(', ')} and then ${list[list.length - 1]}`
-    return `You are next to ${name} now. Since you last handed them anything, ${asked}. If one of those asks is for something you are carrying, hand it over with give now, unless they called it off since.`
-  },
+  // player, when she acted on a line of theirs since her last hand-over
+  // (orchestrator arrivalAskText). Without it the arrival turn carried only
+  // "reached Alex" and the newest order, and 9 of 24 errands sessions that
+  // never handed the coal over had her standing next to the player with it
+  // in her bag. It quotes nothing: in live play she keeps working while she
+  // chats, so the lines she "acted on" include small talk, and a quoted list
+  // read as orders. It names both outcomes so a call-off holds.
+  arrivedAsks: ({ who }) => `You are next to ${who || 'the player'} now. Look back at what they asked you for: anything they still want that you are carrying reaches them only through give, and anything they called off stays with you.`,
 
   // 261018 (quality pass 15): the line the snapshot carries after she
   // stopped (stop or unfollow, nothing new started) in answer to a player
