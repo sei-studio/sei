@@ -987,6 +987,16 @@ export const NUDGES = {
     return `While it ran, the player said ${quoted.slice(0, -1).join(', ')} and then ${quoted[quoted.length - 1]}, and you answered without starting anything. If one of them asked you to do something you have not started, start it now, before your own plan.`
   },
 
+  // 261031 (quality pass 32): the completion turn of a walk that reached the
+  // player, when she acted on a line of theirs since her last hand-over
+  // (orchestrator arrivalAskText). Without it the arrival turn carried only
+  // "reached Alex" and the newest order, and 9 of 24 errands sessions that
+  // never handed the coal over had her standing next to the player with it
+  // in her bag. It quotes nothing: in live play she keeps working while she
+  // chats, so the lines she "acted on" include small talk, and a quoted list
+  // read as orders. It names both outcomes so a call-off holds.
+  arrivedAsks: ({ who }) => `You are next to ${who || 'the player'} now. Look back at what they asked you for: anything they still want that you are carrying reaches them only through give, and anything they called off stays with you.`,
+
   // 261018 (quality pass 15): the line the snapshot carries after she
   // stopped (stop or unfollow, nothing new started) in answer to a player
   // line. She decides from their words whether it was a request to stay; the

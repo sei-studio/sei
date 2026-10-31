@@ -1127,6 +1127,21 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // handed the items over anyway (probe chain_give and chain_gather).
   let clearedTasks = []
   const CLEARED_TASK_MS = config?.memory?.cleared_task_note_ms ?? 180_000
+  // 261031 (pass 32): the player's lines she answered with a world action
+  // since her last hand-over ({ at, who, line, toPlayer }), oldest first.
+  // Everything above keys on a player task in her heartbeat, and she wrote
+  // one for "grab me some coal and bring it back here" in only 48 of 140
+  // errands sessions (10-20..10-30). Without it, nothing kept the errand: on
+  // the turn her walk reached the player she started the next order or her
+  // own plan with the coal still in her bag (9 of the 24 sessions where the
+  // coal never reached them). While one is open, the turn her walk to the
+  // player ends gets a hand-over note (arrivalAskText). toPlayer: the line only got a walk to the
+  // player or follow ("meet me over here"), so it asks for nothing to hand
+  // over. Cleared by a give that lands, a plain stop, or age. Only for games
+  // that report their hand-overs (caps.handOverDetail).
+  let openAsks = []
+  const OPEN_ASK_MS = config?.memory?.open_ask_note_ms ?? 300_000
+  const OPEN_ASK_MAX = 3
   async function refreshPlayerTaskInGoals() {
     if (!heartbeatLog) { playerTaskInGoals = false; heartbeatGoals = []; heartbeatGoalLines = []; playerTasks = []; taskHolds.clear(); return }
     try {
@@ -1186,6 +1201,36 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     if (!args || typeof args !== 'object') return false
     const names = new Set(playerNames().map((n) => String(n).toLowerCase()))
     return Object.values(args).some((v) => typeof v === 'string' && names.has(v.trim().toLowerCase()))
+  }
+  // pass 32: see openAsks.
+  function noteOpenAsk(line, who, uses) {
+    const text = String(line ?? '').trim()
+    if (!text || typeof caps.handOverDetail !== 'function') return
+    const toPlayer = uses.every((u) => aimsAtPlayer(u.input) && !isHandOver(u.name))
+    openAsks = [...openAsks.filter((a) => a.line !== text), { at: Date.now(), who: who ?? null, line: text, toPlayer }].slice(-OPEN_ASK_MAX)
+  }
+  // The completion turn of a walk that reached the player: the hand-over
+  // note, or '' when no open line could want a hand-over.
+  // Only a walk to the player themself: aimsAtPlayer also matches sibling
+  // companions, and "You are next to Steve" on reaching Lyra is false.
+  const isOwnerName = (v) => typeof v === 'string' && !!v.trim() &&
+    [config?.player_display_name, config?.player_username].some((n) => n && String(n).toLowerCase() === v.trim().toLowerCase())
+  const isCompanionName = (v) => typeof v === 'string' && !!v.trim() &&
+    companions.some((c) => String(c).toLowerCase() === v.trim().toLowerCase())
+  function arrivalAskText(data) {
+    if (!openAsks.length || data?.aborted || data?.name !== 'goTo') return ''
+    if (!Object.values(data?.input ?? {}).some(isOwnerName)) return ''
+    if (!/^reached\b/.test(String(data?.result ?? ''))) return ''
+    // A held player task has its own note (taskNoteText). A cleared one does
+    // not stop this note: the coal asked for before a called-off log run
+    // still has to be handed over (errands-02-B, pass 32 compare).
+    if (taskHolds.size) return ''
+    openAsks = openAsks.filter((a) => Date.now() - a.at < OPEN_ASK_MS)
+    if (!openAsks.some((a) => !a.toPlayer)) return ''
+    // Name the player she reached, not the newest asker (a teammate or a
+    // second human may have spoken last).
+    const who = config?.player_display_name || config?.player_username || null
+    return NUDGES.arrivedAsks({ who })
   }
   function noteTaskStarted(name, args) {
     if (ACTION_VERB_SKIP.has(name)) return
@@ -4228,6 +4273,10 @@ function maybeWarnByteCap(loop, warned) {
         const text = typeof r === 'string' ? r : (typeof r?.text === 'string' ? r.text : '')
         const h = caps.handOverDetail(name, text)
         if (h) convoMemory.recentChat.noteGiven(h)
+        // pass 32: a hand-over answers the asks before it. Not a give to a
+        // sibling companion ("give Lyra some logs"): the player's own ask
+        // is still open.
+        if (h && !isCompanionName(h.to)) openAsks = []
       }
       if (countsAsGoalWork(name, r)) lastWorkAt = Date.now()
       if (!ACTION_VERB_SKIP.has(name)) lastActionEndAt = Date.now()
@@ -4660,7 +4709,8 @@ function maybeWarnByteCap(loop, warned) {
     // own cadence check).
     // 261020 (pass 20): her fresh line, when this is the result of her own
     // action (a player line folded in already carries the reply form).
-    const resultEventText = extraEventText ?? (resultRepeatsTail(loop).trim() || null)
+    // 261031 (pass 32): plus the open asks when a walk reached the player.
+    const resultEventText = extraEventText ?? ([arrivalAskText(data), resultRepeatsTail(loop).trim()].filter(Boolean).join('\n\n') || null)
     try {
       loop.appendToolResults(pendingResults, {
         snapshot: snapshotText(),
@@ -4820,6 +4870,10 @@ function maybeWarnByteCap(loop, warned) {
       // 261016 (pass 9c): she answered a player line while this ran without
       // starting anything ("on it, after this stone batch"); bring that line
       // back now, so a new order is not lost behind her own next step.
+      // 261031 (pass 32): a walk that reached the player first asks what she
+      // brought them (arrivalAskText), ahead of the next order.
+      const arrival = arrivalAskText(data)
+      if (arrival) eventText = `${eventText}\n\n${arrival}`
       if (replyDeferred?.length) eventText = `${eventText}\n\n${NUDGES.deferredReplies(replyDeferred)}`
       // 261020 (pass 20): her fresh line, so the result turn does not say it again.
       else if (!pendingInterrupt) eventText += resultRepeatsTail(loop)
@@ -5596,6 +5650,12 @@ function maybeWarnByteCap(loop, warned) {
         // ends it. The stay note below lets stationary actions through.
         if (actingTools.some(u => u.name !== 'unfollow') || setsGoal) playerStopAt = 0
         else if ((hasStop && asksToStop(line)) || isBareStopLine(line)) playerStopAt = Date.now()
+        // pass 32: a line she acted on stays open until a hand-over; a plain
+        // stop (no new action) closes them all.
+        if (!loop._groupVoiceLine) {
+          if (newSuspendingTools.length > 0) noteOpenAsk(line, loop._lastPlayerLine.who, newSuspendingTools)
+          else if (hasStop) openAsks = []
+        }
         // 261018 (pass 15): her own choice to stop or unfollow in answer to
         // this line leaves the stay note for later turns (see stayNote). Not
         // for a group-call line, which may have been for someone else, and
