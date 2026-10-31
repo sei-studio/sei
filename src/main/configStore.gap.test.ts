@@ -284,12 +284,35 @@ describe('configShowsPriorSetup', () => {
     await mkdir(mem, { recursive: true });
     expect(await configShowsPriorSetup()).toBe(false);
     await writeFile(path.join(mem, 'chat.jsonl'), '{}\n');
+    expect(await configShowsPriorSetup()).toBe(false);
+    await writeFile(path.join(mem, 'chat.jsonl'), JSON.stringify({ id: 'a', role: 'user', text: 'hi', ts: 1 }) + '\n');
+    expect(await configShowsPriorSetup()).toBe(true);
+    await rm(path.join(mem, 'chat.jsonl'));
+    await writeFile(path.join(mem, 'MEMORY.md'), '- [x] likes cats\n');
     expect(await configShowsPriorSetup()).toBe(true);
   });
 
-  it('a pre-reset copy means set up', async () => {
-    await writeRaw('{}', path.join(dir(), 'config.before-reset-2026-01-01T00-00-00-000Z.json'));
+  it('a transcript with only a system play row (written after a factory reset wipe) is still new', async () => {
+    const mem = path.join(dir(), 'memory', 'sui');
+    await mkdir(mem, { recursive: true });
+    const row = { id: 'p', role: 'system', text: 'You and Sui played chess for 3 minutes.', ts: 1, event: { kind: 'play' } };
+    await writeFile(path.join(mem, 'chat.jsonl'), JSON.stringify(row) + '\n');
+    expect(await configShowsPriorSetup()).toBe(false);
+  });
+
+  it('a pre-reset copy that names the player means set up', async () => {
+    await writeRaw(JSON.stringify({ preferred_name: 'Ana' }), path.join(dir(), 'config.before-reset-2026-01-01T00-00-00-000Z.json'));
     expect(await configShowsPriorSetup()).toBe(true);
+  });
+
+  it('a safe-mode reset of a profile that never onboarded is still new', async () => {
+    // Safe-mode Reset runs on every profile: a fresh install that failed to
+    // start twice, or a signed-in user's untouched local profile.
+    await saveConfig(UserConfigSchema.parse({ ui_language: 'zh' }));
+    await updateConfig((c) => ({ ...c, theme_mode: 'acorn' }));
+    await resetConfigKeepingIdentity();
+    expect((await names()).some((n) => n.startsWith('config.before-reset-'))).toBe(true);
+    expect(await configShowsPriorSetup()).toBe(false);
   });
 
   it('is per profile', async () => {

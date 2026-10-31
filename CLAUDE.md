@@ -3797,8 +3797,11 @@ A build that cannot start must still be able to update itself, and a damaged
   `accountHasProfile`) first asks `config:profile-state`
   (`profileSetupState.ts` -> `configStore.configShowsPriorSetup`; renderer
   `lib/profileSetUp.ts`). Set up before = this process recovered the
-  config, a `config.corrupt-*` or `config.before-reset-*` copy exists, the
-  `.bak` names the player, or a companion has `chat.jsonl` / `MEMORY.md`.
+  config, a `config.corrupt-*` copy exists, the `.bak` or a
+  `config.before-reset-*` copy names the player (Reset runs on every
+  profile, so a nameless pre-reset copy is no evidence), or a companion has
+  a `MEMORY.md` or a `chat.jsonl` with a user or companion line (system
+  play rows alone can land after a factory reset wipe).
   A config + backup with no name (an onboarding left half way, or a fresh
   install after main's boot writes) is still new. Such a profile goes home
   signed in (main first reads the name back from the cloud profile,

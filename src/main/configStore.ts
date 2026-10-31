@@ -15,7 +15,7 @@
  * — never read the raw field on UserConfig directly so the default
  * fall-through stays inside one helper.
  */
-import { readFile, mkdir, readdir, rename, unlink } from 'node:fs/promises';
+import { readFile, mkdir, readdir, rename, unlink, open } from 'node:fs/promises';
 import path from 'node:path';
 import { UserConfigSchema, type UserConfig } from '../shared/characterSchema';
 // ESM imports of existing brain JS helpers (.js extension required under nodenext-style resolution).
@@ -624,15 +624,49 @@ function hasName(v: unknown): boolean {
 }
 
 /**
+ * Whether a chat transcript holds a line the player or the companion said
+ * (not only `system` play/call rows). A closing play row can be appended
+ * after a factory reset wiped the profile (chess and call ends race the
+ * wipe and mkdir the memory dir back), and that alone is no evidence of
+ * setup. Reads the first 64 KB only.
+ */
+async function transcriptHasConversation(file: string): Promise<boolean> {
+  let text = '';
+  try {
+    const fh = await open(file, 'r');
+    try {
+      const buf = Buffer.alloc(64 * 1024);
+      const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
+      text = buf.subarray(0, bytesRead).toString('utf8');
+    } finally {
+      await fh.close();
+    }
+  } catch {
+    return false;
+  }
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const row = JSON.parse(line) as { role?: unknown } | null;
+      if (row && (row.role === 'user' || row.role === 'companion')) return true;
+    } catch {
+      /* a partial last line, or junk */
+    }
+  }
+  return false;
+}
+
+/**
  * Whether this profile was set up before, judged WITHOUT the name in its
  * config (T283). Onboarding is keyed on `preferred_name`, and a config
  * recovered to defaults has none, so the renderer asks this before it sends a
  * profile with no name to onboarding. True when any of:
  *   - this process recovered the profile's config from damage or loss,
- *   - a quarantined (`config.corrupt-*`) or pre-reset copy is on disk,
- *   - the backup (`config.json.bak`) names the player,
- *   - a companion has a chat transcript or memories (`memory/<id>/chat.jsonl`
- *     or `MEMORY.md`): those are only written after onboarding.
+ *   - a quarantined (`config.corrupt-*`) copy is on disk,
+ *   - the backup (`config.json.bak`) or a pre-reset copy names the player,
+ *   - a companion has memories (`memory/<id>/MEMORY.md`) or a chat transcript
+ *     with a line the player or companion said (`chat.jsonl`; system play
+ *     rows alone do not count): those are only written after onboarding.
  * A fresh install (and an onboarding left half way, which writes a config
  * and its backup but no name) has none of these. Never throws.
  */
@@ -647,13 +681,19 @@ export async function configShowsPriorSetup(opts?: { scope?: string }): Promise<
   } catch {
     return false;
   }
-  if (names.some((n) => n.startsWith(QUARANTINE_PREFIX) || n.startsWith(RESET_PREFIX))) return true;
-  if (names.includes(path.basename(backupPath(target)))) {
-    const bakText = await readTextOrNull(backupPath(target));
-    if (bakText !== null) {
-      const obj = parseObjectText(bakText);
-      if (hasName(obj ? obj.preferred_name : extractIdentityKeys(bakText).preferred_name)) return true;
-    }
+  if (names.some((n) => n.startsWith(QUARANTINE_PREFIX))) return true;
+  // A backup or pre-reset copy counts only when it names the player. Safe-mode
+  // Reset runs on EVERY profile (a fresh install that crashed twice on start,
+  // a signed-in user's never-used local profile), so a pre-reset copy on its
+  // own is no evidence of setup, and the reset keeps preferred_name anyway.
+  const namedCopies = names
+    .filter((n) => n === path.basename(backupPath(target)) || n.startsWith(RESET_PREFIX))
+    .map((n) => path.join(dir, n));
+  for (const file of namedCopies) {
+    const text = await readTextOrNull(file);
+    if (text === null) continue;
+    const obj = parseObjectText(text);
+    if (hasName(obj ? obj.preferred_name : extractIdentityKeys(text).preferred_name)) return true;
   }
   if (names.includes('memory')) {
     let ids: string[] = [];
@@ -661,7 +701,10 @@ export async function configShowsPriorSetup(opts?: { scope?: string }): Promise<
     for (const id of ids) {
       let files: string[] = [];
       try { files = await readdir(path.join(dir, 'memory', id)); } catch { continue; }
-      if (files.includes('chat.jsonl') || files.includes('MEMORY.md')) return true;
+      if (files.includes('MEMORY.md')) return true;
+      if (files.includes('chat.jsonl') && (await transcriptHasConversation(path.join(dir, 'memory', id, 'chat.jsonl')))) {
+        return true;
+      }
     }
   }
   return false;
