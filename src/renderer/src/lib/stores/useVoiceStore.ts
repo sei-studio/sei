@@ -1968,6 +1968,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           onBargeAbort: (reason) => {
             if (session !== mySession) return;
             if (reason === 'echo') interruptStats.note('echo_rejected');
+            else if (reason === 'no_voice' || reason === 'no_word') interruptStats.note(reason);
             queue?.duck(false);
           },
           onBargeIn: () => {

@@ -2133,6 +2133,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
             cuts: z.number().int().nonnegative(),
             echo_rejected: z.number().int().nonnegative(),
             manual: z.number().int().nonnegative(),
+            // 261031: absent from a renderer that predates them = 0.
+            no_voice: z.number().int().nonnegative().default(0),
+            no_word: z.number().int().nonnegative().default(0),
           })
           .optional(),
       })

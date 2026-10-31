@@ -1897,6 +1897,33 @@ The design and its measurements are committed at
   A confirmed barge also calls `backseatInterrupt`: clearing the queue only
   silences what is already synthesised, and the turn behind it would otherwise
   land its line a second later.
+- **False cuts during shares (261031).** 0.6.11 cut companions off over game
+  audio on speakers ("it keeps getting cut off"). Replayed headless (real game
+  clips, her TTS echo, real whisper-tiny), the confirming pass was reading the
+  pre-roll from BEFORE the duck, which is her own echo: Whisper made "Okay." /
+  "Hey." of it, one or two words are under the echo gate's token minimum, so
+  it committed, and the same word was then sent to her as the player's turn.
+  Now (`dictation.ts`, "Voice after the duck"): the duck PAUSES her clip
+  (`audioQueue.duck`) and a retraction resumes it, so a false duck costs a
+  short pause and no words; after the duck the mic must show a voice
+  (`bargeVoiceBar`) within ~3 frames or the duck is retracted with no STT call
+  (`no_voice`); the confirming pass reads only post-duck audio and commits on
+  `isBargeWord` (hasSpokenWord AND the utterance junk filter) that the echo
+  gate does not trace to her or the screen; a no-word pass gets one more pass
+  when a voice kept going; a duck a transcription rejected raises the bar
+  (`learnFalseDuck`), which ends the re-duck-on-resume loop a loud game
+  otherwise causes; text judged not an interrupt is never dispatched; an
+  utterance open when her clip becomes audible ends at her onset. The energy
+  deadline needs most post-duck frames voiced. `voice_call_ended` gained
+  `interrupt_no_voice` / `interrupt_no_word`. Pinned by
+  `dictation.bargeEvidence.test.ts` (scene rig: tagged frames, a Whisper-like
+  STT mock, her line paused by the duck). Cost of the trade: a lone very short
+  word that ends inside the first frame after the duck can read as a blip,
+  and so can speech that only crosses the duck bar on its last loud frame (a
+  player quieter than her echo on loud speakers, no AEC). In the headless
+  replay that converted fewer short interjections into cuts than 0.6.11 did;
+  0.6.11 caught them by transcribing the pre-roll, the same mechanism that
+  invented the false cuts. Unmeasured on real hardware.
 - **The echo gate: speakers into the mic (260807).** On speakers at max volume
   the mic hears THREE voices, and two of them used to become "the player".
   Measured across two live Instagram sessions: reel dialogue was transcribed

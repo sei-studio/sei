@@ -122,6 +122,93 @@ describe('audioQueue barge-in fade', () => {
   });
 });
 
+describe('audioQueue duck (261031: pause, not mute)', () => {
+  // The duck ramp schedules through window.setTimeout (renderer code).
+  beforeEach(() => {
+    vi.stubGlobal('window', globalThis);
+  });
+
+  it('a duck ramps the clip down and pauses it; un-duck resumes the same element', async () => {
+    const { q, el } = playingQueue();
+    q.duck(true);
+    expect(el.paused).toBe(false); // ramping
+    await vi.advanceTimersByTimeAsync(100);
+    expect(el.volume).toBe(0);
+    expect(el.paused).toBe(true); // paused, so the words under the duck are kept
+    expect(q.speaking()).toBe(true); // the slot still holds the playhead
+
+    q.duck(false);
+    expect(el.paused).toBe(false); // resumed where it stopped, same element
+    expect(FakeAudio.instances.at(-1)).toBe(el);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(el.volume).toBe(1);
+  });
+
+  it('an un-duck inside the ramp never pauses at all', async () => {
+    const { q, el } = playingQueue();
+    q.duck(true);
+    await vi.advanceTimersByTimeAsync(20);
+    q.duck(false);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(el.paused).toBe(false);
+    expect(el.volume).toBe(1);
+  });
+
+  it('a clip that reaches the playhead while ducked waits unstarted', async () => {
+    const onSpeak = vi.fn();
+    const q = createAudioQueue(onSpeak);
+    q.duck(true);
+    q.enqueue(new ArrayBuffer(8), 'sui', 'next line', 1);
+    const el = FakeAudio.instances.at(-1)!;
+    expect(el.paused).toBe(true);
+    expect(q.speaking()).toBe(true);
+    q.duck(false);
+    expect(el.paused).toBe(false);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(el.volume).toBe(1);
+  });
+
+  it('the AbortError a duck pause gives a pending play() does not end the clip', async () => {
+    const rejects: Array<(e: Error) => void> = [];
+    const realPlay = FakeAudio.prototype.play;
+    FakeAudio.prototype.play = function (this: FakeAudio): Promise<void> {
+      this.paused = false;
+      return new Promise((_, reject) => rejects.push(reject)); // still loading
+    };
+    try {
+      const onSpeak = vi.fn();
+      const q = createAudioQueue(onSpeak);
+      q.enqueue(new ArrayBuffer(8), 'sui', 'hi there', 1);
+      const el = FakeAudio.instances.at(-1)!;
+      q.duck(true);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(el.paused).toBe(true);
+      // The browser now rejects the interrupted play() with AbortError.
+      rejects.shift()!(new Error('AbortError'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(q.speaking()).toBe(true); // still this clip's slot, not skipped
+      expect(onSpeak).not.toHaveBeenLastCalledWith(false, null);
+      q.duck(false);
+      expect(el.paused).toBe(false);
+      expect(rejects.length).toBe(1); // play() asked again on resume
+    } finally {
+      FakeAudio.prototype.play = realPlay;
+    }
+  });
+
+  it('a confirmed barge clears a paused clip at once and the reply plays at full volume', async () => {
+    const { q, el } = playingQueue();
+    q.duck(true);
+    await vi.advanceTimersByTimeAsync(100);
+    q.clear();
+    expect(el.src).toBe(''); // torn down without a fade: it was already silent
+    q.enqueue(new ArrayBuffer(8), 'sui', 'oh, go ahead', 1);
+    const next = FakeAudio.instances.at(-1)!;
+    expect(next.paused).toBe(false);
+    expect(next.volume).toBe(1);
+  });
+});
+
 /**
  * Turn supersession (260806). Backseat turns land every 10-20 s while TTS
  * playback of a multi-part reply can run longer, so a new turn's lines used to
