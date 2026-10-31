@@ -33,7 +33,7 @@ import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { registerFacepackIpc } from './facepack/facepackIpc';
 import { isAnalyticsActive, shutdownAnalytics, capture, captureAppQuit, noteSurface } from './analytics';
 import { reportOnboardingAbandoned } from './onboardingFunnel';
-import { initCrashReporting, appOpenedCrashProps } from './crashReporting';
+import { initCrashReporting, appOpenedCrashProps, markStartFailed } from './crashReporting';
 import { notePreGateFailure, clearSummonBlock, clearSummonBlocksOfClass } from './summonGuard';
 import { createBotSupervisor, SUMMON_CANCELLED } from './botSupervisor';
 import { registerGameModule, getGameModule, listGameModules } from './games';
@@ -1618,6 +1618,8 @@ if (!gotLock) {
         if (applying) return;
         bootstrap().catch((err) => {
           logger.error(`bootstrap failed: ${(err as Error).message}`);
+          // A failed start, not a clean quit (crashReporting.ts).
+          markStartFailed();
           app.exit(1);
         });
       });
@@ -1694,8 +1696,10 @@ if (!gotLock) {
     // Draw!: clear turn timers and abort any in-flight guess/draw call.
     try { (await import('./draw/drawService')).shutdownDraw(); } catch { /* best-effort */ }
     try { for (const mod of listGameModules()) mod.watcher.stop(); } catch { /* best-effort */ }
-    // Close the skin server's TCP listener so the port is
-    // freed promptly. server.close drains in-flight requests before resolving.
+    // Close the skin server's TCP listener so the port is freed promptly.
+    // Bounded (261031): stop() drops idle keep-alive sockets and gives up
+    // after SERVER_STOP_TIMEOUT_MS (httpServerStop.ts); before, a keep-alive
+    // socket could hold server.close, and so the quit, open forever.
     try { if (skinServer) await skinServer.stop(); } catch { /* best-effort */ }
     // Same for the auth loopback callback server — release port 54321.
     try { if (loopbackAuthServer) await loopbackAuthServer.stop(); } catch { /* best-effort */ }

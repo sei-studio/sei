@@ -4,12 +4,15 @@
  * No paid service and no minidump upload. Three layers:
  *
  *   1. The session marker (sessionMarker.ts). Written `open` at launch, kept
- *      current by a heartbeat and the surface in use, rewritten `closed` on a
- *      clean quit (`os_shutdown` on Windows log-off / OS shutdown). The NEXT
- *      launch reads it first: a marker still `open` means the previous session
- *      died without quitting (a main-process crash, a force quit of a hung
- *      app, a kill, a power loss), reported as `app_unclean_exit` with that
- *      session's version, uptime and last surface. `app_opened` carries
+ *      current by a heartbeat and the surface in use, `closing` at
+ *      before-quit, `closed` at 'quit' once the teardown is done
+ *      (`os_shutdown` on Windows log-off / OS shutdown, `start_failed` when
+ *      bootstrap threw). The NEXT launch reads it first: a marker still
+ *      `open` means the previous session died without quitting (a
+ *      main-process crash, a force quit of a hung app, a kill, a power loss),
+ *      `closing` a quit whose teardown hung, `start_failed` a failed start;
+ *      all three are reported as `app_unclean_exit` (with `prev_exit`) and
+ *      that session's version, uptime and last surface. `app_opened` carries
  *      `prev_exit` + `prev_version`, so crash-free sessions per version is one
  *      query (crashfree.mjs in the reports repo).
  *   2. Live handlers. Main `uncaughtException` (`app_crash`, kind
@@ -52,6 +55,8 @@ import {
   readPreviousSession,
   uncleanExitProps,
   SESSION_MARKER_FILE,
+  isBadExit,
+  type EndState,
   type PrevExit,
   type PreviousSession,
 } from './sessionMarker';
@@ -113,7 +118,9 @@ export interface CrashReporter {
   onWindowClosed(windowKey: number): void;
   noteSurface(surface: string): void;
   heartbeat(): void;
-  close(state: 'closed' | 'os_shutdown'): void;
+  /** A quit started (before-quit); `close('closed')` follows once it finished. */
+  closing(): void;
+  close(state: EndState): void;
 }
 
 /** Electron reason enums ('crashed', 'oom', 'abnormal-exit', ...) as a safe token. */
@@ -212,11 +219,12 @@ export function createCrashReporter(deps: CrashReporterDeps): CrashReporter {
     marker.update({ crash_kind: kind }, now());
   }
 
-  // The previous session died open: say so now, from this launch.
-  if (previous.prevExit === 'unclean' && previous.marker) {
+  // The previous session died open, hung on quit or failed to start: say so
+  // now, from this launch.
+  if (isBadExit(previous.prevExit) && previous.marker) {
     const props = uncleanExitProps(previous.marker);
     appendCrashLog(deps.crashDir, {
-      kind: 'unclean_exit',
+      kind: previous.prevExit === 'unclean' ? 'unclean_exit' : previous.prevExit,
       process: 'main',
       version: deps.version,
       at: startedAt,
@@ -342,6 +350,10 @@ export function createCrashReporter(deps: CrashReporterDeps): CrashReporter {
     heartbeat() {
       marker.update({}, now());
     },
+    closing() {
+      if (closed) return;
+      marker.closing(now());
+    },
     close(state) {
       if (closed) return;
       closed = true;
@@ -466,11 +478,23 @@ function initInner(): void {
     /* not available on this platform */
   }
 
-  // A clean quit. before-quit for the ordinary paths (Cmd+Q, the tray, an
-  // update's quitAndInstall); 'quit' as the fallback, because the teardown
-  // chain ends in app.exit(0), which still emits it.
-  app.on('before-quit', () => r.close('closed'));
-  app.on('quit', () => r.close('closed'));
+  // A quit starts at before-quit (Cmd+Q, the tray, an update's
+  // quitAndInstall) and ends at 'quit': index.ts's teardown (flush, bot
+  // drain, server stops) runs in between and ends in app.exit(0), which skips
+  // will-quit but still emits 'quit'. A teardown that hangs and is killed
+  // leaves 'closing' (prev_exit quit_hang next launch), not 'closed'. The only
+  // nonzero exit is the bootstrap failure (markStartFailed() already ran).
+  app.on('before-quit', () => r.closing());
+  app.on('quit', (_e, exitCode) => r.close(exitCode === 0 ? 'closed' : 'start_failed'));
+}
+
+/**
+ * Bootstrap threw and the app is about to exit(1): record a failed start, so
+ * the next launch reports it (prev_exit start_failed) instead of a clean quit.
+ * Never throws.
+ */
+export function markStartFailed(): void {
+  guard(() => reporter?.close('start_failed'));
 }
 
 let currentSurfaceSync: string | null = null;

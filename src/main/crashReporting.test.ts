@@ -115,6 +115,40 @@ describe('unclean exit detection across launches', () => {
     expect(events.find((e) => e.event === 'app_unclean_exit')).toBeUndefined();
   });
 
+  it('a quit whose teardown hung is reported as quit_hang, a finished one as clean', () => {
+    const r = launch();
+    r.closing();
+    r.heartbeat();
+    // ...killed during the teardown: no close().
+    const next = launch();
+    expect(next.appOpenedProps().prev_exit).toBe('quit_hang');
+    const ev = events.filter((e) => e.event === 'app_unclean_exit');
+    expect(ev).toHaveLength(1);
+    expect(ev[0].props.prev_exit).toBe('quit_hang');
+    expect(crashLog()).toContain('quit_hang');
+    next.closing();
+    next.close('closed');
+    events = [];
+    expect(launch().appOpenedProps().prev_exit).toBe('clean');
+    expect(events).toEqual([]);
+  });
+
+  it('a failed start is reported as start_failed, never as clean', () => {
+    const r = launch();
+    r.close('start_failed');
+    // app.exit(1) then emits 'quit'; the first end state wins.
+    r.close('closed');
+    const next = launch();
+    expect(next.appOpenedProps().prev_exit).toBe('start_failed');
+    expect(events.filter((e) => e.event === 'app_unclean_exit').map((e) => e.props.prev_exit)).toEqual(['start_failed']);
+  });
+
+  it('a plain crash carries prev_exit unclean on app_unclean_exit', () => {
+    launch();
+    launch();
+    expect(events.find((e) => e.event === 'app_unclean_exit')?.props.prev_exit).toBe('unclean');
+  });
+
   it('a torn or foreign marker file reads as none, never as a crash', () => {
     writeFileSync(markerFile, '{"v":1,"state":"op');
     expect(launch().appOpenedProps().prev_exit).toBe('none');
