@@ -1905,9 +1905,10 @@ The design and its measurements are committed at
   it committed, and the same word was then sent to her as the player's turn.
   Now (`dictation.ts`, "Voice after the duck"): the duck PAUSES her clip
   (`audioQueue.duck`) and a retraction resumes it, so a false duck costs a
-  short pause and no words; after the duck the mic must show a voice
-  (`bargeVoiceBar`) within ~3 frames or the duck is retracted with no STT call
-  (`no_voice`), and that retraction re-arms the short re-grace so the residue
+  short pause and no words; a duck inside the clip's grace window (where the
+  trigger may be her own onset) must show a voice after it (`bargeVoiceBar`)
+  within ~3 frames or it is retracted with no STT call (`no_voice`), and that
+  retraction re-arms the short re-grace so the residue
   learns her echo from the resumed frames (the duck spends the clip's grace
   paused, and on loud speakers every resumed frame re-ducked her, a line
   played 128 ms at a time); the confirming pass reads only post-duck audio and commits on
@@ -1920,13 +1921,20 @@ The design and its measurements are committed at
   deadline needs most post-duck frames voiced. `voice_call_ended` gained
   `interrupt_no_voice` / `interrupt_no_word`. Pinned by
   `dictation.bargeEvidence.test.ts` (scene rig: tagged frames, a Whisper-like
-  STT mock, her line paused by the duck). Cost of the trade: a lone very short
-  word that ends inside the first frame after the duck can read as a blip,
-  and so can speech that only crosses the duck bar on its last loud frame (a
-  player quieter than her echo on loud speakers, no AEC). In the headless
-  replay that converted fewer short interjections into cuts than 0.6.11 did;
-  0.6.11 caught them by transcribing the pre-roll, the same mechanism that
-  invented the false cuts. Unmeasured on real hardware.
+  STT mock, her line paused by the duck). Short words (review, same day):
+  "stop" or "no" is often over by the frame after the duck, and on loud
+  speakers its end reads the same as her echo tail, so an energy test there
+  dropped most of them. A duck after the grace window therefore gets its one
+  pass (from the trigger frame on, never the pre-roll) even with nothing
+  voiced after it; a pass that answers after the duck was given up on is
+  still delivered as an ordinary turn when it is a word the echo gate does
+  not trace to her. Cost of the trade: those ducks cost a transcription, and
+  Whisper now and then makes a stock word ("Bye.") of one and cuts her. In
+  the headless replay that was a couple of cuts an hour on loud speakers over
+  a game (0.6.11: close to one a minute), short interjections cut her a
+  little less often than in 0.6.11, and transcriptions stayed below
+  0.6.11's in every condition. A word that never reaches the duck bar is not
+  an interrupt. Unmeasured on real hardware.
 - **The echo gate: speakers into the mic (260807).** On speakers at max volume
   the mic hears THREE voices, and two of them used to become "the player".
   Measured across two live Instagram sessions: reel dialogue was transcribed

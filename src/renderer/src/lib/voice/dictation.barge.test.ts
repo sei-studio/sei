@@ -263,8 +263,9 @@ describe('stage two after a duck', () => {
     r.dictation.armBargeGrace();
     r.frame(0.01, 8);
     // The duck, then the voice after it: stage two only reads the audio from
-    // the duck on (261031), so it needs a few frames of the player.
-    r.frame(0.06, 6);
+    // the duck on (261031), so it needs a few frames of the player. Five, so
+    // the voice does not keep going long enough to earn a second pass.
+    r.frame(0.06, 5);
     await flush();
     expect(r.barges).toBe(0);
     expect(r.aborts).toEqual(['echo']);
@@ -277,8 +278,9 @@ describe('stage two after a duck', () => {
     r.dictation.armBargeGrace();
     r.frame(0.01, 8);
     // The duck, then the voice after it: stage two only reads the audio from
-    // the duck on (261031), so it needs a few frames of the player.
-    r.frame(0.06, 6);
+    // the duck on (261031), so it needs a few frames of the player. Five, so
+    // the voice does not keep going long enough to earn a second pass.
+    r.frame(0.06, 5);
     await flush();
     expect(r.aborts).toEqual(['no_word']);
   });

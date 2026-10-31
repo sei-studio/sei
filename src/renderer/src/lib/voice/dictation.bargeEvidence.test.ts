@@ -91,16 +91,30 @@ function tagsIn(audio: Float32Array): { echo: number; player: number } {
 
 const HER_LINE = 'I found some iron over by the cave';
 
-/** Whisper as measured on the real clips: real speech gives its words; a few
- *  frames of her echo give an onset word ("Okay."), a longer stretch gives her
- *  own words back; the game alone gives nothing. */
+/** Whisper as measured on the real clips: real speech gives its words; the
+ *  ~400 ms of her echo the old pre-roll pass read gives an onset word
+ *  ("Okay."), a longer stretch gives her own words back; the game alone gives
+ *  nothing. The two frames of her a pass after a clean duck holds (the
+ *  trigger and its tail) came back as nothing or a non-speech tag in the
+ *  replay, but for two stock words ("Bye.") in 68 minutes of it. */
 function whisperLike(playerText: string) {
   return (audio: Float32Array): string => {
     const t = tagsIn(audio);
     if (t.player >= 3) return playerText;
     if (t.echo >= 4) return HER_LINE;
-    if (t.echo > 0) return 'Okay.';
+    if (t.echo >= 3) return 'Okay.';
     return '';
+  };
+}
+
+/** Whisper on a short interjection: a frame or two of the player, at least as
+ *  loud as anything else in the audio, comes back as the word; otherwise the
+ *  same as whisperLike. */
+function shortWordLike(word: string) {
+  const rest = whisperLike(word);
+  return (audio: Float32Array): string => {
+    const t = tagsIn(audio);
+    return t.player >= 1 && t.player >= t.echo ? word : rest(audio);
   };
 }
 
@@ -144,8 +158,8 @@ interface SceneOpts {
   share: boolean;
   /** Mic level of the room (and the game, during a share), per frame. */
   room: (i: number) => number;
-  /** Her echo at the mic while she is audible. */
-  echo: number;
+  /** Her echo at the mic while she is audible (a level, or one per frame). */
+  echo: number | ((i: number) => number);
   /** Frames per line of hers, and the gap between lines. */
   lineFrames: number;
   gapFrames: number;
@@ -159,6 +173,9 @@ interface SceneOpts {
   stt?: (audio: Float32Array) => string | null;
   /** Runs after each frame is fed (mute toggles and the like). */
   onFrame?: (i: number, d: { setMuted(m: boolean): void }) => void;
+  /** Share of her echo still in the frame after the duck (the queue's 60 ms
+   *  ramp plus the speaker path). 0 = she stops at the frame boundary. */
+  duckTail?: number;
 }
 
 interface SceneResult {
@@ -193,6 +210,7 @@ async function runScene(o: SceneOpts): Promise<SceneResult> {
   let frameNo = 0;
   const answer = o.stt ?? whisperLike(o.playerText ?? 'wait, hold on');
   let paused = false;
+  let pausedAt = -1;
   let lineLeft = 0;
   let gapLeft = 20;
   let duckCallsAt = -1;
@@ -203,6 +221,7 @@ async function runScene(o: SceneOpts): Promise<SceneResult> {
   const dictation = await createDictation({
     localModel: 'none',
     cloudTranscribe: (audio) => {
+      if (process.env.DEBUG_SCENE) process.stderr.write(`#${frameNo} stt ${JSON.stringify(tagsIn(audio))} n=${audio.length / FRAME}\n`);
       res.sttCalls += 1;
       res.sttAudio.push(tagsIn(audio));
       if (duckCallsAt >= 0) res.duckAudio[res.duckAudio.length - 1].push(tagsIn(audio));
@@ -216,12 +235,15 @@ async function runScene(o: SceneOpts): Promise<SceneResult> {
     },
     onStatus: () => {},
     onBargeSuspect: () => {
+      if (process.env.DEBUG_SCENE) process.stderr.write(`#${frameNo} duck\n`);
       res.suspects += 1;
       duckCallsAt = res.sttCalls;
       res.duckAudio.push([]);
       paused = true;
+      pausedAt = frameNo;
     },
     onBargeAbort: (why) => {
+      if (process.env.DEBUG_SCENE) process.stderr.write(`#${frameNo} abort ${why}\n`);
       res.aborts.push(why);
       closeDuck();
       paused = false;
@@ -248,9 +270,17 @@ async function runScene(o: SceneOpts): Promise<SceneResult> {
       }
     }
     const audible = lineLeft > 0 && !paused;
+    const echoAt = (i: number): number => (typeof o.echo === 'function' ? o.echo(i) : o.echo);
+    const tail = lineLeft > 0 && paused && pausedAt === frameNo - 1 ? (o.duckTail ?? 0) : 0;
+    const e = audible ? echoAt(frameNo) : echoAt(frameNo - 1) * tail;
     const p = o.player?.(frameNo) ?? 0;
-    const level = mix(o.room(frameNo), audible ? o.echo : 0, p);
-    const tags = (audible && o.echo > 0 ? TAG_ECHO : 0) | (p > 0 ? TAG_PLAYER : 0);
+    const r = o.room(frameNo);
+    const level = mix(r, e, p);
+    // A voice is in the transcript when it is within ~6 dB of the loudest
+    // other sound in the frame (speech stays intelligible under a game bed,
+    // not under a hit four times louder).
+    const heard = (v: number, ...others: number[]): boolean => v > 0 && v >= 0.5 * Math.max(...others);
+    const tags = (heard(e, r, p) ? TAG_ECHO : 0) | (heard(p, r, e) ? TAG_PLAYER : 0);
     clock += FRAME_MS;
     node.port.onmessage?.({ data: frameOf(level, tags) });
     o.onFrame?.(frameNo, dictation);
@@ -296,7 +326,7 @@ describe('false cuts (261031)', () => {
     expect(r.sttCalls).toBe(0);
   });
 
-  it('a spiky game during a share: no cut, nothing sent as the player, blips cost no STT', async () => {
+  it('a spiky game during a share: no cut, nothing sent as the player, STT bounded per duck', async () => {
     const game = spikyGame(7, 0.015, 1200);
     const r = await runScene({
       share: true,
@@ -309,9 +339,13 @@ describe('false cuts (261031)', () => {
     expect(r.suspects).toBeGreaterThan(3); // the game does trip the duck
     expect(r.cuts).toBe(0);
     expect(r.utterances.filter((u) => isBargeWord(u))).toEqual([]);
-    // Every duck retracted for lack of a voice was decided without paying.
+    // A hit after the clip's grace window gets its pass, as a short word
+    // would (261031 review), plus at most the one re-ask when the game kept
+    // going while it was out. The rig cannot see a duck that takes over a
+    // finished one's wait, so it counts per open span.
+    expect(r.callsPerDuck.reduce((a, c) => a + c, 0)).toBeLessThanOrEqual(2 * r.suspects);
+    // A duck retracted for lack of a voice was decided without paying.
     const noVoice = r.aborts.map((a, i) => [a, r.callsPerDuck[i]] as const).filter(([a]) => a === 'no_voice');
-    expect(noVoice.length).toBeGreaterThan(0);
     expect(noVoice.every(([, calls]) => calls === 0)).toBe(true);
     // And no transcription that decided a duck ever read her echo.
     // No duck ever transcribed her echo alone.
@@ -333,11 +367,14 @@ describe('false cuts (261031)', () => {
     });
     expect(r.cuts).toBe(1);
     expect(r.utterances).toEqual(['wait, hold on']);
-    // The confirming pass read the player, not the pre-roll of her echo.
+    // The pass that decided it read the player, not the pre-roll of her echo.
+    // (A game hit before the player can spend a pass of its own: a clean duck
+    // may be a short word.)
     const confirm = r.duckAudio[r.duckAudio.length - 1];
-    expect(confirm).toHaveLength(1);
-    expect(confirm[0].echo).toBe(0);
-    expect(confirm[0].player).toBeGreaterThanOrEqual(3);
+    const last = confirm[confirm.length - 1];
+    expect(confirm.length).toBeLessThanOrEqual(3);
+    expect(last.echo).toBe(0);
+    expect(last.player).toBeGreaterThanOrEqual(3);
   });
 
   it('a word the utterance filter would drop ("Thank you.") does not cut her', async () => {
@@ -474,6 +511,144 @@ describe('ducks that cannot stick (261031 review)', () => {
     expect(r.suspects).toBe(1);
     expect(r.aborts).toEqual(['no_word']);
     expect(r.pausedFrames).toBeLessThan(50); // ~4 s bound, not the rest of the scene
+  });
+});
+
+describe('short interjections (261031 review)', () => {
+  // She starts at frame 20; her grace window is over by frame 26. A word of one
+  // or two frames used to fail the voice window after the duck and be dropped.
+  const quietLine = { share: false, room: () => QUIET, echo: 0.01, lineFrames: 80, gapFrames: 300, totalFrames: 140 };
+
+  it('a two-frame "stop" cuts her and reaches her as the player', async () => {
+    const r = await runScene({
+      ...quietLine,
+      player: (i) => (i === 40 || i === 41 ? VOICE : 0),
+      stt: shortWordLike('stop'),
+    });
+    expect(r.suspects).toBe(1);
+    expect(r.cuts).toBe(1);
+    expect(r.utterances).toEqual(['stop']);
+    expect(r.sttCalls).toBe(1);
+  });
+
+  it('a crisp "stop" over inside the trigger frame still cuts her', async () => {
+    const r = await runScene({
+      ...quietLine,
+      player: (i) => (i === 40 ? 0.08 : 0),
+      stt: shortWordLike('stop'),
+    });
+    expect(r.cuts).toBe(1);
+    expect(r.utterances).toEqual(['stop']);
+    expect(r.sttCalls).toBe(1);
+  });
+
+  it('a short "stop" on loud speakers, its end no louder than her echo tail, still cuts her', async () => {
+    // Her echo at a normal voice's level and a long duck tail: the skip frame
+    // after the word reads the same as her tail does, and nothing voiced
+    // follows, so only the pass can tell this from her.
+    const r = await runScene({
+      ...quietLine,
+      echo: 0.08,
+      duckTail: 0.7,
+      lineFrames: 140,
+      totalFrames: 220,
+      player: (i) => (i === 100 ? 0.15 : i === 101 ? 0.04 : 0),
+      stt: shortWordLike('stop'),
+    });
+    expect(r.cuts).toBe(1);
+    expect(r.utterances).toEqual(['stop']);
+  });
+
+  it('a three-frame fading "wait" cuts her', async () => {
+    const fade = [1, 0.6, 0.3];
+    const r = await runScene({
+      ...quietLine,
+      player: (i) => (i >= 40 && i < 43 ? VOICE * fade[i - 40] : 0),
+      stt: shortWordLike('wait'),
+    });
+    expect(r.cuts).toBe(1);
+    expect(r.utterances).toEqual(['wait']);
+  });
+
+  it('early in a call (a cold floor, her first line) a fading "wait" still cuts', async () => {
+    // The floor starts at 0.008 and does not adapt while she talks, so the
+    // voice bar sits near 0.033: the word's second frame is under it.
+    const fade = [1, 0.6, 0.3];
+    const r = await runScene({
+      ...quietLine,
+      echo: 0.004, // headphones
+      player: (i) => (i >= 27 && i < 30 ? VOICE * fade[i - 27] : 0),
+      stt: shortWordLike('wait'),
+    });
+    expect(r.cuts).toBe(1);
+    expect(r.utterances).toEqual(['wait']);
+  });
+
+  it('her own loud syllables on loud speakers do not cut her and are not sent as the player', async () => {
+    // Loud speakers, a long duck tail, and every so often two frames of hers
+    // twice as loud as the rest of the line: the shape of a short word, made
+    // of her echo. Past the grace window each one gets a pass (no energy test
+    // tells it from a word), and the pass reads only the trigger and its
+    // tail, never the pre-roll Whisper used to turn into "Okay.".
+    const r = await runScene({
+      share: false,
+      room: () => QUIET,
+      echo: (i) => (i % 23 === 0 || i % 23 === 1 ? 0.16 : 0.08),
+      duckTail: 0.7,
+      lineFrames: 60,
+      gapFrames: 25,
+      totalFrames: 600,
+      stt: shortWordLike('stop'),
+    });
+    expect(r.cuts).toBe(0);
+    expect(r.utterances).toEqual([]);
+    // Each of those ducks costs its one pass, and no more.
+    expect(r.callsPerDuck.every((c) => c <= 1)).toBe(true);
+  });
+
+  it('a short word whose transcript lands after the wait is delivered once, without a cut', async () => {
+    const r = await runScene({
+      ...quietLine,
+      totalFrames: 200,
+      player: (i) => (i === 40 || i === 41 ? VOICE : 0),
+      stt: shortWordLike('stop'),
+      latencyFrames: 45, // ~5.8 s: past the 4 s bound on a finished barge
+    });
+    expect(r.suspects).toBe(1);
+    expect(r.cuts).toBe(0);
+    expect(r.aborts).toEqual(['no_word']);
+    expect(r.utterances).toEqual(['stop']);
+  });
+
+  it('a late transcript that is not a word, or is her own line, is not delivered', async () => {
+    for (const late of ['Thank you.', '[Music]', HER_LINE]) {
+      const r = await runScene({
+        ...quietLine,
+        totalFrames: 200,
+        player: (i) => (i === 40 || i === 41 ? VOICE : 0),
+        stt: () => late,
+        latencyFrames: 45,
+      });
+      expect(r.cuts, late).toBe(0);
+      expect(r.utterances, late).toEqual([]);
+    }
+  });
+
+  it('a long utterance whose pass outlives the energy deadline is delivered after the retraction', async () => {
+    // A word, then the player keeps a voice up under the bar the deadline
+    // needs; transcription is slow. The deadline retracts the duck, and the
+    // word that comes back late is still the player's turn.
+    const r = await runScene({
+      ...quietLine,
+      totalFrames: 200,
+      player: (i) => (i >= 40 && i < 55 ? (i % 4 === 0 ? VOICE : 0.006) : 0),
+      stt: shortWordLike('hang on'),
+      latencyFrames: 20,
+    });
+    expect(r.suspects).toBe(1);
+    expect(r.cuts).toBe(0);
+    expect(r.aborts).toEqual(['no_word']);
+    expect(r.utterances).toEqual(['hang on']);
   });
 });
 

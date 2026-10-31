@@ -303,11 +303,13 @@ const SHARE_NOISE_FLOOR_CAP = BARGE_ABS_MIN / BARGE_NOISE_FACTOR;
  *     the duck bar with her echo taken out (`bargeVoiceBar`, the room alone).
  *     A click, a door, a game hit or her own onset dies inside a few frames,
  *     and the duck is retracted with NO transcription at all ('no_voice'). A
- *     voice keeps going. This also stops paying for an STT call on every
- *     false duck.
- *   - The confirming pass reads only the post-duck audio (from the frame
- *     after the trigger on), and commits only on a word that also passes the utterance
- *     junk filter and the echo gate.
+ *     voice keeps going. This now holds only for ducks inside a clip's grace
+ *     window: a later duck may be a short word that is already over, and
+ *     gets its one pass (see "A short word" below).
+ *   - The confirming pass never reads the pre-roll: it starts at the frame
+ *     after the trigger (at the trigger itself after a clean duck), and
+ *     commits only on a word that also passes the utterance junk filter and
+ *     the echo gate.
  *   - The energy deadline needs most of the post-duck frames voiced, not one
  *     loud frame.
  *   - A pass that found no word gets ONE more pass over the audio after it
@@ -319,13 +321,31 @@ const SHARE_NOISE_FLOOR_CAP = BARGE_ABS_MIN / BARGE_NOISE_FACTOR;
  *     is open when her clip becomes audible ends there (armBargeGrace), and
  *     the pre-roll collected under hold is dropped when she stops.
  *
- * The cost, honestly: a lone very short word ("no") that ends inside the
- * first frame after the duck can now be read as a blip, and she carries on.
- * So can speech that only crosses the duck bar on its LAST loud frame (a
- * player quieter than her echo on loud speakers): the duck lands as they
- * stop, nothing follows it, and it is retracted. The old pre-roll pass caught
- * some of those, by the same mechanism that invented "Okay." out of her echo.
- * Anything that is still going ~250 ms after the duck cuts.
+ *   - A short word (261031 review): "no", "stop" or "wait" is often over in
+ *     the trigger frame and the skip frame, and nothing voiced follows. When
+ *     the duck came after the clip's grace window (the residue knows her echo,
+ *     so the trigger was louder than she can be), the duck gets ONE pass over
+ *     the trigger frame onward once the voice window closes, and commits on a
+ *     word like any other. An energy test on the skip frame was tried first
+ *     and lost most short words on loud speakers, where the end of a word and
+ *     the tail of her echo are the same level; a learned duck bar and the
+ *     pass are what bound it instead. A duck inside the grace window (where
+ *     the trigger may be her own onset) still needs a voice after it, and is
+ *     retracted for free without one.
+ *   - Nothing transcribed is thrown away silently: a pass that answers after
+ *     the energy deadline gave up on it, or after a finished barge's wait ran
+ *     out, still reaches her as an ordinary turn when it is a word the echo
+ *     gate does not trace to her (settleDelivery).
+ *
+ * The cost, honestly: a clean false duck (a game hit, a loud syllable of
+ * hers) costs one transcription, and on rare occasions Whisper makes a stock
+ * word of that audio ("Bye.") and it cuts her: in the headless replay a
+ * couple of times an hour on loud speakers over a game, against close to
+ * once a minute in 0.6.11. A word that never reaches the duck bar is not
+ * heard as an interrupt at all, and neither is a short word inside the first
+ * ~150 ms of one of her clips (600 ms for the first clip of a reply) that is
+ * over before a voiced frame. The old pre-roll pass caught some of those, by
+ * the same mechanism that invented "Okay." out of her echo.
  */
 /** Frames right after the trigger that still carry her echo: the duck's
  *  60 ms ramp plus the speaker-to-mic path. Not counted either way. */
@@ -756,6 +776,13 @@ export async function createDictation(opts: {
     post: number;
     voiced: number;
     trig: number;
+    /** The duck fired outside the clip's grace window, so the residue has
+     *  learned her echo and the trigger frame was louder than she can be. */
+    clean: boolean;
+    /** A clean duck, past its trigger: it may be a short word that is over
+     *  before any counted frame, so it is transcribed even with nothing
+     *  voiced after it (261031 review). */
+    burst: boolean;
     /** Where the confirming pass reads from in `utterance`, and where the
      *  audio it was given ended (a second pass reads from there). */
     askFrom: number;
@@ -770,6 +797,10 @@ export async function createDictation(opts: {
      *  audio plus its silence run. */
     passText?: string;
     passWaiter?: (text: string) => void;
+    /** How the duck was retracted while its pass was still out: 'late' means
+     *  the energy deadline gave up on the pass, so its answer is still owed to
+     *  the player as an ordinary turn (see settleDelivery). */
+    retracted?: 'late' | 'cancelled';
   };
   /** Running length over the lower DUCK bar, which is what opens stage one. */
   let duckRunMs = 0;
@@ -906,6 +937,7 @@ export async function createDictation(opts: {
     // it. `settle` clears `suspect` before it calls in here, so its own abort
     // does not double-fire.
     if (suspect) {
+      suspect.retracted = 'cancelled';
       suspect = null;
       opts.onBargeAbort?.('cancelled');
     }
@@ -960,6 +992,15 @@ export async function createDictation(opts: {
       }
       if (barge && !barge.voiced) {
         console.log(`[sei/voice] barge: dropped, no voice after the duck — "${text.slice(0, 80)}"`);
+        return;
+      }
+      // A barge decided without its transcript (its wait ran out, a newer duck
+      // took it over, or the energy deadline gave up on the pass) arrives here
+      // late. It is delivered as the player's turn, but only on the same terms
+      // as a commit: a word the junk filter keeps, already echo-checked as a
+      // barge above (her own words condemn from two tokens, not three).
+      if (barge && !isBargeWord(text)) {
+        console.log(`[sei/voice] barge: late transcript dropped, not a word — "${text.slice(0, 80)}"`);
         return;
       }
       opts.onUtterance(text, { t0, t1 });
@@ -1044,7 +1085,9 @@ export async function createDictation(opts: {
 
   /** What settleDelivery needs to know about a still-open barge. */
   function bargeOf(s: Suspect | null): BargeVerdict | null {
-    return s ? { voiced: s.voiced >= VOICE_MIN_FRAMES, open: true, since: performance.now(), trig: s.trig } : null;
+    return s
+      ? { voiced: s.voiced >= VOICE_MIN_FRAMES || s.burst, open: true, since: performance.now(), trig: s.trig }
+      : null;
   }
 
   /** A duck that turned out not to be the player teaches the bar (261031):
@@ -1100,6 +1143,17 @@ export async function createDictation(opts: {
     };
 
     s.post += 1;
+    // The skip frame is not voice evidence (it still holds the tail of her
+    // echo), and a short word like "stop" is often over inside it. No energy
+    // test tells that word from her echo there (in the replay a player's word
+    // on loud speakers and her own echo tail read the same), so a clean duck
+    // is a burst: it gets its one pass even with nothing voiced after it, and
+    // the pass decides. The word started in the trigger frame, so that is
+    // where the pass reads from.
+    if (s.post <= VOICE_SKIP_FRAMES && s.clean) {
+      s.burst = true;
+      s.askFrom = s.head;
+    }
     const voicedFrame = s.post > VOICE_SKIP_FRAMES && rms >= s.voiceBar;
     if (voicedFrame) s.voiced += 1;
     if (voicedFrame && s.asked) s.voicedSinceAsk += 1;
@@ -1113,20 +1167,31 @@ export async function createDictation(opts: {
       // Transcription never answered. Decide on energy, over everything heard
       // since the duck (261031: it used to be the one frame that happened to
       // land on the deadline, which a single game hit could win).
-      settle(counted > 0 && s.voiced / counted >= BARGE_DEADLINE_VOICED);
+      const real = counted > 0 && s.voiced / counted >= BARGE_DEADLINE_VOICED;
+      // A pass still out is owed to the player: its answer, if it is a word,
+      // arrives as an ordinary turn instead of being dropped with the duck.
+      if (!real && s.asked && s.passText === undefined) s.retracted = 'late';
+      settle(real);
       return;
     }
     // 261031: no voice after the duck = a blip, or her own onset. Retracted
-    // here for free, before any transcription is paid for.
-    if (s.voiced < VOICE_MIN_FRAMES) {
+    // here for free, before any transcription is paid for. A short burst
+    // (see `burst`) is the exception: it is a word that has already ended.
+    if (s.voiced < VOICE_MIN_FRAMES && !s.burst) {
       if (counted >= VOICE_WINDOW_FRAMES) settle(false, 'no_voice');
       return;
     }
     if (s.asked) return;
     // Only the audio from the duck on: the pre-roll before it is her echo,
     // which is what Whisper turned into the words that used to cut her off.
+    // (A burst reads from the trigger frame: after a clean duck it was louder
+    // than her echo has been, and a word's start is in it.)
     const heard = utterance.slice(s.askFrom);
-    if (speechMsOf(heard) < BARGE_WORD_MS) return;
+    // A burst with nothing voiced after it is a word that has already ended:
+    // it is read once the voice window closes on it, since a longer word
+    // shows up there and needs no special case.
+    const shortWord = s.voiced < VOICE_MIN_FRAMES;
+    if (shortWord ? counted < VOICE_WINDOW_FRAMES : speechMsOf(heard) < BARGE_WORD_MS) return;
     s.asked = true;
     s.askEnd = utterance.length;
     s.voicedSinceAsk = 0;
@@ -1143,7 +1208,13 @@ export async function createDictation(opts: {
         if (suspect !== s) {
           const w = s.passWaiter;
           s.passWaiter = undefined;
-          w?.(text);
+          if (w) w(text);
+          // The energy deadline retracted the duck before this answered, and
+          // the player's word is still unheard: deliver it as an ordinary turn
+          // through the same checks a commit would face (a closed barge).
+          else if (s.retracted === 'late') {
+            settleDelivery(text, t0, t1, env, { voiced: true, open: false, since: s.since, trig: s.trig });
+          }
           return;
         }
         if (!isBargeWord(text)) {
@@ -1289,6 +1360,8 @@ export async function createDictation(opts: {
             head: utterance.length - 1,
             voiceBar: bargeVoiceBar(levels),
             trig: rms,
+            clean: !inGrace,
+            burst: false,
             post: 0,
             voiced: 0,
             // The frame after the trigger: the trigger itself still carries
