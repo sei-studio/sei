@@ -51,6 +51,15 @@ directories:
 # blocks below, under the "app-tree exclusions" heading, and THAT is the copy
 # that actually removes them. Keep the two in sync; if a third platform target
 # is ever revived, it needs the same block.
+#
+# 261031 correction (measured on electron-builder 26.16.1 by hooking
+# appFileCopier.computeFileSets): the app dir gets TWO matchers, one with this
+# list and one with the platform block plus electron-builder's defaults, and
+# app.asar holds the UNION of what they pick. A project path is therefore
+# only left out when BOTH lists exclude it: the platform-only `!src/main/**`
+# first tried for T281 changed nothing, and package-lock.json, build/ and
+# patches/ shipped in v0.6.11 although the defaults exclude the first two.
+# Same rule as above in practice: every project exclusion goes in both.
 files:
   - "**/*"
   # build outputs that get regenerated
@@ -84,6 +93,20 @@ files:
   - "!config.json"
   - "!config.example.json"
   - "!.env*"
+  # 261031 installer diet (T281): runtime-dead project files. The rationale
+  # is with the copy in the mac block; it is repeated here because BOTH
+  # lists must exclude a project path (see the 261031 note above).
+  - "!src/main/**"
+  - "!src/preload/**"
+  - "!src/shared/**"
+  - "!src/renderer/**"
+  - "!src/bot/**/*.test.{js,mjs,cjs}"
+  - "!src/bot/**/{__fixtures__,fixtures}/**"
+  - "!src/bot/**/*.d.ts"
+  - "!patches/**"
+  - "!build/**"
+  - "!package-lock.json"
+  - "!vitest.config.ts"
   # sibling working copies / forks
   - "!mineflayer/**"
   # 260908 GAME PACKS. packs/<game>/package.json is an npm WORKSPACE that owns
@@ -156,6 +179,22 @@ files:
 artifactName: Sei-${os}-${arch}.${ext}
 
 asar: true
+
+# 261031 (T281): keep only the Chromium locales of the languages Sei speaks
+# (UI: en, zh; conversation: en, zh, ja, ko, fr, es). A bare tag keeps every
+# region variant (en -> en-US + en-GB, zh -> zh-CN + zh-TW, es -> es +
+# es-419). 55 -> 9 .pak files on Windows (48MB -> ~5MB on disk, ~7MB off the
+# installer); the mac build drops the same .lproj folders. A system language
+# outside the list makes Chromium fall back to en-US for its own strings and
+# app.getLocale() (localeDetect.ts reads getPreferredSystemLanguages() first,
+# which is OS-level and unaffected; safe mode's page only distinguishes zh).
+electronLanguages:
+  - en
+  - zh
+  - ja
+  - ko
+  - fr
+  - es
 
 # 260925 Electron fuses (flipped in the packaged Electron binary right before
 # signing, by app-builder-lib's doAddElectronFuses via @electron/fuses). Until
@@ -315,7 +354,7 @@ mac:
     # matters beyond size: a LOCAL `dist:mac` was packing the developer's own
     # .env into app.asar. CI never had one, so no shipped build carried it,
     # but nothing was stopping the next hand-built artifact from doing so.
-    # src/ stays: the bot ships as raw ESM source and is forked from there.
+    # src/bot stays: the bot ships as raw ESM source and is forked from there.
     - "!vendor/**"
     - "!packs/**"
     - "!.planning/**"
@@ -335,8 +374,45 @@ mac:
     - "!config.json"
     - "!config.example.json"
     - "!.env*"
-    - "!node_modules/onnxruntime-node/bin/napi-v3/{linux,win32}/**"
-    - "!node_modules/cce-1/node_modules/onnxruntime-node/bin/napi-v6/{linux,win32}/**"
+    # 261031 installer diet (T281): project files nothing reads at runtime.
+    # src/main, src/preload, src/shared and src/renderer are TypeScript/React
+    # SOURCE; the app runs the electron-vite output in dist/ (main and preload
+    # bundle src/shared in, and src/renderer/public is copied into
+    # dist/renderer by Vite, so the voice previews, images and fonts were
+    # shipping twice). The only packaged-mode file reads are under dist/
+    # (windowChrome.ts splashLogoB64) and app.asar.unpacked/src/bot (the
+    # forked bot, raw ESM; its non-test files import nothing outside
+    # src/bot). Every other src/renderer path in src/main sits behind
+    # `!app.isPackaged`. patches/ is patch-package input (postinstall only;
+    # 10.5MB, nearly all of it the minecraft-data patch for the game pack),
+    # build/ holds builder inputs (icons reach the app via extraResources)
+    # and is only read by unpackaged runs. The bot's tests and their
+    # fixtures are never imported by bot code.
+    - "!src/main/**"
+    - "!src/preload/**"
+    - "!src/shared/**"
+    - "!src/renderer/**"
+    - "!src/bot/**/*.test.{js,mjs,cjs}"
+    - "!src/bot/**/{__fixtures__,fixtures}/**"
+    - "!src/bot/**/*.d.ts"
+    - "!patches/**"
+    - "!build/**"
+    - "!package-lock.json"
+    - "!vitest.config.ts"
+    # 261031 (T281): @huggingface/transformers (and with it the napi-v3
+    # onnxruntime-node 1.21) moved to devDependencies: it is only imported by
+    # the renderer's whisperWorker, which Vite bundles. That freed the
+    # top-level slot, and electron-builder's collector now HOISTS cce-1's
+    # onnxruntime-node 1.27 to node_modules/onnxruntime-node (Node still
+    # resolves it from node_modules/cce-1/src). `node_modules/**/` below
+    # matches both the hoisted and the nested location.
+    - "!node_modules/**/onnxruntime-node/bin/napi-v6/{linux,win32}/**"
+    # 261031 (T281): onnxruntime-node 1.27's npm tarball carries the darwin
+    # runtime twice as two byte-identical 37MB files (npm cannot pack a
+    # symlink). onnxruntime_binding.node links @rpath/libonnxruntime.1.dylib
+    # (LC_RPATH @loader_path), and no file in the package names the
+    # versioned copy, so libonnxruntime.1.27.0.dylib is never loaded.
+    - "!node_modules/**/onnxruntime-node/bin/napi-v6/darwin/*/libonnxruntime.1.*.*.dylib"
     # 260816 local speech: sherpa-onnx ships per-PLATFORM prebuild packages
     # (sherpa-onnx-darwin-arm64 etc., pulled as optionalDependencies of
     # sherpa-onnx-node), so unlike onnxruntime-node's single all-platform
@@ -459,10 +535,45 @@ win:
     - "!config.json"
     - "!config.example.json"
     - "!.env*"
-    - "!node_modules/onnxruntime-node/bin/napi-v3/{darwin,linux}/**"
-    - "!node_modules/onnxruntime-node/bin/napi-v3/win32/arm64/**"
-    - "!node_modules/cce-1/node_modules/onnxruntime-node/bin/napi-v6/{darwin,linux}/**"
-    - "!node_modules/cce-1/node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**"
+    # 261031 installer diet (T281): project files nothing reads at runtime.
+    # src/main, src/preload, src/shared and src/renderer are TypeScript/React
+    # SOURCE; the app runs the electron-vite output in dist/ (main and preload
+    # bundle src/shared in, and src/renderer/public is copied into
+    # dist/renderer by Vite, so the voice previews, images and fonts were
+    # shipping twice). The only packaged-mode file reads are under dist/
+    # (windowChrome.ts splashLogoB64) and app.asar.unpacked/src/bot (the
+    # forked bot, raw ESM; its non-test files import nothing outside
+    # src/bot). Every other src/renderer path in src/main sits behind
+    # `!app.isPackaged`. patches/ is patch-package input (postinstall only;
+    # 10.5MB, nearly all of it the minecraft-data patch for the game pack),
+    # build/ holds builder inputs (icons reach the app via extraResources)
+    # and is only read by unpackaged runs. The bot's tests and their
+    # fixtures are never imported by bot code.
+    - "!src/main/**"
+    - "!src/preload/**"
+    - "!src/shared/**"
+    - "!src/renderer/**"
+    - "!src/bot/**/*.test.{js,mjs,cjs}"
+    - "!src/bot/**/{__fixtures__,fixtures}/**"
+    - "!src/bot/**/*.d.ts"
+    - "!patches/**"
+    - "!build/**"
+    - "!package-lock.json"
+    - "!vitest.config.ts"
+    # 261031 (T281): cce-1's onnxruntime-node is hoisted to the top level
+    # now that the transformers copy left the app (see the mac block).
+    - "!node_modules/**/onnxruntime-node/bin/napi-v6/{darwin,linux}/**"
+    - "!node_modules/**/onnxruntime-node/bin/napi-v6/win32/arm64/**"
+    # 261031 (T281): the GPU side of cce-1's onnxruntime (38MB). Chess runs
+    # on the default CPU execution provider (cce-1 src/maia.js calls
+    # InferenceSession.create(modelPath) with no executionProviders). The
+    # PE import table of onnxruntime.dll lists DirectML.dll (with d3d12 and
+    # dxgi) as DELAY-loaded, so Windows only maps it when the DirectML
+    # provider is requested, and dxcompiler.dll/dxil.dll are not imported at
+    # all (Dawn's WebGPU backend LoadLibrary's them on demand).
+    # onnxruntime_binding.node itself imports only onnxruntime.dll plus the
+    # system and MSVC runtime DLLs.
+    - "!node_modules/**/onnxruntime-node/bin/napi-v6/win32/x64/{DirectML,dxcompiler,dxil}.dll"
     # 260816 local speech: drop foreign-platform sherpa-onnx prebuild packages
     # (win-ia32 is never a target; see the mac block's note on this pattern).
     - "!node_modules/sherpa-onnx-darwin-*/**"
