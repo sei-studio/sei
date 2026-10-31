@@ -59,6 +59,10 @@ export const DEATH_ADDENDUM_KEPT =
   '\n\nYou DIED and respawned at the world spawn. Your health and food are full again.{cause} This world keeps inventories on death, so you still have everything you were carrying. ' + REACT_LINE + ' Then carry on.'
 export const DEATH_ADDENDUM_EMPTY =
   '\n\nYou DIED and respawned at the world spawn. Your health and food are full again.{cause} You were not carrying anything, so nothing dropped. ' + REACT_LINE + ' Then carry on.'
+// 261031 (quality pass 33): nothing dropped this time, but the weapon from an
+// earlier death still lies on the ground ({earlier}, DEATH_EARLIER_WEAPON).
+export const DEATH_ADDENDUM_EMPTY_EARLIER =
+  '\n\nYou DIED and respawned at the world spawn. Your health and food are full again.{cause} You were not carrying anything this time.{earlier} ' + REACT_LINE + ' Then decide whether to go back for it.'
 
 const LOST_LIST_MAX = 12
 
@@ -97,8 +101,41 @@ function deathCauseSentence(data) {
 // health and food are full again", she fought the next mob bare-handed and
 // died again (combat_night eval: 13 of 18 deaths in the two worst runs came
 // after an earlier death had taken her sword).
+// 261031 (quality pass 33): "keep out of fights and stay close to the player"
+// sent her after the player, who was where the mobs were, and away from the
+// sword lying a few blocks off (combat_night eval: 7 and 15 deaths in two
+// runs). Getting the weapon back is now the plan it names.
 export const DEATH_LOST_WEAPON =
-  ' That includes your {weapon}, so you have no weapon until you get it back: your swings do 1 damage, so keep out of fights and stay close to the player.'
+  ' That includes your {weapon}, so you have no weapon until you get it back, and your swings do 1 damage. Picking it back up is the quickest way to be armed again; keep out of fights until you have it.'
+// 261031 (quality pass 33): a later death while the weapon from an earlier
+// one still lies on the ground (deathTracker earlierWeapon). The death turn
+// said "nothing dropped" and she forgot it.
+export const DEATH_EARLIER_WEAPON =
+  ' Your {weapon} from an earlier death is still on the ground near {x},{y},{z} ({dist} blocks from you) for about {minutes} more minutes, and you have no weapon until you get it back.'
+// 261031 (quality pass 33): the count of recent deaths (deathTracker
+// recentDeaths), so a fifth death does not read like the first one.
+export const DEATH_RECENT_COUNT = ' You have died {count} times in the last {minutes} minutes.'
+
+function recentDeathsSentence(data) {
+  const r = data?.recentDeaths
+  if (!r || !(r.count > 1) || !Number.isFinite(r.minutes)) return ''
+  const text = r.minutes === 1 ? DEATH_RECENT_COUNT.replace('the last {minutes} minutes', 'the last minute') : DEATH_RECENT_COUNT
+  return text.replace('{count}', String(r.count)).replace('{minutes}', String(r.minutes))
+}
+
+function earlierWeaponSentence(data) {
+  const w = data?.earlierWeapon
+  if (!w || typeof w.weapon !== 'string' || !(w.minutesLeft > 0)) return ''
+  const p = w.pos
+  if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) {
+    return ` Your ${w.weapon} from an earlier death is still on the ground where you died then, and you have no weapon until you get it back.`
+  }
+  return DEATH_EARLIER_WEAPON
+    .replace('{weapon}', w.weapon)
+    .replace('{x}', String(p.x)).replace('{y}', String(p.y)).replace('{z}', String(p.z))
+    .replace('{dist}', Number.isFinite(w.dist) ? String(w.dist) : '?')
+    .replace('{minutes}', String(w.minutesLeft))
+}
 
 function lostSentence(data) {
   const list = formatLostItems(data?.lost)
@@ -115,10 +152,16 @@ function lostSentence(data) {
 
 export function deathAddendum(data) {
   const p = data?.pos
-  const cause = deathCauseSentence(data)
+  // 261031 (pass 33): the recent-death count rides with the cause, and a
+  // weapon still lying from an earlier death with what dropped this time.
+  const cause = deathCauseSentence(data) + recentDeathsSentence(data)
+  const earlier = earlierWeaponSentence(data)
   if (data?.keptAll === true) return DEATH_ADDENDUM_KEPT.replace('{cause}', () => cause)
-  if (Array.isArray(data?.lost) && data.lost.length === 0) return DEATH_ADDENDUM_EMPTY.replace('{cause}', () => cause)
-  const lost = lostSentence(data)
+  if (Array.isArray(data?.lost) && data.lost.length === 0) {
+    if (earlier) return DEATH_ADDENDUM_EMPTY_EARLIER.replace('{cause}', () => cause).replace('{earlier}', () => earlier)
+    return DEATH_ADDENDUM_EMPTY.replace('{cause}', () => cause)
+  }
+  const lost = lostSentence(data) + earlier
   if (p && Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z)) {
     return DEATH_ADDENDUM_WITH_POS
       .replace('{cause}', () => cause)
