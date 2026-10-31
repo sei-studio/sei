@@ -19,7 +19,16 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { bargeVoiceBar, createDictation, isBargeWord, type BargeAbortReason } from './dictation';
+import {
+  bargeVoiceBar,
+  burstWordOffScript,
+  burstWordUnsure,
+  cloudPassText,
+  createDictation,
+  isBargeWord,
+  type BargeAbortReason,
+} from './dictation';
+import type { SttHint } from './sttArbiter';
 import { MIN_ECHO_TOKENS, normalizeTokens, SELF_ECHO_OVERLAP, textOverlap } from './echoGate';
 
 const FRAME = 2048;
@@ -130,6 +139,25 @@ function pessimisticLike(word: string) {
   };
 }
 
+/** Scribe on a burst, as measured on 58 barge-pass clips sent through it with
+ *  the app's parameters (261101): the player's short word comes back sure of
+ *  itself (word log-probability above -0.01 for "stop" / "wait"), while the
+ *  trigger frame of her echo comes back about half the time as an invented
+ *  word it is unsure of ("No" at -0.5 to -1.9), or in a script the call does
+ *  not use ("你好"). `sure: false` drops the confidence, as a proxy that does
+ *  not relay it would. */
+function scribeLike(word: string, o: { invent?: string; sure?: boolean } = {}) {
+  const rest = shortWordLike(word);
+  return (audio: Float32Array): SttAnswer => {
+    const t = tagsIn(audio);
+    const conf = (lp: number): number | undefined => (o.sure === false ? undefined : lp);
+    if (t.player >= 1 && t.player >= t.echo) return { text: word, minWordLogprob: conf(-0.005) };
+    if (t.echo > 0 && t.echo <= 2) return { text: o.invent ?? 'No', minWordLogprob: conf(-0.9) };
+    const text = rest(audio);
+    return { text, minWordLogprob: text ? conf(-0.05) : undefined };
+  };
+}
+
 /** micEchoCheck's first step (her own words), as useVoiceStore runs it. */
 function ownVoiceCheck(info: { text: string; purpose: 'utterance' | 'barge' }): boolean {
   const min = info.purpose === 'barge' ? 2 : MIN_ECHO_TOKENS;
@@ -181,8 +209,11 @@ interface SceneOpts {
   playerText?: string;
   /** STT round trip, in frames (~900 ms default). */
   latencyFrames?: number;
-  /** Override the STT answer. */
-  stt?: (audio: Float32Array) => string | null;
+  /** Override the STT answer. An object answer carries Scribe's confidence
+   *  and goes through the voice store's cloudPassText, as the app's does. */
+  stt?: (audio: Float32Array) => SttAnswer;
+  /** The conversation language (createDictation's `language`). */
+  language?: string;
   /** Runs after each frame is fed (mute toggles and the like). */
   onFrame?: (i: number, d: { setMuted(m: boolean): void }) => void;
   /** Share of her echo still in the frame after the duck (the queue's 60 ms
@@ -190,7 +221,11 @@ interface SceneOpts {
   duckTail?: number;
 }
 
+type SttAnswer = string | null | { text: string; minWordLogprob?: number };
+
 interface SceneResult {
+  /** The hint each STT call was given. */
+  sttHints: (SttHint | undefined)[];
   suspects: number;
   cuts: number;
   aborts: BargeAbortReason[];
@@ -208,6 +243,7 @@ interface SceneResult {
 
 async function runScene(o: SceneOpts): Promise<SceneResult> {
   const res: SceneResult = {
+    sttHints: [],
     suspects: 0,
     cuts: 0,
     aborts: [],
@@ -232,12 +268,15 @@ async function runScene(o: SceneOpts): Promise<SceneResult> {
   };
   const dictation = await createDictation({
     localModel: 'none',
-    cloudTranscribe: (audio) => {
+    language: o.language,
+    cloudTranscribe: (audio, hint) => {
       if (process.env.DEBUG_SCENE) process.stderr.write(`#${frameNo} stt ${JSON.stringify(tagsIn(audio))} n=${audio.length / FRAME}\n`);
       res.sttCalls += 1;
       res.sttAudio.push(tagsIn(audio));
       if (duckCallsAt >= 0) res.duckAudio[res.duckAudio.length - 1].push(tagsIn(audio));
-      const text = answer(audio);
+      res.sttHints.push(hint);
+      const a = answer(audio);
+      const text = a !== null && typeof a === 'object' ? cloudPassText(a, hint) : a;
       return new Promise((resolve) => {
         pending.push({ due: frameNo + (o.latencyFrames ?? 7), resolve: () => resolve(text) });
       });
@@ -685,6 +724,114 @@ describe('short interjections (261031 review)', () => {
     expect(r.cuts).toBe(0);
     expect(r.aborts).toEqual(['no_word']);
     expect(r.utterances).toEqual(['hang on']);
+  });
+});
+
+describe('Scribe on a burst (261101)', () => {
+  // The loud-speaker syllables of the review above, with Scribe as measured:
+  // it made a word of her trigger frame about half the time. One token is
+  // under the echo gate's minimum, so before this each of those cut her.
+  const loudSyllables = {
+    share: false,
+    room: () => QUIET,
+    echo: (i: number) => (i % 23 === 0 || i % 23 === 1 ? 0.16 : 0.08),
+    duckTail: 0.7,
+    lineFrames: 60,
+    gapFrames: 25,
+    totalFrames: 600,
+  };
+
+  it('the path was real: the same invented words with no confidence cut her', async () => {
+    const r = await runScene({ ...loudSyllables, stt: scribeLike('stop', { sure: false }) });
+    expect(r.cuts).toBeGreaterThan(0);
+  });
+
+  it('an invented burst word Scribe is unsure of does not cut her', async () => {
+    const r = await runScene({ ...loudSyllables, stt: scribeLike('stop') });
+    expect(r.sttCalls).toBeGreaterThan(0);
+    expect(r.cuts).toBe(0);
+    expect(r.utterances).toEqual([]);
+    // Every pass here was a burst, and said so to the cloud leg.
+    expect(r.sttHints.every((h) => h?.burst === true)).toBe(true);
+  });
+
+  it('an invented word in a script the call does not use does not cut her, even when sure', async () => {
+    const r = await runScene({ ...loudSyllables, stt: scribeLike('stop', { invent: '你好', sure: false }) });
+    expect(r.cuts).toBe(0);
+    // On a Chinese call the same word is a word: only Latin calls are judged.
+    const zh = await runScene({
+      ...loudSyllables,
+      language: 'zh',
+      stt: scribeLike('stop', { invent: '你好', sure: false }),
+    });
+    expect(zh.cuts).toBeGreaterThan(0);
+  });
+
+  it('a real short word still cuts her, quiet room or loud speakers', async () => {
+    const quiet = await runScene({
+      share: false,
+      room: () => QUIET,
+      echo: 0.01,
+      lineFrames: 80,
+      gapFrames: 300,
+      totalFrames: 140,
+      player: (i) => (i === 40 || i === 41 ? VOICE : 0),
+      stt: scribeLike('stop'),
+    });
+    expect(quiet.cuts).toBe(1);
+    expect(quiet.utterances).toEqual(['stop']);
+    expect(quiet.sttHints).toEqual([{ burst: true }]);
+    const loud = await runScene({
+      ...loudSyllables,
+      totalFrames: 140,
+      player: (i) => (i === 57 ? 0.3 : 0),
+      stt: scribeLike('stop'),
+    });
+    expect(loud.cuts).toBe(1);
+    expect(loud.utterances).toEqual(['stop']);
+  });
+
+  it('a voiced pass is not a burst, and its words are not judged by confidence', async () => {
+    const r = await runScene({
+      share: false,
+      room: () => QUIET,
+      echo: 0.01,
+      lineFrames: 80,
+      gapFrames: 300,
+      totalFrames: 140,
+      player: (i) => (i >= 40 && i < 52 ? VOICE : 0),
+      stt: () => ({ text: 'wait, hold on', minWordLogprob: -1.2 }),
+    });
+    expect(r.cuts).toBe(1);
+    expect(r.sttHints[0]).toBeUndefined();
+  });
+});
+
+describe('burst word helpers (261101)', () => {
+  it('burstWordUnsure: below the bar is unsure, unknown confidence is not', () => {
+    expect(burstWordUnsure(-0.9)).toBe(true);
+    expect(burstWordUnsure(-0.31)).toBe(true);
+    expect(burstWordUnsure(-0.2)).toBe(false);
+    expect(burstWordUnsure(-0.004)).toBe(false);
+    expect(burstWordUnsure(undefined)).toBe(false);
+  });
+
+  it('cloudPassText judges bursts only', () => {
+    const unsure = { text: 'No', minWordLogprob: -0.9 };
+    expect(cloudPassText(unsure, { burst: true })).toBe('');
+    expect(cloudPassText(unsure)).toBe('No');
+    expect(cloudPassText({ text: 'Stop', minWordLogprob: -0.004 }, { burst: true })).toBe('Stop');
+    expect(cloudPassText({ text: 'No' }, { burst: true })).toBe('No');
+  });
+
+  it('burstWordOffScript: no Latin letter on a Latin-script call', () => {
+    expect(burstWordOffScript('你好', undefined)).toBe(true);
+    expect(burstWordOffScript('いいの', 'en')).toBe(true);
+    expect(burstWordOffScript('听吗？', 'fr')).toBe(true);
+    expect(burstWordOffScript('Stop', 'en')).toBe(false);
+    expect(burstWordOffScript('¡Para!', 'es')).toBe(false);
+    expect(burstWordOffScript('等等', 'zh')).toBe(false);
+    expect(burstWordOffScript('stop', 'ja')).toBe(false);
   });
 });
 

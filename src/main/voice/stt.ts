@@ -147,6 +147,11 @@ type UpstreamTranscript = {
   text: string;
   languageCode?: string;
   languageProbability?: number;
+  /** The least confident word's log-probability (Scribe's per-word
+   * `logprob`). The renderer reads it on a barge burst, where Scribe invents
+   * a word out of her echo and is unsure of it (dictation.ts
+   * burstWordUnsure). Absent when the upstream does not report it. */
+  minWordLogprob?: number;
 };
 
 /** The Scribe (or proxy) success body, before validation. */
@@ -154,7 +159,26 @@ type SttResponseBody = {
   text?: unknown;
   language_code?: unknown;
   language_probability?: unknown;
+  /** Proxy route: the proxy relays only this, not the words array. */
+  min_word_logprob?: unknown;
+  /** Direct route: Scribe's per-token array. */
+  words?: unknown;
 };
+
+/** The lowest `logprob` over Scribe's word tokens (spacing and audio events
+ * skipped), or the proxy's precomputed `min_word_logprob`. */
+export function minWordLogprobOf(json: SttResponseBody | null): number | undefined {
+  if (typeof json?.min_word_logprob === 'number' && Number.isFinite(json.min_word_logprob)) {
+    return json.min_word_logprob;
+  }
+  if (!Array.isArray(json?.words)) return undefined;
+  let min: number | undefined;
+  for (const w of json.words as Array<{ type?: unknown; logprob?: unknown }>) {
+    if (w?.type !== 'word' || typeof w.logprob !== 'number' || !Number.isFinite(w.logprob)) continue;
+    if (min === undefined || w.logprob < min) min = w.logprob;
+  }
+  return min;
+}
 
 /** A Retry-After (or retry_after_seconds) at least this long is a window that
  * outlives any call, so it is the daily cap rather than a burst limit. The
@@ -227,12 +251,14 @@ async function fetchTranscript(url: string, init: RequestInit, viaProxy = false)
       // which downstream trusts as "the clip was not speech".
       throw new Error(`VOICE_STT_FAILED: ${(err as Error).message}`);
     }
+    const minWordLogprob = minWordLogprobOf(json);
     return {
       text: typeof json?.text === 'string' ? json.text : '',
       ...(typeof json?.language_code === 'string' ? { languageCode: json.language_code } : {}),
       ...(typeof json?.language_probability === 'number'
         ? { languageProbability: json.language_probability }
         : {}),
+      ...(minWordLogprob !== undefined ? { minWordLogprob } : {}),
     };
   } finally {
     clearTimeout(timeout);
@@ -252,8 +278,9 @@ function logSttResult(up: UpstreamTranscript, normalized: string, startedAt: num
   const lang = up.languageCode
     ? ` lang=${up.languageCode}@${(up.languageProbability ?? 0).toFixed(2)}`
     : ' lang=?';
+  const conf = up.minWordLogprob !== undefined ? ` minlp=${up.minWordLogprob.toFixed(3)}` : '';
   console.log(
-    `[sei/voice] stt ${ms}ms${lang} raw="${up.text.slice(0, 120)}" -> "${normalized.slice(0, 120)}"`,
+    `[sei/voice] stt ${ms}ms${lang}${conf} raw="${up.text.slice(0, 120)}" -> "${normalized.slice(0, 120)}"`,
   );
 }
 
@@ -266,7 +293,7 @@ export type SttUnavailableReason = 'no-credentials' | 'upstream';
 export async function voiceStt(args: {
   pcm: ArrayBuffer;
 }): Promise<
-  | { text: string; languageCode?: string; languageProbability?: number }
+  | { text: string; languageCode?: string; languageProbability?: number; minWordLogprob?: number }
   | { unavailable: true; reason: SttUnavailableReason }
 > {
   const wav = encodeWav(new Float32Array(args.pcm));

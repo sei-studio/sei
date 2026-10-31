@@ -25,7 +25,7 @@
  */
 
 import { dbOf, pushEnv, type EnvSample, type MicEchoInfo } from './echoGate';
-import { createSttArbiter } from './sttArbiter';
+import { createSttArbiter, type SttHint } from './sttArbiter';
 import { whisperMirrorFirst } from './mirrorPref';
 import { tagCallSetupStage } from './callSetupFailure';
 import { isJunkTranscript } from './pfcSteer';
@@ -345,6 +345,13 @@ const SHARE_NOISE_FLOOR_CAP = BARGE_ABS_MIN / BARGE_NOISE_FACTOR;
  *     line, and with an echo that swings between soft and loud frames a
  *     pass at the onset of every line. Inside the window the residue
  *     relearns her and a duck needs a voice after it.
+ *   - Cloud STT on a burst (261101): Scribe, unlike Whisper, made a word of
+ *     the trigger frame of her echo about half the time ("No", "You know",
+ *     "你好"), and one word is under the echo gate's minimum. A burst pass
+ *     therefore tells the cloud leg it is one (`SttHint.burst`), and a word
+ *     Scribe was unsure of (`burstWordUnsure`, its least confident word's
+ *     log-probability) or one in a script the call does not use
+ *     (`burstWordOffScript`) counts as no word. Voiced passes are unchanged.
  *
  * The cost, honestly: a clean false duck (a game hit, a loud syllable of
  * hers) costs one transcription, and on rare occasions Whisper makes a stock
@@ -361,6 +368,12 @@ const SHARE_NOISE_FLOOR_CAP = BARGE_ABS_MIN / BARGE_NOISE_FACTOR;
  * the first clip of a reply, and 600 ms after any retracted duck. The old
  * pre-roll pass caught some of those, by the same mechanism that invented
  * "Okay." out of her echo.
+ *
+ * With Scribe in the same replay (261101), before the burst gate: 8 cuts in
+ * 23 minutes with no player, every one a burst word made of her echo, most
+ * of them with no game running. With it: none, and about 4% fewer short
+ * interjections caught, the ones Scribe was itself unsure of ("Now", a
+ * "hey" heard as "Yeah").
  */
 /** Frames right after the trigger that still carry her echo: the duck's
  *  60 ms ramp plus the speaker-to-mic path. Not counted either way. */
@@ -444,6 +457,50 @@ export type BargeAbortReason = 'echo' | 'no_word' | 'no_voice' | 'cancelled';
  *  before it reached her, and she went silent. */
 export function isBargeWord(text: string): boolean {
   return hasSpokenWord(text) && !isJunkTranscript(text);
+}
+
+/**
+ * Cloud STT on a burst (261101). A burst pass reads the trigger frame and its
+ * tail: a few hundred ms of audio with nothing voiced after the duck. Sent
+ * through Scribe with the app's parameters (scribe_v1, audio-event tags, no
+ * language pin), the burst passes of a headless replay on speakers came back
+ * as a word about half the time when the trigger was only her own echo:
+ * "No", "You know", "你好", "いいの", "听吗？". Whisper gave nothing for the
+ * same clips. One token is under the echo gate's minimum, so each of those
+ * cut her (0.7 to 1.4 cuts a minute with no game running).
+ *
+ * Scribe says how sure it is. Every invented word had a word log-probability
+ * of -0.25 or lower (her "No" -0.5 to -1.9); every real short word from the
+ * player ("stop", "wait, wait", "stop it") was -0.2 or higher, nearly all
+ * above -0.01. So a burst word Scribe was unsure of is not an interrupt.
+ * Unknown confidence (an older proxy, or local Whisper) keeps the old rule.
+ */
+export const BURST_MIN_WORD_LOGPROB = -0.3;
+export function burstWordUnsure(minWordLogprob: number | undefined): boolean {
+  return typeof minWordLogprob === 'number' && minWordLogprob < BURST_MIN_WORD_LOGPROB;
+}
+
+/** What the cloud leg hands a pass: the transcript, or '' (no word) when the
+ * pass is a burst and Scribe was unsure of it. The voice store's
+ * cloudTranscribe runs every Scribe answer through this. */
+export function cloudPassText(res: { text: string; minWordLogprob?: number }, hint?: SttHint): string {
+  return hint?.burst && res.text && burstWordUnsure(res.minWordLogprob) ? '' : res.text;
+}
+
+/** Conversation languages written in Latin script (chat_language). */
+const LATIN_LANGUAGES = new Set(['en', 'fr', 'es']);
+
+/**
+ * A burst word in a script the conversation does not use (261101): on an
+ * English call a trigger frame of her echo came back from Scribe as "你好"
+ * or "いいの", because Scribe guesses the language of each clip and a few
+ * hundred ms of a syllable is anything. A player who stops her on an English
+ * call says it in Latin letters. Only Latin-script conversations are judged:
+ * code-switching into English on a Chinese call is ordinary.
+ */
+export function burstWordOffScript(text: string, language: string | undefined): boolean {
+  if (!LATIN_LANGUAGES.has(language ?? 'en')) return false;
+  return !/\p{Script=Latin}/u.test(text);
 }
 
 /**
@@ -546,11 +603,16 @@ export async function createDictation(opts: {
    * keeps the English-only whisper-tiny.en; any other code loads the
    * multilingual model with that decode language pinned (whisperWorker.ts). */
   language?: string;
+  /** 261101: the language a barge BURST word is expected in
+   * (burstWordOffScript). Defaults to `language`. The voice store passes the
+   * UI language when no conversation language has been detected yet, so a
+   * Chinese UI with no voice history is not judged as English. */
+  burstLanguage?: string;
   /** 260724: cloud STT (ElevenLabs Scribe via main). When present, every
    * utterance races this against the local worker (see sttArbiter.ts —
    * bounded grace, local always the fallback). Resolve null on any failure
    * or when cloud STT is unavailable; must not reject. */
-  cloudTranscribe?: (audio: Float32Array) => Promise<string | null>;
+  cloudTranscribe?: (audio: Float32Array, hint?: SttHint) => Promise<string | null>;
   /** 260725 STT policy: 'eager' (default) boots the local Whisper worker up
    * front (today's behavior — cloud races it when configured). 'none' skips
    * the worker AND the ~40MB model download entirely: the mic/VAD pipeline
@@ -922,7 +984,11 @@ export async function createDictation(opts: {
     },
   });
 
-  function postTranscribe(frames: Float32Array[], cb: (text: string) => void): number {
+  function postTranscribe(
+    frames: Float32Array[],
+    cb: (text: string) => void,
+    hint?: SttHint,
+  ): number {
     const total = frames.reduce((n, f) => n + f.length, 0);
     const audio = new Float32Array(total);
     let off = 0;
@@ -932,7 +998,7 @@ export async function createDictation(opts: {
     }
     const id = nextId++;
     inflight.set(id, cb);
-    void transcribe(audio).then((text) => {
+    void transcribe(audio, hint).then((text) => {
       const deliver = inflight.get(id);
       if (!deliver) return; // cancelled (cancelEager / discarded short utterance)
       inflight.delete(id);
@@ -1228,7 +1294,11 @@ export async function createDictation(opts: {
     // arbiter transfers what it is given.
     postTranscribe(
       heard.map((f) => f.slice()),
-      (text) => {
+      (raw) => {
+        // A burst word in a script the call does not use is her echo as Scribe
+        // heard it (burstWordOffScript), the same as no word at all.
+        const text = shortWord && burstWordOffScript(raw, opts.burstLanguage ?? opts.language) ? '' : raw;
+        if (text !== raw) console.log(`[sei/voice] barge: burst word off-script, dropped — "${raw.slice(0, 40)}"`);
         s.passText = text;
         if (suspect !== s) {
           const w = s.passWaiter;
@@ -1274,6 +1344,9 @@ export async function createDictation(opts: {
           () => settle(true),
         );
       },
+      // A burst pass asks the cloud leg to judge how sure Scribe was
+      // (burstWordUnsure): its invented words on her echo are unsure ones.
+      shortWord ? { burst: true } : undefined,
     );
   }
 

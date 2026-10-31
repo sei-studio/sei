@@ -1943,6 +1943,16 @@ The design and its measurements are committed at
   every scrap of her echo (the test rig's pessimistic mock): each clean duck
   on a loud syllable of hers cuts her, about as often as 0.6.11 in the same
   scene, still one pass per duck. Unmeasured on real hardware.
+  Cloud STT (261101): Scribe, unlike Whisper, made a word of the trigger
+  frame of her echo about half the time ("No", "You know", "你好"), which
+  cut her on speakers even with no game running. A burst pass now carries
+  `SttHint.burst` through the arbiter to the voice store's cloud wrapper,
+  and a burst word Scribe was unsure of (`burstWordUnsure`: its least
+  confident word's logprob, `minWordLogprob` from main's voiceStt, relayed
+  by the proxy as `min_word_logprob`) or in a script the call does not use
+  (`burstWordOffScript`, Latin-script calls only) is no word. Voiced passes
+  are unchanged. Unknown confidence (an older proxy, local Whisper) keeps
+  the old rule.
 - **The echo gate: speakers into the mic (260807).** On speakers at max volume
   the mic hears THREE voices, and two of them used to become "the player".
   Measured across two live Instagram sessions: reel dialogue was transcribed

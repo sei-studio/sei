@@ -1886,7 +1886,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     async (
       _event,
       argsRaw: unknown,
-    ): Promise<{ text: string } | { unavailable: true; reason?: 'no-credentials' | 'upstream' }> => {
+    ): Promise<
+      { text: string; minWordLogprob?: number } | { unavailable: true; reason?: 'no-credentials' | 'upstream' }
+    > => {
       const args = z
         .object({
           // 16kHz mono Float32 PCM; 15s max utterance ≈ 960KB, 2MB is headroom.
@@ -1898,7 +1900,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       if ('text' in res) {
         const { noteDetectedLanguage } = await import('./voice/languageAutoSwitch');
         void noteDetectedLanguage(res);
-        return { text: res.text };
+        return {
+          text: res.text,
+          ...(res.minWordLogprob !== undefined ? { minWordLogprob: res.minWordLogprob } : {}),
+        };
       }
       return res;
     },
