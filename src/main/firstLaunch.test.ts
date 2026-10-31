@@ -24,6 +24,7 @@ import {
   recordLaunch,
   noteLaunch,
   takeInstallerFirstLaunch,
+  _resetLaunchForTests,
   macAppLocation,
   installerFirstLaunchProps,
   type FirstLaunchEnv,
@@ -32,7 +33,7 @@ import {
 let dir: string;
 beforeEach(() => {
   dir = mkdtempSync(path.join(os.tmpdir(), 'sei-firstlaunch-'));
-  takeInstallerFirstLaunch(); // clear any process-level state from a prior test
+  _resetLaunchForTests(); // clear any process-level state from a prior test
 });
 afterEach(() => {
   try { chmodSync(dir, 0o755); } catch { /* ignore */ }
@@ -91,7 +92,17 @@ describe('noteLaunch + takeInstallerFirstLaunch', () => {
   it('second launch of the same install: false', () => {
     noteLaunch(dir, '0.6.5');
     takeInstallerFirstLaunch();
+    _resetLaunchForTests(); // a new process
     expect(noteLaunch(dir, '0.6.5')).toBe('seen');
+    expect(takeInstallerFirstLaunch()).toBe(false);
+  });
+
+  it('a second call in the same process keeps the first answer (boot.ts, then bootstrap)', () => {
+    expect(noteLaunch(dir, '0.6.5')).toBe('fresh');
+    // The early updater writes update-state.json between the two calls.
+    writeFileSync(path.join(dir, 'update-state.json'), '{}');
+    expect(noteLaunch(dir, '0.6.5')).toBe('fresh');
+    expect(takeInstallerFirstLaunch()).toBe(true);
     expect(takeInstallerFirstLaunch()).toBe(false);
   });
 

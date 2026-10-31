@@ -125,6 +125,11 @@ export function App(): React.ReactElement {
   // 260929: after "Restart Sei and continue" (a permission grant macOS would
   // only hand to a fresh process), reopen the share picker or the call.
   usePermissionResume();
+  // 261031 (T277): boot safety. The app UI is up, so this start counts as
+  // good once it stays up for a few seconds.
+  useEffect(() => {
+    try { sei.rendererReady?.(); } catch { /* older bridge */ }
+  }, []);
   // ui-A7: developer-console visibility toggle. Default OFF — LogsBar only
   // mounts when the Settings → Show developer console toggle is flipped.
   const devConsoleVisible = useUiStore((s) => s.devConsoleVisible);

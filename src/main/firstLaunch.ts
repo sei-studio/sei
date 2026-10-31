@@ -176,12 +176,26 @@ export function currentFirstLaunchEnv(): FirstLaunchEnv {
 // ── Process-level wiring ────────────────────────────────────────────────────
 
 let pendingFirstLaunch = false;
+let launchKind: LaunchKind | null = null;
 
-/** Call once, first thing in bootstrap(). */
+/**
+ * Classify this launch once per process, before anything writes userData
+ * state. boot.ts calls it ahead of the early updater (whose what's-new check
+ * writes update-state.json, one of the probed entries); bootstrap() calls it
+ * again and gets the same answer.
+ */
 export function noteLaunch(userDataDir: string, appVersion: string): LaunchKind {
+  if (launchKind !== null) return launchKind;
   const kind = recordLaunch(userDataDir, appVersion);
+  launchKind = kind;
   pendingFirstLaunch = kind === 'fresh';
   return kind;
+}
+
+/** TEST-ONLY. */
+export function _resetLaunchForTests(): void {
+  launchKind = null;
+  pendingFirstLaunch = false;
 }
 
 /**

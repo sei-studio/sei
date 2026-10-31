@@ -188,3 +188,13 @@ export function isMissingReleaseArtifacts(err: unknown): boolean {
     /no published versions/i.test(message)
   );
 }
+
+/**
+ * Whether a version carries a pre-release tag (0.7.0-beta.3). The safe-mode
+ * updater keeps such a build on the beta channel (261031, T277): a broken
+ * beta has to be able to reach the beta that fixes it.
+ */
+export function isPrereleaseVersion(version: string): boolean {
+  const v = semver.valid(semver.clean(version) ?? version);
+  return v !== null && semver.prerelease(v) !== null;
+}

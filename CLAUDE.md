@@ -3406,7 +3406,8 @@ any of this in a plain tab.
 ```
 src/
   main/                 Electron host (main process)
-    index.ts            entry
+    boot.ts             entry shim (built as dist/main/index.js): boot guard, updater, safe mode
+    index.ts            the app (built as dist/main/app.js), loaded by boot.ts in normal mode
     ipc.ts              IPC handler registration
     botSupervisor.ts    utilityProcess.fork + MessageChannelMain, multi-bot lifecycle (Map<characterId, session>)
     apiKeyStore.ts      safeStorage key + getAiBackendKind()
@@ -3509,7 +3510,7 @@ Packaging is **electron-builder** (`electron-builder.yml`):
 `--inspect`, but Chromium's `--remote-debugging-port` / `--remote-debugging-pipe`
 have no fuse: any local process could relaunch the signed app with CDP and drive
 the renderer (preload IPC + TCC grants). `src/main/remoteDebugGuard.ts`, the
-FIRST import of `src/main/index.ts`, calls `process.exit(1)` when a packaged
+FIRST import of `src/main/boot.ts` (the main entry since 261031), calls `process.exit(1)` when a packaged
 build whose version has no prerelease tag sees `--remote-debugging-*`,
 `--inspect*`, `--debug-port` or `--js-flags` (argv scan plus
 `app.commandLine.hasSwitch`; pure policy in `remoteDebugPolicy.ts`). Packaged
@@ -3620,6 +3621,63 @@ switch (update rollout to 0, the GitHub release back to draft, migration to
 re-running a cancelled mirror, and the one-time move of the workflows to
 `main` are in **`docs/design/velopack-runbook.md`**. Read it before any
 Windows release.
+
+### Boot safety and settings recovery (261031, T277)
+
+A build that cannot start must still be able to update itself, and a damaged
+`config.json` must not throw a signed-in user back to onboarding.
+
+- **Entry shim.** `src/main/boot.ts` is the main entry (`dist/main/index.js`);
+  `src/main/index.ts` is the app, built as `dist/main/app.js` and loaded with
+  `await import('./index')` only in normal mode. boot.ts imports the
+  remoteDebugGuard / velopackBoot / velopackMigration trio first (same order
+  as before), sets the app name + userData, takes the single-instance lock,
+  runs the boot guard, then starts the updater on `ready` BEFORE the app's own
+  bootstrap. Anything boot.ts imports statically also loads in safe mode, so
+  keep heavy modules (games, auth, native addons) behind the app import.
+  Shared code lands in `dist/main/chunks/`, where `__dirname` is the chunk
+  folder: use `app.getAppPath()` for repo-relative paths in main.
+- **Failed starts.** `<userData>/boot-state.json` (written synchronously,
+  never in the settings store; `bootGuard.ts` pure, `bootContext.ts` the
+  process state). A normal start writes a pending record and succeeds when
+  the main window's renderer sends `app:renderer-ready` (App.tsx mount) and
+  the app stays up `SUCCESS_HOLD_MS` (5 s). Failures: the previous pending
+  start never finished (`unclean_exit`: crash, kill, power loss), bootstrap
+  threw, the app graph failed to import, the renderer died or its main frame
+  failed to load before ready, or a quit at least `NEVER_READY_QUIT_MS` (30 s)
+  after start with no ready ping. An in-process failure is recorded and Sei
+  relaunches itself; the guard picks safe mode once `FAILURE_THRESHOLD` (2)
+  failures are in a row. A new app version resets the count, safe-mode runs
+  never count, update hand-overs (`restartIntoUpdate`, `restartIntoVelopack`,
+  a Velopack apply at launch) are neutral (`noteNeutralExit`). Dev counts
+  nothing unless `SEI_BOOT_GUARD=1`; `--safe-mode` or `SEI_SAFE_MODE=1`
+  forces safe mode anywhere.
+- **Safe mode** never loads the app graph: no games, native addons, overlays,
+  desktop companion, voice, bot, auth or analytics. It runs the updater
+  (`initUpdater({safeMode: true})`, electron-updater or Velopack; the NSIS to
+  Velopack migration is not scheduled) and a small window
+  (`safeMode/`: page = `safeModePage.ts` as a data: URL with a strict CSP,
+  sandboxed preload `src/preload/safeMode.ts` built to
+  `dist/preload/safeMode.cjs`, which may import only electron). Buttons:
+  Check for updates / download / restart, Try normal start (one-shot
+  `forceNormalOnce`, then relaunch), Reset settings (confirmed; every
+  profile, keeps `RESET_KEEP_KEYS` identity, the old file set aside as
+  `config.before-reset-<ts>.json`), Open logs folder. Copy is en + zh.
+  Updater pushes are held until the renderer is listening (ready ping, with
+  fallback flushes) so an early "update available" is not lost.
+- **Settings recovery** (`configStore.ts`, header comment has the details):
+  durable writes (`durableWrite.ts`: temp + fsync + rename), last-known-good
+  `config.json.bak`, damaged files quarantined as
+  `config.corrupt-<ts>.json` (newest 3 kept) then restored from the backup,
+  else rebuilt from readable identity keys, else defaults. Unknown keys from
+  a newer build are kept on every write; `schema_version` is stamped and
+  migrations are idempotent. Logs carry kinds and key names, never values.
+- **Analytics** (packaged only, through the normal helper so opt-out holds):
+  `boot_safe_mode_entered {reason, failures}` on the first normal start after
+  a safe-mode run, `settings_recovered {kind}`.
+- Verify the page in a plain browser: render `renderSafeModeHtml` with a
+  stub `window.seiSafeMode`. Live: `SEI_BOOT_GUARD=1` and kill two starts
+  before ready, or launch with `--safe-mode`.
 
 ### Startup popup (261027, replaced the notices inbox)
 

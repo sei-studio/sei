@@ -15,7 +15,13 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist/main',
       rollupOptions: {
-        input: { index: path.resolve('src/main/index.ts') },
+        // 261031 (T277): `index` is the boot shim (dist/main/index.js, the
+        // package.json main), `app` the app itself, loaded by the shim only
+        // in a normal start. Modules that read __dirname (index.ts,
+        // botSupervisor.ts) must stay in the app entry chunk: the ESM shim
+        // gives each chunk its own __dirname, and shared chunks land in
+        // dist/main/chunks/.
+        input: { index: path.resolve('src/main/boot.ts'), app: path.resolve('src/main/index.ts') },
       },
     },
     define: {
@@ -75,7 +81,8 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist/preload',
       rollupOptions: {
-        input: { index: path.resolve('src/preload/index.ts') },
+        // safeMode: the safe-mode screen's preload (imports only electron).
+        input: { index: path.resolve('src/preload/index.ts'), safeMode: path.resolve('src/preload/safeMode.ts') },
         output: {
           format: 'cjs',
           entryFileNames: '[name].cjs',

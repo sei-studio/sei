@@ -313,7 +313,11 @@ function botEntryPath(): string {
   // code=1 — the regression captured in 260508-mun. Resolve up two
   // levels and into src/bot/index.js so dev launches against the real
   // source file.
-  return path.join(__dirname, '../../src/bot/index.js');
+  // 261031: from the app path (the repo root in dev), not __dirname: since
+  // main has two entries (boot.ts + index.ts) this module can be built into
+  // dist/main/chunks/, where the shim's __dirname is one level deeper.
+  // (Test doubles of `app` may not have getAppPath: the repo root is the cwd there.)
+  return path.join(typeof app.getAppPath === 'function' ? app.getAppPath() : process.cwd(), 'src/bot/index.js');
 }
 
 export interface BotSupervisorOptions {

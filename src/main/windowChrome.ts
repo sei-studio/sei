@@ -113,8 +113,11 @@ export function createMainWindow(opts: CreateMainWindowOptions): BrowserWindow {
 /** The white Sei logo PNG as base64, or null when the asset is missing. */
 function splashLogoB64(): string | null {
   try {
+    // app.getAppPath(), not __dirname (261031): this module can land in a
+    // shared chunk under dist/main/chunks/ now that boot.ts and index.ts are
+    // separate entries, and __dirname follows the chunk.
     const logoPath = app.isPackaged
-      ? path.join(__dirname, '../renderer/img/sei-text.png')
+      ? path.join(app.getAppPath(), 'dist/renderer/img/sei-text.png')
       : path.join(app.getAppPath(), 'src/renderer/public/img/sei-text.png');
     return readFileSync(logoPath).toString('base64');
   } catch {
