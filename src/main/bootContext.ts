@@ -1,0 +1,304 @@
+/**
+ * Runtime half of the boot guard (261031, T277): the one place boot.ts (the
+ * entry shim) and index.ts (the app) share start-up state.
+ *
+ * Kept deliberately small and dependency-free (electron + bootGuard only):
+ * boot.ts loads it before the app's module graph, and anything it imported
+ * would be loaded in safe mode too.
+ */
+import type { BrowserWindow, WebContents } from 'electron';
+import {
+  beginBoot,
+  bootStatePath,
+  freshBootState,
+  inProcessFailureAction,
+  markFailure,
+  markInProcessSafe,
+  markNeutral,
+  markSuccess,
+  quitVerdict,
+  readBootStateSync,
+  requestNormalStart,
+  SUCCESS_HOLD_MS,
+  takeReport,
+  writeBootStateSync,
+  type BootMode,
+  type BootState,
+  type FailureKind,
+  type SafeModeReason,
+} from './bootGuard';
+
+interface Ctx {
+  file: string | null;
+  persistent: boolean;
+  appVersion: string;
+  state: BootState;
+  mode: BootMode;
+  reason: SafeModeReason | null;
+  succeeded: boolean;
+  readyAt: number | null;
+  loadedAt: number | null;
+  successTimer: ReturnType<typeof setTimeout> | null;
+  getMainWindow: () => BrowserWindow | null;
+  getSafeWindow: () => BrowserWindow | null;
+  enterSafeMode: ((reason: SafeModeReason) => void) | null;
+  relaunch: (() => void) | null;
+  onSuccess: Array<() => void>;
+}
+
+const ctx: Ctx = {
+  file: null,
+  persistent: false,
+  appVersion: '0.0.0',
+  state: freshBootState(),
+  mode: 'normal',
+  reason: null,
+  succeeded: false,
+  readyAt: null,
+  loadedAt: null,
+  successTimer: null,
+  getMainWindow: () => null,
+  getSafeWindow: () => null,
+  enterSafeMode: null,
+  relaunch: null,
+  onSuccess: [],
+};
+
+function persist(): void {
+  if (ctx.persistent && ctx.file) writeBootStateSync(ctx.file, ctx.state);
+}
+
+function log(line: string): void {
+  console.log(`[sei] boot: ${line}`);
+}
+
+/**
+ * Record this start attempt and decide its mode. Called once from boot.ts,
+ * after the single-instance lock and before the app graph loads.
+ * `persistent: false` (dev) keeps the state in memory only.
+ */
+export function initBootGuard(opts: {
+  userData: string;
+  appVersion: string;
+  persistent: boolean;
+  forceSafe: boolean;
+  now?: number;
+}): { mode: BootMode; reason: SafeModeReason | null; failures: number } {
+  ctx.persistent = opts.persistent;
+  ctx.appVersion = opts.appVersion;
+  ctx.file = bootStatePath(opts.userData);
+  const prev = opts.persistent ? readBootStateSync(ctx.file) : freshBootState();
+  const r = beginBoot(prev, { appVersion: opts.appVersion, now: opts.now ?? Date.now(), forceSafe: opts.forceSafe });
+  ctx.state = r.state;
+  ctx.mode = r.mode;
+  ctx.reason = r.reason;
+  persist();
+  log(`mode=${r.mode}${r.reason ? ` reason=${r.reason}` : ''} failures=${r.state.failures}`);
+  return { mode: r.mode, reason: r.reason, failures: r.state.failures };
+}
+
+export function getBootMode(): BootMode {
+  return ctx.mode;
+}
+
+export function getSafeModeReason(): SafeModeReason | null {
+  return ctx.reason;
+}
+
+export function getFailureCount(): number {
+  return ctx.state.failures;
+}
+
+/* ---------------------------- windows ------------------------------------ */
+
+/** index.ts registers its main-window getter. */
+export function setMainWindowGetter(fn: () => BrowserWindow | null): void {
+  ctx.getMainWindow = fn;
+}
+
+/** boot.ts registers the safe-mode window getter. */
+export function setSafeWindowGetter(fn: () => BrowserWindow | null): void {
+  ctx.getSafeWindow = fn;
+}
+
+/** The window the updater talks to: the safe-mode screen while it is up, else the main window. */
+export function updaterWindow(): BrowserWindow | null {
+  const safe = ctx.getSafeWindow();
+  if (safe && !safe.isDestroyed()) return safe;
+  return ctx.getMainWindow();
+}
+
+/** The window a second launch should bring forward. */
+export function focusableWindow(): BrowserWindow | null {
+  return updaterWindow();
+}
+
+export function isMainWindowSender(sender: WebContents): boolean {
+  const win = ctx.getMainWindow();
+  return !!win && !win.isDestroyed() && win.webContents.id === sender.id;
+}
+
+/* ------------------------- profile scope gate ----------------------------- */
+
+let resolveScopeReady: () => void = () => {};
+/**
+ * Resolves once bootstrap has picked the profile scope (or given up). The
+ * updater's startup check waits on it so the beta-channel preference is read
+ * from the right profile's config.
+ */
+export const profileScopeReady: Promise<void> = new Promise<void>((r) => {
+  resolveScopeReady = r;
+});
+export function markProfileScopeReady(): void {
+  resolveScopeReady();
+}
+
+/* ------------------------------ hooks ------------------------------------- */
+
+/** boot.ts: how to show the safe-mode screen in this process. */
+export function setSafeModeEntry(fn: (reason: SafeModeReason) => void): void {
+  ctx.enterSafeMode = fn;
+}
+
+/** boot.ts: how to start again (app.relaunch + exit). */
+export function setRelaunch(fn: () => void): void {
+  ctx.relaunch = fn;
+}
+
+/** Run once when the start is judged successful. */
+export function onBootSuccess(fn: () => void): void {
+  if (ctx.succeeded) fn();
+  else ctx.onSuccess.push(fn);
+}
+
+/* ------------------------------ events ------------------------------------ */
+
+function succeed(): void {
+  if (ctx.succeeded) return;
+  ctx.succeeded = true;
+  if (ctx.successTimer) clearTimeout(ctx.successTimer);
+  ctx.successTimer = null;
+  if (ctx.mode === 'normal') {
+    ctx.state = markSuccess(ctx.state);
+    persist();
+    log('start succeeded');
+  }
+  for (const fn of ctx.onSuccess.splice(0)) {
+    try { fn(); } catch { /* a hook never breaks the guard */ }
+  }
+}
+
+export function noteMainWindowLoaded(now = Date.now()): void {
+  if (ctx.loadedAt === null) ctx.loadedAt = now;
+}
+
+/** The main window's renderer mounted. Success after SUCCESS_HOLD_MS without a crash. */
+export function noteRendererReady(now = Date.now()): void {
+  if (ctx.succeeded || ctx.mode !== 'normal') return;
+  if (ctx.readyAt === null) ctx.readyAt = now;
+  if (ctx.successTimer) return;
+  ctx.successTimer = setTimeout(succeed, SUCCESS_HOLD_MS);
+  ctx.successTimer.unref?.();
+}
+
+/**
+ * A start-up failure seen in this process. Before success it counts; then
+ * either one more start (relaunch) or the safe-mode screen right here.
+ * After success it is an ordinary runtime problem and is left alone.
+ */
+export function reportStartupFailure(kind: FailureKind, err?: unknown): void {
+  if (ctx.succeeded || ctx.mode !== 'normal') return;
+  if (ctx.successTimer) clearTimeout(ctx.successTimer);
+  ctx.successTimer = null;
+  ctx.readyAt = null;
+  const now = Date.now();
+  ctx.state = markFailure(ctx.state, kind, { appVersion: ctx.appVersion, now });
+  // Only the error's class, never its message: messages can carry paths or data.
+  const cls = err instanceof Error ? err.name : typeof err;
+  log(`start failed (${kind}${err !== undefined ? `, ${cls}` : ''}), failures=${ctx.state.failures}`);
+  const action = inProcessFailureAction(ctx.state.failures, ctx.persistent);
+  if (action === 'relaunch' && ctx.relaunch) {
+    persist();
+    ctx.relaunch();
+    return;
+  }
+  ctx.mode = 'safe';
+  ctx.reason = kind;
+  ctx.state = markInProcessSafe(ctx.state, kind, { appVersion: ctx.appVersion, now });
+  persist();
+  if (ctx.enterSafeMode) ctx.enterSafeMode(kind);
+}
+
+/** The app is quitting. Judge the start if it has not been judged yet. */
+export function noteQuitting(now = Date.now()): void {
+  if (ctx.succeeded) return;
+  if (ctx.mode !== 'normal') {
+    ctx.state = markNeutral(ctx.state);
+    persist();
+    return;
+  }
+  const verdict = quitVerdict({ succeeded: ctx.succeeded, readyAt: ctx.readyAt, loadedAt: ctx.loadedAt, now });
+  if (verdict === 'success') {
+    succeed();
+    return;
+  }
+  if (verdict === 'failure') {
+    ctx.state = markFailure(ctx.state, 'renderer_never_ready', { appVersion: ctx.appVersion, now });
+    ctx.succeeded = true; // judged; nothing later may re-judge it
+    persist();
+    log('quit before the window came up; counted as a failed start');
+    return;
+  }
+  ctx.state = markNeutral(ctx.state);
+  ctx.succeeded = true;
+  persist();
+}
+
+/** This launch is handing over to an update (or another exit that says nothing about the start). */
+export function noteNeutralExit(): void {
+  if (ctx.succeeded) return;
+  ctx.state = markNeutral(ctx.state);
+  persist();
+}
+
+/** "Try normal start" from the safe-mode screen. */
+export function requestNormalStartNext(): void {
+  ctx.state = requestNormalStart(ctx.state);
+  persist();
+}
+
+/** The unreported safe-mode entry (consumed). Normal starts send it once analytics is up. */
+export function takeSafeModeReport(): BootState['report'] {
+  const r = takeReport(ctx.state);
+  if (!r.report) return null;
+  ctx.state = r.state;
+  persist();
+  return r.report;
+}
+
+/** TEST-ONLY. */
+export function _resetBootContextForTests(): void {
+  if (ctx.successTimer) clearTimeout(ctx.successTimer);
+  Object.assign(ctx, {
+    file: null,
+    persistent: false,
+    appVersion: '0.0.0',
+    state: freshBootState(),
+    mode: 'normal',
+    reason: null,
+    succeeded: false,
+    readyAt: null,
+    loadedAt: null,
+    successTimer: null,
+    getMainWindow: () => null,
+    getSafeWindow: () => null,
+    enterSafeMode: null,
+    relaunch: null,
+    onSuccess: [],
+  } satisfies Ctx);
+}
+
+/** TEST-ONLY: current in-memory state. */
+export function _bootStateForTests(): BootState {
+  return ctx.state;
+}
