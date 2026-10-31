@@ -1897,6 +1897,85 @@ The design and its measurements are committed at
   A confirmed barge also calls `backseatInterrupt`: clearing the queue only
   silences what is already synthesised, and the turn behind it would otherwise
   land its line a second later.
+- **False cuts during shares (261031).** 0.6.11 cut companions off over game
+  audio on speakers ("it keeps getting cut off"). Replayed headless (real game
+  clips, her TTS echo, real whisper-tiny), the confirming pass was reading the
+  pre-roll from BEFORE the duck, which is her own echo: Whisper made "Okay." /
+  "Hey." of it, one or two words are under the echo gate's token minimum, so
+  it committed, and the same word was then sent to her as the player's turn.
+  Now (`dictation.ts`, "Voice after the duck"): the duck PAUSES her clip
+  (`audioQueue.duck`) and a retraction resumes it, so a false duck costs a
+  short pause and no words; a duck inside the clip's grace window (where the
+  trigger may be her own onset) must show a voice after it (`bargeVoiceBar`)
+  within ~3 frames or it is retracted with no STT call (`no_voice`);
+  every retraction (no voice, no word, an echo abort, a finished barge whose
+  wait ran out) resumes her inside a fresh FULL grace window
+  (`regraceOnResume`), so the residue relearns her echo from the resumed
+  frames: while she is paused it decays toward the room, and her first
+  resumed frame used to duck again (on loud speakers a line played 128 ms at
+  a time; with a learned bar a clean duck that paid a pass on her own echo,
+  every ~5 s for a whole line when STT was slow);
+  the confirming pass reads only post-duck audio and commits on
+  `isBargeWord` (hasSpokenWord AND the utterance junk filter) that the echo
+  gate does not trace to her or the screen; a no-word pass gets one more pass
+  when a voice kept going; a duck a transcription rejected raises the bar
+  (`learnFalseDuck`), which ends the re-duck-on-resume loop a loud game
+  otherwise causes; text judged not an interrupt is never dispatched; an
+  utterance open when her clip becomes audible ends at her onset. The energy
+  deadline needs most post-duck frames voiced. `voice_call_ended` gained
+  `interrupt_no_voice` / `interrupt_no_word`. Pinned by
+  `dictation.bargeEvidence.test.ts` (scene rig: tagged frames, a Whisper-like
+  STT mock, her line paused by the duck). Short words (review, same day):
+  "stop" or "no" is often over by the frame after the duck, and on loud
+  speakers its end reads the same as her echo tail, so an energy test there
+  dropped most of them. A duck after the grace window therefore gets its one
+  pass (from the trigger frame on, never the pre-roll) even with nothing
+  voiced after it; a pass that answers after the duck was given up on is
+  still delivered as an ordinary turn when it is a word the echo gate does
+  not trace to her. Cost of the trade: those ducks cost a transcription, and
+  Whisper now and then makes a stock word ("Bye.") of one and cuts her. In
+  the headless replay that was a couple of cuts an hour on loud speakers over
+  a game (0.6.11: close to one a minute), short interjections cut her a
+  little less often than in 0.6.11, and transcriptions stayed below
+  0.6.11's in every condition. A word that never reaches the duck bar is not
+  an interrupt, and neither is a lone short word over before a voiced frame
+  in the 600 ms after a retracted duck. Worst case, if STT made a word of
+  every scrap of her echo (the test rig's pessimistic mock): each clean duck
+  on a loud syllable of hers cuts her, about as often as 0.6.11 in the same
+  scene, still one pass per duck. Unmeasured on real hardware.
+  Cloud STT (261101): Scribe, unlike Whisper, made a word of the trigger
+  frame of her echo about half the time ("No", "You know", "你好"), which
+  cut her on speakers even with no game running. A burst pass now carries
+  `SttHint.burst` through the arbiter to the voice store's cloud wrapper,
+  and a burst word Scribe was unsure of (`burstWordUnsure`: its least
+  confident word's logprob, `minWordLogprob` from main's voiceStt, relayed
+  by the proxy as `min_word_logprob`) or in a script the call does not use
+  (`burstWordOffScript`) is no word. Voiced passes are unchanged. Unknown
+  confidence (an older proxy, local Whisper) keeps the old rule. The script
+  test (review, same day) drops only Han, kana and Hangul, and only on a
+  Latin-script call: those are the scripts the invented words came in, and
+  the call language is often a guess. It is `burstLanguageFor`:
+  chat_language, else a Chinese UI, else the OS locale's language. The UI
+  is only en/zh, so before the OS step every Japanese, Korean, Russian or
+  Arabic player with no chat_language was judged as English and their
+  short words were dropped.
+  The committed turn (review, same day): a committed barge's utterance is
+  trimmed to where the first confirming pass read from, so the turn she
+  hears never opens with the pre-roll of her own echo ("I found... Hold
+  on"). When the pass came back a word and nothing voiced followed the
+  audio it read, that word is the turn, delivered at the cut (`commitTurn`,
+  a closed barge through `settleDelivery`) and the utterance closed. Over a
+  loud game share the end of speech waited for silence the game does not
+  leave, so a "hold on" used to reach her 4.5 to 7.7 s after it stopped
+  her. A player still talking takes the old path and arrives whole at end
+  of speech; when that long transcript comes back with no word (a game
+  burying the phrase: "Hold on" read as "[footsteps thudding]"), the word
+  that cut her is sent instead. Replay (Scribe, paired): late-turn p90 over
+  games 6.0 -> 5.0 s, no turn with her words, no false cuts, catch rate and
+  STT calls unchanged. Most late turns left are a game loud enough to count
+  as voice after the pass, so the immediate path does not apply; a voice bar
+  relative to the trigger level reached 2.5 s in the replay but can split a
+  player who keeps talking more quietly, and is not in.
 - **The echo gate: speakers into the mic (260807).** On speakers at max volume
   the mic hears THREE voices, and two of them used to become "the player".
   Measured across two live Instagram sessions: reel dialogue was transcribed
