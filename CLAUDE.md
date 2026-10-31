@@ -3232,6 +3232,95 @@ defaults was invisible. Cached, not read per event (commonProps is sync);
 `setUiLanguage()` is refreshed from the `config:save` IPC handler, the single
 path both Settings and the onboarding Sui stage write it through.
 
+**Build, device and provider facts on every event; dev builds send nothing
+(261031, T278).** `commonProps()` also stamps `channel` (`stable`/`beta`/
+`test`/`dev`), `packaged`, `device_id`, `rollout_bucket`, `$session_id` (a
+UUIDv7 per process), `ai_provider` (`cloud`/`chatgpt`/`byok`/`ollama`/`unset`),
+`llm_provider`, `model_family` (closed enum, never the model name) and `plan`
+(`free`/`quest`/`party`, `none` signed out, `unknown` before the first credits
+read). Rules in `src/main/analyticsContext.ts` (pure, tested):
+- The channel is baked: release.yml exports `SEI_RELEASE_CHANNEL=sei-channel=
+  stable|beta` on a tag build only (and fails the build if `dist/main` lacks
+  it); `electron.vite.config.ts` defines it. Unpackaged = `dev`; any other
+  packaged build (local `dist:*`, spike or dry-run workflows) = `test`; a
+  prerelease version can never read `stable`.
+- **Send gate:** `initAnalytics` creates no client unless the channel is
+  stable or beta, or `SEI_ANALYTICS_DEV=1` is set at runtime. Tests that need a
+  live (mocked) client set it in `vi.hoisted`.
+- **Identity model (reworked after review).** `distinct_id` = the Supabase
+  user id when signed in; else the profile's EXISTING `analytics_install_id`
+  (every install from before 261031); else `device_id`, a salted sha256 of the
+  device-global `device-id.json` id (never the raw id: it gates trials). A new
+  install id is minted only when the device id cannot be read. `device_id`
+  rides on every event as a property, whatever the distinct id. Nothing is
+  aliased at init. Sign-in (`identifyUser`) sends `alias(user <- anonymous
+  id)` then `identify(user)`, the pre-261031 flow. Rules PostHog enforces and
+  this keeps: the anonymous id is only ever alias()'s `alias` argument, never
+  its `distinctId` and never identified, so its person stays unidentified and
+  merges into the account's person, new or existing. An id that was alias()'s
+  `distinctId` cannot later be an alias, and an identified person never merges
+  into another: the first 261031 draft aliased `device <- install` at init,
+  which identified the device person and orphaned day-0 events
+  (`installer_first_launch`, onboarding) from every later sign-in to an
+  existing account. A second account on one device: `<userData>/
+  analytics-identity.json` records which account each anonymous id was merged
+  into, and a different account gets `identify` only, because aliasing an
+  already-merged id into a NEW account adds that account to the first one's
+  person. Sequences are asserted against a model of PostHog's merge rules in
+  `analytics.identity.test.ts`; `scripts/posthog-identity-check.mjs` replays
+  them against a SCRATCH project by hand (refuses the prod key).
+- `checkout_completed {kind: subscription|upgrade|topup, tier, from_tier,
+  credits_added?, checkout_opened_this_session}` fires when two credits
+  snapshots of the same account in a row show a higher tier or more top-up
+  credits (`notePlanSnapshot`, fed by `proxyClient.creditsGet`). It is what the
+  app learned, not the payment; Supabase ledger stays the source of truth. A
+  tier rise out of `past_due`/`unpaid` is a recovered payment (entitled_tier
+  reads free while it fails) and does not count; each read carries a `seq`
+  taken before its network call, and a read older than one already applied is
+  dropped.
+  `plan_changed` fires on a successful change only.
+- Watch together: `backseat_started`/`_ended` carry `game` (the tile id, or a
+  game matched from the shared window title against the closed list in
+  `backseat/watchedGame.ts`, `game_source: tile|title`) and `watched_kind`
+  (`game`/`video`/`browser`/`other`/`unknown`). The title never ships.
+- `summon_failed` carries `game`, and redact() also scrubs the player's own
+  `mc_username` / `preferred_name` (`RedactOptions.playerNames`).
+
+**Crash reporting (261031, T278, `src/main/crashReporting.ts`).** No Sentry,
+no minidump upload. `initCrashReporting()` runs first in whenReady:
+- `<userData>/session.json` is written `open` at launch (heartbeat every 60s,
+  plus the surface in use and a hung-window flag), `closing` at before-quit,
+  `closed` at `quit` (after index.ts's teardown, which ends in app.exit(0)),
+  `os_shutdown` on Windows `session-end` or powerMonitor `shutdown`, and
+  `start_failed` when bootstrap threw (`markStartFailed()` before app.exit(1);
+  a nonzero `quit` exit code records it too) or the boot guard judged the
+  start failed (see "Crash analytics seam" under Boot safety). The next launch reads it before
+  writing its own: `open` = `unclean`, `closing` = `quit_hang` (the teardown
+  hung and was killed), `start_failed` = `start_failed`; all three send
+  `app_unclean_exit {prev_exit, prev_session_id, prev_version, prev_channel,
+  prev_uptime_ms, prev_surface, prev_renderer_unresponsive, prev_crash_kind,
+  prev_quit_wait_ms (quit_hang)}`, so crashfree.mjs counts them. `app_opened`
+  carries `prev_exit` (`clean`/`unclean`/`quit_hang`/`start_failed`/
+  `os_shutdown`/`none`) and `prev_version`. Do NOT add session.json to
+  `PRIOR_STATE_ENTRIES`: it exists before noteLaunch on a fresh install. The
+  skin and auth-loopback servers stop through `stopHttpServer` (idle
+  keep-alive sockets closed, everything destroyed after 3 s), so a socket can
+  no longer hold the quit open.
+- `app_crash {kind: main_uncaught|renderer_gone|child_gone, process_type,
+  reason, exit_code, page, service, error_name, fingerprint, top_frame,
+  surface, uptime_ms}`, `app_error` (main unhandled rejection, same shape) and
+  `app_hang {page, duration_ms, recovered}` (window `unresponsive` until
+  `responsive` or closed). Once per signature, at most 20 per process.
+  Companion-bot exits are left to `summon_failed`/`bot_session_failed`.
+  Installing the process handlers replaces Electron's error dialog: the app
+  keeps running, as it did after the dialog.
+- `<userData>/logs/crash/crash.log` holds the scrubbed message + stack
+  (`crashLog.ts`, redact() + the player's names), rotated to `crash.1.log` at
+  256 KB, 8 KB per entry, 5 repeats per signature. A subdirectory, so
+  `pruneLogsDir` never deletes it. Events carry no message or stack text.
+- Crash-free sessions per version: `~/suisei/reports/retention-2026-10-05-
+  queries/crashfree.mjs`.
+
 **`installer_first_launch` fires once per install (260926).** It carries
 `platform`, `arch`, `os_version`, `packaged`, `arm64_translation`, and on macOS
 `in_applications`, `translocated` and a coarse `app_location` enum
@@ -3406,7 +3495,8 @@ any of this in a plain tab.
 ```
 src/
   main/                 Electron host (main process)
-    index.ts            entry
+    boot.ts             entry shim (built as dist/main/index.js): boot guard, updater, safe mode
+    index.ts            the app (built as dist/main/app.js), loaded by boot.ts in normal mode
     ipc.ts              IPC handler registration
     botSupervisor.ts    utilityProcess.fork + MessageChannelMain, multi-bot lifecycle (Map<characterId, session>)
     apiKeyStore.ts      safeStorage key + getAiBackendKind()
@@ -3509,7 +3599,7 @@ Packaging is **electron-builder** (`electron-builder.yml`):
 `--inspect`, but Chromium's `--remote-debugging-port` / `--remote-debugging-pipe`
 have no fuse: any local process could relaunch the signed app with CDP and drive
 the renderer (preload IPC + TCC grants). `src/main/remoteDebugGuard.ts`, the
-FIRST import of `src/main/index.ts`, calls `process.exit(1)` when a packaged
+FIRST import of `src/main/boot.ts` (the main entry since 261031), calls `process.exit(1)` when a packaged
 build whose version has no prerelease tag sees `--remote-debugging-*`,
 `--inspect*`, `--debug-port` or `--js-flags` (argv scan plus
 `app.commandLine.hasSwitch`; pure policy in `remoteDebugPolicy.ts`). Packaged
@@ -3620,6 +3710,83 @@ switch (update rollout to 0, the GitHub release back to draft, migration to
 re-running a cancelled mirror, and the one-time move of the workflows to
 `main` are in **`docs/design/velopack-runbook.md`**. Read it before any
 Windows release.
+
+### Boot safety and settings recovery (261031, T277)
+
+A build that cannot start must still be able to update itself, and a damaged
+`config.json` must not throw a signed-in user back to onboarding.
+
+- **Entry shim.** `src/main/boot.ts` is the main entry (`dist/main/index.js`);
+  `src/main/index.ts` is the app, built as `dist/main/app.js` and loaded with
+  `await import('./index')` only in normal mode. boot.ts imports the
+  remoteDebugGuard / velopackBoot / velopackMigration trio first (same order
+  as before), sets the app name + userData, takes the single-instance lock,
+  runs the boot guard, then starts the updater on `ready` BEFORE the app's own
+  bootstrap. Anything boot.ts imports statically also loads in safe mode, so
+  keep heavy modules (games, auth, native addons) behind the app import.
+  Shared code lands in `dist/main/chunks/`, where `__dirname` is the chunk
+  folder: use `app.getAppPath()` for repo-relative paths in main.
+- **Failed starts.** `<userData>/boot-state.json` (written synchronously,
+  never in the settings store; `bootGuard.ts` pure, `bootContext.ts` the
+  process state). A normal start writes a pending record and succeeds when
+  the main window's renderer sends `app:renderer-ready` (App.tsx mount) and
+  the app stays up `SUCCESS_HOLD_MS` (5 s). Failures: the previous pending
+  start never finished (`unclean_exit`: crash, kill, power loss), bootstrap
+  threw, the app graph failed to import, the renderer died or its main frame
+  failed to load before ready, or a quit at least `NEVER_READY_QUIT_MS` (30 s)
+  after start with no ready ping. An in-process failure is recorded and Sei
+  relaunches itself; the guard picks safe mode once `FAILURE_THRESHOLD` (2)
+  failures are in a row. A new app version resets the count, safe-mode runs
+  never count, update hand-overs (`restartIntoUpdate`, `restartIntoVelopack`,
+  a Velopack apply at launch) are neutral (`noteNeutralExit`), and so is an
+  OS shutdown or log-off (`noteOsShutdown`, from crashReporting.ts's
+  `session-end` / powerMonitor `shutdown`). A renderer gone with reason
+  `clean-exit` never counts; `killed` counts only if no OS shutdown shows up
+  within `KILLED_GRACE_MS` (3 s) (`rendererGoneVerdict`). The main window
+  closing before the start is judged judges it then, by the quit rule
+  (`noteMainWindowClosed`): on macOS a window closed during the splash and a
+  quit hours later is neutral. Dev counts
+  nothing unless `SEI_BOOT_GUARD=1`; `--safe-mode` or `SEI_SAFE_MODE=1`
+  forces safe mode anywhere.
+- **Crash analytics seam (T280).** boot-state.json and session.json stay
+  separate files. A start the guard judges failed is written `start_failed`
+  to session.json BEFORE Sei relaunches (`app.exit(0)` would otherwise read
+  as a clean quit), opens safe mode in-process, or quits never-ready
+  (`onStartFailed`, registered by crashReporting.ts `linkBootGuard`). Starts
+  that die before crash reporting runs are written by boot.ts
+  (`recordFailedStart`): the previous normal start left pending with no
+  marker of its own, and an app graph that failed to load. Safe-mode runs
+  write no marker.
+- **Safe mode** never loads the app graph: no games, native addons, overlays,
+  desktop companion, voice, bot, auth or analytics. It runs the updater
+  (`initUpdater({safeMode: true})`, electron-updater or Velopack; the NSIS to
+  Velopack migration is not scheduled) and a small window
+  (`safeMode/`: page = `safeModePage.ts` as a data: URL with a strict CSP,
+  sandboxed preload `src/preload/safeMode.ts` built to
+  `dist/preload/safeMode.cjs`, which may import only electron). Buttons:
+  Check for updates / download / restart, Try normal start (one-shot
+  `forceNormalOnce`, then relaunch), Reset settings (confirmed; every
+  profile, keeps `RESET_KEEP_KEYS` identity, the old file set aside as
+  `config.before-reset-<ts>.json`), Open logs folder. Copy is en + zh.
+  Updater pushes are held until the renderer is listening (ready ping, with
+  fallback flushes) so an early "update available" is not lost. A check
+  with no updater event for `SAFE_MODE_CHECK_TIMEOUT_MS` (30 s) gives the
+  button back with a plain "no answer" line.
+- **Settings recovery** (`configStore.ts`, header comment has the details):
+  durable writes (`durableWrite.ts`: temp + fsync + rename), last-known-good
+  `config.json.bak`, damaged files quarantined as
+  `config.corrupt-<ts>.json` (newest 3 kept) then restored from the backup,
+  else rebuilt from readable identity keys, else defaults. A damaged file
+  that cannot be moved or rewritten (read-only folder) is recovered in
+  memory on every read but reported once per process. Unknown keys from
+  a newer build are kept on every write; `schema_version` is stamped and
+  migrations are idempotent. Logs carry kinds and key names, never values.
+- **Analytics** (packaged only, through the normal helper so opt-out holds):
+  `boot_safe_mode_entered {reason, failures}` on the first normal start after
+  a safe-mode run, `settings_recovered {kind}`.
+- Verify the page in a plain browser: render `renderSafeModeHtml` with a
+  stub `window.seiSafeMode`. Live: `SEI_BOOT_GUARD=1` and kill two starts
+  before ready, or launch with `--safe-mode`.
 
 ### Startup popup (261027, replaced the notices inbox)
 

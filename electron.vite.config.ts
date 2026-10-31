@@ -15,7 +15,13 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist/main',
       rollupOptions: {
-        input: { index: path.resolve('src/main/index.ts') },
+        // 261031 (T277): `index` is the boot shim (dist/main/index.js, the
+        // package.json main), `app` the app itself, loaded by the shim only
+        // in a normal start. Modules that read __dirname (index.ts,
+        // botSupervisor.ts) must stay in the app entry chunk: the ESM shim
+        // gives each chunk its own __dirname, and shared chunks land in
+        // dist/main/chunks/.
+        input: { index: path.resolve('src/main/boot.ts'), app: path.resolve('src/main/index.ts') },
       },
     },
     define: {
@@ -27,6 +33,11 @@ export default defineConfig(({ mode }) => {
       // signed by (velopackVerify.ts). release.yml exports it only when Azure
       // signing is fully configured; unset = an unsigned build, check off.
       'import.meta.env.SEI_WIN_PUBLISHER': JSON.stringify(env.SEI_WIN_PUBLISHER ?? ''),
+      // 261031 (T278): the release channel, `sei-channel=stable|beta`, set by
+      // release.yml on a tag build only. Any other build (dev, a local
+      // dist:*, the spike and dry-run workflows) bakes '' and reads as a
+      // dev/test channel, which sends no analytics (analyticsContext.ts).
+      'import.meta.env.SEI_RELEASE_CHANNEL': JSON.stringify(env.SEI_RELEASE_CHANNEL ?? ''),
       // Phase 13 — proxy host. Read at main-process module load via
       // process.env.* (proxyClient.ts, botSupervisor.ts). Checkout + portal
       // sessions are minted server-side by the proxy (Polar migration 2026-06),
@@ -75,7 +86,8 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist/preload',
       rollupOptions: {
-        input: { index: path.resolve('src/preload/index.ts') },
+        // safeMode: the safe-mode screen's preload (imports only electron).
+        input: { index: path.resolve('src/preload/index.ts'), safeMode: path.resolve('src/preload/safeMode.ts') },
         output: {
           format: 'cjs',
           entryFileNames: '[name].cjs',

@@ -11,20 +11,55 @@
  * Minecraft usernames, or emails. `sanitize()` is a backstop that drops
  * free-form objects and truncates strings on every renderer-supplied payload.
  *
- * Identity: `distinctId` is the Supabase user id when signed in, else a
- * stable per-profile anonymous install UUID (`config.analytics_install_id`,
- * minted here on first init). On sign-in `identifyUser()` alias()es the
- * anonymous id into the account so pre-sign-in activity is not orphaned. Only
- * a signed-up user (who passed the ephemeral COPPA 13+ gate) is ever
- * identified by account id.
+ * Identity (261031, T278, reworked after review): `distinctId` is the
+ * Supabase user id when signed in, else the anonymous id: the profile's
+ * EXISTING `config.analytics_install_id` when it has one (every install from
+ * before 261031), else the hashed device id (analyticsContext.analyticsDeviceId
+ * of `<userData>/device-id.json`). A new install id is minted only when the
+ * device id cannot be read. Nothing is aliased at init. On sign-in
+ * `identifyUser()` sends alias(userId <- anonymous id) then identify(userId),
+ * the same flow as before 261031: the anonymous id is only ever the `alias`
+ * argument and never identified, so PostHog merges its (unidentified) person
+ * into the account's, new or existing. Never alias two ids that could both be
+ * identified persons, and never pass an anonymous id as alias()'s distinctId:
+ * PostHog then marks it identified and refuses every later merge of it, which
+ * orphans day-0 events (installer_first_launch, onboarding) from the account.
+ * `device_id` rides on every event as a property, so devices stay countable
+ * whatever the distinct id. Only a signed-up user (who passed the ephemeral
+ * COPPA 13+ gate) is ever identified by account id.
+ *
+ * Send gate (261031): nothing leaves an unpackaged (dev) or test build unless
+ * SEI_ANALYTICS_DEV=1 is set at runtime; see analyticsContext.ts for how the
+ * channel is decided. Every event carries channel, packaged, app_version,
+ * rollout_bucket, $session_id, ai_provider / llm_provider / model_family and
+ * plan.
  */
 import { app } from 'electron';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { PostHog } from 'posthog-node';
 import { loadConfig, updateConfig } from './configStore';
 import { redact } from './diagnostics';
 import { getAiBackendKind, onAiBackendKindChanged } from './apiKeyStore';
+import {
+  analyticsDeviceId,
+  analyticsSendAllowed,
+  bakedChannel,
+  devAnalyticsFlag,
+  deviceRolloutBucket,
+  processSessionId,
+  providerProps,
+  resolveChannel,
+  detectPurchase,
+  type PlanProp,
+  type PlanSnapshot,
+  type PlanTierProp,
+  type ProviderConfigSlice,
+  type ReleaseChannel,
+} from './analyticsContext';
+import { setCrashRedactNames } from './crashLog';
+import { DEFAULT_MODELS } from '../shared/llmCatalog';
 import {
   ATTRIBUTION_DETAIL_EVENT,
   ATTRIBUTION_DETAIL_PERSON_PROP,
@@ -71,6 +106,23 @@ let appVersion = '0.0.0';
  */
 let profileOnboarded = true;
 
+/** 261031 (T278): build + device facts, set by init. See analyticsContext.ts. */
+let packagedBuild = false;
+let channel: ReleaseChannel = 'dev';
+/** Salted device id (32 hex), '' until init read it. */
+let deviceId = '';
+let rolloutBucket: number | null = null;
+/** The provider slice of the active profile's config, for ai_provider / model_family. */
+let providerCfg: ProviderConfigSlice | null = null;
+/** Plan tier from the last credits snapshot of the signed-in account; null = not read yet this sign-in. */
+let planTier: PlanTierProp | null = null;
+/** The last signed-in credits snapshot, the baseline checkout_completed compares against. */
+let lastPlanSnapshot: PlanSnapshot | null = null;
+/** When this process last sent checkout_opened (ms epoch), for checkout_completed. */
+let checkoutOpenedAt: number | null = null;
+/** The `seq` of the newest credits read applied, so a slower, older read is dropped. */
+let lastPlanSeq: number | null = null;
+
 /**
  * Pre-init queue (261005). initAnalytics runs late in bootstrap (after the
  * IPC handlers and the auth restore, which can wait on a network refresh),
@@ -102,8 +154,8 @@ function keyConfigured(): boolean {
 }
 
 /**
- * Initialize the client, mint/read the anonymous install id, and cache the
- * opt-out flag + backend kind. Call once from bootstrap() after config is
+ * Initialize the client, read the anonymous id (install id or device id),
+ * and cache the opt-out flag + backend kind. Call once from bootstrap() after config is
  * reachable. Never throws — analytics must never block startup.
  */
 export async function initAnalytics(): Promise<void> {
@@ -121,10 +173,28 @@ async function initAnalyticsInner(): Promise<void> {
   } catch {
     /* app not fully ready — version stays default */
   }
-  // Seed the anonymous install id + read the opt-out flag under the file lock.
+  try {
+    packagedBuild = app.isPackaged === true;
+  } catch {
+    packagedBuild = false;
+  }
+  channel = resolveChannel({ packaged: packagedBuild, baked: bakedChannel(), version: appVersion });
+  // The device-global id (auth/deviceId.ts), hashed: never the raw id, which
+  // gates trial claims. A failure falls back to a per-profile install id.
+  try {
+    const { getDeviceId } = await import('./auth/deviceId');
+    const raw = await getDeviceId();
+    deviceId = analyticsDeviceId(raw);
+    rolloutBucket = deviceRolloutBucket(raw);
+  } catch {
+    /* fall back to the install id */
+  }
+  // Read the existing anonymous install id + the opt-out flag under the file
+  // lock. A profile without an install id gets none (the device id is its
+  // anonymous id), unless the device id could not be read.
   try {
     const next = await updateConfig((cfg) => {
-      if (!cfg.analytics_install_id) {
+      if (!cfg.analytics_install_id && !deviceId) {
         return { ...cfg, analytics_install_id: randomUUID() };
       }
       return cfg;
@@ -134,9 +204,12 @@ async function initAnalyticsInner(): Promise<void> {
     consentRead = true;
     setUiLanguage(next.ui_language);
     setProfileOnboarded(next.preferred_name);
+    noteAnalyticsConfig(next);
   } catch (err) {
     logger.warn(`analytics: config init failed: ${(err as Error).message}`);
   }
+  // Before the client exists, so a restored sign-in racing init is guarded.
+  await loadMergedInto();
   // Subscribe BEFORE the initial read so a config write that lands between
   // the two can't be missed; apiKeyStore fires this for every ai_backend_kind
   // writer (explicit switch, sign-in cloud default, boot self-heal).
@@ -152,17 +225,149 @@ async function initAnalyticsInner(): Promise<void> {
     logger.info('analytics: no ingestion key configured — analytics disabled');
     return;
   }
+  // 261031: dev and test builds send nothing (they wrote ~90 fake persons
+  // into production in October). Held pre-init events are dropped with the
+  // client never created.
+  if (!analyticsSendAllowed(channel, devAnalyticsFlag(process.env))) {
+    logger.info(`analytics: ${channel} build, nothing is sent (set SEI_ANALYTICS_DEV=1 to send)`);
+    return;
+  }
   try {
     client = new PostHog(POSTHOG_KEY, {
       host: POSTHOG_HOST,
       flushAt: 20,
       flushInterval: 10_000,
     });
-    logger.info(`analytics: initialized (opt_out=${optedOut}, backend=${backendKind})`);
+    logger.info(`analytics: initialized (opt_out=${optedOut}, backend=${backendKind}, channel=${channel})`);
   } catch (err) {
     logger.warn(`analytics: client init failed: ${(err as Error).message}`);
     client = null;
   }
+  // No alias here (see the header): the anonymous id must stay mergeable
+  // into an account at sign-in.
+}
+
+/**
+ * `<userData>/analytics-identity.json`: {anonymous id: the account it was
+ * aliased into}. Device-global, like the device id. Once an anonymous id is
+ * merged into account A its person IS A's (identified), so aliasing it into a
+ * second account B on the same device would either be refused or, for a new
+ * B, add B's id to A's person and merge two accounts. identifyUser skips the
+ * alias then and only identifies B.
+ */
+const IDENTITY_FILE = 'analytics-identity.json';
+const IDENTITY_MAX = 20;
+let identityFile: string | null = null;
+let mergedInto: Record<string, string> = {};
+
+async function loadMergedInto(): Promise<void> {
+  try {
+    const { paths } = await import('./paths');
+    const { default: nodePath } = await import('node:path');
+    identityFile = nodePath.join(paths.userData(), IDENTITY_FILE);
+  } catch {
+    identityFile = null;
+    return;
+  }
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(identityFile, 'utf8'));
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      for (const [k, v] of Object.entries(parsed)) if (typeof v === 'string') mergedInto[k] = v;
+    }
+  } catch {
+    /* no file yet */
+  }
+}
+
+/** Record anon -> userId (sync: identifyUser is sync and the next sign-in may follow at once). */
+function recordMergedInto(anon: string, userId: string): void {
+  mergedInto[anon] = userId;
+  if (!identityFile) return;
+  try {
+    const keys = Object.keys(mergedInto);
+    if (keys.length > IDENTITY_MAX) for (const k of keys.slice(0, keys.length - IDENTITY_MAX)) delete mergedInto[k];
+    writeFileSync(identityFile, JSON.stringify(mergedInto), 'utf8');
+  } catch {
+    /* best effort: the in-memory record still guards this process */
+  }
+}
+
+/**
+ * Refresh the config-derived props (provider and model family for
+ * ai_provider, and the player's own names for the crash-log scrub) from a
+ * profile config. Called at init, after a renderer config save and after a
+ * profile switch. Never throws.
+ */
+export function noteAnalyticsConfig(cfg: {
+  provider?: string | null;
+  provider_config?: Record<string, unknown> | null;
+  mc_username?: string | null;
+  preferred_name?: string | null;
+} | null | undefined): void {
+  if (!cfg) return;
+  providerCfg = { provider: cfg.provider ?? null, provider_config: cfg.provider_config ?? null };
+  try {
+    setCrashRedactNames([cfg.mc_username, cfg.preferred_name]);
+  } catch {
+    /* scrub names are best effort */
+  }
+}
+
+/**
+ * One signed-in credits snapshot (proxyClient.creditsGet, 261031). Sets the
+ * `plan` property and, when the tier went up or the top-up total grew since
+ * the previous snapshot of the same account, sends `checkout_completed`
+ * (analyticsContext.detectPurchase). `plan` reads 'none' while signed out and
+ * 'unknown' until the first snapshot of a sign-in. A snapshot for an account
+ * that is no longer the signed-in one (a read that raced a switch) is ignored,
+ * and so is a read older than one already applied (`seq`, taken by creditsGet
+ * before its network read: two overlapping reads can resolve out of order).
+ * `status` is the subscription status the read saw; a tier rise out of
+ * past_due/unpaid is a recovered payment, not a purchase (detectPurchase).
+ * Never throws.
+ */
+export function notePlanSnapshot(
+  userId: string,
+  plan: PlanTierProp,
+  extraTotal: number,
+  opts: { status?: string | null; seq?: number; now?: number } = {},
+): void {
+  try {
+    if (signedInUserId && userId !== signedInUserId) return;
+    if (typeof opts.seq === 'number') {
+      if (lastPlanSeq !== null && opts.seq <= lastPlanSeq) return;
+      lastPlanSeq = opts.seq;
+    }
+    planTier = plan;
+    const next: PlanSnapshot = {
+      userId,
+      plan,
+      extraTotal: Number.isFinite(extraTotal) ? extraTotal : 0,
+      status: typeof opts.status === 'string' ? opts.status : null,
+    };
+    const bought = detectPurchase(lastPlanSnapshot, next);
+    lastPlanSnapshot = next;
+    if (!bought) return;
+    const now = opts.now ?? Date.now();
+    capture('checkout_completed', {
+      ...bought,
+      checkout_opened_this_session: checkoutOpenedAt !== null,
+      ...(checkoutOpenedAt !== null ? { ms_since_checkout_opened: Math.max(0, now - checkoutOpenedAt) } : {}),
+    });
+  } catch {
+    /* analytics is never load-bearing */
+  }
+}
+
+function planProp(): PlanProp {
+  if (!signedInUserId) return 'none';
+  if (lastPlanSnapshot && lastPlanSnapshot.userId !== signedInUserId) return 'unknown';
+  return planTier ?? 'unknown';
+}
+
+/** The current build channel (for crash reporting and tests). */
+export function analyticsChannel(): ReleaseChannel {
+  return channel;
 }
 
 /**
@@ -190,7 +395,9 @@ export function setProfileOnboarded(preferredName: string | undefined | null): v
 /** Re-read it from the active profile's config (after a scope switch). Never throws. */
 export async function refreshProfileOnboarded(): Promise<void> {
   try {
-    setProfileOnboarded((await loadConfig()).preferred_name);
+    const cfg = await loadConfig();
+    setProfileOnboarded(cfg.preferred_name);
+    noteAnalyticsConfig(cfg);
   } catch {
     /* keep the cached value */
   }
@@ -204,6 +411,8 @@ export function backendProp(kind: 'local' | 'cloud-proxy', onboarded: boolean): 
 /** Properties attached to every event. All non-PII, all enum/scalar. */
 function commonProps(): Record<string, unknown> {
   const backend = backendProp(backendKind, profileOnboarded);
+  const provider = providerProps(backendKind, profileOnboarded, providerCfg, DEFAULT_MODELS);
+  const plan = planProp();
   return {
     client: CLIENT_TAG,
     app_version: appVersion,
@@ -213,10 +422,31 @@ function commonProps(): Record<string, unknown> {
     backend,
     is_cloud: backendKind === 'cloud-proxy',
     ui_language: uiLanguage,
+    // 261031 (T278): build + device + provider facts on every event.
+    channel,
+    packaged: packagedBuild,
+    device_id: deviceId || null,
+    rollout_bucket: rolloutBucket,
+    $session_id: processSessionId(),
+    ...provider,
+    plan,
     // Keep the person profile's latest platform/version/backend/language up to
     // date, so "how many users run the app in Chinese" is one person query
     // rather than a scan over events.
-    $set: { client: CLIENT_TAG, app_version: appVersion, os: process.platform, backend, ui_language: uiLanguage },
+    $set: {
+      client: CLIENT_TAG,
+      app_version: appVersion,
+      os: process.platform,
+      backend,
+      ui_language: uiLanguage,
+      channel,
+      ai_provider: provider.ai_provider,
+      // Only a known tier: signed-out events land on the anonymous id, which a
+      // sign-in merged into the account's person, so 'none' would overwrite
+      // the account's real plan.
+      ...(plan === 'free' || plan === 'quest' || plan === 'party' ? { plan } : {}),
+      ...(deviceId ? { device_id: deviceId } : {}),
+    },
   };
 }
 
@@ -245,8 +475,16 @@ function sanitize(props?: Record<string, unknown>): Record<string, unknown> {
   return out;
 }
 
+/**
+ * The anonymous distinct id: the profile's pre-261031 install id when it has
+ * one, else the device id. Only ever the `alias` argument of alias().
+ */
+function anonymousId(): string {
+  return installId || deviceId;
+}
+
 function distinctId(): string {
-  return signedInUserId ?? installId;
+  return signedInUserId ?? anonymousId();
 }
 
 /**
@@ -273,6 +511,7 @@ export function personPropsFor(event: string, props: Record<string, unknown>): R
  */
 export function capture(event: string, props?: Record<string, unknown>): void {
   noteSurface(surfaceForEvent(event));
+  if (event === 'checkout_opened') checkoutOpenedAt = Date.now();
   if (!initDone) {
     // Opt-out is not known yet: hold, never send. Dropped if init finds the
     // user opted out or no key (replayPreInit).
@@ -314,6 +553,11 @@ export function _resetPreInitForTests(done = false): void {
   preInitQueue.length = 0;
   lastSurface = null;
   appQuitCaptured = false;
+  signedInUserId = null;
+  planTier = null;
+  lastPlanSnapshot = null;
+  lastPlanSeq = null;
+  checkoutOpenedAt = null;
 }
 
 /** Event name → product surface, for app_quit.last_surface. null = not a surface event. */
@@ -331,9 +575,32 @@ export function surfaceForEvent(event: string): string | null {
   return null;
 }
 
+type SurfaceListener = (surface: string) => void;
+const surfaceListeners: SurfaceListener[] = [];
+
+/** 261031: tell crash reporting when the surface in use changes (session marker). */
+export function onSurfaceChange(listener: SurfaceListener): void {
+  surfaceListeners.push(listener);
+}
+
 /** Record activity on a surface that has no event of its own. */
 export function noteSurface(surface: string | null): void {
-  if (surface) lastSurface = surface;
+  if (!surface) return;
+  const changed = surface !== lastSurface;
+  lastSurface = surface;
+  if (!changed) return;
+  for (const l of surfaceListeners) {
+    try {
+      l(surface);
+    } catch {
+      /* a listener never breaks capture */
+    }
+  }
+}
+
+/** The surface of the most recent activity, null when none yet. */
+export function currentSurface(): string | null {
+  return lastSurface;
 }
 
 /**
@@ -505,29 +772,50 @@ export function isSignedInAnalytics(): boolean {
 }
 
 /**
- * Attach subsequent events to a signed-in cloud account. Aliases the
- * pre-sign-in anonymous install id into the account so its activity is not
- * orphaned, then identifies. Idempotent-ish (PostHog dedupes aliases).
+ * Attach subsequent events to a signed-in cloud account: alias(userId <-
+ * anonymous id), then identify(userId). The anonymous id's person was never
+ * identified, so PostHog merges it into the account's person whether that
+ * account is new or already has one. A repeat (every restored launch) is a
+ * no-op server-side. An anonymous id this device already merged into
+ * ANOTHER account (a second account signing in on one device) is not aliased
+ * again: that would merge the two accounts' persons (see IDENTITY_FILE). The
+ * device's later signed-out events stay with the first account.
  */
 export function identifyUser(userId: string): void {
+  // A snapshot read for this same account before identify (boot restore) keeps.
+  if (lastPlanSnapshot?.userId !== userId) {
+    planTier = null;
+    lastPlanSnapshot = null;
+  }
   signedInUserId = userId;
   if (!client || optedOut) return;
   try {
-    if (installId && installId !== userId) {
-      client.alias({ distinctId: userId, alias: installId });
+    const anon = anonymousId();
+    const owner = anon ? mergedInto[anon] : undefined;
+    if (anon && anon !== userId && (owner === undefined || owner === userId)) {
+      client.alias({ distinctId: userId, alias: anon });
+      if (owner === undefined) recordMergedInto(anon, userId);
     }
     client.identify({
       distinctId: userId,
-      properties: { backend: backendKind, is_cloud: backendKind === 'cloud-proxy', app_version: appVersion },
+      properties: {
+        backend: backendKind,
+        is_cloud: backendKind === 'cloud-proxy',
+        app_version: appVersion,
+        channel,
+        ...(deviceId ? { device_id: deviceId } : {}),
+      },
     });
   } catch (err) {
     logger.warn(`analytics: identify failed: ${(err as Error).message}`);
   }
 }
 
-/** Detach from the signed-in account (sign-out) — revert to anonymous id. */
+/** Detach from the signed-in account (sign-out) — revert to the anonymous id. */
 export function resetUser(): void {
   signedInUserId = null;
+  planTier = null;
+  lastPlanSnapshot = null;
 }
 
 /** Read the persisted opt-out flag (source of truth for the Settings toggle). */

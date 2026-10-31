@@ -29,6 +29,8 @@ declare global {
       readonly SUPABASE_ANON_KEY?: string;
       /** WIN_PUBLISHER_NAME of a signed Windows release, '' otherwise (velopackVerify.ts). */
       readonly SEI_WIN_PUBLISHER?: string;
+      /** `sei-channel=stable|beta` on a release.yml tag build, '' otherwise (analyticsContext.ts). */
+      readonly SEI_RELEASE_CHANNEL?: string;
     };
   }
 }

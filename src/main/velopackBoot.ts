@@ -1,7 +1,7 @@
 /**
  * Velopack startup hook for Windows (261030).
  *
- * Side-effect module. MUST be the second import of src/main/index.ts, right
+ * Side-effect module. MUST be the second import of src/main/boot.ts, right
  * after remoteDebugGuard: Velopack runs install/update/uninstall hooks by
  * launching Sei.exe with `--veloapp-*` arguments and expects the process to
  * handle them and exit within 15-30 s. ES module bodies evaluate in import

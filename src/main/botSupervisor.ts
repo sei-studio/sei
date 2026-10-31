@@ -313,7 +313,11 @@ function botEntryPath(): string {
   // code=1 — the regression captured in 260508-mun. Resolve up two
   // levels and into src/bot/index.js so dev launches against the real
   // source file.
-  return path.join(__dirname, '../../src/bot/index.js');
+  // 261031: from the app path (the repo root in dev), not __dirname: since
+  // main has two entries (boot.ts + index.ts) this module can be built into
+  // dist/main/chunks/, where the shim's __dirname is one level deeper.
+  // (Test doubles of `app` may not have getAppPath: the repo root is the cwd there.)
+  return path.join(typeof app.getAppPath === 'function' ? app.getAppPath() : process.cwd(), 'src/bot/index.js');
 }
 
 export interface BotSupervisorOptions {
@@ -899,6 +903,8 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     backend: AiBackendKind | null;
     /** 261031: the bot's in-game name, once resolved; redacted to `[bot]`. */
     botName: string | null;
+    /** 261031 (T278): the player's mc_username / preferred_name, once read; redacted to `[player]`. */
+    playerNames: string[];
     /**
      * 260926: set at fork. `marks` is read live from the session at fire
      * time, so a failure carries every phase the bot reached.
@@ -916,12 +922,13 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     }): void;
   }
 
-  function createFailureReporter(characterId: string): FailureReporter {
+  function createFailureReporter(characterId: string, game: GameId): FailureReporter {
     const startedAtMs = Date.now();
     let fired = false;
     const reporter: FailureReporter = {
       backend: null,
       botName: null,
+      playerNames: [],
       boot: null,
       fire(partial) {
         if (fired) return;
@@ -939,6 +946,8 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
             durationMs: Date.now() - startedAtMs,
             backend: reporter.backend,
             ...(reporter.botName ? { botName: reporter.botName } : {}),
+            ...(reporter.playerNames.length ? { playerNames: reporter.playerNames } : {}),
+            game,
             boot: reporter.boot
               ? { attemptStartMs: startedAtMs, forkAtMs: reporter.boot.forkAtMs, marks: reporter.boot.marks() ?? {} }
               : undefined,
@@ -1028,6 +1037,9 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // branch's key guard needs userCfg.provider: ollama is keyless by design
     // (260817, china-compat W10). Same-function load, just earlier.
     const userCfg = await loadUserConfig();
+    reporter.playerNames = [userCfg.mc_username, userCfg.preferred_name].filter(
+      (n): n is string => typeof n === 'string' && n.trim() !== '',
+    );
     let apiKey: string = '';
     let cloudMode: { baseURL: string; authToken: string } | undefined;
     if (aiBackendKind === 'cloud-proxy') {
@@ -2332,7 +2344,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     if (pending) return pending;
     const game: GameId = isGameId(gameArg) ? gameArg : 'minecraft';
     lastGame.set(characterId, game);
-    const reporter = createFailureReporter(characterId);
+    const reporter = createFailureReporter(characterId, game);
     const ctl: SummonControl = { cancelled: false };
     summonControls.set(characterId, ctl);
     const attempt = _summon(characterId, reporter, game, ctl)

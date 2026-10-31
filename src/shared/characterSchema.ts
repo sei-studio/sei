@@ -1133,6 +1133,14 @@ export const UserConfigSchema = z.object({
       }),
     )
     .optional(),
+  /**
+   * Config schema version (261031). Stamped by configStore on every write
+   * (CONFIG_SCHEMA_VERSION, never lowered) and read by its upgrade
+   * migrations. A file from a NEWER Sei carries a higher number, which tells
+   * an older build to keep the values it cannot read. Absent = written
+   * before versioning. Main-owned.
+   */
+  schema_version: z.number().int().min(0).optional(),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;

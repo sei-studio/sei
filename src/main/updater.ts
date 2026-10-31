@@ -39,6 +39,7 @@ import {
   applyMinSupported,
   deriveLevel,
   isMissingReleaseArtifacts,
+  isPrereleaseVersion,
   normalizeApply,
   parseMinSupported,
   shouldShowWhatsNew,
@@ -54,6 +55,7 @@ import { restartInstallArgs } from './updateInstall';
 import { refreshNotices } from './notices';
 import { updaterLog } from './updaterLog';
 import { ciMark, velopackInstalled } from './velopackBoot';
+import { noteNeutralExit } from './bootContext';
 import { createVelopackAutoUpdater } from './velopackUpdater';
 
 // Tees to the console AND <userData>/logs/updater.log. Was console-only until
@@ -382,11 +384,53 @@ async function fetchVersionPolicy(): Promise<VersionPolicy | null> {
 /*  Renderer push helper                                                       */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Pushes held until the renderer says it is listening (261031, T277). The
+ * updater now starts at whenReady, before the window exists, so a startup
+ * check that answers quickly would otherwise push into nothing. null = not
+ * holding (the default, and after flushUpdatePushes()).
+ */
+let heldPushes: Array<{ channel: string; payload: unknown }> | null = null;
+const HELD_PUSHES_MAX = 32;
+
 function send(channel: string, payload?: unknown): void {
+  if (heldPushes) {
+    // Progress only matters as its latest value.
+    if (channel === IpcChannel.app.updateProgress) {
+      heldPushes = heldPushes.filter((p) => p.channel !== IpcChannel.app.updateProgress);
+    }
+    if (heldPushes.length < HELD_PUSHES_MAX) heldPushes.push({ channel, payload });
+    return;
+  }
   const win = getMainWindow?.() ?? null;
   if (win && !win.isDestroyed()) {
     win.webContents.send(channel, payload);
   }
+}
+
+/** Start holding pushes (a new renderer is about to take over). */
+export function holdUpdatePushes(): void {
+  heldPushes = heldPushes ?? [];
+}
+
+/** True once the safe-mode screen owns the updater (startup or an in-process start failure). */
+let safeModeActive = false;
+
+/** The safe-mode screen took over in this process (an in-process start failure). */
+export function enterUpdaterSafeMode(): void {
+  safeModeActive = true;
+  holdUpdatePushes();
+}
+
+/**
+ * The renderer (main window or safe-mode screen) is mounted and listening:
+ * deliver what was held and send directly from now on. Idempotent.
+ */
+export function flushUpdatePushes(): void {
+  const held = heldPushes;
+  heldPushes = null;
+  if (!held) return;
+  for (const p of held) send(p.channel, p.payload);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -821,11 +865,46 @@ function maybeBackgroundCheck(reason: string): void {
  * call in dev — it just logs "disabled in dev" and runs nothing that touches
  * autoUpdater.
  */
-export function initUpdater(deps: { getMainWindow: () => BrowserWindow | null }): void {
+/** How long the startup check waits for the profile scope before reading the channel anyway. */
+const CHANNEL_GATE_MAX_MS = 15_000;
+
+/**
+ * The startup channel read (advanced_updates), so a manual check from the
+ * safe-mode screen never races it onto the wrong feed. Null before init.
+ */
+let channelInit: Promise<void> | null = null;
+
+export interface UpdaterInitDeps {
+  getMainWindow: () => BrowserWindow | null;
+  /**
+   * 261031 (T277): the startup check waits for this (at most
+   * CHANNEL_GATE_MAX_MS) before reading the beta-channel preference, because
+   * the updater now starts before bootstrap has picked the profile scope.
+   */
+  channelReady?: Promise<void>;
+  /** Hold renderer pushes until flushUpdatePushes() (the renderer's ready ping). */
+  holdPushes?: boolean;
+  /** Run the notices startup refresh here (default true). Early boot leaves it to bootstrap. */
+  startupNotices?: boolean;
+  /**
+   * Safe mode: no what's-new, no notices, no automatic startup check (the
+   * safe-mode screen asks for one so it gets the checking/up-to-date
+   * feedback), and a pre-release build stays on the beta channel so a broken
+   * beta can reach the beta that fixes it.
+   */
+  safeMode?: boolean;
+}
+
+export function initUpdater(deps: UpdaterInitDeps): void {
   getMainWindow = deps.getMainWindow;
+  if (deps.holdPushes) heldPushes = heldPushes ?? [];
+  const safeMode = deps.safeMode === true;
+  safeModeActive = safeMode;
   // Flow D — what's-new on launch (skipped in dev internally). Memoized so the
   // renderer's pull (getPendingWhatsNew) shares this one computation.
-  void ensureWhatsNewComputed();
+  // Not in safe mode: it records lastSeenVersion, and the changelog belongs
+  // to the normal app that can show it.
+  if (!safeMode) void ensureWhatsNewComputed();
 
   // Seed the throttle so the window's own launch-time focus event doesn't
   // immediately fire a redundant second check. Done before anything else so it
@@ -833,25 +912,35 @@ export function initUpdater(deps: { getMainWindow: () => BrowserWindow | null })
   // thing riding the cadence).
   lastBackgroundCheckAt = Date.now();
   // Notices — startup leg of the shared cadence (260725). Runs in dev as well.
-  void refreshNotices('startup');
+  if (!safeMode && deps.startupNotices !== false) void refreshNotices('startup');
 
   const au = ensureAutoUpdater();
-  if (au) {
-    // Flow A — startup auto-check. Seed the channel from persisted config
-    // BEFORE it, so an advanced-updates user checks the beta feed from the
-    // first check on. Config load is async and best-effort: on any failure we
-    // keep the safe stable default (a normal user must never be silently moved
-    // onto a beta). The lazy import keeps configStore out of updater's
-    // cold-start graph.
+  // Seed the channel from persisted config BEFORE the first check, so an
+  // advanced-updates user checks the beta feed from the first check on. Config
+  // load is async and best-effort: on any failure we keep the safe stable
+  // default (a normal user must never be silently moved onto a beta). The lazy
+  // import keeps configStore out of updater's cold-start graph.
+  channelInit = (async () => {
+    if (deps.channelReady) {
+      await Promise.race([
+        deps.channelReady,
+        new Promise<void>((r) => setTimeout(r, CHANNEL_GATE_MAX_MS).unref?.()),
+      ]);
+    }
+    try {
+      const { loadConfig } = await import('./configStore');
+      const cfg = await loadConfig();
+      allowPrerelease = cfg.advanced_updates === true;
+    } catch (err) {
+      logger.warn(`updater: advanced-updates config read failed (${(err as Error).name})`);
+    }
+    if (safeMode && isPrereleaseVersion(app.getVersion())) allowPrerelease = true;
+    if (au) au.allowPrerelease = allowPrerelease;
+  })();
+  if (au && !safeMode) {
+    // Flow A — startup auto-check.
     void (async () => {
-      try {
-        const { loadConfig } = await import('./configStore');
-        const cfg = await loadConfig();
-        allowPrerelease = cfg.advanced_updates === true;
-        au.allowPrerelease = allowPrerelease;
-      } catch (err) {
-        logger.warn(`updater: advanced-updates config read failed (${(err as Error).message})`);
-      }
+      await channelInit;
       au.checkForUpdates().catch((err: unknown) => {
         const message = err instanceof Error ? err.message : String(err);
         logger.warn(`updater: startup checkForUpdates failed (${message})`);
@@ -894,7 +983,10 @@ export function initUpdater(deps: { getMainWindow: () => BrowserWindow | null })
 export async function checkForUpdatesManual(): Promise<void> {
   // A manual check refreshes notices too — same cadence, and the user asking
   // "is there anything new" is exactly when an unseen announcement should land.
-  void refreshNotices('manual');
+  // Not from the safe-mode screen: it cannot show a popup.
+  if (!safeModeActive) void refreshNotices('manual');
+  // The startup channel read first, so the check hits the right feed.
+  if (channelInit) await channelInit;
   const au = ensureAutoUpdater();
   if (!au) {
     send(IpcChannel.app.updateNotAvailable);
@@ -1015,6 +1107,8 @@ export async function downloadAcceptedUpdate(): Promise<void> {
  * restart note stays readable that long).
  */
 async function restartIntoUpdate(au: AutoUpdater, minHoldMs: number): Promise<void> {
+  // Boot safety (261031): an update hand-over says nothing about this start.
+  noteNeutralExit();
   // A Velopack install (velopackUpdater.ts) has its own update screen and no
   // NSIS installer to watch: its quitAndInstall is the whole restart.
   if (process.platform === 'win32' && !velopackInstalled()) {

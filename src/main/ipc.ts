@@ -3096,6 +3096,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       const { setProfileOnboarded } = await import('./analytics');
       setProfileOnboarded(cfg.preferred_name);
     }
+    // 261031 (T278): ai_provider / model_family on every event, and the
+    // player's own names for the crash-log scrub. Renderer saves are
+    // wholesale, so cfg is the whole profile config.
+    {
+      const { noteAnalyticsConfig } = await import('./analytics');
+      noteAnalyticsConfig(cfg);
+    }
     // Provider/model changes move the active LLM's vision verdict; mirror it
     // to the renderer (ai_backend_kind never rides a renderer save, so the
     // backend-flip listener above covers that axis).
@@ -4217,9 +4224,12 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // product mapping and the upgrade usage-reset (guarded by max_tier_rank).
   ipcMain.handle(IpcChannel.credits.changePlan, async (_e, argsRaw: unknown) => {
     const parsed = CreditsChangePlanArgsSchema.parse(argsRaw);
-    trackAnalytics('plan_changed', { tier: String(parsed.tier) });
     const { changePlan } = await import('./cloud/proxyClient');
-    return changePlan(parsed.tier);
+    const res = await changePlan(parsed.tier);
+    // 261031: on success only (it used to fire on the request). Never fired
+    // in October, so no dashboard depends on the old timing.
+    if (res.ok) trackAnalytics('plan_changed', { tier: String(parsed.tier) });
+    return res;
   });
 
   // subscription:status — Plan 13-13 wired path. Reads subscription_status
