@@ -1907,11 +1907,15 @@ The design and its measurements are committed at
   (`audioQueue.duck`) and a retraction resumes it, so a false duck costs a
   short pause and no words; a duck inside the clip's grace window (where the
   trigger may be her own onset) must show a voice after it (`bargeVoiceBar`)
-  within ~3 frames or it is retracted with no STT call (`no_voice`), and that
-  retraction re-arms the short re-grace so the residue
-  learns her echo from the resumed frames (the duck spends the clip's grace
-  paused, and on loud speakers every resumed frame re-ducked her, a line
-  played 128 ms at a time); the confirming pass reads only post-duck audio and commits on
+  within ~3 frames or it is retracted with no STT call (`no_voice`);
+  every retraction (no voice, no word, an echo abort, a finished barge whose
+  wait ran out) resumes her inside a fresh FULL grace window
+  (`regraceOnResume`), so the residue relearns her echo from the resumed
+  frames: while she is paused it decays toward the room, and her first
+  resumed frame used to duck again (on loud speakers a line played 128 ms at
+  a time; with a learned bar a clean duck that paid a pass on her own echo,
+  every ~5 s for a whole line when STT was slow);
+  the confirming pass reads only post-duck audio and commits on
   `isBargeWord` (hasSpokenWord AND the utterance junk filter) that the echo
   gate does not trace to her or the screen; a no-word pass gets one more pass
   when a voice kept going; a duck a transcription rejected raises the bar
@@ -1934,7 +1938,11 @@ The design and its measurements are committed at
   a game (0.6.11: close to one a minute), short interjections cut her a
   little less often than in 0.6.11, and transcriptions stayed below
   0.6.11's in every condition. A word that never reaches the duck bar is not
-  an interrupt. Unmeasured on real hardware.
+  an interrupt, and neither is a lone short word over before a voiced frame
+  in the 600 ms after a retracted duck. Worst case, if STT made a word of
+  every scrap of her echo (the test rig's pessimistic mock): each clean duck
+  on a loud syllable of hers cuts her, about as often as 0.6.11 in the same
+  scene, still one pass per duck. Unmeasured on real hardware.
 - **The echo gate: speakers into the mic (260807).** On speakers at max volume
   the mic hears THREE voices, and two of them used to become "the player".
   Measured across two live Instagram sessions: reel dialogue was transcribed

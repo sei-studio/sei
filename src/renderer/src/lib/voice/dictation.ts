@@ -336,16 +336,31 @@ const SHARE_NOISE_FLOOR_CAP = BARGE_ABS_MIN / BARGE_NOISE_FACTOR;
  *     the energy deadline gave up on it, or after a finished barge's wait ran
  *     out, still reaches her as an ordinary turn when it is a word the echo
  *     gate does not trace to her (settleDelivery).
+ *   - Every retraction resumes her inside a fresh FULL grace window
+ *     (regraceOnResume, 261031 re-review): no_voice, no_word, an echo abort,
+ *     a too-short utterance, and a finished barge whose wait ran out. While
+ *     she was paused the residue decayed toward the room, so her first
+ *     resumed frame ducked again, now clean, and paid a pass on her own
+ *     echo: with slow STT that was a pass every ~5 s for the rest of her
+ *     line, and with an echo that swings between soft and loud frames a
+ *     pass at the onset of every line. Inside the window the residue
+ *     relearns her and a duck needs a voice after it.
  *
  * The cost, honestly: a clean false duck (a game hit, a loud syllable of
  * hers) costs one transcription, and on rare occasions Whisper makes a stock
  * word of that audio ("Bye.") and it cuts her: in the headless replay a
  * couple of times an hour on loud speakers over a game, against close to
- * once a minute in 0.6.11. A word that never reaches the duck bar is not
- * heard as an interrupt at all, and neither is a short word inside the first
- * ~150 ms of one of her clips (600 ms for the first clip of a reply) that is
- * over before a voiced frame. The old pre-roll pass caught some of those, by
- * the same mechanism that invented "Okay." out of her echo.
+ * once a minute in 0.6.11. If STT turned EVERY scrap of her echo into a word
+ * (the pessimistic test rig), each clean duck on one of her own loud
+ * syllables would cut her, about as often as 0.6.11 does in the same scene:
+ * the trigger frame is her syllable and one word is under the echo gate's
+ * minimum. The pass count stays bounded at one per duck either way. A word
+ * that never reaches the duck bar is not heard as an interrupt at all, and
+ * neither is a short word that is over before a voiced frame when it lands
+ * inside a grace window: the first ~150 ms of one of her clips, 600 ms for
+ * the first clip of a reply, and 600 ms after any retracted duck. The old
+ * pre-roll pass caught some of those, by the same mechanism that invented
+ * "Okay." out of her echo.
  */
 /** Frames right after the trigger that still carry her echo: the duck's
  *  60 ms ramp plus the speaker-to-mic path. Not counted either way. */
@@ -977,6 +992,7 @@ export async function createDictation(opts: {
           opts.onBargeIn?.();
         } else {
           if (barge.voiced) learnFalseDuck(barge.trig); // transcribed, and not the player
+          regraceOnResume();
           opts.onBargeAbort?.(echo && word ? 'echo' : barge.voiced ? 'no_word' : 'no_voice');
           // 261031: this text was just judged not to be the player stopping
           // her, so it is not sent to her as their turn either ("Thank you."
@@ -1052,6 +1068,7 @@ export async function createDictation(opts: {
       if (barge && s) {
         barge.open = false;
         flushedBarge = null;
+        regraceOnResume();
         opts.onBargeAbort?.(barge.voiced ? 'no_word' : 'no_voice');
       }
       return;
@@ -1101,6 +1118,19 @@ export async function createDictation(opts: {
     if (target > holdResidue) holdResidue += (target - holdResidue) * FALSE_DUCK_LEARN;
   }
 
+  /** A retracted duck resumes her mid-line after a pause (one frame to the
+   *  full echo wait). While she was paused the residue decayed toward the
+   *  room, so her first resumed frames would duck again, now outside any
+   *  grace window: a clean duck, a burst, and a paid pass on her own echo,
+   *  every few seconds for the rest of the line when STT is slow (261031
+   *  review). The resumed frames are her echo, so they get the full grace
+   *  window a cold clip gets: the residue learns them, and a duck inside it
+   *  needs a voice after it. */
+  function regraceOnResume(): void {
+    holdSince = performance.now();
+    graceMs = BARGE_GRACE_MS;
+  }
+
   function speechMsOf(frames: Float32Array[]): number {
     const samples = frames.reduce((n, f) => n + f.length, 0);
     return (samples / SAMPLE_RATE) * 1000;
@@ -1128,16 +1158,11 @@ export async function createDictation(opts: {
       // level, and learning from its peak would make a quiet player unable to
       // duck her after a few game hits.
       if (why === 'echo' || (why === 'no_word' && s.asked)) learnFalseDuck(s.trig);
-      // A no-voice retraction resumes her mid-line, and the duck spent the
-      // clip's grace window paused, so the residue never saw her echo: on
-      // loud speakers every resumed frame re-ducked her (one frame of audio,
-      // then a ~0.5 s pause, for a whole line). The resumed frames are her
-      // echo again, so they get the short re-grace the next clip of a run
-      // gets: the residue learns from them and the duck bar catches up.
-      if (why === 'no_voice') {
-        holdSince = performance.now();
-        graceMs = BARGE_REGRACE_MS;
-      }
+      // The retraction resumes her mid-line. On loud speakers every resumed
+      // frame used to re-duck her (one frame of audio, then a ~0.5 s pause,
+      // for a whole line), and with a learned bar the first resumed frame
+      // still ducked as clean and paid a pass on her echo (regraceOnResume).
+      regraceOnResume();
       opts.onBargeAbort?.(why);
       resetUtterance();
     };
@@ -1275,6 +1300,11 @@ export async function createDictation(opts: {
     if (flushedBarge && performance.now() - flushedBarge.since >= BARGE_ECHO_WAIT_MAX_MS) {
       flushedBarge.open = false;
       flushedBarge = null;
+      // She resumes after up to 4 s paused, and the transcript that would
+      // have taught the bar has not come back (slow STT): without the grace
+      // window her first resumed frame ducks clean and pays a pass on her own
+      // echo, and the cycle repeats every ~5 s for the rest of the line.
+      regraceOnResume();
       opts.onBargeAbort?.('no_word');
     }
     if (muted) {

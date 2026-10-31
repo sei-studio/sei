@@ -118,6 +118,18 @@ function shortWordLike(word: string) {
   };
 }
 
+/** The worst case for a pass that reads her echo: Whisper (or Scribe) makes a
+ *  stock word of ANY of it ("Okay."), however little there is. The player,
+ *  when at least as loud, still comes back as the word. */
+function pessimisticLike(word: string) {
+  const rest = shortWordLike(word);
+  return (audio: Float32Array): string => {
+    const t = tagsIn(audio);
+    if (t.player >= 1 && t.player >= t.echo) return word;
+    return t.echo > 0 ? 'Okay.' : rest(audio);
+  };
+}
+
 /** micEchoCheck's first step (her own words), as useVoiceStore runs it. */
 function ownVoiceCheck(info: { text: string; purpose: 'utterance' | 'barge' }): boolean {
   const min = info.purpose === 'barge' ? 2 : MIN_ECHO_TOKENS;
@@ -606,6 +618,30 @@ describe('short interjections (261031 review)', () => {
     expect(r.callsPerDuck.every((c) => c <= 1)).toBe(true);
   });
 
+  it('the same syllables under pessimistic STT: the worst case is bounded to one pass per duck', async () => {
+    // If STT turns any of her echo into a stock word, a pass on a clean duck
+    // past the grace window has nothing left to tell it from "stop": the
+    // trigger frame IS her syllable, and a one-word transcript is under the
+    // echo gate's token minimum. That is the cost of giving short words their
+    // pass (0.6.11, reading the pre-roll, cut about as often in this scene
+    // and paid several times the transcriptions). What must hold is the
+    // bound: one pass per duck, never a pass on a grace-window duck, and the
+    // retraction re-arms grace so the resumed frames do not re-duck.
+    const r = await runScene({
+      share: false,
+      room: () => QUIET,
+      echo: (i) => (i % 23 === 0 || i % 23 === 1 ? 0.16 : 0.08),
+      duckTail: 0.7,
+      lineFrames: 60,
+      gapFrames: 25,
+      totalFrames: 600,
+      stt: pessimisticLike('stop'),
+    });
+    expect(r.callsPerDuck.every((c) => c <= 1)).toBe(true);
+    expect(r.sttCalls).toBeLessThan(r.suspects);
+    expect(r.cuts).toBeLessThanOrEqual(r.sttCalls);
+  });
+
   it('a short word whose transcript lands after the wait is delivered once, without a cut', async () => {
     const r = await runScene({
       ...quietLine,
@@ -649,6 +685,54 @@ describe('short interjections (261031 review)', () => {
     expect(r.cuts).toBe(0);
     expect(r.aborts).toEqual(['no_word']);
     expect(r.utterances).toEqual(['hang on']);
+  });
+});
+
+describe('resuming after a retracted duck (261031 re-review)', () => {
+  const slowStop = {
+    share: false,
+    room: () => QUIET,
+    echo: 0.04,
+    lineFrames: 200,
+    gapFrames: 300,
+    totalFrames: 280,
+    latencyFrames: 45, // ~5.8 s: a slow cloud STT round trip
+    player: (i: number) => (i === 40 || i === 41 ? VOICE * 2 : 0),
+  };
+
+  it('slow STT: the resumed echo after the wait runs out is a free no_voice, one STT call in all', async () => {
+    const r = await runScene({ ...slowStop, stt: shortWordLike('stop') });
+    expect(r.sttCalls).toBe(1);
+    // The wait ran out (no_word); everything after it was retracted for free.
+    const waited = r.aborts.indexOf('no_word');
+    expect(waited).toBeGreaterThanOrEqual(0);
+    expect(r.aborts.slice(waited + 1).every((a) => a === 'no_voice')).toBe(true);
+    // The word still reaches her, late, as an ordinary turn.
+    expect(r.utterances).toEqual(['stop']);
+    expect(r.cuts).toBe(0);
+  });
+
+  it('slow STT under pessimistic STT: her resumed echo is never transcribed', async () => {
+    const r = await runScene({ ...slowStop, stt: pessimisticLike('stop') });
+    expect(r.sttCalls).toBe(1);
+    expect(r.cuts).toBe(0);
+    expect(r.utterances).toEqual(['stop']);
+  });
+
+  it('alternating soft and loud echo: no pass reads her echo at a line onset', async () => {
+    const r = await runScene({
+      share: false,
+      room: () => QUIET,
+      echo: (i) => (i % 2 === 0 ? 0.03 : 0.1),
+      lineFrames: 30,
+      gapFrames: 25,
+      totalFrames: 600,
+      stt: pessimisticLike('stop'),
+    });
+    expect(r.suspects).toBeGreaterThan(0);
+    expect(r.sttCalls).toBe(0);
+    expect(r.cuts).toBe(0);
+    expect(r.utterances).toEqual([]);
   });
 });
 
