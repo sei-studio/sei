@@ -282,13 +282,40 @@ export async function upsertMyProfile(preferredName: string): Promise<void> {
  * config so onboarding doesn't re-prompt "what should they call you?" for an
  * account that already set a name on another device. Returns the trimmed name
  * or null (no row / blank / signed out / any error — all non-fatal).
+ *
+ * T283 review: the name belongs to whichever user the CURRENT auth session
+ * is, which is not always the profile the caller is about to write into (the
+ * session and the data scope can disagree for a while, 261029). Pass the
+ * profile's user id as `expectedUserId` and a session for anyone else
+ * answers null, so one account's name is never written into another's
+ * profile.
  */
-export async function fetchMyProfileName(): Promise<string | null> {
+export async function fetchMyProfileName(expectedUserId?: string): Promise<string | null> {
+  const own = await fetchMyProfile(expectedUserId);
+  return own?.name ?? null;
+}
+
+/** The session user's id and display name (name null when unset). */
+export interface MyProfileName {
+  userId: string;
+  name: string | null;
+}
+
+/**
+ * fetchMyProfileName with the session user's id beside the name, so a caller
+ * can check whose name it got. Null when signed out, on any error, or when
+ * `expectedUserId` is given and the session belongs to someone else.
+ */
+export async function fetchMyProfile(expectedUserId?: string): Promise<MyProfileName | null> {
   const { getAuthedClient } = await import('../auth/supabaseClient');
   const { data: { session } } = await getClient().auth.getSession();
   const userId = session?.user?.id;
   const token = session?.access_token;
   if (!userId || !token) return null;
+  if (expectedUserId !== undefined && userId !== expectedUserId) {
+    console.warn('[sei] profile name read skipped: the auth session is for another account');
+    return null;
+  }
   const authed = getAuthedClient(token);
   try {
     return await withTimeout(`fetchProfile ${userId}`, async (signal) => {
@@ -300,7 +327,7 @@ export async function fetchMyProfileName(): Promise<string | null> {
         .maybeSingle();
       if (error) return null;
       const name = ((data as { preferred_name?: string | null } | null)?.preferred_name ?? '').trim();
-      return name || null;
+      return { userId, name: name || null };
     });
   } catch {
     return null;

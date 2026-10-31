@@ -325,18 +325,18 @@ describe('configShowsPriorSetup', () => {
 describe('readProfileSetupState', () => {
   it('a named profile is set up without a disk scan or cloud read', async () => {
     await saveConfig(UserConfigSchema.parse({ preferred_name: 'Ana' }));
-    const fetchCloudName = vi.fn(async () => 'Cloud');
+    const fetchCloudName = vi.fn(async () => ({ userId: ACCOUNT, name: 'Cloud' }));
     expect(await readProfileSetupState({ fetchCloudName })).toEqual({ returning: true, preferredName: 'Ana' });
     expect(fetchCloudName).not.toHaveBeenCalled();
   });
 
   it('a fresh profile is new', async () => {
-    expect(await readProfileSetupState({ fetchCloudName: async () => 'Cloud' })).toEqual({ returning: false, preferredName: '' });
+    expect(await readProfileSetupState({ fetchCloudName: async () => ({ userId: ACCOUNT, name: 'Cloud' }) })).toEqual({ returning: false, preferredName: '' });
   });
 
   it('local profile recovered to defaults: returning, no name, no cloud read', async () => {
     await writeRaw('');
-    const fetchCloudName = vi.fn(async () => 'Cloud');
+    const fetchCloudName = vi.fn(async () => ({ userId: ACCOUNT, name: 'Cloud' }));
     expect(await readProfileSetupState({ fetchCloudName })).toEqual({ returning: true, preferredName: '' });
     expect(fetchCloudName).not.toHaveBeenCalled();
   });
@@ -344,8 +344,19 @@ describe('readProfileSetupState', () => {
   it('account profile recovered to defaults: the name is read back from the cloud and saved', async () => {
     setActiveScope(ACCOUNT);
     await writeRaw('');
-    expect(await readProfileSetupState({ fetchCloudName: async () => ' Ana ' })).toEqual({ returning: true, preferredName: 'Ana' });
+    const fetchCloudName = vi.fn(async () => ({ userId: ACCOUNT, name: ' Ana ' }));
+    expect(await readProfileSetupState({ fetchCloudName })).toEqual({ returning: true, preferredName: 'Ana' });
+    expect(fetchCloudName).toHaveBeenCalledWith(ACCOUNT);
     expect((await readJson()).preferred_name).toBe('Ana');
+  });
+
+  it("never saves another account's name (the session is not this profile's)", async () => {
+    setActiveScope(ACCOUNT);
+    await writeRaw('');
+    const OTHER = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
+    const st = await readProfileSetupState({ fetchCloudName: async () => ({ userId: OTHER, name: 'Bea' }) });
+    expect(st).toEqual({ returning: true, preferredName: '' });
+    expect((await loadConfig()).preferred_name ?? '').toBe('');
   });
 
   it('a cloud read that hangs is bounded', async () => {

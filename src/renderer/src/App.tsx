@@ -572,6 +572,12 @@ export function App(): React.ReactElement {
   useEffect(() => {
     return sei.onScopeChanged((ev) => {
       scopeChangesRef.current += 1;
+      // T283 review: this push's generation. Every await below can straddle
+      // the NEXT scope change (the profile-state read alone may take 5 s), and
+      // a stale handler that routes after it would send the new account to
+      // the old account's view. After each await, a newer push means stop.
+      const gen = scopeChangesRef.current;
+      const stale = (): boolean => scopeChangesRef.current !== gen;
       // Drop the previous account's in-memory data first (transcripts are
       // keyed by character id, and the defaults share ids across profiles).
       resetAccountScopedState();
@@ -582,6 +588,7 @@ export function App(): React.ReactElement {
         let skinPending = false;
         try {
           const cfg = await sei.getConfig();
+          if (stale()) return;
           onboardedName = (cfg.preferred_name ?? '').trim();
           skinPending = cfg.skin_setup_pending === true;
           // Default to the midnight "Summoning Terminal" theme on fresh
@@ -617,8 +624,11 @@ export function App(): React.ReactElement {
           // Fall through with empty onboardedName → onboarding (fresh profile).
         }
         // Replace the previous profile's character list + library state.
+        if (stale()) return;
         try { await useDataStore.getState().loadCharacters(); } catch { /* empty-state */ }
+        if (stale()) return;
         try { await useLibraryStateStore.getState().refresh(); } catch { /* no hidden defaults */ }
+        if (stale()) return;
         // 261029 review: the boot routing has not picked the first view yet.
         // It owns that choice (it reads the profile again when a scope change
         // landed under it), so this handler only reloads data; routing here
@@ -661,6 +671,7 @@ export function App(): React.ReactElement {
           useCreditsStore.getState().reset();
           await useCreditsStore.getState().init();
         } catch { /* keep last */ }
+        if (stale()) return;
         // 260728 Sui onboarding: while the first-run scene is driving (view
         // 'onboard'), it owns navigation — the sign-in that just landed came
         // from the scene's own panel, and the scene continues into setup +
@@ -682,6 +693,7 @@ export function App(): React.ReactElement {
         if (offerTiming === 'now') {
           try {
             const peek = await sei.profilePeekLocal();
+            if (stale()) return;
             const existingAccount = Boolean(onboardedName);
             if (shouldOfferLocalImport(peek, existingAccount)) {
               setImportOffer({ peek, existingAccount });
@@ -692,6 +704,7 @@ export function App(): React.ReactElement {
         // T283: no name, but set up before (settings recovered to defaults):
         // not a fresh account, so home rather than onboarding.
         const setUp = onboardedName ? true : (await profileSetUp(onboardedName)).setUp;
+        if (stale()) return;
         // Onboarded but skin-setup still pending → resume the dedicated step.
         if (onboardedName && skinPending) { navigate({ kind: 'skin-setup' }); return; }
         // Onboarded account → home, on the HOME tab (which shows the welcome

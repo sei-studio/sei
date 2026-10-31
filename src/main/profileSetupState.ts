@@ -22,8 +22,15 @@ import { getActiveScope, SCOPE_LOCAL } from './paths';
 /** How long the cloud name read may hold the boot route. */
 export const CLOUD_NAME_TIMEOUT_MS = 5000;
 
+/** What the cloud read answers: whose session it used, and that user's name. */
+export interface CloudName {
+  userId: string;
+  name: string | null;
+}
+
 export interface ProfileSetupDeps {
-  fetchCloudName?: () => Promise<string | null>;
+  /** Reads the session user's cloud profile name; `expectedUserId` is the profile's account. */
+  fetchCloudName?: (expectedUserId: string) => Promise<CloudName | null>;
   timeoutMs?: number;
 }
 
@@ -38,9 +45,9 @@ async function bounded<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
   }
 }
 
-async function defaultFetchCloudName(): Promise<string | null> {
-  const { fetchMyProfileName } = await import('./cloud/cloudCharacterClient');
-  return await fetchMyProfileName();
+async function defaultFetchCloudName(expectedUserId: string): Promise<CloudName | null> {
+  const { fetchMyProfile } = await import('./cloud/cloudCharacterClient');
+  return await fetchMyProfile(expectedUserId);
 }
 
 export async function readProfileSetupState(deps: ProfileSetupDeps = {}): Promise<ProfileSetupState> {
@@ -51,9 +58,19 @@ export async function readProfileSetupState(deps: ProfileSetupDeps = {}): Promis
     if (name) return { returning: true, preferredName: name };
     if (!(await configShowsPriorSetup({ scope }))) return { returning: false, preferredName: '' };
     if (scope === SCOPE_LOCAL) return { returning: true, preferredName: '' };
-    const cloudName = (
-      await bounded((deps.fetchCloudName ?? defaultFetchCloudName)(), deps.timeoutMs ?? CLOUD_NAME_TIMEOUT_MS, null)
-    )?.trim();
+    const cloud = await bounded(
+      (deps.fetchCloudName ?? defaultFetchCloudName)(scope),
+      deps.timeoutMs ?? CLOUD_NAME_TIMEOUT_MS,
+      null,
+    );
+    // The name is the auth SESSION user's, and the session can belong to a
+    // different account than this profile for a while (261029): never write
+    // another account's name here.
+    if (cloud && cloud.userId !== scope) {
+      console.warn('[sei] cloud profile name is for another account; not saved');
+      return { returning: true, preferredName: '' };
+    }
+    const cloudName = cloud?.name?.trim();
     if (!cloudName || getActiveScope() !== scope) return { returning: true, preferredName: '' };
     const next = await updateConfig(
       (cur) => ((cur.preferred_name ?? '').trim() ? cur : { ...cur, preferred_name: cloudName }),
