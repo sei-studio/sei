@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -155,6 +156,28 @@ describe('bootContext', () => {
     noteNeutralExit();
     expect(onDisk().pending).toBeNull();
     expect(launch(2).mode).toBe('normal');
+  });
+
+  it('an update hand-over is not re-judged by the quit that follows', () => {
+    launch(0);
+    noteNeutralExit();
+    noteQuitting(NEVER_READY_QUIT_MS + 1);
+    expect(onDisk().failures).toBe(0);
+    expect(onDisk().pending).toBeNull();
+  });
+
+  it('does not relaunch when the failure could not be written (no relaunch loop)', () => {
+    launch(1);
+    // Make the state file unwritable: a directory where the temp file goes
+    // cannot be renamed over, so every later write fails.
+    rmSync(bootStatePath(tmp), { force: true });
+    mkdirSync(bootStatePath(tmp));
+    const relaunch = vi.fn();
+    setRelaunch(relaunch);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    reportStartupFailure('module_load', new Error('x'));
+    expect(relaunch).not.toHaveBeenCalled();
+    expect(getBootMode()).toBe('normal');
   });
 
   it('forced safe mode, then "Try normal start"', () => {

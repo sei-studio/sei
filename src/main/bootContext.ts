@@ -64,8 +64,10 @@ const ctx: Ctx = {
   onSuccess: [],
 };
 
-function persist(): void {
-  if (ctx.persistent && ctx.file) writeBootStateSync(ctx.file, ctx.state);
+/** True when the state is on disk (or there is nothing to write). */
+function persist(): boolean {
+  if (ctx.persistent && ctx.file) return writeBootStateSync(ctx.file, ctx.state);
+  return true;
 }
 
 function log(line: string): void {
@@ -217,12 +219,15 @@ export function reportStartupFailure(kind: FailureKind, err?: unknown): void {
   const cls = err instanceof Error ? err.name : typeof err;
   log(`start failed (${kind}${err !== undefined ? `, ${cls}` : ''}), failures=${ctx.state.failures}`);
   if (!ctx.persistent) return; // dev: log only (see initBootGuard)
-  persist();
+  const saved = persist();
   // Start again in a fresh process: one more normal start after the first
   // failure, the safe-mode screen after the second (beginBoot decides from
   // the count just written). Safe mode never shares a process with the app
-  // that just failed.
-  if (ctx.relaunch) {
+  // that just failed. Only when the count reached the disk: with boot-state
+  // unwritable (read-only userData, disk full, a locked file) the next
+  // process would read the same old count, fail the same way and relaunch
+  // again, forever. Then this process keeps the pre-guard behaviour.
+  if (ctx.relaunch && saved) {
     ctx.succeeded = true; // judged; the quit that follows must not re-judge it
     ctx.relaunch();
     return;
@@ -265,7 +270,10 @@ export function noteQuitting(now = Date.now()): void {
 /** This launch is handing over to an update (or another exit that says nothing about the start). */
 export function noteNeutralExit(): void {
   if (ctx.succeeded) return;
+  if (ctx.successTimer) clearTimeout(ctx.successTimer);
+  ctx.successTimer = null;
   ctx.state = markNeutral(ctx.state);
+  ctx.succeeded = true; // judged; the quit that follows must not count it
   persist();
 }
 

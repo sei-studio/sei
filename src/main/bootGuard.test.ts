@@ -124,6 +124,18 @@ describe('beginBoot: counting failed starts', () => {
 });
 
 describe('"Try normal start"', () => {
+  it('works from a forced safe mode, whose relaunch keeps --safe-mode', () => {
+    const forced = beginBoot(freshBootState(), { appVersion: V, now: 1, forceSafe: true });
+    expect(forced.mode).toBe('safe');
+    const s = requestNormalStart(forced.state);
+    const tryNormal = beginBoot(s, { appVersion: V, now: 2, forceSafe: true });
+    expect(tryNormal.mode).toBe('normal');
+    expect(tryNormal.state.forceNormalOnce).toBe(false);
+    // One start only: the flag still forces safe mode after that.
+    const after = beginBoot(markSuccess(tryNormal.state), { appVersion: V, now: 3, forceSafe: true });
+    expect(after.mode).toBe('safe');
+  });
+
   it('gives exactly one normal start and keeps the count', () => {
     let s = crashLaunch(freshBootState(), 1).state;
     s = crashLaunch(s, 2).state;

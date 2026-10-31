@@ -158,11 +158,15 @@ export function beginBoot(
   // 3. Decide.
   let mode: BootMode = 'normal';
   let reason: SafeModeReason | null = null;
-  if (opts.forceSafe) {
+  if (s.forceNormalOnce) {
+    // "Try normal start" is the newest request and wins once, even over
+    // --safe-mode / SEI_SAFE_MODE: app.relaunch() reuses this process's argv
+    // and env, so a forced safe mode would otherwise reopen itself and the
+    // button would do nothing (and leave the flag armed for a later start).
+    s.forceNormalOnce = false;
+  } else if (opts.forceSafe) {
     mode = 'safe';
     reason = 'forced';
-  } else if (s.forceNormalOnce) {
-    s.forceNormalOnce = false;
   } else if (s.failures >= FAILURE_THRESHOLD) {
     mode = 'safe';
     reason = s.lastFailure?.kind ?? 'unclean_exit';
