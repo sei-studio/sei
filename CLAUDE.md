@@ -3776,14 +3776,38 @@ A build that cannot start must still be able to update itself, and a damaged
   durable writes (`durableWrite.ts`: temp + fsync + rename), last-known-good
   `config.json.bak`, damaged files quarantined as
   `config.corrupt-<ts>.json` (newest 3 kept) then restored from the backup,
-  else rebuilt from readable identity keys, else defaults. A damaged file
-  that cannot be moved or rewritten (read-only folder) is recovered in
-  memory on every read but reported once per process. Unknown keys from
+  else the newest quarantined copy that parses (T283), else rebuilt from the
+  identity keys readable in the damaged text, the backup and the
+  quarantined copies, else defaults. A config that is MISSING while a
+  backup or quarantined copy sits beside it (a restore that never landed)
+  is recovered the same way instead of reading as defaults. A recovery that
+  cannot be written back (read-only folder, disk full) is HELD in memory for
+  the process (`heldConfigs`): reads serve it (no second quarantine, one
+  report), saves update it without throwing and retry the disk, the first
+  write that lands quarantines a damaged file still in place and drops the
+  hold, and a valid file appearing on disk wins. Safe-mode Reset COPIES the
+  old file aside before replacing it, so config.json is never missing in
+  between. Unknown keys from
   a newer build are kept on every write; `schema_version` is stamped and
   migrations are idempotent. Logs carry kinds and key names, never values.
+- **Recovered is not new (T283).** Onboarding is keyed on `preferred_name`,
+  and a config recovered to defaults has none. Every renderer path that
+  routes a nameless profile to onboarding (boot `bootDestination`, the
+  scope-changed handler, the import-offer resolve, OnboardApp's
+  `accountHasProfile`) first asks `config:profile-state`
+  (`profileSetupState.ts` -> `configStore.configShowsPriorSetup`; renderer
+  `lib/profileSetUp.ts`). Set up before = this process recovered the
+  config, a `config.corrupt-*` or `config.before-reset-*` copy exists, the
+  `.bak` names the player, or a companion has `chat.jsonl` / `MEMORY.md`.
+  A config + backup with no name (an onboarding left half way, or a fresh
+  install after main's boot writes) is still new. Such a profile goes home
+  signed in (main first reads the name back from the cloud profile,
+  bounded 5 s) and to the sign-in panel signed out, whose "Continue
+  locally" then goes home; a still-missing name is set in Settings.
 - **Analytics** (packaged only, through the normal helper so opt-out holds):
   `boot_safe_mode_entered {reason, failures}` on the first normal start after
-  a safe-mode run, `settings_recovered {kind}`.
+  a safe-mode run, `settings_recovered {kind}` (`salvaged`, `restored_backup`,
+  `restored_quarantine` since T283, `reset_defaults`; once per recovery).
 - Verify the page in a plain browser: render `renderSafeModeHtml` with a
   stub `window.seiSafeMode`. Live: `SEI_BOOT_GUARD=1` and kill two starts
   before ready, or launch with `--safe-mode`.

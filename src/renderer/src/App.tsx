@@ -22,6 +22,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { sei } from './lib/ipcClient';
+import { profileSetUp } from './lib/profileSetUp';
 import { effectiveAvatarMode } from '@shared/characterSchema';
 import { applyTheme, clampThemeMode, subscribeSystemTheme } from './lib/theme';
 import { useLangStore, useT } from './lib/i18n';
@@ -688,6 +689,9 @@ export function App(): React.ReactElement {
             }
           } catch { /* no offer; route as usual */ }
         }
+        // T283: no name, but set up before (settings recovered to defaults):
+        // not a fresh account, so home rather than onboarding.
+        const setUp = onboardedName ? true : (await profileSetUp(onboardedName)).setUp;
         // Onboarded but skin-setup still pending → resume the dedicated step.
         if (onboardedName && skinPending) { navigate({ kind: 'skin-setup' }); return; }
         // Onboarded account → home, on the HOME tab (which shows the welcome
@@ -696,7 +700,7 @@ export function App(): React.ReactElement {
         // moment (260802): an unanswered questionnaire used to be interposed
         // right here, and now simply waits for the player to ask for a
         // companion, where Sui asks for it herself.
-        if (onboardedName) {
+        if (setUp) {
           useUiStore.getState().setHomeTab('home');
           navigate({ kind: 'home' });
           return;
@@ -731,8 +735,10 @@ export function App(): React.ReactElement {
     try { await useDataStore.getState().loadCharacters(); } catch { /* empty-state */ }
     // The import can add World companions / Sui to the roster (added_world_ids).
     try { await useLibraryStateStore.getState().refresh(); } catch { /* none */ }
-    if (!onboardedName) { navigate({ kind: 'onboard' }); return; }
-    if (skinPending) { navigate({ kind: 'skin-setup' }); return; }
+    if (!onboardedName) {
+      // T283: set up before (settings recovered to defaults) → home, not onboarding.
+      if (!(await profileSetUp(onboardedName)).setUp) { navigate({ kind: 'onboard' }); return; }
+    } else if (skinPending) { navigate({ kind: 'skin-setup' }); return; }
     useUiStore.getState().setHomeTab('home');
     navigate({ kind: 'home' });
   }
@@ -800,6 +806,9 @@ export function App(): React.ReactElement {
       // resume-to-skin-setup routing below (set on onboarding submit, cleared
       // when the user finishes/skips the SkinSetupScreen).
       let skinPending = false;
+      // T283: a profile with no name that was set up before (settings
+      // recovered to defaults) is not a fresh install.
+      let returning = false;
       // 261029: hydrate from the active profile. Runs again below when the
       // data scope was still moving to the signed-in account at first read.
       const hydrate = async (): Promise<boolean> => {
@@ -809,6 +818,13 @@ export function App(): React.ReactElement {
           if (cancelled) return false;
           onboardedName = (cfg.preferred_name ?? '').trim();
           skinPending = cfg.skin_setup_pending === true;
+          returning = false;
+          if (!onboardedName) {
+            const st = await profileSetUp(onboardedName);
+            if (cancelled) return false;
+            returning = st.setUp;
+            onboardedName = st.name;
+          }
           // Default to the midnight "Summoning Terminal" theme on fresh
           // installs; legacy 'dark'/'light' values are clamped to the new names.
           const mode = clampThemeMode(cfg.theme_mode ?? 'midnight');
@@ -909,7 +925,7 @@ export function App(): React.ReactElement {
         currentAuth: () => useAuthStore.getState().state,
         rehydrate: hydrate,
         scopeChangedSinceHydrate: () => scopeChangesRef.current !== scopeChangesAtStart,
-        profile: () => ({ onboardedName, skinPending }),
+        profile: () => ({ onboardedName, skinPending, returning }),
         isCancelled: () => cancelled,
       });
       if (dest === null) return;

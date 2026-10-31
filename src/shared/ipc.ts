@@ -1354,6 +1354,12 @@ export type AuthState =
   | { kind: 'local' }
   | { kind: 'signed_in'; user: AuthUser };
 
+/** T283: `config:profile-state`, see RendererApi.configProfileState. */
+export interface ProfileSetupState {
+  returning: boolean;
+  preferredName: string;
+}
+
 /**
  * 261029 (login lock on restart): main's auth state read on demand, for a
  * renderer that must route before main's first `auth:state` push can be relied
@@ -2019,6 +2025,14 @@ export interface RendererApi {
 
   // User config + secret
   getConfig(): Promise<UserConfig>;
+  /**
+   * T283: whether the active profile was set up before. `returning` is true
+   * when the config names the player, or when it has no name but the profile
+   * shows earlier setup (a recovered config, quarantined copies, a backup
+   * with a name, chat transcripts or memories). `preferredName` is the name
+   * after main's cloud read-back for an account profile ('' when none).
+   */
+  configProfileState(): Promise<ProfileSetupState>;
   saveConfig(config: UserConfig): Promise<void>;
   saveApiKey(plaintext: string): Promise<void>;
   hasApiKey(): Promise<boolean>;
@@ -3592,6 +3606,8 @@ export const IpcChannel = {
     save: 'config:save',
     saveApiKey: 'config:save-api-key',
     hasApiKey: 'config:has-api-key',
+    // T283: whether a profile with no name was set up before (not a new user).
+    profileState: 'config:profile-state',
   },
   // 260707 — PostHog product analytics. `track` is fire-and-forget one-way
   // (renderer → main via ipcRenderer.send); getOptOut/setOptOut are the
