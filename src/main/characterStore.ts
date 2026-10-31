@@ -155,6 +155,21 @@ export async function listCharacters(): Promise<Character[]> {
   return out;
 }
 
+/**
+ * Keys a pre-260516 character file can carry. listCharacters DELETES a
+ * "legacy shape" file, so the check must not match a file written by a NEWER
+ * Sei that reshaped `persona` (261031, T277: running an older build after a
+ * downgrade must never destroy data). A file with any key outside this set
+ * and the current schema, or with a version stamp, is only skipped.
+ */
+const LEGACY_CHARACTER_KEYS = new Set(['persona_prompt', 'description', 'traits', 'voice', 'style']);
+const CHARACTER_KEYS = new Set(Object.keys(CharacterSchema.shape));
+
+function looksLikePreSchemaFile(obj: Record<string, unknown>): boolean {
+  if (obj.schema_version !== undefined) return false;
+  return Object.keys(obj).every((k) => CHARACTER_KEYS.has(k) || LEGACY_CHARACTER_KEYS.has(k));
+}
+
 export async function getCharacter(id: string): Promise<Character | null> {
   const data = await readJson<unknown>(paths.characterPath(id));
   if (!data) return null;
@@ -166,7 +181,7 @@ export async function getCharacter(id: string): Promise<Character | null> {
       typeof obj.persona_prompt !== 'undefined' ||
       (typeof obj.description !== 'undefined' && typeof obj.persona === 'undefined');
     const hasNew = obj.persona && typeof obj.persona === 'object';
-    if (hasLegacy && !hasNew) {
+    if (hasLegacy && !hasNew && looksLikePreSchemaFile(obj)) {
       throw new Error(
         `character ${id} has legacy shape (persona_prompt/description); delete characters/${id}.json or re-create via the GUI`,
       );
