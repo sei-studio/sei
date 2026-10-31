@@ -157,6 +157,8 @@ interface SceneOpts {
   latencyFrames?: number;
   /** Override the STT answer. */
   stt?: (audio: Float32Array) => string | null;
+  /** Runs after each frame is fed (mute toggles and the like). */
+  onFrame?: (i: number, d: { setMuted(m: boolean): void }) => void;
 }
 
 interface SceneResult {
@@ -251,6 +253,7 @@ async function runScene(o: SceneOpts): Promise<SceneResult> {
     const tags = (audible && o.echo > 0 ? TAG_ECHO : 0) | (p > 0 ? TAG_PLAYER : 0);
     clock += FRAME_MS;
     node.port.onmessage?.({ data: frameOf(level, tags) });
+    o.onFrame?.(frameNo, dictation);
     if (lineLeft > 0) {
       if (paused) res.pausedFrames += 1;
       else {
@@ -428,6 +431,49 @@ describe('false ducks that keep coming (261031)', () => {
     expect(r.cuts).toBe(1);
     expect(r.utterances).toEqual(['wait, hold on']);
     expect(r.callsPerDuck[0]).toBe(2);
+  });
+});
+
+describe('ducks that cannot stick (261031 review)', () => {
+  it('loud speakers and a cold residue: her line does not stutter a frame per duck', async () => {
+    // Her echo far over the starting residue. The first duck pauses her inside
+    // the clip's grace window, so before the re-grace the residue never learned
+    // her level and every resumed frame re-ducked her: 63 ducks and 252 paused
+    // frames in this scene, her line playing 128 ms at a time.
+    const r = await runScene({
+      share: false,
+      room: () => QUIET,
+      echo: 0.08,
+      lineFrames: 60,
+      gapFrames: 25,
+      totalFrames: 600,
+    });
+    expect(r.cuts).toBe(0);
+    expect(r.utterances).toEqual([]);
+    expect(r.suspects).toBeLessThanOrEqual(6);
+    expect(r.pausedFrames).toBeLessThan(40);
+  });
+
+  it('a player muting while a finished barge waits on its transcript still resumes her in bound', async () => {
+    // A short burst ends while its pass is out, transcription never answers,
+    // and the player mutes. The wait's bound used to be checked only on
+    // unmuted frames, so she stayed paused for as long as the mute lasted.
+    const r = await runScene({
+      share: false,
+      room: () => QUIET,
+      echo: 0.01,
+      lineFrames: 80,
+      gapFrames: 300,
+      totalFrames: 140,
+      player: (i) => (i >= 40 && i < 45 ? VOICE : 0),
+      latencyFrames: 1000,
+      onFrame: (i, d) => {
+        if (i === 52) d.setMuted(true);
+      },
+    });
+    expect(r.suspects).toBe(1);
+    expect(r.aborts).toEqual(['no_word']);
+    expect(r.pausedFrames).toBeLessThan(50); // ~4 s bound, not the rest of the scene
   });
 });
 

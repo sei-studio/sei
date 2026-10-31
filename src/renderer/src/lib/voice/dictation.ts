@@ -1085,6 +1085,16 @@ export async function createDictation(opts: {
       // level, and learning from its peak would make a quiet player unable to
       // duck her after a few game hits.
       if (why === 'echo' || (why === 'no_word' && s.asked)) learnFalseDuck(s.trig);
+      // A no-voice retraction resumes her mid-line, and the duck spent the
+      // clip's grace window paused, so the residue never saw her echo: on
+      // loud speakers every resumed frame re-ducked her (one frame of audio,
+      // then a ~0.5 s pause, for a whole line). The resumed frames are her
+      // echo again, so they get the short re-grace the next clip of a run
+      // gets: the residue learns from them and the duck bar catches up.
+      if (why === 'no_voice') {
+        holdSince = performance.now();
+        graceMs = BARGE_REGRACE_MS;
+      }
       opts.onBargeAbort?.(why);
       resetUtterance();
     };
@@ -1188,15 +1198,18 @@ export async function createDictation(opts: {
   captureNode.port.onmessage = (e: MessageEvent) => {
     const frame = e.data as Float32Array;
     if (!(frame instanceof Float32Array) || frame.length === 0) return;
-    if (muted) {
-      if (inSpeech) resetUtterance();
-      preRoll.length = 0;
-      return;
-    }
+    // Before the mute check: a barge whose utterance ended keeps her paused
+    // until its transcript lands, and muting right after speaking must not
+    // stretch that wait past its bound.
     if (flushedBarge && performance.now() - flushedBarge.since >= BARGE_ECHO_WAIT_MAX_MS) {
       flushedBarge.open = false;
       flushedBarge = null;
       opts.onBargeAbort?.('no_word');
+    }
+    if (muted) {
+      if (inSpeech) resetUtterance();
+      preRoll.length = 0;
+      return;
     }
     let sum = 0;
     for (let i = 0; i < frame.length; i += 1) sum += frame[i] * frame[i];

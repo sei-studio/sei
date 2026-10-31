@@ -1907,7 +1907,10 @@ The design and its measurements are committed at
   (`audioQueue.duck`) and a retraction resumes it, so a false duck costs a
   short pause and no words; after the duck the mic must show a voice
   (`bargeVoiceBar`) within ~3 frames or the duck is retracted with no STT call
-  (`no_voice`); the confirming pass reads only post-duck audio and commits on
+  (`no_voice`), and that retraction re-arms the short re-grace so the residue
+  learns her echo from the resumed frames (the duck spends the clip's grace
+  paused, and on loud speakers every resumed frame re-ducked her, a line
+  played 128 ms at a time); the confirming pass reads only post-duck audio and commits on
   `isBargeWord` (hasSpokenWord AND the utterance junk filter) that the echo
   gate does not trace to her or the screen; a no-word pass gets one more pass
   when a voice kept going; a duck a transcription rejected raises the bar
