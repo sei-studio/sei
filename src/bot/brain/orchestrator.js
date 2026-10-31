@@ -1211,8 +1211,15 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   }
   // The completion turn of a walk that reached the player: the hand-over
   // note, or '' when no open line could want a hand-over.
+  // Only a walk to the player themself: aimsAtPlayer also matches sibling
+  // companions, and "You are next to Steve" on reaching Lyra is false.
+  const isOwnerName = (v) => typeof v === 'string' && !!v.trim() &&
+    [config?.player_display_name, config?.player_username].some((n) => n && String(n).toLowerCase() === v.trim().toLowerCase())
+  const isCompanionName = (v) => typeof v === 'string' && !!v.trim() &&
+    companions.some((c) => String(c).toLowerCase() === v.trim().toLowerCase())
   function arrivalAskText(data) {
-    if (!openAsks.length || data?.aborted || data?.name !== 'goTo' || !aimsAtPlayer(data?.input)) return ''
+    if (!openAsks.length || data?.aborted || data?.name !== 'goTo') return ''
+    if (!Object.values(data?.input ?? {}).some(isOwnerName)) return ''
     if (!/^reached\b/.test(String(data?.result ?? ''))) return ''
     // A held player task has its own note (taskNoteText). A cleared one does
     // not stop this note: the coal asked for before a called-off log run
@@ -1220,7 +1227,9 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     if (taskHolds.size) return ''
     openAsks = openAsks.filter((a) => Date.now() - a.at < OPEN_ASK_MS)
     if (!openAsks.some((a) => !a.toPlayer)) return ''
-    const who = openAsks.at(-1).who || config?.player_display_name || config?.player_username || null
+    // Name the player she reached, not the newest asker (a teammate or a
+    // second human may have spoken last).
+    const who = config?.player_display_name || config?.player_username || null
     return NUDGES.arrivedAsks({ who })
   }
   function noteTaskStarted(name, args) {
@@ -4264,8 +4273,10 @@ function maybeWarnByteCap(loop, warned) {
         const text = typeof r === 'string' ? r : (typeof r?.text === 'string' ? r.text : '')
         const h = caps.handOverDetail(name, text)
         if (h) convoMemory.recentChat.noteGiven(h)
-        // pass 32: a hand-over answers the asks before it.
-        if (h) openAsks = []
+        // pass 32: a hand-over answers the asks before it. Not a give to a
+        // sibling companion ("give Lyra some logs"): the player's own ask
+        // is still open.
+        if (h && !isCompanionName(h.to)) openAsks = []
       }
       if (countsAsGoalWork(name, r)) lastWorkAt = Date.now()
       if (!ACTION_VERB_SKIP.has(name)) lastActionEndAt = Date.now()

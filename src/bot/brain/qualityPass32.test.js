@@ -26,7 +26,7 @@ describe('NUDGES.arrivedAsks', () => {
 })
 
 // gather and goTo are instant; goTo to a player reports reaching them.
-function makeAdapter({ handOvers = true, goTo = 'reached Steve (1m away)' } = {}) {
+function makeAdapter({ handOvers = true, goTo = 'reached Steve (1m away)', exec = null } = {}) {
   const ACTIONS = ['gather', 'give', 'goTo', 'follow', 'stop']
   const a = {
     listActions: () => ACTIONS,
@@ -39,11 +39,11 @@ function makeAdapter({ handOvers = true, goTo = 'reached Steve (1m away)' } = {}
     createSnapshotComposer: () => ({ next: () => 'SNAPSHOT' }),
     chat: vi.fn(),
     closeAnySessions: async () => {},
-    executeAction: (name) => Promise.resolve(
-      name === 'give' ? 'gave 6 coal to Steve, tossed at their feet; you have 0 coal left'
+    executeAction: exec ?? ((name, args) => Promise.resolve(
+      name === 'give' ? `gave 6 coal to ${args?.player ?? 'Steve'}, tossed at their feet; you have 0 coal left`
         : name === 'goTo' ? goTo
           : name === 'gather' ? 'gathered 6/6 coal'
-            : `${name} ok`),
+            : `${name} ok`)),
   }
   if (handOvers) {
     a.handOverResult = (name, r) => (name === 'give' ? /^gave \d/.test(String(r ?? '')) : null)
@@ -123,7 +123,7 @@ function setup(script, adapterOpts) {
   }
   // The call made right after each walk to the player finished.
   const arrivalCalls = () => provider.calls.filter((c) => /reached Steve/.test(allText(c)))
-  return { provider, send, arrivalCalls }
+  return { provider, send, arrivalCalls, orch, drain }
 }
 
 describe('orchestrator: open asks on arrival', () => {
@@ -210,6 +210,58 @@ describe('orchestrator: open asks on arrival', () => {
     ])
     await send('grab me some coal')
     await send('meet me over here')
+    const arrivals = arrivalCalls()
+    expect(arrivals.length).toBeGreaterThan(0)
+    expect(allText(arrivals.at(-1))).toContain(ARRIVED)
+  })
+})
+
+// 261031 (pass 32 review): the walk back to the player usually outlasts the
+// 10s action tick, so its completion lands on the tick-claimed path.
+describe('orchestrator: open asks, review cases', () => {
+  it('notes the hand-over when a tick-claimed walk reaches the player', async () => {
+    let finish
+    const exec = (name) => (name === 'goTo'
+      ? new Promise((r) => { finish = r })
+      : Promise.resolve(name === 'gather' ? 'gathered 6/6 coal' : `${name} ok`))
+    const { provider, send, orch, drain } = setup([
+      turn(say('s1', 'on it'), act('a1', 'gather', { item: 'coal', count: 6 })),
+      turn(act('a2', 'goTo', { player: 'Steve' })),
+      turn(),
+      turn(act('a3', 'end_loop')),
+    ], { exec })
+    await send('grab me some coal and bring it back')
+    await orch.handleDispatch('sei:action_tick', { elapsedSec: 10 })
+    await flush(); await drain()
+    expect(allText(provider.calls.at(-1))).not.toContain(ARRIVED)
+    finish('reached Steve (1m away)')
+    await flush(); await drain()
+    const last = allText(provider.calls.at(-1))
+    expect(last).toContain('previous action completed: goTo')
+    expect(last).toContain(ARRIVED)
+  })
+
+  it('says nothing when the walk reached a sibling companion', async () => {
+    const { provider, send, orch } = setup([
+      turn(say('s1', 'on it'), act('a1', 'gather', { item: 'coal', count: 6 })),
+      turn(act('a2', 'goTo', { player: 'Lyra' })),
+      turn(act('a3', 'end_loop')),
+    ], { goTo: 'reached Lyra (1m away)' })
+    orch.setCompanions(['Lyra'])
+    await send('grab me some coal')
+    expect(allText(provider.calls[2])).toContain('reached Lyra')
+    expect(allText(provider.calls[2])).not.toContain(ARRIVED)
+  })
+
+  it('a give to a sibling companion leaves the player ask open', async () => {
+    const { send, orch, arrivalCalls } = setup([
+      turn(say('s1', 'on it'), act('a1', 'gather', { item: 'coal', count: 6 })),
+      turn(act('g1', 'give', { item: 'coal', player: 'Lyra' })),
+      turn(act('a2', 'goTo', { player: 'Steve' })),
+      turn(act('a3', 'end_loop')),
+    ])
+    orch.setCompanions(['Lyra'])
+    await send('grab me some coal')
     const arrivals = arrivalCalls()
     expect(arrivals.length).toBeGreaterThan(0)
     expect(allText(arrivals.at(-1))).toContain(ARRIVED)
