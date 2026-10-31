@@ -16,6 +16,7 @@ import {
   normalizeBootState,
   quitVerdict,
   readBootStateSync,
+  rendererGoneVerdict,
   requestNormalStart,
   safeModeForced,
   takeReport,
@@ -258,5 +259,21 @@ describe('IO', () => {
     writeBootStateSync(file, beginBoot(freshBootState(), at(1)).state);
     const keys = Object.keys(JSON.parse(await readFile(file, 'utf8'))).sort();
     expect(keys).toEqual(['appVersion', 'failures', 'forceNormalOnce', 'lastFailure', 'pending', 'report', 'v']);
+  });
+});
+
+describe('rendererGoneVerdict (T280)', () => {
+  it('a clean exit never counts', () => {
+    expect(rendererGoneVerdict('clean-exit', false)).toBe('ignore');
+    expect(rendererGoneVerdict('clean-exit', true)).toBe('ignore');
+  });
+  it('a kill is neutral during an OS shutdown, else waits for one', () => {
+    expect(rendererGoneVerdict('killed', true)).toBe('ignore');
+    expect(rendererGoneVerdict('killed', false)).toBe('wait');
+  });
+  it('crashes count', () => {
+    for (const r of ['crashed', 'oom', 'launch-failed', 'integrity-failure', 'abnormal-exit', 'memory-eviction']) {
+      expect(rendererGoneVerdict(r, false), r).toBe('failure');
+    }
   });
 });

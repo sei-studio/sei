@@ -5,7 +5,7 @@
  * safe-mode "Reset settings".
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, mkdir, writeFile, readFile, readdir } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, readFile, readdir, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { _setUserDataOverride, paths, setActiveScope } from './paths';
@@ -377,3 +377,52 @@ describe('resetConfigKeepingIdentity', () => {
   });
 });
 
+
+describe('a damaged file in a folder that cannot be written (T280)', () => {
+  const canTestReadOnly = typeof process.getuid === 'function' && process.getuid() !== 0 && process.platform !== 'win32';
+
+  it.skipIf(!canTestReadOnly)('recovers in memory on every read but reports it once per process', async () => {
+    await writeRaw(JSON.stringify({ preferred_name: 'Kept' }), bakPath());
+    await writeRaw('{"preferred_name": "x", broken');
+    const dir = path.dirname(cfgPath());
+    const seen: ConfigRecoveryEvent[] = [];
+    onConfigRecovered((e) => seen.push(e));
+    await chmod(dir, 0o555);
+    try {
+      const a = await loadConfig();
+      const b = await loadConfig();
+      const c = await loadConfig();
+      expect(a.preferred_name).toBe('Kept');
+      expect(b.preferred_name).toBe('Kept');
+      expect(c.preferred_name).toBe('Kept');
+      // The damaged file is still there (nothing could move or replace it).
+      expect(await readFile(cfgPath(), 'utf8')).toContain('broken');
+    } finally {
+      await chmod(dir, 0o755);
+    }
+    expect(seen.map((e) => e.kind)).toEqual(['restored_backup']);
+    expect(configRecoveries()).toHaveLength(1);
+  });
+
+  it.skipIf(!canTestReadOnly)('no backup either: reset_defaults once, not per read', async () => {
+    await writeRaw('{ nothing readable');
+    const dir = path.dirname(cfgPath());
+    await chmod(dir, 0o555);
+    try {
+      await loadConfig();
+      await loadConfig();
+    } finally {
+      await chmod(dir, 0o755);
+    }
+    expect(configRecoveries().map((e) => e.kind)).toEqual(['reset_defaults']);
+  });
+
+  it('a writable folder still reports a second, separate damage', async () => {
+    await writeRaw(JSON.stringify({ preferred_name: 'Kept' }), bakPath());
+    await writeRaw('{ broken');
+    await loadConfig();
+    await writeRaw('{ broken again');
+    await loadConfig();
+    expect(configRecoveries().map((e) => e.kind)).toEqual(['restored_backup', 'restored_backup']);
+  });
+});

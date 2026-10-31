@@ -70,7 +70,9 @@ import { formatPlayDuration, playSummaryText } from './chat/playSummary';
 import { flushUpdatePushes, handOffUpdatesToMigration, isUpdateReadyToInstall } from './updater';
 import {
   markProfileScopeReady,
+  noteMainWindowClosed,
   noteNeutralExit,
+  noteRendererGone,
   reportStartupFailure,
   setMainWindowGetter,
   takeSafeModeReport,
@@ -229,6 +231,9 @@ function sweepVoiceCalls(reason: 'window_closed' | 'renderer_gone' | 'renderer_r
 function wireMainWindowEvents(win: BrowserWindow): void {
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
+    // Boot safety: judge an unjudged start now, not at a quit that may come
+    // hours later (macOS stays running with no window).
+    noteMainWindowClosed();
     // macOS keeps the app running when the last window closes; the call and
     // the share died with the window, so close them with that reason.
     sweepVoiceCalls('window_closed');
@@ -246,11 +251,13 @@ function wireMainWindowEvents(win: BrowserWindow): void {
     setTimeout(() => flushUpdatePushes(), UPDATE_PUSH_FALLBACK_MS).unref?.();
   });
   win.webContents.on('did-navigate', () => sweepVoiceCalls('renderer_reload'));
-  win.webContents.on('render-process-gone', () => {
+  win.webContents.on('render-process-gone', (_e, details) => {
     sweepVoiceCalls('renderer_gone');
     // Boot safety (261031): before the start has been judged good, a dead
-    // renderer is a failed start (ignored afterwards).
-    reportStartupFailure('renderer_gone');
+    // renderer is a failed start (ignored afterwards). Not a 'clean-exit',
+    // and not a 'killed' that comes with an OS shutdown (bootGuard.ts
+    // rendererGoneVerdict).
+    noteRendererGone(details.reason);
   });
   win.webContents.on('did-fail-load', (_e, errorCode, _desc, _url, isMainFrame) => {
     // -3 = ERR_ABORTED (a navigation replaced by another), not a failure.

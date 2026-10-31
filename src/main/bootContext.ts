@@ -4,7 +4,15 @@
  *
  * Kept deliberately small and dependency-free (electron + bootGuard only):
  * boot.ts loads it before the app's module graph, and anything it imported
- * would be loaded in safe mode too.
+ * would be loaded in safe mode too. It lands in a shared chunk, so boot.ts
+ * and the app (crashReporting.ts, index.ts) see the same state.
+ *
+ * Crash reporting seam (261031, T280): boot-state.json ("did this start
+ * work") and session.json (crash analytics, crashReporting.ts) stay separate
+ * files, but they must agree on two things. A start judged failed here is
+ * recorded there as `start_failed` before Sei relaunches or quits
+ * (onStartFailed; boot.ts's fallback writes it when crash reporting never
+ * started). An OS shutdown seen there is neutral here (noteOsShutdown).
  */
 import type { BrowserWindow, WebContents } from 'electron';
 import {
@@ -19,6 +27,8 @@ import {
   quitVerdict,
   readBootStateSync,
   requestNormalStart,
+  KILLED_GRACE_MS,
+  rendererGoneVerdict,
   SUCCESS_HOLD_MS,
   takeReport,
   writeBootStateSync,
@@ -44,6 +54,16 @@ interface Ctx {
   enterSafeMode: ((reason: SafeModeReason) => void) | null;
   relaunch: (() => void) | null;
   onSuccess: Array<() => void>;
+  /** The OS is ending the session (Windows log-off / shutdown, powerMonitor 'shutdown'). */
+  osShutdown: boolean;
+  killedTimer: ReturnType<typeof setTimeout> | null;
+  /** Records a failed start in session.json (crashReporting.ts). */
+  startFailedHooks: Array<(kind: FailureKind) => void>;
+  /** boot.ts: records it when no hook is registered (crash reporting never started). */
+  startFailedFallback: ((kind: FailureKind, startedAt: number) => void) | null;
+  startFailedSent: boolean;
+  /** A failure judged while the process keeps running (macOS window close); sent at quit. */
+  deferredStartFailure: FailureKind | null;
 }
 
 const ctx: Ctx = {
@@ -62,6 +82,12 @@ const ctx: Ctx = {
   enterSafeMode: null,
   relaunch: null,
   onSuccess: [],
+  osShutdown: false,
+  killedTimer: null,
+  startFailedHooks: [],
+  startFailedFallback: null,
+  startFailedSent: false,
+  deferredStartFailure: null,
 };
 
 /** True when the state is on disk (or there is nothing to write). */
@@ -87,19 +113,27 @@ export function initBootGuard(opts: {
   persistent: boolean;
   forceSafe: boolean;
   now?: number;
-}): { mode: BootMode; reason: SafeModeReason | null; failures: number } {
+}): {
+  mode: BootMode;
+  reason: SafeModeReason | null;
+  failures: number;
+  /** The previous NORMAL start never finished (counted as unclean_exit): when it began, on which version. */
+  unfinished: { at: number; appVersion: string } | null;
+} {
   ctx.persistent = opts.persistent;
   ctx.appVersion = opts.appVersion;
   ctx.file = bootStatePath(opts.userData);
   ctx.startedAt = opts.now ?? Date.now();
   const prev = opts.persistent ? readBootStateSync(ctx.file) : freshBootState();
+  const unfinished =
+    prev.pending && prev.pending.mode === 'normal' ? { at: prev.pending.at, appVersion: prev.pending.appVersion } : null;
   const r = beginBoot(prev, { appVersion: opts.appVersion, now: ctx.startedAt, forceSafe: opts.forceSafe });
   ctx.state = r.state;
   ctx.mode = r.mode;
   ctx.reason = r.reason;
   persist();
   log(`mode=${r.mode}${r.reason ? ` reason=${r.reason}` : ''} failures=${r.state.failures}`);
-  return { mode: r.mode, reason: r.reason, failures: r.state.failures };
+  return { mode: r.mode, reason: r.reason, failures: r.state.failures, unfinished };
 }
 
 export function getBootMode(): BootMode {
@@ -170,6 +204,34 @@ export function setRelaunch(fn: () => void): void {
   ctx.relaunch = fn;
 }
 
+/**
+ * Crash reporting (crashReporting.ts): record a failed start in session.json.
+ * Called just before Sei relaunches after a failed start, opens safe mode in
+ * this process, or quits with a start judged failed, so that session is not
+ * read as a clean quit next launch. At most once per process.
+ */
+export function onStartFailed(fn: (kind: FailureKind) => void): void {
+  ctx.startFailedHooks.push(fn);
+}
+
+/** boot.ts: how to record a failed start when crash reporting never started (the app failed to load). */
+export function setStartFailedFallback(fn: (kind: FailureKind, startedAt: number) => void): void {
+  ctx.startFailedFallback = fn;
+}
+
+function sendStartFailed(kind: FailureKind): void {
+  if (ctx.startFailedSent) return;
+  ctx.startFailedSent = true;
+  ctx.deferredStartFailure = null;
+  const hooks = ctx.startFailedHooks;
+  try {
+    if (hooks.length > 0) for (const fn of hooks) fn(kind);
+    else ctx.startFailedFallback?.(kind, ctx.startedAt);
+  } catch {
+    /* a hook never breaks the guard */
+  }
+}
+
 /** Run once when the start is judged successful. */
 export function onBootSuccess(fn: () => void): void {
   if (ctx.succeeded) fn();
@@ -229,6 +291,9 @@ export function reportStartupFailure(kind: FailureKind, err?: unknown): void {
   // again, forever. Then this process keeps the pre-guard behaviour.
   if (ctx.relaunch && saved) {
     ctx.succeeded = true; // judged; the quit that follows must not re-judge it
+    // relaunch() ends in app.exit(0): without this, session.json would read
+    // as a clean quit and the failed start would vanish from crash-free numbers.
+    sendStartFailed(kind);
     ctx.relaunch();
     return;
   }
@@ -239,17 +304,75 @@ export function reportStartupFailure(kind: FailureKind, err?: unknown): void {
   ctx.reason = kind;
   ctx.state = markInProcessSafe(ctx.state, kind, { appVersion: ctx.appVersion, now });
   persist();
+  sendStartFailed(kind);
   if (ctx.enterSafeMode) ctx.enterSafeMode(kind);
+}
+
+/**
+ * The main window's renderer went away (render-process-gone) before the
+ * start was judged. See rendererGoneVerdict: a clean exit says nothing, a
+ * kill during an OS shutdown is neutral, a kill otherwise counts after
+ * KILLED_GRACE_MS unless an OS shutdown shows up first, anything else counts.
+ */
+export function noteRendererGone(reason: string): void {
+  if (ctx.succeeded || ctx.mode !== 'normal') return;
+  const verdict = rendererGoneVerdict(reason, ctx.osShutdown);
+  if (verdict === 'ignore') return;
+  if (verdict === 'failure') {
+    reportStartupFailure('renderer_gone');
+    return;
+  }
+  if (ctx.killedTimer) return;
+  ctx.killedTimer = setTimeout(() => {
+    ctx.killedTimer = null;
+    if (!ctx.osShutdown) reportStartupFailure('renderer_gone');
+  }, KILLED_GRACE_MS);
+  ctx.killedTimer.unref?.();
+}
+
+/**
+ * The OS is ending the session (crashReporting.ts: Windows `session-end`,
+ * powerMonitor `shutdown`). Whatever happens to the start after this says
+ * nothing about the build: neutral, and nothing later re-judges it.
+ */
+export function noteOsShutdown(): void {
+  ctx.osShutdown = true;
+  if (ctx.killedTimer) clearTimeout(ctx.killedTimer);
+  ctx.killedTimer = null;
+  noteNeutralExit();
+}
+
+/**
+ * The main window closed. Before the start was judged, judge it now, from
+ * the time the window went away: on macOS Sei stays running with no window,
+ * and a quit hours later must not read as "never came up"
+ * (renderer_never_ready). Same rule as a quit (quitVerdict). A failure here
+ * is recorded in boot-state.json now and in session.json at the quit, since
+ * the process keeps running.
+ */
+export function noteMainWindowClosed(now = Date.now()): void {
+  if (ctx.succeeded || ctx.mode !== 'normal') return;
+  judgeQuitLike(now, false);
 }
 
 /** The app is quitting. Judge the start if it has not been judged yet. */
 export function noteQuitting(now = Date.now()): void {
-  if (ctx.succeeded) return;
+  if (ctx.succeeded) {
+    // Judged failed earlier while the process kept running (macOS window close).
+    if (ctx.deferredStartFailure) sendStartFailed(ctx.deferredStartFailure);
+    return;
+  }
   if (ctx.mode !== 'normal') {
     ctx.state = markNeutral(ctx.state);
     persist();
     return;
   }
+  judgeQuitLike(now, true);
+}
+
+function judgeQuitLike(now: number, quitting: boolean): void {
+  if (ctx.killedTimer) clearTimeout(ctx.killedTimer);
+  ctx.killedTimer = null;
   const verdict = quitVerdict({ succeeded: ctx.succeeded, readyAt: ctx.readyAt, startedAt: ctx.startedAt, now });
   if (verdict === 'success') {
     succeed();
@@ -259,7 +382,10 @@ export function noteQuitting(now = Date.now()): void {
     ctx.state = markFailure(ctx.state, 'renderer_never_ready', { appVersion: ctx.appVersion, now });
     ctx.succeeded = true; // judged; nothing later may re-judge it
     persist();
-    log('quit before the window came up; counted as a failed start');
+    log(`${quitting ? 'quit' : 'main window closed'} before the window came up; counted as a failed start`);
+    if (!ctx.persistent) return;
+    if (quitting) sendStartFailed('renderer_never_ready');
+    else ctx.deferredStartFailure = 'renderer_never_ready';
     return;
   }
   ctx.state = markNeutral(ctx.state);
@@ -272,6 +398,8 @@ export function noteNeutralExit(): void {
   if (ctx.succeeded) return;
   if (ctx.successTimer) clearTimeout(ctx.successTimer);
   ctx.successTimer = null;
+  if (ctx.killedTimer) clearTimeout(ctx.killedTimer);
+  ctx.killedTimer = null;
   ctx.state = markNeutral(ctx.state);
   ctx.succeeded = true; // judged; the quit that follows must not count it
   persist();
@@ -295,6 +423,7 @@ export function takeSafeModeReport(): BootState['report'] {
 /** TEST-ONLY. */
 export function _resetBootContextForTests(): void {
   if (ctx.successTimer) clearTimeout(ctx.successTimer);
+  if (ctx.killedTimer) clearTimeout(ctx.killedTimer);
   Object.assign(ctx, {
     file: null,
     persistent: false,
@@ -311,6 +440,12 @@ export function _resetBootContextForTests(): void {
     enterSafeMode: null,
     relaunch: null,
     onSuccess: [],
+    osShutdown: false,
+    killedTimer: null,
+    startFailedHooks: [],
+    startFailedFallback: null,
+    startFailedSent: false,
+    deferredStartFailure: null,
   } satisfies Ctx);
 }
 

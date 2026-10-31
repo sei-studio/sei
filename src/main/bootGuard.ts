@@ -25,6 +25,11 @@
  *     The exception is a quit NEVER_READY_QUIT_MS or more into a start whose
  *     renderer never reported ready (quitVerdict): Sei never came up.
  *   - A new app version resets the count: an update deserves a normal start.
+ *   - The OS ending the session (Windows log-off / shutdown, powerMonitor
+ *     'shutdown') is neutral, and so is a renderer that went away because of
+ *     it (rendererGoneVerdict). On macOS, where closing the last window keeps
+ *     Sei running, the start is judged when the main window closes, not at a
+ *     quit hours later.
  *
  * After FAILURE_THRESHOLD consecutive failures the next start is a safe-mode
  * start. "Try normal start" sets forceNormalOnce, which gives exactly one
@@ -238,6 +243,27 @@ export function quitVerdict(opts: {
   if (opts.succeeded || opts.readyAt !== null) return 'success';
   if (opts.now - opts.startedAt >= NEVER_READY_QUIT_MS) return 'failure';
   return 'neutral';
+}
+
+/**
+ * How long a renderer reported 'killed' before ready waits for an OS
+ * shutdown event before it counts. On Windows log-off the OS can end the
+ * renderer a moment before main sees `session-end`.
+ */
+export const KILLED_GRACE_MS = 3_000;
+
+/**
+ * Judge the main window's renderer going away before the start was judged.
+ * 'clean-exit' is a renderer that exited on purpose (window closed, app
+ * quitting), never a failed start. 'killed' is something outside Sei ending
+ * it: neutral during an OS shutdown, otherwise counted once KILLED_GRACE_MS
+ * passes without one ('wait'). Anything else (crashed, oom, launch-failed,
+ * integrity-failure, abnormal-exit) is a failed start.
+ */
+export function rendererGoneVerdict(reason: string, osShuttingDown: boolean): 'ignore' | 'wait' | 'failure' {
+  if (reason === 'clean-exit') return 'ignore';
+  if (reason === 'killed') return osShuttingDown ? 'ignore' : 'wait';
+  return 'failure';
 }
 
 /** Env / argv override: force a safe-mode start (support and testing). */

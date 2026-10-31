@@ -16,12 +16,21 @@ import {
   ERROR_EVENT_CAP,
   cleanToken,
   createCrashReporter,
+  linkBootGuard,
   pageName,
   serviceToken,
   type CrashReporterDeps,
 } from './crashReporting';
 import { CRASH_LOG_FILE, setCrashRedactNames } from './crashLog';
 import { readPreviousSession, SESSION_MARKER_FILE } from './sessionMarker';
+import {
+  _resetBootContextForTests,
+  initBootGuard,
+  noteQuitting,
+  reportStartupFailure,
+  setRelaunch,
+} from './bootContext';
+import { NEVER_READY_QUIT_MS, bootStatePath, readBootStateSync } from './bootGuard';
 
 let dir: string;
 let crashDir: string;
@@ -327,5 +336,57 @@ describe('helpers', () => {
     expect(cleanToken('launch-failed')).toBe('launch_failed');
     expect(cleanToken('<script>')).toBe('unknown');
     expect(cleanToken(undefined)).toBe('unknown');
+  });
+});
+
+describe('the boot-guard seam (T280)', () => {
+  beforeEach(() => {
+    _resetBootContextForTests();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    _resetBootContextForTests();
+    vi.restoreAllMocks();
+  });
+  const boot = (now: number) => initBootGuard({ userData: dir, appVersion: '0.7.0', persistent: true, forceSafe: false, now });
+
+  it("a failed start that relaunches is start_failed, not the relaunch's clean exit 0", () => {
+    boot(Date.now());
+    const r = launch();
+    linkBootGuard(r);
+    // boot.ts's relaunch hook: app.relaunch(); app.exit(0) -> 'quit' with code 0.
+    setRelaunch(() => r.close('closed'));
+    reportStartupFailure('renderer_gone');
+    expect(readPreviousSession(markerFile).prevExit).toBe('start_failed');
+    const next = launch();
+    expect(next.appOpenedProps().prev_exit).toBe('start_failed');
+    expect(events.find((e) => e.event === 'app_unclean_exit')?.props).toMatchObject({ prev_exit: 'start_failed' });
+  });
+
+  it('a quit with the window never up is start_failed', () => {
+    boot(0);
+    const r = launch();
+    linkBootGuard(r);
+    noteQuitting(NEVER_READY_QUIT_MS + 1);
+    r.close('closed'); // the quit event that follows
+    expect(readPreviousSession(markerFile).prevExit).toBe('start_failed');
+  });
+
+  it('an OS shutdown right after launch is os_shutdown here and neutral for the boot guard', () => {
+    boot(Date.now());
+    const r = launch();
+    const seam = linkBootGuard(r);
+    const relaunch = vi.fn();
+    setRelaunch(relaunch);
+    seam.osShutdown();
+    // The renderer and the quit that follow say nothing about the start.
+    reportStartupFailure('renderer_gone');
+    noteQuitting(Date.now() + NEVER_READY_QUIT_MS * 2);
+    r.close('closed');
+    expect(relaunch).not.toHaveBeenCalled();
+    expect(readPreviousSession(markerFile).prevExit).toBe('os_shutdown');
+    const state = readBootStateSync(bootStatePath(dir));
+    expect(state.failures).toBe(0);
+    expect(state.pending).toBeNull();
   });
 });

@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
+  SAFE_MODE_CHECK_TIMEOUT_MS,
   SAFE_MODE_COPY,
   SAFE_MODE_CSP,
   renderSafeModeHtml,
@@ -105,5 +106,101 @@ describe('helpers', () => {
     expect(safeModeTheme('mint')).toBe('light');
     expect(safeModeTheme('system')).toBe('system');
     expect(safeModeTheme(42)).toBe('system');
+  });
+});
+
+/**
+ * Run the page script against a stub DOM and a stub window.seiSafeMode (no
+ * DOM library in this repo). Timers are vitest's fake ones.
+ */
+function bootPage(opts: Partial<SafeModePageOptions> = {}) {
+  const html = renderSafeModeHtml({ ...base, ...opts });
+  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]!);
+  const els = new Map<string, Record<string, unknown>>();
+  const el = (id: string) => {
+    let e = els.get(id);
+    if (!e) {
+      const handlers: Record<string, () => void> = {};
+      e = {
+        id,
+        textContent: '',
+        className: '',
+        hidden: false,
+        disabled: false,
+        style: {},
+        handlers,
+        addEventListener: (type: string, fn: () => void) => { handlers[type] = fn; },
+        focus: () => {},
+      };
+      els.set(id, e);
+    }
+    return e;
+  };
+  let push: ((kind: string, p?: unknown) => void) | null = null;
+  const actions: string[] = [];
+  const win: Record<string, unknown> = {
+    seiSafeMode: {
+      action: (name: string) => { actions.push(name); return Promise.resolve({ ok: true }); },
+      onUpdate: (cb: (kind: string, p?: unknown) => void) => { push = cb; },
+      ready: () => {},
+    },
+  };
+  const doc = { getElementById: el };
+  for (const src of scripts) new Function('window', 'document', src)(win, doc);
+  return {
+    status: () => el('upd-status').textContent as string,
+    checkDisabled: () => el('btn-check').disabled as boolean,
+    click: (id: string) => (el(id).handlers as Record<string, () => void>).click!(),
+    push: (kind: string, p?: unknown) => push!(kind, p),
+    actions,
+  };
+}
+
+describe('safe-mode page: a check that never hears back (T280)', () => {
+  afterEach(() => vi.useRealTimers());
+  const C = SAFE_MODE_COPY.en;
+
+  it('the startup check gives the button back after the timeout, with a plain message', () => {
+    vi.useFakeTimers();
+    const page = bootPage();
+    expect(page.actions).toEqual(['check']);
+    expect(page.status()).toBe(C.checking);
+    expect(page.checkDisabled()).toBe(true);
+    vi.advanceTimersByTime(SAFE_MODE_CHECK_TIMEOUT_MS - 1);
+    expect(page.checkDisabled()).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(page.status()).toBe(C.checkTimeout);
+    expect(page.checkDisabled()).toBe(false);
+    // And it can be tried again.
+    page.click('btn-check');
+    expect(page.actions).toEqual(['check', 'check']);
+    expect(page.status()).toBe(C.checking);
+  });
+
+  it('any updater answer cancels the timeout', () => {
+    vi.useFakeTimers();
+    const page = bootPage();
+    page.push('available', { version: '0.7.1' });
+    vi.advanceTimersByTime(SAFE_MODE_CHECK_TIMEOUT_MS * 2);
+    expect(page.status()).toBe('Sei 0.7.1 is available.');
+  });
+
+  it("an updater 'checking' push restarts the wait", () => {
+    vi.useFakeTimers();
+    const page = bootPage();
+    vi.advanceTimersByTime(SAFE_MODE_CHECK_TIMEOUT_MS - 1000);
+    page.push('checking');
+    vi.advanceTimersByTime(2000);
+    expect(page.status()).toBe(C.checking);
+    vi.advanceTimersByTime(SAFE_MODE_CHECK_TIMEOUT_MS);
+    expect(page.status()).toBe(C.checkTimeout);
+  });
+
+  it('dev builds never start a check', () => {
+    vi.useFakeTimers();
+    const page = bootPage({ packaged: false });
+    vi.advanceTimersByTime(SAFE_MODE_CHECK_TIMEOUT_MS * 2);
+    expect(page.actions).toEqual([]);
+    expect(page.status()).toBe(C.updatesDev);
   });
 });

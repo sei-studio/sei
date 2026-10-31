@@ -24,7 +24,16 @@ export interface SafeModePageOptions {
   version: string;
   /** False in dev: updates only work in the installed app. */
   packaged: boolean;
+  /** Tests only: SAFE_MODE_CHECK_TIMEOUT_MS otherwise. */
+  checkTimeoutMs?: number;
 }
+
+/**
+ * A check with no updater event at all for this long (no answer, no error:
+ * a stalled network or an updater that never started) gives the button back
+ * with a plain message instead of "Checking..." forever.
+ */
+export const SAFE_MODE_CHECK_TIMEOUT_MS = 30_000;
 
 /** Every string the page shows. `{v}` = a version, `{p}` = a percent. */
 export const SAFE_MODE_COPY = {
@@ -46,6 +55,7 @@ export const SAFE_MODE_COPY = {
     installing: 'Installing the update. Sei will restart in a moment.',
     upToDate: "You're on the latest version ({v}).",
     updateError: "Couldn't check for updates. Check your connection and try again.",
+    checkTimeout: "No answer from the update server yet. Check your connection and try again.",
     updatesDev: 'Updates only work in the installed app.',
     otherHeading: 'Other things to try',
     openLogs: 'Open logs folder',
@@ -80,6 +90,7 @@ export const SAFE_MODE_COPY = {
     installing: '正在安装更新，Sei 马上会重启。',
     upToDate: '已经是最新版本（{v}）。',
     updateError: '无法检查更新。请检查网络连接后再试一次。',
+    checkTimeout: '更新服务器暂时没有回应。请检查网络连接后再试一次。',
     updatesDev: '只有安装版可以更新。',
     otherHeading: '还可以试试',
     openLogs: '打开日志文件夹',
@@ -199,7 +210,9 @@ footer { color: var(--muted); font-size: 12px; padding: 0 32px 18px; display: fl
 /**
  * The page script. Plain ES2017, no modules. `C` = copy, `O` = options.
  * States: idle | checking | available | downloading | ready | installing |
- * none | error | dev.
+ * none | error | timeout | dev. Every 'checking' arms a timer (O.checkTimeoutMs);
+ * any updater event disarms it, and if it fires while still checking the
+ * button comes back ('timeout').
  */
 const SCRIPT = `
 (function () {
@@ -208,6 +221,16 @@ const SCRIPT = `
   var $ = function (id) { return document.getElementById(id); };
   var fill = function (s, v, p) { return s.replace('{v}', v == null ? '' : String(v)).replace('{p}', p == null ? '' : String(p)); };
   var st = { kind: O.packaged ? 'idle' : 'dev', version: '', percent: 0 };
+  var checkTimer = null;
+  function disarm() { if (checkTimer !== null) { clearTimeout(checkTimer); checkTimer = null; } }
+  function startCheck() {
+    st.kind = 'checking'; renderUpdate();
+    disarm();
+    checkTimer = setTimeout(function () {
+      checkTimer = null;
+      if (st.kind === 'checking') { st.kind = 'timeout'; renderUpdate(); }
+    }, O.checkTimeoutMs);
+  }
 
   function renderUpdate() {
     var s = $('upd-status'), check = $('btn-check'), dl = $('btn-download'), inst = $('btn-install'), bar = $('upd-bar');
@@ -226,6 +249,7 @@ const SCRIPT = `
       case 'installing': s.textContent = C.installing; check.hidden = true; break;
       case 'none': s.textContent = fill(C.upToDate, O.version); s.className = 'status ok'; break;
       case 'error': s.textContent = C.updateError; s.className = 'status err'; break;
+      case 'timeout': s.textContent = C.checkTimeout; s.className = 'status err'; break;
     }
   }
 
@@ -238,8 +262,9 @@ const SCRIPT = `
 
   if (api) {
     api.onUpdate(function (kind, p) {
-      if (kind === 'checking') st.kind = 'checking';
-      else if (kind === 'not-available') st.kind = O.packaged ? 'none' : 'dev';
+      disarm();
+      if (kind === 'checking') { startCheck(); return; }
+      if (kind === 'not-available') st.kind = O.packaged ? 'none' : 'dev';
       else if (kind === 'available') { st.kind = 'available'; st.version = (p && p.version) || ''; }
       else if (kind === 'progress') { st.kind = 'downloading'; st.percent = (p && typeof p.percent === 'number') ? p.percent : 0; }
       else if (kind === 'downloaded') st.kind = (p && p.forced) ? 'installing' : 'ready';
@@ -248,7 +273,7 @@ const SCRIPT = `
     });
   }
 
-  $('btn-check').addEventListener('click', function () { st.kind = 'checking'; renderUpdate(); run('check'); });
+  $('btn-check').addEventListener('click', function () { startCheck(); run('check'); });
   $('btn-download').addEventListener('click', function () { st.kind = 'downloading'; st.percent = 0; renderUpdate(); run('download'); });
   $('btn-install').addEventListener('click', function () { st.kind = 'installing'; renderUpdate(); run('install'); });
   $('btn-logs').addEventListener('click', function () {
@@ -273,7 +298,7 @@ const SCRIPT = `
   renderUpdate();
   if (api) {
     api.ready();
-    if (O.packaged) { st.kind = 'checking'; renderUpdate(); run('check'); }
+    if (O.packaged) { startCheck(); run('check'); }
   }
 })();
 `;
@@ -333,7 +358,7 @@ export function renderSafeModeHtml(opts: SafeModePageOptions): string {
   </section>
 </main>
 <footer><span>${e(c.versionLine.replace('{v}', opts.version))}</span></footer>
-<script>window.__SEI_COPY__=${inlineJson(c)};window.__SEI_OPTS__=${inlineJson({ version: opts.version, packaged: opts.packaged })};</script>
+<script>window.__SEI_COPY__=${inlineJson(c)};window.__SEI_OPTS__=${inlineJson({ version: opts.version, packaged: opts.packaged, checkTimeoutMs: opts.checkTimeoutMs ?? SAFE_MODE_CHECK_TIMEOUT_MS })};</script>
 <script>${SCRIPT}</script>
 </body>
 </html>`;

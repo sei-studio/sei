@@ -7,7 +7,8 @@
  *      current by a heartbeat and the surface in use, `closing` at
  *      before-quit, `closed` at 'quit' once the teardown is done
  *      (`os_shutdown` on Windows log-off / OS shutdown, `start_failed` when
- *      bootstrap threw). The NEXT launch reads it first: a marker still
+ *      bootstrap threw or the boot guard judged the start failed, before it
+ *      relaunches Sei or opens safe mode: linkBootGuard). The NEXT launch reads it first: a marker still
  *      `open` means the previous session died without quitting (a
  *      main-process crash, a force quit of a hung app, a kill, a power loss),
  *      `closing` a quit whose teardown hung, `start_failed` a failed start;
@@ -40,6 +41,7 @@
 import { app, powerMonitor } from 'electron';
 import path from 'node:path';
 import { bakedChannel, processSessionId, resolveChannel } from './analyticsContext';
+import { noteOsShutdown, onStartFailed } from './bootContext';
 import { loadAnalytics } from './lazyAnalytics';
 import { paths } from './paths';
 import {
@@ -425,6 +427,7 @@ function initInner(): void {
     log: (line) => console.warn(line),
   });
   reporter = r;
+  const seam = linkBootGuard(r);
 
   // The surface in use, mirrored into the marker so an unclean exit says
   // what the player was doing. analytics owns the vocabulary.
@@ -470,10 +473,10 @@ function initInner(): void {
     win.on('responsive', () => r.onResponsive(key));
     win.on('closed', () => r.onWindowClosed(key));
     // Windows log-off / shutdown reaches every top-level window.
-    win.on('session-end', () => r.close('os_shutdown'));
+    win.on('session-end', seam.osShutdown);
   });
   try {
-    powerMonitor.on('shutdown', () => r.close('os_shutdown'));
+    powerMonitor.on('shutdown', seam.osShutdown);
   } catch {
     /* not available on this platform */
   }
@@ -486,6 +489,24 @@ function initInner(): void {
   // nonzero exit is the bootstrap failure (markStartFailed() already ran).
   app.on('before-quit', () => r.closing());
   app.on('quit', (_e, exitCode) => r.close(exitCode === 0 ? 'closed' : 'start_failed'));
+}
+
+/**
+ * The seam with the boot guard (bootContext.ts; the two state files stay
+ * separate). A start the guard judged failed is recorded `start_failed`
+ * before Sei relaunches (app.exit(0), which would otherwise read as a clean
+ * quit) or opens safe mode. An OS shutdown is recorded `os_shutdown` here and
+ * is neutral for the guard, so logging off right after launch is not a
+ * failed start. Returns the OS-shutdown handler to wire to the OS events.
+ */
+export function linkBootGuard(r: Pick<CrashReporter, 'close'>): { osShutdown: () => void } {
+  onStartFailed(() => guard(() => r.close('start_failed')));
+  return {
+    osShutdown: () => {
+      guard(() => r.close('os_shutdown'));
+      guard(() => noteOsShutdown());
+    },
+  };
 }
 
 /**

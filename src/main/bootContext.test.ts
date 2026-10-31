@@ -8,17 +8,22 @@ import {
   _resetBootContextForTests,
   getBootMode,
   initBootGuard,
+  noteMainWindowClosed,
   noteNeutralExit,
+  noteOsShutdown,
   noteQuitting,
+  noteRendererGone,
   noteRendererReady,
   onBootSuccess,
+  onStartFailed,
+  setStartFailedFallback,
   reportStartupFailure,
   requestNormalStartNext,
   setRelaunch,
   setSafeModeEntry,
   takeSafeModeReport,
 } from './bootContext';
-import { NEVER_READY_QUIT_MS, SUCCESS_HOLD_MS, readBootStateSync, bootStatePath } from './bootGuard';
+import { KILLED_GRACE_MS, NEVER_READY_QUIT_MS, SUCCESS_HOLD_MS, readBootStateSync, bootStatePath } from './bootGuard';
 
 let tmp: string;
 beforeEach(async () => {
@@ -219,5 +224,201 @@ describe('bootContext', () => {
     expect(text).toContain('Error');
     expect(text).not.toContain('token=abc');
     expect(text).not.toContain('/Users/someone');
+  });
+});
+
+describe('bootContext: OS shutdown, renderer exits, window close (T280)', () => {
+  it('an OS shutdown before ready is neutral, and nothing after it counts', () => {
+    vi.useFakeTimers();
+    launch(0);
+    const relaunch = vi.fn();
+    setRelaunch(relaunch);
+    noteOsShutdown();
+    reportStartupFailure('renderer_gone');
+    noteRendererGone('crashed');
+    noteQuitting(NEVER_READY_QUIT_MS + 1);
+    vi.advanceTimersByTime(KILLED_GRACE_MS * 2);
+    expect(relaunch).not.toHaveBeenCalled();
+    expect(onDisk().failures).toBe(0);
+    expect(onDisk().pending).toBeNull();
+    expect(launch(1).mode).toBe('normal');
+  });
+
+  it("a renderer 'clean-exit' before ready is not a failed start", () => {
+    launch(0);
+    const relaunch = vi.fn();
+    setRelaunch(relaunch);
+    noteRendererGone('clean-exit');
+    expect(relaunch).not.toHaveBeenCalled();
+    expect(onDisk().failures).toBe(0);
+    expect(onDisk().pending?.mode).toBe('normal'); // still unjudged
+  });
+
+  it('a crashed renderer before ready counts at once', () => {
+    launch(0);
+    const relaunch = vi.fn();
+    setRelaunch(relaunch);
+    noteRendererGone('crashed');
+    expect(relaunch).toHaveBeenCalledOnce();
+    expect(onDisk().failures).toBe(1);
+    expect(onDisk().lastFailure?.kind).toBe('renderer_gone');
+  });
+
+  it("a 'killed' renderer counts after the grace when no OS shutdown follows", () => {
+    vi.useFakeTimers();
+    launch(0);
+    const relaunch = vi.fn();
+    setRelaunch(relaunch);
+    noteRendererGone('killed');
+    vi.advanceTimersByTime(KILLED_GRACE_MS - 1);
+    expect(relaunch).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(relaunch).toHaveBeenCalledOnce();
+    expect(onDisk().failures).toBe(1);
+  });
+
+  it("a 'killed' renderer followed by an OS shutdown is neutral", () => {
+    vi.useFakeTimers();
+    launch(0);
+    const relaunch = vi.fn();
+    setRelaunch(relaunch);
+    noteRendererGone('killed');
+    vi.advanceTimersByTime(KILLED_GRACE_MS / 2);
+    noteOsShutdown();
+    vi.advanceTimersByTime(KILLED_GRACE_MS * 2);
+    expect(relaunch).not.toHaveBeenCalled();
+    expect(onDisk().failures).toBe(0);
+    expect(onDisk().pending).toBeNull();
+  });
+
+  it("a 'killed' renderer during an OS shutdown is neutral", () => {
+    launch(0);
+    noteOsShutdown();
+    noteRendererGone('killed');
+    expect(onDisk().failures).toBe(0);
+  });
+
+  it('macOS: closing the window during the start, then quitting hours later, is neutral', () => {
+    launch(0);
+    noteMainWindowClosed(5_000);
+    noteQuitting(5 * 60 * 60 * 1000);
+    expect(onDisk().failures).toBe(0);
+    expect(onDisk().pending).toBeNull();
+  });
+
+  it('closing a window that never came up after 30 s counts once; session.json hears of it at the quit', () => {
+    launch(0);
+    const hook = vi.fn();
+    onStartFailed(hook);
+    noteMainWindowClosed(NEVER_READY_QUIT_MS + 1);
+    expect(onDisk().failures).toBe(1);
+    expect(onDisk().lastFailure?.kind).toBe('renderer_never_ready');
+    expect(hook).not.toHaveBeenCalled(); // the process keeps running on macOS
+    noteQuitting(NEVER_READY_QUIT_MS * 100);
+    expect(hook).toHaveBeenCalledWith('renderer_never_ready');
+    expect(onDisk().failures).toBe(1);
+  });
+
+  it('closing the window after ready is a success', () => {
+    launch(0);
+    noteRendererReady(1);
+    noteMainWindowClosed(2);
+    expect(onDisk().failures).toBe(0);
+    expect(onDisk().pending).toBeNull();
+  });
+});
+
+describe('bootContext: failed starts reach session.json (T280)', () => {
+  it('runs the start-failed hook BEFORE relaunching, once', () => {
+    launch(0);
+    const order: string[] = [];
+    onStartFailed((kind) => order.push(`hook:${kind}`));
+    setRelaunch(() => order.push('relaunch'));
+    reportStartupFailure('bootstrap');
+    reportStartupFailure('bootstrap');
+    noteQuitting(NEVER_READY_QUIT_MS + 1);
+    expect(order).toEqual(['hook:bootstrap', 'relaunch']);
+  });
+
+  it('runs it before opening safe mode in this process', () => {
+    launch(1);
+    reportStartupFailure('bootstrap'); // no relaunch hook: stays in process
+    _resetBootContextForTests();
+    launch(2);
+    const order: string[] = [];
+    onStartFailed((kind) => order.push(`hook:${kind}`));
+    setSafeModeEntry(() => order.push('safe'));
+    reportStartupFailure('renderer_gone');
+    expect(order).toEqual(['hook:renderer_gone', 'safe']);
+  });
+
+  it('runs it for a quit that never came up', () => {
+    launch(0);
+    const hook = vi.fn();
+    onStartFailed(hook);
+    noteQuitting(NEVER_READY_QUIT_MS + 1);
+    expect(hook).toHaveBeenCalledWith('renderer_never_ready');
+  });
+
+  it('not for a success, a neutral quit, an update hand-over or an OS shutdown', () => {
+    const hook = vi.fn();
+    launch(0);
+    onStartFailed(hook);
+    noteQuitting(1);
+    _resetBootContextForTests();
+    launch(0);
+    onStartFailed(hook);
+    noteNeutralExit();
+    _resetBootContextForTests();
+    launch(0);
+    onStartFailed(hook);
+    noteOsShutdown();
+    _resetBootContextForTests();
+    launch(0);
+    onStartFailed(hook);
+    noteRendererReady(1);
+    noteQuitting(2);
+    expect(hook).not.toHaveBeenCalled();
+  });
+
+  it('uses the boot fallback only when crash reporting never registered', () => {
+    launch(42);
+    const fallback = vi.fn();
+    setStartFailedFallback(fallback);
+    setRelaunch(() => {});
+    reportStartupFailure('module_load');
+    expect(fallback).toHaveBeenCalledWith('module_load', 42);
+    _resetBootContextForTests();
+    launch(43);
+    const fallback2 = vi.fn();
+    const hook = vi.fn();
+    setStartFailedFallback(fallback2);
+    onStartFailed(hook);
+    setRelaunch(() => {});
+    reportStartupFailure('bootstrap');
+    expect(hook).toHaveBeenCalledOnce();
+    expect(fallback2).not.toHaveBeenCalled();
+  });
+
+  it('dev (non-persistent) records nothing', () => {
+    initBootGuard({ userData: tmp, appVersion: '0.7.0', persistent: false, forceSafe: false, now: 0 });
+    const hook = vi.fn();
+    onStartFailed(hook);
+    reportStartupFailure('bootstrap');
+    noteQuitting(NEVER_READY_QUIT_MS + 1);
+    expect(hook).not.toHaveBeenCalled();
+  });
+
+  it('initBootGuard reports the unfinished previous normal start', () => {
+    expect(launch(10).unfinished).toBeNull();
+    _resetBootContextForTests();
+    // The first launch died without being judged.
+    expect(launch(20).unfinished).toEqual({ at: 10, appVersion: '0.7.0' });
+  });
+
+  it('an unfinished safe-mode run is not reported as a failed start', () => {
+    launch(10, true);
+    _resetBootContextForTests();
+    expect(launch(20).unfinished).toBeNull();
   });
 });

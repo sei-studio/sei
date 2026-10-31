@@ -199,6 +199,43 @@ export function createSessionMarker(
   };
 }
 
+/**
+ * Record a start that failed before crash reporting wrote its own marker
+ * (261031, T280), from boot.ts: the app graph failed to load, or the boot
+ * guard found a previous normal start that never finished and session.json
+ * has nothing from it (it died before whenReady). Without this, the failed
+ * start leaves the older marker in place, usually a clean `closed`, and
+ * vanishes from crash-free numbers.
+ *
+ * Writes `start_failed` for the launch that began at `startedAt`, unless
+ * the file already holds a marker from that launch or a later one (crash
+ * reporting got that far; its own state stands) or an older bad exit, which
+ * no launch has reported yet (kept: one report is better than swapping one
+ * for another). Returns whether it wrote.
+ */
+export function recordFailedStart(
+  file: string,
+  init: { sessionId: string; version: string; channel: string; packaged: boolean; startedAt: number; now?: number },
+): boolean {
+  const prev = readPreviousSession(file);
+  if (prev.marker && prev.marker.started_at >= init.startedAt) return false;
+  if (isBadExit(prev.prevExit)) return false;
+  const now = Math.max(init.now ?? Date.now(), init.startedAt);
+  return writeMarker(file, {
+    v: 1,
+    state: 'start_failed',
+    session_id: init.sessionId,
+    version: init.version,
+    channel: init.channel,
+    packaged: init.packaged,
+    started_at: init.startedAt,
+    // Nothing is known about how long it ran: uptime 0.
+    last_beat_at: init.startedAt,
+    surface: null,
+    ended_at: now,
+  });
+}
+
 /** The `app_unclean_exit` props for a previous session that ended badly (isBadExit). Shape only. */
 export function uncleanExitProps(marker: SessionMarker): Record<string, string | number | boolean | null> {
   return {

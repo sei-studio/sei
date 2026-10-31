@@ -90,6 +90,13 @@ const recoveryLog: ConfigRecoveryEvent[] = [];
 const recoveryListeners = new Set<(e: ConfigRecoveryEvent) => void>();
 /** Salvage is reported once per file per process (a newer-schema value would otherwise repeat on every read). */
 const salvageReported = new Set<string>();
+/**
+ * Damaged files that could not be repaired on disk (read-only folder, a
+ * locked file): neither moved aside nor rewritten, so every later read finds
+ * the same damage and recovers it again in memory. Reported once per file per
+ * process, not on every read.
+ */
+const stuckReported = new Set<string>();
 
 function noteRecovery(e: ConfigRecoveryEvent): void {
   if (e.kind === 'salvaged') {
@@ -130,6 +137,7 @@ export function _resetConfigRecoveryForTests(): void {
   recoveryLog.length = 0;
   recoveryListeners.clear();
   salvageReported.clear();
+  stuckReported.clear();
 }
 
 function isPlainObject(x: unknown): x is Record<string, unknown> {
@@ -334,14 +342,27 @@ function backupPath(target: string): string {
  */
 async function recoverDamaged(target: string, damagedText: string): Promise<ParsedConfig> {
   const now = Date.now();
-  await moveAside(target, QUARANTINE_PREFIX, now);
+  const moved = (await moveAside(target, QUARANTINE_PREFIX, now)) !== null;
+  let wrote = false;
+  // The damaged file is still in place: the next read recovers it again.
+  const report = (e: ConfigRecoveryEvent): void => {
+    const stuck = !moved && !wrote;
+    if (!stuck) {
+      stuckReported.delete(target);
+    } else {
+      if (stuckReported.has(target)) return;
+      stuckReported.add(target);
+      console.warn(`[sei] config recovery could not be saved (folder not writable?); serving it from memory`);
+    }
+    noteRecovery(e);
+  };
   let bakText: string | null = null;
   try { bakText = await readFile(backupPath(target), 'utf8'); } catch { /* no backup */ }
   const bakObj = bakText !== null ? parseObjectText(bakText) : null;
   if (bakObj && bakText !== null) {
     const parsed = parseConfigLenient(bakObj);
-    try { await writeFileDurable(target, bakText); } catch { /* served from memory; next write retries */ }
-    noteRecovery({ kind: 'restored_backup', file: target, at: now });
+    try { await writeFileDurable(target, bakText); wrote = true; } catch { /* served from memory; next write retries */ }
+    report({ kind: 'restored_backup', file: target, at: now });
     return parsed;
   }
   const identity = extractIdentityKeys(damagedText);
@@ -350,9 +371,9 @@ async function recoverDamaged(target: string, damagedText: string): Promise<Pars
   // Validated identity only: whatever failed its schema is dropped, not written.
   const clean: ParsedConfig = { config: parsed.config, raw: {}, salvaged: [] };
   if (keptIdentity) {
-    try { await writeFileDurable(target, serializeConfig(clean.config, null)); } catch { /* next write retries */ }
+    try { await writeFileDurable(target, serializeConfig(clean.config, null)); wrote = true; } catch { /* next write retries */ }
   }
-  noteRecovery({ kind: 'reset_defaults', file: target, keptIdentity, at: now });
+  report({ kind: 'reset_defaults', file: target, keptIdentity, at: now });
   return clean;
 }
 

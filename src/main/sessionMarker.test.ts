@@ -21,7 +21,7 @@ vi.mock('node:fs', async (importOriginal) => {
   };
 });
 
-import { createSessionMarker, readPreviousSession, uncleanExitProps } from './sessionMarker';
+import { createSessionMarker, readPreviousSession, recordFailedStart, uncleanExitProps } from './sessionMarker';
 
 let dir: string;
 beforeEach(() => {
@@ -79,5 +79,51 @@ describe('quit states', () => {
     const prev = readPreviousSession(file);
     expect(prev.prevExit).toBe('start_failed');
     expect(uncleanExitProps(prev.marker!).prev_exit).toBe('start_failed');
+  });
+});
+
+describe('recordFailedStart (T280: starts that died before crash reporting)', () => {
+  const failed = { sessionId: 'f1', version: '0.7.0', channel: 'beta', packaged: true, startedAt: 10_000, now: 10_500 };
+
+  it('replaces an older clean marker with start_failed, uptime 0', () => {
+    const file = path.join(dir, 'session.json');
+    const m = createSessionMarker(file, { sessionId: 's0', version: '0.6.11', channel: 'stable', packaged: true, now: 1_000 });
+    m.open();
+    m.close('closed', 2_000);
+    expect(recordFailedStart(file, failed)).toBe(true);
+    const prev = readPreviousSession(file);
+    expect(prev.prevExit).toBe('start_failed');
+    expect(uncleanExitProps(prev.marker!)).toMatchObject({ prev_exit: 'start_failed', prev_version: '0.7.0', prev_uptime_ms: 0 });
+  });
+
+  it('writes one when there is no marker at all (first launch died)', () => {
+    const file = path.join(dir, 'session.json');
+    expect(recordFailedStart(file, failed)).toBe(true);
+    expect(readPreviousSession(file).prevExit).toBe('start_failed');
+  });
+
+  it('leaves a marker from that launch (or later) alone: crash reporting got that far', () => {
+    const file = path.join(dir, 'session.json');
+    const m = createSessionMarker(file, { sessionId: 's1', version: '0.7.0', channel: 'beta', packaged: true, now: 10_001 });
+    m.open();
+    expect(recordFailedStart(file, failed)).toBe(false);
+    expect(readPreviousSession(file).prevExit).toBe('unclean');
+  });
+
+  it('keeps an older bad exit no launch has reported yet', () => {
+    const file = path.join(dir, 'session.json');
+    const m = createSessionMarker(file, { sessionId: 's0', version: '0.7.0', channel: 'beta', packaged: true, now: 1_000 });
+    m.open(); // crashed
+    expect(recordFailedStart(file, failed)).toBe(false);
+    expect(readPreviousSession(file).marker?.session_id).toBe('s0');
+  });
+
+  it('replaces an OS-shutdown marker', () => {
+    const file = path.join(dir, 'session.json');
+    const m = createSessionMarker(file, { sessionId: 's0', version: '0.7.0', channel: 'beta', packaged: true, now: 1_000 });
+    m.open();
+    m.close('os_shutdown', 2_000);
+    expect(recordFailedStart(file, failed)).toBe(true);
+    expect(readPreviousSession(file).prevExit).toBe('start_failed');
   });
 });

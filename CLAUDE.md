@@ -3293,7 +3293,8 @@ no minidump upload. `initCrashReporting()` runs first in whenReady:
   `closed` at `quit` (after index.ts's teardown, which ends in app.exit(0)),
   `os_shutdown` on Windows `session-end` or powerMonitor `shutdown`, and
   `start_failed` when bootstrap threw (`markStartFailed()` before app.exit(1);
-  a nonzero `quit` exit code records it too). The next launch reads it before
+  a nonzero `quit` exit code records it too) or the boot guard judged the
+  start failed (see "Crash analytics seam" under Boot safety). The next launch reads it before
   writing its own: `open` = `unclean`, `closing` = `quit_hang` (the teardown
   hung and was killed), `start_failed` = `start_failed`; all three send
   `app_unclean_exit {prev_exit, prev_session_id, prev_version, prev_channel,
@@ -3737,9 +3738,25 @@ A build that cannot start must still be able to update itself, and a damaged
   relaunches itself; the guard picks safe mode once `FAILURE_THRESHOLD` (2)
   failures are in a row. A new app version resets the count, safe-mode runs
   never count, update hand-overs (`restartIntoUpdate`, `restartIntoVelopack`,
-  a Velopack apply at launch) are neutral (`noteNeutralExit`). Dev counts
+  a Velopack apply at launch) are neutral (`noteNeutralExit`), and so is an
+  OS shutdown or log-off (`noteOsShutdown`, from crashReporting.ts's
+  `session-end` / powerMonitor `shutdown`). A renderer gone with reason
+  `clean-exit` never counts; `killed` counts only if no OS shutdown shows up
+  within `KILLED_GRACE_MS` (3 s) (`rendererGoneVerdict`). The main window
+  closing before the start is judged judges it then, by the quit rule
+  (`noteMainWindowClosed`): on macOS a window closed during the splash and a
+  quit hours later is neutral. Dev counts
   nothing unless `SEI_BOOT_GUARD=1`; `--safe-mode` or `SEI_SAFE_MODE=1`
   forces safe mode anywhere.
+- **Crash analytics seam (T280).** boot-state.json and session.json stay
+  separate files. A start the guard judges failed is written `start_failed`
+  to session.json BEFORE Sei relaunches (`app.exit(0)` would otherwise read
+  as a clean quit), opens safe mode in-process, or quits never-ready
+  (`onStartFailed`, registered by crashReporting.ts `linkBootGuard`). Starts
+  that die before crash reporting runs are written by boot.ts
+  (`recordFailedStart`): the previous normal start left pending with no
+  marker of its own, and an app graph that failed to load. Safe-mode runs
+  write no marker.
 - **Safe mode** never loads the app graph: no games, native addons, overlays,
   desktop companion, voice, bot, auth or analytics. It runs the updater
   (`initUpdater({safeMode: true})`, electron-updater or Velopack; the NSIS to
@@ -3752,12 +3769,16 @@ A build that cannot start must still be able to update itself, and a damaged
   profile, keeps `RESET_KEEP_KEYS` identity, the old file set aside as
   `config.before-reset-<ts>.json`), Open logs folder. Copy is en + zh.
   Updater pushes are held until the renderer is listening (ready ping, with
-  fallback flushes) so an early "update available" is not lost.
+  fallback flushes) so an early "update available" is not lost. A check
+  with no updater event for `SAFE_MODE_CHECK_TIMEOUT_MS` (30 s) gives the
+  button back with a plain "no answer" line.
 - **Settings recovery** (`configStore.ts`, header comment has the details):
   durable writes (`durableWrite.ts`: temp + fsync + rename), last-known-good
   `config.json.bak`, damaged files quarantined as
   `config.corrupt-<ts>.json` (newest 3 kept) then restored from the backup,
-  else rebuilt from readable identity keys, else defaults. Unknown keys from
+  else rebuilt from readable identity keys, else defaults. A damaged file
+  that cannot be moved or rewritten (read-only folder) is recovered in
+  memory on every read but reported once per process. Unknown keys from
   a newer build are kept on every write; `schema_version` is stamped and
   migrations are idempotent. Logs carry kinds and key names, never values.
 - **Analytics** (packaged only, through the normal helper so opt-out holds):

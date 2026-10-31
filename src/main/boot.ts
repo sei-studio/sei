@@ -18,6 +18,11 @@
  *      counts as a failed start.
  *      Safe mode: the app graph is never loaded. The updater and the small
  *      safe-mode window (safeMode/) are all that run.
+ *   5. Failed starts reach crash analytics too (`<userData>/session.json`,
+ *      sessionMarker.ts): crash reporting records the ones it sees
+ *      (bootContext onStartFailed); this file records the ones it cannot, a
+ *      start that died before whenReady and an app graph that failed to
+ *      load (recordFailedStart). Safe-mode runs write no session marker.
  *
  * Anything imported statically here is loaded in safe mode too, so keep this
  * list short and keep heavy modules (games, auth, native addons) behind the
@@ -31,6 +36,7 @@ import path from 'node:path';
 import {
   focusableWindow,
   initBootGuard,
+  setStartFailedFallback,
   isMainWindowSender,
   noteNeutralExit,
   noteQuitting,
@@ -42,6 +48,8 @@ import {
   updaterWindow,
 } from './bootContext';
 import { safeModeForced, type SafeModeReason } from './bootGuard';
+import { bakedChannel, processSessionId, resolveChannel, uuidv7 } from './analyticsContext';
+import { recordFailedStart, SESSION_MARKER_FILE } from './sessionMarker';
 import { noteLaunch } from './firstLaunch';
 import { flushUpdatePushes, initUpdater } from './updater';
 import { applyPendingAtLaunch } from './velopackUpdater';
@@ -88,6 +96,8 @@ async function start(): Promise<void> {
     persistent: app.isPackaged || process.env.SEI_BOOT_GUARD === '1',
     forceSafe: safeModeForced(process.argv, process.env),
   });
+
+  recordFailedStartsForCrashAnalytics(boot.unfinished);
 
   setSafeWindowGetter(safeModeWindow);
   // A failed start (bootstrap threw, the renderer died or never loaded)
@@ -145,6 +155,38 @@ async function start(): Promise<void> {
       app.exit(1);
     });
   }
+}
+
+/**
+ * session.json is crash reporting's (crashReporting.ts), which starts in the
+ * app's whenReady. Two failed starts never get that far, so they are written
+ * here: the previous normal start, if it never finished and left no marker
+ * of its own (it died before whenReady), and this start, if the app graph
+ * fails to load (the fallback runs only when crash reporting never
+ * registered). Both run in safe mode too: the start that failed before a
+ * safe-mode run still counts. Never throws.
+ */
+function recordFailedStartsForCrashAnalytics(unfinished: { at: number; appVersion: string } | null): void {
+  const file = path.join(app.getPath('userData'), SESSION_MARKER_FILE);
+  const base = (version: string) => ({
+    version,
+    channel: resolveChannel({ packaged: app.isPackaged, baked: bakedChannel(), version }),
+    packaged: app.isPackaged,
+  });
+  try {
+    if (unfinished) {
+      recordFailedStart(file, { ...base(unfinished.appVersion), sessionId: uuidv7(unfinished.at), startedAt: unfinished.at });
+    }
+  } catch {
+    /* crash analytics never breaks a start */
+  }
+  setStartFailedFallback((_kind, startedAt) => {
+    try {
+      recordFailedStart(file, { ...base(app.getVersion()), sessionId: processSessionId(), startedAt });
+    } catch {
+      /* ignore */
+    }
+  });
 }
 
 function startSafeMode(reason: SafeModeReason): void {
