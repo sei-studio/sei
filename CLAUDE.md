@@ -3247,16 +3247,37 @@ read). Rules in `src/main/analyticsContext.ts` (pure, tested):
 - **Send gate:** `initAnalytics` creates no client unless the channel is
   stable or beta, or `SEI_ANALYTICS_DEV=1` is set at runtime. Tests that need a
   live (mocked) client set it in `vi.hoisted`.
-- **Identity:** the anonymous `distinct_id` is `device_id`, a salted sha256 of
-  the device-global `device-id.json` id (never the raw id: it gates trials).
-  The old per-profile `analytics_install_id` is aliased into it once
-  (`<userData>/analytics-aliases.json`); sign-in aliases the device id into the
-  account, and `device_id` stays a property after identify.
+- **Identity model (reworked after review).** `distinct_id` = the Supabase
+  user id when signed in; else the profile's EXISTING `analytics_install_id`
+  (every install from before 261031); else `device_id`, a salted sha256 of the
+  device-global `device-id.json` id (never the raw id: it gates trials). A new
+  install id is minted only when the device id cannot be read. `device_id`
+  rides on every event as a property, whatever the distinct id. Nothing is
+  aliased at init. Sign-in (`identifyUser`) sends `alias(user <- anonymous
+  id)` then `identify(user)`, the pre-261031 flow. Rules PostHog enforces and
+  this keeps: the anonymous id is only ever alias()'s `alias` argument, never
+  its `distinctId` and never identified, so its person stays unidentified and
+  merges into the account's person, new or existing. An id that was alias()'s
+  `distinctId` cannot later be an alias, and an identified person never merges
+  into another: the first 261031 draft aliased `device <- install` at init,
+  which identified the device person and orphaned day-0 events
+  (`installer_first_launch`, onboarding) from every later sign-in to an
+  existing account. A second account on one device: `<userData>/
+  analytics-identity.json` records which account each anonymous id was merged
+  into, and a different account gets `identify` only, because aliasing an
+  already-merged id into a NEW account adds that account to the first one's
+  person. Sequences are asserted against a model of PostHog's merge rules in
+  `analytics.identity.test.ts`; `scripts/posthog-identity-check.mjs` replays
+  them against a SCRATCH project by hand (refuses the prod key).
 - `checkout_completed {kind: subscription|upgrade|topup, tier, from_tier,
   credits_added?, checkout_opened_this_session}` fires when two credits
   snapshots of the same account in a row show a higher tier or more top-up
   credits (`notePlanSnapshot`, fed by `proxyClient.creditsGet`). It is what the
-  app learned, not the payment; Supabase ledger stays the source of truth.
+  app learned, not the payment; Supabase ledger stays the source of truth. A
+  tier rise out of `past_due`/`unpaid` is a recovered payment (entitled_tier
+  reads free while it fails) and does not count; each read carries a `seq`
+  taken before its network call, and a read older than one already applied is
+  dropped.
   `plan_changed` fires on a successful change only.
 - Watch together: `backseat_started`/`_ended` carry `game` (the tile id, or a
   game matched from the shared window title against the closed list in
@@ -3268,14 +3289,22 @@ read). Rules in `src/main/analyticsContext.ts` (pure, tested):
 **Crash reporting (261031, T278, `src/main/crashReporting.ts`).** No Sentry,
 no minidump upload. `initCrashReporting()` runs first in whenReady:
 - `<userData>/session.json` is written `open` at launch (heartbeat every 60s,
-  plus the surface in use and a hung-window flag) and rewritten `closed` on
-  before-quit/quit, `os_shutdown` on Windows `session-end` or powerMonitor
-  `shutdown`. The next launch reads it before writing its own: still `open` =
-  unclean exit, reported as `app_unclean_exit {prev_session_id, prev_version,
-  prev_channel, prev_uptime_ms, prev_surface, prev_renderer_unresponsive,
-  prev_crash_kind}`. `app_opened` carries `prev_exit` (`clean`/`unclean`/
+  plus the surface in use and a hung-window flag), `closing` at before-quit,
+  `closed` at `quit` (after index.ts's teardown, which ends in app.exit(0)),
+  `os_shutdown` on Windows `session-end` or powerMonitor `shutdown`, and
+  `start_failed` when bootstrap threw (`markStartFailed()` before app.exit(1);
+  a nonzero `quit` exit code records it too). The next launch reads it before
+  writing its own: `open` = `unclean`, `closing` = `quit_hang` (the teardown
+  hung and was killed), `start_failed` = `start_failed`; all three send
+  `app_unclean_exit {prev_exit, prev_session_id, prev_version, prev_channel,
+  prev_uptime_ms, prev_surface, prev_renderer_unresponsive, prev_crash_kind,
+  prev_quit_wait_ms (quit_hang)}`, so crashfree.mjs counts them. `app_opened`
+  carries `prev_exit` (`clean`/`unclean`/`quit_hang`/`start_failed`/
   `os_shutdown`/`none`) and `prev_version`. Do NOT add session.json to
-  `PRIOR_STATE_ENTRIES`: it exists before noteLaunch on a fresh install.
+  `PRIOR_STATE_ENTRIES`: it exists before noteLaunch on a fresh install. The
+  skin and auth-loopback servers stop through `stopHttpServer` (idle
+  keep-alive sockets closed, everything destroyed after 3 s), so a socket can
+  no longer hold the quit open.
 - `app_crash {kind: main_uncaught|renderer_gone|child_gone, process_type,
   reason, exit_code, page, service, error_name, fingerprint, top_frame,
   surface, uptime_ms}`, `app_error` (main unhandled rejection, same shape) and
