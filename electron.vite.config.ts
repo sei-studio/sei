@@ -33,6 +33,11 @@ export default defineConfig(({ mode }) => {
       // signed by (velopackVerify.ts). release.yml exports it only when Azure
       // signing is fully configured; unset = an unsigned build, check off.
       'import.meta.env.SEI_WIN_PUBLISHER': JSON.stringify(env.SEI_WIN_PUBLISHER ?? ''),
+      // 261031 (T278): the release channel, `sei-channel=stable|beta`, set by
+      // release.yml on a tag build only. Any other build (dev, a local
+      // dist:*, the spike and dry-run workflows) bakes '' and reads as a
+      // dev/test channel, which sends no analytics (analyticsContext.ts).
+      'import.meta.env.SEI_RELEASE_CHANNEL': JSON.stringify(env.SEI_RELEASE_CHANNEL ?? ''),
       // Phase 13 — proxy host. Read at main-process module load via
       // process.env.* (proxyClient.ts, botSupervisor.ts). Checkout + portal
       // sessions are minted server-side by the proxy (Polar migration 2026-06),

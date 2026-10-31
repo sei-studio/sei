@@ -31,6 +31,7 @@ import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { registerFacepackIpc } from './facepack/facepackIpc';
 import { isAnalyticsActive, shutdownAnalytics, capture, captureAppQuit, noteSurface } from './analytics';
 import { reportOnboardingAbandoned } from './onboardingFunnel';
+import { initCrashReporting, appOpenedCrashProps, markStartFailed } from './crashReporting';
 import { notePreGateFailure, clearSummonBlock, clearSummonBlocksOfClass } from './summonGuard';
 import { createBotSupervisor, SUMMON_CANCELLED } from './botSupervisor';
 import { registerGameModule, getGameModule, listGameModules } from './games';
@@ -1495,7 +1496,8 @@ async function bootstrap(): Promise<void> {
     if (takeInstallerFirstLaunch()) {
       capture('installer_first_launch', installerFirstLaunchProps(currentFirstLaunchEnv()));
     }
-    capture('app_opened');
+    // prev_exit / prev_version: how the previous session ended (crashReporting.ts).
+    capture('app_opened', appOpenedCrashProps());
     // Boot safety (261031). Packaged only: dev never counts starts.
     if (app.isPackaged) {
       const safe = takeSafeModeReport();
@@ -1594,6 +1596,11 @@ async function bootstrap(): Promise<void> {
 // module is only loaded by the instance that holds the lock.
 {
   app.whenReady().then(() => {
+    // 261031 (T278): crash, hang and unclean-exit reporting. First, so the
+    // session marker and the handlers cover everything after it. Synchronous,
+    // never throws. See crashReporting.ts.
+    initCrashReporting();
+
     // If a prior version's "Move to Applications" prompt moved us here from
     // ~/Downloads, trash the leftover copy now that we're running from
     // /Applications. The prompt itself was retired when the macOS download
@@ -1630,6 +1637,9 @@ async function bootstrap(): Promise<void> {
         bootstrap().catch((err) => {
           logger.error(`bootstrap failed: ${(err as Error).message}`);
           markProfileScopeReady();
+          // A failed start, not a clean quit (crashReporting.ts). Before the
+          // boot guard: in a packaged build it relaunches Sei at once.
+          markStartFailed();
           // Packaged: counted, and Sei starts again (safe mode after two in a
           // row). Dev: logged only, then exit as before.
           reportStartupFailure('bootstrap', err);
@@ -1709,8 +1719,10 @@ async function bootstrap(): Promise<void> {
     // Draw!: clear turn timers and abort any in-flight guess/draw call.
     try { (await import('./draw/drawService')).shutdownDraw(); } catch { /* best-effort */ }
     try { for (const mod of listGameModules()) mod.watcher.stop(); } catch { /* best-effort */ }
-    // Close the skin server's TCP listener so the port is
-    // freed promptly. server.close drains in-flight requests before resolving.
+    // Close the skin server's TCP listener so the port is freed promptly.
+    // Bounded (261031): stop() drops idle keep-alive sockets and gives up
+    // after SERVER_STOP_TIMEOUT_MS (httpServerStop.ts); before, a keep-alive
+    // socket could hold server.close, and so the quit, open forever.
     try { if (skinServer) await skinServer.stop(); } catch { /* best-effort */ }
     // Same for the auth loopback callback server — release port 54321.
     try { if (loopbackAuthServer) await loopbackAuthServer.stop(); } catch { /* best-effort */ }

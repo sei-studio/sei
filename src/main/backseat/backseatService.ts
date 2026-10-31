@@ -86,6 +86,7 @@ import { actFlagFromEnv, CONTROL_TOOL, controlCall, controlEventNote } from '../
 import { ControlGate, type ControlOrigin } from '../computerUse/controlPolicy';
 import type { ActOutcome } from '../computerUse/actLoop';
 import { loadAnalytics } from '../lazyAnalytics';
+import { WatchedTally, classifyWatched, watchedProps } from './watchedGame';
 
 /**
  * Tick priority. Strictly ordered: a tick preempts an in-flight turn only when
@@ -242,6 +243,8 @@ interface Session {
   lastErrorClass: string | null;
   /** 261023: when the companion's first line went out (null = never). */
   firstLineAt: number | null;
+  /** 261031 (T278): what the share showed, by window title, for the analytics `game`. */
+  watched: WatchedTally;
   /** 261023: ms between this character's previous share ending and this one
    *  starting, when that share had her talking and ended under
    *  RESUME_WINDOW_MS ago. Set = the opening look is a resume, not a hello. */
@@ -395,7 +398,9 @@ export async function startBackseat(
     lastErrorClass: null,
     firstLineAt: null,
     resumedAfterMs: resumedAfterMs(lastEnded.get(characterId), Date.now()),
+    watched: new WatchedTally(),
   };
+  s.watched.note(sourceName);
   if (!startGuard.stillValid()) {
     void log.close().catch(() => {});
     throw accountSwitchingError();
@@ -445,10 +450,10 @@ export async function startBackseat(
         ...restart,
         source_kind: sourceId.startsWith('screen:') ? 'screen' : 'window',
         // 260929: which backseat game tile started it, if any. Shape only:
-        // the id, never the game's name.
-        ...(game
-          ? { game: game.def.id, has_specific_game: !!gameSel?.universeId }
-          : {}),
+        // the id, never the game's name. 261031: otherwise the game the
+        // shared window's title names, from a closed list (watchedGame.ts).
+        ...watchedProps(game?.def.id ?? null, classifyWatched(sourceName)),
+        ...(game ? { has_specific_game: !!gameSel?.universeId } : {}),
       });
     } catch {
       /* analytics is never load-bearing */
@@ -541,7 +546,7 @@ async function endBackseatSession(
         duration_ms: durationMs,
         mode: s.state.mode,
         lines: lineCount,
-        ...(s.game ? { game: s.game.def.id } : {}),
+        ...watchedProps(s.game?.def.id ?? null, s.watched.top()),
         reason,
         // 261023: what the session was like, by shape: how long the first
         // line took (absent when there was none) and how many turns failed.
@@ -765,6 +770,9 @@ export async function handleTick(tick: BackseatTick): Promise<BackseatTickOutcom
   const s = sessions.get(tick.characterId);
   if (!s) return 'dropped';
   if (s.state.phase === 'ended') return 'dropped';
+  // 261031: every tick's window title counts toward what the session showed,
+  // even one dropped below (the title is what was on screen either way).
+  if (s.state.phase !== 'paused') s.watched.note(tick.shareLabel);
   // Paused holds everything, including user ticks: the overlay's chat input is
   // disabled while paused, so a user tick arriving here is a race with the
   // button, and honoring it would speak right after the player asked for quiet.

@@ -8,6 +8,11 @@
  * runs init → opt-out → consent in order.
  */
 import { describe, it, expect, vi } from 'vitest';
+// 261031: tests run unpackaged (channel 'dev'), which sends nothing unless
+// SEI_ANALYTICS_DEV is set (analyticsContext.ts send gate).
+vi.hoisted(() => {
+  process.env.SEI_ANALYTICS_DEV = '1';
+});
 
 const { captureSpy, configState } = vi.hoisted(() => ({
   captureSpy: vi.fn(),

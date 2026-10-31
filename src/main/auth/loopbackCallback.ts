@@ -49,6 +49,7 @@
  * by localhost:3000 (Supabase's default Site URL) where nothing listens.
  */
 import http from 'node:http';
+import { stopHttpServer } from '../httpServerStop';
 import { URL } from 'node:url';
 import type { BrowserWindow } from 'electron';
 import { getClient } from './supabaseClient';
@@ -173,10 +174,8 @@ export async function startLoopbackCallback(opts: {
   return {
     port: LOOPBACK_PORT,
     url: LOOPBACK_CALLBACK_URL,
-    stop: () =>
-      new Promise<void>((resolve) => {
-        server.close(() => resolve());
-      }),
+    // Bounded (261031): a keep-alive socket must not hang the quit.
+    stop: () => stopHttpServer(server),
   };
 }
 
