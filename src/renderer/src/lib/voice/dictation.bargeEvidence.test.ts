@@ -456,20 +456,41 @@ describe('false cuts (261031)', () => {
     expect(r.utterances).toEqual([]);
   });
 
-  it('with transcription down, sustained talking still cuts at the deadline', async () => {
+  it('word-only: with transcription slow, a loud voice held past the deadline does not cut her', async () => {
+    // 261101: this used to cut at the deadline on energy alone (most frames
+    // since the duck voiced). The same energy is a loud game or her own echo
+    // as often as a player, so only a word may stop her now.
     const r = await runScene({
       share: false,
       room: () => QUIET,
       echo: 0.01,
       lineFrames: 80,
       gapFrames: 300,
-      totalFrames: 120,
-      player: (i) => (i >= 40 && i < 70 ? VOICE : 0),
+      totalFrames: 160,
+      player: (i) => (i >= 40 && i < 75 ? VOICE * 2 : 0),
       stt: () => null,
       latencyFrames: 1000, // never answers inside the scene
     });
-    expect(r.suspects).toBe(1);
-    expect(r.cuts).toBe(1);
+    expect(r.suspects).toBeGreaterThan(0);
+    expect(r.cuts).toBe(0);
+    expect(r.utterances).toEqual([]);
+  });
+
+  it('word-only: a word that comes back after the deadline is delivered as one turn, without a cut', async () => {
+    const r = await runScene({
+      share: false,
+      room: () => QUIET,
+      echo: 0.01,
+      lineFrames: 80,
+      gapFrames: 300,
+      totalFrames: 200,
+      // Talking through the 1.8 s deadline (frame ~54), then quiet.
+      player: (i) => (i >= 40 && i < 56 ? VOICE * 2 : 0),
+      playerText: 'wait, hold on',
+      latencyFrames: 25, // ~3.2 s round trip, past the 1.8 s deadline
+    });
+    expect(r.cuts).toBe(0);
+    expect(r.utterances).toEqual(['wait, hold on']);
   });
 
   it('with transcription down, one loud frame on the deadline no longer decides it', async () => {
