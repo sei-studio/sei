@@ -105,17 +105,81 @@ export function bestLostWeapon(lost) {
   return best
 }
 
+// Dropped items despawn 5 minutes after they land (vanilla).
+export const DROP_DESPAWN_MS = 5 * 60_000
+
+const finitePos = (p) => (p && Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z)
+  ? { x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z) }
+  : null)
+
+// 261031 (pass 33 review): the dimension the drop lies in. A death in the
+// Nether respawns her in the Overworld, where the Nether coordinates and the
+// distance to them mean nothing.
+export const dimName = (raw) => {
+  const s = String(raw ?? '').toLowerCase()
+  if (!s) return null
+  if (s.includes('nether')) return 'the_nether'
+  if (s.includes('end')) return 'the_end'
+  return 'overworld'
+}
+const DIM_LABEL = { the_nether: 'the Nether', the_end: 'the End', overworld: 'the Overworld' }
+export const dimLabel = (d) => DIM_LABEL[d] ?? d
+
 /**
- * Mark the bot when a death dropped a weapon. A death while still marked
- * (she died again before getting one back) restarts the window. Returns the
- * weapon or null.
+ * Mark the bot when a death dropped a weapon, with where it dropped (`pos`,
+ * the death spot). A death while still marked (she died again before getting
+ * one back) restarts the window and keeps the first drop's spot and time:
+ * the weapon is still lying there. Returns the weapon or null.
  */
-export function noteLostWeapon(bot, lost, now = Date.now()) {
+export function noteLostWeapon(bot, lost, now = Date.now(), pos = null, dim = null) {
   if (!bot) return null
   const weapon = bestLostWeapon(lost)
-  if (weapon) bot._seiLostWeapon = { weapon, at: now }
+  if (weapon) bot._seiLostWeapon = { weapon, at: now, droppedAt: now, pos: finitePos(pos), dim: dimName(dim) }
   else if (lostWeaponUnarmed(bot, now)) bot._seiLostWeapon = { ...bot._seiLostWeapon, at: now }
   return weapon
+}
+
+/**
+ * 261031 (quality pass 33): where the lost weapon lies, while she is in the
+ * lost-weapon state. { weapon, pos (or null), dist (blocks from her now, or
+ * null), minutesLeft (0 once it has despawned) }, or null outside the state.
+ */
+export function lostWeaponDrop(bot, now = Date.now()) {
+  if (!lostWeaponUnarmed(bot, now)) return null
+  const m = bot._seiLostWeapon
+  const left = (m.droppedAt ?? m.at) + DROP_DESPAWN_MS - now
+  const minutesLeft = left > 0 ? Math.max(1, Math.ceil(left / 60_000)) : 0
+  const here = dimName(bot.game?.dimension)
+  const otherDim = m.dim && here && m.dim !== here ? m.dim : null
+  let dist = null
+  const me = bot.entity?.position
+  if (!otherDim && m.pos && me && Number.isFinite(me.x) && Number.isFinite(me.y) && Number.isFinite(me.z)) {
+    dist = Math.round(Math.hypot(me.x - m.pos.x, me.y - m.pos.y, me.z - m.pos.z))
+  }
+  return { weapon: m.weapon, pos: m.pos ?? null, dist, minutesLeft, ...(otherDim ? { otherDim } : {}) }
+}
+
+/**
+ * 261031 (quality pass 33): the snapshot's `weapon:` line, only in the
+ * lost-weapon state (every other snapshot is unchanged). The combat_night
+ * eval after pass 31: she was told to get away and say she had no weapon, so
+ * she walked away from her sword lying a few blocks off, said "no sword" in
+ * almost every line and died 7 and 15 times in two runs. Every turn now sees
+ * where it lies and how to get it back.
+ */
+export function lostWeaponLine(bot, now = Date.now()) {
+  const d = lostWeaponDrop(bot, now)
+  if (!d) return null
+  if (d.minutesLeft === 0) return `weapon: none. The ${d.weapon} you dropped when you died has despawned; craft a new sword when you can.`
+  if (d.otherDim) {
+    const at = d.pos ? ` @${d.pos.x},${d.pos.y},${d.pos.z}` : ''
+    return `weapon: none. Your ${d.weapon} is on the ground where you died in ${dimLabel(d.otherDim)}${at} for about ${d.minutesLeft === 1 ? '1 more minute' : `${d.minutesLeft} more minutes`}. You are not in that dimension now, so you cannot pick it up from here.`
+  }
+  const where = d.pos
+    ? ` @${d.pos.x},${d.pos.y},${d.pos.z}${d.dist != null ? ` (${d.dist} blocks from you)` : ''}`
+    : ''
+  const mins = d.minutesLeft === 1 ? 'about 1 more minute' : `about ${d.minutesLeft} more minutes`
+  return `weapon: none. Your ${d.weapon} is on the ground where you died${where} for ${mins}. pickup with item "${d.weapon}" and maxDistance 32 walks onto it; if it is farther than that, goTo the spot first.`
 }
 
 /** True while she lost a weapon on death and owns none again. */

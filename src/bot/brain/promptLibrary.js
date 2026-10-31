@@ -352,7 +352,13 @@ export const ATTACKED_ADDENDUM_MOB = `Interrupted — {label} hit you. TELL THE 
 // fought bare-handed and died again (13 of 18 deaths in two runs came unarmed).
 // The text is the mob framing above up to its " Then:" advice, with this advice
 // in its place (so the reaction half is edited in one place).
-export const ATTACKED_UNARMED_THEN = ` Then: you lost your weapon when you died, so your swings do 1 damage and most mobs take about 20 of them while each of their hits costs you 2 or 3 health. Unless the player asks you to fight it, do not stand and fight it: get away from it with follow() on the player or goTo() somewhere away from it, and tell them you have no weapon.`
+// 261031 (quality pass 33): the get-away advice above sent her after the
+// player (where the mobs were) and away from her sword lying a few blocks off,
+// and "tell them you have no weapon" on every hit made "no sword" most of her
+// lines (combat_night eval after pass 31: 7 and 15 deaths in two runs).
+// Getting the weapon back is now the first step (the snapshot's weapon: line
+// says where it lies, weaponSelect lostWeaponLine).
+export const ATTACKED_UNARMED_THEN = ` Then: you have no weapon since you died, and your swings do 1 damage, so do not stand and fight it. Getting your weapon back comes first: the weapon line in your snapshot says where it lies and how to pick it up, and if you are already on your way to it, let that run. If it has despawned, keep away from the mobs and keep the player with you.`
 export const attackedMobUnarmed = () => {
   const cut = ATTACKED_ADDENDUM_MOB.indexOf(' Then:')
   return (cut >= 0 ? ATTACKED_ADDENDUM_MOB.slice(0, cut) : ATTACKED_ADDENDUM_MOB) + ATTACKED_UNARMED_THEN
@@ -424,7 +430,10 @@ export const DEFEND_ADDENDUM_ACTION = `{owner} is being hit by {label}{dist}, th
 // Both said to attackEntity the mob, and after a death took her sword she ran at
 // it bare-handed (the river drowned in the combat_night eval) and died again.
 // `data.unarmed` is set when the turn is written (adapter eventAddendum).
-export const DEFEND_UNARMED_TEXT = `You lost your weapon when you died, so your swings do 1 damage and most mobs take about 20 of them, and a fight like that usually ends with you dead. Unless they ask you to fight it, do not attackEntity it. Say one short line that tells them you have no weapon, and get away from it together (follow them, or goTo somewhere away from it), or place a block between them and it.`
+// 261031 (quality pass 33): "place a block between them and it" with an empty
+// bag gave dirt walls she did not have, and with no plan of her own she told
+// the scared player to fight for her. Getting the weapon back comes first.
+export const DEFEND_UNARMED_TEXT = `You have no weapon since you died, and your swings do 1 damage, so do not attackEntity it. Getting your weapon back comes first: the weapon line in your snapshot says where it lies and how to pick it up, and if you are already on your way to it, let that run. If it has despawned, stay with {owner} and lead them away from the mobs. You are the one looking after them, so tell them what you are doing in one short line rather than asking them to fight it.`
 export const DEFEND_ADDENDUM_THREAT_UNARMED = `{closing} {owner}: the nearest is {ownerDist} blocks from them and {dist} blocks from you.{hp} ` + DEFEND_UNARMED_TEXT
 export const DEFEND_ADDENDUM_HELD_UNARMED = `{owner} is being hit by {label}{dist}. ` + DEFEND_UNARMED_TEXT
 export const DEFEND_ADDENDUM = (label, data) => {

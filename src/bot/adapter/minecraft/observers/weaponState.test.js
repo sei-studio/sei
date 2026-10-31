@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { Vec3 } from 'vec3'
 import { withWeaponState } from './weaponState.js'
-import { noteLostWeapon, lostWeaponUnarmed, LOST_WEAPON_MS } from '../behaviors/weaponSelect.js'
+import { noteLostWeapon, lostWeaponUnarmed, lostWeaponDrop, lostWeaponLine, LOST_WEAPON_MS, DROP_DESPAWN_MS } from '../behaviors/weaponSelect.js'
 import { staleAttackerText } from './staleAttacker.js'
 import { trackEntityDeaths } from './entities.js'
 import {
@@ -97,8 +97,13 @@ describe('unarmed event text', () => {
     const armed = eventAddendum('sei:attacked', data)
     const bare = eventAddendum('sei:attacked', { ...data, unarmed: true })
     expect(armed).toMatch(/Call attackEntity on it now/)
-    expect(bare).toMatch(/^2 hostiles are closing in on Alex: the nearest is 8 blocks from them and 11 blocks from you\. You lost your weapon when you died/)
-    expect(bare).toMatch(/Unless they ask you to fight it, do not attackEntity it/)
+    expect(bare).toMatch(/^2 hostiles are closing in on Alex: the nearest is 8 blocks from them and 11 blocks from you\. You have no weapon since you died/)
+    expect(bare).toMatch(/do not attackEntity it\. Getting your weapon back comes first/)
+    // 261031 (pass 33): no block advice (she had none and "placed" dirt), and
+    // the owner name is filled everywhere.
+    expect(bare).not.toMatch(/place a block/)
+    expect(bare).toMatch(/stay with Alex and lead them away/)
+    expect(bare).not.toMatch(/\{owner\}/)
     expect(bare).not.toMatch(/—/)
   })
 
@@ -106,7 +111,7 @@ describe('unarmed event text', () => {
     const data = { attackerLabel: 'zombie', attackerKind: 'defend', ownerLabel: 'Alex', distance: 5, engaged: false }
     expect(eventAddendum('sei:attacked', data)).toMatch(/attackEntity it to pull it off them/)
     const bare = eventAddendum('sei:attacked', { ...data, unarmed: true })
-    expect(bare).toMatch(/^Alex is being hit by zombie \(5 blocks from you\)\. You lost your weapon when you died/)
+    expect(bare).toMatch(/^Alex is being hit by zombie \(5 blocks from you\)\. You have no weapon since you died/)
     const action = { ...data, engaged: true, actionOnIt: true }
     expect(eventAddendum('sei:attacked', { ...action, unarmed: true })).toBe(eventAddendum('sei:attacked', action))
   })
@@ -120,6 +125,72 @@ describe('death that dropped a weapon', () => {
   it('says nothing about weapons when none dropped', () => {
     const t = deathAddendum({ pos: { x: 1, y: 2, z: 3 }, lost: [{ item: 'bread', n: 3 }] })
     expect(t).not.toMatch(/weapon/)
+  })
+  // 261031 (pass 33): a later death while the sword from an earlier one still
+  // lies on the ground, and the recent-death count.
+  it('a later death names the weapon still lying from an earlier one', () => {
+    const earlierWeapon = { weapon: 'stone_sword', pos: { x: 183, y: 64, z: 10 }, dist: 17, minutesLeft: 4 }
+    const empty = deathAddendum({ pos: { x: 1, y: 2, z: 3 }, lost: [], earlierWeapon })
+    expect(empty).toMatch(/You were not carrying anything this time\. Your stone_sword from an earlier death is still on the ground near 183,64,10 \(17 blocks from you\) for about 4 more minutes/)
+    expect(empty).toMatch(/Then decide whether to go back for it\.$/)
+    expect(empty).not.toMatch(/nothing dropped|carry on/)
+    const some = deathAddendum({ pos: { x: 1, y: 2, z: 3 }, lost: [{ item: 'arrow', n: 2 }], earlierWeapon })
+    expect(some).toMatch(/dropped: arrow x2\..* Your stone_sword from an earlier death is still on the ground near 183,64,10/)
+  })
+  it('the dev texts are unchanged without the new fields', () => {
+    expect(deathAddendum({ pos: { x: 1, y: 2, z: 3 }, lost: [] })).toMatch(/You were not carrying anything, so nothing dropped\. .* Then carry on\.$/)
+    expect(deathAddendum({ pos: { x: 1, y: 2, z: 3 }, lost: [], earlierWeapon: { weapon: 'stone_sword', minutesLeft: 0 } })).toMatch(/so nothing dropped/)
+  })
+  it('counts recent deaths', () => {
+    const t = deathAddendum({ pos: { x: 1, y: 2, z: 3 }, lost: [], deathText: 'Sui was slain by Drowned', recentDeaths: { count: 4, minutes: 3 } })
+    expect(t).toMatch(/The game reported: "Sui was slain by Drowned"\. You have died 4 times in the last 3 minutes\. You were not carrying/)
+    expect(deathAddendum({ pos: { x: 1, y: 2, z: 3 }, lost: [] })).not.toMatch(/You have died/)
+  })
+})
+
+describe('lostWeaponLine (the snapshot weapon: line)', () => {
+  const bot = (pos) => ({ entity: { position: pos }, inventory: { items: () => [] } })
+  it('only in the lost-weapon state', () => {
+    expect(lostWeaponLine(bot({ x: 0, y: 64, z: 0 }))).toBe(null)
+    const b = bot({ x: 0, y: 64, z: 0 })
+    noteLostWeapon(b, [{ item: 'bread', n: 2 }], 0, { x: 5, y: 64, z: 0 })
+    expect(lostWeaponLine(b, 1000)).toBe(null)
+  })
+  it('says where the weapon lies, how far, and how long it stays', () => {
+    const b = bot({ x: 0, y: 64, z: 0 })
+    noteLostWeapon(b, [{ item: 'stone_sword', n: 1 }], 0, { x: 12.4, y: 64, z: 5 })
+    expect(lostWeaponLine(b, 30_000)).toBe('weapon: none. Your stone_sword is on the ground where you died @12,64,5 (13 blocks from you) for about 5 more minutes. pickup with item "stone_sword" and maxDistance 32 walks onto it; if it is farther than that, goTo the spot first.')
+    expect(lostWeaponDrop(b, 4.5 * 60_000).minutesLeft).toBe(1)
+    expect(lostWeaponLine(b, DROP_DESPAWN_MS + 1)).toMatch(/^weapon: none\. The stone_sword you dropped when you died has despawned/)
+  })
+  it('a later death keeps the first drop, a new weapon drop replaces it', () => {
+    const b = bot({ x: 0, y: 64, z: 0 })
+    noteLostWeapon(b, [{ item: 'stone_sword', n: 1 }], 0, { x: 10, y: 64, z: 0 })
+    noteLostWeapon(b, [{ item: 'arrow', n: 1 }], 60_000, { x: 40, y: 64, z: 0 })
+    expect(lostWeaponDrop(b, 61_000)).toMatchObject({ weapon: 'stone_sword', pos: { x: 10, y: 64, z: 0 }, dist: 10, minutesLeft: 4 })
+    noteLostWeapon(b, [{ item: 'iron_sword', n: 1 }], 120_000, { x: 20, y: 64, z: 0 })
+    expect(lostWeaponDrop(b, 121_000)).toMatchObject({ weapon: 'iron_sword', pos: { x: 20, y: 64, z: 0 }, minutesLeft: 5 })
+  })
+  // 261031 (pass 33 review): a Nether death respawns her in the Overworld.
+  it('a drop in another dimension has no distance or pickup advice', () => {
+    const b = { ...bot({ x: 0, y: 64, z: 0 }), game: { dimension: 'the_nether' } }
+    noteLostWeapon(b, [{ item: 'stone_sword', n: 1 }], 0, { x: 100, y: 40, z: 5 }, 'minecraft:the_nether')
+    expect(lostWeaponDrop(b, 1000)).toMatchObject({ dist: 103 })
+    expect(lostWeaponDrop(b, 1000).otherDim).toBeUndefined()
+    b.game.dimension = 'overworld'
+    expect(lostWeaponDrop(b, 1000)).toMatchObject({ dist: null, otherDim: 'the_nether' })
+    expect(lostWeaponLine(b, 1000)).toBe('weapon: none. Your stone_sword is on the ground where you died in the Nether @100,40,5 for about 5 more minutes. You are not in that dimension now, so you cannot pick it up from here.')
+    const t = deathAddendum({ pos: { x: 1, y: 2, z: 3 }, lost: [], earlierWeapon: lostWeaponDrop(b, 1000) })
+    expect(t).toMatch(/Your stone_sword from an earlier death is still on the ground in the Nether near 100,40,5 for about 5 more minutes/)
+    expect(t).not.toMatch(/\?/)
+  })
+  it('clears once she owns a weapon again', () => {
+    const items = []
+    const b = { entity: { position: { x: 0, y: 64, z: 0 } }, inventory: { items: () => items } }
+    noteLostWeapon(b, [{ item: 'stone_sword', n: 1 }], Date.now(), { x: 3, y: 64, z: 0 })
+    expect(lostWeaponLine(b)).toMatch(/^weapon: none/)
+    items.push({ name: 'stone_sword', count: 1 })
+    expect(lostWeaponLine(b)).toBe(null)
   })
 })
 

@@ -20,6 +20,7 @@ import { nextMilestone, readProgressionState, recipeNote, pickaxeLine, furnaceLi
 import { getInFlightLineForSnapshot, idleLineForSnapshot } from '../../../brain/inflight.js'
 import { tallyAggro, aggroLine, AGGRO_PAIR_RANGE } from './aggro.js'
 import { liveInventoryItems } from './liveInventory.js'
+import { lostWeaponLine } from '../behaviors/weaponSelect.js'
 
 const MAX_ENTITIES = 6
 
@@ -246,6 +247,8 @@ export function composeSnapshot(bot, opts = {}) {
   lines.push(`inventory (${slotsUsed} of 36 slots used): ${invStr}`)
   try { lines.push(pickaxeLine(inv)) } catch { /* best-effort */ }
   try { const f = furnaceLine(bot._seiFurnaceCooking); if (f) lines.push(f) } catch { /* best-effort */ }
+  // 261031 (pass 33): only after a death took her weapon (weaponSelect).
+  try { const w = lostWeaponLine(bot); if (w) lines.push(w) } catch { /* best-effort */ }
 
   // Craftable — what the bot can make RIGHT NOW from its materials. Gated by a
   // crafting table in reach: without one only 2×2 (inventory-grid) recipes show;
