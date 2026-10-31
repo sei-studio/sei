@@ -1,8 +1,9 @@
 /**
- * Electron main process entrypoint.
+ * Electron main process: the app. Loaded by the boot shim (boot.ts, the built
+ * dist/main/index.js) after the app name, the single-instance lock, the boot
+ * guard and the updater are set up; never loaded in safe mode.
  *
  * Composes:
- *   - Single-instance lock
  *   - First-launch migration (legacy persona → characters/sui.json)
  *   - BrowserWindow (1180x760, platform-branched chrome)
  *   - LAN watcher (shared UDP socket, 3s stale)
@@ -16,14 +17,11 @@
  *   - RESEARCH §Pitfall 5 (everything behind app.whenReady)
  *   - CONTEXT D-15, D-21, D-32, project constraints
  */
-// MUST stay the first import: refuses --remote-debugging-* / --inspect* /
-// --js-flags in packaged stable builds before anything else evaluates.
+// remoteDebugGuard, velopackBoot and velopackMigration's early boot run from
+// boot.ts, ahead of the single-instance lock; these imports are already
+// evaluated by the time this file loads.
 import './remoteDebugGuard';
-// Windows: Velopack hooks must run before the rest of main
-// evaluates; see velopackBoot.ts.
 import './velopackBoot';
-// Windows NSIS -> Velopack migration: its early boot must run before the
-// single-instance lock below; see velopackMigration.ts.
 import { scheduleVelopackMigration } from './velopackMigration';
 import { app, BrowserWindow, net, session, systemPreferences } from 'electron';
 import path from 'node:path';
@@ -68,9 +66,16 @@ import {
   runPendingQuitNextSteps,
 } from './quitNextStep';
 import { formatPlayDuration, playSummaryText } from './chat/playSummary';
-import { handOffUpdatesToMigration, initUpdater, isUpdateReadyToInstall } from './updater';
+import { flushUpdatePushes, handOffUpdatesToMigration, isUpdateReadyToInstall } from './updater';
+import {
+  markProfileScopeReady,
+  noteNeutralExit,
+  reportStartupFailure,
+  setMainWindowGetter,
+  takeSafeModeReport,
+} from './bootContext';
 import { applyPendingAtLaunch, updateSplashStatusForLaunch } from './velopackUpdater';
-import { initNotices } from './notices';
+import { initNotices, refreshNotices } from './notices';
 import { installPopupFrameGuards } from './popupFrameGuards';
 import { createSkinServer, SKIN_SERVER_DEV_PORT } from './skinServer';
 import { runFirstLaunchMigration, runUuidRenameMigration, runDefaultsToWorldMigration } from './migration';
@@ -88,20 +93,8 @@ import {
 import { createMcSessionReporter } from './mcActionTelemetry';
 import { IpcChannel, lanHostWarning, forgeHostBlock, FORGE_HOST_BLOCKED, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type GenProgressEvent, type VisionCapability, type ChatMessage, type SpokenLineContext } from '../shared/ipc';
 
-// Lock the app name early so app.getPath('userData') resolves to
-// "Sei" (packaged) or "Sei Dev" (electron-vite dev) — keeping dev state
-// (your private personas) out of the shipped build.
-//
-// DEV-ONLY: SEI_DEV_USERDATA overrides the dev userData/app name so two dev
-// builds (e.g. this UI-revisions worktree + a separate MC-connecting one) can
-// run side by side. Each distinct name gets its own userData dir, which means a
-// distinct single-instance lock — otherwise the second launch quits. Defaults
-// to "Sei Dev" so normal `npm run dev` is unchanged.
-const devUserData = process.env.SEI_DEV_USERDATA?.trim() || 'Sei Dev';
-app.setName(app.isPackaged ? 'Sei' : devUserData);
-if (!app.isPackaged) {
-  app.setPath('userData', path.join(app.getPath('appData'), devUserData));
-}
+// The app name + userData (and the SEI_DEV_USERDATA dev override) are set in
+// boot.ts, before the single-instance lock.
 
 // Register the `sei-portrait://` privileged scheme that serves locally-stored
 // character portraits to the renderer. MUST run before app 'ready'; the request
@@ -136,6 +129,8 @@ const logger = {
 };
 
 let mainWindow: BrowserWindow | null = null;
+// Boot safety (261031): the updater and the boot guard reach the window through this.
+setMainWindowGetter(() => mainWindow);
 // Startup splash (260728) — shown from whenReady, closed when the main window
 // first paints (or by the failsafe timer).
 let splashWindow: BrowserWindow | null = null;
@@ -167,6 +162,9 @@ let skinServer: { baseUrl: string; port: number; stop: () => Promise<void> } | n
 // a fixed port (54321) to localhost only. Lifecycle joined to the
 // before-quit cleanup chain.
 let loopbackAuthServer: { url: string; stop: () => Promise<void> } | null = null;
+
+/** How long after the page loads held updater pushes wait for the ready ping. */
+const UPDATE_PUSH_FALLBACK_MS = 15_000;
 
 function preloadPath(): string {
   // electron-vite outputs preload to dist/preload/index.cjs relative to dist/main/index.js.
@@ -242,9 +240,21 @@ function wireMainWindowEvents(win: BrowserWindow): void {
         win.webContents.send(IpcChannel.world.state, mod.getWorldState());
       }
     }
+    // Updater pushes are held until the app UI says it is listening
+    // (app:renderer-ready, boot.ts). Deliver them anyway if it never does.
+    setTimeout(() => flushUpdatePushes(), UPDATE_PUSH_FALLBACK_MS).unref?.();
   });
   win.webContents.on('did-navigate', () => sweepVoiceCalls('renderer_reload'));
-  win.webContents.on('render-process-gone', () => sweepVoiceCalls('renderer_gone'));
+  win.webContents.on('render-process-gone', () => {
+    sweepVoiceCalls('renderer_gone');
+    // Boot safety (261031): before the start has been judged good, a dead
+    // renderer is a failed start (ignored afterwards).
+    reportStartupFailure('renderer_gone');
+  });
+  win.webContents.on('did-fail-load', (_e, errorCode, _desc, _url, isMainFrame) => {
+    // -3 = ERR_ABORTED (a navigation replaced by another), not a failure.
+    if (isMainFrame && errorCode !== -3) reportStartupFailure('renderer_load_failed');
+  });
 }
 
 function broadcastLan(state: LanState): void {
@@ -788,10 +798,14 @@ async function bootstrap(): Promise<void> {
   //     network (the usual state after a restart), and a refresh that failed
   //     here set 'local' under a session initAuthState then restored, which
   //     locked the user on the sign-in panel (see persistedSessionUserId).
-  {
+  try {
     const { applyBootScope } = await import('./auth/bootScope');
     const bootScope = await applyBootScope({ warn: (m) => logger.warn(m) });
     logger.info(`active profile scope: ${bootScope ?? 'local'}`);
+  } finally {
+    // The updater (started before bootstrap, boot.ts) reads the beta-channel
+    // preference once the scope is known.
+    markProfileScopeReady();
   }
 
   // 0b. One-shot global→profile partition. Relocates a pre-existing install's
@@ -1482,6 +1496,13 @@ async function bootstrap(): Promise<void> {
       capture('installer_first_launch', installerFirstLaunchProps(currentFirstLaunchEnv()));
     }
     capture('app_opened');
+    // Boot safety (261031). Packaged only: dev never counts starts.
+    if (app.isPackaged) {
+      const safe = takeSafeModeReport();
+      if (safe) capture('boot_safe_mode_entered', { reason: safe.reason, failures: safe.failures });
+      const { onConfigRecovered } = await import('./configStore');
+      onConfigRecovered((e) => capture('settings_recovered', { kind: e.kind }));
+    }
   } catch (err) {
     logger.warn(`analytics init failed: ${(err as Error).message}`);
   }
@@ -1546,8 +1567,10 @@ async function bootstrap(): Promise<void> {
   // Operator feed (260725; the startup popup since 261027) — wire the push
   // channel BEFORE initUpdater, which fires the startup refresh as the first
   // leg of the shared cadence.
+  // 261031 (T277): the updater itself starts in boot.ts before bootstrap, so a
+  // broken bootstrap can still be updated; the notices startup leg is here.
   initNotices({ getMainWindow: () => mainWindow });
-  initUpdater({ getMainWindow: () => mainWindow });
+  void refreshNotices('startup');
   scheduleVelopackMigration({ isUpdateReady: isUpdateReadyToInstall, handOff: handOffUpdatesToMigration });
 
   // 5d. 261013 (T120): run the "next time" check for sessions the last quit
@@ -1567,18 +1590,9 @@ async function bootstrap(): Promise<void> {
 // SharedArrayBuffer for voice dictation is enabled in the single enable-features
 // switch near the top of this file.
 
-// Single-instance lock — second launch focuses existing window
-const gotLock = app.requestSingleInstanceLock();
-if (!gotLock) {
-  app.quit();
-} else {
-  app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
-  });
-
+// The single-instance lock and second-instance focus live in boot.ts; this
+// module is only loaded by the instance that holds the lock.
+{
   app.whenReady().then(() => {
     // If a prior version's "Move to Applications" prompt moved us here from
     // ~/Downloads, trash the leftover copy now that we're running from
@@ -1608,9 +1622,17 @@ if (!gotLock) {
     void applyPendingAtLaunch(splashWindow)
       .catch(() => false)
       .then((applying) => {
-        if (applying) return;
+        if (applying) {
+          // Handing over to an update: says nothing about this build's start.
+          noteNeutralExit();
+          return;
+        }
         bootstrap().catch((err) => {
           logger.error(`bootstrap failed: ${(err as Error).message}`);
+          markProfileScopeReady();
+          // Packaged: counted, and Sei starts again (safe mode after two in a
+          // row). Dev: logged only, then exit as before.
+          reportStartupFailure('bootstrap', err);
           app.exit(1);
         });
       });

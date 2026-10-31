@@ -21,8 +21,9 @@
  *     threw, the renderer crashed or failed to load before success) is
  *     counted at once with markFailure().
  *   - A clean quit before success is neutral (markNeutral): someone closing
- *     the app during the splash, or a forced update restart, is not a broken
- *     start.
+ *     the app during the splash, or an update restart, is not a broken start.
+ *     The exception is a quit NEVER_READY_QUIT_MS or more into a start whose
+ *     renderer never reported ready (quitVerdict): Sei never came up.
  *   - A new app version resets the count: an update deserves a normal start.
  *
  * After FAILURE_THRESHOLD consecutive failures the next start is a safe-mode
@@ -41,11 +42,12 @@ export const FAILURE_THRESHOLD = 2;
 /** How long the renderer must stay up after its ready ping to count as a successful start. */
 export const SUCCESS_HOLD_MS = 5_000;
 /**
- * A clean quit counts as a failure only when the window had finished loading
- * this long ago and the renderer never reported ready: the page loaded and
- * then never came up, and the person gave up on it.
+ * A clean quit counts as a failure only when the renderer never reported
+ * ready and the start had been running this long: Sei never came up and the
+ * person gave up on it. A quit earlier than that (closing the app during the
+ * splash) says nothing.
  */
-export const NEVER_READY_QUIT_MS = 20_000;
+export const NEVER_READY_QUIT_MS = 30_000;
 
 export type BootMode = 'normal' | 'safe';
 
@@ -213,24 +215,24 @@ export function takeReport(s: BootState): { state: BootState; report: BootState[
 
 /**
  * What to do with an in-process failure: relaunch for one more try, or show
- * the safe-mode screen now. A guard that cannot persist (dev) never relaunches.
+ * the safe-mode screen now.
  */
-export function inProcessFailureAction(failures: number, persistent: boolean): 'relaunch' | 'safe' {
-  return persistent && failures < FAILURE_THRESHOLD ? 'relaunch' : 'safe';
+export function inProcessFailureAction(failures: number): 'relaunch' | 'safe' {
+  return failures < FAILURE_THRESHOLD ? 'relaunch' : 'safe';
 }
 
 /**
  * Judge a clean quit. `readyAt` is when the renderer reported ready (null =
- * never), `loadedAt` when the main window finished loading (null = never).
+ * never), `startedAt` when this start began.
  */
 export function quitVerdict(opts: {
   succeeded: boolean;
   readyAt: number | null;
-  loadedAt: number | null;
+  startedAt: number;
   now: number;
 }): 'success' | 'failure' | 'neutral' {
   if (opts.succeeded || opts.readyAt !== null) return 'success';
-  if (opts.loadedAt !== null && opts.now - opts.loadedAt >= NEVER_READY_QUIT_MS) return 'failure';
+  if (opts.now - opts.startedAt >= NEVER_READY_QUIT_MS) return 'failure';
   return 'neutral';
 }
 

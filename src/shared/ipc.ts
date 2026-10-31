@@ -3090,6 +3090,12 @@ export interface RendererApi {
    * (patch-only) updates download silently and never push this.
    */
   onUpdateAvailable(cb: (info: UpdateAvailableEvent) => void): Unsubscribe;
+  /**
+   * 261031 (T277): tell main the app UI mounted (boot safety: a start counts
+   * as good a few seconds later, and held updater pushes are delivered).
+   * Optional so stubs and older bridges need not provide it.
+   */
+  rendererReady?(): void;
   /** Fires when a manual update check starts (Settings → Checking…). */
   onUpdateChecking(cb: () => void): Unsubscribe;
   /** Fires when an update check completes with no newer version (Up to date). */
@@ -3887,6 +3893,9 @@ export const IpcChannel = {
   app: {
     ready: 'app:ready',
     warnings: 'app:warnings',
+    // 261031 (T277): the main window's React tree mounted (send, renderer →
+    // main). The boot guard counts a start as good a few seconds after it.
+    rendererReady: 'app:renderer-ready',
     // ── In-app updater (quick/260604-uoy) ────────────────────────────────────
     // Push (main → renderer):
     updateAvailable: 'app:update-available',       // optional update detected

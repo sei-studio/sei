@@ -36,8 +36,8 @@ interface Ctx {
   mode: BootMode;
   reason: SafeModeReason | null;
   succeeded: boolean;
+  startedAt: number;
   readyAt: number | null;
-  loadedAt: number | null;
   successTimer: ReturnType<typeof setTimeout> | null;
   getMainWindow: () => BrowserWindow | null;
   getSafeWindow: () => BrowserWindow | null;
@@ -54,8 +54,8 @@ const ctx: Ctx = {
   mode: 'normal',
   reason: null,
   succeeded: false,
+  startedAt: 0,
   readyAt: null,
-  loadedAt: null,
   successTimer: null,
   getMainWindow: () => null,
   getSafeWindow: () => null,
@@ -75,7 +75,9 @@ function log(line: string): void {
 /**
  * Record this start attempt and decide its mode. Called once from boot.ts,
  * after the single-instance lock and before the app graph loads.
- * `persistent: false` (dev) keeps the state in memory only.
+ * `persistent: false` (dev, unless SEI_BOOT_GUARD=1) keeps the state in
+ * memory and only LOGS start failures: a developer wants the crash, not the
+ * safe-mode screen. A forced safe mode (`--safe-mode`) still works there.
  */
 export function initBootGuard(opts: {
   userData: string;
@@ -87,8 +89,9 @@ export function initBootGuard(opts: {
   ctx.persistent = opts.persistent;
   ctx.appVersion = opts.appVersion;
   ctx.file = bootStatePath(opts.userData);
+  ctx.startedAt = opts.now ?? Date.now();
   const prev = opts.persistent ? readBootStateSync(ctx.file) : freshBootState();
-  const r = beginBoot(prev, { appVersion: opts.appVersion, now: opts.now ?? Date.now(), forceSafe: opts.forceSafe });
+  const r = beginBoot(prev, { appVersion: opts.appVersion, now: ctx.startedAt, forceSafe: opts.forceSafe });
   ctx.state = r.state;
   ctx.mode = r.mode;
   ctx.reason = r.reason;
@@ -155,7 +158,7 @@ export function markProfileScopeReady(): void {
 
 /* ------------------------------ hooks ------------------------------------- */
 
-/** boot.ts: how to show the safe-mode screen in this process. */
+/** How to show the safe-mode screen in this process when there is no relaunch hook. */
 export function setSafeModeEntry(fn: (reason: SafeModeReason) => void): void {
   ctx.enterSafeMode = fn;
 }
@@ -188,10 +191,6 @@ function succeed(): void {
   }
 }
 
-export function noteMainWindowLoaded(now = Date.now()): void {
-  if (ctx.loadedAt === null) ctx.loadedAt = now;
-}
-
 /** The main window's renderer mounted. Success after SUCCESS_HOLD_MS without a crash. */
 export function noteRendererReady(now = Date.now()): void {
   if (ctx.succeeded || ctx.mode !== 'normal') return;
@@ -202,9 +201,10 @@ export function noteRendererReady(now = Date.now()): void {
 }
 
 /**
- * A start-up failure seen in this process. Before success it counts; then
- * either one more start (relaunch) or the safe-mode screen right here.
- * After success it is an ordinary runtime problem and is left alone.
+ * A start-up failure seen in this process. Before success it counts, and Sei
+ * starts again (the next start is safe mode once the count reaches the
+ * threshold). After success it is an ordinary runtime problem and is left
+ * alone.
  */
 export function reportStartupFailure(kind: FailureKind, err?: unknown): void {
   if (ctx.succeeded || ctx.mode !== 'normal') return;
@@ -216,12 +216,20 @@ export function reportStartupFailure(kind: FailureKind, err?: unknown): void {
   // Only the error's class, never its message: messages can carry paths or data.
   const cls = err instanceof Error ? err.name : typeof err;
   log(`start failed (${kind}${err !== undefined ? `, ${cls}` : ''}), failures=${ctx.state.failures}`);
-  const action = inProcessFailureAction(ctx.state.failures, ctx.persistent);
-  if (action === 'relaunch' && ctx.relaunch) {
-    persist();
+  if (!ctx.persistent) return; // dev: log only (see initBootGuard)
+  persist();
+  // Start again in a fresh process: one more normal start after the first
+  // failure, the safe-mode screen after the second (beginBoot decides from
+  // the count just written). Safe mode never shares a process with the app
+  // that just failed.
+  if (ctx.relaunch) {
+    ctx.succeeded = true; // judged; the quit that follows must not re-judge it
     ctx.relaunch();
     return;
   }
+  // No relaunch hook (tests, or a host that cannot relaunch): stay in this
+  // process, and on the second failure show the safe-mode screen here.
+  if (inProcessFailureAction(ctx.state.failures) === 'relaunch') return;
   ctx.mode = 'safe';
   ctx.reason = kind;
   ctx.state = markInProcessSafe(ctx.state, kind, { appVersion: ctx.appVersion, now });
@@ -237,7 +245,7 @@ export function noteQuitting(now = Date.now()): void {
     persist();
     return;
   }
-  const verdict = quitVerdict({ succeeded: ctx.succeeded, readyAt: ctx.readyAt, loadedAt: ctx.loadedAt, now });
+  const verdict = quitVerdict({ succeeded: ctx.succeeded, readyAt: ctx.readyAt, startedAt: ctx.startedAt, now });
   if (verdict === 'success') {
     succeed();
     return;
@@ -287,8 +295,8 @@ export function _resetBootContextForTests(): void {
     mode: 'normal',
     reason: null,
     succeeded: false,
+    startedAt: 0,
     readyAt: null,
-    loadedAt: null,
     successTimer: null,
     getMainWindow: () => null,
     getSafeWindow: () => null,

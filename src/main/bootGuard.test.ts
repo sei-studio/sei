@@ -151,9 +151,8 @@ describe('"Try normal start"', () => {
 
 describe('in-process safe mode + report', () => {
   it('relaunches once, then shows safe mode in-process', () => {
-    expect(inProcessFailureAction(1, true)).toBe('relaunch');
-    expect(inProcessFailureAction(2, true)).toBe('safe');
-    expect(inProcessFailureAction(1, false)).toBe('safe');
+    expect(inProcessFailureAction(1)).toBe('relaunch');
+    expect(inProcessFailureAction(2)).toBe('safe');
   });
 
   it('markInProcessSafe leaves a safe pending + a report', () => {
@@ -177,14 +176,13 @@ describe('in-process safe mode + report', () => {
 
 describe('quitVerdict', () => {
   it('ready seen = success', () => {
-    expect(quitVerdict({ succeeded: false, readyAt: 5, loadedAt: 1, now: 6 })).toBe('success');
+    expect(quitVerdict({ succeeded: false, readyAt: 5, startedAt: 0, now: 99_999 })).toBe('success');
   });
-  it('loaded long ago but never ready = failure', () => {
-    expect(quitVerdict({ succeeded: false, readyAt: null, loadedAt: 0, now: NEVER_READY_QUIT_MS })).toBe('failure');
+  it('running long and never ready = failure', () => {
+    expect(quitVerdict({ succeeded: false, readyAt: null, startedAt: 0, now: NEVER_READY_QUIT_MS })).toBe('failure');
   });
-  it('quit during the splash or soon after load = neutral', () => {
-    expect(quitVerdict({ succeeded: false, readyAt: null, loadedAt: null, now: 99_999 })).toBe('neutral');
-    expect(quitVerdict({ succeeded: false, readyAt: null, loadedAt: 0, now: NEVER_READY_QUIT_MS - 1 })).toBe('neutral');
+  it('a quick quit (during the splash) = neutral', () => {
+    expect(quitVerdict({ succeeded: false, readyAt: null, startedAt: 0, now: NEVER_READY_QUIT_MS - 1 })).toBe('neutral');
   });
 });
 

@@ -2,7 +2,7 @@
  * NSIS -> Velopack migration on Windows (261030). The plan and every rule are
  * in velopackMigrationPolicy.ts; this file runs them.
  *
- * Side-effect module, the THIRD import of src/main/index.ts (after
+ * Side-effect module, the THIRD import of src/main/boot.ts (after
  * velopackBoot): `earlyBoot()` below runs before the single-instance lock.
  * Both copies share userData (%APPDATA%\Sei), so they share that lock, and a
  * launch that should not run (Setup starting the copy it just installed, or
@@ -32,6 +32,7 @@ import { rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { ciMark, pidAlive, userDataInstallId, velopackInstalled, velopackLog } from './velopackBoot';
+import { noteNeutralExit } from './bootContext';
 import { bundleRequire } from './bundleRequire';
 import { checkSigned } from './velopackVerify';
 import { waitForExit } from './winPowerShell';
@@ -442,6 +443,7 @@ function restartIntoVelopack(): void {
   }
   log(`restarting into ${exe}`);
   ciMark('migration-restart', { exe });
+  noteNeutralExit(); // boot safety: a hand-over, not a failed start
   startVelopack(exe, [], { ...process.env, SEI_MIGRATION_WAIT_PID: String(process.pid) });
   app.quit();
 }

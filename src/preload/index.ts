@@ -637,6 +637,9 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.app.updateAvailable, handler);
     return () => ipcRenderer.off(IpcChannel.app.updateAvailable, handler);
   },
+  rendererReady() {
+    ipcRenderer.send(IpcChannel.app.rendererReady);
+  },
   onUpdateChecking(cb: () => void) {
     const handler = () => cb();
     ipcRenderer.on(IpcChannel.app.updateChecking, handler);

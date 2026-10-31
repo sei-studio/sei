@@ -7,7 +7,6 @@ import {
   _resetBootContextForTests,
   getBootMode,
   initBootGuard,
-  noteMainWindowLoaded,
   noteNeutralExit,
   noteQuitting,
   noteRendererReady,
@@ -48,7 +47,6 @@ describe('bootContext', () => {
     launch();
     const hook = vi.fn();
     onBootSuccess(hook);
-    noteMainWindowLoaded();
     noteRendererReady();
     expect(hook).not.toHaveBeenCalled();
     vi.advanceTimersByTime(SUCCESS_HOLD_MS);
@@ -73,9 +71,10 @@ describe('bootContext', () => {
     expect(onDisk().pending).toBeNull();
   });
 
-  it('the second failure opens safe mode in this process', () => {
+  it('the second failure relaunches into safe mode', () => {
     launch(1);
-    reportStartupFailure('bootstrap'); // no relaunch hook set: falls to safe
+    setRelaunch(() => {});
+    reportStartupFailure('bootstrap');
     _resetBootContextForTests();
     // Next launch, failure 1 already on disk.
     launch(2);
@@ -84,11 +83,37 @@ describe('bootContext', () => {
     setRelaunch(relaunch);
     setSafeModeEntry(enter);
     reportStartupFailure('bootstrap');
-    expect(relaunch).not.toHaveBeenCalled();
-    expect(enter).toHaveBeenCalledWith('bootstrap');
+    expect(relaunch).toHaveBeenCalledOnce();
+    expect(enter).not.toHaveBeenCalled();
+    expect(onDisk().failures).toBe(2);
+    _resetBootContextForTests();
+    const third = launch(3);
+    expect(third.mode).toBe('safe');
+    expect(third.reason).toBe('bootstrap');
+    expect(takeSafeModeReport()?.reason).toBe('bootstrap');
+  });
+
+  it('with no relaunch hook, the second failure opens safe mode in this process', () => {
+    launch(1);
+    reportStartupFailure('bootstrap');
+    expect(getBootMode()).toBe('normal');
+    _resetBootContextForTests();
+    launch(2);
+    const enter = vi.fn();
+    setSafeModeEntry(enter);
+    reportStartupFailure('renderer_gone');
+    expect(enter).toHaveBeenCalledWith('renderer_gone');
     expect(getBootMode()).toBe('safe');
     expect(onDisk().failures).toBe(2);
-    expect(onDisk().report?.reason).toBe('bootstrap');
+    expect(onDisk().report?.reason).toBe('renderer_gone');
+  });
+
+  it('a relaunch after a failure is not judged again by the quit', () => {
+    launch(0);
+    setRelaunch(() => {});
+    reportStartupFailure('bootstrap');
+    noteQuitting(NEVER_READY_QUIT_MS + 1);
+    expect(onDisk().failures).toBe(1);
   });
 
   it('failures after success are ignored', () => {
@@ -104,24 +129,23 @@ describe('bootContext', () => {
   });
 
   it('a quit right after ready counts as success', () => {
-    launch();
-    noteRendererReady();
-    noteQuitting();
+    launch(0);
+    noteRendererReady(1);
+    noteQuitting(2);
     expect(onDisk().failures).toBe(0);
     expect(onDisk().pending).toBeNull();
   });
 
-  it('a quit long after load with no ready ping counts as a failure', () => {
+  it('a quit long after the start with no ready ping counts as a failure', () => {
     launch(0);
-    noteMainWindowLoaded(0);
     noteQuitting(NEVER_READY_QUIT_MS + 1);
     expect(onDisk().failures).toBe(1);
     expect(onDisk().lastFailure?.kind).toBe('renderer_never_ready');
   });
 
   it('a quit during the splash is neutral', () => {
-    launch();
-    noteQuitting();
+    launch(0);
+    noteQuitting(NEVER_READY_QUIT_MS - 1);
     expect(onDisk().failures).toBe(0);
     expect(onDisk().pending).toBeNull();
   });
@@ -143,17 +167,24 @@ describe('bootContext', () => {
     expect(launch(2).mode).toBe('normal');
   });
 
-  it('non-persistent (dev) keeps state in memory only and never relaunches', () => {
+  it('non-persistent (dev) keeps state in memory and only logs failures', () => {
     initBootGuard({ userData: tmp, appVersion: '0.7.0', persistent: false, forceSafe: false, now: 1 });
     const relaunch = vi.fn();
     const enter = vi.fn();
     setRelaunch(relaunch);
     setSafeModeEntry(enter);
-    reportStartupFailure('module_load', new TypeError('secret path /home/x'));
+    reportStartupFailure('module_load', new TypeError('x'));
+    reportStartupFailure('module_load', new TypeError('x'));
     expect(relaunch).not.toHaveBeenCalled();
-    expect(enter).toHaveBeenCalledWith('module_load');
+    expect(enter).not.toHaveBeenCalled();
+    expect(getBootMode()).toBe('normal');
     expect(onDisk().pending).toBeNull(); // nothing on disk
-    expect(_bootStateForTests().failures).toBe(1);
+    expect(_bootStateForTests().failures).toBe(2);
+  });
+
+  it('non-persistent forced safe mode still opens safe mode', () => {
+    const r = initBootGuard({ userData: tmp, appVersion: '0.7.0', persistent: false, forceSafe: true, now: 1 });
+    expect(r.mode).toBe('safe');
   });
 
   it('logs only the error class', () => {
