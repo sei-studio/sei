@@ -163,7 +163,35 @@ function Start-Feed {
     try { $null = Invoke-WebRequest -Uri 'http://127.0.0.1:8765/' -UseBasicParsing -TimeoutSec 2; $up = $true } catch { Start-Sleep -Milliseconds 500 }
   }
   if (-not $up) { throw 'the feed server did not answer within 30s' }
-  $script:fullMB = [math]::Round((($keep | Where-Object { $_.Version -eq $Target -and $_.Type -eq 'Full' }).Size) / 1MB)
+  $full = $keep | Where-Object { $_.Version -eq $Target -and $_.Type -eq 'Full' }
+  $script:fullMB = [math]::Round($full.Size / 1MB)
+  $script:fullPkg = Join-Path $Feed "vp\$($full.FileName)"
+}
+
+# The stage's free-space rule (stage() in build/velopack/sei-fast-apply.patch):
+# skip when free < needed + DISK_MARGIN, where needed is the extracted size of
+# the package's app files (get_lib_contents_sizes) and DISK_MARGIN is 1024 MB.
+$StageMarginMB = 1024
+function StageNeedsMB([string]$pkg) {
+  # Mirrors get_lib_contents_sizes: files under lib\<tfm>\, without Squirrel.exe,
+  # execution stubs and symlink stand-ins, plus the nuspec written as sq.version.
+  Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+  $zip = [System.IO.Compression.ZipFile]::OpenRead($pkg)
+  try {
+    $sizes = [System.Collections.Generic.Dictionary[string, long]]::new() # case-sensitive, as in Rust
+    $lib = [regex]'lib[\\/][^\\/]*[\\/]'
+    $nuspec = $zip.Entries | Where-Object { $_.FullName.EndsWith('.nuspec') } | Select-Object -First 1
+    $updater = $zip.Entries | Where-Object { $_.FullName.EndsWith('Squirrel.exe') } | Select-Object -First 1
+    if ($nuspec) { $sizes['sq.version'] = $nuspec.Length }
+    foreach ($e in $zip.Entries) {
+      $n = $e.FullName
+      if ($e -eq $updater -or -not $lib.IsMatch($n) -or $n.EndsWith('/') -or $n.EndsWith('\')) { continue }
+      $rel = $lib.Replace($n, '', 1)
+      if ($rel -cmatch '.__symlink$' -or $rel -cmatch '_ExecutionStub.exe$') { continue }
+      $sizes[$rel.Replace('\', '/')] = $e.Length
+    }
+    [math]::Round((($sizes.Values | Measure-Object -Sum).Sum) / 1MB)
+  } finally { $zip.Dispose() }
 }
 
 function Prepare([string]$mode, [switch]$NoStage, [string]$Publisher = '') {
@@ -540,10 +568,21 @@ switch -Regex ($Scenario) {
   }
 
   '^low-disk$' {
+    # Fill the disk to sit $headroom MB under the stage's threshold for THIS
+    # package, not a fixed amount: the app's size changes from build to build
+    # (T281 took the extracted app from 745 MB to 446 MB, and the old fixed
+    # fill of full package + 1450 MB then left enough room to stage). The
+    # download nets out at about zero (the new full package replaces the old
+    # one) and the runner drifts a few tens of MB down meanwhile, so the free
+    # space at the stage stays under the threshold. What is left above the
+    # extracted size is room for the stock apply at the restart.
+    $needMB = StageNeedsMB $script:fullPkg
+    $headroom = 256
     $free = FreeMB
-    $leave = $script:fullMB + 1450
+    $leave = $needMB + $StageMarginMB - $headroom
     $fillMB = $free - $leave
-    Write-Host "free $free MB, full package $($script:fullMB) MB: filling $fillMB MB to leave $leave MB"
+    $results.stage_needs_mb = $needMB
+    Write-Host "free $free MB, full package $($script:fullMB) MB, staging needs $needMB MB plus $StageMarginMB MB margin: filling $fillMB MB to leave $leave MB"
     if ($fillMB -gt 0) { & fsutil file createnew C:\sei-fill.bin ([int64]$fillMB * 1MB) | Out-Null }
     $results.free_before_mb = FreeMB
     Prepare 'restart'
@@ -551,6 +590,11 @@ switch -Regex ($Scenario) {
     Wait-Downloaded | Out-Null
     $results.free_at_download_mb = FreeMB
     if ($results.stage_result -notlike 'skipped*low disk*') { Fail "expected the stage to skip for low disk, got: $($results.stage_result)" }
+    elseif ($results.stage_result -match 'staging needs (\d+) MB plus (\d+) MB margin') {
+      # The fill is only right if this script computes the rule the way Update.exe does.
+      if ([math]::Abs([int]$Matches[1] - $needMB) -gt 2) { Fail "Update.exe sized the stage at $($Matches[1]) MB, this script at $needMB MB (StageNeedsMB is out of step with get_lib_contents_sizes)" }
+      if ([int]$Matches[2] -ne $StageMarginMB) { Fail "Update.exe's stage margin is $($Matches[2]) MB, this script assumes $StageMarginMB MB" }
+    }
     $rec = Start-Rec $Scenario 70
     $click = (Pull).t
     $oldExit = Wait-AppLoaded $Target 180 $old
