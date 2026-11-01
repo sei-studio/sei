@@ -63,7 +63,7 @@ vi.mock('./velopackMigrationPolicy', async (importOriginal) => {
 });
 
 const { installVelopackForTest } = await import('./velopackMigration');
-const { SPAWN_BUSY_DELAYS_MS } = await import('./spawnRetry');
+const { SPAWN_BUSY_DELAYS_MS } = await import('./velopackSpawnRetry');
 
 const nsis = { dir: '', exe: '', uninstaller: '', perMachine: false };
 const deps = { isUpdateReady: () => false, handOff: vi.fn() };

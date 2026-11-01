@@ -36,7 +36,7 @@ import path from 'node:path';
 import { ciMark, pidAlive, userDataInstallId, velopackInstalled, velopackLog } from './velopackBoot';
 import { noteNeutralExit } from './bootContext';
 import { bundleRequire } from './bundleRequire';
-import { spawnWhenFree } from './spawnRetry';
+import { spawnWhenFree } from './velopackSpawnRetry';
 import { checkSigned } from './velopackVerify';
 import { waitForExit } from './winPowerShell';
 import {
@@ -625,7 +625,7 @@ async function installVelopack(nsis: NsisInstall, deps: MigrationDeps): Promise<
   ciMark('migration-installing', { version: m.version, attempt: decision.attempt });
   log(`installing Velopack ${m.version} (attempt ${decision.attempt})`);
   // A busy Setup (still held by its writer or a scanner) is retried briefly,
-  // and re-checked before every retry (spawnRetry.ts). A start that throws
+  // and re-checked before every retry (velopackSpawnRetry.ts). A start that throws
   // must still fail through here: it used to escape installVelopack and
   // leave the state at 'installing' and the Setup in %TEMP%.
   const started = await spawnWhenFree(() => spawn(setup, ['--silent'], { windowsHide: true, stdio: 'ignore', cwd: tmp }), {
@@ -727,7 +727,7 @@ async function removeNsisCopy(): Promise<void> {
       const copy = path.join(tmp, UNINSTALLER_RUN_AS);
       copyFileSync(uninstaller, copy);
       const how = uninstallSpawn(copy, dir);
-      // Just copied, so a scanner may still hold it (spawnRetry.ts). Nothing
+      // Just copied, so a scanner may still hold it (velopackSpawnRetry.ts). Nothing
       // was verified about this file, so there is nothing to re-check.
       const started = await spawnWhenFree(
         () => spawn(copy, how.args, { ...how.options, windowsHide: true, stdio: 'ignore', cwd: tmp }),
