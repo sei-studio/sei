@@ -21,6 +21,7 @@ import { getInFlightLineForSnapshot, idleLineForSnapshot } from '../../../brain/
 import { tallyAggro, aggroLine, AGGRO_PAIR_RANGE } from './aggro.js'
 import { liveInventoryItems } from './liveInventory.js'
 import { lostWeaponLine } from '../behaviors/weaponSelect.js'
+import { noteSeenStations, seenStationLine } from './seenStations.js'
 
 const MAX_ENTITIES = 6
 
@@ -150,6 +151,7 @@ export function composeSnapshot(bot, opts = {}) {
   const held = heldItem(bot)
   const inv = inventory(bot)
   const survey = surveyBlocks(bot, { radius: 16, maxNames: 10 })
+  try { noteSeenStations(bot, survey.groups) } catch { /* best-effort */ }
   // requireLineOfSight (260618): list only entities the bot can actually see
   // (within ENTITY_RADIUS and not occluded by terrain/fluids — so no underground
   // or behind-wall mobs). Entities behind the bot still count; the pinned owner
@@ -247,6 +249,9 @@ export function composeSnapshot(bot, opts = {}) {
   lines.push(`inventory (${slotsUsed} of 36 slots used): ${invStr}`)
   try { lines.push(pickaxeLine(inv)) } catch { /* best-effort */ }
   try { const f = furnaceLine(bot._seiFurnaceCooking); if (f) lines.push(f) } catch { /* best-effort */ }
+  // 261101 (pass 35): only while she holds raw metal or ore and no furnace is
+  // in view (seenStations.js).
+  try { const s = seenStationLine(bot, survey.groups, inv); if (s) lines.push(s) } catch { /* best-effort */ }
   // 261031 (pass 33): only after a death took her weapon (weaponSelect).
   try { const w = lostWeaponLine(bot); if (w) lines.push(w) } catch { /* best-effort */ }
 
