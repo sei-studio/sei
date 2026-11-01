@@ -44,6 +44,7 @@ import {
   FIRST_CONTACT,
   nextTimeGreeting,
   MEMORY_GOAL_TAIL,
+  ACK_LINE,
 } from './prompts.js'
 import { normalizeNextStep, nextStepMemoryLine, normalizePlayerLine, parsePlanGameField, PLAN_GAMES } from './nextStep.js'
 import { buildAnthropicTools } from './schemaBridge.js'
@@ -3437,8 +3438,10 @@ function maybeWarnByteCap(loop, warned) {
             ? teammateVoiceGuidance(speakerName || 'your teammate').trim()
             : crossed
             ? NUDGES.greetCrossed
-            : 'Reply with the say() tool — a direct message never gets silence, even if your answer is a refusal or a single word. ' +
-              'Your text output is a private scratchpad the player can NEVER see — a reply that exists only in your text is silence to them; only say() reaches them. ' +
+            // 261101 (pass 34): an acknowledgement is let off (ACK_LINE).
+            : 'Reply with the say() tool: a direct message never gets silence, even if your answer is a refusal or a single word. ' +
+              `${ACK_LINE} ` +
+              'Your text output is a private scratchpad the player can NEVER see; a reply that exists only in your text is silence to them. ' +
               NUDGES.replyNoRestate +
               // 261013 (pass 6b): the mid-action variants already end on this
               // check; a line that starts a fresh loop did not, and errands

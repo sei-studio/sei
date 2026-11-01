@@ -10,6 +10,7 @@ import { describe, it, expect, vi } from 'vitest'
 import fs from 'node:fs'
 import { z } from 'zod'
 import { createOrchestrator, _setTickIntervalForTests } from './orchestrator.js'
+import { ACK_LINE } from './prompts.js'
 
 function makeProvider(script) {
   let i = 0
@@ -138,6 +139,10 @@ describe('261012 crossed greeting', () => {
     await orch.handleDispatch('sei:idle', { reason: 'just_connected_first_spawn', quietMs: 0 })
     await say2(orch, 'hey sui')
     expect(lastTurnText(provider)).toContain(NOTE)
+    // 261101 (pass 34): a hello-only line is let off the same way an
+    // acknowledgement is, so the note no longer calls itself the one exception.
+    expect(lastTurnText(provider)).toContain('If this line is only a hello, it needs no answer: skip say() this turn.')
+    expect(lastTurnText(provider)).not.toContain('the one exception')
     // The mandatory-reply framing is swapped out for this one line.
     expect(lastTurnText(provider)).not.toContain('a direct message never gets silence')
     expect(lastTurnText(provider)).not.toContain('but say something')
@@ -181,6 +186,8 @@ describe('261012 crossed greeting', () => {
     }
     expect(lastTurnText(provider)).not.toContain(NOTE)
     expect(lastTurnText(provider)).toContain('a direct message never gets silence')
+    // 261101 (pass 34): the plain reply lets an acknowledgement go unanswered.
+    expect(lastTurnText(provider)).toContain(ACK_LINE)
   })
 
   it('no note when she never said a greeting', async () => {

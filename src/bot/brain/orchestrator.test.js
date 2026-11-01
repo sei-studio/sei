@@ -55,7 +55,9 @@ describe('NUDGES.actionTurn (260608-tik)', () => {
     // the spoken line into its private scratchpad and only calling the action,
     // so the player heard nothing. The action is not the reply.
     expect(t).toContain('The action is not the reply')
-    expect(t).toContain('also call say() this turn')
+    expect(t).toContain('also answer with one short say()')
+    // 261101 (pass 34): an acknowledgement is let off (ACK_LINE).
+    expect(t).toContain('A line that only acknowledges you')
     // The interrupt variant must NOT carry the silent-monitor phrasing.
     expect(t).not.toContain('Nothing needs you')
   })
@@ -928,7 +930,7 @@ describe('player_message block — scratchpad contract (260703b)', () => {
     await orch.handleDispatch('sei:chat_received', chat('yo'))
     const turn = JSON.stringify(provider.calls[0].messages ?? provider.calls[0])
     expect(turn).toContain('private scratchpad the player can NEVER see')
-    expect(turn).toContain('only say() reaches them')
+    expect(turn).toContain('a reply that exists only in your text is silence to them')
   })
 })
 
