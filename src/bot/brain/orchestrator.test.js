@@ -14,7 +14,7 @@ import path from 'node:path'
 import fs from 'node:fs/promises'
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { z } from 'zod'
-import { NUDGES, GREETING_HINT, memoryGameScope, chatContinuityGameScope, PERSONALITY_TOOL_DESCRIPTIONS } from './prompts.js'
+import { NUDGES, GREETING_HINT, memoryGameScope, chatContinuityGameScope, PERSONALITY_TOOL_DESCRIPTIONS, ACK_LINE } from './prompts.js'
 import {
   createOrchestrator,
   composeSeedBlocks,
@@ -55,9 +55,11 @@ describe('NUDGES.actionTurn (260608-tik)', () => {
     // the spoken line into its private scratchpad and only calling the action,
     // so the player heard nothing. The action is not the reply.
     expect(t).toContain('The action is not the reply')
-    expect(t).toContain('also answer with one short say()')
-    // 261101 (pass 34): an acknowledgement is let off (ACK_LINE).
-    expect(t).toContain('A line that only acknowledges you')
+    expect(t).toContain('also call say() this turn')
+    // 261101 (pass 34): the acknowledgement let-off is for plain replies only.
+    // On a mid-action turn it read as leave to skip a stop or a follow
+    // (pass34-compare2: order/stop lines off 0/48 -> 6/48).
+    expect(t).not.toContain(ACK_LINE)
     // The interrupt variant must NOT carry the silent-monitor phrasing.
     expect(t).not.toContain('Nothing needs you')
   })

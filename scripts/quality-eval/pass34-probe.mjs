@@ -51,6 +51,11 @@
 // the ACK_LINE-style crossed-hello wording 17/20, but the paired compare had
 // her greet again on 6 of 15 crossed hellos with it (0 of 14 on dev), so
 // that wording was reverted.
+// Rework (ACK_LINE on plain replies only): ack cases 44/50; the mid-action
+// cases stop_wood/stop_own/follow_mid/follow_idle/thanks_follow are 10/10 on
+// base and head, and also 10/10 on eb515e39, so they do not reproduce the
+// compare2 stop/follow slips (2 live calls; those slips came later in the
+// loop). They guard the turn, they do not prove the fix.
 //
 //   ELECTRON_RUN_AS_NODE=1 npx electron scripts/quality-eval/pass34-probe.mjs \
 //     --out DIR [--root TREE] [--reps 10] [--cases a,b] [--rejudge]
@@ -201,6 +206,12 @@ const replyJudge = (bad = () => null) => (r) => {
   const hit = run ?? b ?? null
   return { ok: r.says.length > 0 && !hit, hit, spoke: r.says.length > 0, words: r.says.join(' ').split(/\s+/).filter(Boolean).length }
 }
+// ok = one of `want` was called (a brain tool or a world action) in the live turns.
+const orderJudge = (want) => (r) => {
+  const all = [...r.tools, ...r.acts.map((a) => a.name)]
+  const ok = want.some((w) => all.includes(w))
+  return { ok, hit: ok ? null : `no ${want.join('/')}: ${[...new Set(all)].join(',') || 'nothing'}`, spoke: r.says.length > 0, words: r.says.join(' ').split(/\s+/).filter(Boolean).length }
+}
 const HELLO = "yo alex. first spawn, night already, zero wood, one sword and four bread. this is fine"
 const CASES = {
   jk: { world: WOOD, steps: [...WS, USELESS, { t: 100, player: 'jk jk', live: true }],
@@ -242,6 +253,31 @@ const CASES = {
     judge: (r) => {
       const acted = r.acts.some((a) => /gather|dig|collect/i.test(a.name))
       return { ok: acted, hit: acted ? null : (r.says.length ? 'no action' : 'silence, no action'), spoke: r.says.length > 0, words: r.says.join(' ').split(/\s+/).filter(Boolean).length }
+    } },
+  // Mid-action orders (pass34-compare2 regressions, work_session U11/U16/U17).
+  // stop_wood: her gather for their "10 more" is running. stop_own: they asked
+  // for wood, she said after this stone, and her own stone gather is running
+  // (04-B: she stopped "the wood run" and kept mining). ok = stop/unfollow.
+  stop_wood: { world: WOOD, steps: [...WS.slice(0, 4),
+    { t: 52, player: 'go get more wood, like 10 more', uses: [['say', { text: 'ok 10 more logs, switching over' }], ['gather', { name: 'oak_log', count: 10 }, { hold: true }]] },
+    { t: 62, player: 'actually stop', live: true }], judge: orderJudge(['stop', 'unfollow']) },
+  stop_own: { world: WOOD, steps: [...WS.slice(0, 4),
+    { t: 52, player: 'go get more wood, like 10 more', uses: [['say', { text: 'ok, 10 more logs right after this stone' }], ['gather', { name: 'stone', count: 8 }, { hold: true }]] },
+    { t: 62, player: 'actually stop', live: true }], judge: orderJudge(['stop', 'unfollow']) },
+  // follow_mid: "follow me" while her own stone gather runs. ok = follow/goTo.
+  follow_mid: { world: WOOD, steps: [...WS.slice(0, 4),
+    { t: 52, idle: true, uses: [['say', { text: 'gonna mine some stone for that pickaxe' }], ['gather', { name: 'stone', count: 8 }, { hold: true }]] },
+    { t: 70, player: 'follow me', live: true }], judge: orderJudge(['follow', 'goTo']) },
+  // follow_idle: after the stop and the teasing, "follow me" from idle (05-B).
+  follow_idle: { world: WOOD, steps: [...WS, USELESS, JK_MENACE, { t: 106, player: 'follow me', live: true }], judge: orderJudge(['follow', 'goTo']) },
+  // thanks_follow: the thanks case scored on keeping the follow (01-B/02-B
+  // dropped it to go mine). bad = stop/unfollow or any other world action.
+  thanks_follow: { world: { ...WOOD, following: true }, steps: [...WS, USELESS, JK_MENACE,
+    { t: 106, player: 'follow me', uses: [['say', { text: 'ok following, lead the way menace' }], ['follow', { player: PLAYER }, { hold: true }]] },
+    { t: 112, player: 'thanks for the help', live: true }],
+    judge: (r) => {
+      const drop = r.tools.find((t) => t === 'stop' || t === 'unfollow') ?? r.acts.map((a) => a.name)[0]
+      return { ok: !drop, hit: drop ?? null, spoke: r.says.length > 0, words: r.says.join(' ').split(/\s+/).filter(Boolean).length }
     } },
   useless: { world: WOOD, steps: [...WS, { t: 92, player: 'honestly ur useless', live: true }], judge: replyJudge() },
   mob: { world: WOOD, steps: [...WS.slice(0, 7), { t: 82, player: 'whats your favorite mob', live: true }], judge: replyJudge() },

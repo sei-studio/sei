@@ -187,8 +187,10 @@ describe('261012 crossed greeting', () => {
     }
     expect(lastTurnText(provider)).not.toContain(NOTE)
     expect(lastTurnText(provider)).toContain('a direct message never gets silence')
-    // 261101 (pass 34): the plain reply lets an acknowledgement go unanswered.
+    // 261101 (pass 34): the plain reply lets an acknowledgement go unanswered,
+    // and only there: the event hint keeps dev's "but say something".
     expect(lastTurnText(provider)).toContain(ACK_LINE)
+    expect(lastTurnText(provider)).toContain('but say something')
   })
 
   it('no note when she never said a greeting', async () => {

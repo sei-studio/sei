@@ -225,7 +225,7 @@ describe('ownRepeatsNote, by kind of turn', () => {
   const QUOTE = `Your last lines to them were "hey alex, want to grab wood with me?" and then "i'll get the oak trees, can you keep an eye on me?". They already heard these.`
 
   it('keeps the full reply-turn wording, byte for byte', () => {
-    const reply = `${QUOTE} Sound like yourself as always, but do not reuse a joke, comeback, greeting, offer or plan from your recent lines in this one; find something new to say, or say less. Do not bring up your plan, a count or an offer again unless they ask about it or it has changed. If they ask how it is going, tell them where things stand, just not in the same words as before.`
+    const reply = `${QUOTE} Sound like yourself as always, but do not reuse a joke, comeback, greeting, offer or plan from your recent lines in this one; find something new to say, or say less. Do not bring up your plan, a count or an offer again unless they ask about it or it has changed. If they ask how it is going, tell them where things stand, just not in the same words as before. If their line only acknowledges yours, a short reaction is enough.`
     expect(ownRepeatsNote(lines, [], { now, names: ['Alex'] })).toBe(reply)
     expect(ownRepeatsNote(lines, [], { now, names: ['Alex'], mode: 'reply' })).toBe(reply)
   })
@@ -273,9 +273,6 @@ describe('ownRepeatsNote, by kind of turn', () => {
   it('lets a real status answer through, only not in the same words', () => {
     const note = ownRepeatsNote(lines, [{ who: 'Alex', text: 'hows it going' }], { now, names: ['Alex'] })
     expect(note).toContain('If they ask how it is going, tell them where things stand, just not in the same words as before.')
-    // 261101 (pass 34): the acknowledgement let-off lives in the reply
-    // mandate (ACK_LINE) now, not in this note.
-    expect(note).not.toContain('only acknowledges')
   })
 
   it('on a reply turn a named bit is left out unless they ask for it', () => {

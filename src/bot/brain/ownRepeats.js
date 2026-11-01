@@ -441,9 +441,7 @@ const REUSE_ASK = 'Sound like yourself as always, but do not reuse a joke, comeb
 // biggest kind of repetitive label left on dev.
 // Review: a question like "hows it going" still gets a real answer about
 // where things stand, only not her last line again.
-// 261101 (pass 34): the acknowledgement sentence moved to the reply
-// mandate (promptLibrary ACK_LINE), which every reply carries.
-const REPITCH_ASK = 'Do not bring up your plan, a count or an offer again unless they ask about it or it has changed. If they ask how it is going, tell them where things stand, just not in the same words as before.'
+const REPITCH_ASK = 'Do not bring up your plan, a count or an offer again unless they ask about it or it has changed. If they ask how it is going, tell them where things stand, just not in the same words as before. If their line only acknowledges yours, a short reaction is enough.'
 
 function linesNote(selfLines, playerLines, opts = {}) {
   const mode = ['idle', 'checkin', 'greeted', 'result'].includes(opts.mode) ? opts.mode : 'reply'
