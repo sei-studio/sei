@@ -97,6 +97,52 @@ Follow the normal release steps in the workspace CLAUDE.md (bump, tag, watch
    it, and hand over. Three failed tries per epoch and an install stops
    trying; `-f epoch=<n+1>` gives them three more.
 
+## Staged rollout (electron-updater)
+
+This gates the NSIS Windows installs and every Mac, i.e. every 0.6.x client
+(Velopack installs use step 5 above instead). electron-updater 6.8.3 reads
+`stagingPercentage` from the release's `latest.yml` / `latest-mac.yml` and
+offers the update only to devices whose bucket (from the UUID in
+`<userData>/.updaterId`) is below that percent. No field = everyone, `0` =
+nobody. `.github/workflows/rollout.yml` writes the field on the GitHub release
+and on the mirror's flat `updates/*.yml` copies of the same version
+(`scripts/set-staging.mjs`); every other byte of the ymls stays as built.
+`dry_run` defaults to true: the first run of any change prints the before and
+after values and the diff, untick it (`-f dry_run=false`) to write.
+
+Default for a stable, 20 -> 50 -> 100:
+
+1. After `release.yml`, delete the stray partial draft (rollout refuses a tag
+   with two releases), then stage the DRAFT so no client ever sees it at
+   100%: `gh workflow run rollout.yml -f tag=vX.Y.Z -f percent=20 -f dry_run=false`.
+2. Publish the draft. `mirror-release.yml` copies the ymls, field included,
+   to dl.sei.gg (it also keeps a same-version value the mirror already has).
+   The run summary of each rollout run lists what both feeds now say.
+3. After about a day with nothing bad in crash reports or support:
+   `gh workflow run rollout.yml -f tag=vX.Y.Z -f percent=50 -f dry_run=false`.
+4. Then everyone: `gh workflow run rollout.yml -f tag=vX.Y.Z -f action=promote -f dry_run=false`.
+
+Notes:
+- Prerelease tags are refused unless `-f force=true`: betas go to everyone.
+- A device's bucket never changes, so raising the percent only adds devices.
+- Not staged: new downloads from sei.gg, and Velopack installs.
+- A stable publish also writes the mirror's `beta*.yml` names, and beta
+  clients on GitHub read the stable's own `latest*.yml`, so beta-channel users
+  below the stable are staged with it.
+- `gh release upload --clobber` deletes the old asset before uploading the new
+  one. A client that checks in that second finds no feed and reports no update.
+- rollout.yml and mirror-release.yml run from `main` (dispatch and the
+  `release: published` trigger both use the default branch). Keep
+  `.github/workflows/rollout.yml`, `.github/workflows/mirror-release.yml`,
+  `scripts/set-staging.mjs` and `scripts/lib/stagingYml.mjs` there in step
+  with dev.
+
+**Rollback = pause, then roll forward.** `gh workflow run rollout.yml -f tag=vX.Y.Z -f action=pause -f dry_run=false`
+stops new installs taking the version (stagingPercentage 0) within one update
+check. Installs that already have it, or already downloaded it for the next
+quit, keep it: electron-updater does not downgrade. Ship the fix as the next
+patch (X.Y.Z+1), staged or at 100%, and the bad installs update to it.
+
 ## The kill switch (three parts)
 
 A bad version can reach users three ways, so stopping it takes three moves.
@@ -105,10 +151,13 @@ Do all three, in this order:
 1. **Velopack update rollout to 0** (stops Velopack installs updating to it):
    `gh workflow run velopack-rollout.yml -f channel=<win|beta> -f kind=update -f version=X.Y.Z -f percent=0 -f dry_run=false`.
    For a stable, also do `channel=beta` if the stable went to beta too.
-2. **The GitHub release back to draft** (stops NSIS installs updating to it
-   through electron-updater, and the GitHub fallback feed):
-   `gh release edit vX.Y.Z --draft=true`. The electron-updater R2 mirror
-   (`updates/`) still lists it: re-mirror the previous good tag there
+2. **electron-updater rollout to 0** (stops NSIS installs and Macs updating
+   to it, on GitHub and the R2 mirror in one run):
+   `gh workflow run rollout.yml -f tag=vX.Y.Z -f action=pause -f dry_run=false`
+   (see "Staged rollout" above). If that cannot run, the old way: the GitHub
+   release back to draft (`gh release edit vX.Y.Z --draft=true`, which also
+   stops the GitHub fallback feed), and re-mirror the previous good tag into
+   `updates/`
    (`gh workflow run mirror-release.yml -f tag=<previous> -f dry_run=false -f velopack_only=false`).
 3. **Migration to 0** (stops NSIS installs migrating, because the migration
    always installs the newest `setup.<channel>.json`, which cannot move

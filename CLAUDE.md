@@ -3809,6 +3809,41 @@ re-running a cancelled mirror, and the one-time move of the workflows to
 `main` are in **`docs/design/velopack-runbook.md`**. Read it before any
 Windows release.
 
+**Staged rollout (electron-updater, 261101).** Every shipped client (0.6.x,
+electron-updater 6.8.3) honours `stagingPercentage` in latest.yml /
+latest-mac.yml: `AppUpdater.isStagingMatch` offers the update only when the
+device's bucket (the last 4 bytes of the UUID in `<userData>/.updaterId`, as a
+fraction of 2^32) is below N/100. Field absent = everyone; **0 = nobody**
+(bucket < 0 never holds), so 0 is the pause value; a value that is not an
+integer reads as everyone, which is why the script accepts only 0-100.
+`.github/workflows/rollout.yml` (inputs `tag`, `action` set|pause|promote,
+`percent`, `force`, `dry_run` default true) rewrites the field in the GitHub
+release's feed ymls (`gh release upload --clobber`) and in the dl.sei.gg
+mirror's flat `updates/*.yml` that serve that version, keeping every other byte
+(`scripts/set-staging.mjs` over `scripts/lib/stagingYml.mjs`, tested). It
+refuses a prerelease tag unless `force` (betas stay at 100%) and a tag with
+two releases (delete the stray draft first). `mirror-release.yml` re-reads the
+ymls just before writing them and keeps a same-version value the mirror
+already has, so a publish or re-mirror cannot reopen a paused rollout.
+- Default for a stable: set 20% on the DRAFT, publish, 50% after a day with
+  no bad signal, then promote:
+  `gh workflow run rollout.yml -f tag=vX.Y.Z -f percent=20 -f dry_run=false`,
+  `... -f percent=50 -f dry_run=false`,
+  `... -f action=promote -f dry_run=false`.
+  Buckets are fixed per device, so raising the percent only adds devices.
+- Rollback = `-f action=pause -f dry_run=false` (no new installs take it),
+  then ship the fix as the next patch. electron-updater never downgrades:
+  installs already on the bad version, or holding its download for the next
+  quit, keep it until the fix arrives.
+- Not staged: new downloads from sei.gg, and Velopack installs (0.7.0+
+  Windows, `velopack-rollout.yml`). Beta-channel clients below the stable read
+  the same staged yml (GitHub) or its beta* copy (mirror).
+- `release: published` and `workflow_dispatch` run the DEFAULT branch's
+  workflow files, so `rollout.yml`, `mirror-release.yml`,
+  `scripts/set-staging.mjs` and `scripts/lib/stagingYml.mjs` must be on
+  `main`. Runbook: `docs/design/velopack-runbook.md`, "Staged rollout
+  (electron-updater)".
+
 ### Boot safety and settings recovery (261031, T277)
 
 A build that cannot start must still be able to update itself, and a damaged
