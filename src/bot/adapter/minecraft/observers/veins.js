@@ -17,6 +17,7 @@
 
 import { getHealedPos } from './posHealer.js'
 import { isExposed } from './blocks.js'
+import { Vec3 } from 'vec3'
 
 const SEE_THROUGH_NAMES = new Set(['air', 'cave_air', 'void_air'])
 
@@ -103,9 +104,11 @@ export function scanColumns(bot, origin, radius) {
   const side = 2 * R + 3
   const half = R + 1
   const grid = new Int32Array(side * side * side)
-  const local = { x: 0, y: 0, z: 0 }
+  // A Vec3, not a plain object: the 1.8 chunk calls pos.modulus().
+  const local = new Vec3(0, 0, 0)
   const cols = new Map()
   let anyColumn = false
+  let anyRead = false
   for (let ix = 0; ix < side; ix++) {
     const wx = ox - half + ix
     for (let iz = 0; iz < side; iz++) {
@@ -131,12 +134,15 @@ export function scanColumns(bot, origin, radius) {
         if (wy < minY) { grid[base + iy] = -1; continue }
         local.y = wy
         let id
-        try { id = col.getBlockStateId(local) } catch { id = -1 }
-        grid[base + iy] = Number.isInteger(id) ? id : -1
+        try { id = col.getBlockStateId(local) } catch { id = undefined }
+        if (Number.isInteger(id)) { grid[base + iy] = id; anyRead = true } else grid[base + iy] = -1
       }
     }
   }
   if (!anyColumn) return new Map()
+  // Columns loaded but no state id could be read (a chunk format this scan
+  // does not understand): let the caller use the findBlocks path.
+  if (!anyRead) return null
 
   // Per-state classification, cached for the scan.
   const info = new Map()

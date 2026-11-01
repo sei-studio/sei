@@ -154,6 +154,32 @@ describe('surveyBlocks', () => {
     expect(surveyBlocks({ entity: { position: new Vec3(0, 0, 0) } })).toEqual({ groups: [], more: 0 })
   })
 
+  it('reads 1.8 chunks too (their getBlockStateId needs a Vec3)', () => {
+    const V = '1.8.9'
+    const reg = require('prismarine-registry')(V)
+    const OldChunk = require('prismarine-chunk')(reg)
+    const world = new (require('prismarine-world')(reg))().sync
+    for (let cx = -1; cx <= 1; cx++) {
+      for (let cz = -1; cz <= 1; cz++) {
+        const c = new OldChunk()
+        for (let x = 0; x < 16; x++) {
+          for (let z = 0; z < 16; z++) {
+            for (let y = 0; y < 70; y++) c.setBlockType(new Vec3(x, y, z), reg.blocksByName.stone.id)
+            c.setBlockType(new Vec3(x, 70, z), reg.blocksByName.grass.id)
+          }
+        }
+        if (cx === 0 && cz === 0) c.setBlockType(new Vec3(3, 71, 3), reg.blocksByName.furnace.id)
+        world.setColumn(cx, cz, c)
+      }
+    }
+    const bot = { registry: reg, world, game: { minY: 0, height: 256 }, entity: { position: new Vec3(0.5, 71, 0.5) } }
+    const s = surveyBlocks(bot, { radius: 16 })
+    expect(names(s).sort()).toEqual(['furnace', 'grass'])
+    // A column whose reads all fail falls back instead of reporting nothing.
+    const broken = { ...bot, world: { getColumn: () => ({ getBlockStateId: () => { throw new Error('x') } }) } }
+    expect(scanColumns(broken, bot.entity.position, 16)).toBeNull()
+  })
+
   it('handles a NaN origin', () => {
     const bot = arenaBot()
     bot.entity = { position: new Vec3(NaN, 71, 0) }
