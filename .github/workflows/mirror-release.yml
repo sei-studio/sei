@@ -29,6 +29,14 @@
 # GitHub channel, cut or re-publish a beta after any stable release (see the
 # beta-feed-ordering rule) or mirror beta clients idle on the stale entry.
 #
+# Staged rollout (261101): rollout.yml sets stagingPercentage in the release's
+# feed ymls and in the flat mirror copies. The ymls are re-read from the
+# release just before they are written here, and a mirror copy of the SAME
+# version that has a stagingPercentage keeps it when the release yml has none
+# (scripts/set-staging.mjs --carry-from), so a publish or a re-mirror never
+# undoes a pause or a partial rollout. Set the percent on the draft before
+# publishing and the mirror simply copies it.
+#
 # Velopack (Windows, 261030): the release's Velopack files (packages, Setup,
 # releases.<channel>.json, setup.<channel>.json; scripts/velopack-pack.mjs) go
 # to velopack/ instead, through scripts/velopack-mirror.mjs: packages and the
@@ -144,9 +152,21 @@ jobs:
           name: ${{ inputs.artifact }}
           path: assets
 
+      - name: Checkout (staging carry-over script)
+        if: inputs.artifact == '' && inputs.velopack_only != true
+        uses: actions/checkout@v6
+        with:
+          path: src
+          sparse-checkout: |
+            scripts/set-staging.mjs
+            scripts/lib/stagingYml.mjs
+          sparse-checkout-cone-mode: false
+
       - name: Upload to R2
         if: inputs.velopack_only != true
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -181,6 +201,36 @@ jobs:
             esac
             aws s3 cp "$f" "s3://sei-dl/updates/$CHANNEL/$(basename "$f")" --endpoint-url "$endpoint"
           done
+          # Staged rollout (rollout.yml, 261101): the feed ymls carry an
+          # optional stagingPercentage. Re-read them from the release now: a
+          # rollout.yml run that landed while the artifacts uploaded (minutes)
+          # changed them, and the copy from the start of this job is stale.
+          mkdir -p fresh
+          for f in assets/*.yml; do
+            n="$(basename "$f")"
+            if gh release download "$TAG" --repo "${{ github.repository }}" --dir fresh --pattern "$n" --clobber \
+              && grep -q '^version:' "fresh/$n"; then
+              cp "fresh/$n" "$f"
+            else
+              echo "::warning::could not re-read $n; mirroring the copy from the start of the job"
+            fi
+          done
+          # Then keep a same-version stagingPercentage the mirror already
+          # serves when the release yml has none (scripts/lib/stagingYml.mjs
+          # carryStaging), so this job can never quietly open a paused or
+          # staged release to everyone. rollout.yml action=promote clears both.
+          mkdir -p carry
+          put_feed() {
+            local src="$1" name="$2" out="carry/$2"
+            cp "$src" "$out"
+            if aws s3 cp "s3://sei-dl/updates/$name" "carry/$name.live" --endpoint-url "$endpoint" --only-show-errors 2>/dev/null; then
+              node src/scripts/set-staging.mjs --carry-from "carry/$name.live" "$out" \
+                || { echo "::warning::stagingPercentage carry-over failed for $name; mirroring it as released"; cp "$src" "$out"; }
+            else
+              echo "$name: nothing on the mirror yet"
+            fi
+            aws s3 cp "$out" "s3://sei-dl/updates/$name" --endpoint-url "$endpoint"
+          }
           # Point every artifact ref in the ymls at the channel dir. Rewrites
           # only the `- url:` entries and the legacy top-level `path:`; sha512
           # and size lines are untouched.
@@ -192,11 +242,12 @@ jobs:
             if [ "$CHANNEL" = "beta" ]; then
               # electron-builder always names the ymls latest*; the beta
               # channel's clients request beta*.yml, so rename on upload.
-              aws s3 cp "$f" "s3://sei-dl/updates/${base/latest/beta}" --endpoint-url "$endpoint"
+              put_feed "$f" "${base/latest/beta}"
             else
-              aws s3 cp "$f" "s3://sei-dl/updates/$base" --endpoint-url "$endpoint"
-              # A stable also refreshes the beta feed names (see header note).
-              aws s3 cp "$f" "s3://sei-dl/updates/${base/latest/beta}" --endpoint-url "$endpoint"
+              put_feed "$f" "$base"
+              # A stable also refreshes the beta feed names (see header note),
+              # from the copy just written so both names carry one value.
+              put_feed "carry/$base" "${base/latest/beta}"
             fi
           done
           echo "Mirrored ${{ steps.tag.outputs.tag }} ($CHANNEL) to r2://sei-dl/updates/"

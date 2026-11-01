@@ -1,0 +1,243 @@
+# Staged rollout of an electron-updater release (261101). Works for every
+# shipped client: electron-updater 6.8.3 (all of 0.6.x) reads an optional
+# `stagingPercentage` from latest.yml / latest-mac.yml and offers the update
+# only to installs whose bucket (a per-device UUID in <userData>/.updaterId)
+# falls under it. scripts/lib/stagingYml.mjs has the exact semantics:
+#
+#   set N     stagingPercentage: N   (100 removes the field: exactly everyone)
+#   pause     stagingPercentage: 0   (0 offers the update to NOBODY)
+#   promote   field removed          (everyone)
+#
+# One run rewrites the field, keeping every other byte, in both feeds a client
+# can read:
+#   1. the GitHub release's feed ymls (latest*.yml; beta*.yml on a forced
+#      prerelease), re-uploaded with `gh release upload --clobber`;
+#   2. the dl.sei.gg mirror's flat feed ymls (updates/latest*.yml and
+#      updates/beta*.yml, see mirror-release.yml), but only the ones that serve
+#      this version. A stable publish also writes the beta* names, so beta
+#      clients on the mirror get the same gate the GitHub feed gives them.
+#
+# The release may still be a DRAFT: set the percent before publishing and no
+# client ever sees the release at 100%. The mirror has no copy of a draft yet;
+# mirror-release.yml copies the release's ymls on publish, field included, and
+# keeps a same-version value already on the mirror (set-staging --carry-from).
+#
+# Refuses a prerelease tag unless `force` is ticked: betas go to everyone.
+# dry_run (the default) downloads both feeds and prints the change without
+# writing anything. Runbook: docs/design/velopack-runbook.md, "Staged rollout
+# (electron-updater)".
+name: Rollout
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag, e.g. v0.6.12'
+        type: string
+        required: true
+      action:
+        description: 'set = use percent; pause = 0 (nobody new); promote = remove the field (everyone)'
+        type: choice
+        options: [set, pause, promote]
+        default: set
+      percent:
+        description: 'Percent of installs, 0-100 (action set only)'
+        type: string
+        default: ''
+      force:
+        description: 'Allow a prerelease tag (betas normally stay at 100%)'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Print the change without writing it (untick to really roll out)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+# One writer at a time for the electron-updater feeds. Never cancel a run
+# half way: it writes GitHub first, then the mirror.
+concurrency:
+  group: electron-updater-rollout
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check inputs and the release
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          ACTION: ${{ inputs.action }}
+          PERCENT: ${{ inputs.percent }}
+          FORCE: ${{ inputs.force }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::tag must look like v0.6.12, got '$TAG'"; exit 1
+          fi
+          case "$ACTION" in
+            set)
+              if ! [[ "$PERCENT" =~ ^[0-9]{1,3}$ ]] || [ "$PERCENT" -gt 100 ]; then
+                echo "::error::action set needs percent 0-100, got '$PERCENT'"; exit 1
+              fi;;
+            pause|promote)
+              if [ -n "$PERCENT" ]; then echo "::notice::percent '$PERCENT' is ignored for action $ACTION"; fi;;
+            *) echo "::error::action must be set, pause or promote"; exit 1;;
+          esac
+          # Exactly one release (published or draft) for the tag. release.yml's
+          # two legs can leave a stray partial draft beside the real one, and
+          # gh would pick either: delete the stray first.
+          rows=$(gh api --paginate "repos/$REPO/releases?per_page=100" \
+            --jq '.[] | select(.tag_name == env.TAG) | "\(.id) \(.draft) \(.prerelease) \(.assets | length)"')
+          count=$(printf '%s' "$rows" | grep -c . || true)
+          if [ "$count" != 1 ]; then
+            echo "::error::expected exactly one release for $TAG, found $count:"
+            printf '%s\n' "$rows"
+            echo "Delete the stray draft (gh api -X DELETE repos/$REPO/releases/<id>) and run again."
+            exit 1
+          fi
+          read -r id draft pre assets <<<"$rows"
+          echo "release $TAG: id=$id draft=$draft prerelease=$pre assets=$assets"
+          if [ "$pre" = true ] && [ "$FORCE" != true ]; then
+            echo "::error::$TAG is a prerelease. Betas stay at 100%; tick force to stage one anyway."; exit 1
+          fi
+          if [ "$DRY_RUN" != true ]; then
+            if [ -z "$R2_ACCOUNT_ID" ] || [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+              echo "::error::R2_ACCOUNT_ID, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY must all be set: the mirror must move with GitHub"; exit 1
+            fi
+          fi
+          {
+            echo "version=${TAG#v}"
+            echo "draft=$draft"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            scripts/set-staging.mjs
+            scripts/lib/stagingYml.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: Download the feeds
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          set -euo pipefail
+          mkdir -p gh mirror
+          gh release download "$TAG" --repo "$REPO" --dir gh --pattern 'latest*.yml' --pattern 'beta*.yml'
+          shopt -s nullglob
+          files=(gh/*.yml)
+          if [ ${#files[@]} -eq 0 ]; then echo "::error::$TAG has no feed ymls"; exit 1; fi
+          for name in latest.yml latest-mac.yml beta.yml beta-mac.yml; do
+            if [ -n "$R2_ACCOUNT_ID" ] && [ -n "$AWS_ACCESS_KEY_ID" ]; then
+              aws s3 cp "s3://sei-dl/updates/$name" "mirror/$name" --only-show-errors \
+                --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" || rm -f "mirror/$name"
+            else
+              # Dry run without R2 secrets: the public copy is the same object.
+              curl -fsS "https://dl.sei.gg/updates/$name?nocache=$(date +%s)" -o "mirror/$name" || rm -f "mirror/$name"
+            fi
+          done
+          ls -la gh mirror
+          mkdir -p before
+          cp -r gh before/gh && cp -r mirror before/mirror
+
+      - name: Rewrite stagingPercentage
+        env:
+          ACTION: ${{ inputs.action }}
+          PERCENT: ${{ inputs.percent }}
+          VERSION: ${{ steps.check.outputs.version }}
+          DRAFT: ${{ steps.check.outputs.draft }}
+          TAG: ${{ inputs.tag }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          args=(--action "$ACTION" --expect-version "$VERSION")
+          if [ "$ACTION" = set ]; then args+=(--percent "$PERCENT"); fi
+          echo "== GitHub release feed"
+          node scripts/set-staging.mjs "${args[@]}" gh/*.yml
+          echo "== dl.sei.gg mirror (updates/)"
+          shopt -s nullglob
+          mirror=(mirror/*.yml)
+          if [ ${#mirror[@]} -eq 0 ]; then
+            echo "no mirror feeds found"
+          else
+            node scripts/set-staging.mjs "${args[@]}" --skip-other-version "${mirror[@]}"
+          fi
+          if [ "$DRAFT" = true ]; then
+            echo "::notice::$TAG is a draft, so the mirror has no copy of it yet; mirror-release.yml copies the value when it is published"
+          fi
+          # The edits above are to local copies; the next step uploads them.
+          if [ "$DRY_RUN" = true ]; then echo "DRY RUN: nothing is uploaded (untick dry_run to write)"; fi
+
+      - name: Write GitHub, then the mirror
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          # GitHub first: it is the feed clients read first, and the mirror's
+          # publish-time carry-over assumes GitHub is never behind the mirror.
+          for f in gh/*.yml; do
+            if cmp -s "$f" "before/$f"; then echo "unchanged: $f"; continue; fi
+            gh release upload "$TAG" "$f" --repo "$REPO" --clobber
+            echo "uploaded $(basename "$f") to the $TAG release"
+          done
+          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          for f in mirror/*.yml; do
+            if cmp -s "$f" "before/$f"; then echo "unchanged: $f"; continue; fi
+            aws s3 cp "$f" "s3://sei-dl/updates/$(basename "$f")" --endpoint-url "$endpoint"
+          done
+
+      - name: Read back what clients see
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          ACTION: ${{ inputs.action }}
+          PERCENT: ${{ inputs.percent }}
+        run: |
+          set -uo pipefail
+          staging() { grep -m1 '^stagingPercentage:' "$1" || echo 'stagingPercentage: absent (everyone)'; }
+          mkdir -p verify/gh verify/mirror
+          gh release download "$TAG" --repo "$REPO" --dir verify/gh --pattern 'latest*.yml' --pattern 'beta*.yml' --clobber
+          {
+            echo "### Rollout $TAG ($ACTION $PERCENT)"
+            echo
+            echo "| feed | version | stagingPercentage |"
+            echo "|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for f in verify/gh/*.yml; do
+            echo "GitHub $(basename "$f"): $(grep -m1 '^version:' "$f") $(staging "$f")"
+            echo "| GitHub $(basename "$f") | $(grep -m1 '^version:' "$f" | cut -d' ' -f2) | $(staging "$f" | cut -d' ' -f2-) |" >> "$GITHUB_STEP_SUMMARY"
+          done
+          for name in latest.yml latest-mac.yml beta.yml beta-mac.yml; do
+            out="verify/mirror/$name"
+            if curl -fsS "https://dl.sei.gg/updates/$name?nocache=$(date +%s)" -o "$out"; then
+              echo "dl.sei.gg $name: $(grep -m1 '^version:' "$out") $(staging "$out")"
+              echo "| dl.sei.gg $name | $(grep -m1 '^version:' "$out" | cut -d' ' -f2) | $(staging "$out" | cut -d' ' -f2-) |" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
