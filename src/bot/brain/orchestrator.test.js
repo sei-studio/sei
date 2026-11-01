@@ -931,8 +931,9 @@ describe('player_message block — scratchpad contract (260703b)', () => {
     })
     await orch.handleDispatch('sei:chat_received', chat('yo'))
     const turn = JSON.stringify(provider.calls[0].messages ?? provider.calls[0])
-    expect(turn).toContain('private scratchpad the player can NEVER see')
-    expect(turn).toContain('a reply that exists only in your text is silence to them')
+    // 261102 (pass 34): said in fewer tokens, in the reply mandate itself.
+    expect(turn).toContain('Text outside say() never reaches them.')
+    expect(turn).toContain('your text output is invisible to them')
   })
 })
 

@@ -968,7 +968,9 @@ const clipNote = (t, n = 160) => { const x = String(t ?? '').replace(/\s+/g, ' '
 // with the "say something" demands there dropped, stop and follow orders
 // slipped (pass34-compare2: order/stop lines off 0/48 -> 6/48), so that turn
 // and playerInterruptHint keep dev's text.
-export const ACK_LINE = 'A line that only acknowledges you or laughs (ok, cool, nice, thanks, lol, jk) needs no answer: skip say() this turn.'
+// 261102: folded into the plain-reply mandate it qualifies, token-neutral
+// against dev (that sentence pair was 70 tokens, this is 67).
+export const ACK_LINE = 'Reply with the say() tool: a direct message never gets silence, even a refusal or one word, unless it only acknowledges you or laughs (ok, cool, nice, thanks, lol, jk); then skip say(). Text outside say() never reaches them.'
 
 export const NUDGES = {
   silence:

@@ -56,6 +56,8 @@
 // base and head, and also 10/10 on eb515e39, so they do not reproduce the
 // compare2 stop/follow slips (2 live calls; those slips came later in the
 // loop). They guard the turn, they do not prove the fix.
+// Token-neutral fold (ACK_LINE is the whole reply mandate, -3 tokens vs dev):
+// ack cases 43/50, every other case within 2 reps of ee4f80d9.
 //
 //   ELECTRON_RUN_AS_NODE=1 npx electron scripts/quality-eval/pass34-probe.mjs \
 //     --out DIR [--root TREE] [--reps 10] [--cases a,b] [--rejudge]
