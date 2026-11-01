@@ -47,7 +47,10 @@
 // howru stays 0/10: she restates the hello's facts (not fixed here).
 // Ablations that did not hold: dropping the quote of her last lines (jk 2/10,
 // nice_job 0/10) and dropping CORE's initiative section on reply turns
-// (jk 0/10, nice_job 1/10).
+// (jk 0/10, nice_job 1/10). greet_cross did not predict the eval: it scored
+// the ACK_LINE-style crossed-hello wording 17/20, but the paired compare had
+// her greet again on 6 of 15 crossed hellos with it (0 of 14 on dev), so
+// that wording was reverted.
 //
 //   ELECTRON_RUN_AS_NODE=1 npx electron scripts/quality-eval/pass34-probe.mjs \
 //     --out DIR [--root TREE] [--reps 10] [--cases a,b] [--rejudge]

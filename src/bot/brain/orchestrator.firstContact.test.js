@@ -139,10 +139,11 @@ describe('261012 crossed greeting', () => {
     await orch.handleDispatch('sei:idle', { reason: 'just_connected_first_spawn', quietMs: 0 })
     await say2(orch, 'hey sui')
     expect(lastTurnText(provider)).toContain(NOTE)
-    // 261101 (pass 34): a hello-only line is let off the same way an
-    // acknowledgement is, so the note no longer calls itself the one exception.
-    expect(lastTurnText(provider)).toContain('If this line is only a hello, it needs no answer: skip say() this turn.')
-    expect(lastTurnText(provider)).not.toContain('the one exception')
+    // 261101 (pass 34): the crossed-hello turn keeps its own wording. Worded
+    // like ACK_LINE ("it needs no answer: skip say()") she greeted again on 6
+    // of 15 crossed hellos in the paired compare, against 0 of 14 with this.
+    expect(lastTurnText(provider)).toContain('do not call say() this turn; that is the one exception to answering every line')
+    expect(lastTurnText(provider)).not.toContain(ACK_LINE)
     // The mandatory-reply framing is swapped out for this one line.
     expect(lastTurnText(provider)).not.toContain('a direct message never gets silence')
     expect(lastTurnText(provider)).not.toContain('but say something')

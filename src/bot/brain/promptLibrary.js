@@ -1120,7 +1120,10 @@ export const NUDGES = {
   // same case. Also appended to a mid-action turn, where it is the exception.
   // 261017: the transcript now orders her lines by when they reached the
   // player, so her hello sits right AFTER their line, not above it.
-  greetCrossed: `Your hello reached them just after they typed this (it comes right after their line in the conversation above), so it already answers their hello. If this line is only a hello, it needs no answer: skip say() this turn. If it says or asks something more, answer that part, and act on it if it is a request, without greeting them or introducing yourself again. Your text output is a private scratchpad they never see.`,
+  // 261101 (pass 34): keep this wording. In ACK_LINE's words ("it needs no
+  // answer: skip say() this turn") she greeted again on 6 of 15 crossed
+  // hellos in the paired compare, against 0 of 14 with this one.
+  greetCrossed: `Your hello reached them just after they typed this (it comes right after their line in the conversation above), so it already answers their hello. If this line is only a hello, do not call say() this turn; that is the one exception to answering every line. If it says or asks something more, answer that part, and act on it if it is a request, without greeting them or introducing yourself again. Your text output is a private scratchpad they never see.`,
 
   // 260708: group-voice variant of playerInterruptHint. On a group call the
   // line may belong to a teammate, so the mandatory-reply sentence is wrong
