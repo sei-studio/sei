@@ -54,7 +54,8 @@ import type { VoiceTtsNoticePush } from '@shared/ipc';
 import { createAudioQueue, type AudioQueue, type TtsStreamHandle } from '../voice/audioQueue';
 import { t, uiLanguage } from '../i18n';
 import { currentResetLine } from '../useResetLine';
-import { createDictation, type Dictation } from '../voice/dictation';
+import { burstLanguageFor, cloudPassText, createDictation, type Dictation } from '../voice/dictation';
+import type { SttHint } from '../voice/sttArbiter';
 import {
   companionAudioGapMs,
   classifyScreenEcho,
@@ -1890,7 +1891,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // disable stays SILENT: in 'none' mode it must not raise the backup-
       // model prompt the way a genuine upstream failure does.
       let cloudSttSilentOff = false;
-      const cloudTranscribe = async (audio: Float32Array): Promise<string | null> => {
+      const cloudTranscribe = async (audio: Float32Array, hint?: SttHint): Promise<string | null> => {
         if (cloudSttOff || !sei.voiceStt) return null;
         try {
           // No language pin (260725): Scribe auto-detects per utterance, and
@@ -1908,7 +1909,15 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
             if (reason === 'no-credentials') cloudSttSilentOff = true;
             return null;
           }
-          return res.text;
+          // A barge burst Scribe was unsure of is her echo it made a word of
+          // (dictation.ts burstWordUnsure): no word, not an interrupt.
+          const text = cloudPassText(res, hint);
+          if (text !== res.text) {
+            console.log(
+              `[sei/voice] barge: unsure burst word dropped (logprob ${res.minWordLogprob?.toFixed(2)}) — "${res.text.slice(0, 40)}"`,
+            );
+          }
+          return text;
         } catch {
           return null; // transient — local covers this utterance, retry on the next
         }
@@ -1917,6 +1926,11 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       try {
         dictation = await createDictation({
           language: chatLanguage,
+          burstLanguage: burstLanguageFor(
+            callCfg?.chat_language,
+            callCfg?.ui_language,
+            typeof navigator !== 'undefined' ? navigator.language : undefined,
+          ),
           // Output path settled — safe to schedule the ring (see ringNow).
           onMicReady: () => {
             window.clearTimeout(ringFallback);
@@ -1968,6 +1982,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           onBargeAbort: (reason) => {
             if (session !== mySession) return;
             if (reason === 'echo') interruptStats.note('echo_rejected');
+            else if (reason === 'no_voice' || reason === 'no_word') interruptStats.note(reason);
             queue?.duck(false);
           },
           onBargeIn: () => {

@@ -12,7 +12,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { bargeBars, bargeDeadlineBar, createDictation, type BargeAbortReason } from './dictation';
+import { bargeBars, createDictation, type BargeAbortReason } from './dictation';
 
 const FRAME = 2048;
 const FRAME_MS = (FRAME / 16_000) * 1000; // 128
@@ -65,6 +65,7 @@ interface Rig {
   suspects: number;
   barges: number;
   aborts: BargeAbortReason[];
+  utterances: string[];
 }
 
 async function rig(opts: {
@@ -72,11 +73,13 @@ async function rig(opts: {
   transcript?: string;
   echoCheck?: () => boolean | Promise<boolean>;
 }): Promise<Rig> {
-  const r = { suspects: 0, barges: 0, aborts: [] as BargeAbortReason[] } as Rig;
+  const r = { suspects: 0, barges: 0, aborts: [] as BargeAbortReason[], utterances: [] as string[] } as Rig;
   r.dictation = await createDictation({
     localModel: 'none',
     cloudTranscribe: async () => opts.transcript ?? '',
-    onUtterance: () => {},
+    onUtterance: (text) => {
+      r.utterances.push(text);
+    },
     onStatus: () => {},
     onBargeSuspect: () => {
       r.suspects += 1;
@@ -232,8 +235,8 @@ describe('stage two after a duck', () => {
   it('a word the echo gate is still judging is not thrown away at the 1.8 s energy deadline', async () => {
     // Windows loopback share: her voice is in the screen reference, so every
     // barge takes the gate's slow path (one bounded screen-STT flush). It used
-    // to run past BARGE_SUSPECT_MAX_MS, and the energy fallback then retracted
-    // the duck on whatever frame came next, dropping the player's words.
+    // to run past BARGE_SUSPECT_MAX_MS, and the deadline then retracted the
+    // duck on whatever frame came next, dropping the player's words.
     let answer: (echo: boolean) => void = () => {};
     const gate = new Promise<boolean>((res) => {
       answer = res;
@@ -246,8 +249,7 @@ describe('stage two after a duck', () => {
     r.frame(0.06, 2); // the player starts talking: duck, then the STT pass
     expect(r.suspects).toBe(1);
     await flush(); // the cloud mock answers with a word; the gate is pending
-    // Keep talking past 1.8 s, softly enough to sit under the deadline bar.
-    expect(0.025).toBeLessThan(bargeDeadlineBar(0.01));
+    // Keep talking past 1.8 s.
     r.frame(0.025, 12);
     expect(r.aborts).toEqual([]);
     answer(false); // not echo: the player's
@@ -256,13 +258,39 @@ describe('stage two after a duck', () => {
     expect(r.aborts).toEqual([]);
   });
 
+  it('word-only: a gate that outlasts its bound retracts the duck, and its cleared word is a late turn', async () => {
+    let answer: (echo: boolean) => void = () => {};
+    const gate = new Promise<boolean>((res) => {
+      answer = res;
+    });
+    const r = await rig({ share: true, transcript: 'wait hold on', echoCheck: () => gate });
+    r.frame(0.004, 200);
+    r.dictation.setHold(true);
+    r.dictation.armBargeGrace();
+    r.frame(0.01, 8);
+    r.frame(0.06, 2);
+    await flush(); // a word came back; the gate is pending
+    for (let i = 0; i < 40 && r.aborts.length === 0; i += 1) r.frame(0.06); // a loud voice up to the 4 s bound
+    expect(r.barges).toBe(0); // no energy commit
+    expect(r.aborts).toEqual(['no_word']);
+    r.frame(0.004, 4);
+    answer(false); // the gate clears it, late
+    await flush();
+    await flush();
+    expect(r.barges).toBe(0);
+    expect(r.utterances).toEqual(['wait hold on']);
+  });
+
   it('a duck the echo gate traces to the speakers is retracted as echo', async () => {
     const r = await rig({ share: true, transcript: 'over there', echoCheck: async () => true });
     r.frame(0.004, 200);
     r.dictation.setHold(true);
     r.dictation.armBargeGrace();
     r.frame(0.01, 8);
-    r.frame(0.06, 2);
+    // The duck, then the voice after it: stage two only reads the audio from
+    // the duck on (261031), so it needs a few frames of the player. Five, so
+    // the voice does not keep going long enough to earn a second pass.
+    r.frame(0.06, 5);
     await flush();
     expect(r.barges).toBe(0);
     expect(r.aborts).toEqual(['echo']);
@@ -274,7 +302,10 @@ describe('stage two after a duck', () => {
     r.dictation.setHold(true);
     r.dictation.armBargeGrace();
     r.frame(0.01, 8);
-    r.frame(0.06, 2);
+    // The duck, then the voice after it: stage two only reads the audio from
+    // the duck on (261031), so it needs a few frames of the player. Five, so
+    // the voice does not keep going long enough to earn a second pass.
+    r.frame(0.06, 5);
     await flush();
     expect(r.aborts).toEqual(['no_word']);
   });

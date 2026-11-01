@@ -26,9 +26,15 @@
  */
 
 export type LocalTranscribe = (audio: Float32Array) => Promise<string>;
+/** What the caller knows about a clip that the cloud leg may need (261101).
+ *  `burst`: a barge pass over a duck with nothing voiced after it (the
+ *  trigger frame and its tail), where Scribe is known to invent a word out of
+ *  her echo; the cloud leg judges its confidence (see burstWordUnsure in
+ *  dictation.ts). */
+export type SttHint = { burst?: boolean };
 /** Resolves transcript text, or null when cloud could not produce one
  * (unavailable, transport error, timeout). Must not reject. */
-export type CloudTranscribe = (audio: Float32Array) => Promise<string | null>;
+export type CloudTranscribe = (audio: Float32Array, hint?: SttHint) => Promise<string | null>;
 
 /** Local finished; not a transcript. */
 const LOCAL_DONE = Symbol('local-done');
@@ -48,9 +54,9 @@ export function createSttArbiter(opts: {
    * or timeout) so the utterance was dropped. Fired per failed utterance —
    * the caller owns any once-per-call gating. */
   onCloudFailure?: () => void;
-}): (audio: Float32Array) => Promise<string> {
+}): (audio: Float32Array, hint?: SttHint) => Promise<string> {
   const cloudTimeoutMs = opts.cloudTimeoutMs ?? DEFAULT_CLOUD_TIMEOUT_MS;
-  return async (audio: Float32Array): Promise<string> => {
+  return async (audio: Float32Array, hint?: SttHint): Promise<string> => {
     const { local, cloud } = opts;
     if (!local) {
       // Cloud-only: no worker, no fallback. '' (dropped upstream) is the only
@@ -60,7 +66,7 @@ export function createSttArbiter(opts: {
         opts.onCloudFailure?.();
         return '';
       }
-      const cloudP = cloud(audio).then(
+      const cloudP = cloud(audio, hint).then(
         (t) => t,
         () => null,
       );
@@ -78,7 +84,7 @@ export function createSttArbiter(opts: {
     if (!cloud) return localP;
     // Never reject: a cloud transport bug must degrade to local, not break
     // the utterance.
-    const cloudP = cloud(audio).then(
+    const cloudP = cloud(audio, hint).then(
       (t) => t,
       () => null,
     );

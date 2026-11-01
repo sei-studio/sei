@@ -122,6 +122,29 @@ describe('voiceStt', () => {
     expect((form.get('file') as Blob).type).toBe('audio/wav');
   });
 
+  it('confidence (261101): the least sure word on the direct route, the relayed field on the proxy', async () => {
+    mockResolveRoute.mockResolvedValue({ kind: 'direct', key: 'dev-key' });
+    fetchSpy.mockResolvedValue(
+      okText('No, wait', {
+        words: [
+          { text: 'No,', type: 'word', logprob: -0.62 },
+          { text: ' ', type: 'spacing', logprob: -9 },
+          { text: '(laughs)', type: 'audio_event', logprob: -5 },
+          { text: 'wait', type: 'word', logprob: -0.01 },
+        ],
+      }),
+    );
+    expect(await voiceStt({ pcm: pcm() })).toMatchObject({ text: 'No, wait', minWordLogprob: -0.62 });
+
+    mockResolveRoute.mockResolvedValue({ kind: 'proxy' });
+    fetchSpy.mockResolvedValue(okText('Stop', { min_word_logprob: -0.004 }));
+    expect(await voiceStt({ pcm: pcm() })).toMatchObject({ text: 'Stop', minWordLogprob: -0.004 });
+
+    // A words array with no logprob (or no word tokens) reports nothing.
+    fetchSpy.mockResolvedValue(okText('', { words: [{ text: ' ', type: 'spacing' }] }));
+    expect(await voiceStt({ pcm: pcm() })).not.toHaveProperty('minWordLogprob');
+  });
+
   it('tolerates a proxy that strips the detection fields', async () => {
     fetchSpy.mockResolvedValue(new Response(JSON.stringify({ text: 'hey' }), { status: 200 }));
     const res = await voiceStt({ pcm: pcm() });

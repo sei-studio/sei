@@ -98,6 +98,16 @@ permissions:
 
 env:
   STABLE_TAG: ${{ inputs.stable_tag || 'v0.6.4' }}
+  # 261101: CI must never write to production analytics. These CI jobs
+  # download and launch real releases (v0.6.4, v0.6.10), which send events
+  # unless told otherwise: release builds bake no key, so analytics.ts reads
+  # POSTHOG_KEY / POSTHOG_HOST at runtime, and a phc_REPLACE_WITH_ key counts as
+  # unset. The builds made here bake the same values. In October these runs
+  # wrote about 200 fake installs into PostHog from GitHub runner IPs (0.6.4,
+  # 0.6.10, 0.6.90-0.6.93) and halved the 10-30 D1 cohort rate.
+  POSTHOG_KEY: phc_REPLACE_WITH_ci_disabled
+  POSTHOG_HOST: http://127.0.0.1:9
+  SEI_ANALYTICS_DEV: '0'
 
 jobs:
   build:
@@ -150,6 +160,24 @@ jobs:
       matrix:
         scenario: [peruser-default, peruser-custom, peruser-running, peruser-quit, permachine, permachine-silent, permachine-tried, fresh]
     steps:
+      # 261101: block PostHog before anything here launches Sei. The runtime
+      # env above stops a release binary from sending, but the hosts entries
+      # also cover processes that do not inherit it. The job fails if the
+      # block does not take.
+      - name: Block product analytics
+        shell: pwsh
+        run: |
+          $hosts = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
+          $names = 'us.i.posthog.com', 'us-assets.i.posthog.com', 'us.posthog.com', 'app.posthog.com', 'eu.i.posthog.com'
+          Add-Content -Path $hosts -Value ($names | ForEach-Object { "0.0.0.0 $_"; ":: $_" })
+          ipconfig /flushdns | Out-Null
+          foreach ($n in $names) {
+            $a = @(try { [System.Net.Dns]::GetHostAddresses($n) | ForEach-Object { $_.ToString() } } catch { })
+            $live = @($a | Where-Object { $_ -ne '0.0.0.0' -and $_ -ne '::' })
+            if ($live.Count) { Write-Output "::error::$n still resolves to $($live -join ', ')"; exit 1 }
+          }
+          "PostHog hosts blocked: $($names -join ', ')"
+
       - name: Download new installer
         uses: actions/download-artifact@v4
         with:
@@ -507,6 +535,24 @@ jobs:
     if: inputs.suite != 'progress' && inputs.suite != 'preview'
     runs-on: windows-latest
     steps:
+      # 261101: block PostHog before anything here launches Sei. The runtime
+      # env above stops a release binary from sending, but the hosts entries
+      # also cover processes that do not inherit it. The job fails if the
+      # block does not take.
+      - name: Block product analytics
+        shell: pwsh
+        run: |
+          $hosts = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
+          $names = 'us.i.posthog.com', 'us-assets.i.posthog.com', 'us.posthog.com', 'app.posthog.com', 'eu.i.posthog.com'
+          Add-Content -Path $hosts -Value ($names | ForEach-Object { "0.0.0.0 $_"; ":: $_" })
+          ipconfig /flushdns | Out-Null
+          foreach ($n in $names) {
+            $a = @(try { [System.Net.Dns]::GetHostAddresses($n) | ForEach-Object { $_.ToString() } } catch { })
+            $live = @($a | Where-Object { $_ -ne '0.0.0.0' -and $_ -ne '::' })
+            if ($live.Count) { Write-Output "::error::$n still resolves to $($live -join ', ')"; exit 1 }
+          }
+          "PostHog hosts blocked: $($names -join ', ')"
+
       - name: Download new installer
         uses: actions/download-artifact@v4
         with:
@@ -565,6 +611,24 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
+      # 261101: block PostHog before anything here launches Sei. The runtime
+      # env above stops a release binary from sending, but the hosts entries
+      # also cover processes that do not inherit it. The job fails if the
+      # block does not take.
+      - name: Block product analytics
+        shell: pwsh
+        run: |
+          $hosts = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
+          $names = 'us.i.posthog.com', 'us-assets.i.posthog.com', 'us.posthog.com', 'app.posthog.com', 'eu.i.posthog.com'
+          Add-Content -Path $hosts -Value ($names | ForEach-Object { "0.0.0.0 $_"; ":: $_" })
+          ipconfig /flushdns | Out-Null
+          foreach ($n in $names) {
+            $a = @(try { [System.Net.Dns]::GetHostAddresses($n) | ForEach-Object { $_.ToString() } } catch { })
+            $live = @($a | Where-Object { $_ -ne '0.0.0.0' -and $_ -ne '::' })
+            if ($live.Count) { Write-Output "::error::$n still resolves to $($live -join ', ')"; exit 1 }
+          }
+          "PostHog hosts blocked: $($names -join ', ')"
+
       - name: Checkout
         uses: actions/checkout@v6
 
@@ -629,6 +693,24 @@ jobs:
           - { variant: mint-zh-late, theme: mint, lang: zh, seconds: 90, history: '45', reduced: false, blocked: false }
           - { variant: blocked-fallback, theme: midnight, lang: en, seconds: 30, history: '', reduced: false, blocked: true }
     steps:
+      # 261101: block PostHog before anything here launches Sei. The runtime
+      # env above stops a release binary from sending, but the hosts entries
+      # also cover processes that do not inherit it. The job fails if the
+      # block does not take.
+      - name: Block product analytics
+        shell: pwsh
+        run: |
+          $hosts = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
+          $names = 'us.i.posthog.com', 'us-assets.i.posthog.com', 'us.posthog.com', 'app.posthog.com', 'eu.i.posthog.com'
+          Add-Content -Path $hosts -Value ($names | ForEach-Object { "0.0.0.0 $_"; ":: $_" })
+          ipconfig /flushdns | Out-Null
+          foreach ($n in $names) {
+            $a = @(try { [System.Net.Dns]::GetHostAddresses($n) | ForEach-Object { $_.ToString() } } catch { })
+            $live = @($a | Where-Object { $_ -ne '0.0.0.0' -and $_ -ne '::' })
+            if ($live.Count) { Write-Output "::error::$n still resolves to $($live -join ', ')"; exit 1 }
+          }
+          "PostHog hosts blocked: $($names -join ', ')"
+
       - name: Checkout
         uses: actions/checkout@v6
 

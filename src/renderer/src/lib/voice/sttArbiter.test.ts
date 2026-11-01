@@ -107,7 +107,17 @@ describe('createSttArbiter', () => {
     const t = createSttArbiter({ local, cloud, graceMs: 50 });
     await t(AUDIO);
     expect(local).toHaveBeenCalledWith(AUDIO);
-    expect(cloud).toHaveBeenCalledWith(AUDIO);
+    expect(cloud).toHaveBeenCalledWith(AUDIO, undefined);
+  });
+
+  it('the hint reaches the cloud leg in both modes (261101 burst passes)', async () => {
+    const cloud = vi.fn(async () => 'c');
+    const raced = createSttArbiter({ local: async () => 'l', cloud, graceMs: 50 });
+    await raced(AUDIO, { burst: true });
+    expect(cloud).toHaveBeenLastCalledWith(AUDIO, { burst: true });
+    const cloudOnly = createSttArbiter({ local: null, cloud, graceMs: 50 });
+    await cloudOnly(AUDIO, { burst: true });
+    expect(cloud).toHaveBeenLastCalledWith(AUDIO, { burst: true });
   });
 });
 

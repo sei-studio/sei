@@ -90,13 +90,18 @@ export interface AudioQueue {
   /** Barge-in: stop playback and drop everything queued; queue stays usable. */
   clear(): void;
   /**
-   * Provisional barge-in (260804): duck the current clip almost to silence
-   * without stopping it, so it can be brought back if the noise that triggered
-   * this turns out not to have been a word.
+   * Provisional barge-in (260804): silence the current clip without dropping
+   * it, so it can be brought back if the noise that triggered this turns out
+   * not to have been a word.
    *
    * This is what lets the barge-in trigger be a hair-trigger. A false clear()
-   * destroys the line; a false duck costs a couple of hundred milliseconds of
-   * volume and is inaudible once the clip resumes.
+   * destroys the line; a false duck costs a short pause.
+   *
+   * 261031: the duck PAUSES the clip (after the volume ramp) and un-ducking
+   * resumes it where it stopped. It used to only mute it while it kept
+   * playing, so every false duck silently skipped the words spoken under it
+   * (about a second each, several times a minute over a loud game). A clip
+   * that reaches the playhead while ducked waits, unstarted, the same way.
    */
   duck(ducked: boolean): void;
   /** Deafen (260705): silence the output without pausing it — clips keep
@@ -239,6 +244,28 @@ export function createAudioQueue(
    *  while the player might be talking, the next clip must not start at full
    *  volume either. */
   let ducked = false;
+  /** Starts (or restarts) the current element; null for a placeholder slot
+   *  that has no audio yet. Kept so a duck can pause the clip and the un-duck
+   *  resume it. */
+  let currentPlay: (() => void) | null = null;
+  /** The current element is stopped by the duck: never started (it reached the
+   *  playhead while ducked) or paused at the end of the duck ramp. */
+  let playHeld = false;
+
+  /** Start a clip's element now, or hold it unstarted while ducked. A play()
+   *  that a duck's pause() interrupts rejects with AbortError: that is the
+   *  duck, not a failed clip, so it is ignored while the duck lasts. */
+  function beginClip(el: HTMLAudioElement, fail: () => void): void {
+    const play = (): void => {
+      void el.play().catch(() => {
+        if (current === el && ducked) return;
+        fail();
+      });
+    };
+    currentPlay = play;
+    playHeld = ducked;
+    if (!ducked) play();
+  }
 
   function finishCurrent(el: HTMLAudioElement): void {
     if (current !== el) return;
@@ -281,7 +308,8 @@ export function createAudioQueue(
     const el = new Audio(url);
     el.muted = outputMuted;
     // A clip enqueued while a provisional barge-in is open must not start at
-    // full volume: the player may still be mid-sentence.
+    // full volume: the player may still be mid-sentence. beginClip also holds
+    // it unstarted until the duck is decided.
     el.volume = ducked ? DUCK_VOLUME : 1;
     const detachPitch = applyPitch(el, rate);
     // Avatar lip sync (260804): sample this clip's level for the overlay.
@@ -306,7 +334,7 @@ export function createAudioQueue(
     el.addEventListener('error', done, { once: true });
     markAudibleOnPlay(el, characterId, text);
     onSpeakingChange(true, characterId, text);
-    void el.play().catch(() => done());
+    beginClip(el, done);
   }
 
   /** Fire onAudible the first time this element actually produces sound. Once
@@ -352,6 +380,8 @@ export function createAudioQueue(
         // reach this waiting slot and later enqueues don't double-start.
         item.onEnd = playCollected;
         current = new Audio();
+        currentPlay = null; // nothing to pause or resume until the bytes land
+        playHeld = false;
         currentDone = item.onDone;
         currentCleanup = () => {
           item.dropped = true;
@@ -464,7 +494,7 @@ export function createAudioQueue(
     el.addEventListener('error', done, { once: true });
     markAudibleOnPlay(el, item.characterId, item.text);
     onSpeakingChange(true, item.characterId, item.text);
-    void el.play().catch(() => done());
+    beginClip(el, done);
   }
 
   function playNext(): void {
@@ -526,10 +556,13 @@ export function createAudioQueue(
   const DUCK_RAMP_MS = 60;
 
   let duckRamp = 0;
-  function rampVolume(el: HTMLAudioElement, to: number): void {
+  function rampVolume(el: HTMLAudioElement, to: number, then?: () => void): void {
     clearTimeout(duckRamp);
     const from = el.volume;
-    if (from === to) return;
+    if (from === to) {
+      then?.();
+      return;
+    }
     const t0 = performance.now();
     const step = (): void => {
       if (current !== el) return;
@@ -540,6 +573,7 @@ export function createAudioQueue(
         return;
       }
       if (k < 1) duckRamp = window.setTimeout(step, FADE_STEP_MS);
+      else then?.();
     };
     step();
   }
@@ -593,6 +627,8 @@ export function createAudioQueue(
       const cleanup = currentCleanup;
       current = null;
       currentCleanup = null;
+      currentPlay = null;
+      playHeld = false;
       // cleanup (stream handler detach / URL revoke) runs AFTER the fade — a
       // MediaSource clip revoked mid-fade would cut instead of trailing off.
       fadeThenTeardown(el, cleanup, fadeMs);
@@ -681,7 +717,28 @@ export function createAudioQueue(
     duck(next) {
       if (stopped || next === ducked) return;
       ducked = next;
-      if (current) rampVolume(current, next ? DUCK_VOLUME : 1);
+      const el = current;
+      if (!el || !currentPlay) return; // nothing playing, or a slot still waiting for bytes
+      if (next) {
+        if (playHeld) return; // already waiting unstarted
+        // Ramp down, then pause, so the clip resumes from the same word.
+        rampVolume(el, DUCK_VOLUME, () => {
+          if (!ducked || current !== el) return;
+          try {
+            el.pause();
+          } catch {
+            /* torn down */
+          }
+          playHeld = true;
+        });
+        return;
+      }
+      if (playHeld) {
+        playHeld = false;
+        el.volume = DUCK_VOLUME;
+        currentPlay();
+      }
+      rampVolume(el, 1);
     },
     setOutputMuted(m) {
       outputMuted = m;

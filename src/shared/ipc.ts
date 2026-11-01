@@ -2472,9 +2472,14 @@ export interface RendererApi {
    * utterance, and main persists a confident repeated detection into
    * UserConfig.chat_language (voice/languageAutoSwitch.ts). The renderer
    * only ever receives the transcript text.
+   *
+   * 261101: plus `minWordLogprob`, Scribe's confidence in its least sure word,
+   * when the upstream reports it (direct ElevenLabs always; the proxy once it
+   * relays `min_word_logprob`). The barge check reads it on a burst.
    */
   voiceStt(args: { pcm: ArrayBuffer }): Promise<
-    { text: string } | { unavailable: true; reason?: 'no-credentials' | 'upstream' }
+    | { text: string; minWordLogprob?: number }
+    | { unavailable: true; reason?: 'no-credentials' | 'upstream' }
   >;
   /**
    * Local speech packs (260816, china-compat W3+W4) — sherpa-onnx models for
