@@ -14,7 +14,7 @@ import path from 'node:path'
 import fs from 'node:fs/promises'
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { z } from 'zod'
-import { NUDGES, GREETING_HINT, memoryGameScope, chatContinuityGameScope, PERSONALITY_TOOL_DESCRIPTIONS } from './prompts.js'
+import { NUDGES, GREETING_HINT, memoryGameScope, chatContinuityGameScope, PERSONALITY_TOOL_DESCRIPTIONS, ACK_LINE } from './prompts.js'
 import {
   createOrchestrator,
   composeSeedBlocks,
@@ -56,6 +56,10 @@ describe('NUDGES.actionTurn (260608-tik)', () => {
     // so the player heard nothing. The action is not the reply.
     expect(t).toContain('The action is not the reply')
     expect(t).toContain('also call say() this turn')
+    // 261101 (pass 34): the acknowledgement let-off is for plain replies only.
+    // On a mid-action turn it read as leave to skip a stop or a follow
+    // (pass34-compare2: order/stop lines off 0/48 -> 6/48).
+    expect(t).not.toContain(ACK_LINE)
     // The interrupt variant must NOT carry the silent-monitor phrasing.
     expect(t).not.toContain('Nothing needs you')
   })
@@ -927,8 +931,9 @@ describe('player_message block — scratchpad contract (260703b)', () => {
     })
     await orch.handleDispatch('sei:chat_received', chat('yo'))
     const turn = JSON.stringify(provider.calls[0].messages ?? provider.calls[0])
-    expect(turn).toContain('private scratchpad the player can NEVER see')
-    expect(turn).toContain('only say() reaches them')
+    // 261102 (pass 34): said in fewer tokens, in the reply mandate itself.
+    expect(turn).toContain('Text outside say() never reaches them.')
+    expect(turn).toContain('your text output is invisible to them')
   })
 })
 

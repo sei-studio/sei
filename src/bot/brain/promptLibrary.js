@@ -954,6 +954,24 @@ export const ACTION_STUCK_NUDGE_NOVISION = 'explore() in a different direction t
 // One line of a goal or a player's line, folded and clipped, for a note.
 const clipNote = (t, n = 160) => { const x = String(t ?? '').replace(/\s+/g, ' ').trim(); return x.length > n ? `${x.slice(0, n - 3).trimEnd()}...` : x }
 
+// 261101 (quality pass 34): a line that only acknowledges hers. Every reply
+// turn said three times that a player line always gets a say(), and CORE
+// says a stock reply is out of character, so "jk jk", "cool", "nice job" and
+// "thanks" each got a bit, and with nothing new to say it was her last one:
+// 39 of 71 repetitive labels in the 10-28..11-01 scorecards and compares were
+// on these lines (6.8% of them against 3.3% of lines that need a reply), and
+// she spoke on 81% of them. Which line is an acknowledgement is her call; the
+// examples only show the kind. pass34-probe: acknowledgement cases ok 28/50
+// -> 44/50 ("cool" 2/10 -> 10/10), every line that needs a reply still
+// answered. A softer "a few words or no say() is enough" moved nothing.
+// Plain replies only (orchestrator player_message). On the mid-action turn,
+// with the "say something" demands there dropped, stop and follow orders
+// slipped (pass34-compare2: order/stop lines off 0/48 -> 6/48), so that turn
+// and playerInterruptHint keep dev's text.
+// 261102: folded into the plain-reply mandate it qualifies, token-neutral
+// against dev (that sentence pair was 70 tokens, this is 67).
+export const ACK_LINE = 'Reply with the say() tool: a direct message never gets silence, even a refusal or one word, unless it only acknowledges you or laughs (ok, cool, nice, thanks, lol, jk); then skip say(). Text outside say() never reaches them.'
+
 export const NUDGES = {
   silence:
     '[several iterations without speaking — call a brief say() if it genuinely fits, or stay silent. don\'t restate numbers; one short observation is enough.]',
@@ -1108,6 +1126,9 @@ export const NUDGES = {
   // same case. Also appended to a mid-action turn, where it is the exception.
   // 261017: the transcript now orders her lines by when they reached the
   // player, so her hello sits right AFTER their line, not above it.
+  // 261101 (pass 34): keep this wording. In ACK_LINE's words ("it needs no
+  // answer: skip say() this turn") she greeted again on 6 of 15 crossed
+  // hellos in the paired compare, against 0 of 14 with this one.
   greetCrossed: `Your hello reached them just after they typed this (it comes right after their line in the conversation above), so it already answers their hello. If this line is only a hello, do not call say() this turn; that is the one exception to answering every line. If it says or asks something more, answer that part, and act on it if it is a request, without greeting them or introducing yourself again. Your text output is a private scratchpad they never see.`,
 
   // 260708: group-voice variant of playerInterruptHint. On a group call the
