@@ -17,7 +17,8 @@
  *     http://localhost:5173/?dashshot=chatfirst    the guided first moment (260926) in the real ChatScreen
  *     http://localhost:5173/?dashshot=perms&part=mic|screen|...  the OS permission cards (DevPermsShot, 260929)
  *     http://localhost:5173/?dashshot=voicekey&part=settings|picker&backend=cloud|local&key=1  the ElevenLabs key
- *                                              field and the picker's add-your-key line (DevVoiceKeyShot, 261020)
+ *                                              field and the picker's add-your-key line (DevVoiceKeyShot, 261020);
+ *                                              &backend=local&tts=fish&fishkey=1 shows the Fish Audio rows (261103)
  *     http://localhost:5173/?dashshot=onboard  the first-run Sui scene from the top (261012); every
  *                                              sei.track call is kept on window.__seiDevTrack
  *     http://localhost:5173/?dashshot=chatlaunch&game=minecraft|dontstarve|stardew  a launch panel inside the real ChatScreen
