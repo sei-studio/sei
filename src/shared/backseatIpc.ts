@@ -385,6 +385,39 @@ export function nextIdleDelayMs(rand: () => number = Math.random): number {
  */
 export const MIN_SPEAK_GAP_MS = 8_000;
 
+// ── Backing off when nobody answers (261103) ──────────────────────────────
+//
+// Feedback from a free user (Valheim, custom companion): the chatter was too
+// much and they quit after about 15 minutes. Every look speaks by design, so
+// the only lever is how often she looks, and on a player who never answers the
+// schedule above lands about two lines a minute (the idle mean alone is ~28 s;
+// gain jolts add more in a loud game): 30-40 lines in 15 minutes with no reply.
+//
+// So the floor grows with the run of lines she has said on her own since the
+// player last spoke. The first QUIET_FREE_LINES (the hello and one more) keep
+// the normal pace; each further unanswered line adds QUIET_STEP_MS to BOTH the
+// speak gap (main, every jolt and idle) and the idle draw (renderer, which
+// shifts the whole distribution, so it stays memoryless past the new floor),
+// up to QUIET_MAX_EXTRA_MS. The player saying anything resets it. Talking
+// with her is unaffected: a user tick always answers and resets the run.
+// Modelled on a silent player over 15 minutes: ~2.0-2.6 lines/min -> ~0.9-1.0.
+
+/** Unanswered lines spoken at the normal pace before the floor starts to grow. */
+export const QUIET_FREE_LINES = 2;
+/** Added to the floor per unanswered line past QUIET_FREE_LINES. */
+export const QUIET_STEP_MS = 10_000;
+/** Most the floor ever grows by. Reached after 8 unanswered lines. */
+export const QUIET_MAX_EXTRA_MS = 60_000;
+
+/**
+ * Extra quiet, in ms, before her next line on her own, given how many lines in
+ * a row she has said since the player last spoke. 0 while the run is short.
+ */
+export function quietExtraMs(unansweredLines: number): number {
+  const over = Math.max(0, Math.floor(unansweredLines) - QUIET_FREE_LINES);
+  return Math.min(over * QUIET_STEP_MS, QUIET_MAX_EXTRA_MS);
+}
+
 /**
  * Refractory period for the GAIN arm of the local jolt trigger. The idle
  * schedule covers the steady state; a jolt exists to put a look ON the moment
@@ -640,6 +673,10 @@ export interface BackseatLine {
   who?: 'player';
   /** Set when the line accompanied a saved clip. */
   clipPath?: string;
+  /** 261103: on a companion line, the extra quiet (quietExtraMs) now in force
+   *  before her next line on her own. The renderer adds it to the idle draw
+   *  and the switch deferral. Absent = 0 (a reply, or a short run). */
+  quietExtraMs?: number;
 }
 
 export interface BackseatState {

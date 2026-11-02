@@ -409,7 +409,9 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
     // very next idle tick is composed, sent and dropped for nothing. (The
     // player's own echoed line is a real turn boundary too: it means a reply is
     // imminent.)
-    offLine = sei.onBackseatLine?.(() => capture?.noteSpoke()) ?? null;
+    // 261103: a companion line carries main's backoff (quietExtraMs); the
+    // player's own line carries none, which resets it here as it does in main.
+    offLine = sei.onBackseatLine?.((l) => capture?.noteSpoke(l.quietExtraMs ?? 0)) ?? null;
   } catch {
     /* preload without the backseat bridge — refresh() still reconciles */
   }

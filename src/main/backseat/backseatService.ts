@@ -39,6 +39,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { ChatMessage, SpokenLineContext } from '../../shared/ipc';
 import {
   MIN_SPEAK_GAP_MS,
+  quietExtraMs,
   PREV_GRID_MAX_AGE_MS,
   START_LOOK_TIMEOUT_MS,
   type BackseatLine,
@@ -192,6 +193,13 @@ interface Session {
    *  something, which is exactly what memory is for). */
   lastRememberAt: number;
   /**
+   * 261103: lines she has said on her own (start, jolt, idle turns) since the
+   * player last spoke. Feeds quietExtraMs, which grows the speak gap for
+   * screen ticks once nobody has answered for a while. A user tick resets it.
+   * Carried over a resumed share (RESUME_WINDOW_MS), which is the same sitting.
+   */
+  unansweredLines: number;
+  /**
    * Index into the chat history where this session's verbatim window starts.
    *
    * Prompt caching (260801): the obvious `history.slice(-RECENT_CAP)` slides
@@ -263,7 +271,7 @@ let deps: BackseatDeps | null = null;
  * days to 261023 started within 30 s of the previous one ending, with no way
  * to tell a lost window from a source switch). Kept in memory only.
  */
-const lastEnded = new Map<string, { at: number; reason: string; spoke: boolean }>();
+const lastEnded = new Map<string, { at: number; reason: string; spoke: boolean; unansweredLines?: number }>();
 /** A start this soon after an end is reported as a restart. */
 const RESTART_WINDOW_MS = 10 * 60_000;
 /** A start this soon after a share she spoke in opens without a new hello. */
@@ -398,8 +406,12 @@ export async function startBackseat(
     lastErrorClass: null,
     firstLineAt: null,
     resumedAfterMs: resumedAfterMs(lastEnded.get(characterId), Date.now()),
+    unansweredLines: 0,
     watched: new WatchedTally(),
   };
+  // A resumed share is the same sitting: a player who was not answering
+  // before the window came back is still not answering.
+  if (s.resumedAfterMs !== null) s.unansweredLines = lastEnded.get(characterId)?.unansweredLines ?? 0;
   s.watched.note(sourceName);
   if (!startGuard.stillValid()) {
     void log.close().catch(() => {});
@@ -524,7 +536,12 @@ async function endBackseatSession(
   s.clips.clear();
   push(s);
   sessions.delete(characterId);
-  lastEnded.set(characterId, { at: Date.now(), reason, spoke: s.firstLineAt !== null || s.resumedAfterMs !== null });
+  lastEnded.set(characterId, {
+    at: Date.now(),
+    reason,
+    spoke: s.firstLineAt !== null || s.resumedAfterMs !== null,
+    unansweredLines: s.unansweredLines,
+  });
   slog(
     s,
     `session end (${reason}): ${Math.round(durationMs / 1000)}s, ${lineCount} line(s) said` +
@@ -780,6 +797,8 @@ export async function handleTick(tick: BackseatTick): Promise<BackseatTickOutcom
 
   const isUser = tick.kind === 'user';
   const label = tick.kind + (tick.joltReason ? `:${tick.joltReason}` : '');
+  // 261103: the player spoke, so the run of lines nobody answered is over.
+  if (isUser) s.unansweredLines = 0;
 
   // 260925 act spike: while the companion is driving (control()), jolts and
   // idle looks are dropped (the livelock lesson: nothing may preempt the act
@@ -798,9 +817,16 @@ export async function handleTick(tick: BackseatTick): Promise<BackseatTickOutcom
 
   // Being talked to always earns an answer, so a user tick skips the speak-gap
   // floor. Everything else respects it: two lines about the same six seconds
-  // is worse than one.
-  if (!isUser && Date.now() - s.lastSpokeAt < MIN_SPEAK_GAP_MS) {
-    slog(s, `tick ${label} dropped (spoke ${((Date.now() - s.lastSpokeAt) / 1000).toFixed(1)}s ago)`);
+  // is worse than one. 261103: the floor grows while nobody answers her
+  // (quietExtraMs); the renderer already pushed its idle look back by the
+  // same amount, so in practice this drops jolts, not idle looks.
+  const gapMs = MIN_SPEAK_GAP_MS + quietExtraMs(s.unansweredLines);
+  if (!isUser && Date.now() - s.lastSpokeAt < gapMs) {
+    slog(
+      s,
+      `tick ${label} dropped (spoke ${((Date.now() - s.lastSpokeAt) / 1000).toFixed(1)}s ago, ` +
+        `gap ${(gapMs / 1000).toFixed(0)}s, ${s.unansweredLines} unanswered)`,
+    );
     return 'dropped';
   }
 
@@ -1231,6 +1257,7 @@ async function runTurn(
     if (!parts.length) return;
     leadSpoken = true;
     s.lastSpokeAt = Date.now();
+    if (tick.kind !== 'user') s.unansweredLines += 1;
     slog(s, `turn ${tick.kind}: said ${parts.length} line(s) before the lookup`);
     leadEmit = emitCompanionLines(s, parts, voiceCall, null, undefined, { turnTag, ambientCapturedAt });
   };
@@ -1412,6 +1439,9 @@ async function runTurn(
   // The lead (if any) is persisted and pushed before the answer.
   await leadEmit;
   if (!parts.length) return;
+  // 261103: one more line nobody has answered yet (once per turn; a lead
+  // spoken before a lookup already counted it).
+  if (tick.kind !== 'user' && !leadSpoken) s.unansweredLines += 1;
   // 261010: how stale the line is before TTS even starts (newest grid frame ->
   // line ready), so a live log shows the timing Shawn hears as retrospective.
   slog(
@@ -1534,11 +1564,14 @@ function emitCompanionLines(
       // The overlay's mini chat is fed separately: it shows lines in BOTH modes
       // (voice included, where the transcript deliberately hides them) because
       // the overlay is the only thing on screen while a game is fullscreen.
+      const quiet = quietExtraMs(s.unansweredLines);
       const line: BackseatLine = {
         id: msg.id,
         text: msg.text,
         at: msg.ts,
         ...(clip && i === parts.length - 1 ? { clipPath: clip.path } : {}),
+        // 261103: the renderer pushes its next idle look back by this much.
+        ...(quiet > 0 ? { quietExtraMs: quiet } : {}),
       };
       s.state.lines.push(line);
       while (s.state.lines.length > LINE_TAIL) s.state.lines.shift();
