@@ -62,6 +62,7 @@ import { chatgptReady, useChatgptStore } from '../lib/stores/useChatgptStore';
 import { chatgptPlanIntentStep } from '../lib/chatgptPlanIntent';
 import { pickDefaultChatgptModel } from '@shared/chatgptPlan';
 import { elevenKeySettingMode } from '../lib/voicePicker';
+import { selectedTtsEngine } from '@shared/ttsEngine';
 
 const API_KEY_BULLET_LEN = 24;
 
@@ -74,6 +75,7 @@ const API_KEY_BULLET_LEN = 24;
  * speech:pack-status push.
  */
 const TTS_PACK_ROWS: ReadonlyArray<{ id: string; label: string }> = [
+  { id: 'tts-kokoro', label: 'Kokoro-82M voices' },
   { id: 'tts-en', label: 'English voices, female and male' },
   { id: 'tts-zh', label: 'Chinese voices, female and male' },
 ];
@@ -533,10 +535,10 @@ export function SettingsScreen(): React.ReactElement {
   // speech through the sherpa-onnx voice packs in main; the per-character
   // ElevenLabs voiceId is KEPT untouched underneath (it still names gender
   // for the local mapping, and a later switch back needs it). ──
-  const ttsEngine: 'elevenlabs' | 'local' = cfg?.tts_engine ?? 'elevenlabs';
-  const onSelectTtsEngine = async (next: 'elevenlabs' | 'local'): Promise<void> => {
+  const ttsEngine = selectedTtsEngine(cfg ?? {});
+  const onSelectTtsEngine = async (next: 'elevenlabs' | 'local' | 'kokoro'): Promise<void> => {
     if (!cfg || next === ttsEngine) return;
-    const updated: UserConfig = { ...cfg, tts_engine: next };
+    const updated: UserConfig = { ...cfg, tts_engine: next, local_tts_voice: 'auto' };
     setCfg(updated);
     try {
       await sei.saveConfig(updated);
@@ -1396,6 +1398,7 @@ export function SettingsScreen(): React.ReactElement {
                 options={[
                   { value: 'elevenlabs', label: t('ElevenLabs') },
                   { value: 'local', label: t('Local') },
+                  { value: 'kokoro', label: 'Kokoro' },
                 ]}
                 onChange={(v) => void onSelectTtsEngine(v)}
               />
@@ -1429,7 +1432,10 @@ export function SettingsScreen(): React.ReactElement {
                     (the English pack holds both speakers). State rides the
                     speech:pack-state push; sizes are the registry's exact
                     bytes. */}
-                {TTS_PACK_ROWS.map((row) => {
+                {ttsEngine === 'kokoro' ? (
+                  <p className={styles.helper}>{t('Kokoro chooses a voice from the chat language and companion gender. Languages or genders without a match use the standard local voice packs. Download the packs you need below.')}</p>
+                ) : null}
+                {TTS_PACK_ROWS.filter((row) => ttsEngine === 'kokoro' || row.id !== 'tts-kokoro').map((row) => {
                   const st = packStates[row.id];
                   return (
                     <div className={styles.row} key={row.id}>
@@ -1914,7 +1920,8 @@ export function SettingsScreen(): React.ReactElement {
             >
               {t('Apache License 2.0')}
             </button>
-            {t(', via icefall.')}
+            {t(', via icefall. Kokoro-82M by hexgrad: Apache-2.0 weights, converted and quantized by sherpa-onnx. Downloaded espeak-ng data retains its GPL license.')}
+            <button type="button" className={styles.creditLink} onClick={() => void sei.openExternal('https://huggingface.co/hexgrad/Kokoro-82M')}>Kokoro-82M</button>
           </p>
           {/* 261028 facepack pilot: renders nothing unless the dev flag is on. */}
           <FacepackDevRow />

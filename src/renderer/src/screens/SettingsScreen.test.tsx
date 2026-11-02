@@ -335,11 +335,13 @@ describe('SettingsScreen (W5 china-compat: Voice group, TTS packs + SenseVoice)'
     expect(preamble.includes("aiBackendKind === 'local'")).toBe(true);
   });
 
-  it('V.2: the TTS engine Seg persists tts_engine between elevenlabs and local', () => {
+  it('V.2: the TTS engine Seg includes Kokoro without a separate preset dropdown', () => {
     const src = readFileSync(SETTINGS_TSX, 'utf-8');
     expect(src.includes('tts_engine: next')).toBe(true);
     expect(src.includes("value: 'elevenlabs'")).toBe(true);
     expect(src.includes("{ value: 'local'")).toBe(true);
+    expect(src.includes("{ value: 'kokoro'")).toBe(true);
+    expect(src.includes('id="local-tts-voice"')).toBe(false);
   });
 
   it('V.3: the two TTS pack rows carry the registry pack ids and an uninstall affordance', () => {
@@ -386,6 +388,7 @@ describe('SettingsScreen (T158: optional ElevenLabs key on Sei Cloud)', () => {
   it('OV.1: the key field shows for BYOK + ElevenLabs and as an optional field on Cloud, never twice', () => {
     expect(elevenKeySettingMode('local', 'elevenlabs')).toBe('byok');
     expect(elevenKeySettingMode('local', 'local')).toBe('hidden');
+    expect(elevenKeySettingMode('local', 'kokoro')).toBe('hidden');
     // Cloud ignores tts_engine (no engine choice there): always optional.
     expect(elevenKeySettingMode('cloud-proxy', 'elevenlabs')).toBe('cloud-optional');
     expect(elevenKeySettingMode('cloud-proxy', 'local')).toBe('cloud-optional');
