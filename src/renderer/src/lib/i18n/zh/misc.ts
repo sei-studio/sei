@@ -160,6 +160,19 @@ export const ZH_MISC: Record<string, string> = {
     '[已用快速语音代读，请在设置中下载 Kokoro 语音包]',
   '[spoken with the Fast voice, the Kokoro voice could not load]':
     '[已用快速语音代读，Kokoro 语音无法加载]',
+  // 261103 Fish Audio local voice: a line the Fast voice spoke instead.
+  '[spoken with the Fast voice, add your Fish Audio key in Settings]':
+    '[已用快速语音代读，请在设置中添加 Fish Audio 密钥]',
+  '[spoken with the Fast voice, Fish Audio rejected your key]':
+    '[已用快速语音代读，Fish Audio 拒绝了你的密钥]',
+  '[spoken with the Fast voice, the Fish Audio free model may have ended, or your account needs credit]':
+    '[已用快速语音代读，Fish Audio 免费模型可能已结束，或你的账户需要充值]',
+  '[spoken with the Fast voice, Fish Audio is busy right now]':
+    '[已用快速语音代读，Fish Audio 当前繁忙]',
+  '[spoken with the Fast voice, the Fish Audio voice was not found]':
+    '[已用快速语音代读，找不到该 Fish Audio 声音]',
+  '[spoken with the Fast voice, Fish Audio could not be reached]':
+    '[已用快速语音代读，无法连接 Fish Audio]',
   // 260817 W10: sherpa-onnx itself failed to load (e.g. a build without the
   // platform package). Without this caption the companion is silently mute.
   '[voice unavailable, local speech cannot run on this install]':

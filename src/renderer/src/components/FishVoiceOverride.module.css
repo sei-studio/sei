@@ -1,0 +1,56 @@
+/* A companion's own Fish Audio voice (261103), under the voice picker. */
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.title {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.current {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text);
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.entry {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.entry > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.hint {
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+  margin: 0;
+}
+
+.error {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--red);
+  margin: 0;
+}

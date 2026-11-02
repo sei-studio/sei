@@ -33,6 +33,7 @@ import type { RegionStatus } from './regionGate';
 import type { PopupAction } from './popupActions';
 import type { BackseatEndReasonArg, BackseatStartTrigger, CallEndReason } from './callEndReasons';
 import type { CallInterruptCounts } from './callInterrupts';
+import type { FishAudioResult, FishFailureReason, FishOverrideResult } from './fishVoices';
 export type { ErrorClass } from './errorClasses';
 import type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
 export type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
@@ -691,6 +692,14 @@ export type VoiceTtsNoticePush =
       kind: 'own-voice-stand-in';
       characterId: string;
       reason: 'no-key' | 'key-invalid' | 'voice-missing' | 'quota' | 'plan';
+    }
+  | {
+      /** 261103: Fish Audio is the chosen local voice but could not speak
+       * this line, so the Fast voices spoke it. The line still plays; the
+       * call UI shows a system notice once per call. */
+      kind: 'fish-fallback';
+      characterId: string;
+      reason: FishFailureReason;
     }
   | {
       /** 261102: Kokoro is the chosen local model but could not speak this
@@ -2681,6 +2690,21 @@ export interface RendererApi {
    * profile. Presence only — the full key is NEVER returned to the renderer.
    */
   voiceElevenKeyStatus(): Promise<{ present: boolean }>;
+  /**
+   * Fish Audio (261103): store (or clear, with null) the user's own Fish API
+   * key. Encrypted in main like the ElevenLabs key and never returned.
+   */
+  voiceFishKeySet(args: { key: string | null }): Promise<void>;
+  /** Fish Audio: whether a key is stored. Presence only. */
+  voiceFishKeyStatus(): Promise<{ present: boolean }>;
+  /** Fish Audio: synthesize one sample line with the stored key (the Settings
+   * Test button), or say why it failed. */
+  voiceFishTest(): Promise<FishAudioResult>;
+  /** Fish Audio: set a character's own voice from a fish.audio link or id
+   * (checked with the user's key), or clear it with `input: null`. */
+  voiceFishOverrideSet(args: { characterId: string; input: string | null }): Promise<FishOverrideResult>;
+  /** Fish Audio: the sample line in one voice (the voice-pick Preview). */
+  voiceFishVoicePreview(args: { voiceId: string }): Promise<FishAudioResult>;
 
   // --- User profile (Phase 19) ---
   /** The in-app user profile (avatar ref + preferred name). */
@@ -3829,6 +3853,16 @@ export const IpcChannel = {
     elevenKeySet: 'voice:eleven-key-set',
     /** Invoke: is a BYOK ElevenLabs key stored? → {present} (260725). */
     elevenKeyStatus: 'voice:eleven-key-status',
+    /** Invoke: store/clear the user's Fish Audio key ({key: string | null}) (261103). */
+    fishKeySet: 'voice:fish-key-set',
+    /** Invoke: is a Fish Audio key stored? → {present} (261103). */
+    fishKeyStatus: 'voice:fish-key-status',
+    /** Invoke: Fish Audio test line → FishAudioResult (261103). */
+    fishTest: 'voice:fish-test',
+    /** Invoke: set/clear a character's own Fish voice ({characterId, input}) → FishOverrideResult (261103). */
+    fishOverrideSet: 'voice:fish-override-set',
+    /** Invoke: sample line in one Fish voice ({voiceId}) → FishAudioResult (261103). */
+    fishVoicePreview: 'voice:fish-voice-preview',
   },
   /** Local speech packs + SenseVoice STT (260816, src/main/speech/). */
   speech: {

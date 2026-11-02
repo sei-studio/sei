@@ -83,6 +83,10 @@ export interface AudioQueue {
       /** 261010: asked once, as this clip reaches the playhead; true drops it
        *  unplayed (onDone(false)). The backseat staleness gate. */
       stale?: () => boolean;
+      /** 261103: the stream may turn out to be ONE WAV clip instead of mp3
+       *  (Fish Audio's Fast-voice fallback). The clip waits for its first
+       *  chunk before choosing MediaSource or one Blob. */
+      sniff?: boolean;
     },
   ): TtsStreamHandle;
   /** True while a clip is playing (or queued clips remain). */
@@ -125,6 +129,8 @@ type StreamItem = {
   turn?: string;
   /** Play from one Blob once complete, never through MediaSource (see enqueueStream). */
   blob: boolean;
+  /** Choose the container from the first chunk (see enqueueStream's opts.sniff). */
+  sniff: boolean;
   chunks: ArrayBuffer[];
   ended: boolean;
   failed: boolean;
@@ -286,6 +292,11 @@ export function createAudioQueue(
     return pitchBus.attach(el, rate);
   }
 
+  function isRiff(buf: ArrayBuffer): boolean {
+    const head = new Uint8Array(buf, 0, Math.min(4, buf.byteLength));
+    return head.length === 4 && head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46;
+  }
+
   function playBuffer(
     buf: ArrayBuffer,
     characterId: string,
@@ -297,8 +308,7 @@ export function createAudioQueue(
     // header: a WAV clip is typed honestly and carries its exact length in its
     // own header, so it needs no trailing-silence pad (the pad exists for mp3
     // decoder tail-cut, and appending mp3 frames to a WAV would be garbage).
-    const head = new Uint8Array(buf, 0, Math.min(4, buf.byteLength));
-    const isWav = head.length === 4 && head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46;
+    const isWav = isRiff(buf);
     // Trailing silence so the decoder plays the real final frame (see SILENCE_MP3).
     const url = URL.createObjectURL(
       isWav
@@ -353,6 +363,37 @@ export function createAudioQueue(
   }
 
   function playStream(item: StreamItem): void {
+    // 261103: a sniffing stream waits for its first chunk (or its end) to
+    // choose the container: a RIFF header means one WAV clip (Fish Audio fell
+    // back to the Fast voices before its first byte), which MediaSource
+    // cannot play. Held with the same droppable placeholder as the collect
+    // path below; MediaSource could not start before the first chunk anyway.
+    if (item.sniff && item.chunks.length === 0 && !item.ended && !item.failed) {
+      const resume = (): void => {
+        item.onChunk = null;
+        item.onEnd = null;
+        if (item.dropped) return;
+        item.sniff = false;
+        playStream(item);
+      };
+      item.onChunk = (c) => {
+        item.chunks.push(c);
+        resume();
+      };
+      item.onEnd = resume;
+      current = new Audio();
+      currentPlay = null;
+      playHeld = false;
+      currentDone = item.onDone;
+      currentCleanup = () => {
+        item.dropped = true;
+        item.onChunk = null;
+        item.onEnd = null;
+      };
+      onSpeakingChange(true, item.characterId, item.text);
+      return;
+    }
+    if (item.chunks.length > 0 && isRiff(item.chunks[0])) item.blob = true;
     // Collect-then-play: the degraded path (no MSE for mpeg), and also every
     // `blob` reservation — a clip fetched whole holds its slot here and plays
     // from one Blob when it lands, which is what MSE-free playback already did.
@@ -666,6 +707,7 @@ export function createAudioQueue(
         rate,
         turn: opts?.turn,
         blob: opts?.blob === true,
+        sniff: opts?.sniff === true,
         chunks: [],
         ended: false,
         failed: false,

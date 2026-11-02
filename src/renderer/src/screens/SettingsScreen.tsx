@@ -55,6 +55,7 @@ import styles from './SettingsScreen.module.css';
 import { GamesSettingsGroup } from '../components/settings/GamesSettingsGroup';
 import { SearchSettingsSection } from '../components/settings/SearchSettingsSection';
 import { LocalImportRow } from '../components/settings/LocalImportRow';
+import { FishAudioSettings } from '../components/settings/FishAudioSettings';
 import { FacepackDevRow } from '../components/settings/FacepackDevRow';
 import { ChatgptPlanSettings, revealChatgptPlanRows } from '../components/ChatgptPlanSettings';
 import { ChatgptLinkRow } from '../components/settings/ChatgptLinkRow';
@@ -1487,12 +1488,17 @@ export function SettingsScreen(): React.ReactElement {
                     options={[
                       { value: 'fast', label: t('Fast') },
                       { value: 'kokoro', label: 'Kokoro' },
+                      { value: 'fish', label: t('Fish Audio (online, free API key)') },
                     ]}
                     onChange={(v) => void onSelectLocalModel(v)}
                   />
                 </div>
+                {/* 261103: Fish Audio, the user's own key, straight from main. */}
+                {localModel === 'fish' ? <FishAudioSettings /> : null}
                 <p className={styles.helper}>
-                  {localModel === 'kokoro' ? (
+                  {localModel === 'fish' ? (
+                    t('If Fish Audio cannot speak a line, the Fast voices below speak it.')
+                  ) : localModel === 'kokoro' ? (
                     t(
                       'Kokoro speaks English, Spanish and French. Companions in other languages use the Fast voices.',
                     )

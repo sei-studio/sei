@@ -51,6 +51,7 @@ import { backseatReasonForCallEnd, type CallEndReason } from '@shared/callEndRea
 import { createStaleGate } from '../backseat/staleGate';
 import { voicePitchRate } from '@shared/voicePitch';
 import type { VoiceTtsNoticePush } from '@shared/ipc';
+import type { FishFailureReason } from '@shared/fishVoices';
 import { createAudioQueue, type AudioQueue, type TtsStreamHandle } from '../voice/audioQueue';
 import { createSentenceTts } from '../voice/sentenceTts';
 import { localTtsModel } from '@shared/ttsEngine';
@@ -346,6 +347,13 @@ let pendingTts = 0;
  */
 let localTtsCall = false;
 let kokoroTtsCall = false;
+/** 261103: Fish Audio is this call's local voice. Its clips are mp3, so the
+ * streaming path is open again (a Fast fallback arrives as one WAV chunk and
+ * the stream player sniffs it). */
+let fishTtsCall = false;
+/** Characters with their own Fish voice this call: played without the pitch
+ * shift (the user picked that exact voice). */
+let fishOverrideIds = new Set<string>();
 let sentenceTts: ReturnType<typeof createSentenceTts> | null = null;
 /** Companion lines that arrived while the (first) call was still 'connecting'.
  * `seq` is the line's ORIGIN sequence resolved at buffer time (see
@@ -566,6 +574,7 @@ function staleGate(text: string, capturedAt: number): (when: 'arrival' | 'playhe
 }
 
 function pitchRateOf(characterId: string): number {
+  if (fishTtsCall && fishOverrideIds.has(characterId)) return 1;
   const character = useDataStore.getState().characters.find((c) => c.id === characterId);
   return voicePitchRate(character ?? { id: characterId, metadata: {} });
 }
@@ -722,10 +731,30 @@ export function kokoroFallbackNotice(reason: 'pack-missing' | 'failed'): string 
     : t('[spoken with the Fast voice, the Kokoro voice could not load]');
 }
 
+/** Notice copy when Fish Audio is the chosen local voice but the Fast voices
+ * spoke the line instead (261103, fish-fallback push). */
+export function fishFallbackNotice(reason: FishFailureReason): string {
+  switch (reason) {
+    case 'no-key':
+      return t('[spoken with the Fast voice, add your Fish Audio key in Settings]');
+    case 'key-invalid':
+      return t('[spoken with the Fast voice, Fish Audio rejected your key]');
+    case 'no-credit':
+      return t('[spoken with the Fast voice, the Fish Audio free model may have ended, or your account needs credit]');
+    case 'busy':
+      return t('[spoken with the Fast voice, Fish Audio is busy right now]');
+    case 'voice-missing':
+      return t('[spoken with the Fast voice, the Fish Audio voice was not found]');
+    case 'failed':
+      return t('[spoken with the Fast voice, Fish Audio could not be reached]');
+  }
+}
+
 /** The call notice for one voice:tts-notice push. */
 function ttsNoticeText(push: VoiceTtsNoticePush): string {
   if (push.kind === 'own-voice-stand-in') return ownVoiceStandInNotice(push.reason);
   if (push.kind === 'kokoro-fallback') return kokoroFallbackNotice(push.reason);
+  if (push.kind === 'fish-fallback') return fishFallbackNotice(push.reason);
   return substitutePackNotice(push);
 }
 
@@ -866,8 +895,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     const canStream =
       typeof sei.voiceTtsStream === 'function' &&
       typeof sei.onVoiceTtsChunk === 'function' &&
-      // Local TTS (260816): whole WAV clips only — see localTtsCall.
-      !localTtsCall;
+      // Local TTS (260816): whole WAV clips only — see localTtsCall. Fish
+      // Audio (261103) is mp3 and streams.
+      (!localTtsCall || fishTtsCall);
     // 260726: a TINY line does not stream. Streaming exists to cut time-to-
     // first-audio on a long clip, and its cost is that playback starts on a
     // buffer that is still filling. On a clip of a few hundred ms there is
@@ -922,6 +952,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         turn,
         onDone,
         ...(stale ? { stale: () => stale('playhead') } : {}),
+        // A Fish line that falls back to the Fast voices arrives as one WAV.
+        ...(fishTtsCall ? { sniff: true } : {}),
       });
       void sei
         .voiceTtsStream({ characterId, text, ...ttsCtx })
@@ -1881,6 +1913,11 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // 261102: Kokoro lines go sentence by sentence (slower synthesis, so
       // the first sentence plays while the next one generates).
       kokoroTtsCall = localTtsCall && localTtsModel(callCfg) === 'kokoro';
+      // 261103: Fish Audio only when it is really the engine (tts_engine
+      // 'local'), not the no-ElevenLabs-key fallback above.
+      fishTtsCall =
+        localTtsCall && callCfg?.tts_engine === 'local' && localTtsModel(callCfg) === 'fish';
+      fishOverrideIds = new Set(fishTtsCall ? Object.keys(callCfg?.fish_voice_overrides ?? {}) : []);
       // 260725: kind from the fresh config read (main truth), not the display
       // store — the store can be UNKNOWN (null) at call time.
       // 260816 SenseVoice: the policy also reads whether the SenseVoice pack is

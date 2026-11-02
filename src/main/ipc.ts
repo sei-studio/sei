@@ -42,6 +42,7 @@ import type { HomeNextStep } from '../shared/homeNextStep';
 import { localTtsModel } from '../shared/ttsEngine';
 import { BACKSEAT_START_TRIGGERS, CALL_END_REASONS } from '../shared/callEndReasons';
 import type { CallInterruptCounts } from '../shared/callInterrupts';
+import type { FishAudioResult, FishOverrideResult } from '../shared/fishVoices';
 import { CharacterSchema, UserConfigSchema, UserPreferencesSchema, MAX_COMPANION_SLOTS, type Character, type UserConfig } from '../shared/characterSchema';
 import { SHOWN_PROVIDERS, GRANDFATHERED_PROVIDERS, type ProviderKind } from '../shared/llmCatalog';
 import { loadConfig } from './configStore';
@@ -2627,6 +2628,49 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.voice.elevenKeyStatus, async (): Promise<{ present: boolean }> => {
     const { hasElevenLabsKey } = await import('./voice/elevenLabsKeyStore');
     return { present: await hasElevenLabsKey() };
+  });
+
+  // Fish Audio (261103): the user's own key, called straight from main. Same
+  // write-only handling as the ElevenLabs key above.
+  ipcMain.handle(IpcChannel.voice.fishKeySet, async (_event, argsRaw: unknown): Promise<void> => {
+    const args = z.object({ key: z.string().min(8).max(200).nullable() }).parse(argsRaw);
+    const { setFishKey } = await import('./voice/fishKeyStore');
+    await setFishKey(args.key);
+    const { clearFishFailures } = await import('./voice/fishTts');
+    clearFishFailures();
+  });
+
+  ipcMain.handle(IpcChannel.voice.fishKeyStatus, async (): Promise<{ present: boolean }> => {
+    const { hasFishKey } = await import('./voice/fishKeyStore');
+    return { present: await hasFishKey() };
+  });
+
+  const fishAudioResult = async (run: () => Promise<ArrayBuffer>): Promise<FishAudioResult> => {
+    try {
+      return { ok: true, audio: await run() };
+    } catch (err) {
+      const { fishFailureReason } = await import('./voice/fishTts');
+      return { ok: false, reason: fishFailureReason(err) ?? 'failed' };
+    }
+  };
+
+  ipcMain.handle(IpcChannel.voice.fishTest, async (): Promise<FishAudioResult> => {
+    const { fishSampleTts } = await import('./voice/tts');
+    return fishAudioResult(() => fishSampleTts());
+  });
+
+  ipcMain.handle(IpcChannel.voice.fishVoicePreview, async (_event, argsRaw: unknown): Promise<FishAudioResult> => {
+    const args = z.object({ voiceId: z.string().regex(/^[0-9a-f]{32}$/) }).parse(argsRaw);
+    const { fishSampleTts } = await import('./voice/tts');
+    return fishAudioResult(() => fishSampleTts({ voiceId: args.voiceId }));
+  });
+
+  // A character's own Fish voice: parse the link, check it with the user's
+  // key, store it sparsely in the main-owned fish_voice_overrides.
+  ipcMain.handle(IpcChannel.voice.fishOverrideSet, async (_event, argsRaw: unknown): Promise<FishOverrideResult> => {
+    const args = z.object({ characterId: IdSchema, input: z.string().max(300).nullable() }).parse(argsRaw);
+    const { setFishVoiceOverride } = await import('./voice/fishOverride');
+    return await setFishVoiceOverride(args.characterId, args.input);
   });
 
   // First-meeting greeting (thoughts consumer #1). The renderer calls this when

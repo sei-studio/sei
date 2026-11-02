@@ -24,4 +24,12 @@ describe('local voice choice (Fast / Kokoro)', () => {
     expect(showTtsPackRow(KOKORO_PACK_ID, 'fast', 'downloading')).toBe(true);
     expect(showTtsPackRow(KOKORO_PACK_ID, 'kokoro', 'absent')).toBe(true);
   });
+
+  it('Fish Audio (261103) saves at once and keeps the Fast rows as its backup', () => {
+    expect(localModelPickAction('fish', 'absent')).toBe('save');
+    expect(localModelPickAction('fish', undefined)).toBe('save');
+    expect(showTtsPackRow('tts-en', 'fish', 'absent')).toBe(true);
+    expect(showTtsPackRow(KOKORO_PACK_ID, 'fish', 'absent')).toBe(false);
+    expect(showTtsPackRow(KOKORO_PACK_ID, 'fish', 'ready')).toBe(true);
+  });
 });

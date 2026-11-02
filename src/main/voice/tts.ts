@@ -48,6 +48,19 @@ import { resolveElevenLabsRoute, resolveTtsRoute, type ElevenLabsRoute } from '.
 import { isOwnVoiceId } from './ownVoices';
 import type { SpeechPackId } from '../speech/packs';
 import { noteCreditWall } from '../creditWall';
+import { resolveFishKey } from './fishKeyStore';
+import {
+  fishFailureReason,
+  openFishStream,
+  planFishVoice,
+  rememberFishFailure,
+  rememberedFishFailure,
+  synthesizeFish,
+  type FishFailureReason,
+  type FishVoicePlan,
+  type OpenedFishStream,
+} from './fishTts';
+import { FISH_OVERRIDE_DEFAULT_SPEED } from '../../shared/fishVoices';
 
 const PROXY_BASE_URL = process.env.SEI_PROXY_URL ?? 'https://api.sei.gg';
 const ELEVENLABS_TTS_MODEL = 'eleven_flash_v2_5';
@@ -381,6 +394,14 @@ export type TtsNotice =
       reason: 'pack-missing' | 'failed';
     }
   | {
+      /** 261103: Fish Audio is the chosen local voice but could not speak
+       * this line (see fishTts.ts for the reasons), so it was spoken with the
+       * Fast voices. */
+      kind: 'fish-fallback';
+      characterId: string;
+      reason: FishFailureReason;
+    }
+  | {
       /** 261020 (T158): a cloud line for an OWN ElevenLabs voice was spoken
        * with the character's stand-in Sei voice instead (see header). */
       kind: 'own-voice-stand-in';
@@ -610,6 +631,76 @@ async function tryLocalFallbackClip(
   }
 }
 
+/**
+ * Fish Audio (261103): the line's plan, or why it cannot be spoken with Fish
+ * right now (no key, or a refusal remembered for this key and voice). The
+ * voice and the request language key on the LINE's effective language, the
+ * same way the local packs do (detectSpokenLanguage).
+ */
+async function prepareFishLine(
+  characterId: string,
+  text: string,
+  voiceId: string,
+  language: ChatLanguage,
+  genderHint?: string,
+): Promise<{ key: string; plan: FishVoicePlan; language: string } | { fail: FishFailureReason }> {
+  const key = await resolveFishKey();
+  if (!key) return { fail: 'no-key' };
+  const speech = await import('../speech');
+  const effLanguage = speech.detectSpokenLanguage(text, language);
+  const gender = speech.voiceGenderFor(voiceId, genderHint);
+  const override = (await loadConfigOrNull())?.fish_voice_overrides?.[characterId];
+  const plan = planFishVoice(override, gender, effLanguage);
+  const remembered = rememberedFishFailure(key, plan.id);
+  if (remembered) return { fail: remembered };
+  return { key, plan, language: effLanguage };
+}
+
+/** A Fish failure for one line: remember it when it is terminal, say so. */
+function noteFishFailure(
+  characterId: string,
+  err: unknown,
+  prep?: { key: string; plan: FishVoicePlan },
+): FishFailureReason {
+  const reason = fishFailureReason(err) ?? 'failed';
+  if (prep) rememberFishFailure(prep.key, prep.plan.id, reason);
+  emitFishFallback(characterId, reason);
+  return reason;
+}
+
+function emitFishFallback(characterId: string, reason: FishFailureReason): void {
+  console.warn(`[sei/voice] Fish Audio unavailable (${reason}), using the Fast voices`);
+  emitTtsNotice({ kind: 'fish-fallback', characterId, reason });
+}
+
+async function fishSelected(): Promise<boolean> {
+  return localTtsModel(await loadConfigOrNull()) === 'fish';
+}
+
+/**
+ * One whole Fish clip (mp3), or null after a failure (notice sent): the
+ * caller speaks the line with the Fast voices instead.
+ */
+async function trySynthesizeFishLine(
+  characterId: string,
+  text: string,
+  voiceId: string,
+  language: ChatLanguage,
+  genderHint?: string,
+): Promise<ArrayBuffer | null> {
+  const prep = await prepareFishLine(characterId, text, voiceId, language, genderHint);
+  if ('fail' in prep) {
+    emitFishFallback(characterId, prep.fail);
+    return null;
+  }
+  try {
+    return await synthesizeFish(prep.key, text.slice(0, MAX_TTS_CHARS), prep.plan, prep.language);
+  } catch (err) {
+    noteFishFailure(characterId, err, prep);
+    return null;
+  }
+}
+
 async function fetchAudio(
   url: string,
   headers: Record<string, string>,
@@ -767,6 +858,12 @@ export async function voiceTts(args: {
   if (await localTtsSelected()) {
     const localText = speechTextFor(args.text, language);
     if (!localText) throw new Error('VOICE_TTS_FAILED: empty text');
+    // 261103: Fish Audio, when chosen, speaks first; any failure falls back
+    // to the Fast voices below with a notice.
+    if (await fishSelected()) {
+      const fish = await trySynthesizeFishLine(args.characterId, localText, voiceId, language, own?.gender);
+      if (fish) return fish;
+    }
     return await synthesizeLocalClip(localText, voiceId, language, args.characterId, own?.gender);
   }
   // An own-account voice (261019) goes direct with the user's key, on cloud
@@ -934,6 +1031,24 @@ export async function voiceTtsStream(
   if (await localTtsSelected()) {
     const localText = speechTextFor(args.text, language);
     if (!localText) throw new Error('VOICE_TTS_FAILED: empty text');
+    // 261103: Fish Audio streams its mp3 like the ElevenLabs path. A failure
+    // before the first byte (no key, a refusal, the connect timeout) falls
+    // back to a Fast clip delivered as one WAV chunk + done; the renderer's
+    // stream player sniffs the container. A failure mid-body ends the stream
+    // with an error, like any other stream.
+    if (await fishSelected()) {
+      const prep = await prepareFishLine(args.characterId, localText, voiceId, language, own?.gender);
+      if ('fail' in prep) {
+        emitFishFallback(args.characterId, prep.fail);
+      } else {
+        try {
+          const opened = await openFishStream(prep.key, localText.slice(0, MAX_TTS_CHARS), prep.plan, prep.language);
+          return pumpTtsStream(opened, sink);
+        } catch (err) {
+          noteFishFailure(args.characterId, err, prep);
+        }
+      }
+    }
     const buf = await synthesizeLocalClip(localText, voiceId, language, args.characterId, own?.gender);
     const streamId = `tts-${nextStreamSeq++}`;
     queueMicrotask(() => {
@@ -988,10 +1103,19 @@ export async function voiceTtsStream(
       ttsContextFor(proxyText, language, prev, more),
     );
   }
-  const { body: resBody, ctrl } = opened;
-  // Upstream accepted the synthesis — this line is what the player will hear
-  // last, so it becomes the next clip's previous_text.
+  return pumpTtsStream(opened, sink);
+}
 
+/**
+ * Pump an opened synthesis body to `sink` in the background (ordered chunks,
+ * then exactly one terminal {done} or {error}) and return its id at once.
+ * Shared by the ElevenLabs and Fish Audio streams.
+ */
+function pumpTtsStream(
+  opened: OpenedTtsStream | OpenedFishStream,
+  sink: (event: TtsStreamEvent) => void,
+): { streamId: string } {
+  const { body: resBody, ctrl } = opened;
   const streamId = `tts-${nextStreamSeq++}`;
   // Pump in the background; the caller gets the id NOW so it can route chunks.
   //
@@ -1099,6 +1223,21 @@ export async function voicePreviewTts(args: {
     // Same path for Fast and Kokoro: synthesizeLocalClip reads the model
     // choice (and falls back to Fast when Kokoro cannot speak).
     const localText = speechTextFor(line, language) || line;
+    // 261103: Fish Audio speaks the sample in the voice the call would use
+    // (the character's own pick when set). A failure plays the Fast sample;
+    // the Settings Test button is where Fish errors are shown.
+    if (await fishSelected()) {
+      const prep = await prepareFishLine(args.characterId ?? '', localText, voiceId ?? '', language, genderHint);
+      if (!('fail' in prep)) {
+        try {
+          return await synthesizeFish(prep.key, localText, prep.plan, prep.language);
+        } catch (err) {
+          const reason = fishFailureReason(err) ?? 'failed';
+          rememberFishFailure(prep.key, prep.plan.id, reason);
+          console.warn(`[sei/voice] Fish Audio sample failed (${reason}), using the Fast voices`);
+        }
+      }
+    }
     return await synthesizeLocalClip(localText, voiceId ?? '', language, args.characterId ?? '', genderHint);
   }
   const voiceId = args.voiceId ?? '';
@@ -1125,6 +1264,24 @@ export async function voicePreviewTts(args: {
   const buf = await synthesize(line, voiceId, language, calmness, route);
   await writeCachedPreview(key, buf);
   return buf;
+}
+
+/**
+ * Fish Audio sample in one voice, for the Settings Test button and the
+ * character's voice-pick Preview (261103). Throws the FISH_* sentinels (no
+ * fallback here: these buttons exist to show whether Fish works). `voiceId`
+ * absent = the automatic female voice for the conversation language.
+ */
+export async function fishSampleTts(args: { voiceId?: string; speed?: number } = {}): Promise<ArrayBuffer> {
+  const key = await resolveFishKey();
+  if (!key) throw new Error('FISH_NO_KEY: add your Fish Audio key first');
+  const language = await ttsLanguage();
+  const line = PREVIEW_LINES[language] ?? PREVIEW_LINES.en;
+  const text = speechTextFor(line, language) || line;
+  const plan = args.voiceId
+    ? planFishVoice({ id: args.voiceId, name: '', speed: args.speed ?? FISH_OVERRIDE_DEFAULT_SPEED }, 'female', language)
+    : planFishVoice(undefined, 'female', language);
+  return await synthesizeFish(key, text, plan, language);
 }
 
 /**

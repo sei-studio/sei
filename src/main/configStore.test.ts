@@ -209,6 +209,20 @@ describe('saveConfigFromRenderer', () => {
     expect(cfg.theme_mode).toBe('mint');
   });
 
+  it('261103: the renderer can pick Fish Audio but never writes the Fish voice overrides', async () => {
+    const id = '0123456789abcdef0123456789abcdef';
+    const mountSnapshot = await loadConfig();
+    await updateConfig((cfg) => ({ ...cfg, fish_voice_overrides: { [UUID_A]: { id, name: 'Calm' } } }));
+    await saveConfigFromRenderer({
+      ...mountSnapshot,
+      local_tts_model: 'fish',
+      fish_voice_overrides: { [UUID_B]: { id, name: 'Injected' } },
+    });
+    const cfg = await loadConfig();
+    expect(cfg.local_tts_model).toBe('fish');
+    expect(cfg.fish_voice_overrides).toEqual({ [UUID_A]: { id, name: 'Calm' } });
+  });
+
   it('260929: the Minecraft setup dismissal (renderer-owned) persists', async () => {
     await saveConfigFromRenderer({ ...(await loadConfig()), mc_setup_dismissed: true });
     expect((await loadConfig()).mc_setup_dismissed).toBe(true);
