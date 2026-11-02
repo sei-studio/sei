@@ -520,8 +520,11 @@ export async function buildAction(args, bot, config, deps = {}) {
     // crafting table "into" grass). The block goes on top, as a player's would.
     const c = cells[0]
     const above = { x: c.x, y: c.y + 1, z: c.z }
-    if (total === 1 && !deps._lifted && !isOccupied(bot, above)) {
-      const name = bot.blockAt(new Vec3(c.x, c.y, c.z))?.name ?? 'a block'
+    // Only on natural ground: the same block she just placed there (the model
+    // repeating a 1-cell build that worked) would stack a tower, and water,
+    // lava or a flower is not ground to stand a block on.
+    const name = bot.blockAt(new Vec3(c.x, c.y, c.z))?.name ?? 'a block'
+    if (total === 1 && !deps._lifted && isNaturalBlock(name) && name !== args.block && !isOccupied(bot, above)) {
       const r = await buildAction({ ...args, from: above, to: above }, bot, config, { ...deps, _lifted: true })
       return `${c.x},${c.y},${c.z} is already ${name}, so it went on top of it at y=${above.y}: ${r}`
     }
@@ -793,13 +796,15 @@ export function bodyInCell(bot, c) {
 
 /**
  * 261012. The highest solid block under the lowest floating cell, scanning at
- * most 16 down; null when there is nothing under it in that range.
+ * most 16 down; null when there is nothing under it in that range. Grass
+ * tufts, snow layers and liquids are passed through: they are not ground.
  */
+const LIQUID = new Set(['water', 'lava', 'bubble_column'])
 function groundBelow(bot, cells) {
   const low = cells.reduce((a, c) => (c.y < a.y ? c : a), cells[0])
   for (let y = low.y - 1; y >= low.y - 16; y--) {
     const b = bot.blockAt(new Vec3(low.x, y, low.z))
-    if (b && !isAir(b.name)) return y
+    if (b && !isAir(b.name) && !REPLACEABLE.has(b.name) && !LIQUID.has(b.name)) return y
   }
   return null
 }

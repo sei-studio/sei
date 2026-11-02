@@ -373,6 +373,61 @@ describe('shelterAction: digs its own blocks when short (261102)', () => {
   })
 })
 
+describe('shelterAction: pass 36 review (261102)', () => {
+  function diggableBot(inv, holes = new Set()) {
+    const bot = makeBot({ inv })
+    const base = bot.blockAt.bind(bot)
+    bot.blockAt = (p) => (holes.has(`${p.x},${p.y},${p.z}`) ? { name: 'air', boundingBox: 'empty', position: p } : base(p))
+    return { bot, holes }
+  }
+  function dirtStack(inv) {
+    let n = 0
+    inv.push({ name: 'dirt', get count() { return n } })
+    return { add: (k) => { n += k } }
+  }
+
+  it('skips a block someone walks onto after the dig list was made', async () => {
+    const inv = []
+    const { bot, holes } = diggableBot(inv)
+    const dirt = dirtStack(inv)
+    let target = null
+    const dig = vi.fn(async ({ x, y, z }) => {
+      if (!target) {
+        // Alex walks onto a column next to the one she is digging.
+        target = (x === 3 && z === 0) ? { x: -3, z: 0 } : { x: 3, z: 0 }
+        bot.entities = { 7: { id: 7, type: 'player', username: 'Alex', position: { x: target.x + 0.5, y: 64, z: target.z + 0.5 } } }
+      }
+      holes.add(`${x},${y},${z}`); dirt.add(1)
+      return 'dug'
+    })
+    await shelterAction({ size: 3 }, bot, {}, { digBlock: dig })
+    expect(dig).toHaveBeenCalledTimes(27)
+    expect(dig.mock.calls.slice(1).some(([a]) => a.x === target.x && a.z === target.z)).toBe(false)
+  })
+
+  it('does not dig a block with nothing solid under it (a thin roof over a cave)', async () => {
+    const inv = []
+    const { bot, holes } = diggableBot(inv, new Set(['3,62,0', '-3,62,0']))
+    const dirt = dirtStack(inv)
+    const dig = vi.fn(async ({ x, y, z }) => { holes.add(`${x},${y},${z}`); dirt.add(1); return 'dug' })
+    await shelterAction({ size: 3 }, bot, {}, { digBlock: dig })
+    expect(dig).toHaveBeenCalledTimes(27)
+    expect(dig.mock.calls.some(([a]) => (a.x === 3 || a.x === -3) && a.z === 0)).toBe(false)
+  })
+
+  it('builds walls and roof with lowering off, so they stay in step', async () => {
+    await shelterAction({ size: 3 }, makeBot(), {})
+    expect(buildAction.mock.calls.length).toBeGreaterThanOrEqual(2)
+    for (const call of buildAction.mock.calls) expect(call[3]).toMatchObject({ partial: true, _lowered: true })
+  })
+
+  it('counts rooted_dirt as a building block', async () => {
+    const res = await shelterAction({ size: 3 }, makeBot({ inv: [{ name: 'rooted_dirt', count: 30 }] }), {})
+    expect(buildAction.mock.calls[0][0].block).toBe('rooted_dirt')
+    expect(res).toMatch(/^built shelter/)
+  })
+})
+
 describe('shelterAction: her own body and walls already there (261102)', () => {
   it('walks to the middle before building when she stands where a wall goes', async () => {
     const bot = makeBot()

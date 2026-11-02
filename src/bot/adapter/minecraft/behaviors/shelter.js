@@ -36,7 +36,7 @@ export const SUPPLY_MARGIN = 2
 // 261012: cheap full blocks the shelter may switch to when the asked material
 // runs short (the quality eval gave her 64 planks + 64 cobblestone, and a 5x5
 // needs 73: the walls went up in planks and the roof was refused).
-const FILLER = /^(cobblestone|cobbled_deepslate|stone|dirt|coarse_dirt|netherrack|blackstone|andesite|diorite|granite|tuff|deepslate|sandstone|red_sandstone|bricks|stone_bricks|mud_bricks|[a-z_]+_planks)$/
+const FILLER = /^(cobblestone|cobbled_deepslate|stone|dirt|coarse_dirt|rooted_dirt|netherrack|blackstone|andesite|diorite|granite|tuff|deepslate|sandstone|red_sandstone|bricks|stone_bricks|mud_bricks|[a-z_]+_planks)$/
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -113,7 +113,10 @@ async function buildPart(bot, config, span, material, hollow) {
   let res = null
   for (const k of buildingKinds(bot, material)) {
     if (invCount(bot, k.name) === 0) continue
-    res = await buildAction({ ...span, block: k.name, hollow }, bot, config, { partial: true })
+    // _lowered: the shelter decides its own layers. Lowering the walls
+    // alone (she stood on a pillar) left the roof a layer up with nothing
+    // under it.
+    res = await buildAction({ ...span, block: k.name, hollow }, bot, config, { partial: true, _lowered: true })
     if (!(typeof res === 'string' && /^no \S+ in inventory$/.test(res))) used.push(k.name)
     if (isAborted(res) || buildComplete(res)) break
     if (!(typeof res === 'string' && /then ran out of /.test(res))) break
@@ -185,7 +188,8 @@ export function supplyCandidates(bot, { cx, cz, baseY, minX, maxX, minZ, maxZ, d
         const b = bot.blockAt?.(new Vec3(x, y, z))
         if (!b) break
         if (!isOccupied(bot, { x, y, z })) continue
-        if ((HAND_DIG.has(b.name) || (canPick && PICK_DIG.has(b.name))) && !bodyInCell(bot, { x, y: y + 1, z })) {
+        // Solid under it: a 1-thick roof over a cave is not dug out.
+        if ((HAND_DIG.has(b.name) || (canPick && PICK_DIG.has(b.name))) && !bodyInCell(bot, { x, y: y + 1, z }) && solidAt(bot, x, y - 1, z) === true) {
           out.push({ x, y, z })
         }
         break
@@ -216,6 +220,9 @@ async function digForBlocks(bot, config, material, want, cands, digBlock) {
     }
     const c = left.shift()
     if (!isOccupied(bot, c)) continue
+    // Checked again right before the dig: someone (her included) may have
+    // walked onto it since the list was made.
+    if (bodyInCell(bot, { x: c.x, y: c.y + 1, z: c.z })) continue
     const before = blocksOnHand(bot, material)
     const r = await digBlock({ x: c.x, y: c.y, z: c.z }, bot, config)
     if (r === 'aborted' || signal?.aborted) return { got, aborted: true }

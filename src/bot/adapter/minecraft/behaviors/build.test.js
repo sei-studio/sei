@@ -799,3 +799,134 @@ describe('buildAction: bodies in the cell, again (261102)', () => {
     expect(r).toContain('had Alex standing in them')
   })
 })
+
+describe('buildAction: pass 36 review (261102)', () => {
+  const reached = () => vi.fn(async () => 'reached')
+
+  it('a 1-cell build repeated on the block it already placed does not stack a tower', async () => {
+    const { bot, blocks } = makeWorld()
+    wirePlaceMock(bot, blocks)
+    bot.entity.position = new Vec3(-37.5, 68, -31.5)
+    blocks.set('-39,68,-31', 'oak_planks')
+    const r = await buildAction(
+      { from: { x: -39, y: 68, z: -31 }, to: { x: -39, y: 68, z: -31 }, block: 'oak_planks' },
+      bot, {}, { goTo: reached() },
+    )
+    expect(r).toMatch(/^built NOTHING: all 1 cells/)
+    expect(blocks.get('-39,69,-31')).toBeUndefined()
+    expect(placeBlockAction).not.toHaveBeenCalled()
+  })
+
+  it('a 1-cell build aimed at water is not lifted on top of it', async () => {
+    const { bot, blocks } = makeWorld()
+    wirePlaceMock(bot, blocks)
+    bot.entity.position = new Vec3(-37.5, 68, -31.5)
+    blocks.set('-39,68,-31', 'water')
+    const r = await buildAction(
+      { from: { x: -39, y: 68, z: -31 }, to: { x: -39, y: 68, z: -31 }, block: 'oak_planks' },
+      bot, {}, { goTo: reached() },
+    )
+    expect(r).not.toMatch(/went on top of it/)
+    expect(blocks.get('-39,69,-31')).toBeUndefined()
+  })
+
+  it('a 1-cell build aimed at a flower is not lifted on top of it', async () => {
+    const { bot, blocks } = makeWorld()
+    wirePlaceMock(bot, blocks)
+    bot.entity.position = new Vec3(-37.5, 68, -31.5)
+    blocks.set('-39,68,-31', 'poppy')
+    const r = await buildAction(
+      { from: { x: -39, y: 68, z: -31 }, to: { x: -39, y: 68, z: -31 }, block: 'oak_planks' },
+      bot, {}, { goTo: reached() },
+    )
+    expect(r).not.toMatch(/went on top of it/)
+    expect(blocks.get('-39,69,-31')).toBeUndefined()
+  })
+
+  it('does not lower when the caller says so (the shelter keeps its walls and roof in step)', async () => {
+    const { bot, blocks } = makeWorld()
+    wirePlaceMock(bot, blocks)
+    bot.entity.position = new Vec3(-37.5, 68, -31.5)
+    const r = await buildAction(
+      { from: { x: -40, y: 69, z: -34 }, to: { x: -40, y: 70, z: -30 }, block: 'oak_planks' },
+      bot, {}, { goTo: reached(), partial: true, _lowered: true },
+    )
+    expect(r).not.toMatch(/floated/)
+    expect(placeBlockAction).not.toHaveBeenCalled()
+    for (let z = -34; z <= -30; z++) expect(blocks.get(`-40,68,${z}`)).toBeUndefined()
+  })
+
+  it('a single-layer span floating above the ground is not lowered', async () => {
+    const { bot, blocks } = makeWorld()
+    wirePlaceMock(bot, blocks)
+    bot.entity.position = new Vec3(-37.5, 68, -31.5)
+    const r = await buildAction(
+      { from: { x: -40, y: 69, z: -34 }, to: { x: -40, y: 69, z: -30 }, block: 'oak_planks' },
+      bot, {}, { goTo: reached() },
+    )
+    expect(r).not.toMatch(/floated/)
+    for (let z = -34; z <= -30; z++) expect(blocks.get(`-40,68,${z}`)).toBeUndefined()
+  })
+
+  it('a tall span touching something it can build against is built where it was asked', async () => {
+    const { bot, blocks } = makeWorld()
+    wirePlaceMock(bot, blocks)
+    bot.entity.position = new Vec3(-37.5, 68, -31.5)
+    blocks.set('-41,69,-32', 'stone')
+    const r = await buildAction(
+      { from: { x: -40, y: 69, z: -34 }, to: { x: -40, y: 70, z: -30 }, block: 'oak_planks' },
+      bot, {}, { goTo: reached() },
+    )
+    expect(r).not.toMatch(/floated/)
+    expect(blocks.get('-40,69,-32')).toBe('oak_planks')
+    for (let z = -34; z <= -30; z++) expect(blocks.get(`-40,68,${z}`)).toBeUndefined()
+  })
+
+  it('grass tufts under a floating wall are not the ground', async () => {
+    const { bot, blocks } = makeWorld()
+    wirePlaceMock(bot, blocks)
+    bot.entity.position = new Vec3(-37.5, 68, -31.5)
+    for (let z = -34; z <= -30; z++) blocks.set(`-40,68,${z}`, 'short_grass')
+    const r = await buildAction(
+      { from: { x: -40, y: 69, z: -34 }, to: { x: -40, y: 70, z: -30 }, block: 'oak_planks' },
+      bot, {}, { goTo: reached() },
+    )
+    expect(r).toMatch(/^that span floated 1 above the ground, so it was built 1 lower, at y=68\.\.69: built 10 placed/)
+    for (let z = -34; z <= -30; z++) expect(blocks.get(`-40,68,${z}`)).toBe('oak_planks')
+  })
+
+  it('an abort while waiting for a player to leave the cell stops the build', async () => {
+    const { bot, blocks } = makeWorld()
+    wirePlaceMock(bot, blocks)
+    bot.entities = { 7: { id: 7, type: 'player', username: 'Alex', position: new Vec3(-37.5, 68, -31.5), width: 0.6, height: 1.8 } }
+    bot.entity.position = new Vec3(-35.5, 68, -31.5)
+    const ctl = new AbortController()
+    setTimeout(() => ctl.abort(), 300)
+    const t0 = Date.now()
+    const r = await buildAction(
+      { from: { x: -38, y: 68, z: -32 }, to: { x: -38, y: 68, z: -32 }, block: 'oak_planks' },
+      bot, { signal: ctl.signal }, { goTo: reached(), bodyWaitMs: 10000 },
+    )
+    expect(r).toBe('aborted after 0 placed of 1 cells')
+    expect(Date.now() - t0).toBeLessThan(2000)
+    expect(placeBlockAction).not.toHaveBeenCalled()
+  })
+
+  it('an abort during her step out of the cell stops the build', async () => {
+    const { bot, blocks } = makeWorld()
+    const inner = bot.blockAt
+    bot.blockAt = (p) => { const b = inner(p); return { ...b, boundingBox: b.name === 'air' ? 'empty' : 'block' } }
+    wirePlaceMock(bot, blocks)
+    bot.entity.position = new Vec3(-37.5, 68, -31.5)
+    bot.entity.onGround = true
+    const ctl = new AbortController()
+    const walk = vi.fn(async () => { ctl.abort(); return 'aborted' })
+    const r = await buildAction(
+      { from: { x: -38, y: 68, z: -32 }, to: { x: -38, y: 69, z: -32 }, block: 'oak_planks' },
+      bot, { signal: ctl.signal }, { goTo: walk },
+    )
+    expect(walk).toHaveBeenCalledTimes(1)
+    expect(r).toBe('aborted after 0 placed of 2 cells')
+    expect(placeBlockAction).not.toHaveBeenCalled()
+  })
+})
