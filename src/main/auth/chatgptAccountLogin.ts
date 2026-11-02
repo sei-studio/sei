@@ -38,6 +38,7 @@
 import { safeStorage } from 'electron';
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { REGION_BLOCKED, REGION_BLOCKED_COPY } from '../../shared/regionGate';
 import type {
   ChatgptLinkResult,
   ChatgptLoginCodeReason,
@@ -77,6 +78,8 @@ export interface SupabaseSessionShape {
 export interface ChatgptAccountLoginDeps {
   fetchImpl: typeof fetch;
   proxyBase: () => string;
+  /** Sei cloud region gate, run fresh on every login (never cached). */
+  regionBlocked: () => Promise<boolean>;
   chatgpt: () => {
     /** The plain plan sign-in (local nonce, no proxy). connectPlan's fallback. */
     signIn(opts?: { accountId?: string | null; enablePlan?: boolean }): Promise<ChatgptSignInResult>;
@@ -331,8 +334,12 @@ export function createChatgptAccountLogin(deps: ChatgptAccountLoginDeps) {
 
   return {
     async login(): Promise<ChatgptLoginResult> {
-      // 261103 (T303): no Sei region pre-check. OpenAI decides whether the
-      // caller's region may sign in; its refusal comes back as provider_region.
+      // This login mints a Sei CLOUD session, so the cloud region gate runs
+      // first, before the browser opens: a blocked attempt never creates an
+      // account. The check is fresh every time (261103: no verdict cache), so
+      // a VPN that is up now counts. connectPlan and the plain plan sign-in
+      // are local-only and never consult it; OpenAI decides there.
+      if (await deps.regionBlocked()) return { ok: false, reason: REGION_BLOCKED, message: REGION_BLOCKED_COPY };
       const gen = ++generation;
       clearPending({ revoke: true });
       const signed = await chatgptSignIn();
@@ -601,6 +608,15 @@ export function chatgptAccountLogin(): ChatgptAccountLogin {
   singleton = createChatgptAccountLogin({
     fetchImpl: (...a) => globalThis.fetch(...a),
     proxyBase: () => process.env.SEI_PROXY_URL ?? 'https://api.sei.gg',
+    regionBlocked: async () => {
+      try {
+        const { getRegionStatus } = await import('../regionDetect');
+        return (await getRegionStatus()).blocked;
+      } catch (err) {
+        logger.warn(`region gate check failed, failing open: ${(err as Error).message}`);
+        return false;
+      }
+    },
     chatgpt: () => chatgptSession(),
     setSupabaseSession: async (s) => {
       const { getClient } = await import('./supabaseClient');

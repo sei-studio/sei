@@ -1512,12 +1512,10 @@ function AuthPanel(props: {
    * backstop. Fails open: a failed pre-check leaves the form usable.
    */
   const [regionBlocked, setRegionBlocked] = useState(false);
-  // A ChatGPT sign-in started from the blocked panel shows its own steps.
-  const regionPanel = regionBlocked && !gptCode && gpt.phase !== 'browser';
   const { onSubStep } = props;
   useEffect(() => {
     onSubStep?.(
-      regionPanel
+      regionBlocked
         ? 'region_blocked'
         : codeSentTo !== null || gptCode
           ? 'code'
@@ -1525,7 +1523,11 @@ function AuthPanel(props: {
             ? 'oauth_wait'
             : 'form',
     );
-  }, [onSubStep, regionPanel, codeSentTo, oauth, gptCode, gpt.phase]);
+  }, [onSubStep, regionBlocked, codeSentTo, oauth, gptCode, gpt.phase]);
+  // "Continue with ChatGPT" mints a Sei cloud session, so main gates it.
+  useEffect(() => {
+    if (gpt.failure === 'region_blocked') setRegionBlocked(true);
+  }, [gpt.failure]);
   useEffect(() => {
     let cancelled = false;
     sei.regionStatus().then(
@@ -1649,9 +1651,11 @@ function AuthPanel(props: {
   // the local-setup path. Placed AFTER the needsTos branch on purpose: that
   // branch serves an already-signed-in user, and existing sessions are never
   // gated.
-  // 261103 (T303): ChatGPT sign-in is not region-gated (OpenAI decides), so
-  // it stays on offer here, and the panel can be re-checked.
-  if (regionPanel) {
+  // 261103 (T303): the verdict is no longer cached, so the panel can be
+  // re-checked. "Continue with ChatGPT" is a cloud account and stays off
+  // here; local mode's provider list has the ChatGPT plan, which OpenAI
+  // gates on its own.
+  if (regionBlocked) {
     return (
       <div className={styles.panel}>
         <p className={styles.panelText}>
@@ -1660,20 +1664,7 @@ function AuthPanel(props: {
         <button className={`${styles.pill} ${styles.pillWide}`} onClick={props.onLocal}>
           {tt('Use my own API key')}
         </button>
-        <ContinueWithChatGPTButton
-          format="black"
-          fullWidth
-          onClick={() => {
-            setError(null);
-            props.onIntent('oauth');
-            void gpt.start();
-          }}
-        />
-        {gpt.error ? (
-          <p className={styles.panelError} role="alert">
-            {gpt.error}
-          </p>
-        ) : null}
+        <p className={styles.panelNote}>{tt('Local mode can also use your ChatGPT plan.')}</p>
         <button className={styles.quietLink} onClick={recheckRegion} disabled={regionChecking}>
           {tt('Check again')}
         </button>
@@ -1953,7 +1944,7 @@ function AuthPanel(props: {
           void gpt.start();
         }}
       />
-      {gpt.error ? (
+      {gpt.error && gpt.failure !== 'region_blocked' ? (
         <p className={styles.panelError} role="alert">
           {gpt.error}
         </p>

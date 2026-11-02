@@ -463,6 +463,7 @@ export const ZH_MISC: Record<string, string> = {
   'OpenAI does not support your region.': 'OpenAI 不支持你所在的地区。',
   '{provider} does not support your region.': '{provider} 不支持你所在的地区。',
   'Your AI provider': '你的 AI 服务商',
+  'Local mode can also use your ChatGPT plan.': '本地模式也可以使用你的 ChatGPT 套餐。',
   'ChatGPT sign-in was declined. Try again, or use another way to sign in.': 'ChatGPT 登录被拒绝。请重试，或换一种方式登录。',
   "Couldn't reach Sei. Check your internet and try again.": '无法连接到 Sei。请检查网络后重试。',
   'Finish in your browser': '请在浏览器中完成',
