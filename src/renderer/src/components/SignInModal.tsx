@@ -136,6 +136,19 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
       cancelled = true;
     };
   }, []);
+  // 261103 (T303): the verdict is never cached, so the blocked body can ask again.
+  const [regionChecking, setRegionChecking] = useState(false);
+  const recheckRegion = (): void => {
+    if (regionChecking) return;
+    setRegionChecking(true);
+    sei.regionStatus().then(
+      (s) => {
+        setRegionChecking(false);
+        if (!s.blocked) setRegionBlocked(false);
+      },
+      () => setRegionChecking(false),
+    );
+  };
 
   useEffect(() => {
     // ESC closes (when not mid-submit so we don't drop a pending sign-in).
@@ -271,13 +284,35 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
   // region, so the whole form is replaced by the blocking message and one
   // acknowledging button. The gate never touches an existing session; this
   // modal only ever fronts signup/sign-in, so blocking it whole is correct.
-  if (regionBlocked) {
+  // 261103 (T303): ChatGPT sign-in is not region-gated (OpenAI decides), so it
+  // stays on offer, and its code step takes over the modal like it does below.
+  if (regionBlocked && gpt.phase !== 'code' && gpt.phase !== 'verifying') {
     return (
       <ModalShell title={titleText} width={460} onClose={onClose}>
         <p className={styles.framing}>
           {t('Our servers do not currently support your region. Please continue with local mode.')}
         </p>
+        <ContinueWithChatGPTButton
+          onClick={() => void gpt.start()}
+          disabled={gptBusy}
+          busy={gpt.phase === 'browser'}
+          fullWidth
+        />
+        {gpt.phase === 'browser' ? (
+          <p className={styles.framing}>
+            {t('Finish signing in to ChatGPT in the browser tab that opened.')}{' '}
+            <button type="button" className={styles.toggleLink} onClick={gpt.cancel}>
+              {t('Cancel')}
+            </button>
+          </p>
+        ) : null}
+        {gpt.phase === 'idle' && gpt.error ? (
+          <p className={styles.errorText} role="alert">{gpt.error}</p>
+        ) : null}
         <ModalFooter>
+          <Button kind="quiet" size="md" onClick={recheckRegion} disabled={regionChecking || gptBusy}>
+            {t('Check again')}
+          </Button>
           <Button kind="accent" size="md" onClick={onClose}>
             {t('Got it')}
           </Button>

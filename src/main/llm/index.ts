@@ -13,6 +13,7 @@
  *     llmCatalog defaults. The single BYOK key in apiKeyStore is THE key for
  *     whatever provider is selected (Settings wipes it on provider switch).
  */
+import { isProviderRegionRefusal, providerRegionError } from '../../bot/brain/llm/regionRefusal.js';
 import {
   COMPANION_MODEL,
   DEFAULT_MODELS,
@@ -84,6 +85,33 @@ export async function buildLocalProviderFor(
   kind: ProviderKind,
   modelOverride?: string,
 ): Promise<LlmProvider> {
+  return withRegionRefusal(kind, await buildLocalProviderRaw(kind, modelOverride));
+}
+
+/**
+ * 261103 (T303): local / BYOK mode never pre-blocks by region, so a provider
+ * that refuses the caller's region answers for itself. Its refusal is
+ * rethrown as one tagged error (PROVIDER_REGION_UNSUPPORTED[<name>]) that
+ * every surface turns into "<Provider> does not support your region." instead
+ * of "your key was rejected" or a generic failure. Every other error passes
+ * through untouched. The cloud provider is never wrapped.
+ */
+export function withRegionRefusal(kind: ProviderKind, provider: LlmProvider): LlmProvider {
+  const call = provider.call.bind(provider);
+  return {
+    ...provider,
+    async call(params) {
+      try {
+        return await call(params);
+      } catch (err) {
+        if (isProviderRegionRefusal(err)) throw providerRegionError(kind, err);
+        throw err;
+      }
+    },
+  };
+}
+
+async function buildLocalProviderRaw(kind: ProviderKind, modelOverride?: string): Promise<LlmProvider> {
   if (kind === 'anthropic') {
     // The exact current BYOK path (or cloud, if that is what the backend says
     // — buildChatSdk reads it fresh; callers on this branch are local).

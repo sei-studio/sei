@@ -12,6 +12,7 @@
  * an apologetic companion message so the UI never gets stuck "typing".
  */
 
+import { providerFromRegionMessage } from '@shared/providerRegion';
 import { create } from 'zustand';
 import { sei } from '../ipcClient';
 import { useDataStore } from './useDataStore';
@@ -187,6 +188,10 @@ export function chatFailureLine(err: unknown): string {
   if (/OLLAMA_MODEL_MISSING/.test(msg)) {
     return "Ollama doesn't have the model picked in Settings. download it in Ollama or pick another model.";
   }
+  // 261103 (T303): a BYOK provider refused the caller's region (tagged in
+  // main/llm/index.ts withRegionRefusal). Its own plain line, no retry.
+  const regionProvider = providerFromRegionMessage(msg);
+  if (regionProvider) return `${regionProvider} does not support your region.`;
   // 261017 (issue #46): ChatGPT plan, tagged in bot/brain/llm/responsesWire.js.
   if (/CHATGPT_USAGE_LIMIT/.test(msg)) {
     return "i can't reply: your ChatGPT plan's usage limit is reached. check Manage usage in ChatGPT, or pick another AI option in Settings.";
@@ -671,7 +676,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       // retry cannot conjure a missing API key. Neither do model timeouts
       // (260926): the local deadline is 120s, so a retry is two more silent
       // minutes on the same model.
-      if (!isLocalNoApiKey(err) && !isLlmTimeout(err) && !isOllamaSetupError(err) && !isChatgptPlanError(err) && notifyTurnFailed(characterId)) {
+      if (!isLocalNoApiKey(err) && !isLlmTimeout(err) && !isOllamaSetupError(err) && !isChatgptPlanError(err) && !providerFromRegionMessage(err) && notifyTurnFailed(characterId)) {
         put((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
         return null;
       }

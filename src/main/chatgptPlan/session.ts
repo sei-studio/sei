@@ -32,6 +32,7 @@
  * thing against a mocked auth server. src/main/chatgptPlan/index.ts wires
  * the Electron deps.
  */
+import { isProviderRegionRefusal } from '../../bot/brain/llm/regionRefusal.js';
 import {
   CHATGPT_MODELS_URL,
   CHATGPT_PLAN_SCOPE,
@@ -484,6 +485,7 @@ export function createChatgptSession(deps: ChatgptSessionDeps): ChatgptSession {
     if (outcome.kind === 'invalid') return no(outcome.reason === 'no_code' ? 'exchange_failed' : outcome.reason);
     if (outcome.kind === 'denied') {
       log(`[chatgpt] ${p.label} declined (${outcome.error})`);
+      if (isProviderRegionRefusal(`${outcome.error} ${outcome.description ?? ''}`)) return no('region_unsupported', outcome.error);
       return no(outcome.error === 'access_denied' ? 'denied' : 'exchange_failed', outcome.error);
     }
 
@@ -498,6 +500,9 @@ export function createChatgptSession(deps: ChatgptSessionDeps): ChatgptSession {
       });
     } catch (err) {
       if (err instanceof OAuthError && err.network) return no('network');
+      // 261103 (T303): OpenAI refuses the token exchange from an unsupported
+      // region (403 unsupported_country_region_territory).
+      if (isProviderRegionRefusal(err)) return no('region_unsupported');
       // invalid_grant: the code is discarded; the user starts a fresh attempt.
       return no('exchange_failed', err instanceof OAuthError ? (err.oauthError ?? undefined) : undefined);
     }

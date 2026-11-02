@@ -33,6 +33,7 @@
  * sprite always scale by the SAME factor and their line weights stay matched;
  * dialogue and the sign-in panel stay in window coordinates at full size.
  */
+import { regionProviderLabel } from '@shared/providerRegion';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { profileSetUp } from '../lib/profileSetUp';
@@ -1511,10 +1512,12 @@ function AuthPanel(props: {
    * backstop. Fails open: a failed pre-check leaves the form usable.
    */
   const [regionBlocked, setRegionBlocked] = useState(false);
+  // A ChatGPT sign-in started from the blocked panel shows its own steps.
+  const regionPanel = regionBlocked && !gptCode && gpt.phase !== 'browser';
   const { onSubStep } = props;
   useEffect(() => {
     onSubStep?.(
-      regionBlocked
+      regionPanel
         ? 'region_blocked'
         : codeSentTo !== null || gptCode
           ? 'code'
@@ -1522,10 +1525,7 @@ function AuthPanel(props: {
             ? 'oauth_wait'
             : 'form',
     );
-  }, [onSubStep, regionBlocked, codeSentTo, oauth, gptCode, gpt.phase]);
-  useEffect(() => {
-    if (gpt.failure === 'region_blocked') setRegionBlocked(true);
-  }, [gpt.failure]);
+  }, [onSubStep, regionPanel, codeSentTo, oauth, gptCode, gpt.phase]);
   useEffect(() => {
     let cancelled = false;
     sei.regionStatus().then(
@@ -1538,6 +1538,20 @@ function AuthPanel(props: {
       cancelled = true;
     };
   }, []);
+  // 261103 (T303): the verdict is never cached, so a player who turns on a
+  // VPN or moves can ask again instead of being stuck on the panel.
+  const [regionChecking, setRegionChecking] = useState(false);
+  const recheckRegion = (): void => {
+    if (regionChecking) return;
+    setRegionChecking(true);
+    sei.regionStatus().then(
+      (s) => {
+        setRegionChecking(false);
+        if (!s.blocked) setRegionBlocked(false);
+      },
+      () => setRegionChecking(false),
+    );
+  };
 
   const years = useMemo(() => {
     const y = now.getFullYear();
@@ -1635,7 +1649,9 @@ function AuthPanel(props: {
   // the local-setup path. Placed AFTER the needsTos branch on purpose: that
   // branch serves an already-signed-in user, and existing sessions are never
   // gated.
-  if (regionBlocked) {
+  // 261103 (T303): ChatGPT sign-in is not region-gated (OpenAI decides), so
+  // it stays on offer here, and the panel can be re-checked.
+  if (regionPanel) {
     return (
       <div className={styles.panel}>
         <p className={styles.panelText}>
@@ -1643,6 +1659,23 @@ function AuthPanel(props: {
         </p>
         <button className={`${styles.pill} ${styles.pillWide}`} onClick={props.onLocal}>
           {tt('Use my own API key')}
+        </button>
+        <ContinueWithChatGPTButton
+          format="black"
+          fullWidth
+          onClick={() => {
+            setError(null);
+            props.onIntent('oauth');
+            void gpt.start();
+          }}
+        />
+        {gpt.error ? (
+          <p className={styles.panelError} role="alert">
+            {gpt.error}
+          </p>
+        ) : null}
+        <button className={styles.quietLink} onClick={recheckRegion} disabled={regionChecking}>
+          {tt('Check again')}
         </button>
       </div>
     );
@@ -1920,7 +1953,7 @@ function AuthPanel(props: {
           void gpt.start();
         }}
       />
-      {gpt.error && gpt.failure !== 'region_blocked' ? (
+      {gpt.error ? (
         <p className={styles.panelError} role="alert">
           {gpt.error}
         </p>
@@ -1992,8 +2025,9 @@ function GoogleWaitPanel(props: {
     props.onDone();
   };
 
-  // W7 region gate — no "Try again": the verdict is cached, retrying cannot
-  // change it. Offer the local path in the scene's own vocabulary.
+  // W7 region gate. "Back" returns to the form, where a new attempt runs a
+  // fresh check (261103: the verdict is never cached). Offer the local path
+  // in the scene's own vocabulary.
   if (regionBlocked) {
     return (
       <div className={styles.panel}>
@@ -2142,7 +2176,7 @@ function LocalSetupPanel(props: {
   if (step === 'key' && probe) {
     return (
       <div className={styles.panel}>
-        <p className={styles.panelText}>{tt(keyProbeLine(provider, probe))}</p>
+        <p className={styles.panelText}>{tt(keyProbeLine(provider, probe), { provider: regionProviderLabel(provider) })}</p>
         <p className={styles.panelNote}>{tt(keyProbeConsequence(probe))}</p>
         <div className={styles.choices}>
           <button className={styles.pill} onClick={() => setProbe(null)}>
@@ -2151,7 +2185,7 @@ function LocalSetupPanel(props: {
           <button
             className={styles.pill}
             onClick={() => {
-              if (probe === 'rejected') skipGenRef.current = true;
+              if (probe === 'rejected' || probe === 'region') skipGenRef.current = true;
               setProbe(null);
               setModel(DEFAULT_MODELS[provider] ?? '');
               setStep('model');
@@ -2489,7 +2523,7 @@ function ModelStep(props: {
         <p className={styles.panelNote}>{tt('Connection works ({seconds}s).', { seconds: test.seconds })}</p>
       ) : test.k === 'err' ? (
         <p className={styles.panelError} role="alert">
-          {tt(test.copy)}
+          {tt(test.copy, { provider: regionProviderLabel(provider) })}
         </p>
       ) : null}
       <div className={styles.choices}>

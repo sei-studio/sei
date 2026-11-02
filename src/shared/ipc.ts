@@ -1450,7 +1450,10 @@ export type OAuthResult =
 export type ChatgptLoginCodeReason = 'existing_account' | 'new_device' | 'unverified_email';
 
 export type ChatgptLoginFailure =
+  // Kept for older renderers' copy maps; main no longer returns it (261103).
   | 'region_blocked'
+  // 261103 (T303): OpenAI itself refused the caller's region.
+  | 'provider_region'
   | 'cancelled'
   | 'denied'
   | 'timeout'

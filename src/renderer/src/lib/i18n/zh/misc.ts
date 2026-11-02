@@ -458,6 +458,11 @@ export const ZH_MISC: Record<string, string> = {
   'ChatGPT sign-in hit a snag. Try again.': 'ChatGPT 登录出了点问题，请重试。',
   'ChatGPT sign-in is having trouble right now. Try again in a moment.': 'ChatGPT 登录暂时有问题，请稍后再试。',
   "ChatGPT sign-in isn't available in your region.": '你所在的地区无法使用 ChatGPT 登录。',
+  'OpenAI does not support your region. You can use local mode with your own API key instead.':
+    'OpenAI 不支持你所在的地区。你可以改用本地模式，使用你自己的 API 密钥。',
+  'OpenAI does not support your region.': 'OpenAI 不支持你所在的地区。',
+  '{provider} does not support your region.': '{provider} 不支持你所在的地区。',
+  'Your AI provider': '你的 AI 服务商',
   'ChatGPT sign-in was declined. Try again, or use another way to sign in.': 'ChatGPT 登录被拒绝。请重试，或换一种方式登录。',
   "Couldn't reach Sei. Check your internet and try again.": '无法连接到 Sei。请检查网络后重试。',
   'Finish in your browser': '请在浏览器中完成',

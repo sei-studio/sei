@@ -21,6 +21,7 @@
  * Source: docs/design/UI-REDESIGN-PARTY.md §1 + §4.7.
  */
 
+import { PROVIDER_REGION_COPY, PROVIDER_REGION_FALLBACK_NAME, PROVIDER_REGION_TOKEN, regionProviderLabel } from '@shared/providerRegion';
 import React, { useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useUiStore } from '../lib/stores/useUiStore';
@@ -626,6 +627,11 @@ export function SettingsScreen(): React.ReactElement {
   /** Human string for a typed llm error token — every token gets a sentence. */
   const llmErrorText = (token: string): string => {
     if (token === 'no_api_key') return t('Add your API key first.');
+    // 261103 (T303): the provider refused this region (never a key problem).
+    if (token === PROVIDER_REGION_TOKEN) {
+      const name = regionProviderLabel(currentProvider);
+      return t(PROVIDER_REGION_COPY, { provider: name === PROVIDER_REGION_FALLBACK_NAME ? t(name) : name });
+    }
     if (token === 'unauthorized')
       return t('The provider rejected your key. Check that it is correct and active.');
     if (token === 'timeout') return t('Timed out. Check your connection and try again.');

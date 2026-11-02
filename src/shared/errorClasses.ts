@@ -99,7 +99,10 @@ export type ErrorClass =
   | 'CHATGPT_REQUEST_REJECTED'
   | 'CHATGPT_UNSUPPORTED'
   | 'CHATGPT_SIGNED_OUT'
-  | 'CHATGPT_PLAN_DISABLED';
+  | 'CHATGPT_PLAN_DISABLED'
+  // 261103 (T303): a BYOK provider refused the caller's region (the brain
+  // stops on it, orchestrator.js). The message carries the provider name.
+  | 'PROVIDER_REGION_UNSUPPORTED';
 
 export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'BOT_START_TIMEOUT',
@@ -150,4 +153,5 @@ export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'CHATGPT_UNSUPPORTED',
   'CHATGPT_SIGNED_OUT',
   'CHATGPT_PLAN_DISABLED',
+  'PROVIDER_REGION_UNSUPPORTED',
 ]);

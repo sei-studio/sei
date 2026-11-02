@@ -43,7 +43,6 @@ function harness(opts: {
   registration?: LoginRegistration | null;
   adopt?: { ok: true; planEnabled: boolean } | { ok: false; reason: string };
   current?: { accessToken: string; userId: string } | null;
-  regionBlocked?: boolean;
   fetchThrows?: boolean;
   /** Saved plan accounts loginTargetFor knows (accountId -> target). */
   vault?: Record<string, { client_id: string; id_token: string | null; email: string | null; subject: string }>;
@@ -79,7 +78,6 @@ function harness(opts: {
   const deps: ChatgptAccountLoginDeps = {
     fetchImpl,
     proxyBase: () => 'https://api.test/',
-    regionBlocked: async () => opts.regionBlocked ?? false,
     chatgpt: () => ({
       signIn: async (o) => {
         plainSignIns.push(o);
@@ -237,11 +235,20 @@ describe('chatgptAccountLogin.login', () => {
     expect(h.signInCalls).toHaveLength(0);
   });
 
-  it('region gate refuses before any network call', async () => {
-    const h = harness({ regionBlocked: true });
+  it('consults no region gate: OpenAI decides, the login goes ahead (261103)', async () => {
+    const h = harness({ routes: { '/auth/chatgpt/session': sessionAnswer() } });
     const r = await h.login.login();
-    expect(r).toMatchObject({ ok: false, reason: 'region_blocked' });
-    expect(h.calls).toHaveLength(0);
+    expect(r).toMatchObject({ ok: true, kind: 'signed_in' });
+    expect(h.calls[0]?.path).toBe('/auth/chatgpt/nonce');
+    expect(h.signInCalls).toHaveLength(1);
+  });
+
+  it('an OpenAI region refusal reads as provider_region, never region_blocked', async () => {
+    const h = harness({ signIns: [{ ok: false, reason: 'region_unsupported' }] });
+    const r = await h.login.login();
+    expect(r).toMatchObject({ ok: false, reason: 'provider_region' });
+    expect((r as { message?: string }).message).toBe('OpenAI does not support your region');
+    expect(h.setSessions).toHaveLength(0);
   });
 
   it('browser failures map through', async () => {

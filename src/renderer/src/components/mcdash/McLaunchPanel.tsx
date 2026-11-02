@@ -150,7 +150,7 @@ export function McLaunchPanel({ characterId }: McLaunchPanelProps): React.ReactE
   const summon = useDataStore((s) => s.summons[characterId]);
   const connecting = summon?.kind === 'connecting';
   const resetLine = useResetLine();
-  const failCopy = summon?.kind === 'error' ? errorCopyText(summon.error, t) : null;
+  const failCopy = summon?.kind === 'error' ? errorCopyText(summon.error, t, summon.message) : null;
   // 260926: the pre-flight credit gate's refusal also says when free play
   // comes back (the same line as the usage-limit popup).
   const failReason =

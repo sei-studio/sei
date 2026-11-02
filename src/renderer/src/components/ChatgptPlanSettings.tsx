@@ -61,6 +61,8 @@ export function signInFailureText(reason: ChatgptSignInFailure, t: (s: string) =
       return t('Could not open your browser. Try again.');
     case 'port_unavailable':
       return t('Sei could not start its sign-in listener. Try again.');
+    case 'region_unsupported':
+      return t('OpenAI does not support your region.');
     default:
       return t('Sign-in did not finish. Try again.');
   }

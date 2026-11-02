@@ -60,6 +60,9 @@ export function chatgptLoginErrorCopy(
       return null;
     case 'region_blocked':
       return t("ChatGPT sign-in isn't available in your region.");
+    case 'provider_region':
+      // 261103 (T303): OpenAI's own refusal. No VPN advice (policy).
+      return t('OpenAI does not support your region. You can use local mode with your own API key instead.');
     case 'denied':
       return t('ChatGPT sign-in was declined. Try again, or use another way to sign in.');
     case 'timeout':

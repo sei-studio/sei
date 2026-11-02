@@ -32,7 +32,7 @@ export function GameErrorModal({ game, characterId, error, message }: GameErrorM
   const rawName = useDataStore((s) => s.characters.find((c) => c.id === characterId)?.name ?? null);
   const name = rawName ?? t('Your companion');
   const gameName = botGameName(game);
-  const copy = ERROR_COPY[error] ? errorCopyText(error, t) : message;
+  const copy = ERROR_COPY[error] ? errorCopyText(error, t, message) : message;
   // 260926: a credit-wall refusal says when free play comes back.
   const resetLine = useResetLine();
   const showReset = error === 'CLOUD_CREDITS_DEPLETED' && !!resetLine;

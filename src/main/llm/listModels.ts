@@ -21,6 +21,8 @@ import {
 import { hasApiKey, loadApiKey } from '../apiKeyStore';
 import { loadConfig } from '../configStore';
 import { buildLocalProviderFor, resolveLocalModel } from './index';
+import { isProviderRegionRefusal } from '../../bot/brain/llm/regionRefusal.js';
+import { PROVIDER_REGION_TOKEN } from '../../shared/providerRegion';
 import type { LlmCallParams } from './types';
 import { ollamaModelVision } from './ollamaCapabilities';
 import { applyAnthropicModelDefaults } from '../../bot/brain/llm/anthropicModelDefaults.js';
@@ -39,11 +41,15 @@ export interface ListModelsResult {
 }
 export type TestResult = { ok: true; latencyMs: number } | { ok: false; error: string };
 
-function typedError(err: unknown): string {
+export function typedError(err: unknown): string {
   const e = err as { name?: string; message?: string; code?: unknown };
   const msg = String(e?.message ?? err ?? '');
   // 261017 (issue #46): ChatGPT-plan codes ride through as their own tokens
   // ('chatgpt_usage_limit', 'chatgpt_signed_out', ...).
+  // 261103 (T303): a provider that refuses the caller's region. Checked
+  // before the status, because Anthropic's answer is a 403 that would
+  // otherwise read as a rejected key.
+  if (isProviderRegionRefusal(err)) return PROVIDER_REGION_TOKEN;
   if (typeof e?.code === 'string' && e.code.startsWith('CHATGPT_')) return e.code.toLowerCase();
   if (e?.name === 'AbortError' || /abort/i.test(msg)) return 'timeout';
   const status = /\b(\d{3})\b/.exec(msg)?.[1];
@@ -58,7 +64,12 @@ async function fetchJson(url: string, headers: Record<string, string>): Promise<
   const timer = setTimeout(() => controller.abort(), LIST_TIMEOUT_MS);
   try {
     const resp = await fetch(url, { headers, signal: controller.signal });
-    if (!resp.ok) throw new Error(`list ${resp.status}`);
+    if (!resp.ok) {
+      // The body rides along (bounded) so typedError can tell a region
+      // refusal from a rejected key (261103).
+      const body = await resp.text().then((t) => t.slice(0, 300), () => '');
+      throw new Error(`list ${resp.status}${body ? `: ${body}` : ''}`);
+    }
     return await resp.json();
   } finally {
     clearTimeout(timer);

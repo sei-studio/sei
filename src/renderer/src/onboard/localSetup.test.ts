@@ -85,6 +85,22 @@ describe('allPacksReady', () => {
   });
 });
 
+describe('provider region refusal (261103, T303)', () => {
+  it('reads as its own verdict and line, not a rejected key', () => {
+    expect(keyProbeVerdict('openai', 'region_unsupported')).toBe('region');
+    expect(keyProbeVerdict('anthropic', 'unauthorized')).toBe('rejected');
+    expect(keyProbeLine('openai', 'region')).toBe('{provider} does not support your region.');
+    expect(keyProbeConsequence('region')).toBe(keyProbeConsequence('rejected'));
+    expect(llmTestErrorCopy('region_unsupported')).toBe('{provider} does not support your region.');
+  });
+  it('has zh copy and no em dash or VPN advice', () => {
+    for (const en of ['{provider} does not support your region.', 'Your AI provider']) {
+      expect(ZH[en], `zh for ${en}`).toBeTruthy();
+      expect(en + ZH[en]).not.toMatch(/\u2014|VPN/i);
+    }
+  });
+});
+
 describe('llmTestErrorCopy', () => {
   it('maps every typed token to a copy line, folding http_NNN into the generic', () => {
     expect(llmTestErrorCopy('no_api_key')).toMatch(/API key/);
