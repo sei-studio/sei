@@ -38,7 +38,7 @@ function readLedger() {
 }
 // One process writes at a time in practice (the harness runs trials serially);
 // read-modify-write keeps concurrent probes roughly right.
-function addSpend(provider, usd) {
+export function addSpend(provider, usd) {
   const l = readLedger()
   l[provider] = (l[provider] || 0) + usd
   l.calls = l.calls || {}
@@ -84,9 +84,9 @@ function userText({ state, instructions, options }) {
 function layaDecider({ url = process.env.LAYA_URL || 'http://127.0.0.1:8765', name = 'laya' } = {}) {
   return {
     name, provider: 'local',
-    async choose({ state, instructions, options, headMaxLen }) {
+    async choose({ state, instructions, options, headMaxLen = process.env.LAYA_HEAD_MAX_LEN, maxLen = process.env.LAYA_MAX_LEN }) {
       const t0 = performance.now()
-      const res = await fetch(`${url}/choose`, { method: 'POST', body: JSON.stringify({ state, instructions, options, head_max_len: headMaxLen }) })
+      const res = await fetch(`${url}/choose`, { method: 'POST', body: JSON.stringify({ state, instructions, options, head_max_len: headMaxLen ? Number(headMaxLen) : undefined, max_len: maxLen ? Number(maxLen) : undefined }) })
       const j = await res.json()
       if (j.error) throw new Error(`laya: ${j.error}`)
       return { choice: j.choice, probs: j.probs, ms: performance.now() - t0, modelMs: j.ms, costUsd: 0 }

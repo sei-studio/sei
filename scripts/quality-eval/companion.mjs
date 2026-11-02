@@ -235,6 +235,7 @@ process.stdin.on('data', (chunk) => {
       else if (msg.type === 'qe-exec') qeExec(msg)
       else if (msg.type === 'qe-abort') qeRunning.get(msg.id)?.abort()
       else if (msg.type === 'qe-probe') qeProbe(msg)
+      else if (msg.type === 'qe-obs') qeObs(msg)
       else botPort.send(msg)
     } catch {}
   }
@@ -253,6 +254,18 @@ try {
   const orig = mineflayer.createBot
   mineflayer.createBot = (...a) => { mcBot = orig(...a); return mcBot }
 } catch (e) { emit({ kind: 'qe_warn', text: `mineflayer capture failed: ${e?.message}` }) }
+
+// Decision-eval (scripts/decision-eval): the structured observation a
+// System-1 decider reads, computed from this body's own mineflayer view.
+let deState = null
+async function qeObs(msg) {
+  try {
+    deState ??= await import(pathToFileURL(path.join(here, '..', 'decision-eval', 'state.mjs')).href)
+    const { Vec3 } = createRequire(path.join(repo, 'package.json'))('vec3')
+    const obs = mcBot?.entity ? deState.scanObs(mcBot, { Vec3 }) : null
+    emit({ kind: 'qe_obs', id: msg.id ?? null, obs })
+  } catch (e) { emit({ kind: 'qe_obs', id: msg.id ?? null, obs: null, error: String(e?.message || e) }) }
+}
 
 function qeProbe(msg) {
   const b = mcBot

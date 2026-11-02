@@ -25,6 +25,14 @@ export function connectAgent({ port = Number(process.env.QE_MC_PORT || 25590), u
     const to = setTimeout(() => reject(new Error('agent spawn timeout')), 60000)
     bot.once('spawn', () => {
       clearTimeout(to)
+      // mineflayer 4.38 ignores 1.21.2+'s set_cursor_item, so the server's
+      // cursor corrections never land and the client view drifts after an
+      // illegal click (e.g. output slot with another item on the cursor).
+      const Item = require('prismarine-item')(bot.registry)
+      bot._client.on('set_cursor_item', (pk) => {
+        const w = bot.currentWindow || bot.inventory
+        try { w.selectedItem = Item.fromNotch(pk.contents) } catch {}
+      })
       const mv = new Movements(bot)
       mv.canDig = false
       bot.pathfinder.setMovements(mv)
@@ -120,6 +128,18 @@ export function uiState(bot, ui) {
   if (!ui) return null
   const win = bot.currentWindow || bot.inventory
   const isTable = win !== bot.inventory && win.type?.includes?.('crafting')
+  const isFurnace = win !== bot.inventory && /furnace/.test(String(win.type))
+  if (isFurnace) {
+    const FR = ['furnace input (top)', 'furnace fuel (bottom)', 'furnace output']
+    const slots = []
+    for (let i = 0; i < win.slots.length; i++) {
+      const it = win.slots[i]
+      if (i > 2 && !it) continue
+      slots.push({ slot: i, role: i <= 2 ? FR[i] : i >= win.inventoryEnd - 9 ? 'hotbar' : 'inventory', name: it?.name ?? null, count: it?.count ?? 0 })
+    }
+    const cur = win.selectedItem
+    return { title: 'furnace (input on top, fuel below, output on the right)', slots, cursor: cur ? { name: cur.name, count: cur.count } : null }
+  }
   const slots = []
   const role = (i) => {
     if (i === 0) return 'craft output'
@@ -157,8 +177,13 @@ export async function l3Exec(bot, key, st) {
     if (m) {
       const slot = Number(m[2])
       const [button, mode] = m[1] === 'click' ? [0, 0] : m[1] === 'rclick' ? [1, 0] : [0, 1]
-      try { await bot.clickWindow(slot, button, mode) } catch (e) { return `click failed: ${String(e?.message || e).slice(0, 60)}` }
-      await sleep(200)
+      // mineflayer waits up to 20 s for a slot update that a no-op click
+      // (empty slot, empty cursor) never gets; the packet is already sent, so
+      // cap the wait and let the server's corrections land.
+      let err = null
+      await Promise.race([bot.clickWindow(slot, button, mode).catch((e) => { err = e }), sleep(1500)])
+      if (err) return `click failed: ${String(err?.message || err).slice(0, 60)}`
+      await sleep(250)
       return `${m[1]} slot ${slot}`
     }
     return 'that control does nothing while the inventory is open'
@@ -210,8 +235,8 @@ export async function l3Exec(bot, key, st) {
   if (key === 'use') {
     const b = bot.blockAtCursor(4.5)
     const held = bot.heldItem
-    if (b && b.name === 'crafting_table') {
-      try { await bot.activateBlock(b); await sleep(400); st.ui = true; return 'opened the crafting table' } catch (e) { return 'could not open it' }
+    if (b && (b.name === 'crafting_table' || b.name === 'furnace' || b.name === 'lit_furnace')) {
+      try { await bot.activateBlock(b); await sleep(500); st.ui = true; return `opened the ${b.name.replace('lit_', '').replace('_', ' ')}` } catch (e) { return 'could not open it' }
     }
     if (b && held && bot.registry.blocksByName[held.name]) {
       // Place against the face the crosshair hits (raycast face).

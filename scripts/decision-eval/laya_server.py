@@ -23,11 +23,13 @@ agent = laya.load(CKPT, subfolder=SUB, device="cpu") if SUB else laya.load(CKPT,
 print(f"# loaded {CKPT} {SUB or ''} in {time.time()-t0:.1f}s", flush=True)
 
 
-def choose(state, instructions, options, head_max_len=None):
+def choose(state, instructions, options, head_max_len=None, max_len=None):
     q = {"next": {"type": "choice", "instructions": instructions, "criteria": options}}
     kw = {}
     if head_max_len:
         kw["head_max_len"] = int(head_max_len)
+    if max_len:
+        kw["max_len"] = int(max_len)
     t = time.perf_counter()
     with torch.inference_mode():
         r = agent.predict(state, q, **kw)
@@ -59,7 +61,17 @@ class H(BaseHTTPRequestHandler):
         n = int(self.headers.get("content-length", 0))
         try:
             req = json.loads(self.rfile.read(n))
-            self._send(200, choose(req["state"], req["instructions"], req["options"], req.get("head_max_len")))
+            if self.path == "/batch":
+                # Same question over N states in one forward pass (throughput probe).
+                q = {"next": {"type": "choice", "instructions": req["instructions"], "criteria": req["options"]}}
+                kw = {k: int(req[k]) for k in ("max_len", "head_max_len") if req.get(k)}
+                t = time.perf_counter()
+                with torch.inference_mode():
+                    rs = agent.predict_batch(req["states"], q, batch_size=req.get("batch_size"), **kw)
+                ms = (time.perf_counter() - t) * 1000
+                self._send(200, {"choices": [r["answers"]["next"].get("choice") for r in rs], "ms": ms})
+                return
+            self._send(200, choose(req["state"], req["instructions"], req["options"], req.get("head_max_len"), req.get("max_len")))
         except Exception as e:
             self._send(500, {"error": str(e)})
 

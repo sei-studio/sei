@@ -109,6 +109,15 @@ export async function startCompanion({ sessDir, mode = 'brain', botRepo = harnes
         send({ type: 'qe-probe', id })
       })
     },
+    obs(timeoutMs = 4000) {
+      const id = `o${nextId++}`
+      return new Promise((resolve) => {
+        const on = (ev) => { if (ev.id === id) { events.off('qe_obs', on); clearTimeout(tm); resolve(ev.obs ?? null) } }
+        const tm = setTimeout(() => { events.off('qe_obs', on); resolve(null) }, timeoutMs)
+        events.on('qe_obs', on)
+        send({ type: 'qe-obs', id })
+      })
+    },
     async stop() {
       if (!exited) {
         send({ type: 'stop' })
