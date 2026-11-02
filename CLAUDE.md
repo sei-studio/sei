@@ -2150,6 +2150,55 @@ The design and its measurements are committed at
     reason as `unspecified`, and the voice.callState schema rejects an
     unknown call reason.
 
+- **Backoff while nobody answers, and fire is not danger (261103, branch
+  fix/backseat-chatter-vision).** A free user (v0.6.12, custom companion,
+  Valheim) quit after about 15 minutes: too much chatter, and she kept saying
+  the house was burning while they stood next to a hearth.
+  - **Chatter is mechanical, as always.** On a player who never answers, the
+    old schedule landed about 2 lines a minute (idle mean ~28 s; gain jolts
+    add more in a loud game). `quietExtraMs(unanswered)` in `backseatIpc.ts`
+    (pure + tested) now grows the floor with the run of lines she said on her
+    own since the player last spoke: the first `QUIET_FREE_LINES` (2, the hello
+    and one more) keep the old pace, then +`QUIET_STEP_MS` (10 s) per line, capped
+    at `QUIET_MAX_EXTRA_MS` (60 s, reached at 8 lines). Main adds it to
+    `MIN_SPEAK_GAP_MS` for every jolt and idle tick (`Session.unansweredLines`,
+    reset by any user tick, carried over a resumed share). Each companion
+    `BackseatLine` carries `quietExtraMs`, and the renderer adds it to the idle
+    draw (the whole distribution shifts, so it stays memoryless) and to the
+    switch-dwell deferral, so it does not composite looks main would drop.
+    Silent-player model, 15 min: ~30-40 lines -> ~13-15. Live replay
+    (`scripts/backseat-live-replay.ts`, a 5 min Valheim base-building clip,
+    muted, Sui, nobody talking, 6 seeds each): 3.4 -> 1.6 lines a
+    minute. Cost of the trade: a real moment inside a long quiet stretch can
+    go unremarked (jolts are gated too; in the replay, one real burn was
+    missed). Talking with her is unchanged. The idle constants, the 8 s gap,
+    the dwell and the refractories are unchanged. No model-decided silence.
+  - **FIRE, LIGHT AND DANGER**, the LAST paragraph of the contract (cached
+    prefix, no per-look tokens): a warm glow, flames or smoke in the small
+    grid is almost always a light they built (hearth, campfire, torch,
+    brazier, forge); a flame among the status icons means warm by a fire;
+    fire is a danger only when the screen plainly shows harm (health
+    dropping, a burning or damage warning, fire spreading) or the player says
+    so; her own earlier worry is not proof; what the player says a thing is
+    settles it. The alarm is never quoted (260807). Measured on the same clip
+    (it has one REAL burn, the player standing in a campfire for ~5 s, which
+    every arm reports and which is not counted): with the backoff off, false
+    alarms went 13 -> 9 in ~100 lines over 6 seeds, and alarms far from the
+    real burn 9 -> 4; most of the rest is the look right after the real one.
+    Placement mattered: the same paragraph mid-contract did nothing (8 -> 11
+    over 3 seeds), and a copy at the end of every look note made it worse
+    (lines announcing that nothing was burning), so neither shipped. With the
+    backoff on, 6 runs had no clear fire alarm, mostly because there are
+    fewer looks. This is a reduction, not a cure: 5.5 still reads a fire it
+    cannot see on some looks. Pinned in `backseatPrompts.test.ts`. Replay
+    spend for all arms: about $0.13.
+  - Not changed: the tone swings. A custom character with no
+    `metadata.voiceStability` sends no stability, so ElevenLabs uses the
+    voice's default (~0.5, expressive). Sui is pinned at 0.85. That is a voice
+    default for every custom character, not a Backseat fix, so it was left for
+    Shawn to decide. Alarm lines were also an excited-tone source, and fewer
+    of them now reach TTS.
+
 **Extracted:** the screen-watching half is mirrored as a public standalone repo
 at `sei-studio/backseat` (AGPL-3.0) with a plain-language architecture README.
 Changes here should be mirrored there when the design moves.
