@@ -685,6 +685,25 @@ describe('buildAction: partial mode (261019)', () => {
     expect(placeBlockAction).toHaveBeenCalledTimes(3)
     expect(r).toMatch(/^built 3 of ~5 needed, then ran out of oak_planks/)
   })
+
+  it('still reports running out when a block lands in the bag after she stopped (261102)', async () => {
+    const bot = countedBot(3)
+    // The first time the bag reads empty she stops; a dirt-style pickup puts
+    // one block back before the result is written.
+    const items = bot.inventory.items
+    let sawEmpty = false
+    bot.inventory.items = () => {
+      const r = items()
+      if (r.length === 0) {
+        if (sawEmpty) return [{ name: 'oak_planks', count: 1 }]
+        sawEmpty = true
+      }
+      return r
+    }
+    const r = await buildAction(span, bot, {}, { goTo: vi.fn(async () => 'reached'), partial: true })
+    expect(placeBlockAction).toHaveBeenCalledTimes(3)
+    expect(r).toMatch(/^built 3 of ~5 needed, then ran out of oak_planks/)
+  })
 })
 
 // 261102 (pass 36): the build failures left in free play after pass 19.

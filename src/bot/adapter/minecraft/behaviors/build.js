@@ -650,7 +650,17 @@ export async function buildAction(args, bot, config, deps = {}) {
     return ` ${n} of them had ${who} standing in them; a block cannot go where a body is, so move out of the span (or wait for them to) and build again.`
   }
 
-  const ranOut = () => deps.partial === true && invCount() === 0
+  // 261102 (pass 36): remember that the bag emptied with cells left. The
+  // check at the end used to re-read the bag, and a dropped block she picked
+  // up in between (she digs shelter blocks out of the ground right there) hid
+  // the stop: "built 8 placed, 0 skipped (already solid), of 9 cells" read
+  // as a finished roof with one cell missing.
+  let ranOutWithCellsLeft = false
+  const ranOut = () => {
+    const out = deps.partial === true && invCount() === 0
+    if (out) ranOutWithCellsLeft = true
+    return out
+  }
   let deferred = []
   for (const c of cells) {
     if (signal?.aborted) return abortedMsg()
@@ -713,7 +723,7 @@ export async function buildAction(args, bot, config, deps = {}) {
   // consumption, since invCount() is the live remaining count). Make it an
   // explicit, actionable signal — gather/ask for more — instead of a bare
   // "0 placed" the model couldn't distinguish from building into terrain.
-  if (placed < needed && invCount() === 0) {
+  if (placed < needed && (ranOutWithCellsLeft || invCount() === 0)) {
     return `built ${placed} of ~${needed} needed, then ran out of ${args.block}. Get more ${args.block} (gather it, or ask the player for it) before finishing this build.`
   }
 

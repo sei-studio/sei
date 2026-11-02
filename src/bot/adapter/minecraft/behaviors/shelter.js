@@ -28,6 +28,10 @@ const PICK_DIG = new Set(['stone', 'cobblestone', 'andesite', 'diorite', 'granit
 export const SUPPLY_RADIUS = 6
 export const SUPPLY_BUDGET_MS = 75000
 const SUPPLY_FAILS = 4
+// Two more than the count: a block can go to scaffolding on the way up, or
+// a cell can need a second try, and a roof one block short is no shelter
+// (free-play eval 11-02: roof 8 of 9 after digging exactly the count).
+export const SUPPLY_MARGIN = 2
 
 // 261012: cheap full blocks the shelter may switch to when the asked material
 // runs short (the quality eval gave her 64 planks + 64 cobblestone, and a 5x5
@@ -298,7 +302,7 @@ export async function shelterAction(args, bot, config, deps = {}) {
   if (have < need) {
     const before = new Map(buildingKinds(bot, material).map(k => [k.name, k.n]))
     const cands = supplyCandidates(bot, { cx, cz, baseY, minX, maxX, minZ, maxZ, doorX })
-    const dug = cands.length ? await digForBlocks(bot, config, material, need - have, cands, digBlock) : { got: 0, stop: 'none_left' }
+    const dug = cands.length ? await digForBlocks(bot, config, material, need - have + SUPPLY_MARGIN, cands, digBlock) : { got: 0, stop: 'none_left' }
     supplyStop = dug.stop
     wentDigging = cands.length > 0
     const dugWhat = dugText(bot, material, before)

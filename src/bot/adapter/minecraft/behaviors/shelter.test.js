@@ -292,7 +292,8 @@ describe('shelterAction: digs its own blocks when short (261102)', () => {
     const dirt = dirtStack(inv)
     const dig = vi.fn(async ({ x, y, z }) => { holes.add(`${x},${y},${z}`); dirt.add(1); return 'dug grass_block; 1 dirt reached your inventory' })
     const res = await shelterAction({ size: 3, center: { x: 0, y: 64, z: 0 } }, bot, {}, { digBlock: dig })
-    expect(dig).toHaveBeenCalledTimes(25)
+    // 25 for the shelter plus SUPPLY_MARGIN (2) spare.
+    expect(dig).toHaveBeenCalledTimes(27)
     for (const [a] of dig.mock.calls) {
       // Not under the walls or the ring of ground around them.
       expect(Math.max(Math.abs(a.x), Math.abs(a.z))).toBeGreaterThanOrEqual(3)
@@ -302,7 +303,7 @@ describe('shelterAction: digs its own blocks when short (261102)', () => {
     }
     expect(buildAction.mock.calls[0][0].block).toBe('dirt')
     expect(res).toMatch(/^built shelter 3x3x2/)
-    expect(res).toContain('dug 25 dirt nearby first')
+    expect(res).toContain('dug 27 dirt nearby first')
   })
 
   it('goes back in the middle after digging around it', async () => {
@@ -321,13 +322,13 @@ describe('shelterAction: digs its own blocks when short (261102)', () => {
     expect(res).toMatch(/^built shelter/)
   })
 
-  it('digs only what is missing', async () => {
+  it('digs only what is missing, plus two spare', async () => {
     const inv = [{ name: 'cobblestone', count: 20 }]
     const { bot, holes } = diggableBot(inv)
     const dirt = dirtStack(inv)
     const dig = vi.fn(async ({ x, y, z }) => { holes.add(`${x},${y},${z}`); dirt.add(1); return 'dug' })
     await shelterAction({ size: 3 }, bot, {}, { digBlock: dig })
-    expect(dig).toHaveBeenCalledTimes(5)
+    expect(dig).toHaveBeenCalledTimes(7)
   })
 
   it('says how far it got when the digs stop bringing blocks in', async () => {
