@@ -423,7 +423,7 @@ async function run(prepDir: string, outDir: string): Promise<void> {
   const scheduleIdle = (): void => {
     if (stopped) return;
     clearTimeout(idleTimer);
-    const delay = ipc.nextIdleDelayMs(rand);
+    const delay = ipc.nextIdleDelayMs(rand) + quietExtra;
     idleTimer = setTimeout(() => {
       scheduleIdle();
       if (stopped || idleBusy) return;
@@ -442,10 +442,12 @@ async function run(prepDir: string, outDir: string): Promise<void> {
 
   // switch dwell with the speak-gap deferral (captureController.fireSwitch)
   let lastSpokeLocalAt = 0;
+  /** 261103: main's backoff (BackseatLine.quietExtraMs), as noteSpoke mirrors it. */
+  let quietExtra = 0;
   let switchDeferTimer: NodeJS.Timeout | undefined;
   async function fireSwitch(sinceChangeMs: number): Promise<void> {
     if (stopped) return;
-    const gapLeft = ipc.MIN_SPEAK_GAP_MS - (Date.now() - lastSpokeLocalAt);
+    const gapLeft = ipc.MIN_SPEAK_GAP_MS + quietExtra - (Date.now() - lastSpokeLocalAt);
     if (gapLeft > 0) {
       clearTimeout(switchDeferTimer);
       switchDeferTimer = setTimeout(() => void fireSwitch(sinceChangeMs + gapLeft), gapLeft + 250);
@@ -457,8 +459,9 @@ async function run(prepDir: string, outDir: string): Promise<void> {
   }
   const switchDwell = createSwitchDwell({ dwellMs: ipc.SWITCH_DWELL_MS, onFire: (ms) => void fireSwitch(ms) });
 
-  const noteSpoke = (): void => {
+  const noteSpoke = (quietExtraMs = 0): void => {
     lastSpokeLocalAt = Date.now();
+    quietExtra = Math.max(0, quietExtraMs);
     scheduleIdle();
   };
 
@@ -503,7 +506,7 @@ async function run(prepDir: string, outDir: string): Promise<void> {
     pushState: () => {},
     pushLine: (_id, line) => {
       if (line.who === 'player') ev({ type: 'playerLine', text: line.text });
-      noteSpoke();
+      noteSpoke(line.quietExtraMs ?? 0);
     },
     requestClip: (id, requestId) => setTimeout(() => svc.receiveClip(id, requestId, null), 50),
     isCallActive: () => true,
