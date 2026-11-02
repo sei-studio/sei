@@ -136,6 +136,19 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
       cancelled = true;
     };
   }, []);
+  // 261103 (T303): the verdict is never cached, so the blocked body can ask again.
+  const [regionChecking, setRegionChecking] = useState(false);
+  const recheckRegion = (): void => {
+    if (regionChecking) return;
+    setRegionChecking(true);
+    sei.regionStatus().then(
+      (s) => {
+        setRegionChecking(false);
+        if (!s.blocked) setRegionBlocked(false);
+      },
+      () => setRegionChecking(false),
+    );
+  };
 
   useEffect(() => {
     // ESC closes (when not mid-submit so we don't drop a pending sign-in).
@@ -271,6 +284,8 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
   // region, so the whole form is replaced by the blocking message and one
   // acknowledging button. The gate never touches an existing session; this
   // modal only ever fronts signup/sign-in, so blocking it whole is correct.
+  // 261103 (T303): the verdict is no longer cached, so the body can be
+  // re-checked. "Continue with ChatGPT" is a cloud account and stays off here.
   if (regionBlocked) {
     return (
       <ModalShell title={titleText} width={460} onClose={onClose}>
@@ -278,6 +293,9 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
           {t('Our servers do not currently support your region. Please continue with local mode.')}
         </p>
         <ModalFooter>
+          <Button kind="quiet" size="md" onClick={recheckRegion} disabled={regionChecking}>
+            {t('Check again')}
+          </Button>
           <Button kind="accent" size="md" onClick={onClose}>
             {t('Got it')}
           </Button>

@@ -148,6 +148,15 @@ describe('ERROR_COPY', () => {
     }
   });
 
+  // 261103 (T303): a BYOK provider refused the region; the bot's terminal
+  // error carries the provider name in its message.
+  it('PROVIDER_REGION_UNSUPPORTED names the provider from the message', () => {
+    const msg = 'PROVIDER_REGION_UNSUPPORTED[Anthropic]: Anthropic does not support your region.';
+    expect(errorCopyText('PROVIDER_REGION_UNSUPPORTED', undefined, msg)).toBe('Anthropic does not support your region.');
+    expect(errorCopyText('PROVIDER_REGION_UNSUPPORTED')).toBe('Your AI provider does not support your region.');
+    expect(errorCopyText('PROVIDER_REGION_UNSUPPORTED', undefined, msg)).not.toMatch(/\u2014|VPN/i);
+  });
+
   // 260926 (PR #26): the bot joins 26.2 / 26.3, but the skin mod only works on
   // the wizard's version. The copy lists every joinable version and steers the
   // launcher steps to the wizard's version, never to the protocol table's newest.

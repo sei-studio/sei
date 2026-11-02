@@ -1459,7 +1459,11 @@ export type OAuthResult =
 export type ChatgptLoginCodeReason = 'existing_account' | 'new_device' | 'unverified_email';
 
 export type ChatgptLoginFailure =
+  // The Sei cloud region gate: login() checks it before the browser opens,
+  // since this login creates a Sei cloud session (261103, T303).
   | 'region_blocked'
+  // 261103 (T303): OpenAI itself refused the caller's region.
+  | 'provider_region'
   | 'cancelled'
   | 'denied'
   | 'timeout'

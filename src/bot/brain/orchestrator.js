@@ -12,6 +12,7 @@ import { FACE_EXPRESSION_ENUM, SAY_EXPRESSION_DESCRIPTION, resolveExpression } f
 import { createLlmProvider } from './llm/index.js'
 import { applyLlmSwitch } from '../llmInit.js'
 import { TERMINAL_CHATGPT_CODES } from './llm/responsesWire.js'
+import { isProviderRegionRefusal, providerRegionError, PROVIDER_REGION_CODE } from './llm/regionRefusal.js'
 import { VISION_MESSAGES_PATH } from './anthropicClient.js'
 import { createTokenBucket } from './rateLimiter.js'
 import { createDebouncer, createThrottle } from './debounce.js'
@@ -5494,6 +5495,25 @@ function maybeWarnByteCap(loop, warned) {
           if (typeof onTerminalError === 'function') {
             try {
               onTerminalError({ error: err.code, message: err.message })
+            } catch (cbErr) {
+              logger.warn?.(`[sei/orch] onTerminalError callback threw: ${cbErr && cbErr.message}`)
+            }
+          }
+          return
+        }
+        // 261103 (T303): a BYOK provider refused the caller's region. Local
+        // mode never pre-blocks by region, so this is the provider's own
+        // answer, and every turn would get it again: stop once with the plain
+        // line ("<Provider> does not support your region.") the launch panel
+        // and the error popup show. Never in cloud mode (the proxy calls the
+        // model from its own servers; its gate is Sei's, not a provider's).
+        if (err && !config.anthropic?.cloudMode && isProviderRegionRefusal(err)) {
+          _halted = true
+          const regionErr = providerRegionError(config.llm?.provider ?? 'anthropic')
+          logger.warn?.(`[sei/orch] ${regionErr.message} — stopping the session`)
+          if (typeof onTerminalError === 'function') {
+            try {
+              onTerminalError({ error: PROVIDER_REGION_CODE, message: regionErr.message })
             } catch (cbErr) {
               logger.warn?.(`[sei/orch] onTerminalError callback threw: ${cbErr && cbErr.message}`)
             }

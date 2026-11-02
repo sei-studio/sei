@@ -12,6 +12,7 @@
  * main-side zod gate (SpeechPackIdSchema) rejects a drifted id loudly.
  */
 import type { SpeechPackStatePush } from '@shared/ipc';
+import { PROVIDER_REGION_COPY, PROVIDER_REGION_TOKEN } from '@shared/providerRegion';
 
 export type SttEngineChoice = 'scribe' | 'whisper' | 'sensevoice';
 export type TtsEngineChoice = 'elevenlabs' | 'local';
@@ -112,7 +113,7 @@ export function keyProbeTransport(provider: string): 'list' | 'test' {
   return provider === 'openrouter' ? 'test' : 'list';
 }
 
-export type KeyProbeVerdict = 'ok' | 'rejected' | 'unreachable';
+export type KeyProbeVerdict = 'ok' | 'rejected' | 'unreachable' | 'region';
 
 /**
  * Probe outcome → verdict. `token` is the typed error vocabulary from
@@ -125,6 +126,8 @@ export type KeyProbeVerdict = 'ok' | 'rejected' | 'unreachable';
  */
 export function keyProbeVerdict(provider: string, token: string | null): KeyProbeVerdict {
   if (!token) return 'ok';
+  // 261103 (T303): the key may be fine; the provider refuses this region.
+  if (token === PROVIDER_REGION_TOKEN) return 'region';
   if (provider === 'ollama') return 'unreachable';
   if (token === 'unauthorized' || token === 'no_api_key') return 'rejected';
   // Gemini answers an invalid key with HTTP 400 (API_KEY_INVALID), not 401.
@@ -134,8 +137,10 @@ export function keyProbeVerdict(provider: string, token: string | null): KeyProb
 }
 
 /** First line of the key-probe popup. */
-export function keyProbeLine(provider: string, verdict: 'rejected' | 'unreachable'): string {
+export function keyProbeLine(provider: string, verdict: 'rejected' | 'unreachable' | 'region'): string {
   if (verdict === 'rejected') return 'The provider rejected this API key.';
+  // 261103 (T303): translated with { provider: regionProviderLabel(provider) }.
+  if (verdict === 'region') return PROVIDER_REGION_COPY;
   return provider === 'ollama'
     ? "Couldn't reach Ollama on your computer. Make sure Ollama is running."
     : "Couldn't reach the provider. Check your connection.";
@@ -144,8 +149,9 @@ export function keyProbeLine(provider: string, verdict: 'rejected' | 'unreachabl
 /** Second line of the key-probe popup: the consequence. A rejected key makes
  * generation IMPOSSIBLE (will); an unreachable provider might recover by
  * setup time (may) — generation is still attempted there. */
-export function keyProbeConsequence(verdict: 'rejected' | 'unreachable'): string {
-  return verdict === 'rejected'
+export function keyProbeConsequence(verdict: 'rejected' | 'unreachable' | 'region'): string {
+  // A region refusal fails generation exactly like a rejected key.
+  return verdict === 'rejected' || verdict === 'region'
     ? 'We will not be able to match you with a unique companion.'
     : 'We may not be able to match you with a unique companion.';
 }
@@ -157,6 +163,9 @@ export function keyProbeConsequence(verdict: 'rejected' | 'unreachable'): string
  */
 export function llmTestErrorCopy(token: string): string {
   switch (token) {
+    case PROVIDER_REGION_TOKEN:
+      // 261103 (T303). Callers translate it with { provider: regionProviderLabel(kind) }.
+      return PROVIDER_REGION_COPY;
     case 'no_api_key':
       return 'No API key saved. Go back a step and paste your key.';
     case 'unauthorized':
@@ -182,4 +191,37 @@ export function llmTestErrorCopy(token: string): string {
  */
 export function returningLocalRoute(hasProfile: boolean | null): 'home' | 'set-up' {
   return hasProfile === false ? 'set-up' : 'home';
+}
+
+/** How long OnboardApp waits before its one retry of a failed profile read. */
+export const PROFILE_READ_RETRY_MS = 500;
+
+/**
+ * Where a sign-in lands after auth. `hasProfile` is accountHasProfile()
+ * (null = the config read failed, even after one retry); `freshAccount` is
+ * "the account was created minutes ago"; `existingAccount` is the 260730
+ * account-age check (signed in, older than 48 h).
+ *
+ * New branch: a profile means welcome-existing, no profile means setup. A
+ * nameless account whose read succeeds always gets setup, however old (the
+ * T303 support case: created by a Google sign-in whose exchange never
+ * finished). Only a read that FAILED falls back to account age, because
+ * setup on a veteran's profile would overwrite its config.
+ *
+ * Returning branch: the player said they had been here before, so a failed
+ * read keeps that answer unless the account was created by this very
+ * sign-in (260916).
+ */
+export function routeAfterAuthDecision(
+  mode: 'new' | 'returning',
+  hasProfile: boolean | null,
+  freshAccount: boolean,
+  existingAccount: boolean,
+): 'setup' | 'welcome-existing' | 'resume-as-new' | 'complete-returning' {
+  if (mode === 'returning') {
+    const fresh = hasProfile === null ? freshAccount : !hasProfile;
+    return fresh ? 'resume-as-new' : 'complete-returning';
+  }
+  const existing = hasProfile === null ? existingAccount : hasProfile;
+  return existing ? 'welcome-existing' : 'setup';
 }

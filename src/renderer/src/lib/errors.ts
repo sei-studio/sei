@@ -15,6 +15,7 @@
 import type { ErrorClass } from '@shared/errorClasses';
 import { t } from './i18n';
 import { MC_RANGE_VARS } from './mcVersions';
+import { PROVIDER_REGION_COPY, PROVIDER_REGION_FALLBACK_NAME, providerFromRegionMessage } from '@shared/providerRegion';
 
 /**
  * Plain-English error copy. Verbatim from UI-SPEC §"Plain-English error copy".
@@ -111,6 +112,8 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   // game brain joined the world and then never said or did anything.
   OLLAMA_NOT_RUNNING: "Sei can't reach Ollama. Start the Ollama app, check the Ollama address in Settings, then press Launch again.",
   OLLAMA_MODEL_MISSING: "Ollama doesn't have the model picked in Settings. Download it in Ollama (ollama pull followed by the model name) or pick another model, then press Launch again.",
+  // 261103 (T303): {provider} comes from the status message (errorCopyText).
+  PROVIDER_REGION_UNSUPPORTED: PROVIDER_REGION_COPY,
   OLLAMA_MODEL_NO_TOOLS: "This Ollama model can't use tools, and your companion needs them to talk and act in games. Pick a model with tool support in Settings, like qwen3 or qwen3-vl, then press Launch again.",
   // 261017 (issue #46): ChatGPT plan.
   CHATGPT_USAGE_LIMIT: "You've reached your ChatGPT plan's usage limit. Check Manage usage in ChatGPT to see when it resets, or switch to another AI option in Settings.",
@@ -132,7 +135,12 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
 export function errorCopyText(
   cls: ErrorClass,
   tr: (en: string, params?: Record<string, string | number>) => string = t,
+  message?: string,
 ): string {
+  if (cls === 'PROVIDER_REGION_UNSUPPORTED') {
+    const name = providerFromRegionMessage(message) ?? PROVIDER_REGION_FALLBACK_NAME;
+    return tr(PROVIDER_REGION_COPY, { provider: name === PROVIDER_REGION_FALLBACK_NAME ? tr(name) : name });
+  }
   return tr(ERROR_COPY[cls] ?? ERROR_COPY.BOT_CRASH, MC_RANGE_VARS);
 }
 

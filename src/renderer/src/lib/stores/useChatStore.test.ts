@@ -279,6 +279,14 @@ describe('useChatStore.send: model timeout vs user cancel (260926)', () => {
     expect(isOllamaSetupError(ipcError('Error: 500 upstream'))).toBe(false);
   });
 
+  it('chatFailureLine names the provider that refused the region (261103)', async () => {
+    const { chatFailureLine } = await import('./useChatStore');
+    const refused = ipcError('Error: PROVIDER_REGION_UNSUPPORTED[Google Gemini]: Google Gemini does not support your region.');
+    expect(chatFailureLine(refused)).toBe('Google Gemini does not support your region.');
+    expect(chatFailureLine(refused)).not.toMatch(/\u2014|VPN/i);
+    expect(chatFailureLine(ipcError('Error: PROVIDER_REGION_UNSUPPORTED'))).toBe('Your AI provider does not support your region.');
+  });
+
   it('chatFailureLine names the ChatGPT rejections (261017 review)', async () => {
     const { chatFailureLine, isChatgptPlanError } = await import('./useChatStore');
     const auth = ipcError('Error: CHATGPT_AUTH_REJECTED: ChatGPT did not accept the sign-in');

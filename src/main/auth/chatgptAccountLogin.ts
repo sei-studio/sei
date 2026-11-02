@@ -78,6 +78,7 @@ export interface SupabaseSessionShape {
 export interface ChatgptAccountLoginDeps {
   fetchImpl: typeof fetch;
   proxyBase: () => string;
+  /** Sei cloud region gate, run fresh on every login (never cached). */
   regionBlocked: () => Promise<boolean>;
   chatgpt: () => {
     /** The plain plan sign-in (local nonce, no proxy). connectPlan's fallback. */
@@ -142,6 +143,8 @@ function mapSignInFailure(reason: ChatgptSignInFailure, message?: string): Chatg
       return fail('browser_failed', message ?? 'Could not open the browser');
     case 'network':
       return fail('network', 'Network error');
+    case 'region_unsupported':
+      return fail('provider_region', 'OpenAI does not support your region');
     case 'port_unavailable':
       return fail('sign_in_failed', 'Could not start the sign-in listener');
     default:
@@ -331,6 +334,11 @@ export function createChatgptAccountLogin(deps: ChatgptAccountLoginDeps) {
 
   return {
     async login(): Promise<ChatgptLoginResult> {
+      // This login mints a Sei CLOUD session, so the cloud region gate runs
+      // first, before the browser opens: a blocked attempt never creates an
+      // account. The check is fresh every time (261103: no verdict cache), so
+      // a VPN that is up now counts. connectPlan and the plain plan sign-in
+      // are local-only and never consult it; OpenAI decides there.
       if (await deps.regionBlocked()) return { ok: false, reason: REGION_BLOCKED, message: REGION_BLOCKED_COPY };
       const gen = ++generation;
       clearPending({ revoke: true });
