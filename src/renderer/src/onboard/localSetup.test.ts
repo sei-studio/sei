@@ -16,6 +16,7 @@ import {
   packsPct,
   packsTotalBytes,
   returningLocalRoute,
+  routeAfterAuthDecision,
   ttsPackIdsFor,
 } from './localSetup';
 import { ZH } from '../lib/i18n/zh';
@@ -210,5 +211,22 @@ describe('returningLocalRoute (261007)', () => {
   });
   it('the line Sui comes back with is translated', () => {
     expect(ZH["Wait, Sei hasn't been set up on this computer yet. Let's do that first!"]).toBeTruthy();
+  });
+});
+
+describe('routeAfterAuthDecision (261103)', () => {
+  it('new branch: a failed profile read goes to setup, never welcome-existing by account age', () => {
+    // The support case: a Google account created days ago whose first
+    // sign-in never finished, so it has no name. Age is not evidence.
+    expect(routeAfterAuthDecision('new', null, false)).toBe('setup');
+    expect(routeAfterAuthDecision('new', null, true)).toBe('setup');
+    expect(routeAfterAuthDecision('new', false, false)).toBe('setup');
+    expect(routeAfterAuthDecision('new', true, false)).toBe('welcome-existing');
+  });
+  it('returning branch keeps the profile answer, and the fresh-account check when it is unknown', () => {
+    expect(routeAfterAuthDecision('returning', true, true)).toBe('complete-returning');
+    expect(routeAfterAuthDecision('returning', false, false)).toBe('resume-as-new');
+    expect(routeAfterAuthDecision('returning', null, true)).toBe('resume-as-new');
+    expect(routeAfterAuthDecision('returning', null, false)).toBe('complete-returning');
   });
 });

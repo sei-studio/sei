@@ -80,6 +80,7 @@ import {
   packsPct,
   packsTotalBytes,
   returningLocalRoute,
+  routeAfterAuthDecision,
   ttsPackIdsFor,
   type KeyProbeVerdict,
   type LocalSetupChoices,
@@ -912,31 +913,6 @@ export function OnboardApp({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase.k]);
 
-  /** New branch only: did the session that just landed belong to an account
-   * that already existed? Decided by ACCOUNT AGE for both the password form
-   * and OAuth (260730). A pure intent check ('signin' = existing) broke the
-   * boomerang first-timer: someone who created their account mid-onboarding,
-   * quit before setup ran (the email-verification detour is the common way),
-   * and came back through "I already have an account". Their profile has no
-   * config yet, so the welcome-back dead-end would bounce them to Home and
-   * replay the whole questionnaire on the NEXT launch — the account-age
-   * window routes them into setup + tutorial now instead. 48h comfortably
-   * covers a verify-tomorrow detour while still catching genuine veterans;
-   * the cost when it misjudges (a days-old account's first sign-in on a
-   * second machine) is one redundant setup, not data loss. A 'signup'
-   * intent and a boot-restored session (null intent, relaunch
-   * mid-onboarding) are always new. */
-  const signedIntoExistingAccount = useCallback((): boolean => {
-    const a = authRef.current;
-    if (a.kind !== 'signed_in') return false;
-    const intent = authIntentRef.current;
-    if (intent === 'signin' || intent === 'oauth') {
-      const ageMs = Date.now() - Date.parse(a.user.createdAt);
-      return Number.isFinite(ageMs) && ageMs > 48 * 3600_000;
-    }
-    return false;
-  }, []);
-
   /**
    * The returning branch signed into an account that was created by that very
    * sign-in (260916). Google sign-in creates the account on the spot, so
@@ -975,8 +951,9 @@ export function OnboardApp({
    * backfills preferred_name from the cloud profile before the scope flips
    * (profileScope.ts), and only the app's own setup ever writes that column,
    * so a veteran on a second machine reads as onboarded and a minutes-old
-   * Google sign-in with no profile does not. The two age heuristics above
-   * stay as the fallback for when the read fails (null = could not tell).
+   * Google sign-in with no profile does not. When the read fails (null),
+   * routeAfterAuthDecision decides (localSetup.ts): setup on the new branch,
+   * the fresh-account check on the returning one.
    */
   const accountHasProfile = useCallback(async (): Promise<boolean | null> => {
     try {
@@ -994,14 +971,12 @@ export function OnboardApp({
   const routeAfterAuth = useCallback(
     async (mode: 'new' | 'returning') => {
       const has = await accountHasProfile();
-      if (mode === 'returning') {
-        const fresh = has === null ? signedIntoFreshAccount() : !has;
-        if (fresh) resumeAsNew();
-        else {
-          trackCompleted('returning');
-          complete(false, null);
-        }
-      } else if (has === null ? signedIntoExistingAccount() : has) {
+      const route = routeAfterAuthDecision(mode, has, signedIntoFreshAccount());
+      if (route === 'resume-as-new') resumeAsNew();
+      else if (route === 'complete-returning') {
+        trackCompleted('returning');
+        complete(false, null);
+      } else if (route === 'welcome-existing') {
         // They walked the new-user branch but signed into an account that
         // already has a profile. Running setup here would clobber the
         // profile's config and mint a new character on the account (260729):
@@ -1011,7 +986,7 @@ export function OnboardApp({
         setPhase({ k: 'setup' });
       }
     },
-    [accountHasProfile, complete, signedIntoExistingAccount, signedIntoFreshAccount, resumeAsNew, trackCompleted],
+    [accountHasProfile, complete, signedIntoFreshAccount, resumeAsNew, trackCompleted],
   );
 
   /** Post-auth continuation: ToS gate, then setup (new) or done (returning). */

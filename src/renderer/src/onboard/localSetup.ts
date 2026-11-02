@@ -183,3 +183,32 @@ export function llmTestErrorCopy(token: string): string {
 export function returningLocalRoute(hasProfile: boolean | null): 'home' | 'set-up' {
   return hasProfile === false ? 'set-up' : 'home';
 }
+
+/**
+ * Where a sign-in lands after auth (261103, T303). `hasProfile` is
+ * accountHasProfile() (null = the config read failed); `freshAccount` is
+ * "the account was created minutes ago".
+ *
+ * New branch: a profile means welcome-existing, otherwise setup. A FAILED
+ * read also means setup. It used to fall back to account age (older than
+ * 48 h = existing), which marked an account whose first sign-in never
+ * finished (created by Google OAuth days earlier, PKCE exchange failed, no
+ * name) as returning and skipped setup. Setup for a veteran costs one
+ * re-confirmed name; skipping it for a new player leaves them with no name
+ * and no companion.
+ *
+ * Returning branch: the player said they had been here before, so a failed
+ * read keeps that answer unless the account was created by this very
+ * sign-in (260916).
+ */
+export function routeAfterAuthDecision(
+  mode: 'new' | 'returning',
+  hasProfile: boolean | null,
+  freshAccount: boolean,
+): 'setup' | 'welcome-existing' | 'resume-as-new' | 'complete-returning' {
+  if (mode === 'returning') {
+    const fresh = hasProfile === null ? freshAccount : !hasProfile;
+    return fresh ? 'resume-as-new' : 'complete-returning';
+  }
+  return hasProfile === true ? 'welcome-existing' : 'setup';
+}
