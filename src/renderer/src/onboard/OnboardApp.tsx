@@ -82,6 +82,7 @@ import {
   packsTotalBytes,
   returningLocalRoute,
   routeAfterAuthDecision,
+  PROFILE_READ_RETRY_MS,
   ttsPackIdsFor,
   type KeyProbeVerdict,
   type LocalSetupChoices,
@@ -929,6 +930,23 @@ export function OnboardApp({
     return Number.isFinite(ageMs) && ageMs < 10 * 60_000;
   }, []);
 
+  /**
+   * Fallback only, for when the profile read fails (260730): the new-user
+   * branch signed into an account older than 48 h through a sign-in (not a
+   * sign-up), so it is probably a veteran and setup would overwrite its
+   * config. A read that succeeds always decides instead.
+   */
+  const signedIntoExistingAccount = useCallback((): boolean => {
+    const a = authRef.current;
+    if (a.kind !== 'signed_in') return false;
+    const intent = authIntentRef.current;
+    if (intent === 'signin' || intent === 'oauth') {
+      const ageMs = Date.now() - Date.parse(a.user.createdAt);
+      return Number.isFinite(ageMs) && ageMs > 48 * 3600_000;
+    }
+    return false;
+  }, []);
+
   /** Returning branch that turned out to have nothing to return to (a sign-in
    * that made a new account, or local mode on a computer with no profile):
    * back to the scene, re-ask. The boot sign-in variant has no scene to
@@ -952,9 +970,9 @@ export function OnboardApp({
    * backfills preferred_name from the cloud profile before the scope flips
    * (profileScope.ts), and only the app's own setup ever writes that column,
    * so a veteran on a second machine reads as onboarded and a minutes-old
-   * Google sign-in with no profile does not. When the read fails (null),
-   * routeAfterAuthDecision decides (localSetup.ts): setup on the new branch,
-   * the fresh-account check on the returning one.
+   * Google sign-in with no profile does not. When the read fails (null,
+   * even after routeAfterAuth's one retry), routeAfterAuthDecision falls
+   * back to account age (localSetup.ts).
    */
   const accountHasProfile = useCallback(async (): Promise<boolean | null> => {
     try {
@@ -971,8 +989,19 @@ export function OnboardApp({
   /** Route a signed-in user: setup (no profile yet) or done (has one). */
   const routeAfterAuth = useCallback(
     async (mode: 'new' | 'returning') => {
-      const has = await accountHasProfile();
-      const route = routeAfterAuthDecision(mode, has, signedIntoFreshAccount());
+      let has = await accountHasProfile();
+      if (has === null) {
+        // One retry before the age fallback: a read that failed once (main
+        // still moving the scope) usually answers a moment later.
+        await new Promise((r) => setTimeout(r, PROFILE_READ_RETRY_MS));
+        has = await accountHasProfile();
+      }
+      const route = routeAfterAuthDecision(
+        mode,
+        has,
+        signedIntoFreshAccount(),
+        signedIntoExistingAccount(),
+      );
       if (route === 'resume-as-new') resumeAsNew();
       else if (route === 'complete-returning') {
         trackCompleted('returning');
@@ -987,7 +1016,14 @@ export function OnboardApp({
         setPhase({ k: 'setup' });
       }
     },
-    [accountHasProfile, complete, signedIntoFreshAccount, resumeAsNew, trackCompleted],
+    [
+      accountHasProfile,
+      complete,
+      signedIntoFreshAccount,
+      signedIntoExistingAccount,
+      resumeAsNew,
+      trackCompleted,
+    ],
   );
 
   /** Post-auth continuation: ToS gate, then setup (new) or done (returning). */

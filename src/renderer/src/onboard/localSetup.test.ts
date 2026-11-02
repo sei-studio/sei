@@ -231,18 +231,20 @@ describe('returningLocalRoute (261007)', () => {
 });
 
 describe('routeAfterAuthDecision (261103)', () => {
-  it('new branch: a failed profile read goes to setup, never welcome-existing by account age', () => {
-    // The support case: a Google account created days ago whose first
-    // sign-in never finished, so it has no name. Age is not evidence.
-    expect(routeAfterAuthDecision('new', null, false)).toBe('setup');
-    expect(routeAfterAuthDecision('new', null, true)).toBe('setup');
-    expect(routeAfterAuthDecision('new', false, false)).toBe('setup');
-    expect(routeAfterAuthDecision('new', true, false)).toBe('welcome-existing');
+  it('new branch: a successful read decides; age never overrides it', () => {
+    // The support case: a nameless Google account, days old, read OK.
+    expect(routeAfterAuthDecision('new', false, false, true)).toBe('setup');
+    expect(routeAfterAuthDecision('new', false, false, false)).toBe('setup');
+    expect(routeAfterAuthDecision('new', true, false, false)).toBe('welcome-existing');
+  });
+  it('new branch: only a failed read falls back to account age (no setup over a veteran)', () => {
+    expect(routeAfterAuthDecision('new', null, false, true)).toBe('welcome-existing');
+    expect(routeAfterAuthDecision('new', null, true, false)).toBe('setup');
   });
   it('returning branch keeps the profile answer, and the fresh-account check when it is unknown', () => {
-    expect(routeAfterAuthDecision('returning', true, true)).toBe('complete-returning');
-    expect(routeAfterAuthDecision('returning', false, false)).toBe('resume-as-new');
-    expect(routeAfterAuthDecision('returning', null, true)).toBe('resume-as-new');
-    expect(routeAfterAuthDecision('returning', null, false)).toBe('complete-returning');
+    expect(routeAfterAuthDecision('returning', true, true, false)).toBe('complete-returning');
+    expect(routeAfterAuthDecision('returning', false, false, true)).toBe('resume-as-new');
+    expect(routeAfterAuthDecision('returning', null, true, false)).toBe('resume-as-new');
+    expect(routeAfterAuthDecision('returning', null, false, true)).toBe('complete-returning');
   });
 });

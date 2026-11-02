@@ -193,18 +193,20 @@ export function returningLocalRoute(hasProfile: boolean | null): 'home' | 'set-u
   return hasProfile === false ? 'set-up' : 'home';
 }
 
+/** How long OnboardApp waits before its one retry of a failed profile read. */
+export const PROFILE_READ_RETRY_MS = 500;
+
 /**
- * Where a sign-in lands after auth (261103, T303). `hasProfile` is
- * accountHasProfile() (null = the config read failed); `freshAccount` is
- * "the account was created minutes ago".
+ * Where a sign-in lands after auth. `hasProfile` is accountHasProfile()
+ * (null = the config read failed, even after one retry); `freshAccount` is
+ * "the account was created minutes ago"; `existingAccount` is the 260730
+ * account-age check (signed in, older than 48 h).
  *
- * New branch: a profile means welcome-existing, otherwise setup. A FAILED
- * read also means setup. It used to fall back to account age (older than
- * 48 h = existing), which marked an account whose first sign-in never
- * finished (created by Google OAuth days earlier, PKCE exchange failed, no
- * name) as returning and skipped setup. Setup for a veteran costs one
- * re-confirmed name; skipping it for a new player leaves them with no name
- * and no companion.
+ * New branch: a profile means welcome-existing, no profile means setup. A
+ * nameless account whose read succeeds always gets setup, however old (the
+ * T303 support case: created by a Google sign-in whose exchange never
+ * finished). Only a read that FAILED falls back to account age, because
+ * setup on a veteran's profile would overwrite its config.
  *
  * Returning branch: the player said they had been here before, so a failed
  * read keeps that answer unless the account was created by this very
@@ -214,10 +216,12 @@ export function routeAfterAuthDecision(
   mode: 'new' | 'returning',
   hasProfile: boolean | null,
   freshAccount: boolean,
+  existingAccount: boolean,
 ): 'setup' | 'welcome-existing' | 'resume-as-new' | 'complete-returning' {
   if (mode === 'returning') {
     const fresh = hasProfile === null ? freshAccount : !hasProfile;
     return fresh ? 'resume-as-new' : 'complete-returning';
   }
-  return hasProfile === true ? 'welcome-existing' : 'setup';
+  const existing = hasProfile === null ? existingAccount : hasProfile;
+  return existing ? 'welcome-existing' : 'setup';
 }
