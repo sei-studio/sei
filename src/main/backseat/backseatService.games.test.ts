@@ -22,6 +22,7 @@ const h = vi.hoisted(() => ({
   saidAtSearch: [] as string[][],
   replies: [] as Array<{ content: unknown[] }>,
   extraStable: [] as Array<string | undefined>,
+  clockInTail: [] as Array<boolean | undefined>,
   said: [] as string[],
   msgs: [] as Array<{ text: string; lookup?: { queries: string[] } }>,
   llmKind: 'anthropic' as string,
@@ -68,11 +69,13 @@ vi.mock('../llm', () => ({
   }),
 }));
 vi.mock('../chat/chatPrompts', () => ({
-  buildSystemBlocks: (o: { extraStable?: string }) => {
+  buildSystemBlocks: (o: { extraStable?: string; clockInTail?: boolean }) => {
     h.extraStable.push(o.extraStable);
+    h.clockInTail.push(o.clockInTail);
     return [];
   },
   markMessageCached: () => {},
+  clockTailNote: () => '[now: test]',
   REMEMBER_TOOL: { name: 'remember', description: '', input_schema: { type: 'object', properties: {} } },
 }));
 vi.mock('../chat/chatService', () => ({
@@ -182,6 +185,7 @@ describe('a backseat session started from a game tile', () => {
     h.saidAtSearch.length = 0;
     h.replies.length = 0;
     h.extraStable.length = 0;
+    h.clockInTail.length = 0;
     h.said.length = 0;
     h.msgs.length = 0;
     h.webRuns.length = 0;
@@ -226,6 +230,23 @@ describe('a backseat session started from a game tile', () => {
     await tick('user', 'how do i get a house');
     expect(toolNames(1)).toEqual(toolNames(0));
     expect(h.extraStable[1]).toBe(stable);
+  });
+
+  it('keeps the clock out of the cached system prompt and stamps it at the end of the look', async () => {
+    // 261102: in the status block the minute clock re-wrote the cached
+    // transcript on every rollover; it now rides after the breakpoint.
+    await startBackseat(CH, 'window:1:0', 'Roblox', 'text' as never, { gameId: 'roblox' });
+    await tick('start');
+    await tick('user', 'how do i get a house');
+    expect(h.clockInTail).toEqual([true, true]);
+    const lastText = (i: number): string => {
+      const msgs = h.requests[i]?.messages as Array<{ content: Array<{ type: string; text?: string }> }>;
+      const blocks = msgs[msgs.length - 1].content;
+      return blocks[blocks.length - 1].text ?? '';
+    };
+    expect(lastText(0).endsWith('\n[now: test]')).toBe(true);
+    // A spoken tick: the player's words, then the stamp.
+    expect(lastText(1).endsWith('how do i get a house\n[now: test]')).toBe(true);
   });
 
   it('runs a client search() once, speaking the lead before the lookup and the answer after', async () => {
