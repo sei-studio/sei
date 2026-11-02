@@ -1613,7 +1613,14 @@ async function bootstrap(): Promise<void> {
     // token exchange, BYOK checks) ignores the OS proxy, so a VPN in "system
     // proxy" mode covered the browser but not main. Route it the way Chromium
     // does. Needs app ready (session.resolveProxy). See systemProxy.ts.
-    installMainSystemProxy();
+    // Never allowed to stop startup: a failure leaves fetch direct.
+    try {
+      installMainSystemProxy().catch((err: unknown) =>
+        console.warn(`[sei] system proxy not installed, going direct: ${(err as Error)?.message ?? err}`),
+      );
+    } catch (err) {
+      console.warn(`[sei] system proxy not installed, going direct: ${(err as Error)?.message ?? err}`);
+    }
 
     // If a prior version's "Move to Applications" prompt moved us here from
     // ~/Downloads, trash the leftover copy now that we're running from

@@ -1,7 +1,7 @@
 /**
  * Main-process side of the system-proxy routing (261103, T303). The routing
- * itself lives in src/bot/net/systemProxy.js so the bot's utilityProcess can
- * share it.
+ * itself lives in src/bot/net/ (systemProxy.js installs proxyDispatcher.js)
+ * so the bot's utilityProcess can share it.
  *
  * Main asks Chromium (`session.defaultSession.resolveProxy`) per origin, so
  * PAC files, bypass lists and the OS proxy settings mean exactly what they
@@ -25,9 +25,13 @@ export const SYSTEM_PROXY_ENV = 'SEI_SYSTEM_PROXY';
 /**
  * Route main's Node fetch through the OS proxy. Call once, after app ready
  * (session.resolveProxy needs it). Requests before that go direct as before.
+ *
+ * Always installed in main, because a VPN can switch the OS proxy on after
+ * launch and only a per-request lookup sees that. A DIRECT answer hands the
+ * request to Node's own built-in Agent, the path it took before this module.
  */
-export function installMainSystemProxy(): void {
-  installSystemProxy({
+export function installMainSystemProxy(): Promise<unknown> {
+  return installSystemProxy({
     resolve: (url) => session.defaultSession.resolveProxy(url),
     log: logger.info,
   });

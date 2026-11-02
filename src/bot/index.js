@@ -37,7 +37,7 @@ import { normalizePalette } from './brain/faceExpressions.js'
 import { sessionActionStats, llmMetaFromConfig } from './brain/actionStats.js'
 import { sessionDigest } from './brain/sessionDigest.js'
 import { setChatgptTokenTransport, deliverChatgptToken } from './brain/llm/chatgptTokenBridge.js'
-import { installSystemProxy, snapshotResolver } from './net/systemProxy.js'
+import { snapshotResolver } from './net/proxyPac.js'
 
 // 260926: the static graph above (config, zod, the brain, the LLM SDKs) is
 // evaluated by now. See bootTiming.js for the phase list.
@@ -50,11 +50,19 @@ const logger = {
 }
 
 // 261103 (T303): route the LLM providers' Node fetch through the OS proxy
-// that main resolved at fork (SEI_SYSTEM_PROXY). Absent = all DIRECT.
-{
+// that main resolved at fork (SEI_SYSTEM_PROXY). Absent or all DIRECT = the
+// undici package is never loaded and the global dispatcher is left alone.
+// start() waits for it so the first LLM call is already routed.
+const proxyReady = (async () => {
   const resolve = snapshotResolver(process.env.SEI_SYSTEM_PROXY)
-  if (resolve) installSystemProxy({ resolve, log: (m) => logger.info(m) })
-}
+  if (!resolve) return
+  try {
+    const { installSystemProxy } = await import('./net/systemProxy.js')
+    await installSystemProxy({ resolve, log: (m) => logger.info(m) })
+  } catch (err) {
+    logger.warn(`system proxy not installed, going direct: ${err?.message ?? err}`)
+  }
+})()
 
 /**
  * Load a game runtime module by kind. Validated against GAME_KINDS so the
@@ -95,6 +103,7 @@ export async function start(config, hooks = {}) {
     postPortMessage = null,
     runtime: runtimeModule = null,
   } = hooks
+  await proxyReady
   const kind = config?.adapter?.kind ?? 'minecraft'
   const mod = runtimeModule ?? await loadRuntimeModule(kind)
   if (typeof mod?.createRuntime !== 'function') {

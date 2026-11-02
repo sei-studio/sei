@@ -4286,6 +4286,20 @@ one is in the website repo's `README-popup.md`.
   or re-checks the scope and gives up; otherwise an account switch in the
   gap lands its write in the next account (cloud default, library add, local
   import, the sign-in reconcile sweep, which also stops when the scope moves).
+- **Node fetch ignores the OS proxy (261103, T303)** → a VPN in "system
+  proxy" mode carried Chromium's requests but not main's or the bot's, so
+  sign-in code exchanges and BYOK calls went out direct and were refused.
+  `src/bot/net/` routes undici's global dispatcher per origin:
+  `systemProxy.js` installs `proxyDispatcher.js`, main always (Chromium's
+  `session.resolveProxy`, `src/main/systemProxy.ts`), the bot only when the
+  fork-time snapshot `SEI_SYSTEM_PROXY` names a proxy (`proxyPac.js` decides
+  without loading undici). DIRECT stays on Node's built-in Agent: the undici
+  package fills the shared global slot with its own Agent when it LOADS, so
+  never import `undici` or `proxyDispatcher.js` statically from main or the
+  bot entry. A proxy that refuses the connection is skipped for 60 s and the
+  request moves down the PAC list, always ending DIRECT; a failed or slow
+  (3 s) lookup is DIRECT for 30 s. `undici` is pinned exactly and must share
+  its major with Electron's `process.versions.undici` (a test checks).
 - **Native ABI mismatch** → `@electron/rebuild` / `install-app-deps` runs in
   `postinstall`. Test packaged builds on a clean machine.
 - **Bot ESM module type in packaged builds** → `src/bot/package.json` exists

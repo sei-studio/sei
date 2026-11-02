@@ -1,8 +1,40 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import http from 'node:http'
 import net from 'node:net'
-import { Agent } from 'undici'
-import { proxyUriFromPac, isLocalHost, snapshotResolver, SystemProxyDispatcher } from './systemProxy.js'
+import { Agent, ProxyAgent } from 'undici'
+import {
+  proxyChainFromPac,
+  proxyUriFromPac,
+  isLocalHost,
+  snapshotResolver,
+  SystemProxyDispatcher,
+  isProxyConnectError,
+} from './proxyDispatcher.js'
+
+describe('proxyChainFromPac', () => {
+  it('keeps every usable entry in order and stops at the first DIRECT', () => {
+    expect(proxyChainFromPac('PROXY a:1; SOCKS5 b:2; DIRECT; PROXY c:3')).toEqual([
+      'http://a:1',
+      'socks5://b:2',
+      null,
+    ])
+    expect(proxyChainFromPac('HTTPS a:443')).toEqual(['https://a:443'])
+    expect(proxyChainFromPac('SOCKS w:1080')).toEqual(['socks5://w:1080'])
+    expect(proxyChainFromPac('QUIC q:443; DIRECT')).toEqual([null])
+    expect(proxyChainFromPac('')).toEqual([])
+    expect(proxyChainFromPac(undefined)).toEqual([])
+  })
+})
+
+describe('isProxyConnectError', () => {
+  it('reads the code anywhere on the cause chain', () => {
+    expect(isProxyConnectError(Object.assign(new Error('x'), { code: 'ECONNREFUSED' }))).toBe(true)
+    const wrapped = new TypeError('fetch failed', { cause: Object.assign(new Error('y'), { code: 'ENOTFOUND' }) })
+    expect(isProxyConnectError(wrapped)).toBe(true)
+    expect(isProxyConnectError(new Error('aborted'))).toBe(false)
+    expect(isProxyConnectError(null)).toBe(false)
+  })
+})
 
 describe('proxyUriFromPac', () => {
   it('maps Chromium PAC answers to the first usable proxy URI', () => {
@@ -77,8 +109,40 @@ async function harness() {
     url: `http://blocked.invalid:${targetPort}`,
     proxyPac: `PROXY 127.0.0.1:${proxyPort}; DIRECT`,
     connects,
+    targetPort,
     close: () => Promise.all([new Promise((r) => target.close(r)), new Promise((r) => proxy.close(r))]),
   }
+}
+
+/** A port nothing listens on. */
+async function freePort() {
+  const srv = net.createServer()
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r))
+  const { port } = srv.address()
+  await new Promise((r) => srv.close(r))
+  return port
+}
+
+/** DIRECT that reaches the harness target under any hostname (a VPN user's
+ * direct route that works once the dead proxy is out of the way). */
+function mappedDirect(targetPort) {
+  return new Agent({
+    connect: (_opts, cb) => {
+      const s = net.connect(targetPort, '127.0.0.1')
+      s.once('connect', () => cb(null, s))
+      s.once('error', (e) => cb(e, null))
+    },
+  })
+}
+
+function countingProxyAgent(uri, dispatched) {
+  const a = new ProxyAgent({ uri })
+  const dispatch = a.dispatch.bind(a)
+  a.dispatch = (o, hd) => {
+    dispatched.push(uri)
+    return dispatch(o, hd)
+  }
+  return a
 }
 
 describe('SystemProxyDispatcher with the built-in fetch', () => {
@@ -124,9 +188,10 @@ describe('SystemProxyDispatcher with the built-in fetch', () => {
     expect(h.connects).toEqual([])
   })
 
-  it('treats a hung or failing lookup as DIRECT and does not cache it', async () => {
+  it('treats a hung lookup as DIRECT and remembers that for failedTtlMs', async () => {
     h = await harness()
     let calls = 0
+    let clock = 1_000_000
     d = new SystemProxyDispatcher({
       resolve: () => {
         calls += 1
@@ -134,12 +199,48 @@ describe('SystemProxyDispatcher with the built-in fetch', () => {
       },
       direct: new Agent(),
       resolveTimeoutMs: 50,
+      now: () => clock,
     })
     await expect(fetch(`${h.url}/`, { dispatcher: d })).rejects.toThrow()
+    // A slow WPAD must not cost resolveTimeoutMs on every request.
+    await expect(fetch(`${h.url}/`, { dispatcher: d })).rejects.toThrow()
+    expect(calls).toBe(1)
+    clock += 31_000
     const res = await fetch(`${h.url}/`, { dispatcher: d })
     expect(res.status).toBe(200)
     await res.text()
     expect(calls).toBe(2)
+  })
+
+  it('caches a failing lookup too, and lets a late answer replace the DIRECT stand-in', async () => {
+    h = await harness()
+    let calls = 0
+    d = new SystemProxyDispatcher({
+      resolve: () => {
+        calls += 1
+        return new Promise((r) => setTimeout(() => r(h.proxyPac), 100))
+      },
+      direct: new Agent(),
+      resolveTimeoutMs: 20,
+    })
+    await expect(fetch(`${h.url}/`, { dispatcher: d })).rejects.toThrow()
+    await new Promise((r) => setTimeout(r, 200))
+    const res = await fetch(`${h.url}/`, { dispatcher: d })
+    expect(await res.text()).toMatch(/^hello/)
+    expect(calls).toBe(1)
+
+    await d.close()
+    let failing = 0
+    d = new SystemProxyDispatcher({
+      resolve: () => {
+        failing += 1
+        throw new Error('pac broke')
+      },
+      direct: new Agent(),
+    })
+    await expect(fetch(`${h.url}/`, { dispatcher: d })).rejects.toThrow()
+    await expect(fetch(`${h.url}/`, { dispatcher: d })).rejects.toThrow()
+    expect(failing).toBe(1)
   })
 
   it('keeps the caller abort working while the lookup is pending and mid-request', async () => {
@@ -159,5 +260,83 @@ describe('SystemProxyDispatcher with the built-in fetch', () => {
     const started = Date.now()
     await expect(fetch(`${h.url}/slow`, { dispatcher: d, signal: AbortSignal.timeout(200) })).rejects.toThrow()
     expect(Date.now() - started).toBeLessThan(1_500)
+  })
+  it('retries a request DIRECT when the proxy refuses the connection, and skips that proxy for deadMs', async () => {
+    h = await harness()
+    const closedPort = await freePort()
+    const dead = `http://127.0.0.1:${closedPort}`
+    const dispatched = []
+    const lines = []
+    let clock = 5_000_000
+    d = new SystemProxyDispatcher({
+      resolve: () => `PROXY 127.0.0.1:${closedPort}; DIRECT`,
+      direct: mappedDirect(h.targetPort),
+      makeAgent: (uri) => countingProxyAgent(uri, dispatched),
+      now: () => clock,
+      log: (m) => lines.push(m),
+    })
+    const res = await fetch(`${h.url}/`, { dispatcher: d })
+    expect(await res.text()).toMatch(/^hello blocked\.invalid/)
+    expect(dispatched).toEqual([dead])
+    expect(lines.some((l) => l.includes(`proxy ${dead} unreachable (ECONNREFUSED)`))).toBe(true)
+
+    // Dead: the next request goes straight to DIRECT.
+    await (await fetch(`${h.url}/again`, { dispatcher: d })).text()
+    expect(dispatched).toEqual([dead])
+
+    // After deadMs the proxy is tried again (and fails over again).
+    clock += 61_000
+    await (await fetch(`${h.url}/later`, { dispatcher: d })).text()
+    expect(dispatched).toEqual([dead, dead])
+  })
+
+  it('falls back DIRECT once even when the PAC answer names no DIRECT', async () => {
+    h = await harness()
+    const closedPort = await freePort()
+    const dispatched = []
+    d = new SystemProxyDispatcher({
+      resolve: () => `PROXY 127.0.0.1:${closedPort}`,
+      direct: mappedDirect(h.targetPort),
+      makeAgent: (uri) => countingProxyAgent(uri, dispatched),
+    })
+    const res = await fetch(`${h.url}/`, { dispatcher: d })
+    expect(res.status).toBe(200)
+    await res.text()
+    expect(dispatched).toHaveLength(1)
+  })
+
+  it('moves to the next proxy in the list before DIRECT', async () => {
+    h = await harness()
+    const closedPort = await freePort()
+    const dispatched = []
+    const livePac = h.proxyPac.replace('; DIRECT', '')
+    d = new SystemProxyDispatcher({
+      resolve: () => `PROXY 127.0.0.1:${closedPort}; ${livePac}; DIRECT`,
+      direct: new Agent(),
+      makeAgent: (uri) => countingProxyAgent(uri, dispatched),
+    })
+    const res = await fetch(`${h.url}/`, { dispatcher: d })
+    expect(await res.text()).toMatch(/^hello/)
+    expect(dispatched).toHaveLength(2)
+    expect(h.connects.length).toBe(1)
+  })
+
+  it('logs once that a SOCKS (v4) entry is tried as SOCKS5', async () => {
+    h = await harness()
+    const lines = []
+    const made = []
+    d = new SystemProxyDispatcher({
+      resolve: () => 'SOCKS 127.0.0.1:1; DIRECT',
+      direct: mappedDirect(h.targetPort),
+      makeAgent: (uri) => {
+        made.push(uri)
+        return countingProxyAgent(`http://127.0.0.1:${new URL(uri).port}`, [])
+      },
+      log: (m) => lines.push(m),
+    })
+    await (await fetch(`${h.url}/`, { dispatcher: d })).text()
+    await (await fetch(`http://other.invalid:${h.targetPort}/`, { dispatcher: d })).text()
+    expect(made).toEqual(['socks5://127.0.0.1:1'])
+    expect(lines.filter((l) => l.includes('tried as SOCKS5'))).toHaveLength(1)
   })
 })
