@@ -25,15 +25,18 @@ import {
   readdirSync,
   renameSync,
   rmSync,
+  statSync,
   statfsSync,
   writeFileSync,
+  type BigIntStats,
 } from 'node:fs';
-import { rm } from 'node:fs/promises';
+import { open, rm, type FileHandle } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { ciMark, pidAlive, userDataInstallId, velopackInstalled, velopackLog } from './velopackBoot';
 import { noteNeutralExit } from './bootContext';
 import { bundleRequire } from './bundleRequire';
+import { spawnWhenFree } from './velopackSpawnRetry';
 import { checkSigned } from './velopackVerify';
 import { waitForExit } from './winPowerShell';
 import {
@@ -415,11 +418,66 @@ async function download(url: string, dest: string, m: SetupManifest): Promise<vo
         out.end(() => r());
       });
     }
+    // end()'s callback fires on 'finish', BEFORE the stream closes its file
+    // handle (that runs on the thread pool, and an antivirus scanning on
+    // close slows it). Windows will not start an image while a write handle
+    // is open on it: Setup started a moment later failed with spawn EBUSY
+    // (velopack-update.yml migrate, 261031 and 261101). Wait for the close.
+    if (!out.closed) await new Promise<void>((r) => out.once('close', () => r()));
   }
   if (failed.error) throw failed.error;
   if (size !== m.size) throw new Error(`size ${size}, expected ${m.size}`);
   const digest = hash.digest('hex');
   if (digest !== m.sha256) throw new Error(`sha256 ${digest.slice(0, 12)}, expected ${m.sha256.slice(0, 12)}`);
+}
+
+/**
+ * Before a RETRIED Setup start: null when `file` still holds the bytes that
+ * were checked (their sha256 matched the feed, and on a signed build those
+ * same bytes passed the Authenticode check, so an equal hash needs no second
+ * PowerShell run), else why not. Hashes through one handle, then checks the
+ * file did not change during the hash and that the path still names that
+ * same file, so a swap or a rewrite while it was busy is caught. The last
+ * check is a synchronous stat, and spawnWhenFree starts Setup in the same
+ * turn this resolves in.
+ */
+async function setupUnchanged(file: string, m: SetupManifest): Promise<string | null> {
+  let fh: FileHandle | null = null;
+  let before: BigIntStats;
+  let after: BigIntStats;
+  const hash = createHash('sha256');
+  try {
+    fh = await open(file, 'r');
+    before = await fh.stat({ bigint: true });
+    const buf = Buffer.alloc(1 << 20);
+    for (;;) {
+      const { bytesRead } = await fh.read(buf, 0, buf.length, null);
+      if (bytesRead === 0) break;
+      hash.update(buf.subarray(0, bytesRead));
+    }
+    after = await fh.stat({ bigint: true });
+  } catch (err) {
+    return `setup unreadable after its check: ${(err as Error).message}`;
+  } finally {
+    // Closed before the start: a read handle would not block it, but the
+    // path check below must be the last thing before spawn.
+    await fh?.close().catch(() => {});
+  }
+  if (hash.digest('hex') !== m.sha256 || after.size !== BigInt(m.size)) return 'setup changed after its check';
+  let named: BigIntStats;
+  try {
+    named = statSync(file, { bigint: true });
+  } catch (err) {
+    return `setup unreadable after its check: ${(err as Error).message}`;
+  }
+  const same =
+    before.size === after.size &&
+    before.mtimeNs === after.mtimeNs &&
+    named.ino === after.ino &&
+    named.dev === after.dev &&
+    named.size === after.size &&
+    named.mtimeNs === after.mtimeNs;
+  return same ? null : 'setup changed after its check';
 }
 
 /* -------------------------------------------------------------------------- */
@@ -521,11 +579,17 @@ async function installVelopack(nsis: NsisInstall, deps: MigrationDeps): Promise<
     cleanupAttempts: 0,
     at: Date.now(),
   };
-  const fail = (error: string) => {
+  // spawnRetries: how many busy Setup starts were retried (only once Setup was tried).
+  const fail = (error: string, spawnRetries?: number) => {
     log(`install failed: ${error}`);
-    ciMark('migration-failed', { error });
+    ciMark('migration-failed', { error, spawnRetries });
     writeState({ ...base, phase: 'failed', pid: undefined, error });
-    void capture('velopack_migration', { phase: 'failed', attempt: decision.attempt, error: error.slice(0, 80) });
+    void capture('velopack_migration', {
+      phase: 'failed',
+      attempt: decision.attempt,
+      error: error.slice(0, 80),
+      spawn_retries: spawnRetries,
+    });
   };
 
   // The Setup's process name is what CI's kill test looks for.
@@ -560,7 +624,24 @@ async function installVelopack(nsis: NsisInstall, deps: MigrationDeps): Promise<
   writeState(base);
   ciMark('migration-installing', { version: m.version, attempt: decision.attempt });
   log(`installing Velopack ${m.version} (attempt ${decision.attempt})`);
-  const child = spawn(setup, ['--silent'], { windowsHide: true, stdio: 'ignore', cwd: tmp });
+  // A busy Setup (still held by its writer or a scanner) is retried briefly,
+  // and re-checked before every retry (velopackSpawnRetry.ts). A start that throws
+  // must still fail through here: it used to escape installVelopack and
+  // leave the state at 'installing' and the Setup in %TEMP%.
+  const started = await spawnWhenFree(() => spawn(setup, ['--silent'], { windowsHide: true, stdio: 'ignore', cwd: tmp }), {
+    recheck: () => setupUnchanged(setup, m),
+    onBusy: (retry, ms) => {
+      log(`Setup is busy (spawn EBUSY); retry ${retry} in ${ms} ms`);
+      ciMark('migration-setup-busy', { retry, ms });
+    },
+  });
+  if (!started.ok) {
+    fail(`setup: ${started.error}`, started.retries);
+    await removeTemp(tmp);
+    return;
+  }
+  const child = started.value;
+  const spawnRetries = started.retries;
   try {
     if (child.pid) os.setPriority(child.pid, os.constants.priority.PRIORITY_BELOW_NORMAL);
   } catch {
@@ -576,7 +657,7 @@ async function installVelopack(nsis: NsisInstall, deps: MigrationDeps): Promise<
     existsSync(path.join(root, 'current', 'sq.version')) &&
     existsSync(path.join(root, 'Update.exe'));
   if (!ok) {
-    fail(r.timedOut ? 'setup timed out' : r.error ? `setup: ${r.error}` : `setup exit ${r.code}`);
+    fail(r.timedOut ? 'setup timed out' : r.error ? `setup: ${r.error}` : `setup exit ${r.code}`, spawnRetries);
     return;
   }
 
@@ -584,8 +665,13 @@ async function installVelopack(nsis: NsisInstall, deps: MigrationDeps): Promise<
   const retargeted = `retargeted ${retargetPins(nsis.dir, target)}`;
   log(`installed; pins: ${retargeted}`);
   writeState({ ...base, phase: 'installed', pid: undefined });
-  ciMark('migration-installed', { version: m.version, pins: retargeted });
-  void capture('velopack_migration', { phase: 'installed', attempt: decision.attempt, version: m.version });
+  ciMark('migration-installed', { version: m.version, pins: retargeted, spawnRetries });
+  void capture('velopack_migration', {
+    phase: 'installed',
+    attempt: decision.attempt,
+    version: m.version,
+    spawn_retries: spawnRetries,
+  });
   deps.handOff(restartIntoVelopack, m.version);
   if (ci && process.env.SEI_MIGRATION_CI_ACTION === 'restart') restartIntoVelopack();
 }
@@ -641,8 +727,14 @@ async function removeNsisCopy(): Promise<void> {
       const copy = path.join(tmp, UNINSTALLER_RUN_AS);
       copyFileSync(uninstaller, copy);
       const how = uninstallSpawn(copy, dir);
-      const child = spawn(copy, how.args, { ...how.options, windowsHide: true, stdio: 'ignore', cwd: tmp });
-      const r = await waitForExit(child, UNINSTALL_TIMEOUT_MS);
+      // Just copied, so a scanner may still hold it (velopackSpawnRetry.ts). Nothing
+      // was verified about this file, so there is nothing to re-check.
+      const started = await spawnWhenFree(
+        () => spawn(copy, how.args, { ...how.options, windowsHide: true, stdio: 'ignore', cwd: tmp }),
+        { onBusy: (retry, ms) => log(`uninstaller copy is busy (spawn EBUSY); retry ${retry} in ${ms} ms`) },
+      );
+      if (!started.ok) throw new Error(started.error);
+      const r = await waitForExit(started.value, UNINSTALL_TIMEOUT_MS);
       log(`NSIS uninstaller: ${r.timedOut ? 'timed out' : `exit ${r.code}`}${r.error ? ` (${r.error})` : ''}`);
     } catch (err) {
       log(`NSIS uninstaller failed: ${(err as Error).message}`);
@@ -706,3 +798,6 @@ export function scheduleVelopackMigration(deps: MigrationDeps): void {
       });
   }, delay(START_DELAY_MS)).unref?.();
 }
+
+/** The NSIS-side install, for velopackMigration.test.ts: scheduleVelopackMigration runs it only in a packaged Windows build. */
+export const installVelopackForTest = installVelopack;
