@@ -27,6 +27,7 @@ import { closeContainerSession } from './behaviors/container.js'
 import { closeFurnaceSession } from './behaviors/furnace.js'
 import { wireBotEvents } from './fsmWires.js'
 import { visualizeAction } from './behaviors/visualize.js'
+import { workItemsFor, carriedCounts } from './observers/workItems.js'
 import {
   WORLD_PRIMER as MINECRAFT_PRIMER,
   describeAction,
@@ -291,6 +292,10 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false, act
       const m = /^gave (\d+) (\S+) to (.+?), tossed/.exec(String(resultText ?? ''))
       return m ? { item: m[2], n: Number(m[1]), to: m[3] } : null
     },
+    // 261102 (pass 37): what an action works toward and how much of it she
+    // carries, so an open ask can name its items (observers/workItems.js).
+    workItems: (name, args) => workItemsFor(bot, name, args),
+    carriedCounts: (names) => carriedCounts(bot, names),
     surfaceBaseline: () => MINECRAFT_BASELINE,
     sessionEndClause: () => SESSION_END_CLAUSE,
     stuckNudges: () => ({ vision: ACTION_STUCK_NUDGE_VISION, noVision: ACTION_STUCK_NUDGE_NOVISION }),
