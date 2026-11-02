@@ -60,6 +60,8 @@ const SHERPA_BASE = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts
 const SPEECH = [
   `${SHERPA_BASE}/vits-piper-en_US-libritts_r-medium.tar.bz2`,
   `${SHERPA_BASE}/vits-icefall-zh-aishell3.tar.bz2`,
+  // 261102: Kokoro local voice (src/main/speech/packs.ts 'tts-kokoro').
+  `${SHERPA_BASE}/kokoro-int8-multi-lang-v1_0.tar.bz2`,
   `${SHERPA_BASE}/vits-piper-zh_CN-chaowen-medium.tar.bz2`,
   'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09.tar.bz2',
 ].map((url) => ({ url, dest: `speech/${url.split('/').pop()}` }));
