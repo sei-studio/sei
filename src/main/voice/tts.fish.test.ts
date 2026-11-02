@@ -1,6 +1,7 @@
 /**
  * Fish Audio as the local voice (261103): routing, the automatic voice and a
- * character's own pick, and the Fast fallback with its one notice. Same
+ * character's own pick, and the Fast fallback with its one notice (sent only
+ * once the Fast clip exists). Same
  * harness as tts.kokoro.test.ts; the Fish HTTP client is mocked here (its
  * own behavior is pinned in fishTts.test.ts).
  */
@@ -175,6 +176,21 @@ describe('Fish Audio TTS routing', () => {
     expect(String.fromCharCode(...head)).toBe('RIFF');
     expect(s.events[1].done).toBe(true);
     expect(notices).toEqual([{ kind: 'fish-fallback', characterId: 'c1', reason: 'key-invalid' }]);
+  });
+
+  it('with no Fast pack a Fish failure is the pack-missing error, with no fallback notice', async () => {
+    m.ready.mockResolvedValue(false);
+    m.fishSynth.mockRejectedValue(new Error('FISH_FAILED: fetch failed'));
+    await expect(voiceTts({ characterId: 'c1', text: 'Hello.' })).rejects.toThrow('VOICE_PACK_MISSING:tts-en');
+    m.key = null; // fails before any request
+    await expect(voiceTts({ characterId: 'c1', text: 'Hello.' })).rejects.toThrow('VOICE_PACK_MISSING:tts-en');
+    m.key = 'fish-key';
+    m.fishOpen.mockRejectedValue(new Error('FISH_KEY_INVALID: status 401'));
+    const s = collect();
+    await expect(voiceTtsStream({ characterId: 'c1', text: 'Hello.' }, s.sink)).rejects.toThrow('VOICE_PACK_MISSING:tts-en');
+    expect(s.events).toEqual([]);
+    expect(m.local).not.toHaveBeenCalled();
+    expect(notices).toEqual([]);
   });
 
   it('the voice preview tries Fish, then the Fast sample without a notice', async () => {

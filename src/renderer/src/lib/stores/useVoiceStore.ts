@@ -354,6 +354,10 @@ let fishTtsCall = false;
 /** Characters with their own Fish voice this call: played without the pitch
  * shift (the user picked that exact voice). */
 let fishOverrideIds = new Set<string>();
+/** Fish fallback reasons already shown this call: the notice is once per
+ * reason per call, not once per line (every queued line can fail the same
+ * way). Cleared at call start. */
+const fishNoticeReasons = new Set<string>();
 let sentenceTts: ReturnType<typeof createSentenceTts> | null = null;
 /** Companion lines that arrived while the (first) call was still 'connecting'.
  * `seq` is the line's ORIGIN sequence resolved at buffer time (see
@@ -1674,6 +1678,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     offTtsNotice =
       sei.onVoiceTtsNotice?.((push) => {
         if (!get().participants.length) return; // no call surface to show it on
+        if (push.kind === 'fish-fallback') {
+          if (fishNoticeReasons.has(push.reason)) return;
+          fishNoticeReasons.add(push.reason);
+        }
         set({ callNotice: ttsNoticeText(push) });
       }) ?? null;
   } catch {
@@ -1918,6 +1926,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       fishTtsCall =
         localTtsCall && callCfg?.tts_engine === 'local' && localTtsModel(callCfg) === 'fish';
       fishOverrideIds = new Set(fishTtsCall ? Object.keys(callCfg?.fish_voice_overrides ?? {}) : []);
+      fishNoticeReasons.clear();
       // 260725: kind from the fresh config read (main truth), not the display
       // store — the store can be UNKNOWN (null) at call time.
       // 260816 SenseVoice: the policy also reads whether the SenseVoice pack is

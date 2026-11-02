@@ -75,8 +75,8 @@ export const ZH: Record<string, string> = {
   'Local voice': '本地语音',
   'About local voices': '关于本地语音',
   'Fast': '快速',
-  'Fast voices start speaking right away and come in English and Chinese. Kokoro sounds more natural but takes longer to speak, and speaks English, Spanish and French. Other languages use the Fast voices.':
-    '快速语音能立刻开口，提供英语和中文。Kokoro 听起来更自然，但开口要慢一些，支持英语、西班牙语和法语。其他语言使用快速语音。',
+  "Fast voices start speaking right away and come in English and Chinese. Kokoro sounds more natural but takes longer to speak, and speaks English, Spanish and French. Other languages use the Fast voices. Fish Audio is an online service that needs your own free Fish Audio key. It sends your companions' lines to Fish Audio.":
+    '快速语音能立刻开口，提供英语和中文。Kokoro 听起来更自然，但开口要慢一些，支持英语、西班牙语和法语。其他语言使用快速语音。Fish Audio 是在线服务，需要你自己的免费 Fish Audio 密钥，会把伙伴要说的话发送给 Fish Audio。',
   'Kokoro speaks English, Spanish and French. Companions in other languages use the Fast voices.':
     'Kokoro 支持英语、西班牙语和法语。使用其他语言的伙伴会使用快速语音。',
   'Kokoro sounds more natural but is slower.': 'Kokoro 听起来更自然，但速度较慢。',

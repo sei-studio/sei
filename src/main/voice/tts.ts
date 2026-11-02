@@ -656,18 +656,20 @@ async function prepareFishLine(
   return { key, plan, language: effLanguage };
 }
 
-/** A Fish failure for one line: remember it when it is terminal, say so. */
+/** A Fish failure for one line: remember it when it is terminal. The notice
+ * waits until the Fast voice has actually spoken the line (emitFishFallback). */
 function noteFishFailure(
-  characterId: string,
   err: unknown,
-  prep?: { key: string; plan: FishVoicePlan },
+  prep: { key: string; plan: FishVoicePlan },
 ): FishFailureReason {
   const reason = fishFailureReason(err) ?? 'failed';
-  if (prep) rememberFishFailure(prep.key, prep.plan.id, reason);
-  emitFishFallback(characterId, reason);
+  rememberFishFailure(prep.key, prep.plan.id, reason);
   return reason;
 }
 
+/** Say the Fast voice spoke a line Fish could not. Only after the Fast clip
+ * is in hand: with no Fast pack the line throws VOICE_PACK_MISSING instead,
+ * and that pack-missing notice is the one the user sees. */
 function emitFishFallback(characterId: string, reason: FishFailureReason): void {
   console.warn(`[sei/voice] Fish Audio unavailable (${reason}), using the Fast voices`);
   emitTtsNotice({ kind: 'fish-fallback', characterId, reason });
@@ -678,8 +680,8 @@ async function fishSelected(): Promise<boolean> {
 }
 
 /**
- * One whole Fish clip (mp3), or null after a failure (notice sent): the
- * caller speaks the line with the Fast voices instead.
+ * One whole Fish clip (mp3), or why Fish could not speak the line: the caller
+ * then speaks it with the Fast voices and, once that worked, sends the notice.
  */
 async function trySynthesizeFishLine(
   characterId: string,
@@ -687,17 +689,13 @@ async function trySynthesizeFishLine(
   voiceId: string,
   language: ChatLanguage,
   genderHint?: string,
-): Promise<ArrayBuffer | null> {
+): Promise<{ audio: ArrayBuffer } | { fail: FishFailureReason }> {
   const prep = await prepareFishLine(characterId, text, voiceId, language, genderHint);
-  if ('fail' in prep) {
-    emitFishFallback(characterId, prep.fail);
-    return null;
-  }
+  if ('fail' in prep) return prep;
   try {
-    return await synthesizeFish(prep.key, text.slice(0, MAX_TTS_CHARS), prep.plan, prep.language);
+    return { audio: await synthesizeFish(prep.key, text.slice(0, MAX_TTS_CHARS), prep.plan, prep.language) };
   } catch (err) {
-    noteFishFailure(characterId, err, prep);
-    return null;
+    return { fail: noteFishFailure(err, prep) };
   }
 }
 
@@ -859,10 +857,13 @@ export async function voiceTts(args: {
     const localText = speechTextFor(args.text, language);
     if (!localText) throw new Error('VOICE_TTS_FAILED: empty text');
     // 261103: Fish Audio, when chosen, speaks first; any failure falls back
-    // to the Fast voices below with a notice.
+    // to the Fast voices below, with a notice once that clip exists.
     if (await fishSelected()) {
       const fish = await trySynthesizeFishLine(args.characterId, localText, voiceId, language, own?.gender);
-      if (fish) return fish;
+      if ('audio' in fish) return fish.audio;
+      const clip = await synthesizeLocalClip(localText, voiceId, language, args.characterId, own?.gender);
+      emitFishFallback(args.characterId, fish.fail);
+      return clip;
     }
     return await synthesizeLocalClip(localText, voiceId, language, args.characterId, own?.gender);
   }
@@ -1035,21 +1036,24 @@ export async function voiceTtsStream(
     // before the first byte (no key, a refusal, the connect timeout) falls
     // back to a Fast clip delivered as one WAV chunk + done; the renderer's
     // stream player sniffs the container. A failure mid-body ends the stream
-    // with an error, like any other stream.
+    // with an error, like any other stream. The notice goes out only once
+    // the Fast clip exists (no Fast pack = the pack-missing error instead).
+    let fishFail: FishFailureReason | null = null;
     if (await fishSelected()) {
       const prep = await prepareFishLine(args.characterId, localText, voiceId, language, own?.gender);
       if ('fail' in prep) {
-        emitFishFallback(args.characterId, prep.fail);
+        fishFail = prep.fail;
       } else {
         try {
           const opened = await openFishStream(prep.key, localText.slice(0, MAX_TTS_CHARS), prep.plan, prep.language);
           return pumpTtsStream(opened, sink);
         } catch (err) {
-          noteFishFailure(args.characterId, err, prep);
+          fishFail = noteFishFailure(err, prep);
         }
       }
     }
     const buf = await synthesizeLocalClip(localText, voiceId, language, args.characterId, own?.gender);
+    if (fishFail) emitFishFallback(args.characterId, fishFail);
     const streamId = `tts-${nextStreamSeq++}`;
     queueMicrotask(() => {
       sink({ streamId, chunk: buf });

@@ -6,8 +6,14 @@
  *
  * The `model` header is ALWAYS `s2.1-pro-free` (FISH_TTS_MODEL). Fish reads a
  * missing or unknown value as the paid s2.1-pro, which bills an account that
- * has credit, so no request in this file may be built without it
- * (fishHeaders is the only header builder, and a test pins it).
+ * has credit, so EVERY request in this file (synthesis and the voice lookup
+ * alike) is built with fishHeaders, the only header builder; tests pin it.
+ *
+ * Fish allows 5 requests at a time per account, and a call opens a request
+ * for every queued line. acquireFishSlot keeps at most FISH_MAX_IN_FLIGHT per
+ * key open (released when the body is fully read, fails, is cancelled or
+ * aborted); the rest WAIT for a slot instead of meeting a 429, so one reply
+ * does not switch to the Fast voice half way.
  *
  * Errors are thrown with a sentinel prefix (fishFailureReason maps them):
  *   FISH_NO_KEY         no key stored
@@ -18,7 +24,8 @@
  *   FISH_VOICE_MISSING  the voice id does not exist (404, or a 400 "Reference
  *                       not found" from /v1/tts), or it is not a usable TTS voice
  *   FISH_FAILED         network, timeout, 5xx, anything else
- * tts.ts turns every one of them into a Fast-voice fallback plus a notice.
+ * tts.ts turns every one of them into a Fast-voice fallback, with a notice
+ * once the Fast clip exists.
  */
 import { createHash } from 'node:crypto';
 import {
@@ -54,6 +61,8 @@ export const FISH_CONNECT_TIMEOUT_MS = 12_000;
 /** One retry after a 429, this long after it. */
 export const FISH_BUSY_RETRY_MS = 600;
 const FISH_LOOKUP_TIMEOUT_MS = 8_000;
+/** Synthesis requests open at once per key (Fish's limit is 5 per account). */
+export const FISH_MAX_IN_FLIGHT = 4;
 
 /** The request headers. The ONLY place they are built: the model pin rides
  * every request. */
@@ -125,7 +134,9 @@ export interface OpenedFishStream {
 
 /**
  * Open one /v1/tts request and return once the headers are in (the mp3 body
- * not read yet). A 429 is retried once after FISH_BUSY_RETRY_MS. The connect
+ * not read yet). Waits for one of the key's FISH_MAX_IN_FLIGHT slots first;
+ * the slot is held until the body ends, fails, is cancelled or aborted. A 429
+ * is retried once after FISH_BUSY_RETRY_MS (holding the slot). The connect
  * timeout is cleared when the response arrives; the body is the caller's to
  * guard.
  */
@@ -135,6 +146,27 @@ export async function openFishStream(
   voice: { id: string; speed: number; volume: number },
   language?: string,
   opts: { retryDelayMs?: number; timeoutMs?: number } = {},
+): Promise<OpenedFishStream> {
+  // Wait for a slot first: the connect timeout below starts only once this
+  // request may actually go out.
+  const release = await acquireFishSlot(key);
+  try {
+    const opened = await openFishStreamNow(key, text, voice, language, opts);
+    // An abort (the caller's stall watchdog) ends the request too.
+    opened.ctrl.signal.addEventListener('abort', release, { once: true });
+    return { body: releasingBody(opened.body, release), ctrl: opened.ctrl };
+  } catch (err) {
+    release();
+    throw err;
+  }
+}
+
+async function openFishStreamNow(
+  key: string,
+  text: string,
+  voice: { id: string; speed: number; volume: number },
+  language: string | undefined,
+  opts: { retryDelayMs?: number; timeoutMs?: number },
 ): Promise<OpenedFishStream> {
   const payload = JSON.stringify(fishTtsBody(text, voice, language));
   for (let attempt = 0; ; attempt++) {
@@ -166,6 +198,62 @@ export async function openFishStream(
     console.warn(`[sei/voice] fish tts ${res.status}: ${excerpt}`);
     throw fishHttpError(res.ok ? 502 : res.status, excerpt);
   }
+}
+
+/**
+ * Per-key slots for synthesis (see the file header). Resolves with a release
+ * function once a slot is free; a released slot passes straight to the next
+ * waiter in order. release is idempotent.
+ */
+const fishSlots = new Map<string, { active: number; waiters: Array<() => void> }>();
+
+export async function acquireFishSlot(key: string): Promise<() => void> {
+  const print = keyPrint(key);
+  let slot = fishSlots.get(print);
+  if (!slot) {
+    slot = { active: 0, waiters: [] };
+    fishSlots.set(print, slot);
+  }
+  const s = slot;
+  if (s.active < FISH_MAX_IN_FLIGHT) s.active++;
+  else await new Promise<void>((resolve) => s.waiters.push(resolve)); // slot handed over by release
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const next = s.waiters.shift();
+    if (next) {
+      next();
+      return;
+    }
+    s.active--;
+    if (s.active === 0 && fishSlots.get(print) === s) fishSlots.delete(print);
+  };
+}
+
+/** The body, releasing its slot when it is read to the end, fails or is cancelled. */
+function releasingBody(body: OpenedFishStream['body'], release: () => void): OpenedFishStream['body'] {
+  const reader = body.getReader();
+  return new ReadableStream<Uint8Array<ArrayBuffer>>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          release();
+          controller.close();
+        } else {
+          controller.enqueue(value);
+        }
+      } catch (err) {
+        release();
+        controller.error(err);
+      }
+    },
+    cancel(reason) {
+      release();
+      return reader.cancel(reason);
+    },
+  });
 }
 
 /** Buffered synthesis: the whole mp3. Used for short lines, previews and Test. */
@@ -203,7 +291,7 @@ export async function fetchFishVoice(key: string, id: string): Promise<{ id: str
   let res: Response;
   try {
     res = await fetch(`${FISH_API_BASE}/model/${encodeURIComponent(id)}`, {
-      headers: { Authorization: `Bearer ${key}` },
+      headers: fishHeaders(key),
       signal: ctrl.signal,
     });
   } catch (err) {

@@ -1,8 +1,8 @@
 /**
  * Fish Audio client (261103). The load-bearing pin is the `model` header:
  * Fish reads a missing or unknown value as the PAID s2.1-pro, so EVERY
- * /v1/tts request (first try and the 429 retry alike) must carry
- * `model: s2.1-pro-free`.
+ * request (each /v1/tts try, the 429 retry and the /model voice lookup) must
+ * carry `model: s2.1-pro-free`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -12,6 +12,7 @@ import {
   fishHeaders,
   fishHttpError,
   fishTtsBody,
+  FISH_MAX_IN_FLIGHT,
   openFishStream,
   planFishVoice,
   rememberFishFailure,
@@ -81,6 +82,71 @@ describe('the free-model pin', () => {
   });
 });
 
+describe('requests in flight per key', () => {
+  /** fetch calls that wait until the test resolves them. */
+  function deferredFetches(): Array<(r: Response) => void> {
+    const pending: Array<(r: Response) => void> = [];
+    fetchMock.mockImplementation(() => new Promise<Response>((resolve) => pending.push(resolve)));
+    return pending;
+  }
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it(`keeps at most ${FISH_MAX_IN_FLIGHT} open and queues the rest instead of failing`, async () => {
+    expect(FISH_MAX_IN_FLIGHT).toBe(4);
+    const pending = deferredFetches();
+    const lines = Array.from({ length: 6 }, (_, i) => synthesizeFish('key-q', `Line ${i}.`, VOICE, 'en'));
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    // Another key has its own slots.
+    const other = synthesizeFish('key-other', 'Other.', VOICE, 'en');
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    pending[4](audioResponse());
+    await other;
+    // A finished line lets the next queued line go, in order.
+    pending[0](audioResponse());
+    await lines[0];
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(6);
+    expect(JSON.parse((fetchMock.mock.calls[5][1] as RequestInit).body as string).text).toBe('Line 4.');
+    // A failed line frees its slot too.
+    pending[1](errorResponse(401));
+    await expect(lines[1]).rejects.toThrow(/^FISH_KEY_INVALID/);
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(7);
+    for (const i of [2, 3, 5, 6]) pending[i](audioResponse());
+    const bufs = await Promise.all([lines[2], lines[3], lines[4], lines[5]]);
+    expect(bufs.every((b) => b.byteLength === 4)).toBe(true);
+  });
+
+  it('a streamed body holds its slot until it is read to the end or cancelled', async () => {
+    const pending = deferredFetches();
+    const opens = Array.from({ length: 5 }, (_, i) => openFishStream('key-s', `S${i}.`, VOICE, 'en'));
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    for (let i = 0; i < 4; i++) pending[i](audioResponse());
+    const opened = await Promise.all(opens.slice(0, 4));
+    await flush();
+    // Headers are in, but no body is done: the fifth still waits.
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect((await new Response(opened[0].body).arrayBuffer()).byteLength).toBe(4);
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    pending[4](audioResponse());
+    const fifth = await opens[4];
+    await opened[1].body.cancel();
+    await opened[2].body.cancel();
+    await opened[3].body.cancel();
+    await fifth.body.cancel();
+    // All slots are free again: four new requests go out at once.
+    const again = Array.from({ length: 4 }, () => openFishStream('key-s', 'Again.', VOICE, 'en'));
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(9);
+    for (let i = 5; i < 9; i++) pending[i](audioResponse());
+    for (const o of await Promise.all(again)) await o.body.cancel();
+  });
+});
+
 describe('fishTtsBody', () => {
   it('sends the language for non-English lines only', () => {
     expect(fishTtsBody('x', VOICE, 'en')).not.toHaveProperty('language');
@@ -145,6 +211,13 @@ describe('fetchFishVoice', () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe(`https://api.fish.audio/model/${ID}`);
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer key-9');
+  });
+
+  it('the voice lookup carries the free-model header too', async () => {
+    fetchMock.mockResolvedValueOnce(model());
+    await fetchFishVoice('key-9', ID);
+    expect(sentHeaders()).toEqual([fishHeaders('key-9')]);
+    expect(sentHeaders()[0].model).toBe('s2.1-pro-free');
   });
 
   it('caps a long title and falls back to the id when there is none', async () => {

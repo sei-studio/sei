@@ -1478,7 +1478,7 @@ export function SettingsScreen(): React.ReactElement {
                     <InfoTip
                       label={t('About local voices')}
                       text={t(
-                        'Fast voices start speaking right away and come in English and Chinese. Kokoro sounds more natural but takes longer to speak, and speaks English, Spanish and French. Other languages use the Fast voices.',
+                        "Fast voices start speaking right away and come in English and Chinese. Kokoro sounds more natural but takes longer to speak, and speaks English, Spanish and French. Other languages use the Fast voices. Fish Audio is an online service that needs your own free Fish Audio key. It sends your companions' lines to Fish Audio.",
                       )}
                     />
                   </span>
