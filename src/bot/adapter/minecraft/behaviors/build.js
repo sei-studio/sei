@@ -259,6 +259,51 @@ const MAX_SHUFFLES = 2
 const SHUFFLE_MS = 1200
 const HALF_WIDTH = 0.3 // player hitbox half-width
 
+// 261102 (pass 36): someone standing in a cell. A player or mob gets a moment
+// to move on (the scripted player follows her and kept walking into the wall
+// she was building, which failed the cell at once and sent the model into the
+// same build again). The wait is capped per build so a player who stays put
+// costs seconds, not seconds per cell.
+export const BODY_RETRY_MS = 3000
+const BODY_WAIT_TOTAL_MS = 6000
+const BODY_POLL_MS = 250
+// How far she looks for a free spot to step to when she stands in a cell.
+const STEP_OUT_RADIUS = 2
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+/** Room to stand at feet cell x,y,z: a solid floor and two free cells. */
+function standable(bot, x, y, z) {
+  return isSolid(bot.blockAt(new Vec3(x, y - 1, z))) &&
+    !isOccupied(bot, { x, y, z }) && !isOccupied(bot, { x, y: y + 1, z })
+}
+
+/**
+ * 261102 (pass 36). The nearest spot she can stand on that keeps her body out
+ * of every cell of the span. Null when there is none close by.
+ * @param {Set<string>} span keys "x,y,z" of the span's cells
+ */
+export function stepOutSpot(bot, span) {
+  const p = bot.entity?.position
+  if (!p || ![p.x, p.y, p.z].every(Number.isFinite)) return null
+  const fx = Math.floor(p.x), fy = Math.floor(p.y + 0.01), fz = Math.floor(p.z)
+  let best = null
+  for (let dx = -STEP_OUT_RADIUS; dx <= STEP_OUT_RADIUS; dx++) {
+    for (let dz = -STEP_OUT_RADIUS; dz <= STEP_OUT_RADIUS; dz++) {
+      if (dx === 0 && dz === 0) continue
+      for (const dy of [0, 1, -1]) {
+        const x = fx + dx, y = fy + dy, z = fz + dz
+        if (span.has(`${x},${y},${z}`) || span.has(`${x},${y + 1},${z}`)) continue
+        if (!standable(bot, x, y, z)) continue
+        const who = bodyInCell(bot, { x, y, z })
+        if (who && who !== 'you') continue
+        const d = Math.hypot(x + 0.5 - p.x, z + 0.5 - p.z) + Math.abs(dy) * 0.75
+        if (!best || d < best.d) best = { x, y, z, d }
+      }
+    }
+  }
+  return best && { x: best.x, y: best.y, z: best.z }
+}
+
 /**
  * 261017. The block holding her up when the one under her feet column is
  * not solid: another cell her hitbox overlaps, with a solid top at the same
@@ -470,6 +515,19 @@ export async function buildAction(args, bot, config, deps = {}) {
   // could — minutes of the session spent to produce a result the block counts
   // predicted up front.
   if (needed === 0 && total > 0) {
+    // 261102 (pass 36): a single block aimed AT the ground (the model gave the
+    // ground block's own y, the most common failed build in free play: a
+    // crafting table "into" grass). The block goes on top, as a player's would.
+    const c = cells[0]
+    const above = { x: c.x, y: c.y + 1, z: c.z }
+    // Only on natural ground: the same block she just placed there (the model
+    // repeating a 1-cell build that worked) would stack a tower, and water,
+    // lava or a flower is not ground to stand a block on.
+    const name = bot.blockAt(new Vec3(c.x, c.y, c.z))?.name ?? 'a block'
+    if (total === 1 && !deps._lifted && isNaturalBlock(name) && name !== args.block && !isOccupied(bot, above)) {
+      const r = await buildAction({ ...args, from: above, to: above }, bot, config, { ...deps, _lifted: true })
+      return `${c.x},${c.y},${c.z} is already ${name}, so it went on top of it at y=${above.y}: ${r}`
+    }
     return `built NOTHING: all ${total} cells of that span are ALREADY solid, so you are building into terrain. Pick a clear span: a wall starts on the first air layer above the ground, which is your own y when you stand on that ground.`
   }
   const have = invCount()
@@ -483,9 +541,24 @@ export async function buildAction(args, bot, config, deps = {}) {
   const progress = (c) => config?.onProgress?.({ placed, skipped: skipped(), total, currentY: c.y })
   const abortedMsg = () => `aborted after ${placed} placed of ${total} cells`
 
+  const spanKeys = new Set(cells.map((c) => `${c.x},${c.y},${c.z}`))
+  let bodyWaitLeft = Number.isFinite(deps.bodyWaitMs) ? deps.bodyWaitMs : BODY_WAIT_TOTAL_MS
+
+  // 261102 (pass 36): she stands in the cell herself. Step to the nearest
+  // free spot outside the span and try again. Before, a cell her own body
+  // was in failed after one retry, and a shelter or a 1-cell build came back
+  // "had you standing in them" for the model to puzzle out.
+  async function stepOut(c) {
+    const spot = stepOutSpot(bot, spanKeys)
+    if (!spot) return
+    await walk(bot, spot.x, spot.y, spot.z, 0, WALK_TIMEOUT_MS, signal)
+    if (signal?.aborted) return
+    if (bodyInCell(bot, c) === 'you') await shuffleTo(bot, spot, spot.y, signal)
+  }
+
   // One cell. Returns 'placed' | 'solid' | 'unreachable' | 'noref' | 'failed'
   // | 'aborted', or { halt } when scaffolding gave up on the whole build.
-  async function tryCell(c) {
+  async function tryCell(c, { stepOutOfIt = false } = {}) {
     if (isOccupied(bot, c)) return 'solid'
     // 261012: nothing to place against yet. Deferred by the caller, not
     // failed: a roof's inner cells and a wall cell over a dip in the ground
@@ -535,7 +608,22 @@ export async function buildAction(args, bot, config, deps = {}) {
     // 261019 (pass 19): the server refuses a block where a body stands. That
     // used to read as "could not reach or place", and she retried the same
     // 1-cell build with the player (or herself) still in the cell.
-    const body = bodyInCell(bot, c)
+    let body = bodyInCell(bot, c)
+    if (body === 'you' && stepOutOfIt) {
+      await stepOut(c)
+      if (signal?.aborted) return 'aborted'
+      body = bodyInCell(bot, c)
+    }
+    if (body && body !== 'you' && bodyWaitLeft > 0) {
+      const t0 = Date.now()
+      const until = t0 + Math.min(BODY_RETRY_MS, bodyWaitLeft)
+      while (body && body !== 'you' && Date.now() < until) {
+        await sleep(BODY_POLL_MS)
+        if (signal?.aborted) return 'aborted'
+        body = bodyInCell(bot, c)
+      }
+      bodyWaitLeft -= Date.now() - t0
+    }
     if (body) return { body }
 
     const r = await placeBlockAction(
@@ -565,7 +653,17 @@ export async function buildAction(args, bot, config, deps = {}) {
     return ` ${n} of them had ${who} standing in them; a block cannot go where a body is, so move out of the span (or wait for them to) and build again.`
   }
 
-  const ranOut = () => deps.partial === true && invCount() === 0
+  // 261102 (pass 36): remember that the bag emptied with cells left. The
+  // check at the end used to re-read the bag, and a dropped block she picked
+  // up in between (she digs shelter blocks out of the ground right there) hid
+  // the stop: "built 8 placed, 0 skipped (already solid), of 9 cells" read
+  // as a finished roof with one cell missing.
+  let ranOutWithCellsLeft = false
+  const ranOut = () => {
+    const out = deps.partial === true && invCount() === 0
+    if (out) ranOutWithCellsLeft = true
+    return out
+  }
   let deferred = []
   for (const c of cells) {
     if (signal?.aborted) return abortedMsg()
@@ -592,7 +690,7 @@ export async function buildAction(args, bot, config, deps = {}) {
     for (const c of deferred) {
       if (signal?.aborted) return abortedMsg()
       if (ranOut()) { next.push(c); continue }
-      const r = await tryCell(c)
+      const r = await tryCell(c, { stepOutOfIt: true })
       if (r === 'aborted') return abortedMsg()
       if (r?.halt) return r.halt
       if (r === 'placed') placed++
@@ -608,11 +706,27 @@ export async function buildAction(args, bot, config, deps = {}) {
   skippedFail += floating.length
   for (const c of floating) progress(c)
 
+  // 261102 (pass 36): a wall or pillar that floats a layer or two above the
+  // ground as a whole (the model counted from the ground block, or from its
+  // own eyes) is built where it was meant to stand, on the ground. Nothing
+  // was placed and nothing was walked to, so this costs one more pass.
+  const tallSpan = args.from.y !== args.to.y
+  if (tallSpan && !deps._lowered && placed === 0 && floating.length > 0 && skippedFail === floating.length && !bodies.size) {
+    const ground = groundBelow(bot, floating)
+    const lowY = Math.min(args.from.y, args.to.y), highY = Math.max(args.from.y, args.to.y)
+    const drop = ground == null ? 0 : lowY - (ground + 1)
+    if (drop >= 1 && drop <= 2) {
+      const from = { ...args.from, y: args.from.y - drop }, to = { ...args.to, y: args.to.y - drop }
+      const r = await buildAction({ ...args, from, to }, bot, config, { ...deps, _lowered: true })
+      return `that span floated ${drop} above the ground, so it was built ${drop} lower, at y=${lowY - drop}..${highY - drop}: ${r}`
+    }
+  }
+
   // Ran out of material before finishing (this also catches scaffolding
   // consumption, since invCount() is the live remaining count). Make it an
   // explicit, actionable signal — gather/ask for more — instead of a bare
   // "0 placed" the model couldn't distinguish from building into terrain.
-  if (placed < needed && invCount() === 0) {
+  if (placed < needed && (ranOutWithCellsLeft || invCount() === 0)) {
     return `built ${placed} of ~${needed} needed, then ran out of ${args.block}. Get more ${args.block} (gather it, or ask the player for it) before finishing this build.`
   }
 
@@ -682,13 +796,15 @@ export function bodyInCell(bot, c) {
 
 /**
  * 261012. The highest solid block under the lowest floating cell, scanning at
- * most 16 down; null when there is nothing under it in that range.
+ * most 16 down; null when there is nothing under it in that range. Grass
+ * tufts, snow layers and liquids are passed through: they are not ground.
  */
+const LIQUID = new Set(['water', 'lava', 'bubble_column'])
 function groundBelow(bot, cells) {
   const low = cells.reduce((a, c) => (c.y < a.y ? c : a), cells[0])
   for (let y = low.y - 1; y >= low.y - 16; y--) {
     const b = bot.blockAt(new Vec3(low.x, y, low.z))
-    if (b && !isAir(b.name)) return y
+    if (b && !isAir(b.name) && !REPLACEABLE.has(b.name) && !LIQUID.has(b.name)) return y
   }
   return null
 }
