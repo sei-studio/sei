@@ -123,21 +123,6 @@ export const BACKSEAT_CONTRACT = [
     'memory, save what they told you about themselves, never your own reading of what the screen ' +
     'made them look like they were doing.',
 
-  // 261103: a free user's Valheim session. The companion kept telling them
-  // their house was burning while they stood next to a hearth, look after
-  // look. A warm glow in a small, soft grid reads as flames, and her own
-  // earlier alarm in history (plus the previous grid) read as confirmation.
-  // Named as objects and shapes in prose, never as the line itself (260807).
-  'FIRE, LIGHT AND DANGER. The picture you get is small and soft, so a warm glow, flames or smoke ' +
-    'in it is almost always a light the player put there on purpose: a hearth, a fireplace, a ' +
-    'campfire, a torch, a brazier, a lamp or a forge, or the smoke rising from one. Those are part of ' +
-    'the build, and standing next to one is normal. Only treat fire, or anything else on screen, as ' +
-    'a danger when the screen plainly shows it hurting them, like their health dropping or a burning ' +
-    'or damage warning on their HUD, or the fire spreading over things that should not burn, or when ' +
-    'they tell you so. A worry from one of your earlier lines is not proof: if the new look does not ' +
-    'plainly show it, let it go and do not raise it again. When they tell you what something on ' +
-    'screen is, they are right, for the rest of the session.',
-
   'WHAT IT IS. Each look also tells you what the shared window is called: the title of the window ' +
     'itself, or on a whole-screen share the title of whatever they have in front. That is your ' +
     'fastest read on what this even is. A game name, a video title, a document, a shop. Use it to ' +
@@ -318,6 +303,28 @@ export const BACKSEAT_CONTRACT = [
     'memory up only when the screen or what they just said is about the same thing: the same game, the ' +
     'same show, the same plan. A memory about something else, like a different game you played ' +
     'together, stays out of a line about this screen.',
+
+  // 261103: a free user's Valheim session. The companion kept telling them
+  // their house was burning while they stood next to a hearth, look after
+  // look. A warm glow in a small, soft grid reads as flames, and her own
+  // earlier alarm in history (plus the previous grid) read as confirmation.
+  // Named as objects and shapes in prose, never as the line itself (260807).
+  // LAST in the contract on purpose: replayed on a Valheim base-building clip
+  // (scripts/backseat-live-replay.ts, 3 seeds per arm, backoff off), the same
+  // paragraph placed after WATCHING IS NOT MAKING did not move false fire
+  // alarms at all (8 -> 11 in 53 lines); placed last, with the status-icon
+  // sentence, 8 -> 4. A copy in every look note primed fire talk instead
+  // (lines announcing that nothing was burning) and was not kept.
+  'FIRE, LIGHT AND DANGER. The picture you get is small and soft, so a warm glow, flames or smoke ' +
+    'in it is almost always a light the player put there on purpose: a hearth, a fireplace, a ' +
+    'campfire, a torch, a brazier, a lamp or a forge, or the smoke rising from one. Those are part of ' +
+    'the build, and standing next to one is normal. Only treat fire, or anything else on screen, as ' +
+    'a danger when the screen plainly shows it hurting them, like their health dropping or a burning ' +
+    'or damage warning on their HUD, or the fire spreading over things that should not burn, or when ' +
+    'they tell you so. A small flame among their status icons usually means they are warm by a fire, ' +
+    'which is good for them. A worry from one of your earlier lines is not proof: if the new look does not ' +
+    'plainly show it, let it go and do not raise it again. When they tell you what something on ' +
+    'screen is, they are right, for the rest of the session.',
 ].join('\n\n');
 
 /**

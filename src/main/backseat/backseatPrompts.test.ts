@@ -244,6 +244,15 @@ describe('BACKSEAT_CONTRACT fire, light and danger (261103)', () => {
     expect(rule).toContain('When they tell you what something on screen is, they are right');
   });
 
+  it('is the last paragraph of the contract, where the replay showed it working', () => {
+    const paras = BACKSEAT_CONTRACT.split('\n\n');
+    expect(paras[paras.length - 1]).toBe(rule);
+  });
+
+  it('reads a flame among the status icons as warmth, not harm', () => {
+    expect(rule).toContain('A small flame among their status icons usually means they are warm by a fire');
+  });
+
   it('never quotes the alarm it is about, and is plain text', () => {
     expect(rule).not.toMatch(/on fire/i);
     expect(rule).not.toMatch(/["\u201c\u201d]/);
