@@ -259,6 +259,14 @@
  *   hand-over, or it failed). When the adapter has it, the conversation
  *   transcript ends on the session's hand-over line (261026). Minecraft:
  *   give's "gave N item to NAME, ...". Default: absent, no hand-over line.
+ * @property {(name: string, args: object) => string[]}                    [workItems]
+ *   The item names an action brings into her bag (a gather's drops, a
+ *   craft's product). An open player ask remembers them, so the arrival note
+ *   and the delivery line name what she fetched (261102, pass 37). Minecraft:
+ *   gather/find/dig targets' drops, craft/pickup/withdrawItem items.
+ *   Default: absent, asks carry no items.
+ * @property {(names: string[]) => Record<string, number>}                 [carriedCounts]
+ *   How many of each named item she carries now. Default: absent.
  * @property {() => string}                                                [surfaceBaseline]
  *   The game-surface half of the cached system block [0]. The brain composes
  *   `${UNIVERSAL_BASELINE}\n\n${surfaceBaseline()}`. Default MINECRAFT_BASELINE.

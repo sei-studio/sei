@@ -1140,9 +1140,24 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // player or follow ("meet me over here"), so it asks for nothing to hand
   // over. Cleared by a give that lands, a plain stop, or age. Only for games
   // that report their hand-overs (caps.handOverDetail).
+  // 261102 (pass 37): each ask also keeps `items` (what the actions she
+  // answered it with bring in, caps.workItems) and `delivering` (she set off
+  // toward the player while carrying some of them). The 11-02 scorecard had
+  // the plain "look back at what they asked you for" note hand over the
+  // called-off logs while the asked-for coal stayed in her bag (errands-02),
+  // a stop clear the coal errand with the log run (errands-03), and a stop
+  // that ended a log run leave the logs owed, so they went to the player and
+  // her next craft failed (work_session-01).
   let openAsks = []
   const OPEN_ASK_MS = config?.memory?.open_ask_note_ms ?? 300_000
   const OPEN_ASK_MAX = 3
+  // A line answered only with a walk gets the items of the next action that
+  // brings some in, if it starts this soon after.
+  const OPEN_ASK_ITEMS_MS = 90_000
+  // Actions whose items are a product made from the items fetched first. In
+  // the same loop they add to the ask, so "make me a crafting table" is
+  // answered by the give of the table and not by the leftover log.
+  const MAKES_ITEMS = new Set(['craft', 'smeltInput'])
   async function refreshPlayerTaskInGoals() {
     if (!heartbeatLog) { playerTaskInGoals = false; heartbeatGoals = []; heartbeatGoalLines = []; playerTasks = []; taskHolds.clear(); return }
     try {
@@ -1204,11 +1219,99 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     return Object.values(args).some((v) => typeof v === 'string' && names.has(v.trim().toLowerCase()))
   }
   // pass 32: see openAsks.
-  function noteOpenAsk(line, who, uses) {
+  function noteOpenAsk(line, who, uses, loopId = null) {
     const text = String(line ?? '').trim()
     if (!text || typeof caps.handOverDetail !== 'function') return
     const toPlayer = uses.every((u) => aimsAtPlayer(u.input) && !isHandOver(u.name))
-    openAsks = [...openAsks.filter((a) => a.line !== text), { at: Date.now(), who: who ?? null, line: text, toPlayer }].slice(-OPEN_ASK_MAX)
+    const items = toPlayer ? [] : [...new Set(uses.flatMap((u) => workItemsOf(u.name, u.input)))]
+    openAsks = [...openAsks.filter((a) => a.line !== text), { at: Date.now(), who: who ?? null, line: text, toPlayer, items, delivering: false, loopId }].slice(-OPEN_ASK_MAX)
+  }
+  // pass 37: see openAsks.
+  function workItemsOf(name, args) {
+    if (typeof caps.workItems !== 'function') return []
+    try {
+      const out = caps.workItems(name, args)
+      return Array.isArray(out) ? out.filter((n) => typeof n === 'string' && n) : []
+    } catch { return [] }
+  }
+  // What she carries of an ask's items, as [{ item, n }].
+  function carriedFor(ask) {
+    if (!ask?.items?.length || typeof caps.carriedCounts !== 'function') return []
+    let counts = {}
+    try { counts = caps.carriedCounts(ask.items) ?? {} } catch { counts = {} }
+    return ask.items.map((item) => ({ item, n: Number(counts[item]) || 0 })).filter((c) => c.n > 0)
+  }
+  // Open asks that wanted something brought, with what she carries of each.
+  // An item is listed once, under the newest ask that names it.
+  function carriedAsks({ deliveringOnly = false } = {}) {
+    openAsks = openAsks.filter((a) => Date.now() - a.at < OPEN_ASK_MS)
+    const seen = new Set()
+    const out = []
+    for (const a of [...openAsks].reverse()) {
+      if (a.toPlayer || (deliveringOnly && !a.delivering)) continue
+      const items = carriedFor(a).filter((c) => !seen.has(c.item))
+      for (const c of items) seen.add(c.item)
+      if (items.length) out.unshift({ line: a.line, items })
+    }
+    return out
+  }
+  // A stop on the player's line ends the asks whose work it ended (the log
+  // run "actually stop" ended), and with nothing running, all of them (pass
+  // 32). Stopping a walk or an explore ends no ask: in errands-03 "forget the
+  // logs, just meet me" stopped an explore and the coal was still owed.
+  function closeAsksOnStop(running, startsNew) {
+    if (!running) {
+      if (!startsNew) openAsks = []
+      return
+    }
+    const ended = new Set(workItemsOf(running.name, running.args ?? running.input))
+    if (!ended.size) return
+    openAsks = openAsks.filter((a) => !a.items?.some((i) => ended.has(i)))
+  }
+  // A give that landed answers the asks for that item, and the asks that
+  // named no items. A give no open ask names answers them all (pass 32): the
+  // item lists miss things (a recipe chain made outside the ask's loop), and
+  // an ask left open after its give makes the arrival note offer leftovers.
+  function closeAsksOnGive(item) {
+    if (!openAsks.some((a) => a.items?.includes(item))) { openAsks = []; return }
+    openAsks = openAsks.filter((a) => a.items?.length && !a.items.includes(item))
+  }
+  // Called for every world action she starts.
+  function noteAskWork(name, args) {
+    if (!openAsks.length) return
+    const now = Date.now()
+    const last = openAsks[openAsks.length - 1]
+    // Only work in the loop the player's line started counts toward it: an
+    // item action on a later turn is as likely her own goal work, and the
+    // arrival note would then offer her own logs for "go explore east".
+    const loopId = currentLoop?.id ?? null
+    const ask = loopId ? [...openAsks].reverse().find((a) => a.loopId === loopId && !a.toPlayer) : null
+    if (ask) {
+      const items = workItemsOf(name, args)
+      if (items.length && MAKES_ITEMS.has(name)) ask.items = [...new Set([...(ask.items ?? []), ...items])]
+      else if (items.length && !ask.items?.length && now - ask.at < OPEN_ASK_ITEMS_MS) ask.items = items
+    }
+    // Her own walk back with the items. A walk that answers a newer line
+    // ("come here", "meet me over here") is not a delivery: in the probe the
+    // line then made her hand over things nobody asked for (cobblestone
+    // after "hows it going") or logs the player had just called off.
+    if (walksOrFollowsOwner(name, args) && !last?.toPlayer) {
+      for (const a of openAsks) if (!a.toPlayer && !a.delivering && carriedFor(a).length) a.delivering = true
+    }
+  }
+  const walksOrFollowsOwner = (name, args) => (name === 'goTo' || name === 'follow') && Object.values(args ?? {}).some(isOwnerName)
+  // The delivery line in the snapshot: asks she set off to hand over and
+  // still carries, only while that walk (or follow) is running. Once she has
+  // arrived the arrival note says it once; the line staying on after it made
+  // her hand over logs the player had called off during the walk.
+  function deliveryNoteText() {
+    if (!openAsks.length || stayNote) return ''
+    const cur = inflight.current()
+    if (!cur || !walksOrFollowsOwner(cur.name, cur.args)) return ''
+    const asks = carriedAsks({ deliveringOnly: true })
+    if (!asks.length) return ''
+    const who = config?.player_display_name || config?.player_username || null
+    return NUDGES.deliveryNote({ who, asks })
   }
   // The completion turn of a walk that reached the player: the hand-over
   // note, or '' when no open line could want a hand-over.
@@ -1218,6 +1321,8 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     [config?.player_display_name, config?.player_username].some((n) => n && String(n).toLowerCase() === v.trim().toLowerCase())
   const isCompanionName = (v) => typeof v === 'string' && !!v.trim() &&
     companions.some((c) => String(c).toLowerCase() === v.trim().toLowerCase())
+  // 261102 (pass 37): a goTo whose target is the player themself.
+  const walksToOwner = (u) => u?.name === 'goTo' && Object.values(u?.input ?? {}).some(isOwnerName)
   function arrivalAskText(data) {
     if (!openAsks.length || data?.aborted || data?.name !== 'goTo') return ''
     if (!Object.values(data?.input ?? {}).some(isOwnerName)) return ''
@@ -1231,11 +1336,17 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // Name the player she reached, not the newest asker (a teammate or a
     // second human may have spoken last).
     const who = config?.player_display_name || config?.player_username || null
+    // pass 37: name what she carries for which line, when it is known.
+    const asks = carriedAsks()
+    if (asks.length) {
+      return NUDGES.arrivedCarrying({ who, asks })
+    }
     return NUDGES.arrivedAsks({ who })
   }
   function noteTaskStarted(name, args) {
     if (ACTION_VERB_SKIP.has(name)) return
     lastActionStartAt = Date.now()
+    noteAskWork(name, args)
     if (!playerTasks.length) return
     const open = playerTasks.filter((t) => Number.isFinite(taskSetAt.get(t.key)))
     const linked = aimsAtPlayer(args) ? open : tasksOfAction(args, open, { names: playerNames() })
@@ -2487,6 +2598,8 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       const w = worldRegistry?.current?.() ?? null
       // Read first: it also expires the note.
       const note = stayNoteText()
+      // 261102 (pass 37): the items she set off to hand over.
+      const delivery = deliveryNoteText()
       const text = snapshotComposer.next({
         lastActionResult,
         inFlight: inflight.current(),
@@ -2510,7 +2623,9 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
         // chat turns after "actually stop" she read "next: make a furnace" as
         // what she was doing ("i'm still making that furnace", 1 cobblestone,
         // nothing running).
-        hideNext: playerRequestOwed || playerTaskInGoals || !!note,
+        // 261102 (pass 37): and so does a hand-over she set off on (errands-03
+        // left the coal in her bag for "next: crafting table" with no wood).
+        hideNext: playerRequestOwed || playerTaskInGoals || !!note || !!delivery,
         // 261018 (pass 16): items that arrived without an action of hers go
         // into the conversation record (sessionEvents.describeInventoryGain).
         // A run of them with nothing said in between is one line.
@@ -2519,7 +2634,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       if (typeof text === 'string') _repeatsContext.snapshot = text
       if (typeof text !== 'string') return text
       const tasks = taskNoteText()
-      return [text, note, tasks].filter(Boolean).join('\n')
+      return [text, note, tasks, delivery].filter(Boolean).join('\n')
     } catch (err) {
       logger.warn(`[sei/orch] composeSnapshot failed: ${err.message}`)
       return '(snapshot unavailable)'
@@ -2834,7 +2949,8 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // 261018 (pass 15): any world action that moves her or starts work ends
     // the stay note, on any trigger (a completion turn, an idle tick, her own
     // project), not only on the turn a player line started.
-    if (stayNote && !ACTION_VERB_SKIP.has(name) && !STATIONARY_ACTIONS.has(name)) {
+    // 261102 (pass 37): not a walk over to the player (see stopToPlayer).
+    if (stayNote && !ACTION_VERB_SKIP.has(name) && !STATIONARY_ACTIONS.has(name) && !walksToOwner({ name, input: args })) {
       logger.info?.(`[sei/orch] stay note cleared: she started ${name}`)
       stayNote = null
     }
@@ -4278,7 +4394,8 @@ function maybeWarnByteCap(loop, warned) {
         // pass 32: a hand-over answers the asks before it. Not a give to a
         // sibling companion ("give Lyra some logs"): the player's own ask
         // is still open.
-        if (h && !isCompanionName(h.to)) openAsks = []
+        // pass 37: only the asks for what she gave.
+        if (h && !isCompanionName(h.to)) closeAsksOnGive(h.item)
       }
       if (countsAsGoalWork(name, r)) lastWorkAt = Date.now()
       if (!ACTION_VERB_SKIP.has(name)) lastActionEndAt = Date.now()
@@ -5652,11 +5769,11 @@ function maybeWarnByteCap(loop, warned) {
         // ends it. The stay note below lets stationary actions through.
         if (actingTools.some(u => u.name !== 'unfollow') || setsGoal) playerStopAt = 0
         else if ((hasStop && asksToStop(line)) || isBareStopLine(line)) playerStopAt = Date.now()
-        // pass 32: a line she acted on stays open until a hand-over; a plain
-        // stop (no new action) closes them all.
+        // pass 32: a line she acted on stays open until a hand-over. pass 37:
+        // a stop closes the asks whose work it ended (closeAsksOnStop).
         if (!loop._groupVoiceLine) {
-          if (newSuspendingTools.length > 0) noteOpenAsk(line, loop._lastPlayerLine.who, newSuspendingTools)
-          else if (hasStop) openAsks = []
+          if (hasStop) closeAsksOnStop(loop.inFlight ?? inflight.current(), newSuspendingTools.length > 0)
+          if (newSuspendingTools.length > 0) noteOpenAsk(line, loop._lastPlayerLine.who, newSuspendingTools, loop.id)
         }
         // 261018 (pass 15): her own choice to stop or unfollow in answer to
         // this line leaves the stay note for later turns (see stayNote). Not
@@ -5665,7 +5782,12 @@ function maybeWarnByteCap(loop, warned) {
         // goal set from the line ends it here; a world action ends it in
         // startLongRunner, on any turn.
         const calledUnfollow = actingTools.some(u => u.name === 'unfollow')
-        const newWork = actingTools.some(u => !STATIONARY_ACTIONS.has(u.name)) || setsGoal
+        // 261102 (pass 37): a stop that only walks her over to the player
+        // ("actually stop" answered with stop + goTo them) still leaves the
+        // note. In work_session-01 she reached them and set off on a new
+        // mining trip a second later.
+        const stopToPlayer = hasStop && !setsGoal && actingTools.length > 0 && actingTools.every(walksToOwner)
+        const newWork = !stopToPlayer && (actingTools.some(u => !STATIONARY_ACTIONS.has(u.name)) || setsGoal)
         // 261024 (pass 26): a stop that gets the call after it sets the note
         // only if that call starts nothing either (stopBefore).
         if (newWork) {

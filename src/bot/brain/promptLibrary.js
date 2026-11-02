@@ -972,6 +972,15 @@ const clipNote = (t, n = 160) => { const x = String(t ?? '').replace(/\s+/g, ' '
 // against dev (that sentence pair was 70 tokens, this is 67).
 export const ACK_LINE = 'Reply with the say() tool: a direct message never gets silence, even a refusal or one word, unless it only acknowledges you or laughs (ok, cool, nice, thanks, lol, jk); then skip say(). Text outside say() never reaches them.'
 
+// 261102 (pass 37): "coal×6 you got for their line "..."", joined with "and".
+function carriedList(asks) {
+  const quote = (t) => {
+    const x = String(t ?? '').trim().replace(/\s+/g, ' ')
+    return x.length > 100 ? `${x.slice(0, 97)}...` : x
+  }
+  return (asks ?? []).map((a) => `${a.items.map((c) => `${c.item}×${c.n}`).join(' and ')}, which you got for their line "${quote(a.line)}"`).join('; and ')
+}
+
 export const NUDGES = {
   silence:
     '[several iterations without speaking — call a brief say() if it genuinely fits, or stay silent. don\'t restate numbers; one short observation is enough.]',
@@ -1014,6 +1023,19 @@ export const NUDGES = {
   // chats, so the lines she "acted on" include small talk, and a quoted list
   // read as orders. It names both outcomes so a call-off holds.
   arrivedAsks: ({ who }) => `You are next to ${who || 'the player'} now. Look back at what they asked you for: anything they still want that you are carrying reaches them only through give, and anything they called off stays with you.`,
+
+  // 261102 (quality pass 37): the same arrival turn when the brain knows what
+  // she fetched for which line (orchestrator carriedAsks). The general note
+  // above had her hand over the logs they had called off and keep the coal
+  // they asked for (errands-02, 11-02 scorecard). asks: [{ line, items:
+  // [{ item, n }] }], oldest first.
+  arrivedCarrying: ({ who, asks }) => `You are next to ${who || 'the player'} now. You are carrying ${carriedList(asks)}. Anything there they still want reaches them only through give, and anything they called off stays with you.`,
+
+  // 261102 (quality pass 37): a snapshot line while she carries what she set
+  // off to hand over (a walk or follow toward the player with it in her bag).
+  // In errands-03 she followed the player up out of a pit with the coal, and
+  // the next quiet turn went to crafting a table she had no wood for.
+  deliveryNote: ({ who, asks }) => `hand-over: you set off toward ${who || 'the player'} carrying ${carriedList(asks)}. It reaches them only through give, which walks to them first. If they called it off, keep it.`,
 
   // 261018 (quality pass 15): the line the snapshot carries after she
   // stopped (stop or unfollow, nothing new started) in answer to a player
