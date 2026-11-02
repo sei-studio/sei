@@ -3003,9 +3003,9 @@ worth knowing before touching the DST body:
 Headless testing (Linux dedicated server + `scripts/dst-headless-harness.mjs`)
 is in `native/dst-mod/sei/README.md`.
 
-**Credits:** every reused project is in the README Acknowledgements with its
-license (user decision 7); copied code carries a header credit and
-`native/<mod>/THIRD_PARTY_NOTICES.md`.
+**Credits:** every reused project is in `CREDITS.md` (linked from the README
+License section) with its license (user decision 7); copied code carries a header
+credit and `native/<mod>/THIRD_PARTY_NOTICES.md`.
 
 ## Instrumenting a game or timed surface (REQUIRED)
 
