@@ -32,6 +32,7 @@ import { registerFacepackIpc } from './facepack/facepackIpc';
 import { isAnalyticsActive, shutdownAnalytics, capture, captureAppQuit, noteSurface } from './analytics';
 import { reportOnboardingAbandoned } from './onboardingFunnel';
 import { initCrashReporting, appOpenedCrashProps, markStartFailed } from './crashReporting';
+import { installMainSystemProxy } from './systemProxy';
 import { notePreGateFailure, clearSummonBlock, clearSummonBlocksOfClass } from './summonGuard';
 import { createBotSupervisor, SUMMON_CANCELLED } from './botSupervisor';
 import { registerGameModule, getGameModule, listGameModules } from './games';
@@ -1607,6 +1608,12 @@ async function bootstrap(): Promise<void> {
     // session marker and the handlers cover everything after it. Synchronous,
     // never throws. See crashReporting.ts.
     initCrashReporting();
+
+    // 261103 (T303): Node's fetch (supabase-js auth, proxyClient, the ChatGPT
+    // token exchange, BYOK checks) ignores the OS proxy, so a VPN in "system
+    // proxy" mode covered the browser but not main. Route it the way Chromium
+    // does. Needs app ready (session.resolveProxy). See systemProxy.ts.
+    installMainSystemProxy();
 
     // If a prior version's "Move to Applications" prompt moved us here from
     // ~/Downloads, trash the leftover copy now that we're running from

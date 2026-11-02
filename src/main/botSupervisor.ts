@@ -42,6 +42,7 @@ import { isGameId, type GameId } from '../shared/gameIpc';
 import { getGameModule, type GameModule } from './games';
 import { clampChatLanguage } from '../shared/chatLanguage';
 import { buildLlmInitSection, type LlmInitSection } from './llmInitSection';
+import { botProxySnapshot, SYSTEM_PROXY_ENV } from './systemProxy';
 import { chatgptSession } from './chatgptPlan';
 import {
   answerChatgptTokenRequest,
@@ -1354,6 +1355,10 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // the logs reappear unmodified on the next bot fork.
     const seiBackend = aiBackendKind; // 'local' | 'cloud-proxy'
     const seiHasApiKey = apiKey ? '1' : '';
+    // 261103 (T303): the bot has no session to ask Chromium about the OS
+    // proxy, so main resolves the bot's LLM origins now. Undefined (all
+    // DIRECT, or the lookups failed) leaves the bot on plain Node fetch.
+    const proxySnapshot = await botProxySnapshot([llmInit?.base_url]).catch(() => undefined);
     const forkAtMs = Date.now();
     const child = utilityProcess.fork(botEntryPath(), [], {
       stdio: 'pipe', // Pitfall 2 — required for stdout/stderr access
@@ -1367,6 +1372,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         SEI_CHARACTER_ID: characterId,
         SEI_BACKEND: seiBackend,
         SEI_HAS_API_KEY: seiHasApiKey,
+        ...(proxySnapshot ? { [SYSTEM_PROXY_ENV]: proxySnapshot } : {}),
       },
     });
     const { port1, port2 } = new MessageChannelMain();

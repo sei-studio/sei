@@ -37,6 +37,7 @@ import { normalizePalette } from './brain/faceExpressions.js'
 import { sessionActionStats, llmMetaFromConfig } from './brain/actionStats.js'
 import { sessionDigest } from './brain/sessionDigest.js'
 import { setChatgptTokenTransport, deliverChatgptToken } from './brain/llm/chatgptTokenBridge.js'
+import { installSystemProxy, snapshotResolver } from './net/systemProxy.js'
 
 // 260926: the static graph above (config, zod, the brain, the LLM SDKs) is
 // evaluated by now. See bootTiming.js for the phase list.
@@ -46,6 +47,13 @@ const logger = {
   info:  (m) => console.log(`[sei] ${typeof m === 'string' ? m : JSON.stringify(m)}`),
   warn:  (m) => console.warn(`[sei] ${typeof m === 'string' ? m : JSON.stringify(m)}`),
   error: (m) => console.error(`[sei] ${typeof m === 'string' ? m : JSON.stringify(m)}`),
+}
+
+// 261103 (T303): route the LLM providers' Node fetch through the OS proxy
+// that main resolved at fork (SEI_SYSTEM_PROXY). Absent = all DIRECT.
+{
+  const resolve = snapshotResolver(process.env.SEI_SYSTEM_PROXY)
+  if (resolve) installSystemProxy({ resolve, log: (m) => logger.info(m) })
 }
 
 /**
