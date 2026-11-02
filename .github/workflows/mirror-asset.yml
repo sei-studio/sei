@@ -1,0 +1,105 @@
+# 261102: copy ONE model asset (speech pack, chess model, HF file) into the
+# dl.sei.gg mirror (R2 bucket sei-dl), size- and sha256-checked before AND
+# after the upload. Until now these were uploaded by hand (scripts/
+# mirror-assets.mjs stages them); this does the same with the existing R2_*
+# secrets so nobody needs a local R2 token.
+#
+#   gh workflow run mirror-asset.yml -R sei-studio/sei \
+#     -f url=https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_0.tar.bz2 \
+#     -f key=speech/kokoro-int8-multi-lang-v1_0.tar.bz2 \
+#     -f bytes=132353410 \
+#     -f sha256=72c347230107ef8a31098ec4d468a605244beef5f1ed00db97efa13518800653 \
+#     -f dry_run=false
+#
+# workflow_dispatch only works once this file is on the DEFAULT branch.
+# An object already at `key` is left alone unless it fails the check.
+name: Mirror one asset to R2
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Origin URL to copy'
+        required: true
+      key:
+        description: 'Object key in sei-dl (must start with speech/, chess/ or hf/)'
+        required: true
+      bytes:
+        description: 'Exact size in bytes'
+        required: true
+      sha256:
+        description: 'Expected SHA-256 (hex)'
+        required: true
+      dry_run:
+        description: 'Download and verify only, no upload (untick to really mirror)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download and verify
+        env:
+          URL: ${{ inputs.url }}
+          KEY: ${{ inputs.key }}
+          BYTES: ${{ inputs.bytes }}
+          SHA: ${{ inputs.sha256 }}
+        run: |
+          set -euo pipefail
+          case "$KEY" in
+            speech/*|chess/*|hf/*) ;;
+            *) echo "::error::key must start with speech/, chess/ or hf/"; exit 1;;
+          esac
+          case "$KEY" in *..*) echo "::error::bad key"; exit 1;; esac
+          curl -fsSL --retry 3 -o asset.bin "$URL"
+          got_bytes=$(stat -c %s asset.bin)
+          got_sha=$(sha256sum asset.bin | cut -d' ' -f1)
+          echo "origin: $got_bytes bytes, sha256 $got_sha"
+          [ "$got_bytes" = "$BYTES" ] || { echo "::error::size $got_bytes != $BYTES"; exit 1; }
+          [ "$got_sha" = "$SHA" ] || { echo "::error::sha256 mismatch"; exit 1; }
+
+      - name: Upload to R2
+        if: inputs.dry_run != true
+        env:
+          KEY: ${{ inputs.key }}
+          SHA: ${{ inputs.sha256 }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          set -euo pipefail
+          if [ -z "$R2_ACCOUNT_ID" ] || [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+            echo "::error::R2_ACCOUNT_ID, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY must all be set."
+            exit 1
+          fi
+          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          if live=$(curl -fsSL "https://dl.sei.gg/$KEY" | sha256sum | cut -d' ' -f1) && [ "$live" = "$SHA" ]; then
+            echo "dl.sei.gg/$KEY already serves this exact file; nothing to do."
+            exit 0
+          fi
+          case "$KEY" in
+            *.tar.bz2) type=application/x-bzip2;;
+            *.json) type=application/json;;
+            *) type=application/octet-stream;;
+          esac
+          aws s3 cp asset.bin "s3://sei-dl/$KEY" --endpoint-url "$endpoint" --content-type "$type" --only-show-errors
+
+      - name: Verify the mirror copy
+        if: inputs.dry_run != true
+        env:
+          KEY: ${{ inputs.key }}
+          BYTES: ${{ inputs.bytes }}
+          SHA: ${{ inputs.sha256 }}
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o mirror.bin "https://dl.sei.gg/$KEY"
+          got_bytes=$(stat -c %s mirror.bin)
+          got_sha=$(sha256sum mirror.bin | cut -d' ' -f1)
+          echo "mirror: $got_bytes bytes, sha256 $got_sha"
+          [ "$got_bytes" = "$BYTES" ] && [ "$got_sha" = "$SHA" ] || { echo "::error::mirror copy does not match"; exit 1; }
