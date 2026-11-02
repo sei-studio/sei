@@ -7,8 +7,10 @@
  * Config (UserConfig, renderer-settable through saveConfig):
  *   tts_engine: 'elevenlabs' | 'local'      absent = 'elevenlabs'. Read only
  *     when ai_backend_kind === 'local'; cloud accounts ignore it.
- *   local_tts_model: 'fast' | 'kokoro'      absent = 'fast' (261102). Which
- *     on-device model speaks; Kokoro falls back to Fast per line.
+ *   local_tts_model: 'fast' | 'kokoro' | 'fish'   absent = 'fast' (261102).
+ *     Which local-mode voice speaks; Kokoro falls back to Fast per line.
+ *     'fish' (261103) is Fish Audio ONLINE with the user's own key
+ *     (main/voice/fishTts.ts), also falling back to Fast per line.
  *   stt_engine: 'scribe' | 'whisper' | 'sensevoice'
  *     BYOK: 'sensevoice' turns dictation local-only through main-side
  *     SenseVoice (pack required). Cloud: the local-fallback model prefers

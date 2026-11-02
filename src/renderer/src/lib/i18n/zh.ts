@@ -75,11 +75,39 @@ export const ZH: Record<string, string> = {
   'Local voice': '本地语音',
   'About local voices': '关于本地语音',
   'Fast': '快速',
-  'Fast voices start speaking right away and come in English and Chinese. Kokoro sounds more natural but takes longer to speak, and speaks English, Spanish and French. Other languages use the Fast voices.':
-    '快速语音能立刻开口，提供英语和中文。Kokoro 听起来更自然，但开口要慢一些，支持英语、西班牙语和法语。其他语言使用快速语音。',
+  "Fast voices start speaking right away and come in English and Chinese. Kokoro sounds more natural but takes longer to speak, and speaks English, Spanish and French. Other languages use the Fast voices. Fish Audio is an online service that needs your own free Fish Audio key. It sends your companions' lines to Fish Audio.":
+    '快速语音能立刻开口，提供英语和中文。Kokoro 听起来更自然，但开口要慢一些，支持英语、西班牙语和法语。其他语言使用快速语音。Fish Audio 是在线服务，需要你自己的免费 Fish Audio 密钥，会把伙伴要说的话发送给 Fish Audio。',
   'Kokoro speaks English, Spanish and French. Companions in other languages use the Fast voices.':
     'Kokoro 支持英语、西班牙语和法语。使用其他语言的伙伴会使用快速语音。',
   'Kokoro sounds more natural but is slower.': 'Kokoro 听起来更自然，但速度较慢。',
+  // 261103 Fish Audio local voice (Settings + Edit companion)
+  'Fish Audio (online, free API key)': 'Fish Audio（在线，免费 API 密钥）',
+  'If Fish Audio cannot speak a line, the Fast voices below speak it.': '如果 Fish Audio 无法朗读某句话，会改用下方的快速语音。',
+  'Fish Audio key': 'Fish Audio 密钥',
+  'Your Fish Audio key': '你的 Fish Audio 密钥',
+  'Fish Audio works.': 'Fish Audio 可以正常使用。',
+  "Fish Audio is an online service. Sei uses its free model and sends your companions' lines to Fish Audio to be spoken.":
+    'Fish Audio 是在线服务。Sei 使用它的免费模型，并把伙伴要说的话发送给 Fish Audio 朗读。',
+  'Get a free key': '获取免费密钥',
+  'Add your Fish Audio key first.': '请先添加你的 Fish Audio 密钥。',
+  'Fish Audio rejected this key.': 'Fish Audio 拒绝了这个密钥。',
+  'Fish Audio refused the free model. It may have ended, or your account needs credit.':
+    'Fish Audio 拒绝了免费模型。免费模型可能已结束，或你的账户需要充值。',
+  'Fish Audio is busy. Try again in a moment.': 'Fish Audio 正忙，请稍后再试。',
+  'That voice was not found on Fish Audio.': '在 Fish Audio 上找不到这个声音。',
+  'That is not a Fish Audio voice link.': '这不是 Fish Audio 的声音链接。',
+  'Could not reach Fish Audio. Check your connection.': '无法连接 Fish Audio。请检查网络。',
+  'Fish Audio voice': 'Fish Audio 声音',
+  'Automatic': '自动',
+  'Preview': '试听',
+  'Use automatic': '改回自动',
+  'Paste a fish.audio voice link': '粘贴 fish.audio 声音链接',
+  'Fish Audio voice link': 'Fish Audio 声音链接',
+  'Use voice': '使用此声音',
+  'This voice plays without the pitch setting. It is saved right away.': '这个声音不使用音调设置，选择后立即保存。',
+  'Sei picks a Fish Audio voice that matches this companion. Paste a voice link to choose your own.':
+    'Sei 会为这位伙伴挑选匹配的 Fish Audio 声音。粘贴声音链接即可自己选择。',
+  'Their own Fish Audio voice plays without the pitch setting.': '他们自己的 Fish Audio 声音不使用音调设置。',
   'It is a {mb} MB download.': '需要下载 {mb} MB。',
   'Downloading… {pct}%': '下载中… {pct}%',
   'Ready': '已就绪',

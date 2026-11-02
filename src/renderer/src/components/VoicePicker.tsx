@@ -74,6 +74,7 @@ import { attach as attachPitch, warm as warmPitchBus, whenReady as pitchReady } 
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { useT } from '../lib/i18n';
 import { PlayIcon, StopIcon } from './icons';
+import { clipMimeType } from '../lib/fishVoice';
 import styles from './VoicePicker.module.css';
 
 export interface VoicePickerProps {
@@ -102,6 +103,12 @@ export interface VoicePickerProps {
    */
   localTtsMode?: boolean;
   /**
+   * 261103: the companion speaks with a Fish Audio voice the user picked,
+   * which plays without the pitch shift. The pitch sample plays at 1 and the
+   * slider says why.
+   */
+  pitchBypassed?: boolean;
+  /**
    * Local TTS (260915): the companion whose local voice the pitch sample
    * should use (Edit companion passes its id; the creation flow has none yet).
    * main resolves gender from the companion exactly like a live call line, so
@@ -117,6 +124,7 @@ export function VoicePicker({
   params,
   onParamsChange,
   localTtsMode = false,
+  pitchBypassed = false,
   previewCharacterId,
   valueOwn = null,
 }: VoicePickerProps): React.ReactElement {
@@ -409,15 +417,17 @@ export function VoicePicker({
     setError(null);
     setLoadingId(LOCAL_SAMPLE_ID);
     try {
-      if (pitch !== PITCH_DEFAULT) await pitchReady();
+      const samplePitch = pitchBypassed ? PITCH_DEFAULT : pitch;
+      if (samplePitch !== PITCH_DEFAULT) await pitchReady();
       if (!aliveRef.current) return;
       const buf = await sei.voicePreview({
         ...(value !== null && value !== NO_VOICE_ID ? { voiceId: value } : {}),
         ...(previewCharacterId ? { characterId: previewCharacterId } : {}),
       });
       if (!aliveRef.current) return;
-      const url = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
-      const ok = await startAudio(url, LOCAL_SAMPLE_ID, pitch);
+      // WAV from the local packs, mp3 from Fish Audio (261103).
+      const url = URL.createObjectURL(new Blob([buf], { type: clipMimeType(buf) }));
+      const ok = await startAudio(url, LOCAL_SAMPLE_ID, samplePitch);
       if (!ok && aliveRef.current) setError(t('Sample unavailable right now.'));
     } catch (err) {
       if (!aliveRef.current) return;
@@ -684,6 +694,9 @@ export function VoicePicker({
       <section className={styles.tuner} aria-label={t('Tune the voice')}>
         <h3 className={styles.groupTitle}>{t('Tune the voice')}</h3>
         {!tunable ? <div className={styles.hint}>{t('Pick a voice to tune it.')}</div> : null}
+        {localTtsMode && pitchBypassed ? (
+          <div className={styles.hint}>{t('Their own Fish Audio voice plays without the pitch setting.')}</div>
+        ) : null}
         {!localTtsMode && tunable && tuned && samplesOff ? (
           <div className={styles.hint}>{t('Sign in to hear tuned samples.')}</div>
         ) : null}

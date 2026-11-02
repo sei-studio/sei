@@ -1082,11 +1082,36 @@ export const UserConfigSchema = z.object({
    * Read through localTtsModel() (shared/ttsEngine.ts). A Kokoro line whose
    * pack is missing or broken, or whose language/gender Kokoro has no voice
    * for, is spoken with the Fast voices instead (main/voice/tts.ts).
+   * 261103: 'fish' = Fish Audio's free online model with the user's own
+   * key (main/voice/fishTts.ts); any Fish failure speaks the line with the
+   * Fast voices.
    * (The unreleased PR #49 preview wrote `local_tts_voice` and a third
    * tts_engine value; neither shipped, and configStore keeps the stray key
    * as an unknown key.)
    */
-  local_tts_model: z.enum(['fast', 'kokoro']).optional(),
+  local_tts_model: z.enum(['fast', 'kokoro', 'fish']).optional(),
+  /**
+   * 261103: per-character Fish Audio voice picks, SPARSE like avatar_prefs: an
+   * absent character id means "automatic" (shared/fishVoices.ts maps the
+   * character's voice gender + the line's language to a curated licensed
+   * voice). Read only while local_tts_model is 'fish'. `id` is a fish.audio
+   * voice id, `name` its title when it was checked, `speed` prosody.speed
+   * (absent = FISH_OVERRIDE_DEFAULT_SPEED). A picked voice plays WITHOUT the
+   * voicePitch shift: the user chose that exact voice. Lives here and not in
+   * character.metadata (metadata cloud-syncs verbatim and is not editable on
+   * foreign or default characters). Main-owned: written only by the
+   * voice:fish-override-set IPC, after it checked the voice with the user's
+   * key. No `.default({})` on purpose.
+   */
+  fish_voice_overrides: z
+    .record(
+      z.object({
+        id: z.string().regex(/^[0-9a-f]{32}$/),
+        name: z.string().max(120),
+        speed: z.number().min(0.5).max(2).optional(),
+      }),
+    )
+    .optional(),
   /**
    * 260725: cloud users' opt-in to the local Whisper fallback. Set true once
    * the user accepts the Whisper-install prompt after a Scribe failure, so

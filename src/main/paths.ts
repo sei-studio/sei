@@ -160,6 +160,9 @@ export const paths = {
   // BYOK ElevenLabs voice key (260725) — same safeStorage-encrypted blob
   // pattern as api_key.bin, profile-scoped for the same reason.
   elevenLabsKeyPath: () => path.join(profileRootDir(), 'elevenlabs_key.bin'),
+  // 261103: the user's own Fish Audio API key (Local voice > Fish Audio), the
+  // same safeStorage-encrypted blob pattern.
+  fishKeyPath: () => path.join(profileRootDir(), 'fish_audio_key.bin'),
   memoryDir: (characterId: string) => path.join(profileRootDir(), 'memory', characterId),
   // 260725 knowledge: user-uploaded reference files injected into every AI
   // surface (chat / voice / chess / Minecraft bot). Deliberately OUTSIDE

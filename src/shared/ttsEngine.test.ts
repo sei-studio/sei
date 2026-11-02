@@ -12,6 +12,22 @@ describe('local TTS model setting', () => {
   it('reads an explicit choice', () => {
     expect(localTtsModel(UserConfigSchema.parse({ local_tts_model: 'kokoro' }))).toBe('kokoro');
     expect(localTtsModel(UserConfigSchema.parse({ local_tts_model: 'fast' }))).toBe('fast');
+    expect(localTtsModel(UserConfigSchema.parse({ local_tts_model: 'fish' }))).toBe('fish');
+  });
+
+  it('parses Fish Audio voice overrides sparsely and strictly (261103)', () => {
+    const id = '0123456789abcdef0123456789abcdef';
+    expect(UserConfigSchema.parse({}).fish_voice_overrides).toBeUndefined();
+    const ok = UserConfigSchema.parse({ fish_voice_overrides: { c1: { id, name: 'Calm' }, c2: { id, name: 'Fast', speed: 1.5 } } });
+    expect(ok.fish_voice_overrides).toEqual({ c1: { id, name: 'Calm' }, c2: { id, name: 'Fast', speed: 1.5 } });
+    for (const bad of [
+      { c1: { id: 'not-an-id', name: 'x' } },
+      { c1: { id, name: 'x'.repeat(121) } },
+      { c1: { id, name: 'x', speed: 3 } },
+      { c1: { name: 'x' } },
+    ]) {
+      expect(UserConfigSchema.safeParse({ fish_voice_overrides: bad }).success).toBe(false);
+    }
   });
 
   it('never moves an unreleased-preview profile to Kokoro', () => {

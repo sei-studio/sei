@@ -442,6 +442,11 @@ const api: RendererApi = {
   voicePreviewAvailable: () => ipcRenderer.invoke(IpcChannel.voice.previewAvailable),
   voiceElevenKeySet: (args) => ipcRenderer.invoke(IpcChannel.voice.elevenKeySet, args),
   voiceElevenKeyStatus: () => ipcRenderer.invoke(IpcChannel.voice.elevenKeyStatus),
+  voiceFishKeySet: (args) => ipcRenderer.invoke(IpcChannel.voice.fishKeySet, args),
+  voiceFishKeyStatus: () => ipcRenderer.invoke(IpcChannel.voice.fishKeyStatus),
+  voiceFishTest: () => ipcRenderer.invoke(IpcChannel.voice.fishTest),
+  voiceFishOverrideSet: (args) => ipcRenderer.invoke(IpcChannel.voice.fishOverrideSet, args),
+  voiceFishVoicePreview: (args) => ipcRenderer.invoke(IpcChannel.voice.fishVoicePreview, args),
   onVoiceCallEnded(cb: (push: { characterId: string }) => void) {
     const handler = (_e: Electron.IpcRendererEvent, push: { characterId: string }) => cb(push);
     ipcRenderer.on(IpcChannel.voice.callEnded, handler);

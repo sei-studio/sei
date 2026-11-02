@@ -45,6 +45,8 @@ import { PortraitImagePicker } from './PortraitImagePicker';
 import { PortraitVersionsModal } from './PortraitVersionsModal';
 import { SkinEditor } from './SkinEditor';
 import { VoicePicker } from './VoicePicker';
+import { FishVoiceOverride, type FishVoicePick } from './FishVoiceOverride';
+import { localTtsModel } from '@shared/ttsEngine';
 import type { VoiceParams } from '../lib/voicePicker';
 import {
   applySharedVoicePick,
@@ -144,15 +146,24 @@ export function EditCharacterModal({
   // a later engine switch keep their designated voice.
   const aiBackendKind = useCreditsStore((s) => s.ai_backend_kind);
   const [localTtsPref, setLocalTtsPref] = useState<boolean>(false);
+  // 261103: Fish Audio as the local voice, and this companion's own pick.
+  const [fishPref, setFishPref] = useState<boolean>(false);
+  const [fishVoice, setFishVoice] = useState<FishVoicePick | null>(null);
   useEffect(() => {
     void sei
       .getConfig()
-      .then((c) => setLocalTtsPref(c.tts_engine === 'local'))
+      .then((c) => {
+        setLocalTtsPref(c.tts_engine === 'local');
+        setFishPref(localTtsModel(c) === 'fish');
+        const own = c.fish_voice_overrides?.[character.id];
+        setFishVoice(own ? { id: own.id, name: own.name } : null);
+      })
       .catch(() => {
         /* non-fatal — default keeps the full picker */
       });
-  }, []);
+  }, [character.id]);
   const localTtsMode = aiBackendKind === 'local' && localTtsPref;
+  const fishMode = localTtsMode && fishPref;
 
   // ── Games: chess profile (260710). Auto-derived from the persona on the
   //    first game unless the user customizes it here (source 'user'). ─────
@@ -609,7 +620,11 @@ export function EditCharacterModal({
                     onParamsChange={setVoiceParams}
                     localTtsMode={localTtsMode}
                     previewCharacterId={character.id}
+                    pitchBypassed={fishMode && fishVoice !== null}
                   />
+                  {fishMode ? (
+                    <FishVoiceOverride characterId={character.id} value={fishVoice} onChange={setFishVoice} />
+                  ) : null}
                   {voiceOwn && voiceId && !localTtsMode ? (
                     <div className={styles.sharedVoice}>
                       <SharedVoiceChoice

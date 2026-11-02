@@ -86,6 +86,9 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
   // &chatgpt=1 (261023): local backend on the ChatGPT plan, one signed-in
   // account, so the connected row renders.
   const voiceKeyChatgpt = params.get('chatgpt') === '1';
+  // &tts=fish (261103): local voice set to Fish Audio, with &fishkey=1 a saved key.
+  const voiceKeyFish = params.get('tts') === 'fish';
+  const voiceKeyFishSaved = params.get('fishkey') === '1';
   const voiceKeyChatgptStatus = {
     accounts: voiceKeyChatgpt
       ? [{ id: 'acc1', email: 'player@example.com', label: 'player@example.com', signedIn: true, planEnabled: true }]
@@ -312,9 +315,11 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
       ? {
           getConfig: async () => ({
             ai_backend_kind: voiceKeyBackend,
-            tts_engine: 'elevenlabs',
+            tts_engine: voiceKeyFish ? 'local' : 'elevenlabs',
+            ...(voiceKeyFish ? { local_tts_model: 'fish' } : {}),
             ...(voiceKeyChatgpt ? { provider: 'chatgpt' } : {}),
           }),
+          voiceFishKeyStatus: async () => ({ present: voiceKeyFishSaved }),
           chatgptStatus: async () => voiceKeyChatgptStatus,
           onChatgptStatus: () => () => {},
           creditsGet: async () => ({

@@ -144,6 +144,28 @@ by `llm.provider` in `src/bot/config.js`:
   "add playtime" surface). It **fails open** on any error and is skipped
   entirely for BYOK, so a transient hiccup never blocks a paying or local user.
 
+### Local voices: Fish Audio (261103)
+
+Fish Audio is the third Local voice next to Fast and Kokoro
+(`src/main/voice/fishTts.ts`, wired in `tts.ts`).
+- **Every request to fish.audio MUST send the header `model: s2.1-pro-free`.**
+  Fish reads a missing or unknown header as the paid `s2.1-pro`, which bills
+  an account that has credit. `fishHeaders(key)` is the only header builder:
+  /v1/tts, the 429 retry and the `/model/{id}` voice lookup all use it, and
+  `fishTts.test.ts` pins each one. Never hand-build Fish headers.
+- The key is the user's own (BYOK, safeStorage, `fishKeyStore.ts`). Main calls
+  api.fish.audio directly, never through the Sei proxy.
+- Fish allows 5 requests at a time per account. `openFishStream` keeps at most
+  `FISH_MAX_IN_FLIGHT` (4) per key and queues the rest, so a long reply does
+  not hit a 429 and change voice part way through.
+- If Fish fails, the line is spoken with the Fast voices, and the
+  `fish-fallback` notice is sent only once that clip exists. The renderer shows
+  it once per reason per call. With no Fast pack installed, the usual
+  pack-missing error appears instead.
+- Three table voices are pvc voices with retire dates. Replace them in
+  `src/shared/fishVoices.ts` before these dates: ivish (en male) 2029-10-25,
+  桃桃 (zh female) 2028-10-26, 温柔沉稳男声 (zh male) 2028-10-15.
+
 ---
 
 ## Bot / LLM internals (`src/bot`)
