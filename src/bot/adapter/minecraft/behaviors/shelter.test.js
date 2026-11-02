@@ -384,6 +384,20 @@ describe('shelterAction: her own body and walls already there (261102)', () => {
     expect(res).toMatch(/^built shelter/)
   })
 
+  it('steps back in to the middle when the doorway dig left her in the doorway', async () => {
+    const bot = makeBot()
+    bot.entity.position = { x: 0.5, y: 64, z: 0.5 }
+    // A dirt doorway drops an item and the dig walks onto it.
+    digAction.mockImplementationOnce(async () => { bot.entity.position = { x: 0.5, y: 64, z: -0.5 }; return 'dug 1/2 (1 skipped air)' })
+    const walk = vi.fn(async (b, x, y, z) => { b.entity.position = { x: x + 0.5, y, z: z + 0.5 }; return 'reached' })
+    const res = await shelterAction({ size: 3 }, bot, {}, { goTo: walk })
+    expect(walk).toHaveBeenCalledTimes(1)
+    expect(walk).toHaveBeenCalledWith(bot, 0, 64, 0, 0, expect.any(Number), undefined)
+    expect(walk.mock.invocationCallOrder[0]).toBeGreaterThan(digAction.mock.invocationCallOrder[0])
+    expect(bot.entity.position).toEqual({ x: 0.5, y: 64, z: 0.5 })
+    expect(res).toMatch(/^built shelter/)
+  })
+
   it('does not walk when she is already clear of the walls', async () => {
     const walk = vi.fn(async () => 'reached')
     await shelterAction({ size: 3, center: { x: 0, y: 64, z: 0 } }, makeBot(), {}, { goTo: walk })

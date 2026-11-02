@@ -63,12 +63,14 @@ function shelterState(pbot, cx, cz) {
   const roof2 = roofAt(Y + 2)
   const roof3 = roofAt(Y + 3)
   const roofOk = roof2 === 9 || (roof3 === 9 && wallMissing([Y + 2]).length === 0)
-  return { enclosed: low.length === 0 && roofOk, wallMissing: low.length, roof: Math.max(roof2, roof3) }
+  const doorOpen = !solid(pbot, cx, Y, minZ) && !solid(pbot, cx, Y + 1, minZ)
+  return { enclosed: low.length === 0 && roofOk, wallMissing: low.length, roof: Math.max(roof2, roof3), doorOpen }
 }
 
 function insideOf(pos, cx, cz) {
   return !!pos && Math.floor(pos.x) === cx && Math.floor(pos.z) === cz
 }
+const posText = (pos) => pos ? `${Math.floor(pos.x)},${Math.floor(pos.y)},${Math.floor(pos.z)}` : null
 
 const BODY_FAIL = /standing in them|standing where a wall goes/
 
@@ -82,7 +84,7 @@ const CASES = {
       await sleep(800)
       const st = shelterState(ctx.pbot, S.x, S.z)
       const pr = await ctx.comp.probe()
-      return { result: r.result, ms, ...st, inside: insideOf(pr?.pos, S.x, S.z), success: st.enclosed }
+      return { result: r.result, ms, ...st, inside: insideOf(pr?.pos, S.x, S.z), pos: posText(pr?.pos), success: st.enclosed }
     },
   },
   shelter_offcenter: {
@@ -95,7 +97,7 @@ const CASES = {
       await sleep(800)
       const st = shelterState(ctx.pbot, cx, cz)
       const pr = await ctx.comp.probe()
-      return { result: r.result, ms, ...st, bodyFail: BODY_FAIL.test(String(r.result)), inside: insideOf(pr?.pos, cx, cz), success: st.enclosed }
+      return { result: r.result, ms, ...st, bodyFail: BODY_FAIL.test(String(r.result)), inside: insideOf(pr?.pos, cx, cz), pos: posText(pr?.pos), success: st.enclosed }
     },
   },
   shelter_walkin: {
@@ -128,7 +130,8 @@ const CASES = {
       const ms = Date.now() - t0
       await sleep(800)
       const st = shelterState(ctx.pbot, S.x, S.z)
-      return { result: r.result, ms, ...st, success: st.enclosed }
+      const pr = await ctx.comp.probe()
+      return { result: r.result, ms, ...st, inside: insideOf(pr?.pos, S.x, S.z), pos: posText(pr?.pos), success: st.enclosed }
     },
   },
   table_into_ground: {

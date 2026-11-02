@@ -375,12 +375,21 @@ export async function shelterAction(args, bot, config, deps = {}) {
 
   // 4. Carve a one-block-wide, two-tall doorway out of the front (min-Z) wall,
   //    centered on the footprint, so the bot can walk in and out.
+  const inMiddleBeforeDoor = !awayFromMiddle()
   const doorRes = await digAction(
     { x: doorX, y: baseY, z: minZ, to: { x: doorX, y: baseY + 1, z: minZ } },
     bot,
     config,
   )
   if (doorRes === 'aborted') return 'aborted'
+  // 261102 (pass 36): a dug dirt doorway drops an item and the dig walks onto
+  // it, which left her standing in the doorway instead of inside (probe: 3 of
+  // 3 dirt shelters; cobblestone dug by hand drops nothing, so it never
+  // showed). Step back in when she was in the middle before the doorway.
+  if (inMiddleBeforeDoor && awayFromMiddle()) {
+    await standClearOfWalls(bot, wallCells, cx, baseY, cz, signal, walk, true)
+    if (signal?.aborted) return 'aborted'
+  }
 
   const done = buildComplete(wallsRes) && buildComplete(roofRes)
   const detail = `(walls: ${wallsRes}; roof: ${roofRes}; doorway: ${doorRes}${notes.length ? `; ${notes.join('; ')}` : ''})`
