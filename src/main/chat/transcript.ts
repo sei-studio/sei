@@ -53,8 +53,44 @@ export function voiceWindowStart(history: readonly ChatMessage[], base: number, 
  * with bracketed content, so two adjacent play rows (or a user message followed
  * by a play row) fold into a single user turn instead of two adjacent `user`
  * messages that Anthropic rejects with 400 "roles must alternate".
+ *
+ * `appendOnly` (261102, backseat): a merged row becomes its own text block,
+ * "\n" + row, instead of being concatenated onto the previous row's string.
+ * The text the model reads is the same (Anthropic joins the text blocks of a
+ * message with no separator, so ["a", "\nb"] reads as "a\nb"; count_tokens
+ * gives both the same size), but the bytes of the earlier rows no longer
+ * change when a row is appended. That matters to a surface that puts its
+ * cache breakpoint on the last history message and then appends to that same
+ * message next turn. Backseat does exactly that: the companion speaks on
+ * every look and the player rarely does, so consecutive companion lines merge
+ * into one assistant message. As a growing string, the block the breakpoint
+ * sat on changed on every tick, so its cache write was never read back and
+ * the whole transcript was written again at 1.25x on the next look (live
+ * free sessions: cache_read flat at the system prefix, ~900 tokens written
+ * per tick). As separate blocks, the previous breakpoint's block is still
+ * there, unchanged, and the next tick reads it. Chat and calls keep the
+ * string merge (their transcript alternates, so it rarely merges across turns).
  */
-export function toMessages(history: ChatMessage[]): Array<{ role: 'user' | 'assistant'; content: unknown }> {
+export function toMessages(
+  history: ChatMessage[],
+  opts: { appendOnly?: boolean } = {},
+): Array<{ role: 'user' | 'assistant'; content: unknown }> {
+  const appendOnly = opts.appendOnly === true;
+  // Adds `text` to a message as a new row: a fresh block in appendOnly mode,
+  // a "\n"-joined string otherwise. False when the message cannot take it.
+  const appendRow = (msg: { content: unknown }, text: string): boolean => {
+    if (typeof msg.content === 'string') {
+      msg.content = appendOnly
+        ? [{ type: 'text', text: msg.content }, { type: 'text', text: `\n${text}` }]
+        : `${msg.content}\n${text}`;
+      return true;
+    }
+    if (appendOnly && Array.isArray(msg.content)) {
+      msg.content.push({ type: 'text', text: `\n${text}` });
+      return true;
+    }
+    return false;
+  };
   const out: Array<{ role: 'user' | 'assistant'; content: unknown }> = [];
   for (const m of history) {
     // Per row, derive role + content first; then run the single shared merge.
@@ -96,8 +132,7 @@ export function toMessages(history: ChatMessage[]): Array<{ role: 'user' | 'assi
       if (queries.length) {
         const note = `[results of your web search for ${queries.map((q) => `"${q.trim()}"`).join(', ')} came back here]`;
         const prev = out[out.length - 1];
-        if (prev && prev.role === 'user' && typeof prev.content === 'string') prev.content = `${prev.content}\n${note}`;
-        else out.push({ role: 'user', content: note });
+        if (!(prev && prev.role === 'user' && appendRow(prev, note))) out.push({ role: 'user', content: note });
       }
       // 260703: stamp USER messages with their send time so the model can feel
       // gaps (overnight silence vs rapid-fire). Assistant turns stay unstamped —
@@ -109,11 +144,7 @@ export function toMessages(history: ChatMessage[]): Array<{ role: 'user' | 'assi
     // can hold two user turns in a row; Anthropic requires strict alternation, so
     // fold them into one.
     const last = out[out.length - 1];
-    if (last && last.role === role && typeof last.content === 'string') {
-      last.content = `${last.content}\n${content}`;
-    } else {
-      out.push({ role, content });
-    }
+    if (!(last && last.role === role && appendRow(last, content))) out.push({ role, content });
   }
   // Anthropic requires the first message to be from the user. Never satisfy
   // that by DROPPING a leading assistant turn: after a first-meeting greeting

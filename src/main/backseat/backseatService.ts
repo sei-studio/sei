@@ -52,7 +52,7 @@ import { loadConfig } from '../configStore';
 import { getCharacter } from '../characterStore';
 import { CHAT_TIMEOUT_MS } from '../chat/sdk';
 import { activeLlmVision, buildLlmProvider } from '../llm';
-import { buildSystemBlocks, markMessageCached, REMEMBER_TOOL } from '../chat/chatPrompts';
+import { buildSystemBlocks, clockTailNote, markMessageCached, REMEMBER_TOOL } from '../chat/chatPrompts';
 import { toMessages, isSilenceFiller, splitReply } from '../chat/chatService';
 import { isNoteLeak, stripThoughtTags } from '../chat/noteLeak';
 import { readChatContext, foldIfDue } from '../chat/continuity';
@@ -1118,6 +1118,12 @@ async function runTurn(
     language: surfaceLanguage(character.metadata, config.chat_language),
     // 261010: the notes are about the player's real life, not the screen.
     memoryNote: BACKSEAT_MEMORY_NOTE,
+    // 261102: the minute clock rides after the last breakpoint, at the end
+    // of the look note (clockTailNote below), the same move calls made on
+    // 261024. In the status block, every minute rollover changed a cached
+    // block and re-wrote the whole transcript below it to cache; looks land
+    // 12-60 s apart, so that was roughly one look in five.
+    clockInTail: true,
     // The whole-session contract rides inside the cached region, so the grid
     // explanation and the register are written once and read every tick.
     // 260929: a game tile's block (knowledge + the picked experience) rides
@@ -1144,7 +1150,13 @@ async function runTurn(
     const last = recent[recent.length - 1];
     if (last && last.role === 'user' && last.text === tick.text) recent = recent.slice(0, -1);
   }
-  const messages = toMessages(recent);
+  // appendOnly (261102): each row is its own text block, so appending the
+  // line this tick produces leaves the block the breakpoint below sits on
+  // byte-identical next tick. Merged into one growing string (the companion
+  // speaks on every look, so her lines run together into one assistant
+  // message), that block changed every tick and the transcript was re-written
+  // to cache on every look without ever being read back (see toMessages).
+  const messages = toMessages(recent, { appendOnly: true });
   // Prompt caching (260801), and the reason this is NOT markLastMessageCached.
   // buildSystemBlocks already spent three of Anthropic's four breakpoints. The
   // fourth belongs HERE, at the end of the history, not on the message below:
@@ -1188,7 +1200,10 @@ async function runTurn(
   const content: unknown[] = [
     ...(prev ? [image(strip(prev.data))] : []),
     image(strip(tick.grid)),
-    { type: 'text', text: tick.kind === 'user' ? `${note}\n\n${tick.text ?? ''}` : note },
+    {
+      type: 'text',
+      text: `${tick.kind === 'user' ? `${note}\n\n${tick.text ?? ''}` : note}\n${clockTailNote()}`,
+    },
   ];
   messages.push({ role: 'user', content: content as never });
 

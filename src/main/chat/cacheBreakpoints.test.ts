@@ -14,6 +14,8 @@ import {
   buildSystemBlocks,
   clockTailNote,
 } from './chatPrompts';
+import { toMessages } from './transcript';
+import type { ChatMessage } from '../../shared/ipc';
 
 type Msg = { role: 'user' | 'assistant'; content: unknown };
 const cached = (m: Msg): boolean => {
@@ -84,6 +86,65 @@ describe('an image-per-turn surface (backseat)', () => {
     // And exactly one breakpoint in the messages, so the other three stay
     // available to buildSystemBlocks. Anthropic allows four in total.
     expect(history.filter(cached)).toHaveLength(1);
+  });
+});
+
+/**
+ * The backseat transcript across two looks (261102). The companion speaks on
+ * every look and the player mostly does not, so her lines are consecutive
+ * companion rows that merge into ONE assistant message, and the breakpoint
+ * sits on that message. What the next look can read back is everything up to
+ * and including the block the breakpoint was on, so that block must come back
+ * byte-identical. A growing string does not; one block per row does.
+ */
+describe('backseat transcript across looks (261102)', () => {
+  const row = (i: number, text: string): ChatMessage =>
+    ({ id: `c${i}`, role: 'companion', text, ts: 1_700_000_000_000 + i * 1000 }) as ChatMessage;
+  /** One look as runTurn assembles it: history, breakpoint on its last message, then the grid turn. */
+  const look = (history: ChatMessage[], appendOnly: boolean): Msg[] => {
+    const messages = toMessages(history, appendOnly ? { appendOnly: true } : {}) as Msg[];
+    markMessageCached(messages, messages.length - 1);
+    messages.push({
+      role: 'user',
+      content: [
+        { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: '...' } },
+        { type: 'text', text: '[look note]' },
+      ],
+    });
+    return messages;
+  };
+  /** Content blocks in cache-prefix order with cache_control stripped (it is not part of the bytes). */
+  const prefix = (ms: Msg[]): string[] =>
+    ms.flatMap((m, i) => {
+      const bs = typeof m.content === 'string' ? [{ type: 'text', text: m.content }] : (m.content as object[]);
+      return bs.map((b) => {
+        const { cache_control: _cc, ...rest } = b as { cache_control?: unknown };
+        return `${i}:${m.role}:${JSON.stringify(rest)}`;
+      });
+    });
+  /** Index of the block carrying the breakpoint, in prefix() order. */
+  const breakpointAt = (ms: Msg[]): number =>
+    ms
+      .flatMap((m) => (typeof m.content === 'string' ? [{}] : (m.content as Array<{ cache_control?: unknown }>)))
+      .findIndex((b) => !!(b as { cache_control?: unknown }).cache_control);
+
+  const lines = ['oh the boss is back', 'that dodge was clean', 'ok now heal', 'you got this'];
+
+  it('reads back the previous look\'s cached transcript when one block per row', () => {
+    for (let n = 1; n < lines.length; n++) {
+      const a = look(lines.slice(0, n).map((t, i) => row(i, t)), true);
+      const b = look(lines.slice(0, n + 1).map((t, i) => row(i, t)), true);
+      const upTo = breakpointAt(a) + 1;
+      expect(upTo).toBeGreaterThan(0);
+      expect(prefix(b).slice(0, upTo)).toEqual(prefix(a).slice(0, upTo));
+    }
+  });
+
+  it('the old string merge rewrote the block the breakpoint was on (the regression this pins)', () => {
+    const a = look(lines.slice(0, 2).map((t, i) => row(i, t)), false);
+    const b = look(lines.slice(0, 3).map((t, i) => row(i, t)), false);
+    const upTo = breakpointAt(a) + 1;
+    expect(prefix(b).slice(0, upTo)).not.toEqual(prefix(a).slice(0, upTo));
   });
 });
 
