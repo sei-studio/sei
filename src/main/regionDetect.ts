@@ -2,14 +2,14 @@
  * Region detection for the W7 region gate (260816).
  *
  * One GET to the Cloudflare-fronted proxy's trace endpoint, parsed for the
- * `loc=CC` line, cached in memory for the process lifetime with a 24h
- * refresh. Everything unhappy — network error, timeout, non-2xx, absent or
+ * `loc=CC` line. Everything unhappy — network error, timeout, non-2xx, absent or
  * junk loc — resolves to `loc: null` (= 'unknown'), and unknown is ALLOWED:
  * the gate FAILS OPEN so a detection hiccup never blocks a legitimate user.
  *
- * A failed lookup is cached on a much shorter TTL than a successful one, so
- * a transient boot-time network failure does not disable the gate for a
- * whole day, while a healthy answer is not re-fetched per auth attempt.
+ * 261103 (T303): nothing is cached. Every auth attempt and every renderer
+ * pre-check fetches the trace again, so the verdict follows the network the
+ * user is on NOW (a VPN or network change after launch counts on the next
+ * attempt, not after a restart). Only concurrent callers share one fetch.
  *
  * Consumers:
  *   - src/main/auth/authHandlers.ts — the AUTHORITATIVE gate, checked before
@@ -21,12 +21,6 @@ import { isRegionBlocked, parseTraceLoc, type RegionStatus } from '../shared/reg
 
 const TRACE_URL = 'https://api.sei.gg/cdn-cgi/trace';
 const TRACE_TIMEOUT_MS = 5_000;
-/** A real answer holds for a day; IP region does not change mid-session. */
-const SUCCESS_TTL_MS = 24 * 60 * 60 * 1000;
-/** A failed lookup retries sooner — 'unknown' should heal once the network does. */
-const FAILURE_TTL_MS = 10 * 60 * 1000;
-
-let cache: { loc: string | null; at: number } | null = null;
 let inFlight: Promise<string | null> | null = null;
 
 /**
@@ -59,32 +53,20 @@ export async function detectRegionLoc(fetchImpl?: typeof fetch): Promise<string 
 }
 
 /**
- * Cached region verdict. Single-flight: concurrent callers (an auth submit
- * racing the renderer pre-check) share one fetch.
+ * Region verdict, fetched fresh on every call. Single-flight: concurrent
+ * callers (an auth submit racing the renderer pre-check) share one fetch.
  */
 export async function getRegionStatus(fetchImpl?: typeof fetch): Promise<RegionStatus> {
-  if (cache !== null) {
-    const ttl = cache.loc === null ? FAILURE_TTL_MS : SUCCESS_TTL_MS;
-    if (Date.now() - cache.at < ttl) {
-      return { loc: cache.loc, blocked: isRegionBlocked(cache.loc) };
-    }
-  }
   if (inFlight === null) {
-    inFlight = detectRegionLoc(fetchImpl)
-      .then((loc) => {
-        cache = { loc, at: Date.now() };
-        return loc;
-      })
-      .finally(() => {
-        inFlight = null;
-      });
+    inFlight = detectRegionLoc(fetchImpl).finally(() => {
+      inFlight = null;
+    });
   }
   const loc = await inFlight;
   return { loc, blocked: isRegionBlocked(loc) };
 }
 
-/** Test hook: drop the cache + in-flight fetch between cases. */
+/** Test hook: drop the in-flight fetch between cases. */
 export function resetRegionCacheForTest(): void {
-  cache = null;
   inFlight = null;
 }

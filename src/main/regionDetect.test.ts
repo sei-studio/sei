@@ -107,12 +107,22 @@ describe('getRegionStatus', () => {
     });
   });
 
-  it('caches a successful verdict: one fetch across repeated calls', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(traceResponse('HK'));
+  it('never caches a verdict: every call fetches the trace again', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(traceResponse('JP'));
     await getRegionStatus(fetchMock as unknown as typeof fetch);
     await getRegionStatus(fetchMock as unknown as typeof fetch);
     await getRegionStatus(fetchMock as unknown as typeof fetch);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('a blocked verdict is not kept: CN then US reads allowed on the next call', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(traceResponse('CN'))
+      .mockResolvedValueOnce(traceResponse('US'));
+    expect(await getRegionStatus(fetchMock as unknown as typeof fetch)).toEqual({ loc: 'CN', blocked: true });
+    expect(await getRegionStatus(fetchMock as unknown as typeof fetch)).toEqual({ loc: 'US', blocked: false });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('single-flights concurrent callers onto one fetch', async () => {
