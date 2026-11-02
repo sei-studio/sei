@@ -53,7 +53,7 @@ import { voicePitchRate } from '@shared/voicePitch';
 import type { VoiceTtsNoticePush } from '@shared/ipc';
 import { createAudioQueue, type AudioQueue, type TtsStreamHandle } from '../voice/audioQueue';
 import { createSentenceTts } from '../voice/sentenceTts';
-import { selectedTtsEngine } from '@shared/ttsEngine';
+import { localTtsModel } from '@shared/ttsEngine';
 import { t, uiLanguage } from '../i18n';
 import { currentResetLine } from '../useResetLine';
 import { burstLanguageFor, cloudPassText, createDictation, type Dictation } from '../voice/dictation';
@@ -714,9 +714,19 @@ export function ownVoiceStandInNotice(
   }
 }
 
+/** Notice copy when Kokoro is the chosen local voice but the Fast voices
+ * spoke the line instead (261102, kokoro-fallback push). */
+export function kokoroFallbackNotice(reason: 'pack-missing' | 'failed'): string {
+  return reason === 'pack-missing'
+    ? t('[spoken with the Fast voice, download the Kokoro voice pack in Settings]')
+    : t('[spoken with the Fast voice, the Kokoro voice could not load]');
+}
+
 /** The call notice for one voice:tts-notice push. */
 function ttsNoticeText(push: VoiceTtsNoticePush): string {
-  return push.kind === 'own-voice-stand-in' ? ownVoiceStandInNotice(push.reason) : substitutePackNotice(push);
+  if (push.kind === 'own-voice-stand-in') return ownVoiceStandInNotice(push.reason);
+  if (push.kind === 'kokoro-fallback') return kokoroFallbackNotice(push.reason);
+  return substitutePackNotice(push);
 }
 
 export const useVoiceStore = create<VoiceState>((set, get) => {
@@ -1867,10 +1877,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       if (session !== mySession) return;
       localTtsCall =
         (callCfg?.ai_backend_kind ?? 'cloud-proxy') === 'local' &&
-        (selectedTtsEngine(callCfg ?? {}) !== 'elevenlabs' || !elevenKeyPresent);
-      kokoroTtsCall =
-        (callCfg?.ai_backend_kind ?? 'cloud-proxy') === 'local' &&
-        selectedTtsEngine(callCfg ?? {}) === 'kokoro';
+        (callCfg?.tts_engine === 'local' || !elevenKeyPresent);
+      // 261102: Kokoro lines go sentence by sentence (slower synthesis, so
+      // the first sentence plays while the next one generates).
+      kokoroTtsCall = localTtsCall && localTtsModel(callCfg) === 'kokoro';
       // 260725: kind from the fresh config read (main truth), not the display
       // store — the store can be UNKNOWN (null) at call time.
       // 260816 SenseVoice: the policy also reads whether the SenseVoice pack is

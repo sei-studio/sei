@@ -147,7 +147,7 @@ export function EditCharacterModal({
   useEffect(() => {
     void sei
       .getConfig()
-      .then((c) => setLocalTtsPref(c.tts_engine === 'local' || c.tts_engine === 'kokoro'))
+      .then((c) => setLocalTtsPref(c.tts_engine === 'local'))
       .catch(() => {
         /* non-fatal — default keeps the full picker */
       });

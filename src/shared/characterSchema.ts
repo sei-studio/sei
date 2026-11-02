@@ -1072,9 +1072,21 @@ export const UserConfigSchema = z.object({
    * language to a local voice pack at synthesis time, and
    * metadata.voicePitch still applies through the pitch shifter.
    */
-  tts_engine: z.enum(['elevenlabs', 'local', 'kokoro']).optional(),
-  /** Legacy preview field; only used to migrate the engine, never to pin a voice. */
-  local_tts_voice: z.enum(['auto', 'af_heart', 'if_sara']).optional(),
+  tts_engine: z.enum(['elevenlabs', 'local']).optional(),
+  /**
+   * 261102: which on-device model speaks when local TTS is in use (Settings
+   * > Voice > Local voice). 'fast' = the sherpa-onnx Piper/icefall voice
+   * packs (the original local voices); 'kokoro' = Kokoro-82M, more natural
+   * but slower and a ~126 MB download. Optional and NOT defaulted: absent
+   * means 'fast', so every profile from before this key keeps its voices.
+   * Read through localTtsModel() (shared/ttsEngine.ts). A Kokoro line whose
+   * pack is missing or broken, or whose language/gender Kokoro has no voice
+   * for, is spoken with the Fast voices instead (main/voice/tts.ts).
+   * (The unreleased PR #49 preview wrote `local_tts_voice` and a third
+   * tts_engine value; neither shipped, and configStore keeps the stray key
+   * as an unknown key.)
+   */
+  local_tts_model: z.enum(['fast', 'kokoro']).optional(),
   /**
    * 260725: cloud users' opt-in to the local Whisper fallback. Set true once
    * the user accepts the Whisper-install prompt after a Scribe failure, so

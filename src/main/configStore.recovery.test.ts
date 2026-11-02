@@ -426,3 +426,28 @@ describe('a damaged file in a folder that cannot be written (T280)', () => {
     expect(configRecoveries().map((e) => e.kind)).toEqual(['restored_backup', 'restored_backup']);
   });
 });
+
+describe('local TTS model setting (261102)', () => {
+  it('a profile with no choice saved stays on Fast and parses clean', async () => {
+    await writeRaw(JSON.stringify({ preferred_name: 'Ana', tts_engine: 'local', schema_version: CONFIG_SCHEMA_VERSION }));
+    const cfg = await loadConfig();
+    expect(cfg.tts_engine).toBe('local');
+    expect(cfg.local_tts_model).toBeUndefined();
+    expect(configRecoveries()).toEqual([]);
+  });
+
+  it('keeps an unreleased-preview local_tts_voice key as an unknown key, never reading it', async () => {
+    await writeRaw(
+      JSON.stringify({ preferred_name: 'Ana', tts_engine: 'local', local_tts_voice: 'af_heart', schema_version: CONFIG_SCHEMA_VERSION }),
+    );
+    const cfg = await loadConfig();
+    expect(cfg.tts_engine).toBe('local');
+    expect(cfg.local_tts_model).toBeUndefined();
+    expect(configRecoveries()).toEqual([]);
+    await updateConfig((c) => ({ ...c, local_tts_model: 'kokoro' }));
+    const raw = await readJson();
+    expect(raw.local_tts_model).toBe('kokoro');
+    expect(raw.local_tts_voice).toBe('af_heart');
+    expect(raw.tts_engine).toBe('local');
+  });
+});

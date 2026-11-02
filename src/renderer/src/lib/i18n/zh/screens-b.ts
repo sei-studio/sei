@@ -164,6 +164,12 @@ export const ZH_SCREENS_B: Record<string, string> = {
     '，经由 Piper；已转换为 ONNX。中文语音：基于北京希尔贝壳科技的 AISHELL-3 训练，',
   'Apache License 2.0': 'Apache 2.0 许可证',
   ', via icefall.': '，经由 icefall。',
+  // 261102 Kokoro credit (Settings > About).
+  'Kokoro voice:': 'Kokoro 语音：',
+  'by hexgrad,': '，作者 hexgrad，',
+  ', converted by sherpa-onnx. Its pronunciation data comes from espeak-ng,':
+    '，由 sherpa-onnx 转换。其发音数据来自 espeak-ng，',
+  '.': '。',
   'Danger': '危险操作',
   'Reset all companion memories': '重置所有伙伴的记忆',
   'All memories reset': '已重置所有记忆',

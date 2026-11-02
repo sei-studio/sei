@@ -7,6 +7,8 @@
  * Config (UserConfig, renderer-settable through saveConfig):
  *   tts_engine: 'elevenlabs' | 'local'      absent = 'elevenlabs'. Read only
  *     when ai_backend_kind === 'local'; cloud accounts ignore it.
+ *   local_tts_model: 'fast' | 'kokoro'      absent = 'fast' (261102). Which
+ *     on-device model speaks; Kokoro falls back to Fast per line.
  *   stt_engine: 'scribe' | 'whisper' | 'sensevoice'
  *     BYOK: 'sensevoice' turns dictation local-only through main-side
  *     SenseVoice (pack required). Cloud: the local-fallback model prefers
@@ -53,6 +55,12 @@ export {
   type LocalVoiceId,
   type LocalVoicePick,
 } from './localVoice';
-export { synthesizeKokoro, synthesizeLocal, transcribeLocal, packMissingError } from './engine';
+export {
+  synthesizeKokoro,
+  releaseKokoroEngines,
+  synthesizeLocal,
+  transcribeLocal,
+  packMissingError,
+} from './engine';
 export { detectSpokenLanguage } from './spokenLanguage';
 export { pickKokoroVoice } from './kokoro';

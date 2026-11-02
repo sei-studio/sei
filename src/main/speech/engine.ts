@@ -24,15 +24,16 @@
  * addon's own message.
  *
  * Engines are cached per pack (the models are small: 78 MB en, 30 MB zh,
- * 155 MB SenseVoice int8) and created lazily on first use.
+ * 155 MB SenseVoice int8) and created lazily on first use. Kokoro engines are
+ * the exception (larger, one per language): see the Kokoro section below.
  * A missing pack surfaces as the typed error `VOICE_PACK_MISSING:<packId>`
  * that the renderer maps to a download prompt — NEVER auto-downloaded
  * mid-call.
  */
 import path from 'node:path';
-import { kokoroConfig, KOKORO_VOICES, type KokoroVoice } from './kokoro';
 import { existsSync } from 'node:fs';
 import { bundleRequire } from '../bundleRequire';
+import { kokoroConfig, KOKORO_VOICES, type KokoroVoice } from './kokoro';
 import { LOCAL_VOICE_SPEC, type LocalVoiceId } from './localVoice';
 import { SPEECH_PACKS, type SpeechPackId } from './packs';
 import { packModelDir, packReady } from './packStore';
@@ -166,22 +167,118 @@ export async function synthesizeLocal(
   return { samples: audio.samples, sampleRate: audio.sampleRate };
 }
 
-/** One engine per phonemizer language: do not mutate a shared engine mid-call. */
+// ── Kokoro (261102) ─────────────────────────────────────────────────────────
+//
+// One engine per phonemizer language (the espeak `lang` is fixed at create
+// time, so en/es/fr/it each need their own), about 250 MB resident each. They
+// are NOT kept for the life of the app like the small Fast engines above:
+//  - releaseKokoroEngines() drops them all; main calls it when the user
+//    switches away from Kokoro or uninstalls its pack (voice/tts.ts).
+//  - after KOKORO_IDLE_RELEASE_MS with no Kokoro line they drop by themselves,
+//    so a call that ended long ago does not pin the memory.
+// sherpa-onnx-node has no explicit free: the native model is destroyed by the
+// handle's finalizer once V8 collects the wrapper, so "release" means dropping
+// every reference. A line already synthesizing keeps its engine alive until it
+// returns.
+// A create that FAILS (a broken pack, a runtime that cannot load the model) is
+// remembered for KOKORO_RETRY_AFTER_FAIL_MS, so every line of a call does not
+// re-read a 126 MB model only to fail again; the caller falls back to Fast.
+
+export const KOKORO_IDLE_RELEASE_MS = 5 * 60_000;
+export const KOKORO_RETRY_AFTER_FAIL_MS = 60_000;
+
 const kokoroEngines = new Map<string, Promise<TtsEngine>>();
-export async function synthesizeKokoro(text: string, voice: KokoroVoice) {
+let kokoroInFlight = 0;
+let kokoroIdleTimer: ReturnType<typeof setTimeout> | null = null;
+let kokoroCreateFailure: { at: number; message: string } | null = null;
+
+function clearKokoroIdleTimer(): void {
+  if (kokoroIdleTimer) clearTimeout(kokoroIdleTimer);
+  kokoroIdleTimer = null;
+}
+
+function armKokoroIdleTimer(): void {
+  clearKokoroIdleTimer();
+  if (kokoroEngines.size === 0) return;
+  kokoroIdleTimer = setTimeout(() => {
+    kokoroIdleTimer = null;
+    if (kokoroInFlight === 0) releaseKokoroEngines('idle');
+  }, KOKORO_IDLE_RELEASE_MS);
+  kokoroIdleTimer.unref?.();
+}
+
+/** Drop every cached Kokoro engine (and forget a remembered load failure, so
+ * a re-downloaded pack is tried again at once). Safe to call any time. */
+export function releaseKokoroEngines(reason = 'release'): void {
+  clearKokoroIdleTimer();
+  kokoroCreateFailure = null;
+  if (kokoroEngines.size === 0) return;
+  console.log(`[sei/speech] kokoro: released ${kokoroEngines.size} engine(s) (${reason})`);
+  kokoroEngines.clear();
+}
+
+function kokoroEngineFor(voice: KokoroVoice): Promise<TtsEngine> {
+  const lang = KOKORO_VOICES[voice].lang;
+  let engine = kokoroEngines.get(lang);
+  if (!engine) {
+    if (kokoroCreateFailure && Date.now() - kokoroCreateFailure.at < KOKORO_RETRY_AFTER_FAIL_MS) {
+      return Promise.reject(
+        new Error(`VOICE_TTS_FAILED: Kokoro could not load: ${kokoroCreateFailure.message}`),
+      );
+    }
+    const created = (async () =>
+      (await loadSherpa().OfflineTts.createAsync(
+        kokoroConfig(packModelDir('tts-kokoro'), voice),
+      )) as TtsEngine)();
+    engine = created;
+    kokoroEngines.set(lang, created);
+    created.catch((err: unknown) => {
+      if (kokoroEngines.get(lang) === created) kokoroEngines.delete(lang);
+      kokoroCreateFailure = { at: Date.now(), message: (err as Error)?.message ?? String(err) };
+    });
+  }
+  return engine;
+}
+
+/** Synthesize one line with a Kokoro voice. Throws VOICE_PACK_MISSING:tts-kokoro
+ * when the pack is not installed; the caller (voice/tts.ts) falls back to the
+ * Fast voices on any failure. */
+export async function synthesizeKokoro(
+  text: string,
+  voice: KokoroVoice,
+): Promise<{ samples: Float32Array; sampleRate: number }> {
   if (!(await packReady('tts-kokoro'))) throw packMissingError('tts-kokoro');
   const spec = KOKORO_VOICES[voice];
-  let engine = kokoroEngines.get(spec.lang);
-  if (!engine) {
-    engine = loadSherpa().OfflineTts.createAsync(kokoroConfig(packModelDir('tts-kokoro'), voice)) as Promise<TtsEngine>;
-    kokoroEngines.set(spec.lang, engine);
-    engine.catch(() => kokoroEngines.delete(spec.lang));
+  kokoroInFlight++;
+  clearKokoroIdleTimer();
+  const started = Date.now();
+  try {
+    const engine = await kokoroEngineFor(voice);
+    // enableExternalBuffer: false, same Electron memory-cage reason as above.
+    const audio = await engine.generateAsync({
+      text,
+      sid: spec.sid,
+      speed: spec.rate,
+      enableExternalBuffer: false,
+    });
+    if (!audio.samples?.length || !Number.isFinite(audio.sampleRate) || audio.sampleRate <= 0) {
+      throw new Error('VOICE_TTS_FAILED: Kokoro produced no usable audio');
+    }
+    const dur = audio.samples.length / audio.sampleRate;
+    console.log(
+      `[sei/speech] tts kokoro/${voice} ${dur.toFixed(2)}s in ${Date.now() - started}ms ` +
+        `(rtf ${dur > 0 ? ((Date.now() - started) / 1000 / dur).toFixed(3) : '?'})`,
+    );
+    return { samples: audio.samples, sampleRate: audio.sampleRate };
+  } finally {
+    kokoroInFlight--;
+    if (kokoroInFlight === 0) armKokoroIdleTimer();
   }
-  const audio = await (await engine).generateAsync({ text, sid: spec.sid, speed: spec.rate, enableExternalBuffer: false });
-  if (!audio.samples?.length || !Number.isFinite(audio.sampleRate) || audio.sampleRate <= 0) {
-    throw new Error('VOICE_TTS_FAILED: Kokoro produced no usable audio');
-  }
-  return { samples: audio.samples, sampleRate: audio.sampleRate };
+}
+
+/** TEST-ONLY: how many Kokoro engines are cached. */
+export function _kokoroEngineCountForTests(): number {
+  return kokoroEngines.size;
 }
 
 // ── STT (SenseVoice) ────────────────────────────────────────────────────────
