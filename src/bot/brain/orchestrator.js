@@ -1154,6 +1154,10 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // A line answered only with a walk gets the items of the next action that
   // brings some in, if it starts this soon after.
   const OPEN_ASK_ITEMS_MS = 90_000
+  // Actions whose items are a product made from the items fetched first. In
+  // the same loop they add to the ask, so "make me a crafting table" is
+  // answered by the give of the table and not by the leftover log.
+  const MAKES_ITEMS = new Set(['craft', 'smeltInput'])
   async function refreshPlayerTaskInGoals() {
     if (!heartbeatLog) { playerTaskInGoals = false; heartbeatGoals = []; heartbeatGoalLines = []; playerTasks = []; taskHolds.clear(); return }
     try {
@@ -1215,12 +1219,12 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     return Object.values(args).some((v) => typeof v === 'string' && names.has(v.trim().toLowerCase()))
   }
   // pass 32: see openAsks.
-  function noteOpenAsk(line, who, uses) {
+  function noteOpenAsk(line, who, uses, loopId = null) {
     const text = String(line ?? '').trim()
     if (!text || typeof caps.handOverDetail !== 'function') return
     const toPlayer = uses.every((u) => aimsAtPlayer(u.input) && !isHandOver(u.name))
     const items = toPlayer ? [] : [...new Set(uses.flatMap((u) => workItemsOf(u.name, u.input)))]
-    openAsks = [...openAsks.filter((a) => a.line !== text), { at: Date.now(), who: who ?? null, line: text, toPlayer, items, delivering: false }].slice(-OPEN_ASK_MAX)
+    openAsks = [...openAsks.filter((a) => a.line !== text), { at: Date.now(), who: who ?? null, line: text, toPlayer, items, delivering: false, loopId }].slice(-OPEN_ASK_MAX)
   }
   // pass 37: see openAsks.
   function workItemsOf(name, args) {
@@ -1265,8 +1269,11 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     openAsks = openAsks.filter((a) => !a.items?.some((i) => ended.has(i)))
   }
   // A give that landed answers the asks for that item, and the asks that
-  // named no items (pass 32: any give answered them all).
+  // named no items. A give no open ask names answers them all (pass 32): the
+  // item lists miss things (a recipe chain made outside the ask's loop), and
+  // an ask left open after its give makes the arrival note offer leftovers.
   function closeAsksOnGive(item) {
+    if (!openAsks.some((a) => a.items?.includes(item))) { openAsks = []; return }
     openAsks = openAsks.filter((a) => a.items?.length && !a.items.includes(item))
   }
   // Called for every world action she starts.
@@ -1274,9 +1281,15 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     if (!openAsks.length) return
     const now = Date.now()
     const last = openAsks[openAsks.length - 1]
-    if (last && !last.toPlayer && !last.items?.length && now - last.at < OPEN_ASK_ITEMS_MS) {
+    // Only work in the loop the player's line started counts toward it: an
+    // item action on a later turn is as likely her own goal work, and the
+    // arrival note would then offer her own logs for "go explore east".
+    const loopId = currentLoop?.id ?? null
+    const ask = loopId ? [...openAsks].reverse().find((a) => a.loopId === loopId && !a.toPlayer) : null
+    if (ask) {
       const items = workItemsOf(name, args)
-      if (items.length) last.items = items
+      if (items.length && MAKES_ITEMS.has(name)) ask.items = [...new Set([...(ask.items ?? []), ...items])]
+      else if (items.length && !ask.items?.length && now - ask.at < OPEN_ASK_ITEMS_MS) ask.items = items
     }
     // Her own walk back with the items. A walk that answers a newer line
     // ("come here", "meet me over here") is not a delivery: in the probe the
@@ -5760,7 +5773,7 @@ function maybeWarnByteCap(loop, warned) {
         // a stop closes the asks whose work it ended (closeAsksOnStop).
         if (!loop._groupVoiceLine) {
           if (hasStop) closeAsksOnStop(loop.inFlight ?? inflight.current(), newSuspendingTools.length > 0)
-          if (newSuspendingTools.length > 0) noteOpenAsk(line, loop._lastPlayerLine.who, newSuspendingTools)
+          if (newSuspendingTools.length > 0) noteOpenAsk(line, loop._lastPlayerLine.who, newSuspendingTools, loop.id)
         }
         // 261018 (pass 15): her own choice to stop or unfollow in answer to
         // this line leaves the stay note for later turns (see stayNote). Not

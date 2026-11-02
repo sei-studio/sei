@@ -31,9 +31,32 @@ function dropsOf(bot, term) {
   return [...out]
 }
 
+// What a furnace input cooks into (smeltInput names only the input). An input
+// left out here just names no item.
+const SMELTS = {
+  raw_iron: 'iron_ingot', raw_gold: 'gold_ingot', raw_copper: 'copper_ingot',
+  iron_ore: 'iron_ingot', deepslate_iron_ore: 'iron_ingot',
+  gold_ore: 'gold_ingot', deepslate_gold_ore: 'gold_ingot', nether_gold_ore: 'gold_ingot',
+  copper_ore: 'copper_ingot', deepslate_copper_ore: 'copper_ingot',
+  ancient_debris: 'netherite_scrap',
+  sand: 'glass', red_sand: 'glass', cobblestone: 'stone', stone: 'smooth_stone',
+  clay_ball: 'brick', netherrack: 'nether_brick', cactus: 'green_dye', kelp: 'dried_kelp',
+  potato: 'baked_potato', wet_sponge: 'sponge', chorus_fruit: 'popped_chorus_fruit',
+  beef: 'cooked_beef', porkchop: 'cooked_porkchop', chicken: 'cooked_chicken', mutton: 'cooked_mutton',
+  rabbit: 'cooked_rabbit', cod: 'cooked_cod', salmon: 'cooked_salmon',
+}
+export function smeltProductOf(input) {
+  const n = String(input ?? '').toLowerCase().trim()
+  if (SMELTS[n]) return SMELTS[n]
+  // Logs and wood (stripped or not) burn to charcoal; nether stems do not.
+  if (/_(log|wood)$/.test(n)) return 'charcoal'
+  return null
+}
+
 /**
  * Item names an action brings into her bag when it works: a gather, dig or
- * find target's drops, and the item a craft, pickup or withdraw names.
+ * find target's drops, the item a craft, pickup or withdraw names, and what a
+ * smeltInput cooks into.
  * [] for anything else (walking, following, building, a dig by coordinates).
  * @param {object} bot
  * @param {string} name
@@ -52,6 +75,10 @@ export function workItemsFor(bot, name, args) {
     case 'pickup':
     case 'withdrawItem':
       return typeof a.item === 'string' && a.item.trim() ? [a.item.toLowerCase().trim()] : []
+    case 'smeltInput': {
+      const out = smeltProductOf(a.item)
+      return out ? [out] : []
+    }
     default:
       return []
   }

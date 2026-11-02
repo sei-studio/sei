@@ -22,7 +22,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { z } from 'zod'
 import { NUDGES } from './promptLibrary.js'
 import { createOrchestrator, _setTickIntervalForTests } from './orchestrator.js'
-import { workItemsFor, carriedCounts } from '../adapter/minecraft/observers/workItems.js'
+import { workItemsFor, carriedCounts, smeltProductOf } from '../adapter/minecraft/observers/workItems.js'
 
 afterEach(() => { vi.restoreAllMocks() })
 
@@ -52,6 +52,16 @@ describe('minecraft workItems', () => {
     expect(workItemsFor(bot, 'goTo', { player: 'Alex' })).toEqual([])
     expect(workItemsFor(bot, 'dig', { x: 1, y: 2, z: 3 })).toEqual([])
     expect(workItemsFor(bot, 'gather', { x: 1, y: 2, z: 3 })).toEqual([])
+    expect(workItemsFor(bot, 'smeltInput', { item: 'raw_iron', count: 3 })).toEqual(['iron_ingot'])
+    expect(workItemsFor(bot, 'smeltInput', { item: 'iron_ingot' })).toEqual([])
+  })
+  it('knows what a furnace input cooks into', () => {
+    expect(smeltProductOf('raw_gold')).toBe('gold_ingot')
+    expect(smeltProductOf('Sand')).toBe('glass')
+    expect(smeltProductOf('beef')).toBe('cooked_beef')
+    expect(smeltProductOf('stripped_oak_log')).toBe('charcoal')
+    expect(smeltProductOf('crimson_stem')).toBe(null)
+    expect(smeltProductOf('dirt')).toBe(null)
   })
   it('counts what she carries', () => {
     expect(carriedCounts(bot, ['coal', 'oak_log'])).toEqual({ coal: 6 })
@@ -61,9 +71,9 @@ describe('minecraft workItems', () => {
 
 // ---- orchestrator harness (as qualityPass32.test.js, plus items) ----------
 
-const ITEMS = { coal_ore: ['coal'], coal: ['coal'], oak_log: ['oak_log'] }
+const ITEMS = { coal_ore: ['coal'], coal: ['coal'], oak_log: ['oak_log'], iron_ore: ['raw_iron'] }
 function makeAdapter({ inv, held = new Set(), goTo = 'reached Steve (1m away)' }) {
-  const ACTIONS = ['gather', 'give', 'goTo', 'follow', 'stop', 'explore', 'craft']
+  const ACTIONS = ['gather', 'give', 'goTo', 'follow', 'stop', 'explore', 'craft', 'smeltInput']
   const holds = {}
   const a = {
     listActions: () => ACTIONS,
@@ -97,7 +107,9 @@ function makeAdapter({ inv, held = new Set(), goTo = 'reached Steve (1m away)' }
       const m = /^gave (\d+) (\S+) to (.+?), tossed/.exec(String(r ?? ''))
       return m ? { item: m[2], n: Number(m[1]), to: m[3] } : null
     },
-    workItems: (name, args) => (['gather', 'find'].includes(name) ? ITEMS[args?.name] ?? [] : name === 'craft' ? [args?.item] : []),
+    workItems: (name, args) => (['gather', 'find'].includes(name) ? ITEMS[args?.name] ?? []
+      : name === 'craft' ? [args?.item]
+        : name === 'smeltInput' ? (smeltProductOf(args?.item) ? [smeltProductOf(args?.item)] : []) : []),
     carriedCounts: (names) => Object.fromEntries(names.filter((n) => inv[n] > 0).map((n) => [n, inv[n]])),
   }
   a.finish = (name, result) => holds[name]?.(result)
@@ -249,6 +261,77 @@ describe('orchestrator: open asks remember their items', () => {
     ], { inv })
     await send('grab me some coal')
     expect(allText(arrivalCalls().at(-1))).toContain('coal×3')
+  })
+})
+
+describe('orchestrator: a give of the product closes a recipe chain (review)', () => {
+  it('"make me a crafting table": gather, craft, give the table closes the ask; the leftover log is not offered', async () => {
+    const inv = { oak_log: 1, oak_planks: 0, crafting_table: 1 }
+    const { send, arrivalCalls } = setup([
+      turn(say('s1', 'on it'), act('a1', 'gather', { name: 'oak_log', count: 2 })),
+      turn(act('c1', 'craft', { item: 'oak_planks' })),
+      turn(act('c2', 'craft', { item: 'crafting_table' })),
+      turn(act('g1', 'give', { item: 'crafting_table', player: 'Steve' })),
+      turn(act('w1', 'goTo', { player: 'Steve' })),
+      turn(act('e1', 'end_loop')),
+    ], { inv })
+    await send('make me a crafting table')
+    const t = allText(arrivalCalls().at(-1))
+    expect(t).not.toContain(CARRYING)
+    expect(t).not.toContain('oak_log×')
+    expect(t).not.toContain(GENERAL)
+  })
+
+  it('"smelt me some iron": gather ore, smelt, give the ingots closes the ask', async () => {
+    const inv = { raw_iron: 1, iron_ingot: 3 }
+    const { send, arrivalCalls } = setup([
+      turn(say('s1', 'on it'), act('a1', 'gather', { name: 'iron_ore', count: 4 })),
+      turn(act('s2', 'smeltInput', { item: 'raw_iron', count: 3 })),
+      turn(act('g1', 'give', { item: 'iron_ingot', player: 'Steve' })),
+      turn(act('w1', 'goTo', { player: 'Steve' })),
+      turn(act('e1', 'end_loop')),
+    ], { inv })
+    await send('smelt me some iron')
+    const t = allText(arrivalCalls().at(-1))
+    expect(t).not.toContain(CARRYING)
+    expect(t).not.toContain('raw_iron×')
+  })
+
+  it('a give no open ask names closes them all (pass 32)', async () => {
+    const inv = { coal: 2, torch: 4 }
+    const { send, arrivalCalls } = setup([
+      turn(say('s1', 'on it'), act('a1', 'gather', { name: 'coal_ore', count: 2 })),
+      turn(act('g1', 'give', { item: 'torch', player: 'Steve' })),
+      turn(act('w1', 'goTo', { player: 'Steve' })),
+      turn(act('e1', 'end_loop')),
+    ], { inv })
+    await send('bring me some torches')
+    const t = allText(arrivalCalls().at(-1))
+    expect(t).not.toContain(CARRYING)
+    expect(t).not.toContain('coal×')
+  })
+
+  it('her own gather on a later loop does not become the items of "go explore east"', async () => {
+    const inv = { oak_log: 5 }
+    const { send, orch, drain, arrivalCalls } = setup([
+      turn(say('s1', 'on it'), act('x1', 'explore', { name: 'east' })),
+      turn(act('e1', 'end_loop')),
+      turn(act('a1', 'gather', { name: 'oak_log', count: 5 })),
+      turn(act('w1', 'goTo', { player: 'Steve' })),
+      turn(act('e2', 'end_loop')),
+    ], { inv })
+    await send('go explore east')
+    const later = Date.now() + 14_000
+    const spy = vi.spyOn(Date, 'now').mockImplementation(() => later)
+    try {
+      await orch.handleDispatch('sei:idle', { quietMs: 6800 })
+      await flush()
+      await drain()
+    } finally { spy.mockRestore() }
+    const arrival = arrivalCalls().at(-1)
+    expect(arrival).toBeTruthy()
+    expect(allText(arrival)).not.toContain(CARRYING)
+    expect(allText(arrival)).not.toContain('oak_log×')
   })
 })
 
