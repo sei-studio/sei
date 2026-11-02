@@ -1154,9 +1154,6 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // A line answered only with a walk gets the items of the next action that
   // brings some in, if it starts this soon after.
   const OPEN_ASK_ITEMS_MS = 90_000
-  // When the arrival note last named her items: the delivery line in the
-  // snapshot of that same turn would say it twice.
-  let arrivalItemsAt = 0
   async function refreshPlayerTaskInGoals() {
     if (!heartbeatLog) { playerTaskInGoals = false; heartbeatGoals = []; heartbeatGoalLines = []; playerTasks = []; taskHolds.clear(); return }
     try {
@@ -1281,15 +1278,23 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       const items = workItemsOf(name, args)
       if (items.length) last.items = items
     }
-    if ((name === 'goTo' || name === 'follow') && Object.values(args ?? {}).some(isOwnerName)) {
+    // Her own walk back with the items. A walk that answers a newer line
+    // ("come here", "meet me over here") is not a delivery: in the probe the
+    // line then made her hand over things nobody asked for (cobblestone
+    // after "hows it going") or logs the player had just called off.
+    if (walksOrFollowsOwner(name, args) && !last?.toPlayer) {
       for (const a of openAsks) if (!a.toPlayer && !a.delivering && carriedFor(a).length) a.delivering = true
     }
   }
+  const walksOrFollowsOwner = (name, args) => (name === 'goTo' || name === 'follow') && Object.values(args ?? {}).some(isOwnerName)
   // The delivery line in the snapshot: asks she set off to hand over and
-  // still carries. Not while the stay note holds her, nor on the turn the
-  // arrival note named them.
+  // still carries, only while that walk (or follow) is running. Once she has
+  // arrived the arrival note says it once; the line staying on after it made
+  // her hand over logs the player had called off during the walk.
   function deliveryNoteText() {
-    if (!openAsks.length || stayNote || Date.now() - arrivalItemsAt < 2000) return ''
+    if (!openAsks.length || stayNote) return ''
+    const cur = inflight.current()
+    if (!cur || !walksOrFollowsOwner(cur.name, cur.args)) return ''
     const asks = carriedAsks({ deliveringOnly: true })
     if (!asks.length) return ''
     const who = config?.player_display_name || config?.player_username || null
@@ -1321,7 +1326,6 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // pass 37: name what she carries for which line, when it is known.
     const asks = carriedAsks()
     if (asks.length) {
-      arrivalItemsAt = Date.now()
       return NUDGES.arrivedCarrying({ who, asks })
     }
     return NUDGES.arrivedAsks({ who })

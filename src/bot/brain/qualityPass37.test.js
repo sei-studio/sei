@@ -307,6 +307,55 @@ describe('orchestrator: the delivery line', () => {
     expect(t).toContain('coal×1')
   })
 
+  it('rides the walk, and is gone once the walk has ended (the arrival note says it once)', async () => {
+    const inv = { oak_log: 8 }
+    const { send, provider, adapter, drain, orch } = setup([
+      turn(say('s1', 'on it'), act('a1', 'gather', { name: 'oak_log', count: 8 })),
+      turn(act('w1', 'goTo', { player: 'Steve' })),
+      turn(act('e1', 'end_loop')),
+      turn(say('s2', 'haha')),
+      turn(say('s3', 'here')),
+      turn(say('s4', 'ok')),
+    ], { inv, held: new Set(['goTo']) })
+    await send('get me 8 logs')
+    await send('lol')
+    expect(allText(provider.calls.at(-1))).toContain(DELIVERY)
+    adapter.finish('goTo', 'reached Steve (1m away)')
+    await flush()
+    await drain()
+    const arrival = provider.calls.filter((c) => /reached Steve/.test(allText(c))).at(-1)
+    expect(allText(arrival)).toContain(CARRYING)
+    expect(allText(arrival).split(CARRYING).at(-1)).not.toContain(DELIVERY)
+    // The idle turn after the arrival (the probe's calloff_walk regression).
+    // 14 s later, as in the probe.
+    const n = provider.calls.length
+    const later = Date.now() + 14_000
+    const spy = vi.spyOn(Date, 'now').mockImplementation(() => later)
+    try {
+      await orch.handleDispatch('sei:idle', { quietMs: 6800 })
+      await flush()
+    } finally { spy.mockRestore() }
+    expect(provider.calls.length).toBeGreaterThan(n)
+    expect(allText(provider.calls.at(-1))).not.toContain(DELIVERY)
+  })
+
+  it('a walk answering a newer line ("come here") is not a delivery', async () => {
+    const inv = { cobblestone: 12 }
+    const { send, provider } = setup([
+      turn(say('s1', 'good'), act('a1', 'gather', { name: 'stone', count: 4 })),
+      turn(act('e1', 'end_loop')),
+      turn(say('s2', 'coming'), act('f1', 'follow', { player: 'Steve' })),
+      turn(act('e2', 'end_loop')),
+      turn(say('s3', 'haha')),
+    ], { inv, held: new Set(['follow']) })
+    ITEMS.stone = ['cobblestone']
+    await send('hows it going')
+    await send('come here')
+    await send('lol')
+    expect(allText(provider.calls.at(-1))).not.toContain(DELIVERY)
+    delete ITEMS.stone
+  })
+
   it('is absent before she sets off, and after the give', async () => {
     const inv = { coal: 1 }
     const { send, provider } = setup([
