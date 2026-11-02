@@ -79,7 +79,7 @@ function statusOf(err, text) {
     const s = e?.[k]
     if (typeof s === 'number' && s >= 100 && s <= 599) return s
   }
-  const m = text.match(/\bapi (\d{3})\b/) ?? text.match(/^(\d{3})\b/)
+  const m = text.match(/\bapi (\d{3})\b/) ?? text.match(/^list (\d{3})\b/) ?? text.match(/^(\d{3})\b/)
   return m ? Number(m[1]) : null
 }
 

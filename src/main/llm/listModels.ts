@@ -68,7 +68,7 @@ async function fetchJson(url: string, headers: Record<string, string>): Promise<
       // The body rides along (bounded) so typedError can tell a region
       // refusal from a rejected key (261103).
       const body = await resp.text().then((t) => t.slice(0, 300), () => '');
-      throw new Error(`list ${resp.status}${body ? `: ${body}` : ''}`);
+      throw Object.assign(new Error(`list ${resp.status}${body ? `: ${body}` : ''}`), { status: resp.status });
     }
     return await resp.json();
   } finally {

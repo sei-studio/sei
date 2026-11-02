@@ -62,6 +62,13 @@ describe('typedError (llm:test / llm:list-models token)', () => {
     );
   });
 
+  it('an Anthropic model-list 403 "Request not allowed" is a region refusal, by message or by status', () => {
+    const body = '{"type":"error","error":{"type":"forbidden","message":"Request not allowed"}}';
+    expect(typedError(new Error(`list 403: ${body}`))).toBe('region_unsupported');
+    expect(typedError(Object.assign(new Error(`list 403: ${body}`), { status: 403 }))).toBe('region_unsupported');
+    expect(typedError(new Error('list 401: {"type":"error","error":{"type":"authentication_error"}}'))).toBe('unauthorized');
+  });
+
   it('auth failures keep reading as unauthorized', () => {
     expect(typedError(new Error('openai API 401: invalid_api_key'))).toBe('unauthorized');
     expect(typedError(new Error('list 403: Forbidden'))).toBe('unauthorized');
