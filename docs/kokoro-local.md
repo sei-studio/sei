@@ -1,93 +1,93 @@
-# Optional Kokoro local voices
+# Kokoro local voice
 
-Implementation for [SEI issue #47](https://github.com/sei-studio/sei/issues/47)
-and [PR #49](https://github.com/sei-studio/sei/pull/49), targeting `dev`.
-Uses the existing `sherpa-onnx-node` runtime and speech pack downloader.
-No new npm dependency, Python/Docker service, bundled weights or Android changes.
+Kokoro-82M is one of the two on-device voice models for local (own key) mode,
+next to the original voice packs, which the UI calls **Fast**. It came in with
+issue #47 / PR #49 and uses the existing `sherpa-onnx-node` runtime and speech
+pack downloader. No new npm dependency, service or bundled weights.
 
-## Setup and routing
+## Setting
 
-1. Use the **My key** backend and open Settings → Voice.
-2. Select **Kokoro**, beside **ElevenLabs** and **Local**.
-3. Download the Kokoro pack. Download standard local packs too if you need fallback.
-4. Preview a companion voice or start a call.
+Settings > Voice: **Voices** = ElevenLabs | Local. Under Local, **Local voice**
+= Fast | Kokoro.
 
-`tts_engine: 'kokoro'` selects automatic language/gender matching for each line.
-The companion's existing voice identity, own-voice gender hint and pitch remain
-unchanged. Character language pins and SEI's text-script language handling apply.
-Cloud accounts keep their existing route and ignore this engine preference.
-Profiles from the first preview with Local + an explicit Kokoro preset are read
-as Kokoro; changing the engine in Settings clears that legacy preset.
-The old global preset dropdown is removed.
+| Key | Values | Absent means |
+| --- | --- | --- |
+| `tts_engine` | `elevenlabs`, `local` | `elevenlabs` |
+| `local_tts_model` | `fast`, `kokoro` | `fast` |
+
+Read through `localTtsModel()` in `src/shared/ttsEngine.ts`. Profiles from
+before the key have no value and stay on Fast, so nobody is moved to Kokoro
+without picking it. Cloud accounts ignore both keys. (The unreleased PR #49
+preview wrote `local_tts_voice` and a third `tts_engine` value; neither
+shipped. configStore keeps the stray `local_tts_voice` key as an unknown key
+and nothing reads it.)
+
+Picking Kokoro while its pack is missing opens the download confirm, and the
+choice is saved once the pack is ready (same flow as SenseVoice). The Kokoro
+pack row shows while Kokoro is chosen or while its pack is on disk, so it can
+be uninstalled after switching back to Fast.
+
+## Routing
+
+`synthesizeLocalClip` in `src/main/voice/tts.ts`, per line:
 
 | Language | Female | Male |
 | --- | --- | --- |
 | English | af_heart (speaker 3, speed 0.8) | am_michael (16) |
 | Spanish | ef_dora (28) | em_alex (29) |
-| French | ff_siwis (30) | standard local fallback |
-| Italian mapping | if_sara (35) | im_nicola (36) |
+| French | ff_siwis (30) | Fast voices |
+| Italian (mapped, no chat language yet) | if_sara (35) | im_nicola (36) |
 
-The speaker IDs follow the [sherpa v1.0 table](https://github.com/k2-fsa/sherpa-onnx/blob/master/scripts/kokoro/v1.0/generate_voices_bin.py).
-Italian mappings are tested at the synthesis/helper boundary; SEI's current
-conversation-language set does **not** include Italian. This PR does not expand
-STT/chat-language support. Unlike the first preview, an old Sara selection no
-longer forces Italian pronunciation over an English conversation.
+Speaker ids follow the
+[sherpa v1.0 table](https://github.com/k2-fsa/sherpa-onnx/blob/master/scripts/kokoro/v1.0/generate_voices_bin.py).
+Any language or gender without a Kokoro voice (zh, ja, ko, French male) uses
+the Fast voices with their installed-pack fallback.
 
-No configured match (including zh, ja, ko and French male) uses the existing
-standard local picker, with its installed-pack fallback and missing-pack notice.
-A matching Kokoro voice with its pack missing raises `VOICE_PACK_MISSING:tts-kokoro`;
-it never downloads automatically during a call or silently changes engines on a
-runtime failure. Silent companions remain silent.
+Kokoro never leaves a companion silent: when its pack is missing, or it fails
+to load or returns no audio, the line is spoken with the Fast voices and the
+call shows a `kokoro-fallback` notice (`pack-missing` or `failed`). Only when
+no Fast pack is installed either does the line fail, with
+`VOICE_PACK_MISSING:tts-kokoro` so the notice names the Kokoro download. A
+failed engine load is remembered for 60 s so a call does not reload a broken
+model on every line. Companions with no voice stay silent.
 
-## Sentence delivery and interruption
+The voice preview (Edit companion) goes through the same function, so it
+plays Kokoro when Kokoro is chosen and Fast otherwise, with the pre-Kokoro
+inputs: the chat language's sample line, and the picker's voice for a
+companion that has none saved yet.
 
-Kokoro calls reserve one ordered WAV slot per sentence in the existing audio
-queue. The renderer invokes the existing `voiceTts` IPC once per sentence;
-synthesis is sequential across lines/companions within the call. Sentence one
-can play while sentence two is generating. This is sentence-level delivery, not
-sample-level PCM streaming or concatenated WAVs in the MPEG/MSE stream.
+## Memory
 
-The queue still owns pitch, captions, echo references, turn supersession, stale
-lines, mute/deafen, barge-in and hang-up. A Backseat confirmation is reported
-heard only when every sentence completes audibly. Interrupts discard late audio
-and prevent remaining sentences from being synthesized. Native inference already
-running cannot be preempted; a new sentence waits for it to return. A long sentence
-still needs its whole inference before playback, and audio can underrun if CPU
-synthesis is slower than real time. No latency guarantee is made.
+One Kokoro engine per phonemizer language (en, es, fr, it), roughly 170 to
+250 MB each. They are dropped when the user switches away from Kokoro (config
+save), when the pack is uninstalled, and after 5 minutes without a Kokoro
+line. sherpa-onnx-node has no explicit free: the native model goes when V8
+collects the wrapper.
 
-The public `voiceTtsStream` local compatibility path still returns one complete
-WAV; Kokoro calls use the sentence queue instead of the MPEG stream API.
+## Sentence delivery
 
-## Model and licenses
+Kokoro synthesizes slower than the Fast voices, so Kokoro calls reserve one
+ordered WAV slot per sentence in the existing audio queue and call `voiceTts`
+once per sentence (`src/renderer/src/lib/voice/sentenceTts.ts`). Sentence one
+plays while sentence two is generating. The queue still owns pitch, captions,
+echo references, supersession, mute, barge-in and hang-up. Native inference
+already running cannot be preempted; interrupts discard late audio and stop
+the remaining sentences.
 
-- Pack: `kokoro-int8-multi-lang-v1_0.tar.bz2`, 132,353,410 bytes (~126 MiB).
-- [Origin](https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models).
-- Observed SHA-256: `72c347230107ef8a31098ec4d468a605244beef5f1ed00db97efa13518800653`.
-  Downloader checks archive size and bzip2 CRC; SHA-256 is a validation check,
-  not an additional runtime guarantee.
-- Existing mirror-first downloader with origin fallback; no claim the SEI
-  mirror already hosts this asset. Models live under
-  `<userData>/speech-models/tts-kokoro/` and are never committed.
-- Lazy async engines are cached per phonemizer language and shared by same-language
-  voices. `enableExternalBuffer: false` preserves Electron's memory-cage constraint.
-- SEI retains AGPL. [Kokoro-82M by hexgrad](https://huggingface.co/hexgrad/Kokoro-82M)
-  weights are Apache-2.0; conversion/runtime are from sherpa-onnx.
-  The pack's espeak-ng data retains GPL-3.0-or-later notices and corresponding
-  source obligations. Extraction preserves the archive's regular notice files.
+## Pack and licenses
 
-## Reproduce checks
+- Asset `kokoro-int8-multi-lang-v1_0.tar.bz2`, 132,353,410 bytes (126 MB),
+  SHA-256 `72c347230107ef8a31098ec4d468a605244beef5f1ed00db97efa13518800653`,
+  from the [sherpa-onnx tts-models release](https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models).
+  Downloaded mirror first (`dl.sei.gg/speech/`), then the origin.
+  The downloader checks the exact size and the bzip2 CRC.
+- [Kokoro-82M by hexgrad](https://huggingface.co/hexgrad/Kokoro-82M): Apache-2.0
+  weights; conversion and runtime by sherpa-onnx. The pack's espeak-ng data
+  keeps its GPL-3.0-or-later notices.
 
-```sh
-npm ci --ignore-scripts
-npm test -- src/main/speech src/main/voice/tts.test.ts src/main/voice/tts.kokoro.test.ts src/main/configStore.test.ts src/shared/ttsEngine.test.ts src/renderer/src/lib/voice/audioQueue.test.ts src/renderer/src/lib/voice/sentenceTts.test.ts src/renderer/src/screens/SettingsScreen.test.tsx --maxWorkers=2 --pool=threads
-npm run typecheck
-npm run build
-```
+## Live check
 
-For the opt-in native test, extract the archive beneath
-`<isolated-test-userData>/speech-models/tts-kokoro/` and create the pack marker
-as described in `packStore.ts`. Never point this test at production userData.
-Set `SEI_KOKORO_LIVE_DIR` to that isolated directory and run
-`npm test -- src/main/speech/kokoro.live.test.ts --maxWorkers=1 --pool=threads`.
-It checks every mapped voice for nonempty, finite, non-silent 24 kHz PCM under
-Node, not Electron. See `kokoro-validation.md` for actual results and limitations.
+`src/main/speech/kokoro.live.test.ts` is opt-in: extract the archive under
+`<isolated userData>/speech-models/tts-kokoro/`, add the `pack.json` marker
+(see `packStore.ts`), then run it with `SEI_KOKORO_LIVE_DIR` set to that
+userData. Never point it at a real profile.

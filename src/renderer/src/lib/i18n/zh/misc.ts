@@ -152,6 +152,14 @@ export const ZH_MISC: Record<string, string> = {
     '[已用英文语音代读，在设置中下载中文语音包效果更好]',
   '[spoken with the Chinese voice, download the English voice pack in Settings for a better fit]':
     '[已用中文语音代读，在设置中下载英文语音包效果更好]',
+  // 261102 Kokoro local voice: missing pack, or a line the Fast voice spoke
+  // because Kokoro could not.
+  '[voice unavailable, download the Kokoro voice pack in Settings]':
+    '[语音不可用，请在设置中下载 Kokoro 语音包]',
+  '[spoken with the Fast voice, download the Kokoro voice pack in Settings]':
+    '[已用快速语音代读，请在设置中下载 Kokoro 语音包]',
+  '[spoken with the Fast voice, the Kokoro voice could not load]':
+    '[已用快速语音代读，Kokoro 语音无法加载]',
   // 260817 W10: sherpa-onnx itself failed to load (e.g. a build without the
   // platform package). Without this caption the companion is silently mute.
   '[voice unavailable, local speech cannot run on this install]':

@@ -70,6 +70,17 @@ export const ZH: Record<string, string> = {
     '未连接 Sei 云端，也没有 ElevenLabs 密钥。自定义语音将无法播放。本地语音包仍可正常使用。',
   'English voices, female and male': '英语语音，女声和男声',
   'Chinese voices, female and male': '中文语音，女声和男声',
+  // 261102: Local voice choice (Fast = the original packs, or Kokoro).
+  'Kokoro voices': 'Kokoro 语音',
+  'Local voice': '本地语音',
+  'About local voices': '关于本地语音',
+  'Fast': '快速',
+  'Fast voices start speaking right away and come in English and Chinese. Kokoro sounds more natural but takes longer to speak, and speaks English, Spanish and French. Other languages use the Fast voices.':
+    '快速语音能立刻开口，提供英语和中文。Kokoro 听起来更自然，但开口要慢一些，支持英语、西班牙语和法语。其他语言使用快速语音。',
+  'Kokoro speaks English, Spanish and French. Companions in other languages use the Fast voices.':
+    'Kokoro 支持英语、西班牙语和法语。使用其他语言的伙伴会使用快速语音。',
+  'Kokoro sounds more natural but is slower.': 'Kokoro 听起来更自然，但速度较慢。',
+  'It is a {mb} MB download.': '需要下载 {mb} MB。',
   'Downloading… {pct}%': '下载中… {pct}%',
   'Ready': '已就绪',
   'Download…': '下载…',

@@ -3,7 +3,11 @@ import type { VoiceGender } from './localVoice';
 
 /** Speaker order is specific to sherpa's v1.0 voices.bin, not the HF listing:
  * https://github.com/k2-fsa/sherpa-onnx/blob/master/scripts/kokoro/v1.0/generate_voices_bin.py
- * Heart keeps the 0.8 speed used in issue #47's earlier experiment. */
+ * Heart runs at 0.8 (issue #47). Checked 261102 on one 20-word line: heart at
+ * 0.8 speaks ~217 words/min, michael at 1.0 ~225, heart at 1.0 ~244. So 0.8
+ * is not slow; it puts heart at the same pace as michael (heart's 1.0 is the
+ * fastest of the set). Italian voices stay mapped, but Italian is not a chat
+ * language yet, so nothing reaches them today. */
 export const KOKORO_VOICES = {
   af_heart: { sid: 3, lang: 'en-us', rate: 0.8 },
   am_michael: { sid: 16, lang: 'en-us', rate: 1.0 },

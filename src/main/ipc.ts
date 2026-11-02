@@ -39,6 +39,7 @@ import {
 } from '../shared/ipc';
 import { GAME_IDS, isGameId, type GameId, type WorldState, type WorldStates } from '../shared/gameIpc';
 import type { HomeNextStep } from '../shared/homeNextStep';
+import { localTtsModel } from '../shared/ttsEngine';
 import { BACKSEAT_START_TRIGGERS, CALL_END_REASONS } from '../shared/callEndReasons';
 import type { CallInterruptCounts } from '../shared/callInterrupts';
 import { CharacterSchema, UserConfigSchema, UserPreferencesSchema, MAX_COMPANION_SLOTS, type Character, type UserConfig } from '../shared/characterSchema';
@@ -2083,7 +2084,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.speech.packRemove, async (_event, argsRaw: unknown): Promise<void> => {
     const args = z.object({ packId: SpeechPackIdSchema }).parse(argsRaw);
     await wireSpeechPush();
-    const { removePack } = await import('./speech');
+    const { removePack, releaseKokoroEngines } = await import('./speech');
+    // 261102: drop loaded Kokoro engines with their files.
+    if (args.packId === 'tts-kokoro') releaseKokoroEngines('pack removed');
     await removePack(args.packId);
   });
   // SenseVoice dictation transcription (renderer VAD-cut utterance → text).
@@ -3096,6 +3099,16 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // configStore.saveConfigFromRenderer.
     const { saveConfigFromRenderer } = await import('./configStore');
     await saveConfigFromRenderer(cfg);
+    // 261102: switching away from Kokoro frees its engines (~250 MB each)
+    // now instead of at the idle timeout.
+    if (cfg.tts_engine !== 'local' || localTtsModel(cfg) !== 'kokoro') {
+      try {
+        const { releaseKokoroEngines } = await import('./speech');
+        releaseKokoroEngines('model switched');
+      } catch {
+        /* freeing memory early is never load-bearing (idle release covers it) */
+      }
+    }
     // Keep the analytics ui_language property current — both surfaces that
     // write it (Settings and the onboarding Sui stage) save through here.
     if ('ui_language' in (cfgArg as Record<string, unknown>)) {

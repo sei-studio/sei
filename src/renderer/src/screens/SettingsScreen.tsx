@@ -21,7 +21,7 @@
  * Source: docs/design/UI-REDESIGN-PARTY.md §1 + §4.7.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useChatStore } from '../lib/stores/useChatStore';
@@ -62,7 +62,8 @@ import { chatgptReady, useChatgptStore } from '../lib/stores/useChatgptStore';
 import { chatgptPlanIntentStep } from '../lib/chatgptPlanIntent';
 import { pickDefaultChatgptModel } from '@shared/chatgptPlan';
 import { elevenKeySettingMode } from '../lib/voicePicker';
-import { selectedTtsEngine } from '@shared/ttsEngine';
+import { localTtsModel, type LocalTtsModel } from '@shared/ttsEngine';
+import { KOKORO_PACK_ID, localModelPickAction, showTtsPackRow } from '../lib/localVoiceChoice';
 
 const API_KEY_BULLET_LEN = 24;
 
@@ -75,7 +76,7 @@ const API_KEY_BULLET_LEN = 24;
  * speech:pack-status push.
  */
 const TTS_PACK_ROWS: ReadonlyArray<{ id: string; label: string }> = [
-  { id: 'tts-kokoro', label: 'Kokoro-82M voices' },
+  { id: 'tts-kokoro', label: 'Kokoro voices' },
   { id: 'tts-en', label: 'English voices, female and male' },
   { id: 'tts-zh', label: 'Chinese voices, female and male' },
 ];
@@ -250,11 +251,13 @@ export function SettingsScreen(): React.ReactElement {
   // speech:pack-status, kept live by the speech:pack-state push. ──
   const [packStates, setPackStates] = useState<Record<string, SpeechPackStatePush>>({});
   /** Pack awaiting the shared "Download? (XX MB)" confirm. `thenSensevoice`
-   * marks the STT flow: persist stt_engine once the download lands. */
+   * marks the STT flow: persist stt_engine once the download lands.
+   * `thenKokoro` (261102) is the same for the Local voice choice. */
   const [pendingPack, setPendingPack] = useState<{
     id: string;
     name: string;
     thenSensevoice?: boolean;
+    thenKokoro?: boolean;
   } | null>(null);
   const [packError, setPackError] = useState<string | null>(null);
 
@@ -535,10 +538,10 @@ export function SettingsScreen(): React.ReactElement {
   // speech through the sherpa-onnx voice packs in main; the per-character
   // ElevenLabs voiceId is KEPT untouched underneath (it still names gender
   // for the local mapping, and a later switch back needs it). ──
-  const ttsEngine = selectedTtsEngine(cfg ?? {});
-  const onSelectTtsEngine = async (next: 'elevenlabs' | 'local' | 'kokoro'): Promise<void> => {
+  const ttsEngine: 'elevenlabs' | 'local' = cfg?.tts_engine ?? 'elevenlabs';
+  const onSelectTtsEngine = async (next: 'elevenlabs' | 'local'): Promise<void> => {
     if (!cfg || next === ttsEngine) return;
-    const updated: UserConfig = { ...cfg, tts_engine: next, local_tts_voice: 'auto' };
+    const updated: UserConfig = { ...cfg, tts_engine: next };
     setCfg(updated);
     try {
       await sei.saveConfig(updated);
@@ -550,14 +553,51 @@ export function SettingsScreen(): React.ReactElement {
     }
   };
 
+  // ── 261102: which on-device model speaks under Local: Fast (the original
+  // voice packs, the default; absent = 'fast') or Kokoro. Picking Kokoro
+  // while its pack is missing detours through the download confirm, like
+  // SenseVoice above, and the choice is saved once the pack is READY. The
+  // save reads the LATEST cfg (cfgRef): the download takes a while and a
+  // wholesale save of the copy from before it would revert anything the user
+  // changed meanwhile. ──
+  const localModel: LocalTtsModel = localTtsModel(cfg);
+  const cfgRef = useRef(cfg);
+  cfgRef.current = cfg;
+  const persistLocalModel = async (next: LocalTtsModel): Promise<void> => {
+    const base = cfgRef.current;
+    if (!base || localTtsModel(base) === next) return;
+    const updated: UserConfig = { ...base, local_tts_model: next };
+    setCfg(updated);
+    try {
+      await sei.saveConfig(updated);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] saveConfig (local_tts_model) failed', err);
+      setCfg(base);
+      setSaveError(t('Failed to save. Try again.'));
+    }
+  };
+  const onSelectLocalModel = async (next: LocalTtsModel): Promise<void> => {
+    if (localModelPickAction(next, packStates[KOKORO_PACK_ID]?.state) === 'offer-download') {
+      setPendingPack({ id: KOKORO_PACK_ID, name: t('Kokoro voices'), thenKokoro: true });
+      return;
+    }
+    await persistLocalModel(next);
+  };
+
   // ── W5: pack download/remove. Download resolves when the pack is READY;
   // progress arrives on the speech:pack-state push the effect above follows.
-  const startPackDownload = async (packId: string, thenSensevoice: boolean): Promise<void> => {
+  const startPackDownload = async (
+    packId: string,
+    thenSensevoice: boolean,
+    thenKokoro = false,
+  ): Promise<void> => {
     setPendingPack(null);
     setPackError(null);
     try {
       await sei.speechPackDownload({ packId });
       if (thenSensevoice) await persistSttEngine('sensevoice');
+      if (thenKokoro) await persistLocalModel('kokoro');
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('[SettingsScreen] speechPackDownload failed', err);
@@ -1398,7 +1438,6 @@ export function SettingsScreen(): React.ReactElement {
                 options={[
                   { value: 'elevenlabs', label: t('ElevenLabs') },
                   { value: 'local', label: t('Local') },
-                  { value: 'kokoro', label: 'Kokoro' },
                 ]}
                 onChange={(v) => void onSelectTtsEngine(v)}
               />
@@ -1428,14 +1467,56 @@ export function SettingsScreen(): React.ReactElement {
               </>
             ) : (
               <>
-                {/* Local voice packs: three downloads carry the four voices
-                    (the English pack holds both speakers). State rides the
-                    speech:pack-state push; sizes are the registry's exact
-                    bytes. */}
-                {ttsEngine === 'kokoro' ? (
-                  <p className={styles.helper}>{t('Kokoro chooses a voice from the chat language and companion gender. Languages or genders without a match use the standard local voice packs. Download the packs you need below.')}</p>
-                ) : null}
-                {TTS_PACK_ROWS.filter((row) => ttsEngine === 'kokoro' || row.id !== 'tts-kokoro').map((row) => {
+                {/* 261102: which on-device model speaks. Fast is the original
+                    voice packs and the default; Kokoro is offered as a plain
+                    alternative to Fast (Shawn 261102: no beta badge), and picking it
+                    offers its download. */}
+                <div className={styles.row}>
+                  <span className={styles.label}>
+                    {t('Local voice')}
+                    <InfoTip
+                      label={t('About local voices')}
+                      text={t(
+                        'Fast voices start speaking right away and come in English and Chinese. Kokoro sounds more natural but takes longer to speak, and speaks English, Spanish and French. Other languages use the Fast voices.',
+                      )}
+                    />
+                  </span>
+                  <Seg
+                    aria-label={t('Local voice')}
+                    value={localModel}
+                    options={[
+                      { value: 'fast', label: t('Fast') },
+                      { value: 'kokoro', label: 'Kokoro' },
+                    ]}
+                    onChange={(v) => void onSelectLocalModel(v)}
+                  />
+                </div>
+                <p className={styles.helper}>
+                  {localModel === 'kokoro' ? (
+                    t(
+                      'Kokoro speaks English, Spanish and French. Companions in other languages use the Fast voices.',
+                    )
+                  ) : (
+                    <>
+                      {t('Kokoro sounds more natural but is slower.')}
+                      {packStates[KOKORO_PACK_ID] && packStates[KOKORO_PACK_ID].state !== 'ready'
+                        ? ' ' +
+                          t('It is a {mb} MB download.', {
+                            mb: formatMb(packStates[KOKORO_PACK_ID].bytes),
+                          })
+                        : null}
+                    </>
+                  )}
+                </p>
+                {/* Local voice packs: the English and Chinese downloads carry
+                    the Fast voices (each pack holds both speakers); the Kokoro
+                    row shows while Kokoro is chosen, or while its pack is on
+                    disk so it can still be uninstalled after switching back.
+                    State rides the speech:pack-state push; sizes are the
+                    registry's exact bytes. */}
+                {TTS_PACK_ROWS.filter((row) =>
+                  showTtsPackRow(row.id, localModel, packStates[KOKORO_PACK_ID]?.state),
+                ).map((row) => {
                   const st = packStates[row.id];
                   return (
                     <div className={styles.row} key={row.id}>
@@ -1920,8 +2001,38 @@ export function SettingsScreen(): React.ReactElement {
             >
               {t('Apache License 2.0')}
             </button>
-            {t(', via icefall. Kokoro-82M by hexgrad: Apache-2.0 weights, converted and quantized by sherpa-onnx. Downloaded espeak-ng data retains its GPL license.')}
-            <button type="button" className={styles.creditLink} onClick={() => void sei.openExternal('https://huggingface.co/hexgrad/Kokoro-82M')}>Kokoro-82M</button>
+            {t(', via icefall.')}{' '}
+            {/* 261102: Kokoro credit as its own sentence; the model name links
+                to its page, the license to the license text. */}
+            {t('Kokoro voice:')}{' '}
+            <button
+              type="button"
+              className={styles.creditLink}
+              onClick={() => void sei.openExternal('https://huggingface.co/hexgrad/Kokoro-82M')}
+            >
+              Kokoro-82M
+            </button>{' '}
+            {t('by hexgrad,')}{' '}
+            <button
+              type="button"
+              className={styles.creditLink}
+              onClick={() =>
+                void sei.openExternal('https://www.apache.org/licenses/LICENSE-2.0')
+              }
+            >
+              {t('Apache License 2.0')}
+            </button>
+            {t(', converted by sherpa-onnx. Its pronunciation data comes from espeak-ng,')}{' '}
+            <button
+              type="button"
+              className={styles.creditLink}
+              onClick={() =>
+                void sei.openExternal('https://github.com/espeak-ng/espeak-ng/blob/master/COPYING')
+              }
+            >
+              GPL v3
+            </button>
+            {t('.')}
           </p>
           {/* 261028 facepack pilot: renders nothing unless the dev flag is on. */}
           <FacepackDevRow />
@@ -2049,7 +2160,11 @@ export function SettingsScreen(): React.ReactElement {
           bytes={packStates[pendingPack.id].bytes}
           onCancel={() => setPendingPack(null)}
           onConfirm={() =>
-            void startPackDownload(pendingPack.id, pendingPack.thenSensevoice === true)
+            void startPackDownload(
+              pendingPack.id,
+              pendingPack.thenSensevoice === true,
+              pendingPack.thenKokoro === true,
+            )
           }
         />
       ) : null}

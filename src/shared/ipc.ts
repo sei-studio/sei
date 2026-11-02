@@ -691,6 +691,14 @@ export type VoiceTtsNoticePush =
       kind: 'own-voice-stand-in';
       characterId: string;
       reason: 'no-key' | 'key-invalid' | 'voice-missing' | 'quota' | 'plan';
+    }
+  | {
+      /** 261102: Kokoro is the chosen local model but could not speak this
+       * line (pack not downloaded, or it would not load), so the Fast voices
+       * spoke it. The line still plays; the call UI shows a system notice. */
+      kind: 'kokoro-fallback';
+      characterId: string;
+      reason: 'pack-missing' | 'failed';
     };
 
 /**

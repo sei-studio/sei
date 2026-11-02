@@ -35,7 +35,7 @@ import { createHash } from 'node:crypto';
 import { getClient } from '../auth/supabaseClient';
 import { getCharacter } from '../characterStore';
 import { loadConfig } from '../configStore';
-import { selectedTtsEngine } from '../../shared/ttsEngine';
+import { localTtsModel } from '../../shared/ttsEngine';
 import { voiceStabilityFor } from '../../shared/voicePitch';
 import type { Character } from '../../shared/characterSchema';
 import { characterLanguage, clampChatLanguage, type ChatLanguage } from '../../shared/chatLanguage';
@@ -141,6 +141,15 @@ export function directElevenLabsError(status: number, body: string): string | nu
  * nothing — request bodies stay byte-identical to before. Read fresh per
  * synthesis so an auto-switch applies to the very next spoken line.
  */
+/** The config, or null when it cannot be read (callers fall back to defaults). */
+async function loadConfigOrNull(): Promise<Awaited<ReturnType<typeof loadConfig>> | null> {
+  try {
+    return await loadConfig();
+  } catch {
+    return null;
+  }
+}
+
 async function ttsLanguage(): Promise<ChatLanguage> {
   try {
     return clampChatLanguage((await loadConfig()).chat_language);
@@ -339,8 +348,7 @@ async function localTtsSelected(): Promise<boolean> {
   try {
     const { getAiBackendKind } = await import('../apiKeyStore');
     if ((await getAiBackendKind()) !== 'local') return false;
-    const engine = selectedTtsEngine(await loadConfig());
-    return engine === 'local' || engine === 'kokoro';
+    return (await loadConfig()).tts_engine === 'local';
   } catch {
     return false;
   }
@@ -363,6 +371,14 @@ export type TtsNotice =
       missingPackId: string;
       /** Pack the line was actually spoken with. */
       spokenPackId: string;
+    }
+  | {
+      /** 261102: Kokoro is the chosen local model but could not speak this
+       * line ('pack-missing': not downloaded; 'failed': the pack would not
+       * load or produced no audio), so it was spoken with the Fast voices. */
+      kind: 'kokoro-fallback';
+      characterId: string;
+      reason: 'pack-missing' | 'failed';
     }
   | {
       /** 261020 (T158): a cloud line for an OWN ElevenLabs voice was spoken
@@ -522,25 +538,44 @@ async function synthesizeLocalClip(
   const speech = await import('../speech');
   const effLanguage = speech.detectSpokenLanguage(text, language);
   const gender = speech.voiceGenderFor(voiceId, genderHint);
-  if (selectedTtsEngine(await loadConfig()) === 'kokoro') {
+  // 261102: Kokoro, when chosen, speaks the languages/genders it has a voice
+  // for. A missing or broken Kokoro pack falls through to the Fast voices
+  // below (with a call notice) instead of leaving the companion silent.
+  let kokoroFallback: 'pack-missing' | 'failed' | null = null;
+  if (localTtsModel(await loadConfigOrNull()) === 'kokoro') {
     const voice = speech.pickKokoroVoice(gender, effLanguage);
     if (voice) {
-      const { samples, sampleRate } = await speech.synthesizeKokoro(text, voice);
-      const { encodeWav } = await import('./stt');
-      return encodeWav(samples, sampleRate);
+      try {
+        const { samples, sampleRate } = await speech.synthesizeKokoro(text, voice);
+        const { encodeWav } = await import('./stt');
+        return encodeWav(samples, sampleRate);
+      } catch (err) {
+        const msg = String((err as Error)?.message ?? err);
+        kokoroFallback = msg.startsWith('VOICE_PACK_MISSING') ? 'pack-missing' : 'failed';
+        console.warn(`[sei/voice] Kokoro unavailable, using the Fast voices: ${msg}`);
+      }
     }
+  } else {
+    // Switched away from Kokoro: free its engines now rather than at the
+    // idle timeout (a no-op when none are loaded).
+    speech.releaseKokoroEngines('model switched');
   }
   const ready: SpeechPackId[] = [];
   for (const id of speech.SPEECH_PACK_IDS) {
-    if (id.startsWith('tts-') && (await speech.packReady(id))) ready.push(id);
+    if (id.startsWith('tts-') && id !== 'tts-kokoro' && (await speech.packReady(id))) ready.push(id);
   }
   const pick = speech.pickLocalVoice(gender, effLanguage, ready);
   if (!pick) {
+    // Kokoro was chosen and only its pack is missing: name that download.
     throw speech.packMissingError(
-      speech.LOCAL_VOICE_SPEC[speech.localVoiceFor(gender, effLanguage)].packId,
+      kokoroFallback === 'pack-missing'
+        ? 'tts-kokoro'
+        : speech.LOCAL_VOICE_SPEC[speech.localVoiceFor(gender, effLanguage)].packId,
     );
   }
-  if (pick.missingPreferredPack) {
+  if (kokoroFallback) {
+    emitTtsNotice({ kind: 'kokoro-fallback', characterId, reason: kokoroFallback });
+  } else if (pick.missingPreferredPack) {
     emitTtsNotice({
       kind: 'substitute-pack',
       characterId,
@@ -1061,14 +1096,10 @@ export async function voicePreviewTts(args: {
         genderHint = ownVoicePickOf(character)?.gender;
       }
     }
-    const character = args.characterId ? await getCharacter(args.characterId) : null;
-    if (character?.metadata?.voiceId === NO_VOICE_ID) {
-      throw new Error('VOICE_DISABLED: this companion has no voice');
-    }
-    const previewLanguage = characterLanguage(character?.metadata) ?? language;
-    const sampleLine = PREVIEW_LINES[previewLanguage];
-    const localText = speechTextFor(sampleLine, previewLanguage) || sampleLine;
-    return await synthesizeLocalClip(localText, voiceId ?? '', previewLanguage, args.characterId ?? '', genderHint);
+    // Same path for Fast and Kokoro: synthesizeLocalClip reads the model
+    // choice (and falls back to Fast when Kokoro cannot speak).
+    const localText = speechTextFor(line, language) || line;
+    return await synthesizeLocalClip(localText, voiceId ?? '', language, args.characterId ?? '', genderHint);
   }
   const voiceId = args.voiceId ?? '';
   // Closed allowlist: the curated pool, or (261019) a voice in the user's
