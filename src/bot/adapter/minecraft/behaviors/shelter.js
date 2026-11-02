@@ -9,8 +9,25 @@
 import { Vec3 } from 'vec3'
 import { buildAction, enumerateBuildCells, isOccupied, bodyInCell } from './build.js'
 import { digAction } from './dig.js'
+import { digToolAction } from './digTool.js'
+import { goTo as realGoTo } from './pathfind.js'
 
-const WALL_HEIGHT = 3 // wall layers (y range height); roof sits one above.
+// Wall layers (y range height); the roof sits one above. 261102 (pass 36):
+// 2, not 3. A 2-high room fits her and the player, and a 3x3 now takes 25
+// blocks instead of 33, which is the difference between a shelter and a
+// refusal on most nights.
+const WALL_HEIGHT = 2
+
+// 261102 (pass 36): when she is short of blocks she digs them out of the
+// ground around the shelter first. 65 of 82 shelter calls in the free-play
+// evals since 10-20 came back "no shelter built" for want of blocks, and the
+// gather('dirt') she ran next dug the pit she then built the shelter in.
+// Dirt-like ground breaks by hand and drops dirt; stone needs a pickaxe.
+const HAND_DIG = new Set(['dirt', 'grass_block', 'coarse_dirt', 'podzol', 'mycelium', 'rooted_dirt'])
+const PICK_DIG = new Set(['stone', 'cobblestone', 'andesite', 'diorite', 'granite', 'deepslate', 'tuff'])
+export const SUPPLY_RADIUS = 6
+export const SUPPLY_BUDGET_MS = 75000
+const SUPPLY_FAILS = 4
 
 // 261012: cheap full blocks the shelter may switch to when the asked material
 // runs short (the quality eval gave her 64 planks + 64 cobblestone, and a 5x5
@@ -142,7 +159,101 @@ async function stepToMiddle(bot, cx, cz, signal) {
   }
 }
 
-export async function shelterAction(args, bot, config) {
+function blocksOnHand(bot, material) {
+  return buildingKinds(bot, material).reduce((n, k) => n + k.n, 0)
+}
+
+/**
+ * 261102 (pass 36). Blocks she may dig for the shelter: the top block of each
+ * column near it, outside the footprint and the ring of ground around it (so
+ * the walls keep their footing), off the path to the doorway, and not under
+ * anyone's feet.
+ */
+export function supplyCandidates(bot, { cx, cz, baseY, minX, maxX, minZ, maxZ, doorX }) {
+  const canPick = (() => { try { return bot.inventory.items().some(i => /_pickaxe$/.test(i.name)) } catch { return false } })()
+  const out = []
+  for (let dx = -SUPPLY_RADIUS; dx <= SUPPLY_RADIUS; dx++) {
+    for (let dz = -SUPPLY_RADIUS; dz <= SUPPLY_RADIUS; dz++) {
+      const x = cx + dx, z = cz + dz
+      if (x >= minX - 1 && x <= maxX + 1 && z >= minZ - 1 && z <= maxZ + 1) continue
+      if (x === doorX && z < minZ && z >= minZ - 3) continue
+      for (let y = baseY + 1; y >= baseY - 3; y--) {
+        const b = bot.blockAt?.(new Vec3(x, y, z))
+        if (!b) break
+        if (!isOccupied(bot, { x, y, z })) continue
+        if ((HAND_DIG.has(b.name) || (canPick && PICK_DIG.has(b.name))) && !bodyInCell(bot, { x, y: y + 1, z })) {
+          out.push({ x, y, z })
+        }
+        break
+      }
+    }
+  }
+  return out
+}
+
+/**
+ * Dig up to `want` building blocks from `cands`, nearest to her first, within
+ * the time budget. Returns how many reached her bag.
+ */
+async function digForBlocks(bot, config, material, want, cands, digBlock) {
+  const signal = config?.signal
+  const end = Date.now() + SUPPLY_BUDGET_MS
+  const left = cands.slice()
+  let got = 0, fails = 0
+  let stop = 'none_left'
+  while (got < want && left.length) {
+    if (fails >= SUPPLY_FAILS) { stop = 'fails'; break }
+    if (Date.now() >= end) { stop = 'time'; break }
+    if (signal?.aborted) return { got, aborted: true }
+    const p = bot.entity?.position
+    if (p) {
+      const d = (c) => Math.hypot(c.x + 0.5 - p.x, c.y + 0.5 - (p.y + 1.62), c.z + 0.5 - p.z)
+      left.sort((a, b) => d(a) - d(b))
+    }
+    const c = left.shift()
+    if (!isOccupied(bot, c)) continue
+    const before = blocksOnHand(bot, material)
+    const r = await digBlock({ x: c.x, y: c.y, z: c.z }, bot, config)
+    if (r === 'aborted' || signal?.aborted) return { got, aborted: true }
+    const gain = blocksOnHand(bot, material) - before
+    if (gain > 0) { got += gain; fails = 0 } else fails++
+  }
+  return { got, stop }
+}
+
+/** Kinds of block she dug, for the result: "12 dirt". */
+function dugText(bot, material, before) {
+  const now = new Map(buildingKinds(bot, material).map(k => [k.name, k.n]))
+  const parts = []
+  for (const [name, n] of now) {
+    const d = n - (before.get(name) ?? 0)
+    if (d > 0) parts.push(`${d} ${name}`)
+  }
+  return parts.join(', ')
+}
+
+/**
+ * 261102 (pass 36). Her own body in a wall cell fails that cell. The model
+ * nearly always passes `center`, and then she was never moved: she stood
+ * where a wall goes and the result said "had you standing in them". Walk to
+ * the middle of the shelter when there is room to stand there.
+ */
+async function standClearOfWalls(bot, wallCells, cx, baseY, cz, signal, walk, backInside = false) {
+  const inWalls = () => wallCells.some(c => bodyInCell(bot, c) === 'you')
+  if (!inWalls() && !backInside) return
+  const p = bot.entity?.position
+  const inMiddle = p && Math.floor(p.x) === cx && Math.floor(p.z) === cz
+  if (!inMiddle) {
+    if (solidAt(bot, cx, baseY - 1, cz) !== true || isOccupied(bot, { x: cx, y: baseY, z: cz }) || isOccupied(bot, { x: cx, y: baseY + 1, z: cz })) return
+    try { await walk(bot, cx, baseY, cz, 0, 6000, signal) } catch {}
+    if (signal?.aborted) return
+  }
+  await stepToMiddle(bot, cx, cz, signal)
+}
+
+export async function shelterAction(args, bot, config, deps = {}) {
+  const walk = deps.goTo ?? realGoTo
+  const digBlock = deps.digBlock ?? digToolAction
   const signal = config?.signal
   if (signal?.aborted) return 'aborted'
 
@@ -171,26 +282,56 @@ export async function shelterAction(args, bot, config) {
   // 1. Enough blocks for the whole shelter? 261019 (pass 19): the walls used
   // to need enough of ONE kind, so 20 planks and 30 dirt came back "1 short"
   // and she retried the same call, or crafted the planks away. Now any full
-  // building block she carries counts, walls and roof together, and the
-  // shortfall is said before any walking or placing.
+  // building block she carries counts, walls and roof together. 261102
+  // (pass 36): when that is not enough she digs the rest out of the ground
+  // nearby, and only says the shortfall when the ground could not cover it.
   const wallNeed = cellsNeeded(bot, wallFrom, wallTo, true)
   const roofNeed = cellsNeeded(bot, roofFrom, roofTo, false)
-  const kinds = buildingKinds(bot, material)
-  const have = kinds.reduce((n, k) => n + k.n, 0)
-  if (have < wallNeed + roofNeed) {
-    const short = wallNeed + roofNeed - have
+  const need = wallNeed + roofNeed
+  const doorX = cx
+  let have = blocksOnHand(bot, material)
+  let supplyStop = null
+  // Inside the footprint when she called it (the default: centered on her).
+  const sp = bot.entity?.position
+  const startedInside = !!sp && Math.floor(sp.x) > minX && Math.floor(sp.x) < maxX && Math.floor(sp.z) > minZ && Math.floor(sp.z) < maxZ
+  let wentDigging = false
+  if (have < need) {
+    const before = new Map(buildingKinds(bot, material).map(k => [k.name, k.n]))
+    const cands = supplyCandidates(bot, { cx, cz, baseY, minX, maxX, minZ, maxZ, doorX })
+    const dug = cands.length ? await digForBlocks(bot, config, material, need - have, cands, digBlock) : { got: 0, stop: 'none_left' }
+    supplyStop = dug.stop
+    wentDigging = cands.length > 0
+    const dugWhat = dugText(bot, material, before)
+    if (dug.aborted) {
+      return `shelter stopped while digging blocks for it, nothing is built yet${dugWhat ? ` (dug ${dugWhat} so far)` : ''}`
+    }
+    if (dugWhat) notes.push(`dug ${dugWhat} nearby first`)
+    have = blocksOnHand(bot, material)
+  }
+  if (have < need) {
+    const kinds = buildingKinds(bot, material)
+    const short = need - have
     const smaller = size > 3
       ? `, or ask for a smaller shelter (size ${size - 1} or 3)`
       : ' (3x3 is the smallest shelter, so it will not fit in fewer blocks)'
     const what = kinds.length ? `${have} building blocks (${kindsText(kinds)})` : 'no building blocks'
-    return `no shelter built: it needs ${wallNeed + roofNeed} full blocks (${wallNeed} for the walls, ${roofNeed} for the roof) and you have ${what}, ${short} short. Any mix of full blocks works (dirt, cobblestone, planks, stone). Gather at least ${short} more (or ask the player for some) before trying again${smaller}.`
+    const why = supplyStop === 'time' ? 'digging took too long'
+      : supplyStop === 'fails' ? 'the last few digs brought nothing in'
+      : 'there is no more dirt or grass close by that you can dig by hand'
+    const dugNote = notes.length ? ` You ${notes[0]}, then stopped: ${why}.`
+      : supplyStop === 'none_left' ? ' There is no dirt or grass close by that you can dig for it.' : ` Digging for blocks failed: ${why}.`
+    return `no shelter built: it needs ${need} full blocks (${wallNeed} for the walls, ${roofNeed} for the roof) and you have ${what}, ${short} short.${dugNote} Any mix of full blocks works (dirt, cobblestone, planks, stone). Gather at least ${short} more (or ask the player for some) before trying again${smaller}.`
   }
 
   // 2. Nobody in the way. A block cannot go where a body is: she stood near
   // the edge of her block, or the player stood next to her where the wall
   // goes (combat_night eval: the same 3x3 shelter failed three times with
   // the player in a wall cell).
-  if (!args?.center) await stepToMiddle(bot, cx, cz, signal)
+  const wallCells = enumerateBuildCells(wallFrom, wallTo, true)
+  // After digging around, she goes back in the middle when that is where she
+  // was going to be.
+  const awayFromMiddle = () => { const q = bot.entity?.position; return !!q && (Math.floor(q.x) !== cx || Math.floor(q.z) !== cz) }
+  await standClearOfWalls(bot, wallCells, cx, baseY, cz, signal, walk, startedInside && wentDigging && awayFromMiddle())
   if (signal?.aborted) return 'aborted'
   let inRing = playersInRing(bot, minX, maxX, minZ, maxZ, baseY)
   const waitEnd = Date.now() + BODY_WAIT_MS
@@ -212,7 +353,11 @@ export async function shelterAction(args, bot, config) {
   }
 
   // 3. Four hollow walls across the full height range, then a solid roof.
-  const walls = await buildPart(bot, config, { from: wallFrom, to: wallTo }, material, true)
+  // 261102 (pass 36): walls that are already there (she stands in a pit or
+  // against a hillside) are a finished part, not "built NOTHING".
+  const walls = wallNeed === 0
+    ? { res: allThere(wallCells.length), used: [] }
+    : await buildPart(bot, config, { from: wallFrom, to: wallTo }, material, true)
   const wallsRes = walls.res
   if (isAborted(wallsRes)) return abortedAt('walls', wallsRes)
   // 261011: a shelter with no walls is not a shelter. The result used to read
@@ -221,14 +366,15 @@ export async function shelterAction(args, bot, config) {
   if (!placedSome(wallsRes)) return `no shelter built: walls: ${wallsRes}`
   if (walls.used.some(k => k !== material)) notes.push(`walls in ${walls.used.join(' and ')}`)
 
-  const roof = await buildPart(bot, config, { from: roofFrom, to: roofTo }, material, false)
+  const roof = roofNeed === 0
+    ? { res: allThere(size * size), used: [] }
+    : await buildPart(bot, config, { from: roofFrom, to: roofTo }, material, false)
   const roofRes = roof.res
   if (isAborted(roofRes)) return abortedAt('roof', roofRes, wallsRes)
   if (roof.used.some(k => k !== material)) notes.push(`roof in ${roof.used.join(' and ')}`)
 
   // 4. Carve a one-block-wide, two-tall doorway out of the front (min-Z) wall,
   //    centered on the footprint, so the bot can walk in and out.
-  const doorX = cx
   const doorRes = await digAction(
     { x: doorX, y: baseY, z: minZ, to: { x: doorX, y: baseY + 1, z: minZ } },
     bot,
@@ -240,6 +386,11 @@ export async function shelterAction(args, bot, config) {
   const detail = `(walls: ${wallsRes}; roof: ${roofRes}; doorway: ${doorRes}${notes.length ? `; ${notes.join('; ')}` : ''})`
   if (!done) return `shelter UNFINISHED, it has gaps and is not safe yet ${detail}`
   return `built shelter ${size}x${size}x${WALL_HEIGHT} with a doorway at ${doorX},${baseY},${minZ} ${detail}`
+}
+
+/** A part whose every cell was already solid, in buildAction's words. */
+function allThere(n) {
+  return `built 0 placed, ${n} skipped (already solid), of ${n} cells`
 }
 
 /** buildAction stopped by an abort ('aborted' or 'aborted after ...'). */

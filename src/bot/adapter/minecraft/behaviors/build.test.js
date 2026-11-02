@@ -564,9 +564,10 @@ describe('buildAction — cells with nothing to place against (261012)', () => {
     const { bot, blocks } = makeWorld()
     wirePlaceMock(bot, blocks)
     const walkMock = vi.fn(async () => 'reached')
-    // Ground is y=67 and the bot stands at 68; this wall starts at 69.
+    // Ground is y=67 and the bot stands at 68; this wall starts at 71, three
+    // layers up (more than the two a whole span is moved down by itself).
     const r = await buildAction(
-      { from: { x: -40, y: 69, z: -34 }, to: { x: -36, y: 71, z: -30 }, block: 'oak_planks', hollow: true },
+      { from: { x: -40, y: 71, z: -34 }, to: { x: -36, y: 73, z: -30 }, block: 'oak_planks', hollow: true },
       bot, {}, { goTo: walkMock },
     )
     expect(r).toMatch(/^built 0 placed, 48 cells FAILED/)
@@ -634,7 +635,7 @@ describe('buildAction: a body in the cell (261019)', () => {
     bot.entity.position = new Vec3(-36.5, 68, -30.5)
     const r = await buildAction(
       { from: { x: -38, y: 68, z: -32 }, to: { x: -38, y: 68, z: -32 }, block: 'oak_planks' },
-      bot, {}, { goTo: walkMock },
+      bot, {}, { goTo: walkMock, bodyWaitMs: 0 },
     )
     expect(r).toContain('1 cells FAILED')
     expect(r).toContain('had Alex standing in them')
@@ -683,5 +684,99 @@ describe('buildAction: partial mode (261019)', () => {
     const r = await buildAction(span, bot, {}, { goTo: vi.fn(async () => 'reached'), partial: true })
     expect(placeBlockAction).toHaveBeenCalledTimes(3)
     expect(r).toMatch(/^built 3 of ~5 needed, then ran out of oak_planks/)
+  })
+})
+
+// 261102 (pass 36): the build failures left in free play after pass 19.
+describe('buildAction: where the model meant it (261102)', () => {
+  it('a wall that floats one layer above the ground is built on the ground', async () => {
+    const { bot, blocks } = makeWorld()
+    wirePlaceMock(bot, blocks)
+    bot.entity.position = new Vec3(-37.5, 68, -31.5)
+    const r = await buildAction(
+      { from: { x: -40, y: 69, z: -34 }, to: { x: -40, y: 70, z: -30 }, block: 'oak_planks' },
+      bot, {}, { goTo: vi.fn(async () => 'reached') },
+    )
+    expect(r).toBe('that span floated 1 above the ground, so it was built 1 lower, at y=68..69: built 10 placed, 0 skipped (already solid), of 10 cells')
+    for (let z = -34; z <= -30; z++) {
+      expect(blocks.get(`-40,68,${z}`)).toBe('oak_planks')
+      expect(blocks.get(`-40,69,${z}`)).toBe('oak_planks')
+      expect(blocks.get(`-40,70,${z}`)).toBeUndefined()
+    }
+  })
+
+  it('one block aimed at the ground goes on top of it', async () => {
+    const { bot, blocks } = makeWorld()
+    wirePlaceMock(bot, blocks)
+    bot.entity.position = new Vec3(-37.5, 68, -31.5)
+    const r = await buildAction(
+      { from: { x: -39, y: 67, z: -31 }, to: { x: -39, y: 67, z: -31 }, block: 'oak_planks' },
+      bot, {}, { goTo: vi.fn(async () => 'reached') },
+    )
+    expect(r).toBe('-39,67,-31 is already sand, so it went on top of it at y=68: built 1 placed, 0 skipped (already solid), of 1 cells')
+    expect(blocks.get('-39,68,-31')).toBe('oak_planks')
+  })
+
+  it('a span of terrain wider than one block is still refused', async () => {
+    const { bot, blocks } = makeWorld()
+    wirePlaceMock(bot, blocks)
+    const r = await buildAction(
+      { from: { x: -39, y: 67, z: -31 }, to: { x: -38, y: 67, z: -31 }, block: 'oak_planks' },
+      bot, {}, { goTo: vi.fn(async () => 'reached') },
+    )
+    expect(r).toMatch(/^built NOTHING: all 2 cells of that span are ALREADY solid/)
+  })
+})
+
+describe('buildAction: bodies in the cell, again (261102)', () => {
+  function solidWorld() {
+    const w = makeWorld()
+    const inner = w.bot.blockAt
+    w.bot.blockAt = (p) => { const b = inner(p); return b.name === 'air' ? { ...b, boundingBox: 'empty' } : { ...b, boundingBox: 'block' } }
+    return w
+  }
+
+  it('she steps out of the cell she stands in and places it', async () => {
+    const { bot, blocks } = solidWorld()
+    wirePlaceMock(bot, blocks)
+    bot.entity.position = new Vec3(-37.5, 68, -31.5)
+    bot.entity.onGround = true
+    const walk = vi.fn(async (b, x, y, z) => { b.entity.position = new Vec3(x + 0.5, y, z + 0.5); return 'reached' })
+    const r = await buildAction(
+      { from: { x: -38, y: 68, z: -32 }, to: { x: -38, y: 69, z: -32 }, block: 'oak_planks' },
+      bot, {}, { goTo: walk },
+    )
+    expect(r).toBe('built 2 placed, 0 skipped (already solid), of 2 cells')
+    expect(walk).toHaveBeenCalledTimes(1)
+    const [, x, , z] = walk.mock.calls[0]
+    expect(x === -38 && z === -32).toBe(false)
+  })
+
+  it('waits for a player to walk out of the cell, then places it', async () => {
+    const { bot, blocks } = solidWorld()
+    wirePlaceMock(bot, blocks)
+    const alex = { id: 7, type: 'player', username: 'Alex', position: new Vec3(-37.5, 68, -31.5), width: 0.6, height: 1.8 }
+    bot.entities = { 7: alex }
+    bot.entity.position = new Vec3(-35.5, 68, -31.5)
+    setTimeout(() => { alex.position = new Vec3(-30.5, 68, -31.5) }, 600)
+    const r = await buildAction(
+      { from: { x: -38, y: 68, z: -32 }, to: { x: -38, y: 68, z: -32 }, block: 'oak_planks' },
+      bot, {}, { goTo: vi.fn(async () => 'reached') },
+    )
+    expect(r).toBe('built 1 placed, 0 skipped (already solid), of 1 cells')
+  })
+
+  it('a player who stays put still fails the cell, after a bounded wait', async () => {
+    const { bot, blocks } = solidWorld()
+    wirePlaceMock(bot, blocks)
+    bot.entities = { 7: { id: 7, type: 'player', username: 'Alex', position: new Vec3(-37.5, 68, -31.5), width: 0.6, height: 1.8 } }
+    bot.entity.position = new Vec3(-35.5, 68, -31.5)
+    const t0 = Date.now()
+    const r = await buildAction(
+      { from: { x: -38, y: 68, z: -32 }, to: { x: -38, y: 68, z: -32 }, block: 'oak_planks' },
+      bot, {}, { goTo: vi.fn(async () => 'reached'), bodyWaitMs: 500 },
+    )
+    expect(Date.now() - t0).toBeLessThan(1500)
+    expect(r).toContain('had Alex standing in them')
   })
 })
