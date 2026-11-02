@@ -79,7 +79,9 @@ jobs:
             exit 1
           fi
           endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-          if live=$(curl -fsSL "https://dl.sei.gg/$KEY" | sha256sum | cut -d' ' -f1) && [ "$live" = "$SHA" ]; then
+          # Cache-busted: Cloudflare caches a 404 for 4 h, and a plain-URL miss here
+          # would keep serving 404 at this edge after the upload.
+          if live=$(curl -fsSL "https://dl.sei.gg/$KEY?v=$GITHUB_RUN_ID-pre" | sha256sum | cut -d' ' -f1) && [ "$live" = "$SHA" ]; then
             echo "dl.sei.gg/$KEY already serves this exact file; nothing to do."
             exit 0
           fi
@@ -98,7 +100,7 @@ jobs:
           SHA: ${{ inputs.sha256 }}
         run: |
           set -euo pipefail
-          curl -fsSL --retry 3 -o mirror.bin "https://dl.sei.gg/$KEY"
+          sleep 10; curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 -o mirror.bin "https://dl.sei.gg/$KEY?v=$GITHUB_RUN_ID"
           got_bytes=$(stat -c %s mirror.bin)
           got_sha=$(sha256sum mirror.bin | cut -d' ' -f1)
           echo "mirror: $got_bytes bytes, sha256 $got_sha"
