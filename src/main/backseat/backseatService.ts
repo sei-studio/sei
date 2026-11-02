@@ -1144,7 +1144,13 @@ async function runTurn(
     const last = recent[recent.length - 1];
     if (last && last.role === 'user' && last.text === tick.text) recent = recent.slice(0, -1);
   }
-  const messages = toMessages(recent);
+  // appendOnly (261102): each row is its own text block, so appending the
+  // line this tick produces leaves the block the breakpoint below sits on
+  // byte-identical next tick. Merged into one growing string (the companion
+  // speaks on every look, so her lines run together into one assistant
+  // message), that block changed every tick and the transcript was re-written
+  // to cache on every look without ever being read back (see toMessages).
+  const messages = toMessages(recent, { appendOnly: true });
   // Prompt caching (260801), and the reason this is NOT markLastMessageCached.
   // buildSystemBlocks already spent three of Anthropic's four breakpoints. The
   // fourth belongs HERE, at the end of the history, not on the message below:
