@@ -103,6 +103,9 @@
   --sans: 'Rajdhani', 'Noto Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --pixel: 'Press Start 2P', monospace;
+  /* CJK UI faces, first in --sans under a Japanese or Chinese UI (below). */
+  --sans-ja: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Meiryo UI', 'Noto Sans CJK JP', 'Noto Sans JP';
+  --sans-zh: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Noto Sans SC';
 
   /*
    * ── ICE theme (light) — "Nurture sky" ─────────────────────────
@@ -444,4 +447,21 @@
   --shadow-window: 0 0 0 1px rgba(28, 74, 48, .08), 0 24px 60px rgba(28, 74, 48, .18), 0 4px 16px rgba(28, 74, 48, .07);
   --shadow-card: 0 1px 2px rgba(28, 74, 48, .05), 0 4px 12px rgba(28, 74, 48, .06);
   --shadow-pop: 0 12px 32px rgba(28, 74, 48, .12);
+}
+
+/* ── Japanese and Chinese UI type (261104) ────────────────────────────
+ * Rajdhani is a condensed Latin face with a small x-height, and it has no
+ * CJK, so a mixed label such as "ChatGPTログイン" or "账户 ID" set its Latin
+ * in Rajdhani and its kana/hanzi in the system CJK face: the Latin read
+ * smaller and in a different face. Under a ja or zh UI the system CJK face
+ * leads --sans, so the whole label is one face whose Latin was drawn to sit
+ * beside its CJK. Rajdhani stays as the fallback. --display (Oswald
+ * headings) and --mono are unchanged. html:lang() outranks :root, and no
+ * theme block redefines --sans.
+ */
+html:lang(ja) {
+  --sans: var(--sans-ja), 'Rajdhani', 'Noto Sans', system-ui, sans-serif;
+}
+html:lang(zh) {
+  --sans: var(--sans-zh), 'Rajdhani', 'Noto Sans', system-ui, sans-serif;
 }

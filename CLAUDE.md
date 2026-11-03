@@ -3731,7 +3731,11 @@ languages from `src/shared/addedLanguageCopy.ts`.
   (Russian needs one/few/many). Never build a count by joining words.
 - System locale: zh-* to zh, every pt-* (pt-PT included) to pt-BR, every
   es-* to the neutral `es`, everything else English (`uiLanguageForLocale`).
-- Fonts: Japanese uses the OS CJK face picked by `<html lang>`, like zh;
+- Fonts: under a ja or zh UI, `--sans` puts the OS CJK face FIRST
+  (`--sans-ja` / `--sans-zh` in tokens.css, `html:lang()` rules), so Latin
+  inside a label ("ChatGPTログイン") uses the CJK face's own Latin instead of
+  Rajdhani, which runs much smaller than kana and hanzi at the same size.
+  `--display` (Oswald) and `--mono` are unchanged; en is untouched.
   Cyrillic subsets of the UI faces are self-hosted in `fonts.css` (by
   unicode-range, so other languages render as before). The DST faces
   (Fredericka, Metamorphous) have no Cyrillic and fall back to a serif.
