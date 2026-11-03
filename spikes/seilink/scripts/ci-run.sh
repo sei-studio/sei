@@ -18,7 +18,7 @@ if [ -n "${SEILINK_VARIANTS:-}" ]; then
   VARIANTS="$SEILINK_VARIANTS"
 elif [ "$OS" = win ]; then
   # explorer-restart last: it rebuilds the shell under everything else.
-  VARIANTS="baseline auto auto-showfirst auto-nodcomp auto-nogpu auto-noocclusion workerw explorer-restart"
+  VARIANTS="baseline auto auto-showfirst auto-nodcomp auto-nogpu auto-noocclusion workerw explorer-restart-child"
 else
   VARIANTS="mac-baseline electron-desktop native-desktop+1 native-icon-1-nothrottle native-icon-1"
 fi
@@ -26,6 +26,11 @@ echo "OS=$OS electron=$ELECTRON variants: $VARIANTS"
 for v in $VARIANTS; do
   echo "::group::variant $v"
   start=$(date +%s)
+  # CI only: the runner's console window sits over the screen centre; minimise everything first.
+  if [ "$OS" = win ] && [ -n "${CI:-}" ]; then
+    powershell.exe -NoProfile -Command "(New-Object -ComObject Shell.Application).MinimizeAll()" || true
+    sleep 1
+  fi
   run_timeout 200 "$ELECTRON" . --variant="$v" --out="$OUT_ROOT/$v" --timeout=170 > "$OUT_ROOT/$v.stdout.txt" 2>&1
   code=$?
   echo "exit=$code after $(( $(date +%s) - start ))s" | tee -a "$OUT_ROOT/$v.stdout.txt"

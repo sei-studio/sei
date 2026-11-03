@@ -7,6 +7,27 @@
 
 #include <string>
 
+// A plain AppKit hit proxy, to tell whether a click activates the app because of AppKit or because
+// of Chromium's own mouse handling in an Electron panel.
+static int g_nativeProxyClicks = 0;
+@interface SeiHitView : NSView
+@end
+@implementation SeiHitView
+- (BOOL)acceptsFirstMouse:(NSEvent*)e { return YES; }
+- (void)mouseDown:(NSEvent*)e { g_nativeProxyClicks++; }
+- (void)drawRect:(NSRect)r {
+  [[NSColor colorWithCalibratedRed:0 green:0.8 blue:1 alpha:0.45] setFill];
+  NSRectFill(r);
+}
+@end
+@interface SeiHitPanel : NSPanel
+@end
+@implementation SeiHitPanel
+- (BOOL)canBecomeKeyWindow { return NO; }
+- (BOOL)canBecomeMainWindow { return NO; }
+@end
+static SeiHitPanel* g_nativeProxy = nil;
+
 namespace {
 
 NSWindow* WindowFrom(const Napi::Value& v) {
@@ -168,6 +189,53 @@ Napi::Value TestClick(const Napi::CallbackInfo& info) {
   return Napi::Boolean::New(info.Env(), AXIsProcessTrusted());
 }
 
+// nativeProxy({x,y,w,h, level}) in global top-left coords. Non-activating NSPanel, own content view.
+Napi::Value NativeProxy(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  auto o = info[0].As<Napi::Object>();
+  double x = o.Get("x").As<Napi::Number>().DoubleValue(), y = o.Get("y").As<Napi::Number>().DoubleValue();
+  double w = o.Get("w").As<Napi::Number>().DoubleValue(), h = o.Get("h").As<Napi::Number>().DoubleValue();
+  NSInteger level = (NSInteger)o.Get("level").As<Napi::Number>().Int64Value();
+  CGFloat screenH = [[NSScreen screens] firstObject].frame.size.height;
+  NSRect fr = NSMakeRect(x, screenH - y - h, w, h);
+  g_nativeProxy = [[SeiHitPanel alloc] initWithContentRect:fr
+                                                 styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
+                                                   backing:NSBackingStoreBuffered
+                                                     defer:NO];
+  [g_nativeProxy setOpaque:NO];
+  [g_nativeProxy setBackgroundColor:[NSColor clearColor]];
+  [g_nativeProxy setHasShadow:NO];
+  [g_nativeProxy setHidesOnDeactivate:NO];
+  [g_nativeProxy setBecomesKeyOnlyIfNeeded:YES];
+  [g_nativeProxy setFloatingPanel:NO];
+  [g_nativeProxy setIgnoresMouseEvents:NO];
+  [g_nativeProxy setLevel:level];
+  [g_nativeProxy setCollectionBehavior:NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorStationary |
+                                       NSWindowCollectionBehaviorIgnoresCycle];
+  [g_nativeProxy setContentView:[[SeiHitView alloc] initWithFrame:NSMakeRect(0, 0, w, h)]];
+  [g_nativeProxy orderFrontRegardless];
+  return WinObj(env, g_nativeProxy);
+}
+
+Napi::Value NativeProxyClicks(const Napi::CallbackInfo& info) {
+  return Napi::Number::New(info.Env(), g_nativeProxyClicks);
+}
+
+Napi::Value NativeProxyClose(const Napi::CallbackInfo& info) {
+  if (g_nativeProxy) [g_nativeProxy orderOut:nil];
+  g_nativeProxy = nil;
+  return info.Env().Undefined();
+}
+
+// Force the non-activating bit on an Electron panel (it may already be set).
+Napi::Value SetNonactivating(const Napi::CallbackInfo& info) {
+  NSWindow* w = WindowFrom(info[0]);
+  if (!w) return Napi::Boolean::New(info.Env(), false);
+  [w setStyleMask:[w styleMask] | NSWindowStyleMaskNonactivatingPanel];
+  if ([w isKindOfClass:[NSPanel class]]) [(NSPanel*)w setBecomesKeyOnlyIfNeeded:YES];
+  return Napi::Boolean::New(info.Env(), true);
+}
+
 Napi::Value Frontmost(const Napi::CallbackInfo& info) {
   NSRunningApplication* a = [[NSWorkspace sharedWorkspace] frontmostApplication];
   std::string s = a ? std::string([[a localizedName] UTF8String] ?: "") : "";
@@ -183,6 +251,10 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("windowList", Napi::Function::New(env, WindowList));
   exports.Set("testClick", Napi::Function::New(env, TestClick));
   exports.Set("frontmost", Napi::Function::New(env, Frontmost));
+  exports.Set("nativeProxy", Napi::Function::New(env, NativeProxy));
+  exports.Set("nativeProxyClicks", Napi::Function::New(env, NativeProxyClicks));
+  exports.Set("nativeProxyClose", Napi::Function::New(env, NativeProxyClose));
+  exports.Set("setNonactivating", Napi::Function::New(env, SetNonactivating));
   return exports;
 }
 

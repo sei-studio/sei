@@ -23,7 +23,7 @@ for (const v of fs.readdirSync(root).sort()) {
     c.fpsVisible ? c.fpsVisible.median : '-',
     c.fpsCovered ? c.fpsCovered.median : '-',
     ramEnd ? ramEnd.totalWorkingSetMB : '-',
-    [c.rawInputSeesDesktopClicks != null ? `raw=${c.rawInputSeesDesktopClicks}` : '', c.proxyReceivesClick != null ? `proxy=${yn(c.proxyReceivesClick)}` : '', c.explorerRestartReattached != null ? `explorer=${yn(c.explorerRestartReattached)} render=${yn(c.rendersAfterRestart)} anim=${yn(c.animatesAfterRestart)}` : '', r.fatal ? 'FATAL' : '', r.hardTimeout ? 'TIMEOUT' : ''].filter(Boolean).join(' '),
+    [c.rawInputSeesDesktopClicks != null ? `raw=${c.rawInputSeesDesktopClicks}` : '', c.proxyReceivesClick != null ? `proxy=${yn(c.proxyReceivesClick)} keepsFront=${yn(c.proxyKeepsFrontApp)}` : '', c.nativeProxyReceivesClick != null ? `nsPanel=${yn(c.nativeProxyReceivesClick)} keepsFront=${yn(c.nativeProxyKeepsFrontApp)}` : '', r.afterWallpaperClick ? `wallpaperClick->${r.afterWallpaperClick.frontmost}` : '', c.childDiedOnExplorerExit != null ? `childDied=${yn(c.childDiedOnExplorerExit)} exit=${(r.children || []).map((k) => k.exit && k.exit.hex).join(',')} via=${c.recoveredBy} ${c.recoveryMsAfterKill}ms` : '', c.explorerRestartReattached != null ? `explorer=${yn(c.explorerRestartReattached)} render=${yn(c.rendersAfterRestart)} anim=${yn(c.animatesAfterRestart)}` : '', r.fatal ? 'FATAL' : '', r.hardTimeout ? 'TIMEOUT' : ''].filter(Boolean).join(' '),
   ])
 }
 console.log(`### SeiLink spike: ${osLine}\n`)

@@ -450,7 +450,7 @@ LRESULT CALLBACK RawProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         std::string c = under ? ClassOf(under) : "";
         std::string rc = root ? ClassOf(root) : "";
         std::string rec = std::to_string(pt.x) + "," + std::to_string(pt.y) + "," + c + "," + rc + "," +
-                          (IsDesktopClass(c) ? "desktop" : "other") + ",fg=" + ClassOf(GetForegroundWindow());
+                          (IsDesktopClass(c) || rc == "Progman" || rc == "WorkerW" ? "desktop" : "other") + ",fg=" + ClassOf(GetForegroundWindow());
         std::lock_guard<std::mutex> l(g_mu);
         if (g_clicks.size() < 50) g_clicks.push_back(rec);
       }

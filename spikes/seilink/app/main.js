@@ -36,6 +36,9 @@ const PRESETS = {
   },
   workerw: { mode: 'workerw', full: true },
   'explorer-restart': { mode: 'auto', explorerRestart: true },
+  // Supervisor + room in a child Electron process that re-attaches itself on a new Explorer.
+  'explorer-restart-child': { explorerRestartChild: true },
+  'room-child': { mode: 'auto', roomOnly: true },
   // macOS
   'mac-baseline': { noWindow: true },
   'electron-desktop': { mac: 'electron-desktop' },
@@ -78,6 +81,7 @@ try {
 
 // ---------------------------------------------------------------- renderer telemetry
 let latestRoom = null
+let childFrames = null
 ipcMain.on('frame', (_e, d) => {
   latestRoom = d
   result.fps.push({ t: +((Date.now() - T0) / 1000).toFixed(1), fps: +d.fps.toFixed(1), frames: d.frames, vis: d.vis, phase })
@@ -99,7 +103,7 @@ function run(cmd, args, timeoutMs = 20000) {
 
 async function shot(name, { dc = false } = {}) {
   const file = path.join(OUT, `${name}.png`)
-  const framesAt = latestRoom ? latestRoom.frames : null
+  const framesAt = latestRoom ? latestRoom.frames : childFrames ? childFrames() : null
   let r
   if (argv['no-shots']) return { file, framesAt, ok: false }
   if (IS_WIN) {
@@ -169,19 +173,38 @@ function baseRegions() {
   // Windows icons sit in the top-left column, Finder icons in the top-right column.
   const iconColumn = IS_MAC ? { x: b.width - 120, y: 30, w: 120, h: Math.min(700, b.height - 60) } : { x: 0, y: 0, w: 90, h: Math.min(560, b.height - 60) }
   const center = { x: b.width * 0.35, y: b.height * 0.35, w: b.width * 0.3, h: b.height * 0.3 }
-  return { iconColumn, center }
+  // The ticker band of pattern.html (y 79%..89%), clear of the icon column and of CI console windows.
+  const band = { x: b.width * 0.12, y: b.height * 0.8, w: b.width * 0.76, h: b.height * 0.08 }
+  return { iconColumn, center, band }
 }
 
 async function shotAndCheck(name, extraRegions = {}, opts = {}) {
   const s = await shot(name, opts)
   const a = s.ok ? analyze(s.file, { ...baseRegions(), ...extraRegions }) : { error: 'no shot' }
   const rec = { name, framesAt: s.framesAt, ...a }
-  if (opts.dc && fs.existsSync(path.join(OUT, `${name}-dc.png`))) rec.dc = analyze(path.join(OUT, `${name}-dc.png`), baseRegions())
+  if (opts.dc && fs.existsSync(path.join(OUT, `${name}-dc.png`))) rec.dc = analyze(path.join(OUT, `${name}-dc.png`), { ...baseRegions(), ...extraRegions })
   log('shot', rec)
   result.shots = result.shots || []
   result.shots.push(rec)
   save()
   return rec
+}
+
+// Pixel verdicts from two shots. Uses the GDI/screencapture image, else the desktopCapturer one.
+function pick(S) {
+  return S && S.band ? S : S && S.dc && S.dc.band ? S.dc : null
+}
+function judge(A, B) {
+  const a = pick(A), b = pick(B)
+  if (!a || !b) return { visible: false, animates: false, iconsOver: false, source: null }
+  const ca = a.band.greenCentroid, cb = b.band.greenCentroid
+  return {
+    source: a === A ? 'screenshot' : 'desktopCapturer',
+    visible: a.band.magenta > 0.3 && b.band.magenta > 0.3,
+    animates: !!(ca && cb && Math.abs(ca.x - cb.x) > 15) && B.framesAt > A.framesAt,
+    iconsOver: a.iconColumn.magenta < a.band.magenta - 0.08,
+    centerMagenta: a.center.magenta,
+  }
 }
 
 // ---------------------------------------------------------------- RAM
@@ -316,7 +339,9 @@ async function scenario() {
     result.winBefore = summarizeWinTree(before)
     log('win before', result.winBefore)
   }
+  if (preset.roomOnly) return roomOnly()
   await shotAndCheck('00-before')
+  if (preset.explorerRestartChild) return explorerRestartChild()
   if (preset.noWindow) return
 
   phase = 'visible'
@@ -348,9 +373,11 @@ async function scenario() {
   const A = await shotAndCheck('01-a', {}, { dc: true })
   await sleep(3000)
   const B = await shotAndCheck('02-b', {}, { dc: true })
-  result.checks.rendersBehindIcons = (A.center && A.center.magenta > 0.4) || false
-  result.checks.animates = !!(A.all && B.all && A.all.greenCentroid && B.all.greenCentroid && Math.hypot(A.all.greenCentroid.x - B.all.greenCentroid.x, A.all.greenCentroid.y - B.all.greenCentroid.y) > 15) && B.framesAt > A.framesAt
-  result.checks.iconColumnLessMagenta = !!(A.iconColumn && A.center && A.iconColumn.magenta < A.center.magenta - 0.08)
+  const J = judge(A, B)
+  result.checks.pixelSource = J.source
+  result.checks.rendersBehindIcons = J.visible
+  result.checks.animates = J.animates
+  result.checks.iconColumnLessMagenta = J.iconsOver
   result.checks.framesBetweenShots = A.framesAt != null && B.framesAt != null ? B.framesAt - A.framesAt : null
   result.checks.fpsVisible = fpsSummary('visible')
   ram('steady-visible')
@@ -368,7 +395,7 @@ async function fullWin() {
   addon.rawInputStart()
   await sleep(400)
   // 1) click on empty desktop while desktop has focus
-  const pt = { x: Math.round(b.width * 0.62), y: Math.round(b.height * 0.55) }
+  const pt = { x: Math.round(b.width * 0.62), y: Math.round(b.height * 0.84) }
   addon.testClick(pt.x, pt.y)
   await sleep(800)
   result.rawInput1 = addon.rawInputStats()
@@ -385,12 +412,13 @@ async function fullWin() {
   result.notepad = tops
   const r = tops[0] && tops[0].rect
   log('notepad windows', tops.map((t) => t.rect))
-  const C = await shotAndCheck('03-notepad', { cover: r && { x: r.x + 10, y: r.y + 40, w: r.w - 20, h: r.h - 50 } })
-  result.checks.normalWindowCovers = !!(C.cover && C.cover.magenta < 0.03 && C.center)
+  const C = await shotAndCheck('03-notepad', { cover: r && { x: r.x + 10, y: r.y + 40, w: r.w - 20, h: r.h - 50 } }, { dc: true })
+  const pc = pick(C)
+  result.checks.normalWindowCovers = !!(pc && pc.cover && pc.cover.magenta < 0.03 && pc.band.magenta > 0.3)
   result.checks.fpsCovered = fpsSummary('covered')
 
   // 3) click on empty desktop while Notepad is the foreground app (outside Notepad)
-  const pt2 = { x: Math.round(b.width - 160), y: Math.round(b.height - 140) }
+  const pt2 = { x: Math.round(b.width * 0.95), y: Math.round(b.height * 0.84) }
   addon.testClick(pt2.x, pt2.y)
   await sleep(800)
   result.rawInput2 = addon.rawInputStats()
@@ -402,14 +430,14 @@ async function fullWin() {
   } catch {}
   phase = 'visible2'
   await sleep(1500)
-  await shotAndCheck('04-after-notepad')
+  await shotAndCheck('04-after-notepad', {}, { dc: true })
   result.checks.fpsAfterCover = fpsSummary('visible2')
   save()
 }
 
 async function createProxy() {
   const b = screen.getPrimaryDisplay().bounds
-  const rect = { x: Math.round(b.width * 0.22), y: Math.round(b.height * 0.55), width: 240, height: 160 }
+  const rect = { x: Math.round(b.width * 0.22), y: Math.round(b.height * 0.66), width: 240, height: 90 }
   const p = new BrowserWindow({
     ...rect,
     type: 'panel',
@@ -455,24 +483,49 @@ async function fullMac(proxy) {
   result.frontmostBefore = addon.frontmost()
 
   // Click tests (test harness stand-in for a hand; needs Accessibility for CGEventPost).
+  const activateTextEdit = async () => {
+    await run('/usr/bin/open', ['-a', 'TextEdit'])
+    await sleep(1500)
+    return addon.frontmost()
+  }
   if (proxy) {
+    // A) plain AppKit non-activating NSPanel at desktopIcon+1: does a click activate us at all?
+    const lv = addon.levels()
+    const nr = { x: Math.round(b.width * 0.5), y: Math.round(b.height * 0.66), w: 240, h: 90 }
+    result.nativeProxy = { rect: nr, info: addon.nativeProxy({ ...nr, level: lv.desktopIcon + 1 }) }
+    await sleep(600)
+    const fA = addon.frontmost()
+    addon.testClick(nr.x + nr.w / 2, nr.y + nr.h / 2)
+    await sleep(1200)
+    const teA = textEditWindow()
+    result.afterNativeProxyClick = { frontmostBefore: fA, clicks: addon.nativeProxyClicks(), frontmost: addon.frontmost(), textEditBounds: teA && teA.bounds }
+    log('after native NSPanel proxy click', result.afterNativeProxyClick)
+    result.checks.nativeProxyReceivesClick = addon.nativeProxyClicks() > 0
+    result.checks.nativeProxyKeepsFrontApp = result.afterNativeProxyClick.frontmost === fA && fA === 'TextEdit'
+
+    // B) Electron type:'panel' proxy at desktopIcon+1.
+    const fB = await activateTextEdit()
     const pr = result.proxy.rect
     const n0 = result.proxyClicks.length
     result.clickPosted1 = addon.testClick(pr.x + pr.width / 2, pr.y + pr.height / 2)
     await sleep(1200)
     const te1 = textEditWindow()
-    result.afterProxyClick = { proxyClicks: result.proxyClicks.length - n0, frontmost: addon.frontmost(), textEditBounds: te1 && te1.bounds, axTrusted: result.clickPosted1 }
-    log('after proxy click', result.afterProxyClick)
+    result.afterProxyClick = { frontmostBefore: fB, proxyClicks: result.proxyClicks.length - n0, frontmost: addon.frontmost(), textEditBounds: te1 && te1.bounds, axTrusted: result.clickPosted1 }
+    log('after Electron panel proxy click', result.afterProxyClick)
     result.checks.proxyReceivesClick = result.proxyClicks.length > n0
+    result.checks.proxyKeepsFrontApp = result.afterProxyClick.frontmost === fB && fB === 'TextEdit'
+    await shotAndCheck('03b-after-proxy-clicks')
 
-    // empty wallpaper click (no proxy there) with a normal app frontmost: does macOS sweep windows away?
+    // C) empty wallpaper click (no proxy there) with TextEdit frontmost: does macOS sweep windows away?
+    const fC = await activateTextEdit()
     const n1 = result.proxyClicks.length
-    addon.testClick(Math.round(b.width * 0.5), Math.round(b.height - 120))
+    addon.testClick(Math.round(b.width * 0.85), Math.round(b.height * 0.3))
     await sleep(1800)
     const te2 = textEditWindow()
-    result.afterWallpaperClick = { proxyClicks: result.proxyClicks.length - n1, frontmost: addon.frontmost(), textEditBounds: te2 ? te2.bounds : 'not on screen (swept?)' }
+    result.afterWallpaperClick = { frontmostBefore: fC, proxyClicks: result.proxyClicks.length - n1, frontmost: addon.frontmost(), textEditBounds: te2 ? te2.bounds : 'not on screen (swept?)' }
     log('after wallpaper click', result.afterWallpaperClick)
     await shotAndCheck('04-after-wallpaper-click')
+    addon.nativeProxyClose()
   }
   await run('/usr/bin/osascript', ['-e', 'quit app "TextEdit" saving no'], 8000).catch(() => {})
   await run('/usr/bin/pkill', ['-x', 'TextEdit'])
@@ -523,12 +576,157 @@ async function explorerRestart() {
   log('after explorer restart', result.winAfterExplorer)
   phase = 'visible3'
   await sleep(3000)
-  const D = await shotAndCheck('05-after-explorer-restart')
+  const D = await shotAndCheck('05-after-explorer-restart', {}, { dc: true })
   await sleep(2000)
-  const E = await shotAndCheck('06-after-explorer-restart-b')
-  result.checks.rendersAfterRestart = !!(D.center && D.center.magenta > 0.4)
-  result.checks.animatesAfterRestart = !!(D.all && E.all && D.all.greenCentroid && E.all.greenCentroid && Math.hypot(D.all.greenCentroid.x - E.all.greenCentroid.x, D.all.greenCentroid.y - E.all.greenCentroid.y) > 15)
+  const E = await shotAndCheck('06-after-explorer-restart-b', {}, { dc: true })
+  const JR = judge(D, E)
+  result.checks.rendersAfterRestart = JR.visible
+  result.checks.animatesAfterRestart = JR.animates
   save()
+}
+
+// Child: room + attach, then watch for a new Explorer and re-attach in place (or recreate the room).
+async function roomOnly() {
+  phase = 'visible'
+  const w = await createRoom()
+  result.attach = await attachWin(w)
+  save()
+  setInterval(save, 1000)
+  setTimeout(() => ram('child-steady'), 5000)
+  let pid0 = addon.status(w.getNativeWindowHandle()).explorerPid
+  result.watch = []
+  for (;;) {
+    await sleep(300)
+    const alive = room && !room.isDestroyed()
+    const st = addon.status(alive ? room.getNativeWindowHandle() : Buffer.alloc(8))
+    if (st.explorerPid !== pid0 && result.watch.length < 40) result.watch.push({ ms: Date.now() - T0, alive, ...st })
+    if (st.explorerPid && st.explorerPid !== pid0 && st.defViewExists) {
+      log('child: new Explorer', st, 'room alive', alive)
+      await sleep(1500)
+      if (!room || room.isDestroyed()) {
+        log('child: room was destroyed; recreating')
+        await createRoom()
+      }
+      result.reattach = await attachWin(room)
+      result.reattach.atMs = Date.now() - T0
+      result.winAfterExplorer = summarizeWinTree(addon.inspect(room.getNativeWindowHandle()))
+      log('child: reattached', result.reattach.ok, result.winAfterExplorer)
+      pid0 = st.explorerPid
+      phase = 'visible3'
+      save()
+    }
+  }
+}
+
+function spawnChild(tag) {
+  const out = path.join(OUT, `child-${tag}`)
+  const p = cp.spawn(process.execPath, [ROOT, '--variant=room-child', `--out=${out}`, '--timeout=150', '--no-shots'], {
+    stdio: ['ignore', 'ignore', 'pipe'],
+    env: { ...process.env, ELECTRON_ENABLE_LOGGING: '1' },
+  })
+  const rec = { tag, pid: p.pid, out, exit: null, stderrTail: '' }
+  p.stderr.on('data', (d) => (rec.stderrTail = (rec.stderrTail + d).slice(-4000)))
+  p.on('exit', (code, sig) => {
+    rec.exit = { code, sig, hex: code != null ? '0x' + (code >>> 0).toString(16) : null, atMs: Date.now() - T0 }
+    log('child exit', tag, rec.exit)
+  })
+  return { p, rec }
+}
+function readChild(c) {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(c.rec.out, 'result.json'), 'utf8'))
+  } catch {
+    return null
+  }
+}
+async function waitChildFrames(c, ms) {
+  const t = Date.now()
+  while (Date.now() - t < ms) {
+    const r = readChild(c)
+    if (r && r.attach && r.fps.length >= 2) return r
+    await sleep(300)
+  }
+  return readChild(c)
+}
+
+async function explorerRestartChild() {
+  phase = 'visible'
+  let c = spawnChild('a')
+  const children = [c]
+  childFrames = () => {
+    const r = readChild(c)
+    return r && r.fps.length ? r.fps[r.fps.length - 1].frames : null
+  }
+  const r0 = await waitChildFrames(c, 20000)
+  result.attach = r0 && r0.attach
+  log('child a attach', result.attach && result.attach.ok, result.attach && result.attach.method)
+  await sleep(1500)
+  const A = await shotAndCheck('01-a', {}, { dc: true })
+  await sleep(3000)
+  const B = await shotAndCheck('02-b', {}, { dc: true })
+  const J = judge(A, B)
+  Object.assign(result.checks, { pixelSource: J.source, rendersBehindIcons: J.visible, animates: J.animates, iconColumnLessMagenta: J.iconsOver })
+
+  phase = 'explorer'
+  const st0 = addon.status(Buffer.alloc(8))
+  log('status before explorer kill', st0)
+  const tKill = Date.now()
+  await run('taskkill', ['/F', '/IM', 'explorer.exe'])
+  let started = false
+  let newShell = null
+  const timeline = []
+  for (let i = 0; i < 100; i++) {
+    await sleep(250)
+    const st = addon.status(Buffer.alloc(8))
+    if (i % 4 === 0) timeline.push({ ms: Date.now() - tKill, childAlive: c.rec.exit == null, ...st })
+    if (!started && Date.now() - tKill > 6000 && !st.explorerPid) {
+      log('explorer did not auto-restart; starting explorer.exe')
+      cp.spawn('explorer.exe', [], { detached: true, stdio: 'ignore' }).unref()
+      started = true
+    }
+    if (st.defViewExists && st.explorerPid && st.explorerPid !== st0.explorerPid) {
+      newShell = { ms: Date.now() - tKill, ...st }
+      break
+    }
+  }
+  result.explorerTimeline = timeline
+  result.newShell = newShell
+  log('new shell', newShell)
+  await sleep(4000)
+  result.checks.childDiedOnExplorerExit = c.rec.exit != null
+  if (c.rec.exit != null) {
+    log('child a died with Explorer; respawning child b')
+    c = spawnChild('b')
+    children.push(c)
+    const rb = await waitChildFrames(c, 20000)
+    result.reattach = rb && rb.attach
+    result.checks.recoveredBy = 'respawn'
+  } else {
+    const ra = readChild(c)
+    result.reattach = ra && ra.reattach
+    result.checks.recoveredBy = ra && ra.reattach ? 'in-place re-attach' : 'none'
+  }
+  result.checks.recoveryMsAfterKill = Date.now() - tKill
+  phase = 'visible3'
+  await sleep(2000)
+  const D = await shotAndCheck('05-after-explorer-restart', {}, { dc: true })
+  await sleep(3000)
+  const E = await shotAndCheck('06-after-explorer-restart-b', {}, { dc: true })
+  const JR = judge(D, E)
+  result.checks.rendersAfterRestart = JR.visible
+  result.checks.animatesAfterRestart = JR.animates
+  result.checks.explorerRestartReattached = !!(result.reattach && result.reattach.ok)
+  treeDump('tree-after-explorer-restart')
+  for (const k of children) {
+    const r = readChild(k)
+    k.rec.result = r && { attach: r.attach && { ok: r.attach.ok, method: r.attach.method }, reattach: r.reattach && { ok: r.reattach.ok, atMs: r.reattach.atMs }, watch: r.watch, winAfterExplorer: r.winAfterExplorer, fpsTail: r.fps.slice(-5), ram: r.ram }
+    k.rec.stderrTail = k.rec.stderrTail.split('\n').filter((l) => /FATAL|ERROR|Check failed|crash|0x/i.test(l)).slice(-30).join('\n')
+  }
+  result.children = children.map((k) => k.rec)
+  // RAM of the room process tree (the supervisor's own metrics do not include the child).
+  save()
+  for (const k of children) if (k.rec.exit == null) k.p.kill()
+  await sleep(500)
 }
 
 // ---------------------------------------------------------------- lifecycle
