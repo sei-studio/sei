@@ -2,7 +2,8 @@
  * call view (lg) and the docked call section (sm). 260721 redesign: Discord-ish
  * rounded-rectangle pills in a tight row — filled shapes, larger hit areas, no
  * thin outline circles. Colors via tokens; neutral fills are text-tinted
- * color-mix so they read on both themes. */
+ * color-mix so they read on both themes. 261103: sharp corners like every
+ * other button (Shawn); filled, so no border (the 261103 button rule). */
 
 .controls {
   display: flex;
@@ -22,7 +23,7 @@
   justify-content: center;
   width: 64px;
   height: 44px;
-  border-radius: 12px;
+  border-radius: 0;
   border: none;
   background: color-mix(in srgb, var(--text) 9%, transparent);
   color: var(--text);
@@ -33,7 +34,7 @@
 .pillBtnSm {
   width: 48px;
   height: 32px;
-  border-radius: 9px;
+  border-radius: 0;
 }
 
 .pillBtn:hover {
