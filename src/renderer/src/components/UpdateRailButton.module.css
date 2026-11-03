@@ -7,9 +7,9 @@
   position: relative;
   align-self: stretch;
   flex-shrink: 0;
-  /* Flush with the rail's bottom edge (cancel .rail's 14px bottom padding)
+  /* Flush with the rail's bottom edge (cancel .rail's bottom padding, --space-md)
      and over its 1px right border, so no rail-colored seam shows. */
-  margin: var(--space-sm) -1px -14px 0;
+  margin: var(--space-sm) -1px calc(-1 * var(--space-md)) 0;
   min-height: 64px;
   padding: var(--space-sm) var(--space-xs) var(--space-md);
   display: flex;
