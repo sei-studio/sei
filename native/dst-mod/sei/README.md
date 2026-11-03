@@ -90,6 +90,23 @@ burning fire near the body awake (`Reflexes.KeepFiresAwake`). Fire heat did
 not change the body's temperature on the test server, so warming up is
 checked only as walking to the fire.
 
+### A world with caves (two shards)
+
+A caves world runs two server processes, and the helper loads and
+heartbeats in both (`TheWorld.ismastersim` is true on each). Each beat lists
+only the players on that shard, and the cave shard reports `phase` "night"
+at any time of day. Helpers before 0.3.1 sent no shard id, and the app gave
+the summon to whichever shard asked first, so about half the summons spawned
+the body in the caves, alone and in the dark, where Charlie killed it about
+16 s later (DST_BODY_DIED). To reproduce it: set `shard_enabled = true`,
+`master_port` and `cluster_key` in `cluster.ini`, add a `Caves` shard folder
+(`is_master = false`, a `worldgenoverride.lua` with `preset = "DST_CAVE"`,
+its own `server_port`), enable the mod on both shards, start both with
+`-shard Master` / `-shard Caves`, and watch which shard takes the offer.
+Since 0.3.1 the helper sends `shard` and `mastershard`, the app gives the
+offer only to the shard that lists the player (else the master), and a
+secondary shard refuses an offer for a player it does not have.
+
 ## Credits
 
 Adapted from FAtiMA-DST (MIT, hineios), DST-AICompanion (MIT, Hansae) and

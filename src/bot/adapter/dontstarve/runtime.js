@@ -325,6 +325,7 @@ export async function createRuntime(config, hooks) {
   let _stopped = false
   let _readyFired = false
   let _spawned = false
+  let _spawnedAt = 0
   let _spawnTimer = null
   let _hbTimer = null
   let _deathTimer = null
@@ -383,6 +384,7 @@ export async function createRuntime(config, hooks) {
   link.events.on('spawned', (info) => {
     if (_spawned || _stopped) return
     _spawned = true
+    _spawnedAt = Date.now()
     clearTimeout(_spawnTimer); _spawnTimer = null
     if (typeof info?.session === 'string' && info.session) link.session = info.session
     logger.info(`[sei] DST survivor spawned (${info?.prefab ?? dst.prefab}) as "${info?.name ?? dst.username}", helper mod ${link.modVersion ?? '< 0.3.0'}`)
@@ -416,8 +418,15 @@ export async function createRuntime(config, hooks) {
       fail("GAME_WORLD_NOT_OPEN: The Don't Starve Together world removed your companion. Press Play to summon them again.")
     })
   })
-  link.events.on('death', () => {
+  link.events.on('death', (ev) => {
     if (_stopped || _deathTimer) return
+    // What killed her, where, and on which shard: a body that died in the
+    // dark caves seconds after spawn (261104) left no trace of why.
+    try {
+      const w = link.state.world
+      const since = _spawnedAt ? `${Math.round((Date.now() - _spawnedAt) / 1000)}s after spawn` : 'before spawn'
+      logger.info(`[sei] DST body died ${since}: cause=${String(ev?.cause ?? '?').slice(0, 40)} afflicter=${String(ev?.afflicter ?? '-').slice(0, 40)} at (${Math.round(Number(ev?.x) || 0)}, ${Math.round(Number(ev?.z) || 0)}) caves=${w?.caves ? 'yes' : 'no'} phase=${w?.phase ?? '?'}`)
+    } catch {}
     // An ownerless survivor has no client to revive it: give the brain one
     // turn to react (the sei:death prompt), then end the session honestly.
     const grace = Number.isFinite(dst.death_grace_ms) ? dst.death_grace_ms : DEATH_GRACE_MS
