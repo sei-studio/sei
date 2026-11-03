@@ -39,6 +39,19 @@
  * confirmed limit, and only auto-dismisses when that confirmed limit clears (a
  * top up, an upgrade reset, or the weekly rollover).
  *
+ * 261103 (T307) — "Keep playing free". A week is a long wait for a free
+ * player who hits the wall on their first day, so a free player at the wall
+ * now also gets two ways to keep playing on an account of their own, under
+ * the Top up / Upgrade pair (wallFreeOptions):
+ *   - "Use your ChatGPT plan": the startup popup's chatgpt-plan flow
+ *     (startChatgptPlan, lib/popupActions.ts): Settings at the ChatGPT plan
+ *     row, then the sign-in or the switch that row's own button would run.
+ *     Hidden when the plan is already the provider in use, and when
+ *     region:status says the region is blocked (fails open, like SignInModal).
+ *   - "Use your own API key or a local model": Settings at the AI Backend row
+ *     (view.focus 'ai-backend').
+ * Both dismiss the popup FIRST, like Upgrade, then navigate.
+ *
  * Sources: SPEC §5.B, AcceptToSModal.tsx (structural template),
  *          useCreditsStore.ts (hardStopActive / acknowledgeHardStop wire).
  */
@@ -47,7 +60,11 @@ import React, { useEffect, useState } from 'react';
 import { t as tr, useT } from '../lib/i18n';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { useUiStore } from '../lib/stores/useUiStore';
+import type { PlanTier } from '@shared/ipc';
+import { startChatgptPlan } from '../lib/popupActions';
 import { Button } from './Button';
+import { ChatgptLogo } from './ChatgptLogo';
+import { KeyIcon } from './icons';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { PlanButton } from './PlanButton';
 import { useResetLine } from '../lib/useResetLine';
@@ -84,9 +101,12 @@ export function formatRetryWhen(untilMs: number | null, nowMs: number): string {
 /**
  * 261005: what the player did at the wall (`credit_wall_action`). The wall
  * itself is `credit_wall_hit`, fired in main; this is the other half of the
- * funnel (close vs top up vs upgrade). Shape only. Never throws.
+ * funnel (close vs top up vs upgrade, and since 261103 the two free options:
+ * 'chatgpt' and 'own_key'). Shape only. Never throws.
  */
-function trackWallAction(action: 'close' | 'topup' | 'upgrade', reason: string | null, openedAt: number): void {
+export type WallAction = 'close' | 'topup' | 'upgrade' | 'chatgpt' | 'own_key';
+
+function trackWallAction(action: WallAction, reason: string | null, openedAt: number): void {
   try {
     sei.track('credit_wall_action', {
       action,
@@ -95,6 +115,52 @@ function trackWallAction(action: 'close' | 'topup' | 'upgrade', reason: string |
     });
   } catch {
     /* analytics is never load-bearing */
+  }
+}
+
+/** Which "Keep playing free" options the popup shows (261103). */
+export interface WallFreeOptions {
+  chatgpt: boolean;
+  ownKey: boolean;
+}
+
+/**
+ * Pure: the free options for this wall. Only a free plan at the credit wall
+ * gets them (a rate limit is not a balance, and a subscriber's wall keeps its
+ * plain Top up / Upgrade). The ChatGPT option is left out when the plan is
+ * already the provider in use (`llmProvider === 'chatgpt'`) and when the
+ * region check said blocked.
+ */
+export function wallFreeOptions(input: {
+  reason: string | null;
+  plan: PlanTier;
+  llmProvider: string | null;
+  regionBlocked: boolean;
+}): WallFreeOptions {
+  const freeWall = input.reason !== 'rate_limited' && input.plan === 'free';
+  return {
+    chatgpt: freeWall && input.llmProvider !== 'chatgpt' && !input.regionBlocked,
+    ownKey: freeWall,
+  };
+}
+
+/**
+ * A "Keep playing free" click: track it, dismiss the popup (it would cover
+ * Settings otherwise), then route. 'chatgpt' runs the same flow as the
+ * startup popup's chatgpt-plan action; 'own_key' opens Settings at the AI
+ * Backend row. Exported for the unit test.
+ */
+export function takeWallFreeOption(option: 'chatgpt' | 'own_key', reason: string | null, openedAt: number): void {
+  trackWallAction(option, reason, openedAt);
+  useCreditsStore.getState().acknowledgeHardStop();
+  if (option === 'chatgpt') {
+    // Another chatgpt-plan run still in flight (a popup click a moment ago):
+    // this one does nothing, so at least land on the row it is using.
+    void startChatgptPlan().then((ran) => {
+      if (!ran) useUiStore.getState().navigate({ kind: 'settings', focus: 'chatgpt-plan' });
+    });
+  } else {
+    useUiStore.getState().navigate({ kind: 'settings', focus: 'ai-backend' });
   }
 }
 
@@ -112,7 +178,9 @@ export function HardStopModal(): React.ReactElement | null {
   const refresh = useCreditsStore((s) => s.refresh);
   const acknowledgeHardStop = useCreditsStore((s) => s.acknowledgeHardStop);
   const requestTopUp = useCreditsStore((s) => s.requestTopUp);
+  const plan = useCreditsStore((s) => s.plan);
   const navigate = useUiStore((s) => s.navigate);
+  const llmProvider = useUiStore((s) => s.llmProvider);
 
   // A rate limit is a time window: no billing change clears it, so it never
   // takes part in the over_limit refresh/latch/auto-dismiss machinery below.
@@ -127,6 +195,29 @@ export function HardStopModal(): React.ReactElement | null {
     trackWallAction('close', hardStopReason, openedAt);
     acknowledgeHardStop();
   };
+
+  // 261103: the ChatGPT option is hidden for a blocked region, the same
+  // region:status pre-check SignInModal runs. Asked again each time the
+  // popup opens (main caches nothing, so a VPN that is up now counts). Fails
+  // open: until it answers, or when it cannot, the option shows.
+  const [regionBlocked, setRegionBlocked] = useState(false);
+  useEffect(() => {
+    if (!hardStopActive || isRateLimited) return;
+    let cancelled = false;
+    try {
+      void sei.regionStatus().then(
+        (r) => {
+          if (!cancelled) setRegionBlocked(r?.blocked === true);
+        },
+        () => undefined,
+      );
+    } catch {
+      /* no bridge: fail open */
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [hardStopActive, isRateLimited]);
 
   // ESC dismissal is owned by ModalShell (escClose default true → onClose).
 
@@ -217,6 +308,8 @@ export function HardStopModal(): React.ReactElement | null {
     navigate({ kind: 'credits' });
   };
 
+  const free = wallFreeOptions({ reason: hardStopReason, plan, llmProvider, regionBlocked });
+
   return (
     // Click-outside intentionally does NOT dismiss (scrimClose omitted) — Close,
     // the CTAs, and ESC are the deliberate dismiss paths. Base tier: the consent
@@ -238,6 +331,41 @@ export function HardStopModal(): React.ReactElement | null {
           {t('Upgrade')}
         </PlanButton>
       </div>
+      {/* 261103: ways to keep playing that cost Sei nothing (header). One
+          step quieter than the pair above: a small heading, sm buttons. */}
+      {free.chatgpt || free.ownKey ? (
+        <div className={styles.free} data-testid="wall-free-options">
+          <p className={styles.freeTitle}>{t('Keep playing free')}</p>
+          <div className={styles.freeOptions}>
+            {free.chatgpt ? (
+              <PlanButton
+                kind="secondary"
+                size="sm"
+                icon={
+                  <span className={styles.chatgptLogo}>
+                    <ChatgptLogo size={16} />
+                  </span>
+                }
+                onClick={() => takeWallFreeOption('chatgpt', hardStopReason, openedAt)}
+              >
+                {t('Use your ChatGPT plan')}
+              </PlanButton>
+            ) : null}
+            {/* The note belongs to the ChatGPT option, so it sits right under it. */}
+            {free.chatgpt ? <p className={styles.freeNote}>{t('Works with your ChatGPT Plus or Pro account.')}</p> : null}
+            {free.ownKey ? (
+              <PlanButton
+                kind="secondary"
+                size="sm"
+                icon={<KeyIcon size={16} />}
+                onClick={() => takeWallFreeOption('own_key', hardStopReason, openedAt)}
+              >
+                {t('Use your own API key or a local model')}
+              </PlanButton>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
       <ModalFooter>
         <Button kind="quiet" size="md" onClick={closeTracked}>
           {t('Close')}

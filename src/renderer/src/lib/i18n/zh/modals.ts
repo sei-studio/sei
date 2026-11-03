@@ -220,6 +220,10 @@ export const ZH_MODALS: Record<string, string> = {
   'Top up': '充值',
   'Upgrade': '升级',
   '{weekday} at {time}': '{weekday} {time}',
+  // 261103: the free options under Top up / Upgrade ("Use your ChatGPT plan"
+  // and "Works with your ChatGPT Plus or Pro account." live in screens-b).
+  'Keep playing free': '免费继续玩',
+  'Use your own API key or a local model': '使用你自己的 API 密钥或本地模型',
 
   // ── ImportLocalProfileModal ──
   'Bring your companion to this account?': '要把你的伙伴带到这个账户吗？',

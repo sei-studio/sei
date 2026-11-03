@@ -23,7 +23,7 @@ vi.mock('./ipcClient', () => ({
   },
 }));
 
-const { planChatgptPlanAction, runPopupAction, _resetPopupActionLatch, POPUP_ACTION_LATCH_MS } = await import(
+const { planChatgptPlanAction, runPopupAction, startChatgptPlan, _resetPopupActionLatch, POPUP_ACTION_LATCH_MS } = await import(
   './popupActions'
 );
 const { useChatgptStore } = await import('./stores/useChatgptStore');
@@ -172,6 +172,38 @@ describe('runPopupAction', () => {
       finish({ ok: false, reason: 'cancelled' });
       await again;
       expect(calls).toBe(2);
+    } finally {
+      useChatgptStore.setState({ signIn: origSignIn });
+    }
+  });
+
+  it('startChatgptPlan (the usage-limit popup) runs the same flow as the action', async () => {
+    h.status = status();
+    h.signInResult = { ok: true, status: ready, planEnabled: true };
+    expect(await startChatgptPlan()).toBe(true);
+    expect(h.signInCalls).toEqual([undefined]);
+    expect(useUiStore.getState().view).toEqual({ kind: 'settings', useChatgptPlan: true });
+  });
+
+  it('startChatgptPlan shares the latch: it does nothing (false) while a popup action runs', async () => {
+    h.status = status();
+    let finish: (r: ChatgptSignInResult) => void = () => undefined;
+    const origSignIn = useChatgptStore.getState().signIn;
+    let calls = 0;
+    useChatgptStore.setState({
+      signIn: () => {
+        calls += 1;
+        return new Promise((r) => (finish = r));
+      },
+    });
+    try {
+      const first = runPopupAction('chatgpt-plan');
+      expect(await startChatgptPlan()).toBe(false);
+      await Promise.resolve();
+      await Promise.resolve();
+      finish({ ok: false, reason: 'cancelled' });
+      await first;
+      expect(calls).toBe(1);
     } finally {
       useChatgptStore.setState({ signIn: origSignIn });
     }

@@ -30,6 +30,9 @@
  *
  * One action at a time (the in-flight latch below), so a double click cannot
  * start two browser sign-ins.
+ *
+ * 261103: the usage-limit popup's "Use your ChatGPT plan" option runs the
+ * same flow through startChatgptPlan(), under the same latch.
  */
 import type { ChatgptStatus } from '@shared/chatgptPlan';
 import { isPopupAction } from '@shared/popupActions';
@@ -109,32 +112,51 @@ async function runChatgptPlan(): Promise<void> {
 }
 
 /**
- * Run a popup action by name. Returns whether the name was an action this
- * build knows (unknown names do nothing). Never throws.
+ * Run `fn` under the one-at-a-time latch. Returns false (and runs nothing)
+ * when another action is still in flight. Never throws.
  */
-export async function runPopupAction(name: unknown): Promise<boolean> {
-  if (!isPopupAction(name)) return false;
-  // One at a time: a second click while the first is still running is a
-  // known action that does nothing.
-  if (inFlight) return true;
+async function withActionLatch(fn: () => Promise<void>): Promise<boolean> {
+  // One at a time: a second click while the first is still running does
+  // nothing.
+  if (inFlight) return false;
   const latch = setTimeout(() => {
     if (inFlight === latch) inFlight = null;
   }, POPUP_ACTION_LATCH_MS);
   inFlight = latch;
   try {
-    switch (name) {
-      case 'chatgpt-plan':
-        await runChatgptPlan();
-        return true;
-      default:
-        return false;
-    }
+    await fn();
   } catch {
     // The store calls already swallow their errors; this is a backstop so a
-    // popup click can never surface an unhandled rejection.
-    return true;
+    // click can never surface an unhandled rejection.
   } finally {
     clearTimeout(latch);
     if (inFlight === latch) inFlight = null;
+  }
+  return true;
+}
+
+/**
+ * The chatgpt-plan flow for an in-app button (261103: the usage-limit
+ * popup): the same steps and the same latch as the popup action, so a
+ * popup click and a button click can never start two sign-ins. Returns
+ * whether it ran (false while another action is still running). Never throws.
+ */
+export function startChatgptPlan(): Promise<boolean> {
+  return withActionLatch(runChatgptPlan);
+}
+
+/**
+ * Run a popup action by name. Returns whether the name was an action this
+ * build knows (unknown names do nothing). Never throws.
+ */
+export async function runPopupAction(name: unknown): Promise<boolean> {
+  if (!isPopupAction(name)) return false;
+  switch (name) {
+    case 'chatgpt-plan':
+      // A known action that finds another one in flight does nothing.
+      await startChatgptPlan();
+      return true;
+    default:
+      return false;
   }
 }

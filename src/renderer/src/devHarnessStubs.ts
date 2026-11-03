@@ -240,6 +240,12 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
       ai_backend_kind: 'cloud-proxy',
       feedback_reward_available: false,
     }),
+    // `&region=blocked` (261103): region:status answers blocked, so the
+    // usage-limit popup (?dashshot=creditwall) hides its ChatGPT option.
+    regionStatus: async () => ({
+      loc: params.get('region') === 'blocked' ? 'CN' : null,
+      blocked: params.get('region') === 'blocked',
+    }),
     saveConfig: noop,
     openExternal: noop,
     // `&pack=missing` (260929): the pack card's download offer, the tallest
@@ -378,7 +384,9 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
           chatgptLoginResendCode: async () => ({ ok: true }),
         }
       : {}),
-    ...(onboardMode
+    // ?dashshot=onboard and ?dashshot=creditwall (the usage-limit popup's
+    // credit_wall_action clicks, 261103) record track calls.
+    ...(onboardMode || creditWallMode
       ? {
           track: (event: string, props: unknown) => {
             const dev = window as unknown as { __seiDevTrack?: Array<{ event: string; props: unknown; at: number }> };

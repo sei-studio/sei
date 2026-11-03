@@ -26,3 +26,41 @@
   gap: var(--space-sm);
   margin-top: var(--space-lg);
 }
+
+/* 261103: "Keep playing free", under the Top up | Upgrade pair. Quieter than
+   it: a small muted heading and sm PlanButtons stacked full width. No
+   divider line (house style: no border lines). */
+.free {
+  margin-top: var(--space-lg);
+}
+
+.freeTitle {
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--muted);
+  margin: 0 0 var(--space-sm);
+}
+
+.freeOptions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.freeNote {
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--muted);
+  /* Pulled up toward its button; the column gap still parts it from the next. */
+  margin: calc(var(--space-sm) * -0.5) 0 0;
+}
+
+/* The ChatGPT logo is a brand asset: black or white only, so it keeps the
+   text colour instead of the button's grey or hover accent. */
+.chatgptLogo {
+  display: inline-flex;
+  color: var(--text);
+}

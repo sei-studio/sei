@@ -3513,7 +3513,21 @@ file appears, and keep `noteLaunch()` ahead of anything that writes userData.
   collapses while repeats are under 10 minutes apart. A new hard-stop path
   passes its `CreditWallContext`. `allowance_used_micro` is `usage_pct` of the
   plan allowance (1% resolution; the client cannot read the ledger sum).
-  `credit_wall_action {action, reason, ms_open}` is the modal's answer.
+  `credit_wall_action {action, reason, ms_open}` is the modal's answer
+  (`close | topup | upgrade | chatgpt | own_key`).
+- **Free ways past the wall (261103, T307).** On a free plan at a credit wall
+  (not a rate limit, not a subscriber) HardStopModal adds "Keep playing free"
+  under Top up / Upgrade (`wallFreeOptions`, pure): "Use your ChatGPT plan"
+  runs `startChatgptPlan()` (`lib/popupActions.ts`, the SAME flow and
+  in-flight latch as the popup `chatgpt-plan` action; a busy latch falls back
+  to Settings at the plan row), and "Use your own API key or a local model"
+  opens Settings at the Backend row (`view.focus: 'ai-backend'`, the
+  `data-settings-focus` marker, else the local Provider row). Both dismiss
+  the popup first. The ChatGPT option is hidden when it is already the
+  provider in use and when `region:status` says blocked (the SignInModal
+  pre-check, fails open; Settings itself still shows the plan row there).
+  Verify with `?dashshot=creditwall&part=modal` (+`&gpt=active`,
+  `&region=blocked`, `&theme=light|dark`, `&lang=zh`).
 - `onboarding_step {step, index, action: view|complete|skip|back, ms_in_step,
   path, skipped_creation}` per OnboardApp screen (`onboard/onboardSteps.ts`;
   not the boot sign-in variant). A new screen or button that skips needs a
