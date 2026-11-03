@@ -61,12 +61,21 @@
   color: var(--text);
 }
 
-/* Selected: just a slightly lighter box + lighter text. Same font/weight as the
-   rest, no accent, no bar. */
+/* Selected: a box one step off the panel + the full text colour. Same
+   font/weight as the rest, no accent, no bar. The panel is --bg2: dark themes
+   step UP to --surface-2; light themes already have --surface-2 equal to the
+   panel (both white), so they step DOWN instead, or the selection showed no
+   box at all (261103). --surface alone is too faint a step on white (about
+   half the dark step), so it takes a touch of the theme's accent, which keeps
+   it in each light theme's own hue. */
 .navItemActive,
 .navItemActive:hover {
   background: var(--surface-2);
   color: var(--text);
+}
+:root[data-scheme='light'] .navItemActive,
+:root[data-scheme='light'] .navItemActive:hover {
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
 }
 
 /* ── Right content pane ───────────────────────────────────────────────── */
