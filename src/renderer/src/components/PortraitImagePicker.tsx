@@ -23,6 +23,7 @@ import { portraitSrc } from '../lib/portraitSrc';
 import { t as tBare, useT } from '../lib/i18n';
 import { PortraitCropModal } from './PortraitCropModal';
 import { UserIcon } from './icons';
+import { Button } from './Button';
 import avatarStyles from './PortraitImagePicker.module.css';
 
 /** D-28 size budget (mirrors PORTRAIT_MAX_BYTES in src/main/portraitImageUtil.ts). */
@@ -240,41 +241,15 @@ export function PortraitImagePicker({
         onChange={(e) => void onFile(e)}
         style={{ display: 'none' }}
       />
-      <button
-        type="button"
-        onClick={onPick}
-        disabled={busy}
-        style={{
-          fontFamily: 'inherit',
-          fontSize: 13,
-          padding: '6px 12px',
-          border: '1px solid var(--border)',
-          background: 'transparent',
-          color: 'var(--text)',
-          cursor: busy ? 'wait' : 'pointer',
-          opacity: busy ? 0.6 : 1,
-        }}
-      >
+      {/* The shared Button, like BackgroundImagePicker (261103): these two
+          were hand-rolled with a fainter border than every other secondary. */}
+      <Button kind="ghost" size="sm" disabled={busy} onClick={onPick}>
         {busy ? t('Working…') : value ? t('Change') : t('Upload')}
-      </button>
+      </Button>
       {value ? (
-        <button
-          type="button"
-          onClick={() => void onRemove()}
-          disabled={busy}
-          style={{
-            fontFamily: 'inherit',
-            fontSize: 13,
-            padding: '6px 12px',
-            border: '1px solid var(--border)',
-            background: 'transparent',
-            color: 'var(--red)',
-            cursor: busy ? 'wait' : 'pointer',
-            opacity: busy ? 0.6 : 1,
-          }}
-        >
+        <Button kind="danger" size="sm" disabled={busy} onClick={() => void onRemove()}>
           {t('Remove')}
-        </button>
+        </Button>
       ) : null}
       {error ? (
         <span style={{ color: 'var(--red)', fontSize: 12, fontFamily: 'var(--mono)' }}>

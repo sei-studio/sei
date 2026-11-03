@@ -58,21 +58,27 @@
   width: 100%;
 }
 
+/* ── The border rule (Shawn, 261103) ─────────────────────────────────────
+   A button whose fill differs from the surface it sits on has NO visible
+   border: the fill already marks it. A button with no fill of its own
+   (ghost, danger) keeps its border, since that line is the only thing that
+   says "button". The border stays 1px transparent on filled kinds so every
+   kind has the same box size. */
+
 /* ── Kind: primary / accent — accent fill (accent kept as alias) ─────── */
 .primary,
 .accent {
   background: var(--accent);
   color: var(--accent-text);
-  border-color: var(--accent);
+  border-color: transparent;
   font-weight: 600;
 }
 .primary:hover:not(:disabled),
 .accent:hover:not(:disabled) {
   background: var(--accent-strong);
-  border-color: var(--accent-strong);
 }
 
-/* ── Kind: ghost — bordered, lights up to accent ─────────────────────── */
+/* ── Kind: ghost — no fill, so bordered; lights up to accent ─────────── */
 .ghost {
   background: none;
   color: var(--text-2);
