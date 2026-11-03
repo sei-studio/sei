@@ -1944,6 +1944,8 @@ export const JA: Record<string, string> = {
   "{other} is already in this world. Don't Starve Together fits one companion at a time, so disconnect {other} first.": "このワールドにはすでに{other}がいます。Don't Starve Togetherでは同時に1人のコンパニオンしか参加できないので、先に{other}を切断してください。",
   "Another companion": "別のコンパニオン",
   "Your companion's survivor died in the Constant. Press Play to summon them again.": "コンパニオンのキャラクターがConstantで力尽きました。「プレイ」を押すともう一度召喚できます。",
+  "Your companion died again after coming back 3 times this session, so Sei stopped bringing them back. Press Play to summon them again when you're ready.": "コンパニオンがこのセッションで3回復活したあと、また力尽きたため、Seiはそれ以上復活させるのをやめました。準備ができたら「プレイ」を押してもう一度召喚してください。",
+  "Your companion died right after coming back, twice in a row, so Sei stopped bringing them back. Move somewhere safer (near a fire at night), then press Play.": "コンパニオンが復活直後に2回続けて力尽きたため、Seiはそれ以上復活させるのをやめました。もっと安全な場所（夜は火のそば）に移動してから「プレイ」を押してください。",
   // ── stardew ──
   "Stardew Valley": "Stardew Valley",
   "Checking your Stardew Valley install...": "Stardew Valleyのインストールを確認中…",

@@ -1944,6 +1944,8 @@ export const ES: Record<string, string> = {
   "{other} is already in this world. Don't Starve Together fits one companion at a time, so disconnect {other} first.": "{other} ya está en este mundo. En Don't Starve Together solo cabe un compi a la vez, así que desconecta primero a {other}.",
   "Another companion": "Otro compi",
   "Your companion's survivor died in the Constant. Press Play to summon them again.": "El superviviente de tu compi murió en la Constante. Pulsa Jugar para volver a invocar a tu compi.",
+  "Your companion died again after coming back 3 times this session, so Sei stopped bringing them back. Press Play to summon them again when you're ready.": "Tu compi volvió a morir después de regresar 3 veces en esta sesión, así que Sei dejó de traerlo de vuelta. Pulsa Jugar para volver a invocarlo cuando estés listo.",
+  "Your companion died right after coming back, twice in a row, so Sei stopped bringing them back. Move somewhere safer (near a fire at night), then press Play.": "Tu compi murió justo después de regresar, dos veces seguidas, así que Sei dejó de traerlo de vuelta. Ve a un lugar más seguro (junto a una fogata por la noche) y pulsa Jugar.",
   // ── stardew ──
   "Stardew Valley": "Stardew Valley",
   "Checking your Stardew Valley install...": "Comprobando tu instalación de Stardew Valley...",

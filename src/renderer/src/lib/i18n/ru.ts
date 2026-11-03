@@ -1944,6 +1944,8 @@ export const RU: Record<string, string> = {
   "{other} is already in this world. Don't Starve Together fits one companion at a time, so disconnect {other} first.": "{other} уже в этом мире. В Don't Starve Together может играть только один компаньон за раз, так что сначала отключи {other}.",
   "Another companion": "Другой компаньон",
   "Your companion's survivor died in the Constant. Press Play to summon them again.": "Выживший твоего компаньона погиб в Constant. Нажми «Играть», чтобы призвать компаньона снова.",
+  "Your companion died again after coming back 3 times this session, so Sei stopped bringing them back. Press Play to summon them again when you're ready.": "Твой компаньон снова погиб после 3 возрождений за эту сессию, поэтому Sei больше его не возрождает. Нажми «Играть», чтобы снова призвать его, когда будешь готов.",
+  "Your companion died right after coming back, twice in a row, so Sei stopped bringing them back. Move somewhere safer (near a fire at night), then press Play.": "Твой компаньон два раза подряд погиб сразу после возрождения, поэтому Sei больше его не возрождает. Перейди в более безопасное место (ночью держись поближе к огню), затем нажми «Играть».",
   // ── stardew ──
   "Stardew Valley": "Stardew Valley",
   "Checking your Stardew Valley install...": "Проверяем установку Stardew Valley...",
