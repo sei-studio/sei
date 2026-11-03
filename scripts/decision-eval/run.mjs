@@ -62,7 +62,9 @@ function layaPid() {
       if (!/^\d+$/.test(d)) continue
       let c = ''
       try { c = fs.readFileSync(`/proc/${d}/cmdline`, 'utf8') } catch { continue }
-      if (/python/.test(c) && /laya_server\.py/.test(c)) return Number(d)
+      // argv[0] must be the interpreter: a shell wrapper's cmdline mentions both too
+      const argv = c.split('\0')
+      if (/python[\d.]*$/.test(argv[0]) && argv.some((a) => /laya_server\.py$/.test(a))) return Number(d)
     }
   } catch {}
   return null
@@ -355,6 +357,7 @@ async function runTrial(cell, rep) {
     costUsd: Number(costUsd.toFixed(5)), usdPerHour: Number((costUsd / (timeMs / 3.6e6)).toFixed(4)),
     layaCpuPct: laya && tick0 != null && tick1 != null ? Math.round(((tick1 - tick0) / clk) / (timeMs / 1000) * 100) : null,
     layaRssMb: laya ? procRssMb(laya) : null,
+    loadAvg1: Number(os.loadavg()[0].toFixed(2)),
     choices, llm, bootMs: comp?.bootMs ?? null,
     chat: comp ? comp.log.filter((e) => e.kind === 'chat_out' && e.t >= t0).map((e) => e.text).slice(0, 10) : null,
     actions: comp && level === 'base' ? comp.log.filter((e) => e.kind === 'action_call' && e.t >= t0 && !['thinking', 'say', 'remember', 'forget', 'setGoal', 'clearGoal', 'end_loop'].includes(e.name)).map((e) => e.name) : null,
