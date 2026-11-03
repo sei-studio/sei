@@ -89,6 +89,7 @@ ipcMain.on('frame', (_e, d) => {
 ipcMain.on('proxy-click', (_e, d) => {
   result.proxyClicks.push(d)
   log('proxy mousedown', d)
+  if (IS_MAC && addon) setTimeout(() => log('frontmost 400ms after Electron proxy click:', addon.frontmost()), 400)
 })
 let phase = 'start'
 
@@ -385,7 +386,8 @@ async function scenario() {
   save()
 
   if (preset.full && IS_WIN) await fullWin()
-  if (preset.full && IS_MAC) await fullMac(proxy)
+  if (preset.full && IS_MAC && !argv['no-auto-clicks']) await fullMac(proxy)
+  if (IS_MAC && proxy) result.manualClicks = { electronPanel: result.proxyClicks.length, nativePanel: addon.nativeProxyClicks() }
   if (preset.explorerRestart && IS_WIN) await explorerRestart()
   ram('end')
 }
@@ -459,6 +461,18 @@ async function createProxy() {
   await sleep(400)
   result.proxy = { rect, setLevel: res, afterShow: addon.windowInfo(p.getNativeWindowHandle()) }
   log('hit proxy', result.proxy.afterShow)
+  // Plain AppKit non-activating NSPanel beside it (blue), same level.
+  const nr = { x: Math.round(b.width * 0.5), y: Math.round(b.height * 0.66), w: 240, h: 90 }
+  result.nativeProxy = { rect: nr, info: addon.nativeProxy({ ...nr, level: lv.desktopIcon + 1 }) }
+  log('native NSPanel proxy', result.nativeProxy.info)
+  let seen = 0
+  setInterval(() => {
+    const n = addon.nativeProxyClicks()
+    if (n !== seen) {
+      seen = n
+      log('native NSPanel proxy mousedown', n, 'frontmost:', addon.frontmost())
+    }
+  }, 300)
   return p
 }
 
@@ -490,10 +504,7 @@ async function fullMac(proxy) {
   }
   if (proxy) {
     // A) plain AppKit non-activating NSPanel at desktopIcon+1: does a click activate us at all?
-    const lv = addon.levels()
-    const nr = { x: Math.round(b.width * 0.5), y: Math.round(b.height * 0.66), w: 240, h: 90 }
-    result.nativeProxy = { rect: nr, info: addon.nativeProxy({ ...nr, level: lv.desktopIcon + 1 }) }
-    await sleep(600)
+    const nr = result.nativeProxy.rect
     const fA = addon.frontmost()
     addon.testClick(nr.x + nr.w / 2, nr.y + nr.h / 2)
     await sleep(1200)

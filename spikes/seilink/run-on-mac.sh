@@ -3,9 +3,12 @@
 # account, e.g. from the server:
 #   mac status                                    # tunnel must be up
 #   mac sh 'bash -s' < spikes/seilink/run-on-mac.sh      # or: scp it over and run it
-# While each variant HOLDs (default 30 s), take `mac shot` screenshots from the server and click
-# the yellow "HIT PROXY" box with `mac click` (real HID input via Screen Sharing). Then click an
-# empty wallpaper spot with a normal window open to see whether macOS sweeps windows away.
+# While each variant HOLDs (default 30 s), take `mac shot` screenshots from the server. In
+# native-icon-1, open a Finder window first so it is the front app, then `mac click` the yellow
+# box (Electron type:'panel' proxy) and the blue box (plain AppKit non-activating NSPanel), and
+# note whether the Finder window's title bar greys out (= Sei took focus; the log prints the
+# frontmost app after each click). Last, click an empty wallpaper spot to see whether macOS sweeps
+# windows away. The script posts no synthetic clicks itself (--no-auto-clicks).
 #
 # The app is launched through LaunchServices (`open`) so it lands in the GUI session even when
 # this script runs over ssh. In-app screencapture is OFF by default (it would need Screen
@@ -40,12 +43,12 @@ for v in $VARIANTS; do
   out="$PWD/out/$v"
   rm -rf "$out"; mkdir -p "$out"
   echo "=== $v: launching, HOLD ${HOLD}s starts once the room is attached (see $out/log.txt)"
-  open -n -g -W "$APP" --args "$PWD" --variant="$v" --out="$out" --hold="$HOLD" $SHOT_FLAG &
+  open -n -g -W "$APP" --args "$PWD" --variant="$v" --out="$out" --hold="$HOLD" --no-auto-clicks $SHOT_FLAG &
   pid=$!
   for _ in $(seq 1 30); do grep -q HOLD "$out/log.txt" 2>/dev/null && break; sleep 1; done
-  echo ">>> HOLDING now: mac shot / mac click the yellow proxy, open a Finder window and click empty wallpaper"
+  echo ">>> HOLDING now: mac shot; with a Finder window in front, mac click the yellow box, then the blue box, then empty wallpaper"
   wait $pid || true
-  grep -E "mac attach|HOLD|proxy mousedown|checks|ram |after .* click|FATAL" "$out/log.txt" | cut -c1-300 || true
+  grep -E "mac attach|HOLD|proxy mousedown|frontmost|NSPanel|checks|ram |FATAL" "$out/log.txt" | cut -c1-300 || true
 done
 node scripts/summarize.js "$PWD/out"
 # Remove the test icons again.
