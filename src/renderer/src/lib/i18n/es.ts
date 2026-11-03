@@ -649,7 +649,7 @@ export const ES: Record<string, string> = {
   "Signed in as {name}.": "Sesión iniciada como {name}.",
   "Finish signing in with ChatGPT in your browser.": "Termina de iniciar sesión con ChatGPT en tu navegador.",
   "Sign in with your ChatGPT account to use your plan in Sei. No API key needed.": "Inicia sesión con tu cuenta de ChatGPT para usar tu plan en Sei. No hace falta clave de API.",
-  "Your ChatGPT sign-in ended. Continue with ChatGPT to sign in again.": "Tu sesión de ChatGPT terminó. Pulsa «Continue with ChatGPT» para iniciar sesión de nuevo.",
+  "Your ChatGPT sign-in ended. Continue with ChatGPT to sign in again.": "Tu sesión de ChatGPT terminó. Pulsa «Continuar con ChatGPT» para iniciar sesión de nuevo.",
   "ChatGPT plan use was not turned on when you signed in, so Sei cannot use your plan yet.": "El uso del plan de ChatGPT no estaba activado cuando iniciaste sesión, así que Sei todavía no puede usar tu plan.",
   "Turn on ChatGPT plan": "Activar plan de ChatGPT",
   "Usage limit reached. Requests are paused.": "Límite de uso alcanzado. Las solicitudes están en pausa.",
@@ -2176,4 +2176,5 @@ export const ES: Record<string, string> = {
   "3x Quest usage. Best for gaming.": "El triple de uso que en Quest. Ideal para jugar.",
   "{n} credits": "{n, plural, one {# crédito} other {# créditos}}",
   "{n} credits + {bonus} bonus": "{n, plural, one {# crédito} other {# créditos}} + {bonus} de regalo",
+  "Continue with ChatGPT": "Continuar con ChatGPT",
 };

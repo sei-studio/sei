@@ -649,7 +649,7 @@ export const JA: Record<string, string> = {
   "Signed in as {name}.": "{name}としてログイン中です。",
   "Finish signing in with ChatGPT in your browser.": "ブラウザでChatGPTのログインを完了してください。",
   "Sign in with your ChatGPT account to use your plan in Sei. No API key needed.": "ChatGPTアカウントでログインすると、Seiでプランを使えます。APIキーは不要です。",
-  "Your ChatGPT sign-in ended. Continue with ChatGPT to sign in again.": "ChatGPTのログインが切れました。「Continue with ChatGPT」でもう一度ログインしてください。",
+  "Your ChatGPT sign-in ended. Continue with ChatGPT to sign in again.": "ChatGPTのログインが切れました。「ChatGPTで続ける」でもう一度ログインしてください。",
   "ChatGPT plan use was not turned on when you signed in, so Sei cannot use your plan yet.": "ログイン時にChatGPTプランの利用がオンになっていなかったため、Seiはまだプランを使えません。",
   "Turn on ChatGPT plan": "ChatGPTプランをオンにする",
   "Usage limit reached. Requests are paused.": "使用量の上限に達しました。リクエストは一時停止中です。",
@@ -2176,4 +2176,5 @@ export const JA: Record<string, string> = {
   "3x Quest usage. Best for gaming.": "Questの3倍使えます。ゲームにぴったりです。",
   "{n} credits": "{n}クレジット",
   "{n} credits + {bonus} bonus": "{n}クレジット+ボーナス{bonus}",
+  "Continue with ChatGPT": "ChatGPTで続ける",
 };

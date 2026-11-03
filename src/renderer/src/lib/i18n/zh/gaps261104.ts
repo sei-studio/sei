@@ -49,4 +49,5 @@ export const ZH_GAPS_261104: Record<string, string> = {
   "3x Quest usage. Best for gaming.": "Quest 的 3 倍用量。最适合打游戏。",
   "{n} credits": "{n} 额度",
   "{n} credits + {bonus} bonus": "{n} 额度 + 赠送 {bonus}",
+  "Continue with ChatGPT": "通过 ChatGPT 继续",
 };

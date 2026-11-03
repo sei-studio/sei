@@ -3744,6 +3744,10 @@ languages from `src/shared/addedLanguageCopy.ts`.
   `planLabel`, `planBlurb` and `topUpCreditsLine` in `lib/planCatalog.ts`
   ("Free" is translated, Quest and Party stay brand names). A blurb the
   proxy changes shows in English until the dictionaries have it.
+- The "Continue with ChatGPT" button (`ContinueWithChatGPTButton`, the one
+  component every surface uses) is translated like the Google button, with
+  "ChatGPT" verbatim. The spec width is a `min-width` (242px): a longer label
+  (ru, pt-BR) widens the button instead of overflowing its 20px gutters.
 - Only zh changes companion behavior (language pin at creation, SenseVoice,
   zh voices, Draw! and chess character-language paths); the 261104 languages
   translate the interface only.

@@ -649,7 +649,7 @@ export const RU: Record<string, string> = {
   "Signed in as {name}.": "Вход выполнен: {name}.",
   "Finish signing in with ChatGPT in your browser.": "Заверши вход через ChatGPT в браузере.",
   "Sign in with your ChatGPT account to use your plan in Sei. No API key needed.": "Войди в аккаунт ChatGPT, чтобы использовать свой тариф в Sei. API-ключ не нужен.",
-  "Your ChatGPT sign-in ended. Continue with ChatGPT to sign in again.": "Сессия ChatGPT закончилась. Нажми «Continue with ChatGPT», чтобы войти снова.",
+  "Your ChatGPT sign-in ended. Continue with ChatGPT to sign in again.": "Сессия ChatGPT закончилась. Нажми «Продолжить через ChatGPT», чтобы войти снова.",
   "ChatGPT plan use was not turned on when you signed in, so Sei cannot use your plan yet.": "При входе доступ к тарифу ChatGPT не был включён, поэтому Sei пока не может им пользоваться.",
   "Turn on ChatGPT plan": "Включить тариф ChatGPT",
   "Usage limit reached. Requests are paused.": "Лимит использования исчерпан. Запросы на паузе.",
@@ -2176,4 +2176,5 @@ export const RU: Record<string, string> = {
   "3x Quest usage. Best for gaming.": "В 3 раза больше, чем в Quest. Для игр.",
   "{n} credits": "{n, plural, one {# кредит} few {# кредита} many {# кредитов} other {# кредита}}",
   "{n} credits + {bonus} bonus": "{n, plural, one {# кредит} few {# кредита} many {# кредитов} other {# кредита}} + {bonus} бонусом",
+  "Continue with ChatGPT": "Продолжить через ChatGPT",
 };

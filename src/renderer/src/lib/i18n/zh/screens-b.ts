@@ -356,8 +356,8 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'Go home': '回到主页',
   'Say hello': '打个招呼',
 
-  // ── 261017 (issue #46): ChatGPT plan ("Continue with ChatGPT" itself is
-  //    OpenAI's fixed button label and is never translated) ─────────────
+  // ── 261017 (issue #46): ChatGPT plan (the "Continue with ChatGPT" button
+  //    label itself is translated since 261104, in gaps261104.ts) ────────
   'ChatGPT plan': 'ChatGPT 套餐',
   'Use your ChatGPT plan': '使用你的 ChatGPT 套餐',
   'Use ChatGPT plan': '使用 ChatGPT 套餐',
@@ -383,7 +383,7 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'Sign in with your ChatGPT account to use your plan in Sei. No API key needed.':
     '登录你的 ChatGPT 账户，即可在 Sei 中使用你的套餐。无需 API 密钥。',
   'Your ChatGPT sign-in ended. Continue with ChatGPT to sign in again.':
-    '你的 ChatGPT 登录已失效。点击 Continue with ChatGPT 重新登录。',
+    '你的 ChatGPT 登录已失效。点击「通过 ChatGPT 继续」重新登录。',
   'ChatGPT plan use was not turned on when you signed in, so Sei cannot use your plan yet.':
     '登录时没有开启 ChatGPT 套餐使用权限，所以 Sei 暂时无法使用你的套餐。',
   'Turn on ChatGPT plan': '开启 ChatGPT 套餐',
