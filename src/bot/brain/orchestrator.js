@@ -1149,6 +1149,14 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // a stop clear the coal errand with the log run (errands-03), and a stop
   // that ended a log run leave the logs owed, so they went to the player and
   // her next craft failed (work_session-01).
+  // 261103 (pass 38): `delivering` is 'own' when she set off on her own and
+  // 'answer' when the walk answers a newer line that got only the walk
+  // ("hows it going" answered with "walking it to you" and a goTo). Before,
+  // that newer walk-only line blocked the flag, so in errands-04-B (pass-37
+  // compare) the walk back carried no hand-over line, the log order during
+  // it took over, and she reached the player and kept the coal. A toPlayer
+  // ask also keeps `replaced`, the items of the work its walk cut off: those
+  // asks are not delivered by it ("forget the logs, just meet me").
   let openAsks = []
   const OPEN_ASK_MS = config?.memory?.open_ask_note_ms ?? 300_000
   const OPEN_ASK_MAX = 3
@@ -1220,12 +1228,14 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     return Object.values(args).some((v) => typeof v === 'string' && names.has(v.trim().toLowerCase()))
   }
   // pass 32: see openAsks.
-  function noteOpenAsk(line, who, uses, loopId = null) {
+  function noteOpenAsk(line, who, uses, loopId = null, running = null) {
     const text = String(line ?? '').trim()
     if (!text || typeof caps.handOverDetail !== 'function') return
     const toPlayer = uses.every((u) => aimsAtPlayer(u.input) && !isHandOver(u.name))
     const items = toPlayer ? [] : [...new Set(uses.flatMap((u) => workItemsOf(u.name, u.input)))]
-    openAsks = [...openAsks.filter((a) => a.line !== text), { at: Date.now(), who: who ?? null, line: text, toPlayer, items, delivering: false, loopId }].slice(-OPEN_ASK_MAX)
+    // pass 38: the work a walk-only answer cuts off (see openAsks).
+    const replaced = toPlayer && running ? workItemsOf(running.name, running.args ?? running.input) : []
+    openAsks = [...openAsks.filter((a) => a.line !== text), { at: Date.now(), who: who ?? null, line: text, toPlayer, items, delivering: false, loopId, replaced }].slice(-OPEN_ASK_MAX)
   }
   // pass 37: see openAsks.
   function workItemsOf(name, args) {
@@ -1252,7 +1262,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       if (a.toPlayer || (deliveringOnly && !a.delivering)) continue
       const items = carriedFor(a).filter((c) => !seen.has(c.item))
       for (const c of items) seen.add(c.item)
-      if (items.length) out.unshift({ line: a.line, items })
+      if (items.length) out.unshift({ line: a.line, items, delivering: a.delivering, at: a.at })
     }
     return out
   }
@@ -1292,12 +1302,18 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       if (items.length && MAKES_ITEMS.has(name)) ask.items = [...new Set([...(ask.items ?? []), ...items])]
       else if (items.length && !ask.items?.length && now - ask.at < OPEN_ASK_ITEMS_MS) ask.items = items
     }
-    // Her own walk back with the items. A walk that answers a newer line
-    // ("come here", "meet me over here") is not a delivery: in the probe the
-    // line then made her hand over things nobody asked for (cobblestone
-    // after "hows it going") or logs the player had just called off.
-    if (walksOrFollowsOwner(name, args) && !last?.toPlayer) {
-      for (const a of openAsks) if (!a.toPlayer && !a.delivering && carriedFor(a).length) a.delivering = true
+    // Her walk back with the items. pass 38: also when the walk answers a
+    // newer line that got only the walk (errands-04-B "hows it going"); its
+    // snapshot line then leaves the choice to her (deliveryNoteText), since
+    // that line may be "come here" after small talk she answered with her
+    // own gather. Not the asks whose work that walk cut off.
+    if (walksOrFollowsOwner(name, args)) {
+      const answers = last?.toPlayer ? last : null
+      for (const a of openAsks) {
+        if (a.toPlayer || a.delivering || !carriedFor(a).length) continue
+        if (answers?.replaced?.some((i) => a.items?.includes(i))) continue
+        a.delivering = answers ? 'answer' : 'own'
+      }
     }
   }
   const walksOrFollowsOwner = (name, args) => (name === 'goTo' || name === 'follow') && Object.values(args ?? {}).some(isOwnerName)
@@ -1312,7 +1328,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     const asks = carriedAsks({ deliveringOnly: true })
     if (!asks.length) return ''
     const who = config?.player_display_name || config?.player_username || null
-    return NUDGES.deliveryNote({ who, asks })
+    return NUDGES.deliveryNote({ who, asks, answered: !asks.some((a) => a.delivering === 'own') })
   }
   // The completion turn of a walk that reached the player: the hand-over
   // note, or '' when no open line could want a hand-over.
@@ -1324,7 +1340,9 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     companions.some((c) => String(c).toLowerCase() === v.trim().toLowerCase())
   // 261102 (pass 37): a goTo whose target is the player themself.
   const walksToOwner = (u) => u?.name === 'goTo' && Object.values(u?.input ?? {}).some(isOwnerName)
-  function arrivalAskText(data) {
+  // pass 38: `deferred`: a line she answered during the walk without
+  // starting it (handleActionComplete's replyDeferred).
+  function arrivalAskText(data, { deferred = false } = {}) {
     if (!openAsks.length || data?.aborted || data?.name !== 'goTo') return ''
     if (!Object.values(data?.input ?? {}).some(isOwnerName)) return ''
     if (!/^reached\b/.test(String(data?.result ?? ''))) return ''
@@ -1340,7 +1358,10 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // pass 37: name what she carries for which line, when it is known.
     const asks = carriedAsks()
     if (asks.length) {
-      return NUDGES.arrivedCarrying({ who, asks })
+      // pass 38: they asked for something else since (see arrivedCarrying).
+      const since = Math.min(...asks.map((a) => a.at))
+      const newer = deferred || playerTasks.some((t) => taskNotStarted(t) && taskSetAt.get(t.key) > since)
+      return NUDGES.arrivedCarrying({ who, asks, newer })
     }
     return NUDGES.arrivedAsks({ who })
   }
@@ -4992,7 +5013,7 @@ function maybeWarnByteCap(loop, warned) {
       // back now, so a new order is not lost behind her own next step.
       // 261031 (pass 32): a walk that reached the player first asks what she
       // brought them (arrivalAskText), ahead of the next order.
-      const arrival = arrivalAskText(data)
+      const arrival = arrivalAskText(data, { deferred: !!replyDeferred?.length })
       if (arrival) eventText = `${eventText}\n\n${arrival}`
       if (replyDeferred?.length) eventText = `${eventText}\n\n${NUDGES.deferredReplies(replyDeferred)}`
       // 261020 (pass 20): her fresh line, so the result turn does not say it again.
@@ -5793,7 +5814,7 @@ function maybeWarnByteCap(loop, warned) {
         // a stop closes the asks whose work it ended (closeAsksOnStop).
         if (!loop._groupVoiceLine) {
           if (hasStop) closeAsksOnStop(loop.inFlight ?? inflight.current(), newSuspendingTools.length > 0)
-          if (newSuspendingTools.length > 0) noteOpenAsk(line, loop._lastPlayerLine.who, newSuspendingTools, loop.id)
+          if (newSuspendingTools.length > 0) noteOpenAsk(line, loop._lastPlayerLine.who, newSuspendingTools, loop.id, loop.inFlight ?? inflight.current())
         }
         // 261018 (pass 15): her own choice to stop or unfollow in answer to
         // this line leaves the stay note for later turns (see stayNote). Not
