@@ -16,38 +16,40 @@ const f = (v, d = 2) => (v == null ? '-' : Number(v).toFixed(d));
 const groups = new Map();
 for (const r of runs) {
   if (r.error) continue;
-  const key = `${r.task}|${r.arm}|${r.model || 'none'}`;
+  const key = `${r.task}|${r.arm === 'random' ? `random-${r.steps}` : r.arm}|${r.model || 'none'}`;
   if (!groups.has(key)) groups.set(key, []);
   groups.get(key).push(r);
 }
 const rows = [];
 for (const [key, rs] of groups) {
   const [task, arm, model] = key.split('|');
-  const perAct = [];
+  const perAct = [], modelS = [];
   for (const r of rs) {
     const p = join(OUT, r.runId, 'steps.jsonl');
     if (!existsSync(p)) continue;
     for (const l of readFileSync(p, 'utf8').split('\n').filter(Boolean)) {
       const s = JSON.parse(l);
       if (s.wallMs && s.actions?.length) perAct.push(s.wallMs / s.actions.length / 1000);
+      if (s.modelMs) modelS.push(s.modelMs / 1000);
     }
   }
   rows.push({
     task, arm, model: model.replace('claude-', ''), pass: rs.filter((r) => r.pass).length, reps: rs.length,
-    actP50: pct(perAct, 0.5), actP95: pct(perAct, 0.95),
+    actP50: pct(perAct, 0.5), actP95: pct(perAct, 0.95), modelP50: pct(modelS, 0.5), modelP95: pct(modelS, 0.95),
+    steps: mean(rs.map((r) => r.steps)), acts: mean(rs.map((r) => r.actions)),
     cost: mean(rs.map((r) => r.cost)), perHour: mean(rs.map((r) => r.costPerHour)),
     wall: mean(rs.map((r) => r.wallS)), metric: rs.map((r) => r.metric).join('/'), falseDone: rs.filter((r) => r.falseDone).length,
   });
 }
-const order = ['mc-walk', 'mc-blocks', 'mc-find', '2048', 'cookie'];
+const order = ['mc-walk', 'mc-walk-ledge', 'mc-blocks', 'mc-find', '2048', 'cookie'];
 rows.sort((a, b) => order.indexOf(a.task) - order.indexOf(b.task) || a.arm.localeCompare(b.arm) || a.model.localeCompare(b.model));
 const errors = runs.filter((r) => r.error).length;
 if (args.md) {
-  console.log('| Task | Arm | Model | Pass | s/action p50 | s/action p95 | $/run | $/hour | mean wall s | metric per rep | false done |');
-  console.log('|---|---|---|---|---|---|---|---|---|---|---|');
-  for (const r of rows) console.log(`| ${r.task} | ${r.arm} | ${r.model} | ${r.pass}/${r.reps} | ${f(r.actP50)} | ${f(r.actP95)} | ${f(r.cost, 4)} | ${f(r.perHour, 3)} | ${f(r.wall, 0)} | ${r.metric} | ${r.falseDone} |`);
+  console.log('| Task | Arm | Model | Pass | s/action p50 | s/action p95 | model call s p50/p95 | actions/run | $/run | $/hour | wall s/run | metric per rep | false done |');
+  console.log('|---|---|---|---|---|---|---|---|---|---|---|---|---|');
+  for (const r of rows) console.log(`| ${r.task} | ${r.arm} | ${r.model} | ${r.pass}/${r.reps} | ${f(r.actP50)} | ${f(r.actP95)} | ${f(r.modelP50, 1)}/${f(r.modelP95, 1)} | ${f(r.acts, 0)} | ${f(r.cost, 4)} | ${f(r.perHour, 3)} | ${f(r.wall, 0)} | ${r.metric} | ${r.falseDone} |`);
 } else {
-  for (const r of rows) console.log(`${r.task.padEnd(9)} ${r.arm.padEnd(6)} ${r.model.padEnd(10)} ${r.pass}/${r.reps}  act ${f(r.actP50)}/${f(r.actP95)}s  $${f(r.cost, 4)}/run  $${f(r.perHour, 3)}/h  wall ${f(r.wall, 0)}s  metric ${r.metric}  falseDone ${r.falseDone}`);
+  for (const r of rows) console.log(`${r.task.padEnd(9)} ${r.arm.padEnd(6)} ${r.model.padEnd(10)} ${r.pass}/${r.reps}  act ${f(r.actP50)}/${f(r.actP95)}s model ${f(r.modelP50, 1)}/${f(r.modelP95, 1)}s acts ${f(r.acts, 0)}  $${f(r.cost, 4)}/run  $${f(r.perHour, 3)}/h  wall ${f(r.wall, 0)}s  metric ${r.metric}  falseDone ${r.falseDone}`);
 }
 if (errors) console.log(`(${errors} runs errored and are excluded)`);
 let spend = 0; try { spend = JSON.parse(readFileSync(join(OUT, 'spend.json'), 'utf8')).total; } catch {}

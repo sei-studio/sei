@@ -98,7 +98,7 @@ async function mcClickToLock(display) {
 
 function mcTask({ id, prompt, prepare, check }) {
   return {
-    id, url: MC_URL, game: 'minecraft-classic', pxPerDegree: MC_PX_PER_DEGREE, hint: MC_HINT, prompt,
+    id, url: MC_URL, game: 'minecraft-classic', pxPerDegree: MC_PX_PER_DEGREE, hint: MC_HINT, prompt, prepare,
     pointerLock: true,
     async setup(ctx) {
       for (let attempt = 0; attempt < 7; attempt++) {
@@ -120,7 +120,7 @@ function mcTask({ id, prompt, prepare, check }) {
 
 const mcWalk = mcTask({
   id: 'mc-walk',
-  prompt: 'Walk to the tree in front of you and stand right next to its trunk, touching it.',
+  prompt: 'Walk to the tree in front of you and stop right next to its trunk.',
   // Put the player on open ground 7-11 blocks from a tree trunk on the same
   // level, with a clear line of sight from the eye to the trunk, facing it.
   async prepare(page) {
@@ -154,7 +154,7 @@ const mcWalk = mcTask({
     return page.evaluate(() => {
       const T = window.__ttw; const t = T.nearest(T.log, -1, 2, 6); const [px, py, pz] = T.pos();
       const d = t ? t.d : 99; const dt = T.target ? Math.hypot(T.target.x + 0.5 - px, T.target.z + 0.5 - pz) : 99;
-      return { pass: d <= 1.6, metric: +Math.min(d, dt).toFixed(2), note: `nearest trunk ${d.toFixed(1)}, start tree ${dt.toFixed(1)} blocks`, pos: [px, py, pz].map((v) => +v.toFixed(1)), hd: T.heading() };
+      return { pass: d <= 2.0, metric: +Math.min(d, dt).toFixed(2), note: `nearest trunk ${d.toFixed(1)}, start tree ${dt.toFixed(1)} blocks`, pos: [px, py, pz].map((v) => +v.toFixed(1)), hd: T.heading() };
     });
   },
 });
@@ -265,4 +265,29 @@ const cookie = {
   isPointerLocked: async () => false,
 };
 
-export const TASKS = { 'mc-walk': mcWalk, 'mc-blocks': mcBlocks, 'mc-find': mcFind, 2048: g2048, cookie };
+// The same walk with a one-block ledge across the way: a 5-wide row of the
+// ground block, 3 blocks ahead, that can only be crossed by jumping.
+const mcWalkLedge = mcTask({
+  id: 'mc-walk-ledge',
+  prompt: mcWalk.prompt,
+  async prepare(page) {
+    const info = await mcWalk.prepare(page);
+    if (!info || info.targetDist < 6) return null;
+    const placed = await page.evaluate(() => {
+      const T = window.__ttw, w = noa.world, t = T.target; const [px, py, pz] = T.pos();
+      const ground = w.getBlockID(Math.floor(px), Math.floor(py - 0.5), Math.floor(pz));
+      const dx = t.x + 0.5 - px, dz = t.z + 0.5 - pz, n = Math.hypot(dx, dz), ux = dx / n, uz = dz / n;
+      const cells = new Set(); let count = 0;
+      for (let off = -2.5; off <= 2.5; off += 0.5) {
+        const x = Math.floor(px + ux * 3 - uz * off), z = Math.floor(pz + uz * 3 + ux * off), y = Math.floor(py);
+        const k = `${x},${z}`; if (cells.has(k)) continue; cells.add(k);
+        if (w.getBlockID(x, y, z) === 0) { w.setBlockID(ground, x, y, z); count++; }
+      }
+      T.edits = []; return count;
+    });
+    return placed >= 3 ? { ...info, ledgeBlocks: placed } : null;
+  },
+  check: mcWalk.check,
+});
+
+export const TASKS = { 'mc-walk': mcWalk, 'mc-walk-ledge': mcWalkLedge, 'mc-blocks': mcBlocks, 'mc-find': mcFind, 2048: g2048, cookie };
