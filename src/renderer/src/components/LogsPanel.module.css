@@ -53,6 +53,7 @@
   letter-spacing: 0.6px;
   cursor: pointer;
   box-shadow: var(--shadow-pop);
+  border-radius: var(--radius-sm);
 }
 
 .newLinesPill:hover {

@@ -9,6 +9,7 @@
   flex-direction: column;
   margin-top: var(--space-md);
   border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
 .row {

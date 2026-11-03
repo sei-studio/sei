@@ -71,14 +71,22 @@
   --page-gutter: var(--space-xl);
 
   /* ── Corner radius ───────────────────────────────────────────
-   * 0 = the sharp "Summoning Terminal" look (D-28). Rectangular chrome
-   * reads these instead of a literal: Button, PlanButton, selects and
-   * framed inputs, cards and tiles, modal/popup shells, menus, Seg, call
-   * controls, toasts. NOT circles (50%), deliberate pills (999px), the
-   * underline-only TextField, pixel art, or the game-register panels
-   * (Draw!, Stardew/DST/Minecraft dashboards + launch panels). */
-  --radius: 0px;
-  --radius-sm: 0px;
+   * 2px (261103, Shawn's pick over 0 and 4): sharp-ish, not severe. Was 0
+   * (D-28). Every rectangular piece of chrome reads these, never a literal:
+   * Button, PlanButton, framed inputs and selects, cards, tiles, list
+   * boxes, modal and popup shells, menus, tooltips, Seg, Toggle, call
+   * controls, toasts, notices, the main pane's top-left corner, progress
+   * tracks of 6px and up, checkboxes, the scrollbar thumb.
+   *   --radius     chrome: buttons, fields, cards, panels, menus
+   *   --radius-sm  small controls: tags, badges, icon buttons, checkboxes,
+   *                toggle, slider thumbs, scrollbar thumb, progress tracks
+   * NOT: circles (50%: avatars, dots, radios), the underline-only
+   * TextField, hairline bars under 6px tall, pixel art, the Continue with
+   * ChatGPT / Google sign-in buttons (their brand shapes), or the game
+   * register (Draw!, Stardew/DST/Minecraft dashboards + launch panels,
+   * backseat, onboarding art cards, the tutorial speech bubble). */
+  --radius: 2px;
+  --radius-sm: 2px;
 
   /* ── Easing + motion (mockup: hud.jsx --ease) ─────────────── */
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);

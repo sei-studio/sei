@@ -210,6 +210,7 @@
   background: var(--accent);
   border: none;
   cursor: pointer;
+  border-radius: var(--radius-sm);
 }
 
 .slider:focus-visible {
@@ -232,6 +233,7 @@
   color: var(--muted);
   cursor: pointer;
   transition: color 120ms var(--ease), background 120ms var(--ease);
+  border-radius: var(--radius-sm);
 }
 .copyBtn:hover {
   color: var(--accent);
@@ -265,6 +267,7 @@
   border: 1px solid var(--border-strong);
   background: var(--surface-2);
   margin-top: var(--space-xs);
+  border-radius: var(--radius);
 }
 
 .modelRow {

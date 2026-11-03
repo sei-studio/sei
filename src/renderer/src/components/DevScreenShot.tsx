@@ -218,7 +218,7 @@ export function DevScreenShot(): React.ReactElement {
                   minHeight: 0,
                   overflow: 'auto',
                   background: 'var(--window)',
-                  borderTopLeftRadius: 12,
+                  borderTopLeftRadius: 'var(--radius)',
                   borderTop: '1px solid var(--border)',
                   borderLeft: '1px solid var(--border)',
                 }}

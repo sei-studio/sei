@@ -3715,8 +3715,9 @@ src/
 
 ### UI / design system
 
-The renderer follows the **"Summoning Terminal"** look: dark, sharp-edged,
-periwinkle `#7FB0FF` accent. Always use tokens from
+The renderer follows the **"Summoning Terminal"** look: dark, sharp-ish 2px
+corners (`--radius` / `--radius-sm`, never a literal radius), periwinkle
+`#7FB0FF` accent. Always use tokens from
 `src/renderer/src/styles/tokens.css` — never literal hex/px — and reuse existing
 primitives (`Button`, `CharacterCard`, modal patterns) before writing new CSS.
 

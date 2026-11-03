@@ -499,6 +499,7 @@
   height: 6px;
   background: var(--accent-soft);
   overflow: hidden;
+  border-radius: var(--radius-sm);
 }
 
 .progressIndeterminate {

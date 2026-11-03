@@ -41,7 +41,7 @@
 
 .ring {
   position: fixed;
-  border-radius: 12px;
+  border-radius: var(--radius);
   pointer-events: none;
   box-shadow:
     0 0 0 2px var(--accent, #7fb0ff),

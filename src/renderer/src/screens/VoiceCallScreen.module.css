@@ -387,6 +387,7 @@
   border: 1px solid var(--border-strong);
   background: var(--window);
   overflow: hidden;
+  border-radius: var(--radius-sm);
 }
 
 .installBarFill {
@@ -429,7 +430,7 @@
   position: relative;
   z-index: 1;
   padding: var(--space-sm) var(--space-md);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--window) 78%, transparent);
   backdrop-filter: blur(6px);
 }
@@ -534,7 +535,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-lg, 12px);
+  border-radius: var(--radius);
   border: 1px solid var(--border-strong);
   /* Deliberately near-black rather than surface-2: this is a letterboxed
      picture, and the bars have to read as bars and not as a panel. */

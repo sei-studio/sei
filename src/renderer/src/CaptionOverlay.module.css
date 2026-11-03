@@ -19,7 +19,7 @@
 .box {
   position: absolute;
   inset: 8px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: rgba(10, 12, 16, 0.72);
   padding: 10px 14px;
   display: flex;
