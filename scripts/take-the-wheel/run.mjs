@@ -52,6 +52,13 @@ const SKIP = new Set(['screenshot', 'zoom', 'cursor_position']);
 const fmt = (a) => `${a.name} ${JSON.stringify(a.input)}`.slice(0, 140);
 
 let disp, chrome, rec;
+// A killed run must not orphan its Xvfb and Chrome.
+for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, async () => {
+  try { if (rec) await rec.stop(); } catch {}
+  try { if (chrome) await chrome.stop(); } catch {}
+  try { if (disp) disp.stop(); } catch {}
+  process.exit(143);
+});
 const summary = { runId, task: task.id, arm, model: arm === 'random' ? null : model, rep, pass: false };
 try {
   disp = await startDisplay(display);

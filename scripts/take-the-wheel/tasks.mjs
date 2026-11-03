@@ -121,12 +121,34 @@ function mcTask({ id, prompt, prepare, check }) {
 const mcWalk = mcTask({
   id: 'mc-walk',
   prompt: 'Walk to the tree in front of you and stand right next to its trunk, touching it.',
+  // Put the player on open ground 7-11 blocks from a tree trunk on the same
+  // level, with a clear line of sight from the eye to the trunk, facing it.
   async prepare(page) {
-    return page.evaluate(() => {
-      const T = window.__ttw; const t = T.visibleOf(T.log, -1, 3, 16, 5, 14)[0];
-      if (!t) return null;
-      T.face(t.x, t.z); T.target = t; return { targetDist: +t.d.toFixed(1) };
+    const ok = await page.evaluate(() => {
+      const T = window.__ttw, w = noa.world, N = noa.worldSize;
+      const solidTop = (x, z) => { for (let y = 70; y >= 1; y--) { const b = w.getBlockID(x, y, z); if (b !== 0) return { y, b }; } return null; };
+      const clear = (ax, ay, az, bx, by, bz) => { const d = Math.hypot(bx - ax, by - ay, bz - az), n = Math.ceil(d * 4); for (let i = 1; i < n; i++) { const f = i / n; const cx = Math.floor(ax + (bx - ax) * f), cy = Math.floor(ay + (by - ay) * f), cz = Math.floor(az + (bz - az) * f); if (cx === Math.floor(bx) && cz === Math.floor(bz)) return true; if (w.getBlockID(cx, cy, cz) !== 0) return false; } return true; };
+      const [px, , pz] = T.pos(); const bases = [];
+      for (let x = 4; x < N - 4; x++) for (let z = 4; z < N - 4; z++) { const t = solidTop(x, z); if (!t) continue; for (let y = t.y; y > 20; y--) { const b = w.getBlockID(x, y, z); if (T.log.includes(b) && !T.log.includes(w.getBlockID(x, y - 1, z)) && w.getBlockSolidity(x, y - 1, z)) { bases.push({ x, y, z, dp: Math.hypot(x - px, z - pz) }); break; } } }
+      bases.sort((a, b) => a.dp - b.dp);
+      for (const t of bases.slice(0, 40)) {
+        for (let k = 0; k < 16; k++) {
+          const ang = k * Math.PI / 8; const r = 7 + (k % 5);
+          const sx = Math.floor(t.x + 0.5 + Math.sin(ang) * r), sz = Math.floor(t.z + 0.5 + Math.cos(ang) * r);
+          if (sx < 1 || sz < 1 || sx >= N - 1 || sz >= N - 1) continue;
+          const top = solidTop(sx, sz); if (!top || T.water.includes(top.b) || T.log.includes(top.b) || !w.getBlockSolidity(sx, top.y, sz)) continue;
+          const sy = top.y + 1; if (Math.abs(sy - t.y) > 1 || w.getBlockID(sx, sy + 1, sz) !== 0) continue;
+          if (!clear(sx + 0.5, sy + 1.6, sz + 0.5, t.x + 0.5, t.y + 1.5, t.z + 0.5)) continue;
+          noa.entities.setPosition(noa.playerEntity, sx + 0.5, sy + 0.05, sz + 0.5);
+          T.target = { x: t.x, y: t.y, z: t.z, d: Math.hypot(t.x - sx, t.z - sz) };
+          return true;
+        }
+      }
+      return false;
     });
+    if (!ok) return null;
+    await sleep(2500);
+    return page.evaluate(() => { const T = window.__ttw, t = T.target; T.face(t.x, t.z); const [px, , pz] = T.pos(); return { targetDist: +Math.hypot(t.x + 0.5 - px, t.z + 0.5 - pz).toFixed(1) }; });
   },
   async check(page) {
     return page.evaluate(() => {
