@@ -35,6 +35,7 @@
   text-align: left;
   cursor: pointer;
   transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
+  border-radius: var(--radius);
 }
 
 .trigger:hover {
@@ -91,6 +92,7 @@
   background: var(--surface);
   box-shadow: var(--shadow-pop);
   outline: none;
+  border-radius: var(--radius);
 }
 
 .option {

@@ -22,6 +22,8 @@
  *              --acc (rgb triple, for rgba()) --acc-c (= rgb(var(--acc)))
  *   Status     --green --red --red-strong --warn  (+ --ok rgb triple)
  *   Type       --display (Oswald) --sans (Rajdhani) --mono (JetBrains Mono) --pixel
+ *   Corners    --radius (chrome: buttons, fields, cards, popups)
+ *              --radius-sm (small controls: chips, tags, icon buttons)
  *   Motion     --ease --ease-pop --flux (motion multiplier) --scan (scanline α)
  */
 
@@ -67,6 +69,16 @@
   --pad-modal: var(--space-lg);
   --page-top: var(--space-lg);
   --page-gutter: var(--space-xl);
+
+  /* ── Corner radius ───────────────────────────────────────────
+   * 0 = the sharp "Summoning Terminal" look (D-28). Rectangular chrome
+   * reads these instead of a literal: Button, PlanButton, selects and
+   * framed inputs, cards and tiles, modal/popup shells, menus, Seg, call
+   * controls, toasts. NOT circles (50%), deliberate pills (999px), the
+   * underline-only TextField, pixel art, or the game-register panels
+   * (Draw!, Stardew/DST/Minecraft dashboards + launch panels). */
+  --radius: 0px;
+  --radius-sm: 0px;
 
   /* ── Easing + motion (mockup: hud.jsx --ease) ─────────────── */
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);

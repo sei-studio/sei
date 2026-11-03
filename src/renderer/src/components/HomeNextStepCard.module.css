@@ -76,6 +76,7 @@
   color: var(--muted);
   cursor: pointer;
   transition: color 140ms var(--ease), background-color 140ms var(--ease);
+  border-radius: var(--radius-sm);
 }
 
 .dismiss:hover {

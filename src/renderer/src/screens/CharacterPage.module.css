@@ -100,6 +100,7 @@
   background: color-mix(in srgb, var(--window) 45%, transparent);
   color: var(--text-2);
   transition: color 140ms var(--ease), background 140ms var(--ease);
+  border-radius: var(--radius-sm);
 }
 
 .artExpandBtn:hover {
@@ -282,6 +283,7 @@
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface-2) 55%, transparent);
   padding: var(--pad-control) var(--pad-card);
+  border-radius: var(--radius);
 }
 
 .personaHead {
@@ -303,6 +305,7 @@
   align-items: center;
   justify-content: center;
   transition: color 140ms ease, border-color 140ms ease;
+  border-radius: var(--radius-sm);
 }
 
 .rotateBtn:hover {
@@ -334,6 +337,7 @@
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface-2) 55%, transparent);
   padding: var(--pad-control) var(--pad-card);
+  border-radius: var(--radius);
 }
 
 /* Label typography comes from the shared u-lbl utility (same as the
@@ -363,6 +367,7 @@
   padding: var(--pad-control) var(--pad-card);
   font-size: 13px;
   color: var(--text-2);
+  border-radius: var(--radius);
 }
 
 .shareLabel {
@@ -415,6 +420,7 @@
   flex-direction: column;
   background: var(--surface);
   box-shadow: var(--shadow-pop);
+  border-radius: var(--radius);
 }
 
 .settingsItem {

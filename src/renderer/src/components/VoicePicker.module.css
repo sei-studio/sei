@@ -14,7 +14,7 @@
 .optionCard {
   text-align: left;
   padding: var(--pad-control) var(--pad-card);
-  border-radius: 0;
+  border-radius: var(--radius);
   border: 1px solid var(--border-strong);
   background: transparent;
   color: var(--text);
@@ -54,7 +54,7 @@
   align-items: stretch;
   gap: var(--gap-control);
   border: 1px solid var(--border);
-  border-radius: 0;
+  border-radius: var(--radius);
   padding: var(--space-sm) var(--space-md);
 }
 
@@ -76,7 +76,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-strong);
   background: transparent;
   color: var(--accent);
@@ -192,7 +192,7 @@
   flex-direction: column;
   gap: var(--gap-control);
   border: 1px solid var(--border);
-  border-radius: 0;
+  border-radius: var(--radius);
   padding: var(--pad-control) var(--pad-card);
 }
 
@@ -223,7 +223,7 @@
   margin-left: auto;
   background: transparent;
   border: 1px solid var(--border-strong);
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   padding: 2px 8px;
   font-family: var(--mono);
   font-size: 10.5px;

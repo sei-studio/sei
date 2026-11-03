@@ -151,7 +151,7 @@
   background: var(--input-bg, var(--window));
   color: var(--text);
   border: 1px solid var(--border-strong);
-  border-radius: 0;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 

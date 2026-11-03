@@ -89,7 +89,7 @@
   place-items: center;
   background: transparent;
   border: none;
-  border-radius: 0;
+  border-radius: var(--radius);
   cursor: pointer;
   color: var(--rail-fg);
   transition: color 0.2s ease, background 0.2s ease;

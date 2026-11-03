@@ -41,6 +41,7 @@
   color: var(--text);
   background-color: var(--surface-2);
   transition: filter 140ms var(--ease), background-color 140ms var(--ease), box-shadow 140ms var(--ease);
+  border-radius: var(--radius);
 }
 
 .tile:focus-visible {

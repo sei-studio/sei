@@ -12,6 +12,7 @@
   height: 640px;
   max-height: calc(100vh - 2 * var(--space-xl));
   overflow: hidden;
+  border-radius: var(--radius);
 }
 
 /* ── Left sidebar ─────────────────────────────────────────────────────── */
@@ -55,6 +56,7 @@
   color: var(--text-2);
   cursor: pointer;
   transition: background 140ms var(--ease), color 140ms var(--ease);
+  border-radius: var(--radius);
 }
 
 .navItem:hover {
@@ -118,6 +120,7 @@
   border: 1px solid var(--accent);
   padding: var(--space-sm) var(--pad-control);
   margin: 0;
+  border-radius: var(--radius);
 }
 
 .field {
@@ -190,6 +193,7 @@
   border: 1px solid var(--border-strong);
   background: rgba(127, 127, 127, 0.03);
   padding: var(--pad-control);
+  border-radius: var(--radius);
 }
 
 .expandedTextarea {
@@ -229,6 +233,7 @@
   font-size: 10.5px;
   letter-spacing: 0.04em;
   cursor: pointer;
+  border-radius: var(--radius-sm);
 }
 
 .expandedCopy:hover {
@@ -244,6 +249,7 @@
   border: 1px solid var(--border-strong);
   background: var(--surface-2);
   padding: var(--pad-control);
+  border-radius: var(--radius);
 }
 
 .confirmBannerText {

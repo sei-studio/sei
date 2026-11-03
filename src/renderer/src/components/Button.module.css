@@ -9,7 +9,7 @@
  */
 
 .button {
-  border-radius: 0; /* D-28 sharp */
+  border-radius: var(--radius); /* D-28 sharp */
   display: inline-flex;
   align-items: center;
   justify-content: center;

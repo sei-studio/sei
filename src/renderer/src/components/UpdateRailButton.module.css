@@ -18,7 +18,7 @@
   justify-content: center;
   gap: var(--space-xs);
   border: none;
-  border-radius: 0;
+  border-radius: var(--radius);
   background: linear-gradient(160deg, var(--green), var(--accent-strong));
   color: var(--accent-text);
   font-family: var(--sans);

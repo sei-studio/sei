@@ -69,6 +69,7 @@
     display 120ms allow-discrete;
   z-index: 50;
   box-shadow: var(--shadow-pop);
+  border-radius: var(--radius);
 }
 
 .dot:hover + .tip,

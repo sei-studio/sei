@@ -19,6 +19,7 @@
   transition:
     right 300ms var(--ease),
     bottom 200ms var(--ease);
+  border-radius: var(--radius);
 }
 
 .art {

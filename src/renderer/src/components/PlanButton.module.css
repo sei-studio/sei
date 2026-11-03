@@ -25,7 +25,7 @@
   justify-content: center;
   gap: var(--space-sm);
   padding: 0 var(--space-md-plus);
-  border-radius: 0;
+  border-radius: var(--radius);
   /* No border at all (261027): a transparent one still made a 1px frame
      the glint below could not cover (overflow clips at the padding box). */
   border: 0;

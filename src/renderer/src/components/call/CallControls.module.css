@@ -23,7 +23,7 @@
   justify-content: center;
   width: 64px;
   height: 44px;
-  border-radius: 0;
+  border-radius: var(--radius);
   border: none;
   background: color-mix(in srgb, var(--text) 9%, transparent);
   color: var(--text);
@@ -34,7 +34,7 @@
 .pillBtnSm {
   width: 48px;
   height: 32px;
-  border-radius: 0;
+  border-radius: var(--radius);
 }
 
 .pillBtn:hover {
