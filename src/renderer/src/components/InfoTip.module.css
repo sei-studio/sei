@@ -14,7 +14,7 @@
   width: 16px;
   height: 16px;
   padding: 0;
-  border-radius: 50%;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   /* Filled, so no border line (261103 button rule): the disc and the "i"
      mark it. The transparent border keeps the 16px box. */
@@ -69,6 +69,7 @@
     display 120ms allow-discrete;
   z-index: 50;
   box-shadow: var(--shadow-pop);
+  border-radius: var(--radius);
 }
 
 .dot:hover + .tip,

@@ -1158,7 +1158,7 @@ export function App(): React.ReactElement {
     background: backgroundImage
       ? `color-mix(in srgb, var(--window) ${tintPct}%, transparent)`
       : 'var(--window)',
-    borderTopLeftRadius: 12,
+    borderTopLeftRadius: 'var(--radius)',
     borderTop: '1px solid var(--border)',
     borderLeft: '1px solid var(--border)',
   };

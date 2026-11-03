@@ -70,7 +70,7 @@
   height: 30px;
   padding: 0;
   border: none;
-  border-radius: 50%;
+  border-radius: var(--radius);
   background: rgba(4, 7, 15, 0.55);
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);

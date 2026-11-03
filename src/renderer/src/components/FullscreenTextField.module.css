@@ -13,7 +13,7 @@
   padding: 12px 40px 12px 14px; /* right gutter clears the expand button */
   background: transparent;
   border: 1px solid var(--border-strong);
-  border-radius: 0;
+  border-radius: var(--radius);
   color: var(--text);
   font-family: var(--sans);
   font-size: 15px;
@@ -43,7 +43,7 @@
   padding: 0;
   background: transparent;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   color: var(--muted);
   cursor: pointer;
   transition: color 140ms ease, background 140ms ease;
@@ -66,7 +66,7 @@
   resize: none;
   background: var(--bg);
   border: none;
-  border-radius: 0;
+  border-radius: var(--radius);
   padding: 16px;
   color: var(--text);
   font-family: var(--sans);

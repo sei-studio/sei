@@ -213,7 +213,7 @@ export function PortraitImagePicker({
             height: 56,
             objectFit: 'cover',
             border: '1px solid var(--border)',
-            borderRadius: 4,
+            borderRadius: 'var(--radius)',
           }}
         />
       ) : (
@@ -225,7 +225,7 @@ export function PortraitImagePicker({
             alignItems: 'center',
             justifyContent: 'center',
             border: '1px dashed var(--border)',
-            borderRadius: 4,
+            borderRadius: 'var(--radius)',
             color: 'var(--muted)',
             fontSize: 11,
             fontFamily: 'var(--mono)',

@@ -89,7 +89,7 @@
   place-items: center;
   background: transparent;
   border: none;
-  border-radius: 0;
+  border-radius: var(--radius);
   cursor: pointer;
   color: var(--rail-fg);
   transition: color 0.2s ease, background 0.2s ease;
@@ -155,7 +155,7 @@
   border: none;
   padding: 0;
   cursor: pointer;
-  border-radius: 50%;
+  border-radius: var(--radius);
   transition: transform 0.15s var(--ease);
 }
 
@@ -177,7 +177,7 @@
   position: relative;
   width: 40px;
   height: 40px;
-  border-radius: 50%;
+  border-radius: var(--radius);
   overflow: hidden;
   display: inline-flex;
   align-items: center;
@@ -196,7 +196,7 @@
   content: '';
   position: absolute;
   inset: 2px;
-  border-radius: 50%;
+  border-radius: var(--radius);
   border: 2px solid var(--green);
   animation: socket-pulse 2.6s var(--ease) infinite;
   pointer-events: none;
@@ -231,7 +231,7 @@
   width: 14px;
   height: 14px;
   box-sizing: border-box;
-  border-radius: 50%;
+  border-radius: var(--radius-sm);
   background: var(--rail-accent);
   color: var(--rail);
   border: 2px solid var(--rail);
@@ -266,6 +266,7 @@
   pointer-events: none;
   z-index: 9999;
   box-shadow: var(--shadow-pop);
+  border-radius: var(--radius);
 }
 
 /* ── Dormant socket (+ new companion — mockup .socket.dormant) ───────── */
@@ -273,7 +274,7 @@
   position: relative;
   width: 40px;
   height: 40px;
-  border-radius: 50%;
+  border-radius: var(--radius);
   border: 1px solid rgb(var(--acc) / 0.4);
   background: transparent;
   color: rgb(var(--acc) / 0.55);

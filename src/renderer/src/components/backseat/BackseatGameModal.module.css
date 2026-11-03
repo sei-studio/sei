@@ -17,7 +17,7 @@
   aspect-ratio: 16 / 10;
   background-size: cover;
   background-position: center;
-  border-radius: var(--radius-sm, 6px);
+  border-radius: 6px;
   border: 1px solid var(--border);
 }
 

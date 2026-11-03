@@ -3,13 +3,13 @@
  * Mockup language (sei-roster-concept .btn): Rajdhani semibold, regular case,
  * bordered secondaries that light to the accent, accent-filled primaries.
  * The old mono/uppercase/tracked language and the notched clip-path are
- * retired. D-28 sharp throughout.
+ * retired. Corners on --radius (2px, 261103).
  *
  * Source: docs/design/UI-REDESIGN-PARTY.md §1.
  */
 
 .button {
-  border-radius: 0; /* D-28 sharp */
+  border-radius: var(--radius); /* D-28 sharp */
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -76,6 +76,20 @@
 .primary:hover:not(:disabled),
 .accent:hover:not(:disabled) {
   background: var(--accent-strong);
+}
+
+/* ── Kind: secondary — neutral fill, so no border ─────────────────────
+   A faint wash of the text colour (the PlanButton secondary), for an action
+   that should not add a colour to its surface. Lights to the accent on
+   hover like the other kinds. */
+.secondary {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text);
+  border-color: transparent;
+}
+.secondary:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 /* ── Kind: ghost — no fill, so bordered; lights up to accent ─────────── */

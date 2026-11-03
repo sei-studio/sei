@@ -27,6 +27,7 @@
   flex-direction: column;
   gap: var(--gap-group);
   animation: fade-up 280ms var(--ease-pop);
+  border-radius: var(--radius);
 }
 
 .title {

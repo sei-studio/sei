@@ -78,6 +78,7 @@
   cursor: pointer;
   color: var(--text-2);
   transition: border-color calc(120ms / var(--flux)) var(--ease);
+  border-radius: var(--radius);
 }
 
 .thumb:hover:not(:disabled),

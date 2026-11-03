@@ -141,7 +141,7 @@
   height: 28px;
   padding: 0;
   border: none;
-  border-radius: 50%;
+  border-radius: var(--radius);
   overflow: hidden;
   background: var(--surface-2);
   display: inline-flex;

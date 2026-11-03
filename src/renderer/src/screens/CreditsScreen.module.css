@@ -113,6 +113,7 @@
   height: 8px;
   background: var(--bg4);
   overflow: hidden;
+  border-radius: var(--radius-sm);
 }
 
 .usageTrack i {
@@ -161,7 +162,7 @@
   flex-direction: column;
   gap: var(--gap-tight);
   padding: var(--pad-control);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--accent-soft);
   font-family: var(--sans);
 }
@@ -205,6 +206,7 @@
   gap: var(--gap-tight);
   min-height: 196px;
   min-width: 0;
+  border-radius: var(--radius);
 }
 
 /* Active subscription — accent edge on the solid surface. */
@@ -239,6 +241,7 @@
   text-transform: uppercase;
   line-height: 1.2;
   white-space: nowrap;
+  border-radius: var(--radius-sm);
 }
 
 .planName {
@@ -286,6 +289,7 @@
   padding: var(--pad-control);
   border: 1px solid var(--border);
   color: var(--text);
+  border-radius: var(--radius);
 }
 
 .chatgptPlanText {
@@ -385,7 +389,7 @@
   justify-content: center;
   width: 22px;
   height: 22px;
-  border-radius: 50%;
+  border-radius: var(--radius);
   background: var(--accent);
   color: var(--accent-text);
   font-size: 13px;

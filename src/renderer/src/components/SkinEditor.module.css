@@ -13,7 +13,7 @@
   padding: var(--space-lg);
   border: 1px solid var(--border);
   background: var(--window);
-  border-radius: 0;
+  border-radius: var(--radius);
 }
 
 /*
@@ -190,7 +190,7 @@
   padding: var(--space-sm) var(--space-md);
   cursor: pointer;
   /* Sharp corners (D-28). */
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   transition:
     background 120ms ease,
     border-color 120ms ease;

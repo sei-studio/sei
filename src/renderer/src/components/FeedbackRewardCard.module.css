@@ -9,6 +9,7 @@
   padding: 16px 18px;
   border: 1.5px solid var(--accent);
   background: var(--accent-soft);
+  border-radius: var(--radius);
 }
 
 .lede {

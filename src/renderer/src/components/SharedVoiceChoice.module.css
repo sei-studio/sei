@@ -31,7 +31,7 @@
   background: var(--input-bg, var(--window));
   color: var(--text);
   border: 1px solid var(--border-strong);
-  border-radius: 0;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
@@ -54,7 +54,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-strong);
   background: transparent;
   color: var(--accent);

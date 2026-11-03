@@ -1,14 +1,14 @@
 /**
- * Button — primary / accent / ghost / quiet × sm / md / lg.
+ * Button — primary / accent / secondary / ghost / quiet / danger × sm / md / lg.
  *
  * Source: 04-UI-SPEC.md §Component Inventory → Button (variants × size matrix).
- * Visual contract: D-28 sharp corners; native :focus-visible 1.5px accent ring.
+ * Visual contract: --radius corners; native :focus-visible 1.5px accent ring.
  */
 
 import React from 'react';
 import styles from './Button.module.css';
 
-type Kind = 'primary' | 'accent' | 'ghost' | 'quiet' | 'danger';
+type Kind = 'primary' | 'accent' | 'secondary' | 'ghost' | 'quiet' | 'danger';
 type Size = 'sm' | 'md' | 'lg';
 
 interface ButtonProps {

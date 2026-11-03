@@ -18,6 +18,7 @@
   border-left: 3px solid var(--green);
   box-shadow: var(--shadow-pop);
   animation: toast-in 240ms var(--ease-pop);
+  border-radius: var(--radius);
 }
 
 .text {
@@ -58,6 +59,7 @@
   background: transparent;
   color: var(--muted);
   cursor: pointer;
+  border-radius: var(--radius-sm);
 }
 
 .close:hover {

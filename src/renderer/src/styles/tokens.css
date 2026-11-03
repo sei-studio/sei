@@ -22,6 +22,8 @@
  *              --acc (rgb triple, for rgba()) --acc-c (= rgb(var(--acc)))
  *   Status     --green --red --red-strong --warn  (+ --ok rgb triple)
  *   Type       --display (Oswald) --sans (Rajdhani) --mono (JetBrains Mono) --pixel
+ *   Corners    --radius (chrome: buttons, fields, cards, popups)
+ *              --radius-sm (small controls: chips, tags, icon buttons)
  *   Motion     --ease --ease-pop --flux (motion multiplier) --scan (scanline α)
  */
 
@@ -67,6 +69,25 @@
   --pad-modal: var(--space-lg);
   --page-top: var(--space-lg);
   --page-gutter: var(--space-xl);
+
+  /* ── Corner radius ───────────────────────────────────────────
+   * 2px (261103, Shawn's pick over 0 and 4): sharp-ish, not severe. Was 0
+   * (D-28). Every rectangular piece of chrome reads these, never a literal:
+   * Button, PlanButton, framed inputs and selects, cards, tiles, list
+   * boxes, modal and popup shells, menus, tooltips, Seg, Toggle, call
+   * controls, toasts, notices, the main pane's top-left corner, progress
+   * tracks of 6px and up, checkboxes, the scrollbar thumb.
+   *   --radius     chrome: buttons, fields, cards, panels, menus
+   *   --radius-sm  small controls: tags, badges, icon buttons, checkboxes,
+   *                toggle, slider thumbs, scrollbar thumb, progress tracks
+   * Avatars and portraits are --radius squares too (261103, one rule).
+   * NOT: the few circles left (50%: tiny status dots, radios, spinners),
+   * the underline-only TextField, hairline bars under 6px tall, pixel art, the Continue with
+   * ChatGPT / Google sign-in buttons (their brand shapes), or the game
+   * register (Draw!, Stardew/DST/Minecraft dashboards + launch panels,
+   * backseat, onboarding art cards, the tutorial speech bubble). */
+  --radius: 2px;
+  --radius-sm: 2px;
 
   /* ── Easing + motion (mockup: hud.jsx --ease) ─────────────── */
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);

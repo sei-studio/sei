@@ -26,9 +26,13 @@ the theme toggle.
 
 **Five principles**
 
-1. **Sharp, almost never round.** Corners are square (`border-radius: 0`,
-   D-28). The deliberate circles: rail sockets/avatars, status dots, the
-   Toggle pill, PercentBar. Nothing else rounds.
+1. **Sharp-ish, almost never round.** Corners are 2px (`var(--radius)` /
+   `var(--radius-sm)` in tokens.css; 261103, was `0` under D-28). Never a
+   literal radius, one rule everywhere: avatars and portraits (rail
+   sockets, chat, call tiles, profile picture) are 2px squares too. The
+   only circles left: tiny status dots (under ~10px), radios, spinners.
+   Nothing else rounds past 2px (the Toggle and PercentBar were pills;
+   both are on the token now).
 2. **One accent, used sparingly.** Periwinkle `#7FB0FF`. It marks the active
    nav, the primary CTA, focus rings, hovered borders, "new" presence — nothing
    decorative. Surfaces stay dark navy; green is reserved for live/in-world.
@@ -89,7 +93,7 @@ brand-locked). Write labels in sentence case.
 - `.u-mono` — mono with tabular numerics.
 - `.u-display` — Oswald display.
 - `.u-brk` + `.tl/.tr/.bl/.br` — corner brackets (used by UniqueReveal).
-- `[data-tip]` — fast CSS tooltip (mono, sharp, below the element).
+- `[data-tip]` — fast CSS tooltip (mono, `--radius` corners, below the element).
 
 HUD overlays (grain only; vignette neutralized) are mounted once by
 `MacosWindow`. No scanlines, no sweep band — do not reintroduce.

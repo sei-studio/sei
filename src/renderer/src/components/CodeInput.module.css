@@ -20,7 +20,7 @@
   background: transparent;
   border: none;
   border-bottom: 1px solid var(--border-strong);
-  border-radius: 0; /* D-28 */
+  border-radius: var(--radius); /* D-28 */
   color: var(--text);
   font-family: var(--mono);
   font-size: 28px;
