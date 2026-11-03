@@ -20,7 +20,12 @@
 //                       habits have nothing to make light with
 //   enterdark        -> nothing (the light watcher lags nightfall by seconds
 //                       and the habit is already on it)
-//   death       -> onDeath       (P1)
+//   death       -> onDying       the moment she dies: in-flight turns of the
+//                                dead body are dropped (orchestrator noteDeath)
+//   bodydied    -> onDeath       (P1) emitted by the RUNTIME, not the mod
+//                                (261104): after the respawn (or, for her last
+//                                death, right away), with the cause, where her
+//                                items dropped and what happens next (detail)
 //   spawned     -> onSpawn
 //   phase       -> a P3 idle tick with reason 'phase_change' via onIdleNudge
 //                  (the brain has no phase concept; the runtime enqueues it as
@@ -127,9 +132,16 @@ export function wireLinkEvents(link, handlers, opts) {
     })
   })
 
-  const onDeath = safe('onDeath', (p) => {
-    const pos = typeof p.x === 'number' && typeof p.z === 'number' ? { x: p.x, y: 0, z: p.z } : null
-    handlers.onDeath?.({ pos })
+  const onDying = safe('onDying', () => { handlers.onDying?.() })
+
+  const onBodyDied = safe('onDeath', (p) => {
+    const pos = p.pos && typeof p.pos.x === 'number' && typeof p.pos.z === 'number' ? { x: p.pos.x, y: 0, z: p.pos.z } : null
+    handlers.onDeath?.({
+      pos,
+      ...(Number.isFinite(p.diedAt) ? { diedAt: p.diedAt } : {}),
+      ...(typeof p.deathText === 'string' && p.deathText ? { deathText: p.deathText } : {}),
+      ...(p.detail && typeof p.detail === 'object' ? { detail: p.detail } : {}),
+    })
   })
 
   const onSpawned = safe('onSpawn', () => { handlers.onSpawn?.() })
@@ -149,7 +161,8 @@ export function wireLinkEvents(link, handlers, opts) {
   link.on('attacked', onAttacked)
   link.on('survival', onSurvival)
   link.on('enterdark', onEnterDark)
-  link.on('death', onDeath)
+  link.on('death', onDying)
+  link.on('bodydied', onBodyDied)
   link.on('spawned', onSpawned)
   link.on('phase', onPhase)
   link.on('playerjoined', onPlayerJoined)
@@ -160,7 +173,8 @@ export function wireLinkEvents(link, handlers, opts) {
     link.off('attacked', onAttacked)
     link.off('survival', onSurvival)
     link.off('enterdark', onEnterDark)
-    link.off('death', onDeath)
+    link.off('death', onDying)
+    link.off('bodydied', onBodyDied)
     link.off('spawned', onSpawned)
     link.off('phase', onPhase)
     link.off('playerjoined', onPlayerJoined)

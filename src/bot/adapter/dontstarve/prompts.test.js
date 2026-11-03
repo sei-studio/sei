@@ -104,3 +104,39 @@ describe('DST prompts', () => {
     expect(eventAddendum('sei:something_else', {})).toBe('')
   })
 })
+
+describe('DST death turn after a respawn (261104)', () => {
+  const base = { pos: { x: 3.4, z: -9.6 }, lastAttack: { label: 'Spider' } }
+  it('respawned: names the cause, the player and the drop spot, asks for say() + remember()', () => {
+    const t = eventAddendum('sei:death', { ...base, detail: { outcome: 'respawned', cause: 'Charlie in the darkness', respawns: 1, respawnsLeft: 2, player: 'Steve' } })
+    expect(t).toMatch(/killed by Charlie in the darkness; the last thing that hit you was Spider/)
+    expect(t).toMatch(/fresh body next to Steve/)
+    expect(t).toMatch(/around 3,-10/)
+    expect(t).toMatch(/say\(\)/)
+    expect(t).toMatch(/remember\(\)/)
+    expect(t).not.toMatch(/once more|last comeback/)
+    expect(t).not.toMatch(/\u2014/)
+    expect(t).not.toMatch(/\{\w+\}/)
+  })
+
+  it('respawned: warns when one comeback or none is left', () => {
+    const one = eventAddendum('sei:death', { ...base, detail: { outcome: 'respawned', cause: 'starvation', respawns: 2, respawnsLeft: 1, player: 'Steve' } })
+    expect(one).toMatch(/once more this session/)
+    const none = eventAddendum('sei:death', { ...base, detail: { outcome: 'respawned', cause: 'starvation', respawns: 3, respawnsLeft: 0, player: 'Steve' } })
+    expect(none).toMatch(/last comeback this session/)
+  })
+
+  it('final: says why she is not coming back, cap or bad spot', () => {
+    const cap = eventAddendum('sei:death', { ...base, detail: { outcome: 'final', reason: 'cap', cause: 'freezing', respawns: 3, respawnsLeft: 0, player: 'Steve' } })
+    expect(cap).toMatch(/not coming back this session: you already came back 3 times, which is the limit/)
+    expect(cap).toMatch(/goodbye to Steve/)
+    const bad = eventAddendum('sei:death', { ...base, detail: { outcome: 'final', reason: 'bad_spot', cause: null, respawns: 2, player: null } })
+    expect(bad).toMatch(/twice in a row, so this spot is too dangerous/)
+    expect(bad).toMatch(/the last thing that hit you was Spider/)
+    expect(bad).toMatch(/goodbye to the player/)
+    for (const t of [cap, bad]) {
+      expect(t).not.toMatch(/\u2014/)
+      expect(t).not.toMatch(/\{\w+\}/)
+    }
+  })
+})

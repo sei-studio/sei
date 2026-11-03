@@ -68,6 +68,11 @@ export type ErrorClass =
   | 'DST_SPAWN_FAILED'
   | 'DST_PORT_IN_USE'
   | 'DST_BODY_DIED'
+  // 261104: a dead survivor is respawned beside the host, up to 3 times a
+  // session. These end it: the comebacks are used up, or she died right
+  // after coming back twice in a row (the spot keeps killing her).
+  | 'DST_DIED_TOO_OFTEN'
+  | 'DST_DANGEROUS_SPOT'
   // 260909: the helper runs ONE body per world. A second character's summon
   // used to replace the first (and, through a link-reset race, strand a
   // brainless survivor), so the supervisor refuses it and the launch panel
@@ -139,6 +144,8 @@ export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'DST_SPAWN_FAILED',
   'DST_PORT_IN_USE',
   'DST_BODY_DIED',
+  'DST_DIED_TOO_OFTEN',
+  'DST_DANGEROUS_SPOT',
   'DST_ONE_COMPANION',
   'STARDEW_FARMHAND_NO_MOD',
   'SMAPI_INSTALL_FAILED',

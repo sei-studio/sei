@@ -1,6 +1,6 @@
 // Game-adapters M2 (260908): the DST runtime against the fake mod
 // (scripts/fake-dst-mod.mjs) — connect, summon timeout, poll hold,
-// heartbeat loss, death, stop. No Electron, no game.
+// heartbeat loss, death + respawn (261104), stop. No Electron, no game.
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { createRuntime, createDstLink, adapterConfigFrom, botUsernameFor, checkJoinTarget } from './runtime.js'
 import { createFakeMod, sleep } from '../../../../scripts/fake-dst-mod.mjs'
@@ -29,7 +29,7 @@ function hooks(extra = {}) {
     logger: quiet,
     summonDeadlineAt: Date.now() + 30_000,
     createBrain: vi.fn(async (adapter) => { h.adapter = adapter; adapter.attach(h.handlers); return brain }),
-    handlers: { onChat: vi.fn(), onAttacked: vi.fn(), onDeath: vi.fn(), onSpawn: vi.fn(), onPlayerJoined: vi.fn(), onPlayerLeft: vi.fn() },
+    handlers: { onChat: vi.fn(), onAttacked: vi.fn(), onDying: vi.fn(), onDeath: vi.fn(), onSpawn: vi.fn(), onPlayerJoined: vi.fn(), onPlayerLeft: vi.fn() },
     onBrainReady: vi.fn(), onBrainLost: vi.fn(), onConnected: vi.fn(), onDisconnected: vi.fn(), onError: vi.fn(),
     onDashboard: vi.fn(), emitVisionCapability: vi.fn(), postPortMessage: vi.fn(),
     brain,
@@ -146,22 +146,123 @@ describe('createRuntime + fake mod', () => {
     expect(h.brain.stop).toHaveBeenCalled()
   })
 
-  it('a death gives the brain a turn, then ends the session as DST_BODY_DIED', async () => {
+  it('a death respawns the body beside the host under a new token, then gives the brain its death turn', async () => {
     const h = hooks()
-    const rt = await createRuntime(dstConfig({ death_grace_ms: 400 }), h)
+    const rt = await createRuntime(dstConfig({ respawn_delay_ms: 50, death_grace_ms: 200 }), h)
     cleanup.push(() => rt.stop())
-    const { port, token } = h.postPortMessage.mock.calls[0][0]
-    const mod = createFakeMod({ botPort: port, token })
-    cleanup.push(() => mod.stop())
-    await mod.start()
-    await waitFor(() => h.onConnected.mock.calls.length === 1)
-    await mod.event('death', { x: 1, z: 2 })
+    const { mod } = await bringLive(h)
+    await mod.event('death', { x: 1, z: 2, cause: 'darkness' })
+    await waitFor(() => h.handlers.onDying.mock.calls.length === 1)
+    // No death turn yet: she is coming back.
+    expect(h.handlers.onDeath).not.toHaveBeenCalled()
+    expect(h.postPortMessage).toHaveBeenCalledWith({ type: 'dst-lives', respawns: 0, deaths: 1, lastDeathCause: 'darkness' })
+
+    // The corpse is despawned, then main is asked for a fresh body.
+    const offer = await nextListen(h, 2)
+    expect(mod.received.some((c) => c.kind === 'despawn')).toBe(true)
+    expect(offer).toMatchObject({ type: 'dst-listen', respawn: true, nearUserid: 'KU_fake' })
+    expect(offer.token).not.toBe(h.postPortMessage.mock.calls[0][0].token)
+    expect(offer.port).toBe(h.postPortMessage.mock.calls[0][0].port)
+    await mod.stop()
+    // The old token is dead.
+    const stale = await fetch(`http://127.0.0.1:${offer.port}/cmd?since=0&t=${h.postPortMessage.mock.calls[0][0].token}`)
+    expect(stale.status).toBe(401)
+
+    rt.handlePortMessage({ type: 'dst-respawn-offer', ok: true, nearUserid: 'KU_fake', nearName: 'Steve' })
+    const mod2 = createFakeMod({ botPort: offer.port, token: offer.token })
+    cleanup.push(() => mod2.stop())
+    await mod2.start()
     await waitFor(() => h.handlers.onDeath.mock.calls.length === 1)
-    expect(h.handlers.onDeath.mock.calls[0][0]).toEqual({ pos: { x: 1, y: 0, z: 2 } })
+    const evt = h.handlers.onDeath.mock.calls[0][0]
+    expect(evt.pos).toEqual({ x: 1, y: 0, z: 2 })
+    expect(evt.deathText).toBe('killed by Charlie in the darkness')
+    expect(evt.detail).toMatchObject({ outcome: 'respawned', cause: 'Charlie in the darkness', respawns: 1, respawnsLeft: 2, player: 'Steve' })
+    // Same brain, no second bring-up, no session end.
+    expect(h.createBrain).toHaveBeenCalledTimes(1)
+    expect(h.onConnected).toHaveBeenCalledTimes(1)
     expect(h.onError).not.toHaveBeenCalled()
+    expect(rt.lives).toEqual({ respawns: 1, deaths: 1, lastDeathCause: 'darkness' })
+    expect(h.postPortMessage).toHaveBeenCalledWith({ type: 'dst-lives', respawns: 1, deaths: 1, lastDeathCause: 'darkness' })
+
+    // The new body takes commands on the new link.
+    await waitFor(() => rt.link.state.hasFull)
+    const r = await rt.adapter.executeAction('gather', { item: 'twigs', count: 1 }, { signal: new AbortController().signal })
+    expect(r).toBe('gathered 1 twigs')
+  })
+
+  it('ends as DST_BODY_DIED when main finds no host to respawn beside', async () => {
+    const h = hooks()
+    const rt = await createRuntime(dstConfig({ respawn_delay_ms: 20 }), h)
+    cleanup.push(() => rt.stop())
+    const { mod } = await bringLive(h)
+    await mod.event('death', { x: 1, z: 2, cause: 'spider', afflicter: 'Spider' })
+    await nextListen(h, 2)
+    rt.handlePortMessage({ type: 'dst-respawn-offer', ok: false, reason: 'no_host' })
     await waitFor(() => h.onError.mock.calls.length === 1)
     expect(h.onError.mock.calls[0][0].error).toBe('DST_BODY_DIED')
+    expect(h.onDisconnected).toHaveBeenCalledWith({ reason: 'died', willRetry: false })
+    expect(h.brain.stop).toHaveBeenCalled()
+  })
+
+  it('ends as DST_BODY_DIED when no new body appears in time', async () => {
+    const h = hooks()
+    const rt = await createRuntime(dstConfig({ respawn_delay_ms: 20, respawn_timeout_ms: 300 }), h)
+    cleanup.push(() => rt.stop())
+    const { mod } = await bringLive(h)
+    await mod.event('death', { x: 1, z: 2 })
+    await nextListen(h, 2)
+    await mod.stop()
+    await waitFor(() => h.onError.mock.calls.length === 1)
+    expect(h.onError.mock.calls[0][0].error).toBe('DST_BODY_DIED')
+  })
+
+  it('after the cap the next death gets a final death turn and ends as DST_DIED_TOO_OFTEN', async () => {
+    const h = hooks()
+    const rt = await createRuntime(dstConfig({ respawn_delay_ms: 20, death_grace_ms: 150, max_respawns: 1, quick_death_ms: 0 }), h)
+    cleanup.push(() => rt.stop())
+    let { mod } = await bringLive(h)
+    await mod.event('death', { x: 1, z: 2, cause: 'hunger' })
+    mod = await acceptRespawn(rt, h, mod, 2)
+    await waitFor(() => h.handlers.onDeath.mock.calls.length === 1)
+    await mod.event('death', { x: 5, z: 6, cause: 'cold' })
+    await waitFor(() => h.handlers.onDeath.mock.calls.length === 2)
+    expect(h.handlers.onDeath.mock.calls[1][0].detail).toMatchObject({ outcome: 'final', reason: 'cap', cause: 'freezing', respawns: 1, respawnsLeft: 0 })
+    // No third dst-listen: she is not coming back.
+    expect(h.postPortMessage.mock.calls.filter((c) => c[0].type === 'dst-listen')).toHaveLength(2)
+    await waitFor(() => h.onError.mock.calls.length === 1)
+    expect(h.onError.mock.calls[0][0].error).toBe('DST_DIED_TOO_OFTEN')
+    expect(h.onError.mock.calls[0][0].message).toMatch(/died 2 times this session and came back 1 times/)
     expect(mod.received.some((c) => c.kind === 'despawn')).toBe(true)
+    expect(h.postPortMessage).toHaveBeenCalledWith({ type: 'dst-lives', respawns: 1, deaths: 2, lastDeathCause: 'cold' })
+  })
+
+  it('two deaths in a row right after coming back end the session as DST_DANGEROUS_SPOT', async () => {
+    const h = hooks()
+    const rt = await createRuntime(dstConfig({ respawn_delay_ms: 20, death_grace_ms: 150, quick_death_ms: 60_000 }), h)
+    cleanup.push(() => rt.stop())
+    let { mod } = await bringLive(h)
+    await mod.event('death', { x: 1, z: 2, cause: 'darkness' })   // first summon: not quick
+    mod = await acceptRespawn(rt, h, mod, 2)
+    await mod.event('death', { x: 1, z: 2, cause: 'darkness' })   // quick #1: still respawns
+    mod = await acceptRespawn(rt, h, mod, 3)
+    await mod.event('death', { x: 1, z: 2, cause: 'darkness' })   // quick #2: bad spot
+    await waitFor(() => h.onError.mock.calls.length === 1)
+    expect(h.onError.mock.calls[0][0].error).toBe('DST_DANGEROUS_SPOT')
+    const last = h.handlers.onDeath.mock.calls.at(-1)[0]
+    expect(last.detail).toMatchObject({ outcome: 'final', reason: 'bad_spot' })
+    expect(rt.lives.respawns).toBe(2)
+  })
+
+  it('a stop while waiting for the new body cancels the offer in main', async () => {
+    const h = hooks()
+    const rt = await createRuntime(dstConfig({ respawn_delay_ms: 20 }), h)
+    const { mod } = await bringLive(h)
+    await mod.event('death', { x: 1, z: 2 })
+    await nextListen(h, 2)
+    await mod.stop()
+    await rt.stop()
+    expect(h.postPortMessage).toHaveBeenCalledWith({ type: 'dst-offer-cancel' })
+    expect(h.onError).not.toHaveBeenCalled()
   })
 
   it('a pending command is cancelled by the abort signal and a stop is sent to the body', async () => {
@@ -225,6 +326,36 @@ describe('the /cmd long-poll', () => {
     expect(second).toEqual([])
   })
 })
+
+/** Start a fake mod on the runtime's first dst-listen and wait for the brain. */
+async function bringLive(h) {
+  const { port, token } = h.postPortMessage.mock.calls[0][0]
+  const mod = createFakeMod({ botPort: port, token })
+  cleanup.push(() => mod.stop())
+  await mod.start()
+  await waitFor(() => h.onConnected.mock.calls.length === 1)
+  return { mod }
+}
+
+/** The n-th dst-listen the runtime posted (1-based), once it exists. */
+async function nextListen(h, n) {
+  const listens = () => h.postPortMessage.mock.calls.map((c) => c[0]).filter((m) => m.type === 'dst-listen')
+  await waitFor(() => listens().length >= n)
+  return listens()[n - 1]
+}
+
+/** Answer the n-th dst-listen (a respawn) the way main + the mod would. */
+async function acceptRespawn(rt, h, oldMod, n) {
+  const offer = await nextListen(h, n)
+  await oldMod.stop()
+  rt.handlePortMessage({ type: 'dst-respawn-offer', ok: true, nearUserid: 'KU_fake', nearName: 'Steve' })
+  const mod = createFakeMod({ botPort: offer.port, token: offer.token })
+  cleanup.push(() => mod.stop())
+  await mod.start()
+  await waitFor(() => rt.lives.respawns === n - 1)
+  await waitFor(() => rt.link.state.hasFull)
+  return mod
+}
 
 async function waitFor(pred, timeoutMs = 4_000, stepMs = 20) {
   const t0 = Date.now()

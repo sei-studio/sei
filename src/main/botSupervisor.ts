@@ -40,6 +40,7 @@ import { effectiveMcUsername, type Character } from '../shared/characterSchema';
 import type { CreditWallContext } from './creditWall';
 import { isGameId, type GameId } from '../shared/gameIpc';
 import { getGameModule, type GameModule } from './games';
+import type { DstGameModule, DstOfferResult } from './games/dontstarve';
 import { clampChatLanguage } from '../shared/chatLanguage';
 import { buildLlmInitSection, type LlmInitSection } from './llmInitSection';
 import { botProxySnapshot, SYSTEM_PROXY_ENV } from './systemProxy';
@@ -123,6 +124,9 @@ function summonCancelledError(): Error {
 }
 
 /** Per-attempt cancel handle, owned by summon() and armed by _summon. */
+/** The slice of the DST module the port handlers use (261104). */
+type DstOfferModule = Pick<DstGameModule, 'setSummonOffer'>;
+
 interface SummonControl {
   cancelled: boolean;
   /** Set once the child is forked: kill it and reject the summon now. */
@@ -394,6 +398,11 @@ export interface BotSupervisorOptions {
    * validates. Optional — undefined no-ops.
    */
   onActionStats?: (characterId: string, stats: unknown) => void;
+  /**
+   * 261104: the DST bot's lives counters ({type:'dst-lives'} after every
+   * death and respawn). Forwarded RAW; main validates. Optional.
+   */
+  onDstLives?: (characterId: string, raw: unknown) => void;
   /**
    * 261011: the session's recent conversation ({type:'session-digest'} port
    * message, every ~15s while changing plus once before any terminal
@@ -1593,16 +1602,41 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // can offer the summon to the mod on the next heartbeat. Not a
       // BotStatus event — return before lifecycleToStatus.
       if ((data as { type?: string }).type === 'dst-listen') {
+        const replyRespawn = (r: DstOfferResult): void => {
+          try { port1.postMessage({ type: 'dst-respawn-offer', ...r }); } catch { /* port gone: the bot's own deadline ends it */ }
+        };
         void (async () => {
+          let respawn = false;
           try {
             const { DstListenMessageSchema } = await import('../shared/dstIpc');
             const msg = DstListenMessageSchema.parse(data);
-            const mod = getGameModule('dontstarve') as { setSummonOffer?: (id: string, l: { port: number; token: string }) => Promise<void> } | null;
-            await mod?.setSummonOffer?.(characterId, { port: msg.port, token: msg.token });
+            respawn = msg.respawn === true;
+            const mod = getGameModule('dontstarve') as DstOfferModule | null;
+            const res = await mod?.setSummonOffer?.(characterId, {
+              port: msg.port,
+              token: msg.token,
+              respawn: msg.respawn,
+              nearUserid: msg.nearUserid,
+            });
+            // 261104: a respawn waits on this answer (no host = the session
+            // ends as DST_BODY_DIED instead of a body at the portal).
+            if (respawn) replyRespawn(res ?? { ok: false, reason: 'no_world' });
           } catch (err) {
             logger.warn(`dst-listen handoff failed for ${characterId}: ${(err as Error).message}`);
+            if (respawn) replyRespawn({ ok: false, reason: 'no_world' });
           }
         })();
+        return;
+      }
+      // 261104: the bot stopped while a respawn offer was still queued.
+      if ((data as { type?: string }).type === 'dst-offer-cancel') {
+        const mod = getGameModule('dontstarve') as DstOfferModule | null;
+        void mod?.setSummonOffer?.(characterId, null)?.catch(() => undefined);
+        return;
+      }
+      // 261104: DST deaths and respawns, for bot_session_ended. Not a status.
+      if ((data as { type?: string }).type === 'dst-lives') {
+        try { opts.onDstLives?.(characterId, data); } catch { /* telemetry never breaks the session */ }
         return;
       }
       // 260926: boot-phase snapshot (src/bot/bootTiming.js). Not a lifecycle

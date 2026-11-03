@@ -7,14 +7,17 @@
 //   GAME_NOT_ANSWERING:    the world is open but the mod never contacted the runtime
 //   DST_SPAWN_FAILED:      the mod answered but could not spawn the survivor
 //   DST_PORT_IN_USE:       the runtime could not bind a loopback port
-//   DST_BODY_DIED:         the survivor died (no client can revive an ownerless body)
+//   DST_BODY_DIED:         the survivor died and could not be brought back
+//                          (no host to respawn beside, or no new body in time)
+//   DST_DIED_TOO_OFTEN:    died again after the session's respawns were used (261104)
+//   DST_DANGEROUS_SPOT:    died right after a respawn, twice in a row (261104)
 // Anything else is a silent stall -> BOT_START_TIMEOUT.
 
-const KNOWN = ['GAME_WORLD_NOT_OPEN', 'GAME_NOT_ANSWERING', 'DST_SPAWN_FAILED', 'DST_PORT_IN_USE', 'DST_BODY_DIED']
+const KNOWN = ['GAME_WORLD_NOT_OPEN', 'GAME_NOT_ANSWERING', 'DST_SPAWN_FAILED', 'DST_PORT_IN_USE', 'DST_BODY_DIED', 'DST_DIED_TOO_OFTEN', 'DST_DANGEROUS_SPOT']
 
 /**
  * @param {string} message
- * @returns {'GAME_WORLD_NOT_OPEN'|'GAME_NOT_ANSWERING'|'DST_SPAWN_FAILED'|'DST_PORT_IN_USE'|'DST_BODY_DIED'|'BOT_START_TIMEOUT'}
+ * @returns {'GAME_WORLD_NOT_OPEN'|'GAME_NOT_ANSWERING'|'DST_SPAWN_FAILED'|'DST_PORT_IN_USE'|'DST_BODY_DIED'|'DST_DIED_TOO_OFTEN'|'DST_DANGEROUS_SPOT'|'BOT_START_TIMEOUT'}
  */
 export function classifyConnectError(message) {
   const m = String(message ?? '')
