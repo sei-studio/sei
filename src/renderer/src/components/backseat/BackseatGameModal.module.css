@@ -38,8 +38,7 @@
 .panel {
   /* The grid scrolls; the title, pill and skip stay put. */
   overflow: hidden;
-  padding: 22px 22px 14px;
-  gap: 14px;
+  padding: var(--pad-modal) var(--pad-modal) var(--gap-group);
   transition: opacity 180ms var(--ease), transform 180ms var(--ease);
 }
 

@@ -4,7 +4,7 @@
 .framing {
   font-size: 14px;
   color: var(--muted);
-  margin: 0 0 var(--space-md) 0;
+  margin: 0;
 }
 
 .form {

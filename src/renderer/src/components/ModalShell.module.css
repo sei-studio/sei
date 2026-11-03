@@ -12,17 +12,20 @@
 }
 
 .panel {
-  max-width: calc(100vw - 48px);
-  max-height: calc(100vh - 64px);
+  max-width: calc(100vw - 2 * var(--space-lg));
+  max-height: calc(100vh - 2 * var(--space-xl));
   overflow-y: auto;
   background: var(--bg2);
   /* Borderless popup (260729): the shadow alone lifts the panel off the
      scrim; the hairline frame read as clutter on every dialog. */
   box-shadow: var(--shadow-pop);
-  padding: 20px;
+  /* 261103 spacing pass: one inset and one rhythm for every dialog. The
+     panel's gap is the group gap; a modal's children carry no outer
+     margins, they group their own lines with a tighter inner gap. */
+  padding: var(--pad-modal);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--gap-group);
   animation: fade-up 280ms var(--ease-pop);
 }
 
@@ -39,6 +42,8 @@
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: 8px;
-  padding-top: 4px;
+  gap: var(--gap-control);
+  /* group gap + this = the panel inset, so the actions sit as far from the
+     content as the content sits from the panel's edge. */
+  padding-top: calc(var(--pad-modal) - var(--gap-group));
 }

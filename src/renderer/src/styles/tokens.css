@@ -36,6 +36,38 @@
   --space-2xl: 40px;
   --space-3xl: 56px;
 
+  /* ── Spacing roles (261103 spacing pass) ─────────────────────
+   * Pick the ROLE, not a number. Distance says what belongs together:
+   * each step up separates more, so two neighbours never sit closer than
+   * the things inside either of them.
+   *
+   *   --gap-tight    4   a line and its own hint/caption, label + field
+   *   --gap-control  8   sibling controls: a button row or stack, chips
+   *   --gap-stack   12   items of one list: rows, fields, cards in a row
+   *   --gap-group   16   groups inside one panel, modal or card
+   *   --gap-section 32   sections of a page (settings groups, Usage/Plan)
+   *
+   *   --pad-control 12   inside small boxes: callouts, list rows, menus
+   *   --pad-card    16   inside cards and tiles
+   *   --pad-modal   24   inside every ModalShell panel (and its footer)
+   *   --page-top    24   top inset of a scrolling page
+   *   --page-gutter 32   side inset of a page's content column
+   *
+   * Rules: the parent owns the space (flex/grid `gap`), children carry no
+   * outer margins. Literal px only for optical nudges under 4px, hairlines,
+   * and control heights. Vertical padding inside a button or field is
+   * sizing, not rhythm, and stays where it hits the control's height. */
+  --gap-tight: var(--space-xs);
+  --gap-control: var(--space-sm);
+  --gap-stack: var(--space-md);
+  --gap-group: var(--space-md-plus);
+  --gap-section: var(--space-xl);
+  --pad-control: var(--space-md);
+  --pad-card: var(--space-md-plus);
+  --pad-modal: var(--space-lg);
+  --page-top: var(--space-lg);
+  --page-gutter: var(--space-xl);
+
   /* ── Easing + motion (mockup: hud.jsx --ease) ─────────────── */
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
   --ease-pop: cubic-bezier(0.2, 0.7, 0.2, 1);

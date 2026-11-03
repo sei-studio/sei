@@ -8,13 +8,13 @@
   font-family: var(--sans);
   font-size: 14px;
   color: var(--muted);
-  margin: 0 0 14px;
+  margin: 0;
 }
 
 .packs {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  gap: var(--gap-stack);
 }
 
 /* Solid surface card, mirrors CreditsScreen .planCard (260725): var(--bg4)
@@ -24,10 +24,10 @@
   min-width: 0;
   background: var(--bg4);
   border: 1px solid var(--border);
-  padding: 16px 14px 14px;
+  padding: var(--pad-card);
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--gap-tight);
 }
 
 .packPrice {
@@ -46,5 +46,5 @@
 
 .packAction {
   margin-top: auto;
-  padding-top: 14px;
+  padding-top: var(--gap-stack);
 }
