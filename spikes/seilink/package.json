@@ -1,0 +1,17 @@
+{
+  "name": "seilink-spike",
+  "version": "0.0.0",
+  "private": true,
+  "description": "SeiLink technical spike: Electron window behind the desktop icons (Windows + macOS). No product UI.",
+  "main": "app/main.js",
+  "license": "UNLICENSED",
+  "scripts": {
+    "build:addon": "node scripts/build-addon.js",
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "42.0.0",
+    "node-addon-api": "8.5.0",
+    "node-gyp": "13.1.0"
+  }
+}

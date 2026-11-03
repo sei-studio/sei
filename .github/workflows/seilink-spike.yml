@@ -1,0 +1,85 @@
+name: SeiLink Spike
+
+# Technical spike: can an Electron window live behind the desktop icons?
+# Runs only on the spike branch. Self-contained under spikes/seilink/. No secrets, no signing.
+on:
+  push:
+    branches: ['exp/seilink-spike']
+    paths:
+      - 'spikes/seilink/**'
+      - '.github/workflows/seilink-spike.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: seilink-spike-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  spike:
+    name: spike (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025, macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+        working-directory: spikes/seilink
+    steps:
+      - name: Checkout (spike dir only)
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            spikes/seilink
+            .github/workflows/seilink-spike.yml
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Build native addon
+        run: npm run build:addon
+
+      - name: Put a few icons on the desktop (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $d = [Environment]::GetFolderPath('Desktop')
+          Write-Output "Desktop: $d"
+          1..6 | ForEach-Object { Set-Content -Path (Join-Path $d "SeiLink test $_.txt") -Value "icon $_" }
+          Get-ChildItem $d | Select-Object -First 20 | Format-Table Name
+          Get-Process explorer -ErrorAction SilentlyContinue | Format-Table Id, SessionId, StartTime
+          Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::AllScreens | Format-List
+          (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion') | Select-Object ProductName, DisplayVersion, CurrentBuild, UBR | Format-List
+          Start-Sleep -Seconds 3
+
+      - name: Put a few icons on the desktop (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          for i in 1 2 3 4 5 6; do echo "icon $i" > "$HOME/Desktop/SeiLink test $i.txt"; done
+          ls -la "$HOME/Desktop" | head -20
+          sw_vers
+          defaults read com.apple.finder CreateDesktop 2>/dev/null || echo "CreateDesktop unset (default true)"
+          defaults read com.apple.WindowManager EnableStandardClickToShowDesktop 2>/dev/null || echo "EnableStandardClickToShowDesktop unset (default)"
+          pgrep -lx Finder || echo "Finder not running"
+          system_profiler SPDisplaysDataType | grep -E "Resolution|Display Type|Chipset" || true
+          sleep 3
+
+      - name: Run spike variants
+        run: bash scripts/ci-run.sh
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seilink-${{ matrix.os }}
+          path: spikes/seilink/out/
+          retention-days: 14
