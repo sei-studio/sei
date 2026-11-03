@@ -1029,13 +1029,26 @@ export const NUDGES = {
   // above had her hand over the logs they had called off and keep the coal
   // they asked for (errands-02, 11-02 scorecard). asks: [{ line, items:
   // [{ item, n }] }], oldest first.
-  arrivedCarrying: ({ who, asks }) => `You are next to ${who || 'the player'} now. You are carrying ${carriedList(asks)}. Anything there they still want reaches them only through give, and anything they called off stays with you.`,
+  // 261103 (pass 38): `newer`: they asked for something else since (a line
+  // she answered during the walk without starting it, or a player task set
+  // after the ask and not started), so the hand-over goes first. In
+  // errands-04-B (pass-37 compare) the arrival turn also carried the log
+  // order from the walk ("start it now") and its not-started task line, and
+  // she went for logs with the coal still in her bag. Not on every arrival:
+  // "give it before anything new" there had her hand over the cobblestone
+  // she got while answering "hows it going" (probe come_here_busy 2/5).
+  arrivedCarrying: ({ who, asks, newer = false }) => `You are next to ${who || 'the player'} now. You are carrying ${carriedList(asks)}. Anything there they still want reaches them only through give, and anything they called off stays with you.${newer ? ' If they still want it, give it before you start anything they asked for since.' : ''}`,
 
   // 261102 (quality pass 37): a snapshot line while she carries what she set
   // off to hand over (a walk or follow toward the player with it in her bag).
   // In errands-03 she followed the player up out of a pit with the coal, and
   // the next quiet turn went to crafting a table she had no wood for.
-  deliveryNote: ({ who, asks }) => `hand-over: you set off toward ${who || 'the player'} carrying ${carriedList(asks)}. It reaches them only through give, which walks to them first. If they called it off, keep it.`,
+  // 261103 (pass 38): `answered`: the walk answers a newer line of theirs
+  // that got only the walk, which may be "come here" after small talk she
+  // answered with her own gather, so it names both outcomes.
+  deliveryNote: ({ who, asks, answered = false }) => answered
+    ? `hand-over: you are walking to ${who || 'the player'} carrying ${carriedList(asks)}. Anything there they still want reaches them only through give, which walks to them first. If they called it off, keep it.`
+    : `hand-over: you set off toward ${who || 'the player'} carrying ${carriedList(asks)}. It reaches them only through give, which walks to them first. If they called it off, keep it.`,
 
   // 261018 (quality pass 15): the line the snapshot carries after she
   // stopped (stop or unfollow, nothing new started) in answer to a player
