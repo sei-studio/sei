@@ -104,6 +104,15 @@ const CHAT = [
   ['companion', "already in my bag. 64 spruce stairs and a stack of lanterns for the dock, because i'm thinking ahead for once", 5.8],
 ] as const;
 
+const VOICES = [
+  ['v-sarah', 'Sarah', 'female', 'young', 'bright and playful, American'],
+  ['v-lily', 'Lily', 'female', 'adult', 'warm and calm, British'],
+  ['v-aria', 'Aria', 'female', 'young', 'soft and dreamy'],
+  ['v-roger', 'Roger', 'male', 'adult', 'laid back, casual'],
+  ['v-george', 'George', 'male', 'elder', 'deep storyteller, British'],
+  ['v-river', 'River', 'neutral', 'adult', 'relaxed and even'],
+].map(([id, label, gender, age, vibe]) => ({ id, label, gender, age, tags: [], vibe }));
+
 function seed(): void {
   if (params.get('lang') === 'zh') useLangStore.getState().setLang('zh');
   const theme = params.get('theme');
@@ -121,6 +130,9 @@ function seed(): void {
     getConfig: async () => ({ preferred_name: 'Robin', ai_backend_kind: 'cloud-proxy', ui_language: params.get('lang') ?? 'en' }),
     getCharacter: async (id: string) => CHARACTERS.find((c) => c.id === id) ?? null,
     listCharacters: async () => CHARACTERS,
+    getSkinServerUrl: async () => ({ baseUrl: 'http://127.0.0.1:1' }),
+    voiceListVoices: async () => VOICES,
+    voiceListOwnVoices: async () => ({ status: 'unavailable', voices: [] }),
   });
   useDataStore.setState({
     characters: CHARACTERS as unknown as ReturnType<typeof useDataStore.getState>['characters'],
