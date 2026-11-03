@@ -218,8 +218,11 @@ async function errandRun(c: Ctx, line: string, prefab: string, need: number, max
   let doneMs: number | null = null, asked = false, askAt = 0;
   while (Date.now() - t < maxMs) {
     const p = await c.tick();
-    if (midLine && !asked && Date.now() - t > 30_000) { c.say(midLine); asked = true; askAt = Date.now(); }
-    if (p && delivered(p, prefab) >= need) { doneMs = Date.now() - t; break; }
+    if (doneMs == null && p && delivered(p, prefab) >= need) doneMs = Date.now() - t;
+    // Ask at 30 s, or as soon as she finishes if that is sooner, then give her
+    // 15 s to answer before ending the rep.
+    if (midLine && !asked && (Date.now() - t > 30_000 || doneMs != null)) { c.say(midLine); asked = true; askAt = Date.now(); }
+    if (doneMs != null && (!midLine || Date.now() - askAt > 16_000)) break;
     await sleep(1000);
   }
   const last = c.probes[c.probes.length - 1];
@@ -298,7 +301,10 @@ const SCENARIOS: Record<string, Scenario> = {
       await sleep(4000);
       const r = await errandRun(c, 'Sui, can you get me 10 twigs?', 'twigs', 10, 180_000, "how's it going?");
       const askAt = Number(r.askAt) || 0;
-      const reply = askAt ? c.bot.events.find((e) => e.kind === 'chat_out' && e.t >= askAt && e.t <= askAt + 30_000)?.text ?? null : null;
+      // Her answer often arrives as several short chat lines ("there" / "10 twigs
+      // steve"), so judge every line she says in the 15 s after the question.
+      const lines = askAt ? c.bot.events.filter((e) => e.kind === 'chat_out' && e.t >= askAt && e.t <= askAt + 15_000).map((e) => String(e.text)) : [];
+      const reply = lines.length ? lines.join(' / ') : null;
       const judge = askAt ? await judgeReply("how's it going?", reply) : null;
       return { ...r, pass: !!r.pass && judge?.ok === true, errand_pass: r.pass, reply, judge };
     },
@@ -322,10 +328,10 @@ const SCENARIOS: Record<string, Scenario> = {
 // ── judge (errand_chat only): one small Haiku call ─────────────────────
 let judgeUsd = 0;
 async function judgeReply(question: string, reply: string | null) {
-  if (!reply) return { ok: false, why: 'no reply within 30 s' };
+  if (!reply) return { ok: false, why: 'no reply within 15 s' };
   const { default: Anthropic } = await import(path.join(REPO, 'node_modules', '@anthropic-ai', 'sdk', 'index.js')).catch(() => import('@anthropic-ai/sdk'));
   const client = new Anthropic({ apiKey: readFileSync(KEY_FILE, 'utf8').trim() });
-  const prompt = `A player in Don't Starve Together asked their AI companion to fetch 10 twigs. While she was out picking saplings, the player typed: "${question}"\nHer reply in chat was: "${reply}"\n\nDoes her reply answer the question in a way that fits what she is doing (fetching twigs)? Reply with YES or NO on the first line, then one short sentence.`;
+  const prompt = `A player in Don't Starve Together asked their AI companion to fetch 10 twigs. While she was out picking saplings, the player typed: "${question}"\nHer chat lines in the next 15 seconds, in order, were: "${reply}"\n\nDo her lines answer the question sensibly given what she is doing (fetching twigs, or having just finished)? A short status update about the task counts as an answer. Reply with YES or NO on the first line, then one short sentence.`;
   const res = await client.messages.create({ model: 'claude-haiku-5-5', max_tokens: 60, thinking: { type: 'disabled' }, messages: [{ role: 'user', content: prompt }] } as never) as any;
   judgeUsd += usd(res.usage);
   const text = (res.content ?? []).map((b: any) => b.text ?? '').join('').trim();
