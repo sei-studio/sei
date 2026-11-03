@@ -69,65 +69,111 @@ bool Contains(const RECT& outer, const RECT& in, int tol) {
          in.bottom >= outer.bottom - tol;
 }
 
+std::string ExeOf(DWORD pid) {
+  HANDLE ph = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+  if (!ph) return "";
+  wchar_t buf[MAX_PATH];
+  DWORD n = MAX_PATH;
+  std::string out;
+  if (QueryFullProcessImageNameW(ph, 0, buf, &n)) {
+    std::wstring w(buf, n);
+    size_t k = w.find_last_of(L"\\/");
+    if (k != std::wstring::npos) w = w.substr(k + 1);
+    int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
+    out.resize(len);
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &out[0], len, nullptr, nullptr);
+  }
+  CloseHandle(ph);
+  return out;
+}
+
+struct CoverCtx {
+  Cover* cv;
+  HMONITOR mon;
+  MONITORINFO mi;
+  DWORD self;
+  std::vector<std::string>* all;  // debug: every window that passes the rule (no early stop)
+};
+
 // Any visible, uncloaked, non-minimized window that is maximized on the room's monitor or covers
 // the whole monitor hides the wallpaper, whatever its z-order (the room is the bottom layer).
-Cover ComputeCover() {
+// Returns the kind, or nullptr when the window does not cover the room.
+const char* CoverKind(HWND t, CoverCtx* c, RECT* outR) {
+  if (!IsWindowVisible(t) || IsIconic(t)) return nullptr;
+  LONG_PTR ex = GetWindowLongPtrW(t, GWL_EXSTYLE);
+  if (ex & (WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW)) return nullptr;
+  BOOL cloaked = FALSE;
+  DwmGetWindowAttribute(t, DWMWA_CLOAKED, &cloaked, sizeof(cloaked));
+  if (cloaked) return nullptr;
+  std::string cls = ClassOf(t);
+  if (cls == "Progman" || cls == "WorkerW" || cls == "Shell_TrayWnd" || cls == "Shell_SecondaryTrayWnd")
+    return nullptr;
+  // Shell-owned monitor-sized windows that are "visible" and uncloaked but draw nothing.
+  // Measured on CI (round 2, run 1): ApplicationManager_ImmersiveShellWindow reads as a
+  // fullscreen window from the first check on both Windows images.
+  static const char* kInvisibleShell[] = {"ApplicationManager_ImmersiveShellWindow", "EdgeUiInputTopWndClass",
+                                          "EdgeUiInputWndClass", "NativeHWNDHost", "Internet Explorer_Hidden",
+                                          "ApplicationManager_DesktopShellWindow", "ForegroundStaging",
+                                          "MultitaskingViewFrame", "XamlExplorerHostIslandWindow"};
+  for (const char* k : kInvisibleShell)
+    if (cls == k) {
+      c->cv->skippedShell++;
+      return nullptr;
+    }
+  // The room host's own windows never cover the room.
+  DWORD pid = 0;
+  GetWindowThreadProcessId(t, &pid);
+  if (pid == c->self) return nullptr;
+  if (ex & WS_EX_LAYERED) {
+    BYTE alpha = 255;
+    DWORD flags = 0;
+    if (GetLayeredWindowAttributes(t, nullptr, &alpha, &flags) && (flags & LWA_ALPHA) && alpha < 16) return nullptr;
+  }
+  if (MonitorFromWindow(t, MONITOR_DEFAULTTONULL) != c->mon) return nullptr;
+  RECT r{};
+  if (FAILED(DwmGetWindowAttribute(t, DWMWA_EXTENDED_FRAME_BOUNDS, &r, sizeof(r)))) GetWindowRect(t, &r);
+  *outR = r;
+  if (Contains(r, c->mi.rcMonitor, 2)) return "fullscreen";
+  if (IsZoomed(t) && Contains(r, c->mi.rcWork, 10)) return "maximized";
+  return nullptr;
+}
+
+Cover ComputeCover(std::vector<std::string>* all = nullptr) {
   Cover cv;
   HMONITOR mon = MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY);  // spike: primary display
   MONITORINFO mi{};
   mi.cbSize = sizeof(mi);
   GetMonitorInfoW(mon, &mi);
-  struct Ctx {
-    Cover* cv;
-    HMONITOR mon;
-    MONITORINFO mi;
-    DWORD self;
-  } ctx{&cv, mon, mi, GetCurrentProcessId()};
+  CoverCtx ctx{&cv, mon, mi, GetCurrentProcessId(), all};
   EnumWindows(
       [](HWND t, LPARAM lp) -> BOOL {
-        auto* c = (Ctx*)lp;
+        auto* c = (CoverCtx*)lp;
         c->cv->scanned++;
-        if (!IsWindowVisible(t) || IsIconic(t)) return TRUE;
-        LONG_PTR ex = GetWindowLongPtrW(t, GWL_EXSTYLE);
-        if (ex & (WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW)) return TRUE;
-        BOOL cloaked = FALSE;
-        DwmGetWindowAttribute(t, DWMWA_CLOAKED, &cloaked, sizeof(cloaked));
-        if (cloaked) return TRUE;
-        std::string cls = ClassOf(t);
-        if (cls == "Progman" || cls == "WorkerW" || cls == "Shell_TrayWnd" || cls == "Shell_SecondaryTrayWnd")
-          return TRUE;
-        // Shell-owned monitor-sized windows that are "visible" and uncloaked but draw nothing.
-        // Measured on CI (round 2, run 1): ApplicationManager_ImmersiveShellWindow reads as a
-        // fullscreen window from the first check on both Windows images.
-        static const char* kInvisibleShell[] = {"ApplicationManager_ImmersiveShellWindow", "EdgeUiInputTopWndClass",
-                                                "EdgeUiInputWndClass", "NativeHWNDHost", "Internet Explorer_Hidden",
-                                                "ApplicationManager_DesktopShellWindow", "ForegroundStaging",
-                                                "MultitaskingViewFrame", "XamlExplorerHostIslandWindow"};
-        for (const char* k : kInvisibleShell)
-          if (cls == k) {
-            c->cv->skippedShell++;
-            return TRUE;
-          }
-        if (ex & WS_EX_LAYERED) {
-          BYTE alpha = 255;
-          DWORD flags = 0;
-          if (GetLayeredWindowAttributes(t, nullptr, &alpha, &flags) && (flags & LWA_ALPHA) && alpha < 16) return TRUE;
-        }
-        if (MonitorFromWindow(t, MONITOR_DEFAULTTONULL) != c->mon) return TRUE;
         RECT r{};
-        if (FAILED(DwmGetWindowAttribute(t, DWMWA_EXTENDED_FRAME_BOUNDS, &r, sizeof(r)))) GetWindowRect(t, &r);
-        const char* kind = nullptr;
-        if (Contains(r, c->mi.rcMonitor, 2)) kind = "fullscreen";
-        else if (IsZoomed(t) && Contains(r, c->mi.rcWork, 10)) kind = "maximized";
+        const char* kind = CoverKind(t, c, &r);
         if (!kind) return TRUE;
-        c->cv->covered = true;
-        c->cv->kind = kind;
-        c->cv->cls = cls;
-        c->cv->title = TitleOf(t);
-        GetWindowThreadProcessId(t, &c->cv->pid);
-        c->cv->r = r;
-        c->cv->hwnd = t;
-        return FALSE;
+        DWORD pid = 0;
+        GetWindowThreadProcessId(t, &pid);
+        if (c->all) {
+          char b[400];
+          snprintf(b, sizeof b,
+                   "{\"hwnd\":\"%s\",\"kind\":\"%s\",\"pid\":%lu,\"style\":\"0x%lX\",\"ex\":\"0x%lX\","
+                   "\"rect\":{\"x\":%ld,\"y\":%ld,\"w\":%ld,\"h\":%ld}",
+                   Hex((uintptr_t)t).c_str(), kind, pid, (unsigned long)GetWindowLongPtrW(t, GWL_STYLE),
+                   (unsigned long)GetWindowLongPtrW(t, GWL_EXSTYLE), r.left, r.top, r.right - r.left, r.bottom - r.top);
+          c->all->push_back(std::string(b) + ",\"class\":" + Q(ClassOf(t)) + ",\"title\":" + Q(TitleOf(t)) +
+                            ",\"exe\":" + Q(ExeOf(pid)) + ",\"owner\":\"" + Hex((uintptr_t)GetWindow(t, GW_OWNER)) + "\"}");
+        }
+        if (!c->cv->covered) {
+          c->cv->covered = true;
+          c->cv->kind = kind;
+          c->cv->cls = ClassOf(t);
+          c->cv->title = TitleOf(t);
+          c->cv->pid = pid;
+          c->cv->r = r;
+          c->cv->hwnd = t;
+        }
+        return c->all ? TRUE : FALSE;
       },
       (LPARAM)&ctx);
   QUERY_USER_NOTIFICATION_STATE q{};
@@ -147,7 +193,7 @@ std::string CoverJson(const Cover& cv) {
            cv.r.bottom - cv.r.top);
   HWND fg = GetForegroundWindow();
   return std::string("{\"covered\":") + (cv.covered ? "true" : "false") + ",\"kind\":" + Q(cv.kind) +
-         ",\"by\":{\"class\":" + Q(cv.cls) + ",\"title\":" + Q(cv.title) + ",\"pid\":" + std::to_string(cv.pid) +
+         ",\"by\":{\"class\":" + Q(cv.cls) + ",\"title\":" + Q(cv.title) + ",\"pid\":" + std::to_string(cv.pid) + ",\"exe\":" + Q(cv.pid ? ExeOf(cv.pid) : "") +
          ",\"hwnd\":" + Q(Hex((uintptr_t)cv.hwnd)) + ",\"rect\":" + rb + "},\"fgClass\":" + Q(fg ? ClassOf(fg) : "") +
          ",\"quns\":" + std::to_string(cv.quns) + ",\"scanned\":" + std::to_string(cv.scanned) +
          ",\"skippedShell\":" + std::to_string(cv.skippedShell) + "}";
@@ -281,10 +327,15 @@ Napi::Value WatchStats(const Napi::CallbackInfo& info) {
 
 Napi::Value CoverageNow(const Napi::CallbackInfo& info) {
   uint64_t t0 = NowMs();
-  Cover cv = ComputeCover();
+  std::vector<std::string> all;
+  Cover cv = ComputeCover(&all);
   std::string j = CoverJson(cv);
+  std::string a = "[";
+  for (size_t i = 0; i < all.size(); i++) a += (i ? "," : "") + all[i];
+  a += "]";
   auto o = Napi::Object::New(info.Env());
   o.Set("json", j);
+  o.Set("candidates", a);
   o.Set("ms", (double)(NowMs() - t0));
   return o;
 }
@@ -426,9 +477,21 @@ Napi::Value TestSetDisplay(const Napi::CallbackInfo& info) {
 // redrawParent(hwnd): repaint the room's parent (WorkerW / Progman) after hiding the room. On the
 // classic layout a hidden child left its last frame on screen until something else repainted
 // the WorkerW (round 2 run 1, windows-2022).
+// After hiding the attached room, make its parent repaint the wallpaper under it. Round 2 run 2:
+// on the classic layout (child of the 0x052C WorkerW) the hidden room's last frame stayed on
+// screen. hard=true also re-applies the current wallpaper (SPI_SETDESKWALLPAPER with NULL), the
+// Lively "RefreshDesktop" trick, which forces the WorkerW to repaint.
 Napi::Value RedrawParent(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
   HWND h = HwndFrom(info[0]);
+  bool hard = info.Length() > 1 && info[1].IsBoolean() && info[1].As<Napi::Boolean>().Value();
   HWND p = h ? GetParent(h) : nullptr;
-  BOOL ok = p ? RedrawWindow(p, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW) : FALSE;
-  return Napi::Boolean::New(info.Env(), ok != FALSE);
+  auto o = Napi::Object::New(env);
+  o.Set("visibleAfterHide", h ? IsWindowVisible(h) != FALSE : false);
+  if (h && IsWindowVisible(h)) ShowWindow(h, SW_HIDE);
+  o.Set("parentClass", p ? ClassOf(p) : "");
+  BOOL ok = p ? RedrawWindow(p, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN | RDW_UPDATENOW) : FALSE;
+  o.Set("redraw", ok != FALSE);
+  if (hard) o.Set("spi", SystemParametersInfoW(SPI_SETDESKWALLPAPER, 0, nullptr, SPIF_UPDATEINIFILE) != FALSE);
+  return o;
 }

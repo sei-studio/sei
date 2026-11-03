@@ -128,7 +128,7 @@ function onCommand(m) {
     case 'hide':
       if (room) {
         room.hide()
-        if (IS_WIN) addon.redrawParent(room.getNativeWindowHandle())
+        if (IS_WIN) log('hide repaint', JSON.stringify(addon.redrawParent(room.getNativeWindowHandle(), attachInfo && attachInfo.layout === 'classic')))
       }
       send({ type: 'ack', of: m.type })
       break
@@ -320,6 +320,7 @@ async function validate(trigger) {
   return v
 }
 let workerWMissingAccepted = false
+let coverDumps = 0
 
 function onNativeEvent(json) {
   let e
@@ -330,7 +331,12 @@ function onNativeEvent(json) {
   }
   if (e.type === 'coverage') {
     coverWin = e
-    setCovered(!!e.state.covered, `${e.trigger}: ${e.state.kind || 'none'} ${e.state.by.class || ''}`.trim())
+    log('coverage state', JSON.stringify(e.state).slice(0, 600))
+    if (e.state.covered && coverDumps < 6) {
+      coverDumps++
+      try { log('coverage candidates', addon.coverageNow().candidates.slice(0, 3000)) } catch (err) { log('candidates error', String(err)) }
+    }
+    setCovered(!!e.state.covered, `${e.trigger}: ${e.state.kind || 'none'} ${e.state.by.class || ''} ${e.state.by.exe || ''}`.trim())
     send({ type: 'event', event: 'coverage', detail: e })
     return
   }
