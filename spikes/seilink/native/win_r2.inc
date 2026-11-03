@@ -64,6 +64,8 @@ struct Cover {
   HWND hwnd = nullptr;
 };
 
+// True when rect `in` covers rect `outer` (within tol px). Round 2 runs 1-3 called it with the
+// arguments swapped, so every on-monitor window read as "fullscreen".
 bool Contains(const RECT& outer, const RECT& in, int tol) {
   return in.left <= outer.left + tol && in.top <= outer.top + tol && in.right >= outer.right - tol &&
          in.bottom >= outer.bottom - tol;
@@ -108,9 +110,9 @@ const char* CoverKind(HWND t, CoverCtx* c, RECT* outR) {
   std::string cls = ClassOf(t);
   if (cls == "Progman" || cls == "WorkerW" || cls == "Shell_TrayWnd" || cls == "Shell_SecondaryTrayWnd")
     return nullptr;
-  // Shell-owned monitor-sized windows that are "visible" and uncloaked but draw nothing.
-  // Measured on CI (round 2, run 1): ApplicationManager_ImmersiveShellWindow reads as a
-  // fullscreen window from the first check on both Windows images.
+  // Shell-owned windows that are "visible" and uncloaked but draw nothing. Run 1 flagged
+  // ApplicationManager_ImmersiveShellWindow, but run 1 also had the swapped Contains bug, so this
+  // list is a guard that has not been shown necessary on its own.
   static const char* kInvisibleShell[] = {"ApplicationManager_ImmersiveShellWindow", "EdgeUiInputTopWndClass",
                                           "EdgeUiInputWndClass", "NativeHWNDHost", "Internet Explorer_Hidden",
                                           "ApplicationManager_DesktopShellWindow", "ForegroundStaging",
@@ -133,8 +135,8 @@ const char* CoverKind(HWND t, CoverCtx* c, RECT* outR) {
   RECT r{};
   if (FAILED(DwmGetWindowAttribute(t, DWMWA_EXTENDED_FRAME_BOUNDS, &r, sizeof(r)))) GetWindowRect(t, &r);
   *outR = r;
-  if (Contains(r, c->mi.rcMonitor, 2)) return "fullscreen";
-  if (IsZoomed(t) && Contains(r, c->mi.rcWork, 10)) return "maximized";
+  if (Contains(c->mi.rcMonitor, r, 2)) return "fullscreen";  // the window covers the monitor
+  if (IsZoomed(t) && Contains(c->mi.rcWork, r, 10)) return "maximized";
   return nullptr;
 }
 
