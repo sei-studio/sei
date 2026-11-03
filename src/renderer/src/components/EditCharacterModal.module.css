@@ -316,7 +316,7 @@
 /* ── Games: chess profile (260710) ───────────────────────────────────── */
 .chessModeRow {
   display: flex;
-  gap: var(--gap-control);
+  gap: var(--space-lg);
   margin-top: var(--gap-control);
 }
 
