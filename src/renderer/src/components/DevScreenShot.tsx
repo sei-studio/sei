@@ -7,7 +7,7 @@
  * without its flow layer.
  *
  *   http://localhost:5173/?dashshot=screen&screen=<screen>[&modal=<modal>]
- *     screen = home | character | chat | call | settings | edit
+ *     screen = home | character | chat | call | settings | edit (&section=appearance|voice|persona|games)
  *     modal  = delete | feedback | report | signout | apikey | creationlimit |
  *              topup | factoryreset | deleteaccount   (over the Home screen)
  *     &theme=light|dark  &lang=zh
@@ -217,7 +217,7 @@ export function DevScreenShot(): React.ReactElement {
           </div>
         </div>
       </MacosWindow>
-      {screen === 'edit' ? <EditCharacterModal character={sui} onClose={noop} initialSection={params.get('section') === 'persona' ? 'persona' : 'basic'} /> : null}
+      {screen === 'edit' ? <EditCharacterModal character={sui} onClose={noop} initialSection={(['appearance', 'voice', 'persona', 'games'] as const).find((x) => x === params.get('section')) ?? 'basic'} /> : null}
       <Modal />
     </div>
   );
