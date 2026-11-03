@@ -231,7 +231,7 @@
 .subtitle {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--gap-control);
   font-family: var(--sans);
   font-size: 13px;
   color: var(--text-2);
@@ -498,7 +498,7 @@
 .artChromeStatus {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--gap-control);
   font-family: var(--sans);
   font-size: 13px;
   color: rgb(255 255 255 / 0.78);

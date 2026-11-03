@@ -74,7 +74,7 @@
    * than the rest of the app's input clusters (TextField row groups
    * use --space-md elsewhere). Brings the auth form in line.
    */
-  gap: var(--space-md);
+  gap: var(--gap-stack);
 }
 
 .fieldGroup {
@@ -112,7 +112,7 @@
   font-family: var(--sans);
   font-size: 13px;
   color: var(--muted);
-  margin: 2px 0;
+  margin: 0;
 }
 
 .divider::before,
@@ -125,7 +125,6 @@
 .toggleRow {
   display: flex;
   justify-content: center;
-  margin-top: var(--space-xs);
 }
 
 .toggleLink {

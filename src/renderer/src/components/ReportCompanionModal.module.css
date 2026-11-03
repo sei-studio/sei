@@ -11,7 +11,8 @@
 .form {
   display: flex;
   flex-direction: column;
-  gap: var(--space-md-plus);
+  /* 261103: field groups a stack step apart, as on the sign-in page (D10). */
+  gap: var(--gap-stack);
 }
 
 .reasons {
