@@ -10,7 +10,7 @@
  *     screen = home | character | chat | call | settings | edit (&section=appearance|voice|persona|games)
  *     modal  = delete | feedback | report | signout | apikey | creationlimit |
  *              topup | factoryreset | deleteaccount   (over the Home screen)
- *     &theme=light|dark  &lang=zh
+ *     &theme=light|dark  &lang=zh  &backdrop=1 (call: the character-art view)
  *
  * Other surfaces already have harnesses: ?dashshot=creditwall&part=modal|credits,
  * ?dashshot=signinmodal, ?dashshot=authchoice, ?dashshot=onboard.
@@ -139,7 +139,7 @@ function seed(): void {
     summons: {},
   });
   if (screen === 'call') {
-    useUiStore.getState().setCallBackdropFor(SUI, false);
+    useUiStore.getState().setCallBackdropFor(SUI, params.get('backdrop') === '1');
     useVoiceStore.setState({ participants: [SUI], status: 'live', liveAt: now - 3 * 60_000 - 12_000 });
   }
   // A signed-in cloud account: the common case.
