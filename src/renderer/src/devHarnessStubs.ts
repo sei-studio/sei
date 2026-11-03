@@ -68,7 +68,9 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
   // picks the card for the first companion: plan (a Minecraft plan, the
   // default), call, untagged, goal, long (two-line clamp), or none (no card).
   // Analytics calls are kept on window.__seiDevTrack.
-  const homeMode = (params.get('dashshot') ?? '') === 'home';
+  // ?dashshot=screen (261103): DevScreenShot, the real screens in the real
+  // shell for spacing/layout review. Rides the Home stubs (the up-next strip).
+  const homeMode = (params.get('dashshot') ?? '') === 'home' || (params.get('dashshot') ?? '') === 'screen';
   // ?dashshot=art (261023): names over character art (DevArtShot). The
   // generic Proxy answers whatever the page, call and grid ask.
   const artMode = (params.get('dashshot') ?? '') === 'art';

@@ -25,9 +25,16 @@ if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('ches
   // summon and no real IPC, so the game-styled panels can be checked in a
   // plain browser tab. Lazy import keeps it out of prod bundles.
   const which = new URLSearchParams(window.location.search).get('dashshot') ?? '';
-  void import('./components/games/DevDashShot').then(({ DevDashShot }) => {
-    root.render(<DevDashShot which={which} />);
-  });
+  if (which === 'screen') {
+    // 261103: the real screens in the real shell (DevScreenShot).
+    void import('./components/DevScreenShot').then(({ DevScreenShot }) => {
+      root.render(<DevScreenShot />);
+    });
+  } else {
+    void import('./components/games/DevDashShot').then(({ DevDashShot }) => {
+      root.render(<DevDashShot which={which} />);
+    });
+  }
   // 260803: the `?backseat=1` branch is gone with the backseat overlay window.
   // Screen sharing is a call feature now and its capture runs in THIS window;
   // see lib/stores/useBackseatStore.ts for why that is safe.
