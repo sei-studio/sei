@@ -46,8 +46,8 @@
  *   - "Use your ChatGPT plan": the startup popup's chatgpt-plan flow
  *     (startChatgptPlan, lib/popupActions.ts): Settings at the ChatGPT plan
  *     row, then the sign-in or the switch that row's own button would run.
- *     Hidden when the plan is already the provider in use, and when
- *     region:status says the region is blocked (fails open, like SignInModal).
+ *     Hidden when the plan is already the provider in use. Never hidden by
+ *     region: like the Settings row, the provider decides (Shawn, 261103).
  *   - "Use your own API key or a local model": Settings at the AI Backend row
  *     (view.focus 'ai-backend').
  * Both dismiss the popup FIRST, like Upgrade, then navigate.
@@ -128,18 +128,16 @@ export interface WallFreeOptions {
  * Pure: the free options for this wall. Only a free plan at the credit wall
  * gets them (a rate limit is not a balance, and a subscriber's wall keeps its
  * plain Top up / Upgrade). The ChatGPT option is left out when the plan is
- * already the provider in use (`llmProvider === 'chatgpt'`) and when the
- * region check said blocked.
+ * already the provider in use (`llmProvider === 'chatgpt'`).
  */
 export function wallFreeOptions(input: {
   reason: string | null;
   plan: PlanTier;
   llmProvider: string | null;
-  regionBlocked: boolean;
 }): WallFreeOptions {
   const freeWall = input.reason !== 'rate_limited' && input.plan === 'free';
   return {
-    chatgpt: freeWall && input.llmProvider !== 'chatgpt' && !input.regionBlocked,
+    chatgpt: freeWall && input.llmProvider !== 'chatgpt',
     ownKey: freeWall,
   };
 }
@@ -195,29 +193,6 @@ export function HardStopModal(): React.ReactElement | null {
     trackWallAction('close', hardStopReason, openedAt);
     acknowledgeHardStop();
   };
-
-  // 261103: the ChatGPT option is hidden for a blocked region, the same
-  // region:status pre-check SignInModal runs. Asked again each time the
-  // popup opens (main caches nothing, so a VPN that is up now counts). Fails
-  // open: until it answers, or when it cannot, the option shows.
-  const [regionBlocked, setRegionBlocked] = useState(false);
-  useEffect(() => {
-    if (!hardStopActive || isRateLimited) return;
-    let cancelled = false;
-    try {
-      void sei.regionStatus().then(
-        (r) => {
-          if (!cancelled) setRegionBlocked(r?.blocked === true);
-        },
-        () => undefined,
-      );
-    } catch {
-      /* no bridge: fail open */
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [hardStopActive, isRateLimited]);
 
   // ESC dismissal is owned by ModalShell (escClose default true → onClose).
 
@@ -308,7 +283,7 @@ export function HardStopModal(): React.ReactElement | null {
     navigate({ kind: 'credits' });
   };
 
-  const free = wallFreeOptions({ reason: hardStopReason, plan, llmProvider, regionBlocked });
+  const free = wallFreeOptions({ reason: hardStopReason, plan, llmProvider });
 
   return (
     // Click-outside intentionally does NOT dismiss (scrimClose omitted) — Close,

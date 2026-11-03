@@ -11,9 +11,8 @@
  *
  * `&plan=quest|party` seeds a subscriber, `&under=1` an account with
  * allowance left (both answered by the creditsGet stub too).
- * `&gpt=active` (261103) makes the ChatGPT plan the provider in use and
- * `&region=blocked` answers region:status blocked; both hide the modal's
- * "Use your ChatGPT plan" option. Clicks land on `window.__seiDevTrack`.
+ * `&gpt=active` (261103) makes the ChatGPT plan the provider in use, which
+ * hides the modal's "Use your ChatGPT plan" option. Clicks land on `window.__seiDevTrack`.
  * `&theme=light|dark` picks the theme (default: the dev page's own).
  *
  * Add `&lang=zh` for the Chinese copy. window.sei is stubbed by

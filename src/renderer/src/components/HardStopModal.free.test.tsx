@@ -141,21 +141,14 @@ describe('HardStopModal: Keep playing free', () => {
     expect(html).toContain('Use your own API key or a local model');
   });
 
-  it('F.2: wallFreeOptions drops only the ChatGPT option for a blocked region', () => {
+  it('F.2: wallFreeOptions: free credit wall only, ChatGPT left out only when already in use', () => {
     const base = { reason: 'depleted', plan: 'free' as const, llmProvider: null };
-    expect(wallFreeOptions({ ...base, regionBlocked: false })).toEqual({ chatgpt: true, ownKey: true });
-    expect(wallFreeOptions({ ...base, regionBlocked: true })).toEqual({ chatgpt: false, ownKey: true });
-    expect(wallFreeOptions({ ...base, llmProvider: 'chatgpt', regionBlocked: false })).toEqual({
-      chatgpt: false,
-      ownKey: true,
-    });
-    expect(wallFreeOptions({ ...base, reason: 'rate_limited', regionBlocked: false })).toEqual({
-      chatgpt: false,
-      ownKey: false,
-    });
-    expect(wallFreeOptions({ ...base, plan: 'quest', regionBlocked: false })).toEqual({ chatgpt: false, ownKey: false });
+    expect(wallFreeOptions(base)).toEqual({ chatgpt: true, ownKey: true });
+    expect(wallFreeOptions({ ...base, llmProvider: 'chatgpt' })).toEqual({ chatgpt: false, ownKey: true });
+    expect(wallFreeOptions({ ...base, reason: 'rate_limited' })).toEqual({ chatgpt: false, ownKey: false });
+    expect(wallFreeOptions({ ...base, plan: 'quest' })).toEqual({ chatgpt: false, ownKey: false });
     // Another local provider (anthropic, ollama) is not the plan: offer it.
-    expect(wallFreeOptions({ ...base, llmProvider: 'ollama', regionBlocked: false }).chatgpt).toBe(true);
+    expect(wallFreeOptions({ ...base, llmProvider: 'ollama' }).chatgpt).toBe(true);
   });
 
   it('F.3: "Use your ChatGPT plan" tracks, dismisses first, then runs the shared flow', async () => {
@@ -187,11 +180,9 @@ describe('HardStopModal: Keep playing free', () => {
     expect(navigations).toEqual([{ kind: 'settings', focus: 'ai-backend' }]);
   });
 
-  it('F.4: the region gate is the region:status pre-check, fails open, and feeds the options', () => {
-    expect(SRC).toContain('sei.regionStatus()');
-    expect(SRC).toContain("setRegionBlocked(r?.blocked === true)");
-    expect(SRC).toContain('useState(false)');
-    expect(SRC).toContain('wallFreeOptions({ reason: hardStopReason, plan, llmProvider, regionBlocked })');
+  it('F.4: the ChatGPT option is never hidden by region (the provider decides, like Settings)', () => {
+    expect(SRC).not.toContain('regionStatus');
+    expect(SRC).toContain('wallFreeOptions({ reason: hardStopReason, plan, llmProvider })');
     expect(SRC).toContain("export type WallAction = 'close' | 'topup' | 'upgrade' | 'chatgpt' | 'own_key';");
   });
 

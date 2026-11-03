@@ -3524,10 +3524,10 @@ file appears, and keep `noteLaunch()` ahead of anything that writes userData.
   opens Settings at the Backend row (`view.focus: 'ai-backend'`, the
   `data-settings-focus` marker, else the local Provider row). Both dismiss
   the popup first. The ChatGPT option is hidden when it is already the
-  provider in use and when `region:status` says blocked (the SignInModal
-  pre-check, fails open; Settings itself still shows the plan row there).
+  provider in use. It is never hidden by region: like the Settings plan
+  row, the provider decides (Shawn, 261103).
   Verify with `?dashshot=creditwall&part=modal` (+`&gpt=active`,
-  `&region=blocked`, `&theme=light|dark`, `&lang=zh`).
+  `&theme=light|dark`, `&lang=zh`).
 - `onboarding_step {step, index, action: view|complete|skip|back, ms_in_step,
   path, skipped_creation}` per OnboardApp screen (`onboard/onboardSteps.ts`;
   not the boot sign-in variant). A new screen or button that skips needs a
