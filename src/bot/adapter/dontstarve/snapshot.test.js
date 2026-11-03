@@ -93,4 +93,29 @@ describe('DST snapshot composer', () => {
     expect(text).not.toContain('days left')
     expect(text).not.toMatch(/holding|attacking/)
   })
+  it('says how far the follow target is once it is out of sight (helper 0.3.2), and that a command leaves it behind', () => {
+    const st = createObservationState()
+    const mod = createFakeMod({ botPort: 1, token: 'x' })
+    const frame = mod.frame(true)
+    frame.self.follow = 99999
+    frame.self.followd = 82.4
+    st.apply(frame)
+    const handles = createHandleRegistry()
+    const composer = createSnapshotComposer({ state: st, handles, getBodyState: () => ({ fight: true, followLabel: 'Steve' }) })
+    expect(composer.next({})).toContain('follow: Steve (82m away, out of sight: while another command runs you stay behind) | fight back')
+    // An older helper sends no distance: the target is simply not in sight.
+    const st2 = createObservationState()
+    const f2 = createFakeMod({ botPort: 1, token: 'x' }).frame(true)
+    f2.self.follow = 99999
+    st2.apply(f2)
+    const c2 = createSnapshotComposer({ state: st2, handles: createHandleRegistry(), getBodyState: () => ({ fight: true, followLabel: 'Steve' }) })
+    expect(c2.next({})).toContain('follow: Steve (over 24m away, out of sight')
+    // Close by: no note.
+    const st3 = createObservationState()
+    const f3 = createFakeMod({ botPort: 1, token: 'x' }).frame(true)
+    f3.self.followd = 3
+    st3.apply(f3)
+    const c3 = createSnapshotComposer({ state: st3, handles: createHandleRegistry(), getBodyState: () => ({ fight: true, followLabel: 'Steve' }) })
+    expect(c3.next({})).not.toContain('out of sight')
+  })
 })
