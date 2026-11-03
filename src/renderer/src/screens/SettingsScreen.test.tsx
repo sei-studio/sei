@@ -503,7 +503,7 @@ describe('261023 settings tidy: web search tab + compact ChatGPT plan row', () =
     expect(credits).not.toContain('ChatGPT plan, separate from Sei plans');
     expect(credits).not.toContain('Have ChatGPT Plus or Pro?');
     expect(credits).toContain("navigate({ kind: 'settings', useChatgptPlan: true })");
-    expect(readFileSync(USE_UI_STORE_TS, 'utf8')).toContain("{ kind: 'settings'; useChatgptPlan?: boolean; focus?: 'chatgpt-plan' }");
+    expect(readFileSync(USE_UI_STORE_TS, 'utf8')).toContain("{ kind: 'settings'; useChatgptPlan?: boolean; focus?: SettingsFocus }");
   });
 
   it('Settings runs the intent once through the normal switch paths, then clears it', () => {
@@ -521,5 +521,16 @@ describe('261023 settings tidy: web search tab + compact ChatGPT plan row', () =
     expect(body).toContain("setSwitchVia('chatgpt')");
     expect(body).toContain("setPendingSwitch('local')");
     expect(body).toContain("onChangeProvider('chatgpt')");
+  });
+
+  it("view.focus 'ai-backend' (the usage-limit popup's own-key option) reveals the Backend row, else Provider", () => {
+    expect(readFileSync(USE_UI_STORE_TS, 'utf8')).toContain("export type SettingsFocus = 'chatgpt-plan' | 'ai-backend';");
+    expect(settings).toContain('revealSettingsFocus(focusTarget)');
+    // Both rows are marked; the Backend row comes first in the DOM, so it wins
+    // whenever it renders (signed in), and Provider is the signed-out fallback.
+    const marks = [...settings.matchAll(/data-settings-focus="ai-backend"/g)].map((m) => m.index ?? -1);
+    expect(marks).toHaveLength(2);
+    expect(settings.slice(marks[0], marks[0] + 200)).toContain("t('Backend')");
+    expect(settings.slice(marks[1], marks[1] + 200)).toContain("t('Provider')");
   });
 });

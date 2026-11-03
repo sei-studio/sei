@@ -46,6 +46,14 @@
     color 180ms var(--ease);
 }
 
+/* 261103: the usage-limit popup's "Keep playing free" options, one step
+   quieter than the Top up / Upgrade pair above them. */
+.sm {
+  min-height: 38px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
 .md {
   min-height: 44px;
   font-size: 15px;

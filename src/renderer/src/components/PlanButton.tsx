@@ -29,8 +29,8 @@ export interface PlanButtonProps {
   children: React.ReactNode;
   onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   kind?: 'primary' | 'secondary';
-  /** md = 44px (modals), lg = 48px (plan cards). */
-  size?: 'md' | 'lg';
+  /** sm = 38px (a quieter row under a modal's main pair), md = 44px (modals), lg = 48px (plan cards). */
+  size?: 'sm' | 'md' | 'lg';
   /** Trailing arrow, for actions that move the user on (checkout, plans). */
   arrow?: boolean;
   /** Leading icon (e.g. the check on "Current plan"). */

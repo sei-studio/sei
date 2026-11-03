@@ -18,6 +18,9 @@
  *   - "Top up"  → the same navigation, with `requestTopUp()` so the plan screen
  *     opens the packages on arrival. The purchase then runs where the checkout
  *     watcher lives, instead of polling behind a popup with no progress UI.
+ * 261103: ONE CTA (Shawn: two buttons to the same page read as if topping up
+ * beat upgrading). Free and Quest get "Upgrade"; Party, which has no tier
+ * above it, gets "Top up". The copy no longer pitches either.
  * Close and ESC dismiss it: the bot has already left or was never summoned, so
  * this is a notice, not a blocking gate. 261023: the two CTAs are full-width
  * PlanButtons under the copy (Upgrade the loud one); Close stays in the footer.
@@ -39,6 +42,19 @@
  * confirmed limit, and only auto-dismisses when that confirmed limit clears (a
  * top up, an upgrade reset, or the weekly rollover).
  *
+ * 261103 (T307) — "Keep playing free". A week is a long wait for a free
+ * player who hits the wall on their first day, so a free player at the wall
+ * now also gets two ways to keep playing on an account of their own, under
+ * an "or" below Upgrade (wallFreeOptions), own key first, ChatGPT last:
+ *   - "Use your ChatGPT plan": the startup popup's chatgpt-plan flow
+ *     (startChatgptPlan, lib/popupActions.ts): Settings at the ChatGPT plan
+ *     row, then the sign-in or the switch that row's own button would run.
+ *     Hidden when the plan is already the provider in use. Never hidden by
+ *     region: like the Settings row, the provider decides (Shawn, 261103).
+ *   - "Use your own API key or a local model": Settings at the AI Backend row
+ *     (view.focus 'ai-backend').
+ * Both dismiss the popup FIRST, like Upgrade, then navigate.
+ *
  * Sources: SPEC §5.B, AcceptToSModal.tsx (structural template),
  *          useCreditsStore.ts (hardStopActive / acknowledgeHardStop wire).
  */
@@ -47,7 +63,11 @@ import React, { useEffect, useState } from 'react';
 import { t as tr, useT } from '../lib/i18n';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { useUiStore } from '../lib/stores/useUiStore';
+import type { PlanTier } from '@shared/ipc';
+import { startChatgptPlan } from '../lib/popupActions';
 import { Button } from './Button';
+import { ChatgptLogo } from './ChatgptLogo';
+import { KeyIcon } from './icons';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { PlanButton } from './PlanButton';
 import { useResetLine } from '../lib/useResetLine';
@@ -84,9 +104,12 @@ export function formatRetryWhen(untilMs: number | null, nowMs: number): string {
 /**
  * 261005: what the player did at the wall (`credit_wall_action`). The wall
  * itself is `credit_wall_hit`, fired in main; this is the other half of the
- * funnel (close vs top up vs upgrade). Shape only. Never throws.
+ * funnel (close vs top up vs upgrade, and since 261103 the two free options:
+ * 'chatgpt' and 'own_key'). Shape only. Never throws.
  */
-function trackWallAction(action: 'close' | 'topup' | 'upgrade', reason: string | null, openedAt: number): void {
+export type WallAction = 'close' | 'topup' | 'upgrade' | 'chatgpt' | 'own_key';
+
+function trackWallAction(action: WallAction, reason: string | null, openedAt: number): void {
   try {
     sei.track('credit_wall_action', {
       action,
@@ -95,6 +118,50 @@ function trackWallAction(action: 'close' | 'topup' | 'upgrade', reason: string |
     });
   } catch {
     /* analytics is never load-bearing */
+  }
+}
+
+/** Which "Keep playing free" options the popup shows (261103). */
+export interface WallFreeOptions {
+  chatgpt: boolean;
+  ownKey: boolean;
+}
+
+/**
+ * Pure: the free options for this wall. Only a free plan at the credit wall
+ * gets them (a rate limit is not a balance, and a subscriber's wall keeps its
+ * plain Top up / Upgrade). The ChatGPT option is left out when the plan is
+ * already the provider in use (`llmProvider === 'chatgpt'`).
+ */
+export function wallFreeOptions(input: {
+  reason: string | null;
+  plan: PlanTier;
+  llmProvider: string | null;
+}): WallFreeOptions {
+  const freeWall = input.reason !== 'rate_limited' && input.plan === 'free';
+  return {
+    chatgpt: freeWall && input.llmProvider !== 'chatgpt',
+    ownKey: freeWall,
+  };
+}
+
+/**
+ * A "Keep playing free" click: track it, dismiss the popup (it would cover
+ * Settings otherwise), then route. 'chatgpt' runs the same flow as the
+ * startup popup's chatgpt-plan action; 'own_key' opens Settings at the AI
+ * Backend row. Exported for the unit test.
+ */
+export function takeWallFreeOption(option: 'chatgpt' | 'own_key', reason: string | null, openedAt: number): void {
+  trackWallAction(option, reason, openedAt);
+  useCreditsStore.getState().acknowledgeHardStop();
+  if (option === 'chatgpt') {
+    // Another chatgpt-plan run still in flight (a popup click a moment ago):
+    // this one does nothing, so at least land on the row it is using.
+    void startChatgptPlan().then((ran) => {
+      if (!ran) useUiStore.getState().navigate({ kind: 'settings', focus: 'chatgpt-plan' });
+    });
+  } else {
+    useUiStore.getState().navigate({ kind: 'settings', focus: 'ai-backend' });
   }
 }
 
@@ -112,7 +179,9 @@ export function HardStopModal(): React.ReactElement | null {
   const refresh = useCreditsStore((s) => s.refresh);
   const acknowledgeHardStop = useCreditsStore((s) => s.acknowledgeHardStop);
   const requestTopUp = useCreditsStore((s) => s.requestTopUp);
+  const plan = useCreditsStore((s) => s.plan);
   const navigate = useUiStore((s) => s.navigate);
+  const llmProvider = useUiStore((s) => s.llmProvider);
 
   // A rate limit is a time window: no billing change clears it, so it never
   // takes part in the over_limit refresh/latch/auto-dismiss machinery below.
@@ -217,26 +286,68 @@ export function HardStopModal(): React.ReactElement | null {
     navigate({ kind: 'credits' });
   };
 
+  const free = wallFreeOptions({ reason: hardStopReason, plan, llmProvider });
+
   return (
     // Click-outside intentionally does NOT dismiss (scrimClose omitted) — Close,
     // the CTAs, and ESC are the deliberate dismiss paths. Base tier: the consent
     // gate and the top up modal stack above this at 1100.
     <ModalShell title={t('Usage limit reached')} width={440} onClose={closeTracked}>
-      <p className={styles.body}>
-        {t(
-          "You've used this week's allowance. Upgrade for a bigger weekly allowance, or top up to keep playing now.",
+      {/* 261103 spacing pass: one stack, one rhythm. The shell's gap parts
+          the title, this stack and the footer; inside it the copy, the CTA
+          and the free options are groups a step further apart, and each
+          group keeps its own lines tight. */}
+      <div className={styles.stack}>
+        <div className={styles.copy}>
+          <p className={styles.body}>{t("You've used this week's allowance.")}</p>
+          {resetLine ? <p className={`${styles.body} ${styles.resetLine}`}>{resetLine}</p> : null}
+        </div>
+        {/* 261103: one way forward, full width. Party has no tier above it,
+            so its button is Top up. Close stays a quiet footer link. */}
+        {plan === 'party' ? (
+          <PlanButton kind="primary" size="md" arrow onClick={handleTopUp}>
+            {t('Top up')}
+          </PlanButton>
+        ) : (
+          <PlanButton kind="primary" size="md" arrow onClick={handleUpgrade}>
+            {t('Upgrade')}
+          </PlanButton>
         )}
-      </p>
-      {resetLine ? <p className={`${styles.body} ${styles.resetLine}`}>{resetLine}</p> : null}
-      {/* 261023: the two ways forward are big targets of their own, Upgrade
-          the loud one. Close stays a quiet footer link. */}
-      <div className={styles.ctas}>
-        <PlanButton kind="secondary" size="md" onClick={handleTopUp}>
-          {t('Top up')}
-        </PlanButton>
-        <PlanButton kind="primary" size="md" arrow onClick={handleUpgrade}>
-          {t('Upgrade')}
-        </PlanButton>
+        {/* 261103: ways to keep playing that cost Sei nothing, one step
+            quieter than Upgrade: an "or", then sm buttons. ChatGPT goes last so
+            its note is the bottom line (Shawn: less text in the lower half). */}
+        {free.chatgpt || free.ownKey ? (
+          <div className={styles.free} data-testid="wall-free-options">
+            <p className={styles.freeTitle}>{t('or')}</p>
+            {free.ownKey ? (
+              <PlanButton
+                kind="secondary"
+                size="sm"
+                icon={<KeyIcon size={16} />}
+                onClick={() => takeWallFreeOption('own_key', hardStopReason, openedAt)}
+              >
+                {t('Use your own API key or a local model')}
+              </PlanButton>
+            ) : null}
+            {free.chatgpt ? (
+              <div className={styles.withNote}>
+                <PlanButton
+                  kind="secondary"
+                  size="sm"
+                  icon={
+                    <span className={styles.chatgptLogo}>
+                      <ChatgptLogo size={16} />
+                    </span>
+                  }
+                  onClick={() => takeWallFreeOption('chatgpt', hardStopReason, openedAt)}
+                >
+                  {t('Use your ChatGPT plan')}
+                </PlanButton>
+                <p className={styles.freeNote}>{t('Works with ChatGPT Plus or Pro.')}</p>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       <ModalFooter>
         <Button kind="quiet" size="md" onClick={closeTracked}>

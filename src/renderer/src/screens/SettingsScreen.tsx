@@ -58,7 +58,7 @@ import { SearchSettingsSection } from '../components/settings/SearchSettingsSect
 import { LocalImportRow } from '../components/settings/LocalImportRow';
 import { FishAudioSettings } from '../components/settings/FishAudioSettings';
 import { FacepackDevRow } from '../components/settings/FacepackDevRow';
-import { ChatgptPlanSettings, revealChatgptPlanRows } from '../components/ChatgptPlanSettings';
+import { ChatgptPlanSettings, revealSettingsFocus, settingsFocusTargetClass } from '../components/ChatgptPlanSettings';
 import { ChatgptLinkRow } from '../components/settings/ChatgptLinkRow';
 import { chatgptReady, useChatgptStore } from '../lib/stores/useChatgptStore';
 import { chatgptPlanIntentStep } from '../lib/chatgptPlanIntent';
@@ -826,12 +826,15 @@ export function SettingsScreen(): React.ReactElement {
   // 261029: view.focus (the startup popup's chatgpt-plan action) scrolls to
   // the ChatGPT plan rows and flashes them. Cleared at once, keeping any
   // useChatgptPlan intent, so a later visit does not scroll again.
+  // 261103: 'ai-backend' (the usage-limit popup's "own API key or local
+  // model" option) does the same for the Backend row, or the Provider row
+  // when there is no Backend switch (signed out).
   const focusTarget = useUiStore((s) => (s.view.kind === 'settings' ? s.view.focus ?? null : null));
   useEffect(() => {
     if (!focusTarget) return;
     const v = useUiStore.getState().view;
     if (v.kind === 'settings') useUiStore.setState({ view: { ...v, focus: undefined } });
-    if (focusTarget === 'chatgpt-plan') revealChatgptPlanRows();
+    revealSettingsFocus(focusTarget);
   }, [focusTarget]);
 
   // ui-A7: persist developer-console toggle. Update zustand FIRST so the UI
@@ -1191,7 +1194,7 @@ export function SettingsScreen(): React.ReactElement {
               (A guessed "My key" here is how the UI claimed BYOK over live
               cloud billing.) */}
           {authState.kind === 'signed_in' && aiBackendKind !== null ? (
-            <div className={styles.row}>
+            <div className={`${styles.row} ${settingsFocusTargetClass}`} data-settings-focus="ai-backend">
               <span className={styles.label}>
                 {t('Backend')}
                 <InfoTip
@@ -1246,7 +1249,7 @@ export function SettingsScreen(): React.ReactElement {
           {/* Provider + API key — local (BYOK) mode only. */}
           {aiBackendKind === 'local' ? (
             <>
-              <div className={styles.row}>
+              <div className={`${styles.row} ${settingsFocusTargetClass}`} data-settings-focus="ai-backend">
                 <span className={styles.label}>{t('Provider')}</span>
                 <ProviderSelect
                   value={currentProvider}

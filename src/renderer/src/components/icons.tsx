@@ -1043,6 +1043,29 @@ export const LockIcon: React.FC<IconProps> = ({ size = 16 }) => (
 );
 
 /**
+ * KeyIcon — a key: round bow, shaft and two teeth. The usage-limit popup's
+ * "own API key or local model" option (261103). Stroke-only, currentColor.
+ */
+export const KeyIcon: React.FC<IconProps> = ({ size = 16 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <circle cx={8} cy={15} r={4} />
+    <path d="M10.8 12.2 20 3" />
+    <path d="M16.5 6.5 19 9" />
+    <path d="M14 9l2 2" />
+  </svg>
+);
+
+/**
  * FlipIcon — two curved arrows chasing each other in a circle. Chess HUD
  * "flip board" control. Stroke-only, inherits currentColor.
  */

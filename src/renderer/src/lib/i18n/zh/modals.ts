@@ -215,11 +215,14 @@ export const ZH_MODALS: Record<string, string> = {
   "Sei's servers are limiting requests right now, so your companion has to sit this one out. This does not use up any of your credits. You can try again in a little while.":
     'Sei 的服务器目前正在限制请求，你的伙伴只能先休息一下。这不会消耗你的任何积分。请稍后再试。',
   'Usage limit reached': '已达使用上限',
-  "You've used this week's allowance. Upgrade for a bigger weekly allowance, or top up to keep playing now.":
-    '你已用完本周额度。升级可获得更高的每周额度，或充值以立即继续游玩。',
+  "You've used this week's allowance.": '你已用完本周额度。',
   'Top up': '充值',
   'Upgrade': '升级',
   '{weekday} at {time}': '{weekday} {time}',
+  // 261103: the free options under the wall's CTA ("Use your ChatGPT plan"
+  // lives in screens-b, "or" further down).
+  'Works with ChatGPT Plus or Pro.': '适用于 ChatGPT Plus 或 Pro。',
+  'Use your own API key or a local model': '使用你自己的 API 密钥或本地模型',
 
   // ── ImportLocalProfileModal ──
   'Bring your companion to this account?': '要把你的伙伴带到这个账户吗？',

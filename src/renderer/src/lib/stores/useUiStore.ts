@@ -17,6 +17,14 @@ import type { BackseatGameSelection } from '@shared/backseatGames';
 import type { ErrorClass } from '@shared/errorClasses';
 import type { AvatarMode, AvatarPrefs } from '@shared/characterSchema';
 
+/**
+ * A Settings row to scroll to and flash on arrival (view.focus). Each one is
+ * an element marked `data-settings-focus="<name>"` in Settings.
+ *   chatgpt-plan  the ChatGPT plan rows (startup popup action, usage-limit popup)
+ *   ai-backend    the AI Backend / Provider row (usage-limit popup, 261103)
+ */
+export type SettingsFocus = 'chatgpt-plan' | 'ai-backend';
+
 export type View =
   | { kind: 'loading' }
   | { kind: 'auth-choice' }
@@ -58,8 +66,9 @@ export type View =
   // after its sign-in; Settings runs the "Use ChatGPT plan" switch (with the
   // cloud confirm) once, on arrival.
   // focus (261029): scroll to and briefly highlight one row on arrival (the
-  // startup popup's chatgpt-plan action). Cleared once handled.
-  | { kind: 'settings'; useChatgptPlan?: boolean; focus?: 'chatgpt-plan' }
+  // startup popup's chatgpt-plan action; 261103 the usage-limit popup's
+  // "own API key or local model" option, 'ai-backend'). Cleared once handled.
+  | { kind: 'settings'; useChatgptPlan?: boolean; focus?: SettingsFocus }
   | { kind: 'credits' }
   | { kind: 'coming-soon' }
   // 260703 procgen — the "unique companion" (system-generated) flow. Both are
