@@ -441,10 +441,13 @@ async function winCoverage() {
   if (np) addon.testShowWindow(hwnd, 1)
   await sleep(1000)
   // 5) a fullscreen window (borderless monitor-sized, no maximize bit)
+  // Register the waiter BEFORE creating the window: run 4 saw the covered event land ~1 s after
+  // creation, before loadURL resolved, so a waiter registered afterwards missed it.
   t = Date.now()
+  const c2p = sup.waitFor('covered', (x) => x.covered === true, 8000).then((m) => (m ? { ms: m.recvAt - t, reason: m.reason } : null))
   const fs1 = new BrowserWindow({ ...b, fullscreen: true, frame: false, backgroundColor: '#204020', title: 'SeiLink fullscreen' })
   await fs1.loadURL('data:text/html,<body style="background:#204020;color:#fff;font:40px sans-serif">fullscreen app</body>')
-  const c2 = await waitCovered(true, 6000, t)
+  const c2 = await c2p
   result.numbers.coverFullscreen = c2
   const mf = await measure('covered-fullscreen', 4000)
   result.checks.fullscreenCovered = !!c2 && mf.fpsMedian === 0
