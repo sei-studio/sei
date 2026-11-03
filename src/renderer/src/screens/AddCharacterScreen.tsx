@@ -622,12 +622,15 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
         onSecondary={() => void skip()}
       >
         {created ? (
-          <SkinEditor
-            character={created}
-            onChanged={() => {
-              if (created) void refreshCharacter(created.id);
-            }}
-          />
+          // The box's distance from the hint is the step's to set (261103).
+          <div style={{ paddingTop: 'var(--space-xl)' }}>
+            <SkinEditor
+              character={created}
+              onChanged={() => {
+                if (created) void refreshCharacter(created.id);
+              }}
+            />
+          </div>
         ) : null}
       </QuestionShell>
     );

@@ -57,7 +57,7 @@
 }
 
 .editorPanel {
-  gap: 16px;
+  gap: var(--gap-group);
 }
 
 .editor {

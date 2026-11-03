@@ -611,28 +611,30 @@ export function CreditsScreen(): React.ReactElement {
           Click-to-Cancel online cancel path). The carry-over note lives under
           the extra-credits bar (260725).
         */}
-        <div className={styles.foot}>
-          <Button
-            kind="ghost"
-            size="sm"
-            disabled={managing}
-            aria-disabled={managing}
-            onClick={() => void handleManage()}
-          >
-            {managing ? t('Opening…') : t('Manage billing')}
-          </Button>
-        </div>
-        {manageError ? <p className={styles.manageError}>{manageError}</p> : null}
-
-        {/* Standing feedback entry point once the one-time reward banner has
-            been used (260706). Sits under Manage billing, same style. */}
-        {cloudMode && rewardClaimed === true ? (
-          <div className={styles.footFeedback}>
-            <Button kind="ghost" size="sm" onClick={() => setShowFeedbackModal(true)}>
-              {t('Submit feedback')}
+        <div className={styles.footGroup}>
+          <div className={styles.foot}>
+            <Button
+              kind="ghost"
+              size="sm"
+              disabled={managing}
+              aria-disabled={managing}
+              onClick={() => void handleManage()}
+            >
+              {managing ? t('Opening…') : t('Manage billing')}
             </Button>
           </div>
-        ) : null}
+          {manageError ? <p className={styles.manageError}>{manageError}</p> : null}
+
+          {/* Standing feedback entry point once the one-time reward banner has
+              been used (260706). Sits under Manage billing, same style. */}
+          {cloudMode && rewardClaimed === true ? (
+            <div className={styles.foot}>
+              <Button kind="ghost" size="sm" onClick={() => setShowFeedbackModal(true)}>
+                {t('Submit feedback')}
+              </Button>
+            </div>
+          ) : null}
+        </div>
       </div>
 
       {showTopUp ? (

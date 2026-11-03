@@ -5,25 +5,27 @@
 .framing {
   font-size: 14px;
   color: var(--muted);
-  margin: 0 0 var(--space-md) 0;
+  margin: 0;
 }
 
 .form {
   display: flex;
   flex-direction: column;
-  gap: var(--space-md-plus);
+  /* 261103: a group step, not the forms' 12px field step: the reason list
+     is a dense list, and at 12px the Details label read as one more row. */
+  gap: var(--gap-group);
 }
 
 .reasons {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--gap-control);
 }
 
 .checkbox {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--gap-control);
   font-family: var(--sans);
   font-size: 14px;
   color: var(--text);

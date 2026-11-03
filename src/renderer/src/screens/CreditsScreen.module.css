@@ -20,7 +20,7 @@
 .root {
   flex: 1;
   overflow-y: auto;
-  padding: 28px 0 40px;
+  padding: var(--page-top) 0 var(--space-2xl);
   display: flex;
   flex-direction: column;
 }
@@ -29,30 +29,33 @@
   width: 100%;
   max-width: 860px;
   margin: 0 auto;
-  padding: 0 26px;
+  padding: 0 var(--page-gutter);
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  /* 261103 spacing pass: Usage, Plan, the ChatGPT row and the footer are
+     page sections, one --gap-section apart (was 28, plus 24 more above
+     the ChatGPT row). */
+  gap: var(--gap-section);
 }
 
 .backRow {
   /* Pull left by the quiet/sm button's horizontal padding so the icon lines up
      with the column's content edge. */
-  margin-left: -12px;
+  margin-left: calc(-1 * var(--space-md));
 }
 
 /* ── Usage: two aligned label / bar / value rows (260725 sketch) ── */
 .usage {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--gap-group);
 }
 
 /* Shared section heading ("Usage" / "Plan") + the quiet refresh beside it. */
 .usageHead {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-control);
 }
 
 /* Oswald's tall ascender space makes the centered refresh button read as
@@ -76,7 +79,7 @@
   display: grid;
   grid-template-columns: minmax(150px, 190px) 1fr minmax(64px, auto);
   align-items: center;
-  gap: 16px;
+  gap: var(--gap-group);
 }
 
 .usageLabel {
@@ -147,7 +150,8 @@
   font-family: var(--sans);
   font-size: 12px;
   color: var(--muted-2);
-  margin: -6px 0 0;
+  /* Pulled toward the bars it captions: a tight step, not the group gap. */
+  margin: calc(var(--gap-tight) - var(--gap-group)) 0 0;
 }
 
 /* 260926: the credit wall's pause line ("Free play resets in 3 days
@@ -155,8 +159,8 @@
 .resetCallout {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 10px 12px;
+  gap: var(--gap-tight);
+  padding: var(--pad-control);
   border-radius: 8px;
   background: var(--accent-soft);
   font-family: var(--sans);
@@ -177,13 +181,14 @@
 .plans {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  /* Title to content as in Usage. */
+  gap: var(--gap-group);
 }
 
 .plansRow {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
+  gap: var(--gap-stack);
 }
 
 /* Solid surface: var(--bg4) is a visible step off the window in every theme
@@ -194,10 +199,10 @@
   position: relative;
   background: var(--bg4);
   border: 1px solid var(--border);
-  padding: 20px 18px 18px;
+  padding: var(--pad-card);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--gap-tight);
   min-height: 196px;
   min-width: 0;
 }
@@ -271,14 +276,14 @@
 
 /* 261017: "Use your ChatGPT plan", its own block under the plan cards. */
 .chatgptPlan {
-  margin-top: var(--space-lg);
+  min-width: 0;
 }
 
 .chatgptPlanRow {
   display: flex;
   align-items: center;
-  gap: var(--space-md);
-  padding: var(--space-md);
+  gap: var(--gap-stack);
+  padding: var(--pad-control);
   border: 1px solid var(--border);
   color: var(--text);
 }
@@ -320,7 +325,7 @@
 
 .planCardActions {
   margin-top: auto;
-  padding-top: 16px;
+  padding-top: var(--gap-group);
 }
 
 /* "Your Party plan renews on …" / "… will not renew" note under the cards. */
@@ -328,22 +333,23 @@
   font-family: var(--sans);
   font-size: 13px;
   color: var(--text-2);
-  margin: 4px 0 0;
+  margin: 0;
 }
 
 /* ── Footer: Manage billing ──────────────────────────────────── */
 .foot {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: var(--gap-stack);
   flex-wrap: wrap;
 }
 
-/* Standing "Submit feedback" button row, tucked under Manage billing (260706).
- * Negative margin pulls it inside the column's 28px gap so it reads as part
- * of the footer cluster rather than a new section. */
-.footFeedback {
-  margin-top: -16px;
+/* Manage billing, its error and the standing "Submit feedback" row (260706)
+ * as one footer cluster: a control step apart, not a section. */
+.footGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-control);
 }
 
 .manageError {
@@ -358,7 +364,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: var(--gap-stack);
   text-align: center;
 }
 

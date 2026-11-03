@@ -147,12 +147,10 @@ export function UpdatePopup({ state, onUpdateNow, onDismiss, platform }: UpdateP
     case 'forced':
       title = t('Update ready');
       body = (
-        <>
+        <div className={styles.copy}>
           <p className={styles.body}>{t('Applying the update. Sei will restart in a moment…')}</p>
-          {showsWindowsUpdateNote(platform) ? (
-            <p className={`${styles.body} ${styles.note}`}>{t(WINDOWS_UPDATE_NOTE)}</p>
-          ) : null}
-        </>
+          {showsWindowsUpdateNote(platform) ? <p className={styles.body}>{t(WINDOWS_UPDATE_NOTE)}</p> : null}
+        </div>
       );
       break;
 
