@@ -11,8 +11,9 @@
 .form {
   display: flex;
   flex-direction: column;
-  /* 261103: field groups a stack step apart, as on the sign-in page (D10). */
-  gap: var(--gap-stack);
+  /* 261103: a group step, not the forms' 12px field step: the reason list
+     is a dense list, and at 12px the Details label read as one more row. */
+  gap: var(--gap-group);
 }
 
 .reasons {
