@@ -18,17 +18,16 @@
   font-weight: 600;
 }
 
-/* 261023: Top up | Upgrade, full width under the copy. Upgrade gets the
-   wider column. */
+/* 261103: one CTA, full width under the copy (Upgrade, or Top up on Party). */
 .ctas {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-sm);
   margin-top: var(--space-lg);
 }
 
-/* 261103: "Keep playing free", under the Top up | Upgrade pair. Quieter than
-   it: a small muted heading and sm PlanButtons stacked full width. No
+/* 261103: the free options under an "or" below the CTA. Quieter than
+   it: a small muted centered "or" and sm PlanButtons stacked full width. No
    divider line (house style: no border lines). */
 .free {
   margin-top: var(--space-lg);
@@ -40,6 +39,7 @@
   font-weight: 600;
   line-height: 1.4;
   color: var(--muted);
+  text-align: center;
   margin: 0 0 var(--space-sm);
 }
 

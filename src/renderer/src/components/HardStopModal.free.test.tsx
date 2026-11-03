@@ -118,21 +118,33 @@ beforeEach(() => {
   navigations.length = 0;
 });
 
-describe('HardStopModal: Keep playing free', () => {
-  it('F.1: a free plan at the credit wall gets both options under Top up / Upgrade', () => {
+describe('HardStopModal: free options at the wall', () => {
+  it('F.1: a free plan at the credit wall gets one CTA, then own key, then ChatGPT with its note last', () => {
     const html = render();
-    expect(html).toContain('Keep playing free');
-    expect(html).toContain('Use your ChatGPT plan');
-    expect(html).toContain('Use your own API key or a local model');
-    // Under the plan pair, and the pair is still there.
-    expect(html.indexOf('Upgrade')).toBeLessThan(html.indexOf('Keep playing free'));
-    expect(html).toContain('Top up');
+    expect(html).toContain('wall-free-options');
+    expect(html).toContain('Upgrade');
+    // One CTA (Shawn 261103): no Top up beside Upgrade, no top-up pitch.
+    expect(html).not.toContain('Top up');
+    expect(html).not.toContain('top up');
+    const own = html.indexOf('Use your own API key or a local model');
+    const gpt = html.indexOf('Use your ChatGPT plan');
+    const note = html.indexOf('Works with ChatGPT Plus or Pro.');
+    expect(html.indexOf('Upgrade')).toBeLessThan(own);
+    expect(own).toBeGreaterThan(0);
+    expect(own).toBeLessThan(gpt);
+    expect(gpt).toBeLessThan(note);
   });
 
-  it('F.1: no free options for a rate limit or a subscriber at the wall', () => {
-    expect(render({ reason: 'rate_limited' })).not.toContain('Keep playing free');
-    expect(render({ plan: 'quest' })).not.toContain('Keep playing free');
-    expect(render({ plan: 'party' })).not.toContain('Keep playing free');
+  it('F.1: no free options for a rate limit or a subscriber; Party gets Top up as its one CTA', () => {
+    expect(render({ reason: 'rate_limited' })).not.toContain('wall-free-options');
+    const quest = render({ plan: 'quest' });
+    expect(quest).not.toContain('wall-free-options');
+    expect(quest).toContain('Upgrade');
+    expect(quest).not.toContain('Top up');
+    const party = render({ plan: 'party' });
+    expect(party).not.toContain('wall-free-options');
+    expect(party).toContain('Top up');
+    expect(party).not.toContain('Upgrade');
   });
 
   it('F.2: the ChatGPT option is hidden when the plan is already in use', () => {
@@ -187,8 +199,8 @@ describe('HardStopModal: Keep playing free', () => {
   });
 
   it('F.4: the new copy is plain and has a zh translation', () => {
-    for (const s of ['Keep playing free', 'Use your own API key or a local model']) {
-      expect(ZH).toContain(`'${s}':`);
+    for (const s of ["You've used this week's allowance.", 'Use your own API key or a local model', 'Works with ChatGPT Plus or Pro.']) {
+      expect(ZH.includes(`'${s}':`) || ZH.includes(`"${s}":`)).toBe(true);
       expect(s).not.toContain('—');
       expect(s.toLowerCase()).not.toContain('friend');
     }

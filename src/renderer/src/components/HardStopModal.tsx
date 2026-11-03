@@ -18,6 +18,9 @@
  *   - "Top up"  → the same navigation, with `requestTopUp()` so the plan screen
  *     opens the packages on arrival. The purchase then runs where the checkout
  *     watcher lives, instead of polling behind a popup with no progress UI.
+ * 261103: ONE CTA (Shawn: two buttons to the same page read as if topping up
+ * beat upgrading). Free and Quest get "Upgrade"; Party, which has no tier
+ * above it, gets "Top up". The copy no longer pitches either.
  * Close and ESC dismiss it: the bot has already left or was never summoned, so
  * this is a notice, not a blocking gate. 261023: the two CTAs are full-width
  * PlanButtons under the copy (Upgrade the loud one); Close stays in the footer.
@@ -42,7 +45,7 @@
  * 261103 (T307) — "Keep playing free". A week is a long wait for a free
  * player who hits the wall on their first day, so a free player at the wall
  * now also gets two ways to keep playing on an account of their own, under
- * the Top up / Upgrade pair (wallFreeOptions):
+ * an "or" below Upgrade (wallFreeOptions), own key first, ChatGPT last:
  *   - "Use your ChatGPT plan": the startup popup's chatgpt-plan flow
  *     (startChatgptPlan, lib/popupActions.ts): Settings at the ChatGPT plan
  *     row, then the sign-in or the switch that row's own button would run.
@@ -291,27 +294,39 @@ export function HardStopModal(): React.ReactElement | null {
     // gate and the top up modal stack above this at 1100.
     <ModalShell title={t('Usage limit reached')} width={440} onClose={closeTracked}>
       <p className={styles.body}>
-        {t(
-          "You've used this week's allowance. Upgrade for a bigger weekly allowance, or top up to keep playing now.",
-        )}
+        {t("You've used this week's allowance.")}
       </p>
       {resetLine ? <p className={`${styles.body} ${styles.resetLine}`}>{resetLine}</p> : null}
-      {/* 261023: the two ways forward are big targets of their own, Upgrade
-          the loud one. Close stays a quiet footer link. */}
+      {/* 261103: one way forward, full width. Party has no tier above it,
+          so its button is Top up. Close stays a quiet footer link. */}
       <div className={styles.ctas}>
-        <PlanButton kind="secondary" size="md" onClick={handleTopUp}>
-          {t('Top up')}
-        </PlanButton>
-        <PlanButton kind="primary" size="md" arrow onClick={handleUpgrade}>
-          {t('Upgrade')}
-        </PlanButton>
+        {plan === 'party' ? (
+          <PlanButton kind="primary" size="md" arrow onClick={handleTopUp}>
+            {t('Top up')}
+          </PlanButton>
+        ) : (
+          <PlanButton kind="primary" size="md" arrow onClick={handleUpgrade}>
+            {t('Upgrade')}
+          </PlanButton>
+        )}
       </div>
-      {/* 261103: ways to keep playing that cost Sei nothing (header). One
-          step quieter than the pair above: a small heading, sm buttons. */}
+      {/* 261103: ways to keep playing that cost Sei nothing, one step
+          quieter than Upgrade: an "or", then sm buttons. ChatGPT goes last so
+          its note is the bottom line (Shawn: less text in the lower half). */}
       {free.chatgpt || free.ownKey ? (
         <div className={styles.free} data-testid="wall-free-options">
-          <p className={styles.freeTitle}>{t('Keep playing free')}</p>
+          <p className={styles.freeTitle}>{t('or')}</p>
           <div className={styles.freeOptions}>
+            {free.ownKey ? (
+              <PlanButton
+                kind="secondary"
+                size="sm"
+                icon={<KeyIcon size={16} />}
+                onClick={() => takeWallFreeOption('own_key', hardStopReason, openedAt)}
+              >
+                {t('Use your own API key or a local model')}
+              </PlanButton>
+            ) : null}
             {free.chatgpt ? (
               <PlanButton
                 kind="secondary"
@@ -326,18 +341,7 @@ export function HardStopModal(): React.ReactElement | null {
                 {t('Use your ChatGPT plan')}
               </PlanButton>
             ) : null}
-            {/* The note belongs to the ChatGPT option, so it sits right under it. */}
-            {free.chatgpt ? <p className={styles.freeNote}>{t('Works with your ChatGPT Plus or Pro account.')}</p> : null}
-            {free.ownKey ? (
-              <PlanButton
-                kind="secondary"
-                size="sm"
-                icon={<KeyIcon size={16} />}
-                onClick={() => takeWallFreeOption('own_key', hardStopReason, openedAt)}
-              >
-                {t('Use your own API key or a local model')}
-              </PlanButton>
-            ) : null}
+            {free.chatgpt ? <p className={styles.freeNote}>{t('Works with ChatGPT Plus or Pro.')}</p> : null}
           </div>
         </div>
       ) : null}
