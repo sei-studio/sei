@@ -293,13 +293,17 @@ export function HardStopModal(): React.ReactElement | null {
     // the CTAs, and ESC are the deliberate dismiss paths. Base tier: the consent
     // gate and the top up modal stack above this at 1100.
     <ModalShell title={t('Usage limit reached')} width={440} onClose={closeTracked}>
-      <p className={styles.body}>
-        {t("You've used this week's allowance.")}
-      </p>
-      {resetLine ? <p className={`${styles.body} ${styles.resetLine}`}>{resetLine}</p> : null}
-      {/* 261103: one way forward, full width. Party has no tier above it,
-          so its button is Top up. Close stays a quiet footer link. */}
-      <div className={styles.ctas}>
+      {/* 261103 spacing pass: one stack, one rhythm. The shell's gap parts
+          the title, this stack and the footer; inside it the copy, the CTA
+          and the free options are groups a step further apart, and each
+          group keeps its own lines tight. */}
+      <div className={styles.stack}>
+        <div className={styles.copy}>
+          <p className={styles.body}>{t("You've used this week's allowance.")}</p>
+          {resetLine ? <p className={`${styles.body} ${styles.resetLine}`}>{resetLine}</p> : null}
+        </div>
+        {/* 261103: one way forward, full width. Party has no tier above it,
+            so its button is Top up. Close stays a quiet footer link. */}
         {plan === 'party' ? (
           <PlanButton kind="primary" size="md" arrow onClick={handleTopUp}>
             {t('Top up')}
@@ -309,14 +313,12 @@ export function HardStopModal(): React.ReactElement | null {
             {t('Upgrade')}
           </PlanButton>
         )}
-      </div>
-      {/* 261103: ways to keep playing that cost Sei nothing, one step
-          quieter than Upgrade: an "or", then sm buttons. ChatGPT goes last so
-          its note is the bottom line (Shawn: less text in the lower half). */}
-      {free.chatgpt || free.ownKey ? (
-        <div className={styles.free} data-testid="wall-free-options">
-          <p className={styles.freeTitle}>{t('or')}</p>
-          <div className={styles.freeOptions}>
+        {/* 261103: ways to keep playing that cost Sei nothing, one step
+            quieter than Upgrade: an "or", then sm buttons. ChatGPT goes last so
+            its note is the bottom line (Shawn: less text in the lower half). */}
+        {free.chatgpt || free.ownKey ? (
+          <div className={styles.free} data-testid="wall-free-options">
+            <p className={styles.freeTitle}>{t('or')}</p>
             {free.ownKey ? (
               <PlanButton
                 kind="secondary"
@@ -328,23 +330,25 @@ export function HardStopModal(): React.ReactElement | null {
               </PlanButton>
             ) : null}
             {free.chatgpt ? (
-              <PlanButton
-                kind="secondary"
-                size="sm"
-                icon={
-                  <span className={styles.chatgptLogo}>
-                    <ChatgptLogo size={16} />
-                  </span>
-                }
-                onClick={() => takeWallFreeOption('chatgpt', hardStopReason, openedAt)}
-              >
-                {t('Use your ChatGPT plan')}
-              </PlanButton>
+              <div className={styles.withNote}>
+                <PlanButton
+                  kind="secondary"
+                  size="sm"
+                  icon={
+                    <span className={styles.chatgptLogo}>
+                      <ChatgptLogo size={16} />
+                    </span>
+                  }
+                  onClick={() => takeWallFreeOption('chatgpt', hardStopReason, openedAt)}
+                >
+                  {t('Use your ChatGPT plan')}
+                </PlanButton>
+                <p className={styles.freeNote}>{t('Works with ChatGPT Plus or Pro.')}</p>
+              </div>
             ) : null}
-            {free.chatgpt ? <p className={styles.freeNote}>{t('Works with ChatGPT Plus or Pro.')}</p> : null}
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
       <ModalFooter>
         <Button kind="quiet" size="md" onClick={closeTracked}>
           {t('Close')}

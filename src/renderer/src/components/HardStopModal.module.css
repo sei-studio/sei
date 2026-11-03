@@ -1,6 +1,21 @@
 /* HardStopModal (PROXY-06) — Party redesign.
-   The scrim, panel, title, footer + animations are owned by ModalShell now;
-   only the body copy style remains here. */
+   The scrim, panel, title, footer + animations are owned by ModalShell.
+   261103 spacing pass: no child carries its own margin. Three steps only:
+     group gap   (--space-md-plus) between the copy, the CTA and the options
+     control gap (--space-sm)      between the lines / buttons of one group
+     caption gap (--space-xs)      a note under the button it belongs to */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md-plus);
+}
+
+.copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
 
 .body {
   font-family: var(--sans);
@@ -10,27 +25,20 @@
   margin: 0;
 }
 
-/* 260926: the "Free play resets in N days (...)" line, set apart from the
-   body so the answer to "when can I play again" is the thing you read. */
+/* 260926: the "Free play resets in N days (...)" line. Weight, not distance,
+   sets it apart: the answer to "when can I play again" is what you read. */
 .resetLine {
-  margin-top: 10px;
   color: var(--text);
   font-weight: 600;
-}
-
-/* 261103: one CTA, full width under the copy (Upgrade, or Top up on Party). */
-.ctas {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-sm);
-  margin-top: var(--space-lg);
 }
 
 /* 261103: the free options under an "or" below the CTA. Quieter than
    it: a small muted centered "or" and sm PlanButtons stacked full width. No
    divider line (house style: no border lines). */
 .free {
-  margin-top: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
 }
 
 .freeTitle {
@@ -40,22 +48,24 @@
   line-height: 1.4;
   color: var(--muted);
   text-align: center;
-  margin: 0 0 var(--space-sm);
+  margin: 0;
 }
 
-.freeOptions {
+/* A button and the caption that belongs to it. */
+.withNote {
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
+  gap: var(--space-xs);
 }
 
+/* Centered like the "or" and the button labels above it. */
 .freeNote {
   font-family: var(--sans);
   font-size: 13px;
   line-height: 1.4;
   color: var(--muted);
-  /* Pulled up toward its button; the column gap still parts it from the next. */
-  margin: calc(var(--space-sm) * -0.5) 0 0;
+  text-align: center;
+  margin: 0;
 }
 
 /* The ChatGPT logo is a brand asset: black or white only, so it keeps the
