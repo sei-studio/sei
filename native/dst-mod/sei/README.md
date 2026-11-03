@@ -79,6 +79,12 @@ cluster token:
    with a scenario on stdin (`tool`, `snap`, `obs`, `lua`, `wait`, `events`).
    Scenarios for the 0.3.0 habits are in `scripts/dst-headless-scenarios/`
    (chop near a fire at night, a night alone, holds/defend/give).
+5. Respawn after death (261104) needs a cluster with caves (`shard_enabled =
+   true`, a Master and a Caves shard, the mod enabled in both) and the
+   stand-in on Master: `DST_MASTER_FIFO=<fifo> npx tsx
+   scripts/dst-respawn-headless.ts cap|badspot` drives the real bot runtime
+   and main's DST module, kills the body from the console and prints where
+   each new body stood, the death-turn prompt and how the session ended.
 
 What a server with no real client cannot show: entities away from a real
 player are asleep, and a sleeping light does not light anything (the same
