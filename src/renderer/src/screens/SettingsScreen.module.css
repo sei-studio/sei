@@ -108,6 +108,33 @@
   margin: var(--space-xs) 0 0;
 }
 
+/* 261103: inline confirm that opens under a row (Experimental updates ON).
+   The row drops its hairline so the confirm reads as part of it; the confirm
+   carries the hairline instead. Text left, actions right. */
+.rowOpen {
+  border-bottom: none;
+}
+
+.inlineConfirm {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  margin: 0 0 var(--space-md);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+
+.inlineConfirmText {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text);
+}
+
 /* Inline text link inside a .helper line (e.g. the photo credits). */
 .creditLink {
   -webkit-appearance: none;

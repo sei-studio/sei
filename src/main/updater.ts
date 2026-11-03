@@ -1024,7 +1024,7 @@ export async function checkForUpdatesManual(): Promise<void> {
 }
 
 /**
- * Switch the update channel (Settings "Advanced updates" toggle). The renderer
+ * Switch the update channel (Settings "Experimental updates" toggle). The renderer
  * persists `advanced_updates` in config; this applies the choice to the live
  * updater so it takes effect without a re-launch.
  *

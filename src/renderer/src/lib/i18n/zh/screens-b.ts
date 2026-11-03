@@ -129,7 +129,8 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'up to date': '已是最新',
   'update available': '有可用更新',
   'check failed': '检查失败',
-  'Advanced updates': '抢先更新',
+  // 261103: "Advanced updates" renamed to Experimental updates, ON asks first.
+  'Experimental updates': '实验性更新',
   // 260909 Search group
   'Search': '搜索',
   // 261023: web search moved into the Games group, renamed for both.
@@ -146,9 +147,10 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'Paste your key': '粘贴你的密钥',
   'Clear': '清除',
   'Without a key, search falls back to the free providers.': '未设置密钥时，搜索会回退到免费提供方。',
-  'About advanced updates': '关于抢先更新',
-  'Get beta releases early, before they roll out to everyone. Betas are less tested and may have rough edges. Leave this off for the stable version.':
-    '在向所有人推送之前抢先获得测试版。测试版测试较少，可能不够完善。想用稳定版就保持关闭。',
+  'About experimental updates': '关于实验性更新',
+  'Try new features early. These builds can be buggy, and not every experimental feature makes it into the stable version.':
+    '抢先体验新功能。这些版本可能有 bug，而且并非每个实验性功能都会进入稳定版。',
+  "You'll get new features early, but they can be buggy. Continue?": '你会抢先用到新功能，但它们可能有 bug。要继续吗？',
   'Terms of Service': '服务条款',
   'Privacy Policy': '隐私政策',
   'Open': '打开',
