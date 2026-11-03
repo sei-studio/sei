@@ -1,6 +1,9 @@
 /* HomeNextStepCard (261013): the "up next" strip above the Home party wall.
- * In flow, full width, sharp and borderless except the hairline that
- * separates it from the panels. Tokens only. */
+ * In flow, full width, borderless except the hairline that separates it
+ * from the panels. Tokens only.
+ * 261103: one colour only, the portrait. The strip sits on the page itself
+ * (no tinted band), the label is the one quiet gray, the plan line is body
+ * text, the button is the neutral secondary and the dismiss stays gray. */
 
 .root {
   flex: none;
@@ -8,7 +11,7 @@
   align-items: center;
   gap: var(--space-md);
   padding: var(--space-sm) var(--space-lg);
-  background: var(--surface);
+  background: transparent;
   border-bottom: 1px solid var(--border);
   animation: fade-up 280ms var(--ease-pop) both;
 }
@@ -19,6 +22,7 @@
   height: 44px;
   overflow: hidden;
   background: var(--surface-2);
+  border-radius: var(--radius);
 }
 
 .copy {
@@ -73,7 +77,7 @@
   padding: 0;
   border: none;
   background: none;
-  color: var(--muted);
+  color: var(--text-2);
   cursor: pointer;
   transition: color 140ms var(--ease), background-color 140ms var(--ease);
   border-radius: var(--radius-sm);
@@ -81,7 +85,7 @@
 
 .dismiss:hover {
   color: var(--text);
-  background: var(--surface-2);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
 }
 
 .dismiss:focus-visible {

@@ -170,7 +170,7 @@
 .swatch {
   width: 30px;
   height: 30px;
-  border-radius: 50%;
+  border-radius: var(--radius);
   /* The two color halves (inline gradient) fill the WHOLE circle — the border
      is transparent so nothing behind the button leaks in at the rim; a faint
      INSET hairline keeps light swatches visible on light surfaces. Selected

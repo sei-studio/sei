@@ -46,7 +46,7 @@
   height: 22px;
   flex-shrink: 0;
   overflow: hidden;
-  border-radius: 50%;
+  border-radius: var(--radius-sm);
   background: var(--surface-2);
   display: flex;
   align-items: center;

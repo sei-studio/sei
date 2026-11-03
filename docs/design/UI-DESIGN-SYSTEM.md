@@ -28,9 +28,11 @@ the theme toggle.
 
 1. **Sharp-ish, almost never round.** Corners are 2px (`var(--radius)` /
    `var(--radius-sm)` in tokens.css; 261103, was `0` under D-28). Never a
-   literal radius. The deliberate circles: rail sockets/avatars, status
-   dots, radios. Nothing else rounds past 2px (the Toggle and PercentBar
-   were pills; both are on the token now).
+   literal radius, one rule everywhere: avatars and portraits (rail
+   sockets, chat, call tiles, profile picture) are 2px squares too. The
+   only circles left: tiny status dots (under ~10px), radios, spinners.
+   Nothing else rounds past 2px (the Toggle and PercentBar were pills;
+   both are on the token now).
 2. **One accent, used sparingly.** Periwinkle `#7FB0FF`. It marks the active
    nav, the primary CTA, focus rings, hovered borders, "new" presence — nothing
    decorative. Surfaces stay dark navy; green is reserved for live/in-world.

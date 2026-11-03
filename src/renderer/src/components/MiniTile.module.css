@@ -71,7 +71,7 @@
   display: block;
   width: 44px;
   height: 44px;
-  border-radius: 50%;
+  border-radius: var(--radius);
   overflow: hidden;
   background: var(--surface-2);
 }

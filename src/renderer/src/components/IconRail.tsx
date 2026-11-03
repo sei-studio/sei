@@ -7,7 +7,7 @@
  *      Opens the World tab (sets homeTab='world' then navigate home); active
  *      while the World tab is selected.
  *   3. Thin divider
- *   4. Scrollable 40px circular character sockets sorted by last_launched desc,
+ *   4. Scrollable 40px character sockets (--radius squares) sorted by last_launched desc,
  *      then created desc. Active when view.kind==='character' && id matches.
  *      Each socket carries a top-right activity badge when the character is
  *      on a voice call (phone) or in a live game session (controller) — see
@@ -101,7 +101,7 @@ interface RailButtonProps {
   title?: string;
   badge?: boolean;
   muted?: boolean;
-  /** When true, omit the active-bar so circular avatars can carry their own focus ring. */
+  /** When true, omit the active-bar so the avatars can carry their own focus ring. */
   noActiveBar?: boolean;
   /** Optional warm-up fired on hover / focus (e.g. prefetch the World grid). */
   onHoverStart?: () => void;
@@ -211,8 +211,8 @@ export function avatarActivityBadge(
 
 /**
  * Single avatar in the scrollable character cluster. Uses the character's
- * portrait_image when present (rendered as a circular <img>), otherwise
- * a 40px PixelPortrait inside a circular clip.
+ * portrait_image when present (rendered as a --radius-cornered <img>), otherwise
+ * a 40px PixelPortrait inside the same clip.
  */
 interface AvatarButtonProps {
   characterId: string;
@@ -277,7 +277,7 @@ function AvatarButton({
       onBlur={() => setHover(null)}
     >
       {/*
-        Wrapper enforces the circular crop. Browsers honor `border-radius`
+        Wrapper enforces the avatar crop. Browsers honor `border-radius`
         on <img>, but non-square portraits with `object-fit:cover` + the
         `image-rendering: pixelated` rule have shown inconsistent clipping
         in some Electron builds. A wrapping div with `overflow: hidden`
@@ -303,7 +303,7 @@ function AvatarButton({
           />
         )}
       </span>
-      {/* Activity badge — sits OUTSIDE .avatarClip so the circular crop
+      {/* Activity badge — sits OUTSIDE .avatarClip so the avatar crop
           doesn't shave it; the panel-colored ring separates it from the
           avatar art. aria-hidden: the activity is already in the button's
           aria-label suffix. */}

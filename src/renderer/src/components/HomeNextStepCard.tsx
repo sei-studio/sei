@@ -70,7 +70,7 @@ export function HomeNextStepCard({
         <span className={styles.text}>{step.text}</span>
       </div>
       <div className={styles.actions}>
-        <Button kind="primary" size="md" onClick={() => launchHomeNextStep(step)}>
+        <Button kind="secondary" size="md" onClick={() => launchHomeNextStep(step)}>
           {nextStepButtonLabel(target, name, t)}
         </Button>
         <button

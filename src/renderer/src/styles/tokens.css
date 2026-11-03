@@ -80,8 +80,9 @@
    *   --radius     chrome: buttons, fields, cards, panels, menus
    *   --radius-sm  small controls: tags, badges, icon buttons, checkboxes,
    *                toggle, slider thumbs, scrollbar thumb, progress tracks
-   * NOT: circles (50%: avatars, dots, radios), the underline-only
-   * TextField, hairline bars under 6px tall, pixel art, the Continue with
+   * Avatars and portraits are --radius squares too (261103, one rule).
+   * NOT: the few circles left (50%: tiny status dots, radios, spinners),
+   * the underline-only TextField, hairline bars under 6px tall, pixel art, the Continue with
    * ChatGPT / Google sign-in buttons (their brand shapes), or the game
    * register (Draw!, Stardew/DST/Minecraft dashboards + launch panels,
    * backseat, onboarding art cards, the tutorial speech bubble). */
