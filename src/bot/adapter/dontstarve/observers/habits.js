@@ -21,6 +21,7 @@ export function habitPhrase(ev) {
         case 'crafted': return 'crafted a torch for light'
         case 'prepared': return 'made a torch for tonight'
         case 'built': return `built a ${item ?? 'campfire'} for light`
+        case 'picked': return `picked ${item === 'cutgrass' ? 'grass' : (item ?? 'makings')} for a torch`
         case 'stowed': return `put your ${item ?? 'torch'} away`
         default: return null
       }
