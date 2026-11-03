@@ -5,7 +5,10 @@ set -u
 cd "$(dirname "$0")/.."
 OUT_ROOT="${SEILINK_OUT:-$PWD/out}"
 mkdir -p "$OUT_ROOT"
-ELECTRON="$(node -p "require('electron')")"
+# electron 42 fetches its binary on first require and prints progress first: keep the last line.
+ELECTRON="$(node -p "require('electron')" | tail -n 1)"
+# macOS has no coreutils timeout; perl's alarm survives exec.
+run_timeout() { if command -v timeout >/dev/null; then timeout "$@"; else perl -e 'alarm shift; exec @ARGV' "$@"; fi; }
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) OS=win ;;
   Darwin) OS=mac ;;
@@ -23,7 +26,7 @@ echo "OS=$OS electron=$ELECTRON variants: $VARIANTS"
 for v in $VARIANTS; do
   echo "::group::variant $v"
   start=$(date +%s)
-  timeout 200 "$ELECTRON" . --variant="$v" --out="$OUT_ROOT/$v" --timeout=170 > "$OUT_ROOT/$v.stdout.txt" 2>&1
+  run_timeout 200 "$ELECTRON" . --variant="$v" --out="$OUT_ROOT/$v" --timeout=170 > "$OUT_ROOT/$v.stdout.txt" 2>&1
   code=$?
   echo "exit=$code after $(( $(date +%s) - start ))s" | tee -a "$OUT_ROOT/$v.stdout.txt"
   grep -E "attach|checks|FATAL|CLOSED|ram |HARD|reattach|mac attach|raw input|proxy|TextEdit|notepad|explorer" "$OUT_ROOT/$v/log.txt" 2>/dev/null | cut -c1-400 | head -40

@@ -101,6 +101,7 @@ async function shot(name, { dc = false } = {}) {
   const file = path.join(OUT, `${name}.png`)
   const framesAt = latestRoom ? latestRoom.frames : null
   let r
+  if (argv['no-shots']) return { file, framesAt, ok: false }
   if (IS_WIN) {
     r = await run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(ROOT, 'scripts', 'shot-win.ps1'), '-Path', file])
   } else if (IS_MAC) {
@@ -335,6 +336,14 @@ async function scenario() {
   let proxy = null
   if (preset.proxy) proxy = await createProxy()
 
+  if (argv.hold) {
+    // Real-machine mode: keep the room up so a human/VNC can screenshot and click it.
+    log(`HOLD ${argv.hold}s: take screenshots / click the yellow hit proxy now`)
+    phase = 'hold'
+    await sleep(Number(argv.hold) * 1000)
+    result.checks.fpsHold = fpsSummary('hold')
+    phase = 'visible'
+  }
   await sleep(2500)
   const A = await shotAndCheck('01-a', {}, { dc: true })
   await sleep(3000)
@@ -531,7 +540,7 @@ const hardStop = setTimeout(() => {
   result.hardTimeout = true
   save()
   app.exit(3)
-}, Number(argv.timeout || 150) * 1000)
+}, (Number(argv.timeout || 150) + Number(argv.hold || 0)) * 1000)
 
 if (IS_MAC && app.setActivationPolicy) app.setActivationPolicy('accessory')
 app
