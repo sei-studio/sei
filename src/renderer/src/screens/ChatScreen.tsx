@@ -965,17 +965,21 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
             </button>
           </div>
           <div className={styles.presBody}>
-            <div className={styles.presNameRow}>
-              <span className={styles.presName}>{showingUser ? userName : companionName}</span>
-              {showingUser
-                ? userProfile?.handle && <IdTag id={userProfile.handle} size="sm" />
-                : character?.public_id && <IdTag id={character.public_id} size="sm" />}
+            {/* 261103: who and what they are doing, one tight group; the
+                actions are the next group below. */}
+            <div className={styles.presIdentity}>
+              <div className={styles.presNameRow}>
+                <span className={styles.presName}>{showingUser ? userName : companionName}</span>
+                {showingUser
+                  ? userProfile?.handle && <IdTag id={userProfile.handle} size="sm" />
+                  : character?.public_id && <IdTag id={character.public_id} size="sm" />}
+              </div>
+              <div className={styles.presKind}>
+                {showingUser ? t('Human') : kindLine === 'Companion' ? t('Companion') : kindLine}
+              </div>
+              {!showingUser ? <Presence category={presence.category} label={presence.label} /> : null}
+              {!showingUser && nowVerb ? <div className={styles.presNow}>{nowVerb}</div> : null}
             </div>
-            <div className={styles.presKind}>
-              {showingUser ? t('Human') : kindLine === 'Companion' ? t('Companion') : kindLine}
-            </div>
-            {!showingUser ? <Presence category={presence.category} label={presence.label} /> : null}
-            {!showingUser && nowVerb ? <div className={styles.presNow}>{nowVerb}</div> : null}
             {!showingUser ? (
               <div className={styles.presActions}>
                 {online ? (
