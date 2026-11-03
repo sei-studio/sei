@@ -41,3 +41,19 @@ The product design never posts mouse messages into Chromium.
 ```
 npm ci && npm run build:addon && bash scripts/ci-run.sh   # or SEILINK_VARIANTS="auto" ...
 ```
+
+Round 2 CI result (2026-11-04, CI run on code at 136083b6): every check passes on windows-2022 (classic
+layout), windows-2025 (raised layout), macos-15 and macos-26. Things learned on the way:
+
+- The Windows coverage rect test had its arguments swapped for three runs, so every visible
+  window on the primary monitor read as fullscreen. The shell-class skip list in
+  `win_r2.inc` was added while chasing that and is a guard, not a proven need.
+- windows-2025: after WM_CLOSE to the WorkerW, 0x052C does not bring one back. The room stays
+  visible as a child of Progman, so `validate()` accepts a missing WorkerW after one re-attach.
+- windows-2022 (classic): hiding the room left its last frame on screen until the wallpaper was
+  re-applied (`SPI_SETDESKWALLPAPER` with NULL after the hide).
+- mac: a zoomed TextEdit or a fullscreen window does not occlude the whole room window (menu bar
+  and Dock strips stay visible); "covered" comes from the hit panel over the companion rect
+  reporting itself occluded.
+- mac double click arrives as down, click, down, dblclick: the product must hold a single click
+  for the double-click interval before acting on it.
