@@ -3174,7 +3174,7 @@ export interface RendererApi {
   /** Manually trigger an update check (Settings "Check for updates"). */
   checkForUpdates(): Promise<void>;
   /**
-   * Switch the update channel (Settings "Advanced updates" toggle). `advanced`
+   * Switch the update channel (Settings "Experimental updates" toggle). `advanced`
    * true tracks beta (pre-releases included); false tracks stable only. The
    * renderer persists `advanced_updates` in config; this applies it to the live
    * updater and, when enabling, re-checks so a waiting beta surfaces at once.

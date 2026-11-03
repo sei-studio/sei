@@ -58,6 +58,7 @@ import { SearchSettingsSection } from '../components/settings/SearchSettingsSect
 import { LocalImportRow } from '../components/settings/LocalImportRow';
 import { FishAudioSettings } from '../components/settings/FishAudioSettings';
 import { FacepackDevRow } from '../components/settings/FacepackDevRow';
+import { ExperimentalUpdatesRow } from '../components/settings/ExperimentalUpdatesRow';
 import { ChatgptPlanSettings, revealSettingsFocus, settingsFocusTargetClass } from '../components/ChatgptPlanSettings';
 import { ChatgptLinkRow } from '../components/settings/ChatgptLinkRow';
 import { chatgptReady, useChatgptStore } from '../lib/stores/useChatgptStore';
@@ -217,7 +218,8 @@ export function SettingsScreen(): React.ReactElement {
   const [updateStatus, setUpdateStatus] = useState<
     'idle' | 'checking' | 'up-to-date' | 'available' | 'error'
   >('idle');
-  // "Advanced updates" channel. Off = stable only (the default); on = beta
+  // "Experimental updates" channel (config key advanced_updates). Off = stable
+  // only (the default); on = beta
   // (pre-releases included). Seeded from config on open; persisted + pushed to
   // the live updater on toggle. Local state, since only this screen reads it.
   const [advancedUpdates, setAdvancedUpdates] = useState<boolean>(false);
@@ -853,7 +855,8 @@ export function SettingsScreen(): React.ReactElement {
     }
   };
 
-  // About: persist the "Advanced updates" channel toggle, then push it to the
+  // About: persist the "Experimental updates" channel toggle (after its inline
+  // confirm when turning on, see ExperimentalUpdatesRow), then push it to the
   // live updater so it takes effect without a re-launch. Optimistic-then-
   // write-through, same as the dev-console toggle; setUpdateChannel(true) also
   // re-checks so a waiting beta surfaces right away.
@@ -1922,24 +1925,14 @@ export function SettingsScreen(): React.ReactElement {
               {t('Check now')}
             </Button>
           </div>
-          {/* Advanced updates: opt into the beta channel. Off by default so a
-              normal user is never moved onto a pre-release build. */}
-          <div className={styles.row}>
-            <span className={styles.label}>
-              {t('Advanced updates')}
-              <InfoTip
-                label={t('About advanced updates')}
-                text={t(
-                  'Get beta releases early, before they roll out to everyone. Betas are less tested and may have rough edges. Leave this off for the stable version.',
-                )}
-              />
-            </span>
-            <Toggle
-              aria-label={t('Advanced updates')}
-              on={advancedUpdates}
-              onChange={(v) => void onToggleAdvancedUpdates(v)}
-            />
-          </div>
+          {/* Experimental updates (was "Advanced updates"; config key
+              advanced_updates): opt into the beta channel. Off by default so a
+              normal user is never moved onto a pre-release build. Turning it
+              on asks first, inline under the row. */}
+          <ExperimentalUpdatesRow
+            on={advancedUpdates}
+            onSave={(v) => void onToggleAdvancedUpdates(v)}
+          />
           <div className={styles.row}>
             <span className={styles.label}>{t('Terms of Service')}</span>
             <Button

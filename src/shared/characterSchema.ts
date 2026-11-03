@@ -650,7 +650,8 @@ export const UserConfigSchema = z.object({
    */
   dev_console_visible: z.boolean().optional().default(false),
   /**
-   * "Advanced updates" (About). When on, this install tracks the beta channel:
+   * "Experimental updates" (About; labelled "Advanced updates" before 261103).
+   * When on, this install tracks the beta channel:
    * the updater sets `autoUpdater.allowPrerelease = true` and offers ANY newer
    * release, including GitHub pre-releases. Off (the default) tracks stable
    * only, so a normal user is NEVER moved onto a beta build. Every release ships

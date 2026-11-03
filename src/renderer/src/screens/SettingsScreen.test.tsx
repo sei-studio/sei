@@ -348,8 +348,9 @@ describe('SettingsScreen (W5 china-compat: Voice group, TTS packs + SenseVoice)'
     expect(src.includes('id="local-tts-voice"')).toBe(false);
     // Picking Kokoro without its pack offers the download, then saves.
     expect(src.includes("if (thenKokoro) await persistLocalModel('kokoro')")).toBe(true);
-    // Never labelled experimental (Shawn, 261102).
-    expect(/experimental/i.test(src)).toBe(false);
+    // Never labelled experimental (Shawn, 261102). The About row's own
+    // "Experimental updates" (261103) is the one allowed use.
+    expect(/experimental/i.test(src.replace(/ExperimentalUpdatesRow|Experimental updates/g, ''))).toBe(false);
   });
 
   it('V.3: the two TTS pack rows carry the registry pack ids and an uninstall affordance', () => {
