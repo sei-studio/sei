@@ -441,3 +441,49 @@ describe('repeatedOpener, context and signatures', () => {
     expect(ownRepeatsNote(lines, [], { now: nowAfter(2), context: ['crafting_table×1'] })).not.toContain('keep starting with')
   })
 })
+
+// 261103 (pass 40): a phrase from her own character prompt in her last line
+// is named on the next turn, even when it is the only line she has said.
+describe('repeatedOwnPhrases, phrases from her card', () => {
+  const card = 'You see {{user}} as your big brother or big sister.\nExamples:\n"Oh! Did you see that, big brother?"\n"Can I sit with you for a while?"'
+
+  it('names a card phrase from her greeting on the very next turn', () => {
+    const lines = session(["Oh! Alex, you're back. I missed the river hut, big brother."])
+    expect(repeatedOwnPhrases(lines, [], { now: nowAfter(1), names: ['Alex'] })).toEqual([])
+    const hits = repeatedOwnPhrases(lines, [], { now: nowAfter(1), names: ['Alex'], card })
+    expect(hits).toEqual([{ phrase: 'big brother', count: 2, card: true }])
+  })
+
+  it('looks only at her last line, so a phrase she likes comes back every other line at most', () => {
+    const lines = session(['okay big brother', 'getting the logs now'])
+    expect(repeatedOwnPhrases(lines, [], { now: nowAfter(2), card })).toEqual([])
+  })
+
+  it('keeps the usual filters: names, the job, and what the player said', () => {
+    const lines = session(['can i sit with you for a while'])
+    // "sit with you for a while" is two content words, one of them hers.
+    expect(repeatedOwnPhrases(lines, [], { now: nowAfter(1), card }).map((h) => h.phrase)).toEqual(['sit with you for a while'])
+    expect(repeatedOwnPhrases(lines, [{ who: 'Alex', text: 'sit with you for a while? sure' }], { now: nowAfter(1), card })).toEqual([])
+    // A phrase that is only the job ("need oak logs") is never hers.
+    expect(repeatedOwnPhrases(session(['ok need oak logs']), [], { now: nowAfter(1), card: 'you always need oak logs', vocab: ['oak_log'] })).toEqual([])
+    expect(repeatedOwnPhrases(session(['nice one alex smith']), [], { now: nowAfter(1), card: 'say nice one alex smith', names: ['Alex Smith'] })).toEqual([])
+  })
+
+  it('a phrase she really said twice keeps the plain count', () => {
+    const lines = session(['big brother look', 'thanks big brother'])
+    expect(repeatedOwnPhrases(lines, [], { now: nowAfter(2), card })).toEqual([{ phrase: 'big brother', count: 2 }])
+  })
+
+  it('reaches every kind of turn through ownRepeatsNote, worded as from her card', () => {
+    const lines = session(["Oh! Alex, you're back. I missed you, big brother."])
+    const reply = ownRepeatsNote(lines, [], { now: nowAfter(1), names: ['Alex'], signature: card })
+    expect(reply).toContain('Your last line took "big brother" from your character prompt. Leave it out of this one unless the moment really calls for it.')
+    expect(reply).toContain('Your last line to them was')
+    const idle = ownRepeatsNote(lines, [], { now: nowAfter(1), names: ['Alex'], signature: card, mode: 'idle' })
+    expect(idle).toBe('Your last line took "big brother" from your character prompt. Leave it out of this one unless the moment really calls for it.')
+    // Nothing from the card: the note is what it was.
+    const plain = session(["Oh! Alex, you're back. I missed you."])
+    expect(ownRepeatsNote(plain, [], { now: nowAfter(1), names: ['Alex'], signature: card, mode: 'idle' })).toBeNull()
+    expect(ownRepeatsNote(plain, [], { now: nowAfter(1), names: ['Alex'], signature: card })).not.toContain('character prompt')
+  })
+})

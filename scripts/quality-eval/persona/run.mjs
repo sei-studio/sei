@@ -15,7 +15,7 @@
 //   ELECTRON_RUN_AS_NODE=1 npx electron scripts/quality-eval/persona/run.mjs \
 //     --chars ~/suisei/eval/characters --out <dir> [--reps 3] [--only sui,marv]
 //     [--situations greeting,tease] [--concurrency 5]
-//     [--history <samples.jsonl> [--history-n 3]]
+//     [--history <samples.jsonl> [--history-n 3]] [--chain small_talk,tease,order]
 //
 // --history replays a longer session before each situation: after the
 // greeting, N earlier exchanges of the same character and rep (the player's
@@ -34,6 +34,13 @@
 // --history-n 3, where the note fired in 7 of 15 situations. A card that puts
 // a tic in every opening line is still the problem; this is only how to read
 // the number. To try a card change, see card-edits.mjs.
+//
+// --chain runs one live session per character and rep instead: the greeting,
+// then each listed situation in order, all through the real model in the same
+// brain, so every turn hears what she actually said before it (runChain).
+// It costs one model call per turn, like the default mode, and shows how far
+// the greeting's wording carries into the next few turns, which neither a
+// primed second turn nor a replayed history from another run can.
 //
 // The Anthropic key is read from ~/.sei-dev/anthropic-test-key (or
 // ANTHROPIC_API_KEY) and never printed. Output: <out>/samples.jsonl, one row
@@ -64,6 +71,7 @@ const SITS = arg('situations')?.split(',')
 const MODEL = arg('model', 'claude-haiku-5-5')
 const HISTORY = arg('history')
 const HISTORY_N = Number(arg('history-n', 3))
+const CHAIN = arg('chain')?.split(',').filter(Boolean)
 if (!OUT) { console.error('--out required'); process.exit(2) }
 fs.mkdirSync(path.join(OUT, 'requests'), { recursive: true })
 
@@ -88,11 +96,13 @@ const quietLogger = {
 const textOf = (content) => (content ?? []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim()
 
 /**
- * One brain instance for one (character, situation, rep). `prime` replays a
- * greeting line through a stubbed first dispatch so the session reads as a
- * few minutes in. Returns the sample row.
+ * One brain instance for one character: the stub world, the provider that
+ * forwards one model call per dispatch to the real API, and the orchestrator.
+ * `live(sit, data)` runs a dispatch through the real model and returns what it
+ * said and did; `prime(line, ev, data)` runs a dispatch whose turn is the
+ * given line, as if she had said it.
  */
-async function runOne({ ch, sit, rep, primeLine, history = [] }) {
+async function createSession(ch) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'persona-eval-'))
   const mem = (f) => path.join(dir, f)
   await savePlayer(mem('PLAYER.md'), {
@@ -113,15 +123,16 @@ async function runOne({ ch, sit, rep, primeLine, history = [] }) {
     entity: { position: { x: 112, y: 71, z: -40 } }, health: 20, food: 20,
   }
   const realAdapter = createMinecraftAdapter({ bot, config, visionEnabled: true })
+  let current = null
   const overrides = {
-    createSnapshotComposer: () => ({ next: () => sit.snapshot }),
+    createSnapshotComposer: () => ({ next: () => current?.snapshot }),
     closeAnySessions: async () => {},
   }
   const adapter = new Proxy(realAdapter, { get: (t, k) => (k in overrides ? overrides[k] : t[k]) })
 
   const real = createAnthropicProvider(config)
-  let mode = primeLine != null ? 'prime' : 'live'
-  let pendingPrime = primeLine
+  let mode = 'live'
+  let pendingPrime = null
   let calls = 0
   let sample = null
   const endLoop = () => ({
@@ -133,8 +144,7 @@ async function runOne({ ch, sit, rep, primeLine, history = [] }) {
     get model() { return real.model },
     async call(req) {
       if (mode === 'prime') {
-        // Stand-in for the greeting turn that opened this session: the
-        // character's own greeting line from the same rep.
+        // Stand-in for an earlier turn of this session: a line of hers.
         mode = 'primed'
         const tu = { id: 'prime1', name: 'say', input: { text: pendingPrime } }
         return { text: '', toolUses: [tu], content: [{ type: 'tool_use', ...tu }], usage: {}, stopReason: 'tool_use' }
@@ -150,9 +160,9 @@ async function runOne({ ch, sit, rep, primeLine, history = [] }) {
         says, actions, scratchpad: String(resp.text ?? '').trim(), stopReason: resp.stopReason,
         usage: resp.usage, ms: Date.now() - t0,
       }
-      if (!captured.has(`${ch.key}-${sit.id}`)) {
-        captured.add(`${ch.key}-${sit.id}`)
-        fs.writeFileSync(path.join(OUT, 'requests', `${ch.key}-${sit.id}.json`), JSON.stringify({
+      if (current && !captured.has(`${ch.key}-${current.id}`)) {
+        captured.add(`${ch.key}-${current.id}`)
+        fs.writeFileSync(path.join(OUT, 'requests', `${ch.key}-${current.id}.json`), JSON.stringify({
           systemBlocks: req.systemBlocks, messages: req.messages, tools: (req.tools ?? []).map((t) => t.name),
         }, null, 1))
       }
@@ -173,34 +183,92 @@ async function runOne({ ch, sit, rep, primeLine, history = [] }) {
     adapter, config, logger: quietLogger, sessionState,
     playerStore: { loadPlayer, savePlayer, formatPlayerSeedBlock }, _anthropicOverride: provider,
   })
+  return {
+    orch,
+    async prime(line, event, data, sit = null) {
+      current = sit
+      pendingPrime = line
+      mode = 'prime'
+      await orch.handleDispatch(event, data, new AbortController().signal)
+      mode = 'live'
+    },
+    async live(sit, data) {
+      current = sit
+      mode = 'live'
+      calls = 0
+      sample = null
+      let error = null
+      try {
+        await orch.handleDispatch(sit.dispatch.event, data, new AbortController().signal)
+      } catch (err) { error = String(err?.message ?? err) }
+      if (!sample) error = error ?? 'no model call captured'
+      return { error, sample }
+    },
+    close() { try { fs.rmSync(dir, { recursive: true, force: true }) } catch {} },
+  }
+}
+
+const beat = () => new Promise((r) => setTimeout(r, 300))
+const dataFor = (sit, ch) => JSON.parse(JSON.stringify(sit.dispatch.data).replaceAll('{NAME}', ch.name))
+
+/**
+ * One brain instance for one (character, situation, rep). `prime` replays a
+ * greeting line through a stubbed first dispatch so the session reads as a
+ * few minutes in. Returns the sample row.
+ */
+async function runOne({ ch, sit, rep, primeLine, history = [] }) {
+  const s = await createSession(ch)
   if (primeLine != null) {
-    await orch.handleDispatch('sei:idle', { reason: 'just_connected_first_spawn' }, new AbortController().signal)
+    // The target situation's snapshot rides the replayed turns too, as before.
+    await s.prime(primeLine, 'sei:idle', { reason: 'just_connected_first_spawn' }, sit)
     // Earlier exchanges of a longer session (--history). Each is its own
     // stubbed turn, a beat apart: a turn's lines are recorded within a few ms
     // of each other, and two turns are seconds apart in a real session.
     for (const h of history) {
-      await new Promise((r) => setTimeout(r, 300))
-      if (h.playerLine) orch.recordIncomingChat(PLAYER_NAME, h.playerLine)
-      pendingPrime = h.say
-      mode = 'prime'
-      await orch.handleDispatch('sei:idle', { quietMs: 20000 }, new AbortController().signal)
+      await beat()
+      if (h.playerLine) s.orch.recordIncomingChat(PLAYER_NAME, h.playerLine)
+      await s.prime(h.say, 'sei:idle', { quietMs: 20000 }, sit)
     }
-    if (history.length) await new Promise((r) => setTimeout(r, 300))
-    mode = 'live'
+    if (history.length) await beat()
   }
-  const data = JSON.parse(JSON.stringify(sit.dispatch.data).replaceAll('{NAME}', ch.name))
-  let error = null
-  try {
-    await orch.handleDispatch(sit.dispatch.event, data, new AbortController().signal)
-  } catch (err) { error = String(err?.message ?? err) }
-  try { fs.rmSync(dir, { recursive: true, force: true }) } catch {}
-  if (!sample) error = error ?? 'no model call captured'
+  const data = dataFor(sit, ch)
+  const { error, sample } = await s.live(sit, data)
+  s.close()
   return {
     char: ch.key, name: ch.name, situation: sit.id, rep, model: MODEL,
     playerLine: sit.dispatch.event === 'player_chat' ? data.text : null,
     event: sit.dispatch.event, primeLine: primeLine ?? null,
     ...(history.length ? { history: history.map((h) => h.say) } : {}), error, ...(sample ?? {}),
   }
+}
+
+/**
+ * --chain: one live session per (character, rep). The greeting and then each
+ * chained situation in order go through the real model in the same brain, so
+ * every turn hears what she really said on the turns before it, the way the
+ * opening minutes of a real session do. The player's line is recorded the way
+ * chat.js does before its dispatch. One row per turn, with `turn` (0 is the
+ * greeting) and `chain: true`.
+ */
+async function runChain({ ch, rep, chainSits, write }) {
+  const s = await createSession(ch)
+  const rows = []
+  const sits = [SITUATIONS.find((x) => x.id === 'greeting'), ...chainSits]
+  for (const [turn, sit] of sits.entries()) {
+    if (turn > 0) await beat()
+    const data = dataFor(sit, ch)
+    if (sit.dispatch.event === 'player_chat') s.orch.recordIncomingChat(PLAYER_NAME, data.text)
+    const { error, sample } = await s.live(sit, data)
+    const row = {
+      char: ch.key, name: ch.name, situation: sit.id, rep, model: MODEL, chain: true, turn,
+      playerLine: sit.dispatch.event === 'player_chat' ? data.text : null,
+      event: sit.dispatch.event, primeLine: null, error, ...(sample ?? {}),
+    }
+    write(row)
+    rows.push(row)
+  }
+  s.close()
+  return rows
 }
 
 const captured = new Set()
@@ -227,6 +295,16 @@ const write = (row) => {
   const said = row.says?.length ? row.says.join(' | ') : '(silent)'
   const acts = row.actions?.map((a) => a.name).join(',') || '-'
   console.log(`[${row.char}/${row.situation}/${row.rep}] ${row.error ? 'ERROR ' + row.error : said}  {${acts}}`)
+}
+
+if (CHAIN) {
+  const chainSits = CHAIN.map((id) => SITUATIONS.find((x) => x.id === id) ?? (() => { throw new Error(`unknown situation ${id}`) })())
+  const chainJobs = chars.flatMap((ch) => Array.from({ length: REPS }, (_, rep) => ({ ch, rep, chainSits, write, meta: { char: ch.key, situation: 'chain', rep } })))
+  await pool(chainJobs, CONC, runChain)
+  out.end()
+  await new Promise((r) => out.on('finish', r))
+  console.log(`done -> ${samplesPath}`)
+  process.exit(0)
 }
 
 // Greetings first: every primed situation replays the same rep's greeting.

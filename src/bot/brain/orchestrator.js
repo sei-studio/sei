@@ -1564,6 +1564,10 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   }
   // `mode` is the kind of turn (ownRepeats.js REUSE_ASK): 'reply' when the
   // player just spoke, 'idle' for a turn of her own, 'checkin' mid-action.
+  // `signature` is her card: its words mark an opener as a signature, and
+  // (261103, pass 40) a phrase from it in her last line is named on the next
+  // turn, so the first reply after a greeting copied from the card is told.
+  // The note grows only on those turns.
   function ownRepeatsText(mode = 'reply') {
     try {
       const { selfLines, playerLines } = convoMemory.recentChat._internal

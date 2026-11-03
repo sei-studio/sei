@@ -100,6 +100,20 @@ function signatureWords(text) {
   return _sigCache.words
 }
 
+// 261103 (pass 40): every run of 2 to 10 words in the card, for the card
+// phrase check in repeatedOwnPhrases. Built once per card text.
+let _cardCache = { text: null, grams: new Set() }
+function cardGrams(text) {
+  const t = typeof text === 'string' ? text : ''
+  if (_cardCache.text !== t) {
+    const w = tokensOf(t)
+    const grams = new Set()
+    for (let i = 0; i < w.length; i++) for (let n = 2; n <= 10 && i + n <= w.length; n++) grams.add(w.slice(i, i + n).join(' '))
+    _cardCache = { text: t, grams }
+  }
+  return _cardCache.grams
+}
+
 /** Group self lines ({at, text}, oldest first) into turns. */
 export function groupTurns(selfLines, gapMs = TURN_GAP_MS) {
   const turns = []
@@ -286,18 +300,30 @@ export function recentOwnTurns(selfLines, { now = Date.now(), turns = LAST_LINES
  * were all quoted in her last lines and none was named, and "repetitive" was
  * half of the off lines.
  *
+ * 261103 (pass 40): `card` is her character prompt. A phrase from it that
+ * she used in her LAST turn counts as said twice: once by her, once by the
+ * card that keeps handing it to her. That is the one repeat the turn count
+ * cannot see early: the first reply of a session follows a single line, her
+ * greeting, and the greeting is the line most taken from the card. In the
+ * persona eval (11-03 dev) Roger's greeting carried his sample line's "big
+ * brother" and so did 86% of the replies after it, before anything could
+ * name it. These come back with `card: true`. Only her last turn counts this
+ * way, so a phrase she likes is named on the turn after she says it, not for
+ * the rest of the window.
+ *
  * @param {Array<{at:number,text:string}>} selfLines   oldest first
  * @param {Array<{text:string,who?:string}>} [playerLines]
- * @returns {Array<{phrase:string, count:number}>} at most `max`, most repeated first
+ * @returns {Array<{phrase:string, count:number, card?: true}>} at most `max`, most repeated first
  */
 export function repeatedOwnPhrases(selfLines, playerLines = [], {
   now = Date.now(), window = PHRASE_TURNS, withinMs = PHRASE_WITHIN_MS, minTurns = 2, max = MAX_PHRASES,
-  playerWindow = 8, names = [], context = [], vocab = null, asked = false,
+  playerWindow = 8, names = [], context = [], vocab = null, asked = false, card = null,
 } = {}) {
   const turns = groupTurns(selfLines)
     .filter((t) => !Number.isFinite(t.at) || now - t.at <= withinMs)
     .slice(-window)
-  if (turns.length < minTurns) return []
+  const grams = typeof card === 'string' && card.trim() ? cardGrams(card) : null
+  if (turns.length < (grams ? 1 : minTurns)) return []
   const known = new Set()
   for (const n of [...(names ?? []), ...(playerLines ?? []).map((l) => l?.who), ...(context ?? [])]) {
     for (const w of tokensOf(n)) if (w.length > 1) for (const k of wordKeys(w)) known.add(k)
@@ -321,6 +347,17 @@ export function repeatedOwnPhrases(selfLines, playerLines = [], {
     }
     for (const p of seen) counts.set(p, (counts.get(p) ?? 0) + 1)
   }
+  // Phrases of her last turn that the card has too (see `card` above).
+  const fromCard = new Set()
+  if (grams) {
+    const t = tokensOf(turns[turns.length - 1].text)
+    for (let i = 0; i < t.length; i++) {
+      for (let n = 2; n <= 10 && i + n <= t.length; n++) {
+        const p = t.slice(i, i + n).join(' ')
+        if (grams.has(p) && (counts.get(p) ?? 0) < minTurns) { counts.set(p, minTurns); fromCard.add(p) }
+      }
+    }
+  }
   const isWord = (w) => isContent(w) || COUNT_WORDS.has(w)
   const ok = (p, c) => {
     const words = p.split(' ')
@@ -341,7 +378,7 @@ export function repeatedOwnPhrases(selfLines, playerLines = [], {
   }
   const hits = [...counts]
     .filter(([p, c]) => c >= minTurns && ok(p, c))
-    .map(([phrase, count]) => ({ phrase, count }))
+    .map(([phrase, count]) => (fromCard.has(phrase) ? { phrase, count, card: true } : { phrase, count }))
     .sort((a, b) => b.count - a.count || b.phrase.split(' ').length - a.phrase.split(' ').length)
   const out = []
   for (const h of hits) {
@@ -452,14 +489,20 @@ function linesNote(selfLines, playerLines, opts = {}) {
   // A fact she repeats is fine when the player just asked about it.
   const lastHeard = (playerLines ?? []).filter((l) => l && l.companion !== true).at(-1)
   const asked = (mode === 'reply' || mode === 'greeted') && isQuestion(lastHeard?.text)
-  const phrases = repeatedOwnPhrases(selfLines, playerLines, { ...opts, asked })
+  const phrases = repeatedOwnPhrases(selfLines, playerLines, { ...opts, asked, card: opts.signature })
     .filter((p) => !skip.some((t) => ` ${p.phrase} `.includes(t)))
   const names = [...(opts.names ?? []), ...(playerLines ?? []).map((l) => l?.who)]
   const quoted = last.map((t) => `"${clip(t.text)}"`).join(' and then ')
   const lead = last.length === 1 ? `Your last line to them was ${quoted}.` : `Your last lines to them were ${quoted}.`
-  const bits = phrases.length
-    ? ` You have said ${phrases.map((p) => `"${p.phrase}"`).join(' and ')} more than once already, so leave ${phrases.length === 1 ? 'it' : 'them'} out of this line${mode === 'reply' || mode === 'greeted' ? ' unless they ask for it' : ''}.`
-    : ''
+  const said = phrases.filter((p) => !p.card)
+  const fromCard = phrases.filter((p) => p.card)
+  const list = (ps) => ps.map((p) => `"${p.phrase}"`).join(' and ')
+  const unless = mode === 'reply' || mode === 'greeted' ? ' unless they ask for it' : ''
+  const bits = (said.length
+    ? ` You have said ${list(said)} more than once already, so leave ${said.length === 1 ? 'it' : 'them'} out of this line${unless}.`
+    : '') + (fromCard.length
+    ? ` Your last line took ${list(fromCard)} from your character prompt. Leave ${fromCard.length === 1 ? 'it' : 'them'} out of this one unless the moment really calls for ${fromCard.length === 1 ? 'it' : 'them'}.`
+    : '')
   if (mode === 'checkin' || mode === 'result') {
     return `${lead} They already heard ${last.length === 1 ? 'it' : 'these'}, so if you say something ${mode === 'checkin' ? 'this tick' : 'now'}, make it new.${bits}`
   }
