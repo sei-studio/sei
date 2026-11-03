@@ -10,7 +10,7 @@
   padding: 0;
   width: 920px;
   height: 640px;
-  max-height: calc(100vh - 64px);
+  max-height: calc(100vh - 2 * var(--space-xl));
   overflow: hidden;
 }
 
@@ -21,7 +21,7 @@
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  padding: 24px 12px;
+  padding: var(--pad-modal) var(--space-md);
   box-sizing: border-box;
 }
 
@@ -31,8 +31,8 @@
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--text);
-  margin: 0 0 20px;
-  padding: 0 12px;
+  margin: 0 0 var(--gap-group);
+  padding: 0 var(--space-md);
 }
 
 .nav {
@@ -45,7 +45,8 @@
   -webkit-appearance: none;
   appearance: none;
   text-align: left;
-  padding: 10px 14px;
+  /* Text on the title's left edge (was 14px, 2px off the 12px title). */
+  padding: 10px var(--space-md);
   border: 0;
   background: transparent;
   font-family: var(--sans);
@@ -74,7 +75,9 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  padding: 26px 28px 0;
+  /* 261103: the shell's --pad-modal on all sides (was 26 / 28, and the
+     footer below sat only 14px off the bottom edge). */
+  padding: var(--pad-modal) var(--pad-modal) 0;
   overflow: hidden;
 }
 
@@ -84,8 +87,8 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding-bottom: 16px;
+  gap: var(--gap-group);
+  padding-bottom: var(--gap-group);
 }
 
 .paneHint {
@@ -104,14 +107,14 @@
   color: var(--accent);
   background: var(--accent-soft);
   border: 1px solid var(--accent);
-  padding: 8px 10px;
+  padding: var(--space-sm) var(--pad-control);
   margin: 0;
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--gap-control);
 }
 
 .label {
@@ -125,7 +128,7 @@
   font-family: var(--sans);
   font-size: 13px;
   color: var(--red);
-  padding: 4px 0;
+  padding: var(--space-xs) 0;
 }
 
 .savedTag {
@@ -138,7 +141,7 @@
 /* ── Persona mode tabs (Standard / Advanced) — underline like detail tabs ── */
 .modeTabs {
   display: flex;
-  gap: 22px;
+  gap: var(--space-lg);
   border-bottom: 1px solid var(--border);
   align-self: flex-start;
 }
@@ -148,7 +151,7 @@
   border: 0;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
-  padding: 8px 0;
+  padding: var(--space-sm) 0;
   font-family: var(--sans);
   font-size: 13px;
   font-weight: 600;
@@ -177,7 +180,7 @@
   position: relative;
   border: 1px solid var(--border-strong);
   background: rgba(127, 127, 127, 0.03);
-  padding: 12px;
+  padding: var(--pad-control);
 }
 
 .expandedTextarea {
@@ -228,10 +231,10 @@
 .confirmBanner {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--gap-control);
   border: 1px solid var(--border-strong);
   background: var(--surface-2);
-  padding: 14px;
+  padding: var(--pad-control);
 }
 
 .confirmBannerText {
@@ -243,7 +246,7 @@
 
 .confirmBannerActions {
   display: flex;
-  gap: 8px;
+  gap: var(--gap-control);
   flex-wrap: wrap;
 }
 
@@ -251,7 +254,7 @@
 .subSection {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--gap-control);
 }
 
 /* Card image row (260909): the upload picker + the Regenerate popup trigger. */
@@ -273,7 +276,7 @@
 .dangerPane {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--gap-group);
   max-width: 360px;
 }
 
@@ -288,7 +291,7 @@
 .dangerRow {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--gap-control);
   align-items: flex-start;
 }
 
@@ -296,9 +299,9 @@
 .footer {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--gap-control);
   justify-content: flex-end;
-  padding: 14px 0;
+  padding: var(--gap-group) 0 var(--pad-modal);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -313,20 +316,20 @@
 /* ── Games: chess profile (260710) ───────────────────────────────────── */
 .chessModeRow {
   display: flex;
-  gap: 8px;
-  margin-top: 8px;
+  gap: var(--gap-control);
+  margin-top: var(--gap-control);
 }
 
 .chessEloSlider {
   width: 100%;
   max-width: 360px;
   accent-color: var(--accent);
-  margin: 6px 0 4px;
+  margin: var(--space-sm) 0 var(--space-xs);
 }
 
 /* 261019 — "Others will hear" under an own ElevenLabs voice. */
 .sharedVoice {
-  margin-top: 16px;
-  padding-top: 14px;
+  margin-top: var(--gap-group);
+  padding-top: var(--gap-group);
   border-top: 1px solid var(--border);
 }

@@ -9,19 +9,23 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--space-lg) 0 var(--space-2xl);
+  padding: var(--page-top) 0 var(--space-2xl);
 }
 
 .col {
   max-width: 780px;
   margin: 0 auto;
-  padding: 0 var(--space-lg);
+  padding: 0 var(--page-gutter);
   display: flex;
   flex-direction: column;
 }
 
+/* 261103 spacing pass: groups are page sections, one --gap-section apart
+   (was 4 above + 24 below, so a group's title sat nearer the previous
+   group than the T262 explore's rhythm). Title to first row stays a group
+   step (4 + the row's 12). */
 .group {
-  padding: var(--space-xs) 0 var(--space-lg);
+  padding: 0 0 var(--gap-section);
 }
 
 .groupTitle {

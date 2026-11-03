@@ -132,8 +132,11 @@
   width: min(520px, 60%);
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
-  padding: 18px 22px 24px 34px;
+  /* 261103 spacing pass: the header (crumb, title, tabs) and the pane are
+     groups; the pane's boxes sit a stack step apart inside it. Insets are
+     the page tokens (was 18 / 22 / 24 / 34). */
+  gap: var(--gap-group);
+  padding: var(--page-top) var(--space-lg) var(--page-top) var(--page-gutter);
   overflow-y: auto;
   overflow-x: hidden;
   /* Content panel slides in from the right when the page opens. Clipped by
@@ -170,7 +173,7 @@
 .crumb {
   /* Pull left by the quiet/sm button's horizontal padding so the back button's
      icon lines up with the title + content left edge. */
-  margin-left: -12px;
+  margin-left: calc(-1 * var(--space-md));
   align-self: flex-start;
 }
 
@@ -178,7 +181,6 @@
   display: flex;
   align-items: baseline;
   gap: var(--space-sm);
-  margin-top: 2px;
 }
 
 .title {
@@ -212,11 +214,13 @@
 }
 
 /* ── Tabs (mockup .pf-tab — underline on active) ─────────────────────── */
+/* 261103: the labels sit on the content's left edge (they were inset 14px
+   from the title) with the underline under the word, like the edit
+   modal's persona mode tabs. */
 .tabs {
   display: flex;
-  gap: 2px;
+  gap: var(--space-lg);
   border-bottom: 1px solid var(--border);
-  margin-top: 4px;
 }
 
 .tab,
@@ -226,7 +230,7 @@
   border: 0;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
-  padding: 8px 14px;
+  padding: var(--space-sm) 0;
   font-family: var(--sans);
   font-size: 14px;
   font-weight: 600;
@@ -250,7 +254,7 @@
 .pane {
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
+  gap: var(--gap-stack);
   min-height: 0;
 }
 
@@ -269,7 +273,7 @@
 .personaBlock {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--gap-control);
   align-items: flex-start;
 }
 
@@ -277,14 +281,14 @@
   align-self: stretch;
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface-2) 55%, transparent);
-  padding: 13px 15px;
+  padding: var(--pad-control) var(--pad-card);
 }
 
 .personaHead {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
+  gap: var(--gap-control);
+  margin-bottom: var(--gap-control);
 }
 
 .rotateBtn {
@@ -323,20 +327,20 @@
 .stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-md);
+  gap: var(--gap-stack);
 }
 
 .stat {
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface-2) 55%, transparent);
-  padding: 11px 12px;
+  padding: var(--pad-control) var(--pad-card);
 }
 
 /* Label typography comes from the shared u-lbl utility (same as the
    description card's header) so the pane reads as one type family. */
 .statEyebrow {
   display: block;
-  margin-bottom: 7px;
+  margin-bottom: var(--gap-control);
 }
 
 /* Matches the description card body (sans 14px), just bolder for the figure. */
@@ -353,10 +357,10 @@
 .shareBox {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--gap-control);
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface-2) 55%, transparent);
-  padding: 11px 12px;
+  padding: var(--pad-control) var(--pad-card);
   font-size: 13px;
   color: var(--text-2);
 }
@@ -367,7 +371,6 @@
 
 /* 261019 — "Voice for others: <name>" under the share box (own voice only). */
 .shareVoiceRow {
-  margin-top: 8px;
   padding: 0 2px;
   font-family: var(--sans);
 }
@@ -376,8 +379,8 @@
 .deploy {
   margin-top: auto;
   display: flex;
-  gap: 10px;
-  padding-top: 18px;
+  gap: var(--gap-control);
+  padding-top: var(--gap-group);
 }
 
 .deployBig {
@@ -404,10 +407,10 @@
 .settingsMenu {
   position: absolute;
   right: 0;
-  bottom: calc(100% + 4px);
+  bottom: calc(100% + var(--space-xs));
   z-index: 40;
   min-width: 168px;
-  padding: 4px;
+  padding: var(--space-xs);
   display: flex;
   flex-direction: column;
   background: var(--surface);
@@ -418,7 +421,7 @@
   display: flex;
   align-items: center;
   min-height: 34px;
-  padding: 0 11px;
+  padding: 0 var(--space-md);
   border: none;
   background: none;
   font-family: var(--mono);
@@ -465,7 +468,6 @@
 }
 
 .confirmVoice {
-  margin-top: 14px;
   font-family: var(--sans);
 }
 
@@ -555,15 +557,14 @@
 .skelTitle {
   width: 200px;
   height: 34px;
-  margin-top: 6px;
   background: var(--bg3);
 }
 
 .skelBlock {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px 15px;
+  gap: var(--gap-control);
+  padding: var(--pad-control) var(--pad-card);
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface-2) 55%, transparent);
 }
@@ -593,8 +594,8 @@
 .skelDeploy {
   margin-top: auto;
   display: flex;
-  gap: 10px;
-  padding-top: 18px;
+  gap: var(--gap-control);
+  padding-top: var(--gap-group);
 }
 
 .skelBtn {
