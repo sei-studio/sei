@@ -42,6 +42,7 @@ import { VoiceCallScreen } from '../screens/VoiceCallScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import suiArt from '../../../../vendor/skin-gen/examples/sui-input.png';
 import lyraArt from '../../../../vendor/skin-gen/examples/lyra-input.png';
+import { isUiLanguage } from '@shared/uiLanguage';
 
 const SUI = '3f6c2a1e-9b7d-4c1a-8e2f-5a6b7c8d9e01';
 const LYRA = '7a1b2c3d-4e5f-4a6b-9c7d-8e9f0a1b2c03';
@@ -114,7 +115,8 @@ const VOICES = [
 ].map(([id, label, gender, age, vibe]) => ({ id, label, gender, age, tags: [], vibe }));
 
 function seed(): void {
-  if (params.get('lang') === 'zh') useLangStore.getState().setLang('zh');
+  const shotLang = params.get('lang');
+  if (isUiLanguage(shotLang)) useLangStore.getState().setLang(shotLang);
   const theme = params.get('theme');
   if (theme === 'light' || theme === 'dark') applyTheme(theme === 'light' ? 'ice' : 'midnight');
   const sei = window.sei as unknown as Record<string, unknown>;

@@ -17,7 +17,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
-import { useT } from '../lib/i18n';
+import { uiLocale, useT } from '../lib/i18n';
 import { cleanIpcError } from '../lib/errors';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useDataStore } from '../lib/stores/useDataStore';
@@ -173,7 +173,7 @@ export function PortraitVersionsModal({
                 className={`${styles.thumb} ${isActive ? styles.thumbActive : ''}`}
                 disabled={busy}
                 onClick={() => void select(v.file)}
-                title={new Date(v.created_at).toLocaleString()}
+                title={new Date(v.created_at).toLocaleString(uiLocale())}
               >
                 {src ? <img src={src} alt="" className={styles.thumbImg} /> : null}
                 <span className={styles.thumbLabel}>

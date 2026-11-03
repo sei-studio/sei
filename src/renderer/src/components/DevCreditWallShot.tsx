@@ -32,13 +32,15 @@ import { Banner } from './Banner';
 import { CreditsScreen } from '../screens/CreditsScreen';
 import { DrawScreen } from './draw/DrawScreen';
 import { useT } from '../lib/i18n';
+import { isUiLanguage } from '@shared/uiLanguage';
 
 const CHAR = 'creditwall-char';
 const RESETS_AT = new Date(Date.now() + 3 * 86_400_000).toISOString();
 
 function seed(): void {
   const params = new URLSearchParams(window.location.search);
-  if (params.get('lang') === 'zh') useLangStore.getState().setLang('zh');
+  const shotLang = params.get('lang');
+  if (isUiLanguage(shotLang)) useLangStore.getState().setLang(shotLang);
   const theme = params.get('theme');
   if (theme === 'light' || theme === 'dark') applyTheme(theme === 'light' ? 'ice' : 'midnight');
   if (params.get('gpt') === 'active') useUiStore.setState({ llmProvider: 'chatgpt' });

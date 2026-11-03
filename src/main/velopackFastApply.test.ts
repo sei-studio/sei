@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { UI_LANGUAGES } from '../shared/uiLanguage';
 import {
   APPLYING_MARKER_MAX_AGE_MS,
   applyArgs,
@@ -73,7 +74,7 @@ describe('parseStageResult', () => {
 
 describe('update screen text', () => {
   it('has every frame in both languages', () => {
-    for (const lang of ['en', 'zh'] as const) {
+    for (const lang of UI_LANGUAGES) {
       const f = overlayFrames(lang);
       expect(Object.keys(f).sort()).toEqual(
         ['updating', 'error', 'eta-long', ...ETA_BUCKETS.map((s) => `eta-${s}`)].sort(),
@@ -94,10 +95,18 @@ describe('update screen text', () => {
     expect(zh.updating).toBe('正在更新…');
     expect(zh.eta['eta-20']).toBe('正在更新…大约还需 20 秒');
     expect(zh.error).toBe('更新失败，正在打开 Sei…');
+    for (const lang of ['ja', 'ru', 'pt-BR', 'es'] as const) {
+      const t = updateScreenText(lang);
+      for (const v of Object.values(t.eta)) {
+        expect(v.startsWith(t.updating), `${lang}: ${v}`).toBe(true);
+        expect(v, lang).not.toMatch(/[{}#]/);
+      }
+    }
+    expect(updateScreenText('ru').eta['eta-120']).toMatch(/2/);
   });
 
   it('never uses an em dash', () => {
-    for (const lang of ['en', 'zh'] as const) {
+    for (const lang of UI_LANGUAGES) {
       for (const v of Object.values(overlayFrames(lang))) expect(v).not.toMatch(/\u2014/);
     }
   });

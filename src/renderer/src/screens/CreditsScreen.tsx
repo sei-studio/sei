@@ -58,7 +58,7 @@ import { FeedbackModal } from '../components/FeedbackModal';
 import { formatRenewal } from '../lib/formatRenewal';
 import { useResetLine } from '../lib/useResetLine';
 import { RECOMMENDED_TIER, TIER_ORDER, planCard, planName } from '../lib/planCatalog';
-import { t, useT } from '../lib/i18n';
+import { t, uiLocale, useT } from '../lib/i18n';
 import styles from './CreditsScreen.module.css';
 import { ChatgptLogo } from '../components/ChatgptLogo';
 import { ChatgptPlanSettings, chatgptPlanDisclosure } from '../components/ChatgptPlanSettings';
@@ -342,8 +342,8 @@ export function CreditsScreen(): React.ReactElement {
   // that never topped up shows an empty bar and the Top up button.
   const extraPct = extraTotal > 0 ? (extraUsed / extraTotal) * 100 : 0;
   const extraLabel = t('{used}/{total} credits used', {
-    used: extraUsed.toLocaleString(),
-    total: extraTotal.toLocaleString(),
+    used: extraUsed.toLocaleString(uiLocale()),
+    total: extraTotal.toLocaleString(uiLocale()),
   });
 
   return (

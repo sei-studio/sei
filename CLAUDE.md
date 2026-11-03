@@ -1978,10 +1978,10 @@ The design and its measurements are committed at
   test (review, same day) drops only Han, kana and Hangul, and only on a
   Latin-script call: those are the scripts the invented words came in, and
   the call language is often a guess. It is `burstLanguageFor`:
-  chat_language, else a Chinese UI, else the OS locale's language. The UI
-  is only en/zh, so before the OS step every Japanese, Korean, Russian or
-  Arabic player with no chat_language was judged as English and their
-  short words were dropped.
+  chat_language, else a non-English UI's language (zh, ja, ru, pt, es
+  since 261104), else the OS locale's language. Before the OS step every
+  Japanese, Korean, Russian or Arabic player with no chat_language was
+  judged as English and their short words were dropped.
   The committed turn (review, same day): a committed barge's utterance is
   trimmed to where the first confirming pass read from, so the turn she
   hears never opens with the pre-roll of her own echo ("I found... Hold
@@ -3712,6 +3712,33 @@ src/
     errorClasses.ts     typed error vocabulary
     legalVersions.ts    ToS/privacy version pins
 ```
+
+### UI languages (260730 zh, 261104 ja, ru, pt-BR, es)
+
+The app UI language is `UserConfig.ui_language`, listed once in
+`src/shared/uiLanguage.ts` (`UI_LANGUAGES`, native names, BCP 47 tags,
+`formatMessage` with `{name}` and ICU-lite `{n, plural, ...}` forms,
+`joinSentences`). The i18n key is the English string; dictionaries live in
+`src/renderer/src/lib/i18n/` (`zh.ts` + `zh/*`, `ja.ts`, `ru.ts`, `pt-BR.ts`,
+`es.ts`, registered in `DICTIONARIES`). Main-process copy (safe mode, the
+Windows update window, the Velopack splash, the free-play reset notice, the
+macOS DST grant panel) keeps en and zh inline and takes the four 261104
+languages from `src/shared/addedLanguageCopy.ts`.
+- **A new English string needs all five translations.**
+  `dictionaries.test.ts` fails on a missing key, an empty value, an em dash,
+  a "friend" word, or a placeholder that differs from the English key.
+- Plurals: write `{n, plural, one {...} few {...} many {...} other {...}}`
+  (Russian needs one/few/many). Never build a count by joining words.
+- System locale: zh-* to zh, every pt-* (pt-PT included) to pt-BR, every
+  es-* to the neutral `es`, everything else English (`uiLanguageForLocale`).
+- Fonts: Japanese uses the OS CJK face picked by `<html lang>`, like zh;
+  Cyrillic subsets of the UI faces are self-hosted in `fonts.css` (by
+  unicode-range, so other languages render as before). The DST faces
+  (Fredericka, Metamorphous) have no Cyrillic and fall back to a serif.
+- Only zh changes companion behavior (language pin at creation, SenseVoice,
+  zh voices, Draw! and chess character-language paths); the 261104 languages
+  translate the interface only.
+- Check layout with any `?dashshot=` harness plus `&lang=<code>`.
 
 ### UI / design system
 

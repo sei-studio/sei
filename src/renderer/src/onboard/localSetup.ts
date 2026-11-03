@@ -44,7 +44,7 @@ export const SENSEVOICE_PACK_ID = 'stt-sensevoice';
  * voice at synthesis time (localVoice.ts), so 'en' is the right download for
  * them too.
  */
-export function ttsPackIdsFor(lang: 'en' | 'zh'): string[] {
+export function ttsPackIdsFor(lang: string): string[] {
   return lang === 'zh' ? ['tts-zh'] : ['tts-en'];
 }
 

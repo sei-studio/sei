@@ -19,6 +19,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CallOverlayState } from '@shared/ipc';
 import { sei } from './lib/ipcClient';
+import { useLangStore, useT } from './lib/i18n';
 import { captionCapacity, chunkCaption, visualUnits } from './lib/avatar/captionChunks';
 import styles from './CaptionOverlay.module.css';
 
@@ -48,6 +49,13 @@ const MAX_H = 800;
 
 export function CaptionOverlay(): React.ReactElement | null {
   const [state, setState] = useState<CallOverlayState | null>(null);
+  // The edit-mode tooltips follow the app's UI language, which rides the
+  // state push (this window never boots the App that hydrates it).
+  const t = useT();
+  const lang = state?.lang;
+  useEffect(() => {
+    if (lang) useLangStore.getState().setLang(lang);
+  }, [lang]);
   const [editing, setEditing] = useState(false);
   const [fontSize, setFontSize] = useState(18);
   const [win, setWin] = useState({ w: window.innerWidth, h: window.innerHeight });
@@ -234,12 +242,12 @@ export function CaptionOverlay(): React.ReactElement | null {
             <div className={`${styles.handle} ${styles.bl}`} onPointerDown={(e) => beginResize(e, 'bl')} />
             <div className={`${styles.handle} ${styles.br}`} onPointerDown={(e) => beginResize(e, 'br')} />
             <div className={styles.fontBtns} onPointerDown={(e) => e.stopPropagation()}>
-              <button type="button" className={styles.fontBtn} title="Smaller text" onClick={() => bumpFont(-1)}>
+              <button type="button" className={styles.fontBtn} title={t('Smaller text')} onClick={() => bumpFont(-1)}>
                 <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
                   <path d="M2 5 h6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
                 </svg>
               </button>
-              <button type="button" className={styles.fontBtn} title="Larger text" onClick={() => bumpFont(1)}>
+              <button type="button" className={styles.fontBtn} title={t('Larger text')} onClick={() => bumpFont(1)}>
                 <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
                   <path d="M5 2 v6 M2 5 h6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
                 </svg>

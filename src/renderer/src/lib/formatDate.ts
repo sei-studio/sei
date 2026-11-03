@@ -1,3 +1,5 @@
+import { uiLocale } from './i18n';
+
 /**
  * formatDate — ISO-timestamp → "Jun 6, 2026" formatter that always renders in
  * the user's LOCAL timezone.
@@ -18,7 +20,7 @@ export function formatDate(iso: string | null): string {
   try {
     const d = parseLocalDate(iso);
     if (Number.isNaN(d.getTime())) return '-';
-    return d.toLocaleDateString(undefined, {
+    return d.toLocaleDateString(uiLocale(), {
       month: 'short',
       day: 'numeric',
       year: 'numeric',

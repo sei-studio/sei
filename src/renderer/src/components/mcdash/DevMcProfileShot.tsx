@@ -24,12 +24,14 @@ import { UnsupportedVersionModal } from '../UnsupportedVersionModal';
 import { LanHostWarningModal } from '../LanHostWarningModal';
 import { McSetupModal } from '../McSetupModal';
 import { SetupWizardModal } from '../SetupWizardModal';
+import { isUiLanguage } from '@shared/uiLanguage';
 
 const CHAR = 'mcprofile-char';
 
 function seed(): void {
   const params = new URLSearchParams(window.location.search);
-  if (params.get('lang') === 'zh') useLangStore.getState().setLang('zh');
+  const shotLang = params.get('lang');
+  if (isUiLanguage(shotLang)) useLangStore.getState().setLang(shotLang);
   useDataStore.setState((s) => ({
     characters: [
       ...s.characters,

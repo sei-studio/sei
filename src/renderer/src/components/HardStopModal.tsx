@@ -60,7 +60,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { t as tr, useT } from '../lib/i18n';
+import { t as tr, uiLocale, useT } from '../lib/i18n';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { useUiStore } from '../lib/stores/useUiStore';
 import type { PlanTier } from '@shared/ipc';
@@ -93,10 +93,10 @@ const RETRY_TIME_MIN_MS = 5 * 60_000;
 export function formatRetryWhen(untilMs: number | null, nowMs: number): string {
   if (!untilMs || untilMs - nowMs < RETRY_TIME_MIN_MS) return '';
   const until = new Date(untilMs);
-  const time = until.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const time = until.toLocaleTimeString(uiLocale(), { hour: 'numeric', minute: '2-digit' });
   if (until.toDateString() === new Date(nowMs).toDateString()) return time;
   return tr('{weekday} at {time}', {
-    weekday: until.toLocaleDateString([], { weekday: 'long' }),
+    weekday: until.toLocaleDateString(uiLocale(), { weekday: 'long' }),
     time,
   });
 }

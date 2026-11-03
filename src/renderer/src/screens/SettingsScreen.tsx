@@ -66,6 +66,7 @@ import { chatgptPlanIntentStep } from '../lib/chatgptPlanIntent';
 import { pickDefaultChatgptModel } from '@shared/chatgptPlan';
 import { elevenKeySettingMode } from '../lib/voicePicker';
 import { localTtsModel, type LocalTtsModel } from '@shared/ttsEngine';
+import { UI_LANGUAGES, UI_LANGUAGE_NATIVE_NAMES, isUiLanguage } from '@shared/uiLanguage';
 import { KOKORO_PACK_ID, localModelPickAction, showTtsPackRow } from '../lib/localVoiceChoice';
 
 const API_KEY_BULLET_LEN = 24;
@@ -1664,20 +1665,34 @@ export function SettingsScreen(): React.ReactElement {
               {t('App language')}
               <InfoTip
                 label={t('About the app language')}
-                text={t(
-                  'Switches the whole app to this language. Companions you create while it is on speak it too.',
-                )}
+                text={
+                  // Only Chinese pins new companions to the UI language
+                  // (AddCharacterScreen); the 261104 languages translate the
+                  // interface alone, so their hint must not promise it.
+                  lang === 'zh'
+                    ? t(
+                        'Switches the whole app to this language. Companions you create while it is on speak it too.',
+                      )
+                    : t('Switches the whole app to this language.')
+                }
               />
             </span>
-            <Seg
+            {/* A native select, not a Seg: six languages, each named in its
+                own language, do not fit a segmented control (261104). */}
+            <select
+              className={styles.langSelect}
               aria-label={t('App language')}
               value={lang}
-              options={[
-                { value: 'en', label: 'EN' },
-                { value: 'zh', label: '中文' },
-              ]}
-              onChange={(v) => void onSelectLanguage(v as UiLanguage)}
-            />
+              onChange={(e) => {
+                if (isUiLanguage(e.target.value)) void onSelectLanguage(e.target.value);
+              }}
+            >
+              {UI_LANGUAGES.map((code) => (
+                <option key={code} value={code} lang={code}>
+                  {UI_LANGUAGE_NATIVE_NAMES[code]}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 

@@ -49,3 +49,11 @@
   margin-top: auto;
   padding-top: var(--gap-stack);
 }
+
+/* 261104: "Comprar por $20" (es, pt-BR) is a few px wider than the pack
+   card's button and ended in an ellipsis. Those two languages get tighter
+   side padding; every other language keeps the PlanButton default. */
+:global(html:lang(es)) .packAction button,
+:global(html:lang(pt)) .packAction button {
+  padding-inline: var(--space-sm);
+}

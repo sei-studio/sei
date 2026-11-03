@@ -36,7 +36,8 @@
  *                                                  &novision=1: text-only model, chess leads)
  *                                                  (&update=downloading|ready|restarting|updated: the sidebar
  *                                                  "Update Sei" button / "Updated to vX" toast, 261023;
- *                                                  &live=game: a companion online, so a click asks first)
+ *                                                  &live=game: a companion online, so a click asks first;
+ *                                                  &update=optional|forced|whatsnew: the UpdatePopup modal, 261104)
  *
  * It seeds useMcDashboardStore with fixture snapshots and useDataStore with
  * two named characters (window.sei is stubbed by devHarnessStubs.ts, which
@@ -69,6 +70,7 @@ import { useVoiceStore } from '../../lib/stores/useVoiceStore';
 import { useUpdateStore } from '../../lib/stores/useUpdateStore';
 import { topChangelogLine } from '../../lib/changelog';
 import { UpdatedToast } from '../UpdatedToast';
+import { UpdatePopup, type UpdatePopupState } from '../UpdatePopup';
 import { useUiStore } from '../../lib/stores/useUiStore';
 import { useLangStore } from '../../lib/i18n';
 import { DEFAULT_CHARACTER_UUIDS } from '@shared/defaultCharacters';
@@ -80,6 +82,7 @@ import { CreditsScreen } from '../../screens/CreditsScreen';
 import { CharactersScreen } from '../../screens/CharactersScreen';
 import { IconRail } from '../IconRail';
 import { GamesPickerModal } from '../GamesPickerModal';
+import { isUiLanguage } from '@shared/uiLanguage';
 
 const DST_ID = 'dashshot-dst';
 const SDV_ID = 'dashshot-sdv';
@@ -191,7 +194,8 @@ function seed(): void {
   // ?dashshot=chatfirst: armed exactly as App.tsx arms it at onboarding
   // completion, so opening the chat runs the real greeting + card path.
   const params = new URLSearchParams(window.location.search);
-  if (params.get('lang') === 'zh') useLangStore.getState().setLang('zh');
+  const shotLang = params.get('lang');
+  if (isUiLanguage(shotLang)) useLangStore.getState().setLang(shotLang);
   const which = params.get('dashshot') ?? '';
   // ?dashshot=chatlaunch (260929): a launch panel opened from the games
   // picker, hosted by the real ChatScreen at the real game/chat split.
@@ -341,6 +345,7 @@ export function DevDashShot({ which }: { which: string }): React.ReactElement {
         </div>
         {part === 'picker' ? <GamesPickerModal characterId={SDV_ID} /> : null}
         {update === 'updated' ? <UpdatedToast /> : null}
+        {DEV_POPUP_STATES[update ?? ''] ? <UpdatePopup state={DEV_POPUP_STATES[update ?? '']} platform="win32" onDismiss={() => undefined} onUpdateNow={() => undefined} /> : null}
       </div>
     );
   }
@@ -386,6 +391,14 @@ export function DevDashShot({ which }: { which: string }): React.ReactElement {
     </div>
   );
 }
+
+const DEV_CHANGELOG = "## What's new in 0.7.0\n- New: use your own ElevenLabs voices. Save your key in Settings and pick them in the voice picker\n- Fixes";
+/** ?dashshot=chatui&update=optional|forced|whatsnew (261104): the update popup's three states. */
+const DEV_POPUP_STATES: Record<string, UpdatePopupState> = {
+  optional: { kind: 'available-optional', currentVersion: '0.6.12', latestVersion: '0.7.0', changelog: DEV_CHANGELOG },
+  forced: { kind: 'forced' },
+  whatsnew: { kind: 'whats-new', version: '0.7.0', changelog: DEV_CHANGELOG },
+};
 
 /** ?dashshot=home (261013): the Home wall, plus the games picker when the card opens it. */
 function DevHomeShot(): React.ReactElement {

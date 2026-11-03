@@ -25,13 +25,15 @@ import { ShareScreenModal } from './ShareScreenModal';
 import { useVoiceStore } from '../../lib/stores/useVoiceStore';
 import { useBackseatStore } from '../../lib/stores/useBackseatStore';
 import { VoiceCallScreen } from '../../screens/VoiceCallScreen';
+import { isUiLanguage } from '@shared/uiLanguage';
 
 const CHAR = 'dashshot-roblox';
 const INTRO_KEY = 'sei.backseatGameIntro.v1.roblox.local';
 
 function seed(): void {
   const params = new URLSearchParams(window.location.search);
-  if (params.get('lang') === 'zh') useLangStore.getState().setLang('zh');
+  const shotLang = params.get('lang');
+  if (isUiLanguage(shotLang)) useLangStore.getState().setLang(shotLang);
   useDataStore.setState((s) => ({
     characters: [
       ...s.characters,

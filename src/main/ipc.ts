@@ -39,6 +39,7 @@ import {
 } from '../shared/ipc';
 import { GAME_IDS, isGameId, type GameId, type WorldState, type WorldStates } from '../shared/gameIpc';
 import type { HomeNextStep } from '../shared/homeNextStep';
+import { UI_LANGUAGES, normalizeUiLanguage } from '../shared/uiLanguage';
 import { localTtsModel } from '../shared/ttsEngine';
 import { BACKSEAT_START_TRIGGERS, CALL_END_REASONS } from '../shared/callEndReasons';
 import type { CallInterruptCounts } from '../shared/callInterrupts';
@@ -1984,7 +1985,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     let grant: import('./games/dontstarve/install').MacGrant | undefined;
     if (process.platform === 'darwin') {
       const { createMacGrant } = await import('./games/dontstarve/macGrant');
-      const language = await loadConfig().then((c) => (c.ui_language === 'zh' ? 'zh' : 'en') as 'en' | 'zh', () => 'en' as const);
+      const language = await loadConfig().then((c) => normalizeUiLanguage(c.ui_language), () => 'en' as const);
       grant = createMacGrant({ window: BrowserWindow.fromWebContents(event.sender), language });
     }
     return mod.runInstall(
@@ -2315,7 +2316,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         lastSpoken: z.string().max(4000).nullable().optional(),
         lastSpokenId: z.string().max(64).nullable().optional(),
         // 261031: UI language for the overlay's button tooltips.
-        lang: z.enum(['en', 'zh']).optional(),
+        lang: z.enum(UI_LANGUAGES).optional(),
       })
       .parse(stateRaw);
     const { updateCallOverlay } = await import('./callOverlay');

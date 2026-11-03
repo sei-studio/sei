@@ -14,8 +14,13 @@ import { SAFE_MODE_ACTIONS } from '../../preload/safeMode';
 const base: SafeModePageOptions = { lang: 'en', cause: 'repeated', theme: 'system', version: '0.7.0', packaged: true };
 
 describe('safe-mode page copy', () => {
-  it('has the same keys in every language', () => {
-    expect(Object.keys(SAFE_MODE_COPY.zh).sort()).toEqual(Object.keys(SAFE_MODE_COPY.en).sort());
+  it('has the same keys and placeholders in every language', () => {
+    const en = SAFE_MODE_COPY.en as Record<string, string>;
+    const holes = (s: string) => (s.match(/\{\w+\}/g) ?? []).sort();
+    for (const [lang, copy] of Object.entries(SAFE_MODE_COPY) as [string, Record<string, string>][]) {
+      expect(Object.keys(copy).sort(), lang).toEqual(Object.keys(en).sort());
+      for (const key of Object.keys(en)) expect(holes(copy[key]), `${lang}.${key}`).toEqual(holes(en[key]));
+    }
   });
 
   it('follows the copy rules: no em dash, no "friend", nothing empty', () => {
@@ -60,6 +65,9 @@ describe('renderSafeModeHtml', () => {
     expect(zh).toContain('lang="zh-CN"');
     expect(zh).toContain(SAFE_MODE_COPY.zh.title);
     expect(zh).toContain(SAFE_MODE_COPY.zh.bodyForced);
+    const pt = renderSafeModeHtml({ ...base, lang: 'pt-BR' });
+    expect(pt).toContain('lang="pt-BR"');
+    expect(pt).toContain(SAFE_MODE_COPY['pt-BR'].title);
     expect(renderSafeModeHtml(base)).toContain(SAFE_MODE_COPY.en.bodyRepeated);
   });
 
@@ -91,9 +99,14 @@ describe('renderSafeModeHtml', () => {
 });
 
 describe('helpers', () => {
-  it('picks zh only for a Chinese locale', () => {
+  it('picks the UI language the system locale maps to, else en', () => {
     expect(safeModeLang('zh-CN')).toBe('zh');
     expect(safeModeLang('zh-TW')).toBe('zh');
+    expect(safeModeLang('ja')).toBe('ja');
+    expect(safeModeLang('ru-RU')).toBe('ru');
+    expect(safeModeLang('pt-PT')).toBe('pt-BR');
+    expect(safeModeLang('es-419')).toBe('es');
+    expect(safeModeLang('fr-FR')).toBe('en');
     expect(safeModeLang('en-US')).toBe('en');
     expect(safeModeLang('')).toBe('en');
     expect(safeModeLang(undefined)).toBe('en');

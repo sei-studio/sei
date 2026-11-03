@@ -50,6 +50,7 @@ Sei is not affiliated with Mojang, Microsoft, ConcernedApe, Klei Entertainment, 
 
 - [Monocraft](https://github.com/IdreesInc/Monocraft) (OFL-1.1): the pixel face the Minecraft launch panel is set in
 - Oswald, Rajdhani, JetBrains Mono, Noto Sans, Press Start 2P, Architects Daughter, Pixelify Sans, Fredericka the Great, and Metamorphous (OFL-1.1), and Roboto Mono (Apache-2.0): self-hosted app fonts
+- Caveat (OFL-1.1) and Roboto Condensed (Apache-2.0), Cyrillic subsets only: stand-ins for Architects Daughter and Rajdhani in the Russian UI
 - Chess pieces by Colin M.L. Burnett (the "cburnett" set from [lichess](https://github.com/lichess-org/lila)), used under the GPL
 - [Kenney Impact Sounds](https://kenney.nl/assets/impact-sounds) (CC0): footstep sounds
 - Minecraft artwork by Mojang Studios. Movie night photo by [American Retirement Homes](https://americanretirementhomes.org/movie-nights-and-in-house-entertainment-options/) (CC licensed)

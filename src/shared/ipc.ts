@@ -28,6 +28,7 @@ import type {
 } from './characterSchema';
 import type { ErrorClass } from './errorClasses';
 import type { OverlayPointerSample } from './overlayPointer';
+import type { UiLanguage } from './uiLanguage';
 import type { ChatgptSignInResult, ChatgptSignOutResult, ChatgptStatus } from './chatgptPlan';
 import type { RegionStatus } from './regionGate';
 import type { PopupAction } from './popupActions';
@@ -875,7 +876,7 @@ export interface CallOverlayState {
   captionsOn?: boolean;
   /** 261031: the app's UI language, so the overlay's button tooltips follow
    * it (the overlay window never boots the App that hydrates the store). */
-  lang?: 'en' | 'zh';
+  lang?: UiLanguage;
 }
 
 /**
