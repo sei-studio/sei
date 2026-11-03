@@ -59,6 +59,7 @@ struct Cover {
   DWORD pid = 0;
   RECT r{};
   int scanned = 0;
+  int skippedShell = 0;
   int quns = 0;
   HWND hwnd = nullptr;
 };
@@ -95,6 +96,23 @@ Cover ComputeCover() {
         std::string cls = ClassOf(t);
         if (cls == "Progman" || cls == "WorkerW" || cls == "Shell_TrayWnd" || cls == "Shell_SecondaryTrayWnd")
           return TRUE;
+        // Shell-owned monitor-sized windows that are "visible" and uncloaked but draw nothing.
+        // Measured on CI (round 2, run 1): ApplicationManager_ImmersiveShellWindow reads as a
+        // fullscreen window from the first check on both Windows images.
+        static const char* kInvisibleShell[] = {"ApplicationManager_ImmersiveShellWindow", "EdgeUiInputTopWndClass",
+                                                "EdgeUiInputWndClass", "NativeHWNDHost", "Internet Explorer_Hidden",
+                                                "ApplicationManager_DesktopShellWindow", "ForegroundStaging",
+                                                "MultitaskingViewFrame", "XamlExplorerHostIslandWindow"};
+        for (const char* k : kInvisibleShell)
+          if (cls == k) {
+            c->cv->skippedShell++;
+            return TRUE;
+          }
+        if (ex & WS_EX_LAYERED) {
+          BYTE alpha = 255;
+          DWORD flags = 0;
+          if (GetLayeredWindowAttributes(t, nullptr, &alpha, &flags) && (flags & LWA_ALPHA) && alpha < 16) return TRUE;
+        }
         if (MonitorFromWindow(t, MONITOR_DEFAULTTONULL) != c->mon) return TRUE;
         RECT r{};
         if (FAILED(DwmGetWindowAttribute(t, DWMWA_EXTENDED_FRAME_BOUNDS, &r, sizeof(r)))) GetWindowRect(t, &r);
@@ -131,7 +149,8 @@ std::string CoverJson(const Cover& cv) {
   return std::string("{\"covered\":") + (cv.covered ? "true" : "false") + ",\"kind\":" + Q(cv.kind) +
          ",\"by\":{\"class\":" + Q(cv.cls) + ",\"title\":" + Q(cv.title) + ",\"pid\":" + std::to_string(cv.pid) +
          ",\"hwnd\":" + Q(Hex((uintptr_t)cv.hwnd)) + ",\"rect\":" + rb + "},\"fgClass\":" + Q(fg ? ClassOf(fg) : "") +
-         ",\"quns\":" + std::to_string(cv.quns) + ",\"scanned\":" + std::to_string(cv.scanned) + "}";
+         ",\"quns\":" + std::to_string(cv.quns) + ",\"scanned\":" + std::to_string(cv.scanned) +
+         ",\"skippedShell\":" + std::to_string(cv.skippedShell) + "}";
 }
 
 void Recheck(const std::string& why) {
@@ -402,4 +421,14 @@ Napi::Value TestSetDisplay(const Napi::CallbackInfo& info) {
     r = ChangeDisplaySettingsW(&dm, CDS_FULLSCREEN);
   }
   return Napi::Number::New(info.Env(), (double)r);
+}
+
+// redrawParent(hwnd): repaint the room's parent (WorkerW / Progman) after hiding the room. On the
+// classic layout a hidden child left its last frame on screen until something else repainted
+// the WorkerW (round 2 run 1, windows-2022).
+Napi::Value RedrawParent(const Napi::CallbackInfo& info) {
+  HWND h = HwndFrom(info[0]);
+  HWND p = h ? GetParent(h) : nullptr;
+  BOOL ok = p ? RedrawWindow(p, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW) : FALSE;
+  return Napi::Boolean::New(info.Env(), ok != FALSE);
 }

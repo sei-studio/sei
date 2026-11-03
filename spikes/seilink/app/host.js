@@ -126,7 +126,10 @@ function onCommand(m) {
       send({ type: 'ack', of: m.type })
       break
     case 'hide':
-      if (room) room.hide()
+      if (room) {
+        room.hide()
+        if (IS_WIN) addon.redrawParent(room.getNativeWindowHandle())
+      }
       send({ type: 'ack', of: m.type })
       break
     case 'pause':
@@ -281,7 +284,15 @@ async function validate(trigger) {
   if (!IS_WIN || !room || room.isDestroyed() || reattaching) return null
   const px = displayPx()
   const v = addon.validate(room.getNativeWindowHandle(), { w: px.w, h: px.h })
-  if (v.ok) return v
+  if (v.ok) {
+    workerWMissingAccepted = false
+    return v
+  }
+  // Raised (24H2) layout: once a WorkerW is destroyed, 0x052C does not bring it back (measured on
+  // windows-2025, round 2 run 1), and the room still draws fine directly under DefView. Re-attach
+  // once; if that leaves only "no-workerw", accept it instead of re-attaching every 2 s.
+  const onlyWorkerW = v.layout === 'raised' && v.reasons.every((r) => r === 'no-workerw' || r === 'workerw-not-bottom')
+  if (onlyWorkerW && workerWMissingAccepted) return v
   log('validate failed', trigger, v)
   send({ type: 'event', event: 'validate-failed', trigger, reasons: v.reasons, layout: v.layout })
   if (v.reasons.includes('no-progman') || v.reasons.includes('no-defview')) {
@@ -298,8 +309,17 @@ async function validate(trigger) {
   } finally {
     reattaching = false
   }
+  if (v.layout === 'raised' && v.reasons.some((r) => r === 'no-workerw')) {
+    const v2 = addon.validate(room.getNativeWindowHandle(), { w: px.w, h: px.h })
+    if (!v2.ok && v2.reasons.every((r) => r === 'no-workerw' || r === 'workerw-not-bottom')) {
+      workerWMissingAccepted = true
+      log('raised layout without WorkerW: accepted after one re-attach')
+      send({ type: 'event', event: 'workerw-missing-accepted', reasons: v2.reasons })
+    }
+  }
   return v
 }
+let workerWMissingAccepted = false
 
 function onNativeEvent(json) {
   let e

@@ -573,6 +573,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("testSetWallpaper", Napi::Function::New(env, TestSetWallpaper));
   exports.Set("testDisplayModes", Napi::Function::New(env, TestDisplayModes));
   exports.Set("testSetDisplay", Napi::Function::New(env, TestSetDisplay));
+  exports.Set("redrawParent", Napi::Function::New(env, RedrawParent));
   return exports;
 }
 

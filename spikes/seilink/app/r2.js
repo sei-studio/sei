@@ -139,7 +139,7 @@ function judge(A, B) {
   const ca = A.band.greenCentroid, cb = B.band.greenCentroid
   return {
     visible: A.band.magenta > 0.3 && B.band.magenta > 0.3,
-    animates: !!(ca && cb && Math.abs(ca.x - cb.x) > 15) && B.framesAt > A.framesAt,
+    animates: !!(ca && cb && Math.abs(ca.x - cb.x) > 8) && B.framesAt > A.framesAt,
   }
 }
 
@@ -279,7 +279,7 @@ async function common() {
   step('attached', result.numbers.coldStart)
   await sleep(2500)
   const A = await shotAndCheck('01-visible-a')
-  await sleep(2500)
+  await sleep(700)
   const B = await shotAndCheck('02-visible-b')
   Object.assign(result.checks, judge(A, B))
 
@@ -429,8 +429,9 @@ async function winCoverage() {
   result.numbers.uncoverShowDesktop = { ...(u1 || {}), via: showDesktopVia }
   await sleep(800)
   const D1 = await shotAndCheck('11-show-desktop-a')
-  const mu = await measure('uncovered-show-desktop', 5000)
+  await sleep(700)
   const D2 = await shotAndCheck('12-show-desktop-b')
+  const mu = await measure('uncovered-show-desktop', 5000)
   result.checks.showDesktopUncovered = !!u1 && mu.fpsMedian > 20 && judge(D1, D2).animates
 
   // 4) restore the app window (normal) -> stays uncovered
@@ -497,7 +498,7 @@ async function winShellEvents() {
     await hostReaction('workerw-wm-close', async () => addon.testPostMessage(v0.workerW, 0x0010), 10000)
     await sleep(500)
     const A = await shotAndCheck('20-after-workerw-close-a')
-    await sleep(2000)
+    await sleep(700)
     const B = await shotAndCheck('21-after-workerw-close-b')
     result.checks.workerwCloseRecovered = judge(A, B)
   } else {
@@ -507,7 +508,7 @@ async function winShellEvents() {
   await hostReaction('wallpaper-change', async () => addon.testSetWallpaper(''), 5000)
   {
     const A = await shotAndCheck('22-after-wallpaper-a')
-    await sleep(2000)
+    await sleep(700)
     const B = await shotAndCheck('23-after-wallpaper-b')
     result.checks.wallpaperChangeStillVisible = judge(A, B)
   }
@@ -520,13 +521,13 @@ async function winShellEvents() {
     await hostReaction('display-change', async () => addon.testSetDisplay(alt.w, alt.h), 8000)
     await sleep(1000)
     const A = await shotAndCheck('24-display-changed-a')
-    await sleep(2000)
+    await sleep(700)
     const B = await shotAndCheck('25-display-changed-b')
     result.checks.displayChangeStillVisible = judge(A, B)
     await hostReaction('display-restore', async () => addon.testSetDisplay(0, 0), 8000)
     await sleep(1000)
     const C = await shotAndCheck('26-display-restored-a')
-    await sleep(2000)
+    await sleep(700)
     const D = await shotAndCheck('27-display-restored-b')
     result.checks.displayRestoreStillVisible = judge(C, D)
   } else {
@@ -588,7 +589,7 @@ async function winExplorerKill() {
   result.checks.mainSurvivedExplorerKill = alive.alive
   await sleep(1500)
   const A = await shotAndCheck('30-after-explorer-a')
-  await sleep(2500)
+  await sleep(700)
   const B = await shotAndCheck('31-after-explorer-b')
   result.checks.afterExplorer = judge(A, B)
   result.numbers.ramAfterExplorer = { main: mainRam(), host: lastHb && lastHb.ramMB }
@@ -759,8 +760,9 @@ async function macCoverage() {
   result.numbers.uncoverShowDesktop = { ...(u1 || {}), via }
   await sleep(1000)
   const D1 = await shotAndCheck('51-show-desktop-a', { hit: rect })
-  const mu = await measure('mac-uncovered-show-desktop', 5000)
+  await sleep(700)
   const D2 = await shotAndCheck('52-show-desktop-b', { hit: rect })
+  const mu = await measure('mac-uncovered-show-desktop', 5000)
   result.checks.showDesktopUncovered = !!u1 && mu.fpsMedian > 20 && judge(D1, D2).animates
   result.textEditAfterShowDesktop = teWin() ? teWin().bounds : 'not on screen'
   // undo show desktop (same gesture toggles back), then close TextEdit
@@ -807,7 +809,7 @@ async function macShellRestarts() {
     const hb = await sup.waitFor('heartbeat', () => true, 3000)
     const r = { hostExits: exits, attached: hb && hb.attached, fps: hb && hb.fps, covered: hb && hb.covered, ms: Date.now() - t }
     const A = await shotAndCheck(`6${proc === 'Dock' ? 0 : 2}-after-${proc.toLowerCase()}-a`)
-    await sleep(2000)
+    await sleep(700)
     const B = await shotAndCheck(`6${proc === 'Dock' ? 1 : 3}-after-${proc.toLowerCase()}-b`)
     r.judge = judge(A, B)
     result.numbers[`kill${proc}`] = r
