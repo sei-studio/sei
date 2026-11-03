@@ -34,6 +34,7 @@ import { createDontStarveAdapter } from './index.js'
 import { classifyConnectError } from './errors.js'
 import { createObservationState, createHandleRegistry, CMD_HOLD_MS, CMD_RESULT_TIMEOUT_MS, HEARTBEAT_LOSS_MS } from './protocol.js'
 import { modHasCaps } from './modVersion.js'
+import { isDarknessHit } from './darkness.js'
 import { createRespawnPolicy, describeDeathCause, sanitizeDeathCause, MAX_RESPAWNS, QUICK_DEATH_MS } from './respawn.js'
 
 const MAX_BODY_BYTES = 65_536
@@ -47,6 +48,8 @@ const DESPAWN_WAIT_MS = 2_500
 // under the brain's 10 s death backstop (orchestrator DEATH_PENDING_MAX_MS).
 const RESPAWN_DELAY_MS = 4_000
 const RESPAWN_SPAWN_WAIT_MS = 15_000
+/** How recent a darkness hit must be for a cause-less death to be the dark. */
+const DARK_DEATH_WINDOW_MS = 15_000
 
 const BODY_DIED_MESSAGE = 'DST_BODY_DIED: Your companion died in the Constant. Summon them again to bring them back.'
 
@@ -479,8 +482,16 @@ export async function createRuntime(config, hooks) {
       fail("GAME_WORLD_NOT_OPEN: The Don't Starve Together world removed your companion. Press Play to summon them again.")
     })
   })
-  link.events.on('death', (ev) => {
+  // Charlie kills through health with no attacker, so a helper before 0.3.2
+  // reports the cause as "NIL". The killing blow's `attacked` is posted
+  // after the death, but the hit before it (5-11 s earlier) names it.
+  let _lastDarkHitAt = 0
+  link.events.on('attacked', (p) => { if (isDarknessHit(p, link.state)) _lastDarkHitAt = Date.now() })
+  link.events.on('death', (raw) => {
     if (_stopped || _deathState) return
+    const ev = sanitizeDeathCause(raw?.cause) === 'unknown' && Date.now() - _lastDarkHitAt < DARK_DEATH_WINDOW_MS
+      ? { ...raw, cause: 'darkness' }
+      : raw
     // What killed her, where, and on which shard: a body that died in the
     // dark caves seconds after spawn (261104) left no trace of why.
     try {

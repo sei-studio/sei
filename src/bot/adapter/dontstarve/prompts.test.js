@@ -67,6 +67,23 @@ describe('DST prompts', () => {
     expect(all).not.toContain('\u2014')
   })
 
+  it('a hit by the darkness names Charlie, says running does not help, and counts the torch', () => {
+    const caps = { hasCaps: true }
+    const hit = { attackerKind: 'mob', attackerLabel: 'the darkness', darkness: true, healthPct: 0.33 }
+    const partial = eventAddendum('sei:attacked', { ...hit, torchNeed: { grass: 0, twigs: 1, haveGrass: 2, haveTwigs: 1 } }, caps)
+    expect(partial).toMatch(/^Interrupted: the darkness hit you \(33% health left\)\. That is Charlie/)
+    expect(partial).toMatch(/running from it does not help/)
+    expect(partial).toMatch(/you carry 2 grass and 1 twigs, so get 1 twig now/)
+    expect(partial).toMatch(/Your body makes and lights the torch the moment you have them/)
+    expect(partial).not.toMatch(/flee\(\)/)
+    expect(partial).not.toContain('\u2014')
+    expect(eventAddendum('sei:attacked', { ...hit, torchNeed: { grass: 2, twigs: 2, haveGrass: 0, haveTwigs: 0 } }, caps)).toMatch(/so get 2 grass and 2 twigs now/)
+    expect(eventAddendum('sei:attacked', { ...hit, torchNeed: { grass: 0, twigs: 0, haveGrass: 3, haveTwigs: 2 } }, caps)).toMatch(/your body is making it now/)
+    expect(eventAddendum('sei:attacked', { ...hit, torchNeed: { grass: 1, twigs: 0, haveGrass: 1, haveTwigs: 2 } })).toMatch(/Then craft\(torch\) and equip it/)
+    // A monster still gets the monster text.
+    expect(eventAddendum('sei:attacked', { attackerKind: 'mob', attackerLabel: 'hound', healthPct: 0.5 }, caps)).toMatch(/call flee\(\)/)
+  })
+
   it('0.3.0 event prose: defend, alerts as wakes and as idle nudges, a hopeless dark, habit-aware idle', () => {
     const caps = { hasCaps: true }
     expect(eventAddendum('sei:attacked', { attackerKind: 'defend', attackerLabel: 'spider', player: 'Steve' }, caps)).toMatch(/spider went for Steve, and your body is fighting it/)

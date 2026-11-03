@@ -146,6 +146,17 @@ describe('createRuntime + fake mod', () => {
     expect(h.brain.stop).toHaveBeenCalled()
   })
 
+  it('an older helper\'s cause-less death right after a darkness hit is reported as the darkness', async () => {
+    const h = hooks()
+    const rt = await createRuntime(dstConfig({ respawn_delay_ms: 50, death_grace_ms: 200 }), h)
+    cleanup.push(() => rt.stop())
+    const { mod } = await bringLive(h)
+    await mod.event('attacked', { label: 'something', stimuli: 'darkness', healthpct: 0.3 })
+    await mod.event('death', { x: 1, z: 2, cause: 'NIL' })
+    await waitFor(() => h.postPortMessage.mock.calls.some((c) => c[0]?.type === 'dst-lives'))
+    expect(h.postPortMessage).toHaveBeenCalledWith({ type: 'dst-lives', respawns: 0, deaths: 1, lastDeathCause: 'darkness' })
+  })
+
   it('a death respawns the body beside the host under a new token, then gives the brain its death turn', async () => {
     const h = hooks()
     const rt = await createRuntime(dstConfig({ respawn_delay_ms: 50, death_grace_ms: 200 }), h)
