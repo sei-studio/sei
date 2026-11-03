@@ -56,6 +56,7 @@ import { createAudioQueue, type AudioQueue, type TtsStreamHandle } from '../voic
 import { createSentenceTts } from '../voice/sentenceTts';
 import { localTtsModel } from '@shared/ttsEngine';
 import { t, uiLanguage } from '../i18n';
+import { joinSentences } from '@shared/uiLanguage';
 import { currentResetLine } from '../useResetLine';
 import { burstLanguageFor, cloudPassText, createDictation, type Dictation } from '../voice/dictation';
 import type { SttHint } from '../voice/sttArbiter';
@@ -643,7 +644,7 @@ function friendlyError(err: unknown): string {
     // 260926: say when free play comes back, not just that it is gone.
     const base = t("You've used this week's credits. Upgrade or top up to keep calling.");
     const reset = currentResetLine();
-    return reset ? `${base}${uiLanguage() === 'zh' ? '' : ' '}${reset}` : base;
+    return reset ? joinSentences(uiLanguage(), base, reset) : base;
   }
   // 260810: the daily dollar cap was retired 260724, so a voice 429 is the
   // burst rate gate — never claim a daily cap or a tomorrow reset.

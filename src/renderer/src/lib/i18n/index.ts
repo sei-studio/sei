@@ -1,5 +1,7 @@
 /**
- * App UI i18n (260730). Two languages: English and Simplified Chinese.
+ * App UI i18n (260730). English and Simplified Chinese; 261104 adds Japanese,
+ * Russian, Brazilian Portuguese and Spanish (the list lives in
+ * src/shared/uiLanguage.ts).
  *
  * Design: the KEY IS THE ENGLISH STRING. `t('Delete')` looks the string up in
  * the zh dictionary when the UI language is 'zh' and falls back to the English
@@ -10,6 +12,10 @@
  * Interpolation: keys may carry `{name}`-style placeholders. Call
  * `t('Welcome back, {name}!', { name })` — the lookup happens on the raw key,
  * the substitution afterwards, so one dictionary entry covers every value.
+ * A translation may also carry an ICU-lite plural block,
+ * `{n, plural, one {# день} few {# дня} many {# дней} other {# дня}}`, chosen
+ * with Intl.PluralRules for the UI locale (Russian needs it; the English key
+ * never does). See formatMessage in src/shared/uiLanguage.ts.
  *
  * Reactivity: components MUST get their translator from `useT()` (a hook that
  * subscribes to the language) so a Settings toggle re-renders them. The bare
@@ -21,9 +27,23 @@
  * hydrated into this store at boot by App.tsx / the onboarding entry.
  */
 import { create } from 'zustand';
+import { formatMessage, uiLocaleTag, type UiLanguage } from '@shared/uiLanguage';
 import { ZH } from './zh';
+import { JA } from './ja';
+import { RU } from './ru';
+import { PT_BR } from './pt-BR';
+import { ES } from './es';
 
-export type UiLanguage = 'en' | 'zh';
+export type { UiLanguage } from '@shared/uiLanguage';
+
+/** Every non-English dictionary, keyed by the English string. */
+export const DICTIONARIES: Record<Exclude<UiLanguage, 'en'>, Record<string, string>> = {
+  zh: ZH,
+  ja: JA,
+  ru: RU,
+  'pt-BR': PT_BR,
+  es: ES,
+};
 
 interface LangState {
   lang: UiLanguage;
@@ -37,7 +57,7 @@ interface LangState {
 function applyDocumentLang(lang: UiLanguage): void {
   try {
     if (typeof document !== 'undefined' && document.documentElement) {
-      document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+      document.documentElement.lang = lang === 'en' ? 'en' : uiLocaleTag(lang);
     }
   } catch {
     /* no DOM (tests) */
@@ -53,13 +73,8 @@ export const useLangStore = create<LangState>((set) => ({
 }));
 
 function translate(lang: UiLanguage, en: string, params?: Record<string, string | number>): string {
-  let out = lang === 'zh' ? (ZH[en] ?? en) : en;
-  if (params) {
-    for (const [k, v] of Object.entries(params)) {
-      out = out.split(`{${k}}`).join(String(v));
-    }
-  }
-  return out;
+  const out = lang === 'en' ? en : (DICTIONARIES[lang]?.[en] ?? en);
+  return formatMessage(out, params, lang);
 }
 
 /** Translate with the CURRENT language. Safe inside subscribed renders. */
@@ -79,4 +94,9 @@ export function useT(): (en: string, params?: Record<string, string | number>) =
 /** Current language, for non-string switches (fonts, date formats, prompts). */
 export function uiLanguage(): UiLanguage {
   return useLangStore.getState().lang;
+}
+
+/** BCP 47 tag of the current UI language, for Intl date/number formatting. */
+export function uiLocale(): string {
+  return uiLocaleTag(useLangStore.getState().lang);
 }

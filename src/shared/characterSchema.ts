@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { mcUsernameFromName } from '../bot/names.js';
+import { UI_LANGUAGES } from './uiLanguage';
 
 /**
  * 260516-0yw: persona is now an object with `source` (user's short blurb,
@@ -579,8 +580,9 @@ export const UserConfigSchema = z.object({
    */
   chat_language: z.enum(['en', 'zh', 'ja', 'ko', 'fr', 'es']).optional(),
   /**
-   * 260730: APP UI language. 'zh' switches every renderer surface to Chinese
-   * AND stamps characters created while it is active with
+   * 260730: APP UI language (the list is UI_LANGUAGES in uiLanguage.ts;
+   * 261104 added ja, ru, pt-BR and es, which translate the interface only).
+   * 'zh' switches every renderer surface to Chinese AND stamps characters created while it is active with
    * metadata.language 'zh', which makes their AI surfaces (persona
    * generation, chat, games, the Minecraft bot) run on Chinese prompts.
    * Distinct from chat_language above, which is the auto-detected
@@ -589,7 +591,7 @@ export const UserConfigSchema = z.object({
    * literals don't all need to spell it out — same convention as
    * chat_language.
    */
-  ui_language: z.enum(['en', 'zh']).optional(),
+  ui_language: z.enum(UI_LANGUAGES).optional(),
   /** Plan 07: Linux basic_text safeStorage warning Banner dismissal (Pitfall A2). */
   linuxBasicTextWarnDismissed: z.boolean().default(false),
   /**

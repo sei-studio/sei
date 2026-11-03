@@ -20,11 +20,13 @@ import { useLangStore } from '../lib/i18n';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { VoicePicker } from './VoicePicker';
 import type { VoiceParams } from '../lib/voicePicker';
+import { isUiLanguage } from '@shared/uiLanguage';
 
 const params = new URLSearchParams(window.location.search);
 
 function seed(): void {
-  if (params.get('lang') === 'zh') useLangStore.getState().setLang('zh');
+  const shotLang = params.get('lang');
+  if (isUiLanguage(shotLang)) useLangStore.getState().setLang(shotLang);
   useCreditsStore.setState({
     plan: 'free',
     ai_backend_kind: params.get('backend') === 'local' ? 'local' : 'cloud-proxy',

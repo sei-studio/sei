@@ -30,7 +30,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
-import { useT, uiLanguage } from '../lib/i18n';
+import { useT, uiLocale } from '../lib/i18n';
 import { useEmailCode } from '../lib/useEmailCode';
 import { useChatgptLogin, chatgptCodeReasonCopy } from '../lib/useChatgptLogin';
 import { SeiPixelMark } from '../components/SeiPixelMark';
@@ -382,7 +382,7 @@ export function AuthChoiceScreen({
                   {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
                     <option key={m} value={String(m)}>
                       {new Date(2000, m - 1, 1).toLocaleString(
-                        uiLanguage() === 'zh' ? 'zh-CN' : 'en-US',
+                        uiLocale(),
                         { month: 'short' },
                       )}
                     </option>

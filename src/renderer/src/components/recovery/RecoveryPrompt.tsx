@@ -19,7 +19,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { sei } from '../../lib/ipcClient';
-import { useT, uiLanguage } from '../../lib/i18n';
+import { useT, uiLocale } from '../../lib/i18n';
 import { useUiStore } from '../../lib/stores/useUiStore';
 import { useVoiceStore } from '../../lib/stores/useVoiceStore';
 import { useBackseatStore } from '../../lib/stores/useBackseatStore';
@@ -153,7 +153,7 @@ export function RecoveryPrompt(): React.ReactElement | null {
 
   const fmtRow = (c: RecoveryCandidate): string => {
     const date = new Date(c.startTs).toLocaleDateString(
-      uiLanguage() === 'zh' ? 'zh-CN' : 'en-US',
+      uiLocale(),
       { month: 'short', day: 'numeric' },
     );
     return t('{name}, {date}, {minutes} minutes, {count} messages', {

@@ -12,7 +12,10 @@
  * User copy rules: plain and short, no em dashes.
  */
 
-export type SafeModeLang = 'en' | 'zh';
+import { SAFE_MODE_ADDED } from '../../shared/addedLanguageCopy';
+import { uiLanguageForLocale, uiLocaleTag, type UiLanguage } from '../../shared/uiLanguage';
+
+export type SafeModeLang = UiLanguage;
 export type SafeModeTheme = 'system' | 'dark' | 'light';
 /** Why safe mode is up, as the page words it. */
 export type SafeModeCause = 'repeated' | 'forced';
@@ -107,13 +110,18 @@ export const SAFE_MODE_COPY = {
     logsHint: '如果问题一直出现，那里最新的文件能帮我们找到原因。',
     versionLine: '版本 {v}',
   },
+  ...SAFE_MODE_ADDED,
 } as const satisfies Record<SafeModeLang, Record<string, string>>;
 
-export type SafeModeCopy = (typeof SAFE_MODE_COPY)['en'];
+export type SafeModeCopy = Record<keyof (typeof SAFE_MODE_COPY)['en'], string>;
 
-/** zh for a Chinese system locale, else English. */
+/**
+ * The page language from the SYSTEM locale (safe mode never reads the
+ * settings file, which may be what is broken): the same mapping as the
+ * first-launch auto-pick, English for anything else.
+ */
 export function safeModeLang(locale: string | null | undefined): SafeModeLang {
-  return typeof locale === 'string' && locale.toLowerCase().startsWith('zh') ? 'zh' : 'en';
+  return uiLanguageForLocale(locale) ?? 'en';
 }
 
 /** The app theme_mode setting to the page theme (unknown = follow the system). */
@@ -310,7 +318,7 @@ export function renderSafeModeHtml(opts: SafeModePageOptions): string {
   const body = opts.cause === 'forced' ? c.bodyForced : c.bodyRepeated;
   const themeAttr = opts.theme === 'system' ? '' : ` data-theme="${opts.theme}"`;
   return `<!doctype html>
-<html lang="${opts.lang === 'zh' ? 'zh-CN' : 'en'}"${themeAttr}>
+<html lang="${opts.lang === 'en' ? 'en' : uiLocaleTag(opts.lang)}"${themeAttr}>
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${e(SAFE_MODE_CSP)}">

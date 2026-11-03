@@ -176,7 +176,7 @@ const SCRIPT: Record<LineId, string> = {
   // 261012: the optional one-tap follow-up for "AI" and "Google search".
   heardAi: 'Ooh, another AI! Which one?',
   heardGoogle: 'Nice! What did you search for?',
-  job: 'So, {name}, my job here is to help you meet other AI friends from my world.',
+  job: 'So, {name}, my job here is to help you meet other AI companions from my world.',
   skipConfirm: 'Aww, really? I was going to find a companion just for you. You wanna skip it?',
   fiveQs:
     'The terminal says I need five quick answers from you. It uses them to pick who you meet first, so be honest with me okay?',

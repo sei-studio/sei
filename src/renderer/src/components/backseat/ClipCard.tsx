@@ -13,6 +13,7 @@
  */
 
 import React from 'react';
+import { useT } from '../../lib/i18n';
 import { sei } from '../../lib/ipcClient';
 import styles from './ClipCard.module.css';
 
@@ -21,6 +22,7 @@ export interface ClipCardProps {
 }
 
 export function ClipCard({ clip }: ClipCardProps): React.ReactElement {
+  const t = useT();
   return (
     <div className={styles.card}>
       <video
@@ -38,7 +40,7 @@ export function ClipCard({ clip }: ClipCardProps): React.ReactElement {
           className={styles.reveal}
           onClick={() => void sei.backseatRevealClip(clip.path).catch(() => {})}
         >
-          Show file
+          {t('Show file')}
         </button>
       </div>
     </div>

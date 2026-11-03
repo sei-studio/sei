@@ -25,6 +25,8 @@
  */
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import { VELOPACK_SPLASH_ADDED } from '../shared/addedLanguageCopy';
+import { formatMessage, joinSentences, type UiLanguage } from '../shared/uiLanguage';
 
 /** Folder (inside the Velopack packages dir) the stage command writes to. */
 export const STAGE_DIR = 'SeiStaged';
@@ -111,7 +113,7 @@ export function parseStageResult(text: string | null | undefined): StageResult {
 /*  Update screen text                                                         */
 /* -------------------------------------------------------------------------- */
 
-export type UpdateLang = 'en' | 'zh';
+export type UpdateLang = UiLanguage;
 
 export interface UpdateScreenText {
   updating: string;
@@ -127,6 +129,19 @@ export interface UpdateScreenText {
  * as a different screen.
  */
 export function updateScreenText(lang: UpdateLang): UpdateScreenText {
+  if (lang !== 'en' && lang !== 'zh') {
+    const c = VELOPACK_SPLASH_ADDED[lang];
+    const eta: Record<string, string> = {};
+    for (const s of ETA_BUCKETS) {
+      let rest: string;
+      if (s < 60) rest = formatMessage(c.secondsLeft, { s }, lang);
+      else if (s === 60) rest = c.minuteLeft;
+      else rest = formatMessage(c.minutesLeft, { n: s / 60 }, lang);
+      eta[`eta-${s}`] = joinSentences(lang, c.updating, rest);
+    }
+    eta['eta-long'] = joinSentences(lang, c.updating, c.longer);
+    return { updating: c.updating, error: c.error, eta };
+  }
   const zh = lang === 'zh';
   const updating = zh ? '正在更新…' : 'Updating…';
   const eta: Record<string, string> = {};

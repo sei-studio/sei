@@ -124,6 +124,40 @@ describe('quietCompanionNotice', () => {
   });
 });
 
+describe('the 261104 languages', () => {
+  const langs = ['ja', 'ru', 'pt-BR', 'es'] as const;
+
+  it('every line is filled, localized and free of placeholders', () => {
+    for (const lang of langs) {
+      for (const when of [at(2026, 9, 26, 21, 30), at(2026, 9, 27, 9), at(2026, 9, 29, 9)]) {
+        for (const plan of ['free', 'quest'] as const) {
+          const line = formatResetLine(iso(when), NOW, { lang, plan });
+          expect(line, lang).toBeTruthy();
+          expect(line!, lang).not.toMatch(/[{}#\u2014]/);
+          expect(line!, lang).not.toMatch(/Free play|allowance resets/);
+        }
+      }
+      const notice = quietCompanionNotice({ name: 'Marv', lang, resetsAt: iso(at(2026, 9, 29, 9)), nowMs: NOW });
+      expect(notice).toContain('Marv');
+      expect(notice).not.toMatch(/[{}#\u2014]/);
+    }
+  });
+
+  it('uses the locale clock and plural forms', () => {
+    // 24 h clock outside English.
+    expect(formatResetLine(iso(at(2026, 9, 26, 21, 30)), NOW, { lang: 'es' })).toContain('21:30');
+    expect(formatResetLine(iso(at(2026, 9, 26, 21, 30)), NOW, { lang: 'ja' })).toContain('21:30');
+    // 3 days: Russian "3 дня", Spanish "3 días".
+    expect(formatResetLine(iso(at(2026, 9, 29, 9)), NOW, { lang: 'ru' })).toContain('3 дня');
+    expect(formatResetLine(iso(at(2026, 9, 29, 9)), NOW, { lang: 'es' })).toContain('3 días');
+  });
+
+  it('Japanese joins sentences without a space', () => {
+    const notice = quietCompanionNotice({ name: 'Marv', lang: 'ja', resetsAt: iso(at(2026, 9, 29, 9)), nowMs: NOW });
+    expect(notice).not.toMatch(/。 /);
+  });
+});
+
 describe('decideFreePlayBanner', () => {
   const base = { cloud: true, snapshotFailed: false, over_limit: false, resets_at: '' };
   const reset = iso(at(2026, 9, 30, 9));

@@ -45,6 +45,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { UPDATE_WINDOW_ADDED } from '../shared/addedLanguageCopy';
+import { formatMessage, normalizeUiLanguage, type UiLanguage } from '../shared/uiLanguage';
 
 /** Default install estimate: the measured real-user median (261030). */
 export const DEFAULT_INSTALL_SECONDS = 100;
@@ -79,14 +81,14 @@ export const HELPER_FILES = [
   'fonts/sei-rajdhani-600.ttf',
 ] as const;
 
-export type HelperLang = 'en' | 'zh';
+export type HelperLang = UiLanguage;
 export type HelperTheme = 'midnight' | 'ice' | 'acorn' | 'mint';
 
 /** Every line the window can show. Plain and short (prompt-writing-style). */
 export interface HelperCopy {
   title: string;
   subtitle: string;
-  /** `{n}` = whole minutes, 2 or more. */
+  /** `{n}` = whole minutes, 2 or more (may be a plural block, formatMessage). */
   minutes: string;
   oneMinute: string;
   underMinute: string;
@@ -122,6 +124,23 @@ export const HELPER_COPY: Record<HelperLang, HelperCopy> = {
     opening: '正在打开 Sei',
     failed: 'Sei 没有自动打开，请从开始菜单打开。',
   },
+  ...UPDATE_WINDOW_ADDED,
+};
+
+/**
+ * WPF fallback fonts behind the bundled Oswald/Rajdhani (Latin-1 only), per
+ * language. The script puts them after the bundled face, so Latin text keeps
+ * the app's look and only the missing glyphs fall through: Cyrillic to
+ * Segoe UI, Japanese to Yu Gothic UI (YaHei would draw kanji in Chinese
+ * forms), Chinese to YaHei as before.
+ */
+export const HELPER_FALLBACK_FONTS: Record<HelperLang, string> = {
+  en: 'Microsoft YaHei UI, Microsoft YaHei, Segoe UI',
+  zh: 'Microsoft YaHei UI, Microsoft YaHei, Segoe UI',
+  ja: 'Yu Gothic UI, Meiryo UI, Segoe UI',
+  ru: 'Segoe UI, Microsoft YaHei UI',
+  'pt-BR': 'Segoe UI, Microsoft YaHei UI',
+  es: 'Segoe UI, Microsoft YaHei UI',
 };
 
 /**
@@ -182,9 +201,9 @@ export function progressAt(t: number, e: number, start = 0): number {
  * countdown: the estimate is a median, and a clock that hits zero and keeps
  * waiting reads as a lie. Past the estimate it says so plainly.
  */
-export function statusAt(t: number, e: number, copy: HelperCopy): string {
+export function statusAt(t: number, e: number, copy: HelperCopy, lang: HelperLang = 'en'): string {
   const r = e - t;
-  if (r >= 90) return copy.minutes.replace('{n}', String(Math.max(2, Math.round(r / 60))));
+  if (r >= 90) return formatMessage(copy.minutes, { n: Math.max(2, Math.round(r / 60)) }, lang);
   if (r >= 45) return copy.oneMinute;
   if (r >= 12) return copy.underMinute;
   if (r >= 0) return copy.seconds;
@@ -204,13 +223,13 @@ export interface HelperPlan {
   status: Array<[number, string]>;
 }
 
-export function buildPlan(estimateSec: number, copy: HelperCopy, startShare = 0): HelperPlan {
+export function buildPlan(estimateSec: number, copy: HelperCopy, startShare = 0, lang: HelperLang = 'en'): HelperPlan {
   const end = Math.ceil(estimateSec * 4);
   const curve: Array<[number, number]> = [];
   const status: Array<[number, string]> = [];
   for (let t = 0; t <= end; t++) {
     curve.push([t, Math.round(progressAt(t, estimateSec, startShare) * 10000) / 10000]);
-    const line = statusAt(t, estimateSec, copy);
+    const line = statusAt(t, estimateSec, copy, lang);
     if (status.length === 0 || status[status.length - 1][1] !== line) status.push([t, line]);
   }
   return { estimateSec, startShare, openingFillSec: startShare > 0 ? OPENING_FILL_SEC : 0, curve, status };
@@ -218,6 +237,8 @@ export function buildPlan(estimateSec: number, copy: HelperCopy, startShare = 0)
 
 export interface HelperConfig {
   lang: HelperLang;
+  /** WPF font fallback list for glyphs the bundled faces lack. */
+  fallbackFonts: string;
   theme: HelperTheme;
   copy: HelperCopy;
   plan: HelperPlan;
@@ -244,7 +265,7 @@ export function resolveHelperTheme(mode: string | undefined, osDark: boolean): H
 
 /** The window's language from UserConfig.ui_language (absent = en). */
 export function resolveHelperLang(uiLanguage: string | undefined): HelperLang {
-  return uiLanguage === 'zh' ? 'zh' : 'en';
+  return normalizeUiLanguage(uiLanguage);
 }
 
 export interface HelperConfigInputs {
@@ -266,9 +287,10 @@ export function buildHelperConfig(i: HelperConfigInputs): HelperConfig {
   const copy = HELPER_COPY[lang];
   return {
     lang,
+    fallbackFonts: HELPER_FALLBACK_FONTS[lang],
     theme: resolveHelperTheme(i.themeMode, i.osDark),
     copy,
-    plan: buildPlan(estimateInstallSeconds(i.history), copy, i.downloaded ? DOWNLOAD_DONE_SHARE : 0),
+    plan: buildPlan(estimateInstallSeconds(i.history), copy, i.downloaded ? DOWNLOAD_DONE_SHARE : 0, lang),
     version: i.version.replace(/^v/, ''),
     installerName: processNameOf(i.installerPath),
     appName: processNameOf(i.appExe),

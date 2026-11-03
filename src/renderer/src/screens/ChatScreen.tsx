@@ -29,7 +29,7 @@
  */
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useT, uiLanguage } from '../lib/i18n';
+import { useT, uiLanguage, uiLocale } from '../lib/i18n';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { resolvedScheme } from '../lib/theme';
 import { useDataStore } from '../lib/stores/useDataStore';
@@ -111,10 +111,14 @@ function fmtTimestamp(ts: number): string {
 /** "17 Apr 2026" — day-separator label ("2026年4月17日" in Chinese). */
 function fmtDay(ts: number): string {
   const d = new Date(ts);
-  if (uiLanguage() === 'zh') {
+  const lang = uiLanguage();
+  if (lang === 'zh') {
     return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
   }
-  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  if (lang === 'en') return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  // 261104 languages: the locale's own date order and month names
+  // ("2026年4月17日", "17 апр. 2026 г.", "17 de abr. de 2026").
+  return d.toLocaleDateString(uiLocale(), { day: 'numeric', month: lang === 'ja' ? 'long' : 'short', year: 'numeric' });
 }
 
 /** Stable per-calendar-day key so a separator drops in when the day changes. */

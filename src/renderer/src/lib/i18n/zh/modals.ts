@@ -407,7 +407,7 @@ export const ZH_MODALS: Record<string, string> = {
 
   // ── OfflineRetryModal ──
   "You're offline": '你已离线',
-  'Sei couldn’t reach the cloud to check your account. You can keep playing locally — cloud features like character sync will reconnect once you’re back online.':
+  'Sei couldn’t reach the cloud to check your account. You can keep playing locally. Cloud features like character sync will reconnect once you’re back online.':
     'Sei 无法连接云端以检查你的账户。你可以继续在本地游玩，等你重新联网后，角色同步等云端功能会自动重连。',
   'Still can’t connect. Check your internet connection and try again.':
     '仍然无法连接。请检查网络连接后重试。',

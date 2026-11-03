@@ -70,6 +70,26 @@
   color: var(--text);
 }
 
+/* App language picker (261104): a native select, styled like the shared
+   voice picker's. */
+.langSelect {
+  flex: 0 0 auto;
+  min-width: 160px;
+  padding: 6px var(--space-md);
+  font-family: var(--sans);
+  font-size: 14px;
+  background: var(--input-bg, var(--window));
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.langSelect:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .value {
   font-family: var(--sans);
   font-size: 13px;

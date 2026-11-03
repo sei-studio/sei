@@ -489,14 +489,17 @@ export function cloudPassText(res: { text: string; minWordLogprob?: number }, hi
   return hint?.burst && res.text && burstWordUnsure(res.minWordLogprob) ? '' : res.text;
 }
 
-/** Conversation languages written in Latin script (chat_language). */
-const LATIN_LANGUAGES = new Set(['en', 'fr', 'es']);
+/** Conversation languages written in Latin script (chat_language, or the
+ * base code of a Latin-script UI language such as pt-BR). */
+const LATIN_LANGUAGES = new Set(['en', 'fr', 'es', 'pt']);
 
 /**
  * The language a call's burst words are judged against (261101). chat_language
- * when the player set one; otherwise the UI's Chinese, else the OS locale's
- * language. The UI is only en/zh, so without the OS step a Japanese, Korean,
- * Russian or Arabic speaker with no chat_language read as an English call.
+ * when the player set one; otherwise a non-English UI language (its base code:
+ * zh, ja, ru, pt, es since 261104), else the OS locale's language. An English
+ * UI says nothing about the player's language (it is also the default), so
+ * without the OS step a Korean or Arabic speaker with no chat_language would
+ * read as an English call.
  */
 export function burstLanguageFor(
   chatLanguage: string | undefined,
@@ -504,7 +507,7 @@ export function burstLanguageFor(
   osLocale: string | undefined,
 ): string {
   if (chatLanguage) return chatLanguage;
-  if (uiLanguage === 'zh') return 'zh';
+  if (uiLanguage && uiLanguage !== 'en') return uiLanguage.split('-')[0].toLowerCase();
   const os = (osLocale ?? '').split('-')[0].toLowerCase();
   return os || 'en';
 }

@@ -38,6 +38,7 @@ import { useTutorialStore, type TutorialStep } from './lib/stores/useTutorialSto
 import { useFirstMomentStore } from './lib/stores/useFirstMomentStore';
 import { firstMomentCompanion } from './lib/firstMoment';
 import { DEFAULT_CHARACTER_UUIDS } from '@shared/defaultCharacters';
+import { normalizeUiLanguage } from '@shared/uiLanguage';
 import type { WhatsNewEvent } from '@shared/ipc';
 import { SkinSetupScreen } from './screens/SkinSetupScreen';
 import { CharactersScreen } from './screens/CharactersScreen';
@@ -597,7 +598,7 @@ export function App(): React.ReactElement {
           setThemeMode(mode);
           applyTheme(mode);
           // App UI language follows the incoming profile's config (260730).
-          useLangStore.getState().setLang(cfg.ui_language === 'zh' ? 'zh' : 'en');
+          useLangStore.getState().setLang(normalizeUiLanguage(cfg.ui_language));
           useUiStore.getState().setDevConsoleVisible(!!cfg.dev_console_visible);
           // Appearance & feel: seed the "Realistic typing" pacing toggle
           // (default ON) so useChatStore.send() reads the right value.
@@ -844,7 +845,7 @@ export function App(): React.ReactElement {
           setThemeMode(mode);
           applyTheme(mode);
           // App UI language (260730): hydrate before the first localized render.
-          useLangStore.getState().setLang(cfg.ui_language === 'zh' ? 'zh' : 'en');
+          useLangStore.getState().setLang(normalizeUiLanguage(cfg.ui_language));
           // ui-A7: seed the developer-console visibility from persisted config
           // BEFORE the first render of any view that mounts LogsBar — the
           // gate below reads useUiStore.devConsoleVisible directly.

@@ -19,7 +19,11 @@
  * date is read in LOCAL time: "tomorrow" means the user's tomorrow.
  */
 
-export type ResetLang = 'en' | 'zh';
+import { formatMessage, joinSentences, uiLocaleTag, type UiLanguage } from './uiLanguage';
+import { FREE_PLAY_RESET_ADDED } from './addedLanguageCopy';
+
+/** Any app UI language (en and zh keep their hand-written sentences below). */
+export type ResetLang = UiLanguage;
 export type ResetPlan = 'free' | 'quest' | 'party';
 
 const DAY_MS = 86_400_000;
@@ -46,13 +50,9 @@ export function resetCountdown(
   return { days, atMs };
 }
 
-function locale(lang: ResetLang): string {
-  return lang === 'zh' ? 'zh-CN' : 'en-US';
-}
-
-/** "Tuesday, Sep 30" / "9月30日星期二". */
+/** "Tuesday, Sep 30" / "9月30日星期二" / "30 de set., terça-feira"... */
 export function formatResetDate(atMs: number, lang: ResetLang): string {
-  return new Intl.DateTimeFormat(locale(lang), {
+  return new Intl.DateTimeFormat(uiLocaleTag(lang), {
     weekday: 'long',
     month: 'short',
     day: 'numeric',
@@ -60,10 +60,12 @@ export function formatResetDate(atMs: number, lang: ResetLang): string {
 }
 
 function formatResetTime(atMs: number, lang: ResetLang): string {
-  return new Intl.DateTimeFormat(locale(lang), {
+  return new Intl.DateTimeFormat(uiLocaleTag(lang), {
     hour: 'numeric',
     minute: '2-digit',
-    hour12: lang !== 'zh',
+    // en keeps "9:30 PM" and zh "21:30" as before; the others use their
+    // locale's own clock (24 h for ja/ru/pt-BR/es).
+    hour12: lang === 'en' ? true : lang === 'zh' ? false : undefined,
   }).format(new Date(atMs));
 }
 
@@ -94,6 +96,15 @@ export function formatResetLine(
     if (c.days === 1) return `${subject}将在明天重置（${date}）。`;
     return `${subject}将在${c.days}天后重置（${date}）。`;
   }
+  if (lang !== 'en') {
+    const copy = FREE_PLAY_RESET_ADDED[lang];
+    if (c.days === 0) {
+      return formatMessage(free ? copy.freeToday : copy.allowanceToday, { time: formatResetTime(c.atMs, lang) }, lang);
+    }
+    const date = formatResetDate(c.atMs, lang);
+    if (c.days === 1) return formatMessage(free ? copy.freeTomorrow : copy.allowanceTomorrow, { date }, lang);
+    return formatMessage(free ? copy.freeDays : copy.allowanceDays, { n: c.days, date }, lang);
+  }
   const subject = free ? 'Free play' : 'Your weekly allowance';
   if (c.days === 0) return `${subject} resets today at ${formatResetTime(c.atMs, lang)}.`;
   const date = formatResetDate(c.atMs, lang);
@@ -123,6 +134,12 @@ export function quietCompanionNotice(opts: {
       ? `你的免费游玩已用完，${name}会继续安静地陪你下完这局，但暂时不会聊天。`
       : `本周额度已用完，${name}会继续安静地陪你下完这局，但暂时不会聊天。`;
     return `${lead}${reset ?? ''}${top ? '充值' : '充值或升级'}可以让TA更早开口。`;
+  }
+  if (lang !== 'en') {
+    const copy = FREE_PLAY_RESET_ADDED[lang];
+    const lead = formatMessage(free ? copy.quietFree : copy.quietAllowance, { name }, lang);
+    const cta = top ? copy.ctaTopUp : copy.ctaTopUpOrUpgrade;
+    return joinSentences(lang, joinSentences(lang, lead, reset ?? ''), cta);
   }
   const lead = free
     ? `You're out of free play for now, so ${name} will keep playing quietly, with no chat.`

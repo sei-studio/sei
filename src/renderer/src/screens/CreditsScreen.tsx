@@ -56,9 +56,18 @@ import { TopUpModal } from '../components/TopUpModal';
 import { FeedbackRewardCard } from '../components/FeedbackRewardCard';
 import { FeedbackModal } from '../components/FeedbackModal';
 import { formatRenewal } from '../lib/formatRenewal';
+import { formatResetsIn, resetsInLine } from '../lib/formatResetsIn';
 import { useResetLine } from '../lib/useResetLine';
-import { RECOMMENDED_TIER, TIER_ORDER, planCard, planName } from '../lib/planCatalog';
-import { t, useT } from '../lib/i18n';
+import {
+  RECOMMENDED_TIER,
+  TIER_ORDER,
+  planBlurb,
+  planCard,
+  planDisplayName,
+  planLabel,
+  planName,
+} from '../lib/planCatalog';
+import { t, uiLocale, useT } from '../lib/i18n';
 import styles from './CreditsScreen.module.css';
 import { ChatgptLogo } from '../components/ChatgptLogo';
 import { ChatgptPlanSettings, chatgptPlanDisclosure } from '../components/ChatgptPlanSettings';
@@ -69,27 +78,6 @@ import { chatgptReady, useChatgptStore } from '../lib/stores/useChatgptStore';
 /** Note under the extra-credits bar: what carries over and what does not (SPEC §2). */
 const CARRY_OVER_NOTE =
   'Unused weekly credits do not carry over. Extra credits never expire.';
-
-/**
- * "3 days 4 hr" / "4 hr 30 min" / "30 min" / "soon" from the resets_at ISO
- * stamp (260725 wording). Two largest units only; minute precision is all the
- * surface needs, and the screen re-renders on a 60s tick while open. Empty
- * string on a bad date so the sub-line simply doesn't render.
- */
-export function formatResetsIn(resetsAt: string, nowMs: number): string {
-  const t = Date.parse(resetsAt);
-  if (Number.isNaN(t)) return '';
-  const left = t - nowMs;
-  if (left <= 60_000) return 'soon';
-  const mins = Math.floor(left / 60_000);
-  const d = Math.floor(mins / 1440);
-  const h = Math.floor((mins % 1440) / 60);
-  const m = mins % 60;
-  // Compact consistent units (260725): "3d 4h" / "4h 30m" / "30m".
-  if (d > 0) return h > 0 ? `${d}d ${h}h` : `${d}d`;
-  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
-  return `${m}m`;
-}
 
 /**
  * 260706 — how much of the weekly allowance must be spent before the one-time
@@ -342,8 +330,8 @@ export function CreditsScreen(): React.ReactElement {
   // that never topped up shows an empty bar and the Top up button.
   const extraPct = extraTotal > 0 ? (extraUsed / extraTotal) * 100 : 0;
   const extraLabel = t('{used}/{total} credits used', {
-    used: extraUsed.toLocaleString(),
-    total: extraTotal.toLocaleString(),
+    used: extraUsed.toLocaleString(uiLocale()),
+    total: extraTotal.toLocaleString(uiLocale()),
   });
 
   return (
@@ -396,14 +384,14 @@ export function CreditsScreen(): React.ReactElement {
           <div className={styles.usageRow}>
             <div className={styles.usageLabel}>
               <span className={styles.usageName}>
-                {t('{name} plan', { name: planName(planCards, plan) })}
+                {planLabel(planCards, plan)}
               </span>
               {snapshotFailed ? (
                 <span className={styles.usageSubWarn}>
                   {t("Couldn't check your account. Refresh to try again.")}
                 </span>
               ) : resetsIn ? (
-                <span className={styles.usageSub}>{t('Resets in {time}', { time: resetsIn })}</span>
+                <span className={styles.usageSub}>{resetsInLine(resetsIn)}</span>
               ) : null}
             </div>
             <div className={styles.usageTrack}>
@@ -473,14 +461,14 @@ export function CreditsScreen(): React.ReactElement {
                   {isRecommended ? (
                     <span className={styles.planTag}>{t('Recommended')}</span>
                   ) : null}
-                  <span className={styles.planName}>{card.name}</span>
+                  <span className={styles.planName}>{planDisplayName(card)}</span>
                   <span className={styles.planPrice}>
                     {card.price}
                     {card.priceQualifier ? (
-                      <span className={styles.planPriceQualifier}>{card.priceQualifier}</span>
+                      <span className={styles.planPriceQualifier}>{t(card.priceQualifier)}</span>
                     ) : null}
                   </span>
-                  <span className={styles.planBlurb}>{card.blurb}</span>
+                  <span className={styles.planBlurb}>{planBlurb(card)}</span>
                   {/* 261023: one big button per card. The primary (accent,
                       48px) is the upgrade; everything else is the quiet
                       secondary at the same height so the cards line up. */}

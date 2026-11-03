@@ -59,6 +59,7 @@ import {
   type ReleaseChannel,
 } from './analyticsContext';
 import { setCrashRedactNames } from './crashLog';
+import { normalizeUiLanguage } from '../shared/uiLanguage';
 import { DEFAULT_MODELS } from '../shared/llmCatalog';
 import {
   ATTRIBUTION_DETAIL_EVENT,
@@ -371,7 +372,7 @@ export function analyticsChannel(): ReleaseChannel {
 }
 
 /**
- * Cached UserConfig.ui_language ('en' | 'zh'), the APP UI language — not the
+ * Cached UserConfig.ui_language (one of UI_LANGUAGES), the APP UI language — not the
  * per-character conversation language. 260801: before this, the only trace of
  * a non-English user anywhere in the cloud was `characters.metadata.language`,
  * which is stamped at character CREATION, so anyone who only ever used the
@@ -384,7 +385,7 @@ let uiLanguage = 'en';
 
 /** Refresh the cached ui_language. Called after a renderer config save. */
 export function setUiLanguage(lang: string | undefined | null): void {
-  uiLanguage = lang === 'zh' ? 'zh' : 'en';
+  uiLanguage = normalizeUiLanguage(lang);
 }
 
 /** Refresh the cached onboarded flag from a profile's preferred_name. */

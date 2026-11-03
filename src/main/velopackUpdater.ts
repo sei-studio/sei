@@ -63,6 +63,7 @@ import {
 } from './velopackFastApply';
 import { closeSplashWindow, createSplashWindow, renderSplashFrames } from './windowChrome';
 import { hasPassingVerdict, verifyPackage } from './velopackVerify';
+import { normalizeUiLanguage } from '../shared/uiLanguage';
 
 /** The feed: releases.<channel>.json plus packages, served from R2 behind dl.sei.gg. */
 const DEFAULT_FEED = 'https://dl.sei.gg/velopack';
@@ -99,7 +100,7 @@ async function uiLang(): Promise<UpdateLang> {
   try {
     const { loadConfig } = await import('./configStore');
     const cfg = await loadConfig();
-    return cfg.ui_language === 'zh' ? 'zh' : 'en';
+    return normalizeUiLanguage(cfg.ui_language);
   } catch {
     return 'en';
   }
