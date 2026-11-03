@@ -366,6 +366,9 @@ export async function start({ config, adapter, logger = console, onTerminalError
         ...(Array.isArray(evt?.lost) ? { lost: evt.lost } : {}),
         ...(evt?.keptAll === true ? { keptAll: true } : {}),
         ...(deathText ? { deathText } : {}),
+        // 261104: adapter-owned facts for its own death prose (DST: whether
+        // she came back, beside whom, how many comebacks are left).
+        ...(evt?.detail && typeof evt.detail === 'object' ? { detail: evt.detail } : {}),
       })
     },
     onSpawn: () => {

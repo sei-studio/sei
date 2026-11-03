@@ -198,8 +198,29 @@ through this.
 - Bot runtime: no contact by the spawn deadline (sized inside the
   supervisor's 30 s summon watchdog, floor 5 s) = `GAME_NOT_ANSWERING`;
   contact but no `spawned` = `DST_SPAWN_FAILED`; no traffic for 10 s after
-  spawn = `GAME_WORLD_NOT_OPEN` (the world closed); `death` = one brain turn,
-  then `DST_BODY_DIED` (an ownerless survivor has no client to revive it).
+  spawn = `GAME_WORLD_NOT_OPEN` (the world closed).
+- `death` (app side since 261104, no mod change; any helper version): an
+  ownerless survivor has no client to revive it, so the runtime brings her
+  back itself. About 4 s after the death it queues `despawn` for the corpse
+  (waits up to 2.5 s for `despawned`), mints a NEW token, and reports
+  `{type:'dst-listen', port, token, respawn: true, nearUserid}`. Main answers
+  `{type:'dst-respawn-offer', ok, reason?, nearUserid?, nearName?}`: a
+  respawn offer goes only to the shard listing the original host (else any
+  player), and with no world or no player it is refused (`no_world` /
+  `no_host`) and the session ends as `DST_BODY_DIED`. The mod sees an
+  ordinary summon offer on its next heartbeat: `onSummon` despawns any body
+  still standing, configures the new token and spawns beside that player,
+  then posts `spawned` as usual. The new token matters: `Despawn` drops the
+  link one second later only while `Net.token` is still the one it despawned
+  with, so a reused token would cut the new body's link. No `spawned` within
+  15 s = `DST_BODY_DIED`. The inventory is not restored (it dropped where
+  she fell, as vanilla) and stats are a fresh spawn's. The brain gets ONE
+  death turn after the new body is up. At most 3 respawns per session; a
+  death within 20 s of a respawn twice in a row is a bad spot. Either one
+  gets a final death turn, then `DST_DIED_TOO_OFTEN` / `DST_DANGEROUS_SPOT`.
+  The runtime reports `{type:'dst-lives', respawns, deaths, lastDeathCause}`
+  after each death and respawn (for `bot_session_ended`), and a stop while
+  the respawn offer is still queued sends `{type:'dst-offer-cancel'}`.
 - Stop: the runtime queues `despawn`, waits up to 2.5 s for `despawned`,
   stops the brain, closes the listener. The mod drops the inventory on the
   ground before `inst:Remove()` (the body is never saved with the world).

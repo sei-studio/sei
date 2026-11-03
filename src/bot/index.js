@@ -323,6 +323,14 @@ export async function start(config, hooks = {}) {
     setDashboardWatch(active) {
       try { _runtime?.setDashboardWatch?.(active) } catch {}
     },
+    /**
+     * 261104: a main -> runtime message (DST: main's answer to a respawn
+     * offer, {type:'dst-respawn-offer'}). NOT a brain passthrough: the game
+     * runtime owns it (portForwarders.test.js exempts it).
+     */
+    runtimeMessage(data) {
+      try { _runtime?.handlePortMessage?.(data) } catch {}
+    },
   }
 }
 
@@ -1048,6 +1056,9 @@ if (process.parentPort) {
             // (FSM hold + abort of live work); paused:false resumes with the
             // "player just unpaused your game" tick.
             try { _running?.setGamePaused?.(data.paused === true) } catch {}
+          } else if (data && data.type === 'dst-respawn-offer') {
+            // 261104: main checked for a host to respawn the DST body beside.
+            try { _running?.runtimeMessage?.(data) } catch {}
           } else if (data && data.type === 'game-mode') {
             // 260725: runtime reactive/proactive mode. Never persisted; every
             // summon starts proactive.

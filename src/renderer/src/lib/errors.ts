@@ -105,6 +105,10 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   DST_SPAWN_FAILED: "Sei's helper answered, but no survivor appeared in your world. Make sure you are the host, then press Play again.",
   DST_PORT_IN_USE: "Sei couldn't open its local port for Don't Starve Together. Change the discovery port in Settings, or close whatever is using it, and try again.",
   DST_BODY_DIED: "Your companion's survivor died in the Constant. Press Play to summon them again.",
+  // 261104 respawn. "3 times" MIRRORS MAX_RESPAWNS in
+  // src/bot/adapter/dontstarve/respawn.js (runtime.test.js pins the two).
+  DST_DIED_TOO_OFTEN: "Your companion died again after coming back 3 times this session, so Sei stopped bringing them back. Press Play to summon them again when you're ready.",
+  DST_DANGEROUS_SPOT: "Your companion died right after coming back, twice in a row, so Sei stopped bringing them back. Move somewhere safer (near a fire at night), then press Play.",
   DST_ONE_COMPANION: "Don't Starve Together fits one companion at a time. Disconnect the companion already in your world, then press Play.",
   // Stardew Valley (game-adapters M1, 260908).
   STARDEW_FARMHAND_NO_MOD: "Someone in your farm doesn't have the Sei companion mod, so your companion can't appear for them. Ask them to install it, or play without them for now.",

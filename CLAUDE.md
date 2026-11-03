@@ -3087,6 +3087,33 @@ player (`dstOfferShard`; else the master; never a cave shard alone), and a
 0.3.1 helper on a secondary shard refuses an offer for a player it does not
 have. The body still cannot follow the host between shards.
 
+**A death respawns the body (261104, app side, any helper).** An ownerless
+survivor cannot be revived, so a death used to end every DST session. Now
+`runtime.js` (decision in `respawn.js`, pure) waits `RESPAWN_DELAY_MS`
+(4 s), despawns the corpse, ROTATES the link token (`link.rotateToken()`:
+the mod's Despawn drops the link a second later only while its token is
+unchanged, so a reused token cuts the new body) and posts a second
+`dst-listen` with `respawn: true, nearUserid`. Main's
+`setSummonOffer` queues it for the shard listing that host (else any
+player, `pickRespawnHost`), or answers `dst-respawn-offer {ok:false,
+reason: no_world|no_host}` and the session ends as `DST_BODY_DIED`, as does
+no `spawned` within 15 s. Same brain, same prefab, no second greeting; the
+inventory stays where she fell and stats are fresh. The brain's death turn
+comes AFTER the respawn: fsmWires maps the mod's `death` to `onDying`
+(orchestrator `noteDeath`, drops turns planned by the dead body) and the
+runtime's own `bodydied` event to `onDeath`, whose `detail` (outcome,
+cause, respawns left, player) feeds `DEATH_RESPAWNED_ADDENDUM` /
+`DEATH_FINAL_ADDENDUM`: one say() line in her voice plus a remember() of
+what killed her. Limits: `MAX_RESPAWNS` 3 per session, and a death within
+`QUICK_DEATH_MS` (20 s) of a respawn twice in a row is a bad spot; either
+gives a final death turn, then `DST_DIED_TOO_OFTEN` / `DST_DANGEROUS_SPOT`
+(ERROR_COPY says "3 times", pinned to MAX_RESPAWNS by `respawn.test.js`).
+`bot_session_ended` for DST carries `respawns`, `deaths` and
+`last_death_cause` (a game id such as `darkness`, never the afflicter label,
+which can be a player name), from the bot's `dst-lives` port messages
+(`sessionLives.ts`). Test overrides: `dst.respawn_delay_ms`,
+`respawn_timeout_ms`, `max_respawns`, `quick_death_ms`, `death_grace_ms`.
+
 **Credits:** every reused project is in `CREDITS.md` (linked from the README
 License section) with its license (user decision 7); copied code carries a header
 credit and `native/<mod>/THIRD_PARTY_NOTICES.md`.

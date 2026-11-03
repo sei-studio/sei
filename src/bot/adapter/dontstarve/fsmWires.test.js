@@ -47,3 +47,39 @@ describe('DST fsm wires: survival routing', () => {
     expect(handlers.onAttacked).not.toHaveBeenCalled()
   })
 })
+
+describe('DST fsm wires: death and respawn (261104)', () => {
+  function deathSetup() {
+    const link = new EventEmitter()
+    const handlers = { onDying: vi.fn(), onDeath: vi.fn() }
+    const dispose = wireLinkEvents(link, handlers, { botName: 'Sui', companions: () => [], hasCaps: () => true })
+    return { link, handlers, dispose }
+  }
+
+  it("the mod's death only marks her dying; the death turn waits for the runtime's bodydied", () => {
+    const { link, handlers } = deathSetup()
+    link.emit('death', { x: 1, z: 2, cause: 'darkness' })
+    expect(handlers.onDying).toHaveBeenCalledTimes(1)
+    expect(handlers.onDeath).not.toHaveBeenCalled()
+
+    link.emit('bodydied', {
+      pos: { x: 1, y: 0, z: 2 }, diedAt: 123, deathText: 'killed by Charlie in the darkness',
+      detail: { outcome: 'respawned', cause: 'Charlie in the darkness', respawns: 1, respawnsLeft: 2, player: 'Steve' },
+    })
+    expect(handlers.onDeath).toHaveBeenCalledWith({
+      pos: { x: 1, y: 0, z: 2 }, diedAt: 123, deathText: 'killed by Charlie in the darkness',
+      detail: { outcome: 'respawned', cause: 'Charlie in the darkness', respawns: 1, respawnsLeft: 2, player: 'Steve' },
+    })
+  })
+
+  it('a bodydied with no position or cause still gives a death turn', () => {
+    const { link, handlers, dispose } = deathSetup()
+    link.emit('bodydied', { pos: null, deathText: null })
+    expect(handlers.onDeath).toHaveBeenCalledWith({ pos: null })
+    dispose()
+    link.emit('death', {})
+    link.emit('bodydied', {})
+    expect(handlers.onDying).not.toHaveBeenCalled()
+    expect(handlers.onDeath).toHaveBeenCalledTimes(1)
+  })
+})

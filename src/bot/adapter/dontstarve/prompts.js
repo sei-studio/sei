@@ -163,6 +163,10 @@ function alertHint(key) {
 
 export const ENTER_DARK_ADDENDUM = 'You just stepped into darkness ({phase}). If you have no torch lit, that is deadly in seconds: lightFire(), craft(torch) + equip(torch), or goTo a fire, this turn.'
 export const DEATH_ADDENDUM = 'You DIED{cause}. In Don\'t Starve Together an ownerless survivor does not come back as a ghost the player can revive, so this is the end of your body for now: everything you carried dropped where you fell (~{x},{z}). React in character in ONE short say() line (the player will need to summon you again), and if this session left something worth keeping, call remember() in the same turn.'
+// 261104: Sei brings her back (runtime.js + respawn.js). The line is hers,
+// so the prompt gives the facts and the job, never a line to copy.
+export const DEATH_RESPAWNED_ADDENDUM = 'You DIED{cause} and you just came back in a fresh body next to {player}: health, hunger and sanity start fresh and your hands are empty, because everything you carried dropped where you fell (around {x},{z}).{left} Tell {player} about dying and coming back in ONE short say() line, in your own voice, the way you would really react, not a status report. Call remember() in the same turn with what killed you and what you will do differently so it does not happen again (for example staying in the light at night). If your dropped things are worth it and the spot is safe now, you can go get them.'
+export const DEATH_FINAL_ADDENDUM = 'You DIED{cause}, and this time you are not coming back this session: {why}. Everything you carried dropped where you fell (around {x},{z}). Say ONE short goodbye to {player} with say(), in your own voice (they can summon you again from Sei later). Call remember() in the same turn with what killed you, and anything else from this session worth keeping.'
 
 const fill = (tpl, vars) => Object.entries(vars).reduce((s, [k, v]) => s.split(`{${k}}`).join(String(v ?? '')), tpl)
 
@@ -214,9 +218,30 @@ export function eventAddendum(event, data, opts = {}) {
   if (event === 'sei:enterdark') return fill(ENTER_DARK_ADDENDUM, { phase: data?.phase ?? 'night' })
   if (event === 'sei:death') {
     const la = data?.lastAttack
-    const cause = la?.label ? ` (the last thing that hit you was ${la.label})` : ''
+    const d = data?.detail && typeof data.detail === 'object' ? data.detail : null
     const p = data?.pos
-    return fill(DEATH_ADDENDUM, { cause, x: p ? Math.round(p.x) : '?', z: p ? Math.round(p.z) : '?' })
+    const at = { x: p ? Math.round(p.x) : '?', z: p ? Math.round(p.z) : '?' }
+    const player = typeof d?.player === 'string' && d.player ? d.player : 'the player'
+    // What killed her: the game's cause first, else the last thing that hit her.
+    const cause = typeof d?.cause === 'string' && d.cause
+      ? ` (killed by ${d.cause}${la?.label && la.label !== d.cause ? `; the last thing that hit you was ${la.label}` : ''})`
+      : la?.label ? ` (the last thing that hit you was ${la.label})` : ''
+    if (d?.outcome === 'respawned') {
+      const leftN = Number(d.respawnsLeft)
+      const left = !Number.isFinite(leftN) ? ''
+        : leftN <= 0 ? ' That was your last comeback this session: die again and you are out until the player summons you again.'
+          : leftN === 1 ? ' You can come back like this once more this session.'
+            : ''
+      return fill(DEATH_RESPAWNED_ADDENDUM, { cause, player, left, ...at })
+    }
+    if (d?.outcome === 'final') {
+      const n = Number(d.respawns)
+      const why = d.reason === 'bad_spot'
+        ? 'you died again right after coming back, twice in a row, so this spot is too dangerous for now'
+        : `you already came back ${Number.isFinite(n) ? n : 'several'} time${n === 1 ? '' : 's'}, which is the limit for one session`
+      return fill(DEATH_FINAL_ADDENDUM, { cause, player, why, ...at })
+    }
+    return fill(DEATH_ADDENDUM, { cause, ...at })
   }
   return ''
 }

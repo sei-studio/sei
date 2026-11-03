@@ -29,7 +29,8 @@ const SRC = readFileSync(
 // `stop` is a real method on the wrapper; `setDashboardWatch` (260721) is
 // also real — it forwards to the adapter-side dashboard telemetry handle
 // (_dash), not to the brain, so the _brain-forwarder pin does not apply.
-const EXEMPT = new Set(['stop', 'setDashboardWatch'])
+// `runtimeMessage` (261104) forwards to the game runtime's handlePortMessage.
+const EXEMPT = new Set(['stop', 'setDashboardWatch', 'runtimeMessage'])
 
 describe('bot entry port dispatch — every _running method has a _brain forwarder', () => {
   const dispatched = [...new Set([...SRC.matchAll(/_running\?\.(\w+)\?\./g)].map((m) => m[1]))]
@@ -46,5 +47,12 @@ describe('bot entry port dispatch — every _running method has a _brain forward
         `forwarder — the optional chain silently drops the message (see deliverSeiChat 260703 / ` +
         `observeSeiChat 260708). Add:  ${method}(payload) { try { _brain?.${method}?.(payload) } catch {} }`,
     ).toBe(true)
+  })
+})
+
+describe('bot entry port dispatch — runtime-owned messages reach the runtime', () => {
+  it('runtimeMessage forwards to the game runtime', () => {
+    expect(SRC).toContain('_runtime?.handlePortMessage?.(data)')
+    expect(SRC).toContain("data.type === 'dst-respawn-offer'")
   })
 })
