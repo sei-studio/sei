@@ -4,6 +4,8 @@
 #define NOMINMAX
 #include <windows.h>
 #include <dwmapi.h>
+#include <shellapi.h>
+#include <wtsapi32.h>
 #include <napi.h>
 
 #include <atomic>
@@ -548,6 +550,8 @@ Napi::Value FindTop(const Napi::CallbackInfo& info) {
   return ctx.arr;
 }
 
+#include "win_r2.inc"
+
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("platform", "win32");
   exports.Set("inspect", Napi::Function::New(env, Inspect));
@@ -558,6 +562,17 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("testClick", Napi::Function::New(env, TestClick));
   exports.Set("foreground", Napi::Function::New(env, Foreground));
   exports.Set("findTop", Napi::Function::New(env, FindTop));
+  // round 2
+  exports.Set("watchStart", Napi::Function::New(env, WatchStart));
+  exports.Set("watchStats", Napi::Function::New(env, WatchStats));
+  exports.Set("coverageNow", Napi::Function::New(env, CoverageNow));
+  exports.Set("validate", Napi::Function::New(env, Validate));
+  exports.Set("testKeys", Napi::Function::New(env, TestKeys));
+  exports.Set("testShowWindow", Napi::Function::New(env, TestShowWindow));
+  exports.Set("testPostMessage", Napi::Function::New(env, TestPostMessage));
+  exports.Set("testSetWallpaper", Napi::Function::New(env, TestSetWallpaper));
+  exports.Set("testDisplayModes", Napi::Function::New(env, TestDisplayModes));
+  exports.Set("testSetDisplay", Napi::Function::New(env, TestSetDisplay));
   return exports;
 }
 

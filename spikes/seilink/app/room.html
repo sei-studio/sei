@@ -1,0 +1,77 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>SeiLink room host</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#ff00ff}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// Round-2 test pattern (no product UI): the round-1 magenta field + green ticker band, plus a box
+// where the companion would stand (the mac hit panel sits exactly over it). The host sets the
+// frame rate; 0 means no rAF at all, so a covered room costs nothing but this 1 Hz report.
+const { ipcRenderer } = require('electron')
+const n = new URLSearchParams(location.search).get('n') || '?'
+const c = document.getElementById('c')
+const g = c.getContext('2d')
+let frames = 0, drawnInWindow = 0, lastReport = performance.now(), fps = 0
+let target = 60, scheduled = false, lastDraw = 0
+let hit = null, poke = null, pokeAt = 0
+let reportNext = false // host asked: report the next drawn frame right away (recovery timing)
+function size() {
+  const d = devicePixelRatio || 1
+  c.width = innerWidth * d; c.height = innerHeight * d
+  c.style.width = innerWidth + 'px'; c.style.height = innerHeight + 'px'
+  g.setTransform(d, 0, 0, d, 0, 0)
+  if (target === 0) draw(performance.now())
+}
+addEventListener('resize', size); size()
+function draw(now) {
+  frames++; drawnInWindow++
+  const W = innerWidth, H = innerHeight, S = 160, t = now / 1000
+  g.fillStyle = '#ff00ff'; g.fillRect(0, 0, W, H)
+  g.fillStyle = '#00ff00'
+  g.fillRect((W - S) * (0.5 + 0.45 * Math.sin(t * 1.3)), (H - S) * (0.5 + 0.45 * Math.sin(t * 0.9 + 1)) * 0.6, S, S)
+  const TW = 140, by = H * 0.79, bh = H * 0.1
+  g.fillRect((W - TW) * (0.5 + 0.48 * Math.sin(t * 2.2)), by, TW, bh)
+  if (hit) {
+    const flash = now - pokeAt < 400
+    g.fillStyle = flash ? '#ffffff' : '#ffd200'
+    g.fillRect(hit.x, hit.y, hit.w, hit.h)
+    g.fillStyle = '#000000'; g.font = 'bold 18px sans-serif'
+    g.fillText('companion box', hit.x + 10, hit.y + 26)
+    if (poke) g.fillText(poke, hit.x + 10, hit.y + 52)
+  }
+  g.fillStyle = '#ffffff'; g.font = 'bold 40px sans-serif'
+  g.fillText(`SEILINK host ${n}`, W * 0.3, H * 0.16)
+  g.fillText(`frame ${frames}  ${fps.toFixed(0)} fps  target ${target}`, W * 0.3, H * 0.16 + 50)
+}
+function loop(now) {
+  if (target <= 0) { scheduled = false; return }
+  if (target >= 60 || now - lastDraw >= 1000 / target - 4) {
+    lastDraw = now
+    draw(now)
+    if (reportNext) { reportNext = false; ipcRenderer.send('frame', { frames, fps, target, vis: document.visibilityState, first: true }) }
+  }
+  requestAnimationFrame(loop)
+}
+function kick() { if (!scheduled && target > 0) { scheduled = true; requestAnimationFrame(loop) } }
+ipcRenderer.on('set-fps', (_e, f) => {
+  target = f
+  if (target === 0) draw(performance.now()) // leave a fresh still frame up
+  kick()
+})
+ipcRenderer.on('report-now', () => { reportNext = true; kick() })
+ipcRenderer.on('hit-rect', (_e, r) => { hit = r; if (target === 0) draw(performance.now()) })
+ipcRenderer.on('poke', (_e, k) => { poke = k; pokeAt = performance.now(); if (target === 0) draw(performance.now()) })
+kick()
+setInterval(() => {
+  const now = performance.now()
+  fps = (drawnInWindow * 1000) / (now - lastReport)
+  lastReport = now; drawnInWindow = 0
+  ipcRenderer.send('frame', { frames, fps, target, vis: document.visibilityState })
+}, 1000)
+</script>
+</body>
+</html>

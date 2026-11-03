@@ -17,10 +17,11 @@ esac
 if [ -n "${SEILINK_VARIANTS:-}" ]; then
   VARIANTS="$SEILINK_VARIANTS"
 elif [ "$OS" = win ]; then
-  # explorer-restart last: it rebuilds the shell under everything else.
-  VARIANTS="baseline auto auto-showfirst auto-nodcomp auto-nogpu auto-noocclusion workerw explorer-restart-child"
+  # Round 2 (supervised room host). Round-1 variants: SEILINK_VARIANTS="baseline auto ... explorer-restart-child".
+  VARIANTS="r2-win"
 else
-  VARIANTS="mac-baseline electron-desktop native-desktop+1 native-icon-1-nothrottle native-icon-1"
+  # Round-1 mac variants: SEILINK_VARIANTS="mac-baseline electron-desktop native-desktop+1 native-icon-1-nothrottle native-icon-1"
+  VARIANTS="r2-mac"
 fi
 echo "OS=$OS electron=$ELECTRON variants: $VARIANTS"
 for v in $VARIANTS; do
@@ -31,10 +32,11 @@ for v in $VARIANTS; do
     powershell.exe -NoProfile -Command "(New-Object -ComObject Shell.Application).MinimizeAll()" || true
     sleep 1
   fi
-  run_timeout 200 "$ELECTRON" . --variant="$v" --out="$OUT_ROOT/$v" --timeout=170 > "$OUT_ROOT/$v.stdout.txt" 2>&1
+  case "$v" in r2*) T=400 ;; *) T=170 ;; esac
+  run_timeout $((T + 30)) "$ELECTRON" . --variant="$v" --out="$OUT_ROOT/$v" --timeout=$T > "$OUT_ROOT/$v.stdout.txt" 2>&1
   code=$?
   echo "exit=$code after $(( $(date +%s) - start ))s" | tee -a "$OUT_ROOT/$v.stdout.txt"
-  grep -E "attach|checks|FATAL|CLOSED|ram |HARD|reattach|mac attach|raw input|proxy|TextEdit|notepad|explorer" "$OUT_ROOT/$v/log.txt" 2>/dev/null | cut -c1-400 | head -40
+  grep -E "attach|checks|FATAL|CLOSED|ram |HARD|reattach|mac attach|raw input|proxy|TextEdit|notepad|explorer|STEP|measure|covered|reaction|hit trial|show desktop|killall" "$OUT_ROOT/$v/log.txt" 2>/dev/null | cut -c1-400 | head -80
   echo "::endgroup::"
   sleep 2
 done

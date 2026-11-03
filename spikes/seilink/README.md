@@ -17,6 +17,24 @@ the window shows a magenta test pattern with a moving green square and a frame c
   supervisor kills Explorer, records the child's exit code and respawns it if it died.
 - `run-on-mac.sh` - the same on a real Mac (no synthetic clicks; a person clicks during HOLD).
 
+## Round 2 (2026-11-04): supervised room host, mac hit layer, coverage signal
+
+- `app/supervisor.js` - main spawns `<electron> . --room-host` as its own process and talks JSON
+  lines over a named pipe / unix socket (`show hide pause resume set-fps ping` down;
+  `ready attached covered click heartbeat` up). Restarts on exit or 3 s without a heartbeat,
+  backoff 0, 0.5, 1, 2 ... 10 s, reset after 20 s up.
+- `app/host.js` + `app/room.html` - the room host: attaches, re-validates the attachment on
+  shell events (TaskbarCreated, WM_DISPLAYCHANGE, WM_SETTINGCHANGE, session change) and every
+  2 s, drops to 0 FPS while covered, owns the mac hit panel.
+- `native/win_r2.inc` - hidden watcher window + WinEventHooks (foreground, move/size end,
+  minimize, location change of the foreground window) -> coverage check (a maximized or
+  monitor-sized window on the primary monitor, or a D3D fullscreen app); `validate()`.
+- `native/mac_r2.inc` - non-activating NSPanel at desktopIcon+1 over the companion rect
+  (click / dblclick / drag events, rect settable from JS), NSWindow occlusion observer, and test
+  helpers (double click, drag, keys, AX move of another app's window).
+- `app/r2.js` - the harness (`--variant=r2-win` / `r2-mac`), run by `scripts/ci-run.sh`. Runs on
+  Linux too (common block only, no desktop layer): `xvfb-run electron . --variant=r2 --no-sandbox`.
+
 Test-harness clicks (`testClick`) use OS-level `SendInput` / `CGEventPost` to stand in for a hand.
 The product design never posts mouse messages into Chromium.
 

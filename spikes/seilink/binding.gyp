@@ -7,7 +7,7 @@
       "conditions": [
         ["OS=='win'", {
           "sources": ["native/win.cc"],
-          "libraries": ["user32.lib", "dwmapi.lib", "advapi32.lib"],
+          "libraries": ["user32.lib", "dwmapi.lib", "advapi32.lib", "wtsapi32.lib", "shell32.lib"],
           "defines": ["UNICODE", "_UNICODE"],
           "msvs_settings": { "VCCLCompilerTool": { "AdditionalOptions": ["/std:c++20"] } }
         }],

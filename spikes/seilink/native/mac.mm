@@ -242,6 +242,12 @@ Napi::Value Frontmost(const Napi::CallbackInfo& info) {
   return Napi::String::New(info.Env(), s);
 }
 
+}  // namespace
+
+#include "mac_r2.inc"
+
+namespace {
+
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("platform", "darwin");
   exports.Set("levels", Napi::Function::New(env, Levels));
@@ -255,6 +261,20 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("nativeProxyClicks", Napi::Function::New(env, NativeProxyClicks));
   exports.Set("nativeProxyClose", Napi::Function::New(env, NativeProxyClose));
   exports.Set("setNonactivating", Napi::Function::New(env, SetNonactivating));
+  // round 2
+  exports.Set("onEvents", Napi::Function::New(env, OnEvents));
+  exports.Set("hitPanel", Napi::Function::New(env, HitPanel));
+  exports.Set("hitPanelSetRect", Napi::Function::New(env, HitPanelSetRect));
+  exports.Set("hitPanelInfo", Napi::Function::New(env, HitPanelInfo));
+  exports.Set("hitPanelClose", Napi::Function::New(env, HitPanelClose));
+  exports.Set("observeOcclusion", Napi::Function::New(env, ObserveOcclusion));
+  exports.Set("appActive", Napi::Function::New(env, AppActive));
+  exports.Set("frontmostInfo", Napi::Function::New(env, FrontmostInfo));
+  exports.Set("testDoubleClick", Napi::Function::New(env, TestDoubleClick));
+  exports.Set("testDrag", Napi::Function::New(env, TestDrag));
+  exports.Set("testKey", Napi::Function::New(env, TestKey));
+  exports.Set("axSetFrame", Napi::Function::New(env, AxSetFrame));
+  exports.Set("axSetFullscreen", Napi::Function::New(env, AxSetFullscreen));
   return exports;
 }
 

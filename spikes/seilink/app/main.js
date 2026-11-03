@@ -4,6 +4,15 @@
 // desktop layer (Windows: Progman/WorkerW parenting; macOS: native window level), dumps the
 // window tree, takes screenshots, checks them by pixel, measures FPS/RAM and writes
 // <out>/result.json + log.txt. See ../README.md for the variant list.
+// Round 2: the room host process and the supervisor harness live in their own files.
+if (process.argv.includes('--room-host')) {
+  require('./host.js')
+  return
+}
+if (process.argv.some((a) => a.startsWith('--variant=r2'))) {
+  require('./r2.js')
+  return
+}
 const { app, BrowserWindow, ipcMain, screen, desktopCapturer, nativeImage } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')

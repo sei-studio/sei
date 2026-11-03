@@ -24,7 +24,7 @@ jobs:
       matrix:
         os: [windows-2022, windows-2025, macos-15, macos-26]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 45
     defaults:
       run:
         shell: bash
