@@ -1215,7 +1215,7 @@ export function SettingsScreen(): React.ReactElement {
                 />
               </span>
               <Seg
-                aria-label="AI backend"
+                aria-label={t('Backend')}
                 value={backendSegValue}
                 options={[
                   { value: 'cloud', label: t('Cloud') },
@@ -1706,7 +1706,7 @@ export function SettingsScreen(): React.ReactElement {
                 theme it currently resolves to until the user picks one).
                 Labels are pre-translated so the map param can stay `t` (the
                 structure test pins the literal data-tip={t.label}). */}
-            <div className={styles.swatchRow} role="radiogroup" aria-label="Theme">
+            <div className={styles.swatchRow} role="radiogroup" aria-label={t('Theme')}>
               {THEME_SWATCHES.map((s) => ({ ...s, label: t(s.label) })).map((t) => {
                 const active =
                   themeMode === t.value ||

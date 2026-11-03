@@ -64,7 +64,7 @@ describe('SettingsScreen (Party restyle structure)', () => {
   it('S.2: backend switch is a Seg wired to SwitchBackendConfirmModal', () => {
     const src = readFileSync(SETTINGS_TSX, 'utf-8');
     expect(src.includes("from '../components/Seg'")).toBe(true);
-    expect(src.includes('aria-label="AI backend"')).toBe(true);
+    expect(src.includes("aria-label={t('Backend')}")).toBe(true);
     // Both directional intents route through the confirm modal — the Seg maps
     // its value to the target backend, then arms the pending switch.
     expect(src.includes('SwitchBackendConfirmModal')).toBe(true);
@@ -88,7 +88,7 @@ describe('SettingsScreen (Party restyle structure)', () => {
 
   it('S.3: theme picker is four color swatches, no System option', () => {
     const src = readFileSync(SETTINGS_TSX, 'utf-8');
-    expect(src.includes('aria-label="Theme"')).toBe(true);
+    expect(src.includes("aria-label={t('Theme')}")).toBe(true);
     // All four named themes offered as swatches (260724).
     expect(src.includes("value: 'midnight'")).toBe(true);
     expect(src.includes("value: 'ice'")).toBe(true);

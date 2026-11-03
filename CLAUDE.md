@@ -3739,6 +3739,11 @@ languages from `src/shared/addedLanguageCopy.ts`.
   Cyrillic subsets of the UI faces are self-hosted in `fonts.css` (by
   unicode-range, so other languages render as before). The DST faces
   (Fredericka, Metamorphous) have no Cyrillic and fall back to a serif.
+- The plan catalog is server copy (proxy `plan_config` / `topup_config`),
+  translated in the client through its English text: `planDisplayName`,
+  `planLabel`, `planBlurb` and `topUpCreditsLine` in `lib/planCatalog.ts`
+  ("Free" is translated, Quest and Party stay brand names). A blurb the
+  proxy changes shows in English until the dictionaries have it.
 - Only zh changes companion behavior (language pin at creation, SenseVoice,
   zh voices, Draw! and chess character-language paths); the 261104 languages
   translate the interface only.

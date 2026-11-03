@@ -37,4 +37,16 @@ export const ZH_GAPS_261104: Record<string, string> = {
   "Generating…": "生成中…",
   "Create": "创建",
   "Switches the whole app to this language.": "切换整个应用的显示语言。",
+  // 261104 follow-up: duration units, plan names and blurbs, top up lines.
+  "{d}d {h}h": "{d}天{h}小时",
+  "{n}d": "{n}天",
+  "Resets soon": "即将重置",
+  "Free": "免费",
+  "Free plan": "免费套餐",
+  "/mo": "/月",
+  "Give Sei a try!": "先来体验一下 Sei！",
+  "Best for texting and calling.": "适合聊天和通话。",
+  "3x Quest usage. Best for gaming.": "Quest 的 3 倍用量。最适合打游戏。",
+  "{n} credits": "{n} 额度",
+  "{n} credits + {bonus} bonus": "{n} 额度 + 赠送 {bonus}",
 };

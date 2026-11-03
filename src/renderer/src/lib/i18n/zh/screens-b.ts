@@ -203,7 +203,7 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'Refresh plan usage': '刷新套餐用量',
   '{name} plan': '{name} 套餐',
   "Couldn't check your account. Refresh to try again.": '无法查询你的账户。请刷新重试。',
-  'Resets in {time}': '{time} 后重置',
+  'Resets in {time}': '{time}后重置',
   // 260926: under the free-play reset line when the allowance is spent.
   'To keep playing before then, top up or pick a plan below.':
     '想在那之前继续玩，可以充值或在下方选择套餐。',
@@ -306,7 +306,6 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'Timeless': '无龄',
   'A partner in crime': '一起闯祸的搭档',
   'Someone to look after': '需要你照顾的人',
-  'A chill friend': '一个随性的朋友',
   'Round chibi': '圆润 Q 版',
   'Anime': '动漫',
   'Cel-shaded': '赛璐璐',
