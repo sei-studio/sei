@@ -3074,6 +3074,19 @@ worth knowing before touching the DST body:
 Headless testing (Linux dedicated server + `scripts/dst-headless-harness.mjs`)
 is in `native/dst-mod/sei/README.md`.
 
+**A world with caves runs two shards (261104, helper 0.3.1).** The helper
+heartbeats from BOTH server shards (`ismastersim` is true on each), and each
+beat lists only that shard's players. The watcher used to hand the summon to
+whichever beat first, so about half the summons in a caves world spawned the
+body in the dark caves with no player near, and Charlie killed it ~16 s
+later: the 31% of DST sessions ending DST_BODY_DIED ~24 s after the summon
+(proven on a headless two-shard server; the caves setting of real users is
+not in analytics). `watcher.ts` now keeps one beat per shard, merges them
+for the world state, and hands an offer only to the shard listing the
+player (`dstOfferShard`; else the master; never a cave shard alone), and a
+0.3.1 helper on a secondary shard refuses an offer for a player it does not
+have. The body still cannot follow the host between shards.
+
 **Credits:** every reused project is in `CREDITS.md` (linked from the README
 License section) with its license (user decision 7); copied code carries a header
 credit and `native/<mod>/THIRD_PARTY_NOTICES.md`.

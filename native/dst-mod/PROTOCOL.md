@@ -32,9 +32,10 @@ token get `401` and never reach a handler.
 
 ## 1. Discovery (mod -> main)
 
-`GET http://127.0.0.1:<port>/hello?q=<urlencoded json>` every 2 s from the
-master simulation (the host's own game process, or the shard server when
-caves are enabled). `q`:
+`GET http://127.0.0.1:<port>/hello?q=<urlencoded json>` every 2 s from
+every server simulation: the host's own game process, or, when caves are
+enabled, BOTH shard servers (forest master and caves; `TheWorld.ismastersim`
+is true on each). Each shard lists only the players on it. `q`:
 
 ```json
 {
@@ -43,20 +44,31 @@ caves are enabled). `q`:
   "day": 3, "season": "autumn", "phase": "day",
   "players": [{ "userid": "KU_xxx", "name": "Steve", "prefab": "wilson" }],
   "ismastersim": true, "caves": false,
+  "shard": "1", "mastershard": true,
   "mod": "0.1.0", "build": "<APP_VERSION>",
   "bot": 12345
 }
 ```
 
-`bot` is the GUID of the live companion body when one exists. A heartbeat
-inside 6 s = the world is `open` (`WorldState.dontstarve`); nothing for
-longer = `closed`.
+`bot` is the GUID of the live companion body when one exists. `shard`
+(`TheShard:GetShardId()`) and `mastershard` (`TheWorld.ismastershard`) are
+0.3.1+; older helpers send neither and main tells the shards apart by
+`caves`. A heartbeat from any shard inside 6 s = the world is `open`
+(`WorldState.dontstarve`); nothing for longer = `closed`. Main keeps one
+heartbeat per shard and merges them (players from all, world facts from the
+shard the first player is on).
 
 Response, idle: `{"ok": true, "app": "sei"}`. The `app` field is what lets
 the mod tell Sei from a stranger listening on one of the discovery ports; a
 response without it is treated as a miss.
 
-Response carrying a summon (delivered to exactly one heartbeat, then dropped):
+Response carrying a summon (delivered to exactly one heartbeat, then
+dropped). It goes only to the shard that lists `nearUserid`; with no player
+named, to the first shard with anyone on it; otherwise to the master shard.
+It never goes to a cave shard the player is not on (261104: a body spawned
+there stood alone in the dark and Charlie killed it 10-20 s later). A 0.3.1+
+helper on a secondary shard also refuses such an offer itself with
+`spawnfailed`, for a player migrating at that moment:
 
 ```json
 { "ok": true, "app": "sei", "summon": {

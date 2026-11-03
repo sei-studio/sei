@@ -19,6 +19,18 @@
  *
  * Only when EVERY candidate refuses to bind is the state `unavailable`, with
  * a reason the launch panel shows; nothing throws.
+ *
+ * A world with caves is TWO server processes (the forest master shard and
+ * the cave shard), and the helper runs and heartbeats on both, each listing
+ * only the players on its own shard (261104). Heartbeats are therefore kept
+ * PER SHARD: the world view merges them (players from every shard, world
+ * facts from the shard the host is on), and an offer is handed only to the
+ * shard where its player is, else to the master shard. Before this the
+ * offer went to whichever shard beat first, so about half the summons into a
+ * caves world spawned the body alone in the pitch-dark caves, where the
+ * darkness (Charlie) killed it 10-20 s later: the DST_BODY_DIED ~24 s after
+ * joining seen in 31% of DST sessions (reproduced on a headless two-shard
+ * server, see native/dst-mod/sei/README.md).
  */
 import http from 'node:http';
 import type { WorldState } from '../../../shared/gameIpc';
@@ -63,6 +75,44 @@ export interface DstWatcher {
 
 const MAX_QUERY_BYTES = 16_384;
 
+export interface ShardBeat {
+  key: string;
+  hb: DstHeartbeat;
+  at: number;
+}
+
+/** One key per shard: the helper's shard id (0.3.1+), else forest vs caves. */
+export function dstShardKey(hb: DstHeartbeat): string {
+  if (hb.shard) return `id:${hb.shard}`;
+  return hb.caves ? 'caves' : 'master';
+}
+
+/** Is this heartbeat from the master (forest) shard? Older helpers: not caves. */
+export function isDstMasterShard(hb: DstHeartbeat): boolean {
+  return hb.mastershard ?? !hb.caves;
+}
+
+/**
+ * The shard an offer must spawn on, from the fresh shards (master first):
+ * the one listing the offer's player; with no player named, the first shard
+ * that has anyone on it; otherwise the master shard (a player the helper
+ * does not list, e.g. mid-migration, gets the old portal spawn there). Never
+ * a secondary shard the player is not on: with no master shard heard from,
+ * null, and the offer waits for one (or expires).
+ * Pure; exported for the tests.
+ */
+export function dstOfferShard(nearUserid: string, fresh: readonly ShardBeat[]): string | null {
+  if (fresh.length === 0) return null;
+  if (nearUserid) {
+    const withPlayer = fresh.find((s) => s.hb.players.some((p) => p.userid === nearUserid));
+    if (withPlayer) return withPlayer.key;
+  } else {
+    const occupied = fresh.find((s) => s.hb.players.length > 0);
+    if (occupied) return occupied.key;
+  }
+  return fresh.find((s) => isDstMasterShard(s.hb))?.key ?? null;
+}
+
 export function createDstWatcher(opts: DstWatcherOptions = {}): DstWatcher {
   const now = opts.now ?? (() => Date.now());
   const staleMs = opts.staleMs ?? DST_HEARTBEAT_STALE_MS;
@@ -74,15 +124,50 @@ export function createDstWatcher(opts: DstWatcherOptions = {}): DstWatcher {
   let server: http.Server | null = null;
   let onUpdate: ((s: WorldState) => void) | null = null;
   let timer: NodeJS.Timeout | null = null;
-  let last: DstHeartbeat | null = null;
-  let lastAt = 0;
+  const shards = new Map<string, ShardBeat>();
   let bindError: string | null = null;
   let lastEmitted: string | null = null;
   const offers = new Map<string, DstSummonOffer>();
 
+  /** Shards heard from inside the stale window, master first, then newest. */
+  function freshShards(): ShardBeat[] {
+    const t = now();
+    const fresh: ShardBeat[] = [];
+    for (const [key, s] of shards) {
+      if (t - s.at <= staleMs) fresh.push(s);
+      else shards.delete(key);
+    }
+    return fresh.sort((a, b) => Number(isDstMasterShard(b.hb)) - Number(isDstMasterShard(a.hb)) || b.at - a.at);
+  }
+
+  /**
+   * One heartbeat for the whole world: every shard's players (master's
+   * first, deduped), the rest from the shard the first of them is on (where
+   * a summon spawns), else the master shard.
+   */
+  function merged(): { hb: DstHeartbeat; at: number } | null {
+    const fresh = freshShards();
+    if (fresh.length === 0) return null;
+    const players: DstHeartbeat['players'] = [];
+    const seen = new Set<string>();
+    for (const s of fresh) {
+      for (const p of s.hb.players) {
+        const id = p.userid || `name:${p.name}`;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        players.push(p);
+      }
+    }
+    const host = players[0];
+    const primary = (host && fresh.find((s) => s.hb.players.some((p) => p.userid === host.userid && p.name === host.name))) || fresh[0];
+    return { hb: { ...primary.hb, players }, at: Math.max(...fresh.map((s) => s.at)) };
+  }
+
   function compute(): DstWorldState {
     if (bindError) return { game: 'dontstarve', kind: 'unavailable', reason: bindError };
-    if (last && now() - lastAt <= staleMs) {
+    const m = merged();
+    if (m) {
+      const last = m.hb;
       return {
         game: 'dontstarve',
         kind: 'open',
@@ -93,7 +178,7 @@ export function createDstWatcher(opts: DstWatcherOptions = {}): DstWatcher {
         phase: last.phase,
         caves: last.caves,
         players: last.players.map((p) => ({ userid: p.userid, name: p.name })),
-        lastSeenAt: lastAt,
+        lastSeenAt: m.at,
       };
     }
     return { game: 'dontstarve', kind: 'closed' };
@@ -111,13 +196,16 @@ export function createDstWatcher(opts: DstWatcherOptions = {}): DstWatcher {
     return s;
   }
 
-  function takeOffer(): DstSummonOffer | null {
+  /** The first live offer whose destination is the shard that just beat. */
+  function takeOffer(key: string): DstSummonOffer | null {
     const t = now();
+    const fresh = freshShards();
     for (const [id, o] of offers) {
       if (o.expiresAt <= t) {
         offers.delete(id);
         continue;
       }
+      if (dstOfferShard(o.nearUserid, fresh) !== key) continue;
       offers.delete(id);
       return o;
     }
@@ -126,15 +214,17 @@ export function createDstWatcher(opts: DstWatcherOptions = {}): DstWatcher {
 
   function handleHello(raw: unknown): DstHelloResponse {
     const parsed = DstHeartbeatSchema.safeParse(raw);
-    if (parsed.success) {
-      last = parsed.data;
-      lastAt = now();
-      emitIfChanged();
-    }
-    const offer = takeOffer();
+    // A heartbeat that does not parse still gets an ok (the helper keeps
+    // going) but never an offer: the offer's shard has to be known.
+    if (!parsed.success) return { ok: true, app: DST_HELLO_APP };
+    const key = dstShardKey(parsed.data);
+    shards.set(key, { key, hb: parsed.data, at: now() });
+    emitIfChanged();
+    const offer = takeOffer(key);
     if (!offer) return { ok: true, app: DST_HELLO_APP };
     const { expiresAt: _drop, ...wire } = offer;
-    log(`handing summon of ${wire.prefab} "${wire.name}" to the world (bot port ${wire.botPort})`);
+    const where = isDstMasterShard(parsed.data) ? 'master shard' : `${parsed.data.caves ? 'cave' : 'secondary'} shard`;
+    log(`handing summon of ${wire.prefab} "${wire.name}" to the world, ${where} (bot port ${wire.botPort})`);
     return { ok: true, app: DST_HELLO_APP, summon: wire };
   }
 
@@ -231,7 +321,7 @@ export function createDstWatcher(opts: DstWatcherOptions = {}): DstWatcher {
       onUpdate = null;
     },
     getState: compute,
-    latestHeartbeat: () => (compute().kind === 'open' ? last : null),
+    latestHeartbeat: () => (bindError ? null : merged()?.hb ?? null),
     setSummonOffer(characterId, offer) {
       if (offer) offers.set(characterId, offer);
       else offers.delete(characterId);

@@ -55,6 +55,15 @@ export const DstHeartbeatSchema = z.object({
   players: z.array(DstHeartbeatPlayerSchema).max(64).default([]),
   ismastersim: z.boolean().default(true),
   caves: z.boolean().default(false),
+  /**
+   * A world with caves runs TWO server shards (forest + caves) and the helper
+   * heartbeats from both, each listing only the players on ITS shard (261104).
+   * `shard` is TheShard:GetShardId() and `mastershard` is
+   * TheWorld.ismastershard (helper 0.3.1+). Older helpers send neither, and
+   * the watcher falls back to `caves` (the cave shard is never the master).
+   */
+  shard: z.string().max(32).optional(),
+  mastershard: z.boolean().optional(),
   /** Mod version string (modinfo.lua). */
   mod: z.string().max(32).optional(),
   /** Game build, when the mod can read it. */
@@ -77,7 +86,11 @@ export const DstSummonOfferSchema = z.object({
   name: z.string().min(1).max(32),
   /** Survivor prefab id (validated against the roster by the module). */
   prefab: z.string().min(1).max(32),
-  /** Spawn next to this player (userid); '' = the first player found. */
+  /**
+   * Spawn next to this player (userid); '' = the first player found. The
+   * watcher hands the offer only to the shard that lists this player (else
+   * the master shard), never to a cave shard the player is not on.
+   */
   nearUserid: z.string().max(64).default(''),
   /** Announce say() lines into the chat log as well as the speech bubble. */
   announce: z.boolean().default(true),
