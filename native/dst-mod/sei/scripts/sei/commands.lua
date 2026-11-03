@@ -161,6 +161,19 @@ local function actionFor(inst, cmd)
         return nil
     end
     local b = BufferedAction(inst, target, act, invobject, pos, cmd.recipe)
+    -- An action that is invalid from the start (a plant already picked, an
+    -- item someone else took) is refused in PushBufferedAction with only an
+    -- "actionfailed" event: its fail callbacks never run, DoAction fails the
+    -- node, and this function builds the same dead action again every tick
+    -- until the command deadline (a stale "pickable" flag kept a pick in the
+    -- slot for 90 s). End the command here instead.
+    if not b:IsValid() then
+        local pickable = target ~= nil and target.components.pickable or nil
+        local why = (pickable ~= nil and not pickable:CanBePicked() and ("nothing left to pick on the " .. target.prefab))
+            or ("can't " .. string.lower(name) .. (target and (" the " .. target.prefab) or "") .. " right now")
+        Commands.Finish(inst, cmd, false, why)
+        return nil
+    end
     cmd.state.started = true
     b:AddFailAction(function()
         if WORK_ACTIONS[name] and keepWorking(name, target) then return end
