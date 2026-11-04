@@ -6,13 +6,17 @@
 import React, { useMemo } from 'react';
 import { RoomEditor } from './RoomEditor';
 import { ipcRoomEditorSource } from './roomEditorSource';
+import type { EditorOpenedFrom } from '@shared/seilinkTelemetry';
 
 export interface CompanionRoomEditorProps {
   characterId: string;
   onClose: () => void;
+  /** Where the editor was opened from (analytics). */
+  openedFrom?: EditorOpenedFrom;
 }
 
-export default function CompanionRoomEditor({ characterId, onClose }: CompanionRoomEditorProps): React.ReactElement {
+export default function CompanionRoomEditor({ characterId, onClose, openedFrom = 'other' }: CompanionRoomEditorProps): React.ReactElement {
   const source = useMemo(() => ipcRoomEditorSource(characterId), [characterId]);
-  return <RoomEditor source={source} characterId={characterId} onClose={onClose} />;
+  const telemetry = useMemo(() => ({ openedFrom }), [openedFrom]);
+  return <RoomEditor source={source} characterId={characterId} onClose={onClose} telemetry={telemetry} />;
 }

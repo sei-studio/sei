@@ -30,6 +30,7 @@ import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
 import { movedInId, useSeilinkStore } from '../lib/stores/useSeilinkStore';
 import { moveInFailed, needsMoveInSheet } from '../lib/seilink/moveIn';
+import type { EditorOpenedFrom, MoveInReason } from '@shared/seilinkTelemetry';
 import { Button } from '../components/Button';
 import { Toggle } from '../components/Toggle';
 import { ModalShell, ModalFooter } from '../components/ModalShell';
@@ -171,8 +172,10 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   // Her host kept crashing and the supervisor gave up (state failed, for her).
   const seilinkFailedHere = useSeilinkStore((s) => s.status.state === 'failed' && s.status.characterId === id);
   const pendingEditor = useSeilinkStore((s) => s.pendingEditor);
-  const [roomEditorOpen, setRoomEditorOpen] = useState<boolean>(false);
-  const [moveInOpen, setMoveInOpen] = useState<boolean>(false);
+  // Open = where it was opened from (analytics), null = closed.
+  const [roomEditorOpen, setRoomEditorOpen] = useState<EditorOpenedFrom | null>(null);
+  // Open = why the sheet shows (analytics), null = closed.
+  const [moveInOpen, setMoveInOpen] = useState<MoveInReason | null>(null);
   // A move in / out is on its way: a second click waits for it (main also queues them).
   const moveBusyRef = useRef(false);
   const [moveBusy, setMoveBusy] = useState<boolean>(false);
@@ -180,7 +183,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   useEffect(() => {
     if (!pendingEditor || pendingEditor !== id) return;
     useSeilinkStore.getState().clearEditor();
-    setRoomEditorOpen(true);
+    setRoomEditorOpen('dock');
   }, [pendingEditor, id]);
   const settingsRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -508,12 +511,12 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       }
       const room = await sei.seilinkRoomGet?.(id).catch(() => null);
       if (needsMoveInSheet({ saved: room?.saved === true, movedInId: livingId, characterId: id })) {
-        setMoveInOpen(true);
+        setMoveInOpen(room?.saved === true ? 'swap' : 'first_room');
         return;
       }
       const status = await sei.seilinkHostStart?.(id).catch(() => null);
       // A start that did not take opens the sheet, which has the retry and the error line.
-      if (!status || moveInFailed(status)) setMoveInOpen(true);
+      if (!status || moveInFailed(status)) setMoveInOpen('retry');
     } finally {
       moveBusyRef.current = false;
       setMoveBusy(false);
@@ -923,7 +926,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                           className={styles.settingsItem}
                           onClick={() => {
                             setSettingsOpen(false);
-                            setRoomEditorOpen(true);
+                            setRoomEditorOpen('gear');
                           }}
                         >
                           {t('Edit room')}
@@ -997,7 +1000,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       ) : null}
       {roomEditorOpen ? (
         <Suspense fallback={null}>
-          <CompanionRoomEditor characterId={character.id} onClose={() => setRoomEditorOpen(false)} />
+          <CompanionRoomEditor characterId={character.id} openedFrom={roomEditorOpen} onClose={() => setRoomEditorOpen(null)} />
         </Suspense>
       ) : null}
       {moveInOpen ? (
@@ -1006,7 +1009,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
             characterId={character.id}
             name={character.name}
             otherName={livingId && livingId !== character.id ? (characters.find((c) => c.id === livingId)?.name ?? null) : null}
-            onClose={() => setMoveInOpen(false)}
+            reason={moveInOpen}
+            onClose={() => setMoveInOpen(null)}
           />
         </Suspense>
       ) : null}
