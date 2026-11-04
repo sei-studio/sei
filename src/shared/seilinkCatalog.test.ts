@@ -7,6 +7,7 @@ import { DEFAULT_SLOT_LABEL, defaultRoomState, describeRoom, patternsFor, resolv
 import { coverCrop, cycleColour, roomDrawPlan, type SlotLayer } from './seilinkDraw';
 import { parseRoomManifest, sanitizeRoomState } from './seilinkValidate';
 import { toneOnTone } from './seilinkPatterns';
+import { currentPattern, setItemAccent, setItemPattern, setSlotAccent, setSlotComponent, setSlotCycle, setSlotPattern, setSlotTint } from './seilinkEdit';
 
 const raw = {
   format: 'sei-room',
@@ -235,5 +236,48 @@ describe('look() names the weather', () => {
     expect(night).not.toContain('rain falling outside');
     s.time = 'day';
     expect(describeRoom(manifest, s).things).not.toContain('fireflies');
+  });
+});
+
+describe('catalog edit ops', () => {
+  const s0 = defaultRoomState('forest');
+
+  it('sets and clears a slot pattern and accent, leaving untouched rooms unchanged', () => {
+    const p = setSlotPattern(manifest, s0, 'bed', 'gingham');
+    expect(p.slots.bed).toEqual({ id: 'tent', pattern: 'gingham' });
+    expect(setSlotPattern(manifest, s0, 'bed', 'pinstripe')).toBe(s0); // not offered on a tent
+    expect(setSlotPattern(manifest, s0, 'tree', 'gingham')).toBe(s0); // not tintable
+    const a = setSlotAccent(manifest, p, 'bed', '#AABBCC');
+    expect(a.slots.bed).toEqual({ id: 'tent', pattern: 'gingham', accent: '#aabbcc' });
+    expect(setSlotAccent(manifest, a, 'bed', 'red')).toBe(a);
+    const plain = setSlotAccent(manifest, setSlotPattern(manifest, a, 'bed', 'plain'), 'bed', null);
+    // Plain with no default pattern drops the key: same as never touched.
+    expect(plain.slots.bed).toEqual({ id: 'tent' });
+    expect(currentPattern(manifest.components.find((c) => c.id === 'tent'), undefined)).toBe('plain');
+  });
+
+  it('keeps pattern and colours across a tint change; picking a colour stops a cycle', () => {
+    const p = setSlotTint(manifest, setSlotPattern(manifest, s0, 'bed', 'plaid'), 'bed', '#336699');
+    expect(p.slots.bed).toEqual({ id: 'tent', pattern: 'plaid', tint: '#336699' });
+    const lit = setSlotComponent(manifest, s0, 'lights', 'string');
+    const cyc = setSlotCycle(manifest, lit, 'lights', true);
+    expect(cyc.slots.lights).toEqual({ id: 'string', cycle: true });
+    expect(setSlotTint(manifest, cyc, 'lights', '#ff0000').slots.lights).toEqual({ id: 'string', tint: '#ff0000' });
+    expect(setSlotCycle(manifest, cyc, 'lights', false).slots.lights).toEqual({ id: 'string' });
+    // Fireflies do not cycle.
+    const ff = setSlotComponent(manifest, s0, 'lights', 'fireflies');
+    expect(setSlotCycle(manifest, ff, 'lights', true)).toBe(ff);
+    // Swapping to a part without the cycle drops it.
+    expect(setSlotComponent(manifest, cyc, 'lights', 'fireflies').slots.lights).toEqual({ id: 'fireflies' });
+  });
+
+  it('item patterns follow the explicit list', () => {
+    const s = { ...s0, items: [{ id: 'blanket', x: 10, y: 10 }] };
+    const g = setItemPattern(manifest, s, 0, 'ditsy');
+    expect(g.items[0]).toEqual({ id: 'blanket', x: 10, y: 10, pattern: 'ditsy' });
+    expect(setItemPattern(manifest, s, 0, 'plaid')).toBe(s);
+    const acc = setItemAccent(manifest, g, 0, '#112233');
+    expect(acc.items[0].accent).toBe('#112233');
+    expect(setItemAccent(manifest, setItemPattern(manifest, acc, 0, 'plain'), 0, null).items[0]).toEqual({ id: 'blanket', x: 10, y: 10 });
   });
 });
