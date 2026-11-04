@@ -320,12 +320,27 @@ function addCount(map, item, n) {
  * handed over. The ledger is that record: every give that went through
  * (from the adapter's handOverDetail) and every item that came into her
  * inventory without an action of hers (handed to her or picked up). Pure.
+ *
+ * 261104 (quality pass 41): it also keeps what her own actions made (the
+ * adapter's ownWorkDetail: gathered, crafted, smelted, placed, killed), so
+ * the line says who did the work. In the 11-03 scorecard and the pass-38
+ * compare, "thanks for the help" got "you're the one who got the wood and
+ * the table" (and "gave me the pickaxe", "found the coal") in 3 of 15
+ * work_session runs, after she gathered, crafted and placed all of it
+ * herself. The game: lines said so 40 lines up, and the closing line spoke
+ * only of what she owns, not of who did what.
  */
+// pass 41: at most this many kinds per kind of work (the newest), so a long
+// session's line stays short.
+const WORK_KINDS_SHOWN = 6
+
 export function createHandOverLedger() {
   /** @type {Map<string, Map<string, number>>} recipient -> item -> count */
   const given = new Map()
   /** @type {Map<string, number>} */
   const received = new Map()
+  /** @type {Map<string, Map<string, number>>} verb -> item -> count */
+  const done = new Map()
 
   /** @param {{item: string, n: number, to?: string|null}|null|undefined} h */
   function gave(h) {
@@ -342,6 +357,17 @@ export function createHandOverLedger() {
     }
   }
 
+  /** @param {{verb: string, item: string, n: number}|null|undefined} w */
+  function did(w) {
+    if (!w || typeof w.verb !== 'string' || !w.verb || typeof w.item !== 'string' || !w.item || !Number.isFinite(w.n) || w.n <= 0) return
+    if (!done.has(w.verb)) done.set(w.verb, new Map())
+    const items = done.get(w.verb)
+    // The newest kind goes last, so a long session lists its recent work.
+    const n = (items.get(w.item) ?? 0) + w.n
+    items.delete(w.item)
+    items.set(w.item, n)
+  }
+
   /**
    * @param {{ label?: (name: string) => string }} [opts] label: how the
    *   transcript names a player (convoMemory.playerLabel), so the recipient
@@ -349,6 +375,9 @@ export function createHandOverLedger() {
    */
   function describe({ label = (name) => name } = {}) {
     const list = (m) => joinAnd([...m].map(([item, n]) => `${n} ${item}`))
+    const workList = (m) => m.size > WORK_KINDS_SHOWN
+      ? `${[...m].slice(-WORK_KINDS_SHOWN).map(([item, n]) => `${n} ${item}`).join(', ')} and more`
+      : list(m)
     const who = (to) => {
       if (!to) return 'the player'
       try { return String(label(to) || to) } catch { return to }
@@ -359,8 +388,12 @@ export function createHandOverLedger() {
     const inn = received.size
       ? ` ${list(received)} came into your inventory without an action of yours (handed to you or picked up).`
       : ''
-    return `Handed over this session: ${out}${inn} Everything else you crafted, gathered or picked up went into your own inventory and is still yours unless you used it up, placed it or dropped it. The inventory in your snapshot is yours; you cannot see what the player carries.`
+    // pass 41: her own work, in the order she first did each kind.
+    const work = done.size
+      ? ` You did these yourself: ${[...done].map(([verb, items]) => `${verb} ${workList(items)}`).join('; ')}.`
+      : ''
+    return `Who did what this session.${work} ${out[0].toUpperCase()}${out.slice(1)}${inn} Everything you did not give away is still yours unless you used it up, placed it or dropped it. The inventory in your snapshot is yours; you cannot see what the player carries.`
   }
 
-  return { gave, received: receivedItems, describe }
+  return { gave, received: receivedItems, did, describe }
 }

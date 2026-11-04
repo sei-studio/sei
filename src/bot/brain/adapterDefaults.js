@@ -49,6 +49,8 @@ export const ADAPTER_DEFAULTS = Object.freeze({
   // 261026 (pass 28): no hand-over details, so the transcript carries no
   // hand-over line (it could not tell what was given).
   handOverDetail: null,
+  // 261104 (pass 41): no own-work details, so that line lists none.
+  ownWorkDetail: null,
   // 261102 (pass 37): no item knowledge, so open asks name no items and the
   // arrival note stays the general one.
   workItems: null,
@@ -125,6 +127,7 @@ export function resolveAdapterCaps(adapter, config) {
     fightActions: new Set(pick('fightActions')),
     handOverResult: pick('handOverResult'),
     handOverDetail: pick('handOverDetail'),
+    ownWorkDetail: pick('ownWorkDetail'),
     workItems: pick('workItems'),
     carriedCounts: pick('carriedCounts'),
     surfaceBaseline: pick('surfaceBaseline'),

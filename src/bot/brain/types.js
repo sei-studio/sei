@@ -259,6 +259,10 @@
  *   hand-over, or it failed). When the adapter has it, the conversation
  *   transcript ends on the session's hand-over line (261026). Minecraft:
  *   give's "gave N item to NAME, ...". Default: absent, no hand-over line.
+ * @property {(name: string, resultText: string) => ({verb: string, item: string, n: number} | null)} [ownWorkDetail]
+ *   What one of her own actions made or did ("gathered", 8, "oak_log"), or
+ *   null. Listed on the hand-over line as her own work (261104). Minecraft:
+ *   observers/ownWork.js. Default: absent, no work listed.
  * @property {(name: string, args: object) => string[]}                    [workItems]
  *   The item names an action brings into her bag (a gather's drops, a
  *   craft's product). An open player ask remembers them, so the arrival note

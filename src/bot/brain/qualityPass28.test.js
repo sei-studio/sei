@@ -23,8 +23,9 @@ describe('createHandOverLedger', () => {
   it('says nothing was given when nothing was', () => {
     const l = createHandOverLedger()
     const d = l.describe()
-    expect(d).toMatch(/^Handed over this session: you have not given anything to anyone\./)
-    expect(d).toContain('Everything else you crafted, gathered or picked up went into your own inventory')
+    // 261104 (pass 41): renamed "Who did what", the owned-items sentence shortened.
+    expect(d).toMatch(/^Who did what this session\. You have not given anything to anyone\./)
+    expect(d).toContain('Everything you did not give away is still yours')
     expect(d).toContain('you cannot see what the player carries')
     expect(d).not.toContain('came into your inventory')
   })
@@ -37,7 +38,7 @@ describe('createHandOverLedger', () => {
     l.gave({ item: 'bread', n: 1, to: 'Sam' })
     l.received([{ item: 'iron_sword', n: 1 }, { item: 'bread', n: 4 }])
     const d = l.describe()
-    expect(d).toContain('you gave Alex 6 oak_log and 7 coal and Sam 1 bread.')
+    expect(d).toContain('You gave Alex 6 oak_log and 7 coal and Sam 1 bread.')
     expect(d).toContain('1 iron_sword and 4 bread came into your inventory without an action of yours')
   })
 
@@ -47,9 +48,9 @@ describe('createHandOverLedger', () => {
     l.gave({ item: 'coal', n: 0 })
     l.gave({ item: '', n: 2 })
     l.received([{ item: 'bread', n: -1 }, null])
-    expect(l.describe()).toMatch(/you have not given anything to anyone\./)
+    expect(l.describe()).toMatch(/You have not given anything to anyone\./)
     l.gave({ item: 'coal', n: 3 })
-    expect(l.describe()).toContain('you gave the player 3 coal.')
+    expect(l.describe()).toContain('You gave the player 3 coal.')
   })
 })
 
@@ -78,10 +79,10 @@ describe('convoMemory hand-over line', () => {
     off.recentChat.pushPlayer('Alex', 'give me some coal')
     on.recentChat.noteGiven({ item: 'coal', n: 7, to: 'Alex' })
     const block = on.recentChat.formatConversationBlock()
-    expect(block.trim().split('\n').pop()).toMatch(/^Handed over this session: you gave player \(Alex\) 7 coal\./)
+    expect(block.trim().split('\n').pop()).toMatch(/^Who did what this session\. You gave player \(Alex\) 7 coal\./)
 
     off.recentChat.noteGiven({ item: 'coal', n: 7, to: 'Alex' })
-    expect(off.recentChat.formatConversationBlock()).not.toContain('Handed over this session')
+    expect(off.recentChat.formatConversationBlock()).not.toContain('Who did what this session')
   })
 })
 
@@ -194,11 +195,11 @@ describe('orchestrator: the hand-over line', () => {
     await flush()
     await drain()
     // Nobody had spoken before the first turn, so it has no transcript.
-    expect(allText(provider.calls[0])).not.toContain('Handed over this session')
+    expect(allText(provider.calls[0])).not.toContain('Who did what this session')
     await orch.handleDispatch('sei:chat_received', line('thanks'))
     await flush()
     await drain()
     const last = allText(provider.calls[provider.calls.length - 1])
-    expect(last).toContain('Handed over this session: you gave player (Steve) 7 coal.')
+    expect(last).toContain('Who did what this session. You gave player (Steve) 7 coal.')
   })
 })

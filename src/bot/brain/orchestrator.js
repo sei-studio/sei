@@ -4419,6 +4419,11 @@ function maybeWarnByteCap(loop, warned) {
         // pass 37: only the asks for what she gave.
         if (h && !isCompanionName(h.to)) closeAsksOnGive(h.item)
       }
+      // pass 41: her own work, for the same line.
+      if (typeof caps.ownWorkDetail === 'function') {
+        const text = typeof r === 'string' ? r : (typeof r?.text === 'string' ? r.text : '')
+        convoMemory.recentChat.noteDone(caps.ownWorkDetail(name, text))
+      }
       if (countsAsGoalWork(name, r)) lastWorkAt = Date.now()
       if (!ACTION_VERB_SKIP.has(name)) lastActionEndAt = Date.now()
     } catch {}

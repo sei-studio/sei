@@ -28,6 +28,7 @@ import { closeFurnaceSession } from './behaviors/furnace.js'
 import { wireBotEvents } from './fsmWires.js'
 import { visualizeAction } from './behaviors/visualize.js'
 import { workItemsFor, carriedCounts } from './observers/workItems.js'
+import { ownWorkDetail } from './observers/ownWork.js'
 import {
   WORLD_PRIMER as MINECRAFT_PRIMER,
   describeAction,
@@ -292,6 +293,9 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false, act
       const m = /^gave (\d+) (\S+) to (.+?), tossed/.exec(String(resultText ?? ''))
       return m ? { item: m[2], n: Number(m[1]), to: m[3] } : null
     },
+    // 261104 (pass 41): what her own action made, for the transcript's
+    // "who did what" line (observers/ownWork.js).
+    ownWorkDetail,
     // 261102 (pass 37): what an action works toward and how much of it she
     // carries, so an open ask can name its items (observers/workItems.js).
     workItems: (name, args) => workItemsFor(bot, name, args),
