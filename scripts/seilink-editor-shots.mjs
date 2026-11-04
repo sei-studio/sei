@@ -148,6 +148,8 @@ const SHOTS = {
   // The mug at the back and the front of the log's left ridge (no lip: the bark rolls away, nothing to tuck behind).
   'forest-log-back': ['time=day&items=1', async (page) => dragRoom(page, [880, 1030], [980, 1020]), [880, 980, 220, 160]],
   'forest-log-front': ['time=day&items=1', async (page) => dragRoom(page, [880, 1030], [980, 1075]), [880, 980, 220, 160]],
+  // Run with --presets forest: the tent's slot (bed) opens Walls & fabrics there (slots.bed.group).
+  'forest-tent': ['time=day&items=1&panel=bed'],
   'bed-succulent': ['time=day&items=1', async (page) => dragRoom(page, [390, 430], [330, 965]), [220, 880, 520, 170]],
 };
 

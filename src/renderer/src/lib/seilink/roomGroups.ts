@@ -6,14 +6,16 @@
  *  - fabrics: surfaces and textiles she only recolours or repatterns;
  *  - furniture: standalone pieces, each with its own parts and colours.
  */
-import type { RoomSlotId } from '@shared/seilinkRoom';
+import type { RoomEditorGroup, RoomPresetManifest, RoomSlotId } from '@shared/seilinkRoom';
 
-export type SlotGroup = 'room' | 'fabrics' | 'furniture';
+export type SlotGroup = RoomEditorGroup;
 
 /**
  * Which panel holds each slot (Shawn 261105): the room itself (window view),
  * surfaces and textiles she only recolours or repatterns, and standalone
- * pieces. A slot missing here is furniture.
+ * pieces. A slot missing here is furniture. A pack can move one of its slots
+ * (RoomSlotDef.group): forest's tent and log blanket sit in the bed and
+ * chair slots but are fabrics.
  */
 const SLOT_GROUP: Partial<Record<RoomSlotId, SlotGroup>> = {
   view: 'room',
@@ -26,16 +28,17 @@ const SLOT_GROUP: Partial<Record<RoomSlotId, SlotGroup>> = {
   campfire: 'furniture',
   lamp: 'furniture',
 };
-export const slotGroup = (slot: RoomSlotId): SlotGroup => SLOT_GROUP[slot] ?? 'furniture';
+export const slotGroup = (slot: RoomSlotId, manifest?: Pick<RoomPresetManifest, 'slots'> | null): SlotGroup =>
+  manifest?.slots[slot]?.group ?? SLOT_GROUP[slot] ?? 'furniture';
 
 /** Section order inside a panel: big pieces first (a slot not listed goes last, in draw order). */
 const SECTION_ORDER: readonly RoomSlotId[] = ['view', 'shell', 'curtains', 'rug', 'bed', 'shelf', 'chair', 'campfire', 'lamp'];
 
-/** The slots of `slots` (draw order) that `group` lists, in its section order. */
-export function groupSlots(slots: readonly RoomSlotId[], group: SlotGroup): RoomSlotId[] {
+/** The slots of `slots` (draw order) that `group` lists in this pack, in its section order. */
+export function groupSlots(slots: readonly RoomSlotId[], group: SlotGroup, manifest?: Pick<RoomPresetManifest, 'slots'> | null): RoomSlotId[] {
   const rank = (s: RoomSlotId): number => {
     const i = SECTION_ORDER.indexOf(s);
     return i < 0 ? SECTION_ORDER.length : i;
   };
-  return slots.filter((s) => slotGroup(s) === group).sort((a, b) => rank(a) - rank(b) || slots.indexOf(a) - slots.indexOf(b));
+  return slots.filter((s) => slotGroup(s, manifest) === group).sort((a, b) => rank(a) - rank(b) || slots.indexOf(a) - slots.indexOf(b));
 }

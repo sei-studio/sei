@@ -34,7 +34,8 @@
       "options": [
         "canvas_tent"
       ],
-      "optional": true
+      "optional": true,
+      "group": "fabrics"
     },
     "lamp": {
       "z": 60,
@@ -53,7 +54,8 @@
       "z": 90,
       "options": [
         "log_seat"
-      ]
+      ],
+      "group": "fabrics"
     }
   },
   "components": [

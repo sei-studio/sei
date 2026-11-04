@@ -516,6 +516,13 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
   const state = history?.present ?? null;
   const pack = useMemo(() => (state && packs ? (packs.find((p) => p.id === state.preset) ?? null) : null), [packs, state]);
   const manifest = pack?.manifest ?? null;
+  // A slot asked for up front opens its group in this pack once the pack is known (a pack can move a slot).
+  const initialPlaced = useRef(false);
+  useEffect(() => {
+    if (initialPlaced.current || !initialSlot || !manifest) return;
+    initialPlaced.current = true;
+    setPanel(slotGroup(initialSlot, manifest));
+  }, [manifest, initialSlot]);
   const now = (clock ?? (() => new Date()))();
   const time: RoomTime = state ? resolveRoomTime(state, now) : 'day';
 
@@ -541,13 +548,13 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
   const slots = useMemo(() => (manifest && state ? editableSlots(manifest, state) : []), [manifest, state]);
   const slotSet = useMemo(() => new Set(slots), [slots]);
   const sections = useMemo(
-    () => ({ room: groupSlots(slots, 'room'), fabrics: groupSlots(slots, 'fabrics'), furniture: groupSlots(slots, 'furniture') }),
-    [slots],
+    () => ({ room: groupSlots(slots, 'room', manifest), fabrics: groupSlots(slots, 'fabrics', manifest), furniture: groupSlots(slots, 'furniture', manifest) }),
+    [slots, manifest],
   );
 
   /** Open the group that holds `slot`, with its section in view. */
   const openSlot = (slot: RoomSlotId): void => {
-    const group = slotGroup(slot);
+    const group = slotGroup(slot, manifest);
     setFocus((f) => ({ slot, n: (f?.n ?? 0) + 1, smooth: panel === group }));
     setPanel(group);
   };

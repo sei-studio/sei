@@ -180,12 +180,23 @@ export interface RoomComponent {
   swatches?: string[];
 }
 
+/** Room editor panels that list slots (the rail's Room, Walls & fabrics and Furniture tiles). */
+export type RoomEditorGroup = 'room' | 'fabrics' | 'furniture';
+export const ROOM_EDITOR_GROUPS: readonly RoomEditorGroup[] = ['room', 'fabrics', 'furniture'];
+
 export interface RoomSlotDef {
   z: number;
   /** Component ids that fit this slot. The first is the default. */
   options: string[];
   /** Slot can be left empty (e.g. no rug). */
   optional?: boolean;
+  /**
+   * The editor panel that lists this slot in this pack, over the default for
+   * the slot id (roomGroups.ts). For a pack that reuses a slot for something
+   * else: forest's tent (bed slot) and log blanket (chair slot) are fabrics
+   * she only recolours, not furniture.
+   */
+  group?: RoomEditorGroup;
 }
 
 export interface RoomPresetManifest {

@@ -316,6 +316,11 @@ and thumbnails all use the same plan).
   props barely shrink with depth (a far backpack ends up about half size,
   which matches the campfire ring's foreshortening). The log also blocks the
   ground behind Sei's seat (x 1040-1560): items there vanished behind her.
+  Editor panels: a slot's panel comes from its id (`roomGroups.ts`) unless
+  the pack names one (`slots.<id>.group`: room, fabrics or furniture).
+  Forest's tent (bed slot) and log blanket (chair slot) are only recoloured,
+  so they set `group: "fabrics"` (Shawn msg 1580: recolour or repattern only
+  = Walls & fabrics, standalone pieces = Furniture).
   The tree stump has no top (261105): it sits behind Sei's head, so decor
   placed there never showed; a room saved with an item on it settles onto
   the log. Item `foot` = the sprite's first opaque row minus 3 (the
