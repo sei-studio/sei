@@ -168,6 +168,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   // (Settings > Labs, or the dev flag), so most users never see them.
   const seilinkOn = useSeilinkStore((s) => s.availability?.enabled === true);
   const livingId = useSeilinkStore((s) => movedInId(s.status));
+  // Her host kept crashing and the supervisor gave up (state failed, for her).
+  const seilinkFailedHere = useSeilinkStore((s) => s.status.state === 'failed' && s.status.characterId === id);
   const pendingEditor = useSeilinkStore((s) => s.pendingEditor);
   const [roomEditorOpen, setRoomEditorOpen] = useState<boolean>(false);
   const [moveInOpen, setMoveInOpen] = useState<boolean>(false);
@@ -897,6 +899,11 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                         >
                           {livingId === character.id ? t('Move off desktop') : t('Move onto desktop')}
                         </button>
+                        {seilinkFailedHere && livingId !== character.id ? (
+                          <div className={styles.settingsNote} role="note">
+                            {t('Her desktop room kept stopping, so it was turned off. Move her in to try again.')}
+                          </div>
+                        ) : null}
                         <button
                           type="button"
                           role="menuitem"

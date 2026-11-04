@@ -10,9 +10,11 @@
  *   because the commonest cause (Explorer restarting on Windows) wants the
  *   host back as soon as the shell is. The streak resets once a host has
  *   stayed up for `stableMs` (20 s).
- * - Gives up after `maxFailures` restarts in a row whose host never got
- *   attached (a broken install, an addon that cannot load): the status goes
- *   to failed instead of spinning forever.
+ * - Gives up after `maxRestarts` restarts within `restartWindowMs` (5 in
+ *   10 min), attached or not: a broken install, an addon that cannot load,
+ *   or a host that attaches and then crashes every time. The status goes to
+ *   failed instead of spinning forever. Only a new start() (a user move-in,
+ *   an app restart) begins a new count.
  *
  * Process handling is injected (`spawn`, `kill`) so the restart policy is
  * unit-tested without Electron (supervisor.test.ts).
@@ -22,7 +24,9 @@ import type { FromHost } from './protocol';
 
 export const HOST_STABLE_MS = 20_000;
 export const HOST_HEARTBEAT_TIMEOUT_MS = 3_000;
-export const HOST_MAX_FAILURES = 6;
+/** Give up after this many restarts within HOST_RESTART_WINDOW_MS. */
+export const HOST_MAX_RESTARTS = 5;
+export const HOST_RESTART_WINDOW_MS = 10 * 60_000;
 /** A host that never says hello (wedged before its pipe connected) is killed after this. */
 export const HOST_HELLO_TIMEOUT_MS = 20_000;
 
@@ -48,7 +52,8 @@ export interface SupervisorDeps {
   hbTimeoutMs?: number;
   helloTimeoutMs?: number;
   stableMs?: number;
-  maxFailures?: number;
+  maxRestarts?: number;
+  restartWindowMs?: number;
   log?: (line: string) => void;
 }
 
@@ -64,14 +69,16 @@ interface Current {
 /**
  * Events: 'message' (FromHost, from the live host only), 'spawn' ({n, pid}),
  * 'exit' ({n, code, signal}), 'restart' ({reason, delay, streak}),
- * 'hung' ({n, gapMs}), 'gave-up' ({reason}).
+ * 'hung' ({n, gapMs}), 'gave-up' ({reason, restarts, everAttached}).
  */
 export class HostSupervisor extends EventEmitter {
   private cur: Current | null = null;
   private n = 0;
   private streak = 0;
-  /** Restarts in a row whose host never attached. */
-  private failures = 0;
+  /** When each restart of this run was scheduled (pruned to the window). */
+  private restartTimes: number[] = [];
+  /** Some host of this run attached. */
+  private everAttached = false;
   private lastHb = 0;
   private stopped = true;
   private pendingRestart: unknown = null;
@@ -89,7 +96,8 @@ export class HostSupervisor extends EventEmitter {
       hbTimeoutMs: HOST_HEARTBEAT_TIMEOUT_MS,
       helloTimeoutMs: HOST_HELLO_TIMEOUT_MS,
       stableMs: HOST_STABLE_MS,
-      maxFailures: HOST_MAX_FAILURES,
+      maxRestarts: HOST_MAX_RESTARTS,
+      restartWindowMs: HOST_RESTART_WINDOW_MS,
       log: () => {},
       ...deps,
     } as SupervisorDeps & Required<Omit<SupervisorDeps, 'log'>> & { log: (line: string) => void };
@@ -111,7 +119,8 @@ export class HostSupervisor extends EventEmitter {
     if (!this.stopped) return;
     this.stopped = false;
     this.streak = 0;
-    this.failures = 0;
+    this.restartTimes = [];
+    this.everAttached = false;
     this.watchdog = this.d.setInterval(() => this.checkHeartbeat(), 250);
     this.spawn('initial');
   }
@@ -149,9 +158,11 @@ export class HostSupervisor extends EventEmitter {
     const cur = this.cur;
     if (!cur || cur.exited || cur.child.pid !== pid) return;
     if (m.type === 'heartbeat') this.lastHb = this.d.now();
+    // Attaching does NOT reset the restart count: a host that attaches and then crashes every
+    // time would otherwise restart forever (about every 10 s at the backoff cap).
     if (m.type === 'attached') {
       cur.attached = true;
-      this.failures = 0;
+      this.everAttached = true;
     }
     this.emit('message', m);
   }
@@ -172,7 +183,6 @@ export class HostSupervisor extends EventEmitter {
       child = this.d.spawn(n);
     } catch (err) {
       this.d.log(`seilink host ${n}: spawn failed (${(err as Error).message})`);
-      this.failures++;
       this.emit('spawn-failed', { n });
       this.scheduleRestart('spawn-failed', this.d.now());
       return;
@@ -187,7 +197,6 @@ export class HostSupervisor extends EventEmitter {
       this.emit('exit', { n, code, signal });
       if (this.cur !== cur) return;
       this.cur = null;
-      if (!cur.attached) this.failures++;
       this.d.log(`seilink host ${n}: exited (${code ?? signal})`);
       this.scheduleRestart(`exit ${code ?? signal}`, cur.spawnedAt);
     });
@@ -195,12 +204,16 @@ export class HostSupervisor extends EventEmitter {
 
   private scheduleRestart(reason: string, spawnedAt: number): void {
     if (this.stopped || this.pendingRestart !== null) return;
-    if (this.failures >= this.d.maxFailures) {
-      this.d.log(`seilink host: giving up after ${this.failures} failed starts (${reason})`);
-      this.emit('gave-up', { reason });
+    const now = this.d.now();
+    this.restartTimes = this.restartTimes.filter((t) => now - t < this.d.restartWindowMs);
+    if (this.restartTimes.length >= this.d.maxRestarts) {
+      const restarts = this.restartTimes.length;
+      this.d.log(`seilink host: giving up after ${restarts} restarts in ${Math.round(this.d.restartWindowMs / 60_000)} min (${reason})`);
+      this.emit('gave-up', { reason, restarts, everAttached: this.everAttached });
       this.stop();
       return;
     }
+    this.restartTimes.push(now);
     if (this.d.now() - spawnedAt > this.d.stableMs) this.streak = 0;
     const delay = hostBackoffMs(this.streak);
     this.streak++;

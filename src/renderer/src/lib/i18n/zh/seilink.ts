@@ -46,6 +46,7 @@ export const ZH_SEILINK: Record<string, string> = {
   "Moving in": "正在搬入",
   "Move in": "搬进来",
   "Could not move in. Try again.": "没能搬进来，请再试一次。",
+  "Her desktop room kept stopping, so it was turned off. Move her in to try again.": "她的桌面房间一直停止运行，所以已经关闭。再搬一次试试。",
   "Click {name} to chat. The dock in the room edits it, mutes idle lines, or moves {name} out.": "点击 {name} 就能聊天。房间里的工具栏可以编辑房间、静音闲聊台词，或让 {name} 搬走。",
   "Idle lines on": "闲聊台词已开启",
   "Idle lines off": "闲聊台词已关闭",

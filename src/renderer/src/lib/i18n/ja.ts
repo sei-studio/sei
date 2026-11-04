@@ -2226,6 +2226,7 @@ export const JA: Record<string, string> = {
   "Moving in": "引っ越し中",
   "Move in": "引っ越す",
   "Could not move in. Try again.": "引っ越せませんでした。もう一度お試しください。",
+  "Her desktop room kept stopping, so it was turned off. Move her in to try again.": "デスクトップの部屋が止まり続けたので、オフにしました。もう一度引っ越して試してください。",
   "Click {name} to chat. The dock in the room edits it, mutes idle lines, or moves {name} out.": "{name}をクリックするとチャットできます。部屋のドックから、部屋の編集、ひとりごとのミュート、{name}の引っ越しができます。",
   "Idle lines on": "ひとりごと オン",
   "Idle lines off": "ひとりごと オフ",

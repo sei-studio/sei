@@ -2226,6 +2226,7 @@ export const RU: Record<string, string> = {
   "Moving in": "Переезжаем",
   "Move in": "Переселить",
   "Could not move in. Try again.": "Не получилось переселить. Попробуй ещё раз.",
+  "Her desktop room kept stopping, so it was turned off. Move her in to try again.": "Её комната на рабочем столе постоянно останавливалась, поэтому её отключили. Переселите её снова, чтобы попробовать ещё раз.",
   "Click {name} to chat. The dock in the room edits it, mutes idle lines, or moves {name} out.": "Нажми на {name}, чтобы поговорить. Панель в комнате открывает редактор, выключает реплики без повода или переселяет {name} обратно.",
   "Idle lines on": "Реплики без повода включены",
   "Idle lines off": "Реплики без повода выключены",

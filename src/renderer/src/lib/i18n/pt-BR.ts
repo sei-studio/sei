@@ -2226,6 +2226,7 @@ export const PT_BR: Record<string, string> = {
   "Moving in": "Mudando",
   "Move in": "Mudar",
   "Could not move in. Try again.": "Não deu para mudar. Tente de novo.",
+  "Her desktop room kept stopping, so it was turned off. Move her in to try again.": "O quarto dela na área de trabalho parava toda hora, então foi desligado. Mude ela de novo para tentar.",
   "Click {name} to chat. The dock in the room edits it, mutes idle lines, or moves {name} out.": "Clique em {name} para conversar. A barra no quarto edita o quarto, silencia as falas espontâneas ou tira {name} de lá.",
   "Idle lines on": "Falas espontâneas ligadas",
   "Idle lines off": "Falas espontâneas desligadas",

@@ -49,8 +49,12 @@ main (src/main/seilink/host/seilinkHost.ts)        host (hostEntry.ts, same bina
   (`HOST_STABLE_MS`) resets the streak.
 - Hung = no heartbeat for 3 s (`HOST_HEARTBEAT_TIMEOUT_MS`, watchdog every
   250 ms; detected in about 3.1 s on Linux). No hello within 20 s = killed.
-- 6 starts in a row that never attached (`HOST_MAX_FAILURES`) = state
-  `failed`, no more spawns.
+- 5 restarts within 10 min (`HOST_MAX_RESTARTS`, `HOST_RESTART_WINDOW_MS`),
+  attached or not, = give up: the session ends with state `failed` and a
+  failure class (the last failure since her last good attach, or
+  `crash_loop`), `seilink_ended` carries it, her page's gear menu says her
+  room stopped, and nothing spawns again until a user move-in or an app
+  restart (the saved move-in is kept, so the next app start retries once).
 - Kill: `taskkill /T /F` on Windows, SIGKILL elsewhere. Stop sends `quit`,
   waits 1.5 s, then kills.
 

@@ -361,6 +361,10 @@ async function openSession(characterId: string, restored: boolean): Promise<void
   supervisor.on('exit', (e) => seilinkHostEvents.emit('exit', e));
   supervisor.on('gave-up', () => {
     if (session !== s) return;
+    // The class of what kept going wrong since the last good attach (a hang, an attach
+    // failure), or crash_loop for a host that just kept exiting. The status goes to failed
+    // (the UI shows it), seilink_ended carries failure_class, and nothing restarts it until
+    // the user moves her in again or the app restarts.
     const failure = s.lastFailure ?? 'crash_loop';
     void endSession('failed', failure);
   });
@@ -511,6 +515,7 @@ function onHostMessage(s: Session, m: FromHost): void {
   seilinkHostEvents.emit('message', m);
   switch (m.type) {
     case 'attached':
+      s.lastFailure = null;
       patchStatus({ state: 'running', failure: undefined });
       if (s.startedAt === null) {
         s.startedAt = Date.now();
@@ -648,8 +653,8 @@ function noteFailure(s: Session, failure: SeilinkHostFailure, fromHost: boolean)
       from_host: fromHost,
     });
   }
-  // The host cannot get onto the desktop: recycle it (a fresh process, with backoff). A host
-  // that keeps failing never attaches, so the supervisor gives up after HOST_MAX_FAILURES.
+  // The host cannot get onto the desktop: recycle it (a fresh process, with backoff). The
+  // supervisor gives up after HOST_MAX_RESTARTS restarts within HOST_RESTART_WINDOW_MS.
   if (fromHost) s.supervisor.recycle(failure);
 }
 
@@ -671,7 +676,8 @@ async function endSession(reason: SeilinkEndReason, failure?: SeilinkHostFailure
     ...(failure ? { failure_class: failure } : {}),
   });
   log(`host ended (${reason}${failure ? `, ${failure}` : ''})`);
-  setStatus(failure ? { ...SEILINK_HOST_OFF, state: 'failed', failure } : baseStatus());
+  // A failure keeps who it was for, so her page can say her room stopped.
+  setStatus(failure ? { ...SEILINK_HOST_OFF, state: 'failed', characterId: s.characterId, failure } : baseStatus());
   if (live !== null) {
     const child = s.children.get(live);
     if (child && child.exitCode === null && reason !== 'app_quit') {

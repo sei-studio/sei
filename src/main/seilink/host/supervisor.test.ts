@@ -5,7 +5,7 @@ interface FakeChild extends HostChild {
   exit(code?: number | null, signal?: string | null): void;
 }
 
-function harness(opts?: { maxFailures?: number }) {
+function harness(opts?: { maxRestarts?: number; restartWindowMs?: number }) {
   let nextPid = 100;
   const children: FakeChild[] = [];
   const killed: number[] = [];
@@ -31,7 +31,8 @@ function harness(opts?: { maxFailures?: number }) {
       const c = children.find((x) => x.pid === pid);
       setTimeout(() => c?.exit(null, 'SIGKILL'), 10);
     },
-    ...(opts?.maxFailures ? { maxFailures: opts.maxFailures } : {}),
+    ...(opts?.maxRestarts ? { maxRestarts: opts.maxRestarts } : {}),
+    ...(opts?.restartWindowMs ? { restartWindowMs: opts.restartWindowMs } : {}),
   });
   const live = (): FakeChild => children[children.length - 1];
   const hello = (): void => {
@@ -125,37 +126,82 @@ describe('seilink host supervisor', () => {
     expect(msgs).toHaveBeenCalledTimes(1);
   });
 
-  it('gives up after repeated starts that never attach', () => {
-    const h = harness({ maxFailures: 3 });
+  it('gives up after 5 restarts within 10 min of starts that never attach', () => {
+    const h = harness();
     const gaveUp = vi.fn();
     h.sup.on('gave-up', gaveUp);
     h.sup.start();
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 6; i++) {
       h.hello();
       h.live().exit(3);
       vi.advanceTimersByTime(10_000);
     }
     expect(gaveUp).toHaveBeenCalledTimes(1);
+    expect(gaveUp.mock.calls[0][0]).toMatchObject({ restarts: 5, everAttached: false });
     expect(h.sup.running).toBe(false);
-    expect(h.children).toHaveLength(3);
+    // The first host plus 5 restarts, then nothing more.
+    expect(h.children).toHaveLength(6);
+    vi.advanceTimersByTime(60 * 60_000);
+    expect(h.children).toHaveLength(6);
   });
 
-  it('an attached host resets the failure count', () => {
-    const h = harness({ maxFailures: 2 });
+  it('gives up on a host that attaches and then crashes every time (no endless restarts)', () => {
+    const h = harness();
     const gaveUp = vi.fn();
     h.sup.on('gave-up', gaveUp);
     h.sup.start();
-    h.live().exit(3);
-    vi.advanceTimersByTime(10_000);
-    h.hello();
-    h.attach();
+    // Each host attaches, beats for a while past the stable time, then crashes.
+    for (let i = 0; i < 10 && h.sup.running; i++) {
+      h.hello();
+      h.attach();
+      for (let k = 0; k < 25; k++) {
+        vi.advanceTimersByTime(1000);
+        h.beat();
+      }
+      h.live().exit(1);
+      vi.advanceTimersByTime(10_000);
+    }
+    expect(gaveUp).toHaveBeenCalledTimes(1);
+    expect(gaveUp.mock.calls[0][0]).toMatchObject({ restarts: 5, everAttached: true });
+    expect(h.sup.running).toBe(false);
+    expect(h.children).toHaveLength(6);
+  });
+
+  it('only counts restarts inside the window', () => {
+    const h = harness({ maxRestarts: 2, restartWindowMs: 60_000 });
+    const gaveUp = vi.fn();
+    h.sup.on('gave-up', gaveUp);
+    h.sup.start();
+    for (let i = 0; i < 6; i++) {
+      h.hello();
+      h.attach();
+      // Crashes 40 s apart: never more than 2 restarts inside any 60 s.
+      for (let k = 0; k < 40; k++) {
+        vi.advanceTimersByTime(1000);
+        h.beat();
+      }
+      h.live().exit(1);
+      vi.advanceTimersByTime(0);
+    }
+    expect(gaveUp).not.toHaveBeenCalled();
+    expect(h.children).toHaveLength(7);
+  });
+
+  it('a new start() begins a new count', () => {
+    const h = harness({ maxRestarts: 1 });
+    const gaveUp = vi.fn();
+    h.sup.on('gave-up', gaveUp);
+    h.sup.start();
     h.live().exit(1);
     vi.advanceTimersByTime(10_000);
-    h.live().exit(3);
-    vi.advanceTimersByTime(10_000);
-    expect(gaveUp).not.toHaveBeenCalled();
-    h.live().exit(3);
+    h.live().exit(1);
     expect(gaveUp).toHaveBeenCalledTimes(1);
+    expect(h.sup.running).toBe(false);
+    h.sup.start();
+    h.live().exit(1);
+    vi.advanceTimersByTime(10_000);
+    expect(gaveUp).toHaveBeenCalledTimes(1);
+    expect(h.sup.running).toBe(true);
   });
 
   it('stop without kill leaves the host to quit by itself and never restarts it', () => {
