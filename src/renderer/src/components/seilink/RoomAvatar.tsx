@@ -96,8 +96,8 @@ export interface RoomAvatarProps {
 
 /** How far her figure hangs below the floor line, in her heights (see the header). */
 export const SINK = 0.07;
-/** An imported model contain-fits its box; this shows the top two thirds of it. */
-const BUST_CAMERA: AvatarCamera = { zoom: 1.5, x: 0, y: 0.25 };
+/** An imported model contain-fits its box; this shows the top three quarters of it (top edge at the box top). */
+const BUST_CAMERA: AvatarCamera = { zoom: 1.35, x: 0, y: 0.175 };
 /** Motion never draws faster than this, whatever the room runs at. */
 const MOTION_FPS_MAX = 30;
 /** How often the frame edges are re-measured for a walk-off. */
@@ -105,8 +105,8 @@ const EXIT_MEASURE_MS = 1_000;
 /** Time-of-day grade so a day-lit figure sits in a night room. */
 const TIME_GRADE: Record<RoomTime, string> = {
   day: 'none',
-  dusk: 'brightness(0.95) saturate(1.04) sepia(0.06)',
-  night: 'brightness(0.8) saturate(0.88)',
+  dusk: 'brightness(0.97) sepia(0.05)',
+  night: 'brightness(0.84) saturate(0.9)',
 };
 
 // ── kind resolution ─────────────────────────────────────────────────────────
@@ -304,14 +304,23 @@ function PortraitFigure({ url, height, name, onError }: { url: string; height: n
   return <img className={styles.sprite} src={cut.src} alt={name ?? ''} draggable={false} style={{ height, width: height * cut.aspect }} data-cutout={cut.method} />;
 }
 
-/** No art at all: a soft seated silhouette, tinted by the room's time. */
+/** No art at all: a soft head-and-shoulders silhouette, tinted by the room's time (the editor's figure shape). */
 function Silhouette({ height, time }: { height: number; time: RoomTime }): React.ReactElement {
-  const fill = time === 'night' ? '#3a3f63' : time === 'dusk' ? '#7d5a73' : '#9fb4e6';
+  const [top, bottom] = time === 'night' ? ['#59608f', '#3a3f63'] : time === 'dusk' ? ['#a47f97', '#7d5a73'] : ['#bccbef', '#94a9dc'];
+  const id = `sil-${time}`;
   return (
-    <svg width={height * 0.62} height={height} viewBox="0 0 62 100" aria-hidden="true">
-      <path d="M6 100 C6 74 15 61 31 61 C47 61 56 74 56 100 Z" fill={fill} opacity="0.92" />
-      <ellipse cx="31" cy="39" rx="16" ry="18" fill={fill} />
-      <path d="M13 41 C12 17 50 17 49 41 L53 66 L44 52 L18 52 L9 66 Z" fill={fill} opacity="0.8" />
+    <svg width={height * 0.6} height={height} viewBox="0 0 60 100" preserveAspectRatio="none" aria-hidden="true">
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={top} />
+          <stop offset="1" stopColor={bottom} />
+        </linearGradient>
+      </defs>
+      <path
+        d="M30 5c7.6 0 13 6 13 15.5 0 7.4-3.6 12.6-7.6 14.8V40c10 1.8 18.4 8.6 20.4 20.5L58 100H2l2.2-39.5C6.2 48.6 14.6 41.8 24.6 40v-4.7C20.6 33.1 17 27.9 17 20.5 17 11 22.4 5 30 5z"
+        fill={`url(#${id})`}
+        opacity="0.9"
+      />
     </svg>
   );
 }
@@ -440,7 +449,7 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
     figW = 0; // sized by the image
   } else if (kind === 'placeholder') {
     view = <Silhouette height={figH} time={slot.time} />;
-    figW = figH * 0.62;
+    figW = figH * 0.6;
   }
 
   // The stage is as wide as a seated figure so the slot box centres on her.

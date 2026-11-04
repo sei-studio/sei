@@ -167,7 +167,9 @@ export function vignetteAlpha(x: number, y: number, w: number, h: number): numbe
   const head = Math.sqrt((u / 0.34) ** 2 + ((v - 0.42) / 0.44) ** 2) - 1;
   // Shoulders: a wide ellipse whose top sits below the chin.
   const shoulders = Math.sqrt((u / 0.52) ** 2 + ((v - 1.08) / 0.5) ** 2) - 1;
-  return Math.max(smooth(head), smooth(shoulders));
+  // The top edge fades out: a portrait's background shows most between the ears and above the hair.
+  const top = Math.min(1, Math.max(0, (v - 0.015) / 0.085));
+  return Math.max(smooth(head), smooth(shoulders)) * top * top * (3 - 2 * top);
 }
 
 export interface Cutout {
