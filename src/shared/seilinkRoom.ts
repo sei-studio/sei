@@ -1,0 +1,189 @@
+/**
+ * SeiLink room format v1 (261104, Shawn's "SeiLink visuals" doc, msg 1531).
+ *
+ * A room is a fixed webcam-POV scene: she sits at her desk facing the player,
+ * so no desk is drawn. Lower center holds her chair (drawn behind her), a
+ * large window sits on the right, and a bed or shelf fills the rest.
+ * Everything is modular: each part of the room is a slot that holds one
+ * component, components can be swapped, and tintable components can be
+ * recoloured. Small things the player places are items.
+ *
+ * Three presets to start (quality over quantity): cozy, gamer, forest
+ * (outdoor campfire, lit at night). Each cycles day, dusk and night.
+ *
+ * Draw order: slots sorted by z ascending, the avatar at AVATAR_Z, then items
+ * by their own z. A component's frame for the current time of day is drawn
+ * at (0,0) on the preset canvas (frames are full-canvas, transparent where
+ * empty) unless it has a box. A tintable frame's mask (white = recolour) is
+ * multiplied with the tint inside the mask, keeping the frame's shading.
+ * A frame's glow (an additive light layer: lamp, campfire, monitor) is drawn
+ * with 'screen' after everything else.
+ *
+ * The AI side reads describeRoom(): a short place line for the prompt and a
+ * plain list of what is in the room for look().
+ */
+
+export const SEILINK_ROOM_FORMAT = 'sei-room' as const;
+export const SEILINK_ROOM_VERSION = 1 as const;
+
+export type RoomTime = 'day' | 'dusk' | 'night';
+export const ROOM_TIMES: readonly RoomTime[] = ['day', 'dusk', 'night'];
+
+export type RoomPresetId = 'cozy' | 'gamer' | 'forest';
+export const ROOM_PRESET_IDS: readonly RoomPresetId[] = ['cozy', 'gamer', 'forest'];
+
+/** Slot ids. A preset uses the subset that fits it (forest has no curtains). */
+export type RoomSlotId =
+  | 'view' // what is outside the window (or the sky, outdoors)
+  | 'shell' // walls, floor, window frame (indoor) or ground and trees (forest)
+  | 'curtains'
+  | 'bed'
+  | 'shelf'
+  | 'chair' // drawn behind her
+  | 'lamp'
+  | 'rug'
+  | 'campfire';
+
+/** z of the avatar. Slots below it are behind her, above it in front. */
+export const AVATAR_Z = 100;
+
+export type RoomBox = [x: number, y: number, w: number, h: number];
+
+export interface RoomFrame {
+  /** Path relative to the pack root. */
+  src: string;
+  /** White where a tint applies. Required when the component is tintable. */
+  mask?: string;
+  /** Additive light layer drawn with 'screen' on top of the scene. */
+  glow?: string;
+}
+
+export interface RoomComponent {
+  id: string;
+  slot: RoomSlotId | 'item';
+  /** Short plain name the AI sees in look(), e.g. "purple curtains" is built from tintName + name. */
+  name: string;
+  tintable?: boolean;
+  /** Hex, used when the room state has no tint for it. */
+  defaultTint?: string;
+  /** Frames per time of day. A missing time falls back to day. */
+  frames: Partial<Record<RoomTime, RoomFrame>> & { day: RoomFrame };
+  /** Items only: where it may sit. */
+  placement?: 'floor' | 'wall' | 'surface';
+  /** Only for full-canvas slot art that is smaller than the canvas. */
+  box?: RoomBox;
+  z?: number;
+}
+
+export interface RoomSlotDef {
+  z: number;
+  /** Component ids that fit this slot. The first is the default. */
+  options: string[];
+  /** Slot can be left empty (e.g. no rug). */
+  optional?: boolean;
+}
+
+export interface RoomPresetManifest {
+  format: typeof SEILINK_ROOM_FORMAT;
+  version: typeof SEILINK_ROOM_VERSION;
+  id: RoomPresetId;
+  /** Plain place name for the prompt: "your bedroom", "your gaming room", "a campfire in the forest". */
+  place: string;
+  canvas: [w: number, h: number];
+  /** Where she sits: bottom center of her body in canvas px, and her height in canvas px. */
+  avatar: { x: number; y: number; height: number };
+  /** Floor area items may be placed on (canvas px), for the editor. */
+  floor?: RoomBox;
+  slots: Partial<Record<RoomSlotId, RoomSlotDef>>;
+  components: RoomComponent[];
+  /** Hex colours per time of day for the editor overlay tint (light room, light overlay). */
+  overlay?: Partial<Record<RoomTime, string>>;
+}
+
+export interface RoomItemPlacement {
+  id: string;
+  x: number;
+  y: number;
+  scale?: number;
+  flip?: boolean;
+}
+
+/** What a companion's room looks like. Lives on the device, a few KB. */
+export interface RoomState {
+  version: typeof SEILINK_ROOM_VERSION;
+  preset: RoomPresetId;
+  /** auto follows the computer's clock. */
+  time: RoomTime | 'auto';
+  /** Per slot: chosen component (null = empty optional slot) and tint. */
+  slots: Partial<Record<RoomSlotId, { id: string | null; tint?: string }>>;
+  items: RoomItemPlacement[];
+  avatar: { kind: 'sei' } | { kind: 'live2d'; modelPath: string };
+}
+
+export function defaultRoomState(preset: RoomPresetId = 'cozy'): RoomState {
+  return { version: SEILINK_ROOM_VERSION, preset, time: 'auto', slots: {}, items: [], avatar: { kind: 'sei' } };
+}
+
+/** Clock time to room time: dawn and dusk both use the dusk art. */
+export function roomTimeAt(date: Date): RoomTime {
+  const h = date.getHours() + date.getMinutes() / 60;
+  if (h >= 7 && h < 17) return 'day';
+  if ((h >= 5 && h < 7) || (h >= 17 && h < 19.5)) return 'dusk';
+  return 'night';
+}
+
+export function resolveRoomTime(state: Pick<RoomState, 'time'>, now: Date = new Date()): RoomTime {
+  return state.time === 'auto' ? roomTimeAt(now) : state.time;
+}
+
+/** The component in each slot after defaults (null = empty). */
+export function resolveSlots(manifest: RoomPresetManifest, state: RoomState): Array<{ slot: RoomSlotId; component: RoomComponent; tint?: string }> {
+  const byId = new Map(manifest.components.map((c) => [c.id, c]));
+  const out: Array<{ slot: RoomSlotId; component: RoomComponent; tint?: string }> = [];
+  for (const [slot, def] of Object.entries(manifest.slots) as Array<[RoomSlotId, RoomSlotDef]>) {
+    const chosen = state.slots[slot];
+    const id = chosen && chosen.id !== undefined ? chosen.id : def.options[0];
+    if (id === null) continue;
+    const component = byId.get(id) ?? byId.get(def.options[0]);
+    if (!component) continue;
+    out.push({ slot, component, tint: chosen?.tint ?? component.defaultTint });
+  }
+  return out.sort((a, b) => manifest.slots[a.slot]!.z - manifest.slots[b.slot]!.z);
+}
+
+/** Basic colour words for tints, so look() can say "purple curtains". */
+export function tintName(hex: string | undefined): string | null {
+  if (!hex || !/^#?[0-9a-f]{6}$/i.test(hex)) return null;
+  const n = parseInt(hex.replace('#', ''), 16);
+  const r = (n >> 16) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, d = max - min;
+  if (d < 0.08) return l > 0.85 ? 'white' : l < 0.18 ? 'black' : 'gray';
+  let h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  h = (h * 60 + 360) % 360;
+  if (l < 0.3 && (h < 45 || h >= 345)) return 'brown';
+  if (h < 15 || h >= 345) return l > 0.7 ? 'pink' : 'red';
+  if (h < 45) return l < 0.45 ? 'brown' : 'orange';
+  if (h < 70) return 'yellow';
+  if (h < 160) return 'green';
+  if (h < 200) return 'teal';
+  if (h < 255) return 'blue';
+  if (h < 290) return 'purple';
+  return 'pink';
+}
+
+/** What the AI knows about her room: a place line and a plain item list. */
+export function describeRoom(manifest: RoomPresetManifest, state: RoomState, now: Date = new Date()): { place: string; time: RoomTime; things: string[] } {
+  const time = resolveRoomTime(state, now);
+  const things: string[] = [];
+  for (const { component, tint } of resolveSlots(manifest, state)) {
+    if (component.slot === 'shell' || component.slot === 'view') continue;
+    const colour = component.tintable ? tintName(tint) : null;
+    things.push(colour ? `${colour} ${component.name}` : component.name);
+  }
+  const byId = new Map(manifest.components.map((c) => [c.id, c]));
+  for (const it of state.items) {
+    const c = byId.get(it.id);
+    if (c) things.push(c.name);
+  }
+  return { place: manifest.place, time, things };
+}
