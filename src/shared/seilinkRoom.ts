@@ -46,6 +46,30 @@
  *    first (its defaultTint is always offered too).
  *  - Editor rules (placement areas, scale range, edit ops, undo) live in
  *    seilinkEdit.ts.
+ *
+ * 261105 (placement pass, Shawn: "the bottom of furniture has to touch"
+ * the ground or shelf), all optional; a pack without them places as before:
+ *  - `floorAreas` (manifest): polygons of real floor, canvas px, following the
+ *    room's perspective. A floor item's bottom centre stands inside one. They
+ *    replace the legacy `floor` box.
+ *  - `wallAreas` (manifest): polygons of bare wall (no window glass). A wall
+ *    item's whole sprite hangs inside them.
+ *  - `horizon` (manifest): eye level, canvas y. Floor items further back
+ *    (higher on screen) are drawn smaller, by (y - horizon) / (yRef - horizon)
+ *    where yRef is the item's own box bottom (its artist spot keeps its drawn
+ *    size), else the front of the floor. Without it a typical eye level is
+ *    guessed from the floor areas.
+ *  - `surfaceLines` (slot components): [x1, y1, x2, y2] lines along a plank,
+ *    desk or nightstand top, through the middle of its top face. A surface
+ *    item's bottom centre sits ON the line, x free along it.
+ *  - `surfaceAreas` (slot components): polygons a surface item may rest
+ *    anywhere inside (a bed top). Legacy `surfaces` boxes still work.
+ *  - `blocks` (slot components): `{ floor, wall }` polygons the part covers
+ *    while it is in the room (a bed's footprint, a lamp's pole). Removing the
+ *    part frees them. Surface items whose part is removed fall to the floor.
+ *  - Draw order: a floor item's z is ITEM_Z.floor plus a fraction that grows
+ *    with its y (nearer = in front of further back); a surface item takes the
+ *    z of the part it rests on plus a half. Rules live in seilinkPlace.ts.
  */
 
 export const SEILINK_ROOM_FORMAT = 'sei-room' as const;
@@ -73,6 +97,11 @@ export type RoomSlotId =
 export const AVATAR_Z = 100;
 
 export type RoomBox = [x: number, y: number, w: number, h: number];
+export type RoomPoint = [x: number, y: number];
+/** A closed polygon, canvas px, at least 3 points. */
+export type RoomPolygon = RoomPoint[];
+/** A line from (x1, y1) to (x2, y2), canvas px. */
+export type RoomSegment = [x1: number, y1: number, x2: number, y2: number];
 
 export interface RoomFrame {
   /** Path relative to the pack root. */
@@ -102,11 +131,23 @@ export interface RoomComponent {
   frames: Partial<Record<RoomTime, RoomFrame>> & { day: RoomFrame };
   /** Items only: where it may sit. */
   placement?: 'floor' | 'wall' | 'surface';
+  /**
+   * Items only (261105): depth of the soft contact shadow at the bottom of the
+   * sprite, sprite px at scale 1. A floor item keeps this much floor behind
+   * its anchor, so it never stands half up the back wall.
+   */
+  foot?: number;
   /** Only for full-canvas slot art that is smaller than the canvas. */
   box?: RoomBox;
   z?: number;
-  /** Slot components: where surface items may rest (bottom-centre boxes, canvas px). */
+  /** Slot components: where surface items may rest (bottom-centre boxes, canvas px). Legacy; prefer surfaceLines. */
   surfaces?: RoomBox[];
+  /** Slot components: plank / desk tops a surface item's bottom sits on (261105). */
+  surfaceLines?: RoomSegment[];
+  /** Slot components: areas a surface item may rest anywhere inside, e.g. a bed top (261105). */
+  surfaceAreas?: RoomPolygon[];
+  /** Slot components: floor and wall this part covers while it is in the room (261105). */
+  blocks?: { floor?: RoomPolygon[]; wall?: RoomPolygon[] };
   /** Tintable components: colours the editor offers first. */
   swatches?: string[];
 }
@@ -128,8 +169,14 @@ export interface RoomPresetManifest {
   canvas: [w: number, h: number];
   /** Where she sits: bottom center of her body in canvas px, and her height in canvas px. */
   avatar: { x: number; y: number; height: number };
-  /** Floor area items may be placed on (canvas px), for the editor. */
+  /** Floor area items may be placed on (canvas px), for the editor. Legacy; floorAreas wins. */
   floor?: RoomBox;
+  /** Real floor, as polygons following the perspective (261105). */
+  floorAreas?: RoomPolygon[];
+  /** Bare wall where wall items hang (261105). */
+  wallAreas?: RoomPolygon[];
+  /** Eye level, canvas y, for the depth scale of floor items (261105). */
+  horizon?: number;
   slots: Partial<Record<RoomSlotId, RoomSlotDef>>;
   components: RoomComponent[];
   /** Hex colours per time of day for the editor overlay tint (light room, light overlay). */

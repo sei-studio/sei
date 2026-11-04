@@ -2201,6 +2201,7 @@ export const RU: Record<string, string> = {
   "Curtains": "Шторы",
   "Bed": "Кровать",
   "Shelves": "Полки",
+  "Floor": "Пол",
   "Chair": "Стул",
   "Lamp": "Лампа",
   "Rug": "Ковёр",

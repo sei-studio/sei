@@ -13,7 +13,10 @@
  *    preview), undo, save, close;
  *  - in the room: click a part to open its options, click an item to select
  *    it, drag it (it stays on the floor, wall or shelf it belongs to), and
- *    flip, resize, recolour or remove it from the toolbar above it.
+ *    flip, resize, recolour or remove it from the toolbar above it. A drag
+ *    snaps the item's bottom onto real floor, a shelf top or bare wall
+ *    (shared/seilinkPlace.ts) and shows those places faintly
+ *    (PlacementGuide) until it is dropped.
  *
  * Every change is live. Rules (placement, ops, undo) are the pure helpers in
  * shared/seilinkEdit.ts; reads and writes go through a RoomEditorSource
@@ -34,12 +37,12 @@ import {
   type RoomTime,
   ROOM_PRESET_IDS,
 } from '@shared/seilinkRoom';
-import { roomDrawPlan, viewportToCanvas, type ItemLayer, type RoomOverlay, type RoomViewport } from '@shared/seilinkDraw';
+import { frameFor, roomDrawPlan, viewportToCanvas, type ItemLayer, type RoomOverlay, type RoomViewport } from '@shared/seilinkDraw';
+import { placementOf, placementRegions, snapSpot, spriteFit, type PlacementClass } from '@shared/seilinkPlace';
 import { sanitizeRoomState } from '@shared/seilinkValidate';
 import {
   addItem,
   canUndo,
-  clampPlacement,
   clampScale,
   commitEdit,
   createHistory,
@@ -47,8 +50,7 @@ import {
   endGesture,
   flipItem,
   isDirty,
-  ITEM_SCALE_MAX,
-  ITEM_SCALE_MIN,
+  itemScaleRange,
   ITEM_SCALE_STEP,
   markSaved,
   moveItem,
@@ -74,6 +76,7 @@ import { groupSlots, slotGroup, type SlotGroup } from '../../lib/seilink/roomGro
 import { drawRoomLayers, loadPlanAssets } from '../../lib/seilink/roomCompose';
 import { ctx2d } from '../../lib/seilink/roomImages';
 import { RoomAvatar } from './RoomAvatar';
+import { PlacementGuide } from './PlacementGuide';
 import type { EditorAvatarModel, EditorPack, RoomEditorSource } from './roomEditorSource';
 import {
   AutoIcon,
@@ -120,6 +123,13 @@ const SLOT_LABEL: Record<RoomSlotId, string> = {
 };
 
 const GROUP_LABEL = { fabrics: 'Walls & fabrics', furniture: 'Furniture' } as const;
+
+/** Item library groups, by placement class (keys are the English strings). */
+const ITEM_GROUPS: ReadonlyArray<{ cls: PlacementClass; label: string }> = [
+  { cls: 'floor', label: 'Floor' },
+  { cls: 'surface', label: 'Shelves' },
+  { cls: 'wall', label: 'Walls' },
+];
 
 const RAIL_ICON = 22;
 
@@ -237,12 +247,16 @@ function ItemGhost({ pack, item, time, vp }: { pack: EditorPack; item: RoomItemP
   const ref = useRef<HTMLCanvasElement>(null);
   const [rect, setRect] = useState<[number, number, number, number] | null>(null);
   const { manifest, resolve } = pack;
-  const key = `${item.id}:${item.scale ?? 1}:${item.flip ? 1 : 0}:${item.tint ?? ''}:${time}:${vp.scale}`;
+  // The sprite is drawn once per look (scale with depth, rounded); moving only moves the canvas.
+  const plan = useMemo(
+    () => roomDrawPlan(manifest, { ...defaultRoomState(manifest.id), items: [item] }, time, { avatar: false }),
+    [manifest, item, time],
+  );
+  const lay = plan.layers.find((l): l is ItemLayer => l.kind === 'item');
+  const key = `${item.id}:${lay ? lay.scale.toFixed(2) : 1}:${item.flip ? 1 : 0}:${item.tint ?? ''}:${time}:${vp.scale}`;
   useEffect(() => {
     let dead = false;
-    const state: RoomState = { ...defaultRoomState(manifest.id), items: [{ ...item, x: 0, y: 0 }] };
-    const plan = roomDrawPlan(manifest, state, time, { avatar: false });
-    const layer = plan.layers.find((l): l is ItemLayer => l.kind === 'item');
+    const layer = lay && { ...lay, x: 0, y: 0, scale: Math.round(lay.scale * 100) / 100 };
     if (!layer) return;
     void loadPlanAssets({ ...plan, layers: [layer], glows: [] }, resolve).then(({ assets }) => {
       const img = assets.images.get(layer.frame.src);
@@ -351,7 +365,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
   const [selected, setSelected] = useState<number | null>(initial?.selected ?? null);
   const [overlay, setOverlay] = useState<RoomOverlay | null>(null);
   const [vp, setVp] = useState<RoomViewport>({ scale: 0, left: 0, top: 0, width: 0, height: 0 });
-  const [drag, setDrag] = useState<{ index: number; x: number; y: number } | null>(null);
+  const [drag, setDrag] = useState<{ index: number; x: number; y: number; surface: number } | null>(null);
   const [saving, setSaving] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [confirmClose, setConfirmClose] = useState(false);
   const [model, setModel] = useState<EditorAvatarModel | null>(null);
@@ -362,7 +376,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
   const stageRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const pickerRef = useRef(new RoomPicker());
-  const dragRef = useRef<{ index: number; pointerId: number; dx: number; dy: number; sx: number; sy: number; lifted: boolean } | null>(null);
+  const dragRef = useRef<{ index: number; pointerId: number; dx: number; dy: number; sx: number; sy: number; lifted: boolean; surface: number } | null>(null);
   const historyRef = useRef(history);
   historyRef.current = history;
 
@@ -419,6 +433,12 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     setSaving((s) => (s === 'saved' || s === 'error' ? 'idle' : s));
   }, []);
   const endEditGesture = useCallback(() => setHistory((h) => (h ? endGesture(h) : h)), []);
+
+  // Where things can stand in this room (floor, shelf tops, wall), for drags and the guide.
+  const regions = useMemo(() => (manifest && state ? placementRegions(manifest, state) : null), [manifest, state]);
+  /** The sprite size of an item with no box, once its image is loaded (null before: anchor-only checks). */
+  const naturalOf = (c: RoomComponent): [number, number] | null =>
+    c.box || !pack ? null : pickerRef.current.natural(pack.resolve(frameFor(c, time).src));
 
   // What the canvas draws: the dragged item is lifted out (drawn as a ghost) so a drag never rebuilds the room.
   const renderState = useMemo(() => {
@@ -558,7 +578,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
       const it = state.items[hit.index];
       setSelected(hit.index);
       setPanel('items');
-      dragRef.current = { index: hit.index, pointerId: e.pointerId, dx: cx - it.x, dy: cy - it.y, sx: e.clientX, sy: e.clientY, lifted: false };
+      dragRef.current = { index: hit.index, pointerId: e.pointerId, dx: cx - it.x, dy: cy - it.y, sx: e.clientX, sy: e.clientY, lifted: false, surface: -1 };
       e.currentTarget.setPointerCapture(e.pointerId);
       return;
     }
@@ -574,15 +594,17 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
 
   const onStageMove = (e: React.PointerEvent<HTMLDivElement>): void => {
     const d = dragRef.current;
-    if (!d || d.pointerId !== e.pointerId || !manifest || !state) return;
+    if (!d || d.pointerId !== e.pointerId || !manifest || !state || !regions) return;
     if (!d.lifted && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 4) return;
     d.lifted = true;
     const it = state.items[d.index];
     const c = it && manifest.components.find((x) => x.id === it.id);
     if (!c) return;
     const [cx, cy] = pointerCanvas(e);
-    const [x, y] = clampPlacement(manifest, state, c, cx - d.dx, cy - d.dy);
-    setDrag((prev) => (prev && prev.index === d.index && prev.x === x && prev.y === y ? prev : { index: d.index, x, y }));
+    const snap = snapSpot(regions, c, cx - d.dx, cy - d.dy, { fit: spriteFit(regions, c, it.scale ?? 1, naturalOf(c)), prefer: d.surface });
+    d.surface = snap.surface;
+    const { x, y, surface } = snap;
+    setDrag((prev) => (prev && prev.index === d.index && prev.x === x && prev.y === y ? prev : { index: d.index, x, y, surface }));
   };
 
   const onStageUp = (e: React.PointerEvent<HTMLDivElement>): void => {
@@ -591,7 +613,10 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     dragRef.current = null;
     const pos = drag;
     setDrag(null);
-    if (d.lifted && pos && manifest) edit((s) => moveItem(manifest, s, d.index, pos.x, pos.y));
+    if (d.lifted && pos && manifest) {
+      const c = manifest.components.find((x) => x.id === state?.items[d.index]?.id);
+      edit((s) => moveItem(manifest, s, d.index, pos.x, pos.y, { natural: c ? naturalOf(c) : null, prefer: pos.surface }));
+    }
   };
 
   // ── keyboard ──
@@ -630,7 +655,8 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
         e.preventDefault();
         edit((s) => {
           const it = s.items[selected];
-          return it ? moveItem(manifest, s, selected, it.x + mv[0], it.y + mv[1]) : s;
+          const c = it && manifest.components.find((x) => x.id === it.id);
+          return it ? moveItem(manifest, s, selected, it.x + mv[0], it.y + mv[1], { natural: c ? naturalOf(c) : null }) : s;
         }, `nudge:${selected}`);
       }
     };
@@ -670,8 +696,13 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
 
   const byId = new Map(manifest.components.map((c) => [c.id, c]));
   const items = manifest.components.filter((c) => c.slot === 'item');
+  const dragComp = drag && state.items[drag.index] ? byId.get(state.items[drag.index].id) : undefined;
+  // The library groups items by where they go (floor, shelves, wall) when there is more than one kind.
+  const itemGroups = ITEM_GROUPS.map((g) => ({ ...g, items: items.filter((c) => placementOf(c) === g.cls) })).filter((g) => g.items.length);
   const selItem = selected !== null ? state.items[selected] : undefined;
   const selComp = selItem ? byId.get(selItem.id) : undefined;
+  const selNatural = selComp ? naturalOf(selComp) : null;
+  const selRange = selected !== null && selItem ? itemScaleRange(manifest, state, selected, selNatural) : null;
   void pickTick; // re-render when hit maps (and so item rects) are ready
   const selRect =
     selected !== null && !drag ? pickerRef.current.itemRect(manifest, state, time, pack.resolve, selected) : null;
@@ -874,16 +905,21 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
       return (
         <section key="items" className={styles.panel} aria-label={t('Items')}>
           <h2 className={styles.title}>{t('Items')}</h2>
-          <div className={styles.grid}>
-            {items.map((c) => (
-              <button key={c.id} type="button" className={styles.option} title={c.name} aria-label={c.name} onClick={() => addItemById(c.id)}>
-                <PartThumb pack={pack} component={c} tint={c.tintable ? (c.defaultTint ?? null) : null} time="day" />
-                <span className={styles.addBadge}>
-                  <PlusIcon size={12} />
-                </span>
-              </button>
-            ))}
-          </div>
+          {itemGroups.map((g) => (
+            <div key={g.cls} className={styles.itemGroup} role="group" aria-label={itemGroups.length > 1 ? t(g.label) : undefined}>
+              {itemGroups.length > 1 && <h3 className={styles.itemGroupTitle}>{t(g.label)}</h3>}
+              <div className={styles.grid}>
+                {g.items.map((c) => (
+                  <button key={c.id} type="button" className={styles.option} title={c.name} aria-label={c.name} onClick={() => addItemById(c.id)}>
+                    <PartThumb pack={pack} component={c} tint={c.tintable ? (c.defaultTint ?? null) : null} time="day" />
+                    <span className={styles.addBadge}>
+                      <PlusIcon size={12} />
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
         </section>
       );
     }
@@ -914,6 +950,9 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
           onPointerCancel={onStageUp}
         >
           {cssRect && <div className={styles.selection} style={cssRect} />}
+          {drag && regions && dragComp && (
+            <PlacementGuide regions={regions} cls={placementOf(dragComp)} surface={drag.surface} vp={vp} canvas={manifest.canvas} />
+          )}
           {drag && state.items[drag.index] && <ItemGhost pack={pack} item={{ ...state.items[drag.index], x: drag.x, y: drag.y }} time={time} vp={vp} />}
         </div>
         {/* The editor covers the app window, title strip included: keep the
@@ -940,8 +979,8 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
                 className={styles.tool}
                 title={t('Smaller')}
                 aria-label={t('Smaller')}
-                disabled={clampScale(selItem.scale ?? 1) <= ITEM_SCALE_MIN}
-                onClick={() => edit((s) => scaleItem(s, selected, (selItem.scale ?? 1) - ITEM_SCALE_STEP))}
+                disabled={!selRange || clampScale(selItem.scale ?? 1, selRange) <= selRange[0]}
+                onClick={() => edit((s) => scaleItem(s, selected, (selItem.scale ?? 1) - ITEM_SCALE_STEP, manifest, selNatural))}
               >
                 <MinusIcon />
               </button>
@@ -950,8 +989,8 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
                 className={styles.tool}
                 title={t('Larger')}
                 aria-label={t('Larger')}
-                disabled={clampScale(selItem.scale ?? 1) >= ITEM_SCALE_MAX}
-                onClick={() => edit((s) => scaleItem(s, selected, (selItem.scale ?? 1) + ITEM_SCALE_STEP))}
+                disabled={!selRange || clampScale(selItem.scale ?? 1, selRange) >= selRange[1]}
+                onClick={() => edit((s) => scaleItem(s, selected, (selItem.scale ?? 1) + ITEM_SCALE_STEP, manifest, selNatural))}
               >
                 <PlusIcon />
               </button>
@@ -992,7 +1031,8 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
           </div>
         )}
 
-        <div className={styles.side}>
+        {/* While an item is dragged the side panel fades away, so the shelves under it show. */}
+        <div className={drag ? `${styles.side} ${styles.sideAway}` : styles.side}>
           <nav className={panel ? `${styles.rail} ${styles.railOpen}` : styles.rail} aria-label={t('Room')}>
             {tile('avatar', t('Avatar'), <PersonIcon size={RAIL_ICON} />)}
             {tile('room', t('Room'), <HouseIcon size={RAIL_ICON} />)}

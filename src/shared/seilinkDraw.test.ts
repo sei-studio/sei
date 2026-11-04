@@ -145,7 +145,8 @@ describe('seilink validation', () => {
     });
     expect(s.time).toBe('night');
     expect(s.slots).toEqual({ curtains: { id: 'curtains-plain', tint: '#2f6fd6' }, lamp: { id: null } });
-    expect(s.items).toEqual([{ id: 'plant', x: 1, y: 2 }]);
+    // Kept, and settled onto the floor (an item never floats on the wall): 0.78 of the canvas height.
+    expect(s.items).toEqual([{ id: 'plant', x: 1, y: 842 }]);
     expect(s.avatar).toEqual({ kind: 'live2d', modelPath: 'abc' });
     expect(sanitizeRoomState(manifest, { preset: 'gamer' })).toEqual(defaultRoomState('cozy'));
     expect(sanitizeRoomState(manifest, 'junk')).toEqual(defaultRoomState('cozy'));

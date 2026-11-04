@@ -3,21 +3,12 @@
   "version": 1,
   "id": "cozy",
   "place": "your bedroom",
-  "canvas": [
-    2560,
-    1440
-  ],
+  "canvas": [2560, 1440],
   "avatar": {
     "x": 1300,
     "y": 1440,
     "height": 720
   },
-  "floor": [
-    1720,
-    1250,
-    840,
-    190
-  ],
   "slots": {
     "view": {
       "z": 0,
@@ -80,12 +71,7 @@
       "id": "view_city",
       "slot": "view",
       "name": "city skyline",
-      "box": [
-        1341,
-        16,
-        1219,
-        1292
-      ],
+      "box": [1341, 16, 1219, 1292],
       "frames": {
         "day": {
           "src": "view_city_day.webp"
@@ -102,12 +88,7 @@
       "id": "view_forest",
       "slot": "view",
       "name": "forest valley",
-      "box": [
-        1341,
-        16,
-        1219,
-        1292
-      ],
+      "box": [1341, 16, 1219, 1292],
       "frames": {
         "day": {
           "src": "view_forest_day.webp"
@@ -124,12 +105,7 @@
       "id": "view_sea",
       "slot": "view",
       "name": "seaside town",
-      "box": [
-        1341,
-        16,
-        1219,
-        1292
-      ],
+      "box": [1341, 16, 1219, 1292],
       "frames": {
         "day": {
           "src": "view_sea_day.webp"
@@ -204,6 +180,15 @@
           "src": "curtains_night.webp",
           "mask": "curtains_mask.webp"
         }
+      },
+      "blocks": {
+        "floor": [
+          [[2168, 1280], [2560, 1280], [2560, 1420], [2500, 1401], [2400, 1406], [2300, 1394], [2250, 1364], [2200, 1374], [2168, 1366]]
+        ],
+        "wall": [
+          [[1085, 40], [1470, 40], [1470, 800], [1085, 800]],
+          [[2165, 0], [2560, 0], [2560, 1420], [2165, 1420]]
+        ]
       }
     },
     {
@@ -220,6 +205,14 @@
         "night": {
           "src": "shelf_night.webp"
         }
+      },
+      "surfaceLines": [[0, 236, 524, 337], [0, 421, 524, 480], [0, 604, 524, 623]],
+      "blocks": {
+        "wall": [
+          [[0, 227], [530, 322], [530, 354], [0, 277]],
+          [[0, 408], [530, 466], [530, 496], [0, 451]],
+          [[0, 588], [530, 609], [530, 639], [0, 626]]
+        ]
       }
     },
     {
@@ -241,6 +234,17 @@
           "src": "bed_night.webp",
           "mask": "bed_mask.webp"
         }
+      },
+      "surfaceAreas": [
+        [[230, 985], [700, 975], [748, 1022], [480, 1024], [240, 1030]]
+      ],
+      "blocks": {
+        "floor": [
+          [[0, 1080], [895, 1080], [895, 1208], [834, 1208], [834, 1148], [800, 1155], [700, 1182], [600, 1211], [500, 1241], [400, 1271], [300, 1306], [200, 1330], [96, 1360], [96, 1480], [0, 1480]]
+        ],
+        "wall": [
+          [[0, 970], [200, 956], [300, 934], [400, 884], [446, 820], [892, 826], [897, 1214], [0, 1260]]
+        ]
       }
     },
     {
@@ -259,6 +263,14 @@
           "src": "lamp_night.webp",
           "glow": "lamp_glow_night.webp"
         }
+      },
+      "blocks": {
+        "floor": [
+          [[834, 1140], [915, 1140], [915, 1262], [834, 1262]]
+        ],
+        "wall": [
+          [[770, 460], [946, 460], [946, 1135], [910, 1262], [834, 1262], [834, 655], [770, 655]]
+        ]
       }
     },
     {
@@ -275,6 +287,14 @@
         "night": {
           "src": "chair_night.webp"
         }
+      },
+      "blocks": {
+        "floor": [
+          [[878, 1140], [1724, 1140], [1724, 1200], [1706, 1250], [1664, 1300], [1658, 1350], [1654, 1480], [953, 1480], [949, 1350], [943, 1300], [901, 1250], [878, 1200]]
+        ],
+        "wall": [
+          [[876, 1150], [948, 1100], [998, 1076], [1046, 772], [1300, 762], [1556, 772], [1604, 1076], [1652, 1100], [1726, 1160], [1726, 1260], [1656, 1440], [948, 1440]]
+        ]
       }
     },
     {
@@ -282,13 +302,7 @@
       "slot": "item",
       "name": "green banker's lamp",
       "placement": "surface",
-      "box": [
-        153,
-        443,
-        274,
-        175
-      ],
-      "z": 45,
+      "box": [153, 449, 274, 175],
       "frames": {
         "day": {
           "src": "item_desk_lamp_day.webp"
@@ -301,20 +315,15 @@
           "src": "item_desk_lamp_night.webp",
           "glow": "item_desk_lamp_glow_night.webp"
         }
-      }
+      },
+      "foot": 9
     },
     {
       "id": "books",
       "slot": "item",
       "name": "stack of books",
       "placement": "surface",
-      "box": [
-        527,
-        891,
-        166,
-        127
-      ],
-      "z": 55,
+      "box": [527, 891, 166, 127],
       "frames": {
         "day": {
           "src": "item_books_day.webp"
@@ -325,20 +334,15 @@
         "night": {
           "src": "item_books_night.webp"
         }
-      }
+      },
+      "foot": 14
     },
     {
       "id": "succulent",
       "slot": "item",
       "name": "little succulent",
       "placement": "surface",
-      "box": [
-        346,
-        361,
-        88,
-        103
-      ],
-      "z": 45,
+      "box": [346, 368, 88, 103],
       "frames": {
         "day": {
           "src": "item_succulent_day.webp"
@@ -349,20 +353,15 @@
         "night": {
           "src": "item_succulent_night.webp"
         }
-      }
+      },
+      "foot": 6
     },
     {
       "id": "monstera",
       "slot": "item",
       "name": "potted monstera plant",
       "placement": "floor",
-      "box": [
-        1767,
-        881,
-        416,
-        583
-      ],
-      "z": 85,
+      "box": [1767, 881, 416, 583],
       "frames": {
         "day": {
           "src": "item_monstera_day.webp"
@@ -373,20 +372,15 @@
         "night": {
           "src": "item_monstera_night.webp"
         }
-      }
+      },
+      "foot": 36
     },
     {
       "id": "cushion",
       "slot": "item",
       "name": "floor cushion",
       "placement": "floor",
-      "box": [
-        2052,
-        1236,
-        346,
-        228
-      ],
-      "z": 85,
+      "box": [2052, 1236, 346, 228],
       "frames": {
         "day": {
           "src": "item_cushion_day.webp",
@@ -402,12 +396,22 @@
         }
       },
       "tintable": true,
-      "defaultTint": "#E3A9A6"
+      "defaultTint": "#E3A9A6",
+      "foot": 30
     }
   ],
   "overlay": {
     "day": "#FFF7EC",
     "dusk": "#F6DCE4",
     "night": "#25304F"
-  }
+  },
+  "horizon": 705,
+  "floorAreas": [
+    [[0, 1246], [465, 1146], [1300, 1240], [2560, 1390], [2560, 1470], [0, 1470]]
+  ],
+  "wallAreas": [
+    [[0, 18], [463, 150], [463, 1114], [0, 1214]],
+    [[467, 150], [1298, 16], [1298, 1203], [467, 1114]],
+    [[2476, 0], [2560, 0], [2560, 1342], [2476, 1334]]
+  ]
 }

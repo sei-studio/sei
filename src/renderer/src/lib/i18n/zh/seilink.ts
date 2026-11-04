@@ -21,6 +21,7 @@ export const ZH_SEILINK: Record<string, string> = {
   "Curtains": "窗帘",
   "Bed": "床",
   "Shelves": "架子",
+  "Floor": "地面",
   "Chair": "椅子",
   "Lamp": "灯",
   "Rug": "地毯",

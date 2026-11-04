@@ -38,6 +38,7 @@ import { RoomCanvas } from './RoomCanvas';
 import { clearRoomImageCache } from '../../lib/seilink/roomImages';
 import { RoomEditor } from './RoomEditor';
 import { addItem } from '@shared/seilinkEdit';
+import { settleItems } from '@shared/seilinkPlace';
 import { memoryRoomEditorSource, type EditorPack, type RoomEditorSource } from './roomEditorSource';
 import { useLangStore, type UiLanguage } from '../../lib/i18n';
 import { RoomAvatar, type RoomAvatarKind, type RoomAvatarUse } from './RoomAvatar';
@@ -72,7 +73,8 @@ function initialState(manifest: RoomPresetManifest): RoomState {
     const slot = k.slice(5) as RoomSlotId;
     if (manifest.slots[slot] && /^[0-9a-f]{6}$/i.test(v)) s.slots[slot] = { id: manifest.slots[slot]!.options[0], tint: `#${v.toLowerCase()}` };
   }
-  if (params.get('items') === '1') s.items = sampleItems(manifest);
+  // Settled onto the pack's floor, walls and shelves where it labels them.
+  if (params.get('items') === '1') s.items = settleItems(manifest, { ...s, items: sampleItems(manifest) }).items;
   return s;
 }
 

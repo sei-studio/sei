@@ -2201,6 +2201,7 @@ export const PT_BR: Record<string, string> = {
   "Curtains": "Cortinas",
   "Bed": "Cama",
   "Shelves": "Prateleiras",
+  "Floor": "Chão",
   "Chair": "Cadeira",
   "Lamp": "Luminária",
   "Rug": "Tapete",

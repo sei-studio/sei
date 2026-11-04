@@ -104,8 +104,42 @@ const SHOTS = {
   ],
   'retint-ref': ['time=day&items=1&panel=curtains&tint.curtains=7a4fc2'],
   'lang-ja': ['time=dusk&items=1&panel=room&lang=ja'],
+  // Physics-aware placement (261105), in cozy canvas px. Items with items=1 are
+  // the pack's own, in manifest order: desk_lamp 0, books 1, succulent 2, monstera 3, cushion 4.
+  // Books held between the shelves: the shelf tops show, the one they would land on brighter.
+  'place-drag': ['time=day&items=1', async (page) => dragRoom(page, [610, 950], [360, 250], { release: false })],
+  // Books dropped on the top shelf, clear of the rail.
+  'place-books-shelf': ['time=day&items=1', async (page) => dragRoom(page, [610, 950], [360, 250])],
+  // The monstera held up on the back wall: the floor shows (minus the bed, lamp and chair), the plant drops onto it.
+  'place-drag-floor': ['time=day&items=1', async (page) => dragRoom(page, [1975, 1350], [2050, 1000], { release: false })],
+  // The monstera at the back of the floor (smaller) and at the front, by the bed.
+  'place-plant-back': ['time=day&items=1', async (page) => dragRoom(page, [1975, 1350], [2050, 1000])],
+  'place-plant-front': ['time=day&items=1', async (page) => dragRoom(page, [1975, 1350], [600, 1310])],
 };
+
+/** Room canvas px to page px (the room's canvases fill its scene box). */
+async function roomToPage(page, [cx, cy]) {
+  const box = await page.locator('[data-room-editor] canvas').first().boundingBox();
+  const [w, h] = ROOM_CANVAS;
+  return [box.x + (cx * box.width) / w, box.y + (cy * box.height) / h];
+}
+
+/** Grab the room at `from` and drag to `to` (canvas px); drop it unless release is false (then Escape lets go of the selection and closes the panel, so the room shows whole). */
+async function dragRoom(page, from, to, { release = true } = {}) {
+  const [sx, sy] = await roomToPage(page, from);
+  const [tx, ty] = await roomToPage(page, to);
+  await page.mouse.move(sx, sy);
+  await page.mouse.down();
+  for (let i = 1; i <= 12; i++) await page.mouse.move(sx + ((tx - sx) * i) / 12, sy + ((ty - sy) * i) / 12);
+  await page.waitForTimeout(400);
+  if (!release) return;
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+}
 const names = arg('shots', Object.keys(SHOTS).join(',')).split(',');
+let ROOM_CANVAS = [2560, 1440];
 
 function packServer(root) {
   return new Promise((resolve) => {
@@ -222,6 +256,7 @@ async function main() {
   const found = fs.readdirSync(PACKS).filter((d) => fs.existsSync(path.join(PACKS, d, 'manifest.json')));
   const order = arg('presets', '').split(',').filter((p) => found.includes(p));
   const presets = [...order, ...found.filter((p) => !order.includes(p))];
+  ROOM_CANVAS = JSON.parse(fs.readFileSync(path.join(PACKS, presets[0], 'manifest.json'), 'utf8')).canvas ?? ROOM_CANVAS;
   const packs = await packServer(PACKS);
   const vite = await createServer({
     configFile: false,
