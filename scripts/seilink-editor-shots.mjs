@@ -122,9 +122,17 @@ const SHOTS = {
   // at x 300 runs from its back edge (y 445) to the front of its top face (y 468).
   // Held a little above the middle plank: its whole top glows as a band, the lip over the books.
   'shelf-drag-band': ['time=day&items=1', async (page) => dragRoom(page, [610, 950], [300, 382], { release: false }), [0, 160, 720, 520]],
-  // Dropped at the back of the band, and at its front (tucked behind the lip).
+  // Dropped at the back of the band, and below its front edge (lands at the front, tucked behind the lip).
   'shelf-books-back': ['time=day&items=1', async (page) => dragRoom(page, [610, 950], [300, 392]), [170, 340, 300, 170]],
-  'shelf-books-front': ['time=day&items=1', async (page) => dragRoom(page, [610, 950], [300, 412]), [170, 340, 300, 170]],
+  'shelf-books-front': ['time=day&items=1', async (page) => dragRoom(page, [610, 950], [300, 430]), [170, 340, 300, 170]],
+  // The same on the top plank (back edge ~285 at x 300, front of its top face ~307).
+  'top-books-back': ['time=day&items=1', async (page) => dragRoom(page, [610, 950], [300, 232]), [170, 160, 300, 200]],
+  'top-books-front': ['time=day&items=1', async (page) => dragRoom(page, [610, 950], [300, 270]), [170, 160, 300, 200]],
+  // Held below the middle plank's front edge, not dropped: the ghost is cut at the lip as it will sit.
+  'shelf-drag-front': ['time=day&items=1', async (page) => dragRoom(page, [610, 950], [300, 430], { release: false }), [170, 340, 300, 170]],
+  // The succulent where the pack puts it (middle plank), and pulled to that plank's front (grabbed 41 px above its anchor).
+  'shelf-succulent': ['time=day&items=1', null, [300, 350, 200, 150]],
+  'shelf-succulent-front': ['time=day&items=1', async (page) => dragRoom(page, [390, 430], [330, 445]), [240, 350, 200, 150]],
   // Dropped 34 px above the plank's back edge: it still lands on that plank.
   'shelf-drop-above': ['time=day&items=1', async (page) => dragRoom(page, [610, 950], [300, 357]), [0, 160, 720, 520]],
   // 36 px past the middle plank's right end (x 524): it lands on that plank, kept in from the end.
@@ -133,8 +141,15 @@ const SHOTS = {
   'bed-books': ['time=day&items=1', null, [470, 860, 300, 190]],
   // Run with --presets gamer: the energy can from the middle plank onto the top plank (grabbed 52 px above its anchor).
   'gamer-shelf': ['time=day&items=1', async (page) => dragRoom(page, [380, 410], [420, 270]), [0, 150, 620, 520]],
+  // Run with --presets gamer: the can dropped below the top plank's front edge (lands at its front).
+  'gamer-can-front': ['time=day&items=1', async (page) => dragRoom(page, [380, 410], [420, 292]), [300, 180, 220, 180]],
   // Run with --presets forest: the mug from the left of the log to its right end (grabbed 28 px above its anchor).
   'forest-log': ['time=day&items=1', async (page) => dragRoom(page, [880, 1030], [1800, 1241]), [1450, 1000, 760, 440]],
+  // The mug at the back and the front of the log's left ridge (no lip: the bark rolls away, nothing to tuck behind).
+  'forest-log-back': ['time=day&items=1', async (page) => dragRoom(page, [880, 1030], [980, 1020]), [880, 980, 220, 160]],
+  'forest-log-front': ['time=day&items=1', async (page) => dragRoom(page, [880, 1030], [980, 1075]), [880, 980, 220, 160]],
+  // Run with --presets forest: the tent's slot (bed) opens Walls & fabrics there (slots.bed.group).
+  'forest-tent': ['time=day&items=1&panel=bed'],
   'bed-succulent': ['time=day&items=1', async (page) => dragRoom(page, [390, 430], [330, 965]), [220, 880, 520, 170]],
 };
 

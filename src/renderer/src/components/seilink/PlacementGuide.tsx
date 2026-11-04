@@ -71,7 +71,7 @@ export function PlacementGuide({
             </filter>
           </defs>
           <polygon
-            points={pts((regions.surfaces[surface] as { poly: RoomPolygon }).poly)}
+            points={pts((regions.surfaces[surface] as { face: RoomPolygon }).face)}
             fill="rgb(255 255 255 / 0.18)"
             stroke="rgb(255 255 255 / 0.55)"
             strokeWidth={6 * px}
@@ -97,7 +97,7 @@ export function PlacementGuide({
           ) : (
             <polygon
               key={i}
-              points={pts(s.poly)}
+              points={pts(s.face)}
               fill={i === surface ? 'rgb(255 255 255 / 0.3)' : 'rgb(255 255 255 / 0.2)'}
               stroke={i === surface ? 'rgb(255 255 255 / 0.7)' : 'none'}
               strokeWidth={1.5 * px}

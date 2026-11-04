@@ -4,12 +4,14 @@
  * both are checked before anything draws or path-joins them. Pure.
  */
 import {
+  ROOM_EDITOR_GROUPS,
   ROOM_PRESET_IDS,
   ROOM_TIMES,
   SEILINK_ROOM_FORMAT,
   SEILINK_ROOM_VERSION,
   defaultRoomState,
   type RoomComponent,
+  type RoomEditorGroup,
   type RoomFrame,
   type RoomPolygon,
   type RoomSurfaceTop,
@@ -196,6 +198,7 @@ export function parseRoomManifest(raw: unknown): RoomPresetManifest | null {
     if (options.length !== d.options.length) return null;
     const def: RoomSlotDef = { z: d.z, options };
     if (d.optional === true) def.optional = true;
+    if ((ROOM_EDITOR_GROUPS as readonly unknown[]).includes(d.group)) def.group = d.group as RoomEditorGroup;
     slots[k as RoomSlotId] = def;
   }
   const out: RoomPresetManifest = {

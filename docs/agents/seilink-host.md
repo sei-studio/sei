@@ -314,6 +314,19 @@ and thumbnails all use the same plan).
   one part are ranked by height and get stacked z bands. Lip layers are baked
   into the renderer's cached composites (no per-frame cost) and have no glow
   of their own; the picker ignores a lip outside its polygon.
+- Tuck (261105, Shawn: "the items are in front of shelf, put shelf in
+  front"): an item's opaque base ends about 4 px (sprite px) above its
+  contact, so an item at the front of a top used to end exactly on the
+  plank's front edge and read as perched in front of it. Now a lipped top's
+  contact may reach `LIP_TUCK` (5 canvas px) into the lip (`AreaSurface.poly`
+  is the traced `face` stretched forward, back edge fixed), and every item
+  on a lipped top is cut to above the lip's top edge minus `KEEP_LIFT`
+  (`ItemLayer.clip` = `AreaSurface.keep`, from `lipKeep`), so the plank's
+  front outline always draws over its base and nothing shows on the front
+  face or under a thin plank. The renderer (`roomCompose`), look()
+  (`keepInside`), the picker and the drag ghost (CSS `clip-path` on the
+  sprite, lift shadow on its wrapper) all apply the cut. Only the lip's TOP
+  edge matters for the cut; the guide still glows the traced face.
 - `sink` (canvas px, a bed or a cushion): items on it are drawn `sink x
   scale` lower, their base fading out just under the contact, with a soft
   contact shadow as wide as the base (`sinkLook`, `contactShadow`,
@@ -321,7 +334,7 @@ and thumbnails all use the same plan).
   `cutToPolygons` for lips).
 - Labelling: `scripts/seilink-region-overlay.mjs --bands <part>` measures
   plank tops and lips from the art and prints `surfaceTops` for a draft;
-  logs, stumps and beds are traced by hand with `--grid 25 --crop`; the
+  logs and beds are traced by hand with `--grid 25 --crop`; the
   overlay draws tops (orange), lips (cyan hatch) and `sink N`; `--merge`
   writes the draft into the manifest. The editor's drag guide glows the top
   under the pointer and draws the lip over the drag ghost.
@@ -329,13 +342,19 @@ and thumbnails all use the same plan).
   shell (`--without bed,chair,...`) and every part blocks its own silhouette,
   so removing an optional part frees its spot. Gamer's black planks need
   `--bands black_wall_shelves --dark 60`; its bed top and forest's log ridges
-  and stump ellipse are hand traced. Forest has no wall (a poster on the tree
+  are hand traced. Forest has no wall (a poster on the tree
   read wrong); its horizon is 300, not the distant hills, because the art's
   props barely shrink with depth (a far backpack ends up about half size,
   which matches the campfire ring's foreshortening). The log also blocks the
   ground behind Sei's seat (x 1040-1560): items there vanished behind her.
-  The stump top sits behind the default Sei's head; it is labelled for
-  other avatars. Item `foot` = the sprite's first opaque row minus 3 (the
+  Editor panels: a slot's panel comes from its id (`roomGroups.ts`) unless
+  the pack names one (`slots.<id>.group`: room, fabrics or furniture).
+  Forest's tent (bed slot) and log blanket (chair slot) are only recoloured,
+  so they set `group: "fabrics"` (Shawn msg 1580: recolour or repattern only
+  = Walls & fabrics, standalone pieces = Furniture).
+  The tree stump has no top (261105): it sits behind Sei's head, so decor
+  placed there never showed; a room saved with an item on it settles onto
+  the log. Item `foot` = the sprite's first opaque row minus 3 (the
   cozy convention).
 
 ## Gotchas
