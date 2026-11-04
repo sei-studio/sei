@@ -307,7 +307,7 @@ function ItemGhost({
         height: rect[3] * vp.scale,
       }
     : { visibility: 'hidden' };
-  // On a lipped top the sprite is cut at the lip's top edge; the wrapper's lift shadow follows the cut sprite.
+  // On a lipped top the sprite is cut at the plank's bottom edge (LipGhost draws the plank over the rest); the wrapper's lift shadow follows the cut sprite.
   const cut = rect && lay?.clip?.length ? ghostClip(lay.clip[0], item.x + rect[0], item.y + rect[1], rect[2], rect[3], vp.scale) : undefined;
   return (
     <div className={styles.ghost} style={style}>

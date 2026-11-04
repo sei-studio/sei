@@ -15,10 +15,11 @@
  *  - a surface top with a `lip` (261105 shelf pass) that has items on it
  *    adds one more slot layer: its part's frame cut to the lip polygon
  *    (`clip`), at the top of that top's z slice, so it covers the base of
- *    the items on it and nothing else (seilinkPlace.ts has the slices); the
- *    items on it are themselves cut to above the lip's top edge (their
- *    `clip`), so nothing of them shows on the front face or under a thin
- *    plank;
+ *    the items on it and nothing else (seilinkPlace.ts has the slices). The
+ *    lip is the whole visible plank below its top face, so the plank's
+ *    front, end and underside all draw over an item tucked behind it; the
+ *    items on it are themselves cut to above the plank's bottom edge (their
+ *    `clip`), so nothing of them shows under a thin plank;
  *  - an item on a soft top (`sink`) carries how its base settles in
  *    (ItemLayer.sink): the renderers draw it a little lower, fade its base
  *    out just under the top's surface and lay a soft contact shadow under
@@ -89,8 +90,8 @@ export interface ItemLayer {
   sink?: { depth: number; foot: number } | null;
   /**
    * Draw only inside these polygons, canvas px: on a top with a lip, the
-   * region above the lip's top edge (AreaSurface.keep), so the plank's front
-   * face always hides the item's base. Absent = all of it.
+   * region above the plank's bottom edge (AreaSurface.keep); the lip drawn
+   * over the item hides the rest of its base. Absent = all of it.
    */
   clip?: RoomPolygon[];
 }

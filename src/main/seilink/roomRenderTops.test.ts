@@ -1,12 +1,13 @@
 /** look()'s shelf-lip cut and soft-top sink (261105 shelf pass). */
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { ItemLayer } from '../../shared/seilinkDraw';
-import { LIP_TUCK } from '../../shared/seilinkPlace';
+import { bottomEdge, LIP_TUCK, topEdge } from '../../shared/seilinkPlace';
 import { defaultRoomState, type RoomComponent, type RoomPresetManifest } from '../../shared/seilinkRoom';
+import { parseRoomManifest } from '../../shared/seilinkValidate';
 import { cutToPolygons, keepInside, renderRoomImage, sinkItem } from './roomRender';
 
 const solid = (w: number, h: number): Buffer => Buffer.alloc(w * h * 4, 255);
@@ -140,8 +141,10 @@ describe('look() over a shelf', () => {
           { id: 'box', slot: 'item', name: 'box', placement: 'surface', foot: 10, box: [0, 0, 40, 40], frames: { day: { src: 'box.png' } } },
         ],
       };
-      // At the very front of the top: contact LIP_TUCK into the lip, the sprite's bottom 7 px under the plank.
+      // At the very front of the top: contact LIP_TUCK past the traced face, deeper than this
+      // thin plank is thick, so the sprite's bottom ends well under the plank.
       const y = 52 + LIP_TUCK + 10;
+      expect(y).toBeGreaterThan(62);
       const state = { ...defaultRoomState('cozy'), time: 'day' as const, items: [{ id: 'box', x: 100, y }] };
       const img = await renderRoomImage({ manifest, state, packDir: dir }, { width: W, quality: 100 });
       const { data, info } = await sharp(img.data).raw().toBuffer({ resolveWithObject: true });
@@ -149,9 +152,11 @@ describe('look() over a shelf', () => {
         const i = (py * info.width + x) * info.channels;
         return [data[i], data[i + 1], data[i + 2]];
       };
-      // The box above the plank's front edge.
-      expect(px(100, 30)[2]).toBeGreaterThan(200);
-      expect(px(100, 30)[0]).toBeLessThan(60);
+      // The box above the plank's front edge, over the top face too.
+      for (const fy of [y - 36, 42, 46]) {
+        expect(px(100, fy)[2], `y ${fy}`).toBeGreaterThan(200);
+        expect(px(100, fy)[0], `y ${fy}`).toBeLessThan(60);
+      }
       // The front face is red all along under the box: the lip is drawn over it.
       for (const fy of [51, 55, 58]) {
         const [r, g, b] = px(100, fy);
@@ -165,6 +170,67 @@ describe('look() over a shelf', () => {
       }
     } finally {
       await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('the bundled shelf lips (261105 plank pass)', () => {
+  // Shawn: "select the entire visible plank (both the side and under part) and put it on top of
+  // the object". Each lip is traced from the art: everything of the plank below its top face.
+  it.each([
+    ['cozy', 'floating_shelves'],
+    ['gamer', 'black_wall_shelves'],
+  ])('%s: every lip is the whole plank below its top face, and nothing past it', async (pack, id) => {
+    const req = createRequire(import.meta.url);
+    const sharp = req(req.resolve('sharp', { paths: [path.dirname(req.resolve('img2skin/package.json'))] })) as (input?: unknown) => {
+      ensureAlpha(): { raw(): { toBuffer(o: { resolveWithObject: true }): Promise<{ data: Buffer; info: { width: number; height: number; channels: number } }> } };
+    };
+    const dir = path.resolve(__dirname, `../../../resources/seilink-packs/${pack}`);
+    const manifest = parseRoomManifest(JSON.parse(await readFile(path.join(dir, 'manifest.json'), 'utf8')))!;
+    const shelf = manifest.components.find((c) => c.id === id)!;
+    const { data, info } = await sharp(path.join(dir, shelf.frames.day.src)).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const alpha = (x: number, y: number): number => data[(y * info.width + x) * info.channels + 3];
+    const at = (edge: Array<[number, number]>, x: number): number => {
+      for (let i = 1; i < edge.length; i++) {
+        const [x1, y1] = edge[i - 1];
+        const [x2, y2] = edge[i];
+        if (x >= x1 && x <= x2 && x2 > x1) return y1 + ((x - x1) * (y2 - y1)) / (x2 - x1);
+      }
+      return NaN;
+    };
+    const tops = shelf.surfaceTops!;
+    expect(tops).toHaveLength(3);
+    for (const [k, t] of tops.entries()) {
+      const lip = t.lip!;
+      expect(lip, `plank ${k} parsed`).toBeTruthy();
+      const top = topEdge(lip);
+      const bottom = bottomEdge(lip);
+      const faceStart = Math.min(...t.area.map((p) => p[0]));
+      const lx = Math.min(...lip.map((p) => p[0]));
+      const lw = Math.max(...lip.map((p) => p[0])) - lx;
+      // The end face is part of it: at the plank's end the lip reaches the plank's top.
+      expect(faceStart, `plank ${k} end face`).toBeGreaterThan(10);
+      let cols = 0;
+      let bad = 0;
+      for (let x = Math.max(0, Math.ceil(lx)) + 1; x < lx + lw - 2; x += 3) {
+        const cx = x + 0.5;
+        const y0 = at(top, cx);
+        const y1 = at(bottom, cx);
+        if (!Number.isFinite(y0) || !Number.isFinite(y1)) continue;
+        cols++;
+        let ok = true;
+        // Inside (1 px clear of its edges): all plank, no wall or shadow drawn twice.
+        for (let y = Math.ceil(y0 + 1); y < y1 - 1; y++) if (alpha(x, y) < 200) ok = false;
+        // Just under it: no plank left out (the soft shadow is faint).
+        for (let y = Math.ceil(y1 + 1); y < y1 + 4; y++) if (alpha(x, y) >= 200) ok = false;
+        // At the end face the lip starts at the plank's top, else at the top face's front.
+        if (x < faceStart - 1 && alpha(x, Math.floor(y0 - 1.5)) >= 128) ok = false;
+        if (x > faceStart + 1 && alpha(x, Math.floor(y0 - 2)) < 200) ok = false;
+        if (!ok) bad++;
+      }
+      expect(cols, `plank ${k}`).toBeGreaterThan(150);
+      // A bracket pin or two may break a column.
+      expect(bad / cols, `plank ${k}: ${bad} of ${cols} columns off`).toBeLessThan(0.03);
     }
   });
 });
