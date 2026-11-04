@@ -80,7 +80,7 @@ export type { OsPermissionKind, OsPermissionStatus, PermissionResume } from './p
 import type { McDashboardSnapshot, McDashboardSnapshotPush } from './mcDashboardIpc';
 import type { GameId, WorldState, WorldStates, GameDashboardSnapshot } from './gameIpc';
 import type { HomeNextStep } from './homeNextStep';
-import { StardewIpcChannel, type StardewInstallState, type StardewInstallProgressEvent, type StardewLaunchResult } from './stardewIpc';
+import { StardewIpcChannel, type StardewChooseFolderResult, type StardewGameRunning, type StardewInstallState, type StardewInstallProgressEvent, type StardewLaunchResult } from './stardewIpc';
 import { GameIpcChannel } from './gameIpc';
 export type { GameId, WorldState, WorldStates, GameDashboardSnapshot } from './gameIpc';
 import type { GamePackProgressPush, GamePackState } from './gamePacks';
@@ -2465,6 +2465,14 @@ export interface RendererApi {
   stardewInstall(): Promise<StardewInstallState>;
   /** Start the game through SMAPI (no-op with a message when it is already running). */
   stardewLaunch(): Promise<StardewLaunchResult>;
+  /**
+   * 261104: pick the game folder when the scan found none. Validated by the
+   * game files being present (an Xbox `XboxGames\Stardew Valley` pick
+   * resolves to its Content folder), saved, then a fresh detection.
+   */
+  stardewChooseFolder?(): Promise<StardewChooseFolderResult>;
+  /** 261104: is the game running, and through SMAPI? (the "mod never answered" hint). */
+  stardewGameRunning?(): Promise<StardewGameRunning>;
   onStardewInstallProgress(cb: (ev: StardewInstallProgressEvent) => void): Unsubscribe;
   /**
    * 260725 play/pause: freeze/resume the in-game brain. Paused: no game LLM

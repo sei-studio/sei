@@ -312,6 +312,8 @@ const api: RendererApi = {
   stardewInstallState: () => ipcRenderer.invoke(IpcChannel.stardew.installState),
   stardewInstall: () => ipcRenderer.invoke(IpcChannel.stardew.install),
   stardewLaunch: () => ipcRenderer.invoke(IpcChannel.stardew.launch),
+  stardewChooseFolder: () => ipcRenderer.invoke(IpcChannel.stardew.chooseFolder),
+  stardewGameRunning: () => ipcRenderer.invoke(IpcChannel.stardew.gameRunning),
   onStardewInstallProgress(cb) {
     const handler = (_e: Electron.IpcRendererEvent, ev: Parameters<typeof cb>[0]) => cb(ev);
     ipcRenderer.on(IpcChannel.stardew.installProgress, handler);

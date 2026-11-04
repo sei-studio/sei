@@ -40,15 +40,18 @@ import {
   SMAPI_INSTALLER_ORIGIN_URL,
   SMAPI_VERSION,
   STARDEW_DEFAULT_PORT,
+  STARDEW_MIN_GAME_VERSION,
   STARDEW_MOD_FOLDER,
   STARDEW_MOD_PACK_PATH,
   StardewModConfigSchema,
   type StardewInstallProgressEvent,
+  type StardewChooseFolderResult,
+  type StardewGameFolderType,
   type StardewInstallState,
   type StardewModConfig,
 } from '../../../shared/stardewIpc';
 import { DL_MIRROR_BASE, MIRROR_CONNECT_TIMEOUT_MS } from '../../speech/mirrors';
-import { packModIsNewer } from '../modVersion';
+import { compareModVersions, packModIsNewer } from '../modVersion';
 import { trackSetupStep, type SetupSink } from '../../setupTelemetry';
 import { classifyFailReason, type StardewSetupStep } from '../../../shared/setupTelemetry';
 
@@ -75,6 +78,31 @@ export interface StardewInstallEnv {
   /** Run the extracted SMAPI installer (overridable so tests can fake it). */
   runInstaller: (installerPath: string, args: string[], cwd: string) => Promise<{ stdout: string; stderr: string }>;
   now: () => number;
+  /** 261104: the folder the player picked with Choose folder (null = none). Optional so test envs can omit it. */
+  readCustomPath?: () => Promise<string | null>;
+}
+
+/** Where Choose folder keeps the picked game folder (userData; never the SMAPI targets file). */
+export const CUSTOM_PATH_FILE = 'stardew-game-path.json';
+
+async function customPathFile(): Promise<string> {
+  const { paths } = await import('../../paths');
+  return path.join(paths.userData(), CUSTOM_PATH_FILE);
+}
+
+async function readCustomPathDefault(): Promise<string | null> {
+  try {
+    const j = JSON.parse(await fs.readFile(await customPathFile(), 'utf8')) as { gamePath?: unknown };
+    return typeof j.gamePath === 'string' && j.gamePath ? j.gamePath : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveCustomGamePath(gamePath: string, file?: string): Promise<void> {
+  const target = file ?? (await customPathFile());
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, JSON.stringify({ gamePath }), 'utf8');
 }
 
 export function defaultEnv(): StardewInstallEnv {
@@ -105,6 +133,7 @@ export function defaultEnv(): StardewInstallEnv {
       return { stdout: String(stdout ?? ''), stderr: String(stderr ?? '') };
     },
     now: () => Date.now(),
+    readCustomPath: readCustomPathDefault,
   };
 }
 
@@ -211,6 +240,9 @@ export function defaultInstallPaths(platform: StardewInstallEnv['platform'], hom
     }
     for (let d = 'C'.charCodeAt(0); d <= 'H'.charCodeAt(0); d++) {
       out.push(`${String.fromCharCode(d)}:\\Program Files\\ModifiableWindowsApps\\Stardew Valley`);
+      // 261104: the Xbox app's newer default install folder (Game Pass /
+      // Microsoft Store). The game files sit one level down, in Content.
+      out.push(`${String.fromCharCode(d)}:\\XboxGames\\Stardew Valley\\Content`);
     }
   }
   return out;
@@ -225,7 +257,7 @@ export function gamePathFromTargets(xml: string): string | null {
 export function storeFromPath(p: string): StardewInstallState['store'] {
   const lower = p.toLowerCase();
   if (lower.includes('steamapps')) return 'steam';
-  if (lower.includes('modifiablewindowsapps')) return 'xbox';
+  if (lower.includes('modifiablewindowsapps') || lower.includes('xboxgames')) return 'xbox';
   if (lower.includes('gog') || lower.includes('galaxy')) return 'gog';
   return 'unknown';
 }
@@ -247,6 +279,82 @@ export async function classifyGameFolder(dir: string): Promise<'valid' | 'legacy
   return 'invalid';
 }
 
+/**
+ * The folder a player picked with Choose folder, resolved to the game
+ * folder (261104). People pick the folder they see: the Xbox app's
+ * `XboxGames\Stardew Valley` (files in Content), the macOS app bundle, the
+ * GOG Linux root (files in game). Valid = `Stardew Valley.dll` present.
+ */
+export async function resolveChosenFolder(dir: string): Promise<{ gamePath: string } | { error: 'not_game' | 'legacy' }> {
+  const tries = [
+    dir,
+    path.join(dir, 'Content'),
+    path.join(dir, 'Contents', 'MacOS'),
+    path.join(dir, 'Stardew Valley.app', 'Contents', 'MacOS'),
+    path.join(dir, 'game'),
+    path.join(dir, 'Stardew Valley'),
+    path.join(dir, 'Stardew Valley', 'Content'),
+  ];
+  let legacy = false;
+  for (const t of tries) {
+    const kind: StardewGameFolderType = await classifyGameFolder(t);
+    if (kind === 'valid') return { gamePath: t };
+    if (kind === 'legacy') legacy = true;
+  }
+  return { error: legacy ? 'legacy' : 'not_game' };
+}
+
+const PE_FIXED_FILE_INFO_SIG = Buffer.from([0xbd, 0x04, 0xef, 0xfe]);
+
+/**
+ * major.minor.patch of a PE file's VS_FIXEDFILEINFO FileVersion, or null.
+ * Stardew Valley.dll is a .NET assembly on every OS and its Win32 version
+ * resource carries the game version (1.6.15.24356 -> "1.6.15").
+ */
+export function peFileVersion(buf: Buffer): string | null {
+  let i = buf.indexOf(PE_FIXED_FILE_INFO_SIG);
+  while (i >= 0 && i + 16 <= buf.length) {
+    if (buf.readUInt32LE(i + 4) === 0x00010000) {
+      const ms = buf.readUInt32LE(i + 8);
+      const ls = buf.readUInt32LE(i + 12);
+      return `${ms >>> 16}.${ms & 0xffff}.${ls >>> 16}`;
+    }
+    i = buf.indexOf(PE_FIXED_FILE_INFO_SIG, i + 1);
+  }
+  return null;
+}
+
+const gameVersionCache = new Map<string, { key: string; version: string | null }>();
+
+/**
+ * The installed game's version, or null when it cannot be read. A 1.0.0 /
+ * 0.x answer is a placeholder resource, not the game version, so it reads
+ * as unknown (never as "too old"). Cached by size + mtime: detection runs
+ * on every Check again and on the watcher's port refresh.
+ */
+export async function readGameVersion(gamePath: string): Promise<string | null> {
+  const dll = path.join(gamePath, 'Stardew Valley.dll');
+  try {
+    const st = await fs.stat(dll);
+    const key = `${st.size}:${st.mtimeMs}`;
+    const hit = gameVersionCache.get(dll);
+    if (hit && hit.key === key) return hit.version;
+    let version = peFileVersion(await fs.readFile(dll));
+    if (version && (!version.startsWith('1.') || version === '1.0.0')) version = null;
+    gameVersionCache.set(dll, { key, version });
+    return version;
+  } catch {
+    return null;
+  }
+}
+
+/** true = new enough for the helper, false = too old, null = unknown. */
+export function gameVersionOk(version: string | null): boolean | null {
+  if (!version) return null;
+  const c = compareModVersions(version, STARDEW_MIN_GAME_VERSION);
+  return c == null ? null : c >= 0;
+}
+
 /* ── Detection ───────────────────────────────────────────────────────── */
 
 /** Every folder worth checking, custom + registry + Steam libraries + defaults, deduplicated in order. */
@@ -257,6 +365,12 @@ export async function candidateGamePaths(env: StardewInstallEnv): Promise<string
     const norm = path.normalize(p.trim().replace(/[\\/]+$/, ''));
     if (!out.some((x) => x.toLowerCase() === norm.toLowerCase())) out.push(norm);
   };
+  // The folder the player picked comes first: they told us where it is.
+  try {
+    push(await env.readCustomPath?.());
+  } catch {
+    /* no picked folder */
+  }
   try {
     const targets = await fs.readFile(path.join(env.home, 'stardewvalley.targets'), 'utf8');
     push(gamePathFromTargets(targets));
@@ -371,6 +485,12 @@ async function readSmapiVersion(gamePath: string): Promise<string | null> {
 /** One detection pass: game folder, SMAPI, the mod, its config. */
 export async function detectStardew(env: StardewInstallEnv = defaultEnv()): Promise<StardewInstallState> {
   const candidates = await candidateGamePaths(env);
+  let custom: string | null = null;
+  try {
+    custom = (await env.readCustomPath?.()) ?? null;
+  } catch {
+    custom = null;
+  }
   let gamePath: string | null = null;
   for (const c of candidates) {
     if ((await classifyGameFolder(c)) === 'valid') {
@@ -387,10 +507,15 @@ export async function detectStardew(env: StardewInstallEnv = defaultEnv()): Prom
     modVersion: null,
     modConfig: null,
     store: gamePath ? storeFromPath(gamePath) : 'unknown',
+    manual: !!gamePath && !!custom && path.normalize(custom.trim().replace(/[\\/]+$/, '')).toLowerCase() === gamePath.toLowerCase(),
+    gameVersion: null,
+    versionOk: null,
     platform: env.platform,
     ready: false,
   };
   if (!gamePath) return base;
+  base.gameVersion = await readGameVersion(gamePath);
+  base.versionOk = gameVersionOk(base.gameVersion);
   base.smapiInstalled = await smapiInstalledIn(gamePath, env.platform);
   base.smapiVersion = base.smapiInstalled ? await readSmapiVersion(gamePath) : null;
   base.modInstalled = (await exists(path.join(modDir(gamePath), 'SeiCompanion.dll'))) && (await exists(path.join(modDir(gamePath), 'manifest.json')));
@@ -729,4 +854,36 @@ export async function spawnGame(gamePath: string, platform: StardewInstallEnv['p
   child.on('error', () => {});
   child.unref();
   return { via };
+}
+
+/* ── Choose folder (261104) ──────────────────────────────────────────── */
+
+/**
+ * The setup's Choose folder: `pick` shows the folder dialog (null =
+ * cancelled); the pick is validated by the game files being there, saved,
+ * and answered with a fresh detection.
+ */
+export async function chooseStardewFolder(
+  pick: () => Promise<string | null>,
+  opts: { env?: StardewInstallEnv; save?: (gamePath: string) => Promise<void>; track?: SetupSink } = {},
+): Promise<StardewChooseFolderResult> {
+  const env = opts.env ?? defaultEnv();
+  const track = opts.track ?? trackSetupStep;
+  const dir = await pick();
+  if (!dir) return { ok: false, reason: 'cancelled' };
+  const resolved = await resolveChosenFolder(dir);
+  if ('error' in resolved) {
+    safeTrack(track, {
+      game: 'stardew',
+      step: 'choose_folder',
+      outcome: 'fail',
+      store: 'manual',
+      error_code: resolved.error === 'legacy' ? 'STARDEW_FOLDER_LEGACY' : 'STARDEW_FOLDER_NOT_GAME',
+    });
+    return { ok: false, reason: resolved.error };
+  }
+  await (opts.save ?? ((p: string) => saveCustomGamePath(p)))(resolved.gamePath);
+  const state = await detectStardew(env);
+  safeTrack(track, { game: 'stardew', step: 'choose_folder', outcome: 'ok', store: storeFromPath(resolved.gamePath) === 'unknown' ? 'manual' : storeFromPath(resolved.gamePath) });
+  return { ok: true, state };
 }

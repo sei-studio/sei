@@ -2179,4 +2179,9 @@ export const RU: Record<string, string> = {
   "{n} credits": "{n, plural, one {# кредит} few {# кредита} many {# кредитов} other {# кредита}}",
   "{n} credits + {bonus} bonus": "{n, plural, one {# кредит} few {# кредита} many {# кредитов} other {# кредита}} + {bonus} бонусом",
   "Continue with ChatGPT": "Продолжить через ChatGPT",
+  "Installed somewhere else? Choose the game folder.": "Игра установлена в другую папку? Выбери папку с игрой.",
+  "Choose folder": "Выбрать папку",
+  "That folder doesn't have Stardew Valley in it. Pick the folder with Stardew Valley.dll in it.": "В этой папке нет Stardew Valley. Выбери папку, где лежит Stardew Valley.dll.",
+  "This Stardew Valley is too old for Sei. Update the game to {min} or newer, then check again.": "Эта версия Stardew Valley слишком старая для Sei. Обнови игру до {min} или новее и проверь ещё раз.",
+  "Stardew Valley is running, but Sei's helper isn't answering. The game has to start through SMAPI: close it, then press Launch Stardew Valley (with Sei).": "Stardew Valley запущена, но мод Sei не отвечает. Игру нужно запускать через SMAPI: закрой её и нажми «Запустить Stardew Valley (с Sei)».",
 };

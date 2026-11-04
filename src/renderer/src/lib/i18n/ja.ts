@@ -2179,4 +2179,9 @@ export const JA: Record<string, string> = {
   "{n} credits": "{n}クレジット",
   "{n} credits + {bonus} bonus": "{n}クレジット+ボーナス{bonus}",
   "Continue with ChatGPT": "ChatGPTで続ける",
+  "Installed somewhere else? Choose the game folder.": "別の場所にインストールしましたか？ゲームのフォルダを選んでください。",
+  "Choose folder": "フォルダを選ぶ",
+  "That folder doesn't have Stardew Valley in it. Pick the folder with Stardew Valley.dll in it.": "このフォルダにはStardew Valleyが入っていません。Stardew Valley.dllがあるフォルダを選んでください。",
+  "This Stardew Valley is too old for Sei. Update the game to {min} or newer, then check again.": "このStardew ValleyはSeiには古すぎます。ゲームを{min}以降に更新してから、もう一度確認してください。",
+  "Stardew Valley is running, but Sei's helper isn't answering. The game has to start through SMAPI: close it, then press Launch Stardew Valley (with Sei).": "Stardew Valleyは起動していますが、Seiの補助MODが応答しません。ゲームはSMAPI経由で起動する必要があります。いったん閉じてから「Stardew Valleyを起動（Sei経由）」を押してください。",
 };

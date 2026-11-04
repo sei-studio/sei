@@ -2058,6 +2058,27 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const { launchStardew } = await import('./games/stardew/launch');
     return launchStardew();
   });
+  // 261104: Choose folder when the scan found no game (validated in main by
+  // the game files being present; saved under userData).
+  ipcMain.handle(IpcChannel.stardew.chooseFolder, async (event) => {
+    const { chooseStardewFolder } = await import('./games/stardew/install');
+    const { dialog } = await import('electron');
+    const res = await chooseStardewFolder(async () => {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      const options: Electron.OpenDialogOptions = { properties: ['openDirectory', 'treatPackageAsDirectory'] };
+      const r = win && !win.isDestroyed() ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
+      return r.canceled || r.filePaths.length === 0 ? null : r.filePaths[0];
+    });
+    if (res.ok) {
+      trackStardewScan(res.state);
+      void deps.worldCheckNow?.('stardew').catch(() => {});
+    }
+    return res;
+  });
+  ipcMain.handle(IpcChannel.stardew.gameRunning, async () => {
+    const { stardewGameRunning } = await import('./games/stardew/launch');
+    return stardewGameRunning();
+  });
 
   // ── Local speech (260816, china-compat W3+W4) ─────────────────────────────
   // sherpa-onnx model packs (local TTS voices + SenseVoice STT), downloaded
