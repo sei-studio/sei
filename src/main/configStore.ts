@@ -920,6 +920,7 @@ export const MAIN_OWNED_KEYS: readonly (keyof UserConfig)[] = [
   'chess_elo_offsets', // chess/chessDifficulty.ts
   'draw_intro_done', // draw/drawService.ts
   'fish_voice_overrides', // voice:fish-override-set IPC (voice/fishTts.ts)
+  'seilink_moved_in', // seilink/host/seilinkHost.ts
   'schema_version', // configStore itself, on every write
 ];
 

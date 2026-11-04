@@ -17,6 +17,7 @@
 import type { FaceCue, FacepackDevInfo, FacepackManifest } from './facepack';
 import type { SeilinkDevInfo, SeilinkPack, SeilinkRoomPayload } from './seilinkPack';
 import type { RoomState } from './seilinkRoom';
+import type { SeilinkHostStatus } from './seilinkHost';
 import { z } from 'zod';
 import type {
   Character,
@@ -2200,6 +2201,13 @@ export interface RendererApi {
   seilinkRoomSet?(characterId: string, state: RoomState): Promise<SeilinkRoomPayload>;
   onSeilinkRoomChanged?(cb: (characterId: string) => void): Unsubscribe;
   seilinkOpenPreview?(): Promise<boolean>;
+  /** Desktop host (milestone 3; dev flag only): she moves in, her room becomes the wallpaper. */
+  seilinkHostStart?(characterId: string): Promise<SeilinkHostStatus>;
+  seilinkHostStop?(): Promise<SeilinkHostStatus>;
+  seilinkHostStatus?(): Promise<SeilinkHostStatus>;
+  onSeilinkHostStatus?(cb: (status: SeilinkHostStatus) => void): Unsubscribe;
+  /** She was clicked on the desktop: open her chat (characterId). */
+  onSeilinkOpenChat?(cb: (characterId: string) => void): Unsubscribe;
   /**
    * Overlay window only (260806): stream a character's tile camera (zoom +
    * pan within the tile) while edit-mode wheel/drag adjusts it; `commit`
@@ -4243,6 +4251,16 @@ export const IpcChannel = {
     roomChanged: 'seilink:room-changed',
     /** Invoke: open the dev preview window (dev flag only) → boolean. */
     openPreview: 'seilink:open-preview',
+    /** Invoke: she moves in (characterId) → SeilinkHostStatus. Dev flag only (SEILINK_DISABLED). */
+    hostStart: 'seilink:host-start',
+    /** Invoke: she moves out → SeilinkHostStatus. */
+    hostStop: 'seilink:host-stop',
+    /** Invoke: → SeilinkHostStatus. */
+    hostStatus: 'seilink:host-status',
+    /** Push (main → main window): SeilinkHostStatus on every change. */
+    hostStatusChanged: 'seilink:host-status-changed',
+    /** Push (main → main window): characterId she was clicked on the desktop; open her chat. */
+    openChat: 'seilink:open-chat',
   },
 } as const;
 

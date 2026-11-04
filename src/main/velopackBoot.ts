@@ -28,6 +28,7 @@ import { appendFileSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, 
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { bundleRequire } from './bundleRequire';
+import { isSeilinkHostLaunch } from './seilink/host/hostArgs';
 import {
   applyInProgress,
   isUpdaterImage,
@@ -265,7 +266,9 @@ function clearLeftoverRelaunch(file: string): void {
   }
 }
 
-if (process.platform === 'win32' && app.isPackaged) {
+// A SeiLink room host launch (the same exe, --seilink-host) is not an app start: it must never
+// run Velopack's hooks or startup apply (seilink/host/hostArgs.ts).
+if (process.platform === 'win32' && app.isPackaged && !isSeilinkHostLaunch(process.argv)) {
   try {
     mod = bundleRequire()('velopack') as VelopackModule;
     const builder = mod.VelopackApp.build();

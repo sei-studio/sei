@@ -1116,6 +1116,20 @@ export const UserConfigSchema = z.object({
     )
     .optional(),
   /**
+   * 261104 — SeiLink desktop host: the companion who "moved in" (her room is
+   * the live wallpaper). Main-owned (src/main/seilink/host/seilinkHost.ts):
+   * written by start(), cleared by a user stop, read at app start and after
+   * an account switch to bring her back. Absent or null = off. Per profile,
+   * like the rest of config.json.
+   */
+  seilink_moved_in: z
+    .object({
+      character_id: z.string().uuid(),
+      moved_in_at: z.number().int().nonnegative(),
+    })
+    .nullable()
+    .optional(),
+  /**
    * 260725: cloud users' opt-in to the local Whisper fallback. Set true once
    * the user accepts the Whisper-install prompt after a Scribe failure, so
    * later calls fall back to local recognition without re-asking. Optional

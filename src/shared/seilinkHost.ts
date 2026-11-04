@@ -1,0 +1,110 @@
+/**
+ * SeiLink desktop host (261104, milestone 3): the companion's room as a live
+ * wallpaper behind the desktop icons. Shared by main (the service and the
+ * host process, src/main/seilink/host/), the main window (status, start/stop)
+ * and the host's own page (renderer components/seilink/host/).
+ *
+ * See docs/agents/seilink-host.md.
+ */
+import type { SeilinkRoomPayload } from './seilinkPack';
+
+/**
+ * - off: nothing on the desktop.
+ * - starting: the host process is coming up (first spawn after start()).
+ * - running: attached behind the icons and drawing.
+ * - restarting: the host died, hung or lost the desktop; the supervisor is bringing it back.
+ * - failed: gave up (see `failure`); start() again to retry.
+ * - unsupported: no desktop layer on this OS/install (Linux, or the addon is missing).
+ */
+export type SeilinkHostState = 'off' | 'starting' | 'running' | 'restarting' | 'failed' | 'unsupported';
+
+/** Why the host could not get (or stay) on the desktop. Shape only, safe for analytics. */
+export type SeilinkHostFailure =
+  | 'unsupported_platform'
+  | 'addon_missing'
+  | 'addon_load_failed'
+  | 'spawn_failed'
+  | 'no_shell'
+  | 'no_window'
+  | 'no_workerw'
+  | 'set_parent_failed'
+  | 'level_not_applied'
+  | 'attach_failed'
+  | 'renderer_failed'
+  | 'host_hung'
+  | 'crash_loop';
+
+export const SEILINK_HOST_FAILURES: readonly SeilinkHostFailure[] = [
+  'unsupported_platform',
+  'addon_missing',
+  'addon_load_failed',
+  'spawn_failed',
+  'no_shell',
+  'no_window',
+  'no_workerw',
+  'set_parent_failed',
+  'level_not_applied',
+  'attach_failed',
+  'renderer_failed',
+  'host_hung',
+  'crash_loop',
+];
+
+export function isSeilinkHostFailure(v: unknown): v is SeilinkHostFailure {
+  return typeof v === 'string' && (SEILINK_HOST_FAILURES as readonly string[]).includes(v);
+}
+
+/** Why a desktop session ended (seilink_ended.reason). */
+export type SeilinkEndReason = 'user_stop' | 'replaced' | 'app_quit' | 'account_switch' | 'failed' | 'disabled';
+
+/** What the main window sees (push + pull). */
+export interface SeilinkHostStatus {
+  state: SeilinkHostState;
+  /** The companion who moved in (null when off). */
+  characterId: string | null;
+  /** A maximized/fullscreen window hides her (mac: her box is occluded). */
+  covered: boolean;
+  /** Screen locked or the machine asleep. */
+  paused: boolean;
+  /** Frames drawn in the last second (heartbeat). */
+  fps: number;
+  /** Set when state is failed or unsupported. */
+  failure?: SeilinkHostFailure;
+}
+
+export const SEILINK_HOST_OFF: SeilinkHostStatus = { state: 'off', characterId: null, covered: false, paused: false, fps: 0 };
+
+/** Her box in CSS px of the room page (the room window covers the primary display). */
+export interface SeilinkBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Frame cap while visible. The room's own effects are cheap; 30 keeps the GPU calm. */
+export const SEILINK_HOST_FPS = 30;
+
+/**
+ * The host page's bridge (`window.seiRoomHost`, src/preload/seilinkHost.ts).
+ * The page never talks to the main app directly: everything goes through
+ * the host process, which relays to main over its pipe.
+ */
+export interface SeilinkHostBridge {
+  /** Her room (on start and after every save). */
+  onRoom(cb: (room: SeilinkRoomPayload) => void): () => void;
+  /** The frame cap now: 0 while covered, locked or asleep. */
+  onFps(cb: (fps: number) => void): () => void;
+  /** A click on her (after the double-click wait), a double click, or a drag stroke. */
+  onPoke(cb: (kind: SeilinkPokeKind) => void): () => void;
+  /** Her box moved (layout, a new room). Drives the click area. */
+  setBox(box: SeilinkBox | null): void;
+  /** Frames drawn so far; sent about once a second. */
+  frames(count: number): void;
+  /** The first frame of a scene is on screen. */
+  firstFrame(): void;
+  /** Ask for the current room + fps (the page mounted). */
+  ready(): void;
+}
+
+export type SeilinkPokeKind = 'click' | 'dblclick' | 'drag';
