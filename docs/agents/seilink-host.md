@@ -294,6 +294,18 @@ and thumbnails all use the same plan).
   overlay draws tops (orange), lips (cyan hatch) and `sink N`; `--merge`
   writes the draft into the manifest. The editor's drag guide glows the top
   under the pointer and draws the lip over the drag ghost.
+- Labelling the shipped packs (261105): floor and wall areas cover the BARE
+  shell (`--without bed,chair,...`) and every part blocks its own silhouette,
+  so removing an optional part frees its spot. Gamer's black planks need
+  `--bands black_wall_shelves --dark 60`; its bed top and forest's log ridges
+  and stump ellipse are hand traced. Forest has no wall (a poster on the tree
+  read wrong); its horizon is 300, not the distant hills, because the art's
+  props barely shrink with depth (a far backpack ends up about half size,
+  which matches the campfire ring's foreshortening). The log also blocks the
+  ground behind Sei's seat (x 1040-1560): items there vanished behind her.
+  The stump top sits behind the default Sei's head; it is labelled for
+  other avatars. Item `foot` = the sprite's first opaque row minus 3 (the
+  cozy convention).
 
 ## Gotchas
 
@@ -331,5 +343,6 @@ and thumbnails all use the same plan).
   calls, so desktop lines are bubbles only (the mouth moves without audio).
 - The dock is always shown (no hover on the wallpaper: Windows raw input
   only reports presses, the mac panel only covers the click area).
-- Pack downloads (`downloadPack` is a stub): only the bundled cozy pack and
-  dev packs exist, so the room cards show Gamer and Forest as "Soon".
+- Pack downloads (`downloadPack` is a stub): the three presets (cozy, gamer,
+  forest, about 2.5 MB each) ship bundled in `resources/seilink-packs`
+  (extraResources); a pack that fails to load shows its card disabled.
