@@ -276,37 +276,48 @@ and thumbnails all use the same plan).
   or floats at the back. Rooms saved on the old lines are snapped onto the
   band on load (`settleItems` via `sanitizeRoomState`); items already inside
   stay where they were.
-- `lip`: the front face of the plank. When something rests on that top,
-  the plan adds the part's own frame again clipped to the lip
-  (`SlotLayer.clip`), at the top of that top's z band, so the lip covers the
-  base of the items on it and stays under the plank below's items. Tops of
-  one part are ranked by height and get stacked z bands. Lip layers are baked
-  into the renderer's cached composites (no per-frame cost) and have no glow
-  of their own; the picker ignores a lip outside its polygon.
-- Tuck (261105, Shawn: "the items are in front of shelf, put shelf in
-  front"): an item's opaque base ends about 4 px (sprite px) above its
-  contact, so an item at the front of a top used to end exactly on the
-  plank's front edge and read as perched in front of it. Now a lipped top's
-  contact may reach `LIP_TUCK` (5 canvas px) into the lip (`AreaSurface.poly`
-  is the traced `face` stretched forward, back edge fixed), and every item
-  on a lipped top is cut to above the lip's top edge minus `KEEP_LIFT`
-  (`ItemLayer.clip` = `AreaSurface.keep`, from `lipKeep`), so the plank's
-  front outline always draws over its base and nothing shows on the front
-  face or under a thin plank. The renderer (`roomCompose`), look()
-  (`keepInside`), the picker and the drag ghost (CSS `clip-path` on the
-  sprite, lift shadow on its wrapper) all apply the cut. Only the lip's TOP
-  edge matters for the cut; the guide still glows the traced face.
+- `lip`: the WHOLE visible plank below its top face: front face, end face,
+  underside and the dark bottom outline (Shawn 261105: "select the entire
+  visible plank (both the side and under part) and put it on top of the
+  object"). When something rests on that top, the plan adds the part's own
+  frame again clipped to the lip (`SlotLayer.clip`), at the top of that
+  top's z band, so the plank covers the base of the items on it and stays
+  under the plank below's items. Tops of one part are ranked by height and
+  get stacked z bands. Lip layers are baked into the renderer's cached
+  composites (no per-frame cost) and have no glow of their own. The picker
+  treats a lip as a hit anywhere inside its polygon (no alpha test); a lip
+  that is not pickable still blocks the items under it, so an item cannot
+  be grabbed through the plank. Manifest polygons are capped at 64 points
+  (`ROOM_LIMITS.polygonPoints`); a longer lip is dropped by validation
+  without a warning, so the tracer simplifies to fit.
+- Tuck (261105): an item's opaque base ends about 2-4 px (sprite px) above
+  its contact, so with the old 5 px tuck the item's own bottom outline still
+  showed along the plank edge. Now a lipped top's contact may reach
+  `LIP_TUCK` (10 canvas px) into the lip (`AreaSurface.poly` is the traced
+  `face` stretched forward, back edge fixed), which hides roughly 9-12 px
+  (6-10%) of an item at the front. Every item on a lipped top is cut to
+  above the plank's BOTTOM edge (`ItemLayer.clip` = `AreaSurface.keep`, from
+  `lipKeep` via `bottomEdge`; the old `KEEP_LIFT` top-edge cut is gone), so
+  nothing pokes out under a thin plank and the lip layer hides the rest.
+  The renderer (`roomCompose`), look() (`keepInside` + `cutToPolygons`), the
+  picker and the drag ghost (CSS `clip-path` on the sprite plus `LipGhost`)
+  all apply it. The guide still glows the traced face.
 - `sink` (canvas px, a bed or a cushion): items on it are drawn `sink x
   scale` lower, their base fading out just under the contact, with a soft
   contact shadow as wide as the base (`sinkLook`, `contactShadow`,
   `baseSpan`). look() does the same in `roomRender.ts` (`sinkItem`,
   `cutToPolygons` for lips).
-- Labelling: `scripts/seilink-region-overlay.mjs --bands <part>` measures
-  plank tops and lips from the art and prints `surfaceTops` for a draft;
-  logs and beds are traced by hand with `--grid 25 --crop`; the
-  overlay draws tops (orange), lips (cyan hatch) and `sink N`; `--merge`
-  writes the draft into the manifest. The editor's drag guide glows the top
-  under the pointer and draws the lip over the drag ghost.
+- Labelling: `scripts/seilink-region-overlay.mjs --bands <part>` traces
+  plank tops and lips from the art's alpha (subpixel edges, median filters
+  against bracket pins, Douglas-Peucker to at most 64 points) and prints
+  `surfaceTops` for a draft; the top face is the first light run of 5+ rows
+  in each column and the end face is the leading columns without one (cozy
+  areas therefore start at x 25, after the end face). Logs and beds are
+  traced by hand with `--grid 25 --crop`; the overlay draws tops (orange),
+  lips (cyan hatch) and `sink N`; `--merge` writes the draft into the
+  manifest. `roomRenderTops.test.ts` checks the bundled lips against the
+  shelf art column by column. The editor's drag guide glows the top under
+  the pointer and draws the lip over the drag ghost.
 - Labelling the shipped packs (261105): floor and wall areas cover the BARE
   shell (`--without bed,chair,...`) and every part blocks its own silhouette,
   so removing an optional part frees its spot. Gamer's black planks need
