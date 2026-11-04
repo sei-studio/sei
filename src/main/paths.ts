@@ -94,6 +94,10 @@ export const paths = {
   // 261104 SeiLink: installed room art packs (<dir>/<presetId>/manifest.json).
   // Device-global, not per profile: art is the same for every account.
   seilinkPacksDir: () => path.join(userDataRoot(), 'seilink', 'packs'),
+  // 261105 Anima: downloaded face sets (packs/<an-id>/) and which character
+  // uses which (index.json). Device-global: packs are content-addressed by
+  // the portrait, the same for every account that sees her.
+  animaDir: () => path.join(userDataRoot(), 'anima'),
   // Wizard state JSON. Persists which MC installs the user ticked,
   // `hasRunOnce` (gates the first-launch modal vs the settings-reopen flow),
   // and the last skin-server port (used for port-drift detection on bootstrap).
