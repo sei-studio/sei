@@ -299,8 +299,10 @@ describe('detection + install against a fake game folder', () => {
   it.skipIf(process.platform === 'win32')('installs SMAPI from the fixture zip (mirror 404 falls through to origin) then the mod, streaming stages', async () => {
     const stages: string[] = [];
     let pctSeen = 0;
+    const tracked: { step: string; outcome: string; game: string }[] = [];
     const state = await installStardew({
       env: envFor(),
+      track: (i) => tracked.push(i),
       onProgress: (ev) => {
         stages.push(ev.stage);
         if (ev.stage === 'smapi-downloading') pctSeen = Math.max(pctSeen, ev.pct);
@@ -317,6 +319,16 @@ describe('detection + install against a fake game folder', () => {
     expect(state.modVersion).toBe('0.1.0');
     expect(state.modConfig?.hasToken).toBe(true);
     expect(state.ready).toBe(true);
+    // 261104: game_setup_step per install step, in order.
+    expect(tracked.map((e) => `${e.step}:${e.outcome}`)).toEqual([
+      'smapi_download:start',
+      'smapi_download:ok',
+      'smapi_run:start',
+      'smapi_run:ok',
+      'mod_copy:start',
+      'mod_copy:ok',
+    ]);
+    expect(tracked.every((e) => e.game === 'stardew')).toBe(true);
     // A second run skips SMAPI (already there) and keeps the token.
     const token = (await readModConfig(game))?.Token;
     const stages2: string[] = [];
@@ -335,12 +347,15 @@ describe('detection + install against a fake game folder', () => {
 
   it.skipIf(process.platform === 'win32')('reports SMAPI_INSTALL_FAILED when every download source fails', async () => {
     const events: { stage: string }[] = [];
+    const tracked: Record<string, unknown>[] = [];
     await expect(
       installStardew({
         env: envFor({ smapiSources: () => [{ url: `${serverUrl}/missing.zip`, connectTimeoutMs: 2000 }] }),
         onProgress: (ev) => events.push(ev),
+        track: (i) => tracked.push({ ...i }),
       }),
     ).rejects.toThrow(/^SMAPI_INSTALL_FAILED/);
     expect(events.at(-1)).toMatchObject({ stage: 'failed', error: 'SMAPI_INSTALL_FAILED' });
+    expect(tracked.at(-1)).toMatchObject({ step: 'smapi_download', outcome: 'fail', error_code: 'SMAPI_INSTALL_FAILED', reason: 'network' });
   });
 });

@@ -49,6 +49,8 @@ import {
 } from '../../../shared/stardewIpc';
 import { DL_MIRROR_BASE, MIRROR_CONNECT_TIMEOUT_MS } from '../../speech/mirrors';
 import { packModIsNewer } from '../modVersion';
+import { trackSetupStep, type SetupSink } from '../../setupTelemetry';
+import { classifyFailReason, type StardewSetupStep } from '../../../shared/setupTelemetry';
 
 const execFileAsync = promisify(execFile);
 const STEAM_APP_ID = '413150';
@@ -595,6 +597,8 @@ export interface InstallStardewOpts {
   onProgress?: (ev: StardewInstallProgressEvent) => void;
   signal?: AbortSignal | null;
   env?: StardewInstallEnv;
+  /** game_setup_step sink (261104); tests pass a recorder. */
+  track?: SetupSink;
 }
 
 /**
@@ -603,19 +607,32 @@ export interface InstallStardewOpts {
  * GAME_INSTALL_FAILED); the IPC handler forwards it and the last progress
  * event carries the same class.
  */
-export async function installStardew({ onProgress = () => {}, signal = null, env = defaultEnv() }: InstallStardewOpts = {}): Promise<StardewInstallState> {
+export async function installStardew({ onProgress = () => {}, signal = null, env = defaultEnv(), track = trackSetupStep }: InstallStardewOpts = {}): Promise<StardewInstallState> {
+  // 261104: each install step reports start / ok / fail (shape only).
+  let step: StardewSetupStep | null = null;
+  let store: string = 'unknown';
+  const begin = (next: StardewSetupStep): void => {
+    if (step) safeTrack(track, { game: 'stardew', step, outcome: 'ok', store });
+    step = next;
+    safeTrack(track, { game: 'stardew', step, outcome: 'start', store });
+  };
   const fail = (error: 'GAME_NOT_INSTALLED' | 'SMAPI_INSTALL_FAILED' | 'GAME_INSTALL_FAILED', message: string): never => {
+    if (step) safeTrack(track, { game: 'stardew', step, outcome: 'fail', store, error_code: error, reason: classifyFailReason(message) });
+    step = null;
     onProgress({ stage: 'failed', error, message });
     throw new Error(`${error}: ${message}`);
   };
   onProgress({ stage: 'detecting' });
   const before = await detectStardew(env);
+  store = before.store;
   if (!before.gamePath) {
+    step = 'find_game';
     fail('GAME_NOT_INSTALLED', `Stardew Valley was not found. Looked in: ${before.candidates.slice(0, 6).join(', ')}`);
   }
   const gamePath = before.gamePath as string;
 
   if (!before.smapiInstalled) {
+    begin('smapi_download');
     onProgress({ stage: 'smapi-downloading', pct: 0 });
     let zipBytes: Buffer;
     try {
@@ -623,6 +640,7 @@ export async function installStardew({ onProgress = () => {}, signal = null, env
     } catch (err) {
       fail('SMAPI_INSTALL_FAILED', String((err as Error)?.message ?? err).replace(/^SMAPI_INSTALL_FAILED:\s*/, ''));
     }
+    begin('smapi_run');
     onProgress({ stage: 'smapi-installing' });
     const workDir = path.join(await env.tmpDir(), `smapi-installer-${env.now().toString(36)}`);
     try {
@@ -634,13 +652,18 @@ export async function installStardew({ onProgress = () => {}, signal = null, env
       }
     } catch (err) {
       const msg = String((err as Error)?.message ?? err);
-      if (msg.startsWith('SMAPI_INSTALL_FAILED')) throw err;
+      if (msg.startsWith('SMAPI_INSTALL_FAILED')) {
+        // Thrown by extractSmapiInstaller (no progress event yet) or by fail() above.
+        if (step) fail('SMAPI_INSTALL_FAILED', msg.replace(/^SMAPI_INSTALL_FAILED:\s*/, ''));
+        throw err;
+      }
       fail('SMAPI_INSTALL_FAILED', `${msg}. Close Stardew Valley and try again; if it keeps failing, install SMAPI from smapi.io and re-run this setup.`);
     } finally {
       await fs.rm(workDir, { recursive: true, force: true }).catch(() => {});
     }
   }
 
+  begin('mod_copy');
   onProgress({ stage: 'mod-placing' });
   let packRoot: string;
   try {
@@ -654,14 +677,25 @@ export async function installStardew({ onProgress = () => {}, signal = null, env
   } catch (err) {
     const msg = String((err as Error)?.message ?? err);
     if (msg.startsWith('GAME_INSTALL_FAILED')) {
+      if (step) safeTrack(track, { game: 'stardew', step, outcome: 'fail', store, error_code: 'GAME_INSTALL_FAILED', reason: classifyFailReason(msg) });
+      step = null;
       onProgress({ stage: 'failed', error: 'GAME_INSTALL_FAILED', message: msg.replace(/^GAME_INSTALL_FAILED:\s*/, '') });
       throw err;
     }
     fail('GAME_INSTALL_FAILED', `could not copy the mod into ${modDir(gamePath)}: ${msg}`);
   }
   const after = await detectStardew(env);
+  if (step) safeTrack(track, { game: 'stardew', step, outcome: 'ok', store });
   onProgress({ stage: 'done', state: after });
   return after;
+}
+
+function safeTrack(track: SetupSink, input: Parameters<SetupSink>[0]): void {
+  try {
+    track(input);
+  } catch {
+    /* telemetry never breaks the install */
+  }
 }
 
 /** sha256 of a buffer (exported for the tests' fixture checks). */

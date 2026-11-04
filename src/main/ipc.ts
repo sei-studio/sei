@@ -71,6 +71,8 @@ import { capture as trackAnalytics, getAnalyticsOptOut, setAnalyticsOptOut } fro
 import { blockedAutoSummon, clearSummonBlock } from './summonGuard';
 import { noteCreditWall, type CreditWallContext } from './creditWall';
 import { observeOnboardingEvent } from './onboardingFunnel';
+import { sanitizeRendererSetupProps, trackMcScan, trackStardewScan, trackStartMinecraft } from './setupTelemetry';
+import { GAME_SETUP_EVENT } from '../shared/setupTelemetry';
 import { registerPermissionHandlers } from './permissions/permissionsService';
 import { setSupervisor as setAuthSupervisor } from './auth/authHandlers';
 import type { BotSupervisor } from './botSupervisor';
@@ -2031,7 +2033,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   let stardewInstallInFlight: Promise<unknown> | null = null;
   ipcMain.handle(IpcChannel.stardew.installState, async () => {
     const { detectStardew } = await import('./games/stardew/install');
-    return detectStardew();
+    const state = await detectStardew();
+    trackStardewScan(state);
+    return state;
   });
   ipcMain.handle(IpcChannel.stardew.install, async () => {
     if (stardewInstallInFlight) return stardewInstallInFlight;
@@ -3070,8 +3074,16 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // AbortController in src/main/wizard.ts.
   ipcMain.handle(IpcChannel.wizard.detectInstalls, async () => {
     const { scanMcInstalls } = await import('./mcInstallScan');
-    const installs = await scanMcInstalls();
-    return { installs };
+    // 261104: also what the scan cannot use (Bedrock, other launchers, a
+    // launcher with no .minecraft yet) so the setup step can say why, and
+    // one game_setup_step per distinct answer.
+    const { scanMcExtras } = await import('./mcOtherInstalls');
+    const [installs, extras] = await Promise.all([
+      scanMcInstalls(),
+      scanMcExtras().catch(() => null),
+    ]);
+    trackMcScan(installs, extras);
+    return { installs, extras };
   });
 
   ipcMain.handle(IpcChannel.wizard.install, async (_event, argsRaw: unknown) => {
@@ -3116,7 +3128,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       .optional()
       .parse(argsRaw ?? {});
     const { startMinecraft } = await import('./mcLauncher');
-    return await startMinecraft({ mcVersion: args?.mcVersion });
+    const res = await startMinecraft({ mcVersion: args?.mcVersion });
+    trackStartMinecraft(res);
+    return res;
   });
 
   ipcMain.handle(IpcChannel.wizard.minecraftRunning, async () => {
@@ -3304,7 +3318,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.on(IpcChannel.analytics.track, (_event, raw: unknown) => {
     try {
       const { event, props } = TrackArgsSchema.parse(raw);
-      trackAnalytics(event, props);
+      // 261104: setup steps are rebuilt from closed enums (shape only).
+      trackAnalytics(event, event === GAME_SETUP_EVENT ? sanitizeRendererSetupProps(props) : props);
       // 261005: remember where onboarding is, so a quit can report it.
       observeOnboardingEvent(event, props);
     } catch {

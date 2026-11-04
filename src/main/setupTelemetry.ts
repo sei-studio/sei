@@ -6,14 +6,16 @@
  * analytics being initialized. capture() is a no-op when opted out, keyless,
  * or on a dev build.
  */
-import type { WizardProgressEvent } from '../shared/ipc';
+import type { McInstall, McScanExtras, StartMinecraftResult, WizardProgressEvent } from '../shared/ipc';
 import {
   GAME_SETUP_EVENT,
   classifyFailReason,
+  mcScanFound,
   setupStepProps,
   type McSetupStep,
   type SetupStepInput,
 } from '../shared/setupTelemetry';
+import type { StardewInstallState } from '../shared/stardewIpc';
 import { loadAnalytics } from './lazyAnalytics';
 
 export type SetupSink = (input: SetupStepInput) => void;
@@ -129,4 +131,106 @@ export function observeWizardProgress(
     }
     onProgress(ev);
   };
+}
+
+const dedupedScan = createDedupedSink();
+
+/**
+ * The Minecraft install scan's answer (wizard:detect-installs). Sent once per
+ * distinct answer per process: the launch panel re-scans every 10 s.
+ */
+export function trackMcScan(
+  installs: readonly McInstall[],
+  extras: McScanExtras | null | undefined,
+  sink: (key: string, signature: string, input: SetupStepInput) => void = dedupedScan,
+): void {
+  try {
+    const found = mcScanFound(installs, extras);
+    const launchers = [...installs.map((i) => i.kind), ...(extras?.others ?? []).map((o) => o.launcher)];
+    const bedrock = extras?.bedrock === true;
+    const input: SetupStepInput = {
+      game: 'minecraft',
+      step: 'install_scan',
+      outcome: found === 'java' ? 'ok' : 'fail',
+      error_code: found === 'java' ? null : `MC_SCAN_${found.toUpperCase()}`,
+      store: installs[0]?.kind ?? extras?.others[0]?.launcher ?? 'none',
+      found,
+      launchers,
+      bedrock,
+    };
+    const signature = [found, [...new Set(launchers)].sort().join(','), bedrock, extras?.launcherInstalled === true].join('|');
+    sink('install_scan', signature, input);
+  } catch {
+    /* never disturb the scan */
+  }
+}
+
+/** Start Minecraft's answer (wizard:start-minecraft): did a launcher open? */
+export function trackStartMinecraft(res: StartMinecraftResult, sink: SetupSink = trackSetupStep): void {
+  if (res.ok) {
+    sink({ game: 'minecraft', step: 'start_minecraft', outcome: 'ok', store: res.launcher });
+  } else {
+    sink({ game: 'minecraft', step: 'start_minecraft', outcome: 'fail', error_code: `MC_START_${res.reason.toUpperCase()}`, store: 'none' });
+  }
+}
+
+/**
+ * A `game_setup_step` the renderer sent through analytics:track goes back
+ * through the same builder, so a renderer bug cannot add a free-text field.
+ */
+export function sanitizeRendererSetupProps(props: Record<string, unknown> | undefined): Record<string, string | number | boolean> {
+  const p = (props ?? {}) as Record<string, unknown>;
+  const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+  return setupStepProps({
+    game: p.game === 'stardew' ? 'stardew' : 'minecraft',
+    step: (str(p.step) ?? 'unknown') as SetupStepInput['step'],
+    outcome: (str(p.outcome) ?? 'start') as SetupStepInput['outcome'],
+    error_code: str(p.error_code),
+    store: str(p.store),
+    reason: str(p.reason) as SetupStepInput['reason'],
+    found: str(p.found) as SetupStepInput['found'],
+    launchers: typeof p.launchers === 'string' ? p.launchers.split(',') : null,
+    bedrock: typeof p.bedrock === 'boolean' ? p.bedrock : null,
+    ended: str(p.ended) as SetupStepInput['ended'],
+    wait_ms: typeof p.wait_ms === 'number' ? p.wait_ms : null,
+    version_ok: typeof p.version_ok === 'boolean' ? p.version_ok : null,
+  });
+}
+
+/**
+ * Stardew's game scan (stardew:install-state): found or not, and the store
+ * the folder belongs to. Once per distinct answer per process.
+ */
+export function trackStardewScan(
+  state: Pick<StardewInstallState, 'gamePath' | 'store' | 'smapiInstalled' | 'modInstalled' | 'ready'> & { manual?: boolean; versionOk?: boolean | null },
+  sink: (key: string, signature: string, input: SetupStepInput) => void = dedupedScan,
+): void {
+  try {
+    const found = state.gamePath != null;
+    const store = found ? (state.manual ? 'manual' : state.store) : 'unknown';
+    const input: SetupStepInput = {
+      game: 'stardew',
+      step: 'find_game',
+      outcome: found ? 'ok' : 'fail',
+      error_code: found ? null : 'GAME_NOT_INSTALLED',
+      store,
+      ...(found && state.versionOk !== undefined ? { version_ok: state.versionOk } : {}),
+    };
+    sink('stardew_scan', [found, store, state.versionOk ?? 'na'].join('|'), input);
+  } catch {
+    /* never disturb the scan */
+  }
+}
+
+let farmSeen = false;
+
+/** The first open farm this process saw: the end of the Stardew setup. */
+export function trackStardewFarmSeen(store: string, sink: SetupSink = trackSetupStep): void {
+  if (farmSeen) return;
+  farmSeen = true;
+  try {
+    sink({ game: 'stardew', step: 'farm_seen', outcome: 'ok', store });
+  } catch {
+    /* ignore */
+  }
 }

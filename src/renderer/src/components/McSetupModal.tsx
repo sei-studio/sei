@@ -21,7 +21,8 @@
  * has joined; "connected" stays reserved for BotStatus.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import type { WaitEnd } from '@shared/setupTelemetry';
 // The ceiling comes from minecraft-protocol's table via lib/mcVersions (the
 // same table the bot enforces), so it can never drift from what Sei joins.
 import { MC_NEWEST_JOINABLE } from '../lib/mcVersions';
@@ -36,6 +37,7 @@ import { StatusPill, type StatusPillTone } from './StatusPill';
 import styles from './McSetupModal.module.css';
 import noteStyles from './LanNotOpenModal.module.css';
 import { useFirewallHint, useSeiProfileAction } from './mcdash/useStartMinecraft';
+import { trackSetupStep } from '../lib/setupTelemetry';
 
 /**
  * Newest Minecraft Java version Sei can join, from the same joinable list the
@@ -87,10 +89,37 @@ export function McSetupModal({ tab: initialTab, searching }: McSetupModalProps):
   const action = useSeiProfileAction();
   const firewallHint = useFirewallHint();
 
+  // ── lan_wait telemetry (261104): shown, and how it ended ────────────────
+  // One start per searching window; the first end wins (closing after the
+  // world opened is still world_open). Unmounted any other way = left.
+  const waitStart = useRef<number | null>(null);
+  const endWait = (ended: WaitEnd): void => {
+    const began = waitStart.current;
+    if (began == null) return;
+    waitStart.current = null;
+    trackSetupStep({
+      game: 'minecraft',
+      step: 'lan_wait',
+      outcome: ended === 'world_open' ? 'ok' : 'fail',
+      error_code: ended === 'world_open' ? null : `LAN_WAIT_${ended.toUpperCase()}`,
+      ended,
+      wait_ms: Date.now() - began,
+    });
+  };
+  const endWaitRef = useRef(endWait);
+  endWaitRef.current = endWait;
+  useEffect(() => {
+    if (!searching) return;
+    waitStart.current = Date.now();
+    trackSetupStep({ game: 'minecraft', step: 'lan_wait', outcome: 'start' });
+    return () => endWaitRef.current('left');
+  }, [searching]);
+
   // ── Auto-resume on open world (D-56) ────────────────────────────────────
   useEffect(() => {
     if (!searching) return;
     if (lan.kind !== 'open') return;
+    endWaitRef.current('world_open');
     if (!pendingSummonId) {
       closeModal();
       return;
@@ -118,6 +147,7 @@ export function McSetupModal({ tab: initialTab, searching }: McSetupModalProps):
   // ── Dismiss (D-24): in searching mode, closing also cancels the summon. ──
   const onClose = (): void => {
     if (searching) {
+      endWait('closed');
       setPendingSummon(null);
       setPendingSummonReturnToChat(false);
     }
@@ -126,6 +156,7 @@ export function McSetupModal({ tab: initialTab, searching }: McSetupModalProps):
 
   const onOpenSkinSetup = (): void => {
     if (searching) {
+      endWait('skin_setup');
       setPendingSummon(null);
       setPendingSummonReturnToChat(false);
     }

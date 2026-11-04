@@ -190,7 +190,7 @@ export function classifyFailReason(message: string | null | undefined): FailReas
   if (/antivirus|quarantin|virus|defender/.test(m)) return 'antivirus';
   if (/game is (still )?running|close stardew|still running/.test(m)) return 'game_running';
   if (/ebusy|being used by another process|resource busy|locked/.test(m)) return 'locked';
-  if (/eperm|eacces|permission|access (to the path .* )?is denied|unauthorizedaccess|operation not permitted|read-only/.test(m)) return 'permission';
+  if (/eperm|eacces|permission|access\b.*\bdenied|unauthorizedaccess|operation not permitted|read-only/.test(m)) return 'permission';
   if (/enospc|no space|disk full|not enough space/.test(m)) return 'disk_full';
   if (/timed? ?out|timeout|etimedout|stalled/.test(m)) return 'timeout';
   if (/enotfound|econnrefused|econnreset|enetunreach|eai_again|getaddrinfo|fetch failed|could not reach|could not download|socket|network|\b5\d\d\b|\b4\d\d\b/.test(m)) return 'network';
