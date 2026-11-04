@@ -318,6 +318,9 @@ async function createRoomWindow(): Promise<BrowserWindow> {
     fullscreenable: false,
     hasShadow: false,
     enableLargerThanScreen: true,
+    // Windows: no resize frame at all. With it, the attached child kept an 8 px non-client
+    // strip left and right, and the page measured her box 8 px off (CI 261104).
+    thickFrame: false,
     title: 'Sei room',
     backgroundColor: '#101114',
     webPreferences: {

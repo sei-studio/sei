@@ -198,6 +198,11 @@ Napi::Value Attach(const Napi::CallbackInfo& info) {
   else flags |= SWP_NOZORDER;
   if (!SetWindowPos(h, after, p.x, p.y, w, hh, flags))
     step("SetWindowPos failed " + std::to_string(GetLastError()));
+  // A leftover non-client frame shrinks the page (CI 261104: an 8 px strip each side).
+  RECT cr{};
+  if (GetClientRect(h, &cr) && (cr.right - cr.left != w || cr.bottom - cr.top != hh))
+    step("client " + std::to_string(cr.right - cr.left) + "x" + std::to_string(cr.bottom - cr.top) + " of " +
+         std::to_string(w) + "x" + std::to_string(hh));
 
   if (d.raised && d.workerW) {
     // The wallpaper WorkerW must stay the last (bottom) child of Progman.
