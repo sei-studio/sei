@@ -24,14 +24,17 @@
  * - `busy`: the player is chatting with her (main says so) or just clicked
  *   her. Hold her in her seat.
  * - `poke` changes on every click on her (`n` counts up). 'click' also opens
- *   her chat in Sei; 'dblclick' is reserved; 'drag' is a stroke across her
- *   (macOS only for now).
+ *   her chat in Sei; 'dblclick' asks her for a short reply (M4,
+ *   desktopLines.ts in main); 'drag' is a stroke across her (macOS only for
+ *   now).
+ * - `speaking` (M4): one of her lines is on screen as a bubble. Move her
+ *   mouth and hold her in her seat. No audio plays in the host, so there is
+ *   no real level: RoomAvatarHost makes a soft syllable envelope.
  * - Data comes in props. The page's `window.sei` has only the avatar calls
  *   RoomAvatar's views make (avatarGet, avatarModelFiles, onAvatarManifest,
  *   facepackForCharacter, facepackManifest, facepackFile), relayed to main
  *   for this character only (src/preload/seilinkHost.ts).
- * - Not wired yet: `speaking` / `levelRef` (her voice does not play in the
- *   host) and `emotion`.
+ * - Not wired yet: her voice (TTS) on the desktop, and `emotion`.
  */
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { RoomAvatarSlot } from '../RoomCanvas';
@@ -58,6 +61,8 @@ export interface HostAvatarProps {
   /** Chatting with her (from main). The component adds its own hold after a poke. */
   busy: boolean;
   poke: HostAvatarPoke | null;
+  /** M4: a line of hers is showing (mouth moves, she holds still). */
+  speaking?: boolean;
 }
 
 export type HostAvatarComponent = React.ComponentType<HostAvatarProps>;
@@ -67,9 +72,10 @@ export const POKE_HOLD_MS = 8_000;
 
 /** RoomAvatar in the host: her figure is the click area, and a poke holds her still for a moment. */
 export function RoomAvatarHost(props: HostAvatarProps): React.ReactElement {
-  const { characterId, name, slot, portrait, use, busy, poke } = props;
+  const { characterId, name, slot, portrait, use, busy, poke, speaking = false } = props;
   const ref = useRef<HTMLDivElement>(null);
   const [held, setHeld] = useState(false);
+  const levelRef = useSyllableLevel(speaking && slot.fps > 0);
 
   useEffect(() => {
     if (!poke) return;
@@ -86,9 +92,43 @@ export function RoomAvatarHost(props: HostAvatarProps): React.ReactElement {
 
   return (
     <div ref={ref} style={{ display: 'contents' }}>
-      <RoomAvatar slot={slot} characterId={characterId} name={name} portrait={portrait} use={use} busy={busy || held} />
+      <RoomAvatar
+        slot={slot}
+        characterId={characterId}
+        name={name}
+        portrait={portrait}
+        use={use}
+        busy={busy || held}
+        speaking={speaking}
+        levelRef={levelRef}
+      />
     </div>
   );
 }
 
 export const HostAvatar: HostAvatarComponent = RoomAvatarHost;
+
+/** A speech-like mouth level without audio: syllables of 120-220 ms with small gaps. */
+function useSyllableLevel(on: boolean): React.MutableRefObject<number> {
+  const level = useRef(0);
+  useEffect(() => {
+    if (!on) {
+      level.current = 0;
+      return;
+    }
+    let dead = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const step = (open: boolean): void => {
+      if (dead) return;
+      level.current = open ? 0.35 + Math.random() * 0.5 : 0.05;
+      timer = setTimeout(() => step(!open), open ? 120 + Math.random() * 100 : 50 + Math.random() * 70);
+    };
+    step(true);
+    return () => {
+      dead = true;
+      if (timer) clearTimeout(timer);
+      level.current = 0;
+    };
+  }, [on]);
+  return level;
+}

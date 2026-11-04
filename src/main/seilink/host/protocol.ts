@@ -9,7 +9,7 @@
  * process, is never listened to.
  */
 import type { AvatarManifest } from '../../../shared/ipc';
-import type { SeilinkHostAvatarMethod, SeilinkHostFailure, SeilinkHostRoom } from '../../../shared/seilinkHost';
+import type { SeilinkDockAction, SeilinkHostAvatarMethod, SeilinkHostFailure, SeilinkHostRoom } from '../../../shared/seilinkHost';
 
 /** Main -> host. */
 export type ToHost =
@@ -29,6 +29,10 @@ export type ToHost =
   | { type: 'avatar-manifest'; characterId: string; manifest: AvatarManifest | null }
   /** Frame cap while visible. */
   | { type: 'set-fps'; fps: number }
+  /** M4: the dock's state (her idle lines muted). */
+  | { type: 'dock-state'; deafened: boolean }
+  /** M4: a line she says on the desktop (a bubble near her). */
+  | { type: 'line'; text: string; kind: 'idle' | 'poke' }
   /** Hold the room still (a future dock "pause"). */
   | { type: 'set-paused'; paused: boolean }
   | { type: 'quit' }
@@ -43,7 +47,14 @@ export type FromHost =
   | { type: 'first-frame'; sinceStartMs: number }
   | { type: 'activity'; covered: boolean; paused: boolean; fps: number; reason: string }
   | { type: 'click'; kind: 'click' | 'dblclick' }
-  | { type: 'box'; screen: { x: number; y: number; w: number; h: number } | null }
+  /** Her box and (M4) the dock buttons, in screen coordinates (top-left points). */
+  | {
+      type: 'box';
+      screen: { x: number; y: number; w: number; h: number } | null;
+      dock?: Array<{ id: SeilinkDockAction; x: number; y: number; w: number; h: number }>;
+    }
+  /** M4: a dock action the user pressed (and confirmed, for move out). */
+  | { type: 'dock'; action: SeilinkDockAction }
   | {
       type: 'heartbeat';
       fps: number;

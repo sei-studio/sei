@@ -36,9 +36,11 @@ import { addonAvailability } from './native';
 import {
   SEILINK_HOST_FPS,
   SEILINK_HOST_OFF,
+  isSeilinkDockAction,
   isSeilinkHostAvatarMethod,
   isSeilinkHostFailure,
   type SeilinkEndReason,
+  type SeilinkDockAction,
   type SeilinkHostFailure,
   type SeilinkHostStatus,
 } from '../../../shared/seilinkHost';
@@ -60,8 +62,10 @@ export interface SeilinkHostDeps {
   pushStatus(status: SeilinkHostStatus): void;
   /** She was clicked: open (or focus) her chat in Sei. */
   openChat(characterId: string): void;
-  /** Double click on her: reserved (the dock milestone). */
+  /** Double click on her (M4: a poke, answered by desktopLines.ts). */
   onDoubleClick?(characterId: string): void;
+  /** M4: the dock's "edit room": show Sei and open her room editor. */
+  openRoomEditor?(characterId: string): void;
   /** M4: the Labs setting or the profile changed (SeilinkAvailability to the main window). */
   pushAvailability?(): void;
 }
@@ -451,6 +455,10 @@ function onConnection(s: Session, sock: net.Socket): void {
         sendTo(s, { type: 'set-fps', fps: fpsCap });
         sendTo(s, { type: 'busy', busy: s.busy.busy });
         void sendRoom(s);
+        void loadConfig().then(
+          (c) => session === s && sendTo(s, { type: 'dock-state', deafened: c.seilink_deafened === true }),
+          () => {},
+        );
         return;
       }
       s.supervisor.onHostMessage(pid, m);
@@ -489,7 +497,9 @@ async function sendRoom(s: Session): Promise<void> {
     }
     const character = await getCharacter(s.characterId).catch(() => null);
     const portrait = await hostPortrait(character?.portrait_image ?? null, paths.portraitPath);
-    const payload = { ...room, portrait: portrait.url, name: character?.name ?? '' };
+    // M4: the dock and bubble speak the app's language.
+    const uiLanguage = (await loadConfig().catch(() => null))?.ui_language ?? null;
+    const payload = { ...room, portrait: portrait.url, name: character?.name ?? '', uiLanguage };
     if (session === s) sendTo(s, { type: 'room', payload, files, portraitFile: portrait.file });
   } catch (err) {
     log(`room for host failed: ${(err as Error).message}`);
@@ -527,6 +537,9 @@ function onHostMessage(s: Session, m: FromHost): void {
       if (m.kind === 'click') deps?.openChat(s.characterId);
       else if (m.kind === 'dblclick') deps?.onDoubleClick?.(s.characterId);
       break;
+    case 'dock':
+      if (isSeilinkDockAction(m.action)) void onDockAction(s, m.action);
+      break;
     case 'log':
       log(`host: ${m.msg}`);
       break;
@@ -534,6 +547,60 @@ function onHostMessage(s: Session, m: FromHost): void {
       void answerCall(s, m);
       break;
   }
+}
+
+/**
+ * M4: a dock button (the host routed the press, the page confirmed move out).
+ * seilink_dock_action {action, character_id, deafened?} (shape only).
+ */
+async function onDockAction(s: Session, action: SeilinkDockAction): Promise<void> {
+  if (session !== s) return;
+  const characterId = s.characterId;
+  if (action === 'edit') {
+    capture('seilink_dock_action', { action, character_id: characterId });
+    deps?.openRoomEditor?.(characterId);
+    return;
+  }
+  if (action === 'deafen') {
+    let next = false;
+    try {
+      await updateConfig((c) => {
+        next = c.seilink_deafened !== true;
+        return { ...c, seilink_deafened: next };
+      });
+    } catch (err) {
+      log(`deafen failed: ${(err as Error).message}`);
+      return;
+    }
+    if (session === s) sendTo(s, { type: 'dock-state', deafened: next });
+    capture('seilink_dock_action', { action, character_id: characterId, deafened: next });
+    return;
+  }
+  capture('seilink_dock_action', { action, character_id: characterId });
+  await stopSeilinkHost('user_stop', 'dock');
+}
+
+/**
+ * M4: show a line she says as a bubble by her on the desktop. False when she
+ * is not the one on the desktop or the host is not connected.
+ */
+export function sendSeilinkLine(characterId: string, text: string, kind: 'idle' | 'poke'): boolean {
+  const s = session;
+  if (!s || s.ending || s.characterId !== characterId || !s.conn) return false;
+  sendTo(s, { type: 'line', text, kind });
+  return true;
+}
+
+/** M4: who is on the desktop right now (attached and drawing), for desktopLines.ts. */
+export function seilinkLiveCharacter(): string | null {
+  const s = session;
+  if (!s || s.ending || !s.conn || status.state !== 'running') return null;
+  return s.characterId;
+}
+
+/** M4: the player is chatting with her (or just clicked her): no idle line now. */
+export function seilinkHostBusy(): boolean {
+  return session?.busy.busy === true;
 }
 
 const avatarStores: HostAvatarStores = {

@@ -44,7 +44,7 @@ vi.mock('../llm/webSearchSettings', () => ({
 
 import type { ChatDeps } from './chatService';
 import type { ChatMessage } from '../../shared/ipc';
-import { sendChatMessage, sendVoiceIdleTurn, sendVoiceGreetingTurn } from './chatService';
+import { DESKTOP_LINE_NOTES, readRecent, sendChatMessage, sendDesktopLineTurn, sendVoiceIdleTurn, sendVoiceGreetingTurn } from './chatService';
 import { setCallActive } from '../voice/callState';
 import { devRoomSource, setGameSurfaceProbe, setRoomSource, type RoomContext, type RoomSource } from '../seilink/roomContext';
 
@@ -211,5 +211,34 @@ describe('look()', () => {
     const spoken = result.messages.map((m) => m.text).join(' ');
     expect(spoken).toContain('let me look around');
     expect(spoken).toContain('my lamp is on');
+  });
+});
+
+describe('desktop lines (M4)', () => {
+  it('a poke reply: her room line, the note after the breakpoint, saved to her chat', async () => {
+    createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: 'hey, that tickles' }] });
+    const line = await sendDesktopLineTurn(CHAR, 'poke');
+    expect(line?.text).toBe('hey, that tickles');
+    const r = req(0);
+    expect(statusBlock(r)).toContain("You're in your bedroom.");
+    expect(JSON.stringify(r.messages[r.messages.length - 1].content)).toContain(DESKTOP_LINE_NOTES.poke.slice(0, 60));
+    const rows = await readRecent(CHAR, 5);
+    expect(rows.map((m) => m.text)).toContain('hey, that tickles');
+    expect(rows.every((m) => m.voice !== true)).toBe(true);
+  });
+
+  it('an idle (silence) is not shown or saved', async () => {
+    createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: '(silence)' }] });
+    expect(await sendDesktopLineTurn(CHAR, 'idle')).toBeNull();
+    expect(await readRecent(CHAR, 5)).toEqual([]);
+  });
+
+  it('no line (and no model call) while she has no room: a game surface, or none at all', async () => {
+    setGameSurfaceProbe(() => true);
+    expect(await sendDesktopLineTurn(CHAR, 'idle')).toBeNull();
+    setGameSurfaceProbe(null);
+    setRoomSource(null);
+    expect(await sendDesktopLineTurn(CHAR, 'poke')).toBeNull();
+    expect(createSpy).not.toHaveBeenCalled();
   });
 });

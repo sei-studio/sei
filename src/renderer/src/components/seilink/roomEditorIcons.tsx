@@ -114,3 +114,36 @@ export const PaletteIcon = (p: P): React.ReactElement => (
     <circle cx="15" cy="7.6" r="1.1" />
   </Svg>
 );
+
+// ── SeiLink dock (M4) ──
+
+/** Edit room: a paint brush. */
+export const BrushIcon = (p: P): React.ReactElement => (
+  <Svg {...p}>
+    <path d="M14.5 4.5l5 5L11 18l-5-5z" />
+    <path d="M6 13c-2 .5-2.5 2.5-2.5 6.5 3.5 0 6-.5 6.5-2.5" />
+  </Svg>
+);
+
+/** Her idle lines on: a speech bubble. */
+export const BubbleIcon = (p: P): React.ReactElement => (
+  <Svg {...p}>
+    <path d="M5 5.5h14a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-7L7.5 20v-3.5H5A1.5 1.5 0 0 1 3.5 15V7A1.5 1.5 0 0 1 5 5.5z" />
+  </Svg>
+);
+
+/** Her idle lines muted: the bubble, struck through. */
+export const BubbleOffIcon = (p: P): React.ReactElement => (
+  <Svg {...p}>
+    <path d="M9 5.5h10a1.5 1.5 0 0 1 1.5 1.5v8c0 .5-.2.9-.6 1.2M16 16.5h-4L7.5 20v-3.5H5A1.5 1.5 0 0 1 3.5 15V7c0-.6.3-1 .8-1.3" />
+    <path d="M3.5 3.5l17 17" />
+  </Svg>
+);
+
+/** Move out: a door with an arrow leaving it. */
+export const MoveOutIcon = (p: P): React.ReactElement => (
+  <Svg {...p}>
+    <path d="M13 4.5H6.5A1.5 1.5 0 0 0 5 6v12a1.5 1.5 0 0 0 1.5 1.5H13" />
+    <path d="M10 12h10M16.5 8.5L20 12l-3.5 3.5" />
+  </Svg>
+);

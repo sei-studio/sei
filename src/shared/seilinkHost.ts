@@ -122,6 +122,8 @@ export interface SeilinkHostRoom extends SeilinkRoomPayload {
    */
   portrait: string | null;
   name: string;
+  /** M4: the app's UI language (UserConfig.ui_language) for the dock's few words; null = follow the system. */
+  uiLanguage?: string | null;
 }
 
 /** The pack-id slot of sei-room:// URLs that serves her portrait in the host (pack ids never start with '_'). */
@@ -162,6 +164,51 @@ export interface SeilinkHostBridge {
   firstFrame(): void;
   /** Ask for the current room + fps (the page mounted). */
   ready(): void;
+  // ── M4: the dock and her desktop lines ──
+  /** The display's work area in page CSS px (the dock sits above the taskbar / Dock). */
+  onLayout(cb: (layout: SeilinkHostLayout) => void): () => void;
+  /** Dock state from main (deafened). */
+  onDockState(cb: (state: SeilinkDockState) => void): () => void;
+  /** A press on a dock button (the host routes presses by position; the page never gets DOM clicks). */
+  onDockPress(cb: (id: SeilinkDockAction) => void): () => void;
+  /** The dock buttons' boxes (CSS px), or null when the dock is hidden. Part of the click area. */
+  setDock(buttons: SeilinkDockButton[] | null): void;
+  /** A dock action the user confirmed: the host relays it to main. */
+  dockAction(action: SeilinkDockAction): void;
+  /** A short line from her (a click reply or a rare idle line), shown as a bubble. */
+  onLine(cb: (line: SeilinkHostLine) => void): () => void;
 }
 
 export type SeilinkPokeKind = 'click' | 'dblclick' | 'drag';
+
+/**
+ * Dock buttons (M4): edit her room (opens the editor in the app), deafen
+ * (mute her idle desktop lines; replies to a poke still show), move out
+ * (a second press confirms).
+ */
+export const SEILINK_DOCK_ACTIONS = ['edit', 'deafen', 'moveout'] as const;
+export type SeilinkDockAction = (typeof SEILINK_DOCK_ACTIONS)[number];
+
+export function isSeilinkDockAction(v: unknown): v is SeilinkDockAction {
+  return typeof v === 'string' && (SEILINK_DOCK_ACTIONS as readonly string[]).includes(v);
+}
+
+export interface SeilinkDockButton extends SeilinkBox {
+  id: SeilinkDockAction;
+}
+
+export interface SeilinkDockState {
+  deafened: boolean;
+}
+
+export interface SeilinkHostLayout {
+  /** The work area (display minus taskbar / menu bar / Dock), page CSS px. */
+  workArea: SeilinkBox;
+}
+
+/** A line she says on the desktop: `poke` answers a double click, `idle` is unprompted. */
+export interface SeilinkHostLine {
+  id: number;
+  text: string;
+  kind: 'idle' | 'poke';
+}

@@ -17,7 +17,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { defaultRoomState, ROOM_PRESET_IDS, type RoomPresetId } from '@shared/seilinkRoom';
-import { seilinkResolver, type SeilinkPack } from '@shared/seilinkPack';
+import { seilinkResolver, type RoomUrlResolver, type SeilinkPack } from '@shared/seilinkPack';
 import { sei } from '../../lib/ipcClient';
 import { useT } from '../../lib/i18n';
 import { roomThumb } from '../../lib/seilink/roomThumbs';
@@ -27,18 +27,18 @@ import { CheckIcon } from './roomEditorIcons';
 import { moveInFailed, ROOM_PRESET_LABEL } from '../../lib/seilink/moveIn';
 import styles from './MoveInSheet.module.css';
 
-function PresetThumb({ pack }: { pack: SeilinkPack }): React.ReactElement {
+function PresetThumb({ pack, resolveFor }: { pack: SeilinkPack; resolveFor?: (p: SeilinkPack) => RoomUrlResolver }): React.ReactElement {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     let dead = false;
-    roomThumb(pack.manifest, defaultRoomState(pack.id), { time: 'day', resolve: seilinkResolver(pack), width: 320, rev: pack.rev }).then(
+    roomThumb(pack.manifest, defaultRoomState(pack.id), { time: 'day', resolve: (resolveFor ?? seilinkResolver)(pack), width: 320, rev: pack.rev }).then(
       (u) => !dead && setUrl(u),
       () => {},
     );
     return () => {
       dead = true;
     };
-  }, [pack]);
+  }, [pack, resolveFor]);
   return url ? <img className={styles.cardImg} src={url} alt="" draggable={false} /> : <span className={styles.cardWait} />;
 }
 
@@ -56,6 +56,8 @@ export interface MoveInSheetViewProps {
   error: string | null;
   onCancel: () => void;
   onConfirm: () => void;
+  /** Dev screenshots: pack URLs over HTTP instead of sei-room://. */
+  resolveFor?: (pack: SeilinkPack) => RoomUrlResolver;
 }
 
 export function MoveInSheetView(p: MoveInSheetViewProps): React.ReactElement {
@@ -79,7 +81,7 @@ export function MoveInSheetView(p: MoveInSheetViewProps): React.ReactElement {
                   onClick={() => p.onPick(id)}
                 >
                   <span className={styles.cardArt}>
-                    {pack ? <PresetThumb pack={pack} /> : <span className={styles.cardWait} />}
+                    {pack ? <PresetThumb pack={pack} resolveFor={p.resolveFor} /> : <span className={styles.cardWait} />}
                     {on ? (
                       <span className={styles.cardCheck}>
                         <CheckIcon size={12} />
@@ -101,7 +103,7 @@ export function MoveInSheetView(p: MoveInSheetViewProps): React.ReactElement {
       <ul className={styles.points}>
         <li>{t('{name} lives on your wallpaper, behind your windows and icons.', { name: p.name })}</li>
         <li>{t('The room pauses while windows cover it.')}</li>
-        <li>{t('Click {name} to chat. The dock in the room edits it, mutes desktop lines, or moves {name} out.', { name: p.name })}</li>
+        <li>{t('Click {name} to chat. The dock in the room edits it, mutes idle lines, or moves {name} out.', { name: p.name })}</li>
       </ul>
       {p.otherName ? (
         <p className={styles.line}>{t('{other} moves out first. One companion lives on the desktop at a time.', { other: p.otherName })}</p>
