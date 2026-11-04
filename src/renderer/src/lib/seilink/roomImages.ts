@@ -150,6 +150,49 @@ export function loadRoomGlow(url: string): Promise<TrimmedGlow> {
   });
 }
 
+/**
+ * A glow with its colour taken out (261105 light colour): each pixel's
+ * brightness (max channel) as grey, so multiplying by a tint lights it in
+ * that colour. Same trim as loadRoomGlow.
+ */
+export function loadRoomGlowGrey(url: string): Promise<TrimmedGlow> {
+  return remember(`glowgrey:${url}`, async () => {
+    const g = await loadRoomGlow(url);
+    if (!g.bitmap) return g;
+    const c = makeCanvas(g.w, g.h);
+    const ctx = ctx2d(c, { willReadFrequently: true });
+    ctx.drawImage(g.bitmap, 0, 0);
+    const img = ctx.getImageData(0, 0, g.w, g.h);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const v = Math.max(d[i], d[i + 1], d[i + 2]);
+      d[i] = v;
+      d[i + 1] = v;
+      d[i + 2] = v;
+    }
+    ctx.putImageData(img, 0, 0);
+    return { ...g, bitmap: await createImageBitmap(c) };
+  });
+}
+
+/** A painted pattern tile's grey (luminance x alpha, transparent = base), row major 0..255. */
+export function loadPatternTileGrey(url: string): Promise<{ w: number; h: number; data: Uint8Array }> {
+  return remember(`tile:${url}`, async () => {
+    const src = await loadRoomImage(url);
+    const c = makeCanvas(src.width, src.height);
+    const ctx = ctx2d(c, { willReadFrequently: true });
+    ctx.drawImage(src, 0, 0);
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    const data = new Uint8Array(c.width * c.height);
+    for (let i = 0; i < data.length; i++) {
+      const a = d[i * 4 + 3] / 255;
+      const l = d[i * 4] * 0.299 + d[i * 4 + 1] * 0.587 + d[i * 4 + 2] * 0.114;
+      data[i] = Math.round(l * a + 255 * (1 - a));
+    }
+    return { w: c.width, h: c.height, data };
+  });
+}
+
 /** Drop every cached image (the dev preview's reload; a pack swap). */
 export function clearRoomImageCache(): void {
   cache.clear();

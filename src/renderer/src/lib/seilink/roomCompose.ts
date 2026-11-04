@@ -13,10 +13,16 @@
  * through a scratch with its base faded into the top (sinkKeep), over a soft
  * contact shadow as wide as its base. Both happen when a cached layer is
  * built, never per frame.
+ *
+ * 261105 catalog: a patterned layer multiplies by its colour canvas
+ * (roomPattern.ts) instead of a flat tint; a `fit: 'cover'` slot is cropped
+ * to its box (coverCrop); a light's glow can be lit in a colour (its grey
+ * version times the colour, per frame while it cycles).
  */
 import {
   baseSpan,
   contactShadow,
+  coverCrop,
   itemRect,
   sinkKeep,
   sinkLook,
@@ -29,12 +35,18 @@ import {
 } from '@shared/seilinkDraw';
 import type { RoomBox, RoomPolygon } from '@shared/seilinkRoom';
 import type { RoomUrlResolver } from '@shared/seilinkPack';
-import { ctx2d, loadRoomGlow, loadRoomImage, loadRoomMask, makeCanvas, maskBounds, type AnyCanvas, type AnyContext2D, type TrimmedGlow } from './roomImages';
+import { mipTile, type MipTile } from '@shared/seilinkPatterns';
+import { ctx2d, loadPatternTileGrey, loadRoomGlow, loadRoomGlowGrey, loadRoomImage, loadRoomMask, makeCanvas, maskBounds, type AnyCanvas, type AnyContext2D, type TrimmedGlow } from './roomImages';
+import { patternColour } from './roomPattern';
 
 export interface RoomAssets {
   images: Map<string, ImageBitmap>;
   masks: Map<string, ImageBitmap>;
   glows: Map<string, TrimmedGlow>;
+  /** 261105: painted pattern tiles by pack path. */
+  tiles?: Map<string, MipTile>;
+  /** 261105: glows with their colour taken out, for lights lit in a colour. */
+  glowsGrey?: Map<string, TrimmedGlow>;
 }
 
 export interface RoomAssetError {
@@ -60,8 +72,15 @@ export async function loadPlanAssets(plan: Pick<RoomDrawPlan, 'layers' | 'glows'
     if (l.kind === 'avatar') continue;
     want(assets.images, l.frame.src, loadRoomImage);
     if (l.tint && l.frame.mask) want(assets.masks, l.frame.mask, loadRoomMask);
+    // 261105: an indoor shell's window glass (where rain runs and view particles show).
+    if (l.frame.glass && plan.particles?.length) want(assets.masks, l.frame.glass, loadRoomMask);
+    const tile = l.pattern?.def.made === 'tile' ? l.pattern.def.tile : undefined;
+    if (tile) want((assets.tiles ??= new Map()), tile, async (url) => mipTile(await loadPatternTileGrey(url)));
   }
-  for (const g of plan.glows) want(assets.glows, g.src, loadRoomGlow);
+  for (const g of plan.glows) {
+    want(assets.glows, g.src, loadRoomGlow);
+    if (g.tint || g.cycle) want((assets.glowsGrey ??= new Map()), g.src, loadRoomGlowGrey);
+  }
   await Promise.all(jobs);
   return { assets, errors };
 }
@@ -101,7 +120,17 @@ function drawFlipped(ctx: AnyContext2D, img: CanvasImageSource, [x, y, w, h]: Ro
  * the scratch size. `clip` (canvas px) limits the work to a region: the
  * recolour fast path redraws only where the mask is.
  */
-function drawTinted(ctx: AnyContext2D, frame: ImageBitmap, mask: ImageBitmap, tint: string, rect: RoomBox, scale: number, flip = false, clip?: RoomBox): void {
+function drawTinted(
+  ctx: AnyContext2D,
+  frame: ImageBitmap,
+  mask: ImageBitmap,
+  tint: string,
+  rect: RoomBox,
+  scale: number,
+  flip = false,
+  clip?: RoomBox,
+  colour?: { canvas: AnyCanvas; rect: RoomBox } | null,
+): void {
   let [x, y, w, h] = rect;
   // Source regions of the frame and the mask (they may differ in size).
   let fx = 0;
@@ -139,8 +168,17 @@ function drawTinted(ctx: AnyContext2D, frame: ImageBitmap, mask: ImageBitmap, ti
   sc.clearRect(0, 0, sw, sh);
   sc.drawImage(frame, fx, fy, fw, fh, 0, 0, sw, sh);
   sc.globalCompositeOperation = 'multiply';
-  sc.fillStyle = tint;
-  sc.fillRect(0, 0, sw, sh);
+  if (colour) {
+    // The pattern's colours over the mask's bounds (outside them the mask is empty anyway).
+    const [rx, ry, rw, rh] = colour.rect;
+    const kx = sw / w;
+    const ky = sh / h;
+    sc.imageSmoothingEnabled = true;
+    sc.drawImage(colour.canvas, (rx - x) * kx, (ry - y) * ky, rw * kx, rh * ky);
+  } else {
+    sc.fillStyle = tint;
+    sc.fillRect(0, 0, sw, sh);
+  }
   sc.globalCompositeOperation = 'destination-in';
   sc.drawImage(mask, mx, my, mw, mh, 0, 0, sw, sh);
   sc.drawImage(frame, fx, fy, fw, fh, 0, 0, sw, sh);
@@ -199,14 +237,20 @@ function intersect(a: RoomBox, b: RoomBox | undefined): RoomBox {
   return [x, y, Math.max(0, Math.min(a[0] + a[2], b[0] + b[2]) - x), Math.max(0, Math.min(a[1] + a[3], b[1] + b[3]) - y)];
 }
 
-/** One layer as it is, with its tint when it has one. */
+/** One layer as it is, with its tint (or pattern) when it has one. */
 function drawPlain(ctx: AnyContext2D, l: SlotLayer | ItemLayer, img: ImageBitmap, rect: RoomBox, assets: RoomAssets, scale: number, clip?: RoomBox): void {
   if (l.tint && l.frame.mask) {
     const mask = assets.masks.get(l.frame.mask);
     if (mask) {
-      drawTinted(ctx, img, mask, l.tint, rect, scale, l.kind === 'item' && l.flip, clip);
+      const colour = l.pattern ? patternColour(l, rect, img, mask, assets.tiles, scale) : null;
+      drawTinted(ctx, img, mask, l.tint, rect, scale, l.kind === 'item' && l.flip, clip, colour);
       return;
     }
+  }
+  if (l.kind === 'slot' && l.component.fit === 'cover' && l.box) {
+    const [sx, sy, sw, sh] = coverCrop([img.width, img.height], [rect[2], rect[3]], l.component.focus);
+    ctx.drawImage(img, sx, sy, sw, sh, rect[0], rect[1], rect[2], rect[3]);
+    return;
   }
   drawFlipped(ctx, img, rect, l.kind === 'item' && l.flip);
 }
@@ -345,13 +389,43 @@ function clipTo(ctx: AnyContext2D, polys: readonly RoomPolygon[]): void {
   ctx.clip();
 }
 
-/** Draw glows (into a layer that is screen-blended over the scene). `alpha(g)` is each glow's opacity. */
+let glowScratch: { c: AnyCanvas; ctx: AnyContext2D } | null = null;
+
+/** A grey glow multiplied by a colour, at its own trimmed size (cached per glow + colour for still lights). */
+function colouredGlow(glow: TrimmedGlow, colour: string): AnyCanvas | null {
+  if (!glow.bitmap) return null;
+  const { w, h } = glow;
+  if (!glowScratch || glowScratch.c.width < w || glowScratch.c.height < h) {
+    const c = makeCanvas(Math.max(w, glowScratch?.c.width ?? 0), Math.max(h, glowScratch?.c.height ?? 0));
+    glowScratch = { c, ctx: ctx2d(c) };
+  }
+  const sc = glowScratch.ctx;
+  sc.save();
+  sc.setTransform(1, 0, 0, 1, 0, 0);
+  sc.globalCompositeOperation = 'source-over';
+  sc.clearRect(0, 0, w, h);
+  sc.drawImage(glow.bitmap, 0, 0);
+  sc.globalCompositeOperation = 'multiply';
+  sc.fillStyle = colour;
+  sc.fillRect(0, 0, w, h);
+  sc.globalCompositeOperation = 'destination-in';
+  sc.drawImage(glow.bitmap, 0, 0);
+  sc.restore();
+  return glowScratch.c;
+}
+
+/**
+ * Draw glows (into a layer that is screen-blended over the scene). `alpha(g)`
+ * is each glow's opacity; `colour(g)` (261105) the colour a light is lit in,
+ * or null for the glow's own colours.
+ */
 export function drawRoomGlows(
   ctx: AnyContext2D,
   glows: ReadonlyArray<GlowLayer>,
   canvas: readonly [number, number],
   assets: RoomAssets,
   alpha: (g: GlowLayer) => number,
+  colour: (g: GlowLayer) => string | null = (g) => g.tint ?? null,
 ): void {
   for (const g of glows) {
     const glow = assets.glows.get(g.src);
@@ -365,7 +439,23 @@ export function drawRoomGlows(
     const flip = g.owner.kind === 'item' && g.owner.flip;
     const gx = flip ? x + (glow.fw - glow.x - glow.w) * sx : x + glow.x * sx;
     ctx.globalAlpha = Math.min(1, a);
-    drawFlipped(ctx, glow.bitmap, [gx, y + glow.y * sy, glow.w * sx, glow.h * sy], flip);
+    const tint = colour(g);
+    const grey = tint ? assets.glowsGrey?.get(g.src) : undefined;
+    const lit = grey && tint ? colouredGlow(grey, tint) : null;
+    const dest: RoomBox = [gx, y + glow.y * sy, glow.w * sx, glow.h * sy];
+    if (lit && grey) {
+      if (flip) {
+        ctx.save();
+        ctx.translate(dest[0] + dest[2], dest[1]);
+        ctx.scale(-1, 1);
+        ctx.drawImage(lit, 0, 0, grey.w, grey.h, 0, 0, dest[2], dest[3]);
+        ctx.restore();
+      } else {
+        ctx.drawImage(lit, 0, 0, grey.w, grey.h, dest[0], dest[1], dest[2], dest[3]);
+      }
+    } else {
+      drawFlipped(ctx, glow.bitmap, dest, flip);
+    }
   }
   ctx.globalAlpha = 1;
 }
