@@ -273,8 +273,9 @@ export async function resolveSeilinkUrl(url: string): Promise<{ file: string; ty
   return { file: real, type: CONTENT_TYPES[path.extname(real).toLowerCase()] ?? 'application/octet-stream' };
 }
 
-/** Attach the sei-room:// handler. After app 'ready'. */
+/** Attach the sei-room:// handler. After app 'ready'. Once: protocol.handle throws on a handled scheme. */
 export function registerSeilinkProtocol(): void {
+  if (protocol.isProtocolHandled(SEILINK_ROOM_SCHEME)) return;
   protocol.handle(SEILINK_ROOM_SCHEME, async (request) => {
     const headers = { 'Access-Control-Allow-Origin': '*' };
     const hit = await resolveSeilinkUrl(request.url);

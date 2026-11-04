@@ -11,8 +11,12 @@ import { getRoomPayload, isRoomCharacterId, onRoomChange, setRoomState } from '.
 import { seilinkHostStatus, startSeilinkHost, stopSeilinkHost } from './host/seilinkHost';
 
 let previewWin: BrowserWindow | null = null;
+let registered = false;
 
+/** Once per process (ipcMain.handle throws on a second handler for a channel). */
 export function registerSeilinkIpc(opts: { preloadPath: string; rendererTarget: () => string }): void {
+  if (registered) return;
+  registered = true;
   onRoomChange((characterId) => {
     for (const w of BrowserWindow.getAllWindows()) {
       if (!w.isDestroyed()) w.webContents.send(IpcChannel.seilink.roomChanged, characterId);

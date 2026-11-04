@@ -144,6 +144,10 @@ const logger = {
 let mainWindow: BrowserWindow | null = null;
 // Boot safety (261031): the updater and the boot guard reach the window through this.
 setMainWindowGetter(() => mainWindow);
+/** bootstrap() has run (or is running). A second run throws, see openMainWindowAgain. */
+let bootstrapStarted = false;
+/** bootstrap() made its main window; before that, a reopen leaves it to bootstrap. */
+let firstWindowMade = false;
 // Startup splash (260728) — shown from whenReady, closed when the main window
 // first paints (or by the failsafe timer).
 let splashWindow: BrowserWindow | null = null;
@@ -253,7 +257,50 @@ function openFromSeilink(channel: string, characterId: string): void {
   // macOS keeps running with no window: make one, like a Dock click, and open the chat once
   // its UI says it is listening (app:renderer-ready).
   pendingSeilinkOpen = { channel, characterId };
-  if (mainWindow === null) bootstrap().catch((err) => logger.error(`re-bootstrap failed: ${(err as Error).message}`));
+  if (process.platform === 'darwin') app.focus({ steal: true });
+  if (mainWindow === null) openMainWindowAgain();
+}
+
+/**
+ * macOS: the last window was closed and Sei kept running; the Dock icon or a
+ * click on her desktop room asks for a window again. Before the first
+ * bootstrap that is bootstrap(). After it, ONLY the window is made again:
+ * everything else bootstrap() set up is still live (the Supabase storage
+ * adapter, protocol handlers, every IPC handler, the bot supervisor), and
+ * running it a second time threw on the first of those (step 0,
+ * SUPABASE_CLIENT_ALREADY_CREATED; protocol.handle on an already handled
+ * scheme), so no window came back at all.
+ */
+function openMainWindowAgain(): void {
+  if (!bootstrapStarted) {
+    bootstrap().catch((err) => logger.error(`bootstrap failed: ${(err as Error).message}`));
+    return;
+  }
+  // Still booting: bootstrap makes the window (and the pending SeiLink open waits for it).
+  if (!firstWindowMade) return;
+  try {
+    reopenMainWindow();
+  } catch (err) {
+    logger.error(`reopen window failed: ${(err as Error).message}`);
+  }
+}
+
+function reopenMainWindow(): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    return;
+  }
+  const win = createMainWindow({ preloadPath: preloadPath(), indexHtmlUrlOrPath: rendererTarget() });
+  mainWindow = win;
+  wireMainWindowEvents(win);
+  installPopupFrameGuards(win);
+  // Auth pushes (and their replay on load) go to the new window.
+  void import('./auth/authState')
+    .then((m) => m.rebindAuthWindow(win))
+    .catch((err) => logger.warn(`auth window rebind failed: ${(err as Error).message}`));
+  logger.info('main window reopened');
 }
 
 function openSeilinkChat(characterId: string): void {
@@ -815,6 +862,7 @@ async function endGameSurfacesForQuit(): Promise<void> {
 }
 
 async function bootstrap(): Promise<void> {
+  bootstrapStarted = true;
   // 0-pre. Install marker (260926). MUST be the first thing bootstrap does:
   //        it tells a fresh install from an existing one by probing for Sei
   //        state under userData, which every later step starts creating. The
@@ -1118,6 +1166,7 @@ async function bootstrap(): Promise<void> {
     },
   });
   wireMainWindowEvents(mainWindow);
+  firstWindowMade = true;
   // Startup popup (261027): lock the operator page's iframe to sei.gg/popup/,
   // send its links (and any window.open) to the default browser, and let it
   // be framed despite sei.gg's X-Frame-Options. See popupFrameGuards.ts.
@@ -1775,9 +1824,7 @@ async function bootstrap(): Promise<void> {
       });
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0 && mainWindow === null) {
-        bootstrap().catch((err) => logger.error(`re-bootstrap failed: ${(err as Error).message}`));
-      }
+      if (BrowserWindow.getAllWindows().length === 0 && mainWindow === null) openMainWindowAgain();
     });
   });
 

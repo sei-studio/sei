@@ -255,6 +255,14 @@ The contract for any replacement is in the file header.
 
 ## Gotchas
 
+- macOS reopen: with the main window closed Sei keeps running. A Dock click
+  or a click on her desktop room calls `openMainWindowAgain` (index.ts),
+  which recreates ONLY the window (plus its events, popup guards and the auth
+  window binding). It used to run `bootstrap()` again, which threw at step 0
+  (`SUPABASE_CLIENT_ALREADY_CREATED`) and then on `protocol.handle` for an
+  already handled scheme, so no window came back. `registerSeilinkIpc` and
+  `registerSeilinkProtocol` are also idempotent.
+
 - Rollup drops a side-effect-free busy loop: the `test-hang` loop counts
   and logs its spins so the hang actually happens.
 - Linux dev hosts need `--no-sandbox` (passed through when main has it), or
