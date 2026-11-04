@@ -25,7 +25,11 @@
  *    it (sinkLook, sunkRect, sinkKeep, contactShadow);
  *  - a frame for a time the component does not have falls back to day;
  *  - glows are listed separately: they are drawn with 'screen' over
- *    everything, the avatar included, in the same z order.
+ *    everything, the avatar included, in the same z order;
+ *  - 261105: a patterned part's layer carries its pattern and planes
+ *    (`pattern`, `quads`, frame px); a light's glow carries its colour
+ *    (`tint`, glowTint frames) or `cycle`; a frame's particles are listed in
+ *    `particles` with their area (a view's: its box, outside the glass).
  */
 import {
   AVATAR_Z,
@@ -36,6 +40,8 @@ import {
   type RoomComponent,
   type RoomFrame,
   type RoomGlowEffect,
+  type RoomPatternChoice,
+  resolvePattern,
   type RoomPolygon,
   type RoomPresetManifest,
   type RoomSlotId,
@@ -43,6 +49,8 @@ import {
   type RoomTime,
 } from './seilinkRoom';
 import { contactY, depthScale, placedItemZ, placementOf, placementRegions, surfaceAt } from './seilinkPlace';
+import type { PatternQuad } from './seilinkPatterns';
+import type { RoomParticles } from './seilinkParticles';
 
 export interface SlotLayer {
   kind: 'slot';
@@ -56,6 +64,11 @@ export interface SlotLayer {
   box: RoomBox | null;
   /** Draw only inside these polygons, canvas px (a top's lip over the items on it). Absent = all of it. */
   clip?: RoomPolygon[];
+  /** 261105: the pattern inside the mask (with tint as the base), and its planes in frame px. */
+  pattern?: RoomPatternChoice;
+  quads?: PatternQuad[];
+  /** 261105: a light cycling through the colours (its glow is coloured per frame). */
+  cycle?: boolean;
 }
 
 export interface AvatarLayer {
@@ -93,6 +106,9 @@ export interface ItemLayer {
    * face always hides the item's base. Absent = all of it.
    */
   clip?: RoomPolygon[];
+  /** 261105: as SlotLayer. Quads are sprite px. */
+  pattern?: RoomPatternChoice;
+  quads?: PatternQuad[];
 }
 
 export type RoomLayer = SlotLayer | AvatarLayer | ItemLayer;
@@ -103,6 +119,22 @@ export interface GlowLayer {
   effect: RoomGlowEffect | null;
   /** Same placement as its owner. */
   owner: SlotLayer | ItemLayer;
+  /** 261105: light the glow in this colour (a glowTint frame), hex. */
+  tint?: string;
+  /** 261105: the light runs through the hues (colour per frame, see cycleColour). */
+  cycle?: boolean;
+}
+
+/** One frame's particles, placed (261105). */
+export interface ParticleLayer {
+  spec: RoomParticles;
+  /** canvas px */
+  area: RoomBox;
+  /** 'outside' = behind the room's glass (see RoomParticles.where). */
+  where: 'outside' | 'scene';
+  owner: SlotLayer | ItemLayer;
+  /** Stable per part and spec, seeds the field. */
+  key: string;
 }
 
 export interface RoomDrawPlan {
@@ -110,6 +142,41 @@ export interface RoomDrawPlan {
   time: RoomTime;
   layers: RoomLayer[];
   glows: GlowLayer[];
+  /** 261105, may be empty. */
+  particles: ParticleLayer[];
+}
+
+/** The shared blank frame a particle-only part (fireflies) uses. */
+export const BLANK_FRAME = '_shared/blank.webp';
+
+/** The source crop [sx, sy, sw, sh] of a `fit: 'cover'` frame of natural size `img` filling a `box`-sized rect, around `focus`. */
+export function coverCrop(img: readonly [number, number], box: readonly [number, number], focus: readonly [number, number] = [0.5, 0.5]): RoomBox {
+  const [iw, ih] = img;
+  const [bw, bh] = box;
+  if (iw <= 0 || ih <= 0 || bw <= 0 || bh <= 0) return [0, 0, Math.max(0, iw), Math.max(0, ih)];
+  const k = Math.max(bw / iw, bh / ih);
+  const sw = Math.min(iw, bw / k);
+  const sh = Math.min(ih, bh / k);
+  const fx = Math.max(0, Math.min(1, focus[0]));
+  const fy = Math.max(0, Math.min(1, focus[1]));
+  // The focus point stays where it is in the frame, as far as the crop allows.
+  const sx = Math.max(0, Math.min(iw - sw, fx * iw - sw / 2));
+  const sy = Math.max(0, Math.min(ih - sh, fy * ih - sh / 2));
+  return [sx, sy, sw, sh];
+}
+
+/** A light's colour at time `ms` while cycling: once round the hues in CYCLE_MS, full saturation, bright. */
+export const CYCLE_MS = 20_000;
+export function cycleColour(ms: number, offset = 0): string {
+  const h = (((ms / CYCLE_MS + offset) % 1) + 1) % 1;
+  const f = (n: number): number => {
+    const k = (n + h * 6) % 6;
+    return 1 - Math.max(0, Math.min(k, 4 - k, 1));
+  };
+  // HSV with s = 0.85, v = 1.
+  const s = 0.85;
+  const c = (n: number): number => Math.round(255 * (1 - s * (1 - f(n))));
+  return '#' + [c(5), c(3), c(1)].map((v) => v.toString(16).padStart(2, '0')).join('');
 }
 
 const KIND_RANK: Record<RoomLayer['kind'], number> = { slot: 0, avatar: 1, item: 2 };
@@ -133,17 +200,26 @@ export function roomDrawPlan(
   opts: { avatar?: boolean } = {},
 ): RoomDrawPlan {
   const layers: RoomLayer[] = [];
-  for (const { slot, component, tint } of resolveSlots(manifest, state)) {
+  for (const { slot, component, tint, pattern, cycle } of resolveSlots(manifest, state)) {
     const frame = frameFor(component, time);
-    layers.push({
+    const tinted = component.tintable && frame.mask && tint ? tint : null;
+    const layer: SlotLayer = {
       kind: 'slot',
       z: manifest.slots[slot]!.z,
       slot,
       component,
       frame,
-      tint: component.tintable && frame.mask && tint ? tint : null,
+      // A cycling light's part is drawn in white; its glow carries the colour.
+      tint: tinted && cycle ? '#ffffff' : tinted,
       box: component.box ?? null,
-    });
+    };
+    if (tinted && pattern && !cycle) {
+      layer.pattern = pattern;
+      const quads = frame.patternQuads ?? component.patternQuads;
+      if (quads) layer.quads = quads;
+    }
+    if (cycle) layer.cycle = true;
+    layers.push(layer);
   }
   if (opts.avatar !== false) {
     layers.push({ kind: 'avatar', z: AVATAR_Z, x: manifest.avatar.x, y: manifest.avatar.y, height: manifest.avatar.height });
@@ -170,6 +246,8 @@ export function roomDrawPlan(
         if (top.sink > 0) sink = { depth: top.sink * scale, foot: Math.max(0, component.foot ?? 0) * scale };
       }
     }
+    const pattern = component.tintable && frame.mask && tint ? resolvePattern(manifest, component, tint, it.pattern, it.accent) : null;
+    const quads = pattern ? (frame.patternQuads ?? component.patternQuads) : undefined;
     layers.push({
       kind: 'item',
       z: placedItemZ(regions, component, it),
@@ -184,6 +262,8 @@ export function roomDrawPlan(
       tint: component.tintable && frame.mask && tint ? tint : null,
       sink,
       ...(clip ? { clip } : {}),
+      ...(pattern ? { pattern } : {}),
+      ...(quads ? { quads } : {}),
     });
   });
   // Each used lip: its part's frame again, cut to the lip, just over the items on that top.
@@ -197,12 +277,25 @@ export function roomDrawPlan(
   order.sort((a, b) => a.l.z - b.l.z || KIND_RANK[a.l.kind] - KIND_RANK[b.l.kind] || a.i - b.i);
   const sorted = order.map((o) => o.l);
   const glows: GlowLayer[] = [];
+  const particles: ParticleLayer[] = [];
   for (const l of sorted) {
     // A lip is its part drawn again in part: the part's own layer carries the glow.
-    if (l.kind === 'avatar' || !l.frame.glow || (l.kind === 'slot' && l.clip)) continue;
-    glows.push({ z: l.z, src: l.frame.glow, effect: l.frame.effect ?? null, owner: l });
+    if (l.kind === 'avatar' || (l.kind === 'slot' && l.clip)) continue;
+    if (l.frame.glow) {
+      const g: GlowLayer = { z: l.z, src: l.frame.glow, effect: l.frame.effect ?? null, owner: l };
+      if (l.frame.glowTint && l.kind === 'slot' && l.cycle) g.cycle = true;
+      else if (l.frame.glowTint && l.tint) g.tint = l.tint;
+      glows.push(g);
+    }
+    if (l.frame.particles && l.kind === 'slot') {
+      l.frame.particles.forEach((spec, i) => {
+        const where = spec.where ?? (l.slot === 'view' ? 'outside' : 'scene');
+        const area: RoomBox = spec.area ?? (l.slot === 'view' && l.box ? l.box : [0, 0, manifest.canvas[0], manifest.canvas[1]]);
+        particles.push({ spec, area, where, owner: l, key: `${l.slot}:${l.component.id}:${i}:${spec.kind}` });
+      });
+    }
   }
-  return { canvas: manifest.canvas, time, layers: sorted, glows };
+  return { canvas: manifest.canvas, time, layers: sorted, glows, particles };
 }
 
 /** Split a plan at the avatar: what is behind her and what is in front. */

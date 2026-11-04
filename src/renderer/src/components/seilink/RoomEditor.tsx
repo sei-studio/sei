@@ -27,6 +27,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from 'react-dom';
 import {
   defaultRoomState,
+  slotLabel,
   resolveRoomTime,
   type RoomComponent,
   type RoomItemPlacement,
@@ -113,18 +114,6 @@ const GROUPS: readonly Group[] = ['avatar', 'room', 'fabrics', 'furniture', 'ite
 export type PanelRequest = Group | RoomSlotId;
 
 /** Labels for slot tiles (keys are the English strings; see i18n). */
-const SLOT_LABEL: Record<RoomSlotId, string> = {
-  view: 'View',
-  shell: 'Walls',
-  curtains: 'Curtains',
-  bed: 'Bed',
-  shelf: 'Shelves',
-  chair: 'Chair',
-  lamp: 'Lamp',
-  rug: 'Rug',
-  campfire: 'Campfire',
-};
-
 const GROUP_LABEL = { fabrics: 'Walls & fabrics', furniture: 'Furniture' } as const;
 
 /** Item library groups, by placement class (keys are the English strings). */
@@ -851,10 +840,10 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
         }}
         className={styles.section}
         role="group"
-        aria-label={t(SLOT_LABEL[slot])}
+        aria-label={t(slotLabel(manifest, slot))}
         data-slot={slot}
       >
-        <h2 className={styles.title}>{t(SLOT_LABEL[slot])}</h2>
+        <h2 className={styles.title}>{t(slotLabel(manifest, slot))}</h2>
         {(def.options.length > 1 || def.optional) && (
           <div className={styles.grid}>
             {def.options.map((id) => {

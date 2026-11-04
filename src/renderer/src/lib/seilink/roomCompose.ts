@@ -43,7 +43,7 @@ export interface RoomAssetError {
 }
 
 /** Load everything a plan draws. Missing files are reported, not thrown: the rest still draws. */
-export async function loadPlanAssets(plan: RoomDrawPlan, resolve: RoomUrlResolver, into?: RoomAssets): Promise<{ assets: RoomAssets; errors: RoomAssetError[] }> {
+export async function loadPlanAssets(plan: Pick<RoomDrawPlan, 'layers' | 'glows'> & Partial<RoomDrawPlan>, resolve: RoomUrlResolver, into?: RoomAssets): Promise<{ assets: RoomAssets; errors: RoomAssetError[] }> {
   const assets: RoomAssets = into ?? { images: new Map(), masks: new Map(), glows: new Map() };
   const errors: RoomAssetError[] = [];
   const jobs: Array<Promise<void>> = [];
