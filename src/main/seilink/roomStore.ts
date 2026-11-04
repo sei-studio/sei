@@ -22,7 +22,7 @@ import type { SeilinkRoomPayload } from '../../shared/seilinkPack';
 import { paths } from '../paths';
 import { trackScopedWrite } from '../profile/scopeBarrier';
 import { loadPack, publicPack } from './packs';
-import { seilinkEnabled } from './gate';
+import { seilinkEnabled, seilinkResident } from './gate';
 import type { RoomContext, RoomSource } from './types';
 
 const ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -108,15 +108,17 @@ export async function setRoomState(characterId: string, raw: unknown): Promise<R
 }
 
 /**
- * What the AI side reads (roomContext.ts). null when her preset's pack is not
- * installed, or while SeiLink is off: the cozy pack ships with the app (M4),
- * so without this gate every companion of every user would get a room line
- * and look() on every turn.
+ * What the AI side reads (roomContext.ts). null unless SeiLink is on AND she
+ * is the companion who moved in, with her host session open
+ * (gate.seilinkResident): the cozy pack ships with the app (M4), so without
+ * this gate every companion of every Labs user would get a room line and
+ * look() on every turn, for a room they do not live in. Also null when her
+ * preset's pack is not installed.
  */
 export const roomSource: RoomSource = {
   async getRoom(characterId: string): Promise<RoomContext | null> {
     if (!isRoomCharacterId(characterId)) return null;
-    if (!seilinkEnabled()) return null;
+    if (!seilinkEnabled() || seilinkResident() !== characterId) return null;
     const raw = await readRaw(paths.seilinkRoomPath(characterId));
     const preset = coarseState(raw).preset;
     const pack = await loadPack(preset);

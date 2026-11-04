@@ -18,6 +18,7 @@ const state = vi.hoisted(() => ({
   config: {} as Record<string, unknown>,
   characters: new Set<string>(),
   hosts: [] as Array<{ pid: number; pipe: string; alive: boolean }>,
+  resident: null as string | null,
 }));
 
 vi.mock('electron', () => ({
@@ -74,6 +75,9 @@ vi.mock('../gate', () => ({
   seilinkEnabled: () => true,
   seilinkAvailability: () => ({ supported: true, setting: true, enabled: true, dev: false }),
   setSeilinkSetting: () => {},
+  setSeilinkResident: (id: string | null) => {
+    state.resident = id;
+  },
 }));
 vi.mock('../packs', () => ({ loadPack: async () => null }));
 vi.mock('../../characterStore', () => ({
@@ -150,6 +154,8 @@ describe('seilink host start / stop / restore', () => {
       expect(existsSync(second.pipe)).toBe(true);
     }
     expect(host.seilinkHostStatus().characterId).toBe(LYRA);
+    // Only Lyra lives in the room now (the room line and look() follow this).
+    expect(state.resident).toBe(LYRA);
     expect((state.config.seilink_moved_in as { character_id: string }).character_id).toBe(LYRA);
   });
 
@@ -158,6 +164,7 @@ describe('seilink host start / stop / restore', () => {
     await settle();
     expect(live()).toHaveLength(0);
     expect(host.seilinkHostStatus().state).toBe('off');
+    expect(state.resident).toBeNull();
     expect(state.config.seilink_moved_in ?? null).toBeNull();
   });
 

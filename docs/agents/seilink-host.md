@@ -10,6 +10,9 @@ with the host addon in the build; elsewhere the Labs toggle is disabled with
 the reason. Linux reports `unsupported_platform`; the app builds and runs the
 same. The room source (`roomStore.roomSource`) is gated the same way, so a
 user with SeiLink off gets no room line and no look() tool (no added tokens).
+With SeiLink on, only the companion who moved in gets them, and only while
+her host session is open (`gate.seilinkResident`, set by seilinkHost.ts);
+the others do not live there.
 
 The numbers and the Windows recovery rules come from the spike
 (`exp/seilink-spike`, `spikes/seilink/`), measured on windows-2022/2025 and

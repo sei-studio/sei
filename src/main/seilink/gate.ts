@@ -19,6 +19,8 @@ import { addonAvailability } from './host/native';
 
 let settingOn = false;
 let testOverride: boolean | null = null;
+/** Who lives in the desktop room right now: set while her host session is open (seilinkHost.ts). */
+let resident: string | null = null;
 let supportCache: Pick<SeilinkAvailability, 'supported' | 'reason'> | null = null;
 
 /** The Labs setting as last read from this profile's config. */
@@ -54,6 +56,20 @@ export function seilinkEnabled(): boolean {
 export function seilinkAvailability(): SeilinkAvailability {
   const support = seilinkSupport();
   return { ...support, setting: settingOn, enabled: seilinkEnabled(), dev: seilinkDevEnabled() };
+}
+
+/**
+ * The companion whose room is on the desktop now (a host session is open for
+ * her: starting, running or restarting), or null. Only she gets the room
+ * prompt line and look() (roomStore.roomSource); the others do not live there.
+ */
+export function seilinkResident(): string | null {
+  return resident;
+}
+
+/** seilinkHost.ts: a session opened (her id) or ended (null). */
+export function setSeilinkResident(characterId: string | null): void {
+  resident = characterId;
 }
 
 /** Tests only. null restores the real answer. */

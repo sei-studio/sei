@@ -8,7 +8,7 @@ import { seilinkFileUrl } from '../../shared/seilinkPack';
 import { readdir } from 'node:fs/promises';
 import { __setPackRootsForTest, bundledPacksDir, listPacks, loadPack, manifestFiles, resolveSeilinkUrl } from './packs';
 import { getRoomPayload, onRoomChange, roomSource, setRoomState } from './roomStore';
-import { __setSeilinkEnabledForTest } from './gate';
+import { __setSeilinkEnabledForTest, setSeilinkResident } from './gate';
 
 const CHAR = '0b9e7a62-3c1f-4d7e-9a55-2f4c8d1e6b10';
 
@@ -50,10 +50,12 @@ beforeEach(async () => {
   __setPackRootsForTest([{ dir: root, source: 'dev' }]);
   _setUserDataOverride(path.join(tmp, 'userData'));
   __setSeilinkEnabledForTest(true);
+  setSeilinkResident(CHAR);
 });
 
 afterEach(async () => {
   __setSeilinkEnabledForTest(null);
+  setSeilinkResident(null);
   __setPackRootsForTest(null);
   _setUserDataOverride(null);
   await rm(tmp, { recursive: true, force: true });
@@ -180,6 +182,21 @@ describe('seilink room store', () => {
     await writePack(path.join(root, 'cozy'));
     expect(await roomSource.getRoom(CHAR)).not.toBeNull();
     __setSeilinkEnabledForTest(false);
+    expect(await roomSource.getRoom(CHAR)).toBeNull();
+  });
+
+  it('gives the room only to the companion who moved in, while her host session is open', async () => {
+    await writePack(path.join(root, 'cozy'));
+    const OTHER = '7d3c2b1a-9e8f-4a6b-8c5d-1f2e3a4b5c6d';
+    expect(await roomSource.getRoom(CHAR)).not.toBeNull();
+    // Another companion does not live there: no room line, no look().
+    expect(await roomSource.getRoom(OTHER)).toBeNull();
+    // Nobody moved in (the host is off): nobody gets the room.
+    setSeilinkResident(null);
+    expect(await roomSource.getRoom(CHAR)).toBeNull();
+    expect(await roomSource.getRoom(OTHER)).toBeNull();
+    setSeilinkResident(OTHER);
+    expect(await roomSource.getRoom(OTHER)).not.toBeNull();
     expect(await roomSource.getRoom(CHAR)).toBeNull();
   });
 

@@ -45,7 +45,7 @@ import {
   type SeilinkHostStatus,
 } from '../../../shared/seilinkHost';
 import { loadPack } from '../packs';
-import { seilinkAvailability, seilinkEnabled, setSeilinkSetting } from '../gate';
+import { seilinkAvailability, seilinkEnabled, setSeilinkResident, setSeilinkSetting } from '../gate';
 import { BusyTracker, onSeilinkAvatarChanged, onSeilinkChatTurn } from './hostSignals';
 import { answerHostAvatarCall, hostPortrait, type HostAvatarStores } from './hostAvatarCalls';
 import { getCharacter } from '../../characterStore';
@@ -394,6 +394,7 @@ async function openSession(characterId: string, restored: boolean): Promise<void
     s.busy.dispose();
   };
   session = s;
+  setSeilinkResident(characterId);
   supervisor.on('message', (m: FromHost) => onHostMessage(s, m));
   supervisor.on('restart', (e: { reason: string }) => {
     s.restarts++;
@@ -712,6 +713,7 @@ async function endSession(reason: SeilinkEndReason, failure?: SeilinkHostFailure
   if (!s || s.ending) return;
   s.ending = true;
   session = null;
+  setSeilinkResident(null);
   s.unsub();
   const live = s.supervisor.stop({ kill: false });
   sendTo(s, { type: 'quit' });
