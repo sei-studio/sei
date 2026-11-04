@@ -4,19 +4,25 @@
  * On when either:
  *   - the dev flag is set (unpackaged + SEI_SEILINK_PACKS, packs.ts), or
  *   - the user turned it on in Settings > Labs (`seilink_enabled`, per
- *     profile) on an install that can run the desktop host.
+ *     profile) on an install that can run the desktop host: macOS or
+ *     Windows with the host addon in the build (native.ts). Elsewhere the
+ *     Settings row is shown disabled with the reason.
  *
- * Kept synchronous (prompt assembly and IPC handlers ask on every call): the
- * setting is mirrored here from config at start, after every renderer save
- * and after an account switch (index.ts / ipc.ts call setSeilinkSetting).
+ * Kept synchronous (prompt assembly asks on every turn): the setting is
+ * mirrored here from config at start and after an account switch
+ * (restoreSeilinkHost) and after a renderer save (the config:save handler).
  */
+import { app } from 'electron';
+import type { SeilinkAvailability } from '../../shared/seilinkHost';
 import { seilinkDevEnabled } from './packs';
+import { addonAvailability } from './host/native';
 
 let settingOn = false;
 let testOverride: boolean | null = null;
+let supportCache: Pick<SeilinkAvailability, 'supported' | 'reason'> | null = null;
 
 /** The Labs setting as last read from this profile's config. */
-export function setSeilinkSetting(on: boolean): void {
+export function setSeilinkSetting(on: boolean | undefined | null): void {
   settingOn = on === true;
 }
 
@@ -24,9 +30,30 @@ export function seilinkSettingOn(): boolean {
   return settingOn;
 }
 
+/** Can this install run the desktop host at all? Cached: the addon does not come and go. */
+export function seilinkSupport(): Pick<SeilinkAvailability, 'supported' | 'reason'> {
+  if (supportCache) return supportCache;
+  let out: Pick<SeilinkAvailability, 'supported' | 'reason'>;
+  try {
+    if (!app) throw new Error('no app');
+    const a = addonAvailability({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() });
+    out = a.ok ? { supported: true } : { supported: false, reason: a.failure === 'unsupported_platform' ? 'platform' : 'addon' };
+  } catch {
+    // vitest (no electron app): unsupported, and not cached so a test can stub it.
+    return { supported: false, reason: 'platform' };
+  }
+  supportCache = out;
+  return out;
+}
+
 export function seilinkEnabled(): boolean {
   if (testOverride !== null) return testOverride;
-  return seilinkDevEnabled() || settingOn;
+  return seilinkDevEnabled() || (settingOn && seilinkSupport().supported);
+}
+
+export function seilinkAvailability(): SeilinkAvailability {
+  const support = seilinkSupport();
+  return { ...support, setting: settingOn, enabled: seilinkEnabled(), dev: seilinkDevEnabled() };
 }
 
 /** Tests only. null restores the real answer. */

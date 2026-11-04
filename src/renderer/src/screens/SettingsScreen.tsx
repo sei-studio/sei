@@ -59,6 +59,7 @@ import { LocalImportRow } from '../components/settings/LocalImportRow';
 import { FishAudioSettings } from '../components/settings/FishAudioSettings';
 import { FacepackDevRow } from '../components/settings/FacepackDevRow';
 import { ExperimentalUpdatesRow } from '../components/settings/ExperimentalUpdatesRow';
+import { SeilinkLabsRow } from '../components/settings/SeilinkLabsRow';
 import { ChatgptPlanSettings, revealSettingsFocus, settingsFocusTargetClass } from '../components/ChatgptPlanSettings';
 import { ChatgptLinkRow } from '../components/settings/ChatgptLinkRow';
 import { chatgptReady, useChatgptStore } from '../lib/stores/useChatgptStore';
@@ -1912,6 +1913,13 @@ export function SettingsScreen(): React.ReactElement {
               onChange={() => void onToggleConvoStarters()}
             />
           </div>
+        </div>
+
+        {/* ── Labs (261104) ───────────────────────────────────── */}
+        {/* Features that are new and still changing. Off until turned on. */}
+        <div className={styles.group}>
+          <h3 className={styles.groupTitle}>{t('Labs')}</h3>
+          <SeilinkLabsRow config={cfg} saveConfig={persistConfig} />
         </div>
 
         {/* ── About ───────────────────────────────────────────── */}

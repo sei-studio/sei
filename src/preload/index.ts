@@ -40,7 +40,7 @@ import {
 import type { ChatgptStatus } from '../shared/chatgptPlan';
 import type { OverlayPointerSample } from '../shared/overlayPointer';
 import type { PopupAction } from '../shared/popupActions';
-import type { SeilinkHostStatus } from '../shared/seilinkHost';
+import type { SeilinkAvailability, SeilinkHostStatus } from '../shared/seilinkHost';
 
 const api: RendererApi = {
   // Game adapters (M0): {characterId, game} (main also still accepts a bare id).
@@ -434,6 +434,17 @@ const api: RendererApi = {
     const handler = (_e: Electron.IpcRendererEvent, characterId: string) => cb(characterId);
     ipcRenderer.on(IpcChannel.seilink.openChat, handler);
     return () => ipcRenderer.off(IpcChannel.seilink.openChat, handler);
+  },
+  seilinkAvailability: () => ipcRenderer.invoke(IpcChannel.seilink.availability),
+  onSeilinkAvailability: (cb) => {
+    const handler = (_e: Electron.IpcRendererEvent, a: SeilinkAvailability) => cb(a);
+    ipcRenderer.on(IpcChannel.seilink.availabilityChanged, handler);
+    return () => ipcRenderer.off(IpcChannel.seilink.availabilityChanged, handler);
+  },
+  onSeilinkOpenRoomEditor: (cb) => {
+    const handler = (_e: Electron.IpcRendererEvent, characterId: string) => cb(characterId);
+    ipcRenderer.on(IpcChannel.seilink.openRoomEditor, handler);
+    return () => ipcRenderer.off(IpcChannel.seilink.openRoomEditor, handler);
   },
   avatarOverlayCamera: (args) => ipcRenderer.invoke(IpcChannel.avatar.overlayCamera, args),
   avatarOverlayEditing: (editing) => ipcRenderer.invoke(IpcChannel.avatar.overlayEditing, editing),

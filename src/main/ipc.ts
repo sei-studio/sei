@@ -956,6 +956,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         return removed ? { ...cfg, added_default_ids: added } : cfg;
       });
       if (removed) void (await import('./cloud/librarySync')).syncLibraryRoster('default-removed');
+      // 261104 SeiLink M4: a removed default that had moved in moves out.
+      if (removed) void (await import('./seilink/host/seilinkHost')).onSeilinkCharacterRemoved(id);
       return;
     }
     await deleteCharacter(id);
@@ -1140,6 +1142,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     } catch (err) {
       console.warn(`[sei] removeFromLibrary index for ${id}: ${(err as Error).message}`);
     }
+    // 261104 SeiLink M4: if she moved in, she moves out.
+    void import('./seilink/host/seilinkHost').then((m) => m.onSeilinkCharacterRemoved(id)).catch(() => {});
   });
   ipcMain.handle(IpcChannel.chars.resetMemory, async (_event, idArg: unknown): Promise<void> => {
     const id = IdSchema.parse(idArg);
@@ -3200,6 +3204,20 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     if ('avatar_in_captures' in (cfgArg as Record<string, unknown>)) {
       const { setAvatarCaptureVisible } = await import('./callOverlay');
       setAvatarCaptureVisible(cfg.avatar_in_captures === true);
+    }
+    // 261104 SeiLink M4: Settings > Labs "Desktop room". Off moves her out.
+    if ('seilink_enabled' in (cfgArg as Record<string, unknown>)) {
+      const on = cfg.seilink_enabled === true;
+      const [{ applySeilinkSetting }, { seilinkSupport }] = await Promise.all([
+        import('./seilink/host/seilinkHost'),
+        import('./seilink/gate'),
+      ]);
+      if (await applySeilinkSetting(on)) {
+        const { loadAnalytics } = await import('./lazyAnalytics');
+        void loadAnalytics()
+          .then((a) => a.capture('seilink_setting_toggled', { enabled: on, supported: seilinkSupport().supported }))
+          .catch(() => {});
+      }
     }
     // Item 7: mirror the user's preferred name into the public profiles table
     // so Browse shows "by <name>" on their published characters. Fire-and-forget

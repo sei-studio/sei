@@ -2209,4 +2209,10 @@ export const JA: Record<string, string> = {
   "Leave without saving?": "保存せずに閉じますか？",
   "No room art yet.": "部屋の素材はまだありません。",
   "Could not save the room.": "部屋を保存できませんでした。",
+  "Labs": "ラボ",
+  "Desktop room": "デスクトップの部屋",
+  "About the desktop room": "デスクトップの部屋について",
+  "Your companion moves onto your desktop wallpaper, in a room you can decorate. Turn it on, then pick who moves in from their page.": "コンパニオンがデスクトップの壁紙に引っ越して、あなたが飾りつけできる部屋で暮らします。オンにしてから、キャラクターのページで誰が引っ越すかを選んでください。",
+  "Needs macOS or Windows.": "macOS または Windows が必要です。",
+  "Not available in this build of Sei.": "このビルドの Sei では使えません。",
 };

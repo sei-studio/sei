@@ -2209,4 +2209,10 @@ export const RU: Record<string, string> = {
   "Leave without saving?": "Выйти без сохранения?",
   "No room art yet.": "Оформления комнаты пока нет.",
   "Could not save the room.": "Не удалось сохранить комнату.",
+  "Labs": "Лаборатория",
+  "Desktop room": "Комната на рабочем столе",
+  "About the desktop room": "О комнате на рабочем столе",
+  "Your companion moves onto your desktop wallpaper, in a room you can decorate. Turn it on, then pick who moves in from their page.": "Компаньон переезжает на обои рабочего стола, в комнату, которую можно обставить. Включи функцию, потом выбери на странице персонажа, кто переедет.",
+  "Needs macOS or Windows.": "Нужна macOS или Windows.",
+  "Not available in this build of Sei.": "Недоступно в этой сборке Sei.",
 };

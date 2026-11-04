@@ -33,6 +33,7 @@ import { openSeilinkPreview, registerSeilinkIpc } from './seilink/seilinkIpc';
 import { initSeilinkHost, restoreSeilinkHost, stopSeilinkHostForQuit } from './seilink/host/seilinkHost';
 import { registerSeilinkProtocol, seilinkDevEnabled, SEILINK_SCHEME_PRIVILEGES } from './seilink/packs';
 import { devRoomSource, setGameSurfaceProbe, setRoomSource } from './seilink/roomContext';
+import { seilinkAvailability } from './seilink/gate';
 import { roomSource } from './seilink/roomStore';
 import { isAnalyticsActive, shutdownAnalytics, capture, captureAppQuit, noteSurface } from './analytics';
 import { reportOnboardingAbandoned } from './onboardingFunnel';
@@ -1381,14 +1382,18 @@ async function bootstrap(): Promise<void> {
   if (seilinkDevEnabled() && process.env.SEI_SEILINK_PREVIEW === '1') {
     openSeilinkPreview({ preloadPath: preloadPath(), rendererTarget });
   }
-  // 261104 SeiLink desktop host (milestone 3, dev flag only): her room as the
-  // live wallpaper. Restores whoever moved in on this profile.
+  // 261104 SeiLink desktop host: her room as the live wallpaper, while
+  // SeiLink is on (Settings > Labs, or the dev flag; seilink/gate.ts).
+  // Restores whoever moved in on this profile (and mirrors the setting).
   initSeilinkHost({
     pushStatus: (status) => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcChannel.seilink.hostStatusChanged, status);
     },
     openChat: openSeilinkChat,
     onDoubleClick: (characterId) => logger.info(`seilink: double click on ${characterId} (reserved)`),
+    pushAvailability: () => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcChannel.seilink.availabilityChanged, seilinkAvailability());
+    },
   });
   void restoreSeilinkHost();
   if (!app.isPackaged && process.env.SEI_SEILINK_SELFTEST) {

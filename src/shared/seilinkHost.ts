@@ -55,7 +55,15 @@ export function isSeilinkHostFailure(v: unknown): v is SeilinkHostFailure {
 }
 
 /** Why a desktop session ended (seilink_ended.reason). */
-export type SeilinkEndReason = 'user_stop' | 'replaced' | 'app_quit' | 'account_switch' | 'failed' | 'disabled';
+export type SeilinkEndReason =
+  | 'user_stop'
+  | 'replaced'
+  | 'app_quit'
+  | 'account_switch'
+  | 'failed'
+  | 'disabled'
+  /** M4: the moved-in companion was deleted or removed from the library. */
+  | 'character_removed';
 
 /** What the main window sees (push + pull). */
 export interface SeilinkHostStatus {
@@ -70,6 +78,21 @@ export interface SeilinkHostStatus {
   fps: number;
   /** Set when state is failed or unsupported. */
   failure?: SeilinkHostFailure;
+}
+
+/**
+ * M4: can SeiLink be turned on here, and is it on? (main gate.ts)
+ * - supported: macOS or Windows with the host addon in this build (or the dev fake desktop).
+ * - reason: why not, when unsupported.
+ * - setting: the Labs setting (`seilink_enabled`, this profile).
+ * - enabled: SeiLink is on (the setting on a supported install, or the dev flag).
+ */
+export interface SeilinkAvailability {
+  supported: boolean;
+  reason?: 'platform' | 'addon';
+  setting: boolean;
+  enabled: boolean;
+  dev: boolean;
 }
 
 export const SEILINK_HOST_OFF: SeilinkHostStatus = { state: 'off', characterId: null, covered: false, paused: false, fps: 0 };

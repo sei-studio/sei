@@ -9,8 +9,8 @@
  * spawned and restarted by HostSupervisor over a pipe this module serves.
  * Who moved in is saved as `seilink_moved_in` (main-owned UserConfig key)
  * and restored at app start and after an account switch (config.json is per
- * profile). Dev flag only for now (seilinkDevEnabled(): unpackaged with
- * SEI_SEILINK_PACKS); the dock and first-run milestone flips that.
+ * profile). Only while SeiLink is on (gate.ts: Settings > Labs on a supported
+ * install, or the dev flag); turning it off moves her out.
  *
  * Analytics (shape only): seilink_started on the first attach of a session,
  * seilink_ended {duration_ms, character_id, reason, ...} at the single end
@@ -39,7 +39,8 @@ import {
   type SeilinkHostFailure,
   type SeilinkHostStatus,
 } from '../../../shared/seilinkHost';
-import { loadPack, seilinkDevEnabled } from '../packs';
+import { loadPack } from '../packs';
+import { seilinkAvailability, seilinkEnabled, setSeilinkSetting } from '../gate';
 import { BusyTracker, onSeilinkAvatarChanged, onSeilinkChatTurn } from './hostSignals';
 import { answerHostAvatarCall, hostPortrait, type HostAvatarStores } from './hostAvatarCalls';
 import { getCharacter } from '../../characterStore';
@@ -58,6 +59,8 @@ export interface SeilinkHostDeps {
   openChat(characterId: string): void;
   /** Double click on her: reserved (the dock milestone). */
   onDoubleClick?(characterId: string): void;
+  /** M4: the Labs setting or the profile changed (SeilinkAvailability to the main window). */
+  pushAvailability?(): void;
 }
 
 /** Everything the host says, plus 'status' — the CI self-test (selfTest.ts) listens here. */
@@ -160,7 +163,7 @@ function capture(event: string, props: Record<string, unknown>): void {
  * An unsupported install returns the unsupported status instead of throwing.
  */
 export async function startSeilinkHost(characterId: string, opts?: { restored?: boolean }): Promise<SeilinkHostStatus> {
-  if (!seilinkDevEnabled()) throw new Error('SEILINK_DISABLED');
+  if (!seilinkEnabled()) throw new Error('SEILINK_DISABLED');
   if (!isRoomCharacterId(characterId)) throw new Error('SEILINK_BAD_ID');
   const a = availability();
   if (!a.ok) {
@@ -182,7 +185,7 @@ export async function startSeilinkHost(characterId: string, opts?: { restored?: 
 /** She moves out (the user's stop). Clears the saved move-in. */
 export async function stopSeilinkHost(reason: SeilinkEndReason = 'user_stop'): Promise<SeilinkHostStatus> {
   if (session) await endSession(reason);
-  if (reason === 'user_stop' || reason === 'disabled') {
+  if (reason === 'user_stop' || reason === 'disabled' || reason === 'character_removed') {
     await updateConfig((c) => (c.seilink_moved_in ? { ...c, seilink_moved_in: null } : c)).catch((err) =>
       log(`clear moved-in failed: ${(err as Error).message}`),
     );
@@ -202,9 +205,15 @@ export function stopSeilinkHostForQuit(): void {
 
 /** App start and after an account switch: bring back whoever moved in on this profile. */
 export async function restoreSeilinkHost(): Promise<void> {
-  if (!seilinkDevEnabled()) return;
   try {
     const cfg = await loadConfig();
+    // The Labs setting is per profile: mirror it for the gate first.
+    setSeilinkSetting(cfg.seilink_enabled);
+    pushAvailability();
+    if (!seilinkEnabled()) {
+      if (session) await endSession('disabled');
+      return;
+    }
     const id = cfg.seilink_moved_in?.character_id;
     if (!id) {
       if (session) await endSession('replaced');
@@ -213,6 +222,44 @@ export async function restoreSeilinkHost(): Promise<void> {
     await startSeilinkHost(id, { restored: true });
   } catch (err) {
     log(`restore failed: ${(err as Error).message}`);
+  }
+}
+
+function pushAvailability(): void {
+  try {
+    deps?.pushAvailability?.();
+  } catch (err) {
+    log(`availability push failed: ${(err as Error).message}`);
+  }
+}
+
+/**
+ * M4: the Labs setting was saved (config:save). Off moves her out and forgets
+ * the move-in; on brings nobody in by itself (the move-in sheet does that).
+ * Returns whether the value changed.
+ */
+export async function applySeilinkSetting(on: boolean): Promise<boolean> {
+  const before = seilinkAvailability().setting;
+  setSeilinkSetting(on);
+  if (before !== on) pushAvailability();
+  if (!seilinkEnabled() && (before !== on || session)) await stopSeilinkHost('disabled');
+  return before !== on;
+}
+
+/**
+ * M4: a companion was deleted or removed from the library. If she is the one
+ * who moved in, she moves out and the move-in is cleared (also when the host
+ * is not running, e.g. it failed or SeiLink is off right now).
+ */
+export async function onSeilinkCharacterRemoved(characterId: string): Promise<void> {
+  try {
+    if (session?.characterId === characterId) {
+      await stopSeilinkHost('character_removed');
+      return;
+    }
+    await updateConfig((c) => (c.seilink_moved_in?.character_id === characterId ? { ...c, seilink_moved_in: null } : c));
+  } catch (err) {
+    log(`character removed cleanup failed: ${(err as Error).message}`);
   }
 }
 

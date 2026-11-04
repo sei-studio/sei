@@ -1130,6 +1130,18 @@ export const UserConfigSchema = z.object({
     .nullable()
     .optional(),
   /**
+   * 261104 (M4) — Settings > Labs "Desktop room": SeiLink on for this
+   * profile. Renderer-settable; off when absent. Only takes effect on an
+   * install that can run the desktop host (src/main/seilink/gate.ts).
+   */
+  seilink_enabled: z.boolean().optional(),
+  /**
+   * 261104 (M4) — the dock's deafen button: no idle desktop lines from the
+   * companion who moved in. Main-owned (seilink/desktopLines.ts). A poke
+   * still gets a reply.
+   */
+  seilink_deafened: z.boolean().optional(),
+  /**
    * 260725: cloud users' opt-in to the local Whisper fallback. Set true once
    * the user accepts the Whisper-install prompt after a Scribe failure, so
    * later calls fall back to local recognition without re-asking. Optional

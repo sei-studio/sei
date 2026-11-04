@@ -6,6 +6,7 @@
 import { BrowserWindow, ipcMain } from 'electron';
 import { IpcChannel } from '../../shared/ipc';
 import { listPacks, publicPack, seilinkDevEnabled, seilinkDevInfo } from './packs';
+import { seilinkAvailability } from './gate';
 import { getRoomPayload, isRoomCharacterId, onRoomChange, setRoomState } from './roomStore';
 import { seilinkHostStatus, startSeilinkHost, stopSeilinkHost } from './host/seilinkHost';
 
@@ -34,13 +35,14 @@ export function registerSeilinkIpc(opts: { preloadPath: string; rendererTarget: 
     return getRoomPayload(a.characterId);
   });
 
-  // Desktop host (milestone 3). Start throws SEILINK_DISABLED while the dev flag is off.
+  // Desktop host. Start throws SEILINK_DISABLED while SeiLink is off (gate.ts).
   ipcMain.handle(IpcChannel.seilink.hostStart, async (_e, characterId: unknown) => {
     if (!isRoomCharacterId(characterId)) throw new Error('SEILINK_BAD_ID');
     return startSeilinkHost(characterId);
   });
   ipcMain.handle(IpcChannel.seilink.hostStop, async () => stopSeilinkHost('user_stop'));
   ipcMain.handle(IpcChannel.seilink.hostStatus, async () => seilinkHostStatus());
+  ipcMain.handle(IpcChannel.seilink.availability, async () => seilinkAvailability());
 
   ipcMain.handle(IpcChannel.seilink.openPreview, async () => {
     if (!seilinkDevEnabled()) return false;

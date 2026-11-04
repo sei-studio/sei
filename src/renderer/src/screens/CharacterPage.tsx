@@ -28,6 +28,7 @@ import { useDataStore } from '../lib/stores/useDataStore';
 import { useChatStore } from '../lib/stores/useChatStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
+import { useSeilinkStore } from '../lib/stores/useSeilinkStore';
 import { Button } from '../components/Button';
 import { Toggle } from '../components/Toggle';
 import { ModalShell, ModalFooter } from '../components/ModalShell';
@@ -161,20 +162,10 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const [knowledgeOpen, setKnowledgeOpen] = useState<boolean>(false);
   // 260909 Card image popup (versions + regenerate) — owned characters only.
   const [cardImageOpen, setCardImageOpen] = useState<boolean>(false);
-  // 261104 SeiLink room editor: the menu item exists only under the dev flag
-  // (unpackaged + SEI_SEILINK_PACKS), so users never see it.
-  const [seilinkDev, setSeilinkDev] = useState<boolean>(false);
+  // 261104 SeiLink (M4): the room items exist only while SeiLink is on
+  // (Settings > Labs, or the dev flag), so most users never see them.
+  const seilinkOn = useSeilinkStore((s) => s.availability?.enabled === true);
   const [roomEditorOpen, setRoomEditorOpen] = useState<boolean>(false);
-  useEffect(() => {
-    let dead = false;
-    sei.seilinkDevInfo?.().then(
-      (info) => !dead && setSeilinkDev(info.enabled),
-      () => {},
-    );
-    return () => {
-      dead = true;
-    };
-  }, []);
   const settingsRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!settingsOpen) return;
@@ -865,7 +856,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                     >
                       {t('Knowledge')}
                     </button>
-                    {seilinkDev ? (
+                    {seilinkOn ? (
                       <button
                         type="button"
                         role="menuitem"

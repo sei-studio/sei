@@ -2209,4 +2209,10 @@ export const ES: Record<string, string> = {
   "Leave without saving?": "¿Salir sin guardar?",
   "No room art yet.": "Aún no hay arte de habitación.",
   "Could not save the room.": "No se pudo guardar la habitación.",
+  "Labs": "Labs",
+  "Desktop room": "Habitación en el escritorio",
+  "About the desktop room": "Sobre la habitación en el escritorio",
+  "Your companion moves onto your desktop wallpaper, in a room you can decorate. Turn it on, then pick who moves in from their page.": "Tu compi se muda al fondo de pantalla del escritorio, a una habitación que puedes decorar. Actívalo y elige quién se muda desde su página.",
+  "Needs macOS or Windows.": "Requiere macOS o Windows.",
+  "Not available in this build of Sei.": "No disponible en esta versión de Sei.",
 };
