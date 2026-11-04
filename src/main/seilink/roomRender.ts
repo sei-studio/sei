@@ -202,7 +202,7 @@ export async function renderRoomImage(
       try {
         const place = l.kind === 'slot' ? slotPlace(l, s, W, H) : await itemPlace(sharp, l, src, s);
         if (!place) return null;
-        const rgb = l.kind === 'slot' ? hexRgb(l.tint ?? undefined) : null;
+        const rgb = hexRgb(l.tint ?? undefined);
         const maskFile = rgb && l.frame.mask ? packFile(packDir, l.frame.mask) : null;
         const [data, mask] = await Promise.all([
           rawOf(sharp, src, place.width, place.height, place.flip),

@@ -45,6 +45,9 @@ export function isHexColor(v: unknown): v is string {
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isBox = (v: unknown): v is [number, number, number, number] =>
   Array.isArray(v) && v.length === 4 && v.every(isNum) && v[2] > 0 && v[3] > 0;
+/** A surface may be a line (h = 0): a shelf top. */
+const isSurface = (v: unknown): v is [number, number, number, number] =>
+  Array.isArray(v) && v.length === 4 && v.every(isNum) && v[2] > 0 && v[3] >= 0;
 
 function parseFrame(raw: unknown, tintable: boolean): RoomFrame | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -93,6 +96,14 @@ function parseComponent(raw: unknown): RoomComponent | null {
     out.box = c.box;
   }
   if (isNum(c.z)) out.z = c.z;
+  if (Array.isArray(c.surfaces)) {
+    const surfaces = c.surfaces.filter(isSurface).slice(0, 16);
+    if (surfaces.length) out.surfaces = surfaces;
+  }
+  if (Array.isArray(c.swatches)) {
+    const swatches = c.swatches.filter(isHexColor).slice(0, 12).map((h) => h.toLowerCase());
+    if (swatches.length) out.swatches = swatches;
+  }
   return out;
 }
 
@@ -196,6 +207,7 @@ export function sanitizeRoomState(manifest: RoomPresetManifest, raw: unknown): R
       if (isNum(i.scale) && i.scale >= 0.25 && i.scale <= 4) p.scale = i.scale;
       if (i.flip === true) p.flip = true;
       if (isNum(i.z)) p.z = i.z;
+      if (isHexColor(i.tint) && byId.get(i.id)?.tintable) p.tint = i.tint.toLowerCase();
       out.items.push(p);
     }
   }

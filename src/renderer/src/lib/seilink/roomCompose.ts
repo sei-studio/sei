@@ -11,7 +11,7 @@
 import { itemRect, type GlowLayer, type ItemLayer, type RoomDrawPlan, type SlotLayer } from '@shared/seilinkDraw';
 import type { RoomBox } from '@shared/seilinkRoom';
 import type { RoomUrlResolver } from '@shared/seilinkPack';
-import { ctx2d, loadRoomGlow, loadRoomImage, loadRoomMask, makeCanvas, type AnyCanvas, type AnyContext2D, type TrimmedGlow } from './roomImages';
+import { ctx2d, loadRoomGlow, loadRoomImage, loadRoomMask, makeCanvas, maskBounds, type AnyCanvas, type AnyContext2D, type TrimmedGlow } from './roomImages';
 
 export interface RoomAssets {
   images: Map<string, ImageBitmap>;
@@ -41,7 +41,7 @@ export async function loadPlanAssets(plan: RoomDrawPlan, resolve: RoomUrlResolve
   for (const l of plan.layers) {
     if (l.kind === 'avatar') continue;
     want(assets.images, l.frame.src, loadRoomImage);
-    if (l.kind === 'slot' && l.tint && l.frame.mask) want(assets.masks, l.frame.mask, loadRoomMask);
+    if (l.tint && l.frame.mask) want(assets.masks, l.frame.mask, loadRoomMask);
   }
   for (const g of plan.glows) want(assets.glows, g.src, loadRoomGlow);
   await Promise.all(jobs);
@@ -78,10 +78,39 @@ function drawFlipped(ctx: AnyContext2D, img: CanvasImageSource, [x, y, w, h]: Ro
   ctx.restore();
 }
 
-/** Draw one tinted frame. `scale` is ctx's canvas-px to device-px factor, for the scratch size. */
-function drawTinted(ctx: AnyContext2D, frame: ImageBitmap, mask: ImageBitmap, tint: string, rect: RoomBox, scale: number): void {
-  const [x, y, w, h] = rect;
-  ctx.drawImage(frame, x, y, w, h);
+/**
+ * Draw one tinted frame. `scale` is ctx's canvas-px to device-px factor, for
+ * the scratch size. `clip` (canvas px) limits the work to a region: the
+ * recolour fast path redraws only where the mask is.
+ */
+function drawTinted(ctx: AnyContext2D, frame: ImageBitmap, mask: ImageBitmap, tint: string, rect: RoomBox, scale: number, flip = false, clip?: RoomBox): void {
+  let [x, y, w, h] = rect;
+  // Source regions of the frame and the mask (they may differ in size).
+  let fx = 0;
+  let fy = 0;
+  let fw = frame.width;
+  let fh = frame.height;
+  let mx = 0;
+  let my = 0;
+  let mw = mask.width;
+  let mh = mask.height;
+  if (clip && !flip) {
+    const ix = Math.max(x, clip[0]);
+    const iy = Math.max(y, clip[1]);
+    const ix2 = Math.min(x + w, clip[0] + clip[2]);
+    const iy2 = Math.min(y + h, clip[1] + clip[3]);
+    if (ix2 <= ix || iy2 <= iy) return;
+    const u0 = (ix - x) / w;
+    const v0 = (iy - y) / h;
+    const u1 = (ix2 - x) / w;
+    const v1 = (iy2 - y) / h;
+    [fx, fy, fw, fh] = [u0 * frame.width, v0 * frame.height, (u1 - u0) * frame.width, (v1 - v0) * frame.height];
+    [mx, my, mw, mh] = [u0 * mask.width, v0 * mask.height, (u1 - u0) * mask.width, (v1 - v0) * mask.height];
+    [x, y, w, h] = [ix, iy, ix2 - ix, iy2 - iy];
+  }
+  const dest: RoomBox = [x, y, w, h];
+  if (flip) drawFlipped(ctx, frame, dest, true);
+  else ctx.drawImage(frame, fx, fy, fw, fh, x, y, w, h);
   const sw = Math.max(1, Math.ceil(w * scale));
   const sh = Math.max(1, Math.ceil(h * scale));
   const s = scratchOf(sw, sh);
@@ -90,15 +119,43 @@ function drawTinted(ctx: AnyContext2D, frame: ImageBitmap, mask: ImageBitmap, ti
   sc.setTransform(1, 0, 0, 1, 0, 0);
   sc.globalCompositeOperation = 'source-over';
   sc.clearRect(0, 0, sw, sh);
-  sc.drawImage(frame, 0, 0, sw, sh);
+  sc.drawImage(frame, fx, fy, fw, fh, 0, 0, sw, sh);
   sc.globalCompositeOperation = 'multiply';
   sc.fillStyle = tint;
   sc.fillRect(0, 0, sw, sh);
   sc.globalCompositeOperation = 'destination-in';
-  sc.drawImage(mask, 0, 0, sw, sh);
-  sc.drawImage(frame, 0, 0, sw, sh);
+  sc.drawImage(mask, mx, my, mw, mh, 0, 0, sw, sh);
+  sc.drawImage(frame, fx, fy, fw, fh, 0, 0, sw, sh);
   sc.restore();
-  ctx.drawImage(s.c, 0, 0, sw, sh, x, y, w, h);
+  if (!flip) {
+    ctx.drawImage(s.c, 0, 0, sw, sh, x, y, w, h);
+    return;
+  }
+  ctx.save();
+  ctx.translate(x + w, y);
+  ctx.scale(-1, 1);
+  ctx.drawImage(s.c, 0, 0, sw, sh, 0, 0, w, h);
+  ctx.restore();
+}
+
+/**
+ * Canvas-px region a tinted layer's mask covers (where a recolour changes
+ * pixels), or null when unknown (draw it all).
+ */
+export function tintRegion(layer: SlotLayer | ItemLayer, canvas: readonly [number, number], assets: RoomAssets): RoomBox | null {
+  if (!layer.frame.mask) return null;
+  const mask = assets.masks.get(layer.frame.mask);
+  const rect = layerRect(layer, canvas, assets);
+  if (!mask || !rect) return null;
+  const b = maskBounds(mask);
+  if (b === undefined) return null;
+  if (b === null) return [rect[0], rect[1], 0, 0];
+  const [x, y, w, h] = rect;
+  const sx = w / mask.width;
+  const sy = h / mask.height;
+  const flip = layer.kind === 'item' && layer.flip;
+  const bx = flip ? mask.width - b[0] - b[2] : b[0];
+  return [x + bx * sx, y + b[1] * sy, b[2] * sx, b[3] * sy];
 }
 
 /**
@@ -111,15 +168,16 @@ export function drawRoomLayers(
   canvas: readonly [number, number],
   assets: RoomAssets,
   scale: number,
+  clip?: RoomBox,
 ): void {
   for (const l of layers) {
     const img = assets.images.get(l.frame.src);
     const rect = layerRect(l, canvas, assets);
     if (!img || !rect) continue;
-    if (l.kind === 'slot' && l.tint && l.frame.mask) {
+    if (l.tint && l.frame.mask) {
       const mask = assets.masks.get(l.frame.mask);
       if (mask) {
-        drawTinted(ctx, img, mask, l.tint, rect, scale);
+        drawTinted(ctx, img, mask, l.tint, rect, scale, l.kind === 'item' && l.flip, clip);
         continue;
       }
     }

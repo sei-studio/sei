@@ -34,6 +34,18 @@
  *    (monitor, lamp). The renderer animates only these and the avatar.
  *  - Draw plan, time-of-day crossfade and overlay helpers live in
  *    seilinkDraw.ts; manifest/state validation in seilinkValidate.ts.
+ *
+ * 261104 (editor pass) additions, also optional:
+ *  - A placed item may carry its own `tint` (a tintable item with a mask,
+ *    e.g. a floor cushion), drawn the same way as a slot tint.
+ *  - A slot component may list `surfaces`: boxes (canvas px) where a
+ *    'surface' item's bottom centre may rest, e.g. the top of each shelf
+ *    plank. The editor snaps surface items into them; with none, surface
+ *    items move freely.
+ *  - A tintable component may list `swatches`, the colours the editor offers
+ *    first (its defaultTint is always offered too).
+ *  - Editor rules (placement areas, scale range, edit ops, undo) live in
+ *    seilinkEdit.ts.
  */
 
 export const SEILINK_ROOM_FORMAT = 'sei-room' as const;
@@ -93,6 +105,10 @@ export interface RoomComponent {
   /** Only for full-canvas slot art that is smaller than the canvas. */
   box?: RoomBox;
   z?: number;
+  /** Slot components: where surface items may rest (bottom-centre boxes, canvas px). */
+  surfaces?: RoomBox[];
+  /** Tintable components: colours the editor offers first. */
+  swatches?: string[];
 }
 
 export interface RoomSlotDef {
@@ -129,6 +145,8 @@ export interface RoomItemPlacement {
   flip?: boolean;
   /** Overrides the component/placement default z (editor "bring forward"). */
   z?: number;
+  /** Hex tint for a tintable item (else its defaultTint). */
+  tint?: string;
 }
 
 /** What a companion's room looks like. Lives on the device, a few KB. */
@@ -206,7 +224,9 @@ export function describeRoom(manifest: RoomPresetManifest, state: RoomState, now
   const byId = new Map(manifest.components.map((c) => [c.id, c]));
   for (const it of state.items) {
     const c = byId.get(it.id);
-    if (c) things.push(c.name);
+    if (!c) continue;
+    const colour = c.tintable ? tintName(it.tint ?? c.defaultTint) : null;
+    things.push(colour ? `${colour} ${c.name}` : c.name);
   }
   return { place: manifest.place, time, things };
 }
