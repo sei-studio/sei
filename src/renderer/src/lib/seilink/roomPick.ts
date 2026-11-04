@@ -9,6 +9,7 @@
  * (a drag must start on pointerdown, not a frame later).
  */
 import { itemRect, roomDrawPlan, type RoomLayer } from '@shared/seilinkDraw';
+import { pointInPolygon } from '@shared/seilinkPlace';
 import type { RoomPresetManifest, RoomSlotId, RoomState, RoomTime } from '@shared/seilinkRoom';
 import type { RoomUrlResolver } from '@shared/seilinkPack';
 import { ctx2d, loadRoomImage, makeCanvas } from './roomImages';
@@ -85,6 +86,8 @@ export class RoomPicker {
         continue;
       }
       if (l.kind === 'slot' && !slots.has(l.slot)) continue;
+      // A lip is its part only inside the lip.
+      if (l.kind === 'slot' && l.clip && !l.clip.some((p) => pointInPolygon(p, x, y))) continue;
       const map = this.maps.get(resolve(l.frame.src));
       if (!map) continue;
       const rect = l.kind === 'slot' ? (l.box ?? [0, 0, manifest.canvas[0], manifest.canvas[1]]) : itemRect(l, [map.nw, map.nh]);
