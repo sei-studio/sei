@@ -31,6 +31,13 @@ Packaging is **electron-builder** (`electron-builder.yml`):
   (manual dispatch) re-verifies them on windows-latest. Release builds are
   signed through Azure Trusted Signing (the "unsigned for v1" note is stale).
 - **Linux:** AppImage (best-effort unsigned).
+- **SeiLink desktop host addon (261104):** `native/seilink` is built by
+  `scripts/build-seilink-addon.mjs` (mac universal via lipo, win x64) into
+  `resources/seilink/seilink.node`, packed by `extraResources` outside
+  app.asar. It runs in `predev` / `predist*` and in its own release.yml step.
+  A failed compile is not fatal (warning, ships without the addon) unless
+  `SEILINK_ADDON_STRICT=1`; `.github/workflows/seilink-host-check.yml` builds
+  it strictly. See `docs/agents/seilink-host.md`.
 - `postinstall` runs `electron-builder install-app-deps` to rebuild native
   modules against Electron's ABI.
 - **Version bumps:** run `npm install --package-lock-only` only where
