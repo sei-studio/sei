@@ -47,6 +47,7 @@ import {
   type StardewInstallProgressEvent,
   type StardewChooseFolderResult,
   type StardewGameFolderType,
+  type StardewInstallErrorClass,
   type StardewInstallState,
   type StardewModConfig,
 } from '../../../shared/stardewIpc';
@@ -80,6 +81,10 @@ export interface StardewInstallEnv {
   now: () => number;
   /** 261104: the folder the player picked with Choose folder (null = none). Optional so test envs can omit it. */
   readCustomPath?: () => Promise<string | null>;
+  /** 261104: is the game running (null = cannot tell)? Optional; checked before the SMAPI install. */
+  isGameRunning?: () => Promise<boolean | null>;
+  /** 261104: wait after the Windows installer before checking its files (tests set 0). */
+  postInstallSettleMs?: number;
 }
 
 /** Where Choose folder keeps the picked game folder (userData; never the SMAPI targets file). */
@@ -134,6 +139,10 @@ export function defaultEnv(): StardewInstallEnv {
     },
     now: () => Date.now(),
     readCustomPath: readCustomPathDefault,
+    isGameRunning: async () => {
+      const { stardewGameRunning } = await import('./launch');
+      return (await stardewGameRunning()).running;
+    },
   };
 }
 
@@ -517,6 +526,9 @@ export async function detectStardew(env: StardewInstallEnv = defaultEnv()): Prom
   base.gameVersion = await readGameVersion(gamePath);
   base.versionOk = gameVersionOk(base.gameVersion);
   base.smapiInstalled = await smapiInstalledIn(gamePath, env.platform);
+  // Windows only: on macOS / Linux a dll without the rewired launcher is also
+  // a manual half-install (see smapiLauncherWired), not a quarantine.
+  base.smapiRemoved = !base.smapiInstalled && env.platform === 'win32' && (await smapiFilesRemoved(gamePath, env.platform));
   base.smapiVersion = base.smapiInstalled ? await readSmapiVersion(gamePath) : null;
   base.modInstalled = (await exists(path.join(modDir(gamePath), 'SeiCompanion.dll'))) && (await exists(path.join(modDir(gamePath), 'manifest.json')));
   base.modVersion = base.modInstalled ? await readModVersion(gamePath) : null;
@@ -716,6 +728,41 @@ export async function upgradeModIfNewer(gamePath: string, packRoot: string): Pro
   return { upgraded: true, from, to };
 }
 
+/* ── SMAPI failure causes (261104) ───────────────────────────────────── */
+
+/**
+ * The SMAPI installer's failure, read into its own class so the setup can
+ * name the fix (it used to be one SMAPI_INSTALL_FAILED for everything).
+ */
+export function smapiRunFailCode(text: string): StardewInstallErrorClass {
+  switch (classifyFailReason(text)) {
+    case 'game_running':
+    case 'locked':
+      return 'SMAPI_GAME_RUNNING';
+    case 'permission':
+      return 'SMAPI_PERMISSION_DENIED';
+    case 'antivirus':
+      return 'SMAPI_ANTIVIRUS_SUSPECTED';
+    case 'network':
+      return 'SMAPI_NETWORK_FAILED';
+    default:
+      return 'SMAPI_INSTALL_FAILED';
+  }
+}
+
+/**
+ * SMAPI was put in the game folder and then lost its launcher: the
+ * installer's other files (StardewModdingAPI.dll, the deps file) are there
+ * but StardewModdingAPI.exe (Windows) / StardewModdingAPI (macOS, Linux) is
+ * not. That is an antivirus quarantine, not a failed install.
+ */
+export async function smapiFilesRemoved(gamePath: string, platform: StardewInstallEnv['platform']): Promise<boolean> {
+  const others = (await exists(path.join(gamePath, 'StardewModdingAPI.dll'))) || (await exists(path.join(gamePath, 'StardewModdingAPI.deps.json')));
+  if (!others) return false;
+  const launcher = path.join(gamePath, platform === 'win32' ? 'StardewModdingAPI.exe' : 'StardewModdingAPI');
+  return !(await exists(launcher));
+}
+
 /* ── The whole install ───────────────────────────────────────────────── */
 
 export interface InstallStardewOpts {
@@ -741,7 +788,7 @@ export async function installStardew({ onProgress = () => {}, signal = null, env
     step = next;
     safeTrack(track, { game: 'stardew', step, outcome: 'start', store });
   };
-  const fail = (error: 'GAME_NOT_INSTALLED' | 'SMAPI_INSTALL_FAILED' | 'GAME_INSTALL_FAILED', message: string): never => {
+  const fail = (error: StardewInstallErrorClass, message: string): never => {
     if (step) safeTrack(track, { game: 'stardew', step, outcome: 'fail', store, error_code: error, reason: classifyFailReason(message) });
     step = null;
     onProgress({ stage: 'failed', error, message });
@@ -757,31 +804,58 @@ export async function installStardew({ onProgress = () => {}, signal = null, env
   const gamePath = before.gamePath as string;
 
   if (!before.smapiInstalled) {
+    // 261104: a running game holds its files open and the installer fails
+    // half way, so say so before a 42 MB download.
+    if ((await env.isGameRunning?.().catch(() => null)) === true) {
+      step = 'smapi_run';
+      fail('SMAPI_GAME_RUNNING', 'Stardew Valley is running. Close the game, then run the setup again.');
+    }
     begin('smapi_download');
     onProgress({ stage: 'smapi-downloading', pct: 0 });
     let zipBytes: Buffer;
     try {
       zipBytes = await downloadSmapiInstaller(env, (pct, bytes, total) => onProgress({ stage: 'smapi-downloading', pct, bytes, total }), signal);
     } catch (err) {
-      fail('SMAPI_INSTALL_FAILED', String((err as Error)?.message ?? err).replace(/^SMAPI_INSTALL_FAILED:\s*/, ''));
+      const msg = String((err as Error)?.message ?? err).replace(/^SMAPI_INSTALL_FAILED:\s*/, '');
+      fail(msg === 'cancelled' ? 'SMAPI_INSTALL_FAILED' : 'SMAPI_NETWORK_FAILED', msg);
     }
     begin('smapi_run');
     onProgress({ stage: 'smapi-installing' });
     const workDir = path.join(await env.tmpDir(), `smapi-installer-${env.now().toString(36)}`);
     try {
-      const installer = await extractSmapiInstaller(zipBytes!, workDir, env.platform);
-      const { stdout, stderr } = await env.runInstaller(installer, ['--install', '--no-prompt', '--game-path', gamePath], path.dirname(installer));
+      let installer: string;
+      try {
+        installer = await extractSmapiInstaller(zipBytes!, workDir, env.platform);
+      } catch (err) {
+        const msg = String((err as Error)?.message ?? err).replace(/^SMAPI_INSTALL_FAILED:\s*/, '');
+        // The zip was checked on download; an installer that is not there
+        // right after it was written was taken by an antivirus.
+        fail(/has no .*SMAPI\.Installer|EPERM|EACCES/i.test(msg) ? 'SMAPI_ANTIVIRUS_SUSPECTED' : 'SMAPI_INSTALL_FAILED', msg);
+      }
+      let out: { stdout: string; stderr: string };
+      try {
+        out = await env.runInstaller(installer!, ['--install', '--no-prompt', '--game-path', gamePath], path.dirname(installer!));
+      } catch (err) {
+        const e = err as Error & { code?: unknown; stdout?: unknown; stderr?: unknown };
+        const text = [e?.message ?? String(err), String(e?.stdout ?? ''), String(e?.stderr ?? '')].join('\n');
+        const code = e?.code === 'ENOENT' && !(await exists(installer!)) ? 'SMAPI_ANTIVIRUS_SUSPECTED' : smapiRunFailCode(text);
+        const tail = text.trim().split('\n').filter(Boolean).slice(-4).join(' | ');
+        fail(code, `${tail}. Close Stardew Valley and try again; if it keeps failing, install SMAPI from smapi.io and re-run this setup.`);
+      }
+      // An antivirus quarantines a new exe a moment after it is written.
+      if (env.platform === 'win32') await new Promise((r) => setTimeout(r, env.postInstallSettleMs ?? 1500));
       if (!(await smapiInstalledIn(gamePath, env.platform))) {
+        const { stdout, stderr } = out!;
         const tail = (stdout + '\n' + stderr).trim().split('\n').slice(-6).join(' | ');
-        fail('SMAPI_INSTALL_FAILED', `the SMAPI ${SMAPI_VERSION} installer finished but SMAPI is not wired into ${gamePath}: ${tail || 'no output'}`);
+        const removed = (env.platform === 'win32' && (await smapiFilesRemoved(gamePath, env.platform))) || /SMAPI is installed/i.test(stdout);
+        fail(
+          removed ? 'SMAPI_ANTIVIRUS_SUSPECTED' : smapiRunFailCode(stdout + '\n' + stderr),
+          `the SMAPI ${SMAPI_VERSION} installer finished but SMAPI is not wired into ${gamePath}: ${tail || 'no output'}`,
+        );
       }
     } catch (err) {
       const msg = String((err as Error)?.message ?? err);
-      if (msg.startsWith('SMAPI_INSTALL_FAILED')) {
-        // Thrown by extractSmapiInstaller (no progress event yet) or by fail() above.
-        if (step) fail('SMAPI_INSTALL_FAILED', msg.replace(/^SMAPI_INSTALL_FAILED:\s*/, ''));
-        throw err;
-      }
+      if (/^SMAPI_[A-Z_]+:/.test(msg)) throw err;
       fail('SMAPI_INSTALL_FAILED', `${msg}. Close Stardew Valley and try again; if it keeps failing, install SMAPI from smapi.io and re-run this setup.`);
     } finally {
       await fs.rm(workDir, { recursive: true, force: true }).catch(() => {});

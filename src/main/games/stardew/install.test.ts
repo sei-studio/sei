@@ -34,6 +34,8 @@ import {
   readGameVersion,
   gameVersionOk,
   chooseStardewFolder,
+  smapiRunFailCode,
+  smapiFilesRemoved,
   type StardewInstallEnv,
 } from './install';
 import { launchStardew, parseStardewProcesses } from './launch';
@@ -355,7 +357,7 @@ describe('detection + install against a fake game folder', () => {
     expect(events.at(-1)).toMatchObject({ stage: 'failed', error: 'GAME_NOT_INSTALLED' });
   });
 
-  it.skipIf(process.platform === 'win32')('reports SMAPI_INSTALL_FAILED when every download source fails', async () => {
+  it.skipIf(process.platform === 'win32')('reports SMAPI_NETWORK_FAILED when every download source fails', async () => {
     const events: { stage: string }[] = [];
     const tracked: Record<string, unknown>[] = [];
     await expect(
@@ -364,9 +366,47 @@ describe('detection + install against a fake game folder', () => {
         onProgress: (ev) => events.push(ev),
         track: (i) => tracked.push({ ...i }),
       }),
-    ).rejects.toThrow(/^SMAPI_INSTALL_FAILED/);
-    expect(events.at(-1)).toMatchObject({ stage: 'failed', error: 'SMAPI_INSTALL_FAILED' });
-    expect(tracked.at(-1)).toMatchObject({ step: 'smapi_download', outcome: 'fail', error_code: 'SMAPI_INSTALL_FAILED', reason: 'network' });
+    ).rejects.toThrow(/^SMAPI_NETWORK_FAILED/);
+    expect(events.at(-1)).toMatchObject({ stage: 'failed', error: 'SMAPI_NETWORK_FAILED' });
+    expect(tracked.at(-1)).toMatchObject({ step: 'smapi_download', outcome: 'fail', error_code: 'SMAPI_NETWORK_FAILED', reason: 'network' });
+  });
+
+  it('refuses to install SMAPI while the game runs (SMAPI_GAME_RUNNING), before downloading', async () => {
+    const events: { stage: string }[] = [];
+    let fetched = false;
+    await expect(
+      installStardew({
+        env: envFor({ isGameRunning: async () => true, fetch: async () => { fetched = true; throw new Error('no'); } }),
+        onProgress: (ev) => events.push(ev),
+        track: () => {},
+      }),
+    ).rejects.toThrow(/^SMAPI_GAME_RUNNING/);
+    expect(fetched).toBe(false);
+    expect(events.at(-1)).toMatchObject({ stage: 'failed', error: 'SMAPI_GAME_RUNNING' });
+  });
+
+  it.skipIf(process.platform === 'win32')('names an antivirus when the installer said done but SMAPI is not there', async () => {
+    const tracked: Record<string, unknown>[] = [];
+    await expect(
+      installStardew({
+        env: envFor({ runInstaller: async () => ({ stdout: 'SMAPI is installed! If you use Steam, set its launch options.', stderr: '' }) }),
+        track: (i) => tracked.push({ ...i }),
+      }),
+    ).rejects.toThrow(/^SMAPI_ANTIVIRUS_SUSPECTED/);
+    expect(tracked.at(-1)).toMatchObject({ step: 'smapi_run', outcome: 'fail', error_code: 'SMAPI_ANTIVIRUS_SUSPECTED' });
+  });
+
+  it.skipIf(process.platform === 'win32')('names a permission problem from the installer output', async () => {
+    await expect(
+      installStardew({
+        env: envFor({
+          runInstaller: async () => {
+            throw Object.assign(new Error('Command failed'), { stdout: "System.UnauthorizedAccessException: Access to the path 'StardewModdingAPI.dll' is denied." });
+          },
+        }),
+        track: () => {},
+      }),
+    ).rejects.toThrow(/^SMAPI_PERMISSION_DENIED/);
   });
 });
 
@@ -466,5 +506,31 @@ describe('parseStardewProcesses (261104)', () => {
     expect(parseStardewProcesses('/Users/p/Library/Application Support/Steam/steamapps/common/Stardew Valley/Contents/MacOS/Stardew Valley\n', 'darwin')).toEqual({ running: true, smapi: false });
     expect(parseStardewProcesses('/x/Stardew Valley/Contents/MacOS/StardewModdingAPI\n', 'darwin')).toEqual({ running: true, smapi: true });
     expect(parseStardewProcesses('/usr/bin/zsh\n/Applications/Sei.app/Contents/MacOS/Sei', 'darwin')).toEqual({ running: false, smapi: null });
+  });
+});
+
+describe('SMAPI failure causes (261104)', () => {
+  it.each([
+    ['The process cannot access the file because it is being used by another process', 'SMAPI_GAME_RUNNING'],
+    ['EBUSY: resource busy or locked', 'SMAPI_GAME_RUNNING'],
+    ['EPERM: operation not permitted', 'SMAPI_PERMISSION_DENIED'],
+    ['Operation did not complete successfully because the file contains a virus', 'SMAPI_ANTIVIRUS_SUSPECTED'],
+    ['getaddrinfo ENOTFOUND', 'SMAPI_NETWORK_FAILED'],
+    ['something else', 'SMAPI_INSTALL_FAILED'],
+  ])('%s -> %s', (text, code) => {
+    expect(smapiRunFailCode(text)).toBe(code);
+  });
+
+  it('sees a quarantined StardewModdingAPI.exe next to the files SMAPI left', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'sei-smapi-av-'));
+    try {
+      expect(await smapiFilesRemoved(dir, 'win32')).toBe(false);
+      await writeFile(path.join(dir, 'StardewModdingAPI.dll'), 'x');
+      expect(await smapiFilesRemoved(dir, 'win32')).toBe(true);
+      await writeFile(path.join(dir, 'StardewModdingAPI.exe'), 'x');
+      expect(await smapiFilesRemoved(dir, 'win32')).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

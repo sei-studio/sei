@@ -30,6 +30,9 @@ export async function launchStardew(deps: LaunchDeps = {}): Promise<StardewLaunc
   const logger = deps.logger ?? { info: (m: string) => console.log(m), warn: (m: string) => console.warn(m) };
   const state = await detectStardew(env);
   if (!state.gamePath) return { launched: false, via: 'none', message: 'GAME_NOT_INSTALLED: Stardew Valley was not found on this computer.' };
+  if (state.smapiRemoved) {
+    return { launched: false, via: 'none', message: 'SMAPI_ANTIVIRUS_SUSPECTED: StardewModdingAPI.exe is gone from the game folder; allow it in your antivirus, then run the Stardew setup again.' };
+  }
   if (!state.smapiInstalled || !state.modInstalled) {
     return { launched: false, via: 'none', message: 'GAME_INSTALL_FAILED: run the Stardew setup first so SMAPI and the Sei companion mod are installed.' };
   }

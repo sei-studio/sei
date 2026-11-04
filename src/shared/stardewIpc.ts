@@ -188,6 +188,8 @@ export interface StardewInstallState {
   gameVersion?: string | null;
   /** 261104: false when gameVersion is below STARDEW_MIN_GAME_VERSION (null = unknown). */
   versionOk?: boolean | null;
+  /** 261104: SMAPI's files are there but its launcher is gone (an antivirus quarantine). */
+  smapiRemoved?: boolean;
   platform: 'darwin' | 'win32' | 'linux';
   /** Everything the launch panel needs is in place. */
   ready: boolean;
@@ -201,7 +203,20 @@ export type StardewInstallProgressEvent =
   | { stage: 'mod-placing' }
   | { stage: 'config-writing' }
   | { stage: 'done'; state: StardewInstallState }
-  | { stage: 'failed'; error: 'GAME_NOT_INSTALLED' | 'SMAPI_INSTALL_FAILED' | 'GAME_INSTALL_FAILED'; message: string };
+  | { stage: 'failed'; error: StardewInstallErrorClass; message: string };
+
+/**
+ * The classes a Stardew install fails with. 261104: SMAPI's failure is split
+ * by cause so the copy names the fix; SMAPI_INSTALL_FAILED is what is left.
+ */
+export type StardewInstallErrorClass =
+  | 'GAME_NOT_INSTALLED'
+  | 'GAME_INSTALL_FAILED'
+  | 'SMAPI_INSTALL_FAILED'
+  | 'SMAPI_NETWORK_FAILED'
+  | 'SMAPI_PERMISSION_DENIED'
+  | 'SMAPI_GAME_RUNNING'
+  | 'SMAPI_ANTIVIRUS_SUSPECTED';
 
 /** The Choose folder answer (261104). */
 export type StardewChooseFolderResult =

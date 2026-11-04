@@ -27,6 +27,7 @@ import { useStardewStore } from '../../lib/stores/useStardewStore';
 import { PercentBar } from '../PercentBar';
 import { SearchingLine, type SetupStep, type StepSkin } from '../games/SetupStepper';
 import { progressLine, installErrorCopy, achievementsNoteSeen, markAchievementsNoteSeen } from './stardewCopy';
+import { ERROR_COPY } from '../../lib/errors';
 
 export interface StardewSetup {
   steps: SetupStep[];
@@ -215,6 +216,8 @@ export function useStardewSetupSteps(skin: StepSkin): StardewSetup {
             <span role="alert">{t(err.copy)}</span>
             {err.detail ? <span className={skin.mono}>{err.detail}</span> : null}
           </>
+        ) : install?.smapiRemoved && !installing ? (
+          <span role="alert">{t(ERROR_COPY.SMAPI_ANTIVIRUS_SUSPECTED)}</span>
         ) : null}
         <div className={skin.actions}>
           <Button kind="primary" disabled={installing || !found || tooOld} onClick={() => void runInstall()}>

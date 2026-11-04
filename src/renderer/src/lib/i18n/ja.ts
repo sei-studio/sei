@@ -2184,4 +2184,8 @@ export const JA: Record<string, string> = {
   "That folder doesn't have Stardew Valley in it. Pick the folder with Stardew Valley.dll in it.": "このフォルダにはStardew Valleyが入っていません。Stardew Valley.dllがあるフォルダを選んでください。",
   "This Stardew Valley is too old for Sei. Update the game to {min} or newer, then check again.": "このStardew ValleyはSeiには古すぎます。ゲームを{min}以降に更新してから、もう一度確認してください。",
   "Stardew Valley is running, but Sei's helper isn't answering. The game has to start through SMAPI: close it, then press Launch Stardew Valley (with Sei).": "Stardew Valleyは起動していますが、Seiの補助MODが応答しません。ゲームはSMAPI経由で起動する必要があります。いったん閉じてから「Stardew Valleyを起動（Sei経由）」を押してください。",
+  "Couldn't download SMAPI, the mod loader Stardew Valley needs. Check your internet connection, then try the setup again.": "Stardew Valleyに必要なMODローダー、SMAPIをダウンロードできませんでした。インターネット接続を確認してから、もう一度セットアップしてください。",
+  "SMAPI wasn't allowed to change the Stardew Valley folder. Close the game and Steam, then try the setup again. If it keeps failing, install SMAPI from smapi.io and re-run the setup.": "SMAPIがStardew Valleyのフォルダを変更できませんでした。ゲームとSteamを閉じてから、もう一度セットアップしてください。それでも失敗する場合は、smapi.ioからSMAPIをインストールしてセットアップをやり直してください。",
+  "Stardew Valley is running, so SMAPI can't be installed. Close the game, then try the setup again.": "Stardew Valleyが起動中のため、SMAPIをインストールできません。ゲームを閉じてから、もう一度セットアップしてください。",
+  "SMAPI was installed, but your antivirus most likely removed it. Allow StardewModdingAPI.exe in your antivirus, then run the setup again. In Windows Security: Virus & threat protection, Protection history, pick the item, then Allow on device.": "SMAPIはインストールされましたが、ウイルス対策ソフトに削除された可能性が高いです。ウイルス対策ソフトでStardewModdingAPI.exeを許可してから、もう一度セットアップしてください。Windows セキュリティの場合：ウイルスと脅威の防止、保護の履歴で該当の項目を選び、「デバイスで許可」を押します。",
 };

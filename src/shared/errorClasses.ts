@@ -84,6 +84,12 @@ export type ErrorClass =
   // failing is a different fix from the mod copy failing.
   | 'STARDEW_FARMHAND_NO_MOD'
   | 'SMAPI_INSTALL_FAILED'
+  // 261104: SMAPI's failure by cause, so the copy names the fix.
+  // SMAPI_INSTALL_FAILED stays for the rest.
+  | 'SMAPI_NETWORK_FAILED'
+  | 'SMAPI_PERMISSION_DENIED'
+  | 'SMAPI_GAME_RUNNING'
+  | 'SMAPI_ANTIVIRUS_SUSPECTED'
   // 261010: local Ollama backend problems that used to leave the companion
   // silently mute in-game. Checked before the bot joins (botSupervisor) and
   // again by the brain mid-session (orchestrator.js).
@@ -149,6 +155,10 @@ export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'DST_ONE_COMPANION',
   'STARDEW_FARMHAND_NO_MOD',
   'SMAPI_INSTALL_FAILED',
+  'SMAPI_NETWORK_FAILED',
+  'SMAPI_PERMISSION_DENIED',
+  'SMAPI_GAME_RUNNING',
+  'SMAPI_ANTIVIRUS_SUSPECTED',
   'OLLAMA_NOT_RUNNING',
   'OLLAMA_MODEL_MISSING',
   'OLLAMA_MODEL_NO_TOOLS',
