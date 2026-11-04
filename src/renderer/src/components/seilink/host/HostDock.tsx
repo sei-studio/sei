@@ -3,7 +3,7 @@
  * (261104, M4).
  *
  * The dock is a small glass pill of three round buttons at the bottom of the
- * work area (above the taskbar or the Dock), under her seat: edit her room,
+ * work area (above the taskbar or the Dock), beside her (dockPlace.ts): edit her room,
  * deafen (mute her idle lines; a reply to a double click still shows), and
  * move out. Shawn's room-editor deck puts these shortcuts in "the bottom
  * dock" of the room itself, so it lives on the wallpaper next to her rather
@@ -23,14 +23,12 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { SeilinkBox, SeilinkDockAction, SeilinkDockButton } from '@shared/seilinkHost';
 import { useT } from '../../../lib/i18n';
 import { BrushIcon, BubbleIcon, BubbleOffIcon, MoveOutIcon } from '../roomEditorIcons';
+import { dockBottom, dockLeft } from '../../../lib/seilink/dockPlace';
 import styles from './HostDock.module.css';
 
 /** How long "Move out?" waits for the second press. */
 export const MOVE_OUT_CONFIRM_MS = 4_000;
 const CAPTION_MS = 2_600;
-/** Gap between the dock and the bottom of the work area. */
-const DOCK_BOTTOM_GAP = 20;
-const DOCK_SIDE_GAP = 16;
 
 export interface DockPress {
   id: SeilinkDockAction;
@@ -39,7 +37,9 @@ export interface DockPress {
 
 export interface HostDockProps {
   workArea: SeilinkBox;
-  /** Her seat's x (page CSS px): the dock centres under it. */
+  /** Her box (page CSS px): the dock sits beside it. */
+  her: SeilinkBox | null;
+  /** Her seat's x (page CSS px): the dock centres under it when there is no room beside her. */
   anchorX: number;
   deafened: boolean;
   press: DockPress | null;
@@ -59,7 +59,7 @@ function sameButtons(a: SeilinkDockButton[] | null, b: SeilinkDockButton[] | nul
 }
 
 export function HostDock(props: HostDockProps): React.ReactElement {
-  const { workArea, anchorX, deafened, press, onAction, onButtons } = props;
+  const { workArea, her, anchorX, deafened, press, onAction, onButtons } = props;
   const t = useT();
   const [confirming, setConfirming] = useState(props.initialConfirm === true);
   const [caption, setCaption] = useState<string | null>(null);
@@ -106,9 +106,14 @@ export function HostDock(props: HostDockProps): React.ReactElement {
     return () => clearTimeout(id);
   }, [caption]);
 
-  // Where it sits: centred under her seat, inside the work area.
-  const left = Math.max(workArea.x + DOCK_SIDE_GAP, Math.min(anchorX - width / 2, workArea.x + workArea.w - width - DOCK_SIDE_GAP));
-  const bottom = workArea.y + workArea.h - DOCK_BOTTOM_GAP;
+  // Where it sits: beside her at the bottom of the work area. Placed by its
+  // collapsed width, so "Move out?" grows it away from her instead of moving it.
+  const restWidth = useRef(0);
+  const rest = restWidth.current || width;
+  const placed = dockLeft(workArea, her, anchorX, rest);
+  // Left of her: grow leftwards, away from her.
+  const left = her && placed + rest <= her.x ? placed - Math.max(0, width - rest) : placed;
+  const bottom = dockBottom(workArea);
 
   // Report the buttons' boxes whenever they may have moved.
   const lastSent = useRef<SeilinkDockButton[] | null>(null);
@@ -116,6 +121,7 @@ export function HostDock(props: HostDockProps): React.ReactElement {
     const root = rootRef.current;
     if (!root) return;
     const w = root.getBoundingClientRect().width;
+    if (!confirming) restWidth.current = w;
     if (Math.abs(w - width) >= 1) setWidth(w);
     const buttons: SeilinkDockButton[] = [];
     root.querySelectorAll<HTMLElement>('[data-dock]').forEach((el) => {

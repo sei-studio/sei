@@ -82,9 +82,14 @@ main (src/main/seilink/host/seilinkHost.ts)        host (hostEntry.ts, same bina
 
 `host/HostDock.tsx`, drawn by the wallpaper page itself: a small glass pill
 of three round, borderless buttons at the bottom of the work area (above the
-taskbar or the Dock; the host sends `CH.layout` with the work area), centred
-under her seat. Shawn's room-editor deck puts these shortcuts in "the bottom
-dock" of the room, so it lives on the wallpaper, not in the app or a tray.
+taskbar or the Dock; the host sends `CH.layout` with the work area), beside
+her box (`lib/seilink/dockPlace.ts`: right of her when it fits, else left,
+else centred under her seat). Her figure runs to the bottom of the screen in
+the cozy room, so a dock under her seat sat on her chest. It stays next to
+her box because the native click area is the union of the two (one rect): on
+macOS the hit panel takes the desktop's clicks inside it. Shawn's
+room-editor deck puts these shortcuts in "the bottom dock" of the room, so it
+lives on the wallpaper, not in the app or a tray.
 - Edit room → main `deps.openRoomEditor` (shows Sei, pushes
   `seilink:open-room-editor`; App.tsx navigates to her page and
   `useSeilinkStore.requestEditor` opens her editor there).
@@ -203,7 +208,8 @@ The contract for any replacement is in the file header.
   page path.
 - Self-test (`selfTest.ts`, unpackaged + `SEI_SEILINK_SELFTEST=<outdir>`):
   attach, first frame, cover → 0 fps, uncover, click her / bare wallpaper /
-  double click, kill → reattach, hang → detected and replaced, (Windows)
+  double click, a press on the dock's deafen button (twice, so it ends where
+  it started; must not open her chat), kill → reattach, hang → detected and replaced, (Windows)
   Explorer restart, stop. Writes `result.json`, `selftest.log` and
   screenshots, then exits 0 or 1. Moves Sui in when the profile has her.
 - Linux smoke:
@@ -212,6 +218,11 @@ The contract for any replacement is in the file header.
   SEI_DEV_USERDATA=SeiLinkSmoke timeout 240 xvfb-run -a -s "-screen 0 1920x1080x24"
   ./node_modules/.bin/electron . --no-sandbox` (cover/uncover/click are
   skipped there).
+- Screenshots, no Electron: `?seilinkhost=1&pack=<url>`
+  (DevHostPreview: the wallpaper page with the dock and a bubble over a fake
+  bridge), `?dashshot=screen&seilink=on|off|unsupported` and
+  `&modal=movein&pack=<url>[&swap=1]` (DevScreenShot), all shot by
+  `node scripts/seilink-host-shots.mjs --out <dir>` (bundled cozy pack by default).
 - CI: `.github/workflows/seilink-host-check.yml` (windows-2022/2025,
   macos-15/26; dispatch, or push to `feat/seilink-host` under the host
   paths). One runner per OS also packages a dir build and checks the addon
@@ -247,6 +258,3 @@ The contract for any replacement is in the file header.
   only reports presses, the mac panel only covers the click area).
 - Pack downloads (`downloadPack` is a stub): only the bundled cozy pack and
   dev packs exist, so the room cards show Gamer and Forest as "Soon".
-- Dev previews: `?seilinkhost=1&pack=<url>` (DevHostPreview: the wallpaper
-  page with the dock and a bubble over a fake bridge) and
-  `scripts/seilink-host-shots.mjs`.

@@ -221,7 +221,7 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
 
   if (!room) return <div className={styles.root} />;
 
-  // M4: the dock under her seat, above the taskbar / Dock; her line above her head.
+  // M4: the dock beside her, above the taskbar / Dock; her line above her head.
   const workArea = layout?.workArea ?? { x: 0, y: 0, w: size.w, h: size.h };
   const anchorX = pack
     ? (() => {
@@ -237,6 +237,7 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
       {layout || props.bridge ? (
         <HostDock
           workArea={workArea}
+          her={herBox}
           anchorX={anchorX}
           deafened={deafened}
           press={dockPress}

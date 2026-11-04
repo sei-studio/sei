@@ -298,8 +298,37 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
         checks.click = { ok: false, detail: testAddon ? 'no box reported' : 'no test addon' };
       }
 
+      // ── dock (M4): a press on its deafen button reaches main as a dock action, twice (on, then back off) ──
+      const withDock = [...events].reverse().find((e) => e.m.type === 'box' && Array.isArray((e.m as { dock?: unknown }).dock))?.m as
+        | { dock: Array<{ id: string; x: number; y: number; w: number; h: number }> }
+        | undefined;
+      const deafenBtn = withDock?.dock.find((x) => x.id === 'deafen');
+      if (testAddon && deafenBtn) {
+        const s = IS_WIN ? d.scaleFactor : 1;
+        const px = Math.round((deafenBtn.x + deafenBtn.w / 2) * s);
+        const py = Math.round((deafenBtn.y + deafenBtn.h / 2) * s);
+        const pressDeafen = async (): Promise<boolean> => {
+          const t0 = Date.now();
+          testAddon.testClick(px, py, 1);
+          const got = await waitFor(since(t0, 'dock', (m) => m.action === 'deafen'), 4000);
+          await sleep(600);
+          return !!got;
+        };
+        t = Date.now();
+        log(`press the dock's deafen at ${px},${py}`);
+        const first = await pressDeafen();
+        timings.dockMs = first ? Date.now() - t - 600 : -1;
+        const second = await pressDeafen();
+        // A dock press must not also open her chat.
+        const opened = events.some((e) => e.t >= t && e.m.type === 'click');
+        hideMain();
+        checks.dock = { ok: first && second && !opened, ms: timings.dockMs, detail: `first ${first} second ${second} openedChat ${opened}` };
+      } else {
+        checks.dock = { ok: false, detail: testAddon ? 'no dock reported' : 'no test addon' };
+      }
+
     } else {
-      for (const k of ['cover', 'uncover', 'click']) checks[k] = { ok: true, detail: 'skipped: fake desktop (no coverage or input here)' };
+      for (const k of ['cover', 'uncover', 'click', 'dock']) checks[k] = { ok: true, detail: 'skipped: fake desktop (no coverage or input here)' };
     }
 
     // ── kill ──

@@ -26,6 +26,9 @@ type Cb<T> = (v: T) => void;
 function fakeBridge(params: URLSearchParams): SeilinkHostBridge {
   const packUrl = (params.get('pack') ?? '').replace(/\/?$/, '/');
   const later = (fn: () => void, ms: number): void => void setTimeout(fn, ms);
+  // Deafen flips like the real host's answer (seilinkHost.onDockAction).
+  let deafened = params.get('deafened') === '1';
+  let dockState: Cb<{ deafened: boolean }> | null = null;
   return {
     onRoom: (cb: Cb<SeilinkHostRoom>) => {
       void fetch(`${packUrl}manifest.json`, { cache: 'no-store' })
@@ -56,7 +59,10 @@ function fakeBridge(params: URLSearchParams): SeilinkHostBridge {
     onPoke: () => () => {},
     setBox: () => {},
     frames: () => {},
-    firstFrame: () => {},
+    // The shot script waits for [data-room-ready="1"], like the room preview's.
+    firstFrame: () => {
+      document.body.dataset.roomReady = '1';
+    },
     ready: () => {},
     onLayout: (cb) => {
       const tb = Number(params.get('taskbar') ?? 48) || 0;
@@ -64,7 +70,8 @@ function fakeBridge(params: URLSearchParams): SeilinkHostBridge {
       return () => {};
     },
     onDockState: (cb) => {
-      later(() => cb({ deafened: params.get('deafened') === '1' }), 0);
+      dockState = cb;
+      later(() => cb({ deafened }), 0);
       return () => {};
     },
     onDockPress: (cb: Cb<SeilinkDockAction>) => {
@@ -73,7 +80,12 @@ function fakeBridge(params: URLSearchParams): SeilinkHostBridge {
       return () => {};
     },
     setDock: () => {},
-    dockAction: (a) => console.log(`[dev host] dock action ${a}`),
+    dockAction: (a) => {
+      console.log(`[dev host] dock action ${a}`);
+      if (a !== 'deafen') return;
+      deafened = !deafened;
+      dockState?.({ deafened });
+    },
     onLine: (cb) => {
       const text = params.get('line');
       if (text) later(() => cb({ id: 1, text, kind: 'poke' }), 1800);

@@ -7,7 +7,8 @@ name: SeiLink host check
 #
 # The self-test asserts: attached, first frame, a covering window drops the
 # room to 0 fps and uncovering brings it back, a click on her opens the app
-# while a click on bare wallpaper does not, a killed host reattaches, a hung
+# while a click on bare wallpaper does not, a press on the dock's deafen
+# button reaches main as a dock action (and opens nothing), a killed host reattaches, a hung
 # host is detected and replaced, (Windows) an Explorer restart reattaches,
 # and stop. Screenshots and logs are the artifact.
 #
