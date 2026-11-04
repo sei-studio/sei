@@ -1,0 +1,164 @@
+name: SeiLink host check
+
+# SeiLink desktop host (261104, milestone 3): the companion's room as a live
+# wallpaper behind the desktop icons. Builds the native addon strictly, runs
+# the app's self-test (src/main/seilink/host/selfTest.ts) on real runner
+# desktops, and checks that packaging puts the addon outside app.asar.
+#
+# The self-test asserts: attached, first frame, a covering window drops the
+# room to 0 fps and uncovering brings it back, a click on her opens the app
+# while a click on bare wallpaper does not, a killed host reattaches, a hung
+# host is detected and replaced, (Windows) an Explorer restart reattaches,
+# and stop. Screenshots and logs are the artifact.
+#
+# No secrets, no signing, nothing published. Manual dispatch, plus pushes to
+# the feature branch that touch the host (a workflow that exists only on a
+# branch cannot be dispatched until it reaches the default branch).
+on:
+  workflow_dispatch:
+  push:
+    branches: ['feat/seilink-host']
+    paths:
+      - 'native/seilink/**'
+      - 'src/main/seilink/host/**'
+      - 'src/preload/seilinkHost.ts'
+      - 'src/renderer/seilink-host.html'
+      - 'src/renderer/src/seilinkHostMain.tsx'
+      - 'src/renderer/src/components/seilink/**'
+      - 'scripts/build-seilink-addon.mjs'
+      - 'scripts/seilink/**'
+      - '.github/workflows/seilink-host-check.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: seilink-host-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: host (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            package: false
+          - os: windows-2025
+            package: true
+          - os: macos-15
+            package: true
+          - os: macos-26
+            package: false
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      OUT: ${{ github.workspace }}/seilink-check
+      SEI_DEV_USERDATA: SeiLinkCheck
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        id: setup-python
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        env:
+          npm_config_python: ${{ steps.setup-python.outputs.python-path }}
+        run: npm ci --no-audit --no-fund
+
+      - name: Build the addon (strict, with the CI click helper)
+        env:
+          npm_config_python: ${{ steps.setup-python.outputs.python-path }}
+          SEILINK_ADDON_STRICT: '1'
+        run: |
+          node scripts/build-seilink-addon.mjs --force --test
+          ls -la resources/seilink/ native/seilink/out/
+          if [ "$RUNNER_OS" = "macOS" ]; then lipo -info resources/seilink/seilink.node; fi
+
+      - name: Dev room pack and app bundle
+        run: |
+          node scripts/seilink-dev-pack.mjs --out "$RUNNER_TEMP/seilink-packs"
+          npx electron-vite build
+
+      - name: Desktop details and a few icons (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $d = [Environment]::GetFolderPath('Desktop')
+          1..6 | ForEach-Object { Set-Content -Path (Join-Path $d "SeiLink test $_.txt") -Value "icon $_" }
+          Get-Process explorer -ErrorAction SilentlyContinue | Format-Table Id, SessionId, StartTime
+          Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::AllScreens | Format-List
+          (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion') | Select-Object ProductName, DisplayVersion, CurrentBuild, UBR | Format-List
+
+      - name: Desktop details and a few icons (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          for i in 1 2 3 4 5 6; do echo "icon $i" > "$HOME/Desktop/SeiLink test $i.txt"; done
+          sw_vers
+          system_profiler SPDisplaysDataType | grep -E "Resolution|Display Type|Chipset" || true
+
+      - name: Clear the desktop (Windows)
+        # The runner's agent console sits over the screen centre, where she is; a click there
+        # lands on the console, which is correct, so minimise everything first (the spike did too).
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: (New-Object -ComObject Shell.Application).MinimizeAll(); Start-Sleep -Seconds 2
+
+      - name: Self-test
+        timeout-minutes: 12
+        env:
+          SEI_SEILINK_PACKS: ${{ runner.temp }}/seilink-packs
+          SEI_SEILINK_SELFTEST: ${{ github.workspace }}/seilink-check
+        run: |
+          mkdir -p "$OUT"
+          npx electron . 2>&1 | tee "$OUT/app-stdout.log" | tail -200
+          code=${PIPESTATUS[0]}
+          echo "app exit $code"
+          if [ -f "$OUT/result.json" ]; then cat "$OUT/result.json"; else echo "::error::no result.json"; exit 1; fi
+          node -e "const r=require(process.env.OUT+'/result.json'); for (const [k,v] of Object.entries(r.checks)) console.log((v.ok?'PASS ':'FAIL ')+k+(v.ms!=null?' '+v.ms+'ms':'')+(v.detail?' '+String(v.detail).slice(0,200):'')); process.exit(r.ok?0:1)"
+
+      - name: Package (dir) and check the addon is outside app.asar
+        if: matrix.package && !cancelled()
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            sudo sysctl -w kern.maxfiles=524288 kern.maxfilesperproc=524288 2>/dev/null || true
+            ulimit -n 524288 2>/dev/null || ulimit -n 65536 2>/dev/null || true
+            npx electron-builder --mac dir --arm64 --publish never -c.mac.identity=null -c.mac.notarize=false
+            f=$(find release -path '*Sei.app/Contents/Resources/seilink/seilink.node' | head -1)
+          else
+            npx electron-builder --win dir --x64 --publish never
+            f=$(find release -path '*win-unpacked/resources/seilink/seilink.node' | head -1)
+          fi
+          if [ -z "$f" ]; then echo "::error::seilink.node is not in the packaged resources"; exit 1; fi
+          ls -la "$f"
+          if [ "$RUNNER_OS" = "macOS" ]; then lipo -info "$f"; fi
+          ELECTRON_RUN_AS_NODE=1 npx electron -e "const a=require(require('path').resolve(process.argv[process.argv.length-1])); console.log('packaged addon loads:', a.platform, typeof a.doubleClickMs === 'function' ? a.doubleClickMs() + ' ms' : '')" "$f"
+
+      - name: Collect logs
+        if: always()
+        run: |
+          mkdir -p "$OUT/logs"
+          if [ "$RUNNER_OS" = "macOS" ]; then ud="$HOME/Library/Application Support/$SEI_DEV_USERDATA"; else ud="$APPDATA/$SEI_DEV_USERDATA"; fi
+          cp "$ud/SeiLinkHost/host.log" "$ud/SeiLinkHost/stdio.log" "$OUT/logs/" 2>/dev/null || true
+          ls -la "$OUT" "$OUT/logs" || true
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seilink-host-${{ matrix.os }}
+          path: seilink-check/
+          retention-days: 14

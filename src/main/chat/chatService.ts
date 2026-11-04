@@ -50,6 +50,7 @@ import { facePaletteForCharacterName } from '../facepack/facepackStore';
 import { readChatContext, foldIfDue } from './continuity';
 import { toMessages, voiceWindowStart } from './transcript';
 import { scopedTurnCurrent, withScopedTurn } from '../profile/scopeBarrier';
+import { noteSeilinkChatTurn } from '../seilink/host/hostSignals';
 import { maybeCompactChatMemory } from './memoryCompaction';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import { surfaceLanguage } from '../../shared/chatLanguage';
@@ -2179,7 +2180,11 @@ function blockedReason(errorClass: string): string {
 export function sendChatMessage(
   ...args: Parameters<typeof sendChatMessageImpl>
 ): ReturnType<typeof sendChatMessageImpl> {
-  return withScopedTurn(() => sendChatMessageImpl(...args));
+  // SeiLink (261104): while the player chats with her, her wallpaper self holds still.
+  const done = noteSeilinkChatTurn(args[0].characterId);
+  const turn = withScopedTurn(() => sendChatMessageImpl(...args));
+  turn.then(done, done);
+  return turn;
 }
 
 export function sendLaunchFailedTurn(

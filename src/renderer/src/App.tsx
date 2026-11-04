@@ -132,6 +132,15 @@ export function App(): React.ReactElement {
   useEffect(() => {
     try { sei.rendererReady?.(); } catch { /* older bridge */ }
   }, []);
+  // 261104 SeiLink desktop host: she was clicked on the desktop wallpaper
+  // (main focused this window first; src/main/seilink/host/seilinkHost.ts).
+  useEffect(
+    () =>
+      sei.onSeilinkOpenChat?.((characterId) => {
+        useUiStore.getState().navigate({ kind: 'chat', characterId });
+      }),
+    [],
+  );
   // ui-A7: developer-console visibility toggle. Default OFF — LogsBar only
   // mounts when the Settings → Show developer console toggle is flipped.
   const devConsoleVisible = useUiStore((s) => s.devConsoleVisible);

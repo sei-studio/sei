@@ -55,28 +55,37 @@ import { flushUpdatePushes, initUpdater } from './updater';
 import { applyPendingAtLaunch } from './velopackUpdater';
 import { openSafeModeWindow, safeModeWindow } from './safeMode/safeModeWindow';
 import { IpcChannel } from '../shared/ipc';
+import { isSeilinkHostLaunch } from './seilink/host/hostArgs';
 
-// Lock the app name early so app.getPath('userData') resolves to "Sei"
-// (packaged) or "Sei Dev" (electron-vite dev), keeping dev state out of the
-// shipped build. SEI_DEV_USERDATA (dev only) gives a second dev build its own
-// userData dir and therefore its own single-instance lock.
-const devUserData = process.env.SEI_DEV_USERDATA?.trim() || 'Sei Dev';
-app.setName(app.isPackaged ? 'Sei' : devUserData);
-if (!app.isPackaged) {
-  app.setPath('userData', path.join(app.getPath('appData'), devUserData));
+// A SeiLink room host launch (main spawns this same binary with --seilink-host to draw the
+// companion's room as wallpaper, seilink/host/) is its own small program: no app name or
+// userData change (it gets its own userData by argv), no single-instance lock, no boot guard,
+// no updater.
+if (isSeilinkHostLaunch(process.argv)) {
+  await import('./seilink/host/hostEntry');
+} else {
+  // Lock the app name early so app.getPath('userData') resolves to "Sei"
+  // (packaged) or "Sei Dev" (electron-vite dev), keeping dev state out of the
+  // shipped build. SEI_DEV_USERDATA (dev only) gives a second dev build its own
+  // userData dir and therefore its own single-instance lock.
+  const devUserData = process.env.SEI_DEV_USERDATA?.trim() || 'Sei Dev';
+  app.setName(app.isPackaged ? 'Sei' : devUserData);
+  if (!app.isPackaged) {
+    app.setPath('userData', path.join(app.getPath('appData'), devUserData));
+  }
+
+  // Single-instance lock: a second launch focuses the existing window and
+  // never touches the boot state (it is not a start attempt).
+  const gotLock = app.requestSingleInstanceLock();
+  if (!gotLock) {
+    app.quit();
+  } else {
+    await start();
+  }
 }
 
 function log(line: string): void {
   console.log(`[sei] boot: ${line}`);
-}
-
-// Single-instance lock: a second launch focuses the existing window and
-// never touches the boot state (it is not a start attempt).
-const gotLock = app.requestSingleInstanceLock();
-if (!gotLock) {
-  app.quit();
-} else {
-  await start();
 }
 
 async function start(): Promise<void> {

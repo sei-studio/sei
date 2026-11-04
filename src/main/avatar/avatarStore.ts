@@ -637,12 +637,13 @@ export async function removeAvatar(characterId: string): Promise<void> {
 }
 
 /**
- * The model bundle for the renderer's in-memory loader: every file under the
- * avatar dir except the manifest, as posix-relative paths + bytes.
+ * Where the model bundle's files are: every file under the avatar dir except
+ * the manifest, as posix-relative paths + absolute files. The SeiLink room
+ * host reads them itself (seilink/host/avatarRelay.ts).
  */
-export async function readAvatarModelFiles(characterId: string): Promise<AvatarModelFile[]> {
+export async function listAvatarModelFiles(characterId: string): Promise<Array<{ path: string; file: string }>> {
   const dir = paths.avatarsDir(characterId);
-  const out: AvatarModelFile[] = [];
+  const out: Array<{ path: string; file: string }> = [];
   async function walk(sub: string): Promise<void> {
     const entries = await readdir(path.join(dir, sub), { withFileTypes: true });
     for (const e of entries) {
@@ -651,12 +652,26 @@ export async function readAvatarModelFiles(characterId: string): Promise<AvatarM
       else if (rel !== MANIFEST_NAME) {
         const abs = path.join(dir, ...rel.split('/'));
         const s = await stat(abs);
-        if (s.isFile()) out.push({ path: rel, bytes: new Uint8Array(await readFile(abs)) });
+        if (s.isFile()) out.push({ path: rel, file: abs });
       }
     }
   }
   try {
     await walk('');
+  } catch {
+    return [];
+  }
+  return out;
+}
+
+/**
+ * The model bundle for the renderer's in-memory loader: every file under the
+ * avatar dir except the manifest, as posix-relative paths + bytes.
+ */
+export async function readAvatarModelFiles(characterId: string): Promise<AvatarModelFile[]> {
+  const out: AvatarModelFile[] = [];
+  try {
+    for (const f of await listAvatarModelFiles(characterId)) out.push({ path: f.path, bytes: new Uint8Array(await readFile(f.file)) });
   } catch {
     return [];
   }

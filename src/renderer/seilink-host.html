@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- SeiLink room host page (261104): the companion's room as the desktop
+     wallpaper, loaded by the room host process (src/main/seilink/host/hostEntry.ts)
+     with the sandboxed seilinkHost preload. Not the app: no window.sei here. -->
+<html lang="en" data-theme="midnight" data-scheme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Sei room</title>
+    <link rel="stylesheet" href="/src/styles/tokens.css" />
+    <style>
+      html, body, #root { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #04070f; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/seilinkHostMain.tsx"></script>
+  </body>
+</html>

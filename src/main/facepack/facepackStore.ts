@@ -53,8 +53,8 @@ export async function readPackManifest(id: string): Promise<FacepackManifest | n
   return readManifestAt(path.join(root, id));
 }
 
-/** One pack file's bytes, or null (flag off, bad id/path, missing file). */
-export async function readPackFile(id: string, rel: string): Promise<Uint8Array | null> {
+/** Where one pack file is on disk, or null (flag off, bad id/path, missing, too big). */
+export async function packFilePath(id: string, rel: string): Promise<string | null> {
   const root = facepackDir();
   if (!root || !ID_RE.test(id) || !isSafePackPath(rel)) return null;
   const packDir = path.join(root, id);
@@ -63,6 +63,17 @@ export async function readPackFile(id: string, rel: string): Promise<Uint8Array 
   try {
     const s = await stat(full);
     if (!s.isFile() || s.size > 16 * 1024 * 1024) return null;
+    return full;
+  } catch {
+    return null;
+  }
+}
+
+/** One pack file's bytes, or null (flag off, bad id/path, missing file). */
+export async function readPackFile(id: string, rel: string): Promise<Uint8Array | null> {
+  const full = await packFilePath(id, rel);
+  if (!full) return null;
+  try {
     return new Uint8Array(await readFile(full));
   } catch {
     return null;

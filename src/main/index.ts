@@ -23,13 +23,14 @@
 import './remoteDebugGuard';
 import './velopackBoot';
 import { scheduleVelopackMigration } from './velopackMigration';
-import { app, BrowserWindow, net, session, systemPreferences } from 'electron';
+import { app, BrowserWindow, ipcMain, net, session, systemPreferences } from 'electron';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { closeSplashWindow, createMainWindow, createSplashWindow } from './windowChrome';
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { registerFacepackIpc } from './facepack/facepackIpc';
 import { openSeilinkPreview, registerSeilinkIpc } from './seilink/seilinkIpc';
+import { initSeilinkHost, restoreSeilinkHost, stopSeilinkHostForQuit } from './seilink/host/seilinkHost';
 import { registerSeilinkProtocol, seilinkDevEnabled, SEILINK_SCHEME_PRIVILEGES } from './seilink/packs';
 import { devRoomSource, setGameSurfaceProbe, setRoomSource } from './seilink/roomContext';
 import { roomSource } from './seilink/roomStore';
@@ -232,6 +233,34 @@ function sweepVoiceCalls(reason: 'window_closed' | 'renderer_gone' | 'renderer_r
     .then((m) => m.clearAllBackseat(reason))
     .catch(() => {});
 }
+
+/** 261104 SeiLink: a click on her desktop wallpaper, waiting for a main window to come up (macOS). */
+let pendingSeilinkChat: string | null = null;
+
+/** She was clicked on the desktop: bring Sei forward and open her chat. */
+function openSeilinkChat(characterId: string): void {
+  const w = mainWindow;
+  if (w && !w.isDestroyed()) {
+    if (w.isMinimized()) w.restore();
+    if (!w.isVisible()) w.show();
+    // The click landed in the host process, so Sei is not the active app.
+    if (process.platform === 'darwin') app.focus({ steal: true });
+    w.focus();
+    w.webContents.send(IpcChannel.seilink.openChat, characterId);
+    return;
+  }
+  // macOS keeps running with no window: make one, like a Dock click, and open the chat once
+  // its UI says it is listening (app:renderer-ready).
+  pendingSeilinkChat = characterId;
+  if (mainWindow === null) bootstrap().catch((err) => logger.error(`re-bootstrap failed: ${(err as Error).message}`));
+}
+
+ipcMain.on(IpcChannel.app.rendererReady, (e) => {
+  const id = pendingSeilinkChat;
+  if (!id || !mainWindow || mainWindow.isDestroyed() || e.sender !== mainWindow.webContents) return;
+  pendingSeilinkChat = null;
+  mainWindow.webContents.send(IpcChannel.seilink.openChat, id);
+});
 
 /**
  * Wire the lifecycle listeners the main window needs (extracted 260728).
@@ -1243,7 +1272,11 @@ async function bootstrap(): Promise<void> {
       getMainWindow: () => mainWindow,
       endVoiceCalls: endVoiceCallsFromMain,
       // 261013 (T120): the new account's sessions an app quit ended.
-      onScopeSwitched: () => void runPendingQuitNextSteps(),
+      onScopeSwitched: () => {
+        void runPendingQuitNextSteps();
+        // 261104 SeiLink: config is per profile; bring back whoever moved in on this one.
+        void restoreSeilinkHost();
+      },
     });
   }
 
@@ -1347,6 +1380,19 @@ async function bootstrap(): Promise<void> {
   registerSeilinkIpc({ preloadPath: preloadPath(), rendererTarget });
   if (seilinkDevEnabled() && process.env.SEI_SEILINK_PREVIEW === '1') {
     openSeilinkPreview({ preloadPath: preloadPath(), rendererTarget });
+  }
+  // 261104 SeiLink desktop host (milestone 3, dev flag only): her room as the
+  // live wallpaper. Restores whoever moved in on this profile.
+  initSeilinkHost({
+    pushStatus: (status) => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcChannel.seilink.hostStatusChanged, status);
+    },
+    openChat: openSeilinkChat,
+    onDoubleClick: (characterId) => logger.info(`seilink: double click on ${characterId} (reserved)`),
+  });
+  void restoreSeilinkHost();
+  if (!app.isPackaged && process.env.SEI_SEILINK_SELFTEST) {
+    void import('./seilink/host/selfTest').then((m) => m.runSeilinkSelfTest({ getMainWindow: () => mainWindow }));
   }
   // 261104 SeiLink AI side (src/main/seilink/roomContext.ts): no room line and
   // no look() while she is in chess, Draw! or a Backseat share (bot games
@@ -1777,6 +1823,9 @@ async function bootstrap(): Promise<void> {
     // be shut down after it (and backseat not at all), so their *_ended events
     // were lost on every quit. Bounded: their closing rows write to disk.
     await endGameSurfacesForQuit();
+    // 261104 SeiLink: take her off the desktop (seilink_ended app_quit before the flush; the
+    // move-in is kept, so she is back on the next start).
+    try { stopSeilinkHostForQuit(); } catch { /* best-effort */ }
     // Flush buffered analytics first so queued events survive the quit.
     try { await shutdownAnalytics(); } catch (err) { logger.warn(`analytics shutdown failed: ${(err as Error).message}`); }
     try { if (supervisor) await supervisor.shutdown(); } catch (err) { logger.warn(`supervisor shutdown failed: ${(err as Error).message}`); }

@@ -1,0 +1,29 @@
+/* SeiLink room host page (the desktop wallpaper). */
+.root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* No pack installed: a plain dusk gradient so the desktop is never a hole. */
+.fallback {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, var(--bg) 0%, var(--surface) 60%, var(--accent-soft) 100%);
+}
+
+.fallbackSlot {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.measure {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 100%;
+}

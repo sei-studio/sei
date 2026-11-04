@@ -74,6 +74,7 @@ import { observeOnboardingEvent } from './onboardingFunnel';
 import { registerPermissionHandlers } from './permissions/permissionsService';
 import { setSupervisor as setAuthSupervisor } from './auth/authHandlers';
 import type { BotSupervisor } from './botSupervisor';
+import { noteSeilinkAvatarChanged } from './seilink/host/hostSignals';
 
 // ── Moderation kill-switch ─────────────────────────────────────────────────
 // When false, publishing a shared character SKIPS the image/prompt moderation
@@ -2345,7 +2346,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const bytes = zipArg instanceof ArrayBuffer ? Buffer.from(zipArg) : Buffer.from(zipArg.buffer, zipArg.byteOffset, zipArg.byteLength);
     const { importAvatarZip, AVATAR_ZIP_MAX_BYTES } = await import('./avatar/avatarStore');
     if (bytes.byteLength > AVATAR_ZIP_MAX_BYTES) throw new Error('avatar zip too large');
-    return importAvatarZip(id, bytes);
+    const manifest = await importAvatarZip(id, bytes);
+    noteSeilinkAvatarChanged(id, manifest);
+    return manifest;
   });
 
   // Cloud avatar download (260819): main resolves the URL from the character
@@ -2364,7 +2367,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     if (!res.ok) throw new Error(`avatar download failed: ${res.status}`);
     const bytes = Buffer.from(await res.arrayBuffer());
     if (bytes.byteLength > AVATAR_ZIP_MAX_BYTES) throw new Error('avatar zip too large');
-    return importAvatarZip(id, bytes);
+    const manifest = await importAvatarZip(id, bytes);
+    noteSeilinkAvatarChanged(id, manifest);
+    return manifest;
   });
 
   ipcMain.handle(IpcChannel.avatar.get, async (_event, idArg: unknown) => {
@@ -2377,6 +2382,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const id = IdSchema.parse(idArg);
     const { removeAvatar } = await import('./avatar/avatarStore');
     await removeAvatar(id);
+    noteSeilinkAvatarChanged(id, null);
   });
 
   ipcMain.handle(IpcChannel.avatar.modelFiles, async (_event, idArg: unknown) => {
@@ -2394,6 +2400,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       .parse(argsRaw);
     const { setAvatarAccessory } = await import('./avatar/avatarStore');
     const manifest = await setAvatarAccessory(args.characterId, args.name, args.on);
+    noteSeilinkAvatarChanged(args.characterId, manifest);
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
         win.webContents.send(IpcChannel.avatar.manifestState, {
