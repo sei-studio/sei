@@ -14,20 +14,23 @@
       "z": 0,
       "options": [
         "view_valley"
-      ]
+      ],
+      "label": "Sky"
     },
     "shell": {
       "z": 10,
       "options": [
         "forest_clearing"
-      ]
+      ],
+      "label": "Clearing"
     },
     "shelf": {
       "z": 40,
       "options": [
         "tree_stump"
       ],
-      "optional": true
+      "optional": true,
+      "label": "Stump"
     },
     "bed": {
       "z": 50,
@@ -35,14 +38,16 @@
         "canvas_tent"
       ],
       "optional": true,
-      "group": "fabrics"
+      "group": "fabrics",
+      "label": "Tent"
     },
     "lamp": {
       "z": 60,
       "options": [
         "lantern_post"
       ],
-      "optional": true
+      "optional": true,
+      "label": "Light post"
     },
     "campfire": {
       "z": 80,
@@ -55,7 +60,16 @@
       "options": [
         "log_seat"
       ],
-      "group": "fabrics"
+      "group": "fabrics",
+      "label": "Log seat"
+    },
+    "lights": {
+      "z": 85,
+      "options": [
+        "fireflies"
+      ],
+      "optional": true,
+      "label": "Lights"
     }
   },
   "components": [
@@ -128,7 +142,23 @@
         "floor": [
           [[76, 830], [982, 830], [1040, 870], [1043, 900], [1028, 930], [706, 960], [490, 990], [386, 1023], [329, 1023], [145, 990], [138, 960], [27, 930], [14, 900], [23, 870]]
         ]
-      }
+      },
+      "patternSurface": "tents",
+      "patternQuads": [
+        {
+          "quad": [[372, 439], [683, 406], [444, 839], [156, 778]],
+          "size": [600, 480]
+        },
+        {
+          "quad": [[156, 778], [444, 839], [367, 990], [110, 905]],
+          "size": [600, 140],
+          "uv": [0, 480]
+        },
+        {
+          "quad": [[655, 395], [712, 395], [975, 925], [400, 985]],
+          "size": [540, 430]
+        }
+      ]
     },
     {
       "id": "lantern_post",
@@ -184,17 +214,38 @@
         "day": {
           "src": "campfire_day.webp",
           "glow": "campfire_glow_day.webp",
-          "effect": "flicker"
+          "effect": "flicker",
+          "particles": [
+            {
+              "kind": "embers",
+              "area": [1700, 520, 330, 560],
+              "density": 0.6
+            }
+          ]
         },
         "dusk": {
           "src": "campfire_dusk.webp",
           "glow": "campfire_glow_dusk.webp",
-          "effect": "flicker"
+          "effect": "flicker",
+          "particles": [
+            {
+              "kind": "embers",
+              "area": [1700, 520, 330, 560],
+              "density": 1
+            }
+          ]
         },
         "night": {
           "src": "campfire_night.webp",
           "glow": "campfire_glow_night.webp",
-          "effect": "flicker"
+          "effect": "flicker",
+          "particles": [
+            {
+              "kind": "embers",
+              "area": [1700, 520, 330, 560],
+              "density": 1
+            }
+          ]
         }
       },
       "blocks": {
@@ -244,6 +295,42 @@
           [[704, 1440], [716, 1262], [728, 1117], [752, 1081], [776, 1053], [800, 1045], [840, 1031], [920, 1046], [1040, 1076], [1160, 1103], [1200, 1113], [1240, 1102], [1320, 1124], [1440, 1143], [1520, 1167], [1560, 1193], [1640, 1212], [1760, 1228], [1880, 1256], [2000, 1276], [2036, 1311], [2048, 1346], [2058, 1440]],
           [[1040, 850], [1560, 850], [1560, 1440], [1040, 1440]]
         ]
+      },
+      "patternSurface": "bedding",
+      "patternQuads": [
+        {
+          "quad": [[1140, 1100], [1575, 1180], [1340, 1470], [990, 1470]],
+          "size": [420, 420]
+        }
+      ]
+    },
+    {
+      "id": "fireflies",
+      "slot": "lights",
+      "name": "fireflies",
+      "frames": {
+        "day": {
+          "src": "_shared/blank.webp"
+        },
+        "dusk": {
+          "src": "_shared/blank.webp",
+          "particles": [
+            {
+              "kind": "fireflies",
+              "area": [0, 560, 2560, 700],
+              "density": 0.6
+            }
+          ]
+        },
+        "night": {
+          "src": "_shared/blank.webp",
+          "particles": [
+            {
+              "kind": "fireflies",
+              "area": [0, 480, 2560, 800]
+            }
+          ]
+        }
       }
     },
     {

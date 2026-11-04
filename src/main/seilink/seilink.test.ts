@@ -177,7 +177,19 @@ describe('seilink bundled packs (M4)', () => {
     const named = new Set(manifestFiles(pack!.manifest));
     const onDisk = (await readdir(path.join(REPO_PACKS, id))).filter((f) => f !== 'manifest.json');
     expect(onDisk.filter((f) => !named.has(f))).toEqual([]);
-    expect(named.size).toBe(onDisk.length);
+    // 261105: shared files (views, the blank frame) live in _shared/.
+    const own = [...named].filter((f) => !f.startsWith('_shared/'));
+    expect(own.length).toBe(onDisk.length);
+    for (const rel of named) expect(pack!.files.get(rel), rel).toBeTruthy();
+  });
+
+  it('ships the shared folder: every file in it is used by some pack (261105)', async () => {
+    __setPackRootsForTest([{ dir: REPO_PACKS, source: 'bundled' }]);
+    const used = new Set<string>();
+    for (const id of ['cozy', 'gamer', 'forest'] as const) for (const f of manifestFiles((await loadPack(id))!.manifest)) used.add(f);
+    const views = (await readdir(path.join(REPO_PACKS, '_shared', 'views'))).map((f) => `_shared/views/${f}`);
+    const top = (await readdir(path.join(REPO_PACKS, '_shared'))).filter((f) => f !== 'views').map((f) => `_shared/${f}`);
+    expect([...views, ...top].filter((f) => !used.has(f))).toEqual([]);
   });
 
   it('offers all three presets, since all three packs ship (261105)', async () => {
