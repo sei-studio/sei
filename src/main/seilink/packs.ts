@@ -23,13 +23,17 @@
  * out is refused). One bad reference refuses the whole pack. The protocol
  * serves only files the manifest references, re-checking containment per
  * request, so a file swapped for a symlink after load is still refused.
+ *
+ * Shared files (261105): a `_shared/<rest>` path is contained in
+ * `<root>/_shared/` of the pack's own root, or of the bundled root when
+ * that has none (a dev or downloaded pack using the app's shared views).
  */
 import { protocol, app } from 'electron';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { parseRoomManifest, isRoomPresetId } from '../../shared/seilinkValidate';
 import { ROOM_PRESET_IDS, type RoomPresetId, type RoomPresetManifest } from '../../shared/seilinkRoom';
-import { SEILINK_ROOM_SCHEME, type SeilinkDevInfo, type SeilinkPack, type SeilinkPackSource } from '../../shared/seilinkPack';
+import { SEILINK_ROOM_SCHEME, SHARED_PACK_DIR, sharedRel, type SeilinkDevInfo, type SeilinkPack, type SeilinkPackSource } from '../../shared/seilinkPack';
 import { paths } from '../paths';
 import { reportPackError } from './seilinkErrors';
 
@@ -44,8 +48,10 @@ export const PACK_FILE_MAX_BYTES = 24 * 1024 * 1024;
 export interface LoadedPack extends SeilinkPack {
   /** Realpath of the pack dir. */
   dir: string;
-  /** Every file the manifest references: relative path -> realpath inside dir. */
+  /** Every file the manifest references: relative path -> realpath inside dir (or the shared folder). */
   files: Map<string, string>;
+  /** 261105: for each shared file, the realpath of the shared folder it was found in (re-checked per request). */
+  sharedRoots?: Map<string, string>;
 }
 
 // ── Roots ───────────────────────────────────────────────────────────────────
@@ -135,7 +141,7 @@ export async function containedFile(realRoot: string, rel: string): Promise<stri
   }
 }
 
-/** Every pack file a manifest names (frames, masks, glows). */
+/** Every pack file a manifest names (frames, masks, glows, glass masks, pattern tiles). */
 export function manifestFiles(m: RoomPresetManifest): string[] {
   const out = new Set<string>();
   for (const c of m.components) {
@@ -144,9 +150,32 @@ export function manifestFiles(m: RoomPresetManifest): string[] {
       out.add(f.src);
       if (f.mask) out.add(f.mask);
       if (f.glow) out.add(f.glow);
+      if (f.glass) out.add(f.glass);
     }
   }
+  for (const t of m.patternTiles ?? []) out.add(t.tile);
   return [...out];
+}
+
+/**
+ * Realpath of a shared file: in `<packRoot>/_shared/` first, then in the
+ * bundled root's. Returns the file and the shared folder it is contained in.
+ */
+async function sharedFile(packRoot: string, rest: string): Promise<{ file: string; root: string } | null> {
+  const candidates = [path.join(packRoot, SHARED_PACK_DIR)];
+  const bundled = rootsOverride ? rootsOverride.find((r) => r.source === 'bundled')?.dir : bundledRoot();
+  if (bundled) candidates.push(path.join(bundled, SHARED_PACK_DIR));
+  for (const dir of candidates) {
+    let real: string;
+    try {
+      real = await realpath(dir);
+    } catch {
+      continue;
+    }
+    const file = await containedFile(real, rest);
+    if (file) return { file, root: real };
+  }
+  return null;
 }
 
 // ── Loading ─────────────────────────────────────────────────────────────────
@@ -197,8 +226,17 @@ async function loadPackAt(dir: string, id: RoomPresetId, source: SeilinkPackSour
     return null;
   }
   const files = new Map<string, string>();
+  const sharedRoots = new Map<string, string>();
   for (const rel of manifestFiles(manifest)) {
-    const real = await containedFile(realDir, rel);
+    const rest = sharedRel(rel);
+    let real: string | null;
+    if (rest) {
+      const hit = await sharedFile(path.dirname(realDir), rest);
+      real = hit?.file ?? null;
+      if (hit) sharedRoots.set(rel, hit.root);
+    } else {
+      real = await containedFile(realDir, rel);
+    }
     if (!real) {
       console.warn(`[seilink] pack ${id}: refused, "${rel}" is missing or outside the pack`);
       reportPackError(id, source, 'file_missing');
@@ -206,7 +244,7 @@ async function loadPackAt(dir: string, id: RoomPresetId, source: SeilinkPackSour
     }
     files.set(rel, real);
   }
-  const pack: LoadedPack = { id, manifest, rev: mtimeMs, source, dir: realDir, files };
+  const pack: LoadedPack = { id, manifest, rev: mtimeMs, source, dir: realDir, files, sharedRoots };
   cache.set(`${source}:${id}`, { mtimeMs, manifestPath, pack });
   return pack;
 }
@@ -277,7 +315,9 @@ export async function resolveSeilinkUrl(url: string): Promise<{ file: string; ty
   }
   if (!pack.files.has(rel)) return null;
   // Re-check on disk: the file may have been replaced since the pack loaded.
-  const real = await containedFile(pack.dir, rel);
+  const sharedRoot = pack.sharedRoots?.get(rel);
+  const rest = sharedRel(rel);
+  const real = sharedRoot && rest ? await containedFile(sharedRoot, rest) : await containedFile(pack.dir, rel);
   if (!real) return null;
   return { file: real, type: CONTENT_TYPES[path.extname(real).toLowerCase()] ?? 'application/octet-stream' };
 }

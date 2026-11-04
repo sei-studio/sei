@@ -222,3 +222,18 @@ describe('colour cycle', () => {
     for (const c of seen) expect(c).toMatch(/^#[0-9a-f]{6}$/);
   });
 });
+
+describe('look() names the weather', () => {
+  it('lists rain and fireflies for the time they show', () => {
+    const s = defaultRoomState('forest');
+    s.slots.lights = { id: 'fireflies' };
+    s.time = 'dusk';
+    expect(describeRoom(manifest, s).things).toContain('rain falling outside');
+    s.time = 'night';
+    const night = describeRoom(manifest, s).things;
+    expect(night.filter((t) => t === 'fireflies')).toHaveLength(1);
+    expect(night).not.toContain('rain falling outside');
+    s.time = 'day';
+    expect(describeRoom(manifest, s).things).not.toContain('fireflies');
+  });
+});

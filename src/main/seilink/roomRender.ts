@@ -23,6 +23,13 @@
  * Glow effects (flicker, pulse) are animation only: a still picture draws
  * them at full strength.
  *
+ * 261105 catalog: a patterned layer is coloured per pixel through the same
+ * shared warp the renderer uses (seilinkPatterns.ts warpPatternGrey); a
+ * light's tinted glow is its brightness times the colour (a cycling light
+ * shows the colour of the moment); a `fit: 'cover'` view is cropped to its
+ * box (coverCrop); `_shared/` files resolve where the pack loader found
+ * them. Particles are animation and are not drawn; describeRoom names them.
+ *
  * The whole composite runs at OUTPUT size (1024 px wide by default), not at
  * the 2560 px canvas, so tinting is a few hundred thousand pixels and the
  * picture costs the model about 800 visual tokens.
@@ -35,7 +42,9 @@
 import path from 'node:path';
 import { bundleRequire } from '../bundleRequire';
 import { resolveRoomTime } from '../../shared/seilinkRoom';
-import { baseSpan, contactShadow, itemRect, roomDrawPlan, sinkKeep, sinkLook, type ItemLayer, type SlotLayer } from '../../shared/seilinkDraw';
+import { baseSpan, contactShadow, coverCrop, cycleColour, itemRect, roomDrawPlan, sinkKeep, sinkLook, type ItemLayer, type SlotLayer } from '../../shared/seilinkDraw';
+import { codeTile, greyTileFromRgba, hexToRgb, mipTile, warpPatternGrey, type MipTile, type PatternQuad } from '../../shared/seilinkPatterns';
+import { sharedRel, SHARED_PACK_DIR } from '../../shared/seilinkPack';
 import { pointInPolygon } from '../../shared/seilinkPlace';
 import type { RoomPolygon } from '../../shared/seilinkRoom';
 import type { RoomContext } from './types';
@@ -105,18 +114,103 @@ interface Layer {
   blend?: 'screen';
 }
 
-/** A pack-relative path, refused when it climbs out of the pack. */
-function packFile(packDir: string, rel: string): string | null {
-  const root = path.resolve(packDir);
-  const abs = path.resolve(root, rel);
+/**
+ * A pack-relative path, refused when it climbs out of the pack (or, for a
+ * `_shared/` path, out of the shared folder beside it). `files` is the
+ * loader's checked map, used first.
+ */
+export function packFile(packDir: string, rel: string, files?: ReadonlyMap<string, string>): string | null {
+  const known = files?.get(rel);
+  if (known) return known;
+  const rest = sharedRel(rel);
+  const root = rest ? path.resolve(path.dirname(path.resolve(packDir)), SHARED_PACK_DIR) : path.resolve(packDir);
+  const abs = path.resolve(root, rest ?? rel);
   return abs === root || abs.startsWith(root + path.sep) ? abs : null;
 }
 
-async function rawOf(sharp: SharpFn, file: string, w: number, h: number, flip = false): Promise<Buffer> {
-  let img = sharp(file).resize(w, h, { fit: 'fill' });
+async function rawOf(sharp: SharpFn, file: string, w: number, h: number, flip = false, cover?: [number, number]): Promise<Buffer> {
+  let img = sharp(file);
+  if (cover) {
+    // fit 'cover': crop the frame to the box's aspect around the focus first.
+    const meta = await sharp(file).metadata();
+    if (meta.width && meta.height) {
+      const [sx, sy, sw, sh] = coverCrop([meta.width, meta.height], [w, h], cover);
+      img = img.extract({ left: Math.round(sx), top: Math.round(sy), width: Math.max(1, Math.round(sw)), height: Math.max(1, Math.round(sh)) });
+    }
+  }
+  img = img.resize(w, h, { fit: 'fill' });
   if (flip) img = img.flop();
   const out = await img.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   return out.data;
+}
+
+const tileCache = new Map<string, MipTile>();
+
+/** The pattern's tile as a mip pyramid: generated for a code pattern, decoded for a painted one. */
+async function patternMip(sharp: SharpFn, l: SlotLayer | ItemLayer, packDir: string, files?: ReadonlyMap<string, string>): Promise<MipTile | null> {
+  const def = l.pattern!.def;
+  if (def.made === 'code') {
+    const t = codeTile(def.id);
+    if (!t) return null;
+    const key = `code:${def.id}`;
+    let m = tileCache.get(key);
+    if (!m) tileCache.set(key, (m = mipTile(t)));
+    return m;
+  }
+  const file = def.tile ? packFile(packDir, def.tile, files) : null;
+  if (!file) return null;
+  let m = tileCache.get(file);
+  if (!m) {
+    const out = await sharp(file).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    m = mipTile(greyTileFromRgba(out.data, out.info.width, out.info.height));
+    if (tileCache.size > 16) tileCache.clear();
+    tileCache.set(file, m);
+  }
+  return m;
+}
+
+/**
+ * Colour a decoded layer by its pattern (in place): inside the mask the
+ * frame is multiplied by mix(accent, base, grey), like a plain tint.
+ * `natural` is the frame's own size (the quads are in its px).
+ */
+export function applyPattern(
+  data: Buffer,
+  mask: Buffer,
+  place: { width: number; height: number; flip?: boolean },
+  natural: [number, number],
+  tile: MipTile,
+  period: [number, number],
+  quads: readonly PatternQuad[] | undefined,
+  base: [number, number, number],
+  accent: [number, number, number],
+): void {
+  const { width: w, height: h } = place;
+  const planes = quads?.length ? quads : [{ quad: [[0, 0], [natural[0], 0], [natural[0], natural[1]], [0, natural[1]]] as PatternQuad['quad'] }];
+  const grey = warpPatternGrey({ tile, period, quads: planes, rect: [0, 0, natural[0], natural[1]], scale: w / natural[0], out: [w, h] }).data;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const m = ((mask[i] * 0.299 + mask[i + 1] * 0.587 + mask[i + 2] * 0.114) / 255) * (mask[i + 3] / 255);
+      if (m <= 0) continue;
+      // The data is mirrored for a flipped item; the grey is laid on the unflipped sprite.
+      const g = grey[y * w + (place.flip ? w - 1 - x : x)] / 255;
+      for (let k = 0; k < 3; k++) {
+        const c = accent[k] + (base[k] - accent[k]) * g;
+        data[i + k] = Math.round(data[i + k] * (1 - m + (m * c) / 255));
+      }
+    }
+  }
+}
+
+/** A light's glow in its colour: brightness (max channel) times the colour. In place. */
+export function tintGlow(data: Buffer, rgb: [number, number, number]): void {
+  for (let i = 0; i < data.length; i += 4) {
+    const v = Math.max(data[i], data[i + 1], data[i + 2]) / 255;
+    data[i] = Math.round(v * rgb[0]);
+    data[i + 1] = Math.round(v * rgb[1]);
+    data[i + 2] = Math.round(v * rgb[2]);
+  }
 }
 
 /** Multiply the frame by `tint` where the mask is white (luminance x alpha). In place. */
@@ -267,8 +361,9 @@ export async function renderRoomImage(
 ): Promise<RoomImage> {
   const sharp = loadSharp();
   if (!sharp) throw new Error('sharp is not available');
-  const { manifest, state, packDir } = ctx;
-  const time = resolveRoomTime(state, opts.now ?? new Date());
+  const { manifest, state, packDir, files } = ctx;
+  const now = opts.now ?? new Date();
+  const time = resolveRoomTime(state, now);
   const [cw, ch] = manifest.canvas;
   const W = Math.max(1, Math.round(opts.width ?? ROOM_LOOK_WIDTH));
   const s = W / cw;
@@ -283,7 +378,7 @@ export async function renderRoomImage(
     plan.layers.map(async (l): Promise<Layer | Layer[] | null> => {
       if (l.kind === 'avatar') return null; // never present (avatar: false); she is not in the picture
       const id = l.component.id;
-      const src = packFile(packDir, l.frame.src);
+      const src = packFile(packDir, l.frame.src, files);
       if (!src) {
         console.warn(`[seilink/look] ${id}: frame path leaves the pack, skipped`);
         return null;
@@ -292,12 +387,19 @@ export async function renderRoomImage(
         const place = l.kind === 'slot' ? slotPlace(l, s, W, H) : await itemPlace(sharp, l, src, s);
         if (!place) return null;
         const rgb = hexRgb(l.tint ?? undefined);
-        const maskFile = rgb && l.frame.mask ? packFile(packDir, l.frame.mask) : null;
+        const maskFile = rgb && l.frame.mask ? packFile(packDir, l.frame.mask, files) : null;
+        const cover = l.kind === 'slot' && l.component.fit === 'cover' && l.box ? (l.component.focus ?? [0.5, 0.5]) : undefined;
         const [data, mask] = await Promise.all([
-          rawOf(sharp, src, place.width, place.height, place.flip),
+          rawOf(sharp, src, place.width, place.height, place.flip, cover),
           maskFile ? rawOf(sharp, maskFile, place.width, place.height, place.flip) : null,
         ]);
-        if (rgb && mask) applyTint(data, mask, rgb);
+        const accent = l.pattern ? hexToRgb(l.pattern.accent) : null;
+        const tile = rgb && mask && accent ? await patternMip(sharp, l, packDir, files) : null;
+        if (rgb && mask && accent && tile) {
+          const meta = await sharp(src).metadata();
+          const natural: [number, number] = [meta.width ?? place.width, meta.height ?? place.height];
+          applyPattern(data, mask, place, natural, tile, l.pattern!.period, l.quads, rgb, accent);
+        } else if (rgb && mask) applyTint(data, mask, rgb);
         placed.set(l, place);
         if (l.kind === 'slot' && l.clip?.length) return cutToPolygons(data, place, l.clip, s);
         const sunk = l.kind === 'item' ? sinkItem(l, data, place, s) : null;
@@ -318,10 +420,13 @@ export async function renderRoomImage(
   const glows = await Promise.all(
     plan.glows.map(async (g): Promise<Layer | null> => {
       const place = placed.get(g.owner);
-      const file = place ? packFile(packDir, g.src) : null;
+      const file = place ? packFile(packDir, g.src, files) : null;
       if (!place || !file) return null;
       try {
-        return { data: await rawOf(sharp, file, place.width, place.height, place.flip), ...place, blend: 'screen' };
+        const data = await rawOf(sharp, file, place.width, place.height, place.flip);
+        const colour = g.cycle ? hexRgb(cycleColour(now.getTime())) : hexRgb(g.tint);
+        if (colour) tintGlow(data, colour);
+        return { data, ...place, blend: 'screen' };
       } catch (err) {
         console.warn(`[seilink/look] ${g.owner.component.id}: glow skipped (${(err as Error).message})`);
         return null;

@@ -146,8 +146,7 @@ export interface RoomDrawPlan {
   particles: ParticleLayer[];
 }
 
-/** The shared blank frame a particle-only part (fireflies) uses. */
-export const BLANK_FRAME = '_shared/blank.webp';
+export { BLANK_FRAME } from './seilinkRoom';
 
 /** The source crop [sx, sy, sw, sh] of a `fit: 'cover'` frame of natural size `img` filling a `box`-sized rect, around `focus`. */
 export function coverCrop(img: readonly [number, number], box: readonly [number, number], focus: readonly [number, number] = [0.5, 0.5]): RoomBox {

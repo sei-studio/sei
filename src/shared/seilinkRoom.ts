@@ -402,6 +402,9 @@ export function resolveSlots(manifest: RoomPresetManifest, state: RoomState): Re
 
 export const PLAIN_PATTERN = 'plain';
 
+/** The shared blank frame a particle-only part (fireflies) uses. */
+export const BLANK_FRAME = '_shared/blank.webp';
+
 function tileDef(t: RoomPatternTile): PatternDef {
   return { id: t.id, name: t.name, adjective: t.adjective, period: t.period, surfaces: t.surfaces, made: 'tile', tile: t.tile };
 }
@@ -493,6 +496,16 @@ export function tintName(hex: string | undefined): string | null {
   return 'pink';
 }
 
+/** How look()'s list names a frame's particles (embers go with the campfire, dust without saying). */
+const PARTICLE_WORDS: Readonly<Record<string, string | null>> = {
+  rain: 'rain falling outside',
+  snow: 'snow falling outside',
+  petals: 'petals drifting past',
+  fireflies: 'fireflies',
+  embers: null,
+  dust: null,
+};
+
 /** What the AI knows about her room: a place line and a plain item list. */
 export function describeRoom(manifest: RoomPresetManifest, state: RoomState, now: Date = new Date()): { place: string; time: RoomTime; things: string[] } {
   const time = resolveRoomTime(state, now);
@@ -503,8 +516,15 @@ export function describeRoom(manifest: RoomPresetManifest, state: RoomState, now
     const words = [colour, pattern?.def.adjective].filter(Boolean);
     return words.length ? `${words.join(' ')} ${component.name}` : component.name;
   };
+  const weather = new Set<string>();
   for (const { component, tint, pattern, cycle } of resolveSlots(manifest, state)) {
-    if (component.slot === 'view') continue;
+    const frame = component.frames[time] ?? component.frames.day;
+    for (const p of frame.particles ?? []) {
+      const phrase = PARTICLE_WORDS[p.kind];
+      if (phrase) weather.add(phrase);
+    }
+    // A particle-only part (fireflies) is there only when its particles are.
+    if (component.slot === 'view' || frame.src === BLANK_FRAME) continue;
     // The walls are named only when patterned ("striped walls"); plain walls go without saying.
     if (component.slot === 'shell') {
       if (pattern) things.push(`${say(component, tint, pattern)}`);
@@ -519,5 +539,6 @@ export function describeRoom(manifest: RoomPresetManifest, state: RoomState, now
     const tint = it.tint ?? c.defaultTint;
     things.push(say(c, tint, resolvePattern(manifest, c, tint, it.pattern, it.accent)));
   }
+  things.push(...weather);
   return { place: manifest.place, time, things };
 }
