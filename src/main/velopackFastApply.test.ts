@@ -95,7 +95,7 @@ describe('update screen text', () => {
     expect(zh.updating).toBe('正在更新…');
     expect(zh.eta['eta-20']).toBe('正在更新…大约还需 20 秒');
     expect(zh.error).toBe('更新失败，正在打开 Sei…');
-    for (const lang of ['ja', 'ru', 'pt-BR', 'es'] as const) {
+    for (const lang of ['ja', 'ru', 'pt-BR', 'es', 'it'] as const) {
       const t = updateScreenText(lang);
       for (const v of Object.values(t.eta)) {
         expect(v.startsWith(t.updating), `${lang}: ${v}`).toBe(true);

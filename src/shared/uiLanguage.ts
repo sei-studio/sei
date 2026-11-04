@@ -1,5 +1,5 @@
 /**
- * App UI languages (260730 en+zh, 261104 + ja, ru, pt-BR, es).
+ * App UI languages (260730 en+zh, 261104 + ja, ru, pt-BR, es, it).
  *
  * The ONE list of UI languages, shared by main (config schema, analytics,
  * locale detection, safe mode, the Windows update window) and the renderer
@@ -9,11 +9,11 @@
  * This is the APP UI language (`UserConfig.ui_language`), not the language a
  * companion talks in (`chat_language` / `metadata.language`, see
  * chatLanguage.ts). Only zh changes companion-side behavior today (character
- * language pin at creation, SenseVoice STT, the zh voice pack); the four
- * 261104 languages translate the interface only.
+ * language pin at creation, SenseVoice STT, the zh voice pack); the other
+ * added languages translate the interface only.
  */
 
-export const UI_LANGUAGES = ['en', 'zh', 'ja', 'ru', 'pt-BR', 'es'] as const;
+export const UI_LANGUAGES = ['en', 'zh', 'ja', 'ru', 'pt-BR', 'es', 'it'] as const;
 export type UiLanguage = (typeof UI_LANGUAGES)[number];
 
 /** Each language named in its own language, for the pickers. */
@@ -24,6 +24,7 @@ export const UI_LANGUAGE_NATIVE_NAMES: Record<UiLanguage, string> = {
   ru: 'Русский',
   'pt-BR': 'Português (Brasil)',
   es: 'Español',
+  it: 'Italiano',
 };
 
 /** Compact native names for the onboarding corner menu (one short word each). */
@@ -34,6 +35,7 @@ export const UI_LANGUAGE_SHORT: Record<UiLanguage, string> = {
   ru: 'Русский',
   'pt-BR': 'Português',
   es: 'Español',
+  it: 'Italiano',
 };
 
 /**
@@ -49,6 +51,7 @@ export const UI_LOCALE_TAGS: Record<UiLanguage, string> = {
   ru: 'ru-RU',
   'pt-BR': 'pt-BR',
   es: 'es',
+  it: 'it-IT',
 };
 
 export function isUiLanguage(v: unknown): v is UiLanguage {
@@ -85,6 +88,8 @@ export function uiLanguageForLocale(locale: string | null | undefined): UiLangua
       return 'pt-BR';
     case 'es':
       return 'es';
+    case 'it':
+      return 'it';
     default:
       return null;
   }

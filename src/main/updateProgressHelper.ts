@@ -141,6 +141,7 @@ export const HELPER_FALLBACK_FONTS: Record<HelperLang, string> = {
   ru: 'Segoe UI, Microsoft YaHei UI',
   'pt-BR': 'Segoe UI, Microsoft YaHei UI',
   es: 'Segoe UI, Microsoft YaHei UI',
+  it: 'Segoe UI, Microsoft YaHei UI',
 };
 
 /**

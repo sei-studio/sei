@@ -1,6 +1,6 @@
 /**
  * App UI i18n (260730). English and Simplified Chinese; 261104 adds Japanese,
- * Russian, Brazilian Portuguese and Spanish (the list lives in
+ * Russian, Brazilian Portuguese, Spanish and Italian (the list lives in
  * src/shared/uiLanguage.ts).
  *
  * Design: the KEY IS THE ENGLISH STRING. `t('Delete')` looks the string up in
@@ -33,6 +33,7 @@ import { JA } from './ja';
 import { RU } from './ru';
 import { PT_BR } from './pt-BR';
 import { ES } from './es';
+import { IT } from './it';
 
 export type { UiLanguage } from '@shared/uiLanguage';
 
@@ -43,6 +44,7 @@ export const DICTIONARIES: Record<Exclude<UiLanguage, 'en'>, Record<string, stri
   ru: RU,
   'pt-BR': PT_BR,
   es: ES,
+  it: IT,
 };
 
 interface LangState {

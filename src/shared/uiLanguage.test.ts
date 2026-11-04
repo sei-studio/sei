@@ -20,12 +20,14 @@ describe('UI language list', () => {
     }
     expect(UI_LANGUAGE_NATIVE_NAMES.ja).toBe('日本語');
     expect(UI_LANGUAGE_NATIVE_NAMES.ru).toBe('Русский');
+    expect(UI_LANGUAGE_NATIVE_NAMES.it).toBe('Italiano');
   });
 
   it('validates and normalizes persisted values', () => {
     expect(isUiLanguage('pt-BR')).toBe(true);
     expect(isUiLanguage('pt')).toBe(false);
     expect(normalizeUiLanguage('es')).toBe('es');
+    expect(normalizeUiLanguage('it')).toBe('it');
     expect(normalizeUiLanguage('fr')).toBe('en');
     expect(normalizeUiLanguage(undefined)).toBe('en');
   });
@@ -38,6 +40,8 @@ describe('uiLanguageForLocale', () => {
     expect(uiLanguageForLocale('ru')).toBe('ru');
     expect(uiLanguageForLocale('es-MX')).toBe('es');
     expect(uiLanguageForLocale('es_419')).toBe('es');
+    expect(uiLanguageForLocale('it-IT')).toBe('it');
+    expect(uiLanguageForLocale('it_CH')).toBe('it');
   });
 
   it('sends every Portuguese locale to pt-BR', () => {
@@ -56,6 +60,12 @@ describe('uiLanguageForLocale', () => {
 });
 
 describe('formatMessage', () => {
+  it('formats Italian singular and plural counts', () => {
+    const message = '{n, plural, one {# giorno} other {# giorni}}';
+    expect(uiLocaleTag('it')).toBe('it-IT');
+    expect(formatMessage(message, { n: 1 }, 'it')).toBe('1 giorno');
+    expect(formatMessage(message, { n: 2 }, 'it')).toBe('2 giorni');
+  });
   it('fills plain placeholders', () => {
     expect(formatMessage('Hi {name}, {name}!', { name: 'Sui' }, 'en')).toBe('Hi Sui, Sui!');
     expect(formatMessage('No params {x}', undefined, 'en')).toBe('No params {x}');
