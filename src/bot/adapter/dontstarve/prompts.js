@@ -161,6 +161,24 @@ function alertHint(key) {
   return ''
 }
 
+// 261104: Charlie's hit (darkness.js). The generic monster text told her to
+// flee, which does nothing in the dark and cancelled the gather that would
+// have made her torch.
+export const DARK_HIT_ADDENDUM = 'Interrupted: the darkness hit you ({hp}). That is Charlie: it hits again every few seconds while you stand in the dark, and running from it does not help. Only light stops it. {need}Say one short line so the player knows.'
+
+/** The torch sentence of DARK_HIT_ADDENDUM, from what she carries. */
+export function darkHitNeed(need, caps) {
+  if (!need || typeof need !== 'object') return ''
+  const g = Number(need.grass) || 0
+  const t = Number(need.twigs) || 0
+  if (g <= 0 && t <= 0) return caps ? 'You carry the makings of a torch and your body is making it now. ' : 'You carry the makings of a torch: craft(torch) and equip it now. '
+  const parts = []
+  if (g > 0) parts.push(`${g} grass`)
+  if (t > 0) parts.push(t === 1 ? '1 twig' : `${t} twigs`)
+  const then = caps ? 'Your body makes and lights the torch the moment you have them.' : 'Then craft(torch) and equip it.'
+  return `A torch takes 2 grass and 2 twigs and you carry ${Number(need.haveGrass) || 0} grass and ${Number(need.haveTwigs) || 0} twigs, so get ${parts.join(' and ')} now from the nearest grass or sapling (if a gather for it is already running, let it run). ${then} Going to the player only helps if they are standing in light. `
+}
+
 export const ENTER_DARK_ADDENDUM = 'You just stepped into darkness ({phase}). If you have no torch lit, that is deadly in seconds: lightFire(), craft(torch) + equip(torch), or goTo a fire, this turn.'
 export const DEATH_ADDENDUM = 'You DIED{cause}. In Don\'t Starve Together an ownerless survivor does not come back as a ghost the player can revive, so this is the end of your body for now: everything you carried dropped where you fell (~{x},{z}). React in character in ONE short say() line (the player will need to summon you again), and if this session left something worth keeping, call remember() in the same turn.'
 // 261104: Sei brings her back (runtime.js + respawn.js). The line is hers,
@@ -213,6 +231,7 @@ export function eventAddendum(event, data, opts = {}) {
     }
     if (kind === 'player') return fill(ATTACKED_ADDENDUM_PLAYER, { label })
     const hp = data?.healthPct != null ? `${Math.round(data.healthPct * 100)}% health left` : 'you took damage'
+    if (data?.darkness === true) return fill(DARK_HIT_ADDENDUM, { hp, need: darkHitNeed(data?.torchNeed, caps) })
     return fill(ATTACKED_ADDENDUM_MOB, { label, hp })
   }
   if (event === 'sei:enterdark') return fill(ENTER_DARK_ADDENDUM, { phase: data?.phase ?? 'night' })

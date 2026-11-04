@@ -4,7 +4,9 @@
 // the five brain handlers (src/bot/brain/types.js).
 //
 //   chat        -> onChat        (P1; the player spoke in game chat)
-//   attacked    -> onAttacked    (P0 mob/player hit; the body already swings back)
+//   attacked    -> onAttacked    (P0 mob/player hit; the body already swings back).
+//                                A hit by the darkness (darkness.js) carries
+//                                darkness: true + torchNeed (261104)
 //   survival    -> onAttacked    attackerKind 'reflex' (P1): the safety layer
 //                                retreated / walked to light / ate on its own
 //   enterdark   -> onAttacked    attackerKind 'reflex', survivalKind 'dark' (P1)
@@ -36,13 +38,15 @@
 // lines from OTHER Sei companions are recorded but do not wake the brain
 // (suppressInterrupt), mirroring behaviors/chat.js.
 
+import { isDarknessHit, torchShortfall } from './darkness.js'
+
 const ADDRESS_RE = (name) => new RegExp(`\\b${name.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}\\b`, 'i')
 
 /**
  * @param {import('node:events').EventEmitter} link  the runtime's event bus
  * @param {import('../../brain/types.js').AdapterHandlers} handlers
  * @param {{ botName: string, companions: () => string[], playerName?: string|null,
- *   hasCaps?: () => boolean, darkNeedsBrain?: () => boolean }} opts
+ *   hasCaps?: () => boolean, darkNeedsBrain?: () => boolean, state?: () => object }} opts
  * @returns {() => void} dispose
  */
 export function wireLinkEvents(link, handlers, opts) {
@@ -77,13 +81,18 @@ export function wireLinkEvents(link, handlers, opts) {
   })
 
   const onAttacked = safe('onAttacked', (p) => {
+    // Charlie's hit (darkness.js): still a real hit (P0, it preempts), but
+    // framed as the dark, with what a torch still needs, not as a monster.
+    const state = opts?.state?.()
+    const dark = isDarknessHit(p, state)
     handlers.onAttacked?.({
       attacker: p.attacker != null ? { username: p.isplayer ? String(p.label ?? 'a player') : null, uuid: String(p.attacker) } : null,
-      attackerLabel: String(p.label ?? 'something'),
+      attackerLabel: dark ? 'the darkness' : String(p.label ?? 'something'),
       attackerKind: p.isplayer ? 'player' : 'mob',
       pvp: false,
       healthPct: typeof p.healthpct === 'number' ? p.healthpct : null,
       damage: typeof p.damage === 'number' ? p.damage : null,
+      ...(dark ? { darkness: true, torchNeed: torchShortfall(state) } : {}),
     })
   })
 

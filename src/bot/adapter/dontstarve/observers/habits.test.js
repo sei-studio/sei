@@ -8,6 +8,8 @@ describe('DST habit log', () => {
     expect(habitPhrase({ what: 'light', did: 'equipped', item: 'torch' })).toBe('held your torch for light')
     expect(habitPhrase({ what: 'light', did: 'built', item: 'campfire' })).toBe('built a campfire for light')
     expect(habitPhrase({ what: 'light', did: 'stowed', item: 'torch' })).toBe('put your torch away')
+    expect(habitPhrase({ what: 'light', did: 'picked', item: 'cutgrass' })).toBe('picked grass for a torch')
+    expect(habitPhrase({ what: 'light', did: 'picked', item: 'twigs' })).toBe('picked twigs for a torch')
     expect(habitPhrase({ what: 'fuel', item: 'log', fire: 'campfire' })).toBe('fed the campfire with log')
     expect(habitPhrase({ what: 'equip', items: ['spear', 'armorwood'] })).toBe('equipped spear, armorwood for the fight')
     expect(habitPhrase({ what: 'heal', item: 'healingsalve' })).toBe('used healingsalve to heal')

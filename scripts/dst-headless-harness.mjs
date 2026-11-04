@@ -12,6 +12,8 @@
 //
 // Input is line-based on stdin (pipe a scenario file, or a FIFO for live use):
 //   tool <name> <json args>     run a registry tool and print its result
+//   tool& <name> <json args>    same, without waiting (the next lines run
+//                               while it is in flight)
 //   snap                        print the snapshot the model would read
 //   obs                         print the parsed world block and every
 //                               non-item entity with a target or activity
@@ -114,17 +116,18 @@ async function run(line) {
   const [cmd, ...restArr] = s.split(' ')
   const rest = restArr.join(' ')
   switch (cmd) {
-    case 'tool': {
+    case 'tool':
+    case 'tool&': {
       const sp = rest.indexOf(' ')
       const name = sp < 0 ? rest : rest.slice(0, sp)
       const json = sp < 0 ? '{}' : rest.slice(sp + 1)
       let a = {}
       try { a = JSON.parse(json) } catch (err) { out(`bad json for ${name}: ${err.message}`); return true }
       out(`TOOL ${name} ${JSON.stringify(a)}`)
-      try {
-        lastResult = await registry.execute(name, a, null, { timeoutMs: 120_000 })
-      } catch (err) { lastResult = `threw: ${err.message}` }
-      out(`RESULT ${name}: ${lastResult}`)
+      const exec = registry.execute(name, a, null, { timeoutMs: 120_000 })
+        .then((r) => { lastResult = r }, (err) => { lastResult = `threw: ${err.message}` })
+        .then(() => out(`RESULT ${name}: ${lastResult}`))
+      if (cmd === 'tool') await exec
       return true
     }
     case 'snap':

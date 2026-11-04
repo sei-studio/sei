@@ -180,6 +180,11 @@ local function selfBlock(inst)
         dead = h ~= nil and h:IsDead() or false,
         target = inst.components.combat ~= nil and inst.components.combat.target ~= nil and inst.components.combat.target.GUID or nil,
         follow = inst.sei ~= nil and inst.sei.follow ~= nil and inst.sei.follow:IsValid() and inst.sei.follow.GUID or nil,
+        -- 0.3.2: how far the follow target is, also once it is out of the
+        -- perception radius (a command outranks following, so a player who
+        -- walks on while she works leaves her behind without a trace).
+        followd = inst.sei ~= nil and inst.sei.follow ~= nil and inst.sei.follow:IsValid()
+            and Util.Round1(math.sqrt(inst:GetDistanceSqToInst(inst.sei.follow))) or nil,
         cmd = inst.sei ~= nil and inst.sei.cmd ~= nil and inst.sei.cmd.id or nil,
         inv = {},
         equip = {},

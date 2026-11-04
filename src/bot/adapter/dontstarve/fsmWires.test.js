@@ -2,10 +2,10 @@ import { describe, it, expect, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { wireLinkEvents } from './fsmWires.js'
 
-function setup({ hasCaps = false, darkNeedsBrain } = {}) {
+function setup({ hasCaps = false, darkNeedsBrain, state } = {}) {
   const link = new EventEmitter()
   const handlers = { onAttacked: vi.fn(), onIdleNudge: vi.fn(), onChat: vi.fn() }
-  const dispose = wireLinkEvents(link, handlers, { botName: 'Sui', companions: () => [], hasCaps: () => hasCaps, darkNeedsBrain })
+  const dispose = wireLinkEvents(link, handlers, { botName: 'Sui', companions: () => [], hasCaps: () => hasCaps, darkNeedsBrain, state: state ? () => state : undefined })
   return { link, handlers, dispose }
 }
 
@@ -81,5 +81,31 @@ describe('DST fsm wires: death and respawn (261104)', () => {
     link.emit('bodydied', {})
     expect(handlers.onDying).not.toHaveBeenCalled()
     expect(handlers.onDeath).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('DST fsm wires: a hit by the darkness', () => {
+  const state = {
+    self: { inLight: false, inv: [{ prefab: 'cutgrass', qty: 2 }, { prefab: 'twigs', qty: 1 }], equip: {} },
+    world: { phase: 'night' },
+  }
+
+  it('is still a real hit, labelled the darkness, with what a torch needs', () => {
+    const { link, handlers } = setup({ hasCaps: true, state })
+    link.emit('attacked', { attacker: null, label: 'darkness', stimuli: 'darkness', healthpct: 0.3, damage: 100 })
+    expect(handlers.onAttacked.mock.calls[0][0]).toMatchObject({
+      attackerKind: 'mob', attackerLabel: 'the darkness', darkness: true, healthPct: 0.3,
+      torchNeed: { grass: 0, twigs: 1, haveGrass: 2, haveTwigs: 1 },
+    })
+  })
+
+  it('an older helper\'s "something" in the dark reads the same; a hound does not', () => {
+    const { link, handlers } = setup({ hasCaps: true, state })
+    link.emit('attacked', { label: 'something', healthpct: 0.3 })
+    link.emit('attacked', { attacker: 77, label: 'hound', healthpct: 0.2 })
+    const [a, b] = handlers.onAttacked.mock.calls.map((c) => c[0])
+    expect(a).toMatchObject({ attackerLabel: 'the darkness', darkness: true })
+    expect(b.attackerLabel).toBe('hound')
+    expect(b.darkness).toBeUndefined()
   })
 })

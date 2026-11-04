@@ -94,6 +94,7 @@ export function createDontStarveAdapter({ link, config }) {
         playerName: config.player_username ?? null,
         hasCaps,
         darkNeedsBrain: () => !lightMeans(link.state).any,
+        state: () => link.state,
       })
       // Proactive alerts (observers/alerts.js): the situations a good
       // partner notices. Only with the 0.3.0 habits: an older helper still
