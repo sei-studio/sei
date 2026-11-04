@@ -273,6 +273,19 @@ async function restoreNow(): Promise<void> {
       if (session) await endSession('replaced');
       return;
     }
+    // She may have been deleted since (another device, a hand-cleaned profile, a removal while
+    // the app was closed). Gone = forget the move-in and start nothing. An unreadable file is
+    // not "gone": keep the move-in.
+    const exists = await getCharacter(id).then(
+      (c) => c !== null,
+      () => true,
+    );
+    if (!exists) {
+      log(`restore: ${id} no longer exists, clearing the move-in`);
+      if (session) await endSession('character_removed');
+      await updateConfig((c) => (c.seilink_moved_in?.character_id === id ? { ...c, seilink_moved_in: null } : c));
+      return;
+    }
     await startNow(id, { restored: true });
   } catch (err) {
     log(`restore failed: ${(err as Error).message}`);

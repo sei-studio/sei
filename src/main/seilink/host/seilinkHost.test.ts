@@ -161,6 +161,16 @@ describe('seilink host start / stop / restore', () => {
     expect(state.config.seilink_moved_in ?? null).toBeNull();
   });
 
+  it('restore checks she still exists: gone = move-in cleared, nothing started', async () => {
+    state.config = { seilink_enabled: true, seilink_moved_in: { character_id: SUI, moved_in_at: 1 } };
+    state.characters.delete(SUI);
+    await host.restoreSeilinkHost();
+    await settle();
+    expect(state.hosts).toHaveLength(0);
+    expect(state.config.seilink_moved_in).toBeNull();
+    expect(host.seilinkHostStatus().state).toBe('off');
+  });
+
   it('restore brings back a companion who still exists', async () => {
     state.config = { seilink_enabled: true, seilink_moved_in: { character_id: SUI, moved_in_at: 1 } };
     await host.restoreSeilinkHost();

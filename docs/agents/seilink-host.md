@@ -189,7 +189,8 @@ The contract for any replacement is in the file header.
 - Who moved in: `seilink_moved_in {character_id, moved_in_at}`, a
   MAIN-owned UserConfig key (per profile). Restored at app start and after an
   account switch (`restoreSeilinkHost`, which also mirrors the Labs setting
-  into gate.ts). A user stop, the setting turning off (`applySeilinkSetting`
+  into gate.ts). A restore first checks she still exists: a companion whose
+  file is gone has her move-in cleared and nothing starts. A user stop, the setting turning off (`applySeilinkSetting`
   from the config:save handler) and deleting or removing her
   (`onSeilinkCharacterRemoved`, reason `character_removed`) clear it; quit,
   failure and an account switch keep it.
