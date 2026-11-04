@@ -64,6 +64,21 @@ Napi::Value AxSetWindowFrame(const Napi::CallbackInfo& info) {
     res = (e1 == kAXErrorSuccess && e2 == kAXErrorSuccess)
               ? "ok"
               : "set error " + std::to_string((int)e1) + "/" + std::to_string((int)e2);
+    // Read the frame back: the app may constrain it.
+    CFTypeRef pv = nullptr, sv = nullptr;
+    CGPoint gp{};
+    CGSize gs{};
+    if (AXUIElementCopyAttributeValue(w, kAXPositionAttribute, &pv) == kAXErrorSuccess && pv) {
+      AXValueGetValue((AXValueRef)pv, (AXValueType)kAXValueCGPointType, &gp);
+      CFRelease(pv);
+    }
+    if (AXUIElementCopyAttributeValue(w, kAXSizeAttribute, &sv) == kAXErrorSuccess && sv) {
+      AXValueGetValue((AXValueRef)sv, (AXValueType)kAXValueCGSizeType, &gs);
+      CFRelease(sv);
+    }
+    if (res == "ok")
+      res += " now " + std::to_string((int)gp.x) + "," + std::to_string((int)gp.y) + " " + std::to_string((int)gs.width) +
+             "x" + std::to_string((int)gs.height);
   }
   if (windows) CFRelease(windows);
   CFRelease(axApp);

@@ -418,6 +418,14 @@ function reportFirstFrame(): void {
 
 // ── Hit area ────────────────────────────────────────────────────────────────
 
+/**
+ * macOS: the hit panel keeps this far (points) from the work area's edges. A zoomed window
+ * fills the work area only up to the app's own rounding, and any sliver of the panel left
+ * showing keeps it "visible", so the room would never drop to 0 fps under it.
+ */
+const MAC_PANEL_EDGE_INSET = 12;
+let lastPanelKey = '';
+
 function applyHitRect(): void {
   if (!addon) return;
   const d = primaryDisplay();
@@ -434,8 +442,12 @@ function applyHitRect(): void {
   } else if (IS_MAC) {
     const mac = addon as SeilinkMacAddon;
     const wa = d.workArea;
-    const panel = screenBox && clipRect(screenBox, { x: wa.x, y: wa.y, w: wa.width, h: wa.height });
+    const inset = MAC_PANEL_EDGE_INSET;
+    const panel = screenBox && clipRect(screenBox, { x: wa.x + inset, y: wa.y + inset, w: wa.width - 2 * inset, h: wa.height - 2 * inset });
     if (panel && attached) {
+      const key = `${Math.round(panel.x)},${Math.round(panel.y)} ${Math.round(panel.w)}x${Math.round(panel.h)}`;
+      if (key !== lastPanelKey) log(`hit panel ${key} (work area ${wa.x},${wa.y} ${wa.width}x${wa.height})`);
+      lastPanelKey = key;
       const visible = mac.hitPanel(panel);
       activity.set({ hasPanel: true, panelVisible: visible });
     } else {

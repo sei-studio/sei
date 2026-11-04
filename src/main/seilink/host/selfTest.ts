@@ -99,8 +99,8 @@ async function coverWithTextEdit(
   if (opened.startsWith('ERR')) return false;
   await new Promise((r) => setTimeout(r, 3000));
   const ax = addon?.axSetWindowFrame?.('com.apple.TextEdit', wa.x, wa.y, wa.width, wa.height) ?? 'no AX helper';
-  log(`TextEdit frame via AX: ${ax}`);
-  if (ax !== 'ok') {
+  log(`TextEdit frame via AX (wanted ${wa.x},${wa.y} ${wa.width}x${wa.height}): ${ax}`);
+  if (!ax.startsWith('ok')) {
     const bounds = `{${wa.x}, ${wa.y}, ${wa.x + wa.width}, ${wa.y + wa.height}}`;
     const res = await run('/usr/bin/osascript', ['-e', `tell application "TextEdit" to activate`, '-e', `tell application "TextEdit" to set bounds of front window to ${bounds}`], 8000);
     log(`TextEdit frame via AppleScript: ${res.trim().slice(0, 200) || 'ok'}`);

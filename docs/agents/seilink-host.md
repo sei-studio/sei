@@ -153,6 +153,16 @@ The contract for any replacement is in the file header.
   and logs its spins so the hang actually happens.
 - Linux dev hosts need `--no-sandbox` (passed through when main has it), or
   Chromium's sandbox setup kills them with SIGTRAP.
+- macOS: the hit panel is clipped to the work area (`clipRect`). The menu bar
+  and the Dock row stay visible over a zoomed window, so a panel reaching into
+  them never reads as occluded and the room never drops to 0 fps.
+- Windows: the room window is created with `thickFrame: false`. With the
+  resize frame, the attached child kept an 8 px non-client strip each side
+  (wallpaper showing at the edges, her click box 8 px off). Attach logs
+  `client WxH of WxH` if the client area ever differs again.
+- macOS CI covers with TextEdit sized through Accessibility (the test addon's
+  `axSetWindowFrame`); the runners have no Automation grant for AppleScript,
+  and a window of our own bundle did not occlude the panel.
 - The host page preload may import only `electron` (sandboxed; a test
   checks), and spells its channel names out (`seilinkHostChannels.ts`).
 
