@@ -37,8 +37,8 @@ import {
   type RoomTime,
   ROOM_PRESET_IDS,
 } from '@shared/seilinkRoom';
-import { frameFor, roomDrawPlan, viewportToCanvas, type ItemLayer, type RoomOverlay, type RoomViewport } from '@shared/seilinkDraw';
-import { placementOf, placementRegions, snapSpot, spriteFit, type PlacementClass } from '@shared/seilinkPlace';
+import { frameFor, roomDrawPlan, viewportToCanvas, type ItemLayer, type RoomOverlay, type RoomViewport, type SlotLayer } from '@shared/seilinkDraw';
+import { placementOf, placementRegions, snapSpot, spriteFit, type PlacementClass, type RoomSurface } from '@shared/seilinkPlace';
 import { sanitizeRoomState } from '@shared/seilinkValidate';
 import {
   addItem,
@@ -247,17 +247,31 @@ function EditorAvatar({ slot, state, characterId }: { slot: RoomAvatarSlot; stat
 // ── Item drag ghost ─────────────────────────────────────────────────────────
 
 /** The item being dragged, drawn above the room at the pointer (it rejoins its layer on drop). */
-function ItemGhost({ pack, item, time, vp }: { pack: EditorPack; item: RoomItemPlacement; time: RoomTime; vp: RoomViewport }): React.ReactElement | null {
+function ItemGhost({
+  pack,
+  item,
+  slots,
+  time,
+  vp,
+}: {
+  pack: EditorPack;
+  item: RoomItemPlacement;
+  /** The room's parts now (an item sinks into the bed only while the bed is there). */
+  slots: RoomState['slots'];
+  time: RoomTime;
+  vp: RoomViewport;
+}): React.ReactElement | null {
   const ref = useRef<HTMLCanvasElement>(null);
   const [rect, setRect] = useState<[number, number, number, number] | null>(null);
   const { manifest, resolve } = pack;
-  // The sprite is drawn once per look (scale with depth, rounded); moving only moves the canvas.
+  // The sprite is drawn once per look (scale with depth, rounded, sunk into a soft top); moving only moves the canvas.
   const plan = useMemo(
-    () => roomDrawPlan(manifest, { ...defaultRoomState(manifest.id), items: [item] }, time, { avatar: false }),
-    [manifest, item, time],
+    () => roomDrawPlan(manifest, { ...defaultRoomState(manifest.id), slots, items: [item] }, time, { avatar: false }),
+    [manifest, slots, item, time],
   );
   const lay = plan.layers.find((l): l is ItemLayer => l.kind === 'item');
-  const key = `${item.id}:${lay ? lay.scale.toFixed(2) : 1}:${item.flip ? 1 : 0}:${item.tint ?? ''}:${time}:${vp.scale}`;
+  const sunk = lay?.sink ? `${lay.sink.depth.toFixed(1)}/${lay.sink.foot.toFixed(1)}` : '';
+  const key = `${item.id}:${lay ? lay.scale.toFixed(2) : 1}:${item.flip ? 1 : 0}:${item.tint ?? ''}:${time}:${vp.scale}:${sunk}`;
   useEffect(() => {
     let dead = false;
     const layer = lay && { ...lay, x: 0, y: 0, scale: Math.round(lay.scale * 100) / 100 };
@@ -292,6 +306,52 @@ function ItemGhost({ pack, item, time, vp }: { pack: EditorPack; item: RoomItemP
       }
     : { visibility: 'hidden' };
   return <canvas ref={ref} className={styles.ghost} style={style} />;
+}
+
+/**
+ * The lip of the top a dragged item is over (261105 shelf pass), drawn over
+ * its ghost, so a drag shows the item tucked behind the plank's front edge
+ * exactly as it will sit once dropped. Drawn once per top, a small canvas.
+ */
+function LipGhost({ pack, state, time, vp, top }: { pack: EditorPack; state: RoomState; time: RoomTime; vp: RoomViewport; top: RoomSurface | undefined }): React.ReactElement | null {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const [box, setBox] = useState<[number, number, number, number] | null>(null);
+  const { manifest, resolve } = pack;
+  const lip = top?.kind === 'area' ? top.lip : null;
+  const part = useMemo(() => {
+    if (!lip || !top) return null;
+    const plan = roomDrawPlan(manifest, { ...state, items: [] }, time, { avatar: false });
+    const l = plan.layers.find((x): x is SlotLayer => x.kind === 'slot' && x.slot === top.slot);
+    return l ? { ...l, clip: [lip] } : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manifest, lip, top?.slot, time, state.slots]);
+  useEffect(() => {
+    let dead = false;
+    setBox(null);
+    if (!part || !lip) return;
+    void loadPlanAssets({ canvas: manifest.canvas, time, layers: [part], glows: [] }, resolve).then(({ assets }) => {
+      const c = ref.current;
+      if (dead || !c) return;
+      const xs = lip.map((p) => p[0]);
+      const ys = lip.map((p) => p[1]);
+      const b: [number, number, number, number] = [Math.min(...xs) - 1, Math.min(...ys) - 1, Math.max(...xs) - Math.min(...xs) + 2, Math.max(...ys) - Math.min(...ys) + 2];
+      const s = vp.scale * (window.devicePixelRatio || 1);
+      c.width = Math.max(1, Math.ceil(b[2] * s));
+      c.height = Math.max(1, Math.ceil(b[3] * s));
+      const ctx = ctx2d(c);
+      ctx.setTransform(s, 0, 0, s, -b[0] * s, -b[1] * s);
+      drawRoomLayers(ctx, [part], manifest.canvas, assets, s);
+      setBox(b);
+    });
+    return () => {
+      dead = true;
+    };
+  }, [part, lip, manifest, resolve, time, vp.scale]);
+  if (!lip) return null;
+  const style: React.CSSProperties = box
+    ? { left: vp.left + box[0] * vp.scale, top: vp.top + box[1] * vp.scale, width: box[2] * vp.scale, height: box[3] * vp.scale }
+    : { visibility: 'hidden' };
+  return <canvas ref={ref} className={styles.lipGhost} style={style} data-lip-ghost="" />;
 }
 
 // ── Swatches ────────────────────────────────────────────────────────────────
@@ -969,7 +1029,12 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
           {drag && regions && dragComp && (
             <PlacementGuide regions={regions} cls={placementOf(dragComp)} surface={drag.surface} vp={vp} canvas={manifest.canvas} />
           )}
-          {drag && state.items[drag.index] && <ItemGhost pack={pack} item={{ ...state.items[drag.index], x: drag.x, y: drag.y }} time={time} vp={vp} />}
+          {drag && state.items[drag.index] && (
+            <ItemGhost pack={pack} item={{ ...state.items[drag.index], x: drag.x, y: drag.y }} slots={state.slots} time={time} vp={vp} />
+          )}
+          {drag && regions && dragComp && placementOf(dragComp) === 'surface' && (
+            <LipGhost pack={pack} state={state} time={time} vp={vp} top={regions.surfaces[drag.surface]} />
+          )}
         </div>
         {/* The editor covers the app window, title strip included: keep the
             frameless window movable from the top edge (as MacosWindow does). */}

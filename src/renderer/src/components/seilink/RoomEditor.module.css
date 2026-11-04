@@ -152,6 +152,12 @@
   filter: drop-shadow(0 14px 18px rgb(0 0 0 / 0.28));
 }
 
+/* A plank's front lip over the dragged item (LipGhost): part of the room, so no lift shadow. */
+.lipGhost {
+  position: absolute;
+  pointer-events: none;
+}
+
 /* Where the dragged item can go (PlacementGuide): faint, no outlines. */
 .guide {
   position: absolute;
