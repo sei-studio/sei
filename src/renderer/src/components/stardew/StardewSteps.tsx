@@ -125,6 +125,8 @@ export function useStardewSetupSteps(skin: StepSkin): StardewSetup {
   const open = farm !== null;
   const noSave = world?.kind === 'game_running_no_save';
   const found = install == null ? null : install.gamePath != null;
+  // A warning, never a gate: the dll version read is unverified on real
+  // installs (261104), and a misread must not lock out an up-to-date game.
   const tooOld = install?.versionOk === false;
   const ready = install?.ready === true;
   const modSilent = useModSilent(ready && !open && !noSave);
@@ -220,7 +222,7 @@ export function useStardewSetupSteps(skin: StepSkin): StardewSetup {
           <span role="alert">{t(ERROR_COPY.SMAPI_ANTIVIRUS_SUSPECTED)}</span>
         ) : null}
         <div className={skin.actions}>
-          <Button kind="primary" disabled={installing || !found || tooOld} onClick={() => void runInstall()}>
+          <Button kind="primary" disabled={installing || !found} onClick={() => void runInstall()}>
             {installing ? t('Setting up...') : install?.smapiInstalled ? t("Add Sei's helper") : t("Install SMAPI + Sei's helper")}
           </Button>
           <Button kind="quiet" disabled={installing} onClick={() => void refresh()}>{t('Check again')}</Button>
@@ -275,7 +277,7 @@ export function useStardewSetupSteps(skin: StepSkin): StardewSetup {
   }
 
   const steps: SetupStep[] = [
-    { id: 'game', title: 'Stardew Valley', done: found === true && !tooOld, body: gameBody },
+    { id: 'game', title: 'Stardew Valley', done: found === true, body: gameBody },
     { id: 'helper', title: t("SMAPI and Sei's helper"), done: ready, body: helperBody },
     { id: 'farm', title: t('Your farm'), done: open, body: farmBody },
   ];
