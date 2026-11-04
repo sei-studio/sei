@@ -12,8 +12,9 @@
  *   3. bundled (M4, 261104): the packs that ship with the app, in
  *      `<resources>/seilink-packs/<presetId>/` (electron-builder
  *      extraResources, mac and win) or `<repo>/resources/seilink-packs/` in
- *      dev. The cozy pack ships; gamer and forest light up in the editor and
- *      the move-in sheet as soon as their folders exist (listPacks).
+ *      dev. Cozy, gamer and forest all ship (gamer and forest since 261105);
+ *      a preset lights up in the editor and the move-in sheet when its
+ *      folder exists and loads (listPacks).
  *
  * Trust: a pack is data from disk or the network. Before anything is served
  * or path-joined, the manifest is validated (parseRoomManifest: plain

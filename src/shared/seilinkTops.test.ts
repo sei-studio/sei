@@ -289,3 +289,60 @@ describe('the bundled cozy pack', () => {
     expect(contactY(r, cbooks, s)).toBeLessThan(470);
   });
 });
+
+describe('the bundled gamer and forest packs (261105)', () => {
+  const load = (id: string): RoomPresetManifest =>
+    parseRoomManifest(JSON.parse(fs.readFileSync(path.resolve(__dirname, `../../resources/seilink-packs/${id}/manifest.json`), 'utf8')))!;
+  const settled = (m: RoomPresetManifest) => {
+    const st = defaultRoomState(m.id);
+    const r = placementRegions(m, st);
+    const items = m.components.filter((c) => c.slot === 'item').map((c) => ({ id: c.id, x: c.box![0] + c.box![2] / 2, y: c.box![1] + c.box![3] }));
+    return { r, items, out: sanitizeRoomState(m, { ...st, items }).items };
+  };
+  const slotOf = (r: ReturnType<typeof placementRegions>, m: RoomPresetManifest, it: { id: string; x: number; y: number }): string => {
+    const c = m.components.find((x) => x.id === it.id)!;
+    const i = surfaceAt(r, it.x, contactY(r, c, it));
+    return i >= 0 ? r.surfaces[i].slot : 'none';
+  };
+
+  it.each(['gamer', 'forest'])('%s is labelled with surface tops, blocks, a horizon and item feet', (id) => {
+    const m = load(id);
+    expect(m).not.toBeNull();
+    const r = placementRegions(m, defaultRoomState(m.id));
+    expect(r.labelled && r.perspective).toBe(true);
+    expect(r.surfaces.length).toBeGreaterThan(2);
+    expect(r.surfaces.every((s) => s.kind === 'area')).toBe(true);
+    expect(m.components.some((c) => c.surfaces || c.surfaceLines || c.surfaceAreas)).toBe(false);
+    expect(m.components.filter((c) => c.slot === 'item').every((c) => (c.foot ?? 0) > 0)).toBe(true);
+  });
+
+  it('gamer: three shelf planks with lips, a soft bed, every item settles where the designer put it', () => {
+    const m = load('gamer');
+    const { r, items, out } = settled(m);
+    const tops = r.surfaces.map((s) => [s.slot, s.kind === 'area' && Boolean(s.lip), s.kind === 'area' ? s.sink : 0]);
+    expect(tops).toEqual([['shelf', true, 0], ['shelf', true, 0], ['shelf', true, 0], ['bed', false, 8]]);
+    for (const [i, it] of out.entries()) {
+      expect(Math.hypot(it.x - items[i].x, it.y - items[i].y), it.id).toBeLessThan(16);
+      expect(slotOf(r, m, it), it.id).toBe(it.id === 'controller' ? 'bed' : 'shelf');
+    }
+  });
+
+  it('forest: the mug stays on the log, floor items stay on open ground', () => {
+    const m = load('forest');
+    const { r, items, out } = settled(m);
+    expect(r.surfaces.map((s) => s.slot)).toEqual(['shelf', 'chair', 'chair']);
+    for (const [i, it] of out.entries()) {
+      expect(it, it.id).toEqual(items[i]);
+      const c = m.components.find((x) => x.id === it.id)!;
+      expect(spotValid(r, c.placement!, it.x, it.y, spriteFit(r, c, 1)), it.id).toBe(true);
+    }
+    expect(slotOf(r, m, out.find((it) => it.id === 'camp_mug')!)).toBe('chair');
+    // Nothing on the ground where the campfire, the tent or Sei's seat stand.
+    const backpack = m.components.find((c) => c.id === 'backpack')!;
+    const fit = spriteFit(r, backpack, 1);
+    expect(spotValid(r, 'floor', 1860, 1100, fit)).toBe(false);
+    expect(spotValid(r, 'floor', 500, 960, fit)).toBe(false);
+    expect(spotValid(r, 'floor', 1300, 1300, fit)).toBe(false);
+    expect(spotValid(r, 'floor', 300, 1300, fit)).toBe(true);
+  });
+});

@@ -131,6 +131,10 @@ const SHOTS = {
   'shelf-drop-past-end': ['time=day&items=1', async (page) => dragRoom(page, [610, 950], [560, 425]), [0, 160, 720, 520]],
   // The books on the bed (their artist spot) and the succulent moved onto the bed: sunk into the duvet.
   'bed-books': ['time=day&items=1', null, [470, 860, 300, 190]],
+  // Run with --presets gamer: the energy can from the middle plank onto the top plank (grabbed 52 px above its anchor).
+  'gamer-shelf': ['time=day&items=1', async (page) => dragRoom(page, [380, 410], [420, 270]), [0, 150, 620, 520]],
+  // Run with --presets forest: the mug from the left of the log to its right end (grabbed 28 px above its anchor).
+  'forest-log': ['time=day&items=1', async (page) => dragRoom(page, [880, 1030], [1800, 1241]), [1450, 1000, 760, 440]],
   'bed-succulent': ['time=day&items=1', async (page) => dragRoom(page, [390, 430], [330, 965]), [220, 880, 520, 170]],
 };
 
