@@ -5,12 +5,18 @@ interface FakeChild extends HostChild {
   exit(code?: number | null, signal?: string | null): void;
 }
 
-function harness(opts?: { maxRestarts?: number; restartWindowMs?: number }) {
+function harness(opts?: { maxRestarts?: number; restartWindowMs?: number; pong?: boolean }) {
   let nextPid = 100;
   const children: FakeChild[] = [];
   const killed: number[] = [];
   const spawned: number[] = [];
-  const sup = new HostSupervisor({
+  const pings: Array<{ pid: number; seq: number }> = [];
+  const sup: HostSupervisor = new HostSupervisor({
+    ping: (pid, seq) => {
+      pings.push({ pid, seq });
+      // A live host answers from its pipe read, at once.
+      if (opts?.pong) sup.onHostMessage(pid, { type: 'pong', seq });
+    },
     spawn: () => {
       const pid = nextPid++;
       let cb: ((c: number | null, s: string | null) => void) | null = null;
@@ -39,9 +45,19 @@ function harness(opts?: { maxRestarts?: number; restartWindowMs?: number }) {
     expect(sup.acceptHello(live().pid)).toBe(true);
   };
   const attach = (): void => sup.onHostMessage(live().pid, { type: 'attached', reattach: false, reason: 'initial', layout: 'raised', attachMs: 5 });
-  const beat = (): void =>
-    sup.onHostMessage(live().pid, { type: 'heartbeat', fps: 30, frames: 1, effectiveFps: 30, covered: false, paused: false, attached: true, cpu: 0, ramMB: 0 });
-  return { sup, children, killed, spawned, live, hello, attach, beat };
+  const beat = (o?: { covered?: boolean; paused?: boolean }): void =>
+    sup.onHostMessage(live().pid, {
+      type: 'heartbeat',
+      fps: 30,
+      frames: 1,
+      effectiveFps: 30,
+      covered: o?.covered === true,
+      paused: o?.paused === true,
+      attached: true,
+      cpu: 0,
+      ramMB: 0,
+    });
+  return { sup, children, killed, spawned, pings, live, hello, attach, beat };
 }
 
 describe('seilink host supervisor', () => {
@@ -102,6 +118,110 @@ describe('seilink host supervisor', () => {
     expect(h.killed).toEqual([first]);
     vi.advanceTimersByTime(100);
     expect(h.live().pid).not.toBe(first);
+  });
+
+  it('pings the live host every second; its pongs alone keep it alive (App Nap stretches its own timer)', () => {
+    const h = harness({ pong: true });
+    const hung = vi.fn();
+    h.sup.on('hung', hung);
+    h.sup.start();
+    h.hello();
+    h.attach();
+    // No heartbeat at all for a minute: the host's timers are throttled, its pipe reads are not.
+    vi.advanceTimersByTime(60_000);
+    expect(hung).not.toHaveBeenCalled();
+    expect(h.pings.length).toBeGreaterThanOrEqual(55);
+    expect(h.pings.every((p) => p.pid === h.live().pid)).toBe(true);
+  });
+
+  it('a wedged host answers no ping and is still caught in about 3 s', () => {
+    const h = harness();
+    const hung = vi.fn();
+    h.sup.on('hung', hung);
+    h.sup.start();
+    h.hello();
+    h.attach();
+    h.beat();
+    vi.advanceTimersByTime(3500);
+    expect(h.pings.length).toBeGreaterThan(0);
+    expect(hung).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives a covered or paused host a longer limit', () => {
+    const h = harness();
+    const hung = vi.fn();
+    h.sup.on('hung', hung);
+    h.sup.start();
+    h.hello();
+    h.attach();
+    h.beat({ covered: true });
+    vi.advanceTimersByTime(10_000);
+    expect(hung).not.toHaveBeenCalled();
+    h.beat({ paused: true });
+    vi.advanceTimersByTime(14_000);
+    expect(hung).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1500);
+    expect(hung).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not count sleep as a hang: nothing judged while suspended, a grace after resume', () => {
+    const h = harness();
+    const hung = vi.fn();
+    h.sup.on('hung', hung);
+    h.sup.start();
+    h.hello();
+    h.attach();
+    h.beat();
+    h.sup.noteSuspend();
+    vi.advanceTimersByTime(5 * 60_000);
+    expect(hung).not.toHaveBeenCalled();
+    h.sup.noteResume();
+    vi.advanceTimersByTime(14_000);
+    expect(hung).not.toHaveBeenCalled();
+    // Beating again: fine from here on.
+    h.beat();
+    vi.advanceTimersByTime(2000);
+    h.beat();
+    vi.advanceTimersByTime(2000);
+    expect(hung).not.toHaveBeenCalled();
+    // Silent past grace + limit: hung.
+    vi.advanceTimersByTime(20_000);
+    expect(hung).toHaveBeenCalledTimes(1);
+  });
+
+  it('an unlock gives the same grace', () => {
+    const h = harness();
+    const hung = vi.fn();
+    h.sup.on('hung', hung);
+    h.sup.start();
+    h.hello();
+    h.attach();
+    h.beat();
+    vi.advanceTimersByTime(2000);
+    h.sup.noteResume('unlock-screen');
+    vi.advanceTimersByTime(15_000);
+    expect(hung).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(4000);
+    expect(hung).toHaveBeenCalledTimes(1);
+  });
+
+  it('a watchdog tick far too late (main itself was stopped) gives a grace, not a kill', () => {
+    const h = harness();
+    const hung = vi.fn();
+    h.sup.on('hung', hung);
+    h.sup.start();
+    h.hello();
+    h.attach();
+    h.beat();
+    // The clock jumps a minute with no timer firing (sleep with no suspend event, App Nap of main).
+    vi.setSystemTime(Date.now() + 60_000);
+    vi.advanceTimersByTime(250);
+    expect(hung).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(14_000);
+    expect(hung).not.toHaveBeenCalled();
+    h.beat();
+    vi.advanceTimersByTime(2000);
+    expect(hung).not.toHaveBeenCalled();
   });
 
   it('kills a host that never says hello', () => {

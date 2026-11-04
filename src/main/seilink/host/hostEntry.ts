@@ -255,6 +255,10 @@ function onCommand(m: ToHost): void {
     case 'quit':
       shutdown('quit');
       break;
+    case 'ping':
+      // Answered straight from the pipe read (main's liveness check), not from a timer.
+      send({ type: 'pong', seq: Number(m.seq) || 0 });
+      break;
     case 'test-hang': {
       if (!ARGS.test) break;
       // CI: wedge this process's main thread (no heartbeats, no IPC) so main's hang detection fires.

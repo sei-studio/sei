@@ -306,6 +306,10 @@ async function openSession(characterId: string, restored: boolean): Promise<void
   const supervisor = new HostSupervisor({
     spawn: (n) => spawnHost(s, n),
     kill: (pid) => killPid(pid),
+    // Answered by the host's main process from the pipe read (supervisor.ts: App Nap).
+    ping: (pid, seq) => {
+      if (s.connPid === pid) sendTo(s, { type: 'ping', seq });
+    },
     log,
   });
   const s: Session = {
@@ -715,6 +719,11 @@ function hookPower(): void {
       powerMonitor.on('on-battery', apply);
       powerMonitor.on('on-ac', apply);
       apply();
+      // Sleep: the time asleep is not a hang. Nothing is judged while suspended, and resume or
+      // unlock gives the host a grace period to beat again (supervisor.ts).
+      powerMonitor.on('suspend', () => session?.supervisor.noteSuspend());
+      powerMonitor.on('resume', () => session?.supervisor.noteResume('resume'));
+      powerMonitor.on('unlock-screen', () => session?.supervisor.noteResume('unlock-screen'));
     })
     .catch(() => {
       /* vitest stub */

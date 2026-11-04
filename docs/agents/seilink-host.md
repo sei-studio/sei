@@ -47,8 +47,17 @@ main (src/main/seilink/host/seilinkHost.ts)        host (hostEntry.ts, same bina
 
 - Restart backoff 0, 0.5, 1, 2 s ... capped at 10 s; a host up for 20 s
   (`HOST_STABLE_MS`) resets the streak.
-- Hung = no heartbeat for 3 s (`HOST_HEARTBEAT_TIMEOUT_MS`, watchdog every
-  250 ms; detected in about 3.1 s on Linux). No hello within 20 s = killed.
+- Hung = nothing heard from the host for 3 s (`HOST_HEARTBEAT_TIMEOUT_MS`,
+  watchdog every 250 ms; detected in about 3.1 s on Linux). Any line counts:
+  the host's 1 s heartbeat and its `pong` to main's 1 s `ping`. The pong is
+  answered from the pipe read in the host's main process, so App Nap
+  stretching the host's timers while it is covered does not make it look
+  hung. While its last heartbeat said covered or paused the limit is 15 s
+  (`HOST_PAUSED_HEARTBEAT_TIMEOUT_MS`). No hello within 20 s = killed.
+- Sleep: main forwards `powerMonitor` `suspend` (nothing judged until
+  resume) and `resume` / `unlock-screen` (a 15 s grace, `HOST_RESUME_GRACE_MS`).
+  A watchdog tick more than 2 s late (main's own timers were stopped) gives
+  the same grace.
 - 5 restarts within 10 min (`HOST_MAX_RESTARTS`, `HOST_RESTART_WINDOW_MS`),
   attached or not, = give up: the session ends with state `failed` and a
   failure class (the last failure since her last good attach, or

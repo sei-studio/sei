@@ -3,9 +3,18 @@
  * reads its pipe, restarts it when it dies or hangs. Ported from the spike's
  * supervisor.js (exp/seilink-spike), whose numbers it keeps:
  *
- * - Restart on host exit, or when no heartbeat came for `hbTimeoutMs`
- *   (3 s; the host beats every second, the spike detected a wedged host in
- *   about 2.6 s).
+ * - Restart on host exit, or when nothing came from the host for
+ *   `hbTimeoutMs` (3 s; the spike detected a wedged host in about 2.6 s).
+ *   Liveness is any line from the host: its own 1 s heartbeat, and the
+ *   `pong` it sends back for main's 1 s `ping`. The pong is the robust one:
+ *   it is answered from the pipe read in the host's main process, so App Nap
+ *   stretching the host's timers (a covered wallpaper on macOS) does not
+ *   stop it. While the host says it is covered or paused the limit is
+ *   `pausedHbTimeoutMs` (15 s) anyway.
+ * - Sleep: nothing is judged between suspend and resume, and resume or
+ *   unlock gives `resumeGraceMs` (15 s) before a silent host counts as hung.
+ *   A watchdog tick that comes far too late (main itself was stopped: sleep
+ *   without a suspend event, App Nap of main, a stall) gives the same grace.
  * - Backoff 0, 0.5, 1, 2, 4, 8, max 10 s. The first restart is immediate
  *   because the commonest cause (Explorer restarting on Windows) wants the
  *   host back as soon as the shell is. The streak resets once a host has
@@ -27,6 +36,14 @@ export const HOST_HEARTBEAT_TIMEOUT_MS = 3_000;
 /** Give up after this many restarts within HOST_RESTART_WINDOW_MS. */
 export const HOST_MAX_RESTARTS = 5;
 export const HOST_RESTART_WINDOW_MS = 10 * 60_000;
+/** The limit while the host reports covered or paused (App Nap may throttle it then). */
+export const HOST_PAUSED_HEARTBEAT_TIMEOUT_MS = 15_000;
+/** After resume, unlock or a stall of main: no host is judged hung for this long. */
+export const HOST_RESUME_GRACE_MS = 15_000;
+export const HOST_PING_MS = 1_000;
+const WATCHDOG_MS = 250;
+/** A watchdog tick this late means main's own timers were stopped (sleep, App Nap, a stall). */
+const WATCHDOG_STALL_MS = 2_000;
 /** A host that never says hello (wedged before its pipe connected) is killed after this. */
 export const HOST_HELLO_TIMEOUT_MS = 20_000;
 
@@ -44,12 +61,17 @@ export interface HostChild {
 export interface SupervisorDeps {
   spawn(n: number): HostChild;
   kill(pid: number): void;
+  /** Send `ping` to the live host (it answers `pong`). */
+  ping?(pid: number, seq: number): void;
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (t: unknown) => void;
   setInterval?: (fn: () => void, ms: number) => unknown;
   clearInterval?: (t: unknown) => void;
   hbTimeoutMs?: number;
+  pausedHbTimeoutMs?: number;
+  resumeGraceMs?: number;
+  pingMs?: number;
   helloTimeoutMs?: number;
   stableMs?: number;
   maxRestarts?: number;
@@ -79,11 +101,20 @@ export class HostSupervisor extends EventEmitter {
   private restartTimes: number[] = [];
   /** Some host of this run attached. */
   private everAttached = false;
+  /** Last line from the live host (0: none expected, e.g. it was just killed). */
   private lastHb = 0;
+  /** Its last heartbeat said covered or paused. */
+  private hostIdle = false;
+  /** No host is judged hung before this (resume, unlock, a stall of main). */
+  private graceUntil = 0;
+  private suspended = false;
+  private lastTick = 0;
+  private lastPing = 0;
+  private pingSeq = 0;
   private stopped = true;
   private pendingRestart: unknown = null;
   private watchdog: unknown = null;
-  private readonly d: Required<Omit<SupervisorDeps, 'log'>> & { log: (line: string) => void };
+  private readonly d: Required<Omit<SupervisorDeps, 'log' | 'ping'>> & Pick<SupervisorDeps, 'ping'> & { log: (line: string) => void };
 
   constructor(deps: SupervisorDeps) {
     super();
@@ -94,13 +125,16 @@ export class HostSupervisor extends EventEmitter {
       setInterval: (fn, ms) => setInterval(fn, ms),
       clearInterval: (t) => clearInterval(t as ReturnType<typeof setInterval>),
       hbTimeoutMs: HOST_HEARTBEAT_TIMEOUT_MS,
+      pausedHbTimeoutMs: HOST_PAUSED_HEARTBEAT_TIMEOUT_MS,
+      resumeGraceMs: HOST_RESUME_GRACE_MS,
+      pingMs: HOST_PING_MS,
       helloTimeoutMs: HOST_HELLO_TIMEOUT_MS,
       stableMs: HOST_STABLE_MS,
       maxRestarts: HOST_MAX_RESTARTS,
       restartWindowMs: HOST_RESTART_WINDOW_MS,
       log: () => {},
       ...deps,
-    } as SupervisorDeps & Required<Omit<SupervisorDeps, 'log'>> & { log: (line: string) => void };
+    } as SupervisorDeps & Required<Omit<SupervisorDeps, 'log' | 'ping'>> & { log: (line: string) => void };
   }
 
   get running(): boolean {
@@ -121,7 +155,10 @@ export class HostSupervisor extends EventEmitter {
     this.streak = 0;
     this.restartTimes = [];
     this.everAttached = false;
-    this.watchdog = this.d.setInterval(() => this.checkHeartbeat(), 250);
+    this.graceUntil = 0;
+    this.suspended = false;
+    this.lastTick = this.d.now();
+    this.watchdog = this.d.setInterval(() => this.checkHeartbeat(), WATCHDOG_MS);
     this.spawn('initial');
   }
 
@@ -153,11 +190,31 @@ export class HostSupervisor extends EventEmitter {
     return true;
   }
 
+  /** The machine is going to sleep: judge nothing until it resumes. */
+  noteSuspend(): void {
+    this.suspended = true;
+  }
+
+  /** Resume from sleep or a screen unlock: the gap is not a hang; give the host a grace period. */
+  noteResume(why = 'resume'): void {
+    this.suspended = false;
+    this.grace(why);
+  }
+
+  private grace(why: string): void {
+    if (this.stopped) return;
+    this.graceUntil = this.d.now() + this.d.resumeGraceMs;
+    this.d.log(`seilink host: ${why}, no hang check for ${this.d.resumeGraceMs} ms`);
+  }
+
   /** A message from the live host's connection (after acceptHello). */
   onHostMessage(pid: number, m: FromHost): void {
     const cur = this.cur;
     if (!cur || cur.exited || cur.child.pid !== pid) return;
-    if (m.type === 'heartbeat') this.lastHb = this.d.now();
+    // Any line proves the host's main process is running (a heartbeat, a pong, a click...).
+    if (this.lastHb !== 0) this.lastHb = this.d.now();
+    if (m.type === 'heartbeat') this.hostIdle = m.covered === true || m.paused === true;
+    if (m.type === 'pong') return;
     // Attaching does NOT reset the restart count: a host that attaches and then crashes every
     // time would otherwise restart forever (about every 10 s at the backoff cap).
     if (m.type === 'attached') {
@@ -190,6 +247,7 @@ export class HostSupervisor extends EventEmitter {
     const cur: Current = { n, child, spawnedAt: this.d.now(), helloAt: null, attached: false, exited: false };
     this.cur = cur;
     this.lastHb = 0;
+    this.hostIdle = false;
     this.d.log(`seilink host ${n}: spawned pid ${child.pid} (${cause})`);
     this.emit('spawn', { n, pid: child.pid, cause });
     child.onExit((code, signal) => {
@@ -225,12 +283,18 @@ export class HostSupervisor extends EventEmitter {
   }
 
   private checkHeartbeat(): void {
+    const now = this.d.now();
+    const sinceTick = now - this.lastTick;
+    this.lastTick = now;
+    // Main's own timers were stopped: the host had no chance to be heard either.
+    if (sinceTick > WATCHDOG_STALL_MS) this.grace(`watchdog tick ${sinceTick} ms apart`);
+    if (this.suspended) return;
     const cur = this.cur;
     if (!cur || cur.exited) return;
     if (cur.helloAt === null) {
       // Not connected yet: the exit handler covers a host that dies on the way up; this one
       // covers a host that wedged before it could.
-      if (this.d.now() - cur.spawnedAt > this.d.helloTimeoutMs) {
+      if (now - Math.max(cur.spawnedAt, this.graceUntil) > this.d.helloTimeoutMs) {
         this.d.log(`seilink host ${cur.n}: no hello after ${this.d.helloTimeoutMs} ms, killing it`);
         cur.helloAt = -1;
         this.emit('hung', { n: cur.n, gapMs: this.d.now() - cur.spawnedAt });
@@ -239,9 +303,18 @@ export class HostSupervisor extends EventEmitter {
       return;
     }
     if (!this.lastHb) return;
-    const gap = this.d.now() - this.lastHb;
-    if (gap > this.d.hbTimeoutMs) {
-      this.d.log(`seilink host ${cur.n}: no heartbeat for ${gap} ms, killing it`);
+    if (cur.helloAt > 0 && this.d.ping && now - this.lastPing >= this.d.pingMs) {
+      this.lastPing = now;
+      try {
+        this.d.ping(cur.child.pid, ++this.pingSeq);
+      } catch {
+        /* the pipe is going away; the exit handler follows */
+      }
+    }
+    const gap = now - Math.max(this.lastHb, this.graceUntil);
+    const limit = this.hostIdle ? this.d.pausedHbTimeoutMs : this.d.hbTimeoutMs;
+    if (gap > limit) {
+      this.d.log(`seilink host ${cur.n}: nothing heard for ${gap} ms (limit ${limit}), killing it`);
       this.lastHb = 0;
       this.emit('hung', { n: cur.n, gapMs: gap });
       this.safeKill(cur.child.pid);

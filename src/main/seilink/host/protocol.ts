@@ -36,6 +36,12 @@ export type ToHost =
   /** Hold the room still (a future dock "pause"). */
   | { type: 'set-paused'; paused: boolean }
   | { type: 'quit' }
+  /**
+   * Liveness probe, every second. The host answers `pong` from its main process as soon as the
+   * line arrives: an incoming pipe read wakes a host that App Nap throttles, where its own 1 s
+   * heartbeat timer may be stretched to many seconds while it is covered.
+   */
+  | { type: 'ping'; seq: number }
   /** CI self-test hosts only (--seilink-test): wedge the main thread for `ms`. */
   | { type: 'test-hang'; ms: number };
 
@@ -66,6 +72,8 @@ export type FromHost =
       cpu: number;
       ramMB: number;
     }
+  /** Answer to `ping`. */
+  | { type: 'pong'; seq: number }
   | { type: 'log'; level: 'info' | 'warn'; msg: string }
   /** An avatar bridge call from the page (see SEILINK_HOST_AVATAR_METHODS). */
   | { type: 'call'; id: number; method: SeilinkHostAvatarMethod; args: unknown[] };
