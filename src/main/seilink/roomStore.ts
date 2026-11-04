@@ -22,6 +22,7 @@ import type { SeilinkRoomPayload } from '../../shared/seilinkPack';
 import { paths } from '../paths';
 import { trackScopedWrite } from '../profile/scopeBarrier';
 import { loadPack, publicPack } from './packs';
+import { seilinkEnabled } from './gate';
 import type { RoomContext, RoomSource } from './types';
 
 const ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -106,10 +107,16 @@ export async function setRoomState(characterId: string, raw: unknown): Promise<R
   return state;
 }
 
-/** What the AI side reads (roomContext.ts). null when her preset's pack is not installed. */
+/**
+ * What the AI side reads (roomContext.ts). null when her preset's pack is not
+ * installed, or while SeiLink is off: the cozy pack ships with the app (M4),
+ * so without this gate every companion of every user would get a room line
+ * and look() on every turn.
+ */
 export const roomSource: RoomSource = {
   async getRoom(characterId: string): Promise<RoomContext | null> {
     if (!isRoomCharacterId(characterId)) return null;
+    if (!seilinkEnabled()) return null;
     const raw = await readRaw(paths.seilinkRoomPath(characterId));
     const preset = coarseState(raw).preset;
     const pack = await loadPack(preset);

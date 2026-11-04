@@ -7,7 +7,13 @@
  *      packaged app), e.g. the placeholder pack from
  *      scripts/seilink-dev-pack.mjs or the designer's pack dir;
  *   2. installed: <userData>/seilink/packs/<presetId>/ (filled by a download
- *      from dl.sei.gg later; see downloadPack, a stub for now).
+ *      from dl.sei.gg later; see downloadPack, a stub for now). An installed
+ *      pack overrides the bundled one of the same preset (a newer download);
+ *   3. bundled (M4, 261104): the packs that ship with the app, in
+ *      `<resources>/seilink-packs/<presetId>/` (electron-builder
+ *      extraResources, mac and win) or `<repo>/resources/seilink-packs/` in
+ *      dev. The cozy pack ships; gamer and forest light up in the editor and
+ *      the move-in sheet as soon as their folders exist (listPacks).
  *
  * Trust: a pack is data from disk or the network. Before anything is served
  * or path-joined, the manifest is validated (parseRoomManifest: plain
@@ -21,7 +27,7 @@ import { protocol, app } from 'electron';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { parseRoomManifest, isRoomPresetId } from '../../shared/seilinkValidate';
-import type { RoomPresetId, RoomPresetManifest } from '../../shared/seilinkRoom';
+import { ROOM_PRESET_IDS, type RoomPresetId, type RoomPresetManifest } from '../../shared/seilinkRoom';
 import { SEILINK_ROOM_SCHEME, type SeilinkDevInfo, type SeilinkPack, type SeilinkPackSource } from '../../shared/seilinkPack';
 import { paths } from '../paths';
 
@@ -70,6 +76,22 @@ export function seilinkDevInfo(): SeilinkDevInfo {
   return { enabled: dir !== null, packsDir: dir };
 }
 
+/** The packs that ship with the app: `<resources>/seilink-packs` packaged, `<appPath>/resources/seilink-packs` in dev. */
+export function bundledPacksDir(opts: { packaged: boolean; resourcesPath: string; appPath: string }): string {
+  return opts.packaged
+    ? path.join(opts.resourcesPath, 'seilink-packs')
+    : path.join(opts.appPath, 'resources', 'seilink-packs');
+}
+
+function bundledRoot(): string | null {
+  try {
+    if (!app) return null;
+    return bundledPacksDir({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() });
+  } catch {
+    return null;
+  }
+}
+
 function packRoots(): Array<{ dir: string; source: SeilinkPackSource }> {
   if (rootsOverride) return rootsOverride;
   const out: Array<{ dir: string; source: SeilinkPackSource }> = [];
@@ -80,6 +102,8 @@ function packRoots(): Array<{ dir: string; source: SeilinkPackSource }> {
   } catch {
     // No userData (tests without an override): installed packs simply absent.
   }
+  const bundled = bundledRoot();
+  if (bundled) out.push({ dir: bundled, source: 'bundled' });
   return out;
 }
 
@@ -178,7 +202,7 @@ async function loadPackAt(dir: string, id: RoomPresetId, source: SeilinkPackSour
   return pack;
 }
 
-/** The pack for a preset (dev dir first), validated, or null when none is usable. */
+/** The pack for a preset (dev dir, then installed, then bundled), validated, or null when none is usable. */
 export async function loadPack(id: string): Promise<LoadedPack | null> {
   if (!isRoomPresetId(id)) return null;
   for (const root of packRoots()) {
@@ -188,10 +212,10 @@ export async function loadPack(id: string): Promise<LoadedPack | null> {
   return null;
 }
 
-/** Every usable preset pack, one per preset. */
+/** Every usable preset pack, one per preset (the presets a user can pick are exactly these). */
 export async function listPacks(): Promise<LoadedPack[]> {
   const out: LoadedPack[] = [];
-  for (const id of ['cozy', 'gamer', 'forest'] as const) {
+  for (const id of ROOM_PRESET_IDS) {
     const p = await loadPack(id);
     if (p) out.push(p);
   }
@@ -207,7 +231,7 @@ export function publicPack(p: LoadedPack): SeilinkPack {
  * Download a preset's pack from SEILINK_PACK_BASE_URL into the installed
  * packs dir. Stub: packs ship by download later (a signed index, sha256 per
  * file, unpack to a temp dir, validate with loadPackAt, then rename into
- * place). Until then the dev dir is the only source.
+ * place). Until then the dev dir and the bundled packs are the sources.
  */
 export async function downloadPack(id: RoomPresetId): Promise<never> {
   throw new Error(`SEILINK_DOWNLOAD_UNAVAILABLE: pack downloads are not built yet (${id})`);

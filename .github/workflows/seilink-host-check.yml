@@ -128,7 +128,7 @@ jobs:
           if [ -f "$OUT/result.json" ]; then cat "$OUT/result.json"; else echo "::error::no result.json"; exit 1; fi
           node -e "const r=require(process.env.OUT+'/result.json'); for (const [k,v] of Object.entries(r.checks)) console.log((v.ok?'PASS ':'FAIL ')+k+(v.ms!=null?' '+v.ms+'ms':'')+(v.detail?' '+String(v.detail).slice(0,200):'')); process.exit(r.ok?0:1)"
 
-      - name: Package (dir) and check the addon is outside app.asar
+      - name: Package (dir) and check the addon and the room packs are outside app.asar
         if: matrix.package && !cancelled()
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -144,6 +144,10 @@ jobs:
           fi
           if [ -z "$f" ]; then echo "::error::seilink.node is not in the packaged resources"; exit 1; fi
           ls -la "$f"
+          # M4: the bundled room packs ship next to it (src/main/seilink/packs.ts bundledPacksDir).
+          m=$(find release -path '*seilink-packs/cozy/manifest.json' | head -1)
+          if [ -z "$m" ]; then echo "::error::the cozy room pack is not in the packaged resources"; exit 1; fi
+          echo "cozy pack: $(ls "$(dirname "$m")" | wc -l) files"
           if [ "$RUNNER_OS" = "macOS" ]; then lipo -info "$f"; fi
           ELECTRON_RUN_AS_NODE=1 npx electron -e "const a=require(require('path').resolve(process.argv[process.argv.length-1])); console.log('packaged addon loads:', a.platform, typeof a.doubleClickMs === 'function' ? a.doubleClickMs() + ' ms' : '')" "$f"
 

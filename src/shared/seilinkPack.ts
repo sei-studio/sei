@@ -18,8 +18,8 @@ import type { RoomPresetId, RoomPresetManifest, RoomState } from './seilinkRoom'
 
 export const SEILINK_ROOM_SCHEME = 'sei-room';
 
-/** Where a pack was found: the dev override dir or the installed packs dir. */
-export type SeilinkPackSource = 'dev' | 'installed';
+/** Where a pack was found: the dev override dir, the installed packs dir, or the app's own (bundled). */
+export type SeilinkPackSource = 'dev' | 'installed' | 'bundled';
 
 export interface SeilinkPack {
   id: RoomPresetId;

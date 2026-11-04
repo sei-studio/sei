@@ -1,0 +1,413 @@
+{
+  "format": "sei-room",
+  "version": 1,
+  "id": "cozy",
+  "place": "your bedroom",
+  "canvas": [
+    2560,
+    1440
+  ],
+  "avatar": {
+    "x": 1300,
+    "y": 1440,
+    "height": 720
+  },
+  "floor": [
+    1720,
+    1250,
+    840,
+    190
+  ],
+  "slots": {
+    "view": {
+      "z": 0,
+      "options": [
+        "view_city",
+        "view_forest",
+        "view_sea"
+      ]
+    },
+    "shell": {
+      "z": 10,
+      "options": [
+        "cozy_room"
+      ]
+    },
+    "rug": {
+      "z": 20,
+      "options": [
+        "round_rug"
+      ],
+      "optional": true
+    },
+    "curtains": {
+      "z": 30,
+      "options": [
+        "linen_curtains"
+      ],
+      "optional": true
+    },
+    "shelf": {
+      "z": 40,
+      "options": [
+        "floating_shelves"
+      ],
+      "optional": true
+    },
+    "bed": {
+      "z": 50,
+      "options": [
+        "wooden_bed"
+      ],
+      "optional": true
+    },
+    "lamp": {
+      "z": 60,
+      "options": [
+        "green_floor_lamp"
+      ],
+      "optional": true
+    },
+    "chair": {
+      "z": 90,
+      "options": [
+        "velvet_armchair"
+      ]
+    }
+  },
+  "components": [
+    {
+      "id": "view_city",
+      "slot": "view",
+      "name": "city skyline",
+      "box": [
+        1341,
+        16,
+        1219,
+        1292
+      ],
+      "frames": {
+        "day": {
+          "src": "view_city_day.webp"
+        },
+        "dusk": {
+          "src": "view_city_dusk.webp"
+        },
+        "night": {
+          "src": "view_city_night.webp"
+        }
+      }
+    },
+    {
+      "id": "view_forest",
+      "slot": "view",
+      "name": "forest valley",
+      "box": [
+        1341,
+        16,
+        1219,
+        1292
+      ],
+      "frames": {
+        "day": {
+          "src": "view_forest_day.webp"
+        },
+        "dusk": {
+          "src": "view_forest_dusk.webp"
+        },
+        "night": {
+          "src": "view_forest_night.webp"
+        }
+      }
+    },
+    {
+      "id": "view_sea",
+      "slot": "view",
+      "name": "seaside town",
+      "box": [
+        1341,
+        16,
+        1219,
+        1292
+      ],
+      "frames": {
+        "day": {
+          "src": "view_sea_day.webp"
+        },
+        "dusk": {
+          "src": "view_sea_dusk.webp"
+        },
+        "night": {
+          "src": "view_sea_night.webp"
+        }
+      }
+    },
+    {
+      "id": "cozy_room",
+      "slot": "shell",
+      "name": "walls",
+      "tintable": true,
+      "defaultTint": "#B5C2A0",
+      "frames": {
+        "day": {
+          "src": "shell_day.webp",
+          "mask": "shell_mask.webp"
+        },
+        "dusk": {
+          "src": "shell_dusk.webp",
+          "mask": "shell_mask.webp"
+        },
+        "night": {
+          "src": "shell_night.webp",
+          "mask": "shell_mask.webp",
+          "glow": "shell_glow_night.webp"
+        }
+      }
+    },
+    {
+      "id": "round_rug",
+      "slot": "rug",
+      "name": "round rug",
+      "tintable": true,
+      "defaultTint": "#EAE3D6",
+      "frames": {
+        "day": {
+          "src": "rug_day.webp",
+          "mask": "rug_mask.webp"
+        },
+        "dusk": {
+          "src": "rug_dusk.webp",
+          "mask": "rug_mask.webp"
+        },
+        "night": {
+          "src": "rug_night.webp",
+          "mask": "rug_mask.webp"
+        }
+      }
+    },
+    {
+      "id": "linen_curtains",
+      "slot": "curtains",
+      "name": "curtains",
+      "tintable": true,
+      "defaultTint": "#ECE6DA",
+      "frames": {
+        "day": {
+          "src": "curtains_day.webp",
+          "mask": "curtains_mask.webp"
+        },
+        "dusk": {
+          "src": "curtains_dusk.webp",
+          "mask": "curtains_mask.webp"
+        },
+        "night": {
+          "src": "curtains_night.webp",
+          "mask": "curtains_mask.webp"
+        }
+      }
+    },
+    {
+      "id": "floating_shelves",
+      "slot": "shelf",
+      "name": "wall shelves",
+      "frames": {
+        "day": {
+          "src": "shelf_day.webp"
+        },
+        "dusk": {
+          "src": "shelf_dusk.webp"
+        },
+        "night": {
+          "src": "shelf_night.webp"
+        }
+      }
+    },
+    {
+      "id": "wooden_bed",
+      "slot": "bed",
+      "name": "bed",
+      "tintable": true,
+      "defaultTint": "#F3EEE4",
+      "frames": {
+        "day": {
+          "src": "bed_day.webp",
+          "mask": "bed_mask.webp"
+        },
+        "dusk": {
+          "src": "bed_dusk.webp",
+          "mask": "bed_mask.webp"
+        },
+        "night": {
+          "src": "bed_night.webp",
+          "mask": "bed_mask.webp"
+        }
+      }
+    },
+    {
+      "id": "green_floor_lamp",
+      "slot": "lamp",
+      "name": "green glass floor lamp",
+      "frames": {
+        "day": {
+          "src": "lamp_day.webp"
+        },
+        "dusk": {
+          "src": "lamp_dusk.webp",
+          "glow": "lamp_glow_dusk.webp"
+        },
+        "night": {
+          "src": "lamp_night.webp",
+          "glow": "lamp_glow_night.webp"
+        }
+      }
+    },
+    {
+      "id": "velvet_armchair",
+      "slot": "chair",
+      "name": "green velvet armchair",
+      "frames": {
+        "day": {
+          "src": "chair_day.webp"
+        },
+        "dusk": {
+          "src": "chair_dusk.webp"
+        },
+        "night": {
+          "src": "chair_night.webp"
+        }
+      }
+    },
+    {
+      "id": "desk_lamp",
+      "slot": "item",
+      "name": "green banker's lamp",
+      "placement": "surface",
+      "box": [
+        153,
+        443,
+        274,
+        175
+      ],
+      "z": 45,
+      "frames": {
+        "day": {
+          "src": "item_desk_lamp_day.webp"
+        },
+        "dusk": {
+          "src": "item_desk_lamp_dusk.webp",
+          "glow": "item_desk_lamp_glow_dusk.webp"
+        },
+        "night": {
+          "src": "item_desk_lamp_night.webp",
+          "glow": "item_desk_lamp_glow_night.webp"
+        }
+      }
+    },
+    {
+      "id": "books",
+      "slot": "item",
+      "name": "stack of books",
+      "placement": "surface",
+      "box": [
+        527,
+        891,
+        166,
+        127
+      ],
+      "z": 55,
+      "frames": {
+        "day": {
+          "src": "item_books_day.webp"
+        },
+        "dusk": {
+          "src": "item_books_dusk.webp"
+        },
+        "night": {
+          "src": "item_books_night.webp"
+        }
+      }
+    },
+    {
+      "id": "succulent",
+      "slot": "item",
+      "name": "little succulent",
+      "placement": "surface",
+      "box": [
+        346,
+        361,
+        88,
+        103
+      ],
+      "z": 45,
+      "frames": {
+        "day": {
+          "src": "item_succulent_day.webp"
+        },
+        "dusk": {
+          "src": "item_succulent_dusk.webp"
+        },
+        "night": {
+          "src": "item_succulent_night.webp"
+        }
+      }
+    },
+    {
+      "id": "monstera",
+      "slot": "item",
+      "name": "potted monstera plant",
+      "placement": "floor",
+      "box": [
+        1767,
+        881,
+        416,
+        583
+      ],
+      "z": 85,
+      "frames": {
+        "day": {
+          "src": "item_monstera_day.webp"
+        },
+        "dusk": {
+          "src": "item_monstera_dusk.webp"
+        },
+        "night": {
+          "src": "item_monstera_night.webp"
+        }
+      }
+    },
+    {
+      "id": "cushion",
+      "slot": "item",
+      "name": "floor cushion",
+      "placement": "floor",
+      "box": [
+        2052,
+        1236,
+        346,
+        228
+      ],
+      "z": 85,
+      "frames": {
+        "day": {
+          "src": "item_cushion_day.webp",
+          "mask": "item_cushion_mask.webp"
+        },
+        "dusk": {
+          "src": "item_cushion_dusk.webp",
+          "mask": "item_cushion_mask.webp"
+        },
+        "night": {
+          "src": "item_cushion_night.webp",
+          "mask": "item_cushion_mask.webp"
+        }
+      },
+      "tintable": true,
+      "defaultTint": "#E3A9A6"
+    }
+  ],
+  "overlay": {
+    "day": "#FFF7EC",
+    "dusk": "#F6DCE4",
+    "night": "#25304F"
+  }
+}
