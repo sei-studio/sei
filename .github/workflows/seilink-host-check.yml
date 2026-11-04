@@ -108,6 +108,13 @@ jobs:
           sw_vers
           system_profiler SPDisplaysDataType | grep -E "Resolution|Display Type|Chipset" || true
 
+      - name: Clear the desktop (Windows)
+        # The runner's agent console sits over the screen centre, where she is; a click there
+        # lands on the console, which is correct, so minimise everything first (the spike did too).
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: (New-Object -ComObject Shell.Application).MinimizeAll(); Start-Sleep -Seconds 2
+
       - name: Self-test
         timeout-minutes: 12
         env:

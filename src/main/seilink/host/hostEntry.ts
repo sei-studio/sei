@@ -129,6 +129,12 @@ function connect(): void {
 
 let addon: SeilinkAddon | null = null;
 let win: BrowserWindow | null = null;
+/**
+ * The room window whose page we talk to: set as soon as it is created, while `win` (the
+ * attached window) waits for its first paint. The page's 'ready' can come before that
+ * paint; checked against `win` it was dropped and the page never got its room (CI, 261104).
+ */
+let pageWin: BrowserWindow | null = null;
 let pageReady = false;
 let quitting = false;
 let reattaching = false;
@@ -168,11 +174,15 @@ const clicks = new ClickClassifier({
 function poke(kind: SeilinkPokeKind): void {
   log(`poke ${kind}`);
   if (kind !== 'drag') send({ type: 'click', kind });
-  if (win && !win.isDestroyed()) win.webContents.send(CH.poke, kind);
+  if (pageWin && !pageWin.isDestroyed()) pageWin.webContents.send(CH.poke, kind);
+}
+
+function toPage(channel: string, payload: unknown): void {
+  if (pageWin && !pageWin.isDestroyed() && pageReady) pageWin.webContents.send(channel, payload);
 }
 
 function pushFps(): void {
-  if (win && !win.isDestroyed() && pageReady) win.webContents.send(CH.fps, activity.current.fps);
+  toPage(CH.fps, activity.current.fps);
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -190,13 +200,13 @@ function onCommand(m: ToHost): void {
       break;
     case 'busy':
       busy = m.busy === true;
-      if (win && !win.isDestroyed() && pageReady) win.webContents.send(CH.busy, busy);
+      toPage(CH.busy, busy);
       break;
     case 'call-result':
       relay.onResult(m);
       break;
     case 'avatar-manifest':
-      if (win && !win.isDestroyed() && pageReady) win.webContents.send(CH.avatarManifest, { characterId: m.characterId, manifest: m.manifest });
+      toPage(CH.avatarManifest, { characterId: m.characterId, manifest: m.manifest });
       break;
     case 'set-fps':
       activity.setCap(Number(m.fps));
@@ -231,7 +241,7 @@ function setRoom(payload: SeilinkHostRoom, files: Array<[string, string]>, portr
   if (typeof portraitFile === 'string') next.set(`${SEILINK_PORTRAIT_HOST}/${path.basename(portraitFile)}`, portraitFile);
   allow = next;
   log(`room ${payload.pack ? payload.pack.id : 'no pack'} (${next.size} files)`);
-  if (win && !win.isDestroyed() && pageReady) win.webContents.send(CH.room, payload);
+  toPage(CH.room, payload);
 }
 
 // ── sei-room:// (only the files main listed) ───────────────────────────────
@@ -321,10 +331,13 @@ async function createRoomWindow(): Promise<BrowserWindow> {
   });
   pageReady = false;
   sceneReady = false;
+  pageWin = w;
+  w.webContents.on('did-finish-load', () => log('page loaded'));
   w.webContents.on('will-navigate', (e) => e.preventDefault());
   w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   w.on('closed', () => {
     log('room window closed');
+    if (pageWin === w) pageWin = null;
     if (win === w) {
       win = null;
       attached = false;
@@ -353,12 +366,13 @@ async function createRoomWindow(): Promise<BrowserWindow> {
 
 // The page's own messages.
 function fromOurPage(sender: Electron.WebContents): boolean {
-  return !!win && !win.isDestroyed() && sender === win.webContents;
+  return !!pageWin && !pageWin.isDestroyed() && sender === pageWin.webContents;
 }
 
 ipcMain.on(CH.ready, (e) => {
   if (!fromOurPage(e.sender)) return;
   pageReady = true;
+  log(`page ready${room ? '' : ' (no room yet)'}`);
   e.sender.send(CH.fps, activity.current.fps);
   e.sender.send(CH.busy, busy);
   if (room) e.sender.send(CH.room, room);
@@ -598,12 +612,14 @@ function onNativeEvent(json: string): void {
       const p = { x: Number(e.x), y: Number(e.y), t: Number(e.t) || Date.now() };
       if (e.kind === 'down') downPress = p;
       else if (e.kind === 'up' && downPress) {
+        log(`press at ${p.x},${p.y}`);
         clicks.press(downPress, p);
         downPress = null;
       }
       return;
     }
     case 'hit':
+      if (e.kind !== 'down') log(`hit ${String(e.kind)} at ${Number(e.x)},${Number(e.y)}`);
       if (e.kind === 'click') clicks.tap();
       else if (e.kind === 'dblclick') clicks.doubleTap();
       else if (e.kind === 'drag-end') clicks.drag();
@@ -725,11 +741,13 @@ void app
       activity.set({ suspended: false });
       validateSoon('resume');
     });
+    // Heartbeats first: a fresh Explorer can take many seconds to bring its desktop back, and a
+    // host waiting for it is alive, not hung (CI 261104: it was killed as hung every 3 s).
+    setInterval(heartbeat, 1000);
+    heartbeat();
     await waitForShell();
     await createRoomWindow();
     await attach('initial');
-    setInterval(heartbeat, 1000);
-    heartbeat();
     setInterval(() => void validate('timer'), 2000);
     const onDisplays = (): void => {
       if (IS_WIN && win && !win.isDestroyed()) win.setBounds(primaryDisplay().bounds);

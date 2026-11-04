@@ -79,6 +79,18 @@ function run(cmd: string, args: string[], timeoutMs = 20_000): Promise<string> {
   });
 }
 
+/** macOS: open TextEdit and zoom its window over the work area. False when that did not work. */
+async function coverWithTextEdit(out: string, wa: Electron.Rectangle): Promise<boolean> {
+  const file = path.join(out, 'cover.txt');
+  writeFileSync(file, 'cover');
+  const opened = await run('/usr/bin/open', ['-a', 'TextEdit', file]);
+  if (opened.startsWith('ERR')) return false;
+  await new Promise((r) => setTimeout(r, 2500));
+  const bounds = `{${wa.x}, ${wa.y}, ${wa.x + wa.width}, ${wa.y + wa.height}}`;
+  const res = await run('/usr/bin/osascript', ['-e', `tell application "TextEdit" to activate`, '-e', `tell application "TextEdit" to set bounds of front window to ${bounds}`], 8000);
+  return !res.startsWith('ERR');
+}
+
 export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWindow | null }): Promise<void> {
   const out = path.resolve(process.env.SEI_SEILINK_SELFTEST ?? 'seilink-selftest');
   mkdirSync(out, { recursive: true });
@@ -190,22 +202,31 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
       log(`her box ${JSON.stringify(box?.screen ?? null)}`);
       t = Date.now();
       const d = screen.getPrimaryDisplay();
-      const cover = new BrowserWindow({
-        ...(IS_MAC ? d.workArea : { x: d.workArea.x + 40, y: d.workArea.y + 40, width: 800, height: 600 }),
-        show: false,
-        backgroundColor: '#2d6a4f',
-        title: 'SeiLink cover',
-      });
-      void cover.loadURL('data:text/html,<body style="background:%232d6a4f;color:white;font:40px sans-serif">cover</body>');
-      if (IS_WIN) cover.maximize();
-      cover.show();
+      // macOS: another app's window zoomed over the work area (the spike's cover; a window of our
+      // own Electron bundle did not occlude the hit panel on macos-26). Windows: a maximized window.
+      const textEdit = IS_MAC ? await coverWithTextEdit(out, d.workArea) : false;
+      log(`cover with ${textEdit ? 'TextEdit' : 'an Electron window'}`);
+      const cover = textEdit
+        ? null
+        : new BrowserWindow({
+            ...(IS_MAC ? d.workArea : { x: d.workArea.x + 40, y: d.workArea.y + 40, width: 800, height: 600 }),
+            show: false,
+            backgroundColor: '#2d6a4f',
+            title: 'SeiLink cover',
+          });
+      if (cover) {
+        void cover.loadURL('data:text/html,<body style="background:%232d6a4f;color:white;font:40px sans-serif">cover</body>');
+        if (IS_WIN) cover.maximize();
+        cover.show();
+      }
       const coveredMsg = await waitFor(since(t, 'activity', (m) => m.covered === true), 15_000);
       const zero = await fpsAfter(coveredMsg ? coveredMsg.t : t, 'zero', 10_000);
       timings.coverDetectMs = coveredMsg ? coveredMsg.t - t : -1;
       checks.cover = { ok: !!coveredMsg && zero === 0, ms: timings.coverDetectMs, detail: coveredMsg ? String((coveredMsg.m as { reason?: string }).reason) : 'never covered' };
       await shot('02-covered');
       t = Date.now();
-      cover.destroy();
+      if (cover) cover.destroy();
+      else log(`uncover: ${(await run('/usr/bin/osascript', ['-e', 'tell application "TextEdit" to quit saving no'], 8000)).trim() || 'TextEdit quit'}`);
       const uncoveredMsg = await waitFor(since(t, 'activity', (m) => m.covered === false), 15_000);
       const back = await fpsAfter(uncoveredMsg ? uncoveredMsg.t : t, 'positive', 10_000);
       timings.uncoverMs = uncoveredMsg ? uncoveredMsg.t - t : -1;
@@ -230,6 +251,7 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
         const by = Math.round((d.bounds.y + d.bounds.height * 0.35) * s);
         const insideHer = bx >= b.x * s && bx <= (b.x + b.w) * s && by >= b.y * s && by <= (b.y + b.h) * s;
         t = Date.now();
+        log(`click bare wallpaper at ${bx},${by}`);
         testAddon.testClick(bx, by, 1);
         const stray = await waitFor(since(t, 'click'), 2000);
         t = Date.now();
