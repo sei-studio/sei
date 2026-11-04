@@ -28,6 +28,12 @@ export const SEILINK_HOST_PRELOAD_CHANNELS = {
   busy: 'seilink-host:busy',
   call: 'seilink-host:call',
   avatarManifest: 'seilink-host:avatar-manifest',
+  layout: 'seilink-host:layout',
+  dockState: 'seilink-host:dock-state',
+  dockPress: 'seilink-host:dock-press',
+  dock: 'seilink-host:dock',
+  dockAction: 'seilink-host:dock-action',
+  line: 'seilink-host:line',
 } as const;
 
 const C = SEILINK_HOST_PRELOAD_CHANNELS;
@@ -55,6 +61,18 @@ if (process.contextIsolated) {
     firstFrame: () => ipcRenderer.send(C.firstFrame),
     ready: () => ipcRenderer.send(C.ready),
     onBusy: (cb: (busy: boolean) => void) => listen<boolean>(C.busy, (v) => cb(v === true)),
+    onLayout: (cb: (layout: unknown) => void) => listen(C.layout, cb),
+    onDockState: (cb: (state: unknown) => void) => listen(C.dockState, cb),
+    onDockPress: (cb: (id: string) => void) => listen<string>(C.dockPress, (v) => cb(String(v))),
+    setDock: (buttons: Array<{ id: string; x: number; y: number; w: number; h: number }> | null) =>
+      ipcRenderer.send(
+        C.dock,
+        Array.isArray(buttons)
+          ? buttons.slice(0, 8).map((b) => ({ id: String(b.id), x: num(b.x), y: num(b.y), w: num(b.w), h: num(b.h) }))
+          : null,
+      ),
+    dockAction: (action: string) => ipcRenderer.send(C.dockAction, String(action)),
+    onLine: (cb: (line: unknown) => void) => listen(C.line, cb),
   });
   const call = (method: string, ...args: unknown[]): Promise<unknown> => ipcRenderer.invoke(C.call, method, args);
   contextBridge.exposeInMainWorld('sei', {

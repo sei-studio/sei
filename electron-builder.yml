@@ -126,6 +126,9 @@ files:
   # (object files, several MB after a compile). The built addon ships through
   # extraResources (resources/seilink, mac and win blocks), never app.asar.
   - "!native/seilink/**"
+  # 261104 SeiLink M4: the bundled room art ships through extraResources
+  # (resources/seilink-packs, mac and win blocks), never app.asar as well.
+  - "!resources/seilink-packs/**"
   # 260803 vendor: stop shipping vendor/ TWICE. Every vendored package is a
   # `file:` dependency, so electron-builder already copies its dereferenced tree
   # to node_modules/<name>, which asarUnpack then unpacks. The literal vendor/
@@ -362,6 +365,7 @@ mac:
     - "!vendor/**"
     - "!packs/**"
     - "!native/seilink/**"
+    - "!resources/seilink-packs/**"
     - "!.planning/**"
     - "!docs/**"
     - "!demo/**"
@@ -475,6 +479,11 @@ mac:
     # SeiLink reports unsupported.
     - from: resources/seilink
       to: seilink
+    # 261104 SeiLink M4: the room art packs that ship with the app (cozy, about
+    # 2.7MB of webp; src/main/seilink/packs.ts reads <resources>/seilink-packs,
+    # an installed pack of the same preset overrides it).
+    - from: resources/seilink-packs
+      to: seilink-packs
   extendInfo:
     NSLocalNetworkUsageDescription: "Sei finds your Minecraft world when you open it to LAN so your characters can join it on this Mac."
     # Voice calls (260707): the TCC prompt string macOS shows the first time Sei
@@ -532,6 +541,7 @@ win:
     - "!vendor/**"
     - "!packs/**"
     - "!native/seilink/**"
+    - "!resources/seilink-packs/**"
     - "!.planning/**"
     - "!docs/**"
     - "!demo/**"
@@ -632,6 +642,9 @@ win:
     # 261104 SeiLink desktop host addon (x64), same rules as the mac block.
     - from: resources/seilink
       to: seilink
+    # 261104 SeiLink M4 room art packs, same as the mac block.
+    - from: resources/seilink-packs
+      to: seilink-packs
 
 # 260929 one-click installer (outside-app-steps R2b). The assisted installer
 # was Welcome, install mode, Choose folder, Install, Finish: 3 to 4 clicks

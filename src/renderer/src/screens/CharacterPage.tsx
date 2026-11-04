@@ -28,6 +28,8 @@ import { useDataStore } from '../lib/stores/useDataStore';
 import { useChatStore } from '../lib/stores/useChatStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
+import { movedInId, useSeilinkStore } from '../lib/stores/useSeilinkStore';
+import { moveInFailed, needsMoveInSheet } from '../lib/seilink/moveIn';
 import { Button } from '../components/Button';
 import { Toggle } from '../components/Toggle';
 import { ModalShell, ModalFooter } from '../components/ModalShell';
@@ -58,6 +60,7 @@ import styles from './CharacterPage.module.css';
 
 // SeiLink room editor (261104): dev flag only, loaded on first open.
 const CompanionRoomEditor = lazy(() => import('../components/seilink/CompanionRoomEditor'));
+const MoveInSheet = lazy(() => import('../components/seilink/MoveInSheet'));
 
 function fmtMs(ms: number): string {
   if (ms <= 0) return '-';
@@ -161,20 +164,19 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const [knowledgeOpen, setKnowledgeOpen] = useState<boolean>(false);
   // 260909 Card image popup (versions + regenerate) — owned characters only.
   const [cardImageOpen, setCardImageOpen] = useState<boolean>(false);
-  // 261104 SeiLink room editor: the menu item exists only under the dev flag
-  // (unpackaged + SEI_SEILINK_PACKS), so users never see it.
-  const [seilinkDev, setSeilinkDev] = useState<boolean>(false);
+  // 261104 SeiLink (M4): the room items exist only while SeiLink is on
+  // (Settings > Labs, or the dev flag), so most users never see them.
+  const seilinkOn = useSeilinkStore((s) => s.availability?.enabled === true);
+  const livingId = useSeilinkStore((s) => movedInId(s.status));
+  const pendingEditor = useSeilinkStore((s) => s.pendingEditor);
   const [roomEditorOpen, setRoomEditorOpen] = useState<boolean>(false);
+  const [moveInOpen, setMoveInOpen] = useState<boolean>(false);
+  // The dock's "edit room" lands here (App.tsx navigates to her page first).
   useEffect(() => {
-    let dead = false;
-    sei.seilinkDevInfo?.().then(
-      (info) => !dead && setSeilinkDev(info.enabled),
-      () => {},
-    );
-    return () => {
-      dead = true;
-    };
-  }, []);
+    if (!pendingEditor || pendingEditor !== id) return;
+    useSeilinkStore.getState().clearEditor();
+    setRoomEditorOpen(true);
+  }, [pendingEditor, id]);
   const settingsRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!settingsOpen) return;
@@ -486,6 +488,23 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       setSharePhase('confirm');
       setShareConfirm('going_public');
     }
+  };
+
+  // 261104 SeiLink M4: move her onto the desktop (the sheet the first time,
+  // or when someone else moves out), or off it.
+  const onMoveInClick = async (): Promise<void> => {
+    if (livingId === id) {
+      await sei.seilinkHostStop?.().catch(() => null);
+      return;
+    }
+    const room = await sei.seilinkRoomGet?.(id).catch(() => null);
+    if (needsMoveInSheet({ saved: room?.saved === true, movedInId: livingId, characterId: id })) {
+      setMoveInOpen(true);
+      return;
+    }
+    const status = await sei.seilinkHostStart?.(id).catch(() => null);
+    // A start that did not take opens the sheet, which has the retry and the error line.
+    if (!status || moveInFailed(status)) setMoveInOpen(true);
   };
 
   // Reset memory opens a confirmation popup (reset is irreversible and does NOT
@@ -865,18 +884,31 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                     >
                       {t('Knowledge')}
                     </button>
-                    {seilinkDev ? (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className={styles.settingsItem}
-                        onClick={() => {
-                          setSettingsOpen(false);
-                          setRoomEditorOpen(true);
-                        }}
-                      >
-                        {t('Edit room')}
-                      </button>
+                    {seilinkOn ? (
+                      <>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={styles.settingsItem}
+                          onClick={() => {
+                            setSettingsOpen(false);
+                            void onMoveInClick();
+                          }}
+                        >
+                          {livingId === character.id ? t('Move off desktop') : t('Move onto desktop')}
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={styles.settingsItem}
+                          onClick={() => {
+                            setSettingsOpen(false);
+                            setRoomEditorOpen(true);
+                          }}
+                        >
+                          {t('Edit room')}
+                        </button>
+                      </>
                     ) : null}
                     {canShare ? (
                       <button
@@ -946,6 +978,16 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       {roomEditorOpen ? (
         <Suspense fallback={null}>
           <CompanionRoomEditor characterId={character.id} onClose={() => setRoomEditorOpen(false)} />
+        </Suspense>
+      ) : null}
+      {moveInOpen ? (
+        <Suspense fallback={null}>
+          <MoveInSheet
+            characterId={character.id}
+            name={character.name}
+            otherName={livingId && livingId !== character.id ? (characters.find((c) => c.id === livingId)?.name ?? null) : null}
+            onClose={() => setMoveInOpen(false)}
+          />
         </Suspense>
       ) : null}
       {cardImageOpen ? (

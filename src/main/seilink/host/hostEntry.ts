@@ -35,13 +35,18 @@ import { SEILINK_ROOM_SCHEME } from '../../../shared/seilinkPack';
 import {
   SEILINK_HOST_FPS,
   SEILINK_PORTRAIT_HOST,
+  isSeilinkDockAction,
   isSeilinkHostFailure,
   type SeilinkBox,
+  type SeilinkDockAction,
+  type SeilinkDockButton,
   type SeilinkHostFailure,
+  type SeilinkHostLayout,
   type SeilinkHostRoom,
   type SeilinkPokeKind,
 } from '../../../shared/seilinkHost';
 import { AvatarRelay } from './avatarRelay';
+import { pressTarget, toPagePoint, unionBox, type PressTarget } from './dock';
 
 /** Dev/CI smoke without a desktop layer (native.ts fakeDesktopEnabled): a plain window on any OS. */
 const FAKE = fakeDesktopEnabled(app.isPackaged);
@@ -156,6 +161,11 @@ let sceneReady = false;
 let firstFramePendingAt: number | null = null;
 let held = false;
 let downPress: PressPoint | null = null;
+/** M4: the dock buttons (page CSS px), part of the click area; what the last press went down on. */
+let dock: SeilinkDockButton[] | null = null;
+let downTarget: PressTarget = { kind: 'none' };
+let deafened = false;
+let lineSeq = 0;
 
 const activity = new RoomActivity(SEILINK_HOST_FPS, (a) => {
   log(`activity ${a.reason} fps ${a.fps}`);
@@ -175,6 +185,24 @@ function poke(kind: SeilinkPokeKind): void {
   log(`poke ${kind}`);
   if (kind !== 'drag') send({ type: 'click', kind });
   if (pageWin && !pageWin.isDestroyed()) pageWin.webContents.send(CH.poke, kind);
+}
+
+/** A press on a dock button: the page decides (move out asks once more) and answers with CH.dockAction. */
+function dockPress(id: SeilinkDockAction): void {
+  log(`dock ${id}`);
+  toPage(CH.dockPress, id);
+}
+
+/** Where a native press landed, in page terms. */
+function targetAt(x: number, y: number): PressTarget {
+  const p = toPagePoint({ x, y }, primaryDisplay(), IS_WIN ? 'physical' : 'points');
+  return pressTarget(p, box, dock);
+}
+
+function layoutNow(): SeilinkHostLayout {
+  const d = primaryDisplay();
+  const wa = d.workArea;
+  return { workArea: { x: wa.x - d.bounds.x, y: wa.y - d.bounds.y, w: wa.width, h: wa.height } };
 }
 
 function toPage(channel: string, payload: unknown): void {
@@ -211,6 +239,15 @@ function onCommand(m: ToHost): void {
     case 'set-fps':
       activity.setCap(Number(m.fps));
       break;
+    case 'dock-state':
+      deafened = m.deafened === true;
+      toPage(CH.dockState, { deafened });
+      break;
+    case 'line': {
+      const text = String(m.text ?? '').slice(0, 400).trim();
+      if (text) toPage(CH.line, { id: ++lineSeq, text, kind: m.kind === 'poke' ? 'poke' : 'idle' });
+      break;
+    }
     case 'set-paused':
       held = m.paused === true;
       activity.set({ held });
@@ -378,6 +415,8 @@ ipcMain.on(CH.ready, (e) => {
   log(`page ready${room ? '' : ' (no room yet)'}`);
   e.sender.send(CH.fps, activity.current.fps);
   e.sender.send(CH.busy, busy);
+  e.sender.send(CH.layout, layoutNow());
+  e.sender.send(CH.dockState, { deafened });
   if (room) e.sender.send(CH.room, room);
 });
 
@@ -397,6 +436,21 @@ ipcMain.on(CH.box, (e, raw: unknown) => {
   const r = raw as SeilinkBox | null;
   box = r && r.w > 0 && r.h > 0 ? { x: r.x, y: r.y, w: r.w, h: r.h } : null;
   applyHitRect();
+});
+
+ipcMain.on(CH.dock, (e, raw: unknown) => {
+  if (!fromOurPage(e.sender)) return;
+  const list = Array.isArray(raw)
+    ? (raw as SeilinkDockButton[]).filter((b) => b && isSeilinkDockAction(b.id) && b.w > 0 && b.h > 0).map((b) => ({ id: b.id, x: b.x, y: b.y, w: b.w, h: b.h }))
+    : [];
+  dock = list.length ? list : null;
+  applyHitRect();
+});
+
+ipcMain.on(CH.dockAction, (e, action: unknown) => {
+  if (!fromOurPage(e.sender) || !isSeilinkDockAction(action)) return;
+  log(`dock action ${action}`);
+  send({ type: 'dock', action });
 });
 
 ipcMain.on(CH.frames, (e, count: unknown) => {
@@ -430,8 +484,15 @@ function applyHitRect(): void {
   if (!addon) return;
   const d = primaryDisplay();
   const b = d.bounds;
-  const screenBox = box ? { x: b.x + box.x, y: b.y + box.y, w: box.w, h: box.h } : null;
-  send({ type: 'box', screen: screenBox });
+  const toScreen = (r: SeilinkBox): SeilinkBox => ({ x: b.x + r.x, y: b.y + r.y, w: r.w, h: r.h });
+  // M4: the click area is her box plus the dock (one native rect); presses are routed by position.
+  const hit = unionBox([box, ...(box ? (dock ?? []) : [])]);
+  const screenBox = hit ? toScreen(hit) : null;
+  send({
+    type: 'box',
+    screen: box ? toScreen(box) : null,
+    ...(box && dock ? { dock: dock.map((d0) => ({ id: d0.id, ...toScreen(d0) })) } : {}),
+  });
   if (IS_WIN) {
     const s = d.scaleFactor;
     (addon as SeilinkWinAddon).setHitRect(
@@ -627,16 +688,35 @@ function onNativeEvent(json: string): void {
     case 'pointer': {
       if (e.button !== 'left') return;
       const p = { x: Number(e.x), y: Number(e.y), t: Number(e.t) || Date.now() };
-      if (e.kind === 'down') downPress = p;
-      else if (e.kind === 'up' && downPress) {
+      if (e.kind === 'down') {
+        downPress = p;
+        downTarget = targetAt(p.x, p.y);
+      } else if (e.kind === 'up' && downPress) {
         log(`press at ${p.x},${p.y}`);
-        clicks.press(downPress, p);
+        const start = downTarget;
+        if (start.kind === 'her') clicks.press(downPress, p);
+        else if (start.kind === 'dock') {
+          const end = targetAt(p.x, p.y);
+          // A press that slid off the button is no press (like a normal button).
+          if (end.kind === 'dock' && end.id === start.id && p.t - downPress.t < 1500) dockPress(start.id);
+        }
         downPress = null;
+        downTarget = { kind: 'none' };
       }
       return;
     }
     case 'hit':
       if (e.kind !== 'down') log(`hit ${String(e.kind)} at ${Number(e.x)},${Number(e.y)}`);
+      if (e.kind === 'down') {
+        downTarget = targetAt(Number(e.x), Number(e.y));
+        return;
+      }
+      if (downTarget.kind === 'dock') {
+        // The dock acts on a click; the second click of a double click and drags are dropped.
+        if (e.kind === 'click' && targetAt(Number(e.x), Number(e.y)).kind === 'dock') dockPress(downTarget.id);
+        return;
+      }
+      if (downTarget.kind !== 'her') return;
       if (e.kind === 'click') clicks.tap();
       else if (e.kind === 'dblclick') clicks.doubleTap();
       else if (e.kind === 'drag-end') clicks.drag();
@@ -768,6 +848,7 @@ void app
     setInterval(() => void validate('timer'), 2000);
     const onDisplays = (): void => {
       if (IS_WIN && win && !win.isDestroyed()) win.setBounds(primaryDisplay().bounds);
+      toPage(CH.layout, layoutNow());
       applyHitRect();
       validateSoon('display');
     };

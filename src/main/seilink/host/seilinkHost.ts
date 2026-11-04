@@ -9,14 +9,17 @@
  * spawned and restarted by HostSupervisor over a pipe this module serves.
  * Who moved in is saved as `seilink_moved_in` (main-owned UserConfig key)
  * and restored at app start and after an account switch (config.json is per
- * profile). Dev flag only for now (seilinkDevEnabled(): unpackaged with
- * SEI_SEILINK_PACKS); the dock and first-run milestone flips that.
+ * profile). Only while SeiLink is on (gate.ts: Settings > Labs on a supported
+ * install, or the dev flag); turning it off moves her out.
  *
  * Analytics (shape only): seilink_started on the first attach of a session,
  * seilink_ended {duration_ms, character_id, reason, ...} at the single end
  * choke point (endSession), seilink_attach_failed {failure_class} once per
  * class per session. seilink_ended is deliberately NOT a playtime event
  * (a wallpaper runs for hours; see docs/agents/seilink-host.md).
+ * M4: seilink_moved_in {character_id, swapped, preset, first_room} when the
+ * user moves someone in (not on a restore), seilink_moved_out
+ * {character_id, via} when the user moves her out from the app or the dock.
  */
 import { app } from 'electron';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
@@ -33,13 +36,16 @@ import { addonAvailability } from './native';
 import {
   SEILINK_HOST_FPS,
   SEILINK_HOST_OFF,
+  isSeilinkDockAction,
   isSeilinkHostAvatarMethod,
   isSeilinkHostFailure,
   type SeilinkEndReason,
+  type SeilinkDockAction,
   type SeilinkHostFailure,
   type SeilinkHostStatus,
 } from '../../../shared/seilinkHost';
-import { loadPack, seilinkDevEnabled } from '../packs';
+import { loadPack } from '../packs';
+import { seilinkAvailability, seilinkEnabled, setSeilinkSetting } from '../gate';
 import { BusyTracker, onSeilinkAvatarChanged, onSeilinkChatTurn } from './hostSignals';
 import { answerHostAvatarCall, hostPortrait, type HostAvatarStores } from './hostAvatarCalls';
 import { getCharacter } from '../../characterStore';
@@ -56,8 +62,12 @@ export interface SeilinkHostDeps {
   pushStatus(status: SeilinkHostStatus): void;
   /** She was clicked: open (or focus) her chat in Sei. */
   openChat(characterId: string): void;
-  /** Double click on her: reserved (the dock milestone). */
+  /** Double click on her (M4: a poke, answered by desktopLines.ts). */
   onDoubleClick?(characterId: string): void;
+  /** M4: the dock's "edit room": show Sei and open her room editor. */
+  openRoomEditor?(characterId: string): void;
+  /** M4: the Labs setting or the profile changed (SeilinkAvailability to the main window). */
+  pushAvailability?(): void;
 }
 
 /** Everything the host says, plus 'status' — the CI self-test (selfTest.ts) listens here. */
@@ -159,8 +169,11 @@ function capture(event: string, props: Record<string, unknown>): void {
  * She moves in. Throws SEILINK_DISABLED (flag off), SEILINK_BAD_ID, ACCOUNT_SWITCHING.
  * An unsupported install returns the unsupported status instead of throwing.
  */
-export async function startSeilinkHost(characterId: string, opts?: { restored?: boolean }): Promise<SeilinkHostStatus> {
-  if (!seilinkDevEnabled()) throw new Error('SEILINK_DISABLED');
+export async function startSeilinkHost(
+  characterId: string,
+  opts?: { restored?: boolean; /** The move-in sheet set up her first room. */ firstRoom?: boolean },
+): Promise<SeilinkHostStatus> {
+  if (!seilinkEnabled()) throw new Error('SEILINK_DISABLED');
   if (!isRoomCharacterId(characterId)) throw new Error('SEILINK_BAD_ID');
   const a = availability();
   if (!a.ok) {
@@ -169,10 +182,18 @@ export async function startSeilinkHost(characterId: string, opts?: { restored?: 
   }
   if (session?.characterId === characterId && !session.ending) return status;
   const guard = beginSessionStart();
+  const swapped = session !== null;
   if (session) await endSession('replaced');
   if (!guard.stillValid()) throw new Error('ACCOUNT_SWITCHING');
   if (!opts?.restored) {
     await updateConfig((c) => ({ ...c, seilink_moved_in: { character_id: characterId, moved_in_at: Date.now() } }));
+    const room = await getRoomPayload(characterId).catch(() => null);
+    capture('seilink_moved_in', {
+      character_id: characterId,
+      swapped,
+      preset: room?.state.preset ?? null,
+      first_room: opts?.firstRoom === true,
+    });
   }
   if (!guard.stillValid()) throw new Error('ACCOUNT_SWITCHING');
   await openSession(characterId, opts?.restored === true);
@@ -180,9 +201,16 @@ export async function startSeilinkHost(characterId: string, opts?: { restored?: 
 }
 
 /** She moves out (the user's stop). Clears the saved move-in. */
-export async function stopSeilinkHost(reason: SeilinkEndReason = 'user_stop'): Promise<SeilinkHostStatus> {
+export async function stopSeilinkHost(
+  reason: SeilinkEndReason = 'user_stop',
+  via: 'app' | 'dock' = 'app',
+): Promise<SeilinkHostStatus> {
+  if (reason === 'user_stop') {
+    const id = session?.characterId ?? (await loadConfig().catch(() => null))?.seilink_moved_in?.character_id ?? null;
+    if (id) capture('seilink_moved_out', { character_id: id, via });
+  }
   if (session) await endSession(reason);
-  if (reason === 'user_stop' || reason === 'disabled') {
+  if (reason === 'user_stop' || reason === 'disabled' || reason === 'character_removed') {
     await updateConfig((c) => (c.seilink_moved_in ? { ...c, seilink_moved_in: null } : c)).catch((err) =>
       log(`clear moved-in failed: ${(err as Error).message}`),
     );
@@ -202,9 +230,15 @@ export function stopSeilinkHostForQuit(): void {
 
 /** App start and after an account switch: bring back whoever moved in on this profile. */
 export async function restoreSeilinkHost(): Promise<void> {
-  if (!seilinkDevEnabled()) return;
   try {
     const cfg = await loadConfig();
+    // The Labs setting is per profile: mirror it for the gate first.
+    setSeilinkSetting(cfg.seilink_enabled);
+    pushAvailability();
+    if (!seilinkEnabled()) {
+      if (session) await endSession('disabled');
+      return;
+    }
     const id = cfg.seilink_moved_in?.character_id;
     if (!id) {
       if (session) await endSession('replaced');
@@ -213,6 +247,44 @@ export async function restoreSeilinkHost(): Promise<void> {
     await startSeilinkHost(id, { restored: true });
   } catch (err) {
     log(`restore failed: ${(err as Error).message}`);
+  }
+}
+
+function pushAvailability(): void {
+  try {
+    deps?.pushAvailability?.();
+  } catch (err) {
+    log(`availability push failed: ${(err as Error).message}`);
+  }
+}
+
+/**
+ * M4: the Labs setting was saved (config:save). Off moves her out and forgets
+ * the move-in; on brings nobody in by itself (the move-in sheet does that).
+ * Returns whether the value changed.
+ */
+export async function applySeilinkSetting(on: boolean): Promise<boolean> {
+  const before = seilinkAvailability().setting;
+  setSeilinkSetting(on);
+  if (before !== on) pushAvailability();
+  if (!seilinkEnabled() && (before !== on || session)) await stopSeilinkHost('disabled');
+  return before !== on;
+}
+
+/**
+ * M4: a companion was deleted or removed from the library. If she is the one
+ * who moved in, she moves out and the move-in is cleared (also when the host
+ * is not running, e.g. it failed or SeiLink is off right now).
+ */
+export async function onSeilinkCharacterRemoved(characterId: string): Promise<void> {
+  try {
+    if (session?.characterId === characterId) {
+      await stopSeilinkHost('character_removed');
+      return;
+    }
+    await updateConfig((c) => (c.seilink_moved_in?.character_id === characterId ? { ...c, seilink_moved_in: null } : c));
+  } catch (err) {
+    log(`character removed cleanup failed: ${(err as Error).message}`);
   }
 }
 
@@ -383,6 +455,10 @@ function onConnection(s: Session, sock: net.Socket): void {
         sendTo(s, { type: 'set-fps', fps: fpsCap });
         sendTo(s, { type: 'busy', busy: s.busy.busy });
         void sendRoom(s);
+        void loadConfig().then(
+          (c) => session === s && sendTo(s, { type: 'dock-state', deafened: c.seilink_deafened === true }),
+          () => {},
+        );
         return;
       }
       s.supervisor.onHostMessage(pid, m);
@@ -421,7 +497,9 @@ async function sendRoom(s: Session): Promise<void> {
     }
     const character = await getCharacter(s.characterId).catch(() => null);
     const portrait = await hostPortrait(character?.portrait_image ?? null, paths.portraitPath);
-    const payload = { ...room, portrait: portrait.url, name: character?.name ?? '' };
+    // M4: the dock and bubble speak the app's language.
+    const uiLanguage = (await loadConfig().catch(() => null))?.ui_language ?? null;
+    const payload = { ...room, portrait: portrait.url, name: character?.name ?? '', uiLanguage };
     if (session === s) sendTo(s, { type: 'room', payload, files, portraitFile: portrait.file });
   } catch (err) {
     log(`room for host failed: ${(err as Error).message}`);
@@ -459,6 +537,9 @@ function onHostMessage(s: Session, m: FromHost): void {
       if (m.kind === 'click') deps?.openChat(s.characterId);
       else if (m.kind === 'dblclick') deps?.onDoubleClick?.(s.characterId);
       break;
+    case 'dock':
+      if (isSeilinkDockAction(m.action)) void onDockAction(s, m.action);
+      break;
     case 'log':
       log(`host: ${m.msg}`);
       break;
@@ -466,6 +547,60 @@ function onHostMessage(s: Session, m: FromHost): void {
       void answerCall(s, m);
       break;
   }
+}
+
+/**
+ * M4: a dock button (the host routed the press, the page confirmed move out).
+ * seilink_dock_action {action, character_id, deafened?} (shape only).
+ */
+async function onDockAction(s: Session, action: SeilinkDockAction): Promise<void> {
+  if (session !== s) return;
+  const characterId = s.characterId;
+  if (action === 'edit') {
+    capture('seilink_dock_action', { action, character_id: characterId });
+    deps?.openRoomEditor?.(characterId);
+    return;
+  }
+  if (action === 'deafen') {
+    let next = false;
+    try {
+      await updateConfig((c) => {
+        next = c.seilink_deafened !== true;
+        return { ...c, seilink_deafened: next };
+      });
+    } catch (err) {
+      log(`deafen failed: ${(err as Error).message}`);
+      return;
+    }
+    if (session === s) sendTo(s, { type: 'dock-state', deafened: next });
+    capture('seilink_dock_action', { action, character_id: characterId, deafened: next });
+    return;
+  }
+  capture('seilink_dock_action', { action, character_id: characterId });
+  await stopSeilinkHost('user_stop', 'dock');
+}
+
+/**
+ * M4: show a line she says as a bubble by her on the desktop. False when she
+ * is not the one on the desktop or the host is not connected.
+ */
+export function sendSeilinkLine(characterId: string, text: string, kind: 'idle' | 'poke'): boolean {
+  const s = session;
+  if (!s || s.ending || s.characterId !== characterId || !s.conn) return false;
+  sendTo(s, { type: 'line', text, kind });
+  return true;
+}
+
+/** M4: who is on the desktop right now (attached and drawing), for desktopLines.ts. */
+export function seilinkLiveCharacter(): string | null {
+  const s = session;
+  if (!s || s.ending || !s.conn || status.state !== 'running') return null;
+  return s.characterId;
+}
+
+/** M4: the player is chatting with her (or just clicked her): no idle line now. */
+export function seilinkHostBusy(): boolean {
+  return session?.busy.busy === true;
 }
 
 const avatarStores: HostAvatarStores = {

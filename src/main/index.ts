@@ -33,6 +33,7 @@ import { openSeilinkPreview, registerSeilinkIpc } from './seilink/seilinkIpc';
 import { initSeilinkHost, restoreSeilinkHost, stopSeilinkHostForQuit } from './seilink/host/seilinkHost';
 import { registerSeilinkProtocol, seilinkDevEnabled, SEILINK_SCHEME_PRIVILEGES } from './seilink/packs';
 import { devRoomSource, setGameSurfaceProbe, setRoomSource } from './seilink/roomContext';
+import { seilinkAvailability } from './seilink/gate';
 import { roomSource } from './seilink/roomStore';
 import { isAnalyticsActive, shutdownAnalytics, capture, captureAppQuit, noteSurface } from './analytics';
 import { reportOnboardingAbandoned } from './onboardingFunnel';
@@ -234,11 +235,11 @@ function sweepVoiceCalls(reason: 'window_closed' | 'renderer_gone' | 'renderer_r
     .catch(() => {});
 }
 
-/** 261104 SeiLink: a click on her desktop wallpaper, waiting for a main window to come up (macOS). */
-let pendingSeilinkChat: string | null = null;
+/** 261104 SeiLink: a click on her desktop wallpaper (or the dock), waiting for a main window to come up (macOS). */
+let pendingSeilinkOpen: { channel: string; characterId: string } | null = null;
 
-/** She was clicked on the desktop: bring Sei forward and open her chat. */
-function openSeilinkChat(characterId: string): void {
+/** From the desktop: bring Sei forward and open her chat (a click on her) or her room editor (the dock). */
+function openFromSeilink(channel: string, characterId: string): void {
   const w = mainWindow;
   if (w && !w.isDestroyed()) {
     if (w.isMinimized()) w.restore();
@@ -246,20 +247,24 @@ function openSeilinkChat(characterId: string): void {
     // The click landed in the host process, so Sei is not the active app.
     if (process.platform === 'darwin') app.focus({ steal: true });
     w.focus();
-    w.webContents.send(IpcChannel.seilink.openChat, characterId);
+    w.webContents.send(channel, characterId);
     return;
   }
   // macOS keeps running with no window: make one, like a Dock click, and open the chat once
   // its UI says it is listening (app:renderer-ready).
-  pendingSeilinkChat = characterId;
+  pendingSeilinkOpen = { channel, characterId };
   if (mainWindow === null) bootstrap().catch((err) => logger.error(`re-bootstrap failed: ${(err as Error).message}`));
 }
 
+function openSeilinkChat(characterId: string): void {
+  openFromSeilink(IpcChannel.seilink.openChat, characterId);
+}
+
 ipcMain.on(IpcChannel.app.rendererReady, (e) => {
-  const id = pendingSeilinkChat;
-  if (!id || !mainWindow || mainWindow.isDestroyed() || e.sender !== mainWindow.webContents) return;
-  pendingSeilinkChat = null;
-  mainWindow.webContents.send(IpcChannel.seilink.openChat, id);
+  const pending = pendingSeilinkOpen;
+  if (!pending || !mainWindow || mainWindow.isDestroyed() || e.sender !== mainWindow.webContents) return;
+  pendingSeilinkOpen = null;
+  mainWindow.webContents.send(pending.channel, pending.characterId);
 });
 
 /**
@@ -1276,6 +1281,7 @@ async function bootstrap(): Promise<void> {
         void runPendingQuitNextSteps();
         // 261104 SeiLink: config is per profile; bring back whoever moved in on this one.
         void restoreSeilinkHost();
+        void import('./seilink/desktopLines').then((m) => m.resetDesktopLineBudget()).catch(() => {});
       },
     });
   }
@@ -1381,16 +1387,25 @@ async function bootstrap(): Promise<void> {
   if (seilinkDevEnabled() && process.env.SEI_SEILINK_PREVIEW === '1') {
     openSeilinkPreview({ preloadPath: preloadPath(), rendererTarget });
   }
-  // 261104 SeiLink desktop host (milestone 3, dev flag only): her room as the
-  // live wallpaper. Restores whoever moved in on this profile.
+  // 261104 SeiLink desktop host: her room as the live wallpaper, while
+  // SeiLink is on (Settings > Labs, or the dev flag; seilink/gate.ts).
+  // Restores whoever moved in on this profile (and mirrors the setting).
   initSeilinkHost({
     pushStatus: (status) => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcChannel.seilink.hostStatusChanged, status);
     },
     openChat: openSeilinkChat,
-    onDoubleClick: (characterId) => logger.info(`seilink: double click on ${characterId} (reserved)`),
+    onDoubleClick: (characterId) => void import('./seilink/desktopLines').then((m) => m.onSeilinkPoke(characterId)),
+    openRoomEditor: (characterId) => openFromSeilink(IpcChannel.seilink.openRoomEditor, characterId),
+    pushAvailability: () => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcChannel.seilink.availabilityChanged, seilinkAvailability());
+    },
   });
   void restoreSeilinkHost();
+  // M4: her desktop lines (a reply to a double click, rare idle lines; seilink/desktopLines.ts).
+  void import('./seilink/desktopLines')
+    .then((m) => m.initDesktopLines({ occupied: (id) => onlineIds.has(id) || isCallActive(id), pushChatMessage }))
+    .catch((err) => console.warn(`[seilink] desktop lines not wired: ${(err as Error).message}`));
   if (!app.isPackaged && process.env.SEI_SEILINK_SELFTEST) {
     void import('./seilink/host/selfTest').then((m) => m.runSeilinkSelfTest({ getMainWindow: () => mainWindow }));
   }

@@ -17,7 +17,7 @@
 import type { FaceCue, FacepackDevInfo, FacepackManifest } from './facepack';
 import type { SeilinkDevInfo, SeilinkPack, SeilinkRoomPayload } from './seilinkPack';
 import type { RoomState } from './seilinkRoom';
-import type { SeilinkHostStatus } from './seilinkHost';
+import type { SeilinkAvailability, SeilinkHostStatus } from './seilinkHost';
 import { z } from 'zod';
 import type {
   Character,
@@ -2201,13 +2201,19 @@ export interface RendererApi {
   seilinkRoomSet?(characterId: string, state: RoomState): Promise<SeilinkRoomPayload>;
   onSeilinkRoomChanged?(cb: (characterId: string) => void): Unsubscribe;
   seilinkOpenPreview?(): Promise<boolean>;
-  /** Desktop host (milestone 3; dev flag only): she moves in, her room becomes the wallpaper. */
-  seilinkHostStart?(characterId: string): Promise<SeilinkHostStatus>;
+  /** Desktop host: she moves in, her room becomes the wallpaper (SeiLink on: Labs setting or dev flag). */
+  /** M4: `firstRoom` = the move-in sheet just set up her first room (analytics only). */
+  seilinkHostStart?(characterId: string, opts?: { firstRoom?: boolean }): Promise<SeilinkHostStatus>;
   seilinkHostStop?(): Promise<SeilinkHostStatus>;
   seilinkHostStatus?(): Promise<SeilinkHostStatus>;
   onSeilinkHostStatus?(cb: (status: SeilinkHostStatus) => void): Unsubscribe;
   /** She was clicked on the desktop: open her chat (characterId). */
   onSeilinkOpenChat?(cb: (characterId: string) => void): Unsubscribe;
+  /** M4: the Labs setting and whether this install can run the desktop host. */
+  seilinkAvailability?(): Promise<SeilinkAvailability>;
+  onSeilinkAvailability?(cb: (a: SeilinkAvailability) => void): Unsubscribe;
+  /** M4: the dock's edit button: open her room editor (characterId). */
+  onSeilinkOpenRoomEditor?(cb: (characterId: string) => void): Unsubscribe;
   /**
    * Overlay window only (260806): stream a character's tile camera (zoom +
    * pan within the tile) while edit-mode wheel/drag adjusts it; `commit`
@@ -4251,7 +4257,7 @@ export const IpcChannel = {
     roomChanged: 'seilink:room-changed',
     /** Invoke: open the dev preview window (dev flag only) → boolean. */
     openPreview: 'seilink:open-preview',
-    /** Invoke: she moves in (characterId) → SeilinkHostStatus. Dev flag only (SEILINK_DISABLED). */
+    /** Invoke: she moves in (characterId) → SeilinkHostStatus. SEILINK_DISABLED while SeiLink is off. */
     hostStart: 'seilink:host-start',
     /** Invoke: she moves out → SeilinkHostStatus. */
     hostStop: 'seilink:host-stop',
@@ -4261,6 +4267,12 @@ export const IpcChannel = {
     hostStatusChanged: 'seilink:host-status-changed',
     /** Push (main → main window): characterId she was clicked on the desktop; open her chat. */
     openChat: 'seilink:open-chat',
+    /** Invoke: → SeilinkAvailability (M4: the Labs setting, and whether this install can run the host). */
+    availability: 'seilink:availability',
+    /** Push (main → main window): SeilinkAvailability after the setting changes or the profile switches. */
+    availabilityChanged: 'seilink:availability-changed',
+    /** Push (main → main window): characterId; the dock's edit button, open her room editor. */
+    openRoomEditor: 'seilink:open-room-editor',
   },
 } as const;
 

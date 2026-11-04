@@ -1,11 +1,15 @@
-# SeiLink desktop host (261104, milestone 3)
+# SeiLink desktop host (261104, milestones 3 and 4)
 
 The companion's room as a live wallpaper: one window behind the desktop
 icons on the primary display (Windows: the WorkerW/Progman layer; macOS: the
-desktop window level plus a small hit panel over her). Behind the SeiLink dev
-flag (`seilinkDevEnabled()`: unpackaged with `SEI_SEILINK_PACKS`) until the
-dock and first-run milestone. Linux reports `unsupported_platform`; the app
-builds and runs the same.
+desktop window level plus a small hit panel over her). On while SeiLink is on
+(`gate.ts` `seilinkEnabled()`: Settings > Labs > "Desktop room"
+`seilink_enabled`, per profile, off by default, on a supported install; or the
+dev flag, unpackaged with `SEI_SEILINK_PACKS`). Supported = macOS or Windows
+with the host addon in the build; elsewhere the Labs toggle is disabled with
+the reason. Linux reports `unsupported_platform`; the app builds and runs the
+same. The room source (`roomStore.roomSource`) is gated the same way, so a
+user with SeiLink off gets no room line and no look() tool (no added tokens).
 
 The numbers and the Windows recovery rules come from the spike
 (`exp/seilink-spike`, `spikes/seilink/`), measured on windows-2022/2025 and
@@ -58,13 +62,67 @@ main (src/main/seilink/host/seilinkHost.ts)        host (hostEntry.ts, same bina
   (`SEILINK_HOST_FPS` 30, 15 on battery). The page stops every rAF loop at 0.
 - `clicks.ts` `ClickClassifier`: a single click waits for the OS double-click
   interval (clamped 200 to 900 ms). Click on her → main `openChat` (restore,
-  show and focus the main window, navigate to her chat). Double click →
-  `onDoubleClick` hook (unused, reserved for the dock). Drag = a stroke.
+  show and focus the main window, navigate to her chat). Double click → a
+  poke: `desktopLines.onSeilinkPoke` asks her for a short reply, shown as a
+  bubble (see Desktop lines). Drag = a stroke.
 - Click area: the page measures `[data-seilink-hit]` (RoomAvatarHost marks
   her figure) 4 times a second; none while she is `visibility: hidden`
   (walked out of the frame). Windows: the host's raw-input hit test
   (`setHitRect`, physical px). macOS: an almost transparent NSPanel over her
   (`hitPanel`, points); clicks elsewhere reach the desktop.
+- M4: the native click area is ONE rect, the union of her box and the dock
+  buttons (`dock.ts` `unionBox`). hostEntry routes each press by position
+  (`pressTarget`, page CSS px via `toPagePoint`: Windows physical px divided
+  by the scale factor, mac global top-left points minus the display origin):
+  a dock button → `CH.dockPress` to the page; her → the click classifier;
+  the small gap the union adds → ignored. On mac the press target is taken
+  at `down`, and a dock press acts on `click` (dblclick and drags dropped).
+
+## The dock (M4)
+
+`host/HostDock.tsx`, drawn by the wallpaper page itself: a small glass pill
+of three round, borderless buttons at the bottom of the work area (above the
+taskbar or the Dock; the host sends `CH.layout` with the work area), beside
+her box (`lib/seilink/dockPlace.ts`: right of her when it fits, else left,
+else centred under her seat). Her figure runs to the bottom of the screen in
+the cozy room, so a dock under her seat sat on her chest. It stays next to
+her box because the native click area is the union of the two (one rect): on
+macOS the hit panel takes the desktop's clicks inside it. Shawn's
+room-editor deck puts these shortcuts in "the bottom dock" of the room, so it
+lives on the wallpaper, not in the app or a tray.
+- Edit room → main `deps.openRoomEditor` (shows Sei, pushes
+  `seilink:open-room-editor`; App.tsx navigates to her page and
+  `useSeilinkStore.requestEditor` opens her editor there).
+- Deafen → toggles `seilink_deafened` (main-owned, per profile), pushed back
+  as `dock-state`. Mutes her IDLE lines only; a reply to a poke still shows.
+- Move out → the first press turns the button into "Move out?" for 4 s, a
+  second press sends the action; main `stopSeilinkHost('user_stop', 'dock')`.
+The page never gets DOM clicks: it reports its buttons' boxes (`CH.dock`) and
+answers a press with `CH.dockAction`, which the host relays as FromHost
+`dock`. A short caption above the dock says what a press did (no hover).
+Colours come from the room (`RoomCanvas onOverlay`), not the app theme.
+
+## Desktop lines (M4, `seilink/desktopLines.ts`)
+
+- Poke (double click): one short reply, under the plan's own limits (a free
+  account's weekly cap is the proxy's), at most 6 an hour, 20 s apart.
+- Idle: unprompted, rare (a random 25 to 50 min gap, at most 2 an hour),
+  never while covered or paused, deafened, busy (chatting with her), in a game
+  or on a call, or when nobody has touched the computer for 2 min
+  (`powerMonitor.getSystemIdleTime`). Free cloud accounts never get idle
+  lines (the free tier must cost about nothing per extra user): paid plans
+  under their limit, or the user's own AI (`ai_backend_kind` 'local': BYOK,
+  ChatGPT plan, Ollama) only. The plan is read through `creditsGet()` and
+  cached 10 minutes.
+- The turn is `chatService.sendDesktopLineTurn` (her persona, memory,
+  summary, knowledge and room line; the note after the cache breakpoint;
+  remember() honored; the line saved to her chat and folded like any reply;
+  `(silence)` drops an idle line). Skipped when another turn for her is
+  running or she has no room right now.
+- Shown with ToHost `line` → `CH.line`: a bubble above her head for its
+  reading time; her mouth moves for about the time saying it would take
+  (`speaking` on HostAvatar, with a made-up syllable level since no audio
+  plays in the host). TTS on the desktop is not wired.
 
 ## The avatar mount point
 
@@ -109,8 +167,17 @@ The contract for any replacement is in the file header.
   someone else replaces her (`replaced`).
 - Who moved in: `seilink_moved_in {character_id, moved_in_at}`, a
   MAIN-owned UserConfig key (per profile). Restored at app start and after an
-  account switch (`restoreSeilinkHost`). A user stop or the flag turning off
-  clears it; quit, failure and an account switch keep it.
+  account switch (`restoreSeilinkHost`, which also mirrors the Labs setting
+  into gate.ts). A user stop, the setting turning off (`applySeilinkSetting`
+  from the config:save handler) and deleting or removing her
+  (`onSeilinkCharacterRemoved`, reason `character_removed`) clear it; quit,
+  failure and an account switch keep it.
+- Move-in (M4): the companion page's gear menu has "Move onto desktop" /
+  "Move off desktop" and "Edit room" while SeiLink is on. The first move-in
+  of a companion (no saved room: `SeilinkRoomPayload.saved`), or one that
+  moves someone else out, opens `MoveInSheet` (room cards from the packs
+  that exist, three lines on what it means, Move in). Otherwise the page
+  starts the host directly. `lib/seilink/moveIn.ts` has the rules.
 - Account switch: `endAccountSessions` calls
   `stopSeilinkHostForAccountSwitch()`; starts take `beginSessionStart()`
   (`ACCOUNT_SWITCHING` during a switch).
@@ -123,8 +190,16 @@ The contract for any replacement is in the file header.
   from_host}, once per class per session.
 - `seilink_ended` {character_id, reason, duration_ms, attached, restarts,
   failure_class?} at the single end choke point (`endSession`).
-- NOT in the dashboard's `SESSION_EVENTS` (playtime): a wallpaper runs for
-  hours and would swamp it. Decide its place when the dock ships.
+- NOT in the dashboard's `SESSION_EVENTS` (playtime), decided at M4: a
+  wallpaper left running in the background is not playtime (same rule as a
+  chat left open), and it would swamp the number. Her desktop lines are
+  counted by `seilink_line_shown` instead.
+- M4: `seilink_setting_toggled` {enabled, supported} on a Labs change;
+  `seilink_moved_in` {character_id, swapped, preset, first_room} (not on a
+  restore); `seilink_moved_out` {character_id, via app|dock};
+  `seilink_dock_action` {action edit|deafen|moveout, character_id,
+  deafened?}; `seilink_line_shown` {kind poke|idle, chars, character_id}.
+  Never the line's text.
 
 ## Dev and CI
 
@@ -133,7 +208,8 @@ The contract for any replacement is in the file header.
   page path.
 - Self-test (`selfTest.ts`, unpackaged + `SEI_SEILINK_SELFTEST=<outdir>`):
   attach, first frame, cover → 0 fps, uncover, click her / bare wallpaper /
-  double click, kill → reattach, hang → detected and replaced, (Windows)
+  double click, a press on the dock's deafen button (twice, so it ends where
+  it started; must not open her chat), kill → reattach, hang → detected and replaced, (Windows)
   Explorer restart, stop. Writes `result.json`, `selftest.log` and
   screenshots, then exits 0 or 1. Moves Sui in when the profile has her.
 - Linux smoke:
@@ -142,6 +218,11 @@ The contract for any replacement is in the file header.
   SEI_DEV_USERDATA=SeiLinkSmoke timeout 240 xvfb-run -a -s "-screen 0 1920x1080x24"
   ./node_modules/.bin/electron . --no-sandbox` (cover/uncover/click are
   skipped there).
+- Screenshots, no Electron: `?seilinkhost=1&pack=<url>`
+  (DevHostPreview: the wallpaper page with the dock and a bubble over a fake
+  bridge), `?dashshot=screen&seilink=on|off|unsupported` and
+  `&modal=movein&pack=<url>[&swap=1]` (DevScreenShot), all shot by
+  `node scripts/seilink-host-shots.mjs --out <dir>` (bundled cozy pack by default).
 - CI: `.github/workflows/seilink-host-check.yml` (windows-2022/2025,
   macos-15/26; dispatch, or push to `feat/seilink-host` under the host
   paths). One runner per OS also packages a dir build and checks the addon
@@ -167,12 +248,13 @@ The contract for any replacement is in the file header.
 - The host page preload may import only `electron` (sandboxed; a test
   checks), and spells its channel names out (`seilinkHostChannels.ts`).
 
-## Not done (dock and first-run milestone)
+## Not done
 
-- Turn the flag into a real setting, a dock entry and a first-run move-in;
-  read `seilink:host-status-changed` for its UI (state, covered, fps,
-  failure).
 - More displays: everything goes through `primaryRect()`; attach takes a
   rect, so it is a window per display plus bookkeeping.
-- Her voice in the host (`speaking`, `levelRef`), and a character that is
-  deleted while moved in (the host keeps her room until the next start).
+- Her voice on the desktop: TTS lives in the main renderer and is tied to
+  calls, so desktop lines are bubbles only (the mouth moves without audio).
+- The dock is always shown (no hover on the wallpaper: Windows raw input
+  only reports presses, the mac panel only covers the click area).
+- Pack downloads (`downloadPack` is a stub): only the bundled cozy pack and
+  dev packs exist, so the room cards show Gamer and Forest as "Soon".

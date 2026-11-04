@@ -2171,6 +2171,78 @@ function blockedReason(errorClass: string): string {
   }
 }
 
+// ── SeiLink desktop lines (261104, M4) ──────────────────────────────────────
+
+/** Model-facing notes for a desktop line (plain, see the prompt style note). */
+export const DESKTOP_LINE_NOTES = {
+  poke:
+    "[System note, not the player speaking: you live on the player's desktop wallpaper, in your room, and they just double-clicked you there. " +
+    'Say one short line back to them, under fifteen words, in your own voice. It shows as a small speech bubble next to you. Do not mention this note.]',
+  idle:
+    "[System note, not the player speaking: you live on the player's desktop wallpaper, in your room, while they use their computer. " +
+    'You can say one short line, under twelve words: a passing thought, something about your room, or something you remember about them. ' +
+    'It shows as a small speech bubble next to you and they may not answer. ' +
+    'Or reply with exactly (silence), which is never shown and is often the right choice. Do not mention this note.]',
+} as const;
+
+/**
+ * One short line she says on the desktop (desktopLines.ts decides when and
+ * who pays): `poke` answers a double click on her, `idle` is unprompted.
+ * Same context as a chat turn (persona, memory, summary, knowledge, her room
+ * line), the note after the cache breakpoint, no tool loop. A remember() call
+ * is honored. The line is saved to her chat like any reply, so the chat and
+ * the fold see it. Skipped (null) while another turn for her is running, when
+ * she has no room right now (a game surface), or when she stays silent.
+ */
+async function sendDesktopLineTurnImpl(
+  characterId: string,
+  kind: 'poke' | 'idle',
+): Promise<{ text: string; messages: ChatMessage[] } | null> {
+  if (inflight.has(characterId)) return null;
+  const ctrl = new AbortController();
+  inflight.set(characterId, ctrl);
+  try {
+    const prep = await prepareChatTurn(characterId, { openWorldDetected: false, inGame: false, recentCap: VOICE_RECENT_CAP });
+    if (!prep || !prep.room) return null;
+    const { system, messages } = prep;
+    markLastMessageCached(messages);
+    appendUncachedTail(messages, DESKTOP_LINE_NOTES[kind], prep.clockNote);
+    const llm = await buildLlmProvider();
+    const tools = chatTools(llm, false, true);
+    const res = await llm.call({
+      maxTokens: 120,
+      system,
+      tools,
+      stopSequences: TRANSCRIPT_STOP_SEQUENCES,
+      messages,
+      timeoutMs: CHAT_TIMEOUT_MS,
+      signal: ctrl.signal,
+    });
+    if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return null;
+    await honorRememberCalls(characterId, res.content);
+    const replyText = textOf(res.content).trim();
+    if (!replyText || isSilenceFiller(replyText)) return null;
+    const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');
+    const saved = await persistReplies(characterId, replyText, prep.punctuation, {
+      rememberCalled,
+      truncated: res.stopReason === 'max_tokens',
+      local: llm.backend === 'local',
+    });
+    const text = saved
+      .map((m) => m.text)
+      .join(' ')
+      .trim();
+    if (scopedTurnCurrent()) void foldIfDue(characterId, prep.character.persona.expanded).catch(() => {});
+    return text ? { text, messages: saved } : null;
+  } catch (err) {
+    // Unprompted or a poke: never a popup. The next line simply tries again later.
+    if (!isAbortError(err)) console.warn(`[sei] desktop ${kind} line failed: ${(err as Error).message}`);
+    return null;
+  } finally {
+    if (inflight.get(characterId) === ctrl) inflight.delete(characterId);
+  }
+}
+
 // ── Account-scoped turn entry points (260926) ─────────────────────────────────
 // Every exported LLM turn runs under withScopedTurn: refused while an account
 // switch is running, and tagged with the scope it began in so its writes are
@@ -2215,6 +2287,12 @@ export function sendVoiceIdleTurn(
   ...args: Parameters<typeof sendVoiceIdleTurnImpl>
 ): ReturnType<typeof sendVoiceIdleTurnImpl> {
   return withScopedTurn(() => sendVoiceIdleTurnImpl(...args));
+}
+
+export function sendDesktopLineTurn(
+  ...args: Parameters<typeof sendDesktopLineTurnImpl>
+): ReturnType<typeof sendDesktopLineTurnImpl> {
+  return withScopedTurn(() => sendDesktopLineTurnImpl(...args));
 }
 
 export { readRecent } from './chatStore';

@@ -1,0 +1,129 @@
+/* SeiLink dock + speech bubble on the wallpaper (M4). Tinted by the ROOM:
+ * the host root sets --ov (overlay colour) and --ink (text on it) as RGB
+ * triples, like the room editor. No border lines on buttons. */
+
+.dockWrap {
+  position: absolute;
+  transform: translateY(-100%);
+  font-family: var(--sans);
+  color: rgb(var(--ink));
+  -webkit-user-select: none;
+  user-select: none;
+  pointer-events: none;
+}
+
+.dock {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 999px;
+  background: rgb(var(--ov) / 0.5);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  backdrop-filter: blur(14px) saturate(1.2);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.14);
+  opacity: 0.86;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: rgb(var(--ink) / 0.07);
+  color: rgb(var(--ink) / 0.86);
+  transition:
+    background 160ms var(--ease),
+    transform 160ms var(--ease-pop),
+    color 160ms var(--ease);
+}
+
+.pressed {
+  transform: scale(0.92);
+  background: rgb(var(--ink) / 0.16);
+}
+
+/* Idle lines muted: the button reads as switched off. */
+.off {
+  color: rgb(var(--ink) / 0.55);
+  background: rgb(var(--ink) / 0.03);
+}
+
+.confirm {
+  background: rgb(var(--ink) / 0.86);
+  color: rgb(var(--ov));
+  padding: 0 14px 0 11px;
+}
+
+.confirmText {
+  font-family: var(--display);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.caption {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  padding: 4px 12px 3px;
+  border-radius: 999px;
+  background: rgb(var(--ov) / 0.78);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  animation: rise 200ms var(--ease-pop);
+}
+
+/* Her line: a soft glass bubble above her head with a small tail. */
+.bubble {
+  position: absolute;
+  max-width: 320px;
+  padding: 10px 16px 9px;
+  border-radius: 18px;
+  background: rgb(var(--ov) / 0.9);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.16);
+  color: rgb(var(--ink));
+  font-family: var(--sans);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  animation: pop 240ms var(--ease-pop);
+}
+
+.bubble::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: var(--tail, 50%);
+  width: 14px;
+  height: 9px;
+  transform: translateX(-50%);
+  background: rgb(var(--ov) / 0.9);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 4px);
+  }
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+}

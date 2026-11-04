@@ -25,4 +25,16 @@ export const SEILINK_HOST_CHANNELS = {
   call: 'seilink-host:call',
   /** host -> page: {characterId, manifest}, her imported avatar changed. */
   avatarManifest: 'seilink-host:avatar-manifest',
+  /** host -> page: SeilinkHostLayout (M4). */
+  layout: 'seilink-host:layout',
+  /** host -> page: SeilinkDockState. */
+  dockState: 'seilink-host:dock-state',
+  /** host -> page: SeilinkDockAction, a press on that dock button. */
+  dockPress: 'seilink-host:dock-press',
+  /** page -> host: SeilinkDockButton[] | null. */
+  dock: 'seilink-host:dock',
+  /** page -> host: SeilinkDockAction, confirmed. */
+  dockAction: 'seilink-host:dock-action',
+  /** host -> page: SeilinkHostLine. */
+  line: 'seilink-host:line',
 } as const;

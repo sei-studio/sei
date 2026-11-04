@@ -64,6 +64,7 @@ import {
   type EditHistory,
 } from '@shared/seilinkEdit';
 import { useT } from '../../lib/i18n';
+import { ROOM_PRESET_LABEL } from '../../lib/seilink/moveIn';
 import { RoomCanvas, type RoomAvatarSlot } from './RoomCanvas';
 import { componentThumb, roomThumb } from '../../lib/seilink/roomThumbs';
 import { RoomPicker } from '../../lib/seilink/roomPick';
@@ -104,7 +105,6 @@ const SLOT_LABEL: Record<RoomSlotId, string> = {
   campfire: 'Campfire',
 };
 
-const PRESET_LABEL: Record<RoomPresetId, string> = { cozy: 'Cozy', gamer: 'Gamer', forest: 'Forest' };
 
 const TIMES: ReadonlyArray<{ id: RoomState['time']; label: string; Icon: (p: { size?: number }) => React.ReactElement }> = [
   { id: 'auto', label: 'Auto', Icon: AutoIcon },
@@ -735,7 +735,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
                     </span>
                   )}
                   <span className={styles.cardLabel}>
-                    {t(PRESET_LABEL[id])}
+                    {t(ROOM_PRESET_LABEL[id])}
                     {!p && <span className={styles.soon}>{t('Soon')}</span>}
                   </span>
                 </button>
