@@ -41,22 +41,33 @@ const HOUR_MS = 60 * 60_000;
 
 // ── Pacing (pure) ───────────────────────────────────────────────────────────
 
-/** When the next idle line may come, and how many lines came in the last hour. */
+/**
+ * When the next idle line may come, and how many lines came in the last hour.
+ * One per main process (module level below), so the hourly limits hold across
+ * host restarts, crashes and companion swaps within an app session: a host
+ * that restarts is not a new hour.
+ */
 export class LinePacer {
+  /** Who is on the desktop right now (null while the host is down or restarting). */
   private who: string | null = null;
+  /** The last companion seen on the desktop: her gap survives a host restart. */
+  private last: string | null = null;
   private nextIdleAt = 0;
   private idleTimes: number[] = [];
   private pokeTimes: number[] = [];
 
   constructor(private readonly random: () => number = Math.random) {}
 
-  /** Who is on the desktop now. A new companion waits a full gap before her first idle line. */
+  /**
+   * Who is on the desktop now. A new companion waits a full gap before her
+   * first idle line; the same one coming back (a host restart) keeps hers.
+   * The per-hour counts are never reset here.
+   */
   follow(characterId: string | null, now: number): void {
-    if (characterId === this.who) return;
     this.who = characterId;
-    this.nextIdleAt = characterId ? now + this.gap() : 0;
-    this.idleTimes = [];
-    this.pokeTimes = [];
+    if (!characterId || characterId === this.last) return;
+    this.last = characterId;
+    this.nextIdleAt = now + this.gap();
   }
 
   idleDue(now: number): boolean {

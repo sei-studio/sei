@@ -57,6 +57,34 @@ describe('seilink desktop lines (M4)', () => {
     expect(p.idleDue(t0 + 2 * gap + 1)).toBe(false);
   });
 
+  it('keeps the hourly limits and her gap across a host restart and a swap', () => {
+    const p = new LinePacer(() => 0);
+    let t = 0;
+    p.follow('sui', t);
+    for (let i = 0; i < POKE_PER_HOUR; i++) {
+      expect(p.canPoke(t)).toBe(true);
+      p.notePoke(t);
+      t += POKE_MIN_GAP_MS;
+    }
+    expect(p.canPoke(t)).toBe(false);
+    // The host restarts: she is off the desktop for a moment, then back.
+    p.follow(null, t);
+    expect(p.idleDue(t)).toBe(false);
+    p.follow('sui', t + 1000);
+    expect(p.canPoke(t + 1000)).toBe(false);
+    // Her gap did not start over.
+    expect(p.idleDue(IDLE_MIN_GAP_MS)).toBe(true);
+    p.noteIdle(IDLE_MIN_GAP_MS, true);
+    p.noteIdle(2 * IDLE_MIN_GAP_MS, true);
+    expect(p.idleDue(3 * IDLE_MIN_GAP_MS - 1)).toBe(false);
+    // Moving someone else in gives her a fresh gap, not a fresh hour.
+    p.follow('lyra', 2 * IDLE_MIN_GAP_MS);
+    expect(p.canPoke(2 * IDLE_MIN_GAP_MS)).toBe(false);
+    expect(p.idleDue(3 * IDLE_MIN_GAP_MS - 1)).toBe(false);
+    // An hour after the first pokes, they are allowed again.
+    expect(p.canPoke(60 * 60_000 + POKE_PER_HOUR * POKE_MIN_GAP_MS)).toBe(true);
+  });
+
   it('caps idle lines per hour even with a short gap', () => {
     const p = new LinePacer(() => 0);
     let t = 0;

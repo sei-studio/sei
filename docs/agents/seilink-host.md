@@ -105,7 +105,9 @@ Colours come from the room (`RoomCanvas onOverlay`), not the app theme.
 ## Desktop lines (M4, `seilink/desktopLines.ts`)
 
 - Poke (double click): one short reply, under the plan's own limits (a free
-  account's weekly cap is the proxy's), at most 6 an hour, 20 s apart.
+  account's weekly cap is the proxy's), at most 6 an hour, 20 s apart. The
+  hourly counts live in main (one `LinePacer` per app session), so a host
+  restart or a companion swap does not reset them.
 - Idle: unprompted, rare (a random 25 to 50 min gap, at most 2 an hour),
   never while covered or paused, deafened, busy (chatting with her), in a game
   or on a call, or when nobody has touched the computer for 2 min
