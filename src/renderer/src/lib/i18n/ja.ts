@@ -2222,6 +2222,7 @@ export const JA: Record<string, string> = {
   "Move off desktop": "デスクトップから引っ越す",
   "Move {name} onto your desktop": "{name}をデスクトップに引っ越させる",
   "Pick a room": "部屋を選ぶ",
+  "Preparing {name}'s look…": "{name}の見た目を準備中…",
   "{name}'s room stays as you left it.": "{name}の部屋は前回のままです。",
   "{name} lives on your wallpaper, behind your windows and icons.": "{name}は壁紙の上、ウィンドウやアイコンの後ろで暮らします。",
   "The room pauses while windows cover it.": "ウィンドウで隠れている間、部屋は一時停止します。",

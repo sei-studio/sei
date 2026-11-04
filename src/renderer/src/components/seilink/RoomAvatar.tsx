@@ -41,7 +41,7 @@ import { AvatarView } from '../../lib/avatar/AvatarView';
 import { FacepackView } from '../../lib/facepack/FacepackView';
 import type { FacepackSource } from '../../lib/facepack/facepackSource';
 import { portraitSrc } from '../../lib/portraitSrc';
-import { loadCutout, type CutoutImage } from '../../lib/seilink/portraitCutout';
+import { loadCutout, peekCutout, type CutoutImage } from '../../lib/seilink/portraitCutout';
 import {
   IdleScheduler,
   REST_POSE,
@@ -102,6 +102,9 @@ const BUST_CAMERA: AvatarCamera = { zoom: 1.35, x: 0, y: 0.175 };
 const MOTION_FPS_MAX = 30;
 /** How often the frame edges are re-measured for a walk-off. */
 const EXIT_MEASURE_MS = 1_000;
+/** Portrait to face set: the fade, and how long the portrait waits for the face set to draw. */
+const CROSSFADE_MS = 700;
+const CROSSFADE_WAIT_MS = 4_000;
 /** Time-of-day grade so a day-lit figure sits in a night room. */
 const TIME_GRADE: Record<RoomTime, string> = {
   day: 'none',
@@ -285,12 +288,12 @@ function useIdleMotion(
 // ── figures ─────────────────────────────────────────────────────────────────
 
 function PortraitFigure({ url, height, name, onError }: { url: string; height: number; name?: string; onError(): void }): React.ReactElement | null {
-  const [cut, setCut] = useState<CutoutImage | null>(null);
+  const [cut, setCut] = useState<CutoutImage | null>(() => peekCutout(url));
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
   useEffect(() => {
     let dead = false;
-    setCut(null);
+    setCut(peekCutout(url));
     void loadCutout(url).then((c) => {
       if (dead) return;
       if (c) setCut(c);
@@ -357,11 +360,14 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
   }, [characterId, use, facepack, portraitUrl, failed, importRev]);
 
   // An import or removal of her model re-resolves (AvatarView swaps live2d/rig itself).
+  // 261105: so does a new face set from the anima client; a push starts the fallback chain over.
   useEffect(() => {
     let off: (() => void) | undefined;
     try {
       off = sei?.onAvatarManifest?.((u) => {
-        if (u.characterId === characterId) setImportRev((n) => n + 1);
+        if (u.characterId !== characterId) return;
+        setFailed((f) => (f.size ? new Set() : f));
+        setImportRev((n) => n + 1);
       });
     } catch {
       off = undefined;
@@ -370,8 +376,47 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
   }, [characterId]);
 
   useEffect(() => {
-    if (resolved) cb.current.onKind?.(resolved.kind);
-  }, [resolved]);
+    if (!resolved) return;
+    cb.current.onKind?.(resolved.kind);
+    try {
+      sei?.seilinkAnimaShown?.(characterId, resolved.kind);
+    } catch {
+      /* analytics only */
+    }
+  }, [resolved, characterId]);
+
+  // 261105: her face set arriving while her portrait (or silhouette) shows
+  // crossfades instead of popping: the old figure stays on top until the
+  // face set has drawn, then fades out.
+  const [outgoing, setOutgoing] = useState<{ kind: RoomAvatarKind; fading: boolean } | null>(null);
+  const [incomingReady, setIncomingReady] = useState(true);
+  const lastKind = useRef<RoomAvatarKind | null>(null);
+  useEffect(() => {
+    const prev = lastKind.current;
+    const next = resolved?.kind ?? null;
+    lastKind.current = next;
+    if (next === 'facepack' && (prev === 'portrait' || prev === 'placeholder') && !reduced) {
+      setOutgoing({ kind: prev, fading: false });
+      setIncomingReady(false);
+    } else if (next !== prev) {
+      setOutgoing(null);
+      setIncomingReady(true);
+    }
+  }, [resolved, reduced]);
+  useEffect(() => {
+    if (!outgoing) return;
+    if (!outgoing.fading) {
+      // A face set that never reports ready still takes over after a while (or errors and falls back).
+      const t = setTimeout(() => setIncomingReady(true), CROSSFADE_WAIT_MS);
+      if (incomingReady) {
+        clearTimeout(t);
+        setOutgoing({ ...outgoing, fading: true });
+      }
+      return () => clearTimeout(t);
+    }
+    const t = setTimeout(() => setOutgoing(null), CROSSFADE_MS + 50);
+    return () => clearTimeout(t);
+  }, [outgoing, incomingReady]);
 
   const fail = useCallback((kind: RoomAvatarKind) => {
     setFailed((f) => (f.has(kind) ? f : new Set([...f, kind])));
@@ -379,6 +424,7 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
   const onViewStatus = useCallback(
     (kind: RoomAvatarKind) => (s: 'loading' | 'ready' | 'error') => {
       if (s === 'error') fail(kind);
+      if (s === 'ready' && kind === 'facepack') setIncomingReady(true);
     },
     [fail],
   );
@@ -452,6 +498,26 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
     figW = figH * 0.6;
   }
 
+  let ghost: React.ReactNode = null;
+  if (outgoing && kind === 'facepack') {
+    const old =
+      outgoing.kind === 'portrait' && portraitUrl ? (
+        <PortraitFigure url={portraitUrl} height={figH} name={name} onError={() => setOutgoing(null)} />
+      ) : (
+        <Silhouette height={figH} time={slot.time} />
+      );
+    ghost = (
+      <div className={styles.ghost} style={{ opacity: outgoing.fading ? 0 : 1, transition: `opacity ${CROSSFADE_MS}ms ease` }} aria-hidden="true">
+        {old}
+      </div>
+    );
+    view = (
+      <div className={styles.fill} style={{ opacity: outgoing.fading ? 1 : 0, transition: `opacity ${CROSSFADE_MS}ms ease` }}>
+        {view}
+      </div>
+    );
+  }
+
   // The stage is as wide as a seated figure so the slot box centres on her.
   const stageW = Math.max(h * 0.5, figW || h * 0.75);
   return (
@@ -467,6 +533,7 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
       <div ref={bodyRef} className={away ? `${styles.body} ${styles.away}` : styles.body}>
         <div className={styles.figure} style={{ bottom: -h * SINK, height: figH, width: figW || undefined, filter: TIME_GRADE[slot.time] }}>
           {view}
+          {ghost}
         </div>
       </div>
     </div>

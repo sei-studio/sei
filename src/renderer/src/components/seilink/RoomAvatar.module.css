@@ -33,6 +33,16 @@
   height: 100%;
 }
 
+/* The figure she had before her face set arrived, fading out on top of it. */
+.ghost {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+}
+
 .sprite {
   display: block;
   height: 100%;

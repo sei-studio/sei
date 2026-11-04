@@ -7,6 +7,9 @@ import React, { useMemo } from 'react';
 import { RoomEditor } from './RoomEditor';
 import { ipcRoomEditorSource } from './roomEditorSource';
 import type { EditorOpenedFrom } from '@shared/seilinkTelemetry';
+import { useT } from '../../lib/i18n';
+import { useDataStore } from '../../lib/stores/useDataStore';
+import { useAnimaLook } from '../../lib/seilink/useAnimaLook';
 
 export interface CompanionRoomEditorProps {
   characterId: string;
@@ -16,7 +19,12 @@ export interface CompanionRoomEditorProps {
 }
 
 export default function CompanionRoomEditor({ characterId, onClose, openedFrom = 'other' }: CompanionRoomEditorProps): React.ReactElement {
+  const t = useT();
   const source = useMemo(() => ipcRoomEditorSource(characterId), [characterId]);
   const telemetry = useMemo(() => ({ openedFrom }), [openedFrom]);
-  return <RoomEditor source={source} characterId={characterId} onClose={onClose} telemetry={telemetry} />;
+  // 261105: SeiLink opened for her: her face set gets ready in the background while the room is set up.
+  const look = useAnimaLook(characterId, 'editor');
+  const name = useDataStore((s) => s.characters.find((c) => c.id === characterId)?.name ?? '');
+  const avatarNote = look === 'preparing' && name ? t("Preparing {name}'s look…", { name }) : null;
+  return <RoomEditor source={source} characterId={characterId} onClose={onClose} telemetry={telemetry} avatarNote={avatarNote} />;
 }
