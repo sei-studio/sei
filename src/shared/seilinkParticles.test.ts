@@ -86,8 +86,9 @@ describe('particle counts', () => {
     const small = particleCount({ kind: 'rain' }, [0, 0, 100, 100]);
     const big = particleCount({ kind: 'rain' }, [0, 0, 2560, 1440]);
     expect(small).toBe(30);
-    expect(big).toBe(110);
-    expect(particleCount({ kind: 'rain', density: 0.5 }, [0, 0, 2560, 1440])).toBe(55);
+    expect(big).toBe(140);
+    // Density scales the clamped count (the scene cap still holds the total).
+    expect(particleCount({ kind: 'rain', density: 0.5 }, [0, 0, 2560, 1440])).toBe(70);
   });
 
   it('the scene cap thins every field in proportion', () => {

@@ -171,6 +171,12 @@ function ease(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
 }
 
+/** Dev only: the live renderers, for the perf harness (`globalThis.__seilinkRenderers`). */
+function devRenderers(): Set<RoomRenderer> {
+  const g = globalThis as { __seilinkRenderers?: Set<RoomRenderer> };
+  return (g.__seilinkRenderers ??= new Set());
+}
+
 export class RoomRenderer {
   private scene: Scene | null = null;
   private sceneSeq = 0;
@@ -202,6 +208,8 @@ export class RoomRenderer {
   private reduced: MediaQueryList | null = reducedMotionQuery();
   /** Perf harness: particle frames drawn and the time they took. */
   readonly fxStats = { frames: 0, ms: 0, particles: 0 };
+  /** Perf harness: animated frames drawn and the main-thread time each took (static compose, glow and particles). */
+  readonly frameStats = { frames: 0, ms: 0 };
 
   constructor(
     private readonly canvases: RoomRendererCanvases,
@@ -212,10 +220,13 @@ export class RoomRenderer {
     this.fadeMs = opts.fadeMs ?? 1200;
     document.addEventListener('visibilitychange', this.onVisibility);
     this.reduced?.addEventListener?.('change', this.onReducedMotion);
+    // Dev builds: the shot and perf scripts read the stats of live renderers.
+    if (import.meta.env?.DEV) devRenderers().add(this);
   }
 
   dispose(): void {
     this.disposed = true;
+    if (import.meta.env?.DEV) devRenderers().delete(this);
     cancelAnimationFrame(this.raf);
     document.removeEventListener('visibilitychange', this.onVisibility);
     this.reduced?.removeEventListener?.('change', this.onReducedMotion);
@@ -743,9 +754,12 @@ export class RoomRenderer {
           this.fade = null;
           void this.refresh();
         }
+        const t0 = performance.now();
         this.composeStatic();
         this.drawGlow(now);
         this.drawFx(now);
+        this.frameStats.frames++;
+        this.frameStats.ms += performance.now() - t0;
       }
       if (this.hasAnimation()) this.raf = requestAnimationFrame(step);
       // The loop stops (covered, paused, hidden): the next start steps from scratch, capped.

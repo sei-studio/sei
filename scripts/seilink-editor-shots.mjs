@@ -5,6 +5,7 @@
  *   node scripts/seilink-editor-shots.mjs --packs <dir> [--out seilink-editor-shots]
  *                                         [--shots day,curtains,...] [--size 1280x720]
  *                                         [--presets gamer,cozy] [--perf [--profile]] [--dpr 2]
+ *                                         [--fx --scenes name=query,... [--seconds 6] [--video]]
  *
  * <dir> holds one folder per preset (<dir>/cozy/manifest.json, ...); every
  * preset found is passed to the editor, so the room type picker can switch.
@@ -150,6 +151,39 @@ const SHOTS = {
   'forest-log-front': ['time=day&items=1', async (page) => dragRoom(page, [880, 1030], [980, 1075]), [880, 980, 220, 160]],
   // Run with --presets forest: the tent's slot (bed) opens Walls & fabrics there (slots.bed.group).
   'forest-tent': ['time=day&items=1&panel=bed'],
+  // ── 261105 room catalog (run cozy shots against the catalog test pack,
+  // scripts/seilink-catalog-testpack.mjs, for weather and fairy lights) ──
+  'cat-curtains-day': ['time=day&pattern.curtains=gingham&tint.curtains=c94f4f'],
+  'cat-curtains-day-zoom': ['time=day&pattern.curtains=gingham&tint.curtains=c94f4f', null, [1060, 0, 520, 860]],
+  'cat-curtains-right-zoom': ['time=day&pattern.curtains=gingham&tint.curtains=c94f4f', null, [2080, 300, 480, 700]],
+  'cat-curtains-night': ['time=night&pattern.curtains=gingham&tint.curtains=c94f4f'],
+  'cat-curtains-night-zoom': ['time=night&pattern.curtains=gingham&tint.curtains=c94f4f', null, [1060, 0, 520, 860]],
+  'cat-cozy-all': ['time=day&pattern.shell=pinstripe&pattern.bed=plaid&tint.bed=4f6fa8&pattern.rug=herringbone&tint.rug=d8b46a&pattern.curtains=polka'],
+  'cat-cozy-bed-zoom': ['time=day&pattern.bed=plaid&tint.bed=4f6fa8', null, [0, 820, 920, 620]],
+  'cat-cozy-rug-zoom': ['time=day&pattern.rug=herringbone&tint.rug=d8b46a', null, [1560, 1220, 1000, 220]],
+  'cat-picker': ['time=day&panel=curtains&pattern.curtains=gingham&tint.curtains=c94f4f'],
+  'cat-picker-accent': [
+    'time=day&panel=curtains&pattern.curtains=gingham&tint.curtains=c94f4f&accent.curtains=f3e6c8',
+    async (page) => page.locator('[data-slot="curtains"]').getByRole('tab', { name: 'Second color' }).click(),
+  ],
+  'cat-gamer-stripes': ['time=dusk&pattern.shell=wide_stripe&tint.shell=34463f'],
+  'cat-gamer-stripes-zoom': ['time=dusk&pattern.shell=wide_stripe&tint.shell=34463f', null, [300, 0, 900, 700]],
+  'cat-gamer-bed-zoom': ['time=day&pattern.bed=buffalo&tint.bed=a8403a', null, [0, 820, 920, 620]],
+  'cat-gamer-led-cycle': ['time=night&cycle.lamp=1&panel=lamp'],
+  'cat-forest-tent': ['time=day&pattern.bed=plaid&tint.bed=b5603a'],
+  'cat-forest-tent-zoom': ['time=day&pattern.bed=plaid&tint.bed=b5603a', null, [0, 360, 1100, 680]],
+  'cat-forest-log-zoom': ['time=dusk&pattern.chair=gingham', null, [900, 1040, 760, 400]],
+  'cat-forest-labels': ['time=day&panel=bed&pattern.bed=plaid&tint.bed=b5603a'],
+  'cat-forest-lights': ['time=night&panel=lights'],
+  'cat-rain-dusk': ['time=dusk'],
+  'cat-rain-dusk-zoom': ['time=dusk', null, [1340, 0, 1220, 1320]],
+  'cat-rain-curtain-zoom': ['time=dusk&pattern.curtains=gingham', null, [2000, 200, 560, 700]],
+  'cat-snow-night': ['time=night'],
+  'cat-petals-day': ['time=day'],
+  'cat-fireflies-night': ['time=night'],
+  'cat-fairy-cycle': ['time=night&cycle.lights=1&panel=lights'],
+  'cat-fairy-zoom': ['time=night&cycle.lights=1', null, [0, 40, 1120, 360]],
+  'cat-lang-ja': ['time=day&panel=bed&lang=ja&pattern.bed=plaid'],
   'bed-succulent': ['time=day&items=1', async (page) => dragRoom(page, [390, 430], [330, 965]), [220, 880, 520, 170]],
 };
 
@@ -286,6 +320,74 @@ async function perf(page, base) {
   }
 }
 
+/**
+ * --fx: per scene, the canvas preview (no editor) for a few seconds: frames
+ * drawn and main-thread ms per frame (the renderer's own counters), plus
+ * Chrome's busy time per second; with --video also a short clip per scene
+ * (webm from Playwright, then mp4 with a silent AAC track via ffmpeg).
+ * Scenes are `name=query` pairs (`--scenes rain=time=dusk,...`).
+ */
+async function fx(browser, packBase, preset) {
+  const scenes = arg('scenes', 'scene=time=dusk')
+    .split(',')
+    .map((x) => {
+      const k = x.indexOf('=');
+      return [x.slice(0, k), x.slice(k + 1)];
+    });
+  const seconds = Number(arg('seconds', 6));
+  const video = process.argv.includes('--video');
+  const { execFileSync } = await import('node:child_process');
+  for (const [name, q] of scenes) {
+    const ctx = await browser.newContext({
+      viewport: { width: VW, height: VH },
+      deviceScaleFactor: DPR,
+      ...(video ? { recordVideo: { dir: path.join(OUT, '_video'), size: { width: VW, height: VH } } } : {}),
+    });
+    const page = await ctx.newPage();
+    page.on('pageerror', (e) => console.log(`[page error] ${e.message.slice(0, 300)}`));
+    const t0 = Date.now();
+    await page.goto(`${packBase}&hud=0&fps=30&${q}`, { waitUntil: 'load' });
+    await page.waitForFunction(() => globalThis.__seilinkRenderers?.size > 0, null, { timeout: 60_000 }).catch(() => {});
+    await page.waitForTimeout(3000);
+    const cdp = await ctx.newCDPSession(page);
+    await cdp.send('Performance.enable');
+    const metric = async () => Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map((m) => [m.name, m.value]));
+    const snap = () =>
+      page.evaluate(() => {
+        const r = [...(globalThis.__seilinkRenderers ?? [])];
+        return r.reduce((a, x) => ({ frames: a.frames + x.frameStats.frames, ms: a.ms + x.frameStats.ms, fxFrames: a.fxFrames + x.fxStats.frames, fxMs: a.fxMs + x.fxStats.ms, particles: a.particles + x.fxStats.particles }), { frames: 0, ms: 0, fxFrames: 0, fxMs: 0, particles: 0 });
+      });
+    const m0 = await metric();
+    const s0 = await snap();
+    await page.waitForTimeout(seconds * 1000);
+    const m1 = await metric();
+    const s1 = await snap();
+    const frames = s1.frames - s0.frames;
+    const fxFrames = s1.fxFrames - s0.fxFrames;
+    const out = {
+      scene: name,
+      preset,
+      fps: +(frames / seconds).toFixed(1),
+      msPerFrame: frames ? +((s1.ms - s0.ms) / frames).toFixed(2) : 0,
+      fxMsPerFrame: fxFrames ? +((s1.fxMs - s0.fxMs) / fxFrames).toFixed(2) : 0,
+      particles: s1.particles,
+      busyMsPerSec: +(((m1.TaskDuration - m0.TaskDuration) * 1000) / seconds).toFixed(1),
+      scriptMsPerSec: +(((m1.ScriptDuration - m0.ScriptDuration) * 1000) / seconds).toFixed(1),
+    };
+    console.log('fx', JSON.stringify(out));
+    const vid = page.video();
+    await ctx.close();
+    if (vid) {
+      const webm = await vid.path();
+      const mp4 = path.join(OUT, `${name}.mp4`);
+      const skip = Math.max(0, (Date.now() - t0) / 1000 - seconds - 0.5);
+      execFileSync('timeout', ['120', 'ffmpeg', '-v', 'error', '-y', '-ss', skip.toFixed(2), '-i', webm, '-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo', '-shortest', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '20', '-c:a', 'aac', '-b:a', '64k', mp4]);
+      fs.rmSync(webm, { force: true });
+      console.log(mp4);
+    }
+  }
+}
+
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
   // --presets gamer,cozy picks the order (the first one is the room shown).
@@ -309,6 +411,11 @@ async function main() {
     const packQ = presets.map((p) => `pack=${encodeURIComponent(`http://127.0.0.1:${packs.address().port}/${p}/`)}`).join('&');
     const base = `${viteUrl}/?seilink=1&editor=1&${packQ}`;
     browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH ?? '/usr/bin/google-chrome' });
+    if (process.argv.includes('--fx')) {
+      // The canvas preview takes one pack (the first preset).
+      await fx(browser, `${viteUrl}/?seilink=1&pack=${encodeURIComponent(`http://127.0.0.1:${packs.address().port}/${presets[0]}/`)}`, presets[0]);
+      return;
+    }
     const page = await browser.newPage({ viewport: { width: VW, height: VH }, deviceScaleFactor: DPR });
     page.on('console', (m) => {
       if (m.type() === 'error' || m.type() === 'warning') console.log(`[page ${m.type()}] ${m.text().slice(0, 240)}`);

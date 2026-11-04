@@ -56,9 +56,9 @@ function dropSprite(): AnyCanvas {
   c = makeCanvas(s, s);
   const ctx = ctx2d(c);
   const g = ctx.createRadialGradient(s * 0.5, s * 0.55, 0, s * 0.5, s * 0.5, s * 0.5);
-  g.addColorStop(0, 'rgba(235, 242, 255, 0.35)');
-  g.addColorStop(0.6, 'rgba(200, 215, 235, 0.22)');
-  g.addColorStop(0.85, 'rgba(40, 50, 70, 0.35)');
+  g.addColorStop(0, 'rgba(235, 242, 255, 0.45)');
+  g.addColorStop(0.6, 'rgba(200, 215, 235, 0.3)');
+  g.addColorStop(0.85, 'rgba(40, 50, 70, 0.5)');
   g.addColorStop(1, 'rgba(40, 50, 70, 0)');
   ctx.fillStyle = g;
   ctx.beginPath();
@@ -89,9 +89,9 @@ export function drawField(ctx: AnyContext2D, field: ParticleField, alpha: number
         let a = 0;
         for (const p of ps) {
           if (bandOf(p) !== b) continue;
-          // A streak as long as the drop moves in ~22 ms (motion blur).
+          // A streak as long as the drop moves in ~36 ms (motion blur).
           ctx.moveTo(p.x, p.y);
-          ctx.lineTo(p.x - p.vx * 22, p.y - p.vy * 22);
+          ctx.lineTo(p.x - p.vx * 36, p.y - p.vy * 36);
           width += p.size;
           a += particleAlpha(field, p);
           n++;
@@ -162,7 +162,7 @@ export function drawField(ctx: AnyContext2D, field: ParticleField, alpha: number
   if (field.drops.length) {
     const sprite = dropSprite();
     ctx.globalAlpha = Math.min(1, alpha);
-    ctx.strokeStyle = 'rgba(215, 228, 245, 0.18)';
+    ctx.strokeStyle = 'rgba(215, 228, 245, 0.24)';
     for (const d of field.drops) {
       const r = d.size;
       if (d.vy > 0) {

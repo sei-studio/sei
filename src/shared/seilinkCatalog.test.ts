@@ -8,6 +8,7 @@ import { coverCrop, cycleColour, roomDrawPlan, type SlotLayer } from './seilinkD
 import { parseRoomManifest, sanitizeRoomState } from './seilinkValidate';
 import { toneOnTone } from './seilinkPatterns';
 import { currentPattern, setItemAccent, setItemPattern, setSlotAccent, setSlotComponent, setSlotCycle, setSlotPattern, setSlotTint } from './seilinkEdit';
+import { lightSlotsOf, roomShapeOf } from './seilinkTelemetry';
 
 const raw = {
   format: 'sei-room',
@@ -279,5 +280,22 @@ describe('catalog edit ops', () => {
     const acc = setItemAccent(manifest, g, 0, '#112233');
     expect(acc.items[0].accent).toBe('#112233');
     expect(setItemAccent(manifest, setItemPattern(manifest, acc, 0, 'plain'), 0, null).items[0]).toEqual({ id: 'blanket', x: 10, y: 10 });
+  });
+});
+
+describe('room shape for analytics', () => {
+  it('finds the lights lit in their colour', () => {
+    expect([...lightSlotsOf(manifest)]).toEqual(['lights']);
+  });
+
+  it('counts patterned parts, picked accents, cycling lights and particle parts', () => {
+    const s0 = defaultRoomState('forest');
+    // The sky's dusk rain and the default fireflies.
+    expect(roomShapeOf(manifest, s0)).toEqual({ patterned: 0, accents: 0, cycling: 0, particles: 2, lastPattern: null });
+    let s = setSlotAccent(manifest, setSlotPattern(manifest, s0, 'bed', 'gingham'), 'bed', '#112233');
+    s = setSlotCycle(manifest, setSlotComponent(manifest, s, 'lights', 'string'), 'lights', true);
+    s = { ...s, items: [{ id: 'blanket', x: 1, y: 1, pattern: 'ditsy' }] };
+    expect(roomShapeOf(manifest, s, 'gingham')).toEqual({ patterned: 2, accents: 1, cycling: 1, particles: 1, lastPattern: 'gingham' });
+    expect(roomShapeOf(manifest, setSlotComponent(manifest, s0, 'lights', null)).particles).toBe(1);
   });
 });

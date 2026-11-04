@@ -608,6 +608,139 @@
   padding: 0;
 }
 
+/* 261105: the automatic second colour (tone-on-tone), drawn as a split dot. */
+.swatchAuto {
+  background: linear-gradient(135deg, var(--auto) 0 50%, rgb(var(--ink) / 0.12) 50% 100%);
+}
+
+/* A light that runs through the colours. */
+.swatchCycle {
+  background: linear-gradient(90deg, #ff5a5a, #ffd25a, #5aff8c, #5ac8ff, #a05aff, #ff5ad2);
+  animation: swatchCycle 6s linear infinite;
+}
+
+@keyframes swatchCycle {
+  to {
+    filter: hue-rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .swatchCycle {
+    animation: none;
+  }
+}
+
+/* Colour and pattern of one part. */
+.look {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.lookTabs {
+  display: flex;
+  gap: 4px;
+}
+
+.lookTab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--radius, 2px);
+  background: var(--tile);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  transition: background-color 160ms var(--ease);
+}
+
+.lookTab:hover {
+  background: var(--tile-hover);
+}
+
+.lookTabOn,
+.lookTabOn:hover {
+  background: var(--tile-on);
+  box-shadow: var(--tile-on-shadow);
+  color: inherit;
+}
+
+.lookDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12);
+}
+
+.patterns {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.toolbar .look {
+  padding: 0 8px 8px;
+  max-width: 380px;
+}
+
+.toolbar .patterns {
+  grid-auto-flow: column;
+  grid-template-columns: none;
+  grid-auto-columns: 84px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.pattern {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 4px 3px;
+  border-radius: var(--radius, 2px);
+  background: var(--tile);
+  transition:
+    background-color 160ms var(--ease),
+    box-shadow 160ms var(--ease);
+}
+
+.pattern:hover {
+  background: var(--tile-hover);
+}
+
+.patternOn,
+.patternOn:hover {
+  background: var(--tile-on);
+  box-shadow: var(--tile-on-shadow);
+}
+
+.patternImg,
+.patternPlain {
+  display: block;
+  width: 100%;
+  height: 34px;
+  object-fit: cover;
+  border-radius: var(--radius, 2px);
+  pointer-events: none;
+}
+
+.patternName {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: center;
+  line-height: 1.15;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+.pattern .thumbWait {
+  width: 100%;
+  height: 34px;
+}
+
 /* ── top: time of day, actions ──
    One row at the shared --edge. Equal side columns keep the time pill at the
    window's centre; the left column never gets narrower than the rail plus an
@@ -765,6 +898,10 @@
 .toolbar .swatches {
   padding: 2px 8px 8px;
   flex-wrap: nowrap;
+}
+
+.toolbar .look .swatches {
+  padding: 2px 0 0;
 }
 
 .tool {

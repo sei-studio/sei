@@ -15,7 +15,7 @@
  * Classification is a diff of two room states (classifyEdit), so the editor
  * needs no per-control tracking. Event table: docs/agents/seilink-analytics.md.
  */
-import { ROOM_PRESET_IDS, type RoomSlotId, type RoomState } from './seilinkRoom';
+import { ROOM_PRESET_IDS, resolvePattern, resolveSlots, type RoomPresetManifest, type RoomSlotId, type RoomState } from './seilinkRoom';
 import { CODE_PATTERNS } from './seilinkPatterns';
 
 export const SEILINK_EDITOR_SESSION_EVENT = 'seilink_editor_session';
@@ -72,6 +72,43 @@ const PRESETS = ROOM_PRESET_IDS;
 
 /** Pattern ids the analytics may name: the code patterns, the planned painted tiles, plain. Anything else is 'other'. */
 export const KNOWN_PATTERNS: readonly string[] = ['plain', ...CODE_PATTERNS.map((p) => p.id), 'ditsy', 'leaves', 'clouds', 'sakura', 'other'];
+
+/** Slots holding a part lit in its own colour (a glowTint frame, or a cycling part): their recolour is light_colour. */
+export function lightSlotsOf(manifest: RoomPresetManifest): Set<RoomSlotId> {
+  const out = new Set<RoomSlotId>();
+  for (const c of manifest.components) {
+    if (c.slot === 'item') continue;
+    if (c.cycle || Object.values(c.frames).some((f) => f?.glowTint)) out.add(c.slot as RoomSlotId);
+  }
+  return out;
+}
+
+/** The counts of roomShapeAtClose for a state (pure; the editor passes its last picked pattern). */
+export function roomShapeOf(manifest: RoomPresetManifest, state: RoomState, lastPattern: string | null = null): RoomShapeAtClose {
+  let patterned = 0;
+  let accents = 0;
+  let cycling = 0;
+  let particles = 0;
+  for (const r of resolveSlots(manifest, state)) {
+    if (r.pattern) {
+      patterned++;
+      if (state.slots[r.slot]?.accent) accents++;
+    }
+    if (r.cycle) cycling++;
+    if (Object.values(r.component.frames).some((f) => f?.particles?.length)) particles++;
+  }
+  const byId = new Map(manifest.components.map((c) => [c.id, c]));
+  for (const it of state.items) {
+    const c = byId.get(it.id);
+    if (!c) continue;
+    if (resolvePattern(manifest, c, it.tint ?? c.defaultTint, it.pattern, it.accent)) {
+      patterned++;
+      if (it.accent) accents++;
+    }
+    if (Object.values(c.frames).some((f) => f?.particles?.length)) particles++;
+  }
+  return { patterned, accents, cycling, particles, lastPattern };
+}
 
 /** What the room looks like at close (counts the editor works out with the manifest). */
 export interface RoomShapeAtClose {

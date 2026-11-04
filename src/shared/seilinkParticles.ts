@@ -61,7 +61,7 @@ interface KindDef {
 }
 
 export const KIND_DEFS: Readonly<Record<RoomParticleKind, KindDef>> = {
-  rain: { per1M: 60, min: 30, max: 110, colour: '#c8d6e8' },
+  rain: { per1M: 90, min: 30, max: 140, colour: '#d4e0ee' },
   snow: { per1M: 40, min: 20, max: 80, colour: '#ffffff' },
   petals: { per1M: 14, min: 8, max: 30, colour: '#f6b6c8' },
   fireflies: { per1M: 9, min: 8, max: 26, colour: '#e4f57a' },
@@ -137,7 +137,7 @@ function spawn(field: ParticleField, p: Particle, fresh: boolean): void {
     case 'rain':
       p.vy = (1.1 + r() * 0.6) * p.depth * scale;
       p.vx = p.vy * field.wind;
-      p.size = (1.2 + r() * 1.2) * p.depth;
+      p.size = (1.6 + r() * 1.6) * p.depth;
       p.y = fresh ? ay + r() * ah : ay - r() * ah * 0.2;
       break;
     case 'snow':
@@ -186,7 +186,7 @@ function spawnDrop(field: ParticleField, d: Particle, fresh: boolean): void {
   const [ax, ay, aw, ah] = field.area;
   d.x = ax + r() * aw;
   d.y = ay + r() * ah * (fresh ? 1 : 0.6);
-  d.size = 3 + r() * 4;
+  d.size = 5 + r() * 6;
   d.depth = 1;
   d.vx = 0;
   d.vy = 0;
@@ -311,7 +311,7 @@ export function stepField(field: ParticleField, dtMs: number): void {
 export function particleAlpha(field: ParticleField, p: Particle): number {
   switch (field.kind) {
     case 'rain':
-      return 0.18 + 0.3 * p.depth;
+      return 0.26 + 0.4 * p.depth;
     case 'snow':
       return 0.45 + 0.5 * p.depth;
     case 'petals':

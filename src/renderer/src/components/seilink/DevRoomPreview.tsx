@@ -7,7 +7,9 @@
  *     with CORS), e.g. the shot script's static server.
  *
  * Params (for screenshots): time=auto|day|dusk|night, items=1, hud=0,
- * fit=cover|contain, fps=30|15|0, tint.<slot>=<hex without #>.
+ * fit=cover|contain, fps=30|15|0, tint.<slot>=<hex without #>; 261105:
+ * part.<slot>=<component id|none>, pattern.<slot>=<id|plain>,
+ * accent.<slot>=<hex without #>, cycle.<slot>=1.
  *
  * The HUD is tinted by the room (roomOverlay), not by the app theme: that is
  * the rule the editor overlay follows.
@@ -61,7 +63,8 @@ async function loadFromUrl(base: string): Promise<Loaded> {
   const manifest = parseRoomManifest(await res.json());
   if (!manifest) throw new Error('manifest failed validation');
   const rev = Date.now();
-  return { manifest, resolve: (rel) => `${root}${rel}?v=${rev}`, label: root };
+  // A pack's _shared/ files sit beside the packs (resources/seilink-packs/_shared), as main serves them.
+  return { manifest, resolve: (rel) => `${rel.startsWith('_shared/') ? `${root}../` : root}${rel}?v=${rev}`, label: root };
 }
 
 function initialState(manifest: RoomPresetManifest): RoomState {
@@ -69,9 +72,19 @@ function initialState(manifest: RoomPresetManifest): RoomState {
   const t = params.get('time');
   if (t && (TIMES as readonly string[]).includes(t)) s.time = t as RoomState['time'];
   for (const [k, v] of params) {
-    if (!k.startsWith('tint.')) continue;
-    const slot = k.slice(5) as RoomSlotId;
-    if (manifest.slots[slot] && /^[0-9a-f]{6}$/i.test(v)) s.slots[slot] = { id: manifest.slots[slot]!.options[0], tint: `#${v.toLowerCase()}` };
+    const dot = k.indexOf('.');
+    if (dot < 0) continue;
+    const what = k.slice(0, dot);
+    const slot = k.slice(dot + 1) as RoomSlotId;
+    const def = manifest.slots[slot];
+    if (!def || !['tint', 'pattern', 'accent', 'cycle', 'part'].includes(what)) continue;
+    const entry = { ...(s.slots[slot] ?? { id: def.options[0] }) };
+    if (what === 'part') entry.id = v === 'none' ? null : def.options.includes(v) ? v : entry.id;
+    else if (what === 'tint' && /^[0-9a-f]{6}$/i.test(v)) entry.tint = `#${v.toLowerCase()}`;
+    else if (what === 'accent' && /^[0-9a-f]{6}$/i.test(v)) entry.accent = `#${v.toLowerCase()}`;
+    else if (what === 'pattern') entry.pattern = v;
+    else if (what === 'cycle') entry.cycle = v === '1';
+    s.slots[slot] = entry;
   }
   // Settled onto the pack's floor, walls and shelves where it labels them.
   if (params.get('items') === '1') s.items = settleItems(manifest, { ...s, items: sampleItems(manifest) }).items;
