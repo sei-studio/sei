@@ -31,6 +31,24 @@
   position: absolute;
 }
 
+/* Window drag strip (same height as MacosWindow's). The controls that sit
+   over it opt out below. */
+.dragStrip {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 34px;
+  -webkit-app-region: drag;
+}
+
+.side,
+.toolbar,
+.times,
+.actions,
+.confirm,
+.toast {
+  -webkit-app-region: no-drag;
+}
+
 .light {
   --tile: rgb(var(--ink) / 0.07);
   --tile-hover: rgb(var(--ink) / 0.11);

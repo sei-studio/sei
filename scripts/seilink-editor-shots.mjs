@@ -4,7 +4,7 @@
  *
  *   node scripts/seilink-editor-shots.mjs --packs <dir> [--out seilink-editor-shots]
  *                                         [--shots day,curtains,...] [--size 1280x720]
- *                                         [--perf]
+ *                                         [--presets gamer,cozy] [--perf [--profile]]
  *
  * <dir> holds one folder per preset (<dir>/cozy/manifest.json, ...); every
  * preset found is passed to the editor, so the room type picker can switch.
@@ -190,7 +190,10 @@ async function perf(page, base) {
 
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
-  const presets = fs.readdirSync(PACKS).filter((d) => fs.existsSync(path.join(PACKS, d, 'manifest.json')));
+  // --presets gamer,cozy picks the order (the first one is the room shown).
+  const found = fs.readdirSync(PACKS).filter((d) => fs.existsSync(path.join(PACKS, d, 'manifest.json')));
+  const order = arg('presets', '').split(',').filter((p) => found.includes(p));
+  const presets = [...order, ...found.filter((p) => !order.includes(p))];
   const packs = await packServer(PACKS);
   const vite = await createServer({
     configFile: false,
@@ -210,6 +213,9 @@ async function main() {
     const page = await browser.newPage({ viewport: { width: VW, height: VH }, deviceScaleFactor: 1 });
     page.on('console', (m) => {
       if (m.type() === 'error' || m.type() === 'warning') console.log(`[page ${m.type()}] ${m.text().slice(0, 240)}`);
+    });
+    page.on('response', (r) => {
+      if (r.status() >= 400) console.log(`[page ${r.status()}] ${r.url().slice(0, 200)}`);
     });
     page.on('pageerror', (e) => console.log(`[page error] ${e.message.slice(0, 300)}`));
     for (const name of names) {
