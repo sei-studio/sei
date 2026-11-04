@@ -395,5 +395,26 @@ export function createHandOverLedger() {
     return `Who did what this session.${work} ${out[0].toUpperCase()}${out.slice(1)}${inn} Everything you did not give away is still yours unless you used it up, placed it or dropped it. The inventory in your snapshot is yours; you cannot see what the player carries.`
   }
 
-  return { gave, received: receivedItems, did, describe }
+  /**
+   * 261104 (pass 42): the hand-over half of that line, short, for the turn a
+   * give finishes on. That turn still shows the transcript from before the
+   * give, which says "You have not given anything to anyone", and after her
+   * own give she sometimes thanked the player for it ("got em, thanks").
+   * Empty while nothing was given.
+   * @param {{ label?: (name: string) => string }} [opts] as describe()
+   */
+  function describeGiven({ label = (name) => name } = {}) {
+    if (!given.size) return ''
+    const list = (m) => joinAnd([...m].map(([item, n]) => `${n} ${item}`))
+    const who = (to) => {
+      if (!to) return 'the player'
+      try { return String(label(to) || to) } catch { return to }
+    }
+    const inn = received.size
+      ? `${list(received)} came into your inventory without an action of yours.`
+      : 'Nobody has handed you anything.'
+    return `Who did what, now that this finished: this session you gave ${joinAnd([...given].map(([to, items]) => `${who(to)} ${list(items)}`))}. ${inn} This replaces the older who-did-what line above.`
+  }
+
+  return { gave, received: receivedItems, did, describe, describeGiven }
 }

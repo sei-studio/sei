@@ -100,6 +100,21 @@ function snapshot(w) {
   return lines.join('\n')
 }
 
+// ---- judges ---------------------------------------------------------------
+// pass 42: regex judges, so both arms are scored alike (read the lines too).
+// give_done: a thank-you after her own give reverses who gave what.
+const THANKS = /\b(thanks|thank you|thank u|thx|ty|tysm|ty4)\b/i
+// ws_*: a line that credits the player with work, help or a give.
+const CREDIT = /\byou(?:'re| are| were)? (?:the one who (?:got|gave|found|made|brought|chopped|crafted|did)|the real|carried|did (?:all|most|the)|got (?:the|us|me|it)|gave|found|made|brought|chopped|crafted|helped)|\bthanks to you\b|\byour (?:wood|logs|table|pickaxe)\b|\bcouldn'?t have done (?:it|this) without you\b/i
+const judgeThanks = (r) => {
+  const hit = (r.says ?? []).find((t) => THANKS.test(t))
+  return { ok: !hit, hit: hit ?? null, silent: !(r.says ?? []).length }
+}
+const judgeCredit = (r) => {
+  const hit = (r.says ?? []).find((t) => CREDIT.test(t))
+  return { ok: !hit, hit: hit ?? null, silent: !(r.says ?? []).length }
+}
+
 // ---- cases ----------------------------------------------------------------
 // A step: { t, player?, idle?, uses: [[name, input, {hold?, result?}]...] }.
 // `live: true` on the measured step; `release` lets the held action finish
@@ -159,12 +174,12 @@ const CASES = {
   ws_thanks: {
     world: { inv: [], owner: FAR },
     steps: [...WORK(false), { t: 140, player: 'thanks for the help', live: true }],
-    judge: () => ({ ok: null }),
+    judge: judgeCredit,
   },
   ws_thanks_stone: {
     world: { inv: [], owner: FAR },
     steps: [...WORK(true), { t: 140, player: 'thanks for the help', live: true }],
-    judge: () => ({ ok: null }),
+    judge: judgeCredit,
   },
   ws_thanks_logs: {
     world: { inv: [], owner: NEAR },
@@ -177,7 +192,9 @@ const CASES = {
         ['give', { item: 'oak_log', count: 6, player: PLAYER }, { result: 'gave 6 oak_log to Alex, tossed at their feet; you have 2 oak_log left', inv: [['oak_log', 2]] }],
       ] },
       { t: 30, player: 'thanks for the logs', live: true }],
-    judge: () => ({ ok: null }),
+    // Control: the player did get the logs, so accepting the thanks is right
+    // and crediting them back is the error.
+    judge: judgeCredit,
   },
   give_done: {
     world: { inv: [], owner: NEAR },
@@ -191,7 +208,7 @@ const CASES = {
       ] },
       { t: 28, player: 'ok cool keep going', uses: [['end_loop', {}]] },
       { t: 30, release: { result: 'gave 6 oak_log to Alex, tossed at their feet; you have 2 oak_log left', inv: [['oak_log', 2]] }, live: true }],
-    judge: () => ({ ok: null }),
+    judge: judgeThanks,
   },
 }
 
@@ -423,11 +440,11 @@ for (const j of jobs) {
 stream.end()
 await new Promise((r) => stream.on('finish', r))
 const ok = rows.filter((r) => !r.error)
-const lines = ['# Pass 41 probe', '', `root ${ROOT}`, `model ${MODEL}, ${ok.length} runs (${rows.length - ok.length} errors), cost $${ok.reduce((s, r) => s + (r.cost ?? 0), 0).toFixed(3)}`, '', '| case | ok |', '|---|---:|']
+const lines = ['# Pass 41 probe', '', `root ${ROOT}`, `model ${MODEL}, ${ok.length} runs (${rows.length - ok.length} errors), cost $${ok.reduce((s, r) => s + (r.cost ?? 0), 0).toFixed(3)}`, '', '| case | ok | |', '|---|---:|---|']
 for (const cid of Object.keys(CASES)) {
   const rs = ok.filter((r) => r.case === cid)
   const mv = rs.filter((r) => r.toPlayer !== undefined)
-  if (rs.length) lines.push(`| ${cid} | ${pct(rs.filter((r) => r.ok).length, rs.length)} |${mv.length ? ` moved to player ${pct(mv.filter((r) => r.toPlayer).length, mv.length)}` : ''}`)
+  if (rs.length) lines.push(`| ${cid} | ${pct(rs.filter((r) => r.ok).length, rs.length)} | silent ${rs.filter((r) => r.silent).length}${mv.length ? `, moved to player ${pct(mv.filter((r) => r.toPlayer).length, mv.length)}` : ''}`)
 }
 lines.push('', '## All runs', '')
 for (const r of ok) lines.push(`- ${r.ok ? 'OK ' : 'BAD'} ${r.case}/${r.rep}: ${seq(r)}${r.hit ? `  [hit: ${r.hit}]` : ''}${r.moved !== undefined ? `  [moved ${r.moved}]` : ''}${r.cleared && typeof r.cleared === 'string' ? `  [cleared: ${r.cleared}]` : ''}`)

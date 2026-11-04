@@ -4398,6 +4398,8 @@ function maybeWarnByteCap(loop, warned) {
    * ends, and every player line opens a new loop.
    */
   function noteActionEvent(name, r) {
+    // pass 42: true when this action handed something over.
+    let handed = false
     try {
       const line = describeActionEvent(name, r)
       // 261026 (pass 28): a repeat folds only while nobody spoke since the
@@ -4413,6 +4415,7 @@ function maybeWarnByteCap(loop, warned) {
         const text = typeof r === 'string' ? r : (typeof r?.text === 'string' ? r.text : '')
         const h = caps.handOverDetail(name, text)
         if (h) convoMemory.recentChat.noteGiven(h)
+        handed = !!h
         // pass 32: a hand-over answers the asks before it. Not a give to a
         // sibling companion ("give Lyra some logs"): the player's own ask
         // is still open.
@@ -4427,6 +4430,23 @@ function maybeWarnByteCap(loop, warned) {
       if (countsAsGoalWork(name, r)) lastWorkAt = Date.now()
       if (!ACTION_VERB_SKIP.has(name)) lastActionEndAt = Date.now()
     } catch {}
+    return handed
+  }
+
+  /**
+   * 261104 (pass 42): the turn a give finishes on still shows the transcript
+   * from before it, whose closing line says "You have not given anything to
+   * anyone"; after her own give she then thanked the player for it ("got em,
+   * thanks", give_done probe). Only a turn after a hand-over that went
+   * through gets the refreshed hand-over line (about 40 tokens); every other
+   * turn is unchanged. One-shot per hand-over.
+   */
+  function handOverLedgerTail(loop) {
+    if (!loop?._handOverDone) return ''
+    loop._handOverDone = false
+    let line = ''
+    try { line = convoMemory.recentChat.handOverLine() } catch {}
+    return line ? `\n\n${line}` : ''
   }
 
   /**
@@ -4467,7 +4487,7 @@ function maybeWarnByteCap(loop, warned) {
         const aborted = runner.abortController.signal.aborted
         const result = formatToolResult(use.name, r)
         try { logActionResult(use.name, r) } catch {}
-        noteActionEvent(use.name, r)
+        if (noteActionEvent(use.name, r)) loop._handOverDone = true
         // 260517-fix: capture _tickClaimed BEFORE clearing/nulling, so the
         // dispatcher knows the tool_use was already paired via tick.
         const tickClaimed = !!inflightEntry._tickClaimed
@@ -4856,7 +4876,10 @@ function maybeWarnByteCap(loop, warned) {
     // 261020 (pass 20): her fresh line, when this is the result of her own
     // action (a player line folded in already carries the reply form).
     // 261031 (pass 32): plus the open asks when a walk reached the player.
-    const resultEventText = extraEventText ?? ([arrivalAskText(data), resultRepeatsTail(loop).trim()].filter(Boolean).join('\n\n') || null)
+    // 261104 (pass 42): plus the refreshed hand-over line after a give.
+    const ledgerTail = handOverLedgerTail(loop).trim()
+    const resultEventText = (extraEventText ? [extraEventText, ledgerTail] : [ledgerTail, arrivalAskText(data), resultRepeatsTail(loop).trim()])
+      .filter(Boolean).join('\n\n') || null
     try {
       loop.appendToolResults(pendingResults, {
         snapshot: snapshotText(),
@@ -5003,7 +5026,7 @@ function maybeWarnByteCap(loop, warned) {
       // so a text-only response terminates naturally after the bot replies; a
       // text+action response re-suspends via R2.
       // 260608-tik: unified mid-action interrupt framing (Change 2).
-      eventText = interruptTurnText(loop, pendingInterrupt.chatText, pendingInterrupt.who)
+      eventText = interruptTurnText(loop, pendingInterrupt.chatText, pendingInterrupt.who) + handOverLedgerTail(loop)
       pendingInterrupt = null
       loop._currentIterationTrigger = 'sei:chat_received'
       logger.info?.(`[sei/orch] action_complete (tick-claimed) + PLAYER INTERRUPT folded into loop=${loop.id}`)
@@ -5012,6 +5035,8 @@ function maybeWarnByteCap(loop, warned) {
       // the event annotation when this was a visualize settle.
       const resultStr = visualizeText ?? String(data?.result ?? 'done')
       eventText = `previous action completed: ${data?.name ?? 'action'} -> ${resultStr}`
+      // 261104 (pass 42): the refreshed hand-over line after a give.
+      eventText += handOverLedgerTail(loop)
       loop._currentIterationTrigger = 'sei:action_complete'
       // 261016 (pass 9c): she answered a player line while this ran without
       // starting anything ("on it, after this stone batch"); bring that line

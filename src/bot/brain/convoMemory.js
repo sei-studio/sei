@@ -223,6 +223,9 @@ export function createConvoMemory({ onLine = null, trackHandOvers = false } = {}
       noteReceived: (gains) => handOvers.received(gains),
       // 261104 (pass 41): something her own action made or did.
       noteDone: (w) => handOvers.did(w),
+      // 261104 (pass 42): the short hand-over line for the turn a give
+      // finishes on (handOvers.describeGiven); '' when hand-overs are off.
+      handOverLine: () => trackHandOvers ? handOvers.describeGiven({ label: playerLabel }) : '',
       lastSelf: () => selfLines.length > 0 ? selfLines[selfLines.length - 1] : null,
       // 260730: the pair of these two answers "has the player said anything
       // since I last spoke?", which is what separates a reply from talking to
