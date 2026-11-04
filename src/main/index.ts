@@ -29,6 +29,7 @@ import { randomUUID } from 'node:crypto';
 import { closeSplashWindow, createMainWindow, createSplashWindow } from './windowChrome';
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { registerFacepackIpc } from './facepack/facepackIpc';
+import { devRoomSource, setGameSurfaceProbe, setRoomSource } from './seilink/roomContext';
 import { isAnalyticsActive, shutdownAnalytics, capture, captureAppQuit, noteSurface } from './analytics';
 import { reportOnboardingAbandoned } from './onboardingFunnel';
 import { initCrashReporting, appOpenedCrashProps, markStartFailed } from './crashReporting';
@@ -1334,6 +1335,27 @@ async function bootstrap(): Promise<void> {
 
   // 261028 facepack pilot (dev flag only; handlers answer "disabled" otherwise).
   registerFacepackIpc({ preloadPath: preloadPath(), rendererTarget });
+
+  // 261104 SeiLink AI side (src/main/seilink/roomContext.ts): no room line and
+  // no look() while she is in chess, Draw! or a Backseat share (bot games
+  // arrive as inGame). The room source itself is the host's (feat/seilink-host);
+  // until it registers one, only the dev stub below gives anyone a room.
+  void (async () => {
+    const [{ isChessActive }, { isDrawActive }, { getBackseatState }] = await Promise.all([
+      import('./chess/chessService'),
+      import('./draw/drawService'),
+      import('./backseat/backseatService'),
+    ]);
+    setGameSurfaceProbe((id) => isChessActive(id) || isDrawActive(id) || getBackseatState(id) !== null);
+  })().catch((err) => console.warn(`[seilink] game surface probe not wired: ${(err as Error).message}`));
+  {
+    // Dev only: unpackaged + SEI_SEILINK_ROOM=<room.json> ({packDir, state, characters}).
+    const devRoom = app.isPackaged ? '' : (process.env.SEI_SEILINK_ROOM ?? '').trim();
+    if (devRoom) {
+      setRoomSource(devRoomSource(devRoom));
+      console.log(`[seilink] dev room source: ${devRoom}`);
+    }
+  }
 
   // 5. IPC handlers
   registerIpcHandlers({
