@@ -19,6 +19,7 @@ import {
   MAC_OPEN,
   macOpenArgs,
   openCandidate,
+  openMinecraftLauncher,
   startMinecraft,
   STORE_LAUNCHER_AUMID,
   isLauncherOrGameRunning,
@@ -300,5 +301,31 @@ describe('startMinecraft', () => {
     const res = await startMinecraft({}, { env: env('win32', []), mcDir, isRunning: async () => false, supported: SUPPORTED });
     expect(res).toEqual({ ok: false, reason: 'no_launcher', profileName: 'Sei 26.1' });
     expect((await readJson('launcher_profiles.json')).profiles.s.lastUsed).toMatch(/^\d{4}-/);
+  });
+});
+
+describe('openMinecraftLauncher (261104)', () => {
+  it('opens the Store launcher with no profile selected', async () => {
+    const opened: string[] = [];
+    const res = await openMinecraftLauncher({
+      env: env('win32', ['C:\\Users\\you\\AppData\\Local\\Packages\\Microsoft.4297127D64EC6_8wekyb3d8bbwe']),
+      open: async (c) => {
+        opened.push(c.via);
+      },
+    });
+    expect(res).toEqual({ ok: true, launcher: 'windows-store' });
+    expect(opened).toEqual(['aumid']);
+  });
+
+  it('says no_launcher when Windows has none, launch_failed when opening fails', async () => {
+    expect(await openMinecraftLauncher({ env: env('win32', []), open: async () => {} })).toEqual({ ok: false, reason: 'no_launcher' });
+    expect(
+      await openMinecraftLauncher({
+        env: env('darwin', []),
+        open: async () => {
+          throw new Error('no app');
+        },
+      }),
+    ).toEqual({ ok: false, reason: 'launch_failed' });
   });
 });

@@ -29,7 +29,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { supportedVersions } from 'minecraft-protocol/src/version.js';
 import { compareMcVersions } from '../shared/mcSetup';
-import type { MinecraftLauncherKind, StartMinecraftResult } from '../shared/ipc';
+import type { MinecraftLauncherKind, OpenLauncherResult, StartMinecraftResult } from '../shared/ipc';
 import {
   LAUNCHER_PROFILE_FILES,
   listFabricProfiles,
@@ -348,6 +348,34 @@ export async function openCandidate(c: LauncherCandidate, run: RunFile = runFile
   const { shell } = await import('electron');
   const err = await shell.openPath(c.target);
   if (err) throw new Error(err);
+}
+
+/**
+ * Open the official Minecraft Launcher with no Sei profile (261104): the
+ * Bedrock-only and never-played-Java notes send the player there to pick
+ * Java Edition. Never throws.
+ */
+export async function openMinecraftLauncher(
+  deps: { env?: LauncherEnv; open?: (c: LauncherCandidate) => Promise<void> } = {},
+): Promise<OpenLauncherResult> {
+  const env = deps.env ?? defaultEnv();
+  try {
+    const candidates = await launcherCandidates(env, null);
+    if (candidates.length === 0) return { ok: false, reason: 'no_launcher' };
+    const open = deps.open ?? openCandidate;
+    for (const c of candidates) {
+      try {
+        await open(c);
+        return { ok: true, launcher: c.kind };
+      } catch (err) {
+        logger.warn(`mcLauncher: could not open ${c.kind}/${c.via}: ${(err as Error).message}`);
+      }
+    }
+    return { ok: false, reason: 'launch_failed' };
+  } catch (err) {
+    logger.warn(`mcLauncher: openMinecraftLauncher failed: ${(err as Error).message}`);
+    return { ok: false, reason: 'launch_failed' };
+  }
 }
 
 export interface StartMinecraftDeps {

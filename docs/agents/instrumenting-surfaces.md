@@ -500,3 +500,30 @@ This is also what the character reads later through the rolling summary, so
 dropping results is a deliberate trade: the companion remembers the SESSION
 rather than the scoreline. Anything genuinely worth keeping is what
 `remember()` is for, and every surface already offers it.
+
+### Setup telemetry: `game_setup_step` (261104)
+
+Neither the Minecraft nor the Stardew setup sent anything before this, so
+the 30% of new users whose Minecraft scan found no Java install and every
+Stardew SMAPI failure were invisible. One shape-only event,
+`game_setup_step`: `game` (minecraft | stardew), `step`, `outcome`
+(start | ok | fail), `error_code` (UPPER_SNAKE, always set on a fail),
+`store` (Stardew store or Minecraft launcher kind), plus closed extras:
+`reason` (network / permission / locked / antivirus / game_running /
+timeout / disk_full / not_found / java / cancelled / other, read from the
+error message, which never leaves), `found`, `launchers`, `bedrock`,
+`ended`, `wait_ms`, `version_ok`. `os` and `app_version` come from
+commonProps. The builder (`setupStepProps`, `src/shared/setupTelemetry.ts`)
+drops anything outside the enums, and main rebuilds renderer-sent copies in
+the analytics:track handler, so no path, username or free text can ride.
+
+- Minecraft steps: `install_scan` (once per distinct answer: java /
+  other_launcher / bedrock_only / launcher_only / none), `wizard` and its
+  stages `fabric`, `mods_link`, `skin_mod`, `config` (folded from the
+  wizard progress stream, `observeWizardProgress`), `start_minecraft`,
+  `open_launcher`, `lan_wait` (McSetupModal searching mode; `ended`:
+  world_open / closed / skin_setup / left).
+- Stardew steps: `find_game` (scan, once per distinct answer),
+  `choose_folder`, `smapi_download`, `smapi_run`, `mod_copy`, `mod_silent`
+  (game up 15 s with the helper silent), `farm_seen` (first open farm per
+  process).

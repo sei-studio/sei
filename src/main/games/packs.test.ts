@@ -29,7 +29,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm, stat, readFile, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, stat, readFile, mkdir, writeFile, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
@@ -46,6 +46,7 @@ vi.mock('electron', () => ({
 import {
   ensurePack,
   getPackState,
+  isFileLockError,
   isSafeZipEntryName,
   onGamePackState,
   _setGamePackEnvForTest,
@@ -434,5 +435,52 @@ describe('isSafeZipEntryName', () => {
     expect(isSafeZipEntryName('C:\\x')).toBe(false);
     expect(isSafeZipEntryName('a\\..\\x')).toBe(false);
     expect(isSafeZipEntryName('')).toBe(false);
+  });
+});
+
+describe('game packs: unpack retry on a locked file (261104)', () => {
+  const eperm = (): Error => Object.assign(new Error("EPERM: operation not permitted, rename 'x' -> 'y'"), { code: 'EPERM' });
+
+  it('retries an EPERM with a fresh staging folder and installs', async () => {
+    const fx = await buildZip();
+    served.routes.set(`/mirror/game-packs-${VERSION}.json`, { status: 200, body: manifestFor(fx), type: 'application/json' });
+    served.routes.set(`/mirror/${FILE}`, { status: 200, body: fx.zip, type: 'application/zip' });
+    const froms: string[] = [];
+    let fails = 2;
+    configure(VERSION, {
+      unpackBackoffMs: [1, 1],
+      commitDir: async (from: string, to: string) => {
+        froms.push(path.basename(from));
+        if (fails-- > 0) throw eperm();
+        await rename(from, to);
+      },
+    });
+    const root = await ensurePack('minecraft');
+    expect(root).toBe(path.join(store, 'minecraft', VERSION));
+    expect(froms).toEqual([`${VERSION}.extracting`, `${VERSION}.extracting-2`, `${VERSION}.extracting-3`]);
+    // Leftover staging folders are pruned after the install.
+    await expect(stat(path.join(store, 'minecraft', `${VERSION}.extracting`))).rejects.toBeTruthy();
+  });
+
+  it('gives up after 3 tries and names the antivirus', async () => {
+    const fx = await buildZip();
+    served.routes.set(`/mirror/game-packs-${VERSION}.json`, { status: 200, body: manifestFor(fx), type: 'application/json' });
+    served.routes.set(`/mirror/${FILE}`, { status: 200, body: fx.zip, type: 'application/zip' });
+    let tries = 0;
+    configure(VERSION, {
+      unpackBackoffMs: [1, 1],
+      commitDir: async () => {
+        tries++;
+        throw eperm();
+      },
+    });
+    await expect(ensurePack('minecraft')).rejects.toThrow(/^GAME_PACK_DOWNLOAD_FAILED: could not unpack .* after 3 tries .*antivirus/);
+    expect(tries).toBe(3);
+  });
+
+  it('does not retry other failures', () => {
+    expect(isFileLockError(eperm())).toBe(true);
+    expect(isFileLockError(Object.assign(new Error('busy'), { code: 'EBUSY' }))).toBe(true);
+    expect(isFileLockError(new Error('sha256 mismatch'))).toBe(false);
   });
 });

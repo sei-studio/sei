@@ -312,6 +312,8 @@ const api: RendererApi = {
   stardewInstallState: () => ipcRenderer.invoke(IpcChannel.stardew.installState),
   stardewInstall: () => ipcRenderer.invoke(IpcChannel.stardew.install),
   stardewLaunch: () => ipcRenderer.invoke(IpcChannel.stardew.launch),
+  stardewChooseFolder: () => ipcRenderer.invoke(IpcChannel.stardew.chooseFolder),
+  stardewGameRunning: () => ipcRenderer.invoke(IpcChannel.stardew.gameRunning),
   onStardewInstallProgress(cb) {
     const handler = (_e: Electron.IpcRendererEvent, ev: Parameters<typeof cb>[0]) => cb(ev);
     ipcRenderer.on(IpcChannel.stardew.installProgress, handler);
@@ -476,6 +478,7 @@ const api: RendererApi = {
   runWizardInstall: (args) => ipcRenderer.invoke(IpcChannel.wizard.install, args),
   wizardCancel: (sessionId) => ipcRenderer.invoke(IpcChannel.wizard.cancel, sessionId),
   startMinecraft: (args) => ipcRenderer.invoke(IpcChannel.wizard.startMinecraft, args ?? {}),
+  openMinecraftLauncher: () => ipcRenderer.invoke(IpcChannel.wizard.openLauncher),
   minecraftRunning: () => ipcRenderer.invoke(IpcChannel.wizard.minecraftRunning),
   getWizardState: () => ipcRenderer.invoke(IpcChannel.wizard.getState),
   wizardPromptShown: (action: 'get' | 'set') => ipcRenderer.invoke(IpcChannel.wizard.promptShown, action),
