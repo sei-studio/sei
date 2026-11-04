@@ -33,9 +33,31 @@ const [VW, VH] = arg('size', '1280x720').split('x').map(Number);
 const PERF = process.argv.includes('--perf');
 const PROFILE = process.argv.includes('--profile');
 
-/** name -> [query, optional action]. */
+/**
+ * name -> [query, optional action]. The rail has five panels (avatar, room,
+ * fabrics, furniture, items); `panel=<slot id>` (curtains, shell, view, lamp,
+ * ...) opens the slot's group with that section scrolled into view, so the
+ * slot shots below show their part of the group's panel.
+ */
 const SHOTS = {
   day: ['time=day&items=1'],
+  room: ['time=day&items=1&panel=room'],
+  fabrics: ['time=day&items=1&panel=fabrics'],
+  furniture: ['time=day&items=1&panel=furniture'],
+  items: ['time=day&items=1&panel=items'],
+  'night-room': ['time=night&items=1&panel=room'],
+  'night-fabrics': ['time=night&items=1&panel=fabrics'],
+  // Opens Furniture scrolled down to its last section.
+  'night-furniture': ['time=night&items=1&panel=lamp'],
+  'night-items': ['time=night&items=1&panel=items'],
+  // Click the left curtain in the room: Walls & fabrics opens at Curtains, which flashes.
+  'click-part': [
+    'time=day&items=1',
+    async (page) => {
+      const box = await page.locator('[data-room-editor] canvas').first().boundingBox();
+      await page.mouse.click(box.x + box.width * 0.49, box.y + box.height * 0.3);
+    },
+  ],
   curtains: ['time=day&items=1&panel=curtains'],
   walls: ['time=day&panel=shell'],
   'item-day': ['time=day&items=1&panel=items&selected=3'],
@@ -68,7 +90,7 @@ const SHOTS = {
     'time=day&items=1&panel=curtains',
     async (page) => {
       await page.evaluate(async () => {
-        const input = document.querySelector('[data-room-editor] input[type=color]');
+        const input = document.querySelector('[data-room-editor] [data-slot="curtains"] input[type=color]');
         const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
         for (const c of ['#3b6fd1', '#d13b6f', '#6fd13b', '#7a4fc2']) {
           setter.call(input, c);
@@ -110,10 +132,11 @@ function packServer(root) {
 
 async function waitReady(page) {
   // The rail draws icons, so the editor is up once the rail is; an open panel
-  // still shows image thumbnails, so wait until none is a placeholder.
+  // still shows image thumbnails, so wait until none is a placeholder (a
+  // disabled "Soon" room card keeps its placeholder for good).
   await page.waitForSelector('[data-room-editor] nav', { timeout: 60_000 }).catch(() => console.log('editor never showed its rail'));
   await page
-    .waitForFunction(() => !document.querySelector('[data-room-editor] section [class*="Wait"]'), null, { timeout: 30_000 })
+    .waitForFunction(() => !document.querySelector('[data-room-editor] section button:not(:disabled) [class*="Wait"]'), null, { timeout: 30_000 })
     .catch(() => console.log('panel never showed its thumbnails'));
   await page.waitForTimeout(1500);
 }
@@ -133,7 +156,7 @@ async function perf(page, base) {
     const obs = new PerformanceObserver((l) => l.getEntries().forEach((e) => tasks.push(e.duration)));
     obs.observe({ entryTypes: ['longtask'] });
     const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
-    const input = document.querySelector('[data-room-editor] input[type=color]');
+    const input = document.querySelector('[data-room-editor] [data-slot="curtains"] input[type=color]');
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
     const run = async (fn, n) => {
       tasks.length = 0;
@@ -158,7 +181,7 @@ async function perf(page, base) {
       input.dispatchEvent(new Event('input', { bubbles: true }));
     }, 40);
     // Structural edits (swap the part back and forth) rebuild every layer.
-    const opts = [...document.querySelectorAll('[data-room-editor] section button[aria-pressed]')];
+    const opts = [...document.querySelectorAll('[data-room-editor] [data-slot="curtains"] button[aria-pressed]')];
     const swap = await run((i) => opts[i % 2]?.click(), 12);
     obs.disconnect();
     return { tint, swap };

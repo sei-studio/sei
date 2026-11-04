@@ -2182,6 +2182,8 @@ export const JA: Record<string, string> = {
   // ── seilink room editor ──
   "Edit room": "部屋を編集",
   "Room": "部屋",
+  "Furniture": "家具",
+  "Walls & fabrics": "壁とファブリック",
   "Room type": "部屋のタイプ",
   "Items": "アイテム",
   "Color": "色",

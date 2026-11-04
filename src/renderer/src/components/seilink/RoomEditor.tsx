@@ -4,9 +4,11 @@
  * translucent panels tinted by the ROOM (manifest.overlay for the time of
  * day: light room, light glass), never by the app theme.
  *
- *  - left: a column of inventory tiles (her avatar, the room type, each part
- *    of the room that has options, items). A tile opens its options next to
- *    it: swap the part, recolour it, add items, upload a Live2D model;
+ *  - left: a rail of five tiles (her avatar, the room, walls & fabrics,
+ *    furniture, items). A tile opens a panel next to it; Room, Walls & fabrics
+ *    and Furniture hold one section per part of the room (261105, Shawn: fewer
+ *    rail buttons, surfaces apart from standalone pieces), where she swaps the
+ *    part and recolours it. Avatar uploads a Live2D model, Items adds items;
  *  - top: time of day (auto follows the clock, or a fixed day/dusk/night to
  *    preview), undo, save, close;
  *  - in the room: click a part to open its options, click an item to select
@@ -18,7 +20,7 @@
  * (IPC in the app, memory in the dev preview). Save writes through IPC and
  * main sanitizes it; what she sees next turn is what was saved.
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   defaultRoomState,
@@ -68,6 +70,7 @@ import { ROOM_PRESET_LABEL } from '../../lib/seilink/moveIn';
 import { RoomCanvas, type RoomAvatarSlot } from './RoomCanvas';
 import { componentThumb, roomThumb } from '../../lib/seilink/roomThumbs';
 import { RoomPicker } from '../../lib/seilink/roomPick';
+import { groupSlots, slotGroup, type SlotGroup } from '../../lib/seilink/roomGroups';
 import { drawRoomLayers, loadPlanAssets } from '../../lib/seilink/roomCompose';
 import { ctx2d } from '../../lib/seilink/roomImages';
 import { RoomAvatar } from './RoomAvatar';
@@ -75,33 +78,33 @@ import type { EditorAvatarModel, EditorPack, RoomEditorSource } from './roomEdit
 import {
   AutoIcon,
   BagIcon,
-  BedIcon,
-  CampfireIcon,
   ChairIcon,
   CheckIcon,
   CloseIcon,
-  CurtainsIcon,
   DayIcon,
   DuskIcon,
   FlipIcon,
   HouseIcon,
-  LampIcon,
   MinusIcon,
   NightIcon,
   NoneIcon,
   PersonIcon,
   PlusIcon,
   RollerIcon,
-  RugIcon,
-  ShelfIcon,
   TrashIcon,
   UndoIcon,
   UploadIcon,
-  ViewIcon,
 } from './roomEditorIcons';
 import styles from './RoomEditor.module.css';
 
-type Panel = 'avatar' | 'room' | 'items' | RoomSlotId;
+/** The rail's panels (261105). Room, Walls & fabrics and Furniture hold several slots as sections. */
+type Group = 'avatar' | SlotGroup | 'items';
+const GROUPS: readonly Group[] = ['avatar', 'room', 'fabrics', 'furniture', 'items'];
+/**
+ * What `initial.panel` may name: a group, or a slot (old links, screenshot
+ * scripts), which opens the slot's group with its section in view.
+ */
+export type PanelRequest = Group | RoomSlotId;
 
 /** Labels for slot tiles (keys are the English strings; see i18n). */
 const SLOT_LABEL: Record<RoomSlotId, string> = {
@@ -116,21 +119,9 @@ const SLOT_LABEL: Record<RoomSlotId, string> = {
   campfire: 'Campfire',
 };
 
-/** Rail icons (261105): the rail names the slot; previews live in the panel. */
-const SLOT_ICON: Record<RoomSlotId, (p: { size?: number }) => React.ReactElement> = {
-  view: ViewIcon,
-  shell: RollerIcon,
-  curtains: CurtainsIcon,
-  bed: BedIcon,
-  shelf: ShelfIcon,
-  chair: ChairIcon,
-  lamp: LampIcon,
-  rug: RugIcon,
-  campfire: CampfireIcon,
-};
+const GROUP_LABEL = { fabrics: 'Walls & fabrics', furniture: 'Furniture' } as const;
 
 const RAIL_ICON = 22;
-
 
 const TIMES: ReadonlyArray<{ id: RoomState['time']; label: string; Icon: (p: { size?: number }) => React.ReactElement }> = [
   { id: 'auto', label: 'Auto', Icon: AutoIcon },
@@ -153,7 +144,7 @@ export interface RoomEditorProps {
   /** Effects frame cap (RoomCanvas fps). */
   fps?: number;
   /** Dev / screenshots: open with a panel or an item selected. */
-  initial?: { panel?: Panel | null; selected?: number | null; state?: RoomState };
+  initial?: { panel?: PanelRequest | null; selected?: number | null; state?: RoomState };
   /** Render inline instead of in a portal over the whole window (dev preview). */
   inline?: boolean;
 }
@@ -351,7 +342,12 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
   const [packs, setPacks] = useState<EditorPack[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [history, setHistory] = useState<EditHistory | null>(null);
-  const [panel, setPanel] = useState<Panel | null>(initial?.panel ?? null);
+  const initialSlot = initial?.panel && !GROUPS.includes(initial.panel as Group) ? (initial.panel as RoomSlotId) : null;
+  const [panel, setPanel] = useState<Group | null>(initialSlot ? slotGroup(initialSlot) : ((initial?.panel as Group | undefined) ?? null));
+  // The section a canvas click (or `initial.panel` naming a slot) asked for: scrolled into view and flashed once per `n`.
+  const [focus, setFocus] = useState<{ slot: RoomSlotId; n: number; smooth: boolean } | null>(initialSlot ? { slot: initialSlot, n: 1, smooth: false } : null);
+  const panelRef = useRef<HTMLElement>(null);
+  const sectionEls = useRef(new Map<RoomSlotId, HTMLElement>());
   const [selected, setSelected] = useState<number | null>(initial?.selected ?? null);
   const [overlay, setOverlay] = useState<RoomOverlay | null>(null);
   const [vp, setVp] = useState<RoomViewport>({ scale: 0, left: 0, top: 0, width: 0, height: 0 });
@@ -433,6 +429,32 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
 
   const slots = useMemo(() => (manifest && state ? editableSlots(manifest, state) : []), [manifest, state]);
   const slotSet = useMemo(() => new Set(slots), [slots]);
+  const sections = useMemo(
+    () => ({ room: groupSlots(slots, 'room'), fabrics: groupSlots(slots, 'fabrics'), furniture: groupSlots(slots, 'furniture') }),
+    [slots],
+  );
+
+  /** Open the group that holds `slot`, with its section in view. */
+  const openSlot = (slot: RoomSlotId): void => {
+    const group = slotGroup(slot);
+    setFocus((f) => ({ slot, n: (f?.n ?? 0) + 1, smooth: panel === group }));
+    setPanel(group);
+  };
+
+  // Bring the asked-for section into view and flash it. Runs again once the
+  // editor has loaded (the sections do not exist before that).
+  const ready = Boolean(manifest);
+  useLayoutEffect(() => {
+    if (!focus || !ready) return;
+    const el = sectionEls.current.get(focus.slot);
+    const box = panelRef.current;
+    if (!el || !box) return;
+    const pad = parseFloat(getComputedStyle(box).paddingTop) || 0;
+    box.scrollTo({ top: Math.max(0, el.offsetTop - pad), behavior: focus.smooth ? 'smooth' : 'auto' });
+    el.classList.remove(styles.flash);
+    void el.offsetWidth; // restart the animation
+    el.classList.add(styles.flash);
+  }, [focus, ready]);
 
   // Keep hit-test maps ready for what is on screen.
   useEffect(() => {
@@ -545,7 +567,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
       setSelected(null);
       return;
     }
-    if (hit?.kind === 'slot') setPanel(hit.slot);
+    if (hit?.kind === 'slot') openSlot(hit.slot);
     else if (hit?.kind === 'avatar') setPanel('avatar');
     else setPanel(null);
   };
@@ -657,7 +679,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     ? { left: vp.left + selRect[0] * vp.scale, top: vp.top + selRect[1] * vp.scale, width: selRect[2] * vp.scale, height: selRect[3] * vp.scale }
     : null;
 
-  const tile = (key: Panel, label: string, content: React.ReactNode): React.ReactElement => (
+  const tile = (key: Group, label: string, content: React.ReactNode): React.ReactElement => (
     <button
       key={key}
       type="button"
@@ -667,6 +689,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
       title={label}
       onClick={() => {
         setPanel(panel === key ? null : key);
+        setFocus(null);
         if (key !== 'items') setSelected(null);
       }}
     >
@@ -679,12 +702,78 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     return currentTint(id ? byId.get(id) : undefined, state.slots[slot]?.tint);
   };
 
+  /** One slot as a section of its group: its label, the parts to pick, and colours when the part takes them. */
+  const slotSection = (slot: RoomSlotId): React.ReactNode => {
+    const def = manifest.slots[slot];
+    if (!def) return null;
+    const current = slotChoice(manifest, state, slot);
+    const comp = current ? byId.get(current) : undefined;
+    return (
+      <div
+        key={slot}
+        ref={(el) => {
+          if (el) sectionEls.current.set(slot, el);
+          else sectionEls.current.delete(slot);
+        }}
+        className={styles.section}
+        role="group"
+        aria-label={t(SLOT_LABEL[slot])}
+        data-slot={slot}
+      >
+        <h2 className={styles.title}>{t(SLOT_LABEL[slot])}</h2>
+        {(def.options.length > 1 || def.optional) && (
+          <div className={styles.grid}>
+            {def.options.map((id) => {
+              const c = byId.get(id);
+              if (!c) return null;
+              const on = current === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  className={on ? `${styles.option} ${styles.optionOn}` : styles.option}
+                  aria-pressed={on}
+                  title={c.name}
+                  aria-label={c.name}
+                  onClick={() => edit((s) => setSlotComponent(manifest, s, slot, id))}
+                >
+                  <PartThumb pack={pack} component={c} tint={on ? slotTint(slot) : (c.defaultTint ?? null)} time="day" cover={SCENE_SLOTS.has(slot)} />
+                </button>
+              );
+            })}
+            {def.optional && (
+              <button
+                type="button"
+                className={current === null ? `${styles.option} ${styles.optionOn}` : styles.option}
+                aria-pressed={current === null}
+                title={t('None')}
+                aria-label={t('None')}
+                onClick={() => edit((s) => setSlotComponent(manifest, s, slot, null))}
+              >
+                <NoneIcon size={22} />
+              </button>
+            )}
+          </div>
+        )}
+        {comp?.tintable && (
+          <Swatches
+            component={comp}
+            value={slotTint(slot)}
+            gesture={`tint:${slot}`}
+            onTint={(hex, g) => edit((s) => setSlotTint(manifest, s, slot, hex), g)}
+            onGestureEnd={endEditGesture}
+          />
+        )}
+      </div>
+    );
+  };
+
   // ── panels ──
   const renderPanel = (): React.ReactNode => {
     if (!panel) return null;
     if (panel === 'avatar') {
       return (
-        <section className={styles.panel} aria-label={t('Avatar')}>
+        <section key="avatar" className={styles.panel} aria-label={t('Avatar')}>
           <h2 className={styles.title}>{t('Avatar')}</h2>
           <div className={styles.grid}>
             <button
@@ -739,41 +828,51 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     }
     if (panel === 'room') {
       return (
-        <section className={styles.panel} aria-label={t('Room type')}>
-          <h2 className={styles.title}>{t('Room type')}</h2>
-          <div className={styles.cards}>
-            {ROOM_PRESET_IDS.map((id) => {
-              const p = packs.find((x) => x.id === id);
-              const on = state.preset === id;
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  className={on ? `${styles.card} ${styles.cardOn}` : styles.card}
-                  aria-pressed={on}
-                  disabled={!p}
-                  onClick={() => pickPreset(id)}
-                >
-                  {p ? <RoomCard pack={p} state={on ? state : defaultRoomState(id)} time={time} /> : <span className={styles.cardWait} />}
-                  {on && (
-                    <span className={styles.cardCheck}>
-                      <CheckIcon size={14} />
+        <section key="room" ref={panelRef} className={`${styles.panel} ${styles.groupPanel}`} aria-label={t('Room')}>
+          <div className={styles.section} role="group" aria-label={t('Room type')} data-section="room-type">
+            <h2 className={styles.title}>{t('Room type')}</h2>
+            <div className={styles.cards}>
+              {ROOM_PRESET_IDS.map((id) => {
+                const p = packs.find((x) => x.id === id);
+                const on = state.preset === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    className={on ? `${styles.card} ${styles.cardOn}` : styles.card}
+                    aria-pressed={on}
+                    disabled={!p}
+                    onClick={() => pickPreset(id)}
+                  >
+                    {p ? <RoomCard pack={p} state={on ? state : defaultRoomState(id)} time={time} /> : <span className={styles.cardWait} />}
+                    {on && (
+                      <span className={styles.cardCheck}>
+                        <CheckIcon size={14} />
+                      </span>
+                    )}
+                    <span className={styles.cardLabel}>
+                      {t(ROOM_PRESET_LABEL[id])}
+                      {!p && <span className={styles.soon}>{t('Soon')}</span>}
                     </span>
-                  )}
-                  <span className={styles.cardLabel}>
-                    {t(ROOM_PRESET_LABEL[id])}
-                    {!p && <span className={styles.soon}>{t('Soon')}</span>}
-                  </span>
-                </button>
-              );
-            })}
+                  </button>
+                );
+              })}
+            </div>
           </div>
+          {sections.room.map(slotSection)}
+        </section>
+      );
+    }
+    if (panel === 'fabrics' || panel === 'furniture') {
+      return (
+        <section key={panel} ref={panelRef} className={`${styles.panel} ${styles.groupPanel}`} aria-label={t(GROUP_LABEL[panel])}>
+          {sections[panel].map(slotSection)}
         </section>
       );
     }
     if (panel === 'items') {
       return (
-        <section className={styles.panel} aria-label={t('Items')}>
+        <section key="items" className={styles.panel} aria-label={t('Items')}>
           <h2 className={styles.title}>{t('Items')}</h2>
           <div className={styles.grid}>
             {items.map((c) => (
@@ -788,59 +887,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
         </section>
       );
     }
-    const slot = panel;
-    const def = manifest.slots[slot];
-    if (!def) return null;
-    const current = slotChoice(manifest, state, slot);
-    const comp = current ? byId.get(current) : undefined;
-    return (
-      <section className={styles.panel} aria-label={t(SLOT_LABEL[slot])}>
-        <h2 className={styles.title}>{t(SLOT_LABEL[slot])}</h2>
-        {(def.options.length > 1 || def.optional) && (
-          <div className={styles.grid}>
-            {def.options.map((id) => {
-              const c = byId.get(id);
-              if (!c) return null;
-              const on = current === id;
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  className={on ? `${styles.option} ${styles.optionOn}` : styles.option}
-                  aria-pressed={on}
-                  title={c.name}
-                  aria-label={c.name}
-                  onClick={() => edit((s) => setSlotComponent(manifest, s, slot, id))}
-                >
-                  <PartThumb pack={pack} component={c} tint={on ? slotTint(slot) : (c.defaultTint ?? null)} time="day" cover={SCENE_SLOTS.has(slot)} />
-                </button>
-              );
-            })}
-            {def.optional && (
-              <button
-                type="button"
-                className={current === null ? `${styles.option} ${styles.optionOn}` : styles.option}
-                aria-pressed={current === null}
-                title={t('None')}
-                aria-label={t('None')}
-                onClick={() => edit((s) => setSlotComponent(manifest, s, slot, null))}
-              >
-                <NoneIcon size={22} />
-              </button>
-            )}
-          </div>
-        )}
-        {comp?.tintable && (
-          <Swatches
-            component={comp}
-            value={slotTint(slot)}
-            gesture={`tint:${slot}`}
-            onTint={(hex, g) => edit((s) => setSlotTint(manifest, s, slot, hex), g)}
-            onGestureEnd={endEditGesture}
-          />
-        )}
-      </section>
-    );
+    return null;
   };
 
   const savedLabel = saving === 'saving' ? t('Saving…') : dirty ? t('Save') : t('Saved');
@@ -948,12 +995,9 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
         <div className={styles.side}>
           <nav className={panel ? `${styles.rail} ${styles.railOpen}` : styles.rail} aria-label={t('Room')}>
             {tile('avatar', t('Avatar'), <PersonIcon size={RAIL_ICON} />)}
-            {tile('room', t('Room type'), <HouseIcon size={RAIL_ICON} />)}
-            <span className={styles.railGap} />
-            {slots.map((slot) => {
-              const Icon = SLOT_ICON[slot];
-              return tile(slot, t(SLOT_LABEL[slot]), <Icon size={RAIL_ICON} />);
-            })}
+            {tile('room', t('Room'), <HouseIcon size={RAIL_ICON} />)}
+            {sections.fabrics.length > 0 && tile('fabrics', t(GROUP_LABEL.fabrics), <RollerIcon size={RAIL_ICON} />)}
+            {sections.furniture.length > 0 && tile('furniture', t(GROUP_LABEL.furniture), <ChairIcon size={RAIL_ICON} />)}
             {items.length > 0 && (
               <>
                 <span className={styles.railGap} />

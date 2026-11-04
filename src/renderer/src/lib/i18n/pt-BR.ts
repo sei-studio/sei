@@ -2182,6 +2182,8 @@ export const PT_BR: Record<string, string> = {
   // ── seilink room editor ──
   "Edit room": "Editar quarto",
   "Room": "Quarto",
+  "Furniture": "Móveis",
+  "Walls & fabrics": "Paredes e tecidos",
   "Room type": "Tipo de quarto",
   "Items": "Itens",
   "Color": "Cor",

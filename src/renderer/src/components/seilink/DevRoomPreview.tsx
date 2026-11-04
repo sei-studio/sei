@@ -25,7 +25,8 @@
  * `&editor=1` opens the room editor (RoomEditor) instead, over an in-memory
  * source (saves last until reload). Every `&pack=<url>` is one preset, so
  * several give the room type picker something to switch to. Editor params:
- * panel=<avatar|room|items|slot id>, selected=<item index>, items=1, time=,
+ * panel=<avatar|room|furniture|items|slot id> (a slot opens its group at
+ * that section), selected=<item index>, items=1, time=,
  * tint.<slot>=, lang=<ui language>.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';

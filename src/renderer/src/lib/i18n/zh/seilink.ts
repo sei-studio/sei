@@ -2,6 +2,8 @@
 export const ZH_SEILINK: Record<string, string> = {
   "Edit room": "编辑房间",
   "Room": "房间",
+  "Furniture": "家具",
+  "Walls & fabrics": "墙面与布艺",
   "Room type": "房间类型",
   "Items": "物品",
   "Color": "颜色",

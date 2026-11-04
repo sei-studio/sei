@@ -291,6 +291,55 @@
   display: none;
 }
 
+/* Room and Furniture (261105): one section per slot, stacked and scrolled. */
+.groupPanel {
+  position: relative;
+  gap: 0;
+  padding-block: var(--space-sm);
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--ink) / 0.22) transparent;
+}
+
+.groupPanel::-webkit-scrollbar {
+  display: block;
+  width: 6px;
+}
+
+.groupPanel::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: rgb(var(--ink) / 0.22);
+}
+
+.section {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-sm) var(--space-md-plus);
+  margin-inline: calc(-1 * var(--space-sm));
+  border-radius: var(--r-tile);
+}
+
+.section + .section {
+  box-shadow: inset 0 1px 0 rgb(var(--ink) / 0.1);
+  padding-top: var(--space-md-plus);
+}
+
+/* A click on that part of the room: the section lights up once. */
+.flash {
+  animation: sectionFlash 1400ms var(--ease) both;
+}
+
+@keyframes sectionFlash {
+  0%,
+  35% {
+    background-color: rgb(var(--ink) / 0.1);
+  }
+  100% {
+    background-color: rgb(var(--ink) / 0);
+  }
+}
+
 @keyframes panelIn {
   from {
     opacity: 0;
