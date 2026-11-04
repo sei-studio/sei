@@ -108,7 +108,7 @@ const PRESET_LABEL: Record<RoomPresetId, string> = { cozy: 'Cozy', gamer: 'Gamer
 
 const TIMES: ReadonlyArray<{ id: RoomState['time']; label: string; Icon: (p: { size?: number }) => React.ReactElement }> = [
   { id: 'auto', label: 'Auto', Icon: AutoIcon },
-  { id: 'day', label: 'Day', Icon: DayIcon },
+  { id: 'day', label: 'Daytime', Icon: DayIcon },
   { id: 'dusk', label: 'Dusk', Icon: DuskIcon },
   { id: 'night', label: 'Night', Icon: NightIcon },
 ];
@@ -820,7 +820,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     );
   };
 
-  const savedLabel = saving === 'saving' ? t('Saving') : dirty ? t('Save') : t('Saved');
+  const savedLabel = saving === 'saving' ? t('Saving…') : dirty ? t('Save') : t('Saved');
 
   const body = (
     <div className={`${styles.root} ${tone} ${inline ? styles.inline : ''}`} style={rootStyle} data-room-editor="1">
@@ -846,6 +846,9 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
           {cssRect && <div className={styles.selection} style={cssRect} />}
           {drag && state.items[drag.index] && <ItemGhost pack={pack} item={{ ...state.items[drag.index], x: drag.x, y: drag.y }} time={time} vp={vp} />}
         </div>
+        {/* The editor covers the app window, title strip included: keep the
+            frameless window movable from the top edge (as MacosWindow does). */}
+        {!inline && <div className={styles.dragStrip} aria-hidden="true" />}
 
         {cssRect && selItem && selComp && selected !== null && (
           <div
