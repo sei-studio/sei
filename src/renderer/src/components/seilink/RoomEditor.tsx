@@ -998,12 +998,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
             {tile('room', t('Room'), <HouseIcon size={RAIL_ICON} />)}
             {sections.fabrics.length > 0 && tile('fabrics', t(GROUP_LABEL.fabrics), <RollerIcon size={RAIL_ICON} />)}
             {sections.furniture.length > 0 && tile('furniture', t(GROUP_LABEL.furniture), <ChairIcon size={RAIL_ICON} />)}
-            {items.length > 0 && (
-              <>
-                <span className={styles.railGap} />
-                {tile('items', t('Items'), <BagIcon size={RAIL_ICON} />)}
-              </>
-            )}
+            {items.length > 0 && tile('items', t('Items'), <BagIcon size={RAIL_ICON} />)}
           </nav>
           {renderPanel()}
         </div>

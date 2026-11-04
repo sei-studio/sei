@@ -178,14 +178,6 @@
   display: none;
 }
 
-.railGap {
-  flex: none;
-  height: 2px;
-  margin: 2px 14px;
-  border-radius: 2px;
-  background: rgb(var(--ink) / 0.1);
-}
-
 .tile {
   position: relative;
   flex: none;
