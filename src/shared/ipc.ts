@@ -1120,6 +1120,29 @@ export interface McInstall {
   compatibility: 'full' | 'limited';
 }
 
+/** Third-party Java launchers the scan detects but cannot set up (261104). */
+export type McOtherLauncher = 'prism' | 'multimc' | 'modrinth' | 'atlauncher';
+
+/** One instance of a third-party launcher (detection only; src/main/mcOtherInstalls.ts). */
+export interface McOtherInstance {
+  launcher: McOtherLauncher;
+  /** The instance's folder name, shown in the setup step only (never sent). */
+  label: string;
+  mc_version: string | null;
+  loader: 'vanilla' | 'fabric' | 'quilt' | 'forge' | 'neoforge' | null;
+}
+
+/**
+ * What the install scan found besides usable installs (261104): third-party
+ * launcher instances, a Bedrock install, and whether the official launcher
+ * is installed at all. Rides on wizard:detect-installs next to `installs`.
+ */
+export interface McScanExtras {
+  others: McOtherInstance[];
+  bedrock: boolean;
+  launcherInstalled: boolean;
+}
+
 /** Which Minecraft Launcher build Start Minecraft opened. */
 export type MinecraftLauncherKind = 'mac' | 'windows' | 'windows-store';
 
@@ -2758,7 +2781,7 @@ export interface RendererApi {
 
   // --- Setup wizard ---
   /** Scan known Minecraft launcher + CurseForge paths on the current platform. */
-  detectMcInstalls(): Promise<{ installs: McInstall[] }>;
+  detectMcInstalls(): Promise<{ installs: McInstall[]; extras?: McScanExtras | null }>;
   /**
    * Install Fabric Loader (vanilla) and/or drop CustomSkinLoader into each selected install. Emits progress via onWizardProgress.
    * `sessionId` is a renderer-generated opaque id (e.g. crypto.randomUUID()) that lets a subsequent wizardCancel(sessionId) abort THIS install run.
