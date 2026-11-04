@@ -279,6 +279,9 @@ errors) is in [`seilink-analytics.md`](seilink-analytics.md). The basics:
   bridge), `?dashshot=screen&seilink=on|off|unsupported` and
   `&modal=movein&pack=<url>[&swap=1]` (DevScreenShot), all shot by
   `node scripts/seilink-host-shots.mjs --out <dir>` (bundled cozy pack by default).
+  `--shots host-crossfade --portrait <png> --facepacks <packs dir> --facepack-id <an-...>`
+  shoots the portrait-to-face-set crossfade as a timed sequence (the face set
+  "arrives" 1.5 s after the room draws; dev stub in `devHarnessStubs.ts`).
 - CI: `.github/workflows/seilink-host-check.yml` (windows-2022/2025,
   macos-15/26; dispatch, or push to `feat/seilink-host` under the host
   paths). One runner per OS also packages a dir build and checks the addon
