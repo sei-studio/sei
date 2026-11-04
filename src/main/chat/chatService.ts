@@ -22,7 +22,7 @@ import { CHAT_TIMEOUT_MS } from './sdk';
 // The multi-provider LLM layer (china-compat W1). Anthropic (cloud-proxy and
 // local BYOK) rides the exact old SDK path inside it, streaming included.
 import { buildLlmProvider } from '../llm';
-import { raiseUsageLimitPopup } from './usageLimit';
+import { classifyUsageLimit, raiseUsageLimitPopup } from './usageLimit';
 import {
   buildSystemBlocks,
   markLastMessageCached,
@@ -2194,16 +2194,29 @@ export const DESKTOP_LINE_NOTES = {
  * the fold see it. Skipped (null) while another turn for her is running, when
  * she has no room right now (a game surface), or when she stays silent.
  */
+/** Why a desktop line came back null (analytics, seilink_poke / idle counts). */
+export type DesktopLineSkip = 'busy' | 'no_room' | 'silence' | 'aborted' | 'error' | 'rate_limited' | 'depleted';
+
 async function sendDesktopLineTurnImpl(
   characterId: string,
   kind: 'poke' | 'idle',
+  /** 261105: told why the result is null (shape only). */
+  onSkip?: (why: DesktopLineSkip) => void,
 ): Promise<{ text: string; messages: ChatMessage[] } | null> {
-  if (inflight.has(characterId)) return null;
+  const skip = (why: DesktopLineSkip): null => {
+    try {
+      onSkip?.(why);
+    } catch {
+      /* analytics only */
+    }
+    return null;
+  };
+  if (inflight.has(characterId)) return skip('busy');
   const ctrl = new AbortController();
   inflight.set(characterId, ctrl);
   try {
     const prep = await prepareChatTurn(characterId, { openWorldDetected: false, inGame: false, recentCap: VOICE_RECENT_CAP });
-    if (!prep || !prep.room) return null;
+    if (!prep || !prep.room) return skip('no_room');
     const { system, messages } = prep;
     markLastMessageCached(messages);
     appendUncachedTail(messages, DESKTOP_LINE_NOTES[kind], prep.clockNote);
@@ -2218,10 +2231,10 @@ async function sendDesktopLineTurnImpl(
       timeoutMs: CHAT_TIMEOUT_MS,
       signal: ctrl.signal,
     });
-    if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return null;
+    if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return skip('aborted');
     await honorRememberCalls(characterId, res.content);
     const replyText = textOf(res.content).trim();
-    if (!replyText || isSilenceFiller(replyText)) return null;
+    if (!replyText || isSilenceFiller(replyText)) return skip('silence');
     const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');
     const saved = await persistReplies(characterId, replyText, prep.punctuation, {
       rememberCalled,
@@ -2233,11 +2246,12 @@ async function sendDesktopLineTurnImpl(
       .join(' ')
       .trim();
     if (scopedTurnCurrent()) void foldIfDue(characterId, prep.character.persona.expanded).catch(() => {});
-    return text ? { text, messages: saved } : null;
+    return text ? { text, messages: saved } : skip('silence');
   } catch (err) {
     // Unprompted or a poke: never a popup. The next line simply tries again later.
-    if (!isAbortError(err)) console.warn(`[sei] desktop ${kind} line failed: ${(err as Error).message}`);
-    return null;
+    if (isAbortError(err)) return skip('aborted');
+    console.warn(`[sei] desktop ${kind} line failed: ${(err as Error).message}`);
+    return skip(classifyUsageLimit(err) ?? 'error');
   } finally {
     if (inflight.get(characterId) === ctrl) inflight.delete(characterId);
   }
