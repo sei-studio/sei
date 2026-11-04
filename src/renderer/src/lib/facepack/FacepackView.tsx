@@ -84,6 +84,8 @@ export interface FacepackViewProps {
   decay?: boolean;
   /** Filled every frame for dev readouts. */
   debugRef?: React.MutableRefObject<FaceDebugState | null>;
+  /** Frame cap (261104, SeiLink): absent = every animation frame, 0 = paused (no frames at all), N = at most N a second. */
+  fps?: number;
 }
 
 const EXPRESSION_FADE_MS = 120;
@@ -125,10 +127,13 @@ export function FacepackView({
   overlays = true,
   decay = true,
   debugRef,
+  fps,
 }: FacepackViewProps): React.ReactElement {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const live = useRef({ speaking, camera, expression, expressionSeq, pinnedPose, overlays, decay });
-  live.current = { speaking, camera, expression, expressionSeq, pinnedPose, overlays, decay };
+  const live = useRef({ speaking, camera, expression, expressionSeq, pinnedPose, overlays, decay, fps });
+  live.current = { speaking, camera, expression, expressionSeq, pinnedPose, overlays, decay, fps };
+  // Restarts a loop paused by fps 0.
+  const resumeRef = useRef<(() => void) | null>(null);
   const onStatusRef = useRef(onStatus);
   onStatusRef.current = onStatus;
 
@@ -304,10 +309,18 @@ export function FacepackView({
           return { expression: exprName, pose: avail.includes(idlePose) ? idlePose : avail[0] };
         };
 
+        let lastTick = 0;
         const frame = (): void => {
           if (cancelled) return;
+          const cap = live.current.fps;
+          if (cap === 0) {
+            raf = 0;
+            return;
+          }
           raf = requestAnimationFrame(frame);
           const now = performance.now();
+          if (cap !== undefined && cap > 0 && now - lastTick < 1000 / cap - 1) return;
+          lastTick = now;
           const L = live.current;
 
           // Expression input -> timeline (+ decay).
@@ -420,6 +433,9 @@ export function FacepackView({
           }
         };
         raf = requestAnimationFrame(frame);
+        resumeRef.current = () => {
+          if (!cancelled && raf === 0) raf = requestAnimationFrame(frame);
+        };
         onStatusRef.current?.('ready');
 
         // Warm the other poses of the starting expression in the background.
@@ -435,6 +451,7 @@ export function FacepackView({
 
     return () => {
       cancelled = true;
+      resumeRef.current = null;
       cancelAnimationFrame(raf);
       offCursor?.();
       offLevels?.();
@@ -445,6 +462,10 @@ export function FacepackView({
     // Pack identity changes rebuild everything; the rest is read live.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [characterId, source, packId, levelRef, bandsRef]);
+
+  useEffect(() => {
+    if (fps !== 0) resumeRef.current?.();
+  }, [fps]);
 
   return <div ref={hostRef} className={className} style={style} />;
 }

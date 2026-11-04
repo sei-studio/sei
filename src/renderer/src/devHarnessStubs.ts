@@ -405,13 +405,31 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
 // ?facepack=1 (261028): the facepack dev preview in a plain browser tab. It
 // reads packs over HTTP (urlPackSource), so the bridge only has to answer
 // the view's optional subscriptions: everything is an async undefined, every
-// on* an unsubscribe.
-if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.search).has('facepack')) {
+// on* an unsubscribe. ?seilink=1 (261104) gets the same, so RoomAvatar runs
+// in a plain tab; with &rig=<url of a rig dir> it also answers avatarGet and
+// avatarModelFiles from that dir, so the imported-avatar path can be shot.
+const harnessParams = w ? new URLSearchParams(w.location.search) : null;
+if (import.meta.env.DEV && w && w.sei == null && harnessParams && (harnessParams.has('facepack') || harnessParams.has('seilink'))) {
   const noop = async (): Promise<undefined> => undefined;
+  const rigBase = harnessParams.get('rig')?.replace(/\/?$/, '/') ?? null;
+  const rigFiles = async (): Promise<Array<{ path: string; bytes: Uint8Array }>> => {
+    if (!rigBase) return [];
+    const get = async (rel: string): Promise<{ path: string; bytes: Uint8Array }> => ({ path: rel, bytes: new Uint8Array(await (await fetch(rigBase + rel)).arrayBuffer()) });
+    const spec = (await (await fetch(`${rigBase}rig.json`)).json()) as { layers: Array<{ src?: string; states?: { open: string; closed: string } }> };
+    const refs = spec.layers.flatMap((l) => [l.src, l.states?.open, l.states?.closed]).filter((r): r is string => !!r);
+    return Promise.all(['rig.json', ...refs].map(get));
+  };
+  const answers: Record<string, unknown> = rigBase
+    ? {
+        avatarGet: async () => ({ version: 2, kind: 'rig', name: 'dev rig', entry: 'rig.json', importedAt: '', bytes: 0, expressions: [], emotions: {} }),
+        avatarModelFiles: rigFiles,
+      }
+    : {};
   (window as unknown as { sei: unknown }).sei = new Proxy(
     {},
     {
       get(_t, key) {
+        if (typeof key === 'string' && key in answers) return answers[key];
         if (typeof key === 'string' && key.startsWith('on')) return () => () => undefined;
         return noop;
       },

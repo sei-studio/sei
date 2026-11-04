@@ -12,6 +12,16 @@
  * The HUD is tinted by the room (roomOverlay), not by the app theme: that is
  * the rule the editor overlay follows.
  *
+ * Her avatar (RoomAvatar, 261104): char=<character id> (in the app: her
+ * imported model or dev facepack), faces=<url of a dir of packs> +
+ * face=<pack id, default sui> for a baked face set over HTTP (not
+ * `facepack=`, which main.tsx routes to the facepack preview), portrait=<url>
+ * for the portrait cut-out, rig=<url of a rig dir> for an imported rig (the
+ * browser stub answers it), use=auto|sei|imported, busy=1, speak=1 (a fake
+ * voice level), motion=0 (no idle motion), walk=<s> (force a walk-off that
+ * many seconds after the room is ready), away=<s> (how long it keeps her
+ * away). The HUD "walk" button forces one now.
+ *
  * `&editor=1` opens the room editor (RoomEditor) instead, over an in-memory
  * source (saves last until reload). Every `&pack=<url>` is one preset, so
  * several give the room type picker something to switch to. Editor params:
@@ -23,12 +33,15 @@ import { defaultRoomState, type RoomPresetManifest, type RoomSlotId, type RoomSt
 import { parseRoomManifest } from '@shared/seilinkValidate';
 import type { RoomFit, RoomOverlay } from '@shared/seilinkDraw';
 import { seilinkResolver, type RoomUrlResolver, type SeilinkPack } from '@shared/seilinkPack';
-import { RoomCanvas, type RoomAvatarSlot } from './RoomCanvas';
+import { RoomCanvas } from './RoomCanvas';
 import { clearRoomImageCache } from '../../lib/seilink/roomImages';
 import { RoomEditor } from './RoomEditor';
 import { addItem } from '@shared/seilinkEdit';
 import { memoryRoomEditorSource, type EditorPack, type RoomEditorSource } from './roomEditorSource';
 import { useLangStore, type UiLanguage } from '../../lib/i18n';
+import { RoomAvatar, type RoomAvatarKind, type RoomAvatarUse } from './RoomAvatar';
+import { urlPackSource } from '../../lib/facepack/facepackSource';
+import type { IdlePhase } from '../../lib/seilink/idleMotion';
 
 const params = new URLSearchParams(window.location.search);
 const TIMES = ['auto', 'day', 'dusk', 'night'] as const;
@@ -79,17 +92,32 @@ function sampleItems(manifest: RoomPresetManifest): RoomState['items'] {
   return out;
 }
 
-/** Stand-in for her: a flat silhouette at the avatar slot. The real avatar plugs in here. */
-function PlaceholderAvatar({ slot }: { slot: RoomAvatarSlot }): React.ReactElement {
-  const h = slot.height;
-  const fill = slot.time === 'night' ? '#3a3f63' : slot.time === 'dusk' ? '#7d5a73' : '#9fb4e6';
-  return (
-    <svg width={h * 0.62} height={h} viewBox="0 0 62 100" aria-label="avatar placeholder">
-      <path d="M8 100 C8 74 16 62 31 62 C46 62 54 74 54 100 Z" fill={fill} />
-      <circle cx="31" cy="40" r="17" fill={fill} />
-      <path d="M13 42 C13 18 49 18 49 42 L52 64 L44 52 L18 52 L10 64 Z" fill={fill} opacity="0.85" />
-    </svg>
-  );
+/** RoomAvatar from the preview params (see the header). */
+const AVATAR = {
+  characterId: params.get('char') ?? 'dev-preview',
+  use: (['auto', 'sei', 'imported'].includes(params.get('use') ?? '') ? params.get('use') : 'auto') as RoomAvatarUse,
+  portrait: params.get('portrait'),
+  facepack: params.get('faces') ? urlPackSource(params.get('face') ?? 'sui', params.get('faces')!) : undefined,
+  busy: params.get('busy') === '1',
+  speak: params.get('speak') === '1',
+  motion: params.get('motion') === '0' ? (false as const) : {},
+  walkAt: params.get('walk') ? Number(params.get('walk')) * 1000 : null,
+  awayMs: params.get('away') ? Number(params.get('away')) * 1000 : undefined,
+};
+
+/** A fake voice level for speak=1: syllables at about 5 a second. */
+function useFakeLevel(on: boolean): React.MutableRefObject<number> {
+  const ref = React.useRef(0);
+  useEffect(() => {
+    if (!on) return;
+    const t0 = performance.now();
+    const id = setInterval(() => {
+      const t = (performance.now() - t0) / 1000;
+      ref.current = Math.max(0, Math.sin(t * 2 * Math.PI * 2.6) * 0.6 + 0.25 * Math.sin(t * 7.1));
+    }, 40);
+    return () => clearInterval(id);
+  }, [on]);
+  return ref;
 }
 
 /** The editor over URL packs (browser tab) or main's dev packs (the dev window), saving in memory. */
@@ -152,6 +180,15 @@ function DevRoomPreviewCanvas({ onEdit }: { onEdit(): void }): React.ReactElemen
   const [overlay, setOverlay] = useState<RoomOverlay | null>(null);
   const [ready, setReady] = useState(false);
   const hud = params.get('hud') !== '0';
+  const [walkSignal, setWalkSignal] = useState(0);
+  const [phase, setPhase] = useState<IdlePhase>('seated');
+  const [kind, setKind] = useState<RoomAvatarKind | null>(null);
+  const levelRef = useFakeLevel(AVATAR.speak);
+  useEffect(() => {
+    if (AVATAR.walkAt === null || !ready) return;
+    const id = setTimeout(() => setWalkSignal((n) => n + 1), AVATAR.walkAt);
+    return () => clearTimeout(id);
+  }, [ready]);
 
   const pickPack = useCallback((p: SeilinkPack) => {
     setLoaded({ manifest: p.manifest, resolve: seilinkResolver(p), label: `${p.id} (${p.source})` });
@@ -228,14 +265,30 @@ function DevRoomPreviewCanvas({ onEdit }: { onEdit(): void }): React.ReactElemen
   if (!loaded || !state) return <div style={{ height: '100vh', background: '#14161c' }} />;
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#000' }} data-room-ready={ready ? '1' : '0'}>
+    <div style={{ position: 'fixed', inset: 0, background: '#000' }} data-room-ready={ready ? '1' : '0'} data-avatar-kind={kind ?? ''} data-avatar-phase={phase}>
       <RoomCanvas
         manifest={loaded.manifest}
         state={state}
         resolveUrl={loaded.resolve}
         fit={fit}
         fps={fps}
-        avatar={(slot) => <PlaceholderAvatar slot={slot} />}
+        avatar={(slot) => (
+          <RoomAvatar
+            slot={slot}
+            characterId={AVATAR.characterId}
+            use={AVATAR.use}
+            portrait={AVATAR.portrait}
+            facepack={AVATAR.facepack}
+            busy={AVATAR.busy}
+            speaking={AVATAR.speak}
+            levelRef={levelRef}
+            motion={AVATAR.motion}
+            walkOffSignal={walkSignal}
+            walkOffAwayMs={AVATAR.awayMs}
+            onPhase={setPhase}
+            onKind={setKind}
+          />
+        )}
         onOverlay={setOverlay}
         onReady={() => setReady(true)}
         onError={(e) => console.warn(`[seilink preview] ${e.file}: ${e.message}`)}
@@ -275,6 +328,9 @@ function DevRoomPreviewCanvas({ onEdit }: { onEdit(): void }): React.ReactElemen
                 {f} fps
               </button>
             ))}
+            <button type="button" style={btn(phase !== 'seated')} onClick={() => setWalkSignal((n) => n + 1)}>
+              walk ({kind ?? '...'}: {phase})
+            </button>
             <button type="button" style={btn(false)} onClick={() => void load()}>
               reload
             </button>
