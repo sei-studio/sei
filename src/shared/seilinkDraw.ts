@@ -9,7 +9,9 @@
  *    order (stable sort);
  *  - slot frames are full canvas at (0,0) unless the component has a box;
  *  - item sprites sit with their bottom centre on (x, y), scaled, maybe
- *    mirrored;
+ *    mirrored; a floor item's scale includes its depth scale and its z grows
+ *    with y, a surface item takes the z of the part it rests on
+ *    (seilinkPlace.ts);
  *  - a frame for a time the component does not have falls back to day;
  *  - glows are listed separately: they are drawn with 'screen' over
  *    everything, the avatar included, in the same z order.
@@ -28,6 +30,7 @@ import {
   type RoomState,
   type RoomTime,
 } from './seilinkRoom';
+import { depthScale, placedItemZ, placementRegions } from './seilinkPlace';
 
 export interface SlotLayer {
   kind: 'slot';
@@ -121,20 +124,22 @@ export function roomDrawPlan(
     layers.push({ kind: 'avatar', z: AVATAR_Z, x: manifest.avatar.x, y: manifest.avatar.y, height: manifest.avatar.height });
   }
   const byId = new Map(manifest.components.map((c) => [c.id, c]));
+  const regions = state.items.length ? placementRegions(manifest, state) : null;
   state.items.forEach((it, index) => {
     const component = byId.get(it.id);
-    if (!component || component.slot !== 'item') return;
+    if (!component || component.slot !== 'item' || !regions) return;
     const frame = frameFor(component, time);
     const tint = it.tint ?? component.defaultTint;
+    const manual = typeof it.scale === 'number' && it.scale > 0 ? it.scale : 1;
     layers.push({
       kind: 'item',
-      z: itemZ(component, it.z),
+      z: placedItemZ(regions, component, it),
       index,
       component,
       frame,
       x: it.x,
       y: it.y,
-      scale: typeof it.scale === 'number' && it.scale > 0 ? it.scale : 1,
+      scale: manual * depthScale(regions, component, it.y),
       flip: it.flip === true,
       size: component.box ? [component.box[2], component.box[3]] : null,
       tint: component.tintable && frame.mask && tint ? tint : null,

@@ -11,6 +11,8 @@ import {
   defaultRoomState,
   type RoomComponent,
   type RoomFrame,
+  type RoomPolygon,
+  type RoomSegment,
   type RoomItemPlacement,
   type RoomPresetId,
   type RoomPresetManifest,
@@ -19,12 +21,13 @@ import {
   type RoomState,
   type RoomTime,
 } from './seilinkRoom';
+import { settleItems } from './seilinkPlace';
 
 const SLOT_IDS: readonly RoomSlotId[] = ['view', 'shell', 'curtains', 'bed', 'shelf', 'chair', 'lamp', 'rug', 'campfire'];
 const COMPONENT_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 const HEX_RE = /^#[0-9a-f]{6}$/i;
 /** Hard caps so a hostile file cannot make the renderer allocate without bound. */
-export const ROOM_LIMITS = { components: 400, items: 120, canvasMax: 4096, pathLen: 200 } as const;
+export const ROOM_LIMITS = { components: 400, items: 120, canvasMax: 4096, pathLen: 200, polygons: 24, polygonPoints: 64, lines: 32 } as const;
 
 /** A pack file path: plain relative posix, no traversal, webp/png only. */
 export function isSafeRoomPackPath(rel: unknown): rel is string {
@@ -48,6 +51,30 @@ const isBox = (v: unknown): v is [number, number, number, number] =>
 /** A surface may be a line (h = 0): a shelf top. */
 const isSurface = (v: unknown): v is [number, number, number, number] =>
   Array.isArray(v) && v.length === 4 && v.every(isNum) && v[2] > 0 && v[3] >= 0;
+
+/** A coordinate a little past the canvas is fine (an item cut by the frame's bottom edge); far out is not. */
+const isCoord = (v: unknown): v is number => isNum(v) && v >= -ROOM_LIMITS.canvasMax && v <= 2 * ROOM_LIMITS.canvasMax;
+
+/** A polygon: 3 to 64 [x, y] points. */
+function isPolygon(v: unknown): v is RoomPolygon {
+  return (
+    Array.isArray(v) &&
+    v.length >= 3 &&
+    v.length <= ROOM_LIMITS.polygonPoints &&
+    v.every((p) => Array.isArray(p) && p.length === 2 && isCoord(p[0]) && isCoord(p[1]))
+  );
+}
+
+/** A line with some length. */
+const isSegment = (v: unknown): v is RoomSegment =>
+  Array.isArray(v) && v.length === 4 && v.every(isCoord) && Math.hypot(v[2] - v[0], v[3] - v[1]) >= 1;
+
+/** The valid polygons of a list (bad ones dropped), copied, or undefined when none. */
+function polygons(v: unknown): RoomPolygon[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out = v.filter(isPolygon).slice(0, ROOM_LIMITS.polygons).map((p) => p.map(([x, y]) => [x, y] as [number, number]));
+  return out.length ? out : undefined;
+}
 
 function parseFrame(raw: unknown, tintable: boolean): RoomFrame | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -100,6 +127,19 @@ function parseComponent(raw: unknown): RoomComponent | null {
     const surfaces = c.surfaces.filter(isSurface).slice(0, 16);
     if (surfaces.length) out.surfaces = surfaces;
   }
+  if (Array.isArray(c.surfaceLines)) {
+    const lines = c.surfaceLines.filter(isSegment).slice(0, ROOM_LIMITS.lines).map((l) => [l[0], l[1], l[2], l[3]] as RoomSegment);
+    if (lines.length) out.surfaceLines = lines;
+  }
+  const areas = polygons(c.surfaceAreas);
+  if (areas) out.surfaceAreas = areas;
+  if (c.blocks && typeof c.blocks === 'object') {
+    const b = c.blocks as Record<string, unknown>;
+    const floor = polygons(b.floor);
+    const wall = polygons(b.wall);
+    if (floor || wall) out.blocks = { ...(floor ? { floor } : {}), ...(wall ? { wall } : {}) };
+  }
+  if (isNum(c.foot) && c.foot > 0 && c.foot < 1000) out.foot = c.foot;
   if (Array.isArray(c.swatches)) {
     const swatches = c.swatches.filter(isHexColor).slice(0, 12).map((h) => h.toLowerCase());
     if (swatches.length) out.swatches = swatches;
@@ -153,6 +193,11 @@ export function parseRoomManifest(raw: unknown): RoomPresetManifest | null {
     components,
   };
   if (m.floor !== undefined && isBox(m.floor)) out.floor = m.floor;
+  const floorAreas = polygons(m.floorAreas);
+  if (floorAreas) out.floorAreas = floorAreas;
+  const wallAreas = polygons(m.wallAreas);
+  if (wallAreas) out.wallAreas = wallAreas;
+  if (isCoord(m.horizon)) out.horizon = m.horizon;
   if (m.overlay && typeof m.overlay === 'object') {
     const ov: Partial<Record<RoomTime, string>> = {};
     for (const t of ROOM_TIMES) {
@@ -169,7 +214,9 @@ export function parseRoomManifest(raw: unknown): RoomPresetManifest | null {
  * that do not fit their slot, bad tints and stray items are dropped; an
  * emptied slot stays empty only when the slot is optional. Never throws.
  * A state for a different preset than the manifest comes back as that
- * preset's default (the caller loaded the wrong pack).
+ * preset's default (the caller loaded the wrong pack). Items at a spot that
+ * is not real floor, wall or surface in this room (an older save, a part
+ * since removed) are settled onto the nearest valid spot, never dropped.
  */
 export function sanitizeRoomState(manifest: RoomPresetManifest, raw: unknown): RoomState {
   const base = defaultRoomState(manifest.id);
@@ -215,5 +262,5 @@ export function sanitizeRoomState(manifest: RoomPresetManifest, raw: unknown): R
   if (av && av.kind === 'live2d' && typeof av.modelPath === 'string' && av.modelPath.length > 0 && av.modelPath.length < 1024) {
     out.avatar = { kind: 'live2d', modelPath: av.modelPath };
   }
-  return out;
+  return settleItems(manifest, out);
 }

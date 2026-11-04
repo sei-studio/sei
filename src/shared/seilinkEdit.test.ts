@@ -18,7 +18,6 @@ import {
   ITEM_SCALE_MIN,
   markSaved,
   moveItem,
-  placementAreas,
   removeItem,
   scaleItem,
   setItemTint,
@@ -69,16 +68,21 @@ describe('placement', () => {
   });
 
   it('keeps wall items above the floor', () => {
-    expect(placementAreas(manifest, s, poster)).toEqual([[0, 0, 2000, 850]]);
     expect(clampPlacement(manifest, s, poster, 400, 990)).toEqual([400, 850]);
+    expect(clampPlacement(manifest, s, poster, 400, 500)).toEqual([400, 500]);
   });
 
-  it('snaps surface items to the nearest shelf top, or frees them when the room has none', () => {
+  it('snaps surface items to the nearest shelf top; with the shelf gone they fall to the floor', () => {
     expect(clampPlacement(manifest, s, books, 200, 330)).toEqual([200, 300]);
     expect(clampPlacement(manifest, s, books, 200, 460)).toEqual([200, 500]);
     expect(clampPlacement(manifest, s, books, 900, 480)).toEqual([500, 500]);
     const noShelf = setSlotComponent(manifest, s, 'shelf', null);
-    expect(clampPlacement(manifest, noShelf, books, 900, 480)).toEqual([900, 480]);
+    expect(clampPlacement(manifest, noShelf, books, 900, 480)).toEqual([1200, 850]);
+  });
+
+  it('moves surface items freely in a pack that labels no surfaces', () => {
+    const bare: RoomPresetManifest = { ...manifest, components: manifest.components.map((c) => ({ ...c, surfaces: undefined })) };
+    expect(clampPlacement(bare, s, books, 900, 480)).toEqual([900, 480]);
   });
 
   it('picks the nearest of several areas and rounds', () => {

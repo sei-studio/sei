@@ -3,11 +3,11 @@
  * the rules are unit-tested and the editor screen (renderer
  * components/seilink/RoomEditor.tsx) stays a thin view over them.
  *
- *  - Placement: where an item's bottom centre may go. Floor items stay on
- *    `manifest.floor`; wall items stay on the wall (the canvas above the
- *    floor's top edge); surface items snap onto the `surfaces` the room's
- *    slot components list (shelf tops), or move freely when there are none.
- *    A drag is clamped to the nearest point of the allowed area.
+ *  - Placement: where an item's bottom centre may go, by the physics-aware
+ *    rules in seilinkPlace.ts (floor areas, surface lines, wall areas, the
+ *    parts' blocks). A drag snaps to the nearest valid spot; swapping or
+ *    removing a part settles the items it held (books fall off a removed
+ *    shelf onto the floor).
  *  - Edit ops: small reducers that return a NEW RoomState (never mutate), so
  *    the history can keep every step by reference.
  *  - History: an undo stack with gesture coalescing (one colour drag or one
@@ -15,7 +15,6 @@
  */
 import {
   defaultRoomState,
-  resolveSlots,
   type RoomBox,
   type RoomComponent,
   type RoomItemPlacement,
@@ -23,53 +22,40 @@ import {
   type RoomSlotId,
   type RoomState,
 } from './seilinkRoom';
+import {
+  placementOf,
+  placementRegions,
+  polygonBounds,
+  scaleRangeAt,
+  settleItems,
+  settlePlacement,
+  snapSpot,
+  spriteFit,
+  type PlacementRegions,
+  type Snap,
+} from './seilinkPlace';
 
 // ── Placement ───────────────────────────────────────────────────────────────
+// The rules live in seilinkPlace.ts (floor areas, surface lines, wall areas,
+// blocks, depth); these wrap them for the edit ops.
 
-/** Item scale range in the editor (Shawn: a small range). */
+/** Item scale range in the editor (Shawn: a small range). Per class: SCALE_RANGE. */
 export const ITEM_SCALE_MIN = 0.6;
 export const ITEM_SCALE_MAX = 1.5;
 export const ITEM_SCALE_STEP = 0.1;
 
-/** Fraction of the canvas height treated as floor when a manifest names no floor. */
-const DEFAULT_FLOOR_TOP = 0.78;
-
-export function clampScale(scale: number): number {
+export function clampScale(scale: number, range: readonly [number, number] = [ITEM_SCALE_MIN, ITEM_SCALE_MAX]): number {
   if (!Number.isFinite(scale)) return 1;
   const s = Math.round(scale * 100) / 100;
-  return Math.max(ITEM_SCALE_MIN, Math.min(ITEM_SCALE_MAX, s));
+  return Math.max(range[0], Math.min(range[1], s));
 }
 
-function floorBox(manifest: RoomPresetManifest): RoomBox {
-  const [w, h] = manifest.canvas;
-  if (manifest.floor) return manifest.floor;
-  const top = Math.round(h * DEFAULT_FLOOR_TOP);
-  return [0, top, w, h - top];
-}
-
-/** Surfaces of the slot components currently in the room (shelf tops). */
-export function roomSurfaces(manifest: RoomPresetManifest, state: RoomState): RoomBox[] {
-  const out: RoomBox[] = [];
-  for (const { component } of resolveSlots(manifest, state)) {
-    if (component.surfaces) out.push(...component.surfaces);
-  }
-  return out;
-}
-
-/**
- * Where an item's bottom centre may rest, as boxes (canvas px). Never empty:
- * a surface item in a room with no surfaces gets the whole canvas.
- */
-export function placementAreas(manifest: RoomPresetManifest, state: RoomState, component: Pick<RoomComponent, 'placement'>): RoomBox[] {
-  const [w, h] = manifest.canvas;
-  const where = component.placement ?? 'floor';
-  if (where === 'floor') return [floorBox(manifest)];
-  if (where === 'wall') {
-    const top = floorBox(manifest)[1];
-    return [[0, 0, w, Math.max(1, top)]];
-  }
-  const surfaces = roomSurfaces(manifest, state);
-  return surfaces.length ? surfaces : [[0, 0, w, h]];
+/** What a placement call may know about the sprite: its natural size (when it has no box) and its manual scale. */
+export interface PlaceOpts {
+  natural?: [number, number] | null;
+  scale?: number;
+  /** The surface it was on (kept while a drag stays near it). */
+  prefer?: number;
 }
 
 function clampToBox([bx, by, bw, bh]: RoomBox, x: number, y: number): [number, number] {
@@ -91,26 +77,55 @@ export function clampToAreas(areas: readonly RoomBox[], x: number, y: number): [
   return [Math.round(best[0]), Math.round(best[1])];
 }
 
+/** The nearest spot where `component` may stand in this room (its anchor). */
+export function snapPlacement(manifest: RoomPresetManifest, state: RoomState, component: RoomComponent, x: number, y: number, opts: PlaceOpts = {}): Snap {
+  const r = placementRegions(manifest, state);
+  return snapSpot(r, component, x, y, { fit: spriteFit(r, component, opts.scale ?? 1, opts.natural), prefer: opts.prefer });
+}
+
 /** Clamp a placement for `component` in this room. */
-export function clampPlacement(manifest: RoomPresetManifest, state: RoomState, component: RoomComponent, x: number, y: number): [number, number] {
-  return clampToAreas(placementAreas(manifest, state, component), x, y);
+export function clampPlacement(manifest: RoomPresetManifest, state: RoomState, component: RoomComponent, x: number, y: number, opts: PlaceOpts = {}): [number, number] {
+  const s = snapPlacement(manifest, state, component, x, y, opts);
+  return [s.x, s.y];
+}
+
+/** A point in the middle of where `component` may stand, before snapping. */
+function middleSpot(r: PlacementRegions, component: RoomComponent): [number, number] {
+  const cls = placementOf(component);
+  if (cls === 'surface' && r.surfaces.length) {
+    const s = r.surfaces[0];
+    if (s.kind === 'line') return [(s.seg[0] + s.seg[2]) / 2, (s.seg[1] + s.seg[3]) / 2];
+    const [x, y, w, h] = polygonBounds(s.poly);
+    return [x + w / 2, y + h / 2];
+  }
+  const areas = cls === 'wall' ? r.wall : r.floor;
+  // The biggest area, so a new item lands somewhere roomy.
+  let best = areas[0];
+  let bestA = -1;
+  for (const a of areas) {
+    const [, , w, h] = polygonBounds(a);
+    if (w * h > bestA) {
+      bestA = w * h;
+      best = a;
+    }
+  }
+  const [x, y, w, h] = polygonBounds(best);
+  return [x + w / 2, y + h * (cls === 'wall' ? 0.5 : 0.6)];
 }
 
 /**
  * Where a freshly added item lands. A component with a box is drawn there by
  * the pack (the box's bottom centre is the artist's spot), else the middle of
- * its placement area, nudged per copy so two adds do not stack exactly.
+ * its placement area, nudged per copy so two adds do not stack exactly; then
+ * snapped to a real surface.
  */
-export function defaultSpot(manifest: RoomPresetManifest, state: RoomState, component: RoomComponent): [number, number] {
+export function defaultSpot(manifest: RoomPresetManifest, state: RoomState, component: RoomComponent, opts: PlaceOpts = {}): [number, number] {
   const copies = state.items.filter((i) => i.id === component.id).length;
   const nudge = copies * 48;
-  if (component.box) {
-    const [x, y, w, h] = component.box;
-    if (copies === 0) return [Math.round(x + w / 2), Math.round(y + h)];
-    return clampPlacement(manifest, state, component, x + w / 2 - nudge, y + h);
-  }
-  const [a] = placementAreas(manifest, state, component);
-  return clampToAreas([a], a[0] + a[2] / 2 - nudge, a[1] + a[3] * (component.placement === 'floor' || !component.placement ? 0.6 : 0.5));
+  const r = placementRegions(manifest, state);
+  const [x, y] = component.box ? [component.box[0] + component.box[2] / 2, component.box[1] + component.box[3]] : middleSpot(r, component);
+  const s = snapSpot(r, component, x - nudge, y, { fit: spriteFit(r, component, opts.scale ?? 1, opts.natural) });
+  return [s.x, s.y];
 }
 
 // ── Edit ops (each returns a new state) ─────────────────────────────────────
@@ -137,7 +152,8 @@ export function setSlotComponent(manifest: RoomPresetManifest, state: RoomState,
   const next = manifest.components.find((c) => c.id === id);
   const entry: { id: string | null; tint?: string } = { id };
   if (prev?.tint && next?.tintable) entry.tint = prev.tint;
-  return withSlot(state, slot, entry);
+  // A part that held items or covered floor changes where things can stand.
+  return settleItems(manifest, withSlot(state, slot, entry));
 }
 
 export function setSlotTint(manifest: RoomPresetManifest, state: RoomState, slot: RoomSlotId, tint: string): RoomState {
@@ -158,28 +174,47 @@ function updateItem(state: RoomState, index: number, patch: (it: RoomItemPlaceme
 }
 
 /** Add an item at its default spot. Returns the state and the new item's index. */
-export function addItem(manifest: RoomPresetManifest, state: RoomState, id: string): { state: RoomState; index: number } {
+export function addItem(manifest: RoomPresetManifest, state: RoomState, id: string, opts: PlaceOpts = {}): { state: RoomState; index: number } {
   const c = manifest.components.find((x) => x.id === id);
   if (!c || c.slot !== 'item') return { state, index: -1 };
-  const [x, y] = defaultSpot(manifest, state, c);
+  const [x, y] = defaultSpot(manifest, state, c, opts);
   return { state: withItems(state, [...state.items, { id, x, y }]), index: state.items.length };
 }
 
-/** Move an item, clamped to where it may sit. */
-export function moveItem(manifest: RoomPresetManifest, state: RoomState, index: number, x: number, y: number): RoomState {
+/** Move an item, snapped to where it may stand. */
+export function moveItem(manifest: RoomPresetManifest, state: RoomState, index: number, x: number, y: number, opts: PlaceOpts = {}): RoomState {
   const it = state.items[index];
   const c = it && manifest.components.find((x2) => x2.id === it.id);
   if (!c) return state;
-  const [cx, cy] = clampPlacement(manifest, state, c, x, y);
-  return updateItem(state, index, (p) => ({ ...p, x: cx, y: cy }));
+  const [cx, cy] = clampPlacement(manifest, state, c, x, y, { ...opts, scale: it.scale ?? 1 });
+  return updateItem(state, index, (p) => (p.x === cx && p.y === cy ? p : { ...p, x: cx, y: cy }));
 }
 
-export function scaleItem(state: RoomState, index: number, scale: number): RoomState {
-  const s = clampScale(scale);
-  return updateItem(state, index, (p) => {
+/** The manual scale range of a placed item where it stands (its class, and for decor the surface it is on). */
+export function itemScaleRange(manifest: RoomPresetManifest, state: RoomState, index: number, natural?: [number, number] | null): [number, number] {
+  const it = state.items[index];
+  const c = it && manifest.components.find((x) => x.id === it.id);
+  if (!c) return [ITEM_SCALE_MIN, ITEM_SCALE_MAX];
+  return scaleRangeAt(placementRegions(manifest, state), c, it, natural);
+}
+
+/**
+ * Resize an item. With the manifest, the scale is held to the item's range
+ * where it stands and the item is settled again at its new size (a bigger
+ * poster may need to move off a shelf edge).
+ */
+export function scaleItem(state: RoomState, index: number, scale: number, manifest?: RoomPresetManifest, natural?: [number, number] | null): RoomState {
+  const s = clampScale(scale, manifest ? itemScaleRange(manifest, state, index, natural) : undefined);
+  const next = updateItem(state, index, (p) => {
     const { scale: _old, ...rest } = p;
     return s === 1 ? rest : { ...rest, scale: s };
   });
+  if (!manifest || next === state) return next;
+  const it = next.items[index];
+  const c = manifest.components.find((x) => x.id === it.id);
+  if (!c) return next;
+  const settled = settlePlacement(placementRegions(manifest, next), c, it, natural);
+  return settled === it ? next : updateItem(next, index, () => settled);
 }
 
 export function flipItem(state: RoomState, index: number): RoomState {
