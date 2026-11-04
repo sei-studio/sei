@@ -306,15 +306,16 @@ export function drawRoomLayers(
       const box = intersect(polygonsBox(l.clip), clip);
       if (box[2] <= 0 || box[3] <= 0) continue;
       ctx.save();
-      ctx.beginPath();
-      for (const p of l.clip) {
-        p.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
-        ctx.closePath();
-      }
-      ctx.clip();
+      clipTo(ctx, l.clip);
       drawPlain(ctx, l, img, rect, assets, scale, box);
       ctx.restore();
       continue;
+    }
+    // An item on a lipped top: only above the lip's top edge.
+    const cut = l.kind === 'item' && l.clip?.length ? l.clip : null;
+    if (cut) {
+      ctx.save();
+      clipTo(ctx, cut);
     }
     const look = l.kind === 'item' ? sinkLook(l) : null;
     if (l.kind === 'item' && look) {
@@ -327,10 +328,21 @@ export function drawRoomLayers(
       }
       drawSunk(ctx, l, look, img, rect, assets, scale);
       ctx.restore();
-      continue;
+    } else {
+      drawPlain(ctx, l, img, rect, assets, scale, clip);
     }
-    drawPlain(ctx, l, img, rect, assets, scale, clip);
+    if (cut) ctx.restore();
   }
+}
+
+/** Intersect ctx's clip with the union of polygons (canvas px). */
+function clipTo(ctx: AnyContext2D, polys: readonly RoomPolygon[]): void {
+  ctx.beginPath();
+  for (const p of polys) {
+    p.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
+    ctx.closePath();
+  }
+  ctx.clip();
 }
 
 /** Draw glows (into a layer that is screen-blended over the scene). `alpha(g)` is each glow's opacity. */

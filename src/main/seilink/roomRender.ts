@@ -12,7 +12,8 @@
  *     so the frame's own shading stays;
  *   - an item sits on its BOTTOM CENTRE (itemRect), natural size or box
  *     times scale, mirrored when flipped;
- *   - a lip layer (a slot with `clip`) is kept only inside its polygons; an
+ *   - a lip layer (a slot with `clip`) is kept only inside its polygons, and
+ *     so is an item on a lipped top (above the lip's top edge); an
  *     item on a soft top (`sink`) has its base faded into the top over a
  *     soft contact shadow, by the same sinkLook / sinkKeep / contactShadow
  *     rules the renderer uses;
@@ -181,6 +182,18 @@ export function cutToPolygons(data: Buffer, place: Place, polys: readonly RoomPo
   return { data: out, width: w, height: h, left, top };
 }
 
+/** Clear (in place) a layer's pixels outside polygons (canvas px; `s` = output px per canvas px). */
+export function keepInside(data: Buffer, place: Place, polys: readonly RoomPolygon[], s: number): void {
+  for (let v = 0; v < place.height; v++) {
+    const cy = (place.top + v + 0.5) / s;
+    for (let u = 0; u < place.width; u++) {
+      const i = (v * place.width + u) * 4 + 3;
+      if (!data[i]) continue;
+      if (!polys.some((p) => pointInPolygon(p, (place.left + u + 0.5) / s, cy))) data[i] = 0;
+    }
+  }
+}
+
 /**
  * A sunk item: its place moved down by the sink (returned), its base faded
  * (in place) and its soft contact shadow as a layer to draw under it.
@@ -288,6 +301,9 @@ export async function renderRoomImage(
         placed.set(l, place);
         if (l.kind === 'slot' && l.clip?.length) return cutToPolygons(data, place, l.clip, s);
         const sunk = l.kind === 'item' ? sinkItem(l, data, place, s) : null;
+        const at = sunk ? sunk.place : place;
+        // An item on a lipped top: only above the lip's top edge.
+        if (l.kind === 'item' && l.clip?.length) keepInside(data, at, l.clip, s);
         if (!sunk) return { data, ...place };
         placed.set(l, sunk.place);
         return [sunk.shadow, { data, ...sunk.place }];

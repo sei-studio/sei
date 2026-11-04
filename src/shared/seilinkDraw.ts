@@ -15,7 +15,10 @@
  *  - a surface top with a `lip` (261105 shelf pass) that has items on it
  *    adds one more slot layer: its part's frame cut to the lip polygon
  *    (`clip`), at the top of that top's z slice, so it covers the base of
- *    the items on it and nothing else (seilinkPlace.ts has the slices);
+ *    the items on it and nothing else (seilinkPlace.ts has the slices); the
+ *    items on it are themselves cut to above the lip's top edge (their
+ *    `clip`), so nothing of them shows on the front face or under a thin
+ *    plank;
  *  - an item on a soft top (`sink`) carries how its base settles in
  *    (ItemLayer.sink): the renderers draw it a little lower, fade its base
  *    out just under the top's surface and lay a soft contact shadow under
@@ -84,6 +87,12 @@ export interface ItemLayer {
    * its anchor up to its contact (`foot`), both at its scale. null = a hard top.
    */
   sink?: { depth: number; foot: number } | null;
+  /**
+   * Draw only inside these polygons, canvas px: on a top with a lip, the
+   * region above the lip's top edge (AreaSurface.keep), so the plank's front
+   * face always hides the item's base. Absent = all of it.
+   */
+  clip?: RoomPolygon[];
 }
 
 export type RoomLayer = SlotLayer | AvatarLayer | ItemLayer;
@@ -151,11 +160,13 @@ export function roomDrawPlan(
     const manual = typeof it.scale === 'number' && it.scale > 0 ? it.scale : 1;
     const scale = manual * depthScale(regions, component, it.y);
     let sink: ItemLayer['sink'] = null;
+    let clip: RoomPolygon[] | undefined;
     if (placementOf(component) === 'surface') {
       const on = surfaceAt(regions, it.x, contactY(regions, component, it));
       const top = on >= 0 ? regions.surfaces[on] : null;
       if (top?.kind === 'area') {
         if (top.lip) lipped.add(on);
+        if (top.keep) clip = [top.keep];
         if (top.sink > 0) sink = { depth: top.sink * scale, foot: Math.max(0, component.foot ?? 0) * scale };
       }
     }
@@ -172,6 +183,7 @@ export function roomDrawPlan(
       size: component.box ? [component.box[2], component.box[3]] : null,
       tint: component.tintable && frame.mask && tint ? tint : null,
       sink,
+      ...(clip ? { clip } : {}),
     });
   });
   // Each used lip: its part's frame again, cut to the lip, just over the items on that top.

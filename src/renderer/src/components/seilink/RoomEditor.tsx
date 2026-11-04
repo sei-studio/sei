@@ -30,6 +30,7 @@ import {
   resolveRoomTime,
   type RoomComponent,
   type RoomItemPlacement,
+  type RoomPolygon,
   type RoomPresetId,
   type RoomPresetManifest,
   type RoomSlotId,
@@ -274,7 +275,8 @@ function ItemGhost({
   const key = `${item.id}:${lay ? lay.scale.toFixed(2) : 1}:${item.flip ? 1 : 0}:${item.tint ?? ''}:${time}:${vp.scale}:${sunk}`;
   useEffect(() => {
     let dead = false;
-    const layer = lay && { ...lay, x: 0, y: 0, scale: Math.round(lay.scale * 100) / 100 };
+    // The lip cut is canvas px: it is applied to the ghost's element below (clip-path), not drawn into it.
+    const layer = lay && { ...lay, x: 0, y: 0, scale: Math.round(lay.scale * 100) / 100, clip: undefined };
     if (!layer) return;
     void loadPlanAssets({ ...plan, layers: [layer], glows: [] }, resolve).then(({ assets }) => {
       const img = assets.images.get(layer.frame.src);
@@ -305,7 +307,25 @@ function ItemGhost({
         height: rect[3] * vp.scale,
       }
     : { visibility: 'hidden' };
-  return <canvas ref={ref} className={styles.ghost} style={style} />;
+  // On a lipped top the sprite is cut at the lip's top edge; the wrapper's lift shadow follows the cut sprite.
+  const cut = rect && lay?.clip?.length ? ghostClip(lay.clip[0], item.x + rect[0], item.y + rect[1], rect[2], rect[3], vp.scale) : undefined;
+  return (
+    <div className={styles.ghost} style={style}>
+      <canvas ref={ref} className={styles.ghostSprite} style={cut ? { clipPath: cut } : undefined} />
+    </div>
+  );
+}
+
+/**
+ * A canvas-px keep polygon (an item's lip cut) as a CSS clip-path on a ghost
+ * whose top-left is (x, y) canvas px and size w x h, in CSS px. Points are
+ * clamped to just outside the element, which keeps the shape inside it.
+ */
+function ghostClip(poly: RoomPolygon, x: number, y: number, w: number, h: number, scale: number): string {
+  const pad = 4;
+  const cx = (v: number): number => Math.max(-pad, Math.min(w * scale + pad, (v - x) * scale));
+  const cy = (v: number): number => Math.max(-pad, Math.min(h * scale + pad, (v - y) * scale));
+  return `polygon(${poly.map(([px, py]) => `${cx(px).toFixed(1)}px ${cy(py).toFixed(1)}px`).join(', ')})`;
 }
 
 /**
@@ -496,6 +516,13 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
   const state = history?.present ?? null;
   const pack = useMemo(() => (state && packs ? (packs.find((p) => p.id === state.preset) ?? null) : null), [packs, state]);
   const manifest = pack?.manifest ?? null;
+  // A slot asked for up front opens its group in this pack once the pack is known (a pack can move a slot).
+  const initialPlaced = useRef(false);
+  useEffect(() => {
+    if (initialPlaced.current || !initialSlot || !manifest) return;
+    initialPlaced.current = true;
+    setPanel(slotGroup(initialSlot, manifest));
+  }, [manifest, initialSlot]);
   const now = (clock ?? (() => new Date()))();
   const time: RoomTime = state ? resolveRoomTime(state, now) : 'day';
 
@@ -521,13 +548,13 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
   const slots = useMemo(() => (manifest && state ? editableSlots(manifest, state) : []), [manifest, state]);
   const slotSet = useMemo(() => new Set(slots), [slots]);
   const sections = useMemo(
-    () => ({ room: groupSlots(slots, 'room'), fabrics: groupSlots(slots, 'fabrics'), furniture: groupSlots(slots, 'furniture') }),
-    [slots],
+    () => ({ room: groupSlots(slots, 'room', manifest), fabrics: groupSlots(slots, 'fabrics', manifest), furniture: groupSlots(slots, 'furniture', manifest) }),
+    [slots, manifest],
   );
 
   /** Open the group that holds `slot`, with its section in view. */
   const openSlot = (slot: RoomSlotId): void => {
-    const group = slotGroup(slot);
+    const group = slotGroup(slot, manifest);
     setFocus((f) => ({ slot, n: (f?.n ?? 0) + 1, smooth: panel === group }));
     setPanel(group);
   };

@@ -152,6 +152,12 @@
   filter: drop-shadow(0 14px 18px rgb(0 0 0 / 0.28));
 }
 
+.ghostSprite {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 /* A plank's front lip over the dragged item (LipGhost): part of the room, so no lift shadow. */
 .lipGhost {
   position: absolute;

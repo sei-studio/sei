@@ -41,7 +41,10 @@
  * top draw in its slice (further back on the top first), its lip (the
  * part's frame cut to the top's lip polygon) at the top of the slice, so the
  * lip covers the base of the items on that top and nothing else, and items
- * on the next top down draw over it.
+ * on the next top down draw over it. Items on a lipped top are also cut to
+ * above the lip's top edge (AreaSurface.keep), and their contact may reach
+ * LIP_TUCK px into the lip, so an item at the front sits just behind the
+ * plank's front edge instead of on it (Shawn: "put shelf in front").
  */
 import {
   ITEM_Z,
@@ -92,6 +95,16 @@ export const SURFACE_CAPTURE = 48;
 export const END_INSET = 0.45;
 /** The back of a surface item's base is this many of its feet behind its contact (kept on the top). */
 export const BACK_OF_BASE = 1;
+/**
+ * A top with a lip lets the contact go this many canvas px further forward
+ * than the traced top face (its `area`), into the lip. An object's opaque base
+ * ends a few px above its contact (the contact is the middle of its soft
+ * shadow, `foot`), so without this an item at the very front ends exactly on
+ * the plank's front edge and reads as perched on it, in front of the shelf
+ * (261105, Shawn: "put shelf in front"). With it, the front of the base goes a
+ * few px behind the lip, which is drawn over it.
+ */
+export const LIP_TUCK = 5;
 /** Part z slice the items on its tops (and their lips) draw in: part z + [lo, hi). */
 const TOP_Z_LO = 0.5;
 const TOP_Z_HI = 0.95;
@@ -191,9 +204,18 @@ export interface LineSurface extends SurfaceBase {
 
 export interface AreaSurface extends SurfaceBase {
   kind: 'area';
+  /** Where a contact may rest: the top face, reaching LIP_TUCK px into the lip when it has one. */
   poly: RoomPolygon;
+  /** The top face as traced (what the editor's guide glows). */
+  face: RoomPolygon;
   /** The part's front lip, drawn over the items on this top; null = none. */
   lip: RoomPolygon | null;
+  /**
+   * Items on this top are drawn only inside this polygon: everything above
+   * the lip's top edge (lipKeep), so no pixel of them shows on the plank's
+   * front face or under the plank, however thin the lip. null = no lip.
+   */
+  keep: RoomPolygon | null;
   /** Soft top: px (sprite scale 1) an item's base settles in. 0 = a hard top. */
   sink: number;
   /** Unit direction along the top (its longest edge), x >= 0. */
@@ -254,7 +276,84 @@ function areaSurface(poly: RoomPolygon, slot: RoomSlotId, z: number, lip: RoomPo
     across[0] = Math.min(across[0], c);
     across[1] = Math.max(across[1], c);
   }
-  return { kind: 'area', poly, slot, z, band: [z, z], lip, sink: Math.max(0, sink), axis: [ax, ay], along, across };
+  // A lipped top reaches LIP_TUCK px into the lip: the top stretched along its
+  // normal, back edge fixed (an affine map, so the polygon stays simple and
+  // holds the traced face, and rooms saved inside the face stay valid).
+  let reach = poly;
+  const span = across[1] - across[0];
+  if (lip && span > 0) {
+    reach = poly.map(([x, y]) => {
+      const t = (LIP_TUCK * (x * nx + y * ny - across[0])) / span;
+      return [x + nx * t, y + ny * t] as [number, number];
+    });
+    across[1] += LIP_TUCK;
+  }
+  return {
+    kind: 'area',
+    poly: reach,
+    face: poly,
+    slot,
+    z,
+    band: [z, z],
+    lip,
+    keep: lip ? lipKeep(lip) : null,
+    sink: Math.max(0, sink),
+    axis: [ax, ay],
+    along,
+    across,
+  };
+}
+
+/** How far past the ends of a lip its top edge is carried on (an item hangs at most a little past a top's ends). */
+const KEEP_MARGIN = 400;
+/**
+ * Items are cut this many px above the lip's traced top edge, so the plank's
+ * dark front outline (a px or two, traced to within about one) always shows
+ * over their base, as an edge they sit behind rather than a cut.
+ */
+export const KEEP_LIFT = 1.5;
+
+/** The top edge of a polygon: its lowest-y point on vertical lines through it, left to right. */
+export function topEdge(poly: RoomPolygon): Array<[number, number]> {
+  const [bx, , bw] = polygonBounds(poly);
+  if (!(bw > 0)) return [];
+  const xs = new Set<number>();
+  for (const [x] of poly) xs.add(x);
+  for (let x = bx; x < bx + bw; x += 8) xs.add(x);
+  xs.add(bx + bw);
+  const eps = Math.min(0.01, bw / 4);
+  const out: Array<[number, number]> = [];
+  for (const x0 of [...xs].sort((a, b) => a - b)) {
+    const x = Math.max(bx + eps, Math.min(bx + bw - eps, x0));
+    let top = Infinity;
+    for (const [x1, y1, x2, y2] of edges(poly)) {
+      if (x1 === x2 || x < Math.min(x1, x2) || x > Math.max(x1, x2)) continue;
+      top = Math.min(top, y1 + ((x - x1) * (y2 - y1)) / (x2 - x1));
+    }
+    if (Number.isFinite(top)) out.push([x0, top]);
+  }
+  return out;
+}
+
+/**
+ * What an item on a lipped top may show: the region above the lip's top edge,
+ * carried on KEEP_MARGIN px past its ends along the edge's overall slope, and
+ * everything above that. Canvas px, a simple polygon.
+ */
+export function lipKeep(lip: RoomPolygon): RoomPolygon {
+  const edge = topEdge(lip).map(([x, y]) => [x, y - KEEP_LIFT] as [number, number]);
+  if (edge.length < 2) return lip;
+  const [x0, y0] = edge[0];
+  const [x1, y1] = edge[edge.length - 1];
+  const k = x1 > x0 ? (y1 - y0) / (x1 - x0) : 0;
+  const ceiling = Math.min(y0, y1) - KEEP_MARGIN * (1 + Math.abs(k)) - 10_000;
+  return [
+    [x0 - KEEP_MARGIN, ceiling],
+    [x0 - KEEP_MARGIN, y0 - k * KEEP_MARGIN],
+    ...edge,
+    [x1 + KEEP_MARGIN, y1 + k * KEEP_MARGIN],
+    [x1 + KEEP_MARGIN, ceiling],
+  ];
 }
 
 /** Mean y of a surface, to rank a part's tops back to front. */
