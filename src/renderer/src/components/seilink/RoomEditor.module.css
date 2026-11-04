@@ -118,6 +118,12 @@
   touch-action: none;
 }
 
+.sideAway {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+
 .dragging {
   cursor: grabbing;
 }
@@ -146,6 +152,20 @@
   filter: drop-shadow(0 14px 18px rgb(0 0 0 / 0.28));
 }
 
+/* Where the dragged item can go (PlacementGuide): faint, no outlines. */
+.guide {
+  position: absolute;
+  pointer-events: none;
+  filter: drop-shadow(0 0 6px rgb(255 255 255 / 0.3));
+  animation: guideIn 180ms var(--ease) both;
+}
+
+@keyframes guideIn {
+  from {
+    opacity: 0;
+  }
+}
+
 /* ── left column: inventory + options ── */
 
 .side {
@@ -157,6 +177,7 @@
   align-items: flex-start;
   gap: var(--space-md);
   pointer-events: none;
+  transition: opacity 160ms ease;
 }
 
 .side > * {
@@ -353,6 +374,24 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: var(--space-sm);
+}
+
+/* Items library: one group per place (floor, shelves, wall). */
+.itemGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.itemGroupTitle {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  opacity: 0.8;
 }
 
 .option {

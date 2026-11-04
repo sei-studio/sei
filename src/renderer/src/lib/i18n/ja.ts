@@ -2201,6 +2201,7 @@ export const JA: Record<string, string> = {
   "Curtains": "カーテン",
   "Bed": "ベッド",
   "Shelves": "棚",
+  "Floor": "床",
   "Chair": "椅子",
   "Lamp": "ランプ",
   "Rug": "ラグ",
