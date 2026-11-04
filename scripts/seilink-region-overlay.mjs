@@ -166,10 +166,14 @@ function fitLine(pts) {
  * printed as `surfaceTops`: `area` is the quad from the back edge to the
  * front of the top face pushed `--overlap` px (default 3) into the lip, so a
  * base at the very front tucks just behind it; `lip` is the quad from that
- * front line down to the bottom edge (plus `--pad` px, default 3, at the
- * ends and below), the band drawn again over items on the plank. Works for
- * any part drawn as a light top over a darker outlined front face (shelf
- * planks, a desk, a nightstand). A top without such a face (a log, a stump,
+ * front line down to the bottom edge (plus `--pad` px, default 1, at the
+ * ends and below; the bottom follows the measured columns, since the front
+ * face tapers in perspective), the band drawn again over items on the
+ * plank. Works for any part drawn as a lighter top over a darker outlined
+ * front face (shelf planks, a desk, a nightstand). The top face is the run
+ * at or above `--dark` luminance (default 90, light wood); black or dark
+ * planks need a lower one (gamer's black shelves: --dark 60, top ~70-97,
+ * front face ~45, outlines under 40). A top without such a face (a log, a stump,
  * a duvet) is traced by hand with --grid: an `area` polygon, a `lip` only
  * where the art has a front edge to tuck behind, `sink` for a soft top.
  */
@@ -180,7 +184,7 @@ async function suggestBands(id) {
   const ox = comp.box ? comp.box[0] : 0;
   const oy = comp.box ? comp.box[1] : 0;
   const overlap = Number(arg('overlap', 3));
-  const pad = Number(arg('pad', 3));
+  const pad = Number(arg('pad', 1));
   const dark = Number(arg('dark', 90));
   const lum = (x, y) => {
     const i = (y * img.w + x) * img.c;
@@ -235,12 +239,19 @@ async function suggestBands(id) {
     ];
     const lx1 = x1 - pad;
     const lx2 = x2 + pad;
-    const lip = [
-      [lx1, r(at(front, lx1))],
-      [lx2, r(at(front, lx2))],
-      [lx2, r(at(bottom, lx2) + pad)],
-      [lx1, r(at(bottom, lx1) + pad)],
-    ];
+    // The front face tapers in perspective, so its bottom edge follows the
+    // measured columns (a median every ~64 px) rather than one line: a lip
+    // reaching below the plank would draw its soft shadow twice.
+    const below = [];
+    const step = Math.max(16, Math.round((x2 - x1) / Math.max(1, Math.round((x2 - x1) / 64))));
+    for (let sx = x1; sx < x2 + step / 2; sx += step) {
+      const tx = Math.min(sx, x2);
+      const near = p.cols.filter((c) => Math.abs(c[0] + ox - tx) <= 14).map((c) => c[3]).sort((a, b) => a - b);
+      const y = near.length ? near[near.length >> 1] + oy : at(bottom, tx);
+      below.push([tx === x1 ? lx1 : tx === x2 ? lx2 : tx, r(y + pad)]);
+      if (tx === x2) break;
+    }
+    const lip = [[lx1, r(at(front, lx1))], [lx2, r(at(front, lx2))], ...below.reverse()];
     const depth = inner.reduce((s, c) => s + (c[2] - c[1]), 0) / inner.length;
     const face = inner.reduce((s, c) => s + (c[3] - c[2]), 0) / inner.length;
     console.error(
@@ -294,7 +305,7 @@ async function merge() {
   const n = (k) => out.components.reduce((s, c) => s + (c[k]?.length ?? 0), 0);
   console.log(
     `merged into ${path.join(PACK, 'manifest.json')}: ${out.floorAreas?.length ?? 0} floor, ${out.wallAreas?.length ?? 0} wall, ` +
-      `${n('surfaceLines')} surface lines, ${n('surfaceAreas')} surface areas, horizon ${out.horizon ?? 'none'}`,
+      `${n('surfaceTops')} surface tops, ${n('surfaceLines')} surface lines, ${n('surfaceAreas')} surface areas, horizon ${out.horizon ?? 'none'}`,
   );
 }
 
