@@ -53,6 +53,8 @@ import { scopedTurnCurrent, withScopedTurn } from '../profile/scopeBarrier';
 import { maybeCompactChatMemory } from './memoryCompaction';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import { surfaceLanguage } from '../../shared/chatLanguage';
+import { LOOK_TOOL_NAME, lookAtRoom, lookResultContent, lookToolResult, roomForSurface, roomPromptLine, type RoomContext, type RoomLook } from '../seilink/roomContext';
+import type { RoomImage } from '../seilink/roomRender';
 import * as chatStore from './chatStore';
 import {
   drainThoughts,
@@ -143,9 +145,25 @@ export const NO_FOLLOW_UP_TOOLS: ReadonlySet<string> = new Set(['remember']);
  * (cloud proxy or Anthropic BYOK) get the native server-side web_search + our
  * visit; other providers get our search + visit (webToolsFor).
  */
-function chatTools(llm: Pick<LlmProvider, 'kind'>, voice: boolean): LlmToolDef[] {
+function chatTools(llm: Pick<LlmProvider, 'kind'>, voice: boolean, room = false): LlmToolDef[] {
   const web = webToolsFor({ serverWebSearch: llm.kind === 'anthropic' }) as LlmToolDef[];
-  return chatSurfaceTools(voice, web) as LlmToolDef[];
+  // 261104 SeiLink: look() rides every turn kind while she has a room, so
+  // the list stays identical across the voice turn kinds (prepareChatTurn
+  // decides `room` once per turn, from the same source).
+  return chatSurfaceTools(voice, web, room) as LlmToolDef[];
+}
+
+/**
+ * 261104 SeiLink: run one look() call. Returns the tool_result text and the
+ * picture (null when the model cannot see or the render failed); the caller
+ * places the picture with lookToolResult.
+ */
+async function runLook(characterId: string, room: RoomContext | null, llm: Pick<LlmProvider, 'vision'>): Promise<RoomLook> {
+  if (!room) return { text: 'You have no room to look at right now.', image: null };
+  const t0 = Date.now();
+  const look = await lookAtRoom(room, { vision: llm.vision });
+  console.log(`[sei/chat] look char=${characterId.slice(0, 8)} ${look.image ? `${look.image.width}x${look.image.height} ${look.image.data.length}B` : 'no image'} ${Date.now() - t0}ms`);
+  return look;
 }
 
 /**
@@ -169,19 +187,34 @@ async function followUpWebTools(p: {
   res: LlmResult;
   ctrl: AbortController;
   config: Pick<UserConfig, 'web_search_provider' | 'web_search_api_key'>;
+  /** 261104 SeiLink: her room, so a look() on these turns is answered too. */
+  room?: RoomContext | null;
 }): Promise<LlmResult> {
   const { res } = p;
-  const hasWebUse = res.content.some((b) => b.type === 'tool_use' && isWebTool(b.name));
+  const isFollowUpTool = (name: string): boolean => isWebTool(name) || name === LOOK_TOOL_NAME;
+  const hasWebUse = res.content.some((b) => b.type === 'tool_use' && isFollowUpTool(b.name));
   const paused = res.stopReason === 'pause_turn';
   if (!hasWebUse && !paused) return res;
   const messages: LlmMessage[] = [...p.messages, { role: 'assistant', content: res.content }];
   if (hasWebUse) {
-    const ws = getChatWebSession(p.characterId, resolveWebSearchSettings(p.config));
-    ws.beginTurn();
+    let ws: ReturnType<typeof getChatWebSession> | null = null;
     const results: Anthropic.Messages.ToolResultBlockParam[] = [];
+    const images: RoomImage[] = [];
+    let lookImageSent = false;
     for (const b of res.content) {
       if (b.type !== 'tool_use') continue;
-      if (isWebTool(b.name)) {
+      if (b.name === LOOK_TOOL_NAME) {
+        const look = await runLook(p.characterId, p.room ?? null, p.llm);
+        // One picture per response: a second look() in it gets the list only.
+        const r = lookToolResult(b.id, look, { nested: p.llm.kind === 'anthropic', withImage: !lookImageSent });
+        if (look.image) lookImageSent = true;
+        results.push(r.result);
+        if (r.sibling) images.push(r.sibling);
+      } else if (isWebTool(b.name)) {
+        if (!ws) {
+          ws = getChatWebSession(p.characterId, resolveWebSearchSettings(p.config));
+          ws.beginTurn();
+        }
         try {
           const r = await ws.runTool(b.name, (b.input ?? {}) as Record<string, unknown>, { signal: p.ctrl.signal });
           results.push({ type: 'tool_result', tool_use_id: b.id, content: r.content, ...(r.is_error ? { is_error: true } : {}) });
@@ -197,7 +230,7 @@ async function followUpWebTools(p: {
         results.push({ type: 'tool_result', tool_use_id: b.id, content: 'ok' });
       }
     }
-    messages.push({ role: 'user', content: results });
+    messages.push({ role: 'user', content: lookResultContent(results, images) });
   }
   const next = await p.llm.call({
     maxTokens: 300,
@@ -208,7 +241,7 @@ async function followUpWebTools(p: {
     timeoutMs: CHAT_TIMEOUT_MS,
     signal: p.ctrl.signal,
   });
-  const lead = res.content.filter((b) => b.type === 'text' || (b.type === 'tool_use' && !isWebTool(b.name)));
+  const lead = res.content.filter((b) => b.type === 'text' || (b.type === 'tool_use' && !isFollowUpTool(b.name)));
   const content = mergeFollowUpContent(lead, next.content) as typeof next.content;
   return { ...next, content, text: textOf(content) };
 }
@@ -684,6 +717,11 @@ async function prepareChatTurn(
   // faces; the palette maps a face the pack lacks to its nearest when the
   // reply's tags are read.
   const facePalette = facesEnabled() ? await facePaletteForCharacterName(character.name).catch(() => null) : null;
+  // 261104 SeiLink: where she is, only when she has a room and is not in a
+  // game. On a call an auto time of day stays out of the cached status block
+  // (the call clock stamp carries it; see roomPromptLine).
+  const room = await roomForSurface(characterId, { inGame: opts.inGame });
+  const roomLine = room ? roomPromptLine(room, { includeTime: opts.voiceCall !== true }) : undefined;
   const system = buildSystemBlocks({
     persona: character.persona,
     name: character.name,
@@ -715,6 +753,7 @@ async function prepareChatTurn(
     clockInTail: opts.voiceCall === true,
     // 261028 facepack pilot: dev flag only (unpackaged + SEI_FACEPACK_DIR).
     faceGuide: facesEnabled(),
+    roomLine,
   });
   // Voice: only the recent rows go to the model (VOICE_RECENT_CAP, stepped by
   // VOICE_WINDOW_STEP so the cached transcript prefix holds across turns; see
@@ -726,7 +765,7 @@ async function prepareChatTurn(
   const messages = toMessages(windowed);
   // Voice calls append this after markLastMessageCached (appendUncachedTail).
   const clockNote = opts.voiceCall === true ? clockTailNote() : '';
-  return { character, config, system, messages, punctuation, clockNote, facePalette };
+  return { character, config, system, messages, punctuation, clockNote, facePalette, room };
 }
 
 /**
@@ -1037,7 +1076,7 @@ async function sendChatMessageImpl(
     // end_call + remember are offered only while a call is open (block 0
     // already flips for the primer, so this adds no extra cache churn).
     // Same list on every voice turn kind for the cache prefix (chatTools).
-    const tools = chatTools(llm, args.voiceCall === true);
+    const tools = chatTools(llm, args.voiceCall === true, Boolean(prep.room));
     // 260909: per-character web session (lettered results survive across
     // turns). Resolved lazily so a turn that never searches pays nothing.
     let webSession: ReturnType<typeof getChatWebSession> | null = null;
@@ -1177,16 +1216,29 @@ async function sendChatMessageImpl(
       // Emit replyText, not text: when a server-side search and a client
       // visit() ride the same response the split above has already pushed
       // the pre-search line, and replyText holds only what followed it.
-      if (!isStreaming && replyText && typeof deps.emitReply === 'function' && toolUses.some((b) => isWebTool(b.name))) {
+      // 261104: look() is the same kind of pause ("let me look around").
+      if (!isStreaming && replyText && typeof deps.emitReply === 'function' && toolUses.some((b) => isWebTool(b.name) || b.name === LOOK_TOOL_NAME)) {
         await emitStreamedBubble(replyText, false);
         replyText = '';
       }
 
       messages.push({ role: 'assistant', content: res.content });
       const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
+      /** 261104 SeiLink: look() pictures for a provider that takes them beside the tool_results. */
+      const lookImages: RoomImage[] = [];
+      let lookImageSent = false;
       for (const toolUse of toolUses) {
         let note: string;
-        if (toolUse.name === 'launch') {
+        if (toolUse.name === LOOK_TOOL_NAME) {
+          // Her own room (roomContext.ts). One picture per hop is plenty; a
+          // second look() in the same response gets the list only.
+          const look = await runLook(args.characterId, prep.room, llm);
+          const r = lookToolResult(toolUse.id, look, { nested: llm.kind === 'anthropic', withImage: !lookImageSent });
+          if (look.image) lookImageSent = true;
+          toolResults.push(r.result);
+          if (r.sibling) lookImages.push(r.sibling);
+          continue;
+        } else if (toolUse.name === 'launch') {
           launchCalled = true;
           const game = String((toolUse.input as { game?: string })?.game ?? 'minecraft');
           const result = resolveLaunch(game, args.characterId, deps);
@@ -1284,7 +1336,7 @@ async function sendChatMessageImpl(
         }
         toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: note });
       }
-      messages.push({ role: 'user', content: toolResults });
+      messages.push({ role: 'user', content: lookResultContent(toolResults, lookImages) });
 
       // Double-goodbye guard (260706): the quit/end_call tool notes tell the model
       // to "say goodbye if you have not already". If it ALREADY spoke this turn,
@@ -1620,7 +1672,7 @@ async function sendVoiceGreetingTurnImpl(
     // here, during the ring, so the first spoken user reply is a fast cache READ.
     markLastMessageCached(messages);
     appendUncachedTail(messages, note, prep.clockNote);
-    const tools = chatTools(llm, true);
+    const tools = chatTools(llm, true, Boolean(prep.room));
     const first = await llm.call({
       maxTokens: 200,
       system,
@@ -1632,7 +1684,7 @@ async function sendVoiceGreetingTurnImpl(
     });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
     // 260917: run an announced lookup and speak its answer (one bounded hop).
-    const res = await followUpWebTools({ characterId, llm, system, tools, messages, res: first, ctrl, config: prep.config });
+    const res = await followUpWebTools({ characterId, llm, system, tools, messages, res: first, ctrl, config: prep.config, room: prep.room });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
     await honorRememberCalls(characterId, res.content);
     const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');
@@ -1767,7 +1819,7 @@ async function sendCompanionVoiceTurnImpl(
     appendUncachedTail(messages, note, prep.clockNote);
 
     const llm = await buildLlmProvider();
-    const tools = chatTools(llm, true);
+    const tools = chatTools(llm, true, Boolean(prep.room));
     const first = await llm.call({
       maxTokens: 200,
       system,
@@ -1779,7 +1831,7 @@ async function sendCompanionVoiceTurnImpl(
     });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
     // 260917: run an announced lookup and speak its answer (one bounded hop).
-    const res = await followUpWebTools({ characterId, llm, system, tools, messages, res: first, ctrl, config: prep.config });
+    const res = await followUpWebTools({ characterId, llm, system, tools, messages, res: first, ctrl, config: prep.config, room: prep.room });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
     await honorRememberCalls(characterId, res.content);
     // 260708: honor launch() the same single-shot way remember() is honored —
@@ -1883,7 +1935,7 @@ async function sendVoiceIdleTurnImpl(
     markLastMessageCached(messages);
     appendUncachedTail(messages, note, prep.clockNote);
     const llm = await buildLlmProvider();
-    const tools = chatTools(llm, true);
+    const tools = chatTools(llm, true, Boolean(prep.room));
     const first = await llm.call({
       maxTokens: 200,
       system,
@@ -1895,7 +1947,7 @@ async function sendVoiceIdleTurnImpl(
     });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return { messages: [] };
     // 260917: run an announced lookup and speak its answer (one bounded hop).
-    const res = await followUpWebTools({ characterId, llm, system, tools, messages, res: first, ctrl, config: prep.config });
+    const res = await followUpWebTools({ characterId, llm, system, tools, messages, res: first, ctrl, config: prep.config, room: prep.room });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return { messages: [] };
     await honorRememberCalls(characterId, res.content);
     // No tool loop runs here, so honor end_call by flagging it for the caller:

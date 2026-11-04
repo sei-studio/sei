@@ -31,6 +31,8 @@ import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { registerFacepackIpc } from './facepack/facepackIpc';
 import { openSeilinkPreview, registerSeilinkIpc } from './seilink/seilinkIpc';
 import { registerSeilinkProtocol, seilinkDevEnabled, SEILINK_SCHEME_PRIVILEGES } from './seilink/packs';
+import { devRoomSource, setGameSurfaceProbe, setRoomSource } from './seilink/roomContext';
+import { roomSource } from './seilink/roomStore';
 import { isAnalyticsActive, shutdownAnalytics, capture, captureAppQuit, noteSurface } from './analytics';
 import { reportOnboardingAbandoned } from './onboardingFunnel';
 import { initCrashReporting, appOpenedCrashProps, markStartFailed } from './crashReporting';
@@ -1345,6 +1347,28 @@ async function bootstrap(): Promise<void> {
   registerSeilinkIpc({ preloadPath: preloadPath(), rendererTarget });
   if (seilinkDevEnabled() && process.env.SEI_SEILINK_PREVIEW === '1') {
     openSeilinkPreview({ preloadPath: preloadPath(), rendererTarget });
+  }
+  // 261104 SeiLink AI side (src/main/seilink/roomContext.ts): no room line and
+  // no look() while she is in chess, Draw! or a Backseat share (bot games
+  // arrive as inGame). The room source is the host's room store; it gives a
+  // companion a room only when a pack is installed.
+  void (async () => {
+    const [{ isChessActive }, { isDrawActive }, { getBackseatState }] = await Promise.all([
+      import('./chess/chessService'),
+      import('./draw/drawService'),
+      import('./backseat/backseatService'),
+    ]);
+    setGameSurfaceProbe((id) => isChessActive(id) || isDrawActive(id) || getBackseatState(id) !== null);
+  })().catch((err) => console.warn(`[seilink] game surface probe not wired: ${(err as Error).message}`));
+  {
+    // Dev only: unpackaged + SEI_SEILINK_ROOM=<room.json> ({packDir, state, characters}).
+    const devRoom = app.isPackaged ? '' : (process.env.SEI_SEILINK_ROOM ?? '').trim();
+    if (devRoom) {
+      setRoomSource(devRoomSource(devRoom));
+      console.log(`[seilink] dev room source: ${devRoom}`);
+    } else {
+      setRoomSource(roomSource);
+    }
   }
 
   // 5. IPC handlers
