@@ -19,6 +19,9 @@ const state = vi.hoisted(() => ({
   characters: new Set<string>(),
   hosts: [] as Array<{ pid: number; pipe: string; alive: boolean }>,
   resident: null as string | null,
+  /** Lines a fake host sends after its hello (261105 analytics test). */
+  script: [] as Array<Record<string, unknown>>,
+  events: [] as Array<[string, Record<string, unknown>]>,
 }));
 
 vi.mock('electron', () => ({
@@ -54,6 +57,7 @@ vi.mock('node:child_process', async (orig) => {
         sock.on('error', () => exit());
         sock.setEncoding('utf8');
         sock.write(JSON.stringify({ type: 'hello', pid: child.pid, token: opts.env.SEI_SEILINK_TOKEN }) + '\n');
+        for (const m of state.script) sock.write(JSON.stringify(m) + '\n');
         sock.on('data', (chunk: string) => {
           for (const line of chunk.split('\n').filter(Boolean)) {
             const m = JSON.parse(line) as { type: string; seq?: number };
@@ -104,7 +108,9 @@ vi.mock('../../configStore', () => ({
     return state.config;
   },
 }));
-vi.mock('../../lazyAnalytics', () => ({ loadAnalytics: async () => ({ capture: () => {} }) }));
+vi.mock('../../lazyAnalytics', () => ({
+  loadAnalytics: async () => ({ capture: (e: string, p: Record<string, unknown>) => state.events.push([e, p]) }),
+}));
 vi.mock('../../profile/scopeBarrier', () => ({ beginSessionStart: () => ({ stillValid: () => true }) }));
 
 const host = await import('./seilinkHost');
@@ -120,6 +126,8 @@ describe('seilink host start / stop / restore', () => {
     state.config = { seilink_enabled: true };
     state.characters = new Set([SUI, LYRA]);
     state.hosts = [];
+    state.script = [];
+    state.events = [];
     host.initSeilinkHost({ pushStatus: () => {}, openChat: () => {} });
   });
   afterEach(async () => {
@@ -184,5 +192,43 @@ describe('seilink host start / stop / restore', () => {
     await settle();
     expect(live()).toHaveLength(1);
     expect(host.seilinkHostStatus().characterId).toBe(SUI);
+  });
+
+  it('261105: seilink_shown at the first verified frame, and the end event carries health and counts', async () => {
+    const hb = { type: 'heartbeat', fps: 30, frames: 0, effectiveFps: 30, covered: false, paused: false, attached: true, cpu: 1, ramMB: 210 };
+    state.script = [
+      { type: 'facts', displays: 2, scale: 1.5, widthPx: 2560, heightPx: 1440, gpu: 'enabled', hwAccel: true },
+      { type: 'attached', reattach: false, reason: 'initial', layout: 'raised', method: 'm', attachMs: 42 },
+      { type: 'first-frame', sinceStartMs: 900, verified: true, hidden: false, covered: false, paused: false, reasons: [] },
+      hb,
+      { type: 'attached', reattach: true, reason: 'validate:taskbarCreated:no-workerw', layout: 'raised', attachMs: 7 },
+      { type: 'click', kind: 'click' },
+      { type: 'verify-failed', reasons: ['hidden'], trigger: 'timer' },
+    ];
+    const opened: string[] = [];
+    host.initSeilinkHost({ pushStatus: () => {}, openChat: (id) => (opened.push(id), 'focused') });
+    await host.startSeilinkHost(SUI);
+    await settle();
+    await host.stopSeilinkHost('user_stop');
+    await settle(20);
+    const by = (name: string): Record<string, unknown> | undefined => state.events.find(([e]) => e === name)?.[1];
+    expect(by('seilink_shown')).toMatchObject({
+      character_id: SUI,
+      attach_mode: 'progman',
+      attach_ms: 42,
+      late: false,
+      display_count: 2,
+      scale_factor: 1.5,
+      resolution: '1440p',
+      gpu: 'on',
+      hw_accel: true,
+    });
+    expect(by('seilink_reattached')).toMatchObject({ cause: 'explorer_restart', detail: 'workerw_lost', shown: true });
+    expect(by('seilink_verify_failed')).toMatchObject({ reasons: 'hidden', trigger: 'timer' });
+    expect(opened).toEqual([SUI]);
+    const ended = by('seilink_ended');
+    expect(ended).toMatchObject({ shown: true, clicks: 1, chat_open_focused: 1, reattaches: 1, reattach_explorer_restart: 1, verify_fail_hidden: 1, resolution: '1440p' });
+    expect(typeof ended?.first_frame_ms).toBe('number');
+    expect(by('seilink_not_shown')).toBeUndefined();
   });
 });

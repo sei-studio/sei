@@ -471,7 +471,74 @@ ipcMain.on(CH.firstFrame, (e) => {
 
 function reportFirstFrame(): void {
   firstFramePendingAt = null;
-  send({ type: 'first-frame', sinceStartMs: Date.now() - T0 });
+  const v = verifyNow();
+  const a = activity.current;
+  send({ type: 'first-frame', sinceStartMs: Date.now() - T0, verified: v.ok, hidden: v.hidden, covered: a.covered, paused: a.paused, reasons: v.reasons });
+}
+
+/**
+ * 261105 (analytics): is the room where attach() put it, and visible? Windows: validate()
+ * (still the child of the Progman / WorkerW we chose, right size) plus the window's own
+ * visibility; the raised layout's missing-WorkerW reasons are fine (the room draws under
+ * DefView, see validate below). mac: still at the desktop level and visible. Cheap.
+ */
+function verifyNow(): { ok: boolean; hidden: boolean; reasons: string[] } {
+  if (!win || win.isDestroyed() || !addon) return { ok: false, hidden: false, reasons: ['own-window-gone'] };
+  const hidden = !win.isVisible();
+  const reasons: string[] = [];
+  try {
+    if (IS_WIN) {
+      const px = physicalRect(primaryDisplay());
+      const v = (addon as SeilinkWinAddon).validate(win.getNativeWindowHandle(), { w: px.w, h: px.h });
+      for (const r of v.reasons) if (!(v.layout === 'raised' && SHELL_ONLY_WORKERW.has(r))) reasons.push(r);
+      if (v.hidden) reasons.push('hidden');
+    } else if (IS_MAC) {
+      if ((addon as SeilinkMacAddon).windowLevel(win.getNativeWindowHandle()) !== macWantedLevel) reasons.push('level-mismatch');
+    }
+  } catch {
+    reasons.push('other');
+  }
+  if (hidden) reasons.push('not-visible');
+  const isHidden = hidden || reasons.includes('hidden');
+  return { ok: reasons.length === 0, hidden: isHidden, reasons };
+}
+
+/** The last verify-failed set sent ('' after a clean check), so a lasting problem is reported once. */
+let lastVerifyKey = '';
+
+/** After an attach, a check that a re-attach does not cover (hidden but still parented, mac not visible). */
+function noteVerify(trigger: string, reasons: string[]): void {
+  const key = reasons.slice().sort().join('+');
+  if (key === lastVerifyKey) return;
+  lastVerifyKey = key;
+  if (!key) return;
+  log(`verify failed (${trigger}): ${key}`);
+  send({ type: 'verify-failed', reasons, trigger: trigger.split('+')[0] });
+}
+
+/** Display and GPU facts for main's analytics (no names, no ids). */
+function sendFacts(): void {
+  try {
+    const d = primaryDisplay();
+    const px = physicalRect(d);
+    let gpu = '';
+    try {
+      gpu = String((app.getGPUFeatureStatus() as unknown as Record<string, unknown>).gpu_compositing ?? '');
+    } catch {
+      /* optional */
+    }
+    send({
+      type: 'facts',
+      displays: screen.getAllDisplays().length,
+      scale: d.scaleFactor,
+      widthPx: px.w,
+      heightPx: px.h,
+      gpu,
+      hwAccel: app.isHardwareAccelerationEnabled(),
+    });
+  } catch {
+    /* analytics only */
+  }
 }
 
 // ── Hit area ────────────────────────────────────────────────────────────────
@@ -624,7 +691,9 @@ async function validate(trigger: string): Promise<void> {
     if (attached && mac.windowLevel(handle) !== macWantedLevel) {
       log(`level drifted (${trigger}); re-applying`);
       await attach(`validate:${trigger}:level`);
+      return;
     }
+    if (attached) noteVerify(trigger, win.isVisible() ? [] : ['not-visible']);
     return;
   }
   if (!IS_WIN) return;
@@ -633,6 +702,8 @@ async function validate(trigger: string): Promise<void> {
   const v = a.validate(handle, { w: px.w, h: px.h });
   if (v.ok) {
     workerWMissingAccepted = false;
+    // Parented right but hidden: validate() is ok, so nothing re-attaches. Report it (261105).
+    if (attached) noteVerify(trigger, v.hidden || !win.isVisible() ? ['hidden'] : []);
     return;
   }
   // Raised (24H2) layout: once the WorkerW is destroyed, 0x052C does not bring it back, and the
@@ -846,6 +917,7 @@ void app
     // host waiting for it is alive, not hung (CI 261104: it was killed as hung every 3 s).
     setInterval(heartbeat, 1000);
     heartbeat();
+    sendFacts();
     await waitForShell();
     await createRoomWindow();
     await attach('initial');
@@ -855,6 +927,7 @@ void app
       toPage(CH.layout, layoutNow());
       applyHitRect();
       validateSoon('display');
+      sendFacts();
     };
     screen.on('display-metrics-changed', onDisplays);
     screen.on('display-added', onDisplays);

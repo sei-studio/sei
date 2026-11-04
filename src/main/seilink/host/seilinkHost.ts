@@ -55,19 +55,48 @@ import { packFilePath, packIdForCharacterName, readPackManifest } from '../../fa
 import { getRoomPayload, isRoomCharacterId, onRoomChange } from '../roomStore';
 import { loadConfig, updateConfig } from '../../configStore';
 import { loadAnalytics } from '../../lazyAnalytics';
+import {
+  Counters,
+  HEALTH_INTERVAL_MS,
+  HealthSampler,
+  REATTACH_EVENTS_PER_CAUSE,
+  SHOWN_DEADLINE_MS,
+  ShownWatchdog,
+  gpuState,
+  reattachCause,
+  resolutionBucket,
+  scaleBucket,
+  verifyReasonList,
+  type ReattachDetail,
+  type WatchdogEmit,
+} from './hostTelemetry';
 import { beginSessionStart } from '../../profile/scopeBarrier';
 
 export interface SeilinkHostDeps {
   /** Status to the main window. */
   pushStatus(status: SeilinkHostStatus): void;
-  /** She was clicked: open (or focus) her chat in Sei. */
-  openChat(characterId: string): void;
+  /**
+   * She was clicked: open (or focus) her chat in Sei. 261105: returns how (analytics):
+   * 'focused' (the window was there), 'reopened' / 'deferred' (mac: no window, one is made).
+   */
+  openChat(characterId: string): SeilinkChatOpen | void;
   /** Double click on her (M4: a poke, answered by desktopLines.ts). */
   onDoubleClick?(characterId: string): void;
   /** M4: the dock's "edit room": show Sei and open her room editor. */
   openRoomEditor?(characterId: string): void;
   /** M4: the Labs setting or the profile changed (SeilinkAvailability to the main window). */
   pushAvailability?(): void;
+}
+
+export type SeilinkChatOpen = 'focused' | 'reopened' | 'deferred';
+
+/** Display and GPU facts the host reported (analytics only). */
+interface HostFacts {
+  displays: number;
+  scale: number | null;
+  resolution: string;
+  gpu: 'on' | 'off' | 'unknown';
+  hwAccel: boolean;
 }
 
 /** Everything the host says, plus 'status' — the CI self-test (selfTest.ts) listens here. */
@@ -99,6 +128,20 @@ interface Session {
   /** The player is chatting with her (RoomAvatar holds her seated). */
   busy: BusyTracker;
   ending: boolean;
+  // 261105 analytics (hostTelemetry.ts)
+  openedAt: number;
+  watchdog: ShownWatchdog;
+  health: HealthSampler;
+  counters: Counters;
+  /** Counter values at the last seilink_health (its window is the difference). */
+  healthSnap: Map<string, number>;
+  facts: HostFacts | null;
+  timers: Array<ReturnType<typeof setTimeout>>;
+  /** Why the live host went away, for the next attach (a host_restart re-attach). */
+  restartDetail: ReattachDetail | null;
+  /** seilink_verify_failed sent for these reason sets. */
+  verifySeen: Set<string>;
+  notShownReason: string | null;
 }
 
 let deps: SeilinkHostDeps | null = null;
@@ -109,6 +152,8 @@ let fpsCap = SEILINK_HOST_FPS;
 let powerHooked = false;
 /** Sessions opened by this main process: each gets its own pipe path. */
 let sessionSeq = 0;
+/** seilink_unavailable reasons already sent this app run. */
+const unavailableSent = new Set<string>();
 /** The tail of the start / stop / restore queue (see serial). */
 let opChain: Promise<unknown> = Promise.resolve();
 
@@ -173,11 +218,52 @@ function testMode(): boolean {
 }
 
 function capture(event: string, props: Record<string, unknown>): void {
+  seilinkHostEvents.emit('analytics', event, props);
   void loadAnalytics()
     .then((a) => a.capture(event, props))
     .catch(() => {
       /* analytics is optional */
     });
+}
+
+function factProps(f: HostFacts | null): Record<string, unknown> {
+  if (!f) return {};
+  return { display_count: f.displays, scale_factor: f.scale, resolution: f.resolution, gpu: f.gpu, hw_accel: f.hwAccel };
+}
+
+/** A ShownWatchdog verdict, with the session's facts. */
+function emitWatchdog(s: Session, e: WatchdogEmit | null): void {
+  if (!e) return;
+  if (e.event === 'seilink_not_shown') s.notShownReason = String(e.props.reason);
+  capture(e.event, {
+    character_id: s.characterId,
+    restored: s.restored,
+    restarts: s.restarts,
+    ...(s.lastFailure && e.event === 'seilink_not_shown' && !('failure_class' in e.props) ? { last_failure: s.lastFailure } : {}),
+    ...e.props,
+    ...factProps(s.facts),
+  });
+}
+
+/** 261105: count something on the live session (desktopLines, power, clicks). No session: dropped. */
+export function noteSeilinkCount(key: string, n = 1): void {
+  if (session && !session.ending) session.counters.add(key, n);
+}
+
+/** The periodic health event: the window since the last one. */
+function emitHealth(s: Session): void {
+  const now = Date.now();
+  const window = s.health.takeWindow(now);
+  const counts = s.counters.diff(s.healthSnap);
+  s.healthSnap = s.counters.snapshot();
+  capture('seilink_health', {
+    character_id: s.characterId,
+    session_ms: now - s.openedAt,
+    shown: s.watchdog.shown,
+    ...window,
+    ...counts,
+    ...factProps(s.facts),
+  });
 }
 
 // ── Start / stop ────────────────────────────────────────────────────────────
@@ -202,6 +288,11 @@ async function startNow(
   const a = availability();
   if (!a.ok) {
     setStatus({ ...SEILINK_HOST_OFF, state: 'unsupported', failure: a.failure });
+    // 261105: a move-in (or restore) that cannot run here, by reason, once per reason per app run.
+    if (!unavailableSent.has(a.failure)) {
+      unavailableSent.add(a.failure);
+      capture('seilink_unavailable', { reason: a.failure, restored: opts?.restored === true, character_id: characterId });
+    }
     return status;
   }
   if (session?.characterId === characterId && !session.ending) return status;
@@ -375,7 +466,26 @@ async function openSession(characterId: string, restored: boolean): Promise<void
       if (session === s) sendTo(s, { type: 'busy', busy });
     }),
     ending: false,
+    openedAt: Date.now(),
+    watchdog: new ShownWatchdog(Date.now()),
+    health: new HealthSampler(Date.now()),
+    counters: new Counters(),
+    healthSnap: new Map(),
+    facts: null,
+    timers: [],
+    restartDetail: null,
+    verifySeen: new Set(),
+    notShownReason: null,
   };
+  s.timers.push(
+    setTimeout(() => {
+      if (session === s) emitWatchdog(s, s.watchdog.tick(Date.now()));
+    }, SHOWN_DEADLINE_MS + 50),
+    setInterval(() => {
+      if (session === s) emitHealth(s);
+    }, HEALTH_INTERVAL_MS),
+  );
+  for (const t of s.timers) (t as { unref?: () => void }).unref?.();
   const offs = [
     onRoomChange((id) => {
       if (session === s && id === s.characterId) void sendRoom(s);
@@ -398,10 +508,15 @@ async function openSession(characterId: string, restored: boolean): Promise<void
   supervisor.on('message', (m: FromHost) => onHostMessage(s, m));
   supervisor.on('restart', (e: { reason: string }) => {
     s.restarts++;
+    s.restartDetail ??= 'host_crash';
+    s.health.hostGone();
+    s.watchdog.detached();
     if (session === s) patchStatus({ state: 'restarting' });
     seilinkHostEvents.emit('restart', e);
   });
   supervisor.on('hung', (e) => {
+    s.restartDetail = 'host_hung';
+    s.counters.add('host_hangs');
     noteFailure(s, 'host_hung', false);
     seilinkHostEvents.emit('hung', e);
   });
@@ -502,6 +617,7 @@ function onConnection(s: Session, sock: net.Socket): void {
         }
         clearTimeout(helloTimer);
         pid = Number(m.pid);
+        s.watchdog.hello(Date.now());
         if (s.conn && s.conn !== sock) s.conn.destroy();
         s.conn = sock;
         s.connPid = pid;
@@ -566,6 +682,9 @@ function onHostMessage(s: Session, m: FromHost): void {
     case 'attached':
       s.lastFailure = null;
       patchStatus({ state: 'running', failure: undefined });
+      s.watchdog.attached(Date.now(), m.layout, m.attachMs);
+      if (s.startedAt !== null || m.reattach) noteReattach(s, m);
+      s.restartDetail = null;
       if (s.startedAt === null) {
         s.startedAt = Date.now();
         capture('seilink_started', {
@@ -578,18 +697,58 @@ function onHostMessage(s: Session, m: FromHost): void {
       break;
     case 'attach-failed': {
       const failure = isSeilinkHostFailure(m.failure) ? m.failure : 'attach_failed';
+      s.watchdog.attachFailed(failure);
       noteFailure(s, failure, true);
+      break;
+    }
+    case 'first-frame': {
+      const reasons = verifyReasonList(m.reasons);
+      // An older host build sends no verification: its frame counts as verified (it did attach).
+      const verified = m.verified !== false;
+      if (!verified) s.counters.add('unverified_frames');
+      emitWatchdog(
+        s,
+        s.watchdog.onFrame(Date.now(), { verified, hidden: m.hidden === true, covered: m.covered === true, paused: m.paused === true, reasons }),
+      );
+      break;
+    }
+    case 'facts':
+      s.facts = {
+        displays: Math.max(0, Math.round(Number(m.displays) || 0)),
+        scale: scaleBucket(m.scale),
+        resolution: resolutionBucket(m.widthPx, m.heightPx),
+        gpu: gpuState(m.gpu),
+        hwAccel: m.hwAccel === true,
+      };
+      break;
+    case 'verify-failed': {
+      const reasons = verifyReasonList(m.reasons);
+      for (const r of reasons) s.counters.add(`verify_fail_${r}`);
+      const key = reasons.join('+');
+      if (key && !s.verifySeen.has(key)) {
+        s.verifySeen.add(key);
+        capture('seilink_verify_failed', { character_id: s.characterId, reasons: key, trigger: verifyTrigger(m.trigger), shown: s.watchdog.shown });
+      }
       break;
     }
     case 'activity':
       patchStatus({ covered: m.covered, paused: m.paused, fps: m.fps === 0 ? 0 : status.fps });
+      emitWatchdog(s, s.watchdog.onActivity(Date.now(), { covered: m.covered === true, paused: m.paused === true }));
       break;
     case 'heartbeat':
       patchStatus({ covered: m.covered, paused: m.paused, fps: Math.max(0, Math.round(m.effectiveFps)) });
+      s.health.heartbeat(Date.now(), m);
+      emitWatchdog(s, s.watchdog.onActivity(Date.now(), { covered: m.covered === true, paused: m.paused === true }));
       break;
     case 'click':
-      if (m.kind === 'click') deps?.openChat(s.characterId);
-      else if (m.kind === 'dblclick') deps?.onDoubleClick?.(s.characterId);
+      if (m.kind === 'click') {
+        s.counters.add('clicks');
+        const how = deps?.openChat(s.characterId);
+        s.counters.add(how ? `chat_open_${how}` : 'chat_open_unknown');
+      } else if (m.kind === 'dblclick') {
+        s.counters.add('double_clicks');
+        deps?.onDoubleClick?.(s.characterId);
+      }
       break;
     case 'dock':
       if (isSeilinkDockAction(m.action)) void onDockAction(s, m.action);
@@ -704,7 +863,38 @@ function noteFailure(s: Session, failure: SeilinkHostFailure, fromHost: boolean)
   }
   // The host cannot get onto the desktop: recycle it (a fresh process, with backoff). The
   // supervisor gives up after HOST_MAX_RESTARTS restarts within HOST_RESTART_WINDOW_MS.
-  if (fromHost) s.supervisor.recycle(failure);
+  if (fromHost) {
+    s.restartDetail = 'host_recycled';
+    s.supervisor.recycle(failure);
+  }
+}
+
+const VERIFY_TRIGGERS = new Set(['timer', 'session', 'taskbarCreated', 'displayChange', 'settingChange', 'display', 'resume']);
+
+function verifyTrigger(t: unknown): string {
+  const v = String(t ?? '');
+  return VERIFY_TRIGGERS.has(v) ? v : 'other';
+}
+
+/**
+ * A re-attach: the same host re-attached (Explorer restart, display change, WorkerW lost...)
+ * or a new host attached after a restart. Counted per cause; seilink_reattached for the
+ * first REATTACH_EVENTS_PER_CAUSE of each cause in a session (a re-attach loop is counts only).
+ */
+function noteReattach(s: Session, m: Extract<FromHost, { type: 'attached' }>): void {
+  const c = m.reattach ? reattachCause(m.reason) : { cause: 'host_restart' as const, detail: s.restartDetail ?? 'other' };
+  const key = `reattach_${c.cause}`;
+  s.counters.add('reattaches');
+  s.counters.add(key);
+  if (s.counters.get(key) > REATTACH_EVENTS_PER_CAUSE) return;
+  capture('seilink_reattached', {
+    character_id: s.characterId,
+    cause: c.cause,
+    detail: c.detail,
+    attach_ms: Math.round(Number(m.attachMs) || 0),
+    shown: s.watchdog.shown,
+    session_ms: Date.now() - s.openedAt,
+  });
 }
 
 /** The single end choke point: every stop path (user, replace, quit, account switch, failure) lands here. */
@@ -715,15 +905,25 @@ async function endSession(reason: SeilinkEndReason, failure?: SeilinkHostFailure
   session = null;
   setSeilinkResident(null);
   s.unsub();
+  for (const t of s.timers) clearTimeout(t);
   const live = s.supervisor.stop({ kill: false });
   sendTo(s, { type: 'quit' });
+  const now = Date.now();
   capture('seilink_ended', {
     character_id: s.characterId,
     reason,
-    duration_ms: s.startedAt === null ? 0 : Date.now() - s.startedAt,
+    duration_ms: s.startedAt === null ? 0 : now - s.startedAt,
     attached: s.startedAt !== null,
     restarts: s.restarts,
     ...(failure ? { failure_class: failure } : {}),
+    // 261105: did it show, and how it ran (hostTelemetry.ts).
+    session_ms: now - s.openedAt,
+    shown: s.watchdog.shown,
+    first_frame_ms: s.watchdog.firstFrameMs,
+    ...(s.notShownReason ? { not_shown_reason: s.notShownReason } : {}),
+    ...s.health.sessionProps(now),
+    ...s.counters.props(),
+    ...factProps(s.facts),
   });
   log(`host ended (${reason}${failure ? `, ${failure}` : ''})`);
   // A failure keeps who it was for, so her page can say her room stopped.
@@ -767,9 +967,22 @@ function hookPower(): void {
       apply();
       // Sleep: the time asleep is not a hang. Nothing is judged while suspended, and resume or
       // unlock gives the host a grace period to beat again (supervisor.ts).
-      powerMonitor.on('suspend', () => session?.supervisor.noteSuspend());
-      powerMonitor.on('resume', () => session?.supervisor.noteResume('resume'));
-      powerMonitor.on('unlock-screen', () => session?.supervisor.noteResume('unlock-screen'));
+      // 261105: counted per session (seilink_health / seilink_ended), and a sleep is no heartbeat miss.
+      powerMonitor.on('suspend', () => {
+        session?.supervisor.noteSuspend();
+        session?.health.suspend();
+        noteSeilinkCount('sleeps');
+      });
+      powerMonitor.on('resume', () => {
+        session?.supervisor.noteResume('resume');
+        session?.health.resume();
+        noteSeilinkCount('resumes');
+      });
+      powerMonitor.on('lock-screen', () => noteSeilinkCount('locks'));
+      powerMonitor.on('unlock-screen', () => {
+        session?.supervisor.noteResume('unlock-screen');
+        noteSeilinkCount('unlocks');
+      });
     })
     .catch(() => {
       /* vitest stub */

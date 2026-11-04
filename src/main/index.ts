@@ -243,7 +243,7 @@ function sweepVoiceCalls(reason: 'window_closed' | 'renderer_gone' | 'renderer_r
 let pendingSeilinkOpen: { channel: string; characterId: string } | null = null;
 
 /** From the desktop: bring Sei forward and open her chat (a click on her) or her room editor (the dock). */
-function openFromSeilink(channel: string, characterId: string): void {
+function openFromSeilink(channel: string, characterId: string): 'focused' | 'reopened' | 'deferred' {
   const w = mainWindow;
   if (w && !w.isDestroyed()) {
     if (w.isMinimized()) w.restore();
@@ -252,13 +252,17 @@ function openFromSeilink(channel: string, characterId: string): void {
     if (process.platform === 'darwin') app.focus({ steal: true });
     w.focus();
     w.webContents.send(channel, characterId);
-    return;
+    return 'focused';
   }
   // macOS keeps running with no window: make one, like a Dock click, and open the chat once
   // its UI says it is listening (app:renderer-ready).
   pendingSeilinkOpen = { channel, characterId };
   if (process.platform === 'darwin') app.focus({ steal: true });
-  if (mainWindow === null) openMainWindowAgain();
+  if (mainWindow === null) {
+    openMainWindowAgain();
+    return 'reopened';
+  }
+  return 'deferred';
 }
 
 /**
@@ -303,8 +307,8 @@ function reopenMainWindow(): void {
   logger.info('main window reopened');
 }
 
-function openSeilinkChat(characterId: string): void {
-  openFromSeilink(IpcChannel.seilink.openChat, characterId);
+function openSeilinkChat(characterId: string): 'focused' | 'reopened' | 'deferred' {
+  return openFromSeilink(IpcChannel.seilink.openChat, characterId);
 }
 
 ipcMain.on(IpcChannel.app.rendererReady, (e) => {

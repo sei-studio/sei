@@ -8,6 +8,7 @@
  *
  * Steps, each a named check in <outdir>/result.json, screenshots beside it:
  *   attach      start(), attached behind the icons, first frame, frames > 0
+ *   shown       the first frame verified the attach and main sent seilink_shown (261105)
  *   cover       a maximized window (mac: a work-area window over her box) -> covered, 0 fps
  *   uncover     close it -> fps back
  *   click       a synthetic click on her box -> open-chat; on bare wallpaper -> nothing;
@@ -135,6 +136,12 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
     }
   };
   seilinkHostEvents.on('message', onMsg);
+  // 261105: the analytics main sends (seilinkHost.ts capture), so the run can check seilink_shown.
+  const analytics: Array<{ t: number; event: string; props: Record<string, unknown> }> = [];
+  seilinkHostEvents.on('analytics', (event: string, props: Record<string, unknown>) => {
+    analytics.push({ t: Date.now(), event, props });
+    log(`analytics ${event} ${JSON.stringify(props).slice(0, 300)}`);
+  });
   for (const ev of ['spawn', 'exit', 'restart', 'hung']) {
     seilinkHostEvents.on(ev, (e: Record<string, unknown>) => {
       events.push({ t: Date.now(), m: { type: `sup:${ev}`, ...e } });
@@ -210,6 +217,18 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
     await sleep(1500);
     await shot('01-attached');
     if (!checks.attach.ok) throw new Error(`never attached (${seilinkHostStatus().state} ${seilinkHostStatus().failure ?? ''})`);
+
+    // ── seilink_shown (261105): the first frame verified the attach, and main reported it shown ──
+    const shown = await waitFor(() => analytics.find((a) => a.t >= t && a.event === 'seilink_shown'), 10_000);
+    const notShown = analytics.find((a) => a.t >= t && a.event === 'seilink_not_shown');
+    const firstMsg = first?.m as Record<string, unknown> | undefined;
+    checks.shown = {
+      ok: !!shown && firstMsg?.verified === true && !notShown,
+      ms: shown ? shown.t - t : -1,
+      detail: shown
+        ? `${JSON.stringify(shown.props)} first-frame verified=${String(firstMsg?.verified)} reasons=${JSON.stringify(firstMsg?.reasons ?? [])}`
+        : `no seilink_shown${notShown ? ` (not_shown ${JSON.stringify(notShown.props)})` : ''}; first-frame ${JSON.stringify(firstMsg ?? null)}`,
+    };
 
     if (!FAKE) {
       // ── cover / uncover ──
