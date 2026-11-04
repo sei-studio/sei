@@ -75,13 +75,23 @@ function Commands.Finish(inst, cmd, ok, text)
     result(cmd.id, ok, text)
 end
 
+--- While the body walks to its target the action sits on the locomotor, not
+--- on the entity, so ClearBufferedAction misses it and Stop keeps it. The
+--- DoAction node then stays RUNNING on the old action and never asks for the
+--- next command: a gather replaced mid-walk left the body standing until the
+--- app's 96 s timeout (quality eval, 0.3.2). Clear fails it, which ends the node.
 local function cancelCurrent(inst, why)
     local cur = inst.sei and inst.sei.cmd or nil
+    local old = cur ~= nil and cur.state ~= nil and cur.state.action or nil
     if cur ~= nil then
         Commands.Finish(inst, cur, false, why or "cancelled")
     end
     pcall(function() inst:ClearBufferedAction() end)
-    if inst.components.locomotor ~= nil then pcall(function() inst.components.locomotor:Stop() end) end
+    local loco = inst.components.locomotor
+    if loco ~= nil then
+        pcall(function() loco:Stop() end)
+        if old ~= nil and loco.bufferedaction == old then pcall(function() loco:Clear() end) end
+    end
 end
 
 -- ── helpers ─────────────────────────────────────────────────────────────────
