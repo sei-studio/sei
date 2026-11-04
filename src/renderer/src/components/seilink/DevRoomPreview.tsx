@@ -11,6 +11,12 @@
  *
  * The HUD is tinted by the room (roomOverlay), not by the app theme: that is
  * the rule the editor overlay follows.
+ *
+ * `&editor=1` opens the room editor (RoomEditor) instead, over an in-memory
+ * source (saves last until reload). Every `&pack=<url>` is one preset, so
+ * several give the room type picker something to switch to. Editor params:
+ * panel=<avatar|room|items|slot id>, selected=<item index>, items=1, time=,
+ * tint.<slot>=, lang=<ui language>.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { defaultRoomState, type RoomPresetManifest, type RoomSlotId, type RoomState } from '@shared/seilinkRoom';
@@ -19,6 +25,10 @@ import type { RoomFit, RoomOverlay } from '@shared/seilinkDraw';
 import { seilinkResolver, type RoomUrlResolver, type SeilinkPack } from '@shared/seilinkPack';
 import { RoomCanvas, type RoomAvatarSlot } from './RoomCanvas';
 import { clearRoomImageCache } from '../../lib/seilink/roomImages';
+import { RoomEditor } from './RoomEditor';
+import { addItem } from '@shared/seilinkEdit';
+import { memoryRoomEditorSource, type EditorPack, type RoomEditorSource } from './roomEditorSource';
+import { useLangStore, type UiLanguage } from '../../lib/i18n';
 
 const params = new URLSearchParams(window.location.search);
 const TIMES = ['auto', 'day', 'dusk', 'night'] as const;
@@ -82,7 +92,57 @@ function PlaceholderAvatar({ slot }: { slot: RoomAvatarSlot }): React.ReactEleme
   );
 }
 
+/** The editor over URL packs (browser tab) or main's dev packs (the dev window), saving in memory. */
+function DevRoomEditor({ onClose }: { onClose(): void }): React.ReactElement {
+  const [source, setSource] = useState<RoomEditorSource | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const lang = params.get('lang');
+    if (lang) useLangStore.getState().setLang(lang as UiLanguage);
+    void (async () => {
+      try {
+        const urls = params.getAll('pack');
+        const packs: EditorPack[] = urls.length
+          ? await Promise.all(
+              urls.map(async (u) => {
+                const l = await loadFromUrl(u);
+                return { id: l.manifest.id, manifest: l.manifest, resolve: l.resolve, rev: u };
+              }),
+            )
+          : ((await window.sei?.seilinkPacks?.()) ?? []).map((p) => ({ id: p.id, manifest: p.manifest, resolve: seilinkResolver(p), rev: p.rev }));
+        const first = packs[0];
+        let start = first ? initialState(first.manifest) : null;
+        if (first && start && params.get('items') === '1') {
+          // The pack's own spots for each item (addItem), not the canvas preview's sample spots.
+          start = { ...start, items: [] };
+          for (const c of first.manifest.components) if (c.slot === 'item') start = addItem(first.manifest, start, c.id).state;
+        }
+        setSource(memoryRoomEditorSource(packs, start));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    })();
+  }, []);
+  if (error) return <div style={{ padding: 24, color: '#f4f1ee', background: '#14161c', height: '100vh', font: '14px var(--sans)' }}>SeiLink editor: {error}</div>;
+  if (!source) return <div style={{ height: '100vh', background: '#14161c' }} />;
+  const sel = params.get('selected');
+  return (
+    <RoomEditor
+      source={source}
+      onClose={onClose}
+      fps={Number(params.get('fps') ?? 30) || 0}
+      initial={{ panel: (params.get('panel') as never) ?? null, selected: sel !== null ? Number(sel) : null }}
+    />
+  );
+}
+
 export function DevRoomPreview(): React.ReactElement {
+  const [editing, setEditing] = useState(params.has('editor'));
+  if (editing) return <DevRoomEditor onClose={() => setEditing(false)} />;
+  return <DevRoomPreviewCanvas onEdit={() => setEditing(true)} />;
+}
+
+function DevRoomPreviewCanvas({ onEdit }: { onEdit(): void }): React.ReactElement {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [packs, setPacks] = useState<SeilinkPack[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -103,7 +163,7 @@ export function DevRoomPreview(): React.ReactElement {
     setReady(false);
     clearRoomImageCache();
     try {
-      const url = params.get('pack');
+      const url = params.getAll('pack')[0];
       if (url) {
         const l = await loadFromUrl(url);
         setLoaded(l);
@@ -217,6 +277,9 @@ export function DevRoomPreview(): React.ReactElement {
             ))}
             <button type="button" style={btn(false)} onClick={() => void load()}>
               reload
+            </button>
+            <button type="button" style={btn(false)} onClick={onEdit}>
+              edit
             </button>
           </div>
         )}

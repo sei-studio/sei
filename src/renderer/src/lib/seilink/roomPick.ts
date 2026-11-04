@@ -1,0 +1,127 @@
+/**
+ * What is under the pointer in a room (261104, editor pass): the editor
+ * selects an item, or opens a part's options, by clicking it in the room.
+ *
+ * Hit tests use each layer's own pixels (alpha), not its box, so a click
+ * through the window glass reaches the view and a click beside a plant does
+ * not grab it. Alpha maps are small (at most 256 px on the long side) and
+ * built once per file; `prepare` loads them ahead so `pick` is synchronous
+ * (a drag must start on pointerdown, not a frame later).
+ */
+import { itemRect, roomDrawPlan, type RoomLayer } from '@shared/seilinkDraw';
+import type { RoomPresetManifest, RoomSlotId, RoomState, RoomTime } from '@shared/seilinkRoom';
+import type { RoomUrlResolver } from '@shared/seilinkPack';
+import { ctx2d, loadRoomImage, makeCanvas } from './roomImages';
+
+interface AlphaMap {
+  /** Natural size of the source image. */
+  nw: number;
+  nh: number;
+  w: number;
+  h: number;
+  data: Uint8Array;
+}
+
+const MAP_MAX = 256;
+const HIT_ALPHA = 40;
+
+export type RoomPick = { kind: 'item'; index: number } | { kind: 'slot'; slot: RoomSlotId } | { kind: 'avatar' };
+
+export class RoomPicker {
+  private maps = new Map<string, AlphaMap>();
+  private pending = new Map<string, Promise<void>>();
+
+  /** Load the alpha maps a plan needs. Resolves when all are ready (failures are skipped). */
+  async prepare(manifest: RoomPresetManifest, state: RoomState, time: RoomTime, resolve: RoomUrlResolver): Promise<void> {
+    const plan = roomDrawPlan(manifest, state, time);
+    const jobs: Array<Promise<void>> = [];
+    for (const l of plan.layers) {
+      if (l.kind === 'avatar') continue;
+      const url = resolve(l.frame.src);
+      if (this.maps.has(url)) continue;
+      let p = this.pending.get(url);
+      if (!p) {
+        p = buildMap(url).then(
+          (m) => {
+            this.maps.set(url, m);
+            this.pending.delete(url);
+          },
+          () => {
+            this.pending.delete(url);
+          },
+        );
+        this.pending.set(url, p);
+      }
+      jobs.push(p);
+    }
+    await Promise.all(jobs);
+  }
+
+  /** Natural size of a loaded frame (items without a box need it for their rect). */
+  natural(url: string): [number, number] | null {
+    const m = this.maps.get(url);
+    return m ? [m.nw, m.nh] : null;
+  }
+
+  /**
+   * The top-most thing at canvas point (x, y). `slots` limits which slots can
+   * be picked (the ones the editor offers options for); others are see-through.
+   */
+  pick(
+    manifest: RoomPresetManifest,
+    state: RoomState,
+    time: RoomTime,
+    resolve: RoomUrlResolver,
+    x: number,
+    y: number,
+    slots: ReadonlySet<RoomSlotId>,
+  ): RoomPick | null {
+    const plan = roomDrawPlan(manifest, state, time);
+    for (let i = plan.layers.length - 1; i >= 0; i--) {
+      const l: RoomLayer = plan.layers[i];
+      if (l.kind === 'avatar') {
+        const w = l.height * 0.5;
+        if (x >= l.x - w / 2 && x <= l.x + w / 2 && y >= l.y - l.height * 0.95 && y <= l.y) return { kind: 'avatar' };
+        continue;
+      }
+      if (l.kind === 'slot' && !slots.has(l.slot)) continue;
+      const map = this.maps.get(resolve(l.frame.src));
+      if (!map) continue;
+      const rect = l.kind === 'slot' ? (l.box ?? [0, 0, manifest.canvas[0], manifest.canvas[1]]) : itemRect(l, [map.nw, map.nh]);
+      const [rx, ry, rw, rh] = rect;
+      if (x < rx || y < ry || x > rx + rw || y > ry + rh) continue;
+      let u = (x - rx) / rw;
+      const v = (y - ry) / rh;
+      if (l.kind === 'item' && l.flip) u = 1 - u;
+      const px = Math.min(map.w - 1, Math.max(0, Math.floor(u * map.w)));
+      const py = Math.min(map.h - 1, Math.max(0, Math.floor(v * map.h)));
+      if (map.data[py * map.w + px] < HIT_ALPHA) continue;
+      return l.kind === 'item' ? { kind: 'item', index: l.index } : { kind: 'slot', slot: l.slot };
+    }
+    return null;
+  }
+
+  /** Canvas-px rect of a placed item, or null until its frame is prepared. */
+  itemRect(manifest: RoomPresetManifest, state: RoomState, time: RoomTime, resolve: RoomUrlResolver, index: number): [number, number, number, number] | null {
+    const plan = roomDrawPlan(manifest, state, time);
+    const l = plan.layers.find((x) => x.kind === 'item' && x.index === index);
+    if (!l || l.kind !== 'item') return null;
+    if (l.size) return itemRect(l, l.size);
+    const n = this.natural(resolve(l.frame.src));
+    return n ? itemRect(l, n) : null;
+  }
+}
+
+async function buildMap(url: string): Promise<AlphaMap> {
+  const img = await loadRoomImage(url);
+  const s = Math.min(1, MAP_MAX / Math.max(img.width, img.height));
+  const w = Math.max(1, Math.round(img.width * s));
+  const h = Math.max(1, Math.round(img.height * s));
+  const c = makeCanvas(w, h);
+  const ctx = ctx2d(c, { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, w, h);
+  const rgba = ctx.getImageData(0, 0, w, h).data;
+  const data = new Uint8Array(w * h);
+  for (let i = 0; i < data.length; i++) data[i] = rgba[i * 4 + 3];
+  return { nw: img.width, nh: img.height, w, h, data };
+}

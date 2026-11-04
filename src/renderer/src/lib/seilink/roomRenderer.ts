@@ -19,9 +19,18 @@
  * clock fade (from != to) is applied as given. A jump to another time (the
  * user picks night, or the clock skipped past a fade) is animated over
  * `fadeMs` instead of cutting.
+ *
+ * Recolour (261104, editor pass): a state change that only moves tints
+ * rebuilds just the tinted layers. Each cached side (back / front) keeps a
+ * split around the layer being recoloured: everything below it and
+ * everything above it, pre-composited once. A tint step then costs two
+ * drawImage calls plus the one tinted layer, so dragging a colour stays
+ * smooth. source-over is associative, so below + layer + above is the same
+ * picture the full build draws.
  */
 import {
   AVATAR_Z,
+  type RoomBox,
   type RoomPresetManifest,
   type RoomState,
   type RoomTime,
@@ -32,12 +41,14 @@ import {
   roomOverlay,
   splitAtAvatar,
   type GlowLayer,
+  type ItemLayer,
   type RoomDrawPlan,
+  type SlotLayer,
   type RoomOverlay,
   type RoomTimeMix,
 } from '@shared/seilinkDraw';
 import type { RoomUrlResolver } from '@shared/seilinkPack';
-import { drawRoomGlows, drawRoomLayers, loadPlanAssets, type RoomAssetError, type RoomAssets } from './roomCompose';
+import { drawRoomGlows, drawRoomLayers, loadPlanAssets, tintRegion, type RoomAssetError, type RoomAssets } from './roomCompose';
 import { ctx2d, makeCanvas, type AnyCanvas } from './roomImages';
 
 export interface RoomRendererCanvases {
@@ -57,9 +68,18 @@ export interface RoomRendererEvents {
   onLayersUsed?(used: { front: boolean; glow: boolean }): void;
 }
 
+interface TintSplit {
+  /** Index into the side's layer list of the layer being recoloured. */
+  index: number;
+  below: AnyCanvas;
+  above: AnyCanvas | null;
+}
+
 interface TimeCache {
   time: RoomTime;
   plan: RoomDrawPlan;
+  /** Recolour splits per side (see the header). */
+  splits: { back?: TintSplit; front?: TintSplit };
   back: AnyCanvas;
   front: AnyCanvas | null;
   /** Still glows, pre-composited. */
@@ -77,6 +97,21 @@ interface Scene {
 }
 
 const MIX_STEPS = 128;
+
+/** The state minus what never changes a cached picture (time) and minus tints. */
+function structureKey(state: RoomState): string {
+  const slots: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(state.slots)) slots[k] = v ? { id: v.id } : v;
+  return JSON.stringify({ ...state, time: null, slots, items: state.items.map(({ tint: _t, ...rest }) => rest) });
+}
+
+function tintKey(state: RoomState): string {
+  return JSON.stringify([Object.entries(state.slots).map(([k, v]) => [k, v?.tint ?? null]), state.items.map((i) => i.tint ?? null)]);
+}
+
+function layerTint(l: SlotLayer | ItemLayer): string | null {
+  return l.tint;
+}
 const SEEDS = new WeakMap<GlowLayer, number>();
 
 function seedOf(g: GlowLayer, i: number): number {
@@ -96,6 +131,9 @@ export class RoomRenderer {
   private scene: Scene | null = null;
   private sceneSeq = 0;
   private sceneKey = '';
+  private sceneTints = '';
+  private retinting = false;
+  private retintAgain = false;
   private assets: RoomAssets = { images: new Map(), masks: new Map(), glows: new Map() };
   private caches = new Map<RoomTime, TimeCache>();
   private building = new Map<RoomTime, Promise<TimeCache | null>>();
@@ -137,11 +175,22 @@ export class RoomRenderer {
   setScene(manifest: RoomPresetManifest, state: RoomState, resolve: RoomUrlResolver): void {
     // state.time only picks which caches show (setMix); it never changes what a
     // time's picture looks like, so a time change keeps every cache.
-    const key = JSON.stringify({ ...state, time: null });
+    const key = structureKey(state);
+    const tints = tintKey(state);
     const prev = this.scene;
     this.scene = { manifest, state, resolve };
-    if (prev && prev.manifest === manifest && prev.resolve === resolve && key === this.sceneKey) return;
+    if (prev && prev.manifest === manifest && prev.resolve === resolve && key === this.sceneKey) {
+      if (tints === this.sceneTints) return;
+      this.sceneTints = tints;
+      // Only colours moved: recolour the cached layers in place. While a cache
+      // is still building it would come out with the old colours, so rebuild.
+      if (this.caches.size > 0 && this.building.size === 0) {
+        void this.retint();
+        return;
+      }
+    }
     this.sceneKey = key;
+    this.sceneTints = tints;
     this.sceneSeq++;
     this.readySent = false;
     this.invalidate();
@@ -286,15 +335,110 @@ export class RoomRenderer {
       drawRoomGlows(gctx, still, manifest.canvas, this.assets, () => 1);
     }
 
-    // Average colour (what the overlay falls back to when the manifest names none).
-    const one = makeCanvas(1, 1);
-    const octx = ctx2d(one, { willReadFrequently: true });
-    octx.drawImage(backC, 0, 0, 1, 1);
-    if (frontC) octx.drawImage(frontC, 0, 0, 1, 1);
-    const [r, g, b] = octx.getImageData(0, 0, 1, 1).data;
-    const sampled = '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+    return { time, plan, splits: {}, back: backC, front: frontC, glowStill, glowAnimated: animated, sampled: sampleColour(backC, frontC) };
+  }
 
-    return { time, plan, back: backC, front: frontC, glowStill, glowAnimated: animated, sampled };
+  // ── recolour fast path ────────────────────────────────────────────────────
+
+  private async retint(): Promise<void> {
+    if (this.retinting) {
+      this.retintAgain = true;
+      return;
+    }
+    this.retinting = true;
+    try {
+      do {
+        this.retintAgain = false;
+        const scene = this.scene;
+        if (!scene) return;
+        const seq = this.sceneSeq;
+        const caches = [...this.caches.values()];
+        const plans = caches.map((c) => roomDrawPlan(scene.manifest, scene.state, c.time));
+        // Masks are usually loaded already (the part was tinted by its default).
+        await Promise.all(plans.map((p) => loadPlanAssets(p, scene.resolve, this.assets)));
+        if (this.disposed || seq !== this.sceneSeq) return;
+        if (this.scene !== scene) {
+          this.retintAgain = true;
+          continue;
+        }
+        caches.forEach((c, i) => {
+          if (this.caches.get(c.time) === c) this.retintCache(c, plans[i], scene.manifest);
+        });
+        this.composeStatic(true);
+        this.drawGlow(performance.now());
+      } while (this.retintAgain);
+    } finally {
+      this.retinting = false;
+    }
+  }
+
+  private retintCache(c: TimeCache, plan: RoomDrawPlan, manifest: RoomPresetManifest): void {
+    const canvas = manifest.canvas;
+    const next = splitAtAvatar(plan);
+    const prev = splitAtAvatar(c.plan);
+    for (const side of ['back', 'front'] as const) {
+      const target = side === 'back' ? c.back : c.front;
+      const layers = next[side];
+      const old = prev[side];
+      if (!target || layers.length !== old.length) continue;
+      const changed: number[] = [];
+      for (let i = 0; i < layers.length; i++) if (layerTint(layers[i]) !== layerTint(old[i])) changed.push(i);
+      if (changed.length === 0) continue;
+      const ctx = ctx2d(target);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalAlpha = 1;
+      if (changed.length > 1) {
+        c.splits[side] = undefined;
+        ctx.clearRect(0, 0, target.width, target.height);
+        ctx.setTransform(this.res, 0, 0, this.res, 0, 0);
+        drawRoomLayers(ctx, layers, canvas, this.assets, this.res);
+        continue;
+      }
+      const index = changed[0];
+      let split = c.splits[side];
+      if (!split || split.index !== index) {
+        split = this.makeSplit(layers, index, target.width, target.height, canvas);
+        c.splits[side] = split;
+      }
+      // Only the mask's bounds change colour: redraw just that rectangle
+      // (device px, rounded out). A flipped item draws whole (no clip there).
+      const layer = layers[index];
+      const region = layer.kind === 'item' && layer.flip ? null : tintRegion(layer, canvas, this.assets);
+      let [dx, dy, dw, dh] = [0, 0, target.width, target.height];
+      if (region) {
+        const x0 = Math.max(0, Math.floor(region[0] * this.res) - 1);
+        const y0 = Math.max(0, Math.floor(region[1] * this.res) - 1);
+        const x1 = Math.min(target.width, Math.ceil((region[0] + region[2]) * this.res) + 1);
+        const y1 = Math.min(target.height, Math.ceil((region[1] + region[3]) * this.res) + 1);
+        if (x1 <= x0 || y1 <= y0) continue;
+        [dx, dy, dw, dh] = [x0, y0, x1 - x0, y1 - y0];
+      }
+      const clip: RoomBox | undefined = region ? [dx / this.res, dy / this.res, dw / this.res, dh / this.res] : undefined;
+      ctx.clearRect(dx, dy, dw, dh);
+      ctx.drawImage(split.below, dx, dy, dw, dh, dx, dy, dw, dh);
+      ctx.setTransform(this.res, 0, 0, this.res, 0, 0);
+      drawRoomLayers(ctx, [layer], canvas, this.assets, this.res, clip);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      if (split.above) ctx.drawImage(split.above, dx, dy, dw, dh, dx, dy, dw, dh);
+    }
+    c.plan = plan;
+    // The sample only matters when the pack names no overlay for this time.
+    if (!manifest.overlay?.[c.time]) c.sampled = sampleColour(c.back, c.front);
+  }
+
+  private makeSplit(layers: ReadonlyArray<SlotLayer | ItemLayer>, index: number, w: number, h: number, canvas: readonly [number, number]): TintSplit {
+    const below = makeCanvas(w, h);
+    const bctx = ctx2d(below);
+    bctx.setTransform(this.res, 0, 0, this.res, 0, 0);
+    drawRoomLayers(bctx, layers.slice(0, index), canvas, this.assets, this.res);
+    let above: AnyCanvas | null = null;
+    if (index < layers.length - 1) {
+      above = makeCanvas(w, h);
+      const actx = ctx2d(above);
+      actx.setTransform(this.res, 0, 0, this.res, 0, 0);
+      drawRoomLayers(actx, layers.slice(index + 1), canvas, this.assets, this.res);
+    }
+    return { index, below, above };
   }
 
   private sizeCanvases(): void {
@@ -441,6 +585,16 @@ export class RoomRenderer {
     this.lastOverlay = key;
     this.events.onOverlay(o);
   }
+}
+
+/** Average colour of a cached picture (what the overlay falls back to when the manifest names none). */
+function sampleColour(back: AnyCanvas, front: AnyCanvas | null): string {
+  const one = makeCanvas(1, 1);
+  const octx = ctx2d(one, { willReadFrequently: true });
+  octx.drawImage(back, 0, 0, 1, 1);
+  if (front) octx.drawImage(front, 0, 0, 1, 1);
+  const [r, g, b] = octx.getImageData(0, 0, 1, 1).data;
+  return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
 }
 
 /** Re-exported so callers need one import for the avatar z. */

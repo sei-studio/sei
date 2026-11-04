@@ -74,6 +74,14 @@ export function loadRoomImage(url: string): Promise<ImageBitmap> {
   return remember(`img:${url}`, () => fetchBitmap(url));
 }
 
+/** Lit bounds of a converted mask, in its own px: [x, y, w, h], or null when it is empty. */
+const MASK_BOUNDS = new WeakMap<ImageBitmap, [number, number, number, number] | null>();
+
+/** Where a mask recolours anything (the editor's recolour redraws only there). undefined = unknown. */
+export function maskBounds(mask: ImageBitmap): [number, number, number, number] | null | undefined {
+  return MASK_BOUNDS.get(mask);
+}
+
 export function loadRoomMask(url: string): Promise<ImageBitmap> {
   return remember(`mask:${url}`, async () => {
     const src = await loadRoomImage(url);
@@ -82,15 +90,31 @@ export function loadRoomMask(url: string): Promise<ImageBitmap> {
     ctx.drawImage(src, 0, 0);
     const img = ctx.getImageData(0, 0, c.width, c.height);
     const d = img.data;
+    const w = c.width;
+    let x0 = w;
+    let y0 = c.height;
+    let x1 = -1;
+    let y1 = -1;
     for (let i = 0; i < d.length; i += 4) {
       const a = ((d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) * d[i + 3]) / 255;
       d[i] = 255;
       d[i + 1] = 255;
       d[i + 2] = 255;
       d[i + 3] = a;
+      if (a >= 1) {
+        const p = i >> 2;
+        const x = p % w;
+        const y = (p - x) / w;
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
     }
     ctx.putImageData(img, 0, 0);
-    return createImageBitmap(c);
+    const bitmap = await createImageBitmap(c);
+    MASK_BOUNDS.set(bitmap, x1 < 0 ? null : [x0, y0, x1 - x0 + 1, y1 - y0 + 1]);
+    return bitmap;
   });
 }
 

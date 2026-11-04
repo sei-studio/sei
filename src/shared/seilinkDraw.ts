@@ -63,6 +63,8 @@ export interface ItemLayer {
   flip: boolean;
   /** Fixed sprite size from the component's box (w, h); null = natural image size. */
   size: [number, number] | null;
+  /** Tint through frame.mask (tintable items with a mask), like SlotLayer.tint. */
+  tint: string | null;
 }
 
 export type RoomLayer = SlotLayer | AvatarLayer | ItemLayer;
@@ -122,17 +124,20 @@ export function roomDrawPlan(
   state.items.forEach((it, index) => {
     const component = byId.get(it.id);
     if (!component || component.slot !== 'item') return;
+    const frame = frameFor(component, time);
+    const tint = it.tint ?? component.defaultTint;
     layers.push({
       kind: 'item',
       z: itemZ(component, it.z),
       index,
       component,
-      frame: frameFor(component, time),
+      frame,
       x: it.x,
       y: it.y,
       scale: typeof it.scale === 'number' && it.scale > 0 ? it.scale : 1,
       flip: it.flip === true,
       size: component.box ? [component.box[2], component.box[3]] : null,
+      tint: component.tintable && frame.mask && tint ? tint : null,
     });
   });
   const order = layers.map((l, i) => ({ l, i }));
@@ -167,7 +172,7 @@ export function planFiles(plan: RoomDrawPlan): string[] {
   for (const l of plan.layers) {
     if (l.kind === 'avatar') continue;
     out.add(l.frame.src);
-    if (l.kind === 'slot' && l.tint && l.frame.mask) out.add(l.frame.mask);
+    if (l.tint && l.frame.mask) out.add(l.frame.mask);
     if (l.frame.glow) out.add(l.frame.glow);
   }
   return [...out];

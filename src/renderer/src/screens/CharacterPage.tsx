@@ -19,7 +19,7 @@
  * Source: docs/design/UI-REDESIGN-PARTY.md §4.6.
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useT, t as tGlobal } from '../lib/i18n';
 import { useUiStore } from '../lib/stores/useUiStore';
@@ -55,6 +55,9 @@ import { ownVoiceOf, sharedVoiceIdOf } from '@shared/voiceIds';
 import { sharedVoiceMetadataToSave } from '../lib/sharedVoice';
 import { voicePitchRate } from '@shared/voicePitch';
 import styles from './CharacterPage.module.css';
+
+// SeiLink room editor (261104): dev flag only, loaded on first open.
+const CompanionRoomEditor = lazy(() => import('../components/seilink/CompanionRoomEditor'));
 
 function fmtMs(ms: number): string {
   if (ms <= 0) return '-';
@@ -158,6 +161,20 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const [knowledgeOpen, setKnowledgeOpen] = useState<boolean>(false);
   // 260909 Card image popup (versions + regenerate) — owned characters only.
   const [cardImageOpen, setCardImageOpen] = useState<boolean>(false);
+  // 261104 SeiLink room editor: the menu item exists only under the dev flag
+  // (unpackaged + SEI_SEILINK_PACKS), so users never see it.
+  const [seilinkDev, setSeilinkDev] = useState<boolean>(false);
+  const [roomEditorOpen, setRoomEditorOpen] = useState<boolean>(false);
+  useEffect(() => {
+    let dead = false;
+    sei.seilinkDevInfo?.().then(
+      (info) => !dead && setSeilinkDev(info.enabled),
+      () => {},
+    );
+    return () => {
+      dead = true;
+    };
+  }, []);
   const settingsRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!settingsOpen) return;
@@ -848,6 +865,19 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                     >
                       {t('Knowledge')}
                     </button>
+                    {seilinkDev ? (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className={styles.settingsItem}
+                        onClick={() => {
+                          setSettingsOpen(false);
+                          setRoomEditorOpen(true);
+                        }}
+                      >
+                        {t('Edit room')}
+                      </button>
+                    ) : null}
                     {canShare ? (
                       <button
                         type="button"
@@ -912,6 +942,11 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           characterName={character.name}
           onClose={() => setKnowledgeOpen(false)}
         />
+      ) : null}
+      {roomEditorOpen ? (
+        <Suspense fallback={null}>
+          <CompanionRoomEditor characterId={character.id} onClose={() => setRoomEditorOpen(false)} />
+        </Suspense>
       ) : null}
       {cardImageOpen ? (
         <PortraitVersionsModal
