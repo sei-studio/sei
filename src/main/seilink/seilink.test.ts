@@ -113,17 +113,20 @@ describe('seilink packs', () => {
 describe('seilink bundled packs (M4)', () => {
   const REPO_PACKS = path.resolve(__dirname, '../../../resources/seilink-packs');
 
-  it('ships the cozy pack: it validates, and every file in it is one the manifest names', async () => {
+  it.each(['cozy', 'gamer', 'forest'] as const)('ships the %s pack: it validates, and every file in it is one the manifest names', async (id) => {
     __setPackRootsForTest([{ dir: REPO_PACKS, source: 'bundled' }]);
-    const pack = await loadPack('cozy');
+    const pack = await loadPack(id);
     expect(pack?.source).toBe('bundled');
-    expect(pack?.manifest.id).toBe('cozy');
+    expect(pack?.manifest.id).toBe(id);
     const named = new Set(manifestFiles(pack!.manifest));
-    const onDisk = (await readdir(path.join(REPO_PACKS, 'cozy'))).filter((f) => f !== 'manifest.json');
+    const onDisk = (await readdir(path.join(REPO_PACKS, id))).filter((f) => f !== 'manifest.json');
     expect(onDisk.filter((f) => !named.has(f))).toEqual([]);
     expect(named.size).toBe(onDisk.length);
-    // The presets on offer are exactly the packs that exist.
-    expect((await listPacks()).map((p) => p.id)).toEqual(['cozy']);
+  });
+
+  it('offers all three presets, since all three packs ship (261105)', async () => {
+    __setPackRootsForTest([{ dir: REPO_PACKS, source: 'bundled' }]);
+    expect((await listPacks()).map((p) => p.id)).toEqual(['cozy', 'gamer', 'forest']);
   });
 
   it('lets an installed pack override the bundled one, and the dev dir override both', async () => {

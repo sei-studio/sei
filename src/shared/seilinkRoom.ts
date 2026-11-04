@@ -70,6 +70,22 @@
  *  - Draw order: a floor item's z is ITEM_Z.floor plus a fraction that grows
  *    with its y (nearer = in front of further back); a surface item takes the
  *    z of the part it rests on plus a half. Rules live in seilinkPlace.ts.
+ *
+ * 261105 (shelf pass, Shawn: "make it forgiving ... on the shelf it's just a
+ * line", "make the item go INSIDE the shelf not on top"), also optional:
+ *  - `surfaceTops` (slot components): the whole visible top face of a plank,
+ *    desk, log or bed, as `{ area, lip?, sink? }`. `area` runs from the back
+ *    edge to the front lip (a thin quad for a plank); a surface item's
+ *    contact rests anywhere inside it, its sprite kept in from the ends.
+ *    `lip` is where the part's own front edge is drawn (a plank's front face
+ *    band, from the dark line at the front of the top face down): that much
+ *    of the part's frame is drawn again over the items resting on this top,
+ *    so the lip overlaps their base and they sit in the shelf, not on it.
+ *    `sink` (px at scale 1) is for a soft top (a duvet): an item's base
+ *    settles that far in, fading into the top, with a soft contact shadow.
+ *    Prefer surfaceTops over surfaceLines / surfaceAreas, which still work.
+ *  - Items on one part's tops draw in order of the tops (back to front by
+ *    their y): items on a top, then its lip, then the next top's items.
  */
 
 export const SEILINK_ROOM_FORMAT = 'sei-room' as const;
@@ -102,6 +118,16 @@ export type RoomPoint = [x: number, y: number];
 export type RoomPolygon = RoomPoint[];
 /** A line from (x1, y1) to (x2, y2), canvas px. */
 export type RoomSegment = [x1: number, y1: number, x2: number, y2: number];
+
+/** A surface top of a slot component (261105 shelf pass); see the header. */
+export interface RoomSurfaceTop {
+  /** The whole visible top face, canvas px: back edge to front lip. */
+  area: RoomPolygon;
+  /** The part's front lip, canvas px: its frame cut to this is drawn over the items on this top. */
+  lip?: RoomPolygon;
+  /** Soft top: px (sprite scale 1) an item's base settles into it. */
+  sink?: number;
+}
 
 export interface RoomFrame {
   /** Path relative to the pack root. */
@@ -146,6 +172,8 @@ export interface RoomComponent {
   surfaceLines?: RoomSegment[];
   /** Slot components: areas a surface item may rest anywhere inside, e.g. a bed top (261105). */
   surfaceAreas?: RoomPolygon[];
+  /** Slot components: whole top faces with their lip and give (261105 shelf pass). Preferred. */
+  surfaceTops?: RoomSurfaceTop[];
   /** Slot components: floor and wall this part covers while it is in the room (261105). */
   blocks?: { floor?: RoomPolygon[]; wall?: RoomPolygon[] };
   /** Tintable components: colours the editor offers first. */

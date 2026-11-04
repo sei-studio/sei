@@ -7,9 +7,27 @@
  * Tint (format rule): inside the mask the frame is multiplied by the tint,
  * outside it is untouched, so the art's own shading stays:
  *   out = frame * (1 - m) + frame * tint * m,   m = mask luminance x alpha.
+ *
+ * Lips and soft tops (261105 shelf pass): a slot layer with `clip` (a top's
+ * lip) is drawn only inside its polygons; an item with `sink` is drawn
+ * through a scratch with its base faded into the top (sinkKeep), over a soft
+ * contact shadow as wide as its base. Both happen when a cached layer is
+ * built, never per frame.
  */
-import { itemRect, type GlowLayer, type ItemLayer, type RoomDrawPlan, type SlotLayer } from '@shared/seilinkDraw';
-import type { RoomBox } from '@shared/seilinkRoom';
+import {
+  baseSpan,
+  contactShadow,
+  itemRect,
+  sinkKeep,
+  sinkLook,
+  sunkRect,
+  type GlowLayer,
+  type ItemLayer,
+  type RoomDrawPlan,
+  type SinkLook,
+  type SlotLayer,
+} from '@shared/seilinkDraw';
+import type { RoomBox, RoomPolygon } from '@shared/seilinkRoom';
 import type { RoomUrlResolver } from '@shared/seilinkPack';
 import { ctx2d, loadRoomGlow, loadRoomImage, loadRoomMask, makeCanvas, maskBounds, type AnyCanvas, type AnyContext2D, type TrimmedGlow } from './roomImages';
 
@@ -158,6 +176,115 @@ export function tintRegion(layer: SlotLayer | ItemLayer, canvas: readonly [numbe
   return [x + bx * sx, y + b[1] * sy, b[2] * sx, b[3] * sy];
 }
 
+function polygonsBox(polys: readonly RoomPolygon[]): RoomBox {
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (const p of polys) {
+    for (const [x, y] of p) {
+      x0 = Math.min(x0, x);
+      y0 = Math.min(y0, y);
+      x1 = Math.max(x1, x);
+      y1 = Math.max(y1, y);
+    }
+  }
+  return [x0, y0, Math.max(0, x1 - x0), Math.max(0, y1 - y0)];
+}
+
+function intersect(a: RoomBox, b: RoomBox | undefined): RoomBox {
+  if (!b) return a;
+  const x = Math.max(a[0], b[0]);
+  const y = Math.max(a[1], b[1]);
+  return [x, y, Math.max(0, Math.min(a[0] + a[2], b[0] + b[2]) - x), Math.max(0, Math.min(a[1] + a[3], b[1] + b[3]) - y)];
+}
+
+/** One layer as it is, with its tint when it has one. */
+function drawPlain(ctx: AnyContext2D, l: SlotLayer | ItemLayer, img: ImageBitmap, rect: RoomBox, assets: RoomAssets, scale: number, clip?: RoomBox): void {
+  if (l.tint && l.frame.mask) {
+    const mask = assets.masks.get(l.frame.mask);
+    if (mask) {
+      drawTinted(ctx, img, mask, l.tint, rect, scale, l.kind === 'item' && l.flip, clip);
+      return;
+    }
+  }
+  drawFlipped(ctx, img, rect, l.kind === 'item' && l.flip);
+}
+
+let sinkScratch: { c: AnyCanvas; ctx: AnyContext2D } | null = null;
+/** Base span of each sprite at each sink look, measured once (sprite alpha read back once per frame file). */
+const baseCache = new Map<string, [number, number] | null>();
+const alphaCache = new WeakMap<ImageBitmap, { w: number; h: number; data: Uint8ClampedArray } | null>();
+
+function spriteAlpha(img: ImageBitmap): { w: number; h: number; data: Uint8ClampedArray } | null {
+  if (alphaCache.has(img)) return alphaCache.get(img)!;
+  let out: { w: number; h: number; data: Uint8ClampedArray } | null = null;
+  try {
+    // Item sprites are small; a big one is read at a quarter million px at most.
+    const s = Math.min(1, Math.sqrt(250_000 / Math.max(1, img.width * img.height)));
+    const w = Math.max(1, Math.round(img.width * s));
+    const h = Math.max(1, Math.round(img.height * s));
+    const c = makeCanvas(w, h);
+    const cx = ctx2d(c, { willReadFrequently: true });
+    cx.drawImage(img, 0, 0, w, h);
+    out = { w, h, data: cx.getImageData(0, 0, w, h).data };
+  } catch {
+    out = null;
+  }
+  alphaCache.set(img, out);
+  return out;
+}
+
+function baseOf(l: ItemLayer, look: SinkLook, img: ImageBitmap, rect: RoomBox): [number, number] | null {
+  const key = `${l.frame.src}:${l.flip ? 1 : 0}:${rect.map((v) => v.toFixed(1)).join(',')}:${look.contact.toFixed(1)}:${look.fadeTop.toFixed(1)}`;
+  if (baseCache.has(key)) return baseCache.get(key)!;
+  const a = spriteAlpha(img);
+  const span = a ? baseSpan(l, look, [a.w, a.h], rect, (u, v) => a.data[(v * a.w + u) * 4 + 3]) : null;
+  if (baseCache.size > 256) baseCache.clear();
+  baseCache.set(key, span);
+  return span;
+}
+
+/** An item on a soft top: a soft shadow at its contact, then the sprite a little lower with its base faded into the top. */
+function drawSunk(ctx: AnyContext2D, l: ItemLayer, look: SinkLook, img: ImageBitmap, at: RoomBox, assets: RoomAssets, scale: number): void {
+  const rect = sunkRect(at, look);
+  const [x, y, w, h] = rect;
+  const sh = contactShadow(l, look, baseOf(l, look, img, rect), w);
+  ctx.save();
+  ctx.translate(sh.cx, sh.cy);
+  ctx.scale(1, sh.ry / sh.rx);
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, sh.rx);
+  g.addColorStop(0, `rgba(58, 44, 40, ${sh.alpha})`);
+  g.addColorStop(0.55, `rgba(58, 44, 40, ${sh.alpha * 0.55})`);
+  g.addColorStop(1, 'rgba(58, 44, 40, 0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(-sh.rx, -sh.rx, sh.rx * 2, sh.rx * 2);
+  ctx.restore();
+  // The sprite through a scratch at device px, its base erased by the fade.
+  const pw = Math.max(1, Math.ceil(w * scale));
+  const ph = Math.max(1, Math.ceil(h * scale));
+  if (!sinkScratch || sinkScratch.c.width < pw || sinkScratch.c.height < ph) {
+    const c = makeCanvas(Math.max(pw, sinkScratch?.c.width ?? 0), Math.max(ph, sinkScratch?.c.height ?? 0));
+    sinkScratch = { c, ctx: ctx2d(c) };
+  }
+  const sc = sinkScratch.ctx;
+  sc.save();
+  sc.setTransform(1, 0, 0, 1, 0, 0);
+  sc.globalCompositeOperation = 'source-over';
+  sc.clearRect(0, 0, pw, ph);
+  sc.setTransform(pw / w, 0, 0, ph / h, -x * (pw / w), -y * (ph / h));
+  drawPlain(sc, l, img, rect, assets, scale);
+  sc.globalCompositeOperation = 'destination-out';
+  // sinkKeep is linear from fadeTop (kept) to fadeEnd (gone): two stops draw it exactly.
+  const fade = sc.createLinearGradient(0, look.fadeTop, 0, look.fadeEnd);
+  fade.addColorStop(0, `rgba(0, 0, 0, ${1 - sinkKeep(look, look.fadeTop)})`);
+  fade.addColorStop(1, `rgba(0, 0, 0, ${1 - sinkKeep(look, look.fadeEnd)})`);
+  sc.fillStyle = fade;
+  sc.fillRect(x, look.fadeTop, w, y + h - look.fadeTop + 1);
+  sc.restore();
+  ctx.drawImage(sinkScratch.c, 0, 0, pw, ph, x, y, w, h);
+}
+
 /**
  * Draw slot and item layers in order. `scale` = device px per canvas px of
  * ctx's current transform (used to size the tint scratch).
@@ -174,14 +301,35 @@ export function drawRoomLayers(
     const img = assets.images.get(l.frame.src);
     const rect = layerRect(l, canvas, assets);
     if (!img || !rect) continue;
-    if (l.tint && l.frame.mask) {
-      const mask = assets.masks.get(l.frame.mask);
-      if (mask) {
-        drawTinted(ctx, img, mask, l.tint, rect, scale, l.kind === 'item' && l.flip, clip);
-        continue;
+    if (l.kind === 'slot' && l.clip?.length) {
+      // A lip: only inside its polygons (and only that box goes through the tint scratch).
+      const box = intersect(polygonsBox(l.clip), clip);
+      if (box[2] <= 0 || box[3] <= 0) continue;
+      ctx.save();
+      ctx.beginPath();
+      for (const p of l.clip) {
+        p.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
+        ctx.closePath();
       }
+      ctx.clip();
+      drawPlain(ctx, l, img, rect, assets, scale, box);
+      ctx.restore();
+      continue;
     }
-    drawFlipped(ctx, img, rect, l.kind === 'item' && l.flip);
+    const look = l.kind === 'item' ? sinkLook(l) : null;
+    if (l.kind === 'item' && look) {
+      ctx.save();
+      if (clip) {
+        // A recolour repaints only `clip`: keep the shadow and sprite inside it too.
+        ctx.beginPath();
+        ctx.rect(clip[0], clip[1], clip[2], clip[3]);
+        ctx.clip();
+      }
+      drawSunk(ctx, l, look, img, rect, assets, scale);
+      ctx.restore();
+      continue;
+    }
+    drawPlain(ctx, l, img, rect, assets, scale, clip);
   }
 }
 

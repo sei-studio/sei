@@ -18,11 +18,14 @@
  *   wallAreas          blue fill       (where a wall item hangs)
  *   blocks.floor       orange hatch    (floor a part covers while it is in the room)
  *   blocks.wall        red hatch       (wall a part covers)
- *   surfaceLines       yellow line     (a surface item's contact sits ON it)
- *   surfaceAreas       yellow fill     (a surface item may rest anywhere inside)
+ *   surfaceTops.area   yellow fill     (a top: a surface item's contact rests anywhere inside)
+ *   surfaceTops.lip    cyan hatch      (the part's front lip, drawn again over items on that top)
+ *   surfaceTops.sink   label "sink N"  (a soft top: items settle N px in)
+ *   surfaceLines       yellow line     (legacy: a surface item's contact sits ON it)
+ *   surfaceAreas       yellow fill     (legacy: a top without lip or sink)
  *   horizon            dashed line     (eye level, for the depth scale)
  * `--regions draft.json` merges a draft (same field names, plus
- * `components: { <id>: { surfaceLines, blocks } }`) over the manifest, so a
+ * `components: { <id>: { surfaceTops, blocks } }`) over the manifest, so a
  * region can be checked before it goes into the pack. `--grid N` draws a
  * labelled grid every N canvas px for measuring by eye; `--without` leaves
  * slots out (to see the floor under a chair, say).
@@ -38,8 +41,17 @@
  * deletes a key, e.g. `"z": null` on an item that should take its z from
  * where it stands) and prints the result's region counts.
  *
- * How to label a new pack: run --lines on the shelf (and any desk or
- * nightstand part), paste the lines into that component; trace floorAreas
+ * `--bands <componentId>` (261105 shelf pass) measures the same planks as
+ * whole tops: per plank an `area` quad from the back edge to the front of
+ * the top face (pushed --overlap px into the lip) and the `lip` quad of the
+ * front face under it, printed as `surfaceTops` JSON (see suggestBands).
+ *
+ * How to label a new pack: run --bands on the shelf (and any desk or
+ * nightstand part), paste the tops into that component (or into the draft
+ * and --merge). Tops the measure cannot read (a log, a stump, a bed) are
+ * traced by hand with --grid 25 --crop: an `area` polygon over the whole
+ * visible top, a `lip` polygon only where the art draws a front edge the
+ * items should tuck behind, `sink` (about 6) for a soft one. Trace floorAreas
  * and wallAreas with --grid 50 (and --crop to zoom), add `blocks` to parts
  * that stand on the floor or hang on the wall, set `horizon` where the
  * room's receding lines meet; then render the overlay and check that every
@@ -131,6 +143,127 @@ async function suggestLines(id) {
   console.log(JSON.stringify({ surfaceLines: lines.map((l) => l.seg) }));
 }
 
+// ── --bands: whole plank tops and their front lips ──────────────────────────
+
+/** Least squares y = k x + m through [x, y] points. */
+function fitLine(pts) {
+  const n = pts.length;
+  const sx = pts.reduce((s, q) => s + q[0], 0);
+  const sy = pts.reduce((s, q) => s + q[1], 0);
+  const sxx = pts.reduce((s, q) => s + q[0] * q[0], 0);
+  const sxy = pts.reduce((s, q) => s + q[0] * q[1], 0);
+  const k = (n * sxy - sx * sy) / (n * sxx - sx * sx || 1);
+  const m = (sy - k * sx) / n;
+  const err = Math.sqrt(pts.reduce((s, q) => s + (q[1] - (k * q[0] + m)) ** 2, 0) / n);
+  return { at: (x) => k * x + m, err };
+}
+
+/**
+ * Measure each plank of a part's day frame, column by column: the back edge
+ * (first opaque row), the front of the light top face (the first dark row
+ * under it: the line where the top meets the front face), and the bottom of
+ * the front face (last opaque row). Three lines are fitted per plank and
+ * printed as `surfaceTops`: `area` is the quad from the back edge to the
+ * front of the top face pushed `--overlap` px (default 3) into the lip, so a
+ * base at the very front tucks just behind it; `lip` is the quad from that
+ * front line down to the bottom edge (plus `--pad` px, default 1, at the
+ * ends and below; the bottom follows the measured columns, since the front
+ * face tapers in perspective), the band drawn again over items on the
+ * plank. Works for any part drawn as a lighter top over a darker outlined
+ * front face (shelf planks, a desk, a nightstand). The top face is the run
+ * at or above `--dark` luminance (default 90, light wood); black or dark
+ * planks need a lower one (gamer's black shelves: --dark 60, top ~70-97,
+ * front face ~45, outlines under 40). A top without such a face (a log, a stump,
+ * a duvet) is traced by hand with --grid: an `area` polygon, a `lip` only
+ * where the art has a front edge to tuck behind, `sink` for a soft top.
+ */
+async function suggestBands(id) {
+  const comp = byId.get(id);
+  if (!comp) throw new Error(`no component ${id}`);
+  const img = await raw(path.join(PACK, comp.frames.day.src));
+  const ox = comp.box ? comp.box[0] : 0;
+  const oy = comp.box ? comp.box[1] : 0;
+  const overlap = Number(arg('overlap', 3));
+  const pad = Number(arg('pad', 1));
+  const dark = Number(arg('dark', 90));
+  const lum = (x, y) => {
+    const i = (y * img.w + x) * img.c;
+    return (img.data[i] + img.data[i + 1] + img.data[i + 2]) / 3;
+  };
+  const alpha = (x, y) => img.data[(y * img.w + x) * img.c + 3];
+  const planks = []; // { cols: [[x, back, front, bottom]] }
+  for (let x = 0; x < img.w; x += 2) {
+    let s = -1;
+    const runs = [];
+    for (let y = 0; y <= img.h; y++) {
+      const a = y < img.h && alpha(x, y) > 128;
+      if (a && s < 0) s = y;
+      if (!a && s >= 0) {
+        runs.push([s, y - 1]);
+        s = -1;
+      }
+    }
+    for (const [a, b] of runs) {
+      if (b - a < 6) continue;
+      let y = a;
+      while (y <= b && lum(x, y) < dark) y++;
+      const faceTop = y;
+      while (y <= b && lum(x, y) >= dark) y++;
+      if (y > b || y - faceTop < 2) continue;
+      const front = y;
+      let p = planks.find((q) => {
+        const last = q.cols[q.cols.length - 1];
+        return Math.abs(last[1] - a) < 14 && x - last[0] <= 8;
+      });
+      if (!p) planks.push((p = { cols: [] }));
+      p.cols.push([x, a, front, b]);
+    }
+  }
+  const tops = [];
+  for (const p of planks) {
+    if (p.cols.length < 16) continue;
+    // Fit on the inner columns (the ends round off), apply over the whole plank.
+    const inner = p.cols.slice(2, -2);
+    const back = fitLine(inner.map((c) => [c[0], c[1]]));
+    const front = fitLine(inner.map((c) => [c[0], c[2]]));
+    const bottom = fitLine(inner.map((c) => [c[0], c[3]]));
+    const x1 = p.cols[0][0] + ox;
+    const x2 = p.cols[p.cols.length - 1][0] + ox;
+    const at = (f, x) => Math.round((f.at(x - ox) + oy) * 10) / 10;
+    const r = (v) => Math.round(v);
+    const area = [
+      [x1, r(at(back, x1))],
+      [x2, r(at(back, x2))],
+      [x2, r(at(front, x2) + overlap)],
+      [x1, r(at(front, x1) + overlap)],
+    ];
+    const lx1 = x1 - pad;
+    const lx2 = x2 + pad;
+    // The front face tapers in perspective, so its bottom edge follows the
+    // measured columns (a median every ~64 px) rather than one line: a lip
+    // reaching below the plank would draw its soft shadow twice.
+    const below = [];
+    const step = Math.max(16, Math.round((x2 - x1) / Math.max(1, Math.round((x2 - x1) / 64))));
+    for (let sx = x1; sx < x2 + step / 2; sx += step) {
+      const tx = Math.min(sx, x2);
+      const near = p.cols.filter((c) => Math.abs(c[0] + ox - tx) <= 14).map((c) => c[3]).sort((a, b) => a - b);
+      const y = near.length ? near[near.length >> 1] + oy : at(bottom, tx);
+      below.push([tx === x1 ? lx1 : tx === x2 ? lx2 : tx, r(y + pad)]);
+      if (tx === x2) break;
+    }
+    const lip = [[lx1, r(at(front, lx1))], [lx2, r(at(front, lx2))], ...below.reverse()];
+    const depth = inner.reduce((s, c) => s + (c[2] - c[1]), 0) / inner.length;
+    const face = inner.reduce((s, c) => s + (c[3] - c[2]), 0) / inner.length;
+    console.error(
+      `plank x ${x1}..${x2}: top face ~${depth.toFixed(1)}px deep, front face ~${face.toFixed(1)}px; ` +
+        `fit rms back ${back.err.toFixed(2)} front ${front.err.toFixed(2)} bottom ${bottom.err.toFixed(2)}px`,
+    );
+    tops.push({ y: at(back, (x1 + x2) / 2), top: { area, lip } });
+  }
+  tops.sort((a, b) => a.y - b.y);
+  console.log(format({ surfaceTops: tops.map((t) => t.top) }));
+}
+
 // ── --merge: a draft into manifest.json ─────────────────────────────────────
 
 /** JSON with arrays of numbers (points, boxes, lines) and polygons on one line, the rest indented. */
@@ -172,7 +305,7 @@ async function merge() {
   const n = (k) => out.components.reduce((s, c) => s + (c[k]?.length ?? 0), 0);
   console.log(
     `merged into ${path.join(PACK, 'manifest.json')}: ${out.floorAreas?.length ?? 0} floor, ${out.wallAreas?.length ?? 0} wall, ` +
-      `${n('surfaceLines')} surface lines, ${n('surfaceAreas')} surface areas, horizon ${out.horizon ?? 'none'}`,
+      `${n('surfaceTops')} surface tops, ${n('surfaceLines')} surface lines, ${n('surfaceAreas')} surface areas, horizon ${out.horizon ?? 'none'}`,
   );
 }
 
@@ -207,6 +340,7 @@ async function overlay() {
   const poly = (pts, cls) => `<polygon class="${cls}" points="${pts.map((q) => q.join(',')).join(' ')}"/>`;
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${CW}" height="${CH}" viewBox="0 0 ${CW} ${CH}">
 <defs><pattern id="hatch" width="18" height="18" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="18" height="18" fill="rgba(230,40,40,0.14)"/><line x1="0" y1="0" x2="0" y2="18" stroke="rgba(230,40,40,0.7)" stroke-width="4"/></pattern>
+<pattern id="hatchl" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="rgba(0,220,255,0.18)"/><line x1="0" y1="0" x2="0" y2="8" stroke="rgba(0,220,255,0.85)" stroke-width="2"/></pattern>
 <pattern id="hatchf" width="18" height="18" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)"><rect width="18" height="18" fill="rgba(255,120,0,0.14)"/><line x1="0" y1="0" x2="0" y2="18" stroke="rgba(255,110,0,0.75)" stroke-width="4"/></pattern></defs>
 <style>
 .floor{fill:rgba(40,210,90,0.30);stroke:rgb(20,170,60);stroke-width:4}
@@ -214,6 +348,7 @@ async function overlay() {
 .block{fill:url(#hatch);stroke:rgb(220,30,30);stroke-width:4}
 .fblock{fill:url(#hatchf);stroke:rgb(240,110,0);stroke-width:4}
 .sarea{fill:rgba(255,214,0,0.35);stroke:rgb(255,214,0);stroke-width:3}
+.lip{fill:url(#hatchl);stroke:rgb(0,220,255);stroke-width:2}
 .line{stroke:rgb(255,214,0);stroke-width:${Number(arg('line', 4))};stroke-linecap:round}
 .end{fill:rgb(255,214,0);stroke:#000;stroke-width:1.5}
 .lbl{font:bold 26px sans-serif;fill:#fff;stroke:#000;stroke-width:5;paint-order:stroke}
@@ -235,6 +370,15 @@ async function overlay() {
       if (show.has('labels')) svg += `<text class="lbl" x="${(s[0] + s[2]) / 2}" y="${(s[1] + s[3]) / 2 - 12}" text-anchor="middle">${c.id}#${i}</text>`;
     });
     for (const p of c.surfaceAreas ?? []) svg += poly(p, 'sarea');
+    (c.surfaceTops ?? []).forEach((t, i) => {
+      svg += poly(t.area, 'sarea');
+      if (t.lip) svg += poly(t.lip, 'lip');
+      if (show.has('labels')) {
+        const [x0, y0] = t.area[0];
+        const sink = t.sink ? ` sink ${t.sink}` : '';
+        svg += `<text class="lbl" x="${x0 + 12}" y="${y0 - 10}">${c.id}#${i}${t.lip ? ' +lip' : ''}${sink}</text>`;
+      }
+    });
     for (const b of c.surfaces ?? []) svg += `<rect class="line" fill="none" x="${b[0]}" y="${b[1]}" width="${b[2]}" height="${Math.max(1, b[3])}"/>`;
   }
   if (typeof m.horizon === 'number' && show.has('horizon')) svg += `<line class="hz" x1="0" y1="${m.horizon}" x2="${CW}" y2="${m.horizon}"/><text class="lbl" x="12" y="${m.horizon - 10}">horizon ${m.horizon}</text>`;
@@ -250,7 +394,7 @@ async function overlay() {
     for (let x = 0; x <= CW; x += grid) svg += `<line class="grid" x1="${x}" y1="0" x2="${x}" y2="${CH}"/><text class="gl" x="${x + 3}" y="18">${x}</text>`;
     for (let y = 0; y <= CH; y += grid) svg += `<line class="grid" x1="0" y1="${y}" x2="${CW}" y2="${y}"/><text class="gl" x="3" y="${y - 3}">${y}</text>`;
   }
-  svg += `<text class="lbl" x="${CW - 20}" y="${CH - 20}" text-anchor="end">${manifest.id} ${TIME}: green floor, blue wall, orange/red blocked, yellow surface</text></svg>`;
+  svg += `<text class="lbl" x="${CW - 20}" y="${CH - 20}" text-anchor="end">${manifest.id} ${TIME}: green floor, blue wall, orange/red blocked, yellow surface top, cyan lip</text></svg>`;
   layers.push({ input: Buffer.from(svg), left: 0, top: 0 });
 
   let img = sharp({ create: { width: CW, height: CH, channels: 4, background: '#000' } }).composite(layers);
@@ -276,5 +420,6 @@ async function overlay() {
 }
 
 if (arg('lines')) await suggestLines(arg('lines'));
+else if (arg('bands')) await suggestBands(arg('bands'));
 else if (has('merge')) await merge();
 else await overlay();

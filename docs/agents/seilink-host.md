@@ -256,6 +256,57 @@ errors) is in [`seilink-analytics.md`](seilink-analytics.md). The basics:
   paths). One runner per OS also packages a dir build and checks the addon
   lands in `resources/seilink` and loads.
 
+## Room placement: surface tops (261105)
+
+Where items may go is labelled per pack (`seilinkRoom.ts` format,
+`seilinkPlace.ts` math, `seilinkDraw.ts` order; the renderer, editor, look()
+and thumbnails all use the same plan).
+
+- `surfaceTops: [{area, lip?, sink?}]` on a part: `area` is the WHOLE top
+  face (back edge to the front of the top, a quad for a plank), so an item's
+  contact may rest anywhere in its depth with x free along it. Older
+  `surfaceLines` / `surfaceAreas` still load (a line still means "on the
+  line"); a pack can mix them.
+- Leeway: a drag lands on a top while the pointer is within
+  `SURFACE_CAPTURE` (48 canvas px) of it, above, below or past its end; the
+  top it was on is kept while within capture; past capture the nearest wins
+  with a lean downward (`DOWN_BIAS`). The anchor stays `END_INSET` (0.45 of
+  the sprite width) in from the ends and the back of the base (one foot
+  behind the contact, `BACK_OF_BASE`) stays on the top, so nothing hangs off
+  or floats at the back. Rooms saved on the old lines are snapped onto the
+  band on load (`settleItems` via `sanitizeRoomState`); items already inside
+  stay where they were.
+- `lip`: the front face of the plank. When something rests on that top,
+  the plan adds the part's own frame again clipped to the lip
+  (`SlotLayer.clip`), at the top of that top's z band, so the lip covers the
+  base of the items on it and stays under the plank below's items. Tops of
+  one part are ranked by height and get stacked z bands. Lip layers are baked
+  into the renderer's cached composites (no per-frame cost) and have no glow
+  of their own; the picker ignores a lip outside its polygon.
+- `sink` (canvas px, a bed or a cushion): items on it are drawn `sink x
+  scale` lower, their base fading out just under the contact, with a soft
+  contact shadow as wide as the base (`sinkLook`, `contactShadow`,
+  `baseSpan`). look() does the same in `roomRender.ts` (`sinkItem`,
+  `cutToPolygons` for lips).
+- Labelling: `scripts/seilink-region-overlay.mjs --bands <part>` measures
+  plank tops and lips from the art and prints `surfaceTops` for a draft;
+  logs, stumps and beds are traced by hand with `--grid 25 --crop`; the
+  overlay draws tops (orange), lips (cyan hatch) and `sink N`; `--merge`
+  writes the draft into the manifest. The editor's drag guide glows the top
+  under the pointer and draws the lip over the drag ghost.
+- Labelling the shipped packs (261105): floor and wall areas cover the BARE
+  shell (`--without bed,chair,...`) and every part blocks its own silhouette,
+  so removing an optional part frees its spot. Gamer's black planks need
+  `--bands black_wall_shelves --dark 60`; its bed top and forest's log ridges
+  and stump ellipse are hand traced. Forest has no wall (a poster on the tree
+  read wrong); its horizon is 300, not the distant hills, because the art's
+  props barely shrink with depth (a far backpack ends up about half size,
+  which matches the campfire ring's foreshortening). The log also blocks the
+  ground behind Sei's seat (x 1040-1560): items there vanished behind her.
+  The stump top sits behind the default Sei's head; it is labelled for
+  other avatars. Item `foot` = the sprite's first opaque row minus 3 (the
+  cozy convention).
+
 ## Gotchas
 
 - macOS reopen: with the main window closed Sei keeps running. A Dock click
@@ -292,5 +343,6 @@ errors) is in [`seilink-analytics.md`](seilink-analytics.md). The basics:
   calls, so desktop lines are bubbles only (the mouth moves without audio).
 - The dock is always shown (no hover on the wallpaper: Windows raw input
   only reports presses, the mac panel only covers the click area).
-- Pack downloads (`downloadPack` is a stub): only the bundled cozy pack and
-  dev packs exist, so the room cards show Gamer and Forest as "Soon".
+- Pack downloads (`downloadPack` is a stub): the three presets (cozy, gamer,
+  forest, about 2.5 MB each) ship bundled in `resources/seilink-packs`
+  (extraResources); a pack that fails to load shows its card disabled.

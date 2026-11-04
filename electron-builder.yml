@@ -483,9 +483,10 @@ mac:
     # SeiLink reports unsupported.
     - from: resources/seilink
       to: seilink
-    # 261104 SeiLink M4: the room art packs that ship with the app (cozy, about
-    # 2.7MB of webp; src/main/seilink/packs.ts reads <resources>/seilink-packs,
-    # an installed pack of the same preset overrides it).
+    # 261104 SeiLink M4: the room art packs that ship with the app (cozy, gamer
+    # and forest since 261105, about 8MB of webp in all; src/main/seilink/packs.ts
+    # reads <resources>/seilink-packs, an installed pack of the same preset
+    # overrides it).
     - from: resources/seilink-packs
       to: seilink-packs
   extendInfo:
