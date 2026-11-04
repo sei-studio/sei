@@ -597,6 +597,10 @@ void WatchThread() {
 
 Napi::Value WatchStart(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
+  if (info.Length() < 1 || !info[0].IsFunction()) {
+    Napi::TypeError::New(env, "watchStart: expected a callback function").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
   if (g_watchStarted) return Napi::Boolean::New(env, false);
   g_tsfn = Napi::ThreadSafeFunction::New(env, info[0].As<Napi::Function>(), "seilink-watch", 0, 1);
   g_tsfn.Unref(env);

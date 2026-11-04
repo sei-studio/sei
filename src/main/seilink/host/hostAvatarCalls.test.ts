@@ -47,6 +47,27 @@ describe('hostPortrait', () => {
     await expect(hostPortrait('https://x.test/p.png', at)).resolves.toEqual({ url: 'https://x.test/p.png', file: null });
     await expect(hostPortrait('./img/sui.png', at)).resolves.toEqual({ url: './img/sui.png', file: null });
     await expect(hostPortrait(null, at)).resolves.toEqual({ url: null, file: null });
+    const data = 'data:image/png;base64,iVBOR';
+    await expect(hostPortrait(data, at)).resolves.toEqual({ url: data, file: null });
+  });
+
+  it('drops every other scheme and path (no file:// SMB leak on Windows)', async () => {
+    for (const ref of [
+      'file://host/share/p.png',
+      'file:///C:/Users/x/p.png',
+      '\\\\host\\share\\p.png',
+      '//host/share/p.png',
+      'http://x.test/p.png',
+      'sei-portrait://local/abc.png',
+      'javascript:alert(1)',
+      'data:text/html,<b>x</b>',
+      './img/../../etc/passwd',
+      '../img/sui.png',
+      '/etc/passwd',
+      'portraits/abc/def.png',
+    ]) {
+      await expect(hostPortrait(ref, at), ref).resolves.toEqual({ url: null, file: null });
+    }
   });
 
   it('serves a stored portrait through sei-room://_portrait with a cache key', async () => {

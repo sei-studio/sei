@@ -184,6 +184,10 @@ Napi::Value WindowLevel(const Napi::CallbackInfo& info) {
 
 Napi::Value OnEvents(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
+  if (info.Length() < 1 || !info[0].IsFunction()) {
+    Napi::TypeError::New(env, "onEvents: expected a callback function").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
   if (g_macTsfnSet) return Napi::Boolean::New(env, false);
   g_macTsfn = Napi::ThreadSafeFunction::New(env, info[0].As<Napi::Function>(), "seilink-mac", 0, 1);
   g_macTsfn.Unref(env);

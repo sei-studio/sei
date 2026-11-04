@@ -17,7 +17,21 @@ import { SEILINK_ROOM_SCHEME } from '../../../shared/seilinkPack';
 
 /** portraitProtocol.ts serves exactly these bare refs. */
 const BARE_PORTRAIT_RE = /^[0-9a-z_-]+\.png$/i;
-const URL_RE = /^(?:https?|data):/i;
+/**
+ * The only URL shapes passed through to the host page as they are. Anything
+ * else (file://, http:, smb paths, javascript:, other schemes) is dropped: a
+ * `file://host/share/x.png` portrait would make Windows try SMB and leak the
+ * login hash. The host has no sei-portrait:// scheme, so those are dropped too.
+ */
+const HTTPS_RE = /^https:\/\/[^\s]+$/i;
+const DATA_IMAGE_RE = /^data:image\/[a-z0-9.+-]+[;,]/i;
+/** Bundled defaults ('./img/sui.png'), resolved against the host page like the app's. */
+const BUNDLED_RE = /^\.\/img\/[0-9a-z_./-]+$/i;
+
+function passThrough(ref: string): boolean {
+  if (HTTPS_RE.test(ref) || DATA_IMAGE_RE.test(ref)) return true;
+  return BUNDLED_RE.test(ref) && !ref.split('/').includes('..');
+}
 
 export interface HostPortrait {
   url: string | null;
@@ -26,10 +40,8 @@ export interface HostPortrait {
 }
 
 export async function hostPortrait(ref: string | null | undefined, portraitPath: (uuid: string) => string): Promise<HostPortrait> {
-  if (!ref) return { url: null, file: null };
-  if (URL_RE.test(ref)) return { url: ref, file: null };
-  // Bundled defaults ('./img/sui.png') resolve against the host page like the app's.
-  if (ref.includes('/')) return { url: ref, file: null };
+  if (!ref || typeof ref !== 'string') return { url: null, file: null };
+  if (passThrough(ref)) return { url: ref, file: null };
   if (!BARE_PORTRAIT_RE.test(ref)) return { url: null, file: null };
   try {
     const file = await realpath(portraitPath(ref.replace(/\.png$/i, '')));

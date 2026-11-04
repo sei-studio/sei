@@ -144,8 +144,9 @@ The contract for any replacement is in the file header.
 ### What RoomAvatar can read in the host
 
 - **Portrait.** The host has no `sei-portrait://`. Main resolves
-  `portrait_image` (`hostAvatarCalls.ts` `hostPortrait`): https and bundled
-  `./img/...` paths pass through; a stored `<uuid>.png` becomes
+  `portrait_image` (`hostAvatarCalls.ts` `hostPortrait`): `https:`,
+  `data:image/` and bundled `./img/...` paths pass through, everything else
+  (file://, UNC, http:, other schemes) is dropped; a stored `<uuid>.png` becomes
   `sei-room://_portrait/<file>?v=<mtime>` and its realpath is added to the
   host's allowlist. A portrait changed while she is moved in shows after the
   next room message (a room save, a host restart).
