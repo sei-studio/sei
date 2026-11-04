@@ -410,6 +410,17 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.facepack.cue, handler);
     return () => ipcRenderer.off(IpcChannel.facepack.cue, handler);
   },
+  // SeiLink room (261104).
+  seilinkDevInfo: () => ipcRenderer.invoke(IpcChannel.seilink.devInfo),
+  seilinkPacks: () => ipcRenderer.invoke(IpcChannel.seilink.packs),
+  seilinkRoomGet: (characterId) => ipcRenderer.invoke(IpcChannel.seilink.roomGet, characterId),
+  seilinkRoomSet: (characterId, state) => ipcRenderer.invoke(IpcChannel.seilink.roomSet, { characterId, state }),
+  onSeilinkRoomChanged(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, characterId: string) => cb(characterId);
+    ipcRenderer.on(IpcChannel.seilink.roomChanged, handler);
+    return () => ipcRenderer.off(IpcChannel.seilink.roomChanged, handler);
+  },
+  seilinkOpenPreview: () => ipcRenderer.invoke(IpcChannel.seilink.openPreview),
   avatarOverlayCamera: (args) => ipcRenderer.invoke(IpcChannel.avatar.overlayCamera, args),
   avatarOverlayEditing: (editing) => ipcRenderer.invoke(IpcChannel.avatar.overlayEditing, editing),
   avatarOverlayMuteToggle: () => ipcRenderer.invoke(IpcChannel.avatar.overlayMute),

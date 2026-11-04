@@ -21,6 +21,19 @@
  *
  * The AI side reads describeRoom(): a short place line for the prompt and a
  * plain list of what is in the room for look().
+ *
+ * 261104 (host pass) additions, all optional so v1 packs stay valid:
+ *  - Items are sprites, not full-canvas frames. A placement's (x, y) is the
+ *    BOTTOM CENTRE of the sprite in canvas px; its size is the frame's
+ *    natural size (or the component's box w/h) times `scale`; `flip` mirrors
+ *    it. Default item z by placement: wall ITEM_Z.wall, surface
+ *    ITEM_Z.surface, floor ITEM_Z.floor (all behind her); the component's z or
+ *    the placement's own z wins.
+ *  - Ties in z draw slots first, then the avatar, then items.
+ *  - A frame may carry `effect` for its glow: 'flicker' (campfire) or 'pulse'
+ *    (monitor, lamp). The renderer animates only these and the avatar.
+ *  - Draw plan, time-of-day crossfade and overlay helpers live in
+ *    seilinkDraw.ts; manifest/state validation in seilinkValidate.ts.
  */
 
 export const SEILINK_ROOM_FORMAT = 'sei-room' as const;
@@ -56,7 +69,14 @@ export interface RoomFrame {
   mask?: string;
   /** Additive light layer drawn with 'screen' on top of the scene. */
   glow?: string;
+  /** How the glow moves (261104). Absent: a still glow. */
+  effect?: RoomGlowEffect;
 }
+
+export type RoomGlowEffect = 'flicker' | 'pulse';
+
+/** Default item z by placement (261104). All behind her (AVATAR_Z = 100). */
+export const ITEM_Z: Readonly<Record<'wall' | 'surface' | 'floor', number>> = { wall: 15, surface: 60, floor: 70 };
 
 export interface RoomComponent {
   id: string;
@@ -102,10 +122,13 @@ export interface RoomPresetManifest {
 
 export interface RoomItemPlacement {
   id: string;
+  /** Bottom centre of the sprite, canvas px. */
   x: number;
   y: number;
   scale?: number;
   flip?: boolean;
+  /** Overrides the component/placement default z (editor "bring forward"). */
+  z?: number;
 }
 
 /** What a companion's room looks like. Lives on the device, a few KB. */
