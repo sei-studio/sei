@@ -2182,6 +2182,8 @@ export const ES: Record<string, string> = {
   // ── seilink room editor ──
   "Edit room": "Editar habitación",
   "Room": "Habitación",
+  "Furniture": "Muebles",
+  "Walls & fabrics": "Paredes y telas",
   "Room type": "Tipo de habitación",
   "Items": "Objetos",
   "Color": "Color",

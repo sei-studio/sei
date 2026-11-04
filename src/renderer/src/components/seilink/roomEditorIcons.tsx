@@ -176,7 +176,7 @@ export const ViewIcon = (p: P): React.ReactElement => (
   </Svg>
 );
 
-/** Walls: a paint roller. */
+/** Walls (and the Walls & fabrics rail group): a paint roller. */
 export const RollerIcon = (p: P): React.ReactElement => (
   <Svg {...p}>
     <rect x="3.5" y="3.5" width="14" height="5.5" rx="1.2" />
@@ -227,7 +227,7 @@ export const LampIcon = (p: P): React.ReactElement => (
   </Svg>
 );
 
-/** Chair: an armchair. */
+/** Chair: an armchair (also the Furniture rail group). */
 export const ChairIcon = (p: P): React.ReactElement => (
   <Svg {...p}>
     <path d="M5.5 10.5V7a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v3.5" />
