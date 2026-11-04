@@ -123,11 +123,10 @@ export function isJunkTranscript(raw: string): boolean {
   if (!text) return true;
   // A fully bracketed/parenthesized utterance is a non-speech tag, not speech.
   if (/^[[(].*[\])]$/.test(text)) return true;
-  // No letters at all (pure punctuation / digits / symbols) → junk. Unicode
-  // letter class, NOT [a-z]: the conversation language auto-switch (260725)
-  // means players speak Chinese/Japanese/Korean on calls, and an ASCII-only
-  // check silently ate every CJK utterance before it became a turn.
-  if (!/\p{L}/u.test(text)) return true;
+  // Numbers are real answers too: years (2026), times (18:33), dates and
+  // quantities must survive even when ASR formats them entirely as digits.
+  // Unicode classes preserve non-Latin speech and decimal digits as well.
+  if (!/[\p{L}\p{Nd}]/u.test(text)) return true;
   // Multilingual Whisper's classic silence hallucination in Japanese (its
   // "thanks for watching"). Matched against the raw text — the lowercase
   // normalization below is Latin-only and blanks CJK out.
