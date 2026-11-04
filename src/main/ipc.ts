@@ -3257,7 +3257,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       if (await applySeilinkSetting(on)) {
         const { loadAnalytics } = await import('./lazyAnalytics');
         void loadAnalytics()
-          .then((a) => a.capture('seilink_setting_toggled', { enabled: on, supported: seilinkSupport().supported }))
+          .then((a) => {
+            const support = seilinkSupport();
+            a.capture('seilink_setting_toggled', {
+              enabled: on,
+              supported: support.supported,
+              ...(support.reason ? { unsupported_reason: support.reason } : {}),
+            });
+          })
           .catch(() => {});
       }
     }
