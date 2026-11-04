@@ -27,7 +27,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { parseSeilinkHostArgs } from './hostArgs';
 import { createLineReader, encodeLine, type FromHost, type ToHost } from './protocol';
-import { RoomActivity, WTS_SESSION_LOCK, WTS_SESSION_UNLOCK } from './coverage';
+import { clipRect, RoomActivity, WTS_SESSION_LOCK, WTS_SESSION_UNLOCK } from './coverage';
 import { ClickClassifier, type PressPoint } from './clicks';
 import { FAKE_ADDON_FILE, addonPath, fakeDesktopEnabled, loadSeilinkAddon, type SeilinkAddon, type SeilinkMacAddon, type SeilinkWinAddon } from './native';
 import { SEILINK_HOST_CHANNELS as CH } from '../../../shared/seilinkHostChannels';
@@ -430,8 +430,10 @@ function applyHitRect(): void {
     );
   } else if (IS_MAC) {
     const mac = addon as SeilinkMacAddon;
-    if (screenBox && attached) {
-      const visible = mac.hitPanel(screenBox);
+    const wa = d.workArea;
+    const panel = screenBox && clipRect(screenBox, { x: wa.x, y: wa.y, w: wa.width, h: wa.height });
+    if (panel && attached) {
+      const visible = mac.hitPanel(panel);
       activity.set({ hasPanel: true, panelVisible: visible });
     } else {
       mac.hitPanelClose();

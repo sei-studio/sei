@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { computeActivity, INITIAL_INPUTS, RoomActivity } from './coverage';
+import { clipRect, computeActivity, INITIAL_INPUTS, RoomActivity } from './coverage';
 
 describe('seilink room activity', () => {
   it('draws at the cap while visible', () => {
@@ -48,5 +48,19 @@ describe('seilink room activity', () => {
     a.setCap(30);
     expect(a.current.fps).toBe(0);
     expect(onChange).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe('clipRect', () => {
+  const area = { x: 0, y: 25, w: 1024, h: 680 };
+  it('clips a box that runs past the work area', () => {
+    expect(clipRect({ x: 320, y: 170, w: 384, h: 640 }, area)).toEqual({ x: 320, y: 170, w: 384, h: 535 });
+  });
+  it('keeps a box inside the area as it is', () => {
+    expect(clipRect({ x: 10, y: 30, w: 50, h: 60 }, area)).toEqual({ x: 10, y: 30, w: 50, h: 60 });
+  });
+  it('gives null for a box outside the area', () => {
+    expect(clipRect({ x: 0, y: 0, w: 100, h: 20 }, area)).toBeNull();
+    expect(clipRect({ x: 1100, y: 100, w: 50, h: 50 }, area)).toBeNull();
   });
 });

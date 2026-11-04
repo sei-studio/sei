@@ -98,3 +98,25 @@ export class RoomActivity {
 /** Windows WM_WTSSESSION_CHANGE codes that matter here. */
 export const WTS_SESSION_LOCK = 7;
 export const WTS_SESSION_UNLOCK = 8;
+
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * The part of `r` inside `area`, or null when nothing is. macOS: the hit panel is clipped
+ * to the work area, because the strips the work area leaves out (menu bar, and the Dock
+ * row, translucent with desktop showing around it) stay visible over any zoomed window,
+ * so a panel reaching into them never reads as occluded (CI 261104: her figure box ran
+ * past the bottom of a 1024x768 screen and a full TextEdit never covered her).
+ */
+export function clipRect(r: Rect, area: Rect): Rect | null {
+  const x = Math.max(r.x, area.x);
+  const y = Math.max(r.y, area.y);
+  const right = Math.min(r.x + r.w, area.x + area.w);
+  const bottom = Math.min(r.y + r.h, area.y + area.h);
+  return right > x && bottom > y ? { x, y, w: right - x, h: bottom - y } : null;
+}
