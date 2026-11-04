@@ -22,8 +22,8 @@
   --glass: rgb(var(--ov) / 0.6);
   --glass-strong: rgb(var(--ov) / 0.78);
   --muted: rgb(var(--ink) / 0.58);
-  --r-panel: 18px;
-  --r-tile: 12px;
+  --r-panel: var(--radius, 2px);
+  --r-tile: var(--radius, 2px);
   --t-fade: 700ms;
 }
 
@@ -118,7 +118,7 @@
 
 .selection {
   position: absolute;
-  border-radius: 10px;
+  border-radius: var(--radius, 2px);
   pointer-events: none;
   box-shadow:
     0 0 0 2px rgb(255 255 255 / 0.85),
@@ -233,7 +233,7 @@
   inset: 4px;
   width: calc(100% - 8px);
   height: calc(100% - 8px);
-  border-radius: 9px;
+  border-radius: var(--radius, 2px);
 }
 
 .tileWord {
@@ -260,7 +260,7 @@
   width: calc(100% - 8px);
   height: calc(100% - 8px);
   object-fit: cover;
-  border-radius: 9px;
+  border-radius: var(--radius, 2px);
   pointer-events: none;
 }
 
@@ -269,7 +269,7 @@
   display: block;
   width: 60%;
   height: 60%;
-  border-radius: 8px;
+  border-radius: var(--radius, 2px);
   background: rgb(var(--ink) / 0.06);
 }
 
@@ -470,7 +470,7 @@
   align-items: baseline;
   gap: var(--space-sm);
   padding: 3px 10px 2px;
-  border-radius: 999px;
+  border-radius: var(--radius, 2px);
   font-family: var(--display);
   font-size: 13px;
   letter-spacing: 0.08em;
@@ -543,14 +543,14 @@
   display: flex;
   gap: 2px;
   padding: 5px;
-  border-radius: 999px;
+  border-radius: var(--radius, 2px);
 }
 
 .time {
   height: 34px;
   min-width: 34px;
   padding: 0 9px;
-  border-radius: 999px;
+  border-radius: var(--radius, 2px);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -588,13 +588,13 @@
   align-items: center;
   gap: 4px;
   padding: 5px;
-  border-radius: 999px;
+  border-radius: var(--radius, 2px);
 }
 
 .iconBtn {
   width: 34px;
   height: 34px;
-  border-radius: 50%;
+  border-radius: var(--radius, 2px);
   display: grid;
   place-items: center;
   transition: background-color 160ms var(--ease);
@@ -611,7 +611,7 @@
 .pill {
   height: 34px;
   padding: 0 18px;
-  border-radius: 999px;
+  border-radius: var(--radius, 2px);
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -653,7 +653,7 @@
   align-items: center;
   gap: var(--space-sm);
   padding: 5px;
-  border-radius: 22px;
+  border-radius: var(--radius, 2px);
   animation: toolIn 200ms var(--ease-pop);
 }
 
@@ -676,7 +676,7 @@
 .tool {
   width: 36px;
   height: 36px;
-  border-radius: 50%;
+  border-radius: var(--radius, 2px);
   display: grid;
   place-items: center;
   transition: background-color 140ms var(--ease);
@@ -747,7 +747,7 @@
   right: var(--space-lg);
   margin: 0;
   padding: 8px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius, 2px);
   font-size: 14px;
 }
 
