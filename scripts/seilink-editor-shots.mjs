@@ -4,13 +4,14 @@
  *
  *   node scripts/seilink-editor-shots.mjs --packs <dir> [--out seilink-editor-shots]
  *                                         [--shots day,curtains,...] [--size 1280x720]
- *                                         [--presets gamer,cozy] [--perf [--profile]]
+ *                                         [--presets gamer,cozy] [--perf [--profile]] [--dpr 2]
  *
  * <dir> holds one folder per preset (<dir>/cozy/manifest.json, ...); every
  * preset found is passed to the editor, so the room type picker can switch.
  * Starts the renderer's Vite dev server, a CORS static server for <dir> and
  * headless Chrome (playwright), opens `?seilink=1&editor=1&pack=...` per
- * shot and drives it. `--perf` also times a colour drag against structural
+ * shot and drives it. A shot may name a crop (room canvas px) to zoom in on;
+ * `--dpr 2` renders the room at full resolution for those. `--perf` also times a colour drag against structural
  * edits (long tasks on the main thread). Everything it starts is closed
  * before it exits. CHROME_PATH overrides the browser.
  */
@@ -31,6 +32,7 @@ const PACKS = path.resolve(arg('packs', 'seilink-dev-packs'));
 const OUT = path.resolve(arg('out', 'seilink-editor-shots'));
 const [VW, VH] = arg('size', '1280x720').split('x').map(Number);
 const PERF = process.argv.includes('--perf');
+const DPR = Number(arg('dpr', 1));
 const PROFILE = process.argv.includes('--profile');
 
 /**
@@ -115,6 +117,21 @@ const SHOTS = {
   // The monstera at the back of the floor (smaller) and at the front, by the bed.
   'place-plant-back': ['time=day&items=1', async (page) => dragRoom(page, [1975, 1350], [2050, 1000])],
   'place-plant-front': ['time=day&items=1', async (page) => dragRoom(page, [1975, 1350], [600, 1310])],
+  // Shelf tops (261105 shelf pass). Books are grabbed 68 px above their anchor and stand
+  // 14 px above it (foot), so a pointer at y puts their contact at y + 54. The middle plank
+  // at x 300 runs from its back edge (y 445) to the front of its top face (y 468).
+  // Held a little above the middle plank: its whole top glows as a band, the lip over the books.
+  'shelf-drag-band': ['time=day&items=1', async (page) => dragRoom(page, [610, 950], [300, 382], { release: false }), [0, 160, 720, 520]],
+  // Dropped at the back of the band, and at its front (tucked behind the lip).
+  'shelf-books-back': ['time=day&items=1', async (page) => dragRoom(page, [610, 950], [300, 392]), [170, 340, 300, 170]],
+  'shelf-books-front': ['time=day&items=1', async (page) => dragRoom(page, [610, 950], [300, 412]), [170, 340, 300, 170]],
+  // Dropped 34 px above the plank's back edge: it still lands on that plank.
+  'shelf-drop-above': ['time=day&items=1', async (page) => dragRoom(page, [610, 950], [300, 357]), [0, 160, 720, 520]],
+  // 36 px past the middle plank's right end (x 524): it lands on that plank, kept in from the end.
+  'shelf-drop-past-end': ['time=day&items=1', async (page) => dragRoom(page, [610, 950], [560, 425]), [0, 160, 720, 520]],
+  // The books on the bed (their artist spot) and the succulent moved onto the bed: sunk into the duvet.
+  'bed-books': ['time=day&items=1', null, [470, 860, 300, 190]],
+  'bed-succulent': ['time=day&items=1', async (page) => dragRoom(page, [390, 430], [330, 965]), [220, 880, 520, 170]],
 };
 
 /** Room canvas px to page px (the room's canvases fill its scene box). */
@@ -273,7 +290,7 @@ async function main() {
     const packQ = presets.map((p) => `pack=${encodeURIComponent(`http://127.0.0.1:${packs.address().port}/${p}/`)}`).join('&');
     const base = `${viteUrl}/?seilink=1&editor=1&${packQ}`;
     browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH ?? '/usr/bin/google-chrome' });
-    const page = await browser.newPage({ viewport: { width: VW, height: VH }, deviceScaleFactor: 1 });
+    const page = await browser.newPage({ viewport: { width: VW, height: VH }, deviceScaleFactor: DPR });
     page.on('console', (m) => {
       if (m.type() === 'error' || m.type() === 'warning') console.log(`[page ${m.type()}] ${m.text().slice(0, 240)}`);
     });
@@ -287,7 +304,7 @@ async function main() {
         console.log(`unknown shot ${name}`);
         continue;
       }
-      const [q, act] = shot;
+      const [q, act, crop] = shot;
       await page.goto(`${base}&${q}`, { waitUntil: 'load' });
       await waitReady(page);
       if (act) {
@@ -295,7 +312,15 @@ async function main() {
         await page.waitForTimeout(500);
       }
       const file = path.join(OUT, `${name}.png`);
-      await page.screenshot({ path: file });
+      let clip;
+      if (crop) {
+        const [x0, y0] = await roomToPage(page, [crop[0], crop[1]]);
+        const [x1, y1] = await roomToPage(page, [crop[0] + crop[2], crop[1] + crop[3]]);
+        const left = Math.max(0, x0);
+        const top = Math.max(0, y0);
+        clip = { x: left, y: top, width: Math.min(VW, x1) - left, height: Math.min(VH, y1) - top };
+      }
+      await page.screenshot({ path: file, ...(clip ? { clip } : {}) });
       await page.mouse.up().catch(() => {});
       console.log(file);
     }
