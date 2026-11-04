@@ -153,7 +153,8 @@ The contract for any replacement is in the file header.
   and logs its spins so the hang actually happens.
 - Linux dev hosts need `--no-sandbox` (passed through when main has it), or
   Chromium's sandbox setup kills them with SIGTRAP.
-- macOS: the hit panel is clipped to the work area (`clipRect`). The menu bar
+- macOS: the hit panel is clipped to the work area inset 12 pt (`clipRect`,
+  `MAC_PANEL_EDGE_INSET`). The menu bar
   and the Dock row stay visible over a zoomed window, so a panel reaching into
   them never reads as occluded and the room never drops to 0 fps.
 - Windows: the room window is created with `thickFrame: false`. With the
