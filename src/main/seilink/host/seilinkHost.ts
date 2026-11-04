@@ -107,6 +107,23 @@ let status: SeilinkHostStatus = { ...SEILINK_HOST_OFF };
 let lastPushed = '';
 let fpsCap = SEILINK_HOST_FPS;
 let powerHooked = false;
+/** Sessions opened by this main process: each gets its own pipe path. */
+let sessionSeq = 0;
+/** The tail of the start / stop / restore queue (see serial). */
+let opChain: Promise<unknown> = Promise.resolve();
+
+/**
+ * Start, stop and restore run one at a time, in call order. Without this a
+ * double click on "Move onto desktop", or a move-in during the startup
+ * restore, ran two starts at once: two sessions, one leaking its pipe server
+ * (and on Windows an EADDRINUSE that opened the move-in sheet by mistake).
+ * The *Now functions below assume the queue is held and never re-enter it.
+ */
+function serial<T>(fn: () => Promise<T>): Promise<T> {
+  const run = opChain.then(fn, fn);
+  opChain = run.catch(() => undefined);
+  return run;
+}
 
 function log(line: string): void {
   console.log(`[seilink] ${line}`);
@@ -169,9 +186,16 @@ function capture(event: string, props: Record<string, unknown>): void {
  * She moves in. Throws SEILINK_DISABLED (flag off), SEILINK_BAD_ID, ACCOUNT_SWITCHING.
  * An unsupported install returns the unsupported status instead of throwing.
  */
-export async function startSeilinkHost(
+export function startSeilinkHost(
   characterId: string,
   opts?: { restored?: boolean; /** The move-in sheet set up her first room. */ firstRoom?: boolean },
+): Promise<SeilinkHostStatus> {
+  return serial(() => startNow(characterId, opts));
+}
+
+async function startNow(
+  characterId: string,
+  opts?: { restored?: boolean; firstRoom?: boolean },
 ): Promise<SeilinkHostStatus> {
   if (!seilinkEnabled()) throw new Error('SEILINK_DISABLED');
   if (!isRoomCharacterId(characterId)) throw new Error('SEILINK_BAD_ID');
@@ -201,10 +225,11 @@ export async function startSeilinkHost(
 }
 
 /** She moves out (the user's stop). Clears the saved move-in. */
-export async function stopSeilinkHost(
-  reason: SeilinkEndReason = 'user_stop',
-  via: 'app' | 'dock' = 'app',
-): Promise<SeilinkHostStatus> {
+export function stopSeilinkHost(reason: SeilinkEndReason = 'user_stop', via: 'app' | 'dock' = 'app'): Promise<SeilinkHostStatus> {
+  return serial(() => stopNow(reason, via));
+}
+
+async function stopNow(reason: SeilinkEndReason, via: 'app' | 'dock'): Promise<SeilinkHostStatus> {
   if (reason === 'user_stop') {
     const id = session?.characterId ?? (await loadConfig().catch(() => null))?.seilink_moved_in?.character_id ?? null;
     if (id) capture('seilink_moved_out', { character_id: id, via });
@@ -220,7 +245,7 @@ export async function stopSeilinkHost(
 
 /** Account switch: end the session but keep the old profile's move-in (restored when it comes back). */
 export function stopSeilinkHostForAccountSwitch(): Promise<void> {
-  return session ? endSession('account_switch') : Promise.resolve();
+  return serial(() => (session ? endSession('account_switch') : Promise.resolve()));
 }
 
 /** App quit: synchronous enough for before-quit (the host also exits when the pipe closes). */
@@ -229,7 +254,11 @@ export function stopSeilinkHostForQuit(): void {
 }
 
 /** App start and after an account switch: bring back whoever moved in on this profile. */
-export async function restoreSeilinkHost(): Promise<void> {
+export function restoreSeilinkHost(): Promise<void> {
+  return serial(restoreNow);
+}
+
+async function restoreNow(): Promise<void> {
   try {
     const cfg = await loadConfig();
     // The Labs setting is per profile: mirror it for the gate first.
@@ -244,7 +273,7 @@ export async function restoreSeilinkHost(): Promise<void> {
       if (session) await endSession('replaced');
       return;
     }
-    await startSeilinkHost(id, { restored: true });
+    await startNow(id, { restored: true });
   } catch (err) {
     log(`restore failed: ${(err as Error).message}`);
   }
@@ -276,23 +305,25 @@ export async function applySeilinkSetting(on: boolean): Promise<boolean> {
  * who moved in, she moves out and the move-in is cleared (also when the host
  * is not running, e.g. it failed or SeiLink is off right now).
  */
-export async function onSeilinkCharacterRemoved(characterId: string): Promise<void> {
-  try {
-    if (session?.characterId === characterId) {
-      await stopSeilinkHost('character_removed');
-      return;
+export function onSeilinkCharacterRemoved(characterId: string): Promise<void> {
+  return serial(async () => {
+    try {
+      if (session?.characterId === characterId) {
+        await stopNow('character_removed', 'app');
+        return;
+      }
+      await updateConfig((c) => (c.seilink_moved_in?.character_id === characterId ? { ...c, seilink_moved_in: null } : c));
+    } catch (err) {
+      log(`character removed cleanup failed: ${(err as Error).message}`);
     }
-    await updateConfig((c) => (c.seilink_moved_in?.character_id === characterId ? { ...c, seilink_moved_in: null } : c));
-  } catch (err) {
-    log(`character removed cleanup failed: ${(err as Error).message}`);
-  }
+  });
 }
 
 // ── Session ─────────────────────────────────────────────────────────────────
 
 async function openSession(characterId: string, restored: boolean): Promise<void> {
   const token = randomBytes(16).toString('hex');
-  const pipe = hostPipePath(process.platform, process.pid, os.tmpdir(), path.join);
+  const pipe = hostPipePath(process.platform, process.pid, os.tmpdir(), path.join, ++sessionSeq);
   if (process.platform !== 'win32') rmSync(pipe, { force: true });
   const server = net.createServer((sock) => onConnection(s, sock));
   await new Promise<void>((resolve, reject) => {

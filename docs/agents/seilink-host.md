@@ -32,8 +32,10 @@ main (src/main/seilink/host/seilinkHost.ts)        host (hostEntry.ts, same bina
   or the updater. `velopackBoot` / `velopackMigration` skip host launches.
   The pipe token rides in env `SEI_SEILINK_TOKEN`; main ignores every
   connection until a `hello` with that token from the pid it spawned.
-- Pipe: `\\.\pipe\sei-seilink-<pid>` on Windows, `<tmp>/sei-seilink-<pid>.sock`
-  elsewhere. Line limit 4 MB, so file BYTES never travel over it.
+- Pipe: `\\.\pipe\sei-seilink-<pid>-<n>` on Windows,
+  `<tmp>/sei-seilink-<pid>-<n>.sock` elsewhere; `<n>` counts the sessions of
+  this main process, so a new session never deletes or collides with the
+  path of the one still closing. Line limit 4 MB, so file BYTES never travel over it.
 - The host has its own userData (`<mainUserData>/SeiLinkHost`: host.log,
   stdio.log, its own Chromium session) and owns no app state.
 - Addon: `native/seilink` (win.cc, mac.mm; CI click helpers in ci/), built by
@@ -177,6 +179,9 @@ The contract for any replacement is in the file header.
 
 ## On/off, persistence, account switch
 
+- Start, stop, restore, the account-switch stop and the removal cleanup run
+  one at a time in call order (`serial` in seilinkHost.ts); the gear menu's
+  move button is also disabled while one is on its way.
 - `startSeilinkHost(id, {restored?})` / `stopSeilinkHost(reason)`, IPC
   `seilink:host-start|stop|status`, push `seilink:host-status-changed`
   (the dock reads `SeilinkHostStatus`). One companion at a time; a start for

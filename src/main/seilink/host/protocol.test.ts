@@ -23,7 +23,9 @@ describe('seilink host wire protocol', () => {
   });
 
   it('names a pipe per main process', () => {
-    expect(hostPipePath('win32', 42, 'C:\\tmp', path.win32.join)).toBe('\\\\.\\pipe\\sei-seilink-42');
-    expect(hostPipePath('darwin', 42, '/tmp', path.posix.join)).toBe('/tmp/sei-seilink-42.sock');
+    expect(hostPipePath('win32', 42, 'C:\\tmp', path.win32.join, 3)).toBe('\\\\.\\pipe\\sei-seilink-42-3');
+    expect(hostPipePath('darwin', 42, '/tmp', path.posix.join, 3)).toBe('/tmp/sei-seilink-42-3.sock');
+    // One path per session: the next session never touches the one before it.
+    expect(hostPipePath('darwin', 42, '/tmp', path.posix.join, 4)).not.toBe(hostPipePath('darwin', 42, '/tmp', path.posix.join, 3));
   });
 });

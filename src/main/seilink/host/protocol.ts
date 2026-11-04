@@ -108,7 +108,18 @@ export function createLineReader(onMessage: (msg: Record<string, unknown>) => vo
   };
 }
 
-/** Pipe / socket path for this main process. */
-export function hostPipePath(platform: NodeJS.Platform, pid: number, tmpdir: string, joinPath: (...p: string[]) => string): string {
-  return platform === 'win32' ? `\\\\.\\pipe\\sei-seilink-${pid}` : joinPath(tmpdir, `sei-seilink-${pid}.sock`);
+/**
+ * Pipe / socket path for one host session of this main process. `session` makes it unique per
+ * session, so a session never deletes (mac) or collides with (Windows EADDRINUSE) the path of
+ * the one before it while that one is still closing.
+ */
+export function hostPipePath(
+  platform: NodeJS.Platform,
+  pid: number,
+  tmpdir: string,
+  joinPath: (...p: string[]) => string,
+  session = 0,
+): string {
+  const name = `sei-seilink-${pid}-${session}`;
+  return platform === 'win32' ? `\\\\.\\pipe\\${name}` : joinPath(tmpdir, `${name}.sock`);
 }

@@ -173,6 +173,9 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const pendingEditor = useSeilinkStore((s) => s.pendingEditor);
   const [roomEditorOpen, setRoomEditorOpen] = useState<boolean>(false);
   const [moveInOpen, setMoveInOpen] = useState<boolean>(false);
+  // A move in / out is on its way: a second click waits for it (main also queues them).
+  const moveBusyRef = useRef(false);
+  const [moveBusy, setMoveBusy] = useState<boolean>(false);
   // The dock's "edit room" lands here (App.tsx navigates to her page first).
   useEffect(() => {
     if (!pendingEditor || pendingEditor !== id) return;
@@ -495,18 +498,26 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   // 261104 SeiLink M4: move her onto the desktop (the sheet the first time,
   // or when someone else moves out), or off it.
   const onMoveInClick = async (): Promise<void> => {
-    if (livingId === id) {
-      await sei.seilinkHostStop?.().catch(() => null);
-      return;
+    if (moveBusyRef.current) return;
+    moveBusyRef.current = true;
+    setMoveBusy(true);
+    try {
+      if (livingId === id) {
+        await sei.seilinkHostStop?.().catch(() => null);
+        return;
+      }
+      const room = await sei.seilinkRoomGet?.(id).catch(() => null);
+      if (needsMoveInSheet({ saved: room?.saved === true, movedInId: livingId, characterId: id })) {
+        setMoveInOpen(true);
+        return;
+      }
+      const status = await sei.seilinkHostStart?.(id).catch(() => null);
+      // A start that did not take opens the sheet, which has the retry and the error line.
+      if (!status || moveInFailed(status)) setMoveInOpen(true);
+    } finally {
+      moveBusyRef.current = false;
+      setMoveBusy(false);
     }
-    const room = await sei.seilinkRoomGet?.(id).catch(() => null);
-    if (needsMoveInSheet({ saved: room?.saved === true, movedInId: livingId, characterId: id })) {
-      setMoveInOpen(true);
-      return;
-    }
-    const status = await sei.seilinkHostStart?.(id).catch(() => null);
-    // A start that did not take opens the sheet, which has the retry and the error line.
-    if (!status || moveInFailed(status)) setMoveInOpen(true);
   };
 
   // Reset memory opens a confirmation popup (reset is irreversible and does NOT
@@ -892,6 +903,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                           type="button"
                           role="menuitem"
                           className={styles.settingsItem}
+                          disabled={moveBusy}
+                          aria-busy={moveBusy}
                           onClick={() => {
                             setSettingsOpen(false);
                             void onMoveInClick();
