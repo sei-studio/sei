@@ -32,7 +32,7 @@ main (src/main/seilink/host/seilinkHost.ts)        host (hostEntry.ts, same bina
   elsewhere. Line limit 4 MB, so file BYTES never travel over it.
 - The host has its own userData (`<mainUserData>/SeiLinkHost`: host.log,
   stdio.log, its own Chromium session) and owns no app state.
-- Addon: `native/seilink` (win.cc, mac.mm, test helpers), built by
+- Addon: `native/seilink` (win.cc, mac.mm; CI click helpers in ci/), built by
   `scripts/build-seilink-addon.mjs` into `resources/seilink/seilink.node`
   (mac universal via lipo, win x64). Loaded only in the host through
   `native.ts` (`bundleRequire`, never `createRequire(process.cwd())`).

@@ -34,9 +34,9 @@
     {
       "target_name": "seilink_test",
       "conditions": [
-        ["OS=='win'", { "sources": ["test/test_win.cc"], "libraries": ["user32.lib"] }],
+        ["OS=='win'", { "sources": ["ci/test_win.cc"], "libraries": ["user32.lib"] }],
         ["OS=='mac'", {
-          "sources": ["test/test_mac.mm"],
+          "sources": ["ci/test_mac.mm"],
           "link_settings": { "libraries": ["-framework ApplicationServices"] }
         }]
       ]
