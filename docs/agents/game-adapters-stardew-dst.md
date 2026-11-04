@@ -145,6 +145,25 @@ paragraph below): the SMAPI installer driven from Node on macOS, the NPC
 walking (with the barrier hop), fishing, tool swings, cross-map travel and
 the shop. Still unverified: combat in the mines (spring 5+), a farmhand.
 
+**Setup failure handling (261104).** The scan also looks in
+`<drive>:\XboxGames\Stardew Valley\Content` (the Xbox app's newer
+default). When nothing is found the step offers Choose folder
+(`stardew:choose-folder`): the pick is resolved to the folder holding
+`Stardew Valley.dll` (an XboxGames or `.app` pick works), saved in
+`<userData>/stardew-game-path.json` (never SMAPI's `stardewvalley.targets`)
+and checked first on every scan (`state.manual`). The game version comes
+from the dll's PE FileVersion (`readGameVersion`, cached by size + mtime; a
+1.0.0 / non-1.x answer reads as unknown) against
+`STARDEW_MIN_GAME_VERSION`, which a test pins to the mod manifest's
+`MinimumGameVersion`. **Unverified on a real install:** that the dll's
+FileVersion is the game version. SMAPI failures carry their own class:
+SMAPI_NETWORK_FAILED, SMAPI_GAME_RUNNING (also checked before the
+download, `stardew:game-running` process probe), SMAPI_PERMISSION_DENIED,
+SMAPI_ANTIVIRUS_SUSPECTED (installer said done or left its dll, but
+`StardewModdingAPI.exe` is gone; detection flags it as `smapiRemoved` on
+Windows). The farm step probes the game process and, after 15 s of a
+running game with a silent helper, shows the start-through-SMAPI hint.
+
 **Discovery has no setting (260909).** Main binds the first free port of
 `DST_DISCOVERY_PORTS` (27424..27428, `src/shared/dstIpc.ts`) and the mod
 probes the same list every beat until one answers `app: "sei"`, then sticks

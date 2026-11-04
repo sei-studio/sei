@@ -62,6 +62,7 @@ import {
   type LinkManifestExclusion,
 } from './wizardStateStore';
 import type { McInstall, WizardInstallResult, WizardProgressEvent } from '../shared/ipc';
+import { observeWizardProgress } from './setupTelemetry';
 
 const logger = {
   info: (m: string) => console.log(`[sei] ${m}`),
@@ -280,7 +281,7 @@ function isCancellationError(err: unknown, signal: AbortSignal): boolean {
 export async function runWizardInstall(
   args: RunWizardInstallArgs,
 ): Promise<{ results: WizardInstallResult[] }> {
-  const { sessionId, installIds, skinServerBaseUrl, onProgress, mcVersions } = args;
+  const { sessionId, installIds, skinServerBaseUrl, mcVersions } = args;
 
   // ── Pre-flight: validate sessionId ────────────────────────────────────
   if (!sessionId || typeof sessionId !== 'string') {
@@ -301,6 +302,8 @@ export async function runWizardInstall(
     // freshest McInstall record (mc_version, loader, etc.) for each id.
     const scanned = await scanMcInstalls();
     const byId = new Map(scanned.map((i) => [i.id, i]));
+    // 261104: the stage stream also feeds game_setup_step (shape only).
+    const onProgress = observeWizardProgress(args.onProgress, (id) => byId.get(id)?.kind);
 
     for (const installId of installIds) {
       // Cancellation gate at the top of each install iteration. Catches

@@ -29,9 +29,17 @@ import {
   storeFromPath,
   upgradeModIfNewer,
   readManifestVersion,
+  resolveChosenFolder,
+  peFileVersion,
+  readGameVersion,
+  gameVersionOk,
+  chooseStardewFolder,
+  smapiRunFailCode,
+  smapiFilesRemoved,
   type StardewInstallEnv,
 } from './install';
-import { launchStardew } from './launch';
+import { launchStardew, parseStardewProcesses } from './launch';
+import { STARDEW_MIN_GAME_VERSION } from '../../../shared/stardewIpc';
 
 const VDF = `
 "libraryfolders"
@@ -83,6 +91,10 @@ describe('scanner helpers (SMAPI GameScanner logic port)', () => {
     expect(win).toContain('C:\\Program Files (x86)\\Steam\\steamapps\\common\\Stardew Valley');
     expect(win).toContain('C:\\Program Files\\GOG Galaxy\\Games\\Stardew Valley');
     expect(win.filter((p) => p.includes('ModifiableWindowsApps'))).toHaveLength(6);
+    // 261104: the Xbox app's XboxGames folder, files one level down in Content.
+    expect(win).toContain('D:\\XboxGames\\Stardew Valley\\Content');
+    expect(win.filter((p) => p.includes('XboxGames'))).toHaveLength(6);
+    expect(storeFromPath('E:\\XboxGames\\Stardew Valley\\Content')).toBe('xbox');
     expect(gamePathFromTargets('<Project><PropertyGroup><GamePath>/custom/game</GamePath></PropertyGroup></Project>')).toBe('/custom/game');
     expect(gamePathFromTargets('<Project/>')).toBeNull();
     expect(storeFromPath('/x/steamapps/common/Stardew Valley')).toBe('steam');
@@ -299,8 +311,10 @@ describe('detection + install against a fake game folder', () => {
   it.skipIf(process.platform === 'win32')('installs SMAPI from the fixture zip (mirror 404 falls through to origin) then the mod, streaming stages', async () => {
     const stages: string[] = [];
     let pctSeen = 0;
+    const tracked: { step: string; outcome: string; game: string }[] = [];
     const state = await installStardew({
       env: envFor(),
+      track: (i) => tracked.push(i),
       onProgress: (ev) => {
         stages.push(ev.stage);
         if (ev.stage === 'smapi-downloading') pctSeen = Math.max(pctSeen, ev.pct);
@@ -317,6 +331,16 @@ describe('detection + install against a fake game folder', () => {
     expect(state.modVersion).toBe('0.1.0');
     expect(state.modConfig?.hasToken).toBe(true);
     expect(state.ready).toBe(true);
+    // 261104: game_setup_step per install step, in order.
+    expect(tracked.map((e) => `${e.step}:${e.outcome}`)).toEqual([
+      'smapi_download:start',
+      'smapi_download:ok',
+      'smapi_run:start',
+      'smapi_run:ok',
+      'mod_copy:start',
+      'mod_copy:ok',
+    ]);
+    expect(tracked.every((e) => e.game === 'stardew')).toBe(true);
     // A second run skips SMAPI (already there) and keeps the token.
     const token = (await readModConfig(game))?.Token;
     const stages2: string[] = [];
@@ -333,14 +357,180 @@ describe('detection + install against a fake game folder', () => {
     expect(events.at(-1)).toMatchObject({ stage: 'failed', error: 'GAME_NOT_INSTALLED' });
   });
 
-  it.skipIf(process.platform === 'win32')('reports SMAPI_INSTALL_FAILED when every download source fails', async () => {
+  it.skipIf(process.platform === 'win32')('reports SMAPI_NETWORK_FAILED when every download source fails', async () => {
     const events: { stage: string }[] = [];
+    const tracked: Record<string, unknown>[] = [];
     await expect(
       installStardew({
         env: envFor({ smapiSources: () => [{ url: `${serverUrl}/missing.zip`, connectTimeoutMs: 2000 }] }),
         onProgress: (ev) => events.push(ev),
+        track: (i) => tracked.push({ ...i }),
       }),
-    ).rejects.toThrow(/^SMAPI_INSTALL_FAILED/);
-    expect(events.at(-1)).toMatchObject({ stage: 'failed', error: 'SMAPI_INSTALL_FAILED' });
+    ).rejects.toThrow(/^SMAPI_NETWORK_FAILED/);
+    expect(events.at(-1)).toMatchObject({ stage: 'failed', error: 'SMAPI_NETWORK_FAILED' });
+    expect(tracked.at(-1)).toMatchObject({ step: 'smapi_download', outcome: 'fail', error_code: 'SMAPI_NETWORK_FAILED', reason: 'network' });
+  });
+
+  it('refuses to install SMAPI while the game runs (SMAPI_GAME_RUNNING), before downloading', async () => {
+    const events: { stage: string }[] = [];
+    let fetched = false;
+    await expect(
+      installStardew({
+        env: envFor({ isGameRunning: async () => true, fetch: async () => { fetched = true; throw new Error('no'); } }),
+        onProgress: (ev) => events.push(ev),
+        track: () => {},
+      }),
+    ).rejects.toThrow(/^SMAPI_GAME_RUNNING/);
+    expect(fetched).toBe(false);
+    expect(events.at(-1)).toMatchObject({ stage: 'failed', error: 'SMAPI_GAME_RUNNING' });
+  });
+
+  it.skipIf(process.platform === 'win32')('names an antivirus when the installer said done but SMAPI is not there', async () => {
+    const tracked: Record<string, unknown>[] = [];
+    await expect(
+      installStardew({
+        env: envFor({ runInstaller: async () => ({ stdout: 'SMAPI is installed! If you use Steam, set its launch options.', stderr: '' }) }),
+        track: (i) => tracked.push({ ...i }),
+      }),
+    ).rejects.toThrow(/^SMAPI_ANTIVIRUS_SUSPECTED/);
+    expect(tracked.at(-1)).toMatchObject({ step: 'smapi_run', outcome: 'fail', error_code: 'SMAPI_ANTIVIRUS_SUSPECTED' });
+  });
+
+  it.skipIf(process.platform === 'win32')('names a permission problem from the installer output', async () => {
+    await expect(
+      installStardew({
+        env: envFor({
+          runInstaller: async () => {
+            throw Object.assign(new Error('Command failed'), { stdout: "System.UnauthorizedAccessException: Access to the path 'StardewModdingAPI.dll' is denied." });
+          },
+        }),
+        track: () => {},
+      }),
+    ).rejects.toThrow(/^SMAPI_PERMISSION_DENIED/);
+  });
+});
+
+/** A PE-shaped buffer with a VS_FIXEDFILEINFO for FileVersion a.b.c.d. */
+function fakePe(a: number, b: number, c: number, d: number): Buffer {
+  const info = Buffer.alloc(52);
+  info.writeUInt32LE(0xfeef04bd, 0);
+  info.writeUInt32LE(0x00010000, 4);
+  info.writeUInt32LE(((a << 16) | b) >>> 0, 8);
+  info.writeUInt32LE(((c << 16) | d) >>> 0, 12);
+  return Buffer.concat([Buffer.from('MZ'), Buffer.alloc(300, 7), info, Buffer.alloc(40)]);
+}
+
+describe('game folder finding and version (261104)', () => {
+  let root: string;
+  beforeEach(async () => {
+    root = await mkdtemp(path.join(tmpdir(), 'sei-stardew-find-'));
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it('resolves a picked XboxGames folder to its Content folder', async () => {
+    const content = path.join(root, 'XboxGames', 'Stardew Valley', 'Content');
+    await mkdir(content, { recursive: true });
+    await writeFile(path.join(content, 'Stardew Valley.dll'), 'x');
+    expect(await resolveChosenFolder(path.join(root, 'XboxGames', 'Stardew Valley'))).toEqual({ gamePath: content });
+    expect(await resolveChosenFolder(path.join(root, 'XboxGames'))).toEqual({ gamePath: content });
+    expect(await resolveChosenFolder(content)).toEqual({ gamePath: content });
+  });
+
+  it('refuses a folder without the game files, and names a pre-1.5.5 game', async () => {
+    await mkdir(path.join(root, 'empty'), { recursive: true });
+    expect(await resolveChosenFolder(path.join(root, 'empty'))).toEqual({ error: 'not_game' });
+    await mkdir(path.join(root, 'old'), { recursive: true });
+    await writeFile(path.join(root, 'old', 'Stardew Valley.exe'), 'x');
+    expect(await resolveChosenFolder(path.join(root, 'old'))).toEqual({ error: 'legacy' });
+  });
+
+  it('reads the FileVersion out of Stardew Valley.dll', async () => {
+    expect(peFileVersion(fakePe(1, 6, 15, 24356))).toBe('1.6.15');
+    expect(peFileVersion(Buffer.from('not a pe file'))).toBeNull();
+    await writeFile(path.join(root, 'Stardew Valley.dll'), fakePe(1, 6, 9, 1));
+    expect(await readGameVersion(root)).toBe('1.6.9');
+    // A placeholder 1.0.0 resource reads as unknown, never as "too old".
+    await writeFile(path.join(root, 'Stardew Valley.dll'), fakePe(1, 0, 0, 0));
+    expect(await readGameVersion(root)).toBeNull();
+    expect(await readGameVersion(path.join(root, 'nope'))).toBeNull();
+  });
+
+  it('compares against the helper minimum, which matches the mod manifest', async () => {
+    expect(gameVersionOk('1.6.15')).toBe(true);
+    expect(gameVersionOk(STARDEW_MIN_GAME_VERSION)).toBe(true);
+    expect(gameVersionOk('1.6.8')).toBe(false);
+    expect(gameVersionOk('1.5.6')).toBe(false);
+    expect(gameVersionOk(null)).toBeNull();
+    const manifest = JSON.parse(await readFile(path.join(__dirname, '..', '..', '..', '..', 'assets', 'stardew-mod', 'SeiCompanion', 'manifest.json'), 'utf8'));
+    expect(manifest.MinimumGameVersion).toBe(STARDEW_MIN_GAME_VERSION);
+  });
+
+  it('Choose folder saves a valid pick, detection then uses it (manual)', async () => {
+    const game = path.join(root, 'Games', 'SDV');
+    await mkdir(game, { recursive: true });
+    await writeFile(path.join(game, 'Stardew Valley.dll'), fakePe(1, 6, 15, 1));
+    let saved: string | null = null;
+    const tracked: Record<string, unknown>[] = [];
+    const env: StardewInstallEnv = {
+      platform: 'win32',
+      home: path.join(root, 'home'),
+      readRegistry: async () => null,
+      getPackRoot: async () => root,
+      tmpDir: () => root,
+      fetch: (i, o) => fetch(i, o),
+      smapiSources: () => [],
+      runInstaller: async () => ({ stdout: '', stderr: '' }),
+      now: () => 0,
+      readCustomPath: async () => saved,
+    };
+    expect(await chooseStardewFolder(async () => null, { env, track: (i) => tracked.push({ ...i }) })).toEqual({ ok: false, reason: 'cancelled' });
+    const bad = await chooseStardewFolder(async () => root, { env, save: async (p) => { saved = p; }, track: (i) => tracked.push({ ...i }) });
+    expect(bad).toEqual({ ok: false, reason: 'not_game' });
+    expect(saved).toBeNull();
+    const res = await chooseStardewFolder(async () => game, { env, save: async (p) => { saved = p; }, track: (i) => tracked.push({ ...i }) });
+    expect(saved).toBe(game);
+    expect(res).toMatchObject({ ok: true, state: { gamePath: game, manual: true, gameVersion: '1.6.15', versionOk: true } });
+    expect(tracked.map((e) => `${e.step}:${e.outcome}:${e.error_code ?? ''}`)).toEqual(['choose_folder:fail:STARDEW_FOLDER_NOT_GAME', 'choose_folder:ok:']);
+  });
+});
+
+describe('parseStardewProcesses (261104)', () => {
+  it('tells SMAPI from the vanilla game on Windows', () => {
+    expect(parseStardewProcesses('"explorer.exe","1","Console","1","10 K"\r\n"StardewModdingAPI.exe","2","Console","1","900 K"', 'win32')).toEqual({ running: true, smapi: true });
+    expect(parseStardewProcesses('"Stardew Valley.exe","2","Console","1","900 K"', 'win32')).toEqual({ running: true, smapi: false });
+    expect(parseStardewProcesses('"explorer.exe","1","Console","1","10 K"', 'win32')).toEqual({ running: false, smapi: null });
+  });
+  it('reads ps args on macOS / Linux', () => {
+    expect(parseStardewProcesses('/Users/p/Library/Application Support/Steam/steamapps/common/Stardew Valley/Contents/MacOS/Stardew Valley\n', 'darwin')).toEqual({ running: true, smapi: false });
+    expect(parseStardewProcesses('/x/Stardew Valley/Contents/MacOS/StardewModdingAPI\n', 'darwin')).toEqual({ running: true, smapi: true });
+    expect(parseStardewProcesses('/usr/bin/zsh\n/Applications/Sei.app/Contents/MacOS/Sei', 'darwin')).toEqual({ running: false, smapi: null });
+  });
+});
+
+describe('SMAPI failure causes (261104)', () => {
+  it.each([
+    ['The process cannot access the file because it is being used by another process', 'SMAPI_GAME_RUNNING'],
+    ['EBUSY: resource busy or locked', 'SMAPI_GAME_RUNNING'],
+    ['EPERM: operation not permitted', 'SMAPI_PERMISSION_DENIED'],
+    ['Operation did not complete successfully because the file contains a virus', 'SMAPI_ANTIVIRUS_SUSPECTED'],
+    ['getaddrinfo ENOTFOUND', 'SMAPI_NETWORK_FAILED'],
+    ['something else', 'SMAPI_INSTALL_FAILED'],
+  ])('%s -> %s', (text, code) => {
+    expect(smapiRunFailCode(text)).toBe(code);
+  });
+
+  it('sees a quarantined StardewModdingAPI.exe next to the files SMAPI left', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'sei-smapi-av-'));
+    try {
+      expect(await smapiFilesRemoved(dir, 'win32')).toBe(false);
+      await writeFile(path.join(dir, 'StardewModdingAPI.dll'), 'x');
+      expect(await smapiFilesRemoved(dir, 'win32')).toBe(true);
+      await writeFile(path.join(dir, 'StardewModdingAPI.exe'), 'x');
+      expect(await smapiFilesRemoved(dir, 'win32')).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

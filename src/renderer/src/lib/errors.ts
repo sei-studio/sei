@@ -129,6 +129,11 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   CHATGPT_SIGNED_OUT: "Your ChatGPT sign-in ended. Continue with ChatGPT in Settings to sign in again.",
   CHATGPT_PLAN_DISABLED: "ChatGPT plan use isn't turned on for this sign-in. Turn it on in Settings, then try again.",
   SMAPI_INSTALL_FAILED: "Couldn't install SMAPI, the mod loader Stardew Valley needs. Make sure the game is closed and try the setup again, or install SMAPI from smapi.io and then re-run the setup.",
+  // 261104: SMAPI failures by cause.
+  SMAPI_NETWORK_FAILED: "Couldn't download SMAPI, the mod loader Stardew Valley needs. Check your internet connection, then try the setup again.",
+  SMAPI_PERMISSION_DENIED: "SMAPI wasn't allowed to change the Stardew Valley folder. Close the game and Steam, then try the setup again. If it keeps failing, install SMAPI from smapi.io and re-run the setup.",
+  SMAPI_GAME_RUNNING: "Stardew Valley is running, so SMAPI can't be installed. Close the game, then try the setup again.",
+  SMAPI_ANTIVIRUS_SUSPECTED: "SMAPI was installed, but your antivirus most likely removed it. Allow StardewModdingAPI.exe in your antivirus, then run the setup again. In Windows Security: Virus & threat protection, Protection history, pick the item, then Allow on device.",
 };
 
 /**
