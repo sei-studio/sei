@@ -1,17 +1,22 @@
 /**
  * SeiLink look(): her room as one picture, WITHOUT her in it (261104).
  *
- * Composes a preset's pack layers in the main process with sharp, following
- * the draw rules in src/shared/seilinkRoom.ts:
- *   1. slots by z ascending (resolveSlots), each component's frame for the
- *      room's time of day (a missing time falls back to day), full-canvas at
- *      (0,0) unless the component has a box;
- *   2. a tintable frame with a mask is recoloured inside the mask by
- *      multiplying with the tint, so the frame's own shading stays;
- *   3. the avatar would sit at AVATAR_Z: it is NEVER drawn here. The picture
- *      is what she would see of her room, and she is not part of it;
- *   4. items, by their own z (stable in placement order);
- *   5. every frame's glow layer last, with 'screen'.
+ * Composes a preset's pack layers in the main process with sharp, from the
+ * SAME draw plan the host's RoomCanvas follows (roomDrawPlan in
+ * src/shared/seilinkDraw.ts), so the picture she sees and the room the
+ * player sees cannot drift apart:
+ *   - layers in plan order (slots and items interleaved by z, ties slot
+ *     first), each frame for the room's time of day;
+ *   - a slot is full-canvas at (0,0) unless its component has a box; a
+ *     tinted slot (layer.tint) is recoloured inside its mask by multiplying,
+ *     so the frame's own shading stays;
+ *   - an item sits on its BOTTOM CENTRE (itemRect), natural size or box
+ *     times scale, mirrored when flipped;
+ *   - glows last, with 'screen', on their owner's placement.
+ * The plan is built with `avatar: false`: she is never drawn here. The
+ * picture is what she would see of her room, and she is not part of it.
+ * Glow effects (flicker, pulse) are animation only: a still picture draws
+ * them at full strength.
  *
  * The whole composite runs at OUTPUT size (1024 px wide by default), not at
  * the 2560 px canvas, so tinting is a few hundred thousand pixels and the
@@ -24,7 +29,8 @@
  */
 import path from 'node:path';
 import { bundleRequire } from '../bundleRequire';
-import { resolveRoomTime, resolveSlots, type RoomComponent, type RoomFrame, type RoomTime } from '../../shared/seilinkRoom';
+import { resolveRoomTime } from '../../shared/seilinkRoom';
+import { itemRect, roomDrawPlan, type ItemLayer, type SlotLayer } from '../../shared/seilinkDraw';
 import type { RoomContext } from './types';
 
 /** Output width of the look() picture. Height follows the preset's canvas aspect. */
@@ -99,10 +105,6 @@ function packFile(packDir: string, rel: string): string | null {
   return abs === root || abs.startsWith(root + path.sep) ? abs : null;
 }
 
-function frameFor(c: RoomComponent, time: RoomTime): RoomFrame {
-  return c.frames[time] ?? c.frames.day;
-}
-
 async function rawOf(sharp: SharpFn, file: string, w: number, h: number, flip = false): Promise<Buffer> {
   let img = sharp(file).resize(w, h, { fit: 'fill' });
   if (flip) img = img.flop();
@@ -138,6 +140,33 @@ async function clipped(sharp: SharpFn, l: Layer, W: number, H: number): Promise<
   return { ...l, data: out.data, width: x1 - x0, height: y1 - y0, left: x0, top: y0 };
 }
 
+interface Place {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  flip?: boolean;
+}
+
+/** A slot: its box, else the whole canvas, in output px. */
+function slotPlace(l: SlotLayer, s: number, W: number, H: number): Place {
+  if (!l.box) return { left: 0, top: 0, width: W, height: H };
+  const [x, y, w, h] = l.box;
+  return { left: Math.round(x * s), top: Math.round(y * s), width: Math.max(1, Math.round(w * s)), height: Math.max(1, Math.round(h * s)) };
+}
+
+/** An item: bottom-centre anchored (itemRect), natural size unless boxed. null = unreadable art. */
+async function itemPlace(sharp: SharpFn, l: ItemLayer, src: string, s: number): Promise<Place | null> {
+  let natural: [number, number] = [0, 0];
+  if (!l.size) {
+    const meta = await sharp(src).metadata().catch(() => ({}) as { width?: number; height?: number });
+    if (!meta.width || !meta.height) return null;
+    natural = [meta.width, meta.height];
+  }
+  const [x, y, w, h] = itemRect(l, natural);
+  return { left: Math.round(x * s), top: Math.round(y * s), width: Math.max(1, Math.round(w * s)), height: Math.max(1, Math.round(h * s)), flip: l.flip };
+}
+
 /**
  * Compose her room as a JPEG, without her. Throws only when sharp is missing;
  * a missing or unreadable layer is skipped (logged) so one bad file costs that
@@ -156,70 +185,57 @@ export async function renderRoomImage(
   const s = W / cw;
   const H = Math.max(1, Math.round(ch * s));
 
-  const layers: Layer[] = [];
-  const glows: Layer[] = [];
+  const plan = roomDrawPlan(manifest, state, time, { avatar: false });
+  /** Output-px placement of each drawn layer, so its glow lands on it. */
+  const placed = new Map<SlotLayer | ItemLayer, Place>();
 
-  const addFrame = async (c: RoomComponent, tint: string | undefined, place: { left: number; top: number; width: number; height: number; flip?: boolean }): Promise<void> => {
-    const f = frameFor(c, time);
-    const src = packFile(packDir, f.src);
-    if (!src) return void console.warn(`[seilink/look] ${c.id}: frame path leaves the pack, skipped`);
-    try {
-      const data = await rawOf(sharp, src, place.width, place.height, place.flip);
-      const rgb = c.tintable ? hexRgb(tint ?? c.defaultTint) : null;
-      const maskFile = f.mask ? packFile(packDir, f.mask) : null;
-      if (rgb && maskFile) applyTint(data, await rawOf(sharp, maskFile, place.width, place.height, place.flip), rgb);
-      layers.push({ data, width: place.width, height: place.height, left: place.left, top: place.top });
-      const glowFile = f.glow ? packFile(packDir, f.glow) : null;
-      if (glowFile) {
-        glows.push({ data: await rawOf(sharp, glowFile, place.width, place.height, place.flip), width: place.width, height: place.height, left: place.left, top: place.top, blend: 'screen' });
+  // Decode every layer at once (sharp works on libuv's pool), keep plan order.
+  const drawn = await Promise.all(
+    plan.layers.map(async (l): Promise<Layer | null> => {
+      if (l.kind === 'avatar') return null; // never present (avatar: false); she is not in the picture
+      const id = l.component.id;
+      const src = packFile(packDir, l.frame.src);
+      if (!src) {
+        console.warn(`[seilink/look] ${id}: frame path leaves the pack, skipped`);
+        return null;
       }
-    } catch (err) {
-      console.warn(`[seilink/look] ${c.id}: layer skipped (${(err as Error).message})`);
-    }
-  };
+      try {
+        const place = l.kind === 'slot' ? slotPlace(l, s, W, H) : await itemPlace(sharp, l, src, s);
+        if (!place) return null;
+        const rgb = l.kind === 'slot' ? hexRgb(l.tint ?? undefined) : null;
+        const maskFile = rgb && l.frame.mask ? packFile(packDir, l.frame.mask) : null;
+        const [data, mask] = await Promise.all([
+          rawOf(sharp, src, place.width, place.height, place.flip),
+          maskFile ? rawOf(sharp, maskFile, place.width, place.height, place.flip) : null,
+        ]);
+        if (rgb && mask) applyTint(data, mask, rgb);
+        placed.set(l, place);
+        return { data, ...place };
+      } catch (err) {
+        console.warn(`[seilink/look] ${id}: layer skipped (${(err as Error).message})`);
+        return null;
+      }
+    }),
+  );
 
-  const fullOrBox = (c: RoomComponent) =>
-    c.box
-      ? { left: Math.round(c.box[0] * s), top: Math.round(c.box[1] * s), width: Math.max(1, Math.round(c.box[2] * s)), height: Math.max(1, Math.round(c.box[3] * s)) }
-      : { left: 0, top: 0, width: W, height: H };
+  // Glows over everything, on their owner's placement.
+  const glows = await Promise.all(
+    plan.glows.map(async (g): Promise<Layer | null> => {
+      const place = placed.get(g.owner);
+      const file = place ? packFile(packDir, g.src) : null;
+      if (!place || !file) return null;
+      try {
+        return { data: await rawOf(sharp, file, place.width, place.height, place.flip), ...place, blend: 'screen' };
+      } catch (err) {
+        console.warn(`[seilink/look] ${g.owner.component.id}: glow skipped (${(err as Error).message})`);
+        return null;
+      }
+    }),
+  );
 
-  // 1-2. Slots by z, tinted. The avatar (AVATAR_Z) is deliberately absent.
-  for (const { component, tint } of resolveSlots(manifest, state)) {
-    await addFrame(component, tint, fullOrBox(component));
-  }
-
-  // 4. Items by their own z, stable in placement order. (x, y) is the item's
-  // top-left on the canvas; its size is its box, else its art's own size, times scale.
-  const byId = new Map(manifest.components.map((c) => [c.id, c]));
-  const items = state.items
-    .map((it, i) => ({ it, i, c: byId.get(it.id) }))
-    .filter((x): x is { it: (typeof state.items)[number]; i: number; c: RoomComponent } => Boolean(x.c))
-    .sort((a, b) => (a.c.z ?? 0) - (b.c.z ?? 0) || a.i - b.i);
-  for (const { it, c } of items) {
-    let w: number, h: number;
-    if (c.box) {
-      w = c.box[2];
-      h = c.box[3];
-    } else {
-      const src = packFile(packDir, frameFor(c, time).src);
-      const meta = src ? await sharp(src).metadata().catch(() => ({} as { width?: number; height?: number })) : {};
-      if (!meta.width || !meta.height) continue;
-      w = meta.width;
-      h = meta.height;
-    }
-    const k = (it.scale ?? 1) * s;
-    await addFrame(c, undefined, {
-      left: Math.round(it.x * s),
-      top: Math.round(it.y * s),
-      width: Math.max(1, Math.round(w * k)),
-      height: Math.max(1, Math.round(h * k)),
-      flip: it.flip === true,
-    });
-  }
-
-  // 5. Glow last.
   const overlays: Array<Record<string, unknown>> = [];
-  for (const l of [...layers, ...glows]) {
+  for (const l of [...drawn, ...glows]) {
+    if (!l) continue;
     const c = await clipped(sharp, l, W, H);
     if (!c) continue;
     overlays.push({ input: c.data, raw: { width: c.width, height: c.height, channels: 4 }, left: c.left, top: c.top, ...(c.blend ? { blend: c.blend } : {}) });

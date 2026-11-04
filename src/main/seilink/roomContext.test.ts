@@ -8,6 +8,7 @@ import {
   devRoomSource,
   lookAtRoom,
   lookResultContent,
+  lookToolResult,
   placeSentence,
   roomForSurface,
   roomPromptLine,
@@ -132,12 +133,24 @@ describe('look()', () => {
     expect(look.text).toContain('without you in it');
     expect(look.image?.mediaType).toBe('image/jpeg');
     expect(look.image?.width).toBe(ROOM_LOOK_WIDTH);
-    const content = lookResultContent([{ type: 'tool_result', tool_use_id: 'tu1', content: look.text }], [look.image!]);
+    // An Anthropic backend: the picture inside the tool_result.
+    const nested = lookToolResult('tu1', look, { nested: true });
+    expect(nested.sibling).toBeNull();
+    const inner = nested.result.content as Array<{ type: string; text?: string; source?: { type: string; media_type: string; data: string } }>;
+    expect(inner.map((b) => b.type)).toEqual(['text', 'image']);
+    expect(inner[0].text).toBe(look.text);
+    expect(inner[1].source?.media_type).toBe('image/jpeg');
+    expect(Buffer.from(inner[1].source!.data, 'base64').subarray(0, 2).toString('hex')).toBe('ffd8');
+    // Any other provider: text tool_result, picture as a sibling block after it.
+    const flat = lookToolResult('tu1', look, { nested: false });
+    expect(flat.result.content).toBe(look.text);
+    const content = lookResultContent([flat.result], [flat.sibling!]);
     expect(content.map((b) => b.type)).toEqual(['tool_result', 'image']);
     const img = content[1] as { source: { type: string; media_type: string; data: string } };
     expect(img.source.type).toBe('base64');
     expect(img.source.media_type).toBe('image/jpeg');
-    expect(Buffer.from(img.source.data, 'base64').subarray(0, 2).toString('hex')).toBe('ffd8');
+    // A second look() in one response gets the list only.
+    expect(lookToolResult('tu2', look, { nested: true, withImage: false }).result.content).toBe(look.text);
   });
 
   it('sends the list only when the model cannot see', async () => {

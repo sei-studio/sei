@@ -7,22 +7,24 @@
  * call (buildSystemBlocks with the room line, chatSurfaceTools with look(),
  * the call clock in the uncached tail), against the fixture room pack in
  * src/main/seilink/__fixtures__/room-pack (or --room <room.json>). look() is
- * answered by the real lookAtRoom (sharp composite + list), with the picture
- * beside the tool_result. Text rows only carry across turns, as in the app.
+ * answered by the real lookAtRoom (sharp composite + list), the picture
+ * inside the tool_result as chatService sends it to Anthropic (--sibling: the
+ * other providers' shape, beside it). Text rows only carry across turns, as in the app.
  *
  * Key: ANTHROPIC_API_KEY, else ~/.sei-dev/anthropic-test-key; never printed.
- * Usage: npx tsx scripts/seilink-room-probe.ts [--reps 2] [--surfaces chat,call] [--room file]
+ * Usage: npx tsx scripts/seilink-room-probe.ts [--reps 2] [--surfaces chat,call] [--room file] [--sibling] [--pinned]
  */
 import Anthropic from '@anthropic-ai/sdk';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { appendUncachedTail, buildSystemBlocks, chatSurfaceTools, clockTailNote, markLastMessageCached } from '../src/main/chat/chatPrompts';
 import { toMessages } from '../src/main/chat/transcript';
 import { webToolsFor } from '../src/bot/web/webTools.js';
 import type { ChatMessage } from '../src/shared/ipc';
-import { devRoomSource, lookAtRoom, lookResultContent, roomPromptLine, type RoomContext } from '../src/main/seilink/roomContext';
+import { devRoomSource, lookAtRoom, lookResultContent, lookToolResult, roomPromptLine, type RoomContext } from '../src/main/seilink/roomContext';
 import { MEMORY, PERSONA_EXPANDED, STOP } from './call-fixture';
 
 const argv = process.argv.slice(2);
@@ -32,8 +34,9 @@ const opt = (n: string, d: string): string => {
 };
 const REPS = Number(opt('--reps', '2'));
 const SURFACES = opt('--surfaces', 'chat,call').split(',') as Array<'chat' | 'call'>;
-const ROOM = opt('--room', join(__dirname, '..', 'src', 'main', 'seilink', '__fixtures__', 'room-pack', 'room.json'));
+const ROOM = opt('--room', join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'main', 'seilink', '__fixtures__', 'room-pack', 'room.json'));
 const MODEL = 'claude-haiku-5-5';
+const SIBLING = argv.includes('--sibling');
 
 function key(): string {
   if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
@@ -71,6 +74,7 @@ async function runSession(surface: 'chat' | 'call', room: RoomContext, rep: numb
       proactiveness: 1,
       punctuation: 'casual',
       memory: MEMORY,
+      summary: '',
       openWorldDetected: false,
       inGame: false,
       voiceCall: voice,
@@ -106,8 +110,10 @@ async function runSession(surface: 'chat' | 'call', room: RoomContext, rep: numb
         calls.push(u.name);
         if (u.name === 'look') {
           const look = await lookAtRoom(room, { vision: 'yes' });
-          results.push({ type: 'tool_result', tool_use_id: u.id, content: look.text });
-          if (look.image) images.push(look.image);
+          // As chatService does for an Anthropic backend; --sibling = the other providers' shape.
+          const r = lookToolResult(u.id, look, { nested: !SIBLING });
+          results.push(r.result);
+          if (r.sibling) images.push(r.sibling);
         } else if (u.name === 'remember') {
           results.push({ type: 'tool_result', tool_use_id: u.id, content: 'Saved to your memory. Continue your reply; do not mention saving it.' });
         } else {
@@ -125,6 +131,8 @@ async function runSession(surface: 'chat' | 'call', room: RoomContext, rep: numb
 
 async function main(): Promise<void> {
   const room = (await devRoomSource(ROOM)!.getRoom('probe')) as RoomContext;
+  // The common case: the room follows the clock (the fixture pins night).
+  if (!argv.includes('--pinned')) room.state.time = 'auto';
   for (const surface of SURFACES) for (let r = 0; r < REPS; r++) await runSession(surface, room, r);
   console.log(`\nspend ~$${spend.toFixed(3)}`);
 }

@@ -180,11 +180,13 @@ describe('look()', () => {
     expect(createSpy).toHaveBeenCalledTimes(2);
     const last = req(1).messages[req(1).messages.length - 1];
     expect(last.role).toBe('user');
-    const blocks = last.content as Array<{ type: string; tool_use_id?: string; content?: string; source?: { media_type: string } }>;
-    expect(blocks.map((b) => b.type)).toEqual(['tool_result', 'image']);
+    // The Anthropic backend (the mocked SDK): the picture inside the tool_result.
+    const blocks = last.content as Array<{ type: string; tool_use_id?: string; content?: Array<{ type: string; text?: string; source?: { media_type: string } }> }>;
+    expect(blocks.map((b) => b.type)).toEqual(['tool_result']);
     expect(blocks[0].tool_use_id).toBe('tu_look');
-    expect(blocks[0].content).toContain('Sei 2026 trophy');
-    expect(blocks[1].source?.media_type).toBe('image/jpeg');
+    expect(blocks[0].content!.map((b) => b.type)).toEqual(['text', 'image']);
+    expect(blocks[0].content![0].text).toContain('Sei 2026 trophy');
+    expect(blocks[0].content![1].source?.media_type).toBe('image/jpeg');
     expect(pushed.map((m) => m.text).join(' ')).toContain('hold on lemme look');
     expect(result.replies.map((m) => m.text).join(' ')).toContain('purple curtains');
   });
@@ -203,7 +205,9 @@ describe('look()', () => {
     const result = await sendVoiceIdleTurn(CHAR, 30, []);
     expect(createSpy).toHaveBeenCalledTimes(2);
     const last = req(1).messages[req(1).messages.length - 1];
-    expect((last.content as Array<{ type: string }>).map((b) => b.type)).toEqual(['tool_result', 'image']);
+    const blocks = last.content as Array<{ type: string; content?: Array<{ type: string }> }>;
+    expect(blocks.map((b) => b.type)).toEqual(['tool_result']);
+    expect(blocks[0].content!.map((b) => b.type)).toEqual(['text', 'image']);
     const spoken = result.messages.map((m) => m.text).join(' ');
     expect(spoken).toContain('let me look around');
     expect(spoken).toContain('my lamp is on');

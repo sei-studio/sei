@@ -53,7 +53,7 @@ import { scopedTurnCurrent, withScopedTurn } from '../profile/scopeBarrier';
 import { maybeCompactChatMemory } from './memoryCompaction';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import { surfaceLanguage } from '../../shared/chatLanguage';
-import { LOOK_TOOL_NAME, lookAtRoom, lookResultContent, roomForSurface, roomPromptLine, type RoomContext } from '../seilink/roomContext';
+import { LOOK_TOOL_NAME, lookAtRoom, lookResultContent, lookToolResult, roomForSurface, roomPromptLine, type RoomContext, type RoomLook } from '../seilink/roomContext';
 import type { RoomImage } from '../seilink/roomRender';
 import * as chatStore from './chatStore';
 import {
@@ -156,9 +156,9 @@ function chatTools(llm: Pick<LlmProvider, 'kind'>, voice: boolean, room = false)
 /**
  * 261104 SeiLink: run one look() call. Returns the tool_result text and the
  * picture (null when the model cannot see or the render failed); the caller
- * puts the picture beside the tool_results (lookResultContent).
+ * places the picture with lookToolResult.
  */
-async function runLook(characterId: string, room: RoomContext | null, llm: Pick<LlmProvider, 'vision'>): Promise<{ text: string; image: RoomImage | null }> {
+async function runLook(characterId: string, room: RoomContext | null, llm: Pick<LlmProvider, 'vision'>): Promise<RoomLook> {
   if (!room) return { text: 'You have no room to look at right now.', image: null };
   const t0 = Date.now();
   const look = await lookAtRoom(room, { vision: llm.vision });
@@ -200,12 +200,16 @@ async function followUpWebTools(p: {
     let ws: ReturnType<typeof getChatWebSession> | null = null;
     const results: Anthropic.Messages.ToolResultBlockParam[] = [];
     const images: RoomImage[] = [];
+    let lookImageSent = false;
     for (const b of res.content) {
       if (b.type !== 'tool_use') continue;
       if (b.name === LOOK_TOOL_NAME) {
         const look = await runLook(p.characterId, p.room ?? null, p.llm);
-        results.push({ type: 'tool_result', tool_use_id: b.id, content: look.text });
-        if (look.image && images.length === 0) images.push(look.image);
+        // One picture per response: a second look() in it gets the list only.
+        const r = lookToolResult(b.id, look, { nested: p.llm.kind === 'anthropic', withImage: !lookImageSent });
+        if (look.image) lookImageSent = true;
+        results.push(r.result);
+        if (r.sibling) images.push(r.sibling);
       } else if (isWebTool(b.name)) {
         if (!ws) {
           ws = getChatWebSession(p.characterId, resolveWebSearchSettings(p.config));
@@ -1220,16 +1224,20 @@ async function sendChatMessageImpl(
 
       messages.push({ role: 'assistant', content: res.content });
       const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
-      /** 261104 SeiLink: look() pictures, sent beside the tool_results. */
+      /** 261104 SeiLink: look() pictures for a provider that takes them beside the tool_results. */
       const lookImages: RoomImage[] = [];
+      let lookImageSent = false;
       for (const toolUse of toolUses) {
         let note: string;
         if (toolUse.name === LOOK_TOOL_NAME) {
           // Her own room (roomContext.ts). One picture per hop is plenty; a
           // second look() in the same response gets the list only.
           const look = await runLook(args.characterId, prep.room, llm);
-          note = look.text;
-          if (look.image && lookImages.length === 0) lookImages.push(look.image);
+          const r = lookToolResult(toolUse.id, look, { nested: llm.kind === 'anthropic', withImage: !lookImageSent });
+          if (look.image) lookImageSent = true;
+          toolResults.push(r.result);
+          if (r.sibling) lookImages.push(r.sibling);
+          continue;
         } else if (toolUse.name === 'launch') {
           launchCalled = true;
           const game = String((toolUse.input as { game?: string })?.game ?? 'minecraft');

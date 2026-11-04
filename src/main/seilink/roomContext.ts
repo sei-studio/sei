@@ -26,14 +26,8 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type Anthropic from '@anthropic-ai/sdk';
-import {
-  describeRoom,
-  resolveRoomTime,
-  roomTimeAt,
-  SEILINK_ROOM_FORMAT,
-  type RoomPresetManifest,
-  type RoomState,
-} from '../../shared/seilinkRoom';
+import { describeRoom, resolveRoomTime, roomTimeAt, SEILINK_ROOM_FORMAT, type RoomState } from '../../shared/seilinkRoom';
+import { parseRoomManifest, sanitizeRoomState } from '../../shared/seilinkValidate';
 import type { RoomContext, RoomSource } from './types';
 import { renderRoomImage, type RoomImage } from './roomRender';
 
@@ -197,7 +191,7 @@ export async function lookAtRoom(ctx: RoomContext, opts: { vision: 'yes' | 'no' 
   } else {
     try {
       image = await renderRoomImage(ctx, { now });
-      note = 'The picture shows your room as the player sees it, without you in it.';
+      note = 'The picture shows your room right now, without you in it. It came to you, not to the player.';
     } catch (err) {
       console.warn(`[seilink] look() render failed: ${(err as Error).message}`);
       note = 'The picture did not load this time, so this list is what you know about it.';
@@ -206,18 +200,41 @@ export async function lookAtRoom(ctx: RoomContext, opts: { vision: 'yes' | 'no' 
   return { text: `${head} ${note}`, image };
 }
 
-/** The image block that rides beside the tool_result (see lookResultContent). */
+/** The picture as an image block (see lookToolResult). */
 export function roomImageBlock(image: RoomImage): Anthropic.Messages.ImageBlockParam {
   return { type: 'image', source: { type: 'base64', media_type: image.mediaType, data: image.data.toString('base64') } };
 }
 
 /**
- * The picture goes in the SAME user message as the tool_results, after them,
- * not inside the tool_result: every provider mapper (OpenAI-compatible,
- * Gemini, Ollama, the ChatGPT Responses wire) carries a sibling image block,
- * while the OpenAI-compatible mapper flattens tool_result content to a
- * string. Draw!'s self-look uses the same shape.
+ * Where the picture rides. Measured in the 261104 probe (Haiku 5.5, n=10
+ * look() turns each way): as a sibling block in the user message she read
+ * it as something the player sent ("oh cool, you can see it!", 4 of 10),
+ * and labelling it in text made her talk about the label. Inside the
+ * tool_result, where Anthropic accepts image content, that went to 0 of 5.
+ *
+ * So `nested` (an Anthropic backend: cloud proxy or BYOK) puts the picture
+ * inside the tool_result. Every other provider gets it as a sibling block
+ * after the tool_results in the same user message: the OpenAI-compatible
+ * mapper flattens tool_result content to a string (base64 as text), while
+ * every mapper carries a sibling image (OpenAI-compatible, Gemini, Ollama,
+ * the ChatGPT Responses wire). Draw!'s self-look uses the sibling shape.
  */
+export function lookToolResult(
+  toolUseId: string,
+  look: RoomLook,
+  opts: { nested: boolean; withImage?: boolean },
+): { result: Anthropic.Messages.ToolResultBlockParam; sibling: RoomImage | null } {
+  const image = opts.withImage === false ? null : look.image;
+  if (image && opts.nested) {
+    return {
+      result: { type: 'tool_result', tool_use_id: toolUseId, content: [{ type: 'text', text: look.text }, roomImageBlock(image)] },
+      sibling: null,
+    };
+  }
+  return { result: { type: 'tool_result', tool_use_id: toolUseId, content: look.text }, sibling: image };
+}
+
+/** A user message's content: the tool_results, then any sibling pictures. */
 export function lookResultContent(
   toolResults: Anthropic.Messages.ToolResultBlockParam[],
   images: RoomImage[],
@@ -251,11 +268,12 @@ export function devRoomSource(jsonPath: string): RoomSource | null {
       const cfg = JSON.parse(readFileSync(abs, 'utf8')) as DevRoomFile;
       if (Array.isArray(cfg.characters) && !cfg.characters.includes(characterId)) return null;
       const packDir = path.resolve(base, cfg.packDir);
-      const manifest = JSON.parse(readFileSync(path.join(packDir, 'manifest.json'), 'utf8')) as RoomPresetManifest;
-      const state =
-        typeof cfg.state === 'string'
-          ? (JSON.parse(readFileSync(path.resolve(base, cfg.state), 'utf8')) as RoomState)
-          : (cfg.state ?? { version: 1, preset: manifest.id, time: 'auto', slots: {}, items: [], avatar: { kind: 'sei' } });
+      // The same validation the host's pack loader runs, so the stub cannot
+      // feed the prompt or the renderer anything a real pack could not.
+      const manifest = parseRoomManifest(JSON.parse(readFileSync(path.join(packDir, 'manifest.json'), 'utf8')));
+      if (!manifest) throw new Error(`invalid room manifest in ${packDir}`);
+      const rawState = typeof cfg.state === 'string' ? JSON.parse(readFileSync(path.resolve(base, cfg.state), 'utf8')) : cfg.state;
+      const state = sanitizeRoomState(manifest, rawState ?? {});
       return { manifest, state, packDir };
     },
     // Read fresh every turn, so there is nothing to announce.
