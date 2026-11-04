@@ -283,6 +283,19 @@ and thumbnails all use the same plan).
   one part are ranked by height and get stacked z bands. Lip layers are baked
   into the renderer's cached composites (no per-frame cost) and have no glow
   of their own; the picker ignores a lip outside its polygon.
+- Tuck (261105, Shawn: "the items are in front of shelf, put shelf in
+  front"): an item's opaque base ends about 4 px (sprite px) above its
+  contact, so an item at the front of a top used to end exactly on the
+  plank's front edge and read as perched in front of it. Now a lipped top's
+  contact may reach `LIP_TUCK` (5 canvas px) into the lip (`AreaSurface.poly`
+  is the traced `face` stretched forward, back edge fixed), and every item
+  on a lipped top is cut to above the lip's top edge minus `KEEP_LIFT`
+  (`ItemLayer.clip` = `AreaSurface.keep`, from `lipKeep`), so the plank's
+  front outline always draws over its base and nothing shows on the front
+  face or under a thin plank. The renderer (`roomCompose`), look()
+  (`keepInside`), the picker and the drag ghost (CSS `clip-path` on the
+  sprite, lift shadow on its wrapper) all apply the cut. Only the lip's TOP
+  edge matters for the cut; the guide still glows the traced face.
 - `sink` (canvas px, a bed or a cushion): items on it are drawn `sink x
   scale` lower, their base fading out just under the contact, with a soft
   contact shadow as wide as the base (`sinkLook`, `contactShadow`,

@@ -86,8 +86,8 @@ export class RoomPicker {
         continue;
       }
       if (l.kind === 'slot' && !slots.has(l.slot)) continue;
-      // A lip is its part only inside the lip.
-      if (l.kind === 'slot' && l.clip && !l.clip.some((p) => pointInPolygon(p, x, y))) continue;
+      // A lip is its part only inside the lip; an item on a lipped top only above the lip.
+      if (l.clip && !l.clip.some((p) => pointInPolygon(p, x, y))) continue;
       const map = this.maps.get(resolve(l.frame.src));
       if (!map) continue;
       const rect = l.kind === 'slot' ? (l.box ?? [0, 0, manifest.canvas[0], manifest.canvas[1]]) : itemRect(l, [map.nw, map.nh]);

@@ -5,7 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { defaultRoomState, type RoomComponent, type RoomPresetManifest, type RoomState } from './seilinkRoom';
+import { defaultRoomState, type RoomComponent, type RoomPolygon, type RoomPresetManifest, type RoomState } from './seilinkRoom';
 import { roomDrawPlan, sinkKeep, sinkLook, sunkRect, type ItemLayer, type SlotLayer } from './seilinkDraw';
 import { parseRoomManifest, sanitizeRoomState } from './seilinkValidate';
 import {
@@ -14,7 +14,11 @@ import {
   depthOnSurface,
   END_INSET,
   fitsSurface,
+  KEEP_LIFT,
+  LIP_TUCK,
+  lipKeep,
   placedItemZ,
+  pointInPolygon,
   placementRegions,
   snapSpot,
   spotValid,
@@ -101,9 +105,23 @@ describe('band snapping', () => {
     const above = snapSpot(R, books, 300, at(440), { fit });
     expect(above).toMatchObject({ x: 300, surface: 1 });
     expect(contactY(R, books, above)).toBeCloseTo(470, 0);
+    // Below it: at its front, LIP_TUCK px into the lip, so the base tucks behind it.
     const below = snapSpot(R, books, 300, at(500), { fit });
     expect(below).toMatchObject({ x: 300, surface: 1 });
-    expect(contactY(R, books, below)).toBeCloseTo(480, 0);
+    expect(contactY(R, books, below)).toBeCloseTo(480 + LIP_TUCK, 0);
+  });
+
+  it('lets the contact of a lipped top reach LIP_TUCK px into the lip, the traced face unchanged', () => {
+    const top = R.surfaces[1];
+    if (top.kind !== 'area') throw new Error('plank 2 is an area');
+    expect(top.face).toEqual(plank2.area);
+    expect(top.across[1] - top.across[0]).toBeCloseTo(20 + LIP_TUCK);
+    expect(fitsSurface(top, 300, 480 + LIP_TUCK, topKeep({ w: 120, foot: 10 }))).toBe(true);
+    expect(fitsSurface(top, 300, 481 + LIP_TUCK)).toBe(false);
+    // The back edge stays where it was (no floating at the back), and a top without a lip gets no reach.
+    expect(fitsSurface(top, 300, 459)).toBe(false);
+    const bed = R.surfaces[2];
+    expect(bed.kind === 'area' && bed.poly).toEqual(bed.kind === 'area' && bed.face);
   });
 
   it('keeps a minimal end margin so nothing hangs off', () => {
@@ -200,6 +218,47 @@ describe('lip occlusion order', () => {
     expect(z.slice(1, 6).every((v) => v >= 40 && v < 41)).toBe(true);
   });
 
+  it('draws the lip after every item on its top, and cuts those items above its top edge', () => {
+    const st = state([
+      { id: 'books', x: 300, y: at(474) }, // plank 2, middle
+      { id: 'vase', x: 200, y: 480 + LIP_TUCK + 4 }, // plank 2, at its very front (tucked)
+      { id: 'books', x: 200, y: at(680) }, // the bed: no lip
+    ]);
+    const plan = roomDrawPlan(manifest, st, 'day', { avatar: false });
+    const lipAt = plan.layers.findIndex((l) => l.kind === 'slot' && l.clip?.[0] === plank2.lip);
+    const items = plan.layers.map((l, i) => [l, i] as const).filter(([l]) => l.kind === 'item');
+    expect(lipAt).toBeGreaterThan(0);
+    const onPlank = items.filter(([l]) => (l as ItemLayer).index < 2);
+    expect(onPlank).toHaveLength(2);
+    for (const [l, i] of onPlank) {
+      expect(i, (l as ItemLayer).component.id).toBeLessThan(lipAt);
+      const clip = (l as ItemLayer).clip!;
+      expect(clip).toEqual([lipKeep(plank2.lip as RoomPolygon)]);
+      // Kept: just over the outline above the lip, the item's body. Cut: the lip and under the plank.
+      expect(pointInPolygon(clip[0], 300, 480 - KEEP_LIFT - 0.5)).toBe(true);
+      expect(pointInPolygon(clip[0], 300, 300)).toBe(true);
+      expect(pointInPolygon(clip[0], 300, 481)).toBe(false);
+      expect(pointInPolygon(clip[0], 300, 495)).toBe(false);
+      // Past the plank's ends its top edge carries on.
+      expect(pointInPolygon(clip[0], 520, 481)).toBe(false);
+      expect(pointInPolygon(clip[0], 520, 470)).toBe(true);
+    }
+    const bedItem = items.find(([l]) => (l as ItemLayer).index === 2)![0] as ItemLayer;
+    expect(bedItem.clip).toBeUndefined();
+  });
+
+  it('traces the top edge of a lip that tapers, and of a sloped one', () => {
+    const slope = lipKeep(plank1.lip as RoomPolygon);
+    expect(pointInPolygon(slope, 300, 320 - KEEP_LIFT - 0.5)).toBe(true);
+    expect(pointInPolygon(slope, 300, 321)).toBe(false);
+    // A gamer-style lip whose bottom follows the plank: only the top edge matters.
+    const taper: [number, number][] = [[0, 100], [400, 140], [400, 150], [200, 135], [0, 112]];
+    const k = lipKeep(taper);
+    expect(pointInPolygon(k, 200, 120 - KEEP_LIFT - 0.5)).toBe(true);
+    expect(pointInPolygon(k, 200, 121)).toBe(false);
+    expect(pointInPolygon(k, 200, 200)).toBe(false);
+  });
+
   it('adds a lip only for a top that holds something', () => {
     expect(names(state([{ id: 'books', x: 300, y: at(474) }]))).toEqual(['shell', 'shelf', `books@${at(474)}`, 'lip:480', 'bed']);
     expect(names(state([]))).toEqual(['shell', 'shelf', 'bed']);
@@ -279,8 +338,9 @@ describe('the bundled cozy pack', () => {
   it('gives every plank a band about 20 px deep and lands a drop 40 px above a plank on it', () => {
     for (const [i, s] of r.surfaces.entries()) {
       if (s.kind !== 'area' || s.slot !== 'shelf') continue;
-      expect(s.across[1] - s.across[0], `plank ${i}`).toBeGreaterThan(18);
-      expect(s.across[1] - s.across[0], `plank ${i}`).toBeLessThan(28);
+      // The traced face, plus the reach into the lip.
+      expect(s.across[1] - s.across[0] - LIP_TUCK, `plank ${i}`).toBeGreaterThan(18);
+      expect(s.across[1] - s.across[0] - LIP_TUCK, `plank ${i}`).toBeLessThan(28);
     }
     // Middle plank at x 300: back edge ~445. Held 40 px above it.
     const s = snapSpot(r, cbooks, 300, 405 + 14, { fit: cfit, prefer: 0 });
