@@ -2202,7 +2202,8 @@ export interface RendererApi {
   onSeilinkRoomChanged?(cb: (characterId: string) => void): Unsubscribe;
   seilinkOpenPreview?(): Promise<boolean>;
   /** Desktop host: she moves in, her room becomes the wallpaper (SeiLink on: Labs setting or dev flag). */
-  seilinkHostStart?(characterId: string): Promise<SeilinkHostStatus>;
+  /** M4: `firstRoom` = the move-in sheet just set up her first room (analytics only). */
+  seilinkHostStart?(characterId: string, opts?: { firstRoom?: boolean }): Promise<SeilinkHostStatus>;
   seilinkHostStop?(): Promise<SeilinkHostStatus>;
   seilinkHostStatus?(): Promise<SeilinkHostStatus>;
   onSeilinkHostStatus?(cb: (status: SeilinkHostStatus) => void): Unsubscribe;

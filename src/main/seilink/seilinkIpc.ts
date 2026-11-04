@@ -36,9 +36,10 @@ export function registerSeilinkIpc(opts: { preloadPath: string; rendererTarget: 
   });
 
   // Desktop host. Start throws SEILINK_DISABLED while SeiLink is off (gate.ts).
-  ipcMain.handle(IpcChannel.seilink.hostStart, async (_e, characterId: unknown) => {
+  ipcMain.handle(IpcChannel.seilink.hostStart, async (_e, characterId: unknown, opts: unknown) => {
     if (!isRoomCharacterId(characterId)) throw new Error('SEILINK_BAD_ID');
-    return startSeilinkHost(characterId);
+    const firstRoom = typeof opts === 'object' && opts !== null && (opts as { firstRoom?: unknown }).firstRoom === true;
+    return startSeilinkHost(characterId, { firstRoom });
   });
   ipcMain.handle(IpcChannel.seilink.hostStop, async () => stopSeilinkHost('user_stop'));
   ipcMain.handle(IpcChannel.seilink.hostStatus, async () => seilinkHostStatus());

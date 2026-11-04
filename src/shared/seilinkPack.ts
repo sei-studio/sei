@@ -35,6 +35,8 @@ export interface SeilinkRoomPayload {
   state: RoomState;
   /** null while the preset's pack is not installed. */
   pack: SeilinkPack | null;
+  /** M4: a room was saved for her (false = the default room, never set up). */
+  saved?: boolean;
 }
 
 /** Dev flag info for the preview (null fields when the flag is off). */

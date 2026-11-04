@@ -422,7 +422,7 @@ const api: RendererApi = {
     return () => ipcRenderer.off(IpcChannel.seilink.roomChanged, handler);
   },
   seilinkOpenPreview: () => ipcRenderer.invoke(IpcChannel.seilink.openPreview),
-  seilinkHostStart: (characterId) => ipcRenderer.invoke(IpcChannel.seilink.hostStart, characterId),
+  seilinkHostStart: (characterId, opts) => ipcRenderer.invoke(IpcChannel.seilink.hostStart, characterId, opts),
   seilinkHostStop: () => ipcRenderer.invoke(IpcChannel.seilink.hostStop),
   seilinkHostStatus: () => ipcRenderer.invoke(IpcChannel.seilink.hostStatus),
   onSeilinkHostStatus: (cb) => {

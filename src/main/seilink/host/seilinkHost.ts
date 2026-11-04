@@ -17,6 +17,9 @@
  * choke point (endSession), seilink_attach_failed {failure_class} once per
  * class per session. seilink_ended is deliberately NOT a playtime event
  * (a wallpaper runs for hours; see docs/agents/seilink-host.md).
+ * M4: seilink_moved_in {character_id, swapped, preset, first_room} when the
+ * user moves someone in (not on a restore), seilink_moved_out
+ * {character_id, via} when the user moves her out from the app or the dock.
  */
 import { app } from 'electron';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
@@ -162,7 +165,10 @@ function capture(event: string, props: Record<string, unknown>): void {
  * She moves in. Throws SEILINK_DISABLED (flag off), SEILINK_BAD_ID, ACCOUNT_SWITCHING.
  * An unsupported install returns the unsupported status instead of throwing.
  */
-export async function startSeilinkHost(characterId: string, opts?: { restored?: boolean }): Promise<SeilinkHostStatus> {
+export async function startSeilinkHost(
+  characterId: string,
+  opts?: { restored?: boolean; /** The move-in sheet set up her first room. */ firstRoom?: boolean },
+): Promise<SeilinkHostStatus> {
   if (!seilinkEnabled()) throw new Error('SEILINK_DISABLED');
   if (!isRoomCharacterId(characterId)) throw new Error('SEILINK_BAD_ID');
   const a = availability();
@@ -172,10 +178,18 @@ export async function startSeilinkHost(characterId: string, opts?: { restored?: 
   }
   if (session?.characterId === characterId && !session.ending) return status;
   const guard = beginSessionStart();
+  const swapped = session !== null;
   if (session) await endSession('replaced');
   if (!guard.stillValid()) throw new Error('ACCOUNT_SWITCHING');
   if (!opts?.restored) {
     await updateConfig((c) => ({ ...c, seilink_moved_in: { character_id: characterId, moved_in_at: Date.now() } }));
+    const room = await getRoomPayload(characterId).catch(() => null);
+    capture('seilink_moved_in', {
+      character_id: characterId,
+      swapped,
+      preset: room?.state.preset ?? null,
+      first_room: opts?.firstRoom === true,
+    });
   }
   if (!guard.stillValid()) throw new Error('ACCOUNT_SWITCHING');
   await openSession(characterId, opts?.restored === true);
@@ -183,7 +197,14 @@ export async function startSeilinkHost(characterId: string, opts?: { restored?: 
 }
 
 /** She moves out (the user's stop). Clears the saved move-in. */
-export async function stopSeilinkHost(reason: SeilinkEndReason = 'user_stop'): Promise<SeilinkHostStatus> {
+export async function stopSeilinkHost(
+  reason: SeilinkEndReason = 'user_stop',
+  via: 'app' | 'dock' = 'app',
+): Promise<SeilinkHostStatus> {
+  if (reason === 'user_stop') {
+    const id = session?.characterId ?? (await loadConfig().catch(() => null))?.seilink_moved_in?.character_id ?? null;
+    if (id) capture('seilink_moved_out', { character_id: id, via });
+  }
   if (session) await endSession(reason);
   if (reason === 'user_stop' || reason === 'disabled' || reason === 'character_removed') {
     await updateConfig((c) => (c.seilink_moved_in ? { ...c, seilink_moved_in: null } : c)).catch((err) =>

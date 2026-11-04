@@ -60,7 +60,7 @@ export async function getRoomPayload(characterId: string): Promise<SeilinkRoomPa
   const preset = coarseState(raw).preset;
   const pack = await loadPack(preset);
   const state = pack ? sanitizeRoomState(pack.manifest, raw ?? defaultRoomState(preset)) : coarseState(raw);
-  return { characterId, state, pack: pack ? publicPack(pack) : null };
+  return { characterId, state, pack: pack ? publicPack(pack) : null, saved: raw !== null };
 }
 
 export async function getRoomState(characterId: string): Promise<RoomState> {
