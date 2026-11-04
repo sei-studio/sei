@@ -1,0 +1,51 @@
+.root {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+
+/* The room canvas box (cover crops it, contain letterboxes it). Isolated so
+   the glow's screen blend only touches the room and the avatar. */
+.scene {
+  position: absolute;
+  isolation: isolate;
+  pointer-events: none;
+}
+
+.layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.glow {
+  mix-blend-mode: screen;
+}
+
+.hidden {
+  visibility: hidden;
+}
+
+/* Bottom centre anchored at the manifest's avatar point. */
+.avatar {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.overlay > * {
+  pointer-events: auto;
+}

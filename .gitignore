@@ -73,3 +73,5 @@ native/stardew-mod/**/obj/
 # Local planning scratch (the old GSD tree, removed 261030). Durable design
 # docs go in docs/design/.
 .planning/
+seilink-dev-packs/
+seilink-shots/
