@@ -303,7 +303,7 @@ and thumbnails all use the same plan).
   `cutToPolygons` for lips).
 - Labelling: `scripts/seilink-region-overlay.mjs --bands <part>` measures
   plank tops and lips from the art and prints `surfaceTops` for a draft;
-  logs, stumps and beds are traced by hand with `--grid 25 --crop`; the
+  logs and beds are traced by hand with `--grid 25 --crop`; the
   overlay draws tops (orange), lips (cyan hatch) and `sink N`; `--merge`
   writes the draft into the manifest. The editor's drag guide glows the top
   under the pointer and draws the lip over the drag ghost.
@@ -311,13 +311,14 @@ and thumbnails all use the same plan).
   shell (`--without bed,chair,...`) and every part blocks its own silhouette,
   so removing an optional part frees its spot. Gamer's black planks need
   `--bands black_wall_shelves --dark 60`; its bed top and forest's log ridges
-  and stump ellipse are hand traced. Forest has no wall (a poster on the tree
+  are hand traced. Forest has no wall (a poster on the tree
   read wrong); its horizon is 300, not the distant hills, because the art's
   props barely shrink with depth (a far backpack ends up about half size,
   which matches the campfire ring's foreshortening). The log also blocks the
   ground behind Sei's seat (x 1040-1560): items there vanished behind her.
-  The stump top sits behind the default Sei's head; it is labelled for
-  other avatars. Item `foot` = the sprite's first opaque row minus 3 (the
+  The tree stump has no top (261105): it sits behind Sei's head, so decor
+  placed there never showed; a room saved with an item on it settles onto
+  the log. Item `foot` = the sprite's first opaque row minus 3 (the
   cozy convention).
 
 ## Gotchas

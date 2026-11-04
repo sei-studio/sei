@@ -370,7 +370,7 @@ describe('the bundled gamer and forest packs (261105)', () => {
     expect(m).not.toBeNull();
     const r = placementRegions(m, defaultRoomState(m.id));
     expect(r.labelled && r.perspective).toBe(true);
-    expect(r.surfaces.length).toBeGreaterThan(2);
+    expect(r.surfaces.length).toBeGreaterThanOrEqual(2);
     expect(r.surfaces.every((s) => s.kind === 'area')).toBe(true);
     expect(m.components.some((c) => c.surfaces || c.surfaceLines || c.surfaceAreas)).toBe(false);
     expect(m.components.filter((c) => c.slot === 'item').every((c) => (c.foot ?? 0) > 0)).toBe(true);
@@ -387,10 +387,27 @@ describe('the bundled gamer and forest packs (261105)', () => {
     }
   });
 
+  it('forest: a mug saved on the old stump top moves to the nearest spot on the log', () => {
+    const m = load('forest');
+    const st = defaultRoomState(m.id);
+    const r = placementRegions(m, st);
+    const mug = m.components.find((c) => c.id === 'camp_mug')!;
+    // The stump top ran x 1175..1391 at y ~897..935; the mug's foot is 4.
+    const out = sanitizeRoomState(m, { ...st, items: [{ id: 'camp_mug', x: 1283, y: 920 }] }).items;
+    expect(out).toHaveLength(1);
+    expect(out[0]).not.toEqual({ id: 'camp_mug', x: 1283, y: 920 });
+    expect(slotOf(r, m, out[0])).toBe('chair');
+    expect(spotValid(r, 'surface', out[0].x, out[0].y, spriteFit(r, mug, 1))).toBe(true);
+    // The nearer ridge (the left one, x 830..1130), at its right end.
+    expect(out[0].x).toBeLessThan(1130);
+    expect(out[0].x).toBeGreaterThan(1000);
+  });
+
   it('forest: the mug stays on the log, floor items stay on open ground', () => {
     const m = load('forest');
     const { r, items, out } = settled(m);
-    expect(r.surfaces.map((s) => s.slot)).toEqual(['shelf', 'chair', 'chair']);
+    // Only the log's two ridges: the stump top sat behind Sei's head, so decor there never showed (261105).
+    expect(r.surfaces.map((s) => s.slot)).toEqual(['chair', 'chair']);
     for (const [i, it] of out.entries()) {
       expect(it, it.id).toEqual(items[i]);
       const c = m.components.find((x) => x.id === it.id)!;
