@@ -45,6 +45,18 @@ if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('ches
   void import('./components/DevFacepackPreview').then(({ DevFacepackPreview }) => {
     root.render(<DevFacepackPreview />);
   });
+} else if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('seilinkhost')) {
+  // Dev-only SeiLink wallpaper page with the dock and a bubble (261104, M4),
+  // over a fake host bridge. See DevHostPreview for params.
+  void import('./components/seilink/host/DevHostPreview').then(({ DevHostPreview }) => {
+    root.render(<DevHostPreview />);
+  });
+} else if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('seilink')) {
+  // Dev-only SeiLink room preview (261104): main's dev window (unpackaged +
+  // SEI_SEILINK_PACKS) or a browser tab with &pack=<url>. See DevRoomPreview.
+  void import('./components/seilink/DevRoomPreview').then(({ DevRoomPreview }) => {
+    root.render(<DevRoomPreview />);
+  });
 } else if (new URLSearchParams(window.location.search).has('overlay')) {
   document.documentElement.style.background = 'transparent';
   document.body.style.background = 'transparent';

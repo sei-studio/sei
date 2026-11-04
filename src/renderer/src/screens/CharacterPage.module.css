@@ -449,6 +449,15 @@
   color: var(--red);
 }
 
+/* A short status line under a menu item (SeiLink: her room stopped). */
+.settingsNote {
+  max-width: 220px;
+  padding: 2px var(--space-md) var(--space-xs);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
 .settingsItemDanger:hover,
 .settingsItemDanger:focus-visible {
   background: color-mix(in srgb, var(--red) 12%, transparent);

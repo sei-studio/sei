@@ -19,7 +19,7 @@
  * Source: docs/design/UI-REDESIGN-PARTY.md §4.6.
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useT, t as tGlobal } from '../lib/i18n';
 import { useUiStore } from '../lib/stores/useUiStore';
@@ -28,6 +28,8 @@ import { useDataStore } from '../lib/stores/useDataStore';
 import { useChatStore } from '../lib/stores/useChatStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
+import { movedInId, useSeilinkStore } from '../lib/stores/useSeilinkStore';
+import { moveInFailed, needsMoveInSheet } from '../lib/seilink/moveIn';
 import { Button } from '../components/Button';
 import { Toggle } from '../components/Toggle';
 import { ModalShell, ModalFooter } from '../components/ModalShell';
@@ -55,6 +57,10 @@ import { ownVoiceOf, sharedVoiceIdOf } from '@shared/voiceIds';
 import { sharedVoiceMetadataToSave } from '../lib/sharedVoice';
 import { voicePitchRate } from '@shared/voicePitch';
 import styles from './CharacterPage.module.css';
+
+// SeiLink room editor (261104): dev flag only, loaded on first open.
+const CompanionRoomEditor = lazy(() => import('../components/seilink/CompanionRoomEditor'));
+const MoveInSheet = lazy(() => import('../components/seilink/MoveInSheet'));
 
 function fmtMs(ms: number): string {
   if (ms <= 0) return '-';
@@ -158,6 +164,24 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const [knowledgeOpen, setKnowledgeOpen] = useState<boolean>(false);
   // 260909 Card image popup (versions + regenerate) — owned characters only.
   const [cardImageOpen, setCardImageOpen] = useState<boolean>(false);
+  // 261104 SeiLink (M4): the room items exist only while SeiLink is on
+  // (Settings > Labs, or the dev flag), so most users never see them.
+  const seilinkOn = useSeilinkStore((s) => s.availability?.enabled === true);
+  const livingId = useSeilinkStore((s) => movedInId(s.status));
+  // Her host kept crashing and the supervisor gave up (state failed, for her).
+  const seilinkFailedHere = useSeilinkStore((s) => s.status.state === 'failed' && s.status.characterId === id);
+  const pendingEditor = useSeilinkStore((s) => s.pendingEditor);
+  const [roomEditorOpen, setRoomEditorOpen] = useState<boolean>(false);
+  const [moveInOpen, setMoveInOpen] = useState<boolean>(false);
+  // A move in / out is on its way: a second click waits for it (main also queues them).
+  const moveBusyRef = useRef(false);
+  const [moveBusy, setMoveBusy] = useState<boolean>(false);
+  // The dock's "edit room" lands here (App.tsx navigates to her page first).
+  useEffect(() => {
+    if (!pendingEditor || pendingEditor !== id) return;
+    useSeilinkStore.getState().clearEditor();
+    setRoomEditorOpen(true);
+  }, [pendingEditor, id]);
   const settingsRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!settingsOpen) return;
@@ -468,6 +492,31 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     if (latest && (latest.description ?? '').trim() !== '') {
       setSharePhase('confirm');
       setShareConfirm('going_public');
+    }
+  };
+
+  // 261104 SeiLink M4: move her onto the desktop (the sheet the first time,
+  // or when someone else moves out), or off it.
+  const onMoveInClick = async (): Promise<void> => {
+    if (moveBusyRef.current) return;
+    moveBusyRef.current = true;
+    setMoveBusy(true);
+    try {
+      if (livingId === id) {
+        await sei.seilinkHostStop?.().catch(() => null);
+        return;
+      }
+      const room = await sei.seilinkRoomGet?.(id).catch(() => null);
+      if (needsMoveInSheet({ saved: room?.saved === true, movedInId: livingId, characterId: id })) {
+        setMoveInOpen(true);
+        return;
+      }
+      const status = await sei.seilinkHostStart?.(id).catch(() => null);
+      // A start that did not take opens the sheet, which has the retry and the error line.
+      if (!status || moveInFailed(status)) setMoveInOpen(true);
+    } finally {
+      moveBusyRef.current = false;
+      setMoveBusy(false);
     }
   };
 
@@ -848,6 +897,39 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                     >
                       {t('Knowledge')}
                     </button>
+                    {seilinkOn ? (
+                      <>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={styles.settingsItem}
+                          disabled={moveBusy}
+                          aria-busy={moveBusy}
+                          onClick={() => {
+                            setSettingsOpen(false);
+                            void onMoveInClick();
+                          }}
+                        >
+                          {livingId === character.id ? t('Move off desktop') : t('Move onto desktop')}
+                        </button>
+                        {seilinkFailedHere && livingId !== character.id ? (
+                          <div className={styles.settingsNote} role="note">
+                            {t('Her desktop room kept stopping, so it was turned off. Move her in to try again.')}
+                          </div>
+                        ) : null}
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={styles.settingsItem}
+                          onClick={() => {
+                            setSettingsOpen(false);
+                            setRoomEditorOpen(true);
+                          }}
+                        >
+                          {t('Edit room')}
+                        </button>
+                      </>
+                    ) : null}
                     {canShare ? (
                       <button
                         type="button"
@@ -912,6 +994,21 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           characterName={character.name}
           onClose={() => setKnowledgeOpen(false)}
         />
+      ) : null}
+      {roomEditorOpen ? (
+        <Suspense fallback={null}>
+          <CompanionRoomEditor characterId={character.id} onClose={() => setRoomEditorOpen(false)} />
+        </Suspense>
+      ) : null}
+      {moveInOpen ? (
+        <Suspense fallback={null}>
+          <MoveInSheet
+            characterId={character.id}
+            name={character.name}
+            otherName={livingId && livingId !== character.id ? (characters.find((c) => c.id === livingId)?.name ?? null) : null}
+            onClose={() => setMoveInOpen(false)}
+          />
+        </Suspense>
       ) : null}
       {cardImageOpen ? (
         <PortraitVersionsModal

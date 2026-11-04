@@ -23,12 +23,18 @@
 import './remoteDebugGuard';
 import './velopackBoot';
 import { scheduleVelopackMigration } from './velopackMigration';
-import { app, BrowserWindow, net, session, systemPreferences } from 'electron';
+import { app, BrowserWindow, ipcMain, net, session, systemPreferences } from 'electron';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { closeSplashWindow, createMainWindow, createSplashWindow } from './windowChrome';
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { registerFacepackIpc } from './facepack/facepackIpc';
+import { openSeilinkPreview, registerSeilinkIpc } from './seilink/seilinkIpc';
+import { initSeilinkHost, restoreSeilinkHost, stopSeilinkHostForQuit } from './seilink/host/seilinkHost';
+import { registerSeilinkProtocol, seilinkDevEnabled, SEILINK_SCHEME_PRIVILEGES } from './seilink/packs';
+import { devRoomSource, setGameSurfaceProbe, setRoomSource } from './seilink/roomContext';
+import { seilinkAvailability } from './seilink/gate';
+import { roomSource } from './seilink/roomStore';
 import { isAnalyticsActive, shutdownAnalytics, capture, captureAppQuit, noteSurface } from './analytics';
 import { reportOnboardingAbandoned } from './onboardingFunnel';
 import { initCrashReporting, appOpenedCrashProps, markStartFailed } from './crashReporting';
@@ -104,7 +110,9 @@ import { IpcChannel, lanHostWarning, forgeHostBlock, FORGE_HOST_BLOCKED, type La
 // Register the `sei-portrait://` privileged scheme that serves locally-stored
 // character portraits to the renderer. MUST run before app 'ready'; the request
 // handler is attached in bootstrap() once userData/paths are resolved.
-registerPortraitScheme();
+// sei-room:// (261104, SeiLink room art packs) is registered in the same call:
+// Electron takes only one registerSchemesAsPrivileged per app.
+registerPortraitScheme([{ ...SEILINK_SCHEME_PRIVILEGES, privileges: { ...SEILINK_SCHEME_PRIVILEGES.privileges } }]);
 
 // Backseat (260728): ask Chromium for the macOS system-audio loopback path.
 // MEASURED NOT TO WORK on macOS 26.4 / Electron 42 / Chromium 148 — the track
@@ -136,6 +144,10 @@ const logger = {
 let mainWindow: BrowserWindow | null = null;
 // Boot safety (261031): the updater and the boot guard reach the window through this.
 setMainWindowGetter(() => mainWindow);
+/** bootstrap() has run (or is running). A second run throws, see openMainWindowAgain. */
+let bootstrapStarted = false;
+/** bootstrap() made its main window; before that, a reopen leaves it to bootstrap. */
+let firstWindowMade = false;
 // Startup splash (260728) — shown from whenReady, closed when the main window
 // first paints (or by the failsafe timer).
 let splashWindow: BrowserWindow | null = null;
@@ -226,6 +238,81 @@ function sweepVoiceCalls(reason: 'window_closed' | 'renderer_gone' | 'renderer_r
     .then((m) => m.clearAllBackseat(reason))
     .catch(() => {});
 }
+
+/** 261104 SeiLink: a click on her desktop wallpaper (or the dock), waiting for a main window to come up (macOS). */
+let pendingSeilinkOpen: { channel: string; characterId: string } | null = null;
+
+/** From the desktop: bring Sei forward and open her chat (a click on her) or her room editor (the dock). */
+function openFromSeilink(channel: string, characterId: string): void {
+  const w = mainWindow;
+  if (w && !w.isDestroyed()) {
+    if (w.isMinimized()) w.restore();
+    if (!w.isVisible()) w.show();
+    // The click landed in the host process, so Sei is not the active app.
+    if (process.platform === 'darwin') app.focus({ steal: true });
+    w.focus();
+    w.webContents.send(channel, characterId);
+    return;
+  }
+  // macOS keeps running with no window: make one, like a Dock click, and open the chat once
+  // its UI says it is listening (app:renderer-ready).
+  pendingSeilinkOpen = { channel, characterId };
+  if (process.platform === 'darwin') app.focus({ steal: true });
+  if (mainWindow === null) openMainWindowAgain();
+}
+
+/**
+ * macOS: the last window was closed and Sei kept running; the Dock icon or a
+ * click on her desktop room asks for a window again. Before the first
+ * bootstrap that is bootstrap(). After it, ONLY the window is made again:
+ * everything else bootstrap() set up is still live (the Supabase storage
+ * adapter, protocol handlers, every IPC handler, the bot supervisor), and
+ * running it a second time threw on the first of those (step 0,
+ * SUPABASE_CLIENT_ALREADY_CREATED; protocol.handle on an already handled
+ * scheme), so no window came back at all.
+ */
+function openMainWindowAgain(): void {
+  if (!bootstrapStarted) {
+    bootstrap().catch((err) => logger.error(`bootstrap failed: ${(err as Error).message}`));
+    return;
+  }
+  // Still booting: bootstrap makes the window (and the pending SeiLink open waits for it).
+  if (!firstWindowMade) return;
+  try {
+    reopenMainWindow();
+  } catch (err) {
+    logger.error(`reopen window failed: ${(err as Error).message}`);
+  }
+}
+
+function reopenMainWindow(): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    return;
+  }
+  const win = createMainWindow({ preloadPath: preloadPath(), indexHtmlUrlOrPath: rendererTarget() });
+  mainWindow = win;
+  wireMainWindowEvents(win);
+  installPopupFrameGuards(win);
+  // Auth pushes (and their replay on load) go to the new window.
+  void import('./auth/authState')
+    .then((m) => m.rebindAuthWindow(win))
+    .catch((err) => logger.warn(`auth window rebind failed: ${(err as Error).message}`));
+  logger.info('main window reopened');
+}
+
+function openSeilinkChat(characterId: string): void {
+  openFromSeilink(IpcChannel.seilink.openChat, characterId);
+}
+
+ipcMain.on(IpcChannel.app.rendererReady, (e) => {
+  const pending = pendingSeilinkOpen;
+  if (!pending || !mainWindow || mainWindow.isDestroyed() || e.sender !== mainWindow.webContents) return;
+  pendingSeilinkOpen = null;
+  mainWindow.webContents.send(pending.channel, pending.characterId);
+});
 
 /**
  * Wire the lifecycle listeners the main window needs (extracted 260728).
@@ -775,6 +862,7 @@ async function endGameSurfacesForQuit(): Promise<void> {
 }
 
 async function bootstrap(): Promise<void> {
+  bootstrapStarted = true;
   // 0-pre. Install marker (260926). MUST be the first thing bootstrap does:
   //        it tells a fresh install from an existing one by probing for Sei
   //        state under userData, which every later step starts creating. The
@@ -1061,6 +1149,7 @@ async function bootstrap(): Promise<void> {
   //    Attach the sei-portrait:// request handler first so the renderer can
   //    resolve <img src="sei-portrait://…"> the moment it loads.
   registerPortraitProtocol();
+  registerSeilinkProtocol();
   mainWindow = createMainWindow({
     preloadPath: preloadPath(),
     indexHtmlUrlOrPath: rendererTarget(),
@@ -1077,6 +1166,7 @@ async function bootstrap(): Promise<void> {
     },
   });
   wireMainWindowEvents(mainWindow);
+  firstWindowMade = true;
   // Startup popup (261027): lock the operator page's iframe to sei.gg/popup/,
   // send its links (and any window.open) to the default browser, and let it
   // be framed despite sei.gg's X-Frame-Options. See popupFrameGuards.ts.
@@ -1236,7 +1326,12 @@ async function bootstrap(): Promise<void> {
       getMainWindow: () => mainWindow,
       endVoiceCalls: endVoiceCallsFromMain,
       // 261013 (T120): the new account's sessions an app quit ended.
-      onScopeSwitched: () => void runPendingQuitNextSteps(),
+      onScopeSwitched: () => {
+        void runPendingQuitNextSteps();
+        // 261104 SeiLink: config is per profile; bring back whoever moved in on this one.
+        void restoreSeilinkHost();
+        void import('./seilink/desktopLines').then((m) => m.resetDesktopLineBudget()).catch(() => {});
+      },
     });
   }
 
@@ -1334,6 +1429,57 @@ async function bootstrap(): Promise<void> {
 
   // 261028 facepack pilot (dev flag only; handlers answer "disabled" otherwise).
   registerFacepackIpc({ preloadPath: preloadPath(), rendererTarget });
+
+  // 261104 SeiLink room: packs, room store IPC, dev preview (dev flag only:
+  // unpackaged + SEI_SEILINK_PACKS; SEI_SEILINK_PREVIEW=1 also opens it at boot).
+  registerSeilinkIpc({ preloadPath: preloadPath(), rendererTarget });
+  if (seilinkDevEnabled() && process.env.SEI_SEILINK_PREVIEW === '1') {
+    openSeilinkPreview({ preloadPath: preloadPath(), rendererTarget });
+  }
+  // 261104 SeiLink desktop host: her room as the live wallpaper, while
+  // SeiLink is on (Settings > Labs, or the dev flag; seilink/gate.ts).
+  // Restores whoever moved in on this profile (and mirrors the setting).
+  initSeilinkHost({
+    pushStatus: (status) => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcChannel.seilink.hostStatusChanged, status);
+    },
+    openChat: openSeilinkChat,
+    onDoubleClick: (characterId) => void import('./seilink/desktopLines').then((m) => m.onSeilinkPoke(characterId)),
+    openRoomEditor: (characterId) => openFromSeilink(IpcChannel.seilink.openRoomEditor, characterId),
+    pushAvailability: () => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcChannel.seilink.availabilityChanged, seilinkAvailability());
+    },
+  });
+  void restoreSeilinkHost();
+  // M4: her desktop lines (a reply to a double click, rare idle lines; seilink/desktopLines.ts).
+  void import('./seilink/desktopLines')
+    .then((m) => m.initDesktopLines({ occupied: (id) => onlineIds.has(id) || isCallActive(id), pushChatMessage }))
+    .catch((err) => console.warn(`[seilink] desktop lines not wired: ${(err as Error).message}`));
+  if (!app.isPackaged && process.env.SEI_SEILINK_SELFTEST) {
+    void import('./seilink/host/selfTest').then((m) => m.runSeilinkSelfTest({ getMainWindow: () => mainWindow }));
+  }
+  // 261104 SeiLink AI side (src/main/seilink/roomContext.ts): no room line and
+  // no look() while she is in chess, Draw! or a Backseat share (bot games
+  // arrive as inGame). The room source is the host's room store; it gives a
+  // companion a room only when a pack is installed.
+  void (async () => {
+    const [{ isChessActive }, { isDrawActive }, { getBackseatState }] = await Promise.all([
+      import('./chess/chessService'),
+      import('./draw/drawService'),
+      import('./backseat/backseatService'),
+    ]);
+    setGameSurfaceProbe((id) => isChessActive(id) || isDrawActive(id) || getBackseatState(id) !== null);
+  })().catch((err) => console.warn(`[seilink] game surface probe not wired: ${(err as Error).message}`));
+  {
+    // Dev only: unpackaged + SEI_SEILINK_ROOM=<room.json> ({packDir, state, characters}).
+    const devRoom = app.isPackaged ? '' : (process.env.SEI_SEILINK_ROOM ?? '').trim();
+    if (devRoom) {
+      setRoomSource(devRoomSource(devRoom));
+      console.log(`[seilink] dev room source: ${devRoom}`);
+    } else {
+      setRoomSource(roomSource);
+    }
+  }
 
   // 5. IPC handlers
   registerIpcHandlers({
@@ -1678,9 +1824,7 @@ async function bootstrap(): Promise<void> {
       });
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0 && mainWindow === null) {
-        bootstrap().catch((err) => logger.error(`re-bootstrap failed: ${(err as Error).message}`));
-      }
+      if (BrowserWindow.getAllWindows().length === 0 && mainWindow === null) openMainWindowAgain();
     });
   });
 
@@ -1741,6 +1885,9 @@ async function bootstrap(): Promise<void> {
     // be shut down after it (and backseat not at all), so their *_ended events
     // were lost on every quit. Bounded: their closing rows write to disk.
     await endGameSurfacesForQuit();
+    // 261104 SeiLink: take her off the desktop (seilink_ended app_quit before the flush; the
+    // move-in is kept, so she is back on the next start).
+    try { stopSeilinkHostForQuit(); } catch { /* best-effort */ }
     // Flush buffered analytics first so queued events survive the quit.
     try { await shutdownAnalytics(); } catch (err) { logger.warn(`analytics shutdown failed: ${(err as Error).message}`); }
     try { if (supervisor) await supervisor.shutdown(); } catch (err) { logger.warn(`supervisor shutdown failed: ${(err as Error).message}`); }

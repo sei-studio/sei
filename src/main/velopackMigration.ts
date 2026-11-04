@@ -36,6 +36,7 @@ import path from 'node:path';
 import { ciMark, pidAlive, userDataInstallId, velopackInstalled, velopackLog } from './velopackBoot';
 import { noteNeutralExit } from './bootContext';
 import { bundleRequire } from './bundleRequire';
+import { isSeilinkHostLaunch } from './seilink/host/hostArgs';
 import { spawnWhenFree } from './velopackSpawnRetry';
 import { checkSigned } from './velopackVerify';
 import { waitForExit } from './winPowerShell';
@@ -88,7 +89,8 @@ const HANDOFF_WAIT_MS = 30 * 1000;
 const SETUP_APP_START_GRACE_MS = 5 * 1000;
 
 const ci = process.env.SEI_VELOPACK_CI === '1';
-const active = process.platform === 'win32' && app.isPackaged;
+// Never in a SeiLink room host launch (the same exe, --seilink-host; seilink/host/hostArgs.ts).
+const active = process.platform === 'win32' && app.isPackaged && !isSeilinkHostLaunch(process.argv);
 
 function log(line: string): void {
   velopackLog(`[migration] ${line}`);

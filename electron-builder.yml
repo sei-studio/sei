@@ -122,6 +122,16 @@ files:
   # pack builder applies. The workspace directory itself must stay out of the
   # app tree too (both matchers, see above).
   - "!packs/**"
+  # 261104 SeiLink: the desktop-host addon's sources and node-gyp build tree
+  # (object files, several MB after a compile). The built addon ships through
+  # extraResources (resources/seilink, mac and win blocks), never app.asar.
+  - "!native/seilink/**"
+  # 261104 SeiLink M4: the bundled room art ships through extraResources
+  # (resources/seilink-packs, mac and win blocks), never app.asar as well.
+  - "!resources/seilink-packs/**"
+  # The built addon (resources/seilink/seilink.node) ships through
+  # extraResources only; without this it also landed inside app.asar.
+  - "!resources/seilink/**"
   # 260803 vendor: stop shipping vendor/ TWICE. Every vendored package is a
   # `file:` dependency, so electron-builder already copies its dereferenced tree
   # to node_modules/<name>, which asarUnpack then unpacks. The literal vendor/
@@ -357,6 +367,9 @@ mac:
     # src/bot stays: the bot ships as raw ESM source and is forked from there.
     - "!vendor/**"
     - "!packs/**"
+    - "!native/seilink/**"
+    - "!resources/seilink-packs/**"
+    - "!resources/seilink/**"
     - "!.planning/**"
     - "!docs/**"
     - "!demo/**"
@@ -462,6 +475,19 @@ mac:
       to: audio-tap
     - from: resources/mac-input
       to: mac-input
+    # 261104 SeiLink desktop host (native/seilink, scripts/build-seilink-addon.mjs,
+    # UNIVERSAL .node). Loaded by the room host process from
+    # Contents/Resources/seilink/seilink.node (src/main/seilink/host/native.ts);
+    # electron-osx-sign signs it like the helpers above. A compile failure is not
+    # fatal: the dir is absent, electron-builder skips it with a warning, and
+    # SeiLink reports unsupported.
+    - from: resources/seilink
+      to: seilink
+    # 261104 SeiLink M4: the room art packs that ship with the app (cozy, about
+    # 2.7MB of webp; src/main/seilink/packs.ts reads <resources>/seilink-packs,
+    # an installed pack of the same preset overrides it).
+    - from: resources/seilink-packs
+      to: seilink-packs
   extendInfo:
     NSLocalNetworkUsageDescription: "Sei finds your Minecraft world when you open it to LAN so your characters can join it on this Mac."
     # Voice calls (260707): the TCC prompt string macOS shows the first time Sei
@@ -518,6 +544,9 @@ win:
     # top-level `files:` copy of these does nothing on its own.
     - "!vendor/**"
     - "!packs/**"
+    - "!native/seilink/**"
+    - "!resources/seilink-packs/**"
+    - "!resources/seilink/**"
     - "!.planning/**"
     - "!docs/**"
     - "!demo/**"
@@ -615,6 +644,12 @@ win:
   extraResources:
     - from: resources/update-progress
       to: update-progress
+    # 261104 SeiLink desktop host addon (x64), same rules as the mac block.
+    - from: resources/seilink
+      to: seilink
+    # 261104 SeiLink M4 room art packs, same as the mac block.
+    - from: resources/seilink-packs
+      to: seilink-packs
 
 # 260929 one-click installer (outside-app-steps R2b). The assisted installer
 # was Welcome, install mode, Choose folder, Install, Finish: 3 to 4 clicks

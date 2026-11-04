@@ -40,6 +40,7 @@ import {
 import type { ChatgptStatus } from '../shared/chatgptPlan';
 import type { OverlayPointerSample } from '../shared/overlayPointer';
 import type { PopupAction } from '../shared/popupActions';
+import type { SeilinkAvailability, SeilinkHostStatus } from '../shared/seilinkHost';
 
 const api: RendererApi = {
   // Game adapters (M0): {characterId, game} (main also still accepts a bare id).
@@ -411,6 +412,41 @@ const api: RendererApi = {
     const handler = (_e: Electron.IpcRendererEvent, cue: FaceCue) => cb(cue);
     ipcRenderer.on(IpcChannel.facepack.cue, handler);
     return () => ipcRenderer.off(IpcChannel.facepack.cue, handler);
+  },
+  // SeiLink room (261104).
+  seilinkDevInfo: () => ipcRenderer.invoke(IpcChannel.seilink.devInfo),
+  seilinkPacks: () => ipcRenderer.invoke(IpcChannel.seilink.packs),
+  seilinkRoomGet: (characterId) => ipcRenderer.invoke(IpcChannel.seilink.roomGet, characterId),
+  seilinkRoomSet: (characterId, state) => ipcRenderer.invoke(IpcChannel.seilink.roomSet, { characterId, state }),
+  onSeilinkRoomChanged(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, characterId: string) => cb(characterId);
+    ipcRenderer.on(IpcChannel.seilink.roomChanged, handler);
+    return () => ipcRenderer.off(IpcChannel.seilink.roomChanged, handler);
+  },
+  seilinkOpenPreview: () => ipcRenderer.invoke(IpcChannel.seilink.openPreview),
+  seilinkHostStart: (characterId, opts) => ipcRenderer.invoke(IpcChannel.seilink.hostStart, characterId, opts),
+  seilinkHostStop: () => ipcRenderer.invoke(IpcChannel.seilink.hostStop),
+  seilinkHostStatus: () => ipcRenderer.invoke(IpcChannel.seilink.hostStatus),
+  onSeilinkHostStatus: (cb) => {
+    const handler = (_e: Electron.IpcRendererEvent, status: SeilinkHostStatus) => cb(status);
+    ipcRenderer.on(IpcChannel.seilink.hostStatusChanged, handler);
+    return () => ipcRenderer.off(IpcChannel.seilink.hostStatusChanged, handler);
+  },
+  onSeilinkOpenChat: (cb) => {
+    const handler = (_e: Electron.IpcRendererEvent, characterId: string) => cb(characterId);
+    ipcRenderer.on(IpcChannel.seilink.openChat, handler);
+    return () => ipcRenderer.off(IpcChannel.seilink.openChat, handler);
+  },
+  seilinkAvailability: () => ipcRenderer.invoke(IpcChannel.seilink.availability),
+  onSeilinkAvailability: (cb) => {
+    const handler = (_e: Electron.IpcRendererEvent, a: SeilinkAvailability) => cb(a);
+    ipcRenderer.on(IpcChannel.seilink.availabilityChanged, handler);
+    return () => ipcRenderer.off(IpcChannel.seilink.availabilityChanged, handler);
+  },
+  onSeilinkOpenRoomEditor: (cb) => {
+    const handler = (_e: Electron.IpcRendererEvent, characterId: string) => cb(characterId);
+    ipcRenderer.on(IpcChannel.seilink.openRoomEditor, handler);
+    return () => ipcRenderer.off(IpcChannel.seilink.openRoomEditor, handler);
   },
   avatarOverlayCamera: (args) => ipcRenderer.invoke(IpcChannel.avatar.overlayCamera, args),
   avatarOverlayEditing: (editing) => ipcRenderer.invoke(IpcChannel.avatar.overlayEditing, editing),

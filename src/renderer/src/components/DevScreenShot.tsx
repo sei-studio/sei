@@ -9,7 +9,9 @@
  *   http://localhost:5173/?dashshot=screen&screen=<screen>[&modal=<modal>]
  *     screen = home | character | chat | call | settings | edit (&section=appearance|voice|persona|games)
  *     modal  = delete | feedback | report | signout | apikey | creationlimit |
- *              topup | factoryreset | deleteaccount   (over the Home screen)
+ *              topup | factoryreset | deleteaccount | movein   (over the Home screen)
+ *     &seilink=on|off|unsupported   the desktop room's Labs setting (261104)
+ *     movein: &pack=<url of a pack dir> (its thumbnail), &swap=1 (Lyra lives there now)
  *     &theme=light|dark  &lang=zh  &backdrop=1 (call: the character-art view)
  *
  * Other surfaces already have harnesses: ?dashshot=creditwall&part=modal|credits,
@@ -21,6 +23,7 @@ import { useUiStore } from '../lib/stores/useUiStore';
 import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
+import { useSeilinkStore } from '../lib/stores/useSeilinkStore';
 import { useLangStore } from '../lib/i18n';
 import { applyTheme } from '../lib/theme';
 import { MacosWindow } from './MacosWindow';
@@ -35,6 +38,11 @@ import { CreationLimitModal } from './CreationLimitModal';
 import { TopUpModal } from './TopUpModal';
 import { FactoryResetConfirmModal } from './FactoryResetConfirmModal';
 import { DeleteAccountModal } from './DeleteAccountModal';
+import { MoveInSheetView } from './seilink/MoveInSheet';
+import { parseRoomManifest } from '@shared/seilinkValidate';
+import type { SeilinkPack } from '@shared/seilinkPack';
+import type { SeilinkAvailability } from '@shared/seilinkHost';
+import type { RoomPresetId } from '@shared/seilinkRoom';
 import { CharactersScreen } from '../screens/CharactersScreen';
 import { CharacterPage } from '../screens/CharacterPage';
 import { ChatScreen } from '../screens/ChatScreen';
@@ -54,6 +62,15 @@ type Screen = 'home' | 'character' | 'chat' | 'call' | 'settings' | 'edit';
 const params = new URLSearchParams(window.location.search);
 const screen = (params.get('screen') ?? 'home') as Screen;
 const modal = params.get('modal');
+const seilinkShot = params.get('seilink');
+const seilinkAvailability: SeilinkAvailability | null =
+  seilinkShot === 'on'
+    ? { supported: true, setting: true, enabled: true, dev: false }
+    : seilinkShot === 'off'
+      ? { supported: true, setting: false, enabled: false, dev: false }
+      : seilinkShot === 'unsupported'
+        ? { supported: false, reason: 'platform', setting: false, enabled: false, dev: false }
+        : null;
 const HOUR = 3_600_000;
 const now = Date.now();
 
@@ -129,7 +146,13 @@ function seed(): void {
       [LYRA]: { role: 'companion', text: 'the cauliflower is ready, come look', ts: now - 26 * HOUR },
       [MARV]: { role: 'system', text: 'You and Marv played chess for 12 minutes.', ts: now - 70 * HOUR },
     }),
-    getConfig: async () => ({ preferred_name: 'Robin', ai_backend_kind: 'cloud-proxy', ui_language: params.get('lang') ?? 'en' }),
+    getConfig: async () => ({
+      preferred_name: 'Robin',
+      ai_backend_kind: 'cloud-proxy',
+      ui_language: params.get('lang') ?? 'en',
+      seilink_enabled: seilinkShot === 'on',
+    }),
+    seilinkAvailability: async () => seilinkAvailability,
     getCharacter: async (id: string) => CHARACTERS.find((c) => c.id === id) ?? null,
     listCharacters: async () => CHARACTERS,
     getSkinServerUrl: async () => ({ baseUrl: 'http://127.0.0.1:1' }),
@@ -152,6 +175,7 @@ function seed(): void {
     },
   } as never);
   useCreditsStore.setState({ ai_backend_kind: 'cloud-proxy' } as never);
+  if (seilinkAvailability) useSeilinkStore.setState({ availability: seilinkAvailability });
   const nav = useUiStore.getState().navigate;
   if (screen === 'home') nav({ kind: 'home' });
   if (screen === 'character' || screen === 'edit') nav({ kind: 'character', id: SUI });
@@ -163,6 +187,39 @@ function seed(): void {
 seed();
 
 const noop = (): void => undefined;
+
+/** The move-in sheet with the packs at &pack= (only that one exists; the others show "Soon"). */
+function MoveInShot(): React.ReactElement {
+  const packUrl = (params.get('pack') ?? '').replace(/\/?$/, '/');
+  const [packs, setPacks] = React.useState<SeilinkPack[] | null>(null);
+  const [preset, setPreset] = React.useState<RoomPresetId | null>(null);
+  React.useEffect(() => {
+    void fetch(`${packUrl}manifest.json`)
+      .then((r) => r.json())
+      .then((raw: unknown) => {
+        const manifest = parseRoomManifest(raw);
+        const list: SeilinkPack[] = manifest ? [{ id: manifest.id, manifest, rev: 1, source: 'dev' }] : [];
+        setPacks(list);
+        setPreset(list[0]?.id ?? null);
+      })
+      .catch(() => setPacks([]));
+  }, [packUrl]);
+  return (
+    <MoveInSheetView
+      name="Sui"
+      otherName={params.get('swap') === '1' ? 'Lyra' : null}
+      packs={packs}
+      pickRoom
+      preset={preset}
+      onPick={setPreset}
+      busy={false}
+      error={null}
+      onCancel={noop}
+      onConfirm={noop}
+      resolveFor={() => (rel: string) => `${packUrl}${rel}`}
+    />
+  );
+}
 
 function Modal(): React.ReactElement | null {
   switch (modal) {
@@ -184,6 +241,8 @@ function Modal(): React.ReactElement | null {
       return <FactoryResetConfirmModal onCancel={noop} />;
     case 'deleteaccount':
       return <DeleteAccountModal accountEmail="robin@example.com" onCancel={noop} onConfirmed={noop} />;
+    case 'movein':
+      return <MoveInShot />;
     default:
       return null;
   }

@@ -22,6 +22,7 @@ import { ZH_MISC } from './zh/misc';
 import { ZH_DONTSTARVE } from './zh/dontstarve';
 import { ZH_STARDEW } from './zh/stardew';
 import { ZH_GAPS_261104 } from './zh/gaps261104';
+import { ZH_SEILINK } from './zh/seilink';
 import { ZH_SETUP_261104 } from './zh/setup261104';
 
 export const ZH: Record<string, string> = {
@@ -36,6 +37,7 @@ export const ZH: Record<string, string> = {
   ...ZH_DONTSTARVE,
   ...ZH_STARDEW,
   ...ZH_GAPS_261104,
+  ...ZH_SEILINK,
   ...ZH_SETUP_261104,
 
   // W5 settings (china-compat)

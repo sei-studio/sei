@@ -886,6 +886,8 @@ export const RENDERER_SETTABLE_KEYS: readonly (keyof UserConfig)[] = [
   'web_search_api_key',
   // 260909: "don't show again" on the Minecraft setup step (useMcSetupStore).
   'mc_setup_dismissed',
+  // 261104 SeiLink M4: Settings > Labs "Desktop room".
+  'seilink_enabled',
 ];
 
 /**
@@ -920,6 +922,8 @@ export const MAIN_OWNED_KEYS: readonly (keyof UserConfig)[] = [
   'chess_elo_offsets', // chess/chessDifficulty.ts
   'draw_intro_done', // draw/drawService.ts
   'fish_voice_overrides', // voice:fish-override-set IPC (voice/fishTts.ts)
+  'seilink_moved_in', // seilink/host/seilinkHost.ts
+  'seilink_deafened', // seilink/desktopLines.ts (the dock's deafen button)
   'schema_version', // configStore itself, on every write
 ];
 

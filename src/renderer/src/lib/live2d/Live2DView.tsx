@@ -58,6 +58,11 @@ export interface Live2DViewProps {
   camera?: AvatarCamera | null;
   className?: string;
   onStatus?: (status: 'loading' | 'ready' | 'error') => void;
+  /**
+   * Frame cap (261104, SeiLink): absent = the default ticker, 0 = paused (no
+   * model updates, no rendering), N = render at most N a second.
+   */
+  fps?: number;
 }
 
 /**
@@ -146,6 +151,7 @@ export function Live2DView({
   camera = null,
   className,
   onStatus,
+  fps,
 }: Live2DViewProps): React.ReactElement {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const modelRef = useRef<Live2DModelT | null>(null);
@@ -159,6 +165,9 @@ export function Live2DView({
   const cameraRef = useRef<AvatarCamera | null>(camera);
   cameraRef.current = camera;
   const fitRef = useRef<(() => void) | null>(null);
+  const fpsRef = useRef(fps);
+  fpsRef.current = fps;
+  const applyFpsRef = useRef<(() => void) | null>(null);
 
   // ── Mount: load libs + model, wire idle + mouth, handle resize ──────────
   useEffect(() => {
@@ -383,6 +392,26 @@ export function Live2DView({
         resizeObserver = new ResizeObserver(() => fit());
         resizeObserver.observe(host);
 
+        // Frame cap / pause (261104): 0 stops both the model's updates (it
+        // rides the shared ticker) and this app's render loop.
+        applyFpsRef.current = () => {
+          const cap = fpsRef.current;
+          try {
+            const automator = (model as unknown as { automator?: { autoUpdate: boolean } }).automator;
+            if (cap === 0) {
+              if (automator) automator.autoUpdate = false;
+              pixiApp.stop();
+            } else {
+              pixiApp.ticker.maxFPS = cap ?? 0;
+              if (automator) automator.autoUpdate = true;
+              pixiApp.start();
+            }
+          } catch {
+            /* a mid-destroy app */
+          }
+        };
+        if (fpsRef.current !== undefined) applyFpsRef.current();
+
         // Idle gaze wander: correlated small steps around center (each
         // target keeps a fraction of the last), with an occasional larger
         // glance — attention, not a head on a swivel. Writes the wander GOAL
@@ -443,6 +472,7 @@ export function Live2DView({
     return () => {
       cancelled = true;
       fitRef.current = null;
+      applyFpsRef.current = null;
       if (saccadeTimer) clearTimeout(saccadeTimer);
       if (gazeModeTimer) clearTimeout(gazeModeTimer);
       offCursor?.();
@@ -462,6 +492,10 @@ export function Live2DView({
       host.replaceChildren();
     };
   }, [characterId, levelRef]);
+
+  useEffect(() => {
+    applyFpsRef.current?.();
+  }, [fps]);
 
   // Re-fit when the camera changes (edit-mode wheel/drag streams new values).
   useEffect(() => {

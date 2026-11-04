@@ -558,6 +558,10 @@ export async function deleteCharacter(id: string): Promise<void> {
   await rm(paths.knowledgeDir(id), { recursive: true, force: true });
   // Remove avatar dir (260804; same reasoning as knowledge)
   await rm(paths.avatarsDir(id), { recursive: true, force: true });
+  // Remove her SeiLink room (261104)
+  await rm(paths.seilinkRoomPath(id), { force: true });
+  // 261104 SeiLink M4: if she moved in, she moves out (and the move-in is cleared).
+  void import('./seilink/host/seilinkHost').then((m) => m.onSeilinkCharacterRemoved(id)).catch(() => {});
 
   // Remove from index
   const idx = await loadIndex();

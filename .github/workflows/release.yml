@@ -52,6 +52,23 @@ jobs:
           npm_config_python: ${{ steps.setup-python.outputs.python-path }}
         run: npm ci
 
+      # 261104 SeiLink desktop host addon (native/seilink): mac universal, win x64,
+      # into resources/seilink (electron-builder extraResources). predist runs the
+      # same script again and finds it up to date. Not fatal while SeiLink is behind
+      # its dev flag: a failed compile ships without the addon and leaves a warning.
+      - name: SeiLink desktop host addon
+        env:
+          npm_config_python: ${{ steps.setup-python.outputs.python-path }}
+        shell: bash
+        run: |
+          node scripts/build-seilink-addon.mjs
+          if [ -f resources/seilink/seilink.node ]; then
+            ls -la resources/seilink/
+            if [ "$RUNNER_OS" = "macOS" ]; then lipo -info resources/seilink/seilink.node; fi
+          else
+            echo "::warning::SeiLink addon missing: this build ships without the desktop host"
+          fi
+
       - name: Dry run settings
         if: inputs.dry_run
         shell: bash

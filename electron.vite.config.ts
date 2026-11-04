@@ -87,7 +87,12 @@ export default defineConfig(({ mode }) => {
       outDir: 'dist/preload',
       rollupOptions: {
         // safeMode: the safe-mode screen's preload (imports only electron).
-        input: { index: path.resolve('src/preload/index.ts'), safeMode: path.resolve('src/preload/safeMode.ts') },
+        // seilinkHost: the SeiLink room host page's preload (imports only electron).
+        input: {
+          index: path.resolve('src/preload/index.ts'),
+          safeMode: path.resolve('src/preload/safeMode.ts'),
+          seilinkHost: path.resolve('src/preload/seilinkHost.ts'),
+        },
         output: {
           format: 'cjs',
           entryFileNames: '[name].cjs',
@@ -105,7 +110,9 @@ export default defineConfig(({ mode }) => {
       outDir: path.resolve('dist/renderer'),
       emptyOutDir: true,
       rollupOptions: {
-        input: { index: path.resolve('src/renderer/index.html') },
+        // seilink-host: the SeiLink room host page (the desktop wallpaper,
+        // src/main/seilink/host/hostEntry.ts), its own small bundle.
+        input: { index: path.resolve('src/renderer/index.html'), seilinkHost: path.resolve('src/renderer/seilink-host.html') },
       },
     },
     plugins: [react()],

@@ -1,0 +1,29 @@
+{
+  "format": "sei-room",
+  "version": 1,
+  "id": "cozy",
+  "place": "your bedroom",
+  "canvas": [2560, 1440],
+  "avatar": { "x": 1280, "y": 1440, "height": 1100 },
+  "floor": [0, 1100, 2560, 340],
+  "slots": {
+    "view": { "z": 0, "options": ["view-city"] },
+    "shell": { "z": 10, "options": ["shell-cozy"] },
+    "curtains": { "z": 20, "options": ["curtains-plain"] },
+    "bed": { "z": 30, "options": ["bed-single"] },
+    "lamp": { "z": 40, "options": ["lamp-floor"], "optional": true },
+    "rug": { "z": 50, "options": ["rug-round"], "optional": true },
+    "chair": { "z": 90, "options": ["chair-office"] }
+  },
+  "components": [
+    { "id": "view-city", "slot": "view", "name": "sky", "frames": { "day": { "src": "view/day.png" }, "dusk": { "src": "view/dusk.png" }, "night": { "src": "view/night.png" } } },
+    { "id": "shell-cozy", "slot": "shell", "name": "room", "frames": { "day": { "src": "shell/day.png" } } },
+    { "id": "curtains-plain", "slot": "curtains", "name": "curtains", "tintable": true, "defaultTint": "#7b4fc9", "frames": { "day": { "src": "curtains/day.png", "mask": "curtains/mask.png" } } },
+    { "id": "bed-single", "slot": "bed", "name": "bed", "frames": { "day": { "src": "bed/day.png" } } },
+    { "id": "lamp-floor", "slot": "lamp", "name": "floor lamp", "frames": { "day": { "src": "lamp/day.png" }, "night": { "src": "lamp/day.png", "glow": "lamp/glow.png" } } },
+    { "id": "rug-round", "slot": "rug", "name": "round rug", "frames": { "day": { "src": "rug/day.png" } } },
+    { "id": "chair-office", "slot": "chair", "name": "desk chair", "frames": { "day": { "src": "chair/day.png" } } },
+    { "id": "trophy-sei-2026", "slot": "item", "name": "Sei 2026 trophy", "placement": "surface", "frames": { "day": { "src": "items/trophy.png" } } },
+    { "id": "plant-pot", "slot": "item", "name": "potted plant", "placement": "floor", "frames": { "day": { "src": "items/plant.png" } } }
+  ]
+}

@@ -27,6 +27,7 @@ import { effectiveAvatarMode } from '@shared/characterSchema';
 import { applyTheme, clampThemeMode, subscribeSystemTheme } from './lib/theme';
 import { useLangStore, useT } from './lib/i18n';
 import { useUiStore } from './lib/stores/useUiStore';
+import { useSeilinkStore } from './lib/stores/useSeilinkStore';
 import { useDataStore, subscribeIpc } from './lib/stores/useDataStore';
 import { MacosWindow } from './components/MacosWindow';
 import { IconRail } from './components/IconRail';
@@ -132,6 +133,26 @@ export function App(): React.ReactElement {
   useEffect(() => {
     try { sei.rendererReady?.(); } catch { /* older bridge */ }
   }, []);
+  // 261104 SeiLink desktop host: she was clicked on the desktop wallpaper
+  // (main focused this window first; src/main/seilink/host/seilinkHost.ts).
+  useEffect(
+    () =>
+      sei.onSeilinkOpenChat?.((characterId) => {
+        useUiStore.getState().navigate({ kind: 'chat', characterId });
+      }),
+    [],
+  );
+  // 261104 SeiLink M4: availability + host status for the companion page and
+  // Settings, and the dock's edit button (open her page with the editor up).
+  useEffect(() => useSeilinkStore.getState().init(), []);
+  useEffect(
+    () =>
+      sei.onSeilinkOpenRoomEditor?.((characterId) => {
+        useSeilinkStore.getState().requestEditor(characterId);
+        useUiStore.getState().navigate({ kind: 'character', id: characterId });
+      }),
+    [],
+  );
   // ui-A7: developer-console visibility toggle. Default OFF — LogsBar only
   // mounts when the Settings → Show developer console toggle is flipped.
   const devConsoleVisible = useUiStore((s) => s.devConsoleVisible);
