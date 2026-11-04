@@ -6,7 +6,7 @@
  * analytics being initialized. capture() is a no-op when opted out, keyless,
  * or on a dev build.
  */
-import type { McInstall, McScanExtras, StartMinecraftResult, WizardProgressEvent } from '../shared/ipc';
+import type { McInstall, McScanExtras, OpenLauncherResult, StartMinecraftResult, WizardProgressEvent } from '../shared/ipc';
 import {
   GAME_SETUP_EVENT,
   classifyFailReason,
@@ -172,6 +172,12 @@ export function trackStartMinecraft(res: StartMinecraftResult, sink: SetupSink =
   } else {
     sink({ game: 'minecraft', step: 'start_minecraft', outcome: 'fail', error_code: `MC_START_${res.reason.toUpperCase()}`, store: 'none' });
   }
+}
+
+/** Open Minecraft Launcher (the no-Java notes): did the launcher open? */
+export function trackOpenLauncher(res: OpenLauncherResult, sink: SetupSink = trackSetupStep): void {
+  if (res.ok) sink({ game: 'minecraft', step: 'open_launcher', outcome: 'ok', store: res.launcher });
+  else sink({ game: 'minecraft', step: 'open_launcher', outcome: 'fail', error_code: `MC_OPEN_${res.reason.toUpperCase()}`, store: 'none' });
 }
 
 /**

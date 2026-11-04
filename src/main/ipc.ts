@@ -71,7 +71,7 @@ import { capture as trackAnalytics, getAnalyticsOptOut, setAnalyticsOptOut } fro
 import { blockedAutoSummon, clearSummonBlock } from './summonGuard';
 import { noteCreditWall, type CreditWallContext } from './creditWall';
 import { observeOnboardingEvent } from './onboardingFunnel';
-import { sanitizeRendererSetupProps, trackMcScan, trackStardewScan, trackStartMinecraft } from './setupTelemetry';
+import { sanitizeRendererSetupProps, trackMcScan, trackOpenLauncher, trackStardewScan, trackStartMinecraft } from './setupTelemetry';
 import { GAME_SETUP_EVENT } from '../shared/setupTelemetry';
 import { registerPermissionHandlers } from './permissions/permissionsService';
 import { setSupervisor as setAuthSupervisor } from './auth/authHandlers';
@@ -3151,6 +3151,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const { startMinecraft } = await import('./mcLauncher');
     const res = await startMinecraft({ mcVersion: args?.mcVersion });
     trackStartMinecraft(res);
+    return res;
+  });
+
+  ipcMain.handle(IpcChannel.wizard.openLauncher, async () => {
+    const { openMinecraftLauncher } = await import('./mcLauncher');
+    const res = await openMinecraftLauncher();
+    trackOpenLauncher(res);
     return res;
   });
 

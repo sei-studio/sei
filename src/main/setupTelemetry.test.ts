@@ -6,6 +6,7 @@ import {
   observeWizardProgress,
   sanitizeRendererSetupProps,
   trackMcScan,
+  trackOpenLauncher,
   trackStardewScan,
   trackStartMinecraft,
 } from './setupTelemetry';
@@ -120,5 +121,17 @@ describe('sanitizeRendererSetupProps', () => {
     expect(
       sanitizeRendererSetupProps({ game: 'minecraft', step: 'lan_wait', outcome: 'fail', error_code: 'LAN_WAIT_CLOSED', ended: 'closed', wait_ms: 12, note: 'C:\\Users\\bob' }),
     ).toEqual({ game: 'minecraft', step: 'lan_wait', outcome: 'fail', error_code: 'LAN_WAIT_CLOSED', ended: 'closed', wait_ms: 12 });
+  });
+});
+
+describe('trackOpenLauncher', () => {
+  it('names the launcher or the reason', () => {
+    const { sink, events } = recorder();
+    trackOpenLauncher({ ok: true, launcher: 'mac' }, sink);
+    trackOpenLauncher({ ok: false, reason: 'no_launcher' }, sink);
+    expect(events).toEqual([
+      { game: 'minecraft', step: 'open_launcher', outcome: 'ok', store: 'mac' },
+      { game: 'minecraft', step: 'open_launcher', outcome: 'fail', error_code: 'MC_OPEN_NO_LAUNCHER', store: 'none' },
+    ]);
   });
 });

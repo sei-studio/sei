@@ -2188,4 +2188,10 @@ export const JA: Record<string, string> = {
   "SMAPI wasn't allowed to change the Stardew Valley folder. Close the game and Steam, then try the setup again. If it keeps failing, install SMAPI from smapi.io and re-run the setup.": "SMAPIがStardew Valleyのフォルダを変更できませんでした。ゲームとSteamを閉じてから、もう一度セットアップしてください。それでも失敗する場合は、smapi.ioからSMAPIをインストールしてセットアップをやり直してください。",
   "Stardew Valley is running, so SMAPI can't be installed. Close the game, then try the setup again.": "Stardew Valleyが起動中のため、SMAPIをインストールできません。ゲームを閉じてから、もう一度セットアップしてください。",
   "SMAPI was installed, but your antivirus most likely removed it. Allow StardewModdingAPI.exe in your antivirus, then run the setup again. In Windows Security: Virus & threat protection, Protection history, pick the item, then Allow on device.": "SMAPIはインストールされましたが、ウイルス対策ソフトに削除された可能性が高いです。ウイルス対策ソフトでStardewModdingAPI.exeを許可してから、もう一度セットアップしてください。Windows セキュリティの場合：ウイルスと脅威の防止、保護の履歴で該当の項目を選び、「デバイスで許可」を押します。",
+  "Minecraft Java found in {launcher}. Sei can't add its setup there, but your companion can still join: open a world there on a version up to {latest} and choose Open to LAN.": "{launcher}でMinecraft Java版が見つかりました。Seiはそこにセットアップを追加できませんが、コンパニオンは参加できます。そちらで{latest}以下のバージョンのワールドを開き、「LANに公開」を選んでください。",
+  "To see companion skins in your game, use the official Minecraft Launcher, where Sei can set everything up.": "ゲーム内でコンパニオンのスキンを表示するには、公式のMinecraft Launcherを使ってください。そちらならSeiがすべてセットアップできます。",
+  "Sei needs Minecraft Java Edition, and this computer only has Bedrock Edition. If you own Minecraft for Windows, you most likely own Java Edition too: since 2022 the two come together.": "SeiにはMinecraft Java版が必要ですが、このPCには統合版（Bedrock）しかありません。Minecraft for Windowsを持っているなら、Java版もほぼ確実に持っています。2022年から両方がセットになっています。",
+  "The Minecraft Launcher is installed, but Java Edition hasn't been played on this computer yet.": "Minecraft Launcherはインストールされていますが、このPCではまだJava版がプレイされていません。",
+  "Open the Minecraft Launcher, choose Minecraft: Java Edition, and press Play once. Then check again.": "Minecraft Launcherを開き、「Minecraft: Java Edition」を選んで一度「プレイ」を押してください。そのあと、もう一度確認してください。",
+  "Open Minecraft Launcher": "Minecraft Launcherを開く",
 };

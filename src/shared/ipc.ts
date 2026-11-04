@@ -1143,6 +1143,9 @@ export interface McScanExtras {
   launcherInstalled: boolean;
 }
 
+/** openMinecraftLauncher's answer (261104). */
+export type OpenLauncherResult = { ok: true; launcher: MinecraftLauncherKind } | { ok: false; reason: 'no_launcher' | 'launch_failed' };
+
 /** Which Minecraft Launcher build Start Minecraft opened. */
 export type MinecraftLauncherKind = 'mac' | 'windows' | 'windows-store';
 
@@ -2823,6 +2826,11 @@ export interface RendererApi {
    * "Unable to update the launcher" error). Never throws.
    */
   minecraftRunning(): Promise<boolean | null>;
+  /**
+   * 261104: open the official Minecraft Launcher without selecting a profile
+   * (the Bedrock-only and never-played-Java notes). Never throws.
+   */
+  openMinecraftLauncher?(): Promise<OpenLauncherResult>;
   /** Returns the persisted wizard state (which installs are enabled, last setup timestamp, last skin server port). */
   getWizardState(): Promise<WizardState>;
   /**
@@ -4081,6 +4089,8 @@ export const IpcChannel = {
     startMinecraft: 'wizard:start-minecraft',
     // 260929: is the launcher (or a game it started) still running?
     minecraftRunning: 'wizard:minecraft-running',
+    // 261104: open the official launcher with no Sei profile (no-Java notes).
+    openLauncher: 'wizard:open-launcher',
   },
   auth: {
     state: 'auth:state',
