@@ -119,6 +119,12 @@ describe('decideReaction', () => {
 });
 
 describe('isJunkTranscript', () => {
+  it('keeps spoken numbers, years, times and dates formatted as digits', () => {
+    for (const text of ['2026', '2026.', '18:33', '03/11/2026', '0', '1,5', '２０２６']) {
+      expect(isJunkTranscript(text), text).toBe(false);
+    }
+    for (const text of ['€', '!?', '---']) expect(isJunkTranscript(text), text).toBe(true);
+  });
   it('drops repeated-letter hallucinations', () => {
     expect(isJunkTranscript('hhhhh')).toBe(true);
     expect(isJunkTranscript('mmmm')).toBe(true);

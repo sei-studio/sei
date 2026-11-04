@@ -13,7 +13,16 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { hasSpokenWord } from './dictation';
+import { hasSpokenWord, isBargeWord } from './dictation';
+
+describe('numeric interruption', () => {
+  it('keeps a recognized year through both word and junk gates', () => {
+    expect(hasSpokenWord('2026.')).toBe(true);
+    expect(isBargeWord('2026.')).toBe(true);
+    expect(isBargeWord('18:33')).toBe(true);
+    expect(isBargeWord('...')).toBe(false);
+  });
+});
 
 describe('hasSpokenWord', () => {
   it('accepts the short words people actually interrupt with', () => {
