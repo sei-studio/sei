@@ -50,3 +50,17 @@ Two more things from the same case, since they are why he never got in:
   new-here question. The boot sign-in variant has no scene to resume and
   replays the full one. A password sign-in cannot tell "no account" from
   "wrong password" (same server error), so that panel names the way out.
+
+## No Java install found (261104)
+
+`wizard:detect-installs` also returns `extras` (`src/main/mcOtherInstalls.ts`,
+read-only): third-party launcher instances (Prism, MultiMC, Modrinth App,
+ATLauncher), a Bedrock install (Store package, `%APPDATA%\Minecraft Bedrock`,
+`<drive>:\XboxGames\Minecraft for Windows`) and whether the official
+launcher is installed. McSteps uses it for the "game" step: Bedrock only and
+launcher-without-`.minecraft` get Open Minecraft Launcher
+(`wizard:open-launcher`, no profile), and Java in another launcher is
+DETECTION ONLY: Sei cannot write its Fabric profile there, so the step says
+so, offers Launch (the bot joins any LAN world on a supported version) and
+points skins at the official launcher.
+
