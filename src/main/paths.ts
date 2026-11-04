@@ -91,6 +91,9 @@ export const paths = {
   profilesDir: () => path.join(userDataRoot(), 'profiles'),
   sessionPath: () => path.join(userDataRoot(), 'session.bin'),
   logsDir: () => path.join(userDataRoot(), 'logs'),
+  // 261104 SeiLink: installed room art packs (<dir>/<presetId>/manifest.json).
+  // Device-global, not per profile: art is the same for every account.
+  seilinkPacksDir: () => path.join(userDataRoot(), 'seilink', 'packs'),
   // Wizard state JSON. Persists which MC installs the user ticked,
   // `hasRunOnce` (gates the first-launch modal vs the settings-reopen flow),
   // and the last skin-server port (used for port-drift detection on bootstrap).
@@ -178,6 +181,10 @@ export const paths = {
   // references textures/expressions by relative path), so entry names are
   // sanitized at IMPORT time (avatarStore) rather than validated here.
   avatarsDir: (characterId: string) => path.join(profileRootDir(), 'avatars', characterId),
+  // 261104 SeiLink: a companion's room state (RoomState JSON, a few KB).
+  // Outside memoryDir so a memory reset keeps her room. The id is validated
+  // by roomStore (UUID) before this is called.
+  seilinkRoomPath: (characterId: string) => path.join(profileRootDir(), 'seilink', 'rooms', `${characterId}.json`),
   // Per-persona skin PNG storage. Files live under
   // <profileRoot>/skins/<personaId>.png. The persona id has already been
   // validated by main/ipc.ts's IdSchema (kebab-case slug regex, no '.', '/',

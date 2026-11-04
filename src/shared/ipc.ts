@@ -15,6 +15,8 @@
  */
 
 import type { FaceCue, FacepackDevInfo, FacepackManifest } from './facepack';
+import type { SeilinkDevInfo, SeilinkPack, SeilinkRoomPayload } from './seilinkPack';
+import type { RoomState } from './seilinkRoom';
 import { z } from 'zod';
 import type {
   Character,
@@ -2191,6 +2193,13 @@ export interface RendererApi {
   facepackForCharacter?(characterId: string): Promise<string | null>;
   facepackOpenPreview?(): Promise<boolean>;
   onFaceCue?(cb: (cue: FaceCue) => void): Unsubscribe;
+  // ── SeiLink room (261104; see src/main/seilink/) ──
+  seilinkDevInfo?(): Promise<SeilinkDevInfo>;
+  seilinkPacks?(): Promise<SeilinkPack[]>;
+  seilinkRoomGet?(characterId: string): Promise<SeilinkRoomPayload>;
+  seilinkRoomSet?(characterId: string, state: RoomState): Promise<SeilinkRoomPayload>;
+  onSeilinkRoomChanged?(cb: (characterId: string) => void): Unsubscribe;
+  seilinkOpenPreview?(): Promise<boolean>;
   /**
    * Overlay window only (260806): stream a character's tile camera (zoom +
    * pan within the tile) while edit-mode wheel/drag adjusts it; `commit`
@@ -4218,6 +4227,22 @@ export const IpcChannel = {
     openPreview: 'facepack:open-preview',
     /** Push (main → every window): a FaceCue. */
     cue: 'facepack:cue',
+  },
+  // 261104 SeiLink room (src/main/seilink/): packs served over sei-room://,
+  // a RoomState per companion. See shared/seilinkPack.ts.
+  seilink: {
+    /** Invoke: SeilinkDevInfo (dev flag: unpackaged + SEI_SEILINK_PACKS). */
+    devInfo: 'seilink:dev-info',
+    /** Invoke: every usable pack → SeilinkPack[]. */
+    packs: 'seilink:packs',
+    /** Invoke: a companion's room (characterId) → SeilinkRoomPayload. */
+    roomGet: 'seilink:room-get',
+    /** Invoke: save a companion's room ({characterId, state}) → SeilinkRoomPayload (sanitized). */
+    roomSet: 'seilink:room-set',
+    /** Push (main → every window): characterId whose room was saved. */
+    roomChanged: 'seilink:room-changed',
+    /** Invoke: open the dev preview window (dev flag only) → boolean. */
+    openPreview: 'seilink:open-preview',
   },
 } as const;
 

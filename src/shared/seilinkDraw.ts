@@ -286,3 +286,52 @@ export function roomOverlay(
   const light = luminance(color) > 0.4;
   return { color, light, ink: light ? '#1d1b22' : '#f4f1ee' };
 }
+
+// ── Viewport ────────────────────────────────────────────────────────────────
+
+export type RoomFit = 'cover' | 'contain';
+
+/**
+ * Where the room canvas lands in a box of `w` x `h` CSS px. `cover` fills the
+ * box and crops (a wallpaper), `contain` letterboxes (a preview). Canvas px
+ * to box px is `x * scale + left`.
+ */
+export interface RoomViewport {
+  scale: number;
+  left: number;
+  top: number;
+  /** Drawn size of the whole room canvas, CSS px. */
+  width: number;
+  height: number;
+}
+
+export function roomViewport(canvas: readonly [number, number], w: number, h: number, fit: RoomFit = 'cover'): RoomViewport {
+  const [cw, ch] = canvas;
+  if (!(w > 0 && h > 0 && cw > 0 && ch > 0)) return { scale: 0, left: 0, top: 0, width: 0, height: 0 };
+  const scale = fit === 'cover' ? Math.max(w / cw, h / ch) : Math.min(w / cw, h / ch);
+  const width = cw * scale;
+  const height = ch * scale;
+  return { scale, left: (w - width) / 2, top: (h - height) / 2, width, height };
+}
+
+/** A box point (CSS px, e.g. a pointer) to canvas px. */
+export function viewportToCanvas(vp: RoomViewport, x: number, y: number): [number, number] {
+  return vp.scale > 0 ? [(x - vp.left) / vp.scale, (y - vp.top) / vp.scale] : [0, 0];
+}
+
+// ── Glow effects ────────────────────────────────────────────────────────────
+
+/**
+ * Opacity of an animated glow at `ms` (any monotonic clock). 'pulse' breathes
+ * slowly (monitor, lamp); 'flicker' is a campfire: a sum of incommensurate
+ * sines so it never visibly loops. `seed` desyncs two glows of one kind.
+ */
+export function glowAlpha(effect: RoomGlowEffect | null, ms: number, seed = 0): number {
+  if (effect === 'pulse') return 0.86 + 0.14 * Math.sin((ms / 1000) * 1.6 + seed);
+  if (effect === 'flicker') {
+    const s = ms / 1000 + seed * 7.13;
+    const n = Math.sin(s * 9.1) * 0.5 + Math.sin(s * 14.7 + 1.3) * 0.3 + Math.sin(s * 23.3 + 2.1) * 0.2;
+    return 0.8 + 0.2 * n;
+  }
+  return 1;
+}

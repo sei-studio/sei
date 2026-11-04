@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultRoomState, describeRoom, type RoomPresetManifest } from './seilinkRoom';
-import { itemRect, planFiles, roomDrawPlan, roomOverlay, roomTimeMix, roomTimeMixAt, splitAtAvatar } from './seilinkDraw';
+import { glowAlpha, itemRect, planFiles, roomDrawPlan, roomOverlay, roomTimeMix, roomTimeMixAt, roomViewport, splitAtAvatar, viewportToCanvas } from './seilinkDraw';
 import { isSafeRoomPackPath, parseRoomManifest, sanitizeRoomState } from './seilinkValidate';
 
 const manifest: RoomPresetManifest = {
@@ -122,6 +122,9 @@ describe('seilink validation', () => {
     const badOption = JSON.parse(JSON.stringify(manifest));
     badOption.slots.view.options = ['nope'];
     expect(parseRoomManifest(badOption)).toBeNull();
+    const wrongSlot = JSON.parse(JSON.stringify(manifest));
+    wrongSlot.slots.view.options = ['shell-cozy'];
+    expect(parseRoomManifest(wrongSlot)).toBeNull();
     expect(parseRoomManifest({ ...json, format: 'other' })).toBeNull();
   });
 
@@ -146,5 +149,33 @@ describe('seilink validation', () => {
     expect(s.avatar).toEqual({ kind: 'live2d', modelPath: 'abc' });
     expect(sanitizeRoomState(manifest, { preset: 'gamer' })).toEqual(defaultRoomState('cozy'));
     expect(sanitizeRoomState(manifest, 'junk')).toEqual(defaultRoomState('cozy'));
+  });
+});
+
+describe('roomViewport', () => {
+  it('covers (crops) or contains (letterboxes) and maps points back to canvas px', () => {
+    const cover = roomViewport([1920, 1080], 1000, 1000, 'cover');
+    expect(cover.scale).toBeCloseTo(1000 / 1080, 6);
+    expect(cover.top).toBe(0);
+    expect(cover.left).toBeLessThan(0);
+    const contain = roomViewport([1920, 1080], 1000, 1000, 'contain');
+    expect(contain.width).toBeCloseTo(1000, 6);
+    expect(contain.top).toBeGreaterThan(0);
+    const [x, y] = viewportToCanvas(contain, contain.left + 500, contain.top + contain.height);
+    expect(x).toBeCloseTo(960, 6);
+    expect(y).toBeCloseTo(1080, 6);
+    expect(roomViewport([1920, 1080], 0, 10).scale).toBe(0);
+  });
+});
+
+describe('glowAlpha', () => {
+  it('stays inside a gentle band for every effect', () => {
+    for (const e of ['pulse', 'flicker', null] as const) {
+      for (let ms = 0; ms < 20000; ms += 137) {
+        const a = glowAlpha(e, ms, 1);
+        expect(a).toBeGreaterThanOrEqual(0.6);
+        expect(a).toBeLessThanOrEqual(1);
+      }
+    }
   });
 });

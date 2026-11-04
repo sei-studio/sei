@@ -29,6 +29,8 @@ import { randomUUID } from 'node:crypto';
 import { closeSplashWindow, createMainWindow, createSplashWindow } from './windowChrome';
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { registerFacepackIpc } from './facepack/facepackIpc';
+import { openSeilinkPreview, registerSeilinkIpc } from './seilink/seilinkIpc';
+import { registerSeilinkProtocol, seilinkDevEnabled, SEILINK_SCHEME_PRIVILEGES } from './seilink/packs';
 import { isAnalyticsActive, shutdownAnalytics, capture, captureAppQuit, noteSurface } from './analytics';
 import { reportOnboardingAbandoned } from './onboardingFunnel';
 import { initCrashReporting, appOpenedCrashProps, markStartFailed } from './crashReporting';
@@ -104,7 +106,9 @@ import { IpcChannel, lanHostWarning, forgeHostBlock, FORGE_HOST_BLOCKED, type La
 // Register the `sei-portrait://` privileged scheme that serves locally-stored
 // character portraits to the renderer. MUST run before app 'ready'; the request
 // handler is attached in bootstrap() once userData/paths are resolved.
-registerPortraitScheme();
+// sei-room:// (261104, SeiLink room art packs) is registered in the same call:
+// Electron takes only one registerSchemesAsPrivileged per app.
+registerPortraitScheme([{ ...SEILINK_SCHEME_PRIVILEGES, privileges: { ...SEILINK_SCHEME_PRIVILEGES.privileges } }]);
 
 // Backseat (260728): ask Chromium for the macOS system-audio loopback path.
 // MEASURED NOT TO WORK on macOS 26.4 / Electron 42 / Chromium 148 — the track
@@ -1061,6 +1065,7 @@ async function bootstrap(): Promise<void> {
   //    Attach the sei-portrait:// request handler first so the renderer can
   //    resolve <img src="sei-portrait://…"> the moment it loads.
   registerPortraitProtocol();
+  registerSeilinkProtocol();
   mainWindow = createMainWindow({
     preloadPath: preloadPath(),
     indexHtmlUrlOrPath: rendererTarget(),
@@ -1334,6 +1339,13 @@ async function bootstrap(): Promise<void> {
 
   // 261028 facepack pilot (dev flag only; handlers answer "disabled" otherwise).
   registerFacepackIpc({ preloadPath: preloadPath(), rendererTarget });
+
+  // 261104 SeiLink room: packs, room store IPC, dev preview (dev flag only:
+  // unpackaged + SEI_SEILINK_PACKS; SEI_SEILINK_PREVIEW=1 also opens it at boot).
+  registerSeilinkIpc({ preloadPath: preloadPath(), rendererTarget });
+  if (seilinkDevEnabled() && process.env.SEI_SEILINK_PREVIEW === '1') {
+    openSeilinkPreview({ preloadPath: preloadPath(), rendererTarget });
+  }
 
   // 5. IPC handlers
   registerIpcHandlers({

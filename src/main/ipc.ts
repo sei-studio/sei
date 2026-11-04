@@ -1116,6 +1116,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     } catch (err) {
       console.warn(`[sei] removeFromLibrary avatar dir ${id}: ${(err as Error).message}`);
     }
+    try {
+      await rm(paths.seilinkRoomPath(id), { force: true });
+    } catch (err) {
+      console.warn(`[sei] removeFromLibrary seilink room ${id}: ${(err as Error).message}`);
+    }
     // Drop from the character index so chars.list doesn't re-surface it.
     try {
       const { readFile, writeFile, mkdir } = await import('node:fs/promises');

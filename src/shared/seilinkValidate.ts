@@ -124,7 +124,8 @@ export function parseRoomManifest(raw: unknown): RoomPresetManifest | null {
     if (!(SLOT_IDS as readonly string[]).includes(k)) return null;
     const d = v as Record<string, unknown>;
     if (!d || !isNum(d.z) || !Array.isArray(d.options) || d.options.length === 0) return null;
-    const options = d.options.filter((o): o is string => typeof o === 'string' && ids.has(o));
+    // Every option must exist and be a component made for THIS slot.
+    const options = d.options.filter((o): o is string => typeof o === 'string' && components.some((c) => c.id === o && c.slot === k));
     if (options.length !== d.options.length) return null;
     const def: RoomSlotDef = { z: d.z, options };
     if (d.optional === true) def.optional = true;
