@@ -6,6 +6,14 @@
  *
  *   node scripts/seilink-host-shots.mjs [--packs resources/seilink-packs] [--preset cozy]
  *                                       [--out seilink-host-shots] [--shots a,b,...]
+ *                                       [--portrait <png>] [--name <her name>]
+ *                                       [--facepacks <dir> --facepack-id <an-...>]
+ *
+ * With --facepacks (a dir holding <facepack-id>/facepack.json, e.g. an anima
+ * client's <userData>/anima/packs), the `host-crossfade` shot is a sequence:
+ * her portrait first, then her face set "arrives" 1.5 s after the room first
+ * draws (an avatar-manifest push, like the anima client's) and RoomAvatar
+ * crossfades to it.
  *
  * Starts the renderer's Vite dev server on its own, a CORS static server for
  * <packs>, and Chrome through playwright. Wallpaper shots open
@@ -58,8 +66,13 @@ const SHOTS = {
   'movein-ru-light': { kind: 'app', q: 'screen=home&modal=movein&theme=light&lang=ru', act: 'thumb' },
   'character-menu-dark': { kind: 'app', q: 'screen=character&seilink=on&theme=dark', act: 'menu' },
   'character-menu-light': { kind: 'app', q: 'screen=character&seilink=on&theme=light', act: 'menu' },
+  'host-crossfade': { kind: 'host', q: 'time=day', seq: [1200, 1700, 1900, 2100, 2300, 2500, 2800, 3200, 4500] },
 };
-const names = arg('shots', Object.keys(SHOTS).join(',')).split(',');
+const FACEPACKS = arg('facepacks', null) ? path.resolve(arg('facepacks')) : null;
+const FACEPACK_ID = arg('facepack-id', null);
+const PORTRAIT = arg('portrait', null) ? path.resolve(arg('portrait')) : null;
+const NAME = arg('name', null);
+const names = arg('shots', Object.keys(SHOTS).filter((n) => n !== 'host-crossfade' || FACEPACKS).join(',')).split(',');
 
 function packServer(root) {
   return new Promise((resolve) => {
@@ -107,6 +120,7 @@ async function act(page, what) {
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
   const packs = await packServer(PACKS);
+  const faces = FACEPACKS ? await packServer(FACEPACKS) : null;
   const vite = await createServer({
     configFile: false,
     root: path.join(REPO, 'src/renderer'),
@@ -120,7 +134,12 @@ async function main() {
     await vite.listen();
     const viteUrl = vite.resolvedUrls.local[0].replace(/\/$/, '');
     const packUrl = `http://127.0.0.1:${packs.address().port}/${PRESET}/`;
-    const portrait = `${viteUrl}/@fs${REPO}/vendor/skin-gen/examples/sui-input.png`;
+    const portrait = `${viteUrl}/@fs${PORTRAIT ?? `${REPO}/vendor/skin-gen/examples/sui-input.png`}`;
+    const extra =
+      (NAME ? `&name=${encodeURIComponent(NAME)}` : '') +
+      (faces && FACEPACK_ID
+        ? `&facepacks=${encodeURIComponent(`http://127.0.0.1:${faces.address().port}/`)}&facepackid=${encodeURIComponent(FACEPACK_ID)}&facepackat=1500`
+        : '');
     browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH ?? '/usr/bin/google-chrome' });
     for (const name of names) {
       const shot = SHOTS[name];
@@ -138,9 +157,22 @@ async function main() {
       });
       const url =
         shot.kind === 'host'
-          ? `${viteUrl}/?seilinkhost=1&pack=${encodeURIComponent(packUrl)}&portrait=${encodeURIComponent(portrait)}&${shot.q}`
+          ? `${viteUrl}/?seilinkhost=1&pack=${encodeURIComponent(packUrl)}&portrait=${encodeURIComponent(portrait)}${extra}&${shot.q}`
           : `${viteUrl}/?dashshot=screen&pack=${encodeURIComponent(packUrl)}&${shot.q}`;
       await page.goto(url, { waitUntil: 'load' });
+      if (shot.seq) {
+        // Timed from the room's first frame; the face set lands 1.5 s after it (facepackat).
+        await page.waitForSelector('[data-room-ready="1"]', { timeout: 60_000 }).catch(() => console.log(`  ${name}: room never reported ready`));
+        const t0 = Date.now();
+        for (const at of shot.seq) {
+          await page.waitForTimeout(Math.max(0, at - (Date.now() - t0)));
+          const file = path.join(OUT, `${name}-${String(at).padStart(5, '0')}.png`);
+          await page.screenshot({ path: file });
+          console.log(file);
+        }
+        await page.close();
+        continue;
+      }
       if (shot.kind === 'host') {
         await page.waitForSelector('[data-room-ready="1"]', { timeout: 60_000 }).catch(() => console.log(`  ${name}: room never reported ready`));
         // The fake bridge shows the line at 1.8 s and presses at 2.6 s.
@@ -158,6 +190,7 @@ async function main() {
     await browser?.close().catch(() => {});
     await vite.close().catch(() => {});
     packs.close();
+    faces?.close();
   }
 }
 

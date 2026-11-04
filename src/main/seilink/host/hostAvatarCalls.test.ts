@@ -32,6 +32,17 @@ describe('answerHostAvatarCall', () => {
   });
 });
 
+describe('avatarShown (261105, analytics)', () => {
+  it('records her shown kind only, and answers null', async () => {
+    const seen: Array<[string, string]> = [];
+    const s: HostAvatarStores = { ...stores, noteShown: (id, kind) => seen.push([id, kind]) };
+    await expect(answerHostAvatarCall('her', 'avatarShown', ['her', 'facepack'], s)).resolves.toBeNull();
+    await expect(answerHostAvatarCall('her', 'avatarShown', ['other', 'facepack'], s)).resolves.toBeNull();
+    await expect(answerHostAvatarCall('her', 'avatarShown', ['her', 'bogus'], s)).resolves.toBeNull();
+    expect(seen).toEqual([['her', 'facepack']]);
+  });
+});
+
 describe('hostPortrait', () => {
   let dir = '';
   beforeAll(async () => {

@@ -50,8 +50,8 @@ import { BusyTracker, onSeilinkAvatarChanged, onSeilinkChatTurn } from './hostSi
 import { answerHostAvatarCall, hostPortrait, type HostAvatarStores } from './hostAvatarCalls';
 import { getCharacter } from '../../characterStore';
 import { paths } from '../../paths';
-import { facesEnabled } from '../../facepack/facepackDev';
-import { packFilePath, packIdForCharacterName, readPackManifest } from '../../facepack/facepackStore';
+import { anima } from '../../anima/animaRuntime';
+import { facepackIdForCharacter, packFilePath, readPackManifest } from '../../facepack/facepackStore';
 import { getRoomPayload, isRoomCharacterId, onRoomChange } from '../roomStore';
 import { loadConfig, updateConfig } from '../../configStore';
 import { loadAnalytics } from '../../lazyAnalytics';
@@ -312,6 +312,8 @@ async function startNow(
   }
   if (!guard.stillValid()) throw new Error('ACCOUNT_SWITCHING');
   await openSession(characterId, opts?.restored === true);
+  // 261105: her face set, baked/downloaded in the background (a no-op once it is on disk).
+  void anima.prepare(characterId, opts?.restored ? 'host_restore' : 'host_start');
   return status;
 }
 
@@ -336,6 +338,8 @@ async function stopNow(reason: SeilinkEndReason, via: 'app' | 'dock'): Promise<S
 
 /** Account switch: end the session but keep the old profile's move-in (restored when it comes back). */
 export function stopSeilinkHostForAccountSwitch(): Promise<void> {
+  // 261105: her face-set polls stop too; the next account asks for itself.
+  anima.reset();
   return serial(() => (session ? endSession('account_switch') : Promise.resolve()));
 }
 
@@ -820,12 +824,12 @@ const avatarStores: HostAvatarStores = {
   avatarManifest: async (id) => (await import('../../avatar/avatarStore')).getAvatarManifest(id),
   avatarFiles: async (id) => (await import('../../avatar/avatarStore')).listAvatarModelFiles(id),
   facepackFor: async (id) => {
-    if (!facesEnabled()) return null;
     const c = await getCharacter(id).catch(() => null);
-    return c ? packIdForCharacterName(c.name) : null;
+    return c ? facepackIdForCharacter(id, c.name) : null;
   },
   facepackManifest: (id) => readPackManifest(id),
   facepackFilePath: (id, rel) => packFilePath(id, rel),
+  noteShown: (id, kind) => anima.noteShown(id, kind, 'desktop'),
 };
 
 /** An avatar bridge call from the host page (RoomAvatar's views), answered for her only. */

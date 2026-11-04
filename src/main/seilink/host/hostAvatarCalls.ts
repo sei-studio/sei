@@ -14,6 +14,7 @@ import path from 'node:path';
 import type { SeilinkHostAvatarMethod } from '../../../shared/seilinkHost';
 import { SEILINK_PORTRAIT_HOST } from '../../../shared/seilinkHost';
 import { SEILINK_ROOM_SCHEME } from '../../../shared/seilinkPack';
+import { isAnimaShownKind, type AnimaShownKind } from '../../../shared/anima';
 
 /** portraitProtocol.ts serves exactly these bare refs. */
 const BARE_PORTRAIT_RE = /^[0-9a-z_-]+\.png$/i;
@@ -63,6 +64,8 @@ export interface HostAvatarStores {
   facepackFor(characterId: string): Promise<string | null>;
   facepackManifest(packId: string): Promise<unknown>;
   facepackFilePath(packId: string, rel: string): Promise<string | null>;
+  /** What her RoomAvatar shows on the desktop (analytics). */
+  noteShown?(characterId: string, kind: AnimaShownKind): void;
 }
 
 /**
@@ -93,6 +96,9 @@ export async function answerHostAvatarCall(
       const file = await stores.facepackFilePath(a, b);
       return file ? { file } : null;
     }
+    case 'avatarShown':
+      if (a === characterId && isAnimaShownKind(b)) stores.noteShown?.(characterId, b);
+      return null;
   }
   return null;
 }

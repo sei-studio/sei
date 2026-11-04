@@ -129,3 +129,28 @@
   font-size: 14px;
   color: var(--red);
 }
+
+/* 261105: her face set is on its way (quiet, no spinner; nothing on failure). */
+.preparing {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+  animation: preparingPulse 2.4s ease-in-out infinite;
+}
+
+@keyframes preparingPulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preparing {
+    animation: none;
+  }
+}

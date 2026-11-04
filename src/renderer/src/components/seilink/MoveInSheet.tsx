@@ -26,6 +26,7 @@ import { Button } from '../Button';
 import { ModalShell, ModalFooter } from '../ModalShell';
 import { CheckIcon } from './roomEditorIcons';
 import { moveInFailed, ROOM_PRESET_LABEL } from '../../lib/seilink/moveIn';
+import { useAnimaLook } from '../../lib/seilink/useAnimaLook';
 import { SEILINK_MOVEIN_SHEET_EVENT, type MoveInAction, type MoveInFail, type MoveInReason } from '@shared/seilinkTelemetry';
 import styles from './MoveInSheet.module.css';
 
@@ -60,6 +61,8 @@ export interface MoveInSheetViewProps {
   onConfirm: () => void;
   /** Dev screenshots: pack URLs over HTTP instead of sei-room://. */
   resolveFor?: (pack: SeilinkPack) => RoomUrlResolver;
+  /** 261105: her face set is being baked or downloaded (a quiet line, nothing on failure). */
+  preparingLook?: boolean;
 }
 
 export function MoveInSheetView(p: MoveInSheetViewProps): React.ReactElement {
@@ -109,6 +112,11 @@ export function MoveInSheetView(p: MoveInSheetViewProps): React.ReactElement {
       {p.otherName ? (
         <p className={styles.line}>{t('{other} moves out first. One companion lives on the desktop at a time.', { other: p.otherName })}</p>
       ) : null}
+      {p.preparingLook ? (
+        <p className={styles.preparing} role="status">
+          {t("Preparing {name}'s look…", { name: p.name })}
+        </p>
+      ) : null}
       {p.error ? (
         <p className={styles.error} role="alert">
           {p.error}
@@ -142,6 +150,8 @@ export function MoveInSheet({ characterId, name, otherName, reason, onClose }: M
   const [preset, setPreset] = useState<RoomPresetId | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 261105: SeiLink opened for her: her face set gets ready in the background while she moves in.
+  const look = useAnimaLook(characterId, 'move_in_sheet');
   // Analytics (261105), shape only: shown once loaded, then confirmed, failed (once per class) or dismissed.
   const openedAt = useRef(Date.now());
   const firstPreset = useRef<RoomPresetId | null>(null);
@@ -235,6 +245,7 @@ export function MoveInSheet({ characterId, name, otherName, reason, onClose }: M
         onClose();
       }}
       onConfirm={() => void confirm()}
+      preparingLook={look === 'preparing'}
     />
   );
 }

@@ -10,8 +10,8 @@
  * Exposes `window.seiRoomHost` (SeilinkHostBridge in src/shared/seilinkHost.ts),
  * and a small `window.sei` with only the avatar calls RoomAvatar's views make
  * (avatarGet, avatarModelFiles, onAvatarManifest, facepackForCharacter,
- * facepackManifest, facepackFile). The host relays each one to main, which
- * answers for the moved-in character only. Every other RendererApi method is
+ * facepackManifest, facepackFile, and seilinkAnimaShown for analytics). The
+ * host relays each one to main, which answers for the moved-in character only. Every other RendererApi method is
  * absent here; the views call these with `?.` or only after avatarGet /
  * facepackForCharacter found something.
  */
@@ -82,5 +82,8 @@ if (process.contextIsolated) {
     facepackForCharacter: (characterId: string) => call('facepackForCharacter', characterId),
     facepackManifest: (id: string) => call('facepackManifest', id),
     facepackFile: (id: string, path: string) => call('facepackFile', id, path),
+    seilinkAnimaShown: (characterId: string, kind: string) => {
+      void call('avatarShown', characterId, kind).catch(() => {});
+    },
   });
 }

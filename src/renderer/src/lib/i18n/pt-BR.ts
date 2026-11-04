@@ -2221,6 +2221,7 @@ export const PT_BR: Record<string, string> = {
   "Move off desktop": "Tirar da área de trabalho",
   "Move {name} onto your desktop": "Mudar {name} para a sua área de trabalho",
   "Pick a room": "Escolha um quarto",
+  "Preparing {name}'s look…": "Preparando o visual de {name}…",
   "{name}'s room stays as you left it.": "O quarto de {name} fica do jeito que você deixou.",
   "{name} lives on your wallpaper, behind your windows and icons.": "{name} mora no seu papel de parede, atrás das janelas e dos ícones.",
   "The room pauses while windows cover it.": "O quarto pausa enquanto as janelas o cobrem.",
