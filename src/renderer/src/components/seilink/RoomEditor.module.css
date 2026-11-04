@@ -25,6 +25,12 @@
   --r-panel: var(--radius, 2px);
   --r-tile: var(--radius, 2px);
   --t-fade: 700ms;
+  /* One inset for every edge-anchored bar (rail, time pill, actions), so
+     their top edges line up and cannot drift apart. */
+  --edge: var(--space-lg);
+  --tile-size: 52px;
+  --rail-w: calc(var(--tile-size) + 2 * var(--space-sm));
+  --panel-w: 292px;
 }
 
 .inline {
@@ -144,13 +150,12 @@
 
 .side {
   position: absolute;
-  left: var(--space-lg);
-  top: 50%;
-  transform: translateY(-50%);
+  left: var(--edge);
+  top: var(--edge);
+  bottom: var(--edge);
   display: flex;
   align-items: flex-start;
   gap: var(--space-md);
-  max-height: calc(100% - 2 * var(--space-lg));
   pointer-events: none;
 }
 
@@ -164,7 +169,7 @@
   gap: var(--space-sm);
   padding: var(--space-sm);
   border-radius: var(--r-panel);
-  max-height: calc(100vh - 2 * var(--space-lg));
+  max-height: 100%;
   overflow-y: auto;
   scrollbar-width: none;
 }
@@ -184,10 +189,11 @@
 .tile {
   position: relative;
   flex: none;
-  width: 52px;
-  height: 52px;
+  width: var(--tile-size);
+  height: var(--tile-size);
   border-radius: var(--r-tile);
   background: var(--tile);
+  color: var(--muted);
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -199,6 +205,7 @@
 
 .tile:hover {
   background: var(--tile-hover);
+  color: rgb(var(--ink));
 }
 
 .tile:active {
@@ -207,6 +214,7 @@
 
 .tileOn,
 .tileOn:hover {
+  color: rgb(var(--ink));
   background: var(--tile-on);
   box-shadow: var(--tile-on-shadow);
 }
@@ -223,23 +231,10 @@
 .tile {
   transition:
     background-color 160ms var(--ease),
+    color 160ms var(--ease),
     box-shadow 160ms var(--ease),
     opacity 160ms var(--ease),
     transform 160ms var(--ease-pop);
-}
-
-.tile .cardImg {
-  position: absolute;
-  inset: 4px;
-  width: calc(100% - 8px);
-  height: calc(100% - 8px);
-  border-radius: var(--radius, 2px);
-}
-
-.tileWord {
-  font-family: var(--display);
-  font-size: 13px;
-  letter-spacing: 0.06em;
 }
 
 .thumb {
@@ -247,11 +242,6 @@
   height: 100%;
   object-fit: contain;
   pointer-events: none;
-}
-
-.tile .thumb {
-  width: 44px;
-  height: 44px;
 }
 
 .thumbCover {
@@ -285,8 +275,8 @@
 /* ── the options panel ── */
 
 .panel {
-  width: 292px;
-  max-height: calc(100vh - 2 * var(--space-lg));
+  width: var(--panel-w);
+  max-height: 100%;
   overflow-y: auto;
   scrollbar-width: none;
   padding: var(--space-md-plus);
@@ -533,13 +523,32 @@
   padding: 0;
 }
 
-/* ── top: time of day, actions ── */
+/* ── top: time of day, actions ──
+   One row at the shared --edge. Equal side columns keep the time pill at the
+   window's centre; the left column never gets narrower than the rail plus an
+   open panel, so on a small window the pill slides right instead of running
+   into the panel. */
+
+.top {
+  position: absolute;
+  top: var(--edge);
+  left: 0;
+  right: 0;
+  display: grid;
+  grid-template-columns:
+    minmax(calc(var(--edge) + var(--rail-w) + var(--space-md) + var(--panel-w) + var(--space-md)), 1fr)
+    auto
+    minmax(max-content, 1fr);
+  align-items: start;
+  pointer-events: none;
+}
+
+.top > * {
+  pointer-events: auto;
+}
 
 .times {
-  position: absolute;
-  top: var(--space-lg);
-  left: 50%;
-  transform: translateX(-50%);
+  grid-column: 2;
   display: flex;
   gap: 2px;
   padding: 5px;
@@ -581,9 +590,9 @@
 }
 
 .actions {
-  position: absolute;
-  top: var(--space-lg);
-  right: var(--space-lg);
+  grid-column: 3;
+  justify-self: end;
+  margin-right: var(--edge);
   display: flex;
   align-items: center;
   gap: 4px;
@@ -743,8 +752,8 @@
 
 .toast {
   position: absolute;
-  top: calc(var(--space-lg) + 56px);
-  right: var(--space-lg);
+  top: calc(var(--edge) + 56px);
+  right: var(--edge);
   margin: 0;
   padding: 8px 14px;
   border-radius: var(--radius, 2px);
@@ -788,6 +797,24 @@
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
+}
+
+/* Short windows: smaller tiles so the whole rail (bag included) fits under
+   the --edge inset instead of scrolling with a hidden scrollbar. */
+@media (max-height: 700px) {
+  .root {
+    --tile-size: 44px;
+  }
+}
+
+@media (max-height: 600px) {
+  .root {
+    --tile-size: 40px;
+  }
+
+  .rail {
+    gap: 6px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

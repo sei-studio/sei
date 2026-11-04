@@ -147,3 +147,99 @@ export const MoveOutIcon = (p: P): React.ReactElement => (
     <path d="M10 12h10M16.5 8.5L20 12l-3.5 3.5" />
   </Svg>
 );
+
+// ── Editor rail (261105): one line icon per slot, in place of image previews ──
+
+/** Avatar: a person. */
+export const PersonIcon = (p: P): React.ReactElement => (
+  <Svg {...p}>
+    <circle cx="12" cy="8" r="3.5" />
+    <path d="M5 20.5a7 7 0 0 1 14 0" />
+  </Svg>
+);
+
+/** Room type: a house. */
+export const HouseIcon = (p: P): React.ReactElement => (
+  <Svg {...p}>
+    <path d="M3.5 11L12 4l8.5 7" />
+    <path d="M6 9.5v10h12v-10" />
+    <path d="M10 19.5V15h4v4.5" />
+  </Svg>
+);
+
+/** View: a window onto mountains. */
+export const ViewIcon = (p: P): React.ReactElement => (
+  <Svg {...p}>
+    <rect x="3.5" y="4" width="17" height="16" rx="1.5" />
+    <path d="M3.5 17l5-5 4 4 2.5-2.5 5.5 5" />
+    <circle cx="15.5" cy="8.5" r="1.5" />
+  </Svg>
+);
+
+/** Walls: a paint roller. */
+export const RollerIcon = (p: P): React.ReactElement => (
+  <Svg {...p}>
+    <rect x="3.5" y="3.5" width="14" height="5.5" rx="1.2" />
+    <path d="M17.5 6.2h3v5.3H12v3" />
+    <rect x="10.5" y="14.5" width="3" height="6" rx="1" />
+  </Svg>
+);
+
+/** Rug: a bordered rug on the floor, seen in perspective. */
+export const RugIcon = (p: P): React.ReactElement => (
+  <Svg {...p}>
+    <path d="M6.5 7h11l3.5 10.5H3z" />
+    <path d="M8.6 10h6.8l1.6 4.5H7z" />
+  </Svg>
+);
+
+/** Curtains: two drapes on a rod, tied back. */
+export const CurtainsIcon = (p: P): React.ReactElement => (
+  <Svg {...p}>
+    <path d="M3 4h18" />
+    <path d="M5 4v16.5h3.5c-.6-2.6-1.5-4.4-1.5-7 1.2-1.2 2.3-4.5 2.5-9.5" />
+    <path d="M19 4v16.5h-3.5c.6-2.6 1.5-4.4 1.5-7-1.2-1.2-2.3-4.5-2.5-9.5" />
+  </Svg>
+);
+
+/** Shelves: two shelves with books. */
+export const ShelfIcon = (p: P): React.ReactElement => (
+  <Svg {...p}>
+    <path d="M3 10.5h18M3 19.5h18" />
+    <path d="M6 10.5v-5M8.5 10.5v-5M11 10.5l2-4.5" />
+    <path d="M14.5 19.5v-5M17 19.5v-5" />
+  </Svg>
+);
+
+/** Bed: headboard, pillow and mattress. */
+export const BedIcon = (p: P): React.ReactElement => (
+  <Svg {...p}>
+    <path d="M3 6v13.5M3 16h18M21 19.5V13a2 2 0 0 0-2-2h-8v5" />
+    <rect x="5.5" y="11" width="3.5" height="2.5" rx="1" />
+  </Svg>
+);
+
+/** Lamp: a floor lamp. */
+export const LampIcon = (p: P): React.ReactElement => (
+  <Svg {...p}>
+    <path d="M8.5 3.5h7l3 6.5h-13z" />
+    <path d="M12 10v10M8.5 20.5h7" />
+  </Svg>
+);
+
+/** Chair: an armchair. */
+export const ChairIcon = (p: P): React.ReactElement => (
+  <Svg {...p}>
+    <path d="M5.5 10.5V7a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v3.5" />
+    <path d="M3.5 12a1.5 1.5 0 0 1 3 0v2h11v-2a1.5 1.5 0 0 1 3 0v6h-17z" />
+    <path d="M6 18v2M18 18v2" />
+  </Svg>
+);
+
+/** Campfire: a flame over crossed logs. */
+export const CampfireIcon = (p: P): React.ReactElement => (
+  <Svg {...p}>
+    <path d="M12 3.5c2.7 2.8 4 5 4 7.3a4 4 0 0 1-8 0c0-1.4.6-2.6 1.6-3.6.2 1.1.8 1.9 1.6 2.2-.3-2 .1-4 .8-5.9z" />
+    <path d="M4.5 20.5l15-4M19.5 20.5l-15-4" />
+  </Svg>
+);

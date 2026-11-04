@@ -109,7 +109,12 @@ function packServer(root) {
 }
 
 async function waitReady(page) {
-  await page.waitForSelector('[data-room-editor] img', { timeout: 60_000 }).catch(() => console.log('editor never showed thumbnails'));
+  // The rail draws icons, so the editor is up once the rail is; an open panel
+  // still shows image thumbnails, so wait until none is a placeholder.
+  await page.waitForSelector('[data-room-editor] nav', { timeout: 60_000 }).catch(() => console.log('editor never showed its rail'));
+  await page
+    .waitForFunction(() => !document.querySelector('[data-room-editor] section [class*="Wait"]'), null, { timeout: 30_000 })
+    .catch(() => console.log('panel never showed its thumbnails'));
   await page.waitForTimeout(1500);
 }
 
