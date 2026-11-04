@@ -477,18 +477,23 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
     );
   } else if (kind === 'facepack') {
     figW = figH * 1.15;
+    // Always inside the same wrapper, crossfading or not: dropping the wrapper when the fade
+    // ends would remount FacepackView and blank her for a moment (seen in the 261105 shots).
+    const hidden = !!outgoing && !outgoing.fading;
     view = (
-      <FacepackView
-        characterId={characterId}
-        source={facepack ?? null}
-        packId={resolved?.packId ?? null}
-        speaking={speaking}
-        levelRef={levelRef}
-        expression={emotion}
-        fps={viewFps}
-        className={styles.fill}
-        onStatus={onViewStatus('facepack')}
-      />
+      <div className={styles.fill} style={{ opacity: hidden ? 0 : 1, transition: outgoing ? `opacity ${CROSSFADE_MS}ms ease` : undefined }}>
+        <FacepackView
+          characterId={characterId}
+          source={facepack ?? null}
+          packId={resolved?.packId ?? null}
+          speaking={speaking}
+          levelRef={levelRef}
+          expression={emotion}
+          fps={viewFps}
+          className={styles.fill}
+          onStatus={onViewStatus('facepack')}
+        />
+      </div>
     );
   } else if (kind === 'portrait' && portraitUrl) {
     view = <PortraitFigure url={portraitUrl} height={figH} name={name} onError={() => fail('portrait')} />;
@@ -509,11 +514,6 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
     ghost = (
       <div className={styles.ghost} style={{ opacity: outgoing.fading ? 0 : 1, transition: `opacity ${CROSSFADE_MS}ms ease` }} aria-hidden="true">
         {old}
-      </div>
-    );
-    view = (
-      <div className={styles.fill} style={{ opacity: outgoing.fading ? 1 : 0, transition: `opacity ${CROSSFADE_MS}ms ease` }}>
-        {view}
       </div>
     );
   }
