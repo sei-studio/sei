@@ -2190,7 +2190,6 @@ export const PT_BR: Record<string, string> = {
   "Custom color": "Cor personalizada",
   "Sei avatar": "Avatar Sei",
   "Upload Live2D": "Enviar Live2D",
-  "Soon": "Em breve",
   "Flip": "Espelhar",
   "Smaller": "Menor",
   "Larger": "Maior",

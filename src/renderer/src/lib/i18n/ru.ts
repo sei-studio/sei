@@ -2190,7 +2190,6 @@ export const RU: Record<string, string> = {
   "Custom color": "Свой цвет",
   "Sei avatar": "Аватар Sei",
   "Upload Live2D": "Загрузить Live2D",
-  "Soon": "Скоро",
   "Flip": "Отразить",
   "Smaller": "Меньше",
   "Larger": "Больше",

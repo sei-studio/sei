@@ -10,7 +10,6 @@ export const ZH_SEILINK: Record<string, string> = {
   "Custom color": "自定义颜色",
   "Sei avatar": "Sei 形象",
   "Upload Live2D": "上传 Live2D",
-  "Soon": "即将推出",
   "Flip": "翻转",
   "Smaller": "缩小",
   "Larger": "放大",

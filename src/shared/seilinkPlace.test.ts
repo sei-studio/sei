@@ -225,9 +225,9 @@ describe('surface', () => {
     expect(snapSpot(R, books, 300, 405, { fit, prefer: first.surface }).y).toBe(510);
   });
 
-  it('keeps most of the sprite on the plank at its ends', () => {
-    // Width 120: the anchor stays 40 px in from the line end at x 500.
-    expect(snapSpot(R, books, 900, 500, { fit }).x).toBe(460);
+  it('keeps the sprite on the plank at its ends', () => {
+    // Width 120: the anchor stays END_INSET (0.45) of it, 54 px, in from the line end at x 500.
+    expect(snapSpot(R, books, 900, 500, { fit }).x).toBe(446);
     expect(snapSpot(R, books, 900, 500).x).toBe(500);
   });
 
@@ -385,11 +385,16 @@ describe('the bundled cozy pack', () => {
   const r = placementRegions(cozy, base);
   const byId = (id: string): RoomComponent => cozy.components.find((c) => c.id === id)!;
 
-  it('is labelled: floor, wall, shelf lines, a bed top, part blocks, a horizon', () => {
+  it('is labelled: floor, wall, shelf tops with lips, a soft bed top, part blocks, a horizon', () => {
     expect(cozy).not.toBeNull();
     expect(r.labelled && r.perspective).toBe(true);
-    expect(r.surfaces.filter((s) => s.kind === 'line' && s.slot === 'shelf')).toHaveLength(3);
-    expect(r.surfaces.filter((s) => s.kind === 'area' && s.slot === 'bed')).toHaveLength(1);
+    const planks = r.surfaces.filter((s) => s.kind === 'area' && s.slot === 'shelf');
+    expect(planks).toHaveLength(3);
+    for (const p of planks) expect(p.kind === 'area' && p.lip && p.sink === 0).toBe(true);
+    const bed = r.surfaces.filter((s) => s.kind === 'area' && s.slot === 'bed');
+    expect(bed).toHaveLength(1);
+    expect(bed[0].kind === 'area' && !bed[0].lip && bed[0].sink > 0).toBe(true);
+    expect(r.surfaces.some((s) => s.kind === 'line')).toBe(false);
     expect(r.floorBlocks.length).toBeGreaterThanOrEqual(4);
     expect(cozy.horizon).toBeLessThan(r.floorTop);
   });

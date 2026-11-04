@@ -12,6 +12,7 @@ import {
   type RoomComponent,
   type RoomFrame,
   type RoomPolygon,
+  type RoomSurfaceTop,
   type RoomSegment,
   type RoomItemPlacement,
   type RoomPresetId,
@@ -133,6 +134,21 @@ function parseComponent(raw: unknown): RoomComponent | null {
   }
   const areas = polygons(c.surfaceAreas);
   if (areas) out.surfaceAreas = areas;
+  if (Array.isArray(c.surfaceTops)) {
+    const tops: RoomSurfaceTop[] = [];
+    for (const t of c.surfaceTops.slice(0, ROOM_LIMITS.polygons)) {
+      if (!t || typeof t !== 'object') continue;
+      const r = t as Record<string, unknown>;
+      const [area] = polygons([r.area]) ?? [];
+      if (!area) continue;
+      const top: RoomSurfaceTop = { area };
+      const [lip] = polygons([r.lip]) ?? [];
+      if (lip) top.lip = lip;
+      if (isNum(r.sink) && r.sink > 0 && r.sink < 200) top.sink = r.sink;
+      tops.push(top);
+    }
+    if (tops.length) out.surfaceTops = tops;
+  }
   if (c.blocks && typeof c.blocks === 'object') {
     const b = c.blocks as Record<string, unknown>;
     const floor = polygons(b.floor);

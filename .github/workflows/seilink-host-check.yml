@@ -146,9 +146,11 @@ jobs:
           if [ -z "$f" ]; then echo "::error::seilink.node is not in the packaged resources"; exit 1; fi
           ls -la "$f"
           # M4: the bundled room packs ship next to it (src/main/seilink/packs.ts bundledPacksDir).
-          m=$(find release -path '*seilink-packs/cozy/manifest.json' | head -1)
-          if [ -z "$m" ]; then echo "::error::the cozy room pack is not in the packaged resources"; exit 1; fi
-          echo "cozy pack: $(ls "$(dirname "$m")" | wc -l) files"
+          for p in cozy gamer forest; do
+            m=$(find release -path "*seilink-packs/$p/manifest.json" | head -1)
+            if [ -z "$m" ]; then echo "::error::the $p room pack is not in the packaged resources"; exit 1; fi
+            echo "$p pack: $(ls "$(dirname "$m")" | wc -l) files"
+          done
           if [ "$RUNNER_OS" = "macOS" ]; then lipo -info "$f"; fi
           ELECTRON_RUN_AS_NODE=1 npx electron -e "const a=require(require('path').resolve(process.argv[process.argv.length-1])); console.log('packaged addon loads:', a.platform, typeof a.doubleClickMs === 'function' ? a.doubleClickMs() + ' ms' : '')" "$f"
 

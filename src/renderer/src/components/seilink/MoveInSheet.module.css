@@ -103,13 +103,6 @@
   letter-spacing: 0.06em;
 }
 
-.soon {
-  font-family: var(--sans);
-  font-size: 12px;
-  letter-spacing: 0;
-  color: var(--muted);
-}
-
 .points {
   margin: 0;
   padding-left: 1.2em;

@@ -2,9 +2,10 @@
  * Where a dragged item can go (261105, physics-aware placement): a faint
  * highlight over the room for the item's class, drawn only while dragging.
  *  - floor: the real floor, minus what the parts cover (bed, lamp, chair);
- *  - surface: each shelf / desk line as a soft stroke (the one the item is
- *    on, brighter) and any surface area (a bed top) as a soft fill; with no
- *    surface left in the room it shows the floor the item falls to;
+ *  - surface: each top (a plank's whole top face, a bed top) as a soft
+ *    band, the one the item is on brighter with a soft glow round it (261105
+ *    shelf pass: the band, not a line), legacy lines as a soft stroke; with
+ *    no surface left in the room it shows the floor the item falls to;
  *  - wall: the bare wall, minus the window and the parts on it.
  * Canvas px in, laid over the room with the same viewport as RoomCanvas.
  * Nothing heavy: white at low alpha, no outlines, it fades in.
@@ -62,6 +63,24 @@ export function PlacementGuide({
           <rect x="0" y="0" width={w} height={h} fill="rgb(255 255 255 / 0.2)" mask={`url(#${id}m)`} />
         </>
       )}
+      {cls === 'surface' && regions.surfaces[surface]?.kind === 'area' && (
+        <>
+          <defs>
+            <filter id={`${id}g`} x="-20%" y="-200%" width="140%" height="500%">
+              <feGaussianBlur stdDeviation={5 * px} />
+            </filter>
+          </defs>
+          <polygon
+            points={pts((regions.surfaces[surface] as { poly: RoomPolygon }).poly)}
+            fill="rgb(255 255 255 / 0.18)"
+            stroke="rgb(255 255 255 / 0.55)"
+            strokeWidth={6 * px}
+            strokeLinejoin="round"
+            filter={`url(#${id}g)`}
+            data-guide-glow=""
+          />
+        </>
+      )}
       {cls === 'surface' &&
         regions.surfaces.map((s, i) =>
           s.kind === 'line' ? (
@@ -76,7 +95,15 @@ export function PlacementGuide({
               strokeLinecap="round"
             />
           ) : (
-            <polygon key={i} points={pts(s.poly)} fill={i === surface ? 'rgb(255 255 255 / 0.32)' : 'rgb(255 255 255 / 0.18)'} />
+            <polygon
+              key={i}
+              points={pts(s.poly)}
+              fill={i === surface ? 'rgb(255 255 255 / 0.3)' : 'rgb(255 255 255 / 0.2)'}
+              stroke={i === surface ? 'rgb(255 255 255 / 0.7)' : 'none'}
+              strokeWidth={1.5 * px}
+              strokeLinejoin="round"
+              data-guide-band={i === surface ? 'on' : ''}
+            />
           ),
         )}
     </svg>

@@ -12,6 +12,14 @@
  *    mirrored; a floor item's scale includes its depth scale and its z grows
  *    with y, a surface item takes the z of the part it rests on
  *    (seilinkPlace.ts);
+ *  - a surface top with a `lip` (261105 shelf pass) that has items on it
+ *    adds one more slot layer: its part's frame cut to the lip polygon
+ *    (`clip`), at the top of that top's z slice, so it covers the base of
+ *    the items on it and nothing else (seilinkPlace.ts has the slices);
+ *  - an item on a soft top (`sink`) carries how its base settles in
+ *    (ItemLayer.sink): the renderers draw it a little lower, fade its base
+ *    out just under the top's surface and lay a soft contact shadow under
+ *    it (sinkLook, sunkRect, sinkKeep, contactShadow);
  *  - a frame for a time the component does not have falls back to day;
  *  - glows are listed separately: they are drawn with 'screen' over
  *    everything, the avatar included, in the same z order.
@@ -25,12 +33,13 @@ import {
   type RoomComponent,
   type RoomFrame,
   type RoomGlowEffect,
+  type RoomPolygon,
   type RoomPresetManifest,
   type RoomSlotId,
   type RoomState,
   type RoomTime,
 } from './seilinkRoom';
-import { depthScale, placedItemZ, placementRegions } from './seilinkPlace';
+import { contactY, depthScale, placedItemZ, placementOf, placementRegions, surfaceAt } from './seilinkPlace';
 
 export interface SlotLayer {
   kind: 'slot';
@@ -42,6 +51,8 @@ export interface SlotLayer {
   tint: string | null;
   /** Where to draw, canvas px. null = full canvas at (0,0). */
   box: RoomBox | null;
+  /** Draw only inside these polygons, canvas px (a top's lip over the items on it). Absent = all of it. */
+  clip?: RoomPolygon[];
 }
 
 export interface AvatarLayer {
@@ -68,6 +79,11 @@ export interface ItemLayer {
   size: [number, number] | null;
   /** Tint through frame.mask (tintable items with a mask), like SlotLayer.tint. */
   tint: string | null;
+  /**
+   * On a soft top (a duvet): canvas px its base settles in (`depth`) and from
+   * its anchor up to its contact (`foot`), both at its scale. null = a hard top.
+   */
+  sink?: { depth: number; foot: number } | null;
 }
 
 export type RoomLayer = SlotLayer | AvatarLayer | ItemLayer;
@@ -125,12 +141,24 @@ export function roomDrawPlan(
   }
   const byId = new Map(manifest.components.map((c) => [c.id, c]));
   const regions = state.items.length ? placementRegions(manifest, state) : null;
+  /** Tops with a lip that hold an item (index into regions.surfaces). */
+  const lipped = new Set<number>();
   state.items.forEach((it, index) => {
     const component = byId.get(it.id);
     if (!component || component.slot !== 'item' || !regions) return;
     const frame = frameFor(component, time);
     const tint = it.tint ?? component.defaultTint;
     const manual = typeof it.scale === 'number' && it.scale > 0 ? it.scale : 1;
+    const scale = manual * depthScale(regions, component, it.y);
+    let sink: ItemLayer['sink'] = null;
+    if (placementOf(component) === 'surface') {
+      const on = surfaceAt(regions, it.x, contactY(regions, component, it));
+      const top = on >= 0 ? regions.surfaces[on] : null;
+      if (top?.kind === 'area') {
+        if (top.lip) lipped.add(on);
+        if (top.sink > 0) sink = { depth: top.sink * scale, foot: Math.max(0, component.foot ?? 0) * scale };
+      }
+    }
     layers.push({
       kind: 'item',
       z: placedItemZ(regions, component, it),
@@ -139,18 +167,27 @@ export function roomDrawPlan(
       frame,
       x: it.x,
       y: it.y,
-      scale: manual * depthScale(regions, component, it.y),
+      scale,
       flip: it.flip === true,
       size: component.box ? [component.box[2], component.box[3]] : null,
       tint: component.tintable && frame.mask && tint ? tint : null,
+      sink,
     });
   });
+  // Each used lip: its part's frame again, cut to the lip, just over the items on that top.
+  for (const i of lipped) {
+    const top = regions!.surfaces[i];
+    if (top.kind !== 'area' || !top.lip) continue;
+    const part = layers.find((l): l is SlotLayer => l.kind === 'slot' && l.slot === top.slot && !l.clip);
+    if (part) layers.push({ ...part, z: top.band[1], clip: [top.lip] });
+  }
   const order = layers.map((l, i) => ({ l, i }));
   order.sort((a, b) => a.l.z - b.l.z || KIND_RANK[a.l.kind] - KIND_RANK[b.l.kind] || a.i - b.i);
   const sorted = order.map((o) => o.l);
   const glows: GlowLayer[] = [];
   for (const l of sorted) {
-    if (l.kind === 'avatar' || !l.frame.glow) continue;
+    // A lip is its part drawn again in part: the part's own layer carries the glow.
+    if (l.kind === 'avatar' || !l.frame.glow || (l.kind === 'slot' && l.clip)) continue;
     glows.push({ z: l.z, src: l.frame.glow, effect: l.frame.effect ?? null, owner: l });
   }
   return { canvas: manifest.canvas, time, layers: sorted, glows };
@@ -192,6 +229,90 @@ export function itemRect(layer: ItemLayer, natural: [number, number]): RoomBox {
   const w = w0 * layer.scale;
   const h = h0 * layer.scale;
   return [layer.x - w / 2, layer.y - h, w, h];
+}
+
+// ── Soft tops ───────────────────────────────────────────────────────────────
+
+/**
+ * How a sunk item meets a soft top, canvas px. The sprite is drawn `shift`
+ * px lower than its anchor says, so its base goes below the top's surface at
+ * `contact` (where the object would touch it), and its pixels fade out from
+ * `fadeTop` (as is) to `fadeEnd` (gone): the base disappears into the duvet
+ * just under the surface line instead of perching on it.
+ */
+export interface SinkLook {
+  shift: number;
+  fadeTop: number;
+  contact: number;
+  fadeEnd: number;
+}
+
+export function sinkLook(layer: ItemLayer): SinkLook | null {
+  const s = layer.sink;
+  if (!s || !(s.depth > 0)) return null;
+  const contact = layer.y - s.foot;
+  return { shift: s.depth, fadeTop: contact - s.depth * 0.35, contact, fadeEnd: contact + Math.max(1, s.depth * 0.2) };
+}
+
+/** Opacity multiplier of a sunk sprite at canvas y: 1 above fadeTop, 0 from fadeEnd, linear between. */
+export function sinkKeep(look: SinkLook, y: number): number {
+  if (y <= look.fadeTop) return 1;
+  if (y >= look.fadeEnd) return 0;
+  return (look.fadeEnd - y) / Math.max(1e-6, look.fadeEnd - look.fadeTop);
+}
+
+/** Where a sunk item's sprite is drawn: its rect moved down by the sink. */
+export function sunkRect(rect: RoomBox, look: SinkLook): RoomBox {
+  return [rect[0], rect[1] + look.shift, rect[2], rect[3]];
+}
+
+/**
+ * The soft contact shadow under a sunk item: an ellipse at its contact as wide
+ * as its base (`base`: canvas x span of the sprite's opaque pixels just above
+ * the contact; null = a guess from the sprite width), darkest in the middle.
+ */
+export function contactShadow(layer: ItemLayer, look: SinkLook, base: [number, number] | null, spriteW: number): { cx: number; cy: number; rx: number; ry: number; alpha: number } {
+  const [x0, x1] = base ?? [layer.x - spriteW * 0.3, layer.x + spriteW * 0.3];
+  const rx = Math.max(4, (x1 - x0) / 2 + 3);
+  return { cx: (x0 + x1) / 2, cy: look.contact, rx, ry: Math.max(3, rx * 0.12 + look.shift * 0.3), alpha: 0.32 };
+}
+
+/**
+ * Canvas x span of an item's base: the opaque run of its sprite on the first
+ * row (going up from where it fades out) that has one. `alphaAt(u, v)` reads
+ * the sprite's alpha at sprite px; `size` is the sprite's px size, `rect`
+ * where it is drawn (sunkRect). null when no row near the base is opaque.
+ */
+export function baseSpan(
+  layer: ItemLayer,
+  look: SinkLook,
+  size: [number, number],
+  rect: RoomBox,
+  alphaAt: (u: number, v: number) => number,
+): [number, number] | null {
+  const [sw, sh] = size;
+  const [rx, ry, rw, rh] = rect;
+  if (!(sw > 0 && sh > 0 && rw > 0 && rh > 0)) return null;
+  const toV = (y: number): number => Math.floor(((y - ry) / rh) * sh);
+  const vContact = Math.min(sh - 1, toV(look.fadeEnd));
+  const vStop = Math.max(0, toV(look.fadeTop - look.shift * 2));
+  for (let v = vContact; v >= vStop; v--) {
+    let u0 = -1;
+    let u1 = -1;
+    for (let u = 0; u < sw; u++) {
+      if (alphaAt(u, v) > 140) {
+        if (u0 < 0) u0 = u;
+        u1 = u;
+      }
+    }
+    if (u0 >= 0) {
+      let a = rx + (u0 / sw) * rw;
+      let b = rx + ((u1 + 1) / sw) * rw;
+      if (layer.flip) [a, b] = [rx + rw - (b - rx), rx + rw - (a - rx)];
+      return [a, b];
+    }
+  }
+  return null;
 }
 
 // ── Time of day ─────────────────────────────────────────────────────────────

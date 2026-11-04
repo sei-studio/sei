@@ -1,0 +1,366 @@
+{
+  "format": "sei-room",
+  "version": 1,
+  "id": "forest",
+  "place": "a campfire in the forest",
+  "canvas": [2560, 1440],
+  "avatar": {
+    "x": 1300,
+    "y": 1440,
+    "height": 720
+  },
+  "slots": {
+    "view": {
+      "z": 0,
+      "options": [
+        "view_valley"
+      ]
+    },
+    "shell": {
+      "z": 10,
+      "options": [
+        "forest_clearing"
+      ]
+    },
+    "shelf": {
+      "z": 40,
+      "options": [
+        "tree_stump"
+      ],
+      "optional": true
+    },
+    "bed": {
+      "z": 50,
+      "options": [
+        "canvas_tent"
+      ],
+      "optional": true
+    },
+    "lamp": {
+      "z": 60,
+      "options": [
+        "lantern_post"
+      ],
+      "optional": true
+    },
+    "campfire": {
+      "z": 80,
+      "options": [
+        "campfire"
+      ]
+    },
+    "chair": {
+      "z": 90,
+      "options": [
+        "log_seat"
+      ]
+    }
+  },
+  "components": [
+    {
+      "id": "view_valley",
+      "slot": "view",
+      "name": "valley and hills",
+      "box": [323, 48, 2237, 828],
+      "frames": {
+        "day": {
+          "src": "view_valley_day.webp"
+        },
+        "dusk": {
+          "src": "view_valley_dusk.webp"
+        },
+        "night": {
+          "src": "view_valley_night.webp"
+        }
+      }
+    },
+    {
+      "id": "forest_clearing",
+      "slot": "shell",
+      "name": "forest clearing",
+      "frames": {
+        "day": {
+          "src": "clearing_day.webp"
+        },
+        "dusk": {
+          "src": "clearing_dusk.webp"
+        },
+        "night": {
+          "src": "clearing_night.webp"
+        }
+      }
+    },
+    {
+      "id": "canvas_tent",
+      "slot": "bed",
+      "name": "canvas tent",
+      "tintable": true,
+      "defaultTint": "#EDE7DB",
+      "swatches": [
+        "#ede7db",
+        "#e8dfc8",
+        "#d8c9a3",
+        "#b8a77a",
+        "#4e6b45",
+        "#6b7f4a",
+        "#b5603a",
+        "#d4a23c",
+        "#34466b",
+        "#a8403a"
+      ],
+      "frames": {
+        "day": {
+          "src": "tent_day.webp",
+          "mask": "tent_mask.webp"
+        },
+        "dusk": {
+          "src": "tent_dusk.webp",
+          "mask": "tent_mask.webp"
+        },
+        "night": {
+          "src": "tent_night.webp",
+          "mask": "tent_mask.webp"
+        }
+      },
+      "blocks": {
+        "floor": [
+          [[76, 830], [982, 830], [1040, 870], [1043, 900], [1028, 930], [706, 960], [490, 990], [386, 1023], [329, 1023], [145, 990], [138, 960], [27, 930], [14, 900], [23, 870]]
+        ]
+      }
+    },
+    {
+      "id": "lantern_post",
+      "slot": "lamp",
+      "name": "lantern on a post",
+      "frames": {
+        "day": {
+          "src": "lantern_post_day.webp"
+        },
+        "dusk": {
+          "src": "lantern_post_dusk.webp",
+          "glow": "lantern_glow_dusk.webp",
+          "effect": "flicker"
+        },
+        "night": {
+          "src": "lantern_post_night.webp",
+          "glow": "lantern_glow_night.webp",
+          "effect": "flicker"
+        }
+      },
+      "blocks": {
+        "floor": [
+          [[1046, 830], [1143, 830], [1146, 1000], [1146, 1040], [1170, 1086], [1090, 1086], [1000, 1040], [1038, 1000], [1049, 880]]
+        ]
+      }
+    },
+    {
+      "id": "tree_stump",
+      "slot": "shelf",
+      "name": "tree stump",
+      "frames": {
+        "day": {
+          "src": "stump_day.webp"
+        },
+        "dusk": {
+          "src": "stump_dusk.webp"
+        },
+        "night": {
+          "src": "stump_night.webp"
+        }
+      },
+      "surfaceTops": [
+        {
+          "area": [[1391, 916], [1383, 923], [1359, 929], [1324, 934], [1283, 935], [1242, 934], [1207, 929], [1183, 923], [1175, 916], [1183, 909], [1207, 903], [1242, 898], [1283, 897], [1324, 898], [1359, 903], [1383, 909]]
+        }
+      ],
+      "blocks": {
+        "floor": [
+          [[1169, 886], [1396, 886], [1404, 924], [1404, 984], [1410, 1014], [1437, 1044], [1454, 1074], [1350, 1106], [1139, 1106], [1102, 1074], [1057, 1044], [1062, 1014], [1160, 984], [1161, 924]]
+        ]
+      }
+    },
+    {
+      "id": "campfire",
+      "slot": "campfire",
+      "name": "campfire",
+      "frames": {
+        "day": {
+          "src": "campfire_day.webp",
+          "glow": "campfire_glow_day.webp",
+          "effect": "flicker"
+        },
+        "dusk": {
+          "src": "campfire_dusk.webp",
+          "glow": "campfire_glow_dusk.webp",
+          "effect": "flicker"
+        },
+        "night": {
+          "src": "campfire_night.webp",
+          "glow": "campfire_glow_night.webp",
+          "effect": "flicker"
+        }
+      },
+      "blocks": {
+        "floor": [
+          [[1810, 966], [1929, 966], [2097, 1018], [2141, 1058], [2165, 1098], [2169, 1138], [2139, 1178], [2080, 1218], [2041, 1230], [1742, 1230], [1695, 1218], [1599, 1178], [1559, 1138], [1560, 1098], [1587, 1058], [1626, 1018]]
+        ]
+      }
+    },
+    {
+      "id": "log_seat",
+      "slot": "chair",
+      "name": "log seat with a blanket",
+      "tintable": true,
+      "defaultTint": "#B0473F",
+      "swatches": [
+        "#b0473f",
+        "#3f6d8a",
+        "#d9a848",
+        "#6f8a5a",
+        "#e9dfc9",
+        "#7d5a8c"
+      ],
+      "frames": {
+        "day": {
+          "src": "log_day.webp",
+          "mask": "log_mask.webp"
+        },
+        "dusk": {
+          "src": "log_dusk.webp",
+          "mask": "log_mask.webp"
+        },
+        "night": {
+          "src": "log_night.webp",
+          "mask": "log_mask.webp"
+        }
+      },
+      "surfaceTops": [
+        {
+          "area": [[830, 1040], [900, 1049], [990, 1070], [1090, 1094], [1130, 1104], [1130, 1136], [1090, 1126], [990, 1102], [900, 1081], [830, 1072]]
+        },
+        {
+          "area": [[1640, 1220], [1750, 1233], [1850, 1257], [1950, 1275], [1990, 1282], [1990, 1316], [1950, 1309], [1850, 1291], [1750, 1267], [1640, 1254]]
+        }
+      ],
+      "blocks": {
+        "floor": [
+          [[704, 1440], [716, 1262], [728, 1117], [752, 1081], [776, 1053], [800, 1045], [840, 1031], [920, 1046], [1040, 1076], [1160, 1103], [1200, 1113], [1240, 1102], [1320, 1124], [1440, 1143], [1520, 1167], [1560, 1193], [1640, 1212], [1760, 1228], [1880, 1256], [2000, 1276], [2036, 1311], [2048, 1346], [2058, 1440]],
+          [[1040, 850], [1560, 850], [1560, 1440], [1040, 1440]]
+        ]
+      }
+    },
+    {
+      "id": "camp_lantern",
+      "slot": "item",
+      "name": "camping lantern",
+      "placement": "floor",
+      "box": [440, 1071, 240, 267],
+      "z": 85,
+      "frames": {
+        "day": {
+          "src": "item_camp_lantern_day.webp"
+        },
+        "dusk": {
+          "src": "item_camp_lantern_dusk.webp",
+          "glow": "item_camp_lantern_glow_dusk.webp",
+          "effect": "flicker"
+        },
+        "night": {
+          "src": "item_camp_lantern_night.webp",
+          "glow": "item_camp_lantern_glow_night.webp",
+          "effect": "flicker"
+        }
+      },
+      "foot": 7
+    },
+    {
+      "id": "backpack",
+      "slot": "item",
+      "name": "hiking backpack",
+      "placement": "floor",
+      "box": [247, 1025, 166, 199],
+      "z": 85,
+      "frames": {
+        "day": {
+          "src": "item_backpack_day.webp"
+        },
+        "dusk": {
+          "src": "item_backpack_dusk.webp"
+        },
+        "night": {
+          "src": "item_backpack_night.webp"
+        }
+      },
+      "foot": 13
+    },
+    {
+      "id": "mushrooms",
+      "slot": "item",
+      "name": "little mushrooms",
+      "placement": "floor",
+      "box": [2276, 1274, 108, 119],
+      "z": 85,
+      "frames": {
+        "day": {
+          "src": "item_mushrooms_day.webp"
+        },
+        "dusk": {
+          "src": "item_mushrooms_dusk.webp"
+        },
+        "night": {
+          "src": "item_mushrooms_night.webp"
+        }
+      },
+      "foot": 7
+    },
+    {
+      "id": "firewood",
+      "slot": "item",
+      "name": "stack of firewood",
+      "placement": "floor",
+      "box": [2227, 1123, 146, 104],
+      "z": 85,
+      "frames": {
+        "day": {
+          "src": "item_firewood_day.webp"
+        },
+        "dusk": {
+          "src": "item_firewood_dusk.webp"
+        },
+        "night": {
+          "src": "item_firewood_night.webp"
+        }
+      },
+      "foot": 11
+    },
+    {
+      "id": "camp_mug",
+      "slot": "item",
+      "name": "camping mug",
+      "placement": "surface",
+      "box": [848, 1001, 64, 57],
+      "z": 95,
+      "frames": {
+        "day": {
+          "src": "item_camp_mug_day.webp"
+        },
+        "dusk": {
+          "src": "item_camp_mug_dusk.webp"
+        },
+        "night": {
+          "src": "item_camp_mug_night.webp"
+        }
+      },
+      "foot": 4
+    }
+  ],
+  "overlay": {
+    "day": "#CFDCC8",
+    "dusk": "#5E4A55",
+    "night": "#131C2A"
+  },
+  "horizon": 300,
+  "floorAreas": [
+    [[0, 850], [700, 842], [1600, 835], [2150, 835], [2160, 870], [2090, 905], [1990, 935], [1910, 955], [1920, 965], [2050, 970], [2175, 995], [2325, 1002], [2450, 1015], [2560, 1050], [2560, 1470], [0, 1470]]
+  ]
+}
