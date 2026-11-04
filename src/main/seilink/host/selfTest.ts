@@ -43,6 +43,8 @@ const IS_MAC = !FAKE && process.platform === 'darwin';
 
 interface TestAddon {
   testClick(x: number, y: number, count?: number): unknown;
+  /** macOS only: size another app's first window through Accessibility. */
+  axSetWindowFrame?(bundleId: string, x: number, y: number, w: number, h: number): string;
 }
 
 interface Check {
@@ -79,16 +81,31 @@ function run(cmd: string, args: string[], timeoutMs = 20_000): Promise<string> {
   });
 }
 
-/** macOS: open TextEdit and zoom its window over the work area. False when that did not work. */
-async function coverWithTextEdit(out: string, wa: Electron.Rectangle): Promise<boolean> {
+/**
+ * macOS: open TextEdit and size its window over the work area: through Accessibility (the
+ * test addon; the runner grants it), else AppleScript (needs an Automation grant). True when
+ * TextEdit opened; an unsized window may still cover her, the cover check says.
+ */
+async function coverWithTextEdit(
+  out: string,
+  wa: Electron.Rectangle,
+  addon: TestAddon | null,
+  log: (s: string) => void,
+): Promise<boolean> {
   const file = path.join(out, 'cover.txt');
-  writeFileSync(file, 'cover');
+  writeFileSync(file, 'SeiLink self-test: this window covers the room.\n'.repeat(40));
   const opened = await run('/usr/bin/open', ['-a', 'TextEdit', file]);
+  log(`open TextEdit: ${opened.trim() || 'ok'}`);
   if (opened.startsWith('ERR')) return false;
-  await new Promise((r) => setTimeout(r, 2500));
-  const bounds = `{${wa.x}, ${wa.y}, ${wa.x + wa.width}, ${wa.y + wa.height}}`;
-  const res = await run('/usr/bin/osascript', ['-e', `tell application "TextEdit" to activate`, '-e', `tell application "TextEdit" to set bounds of front window to ${bounds}`], 8000);
-  return !res.startsWith('ERR');
+  await new Promise((r) => setTimeout(r, 3000));
+  const ax = addon?.axSetWindowFrame?.('com.apple.TextEdit', wa.x, wa.y, wa.width, wa.height) ?? 'no AX helper';
+  log(`TextEdit frame via AX: ${ax}`);
+  if (ax !== 'ok') {
+    const bounds = `{${wa.x}, ${wa.y}, ${wa.x + wa.width}, ${wa.y + wa.height}}`;
+    const res = await run('/usr/bin/osascript', ['-e', `tell application "TextEdit" to activate`, '-e', `tell application "TextEdit" to set bounds of front window to ${bounds}`], 8000);
+    log(`TextEdit frame via AppleScript: ${res.trim().slice(0, 200) || 'ok'}`);
+  }
+  return true;
 }
 
 export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWindow | null }): Promise<void> {
@@ -204,7 +221,7 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
       const d = screen.getPrimaryDisplay();
       // macOS: another app's window zoomed over the work area (the spike's cover; a window of our
       // own Electron bundle did not occlude the hit panel on macos-26). Windows: a maximized window.
-      const textEdit = IS_MAC ? await coverWithTextEdit(out, d.workArea) : false;
+      const textEdit = IS_MAC ? await coverWithTextEdit(out, d.workArea, testAddon, log) : false;
       log(`cover with ${textEdit ? 'TextEdit' : 'an Electron window'}`);
       const cover = textEdit
         ? null
@@ -226,7 +243,8 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
       await shot('02-covered');
       t = Date.now();
       if (cover) cover.destroy();
-      else log(`uncover: ${(await run('/usr/bin/osascript', ['-e', 'tell application "TextEdit" to quit saving no'], 8000)).trim() || 'TextEdit quit'}`);
+      // killall, not AppleScript: no Automation grant needed.
+      else log(`uncover: ${(await run('/usr/bin/killall', ['TextEdit'], 8000)).trim() || 'TextEdit killed'}`);
       const uncoveredMsg = await waitFor(since(t, 'activity', (m) => m.covered === false), 15_000);
       const back = await fpsAfter(uncoveredMsg ? uncoveredMsg.t : t, 'positive', 10_000);
       timings.uncoverMs = uncoveredMsg ? uncoveredMsg.t - t : -1;
@@ -246,14 +264,25 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
         const mainShown = !!opts.getMainWindow()?.isVisible();
         hideMain();
         await sleep(800);
-        // Bare wallpaper: the middle of the screen, away from her box and the icon columns.
-        const bx = Math.round((d.bounds.x + d.bounds.width * 0.45) * s);
-        const by = Math.round((d.bounds.y + d.bounds.height * 0.35) * s);
-        const insideHer = bx >= b.x * s && bx <= (b.x + b.w) * s && by >= b.y * s && by <= (b.y + b.h) * s;
+        // Bare wallpaper: beside her on the wider side, a third of the way into the gap (clear of
+        // her and of the icon column at the screen edge), at her mid-height.
+        const wa = d.workArea;
+        const leftGap = b.x - wa.x;
+        const rightGap = wa.x + wa.width - (b.x + b.w);
+        const bxPt = rightGap >= leftGap ? b.x + b.w + rightGap / 3 : b.x - leftGap / 3;
+        const byPt = Math.min(Math.max(b.y + b.h / 2, wa.y + 20), wa.y + wa.height - 20);
+        const bx = Math.round(bxPt * s);
+        const by = Math.round(byPt * s);
+        const insideHer = bxPt >= b.x && bxPt <= b.x + b.w && byPt >= b.y && byPt <= b.y + b.h;
         t = Date.now();
-        log(`click bare wallpaper at ${bx},${by}`);
+        log(`click bare wallpaper at ${bx},${by} (gaps ${Math.round(leftGap)}/${Math.round(rightGap)}${insideHer ? ', INSIDE her box' : ''})`);
         testAddon.testClick(bx, by, 1);
         const stray = await waitFor(since(t, 'click'), 2000);
+        // A stray open would put the app window over her and eat the double click.
+        if (stray) {
+          hideMain();
+          await sleep(800);
+        }
         t = Date.now();
         testAddon.testClick(cx, cy, 2);
         const dbl = await waitFor(since(t, 'click', (m) => m.kind === 'dblclick'), 3000);

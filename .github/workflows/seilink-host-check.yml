@@ -129,7 +129,7 @@ jobs:
           node -e "const r=require(process.env.OUT+'/result.json'); for (const [k,v] of Object.entries(r.checks)) console.log((v.ok?'PASS ':'FAIL ')+k+(v.ms!=null?' '+v.ms+'ms':'')+(v.detail?' '+String(v.detail).slice(0,200):'')); process.exit(r.ok?0:1)"
 
       - name: Package (dir) and check the addon is outside app.asar
-        if: matrix.package
+        if: matrix.package && !cancelled()
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |

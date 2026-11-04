@@ -37,7 +37,7 @@
         ["OS=='win'", { "sources": ["ci/test_win.cc"], "libraries": ["user32.lib"] }],
         ["OS=='mac'", {
           "sources": ["ci/test_mac.mm"],
-          "link_settings": { "libraries": ["-framework ApplicationServices"] }
+          "link_settings": { "libraries": ["-framework AppKit", "-framework ApplicationServices"] }
         }]
       ]
     }
