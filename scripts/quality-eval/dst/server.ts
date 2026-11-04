@@ -9,7 +9,7 @@
 // The mod under test is whatever ~/dst-server/mods/sei points at; the caller
 // repoints that link before start (mods are indexed once, at server start).
 import { spawn, type ChildProcess } from 'node:child_process';
-import { createWriteStream, existsSync, lstatSync, readlinkSync, symlinkSync, unlinkSync } from 'node:fs';
+import { cpSync, createWriteStream, existsSync, lstatSync, readlinkSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -23,6 +23,24 @@ export function pointModAt(modDir: string): string | null {
   try { unlinkSync(MOD_LINK); } catch {}
   symlinkSync(modDir, MOD_LINK);
   return prev;
+}
+
+/**
+ * Start every arm from the same world. The server saves the world on its own
+ * (each new day), so plants a rep spawned, picked or left behind carry into
+ * the next run, and two arms run one after the other would otherwise play
+ * different worlds. The first call copies the cluster's Master save to
+ * `snapshotDir`; later calls put that copy back before the server starts.
+ */
+export function pinWorld(snapshotDir: string, cluster = 'SeiTest'): 'saved' | 'restored' {
+  const save = path.join(os.homedir(), '.klei', 'DoNotStarveTogether', cluster, 'Master', 'save');
+  if (!existsSync(snapshotDir)) {
+    cpSync(save, snapshotDir, { recursive: true });
+    return 'saved';
+  }
+  rmSync(save, { recursive: true, force: true });
+  cpSync(snapshotDir, save, { recursive: true });
+  return 'restored';
 }
 
 export interface DstServer {

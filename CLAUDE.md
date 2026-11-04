@@ -3114,6 +3114,39 @@ which can be a player name), from the bot's `dst-lives` port messages
 (`sessionLives.ts`). Test overrides: `dst.respawn_delay_ms`,
 `respawn_timeout_ms`, `max_respawns`, `quick_death_ms`, `death_grace_ms`.
 
+**DST quality pass 1 (261104, helper 0.3.2).** A headless eval with the real
+brain lives in `scripts/quality-eval/dst/` (night, hostiles, follow, errands,
+hunger, a chat question mid-errand; pass or fail from game state, one small
+judge call for the chat line; usage in `native/dst-mod/sei/README.md`). What
+it found and what changed:
+- **A darkness hit is Charlie, not a monster.** The grue's hit reached the
+  brain as an ordinary attack, and the monster text told her to flee, which
+  does nothing in the dark and cancelled the gather that would have made her
+  torch. `events.lua` names the hit, `darkness.js` / `fsmWires.js` route it
+  to `DARK_HIT_ADDENDUM` (prompts.js): only light stops it, plus what the
+  torch still needs from what she carries.
+- **The light habit picks the torch makings** (`makingsAction` in
+  `reflexes.lua`): dark, no light and nothing to craft one from means grass
+  and twigs within 12 units are picked by the habit itself, retried every
+  0.5 s, so the torch exists before the second hit. A body summoned or
+  respawned into the dark with an empty bag used to die before the brain's
+  gather landed.
+- **The follow line says how far the target is once out of sight**
+  (`followd` in the self block, `followFar` in `snapshot.js`). A command
+  outranks Follow in the behaviour tree, so a long gather leaves her behind;
+  she now sees that. She still often chooses to keep working.
+- **A command whose action is invalid from the start ends at once**
+  (`actionFor`). `PushBufferedAction` refuses it with only an `actionfailed`
+  event and no fail callback, so a pick on an already-picked plant was
+  rebuilt every tick until the 90 s deadline.
+- **A blocked walk ends the command** (`superviseWalk` in `commands.lua`).
+  The DoAction slot only asks for the next action when the current one ends,
+  and a walk into water or a wall never ends, so the command and every one
+  after it sat until the app's timeout, with gather's deadline never read.
+  Three seconds without moving clears the walk: gather skips that target for
+  60 s and says how many it could not reach, other commands end with
+  `cant_reach`. Gather's deadline is also checked from the brain tick.
+
 **Credits:** every reused project is in `CREDITS.md` (linked from the README
 License section) with its license (user decision 7); copied code carries a header
 credit and `native/<mod>/THIRD_PARTY_NOTICES.md`.

@@ -23,7 +23,10 @@
 //
 // Usage (one heavy eval on the box at a time: ~/suisei/eval/QUEUE.md):
 //   npx tsx scripts/quality-eval/dst/run.ts --arm base --repo <checkout> \
-//     --out ~/suisei/reports/quality/<dir> [--scenarios a,b] [--reps 3] [--budget 4]
+//     --out ~/suisei/reports/quality/<dir> [--scenarios a,b] [--reps 3] [--budget 4] [--world <dir>]
+//
+// --world (default <out>/world-snapshot) pins the world: the first arm saves
+// the cluster's save there and every later arm starts from that copy.
 //
 // --repo is the checkout whose bot (src/bot) and helper mod
 // (native/dst-mod/sei) are under test; ~/dst-server/mods/sei is pointed at
@@ -38,7 +41,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDontStarveGameModule } from '../../../src/main/games/dontstarve/index';
 import { createDstWatcher } from '../../../src/main/games/dontstarve/watcher';
-import { startServer, pointModAt, type DstServer } from './server';
+import { startServer, pointModAt, pinWorld, type DstServer } from './server';
 import { HELPERS } from './lua';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -47,6 +50,7 @@ const arg = (k: string, d?: string) => { const i = argv.indexOf(`--${k}`); retur
 const ARM = arg('arm', 'base')!;
 const REPO = path.resolve(arg('repo', path.resolve(here, '..', '..', '..'))!);
 const OUT = path.resolve(arg('out', path.join(os.homedir(), 'suisei', 'reports', 'quality', 'dst-eval'))!);
+const WORLD = path.resolve(arg('world', path.join(OUT, 'world-snapshot'))!);
 const REPS = Number(arg('reps', '3'));
 const BUDGET = Number(arg('budget', '4'));
 const CHAR = arg('character', path.join(os.homedir(), 'suisei', 'eval', 'characters', 'sui.json'))!;
@@ -343,6 +347,7 @@ const prevLink = pointModAt(path.join(REPO, 'native', 'dst-mod', 'sei'));
 log(`arm=${ARM} repo=${REPO} mod link was ${prevLink}`);
 const restoreLink = () => { if (prevLink) { try { unlinkSync(path.join(os.homedir(), 'dst-server', 'mods', 'sei')); symlinkSync(prevLink, path.join(os.homedir(), 'dst-server', 'mods', 'sei')); } catch {} } };
 
+log(`world ${pinWorld(WORLD)} (${WORLD})`);
 srv = await startServer({ logPath: path.join(OUT, ARM, 'server.log'), log: (m) => log('SERVER', m) });
 let watcher: ReturnType<typeof createDstWatcher> | null = null;
 const shutdown = async (code: number) => {
