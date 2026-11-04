@@ -178,7 +178,35 @@ The contract for any replacement is in the file header.
   (`answerHostAvatarCall`) and NAMES files; the host reads them (16 MB per
   facepack file, 256 MB per model). Imports, removals and accessory
   toggles reach the host as `avatar-manifest` (`hostSignals.ts`, called from
-  ipc.ts). The face set is the facepack dev flag's, as in the app.
+  ipc.ts). The face set is her downloaded anima pack (below), else the
+  facepack dev flag's, as in the app. `avatarShown` (analytics only) reports
+  which kind RoomAvatar settled on.
+- **Her look: anima face sets (261105).** `src/main/anima/`. The first time
+  SeiLink opens for her (the move-in sheet, the room editor, her host
+  starting or being restored; never at app start for anyone else), main asks
+  sei-proxy `POST /anima/v1/request {character_id}` with the user's Sei JWT;
+  the proxy bakes a facepack from her cloud portrait on a GPU worker
+  (content-addressed by the portrait, so the defaults bake once for everyone)
+  and answers queued/running/ready/no_pack/failed/deferred/unavailable.
+  Main polls `GET /anima/v1/status/:id` (10 s, 20 s, then 45 s, 25 min max),
+  downloads the signed `pack.zip`, checks its sha256, extracts it into
+  `<userData>/anima/packs/an-<sha32>/` (temp dir + rename; entries must pass
+  `isSafePackPath`, a readable sei-facepack v1 manifest is required), and
+  records her in `<userData>/anima/index.json`. Then it re-broadcasts her
+  avatar manifest (app windows + `avatar-manifest` to the host), so every
+  RoomAvatar re-resolves; a portrait or silhouette crossfades to the face set
+  once it has drawn. `facepackForCharacter` / `facepackManifest` /
+  `facepackFile` serve `an-` ids in every build (no dev flag). Skipped
+  offline and signed out (fallback avatar, nothing shown). BYOK and local
+  model users with a Sei account still get a bake (it goes through the
+  proxy, not their key). The pack on disk is used without the network while
+  her portrait ref (portrait_image, cloud watermark, local file size+mtime)
+  is unchanged and the last check is under 12 h old; a character save that
+  changes it re-asks (with rechecks while the cloud row catches up).
+  Renderer: `useAnimaLook(characterId, trigger)` (IPC
+  `seilink:anima-prepare|status`, push `seilink:anima-changed`) drives the
+  quiet "Preparing {name}'s look…" line in the move-in sheet and the
+  editor's avatar panel. Account switch: `anima.reset()` stops every poll.
 
 ## On/off, persistence, account switch
 
