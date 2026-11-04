@@ -3146,6 +3146,13 @@ it found and what changed:
   Three seconds without moving clears the walk: gather skips that target for
   60 s and says how many it could not reach, other commands end with
   `cant_reach`. Gather's deadline is also checked from the brain tick.
+- **A replaced command lets go of the old action** (`cancelCurrent`). While
+  the body walks to a target the action sits on the LOCOMOTOR, so
+  `ClearBufferedAction` missed it and `locomotor:Stop()` kept it; the
+  DoAction node stayed on the old action and the new command never started
+  (the body stood until the app's timeout). Most eval timeouts followed a
+  "cancelled" result. `locomotor:Clear()` fails it and ends the node. Any
+  code that cancels mid-walk owes the same.
 
 **Credits:** every reused project is in `CREDITS.md` (linked from the README
 License section) with its license (user decision 7); copied code carries a header
