@@ -75,18 +75,29 @@ import type { EditorAvatarModel, EditorPack, RoomEditorSource } from './roomEdit
 import {
   AutoIcon,
   BagIcon,
+  BedIcon,
+  CampfireIcon,
+  ChairIcon,
   CheckIcon,
   CloseIcon,
+  CurtainsIcon,
   DayIcon,
   DuskIcon,
   FlipIcon,
+  HouseIcon,
+  LampIcon,
   MinusIcon,
   NightIcon,
   NoneIcon,
+  PersonIcon,
   PlusIcon,
+  RollerIcon,
+  RugIcon,
+  ShelfIcon,
   TrashIcon,
   UndoIcon,
   UploadIcon,
+  ViewIcon,
 } from './roomEditorIcons';
 import styles from './RoomEditor.module.css';
 
@@ -104,6 +115,21 @@ const SLOT_LABEL: Record<RoomSlotId, string> = {
   rug: 'Rug',
   campfire: 'Campfire',
 };
+
+/** Rail icons (261105): the rail names the slot; previews live in the panel. */
+const SLOT_ICON: Record<RoomSlotId, (p: { size?: number }) => React.ReactElement> = {
+  view: ViewIcon,
+  shell: RollerIcon,
+  curtains: CurtainsIcon,
+  bed: BedIcon,
+  shelf: ShelfIcon,
+  chair: ChairIcon,
+  lamp: LampIcon,
+  rug: RugIcon,
+  campfire: CampfireIcon,
+};
+
+const RAIL_ICON = 22;
 
 
 const TIMES: ReadonlyArray<{ id: RoomState['time']; label: string; Icon: (p: { size?: number }) => React.ReactElement }> = [
@@ -921,65 +947,62 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
 
         <div className={styles.side}>
           <nav className={panel ? `${styles.rail} ${styles.railOpen}` : styles.rail} aria-label={t('Room')}>
-            {tile('avatar', t('Avatar'), state.avatar.kind === 'live2d' ? <span className={styles.tileWord}>2D</span> : <span className={styles.figureIcon} />)}
-            {tile('room', t('Room type'), <RoomCard pack={pack} state={state} time={time} />)}
+            {tile('avatar', t('Avatar'), <PersonIcon size={RAIL_ICON} />)}
+            {tile('room', t('Room type'), <HouseIcon size={RAIL_ICON} />)}
             <span className={styles.railGap} />
             {slots.map((slot) => {
-              const id = slotChoice(manifest, state, slot);
-              const c = id ? byId.get(id) : undefined;
-              return tile(
-                slot,
-                t(SLOT_LABEL[slot]),
-                c ? <PartThumb pack={pack} component={c} tint={slotTint(slot)} time="day" cover={SCENE_SLOTS.has(slot)} /> : <NoneIcon size={20} />,
-              );
+              const Icon = SLOT_ICON[slot];
+              return tile(slot, t(SLOT_LABEL[slot]), <Icon size={RAIL_ICON} />);
             })}
             {items.length > 0 && (
               <>
                 <span className={styles.railGap} />
-                {tile('items', t('Items'), <BagIcon size={22} />)}
+                {tile('items', t('Items'), <BagIcon size={RAIL_ICON} />)}
               </>
             )}
           </nav>
           {renderPanel()}
         </div>
 
-        <div className={styles.times} role="radiogroup" aria-label={t('Time of day')}>
-          {TIMES.map(({ id, label, Icon }) => {
-            const on = state.time === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                role="radio"
-                aria-checked={on}
-                className={on ? `${styles.time} ${styles.timeOn}` : styles.time}
-                title={t(label)}
-                aria-label={t(label)}
-                onClick={() => edit((s) => setRoomTime(s, id))}
-              >
-                <Icon size={17} />
-                {on && <span className={styles.timeLabel}>{t(label)}</span>}
-              </button>
-            );
-          })}
-        </div>
+        <div className={styles.top}>
+          <div className={styles.times} role="radiogroup" aria-label={t('Time of day')}>
+            {TIMES.map(({ id, label, Icon }) => {
+              const on = state.time === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  className={on ? `${styles.time} ${styles.timeOn}` : styles.time}
+                  title={t(label)}
+                  aria-label={t(label)}
+                  onClick={() => edit((s) => setRoomTime(s, id))}
+                >
+                  <Icon size={17} />
+                  {on && <span className={styles.timeLabel}>{t(label)}</span>}
+                </button>
+              );
+            })}
+          </div>
 
-        <div className={styles.actions}>
-          <button type="button" className={styles.iconBtn} title={t('Undo')} aria-label={t('Undo')} disabled={!canUndo(history)} onClick={doUndo}>
-            <UndoIcon />
-          </button>
-          <button
-            type="button"
-            className={dirty ? `${styles.pill} ${styles.pillHot}` : styles.pill}
-            disabled={!dirty || saving === 'saving'}
-            onClick={() => void doSave()}
-          >
-            {!dirty && saving !== 'saving' && <CheckIcon size={16} />}
-            {savedLabel}
-          </button>
-          <button type="button" className={styles.iconBtn} title={t('Close')} aria-label={t('Close')} onClick={requestClose}>
-            <CloseIcon />
-          </button>
+          <div className={styles.actions}>
+            <button type="button" className={styles.iconBtn} title={t('Undo')} aria-label={t('Undo')} disabled={!canUndo(history)} onClick={doUndo}>
+              <UndoIcon />
+            </button>
+            <button
+              type="button"
+              className={dirty ? `${styles.pill} ${styles.pillHot}` : styles.pill}
+              disabled={!dirty || saving === 'saving'}
+              onClick={() => void doSave()}
+            >
+              {!dirty && saving !== 'saving' && <CheckIcon size={16} />}
+              {savedLabel}
+            </button>
+            <button type="button" className={styles.iconBtn} title={t('Close')} aria-label={t('Close')} onClick={requestClose}>
+              <CloseIcon />
+            </button>
+          </div>
         </div>
 
         {saving === 'error' && (
