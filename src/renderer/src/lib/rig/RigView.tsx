@@ -35,6 +35,8 @@ export interface RigViewProps {
   camera?: AvatarCamera | null;
   className?: string;
   onStatus?: (status: 'loading' | 'ready' | 'error') => void;
+  /** Frame cap (261104, SeiLink): absent = every animation frame, 0 = paused (no frames at all), N = at most N a second. */
+  fps?: number;
 }
 
 /* Blink (viewer.html): quick close-open triangle on a randomized timer. */
@@ -101,8 +103,13 @@ export function RigView({
   camera = null,
   className,
   onStatus,
+  fps,
 }: RigViewProps): React.ReactElement {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const fpsRef = useRef(fps);
+  fpsRef.current = fps;
+  // Restarts a loop paused by fps 0.
+  const resumeRef = useRef<(() => void) | null>(null);
   const speakingRef = useRef(speaking);
   speakingRef.current = speaking;
   const onStatusRef = useRef(onStatus);
@@ -248,9 +255,17 @@ export function RigView({
           }
         };
 
+        let lastTick = 0;
         const frame = (t: number): void => {
           if (cancelled) return;
+          const cap = fpsRef.current;
+          if (cap === 0) {
+            raf = 0;
+            return;
+          }
           raf = requestAnimationFrame(frame);
+          if (cap !== undefined && cap > 0 && t - lastTick < 1000 / cap - 1) return;
+          lastTick = t;
           const dt = Math.min((t - lastT) / 1000, 0.05);
           lastT = t;
 
@@ -335,6 +350,9 @@ export function RigView({
           }
         };
         raf = requestAnimationFrame(frame);
+        resumeRef.current = () => {
+          if (!cancelled && raf === 0) raf = requestAnimationFrame(frame);
+        };
         onStatusRef.current?.('ready');
       } catch (err) {
         if (!cancelled) {
@@ -347,6 +365,7 @@ export function RigView({
 
     return () => {
       cancelled = true;
+      resumeRef.current = null;
       cancelAnimationFrame(raf);
       if (saccadeTimer) clearTimeout(saccadeTimer);
       if (gazeModeTimer) clearTimeout(gazeModeTimer);
@@ -356,6 +375,10 @@ export function RigView({
       host.replaceChildren();
     };
   }, [characterId, levelRef]);
+
+  useEffect(() => {
+    if (fps !== 0) resumeRef.current?.();
+  }, [fps]);
 
   return <div ref={hostRef} className={className} />;
 }

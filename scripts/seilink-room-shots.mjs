@@ -4,6 +4,16 @@
  *
  *   node scripts/seilink-room-shots.mjs --packs <dir> [--preset cozy] [--out seilink-shots]
  *                                       [--shots day,dusk,night,...] [--size 1280x720]
+ *                                       [--serve <dir>] [--query '<extra params>']
+ *                                       [--video <seconds> --stills 2,9,15 --name idle]
+ *
+ * Her avatar (261104): --serve starts a second CORS static server over <dir>
+ * and `{SERVE}` in --query becomes its URL, e.g.
+ *   --serve faces --query 'faces={SERVE}/packs&face=sui&walk=6&away=12'
+ * (see DevRoomPreview for the avatar params). --video records the first shot
+ * for that many seconds (from the moment the room is ready) into
+ * <out>/<name>.mp4, H.264 with a silent AAC track (Telegram shows a
+ * soundless mp4 as a GIF), plus a still at each --stills second.
  *
  * Starts the renderer's Vite dev server on its own (no electron-vite), a small
  * CORS static server for <packs>/<preset>/, and Chrome through playwright,
@@ -39,6 +49,11 @@ const SHOTS = {
   'fade-day-night': 'time=day&items=1',
 };
 const names = arg('shots', Object.keys(SHOTS).join(',')).split(',');
+const SERVE = arg('serve', null);
+const QUERY = arg('query', '');
+const VIDEO_S = Number(arg('video', 0));
+const STILLS = arg('stills', '').split(',').filter(Boolean).map(Number);
+const NAME = arg('name', 'idle');
 
 function packServer(root) {
   return new Promise((resolve) => {
@@ -54,7 +69,7 @@ function packServer(root) {
           res.writeHead(404, headers);
           return res.end();
         }
-        const type = p.endsWith('.json') ? 'application/json' : p.endsWith('.webp') ? 'image/webp' : 'image/png';
+        const type = p.endsWith('.json') ? 'application/json' : p.endsWith('.webp') ? 'image/webp' : p.endsWith('.jpg') ? 'image/jpeg' : 'image/png';
         res.writeHead(200, { ...headers, 'Content-Type': type });
         res.end(buf);
       });
@@ -63,9 +78,50 @@ function packServer(root) {
   });
 }
 
+/** Record one shot as an mp4 with a silent audio track, plus stills. */
+async function recordVideo(browser, url) {
+  const dir = fs.mkdtempSync(path.join(OUT, '.video-'));
+  const ctx = await browser.newContext({ viewport: { width: VW, height: VH }, deviceScaleFactor: 1, recordVideo: { dir, size: { width: VW, height: VH } } });
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => console.log(`[page error] ${e.message.slice(0, 300)}`));
+  const t0 = Date.now();
+  await page.goto(url, { waitUntil: 'load' });
+  await page.waitForSelector('[data-room-ready="1"]', { timeout: 60_000 });
+  // Let her art decode before the clip starts.
+  await page.waitForTimeout(1500);
+  const offset = (Date.now() - t0) / 1000;
+  const start = Date.now();
+  for (const at of [...STILLS].sort((a, b) => a - b)) {
+    const wait = at * 1000 - (Date.now() - start);
+    if (wait > 0) await page.waitForTimeout(wait);
+    const file = path.join(OUT, `${NAME}-${String(at).padStart(2, '0')}s.png`);
+    await page.screenshot({ path: file });
+    const phase = await page.getAttribute('[data-avatar-phase]', 'data-avatar-phase').catch(() => null);
+    console.log(`${file} (${phase})`);
+  }
+  const rest = VIDEO_S * 1000 - (Date.now() - start);
+  if (rest > 0) await page.waitForTimeout(rest);
+  const video = page.video();
+  await ctx.close();
+  const webm = await video.path();
+  const mp4 = path.join(OUT, `${NAME}.mp4`);
+  const { spawnSync } = await import('node:child_process');
+  const r = spawnSync(
+    'timeout',
+    ['300', 'ffmpeg', '-y', '-loglevel', 'error', '-ss', offset.toFixed(2), '-i', webm, '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
+      '-t', String(VIDEO_S), '-map', '0:v', '-map', '1:a', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '20', '-r', '30', '-c:a', 'aac', '-b:a', '64k', '-shortest', mp4],
+    { stdio: 'inherit' },
+  );
+  fs.rmSync(dir, { recursive: true, force: true });
+  if (r.status !== 0) throw new Error(`ffmpeg failed (${r.status})`);
+  console.log(mp4);
+}
+
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
   const packs = await packServer(PACKS);
+  const served = SERVE ? await packServer(path.resolve(SERVE)) : null;
+  const extra = QUERY.replaceAll('{SERVE}', served ? `http://127.0.0.1:${served.address().port}` : '');
   const vite = await createServer({
     configFile: false,
     root: path.join(REPO, 'src/renderer'),
@@ -85,6 +141,11 @@ async function main() {
       if (m.type() === 'error' || m.type() === 'warning') console.log(`[page ${m.type()}] ${m.text().slice(0, 240)}`);
     });
     page.on('pageerror', (e) => console.log(`[page error] ${e.message.slice(0, 300)}`));
+    if (VIDEO_S > 0) {
+      const q = SHOTS[names[0]] ?? names[0];
+      await recordVideo(browser, `${viteUrl}/?seilink=1&pack=${encodeURIComponent(packUrl)}&${q}${extra ? `&${extra}` : ''}`);
+      return;
+    }
     for (const name of names) {
       const q = SHOTS[name];
       if (!q) {
@@ -92,7 +153,7 @@ async function main() {
         continue;
       }
       await page.setViewportSize(name === 'contain-dusk' ? { width: 1000, height: 800 } : { width: VW, height: VH });
-      await page.goto(`${viteUrl}/?seilink=1&pack=${encodeURIComponent(packUrl)}&${q}`, { waitUntil: 'load' });
+      await page.goto(`${viteUrl}/?seilink=1&pack=${encodeURIComponent(packUrl)}&${q}${extra ? `&${extra}` : ''}`, { waitUntil: 'load' });
       try {
         await page.waitForSelector('[data-room-ready="1"]', { timeout: 60_000 });
       } catch {
@@ -112,6 +173,7 @@ async function main() {
     await browser?.close().catch(() => {});
     await vite.close().catch(() => {});
     packs.close();
+    served?.close();
   }
 }
 

@@ -69,7 +69,7 @@ import { componentThumb, roomThumb } from '../../lib/seilink/roomThumbs';
 import { RoomPicker } from '../../lib/seilink/roomPick';
 import { drawRoomLayers, loadPlanAssets } from '../../lib/seilink/roomCompose';
 import { ctx2d } from '../../lib/seilink/roomImages';
-import { AvatarView } from '../../lib/avatar/AvatarView';
+import { RoomAvatar } from './RoomAvatar';
 import type { EditorAvatarModel, EditorPack, RoomEditorSource } from './roomEditorSource';
 import {
   AutoIcon,
@@ -207,11 +207,8 @@ function GlassFigure({ height }: { height: number }): React.ReactElement {
 
 function EditorAvatar({ slot, state, characterId }: { slot: RoomAvatarSlot; state: RoomState; characterId?: string }): React.ReactElement {
   if (state.avatar.kind === 'live2d' && characterId) {
-    return (
-      <div style={{ width: slot.height * 0.9, height: slot.height }}>
-        <AvatarView characterId={characterId} className={styles.live2d} />
-      </div>
-    );
+    // Framed exactly as the room shows her (RoomAvatar), held still while editing.
+    return <RoomAvatar slot={slot} characterId={characterId} use="imported" busy motion={false} />;
   }
   return <GlassFigure height={slot.height} />;
 }
