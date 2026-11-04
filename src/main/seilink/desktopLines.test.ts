@@ -10,9 +10,13 @@ import {
   LinePacer,
   POKE_MIN_GAP_MS,
   POKE_PER_HOUR,
+  IdleWindowStats,
+  POKE_REPEAT_QUIET_MS,
   budgetAllows,
+  budgetRefusal,
   idleBlock,
   lineBudgetFor,
+  pokeEventAllowed,
 } from './desktopLines';
 
 const free = { covered: false, paused: false, deafened: false, idleSeconds: 5, busy: false, occupied: false };
@@ -115,5 +119,65 @@ describe('seilink desktop lines (M4)', () => {
     }
     expect(p.canPoke(t + POKE_MIN_GAP_MS)).toBe(false);
     expect(p.canPoke(60 * 60_000 + 1)).toBe(true);
+  });
+});
+
+describe('seilink desktop line analytics (261105)', () => {
+  it('says why the budget refused a line', () => {
+    expect(budgetRefusal('idle', 'free', { plan: 'free', over_limit: false })).toBe('free_plan');
+    expect(budgetRefusal('poke', 'free', { plan: 'free', over_limit: false })).toBeNull();
+    expect(budgetRefusal('poke', 'none', { plan: 'free', over_limit: true })).toBe('free_cap');
+    expect(budgetRefusal('idle', 'none', { plan: 'quest', over_limit: true })).toBe('over_limit');
+    expect(budgetRefusal('poke', 'none', null)).toBe('no_plan');
+    expect(budgetRefusal('idle', 'own', null)).toBeNull();
+  });
+
+  it('counts each idle skip reason once per due window', () => {
+    const counts: Record<string, number> = {};
+    const st = new IdleWindowStats((k) => (counts[k] = (counts[k] ?? 0) + 1));
+    st.skip('covered'); // no window open: ignored
+    st.due();
+    st.due();
+    st.skip('covered');
+    st.skip('covered');
+    st.skip('away');
+    st.attempted('shown');
+    st.due();
+    st.skip('covered');
+    st.attempted('silence');
+    expect(counts).toEqual({
+      idle_due: 2,
+      idle_skip_covered: 2,
+      idle_skip_away: 1,
+      idle_attempted: 2,
+      idle_shown: 1,
+      idle_none_silence: 1,
+    });
+  });
+
+  it('the pacer says when the hourly cap holds a line back', () => {
+    const p = new LinePacer(() => 0); // every gap is exactly IDLE_MIN_GAP_MS (25 min)
+    p.follow('sui', 0);
+    expect(p.idleState(0)).toBe('not_due');
+    const g = IDLE_MIN_GAP_MS;
+    expect(p.idleState(g)).toBe('due');
+    p.noteIdle(g, true);
+    expect(p.idleState(2 * g)).toBe('due');
+    p.noteIdle(2 * g, true);
+    // 75 min: the gap passed, but both lines are inside the last hour.
+    expect(IDLE_PER_HOUR).toBe(2);
+    expect(p.idleState(3 * g)).toBe('cap');
+    expect(p.idleState(g + 60 * 60_000)).toBe('due');
+  });
+
+  it('collapses repeated refused pokes, never a real one', () => {
+    const last = new Map<string, number>();
+    expect(pokeEventAllowed(last, 'limited', 0)).toBe(true);
+    expect(pokeEventAllowed(last, 'limited', 1000)).toBe(false);
+    expect(pokeEventAllowed(last, 'limited', POKE_REPEAT_QUIET_MS + 1)).toBe(true);
+    expect(pokeEventAllowed(last, 'ok', 2)).toBe(true);
+    expect(pokeEventAllowed(last, 'ok', 3)).toBe(true);
+    expect(pokeEventAllowed(last, 'free_cap', 4)).toBe(true);
+    expect(pokeEventAllowed(last, 'free_cap', 5)).toBe(true);
   });
 });

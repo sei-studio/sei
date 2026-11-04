@@ -23,6 +23,7 @@ import { paths } from '../paths';
 import { trackScopedWrite } from '../profile/scopeBarrier';
 import { loadPack, publicPack } from './packs';
 import { seilinkEnabled, seilinkResident } from './gate';
+import { reportRoomError } from './seilinkErrors';
 import type { RoomContext, RoomSource } from './types';
 
 const ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -59,6 +60,8 @@ export async function getRoomPayload(characterId: string): Promise<SeilinkRoomPa
   const raw = await readRaw(paths.seilinkRoomPath(characterId));
   const preset = coarseState(raw).preset;
   const pack = await loadPack(preset);
+  // 261105: her preset's pack is not installed (a broken install for the bundled cozy room).
+  if (!pack) reportRoomError('read', new Error('SEILINK_PACK_MISSING'));
   const state = pack ? sanitizeRoomState(pack.manifest, raw ?? defaultRoomState(preset)) : coarseState(raw);
   return { characterId, state, pack: pack ? publicPack(pack) : null, saved: raw !== null };
 }
@@ -89,6 +92,16 @@ function emitChange(characterId: string): void {
  * (clean) state is returned. Throws SEILINK_BAD_ID / SEILINK_PACK_MISSING.
  */
 export async function setRoomState(characterId: string, raw: unknown): Promise<RoomState> {
+  try {
+    return await setRoomStateNow(characterId, raw);
+  } catch (err) {
+    // 261105: seilink_room_error {op: write, error_class} (the class only, never the message).
+    reportRoomError('write', err);
+    throw err;
+  }
+}
+
+async function setRoomStateNow(characterId: string, raw: unknown): Promise<RoomState> {
   if (!isRoomCharacterId(characterId)) throw new Error('SEILINK_BAD_ID');
   // The path is fixed before any await, so an account switch in the gap
   // still lands this write in the account it began in.

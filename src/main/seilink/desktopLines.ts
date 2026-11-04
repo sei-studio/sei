@@ -19,13 +19,18 @@
  *
  * The turn itself is chatService.sendDesktopLineTurn (her context and room
  * line, the note after the cache breakpoint, saved to her chat). Analytics:
- * seilink_line_shown {kind, chars, character_id}, shape only.
+ * seilink_line_shown {kind, chars, character_id}, shape only. 261105:
+ * seilink_poke {outcome, latency_ms, budget} per double click (repeats of a
+ * refused poke collapse, see pokeEventAllowed), and idle counts on the host
+ * session (idle_due / idle_skip_<reason> once per due window / idle_attempted /
+ * idle_shown / idle_none_<why>), sent with seilink_health and seilink_ended.
  */
 import { powerMonitor } from 'electron';
 import type { ChatMessage } from '../../shared/ipc';
 import { loadConfig } from '../configStore';
 import { loadAnalytics } from '../lazyAnalytics';
-import { seilinkHostBusy, seilinkHostStatus, seilinkLiveCharacter, sendSeilinkLine } from './host/seilinkHost';
+import { noteSeilinkCount, seilinkHostBusy, seilinkHostStatus, seilinkLiveCharacter, sendSeilinkLine } from './host/seilinkHost';
+import type { DesktopLineSkip } from '../chat/chatService';
 
 export const IDLE_MIN_GAP_MS = 25 * 60_000;
 export const IDLE_MAX_GAP_MS = 50 * 60_000;
@@ -71,8 +76,13 @@ export class LinePacer {
   }
 
   idleDue(now: number): boolean {
-    if (!this.who || now < this.nextIdleAt) return false;
-    return this.recent(this.idleTimes, now) < IDLE_PER_HOUR;
+    return this.idleState(now) === 'due';
+  }
+
+  /** 'cap': the gap passed but the hourly cap holds the line back (analytics). */
+  idleState(now: number): 'not_due' | 'cap' | 'due' {
+    if (!this.who || now < this.nextIdleAt) return 'not_due';
+    return this.recent(this.idleTimes, now) < IDLE_PER_HOUR ? 'due' : 'cap';
   }
 
   /** An idle try ran (a line or a silence): the next waits a full gap. */
@@ -127,6 +137,84 @@ export function budgetAllows(kind: 'idle' | 'poke', budget: LineBudget): boolean
 
 export type IdleBlock = 'covered' | 'paused' | 'deafened' | 'away' | 'busy' | 'occupied';
 
+/** Why the budget refused a line: a free account over its weekly cap, a paid one over its limit, no plan read. */
+export type BudgetRefusal = 'free_plan' | 'free_cap' | 'over_limit' | 'no_plan';
+
+export function budgetRefusal(kind: 'idle' | 'poke', budget: LineBudget, credits: { plan: string; over_limit: boolean } | null): BudgetRefusal | null {
+  if (budgetAllows(kind, budget)) return null;
+  if (budget === 'free') return 'free_plan';
+  if (!credits) return 'no_plan';
+  return credits.plan === 'free' ? 'free_cap' : 'over_limit';
+}
+
+/** seilink_poke outcomes. */
+export type PokeOutcome =
+  | 'ok'
+  /** Our own pacing: 20 s apart, POKE_PER_HOUR. */
+  | 'limited'
+  | 'free_plan'
+  | 'free_cap'
+  | 'over_limit'
+  | 'no_plan'
+  | 'rate_limited'
+  | 'occupied'
+  | 'busy'
+  | 'not_live'
+  | 'not_shown'
+  | DesktopLineSkip;
+
+/**
+ * Per-session idle stats: a "due window" opens when her gap has passed and closes at the next
+ * try. Each skip reason is counted once per window (the tick re-checks every minute), so the
+ * counts read "windows held back by X", not minutes.
+ */
+export class IdleWindowStats {
+  private open = false;
+  private seen = new Set<string>();
+
+  constructor(private readonly count: (key: string) => void) {}
+
+  /** A tick found the gap passed. */
+  due(): void {
+    if (this.open) return;
+    this.open = true;
+    this.seen.clear();
+    this.count('idle_due');
+  }
+
+  skip(reason: string): void {
+    if (!this.open || this.seen.has(reason)) return;
+    this.seen.add(reason);
+    this.count(`idle_skip_${reason}`);
+  }
+
+  /** A try ran: the window closes. */
+  attempted(result: 'shown' | string): void {
+    this.open = false;
+    this.count('idle_attempted');
+    this.count(result === 'shown' ? 'idle_shown' : `idle_none_${result}`);
+  }
+
+  /** She left the desktop: a new session starts a new window. */
+  reset(): void {
+    this.open = false;
+    this.seen.clear();
+  }
+}
+
+/** A refused poke repeated within this long sends no second event (it is still counted). */
+export const POKE_REPEAT_QUIET_MS = 60_000;
+
+/** One seilink_poke per refusal outcome per POKE_REPEAT_QUIET_MS; every ok / turn result is sent. */
+export function pokeEventAllowed(last: Map<string, number>, outcome: PokeOutcome, now: number): boolean {
+  const quiet = outcome === 'limited' || outcome === 'busy' || outcome === 'not_live' || outcome === 'occupied';
+  if (!quiet) return true;
+  const at = last.get(outcome);
+  if (at !== undefined && now - at < POKE_REPEAT_QUIET_MS) return false;
+  last.set(outcome, now);
+  return true;
+}
+
 /** Why no idle line now, or null when nothing blocks it. */
 export function idleBlock(s: {
   covered: boolean;
@@ -158,7 +246,10 @@ let deps: DesktopLinesDeps | null = null;
 const pacer = new LinePacer();
 let running = false;
 let timer: ReturnType<typeof setInterval> | null = null;
-let budgetCache: { at: number; value: LineBudget } | null = null;
+let budgetCache: { at: number; value: LineBudget; credits: { plan: string; over_limit: boolean } | null } | null = null;
+const idleStats = new IdleWindowStats((key) => noteSeilinkCount(key));
+const pokeQuiet = new Map<string, number>();
+let lastLive: string | null = null;
 
 export function initDesktopLines(d: DesktopLinesDeps): void {
   deps = d;
@@ -172,22 +263,25 @@ export function resetDesktopLineBudget(): void {
   budgetCache = null;
 }
 
-async function currentBudget(now: number): Promise<LineBudget> {
-  if (budgetCache && now - budgetCache.at < BUDGET_TTL_MS) return budgetCache.value;
+async function budgetInfo(now: number): Promise<{ value: LineBudget; credits: { plan: string; over_limit: boolean } | null }> {
+  if (budgetCache && now - budgetCache.at < BUDGET_TTL_MS) return budgetCache;
   let value: LineBudget = 'none';
+  let credits: { plan: string; over_limit: boolean } | null = null;
   try {
     const { getAiBackendKind } = await import('../apiKeyStore');
     const backend = await getAiBackendKind();
     if (backend === 'local') value = 'own';
     else {
       const { creditsGet } = await import('../cloud/proxyClient');
-      value = lineBudgetFor(backend, await creditsGet());
+      const c = await creditsGet();
+      credits = c ? { plan: c.plan, over_limit: c.over_limit } : null;
+      value = lineBudgetFor(backend, c);
     }
   } catch {
     value = 'none';
   }
-  budgetCache = { at: now, value };
-  return value;
+  budgetCache = { at: now, value, credits };
+  return budgetCache;
 }
 
 function systemIdleSeconds(): number {
@@ -202,7 +296,18 @@ async function tick(): Promise<void> {
   const now = Date.now();
   const id = seilinkLiveCharacter();
   pacer.follow(id, now);
-  if (!id || running || !deps || !pacer.idleDue(now)) return;
+  if (id !== lastLive) {
+    lastLive = id;
+    idleStats.reset();
+  }
+  if (!id || running || !deps) return;
+  const state = pacer.idleState(now);
+  if (state === 'not_due') return;
+  idleStats.due();
+  if (state === 'cap') {
+    idleStats.skip('cap');
+    return;
+  }
   const st = seilinkHostStatus();
   const cfg = await loadConfig().catch(() => null);
   const block = idleBlock({
@@ -214,35 +319,69 @@ async function tick(): Promise<void> {
     occupied: deps.occupied(id),
   });
   // Blocked: try again next tick (the gap already passed, so the line comes once she is free).
-  if (block) return;
-  if (!budgetAllows('idle', await currentBudget(now))) return;
-  const spoke = await say(id, 'idle');
-  pacer.noteIdle(Date.now(), spoke);
+  if (block) {
+    idleStats.skip(block);
+    return;
+  }
+  const budget = await budgetInfo(now);
+  const refusal = budgetRefusal('idle', budget.value, budget.credits);
+  if (refusal) {
+    idleStats.skip(refusal);
+    return;
+  }
+  const r = await say(id, 'idle');
+  idleStats.attempted(r.outcome === 'ok' ? 'shown' : r.outcome);
+  pacer.noteIdle(Date.now(), r.outcome === 'ok');
 }
 
 /** A double click on her (hostEntry's click classifier, via seilinkHost deps.onDoubleClick). */
 export async function onSeilinkPoke(characterId: string): Promise<void> {
   const now = Date.now();
-  if (!deps || running || seilinkLiveCharacter() !== characterId) return;
-  if (!pacer.canPoke(now) || deps.occupied(characterId)) return;
-  if (!budgetAllows('poke', await currentBudget(now))) return;
-  pacer.notePoke(now);
-  await say(characterId, 'poke');
+  const outcome = await pokeOutcome(characterId, now);
+  noteSeilinkCount(`poke_${outcome.outcome}`);
+  if (!pokeEventAllowed(pokeQuiet, outcome.outcome, now)) return;
+  capture('seilink_poke', {
+    character_id: characterId,
+    outcome: outcome.outcome,
+    latency_ms: outcome.latencyMs,
+    budget: outcome.budget,
+  });
 }
 
-async function say(characterId: string, kind: 'idle' | 'poke'): Promise<boolean> {
+async function pokeOutcome(characterId: string, now: number): Promise<{ outcome: PokeOutcome; latencyMs: number | null; budget: LineBudget | null }> {
+  if (!deps) return { outcome: 'not_live', latencyMs: null, budget: null };
+  if (running) return { outcome: 'busy', latencyMs: null, budget: null };
+  if (seilinkLiveCharacter() !== characterId) return { outcome: 'not_live', latencyMs: null, budget: null };
+  if (!pacer.canPoke(now)) return { outcome: 'limited', latencyMs: null, budget: null };
+  if (deps.occupied(characterId)) return { outcome: 'occupied', latencyMs: null, budget: null };
+  const budget = await budgetInfo(now);
+  const refusal = budgetRefusal('poke', budget.value, budget.credits);
+  if (refusal) return { outcome: refusal, latencyMs: null, budget: budget.value };
+  pacer.notePoke(now);
+  const r = await say(characterId, 'poke');
+  return { outcome: r.outcome, latencyMs: Date.now() - now, budget: budget.value };
+}
+
+function capture(event: string, props: Record<string, unknown>): void {
+  void loadAnalytics()
+    .then((a) => a.capture(event, props))
+    .catch(() => {});
+}
+
+async function say(characterId: string, kind: 'idle' | 'poke'): Promise<{ outcome: PokeOutcome }> {
   running = true;
   try {
+    let skipped: DesktopLineSkip = 'error';
     const { sendDesktopLineTurn } = await import('../chat/chatService');
-    const line = await sendDesktopLineTurn(characterId, kind).catch(() => null);
-    if (!line) return false;
+    const line = await sendDesktopLineTurn(characterId, kind, (why) => {
+      skipped = why;
+    }).catch(() => null);
+    if (!line) return { outcome: skipped };
     // Saved to her chat either way; the bubble only when she is still on the desktop.
     for (const m of line.messages) deps?.pushChatMessage(characterId, m);
-    if (!sendSeilinkLine(characterId, line.text, kind)) return false;
-    void loadAnalytics()
-      .then((a) => a.capture('seilink_line_shown', { kind, chars: line.text.length, character_id: characterId }))
-      .catch(() => {});
-    return true;
+    if (!sendSeilinkLine(characterId, line.text, kind)) return { outcome: 'not_shown' };
+    capture('seilink_line_shown', { kind, chars: line.text.length, character_id: characterId });
+    return { outcome: 'ok' };
   } finally {
     running = false;
   }

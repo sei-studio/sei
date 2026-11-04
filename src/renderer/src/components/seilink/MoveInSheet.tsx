@@ -15,7 +15,7 @@
  * A companion whose room is saved and nobody else moved in skips the sheet
  * (needsMoveInSheet, lib/seilink/moveIn.ts); the page starts the host directly.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { defaultRoomState, ROOM_PRESET_IDS, type RoomPresetId } from '@shared/seilinkRoom';
 import { seilinkResolver, type RoomUrlResolver, type SeilinkPack } from '@shared/seilinkPack';
 import { sei } from '../../lib/ipcClient';
@@ -25,6 +25,7 @@ import { Button } from '../Button';
 import { ModalShell, ModalFooter } from '../ModalShell';
 import { CheckIcon } from './roomEditorIcons';
 import { moveInFailed, ROOM_PRESET_LABEL } from '../../lib/seilink/moveIn';
+import { SEILINK_MOVEIN_SHEET_EVENT, type MoveInAction, type MoveInFail, type MoveInReason } from '@shared/seilinkTelemetry';
 import styles from './MoveInSheet.module.css';
 
 function PresetThumb({ pack, resolveFor }: { pack: SeilinkPack; resolveFor?: (p: SeilinkPack) => RoomUrlResolver }): React.ReactElement {
@@ -129,16 +130,44 @@ export interface MoveInSheetProps {
   characterId: string;
   name: string;
   otherName: string | null;
+  /** Why the page showed the sheet (analytics). */
+  reason?: MoveInReason;
   onClose: () => void;
 }
 
-export function MoveInSheet({ characterId, name, otherName, onClose }: MoveInSheetProps): React.ReactElement {
+export function MoveInSheet({ characterId, name, otherName, reason, onClose }: MoveInSheetProps): React.ReactElement {
   const t = useT();
   const [packs, setPacks] = useState<SeilinkPack[] | null>(null);
   const [saved, setSaved] = useState<{ saved: boolean; preset: RoomPresetId } | null>(null);
   const [preset, setPreset] = useState<RoomPresetId | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Analytics (261105), shape only: shown once loaded, then confirmed, failed (once per class) or dismissed.
+  const openedAt = useRef(Date.now());
+  const firstPreset = useRef<RoomPresetId | null>(null);
+  const sent = useRef(new Set<string>());
+  const report = (action: MoveInAction, extra: { error_class?: MoveInFail; packs?: number; pick?: boolean; preset?: RoomPresetId | null } = {}): void => {
+    const key = action === 'failed' ? `failed:${extra.error_class}` : action;
+    if (sent.current.has(key) || (action !== 'failed' && action !== 'shown' && (sent.current.has('confirmed') || sent.current.has('dismissed')))) return;
+    sent.current.add(key);
+    const at = extra.preset !== undefined ? extra.preset : preset;
+    try {
+      sei.track(SEILINK_MOVEIN_SHEET_EVENT, {
+        character_id: characterId,
+        action,
+        reason: reason ?? null,
+        preset: at,
+        pick_room: extra.pick ?? pickRoom,
+        swap: otherName !== null,
+        preset_changed: firstPreset.current !== null && at !== firstPreset.current,
+        ms_open: Date.now() - openedAt.current,
+        ...(extra.packs !== undefined ? { packs_available: extra.packs } : {}),
+        ...(extra.error_class ? { error_class: extra.error_class } : {}),
+      });
+    } catch {
+      /* analytics must never disrupt the sheet */
+    }
+  };
 
   useEffect(() => {
     let dead = false;
@@ -150,12 +179,19 @@ export function MoveInSheet({ characterId, name, otherName, onClose }: MoveInShe
         setSaved(was);
         const usable = list.some((x) => x.id === was.preset) ? was.preset : (list[0]?.id ?? null);
         setPreset(usable);
+        firstPreset.current = usable;
+        report('shown', { packs: list.length, pick: !was.saved, preset: usable });
       },
-      () => !dead && setPacks([]),
+      () => {
+        if (dead) return;
+        setPacks([]);
+        report('shown', { packs: 0 });
+      },
     );
     return () => {
       dead = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [characterId]);
 
   const pickRoom = saved ? !saved.saved : true;
@@ -164,16 +200,21 @@ export function MoveInSheet({ characterId, name, otherName, onClose }: MoveInShe
     if (!sei.seilinkHostStart) return;
     setBusy(true);
     setError(null);
+    let stage: MoveInFail = 'save_failed';
     try {
       if (pickRoom && preset && sei.seilinkRoomSet) await sei.seilinkRoomSet(characterId, defaultRoomState(preset));
+      stage = 'start_failed';
       const status = await sei.seilinkHostStart(characterId, { firstRoom: pickRoom });
       if (moveInFailed(status)) {
+        report('failed', { error_class: status.state === 'unsupported' ? 'unsupported' : 'start_failed' });
         setError(t('Could not move in. Try again.'));
         setBusy(false);
         return;
       }
+      report('confirmed');
       onClose();
     } catch {
+      report('failed', { error_class: stage });
       setError(t('Could not move in. Try again.'));
       setBusy(false);
     }
@@ -189,7 +230,10 @@ export function MoveInSheet({ characterId, name, otherName, onClose }: MoveInShe
       onPick={setPreset}
       busy={busy}
       error={error}
-      onCancel={onClose}
+      onCancel={() => {
+        report('dismissed');
+        onClose();
+      }}
       onConfirm={() => void confirm()}
     />
   );

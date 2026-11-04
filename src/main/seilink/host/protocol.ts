@@ -50,7 +50,28 @@ export type FromHost =
   | { type: 'hello'; pid: number; token: string }
   | { type: 'attached'; reattach: boolean; reason: string; layout: string; method?: string; attachMs: number }
   | { type: 'attach-failed'; failure: SeilinkHostFailure; detail: string }
-  | { type: 'first-frame'; sinceStartMs: number }
+  /**
+   * The page drew its first frame after an attach. 261105: with what the host verified right
+   * then (Windows: validate() says the window is still the child we chose, and visible; mac:
+   * still at the desktop level and visible) and the coverage at that moment (analytics).
+   */
+  | {
+      type: 'first-frame';
+      sinceStartMs: number;
+      verified?: boolean;
+      hidden?: boolean;
+      covered?: boolean;
+      paused?: boolean;
+      /** validate() reasons, closed set (hostTelemetry verifyReasonList). */
+      reasons?: string[];
+    }
+  /** 261105: display and GPU facts for analytics (at start and on a display change). */
+  | { type: 'facts'; displays: number; scale: number; widthPx: number; heightPx: number; gpu: string; hwAccel: boolean }
+  /**
+   * 261105: a post-attach check found something wrong that a re-attach does not report (the
+   * room window hidden while still parented, mac window not visible). Once per distinct set.
+   */
+  | { type: 'verify-failed'; reasons: string[]; trigger: string }
   | { type: 'activity'; covered: boolean; paused: boolean; fps: number; reason: string }
   | { type: 'click'; kind: 'click' | 'dblclick' }
   /** Her box and (M4) the dock buttons, in screen coordinates (top-left points). */

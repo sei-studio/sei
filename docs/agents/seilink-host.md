@@ -209,6 +209,9 @@ The contract for any replacement is in the file header.
 
 ## Analytics (shape only)
 
+The full event table (did it show, health, interaction, move-in, editor,
+errors) is in [`seilink-analytics.md`](seilink-analytics.md). The basics:
+
 - `seilink_started` {character_id, layout raised|classic|mac|other,
   attach_ms, restored}, on the first attach of a session.
 - `seilink_attach_failed` {character_id, failure_class, reattach,

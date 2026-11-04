@@ -30,6 +30,7 @@ import { parseRoomManifest, isRoomPresetId } from '../../shared/seilinkValidate'
 import { ROOM_PRESET_IDS, type RoomPresetId, type RoomPresetManifest } from '../../shared/seilinkRoom';
 import { SEILINK_ROOM_SCHEME, type SeilinkDevInfo, type SeilinkPack, type SeilinkPackSource } from '../../shared/seilinkPack';
 import { paths } from '../paths';
+import { reportPackError } from './seilinkErrors';
 
 /** Future download origin (dl.sei.gg mirrors release assets). Nothing fetches it yet. */
 export const SEILINK_PACK_BASE_URL = 'https://dl.sei.gg/seilink/packs/';
@@ -164,10 +165,13 @@ async function loadPackAt(dir: string, id: RoomPresetId, source: SeilinkPackSour
     const s = await stat(manifestPath);
     if (!s.isFile() || s.size > MANIFEST_MAX_BYTES) {
       console.warn(`[seilink] pack ${id}: manifest missing or too big`);
+      reportPackError(id, source, s.isFile() ? 'manifest_too_big' : 'manifest_missing');
       return null;
     }
     mtimeMs = Math.floor(s.mtimeMs);
   } catch {
+    // The pack's folder exists (realpath above) but has no manifest.
+    reportPackError(id, source, 'manifest_missing');
     return null;
   }
   const hit = cache.get(`${source}:${id}`);
@@ -178,14 +182,17 @@ async function loadPackAt(dir: string, id: RoomPresetId, source: SeilinkPackSour
     manifest = parseRoomManifest(JSON.parse(await readFile(manifestPath, 'utf8')));
   } catch (err) {
     console.warn(`[seilink] pack ${id}: unreadable manifest: ${(err as Error).message}`);
+    reportPackError(id, source, 'manifest_unreadable');
     return null;
   }
   if (!manifest) {
     console.warn(`[seilink] pack ${id}: manifest failed validation`);
+    reportPackError(id, source, 'manifest_invalid');
     return null;
   }
   if (manifest.id !== id) {
     console.warn(`[seilink] pack ${id}: manifest id "${manifest.id}" does not match its dir`);
+    reportPackError(id, source, 'id_mismatch');
     return null;
   }
   const files = new Map<string, string>();
@@ -193,6 +200,7 @@ async function loadPackAt(dir: string, id: RoomPresetId, source: SeilinkPackSour
     const real = await containedFile(realDir, rel);
     if (!real) {
       console.warn(`[seilink] pack ${id}: refused, "${rel}" is missing or outside the pack`);
+      reportPackError(id, source, 'file_missing');
       return null;
     }
     files.set(rel, real);

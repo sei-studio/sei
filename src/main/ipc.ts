@@ -73,6 +73,7 @@ import { noteCreditWall, type CreditWallContext } from './creditWall';
 import { observeOnboardingEvent } from './onboardingFunnel';
 import { sanitizeRendererSetupProps, trackMcScan, trackOpenLauncher, trackStardewScan, trackStartMinecraft } from './setupTelemetry';
 import { GAME_SETUP_EVENT } from '../shared/setupTelemetry';
+import { isSeilinkRendererEvent, sanitizeSeilinkTrack } from '../shared/seilinkTelemetry';
 import { registerPermissionHandlers } from './permissions/permissionsService';
 import { setSupervisor as setAuthSupervisor } from './auth/authHandlers';
 import type { BotSupervisor } from './botSupervisor';
@@ -3257,7 +3258,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       if (await applySeilinkSetting(on)) {
         const { loadAnalytics } = await import('./lazyAnalytics');
         void loadAnalytics()
-          .then((a) => a.capture('seilink_setting_toggled', { enabled: on, supported: seilinkSupport().supported }))
+          .then((a) => {
+            const support = seilinkSupport();
+            a.capture('seilink_setting_toggled', {
+              enabled: on,
+              supported: support.supported,
+              ...(support.reason ? { unsupported_reason: support.reason } : {}),
+            });
+          })
           .catch(() => {});
       }
     }
@@ -3377,7 +3385,15 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     try {
       const { event, props } = TrackArgsSchema.parse(raw);
       // 261104: setup steps are rebuilt from closed enums (shape only).
-      trackAnalytics(event, event === GAME_SETUP_EVENT ? sanitizeRendererSetupProps(props) : props);
+      // 261105: so are the SeiLink editor and move-in sheet events.
+      trackAnalytics(
+        event,
+        event === GAME_SETUP_EVENT
+          ? sanitizeRendererSetupProps(props)
+          : isSeilinkRendererEvent(event)
+            ? sanitizeSeilinkTrack(event, props)
+            : props,
+      );
       // 261005: remember where onboarding is, so a quit can report it.
       observeOnboardingEvent(event, props);
     } catch {

@@ -69,6 +69,8 @@ import {
 } from '@shared/seilinkEdit';
 import { useT } from '../../lib/i18n';
 import { ROOM_PRESET_LABEL } from '../../lib/seilink/moveIn';
+import { useEditorAnalytics } from '../../lib/seilink/editorAnalytics';
+import type { EditorOpenedFrom } from '@shared/seilinkTelemetry';
 import { RoomCanvas, type RoomAvatarSlot } from './RoomCanvas';
 import { componentThumb, roomThumb } from '../../lib/seilink/roomThumbs';
 import { RoomPicker } from '../../lib/seilink/roomPick';
@@ -157,6 +159,8 @@ export interface RoomEditorProps {
   initial?: { panel?: PanelRequest | null; selected?: number | null; state?: RoomState };
   /** Render inline instead of in a portal over the whole window (dev preview). */
   inline?: boolean;
+  /** Usage analytics (shape only). Only the companion editor passes it. */
+  telemetry?: { openedFrom: EditorOpenedFrom };
 }
 
 /** Slots the editor offers anything for, in draw order. */
@@ -351,7 +355,7 @@ function Swatches({
 // ── The editor ──────────────────────────────────────────────────────────────
 
 export function RoomEditor(props: RoomEditorProps): React.ReactElement {
-  const { source, characterId, onClose, clock, fps = 30, initial, inline } = props;
+  const { source, characterId, onClose, clock, fps = 30, initial, inline, telemetry } = props;
   const t = useT();
   const [packs, setPacks] = useState<EditorPack[] | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -379,6 +383,13 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
   const dragRef = useRef<{ index: number; pointerId: number; dx: number; dy: number; sx: number; sy: number; lifted: boolean; surface: number } | null>(null);
   const historyRef = useRef(history);
   historyRef.current = history;
+  const analytics = useEditorAnalytics(telemetry ? { ...telemetry, characterId } : null, {
+    history,
+    panel,
+    saving,
+    loadError,
+    packsEmpty: packs !== null && packs.length === 0,
+  });
 
   // ── load ──
   const loadAll = useCallback(async (): Promise<void> => {
@@ -543,11 +554,14 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
   const onPickZip = async (file: File): Promise<void> => {
     if (!source.avatar) return;
     setAvatarError(null);
+    analytics.avatarUpload('start');
     if (!/\.zip$/i.test(file.name)) {
+      analytics.avatarUpload('fail', 'not_zip');
       setAvatarError(t('That file is not a .zip archive.'));
       return;
     }
     if (file.size > ZIP_MAX_BYTES) {
+      analytics.avatarUpload('fail', 'too_big');
       setAvatarError(t('That archive is too large.'));
       return;
     }
@@ -556,7 +570,9 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
       const m = await source.avatar.importZip(await file.arrayBuffer());
       setModel(m);
       edit((s) => setRoomAvatar(s, { kind: 'live2d', modelPath: m.entry }));
+      analytics.avatarUpload('ok');
     } catch (err) {
+      analytics.avatarUpload('fail', 'import_failed');
       console.warn('[seilink editor] avatar import failed', err);
       setAvatarError(t('Could not read that model. It needs a .model3.json with its .moc3 and textures, or a rig.json with its layer images.'));
     } finally {
