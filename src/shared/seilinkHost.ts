@@ -90,9 +90,43 @@ export const SEILINK_HOST_FPS = 30;
  * The page never talks to the main app directly: everything goes through
  * the host process, which relays to main over its pipe.
  */
+/** Her room as the host page gets it: the saved room plus what RoomAvatar needs. */
+export interface SeilinkHostRoom extends SeilinkRoomPayload {
+  /**
+   * Her portrait as a URL the host page can load: `sei-room://_portrait/<file>?v=<mtime>`
+   * for a portrait stored on disk, else her portrait_image as is (https, or a bundled
+   * `./img/...` path, which resolves against the host page like the app's). null: none.
+   */
+  portrait: string | null;
+  name: string;
+}
+
+/** The pack-id slot of sei-room:// URLs that serves her portrait in the host (pack ids never start with '_'). */
+export const SEILINK_PORTRAIT_HOST = '_portrait';
+
+/**
+ * The avatar bridge calls the host page may make (RoomAvatar's views read them off
+ * `window.sei`); the host relays them to main, which answers for the moved-in
+ * character only.
+ */
+export const SEILINK_HOST_AVATAR_METHODS = [
+  'avatarGet',
+  'avatarModelFiles',
+  'facepackForCharacter',
+  'facepackManifest',
+  'facepackFile',
+] as const;
+export type SeilinkHostAvatarMethod = (typeof SEILINK_HOST_AVATAR_METHODS)[number];
+
+export function isSeilinkHostAvatarMethod(v: unknown): v is SeilinkHostAvatarMethod {
+  return typeof v === 'string' && (SEILINK_HOST_AVATAR_METHODS as readonly string[]).includes(v);
+}
+
 export interface SeilinkHostBridge {
-  /** Her room (on start and after every save). */
-  onRoom(cb: (room: SeilinkRoomPayload) => void): () => void;
+  /** Her room (on start, after every save, and when her portrait changes). */
+  onRoom(cb: (room: SeilinkHostRoom) => void): () => void;
+  /** The player is chatting with her or just clicked her: she holds still in her seat. */
+  onBusy(cb: (busy: boolean) => void): () => void;
   /** The frame cap now: 0 while covered, locked or asleep. */
   onFps(cb: (fps: number) => void): () => void;
   /** A click on her (after the double-click wait), a double click, or a drag stroke. */

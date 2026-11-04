@@ -7,7 +7,13 @@
  * shared chunk cannot load here). The channel names are spelled out and
  * seilinkHostChannels.test.ts checks them against SEILINK_HOST_CHANNELS.
  *
- * Exposes `window.seiRoomHost` (SeilinkHostBridge in src/shared/seilinkHost.ts).
+ * Exposes `window.seiRoomHost` (SeilinkHostBridge in src/shared/seilinkHost.ts),
+ * and a small `window.sei` with only the avatar calls RoomAvatar's views make
+ * (avatarGet, avatarModelFiles, onAvatarManifest, facepackForCharacter,
+ * facepackManifest, facepackFile). The host relays each one to main, which
+ * answers for the moved-in character only. Every other RendererApi method is
+ * absent here; the views call these with `?.` or only after avatarGet /
+ * facepackForCharacter found something.
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 
@@ -19,6 +25,9 @@ export const SEILINK_HOST_PRELOAD_CHANNELS = {
   frames: 'seilink-host:frames',
   firstFrame: 'seilink-host:first-frame',
   ready: 'seilink-host:ready',
+  busy: 'seilink-host:busy',
+  call: 'seilink-host:call',
+  avatarManifest: 'seilink-host:avatar-manifest',
 } as const;
 
 const C = SEILINK_HOST_PRELOAD_CHANNELS;
@@ -45,5 +54,15 @@ if (process.contextIsolated) {
     frames: (count: number) => ipcRenderer.send(C.frames, num(count)),
     firstFrame: () => ipcRenderer.send(C.firstFrame),
     ready: () => ipcRenderer.send(C.ready),
+    onBusy: (cb: (busy: boolean) => void) => listen<boolean>(C.busy, (v) => cb(v === true)),
+  });
+  const call = (method: string, ...args: unknown[]): Promise<unknown> => ipcRenderer.invoke(C.call, method, args);
+  contextBridge.exposeInMainWorld('sei', {
+    avatarGet: (characterId: string) => call('avatarGet', characterId),
+    avatarModelFiles: (characterId: string) => call('avatarModelFiles', characterId),
+    onAvatarManifest: (cb: (update: unknown) => void) => listen(C.avatarManifest, cb),
+    facepackForCharacter: (characterId: string) => call('facepackForCharacter', characterId),
+    facepackManifest: (id: string) => call('facepackManifest', id),
+    facepackFile: (id: string, path: string) => call('facepackFile', id, path),
   });
 }

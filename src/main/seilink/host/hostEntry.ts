@@ -31,8 +31,17 @@ import { RoomActivity, WTS_SESSION_LOCK, WTS_SESSION_UNLOCK } from './coverage';
 import { ClickClassifier, type PressPoint } from './clicks';
 import { FAKE_ADDON_FILE, addonPath, fakeDesktopEnabled, loadSeilinkAddon, type SeilinkAddon, type SeilinkMacAddon, type SeilinkWinAddon } from './native';
 import { SEILINK_HOST_CHANNELS as CH } from '../../../shared/seilinkHostChannels';
-import { SEILINK_ROOM_SCHEME, type SeilinkRoomPayload } from '../../../shared/seilinkPack';
-import { SEILINK_HOST_FPS, isSeilinkHostFailure, type SeilinkBox, type SeilinkHostFailure, type SeilinkPokeKind } from '../../../shared/seilinkHost';
+import { SEILINK_ROOM_SCHEME } from '../../../shared/seilinkPack';
+import {
+  SEILINK_HOST_FPS,
+  SEILINK_PORTRAIT_HOST,
+  isSeilinkHostFailure,
+  type SeilinkBox,
+  type SeilinkHostFailure,
+  type SeilinkHostRoom,
+  type SeilinkPokeKind,
+} from '../../../shared/seilinkHost';
+import { AvatarRelay } from './avatarRelay';
 
 /** Dev/CI smoke without a desktop layer (native.ts fakeDesktopEnabled): a plain window on any OS. */
 const FAKE = fakeDesktopEnabled(app.isPackaged);
@@ -40,7 +49,7 @@ const IS_WIN = !FAKE && process.platform === 'win32';
 const IS_MAC = !FAKE && process.platform === 'darwin';
 const T0 = Date.now();
 const PACK_FILE_MAX_BYTES = 24 * 1024 * 1024;
-const CONTENT_TYPES: Record<string, string> = { '.webp': 'image/webp', '.png': 'image/png' };
+const CONTENT_TYPES: Record<string, string> = { '.webp': 'image/webp', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg' };
 
 const args = parseSeilinkHostArgs(process.argv);
 if (!args) {
@@ -128,7 +137,9 @@ let attachedOnce = false;
 let layout = '';
 let macWantedLevel = 0;
 let workerWMissingAccepted = false;
-let room: SeilinkRoomPayload | null = null;
+let room: SeilinkHostRoom | null = null;
+/** The player is chatting with her or just clicked her (main decides; RoomAvatar holds her seated). */
+let busy = false;
 /** `<packId>/<rel>` -> realpath, from main's room message. */
 let allow = new Map<string, string>();
 let box: SeilinkBox | null = null;
@@ -175,7 +186,17 @@ function failure(v: unknown, fallback: SeilinkHostFailure): SeilinkHostFailure {
 function onCommand(m: ToHost): void {
   switch (m.type) {
     case 'room':
-      setRoom(m.payload, m.files);
+      setRoom(m.payload, m.files, m.portraitFile ?? null);
+      break;
+    case 'busy':
+      busy = m.busy === true;
+      if (win && !win.isDestroyed() && pageReady) win.webContents.send(CH.busy, busy);
+      break;
+    case 'call-result':
+      relay.onResult(m);
+      break;
+    case 'avatar-manifest':
+      if (win && !win.isDestroyed() && pageReady) win.webContents.send(CH.avatarManifest, { characterId: m.characterId, manifest: m.manifest });
       break;
     case 'set-fps':
       activity.setCap(Number(m.fps));
@@ -201,12 +222,13 @@ function onCommand(m: ToHost): void {
   }
 }
 
-function setRoom(payload: SeilinkRoomPayload, files: Array<[string, string]>): void {
+function setRoom(payload: SeilinkHostRoom, files: Array<[string, string]>, portraitFile: string | null): void {
   room = payload;
   const next = new Map<string, string>();
   if (payload.pack && Array.isArray(files)) {
     for (const [rel, real] of files) if (typeof rel === 'string' && typeof real === 'string') next.set(`${payload.pack.id}/${rel}`, real);
   }
+  if (typeof portraitFile === 'string') next.set(`${SEILINK_PORTRAIT_HOST}/${path.basename(portraitFile)}`, portraitFile);
   allow = next;
   log(`room ${payload.pack ? payload.pack.id : 'no pack'} (${next.size} files)`);
   if (win && !win.isDestroyed() && pageReady) win.webContents.send(CH.room, payload);
@@ -338,7 +360,19 @@ ipcMain.on(CH.ready, (e) => {
   if (!fromOurPage(e.sender)) return;
   pageReady = true;
   e.sender.send(CH.fps, activity.current.fps);
+  e.sender.send(CH.busy, busy);
   if (room) e.sender.send(CH.room, room);
+});
+
+// RoomAvatar's avatar calls (window.sei in the host preload), relayed to main.
+const relay = new AvatarRelay((m) => send(m), {
+  size: async (file) => (await stat(file)).size,
+  read: async (file) => new Uint8Array(await readFile(file)),
+});
+
+ipcMain.handle(CH.call, async (e, method: unknown, args: unknown) => {
+  if (!fromOurPage(e.sender)) throw new Error('not the room page');
+  return relay.call(method, args);
 });
 
 ipcMain.on(CH.box, (e, raw: unknown) => {

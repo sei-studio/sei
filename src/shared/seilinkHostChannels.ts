@@ -19,4 +19,10 @@ export const SEILINK_HOST_CHANNELS = {
   firstFrame: 'seilink-host:first-frame',
   /** page -> host: mounted, send the room. */
   ready: 'seilink-host:ready',
+  /** host -> page: busy (chatting with her, or a click just now). */
+  busy: 'seilink-host:busy',
+  /** page -> host (invoke): an avatar bridge call (SeilinkHostAvatarMethod, args), relayed to main. */
+  call: 'seilink-host:call',
+  /** host -> page: {characterId, manifest}, her imported avatar changed. */
+  avatarManifest: 'seilink-host:avatar-manifest',
 } as const;

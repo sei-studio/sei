@@ -32,8 +32,11 @@ import {
   startSeilinkHost,
   stopSeilinkHost,
 } from './seilinkHost';
+import { getCharacter } from '../../characterStore';
+import { SUI_CHARACTER_ID } from '../../../shared/voicePitch';
 
-const TEST_CHARACTER = '5e11a1c0-0000-4000-8000-00000000c1a0';
+/** No such character: the room draws her as a silhouette. Used when Sui is not in the store. */
+const SYNTHETIC_CHARACTER = '5e11a1c0-0000-4000-8000-00000000c1a0';
 const FAKE = fakeDesktopEnabled(app.isPackaged);
 const IS_WIN = !FAKE && process.platform === 'win32';
 const IS_MAC = !FAKE && process.platform === 'darwin';
@@ -127,6 +130,9 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
       log(`shot ${name}: ${(await run('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps1, file])).trim()}`);
     } else if (IS_MAC) {
       log(`shot ${name}: ${(await run('screencapture', ['-x', '-C', '-m', file])).trim() || 'ok'}`);
+    } else if (process.platform === 'linux' && process.env.DISPLAY) {
+      // The Xvfb smoke (fake desktop): ImageMagick's import, when installed.
+      log(`shot ${name}: ${(await run('import', ['-window', 'root', file])).trim() || 'ok'}`);
     }
   };
   const hideMain = (): void => {
@@ -155,7 +161,10 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
 
     // ── attach ──
     let t = Date.now();
-    const st = await startSeilinkHost(TEST_CHARACTER);
+    // Sui when the profile has her (her bundled portrait, cut out), so the screenshots show a real figure.
+    const testCharacter = (await getCharacter(SUI_CHARACTER_ID).catch(() => null)) ? SUI_CHARACTER_ID : SYNTHETIC_CHARACTER;
+    log(`character ${testCharacter === SUI_CHARACTER_ID ? 'sui' : 'synthetic'}`);
+    const st = await startSeilinkHost(testCharacter);
     log(`start -> ${JSON.stringify(st)}`);
     const gaveUp = (): boolean => seilinkHostStatus().state === 'failed';
     const attachedOrFailed = await waitFor(() => since(t, 'attached')() ?? (gaveUp() ? 'failed' : null), 60_000);

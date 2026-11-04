@@ -8,13 +8,25 @@
  * child it spawned, so a straggler from a replaced host, or another local
  * process, is never listened to.
  */
-import type { SeilinkRoomPayload } from '../../../shared/seilinkPack';
-import type { SeilinkHostFailure } from '../../../shared/seilinkHost';
+import type { AvatarManifest } from '../../../shared/ipc';
+import type { SeilinkHostAvatarMethod, SeilinkHostFailure, SeilinkHostRoom } from '../../../shared/seilinkHost';
 
 /** Main -> host. */
 export type ToHost =
-  /** Her room, and the pack files the host may serve (pack-relative path -> realpath). */
-  | { type: 'room'; payload: SeilinkRoomPayload; files: Array<[string, string]> }
+  /**
+   * Her room, and the files the host may serve: pack files (pack-relative path -> realpath),
+   * and her portrait's realpath when payload.portrait is a sei-room://_portrait URL.
+   */
+  | { type: 'room'; payload: SeilinkHostRoom; files: Array<[string, string]>; portraitFile?: string | null }
+  /** The player is chatting with her, or just clicked her. */
+  | { type: 'busy'; busy: boolean }
+  /**
+   * Answer to a `call`. A value that carries file bytes names the files instead
+   * (`{file}` for facepackFile, `[{path, file}]` for avatarModelFiles); the host reads them.
+   */
+  | { type: 'call-result'; id: number; ok: boolean; value?: unknown; error?: string }
+  /** Her imported avatar changed (an accessory toggle, an import, a removal). */
+  | { type: 'avatar-manifest'; characterId: string; manifest: AvatarManifest | null }
   /** Frame cap while visible. */
   | { type: 'set-fps'; fps: number }
   /** Hold the room still (a future dock "pause"). */
@@ -43,7 +55,9 @@ export type FromHost =
       cpu: number;
       ramMB: number;
     }
-  | { type: 'log'; level: 'info' | 'warn'; msg: string };
+  | { type: 'log'; level: 'info' | 'warn'; msg: string }
+  /** An avatar bridge call from the page (see SEILINK_HOST_AVATAR_METHODS). */
+  | { type: 'call'; id: number; method: SeilinkHostAvatarMethod; args: unknown[] };
 
 export function encodeLine(msg: ToHost | FromHost): string {
   return JSON.stringify(msg) + '\n';

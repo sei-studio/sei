@@ -33,12 +33,19 @@ import { addonAvailability } from './native';
 import {
   SEILINK_HOST_FPS,
   SEILINK_HOST_OFF,
+  isSeilinkHostAvatarMethod,
   isSeilinkHostFailure,
   type SeilinkEndReason,
   type SeilinkHostFailure,
   type SeilinkHostStatus,
 } from '../../../shared/seilinkHost';
 import { loadPack, seilinkDevEnabled } from '../packs';
+import { BusyTracker, onSeilinkAvatarChanged, onSeilinkChatTurn } from './hostSignals';
+import { answerHostAvatarCall, hostPortrait, type HostAvatarStores } from './hostAvatarCalls';
+import { getCharacter } from '../../characterStore';
+import { paths } from '../../paths';
+import { facesEnabled } from '../../facepack/facepackDev';
+import { packFilePath, packIdForCharacterName, readPackManifest } from '../../facepack/facepackStore';
 import { getRoomPayload, isRoomCharacterId, onRoomChange } from '../roomStore';
 import { loadConfig, updateConfig } from '../../configStore';
 import { loadAnalytics } from '../../lazyAnalytics';
@@ -59,6 +66,8 @@ export const seilinkHostEvents = new EventEmitter();
 const QUIT_GRACE_MS = 1500;
 const HELLO_WINDOW_MS = 5000;
 const BATTERY_FPS = 15;
+/** After her reply, she stays seated this long (the player is reading or typing). */
+const CHAT_BUSY_HOLD_MS = 60_000;
 
 interface Session {
   characterId: string;
@@ -75,7 +84,10 @@ interface Session {
   restarts: number;
   failuresSeen: Set<SeilinkHostFailure>;
   lastFailure: SeilinkHostFailure | null;
-  unsubRoom: () => void;
+  /** Drops the room, chat and avatar listeners. */
+  unsub: () => void;
+  /** The player is chatting with her (RoomAvatar holds her seated). */
+  busy: BusyTracker;
   ending: boolean;
 }
 
@@ -238,10 +250,28 @@ async function openSession(characterId: string, restored: boolean): Promise<void
     restarts: 0,
     failuresSeen: new Set(),
     lastFailure: null,
-    unsubRoom: onRoomChange((id) => {
-      if (session === s && id === s.characterId) void sendRoom(s);
+    unsub: () => undefined,
+    busy: new BusyTracker(CHAT_BUSY_HOLD_MS, (busy) => {
+      if (session === s) sendTo(s, { type: 'busy', busy });
     }),
     ending: false,
+  };
+  const offs = [
+    onRoomChange((id) => {
+      if (session === s && id === s.characterId) void sendRoom(s);
+    }),
+    onSeilinkChatTurn((id, active) => {
+      if (session !== s || id !== s.characterId) return;
+      if (active) s.busy.begin();
+      else s.busy.end();
+    }),
+    onSeilinkAvatarChanged((id, manifest) => {
+      if (session === s && id === s.characterId) sendTo(s, { type: 'avatar-manifest', characterId: id, manifest });
+    }),
+  ];
+  s.unsub = () => {
+    for (const off of offs) off();
+    s.busy.dispose();
   };
   session = s;
   supervisor.on('message', (m: FromHost) => onHostMessage(s, m));
@@ -351,6 +381,7 @@ function onConnection(s: Session, sock: net.Socket): void {
         s.conn = sock;
         s.connPid = pid;
         sendTo(s, { type: 'set-fps', fps: fpsCap });
+        sendTo(s, { type: 'busy', busy: s.busy.busy });
         void sendRoom(s);
         return;
       }
@@ -382,13 +413,16 @@ export function seilinkHostPidForTest(): number | null {
 
 async function sendRoom(s: Session): Promise<void> {
   try {
-    const payload = await getRoomPayload(s.characterId);
+    const room = await getRoomPayload(s.characterId);
     const files: Array<[string, string]> = [];
-    if (payload.pack) {
-      const pack = await loadPack(payload.pack.id);
+    if (room.pack) {
+      const pack = await loadPack(room.pack.id);
       if (pack) for (const [rel, real] of pack.files) files.push([rel, real]);
     }
-    if (session === s) sendTo(s, { type: 'room', payload, files });
+    const character = await getCharacter(s.characterId).catch(() => null);
+    const portrait = await hostPortrait(character?.portrait_image ?? null, paths.portraitPath);
+    const payload = { ...room, portrait: portrait.url, name: character?.name ?? '' };
+    if (session === s) sendTo(s, { type: 'room', payload, files, portraitFile: portrait.file });
   } catch (err) {
     log(`room for host failed: ${(err as Error).message}`);
   }
@@ -428,6 +462,34 @@ function onHostMessage(s: Session, m: FromHost): void {
     case 'log':
       log(`host: ${m.msg}`);
       break;
+    case 'call':
+      void answerCall(s, m);
+      break;
+  }
+}
+
+const avatarStores: HostAvatarStores = {
+  avatarManifest: async (id) => (await import('../../avatar/avatarStore')).getAvatarManifest(id),
+  avatarFiles: async (id) => (await import('../../avatar/avatarStore')).listAvatarModelFiles(id),
+  facepackFor: async (id) => {
+    if (!facesEnabled()) return null;
+    const c = await getCharacter(id).catch(() => null);
+    return c ? packIdForCharacterName(c.name) : null;
+  },
+  facepackManifest: (id) => readPackManifest(id),
+  facepackFilePath: (id, rel) => packFilePath(id, rel),
+};
+
+/** An avatar bridge call from the host page (RoomAvatar's views), answered for her only. */
+async function answerCall(s: Session, m: Extract<FromHost, { type: 'call' }>): Promise<void> {
+  const id = Number(m.id);
+  if (!Number.isInteger(id)) return;
+  try {
+    if (!isSeilinkHostAvatarMethod(m.method)) throw new Error('unknown method');
+    const value = await answerHostAvatarCall(s.characterId, m.method, Array.isArray(m.args) ? m.args : [], avatarStores);
+    if (session === s) sendTo(s, { type: 'call-result', id, ok: true, value });
+  } catch (err) {
+    if (session === s) sendTo(s, { type: 'call-result', id, ok: false, error: (err as Error).message.slice(0, 200) });
   }
 }
 
@@ -462,7 +524,7 @@ async function endSession(reason: SeilinkEndReason, failure?: SeilinkHostFailure
   if (!s || s.ending) return;
   s.ending = true;
   session = null;
-  s.unsubRoom();
+  s.unsub();
   const live = s.supervisor.stop({ kill: false });
   sendTo(s, { type: 'quit' });
   capture('seilink_ended', {

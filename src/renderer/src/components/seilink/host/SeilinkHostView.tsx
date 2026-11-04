@@ -3,22 +3,24 @@
  * screen, drawn as the desktop wallpaper by the room host process.
  *
  * Talks only to `window.seiRoomHost` (src/preload/seilinkHost.ts):
- * - in: her room (on start and after every save), the frame cap (0 while
- *   covered, locked or asleep), pokes (clicks on her);
+ * - in: her room (on start, after every save, when her portrait changes),
+ *   the frame cap (0 while covered, locked or asleep), pokes (clicks on her),
+ *   busy (chatting with her);
  * - out: her box (the click area), frames drawn, the first frame.
  *
  * The avatar goes through the mount point in hostAvatar.tsx.
  */
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { SeilinkRoomPayload } from '@shared/seilinkPack';
 import { seilinkResolver } from '@shared/seilinkPack';
-import type { SeilinkBox } from '@shared/seilinkHost';
+import type { SeilinkBox, SeilinkHostRoom } from '@shared/seilinkHost';
 import { RoomCanvas, type RoomAvatarSlot } from '../RoomCanvas';
+import { roomAvatarUse } from '../RoomAvatar';
 import { HostAvatar, type HostAvatarPoke } from './hostAvatar';
 import styles from './SeilinkHost.module.css';
 
 const FRAMES_REPORT_MS = 500;
-const BOX_POLL_MS = 1000;
+/** She moves (idle motion, a walk off): re-measure her click area this often. */
+const BOX_POLL_MS = 250;
 
 function sameBox(a: SeilinkBox | null, b: SeilinkBox | null): boolean {
   if (!a || !b) return a === b;
@@ -27,8 +29,9 @@ function sameBox(a: SeilinkBox | null, b: SeilinkBox | null): boolean {
 
 export function SeilinkHostView(): React.ReactElement {
   const bridge = window.seiRoomHost;
-  const [room, setRoom] = useState<SeilinkRoomPayload | null>(null);
+  const [room, setRoom] = useState<SeilinkHostRoom | null>(null);
   const [fps, setFps] = useState(0);
+  const [busy, setBusy] = useState(false);
   const [poke, setPoke] = useState<HostAvatarPoke | null>(null);
   const frames = useRef(0);
   const sceneReady = useRef(false);
@@ -46,6 +49,7 @@ export function SeilinkHostView(): React.ReactElement {
         firstSent.current = false;
       }),
       bridge.onFps(setFps),
+      bridge.onBusy(setBusy),
       bridge.onPoke((kind) => setPoke((p) => ({ kind, n: (p?.n ?? 0) + 1 }))),
     ];
     bridge.ready();
@@ -96,7 +100,8 @@ export function SeilinkHostView(): React.ReactElement {
     if (wrap) {
       const el = (wrap.querySelector('[data-seilink-hit]') as HTMLElement | null) ?? wrap;
       const r = el.getBoundingClientRect();
-      if (r.width > 0 && r.height > 0) next = { x: r.left, y: r.top, w: r.width, h: r.height };
+      // Hidden (she walked out of the frame): no click area, the desktop gets the clicks.
+      if (r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden') next = { x: r.left, y: r.top, w: r.width, h: r.height };
     }
     if (sameBox(next, lastBox.current)) return;
     lastBox.current = next;
@@ -125,9 +130,20 @@ export function SeilinkHostView(): React.ReactElement {
   });
 
   const characterId = room?.characterId ?? '';
+  const avatarChoice = room?.state.avatar;
+  const use = useMemo(() => (avatarChoice ? roomAvatarUse(avatarChoice) : 'sei'), [avatarChoice]);
   const renderAvatar = (slot: RoomAvatarSlot): React.ReactNode => (
     <div ref={setWrap} className={styles.measure}>
-      <HostAvatar characterId={characterId} slot={slot} fps={fps} poke={poke} />
+      <HostAvatar
+        characterId={characterId}
+        name={room?.name ?? ''}
+        slot={slot}
+        fps={fps}
+        portrait={room?.portrait ?? null}
+        use={use}
+        busy={busy}
+        poke={poke}
+      />
     </div>
   );
 
