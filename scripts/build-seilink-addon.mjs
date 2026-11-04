@@ -68,9 +68,10 @@ if (!force && existsSync(OUT) && statSync(OUT).mtimeMs > newestSource() && (!wit
 
 const require = createRequire(import.meta.url);
 const electronVersion = require('electron/package.json').version;
-const gyp = require.resolve('node-gyp/bin/node-gyp.js');
 
 function gypBuild(arch) {
+  // Resolved here, inside build()'s try: a missing node-gyp is a soft failure like a failed compile.
+  const gyp = require.resolve('node-gyp/bin/node-gyp.js');
   const args = [gyp, 'rebuild', `--target=${electronVersion}`, `--arch=${arch}`, '--dist-url=https://electronjs.org/headers'];
   console.log(`seilink addon: node-gyp rebuild (electron ${electronVersion}, ${arch})`);
   execFileSync(process.execPath, args, { cwd: SRC_DIR, stdio: 'inherit' });

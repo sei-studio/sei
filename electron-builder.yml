@@ -129,6 +129,9 @@ files:
   # 261104 SeiLink M4: the bundled room art ships through extraResources
   # (resources/seilink-packs, mac and win blocks), never app.asar as well.
   - "!resources/seilink-packs/**"
+  # The built addon (resources/seilink/seilink.node) ships through
+  # extraResources only; without this it also landed inside app.asar.
+  - "!resources/seilink/**"
   # 260803 vendor: stop shipping vendor/ TWICE. Every vendored package is a
   # `file:` dependency, so electron-builder already copies its dereferenced tree
   # to node_modules/<name>, which asarUnpack then unpacks. The literal vendor/
@@ -366,6 +369,7 @@ mac:
     - "!packs/**"
     - "!native/seilink/**"
     - "!resources/seilink-packs/**"
+    - "!resources/seilink/**"
     - "!.planning/**"
     - "!docs/**"
     - "!demo/**"
@@ -542,6 +546,7 @@ win:
     - "!packs/**"
     - "!native/seilink/**"
     - "!resources/seilink-packs/**"
+    - "!resources/seilink/**"
     - "!.planning/**"
     - "!docs/**"
     - "!demo/**"
