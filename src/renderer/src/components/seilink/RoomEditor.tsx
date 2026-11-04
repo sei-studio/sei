@@ -959,7 +959,6 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
                     )}
                     <span className={styles.cardLabel}>
                       {t(ROOM_PRESET_LABEL[id])}
-                      {!p && <span className={styles.soon}>{t('Soon')}</span>}
                     </span>
                   </button>
                 );

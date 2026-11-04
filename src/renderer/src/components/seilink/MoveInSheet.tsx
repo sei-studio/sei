@@ -4,8 +4,9 @@
  * Shown from the companion page's gear menu the first time a companion moves
  * in (she has no saved room yet), and whenever moving her in would move
  * someone else out. It has:
- *  - a room picker (one card per room pack that exists; a preset without a
- *    pack is shown disabled, "Soon", like the editor). Hidden when she
+ *  - a room picker (one card per room preset; all three ship with the app,
+ *    261105, and a preset whose pack failed to load is shown disabled, like
+ *    the editor). Hidden when she
  *    already has a room: it stays as she left it;
  *  - three short lines on what moving in means (wallpaper, pauses when
  *    covered, click her to chat, the dock);
@@ -91,7 +92,6 @@ export function MoveInSheetView(p: MoveInSheetViewProps): React.ReactElement {
                   </span>
                   <span className={styles.cardLabel}>
                     {t(ROOM_PRESET_LABEL[id])}
-                    {p.packs && !pack ? <span className={styles.soon}>{t('Soon')}</span> : null}
                   </span>
                 </button>
               );

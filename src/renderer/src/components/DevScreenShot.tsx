@@ -188,7 +188,7 @@ seed();
 
 const noop = (): void => undefined;
 
-/** The move-in sheet with the packs at &pack= (only that one exists; the others show "Soon"). */
+/** The move-in sheet with the pack at &pack= (only that one exists; the others show disabled). */
 function MoveInShot(): React.ReactElement {
   const packUrl = (params.get('pack') ?? '').replace(/\/?$/, '/');
   const [packs, setPacks] = React.useState<SeilinkPack[] | null>(null);

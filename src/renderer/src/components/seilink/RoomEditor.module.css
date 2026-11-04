@@ -555,13 +555,6 @@
   backdrop-filter: blur(10px);
 }
 
-.soon {
-  font-family: var(--sans);
-  font-size: 12px;
-  letter-spacing: 0.02em;
-  color: var(--muted);
-}
-
 /* Swatches. */
 .swatches {
   display: flex;

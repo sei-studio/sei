@@ -2190,7 +2190,6 @@ export const JA: Record<string, string> = {
   "Custom color": "カスタムカラー",
   "Sei avatar": "Seiアバター",
   "Upload Live2D": "Live2Dをアップロード",
-  "Soon": "近日公開",
   "Flip": "反転",
   "Smaller": "小さく",
   "Larger": "大きく",
