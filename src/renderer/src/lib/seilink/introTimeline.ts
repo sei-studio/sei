@@ -2,7 +2,7 @@
  * The first-link intro's timeline (261105, T337). Pure, so the view, the
  * harness and the tests agree on where each beat starts.
  *
- * Three beats and an end card, about 10.5 s (8 s calm):
+ * Three beats and an end card, about 11 s (8 s calm):
  *   tunnel  open a tunnel into her world, the room assembles
  *   link    she materialises in the room
  *   port    the room settles into a desktop, behind the icons
@@ -29,8 +29,8 @@ export interface IntroTimeline {
 
 export const FULL_TIMELINE: IntroTimeline = {
   beats: { tunnel: 0, link: 3400, port: 6300, linked: 8900 },
-  fadeAt: 9900,
-  end: 10600,
+  fadeAt: 10500,
+  end: 11200,
   msPerChar: 26,
   lineDelay: 250,
 };
@@ -38,8 +38,8 @@ export const FULL_TIMELINE: IntroTimeline = {
 /** Reduced motion: calm crossfades, shorter. */
 export const CALM_TIMELINE: IntroTimeline = {
   beats: { tunnel: 0, link: 2400, port: 4400, linked: 6200 },
-  fadeAt: 7300,
-  end: 7900,
+  fadeAt: 7700,
+  end: 8300,
   msPerChar: 0,
   lineDelay: 150,
 };

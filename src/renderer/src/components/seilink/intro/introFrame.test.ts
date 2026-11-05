@@ -4,7 +4,7 @@
  * app plays.
  *
  * Invariants under test:
- *   1. Three beats then the end card, in order, about 10.5 s (8 s calm).
+ *   1. Three beats then the end card, in order, about 11 s (8 s calm).
  *   2. The end card holds for the host's answer, at most HOLD_MAX_MS, and
  *      never delays anything before it.
  *   3. Every style: she is not there in beat 1, she is fully there by beat 3,

@@ -277,7 +277,7 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   (`seilink_movein_sheet.entry`, the editor's `opened_from`).
 - There is no on/off setting (the Settings "Labs" section was removed
   261105): SeiLink is available wherever `seilinkSupport()` says it can run.
-- **The first-link intro** (`components/seilink/intro/`): about 10.5 s, three
+- **The first-link intro** (`components/seilink/intro/`): about 11 s, three
   beats with one line each ("Opening a tunnel to the digital world…",
   "Linking {name}…", "Porting the link to your desktop…"), then "Linked." /
   "{name} lives on your desktop now.". `startSeilinkHost` (the only host

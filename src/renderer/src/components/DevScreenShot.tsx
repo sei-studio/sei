@@ -223,7 +223,7 @@ function MoveInShot(): React.ReactElement {
       error={null}
       onCancel={noop}
       onConfirm={noop}
-      resolveFor={() => (rel: string) => `${packUrl}${rel}`}
+      resolveFor={() => (rel: string) => `${rel.startsWith('_shared/') ? `${packUrl}../` : packUrl}${rel}`}
     />
   );
 }

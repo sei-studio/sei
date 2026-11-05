@@ -47,10 +47,10 @@ const SIZE = { width: 1920, height: 1080 };
 
 /** Matches introTimeline.ts (FULL_TIMELINE.end, CALM_TIMELINE.end) plus a short tail. */
 const VIDEOS = {
-  'option-A': { q: 'style=holo', ms: 10_600 + 300 },
-  'option-B': { q: 'style=glitch', ms: 10_600 + 300 },
-  'option-C': { q: 'style=tunnel', ms: 10_600 + 300 },
-  reduced: { q: 'style=holo&reduced=1', ms: 7_900 + 300 },
+  'option-A': { q: 'style=holo', ms: 11_200 + 300 },
+  'option-B': { q: 'style=glitch', ms: 11_200 + 300 },
+  'option-C': { q: 'style=tunnel', ms: 11_200 + 300 },
+  reduced: { q: 'style=holo&reduced=1', ms: 8_300 + 300 },
 };
 const only = arg('only', [...Object.keys(VIDEOS), 'tour'].join(',')).split(',');
 

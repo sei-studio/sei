@@ -35,7 +35,7 @@ import {
   typedChars,
   type IntroTimeline,
 } from '../../../lib/seilink/introTimeline';
-import { computeFrame, type Box, type IntroFrame } from './introFrame';
+import { PORT_SCALE, computeFrame, type Box, type IntroFrame } from './introFrame';
 import { drawBack, drawFront } from './introFx';
 import styles from './FirstLinkIntro.module.css';
 
@@ -123,6 +123,7 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
   const deskRef = useRef<HTMLDivElement>(null);
   const iconRefs = useRef<Array<HTMLDivElement | null>>([]);
   const brandRef = useRef<HTMLDivElement>(null);
+  const scrimRef = useRef<HTMLDivElement>(null);
   const lineRef = useRef<HTMLSpanElement>(null);
   const caretRef = useRef<HTMLSpanElement>(null);
   const subRef = useRef<HTMLParagraphElement>(null);
@@ -192,6 +193,8 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
         set(el, 'transform', `translateY(${((1 - a) * 12).toFixed(1)}px)`);
       });
       set(brandRef.current, 'opacity', f.brand.toFixed(3));
+      // The caption's backing shade, while the room fills the window (the line sits over her).
+      set(scrimRef.current, 'opacity', (f.stage.opacity * span(f.stage.scale, PORT_SCALE + 0.05, 0.95)).toFixed(3));
       f.bars.forEach((b, i) => set(fillRefs.current[i], 'transform', `scaleX(${b.toFixed(4)})`));
 
       // Glitch filter parameters (only read while a burst is on).
@@ -219,7 +222,7 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
         line = lines.aborted;
       } else if (f.beat === 'linked') {
         line = lines.linked;
-        subOpacity = span(f.t, tl.beats.linked + 350, tl.beats.linked + 900);
+        subOpacity = span(f.t, tl.beats.linked + 250, tl.beats.linked + 650);
         lineOpacity = tl.msPerChar > 0 ? 1 : span(f.t, tl.beats.linked + tl.lineDelay, tl.beats.linked + tl.lineDelay + 320);
       } else {
         const full = Array.from(lines[f.beat]);
@@ -414,6 +417,7 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
       </div>
       <canvas ref={frontRef} className={styles.fx} aria-hidden="true" />
 
+      <div ref={scrimRef} className={styles.captionScrim} aria-hidden="true" />
       <div ref={brandRef} className={styles.brand} aria-hidden="true">
         <span className={styles.brandDot} />
         SEILINK
