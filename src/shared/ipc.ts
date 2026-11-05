@@ -2247,6 +2247,8 @@ export interface RendererApi {
   onSeilinkAnima?(cb: (status: AnimaStatus) => void): Unsubscribe;
   /** What a RoomAvatar ended up showing for her (analytics only). */
   seilinkAnimaShown?(characterId: string, kind: AnimaShownKind): void;
+  /** 261105: the companion room editor opened or closed (one token per session); she may react to the edits. */
+  seilinkEditorSession?(phase: 'open' | 'close', token: string, characterId: string): void;
   /**
    * Overlay window only (260806): stream a character's tile camera (zoom +
    * pan within the tile) while edit-mode wheel/drag adjusts it; `commit`
@@ -4329,6 +4331,8 @@ export const IpcChannel = {
     animaChanged: 'seilink:anima-changed',
     /** Send: what a RoomAvatar ended up showing ({characterId, kind}), analytics only. */
     animaShown: 'seilink:anima-shown',
+    /** Send: the companion editor opened or closed ({phase, token, characterId}); main diffs her room for her reaction line (roomReaction.ts). */
+    editorSession: 'seilink:editor-session',
   },
 } as const;
 

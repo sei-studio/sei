@@ -14,13 +14,14 @@
  *   name=<name>           her name (default Sui)
  *   lang=<code>           UI language
  *   press=edit|deafen     simulate a dock press after the line shows (the caption)
+ *   state=<json>          261105: the room as saved (slots, items; sanitized like the store's), e.g. after an edit
  * Used by scripts/seilink-host-shots.mjs. Never in a packaged build (main.tsx
  * imports it only under import.meta.env.DEV).
  */
 import React, { useMemo } from 'react';
 import { defaultRoomState, type RoomState } from '@shared/seilinkRoom';
 import type { SeilinkDockAction, SeilinkHostBridge, SeilinkHostRoom } from '@shared/seilinkHost';
-import { parseRoomManifest } from '@shared/seilinkValidate';
+import { parseRoomManifest, sanitizeRoomState } from '@shared/seilinkValidate';
 import { desktopLineFace } from '@shared/seilinkExpression';
 import type { SeilinkPack } from '@shared/seilinkPack';
 import { SeilinkHostView } from './SeilinkHostView';
@@ -41,7 +42,14 @@ function fakeBridge(params: URLSearchParams): SeilinkHostBridge {
           const manifest = parseRoomManifest(raw);
           if (!manifest) throw new Error('bad manifest');
           const t = params.get('time');
-          const state: RoomState = { ...defaultRoomState(manifest.id), time: t === 'dusk' || t === 'night' ? t : 'day' };
+          let saved: unknown = null;
+          try {
+            saved = JSON.parse(params.get('state') ?? 'null');
+          } catch {
+            saved = null;
+          }
+          const base = saved ? sanitizeRoomState(manifest, { ...defaultRoomState(manifest.id), ...(saved as object) }) : defaultRoomState(manifest.id);
+          const state: RoomState = { ...base, time: t === 'dusk' || t === 'night' ? t : 'day' };
           const pack: SeilinkPack = { id: manifest.id, manifest, rev: 1, source: 'dev' };
           cb({
             characterId: 'dev-preview',

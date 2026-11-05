@@ -24,6 +24,11 @@
  * refused poke collapse, see pokeEventAllowed), and idle counts on the host
  * session (idle_due / idle_skip_<reason> once per due window / idle_attempted /
  * idle_shown / idle_none_<why>), sent with seilink_health and seilink_ended.
+ *
+ * 261105 (T335): a third kind, `react`, is her one line after the player
+ * changes her room in the editor. roomReaction.ts decides when; it pays like
+ * a poke (the player did something) and goes through speakRoomReaction here,
+ * so it shares the one-line-at-a-time guard and the plan read.
  */
 import { powerMonitor } from 'electron';
 import type { ChatMessage } from '../../shared/ipc';
@@ -238,6 +243,8 @@ export function idleBlock(s: {
 export interface DesktopLinesDeps {
   /** She is in a game (bot online) or on a call: the desktop stays quiet. */
   occupied(characterId: string): boolean;
+  /** 261105: she is on a voice call (a room reaction goes to the call's next turn instead). */
+  onCall?(characterId: string): boolean;
   /** Her saved line, to the main window's chat. */
   pushChatMessage(characterId: string, message: ChatMessage): void;
 }
@@ -263,7 +270,7 @@ export function resetDesktopLineBudget(): void {
   budgetCache = null;
 }
 
-async function budgetInfo(now: number): Promise<{ value: LineBudget; credits: { plan: string; over_limit: boolean } | null }> {
+export async function budgetInfo(now: number): Promise<{ value: LineBudget; credits: { plan: string; over_limit: boolean } | null }> {
   if (budgetCache && now - budgetCache.at < BUDGET_TTL_MS) return budgetCache;
   let value: LineBudget = 'none';
   let credits: { plan: string; over_limit: boolean } | null = null;
@@ -368,18 +375,39 @@ function capture(event: string, props: Record<string, unknown>): void {
     .catch(() => {});
 }
 
-async function say(characterId: string, kind: 'idle' | 'poke'): Promise<{ outcome: PokeOutcome }> {
+/** 261105: what roomReaction.ts asks before a reaction line. */
+export function desktopLineState(characterId: string): { ready: boolean; running: boolean; onCall: boolean; occupied: boolean } {
+  if (!deps) return { ready: false, running, onCall: false, occupied: false };
+  const onCall = deps.onCall?.(characterId) === true;
+  return { ready: true, running, onCall, occupied: onCall || deps.occupied(characterId) };
+}
+
+/** 261105: her reaction to room edits (`note`: roomReactionNote), shown as a bubble like a poke reply. */
+export async function speakRoomReaction(characterId: string, note: string): Promise<PokeOutcome> {
+  if (!deps) return 'not_live';
+  if (running) return 'busy';
+  if (seilinkLiveCharacter() !== characterId) return 'not_live';
+  return (await say(characterId, 'react', note)).outcome;
+}
+
+async function say(characterId: string, kind: 'idle' | 'poke' | 'react', note?: string): Promise<{ outcome: PokeOutcome }> {
   running = true;
   try {
     let skipped: DesktopLineSkip = 'error';
     const { sendDesktopLineTurn } = await import('../chat/chatService');
-    const line = await sendDesktopLineTurn(characterId, kind, (why) => {
-      skipped = why;
-    }).catch(() => null);
+    const line = await sendDesktopLineTurn(
+      characterId,
+      kind,
+      (why) => {
+        skipped = why;
+      },
+      note,
+    ).catch(() => null);
     if (!line) return { outcome: skipped };
     // Saved to her chat either way; the bubble only when she is still on the desktop.
     for (const m of line.messages) deps?.pushChatMessage(characterId, m);
-    const sent = sendSeilinkLine(characterId, line.text, kind, line.face ?? null);
+    // The host bubble knows idle and poke; a reaction answers the player like a poke.
+    const sent = sendSeilinkLine(characterId, line.text, kind === 'react' ? 'poke' : kind, line.face ?? null);
     if (!sent) return { outcome: 'not_shown' };
     capture('seilink_line_shown', { kind, chars: line.text.length, character_id: characterId, expression: sent.expression });
     return { outcome: 'ok' };

@@ -6,11 +6,13 @@
  *    ceiling as a dark band across the top of her head; the edge matte cuts it.
  *  - Marv: a busy backdrop. The traced edge is ragged, so the matte stands
  *    down and he keeps the plain vignette (blocks of backdrop would be worse).
+ *  - Lyra's cat ears and twin tail stick out of the head oval. The oval cut
+ *    them off at the sides (Shawn, 261105, T335); the silhouette keeps them.
  */
 import path from 'node:path';
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
-import { edgeMatte, keyAlpha, topTrace, vignetteAlpha } from './portraitCutout';
+import { edgeMatte, keyAlpha, portraitMatte, topTrace, vignetteAlpha } from './portraitCutout';
 
 const FIX = path.join(__dirname, '__fixtures__');
 
@@ -63,9 +65,58 @@ describe('portrait cutout on the default portraits', () => {
     expect(meanAlpha(m, w, h, 0.3, 0.7, 0.8, 0.95)).toBeGreaterThan(0.95);
   });
 
+  it('Lyra: her ears and twin tail are kept whole, and the room beside them is not', async () => {
+    const { data, w, h } = await load('lyra-portrait.jpg');
+    const old = edgeMatte(data, w, h);
+    const m = portraitMatte(data, w, h);
+    /** Mean of the full matte over a box (portraitMatte already holds the vignette). */
+    const kept = (x0: number, x1: number, y0: number, y1: number): number => {
+      let sum = 0;
+      let n = 0;
+      for (let y = Math.round(y0 * h); y < Math.round(y1 * h); y++) {
+        for (let x = Math.round(x0 * w); x < Math.round(x1 * w); x++) {
+          sum += m[y * w + x];
+          n++;
+        }
+      }
+      return sum / n;
+    };
+    type Box = [number, number, number, number];
+    const parts: Record<string, Box> = {
+      leftEarTip: [0.17, 0.21, 0.06, 0.1],
+      leftEarOuter: [0.16, 0.2, 0.1, 0.16],
+      rightEarTip: [0.79, 0.83, 0.06, 0.1],
+      rightEarOuter: [0.8, 0.84, 0.1, 0.16],
+      rightTail: [0.84, 0.88, 0.3, 0.45],
+    };
+    for (const [name, box] of Object.entries(parts)) {
+      // The oval alone cut these away...
+      expect(meanAlpha(old, w, h, ...box), name).toBeLessThan(0.1);
+      // ...the silhouette keeps them.
+      expect(kept(...box), name).toBeGreaterThan(0.8);
+    }
+    // The window, the ceiling corners and the walls beside her stay cut.
+    const room: Record<string, Box> = {
+      window: [0.02, 0.12, 0.1, 0.4],
+      ceilingLeft: [0, 0.12, 0, 0.06],
+      ceilingRight: [0.88, 1, 0, 0.06],
+      ceilingBand: [0.38, 0.62, 0.035, 0.055],
+      besideLeftEar: [0.05, 0.15, 0.04, 0.2],
+      aboveTail: [0.9, 1, 0.04, 0.18],
+      rightWall: [0.975, 1, 0.2, 0.5],
+    };
+    for (const [name, box] of Object.entries(room)) expect(kept(...box), name).toBeLessThan(0.02);
+    expect(kept(0.4, 0.6, 0.4, 0.6)).toBeGreaterThan(0.99);
+  });
+
   it('Marv: a busy backdrop leaves the vignette alone', async () => {
     const { data, w, h } = await load('marv-portrait.jpg');
     expect(keyAlpha(data, w, h)).toBeNull();
     expect(edgeMatte(data, w, h)).toBeNull();
+    // No silhouette either: the full matte is the plain oval.
+    const m = portraitMatte(data, w, h);
+    for (let y = 0; y < h; y += 3) {
+      for (let x = 0; x < w; x += 3) expect(Math.abs(m[y * w + x] - vignetteAlpha(x, y, w, h))).toBeLessThan(1e-6);
+    }
   });
 });

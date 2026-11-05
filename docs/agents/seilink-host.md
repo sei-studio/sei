@@ -143,6 +143,21 @@ Colours come from the room (`RoomCanvas onOverlay`), not the app theme.
   reading time; her mouth moves for about the time saying it would take
   (`speaking` on HostAvatar, with a made-up syllable level since no audio
   plays in the host). TTS on the desktop is not wired.
+- Room edit reaction (261105, T335, `seilink/roomReaction.ts`): when a
+  companion editor session ends (CompanionRoomEditor sends
+  `seilink:editor-session` open/close; RoomEditor.tsx is not involved) and
+  her SAVED room differs from the saved room at open, she says one line
+  about it (kind `react`, shown as a poke bubble). Diff:
+  `shared/seilinkRoomDiff.ts` (moves with a direction, recolours with
+  tintName words, patterns, add/remove/swap, time, preset), at most 5 named,
+  biggest first, in the note after the cache breakpoint. Only for the
+  resident at open and at close (never before she moves in or with SeiLink
+  off), one per session, 5 min cooldown, paid like a poke (free inside the
+  weekly cap; refused = silent). On a call, in a game, on cooldown, over the
+  limit or after a failed line, the room before the session is kept
+  (`roomChangeNote.ts`, 30 min) and the next chat, call or desktop turn that
+  has her room gets one note diffed against the room it read. The room line
+  itself is read fresh every turn (no cache), so a new preset shows at once.
 
 ## The avatar mount point
 
@@ -276,7 +291,7 @@ errors) is in [`seilink-analytics.md`](seilink-analytics.md). The basics:
   `seilink_moved_in` {character_id, swapped, preset, first_room} (not on a
   restore); `seilink_moved_out` {character_id, via app|dock};
   `seilink_dock_action` {action edit|deafen|moveout, character_id,
-  deafened?}; `seilink_line_shown` {kind poke|idle, chars, character_id}.
+  deafened?}; `seilink_line_shown` {kind poke|idle|react, chars, character_id}.
   Never the line's text.
 
 ## Dev and CI

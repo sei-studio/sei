@@ -56,6 +56,7 @@ import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import { surfaceLanguage } from '../../shared/chatLanguage';
 import { LOOK_TOOL_NAME, lookAtRoom, lookResultContent, lookToolResult, roomForSurface, roomPromptLine, type RoomContext, type RoomLook } from '../seilink/roomContext';
 import type { RoomImage } from '../seilink/roomRender';
+import { roomChangeTurnNote } from '../seilink/roomChangeNote';
 import * as chatStore from './chatStore';
 import {
   drainThoughts,
@@ -976,7 +977,8 @@ async function sendChatMessageImpl(
     // the transcript is then cached prefix-incrementally across the call's turns.
     markLastMessageCached(messages);
     // 261024: the call clock goes after the breakpoint (no-op in typed chat).
-    appendUncachedTail(messages, prep.clockNote);
+    // 261105 SeiLink: room edits she did not react to ride once, here too (roomChangeNote.ts).
+    appendUncachedTail(messages, roomChangeTurnNote(args.characterId, prep.room), prep.clockNote);
     const llm = await buildLlmProvider();
 
     // Voice calls (260706): STREAM the reply so TTS can start on sentence 1 while
@@ -1672,7 +1674,7 @@ async function sendVoiceGreetingTurnImpl(
     // not a cacheRead" symptom). Matching them writes the tools+system prefix
     // here, during the ring, so the first spoken user reply is a fast cache READ.
     markLastMessageCached(messages);
-    appendUncachedTail(messages, note, prep.clockNote);
+    appendUncachedTail(messages, note, roomChangeTurnNote(characterId, prep.room), prep.clockNote);
     const tools = chatTools(llm, true, Boolean(prep.room));
     const first = await llm.call({
       maxTokens: 200,
@@ -1817,7 +1819,7 @@ async function sendCompanionVoiceTurnImpl(
     // in before the breakpoint, every group-call reaction wrote a prefix that
     // no turn ever read back.
     markLastMessageCached(messages);
-    appendUncachedTail(messages, note, prep.clockNote);
+    appendUncachedTail(messages, note, roomChangeTurnNote(characterId, prep.room), prep.clockNote);
 
     const llm = await buildLlmProvider();
     const tools = chatTools(llm, true, Boolean(prep.room));
@@ -1934,7 +1936,7 @@ async function sendVoiceIdleTurnImpl(
     // Same warm tools+system cache prefix as every other voice turn.
     // 261024: the note rides after the breakpoint (see the companion turn).
     markLastMessageCached(messages);
-    appendUncachedTail(messages, note, prep.clockNote);
+    appendUncachedTail(messages, note, roomChangeTurnNote(characterId, prep.room), prep.clockNote);
     const llm = await buildLlmProvider();
     const tools = chatTools(llm, true, Boolean(prep.room));
     const first = await llm.call({
@@ -2187,7 +2189,8 @@ export const DESKTOP_LINE_NOTES = {
 
 /**
  * One short line she says on the desktop (desktopLines.ts decides when and
- * who pays): `poke` answers a double click on her, `idle` is unprompted.
+ * who pays): `poke` answers a double click on her, `idle` is unprompted,
+ * `react` (261105) answers the player's room edits (roomReaction.ts).
  * Same context as a chat turn (persona, memory, summary, knowledge, her room
  * line), the note after the cache breakpoint, no tool loop. A remember() call
  * is honored. The line is saved to her chat like any reply, so the chat and
@@ -2199,9 +2202,11 @@ export type DesktopLineSkip = 'busy' | 'no_room' | 'silence' | 'aborted' | 'erro
 
 async function sendDesktopLineTurnImpl(
   characterId: string,
-  kind: 'poke' | 'idle',
+  kind: 'poke' | 'idle' | 'react',
   /** 261105: told why the result is null (shape only). */
   onSkip?: (why: DesktopLineSkip) => void,
+  /** 261105 (T335): the note for a 'react' turn (roomReactionNote: what the player changed in her room). */
+  reactNote?: string,
 ): Promise<{ text: string; messages: ChatMessage[]; face: string | null } | null> {
   const skip = (why: DesktopLineSkip): null => {
     try {
@@ -2219,7 +2224,11 @@ async function sendDesktopLineTurnImpl(
     if (!prep || !prep.room) return skip('no_room');
     const { system, messages } = prep;
     markLastMessageCached(messages);
-    appendUncachedTail(messages, DESKTOP_LINE_NOTES[kind], prep.clockNote);
+    // A reaction carries its own change list; a poke or an idle line takes any unseen room edits.
+    if (kind === 'react') {
+      if (!reactNote) return skip('error');
+      appendUncachedTail(messages, reactNote, prep.clockNote);
+    } else appendUncachedTail(messages, DESKTOP_LINE_NOTES[kind], roomChangeTurnNote(characterId, prep.room), prep.clockNote);
     const llm = await buildLlmProvider();
     const tools = chatTools(llm, false, true);
     const res = await llm.call({
