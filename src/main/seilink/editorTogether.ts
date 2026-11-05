@@ -37,7 +37,7 @@ import {
   type DecorateResult,
   type RoomEditOp,
 } from '../../shared/seilinkDecorate';
-import type { RoomPresetManifest } from '../../shared/seilinkRoom';
+import type { RoomPresetManifest, RoomState } from '../../shared/seilinkRoom';
 import { SEILINK_HER_EDIT_EVENT, type SeilinkEditorEvent, type SeilinkEditorCount } from '../../shared/seilinkTogether';
 import { clearUnseenBaseline, unseenBaseline, type RoomSnapshot } from './roomChangeNote';
 import type { RoomContext } from './types';
@@ -71,6 +71,8 @@ export interface TogetherSession {
   openedOnCall: boolean;
   /** Live-line skip reasons already reported this session (one event each). */
   reportedSkips: Set<string>;
+  /** The room just before her last applied decorate(), until a turn tells her it was undone. */
+  herBefore: RoomState | null;
 }
 
 const sessions = new Map<string, TogetherSession>();
@@ -131,6 +133,7 @@ export function openTogether(token: string, characterId: string, room: RoomConte
     lastEditAt: null,
     openedOnCall: opts.onCall,
     reportedSkips: new Set(),
+    herBefore: null,
   };
   sessions.set(token, s);
   return s;
@@ -151,6 +154,8 @@ export function syncTogether(token: string, room: RoomContext, now: number): Tog
   const s = sessions.get(token);
   if (!s) return null;
   if (sameState(s.live.state, room.state)) return null;
+  // Only the very next change can be the undo of hers (see takeUndoneHers).
+  if (s.herBefore && !sameState(s.herBefore, room.state)) s.herBefore = null;
   s.live = room;
   s.lastEditAt = now;
   return s;
@@ -221,11 +226,28 @@ export function liveLineBlock(s: {
   return null;
 }
 
-/** The note for a live line (sendDesktopLineTurn, kind 'react'). */
-export function liveLineNote(changes: RoomChange[]): string {
+/**
+ * The player put the room back to just before her last changes (the "Undo
+ * her changes" chip, or by hand). Read once: it clears, so the next turn
+ * does not hear it again. A later edit of theirs also clears it.
+ */
+export function takeUndoneHers(s: TogetherSession): boolean {
+  const before = s.herBefore;
+  if (!before) return false;
+  if (sameState(s.live.state, before)) {
+    s.herBefore = null;
+    return true;
+  }
+  return false;
+}
+
+const UNDONE_LINE = 'They undid your last changes, so the room is back how it was before them. ';
+
+/** The note for a live line (sendDesktopLineTurn, kind 'react'). `undone`: takeUndoneHers said so. */
+export function liveLineNote(changes: RoomChange[], undone = false): string {
   return (
     '[System note, not the player speaking: the player has your room editor open and is decorating your room while you watch. ' +
-    `What they just changed: ${roomChangeLine(changes, ROOM_CHANGE_LIST_MAX)}. ` +
+    (undone ? UNDONE_LINE : `What they just changed: ${roomChangeLine(changes, ROOM_CHANGE_LIST_MAX)}. `) +
     'You can say one short line about it, under twelve words, in your own voice, as a small speech bubble next to you. ' +
     'Or reply with exactly (silence) if there is nothing worth saying yet. Do not mention this note.]'
   );
@@ -257,7 +279,8 @@ export function editorTurnNote(characterId: string, opts: { now: number; onCall:
   const s = togetherFor(characterId);
   if (!s) return '';
   const changes = changesBetween(s.turnSeen, s.live);
-  const changed = changes.length ? `What they changed since your last turn: ${roomChangeLine(changes, ROOM_CHANGE_LIST_MAX)}. ` : '';
+  const undone = changes.length > 0 && takeUndoneHers(s);
+  const changed = undone ? UNDONE_LINE : changes.length ? `What they changed since your last turn: ${roomChangeLine(changes, ROOM_CHANGE_LIST_MAX)}. ` : '';
   if (changes.length) markSeen(s, opts.now);
   else s.turnSeen = snap(s.live);
   return (
@@ -314,6 +337,7 @@ export function runDecorate(
     const ops: RoomEditOp[] = r.ops;
     emit({ token: s.token, kind: 'edits', id: randomUUID(), mode: r.mode, ops, changes: r.done.length });
     if (r.mode === 'apply') {
+      s.herBefore = s.live.state;
       s.live = { ...s.live, state: r.state };
       markSeen(s, opts.now);
     }

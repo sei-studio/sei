@@ -281,8 +281,11 @@ export function RoomTogether({ ctx, token, characterId, name }: RoomTogetherProp
           </div>
         )}
         {onCall ? (
-          <div className={styles.call}>
-            <span className={styles.callName}>{t('On a call with {name}', { name })}</span>
+          <div className={styles.call} role="group" aria-label={t('On a call with {name}', { name })}>
+            <span className={styles.callName} title={t('On a call with {name}', { name })}>
+              <i className={styles.liveDot} aria-hidden="true" />
+              {name}
+            </span>
             <CallControls size="sm" onArt />
           </div>
         ) : overLimit ? (

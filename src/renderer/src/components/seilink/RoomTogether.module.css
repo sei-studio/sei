@@ -153,7 +153,7 @@
   flex-direction: column;
   align-items: flex-end;
   gap: var(--space-sm);
-  max-width: min(380px, calc(100% - var(--rail-w) - var(--panel-w) - 4 * var(--edge)));
+  max-width: min(420px, calc(100% - var(--rail-w) - var(--panel-w) - 4 * var(--edge)));
   min-width: 240px;
   -webkit-app-region: no-drag;
 }
@@ -293,9 +293,26 @@
   font-weight: 600;
 }
 
+.call {
+  width: auto;
+  padding-left: 12px;
+}
+
+.liveDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: #4cc38a;
+  box-shadow: 0 0 0 3px rgb(76 195 138 / 0.22);
+  vertical-align: 1px;
+}
+
 .callName {
   flex: 1;
   min-width: 0;
+  max-width: 140px;
   font-size: 14px;
   font-weight: 600;
   white-space: nowrap;

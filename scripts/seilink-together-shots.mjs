@@ -82,7 +82,10 @@ async function main() {
     const page = await ctx.newPage();
     page.on('pageerror', (e) => console.log(`[page error] ${e.message.slice(0, 300)}`));
     page.on('console', (m) => {
-      if (m.type() === 'error') console.log(`[page error] ${m.text().slice(0, 240)}`);
+      if (m.type() === 'error' && !m.text().startsWith('Failed to load resource')) console.log(`[page error] ${m.text().slice(0, 240)}`);
+    });
+    page.on('response', (r) => {
+      if (r.status() >= 400) console.log(`[page ${r.status()}] ${r.url().slice(0, 200)}`);
     });
     const t0 = Date.now();
     const marks = [];

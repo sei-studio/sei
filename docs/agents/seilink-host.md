@@ -192,7 +192,13 @@ Colours come from the room (`RoomCanvas onOverlay`), not the app theme.
     applies them as ONE undo step (`commitEdit(endGesture(h), next, null)`),
     crossfades, rings the changed parts and shows "Undo {name}'s changes".
     `suggest` shows "Try {name}'s idea". At most 5 changes; refusals list the
-    real options and get one more hop.
+    real options and get one more hop. So does any call with more than one
+    change (she says what landed; one change she already answered for ends
+    the turn). While the tool is offered the reply cap is 400 tokens, not
+    200 (a lead line plus five changes ran into 200 in the probe).
+  - Undo: when the very next room change puts the room back to just before
+    her last applied changes, her next turn or live line hears "They undid
+    your last changes" instead of the change list (once).
   - The talk box is her normal chat turn (`useChatStore.send`), so the rows
     land in her chat. Hidden on a call (there is a call pill with
     CallControls instead; edits count as presence). Over the limit it shows

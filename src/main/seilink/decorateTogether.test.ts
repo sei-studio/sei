@@ -29,6 +29,7 @@ import {
   LIVE_MAX_PER_SESSION,
   LIVE_PAUSE_MS,
   liveLineBlock,
+  liveLineNote,
   liveRoomFor,
   notePictureSent,
   openTogether,
@@ -352,6 +353,28 @@ describe('her turns while the editor is open', () => {
     const r = runDecorate(ID, { mode: 'suggest', changes: [{ do: 'time', value: 'night' }] }, { now: 5 });
     expect(r.result?.mode).toBe('suggest');
     expect(togetherByToken(TOKEN)?.live.state).toEqual(room());
+  });
+
+  it('tells her once when the player undid her changes, and not after another edit', () => {
+    openTogether(TOKEN, ID, ctx(room()), { now: 0, onCall: false });
+    runDecorate(ID, { changes: [{ do: 'color', target: 'curtains', value: 'navy' }] }, { now: 1 });
+    // The editor's "Undo her changes": the room is back to before hers.
+    syncTogether(TOKEN, ctx(room()), 2);
+    const note = editorTurnNote(ID, { now: 3, onCall: false });
+    expect(note).toMatch(/They undid your last changes/);
+    expect(note).not.toMatch(/What they changed/);
+    expect(editorTurnNote(ID, { now: 4, onCall: false })).not.toMatch(/undid/);
+    // Hers again, then the player changes something else and only later goes back: a plain change list.
+    runDecorate(ID, { changes: [{ do: 'color', target: 'curtains', value: 'navy' }] }, { now: 5 });
+    const after = togetherByToken(TOKEN)!.live.state;
+    syncTogether(TOKEN, ctx(tint(after, 'bed', 3)), 6);
+    syncTogether(TOKEN, ctx(room()), 7);
+    expect(editorTurnNote(ID, { now: 8, onCall: false })).toMatch(/What they changed since your last turn/);
+  });
+
+  it('a live line after the undo says so instead of listing it', () => {
+    expect(liveLineNote([], true)).toMatch(/They undid your last changes/);
+    expect(liveLineNote([], true)).not.toMatch(/What they just changed/);
   });
 
   it('decorate with the editor closed changes nothing', () => {

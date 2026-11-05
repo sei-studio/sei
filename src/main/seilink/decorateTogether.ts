@@ -38,6 +38,7 @@ import {
   liveLineNote,
   openTogether,
   syncTogether,
+  takeUndoneHers,
   togetherByToken,
   unseenChanges,
   type LiveSkip,
@@ -148,7 +149,7 @@ export class TogetherLive {
     this.speaking.add(token);
     let outcome: PokeOutcome;
     try {
-      outcome = await this.deps.speak(id, liveLineNote(changes)).catch((): PokeOutcome => 'error');
+      outcome = await this.deps.speak(id, liveLineNote(changes, takeUndoneHers(s))).catch((): PokeOutcome => 'error');
     } finally {
       this.speaking.delete(token);
     }

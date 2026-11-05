@@ -167,6 +167,16 @@ function chatTools(llm: Pick<LlmProvider, 'kind'>, voice: boolean, room = false,
  * as a look() she made, after the turn's notes, so it reads as her own look
  * and never as something the player sent (the 261104 probe finding).
  */
+/**
+ * 261105 (T336): the reply cap. While her room editor is open (decorate is
+ * offered) a turn can carry a lead line plus a five-change decorate call; at
+ * 200 the probe's "make it cozier" turns ended exactly at the cap, one step
+ * from a cut-off tool call. Only a cap: a turn pays for what it writes.
+ */
+function replyMaxTokens(tools: ReadonlyArray<{ name: string }> | undefined): number {
+  return tools?.some((t) => t.name === DECORATE_TOOL_NAME) ? 400 : 200;
+}
+
 async function appendCallPicture(characterId: string, room: RoomContext | null, llm: LlmProvider, messages: LlmMessage[]): Promise<void> {
   if (!room) return;
   if (callPictureDecision(characterId, { now: Date.now(), vision: llm.vision }) !== 'send') return;
@@ -1169,7 +1179,7 @@ async function sendChatMessageImpl(
         : undefined;
       // #9 — abortable: a follow-up send aborts this signal.
       const res = await llm.call({
-        maxTokens: 200,
+        maxTokens: replyMaxTokens(tools),
         system,
         tools,
         stopSequences: TRANSCRIPT_STOP_SEQUENCES,
@@ -1258,6 +1268,8 @@ async function sendChatMessageImpl(
         : Boolean(text.trim()) && Boolean(replyText.trim());
       /** 261105: every decorate() this hop applied all it asked for. */
       let decorateClean = true;
+      /** 261105: room changes this hop's decorate() calls made (or offered). */
+      let decorateOps = 0;
       if (
         !isStreaming &&
         replyText &&
@@ -1293,6 +1305,7 @@ async function sendChatMessageImpl(
           });
           decorateLeft -= r.result?.ops.length ?? 0;
           if (!r.result || r.result.rejected.length || !r.result.ops.length) decorateClean = false;
+          decorateOps += r.result?.ops.length ?? 0;
           console.log(
             `[sei/chat] decorate char=${args.characterId.slice(0, 8)} mode=${r.result?.mode ?? '-'} ops=${r.result?.ops.length ?? 0} rejected=${r.result?.rejected.length ?? 0}`,
           );
@@ -1424,9 +1437,11 @@ async function sendChatMessageImpl(
         ? streamedReplies.length > streamedBeforeHop
         : Boolean(text.trim()) && Boolean(replyText.trim());
       if (answeredThisHop && toolUses.every((b) => NO_FOLLOW_UP_TOOLS.has(b.name))) break;
-      // 261105 (T336): "sure, navy it is" + decorate() that applied everything: the line already
-      // answered, so no second round (it would only repeat it). Rejections still get a hop.
-      if (answeredBeforeTools && decorateClean && toolUses.every((b) => NO_FOLLOW_UP_TOOLS.has(b.name) || b.name === DECORATE_TOOL_NAME)) break;
+      // 261105 (T336): "sure, navy it is" + ONE change that applied: the line already answered,
+      // so no second round (it would only repeat it). Several changes get a hop, so she says
+      // what she did after seeing what landed (probe: "my turn, ok" + five silent changes);
+      // rejections get one too.
+      if (answeredBeforeTools && decorateClean && decorateOps <= 1 && toolUses.every((b) => NO_FOLLOW_UP_TOOLS.has(b.name) || b.name === DECORATE_TOOL_NAME)) break;
     }
 
     // #9 — if a newer send arrived (or we were aborted) while this turn ran,
@@ -1736,7 +1751,7 @@ async function sendVoiceGreetingTurnImpl(
     appendUncachedTail(messages, note, roomChangeTurnNote(characterId, prep.room), prep.room ? editorTurnNote(characterId, { now: Date.now(), onCall: true }) : '', prep.clockNote);
     const tools = chatTools(llm, true, Boolean(prep.room), decorateToolFor(characterId, prep.room));
     const first = await llm.call({
-      maxTokens: 200,
+      maxTokens: replyMaxTokens(tools),
       system,
       tools,
       stopSequences: TRANSCRIPT_STOP_SEQUENCES,
@@ -1883,7 +1898,7 @@ async function sendCompanionVoiceTurnImpl(
     const llm = await buildLlmProvider();
     const tools = chatTools(llm, true, Boolean(prep.room), decorateToolFor(characterId, prep.room));
     const first = await llm.call({
-      maxTokens: 200,
+      maxTokens: replyMaxTokens(tools),
       system,
       tools,
       stopSequences: TRANSCRIPT_STOP_SEQUENCES,
@@ -1999,7 +2014,7 @@ async function sendVoiceIdleTurnImpl(
     const llm = await buildLlmProvider();
     const tools = chatTools(llm, true, Boolean(prep.room), decorateToolFor(characterId, prep.room));
     const first = await llm.call({
-      maxTokens: 200,
+      maxTokens: replyMaxTokens(tools),
       system,
       tools,
       stopSequences: TRANSCRIPT_STOP_SEQUENCES,

@@ -139,6 +139,9 @@ describe('decorate() on her turns', () => {
     await sendChatMessage({ characterId: CHAR, text: 'hi' }, deps());
     expect(toolNames(req(1)).at(-1)).toBe('decorate');
     expect(lastUserText(req(1))).toContain('decorating your room together');
+    // Room for a lead line plus a five-change call, only while the editor is open.
+    expect((req(0) as unknown as { max_tokens: number }).max_tokens).toBe(200);
+    expect((req(1) as unknown as { max_tokens: number }).max_tokens).toBe(400);
 
     setCallActive(CHAR, true);
     createSpy.mockClear();
@@ -151,7 +154,7 @@ describe('decorate() on her turns', () => {
     closeTogether(TOKEN);
   });
 
-  it('"make it cozier": her edits go to the editor, one model call when she already answered, all in her chat', async () => {
+  it('"make it cozier": her edits go to the editor, then her line about them, all in her chat', async () => {
     const room = openEditor();
     const curtains = room.manifest.components.find((c) => c.id === 'curtains-plain')!;
     const word = paletteWords(swatchesFor(curtains))[1].word;
@@ -167,16 +170,38 @@ describe('decorate() on her turns', () => {
         },
       ],
     });
+    createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: 'there, dusk and new curtains' }] });
     const pushed: ChatMessage[] = [];
     const result = await sendChatMessage({ characterId: CHAR, text: 'make it cozier' }, deps({ emitReply: (_id, m) => void pushed.push(m) }));
-    expect(createSpy).toHaveBeenCalledTimes(1);
+    // Two changes: a second hop, where she reads what landed and says so.
+    expect(createSpy).toHaveBeenCalledTimes(2);
+    expect(lastUserText(req(1))).toContain('Done, the room changed');
     const edits = events.find((e) => e.kind === 'edits');
     expect(edits).toMatchObject({ token: TOKEN, mode: 'apply', changes: 2 });
     expect(edits && edits.kind === 'edits' && edits.ops.map((o) => o.op)).toEqual(['slot_tint', 'time']);
     const said = [...pushed, ...result.replies].map((m) => m.text).join(' ');
     expect(said).toContain('leave it to me');
+    expect(said).toContain('dusk and new curtains');
     const rows = await readRecent(CHAR, 10);
-    expect(rows.map((m) => m.text)).toEqual(expect.arrayContaining(['make it cozier', 'ooh leave it to me']));
+    expect(rows.map((m) => m.text)).toEqual(expect.arrayContaining(['make it cozier', 'ooh leave it to me', 'there, dusk and new curtains']));
+    closeTogether(TOKEN);
+  });
+
+  it('one change she already answered for ends the turn in one call', async () => {
+    const room = openEditor();
+    const curtains = room.manifest.components.find((c) => c.id === 'curtains-plain')!;
+    const word = paletteWords(swatchesFor(curtains))[1].word;
+    createSpy.mockResolvedValueOnce({
+      stop_reason: 'tool_use',
+      content: [
+        { type: 'text', text: `sure, ${word} it is` },
+        { type: 'tool_use', id: 'tu_dec', name: 'decorate', input: { mode: 'apply', changes: [{ do: 'color', target: 'curtains', value: word }] } },
+      ],
+    });
+    const result = await sendChatMessage({ characterId: CHAR, text: `${word} curtains please` }, deps());
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(events.find((e) => e.kind === 'edits')).toMatchObject({ mode: 'apply', changes: 1 });
+    expect(result.replies.map((m) => m.text).join(' ')).toContain('it is');
     closeTogether(TOKEN);
   });
 
