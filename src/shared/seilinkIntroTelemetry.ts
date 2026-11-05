@@ -27,11 +27,12 @@ export const INTRO_TRIGGERS = ['first_link', 'replay'] as const;
 export type IntroTrigger = (typeof INTRO_TRIGGERS)[number];
 
 /**
- * The visual treatments under evaluation (Shawn picks one, the rest are
- * deleted): holo = clean holographic wireframe and scanlines, glitch = a
- * glitch portal with a data stream, tunnel = a calm light tunnel.
+ * The visual treatments (261106: soft colour gradients, glows and waves, no
+ * hard lines): aurora = swaying curtains of aurora light, bloom = slow warm
+ * pulses breathing out of her seat, tide = drifting pools of liquid light.
+ * One ships as the default (introPref.DEFAULT_INTRO_STYLE).
  */
-export const INTRO_STYLES = ['holo', 'glitch', 'tunnel'] as const;
+export const INTRO_STYLES = ['aurora', 'bloom', 'tide'] as const;
 export type IntroStyle = (typeof INTRO_STYLES)[number];
 
 /** The beats, in order: open the tunnel and build the room, link her, port to the desktop, linked. */

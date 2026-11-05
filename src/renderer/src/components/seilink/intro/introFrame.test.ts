@@ -1,15 +1,16 @@
 /**
- * The first-link intro's timeline and frames (261105, T337). The frames are
- * pure, so the review videos (seeked frame by frame) show exactly what the
- * app plays.
+ * The first-link intro's timeline and frames (261105, T337; 261106 soft light
+ * styles). The frames are pure, so the review videos (seeked frame by frame)
+ * show exactly what the app plays.
  *
  * Invariants under test:
  *   1. Three beats then the end card, in order, about 11 s (8 s calm).
  *   2. The end card holds for the host's answer, at most HOLD_MAX_MS, and
  *      never delays anything before it.
- *   3. Every style: she is not there in beat 1, she is fully there by beat 3,
- *      and the room ends inside the monitor with nothing clipped or masked.
- *   4. Reduced motion: no motion effects at all, only fades.
+ *   3. Every style: she is not there in beat 1, she is fully herself by the
+ *      end card, and the end card is her room full screen with no light left
+ *      over it (the picture the wallpaper draws, so the window can step aside).
+ *   4. Reduced motion: the light stands still, nothing is masked or blurred.
  *   5. Deterministic: the same t gives the same frame.
  */
 import { describe, expect, it } from 'vitest';
@@ -20,11 +21,9 @@ import {
   HOLD_MAX_MS,
   beatAt,
   beatProgress,
-  hash01,
   timelineTime,
-  typedChars,
 } from '../../../lib/seilink/introTimeline';
-import { PORT_SCALE, computeFrame, screenBox } from './introFrame';
+import { computeFrame, revealMask } from './introFrame';
 
 const W = 1920;
 const H = 1080;
@@ -55,14 +54,6 @@ describe('timeline', () => {
     expect(beatProgress(FULL_TIMELINE, FULL_TIMELINE.beats.link + 1, 'link')).toBeGreaterThan(0);
   });
 
-  it('types a line after its delay, whole at once on the calm timeline', () => {
-    const tl = FULL_TIMELINE;
-    expect(typedChars(tl, tl.lineDelay - 1, 'tunnel', 20)).toBe(0);
-    expect(typedChars(tl, tl.lineDelay, 'tunnel', 20)).toBe(1);
-    expect(typedChars(tl, 100_000, 'tunnel', 20)).toBe(20);
-    expect(typedChars(CALM_TIMELINE, CALM_TIMELINE.lineDelay, 'tunnel', 20)).toBe(20);
-  });
-
   it('holds at the end card until the host answers, at most HOLD_MAX_MS', () => {
     const tl = FULL_TIMELINE;
     const K = tl.beats.linked;
@@ -76,47 +67,43 @@ describe('timeline', () => {
     // Answered during the hold: goes on from then.
     expect(timelineTime(tl, K + 2500, K + 2000)).toBe(K + 500);
   });
-
-  it('hash01 is deterministic and in [0, 1)', () => {
-    for (let i = 0; i < 200; i++) {
-      const v = hash01(i, 7);
-      expect(v).toBe(hash01(i, 7));
-      expect(v).toBeGreaterThanOrEqual(0);
-      expect(v).toBeLessThan(1);
-    }
-  });
 });
 
 describe('frames', () => {
   for (const style of INTRO_STYLES) {
     describe(style, () => {
-      it('she is not there in beat 1 and fully there by beat 3', () => {
+      it('she is not there in beat 1 and fully herself by the end card', () => {
         const tl = FULL_TIMELINE;
         for (let t = 0; t < tl.beats.link; t += 100) expect(computeFrame(style, tl, t, W, H, false).avatar.opacity).toBe(0);
         const f = computeFrame(style, tl, tl.beats.port, W, H, false);
         expect(f.avatar.opacity).toBe(1);
-        expect(f.avatar.clip).toBe('none');
         expect(f.avatar.filter).toBe('none');
       });
 
-      it('the room is whole before she arrives', () => {
-        const f = computeFrame(style, FULL_TIMELINE, FULL_TIMELINE.beats.link, W, H, false);
-        expect(f.room.opacity).toBe(1);
-        expect(f.room.clip).toBe('none');
-        expect(f.room.mask).toBe('none');
+      it('the light wakes first and the room stays dark until the port beat', () => {
+        const tl = FULL_TIMELINE;
+        expect(computeFrame(style, tl, 0, W, H, false).field.opacity).toBe(0);
+        expect(computeFrame(style, tl, 1500, W, H, false).field.opacity).toBeGreaterThan(0.9);
+        for (let t = 0; t <= tl.beats.port; t += 100) expect(computeFrame(style, tl, t, W, H, false).room.opacity).toBe(0);
+        const mid = computeFrame(style, tl, tl.beats.port + 1200, W, H, false);
+        expect(mid.room.opacity).toBe(1);
+        expect(mid.room.reveal).toBeGreaterThan(0);
+        expect(mid.room.reveal).toBeLessThan(1);
+        expect(revealMask(mid, { x: W / 2, y: H / 2 })).toMatch(/^radial-gradient\(/);
       });
 
-      it('ends inside the monitor, on the desktop', () => {
-        const f = computeFrame(style, FULL_TIMELINE, FULL_TIMELINE.beats.linked, W, H, false);
-        expect(f.stage.scale).toBeCloseTo(PORT_SCALE, 5);
-        expect(f.stage.tx).toBe(0);
-        expect(f.bezel.opacity).toBe(1);
-        expect(f.desk).toBe(1);
-        expect(f.icons).toEqual([1, 1, 1, 1]);
-        expect(f.room.filter).toBe('none');
-        expect(f.room.glitch).toBe(0);
-        const s = screenBox(W, H);
-        expect(f.H / 2 + f.stage.ty).toBeCloseTo(s.y + s.h / 2, 5);
+      it('ends on her room, full screen, with no light left over it', () => {
+        const tl = FULL_TIMELINE;
+        for (const t of [tl.beats.linked + 1600, tl.fadeAt, tl.end]) {
+          const f = computeFrame(style, tl, t, W, H, false);
+          expect(f.room.opacity).toBe(1);
+          expect(f.room.reveal).toBeGreaterThanOrEqual(1);
+          expect(revealMask(f, { x: 0, y: 0 })).toBe('none');
+          expect(f.field.opacity).toBe(0);
+          expect(f.halo).toBe(0);
+          expect(f.pulse).toBe(-1);
+          expect(f.avatar).toEqual({ opacity: 1, filter: 'none' });
+        }
       });
 
       it('is deterministic', () => {
@@ -125,31 +112,31 @@ describe('frames', () => {
         }
       });
 
-      it('reduced motion only fades', () => {
+      it('reduced motion: a still light, plain fades, nothing masked or blurred', () => {
         const tl = CALM_TIMELINE;
         for (let t = 0; t <= tl.end; t += 50) {
           const f = computeFrame(style, tl, t, W, H, true);
-          expect(f.stage.tx).toBe(0);
-          expect([1, PORT_SCALE]).toContain(f.stage.scale);
-          expect(f.room.clip).toBe('none');
-          expect(f.room.mask).toBe('none');
-          expect(f.room.glitch).toBe(0);
-          expect(f.avatar.glitch).toBe(0);
-          expect(f.avatar.transform).toBe('none');
-          const fx = f.fx;
-          expect([fx.wire, fx.rain, fx.tunnel, fx.rim, fx.ring, fx.linkedPulse]).toEqual([0, 0, 0, 0, 0, 0]);
-          expect([fx.beam, fx.herScan, fx.stream, fx.motes, fx.ripple].every((v) => v < 0)).toBe(true);
+          expect(f.field.clock).toBe(computeFrame(style, tl, 0, W, H, true).field.clock);
+          expect(f.field.gather).toBe(0);
+          expect(f.field.swell).toBe(0);
+          expect(f.pulse).toBe(-1);
+          expect(f.room.reveal).toBeGreaterThanOrEqual(1);
+          expect(f.avatar.filter).toBe('none');
         }
-        const end = computeFrame(style, tl, tl.beats.linked, W, H, true);
+        const end = computeFrame(style, tl, tl.end, W, H, true);
         expect(end.avatar.opacity).toBe(1);
-        expect(end.bezel.opacity).toBe(1);
-        expect(end.stage.scale).toBe(PORT_SCALE);
+        expect(end.room.opacity).toBe(1);
+        expect(end.field.opacity).toBe(0);
+        expect(end.halo).toBe(0);
       });
     });
   }
 
   it('the three styles really differ', () => {
-    const at = (s: (typeof INTRO_STYLES)[number]): string => JSON.stringify(computeFrame(s, FULL_TIMELINE, 1800, W, H, false).fx);
+    const at = (s: (typeof INTRO_STYLES)[number]): string => {
+      const f = computeFrame(s, FULL_TIMELINE, 7000, W, H, false);
+      return JSON.stringify([f.field, f.room]);
+    };
     expect(new Set(INTRO_STYLES.map(at)).size).toBe(INTRO_STYLES.length);
   });
 });
