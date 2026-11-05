@@ -149,6 +149,12 @@ let attachedOnce = false;
 let layout = '';
 let macWantedLevel = 0;
 let workerWMissingAccepted = false;
+/**
+ * Windows (261105): Explorer went away and the native room box lifted the room out of its
+ * tree (win.cc "room box"). The next attach is reported as `shell-lost:...`, an Explorer
+ * restart, whatever trigger runs it.
+ */
+let shellLost = false;
 let room: SeilinkHostRoom | null = null;
 /** The player is chatting with her or just clicked her (main decides; RoomAvatar holds her seated). */
 let busy = false;
@@ -651,6 +657,7 @@ async function attach(reason: string): Promise<boolean> {
     return false;
   }
   attached = true;
+  shellLost = false;
   const reattach = attachedOnce;
   attachedOnce = true;
   log(`attached (${reason}) ${layout} ${method ?? ''} in ${Date.now() - t} ms`);
@@ -669,7 +676,7 @@ async function recoverWindow(reason: string): Promise<void> {
     log(`recover (${reason})`);
     await waitForShell();
     await createRoomWindow();
-    await attach(reason);
+    await attach(shellLost ? `shell-lost:${reason}` : reason);
   } catch (err) {
     log(`recover failed: ${(err as Error).message}`, 'warn');
     send({ type: 'attach-failed', failure: failure((err as { failure?: unknown }).failure, 'attach_failed'), detail: 'recover' });
@@ -732,7 +739,7 @@ async function validate(trigger: string): Promise<void> {
   }
   reattaching = true;
   try {
-    await attach(`validate:${trigger}:${v.reasons.join('+')}`);
+    await attach(`${shellLost ? 'shell-lost' : 'validate'}:${trigger}:${v.reasons.join('+')}`);
   } finally {
     reattaching = false;
   }
@@ -808,6 +815,14 @@ function onNativeEvent(json: string): void {
       if (e.code === WTS_SESSION_LOCK) activity.set({ locked: true });
       else if (e.code === WTS_SESSION_UNLOCK) activity.set({ locked: false });
       validateSoon('session');
+      return;
+    case 'shellLost':
+      // Explorer's desktop windows are being destroyed (Explorer exited or crashed). The room
+      // is a hidden top-level window now; validate() re-attaches once the new shell is up.
+      log(`shell lost (rescued ${String(e.rescued)}, err ${String(e.err)})`, e.rescued ? 'info' : 'warn');
+      shellLost = true;
+      attached = false;
+      validateSoon('shellLost');
       return;
     case 'taskbarCreated':
     case 'displayChange':

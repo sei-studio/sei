@@ -288,7 +288,7 @@ errors) is in [`seilink-analytics.md`](seilink-analytics.md). The basics:
   attach, first frame, cover → 0 fps, uncover, click her / bare wallpaper /
   double click, a press on the dock's deafen button (twice, so it ends where
   it started; must not open her chat), kill → reattach, hang → detected and replaced, (Windows)
-  Explorer restart, stop. Writes `result.json`, `selftest.log` and
+  Explorer restart survived by the same host, stop. Writes `result.json`, `selftest.log` and
   screenshots, then exits 0 or 1. Moves Sui in when the profile has her.
 - Linux smoke:
   `node scripts/seilink-dev-pack.mjs --out /tmp/packs && npx electron-vite build &&
@@ -460,6 +460,22 @@ without them render as before.
   resize frame, the attached child kept an 8 px non-client strip each side
   (wallpaper showing at the edges, her click box 8 px off). Attach logs
   `client WxH of WxH` if the client area ever differs again.
+- Windows Explorer restart (261105, T332): Windows destroys Progman / the
+  WorkerW and every child window with it, other processes' children too.
+  With the room window parented there directly, that destroy reached
+  Chromium's window procedure from a kernel callback and the host died with
+  0xC000041D before any JS ran (the supervisor restarted it, so analytics
+  said `host_restart`/`host_crash`). The room now sits in a native "room
+  box" (`win.cc`, class `SeiLinkRoomBox`, made on the host's main thread):
+  a parent gets WM_DESTROY before its children, so the box's WM_DESTROY
+  hides the room, lifts it out to a top-level popup and emits `shellLost`.
+  hostEntry sets `shellLost`, validate() waits out `no-progman`/`no-defview`
+  and the next attach is reported as `shell-lost:<trigger>:<reasons>`
+  (cause `explorer_restart`, detail `shell_lost`). In the raised layout the
+  BOX is the WS_EX_LAYERED child below DefView and the room itself is no
+  longer layered. validate() adds `not-in-box`. The CI explorer check fails
+  if the host exits, restarts or changes pid, or the re-attach is not a
+  `shell-lost:` one counted as `explorer_restart`.
 - macOS CI covers with TextEdit sized through Accessibility (the test addon's
   `axSetWindowFrame`); the runners have no Automation grant for AppleScript,
   and a window of our own bundle did not occlude the panel.

@@ -15,7 +15,8 @@
  *               a double click -> dblclick and no click
  *   kill        kill the host -> a new host attaches and draws
  *   hang        wedge the host -> hang detected, a new host attaches
- *   explorer    (Windows) kill and restart Explorer -> back behind the icons
+ *   explorer    (Windows) kill and restart Explorer -> the SAME host re-attaches behind the icons
+ *               (no host exit or restart, `shell-lost:` reason, seilink_reattached explorer_restart)
  *   stop        stop() -> host gone, status off
  */
 import { app, BrowserWindow, screen } from 'electron';
@@ -382,6 +383,7 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
       await fpsAfter(Date.now(), 'positive', 15_000);
       await sleep(2000);
       t = Date.now();
+      const pidBefore = seilinkHostPidForTest();
       log(`explorer kill: ${(await run('taskkill', ['/F', '/IM', 'explorer.exe'])).trim()}`);
       await sleep(6000);
       const tasks = await run('tasklist', ['/FI', 'IMAGENAME eq explorer.exe', '/NH']);
@@ -392,7 +394,30 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
       const back2 = await waitFor(since(t, 'attached'), 60_000);
       const frame2 = await fpsAfter(back2 ? back2.t : t, 'positive', 20_000);
       timings.explorerToAttachMs = back2 ? back2.t - t : -1;
-      checks.explorer = { ok: !!back2 && frame2 !== null, ms: timings.explorerToAttachMs, detail: back2 ? JSON.stringify(back2.m) : 'never re-attached' };
+      // 261105 (T332): the SAME host re-attaches. Before, the destroy of Explorer's windows
+      // killed the host (0xC000041D) and a fresh one attached, which this check let pass.
+      const restarted = events.find((e) => e.t >= t && (e.m.type === 'sup:exit' || e.m.type === 'sup:restart' || e.m.type === 'sup:spawn'));
+      const samePid = !!pidBefore && seilinkHostPidForTest() === pidBefore;
+      const m2 = back2?.m as Record<string, unknown> | undefined;
+      const asReattach = m2?.reattach === true && String(m2?.reason ?? '').startsWith('shell-lost:');
+      const counted = await waitFor(
+        () => analytics.find((a) => a.t >= t && a.event === 'seilink_reattached' && a.props.cause === 'explorer_restart'),
+        5000,
+      );
+      const crashed = analytics.find((a) => a.t >= t && a.event === 'seilink_reattached' && a.props.cause === 'host_restart');
+      const why: string[] = [];
+      if (!back2) why.push('never re-attached');
+      if (back2 && frame2 === null) why.push('no frames after');
+      if (restarted) why.push(`host restarted (${restarted.m.type})`);
+      if (!samePid) why.push(`host pid ${pidBefore} -> ${seilinkHostPidForTest()}`);
+      if (back2 && !asReattach) why.push('not a shell-lost re-attach');
+      if (!counted) why.push('no seilink_reattached explorer_restart');
+      if (crashed) why.push('counted as host_restart');
+      checks.explorer = {
+        ok: why.length === 0,
+        ms: timings.explorerToAttachMs,
+        detail: `${why.join('; ') || 'same host re-attached'}${back2 ? ` ${JSON.stringify(back2.m)}` : ''}`,
+      };
       await sleep(3000);
       await shot('04-after-explorer');
     }

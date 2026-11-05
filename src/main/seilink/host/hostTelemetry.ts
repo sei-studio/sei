@@ -30,7 +30,7 @@ export const REATTACH_EVENTS_PER_CAUSE = 3;
 
 // ── Small shapes ────────────────────────────────────────────────────────────
 
-/** How she is attached: Windows layered child of Progman (24H2 raised), child of the WorkerW (classic), mac desktop level. */
+/** How she is attached: Windows room box in Progman (24H2 raised, layered) or in the WorkerW (classic), mac desktop level. */
 export type AttachMode = 'progman' | 'workerw' | 'mac_desktop_level' | 'fake' | 'other';
 
 export function attachMode(layout: unknown): AttachMode {
@@ -89,6 +89,7 @@ const VERIFY_REASONS = new Set([
   'no-progman',
   'no-defview',
   'own-window-gone',
+  'not-in-box',
   'parent-not-progman',
   'not-directly-below-defview',
   'no-workerw',
@@ -120,6 +121,7 @@ export type ReattachCause =
   | 'other';
 
 export type ReattachDetail =
+  | 'shell_lost'
   | 'workerw_lost'
   | 'parent_lost'
   | 'z_order'
@@ -133,12 +135,16 @@ export type ReattachDetail =
 
 /**
  * hostEntry's attach reasons: 'window-closed', 'own-window-gone',
- * `validate:<trigger>[+1500]:<reasons joined by +>` and (mac)
- * `validate:<trigger>:level`. Triggers: timer, session, taskbarCreated,
- * displayChange, settingChange, display, resume.
+ * `validate:<trigger>[+1500]:<reasons joined by +>`, (mac)
+ * `validate:<trigger>:level`, and (Windows, 261105) `shell-lost:<trigger>:<reasons>`
+ * after Explorer went away and the native room box lifted her out of its tree
+ * (`shell-lost:window-closed` when that rescue failed and the window had to be
+ * made again). Triggers: timer, session, taskbarCreated, displayChange,
+ * settingChange, display, resume.
  */
 export function reattachCause(reason: unknown): { cause: ReattachCause; detail: ReattachDetail } {
   const r = String(reason ?? '');
+  if (r.startsWith('shell-lost:')) return { cause: 'explorer_restart', detail: 'shell_lost' };
   if (r === 'window-closed' || r === 'own-window-gone') return { cause: 'window_lost', detail: 'window_gone' };
   if (!r.startsWith('validate:')) return { cause: 'other', detail: 'other' };
   const [, triggerRaw = '', what = ''] = r.split(':');
