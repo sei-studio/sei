@@ -17,6 +17,21 @@
 // owes them). Idioms like "trees like they owe me money" do not count.
 // Every thanks/jk case also records credit (pass 41's judge) and silence.
 //
+// Findings (261105, 30 runs per arm, Sui fixture; base = dev bcee16e3):
+//   - Sui-only: Lyra and Roger fixtures on the same history, 0/20 debts each.
+//   - The template is "np. you still X tho"; X is the most salient open item
+//     (her next tool, an ask she made). Once a debt line is in her recent
+//     lines the thanks reply repeats it 54/60, and no anti-repeat wording
+//     moved that (REUSE_ASK "or call back to", REPITCH_ASK "add nothing").
+//   - Dropping MEMORY_GOAL_TAIL cut fresh thanks debts 54% -> 13%, but the
+//     slot filled with status ("np, still following you, 16 blocks off");
+//     no single clause of it mattered. Not shipped.
+//   - CORE "praise or thanks" (or "being thanked") cut "jk jk" debts 16/60 ->
+//     2/60 but raised a thank-you after her OWN give 1/30 -> 12/30 (and
+//     10/30): naming thanks in the tail core primes her to say it. Reverted.
+//   - A "thanked" reaction on her card (proposal): jk debts 2/60, fresh
+//     thanks debts 19/60, callback 43/60, give reversal 2/30.
+//
 //   ELECTRON_RUN_AS_NODE=1 npx electron scripts/quality-eval/pass43-probe.mjs \
 //     --out DIR [--root TREE] [--reps 10] [--cases a,b]
 //

@@ -1530,14 +1530,6 @@ function fallbackCore(name, expanded) {
   return lines.length ? `${lead} ${lines.join(' ')}` : lead
 }
 
-// 261105 (quality pass 43): "praise or thanks" in the list of moments. Sui
-// answered "thanks for the help" with a debt nobody agreed to ("anytime. you
-// still owe me a stone pickaxe tho", 24 of 82 work_session runs 11-01..11-04)
-// and "jk jk" with one too (30 of 82), then repeated the bit. Lyra and Roger
-// on the same history: 0 of 20 each, so it is her card's voice with no
-// reaction for being thanked. Naming thanks here (2 words): pass43-probe
-// "jk jk" debts 16/60 -> 2/60 on her current card; the thanked line proposed
-// for her card does the rest (thanks debts 49/90 -> 5/60 with both).
 export function renderCore(persona, { userName } = {}) {
   const p = persona && typeof persona === 'object' ? persona : {}
   const name = (typeof p.name === 'string' && p.name.trim()) ? p.name.trim() : 'this character'
@@ -1549,7 +1541,7 @@ export function renderCore(persona, { userName } = {}) {
   const core = sliceCoreSection(expanded) || fallbackCore(name, expanded)
   const behavior = sliceBehaviorSections(expanded)
   const body = behavior ? `${core}\n\n${behavior}` : core
-  return `# CORE\nThis is who you are. Hold this voice and these traits in every line, no matter what is happening around you. That matters most when something happens to you (an order, a hit, a death, a failed action, praise or thanks, an insult, a quiet moment): react the way this person reacts, in their own words and attitude, and take only the kind of initiative they would take. A plain status report or a stock helper reply is a line any companion could say, so it is out of character. What you are doing next is already in your tool calls, so a line that only announces it adds nothing; say how you feel about it or what you want from the player instead.\n\n${body}`
+  return `# CORE\nThis is who you are. Hold this voice and these traits in every line, no matter what is happening around you. That matters most when something happens to you (an order, a hit, a death, a failed action, praise, an insult, a quiet moment): react the way this person reacts, in their own words and attitude, and take only the kind of initiative they would take. A plain status report or a stock helper reply is a line any companion could say, so it is out of character. What you are doing next is already in your tool calls, so a line that only announces it adds nothing; say how you feel about it or what you want from the player instead.\n\n${body}`
 }
 
 // 260618: the progression frontier — milestones reachable RIGHT NOW, computed in
