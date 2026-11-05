@@ -84,7 +84,7 @@ import {
 } from '@shared/seilinkEdit';
 import { useT } from '../../lib/i18n';
 import { ROOM_PRESET_LABEL } from '../../lib/seilink/moveIn';
-import { useEditorAnalytics } from '../../lib/seilink/editorAnalytics';
+import { useEditorAnalytics, type TogetherAnalytics } from '../../lib/seilink/editorAnalytics';
 import { lightSlotsOf, roomShapeOf, type EditorOpenedFrom } from '@shared/seilinkTelemetry';
 import { RoomCanvas, type RoomAvatarSlot } from './RoomCanvas';
 import { componentThumb, roomThumb } from '../../lib/seilink/roomThumbs';
@@ -169,6 +169,28 @@ export interface RoomEditorProps {
   telemetry?: { openedFrom: EditorOpenedFrom };
   /** 261105: a quiet line in the avatar panel ("Preparing {name}'s look..."). */
   avatarNote?: string | null;
+  /** 261105 (T336): decorating together with her (RoomTogether), drawn over the room. */
+  together?: (ctx: RoomTogetherCtx) => React.ReactNode;
+}
+
+/** What the together layer (RoomTogether.tsx) gets from the editor. */
+export interface RoomTogetherCtx {
+  manifest: RoomPresetManifest;
+  state: RoomState;
+  history: EditHistory;
+  pack: EditorPack;
+  time: RoomTime;
+  vp: RoomViewport;
+  picker: RoomPicker;
+  /** Re-render tick for when the picker's maps are ready. */
+  pickTick: number;
+  /** Commit a room as ONE undo step (her changes, or her idea the player tried). */
+  commit(next: RoomState): void;
+  /** Undo once, only if the present is still `state`. True when it did. */
+  undoIf(state: RoomState): boolean;
+  analytics: TogetherAnalytics;
+  /** The room canvas's layer box (for the crossfade snapshot). */
+  sceneEl(): HTMLElement | null;
 }
 
 /** Slots the editor offers anything for, in draw order. */
@@ -599,7 +621,7 @@ function PartLook({
 // ── The editor ──────────────────────────────────────────────────────────────
 
 export function RoomEditor(props: RoomEditorProps): React.ReactElement {
-  const { source, characterId, onClose, clock, fps = 30, initial, inline, telemetry } = props;
+  const { source, characterId, onClose, clock, fps = 30, initial, inline, telemetry, together } = props;
   const t = useT();
   const [packs, setPacks] = useState<EditorPack[] | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -773,6 +795,27 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
 
   // ── actions ──
   const doUndo = useCallback(() => setHistory((h) => (h ? undo(h) : h)), []);
+
+  // 261105 (T336): her commits, one undo step each, and their undo.
+  const commitHers = useCallback((next: RoomState) => {
+    setHistory((h) => (h ? commitEdit(endGesture(h), next, null) : h));
+    setSaving((s) => (s === 'saved' || s === 'error' ? 'idle' : s));
+  }, []);
+  const undoIf = useCallback((st: RoomState): boolean => {
+    if (historyRef.current?.present !== st) return false;
+    setHistory((h) => (h && h.present === st ? undo(h) : h));
+    return true;
+  }, []);
+
+  // 261105 (T336): over the fullscreen editor, modals (the usage wall, the call inactivity check) must still show.
+  useEffect(() => {
+    if (inline) return;
+    const root = document.documentElement;
+    root.style.setProperty('--sei-modal-lift', '1500');
+    return () => {
+      root.style.removeProperty('--sei-modal-lift');
+    };
+  }, [inline]);
 
   const doSave = useCallback(async (): Promise<boolean> => {
     const h = historyRef.current;
@@ -1399,6 +1442,21 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
             </button>
           </div>
         </div>
+
+        {together?.({
+          manifest,
+          state,
+          history,
+          pack,
+          time,
+          vp,
+          picker: pickerRef.current,
+          pickTick,
+          commit: commitHers,
+          undoIf,
+          analytics: analytics.together,
+          sceneEl: () => (stageRef.current?.closest('[data-room-editor]')?.querySelector('canvas')?.parentElement as HTMLElement | null) ?? null,
+        })}
 
         {saving === 'error' && (
           <p className={styles.toast} role="alert">

@@ -465,6 +465,45 @@ if (
       return () => listeners.delete(cb);
     };
   }
+  // &together=<name> (261105, T336): the shared editor (RoomTogether). An empty
+  // chat; window.__seiTogether lets a shot script push her chat lines, emit her
+  // edit events and script the talk-box reply (`reply(text)` -> her line).
+  if (harnessParams.has('together')) {
+    const chatCbs = new Set<(p: unknown) => void>();
+    const editorCbs = new Set<(e: unknown) => void>();
+    const dev = {
+      synced: [] as unknown[],
+      tracked: [] as Array<{ event: string; props: unknown }>,
+      replyMs: 1400,
+      reply: (text: string): string => `ok: ${text}`,
+      push: (characterId: string, text: string): void => {
+        const message = { id: `dev-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, role: 'companion', text, ts: Date.now() };
+        chatCbs.forEach((cb) => cb({ characterId, message }));
+      },
+      emit: (ev: unknown): void => editorCbs.forEach((cb) => cb(ev)),
+    };
+    (window as unknown as { __seiTogether: typeof dev }).__seiTogether = dev;
+    answers.chatHistory = async () => [];
+    answers.chatOpened = undefined;
+    answers.chatSend = async (req: { characterId: string; text: string }) => {
+      await new Promise((r) => setTimeout(r, dev.replyMs));
+      return { replies: [{ id: `dev-r-${Date.now()}`, role: 'companion', text: dev.reply(req.text), ts: Date.now() }] };
+    };
+    answers.onChatMessage = (cb: (p: unknown) => void) => {
+      chatCbs.add(cb);
+      return () => chatCbs.delete(cb);
+    };
+    answers.onSeilinkEditorEvent = (cb: (e: unknown) => void) => {
+      editorCbs.add(cb);
+      return () => editorCbs.delete(cb);
+    };
+    answers.seilinkEditorSync = (sync: unknown) => {
+      dev.synced.push(sync);
+    };
+    answers.track = (event: string, props: unknown) => {
+      dev.tracked.push({ event, props });
+    };
+  }
   (window as unknown as { sei: unknown }).sei = new Proxy(
     {},
     {

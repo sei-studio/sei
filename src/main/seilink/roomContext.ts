@@ -30,6 +30,7 @@ import { describeRoom, resolveRoomTime, roomTimeAt, SEILINK_ROOM_FORMAT, type Ro
 import { parseRoomManifest, sanitizeRoomState } from '../../shared/seilinkValidate';
 import type { RoomContext, RoomSource } from './types';
 import { renderRoomImage, type RoomImage } from './roomRender';
+import { liveRoomFor } from './editorTogether';
 
 export type { RoomContext, RoomSource } from './types';
 
@@ -89,7 +90,8 @@ export async function roomForSurface(characterId: string, opts: { inGame: boolea
       console.warn(`[seilink] room for ${characterId.slice(0, 8)} is malformed, ignored`);
       return null;
     }
-    return ctx;
+    // 261105 (T336): while the player has her room editor open, the room as it is there (unsaved).
+    return liveRoomFor(characterId, ctx);
   } catch (err) {
     console.warn(`[seilink] room source failed for ${characterId.slice(0, 8)}: ${(err as Error).message}`);
     return null;

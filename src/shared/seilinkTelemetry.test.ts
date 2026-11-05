@@ -210,3 +210,54 @@ describe('sanitizeSeilinkTrack', () => {
     expect(sanitizeSeilinkTrack('other', { a: 1 })).toEqual({});
   });
 });
+
+describe('decorating together (261105, T336)', () => {
+  it('leaves her edits out of the player edit counts and reports the together counters', () => {
+    const tr = new EditorSessionTracker('gear', 0);
+    let h = createHistory(base);
+    tr.history(h);
+    tr.together(true);
+    // The player's edit.
+    h = commitEdit(h, { ...h.present, time: 'night' });
+    tr.history(h);
+    // Her edit: one undo step, marked as hers before it lands.
+    const hers: RoomState = { ...h.present, slots: { bed: { id: 'bed_b' } } };
+    tr.markHers(hers);
+    h = commitEdit(endGesture(h), hers, null);
+    tr.history(h);
+    tr.count('her_edits_undone');
+    h = undo(h);
+    tr.history(h);
+    tr.count('talk_messages');
+    tr.count('talk_messages');
+    tr.count('live_lines');
+    const p = tr.finish(10_000, false, CHAR)!;
+    expect(p).toMatchObject({ edits: 1, edit_time_of_day: 1, undos: 1, together: true, on_call_at_open: true, talk_messages: 2, her_edits_undone: 1, live_lines: 1, her_edits_applied: 0 });
+    expect(p.edit_swap_component ?? 0).toBe(0);
+    const clean = sanitizeSeilinkTrack('seilink_editor_session', { ...p, together: 'yes', talk_text: 'hi' });
+    expect(clean.together).toBeUndefined();
+    expect(clean.talk_text).toBeUndefined();
+    expect(sanitizeSeilinkTrack('seilink_editor_session', p)).toMatchObject({ together: true, on_call_at_open: true, talk_messages: 2 });
+  });
+
+  it('leaves the together fields off an editor that was not shared', () => {
+    const tr = new EditorSessionTracker('gear', 0);
+    let h = createHistory(base);
+    tr.history(h);
+    h = commitEdit(h, { ...h.present, time: 'night' });
+    tr.history(h);
+    const p = tr.finish(5_000, false, CHAR)!;
+    expect(p.together).toBeUndefined();
+    expect(p.talk_messages).toBeUndefined();
+  });
+
+  it('sanitizes the talk and her-edit events to shape only', () => {
+    expect(isSeilinkRendererEvent('seilink_editor_talk')).toBe(true);
+    expect(isSeilinkRendererEvent('seilink_her_edit')).toBe(true);
+    expect(sanitizeSeilinkTrack('seilink_editor_talk', { character_id: CHAR, outcome: 'sent', text: 'make it cozier' })).toEqual({ character_id: CHAR, outcome: 'sent' });
+    expect(sanitizeSeilinkTrack('seilink_editor_talk', { character_id: 'x', outcome: 'weird' })).toEqual({ character_id: null, outcome: 'error' });
+    // The editor can only report the player's answer; "applied" comes from main.
+    expect(sanitizeSeilinkTrack('seilink_her_edit', { character_id: CHAR, outcome: 'applied', changes: ['bed'] })).toEqual({ character_id: CHAR, outcome: 'undone', surface: 'editor' });
+    expect(sanitizeSeilinkTrack('seilink_her_edit', { character_id: CHAR, outcome: 'tried' })).toEqual({ character_id: CHAR, outcome: 'tried', surface: 'editor' });
+  });
+});

@@ -57,6 +57,9 @@ carried a face for her avatar), `react_shown`, `react_skip_<reason>`
 |---|---|---|---|
 | `seilink_poke` | a double click on her (a refusal repeats quietly for 60 s) | outcome `ok`/`limited`/`free_plan`/`free_cap`/`over_limit`/`no_plan`/`rate_limited`/`occupied`/`busy`/`not_live`/`not_shown`/`silence`/`no_room`/`aborted`/`error`/`depleted`, latency_ms, budget `own`/`paid`/`free`/`none` | Do pokes work, how fast, why not |
 | `seilink_room_reaction` | a companion editor session for the desktop resident ended (one per session; nothing for an untouched StrictMode remount) | outcome `shown`/`skipped`, reason `no_change`/`cooldown`/`budget`/`on_call`/`in_game`/`busy`/`not_live`/`silence`/`error`, changes (bucket `0`/`1`/`2`/`3-5`/`6-10`/`11+`), latency_ms (shown), budget `own`/`paid`/`free`/`none` | Does she react to room edits, how fast, why not |
+| `seilink_live_line` | decorating together: a live line was due (each skip reason once per session) | outcome `shown`/`skipped`, reason `not_resident`/`on_call`/`in_game`/`cap`/`busy`/`cooldown`/`budget`/`silence`/`error`, changes (bucket), latency_ms (shown), budget | Does she comment while you decorate, why not |
+| `seilink_her_edit` | she used decorate (main, surface `chat`/`call`) or the player answered it (editor, outcome `undone`/`tried`) | outcome `applied`/`suggested`/`rejected`/`undone`/`tried`, changes (bucket), rejected (bucket), surface `chat`/`call`/`editor` | Does she decorate, do people keep it |
+| `seilink_editor_talk` | a message from the editor's talk box | outcome `sent`/`limit`/`error` | Is the talk box used, how often the cap blocks it |
 | `seilink_line_shown` | a bubble line shows | kind poke/idle/react, chars, expression `tag`/`lexicon`/`none` (261105: where her face for the line came from) | How much she talks on the desktop, and how often her face changes with it |
 | `seilink_dock_action` | a dock button | action edit/deafen/moveout, deafened? | Dock use |
 
@@ -64,6 +67,7 @@ Idle lines: a "due window" opens when her gap has passed. `idle_due` counts
 windows, `idle_skip_<reason>` (cap, covered, paused, deafened, away, busy,
 occupied, free_plan, free_cap, over_limit, no_plan) counts each reason once
 per window, `idle_attempted` / `idle_shown` / `idle_none_<why>` count tries.
+Live lines (decorating together): `live_shown`, `live_skip_<reason>`.
 
 ## Move in
 
@@ -107,6 +111,7 @@ per app run.
 | Event | When | Props | Answers |
 |---|---|---|---|
 | `seilink_editor_session` | the editor closes, or the window goes away with it open (one per session; a drag is one edit) | opened_from `gear`/`dock`/`move_in`/`button`/`tour`/`other`, duration_ms, preset, preset_end, first_panel, panels_opened, `panel_<avatar/room/fabrics/furniture/items>`, edits, `edit_<type>`, undos, saves, save_failures, avatar_upload_start/ok/fail, `avatar_fail_<not_zip/too_big/import_failed>`, dirty_at_close, outcome `saved`/`no_changes`/`discarded`, errors; 261105 catalog: `edit_pattern_change`/`edit_accent_change`/`edit_light_colour`/`edit_light_cycle`, patterned_at_close, accents_at_close, cycling_lights_at_close, particle_parts_at_close, particles_on, last_pattern (a code pattern, a painted tile id, `plain` or `other`); 261105 colour pass: preset_color_picks (a preset swatch or the automatic second colour), custom_color_picks (one per finished custom pick: a drag, a typed hex, a key run), recent_color_picks, picker_opens, custom_colors_at_close (tinted parts whose colour is not one of their presets). Never a colour value | Do people edit, what they change, do they save; do patterns and light colours get used |
+| (on `seilink_editor_session`) | 261105 (T336), only when the editor was shared with the resident | together, on_call_at_open, live_lines, call_pictures, call_picture_skipped_unchanged, call_picture_rate_limited, her_edits_applied/suggested/rejected/undone/tried, talk_messages, talk_blocked. Her edits are not counted in `edits` / `edit_<type>` | Decorating together usage |
 | `seilink_editor_error` | first time per kind per session | kind `load_failed`/`no_packs`/`save_failed`/`avatar_import_failed`, opened_from | Editor breakage |
 
 Edit types (`classifyEdit`, a diff of two history entries):

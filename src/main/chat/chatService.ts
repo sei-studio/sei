@@ -57,6 +57,8 @@ import { surfaceLanguage } from '../../shared/chatLanguage';
 import { LOOK_TOOL_NAME, lookAtRoom, lookResultContent, lookToolResult, roomForSurface, roomPromptLine, type RoomContext, type RoomLook } from '../seilink/roomContext';
 import type { RoomImage } from '../seilink/roomRender';
 import { roomChangeTurnNote } from '../seilink/roomChangeNote';
+import { callPictureDecision, DECORATE_TOOL_NAME, decorateToolFor, editorTurnNote, notePictureSent, runDecorate } from '../seilink/editorTogether';
+import { DECORATE_MAX_CHANGES } from '../../shared/seilinkDecorate';
 import * as chatStore from './chatStore';
 import {
   drainThoughts,
@@ -147,12 +149,44 @@ export const NO_FOLLOW_UP_TOOLS: ReadonlySet<string> = new Set(['remember']);
  * (cloud proxy or Anthropic BYOK) get the native server-side web_search + our
  * visit; other providers get our search + visit (webToolsFor).
  */
-function chatTools(llm: Pick<LlmProvider, 'kind'>, voice: boolean, room = false): LlmToolDef[] {
+function chatTools(llm: Pick<LlmProvider, 'kind'>, voice: boolean, room = false, decorate: LlmToolDef | null = null): LlmToolDef[] {
   const web = webToolsFor({ serverWebSearch: llm.kind === 'anthropic' }) as LlmToolDef[];
   // 261104 SeiLink: look() rides every turn kind while she has a room, so
   // the list stays identical across the voice turn kinds (prepareChatTurn
   // decides `room` once per turn, from the same source).
-  return chatSurfaceTools(voice, web, room) as LlmToolDef[];
+  // 261105 (T336): decorate() rides last, on every turn kind too, while the
+  // player has her room editor open (editorTogether.ts decorateToolFor).
+  const tools = chatSurfaceTools(voice, web, room) as LlmToolDef[];
+  return decorate ? [...tools, decorate] : tools;
+}
+
+/**
+ * 261105 (T336): a call turn while her room editor is open gets a fresh
+ * picture of the room when it changed since the last one she saw (at most
+ * one per PICTURE_GAP_MS; editorTogether.ts callPictureDecision). It rides
+ * as a look() she made, after the turn's notes, so it reads as her own look
+ * and never as something the player sent (the 261104 probe finding).
+ */
+/**
+ * 261105 (T336): the reply cap. While her room editor is open (decorate is
+ * offered) a turn can carry a lead line plus a five-change decorate call; at
+ * 200 the probe's "make it cozier" turns ended exactly at the cap, one step
+ * from a cut-off tool call. Only a cap: a turn pays for what it writes.
+ */
+function replyMaxTokens(tools: ReadonlyArray<{ name: string }> | undefined): number {
+  return tools?.some((t) => t.name === DECORATE_TOOL_NAME) ? 400 : 200;
+}
+
+async function appendCallPicture(characterId: string, room: RoomContext | null, llm: LlmProvider, messages: LlmMessage[]): Promise<void> {
+  if (!room) return;
+  if (callPictureDecision(characterId, { now: Date.now(), vision: llm.vision }) !== 'send') return;
+  const look = await runLook(characterId, room, llm);
+  if (!look.image) return;
+  const id = `toolu_room_${randomUUID().replace(/-/g, '').slice(0, 20)}`;
+  const r = lookToolResult(id, look, { nested: llm.kind === 'anthropic' });
+  messages.push({ role: 'assistant', content: [{ type: 'tool_use', id, name: LOOK_TOOL_NAME, input: {} }] } as LlmMessage);
+  messages.push({ role: 'user', content: lookResultContent([r.result], r.sibling ? [r.sibling] : []) } as LlmMessage);
+  notePictureSent(characterId, room, Date.now());
 }
 
 /**
@@ -193,7 +227,7 @@ async function followUpWebTools(p: {
   room?: RoomContext | null;
 }): Promise<LlmResult> {
   const { res } = p;
-  const isFollowUpTool = (name: string): boolean => isWebTool(name) || name === LOOK_TOOL_NAME;
+  const isFollowUpTool = (name: string): boolean => isWebTool(name) || name === LOOK_TOOL_NAME || name === DECORATE_TOOL_NAME;
   const hasWebUse = res.content.some((b) => b.type === 'tool_use' && isFollowUpTool(b.name));
   const paused = res.stopReason === 'pause_turn';
   if (!hasWebUse && !paused) return res;
@@ -212,6 +246,9 @@ async function followUpWebTools(p: {
         if (look.image) lookImageSent = true;
         results.push(r.result);
         if (r.sibling) images.push(r.sibling);
+      } else if (b.name === DECORATE_TOOL_NAME) {
+        // 261105 (T336): her room edits on a call turn while the editor is open.
+        results.push({ type: 'tool_result', tool_use_id: b.id, content: runDecorate(p.characterId, b.input, { now: Date.now(), surface: 'call' }).text });
       } else if (isWebTool(b.name)) {
         if (!ws) {
           ws = getChatWebSession(p.characterId, resolveWebSearchSettings(p.config));
@@ -978,8 +1015,11 @@ async function sendChatMessageImpl(
     markLastMessageCached(messages);
     // 261024: the call clock goes after the breakpoint (no-op in typed chat).
     // 261105 SeiLink: room edits she did not react to ride once, here too (roomChangeNote.ts).
-    appendUncachedTail(messages, roomChangeTurnNote(args.characterId, prep.room), prep.clockNote);
+    // 261105 (T336): with her room editor open, the decorating-together note (what changed since her last turn).
+    const editorNote = prep.room ? editorTurnNote(args.characterId, { now: Date.now(), onCall: args.voiceCall === true }) : '';
+    appendUncachedTail(messages, roomChangeTurnNote(args.characterId, prep.room), editorNote, prep.clockNote);
     const llm = await buildLlmProvider();
+    if (editorNote && args.voiceCall === true) await appendCallPicture(args.characterId, prep.room, llm, messages);
 
     // Voice calls (260706): STREAM the reply so TTS can start on sentence 1 while
     // the model is still writing the rest, instead of waiting for the whole reply
@@ -1079,7 +1119,9 @@ async function sendChatMessageImpl(
     // end_call + remember are offered only while a call is open (block 0
     // already flips for the primer, so this adds no extra cache churn).
     // Same list on every voice turn kind for the cache prefix (chatTools).
-    const tools = chatTools(llm, args.voiceCall === true, Boolean(prep.room));
+    const tools = chatTools(llm, args.voiceCall === true, Boolean(prep.room), decorateToolFor(args.characterId, prep.room));
+    /** 261105 (T336): decorate() changes left this turn (DECORATE_MAX_CHANGES per request). */
+    let decorateLeft = DECORATE_MAX_CHANGES;
     // 260909: per-character web session (lettered results survive across
     // turns). Resolved lazily so a turn that never searches pays nothing.
     let webSession: ReturnType<typeof getChatWebSession> | null = null;
@@ -1137,7 +1179,7 @@ async function sendChatMessageImpl(
         : undefined;
       // #9 — abortable: a follow-up send aborts this signal.
       const res = await llm.call({
-        maxTokens: 200,
+        maxTokens: replyMaxTokens(tools),
         system,
         tools,
         stopSequences: TRANSCRIPT_STOP_SEQUENCES,
@@ -1220,7 +1262,20 @@ async function sendChatMessageImpl(
       // visit() ride the same response the split above has already pushed
       // the pre-search line, and replyText holds only what followed it.
       // 261104: look() is the same kind of pause ("let me look around").
-      if (!isStreaming && replyText && typeof deps.emitReply === 'function' && toolUses.some((b) => isWebTool(b.name) || b.name === LOOK_TOOL_NAME)) {
+      // 261105 (T336): for the "answered" guard below, decided before the early push clears replyText.
+      const answeredBeforeTools = isStreaming
+        ? streamedReplies.length > streamedBeforeHop
+        : Boolean(text.trim()) && Boolean(replyText.trim());
+      /** 261105: every decorate() this hop applied all it asked for. */
+      let decorateClean = true;
+      /** 261105: room changes this hop's decorate() calls made (or offered). */
+      let decorateOps = 0;
+      if (
+        !isStreaming &&
+        replyText &&
+        typeof deps.emitReply === 'function' &&
+        toolUses.some((b) => isWebTool(b.name) || b.name === LOOK_TOOL_NAME || b.name === DECORATE_TOOL_NAME)
+      ) {
         await emitStreamedBubble(replyText, false);
         replyText = '';
       }
@@ -1241,6 +1296,20 @@ async function sendChatMessageImpl(
           toolResults.push(r.result);
           if (r.sibling) lookImages.push(r.sibling);
           continue;
+        } else if (toolUse.name === DECORATE_TOOL_NAME) {
+          // 261105 (T336): her edits to her room while the player has the editor open.
+          const r = runDecorate(args.characterId, toolUse.input, {
+            now: Date.now(),
+            budgetLeft: decorateLeft,
+            surface: args.voiceCall === true ? 'call' : 'chat',
+          });
+          decorateLeft -= r.result?.ops.length ?? 0;
+          if (!r.result || r.result.rejected.length || !r.result.ops.length) decorateClean = false;
+          decorateOps += r.result?.ops.length ?? 0;
+          console.log(
+            `[sei/chat] decorate char=${args.characterId.slice(0, 8)} mode=${r.result?.mode ?? '-'} ops=${r.result?.ops.length ?? 0} rejected=${r.result?.rejected.length ?? 0}`,
+          );
+          note = r.text;
         } else if (toolUse.name === 'launch') {
           launchCalled = true;
           const game = String((toolUse.input as { game?: string })?.game ?? 'minecraft');
@@ -1368,6 +1437,11 @@ async function sendChatMessageImpl(
         ? streamedReplies.length > streamedBeforeHop
         : Boolean(text.trim()) && Boolean(replyText.trim());
       if (answeredThisHop && toolUses.every((b) => NO_FOLLOW_UP_TOOLS.has(b.name))) break;
+      // 261105 (T336): "sure, navy it is" + ONE change that applied: the line already answered,
+      // so no second round (it would only repeat it). Several changes get a hop, so she says
+      // what she did after seeing what landed (probe: "my turn, ok" + five silent changes);
+      // rejections get one too.
+      if (answeredBeforeTools && decorateClean && decorateOps <= 1 && toolUses.every((b) => NO_FOLLOW_UP_TOOLS.has(b.name) || b.name === DECORATE_TOOL_NAME)) break;
     }
 
     // #9 — if a newer send arrived (or we were aborted) while this turn ran,
@@ -1674,10 +1748,10 @@ async function sendVoiceGreetingTurnImpl(
     // not a cacheRead" symptom). Matching them writes the tools+system prefix
     // here, during the ring, so the first spoken user reply is a fast cache READ.
     markLastMessageCached(messages);
-    appendUncachedTail(messages, note, roomChangeTurnNote(characterId, prep.room), prep.clockNote);
-    const tools = chatTools(llm, true, Boolean(prep.room));
+    appendUncachedTail(messages, note, roomChangeTurnNote(characterId, prep.room), prep.room ? editorTurnNote(characterId, { now: Date.now(), onCall: true }) : '', prep.clockNote);
+    const tools = chatTools(llm, true, Boolean(prep.room), decorateToolFor(characterId, prep.room));
     const first = await llm.call({
-      maxTokens: 200,
+      maxTokens: replyMaxTokens(tools),
       system,
       tools,
       stopSequences: TRANSCRIPT_STOP_SEQUENCES,
@@ -1819,12 +1893,12 @@ async function sendCompanionVoiceTurnImpl(
     // in before the breakpoint, every group-call reaction wrote a prefix that
     // no turn ever read back.
     markLastMessageCached(messages);
-    appendUncachedTail(messages, note, roomChangeTurnNote(characterId, prep.room), prep.clockNote);
+    appendUncachedTail(messages, note, roomChangeTurnNote(characterId, prep.room), prep.room ? editorTurnNote(characterId, { now: Date.now(), onCall: true }) : '', prep.clockNote);
 
     const llm = await buildLlmProvider();
-    const tools = chatTools(llm, true, Boolean(prep.room));
+    const tools = chatTools(llm, true, Boolean(prep.room), decorateToolFor(characterId, prep.room));
     const first = await llm.call({
-      maxTokens: 200,
+      maxTokens: replyMaxTokens(tools),
       system,
       tools,
       stopSequences: TRANSCRIPT_STOP_SEQUENCES,
@@ -1936,11 +2010,11 @@ async function sendVoiceIdleTurnImpl(
     // Same warm tools+system cache prefix as every other voice turn.
     // 261024: the note rides after the breakpoint (see the companion turn).
     markLastMessageCached(messages);
-    appendUncachedTail(messages, note, roomChangeTurnNote(characterId, prep.room), prep.clockNote);
+    appendUncachedTail(messages, note, roomChangeTurnNote(characterId, prep.room), prep.room ? editorTurnNote(characterId, { now: Date.now(), onCall: true }) : '', prep.clockNote);
     const llm = await buildLlmProvider();
-    const tools = chatTools(llm, true, Boolean(prep.room));
+    const tools = chatTools(llm, true, Boolean(prep.room), decorateToolFor(characterId, prep.room));
     const first = await llm.call({
-      maxTokens: 200,
+      maxTokens: replyMaxTokens(tools),
       system,
       tools,
       stopSequences: TRANSCRIPT_STOP_SEQUENCES,
@@ -2230,7 +2304,7 @@ async function sendDesktopLineTurnImpl(
       appendUncachedTail(messages, reactNote, prep.clockNote);
     } else appendUncachedTail(messages, DESKTOP_LINE_NOTES[kind], roomChangeTurnNote(characterId, prep.room), prep.clockNote);
     const llm = await buildLlmProvider();
-    const tools = chatTools(llm, false, true);
+    const tools = chatTools(llm, false, true, decorateToolFor(characterId, prep.room));
     const res = await llm.call({
       maxTokens: 120,
       system,

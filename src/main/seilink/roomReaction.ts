@@ -34,6 +34,15 @@ import { clearUnseenBaseline, keepUnseenBaseline, roomReactionNote, unseenBaseli
 export const REACT_COOLDOWN_MS = 5 * 60_000;
 /** StrictMode mounts, unmounts and mounts again: an untouched session this short is that, not a real open. */
 export const REACT_THROWAWAY_MS = 250;
+/** After a live line or a talk-box reply in the editor, no closing line this soon. */
+export const TOGETHER_CLOSE_GAP_MS = 40_000;
+
+/** What she already talked about while the editor was open (editorTogether.ts TogetherSession). */
+export interface TogetherSeen {
+  seen: RoomSnapshot;
+  lastLiveAt: number | null;
+}
+
 /** Open sessions kept at most (a renderer that never says close cannot grow this). */
 const MAX_SESSIONS = 8;
 
@@ -51,6 +60,8 @@ export type ReactionSkip =
   | 'not_live'
   /** She answered with nothing. */
   | 'silence'
+  /** 261105 (T336): she already talked about every change while the editor was open (a live line, a talk turn). */
+  | 'seen_live'
   | 'error';
 
 /** Why no reaction now (before the plan read), or null when she may react. Pure. */
@@ -140,8 +151,13 @@ export class RoomReactions {
     this.sessions.set(token, { characterId, openedAt: this.deps.now(), before });
   }
 
-  /** The session ended. Resolves when the reaction (or the skip) is done. */
-  async closed(token: string): Promise<void> {
+  /**
+   * The session ended. Resolves when the reaction (or the skip) is done.
+   * `together` (261105, T336): what she already said something about while
+   * the editor was open (decorateTogether.ts); the closing line only covers
+   * what changed since, and is skipped when that is nothing.
+   */
+  async closed(token: string, together?: TogetherSeen | null): Promise<void> {
     const s = this.sessions.get(token);
     if (!s) return;
     this.sessions.delete(token);
@@ -155,14 +171,19 @@ export class RoomReactions {
     const session = roomChanges(before.manifest, before.state, after.manifest, after.state);
     if (session.length === 0 && now - s.openedAt < REACT_THROWAWAY_MS) return;
     // Everything she has not heard about yet: this session, plus earlier ones that got no line.
-    const base = unseenBaseline(id, now);
+    // With the editor shared live, that is what changed since she last talked about it.
+    const base = together ? together.seen : unseenBaseline(id, now);
     const all = base ? roomChanges(base.manifest, base.state, after.manifest, after.state) : session;
-    const changes = all.length ? all : session;
+    const changes = together ? all : all.length ? all : session;
     const bucket = roomChangeBucket(changes.length);
     const skip = (reason: ReactionSkip, budget?: LineBudget): void => {
-      if (reason !== 'no_change') keepUnseenBaseline(id, before, now);
-      this.deps.report({ character_id: id, outcome: 'skipped', reason, changes: roomChangeBucket(reason === 'no_change' ? 0 : changes.length), ...(budget ? { budget } : {}) });
+      if (reason !== 'no_change' && reason !== 'seen_live') keepUnseenBaseline(id, base ?? before, now);
+      this.deps.report({ character_id: id, outcome: 'skipped', reason, changes: roomChangeBucket(reason === 'no_change' || reason === 'seen_live' ? 0 : changes.length), ...(budget ? { budget } : {}) });
     };
+    if (together && session.length > 0 && changes.length === 0) {
+      clearUnseenBaseline(id);
+      return skip('seen_live');
+    }
     const lines = this.deps.lines(id);
     const block = reactionBlock({
       changes: session.length,
@@ -174,6 +195,8 @@ export class RoomReactions {
       lastAt: this.lastAt,
     });
     if (block) return skip(block);
+    // No doubling up: right after a live line (or a talk-box reply), the rest waits for her next turn.
+    if (together?.lastLiveAt != null && now - together.lastLiveAt < TOGETHER_CLOSE_GAP_MS) return skip('cooldown');
     const budget = await this.deps.budget().catch(() => ({ value: 'none' as LineBudget, credits: null }));
     if (budgetRefusal('poke', budget.value, budget.credits)) return skip('budget', budget.value);
     this.lastAt = now;
@@ -226,8 +249,8 @@ export function onRoomEditorOpened(token: string, characterId: string): void {
 }
 
 /** seilink:editor-session {phase: 'close'}: the editor closed or its window went away. */
-export function onRoomEditorClosed(token: string): void {
+export function onRoomEditorClosed(token: string, together?: TogetherSeen | null): void {
   void live()
-    .closed(token)
+    .closed(token, together)
     .catch((err) => console.warn(`[seilink] room reaction failed: ${(err as Error).message}`));
 }

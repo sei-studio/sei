@@ -108,4 +108,9 @@ export const ZH_SEILINK: Record<string, string> = {
   "Hey! Remember me? I'm back! Let me show you something cool we just added.": "嘿！还记得我吗？我回来啦！给你看看我们刚加的超酷新功能。",
   "This is SeiLink. {name} can move onto your desktop and live there, right on your wallpaper.": "这是 SeiLink。{name}可以搬到你的桌面上，就住在你的壁纸里。",
   "{name} gets a room there that you can decorate. Pick one and see!": "{name}在那里会有一个你可以布置的房间。选一个看看吧！",
+  "Say something to {name}…": "跟{name}说点什么…",
+  "Undo {name}'s changes": "撤销{name}的改动",
+  "Try {name}'s idea": "试试{name}的点子",
+  "See options": "查看选项",
+  "On a call with {name}": "正在和{name}通话",
 };

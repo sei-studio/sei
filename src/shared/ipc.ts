@@ -18,6 +18,7 @@ import type { FaceCue, FacepackDevInfo, FacepackManifest } from './facepack';
 import type { SeilinkDevInfo, SeilinkPack, SeilinkRoomPayload } from './seilinkPack';
 import type { RoomState } from './seilinkRoom';
 import type { SeilinkAvailability, SeilinkHostStatus } from './seilinkHost';
+import type { SeilinkEditorEvent, SeilinkEditorSync } from './seilinkTogether';
 import type { AnimaShownKind, AnimaStatus, AnimaTrigger } from './anima';
 import { z } from 'zod';
 import type {
@@ -2249,6 +2250,9 @@ export interface RendererApi {
   seilinkAnimaShown?(characterId: string, kind: AnimaShownKind): void;
   /** 261105: the companion room editor opened or closed (one token per session); she may react to the edits. */
   seilinkEditorSession?(phase: 'open' | 'close', token: string, characterId: string): void;
+  /** 261105 (T336): decorating together. The editor's unsaved room, and main's events for it. */
+  seilinkEditorSync?(sync: SeilinkEditorSync): void;
+  onSeilinkEditorEvent?(cb: (ev: SeilinkEditorEvent) => void): Unsubscribe;
   /**
    * Overlay window only (260806): stream a character's tile camera (zoom +
    * pan within the tile) while edit-mode wheel/drag adjusts it; `commit`
@@ -4333,6 +4337,10 @@ export const IpcChannel = {
     animaShown: 'seilink:anima-shown',
     /** Send: the companion editor opened or closed ({phase, token, characterId}); main diffs her room for her reaction line (roomReaction.ts). */
     editorSession: 'seilink:editor-session',
+    /** Send (261105, T336): the editor's unsaved room ({token, characterId, state}), debounced (decorateTogether.ts). */
+    editorSync: 'seilink:editor-sync',
+    /** Push (261105, T336): her edits and the session counters for an open editor (SeilinkEditorEvent). */
+    editorEvent: 'seilink:editor-event',
   },
 } as const;
 
