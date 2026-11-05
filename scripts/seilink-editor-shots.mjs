@@ -219,7 +219,8 @@ const SHOTS = {
       await page.mouse.up();
     },
   ],
-  // The same on the gamer LED (cycle cell first), dusk.
+  'col-picker-ru': ['time=day&panel=curtains&lang=ru', async (page) => SHOTS['col-picker'][1](page)],
+  // The same on the gamer LED (cycle cell first), night.
   'col-picker-led': ['time=night&panel=lamp', async (page) => page.locator('[data-slot="lamp"] [data-custom-color]').first().click()],
   'col-picker-accent': [
     'time=day&panel=curtains&pattern.curtains=gingham&tint.curtains=c27a5c',
