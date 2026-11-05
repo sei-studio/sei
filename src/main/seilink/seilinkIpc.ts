@@ -12,6 +12,8 @@ import { seilinkHostStatus, startSeilinkHost, stopSeilinkHost } from './host/sei
 import { ANIMA_TRIGGERS, isAnimaShownKind, type AnimaTrigger } from '../../shared/anima';
 import { anima } from '../anima/animaRuntime';
 import { isEditorSessionToken, onRoomEditorClosed, onRoomEditorOpened } from './roomReaction';
+import { onTogetherClosed, onTogetherOpened, onTogetherSync } from './decorateTogether';
+import { setTogetherSink } from './editorTogether';
 
 let previewWin: BrowserWindow | null = null;
 let registered = false;
@@ -20,6 +22,12 @@ let registered = false;
 export function registerSeilinkIpc(opts: { preloadPath: string; rendererTarget: () => string }): void {
   if (registered) return;
   registered = true;
+  // 261105 (T336): her edits and the session counters, to the editor (it filters by its token).
+  setTogetherSink((ev) => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.isDestroyed()) w.webContents.send(IpcChannel.seilink.editorEvent, ev);
+    }
+  });
   onRoomChange((characterId) => {
     for (const w of BrowserWindow.getAllWindows()) {
       if (!w.isDestroyed()) w.webContents.send(IpcChannel.seilink.roomChanged, characterId);
@@ -75,8 +83,20 @@ export function registerSeilinkIpc(opts: { preloadPath: string; rendererTarget: 
   ipcMain.on(IpcChannel.seilink.editorSession, (_e, args: unknown) => {
     const a = args as { phase?: unknown; token?: unknown; characterId?: unknown } | null;
     if (!isEditorSessionToken(a?.token)) return;
-    if (a.phase === 'open' && isRoomCharacterId(a.characterId)) onRoomEditorOpened(a.token, a.characterId);
-    else if (a.phase === 'close') onRoomEditorClosed(a.token);
+    if (a.phase === 'open' && isRoomCharacterId(a.characterId)) {
+      onRoomEditorOpened(a.token, a.characterId);
+      void onTogetherOpened(a.token, a.characterId).catch((err) => console.warn(`[seilink] editor open: ${(err as Error).message}`));
+    } else if (a.phase === 'close') {
+      const together = onTogetherClosed(a.token);
+      onRoomEditorClosed(a.token, together);
+    }
+  });
+
+  // 261105 (T336): the editor's unsaved room, so her turns and live lines see what the player sees.
+  ipcMain.on(IpcChannel.seilink.editorSync, (_e, args: unknown) => {
+    const a = args as { token?: unknown; characterId?: unknown; state?: unknown } | null;
+    if (!isEditorSessionToken(a?.token) || !isRoomCharacterId(a?.characterId)) return;
+    void onTogetherSync(a.token, a.characterId, a.state).catch((err) => console.warn(`[seilink] editor sync: ${(err as Error).message}`));
   });
 
   ipcMain.handle(IpcChannel.seilink.openPreview, async () => {

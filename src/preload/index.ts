@@ -41,6 +41,7 @@ import type { ChatgptStatus } from '../shared/chatgptPlan';
 import type { OverlayPointerSample } from '../shared/overlayPointer';
 import type { PopupAction } from '../shared/popupActions';
 import type { SeilinkAvailability, SeilinkHostStatus } from '../shared/seilinkHost';
+import type { SeilinkEditorEvent } from '../shared/seilinkTogether';
 import type { AnimaStatus } from '../shared/anima';
 
 const api: RendererApi = {
@@ -458,6 +459,12 @@ const api: RendererApi = {
   },
   seilinkAnimaShown: (characterId, kind) => ipcRenderer.send(IpcChannel.seilink.animaShown, { characterId, kind }),
   seilinkEditorSession: (phase, token, characterId) => ipcRenderer.send(IpcChannel.seilink.editorSession, { phase, token, characterId }),
+  seilinkEditorSync: (sync) => ipcRenderer.send(IpcChannel.seilink.editorSync, sync),
+  onSeilinkEditorEvent: (cb) => {
+    const handler = (_e: Electron.IpcRendererEvent, ev: SeilinkEditorEvent) => cb(ev);
+    ipcRenderer.on(IpcChannel.seilink.editorEvent, handler);
+    return () => ipcRenderer.off(IpcChannel.seilink.editorEvent, handler);
+  },
   avatarOverlayCamera: (args) => ipcRenderer.invoke(IpcChannel.avatar.overlayCamera, args),
   avatarOverlayEditing: (editing) => ipcRenderer.invoke(IpcChannel.avatar.overlayEditing, editing),
   avatarOverlayMuteToggle: () => ipcRenderer.invoke(IpcChannel.avatar.overlayMute),

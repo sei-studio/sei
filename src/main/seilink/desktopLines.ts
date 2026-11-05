@@ -36,6 +36,7 @@ import { loadConfig } from '../configStore';
 import { loadAnalytics } from '../lazyAnalytics';
 import { noteSeilinkCount, seilinkHostBusy, seilinkHostStatus, seilinkLiveCharacter, sendSeilinkLine } from './host/seilinkHost';
 import type { DesktopLineSkip } from '../chat/chatService';
+import { togetherFor } from './editorTogether';
 
 export const IDLE_MIN_GAP_MS = 25 * 60_000;
 export const IDLE_MAX_GAP_MS = 50 * 60_000;
@@ -308,6 +309,8 @@ async function tick(): Promise<void> {
     idleStats.reset();
   }
   if (!id || running || !deps) return;
+  // 261105 (T336): the player is decorating her room with her; she talks there, not on the desktop.
+  if (togetherFor(id)) return;
   const state = pacer.idleState(now);
   if (state === 'not_due') return;
   idleStats.due();
@@ -388,6 +391,34 @@ export async function speakRoomReaction(characterId: string, note: string): Prom
   if (running) return 'busy';
   if (seilinkLiveCharacter() !== characterId) return 'not_live';
   return (await say(characterId, 'react', note)).outcome;
+}
+
+/**
+ * 261105 (T336): her live line while the player decorates her room in the
+ * editor (decorateTogether.ts). Same turn as a reaction; the line goes to her
+ * chat (and from there to the editor's bubble), not to the desktop host.
+ */
+export async function speakEditorLine(characterId: string, note: string): Promise<{ outcome: PokeOutcome; chars?: number }> {
+  if (!deps) return { outcome: 'not_live' };
+  if (running) return { outcome: 'busy' };
+  running = true;
+  try {
+    let skipped: DesktopLineSkip = 'error';
+    const { sendDesktopLineTurn } = await import('../chat/chatService');
+    const line = await sendDesktopLineTurn(
+      characterId,
+      'react',
+      (why) => {
+        skipped = why;
+      },
+      note,
+    ).catch(() => null);
+    if (!line) return { outcome: skipped };
+    for (const m of line.messages) deps?.pushChatMessage(characterId, m);
+    return { outcome: 'ok', chars: line.text.length };
+  } finally {
+    running = false;
+  }
 }
 
 async function say(characterId: string, kind: 'idle' | 'poke' | 'react', note?: string): Promise<{ outcome: PokeOutcome }> {
