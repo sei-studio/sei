@@ -11,8 +11,10 @@
  *     The bottom border is not sampled: a bust is cut there.
  *  2. Otherwise (a painted scene behind her, Lyra and Marv): a soft
  *     head-and-shoulders vignette, so the room shows round her instead of a
- *     hard rectangle. A real matte needs a segmentation pass this client
- *     does not have; see the report for what a proper default needs.
+ *     hard rectangle, cut further by `edgeMatte` (261105): backdrop that
+ *     runs down from the top edge in one colour goes, so the oval does not
+ *     leave a band of it over her hair. A real matte needs a
+ *     segmentation pass this client does not have.
  *
  * `keyAlpha` is pure (RGBA in, alpha out) and tested; `vignetteAlpha` is a
  * pure shape; `buildCutout` / `loadCutout` do the canvas work in the renderer.
@@ -172,6 +174,138 @@ export function vignetteAlpha(x: number, y: number, w: number, h: number): numbe
   return Math.max(smooth(head), smooth(shoulders)) * top * top * (3 - 2 * top);
 }
 
+export interface EdgeMatteOptions {
+  /** Colour distance (RGB) from the running backdrop colour that ends a scan. */
+  tolerance: number;
+  /** Consecutive pixels past the tolerance that count as her edge (not texture). */
+  run: number;
+  /** One pixel this far (x tolerance) from the backdrop is her edge on its own (a line-art outline). */
+  strong: number;
+  /** How far down a column scan may go (fraction of the height). */
+  maxTop: number;
+  /** Dropped when the scan reaches this deep over the middle (her hair is the backdrop's colour). */
+  centreLimit: number;
+  /**
+   * Dropped when the traced edge is ragged: the mean |second difference| of
+   * the trace (px per column) where the cut shows. A hair or helmet outline
+   * bends smoothly (Lyra about 0.4 at 900 px, 0.5 at 450); a busy backdrop
+   * stops the scans at its own shapes and would leave blocks of it (Marv
+   * about 2).
+   */
+  maxRoughness: number;
+}
+
+export const DEFAULT_EDGE_MATTE: EdgeMatteOptions = { tolerance: 32, run: 2, strong: 1.8, maxTop: 0.4, centreLimit: 0.24, maxRoughness: 1 };
+
+/** Min filter of a trace (window 2r+1): the shallower neighbour wins, so a scan that ran into her hair is pulled back. */
+function minTrace(t: Float32Array, r: number): Float32Array {
+  const out = new Float32Array(t.length);
+  for (let i = 0; i < t.length; i++) {
+    let m = t[i];
+    for (let j = Math.max(0, i - r); j <= Math.min(t.length - 1, i + r); j++) m = Math.min(m, t[j]);
+    out[i] = m;
+  }
+  return out;
+}
+
+/** Median filter of a trace (window 2r+1). */
+function medianTrace(t: Float32Array, r: number): Float32Array {
+  const out = new Float32Array(t.length);
+  const win: number[] = [];
+  for (let i = 0; i < t.length; i++) {
+    win.length = 0;
+    for (let j = Math.max(0, i - r); j <= Math.min(t.length - 1, i + r); j++) win.push(t[j]);
+    out[i] = median(win);
+  }
+  return out;
+}
+
+/**
+ * Per column, how far the backdrop runs down from the top edge: the first
+ * pixel that leaves the running backdrop colour (`run` in a row, or one
+ * `strong` one such as a line-art outline). The running colour follows a
+ * slow gradient (a lit wall, a sky).
+ */
+export function topTrace(data: Uint8ClampedArray, w: number, h: number, opts: Partial<EdgeMatteOptions> = {}): Float32Array {
+  const o = { ...DEFAULT_EDGE_MATTE, ...opts };
+  const maxY = Math.round(h * o.maxTop);
+  const seed = Math.max(2, Math.round(h * 0.01));
+  const depth = new Float32Array(w);
+  for (let x = 0; x < w; x++) {
+    const bg = [0, 0, 0];
+    for (let y = 0; y < seed; y++) {
+      const i = (y * w + x) * 4;
+      for (let c = 0; c < 3; c++) bg[c] += data[i + c] / seed;
+    }
+    let out = 0;
+    let stop = maxY;
+    for (let y = 0; y < maxY; y++) {
+      const i = (y * w + x) * 4;
+      const d = data[i + 3] < 24 ? 0 : dist(data, i, bg);
+      if (d >= o.tolerance * o.strong) {
+        stop = y;
+        break;
+      }
+      if (d < o.tolerance) {
+        out = 0;
+        for (let c = 0; c < 3; c++) bg[c] += (data[i + c] - bg[c]) * 0.08;
+      } else if (++out >= o.run) {
+        stop = y - o.run + 1;
+        break;
+      }
+    }
+    depth[x] = stop;
+  }
+  // A median (texture, single strands), then a min: never deeper than a neighbour, so a scan
+  // that slipped into hair of the backdrop's colour is pulled back to its neighbours' depth.
+  return minTrace(medianTrace(depth, Math.max(2, Math.round(w * 0.01))), Math.max(2, Math.round(w * 0.015)));
+}
+
+/**
+ * Top matte for a portrait with a painted backdrop (261105, T332): the
+ * backdrop that runs down from the top edge in one slowly changing colour,
+ * as an alpha multiplier (0 = backdrop), or null when there is none or the
+ * cut would not be clean.
+ *
+ * Why: the vignette's head oval is a fixed shape, so the backdrop between
+ * it and her hair stayed: Lyra's dark ceiling read as a dark band across
+ * the top of her head. Only backdrop that touches the top edge and matches
+ * it goes, so a figure that runs off the top keeps everything. Dropped
+ * (the vignette alone, as before) when the scan runs deep over the middle
+ * (her hair is the backdrop's colour) or the traced edge is ragged (a busy
+ * backdrop, Marv's).
+ */
+export function edgeMatte(data: Uint8ClampedArray, w: number, h: number, opts: Partial<EdgeMatteOptions> = {}): Float32Array | null {
+  const o = { ...DEFAULT_EDGE_MATTE, ...opts };
+  if (w < 16 || h < 16 || data.length < w * h * 4) return null;
+  const top = topTrace(data, w, h, o);
+  const mid: number[] = [];
+  for (let x = Math.round(w * 0.4); x <= Math.round(w * 0.6); x++) mid.push(top[x]);
+  if (median(mid) > h * o.centreLimit) return null;
+  // Roughness where the cut shows (the vignette keeps something there).
+  let bend = 0;
+  let seen = 0;
+  for (let x = 1; x < w - 1; x++) {
+    if (vignetteAlpha(x, top[x], w, h) < 0.05) continue;
+    bend += Math.abs(top[x + 1] - 2 * top[x] + top[x - 1]);
+    seen++;
+  }
+  if (seen === 0 || bend / seen > o.maxRoughness) return null;
+  const feather = Math.max(2, Math.round(Math.max(w, h) * 0.006));
+  const m = new Float32Array(w * h);
+  let removed = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      // Distance past the edge into her, feathered over a few px.
+      const t = Math.min(1, Math.max(0, (y - top[x] + 1) / feather));
+      const a = t * t * (3 - 2 * t);
+      m[y * w + x] = a;
+      removed += 1 - a;
+    }
+  }
+  return removed > 0 ? m : null;
+}
+
 export interface Cutout {
   canvas: HTMLCanvasElement;
   method: 'key' | 'vignette';
@@ -250,7 +384,13 @@ export async function buildCutout(url: string, maxSide = 900): Promise<Cutout | 
 function vignetteCanvas(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, w: number, h: number, frame: ImageData | null): Cutout {
   if (frame) {
     const d = frame.data;
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) d[(y * w + x) * 4 + 3] = Math.round(d[(y * w + x) * 4 + 3] * vignetteAlpha(x, y, w, h));
+    const edge = edgeMatte(d, w, h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const p = y * w + x;
+        d[p * 4 + 3] = Math.round(d[p * 4 + 3] * vignetteAlpha(x, y, w, h) * (edge ? edge[p] : 1));
+      }
+    }
     ctx.putImageData(frame, 0, 0);
   } else {
     // No readback: mask with a drawn alpha image instead.

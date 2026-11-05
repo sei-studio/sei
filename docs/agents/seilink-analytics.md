@@ -27,7 +27,7 @@ an error message.
 | `seilink_shown` | first frame that is verified in place, not hidden, not covered and not paused (once per session) | first_frame_ms (from the start), attach_ms, attach_mode `progman`/`workerw`/`mac_desktop_level`/`fake`, late, covered_at_start, paused_at_start, restored, restarts, display_count, scale_factor, resolution, gpu, hw_accel | Did people actually see her, how long it took |
 | `seilink_not_shown` | 20 s after the start with no shown frame (once) | reason `no_hello`/`no_attach`/`attach_failed`/`no_frame`/`window_hidden`/`not_verified`/`wallpaper_occluded_at_start`/`paused_at_start`, waited_ms, failure_class?, verify_reasons?, attach_mode, last_failure?, the facts above | "Wallpaper not showing": at which stage it stopped |
 | `seilink_verify_failed` | a check after attach found the window out of place (once per reason set) | reasons (closed set, comma list), trigger, shown | Explorer, display or z-order drift after a good attach |
-| `seilink_reattached` | the host re-attached (first 3 per cause per session) | cause `explorer_restart`/`display_change`/`session_change`/`resume`/`periodic_check`/`window_lost`/`host_restart`/`other`, detail `workerw_lost`/`parent_lost`/`z_order`/`size_mismatch`/`level_drift`/`window_gone`/`host_crash`/`host_hung`/`host_recycled`/`other`, attach_ms, shown, session_ms | Why it had to re-attach |
+| `seilink_reattached` | the host re-attached (first 3 per cause per session) | cause `explorer_restart`/`display_change`/`session_change`/`resume`/`periodic_check`/`window_lost`/`host_restart`/`other`, detail `shell_lost`/`workerw_lost`/`parent_lost`/`z_order`/`size_mismatch`/`level_drift`/`window_gone`/`host_crash`/`host_hung`/`host_recycled`/`other`, attach_ms, shown, session_ms | Why it had to re-attach |
 | `seilink_attach_failed` | an attach failed (once per class) | failure_class, reattach, from_host | Which native step fails |
 | `seilink_unavailable` | Move in on an install where the addon is missing or the OS is unsupported (once per reason per run) | reason, restored | Who tried and could not |
 
@@ -47,14 +47,15 @@ Counters (on `seilink_ended`, per window on `seilink_health`): `clicks`,
 `reattaches`, `reattach_<cause>`, `host_hangs`, `unverified_frames`,
 `verify_fail_<reason>`, `sleeps`, `resumes`, `locks`, `unlocks`,
 `poke_<outcome>`, `idle_due`, `idle_skip_<reason>`, `idle_attempted`,
-`idle_shown`, `idle_none_<why>`.
+`idle_shown`, `idle_none_<why>`, `expressions` (261105: desktop lines that
+carried a face for her avatar).
 
 ## Interaction
 
 | Event | When | Props | Answers |
 |---|---|---|---|
 | `seilink_poke` | a double click on her (a refusal repeats quietly for 60 s) | outcome `ok`/`limited`/`free_plan`/`free_cap`/`over_limit`/`no_plan`/`rate_limited`/`occupied`/`busy`/`not_live`/`not_shown`/`silence`/`no_room`/`aborted`/`error`/`depleted`, latency_ms, budget `own`/`paid`/`free`/`none` | Do pokes work, how fast, why not |
-| `seilink_line_shown` | a bubble line shows | kind poke/idle, chars | How much she talks on the desktop |
+| `seilink_line_shown` | a bubble line shows | kind poke/idle, chars, expression `tag`/`lexicon`/`none` (261105: where her face for the line came from) | How much she talks on the desktop, and how often her face changes with it |
 | `seilink_dock_action` | a dock button | action edit/deafen/moveout, deafened? | Dock use |
 
 Idle lines: a "due window" opens when her gap has passed. `idle_due` counts

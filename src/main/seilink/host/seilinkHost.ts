@@ -55,6 +55,7 @@ import { facepackIdForCharacter, packFilePath, readPackManifest } from '../../fa
 import { getRoomPayload, isRoomCharacterId, onRoomChange } from '../roomStore';
 import { loadConfig, updateConfig } from '../../configStore';
 import { loadAnalytics } from '../../lazyAnalytics';
+import { desktopLineFace, isFaceWord } from '../../../shared/seilinkExpression';
 import {
   Counters,
   HEALTH_INTERVAL_MS,
@@ -798,14 +799,26 @@ async function onDockAction(s: Session, action: SeilinkDockAction): Promise<void
 }
 
 /**
- * M4: show a line she says as a bubble by her on the desktop. False when she
+ * M4: show a line she says as a bubble by her on the desktop. Null when she
  * is not the one on the desktop or the host is not connected.
+ * 261105: the line carries her face (`tag`: the face tag it led with, else
+ * the lexicon over its words, seilinkExpression.ts); counted as
+ * `expressions` on the session, and the result says where it came from
+ * (seilink_line_shown `expression`).
  */
-export function sendSeilinkLine(characterId: string, text: string, kind: 'idle' | 'poke'): boolean {
+export function sendSeilinkLine(
+  characterId: string,
+  text: string,
+  kind: 'idle' | 'poke',
+  tag: string | null = null,
+): { expression: 'tag' | 'lexicon' | 'none' } | null {
   const s = session;
-  if (!s || s.ending || s.characterId !== characterId || !s.conn) return false;
-  sendTo(s, { type: 'line', text, kind });
-  return true;
+  if (!s || s.ending || s.characterId !== characterId || !s.conn) return null;
+  const look = desktopLineFace(text, tag);
+  const expression = !look.face && !look.emotion ? 'none' : isFaceWord(tag) ? 'tag' : 'lexicon';
+  sendTo(s, { type: 'line', text, kind, emotion: look.emotion, face: look.face });
+  if (expression !== 'none') s.counters.add('expressions');
+  return { expression };
 }
 
 /** M4: who is on the desktop right now (attached and drawing), for desktopLines.ts. */

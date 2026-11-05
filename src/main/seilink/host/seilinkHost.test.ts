@@ -22,6 +22,8 @@ const state = vi.hoisted(() => ({
   /** Lines a fake host sends after its hello (261105 analytics test). */
   script: [] as Array<Record<string, unknown>>,
   events: [] as Array<[string, Record<string, unknown>]>,
+  /** Every message the fake hosts got from main (261105 face test). */
+  received: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock('electron', () => ({
@@ -61,6 +63,7 @@ vi.mock('node:child_process', async (orig) => {
         sock.on('data', (chunk: string) => {
           for (const line of chunk.split('\n').filter(Boolean)) {
             const m = JSON.parse(line) as { type: string; seq?: number };
+            state.received.push(m);
             if (m.type === 'quit') {
               sock.end();
               setImmediate(exit);
@@ -128,6 +131,7 @@ describe('seilink host start / stop / restore', () => {
     state.hosts = [];
     state.script = [];
     state.events = [];
+    state.received = [];
     host.initSeilinkHost({ pushStatus: () => {}, openChat: () => {} });
   });
   afterEach(async () => {
@@ -230,5 +234,25 @@ describe('seilink host start / stop / restore', () => {
     expect(ended).toMatchObject({ shown: true, clicks: 1, chat_open_focused: 1, reattaches: 1, reattach_explorer_restart: 1, verify_fail_hidden: 1, resolution: '1440p' });
     expect(typeof ended?.first_frame_ms).toBe('number');
     expect(by('seilink_not_shown')).toBeUndefined();
+  });
+
+  it('261105: a desktop line carries her face (tag first, else its words), counted as expressions', async () => {
+    state.script = [{ type: 'attached', reattach: false, reason: 'initial', layout: 'raised', attachMs: 5 }];
+    await host.startSeilinkHost(SUI);
+    await settle();
+    expect(host.sendSeilinkLine(LYRA, 'haha hi', 'poke')).toBeNull();
+    expect(host.sendSeilinkLine(SUI, 'haha you found me', 'poke')).toEqual({ expression: 'lexicon' });
+    expect(host.sendSeilinkLine(SUI, 'i moved the lamp', 'idle', 'smug')).toEqual({ expression: 'tag' });
+    expect(host.sendSeilinkLine(SUI, 'i moved the lamp', 'idle')).toEqual({ expression: 'none' });
+    await settle(50);
+    const lines = state.received.filter((m) => m.type === 'line');
+    expect(lines).toEqual([
+      { type: 'line', text: 'haha you found me', kind: 'poke', emotion: 'happy', face: 'happy' },
+      { type: 'line', text: 'i moved the lamp', kind: 'idle', emotion: 'happy', face: 'smug' },
+      { type: 'line', text: 'i moved the lamp', kind: 'idle', emotion: null, face: null },
+    ]);
+    await host.stopSeilinkHost('user_stop');
+    await settle(20);
+    expect(state.events.find(([e]) => e === 'seilink_ended')?.[1]).toMatchObject({ expressions: 2 });
   });
 });

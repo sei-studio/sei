@@ -379,8 +379,9 @@ async function say(characterId: string, kind: 'idle' | 'poke'): Promise<{ outcom
     if (!line) return { outcome: skipped };
     // Saved to her chat either way; the bubble only when she is still on the desktop.
     for (const m of line.messages) deps?.pushChatMessage(characterId, m);
-    if (!sendSeilinkLine(characterId, line.text, kind)) return { outcome: 'not_shown' };
-    capture('seilink_line_shown', { kind, chars: line.text.length, character_id: characterId });
+    const sent = sendSeilinkLine(characterId, line.text, kind, line.face ?? null);
+    if (!sent) return { outcome: 'not_shown' };
+    capture('seilink_line_shown', { kind, chars: line.text.length, character_id: characterId, expression: sent.expression });
     return { outcome: 'ok' };
   } finally {
     running = false;

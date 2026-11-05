@@ -32,6 +32,7 @@ import { ClickClassifier, type PressPoint } from './clicks';
 import { FAKE_ADDON_FILE, addonPath, fakeDesktopEnabled, loadSeilinkAddon, type SeilinkAddon, type SeilinkMacAddon, type SeilinkWinAddon } from './native';
 import { SEILINK_HOST_CHANNELS as CH } from '../../../shared/seilinkHostChannels';
 import { SEILINK_ROOM_SCHEME } from '../../../shared/seilinkPack';
+import { isAvatarEmotion, isFaceWord } from '../../../shared/seilinkExpression';
 import {
   SEILINK_HOST_FPS,
   SEILINK_PORTRAIT_HOST,
@@ -148,6 +149,13 @@ let attachedOnce = false;
 let layout = '';
 let macWantedLevel = 0;
 let workerWMissingAccepted = false;
+/**
+ * Windows (261105, T332): Explorer exited and Windows freed the room window with its desktop
+ * windows (win.cc "room window guard" turns that into a normal close instead of a host crash).
+ * The window is made again once the new shell is up, and that attach is reported as
+ * `shell-lost:...`, an Explorer restart, whatever trigger runs it.
+ */
+let shellLost = false;
 let room: SeilinkHostRoom | null = null;
 /** The player is chatting with her or just clicked her (main decides; RoomAvatar holds her seated). */
 let busy = false;
@@ -245,7 +253,10 @@ function onCommand(m: ToHost): void {
       break;
     case 'line': {
       const text = String(m.text ?? '').slice(0, 400).trim();
-      if (text) toPage(CH.line, { id: ++lineSeq, text, kind: m.kind === 'poke' ? 'poke' : 'idle' });
+      // 261105: her face for the line (seilinkExpression.ts), checked again here: closed shapes only.
+      const emotion = isAvatarEmotion(m.emotion) ? m.emotion : null;
+      const face = isFaceWord(m.face) ? m.face : null;
+      if (text) toPage(CH.line, { id: ++lineSeq, text, kind: m.kind === 'poke' ? 'poke' : 'idle', emotion, face });
       break;
     }
     case 'set-paused':
@@ -380,7 +391,8 @@ async function createRoomWindow(): Promise<BrowserWindow> {
   w.webContents.on('will-navigate', (e) => e.preventDefault());
   w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   w.on('closed', () => {
-    log('room window closed');
+    if (IS_WIN && addon && addon.platform === 'win32' && (addon as SeilinkWinAddon).roomLost?.()) shellLost = true;
+    log(`room window closed${shellLost ? ' (Explorer exited)' : ''}`);
     if (pageWin === w) pageWin = null;
     if (win === w) {
       win = null;
@@ -647,6 +659,7 @@ async function attach(reason: string): Promise<boolean> {
     return false;
   }
   attached = true;
+  shellLost = false;
   const reattach = attachedOnce;
   attachedOnce = true;
   log(`attached (${reason}) ${layout} ${method ?? ''} in ${Date.now() - t} ms`);
@@ -665,7 +678,7 @@ async function recoverWindow(reason: string): Promise<void> {
     log(`recover (${reason})`);
     await waitForShell();
     await createRoomWindow();
-    await attach(reason);
+    await attach(shellLost ? `shell-lost:${reason}` : reason);
   } catch (err) {
     log(`recover failed: ${(err as Error).message}`, 'warn');
     send({ type: 'attach-failed', failure: failure((err as { failure?: unknown }).failure, 'attach_failed'), detail: 'recover' });
@@ -678,6 +691,8 @@ const SHELL_ONLY_WORKERW = new Set(['no-workerw', 'workerw-not-bottom']);
 
 /** Re-check the attachment (shell events, display changes, and every 2 s). */
 async function validate(trigger: string): Promise<void> {
+  // The shell took the window and the first recovery gave up waiting for a new one: keep trying.
+  if (!win && shellLost && !reattaching && !quitting) return void recoverWindow('window-closed');
   if (!win || win.isDestroyed() || reattaching || quitting || !addon) return;
   const handle = win.getNativeWindowHandle();
   if (IS_MAC) {
@@ -728,7 +743,7 @@ async function validate(trigger: string): Promise<void> {
   }
   reattaching = true;
   try {
-    await attach(`validate:${trigger}:${v.reasons.join('+')}`);
+    await attach(`${shellLost ? 'shell-lost' : 'validate'}:${trigger}:${v.reasons.join('+')}`);
   } finally {
     reattaching = false;
   }
@@ -804,6 +819,12 @@ function onNativeEvent(json: string): void {
       if (e.code === WTS_SESSION_LOCK) activity.set({ locked: true });
       else if (e.code === WTS_SESSION_UNLOCK) activity.set({ locked: false });
       validateSoon('session');
+      return;
+    case 'shellLost':
+      // Explorer exited and Windows freed the room window with its desktop windows. Log only:
+      // the window's 'closed' handler reads roomLost() itself and makes a new window once the
+      // new shell is up (this message can arrive after that).
+      log('shell lost: Explorer exited and took the room window');
       return;
     case 'taskbarCreated':
     case 'displayChange':

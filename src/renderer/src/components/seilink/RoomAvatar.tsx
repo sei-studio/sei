@@ -80,6 +80,13 @@ export interface RoomAvatarProps {
   levelRef?: React.MutableRefObject<number>;
   /** Emotion of the line being spoken (Live2D expressions; a facepack expression name also works). */
   emotion?: AvatarEmotion | null;
+  /**
+   * 261105: the face set's word for her line (face vocabulary, e.g. 'happy', 'neutral'); wins over
+   * `emotion` for a face set. Absent: the face set follows `emotion`.
+   */
+  face?: string | null;
+  /** Bump to re-apply the same face (FacepackView expressionSeq). */
+  faceSeq?: number;
   /** The player is interacting (dock open, editor, a call): hold her in place. */
   busy?: boolean;
   /** Tune the idle motion, or false for none (still, but the view still blinks). */
@@ -331,7 +338,7 @@ function Silhouette({ height, time }: { height: number; time: RoomTime }): React
 // ── the component ───────────────────────────────────────────────────────────
 
 export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
-  const { slot, characterId, name, use = 'auto', portrait = null, facepack, speaking = false, levelRef, emotion = null, busy = false, motion = {}, camera, walkOffSignal, walkOffAwayMs } = props;
+  const { slot, characterId, name, use = 'auto', portrait = null, facepack, speaking = false, levelRef, emotion = null, face, faceSeq = 0, busy = false, motion = {}, camera, walkOffSignal, walkOffAwayMs } = props;
   const stageRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const reduced = useReducedMotion();
@@ -488,7 +495,8 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
           packId={resolved?.packId ?? null}
           speaking={speaking}
           levelRef={levelRef}
-          expression={emotion}
+          expression={face !== undefined ? face : emotion}
+          expressionSeq={faceSeq}
           fps={viewFps}
           className={styles.fill}
           onStatus={onViewStatus('facepack')}
@@ -529,6 +537,7 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
       aria-label={name}
       data-avatar-kind={kind ?? 'loading'}
       data-avatar-phase={phase}
+      data-avatar-face={kind === 'facepack' || kind === 'live2d' ? ((face !== undefined ? face : emotion) ?? undefined) : undefined}
     >
       <div ref={bodyRef} className={away ? `${styles.body} ${styles.away}` : styles.body}>
         <div className={styles.figure} style={{ bottom: -h * SINK, height: figH, width: figW || undefined, filter: TIME_GRADE[slot.time] }}>

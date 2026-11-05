@@ -20,6 +20,8 @@
 //   coverageNow()             {covered, kind}
 //   redrawDesktop(hwnd|null, hard)  repaint the wallpaper after the room is hidden or gone.
 //   doubleClickMs()           the user's double-click interval.
+//   roomLost()                true once after Explorer's exit freed the room window (see
+//                             "room window guard"); reading it clears it.
 //
 // Nothing here ever posts input. Window titles and exe names are never reported.
 #define WIN32_LEAN_AND_MEAN
@@ -32,7 +34,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdarg>
 #include <cstdio>
+#include <cwchar>
 #include <cstring>
 #include <mutex>
 #include <string>
@@ -142,6 +146,137 @@ Desk FindDesk(bool spawn) {
   return d;
 }
 
+// ---------------------------------------------------------------- CI trace
+// SEI_SEILINK_NATIVE_TRACE=<file> (the CI self-test only): append-only, flushed line by line so
+// it survives the process dying. Logs every exception the process raises (code, address and a
+// short stack as module+offset, from a vectored handler that only observes), the room box's and
+// the room window's messages, and the watcher's shell events. Off (one null check) otherwise.
+
+FILE* g_trace = nullptr;
+std::mutex g_traceMu;
+
+void Trace(const char* fmt, ...) {
+  if (!g_trace) return;
+  std::lock_guard<std::mutex> l(g_traceMu);
+  fprintf(g_trace, "[%lu %lu %llu] ", GetCurrentProcessId(), GetCurrentThreadId(), (unsigned long long)GetTickCount64());
+  va_list ap;
+  va_start(ap, fmt);
+  vfprintf(g_trace, fmt, ap);
+  va_end(ap);
+  fputc('\n', g_trace);
+  fflush(g_trace);
+}
+
+void ModOff(void* addr, char* out, size_t n) {
+  HMODULE mod = nullptr;
+  wchar_t name[MAX_PATH] = {0};
+  if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                         (LPCWSTR)addr, &mod) &&
+      GetModuleFileNameW(mod, name, MAX_PATH)) {
+    const wchar_t* base = wcsrchr(name, L'\\');
+    snprintf(out, n, "%ls+0x%llX", base ? base + 1 : name, (unsigned long long)((uintptr_t)addr - (uintptr_t)mod));
+  } else {
+    snprintf(out, n, "0x%llX", (unsigned long long)(uintptr_t)addr);
+  }
+}
+
+LONG CALLBACK TraceVeh(PEXCEPTION_POINTERS ep) {
+  DWORD code = ep->ExceptionRecord->ExceptionCode;
+  // Thread naming, debug prints and C++ throws Chromium catches itself are noise.
+  if (code == 0x406D1388 || code == 0x40010006 || code == 0x4001000A || code == 0xE06D7363) return EXCEPTION_CONTINUE_SEARCH;
+  char at[300];
+  ModOff(ep->ExceptionRecord->ExceptionAddress, at, sizeof at);
+  std::string st;
+  void* frames[28];
+  USHORT nf = CaptureStackBackTrace(0, 28, frames, nullptr);
+  for (USHORT i = 0; i < nf; i++) {
+    char f[300];
+    ModOff(frames[i], f, sizeof f);
+    st += " ";
+    st += f;
+  }
+  ULONG_PTR p0 = ep->ExceptionRecord->NumberParameters > 0 ? ep->ExceptionRecord->ExceptionInformation[0] : 0;
+  ULONG_PTR p1 = ep->ExceptionRecord->NumberParameters > 1 ? ep->ExceptionRecord->ExceptionInformation[1] : 0;
+  Trace("EXCEPTION 0x%08lX at %s flags 0x%lX p0 0x%llX p1 0x%llX stack%s", code, at, ep->ExceptionRecord->ExceptionFlags,
+        (unsigned long long)p0, (unsigned long long)p1, st.c_str());
+  return EXCEPTION_CONTINUE_SEARCH;
+}
+
+void TraceInit() {
+  char path[MAX_PATH] = {0};
+  DWORD n = GetEnvironmentVariableA("SEI_SEILINK_NATIVE_TRACE", path, MAX_PATH);
+  if (!n || n >= MAX_PATH || g_trace) return;
+  g_trace = fopen(path, "a");
+  if (!g_trace) return;
+  AddVectoredExceptionHandler(1, TraceVeh);
+  Trace("trace on");
+}
+
+bool Noisy(UINT m) {
+  return m == WM_PAINT || m == WM_TIMER || m == WM_NCHITTEST || m == WM_SETCURSOR || m == WM_MOUSEMOVE ||
+         m == WM_ERASEBKGND || m == WM_GETOBJECT || m == 0x0060 /* WM_SYNCPAINT-ish ime */ || m == WM_NCMOUSEMOVE;
+}
+
+// ---------------------------------------------------------------- room window guard
+// Explorer restart (261105, T332, found with the CI trace above): when explorer.exe dies, Windows
+// frees Progman / the WorkerW and every child window in them, the room window too, although it
+// belongs to the host. That free reaches the room's own thread as a bare WM_NCDESTROY, with no
+// WM_DESTROY before it. Chromium's window code expects WM_DESTROY first (that is where it tears
+// its widget and compositor down) and hit a CHECK inside the callback, so the host died with
+// 0xC000041D before any JS ran. The room window is subclassed here: a WM_NCDESTROY without a
+// WM_DESTROY gets the missing WM_DESTROY replayed first, so Chromium closes the window the normal
+// way, the BrowserWindow emits 'closed', and the host makes a new room window in the same process
+// once the new shell is up. roomLost() tells the host the window went that way.
+
+void Emit(std::string json);  // watcher section
+
+struct RoomGuard {
+  HWND hwnd;
+  WNDPROC old;
+  bool sawDestroy;
+};
+RoomGuard g_guard{nullptr, nullptr, false};
+std::atomic<bool> g_roomLost{false};
+
+LRESULT CALLBACK RoomGuardProc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
+  WNDPROC old = g_guard.old;
+  if (h != g_guard.hwnd || !old) return DefWindowProcW(h, m, wp, lp);
+  if (g_trace && !Noisy(m))
+    Trace("room msg 0x%04X wp 0x%llX lp 0x%llX insend %lu", m, (unsigned long long)wp, (unsigned long long)lp,
+          InSendMessageEx(nullptr));
+  if (m == WM_DESTROY) g_guard.sawDestroy = true;
+  if (m == WM_NCDESTROY) {
+    // Put the original procedure back first: nothing of ours runs on a freed window.
+    SetWindowLongPtrW(h, GWLP_WNDPROC, (LONG_PTR)old);
+    bool shell = !g_guard.sawDestroy;
+    g_guard = RoomGuard{nullptr, nullptr, false};
+    if (shell) {
+      Trace("room freed by the shell: replaying WM_DESTROY");
+      g_roomLost = true;
+      Emit("{\"type\":\"shellLost\"}");
+      CallWindowProcW(old, h, WM_DESTROY, 0, 0);
+    }
+    LRESULT r = CallWindowProcW(old, h, m, wp, lp);
+    Trace("room WM_NCDESTROY handled");
+    return r;
+  }
+  return CallWindowProcW(old, h, m, wp, lp);
+}
+
+// Called by attach() on the room window's own thread (the host's main thread).
+void GuardRoom(HWND h) {
+  if (g_guard.hwnd == h) return;
+  if (g_guard.hwnd && IsWindow(g_guard.hwnd) && g_guard.old)
+    SetWindowLongPtrW(g_guard.hwnd, GWLP_WNDPROC, (LONG_PTR)g_guard.old);  // an earlier window
+  g_guard = RoomGuard{h, nullptr, false};
+  g_guard.old = (WNDPROC)SetWindowLongPtrW(h, GWLP_WNDPROC, (LONG_PTR)RoomGuardProc);
+  Trace("room guarded 0x%llX", (unsigned long long)(uintptr_t)h);
+}
+
+Napi::Value RoomLost(const Napi::CallbackInfo& info) {
+  return Napi::Boolean::New(info.Env(), g_roomLost.exchange(false));
+}
+
 Napi::Value Attach(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   HWND h = HwndFrom(info[0]);
@@ -164,6 +299,7 @@ Napi::Value Attach(const Napi::CallbackInfo& info) {
   };
   out.Set("osBuild", (double)OsBuild());
   if (!h || !IsWindow(h)) return fail("no_window", "room window handle is not a window");
+  GuardRoom(h);
 
   Desk d = FindDesk(true);
   out.Set("layout", d.raised ? "raised" : "classic");
@@ -449,6 +585,7 @@ void ScheduleRecheck(const std::string& why) {
 }
 
 void CALLBACK HookProc(HWINEVENTHOOK, DWORD ev, HWND hwnd, LONG idObj, LONG idChild, DWORD, DWORD) {
+  if (ev != EVENT_OBJECT_LOCATIONCHANGE) Trace("hook ev 0x%lX hwnd 0x%llX", ev, (unsigned long long)(uintptr_t)hwnd);
   if (ev == EVENT_OBJECT_LOCATIONCHANGE) {
     if (idObj != OBJID_WINDOW || idChild != CHILDID_SELF || hwnd != g_fgForHook) return;
     ScheduleRecheck("locationchange");
@@ -523,6 +660,7 @@ void OnRawMouse(const RAWMOUSE& m) {
 
 LRESULT CALLBACK WatchProc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
   if (g_msgTaskbarCreated && m == g_msgTaskbarCreated) {
+    Trace("watch TaskbarCreated");
     Emit("{\"type\":\"taskbarCreated\"}");
     ScheduleRecheck("taskbarCreated");
     return 0;
@@ -631,6 +769,7 @@ Napi::Value CoverageNow(const Napi::CallbackInfo& info) {
 }
 
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
+  TraceInit();
   exports.Set("platform", "win32");
   exports.Set("attach", Napi::Function::New(env, Attach));
   exports.Set("validate", Napi::Function::New(env, Validate));
@@ -640,6 +779,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("coverageNow", Napi::Function::New(env, CoverageNow));
   exports.Set("redrawDesktop", Napi::Function::New(env, RedrawDesktop));
   exports.Set("doubleClickMs", Napi::Function::New(env, DoubleClickMs));
+  exports.Set("roomLost", Napi::Function::New(env, RoomLost));
   return exports;
 }
 

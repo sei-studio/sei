@@ -30,13 +30,18 @@
  * - `speaking` (M4): one of her lines is on screen as a bubble. Move her
  *   mouth and hold her in her seat. No audio plays in the host, so there is
  *   no real level: RoomAvatarHost makes a soft syllable envelope.
+ * - `emotion` / `face` / `faceSeq` (261105): her face for the line she is
+ *   saying (hostLook.ts): `emotion` for an imported Live2D model while she
+ *   says it, `face` (a face-set word, 'neutral' when it goes back) for her
+ *   face set. A figure with no face ignores them.
  * - Data comes in props. The page's `window.sei` has only the avatar calls
  *   RoomAvatar's views make (avatarGet, avatarModelFiles, onAvatarManifest,
  *   facepackForCharacter, facepackManifest, facepackFile), relayed to main
  *   for this character only (src/preload/seilinkHost.ts).
- * - Not wired yet: her voice (TTS) on the desktop, and `emotion`.
+ * - Not wired yet: her voice (TTS) on the desktop.
  */
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { AvatarEmotion } from '@shared/ipc';
 import type { RoomAvatarSlot } from '../RoomCanvas';
 import type { SeilinkPokeKind } from '@shared/seilinkHost';
 import { RoomAvatar, type RoomAvatarUse } from '../RoomAvatar';
@@ -63,6 +68,12 @@ export interface HostAvatarProps {
   poke: HostAvatarPoke | null;
   /** M4: a line of hers is showing (mouth moves, she holds still). */
   speaking?: boolean;
+  /** 261105: the Live2D emotion of the line she is saying, else null. */
+  emotion?: AvatarEmotion | null;
+  /** 261105: her face set's word for the line ('neutral' once it goes back), or null before any line. */
+  face?: string | null;
+  /** 261105: bumped with each new face. */
+  faceSeq?: number;
 }
 
 export type HostAvatarComponent = React.ComponentType<HostAvatarProps>;
@@ -72,7 +83,7 @@ export const POKE_HOLD_MS = 8_000;
 
 /** RoomAvatar in the host: her figure is the click area, and a poke holds her still for a moment. */
 export function RoomAvatarHost(props: HostAvatarProps): React.ReactElement {
-  const { characterId, name, slot, portrait, use, busy, poke, speaking = false } = props;
+  const { characterId, name, slot, portrait, use, busy, poke, speaking = false, emotion = null, face = null, faceSeq = 0 } = props;
   const ref = useRef<HTMLDivElement>(null);
   const [held, setHeld] = useState(false);
   const levelRef = useSyllableLevel(speaking && slot.fps > 0);
@@ -101,6 +112,9 @@ export function RoomAvatarHost(props: HostAvatarProps): React.ReactElement {
         busy={busy || held}
         speaking={speaking}
         levelRef={levelRef}
+        emotion={emotion}
+        face={face}
+        faceSeq={faceSeq}
       />
     </div>
   );
