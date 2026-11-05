@@ -27,6 +27,15 @@ export const PLAYER = process.env.QE_PLAYER || 'Alex'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
+// QE_CHARACTER_BY_REPO: {repoDir: characterFile}, set by scorecard.mjs
+// --char-b so one arm of a compare plays a proposed card. Same username.
+function characterFor(botRepo) {
+  try {
+    const map = JSON.parse(process.env.QE_CHARACTER_BY_REPO || '{}')
+    return map[botRepo] || CHARACTER_FILE
+  } catch { return CHARACTER_FILE }
+}
+
 export function companionName() {
   let row = JSON.parse(fs.readFileSync(CHARACTER_FILE, 'utf8'))
   if (Array.isArray(row)) row = row[0]
@@ -43,7 +52,7 @@ export async function startCompanion({ sessDir, mode = 'brain', botRepo = harnes
     ...process.env,
     ELECTRON_RUN_AS_NODE: '1',
     LD_PRELOAD: process.env.QE_LD_PRELOAD ?? (fs.existsSync('/usr/lib/x86_64-linux-gnu/libstdc++.so.6') ? '/usr/lib/x86_64-linux-gnu/libstdc++.so.6' : ''),
-    QE_CHARACTER: CHARACTER_FILE,
+    QE_CHARACTER: characterFor(botRepo),
     QE_PORT: String(port),
     QE_PLAYER: PLAYER,
     QE_USERDATA: userDataDir,

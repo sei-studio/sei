@@ -9,8 +9,8 @@
  * spawned and restarted by HostSupervisor over a pipe this module serves.
  * Who moved in is saved as `seilink_moved_in` (main-owned UserConfig key)
  * and restored at app start and after an account switch (config.json is per
- * profile). Only while SeiLink is on (gate.ts: Settings > Labs on a supported
- * install, or the dev flag); turning it off moves her out.
+ * profile). Only where SeiLink can run (gate.ts: a supported install, or the
+ * dev flag). There is no on/off setting since 261105 (the Labs toggle is gone).
  *
  * Analytics (shape only): seilink_started on the first attach of a session,
  * seilink_ended {duration_ms, character_id, reason, ...} at the single end
@@ -45,7 +45,7 @@ import {
   type SeilinkHostStatus,
 } from '../../../shared/seilinkHost';
 import { loadPack } from '../packs';
-import { seilinkAvailability, seilinkEnabled, setSeilinkResident, setSeilinkSetting } from '../gate';
+import { seilinkEnabled, setSeilinkResident } from '../gate';
 import { BusyTracker, onSeilinkAvatarChanged, onSeilinkChatTurn } from './hostSignals';
 import { answerHostAvatarCall, hostPortrait, type HostAvatarStores } from './hostAvatarCalls';
 import { getCharacter } from '../../characterStore';
@@ -85,7 +85,7 @@ export interface SeilinkHostDeps {
   onDoubleClick?(characterId: string): void;
   /** M4: the dock's "edit room": show Sei and open her room editor. */
   openRoomEditor?(characterId: string): void;
-  /** M4: the Labs setting or the profile changed (SeilinkAvailability to the main window). */
+  /** M4: the profile changed (SeilinkAvailability to the main window). */
   pushAvailability?(): void;
 }
 
@@ -357,8 +357,7 @@ export function restoreSeilinkHost(): Promise<void> {
 async function restoreNow(): Promise<void> {
   try {
     const cfg = await loadConfig();
-    // The Labs setting is per profile: mirror it for the gate first.
-    setSeilinkSetting(cfg.seilink_enabled);
+    // 261105: no on/off setting any more (the Labs toggle is gone); only support decides.
     pushAvailability();
     if (!seilinkEnabled()) {
       if (session) await endSession('disabled');
@@ -394,19 +393,6 @@ function pushAvailability(): void {
   } catch (err) {
     log(`availability push failed: ${(err as Error).message}`);
   }
-}
-
-/**
- * M4: the Labs setting was saved (config:save). Off moves her out and forgets
- * the move-in; on brings nobody in by itself (the move-in sheet does that).
- * Returns whether the value changed.
- */
-export async function applySeilinkSetting(on: boolean): Promise<boolean> {
-  const before = seilinkAvailability().setting;
-  setSeilinkSetting(on);
-  if (before !== on) pushAvailability();
-  if (!seilinkEnabled() && (before !== on || session)) await stopSeilinkHost('disabled');
-  return before !== on;
 }
 
 /**

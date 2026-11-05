@@ -3,34 +3,25 @@
  *
  * On when either:
  *   - the dev flag is set (unpackaged + SEI_SEILINK_PACKS, packs.ts), or
- *   - the user turned it on in Settings > Labs (`seilink_enabled`, per
- *     profile) on an install that can run the desktop host: macOS or
- *     Windows with the host addon in the build (native.ts). Elsewhere the
- *     Settings row is shown disabled with the reason.
+ *   - this install can run the desktop host: macOS or Windows with the host
+ *     addon in the build (native.ts).
  *
- * Kept synchronous (prompt assembly asks on every turn): the setting is
- * mirrored here from config at start and after an account switch
- * (restoreSeilinkHost) and after a renderer save (the config:save handler).
+ * 261105 (T337): there is no on/off setting any more. The Settings > Labs
+ * "Desktop room" toggle (`seilink_enabled`) is gone; SeiLink is simply there
+ * wherever the OS and build support it. An old config's `seilink_enabled` is
+ * dropped by the schema and ignored; a saved move-in stays (restoreSeilinkHost).
+ *
+ * Kept synchronous (prompt assembly asks on every turn).
  */
 import { app } from 'electron';
 import type { SeilinkAvailability } from '../../shared/seilinkHost';
 import { seilinkDevEnabled } from './packs';
 import { addonAvailability } from './host/native';
 
-let settingOn = false;
 let testOverride: boolean | null = null;
 /** Who lives in the desktop room right now: set while her host session is open (seilinkHost.ts). */
 let resident: string | null = null;
 let supportCache: Pick<SeilinkAvailability, 'supported' | 'reason'> | null = null;
-
-/** The Labs setting as last read from this profile's config. */
-export function setSeilinkSetting(on: boolean | undefined | null): void {
-  settingOn = on === true;
-}
-
-export function seilinkSettingOn(): boolean {
-  return settingOn;
-}
 
 /** Can this install run the desktop host at all? Cached: the addon does not come and go. */
 export function seilinkSupport(): Pick<SeilinkAvailability, 'supported' | 'reason'> {
@@ -50,12 +41,12 @@ export function seilinkSupport(): Pick<SeilinkAvailability, 'supported' | 'reaso
 
 export function seilinkEnabled(): boolean {
   if (testOverride !== null) return testOverride;
-  return seilinkDevEnabled() || (settingOn && seilinkSupport().supported);
+  return seilinkDevEnabled() || seilinkSupport().supported;
 }
 
 export function seilinkAvailability(): SeilinkAvailability {
   const support = seilinkSupport();
-  return { ...support, setting: settingOn, enabled: seilinkEnabled(), dev: seilinkDevEnabled() };
+  return { ...support, enabled: seilinkEnabled(), dev: seilinkDevEnabled() };
 }
 
 /**

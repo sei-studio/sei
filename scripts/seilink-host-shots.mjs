@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Screenshots of SeiLink M4 (261104): the wallpaper page with its dock and
- * speech bubble, the Labs setting, the move-in sheet and the companion menu.
+ * speech bubble, the move-in sheet and the companion menu.
  * Headless, no Electron.
  *
  *   node scripts/seilink-host-shots.mjs [--packs resources/seilink-packs] [--preset cozy]
@@ -67,10 +67,6 @@ const SHOTS = {
   'host-ja-confirm-line': { kind: 'host', q: `time=day&lang=ja&confirm=1&line=${encodeURIComponent(LINE_JA)}` },
   'host-react-line': { kind: 'host', q: `time=day&state=${encodeURIComponent(REACT_STATE)}&line=${encodeURIComponent(LINE_REACT)}` },
   'host-taskbar0-line': { kind: 'host', q: `time=day&taskbar=0&line=${encodeURIComponent(LINE)}`, size: { width: 1000, height: 800 } },
-  'settings-on-light': { kind: 'app', q: 'screen=settings&seilink=on&theme=light', act: 'labs' },
-  'settings-on-dark': { kind: 'app', q: 'screen=settings&seilink=on&theme=dark', act: 'labs' },
-  'settings-off-dark': { kind: 'app', q: 'screen=settings&seilink=off&theme=dark', act: 'labs' },
-  'settings-unsupported-light': { kind: 'app', q: 'screen=settings&seilink=unsupported&theme=light', act: 'labs' },
   'movein-light': { kind: 'app', q: 'screen=home&modal=movein&theme=light', act: 'thumb' },
   'movein-dark': { kind: 'app', q: 'screen=home&modal=movein&theme=dark', act: 'thumb' },
   'movein-swap-dark': { kind: 'app', q: 'screen=home&modal=movein&swap=1&theme=dark', act: 'thumb' },
@@ -112,15 +108,8 @@ function packServer(root) {
 }
 
 async function act(page, what) {
-  if (what === 'labs') {
-    const found = await page.evaluate(() => {
-      // Put the Labs group in the middle so the rows around it show too.
-      const el = [...document.querySelectorAll('h3')].find((h) => h.textContent === 'Labs');
-      el?.scrollIntoView({ block: 'center' });
-      return Boolean(el);
-    });
-    if (!found) console.log('  no Labs group');
-    await page.waitForTimeout(300);
+  if (what === 'none') {
+    /* nothing */
   } else if (what === 'thumb') {
     await page.waitForSelector('img', { timeout: 15_000 }).catch(() => console.log('  no thumbnail'));
     await page.waitForTimeout(800);

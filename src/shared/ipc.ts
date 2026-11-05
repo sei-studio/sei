@@ -2229,7 +2229,7 @@ export interface RendererApi {
   seilinkRoomSet?(characterId: string, state: RoomState): Promise<SeilinkRoomPayload>;
   onSeilinkRoomChanged?(cb: (characterId: string) => void): Unsubscribe;
   seilinkOpenPreview?(): Promise<boolean>;
-  /** Desktop host: she moves in, her room becomes the wallpaper (SeiLink on: Labs setting or dev flag). */
+  /** Desktop host: she moves in, her room becomes the wallpaper (SeiLink available: a supported install or the dev flag). */
   /** M4: `firstRoom` = the move-in sheet just set up her first room (analytics only). */
   seilinkHostStart?(characterId: string, opts?: { firstRoom?: boolean }): Promise<SeilinkHostStatus>;
   seilinkHostStop?(): Promise<SeilinkHostStatus>;
@@ -2237,7 +2237,7 @@ export interface RendererApi {
   onSeilinkHostStatus?(cb: (status: SeilinkHostStatus) => void): Unsubscribe;
   /** She was clicked on the desktop: open her chat (characterId). */
   onSeilinkOpenChat?(cb: (characterId: string) => void): Unsubscribe;
-  /** M4: the Labs setting and whether this install can run the desktop host. */
+  /** M4: whether this install can run the desktop host. */
   seilinkAvailability?(): Promise<SeilinkAvailability>;
   onSeilinkAvailability?(cb: (a: SeilinkAvailability) => void): Unsubscribe;
   /** M4: the dock's edit button: open her room editor (characterId). */
@@ -4321,7 +4321,7 @@ export const IpcChannel = {
     hostStatusChanged: 'seilink:host-status-changed',
     /** Push (main → main window): characterId she was clicked on the desktop; open her chat. */
     openChat: 'seilink:open-chat',
-    /** Invoke: → SeilinkAvailability (M4: the Labs setting, and whether this install can run the host). */
+    /** Invoke: → SeilinkAvailability (M4: whether this install can run the host). */
     availability: 'seilink:availability',
     /** Push (main → main window): SeilinkAvailability after the setting changes or the profile switches. */
     availabilityChanged: 'seilink:availability-changed',

@@ -18,6 +18,7 @@
 import { ROOM_PRESET_IDS, resolvePattern, resolveSlots, type RoomComponent, type RoomPresetManifest, type RoomSlotId, type RoomState } from './seilinkRoom';
 import { isPresetColour, swatchesFor } from './seilinkEdit';
 import { CODE_PATTERNS } from './seilinkPatterns';
+import { ENTRY_SOURCES } from './seilinkIntroTelemetry';
 import {
   ALL_TOGETHER_COUNTS,
   EDITOR_TALK_OUTCOMES,
@@ -31,7 +32,8 @@ export const SEILINK_EDITOR_SESSION_EVENT = 'seilink_editor_session';
 export const SEILINK_EDITOR_ERROR_EVENT = 'seilink_editor_error';
 export const SEILINK_MOVEIN_SHEET_EVENT = 'seilink_movein_sheet';
 
-export const EDITOR_OPENED_FROM = ['gear', 'dock', 'move_in', 'other'] as const;
+/** 261105 (T337): 'button' = the chat top bar's SeiLink button, 'tour' = the guide's SeiLink tour. */
+export const EDITOR_OPENED_FROM = ['gear', 'dock', 'move_in', 'button', 'tour', 'other'] as const;
 export type EditorOpenedFrom = (typeof EDITOR_OPENED_FROM)[number];
 
 /** The rail's panels (renderer lib/seilink/roomGroups.ts plus avatar and items). */
@@ -460,6 +462,9 @@ function moveInProps(p: Record<string, unknown>): Record<string, Scalar> {
   if (ms !== undefined) out.ms_open = ms;
   const fail = oneOf(MOVEIN_FAILS, p.error_class);
   if (fail) out.error_class = fail;
+  // 261105 (T337): how the person got here (the SeiLink button, the gear menu, the tour, the dock).
+  const entry = oneOf(ENTRY_SOURCES, p.entry);
+  if (entry) out.entry = entry;
   return out;
 }
 

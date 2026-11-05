@@ -82,16 +82,15 @@ export interface SeilinkHostStatus {
 }
 
 /**
- * M4: can SeiLink be turned on here, and is it on? (main gate.ts)
+ * M4: can SeiLink run here? (main gate.ts)
  * - supported: macOS or Windows with the host addon in this build (or the dev fake desktop).
  * - reason: why not, when unsupported.
- * - setting: the Labs setting (`seilink_enabled`, this profile).
- * - enabled: SeiLink is on (the setting on a supported install, or the dev flag).
+ * - enabled: SeiLink is available (a supported install, or the dev flag). There
+ *   is no on/off setting since 261105 (the Labs toggle was removed).
  */
 export interface SeilinkAvailability {
   supported: boolean;
   reason?: 'platform' | 'addon';
-  setting: boolean;
   enabled: boolean;
   dev: boolean;
 }

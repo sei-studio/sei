@@ -20,8 +20,14 @@
  * with the rest of the tour. The write is fire-and-forget through the
  * get-then-save pattern; a failed write degrades to exactly the old
  * behavior (no tour next launch), never a stuck overlay.
+ *
+ * 261105 (T337): a second, short mode, the SeiLink tour (`mode: 'seilink'`,
+ * steps sl_*; lib/seilink/seilinkTour.ts). It is offered later, at a calm
+ * moment, never in the session of the onboarding tour, and is not persisted:
+ * a quit mid-tour simply ends it.
  */
 import { create } from 'zustand';
+import type { TourAudience } from '@shared/seilinkIntroTelemetry';
 import { sei } from '../ipcClient';
 
 export type TutorialStep =
@@ -37,7 +43,13 @@ export type TutorialStep =
   | 'terminal'
   | 'settings'
   | 'sui'
-  | 'bye';
+  | 'bye'
+  // 261105: the SeiLink tour (mode 'seilink').
+  | 'sl_offer'
+  | 'sl_button'
+  | 'sl_room';
+
+export type TutorialMode = 'onboarding' | 'seilink';
 
 function persist(state: { step: TutorialStep; characterId: string | null } | null): void {
   void sei
@@ -50,32 +62,42 @@ function persist(state: { step: TutorialStep; characterId: string | null } | nul
 
 interface TutorialState {
   active: boolean;
+  mode: TutorialMode;
+  /** The SeiLink tour's audience and which offer this is (mode 'seilink'). */
+  seilink: { audience: TourAudience; offer: number } | null;
   /** The generated companion the full tour introduces; null → reduced tour. */
   characterId: string | null;
   step: TutorialStep;
   start: (characterId: string | null) => void;
   /** Boot-resume: arm the tour at a saved step without re-persisting it. */
   resume: (characterId: string | null, step: TutorialStep) => void;
+  /** The SeiLink tour for `characterId` (her chat holds the button). Not persisted. */
+  startSeilink: (characterId: string, audience: TourAudience, offer: number) => void;
   setStep: (step: TutorialStep) => void;
   end: () => void;
 }
 
 export const useTutorialStore = create<TutorialState>((set, get) => ({
   active: false,
+  mode: 'onboarding',
+  seilink: null,
   characterId: null,
   step: 'meet',
   start: (characterId) => {
     const step: TutorialStep = characterId ? 'meet' : 'terminal';
-    set({ active: true, characterId, step });
+    set({ active: true, mode: 'onboarding', seilink: null, characterId, step });
     persist({ step, characterId });
   },
-  resume: (characterId, step) => set({ active: true, characterId, step }),
+  resume: (characterId, step) => set({ active: true, mode: 'onboarding', seilink: null, characterId, step }),
+  startSeilink: (characterId, audience, offer) =>
+    set({ active: true, mode: 'seilink', seilink: { audience, offer }, characterId, step: 'sl_offer' }),
   setStep: (step) => {
     set({ step });
-    persist({ step, characterId: get().characterId });
+    if (get().mode === 'onboarding') persist({ step, characterId: get().characterId });
   },
   end: () => {
-    set({ active: false, characterId: null });
-    persist(null);
+    const wasOnboarding = get().mode === 'onboarding';
+    set({ active: false, characterId: null, mode: 'onboarding', seilink: null });
+    if (wasOnboarding) persist(null);
   },
 }));

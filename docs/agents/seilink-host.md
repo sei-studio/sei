@@ -2,15 +2,16 @@
 
 The companion's room as a live wallpaper: one window behind the desktop
 icons on the primary display (Windows: the WorkerW/Progman layer; macOS: the
-desktop window level plus a small hit panel over her). On while SeiLink is on
-(`gate.ts` `seilinkEnabled()`: Settings > Labs > "Desktop room"
-`seilink_enabled`, per profile, off by default, on a supported install; or the
-dev flag, unpackaged with `SEI_SEILINK_PACKS`). Supported = macOS or Windows
-with the host addon in the build; elsewhere the Labs toggle is disabled with
-the reason. Linux reports `unsupported_platform`; the app builds and runs the
-same. The room source (`roomStore.roomSource`) is gated the same way, so a
-user with SeiLink off gets no room line and no look() tool (no added tokens).
-With SeiLink on, only the companion who moved in gets them, and only while
+desktop window level plus a small hit panel over her). Available wherever
+the install can run it (`gate.ts` `seilinkEnabled()`: a supported install, or
+the dev flag, unpackaged with `SEI_SEILINK_PACKS`). Supported = macOS or
+Windows with the host addon in the build. There is no on/off setting: the
+Settings > Labs "Desktop room" toggle (`seilink_enabled`) and the whole Labs
+group were removed on 261105 (T337); the schema drops an old
+`seilink_enabled` and a saved move-in stays. Linux reports `unsupported_platform`; the app builds and runs the
+same. The room source (`roomStore.roomSource`) is gated the same way, and
+only the companion who moved in gets a room line and look() (no added tokens
+for anyone else), and only while
 her host session is open (`gate.seilinkResident`, set by seilinkHost.ts);
 the others do not live there.
 
@@ -295,14 +296,14 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   someone else replaces her (`replaced`).
 - Who moved in: `seilink_moved_in {character_id, moved_in_at}`, a
   MAIN-owned UserConfig key (per profile). Restored at app start and after an
-  account switch (`restoreSeilinkHost`, which also mirrors the Labs setting
-  into gate.ts). A restore first checks she still exists: a companion whose
-  file is gone has her move-in cleared and nothing starts. A user stop, the setting turning off (`applySeilinkSetting`
-  from the config:save handler) and deleting or removing her
+  account switch (`restoreSeilinkHost`). A restore first checks she still exists: a companion whose
+  file is gone has her move-in cleared and nothing starts. A user stop and deleting or removing her
   (`onSeilinkCharacterRemoved`, reason `character_removed`) clear it; quit,
   failure and an account switch keep it.
 - Move-in (M4): the companion page's gear menu has "Move onto desktop" /
-  "Move off desktop" and "Edit room" while SeiLink is on. The first move-in
+  "Move off desktop" and "Edit room" while SeiLink is available, and the chat
+  top bar has the SeiLink button (261105, see "Entry points and the first
+  link" below). The first move-in
   of a companion (no saved room: `SeilinkRoomPayload.saved`), or one that
   moves someone else out, opens `MoveInSheet` (room cards from the packs
   that exist, three lines on what it means, Move in). Otherwise the page
@@ -310,6 +311,56 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
 - Account switch: `endAccountSessions` calls
   `stopSeilinkHostForAccountSwitch()`; starts take `beginSessionStart()`
   (`ACCOUNT_SWITCHING` during a switch).
+
+## Entry points and the first link (261105, T337)
+
+- Every way into SeiLink goes through `lib/seilink/seilinkFlow.ts`, and the
+  move-in sheet, the room editor and the intro are rendered once, by
+  `SeilinkFlowHost` (mounted in App.tsx, state in `useSeilinkStore.flow` /
+  `.intro`). Entry points:
+  - the SeiLink button in `ChatTopBar` (after Backseat, before Call;
+    `data-tutorial="seilink-btn"`), shown wherever SeiLink is available.
+    She lives there: her room editor. Otherwise: move her in
+    (`openSeilink`, source `button`).
+  - the companion page's gear menu: "Move onto desktop" / "Move off desktop"
+    (`moveInOrOut`), "Edit room" (`openRoomEditor`), "Replay SeiLink intro"
+    (`replayIntro`). Source `gear`.
+  - the dock's edit button (main push `seilink:open-room-editor`), `dock`.
+  - the guide's tour (below), `tour`.
+  Each records `seilink_entry {source, action}` and passes the source on
+  (`seilink_movein_sheet.entry`, the editor's `opened_from`).
+- There is no on/off setting (the Settings "Labs" section was removed
+  261105): SeiLink is available wherever `seilinkSupport()` says it can run.
+- **The first-link intro** (`components/seilink/intro/`): about 11 s, three
+  beats with one line each ("Opening a tunnel to the digital world…",
+  "Linking {name}…", "Porting the link to your desktop…"), then "Linked." /
+  "{name} lives on your desktop now.". `startSeilinkHost` (the only host
+  start in the renderer) requests it alongside the start, so it never delays
+  the host; only the end card waits for the start's answer (`HOLD_MAX_MS`).
+  A failed start aborts it ("Link interrupted.", then the sheet's retry
+  shows). Skip button and Esc. Reduced motion plays the calm timeline
+  (fades only). Once per account (`lib/seilink/introPref.ts`, localStorage
+  `sei.seilinkIntroSeen.v1.<scope>`): seen when it completed or was skipped
+  on a move-in that worked. Replay plays it over her room with nothing
+  starting.
+  - Frames are pure (`introFrame.ts` computeFrame, `introFx.ts` canvases),
+    so the harness seeks them: `?seilinkintro=1` (DevIntroPreview,
+    `&style=holo|glitch|tunnel&reduced=1&manual=1`), and
+    `scripts/seilink-intro-shots.mjs` renders the review mp4s.
+  - Three treatments behind `IntroStyle` (`holo`, `glitch`, `tunnel`;
+    `DEFAULT_INTRO_STYLE` ships, a dev override is
+    `localStorage['sei.seilinkIntroStyle']`). Once Shawn picks one, delete
+    the other two branches of computeFrame and their fx.
+- **The guide's SeiLink tour** (`lib/seilink/tourPref.ts` decides,
+  `seilinkTour.ts` records, `useTutorialStore` mode `seilink`, steps
+  `sl_offer` / `sl_button` / `sl_room` in TutorialOverlay). App.tsx polls
+  for a calm Home (no modal, tour, first moment, call, game or share; the
+  same `readCalmUi` as the boot offers). Only where SeiLink is available,
+  never in a session that ran onboarding, never for someone already linked.
+  Existing users: "Hey! Remember me? I'm back! ..." New players: a day after
+  onboarding. Sure: her chat, the SeiLink button spotlighted with two lines,
+  then the move-in sheet. Not now: asked once more 3 days later, then never.
+  Not persisted in `tutorial_state` (a quit ends it).
 
 ## Analytics (shape only)
 
@@ -326,8 +377,7 @@ errors) is in [`seilink-analytics.md`](seilink-analytics.md). The basics:
   wallpaper left running in the background is not playtime (same rule as a
   chat left open), and it would swamp the number. Her desktop lines are
   counted by `seilink_line_shown` instead.
-- M4: `seilink_setting_toggled` {enabled, supported} on a Labs change;
-  `seilink_moved_in` {character_id, swapped, preset, first_room} (not on a
+- M4: `seilink_moved_in` {character_id, swapped, preset, first_room} (not on a
   restore); `seilink_moved_out` {character_id, via app|dock};
   `seilink_dock_action` {action edit|deafen|moveout, character_id,
   deafened?}; `seilink_line_shown` {kind poke|idle|react, chars, character_id}.

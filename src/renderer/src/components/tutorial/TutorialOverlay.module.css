@@ -146,3 +146,43 @@
   background: #23283a;
   opacity: 0.6;
 }
+
+/* 261105: the SeiLink tour's offer (Sure / Not now). Borderless buttons,
+   2px corners, inside the light bubble. */
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.choice {
+  appearance: none;
+  border: none;
+  border-radius: var(--radius);
+  padding: 7px 18px;
+  background: rgba(35, 40, 58, 0.08);
+  color: #23283a;
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background 150ms var(--ease);
+}
+
+.choice:hover,
+.choice:focus-visible {
+  background: rgba(35, 40, 58, 0.16);
+  outline: none;
+}
+
+.choicePrimary {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.choicePrimary:hover,
+.choicePrimary:focus-visible {
+  background: var(--accent-strong);
+}
