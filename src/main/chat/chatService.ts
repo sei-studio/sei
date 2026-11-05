@@ -43,7 +43,7 @@ import { noteCompanionGoodbye, type NextStepHookResult } from '../sessionGoodbye
 import { isNoteLeak, stripThoughtTags } from './noteLeak';
 import { isCallActive } from '../voice/callState';
 import { splitReplyParts, type ReplyPart } from './replyParts';
-import type { FacePalette } from '../../bot/brain/faceExpressions.js';
+import { readFaceTags, type FacePalette } from '../../bot/brain/faceExpressions.js';
 import { emitReplyFaces } from '../facepack/faceEvents';
 import { facesEnabled } from '../facepack/facepackDev';
 import { facePaletteForCharacterName } from '../facepack/facepackStore';
@@ -2202,7 +2202,7 @@ async function sendDesktopLineTurnImpl(
   kind: 'poke' | 'idle',
   /** 261105: told why the result is null (shape only). */
   onSkip?: (why: DesktopLineSkip) => void,
-): Promise<{ text: string; messages: ChatMessage[] } | null> {
+): Promise<{ text: string; messages: ChatMessage[]; face: string | null } | null> {
   const skip = (why: DesktopLineSkip): null => {
     try {
       onSkip?.(why);
@@ -2246,7 +2246,11 @@ async function sendDesktopLineTurnImpl(
       .join(' ')
       .trim();
     if (scopedTurnCurrent()) void foldIfDue(characterId, prep.character.persona.expanded).catch(() => {});
-    return text ? { text, messages: saved } : skip('silence');
+    // 261105: the face tag her line led with (only the facepack dev flag prompts for one), for her
+    // desktop avatar; null = the host reads the line's words instead (seilinkExpression.ts).
+    const tags = facesEnabled() ? readFaceTags(replyText, prep.facePalette) : null;
+    const face = tags ? (tags.lead ?? tags.trail) : null;
+    return text ? { text, messages: saved, face } : skip('silence');
   } catch (err) {
     // Unprompted or a poke: never a popup. The next line simply tries again later.
     if (isAbortError(err)) return skip('aborted');

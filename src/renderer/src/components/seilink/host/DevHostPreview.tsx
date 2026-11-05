@@ -7,6 +7,9 @@
  *   deafened=1            the dock shows her idle lines muted
  *   confirm=1             move out already asking
  *   line=<text>           a line of hers in a bubble (shown once her box is measured)
+ *   lineat=<ms>           when the line shows (default 1800)
+ *   face=<word>           her face for the line as if it led with a [word] tag (default: read off
+ *                         its words, as main does: shared/seilinkExpression.ts)
  *   portrait=<url>        her portrait (else her silhouette)
  *   name=<name>           her name (default Sui)
  *   lang=<code>           UI language
@@ -18,6 +21,7 @@ import React, { useMemo } from 'react';
 import { defaultRoomState, type RoomState } from '@shared/seilinkRoom';
 import type { SeilinkDockAction, SeilinkHostBridge, SeilinkHostRoom } from '@shared/seilinkHost';
 import { parseRoomManifest } from '@shared/seilinkValidate';
+import { desktopLineFace } from '@shared/seilinkExpression';
 import type { SeilinkPack } from '@shared/seilinkPack';
 import { SeilinkHostView } from './SeilinkHostView';
 
@@ -88,7 +92,8 @@ function fakeBridge(params: URLSearchParams): SeilinkHostBridge {
     },
     onLine: (cb) => {
       const text = params.get('line');
-      if (text) later(() => cb({ id: 1, text, kind: 'poke' }), 1800);
+      const look = text ? desktopLineFace(text, params.get('face')) : null;
+      if (text) later(() => cb({ id: 1, text, kind: 'poke', ...look }), Number(params.get('lineat') ?? 1800) || 1800);
       return () => {};
     },
   };
@@ -98,6 +103,7 @@ export function DevHostPreview(): React.ReactElement {
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
   const bridge = useMemo(() => fakeBridge(params), [params]);
   const packUrl = (params.get('pack') ?? '').replace(/\/?$/, '/');
-  const resolveFor = useMemo(() => () => (rel: string) => `${packUrl}${rel}`, [packUrl]);
+  // `_shared/...` (views, pattern tiles) sits beside the pack dirs, as in the real resolver.
+  const resolveFor = useMemo(() => () => (rel: string) => (rel.startsWith('_shared/') ? new URL(`../${rel}`, packUrl).href : `${packUrl}${rel}`), [packUrl]);
   return <SeilinkHostView bridge={bridge} resolveFor={resolveFor} initialConfirm={params.get('confirm') === '1'} />;
 }

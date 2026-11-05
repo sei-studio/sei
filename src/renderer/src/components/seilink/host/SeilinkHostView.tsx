@@ -11,6 +11,8 @@
  *   which was pressed, the page answers with the action), her lines (a
  *   bubble above her head while her mouth moves), the work area (where the
  *   dock sits) and the app language.
+ * - 261105: her face for a line (`emotion` / `face` on the line, set by main
+ *   from the line's face tag or its words), held while the bubble is up.
  *
  * The avatar goes through the mount point in hostAvatar.tsx.
  */
@@ -24,6 +26,7 @@ import { RoomCanvas, type RoomAvatarSlot } from '../RoomCanvas';
 import { bubbleMs, HostBubble, HostDock, speakMs, type DockPress } from './HostDock';
 import { roomAvatarUse } from '../RoomAvatar';
 import { HostAvatar, type HostAvatarPoke } from './hostAvatar';
+import { lineFaceHoldMs, NEUTRAL_LOOK, toNeutral, type HostAvatarLook } from './hostLook';
 import styles from './SeilinkHost.module.css';
 
 const FRAMES_REPORT_MS = 500;
@@ -57,6 +60,7 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
   const [dockPress, setDockPress] = useState<DockPress | null>(null);
   const [line, setLine] = useState<SeilinkHostLine | null>(null);
   const [speaking, setSpeaking] = useState(false);
+  const [look, setLook] = useState<HostAvatarLook>(NEUTRAL_LOOK);
   const [herBox, setHerBox] = useState<SeilinkBox | null>(null);
   const [overlay, setOverlay] = useState<RoomOverlay | null>(null);
   const [size, setSize] = useState({ w: window.innerWidth, h: window.innerHeight });
@@ -104,19 +108,30 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
   }, []);
 
   // Her line: the bubble stays up long enough to read; her mouth moves for the first part.
+  // 261105: her face follows the line (hostLook.ts): the Live2D emotion while she says it (the model
+  // lingers on it for half the line, as on a call), the face set's word until her face goes back.
   useEffect(() => {
     if (!line) return;
     setSpeaking(true);
-    const a = setTimeout(() => setSpeaking(false), speakMs(line.text));
+    if (line.emotion || line.face) setLook((l) => ({ emotion: line.emotion ?? null, face: line.face ?? l.face, seq: l.seq + 1 }));
+    const a = setTimeout(() => {
+      setSpeaking(false);
+      setLook((l) => (l.emotion ? { ...l, emotion: null } : l));
+    }, speakMs(line.text));
     const b = setTimeout(() => setLine((l) => (l === line ? null : l)), bubbleMs(line.text));
+    const c = setTimeout(() => setLook(toNeutral), lineFaceHoldMs(line.text));
     return () => {
       clearTimeout(a);
       clearTimeout(b);
+      clearTimeout(c);
     };
   }, [line]);
-  // A covered room drops the bubble (nobody can read it, and it would wait there).
+  // A covered room drops the bubble (nobody can read it, and it would wait there), and her face with it.
   useEffect(() => {
-    if (fps <= 0) setLine(null);
+    if (fps > 0) return;
+    setLine(null);
+    setSpeaking(false);
+    setLook(toNeutral);
   }, [fps]);
 
   const onDockAction = useCallback((action: SeilinkDockAction) => bridge?.dockAction?.(action), [bridge]);
@@ -211,6 +226,9 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
         busy={busy}
         poke={poke}
         speaking={speaking}
+        emotion={look.emotion}
+        face={look.face}
+        faceSeq={look.seq}
       />
     </div>
   );

@@ -53,6 +53,10 @@ describe('shapes', () => {
 describe('reattachCause', () => {
   it('reads the trigger and what was wrong', () => {
     expect(reattachCause('validate:taskbarCreated:no-workerw')).toEqual({ cause: 'explorer_restart', detail: 'workerw_lost' });
+    // 261105: Explorer went away and the room box saved her; any trigger is an Explorer restart.
+    expect(reattachCause('shell-lost:timer:not-in-box+parent-not-progman')).toEqual({ cause: 'explorer_restart', detail: 'shell_lost' });
+    expect(reattachCause('shell-lost:taskbarCreated+1500:not-in-box')).toEqual({ cause: 'explorer_restart', detail: 'shell_lost' });
+    expect(reattachCause('shell-lost:window-closed')).toEqual({ cause: 'explorer_restart', detail: 'shell_lost' });
     expect(reattachCause('validate:taskbarCreated+1500:parent-not-progman+no-workerw')).toEqual({ cause: 'explorer_restart', detail: 'workerw_lost' });
     expect(reattachCause('validate:displayChange:size-mismatch')).toEqual({ cause: 'display_change', detail: 'size_mismatch' });
     expect(reattachCause('validate:display+1500:size-mismatch')).toEqual({ cause: 'display_change', detail: 'size_mismatch' });

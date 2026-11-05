@@ -157,9 +157,31 @@ which renders `RoomAvatar` with:
 | `portrait` | `SeilinkHostRoom.portrait` (below) |
 | `use` | `roomAvatarUse(room.state.avatar)` |
 | `busy` | main (a chat turn with her, held 60 s after the reply) OR 8 s after a click on her |
-| `speaking`, `levelRef`, `emotion`, `facepack` | not passed yet (her voice does not play in the host) |
+| `speaking` | one of her lines is in a bubble (`levelRef` is a made-up syllable envelope; no audio plays in the host) |
+| `emotion`, `face`, `faceSeq` | her face for the line (261105, below) |
+| `facepack` | not passed (RoomAvatar asks main for her pack) |
 
 The contract for any replacement is in the file header.
+
+### Her face on the desktop (261105)
+
+Each desktop line carries her face, at no added tokens: main
+(`sendSeilinkLine`, `shared/seilinkExpression.ts` `desktopLineFace`) takes
+the face tag the line led with (`[happy] ...`, read by
+`sendDesktopLineTurn`; only the facepack dev flag prompts for one), else
+the call overlay's spoken-line lexicon (`classifyEmotion`, now in
+`shared/avatarEmotion.ts`). The `line` message gets `emotion` (Live2D's
+closed set) and `face` (a face-set word: shy = embarrassed, angry =
+annoyed, love = happy). The page (`host/hostLook.ts`) passes `emotion` only
+while she says the line (Live2DView then lingers half the line and decays,
+as on a call) and holds `face` while the bubble is up (at least 1.5x the
+speaking time), then sends `neutral`; FacepackView's own timeline may
+decay a strong face (laugh, surprised) sooner, as in the app. A cover drops
+the bubble and her face. The portrait cutout and the silhouette have no
+face. Counted as `expressions` (seilink_health / seilink_ended) and
+`expression` tag/lexicon/none on `seilink_line_shown`. Her replies in the
+app's chat do not change her desktop face (she is held still while you chat).
+Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
 
 ### What RoomAvatar can read in the host
 
@@ -266,7 +288,7 @@ errors) is in [`seilink-analytics.md`](seilink-analytics.md). The basics:
   attach, first frame, cover → 0 fps, uncover, click her / bare wallpaper /
   double click, a press on the dock's deafen button (twice, so it ends where
   it started; must not open her chat), kill → reattach, hang → detected and replaced, (Windows)
-  Explorer restart, stop. Writes `result.json`, `selftest.log` and
+  Explorer restart survived by the same host, stop. Writes `result.json`, `selftest.log` and
   screenshots, then exits 0 or 1. Moves Sui in when the profile has her.
 - Linux smoke:
   `node scripts/seilink-dev-pack.mjs --out /tmp/packs && npx electron-vite build &&
@@ -438,6 +460,29 @@ without them render as before.
   resize frame, the attached child kept an 8 px non-client strip each side
   (wallpaper showing at the edges, her click box 8 px off). Attach logs
   `client WxH of WxH` if the client area ever differs again.
+- Windows Explorer restart (261105, T332): when explorer.exe exits, Windows
+  frees Progman / the WorkerW and every child window in them, the room
+  window too, although it belongs to the host. The free reaches the room's
+  thread as a bare WM_NCDESTROY with no WM_DESTROY before it (seen with the
+  CI native trace); Chromium expects WM_DESTROY first and hit a CHECK inside
+  the callback, so the host died with 0xC000041D before any JS ran and the
+  supervisor restarted it (analytics said `host_restart`/`host_crash`).
+  `win.cc` now subclasses the room window ("room window guard"): a
+  WM_NCDESTROY without WM_DESTROY gets the WM_DESTROY replayed first, so the
+  BrowserWindow closes normally; its 'closed' handler reads `roomLost()`,
+  sets `shellLost`, and `recoverWindow` makes a new room window once the new
+  shell is up (validate() keeps retrying if Explorer stays away longer than
+  its 30 s wait). That attach is `shell-lost:window-closed`: cause
+  `explorer_restart`, detail `shell_lost`. A container window of our own does
+  not help: the free walks the tree bottom-up and the container gets nothing
+  before the room does (tried, CI 261105). The CI explorer check fails if the
+  host exits, restarts or changes pid, or the re-attach is not a
+  `shell-lost:` one counted as `explorer_restart`.
+- `SEI_SEILINK_NATIVE_TRACE=<file>` (set by the CI self-test only): win.cc
+  appends every exception the process raises (code plus a module+offset
+  stack, from an observing vectored handler), the room window's messages
+  and the watcher's shell events, flushed per line so a dying host still
+  leaves it. Artifact `native-trace.log`.
 - macOS CI covers with TextEdit sized through Accessibility (the test addon's
   `axSetWindowFrame`); the runners have no Automation grant for AppleScript,
   and a window of our own bundle did not occlude the panel.

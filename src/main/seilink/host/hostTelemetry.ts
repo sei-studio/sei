@@ -120,6 +120,7 @@ export type ReattachCause =
   | 'other';
 
 export type ReattachDetail =
+  | 'shell_lost'
   | 'workerw_lost'
   | 'parent_lost'
   | 'z_order'
@@ -133,12 +134,15 @@ export type ReattachDetail =
 
 /**
  * hostEntry's attach reasons: 'window-closed', 'own-window-gone',
- * `validate:<trigger>[+1500]:<reasons joined by +>` and (mac)
- * `validate:<trigger>:level`. Triggers: timer, session, taskbarCreated,
- * displayChange, settingChange, display, resume.
+ * `validate:<trigger>[+1500]:<reasons joined by +>`, (mac)
+ * `validate:<trigger>:level`, and (Windows, 261105) `shell-lost:window-closed`
+ * (or `shell-lost:<trigger>:<reasons>`) once Explorer exited, Windows freed the
+ * room window with its desktop windows, and the host made it again. Triggers:
+ * timer, session, taskbarCreated, displayChange, settingChange, display, resume.
  */
 export function reattachCause(reason: unknown): { cause: ReattachCause; detail: ReattachDetail } {
   const r = String(reason ?? '');
+  if (r.startsWith('shell-lost:')) return { cause: 'explorer_restart', detail: 'shell_lost' };
   if (r === 'window-closed' || r === 'own-window-gone') return { cause: 'window_lost', detail: 'window_gone' };
   if (!r.startsWith('validate:')) return { cause: 'other', detail: 'other' };
   const [, triggerRaw = '', what = ''] = r.split(':');

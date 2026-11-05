@@ -6,6 +6,7 @@
  *
  * See docs/agents/seilink-host.md.
  */
+import type { AvatarEmotion } from './ipc';
 import type { SeilinkRoomPayload } from './seilinkPack';
 
 /**
@@ -213,4 +214,7 @@ export interface SeilinkHostLine {
   id: number;
   text: string;
   kind: 'idle' | 'poke';
+  /** 261105: her face for this line (seilinkExpression.ts): the Live2D emotion and the face set's word. */
+  emotion?: AvatarEmotion | null;
+  face?: string | null;
 }

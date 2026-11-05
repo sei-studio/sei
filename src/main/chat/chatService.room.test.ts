@@ -227,6 +227,20 @@ describe('desktop lines (M4)', () => {
     expect(rows.every((m) => m.voice !== true)).toBe(true);
   });
 
+  it('261105: the face tag her line led with comes back for her desktop face (dev flag only)', async () => {
+    createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: '[smug] told you the lamp goes there' }] });
+    const plain = await sendDesktopLineTurn(CHAR, 'poke');
+    expect(plain).toMatchObject({ text: 'told you the lamp goes there', face: null });
+    const { __setFacesEnabledForTest } = await import('../facepack/facepackDev');
+    __setFacesEnabledForTest(true);
+    try {
+      createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: '[smug] told you the lamp goes there' }] });
+      expect(await sendDesktopLineTurn(CHAR, 'poke')).toMatchObject({ text: 'told you the lamp goes there', face: 'smug' });
+    } finally {
+      __setFacesEnabledForTest(null);
+    }
+  });
+
   it('an idle (silence) is not shown or saved', async () => {
     createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: '(silence)' }] });
     expect(await sendDesktopLineTurn(CHAR, 'idle')).toBeNull();

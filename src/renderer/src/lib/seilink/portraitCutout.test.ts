@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { keyAlpha, unmixKey, vignetteAlpha } from './portraitCutout';
+import { edgeMatte, keyAlpha, unmixKey, vignetteAlpha } from './portraitCutout';
 
 /** An RGBA image filled by fn(x, y) -> [r, g, b, a]. */
 function img(w: number, h: number, fn: (x: number, y: number) => [number, number, number, number]): Uint8ClampedArray {
@@ -86,5 +86,34 @@ describe('vignetteAlpha', () => {
     const mid = vignetteAlpha(84, 40, 100, 100);
     expect(mid).toBeGreaterThanOrEqual(0);
     expect(mid).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('edgeMatte (261105)', () => {
+  const WALL: [number, number, number, number] = [70, 54, 44, 255];
+  const HAIR: [number, number, number, number] = [170, 110, 80, 255];
+  const EW = 200;
+  const EH = 250;
+  /** A bust under a dark wall: a dome of hair (top 18% down) over hair and shoulders to the bottom. */
+  const bustOn = (hair: [number, number, number, number]) => (x: number, y: number): [number, number, number, number] =>
+    Math.hypot((x - 100) / 85, (y - 125) / 80) < 1 || (y >= 125 && x >= 15 && x <= 185) ? hair : WALL;
+
+  it('cuts the wall above her hair and keeps the hair', () => {
+    const d = img(EW, EH, bustOn(HAIR));
+    const m = edgeMatte(d, EW, EH);
+    expect(m).not.toBeNull();
+    expect(m![20 * EW + 100]).toBe(0); // wall over her head
+    expect(m![60 * EW + 100]).toBe(1); // her hair
+    expect(m![200 * EW + 100]).toBe(1);
+  });
+
+  it('stands down when her hair is the wall colour (the scan runs into her)', () => {
+    const d = img(EW, EH, bustOn([76, 58, 46, 255]));
+    expect(edgeMatte(d, EW, EH)).toBeNull();
+  });
+
+  it('removes nothing when she runs off the top', () => {
+    const d = img(EW, EH, (x) => (Math.abs(x - 100) < 80 ? HAIR : WALL));
+    expect(edgeMatte(d, EW, EH)).toBeNull();
   });
 });
