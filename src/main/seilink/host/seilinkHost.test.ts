@@ -80,8 +80,7 @@ vi.mock('node:child_process', async (orig) => {
 vi.mock('./native', () => ({ addonAvailability: () => ({ ok: true }) }));
 vi.mock('../gate', () => ({
   seilinkEnabled: () => true,
-  seilinkAvailability: () => ({ supported: true, setting: true, enabled: true, dev: false }),
-  setSeilinkSetting: () => {},
+  seilinkAvailability: () => ({ supported: true, enabled: true, dev: false }),
   setSeilinkResident: (id: string | null) => {
     state.resident = id;
   },
@@ -126,7 +125,7 @@ async function settle(ms = 100): Promise<void> {
 
 describe('seilink host start / stop / restore', () => {
   beforeEach(() => {
-    state.config = { seilink_enabled: true };
+    state.config = {};
     state.characters = new Set([SUI, LYRA]);
     state.hosts = [];
     state.script = [];
@@ -150,7 +149,7 @@ describe('seilink host start / stop / restore', () => {
   });
 
   it('a move-in during the startup restore runs after it, ending the restored session cleanly', async () => {
-    state.config = { seilink_enabled: true, seilink_moved_in: { character_id: SUI, moved_in_at: 1 } };
+    state.config = { seilink_moved_in: { character_id: SUI, moved_in_at: 1 } };
     const restore = host.restoreSeilinkHost();
     const start = host.startSeilinkHost(LYRA);
     await Promise.all([restore, start]);
@@ -181,7 +180,7 @@ describe('seilink host start / stop / restore', () => {
   });
 
   it('restore checks she still exists: gone = move-in cleared, nothing started', async () => {
-    state.config = { seilink_enabled: true, seilink_moved_in: { character_id: SUI, moved_in_at: 1 } };
+    state.config = { seilink_moved_in: { character_id: SUI, moved_in_at: 1 } };
     state.characters.delete(SUI);
     await host.restoreSeilinkHost();
     await settle();
@@ -191,7 +190,7 @@ describe('seilink host start / stop / restore', () => {
   });
 
   it('restore brings back a companion who still exists', async () => {
-    state.config = { seilink_enabled: true, seilink_moved_in: { character_id: SUI, moved_in_at: 1 } };
+    state.config = { seilink_moved_in: { character_id: SUI, moved_in_at: 1 } };
     await host.restoreSeilinkHost();
     await settle();
     expect(live()).toHaveLength(1);

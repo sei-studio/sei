@@ -69,10 +69,21 @@ per window, `idle_attempted` / `idle_shown` / `idle_none_<why>` count tries.
 
 | Event | When | Props | Answers |
 |---|---|---|---|
-| `seilink_setting_toggled` | Labs toggle | enabled, supported, unsupported_reason? | Who turns it on |
-| `seilink_movein_sheet` | sheet loaded (`shown`), Move in worked (`confirmed`), a try failed (`failed`, once per class), Not now (`dismissed`) | action, reason `first_room`/`swap`/`retry`, preset, pick_room, swap, preset_changed, packs_available (shown), ms_open, error_class `start_failed`/`save_failed`/`unsupported`/`error` | Sheet funnel and which room people pick |
+| `seilink_movein_sheet` | sheet loaded (`shown`), Move in worked (`confirmed`), a try failed (`failed`, once per class), Not now (`dismissed`) | action, reason `first_room`/`swap`/`retry`, preset, pick_room, swap, preset_changed, packs_available (shown), ms_open, error_class `start_failed`/`save_failed`/`unsupported`/`error`, entry `button`/`gear`/`tour`/`dock` (261105: how the person got here) | Sheet funnel and which room people pick |
 | `seilink_moved_in` | host started for her (not a restore) | swapped, preset, first_room | Move-ins |
 | `seilink_moved_out` | she moved out | via app/dock | Move-outs |
+
+## Entry, first-link intro, tour (261105, T337)
+
+Shapes in `src/shared/seilinkIntroTelemetry.ts`, rebuilt in main by
+`sanitizeSeilinkIntroTrack`. There is no settings toggle event any more
+(`seilink_setting_toggled` went with the Labs section).
+
+| Event | When | Props | Answers |
+|---|---|---|---|
+| `seilink_entry` | every SeiLink entry click | character_id, source `button`/`gear`/`tour`/`dock`, action `sheet`/`move_in`/`edit`/`move_out`/`replay_intro` | Which entry point people use |
+| `seilink_intro` | the intro shows (`shown`), and how it ended (`completed`/`skipped`/`aborted`) | character_id, action, trigger `first_link`/`replay`, style `holo`/`glitch`/`tunnel`, reduced_motion, entry; on the end: beat `tunnel`/`link`/`port`/`linked` (where it ended), duration_bucket `lt3s`/`3_6s`/`6_9s`/`9_12s`/`12_20s`/`gt20s`, host `ok`/`failed`/`pending`/`none` | Do people watch it, where they skip, does the host keep up |
+| `seilink_tour` | the guide's tour: `offered`, `sure`, `not_now` (snoozed true on the first, false when it retires), `completed` (the sheet opens), `dropped` (Skip tutorial) | action, audience `new`/`existing`, offer_n (1 or 2), snoozed?, step `offer`/`button`/`room` (dropped) | Tour funnel and snooze outcome |
 
 ## Her look (anima face sets, 261105)
 
@@ -95,7 +106,7 @@ per app run.
 
 | Event | When | Props | Answers |
 |---|---|---|---|
-| `seilink_editor_session` | the editor closes, or the window goes away with it open (one per session; a drag is one edit) | opened_from `gear`/`dock`/`move_in`/`other`, duration_ms, preset, preset_end, first_panel, panels_opened, `panel_<avatar/room/fabrics/furniture/items>`, edits, `edit_<type>`, undos, saves, save_failures, avatar_upload_start/ok/fail, `avatar_fail_<not_zip/too_big/import_failed>`, dirty_at_close, outcome `saved`/`no_changes`/`discarded`, errors; 261105 catalog: `edit_pattern_change`/`edit_accent_change`/`edit_light_colour`/`edit_light_cycle`, patterned_at_close, accents_at_close, cycling_lights_at_close, particle_parts_at_close, particles_on, last_pattern (a code pattern, a painted tile id, `plain` or `other`); 261105 colour pass: preset_color_picks (a preset swatch or the automatic second colour), custom_color_picks (one per finished custom pick: a drag, a typed hex, a key run), recent_color_picks, picker_opens, custom_colors_at_close (tinted parts whose colour is not one of their presets). Never a colour value | Do people edit, what they change, do they save; do patterns and light colours get used |
+| `seilink_editor_session` | the editor closes, or the window goes away with it open (one per session; a drag is one edit) | opened_from `gear`/`dock`/`move_in`/`button`/`tour`/`other`, duration_ms, preset, preset_end, first_panel, panels_opened, `panel_<avatar/room/fabrics/furniture/items>`, edits, `edit_<type>`, undos, saves, save_failures, avatar_upload_start/ok/fail, `avatar_fail_<not_zip/too_big/import_failed>`, dirty_at_close, outcome `saved`/`no_changes`/`discarded`, errors; 261105 catalog: `edit_pattern_change`/`edit_accent_change`/`edit_light_colour`/`edit_light_cycle`, patterned_at_close, accents_at_close, cycling_lights_at_close, particle_parts_at_close, particles_on, last_pattern (a code pattern, a painted tile id, `plain` or `other`); 261105 colour pass: preset_color_picks (a preset swatch or the automatic second colour), custom_color_picks (one per finished custom pick: a drag, a typed hex, a key run), recent_color_picks, picker_opens, custom_colors_at_close (tinted parts whose colour is not one of their presets). Never a colour value | Do people edit, what they change, do they save; do patterns and light colours get used |
 | `seilink_editor_error` | first time per kind per session | kind `load_failed`/`no_packs`/`save_failed`/`avatar_import_failed`, opened_from | Editor breakage |
 
 Edit types (`classifyEdit`, a diff of two history entries):

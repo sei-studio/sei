@@ -45,6 +45,11 @@ if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('ches
   void import('./components/DevFacepackPreview').then(({ DevFacepackPreview }) => {
     root.render(<DevFacepackPreview />);
   });
+} else if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('seilinkintro')) {
+  // Dev-only SeiLink first-link intro (261105, T337). See DevIntroPreview.
+  void import('./components/seilink/intro/DevIntroPreview').then(({ DevIntroPreview }) => {
+    root.render(<DevIntroPreview />);
+  });
 } else if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('seilinkhost')) {
   // Dev-only SeiLink wallpaper page with the dock and a bubble (261104, M4),
   // over a fake host bridge. See DevHostPreview for params.

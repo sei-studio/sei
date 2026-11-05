@@ -62,3 +62,12 @@ this, onboarding landed on Home: 24% of new installs never used any surface.
   call), `&nomc=1` (no Minecraft), `&lan=1` (Minecraft leads), `&novision=1`
   (text-only model: chess leads, no Backseat). The harness greeting is
   a stub; the live greeting's wording is the model's.
+
+## The SeiLink tour is a second tutorial mode (261105, T337)
+
+`useTutorialStore` also runs the guide's short SeiLink tour (`mode:
+'seilink'`, steps `sl_offer` / `sl_button` / `sl_room`). It never runs in the
+session that ran onboarding (`noteOnboardingThisSession` in
+`handleOnboardComplete`), waits for a calm Home, is not persisted in
+`tutorial_state`, and does not hand off to the first moment. Details in
+`docs/agents/seilink-host.md`, "Entry points and the first link".

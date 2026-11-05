@@ -124,7 +124,7 @@ async function setRoomStateNow(characterId: string, raw: unknown): Promise<RoomS
  * What the AI side reads (roomContext.ts). null unless SeiLink is on AND she
  * is the companion who moved in, with her host session open
  * (gate.seilinkResident): the cozy pack ships with the app (M4), so without
- * this gate every companion of every Labs user would get a room line and
+ * this gate every companion of every SeiLink-capable install would get a room line and
  * look() on every turn, for a room they do not live in. Also null when her
  * preset's pack is not installed.
  */

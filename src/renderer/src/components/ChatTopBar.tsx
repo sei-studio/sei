@@ -18,6 +18,11 @@
  *            it. From here, confirming a source starts the call as well (the
  *            picker arms a pending share; see ShareScreenModal). Its one-time
  *            beta tip was moved to the games button (260929).
+ *   - SeiLink (261105, T337): her room on the desktop. Shown wherever SeiLink
+ *            can run (useSeilinkStore availability). Not moved in -> the
+ *            move-in flow (the sheet, or straight in); moved in -> her room
+ *            editor (lib/seilink/seilinkFlow openSeilink). Lit while she lives
+ *            there. The guide's SeiLink tour spotlights it (data-tutorial).
  *   - phone: no call → start one. With a game surface open the call starts IN
  *            PLACE (260722, startOrOpenCall: this screen stays, GameSurface's
  *            chrome row shows the compact controls); otherwise the fullscreen
@@ -37,7 +42,9 @@ import { startOrOpenCall } from '../lib/callLaunch';
 import { visionBlocked, visionGateReason } from '../lib/visionGate';
 import { pickPalette } from '../lib/portraitPalettes';
 import { PixelPortrait } from './PixelPortrait';
-import { GamepadIcon, PhoneIcon, BackIcon, UserIcon, BackseatIcon } from './icons';
+import { GamepadIcon, PhoneIcon, BackIcon, UserIcon, BackseatIcon, SeilinkIcon } from './icons';
+import { movedInId, useSeilinkStore } from '../lib/stores/useSeilinkStore';
+import { openSeilink } from '../lib/seilink/seilinkFlow';
 import { IdTag } from './IdTag';
 import { useT } from '../lib/i18n';
 import styles from './ChatTopBar.module.css';
@@ -61,6 +68,8 @@ export function ChatTopBar({ characterId, gameOpen = false }: ChatTopBarProps): 
   const onCallView = useUiStore((s) => s.view.kind === 'voice-call');
   const character = useDataStore((s) => s.characters.find((c) => c.id === characterId));
   const t = useT();
+  const seilinkAvailable = useSeilinkStore((s) => s.availability?.enabled === true);
+  const seilinkHere = useSeilinkStore((s) => movedInId(s.status) === characterId);
 
   // china-compat W9: backseat is an image surface, so a text-only local model
   // disables the button (never hides it) with the reason as its tooltip. Only
@@ -87,7 +96,9 @@ export function ChatTopBar({ characterId, gameOpen = false }: ChatTopBarProps): 
   // flipped in memory by "Got it" or a click on the games button, so the card
   // leaves without a second read. Everything else it depends on is live
   // state: see gamesTipPref for why each of these suppresses it.
+  // The SeiLink sheet, editor and intro are modals too, but live in their own store.
   const modalOpen = useUiStore((s) => s.modal !== null);
+  const seilinkOpen = useSeilinkStore((s) => s.flow !== null || s.intro !== null);
   const tutorialActive = useTutorialStore((s) => s.active);
   const firstMomentLive = useFirstMomentStore(
     (s) => s.status === 'armed' || s.status === 'greeting' || s.status === 'ready',
@@ -109,7 +120,7 @@ export function ChatTopBar({ characterId, gameOpen = false }: ChatTopBarProps): 
     done: tipDone,
     onChatScreen: !onCallView,
     gameOpen,
-    modalOpen,
+    modalOpen: modalOpen || seilinkOpen,
     tutorialActive,
     firstMomentLive,
   });
@@ -237,6 +248,20 @@ export function ChatTopBar({ characterId, gameOpen = false }: ChatTopBarProps): 
         >
           <BackseatIcon size={18} />
         </button>
+        {seilinkAvailable ? (
+          <button
+            type="button"
+            className={seilinkHere ? `${styles.iconBtn} ${styles.iconBtnActive}` : styles.iconBtn}
+            onClick={() => void openSeilink(characterId, 'button')}
+            aria-label={t('SeiLink')}
+            aria-pressed={seilinkHere}
+            data-tip={seilinkHere ? t("SeiLink: edit {name}'s room", { name: companionName }) : t('SeiLink: put {name} on your desktop', { name: companionName })}
+            data-tip-edge="right"
+            data-tutorial="seilink-btn"
+          >
+            <SeilinkIcon size={18} />
+          </button>
+        ) : null}
         <button
           type="button"
           className={onCallView ? `${styles.iconBtn} ${styles.iconBtnActive}` : styles.iconBtn}

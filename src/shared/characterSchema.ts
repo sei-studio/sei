@@ -1129,12 +1129,10 @@ export const UserConfigSchema = z.object({
     })
     .nullable()
     .optional(),
-  /**
-   * 261104 (M4) — Settings > Labs "Desktop room": SeiLink on for this
-   * profile. Renderer-settable; off when absent. Only takes effect on an
-   * install that can run the desktop host (src/main/seilink/gate.ts).
-   */
-  seilink_enabled: z.boolean().optional(),
+  // 261105 (T337): `seilink_enabled` (the Settings > Labs "Desktop room"
+  // toggle) was removed. SeiLink is available wherever the OS supports it
+  // (src/main/seilink/gate.ts). z.object strips the old key on read, so an
+  // old config is simply ignored; `seilink_moved_in` above is untouched.
   /**
    * 261104 (M4) — the dock's deafen button: no idle desktop lines from the
    * companion who moved in. Main-owned (seilink/desktopLines.ts). A poke

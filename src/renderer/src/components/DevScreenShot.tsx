@@ -10,9 +10,12 @@
  *     screen = home | character | chat | call | settings | edit (&section=appearance|voice|persona|games)
  *     modal  = delete | feedback | report | signout | apikey | creationlimit |
  *              topup | factoryreset | deleteaccount | movein   (over the Home screen)
- *     &seilink=on|off|unsupported   the desktop room's Labs setting (261104)
+ *     &seilink=on|unsupported       SeiLink availability (261104; no setting since 261105)
  *     movein: &pack=<url of a pack dir> (its thumbnail), &swap=1 (Lyra lives there now)
  *     &theme=light|dark  &lang=zh  &backdrop=1 (call: the character-art view)
+ *     &tour=1[&audience=new]  the guide's SeiLink tour, live from its offer on
+ *                    Home (261105): the screen follows the tour's navigation,
+ *                    and its end opens the move-in sheet (&pack= as movein)
  *
  * Other surfaces already have harnesses: ?dashshot=creditwall&part=modal|credits,
  * ?dashshot=signinmodal, ?dashshot=authchoice, ?dashshot=onboard.
@@ -39,6 +42,8 @@ import { TopUpModal } from './TopUpModal';
 import { FactoryResetConfirmModal } from './FactoryResetConfirmModal';
 import { DeleteAccountModal } from './DeleteAccountModal';
 import { MoveInSheetView } from './seilink/MoveInSheet';
+import { TutorialOverlay } from './tutorial/TutorialOverlay';
+import { useTutorialStore } from '../lib/stores/useTutorialStore';
 import { parseRoomManifest } from '@shared/seilinkValidate';
 import type { SeilinkPack } from '@shared/seilinkPack';
 import type { SeilinkAvailability } from '@shared/seilinkHost';
@@ -63,14 +68,13 @@ const params = new URLSearchParams(window.location.search);
 const screen = (params.get('screen') ?? 'home') as Screen;
 const modal = params.get('modal');
 const seilinkShot = params.get('seilink');
+const tourShot = params.get('tour') === '1';
 const seilinkAvailability: SeilinkAvailability | null =
   seilinkShot === 'on'
-    ? { supported: true, setting: true, enabled: true, dev: false }
-    : seilinkShot === 'off'
-      ? { supported: true, setting: false, enabled: false, dev: false }
-      : seilinkShot === 'unsupported'
-        ? { supported: false, reason: 'platform', setting: false, enabled: false, dev: false }
-        : null;
+    ? { supported: true, enabled: true, dev: false }
+    : seilinkShot === 'unsupported'
+      ? { supported: false, reason: 'platform', enabled: false, dev: false }
+      : null;
 const HOUR = 3_600_000;
 const now = Date.now();
 
@@ -150,7 +154,6 @@ function seed(): void {
       preferred_name: 'Robin',
       ai_backend_kind: 'cloud-proxy',
       ui_language: params.get('lang') ?? 'en',
-      seilink_enabled: seilinkShot === 'on',
     }),
     seilinkAvailability: async () => seilinkAvailability,
     getCharacter: async (id: string) => CHARACTERS.find((c) => c.id === id) ?? null,
@@ -182,6 +185,10 @@ function seed(): void {
   if (screen === 'chat') nav({ kind: 'chat', characterId: SUI });
   if (screen === 'call') nav({ kind: 'voice-call', characterId: SUI });
   if (screen === 'settings') nav({ kind: 'settings' });
+  if (tourShot) {
+    nav({ kind: 'home' });
+    useTutorialStore.getState().startSeilink(SUI, params.get('audience') === 'new' ? 'new' : 'existing', 1);
+  }
 }
 
 seed();
@@ -193,6 +200,11 @@ function MoveInShot(): React.ReactElement {
   const packUrl = (params.get('pack') ?? '').replace(/\/?$/, '/');
   const [packs, setPacks] = React.useState<SeilinkPack[] | null>(null);
   const [preset, setPreset] = React.useState<RoomPresetId | null>(null);
+  // Stable, so the thumbnail's effect does not restart on every render.
+  const resolveFor = React.useCallback(
+    () => (rel: string) => `${rel.startsWith('_shared/') ? `${packUrl}../` : packUrl}${rel}`,
+    [packUrl],
+  );
   React.useEffect(() => {
     void fetch(`${packUrl}manifest.json`)
       .then((r) => r.json())
@@ -216,7 +228,7 @@ function MoveInShot(): React.ReactElement {
       error={null}
       onCancel={noop}
       onConfirm={noop}
-      resolveFor={() => (rel: string) => `${packUrl}${rel}`}
+      resolveFor={resolveFor}
     />
   );
 }
@@ -249,8 +261,11 @@ function Modal(): React.ReactElement | null {
 }
 
 export function DevScreenShot(): React.ReactElement {
+  const view = useUiStore((s) => s.view);
+  const flow = useSeilinkStore((s) => s.flow);
+  const shown: Screen = tourShot ? (view.kind === 'chat' ? 'chat' : 'home') : screen;
   const body = (() => {
-    switch (screen) {
+    switch (shown) {
       case 'character':
       case 'edit':
         return <CharacterPage id={SUI} />;
@@ -292,6 +307,8 @@ export function DevScreenShot(): React.ReactElement {
       </MacosWindow>
       {screen === 'edit' ? <EditCharacterModal character={sui} onClose={noop} initialSection={(['appearance', 'voice', 'persona', 'games'] as const).find((x) => x === params.get('section')) ?? 'basic'} /> : null}
       <Modal />
+      {tourShot && flow?.kind === 'sheet' ? <MoveInShot /> : null}
+      {tourShot ? <TutorialOverlay /> : null}
     </div>
   );
 }

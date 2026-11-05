@@ -27,7 +27,21 @@ import { effectiveAvatarMode } from '@shared/characterSchema';
 import { applyTheme, clampThemeMode, subscribeSystemTheme } from './lib/theme';
 import { useLangStore, useT } from './lib/i18n';
 import { useUiStore } from './lib/stores/useUiStore';
-import { useSeilinkStore } from './lib/stores/useSeilinkStore';
+import { movedInId, useSeilinkStore } from './lib/stores/useSeilinkStore';
+import { SeilinkFlowHost } from './components/seilink/SeilinkFlowHost';
+import { introSeen } from './lib/seilink/introPref';
+import {
+  TOUR_FIRST_LOOK_MS,
+  TOUR_POLL_MS,
+  noteOnboardingThisSession,
+  onboardingRanThisSession,
+  pickTourCompanion,
+  readTourRecord,
+  retired,
+  tourDecision,
+  updateTourRecord,
+} from './lib/seilink/tourPref';
+import { beginSeilinkTour } from './lib/seilink/seilinkTour';
 import { useDataStore, subscribeIpc } from './lib/stores/useDataStore';
 import { MacosWindow } from './components/MacosWindow';
 import { IconRail } from './components/IconRail';
@@ -497,6 +511,50 @@ export function App(): React.ReactElement {
       if (timer) clearTimeout(timer);
     };
   }, [bootOfferUserId]);
+
+  // ── The guide's SeiLink tour (261105, T337). ─────────────────────────────
+  //    Once per account (with one snoozed second ask), only where SeiLink can
+  //    run, never in the session that ran onboarding, and only on a calm
+  //    Home (no modal, tour, first moment, call, game or share). The rules
+  //    are tourPref.tourDecision; this only polls for the calm moment.
+  const tourScope = bootOfferUserId ?? 'local';
+  useEffect(() => {
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const tick = (): void => {
+      if (stopped) return;
+      const ui = readCalmUi();
+      const calm = ui.viewKind === 'home' && !ui.popupModalOpen && !ui.tourActive && !ui.liveSession;
+      const seilink = useSeilinkStore.getState();
+      const characters = useDataStore.getState().characters;
+      const companionId = pickTourCompanion(
+        characters.map((c) => ({ id: c.id, lastAt: c.last_chatted ?? null })),
+        DEFAULT_CHARACTER_UUIDS.sui,
+      );
+      const decision = tourDecision({
+        record: readTourRecord(),
+        now: Date.now(),
+        available: seilink.availability?.enabled === true,
+        onboardedThisSession: onboardingRanThisSession(),
+        alreadyLinked: introSeen() || movedInId(seilink.status) != null,
+        hasCompanion: companionId != null,
+      });
+      if (decision.kind === 'retire') {
+        if (!readTourRecord().done) updateTourRecord(retired);
+        return;
+      }
+      if (decision.kind === 'show' && calm && companionId) {
+        beginSeilinkTour(companionId, decision.audience);
+        return;
+      }
+      timer = setTimeout(tick, TOUR_POLL_MS);
+    };
+    timer = setTimeout(tick, TOUR_FIRST_LOOK_MS);
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [tourScope, readCalmUi]);
 
   // ── In-app updater subscriptions (quick/260604-uoy). ──────────────────────
   //    Wired ONCE at mount. onUpdateAvailable fires only for OPTIONAL updates
@@ -1074,6 +1132,8 @@ export function App(): React.ReactElement {
         await routeAfterOnboard();
       })();
       async function routeAfterOnboard(): Promise<void> {
+        // 261105: the SeiLink tour never follows onboarding in the same session.
+        noteOnboardingThisSession({ newPlayer: res.tutorial === true });
         if (res.tutorial) {
           // The guided first moment (260926): a NEW player's tour ends in their
           // companion's chat, greeted first, with a next step to click. Only
@@ -1523,6 +1583,8 @@ export function App(): React.ReactElement {
         GamesPickerModal.
       */}
       <TutorialOverlay />
+      {/* 261105: SeiLink's move-in sheet, room editor and first-link intro (above the tour). */}
+      <SeilinkFlowHost />
     </>
   );
 }
