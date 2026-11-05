@@ -415,6 +415,21 @@ without them render as before.
   `--fx --scenes name=query --video` for perf numbers and mp4s).
   Dev preview query state: `tint.<slot>=hex`, `pattern.<slot>=id`,
   `accent.<slot>=hex`, `cycle.<slot>=1`, `part.<slot>=id|none`.
+- Colours (261105 colour pass, T333): each tintable part lists its curated
+  `swatches` (default tint first, then light to dark, picked against the
+  room's own art) and patterned parts their `accentSwatches`; parts without
+  them get `DEFAULT_SWATCHES` / `DEFAULT_ACCENT_SWATCHES` (seilinkEdit.ts).
+  Every row is nine cells: eight presets (or the automatic / colour-cycle
+  cell and seven), then the custom swatch, which opens `RoomColorPicker`
+  (square + hue + hex + a recent row kept in localStorage
+  `sei.seilinkRecentColors`, per user, not per room). A drag previews once per
+  frame under the row's gesture key: one undo step per drag. The popover is
+  portalled into `[data-color-host]` (the side column, so it fades with the
+  panel during an item drag) or the editor root; the editor's keys ignore
+  events inside `[data-color-picker]`. Colours are stored as values, so a room
+  saved with an old palette's colour draws the same and shows it on the
+  custom swatch (`seilinkPalettes.test.ts`). Shots: `--shots col-...`;
+  `--perf` drags in the picker (60 steps) against 12 part swaps.
 
 ## Gotchas
 

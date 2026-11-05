@@ -92,16 +92,17 @@ const SHOTS = {
   retint: [
     'time=day&items=1&panel=curtains',
     async (page) => {
-      await page.evaluate(async () => {
-        const input = document.querySelector('[data-room-editor] [data-slot="curtains"] input[type=color]');
-        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-        for (const c of ['#3b6fd1', '#d13b6f', '#6fd13b', '#7a4fc2']) {
-          setter.call(input, c);
-          input.dispatchEvent(new Event('input', { bubbles: true }));
-          await new Promise((r) => setTimeout(r, 120));
-        }
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-      });
+      // A drag in the custom picker (the live fast path), then the exact colour typed in.
+      await page.locator('[data-slot="curtains"] [data-custom-color]').first().click();
+      const sv = await page.locator('[data-color-picker] [role="slider"]').first().boundingBox();
+      await page.mouse.move(sv.x + 10, sv.y + 10);
+      await page.mouse.down();
+      for (let i = 1; i <= 8; i++) await page.mouse.move(sv.x + 10 + i * 20, sv.y + 10 + i * 10);
+      await page.mouse.up();
+      const hex = page.locator('[data-color-picker] input');
+      await hex.fill('7a4fc2');
+      await hex.press('Enter');
+      await page.keyboard.press('Escape');
       await page.waitForTimeout(800);
     },
   ],
@@ -199,6 +200,39 @@ const SHOTS = {
   'cat-fairy-zoom': ['time=night&cycle.lights=1', null, [0, 40, 1120, 360]],
   'cat-lang-ja': ['time=day&panel=bed&lang=ja&pattern.bed=plaid'],
   'cat-lang-ru': ['time=day&panel=bed&lang=ru&pattern.bed=plaid'],
+  // ── 261105 colour rows (T333). Run per preset (--presets cozy|gamer|forest). ──
+  'col-cozy-curtains': ['time=day&panel=curtains'],
+  'col-cozy-rug': ['time=day&panel=rug'],
+  'col-gamer-bed': ['time=day&panel=bed'],
+  'col-gamer-led': ['time=night&panel=lamp'],
+  'col-forest-tent': ['time=day&panel=bed'],
+  'col-forest-log': ['time=day&panel=chair'],
+  // The custom colour popover on the curtains row, after a drag in its square (one undo step) and a hex typed.
+  'col-picker': [
+    'time=day&panel=curtains',
+    async (page) => {
+      await page.locator('[data-slot="curtains"] [data-custom-color]').first().click();
+      const sv = await page.locator('[data-color-picker] [role="slider"]').first().boundingBox();
+      await page.mouse.move(sv.x + sv.width * 0.2, sv.y + sv.height * 0.3);
+      await page.mouse.down();
+      for (let i = 1; i <= 10; i++) await page.mouse.move(sv.x + sv.width * (0.2 + i * 0.03), sv.y + sv.height * (0.3 + i * 0.015));
+      await page.mouse.up();
+    },
+  ],
+  // The same on the gamer LED (cycle cell first), dusk.
+  'col-picker-led': ['time=night&panel=lamp', async (page) => page.locator('[data-slot="lamp"] [data-custom-color]').first().click()],
+  'col-picker-accent': [
+    'time=day&panel=curtains&pattern.curtains=gingham&tint.curtains=c27a5c',
+    async (page) => {
+      await page.locator('[data-slot="curtains"]').getByRole('tab', { name: 'Second color' }).click();
+      await page.locator('[data-slot="curtains"] [data-custom-color]').first().click();
+    },
+  ],
+  // Rooms in the new palettes (judge the colours in context).
+  'col-cozy-room': ['time=day&items=1&tint.curtains=c27a5c&tint.rug=b9c3a1&tint.bed=465372&pattern.bed=plaid&accent.bed=f5efe3'],
+  'col-cozy-room-2': ['time=day&items=1&tint.shell=e8c2b4&tint.curtains=7f875c&tint.rug=d6c09a&tint.bed=f3eee4'],
+  'col-gamer-room': ['time=night&items=1&tint.shell=5a4063&tint.bed=3e7a80&tint.lamp=ff5fb0&tint.chair=f2c94c'],
+  'col-forest-room': ['time=dusk&items=1&tint.bed=4f6684&tint.chair=d6a447&pattern.chair=gingham'],
   'bed-succulent': ['time=day&items=1', async (page) => dragRoom(page, [390, 430], [330, 965]), [220, 880, 520, 170]],
 };
 
@@ -270,42 +304,68 @@ async function perf(page, base) {
     await cdp.send('Profiler.setSamplingInterval', { interval: 200 });
     await cdp.send('Profiler.start');
   }
-  const result = await page.evaluate(async () => {
-    const tasks = [];
-    const obs = new PerformanceObserver((l) => l.getEntries().forEach((e) => tasks.push(e.duration)));
-    obs.observe({ entryTypes: ['longtask'] });
-    const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
-    const input = document.querySelector('[data-room-editor] [data-slot="curtains"] input[type=color]');
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-    const run = async (fn, n) => {
-      tasks.length = 0;
-      const t0 = performance.now();
-      for (let i = 0; i < n; i++) {
-        fn(i);
-        await frame();
-      }
-      await new Promise((r) => setTimeout(r, 400));
-      const ms = performance.now() - t0;
-      return { ms: Math.round(ms), perStep: Math.round(ms / n), longTasks: tasks.length, longest: Math.round(Math.max(0, ...tasks)) };
-    };
-    const tint = await run((i) => {
-      const h = (i * 9) % 360;
-      const c = `hsl(${h} 60% 60%)`;
-      const el = document.createElement('div');
-      el.style.color = c;
-      document.body.appendChild(el);
-      const rgb = getComputedStyle(el).color.match(/\d+/g).map(Number);
-      el.remove();
-      setter.call(input, '#' + rgb.map((v) => v.toString(16).padStart(2, '0')).join(''));
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    }, 40);
-    // Structural edits (swap the part back and forth) rebuild every layer.
-    const opts = [...document.querySelectorAll('[data-room-editor] [data-slot="curtains"] button[aria-pressed]')];
-    const swap = await run((i) => opts[i % 2]?.click(), 12);
-    obs.disconnect();
-    return { tint, swap };
+  // 261105 colour pass: a colour drag is a real pointer drag in the custom picker's square.
+  await page.evaluate(() => {
+    globalThis.__longTasks = [];
+    new PerformanceObserver((l) => l.getEntries().forEach((e) => globalThis.__longTasks.push(e.duration))).observe({ entryTypes: ['longtask'] });
   });
-  console.log('perf (40 colour steps vs 12 part swaps):', JSON.stringify(result));
+  const metricsCdp = await page.context().newCDPSession(page);
+  await metricsCdp.send('Performance.enable');
+  const metric = async () => Object.fromEntries((await metricsCdp.send('Performance.getMetrics')).metrics.map((m) => [m.name, m.value]));
+  const rendererMs = () => page.evaluate(() => [...(globalThis.__seilinkRenderers ?? [])].reduce((a, r) => a + r.frameStats.ms, 0));
+  const frames = () => page.evaluate(() => new Promise((r) => {
+    let n = 0;
+    const t0 = performance.now();
+    const f = () => (performance.now() - t0 < 1000 ? (n++, requestAnimationFrame(f)) : r(n));
+    requestAnimationFrame(f);
+  }));
+  const run = async (name, steps, fn) => {
+    await page.evaluate(() => (globalThis.__longTasks.length = 0));
+    const fps = frames();
+    const m0 = await metric();
+    const r0 = await rendererMs();
+    const t0 = Date.now();
+    await fn();
+    await page.waitForTimeout(400);
+    const ms = Date.now() - t0;
+    const m1 = await metric();
+    const r1 = await rendererMs();
+    const longTasks = await page.evaluate(() => globalThis.__longTasks.slice());
+    return {
+      name,
+      steps,
+      ms,
+      fpsFirstSecond: await fps,
+      scriptMsPerStep: +(((m1.ScriptDuration - m0.ScriptDuration) * 1000) / steps).toFixed(2),
+      taskMsPerStep: +(((m1.TaskDuration - m0.TaskDuration) * 1000) / steps).toFixed(2),
+      rendererMs: +(r1 - r0).toFixed(1),
+      longTasks: longTasks.length,
+      longest: Math.round(Math.max(0, ...longTasks)),
+    };
+  };
+  await page.locator('[data-slot="curtains"] [data-custom-color]').first().click();
+  const sv = await page.locator('[data-color-picker] [role="slider"]').first().boundingBox();
+  const STEPS = 60;
+  const tint = await run('picker drag', STEPS, async () => {
+    await page.mouse.move(sv.x + 4, sv.y + 4);
+    await page.mouse.down();
+    for (let i = 1; i <= STEPS; i++) {
+      await page.mouse.move(sv.x + (sv.width - 8) * (i / STEPS) + 4, sv.y + (sv.height - 8) * (0.5 + 0.5 * Math.sin(i / 6)) + 4);
+      await page.waitForTimeout(16);
+    }
+    await page.mouse.up();
+  });
+  const undoSteps = await page.evaluate(() => document.querySelector('[data-room-editor] button[aria-label="Undo"]')?.disabled === false);
+  await page.keyboard.press('Escape');
+  // Structural edits (swap the part back and forth) rebuild every layer.
+  const swap = await run('part swaps', 12, async () => {
+    for (let i = 0; i < 12; i++) {
+      await page.evaluate((k) => [...document.querySelectorAll('[data-room-editor] [data-slot="curtains"] button[aria-pressed]')][k % 2]?.click(), i);
+      await page.waitForTimeout(16);
+    }
+  });
+  const result = { tint, swap, undoEnabledAfterDrag: undoSteps };
+  console.log('perf (60-step picker drag vs 12 part swaps):', JSON.stringify(result));
   if (cdp) {
     // Self time per function over the whole run (tint steps then swaps).
     const { profile } = await cdp.send('Profiler.stop');

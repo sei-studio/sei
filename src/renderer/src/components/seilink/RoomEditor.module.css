@@ -561,17 +561,22 @@
   backdrop-filter: blur(10px);
 }
 
-/* Swatches. */
+/* Swatches (261105 colour pass): one row of nine cells, the same grid in
+   every section: eight presets (or the automatic / colour-cycle cell and
+   seven), then the custom colour (RoomColorPicker). */
 .swatches {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
+  --swatch: 24px;
+  display: grid;
+  grid-template-columns: repeat(9, var(--swatch));
+  justify-content: space-between;
+  row-gap: 8px;
+  padding: 4px 0;
 }
 
 .swatch {
   position: relative;
-  width: 26px;
-  height: 26px;
+  width: var(--swatch);
+  height: var(--swatch);
   border-radius: 50%;
   box-shadow:
     inset 0 0 0 1px rgb(0 0 0 / 0.08),
@@ -589,23 +594,8 @@
 .swatchOn {
   box-shadow:
     inset 0 0 0 1px rgb(0 0 0 / 0.08),
-    0 0 0 3px rgb(var(--ov)),
-    0 0 0 5px rgb(var(--ink) / 0.75);
-}
-
-.swatchCustom {
-  background: conic-gradient(from 210deg, #f28b82, #f6c26b, #fff27a, #9be39b, #7fd3e8, #8fa8f5, #c99af0, #f28b82);
-}
-
-.swatchCustom input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  cursor: pointer;
-  border: none;
-  padding: 0;
+    0 0 0 2.5px rgb(var(--ov)),
+    0 0 0 4.5px rgb(var(--ink) / 0.75);
 }
 
 /* 261105: the automatic second colour (tone-on-tone), drawn as a split dot. */
@@ -898,12 +888,12 @@
 }
 
 .toolbar .swatches {
-  padding: 2px 8px 8px;
-  flex-wrap: nowrap;
+  padding: 4px 8px 8px;
+  column-gap: 7px;
 }
 
 .toolbar .look .swatches {
-  padding: 2px 0 0;
+  padding: 4px 0 0;
 }
 
 .tool {

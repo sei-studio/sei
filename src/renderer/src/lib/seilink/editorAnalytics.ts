@@ -15,6 +15,7 @@ import {
   SEILINK_EDITOR_ERROR_EVENT,
   SEILINK_EDITOR_SESSION_EVENT,
   type AvatarUploadFail,
+  type ColorPickKind,
   type EditorError,
   type EditorOpenedFrom,
   type EditorPanel,
@@ -53,6 +54,10 @@ export interface EditorAnalyticsInput {
 
 export interface EditorAnalytics {
   avatarUpload(stage: 'start' | 'ok' | 'fail', reason?: AvatarUploadFail): void;
+  /** 261105 colour pass: the custom colour popover opened. */
+  pickerOpened(): void;
+  /** 261105 colour pass: a colour was picked from a preset swatch, the custom picker or its recent row. */
+  colorPicked(kind: ColorPickKind): void;
 }
 
 export function useEditorAnalytics(telemetry: EditorTelemetry | null | undefined, input: EditorAnalyticsInput): EditorAnalytics {
@@ -131,5 +136,15 @@ export function useEditorAnalytics(telemetry: EditorTelemetry | null | undefined
     [on, session, error],
   );
 
-  return { avatarUpload };
+  const pickerOpened = useCallback(() => {
+    if (on) session.tracker.pickerOpened();
+  }, [on, session]);
+  const colorPicked = useCallback(
+    (kind: ColorPickKind) => {
+      if (on) session.tracker.colorPicked(kind);
+    },
+    [on, session],
+  );
+
+  return { avatarUpload, pickerOpened, colorPicked };
 }

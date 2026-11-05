@@ -15,7 +15,8 @@
  * Classification is a diff of two room states (classifyEdit), so the editor
  * needs no per-control tracking. Event table: docs/agents/seilink-analytics.md.
  */
-import { ROOM_PRESET_IDS, resolvePattern, resolveSlots, type RoomPresetManifest, type RoomSlotId, type RoomState } from './seilinkRoom';
+import { ROOM_PRESET_IDS, resolvePattern, resolveSlots, type RoomComponent, type RoomPresetManifest, type RoomSlotId, type RoomState } from './seilinkRoom';
+import { isPresetColour, swatchesFor } from './seilinkEdit';
 import { CODE_PATTERNS } from './seilinkPatterns';
 
 export const SEILINK_EDITOR_SESSION_EVENT = 'seilink_editor_session';
@@ -28,6 +29,10 @@ export type EditorOpenedFrom = (typeof EDITOR_OPENED_FROM)[number];
 /** The rail's panels (renderer lib/seilink/roomGroups.ts plus avatar and items). */
 export const EDITOR_PANELS = ['avatar', 'room', 'fabrics', 'furniture', 'items'] as const;
 export type EditorPanel = (typeof EDITOR_PANELS)[number];
+
+/** How a colour was chosen in the editor (261105 colour pass): a preset swatch, the custom picker, its recent row. */
+export const COLOR_PICK_KINDS = ['preset', 'custom', 'recent'] as const;
+export type ColorPickKind = (typeof COLOR_PICK_KINDS)[number];
 
 export const EDIT_TYPES = [
   'swap_component',
@@ -89,7 +94,10 @@ export function roomShapeOf(manifest: RoomPresetManifest, state: RoomState, last
   let accents = 0;
   let cycling = 0;
   let particles = 0;
+  let customColors = 0;
+  const custom = (c: RoomComponent, tint: string | undefined, cycle?: boolean): boolean => Boolean(c.tintable && tint && !cycle && !isPresetColour(swatchesFor(c), tint));
   for (const r of resolveSlots(manifest, state)) {
+    if (custom(r.component, r.tint, r.cycle)) customColors++;
     if (r.pattern) {
       patterned++;
       if (state.slots[r.slot]?.accent) accents++;
@@ -101,13 +109,14 @@ export function roomShapeOf(manifest: RoomPresetManifest, state: RoomState, last
   for (const it of state.items) {
     const c = byId.get(it.id);
     if (!c) continue;
+    if (custom(c, it.tint ?? c.defaultTint)) customColors++;
     if (resolvePattern(manifest, c, it.tint ?? c.defaultTint, it.pattern, it.accent)) {
       patterned++;
       if (it.accent) accents++;
     }
     if (Object.values(c.frames).some((f) => f?.particles?.length)) particles++;
   }
-  return { patterned, accents, cycling, particles, lastPattern };
+  return { patterned, accents, cycling, particles, lastPattern, customColors };
 }
 
 /** What the room looks like at close (counts the editor works out with the manifest). */
@@ -122,6 +131,8 @@ export interface RoomShapeAtClose {
   particles: number;
   /** The last pattern picked in the session, if any. */
   lastPattern?: string | null;
+  /** 261105 colour pass: tinted parts (slots and items) whose main colour is not one of their presets. */
+  customColors?: number;
 }
 const ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -213,6 +224,8 @@ export class EditorSessionTracker {
   private lastPanel: EditorPanel | null = null;
   private done = false;
   private lights: ReadonlySet<RoomSlotId> | undefined;
+  private picks: Record<ColorPickKind, number> = { preset: 0, custom: 0, recent: 0 };
+  private pickerOpens = 0;
 
   constructor(
     private readonly openedFrom: EditorOpenedFrom,
@@ -226,7 +239,7 @@ export class EditorSessionTracker {
 
   /** Any interaction at all (StrictMode's throwaway mount has none). */
   get touched(): boolean {
-    return this.editCount + this.undos + this.saves + this.saveFails + this.avatar.start + this.panels.size > 0;
+    return this.editCount + this.undos + this.saves + this.saveFails + this.avatar.start + this.panels.size + this.pickerOpens > 0;
   }
 
   history(h: HistoryView | null): void {
@@ -256,6 +269,16 @@ export class EditorSessionTracker {
     if (!p) return;
     this.firstPanel ??= p;
     this.panels.set(p, (this.panels.get(p) ?? 0) + 1);
+  }
+
+  /** 261105 colour pass: the custom colour popover opened. */
+  pickerOpened(): void {
+    this.pickerOpens++;
+  }
+
+  /** 261105 colour pass: one colour pick (a preset swatch, one custom pick = one drag or one typed hex, a recent colour). */
+  colorPicked(kind: ColorPickKind): void {
+    if (kind in this.picks) this.picks[kind]++;
   }
 
   saved(ok: boolean): void {
@@ -297,6 +320,10 @@ export class EditorSessionTracker {
       dirty_at_close: dirty,
       outcome: dirty ? 'discarded' : this.saves > 0 ? 'saved' : 'no_changes',
       errors: this.errors.size,
+      preset_color_picks: this.picks.preset,
+      custom_color_picks: this.picks.custom,
+      recent_color_picks: this.picks.recent,
+      picker_opens: this.pickerOpens,
     };
     for (const [p, n] of this.panels) out[`panel_${p}`] = n;
     for (const [t, n] of this.edits) out[`edit_${t}`] = n;
@@ -307,6 +334,7 @@ export class EditorSessionTracker {
       out.cycling_lights_at_close = shape.cycling;
       out.particle_parts_at_close = shape.particles;
       out.particles_on = shape.particles > 0;
+      if (shape.customColors !== undefined) out.custom_colors_at_close = shape.customColors;
       if (shape.lastPattern) out.last_pattern = KNOWN_PATTERNS.includes(shape.lastPattern) ? shape.lastPattern : 'other';
     }
     return out;
@@ -345,6 +373,11 @@ const SESSION_COUNTS = [
   'accents_at_close',
   'cycling_lights_at_close',
   'particle_parts_at_close',
+  'preset_color_picks',
+  'custom_color_picks',
+  'recent_color_picks',
+  'picker_opens',
+  'custom_colors_at_close',
   ...EDITOR_PANELS.map((p) => `panel_${p}`),
   ...EDIT_TYPES.map((t) => `edit_${t}`),
   ...AVATAR_UPLOAD_FAILS.map((r) => `avatar_fail_${r}`),
