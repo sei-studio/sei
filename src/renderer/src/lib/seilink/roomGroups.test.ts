@@ -34,7 +34,8 @@ describe('room editor slot groups', () => {
     expect(slotGroup('chair', forest)).toBe('fabrics');
     const drawn = Object.keys(forest.slots) as RoomSlotId[];
     expect(groupSlots(drawn, 'fabrics', forest)).toEqual(['shell', 'bed', 'chair']);
-    expect(groupSlots(drawn, 'furniture', forest)).toEqual(['shelf', 'campfire', 'lamp']);
+    // 261105: the optional Lights slot (fireflies) sits with the furniture.
+    expect(groupSlots(drawn, 'furniture', forest)).toEqual(['shelf', 'campfire', 'lamp', 'lights']);
     for (const id of ['cozy', 'gamer']) {
       const m = load(id);
       expect(Object.values(m.slots).some((d) => d?.group), id).toBe(false);

@@ -27,12 +27,14 @@ const SLOT_GROUP: Partial<Record<RoomSlotId, SlotGroup>> = {
   chair: 'furniture',
   campfire: 'furniture',
   lamp: 'furniture',
+  lights: 'furniture',
+  tree: 'furniture',
 };
 export const slotGroup = (slot: RoomSlotId, manifest?: Pick<RoomPresetManifest, 'slots'> | null): SlotGroup =>
   manifest?.slots[slot]?.group ?? SLOT_GROUP[slot] ?? 'furniture';
 
 /** Section order inside a panel: big pieces first (a slot not listed goes last, in draw order). */
-const SECTION_ORDER: readonly RoomSlotId[] = ['view', 'shell', 'curtains', 'rug', 'bed', 'shelf', 'chair', 'campfire', 'lamp'];
+const SECTION_ORDER: readonly RoomSlotId[] = ['view', 'shell', 'curtains', 'rug', 'bed', 'shelf', 'chair', 'campfire', 'lamp', 'lights', 'tree'];
 
 /** The slots of `slots` (draw order) that `group` lists in this pack, in its section order. */
 export function groupSlots(slots: readonly RoomSlotId[], group: SlotGroup, manifest?: Pick<RoomPresetManifest, 'slots'> | null): RoomSlotId[] {

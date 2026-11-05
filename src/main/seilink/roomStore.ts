@@ -136,7 +136,7 @@ export const roomSource: RoomSource = {
     const preset = coarseState(raw).preset;
     const pack = await loadPack(preset);
     if (!pack) return null;
-    return { manifest: pack.manifest, state: sanitizeRoomState(pack.manifest, raw ?? defaultRoomState(preset)), packDir: pack.dir };
+    return { manifest: pack.manifest, state: sanitizeRoomState(pack.manifest, raw ?? defaultRoomState(preset)), packDir: pack.dir, files: pack.files };
   },
   onChange: onRoomChange,
 };

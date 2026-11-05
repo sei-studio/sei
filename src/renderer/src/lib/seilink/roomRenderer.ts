@@ -27,6 +27,15 @@
  * drawImage calls plus the one tinted layer, so dragging a colour stays
  * smooth. source-over is associative, so below + layer + above is the same
  * picture the full build draws.
+ *
+ * 261105 (room catalog): a pattern or accent change takes the same recolour
+ * path (roomPattern.ts caches the warp, so only a new pattern or new
+ * geometry runs it). Lights lit in a colour (glowTint) recolour their glow;
+ * a cycling light's glow is drawn per frame in the colour of the moment.
+ * Particles (rain, snow, fireflies, ...) draw on a fourth canvas, `fx`,
+ * between back and her: stepped per frame while the loop runs, frozen when
+ * it stops (covered, paused, hidden: fps 0 or the page hidden), and a single
+ * settled still picture when the system asks for reduced motion.
  */
 import {
   AVATAR_Z,
@@ -36,6 +45,7 @@ import {
   type RoomTime,
 } from '@shared/seilinkRoom';
 import {
+  cycleColour,
   glowAlpha,
   roomDrawPlan,
   roomOverlay,
@@ -44,17 +54,22 @@ import {
   type ItemLayer,
   type RoomDrawPlan,
   type SlotLayer,
+  type ParticleLayer,
   type RoomOverlay,
   type RoomTimeMix,
 } from '@shared/seilinkDraw';
+import { createField, fitCounts, particleCount, particleDt, settle, showsStill, stepField, type ParticleField } from '@shared/seilinkParticles';
 import type { RoomUrlResolver } from '@shared/seilinkPack';
 import { drawRoomGlows, drawRoomLayers, loadPlanAssets, tintRegion, type RoomAssetError, type RoomAssets } from './roomCompose';
 import { ctx2d, makeCanvas, type AnyCanvas } from './roomImages';
+import { buildGlassMask, drawParticleLayers, tightenGlass } from './roomParticles';
 
 export interface RoomRendererCanvases {
   back: HTMLCanvasElement;
   front: HTMLCanvasElement;
   glow: HTMLCanvasElement;
+  /** 261105: particles, between back and the avatar. Absent: no particles drawn. */
+  fx?: HTMLCanvasElement;
 }
 
 export interface RoomRendererEvents {
@@ -64,8 +79,8 @@ export interface RoomRendererEvents {
   onError?(err: RoomAssetError): void;
   /** The overlay tint for UI drawn over the room changed. */
   onOverlay?(overlay: RoomOverlay): void;
-  /** Which of the three canvases have anything on them (hide the empty ones). */
-  onLayersUsed?(used: { front: boolean; glow: boolean }): void;
+  /** Which of the canvases have anything on them (hide the empty ones). */
+  onLayersUsed?(used: { front: boolean; glow: boolean; fx?: boolean }): void;
 }
 
 interface TintSplit {
@@ -84,8 +99,11 @@ interface TimeCache {
   front: AnyCanvas | null;
   /** Still glows, pre-composited. */
   glowStill: AnyCanvas | null;
-  /** Glows that animate, drawn per frame. */
+  /** Glows that animate (an effect, or a cycling light), drawn per frame. */
   glowAnimated: GlowLayer[];
+  /** 261105: this time's particles, and the glass mask over the view for the ones outside. */
+  particles: ParticleLayer[];
+  glass: { box: RoomBox; mask: AnyCanvas } | null;
   /** Average colour of the room at this time, for the overlay fallback. */
   sampled: string;
 }
@@ -98,19 +116,45 @@ interface Scene {
 
 const MIX_STEPS = 128;
 
-/** The state minus what never changes a cached picture (time) and minus tints. */
+/** The state minus what never changes a cached picture (time) and minus colours (tints, patterns, cycle). */
 function structureKey(state: RoomState): string {
   const slots: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(state.slots)) slots[k] = v ? { id: v.id } : v;
-  return JSON.stringify({ ...state, time: null, slots, items: state.items.map(({ tint: _t, ...rest }) => rest) });
+  return JSON.stringify({ ...state, time: null, slots, items: state.items.map(({ tint: _t, pattern: _p, accent: _a, ...rest }) => rest) });
 }
 
 function tintKey(state: RoomState): string {
-  return JSON.stringify([Object.entries(state.slots).map(([k, v]) => [k, v?.tint ?? null]), state.items.map((i) => i.tint ?? null)]);
+  return JSON.stringify([
+    Object.entries(state.slots).map(([k, v]) => [k, v?.tint ?? null, v?.pattern ?? null, v?.accent ?? null, v?.cycle ?? null]),
+    state.items.map((i) => [i.tint ?? null, i.pattern ?? null, i.accent ?? null]),
+  ]);
 }
 
+/** Everything about a layer's colour: a change here recolours just that layer. */
 function layerTint(l: SlotLayer | ItemLayer): string | null {
-  return l.tint;
+  if (!l.tint) return null;
+  const p = l.pattern;
+  return p ? `${l.tint}|${p.def.id}|${p.accent}|${p.period.join('x')}` : l.tint;
+}
+
+function glowKey(glows: readonly GlowLayer[]): string {
+  return glows.map((g) => `${g.src}:${g.effect ?? ''}:${g.tint ?? ''}:${g.cycle ? 1 : 0}`).join(',');
+}
+
+const isAnimatedGlow = (g: GlowLayer): boolean => Boolean(g.effect || g.cycle);
+
+function hashKey(key: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
+  return h | 0;
+}
+
+function reducedMotionQuery(): MediaQueryList | null {
+  try {
+    return typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  } catch {
+    return null;
+  }
 }
 const SEEDS = new WeakMap<GlowLayer, number>();
 
@@ -127,6 +171,18 @@ function ease(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
 }
 
+/** Dev only: the live renderers, for the perf harness (`globalThis.__seilinkRenderers`). */
+function devRenderers(): Set<RoomRenderer> {
+  const g = globalThis as { __seilinkRenderers?: Set<RoomRenderer> };
+  return (g.__seilinkRenderers ??= new Set());
+}
+
+/**
+ * A cycling light's colour moves in steps this long: 2.25 degrees of hue
+ * each, smooth to the eye, and its glow is recoloured 8 times a second
+ * instead of every frame.
+ */
+const CYCLE_STEP_MS = 125;
 export class RoomRenderer {
   private scene: Scene | null = null;
   private sceneSeq = 0;
@@ -149,9 +205,17 @@ export class RoomRenderer {
   private lastFrame = 0;
   private readySent = false;
   private lastOverlay = '';
-  private used = { front: false, glow: false };
+  private used = { front: false, glow: false, fx: false };
   private disposed = false;
   private reported = new Set<string>();
+  /** Live particle fields by ParticleLayer.key (kept across a time crossfade). */
+  private fields = new Map<string, { field: ParticleField; sig: string }>();
+  private lastFx: number | null = null;
+  private reduced: MediaQueryList | null = reducedMotionQuery();
+  /** Perf harness: particle frames drawn and the time they took. */
+  readonly fxStats = { frames: 0, ms: 0, particles: 0 };
+  /** Perf harness: animated frames drawn and the main-thread time each took (static compose, glow and particles). */
+  readonly frameStats = { frames: 0, ms: 0 };
 
   constructor(
     private readonly canvases: RoomRendererCanvases,
@@ -161,14 +225,25 @@ export class RoomRenderer {
     this.fps = opts.fps ?? 30;
     this.fadeMs = opts.fadeMs ?? 1200;
     document.addEventListener('visibilitychange', this.onVisibility);
+    this.reduced?.addEventListener?.('change', this.onReducedMotion);
+    // Dev builds: the shot and perf scripts read the stats of live renderers.
+    if (import.meta.env?.DEV) devRenderers().add(this);
   }
 
   dispose(): void {
     this.disposed = true;
+    if (import.meta.env?.DEV) devRenderers().delete(this);
     cancelAnimationFrame(this.raf);
     document.removeEventListener('visibilitychange', this.onVisibility);
+    this.reduced?.removeEventListener?.('change', this.onReducedMotion);
     this.caches.clear();
     this.building.clear();
+    this.fields.clear();
+  }
+
+  /** The system asks for reduced motion: particles show one still picture (rain left out), no loop. */
+  get reducedMotion(): boolean {
+    return Boolean(this.reduced?.matches);
   }
 
   /** New manifest / state / pack. Caches rebuild; the old picture stays until the new one is ready. */
@@ -244,6 +319,14 @@ export class RoomRenderer {
   // ── internals ─────────────────────────────────────────────────────────────
 
   private onVisibility = (): void => {
+    // Back from hidden: the step after the gap is capped (particleDt), nothing jumps.
+    this.kick();
+  };
+
+  private onReducedMotion = (): void => {
+    this.fields.clear();
+    this.syncFields();
+    this.drawFx(performance.now());
     this.kick();
   };
 
@@ -271,6 +354,8 @@ export class RoomRenderer {
     for (const t of [...this.caches.keys()]) if (!keep.has(t)) this.caches.delete(t);
     this.composeStatic(true);
     this.drawGlow(performance.now());
+    this.syncFields();
+    this.drawFx(performance.now());
     if (!this.readySent) {
       this.readySent = true;
       this.events.onReady?.();
@@ -325,17 +410,55 @@ export class RoomRenderer {
       drawRoomLayers(fctx, front, manifest.canvas, this.assets, res);
     }
 
-    const still = plan.glows.filter((g) => !g.effect);
-    const animated = plan.glows.filter((g) => g.effect);
+    const { still: glowStill, animated } = this.buildGlows(plan, w, h, res, manifest.canvas);
+
+    // Particles outside are seen only through the glass: the view box minus
+    // what the back layers above the view draw over it.
+    let glass: TimeCache['glass'] = null;
+    const outside = plan.particles.find((p) => p.where === 'outside');
+    if (outside && this.canvases.fx) {
+      const owner = outside.owner;
+      const at = back.indexOf(owner);
+      const box: RoomBox = owner.kind === 'slot' && owner.box ? owner.box : outside.area;
+      const shell = back.find((l): l is SlotLayer => l.kind === 'slot' && l.slot === 'shell');
+      const glassImg = shell?.frame.glass ? this.assets.masks.get(shell.frame.glass) : undefined;
+      const above = at >= 0 ? back.slice(at + 1) : [];
+      glass = tightenGlass(
+        box,
+        buildGlassMask(box, res, (ctx) => drawRoomLayers(ctx, above, manifest.canvas, this.assets, res), glassImg && shell ? { image: glassImg, rect: shell.box ?? [0, 0, cw, ch] } : null),
+      );
+    }
+
+    return {
+      time,
+      plan,
+      splits: {},
+      back: backC,
+      front: frontC,
+      glowStill,
+      glowAnimated: animated,
+      particles: plan.particles,
+      glass,
+      sampled: sampleColour(backC, frontC),
+    };
+  }
+
+  /** Still glows pre-composited, and the ones drawn per frame. */
+  private buildGlows(plan: RoomDrawPlan, w: number, h: number, res: number, canvas: readonly [number, number]): { still: AnyCanvas | null; animated: GlowLayer[] } {
+    const still = plan.glows.filter((g) => !isAnimatedGlow(g));
+    const animated = plan.glows.filter(isAnimatedGlow);
     let glowStill: AnyCanvas | null = null;
     if (still.length > 0) {
       glowStill = makeCanvas(w, h);
       const gctx = ctx2d(glowStill);
       gctx.setTransform(res, 0, 0, res, 0, 0);
-      drawRoomGlows(gctx, still, manifest.canvas, this.assets, () => 1);
+      // Glows add up by screen, as the layer meets the scene: a glow file's
+      // opaque black must not cover the glows under it.
+      gctx.globalCompositeOperation = 'screen';
+      drawRoomGlows(gctx, still, canvas, this.assets, () => 1);
+      gctx.globalCompositeOperation = 'source-over';
     }
-
-    return { time, plan, splits: {}, back: backC, front: frontC, glowStill, glowAnimated: animated, sampled: sampleColour(backC, frontC) };
+    return { still: glowStill, animated };
   }
 
   // ── recolour fast path ────────────────────────────────────────────────────
@@ -366,6 +489,8 @@ export class RoomRenderer {
         });
         this.composeStatic(true);
         this.drawGlow(performance.now());
+        // A light switched to (or off) cycling starts (or may stop) the loop.
+        this.kick();
       } while (this.retintAgain);
     } finally {
       this.retinting = false;
@@ -374,6 +499,12 @@ export class RoomRenderer {
 
   private retintCache(c: TimeCache, plan: RoomDrawPlan, manifest: RoomPresetManifest): void {
     const canvas = manifest.canvas;
+    // A light's colour (glowTint) or cycle moved: its glows again (they are small).
+    if (glowKey(plan.glows) !== glowKey(c.plan.glows)) {
+      const { still, animated } = this.buildGlows(plan, c.back.width, c.back.height, this.res, canvas);
+      c.glowStill = still;
+      c.glowAnimated = animated;
+    }
     const next = splitAtAvatar(plan);
     const prev = splitAtAvatar(c.plan);
     for (const side of ['back', 'front'] as const) {
@@ -446,7 +577,8 @@ export class RoomRenderer {
     if (!scene) return;
     const w = Math.round(scene.manifest.canvas[0] * this.res);
     const h = Math.round(scene.manifest.canvas[1] * this.res);
-    for (const c of [this.canvases.back, this.canvases.front, this.canvases.glow]) {
+    for (const c of [this.canvases.back, this.canvases.front, this.canvases.glow, this.canvases.fx]) {
+      if (!c) continue;
       if (c.width !== w || c.height !== h) {
         c.width = w;
         c.height = h;
@@ -496,6 +628,7 @@ export class RoomRenderer {
     this.setUsed({
       front: Boolean(from.front || to.front),
       glow: Boolean(from.glowStill || to.glowStill || from.glowAnimated.length || to.glowAnimated.length),
+      fx: Boolean(this.canvases.fx && (from.particles.length || to.particles.length)),
     });
     this.emitOverlay(mix);
   }
@@ -516,6 +649,9 @@ export class RoomRenderer {
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     const animate = this.fps > 0;
     const parts: Array<[TimeCache, number]> = from === to ? [[to, 1]] : [[from, 1 - t], [to, t]];
+    // Screen, like the layer over the scene: black in a glow file adds nothing
+    // (source-over let an animated light's black box hide the still glows).
+    ctx.globalCompositeOperation = 'screen';
     for (const [c, w] of parts) {
       if (w <= 0) continue;
       if (c.glowStill) {
@@ -525,16 +661,89 @@ export class RoomRenderer {
       }
       if (c.glowAnimated.length) {
         ctx.setTransform(this.res, 0, 0, this.res, 0, 0);
-        drawRoomGlows(ctx, c.glowAnimated, scene.manifest.canvas, this.assets, (g) => w * (animate ? glowAlpha(g.effect, now, seedOf(g, g.z)) : 1));
+        drawRoomGlows(
+          ctx,
+          c.glowAnimated,
+          scene.manifest.canvas,
+          this.assets,
+          (g) => w * (animate && g.effect ? glowAlpha(g.effect, now, seedOf(g, g.z)) : 1),
+          (g) => (g.cycle ? cycleColour(animate ? Math.floor(now / CYCLE_STEP_MS) * CYCLE_STEP_MS : 0, (seedOf(g, g.z) / 6.283) * 0.15) : (g.tint ?? null)),
+        );
         ctx.setTransform(1, 0, 0, 1, 0, 0);
       }
     }
+    ctx.globalCompositeOperation = 'source-over';
   }
 
   private hasAnimation(): boolean {
     if (this.fade) return true;
     for (const c of this.caches.values()) if (c.glowAnimated.length) return true;
+    if (this.canvases.fx && !this.reducedMotion) for (const c of this.caches.values()) if (c.particles.length) return true;
     return false;
+  }
+
+  // ── particles ─────────────────────────────────────────────────────────────
+
+  /** The particle layers of the caches on screen, with their crossfade weights. */
+  private particleParts(): Array<[TimeCache, number]> {
+    const mix = this.currentMix();
+    if (!mix) return [];
+    const a = this.caches.get(mix.from);
+    const b = this.caches.get(mix.to);
+    if (!a && !b) return [];
+    const from = a ?? b!;
+    const to = b ?? a!;
+    if (from === to) return [[to, 1]];
+    const t = Math.max(0, Math.min(1, mix.t));
+    return [[from, 1 - t], [to, t]];
+  }
+
+  /** Make (or keep) a field per particle layer on screen, under the scene cap. */
+  private syncFields(): void {
+    if (!this.canvases.fx) return;
+    const layers = new Map<string, ParticleLayer>();
+    for (const [c] of this.particleParts()) for (const l of c.particles) if (!layers.has(l.key)) layers.set(l.key, l);
+    const list = [...layers.values()];
+    const counts = fitCounts(list.map((l) => particleCount(l.spec, l.area)));
+    const live = new Set<string>();
+    list.forEach((l, i) => {
+      live.add(l.key);
+      const sig = `${l.area.join(',')}:${counts[i]}:${JSON.stringify(l.spec)}`;
+      const hit = this.fields.get(l.key);
+      if (hit && hit.sig === sig) return;
+      const field = createField(l.spec, l.area, hashKey(l.key), counts[i]);
+      // Reduced motion: one settled picture, so embers and drops are mid-life rather than all at birth.
+      if (this.reducedMotion) settle(field);
+      this.fields.set(l.key, { field, sig });
+    });
+    for (const k of [...this.fields.keys()]) if (!live.has(k)) this.fields.delete(k);
+  }
+
+  private drawFx(now: number): void {
+    const fx = this.canvases.fx;
+    if (!fx) return;
+    const t0 = performance.now();
+    const parts = this.particleParts();
+    const still = this.reducedMotion;
+    const dt = still || this.fps <= 0 ? 0 : particleDt(this.lastFx, now);
+    this.lastFx = now;
+    if (dt > 0) for (const { field } of this.fields.values()) stepField(field, dt);
+    const ctx = ctx2d(fx);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.clearRect(0, 0, fx.width, fx.height);
+    let n = 0;
+    const drawn = parts.filter(([c, w]) => w > 0 && c.particles.length > 0);
+    for (const [c, w] of drawn) {
+      // Alone on the cleared canvas: masked in place (see drawParticleLayers).
+      drawParticleLayers(ctx, c.particles, this.res, w, (l) => this.fields.get(l.key)?.field ?? null, c.glass, still, showsStill, drawn.length === 1);
+      for (const l of c.particles) n += this.fields.get(l.key)?.field.particles.length ?? 0;
+    }
+    if (n) {
+      this.fxStats.frames++;
+      this.fxStats.ms += performance.now() - t0;
+      this.fxStats.particles = n;
+    }
   }
 
   /** Start the loop if anything moves; it stops itself when nothing does. */
@@ -560,16 +769,23 @@ export class RoomRenderer {
           this.fade = null;
           void this.refresh();
         }
+        const t0 = performance.now();
         this.composeStatic();
         this.drawGlow(now);
+        this.drawFx(now);
+        this.frameStats.frames++;
+        this.frameStats.ms += performance.now() - t0;
       }
       if (this.hasAnimation()) this.raf = requestAnimationFrame(step);
+      // The loop stops (covered, paused, hidden): the next start steps from scratch, capped.
+      else this.lastFx = null;
     };
+    this.lastFx = null;
     this.raf = requestAnimationFrame(step);
   }
 
-  private setUsed(used: { front: boolean; glow: boolean }): void {
-    if (used.front === this.used.front && used.glow === this.used.glow) return;
+  private setUsed(used: { front: boolean; glow: boolean; fx: boolean }): void {
+    if (used.front === this.used.front && used.glow === this.used.glow && used.fx === this.used.fx) return;
     this.used = used;
     this.events.onLayersUsed?.(used);
   }

@@ -92,13 +92,20 @@ per app run.
 
 | Event | When | Props | Answers |
 |---|---|---|---|
-| `seilink_editor_session` | the editor closes, or the window goes away with it open (one per session; a drag is one edit) | opened_from `gear`/`dock`/`move_in`/`other`, duration_ms, preset, preset_end, first_panel, panels_opened, `panel_<avatar/room/fabrics/furniture/items>`, edits, `edit_<type>`, undos, saves, save_failures, avatar_upload_start/ok/fail, `avatar_fail_<not_zip/too_big/import_failed>`, dirty_at_close, outcome `saved`/`no_changes`/`discarded`, errors | Do people edit, what they change, do they save |
+| `seilink_editor_session` | the editor closes, or the window goes away with it open (one per session; a drag is one edit) | opened_from `gear`/`dock`/`move_in`/`other`, duration_ms, preset, preset_end, first_panel, panels_opened, `panel_<avatar/room/fabrics/furniture/items>`, edits, `edit_<type>`, undos, saves, save_failures, avatar_upload_start/ok/fail, `avatar_fail_<not_zip/too_big/import_failed>`, dirty_at_close, outcome `saved`/`no_changes`/`discarded`, errors; 261105 catalog: `edit_pattern_change`/`edit_accent_change`/`edit_light_colour`/`edit_light_cycle`, patterned_at_close, accents_at_close, cycling_lights_at_close, particle_parts_at_close, particles_on, last_pattern (a code pattern, a painted tile id, `plain` or `other`) | Do people edit, what they change, do they save; do patterns and light colours get used |
 | `seilink_editor_error` | first time per kind per session | kind `load_failed`/`no_packs`/`save_failed`/`avatar_import_failed`, opened_from | Editor breakage |
 
 Edit types (`classifyEdit`, a diff of two history entries):
 `swap_component`, `view_change`, `recolour`, `remove_slot`, `add_item`,
 `move_item`, `scale_item`, `flip_item`, `recolour_item`, `layer_item`,
 `delete_item`, `preset_change`, `time_of_day`, `avatar_change`.
+261105: `pattern_change` (slot or item), `accent_change` (the second
+pattern colour), `light_colour` (a recolour of a slot the editor names as a
+light, via `setLightSlots`; other slots stay `recolour`), `light_cycle` (the
+colour cycle turned on or off). There is no separate particles toggle: an
+optional slot whose part shows particles (forest fireflies) counts as a
+swap or removal, and `particle_parts_at_close` / `particles_on` give the
+state at close.
 
 ## Errors
 

@@ -18,7 +18,9 @@ import {
   type EditorError,
   type EditorOpenedFrom,
   type EditorPanel,
+  type RoomShapeAtClose,
 } from '@shared/seilinkTelemetry';
+import type { RoomSlotId } from '@shared/seilinkRoom';
 import { sei } from '../ipcClient';
 
 export interface EditorTelemetry {
@@ -43,6 +45,10 @@ export interface EditorAnalyticsInput {
   saving: 'idle' | 'saving' | 'saved' | 'error';
   loadError: boolean;
   packsEmpty: boolean;
+  /** 261105: slots whose recolour is a light colour (lightSlotsOf the current pack). */
+  lightSlots?: ReadonlySet<RoomSlotId>;
+  /** 261105: the room's shape at close (roomShapeOf), read when the session ends. */
+  shape?: () => RoomShapeAtClose | undefined;
 }
 
 export interface EditorAnalytics {
@@ -56,6 +62,8 @@ export function useEditorAnalytics(telemetry: EditorTelemetry | null | undefined
   const [session] = useState(() => ({ tracker: new EditorSessionTracker(openedFrom, Date.now()), at: Date.now() }));
   const historyRef = useRef(input.history);
   historyRef.current = input.history;
+  const shapeRef = useRef(input.shape);
+  shapeRef.current = input.shape;
 
   const error = useCallback(
     (kind: EditorError) => {
@@ -67,6 +75,10 @@ export function useEditorAnalytics(telemetry: EditorTelemetry | null | undefined
   useEffect(() => {
     if (on) session.tracker.history(input.history);
   }, [on, session, input.history]);
+
+  useEffect(() => {
+    if (on && input.lightSlots) session.tracker.setLightSlots(input.lightSlots);
+  }, [on, session, input.lightSlots]);
 
   useEffect(() => {
     if (on) session.tracker.panel(input.panel);
@@ -94,7 +106,13 @@ export function useEditorAnalytics(telemetry: EditorTelemetry | null | undefined
       const now = Date.now();
       if (!session.tracker.touched && now - session.at < THROWAWAY_SESSION_MS) return;
       const h = historyRef.current;
-      const props = session.tracker.finish(now, h ? isDirty(h) : false, characterId);
+      let shape: RoomShapeAtClose | undefined;
+      try {
+        shape = shapeRef.current?.();
+      } catch {
+        shape = undefined;
+      }
+      const props = session.tracker.finish(now, h ? isDirty(h) : false, characterId, shape);
       if (props) track(SEILINK_EDITOR_SESSION_EVENT, props);
     };
     window.addEventListener('pagehide', finish);

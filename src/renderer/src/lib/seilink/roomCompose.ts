@@ -13,10 +13,16 @@
  * through a scratch with its base faded into the top (sinkKeep), over a soft
  * contact shadow as wide as its base. Both happen when a cached layer is
  * built, never per frame.
+ *
+ * 261105 catalog: a patterned layer multiplies by its colour canvas
+ * (roomPattern.ts) instead of a flat tint; a `fit: 'cover'` slot is cropped
+ * to its box (coverCrop); a light's glow can be lit in a colour (its grey
+ * version times the colour, per frame while it cycles).
  */
 import {
   baseSpan,
   contactShadow,
+  coverCrop,
   itemRect,
   sinkKeep,
   sinkLook,
@@ -29,12 +35,18 @@ import {
 } from '@shared/seilinkDraw';
 import type { RoomBox, RoomPolygon } from '@shared/seilinkRoom';
 import type { RoomUrlResolver } from '@shared/seilinkPack';
-import { ctx2d, loadRoomGlow, loadRoomImage, loadRoomMask, makeCanvas, maskBounds, type AnyCanvas, type AnyContext2D, type TrimmedGlow } from './roomImages';
+import { mipTile, type MipTile } from '@shared/seilinkPatterns';
+import { ctx2d, loadPatternTileGrey, loadRoomGlow, loadRoomGlowGrey, loadRoomImage, loadRoomMask, makeCanvas, maskBounds, type AnyCanvas, type AnyContext2D, type TrimmedGlow } from './roomImages';
+import { patternColour } from './roomPattern';
 
 export interface RoomAssets {
   images: Map<string, ImageBitmap>;
   masks: Map<string, ImageBitmap>;
   glows: Map<string, TrimmedGlow>;
+  /** 261105: painted pattern tiles by pack path. */
+  tiles?: Map<string, MipTile>;
+  /** 261105: glows with their colour taken out, for lights lit in a colour. */
+  glowsGrey?: Map<string, TrimmedGlow>;
 }
 
 export interface RoomAssetError {
@@ -43,7 +55,7 @@ export interface RoomAssetError {
 }
 
 /** Load everything a plan draws. Missing files are reported, not thrown: the rest still draws. */
-export async function loadPlanAssets(plan: RoomDrawPlan, resolve: RoomUrlResolver, into?: RoomAssets): Promise<{ assets: RoomAssets; errors: RoomAssetError[] }> {
+export async function loadPlanAssets(plan: Pick<RoomDrawPlan, 'layers' | 'glows'> & Partial<RoomDrawPlan>, resolve: RoomUrlResolver, into?: RoomAssets): Promise<{ assets: RoomAssets; errors: RoomAssetError[] }> {
   const assets: RoomAssets = into ?? { images: new Map(), masks: new Map(), glows: new Map() };
   const errors: RoomAssetError[] = [];
   const jobs: Array<Promise<void>> = [];
@@ -60,8 +72,15 @@ export async function loadPlanAssets(plan: RoomDrawPlan, resolve: RoomUrlResolve
     if (l.kind === 'avatar') continue;
     want(assets.images, l.frame.src, loadRoomImage);
     if (l.tint && l.frame.mask) want(assets.masks, l.frame.mask, loadRoomMask);
+    // 261105: an indoor shell's window glass (where rain runs and view particles show).
+    if (l.frame.glass && plan.particles?.length) want(assets.masks, l.frame.glass, loadRoomMask);
+    const tile = l.pattern?.def.made === 'tile' ? l.pattern.def.tile : undefined;
+    if (tile) want((assets.tiles ??= new Map()), tile, async (url) => mipTile(await loadPatternTileGrey(url)));
   }
-  for (const g of plan.glows) want(assets.glows, g.src, loadRoomGlow);
+  for (const g of plan.glows) {
+    want(assets.glows, g.src, loadRoomGlow);
+    if (g.tint || g.cycle) want((assets.glowsGrey ??= new Map()), g.src, loadRoomGlowGrey);
+  }
   await Promise.all(jobs);
   return { assets, errors };
 }
@@ -101,7 +120,17 @@ function drawFlipped(ctx: AnyContext2D, img: CanvasImageSource, [x, y, w, h]: Ro
  * the scratch size. `clip` (canvas px) limits the work to a region: the
  * recolour fast path redraws only where the mask is.
  */
-function drawTinted(ctx: AnyContext2D, frame: ImageBitmap, mask: ImageBitmap, tint: string, rect: RoomBox, scale: number, flip = false, clip?: RoomBox): void {
+function drawTinted(
+  ctx: AnyContext2D,
+  frame: ImageBitmap,
+  mask: ImageBitmap,
+  tint: string,
+  rect: RoomBox,
+  scale: number,
+  flip = false,
+  clip?: RoomBox,
+  colour?: { canvas: AnyCanvas; rect: RoomBox } | null,
+): void {
   let [x, y, w, h] = rect;
   // Source regions of the frame and the mask (they may differ in size).
   let fx = 0;
@@ -139,8 +168,17 @@ function drawTinted(ctx: AnyContext2D, frame: ImageBitmap, mask: ImageBitmap, ti
   sc.clearRect(0, 0, sw, sh);
   sc.drawImage(frame, fx, fy, fw, fh, 0, 0, sw, sh);
   sc.globalCompositeOperation = 'multiply';
-  sc.fillStyle = tint;
-  sc.fillRect(0, 0, sw, sh);
+  if (colour) {
+    // The pattern's colours over the mask's bounds (outside them the mask is empty anyway).
+    const [rx, ry, rw, rh] = colour.rect;
+    const kx = sw / w;
+    const ky = sh / h;
+    sc.imageSmoothingEnabled = true;
+    sc.drawImage(colour.canvas, (rx - x) * kx, (ry - y) * ky, rw * kx, rh * ky);
+  } else {
+    sc.fillStyle = tint;
+    sc.fillRect(0, 0, sw, sh);
+  }
   sc.globalCompositeOperation = 'destination-in';
   sc.drawImage(mask, mx, my, mw, mh, 0, 0, sw, sh);
   sc.drawImage(frame, fx, fy, fw, fh, 0, 0, sw, sh);
@@ -199,14 +237,20 @@ function intersect(a: RoomBox, b: RoomBox | undefined): RoomBox {
   return [x, y, Math.max(0, Math.min(a[0] + a[2], b[0] + b[2]) - x), Math.max(0, Math.min(a[1] + a[3], b[1] + b[3]) - y)];
 }
 
-/** One layer as it is, with its tint when it has one. */
+/** One layer as it is, with its tint (or pattern) when it has one. */
 function drawPlain(ctx: AnyContext2D, l: SlotLayer | ItemLayer, img: ImageBitmap, rect: RoomBox, assets: RoomAssets, scale: number, clip?: RoomBox): void {
   if (l.tint && l.frame.mask) {
     const mask = assets.masks.get(l.frame.mask);
     if (mask) {
-      drawTinted(ctx, img, mask, l.tint, rect, scale, l.kind === 'item' && l.flip, clip);
+      const colour = l.pattern ? patternColour(l, rect, img, mask, assets.tiles, scale) : null;
+      drawTinted(ctx, img, mask, l.tint, rect, scale, l.kind === 'item' && l.flip, clip, colour);
       return;
     }
+  }
+  if (l.kind === 'slot' && l.component.fit === 'cover' && l.box) {
+    const [sx, sy, sw, sh] = coverCrop([img.width, img.height], [rect[2], rect[3]], l.component.focus);
+    ctx.drawImage(img, sx, sy, sw, sh, rect[0], rect[1], rect[2], rect[3]);
+    return;
   }
   drawFlipped(ctx, img, rect, l.kind === 'item' && l.flip);
 }
@@ -345,13 +389,64 @@ function clipTo(ctx: AnyContext2D, polys: readonly RoomPolygon[]): void {
   ctx.clip();
 }
 
-/** Draw glows (into a layer that is screen-blended over the scene). `alpha(g)` is each glow's opacity. */
+const litGlows = new Map<string, { colour: string; canvas: AnyCanvas }>();
+// Keyed by the glow's bitmap: a pack reload makes new bitmaps, so new keys (the LRU drops the old).
+const litIds = new WeakMap<ImageBitmap, number>();
+let nextLitId = 1;
+const LIT_MAX = 16;
+
+/**
+ * A grey glow multiplied by a colour, at its own trimmed size, on a canvas
+ * of its own: a canvas that did not change this frame is a cheap blit, and
+ * recolouring one every frame is not (on a software GPU). A light that keeps
+ * its colour (`cycling` false) is cached per glow + colour; a cycling one
+ * keeps one canvas per glow, recoloured only when its colour moves (the
+ * renderer steps the cycle, see CYCLE_STEP_MS).
+ */
+function colouredGlow(glow: TrimmedGlow, colour: string, cycling: boolean): AnyCanvas | null {
+  const bitmap = glow.bitmap;
+  if (!bitmap) return null;
+  const { w, h } = glow;
+  let id = litIds.get(bitmap);
+  if (!id) litIds.set(bitmap, (id = nextLitId++));
+  const key = cycling ? `${id}|cycle` : `${id}|${colour}`;
+  const hit = litGlows.get(key);
+  if (hit && hit.colour === colour) {
+    litGlows.delete(key);
+    litGlows.set(key, hit);
+    return hit.canvas;
+  }
+  const c = hit?.canvas ?? makeCanvas(w, h);
+  const sc = ctx2d(c);
+  sc.save();
+  sc.setTransform(1, 0, 0, 1, 0, 0);
+  sc.globalCompositeOperation = 'source-over';
+  sc.clearRect(0, 0, w, h);
+  sc.drawImage(bitmap, 0, 0);
+  sc.globalCompositeOperation = 'multiply';
+  sc.fillStyle = colour;
+  sc.fillRect(0, 0, w, h);
+  sc.globalCompositeOperation = 'destination-in';
+  sc.drawImage(bitmap, 0, 0);
+  sc.restore();
+  litGlows.delete(key);
+  litGlows.set(key, { colour, canvas: c });
+  while (litGlows.size > LIT_MAX) litGlows.delete(litGlows.keys().next().value as string);
+  return c;
+}
+
+/**
+ * Draw glows (into a layer that is screen-blended over the scene). `alpha(g)`
+ * is each glow's opacity; `colour(g)` (261105) the colour a light is lit in,
+ * or null for the glow's own colours.
+ */
 export function drawRoomGlows(
   ctx: AnyContext2D,
   glows: ReadonlyArray<GlowLayer>,
   canvas: readonly [number, number],
   assets: RoomAssets,
   alpha: (g: GlowLayer) => number,
+  colour: (g: GlowLayer) => string | null = (g) => g.tint ?? null,
 ): void {
   for (const g of glows) {
     const glow = assets.glows.get(g.src);
@@ -365,7 +460,23 @@ export function drawRoomGlows(
     const flip = g.owner.kind === 'item' && g.owner.flip;
     const gx = flip ? x + (glow.fw - glow.x - glow.w) * sx : x + glow.x * sx;
     ctx.globalAlpha = Math.min(1, a);
-    drawFlipped(ctx, glow.bitmap, [gx, y + glow.y * sy, glow.w * sx, glow.h * sy], flip);
+    const tint = colour(g);
+    const grey = tint ? assets.glowsGrey?.get(g.src) : undefined;
+    const lit = grey && tint ? colouredGlow(grey, tint, !!g.cycle) : null;
+    const dest: RoomBox = [gx, y + glow.y * sy, glow.w * sx, glow.h * sy];
+    if (lit && grey) {
+      if (flip) {
+        ctx.save();
+        ctx.translate(dest[0] + dest[2], dest[1]);
+        ctx.scale(-1, 1);
+        ctx.drawImage(lit, 0, 0, grey.w, grey.h, 0, 0, dest[2], dest[3]);
+        ctx.restore();
+      } else {
+        ctx.drawImage(lit, 0, 0, grey.w, grey.h, dest[0], dest[1], dest[2], dest[3]);
+      }
+    } else {
+      drawFlipped(ctx, glow.bitmap, dest, flip);
+    }
   }
   ctx.globalAlpha = 1;
 }

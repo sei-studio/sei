@@ -86,7 +86,39 @@
  *    Prefer surfaceTops over surfaceLines / surfaceAreas, which still work.
  *  - Items on one part's tops draw in order of the tops (back to front by
  *    their y): items on a top, then its lip, then the next top's items.
+ *
+ * 261105 (room catalog engine, Shawn msgs 1590 + 1627), all optional, so
+ * every pack and saved room from before reads and draws exactly as it did:
+ *  - Patterns (seilinkPatterns.ts): a tintable component offers patterns
+ *    through `patternSurface` (every pattern made for that kind of surface)
+ *    or an explicit `patterns` list. `patternQuads` are its flat planes in
+ *    FRAME px (the frame image's own pixels: canvas px for a full-canvas
+ *    slot, sprite px for an item); without them the pattern lies flat over
+ *    the frame. The state's slot (or item) entry gains `pattern` ('plain'
+ *    for an explicit plain over a `defaultPattern`) and `accent` (the second
+ *    colour; absent = tone-on-tone of the tint). Painted tiles are listed in
+ *    the manifest's `patternTiles`, their files under the shared folder.
+ *  - Shared files: a path starting `_shared/` is read from the shared pack
+ *    folder next to the packs (resources/seilink-packs/_shared), so packs
+ *    share window views and pattern tiles. A component with `fit: 'cover'`
+ *    scales its frame to cover its box keeping its aspect, cropped around
+ *    `focus` ([0..1, 0..1], default the centre), so one view fits windows of
+ *    any shape.
+ *  - Light colour: a frame's `glowTint` lights its glow in the part's tint
+ *    (the glow's brightness times the colour). `cycle` on a component offers
+ *    a colour-cycle choice (state `cycle: true`): the light runs through the
+ *    hues on its own.
+ *  - Particles: a frame's `particles` are procedural weather and ambience
+ *    (rain, snow, petals, fireflies, embers, dust; seilinkParticles.ts). On
+ *    a view they fall outside, behind the room's glass; elsewhere they are
+ *    drawn over the scene in their `area`. Particle-only parts (fireflies)
+ *    use the shared blank frame.
+ *  - Slots `lights` (string lights, fireflies) and `tree` (forest), and a
+ *    per-pack editor `label` on each slot def (English, translated in the
+ *    i18n dictionaries): forest calls its bed slot "Tent".
  */
+import { CODE_PATTERNS, PATTERN_ID_RE, codePattern, toneOnTone, type PatternDef, type PatternQuad, type PatternSurface } from './seilinkPatterns';
+import type { RoomParticles } from './seilinkParticles';
 
 export const SEILINK_ROOM_FORMAT = 'sei-room' as const;
 export const SEILINK_ROOM_VERSION = 1 as const;
@@ -107,7 +139,9 @@ export type RoomSlotId =
   | 'chair' // drawn behind her
   | 'lamp'
   | 'rug'
-  | 'campfire';
+  | 'campfire'
+  | 'lights' // string lights, fairy lights, fireflies (261105)
+  | 'tree'; // forest: the tree at the side of the clearing (261105)
 
 /** z of the avatar. Slots below it are behind her, above it in front. */
 export const AVATAR_Z = 100;
@@ -138,6 +172,18 @@ export interface RoomFrame {
   glow?: string;
   /** How the glow moves (261104). Absent: a still glow. */
   effect?: RoomGlowEffect;
+  /** 261105: the glow is lit in the part's tint (its brightness times the colour), so a light can be any colour. */
+  glowTint?: boolean;
+  /** 261105: procedural weather and ambience this frame shows (see the header). */
+  particles?: RoomParticles[];
+  /**
+   * 261105, indoor shell: white where the window glass is. Rain streaks run
+   * down it and view particles stay behind it. Absent: the glass is worked
+   * out from the view box minus what the room draws over it.
+   */
+  glass?: string;
+  /** 261105: pattern planes for this time's frame when they differ from the component's. */
+  patternQuads?: PatternQuad[];
 }
 
 export type RoomGlowEffect = 'flicker' | 'pulse';
@@ -178,6 +224,45 @@ export interface RoomComponent {
   blocks?: { floor?: RoomPolygon[]; wall?: RoomPolygon[] };
   /** Tintable components: colours the editor offers first. */
   swatches?: string[];
+  /** 261105: scale the frame to cover `box` keeping its aspect (shared views), cropped around `focus`. */
+  fit?: 'cover';
+  /** 261105: [0..1, 0..1] point of the frame kept in view by fit 'cover' (default the centre). */
+  focus?: [number, number];
+  /** 261105 patterns: the kind of surface (offers every pattern made for it). */
+  patternSurface?: PatternSurface;
+  /** 261105 patterns: the pattern ids offered, over patternSurface's list. */
+  patterns?: string[];
+  /** 261105 patterns: the tinted area's flat planes, frame px (see seilinkPatterns.ts). */
+  patternQuads?: PatternQuad[];
+  /** 261105 patterns: pattern size on this part (1 = the pattern's own period). */
+  patternScale?: number;
+  /** 261105 patterns: the pattern when the state names none. */
+  defaultPattern?: string;
+  /** 261105 patterns: the second colour when the state names none (else tone-on-tone of the tint). */
+  defaultAccent?: string;
+  /** 261105 light colour: offer a colour-cycle choice. */
+  cycle?: boolean;
+}
+
+/** A painted pattern tile a pack offers (261105). The file is greyscale-ish: light = base, dark = accent. */
+export interface RoomPatternTile {
+  id: string;
+  name: string;
+  adjective: string;
+  /** Pack-relative file, usually under `_shared/patterns/`. Seamless. */
+  tile: string;
+  /** Surface px one tile covers. */
+  period: [number, number];
+  surfaces: PatternSurface[];
+}
+
+/** A slot or item's pattern and colours, resolved (see resolvePattern). */
+export interface RoomPatternChoice {
+  def: PatternDef;
+  /** Hex. */
+  accent: string;
+  /** Surface px per tile on this part. */
+  period: [number, number];
 }
 
 /** Room editor panels that list slots (the rail's Room, Walls & fabrics and Furniture tiles). */
@@ -197,6 +282,8 @@ export interface RoomSlotDef {
    * she only recolours, not furniture.
    */
   group?: RoomEditorGroup;
+  /** 261105: the editor's name for this slot in this pack (English; i18n translates it). Forest: bed = "Tent". */
+  label?: string;
 }
 
 export interface RoomPresetManifest {
@@ -220,6 +307,8 @@ export interface RoomPresetManifest {
   components: RoomComponent[];
   /** Hex colours per time of day for the editor overlay tint (light room, light overlay). */
   overlay?: Partial<Record<RoomTime, string>>;
+  /** 261105: painted pattern tiles offered next to the code patterns. */
+  patternTiles?: RoomPatternTile[];
 }
 
 export interface RoomItemPlacement {
@@ -233,6 +322,22 @@ export interface RoomItemPlacement {
   z?: number;
   /** Hex tint for a tintable item (else its defaultTint). */
   tint?: string;
+  /** 261105: pattern id ('plain' = none over a default pattern). */
+  pattern?: string;
+  /** 261105: second pattern colour, hex. */
+  accent?: string;
+}
+
+/** What the state says about one slot. Every field but id is optional (rooms saved before 261105 have id + tint only). */
+export interface RoomSlotChoice {
+  id: string | null;
+  tint?: string;
+  /** 261105: pattern id ('plain' = none over a default pattern). */
+  pattern?: string;
+  /** 261105: second pattern colour, hex. */
+  accent?: string;
+  /** 261105: a light running through the colours (the component offers `cycle`). */
+  cycle?: boolean;
 }
 
 /** What a companion's room looks like. Lives on the device, a few KB. */
@@ -241,8 +346,8 @@ export interface RoomState {
   preset: RoomPresetId;
   /** auto follows the computer's clock. */
   time: RoomTime | 'auto';
-  /** Per slot: chosen component (null = empty optional slot) and tint. */
-  slots: Partial<Record<RoomSlotId, { id: string | null; tint?: string }>>;
+  /** Per slot: chosen component (null = empty optional slot), tint, pattern. */
+  slots: Partial<Record<RoomSlotId, RoomSlotChoice>>;
   items: RoomItemPlacement[];
   avatar: { kind: 'sei' } | { kind: 'live2d'; modelPath: string };
 }
@@ -263,19 +368,112 @@ export function resolveRoomTime(state: Pick<RoomState, 'time'>, now: Date = new 
   return state.time === 'auto' ? roomTimeAt(now) : state.time;
 }
 
+export interface ResolvedSlot {
+  slot: RoomSlotId;
+  component: RoomComponent;
+  tint?: string;
+  /** The pattern on it, or absent when plain. */
+  pattern?: RoomPatternChoice;
+  /** The light is cycling through the colours. */
+  cycle?: boolean;
+}
+
 /** The component in each slot after defaults (null = empty). */
-export function resolveSlots(manifest: RoomPresetManifest, state: RoomState): Array<{ slot: RoomSlotId; component: RoomComponent; tint?: string }> {
+export function resolveSlots(manifest: RoomPresetManifest, state: RoomState): ResolvedSlot[] {
   const byId = new Map(manifest.components.map((c) => [c.id, c]));
-  const out: Array<{ slot: RoomSlotId; component: RoomComponent; tint?: string }> = [];
+  const out: ResolvedSlot[] = [];
   for (const [slot, def] of Object.entries(manifest.slots) as Array<[RoomSlotId, RoomSlotDef]>) {
     const chosen = state.slots[slot];
     const id = chosen && chosen.id !== undefined ? chosen.id : def.options[0];
     if (id === null) continue;
     const component = byId.get(id) ?? byId.get(def.options[0]);
     if (!component) continue;
-    out.push({ slot, component, tint: chosen?.tint ?? component.defaultTint });
+    const tint = chosen?.tint ?? component.defaultTint;
+    const r: ResolvedSlot = { slot, component, tint };
+    const pattern = resolvePattern(manifest, component, tint, chosen?.pattern, chosen?.accent);
+    if (pattern) r.pattern = pattern;
+    if (chosen?.cycle && component.cycle && component.tintable) r.cycle = true;
+    out.push(r);
   }
   return out.sort((a, b) => manifest.slots[a.slot]!.z - manifest.slots[b.slot]!.z);
+}
+
+// ── Patterns (261105) ───────────────────────────────────────────────────────
+
+export const PLAIN_PATTERN = 'plain';
+
+/** The shared blank frame a particle-only part (fireflies) uses. */
+export const BLANK_FRAME = '_shared/blank.webp';
+
+function tileDef(t: RoomPatternTile): PatternDef {
+  return { id: t.id, name: t.name, adjective: t.adjective, period: t.period, surfaces: t.surfaces, made: 'tile', tile: t.tile };
+}
+
+/** Every pattern this pack knows: the code patterns plus its painted tiles (a tile never shadows a code id). */
+export function packPatterns(manifest: Pick<RoomPresetManifest, 'patternTiles'>): PatternDef[] {
+  const out: PatternDef[] = [...CODE_PATTERNS];
+  for (const t of manifest.patternTiles ?? []) if (!codePattern(t.id)) out.push(tileDef(t));
+  return out;
+}
+
+/** A pattern by id in this pack (code or tile), or undefined. */
+export function findPattern(manifest: Pick<RoomPresetManifest, 'patternTiles'>, id: string): PatternDef | undefined {
+  const c = codePattern(id);
+  if (c) return c;
+  const t = manifest.patternTiles?.find((p) => p.id === id);
+  return t ? tileDef(t) : undefined;
+}
+
+/** The patterns a component offers, in order (empty when it takes none). */
+export function patternsFor(manifest: Pick<RoomPresetManifest, 'patternTiles'>, component: RoomComponent): PatternDef[] {
+  if (!component.tintable) return [];
+  if (component.patterns) return component.patterns.map((id) => findPattern(manifest, id)).filter((p): p is PatternDef => Boolean(p));
+  const surface = component.patternSurface;
+  if (!surface) return [];
+  return packPatterns(manifest).filter((p) => p.surfaces.includes(surface));
+}
+
+/**
+ * The pattern a part shows: the state's choice over the component's default,
+ * only when the component offers it. null = plain.
+ */
+export function resolvePattern(
+  manifest: Pick<RoomPresetManifest, 'patternTiles'>,
+  component: RoomComponent,
+  tint: string | undefined,
+  pattern: string | undefined,
+  accent: string | undefined,
+): RoomPatternChoice | null {
+  const id = pattern ?? component.defaultPattern;
+  if (!id || id === PLAIN_PATTERN || !PATTERN_ID_RE.test(id)) return null;
+  const offered = patternsFor(manifest, component);
+  const def = offered.find((p) => p.id === id);
+  if (!def) return null;
+  const k = component.patternScale && component.patternScale > 0 ? component.patternScale : 1;
+  const base = tint ?? component.defaultTint ?? '#ffffff';
+  return { def, accent: accent ?? component.defaultAccent ?? toneOnTone(base), period: [def.period[0] * k, def.period[1] * k] };
+}
+
+// ── Editor labels (261105) ──────────────────────────────────────────────────
+
+/** The editor's default name per slot id (English keys of the i18n dictionaries). */
+export const DEFAULT_SLOT_LABEL: Readonly<Record<RoomSlotId, string>> = {
+  view: 'View',
+  shell: 'Walls',
+  curtains: 'Curtains',
+  bed: 'Bed',
+  shelf: 'Shelves',
+  chair: 'Chair',
+  lamp: 'Lamp',
+  rug: 'Rug',
+  campfire: 'Campfire',
+  lights: 'Lights',
+  tree: 'Tree',
+};
+
+/** The editor's name for a slot in this pack (English; pass through t()). */
+export function slotLabel(manifest: Pick<RoomPresetManifest, 'slots'>, slot: RoomSlotId): string {
+  return manifest.slots[slot]?.label ?? DEFAULT_SLOT_LABEL[slot];
 }
 
 /** Basic colour words for tints, so look() can say "purple curtains". */
@@ -298,21 +496,49 @@ export function tintName(hex: string | undefined): string | null {
   return 'pink';
 }
 
+/** How look()'s list names a frame's particles (embers go with the campfire, dust without saying). */
+const PARTICLE_WORDS: Readonly<Record<string, string | null>> = {
+  rain: 'rain falling outside',
+  snow: 'snow falling outside',
+  petals: 'petals drifting past',
+  fireflies: 'fireflies',
+  embers: null,
+  dust: null,
+};
+
 /** What the AI knows about her room: a place line and a plain item list. */
 export function describeRoom(manifest: RoomPresetManifest, state: RoomState, now: Date = new Date()): { place: string; time: RoomTime; things: string[] } {
   const time = resolveRoomTime(state, now);
   const things: string[] = [];
-  for (const { component, tint } of resolveSlots(manifest, state)) {
-    if (component.slot === 'shell' || component.slot === 'view') continue;
+  const say = (component: RoomComponent, tint: string | undefined, pattern: RoomPatternChoice | null | undefined, cycle?: boolean): string => {
+    if (cycle) return `colour-changing ${component.name}`;
     const colour = component.tintable ? tintName(tint) : null;
-    things.push(colour ? `${colour} ${component.name}` : component.name);
+    const words = [colour, pattern?.def.adjective].filter(Boolean);
+    return words.length ? `${words.join(' ')} ${component.name}` : component.name;
+  };
+  const weather = new Set<string>();
+  for (const { component, tint, pattern, cycle } of resolveSlots(manifest, state)) {
+    const frame = component.frames[time] ?? component.frames.day;
+    for (const p of frame.particles ?? []) {
+      const phrase = PARTICLE_WORDS[p.kind];
+      if (phrase) weather.add(phrase);
+    }
+    // A particle-only part (fireflies) is there only when its particles are.
+    if (component.slot === 'view' || frame.src === BLANK_FRAME) continue;
+    // The walls are named only when patterned ("striped walls"); plain walls go without saying.
+    if (component.slot === 'shell') {
+      if (pattern) things.push(`${say(component, tint, pattern)}`);
+      continue;
+    }
+    things.push(say(component, tint, pattern, cycle));
   }
   const byId = new Map(manifest.components.map((c) => [c.id, c]));
   for (const it of state.items) {
     const c = byId.get(it.id);
     if (!c) continue;
-    const colour = c.tintable ? tintName(it.tint ?? c.defaultTint) : null;
-    things.push(colour ? `${colour} ${c.name}` : c.name);
+    const tint = it.tint ?? c.defaultTint;
+    things.push(say(c, tint, resolvePattern(manifest, c, tint, it.pattern, it.accent)));
   }
+  things.push(...weather);
   return { place: manifest.place, time, things };
 }

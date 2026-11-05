@@ -19,8 +19,11 @@ import {
   type RoomComponent,
   type RoomItemPlacement,
   type RoomPresetManifest,
+  type RoomSlotChoice,
   type RoomSlotId,
   type RoomState,
+  PLAIN_PATTERN,
+  patternsFor,
 } from './seilinkRoom';
 import {
   placementOf,
@@ -130,7 +133,7 @@ export function defaultSpot(manifest: RoomPresetManifest, state: RoomState, comp
 
 // ── Edit ops (each returns a new state) ─────────────────────────────────────
 
-function withSlot(state: RoomState, slot: RoomSlotId, entry: { id: string | null; tint?: string }): RoomState {
+function withSlot(state: RoomState, slot: RoomSlotId, entry: RoomSlotChoice): RoomState {
   return { ...state, slots: { ...state.slots, [slot]: entry } };
 }
 
@@ -150,16 +153,70 @@ export function setSlotComponent(manifest: RoomPresetManifest, state: RoomState,
   if (id !== null && !def.options.includes(id)) return state;
   const prev = state.slots[slot];
   const next = manifest.components.find((c) => c.id === id);
-  const entry: { id: string | null; tint?: string } = { id };
+  const entry: RoomSlotChoice = { id };
   if (prev?.tint && next?.tintable) entry.tint = prev.tint;
+  // The pattern and second colour carry over when the new part offers that pattern (261105).
+  if (next && prev?.pattern && (prev.pattern === PLAIN_PATTERN ? next.defaultPattern : patternsFor(manifest, next).some((p) => p.id === prev.pattern))) {
+    entry.pattern = prev.pattern;
+  }
+  if (next?.tintable && prev?.accent) entry.accent = prev.accent;
+  if (next?.cycle && prev?.cycle) entry.cycle = true;
   // A part that held items or covered floor changes where things can stand.
   return settleItems(manifest, withSlot(state, slot, entry));
 }
 
+/** A slot's colour. Picking a colour stops a cycling light (it becomes that colour). Pattern and accent stay. */
 export function setSlotTint(manifest: RoomPresetManifest, state: RoomState, slot: RoomSlotId, tint: string): RoomState {
   const id = slotChoice(manifest, state, slot);
   if (!id || !/^#[0-9a-f]{6}$/i.test(tint)) return state;
-  return withSlot(state, slot, { id, tint: tint.toLowerCase() });
+  const { cycle: _cycle, ...rest } = state.slots[slot] ?? { id };
+  return withSlot(state, slot, { ...rest, id, tint: tint.toLowerCase() });
+}
+
+const HEX = /^#[0-9a-f]{6}$/i;
+
+function slotComponent(manifest: RoomPresetManifest, state: RoomState, slot: RoomSlotId): RoomComponent | undefined {
+  const id = slotChoice(manifest, state, slot);
+  return id ? manifest.components.find((c) => c.id === id) : undefined;
+}
+
+/** The pattern a part shows by the state (its default when none is set), or PLAIN_PATTERN. */
+export function currentPattern(component: RoomComponent | undefined, own: string | undefined): string {
+  if (!component?.tintable) return PLAIN_PATTERN;
+  return own ?? component.defaultPattern ?? PLAIN_PATTERN;
+}
+
+/**
+ * A slot's pattern (261105): an offered id or PLAIN_PATTERN. Plain is stored
+ * only over a default pattern (else the key is dropped), so an untouched
+ * room stays byte-for-byte the same.
+ */
+export function setSlotPattern(manifest: RoomPresetManifest, state: RoomState, slot: RoomSlotId, pattern: string): RoomState {
+  const c = slotComponent(manifest, state, slot);
+  if (!c?.tintable) return state;
+  const prev = state.slots[slot] ?? { id: c.id };
+  const { pattern: _p, ...rest } = prev;
+  if (pattern === PLAIN_PATTERN) return withSlot(state, slot, c.defaultPattern ? { ...rest, id: c.id, pattern: PLAIN_PATTERN } : { ...rest, id: c.id });
+  if (!patternsFor(manifest, c).some((p) => p.id === pattern)) return state;
+  return withSlot(state, slot, { ...rest, id: c.id, pattern });
+}
+
+/** A slot's second pattern colour (261105). null goes back to the tone-on-tone default. */
+export function setSlotAccent(manifest: RoomPresetManifest, state: RoomState, slot: RoomSlotId, accent: string | null): RoomState {
+  const c = slotComponent(manifest, state, slot);
+  if (!c?.tintable) return state;
+  const { accent: _a, ...rest } = state.slots[slot] ?? { id: c.id };
+  if (accent === null) return withSlot(state, slot, { ...rest, id: c.id });
+  if (!HEX.test(accent)) return state;
+  return withSlot(state, slot, { ...rest, id: c.id, accent: accent.toLowerCase() });
+}
+
+/** A light running through the colours, or not (261105). Only parts that offer it. */
+export function setSlotCycle(manifest: RoomPresetManifest, state: RoomState, slot: RoomSlotId, on: boolean): RoomState {
+  const c = slotComponent(manifest, state, slot);
+  if (!c?.tintable || !c.cycle) return state;
+  const { cycle: _c, ...rest } = state.slots[slot] ?? { id: c.id };
+  return withSlot(state, slot, on ? { ...rest, id: c.id, cycle: true } : { ...rest, id: c.id });
 }
 
 function withItems(state: RoomState, items: RoomItemPlacement[]): RoomState {
@@ -229,6 +286,28 @@ export function setItemTint(manifest: RoomPresetManifest, state: RoomState, inde
   const c = it && manifest.components.find((x) => x.id === it.id);
   if (!c?.tintable || !/^#[0-9a-f]{6}$/i.test(tint)) return state;
   return updateItem(state, index, (p) => ({ ...p, tint: tint.toLowerCase() }));
+}
+
+/** An item's pattern (261105), like setSlotPattern. */
+export function setItemPattern(manifest: RoomPresetManifest, state: RoomState, index: number, pattern: string): RoomState {
+  const it = state.items[index];
+  const c = it && manifest.components.find((x) => x.id === it.id);
+  if (!c?.tintable) return state;
+  if (pattern === PLAIN_PATTERN) {
+    return updateItem(state, index, ({ pattern: _p, ...rest }) => (c.defaultPattern ? { ...rest, pattern: PLAIN_PATTERN } : rest));
+  }
+  if (!patternsFor(manifest, c).some((p) => p.id === pattern)) return state;
+  return updateItem(state, index, (p) => ({ ...p, pattern }));
+}
+
+/** An item's second pattern colour (261105). null = tone-on-tone. */
+export function setItemAccent(manifest: RoomPresetManifest, state: RoomState, index: number, accent: string | null): RoomState {
+  const it = state.items[index];
+  const c = it && manifest.components.find((x) => x.id === it.id);
+  if (!c?.tintable) return state;
+  if (accent === null) return updateItem(state, index, ({ accent: _a, ...rest }) => rest);
+  if (!HEX.test(accent)) return state;
+  return updateItem(state, index, (p) => ({ ...p, accent: accent.toLowerCase() }));
 }
 
 export function removeItem(state: RoomState, index: number): RoomState {

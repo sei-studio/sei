@@ -23,14 +23,33 @@ import {
   type RoomSlotId,
   type RoomState,
   type RoomTime,
+  type RoomPatternTile,
+  type RoomSlotChoice,
+  PLAIN_PATTERN,
+  resolvePattern,
 } from './seilinkRoom';
 import { settleItems } from './seilinkPlace';
+import { PATTERN_ID_RE, PATTERN_SURFACES, codePattern, type PatternQuad, type PatternSurface } from './seilinkPatterns';
+import { PARTICLE_KINDS, type RoomParticles } from './seilinkParticles';
 
-const SLOT_IDS: readonly RoomSlotId[] = ['view', 'shell', 'curtains', 'bed', 'shelf', 'chair', 'lamp', 'rug', 'campfire'];
+export const SLOT_IDS: readonly RoomSlotId[] = ['view', 'shell', 'curtains', 'bed', 'shelf', 'chair', 'lamp', 'rug', 'campfire', 'lights', 'tree'];
 const COMPONENT_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 const HEX_RE = /^#[0-9a-f]{6}$/i;
 /** Hard caps so a hostile file cannot make the renderer allocate without bound. */
-export const ROOM_LIMITS = { components: 400, items: 120, canvasMax: 4096, pathLen: 200, polygons: 24, polygonPoints: 64, lines: 32 } as const;
+export const ROOM_LIMITS = {
+  components: 400,
+  items: 120,
+  canvasMax: 4096,
+  pathLen: 200,
+  polygons: 24,
+  polygonPoints: 64,
+  lines: 32,
+  patternQuads: 16,
+  patterns: 40,
+  patternTiles: 24,
+  particles: 4,
+  labelLen: 40,
+} as const;
 
 /** A pack file path: plain relative posix, no traversal, webp/png only. */
 export function isSafeRoomPackPath(rel: unknown): rel is string {
@@ -79,6 +98,45 @@ function polygons(v: unknown): RoomPolygon[] | undefined {
   return out.length ? out : undefined;
 }
 
+const isPoint = (p: unknown): p is [number, number] => Array.isArray(p) && p.length === 2 && isCoord(p[0]) && isCoord(p[1]);
+
+/** Pattern planes (261105): 4 corners each, optional positive size and uv; bad entries dropped. */
+function patternQuads(v: unknown): PatternQuad[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: PatternQuad[] = [];
+  for (const raw of v.slice(0, ROOM_LIMITS.patternQuads)) {
+    if (!raw || typeof raw !== 'object') continue;
+    const r = raw as Record<string, unknown>;
+    const q = r.quad;
+    if (!Array.isArray(q) || q.length !== 4 || !q.every(isPoint)) continue;
+    const quad = q.map(([x, y]) => [x, y]) as PatternQuad['quad'];
+    const entry: PatternQuad = { quad };
+    if (Array.isArray(r.size) && r.size.length === 2 && r.size.every((n) => isNum(n) && n > 0 && n < 100_000)) entry.size = [r.size[0], r.size[1]];
+    if (Array.isArray(r.uv) && r.uv.length === 2 && r.uv.every((n) => isNum(n) && Math.abs(n) < 100_000)) entry.uv = [r.uv[0], r.uv[1]];
+    out.push(entry);
+  }
+  return out.length ? out : undefined;
+}
+
+function parseParticles(v: unknown): RoomParticles[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: RoomParticles[] = [];
+  for (const raw of v.slice(0, ROOM_LIMITS.particles)) {
+    if (!raw || typeof raw !== 'object') continue;
+    const r = raw as Record<string, unknown>;
+    if (!(PARTICLE_KINDS as readonly unknown[]).includes(r.kind)) continue;
+    const p: RoomParticles = { kind: r.kind as RoomParticles['kind'] };
+    if (isNum(r.density) && r.density > 0) p.density = Math.min(3, Math.max(0.1, r.density));
+    if (isBox(r.area)) p.area = [r.area[0], r.area[1], r.area[2], r.area[3]];
+    if (r.where === 'outside' || r.where === 'scene') p.where = r.where;
+    if (r.glass === true) p.glass = true;
+    if (isHexColor(r.colour)) p.colour = r.colour.toLowerCase();
+    if (isNum(r.wind)) p.wind = Math.max(-1, Math.min(1, r.wind));
+    out.push(p);
+  }
+  return out.length ? out : undefined;
+}
+
 function parseFrame(raw: unknown, tintable: boolean): RoomFrame | null {
   if (!raw || typeof raw !== 'object') return null;
   const f = raw as Record<string, unknown>;
@@ -95,8 +153,19 @@ function parseFrame(raw: unknown, tintable: boolean): RoomFrame | null {
     out.glow = f.glow;
   }
   if (f.effect === 'flicker' || f.effect === 'pulse') out.effect = f.effect;
+  if (f.glowTint === true && out.glow) out.glowTint = true;
+  const particles = parseParticles(f.particles);
+  if (particles) out.particles = particles;
+  if (f.glass !== undefined) {
+    if (!isSafeRoomPackPath(f.glass)) return null;
+    out.glass = f.glass;
+  }
+  const quads = patternQuads(f.patternQuads);
+  if (quads) out.patternQuads = quads;
   return out;
 }
+
+const isPatternSurface = (v: unknown): v is PatternSurface => (PATTERN_SURFACES as readonly unknown[]).includes(v);
 
 function parseComponent(raw: unknown): RoomComponent | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -162,7 +231,43 @@ function parseComponent(raw: unknown): RoomComponent | null {
     const swatches = c.swatches.filter(isHexColor).slice(0, 12).map((h) => h.toLowerCase());
     if (swatches.length) out.swatches = swatches;
   }
+  // Cover fit is for untinted full-box art (a shared window view); a tint mask would not line up with the crop.
+  if (c.fit === 'cover' && !tintable && out.box) out.fit = 'cover';
+  if (Array.isArray(c.focus) && c.focus.length === 2 && c.focus.every((n) => isNum(n) && n >= 0 && n <= 1)) out.focus = [c.focus[0], c.focus[1]];
+  // Patterns and light colour only mean something on a part that takes a colour.
+  if (tintable) {
+    if (isPatternSurface(c.patternSurface)) out.patternSurface = c.patternSurface;
+    if (Array.isArray(c.patterns)) {
+      const ids = c.patterns.filter((id): id is string => typeof id === 'string' && PATTERN_ID_RE.test(id) && id !== PLAIN_PATTERN);
+      out.patterns = [...new Set(ids)].slice(0, ROOM_LIMITS.patterns);
+    }
+    const quads = patternQuads(c.patternQuads);
+    if (quads) out.patternQuads = quads;
+    if (isNum(c.patternScale) && c.patternScale >= 0.1 && c.patternScale <= 10) out.patternScale = c.patternScale;
+    if (typeof c.defaultPattern === 'string' && PATTERN_ID_RE.test(c.defaultPattern)) out.defaultPattern = c.defaultPattern;
+    if (isHexColor(c.defaultAccent)) out.defaultAccent = c.defaultAccent.toLowerCase();
+    if (c.cycle === true) out.cycle = true;
+  }
   return out;
+}
+
+function parsePatternTiles(v: unknown): RoomPatternTile[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: RoomPatternTile[] = [];
+  for (const raw of v.slice(0, ROOM_LIMITS.patternTiles)) {
+    if (!raw || typeof raw !== 'object') continue;
+    const r = raw as Record<string, unknown>;
+    if (typeof r.id !== 'string' || !PATTERN_ID_RE.test(r.id) || r.id === PLAIN_PATTERN || codePattern(r.id)) continue;
+    if (out.some((t) => t.id === r.id)) continue;
+    if (typeof r.name !== 'string' || !r.name.trim() || r.name.length > 40) continue;
+    if (typeof r.adjective !== 'string' || !r.adjective.trim() || r.adjective.length > 40) continue;
+    if (!isSafeRoomPackPath(r.tile)) continue;
+    if (!Array.isArray(r.period) || r.period.length !== 2 || !r.period.every((n) => isNum(n) && n >= 4 && n <= 2048)) continue;
+    const surfaces = Array.isArray(r.surfaces) ? r.surfaces.filter(isPatternSurface) : [];
+    if (!surfaces.length) continue;
+    out.push({ id: r.id, name: r.name.trim(), adjective: r.adjective.trim(), tile: r.tile, period: [r.period[0], r.period[1]], surfaces });
+  }
+  return out.length ? out : undefined;
 }
 
 /** A pack's manifest.json, checked. null when anything load-bearing is wrong. */
@@ -199,6 +304,7 @@ export function parseRoomManifest(raw: unknown): RoomPresetManifest | null {
     const def: RoomSlotDef = { z: d.z, options };
     if (d.optional === true) def.optional = true;
     if ((ROOM_EDITOR_GROUPS as readonly unknown[]).includes(d.group)) def.group = d.group as RoomEditorGroup;
+    if (typeof d.label === 'string' && d.label.trim() && d.label.length <= ROOM_LIMITS.labelLen) def.label = d.label.trim();
     slots[k as RoomSlotId] = def;
   }
   const out: RoomPresetManifest = {
@@ -225,7 +331,25 @@ export function parseRoomManifest(raw: unknown): RoomPresetManifest | null {
     }
     out.overlay = ov;
   }
+  const tiles = parsePatternTiles(m.patternTiles);
+  if (tiles) out.patternTiles = tiles;
   return out;
+}
+
+/**
+ * A stored pattern + accent for a part, kept only when the part offers that
+ * pattern (or 'plain' over a default pattern). Mutates `entry`.
+ */
+function keepPattern(manifest: RoomPresetManifest, component: RoomComponent | undefined, v: Record<string, unknown>, entry: { pattern?: string; accent?: string }): void {
+  if (!component?.tintable) return;
+  if (typeof v.pattern === 'string') {
+    if (v.pattern === PLAIN_PATTERN) {
+      if (component.defaultPattern) entry.pattern = PLAIN_PATTERN;
+    } else if (resolvePattern(manifest, component, undefined, v.pattern, undefined)) {
+      entry.pattern = v.pattern;
+    }
+  }
+  if (isHexColor(v.accent)) entry.accent = v.accent.toLowerCase();
 }
 
 /**
@@ -252,7 +376,7 @@ export function sanitizeRoomState(manifest: RoomPresetManifest, raw: unknown): R
   for (const [slot, def] of Object.entries(manifest.slots) as Array<[RoomSlotId, RoomSlotDef]>) {
     const v = slotsRaw[slot] as Record<string, unknown> | undefined;
     if (!v || typeof v !== 'object') continue;
-    const entry: { id: string | null; tint?: string } = { id: def.options[0] };
+    const entry: RoomSlotChoice = { id: def.options[0] };
     if (v.id === null) {
       if (!def.optional) continue;
       entry.id = null;
@@ -262,6 +386,9 @@ export function sanitizeRoomState(manifest: RoomPresetManifest, raw: unknown): R
       continue;
     }
     if (isHexColor(v.tint) && entry.id && byId.get(entry.id)?.tintable) entry.tint = v.tint.toLowerCase();
+    const component = entry.id ? byId.get(entry.id) : undefined;
+    keepPattern(manifest, component, v, entry);
+    if (v.cycle === true && component?.tintable && component.cycle) entry.cycle = true;
     out.slots[slot] = entry;
   }
   out.items = [];
@@ -274,6 +401,7 @@ export function sanitizeRoomState(manifest: RoomPresetManifest, raw: unknown): R
       if (i.flip === true) p.flip = true;
       if (isNum(i.z)) p.z = i.z;
       if (isHexColor(i.tint) && byId.get(i.id)?.tintable) p.tint = i.tint.toLowerCase();
+      keepPattern(manifest, byId.get(i.id), i, p);
       out.items.push(p);
     }
   }

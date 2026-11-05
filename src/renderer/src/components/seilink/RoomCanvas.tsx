@@ -12,7 +12,8 @@
  *     {editorOverlay}
  *   </RoomCanvas>
  *
- * Layers: back canvas (everything behind her), the avatar slot (a DOM box
+ * Layers: back canvas (everything behind her), the fx canvas (particles:
+ * rain, snow, fireflies; 261105), the avatar slot (a DOM box
  * anchored at the manifest's avatar point, bottom centre, `height` tall:
  * anything can live there, a Live2D canvas, a sprite), front canvas
  * (anything in front of her), and the glow canvas, screen-blended over all of
@@ -83,9 +84,10 @@ export function RoomCanvas(props: RoomCanvasProps): React.ReactElement {
   const backRef = useRef<HTMLCanvasElement>(null);
   const frontRef = useRef<HTMLCanvasElement>(null);
   const glowRef = useRef<HTMLCanvasElement>(null);
+  const fxRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<RoomRenderer | null>(null);
   const [box, setBox] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
-  const [used, setUsed] = useState({ front: false, glow: false });
+  const [used, setUsed] = useState<{ front: boolean; glow: boolean; fx?: boolean }>({ front: false, glow: false, fx: false });
   const [mix, setMix] = useState<RoomTimeMix>(() => roomTimeMix(state, (clock ?? (() => new Date()))()));
 
   // Latest callbacks without re-creating the renderer.
@@ -94,7 +96,7 @@ export function RoomCanvas(props: RoomCanvasProps): React.ReactElement {
 
   useLayoutEffect(() => {
     const r = new RoomRenderer(
-      { back: backRef.current!, front: frontRef.current!, glow: glowRef.current! },
+      { back: backRef.current!, front: frontRef.current!, glow: glowRef.current!, fx: fxRef.current! },
       {
         onReady: () => cb.current.onReady?.(),
         onError: (e) => {
@@ -194,6 +196,8 @@ export function RoomCanvas(props: RoomCanvasProps): React.ReactElement {
     <div ref={rootRef} className={className ? `${styles.root} ${className}` : styles.root} style={style}>
       <div className={styles.scene} style={{ left: vp.left, top: vp.top, width: vp.width, height: vp.height }}>
         <canvas ref={backRef} className={styles.layer} />
+        {/* 261105: weather and ambience particles, behind her. */}
+        <canvas ref={fxRef} className={used.fx ? styles.layer : `${styles.layer} ${styles.hidden}`} data-layer="fx" />
         {avatarNode != null && (
           <div className={styles.avatar} style={{ left: slot.x, top: slot.y, height: slot.height }}>
             {avatarNode}

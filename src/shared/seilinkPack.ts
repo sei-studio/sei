@@ -13,10 +13,27 @@
  *
  * `rev` changes whenever the pack's manifest changes on disk, so a renderer
  * image cache keyed by URL never shows a stale frame after a pack update.
+ *
+ * Shared files (261105, room catalog): a manifest path starting `_shared/`
+ * names a file in the shared folder beside the preset folders,
+ * `<root>/_shared/` (window views and pattern tiles several packs use). It
+ * is read from the same root as the pack when that root has it, else from
+ * the bundled packs. On the wire it is still served under the pack's own
+ * host (`sei-room://cozy/_shared/views/city_day.webp`), and main still
+ * serves only files a manifest names, contained in the shared folder.
  */
 import type { RoomPresetId, RoomPresetManifest, RoomState } from './seilinkRoom';
 
 export const SEILINK_ROOM_SCHEME = 'sei-room';
+
+/** Folder (beside the preset folders) and path prefix of the files packs share. */
+export const SHARED_PACK_DIR = '_shared';
+export const SHARED_PREFIX = `${SHARED_PACK_DIR}/`;
+
+/** The path inside the shared folder when `rel` names a shared file, else null. */
+export function sharedRel(rel: string): string | null {
+  return rel.startsWith(SHARED_PREFIX) && rel.length > SHARED_PREFIX.length ? rel.slice(SHARED_PREFIX.length) : null;
+}
 
 /** Where a pack was found: the dev override dir, the installed packs dir, or the app's own (bundled). */
 export type SeilinkPackSource = 'dev' | 'installed' | 'bundled';

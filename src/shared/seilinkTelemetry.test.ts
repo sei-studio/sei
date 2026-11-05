@@ -26,6 +26,20 @@ describe('classifyEdit', () => {
     expect(classifyEdit(base, { ...defaultRoomState('gamer') })).toEqual(['preset_change']);
     expect(classifyEdit(base, { ...base })).toEqual([]);
   });
+
+  it('names pattern, accent and light colour edits (261105)', () => {
+    expect(classifyEdit(base, { ...base, slots: { bed: { id: 'bed_a', pattern: 'gingham' } } })).toEqual(['pattern_change']);
+    const pat = { ...base, slots: { bed: { id: 'bed_a', pattern: 'gingham' } } };
+    expect(classifyEdit(pat, { ...base, slots: { bed: { id: 'bed_a', pattern: 'gingham', accent: '#112233' } } })).toEqual(['accent_change']);
+    expect(classifyEdit(pat, { ...base, slots: { bed: { id: 'bed_a', pattern: 'plaid' } } })).toEqual(['pattern_change']);
+    const lights = new Set(['lights'] as const);
+    const lit = { ...base, slots: { lights: { id: 'fairy' } } };
+    expect(classifyEdit(lit, { ...base, slots: { lights: { id: 'fairy', tint: '#ff0000' } } }, lights)).toEqual(['light_colour']);
+    expect(classifyEdit(lit, { ...base, slots: { lights: { id: 'fairy', cycle: true } } }, lights)).toEqual(['light_cycle']);
+    expect(classifyEdit(lit, { ...base, slots: { lights: { id: 'fairy', tint: '#ff0000' } } })).toEqual(['recolour']);
+    const item = { ...base, items: [{ id: 'plant', x: 10, y: 20 }] };
+    expect(classifyEdit(item, { ...base, items: [{ id: 'plant', x: 10, y: 20, pattern: 'polka', accent: '#000000' }] })).toEqual(['pattern_change', 'accent_change']);
+  });
 });
 
 describe('EditorSessionTracker', () => {
@@ -104,6 +118,27 @@ describe('EditorSessionTracker', () => {
     const p = tr.finish(10, false, null)!;
     expect(p).toMatchObject({ edits: 0, avatar_upload_start: 2, avatar_upload_ok: 1, avatar_upload_fail: 1, avatar_fail_too_big: 1, errors: 1 });
     expect(tr.touched).toBe(true);
+  });
+});
+
+describe('room shape at close (261105)', () => {
+  it('adds closed-shape counts and names only known patterns', () => {
+    const t = new EditorSessionTracker('gear', 0);
+    let h = createHistory(base);
+    t.history(h);
+    h = commitEdit(h, { ...base, slots: { bed: { id: 'bed_a', pattern: 'gingham' } } });
+    t.history(h);
+    const out = t.finish(5000, true, CHAR, { patterned: 2, accents: 1, cycling: 1, particles: 0, lastPattern: 'gingham' })!;
+    expect(out.edit_pattern_change).toBe(1);
+    expect(out.patterned_at_close).toBe(2);
+    expect(out.particles_on).toBe(false);
+    expect(out.last_pattern).toBe('gingham');
+    const t2 = new EditorSessionTracker('gear', 0);
+    expect(t2.finish(10, false, CHAR, { patterned: 0, accents: 0, cycling: 0, particles: 3, lastPattern: 'my_secret_upload' })!.last_pattern).toBe('other');
+    const clean = sanitizeSeilinkTrack('seilink_editor_session', { ...out, last_pattern: 'evil', particles_on: 'yes' });
+    expect(clean?.last_pattern).toBeUndefined();
+    expect(clean?.particles_on).toBeUndefined();
+    expect(sanitizeSeilinkTrack('seilink_editor_session', out)?.patterned_at_close).toBe(2);
   });
 });
 

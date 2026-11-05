@@ -243,3 +243,13 @@ export const CampfireIcon = (p: P): React.ReactElement => (
     <path d="M4.5 20.5l15-4M19.5 20.5l-15-4" />
   </Svg>
 );
+
+/** 261105: a part that is only particles (fireflies): a few glowing dots. */
+export const SparkleIcon = (p: P): React.ReactElement => (
+  <Svg {...p}>
+    <path d="M12 3.5v4M12 16.5v4M3.5 12h4M16.5 12h4" />
+    <circle cx="6" cy="6" r="1" />
+    <circle cx="18.5" cy="17.5" r="1.2" />
+    <circle cx="17.5" cy="6.5" r="0.8" />
+  </Svg>
+);

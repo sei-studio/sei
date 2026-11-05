@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath as realpathOf, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -110,6 +110,62 @@ describe('seilink packs', () => {
   });
 });
 
+describe('seilink shared files (261105)', () => {
+  const shared: RoomPresetManifest = {
+    ...manifest,
+    slots: { ...manifest.slots, view: { z: 0, options: ['city'] } },
+    components: [...manifest.components, { id: 'city', slot: 'view', name: 'city view', box: [0, 0, 300, 300], fit: 'cover', frames: { day: { src: '_shared/views/city_day.webp' } } }],
+  };
+
+  it('resolves _shared/ in the pack root, serves it under the pack, and refuses anything else there', async () => {
+    await writePack(path.join(root, 'cozy'), shared);
+    await mkdir(path.join(root, '_shared', 'views'), { recursive: true });
+    await writeFile(path.join(root, '_shared', 'views', 'city_day.webp'), 'RIFF....WEBP');
+    await writeFile(path.join(root, '_shared', 'views', 'other.webp'), 'x');
+    const pack = await loadPack('cozy');
+    expect(pack?.files.get('_shared/views/city_day.webp')).toBe(path.join(await realpathOf(root), '_shared', 'views', 'city_day.webp'));
+    const hit = await resolveSeilinkUrl(seilinkFileUrl(pack!, '_shared/views/city_day.webp'));
+    expect(hit?.file.endsWith(path.join('_shared', 'views', 'city_day.webp'))).toBe(true);
+    // Not named by the manifest: refused even though it is in the shared folder.
+    expect(await resolveSeilinkUrl(seilinkFileUrl(pack!, '_shared/views/other.webp'))).toBeNull();
+    // `_shared` is not a pack.
+    expect(await loadPack('_shared')).toBeNull();
+  });
+
+  it('falls back to the bundled shared folder, and refuses a shared file that symlinks out', async () => {
+    const bundled = path.join(tmp, 'bundled');
+    __setPackRootsForTest([
+      { dir: root, source: 'dev' },
+      { dir: bundled, source: 'bundled' },
+    ]);
+    await writePack(path.join(root, 'cozy'), shared);
+    expect(await loadPack('cozy')).toBeNull(); // no shared folder anywhere yet
+    await mkdir(path.join(bundled, '_shared', 'views'), { recursive: true });
+    await writeFile(path.join(bundled, '_shared', 'views', 'city_day.webp'), 'RIFF....WEBP');
+    __setPackRootsForTest([
+      { dir: root, source: 'dev' },
+      { dir: bundled, source: 'bundled' },
+    ]);
+    const pack = await loadPack('cozy');
+    expect(pack?.files.get('_shared/views/city_day.webp')?.startsWith(await realpathOf(bundled))).toBe(true);
+    // Swap the shared file for a symlink out: the per-request check refuses it.
+    const outside = path.join(tmp, 'outside.webp');
+    await writeFile(outside, 'x');
+    await rm(path.join(bundled, '_shared', 'views', 'city_day.webp'));
+    await symlink(outside, path.join(bundled, '_shared', 'views', 'city_day.webp'));
+    expect(await resolveSeilinkUrl(seilinkFileUrl(pack!, '_shared/views/city_day.webp'))).toBeNull();
+  });
+
+  it('lists glass masks and pattern tiles among a manifest\'s files', () => {
+    const m: RoomPresetManifest = {
+      ...manifest,
+      components: [{ id: 'shell', slot: 'shell', name: 'room', frames: { day: { src: 's.webp', glass: 'glass.webp' } } }],
+      patternTiles: [{ id: 'ditsy', name: 'Ditsy', adjective: 'flowery', tile: '_shared/patterns/ditsy.webp', period: [64, 64], surfaces: ['bedding'] }],
+    };
+    expect(manifestFiles(m)).toEqual(['s.webp', 'glass.webp', '_shared/patterns/ditsy.webp']);
+  });
+});
+
 describe('seilink bundled packs (M4)', () => {
   const REPO_PACKS = path.resolve(__dirname, '../../../resources/seilink-packs');
 
@@ -121,7 +177,19 @@ describe('seilink bundled packs (M4)', () => {
     const named = new Set(manifestFiles(pack!.manifest));
     const onDisk = (await readdir(path.join(REPO_PACKS, id))).filter((f) => f !== 'manifest.json');
     expect(onDisk.filter((f) => !named.has(f))).toEqual([]);
-    expect(named.size).toBe(onDisk.length);
+    // 261105: shared files (views, the blank frame) live in _shared/.
+    const own = [...named].filter((f) => !f.startsWith('_shared/'));
+    expect(own.length).toBe(onDisk.length);
+    for (const rel of named) expect(pack!.files.get(rel), rel).toBeTruthy();
+  });
+
+  it('ships the shared folder: every file in it is used by some pack (261105)', async () => {
+    __setPackRootsForTest([{ dir: REPO_PACKS, source: 'bundled' }]);
+    const used = new Set<string>();
+    for (const id of ['cozy', 'gamer', 'forest'] as const) for (const f of manifestFiles((await loadPack(id))!.manifest)) used.add(f);
+    const views = (await readdir(path.join(REPO_PACKS, '_shared', 'views'))).map((f) => `_shared/views/${f}`);
+    const top = (await readdir(path.join(REPO_PACKS, '_shared'))).filter((f) => f !== 'views').map((f) => `_shared/${f}`);
+    expect([...views, ...top].filter((f) => !used.has(f))).toEqual([]);
   });
 
   it('offers all three presets, since all three packs ship (261105)', async () => {

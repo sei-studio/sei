@@ -59,15 +59,17 @@
       "slot": "view",
       "name": "neon city",
       "box": [1345, 0, 1215, 1319],
+      "fit": "cover",
+      "focus": [0.5, 0.5],
       "frames": {
         "day": {
-          "src": "view_neon_day.webp"
+          "src": "_shared/views/neon_day.webp"
         },
         "dusk": {
-          "src": "view_neon_dusk.webp"
+          "src": "_shared/views/neon_dusk.webp"
         },
         "night": {
-          "src": "view_neon_night.webp"
+          "src": "_shared/views/neon_night.webp"
         }
       }
     },
@@ -76,15 +78,17 @@
       "slot": "view",
       "name": "city skyline",
       "box": [1345, 0, 1215, 1319],
+      "fit": "cover",
+      "focus": [0.5, 0.5],
       "frames": {
         "day": {
-          "src": "view_city_day.webp"
+          "src": "_shared/views/city_day.webp"
         },
         "dusk": {
-          "src": "view_city_dusk.webp"
+          "src": "_shared/views/city_dusk.webp"
         },
         "night": {
-          "src": "view_city_night.webp"
+          "src": "_shared/views/city_night.webp"
         }
       }
     },
@@ -93,15 +97,17 @@
       "slot": "view",
       "name": "seaside town",
       "box": [1345, 0, 1215, 1319],
+      "fit": "cover",
+      "focus": [0.5, 0.5],
       "frames": {
         "day": {
-          "src": "view_sea_day.webp"
+          "src": "_shared/views/sea_day.webp"
         },
         "dusk": {
-          "src": "view_sea_dusk.webp"
+          "src": "_shared/views/sea_dusk.webp"
         },
         "night": {
-          "src": "view_sea_night.webp"
+          "src": "_shared/views/sea_night.webp"
         }
       }
     },
@@ -110,15 +116,17 @@
       "slot": "view",
       "name": "forest valley",
       "box": [1345, 0, 1215, 1319],
+      "fit": "cover",
+      "focus": [0.5, 0.5],
       "frames": {
         "day": {
-          "src": "view_forest_day.webp"
+          "src": "_shared/views/forest_day.webp"
         },
         "dusk": {
-          "src": "view_forest_dusk.webp"
+          "src": "_shared/views/forest_dusk.webp"
         },
         "night": {
-          "src": "view_forest_night.webp"
+          "src": "_shared/views/forest_night.webp"
         }
       }
     },
@@ -152,7 +160,19 @@
           "mask": "shell_mask.webp",
           "glow": "shell_glow_night.webp"
         }
-      }
+      },
+      "patternSurface": "walls",
+      "patternQuads": [
+        {
+          "quad": [[0, 0], [460, 140], [460, 1120], [0, 1225]],
+          "size": [469, 980]
+        },
+        {
+          "quad": [[460, 140], [2560, -211], [2560, 1349], [460, 1120]],
+          "size": [1804, 980],
+          "uv": [469, 0]
+        }
+      ]
     },
     {
       "id": "black_wall_shelves",
@@ -232,7 +252,23 @@
         "wall": [
           [[438, 813], [880, 813], [885, 1117], [885, 1217], [812, 1240], [0, 1240], [0, 967], [281, 917], [388, 867]]
         ]
-      }
+      },
+      "patternSurface": "bedding",
+      "patternQuads": [
+        {
+          "quad": [[-300, 985], [430, 955], [844, 978], [-300, 1110]],
+          "size": [940, 582]
+        },
+        {
+          "quad": [[-300, 1110], [844, 978], [844, 1090], [-300, 1560]],
+          "size": [940, 150],
+          "uv": [0, 582]
+        },
+        {
+          "quad": [[370, 858], [840, 870], [805, 990], [335, 975]],
+          "size": [582, 128]
+        }
+      ]
     },
     {
       "id": "led_strip",
@@ -261,15 +297,18 @@
           "src": "led_dusk.webp",
           "mask": "led_mask.webp",
           "glow": "led_glow_dusk.webp",
-          "effect": "pulse"
+          "effect": "pulse",
+          "glowTint": true
         },
         "night": {
           "src": "led_night.webp",
           "mask": "led_mask.webp",
           "glow": "led_glow_night.webp",
-          "effect": "pulse"
+          "effect": "pulse",
+          "glowTint": true
         }
-      }
+      },
+      "cycle": true
     },
     {
       "id": "gaming_chair",

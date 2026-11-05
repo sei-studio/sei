@@ -15,6 +15,12 @@ export interface RoomContext {
   state: RoomState;
   /** Absolute pack root. Frame `src`/`mask`/`glow` paths resolve against it. */
   packDir: string;
+  /**
+   * 261105: the loaded pack's files (relative path -> checked realpath), so
+   * shared files (`_shared/...`) resolve where the loader found them. Absent
+   * (dev stub, tests): `_shared/` resolves beside packDir.
+   */
+  files?: ReadonlyMap<string, string>;
 }
 
 export interface RoomSource {

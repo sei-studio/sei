@@ -15,7 +15,8 @@
       "options": [
         "view_city",
         "view_forest",
-        "view_sea"
+        "view_sea",
+        "view_neon"
       ]
     },
     "shell": {
@@ -72,15 +73,17 @@
       "slot": "view",
       "name": "city skyline",
       "box": [1341, 16, 1219, 1292],
+      "fit": "cover",
+      "focus": [0.5, 0.5],
       "frames": {
         "day": {
-          "src": "view_city_day.webp"
+          "src": "_shared/views/city_day.webp"
         },
         "dusk": {
-          "src": "view_city_dusk.webp"
+          "src": "_shared/views/city_dusk.webp"
         },
         "night": {
-          "src": "view_city_night.webp"
+          "src": "_shared/views/city_night.webp"
         }
       }
     },
@@ -89,15 +92,17 @@
       "slot": "view",
       "name": "forest valley",
       "box": [1341, 16, 1219, 1292],
+      "fit": "cover",
+      "focus": [0.5, 0.5],
       "frames": {
         "day": {
-          "src": "view_forest_day.webp"
+          "src": "_shared/views/forest_day.webp"
         },
         "dusk": {
-          "src": "view_forest_dusk.webp"
+          "src": "_shared/views/forest_dusk.webp"
         },
         "night": {
-          "src": "view_forest_night.webp"
+          "src": "_shared/views/forest_night.webp"
         }
       }
     },
@@ -106,15 +111,36 @@
       "slot": "view",
       "name": "seaside town",
       "box": [1341, 16, 1219, 1292],
+      "fit": "cover",
+      "focus": [0.5, 0.5],
       "frames": {
         "day": {
-          "src": "view_sea_day.webp"
+          "src": "_shared/views/sea_day.webp"
         },
         "dusk": {
-          "src": "view_sea_dusk.webp"
+          "src": "_shared/views/sea_dusk.webp"
         },
         "night": {
-          "src": "view_sea_night.webp"
+          "src": "_shared/views/sea_night.webp"
+        }
+      }
+    },
+    {
+      "id": "view_neon",
+      "slot": "view",
+      "name": "neon city",
+      "box": [1341, 16, 1219, 1292],
+      "fit": "cover",
+      "focus": [0.5, 0.5],
+      "frames": {
+        "day": {
+          "src": "_shared/views/neon_day.webp"
+        },
+        "dusk": {
+          "src": "_shared/views/neon_dusk.webp"
+        },
+        "night": {
+          "src": "_shared/views/neon_night.webp"
         }
       }
     },
@@ -138,7 +164,19 @@
           "mask": "shell_mask.webp",
           "glow": "shell_glow_night.webp"
         }
-      }
+      },
+      "patternSurface": "walls",
+      "patternQuads": [
+        {
+          "quad": [[0, 0], [465, 145], [465, 1115], [0, 1214]],
+          "size": [481, 970]
+        },
+        {
+          "quad": [[465, 145], [2560, -180], [2560, 1341], [465, 1115]],
+          "size": [1809, 970],
+          "uv": [481, 0]
+        }
+      ]
     },
     {
       "id": "round_rug",
@@ -159,7 +197,15 @@
           "src": "rug_night.webp",
           "mask": "rug_mask.webp"
         }
-      }
+      },
+      "patternSurface": "rugs",
+      "patternQuads": [
+        {
+          "quad": [[1654, 1289], [2272, 1361], [2261, 1534], [1501, 1421]],
+          "size": [390, 313],
+          "uv": [1254, 128]
+        }
+      ]
     },
     {
       "id": "linen_curtains",
@@ -189,7 +235,20 @@
           [[1085, 40], [1470, 40], [1470, 800], [1085, 800]],
           [[2165, 0], [2560, 0], [2560, 1420], [2165, 1420]]
         ]
-      }
+      },
+      "patternSurface": "curtains",
+      "patternQuads": [
+        {
+          "quad": [[1100, 74], [1458, 20], [1458, 814], [1100, 806]],
+          "size": [326, 625],
+          "uv": [733, 23]
+        },
+        {
+          "quad": [[2159, -7], [2577, -63], [2577, 1440], [2159, 1388]],
+          "size": [247, 956],
+          "uv": [1572, 77]
+        }
+      ]
     },
     {
       "id": "floating_shelves",
@@ -260,6 +319,22 @@
         {
           "area": [[230, 985], [700, 975], [748, 1022], [480, 1024], [240, 1030]],
           "sink": 8
+        }
+      ],
+      "patternSurface": "bedding",
+      "patternQuads": [
+        {
+          "quad": [[-300, 985], [430, 960], [850, 995], [-300, 1075]],
+          "size": [940, 582]
+        },
+        {
+          "quad": [[-300, 1075], [850, 995], [850, 1110], [-300, 1560]],
+          "size": [940, 150],
+          "uv": [0, 582]
+        },
+        {
+          "quad": [[431, 857], [855, 873], [821, 995], [392, 966]],
+          "size": [582, 128]
         }
       ]
     },
@@ -413,7 +488,8 @@
       },
       "tintable": true,
       "defaultTint": "#E3A9A6",
-      "foot": 30
+      "foot": 30,
+      "patternSurface": "cushions"
     }
   ],
   "overlay": {

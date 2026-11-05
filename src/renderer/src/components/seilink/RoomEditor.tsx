@@ -26,7 +26,12 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  BLANK_FRAME,
   defaultRoomState,
+  PLAIN_PATTERN,
+  patternsFor,
+  resolvePattern,
+  slotLabel,
   resolveRoomTime,
   type RoomComponent,
   type RoomItemPlacement,
@@ -41,12 +46,14 @@ import {
 import { frameFor, roomDrawPlan, viewportToCanvas, type ItemLayer, type RoomOverlay, type RoomViewport, type SlotLayer } from '@shared/seilinkDraw';
 import { placementOf, placementRegions, snapSpot, spriteFit, type PlacementClass, type RoomSurface } from '@shared/seilinkPlace';
 import { sanitizeRoomState } from '@shared/seilinkValidate';
+import { toneOnTone, type PatternDef } from '@shared/seilinkPatterns';
 import {
   addItem,
   canUndo,
   clampScale,
   commitEdit,
   createHistory,
+  currentPattern,
   currentTint,
   endGesture,
   flipItem,
@@ -57,10 +64,15 @@ import {
   moveItem,
   removeItem,
   scaleItem,
+  setItemAccent,
+  setItemPattern,
   setItemTint,
   setRoomAvatar,
   setRoomTime,
+  setSlotAccent,
   setSlotComponent,
+  setSlotCycle,
+  setSlotPattern,
   setSlotTint,
   slotChoice,
   swatchesFor,
@@ -71,9 +83,10 @@ import {
 import { useT } from '../../lib/i18n';
 import { ROOM_PRESET_LABEL } from '../../lib/seilink/moveIn';
 import { useEditorAnalytics } from '../../lib/seilink/editorAnalytics';
-import type { EditorOpenedFrom } from '@shared/seilinkTelemetry';
+import { lightSlotsOf, roomShapeOf, type EditorOpenedFrom } from '@shared/seilinkTelemetry';
 import { RoomCanvas, type RoomAvatarSlot } from './RoomCanvas';
 import { componentThumb, roomThumb } from '../../lib/seilink/roomThumbs';
+import { patternThumb } from '../../lib/seilink/patternThumbs';
 import { RoomPicker } from '../../lib/seilink/roomPick';
 import { groupSlots, slotGroup, type SlotGroup } from '../../lib/seilink/roomGroups';
 import { drawRoomLayers, loadPlanAssets } from '../../lib/seilink/roomCompose';
@@ -97,6 +110,7 @@ import {
   PersonIcon,
   PlusIcon,
   RollerIcon,
+  SparkleIcon,
   TrashIcon,
   UndoIcon,
   UploadIcon,
@@ -113,18 +127,6 @@ const GROUPS: readonly Group[] = ['avatar', 'room', 'fabrics', 'furniture', 'ite
 export type PanelRequest = Group | RoomSlotId;
 
 /** Labels for slot tiles (keys are the English strings; see i18n). */
-const SLOT_LABEL: Record<RoomSlotId, string> = {
-  view: 'View',
-  shell: 'Walls',
-  curtains: 'Curtains',
-  bed: 'Bed',
-  shelf: 'Shelves',
-  chair: 'Chair',
-  lamp: 'Lamp',
-  rug: 'Rug',
-  campfire: 'Campfire',
-};
-
 const GROUP_LABEL = { fabrics: 'Walls & fabrics', furniture: 'Furniture' } as const;
 
 /** Item library groups, by placement class (keys are the English strings). */
@@ -218,10 +220,13 @@ function hexTriple(hex: string): string {
 
 function PartThumb({ pack, component, tint, time, cover }: { pack: EditorPack; component: RoomComponent; tint: string | null; time: RoomTime; cover?: boolean }): React.ReactElement {
   const t = useDebounced(tint, 140);
+  // A part drawn only as particles (fireflies) has nothing to trim into a thumbnail.
+  const blank = Object.values(component.frames).every((f) => !f || f.src === BLANK_FRAME);
   const url = useAsyncUrl(
-    () => componentThumb(pack.manifest, component, { time, tint: t, resolve: pack.resolve, cover }),
+    blank ? null : () => componentThumb(pack.manifest, component, { time, tint: t, resolve: pack.resolve, cover }),
     `${pack.id}:${pack.rev}:${component.id}:${t ?? ''}:${time}:${cover ? 1 : 0}`,
   );
+  if (blank) return <SparkleIcon size={26} />;
   return url ? <img className={cover ? styles.thumbCover : styles.thumb} src={url} alt="" draggable={false} /> : <span className={styles.thumbWait} />;
 }
 
@@ -384,16 +389,25 @@ function Swatches({
   gesture,
   onTint,
   onGestureEnd,
+  auto,
+  cycle,
+  label,
 }: {
   component: RoomComponent;
   value: string | null;
   gesture: string;
   onTint(hex: string, gesture: string | null): void;
   onGestureEnd(): void;
+  /** 261105: a first swatch for the automatic colour (the accent's tone-on-tone). */
+  auto?: { colour: string; on: boolean; onPick(): void };
+  /** 261105: a colour-cycle swatch (a light that runs through the colours). */
+  cycle?: { on: boolean; onToggle(on: boolean): void };
+  label?: string;
 }): React.ReactElement {
   const t = useT();
   const swatches = swatchesFor(component);
-  const custom = value && !swatches.includes(value.toLowerCase()) ? value : null;
+  const picked = auto?.on || cycle?.on ? null : value;
+  const custom = picked && !swatches.includes(picked.toLowerCase()) ? picked : null;
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const el = inputRef.current;
@@ -403,15 +417,38 @@ function Swatches({
     return () => el.removeEventListener('change', end);
   }, [onGestureEnd]);
   return (
-    <div className={styles.swatches} role="radiogroup" aria-label={t('Color')}>
+    <div className={styles.swatches} role="radiogroup" aria-label={label ?? t('Color')}>
+      {auto && (
+        <button
+          type="button"
+          role="radio"
+          aria-checked={auto.on}
+          aria-label={t('Automatic')}
+          title={t('Automatic')}
+          className={auto.on ? `${styles.swatch} ${styles.swatchAuto} ${styles.swatchOn}` : `${styles.swatch} ${styles.swatchAuto}`}
+          style={{ ['--auto' as string]: auto.colour }}
+          onClick={auto.onPick}
+        />
+      )}
+      {cycle && (
+        <button
+          type="button"
+          role="radio"
+          aria-checked={cycle.on}
+          aria-label={t('Color cycle')}
+          title={t('Color cycle')}
+          className={cycle.on ? `${styles.swatch} ${styles.swatchCycle} ${styles.swatchOn}` : `${styles.swatch} ${styles.swatchCycle}`}
+          onClick={() => cycle.onToggle(!cycle.on)}
+        />
+      )}
       {swatches.map((hex) => (
         <button
           key={hex}
           type="button"
           role="radio"
-          aria-checked={value?.toLowerCase() === hex}
+          aria-checked={picked?.toLowerCase() === hex}
           aria-label={hex}
-          className={value?.toLowerCase() === hex ? `${styles.swatch} ${styles.swatchOn}` : styles.swatch}
+          className={picked?.toLowerCase() === hex ? `${styles.swatch} ${styles.swatchOn}` : styles.swatch}
           style={{ background: hex }}
           onClick={() => onTint(hex, null)}
         />
@@ -430,6 +467,136 @@ function Swatches({
           onBlur={onGestureEnd}
         />
       </label>
+    </div>
+  );
+}
+
+// ── Patterns (261105) ───────────────────────────────────────────────────────
+
+function PatternSwatch({ pack, def, base, accent }: { pack: EditorPack; def: PatternDef; base: string; accent: string }): React.ReactElement {
+  const b = useDebounced(base, 140);
+  const a = useDebounced(accent, 140);
+  const url = useAsyncUrl(() => patternThumb(def, b, a, pack.resolve), `${pack.id}:${pack.rev}:${def.id}:${b}:${a}`);
+  return url ? <img className={styles.patternImg} src={url} alt="" draggable={false} /> : <span className={styles.thumbWait} />;
+}
+
+/** What a tintable part looks like: its colour, and for a part that takes patterns, the pattern and its second colour. */
+interface PartLookValue {
+  tint: string | null;
+  pattern: string;
+  /** Her own second colour, or null for the automatic tone-on-tone. */
+  accent: string | null;
+  cycle: boolean;
+}
+
+function PartLook({
+  pack,
+  component,
+  value,
+  gesture,
+  onTint,
+  onPattern,
+  onAccent,
+  onCycle,
+  onGestureEnd,
+}: {
+  pack: EditorPack;
+  component: RoomComponent;
+  value: PartLookValue;
+  gesture: string;
+  onTint(hex: string, gesture: string | null): void;
+  onPattern(id: string): void;
+  onAccent(hex: string | null, gesture: string | null): void;
+  onCycle(on: boolean): void;
+  onGestureEnd(): void;
+}): React.ReactElement {
+  const t = useT();
+  const patterns = useMemo(() => patternsFor(pack.manifest, component), [pack.manifest, component]);
+  const [which, setWhich] = useState<'base' | 'accent'>('base');
+  const base = value.tint ?? component.defaultTint ?? '#ffffff';
+  const resolved = resolvePattern(pack.manifest, component, base, value.pattern, value.accent ?? undefined);
+  const accent = resolved?.accent ?? value.accent ?? toneOnTone(base);
+  const patterned = resolved !== null;
+  const editAccent = patterned && which === 'accent';
+  return (
+    <div className={styles.look}>
+      {patterned && (
+        <div className={styles.lookTabs} role="tablist" aria-label={t('Colors')}>
+          {(
+            [
+              ['base', t('Main color'), base],
+              ['accent', t('Second color'), accent],
+            ] as const
+          ).map(([id, label, colour]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={(id === 'accent') === editAccent}
+              className={(id === 'accent') === editAccent ? `${styles.lookTab} ${styles.lookTabOn}` : styles.lookTab}
+              onClick={() => setWhich(id)}
+            >
+              <span className={styles.lookDot} style={{ background: colour }} />
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      {editAccent ? (
+        <Swatches
+          component={component}
+          value={accent}
+          gesture={`${gesture}:accent`}
+          label={t('Second color')}
+          auto={{ colour: toneOnTone(base), on: value.accent === null, onPick: () => onAccent(null, null) }}
+          onTint={(hex, g) => onAccent(hex, g)}
+          onGestureEnd={onGestureEnd}
+        />
+      ) : (
+        <Swatches
+          component={component}
+          value={value.tint}
+          gesture={gesture}
+          cycle={component.cycle ? { on: value.cycle, onToggle: onCycle } : undefined}
+          onTint={onTint}
+          onGestureEnd={onGestureEnd}
+        />
+      )}
+      {patterns.length > 0 && (
+        <div className={styles.patterns} role="radiogroup" aria-label={t('Pattern')}>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={!patterned}
+            title={t('Plain')}
+            className={!patterned ? `${styles.pattern} ${styles.patternOn}` : styles.pattern}
+            onClick={() => {
+              setWhich('base');
+              onPattern(PLAIN_PATTERN);
+            }}
+          >
+            <span className={styles.patternPlain} style={{ background: base }} />
+            <span className={styles.patternName}>{t('Plain')}</span>
+          </button>
+          {patterns.map((def) => {
+            const on = resolved?.def.id === def.id;
+            return (
+              <button
+                key={def.id}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                title={t(def.name)}
+                className={on ? `${styles.pattern} ${styles.patternOn}` : styles.pattern}
+                onClick={() => onPattern(def.id)}
+              >
+                <PatternSwatch pack={pack} def={def} base={base} accent={accent} />
+                <span className={styles.patternName}>{t(def.name)}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -465,12 +632,28 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
   const dragRef = useRef<{ index: number; pointerId: number; dx: number; dy: number; sx: number; sy: number; lifted: boolean; surface: number } | null>(null);
   const historyRef = useRef(history);
   historyRef.current = history;
+  const packsRef = useRef(packs);
+  packsRef.current = packs;
+  /** The last pattern she picked this session (analytics, 261105). */
+  const lastPattern = useRef<string | null>(null);
+  const presetNow = history?.present.preset ?? null;
+  const lightSlots = useMemo(() => {
+    const m = packs?.find((p) => p.id === presetNow)?.manifest;
+    return m ? lightSlotsOf(m) : undefined;
+  }, [packs, presetNow]);
+  const roomShape = useCallback(() => {
+    const st = historyRef.current?.present;
+    const m = st ? packsRef.current?.find((p) => p.id === st.preset)?.manifest : undefined;
+    return st && m ? roomShapeOf(m, st, lastPattern.current) : undefined;
+  }, []);
   const analytics = useEditorAnalytics(telemetry ? { ...telemetry, characterId } : null, {
     history,
     panel,
     saving,
     loadError,
     packsEmpty: packs !== null && packs.length === 0,
+    lightSlots,
+    shape: roomShape,
   });
 
   // ── load ──
@@ -853,10 +1036,10 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
         }}
         className={styles.section}
         role="group"
-        aria-label={t(SLOT_LABEL[slot])}
+        aria-label={t(slotLabel(manifest, slot))}
         data-slot={slot}
       >
-        <h2 className={styles.title}>{t(SLOT_LABEL[slot])}</h2>
+        <h2 className={styles.title}>{t(slotLabel(manifest, slot))}</h2>
         {(def.options.length > 1 || def.optional) && (
           <div className={styles.grid}>
             {def.options.map((id) => {
@@ -892,11 +1075,24 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
           </div>
         )}
         {comp?.tintable && (
-          <Swatches
+          <PartLook
+            key={comp.id}
+            pack={pack}
             component={comp}
-            value={slotTint(slot)}
+            value={{
+              tint: slotTint(slot),
+              pattern: currentPattern(comp, state.slots[slot]?.pattern),
+              accent: state.slots[slot]?.accent ?? null,
+              cycle: Boolean(state.slots[slot]?.cycle && comp.cycle),
+            }}
             gesture={`tint:${slot}`}
             onTint={(hex, g) => edit((s) => setSlotTint(manifest, s, slot, hex), g)}
+            onPattern={(id) => {
+              lastPattern.current = id;
+              edit((s) => setSlotPattern(manifest, s, slot, id));
+            }}
+            onAccent={(hex, g) => edit((s) => setSlotAccent(manifest, s, slot, hex), g)}
+            onCycle={(on) => edit((s) => setSlotCycle(manifest, s, slot, on))}
             onGestureEnd={endEditGesture}
           />
         )}
@@ -1134,11 +1330,19 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
               </button>
             </div>
             {paletteOpen && selComp.tintable && (
-              <Swatches
+              <PartLook
+                key={`${selected}:${selComp.id}`}
+                pack={pack}
                 component={selComp}
-                value={currentTint(selComp, selItem.tint)}
+                value={{ tint: currentTint(selComp, selItem.tint), pattern: currentPattern(selComp, selItem.pattern), accent: selItem.accent ?? null, cycle: false }}
                 gesture={`tint:item:${selected}`}
                 onTint={(hex, g) => edit((s) => setItemTint(manifest, s, selected, hex), g)}
+                onPattern={(id) => {
+                  lastPattern.current = id;
+                  edit((s) => setItemPattern(manifest, s, selected, id));
+                }}
+                onAccent={(hex, g) => edit((s) => setItemAccent(manifest, s, selected, hex), g)}
+                onCycle={() => {}}
                 onGestureEnd={endEditGesture}
               />
             )}
