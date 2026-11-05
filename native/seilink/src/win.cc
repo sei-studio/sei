@@ -42,7 +42,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdarg>
 #include <cstdio>
+#include <cwchar>
 #include <cstring>
 #include <mutex>
 #include <string>
@@ -152,6 +154,94 @@ Desk FindDesk(bool spawn) {
   return d;
 }
 
+// ---------------------------------------------------------------- CI trace
+// SEI_SEILINK_NATIVE_TRACE=<file> (the CI self-test only): append-only, flushed line by line so
+// it survives the process dying. Logs every exception the process raises (code, address and a
+// short stack as module+offset, from a vectored handler that only observes), the room box's and
+// the room window's messages, and the watcher's shell events. Off (one null check) otherwise.
+
+FILE* g_trace = nullptr;
+std::mutex g_traceMu;
+
+void Trace(const char* fmt, ...) {
+  if (!g_trace) return;
+  std::lock_guard<std::mutex> l(g_traceMu);
+  fprintf(g_trace, "[%lu %lu %llu] ", GetCurrentProcessId(), GetCurrentThreadId(), (unsigned long long)GetTickCount64());
+  va_list ap;
+  va_start(ap, fmt);
+  vfprintf(g_trace, fmt, ap);
+  va_end(ap);
+  fputc('\n', g_trace);
+  fflush(g_trace);
+}
+
+void ModOff(void* addr, char* out, size_t n) {
+  HMODULE mod = nullptr;
+  wchar_t name[MAX_PATH] = {0};
+  if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                         (LPCWSTR)addr, &mod) &&
+      GetModuleFileNameW(mod, name, MAX_PATH)) {
+    const wchar_t* base = wcsrchr(name, L'\\');
+    snprintf(out, n, "%ls+0x%llX", base ? base + 1 : name, (unsigned long long)((uintptr_t)addr - (uintptr_t)mod));
+  } else {
+    snprintf(out, n, "0x%llX", (unsigned long long)(uintptr_t)addr);
+  }
+}
+
+LONG CALLBACK TraceVeh(PEXCEPTION_POINTERS ep) {
+  DWORD code = ep->ExceptionRecord->ExceptionCode;
+  // Thread naming, debug prints and C++ throws Chromium catches itself are noise.
+  if (code == 0x406D1388 || code == 0x40010006 || code == 0x4001000A || code == 0xE06D7363) return EXCEPTION_CONTINUE_SEARCH;
+  char at[300];
+  ModOff(ep->ExceptionRecord->ExceptionAddress, at, sizeof at);
+  std::string st;
+  void* frames[28];
+  USHORT nf = CaptureStackBackTrace(0, 28, frames, nullptr);
+  for (USHORT i = 0; i < nf; i++) {
+    char f[300];
+    ModOff(frames[i], f, sizeof f);
+    st += " ";
+    st += f;
+  }
+  ULONG_PTR p0 = ep->ExceptionRecord->NumberParameters > 0 ? ep->ExceptionRecord->ExceptionInformation[0] : 0;
+  ULONG_PTR p1 = ep->ExceptionRecord->NumberParameters > 1 ? ep->ExceptionRecord->ExceptionInformation[1] : 0;
+  Trace("EXCEPTION 0x%08lX at %s flags 0x%lX p0 0x%llX p1 0x%llX stack%s", code, at, ep->ExceptionRecord->ExceptionFlags,
+        (unsigned long long)p0, (unsigned long long)p1, st.c_str());
+  return EXCEPTION_CONTINUE_SEARCH;
+}
+
+void TraceInit() {
+  char path[MAX_PATH] = {0};
+  DWORD n = GetEnvironmentVariableA("SEI_SEILINK_NATIVE_TRACE", path, MAX_PATH);
+  if (!n || n >= MAX_PATH || g_trace) return;
+  g_trace = fopen(path, "a");
+  if (!g_trace) return;
+  AddVectoredExceptionHandler(1, TraceVeh);
+  Trace("trace on");
+}
+
+bool Noisy(UINT m) {
+  return m == WM_PAINT || m == WM_TIMER || m == WM_NCHITTEST || m == WM_SETCURSOR || m == WM_MOUSEMOVE ||
+         m == WM_ERASEBKGND || m == WM_GETOBJECT || m == 0x0060 /* WM_SYNCPAINT-ish ime */ || m == WM_NCMOUSEMOVE;
+}
+
+WNDPROC g_roomOldProc = nullptr;
+HWND g_roomTraced = nullptr;
+
+LRESULT CALLBACK RoomTraceProc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
+  if (!Noisy(m)) Trace("room msg 0x%04X wp 0x%llX lp 0x%llX insend %d", m, (unsigned long long)wp, (unsigned long long)lp, InSendMessageEx(nullptr));
+  LRESULT r = CallWindowProcW(g_roomOldProc, h, m, wp, lp);
+  if (m == WM_DESTROY || m == WM_NCDESTROY) Trace("room msg 0x%04X returned", m);
+  return r;
+}
+
+void TraceRoom(HWND h) {
+  if (!g_trace || !h || h == g_roomTraced) return;
+  g_roomOldProc = (WNDPROC)SetWindowLongPtrW(h, GWLP_WNDPROC, (LONG_PTR)RoomTraceProc);
+  g_roomTraced = h;
+  Trace("room traced 0x%llX", (unsigned long long)(uintptr_t)h);
+}
+
 // ---------------------------------------------------------------- room box
 
 void Emit(std::string json);  // watcher section
@@ -174,12 +264,14 @@ bool LiftOut(HWND room) {
 }
 
 LRESULT CALLBACK BoxProc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
+  if (!Noisy(m)) Trace("box msg 0x%04X wp 0x%llX insend %d", m, (unsigned long long)wp, InSendMessageEx(nullptr));
   switch (m) {
     case WM_DESTROY: {
       // The shell is going away (or the process is exiting). Save the room first.
       HWND room = g_room;
       if (room && IsWindow(room) && GetAncestor(room, GA_PARENT) == h) {
         bool ok = LiftOut(room);
+        Trace("box rescue %s err %lu", ok ? "ok" : "FAILED", GetLastError());
         Emit(std::string("{\"type\":\"shellLost\",\"rescued\":") + (ok ? "true" : "false") +
              ",\"err\":" + std::to_string(GetLastError()) + "}");
       }
@@ -273,6 +365,7 @@ Napi::Value Attach(const Napi::CallbackInfo& info) {
   if (!box) return fail("set_parent_failed", "room box: " + boxWhy);
   if (!boxWhy.empty()) step(boxWhy);
   g_room = h;
+  TraceRoom(h);
 
   LONG_PTR style = GetWindowLongPtrW(h, GWL_STYLE);
   LONG_PTR nstyle = (style | WS_CHILD) &
@@ -561,6 +654,7 @@ void ScheduleRecheck(const std::string& why) {
 }
 
 void CALLBACK HookProc(HWINEVENTHOOK, DWORD ev, HWND hwnd, LONG idObj, LONG idChild, DWORD, DWORD) {
+  if (ev != EVENT_OBJECT_LOCATIONCHANGE) Trace("hook ev 0x%lX hwnd 0x%llX", ev, (unsigned long long)(uintptr_t)hwnd);
   if (ev == EVENT_OBJECT_LOCATIONCHANGE) {
     if (idObj != OBJID_WINDOW || idChild != CHILDID_SELF || hwnd != g_fgForHook) return;
     ScheduleRecheck("locationchange");
@@ -635,6 +729,7 @@ void OnRawMouse(const RAWMOUSE& m) {
 
 LRESULT CALLBACK WatchProc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
   if (g_msgTaskbarCreated && m == g_msgTaskbarCreated) {
+    Trace("watch TaskbarCreated");
     Emit("{\"type\":\"taskbarCreated\"}");
     ScheduleRecheck("taskbarCreated");
     return 0;
@@ -743,6 +838,7 @@ Napi::Value CoverageNow(const Napi::CallbackInfo& info) {
 }
 
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
+  TraceInit();
   exports.Set("platform", "win32");
   exports.Set("attach", Napi::Function::New(env, Attach));
   exports.Set("validate", Napi::Function::New(env, Validate));

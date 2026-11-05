@@ -123,6 +123,8 @@ jobs:
         env:
           SEI_SEILINK_PACKS: ${{ runner.temp }}/seilink-packs
           SEI_SEILINK_SELFTEST: ${{ github.workspace }}/seilink-check
+          # win.cc's CI trace: exceptions with stacks, room box / room window messages.
+          SEI_SEILINK_NATIVE_TRACE: ${{ github.workspace }}/seilink-check/native-trace.log
         run: |
           mkdir -p "$OUT"
           npx electron . 2>&1 | tee "$OUT/app-stdout.log" | tail -200
