@@ -8,7 +8,7 @@
  * child it spawned, so a straggler from a replaced host, or another local
  * process, is never listened to.
  */
-import type { AvatarManifest } from '../../../shared/ipc';
+import type { AvatarEmotion, AvatarManifest } from '../../../shared/ipc';
 import type { SeilinkDockAction, SeilinkHostAvatarMethod, SeilinkHostFailure, SeilinkHostRoom } from '../../../shared/seilinkHost';
 
 /** Main -> host. */
@@ -32,7 +32,7 @@ export type ToHost =
   /** M4: the dock's state (her idle lines muted). */
   | { type: 'dock-state'; deafened: boolean }
   /** M4: a line she says on the desktop (a bubble near her). */
-  | { type: 'line'; text: string; kind: 'idle' | 'poke' }
+  | { type: 'line'; text: string; kind: 'idle' | 'poke'; emotion?: AvatarEmotion | null; face?: string | null }
   /** Hold the room still (a future dock "pause"). */
   | { type: 'set-paused'; paused: boolean }
   | { type: 'quit' }

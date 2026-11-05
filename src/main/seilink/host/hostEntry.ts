@@ -32,6 +32,7 @@ import { ClickClassifier, type PressPoint } from './clicks';
 import { FAKE_ADDON_FILE, addonPath, fakeDesktopEnabled, loadSeilinkAddon, type SeilinkAddon, type SeilinkMacAddon, type SeilinkWinAddon } from './native';
 import { SEILINK_HOST_CHANNELS as CH } from '../../../shared/seilinkHostChannels';
 import { SEILINK_ROOM_SCHEME } from '../../../shared/seilinkPack';
+import { isAvatarEmotion, isFaceWord } from '../../../shared/seilinkExpression';
 import {
   SEILINK_HOST_FPS,
   SEILINK_PORTRAIT_HOST,
@@ -245,7 +246,10 @@ function onCommand(m: ToHost): void {
       break;
     case 'line': {
       const text = String(m.text ?? '').slice(0, 400).trim();
-      if (text) toPage(CH.line, { id: ++lineSeq, text, kind: m.kind === 'poke' ? 'poke' : 'idle' });
+      // 261105: her face for the line (seilinkExpression.ts), checked again here: closed shapes only.
+      const emotion = isAvatarEmotion(m.emotion) ? m.emotion : null;
+      const face = isFaceWord(m.face) ? m.face : null;
+      if (text) toPage(CH.line, { id: ++lineSeq, text, kind: m.kind === 'poke' ? 'poke' : 'idle', emotion, face });
       break;
     }
     case 'set-paused':

@@ -157,9 +157,31 @@ which renders `RoomAvatar` with:
 | `portrait` | `SeilinkHostRoom.portrait` (below) |
 | `use` | `roomAvatarUse(room.state.avatar)` |
 | `busy` | main (a chat turn with her, held 60 s after the reply) OR 8 s after a click on her |
-| `speaking`, `levelRef`, `emotion`, `facepack` | not passed yet (her voice does not play in the host) |
+| `speaking` | one of her lines is in a bubble (`levelRef` is a made-up syllable envelope; no audio plays in the host) |
+| `emotion`, `face`, `faceSeq` | her face for the line (261105, below) |
+| `facepack` | not passed (RoomAvatar asks main for her pack) |
 
 The contract for any replacement is in the file header.
+
+### Her face on the desktop (261105)
+
+Each desktop line carries her face, at no added tokens: main
+(`sendSeilinkLine`, `shared/seilinkExpression.ts` `desktopLineFace`) takes
+the face tag the line led with (`[happy] ...`, read by
+`sendDesktopLineTurn`; only the facepack dev flag prompts for one), else
+the call overlay's spoken-line lexicon (`classifyEmotion`, now in
+`shared/avatarEmotion.ts`). The `line` message gets `emotion` (Live2D's
+closed set) and `face` (a face-set word: shy = embarrassed, angry =
+annoyed, love = happy). The page (`host/hostLook.ts`) passes `emotion` only
+while she says the line (Live2DView then lingers half the line and decays,
+as on a call) and holds `face` while the bubble is up (at least 1.5x the
+speaking time), then sends `neutral`; FacepackView's own timeline may
+decay a strong face (laugh, surprised) sooner, as in the app. A cover drops
+the bubble and her face. The portrait cutout and the silhouette have no
+face. Counted as `expressions` (seilink_health / seilink_ended) and
+`expression` tag/lexicon/none on `seilink_line_shown`. Her replies in the
+app's chat do not change her desktop face (she is held still while you chat).
+Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
 
 ### What RoomAvatar can read in the host
 

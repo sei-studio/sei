@@ -13,7 +13,9 @@
  * client's <userData>/anima/packs), the `host-crossfade` shot is a sequence:
  * her portrait first, then her face set "arrives" 1.5 s after the room first
  * draws (an avatar-manifest push, like the anima client's) and RoomAvatar
- * crossfades to it.
+ * crossfades to it. `host-expression` / `host-expression-surprised` (261105,
+ * also --facepacks) show her face for a line: before, while the bubble is up,
+ * and back to neutral after (data-avatar-face is printed with each frame).
  *
  * Starts the renderer's Vite dev server on its own, a CORS static server for
  * <packs>, and Chrome through playwright. Wallpaper shots open
@@ -40,6 +42,8 @@ const PRESET = arg('preset', 'cozy');
 const OUT = path.resolve(arg('out', 'seilink-host-shots'));
 
 const LINE = 'oh hey. I was just rearranging the shelf again, it never looks right';
+const LINE_HAPPY = 'haha you found me. I was just rearranging the shelf again';
+const LINE_SURPRISED = 'wait, really?? you moved the lamp?';
 const LINE_JA = 'あ、おかえり。棚の並べ方、まだしっくりこないんだよね';
 
 /**
@@ -66,13 +70,16 @@ const SHOTS = {
   'movein-ru-light': { kind: 'app', q: 'screen=home&modal=movein&theme=light&lang=ru', act: 'thumb' },
   'character-menu-dark': { kind: 'app', q: 'screen=character&seilink=on&theme=dark', act: 'menu' },
   'character-menu-light': { kind: 'app', q: 'screen=character&seilink=on&theme=light', act: 'menu' },
+  // 261105: her face for a line (needs --facepacks): neutral, the line's face while the bubble is up, neutral again.
+  'host-expression': { kind: 'host', q: `time=day&lineat=6000&line=${encodeURIComponent(LINE_HAPPY)}`, seq: [4000, 6500, 8000, 14000] },
+  'host-expression-surprised': { kind: 'host', q: `time=dusk&lineat=6000&line=${encodeURIComponent(LINE_SURPRISED)}`, seq: [4000, 6500] },
   'host-crossfade': { kind: 'host', q: 'time=day', seq: [1200, 1700, 1900, 2100, 2300, 2500, 2800, 3200, 4500] },
 };
 const FACEPACKS = arg('facepacks', null) ? path.resolve(arg('facepacks')) : null;
 const FACEPACK_ID = arg('facepack-id', null);
 const PORTRAIT = arg('portrait', null) ? path.resolve(arg('portrait')) : null;
 const NAME = arg('name', null);
-const names = arg('shots', Object.keys(SHOTS).filter((n) => n !== 'host-crossfade' || FACEPACKS).join(',')).split(',');
+const names = arg('shots', Object.keys(SHOTS).filter((n) => !['host-crossfade', 'host-expression', 'host-expression-surprised'].includes(n) || FACEPACKS).join(',')).split(',');
 
 function packServer(root) {
   return new Promise((resolve) => {
@@ -168,7 +175,8 @@ async function main() {
           await page.waitForTimeout(Math.max(0, at - (Date.now() - t0)));
           const file = path.join(OUT, `${name}-${String(at).padStart(5, '0')}.png`);
           await page.screenshot({ path: file });
-          console.log(file);
+          const face = await page.evaluate(() => document.querySelector('[data-avatar-face]')?.getAttribute('data-avatar-face') ?? '-');
+          console.log(`${file} face=${face}`);
         }
         await page.close();
         continue;
