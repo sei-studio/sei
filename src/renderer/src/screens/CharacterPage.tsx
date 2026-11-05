@@ -19,7 +19,7 @@
  * Source: docs/design/UI-REDESIGN-PARTY.md §4.6.
  */
 
-import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useT, t as tGlobal } from '../lib/i18n';
 import { useUiStore } from '../lib/stores/useUiStore';
@@ -29,8 +29,7 @@ import { useChatStore } from '../lib/stores/useChatStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
 import { movedInId, useSeilinkStore } from '../lib/stores/useSeilinkStore';
-import { moveInFailed, needsMoveInSheet } from '../lib/seilink/moveIn';
-import type { EditorOpenedFrom, MoveInReason } from '@shared/seilinkTelemetry';
+import { moveInOrOut, openRoomEditor, replayIntro } from '../lib/seilink/seilinkFlow';
 import { Button } from '../components/Button';
 import { Toggle } from '../components/Toggle';
 import { ModalShell, ModalFooter } from '../components/ModalShell';
@@ -59,9 +58,6 @@ import { sharedVoiceMetadataToSave } from '../lib/sharedVoice';
 import { voicePitchRate } from '@shared/voicePitch';
 import styles from './CharacterPage.module.css';
 
-// SeiLink room editor (261104): dev flag only, loaded on first open.
-const CompanionRoomEditor = lazy(() => import('../components/seilink/CompanionRoomEditor'));
-const MoveInSheet = lazy(() => import('../components/seilink/MoveInSheet'));
 
 function fmtMs(ms: number): string {
   if (ms <= 0) return '-';
@@ -171,20 +167,10 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const livingId = useSeilinkStore((s) => movedInId(s.status));
   // Her host kept crashing and the supervisor gave up (state failed, for her).
   const seilinkFailedHere = useSeilinkStore((s) => s.status.state === 'failed' && s.status.characterId === id);
-  const pendingEditor = useSeilinkStore((s) => s.pendingEditor);
-  // Open = where it was opened from (analytics), null = closed.
-  const [roomEditorOpen, setRoomEditorOpen] = useState<EditorOpenedFrom | null>(null);
-  // Open = why the sheet shows (analytics), null = closed.
-  const [moveInOpen, setMoveInOpen] = useState<MoveInReason | null>(null);
-  // A move in / out is on its way: a second click waits for it (main also queues them).
-  const moveBusyRef = useRef(false);
-  const [moveBusy, setMoveBusy] = useState<boolean>(false);
-  // The dock's "edit room" lands here (App.tsx navigates to her page first).
-  useEffect(() => {
-    if (!pendingEditor || pendingEditor !== id) return;
-    useSeilinkStore.getState().clearEditor();
-    setRoomEditorOpen('dock');
-  }, [pendingEditor, id]);
+  // 261105 (T337): the move-in sheet and the room editor are SeilinkFlowHost's (App.tsx), shared
+  // with the chat top bar's SeiLink button, the dock and the tour (lib/seilink/seilinkFlow.ts).
+  // A move in / out on its way: a second click waits for it (main also queues them).
+  const moveBusy = useSeilinkStore((s) => s.moveBusy);
   const settingsRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!settingsOpen) return;
@@ -495,31 +481,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     if (latest && (latest.description ?? '').trim() !== '') {
       setSharePhase('confirm');
       setShareConfirm('going_public');
-    }
-  };
-
-  // 261104 SeiLink M4: move her onto the desktop (the sheet the first time,
-  // or when someone else moves out), or off it.
-  const onMoveInClick = async (): Promise<void> => {
-    if (moveBusyRef.current) return;
-    moveBusyRef.current = true;
-    setMoveBusy(true);
-    try {
-      if (livingId === id) {
-        await sei.seilinkHostStop?.().catch(() => null);
-        return;
-      }
-      const room = await sei.seilinkRoomGet?.(id).catch(() => null);
-      if (needsMoveInSheet({ saved: room?.saved === true, movedInId: livingId, characterId: id })) {
-        setMoveInOpen(room?.saved === true ? 'swap' : 'first_room');
-        return;
-      }
-      const status = await sei.seilinkHostStart?.(id).catch(() => null);
-      // A start that did not take opens the sheet, which has the retry and the error line.
-      if (!status || moveInFailed(status)) setMoveInOpen('retry');
-    } finally {
-      moveBusyRef.current = false;
-      setMoveBusy(false);
     }
   };
 
@@ -910,7 +871,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                           aria-busy={moveBusy}
                           onClick={() => {
                             setSettingsOpen(false);
-                            void onMoveInClick();
+                            void moveInOrOut(character.id, 'gear');
                           }}
                         >
                           {livingId === character.id ? t('Move off desktop') : t('Move onto desktop')}
@@ -926,10 +887,21 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                           className={styles.settingsItem}
                           onClick={() => {
                             setSettingsOpen(false);
-                            setRoomEditorOpen('gear');
+                            openRoomEditor(character.id, 'gear');
                           }}
                         >
                           {t('Edit room')}
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={styles.settingsItem}
+                          onClick={() => {
+                            setSettingsOpen(false);
+                            replayIntro(character.id, 'gear');
+                          }}
+                        >
+                          {t('Replay SeiLink intro')}
                         </button>
                       </>
                     ) : null}
@@ -997,22 +969,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           characterName={character.name}
           onClose={() => setKnowledgeOpen(false)}
         />
-      ) : null}
-      {roomEditorOpen ? (
-        <Suspense fallback={null}>
-          <CompanionRoomEditor characterId={character.id} openedFrom={roomEditorOpen} onClose={() => setRoomEditorOpen(null)} />
-        </Suspense>
-      ) : null}
-      {moveInOpen ? (
-        <Suspense fallback={null}>
-          <MoveInSheet
-            characterId={character.id}
-            name={character.name}
-            otherName={livingId && livingId !== character.id ? (characters.find((c) => c.id === livingId)?.name ?? null) : null}
-            reason={moveInOpen}
-            onClose={() => setMoveInOpen(null)}
-          />
-        </Suspense>
       ) : null}
       {cardImageOpen ? (
         <PortraitVersionsModal

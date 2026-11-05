@@ -26,6 +26,7 @@ import { useDataStore } from '../../lib/stores/useDataStore';
 import { useTutorialStore, type TutorialStep } from '../../lib/stores/useTutorialStore';
 import { DEFAULT_CHARACTER_UUIDS } from '@shared/defaultCharacters';
 import { enterFirstMoment } from '../../lib/stores/useFirstMomentStore';
+import { seilinkTourCompleted, seilinkTourDropped, seilinkTourNotNow, seilinkTourSure } from '../../lib/seilink/seilinkTour';
 import styles from './TutorialOverlay.module.css';
 
 /** The base sprites face LEFT, so the left corner uses the -flipped variants
@@ -84,6 +85,12 @@ const STEPS: Record<TutorialStep, StepDef> = {
   settings: { targets: ['theme-group'], interactive: false, advanceOnClick: true },
   sui: { targets: ['sui-card'], interactive: false, advanceOnClick: true },
   bye: { targets: [], interactive: false, advanceOnClick: true },
+  // 261105: the SeiLink tour. The offer waits for Sure / Not now; the two
+  // lines spotlight the chat top bar's SeiLink button, inert like 'backseat'
+  // (the tour itself opens the move-in sheet at the end).
+  sl_offer: { targets: [], interactive: false, advanceOnClick: false },
+  sl_button: { targets: ['seilink-btn'], interactive: false, advanceOnClick: true },
+  sl_room: { targets: ['seilink-btn'], interactive: false, advanceOnClick: true },
 };
 
 const PAD = 8;
@@ -124,6 +131,8 @@ export function TutorialOverlay(): React.ReactElement | null {
   const characterId = useTutorialStore((s) => s.characterId);
   const setStep = useTutorialStore((s) => s.setStep);
   const end = useTutorialStore((s) => s.end);
+  const mode = useTutorialStore((s) => s.mode);
+  const seilinkTour = useTutorialStore((s) => s.seilink);
 
   const modal = useUiStore((s) => s.modal);
   const view = useUiStore((s) => s.view);
@@ -164,6 +173,14 @@ export function TutorialOverlay(): React.ReactElement | null {
     ),
     sui: tt("Did I mention? I'm here too! If you ever wanna play with me, I'd be really happy!"),
     bye: tt("Anyways, that's all from me. Welcome to Sei!"),
+    sl_offer:
+      seilinkTour?.audience === 'new'
+        ? tt("Hey, it's me again! Got a minute? I want to show you one more thing.")
+        : tt("Hey! Remember me? I'm back! Let me show you something cool we just added."),
+    sl_button: tt('This is SeiLink. {name} can move onto your desktop and live there, right on your wallpaper.', {
+      name: companion?.name ?? tt('them'),
+    }),
+    sl_room: tt('{name} gets a room there that you can decorate. Pick one and see!', { name: companion?.name ?? tt('them') }),
   };
 
   const def = STEPS[step];
@@ -229,7 +246,23 @@ export function TutorialOverlay(): React.ReactElement | null {
     return () => window.clearInterval(t);
   }, [active, step]);
 
+  // 261105: the SeiLink tour ends here: the last line opens SeiLink, Skip
+  // tutorial before it is a drop (seilinkTour.ts ends the tour itself).
+  const endSeilink = useCallback(
+    (completed: boolean) => {
+      setClosing(true);
+      const at = step;
+      setTimeout(() => {
+        setClosing(false);
+        if (completed) seilinkTourCompleted();
+        else seilinkTourDropped(at === 'sl_offer' ? 'offer' : at === 'sl_button' ? 'button' : 'room');
+      }, 450);
+    },
+    [step],
+  );
+
   const finish = useCallback(() => {
+    if (mode === 'seilink') return endSeilink(false);
     setClosing(true);
     closeModal();
     setTimeout(() => {
@@ -240,7 +273,7 @@ export function TutorialOverlay(): React.ReactElement | null {
       // App.tsx armed it at onboarding completion.
       enterFirstMoment();
     }, 450);
-  }, [closeModal, end]);
+  }, [closeModal, end, mode, endSeilink]);
 
   const advance = useCallback(() => {
     if (!tw.done) return; // let the line finish (a click mid-type is a misfire)
@@ -278,10 +311,16 @@ export function TutorialOverlay(): React.ReactElement | null {
       case 'bye':
         finish();
         break;
+      case 'sl_button':
+        setStep('sl_room');
+        break;
+      case 'sl_room':
+        endSeilink(true);
+        break;
       default:
         break;
     }
-  }, [step, tw.done, setStep, closeModal, setHomeTab, navigate, hasSui, finish]);
+  }, [step, tw.done, setStep, closeModal, setHomeTab, navigate, hasSui, finish, endSeilink]);
 
   // Enter advances like a click (advance() already no-ops mid-typewriter).
   // Ignore presses aimed at a real control so form/button semantics survive.
@@ -369,6 +408,19 @@ export function TutorialOverlay(): React.ReactElement | null {
     : null;
 
   const scrimClick = def.advanceOnClick ? advance : undefined;
+  const onSure = (): void => {
+    if (!characterId) return;
+    seilinkTourSure();
+    navigate({ kind: 'chat', characterId });
+    setStep('sl_button');
+  };
+  const onNotNow = (): void => {
+    setClosing(true);
+    setTimeout(() => {
+      setClosing(false);
+      seilinkTourNotNow();
+    }, 450);
+  };
 
   return (
     <div className={closing ? `${styles.root} ${styles.closing}` : styles.root}>
@@ -432,9 +484,11 @@ export function TutorialOverlay(): React.ReactElement | null {
         <div className={styles.scrimFull} onClick={scrimClick} />
       )}
 
-      <button className={styles.skip} onClick={finish}>
-        {'> ' + tt('Skip tutorial')}
-      </button>
+      {step !== 'sl_offer' ? (
+        <button className={styles.skip} onClick={finish}>
+          {'> ' + tt('Skip tutorial')}
+        </button>
+      ) : null}
 
       <div
         ref={cornerRef}
@@ -459,6 +513,16 @@ export function TutorialOverlay(): React.ReactElement | null {
         <div className={styles.bubble} onClick={def.advanceOnClick ? advance : undefined}>
           {tw.shown}
           {!tw.done ? <span className={styles.caret} /> : null}
+          {step === 'sl_offer' && tw.done && !closing ? (
+            <div className={styles.choices}>
+              <button type="button" className={`${styles.choice} ${styles.choicePrimary}`} onClick={onSure}>
+                {tt('Sure')}
+              </button>
+              <button type="button" className={styles.choice} onClick={onNotNow}>
+                {tt('Not now')}
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

@@ -258,6 +258,56 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   `stopSeilinkHostForAccountSwitch()`; starts take `beginSessionStart()`
   (`ACCOUNT_SWITCHING` during a switch).
 
+## Entry points and the first link (261105, T337)
+
+- Every way into SeiLink goes through `lib/seilink/seilinkFlow.ts`, and the
+  move-in sheet, the room editor and the intro are rendered once, by
+  `SeilinkFlowHost` (mounted in App.tsx, state in `useSeilinkStore.flow` /
+  `.intro`). Entry points:
+  - the SeiLink button in `ChatTopBar` (after Backseat, before Call;
+    `data-tutorial="seilink-btn"`), shown wherever SeiLink is available.
+    She lives there: her room editor. Otherwise: move her in
+    (`openSeilink`, source `button`).
+  - the companion page's gear menu: "Move onto desktop" / "Move off desktop"
+    (`moveInOrOut`), "Edit room" (`openRoomEditor`), "Replay SeiLink intro"
+    (`replayIntro`). Source `gear`.
+  - the dock's edit button (main push `seilink:open-room-editor`), `dock`.
+  - the guide's tour (below), `tour`.
+  Each records `seilink_entry {source, action}` and passes the source on
+  (`seilink_movein_sheet.entry`, the editor's `opened_from`).
+- There is no on/off setting (the Settings "Labs" section was removed
+  261105): SeiLink is available wherever `seilinkSupport()` says it can run.
+- **The first-link intro** (`components/seilink/intro/`): about 10.5 s, three
+  beats with one line each ("Opening a tunnel to the digital world…",
+  "Linking {name}…", "Porting the link to your desktop…"), then "Linked." /
+  "{name} lives on your desktop now.". `startSeilinkHost` (the only host
+  start in the renderer) requests it alongside the start, so it never delays
+  the host; only the end card waits for the start's answer (`HOLD_MAX_MS`).
+  A failed start aborts it ("Link interrupted.", then the sheet's retry
+  shows). Skip button and Esc. Reduced motion plays the calm timeline
+  (fades only). Once per account (`lib/seilink/introPref.ts`, localStorage
+  `sei.seilinkIntroSeen.v1.<scope>`): seen when it completed or was skipped
+  on a move-in that worked. Replay plays it over her room with nothing
+  starting.
+  - Frames are pure (`introFrame.ts` computeFrame, `introFx.ts` canvases),
+    so the harness seeks them: `?seilinkintro=1` (DevIntroPreview,
+    `&style=holo|glitch|tunnel&reduced=1&manual=1`), and
+    `scripts/seilink-intro-shots.mjs` renders the review mp4s.
+  - Three treatments behind `IntroStyle` (`holo`, `glitch`, `tunnel`;
+    `DEFAULT_INTRO_STYLE` ships, a dev override is
+    `localStorage['sei.seilinkIntroStyle']`). Once Shawn picks one, delete
+    the other two branches of computeFrame and their fx.
+- **The guide's SeiLink tour** (`lib/seilink/tourPref.ts` decides,
+  `seilinkTour.ts` records, `useTutorialStore` mode `seilink`, steps
+  `sl_offer` / `sl_button` / `sl_room` in TutorialOverlay). App.tsx polls
+  for a calm Home (no modal, tour, first moment, call, game or share; the
+  same `readCalmUi` as the boot offers). Only where SeiLink is available,
+  never in a session that ran onboarding, never for someone already linked.
+  Existing users: "Hey! Remember me? I'm back! ..." New players: a day after
+  onboarding. Sure: her chat, the SeiLink button spotlighted with two lines,
+  then the move-in sheet. Not now: asked once more 3 days later, then never.
+  Not persisted in `tutorial_state` (a quit ends it).
+
 ## Analytics (shape only)
 
 The full event table (did it show, health, interaction, move-in, editor,

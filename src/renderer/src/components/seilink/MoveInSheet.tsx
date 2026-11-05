@@ -28,6 +28,8 @@ import { CheckIcon } from './roomEditorIcons';
 import { moveInFailed, ROOM_PRESET_LABEL } from '../../lib/seilink/moveIn';
 import { useAnimaLook } from '../../lib/seilink/useAnimaLook';
 import { SEILINK_MOVEIN_SHEET_EVENT, type MoveInAction, type MoveInFail, type MoveInReason } from '@shared/seilinkTelemetry';
+import type { SeilinkEntrySource } from '@shared/seilinkIntroTelemetry';
+import { startSeilinkHost } from '../../lib/seilink/seilinkFlow';
 import styles from './MoveInSheet.module.css';
 
 function PresetThumb({ pack, resolveFor }: { pack: SeilinkPack; resolveFor?: (p: SeilinkPack) => RoomUrlResolver }): React.ReactElement {
@@ -140,10 +142,12 @@ export interface MoveInSheetProps {
   otherName: string | null;
   /** Why the page showed the sheet (analytics). */
   reason?: MoveInReason;
+  /** 261105: how the person got here (analytics: the SeiLink button, the gear menu, the tour, the dock). */
+  entry?: SeilinkEntrySource;
   onClose: () => void;
 }
 
-export function MoveInSheet({ characterId, name, otherName, reason, onClose }: MoveInSheetProps): React.ReactElement {
+export function MoveInSheet({ characterId, name, otherName, reason, entry, onClose }: MoveInSheetProps): React.ReactElement {
   const t = useT();
   const [packs, setPacks] = useState<SeilinkPack[] | null>(null);
   const [saved, setSaved] = useState<{ saved: boolean; preset: RoomPresetId } | null>(null);
@@ -171,6 +175,7 @@ export function MoveInSheet({ characterId, name, otherName, reason, onClose }: M
         swap: otherName !== null,
         preset_changed: firstPreset.current !== null && at !== firstPreset.current,
         ms_open: Date.now() - openedAt.current,
+        ...(entry ? { entry } : {}),
         ...(extra.packs !== undefined ? { packs_available: extra.packs } : {}),
         ...(extra.error_class ? { error_class: extra.error_class } : {}),
       });
@@ -214,9 +219,10 @@ export function MoveInSheet({ characterId, name, otherName, reason, onClose }: M
     try {
       if (pickRoom && preset && sei.seilinkRoomSet) await sei.seilinkRoomSet(characterId, defaultRoomState(preset));
       stage = 'start_failed';
-      const status = await sei.seilinkHostStart(characterId, { firstRoom: pickRoom });
-      if (moveInFailed(status)) {
-        report('failed', { error_class: status.state === 'unsupported' ? 'unsupported' : 'start_failed' });
+      // 261105: the first move-in on this account plays the first-link intro alongside the start.
+      const status = await startSeilinkHost(characterId, { firstRoom: pickRoom, entry: entry ?? 'gear' });
+      if (!status || moveInFailed(status)) {
+        report('failed', { error_class: status?.state === 'unsupported' ? 'unsupported' : 'start_failed' });
         setError(t('Could not move in. Try again.'));
         setBusy(false);
         return;

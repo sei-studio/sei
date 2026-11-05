@@ -29,6 +29,7 @@ import { useDataStore } from './stores/useDataStore';
 import { useFirstMomentStore } from './stores/useFirstMomentStore';
 import { useHomeNextStepStore } from './stores/useHomeNextStepStore';
 import { useChatgptStore } from './stores/useChatgptStore';
+import { useSeilinkStore } from './stores/useSeilinkStore';
 import { clearAllFeedbackDrafts } from './feedbackDraft';
 import { useVoiceStore } from './stores/useVoiceStore';
 import { useBackseatStore } from './stores/useBackseatStore';
@@ -105,4 +106,6 @@ export function resetAccountScopedState(): void {
   useHomeNextStepStore.getState().reset();
   // 261017 (issue #46): the ChatGPT-plan accounts file lives in the profile.
   useChatgptStore.getState().reset();
+  // 261105 (T337): an open move-in sheet, room editor or first-link intro names a companion of the old account.
+  useSeilinkStore.setState({ flow: null, intro: null, moveBusy: false });
 }
