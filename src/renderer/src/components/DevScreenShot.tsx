@@ -200,6 +200,11 @@ function MoveInShot(): React.ReactElement {
   const packUrl = (params.get('pack') ?? '').replace(/\/?$/, '/');
   const [packs, setPacks] = React.useState<SeilinkPack[] | null>(null);
   const [preset, setPreset] = React.useState<RoomPresetId | null>(null);
+  // Stable, so the thumbnail's effect does not restart on every render.
+  const resolveFor = React.useCallback(
+    () => (rel: string) => `${rel.startsWith('_shared/') ? `${packUrl}../` : packUrl}${rel}`,
+    [packUrl],
+  );
   React.useEffect(() => {
     void fetch(`${packUrl}manifest.json`)
       .then((r) => r.json())
@@ -223,7 +228,7 @@ function MoveInShot(): React.ReactElement {
       error={null}
       onCancel={noop}
       onConfirm={noop}
-      resolveFor={() => (rel: string) => `${rel.startsWith('_shared/') ? `${packUrl}../` : packUrl}${rel}`}
+      resolveFor={resolveFor}
     />
   );
 }

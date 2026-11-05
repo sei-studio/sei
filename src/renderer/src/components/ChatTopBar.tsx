@@ -96,7 +96,9 @@ export function ChatTopBar({ characterId, gameOpen = false }: ChatTopBarProps): 
   // flipped in memory by "Got it" or a click on the games button, so the card
   // leaves without a second read. Everything else it depends on is live
   // state: see gamesTipPref for why each of these suppresses it.
+  // The SeiLink sheet, editor and intro are modals too, but live in their own store.
   const modalOpen = useUiStore((s) => s.modal !== null);
+  const seilinkOpen = useSeilinkStore((s) => s.flow !== null || s.intro !== null);
   const tutorialActive = useTutorialStore((s) => s.active);
   const firstMomentLive = useFirstMomentStore(
     (s) => s.status === 'armed' || s.status === 'greeting' || s.status === 'ready',
@@ -118,7 +120,7 @@ export function ChatTopBar({ characterId, gameOpen = false }: ChatTopBarProps): 
     done: tipDone,
     onChatScreen: !onCallView,
     gameOpen,
-    modalOpen,
+    modalOpen: modalOpen || seilinkOpen,
     tutorialActive,
     firstMomentLive,
   });

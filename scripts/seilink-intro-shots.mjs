@@ -84,7 +84,7 @@ function ffmpeg(args) {
 
 function listen(page, label) {
   page.on('console', (m) => {
-    if (m.type() === 'error') console.log(`  [${label} page error] ${m.text().slice(0, 240)}`);
+    if (m.type() === 'error') console.log(`  [${label} page error] ${m.text().slice(0, 240)} ${m.location()?.url ?? ''}`);
   });
   page.on('pageerror', (e) => console.log(`  [${label} page error] ${e.message.slice(0, 300)}`));
   page.on('response', (r) => {
