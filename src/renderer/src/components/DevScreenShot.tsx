@@ -10,7 +10,7 @@
  *     screen = home | character | chat | call | settings | edit (&section=appearance|voice|persona|games)
  *     modal  = delete | feedback | report | signout | apikey | creationlimit |
  *              topup | factoryreset | deleteaccount | movein   (over the Home screen)
- *     &seilink=on|off|unsupported   the desktop room's Labs setting (261104)
+ *     &seilink=on|unsupported       SeiLink availability (261104; no setting since 261105)
  *     movein: &pack=<url of a pack dir> (its thumbnail), &swap=1 (Lyra lives there now)
  *     &theme=light|dark  &lang=zh  &backdrop=1 (call: the character-art view)
  *
@@ -65,12 +65,10 @@ const modal = params.get('modal');
 const seilinkShot = params.get('seilink');
 const seilinkAvailability: SeilinkAvailability | null =
   seilinkShot === 'on'
-    ? { supported: true, setting: true, enabled: true, dev: false }
-    : seilinkShot === 'off'
-      ? { supported: true, setting: false, enabled: false, dev: false }
-      : seilinkShot === 'unsupported'
-        ? { supported: false, reason: 'platform', setting: false, enabled: false, dev: false }
-        : null;
+    ? { supported: true, enabled: true, dev: false }
+    : seilinkShot === 'unsupported'
+      ? { supported: false, reason: 'platform', enabled: false, dev: false }
+      : null;
 const HOUR = 3_600_000;
 const now = Date.now();
 
@@ -150,7 +148,6 @@ function seed(): void {
       preferred_name: 'Robin',
       ai_backend_kind: 'cloud-proxy',
       ui_language: params.get('lang') ?? 'en',
-      seilink_enabled: seilinkShot === 'on',
     }),
     seilinkAvailability: async () => seilinkAvailability,
     getCharacter: async (id: string) => CHARACTERS.find((c) => c.id === id) ?? null,

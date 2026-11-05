@@ -166,7 +166,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   // 260909 Card image popup (versions + regenerate) — owned characters only.
   const [cardImageOpen, setCardImageOpen] = useState<boolean>(false);
   // 261104 SeiLink (M4): the room items exist only while SeiLink is on
-  // (Settings > Labs, or the dev flag), so most users never see them.
+  // (a supported install or the dev flag; no setting since 261105).
   const seilinkOn = useSeilinkStore((s) => s.availability?.enabled === true);
   const livingId = useSeilinkStore((s) => movedInId(s.status));
   // Her host kept crashing and the supervisor gave up (state failed, for her).

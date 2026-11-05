@@ -67,7 +67,6 @@ per window, `idle_attempted` / `idle_shown` / `idle_none_<why>` count tries.
 
 | Event | When | Props | Answers |
 |---|---|---|---|
-| `seilink_setting_toggled` | Labs toggle | enabled, supported, unsupported_reason? | Who turns it on |
 | `seilink_movein_sheet` | sheet loaded (`shown`), Move in worked (`confirmed`), a try failed (`failed`, once per class), Not now (`dismissed`) | action, reason `first_room`/`swap`/`retry`, preset, pick_room, swap, preset_changed, packs_available (shown), ms_open, error_class `start_failed`/`save_failed`/`unsupported`/`error` | Sheet funnel and which room people pick |
 | `seilink_moved_in` | host started for her (not a restore) | swapped, preset, first_room | Move-ins |
 | `seilink_moved_out` | she moved out | via app/dock | Move-outs |

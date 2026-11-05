@@ -3248,27 +3248,6 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       const { setAvatarCaptureVisible } = await import('./callOverlay');
       setAvatarCaptureVisible(cfg.avatar_in_captures === true);
     }
-    // 261104 SeiLink M4: Settings > Labs "Desktop room". Off moves her out.
-    if ('seilink_enabled' in (cfgArg as Record<string, unknown>)) {
-      const on = cfg.seilink_enabled === true;
-      const [{ applySeilinkSetting }, { seilinkSupport }] = await Promise.all([
-        import('./seilink/host/seilinkHost'),
-        import('./seilink/gate'),
-      ]);
-      if (await applySeilinkSetting(on)) {
-        const { loadAnalytics } = await import('./lazyAnalytics');
-        void loadAnalytics()
-          .then((a) => {
-            const support = seilinkSupport();
-            a.capture('seilink_setting_toggled', {
-              enabled: on,
-              supported: support.supported,
-              ...(support.reason ? { unsupported_reason: support.reason } : {}),
-            });
-          })
-          .catch(() => {});
-      }
-    }
     // Item 7: mirror the user's preferred name into the public profiles table
     // so Browse shows "by <name>" on their published characters. Fire-and-forget
     // (don't add a network round-trip to every config save, e.g. theme toggles)

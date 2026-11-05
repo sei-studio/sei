@@ -1441,8 +1441,8 @@ async function bootstrap(): Promise<void> {
     openSeilinkPreview({ preloadPath: preloadPath(), rendererTarget });
   }
   // 261104 SeiLink desktop host: her room as the live wallpaper, while
-  // SeiLink is on (Settings > Labs, or the dev flag; seilink/gate.ts).
-  // Restores whoever moved in on this profile (and mirrors the setting).
+  // SeiLink is available (a supported install, or the dev flag; seilink/gate.ts).
+  // Restores whoever moved in on this profile.
   initSeilinkHost({
     pushStatus: (status) => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcChannel.seilink.hostStatusChanged, status);

@@ -886,8 +886,6 @@ export const RENDERER_SETTABLE_KEYS: readonly (keyof UserConfig)[] = [
   'web_search_api_key',
   // 260909: "don't show again" on the Minecraft setup step (useMcSetupStore).
   'mc_setup_dismissed',
-  // 261104 SeiLink M4: Settings > Labs "Desktop room".
-  'seilink_enabled',
 ];
 
 /**
