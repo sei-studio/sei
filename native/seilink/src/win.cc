@@ -5,11 +5,10 @@
 // Loaded only by the room host process (src/main/seilink/host/hostEntry.ts), plus main's
 // redrawDesktop() after a host that died without cleaning up. Exports:
 //
-//   attach(hwnd, {x,y,w,h})   put the room window behind the desktop icons, inside a container
-//                             window of our own (the "room box", see below).
-//       raised layout (24H2+): the box is a WS_EX_LAYERED child of Progman, directly below
-//                              SHELLDLL_DefView, above the wallpaper WorkerW.
-//       classic layout:        the box is a child of the top-level WorkerW that 0x052C spawns.
+//   attach(hwnd, {x,y,w,h})   put the room window behind the desktop icons.
+//       raised layout (24H2+): WS_EX_LAYERED child of Progman, directly below SHELLDLL_DefView,
+//                              above the wallpaper WorkerW.
+//       classic layout:        child of the top-level WorkerW that 0x052C spawns.
 //   validate(hwnd, {w,h})     is it still there? {ok, layout, reasons[]}
 //   shellStatus()             {progman, defView} (Explorer restarts start without a DefView)
 //   watchStart(cb)            one thread: hidden top-level window (TaskbarCreated, display and
@@ -21,17 +20,10 @@
 //   coverageNow()             {covered, kind}
 //   redrawDesktop(hwnd|null, hard)  repaint the wallpaper after the room is hidden or gone.
 //   doubleClickMs()           the user's double-click interval.
+//   roomLost()                true once after Explorer's exit freed the room window (see
+//                             "room window guard"); reading it clears it.
 //
 // Nothing here ever posts input. Window titles and exe names are never reported.
-//
-// The room box (261105, T332): when Explorer dies, Windows destroys Progman / the WorkerW and every
-// child window with it, including a child that belongs to another process. With the room window
-// (Chromium's HWND) parented there directly, that destroy reached Chromium's window procedure
-// from a kernel callback and the host died with 0xC000041D (STATUS_FATAL_USER_CALLBACK_EXCEPTION,
-// CI 261105) before any JS ran. Now the room sits inside a plain window this module owns. A parent
-// gets WM_DESTROY before its children, so the box's WM_DESTROY hides the room and lifts it out to
-// the desktop (a hidden top-level popup again) before the destroy walks down to it, and emits
-// {"type":"shellLost"}. The host then re-attaches once the new shell is up.
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
@@ -225,108 +217,64 @@ bool Noisy(UINT m) {
          m == WM_ERASEBKGND || m == WM_GETOBJECT || m == 0x0060 /* WM_SYNCPAINT-ish ime */ || m == WM_NCMOUSEMOVE;
 }
 
-WNDPROC g_roomOldProc = nullptr;
-HWND g_roomTraced = nullptr;
-
-LRESULT CALLBACK RoomTraceProc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
-  if (!Noisy(m)) Trace("room msg 0x%04X wp 0x%llX lp 0x%llX insend %d", m, (unsigned long long)wp, (unsigned long long)lp, InSendMessageEx(nullptr));
-  LRESULT r = CallWindowProcW(g_roomOldProc, h, m, wp, lp);
-  if (m == WM_DESTROY || m == WM_NCDESTROY) Trace("room msg 0x%04X returned", m);
-  return r;
-}
-
-void TraceRoom(HWND h) {
-  if (!g_trace || !h || h == g_roomTraced) return;
-  g_roomOldProc = (WNDPROC)SetWindowLongPtrW(h, GWLP_WNDPROC, (LONG_PTR)RoomTraceProc);
-  g_roomTraced = h;
-  Trace("room traced 0x%llX", (unsigned long long)(uintptr_t)h);
-}
-
-// ---------------------------------------------------------------- room box
+// ---------------------------------------------------------------- room window guard
+// Explorer restart (261105, T332, found with the CI trace above): when explorer.exe dies, Windows
+// frees Progman / the WorkerW and every child window in them, the room window too, although it
+// belongs to the host. That free reaches the room's own thread as a bare WM_NCDESTROY, with no
+// WM_DESTROY before it. Chromium's window code expects WM_DESTROY first (that is where it tears
+// its widget and compositor down) and hit a CHECK inside the callback, so the host died with
+// 0xC000041D before any JS ran. The room window is subclassed here: a WM_NCDESTROY without a
+// WM_DESTROY gets the missing WM_DESTROY replayed first, so Chromium closes the window the normal
+// way, the BrowserWindow emits 'closed', and the host makes a new room window in the same process
+// once the new shell is up. roomLost() tells the host the window went that way.
 
 void Emit(std::string json);  // watcher section
 
-HWND g_box = nullptr;   // our container, child of Progman / the WorkerW
-HWND g_room = nullptr;  // the room window attach() last put in it
-bool g_boxLayered = false;
-const wchar_t kBoxClass[] = L"SeiLinkRoomBox";
+struct RoomGuard {
+  HWND hwnd;
+  WNDPROC old;
+  bool sawDestroy;
+};
+RoomGuard g_guard{nullptr, nullptr, false};
+std::atomic<bool> g_roomLost{false};
 
-bool IsBox(HWND h) { return h && h == g_box && IsWindow(h); }
-
-// Make `room` a hidden, unparented popup again (its state before the first attach).
-bool LiftOut(HWND room) {
-  ShowWindow(room, SW_HIDE);
-  SetLastError(0);
-  SetParent(room, nullptr);
-  LONG_PTR style = GetWindowLongPtrW(room, GWL_STYLE);
-  SetWindowLongPtrW(room, GWL_STYLE, (style & ~(LONG_PTR)WS_CHILD) | WS_POPUP);
-  return GetAncestor(room, GA_PARENT) == GetDesktopWindow();
-}
-
-LRESULT CALLBACK BoxProc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
-  if (!Noisy(m)) Trace("box msg 0x%04X wp 0x%llX insend %d", m, (unsigned long long)wp, InSendMessageEx(nullptr));
-  switch (m) {
-    case WM_DESTROY: {
-      // The shell is going away (or the process is exiting). Save the room first.
-      HWND room = g_room;
-      if (room && IsWindow(room) && GetAncestor(room, GA_PARENT) == h) {
-        bool ok = LiftOut(room);
-        Trace("box rescue %s err %lu", ok ? "ok" : "FAILED", GetLastError());
-        Emit(std::string("{\"type\":\"shellLost\",\"rescued\":") + (ok ? "true" : "false") +
-             ",\"err\":" + std::to_string(GetLastError()) + "}");
-      }
-      return 0;
+LRESULT CALLBACK RoomGuardProc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
+  WNDPROC old = g_guard.old;
+  if (h != g_guard.hwnd || !old) return DefWindowProcW(h, m, wp, lp);
+  if (g_trace && !Noisy(m))
+    Trace("room msg 0x%04X wp 0x%llX lp 0x%llX insend %lu", m, (unsigned long long)wp, (unsigned long long)lp,
+          InSendMessageEx(nullptr));
+  if (m == WM_DESTROY) g_guard.sawDestroy = true;
+  if (m == WM_NCDESTROY) {
+    // Put the original procedure back first: nothing of ours runs on a freed window.
+    SetWindowLongPtrW(h, GWLP_WNDPROC, (LONG_PTR)old);
+    bool shell = !g_guard.sawDestroy;
+    g_guard = RoomGuard{nullptr, nullptr, false};
+    if (shell) {
+      Trace("room freed by the shell: replaying WM_DESTROY");
+      g_roomLost = true;
+      Emit("{\"type\":\"shellLost\"}");
+      CallWindowProcW(old, h, WM_DESTROY, 0, 0);
     }
-    case WM_NCDESTROY:
-      if (g_box == h) g_box = nullptr;
-      break;
-    case WM_ERASEBKGND:
-      return 1;  // the room covers all of it
-    case WM_NCHITTEST:
-      return HTTRANSPARENT;
-    case WM_MOUSEACTIVATE:
-      return MA_NOACTIVATE;
+    LRESULT r = CallWindowProcW(old, h, m, wp, lp);
+    Trace("room WM_NCDESTROY handled");
+    return r;
   }
-  return DefWindowProcW(h, m, wp, lp);
+  return CallWindowProcW(old, h, m, wp, lp);
 }
 
-// The box under `parent` (made, or moved there). Created on the calling thread, which is the
-// room window's own (the host's main thread), so the rescue in WM_DESTROY is a same-thread call.
-HWND EnsureBox(HWND parent, bool layered, int x, int y, int w, int hh, std::string* why) {
-  static bool registered = false;
-  HINSTANCE inst = GetModuleHandleW(nullptr);
-  if (!registered) {
-    WNDCLASSW wc{};
-    wc.lpfnWndProc = BoxProc;
-    wc.hInstance = inst;
-    wc.lpszClassName = kBoxClass;
-    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    registered = RegisterClassW(&wc) != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
-  }
-  if (IsBox(g_box) && GetAncestor(g_box, GA_PARENT) == parent && g_boxLayered == layered) return g_box;
-  HWND old = IsBox(g_box) ? g_box : nullptr;
-  // WS_EX_LAYERED is set at creation, before the box has a parent's redirection to join (the
-  // Lively/Godot note for the raised layout). WS_EX_NOPARENTNOTIFY: no WM_PARENTNOTIFY round trip
-  // into Explorer while we create or destroy it.
-  DWORD ex = WS_EX_NOACTIVATE | WS_EX_NOPARENTNOTIFY | (layered ? WS_EX_LAYERED : 0);
-  POINT p{x, y};
-  ScreenToClient(parent, &p);
-  HWND b = CreateWindowExW(ex, kBoxClass, L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, p.x, p.y, w,
-                           hh, parent, nullptr, inst, nullptr);
-  if (!b) {
-    if (why) *why = "CreateWindowEx err " + std::to_string(GetLastError());
-    return nullptr;
-  }
-  if (layered && !SetLayeredWindowAttributes(b, 0, 255, LWA_ALPHA) && why)
-    *why = "box SetLayeredWindowAttributes failed " + std::to_string(GetLastError());
-  g_box = b;
-  g_boxLayered = layered;
-  if (old) {
-    // Move the room over first so the old box's WM_DESTROY has nothing to rescue.
-    if (g_room && IsWindow(g_room) && GetAncestor(g_room, GA_PARENT) == old) SetParent(g_room, b);
-    DestroyWindow(old);
-  }
-  return b;
+// Called by attach() on the room window's own thread (the host's main thread).
+void GuardRoom(HWND h) {
+  if (g_guard.hwnd == h) return;
+  if (g_guard.hwnd && IsWindow(g_guard.hwnd) && g_guard.old)
+    SetWindowLongPtrW(g_guard.hwnd, GWLP_WNDPROC, (LONG_PTR)g_guard.old);  // an earlier window
+  g_guard = RoomGuard{h, nullptr, false};
+  g_guard.old = (WNDPROC)SetWindowLongPtrW(h, GWLP_WNDPROC, (LONG_PTR)RoomGuardProc);
+  Trace("room guarded 0x%llX", (unsigned long long)(uintptr_t)h);
+}
+
+Napi::Value RoomLost(const Napi::CallbackInfo& info) {
+  return Napi::Boolean::New(info.Env(), g_roomLost.exchange(false));
 }
 
 Napi::Value Attach(const Napi::CallbackInfo& info) {
@@ -351,46 +299,40 @@ Napi::Value Attach(const Napi::CallbackInfo& info) {
   };
   out.Set("osBuild", (double)OsBuild());
   if (!h || !IsWindow(h)) return fail("no_window", "room window handle is not a window");
+  GuardRoom(h);
 
   Desk d = FindDesk(true);
   out.Set("layout", d.raised ? "raised" : "classic");
   if (!d.progman) return fail("no_shell", "no Progman");
   HWND parent = d.raised ? d.progman : d.workerW;
-  out.Set("method", d.raised ? "raised: layered box in Progman below DefView" : "classic: box in the 0x052C WorkerW");
+  out.Set("method", d.raised ? "raised: layered child of Progman below DefView" : "classic: child of the 0x052C WorkerW");
   if (!parent) return fail("no_workerw", "no wallpaper WorkerW");
   if (d.raised && !d.defView) return fail("no_shell", "no DefView under Progman");
-
-  std::string boxWhy;
-  HWND box = EnsureBox(parent, d.raised, x, y, w, hh, &boxWhy);
-  if (!box) return fail("set_parent_failed", "room box: " + boxWhy);
-  if (!boxWhy.empty()) step(boxWhy);
-  g_room = h;
-  TraceRoom(h);
 
   LONG_PTR style = GetWindowLongPtrW(h, GWL_STYLE);
   LONG_PTR nstyle = (style | WS_CHILD) &
                     ~(LONG_PTR)(WS_POPUP | WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
   SetWindowLongPtrW(h, GWL_STYLE, nstyle);
   LONG_PTR ex = GetWindowLongPtrW(h, GWL_EXSTYLE);
-  // The box carries WS_EX_LAYERED now; a room left layered by an older attach would be a layered
-  // child inside a layered child, so it is cleared.
-  LONG_PTR nex = (ex | WS_EX_NOACTIVATE) & ~(LONG_PTR)(WS_EX_APPWINDOW | WS_EX_LAYERED);
+  LONG_PTR nex = (ex | WS_EX_NOACTIVATE) & ~(LONG_PTR)WS_EX_APPWINDOW;
+  if (d.raised) nex |= WS_EX_LAYERED;  // must happen BEFORE SetParent (Lively/Godot note)
   SetWindowLongPtrW(h, GWL_EXSTYLE, nex);
+  if (d.raised && !SetLayeredWindowAttributes(h, 0, 255, LWA_ALPHA))
+    step("SetLayeredWindowAttributes failed " + std::to_string(GetLastError()));
 
   SetLastError(0);
-  if (GetAncestor(h, GA_PARENT) != box) SetParent(h, box);
+  SetParent(h, parent);
   DWORD spErr = GetLastError();
-  if (GetAncestor(h, GA_PARENT) != box) return fail("set_parent_failed", "SetParent err " + std::to_string(spErr));
-  step("parent " + ClassOf(parent) + " via box");
+  if (GetAncestor(h, GA_PARENT) != parent) return fail("set_parent_failed", "SetParent err " + std::to_string(spErr));
+  step("parent " + ClassOf(parent));
 
   POINT p{x, y};
   ScreenToClient(parent, &p);
-  UINT flags = SWP_NOACTIVATE | SWP_SHOWWINDOW;
+  UINT flags = SWP_NOACTIVATE | SWP_FRAMECHANGED;
   HWND after = nullptr;
-  if (d.raised) after = d.defView;  // insert the box directly below DefView
+  if (d.raised) after = d.defView;  // insert directly below DefView
   else flags |= SWP_NOZORDER;
-  if (!SetWindowPos(box, after, p.x, p.y, w, hh, flags)) step("box SetWindowPos failed " + std::to_string(GetLastError()));
-  if (!SetWindowPos(h, nullptr, 0, 0, w, hh, SWP_NOACTIVATE | SWP_NOZORDER | SWP_FRAMECHANGED))
+  if (!SetWindowPos(h, after, p.x, p.y, w, hh, flags))
     step("SetWindowPos failed " + std::to_string(GetLastError()));
   // A leftover non-client frame shrinks the page (CI 261104: an 8 px strip each side).
   RECT cr{};
@@ -450,15 +392,10 @@ Napi::Value Validate(const Napi::CallbackInfo& info) {
   if (!IsWindow(h)) {
     bad("own-window-gone");
   } else {
-    // The room sits in our box; the box is what Explorer's tree holds.
     HWND parent = GetAncestor(h, GA_PARENT);
-    bool inBox = IsBox(parent);
-    if (!inBox) bad("not-in-box");
-    HWND top = inBox ? GetAncestor(parent, GA_PARENT) : parent;
-    HWND node = inBox ? parent : h;
     if (d.raised) {
-      if (top != d.progman) bad("parent-not-progman");
-      if (d.defView && GetWindow(d.defView, GW_HWNDNEXT) != node) bad("not-directly-below-defview");
+      if (parent != d.progman) bad("parent-not-progman");
+      if (d.defView && GetWindow(d.defView, GW_HWNDNEXT) != h) bad("not-directly-below-defview");
       if (!d.workerW) {
         bad("no-workerw");
       } else {
@@ -468,9 +405,8 @@ Napi::Value Validate(const Napi::CallbackInfo& info) {
       }
     } else {
       if (!d.workerW) bad("no-workerw");
-      else if (top != d.workerW) bad("parent-not-wallpaper-workerw");
+      else if (parent != d.workerW) bad("parent-not-wallpaper-workerw");
     }
-    if (inBox && !IsWindowVisible(parent)) o.Set("hidden", true);
     RECT r{};
     GetWindowRect(h, &r);
     o.Set("rect", RectObj(env, r));
@@ -492,11 +428,6 @@ Napi::Value RedrawDesktop(const Napi::CallbackInfo& info) {
   bool hard = info.Length() > 1 && info[1].IsBoolean() && info[1].As<Napi::Boolean>().Value();
   HWND p = h && IsWindow(h) ? GetParent(h) : nullptr;
   if (h && IsWindow(h) && IsWindowVisible(h)) ShowWindow(h, SW_HIDE);
-  if (IsBox(p)) {
-    // The box draws nothing of its own; hide it too and repaint what is under it.
-    ShowWindow(p, SW_HIDE);
-    p = GetParent(p);
-  }
   BOOL ok = TRUE;
   if (p) ok = RedrawWindow(p, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN | RDW_UPDATENOW);
   if (hard) ok = SystemParametersInfoW(SPI_SETDESKWALLPAPER, 0, nullptr, SPIF_UPDATEINIFILE) && ok;
@@ -848,6 +779,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("coverageNow", Napi::Function::New(env, CoverageNow));
   exports.Set("redrawDesktop", Napi::Function::New(env, RedrawDesktop));
   exports.Set("doubleClickMs", Napi::Function::New(env, DoubleClickMs));
+  exports.Set("roomLost", Napi::Function::New(env, RoomLost));
   return exports;
 }
 

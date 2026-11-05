@@ -40,6 +40,8 @@ export interface SeilinkWinAddon {
   coverageNow(): { covered: boolean; kind: string };
   redrawDesktop(hwnd: Buffer | null, hard: boolean): boolean;
   doubleClickMs(): number;
+  /** True once after Explorer's exit freed the room window (win.cc "room window guard"); clears on read. */
+  roomLost(): boolean;
 }
 
 export interface SeilinkMacAddon {

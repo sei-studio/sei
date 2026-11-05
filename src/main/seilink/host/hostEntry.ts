@@ -150,9 +150,10 @@ let layout = '';
 let macWantedLevel = 0;
 let workerWMissingAccepted = false;
 /**
- * Windows (261105): Explorer went away and the native room box lifted the room out of its
- * tree (win.cc "room box"). The next attach is reported as `shell-lost:...`, an Explorer
- * restart, whatever trigger runs it.
+ * Windows (261105, T332): Explorer exited and Windows freed the room window with its desktop
+ * windows (win.cc "room window guard" turns that into a normal close instead of a host crash).
+ * The window is made again once the new shell is up, and that attach is reported as
+ * `shell-lost:...`, an Explorer restart, whatever trigger runs it.
  */
 let shellLost = false;
 let room: SeilinkHostRoom | null = null;
@@ -390,7 +391,8 @@ async function createRoomWindow(): Promise<BrowserWindow> {
   w.webContents.on('will-navigate', (e) => e.preventDefault());
   w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   w.on('closed', () => {
-    log('room window closed');
+    if (IS_WIN && addon && addon.platform === 'win32' && (addon as SeilinkWinAddon).roomLost?.()) shellLost = true;
+    log(`room window closed${shellLost ? ' (Explorer exited)' : ''}`);
     if (pageWin === w) pageWin = null;
     if (win === w) {
       win = null;
@@ -689,6 +691,8 @@ const SHELL_ONLY_WORKERW = new Set(['no-workerw', 'workerw-not-bottom']);
 
 /** Re-check the attachment (shell events, display changes, and every 2 s). */
 async function validate(trigger: string): Promise<void> {
+  // The shell took the window and the first recovery gave up waiting for a new one: keep trying.
+  if (!win && shellLost && !reattaching && !quitting) return void recoverWindow('window-closed');
   if (!win || win.isDestroyed() || reattaching || quitting || !addon) return;
   const handle = win.getNativeWindowHandle();
   if (IS_MAC) {
@@ -817,12 +821,10 @@ function onNativeEvent(json: string): void {
       validateSoon('session');
       return;
     case 'shellLost':
-      // Explorer's desktop windows are being destroyed (Explorer exited or crashed). The room
-      // is a hidden top-level window now; validate() re-attaches once the new shell is up.
-      log(`shell lost (rescued ${String(e.rescued)}, err ${String(e.err)})`, e.rescued ? 'info' : 'warn');
-      shellLost = true;
-      attached = false;
-      validateSoon('shellLost');
+      // Explorer exited and Windows freed the room window with its desktop windows. Log only:
+      // the window's 'closed' handler reads roomLost() itself and makes a new window once the
+      // new shell is up (this message can arrive after that).
+      log('shell lost: Explorer exited and took the room window');
       return;
     case 'taskbarCreated':
     case 'displayChange':
