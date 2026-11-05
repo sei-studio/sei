@@ -326,6 +326,54 @@ and thumbnails all use the same plan).
   the log. Item `foot` = the sprite's first opaque row minus 3 (the
   cozy convention).
 
+## Room catalog engine (261105)
+
+Format additions are documented where they are parsed (`src/shared/seilinkRoom.ts`,
+`seilinkValidate.ts`); all are optional, so the three packs and saved rooms
+without them render as before.
+- Patterns: a tintable part names a `patternSurface` (or an item a
+  `patterns` list); `patternsFor` gives the 11 code-drawn tiles plus the
+  pack's `patternTiles` (painted greyscale files, e.g. ditsy, leaves,
+  clouds, sakura: none shipped yet). White in the tile = base colour, black =
+  accent (default `toneOnTone(base)`), and the frame's shading multiplies on
+  top. `patternQuads` (frame px, `[tl, tr, br, bl]`, `size` in surface units,
+  about 388 per metre, optional `uv`) lay the tile in perspective; later
+  quads win, pixels outside every quad get plain base. The warp
+  (`roomPattern.ts`) is cached per frame + pattern + geometry and per colour,
+  so the frame loop never runs it. Fitting quads: back-wall and floor planes
+  from the vanishing points (cozy f about 2157, gamer about 2111); beds were
+  hand-fit because the art's perspective does not agree with itself.
+- Shared views: `_shared/views/<name>_<time>.webp`, referenced as
+  `_shared/...` from any pack (resolved against the pack root's
+  `_shared`, falling back to the bundled one). A view is one component with
+  `fit: "cover"` and a per-room `focus: [x, y]`. Adding a view = one
+  manifest entry per pack.
+- Particles: a frame's `particles` (rain, snow, petals, fireflies, embers,
+  dust) with optional `area`, `density`, `wind`, `glass` (rain drops on the
+  window). A view's particles draw 'outside': clipped to the view box and cut
+  by the glass mask (the view box minus everything drawn over it, cropped to
+  the panes, built once per cached time). Other parts' particles draw in the
+  'scene'. Simulation is seeded and shared (`seilinkParticles.ts`, scene cap
+  160); reduced motion shows one settled still without rain; nothing runs
+  while the wallpaper is covered or paused.
+  Perf: the outside layer is masked IN PLACE on the fx canvas (one clipped
+  destination-in), never via a scratch canvas: blitting a canvas that
+  changed this frame measured 7.3 ms on a software GPU against 0.14 ms.
+- Lights: a slot whose frames have `glowTint` lights its glow in the part's
+  colour; `cycle: true` offers the colour-cycle swatch (body drawn white,
+  glow steps round the hues every 125 ms, 20 s a lap). Glows combine by
+  screen inside the glow layer (a glow file's opaque black adds nothing).
+- Labels: `slots.<id>.label` names a slot per pack (forest: Tent, Log seat,
+  Light post, Stump, Sky, Clearing). New optional slots `lights` and `tree`.
+  Every label and pattern name is an i18n key (five dictionaries).
+- Test pack: `node scripts/seilink-catalog-testpack.mjs --out <dir>
+  [--no-particles]` overlays the bundled packs with cozy weather and
+  placeholder fairy lights (never shipped); pass `--packs <dir>` to
+  `seilink-editor-shots.mjs` (`--shots cat-...` for the catalog shots,
+  `--fx --scenes name=query --video` for perf numbers and mp4s).
+  Dev preview query state: `tint.<slot>=hex`, `pattern.<slot>=id`,
+  `accent.<slot>=hex`, `cycle.<slot>=1`, `part.<slot>=id|none`.
+
 ## Gotchas
 
 - macOS reopen: with the main window closed Sei keeps running. A Dock click

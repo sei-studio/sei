@@ -177,6 +177,12 @@ function devRenderers(): Set<RoomRenderer> {
   return (g.__seilinkRenderers ??= new Set());
 }
 
+/**
+ * A cycling light's colour moves in steps this long: 2.25 degrees of hue
+ * each, smooth to the eye, and its glow is recoloured 8 times a second
+ * instead of every frame.
+ */
+const CYCLE_STEP_MS = 125;
 export class RoomRenderer {
   private scene: Scene | null = null;
   private sceneSeq = 0;
@@ -661,7 +667,7 @@ export class RoomRenderer {
           scene.manifest.canvas,
           this.assets,
           (g) => w * (animate && g.effect ? glowAlpha(g.effect, now, seedOf(g, g.z)) : 1),
-          (g) => (g.cycle ? cycleColour(animate ? now : 0, (seedOf(g, g.z) / 6.283) * 0.15) : (g.tint ?? null)),
+          (g) => (g.cycle ? cycleColour(animate ? Math.floor(now / CYCLE_STEP_MS) * CYCLE_STEP_MS : 0, (seedOf(g, g.z) / 6.283) * 0.15) : (g.tint ?? null)),
         );
         ctx.setTransform(1, 0, 0, 1, 0, 0);
       }
