@@ -85,7 +85,7 @@ import {
 import { useT } from '../../lib/i18n';
 import { ROOM_PRESET_LABEL } from '../../lib/seilink/moveIn';
 import { useEditorAnalytics, type TogetherAnalytics } from '../../lib/seilink/editorAnalytics';
-import { lightSlotsOf, roomShapeOf, type EditorOpenedFrom } from '@shared/seilinkTelemetry';
+import { lightSlotsOf, roomShapeOf, type EditorOpenedFrom, type EditorSurface } from '@shared/seilinkTelemetry';
 import { RoomCanvas, type RoomAvatarSlot } from './RoomCanvas';
 import { componentThumb, roomThumb } from '../../lib/seilink/roomThumbs';
 import { patternThumb } from '../../lib/seilink/patternThumbs';
@@ -166,7 +166,7 @@ export interface RoomEditorProps {
   /** Render inline instead of in a portal over the whole window (dev preview). */
   inline?: boolean;
   /** Usage analytics (shape only). Only the companion editor passes it. */
-  telemetry?: { openedFrom: EditorOpenedFrom };
+  telemetry?: { openedFrom: EditorOpenedFrom; surface?: EditorSurface };
   /** 261105: a quiet line in the avatar panel ("Preparing {name}'s look..."). */
   avatarNote?: string | null;
   /** 261105 (T336): decorating together with her (RoomTogether), drawn over the room. */

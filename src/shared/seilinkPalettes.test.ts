@@ -18,6 +18,8 @@ const pack = (id: string): RoomPresetManifest =>
 /** Default tints as shipped before the colour pass: a room nobody recoloured must not change. */
 const SHIPPED_DEFAULTS: Record<string, string> = {
   cozy_room: '#b5c2a0',
+  // 261106: the blank first room's walls (decorated together; white is the point).
+  blank_room: '#ffffff',
   round_rug: '#eae3d6',
   linen_curtains: '#ece6da',
   wooden_bed: '#f3eee4',

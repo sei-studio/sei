@@ -40,7 +40,7 @@ import {
 import type { ChatgptStatus } from '../shared/chatgptPlan';
 import type { OverlayPointerSample } from '../shared/overlayPointer';
 import type { PopupAction } from '../shared/popupActions';
-import type { SeilinkAvailability, SeilinkHostStatus } from '../shared/seilinkHost';
+import type { SeilinkAvailability, SeilinkHostStatus, SeilinkOpenEditor } from '../shared/seilinkHost';
 import type { SeilinkEditorEvent } from '../shared/seilinkTogether';
 import type { AnimaStatus } from '../shared/anima';
 
@@ -446,10 +446,12 @@ const api: RendererApi = {
     return () => ipcRenderer.off(IpcChannel.seilink.availabilityChanged, handler);
   },
   onSeilinkOpenRoomEditor: (cb) => {
-    const handler = (_e: Electron.IpcRendererEvent, characterId: string) => cb(characterId);
+    const handler = (_e: Electron.IpcRendererEvent, req: SeilinkOpenEditor) => cb(req);
     ipcRenderer.on(IpcChannel.seilink.openRoomEditor, handler);
     return () => ipcRenderer.off(IpcChannel.seilink.openRoomEditor, handler);
   },
+  seilinkStage: (req) => ipcRenderer.invoke(IpcChannel.seilink.stage, req),
+  seilinkOffer: (characterId, via) => ipcRenderer.invoke(IpcChannel.seilink.offer, { characterId, via }),
   seilinkAnimaPrepare: (characterId, trigger) => ipcRenderer.invoke(IpcChannel.seilink.animaPrepare, { characterId, trigger }),
   seilinkAnimaStatus: (characterId) => ipcRenderer.invoke(IpcChannel.seilink.animaStatus, characterId),
   onSeilinkAnima: (cb) => {

@@ -12,16 +12,20 @@
  * every entry point (the chat top bar's SeiLink button, the companion page's
  * gear menu, the dock, the guide's tour) opens the same surfaces, rendered
  * once by SeilinkFlowHost in App.tsx. lib/seilink/seilinkFlow.ts decides.
+ *
+ * 261106 (first-link flow): an editor flow with `desktop` opens ON the
+ * desktop (the main window steps out over it: main/seilink/desktopStage.ts),
+ * and the first-link intro plays there too (`stage`).
  */
 import { create } from 'zustand';
-import { SEILINK_HOST_OFF, type SeilinkAvailability, type SeilinkHostStatus } from '@shared/seilinkHost';
+import { SEILINK_HOST_OFF, type SeilinkAvailability, type SeilinkHostStatus, type SeilinkOpenEditor } from '@shared/seilinkHost';
 import type { EditorOpenedFrom, MoveInReason } from '@shared/seilinkTelemetry';
 import type { IntroTrigger, SeilinkEntrySource } from '@shared/seilinkIntroTelemetry';
 import { sei } from '../ipcClient';
 
 export type SeilinkFlow =
   | { kind: 'sheet'; characterId: string; reason: MoveInReason; entry: SeilinkEntrySource }
-  | { kind: 'editor'; characterId: string; openedFrom: EditorOpenedFrom };
+  | { kind: 'editor'; characterId: string; openedFrom: EditorOpenedFrom; desktop?: boolean };
 
 /** The first-link intro to play. `outcome` settles true when she is on the desktop, false when the start failed. */
 export interface SeilinkIntroRequest {
@@ -31,6 +35,8 @@ export interface SeilinkIntroRequest {
   trigger: IntroTrigger;
   entry: SeilinkEntrySource;
   outcome: Promise<boolean>;
+  /** 261106: play it on the desktop stage and end on her room there (the first link). */
+  stage?: boolean;
 }
 
 interface SeilinkStoreState {
@@ -44,8 +50,8 @@ interface SeilinkStoreState {
   intro: SeilinkIntroRequest | null;
   init: () => () => void;
   refresh: () => void;
-  /** The dock's edit button: her room editor. */
-  requestEditor: (characterId: string) => void;
+  /** Main's push (the dock's edit button, the offer): her room editor. */
+  requestEditor: (req: SeilinkOpenEditor) => void;
   openFlow: (flow: SeilinkFlow) => void;
   closeFlow: () => void;
   setMoveBusy: (busy: boolean) => void;
@@ -79,7 +85,7 @@ export const useSeilinkStore = create<SeilinkStoreState>((set) => ({
       () => {},
     );
   },
-  requestEditor: (characterId) => set({ flow: { kind: 'editor', characterId, openedFrom: 'dock' } }),
+  requestEditor: (req) => set({ flow: { kind: 'editor', characterId: req.characterId, openedFrom: req.openedFrom, desktop: req.desktop } }),
   openFlow: (flow) => set({ flow }),
   closeFlow: () => set({ flow: null }),
   setMoveBusy: (moveBusy) => set({ moveBusy }),

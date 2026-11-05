@@ -180,7 +180,7 @@ export function TutorialOverlay(): React.ReactElement | null {
     sl_button: tt('This is SeiLink. {name} can move onto your desktop and live there, right on your wallpaper.', {
       name: companion?.name ?? tt('them'),
     }),
-    sl_room: tt('{name} gets a room there that you can decorate. Pick one and see!', { name: companion?.name ?? tt('them') }),
+    sl_room: tt("{name} gets a room there that you can decorate together. Let's go see!", { name: companion?.name ?? tt('them') }),
   };
 
   const def = STEPS[step];

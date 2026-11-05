@@ -18,7 +18,17 @@
  */
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { seilinkResolver, type RoomUrlResolver, type SeilinkPack } from '@shared/seilinkPack';
-import type { SeilinkBox, SeilinkDockAction, SeilinkDockButton, SeilinkHostBridge, SeilinkHostLayout, SeilinkHostLine, SeilinkHostRoom } from '@shared/seilinkHost';
+import {
+  isSeilinkDockOffer,
+  type SeilinkBox,
+  type SeilinkDockAction,
+  type SeilinkDockButton,
+  type SeilinkDockOffer,
+  type SeilinkHostBridge,
+  type SeilinkHostLayout,
+  type SeilinkHostLine,
+  type SeilinkHostRoom,
+} from '@shared/seilinkHost';
 import { roomViewport, type RoomOverlay } from '@shared/seilinkDraw';
 import { isUiLanguage, uiLanguageForLocale } from '@shared/uiLanguage';
 import { useLangStore } from '../../../lib/i18n';
@@ -50,6 +60,8 @@ export interface SeilinkHostViewProps {
   resolveFor?: (pack: SeilinkPack) => RoomUrlResolver;
   /** Dev preview / screenshots: move out already asking. */
   initialConfirm?: boolean;
+  /** Dev preview / screenshots: the decorate-together offer already up. */
+  initialOffer?: SeilinkDockOffer;
 }
 
 export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactElement {
@@ -57,6 +69,7 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
   const [room, setRoom] = useState<SeilinkHostRoom | null>(null);
   const [layout, setLayout] = useState<SeilinkHostLayout | null>(null);
   const [deafened, setDeafened] = useState(false);
+  const [offer, setOffer] = useState<SeilinkDockOffer>(props.initialOffer ?? 'none');
   const [dockPress, setDockPress] = useState<DockPress | null>(null);
   const [line, setLine] = useState<SeilinkHostLine | null>(null);
   const [speaking, setSpeaking] = useState(false);
@@ -86,7 +99,10 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
       bridge.onBusy(setBusy),
       bridge.onPoke((kind) => setPoke((p) => ({ kind, n: (p?.n ?? 0) + 1 }))),
       bridge.onLayout?.((l) => setLayout(l)) ?? (() => {}),
-      bridge.onDockState?.((st) => setDeafened(st.deafened === true)) ?? (() => {}),
+      bridge.onDockState?.((st) => {
+        setDeafened(st.deafened === true);
+        setOffer(isSeilinkDockOffer(st.offer) ? st.offer : 'none');
+      }) ?? (() => {}),
       bridge.onDockPress?.((id) => setDockPress((p) => ({ id, n: (p?.n ?? 0) + 1 }))) ?? (() => {}),
       bridge.onLine?.((l) => setLine(l)) ?? (() => {}),
     ];
@@ -258,6 +274,8 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
           her={herBox}
           anchorX={anchorX}
           deafened={deafened}
+          offer={offer}
+          name={room.name}
           press={dockPress}
           onAction={onDockAction}
           onButtons={onDockButtons}

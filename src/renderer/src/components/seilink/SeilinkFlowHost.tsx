@@ -4,7 +4,9 @@
  * Mounted once by App.tsx. It shows whatever useSeilinkStore holds:
  *  - `flow`: the move-in sheet or the room editor, opened by any entry point
  *    (the chat top bar's SeiLink button, the companion page's gear menu, the
- *    dock, the guide's tour; lib/seilink/seilinkFlow.ts);
+ *    dock, the guide's tour, 261106 the dock's decorate offer;
+ *    lib/seilink/seilinkFlow.ts). The editor opens on the desktop for the
+ *    companion who lives there (`desktop`);
  *  - `intro`: the first-link intro (FirstLinkIntro), over everything, while
  *    the host starts.
  * All three are lazy chunks: nothing loads until someone opens SeiLink.
@@ -40,7 +42,13 @@ export function SeilinkFlowHost(): React.ReactElement | null {
         />
       ) : null}
       {flow?.kind === 'editor' ? (
-        <CompanionRoomEditor key={flow.characterId} characterId={flow.characterId} openedFrom={flow.openedFrom} onClose={closeFlow} />
+        <CompanionRoomEditor
+          key={`${flow.characterId}:${flow.desktop ? 'desktop' : 'app'}`}
+          characterId={flow.characterId}
+          openedFrom={flow.openedFrom}
+          desktop={flow.desktop === true}
+          onClose={closeFlow}
+        />
       ) : null}
       {intro ? <FirstLinkIntro key={intro.seq} request={intro} onDone={() => endIntro(intro.seq)} /> : null}
     </Suspense>

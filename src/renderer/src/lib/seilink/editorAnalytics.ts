@@ -19,6 +19,7 @@ import {
   type EditorError,
   type EditorOpenedFrom,
   type EditorPanel,
+  type EditorSurface,
   type RoomShapeAtClose,
 } from '@shared/seilinkTelemetry';
 import type { RoomSlotId } from '@shared/seilinkRoom';
@@ -28,6 +29,8 @@ import { sei } from '../ipcClient';
 export interface EditorTelemetry {
   openedFrom: EditorOpenedFrom;
   characterId?: string;
+  /** 261106: on the desktop (the desktop stage) or in the app window. */
+  surface?: EditorSurface;
 }
 
 /** StrictMode mounts, unmounts and mounts again: an untouched session this short is that, not a real open. */
@@ -76,6 +79,10 @@ export function useEditorAnalytics(telemetry: EditorTelemetry | null | undefined
   const openedFrom = telemetry?.openedFrom ?? 'other';
   const characterId = telemetry?.characterId ?? null;
   const [session] = useState(() => ({ tracker: new EditorSessionTracker(openedFrom, Date.now()), at: Date.now() }));
+  const surface = telemetry?.surface ?? 'app';
+  useEffect(() => {
+    session.tracker.setSurface(surface);
+  }, [session, surface]);
   const historyRef = useRef(input.history);
   historyRef.current = input.history;
   const shapeRef = useRef(input.shape);

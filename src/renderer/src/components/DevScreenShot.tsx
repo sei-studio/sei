@@ -44,10 +44,7 @@ import { DeleteAccountModal } from './DeleteAccountModal';
 import { MoveInSheetView } from './seilink/MoveInSheet';
 import { TutorialOverlay } from './tutorial/TutorialOverlay';
 import { useTutorialStore } from '../lib/stores/useTutorialStore';
-import { parseRoomManifest } from '@shared/seilinkValidate';
-import type { SeilinkPack } from '@shared/seilinkPack';
 import type { SeilinkAvailability } from '@shared/seilinkHost';
-import type { RoomPresetId } from '@shared/seilinkRoom';
 import { CharactersScreen } from '../screens/CharactersScreen';
 import { CharacterPage } from '../screens/CharacterPage';
 import { ChatScreen } from '../screens/ChatScreen';
@@ -195,40 +192,17 @@ seed();
 
 const noop = (): void => undefined;
 
-/** The move-in sheet with the pack at &pack= (only that one exists; the others show disabled). */
+/** The move-in sheet (261106: a first room starts blank; &saved=1 = she has a room already). */
 function MoveInShot(): React.ReactElement {
-  const packUrl = (params.get('pack') ?? '').replace(/\/?$/, '/');
-  const [packs, setPacks] = React.useState<SeilinkPack[] | null>(null);
-  const [preset, setPreset] = React.useState<RoomPresetId | null>(null);
-  // Stable, so the thumbnail's effect does not restart on every render.
-  const resolveFor = React.useCallback(
-    () => (rel: string) => `${rel.startsWith('_shared/') ? `${packUrl}../` : packUrl}${rel}`,
-    [packUrl],
-  );
-  React.useEffect(() => {
-    void fetch(`${packUrl}manifest.json`)
-      .then((r) => r.json())
-      .then((raw: unknown) => {
-        const manifest = parseRoomManifest(raw);
-        const list: SeilinkPack[] = manifest ? [{ id: manifest.id, manifest, rev: 1, source: 'dev' }] : [];
-        setPacks(list);
-        setPreset(list[0]?.id ?? null);
-      })
-      .catch(() => setPacks([]));
-  }, [packUrl]);
   return (
     <MoveInSheetView
       name="Sui"
       otherName={params.get('swap') === '1' ? 'Lyra' : null}
-      packs={packs}
-      pickRoom
-      preset={preset}
-      onPick={setPreset}
+      firstRoom={params.get('saved') !== '1'}
       busy={false}
       error={null}
       onCancel={noop}
       onConfirm={noop}
-      resolveFor={resolveFor}
     />
   );
 }

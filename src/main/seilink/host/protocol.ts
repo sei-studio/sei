@@ -9,7 +9,7 @@
  * process, is never listened to.
  */
 import type { AvatarEmotion, AvatarManifest } from '../../../shared/ipc';
-import type { SeilinkDockAction, SeilinkHostAvatarMethod, SeilinkHostFailure, SeilinkHostRoom } from '../../../shared/seilinkHost';
+import type { SeilinkDockAction, SeilinkDockOffer, SeilinkHostAvatarMethod, SeilinkHostFailure, SeilinkHostRoom } from '../../../shared/seilinkHost';
 
 /** Main -> host. */
 export type ToHost =
@@ -29,8 +29,8 @@ export type ToHost =
   | { type: 'avatar-manifest'; characterId: string; manifest: AvatarManifest | null }
   /** Frame cap while visible. */
   | { type: 'set-fps'; fps: number }
-  /** M4: the dock's state (her idle lines muted). */
-  | { type: 'dock-state'; deafened: boolean }
+  /** M4: the dock's state (her idle lines muted; 261106 the decorate-together offer). */
+  | { type: 'dock-state'; deafened: boolean; offer?: SeilinkDockOffer }
   /** M4: a line she says on the desktop (a bubble near her). */
   | { type: 'line'; text: string; kind: 'idle' | 'poke'; emotion?: AvatarEmotion | null; face?: string | null }
   /** Hold the room still (a future dock "pause"). */

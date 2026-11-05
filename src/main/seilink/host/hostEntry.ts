@@ -37,10 +37,12 @@ import {
   SEILINK_HOST_FPS,
   SEILINK_PORTRAIT_HOST,
   isSeilinkDockAction,
+  isSeilinkDockOffer,
   isSeilinkHostFailure,
   type SeilinkBox,
   type SeilinkDockAction,
   type SeilinkDockButton,
+  type SeilinkDockOffer,
   type SeilinkHostFailure,
   type SeilinkHostLayout,
   type SeilinkHostRoom,
@@ -173,6 +175,8 @@ let downPress: PressPoint | null = null;
 let dock: SeilinkDockButton[] | null = null;
 let downTarget: PressTarget = { kind: 'none' };
 let deafened = false;
+/** 261106: the decorate-together offer on the dock (decorateOffer.ts). */
+let offer: SeilinkDockOffer = 'none';
 let lineSeq = 0;
 
 const activity = new RoomActivity(SEILINK_HOST_FPS, (a) => {
@@ -249,7 +253,8 @@ function onCommand(m: ToHost): void {
       break;
     case 'dock-state':
       deafened = m.deafened === true;
-      toPage(CH.dockState, { deafened });
+      offer = isSeilinkDockOffer(m.offer) ? m.offer : 'none';
+      toPage(CH.dockState, { deafened, offer });
       break;
     case 'line': {
       const text = String(m.text ?? '').slice(0, 400).trim();
@@ -432,7 +437,7 @@ ipcMain.on(CH.ready, (e) => {
   e.sender.send(CH.fps, activity.current.fps);
   e.sender.send(CH.busy, busy);
   e.sender.send(CH.layout, layoutNow());
-  e.sender.send(CH.dockState, { deafened });
+  e.sender.send(CH.dockState, { deafened, offer });
   if (room) e.sender.send(CH.room, room);
 });
 

@@ -16,11 +16,18 @@
  * few seconds, a second press confirms. A short caption above the dock says
  * what a press did (there is no hover to explain an icon).
  *
+ * 261106: the decorate-together offer (main/seilink/decorateOffer.ts). After
+ * her first move-in into a blank room the dock swaps its icons for two text
+ * buttons, "Decorate together" and "Not now". When she asked in her bubble
+ * (`offer: 'her'`) the buttons are the answer; when her line did not come
+ * (`prompt`) the dock asks itself, in a line above them. "Not now" leaves a
+ * caption pointing at the brush, and the usual dock comes back.
+ *
  * Colours come from the room (RoomCanvas onOverlay: light room, light glass),
  * never the app theme. No border lines on buttons.
  */
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { SeilinkBox, SeilinkDockAction, SeilinkDockButton } from '@shared/seilinkHost';
+import type { SeilinkBox, SeilinkDockAction, SeilinkDockButton, SeilinkDockOffer } from '@shared/seilinkHost';
 import { useT } from '../../../lib/i18n';
 import { BrushIcon, BubbleIcon, BubbleOffIcon, MoveOutIcon } from '../roomEditorIcons';
 import { dockBottom, dockLeft } from '../../../lib/seilink/dockPlace';
@@ -29,6 +36,8 @@ import styles from './HostDock.module.css';
 /** How long "Move out?" waits for the second press. */
 export const MOVE_OUT_CONFIRM_MS = 4_000;
 const CAPTION_MS = 2_600;
+/** "Not now" leaves a longer caption: it says where decorating lives from now on. */
+const LATER_CAPTION_MS = 5_000;
 
 export interface DockPress {
   id: SeilinkDockAction;
@@ -42,6 +51,10 @@ export interface HostDockProps {
   /** Her seat's x (page CSS px): the dock centres under it when there is no room beside her. */
   anchorX: number;
   deafened: boolean;
+  /** 261106: the decorate-together offer ('none' = the usual dock). */
+  offer?: SeilinkDockOffer;
+  /** Her name, for the offer's question. */
+  name?: string;
   press: DockPress | null;
   onAction(action: SeilinkDockAction): void;
   onButtons(buttons: SeilinkDockButton[] | null): void;
@@ -60,9 +73,10 @@ function sameButtons(a: SeilinkDockButton[] | null, b: SeilinkDockButton[] | nul
 
 export function HostDock(props: HostDockProps): React.ReactElement {
   const { workArea, her, anchorX, deafened, press, onAction, onButtons } = props;
+  const offer = props.offer ?? 'none';
   const t = useT();
   const [confirming, setConfirming] = useState(props.initialConfirm === true);
-  const [caption, setCaption] = useState<string | null>(null);
+  const [caption, setCaption] = useState<{ text: string; ms: number } | null>(null);
   const [pressed, setPressed] = useState<SeilinkDockAction | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
@@ -83,8 +97,9 @@ export function HostDock(props: HostDockProps): React.ReactElement {
       return;
     }
     setConfirming(false);
-    if (press.id === 'deafen') setCaption(deafened ? t('Idle lines on') : t('Idle lines off'));
-    else setCaption(t('Opening Sei'));
+    if (press.id === 'deafen') setCaption({ text: deafened ? t('Idle lines on') : t('Idle lines off'), ms: CAPTION_MS });
+    else if (press.id === 'later') setCaption({ text: t('Decorate anytime with the brush.'), ms: LATER_CAPTION_MS });
+    else if (press.id === 'edit' || press.id === 'decorate') setCaption({ text: t('Opening the room editor'), ms: CAPTION_MS });
     onAction(press.id);
   }, [press, confirming, deafened, onAction, t]);
 
@@ -102,7 +117,7 @@ export function HostDock(props: HostDockProps): React.ReactElement {
 
   useEffect(() => {
     if (!caption) return;
-    const id = setTimeout(() => setCaption(null), CAPTION_MS);
+    const id = setTimeout(() => setCaption(null), caption.ms);
     return () => clearTimeout(id);
   }, [caption]);
 
@@ -137,11 +152,32 @@ export function HostDock(props: HostDockProps): React.ReactElement {
 
   const cls = (id: SeilinkDockAction, extra = ''): string => [styles.btn, extra, pressed === id ? styles.pressed : ''].filter(Boolean).join(' ');
 
+  if (offer !== 'none') {
+    return (
+      <div ref={rootRef} className={styles.dockWrap} style={{ left, top: bottom }}>
+        {offer === 'prompt' ? (
+          <div className={styles.ask} role="status">
+            {props.name ? t("Decorate {name}'s room together?", { name: props.name }) : t('Decorate the room together?')}
+          </div>
+        ) : null}
+        <div className={styles.dock}>
+          <span data-dock="decorate" className={cls('decorate', styles.textBtn + ' ' + styles.primary)}>
+            <BrushIcon size={16} />
+            {t('Decorate together')}
+          </span>
+          <span data-dock="later" className={cls('later', styles.textBtn)}>
+            {t('Not now')}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div ref={rootRef} className={styles.dockWrap} style={{ left, top: bottom }}>
       {caption ? (
         <div className={styles.caption} role="status">
-          {caption}
+          {caption.text}
         </div>
       ) : null}
       <div className={styles.dock}>

@@ -17,7 +17,7 @@
 import type { FaceCue, FacepackDevInfo, FacepackManifest } from './facepack';
 import type { SeilinkDevInfo, SeilinkPack, SeilinkRoomPayload } from './seilinkPack';
 import type { RoomState } from './seilinkRoom';
-import type { SeilinkAvailability, SeilinkHostStatus } from './seilinkHost';
+import type { SeilinkAvailability, SeilinkHostStatus, SeilinkOfferVia, SeilinkOpenEditor, SeilinkStageRequest, SeilinkStageResult } from './seilinkHost';
 import type { SeilinkEditorEvent, SeilinkEditorSync } from './seilinkTogether';
 import type { AnimaShownKind, AnimaStatus, AnimaTrigger } from './anima';
 import { z } from 'zod';
@@ -2240,8 +2240,12 @@ export interface RendererApi {
   /** M4: whether this install can run the desktop host. */
   seilinkAvailability?(): Promise<SeilinkAvailability>;
   onSeilinkAvailability?(cb: (a: SeilinkAvailability) => void): Unsubscribe;
-  /** M4: the dock's edit button: open her room editor (characterId). */
-  onSeilinkOpenRoomEditor?(cb: (characterId: string) => void): Unsubscribe;
+  /** M4: the dock's edit button: open her room editor. 261106: also the offer's "Decorate together"; `desktop` = on the desktop stage. */
+  onSeilinkOpenRoomEditor?(cb: (req: SeilinkOpenEditor) => void): Unsubscribe;
+  /** 261106: the desktop stage (the first-link intro, the room editor on the desktop). Main window only. */
+  seilinkStage?(req: SeilinkStageRequest): Promise<SeilinkStageResult>;
+  /** 261106: the desktop shows her new blank room: offer to decorate it together. */
+  seilinkOffer?(characterId: string, via: SeilinkOfferVia): Promise<{ shown: boolean }>;
   /** 261105 Anima: SeiLink opened for her; bake/download her face set in the background (src/main/anima/). */
   seilinkAnimaPrepare?(characterId: string, trigger: AnimaTrigger): Promise<AnimaStatus>;
   seilinkAnimaStatus?(characterId: string): Promise<AnimaStatus>;
@@ -4325,8 +4329,12 @@ export const IpcChannel = {
     availability: 'seilink:availability',
     /** Push (main → main window): SeilinkAvailability after the setting changes or the profile switches. */
     availabilityChanged: 'seilink:availability-changed',
-    /** Push (main → main window): characterId; the dock's edit button, open her room editor. */
+    /** Push (main → main window): SeilinkOpenEditor; the dock's edit button or the offer, open her room editor (261106: on the desktop when `desktop`). */
     openRoomEditor: 'seilink:open-room-editor',
+    /** Invoke (261106): SeilinkStageRequest → SeilinkStageResult. The main window steps out over the desktop and back (desktopStage.ts). */
+    stage: 'seilink:stage',
+    /** Invoke (261106): ({characterId, via}) → whether the decorate-together offer showed (decorateOffer.ts). */
+    offer: 'seilink:offer',
     /** Invoke: SeiLink opened for her ({characterId, trigger}) → AnimaStatus. Starts her face-set bake/download in the background. */
     animaPrepare: 'seilink:anima-prepare',
     /** Invoke: characterId → AnimaStatus. */

@@ -32,9 +32,16 @@ export const SEILINK_EDITOR_SESSION_EVENT = 'seilink_editor_session';
 export const SEILINK_EDITOR_ERROR_EVENT = 'seilink_editor_error';
 export const SEILINK_MOVEIN_SHEET_EVENT = 'seilink_movein_sheet';
 
-/** 261105 (T337): 'button' = the chat top bar's SeiLink button, 'tour' = the guide's SeiLink tour. */
-export const EDITOR_OPENED_FROM = ['gear', 'dock', 'move_in', 'button', 'tour', 'other'] as const;
+/**
+ * 261105 (T337): 'button' = the chat top bar's SeiLink button, 'tour' = the guide's SeiLink tour.
+ * 261106: 'offer' = "Decorate together" on the dock after her first move-in (main/seilink/decorateOffer.ts).
+ */
+export const EDITOR_OPENED_FROM = ['gear', 'dock', 'move_in', 'button', 'tour', 'offer', 'other'] as const;
 export type EditorOpenedFrom = (typeof EDITOR_OPENED_FROM)[number];
+
+/** 261106: where the editor drew: on the desktop (the desktop stage, over the icons) or in the app window. */
+export const EDITOR_SURFACES = ['desktop', 'app'] as const;
+export type EditorSurface = (typeof EDITOR_SURFACES)[number];
 
 /** The rail's panels (renderer lib/seilink/roomGroups.ts plus avatar and items). */
 export const EDITOR_PANELS = ['avatar', 'room', 'fabrics', 'furniture', 'items'] as const;
@@ -242,10 +249,17 @@ export class EditorSessionTracker {
   private togetherOnCall = false;
   private togetherCounts = new Map<TogetherCount, number>();
 
+  private surface: EditorSurface = 'app';
+
   constructor(
     private readonly openedFrom: EditorOpenedFrom,
     private readonly openedAt: number,
   ) {}
+
+  /** 261106: the editor stepped out onto the desktop (or fell back to the app window). */
+  setSurface(surface: EditorSurface): void {
+    this.surface = surface;
+  }
 
   /** 261105: the slots holding a light lit in its colour (their recolour is light_colour). */
   setLightSlots(slots: ReadonlySet<RoomSlotId>): void {
@@ -338,6 +352,7 @@ export class EditorSessionTracker {
     const out: Record<string, string | number | boolean | null> = {
       character_id: characterId,
       opened_from: this.openedFrom,
+      surface: this.surface,
       duration_ms: Math.max(0, now - this.openedAt),
       preset: this.startPreset,
       preset_end: this.prev?.present.preset ?? null,
@@ -426,6 +441,7 @@ function editorSessionProps(p: Record<string, unknown>): Record<string, Scalar> 
   const out: Record<string, Scalar> = {
     character_id: charId(p.character_id),
     opened_from: oneOf(EDITOR_OPENED_FROM, p.opened_from) ?? 'other',
+    surface: oneOf(EDITOR_SURFACES, p.surface) ?? 'app',
     preset: oneOf(PRESETS, p.preset),
     preset_end: oneOf(PRESETS, p.preset_end),
     first_panel: oneOf(EDITOR_PANELS, p.first_panel),
@@ -456,6 +472,8 @@ function moveInProps(p: Record<string, unknown>): Record<string, Scalar> {
     swap: p.swap === true,
     preset_changed: p.preset_changed === true,
   };
+  // 261106: the first room starts blank (decorated together afterwards).
+  if (p.blank_room === true) out.blank_room = true;
   const packs = count(p.packs_available);
   if (packs !== undefined) out.packs_available = packs;
   const ms = count(p.ms_open);

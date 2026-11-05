@@ -181,6 +181,7 @@ describe('sanitizeSeilinkTrack', () => {
     expect(out).toEqual({
       character_id: CHAR,
       opened_from: 'other',
+      surface: 'app',
       preset: 'cozy',
       preset_end: null,
       first_panel: null,
@@ -259,5 +260,21 @@ describe('decorating together (261105, T336)', () => {
     // The editor can only report the player's answer; "applied" comes from main.
     expect(sanitizeSeilinkTrack('seilink_her_edit', { character_id: CHAR, outcome: 'applied', changes: ['bed'] })).toEqual({ character_id: CHAR, outcome: 'undone', surface: 'editor' });
     expect(sanitizeSeilinkTrack('seilink_her_edit', { character_id: CHAR, outcome: 'tried' })).toEqual({ character_id: CHAR, outcome: 'tried', surface: 'editor' });
+  });
+});
+
+describe('261106 first-link flow fields', () => {
+  it('the editor session says where it drew and accepts the offer as an origin', () => {
+    const t = new EditorSessionTracker('offer', 0);
+    t.setSurface('desktop');
+    const props = t.finish(1000, false, null);
+    expect(props).toMatchObject({ opened_from: 'offer', surface: 'desktop' });
+    expect(sanitizeSeilinkTrack('seilink_editor_session', { ...props, surface: 'wallpaper' })).toMatchObject({ opened_from: 'offer', surface: 'app' });
+    expect(sanitizeSeilinkTrack('seilink_editor_session', props as Record<string, unknown>)).toMatchObject({ surface: 'desktop' });
+  });
+
+  it('the move-in sheet marks a blank first room', () => {
+    expect(sanitizeSeilinkTrack('seilink_movein_sheet', { action: 'confirmed', reason: 'first_room', blank_room: true })).toMatchObject({ blank_room: true });
+    expect(sanitizeSeilinkTrack('seilink_movein_sheet', { action: 'confirmed', reason: 'first_room', blank_room: 'yes' })).not.toHaveProperty('blank_room');
   });
 });
