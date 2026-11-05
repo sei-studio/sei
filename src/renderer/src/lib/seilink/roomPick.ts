@@ -78,6 +78,9 @@ export class RoomPicker {
     slots: ReadonlySet<RoomSlotId>,
   ): RoomPick | null {
     const plan = roomDrawPlan(manifest, state, time);
+    // Under a plank's lip (drawn over the items on that top) no item can be picked, even when the
+    // plank itself is not pickable: you can't click an item through the plank.
+    let underLip = false;
     for (let i = plan.layers.length - 1; i >= 0; i--) {
       const l: RoomLayer = plan.layers[i];
       if (l.kind === 'avatar') {
@@ -85,9 +88,17 @@ export class RoomPicker {
         if (x >= l.x - w / 2 && x <= l.x + w / 2 && y >= l.y - l.height * 0.95 && y <= l.y) return { kind: 'avatar' };
         continue;
       }
-      if (l.kind === 'slot' && !slots.has(l.slot)) continue;
-      // A lip is its part only inside the lip; an item on a lipped top only above the lip.
+      if (l.kind === 'item' && underLip) continue;
+      // A lip is its part only inside the lip; an item on a lipped top only above the plank's bottom edge.
       if (l.clip && !l.clip.some((p) => pointInPolygon(p, x, y))) continue;
+      // A lip is traced to the plank's pixels: inside it is a hit (the small alpha map blurs a thin
+      // plank), and blocks the items under it even when the part is not pickable.
+      if (l.kind === 'slot' && l.clip) {
+        if (slots.has(l.slot)) return { kind: 'slot', slot: l.slot };
+        underLip = true;
+        continue;
+      }
+      if (l.kind === 'slot' && !slots.has(l.slot)) continue;
       const map = this.maps.get(resolve(l.frame.src));
       if (!map) continue;
       const rect = l.kind === 'slot' ? (l.box ?? [0, 0, manifest.canvas[0], manifest.canvas[1]]) : itemRect(l, [map.nw, map.nh]);

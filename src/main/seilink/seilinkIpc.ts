@@ -6,9 +6,11 @@
 import { BrowserWindow, ipcMain } from 'electron';
 import { IpcChannel } from '../../shared/ipc';
 import { listPacks, publicPack, seilinkDevEnabled, seilinkDevInfo } from './packs';
-import { seilinkAvailability } from './gate';
+import { seilinkAvailability, seilinkEnabled } from './gate';
 import { getRoomPayload, isRoomCharacterId, onRoomChange, setRoomState } from './roomStore';
 import { seilinkHostStatus, startSeilinkHost, stopSeilinkHost } from './host/seilinkHost';
+import { ANIMA_TRIGGERS, isAnimaShownKind, type AnimaTrigger } from '../../shared/anima';
+import { anima } from '../anima/animaRuntime';
 
 let previewWin: BrowserWindow | null = null;
 let registered = false;
@@ -48,6 +50,25 @@ export function registerSeilinkIpc(opts: { preloadPath: string; rendererTarget: 
   ipcMain.handle(IpcChannel.seilink.hostStop, async () => stopSeilinkHost('user_stop'));
   ipcMain.handle(IpcChannel.seilink.hostStatus, async () => seilinkHostStatus());
   ipcMain.handle(IpcChannel.seilink.availability, async () => seilinkAvailability());
+
+  // 261105 Anima: her face set. Only while SeiLink is on: nobody else starts a bake.
+  ipcMain.handle(IpcChannel.seilink.animaPrepare, async (_e, args: unknown) => {
+    const a = args as { characterId?: unknown; trigger?: unknown } | null;
+    if (!isRoomCharacterId(a?.characterId)) throw new Error('SEILINK_BAD_ID');
+    const trigger = ANIMA_TRIGGERS.includes(a.trigger as AnimaTrigger) ? (a.trigger as AnimaTrigger) : 'editor';
+    if (!seilinkEnabled()) return anima.status(a.characterId);
+    // Answer at once; the bake and the download run in the background (status pushes follow).
+    void anima.prepare(a.characterId, trigger);
+    return anima.status(a.characterId);
+  });
+  ipcMain.handle(IpcChannel.seilink.animaStatus, async (_e, characterId: unknown) => {
+    if (!isRoomCharacterId(characterId)) throw new Error('SEILINK_BAD_ID');
+    return anima.status(characterId);
+  });
+  ipcMain.on(IpcChannel.seilink.animaShown, (_e, args: unknown) => {
+    const a = args as { characterId?: unknown; kind?: unknown } | null;
+    if (isRoomCharacterId(a?.characterId) && isAnimaShownKind(a?.kind)) anima.noteShown(a.characterId, a.kind, 'editor');
+  });
 
   ipcMain.handle(IpcChannel.seilink.openPreview, async () => {
     if (!seilinkDevEnabled()) return false;

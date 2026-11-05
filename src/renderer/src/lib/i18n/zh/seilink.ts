@@ -74,6 +74,7 @@ export const ZH_SEILINK: Record<string, string> = {
   "Move off desktop": "从桌面搬走",
   "Move {name} onto your desktop": "让 {name} 搬到你的桌面",
   "Pick a room": "选一个房间",
+  "Preparing {name}'s look…": "正在准备{name}的形象…",
   "{name}'s room stays as you left it.": "{name} 的房间会保持你上次布置的样子。",
   "{name} lives on your wallpaper, behind your windows and icons.": "{name} 住在你的壁纸上，在窗口和图标后面。",
   "The room pauses while windows cover it.": "窗口挡住房间时，房间会暂停。",

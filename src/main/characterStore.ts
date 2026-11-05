@@ -29,6 +29,7 @@ import { deletePortraitFiles } from './portraitFiles';
 import { expandPersona, fetchServerExpansionSystem, type ExpansionProgress } from './personaExpansion';
 import { characterLanguage } from '../shared/chatLanguage';
 import { loadApiKey, getAiBackendKind } from './apiKeyStore';
+import { noteCharacterSaved } from './characterSignals';
 
 const PROXY_BASE_URL = process.env.SEI_PROXY_URL ?? 'https://api.sei.gg';
 
@@ -254,6 +255,7 @@ export async function saveCharacterRaw(character: Character): Promise<void> {
     idx.order.push(validated.id);
     await writeIndex(idx);
   }
+  noteCharacterSaved(validated.id);
 }
 
 // 260705: unlocked write core shared by saveCharacterRaw and patchCharacter —
@@ -295,6 +297,7 @@ export async function patchCharacter(
     return validated;
   });
   if (!patched) return null;
+  noteCharacterSaved(id);
   // An existing character already has its memory dir and index entry (created
   // by the original saveCharacter), so only the cloud mirror follows the write.
   enqueueCloudMirror(patched);

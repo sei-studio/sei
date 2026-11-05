@@ -158,24 +158,72 @@ function fitLine(pts) {
   return { at: (x) => k * x + m, err };
 }
 
+/** Douglas-Peucker: drop points of a polyline within `tol` px of the simplified line. */
+function simplify(pts, tol) {
+  if (pts.length < 3) return pts;
+  const keep = new Uint8Array(pts.length);
+  keep[0] = keep[pts.length - 1] = 1;
+  const stack = [[0, pts.length - 1]];
+  while (stack.length) {
+    const [i, j] = stack.pop();
+    const [x1, y1] = pts[i];
+    const [x2, y2] = pts[j];
+    const len = Math.hypot(x2 - x1, y2 - y1) || 1;
+    let far = -1;
+    let d = tol;
+    for (let k = i + 1; k < j; k++) {
+      const e = Math.abs((y2 - y1) * pts[k][0] - (x2 - x1) * pts[k][1] + x2 * y1 - y2 * x1) / len;
+      if (e > d) {
+        d = e;
+        far = k;
+      }
+    }
+    if (far > 0) {
+      keep[far] = 1;
+      stack.push([i, far], [far, j]);
+    }
+  }
+  return pts.filter((_, k) => keep[k]);
+}
+
+/** Median of each value with its `r` neighbours on either side (drops spikes up to `r` px wide, such as a bracket pin). */
+function median(vals, r) {
+  return vals.map((_, i) => {
+    const w = vals.slice(Math.max(0, i - r), i + r + 1).sort((a, b) => a - b);
+    return w[w.length >> 1];
+  });
+}
+
+const r1 = (v) => Math.round(v * 10) / 10;
+
 /**
- * Measure each plank of a part's day frame, column by column: the back edge
- * (first opaque row), the front of the light top face (the first dark row
- * under it: the line where the top meets the front face), and the bottom of
- * the front face (last opaque row). Three lines are fitted per plank and
- * printed as `surfaceTops`: `area` is the quad from the back edge to the
- * front of the top face pushed `--overlap` px (default 3) into the lip, so a
- * base at the very front tucks just behind it; `lip` is the quad from that
- * front line down to the bottom edge (plus `--pad` px, default 1, at the
- * ends and below; the bottom follows the measured columns, since the front
- * face tapers in perspective), the band drawn again over items on the
- * plank. Works for any part drawn as a lighter top over a darker outlined
- * front face (shelf planks, a desk, a nightstand). The top face is the run
- * at or above `--dark` luminance (default 90, light wood); black or dark
- * planks need a lower one (gamer's black shelves: --dark 60, top ~70-97,
- * front face ~45, outlines under 40). A top without such a face (a log, a stump,
- * a duvet) is traced by hand with --grid: an `area` polygon, a `lip` only
- * where the art has a front edge to tuck behind, `sink` for a soft top.
+ * Measure each plank of a part's day frame, column by column (261105 plank
+ * pass, Shawn: "select the entire visible plank (both the side and under
+ * part) and put it on top of the object"). Per column: the plank's opaque
+ * run (alpha; the soft shadow under it is faint and lighter than the
+ * outline, so it is left out), the light top face in it (rows at or above
+ * `--dark` luminance after the back outline), and the dark line where the
+ * top face meets the front face (the first row under `--dark` below it).
+ *
+ * `area` is the quad from the back edge to the front of the top face pushed
+ * `--overlap` px (default 3) into the lip, fitted over the columns that have
+ * a top face (so a visible end face at the plank's end is not part of it).
+ *
+ * `lip` is EVERYTHING of the plank below the top face, traced from the
+ * pixels: from half a px above the dark front line (the line itself always
+ * draws over an item) down to the plank's bottom outline, under the front
+ * face and the underside alike, and the whole column where the plank's end
+ * face shows (columns at its end that are much darker than its top face, or
+ * have none). Both chains are simplified to within `--tol` px (default 0.3,
+ * loosened if need be to fit a manifest polygon's 64 points);
+ * a spike up to 6 px wide in the bottom (a bracket pin) is dropped. The renderers
+ * draw the part's frame again inside it, over the items on that top, so the
+ * polygon must not reach past the plank: the shadow would be drawn twice.
+ *
+ * The top face is the run at or above `--dark` (default 90, light wood);
+ * black or dark planks need a lower one (gamer's black shelves: --dark 60,
+ * top ~64-97, front face ~45-55, outlines under 40). A top without such a
+ * face (a log, a stump, a duvet) is traced by hand with --grid.
  */
 async function suggestBands(id) {
   const comp = byId.get(id);
@@ -184,81 +232,141 @@ async function suggestBands(id) {
   const ox = comp.box ? comp.box[0] : 0;
   const oy = comp.box ? comp.box[1] : 0;
   const overlap = Number(arg('overlap', 3));
-  const pad = Number(arg('pad', 1));
   const dark = Number(arg('dark', 90));
+  const tol = Number(arg('tol', 0.3));
   const lum = (x, y) => {
     const i = (y * img.w + x) * img.c;
     return (img.data[i] + img.data[i + 1] + img.data[i + 2]) / 3;
   };
-  const alpha = (x, y) => img.data[(y * img.w + x) * img.c + 3];
-  const planks = []; // { cols: [[x, back, front, bottom]] }
-  for (let x = 0; x < img.w; x += 2) {
+  const alpha = (x, y) => (y >= 0 && y < img.h ? img.data[(y * img.w + x) * img.c + 3] : 0);
+  // The plank itself: opaque, or the dark anti-aliased rim of its outline (the shadow is faint and lighter).
+  const solid = (x, y) => alpha(x, y) >= 128 || (alpha(x, y) >= 80 && lum(x, y) < 45);
+  const planks = []; // { cols: [{ x, a, b, face: [top, front] | null, faceLum }] }
+  for (let x = 0; x < img.w; x++) {
     let s = -1;
     const runs = [];
     for (let y = 0; y <= img.h; y++) {
-      const a = y < img.h && alpha(x, y) > 128;
-      if (a && s < 0) s = y;
-      if (!a && s >= 0) {
+      const on = y < img.h && solid(x, y);
+      if (on && s < 0) s = y;
+      if (!on && s >= 0) {
         runs.push([s, y - 1]);
         s = -1;
       }
     }
     for (const [a, b] of runs) {
-      if (b - a < 6) continue;
-      let y = a;
-      while (y <= b && lum(x, y) < dark) y++;
-      const faceTop = y;
-      while (y <= b && lum(x, y) >= dark) y++;
-      if (y > b || y - faceTop < 2) continue;
-      const front = y;
+      if (b - a < 4) continue;
+      // The top face: the first light run at least 5 rows deep (a bracket pin over the plank has a
+      // light px or two), ended by a darker row inside the plank.
+      let face = null;
+      for (let y = a; y <= b && !face; ) {
+        if (lum(x, y) < dark) {
+          y++;
+          continue;
+        }
+        const top = y;
+        while (y <= b && lum(x, y) >= dark) y++;
+        if (y <= b && y - top >= 5) face = [top, y];
+      }
+      let faceLum = 0;
+      if (face) {
+        for (let k = face[0]; k < face[1]; k++) faceLum += lum(x, k);
+        faceLum /= face[1] - face[0];
+      }
       let p = planks.find((q) => {
         const last = q.cols[q.cols.length - 1];
-        return Math.abs(last[1] - a) < 14 && x - last[0] <= 8;
+        return Math.abs(last.a - a) < 14 && x - last.x <= 3;
       });
       if (!p) planks.push((p = { cols: [] }));
-      p.cols.push([x, a, front, b]);
+      p.cols.push({ x, a, b, face, faceLum });
     }
   }
   const tops = [];
   for (const p of planks) {
-    if (p.cols.length < 16) continue;
-    // Fit on the inner columns (the ends round off), apply over the whole plank.
-    const inner = p.cols.slice(2, -2);
-    const back = fitLine(inner.map((c) => [c[0], c[1]]));
-    const front = fitLine(inner.map((c) => [c[0], c[2]]));
-    const bottom = fitLine(inner.map((c) => [c[0], c[3]]));
-    const x1 = p.cols[0][0] + ox;
-    const x2 = p.cols[p.cols.length - 1][0] + ox;
-    const at = (f, x) => Math.round((f.at(x - ox) + oy) * 10) / 10;
-    const r = (v) => Math.round(v);
+    const withFace = p.cols.filter((c) => c.face);
+    if (withFace.length < 16) continue;
+    const lit = withFace.map((c) => c.faceLum).sort((a, b) => a - b)[withFace.length >> 1];
+    // The end face: leading (or trailing) columns with no top face, or one much darker than the plank's.
+    const endish = (c) => !c.face || c.faceLum < lit * 0.86;
+    let i0 = 0;
+    while (i0 < p.cols.length && i0 < 48 && endish(p.cols[i0])) i0++;
+    if (i0 >= 48) i0 = 0;
+    let i1 = p.cols.length - 1;
+    while (i1 > i0 && p.cols.length - 1 - i1 < 48 && !p.cols[i1].face) i1--;
+    const faceCols = p.cols.slice(i0, i1 + 1).filter((c) => c.face);
+    const inner = faceCols.slice(2, -2);
+    const back = fitLine(inner.map((c) => [c.x, c.a]));
+    const frontFit = fitLine(inner.map((c) => [c.x, c.face[1]]).filter((q, k, all) => Math.abs(q[1] - median(all.map((v) => v[1]), 3)[k]) < 3));
+    const fx1 = p.cols[i0].x + ox;
+    const fx2 = p.cols[i1].x + 1 + ox;
+    const at = (f, x) => f.at(x - ox) + oy;
     const area = [
-      [x1, r(at(back, x1))],
-      [x2, r(at(back, x2))],
-      [x2, r(at(front, x2) + overlap)],
-      [x1, r(at(front, x1) + overlap)],
+      [fx1, Math.round(at(back, fx1))],
+      [fx2, Math.round(at(back, fx2))],
+      [fx2, Math.round(at(frontFit, fx2) + overlap)],
+      [fx1, Math.round(at(frontFit, fx1) + overlap)],
     ];
-    const lx1 = x1 - pad;
-    const lx2 = x2 + pad;
-    // The front face tapers in perspective, so its bottom edge follows the
-    // measured columns (a median every ~64 px) rather than one line: a lip
-    // reaching below the plank would draw its soft shadow twice.
-    const below = [];
-    const step = Math.max(16, Math.round((x2 - x1) / Math.max(1, Math.round((x2 - x1) / 64))));
-    for (let sx = x1; sx < x2 + step / 2; sx += step) {
-      const tx = Math.min(sx, x2);
-      const near = p.cols.filter((c) => Math.abs(c[0] + ox - tx) <= 14).map((c) => c[3]).sort((a, b) => a - b);
-      const y = near.length ? near[near.length >> 1] + oy : at(bottom, tx);
-      below.push([tx === x1 ? lx1 : tx === x2 ? lx2 : tx, r(y + pad)]);
-      if (tx === x2) break;
+    // The lip's top: half a px above the front line (subpixel: where the luminance crosses halfway
+    // from the top face to the line), the fitted line where a column has no face (the far end's
+    // outline), and the plank's own top where its end face shows.
+    const topOf = (c, k) => {
+      if (k < i0) return c.a - 0.5;
+      if (!c.face) return at(frontFit, c.x + 0.5) - oy - 0.5;
+      const f = c.face[1];
+      const hi = lum(c.x, Math.max(c.face[0], f - 2));
+      let lo = lum(c.x, f);
+      for (let y = f; y <= Math.min(c.b, f + 2); y++) lo = Math.min(lo, lum(c.x, y));
+      const mid = (hi + lo) / 2;
+      let edge = f;
+      for (let y = Math.max(c.face[0], f - 2); y < Math.min(c.b, f + 2); y++) {
+        const [u, v] = [lum(c.x, y), lum(c.x, y + 1)];
+        if (u >= mid && v < mid) {
+          edge = y + 0.5 + (u - mid) / Math.max(1, u - v);
+          break;
+        }
+      }
+      return edge - 0.5;
+    };
+    // The bottom: the last solid row's coverage over the faint shadow under it (its alpha).
+    const botOf = (c) => {
+      const sh = Math.min(alpha(c.x, c.b + 2), 200);
+      return c.b + Math.max(0, Math.min(1, (alpha(c.x, c.b) - sh) / (255 - sh)));
+    };
+    // Past the end face, a 1-3 px spike (a bracket pin over the plank) is dropped as well.
+    const tops0 = p.cols.map(topOf);
+    tops0.splice(i0, tops0.length - i0, ...median(tops0.slice(i0), 3));
+    const bots = median(p.cols.map(botOf), 6);
+    const upper = [];
+    const lower = [];
+    p.cols.forEach((c, k) => {
+      const x = c.x + ox;
+      const t = tops0[k] + oy;
+      if (k === 0) upper.push([x, t]);
+      // A step between the end face and the top face falls on the column boundary.
+      if (k === i0 && k > 0) upper.push([x, tops0[k - 1] + oy], [x, t]);
+      upper.push([x + 0.5, t]);
+      if (k === p.cols.length - 1) upper.push([x + 1, t]);
+      const bt = bots[k] + oy;
+      if (k === 0) lower.push([x, bt]);
+      lower.push([x + 0.5, bt]);
+      if (k === p.cols.length - 1) lower.push([x + 1, bt]);
+    });
+    // Within --tol px, loosened (0.05 px at a time) until it fits a manifest polygon (64 points, seilinkValidate).
+    let lip;
+    for (let t = tol; ; t += 0.05) {
+      lip = [...simplify(upper, t), ...simplify(lower, t).reverse()].map(([x, y]) => [r1(x), r1(y)]);
+      if (lip.length <= 64) {
+        if (t > tol) console.error(`  (lip simplified to within ${t.toFixed(2)} px to fit 64 points)`);
+        break;
+      }
     }
-    const lip = [[lx1, r(at(front, lx1))], [lx2, r(at(front, lx2))], ...below.reverse()];
-    const depth = inner.reduce((s, c) => s + (c[2] - c[1]), 0) / inner.length;
-    const face = inner.reduce((s, c) => s + (c[3] - c[2]), 0) / inner.length;
+    const depth = inner.reduce((s, c) => s + (c.face[1] - c.a), 0) / inner.length;
+    const thick = p.cols.reduce((s, c, k) => s + (bots[k] - tops0[k]), 0) / p.cols.length;
     console.error(
-      `plank x ${x1}..${x2}: top face ~${depth.toFixed(1)}px deep, front face ~${face.toFixed(1)}px; ` +
-        `fit rms back ${back.err.toFixed(2)} front ${front.err.toFixed(2)} bottom ${bottom.err.toFixed(2)}px`,
+      `plank x ${p.cols[0].x + ox}..${p.cols[p.cols.length - 1].x + ox} (top face from ${fx1}, end face ${i0} px): ` +
+        `top face ~${depth.toFixed(1)}px deep, lip ~${thick.toFixed(1)}px, ${lip.length} points; ` +
+        `fit rms back ${back.err.toFixed(2)} front ${frontFit.err.toFixed(2)}px`,
     );
-    tops.push({ y: at(back, (x1 + x2) / 2), top: { area, lip } });
+    tops.push({ y: at(back, (fx1 + fx2) / 2), top: { area, lip } });
   }
   tops.sort((a, b) => a.y - b.y);
   console.log(format({ surfaceTops: tops.map((t) => t.top) }));

@@ -18,6 +18,7 @@ import type { FaceCue, FacepackDevInfo, FacepackManifest } from './facepack';
 import type { SeilinkDevInfo, SeilinkPack, SeilinkRoomPayload } from './seilinkPack';
 import type { RoomState } from './seilinkRoom';
 import type { SeilinkAvailability, SeilinkHostStatus } from './seilinkHost';
+import type { AnimaShownKind, AnimaStatus, AnimaTrigger } from './anima';
 import { z } from 'zod';
 import type {
   Character,
@@ -2240,6 +2241,12 @@ export interface RendererApi {
   onSeilinkAvailability?(cb: (a: SeilinkAvailability) => void): Unsubscribe;
   /** M4: the dock's edit button: open her room editor (characterId). */
   onSeilinkOpenRoomEditor?(cb: (characterId: string) => void): Unsubscribe;
+  /** 261105 Anima: SeiLink opened for her; bake/download her face set in the background (src/main/anima/). */
+  seilinkAnimaPrepare?(characterId: string, trigger: AnimaTrigger): Promise<AnimaStatus>;
+  seilinkAnimaStatus?(characterId: string): Promise<AnimaStatus>;
+  onSeilinkAnima?(cb: (status: AnimaStatus) => void): Unsubscribe;
+  /** What a RoomAvatar ended up showing for her (analytics only). */
+  seilinkAnimaShown?(characterId: string, kind: AnimaShownKind): void;
   /**
    * Overlay window only (260806): stream a character's tile camera (zoom +
    * pan within the tile) while edit-mode wheel/drag adjusts it; `commit`
@@ -4314,6 +4321,14 @@ export const IpcChannel = {
     availabilityChanged: 'seilink:availability-changed',
     /** Push (main → main window): characterId; the dock's edit button, open her room editor. */
     openRoomEditor: 'seilink:open-room-editor',
+    /** Invoke: SeiLink opened for her ({characterId, trigger}) → AnimaStatus. Starts her face-set bake/download in the background. */
+    animaPrepare: 'seilink:anima-prepare',
+    /** Invoke: characterId → AnimaStatus. */
+    animaStatus: 'seilink:anima-status',
+    /** Push (main → every window): AnimaStatus when it changes. */
+    animaChanged: 'seilink:anima-changed',
+    /** Send: what a RoomAvatar ended up showing ({characterId, kind}), analytics only. */
+    animaShown: 'seilink:anima-shown',
   },
 } as const;
 

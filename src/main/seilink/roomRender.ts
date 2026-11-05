@@ -13,7 +13,7 @@
  *   - an item sits on its BOTTOM CENTRE (itemRect), natural size or box
  *     times scale, mirrored when flipped;
  *   - a lip layer (a slot with `clip`) is kept only inside its polygons, and
- *     so is an item on a lipped top (above the lip's top edge); an
+ *     so is an item on a lipped top (above the plank's bottom edge); an
  *     item on a soft top (`sink`) has its base faded into the top over a
  *     soft contact shadow, by the same sinkLook / sinkKeep / contactShadow
  *     rules the renderer uses;
@@ -404,7 +404,7 @@ export async function renderRoomImage(
         if (l.kind === 'slot' && l.clip?.length) return cutToPolygons(data, place, l.clip, s);
         const sunk = l.kind === 'item' ? sinkItem(l, data, place, s) : null;
         const at = sunk ? sunk.place : place;
-        // An item on a lipped top: only above the lip's top edge.
+        // An item on a lipped top: only above the plank's bottom edge (the lip is drawn over the rest).
         if (l.kind === 'item' && l.clip?.length) keepInside(data, at, l.clip, s);
         if (!sunk) return { data, ...place };
         placed.set(l, sunk.place);

@@ -71,6 +71,23 @@ per window, `idle_attempted` / `idle_shown` / `idle_none_<why>` count tries.
 | `seilink_moved_in` | host started for her (not a restore) | swapped, preset, first_room | Move-ins |
 | `seilink_moved_out` | she moved out | via app/dock | Move-outs |
 
+## Her look (anima face sets, 261105)
+
+One event, `seilink_anima`, from main (`src/main/anima/animaClient.ts`), with
+`phase`. Each phase is sent once per character (and trigger, kind or pack)
+per app run.
+
+| phase | When | Props | Answers |
+|---|---|---|---|
+| `requested` | the first POST /anima/v1/request for her this run | trigger `move_in_sheet`/`editor`/`host_start`/`host_restore`/`portrait_changed`, state (the proxy's first answer), created (this call queued a new bake) | How often SeiLink opens lead to a bake |
+| `ready` | her face set is on disk and in use | trigger, from_cache (no bake was waited on), source `disk`/`cloud_cache`/`baked`, wait_ms (from the request), pack_mb? | How long people wait for her look |
+| `deferred` | the proxy held the bake | reason `budget`/`user_cap`, trigger, wait_ms | Budget switch and weekly cap hits |
+| `no_pack` | her portrait cannot become a face set (final for that portrait) | trigger, wait_ms | Portraits that stay on the fallback |
+| `failed` | the bake, the download or the install failed | reason (the bake's, or `network`/`poll_timeout`/`hash_mismatch`/`bad_archive`/`bad_entry`/`too_big`/`no_manifest`/`download`/`bad_reply`/`http_<n>`), trigger | Breakage |
+| `unavailable` | the proxy will not bake her | reason `not_configured`/`no_portrait`/`portrait_unreadable`/`moderation`/`not_found` (no cloud row)/`forbidden`, trigger | Characters that cannot get a look |
+| `skipped` | nothing was asked | reason `offline`/`signed_out`, trigger | Signed-out and offline SeiLink use |
+| `shown` | a RoomAvatar settled on a kind | avatar_kind `live2d`/`rig`/`facepack`/`portrait`/`placeholder`, surface `desktop`/`editor`, anima_state `idle`/`preparing`/`ready` | What people actually see |
+
 ## Room editor
 
 | Event | When | Props | Answers |

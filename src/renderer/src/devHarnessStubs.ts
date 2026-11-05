@@ -408,8 +408,18 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
 // on* an unsubscribe. ?seilink=1 (261104) gets the same, so RoomAvatar runs
 // in a plain tab; with &rig=<url of a rig dir> it also answers avatarGet and
 // avatarModelFiles from that dir, so the imported-avatar path can be shot.
+// ?seilinkhost=1 (261105) gets it too, and with &facepacks=<url of a packs
+// dir>&facepackid=<pack id>[&facepackat=<ms>] her face set "arrives" that
+// long after the room first draws (data-room-ready; an avatar-manifest push,
+// like the anima client's), so the portrait-to-face-set crossfade can be shot.
 const harnessParams = w ? new URLSearchParams(w.location.search) : null;
-if (import.meta.env.DEV && w && w.sei == null && harnessParams && (harnessParams.has('facepack') || harnessParams.has('seilink'))) {
+if (
+  import.meta.env.DEV &&
+  w &&
+  w.sei == null &&
+  harnessParams &&
+  (harnessParams.has('facepack') || harnessParams.has('seilink') || harnessParams.has('seilinkhost'))
+) {
   const noop = async (): Promise<undefined> => undefined;
   const rigBase = harnessParams.get('rig')?.replace(/\/?$/, '/') ?? null;
   const rigFiles = async (): Promise<Array<{ path: string; bytes: Uint8Array }>> => {
@@ -425,6 +435,35 @@ if (import.meta.env.DEV && w && w.sei == null && harnessParams && (harnessParams
         avatarModelFiles: rigFiles,
       }
     : {};
+  const packsBase = harnessParams.get('facepacks')?.replace(/\/?$/, '/') ?? null;
+  const packId = harnessParams.get('facepackid');
+  if (packsBase && packId) {
+    const delay = Number(harnessParams.get('facepackat') ?? 0) || 0;
+    let arrived = false;
+    const listeners = new Set<(u: { characterId: string; manifest: null }) => void>();
+    const poll = setInterval(() => {
+      if (document.body?.dataset.roomReady !== '1') return;
+      clearInterval(poll);
+      setTimeout(() => {
+        arrived = true;
+        for (const cb of listeners) cb({ characterId: 'dev-preview', manifest: null });
+      }, delay);
+    }, 50);
+    const url = (id: string, rel: string): string => `${packsBase}${encodeURIComponent(id)}/${rel.split('/').map(encodeURIComponent).join('/')}`;
+    answers.facepackForCharacter = async () => (arrived ? packId : null);
+    answers.facepackManifest = async (id: string) => {
+      const r = await fetch(url(id, 'facepack.json'));
+      return r.ok ? r.json() : null;
+    };
+    answers.facepackFile = async (id: string, rel: string) => {
+      const r = await fetch(url(id, rel));
+      return r.ok ? new Uint8Array(await r.arrayBuffer()) : null;
+    };
+    answers.onAvatarManifest = (cb: (u: { characterId: string; manifest: null }) => void) => {
+      listeners.add(cb);
+      return () => listeners.delete(cb);
+    };
+  }
   (window as unknown as { sei: unknown }).sei = new Proxy(
     {},
     {

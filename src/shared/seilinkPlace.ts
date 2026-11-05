@@ -41,10 +41,14 @@
  * top draw in its slice (further back on the top first), its lip (the
  * part's frame cut to the top's lip polygon) at the top of the slice, so the
  * lip covers the base of the items on that top and nothing else, and items
- * on the next top down draw over it. Items on a lipped top are also cut to
- * above the lip's top edge (AreaSurface.keep), and their contact may reach
- * LIP_TUCK px into the lip, so an item at the front sits just behind the
- * plank's front edge instead of on it (Shawn: "put shelf in front").
+ * on the next top down draw over it. The lip is the WHOLE visible plank
+ * below its top face (front face, end face, underside and bottom outline,
+ * traced from the art), and the contact of an item on a lipped top may
+ * reach LIP_TUCK px into it, so an item at the front sits low enough that
+ * the plank hides its base (Shawn: "select the entire visible plank (both
+ * the side and under part) and put it on top of the object"). Items on a
+ * lipped top are also cut to above the plank's bottom edge
+ * (AreaSurface.keep), so nothing of them shows under a thin plank.
  */
 import {
   ITEM_Z,
@@ -99,12 +103,15 @@ export const BACK_OF_BASE = 1;
  * A top with a lip lets the contact go this many canvas px further forward
  * than the traced top face (its `area`), into the lip. An object's opaque base
  * ends a few px above its contact (the contact is the middle of its soft
- * shadow, `foot`), so without this an item at the very front ends exactly on
- * the plank's front edge and reads as perched on it, in front of the shelf
- * (261105, Shawn: "put shelf in front"). With it, the front of the base goes a
- * few px behind the lip, which is drawn over it.
+ * shadow, `foot`), so without this an item at the very front ends on the
+ * plank's front edge and reads as perched in front of the shelf (261105,
+ * Shawn: "put shelf in front"). A 5 px tuck still showed the item's own
+ * bottom edge along the plank's, so it read as pasted on; with this one the
+ * bottom 9-12 px of an item at the front (about 6-10% of the shipped
+ * shelf items, more than its rounded base and its outline) go behind the
+ * plank, which is drawn over them.
  */
-export const LIP_TUCK = 5;
+export const LIP_TUCK = 10;
 /** Part z slice the items on its tops (and their lips) draw in: part z + [lo, hi). */
 const TOP_Z_LO = 0.5;
 const TOP_Z_HI = 0.95;
@@ -212,8 +219,9 @@ export interface AreaSurface extends SurfaceBase {
   lip: RoomPolygon | null;
   /**
    * Items on this top are drawn only inside this polygon: everything above
-   * the lip's top edge (lipKeep), so no pixel of them shows on the plank's
-   * front face or under the plank, however thin the lip. null = no lip.
+   * the lip's bottom edge (lipKeep). The lip is drawn over them inside it,
+   * so this only stops an item tucked deeper than a thin plank showing
+   * under it. null = no lip.
    */
   keep: RoomPolygon | null;
   /** Soft top: px (sprite scale 1) an item's base settles in. 0 = a hard top. */
@@ -304,17 +312,21 @@ function areaSurface(poly: RoomPolygon, slot: RoomSlotId, z: number, lip: RoomPo
   };
 }
 
-/** How far past the ends of a lip its top edge is carried on (an item hangs at most a little past a top's ends). */
+/** How far past the ends of a lip its bottom edge is carried on (an item hangs at most a little past a top's ends). */
 const KEEP_MARGIN = 400;
-/**
- * Items are cut this many px above the lip's traced top edge, so the plank's
- * dark front outline (a px or two, traced to within about one) always shows
- * over their base, as an edge they sit behind rather than a cut.
- */
-export const KEEP_LIFT = 1.5;
 
 /** The top edge of a polygon: its lowest-y point on vertical lines through it, left to right. */
 export function topEdge(poly: RoomPolygon): Array<[number, number]> {
+  return edgeOf(poly, -1);
+}
+
+/** The bottom edge of a polygon: its highest-y point on vertical lines through it, left to right. */
+export function bottomEdge(poly: RoomPolygon): Array<[number, number]> {
+  return edgeOf(poly, 1);
+}
+
+/** The top (dir -1) or bottom (dir 1) edge of a polygon, sampled at its vertices' x and every 8 px. */
+function edgeOf(poly: RoomPolygon, dir: 1 | -1): Array<[number, number]> {
   const [bx, , bw] = polygonBounds(poly);
   if (!(bw > 0)) return [];
   const xs = new Set<number>();
@@ -325,23 +337,26 @@ export function topEdge(poly: RoomPolygon): Array<[number, number]> {
   const out: Array<[number, number]> = [];
   for (const x0 of [...xs].sort((a, b) => a - b)) {
     const x = Math.max(bx + eps, Math.min(bx + bw - eps, x0));
-    let top = Infinity;
+    let best = -dir * Infinity;
     for (const [x1, y1, x2, y2] of edges(poly)) {
       if (x1 === x2 || x < Math.min(x1, x2) || x > Math.max(x1, x2)) continue;
-      top = Math.min(top, y1 + ((x - x1) * (y2 - y1)) / (x2 - x1));
+      const y = y1 + ((x - x1) * (y2 - y1)) / (x2 - x1);
+      best = dir > 0 ? Math.max(best, y) : Math.min(best, y);
     }
-    if (Number.isFinite(top)) out.push([x0, top]);
+    if (Number.isFinite(best)) out.push([x0, best]);
   }
   return out;
 }
 
 /**
- * What an item on a lipped top may show: the region above the lip's top edge,
- * carried on KEEP_MARGIN px past its ends along the edge's overall slope, and
- * everything above that. Canvas px, a simple polygon.
+ * What an item on a lipped top may show: the region above the lip's bottom
+ * edge (the plank's underside outline), carried on KEEP_MARGIN px past its
+ * ends along the edge's overall slope, and everything above that. Inside the
+ * lip the plank is drawn over the item, so this only matters where an item
+ * is tucked deeper than the plank is thick. Canvas px, a simple polygon.
  */
 export function lipKeep(lip: RoomPolygon): RoomPolygon {
-  const edge = topEdge(lip).map(([x, y]) => [x, y - KEEP_LIFT] as [number, number]);
+  const edge = bottomEdge(lip);
   if (edge.length < 2) return lip;
   const [x0, y0] = edge[0];
   const [x1, y1] = edge[edge.length - 1];

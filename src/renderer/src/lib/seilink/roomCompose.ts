@@ -355,7 +355,7 @@ export function drawRoomLayers(
       ctx.restore();
       continue;
     }
-    // An item on a lipped top: only above the lip's top edge.
+    // An item on a lipped top: only above the plank's bottom edge (its lip is drawn over the rest).
     const cut = l.kind === 'item' && l.clip?.length ? l.clip : null;
     if (cut) {
       ctx.save();

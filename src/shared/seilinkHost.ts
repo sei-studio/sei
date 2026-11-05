@@ -140,6 +140,8 @@ export const SEILINK_HOST_AVATAR_METHODS = [
   'facepackForCharacter',
   'facepackManifest',
   'facepackFile',
+  // 261105: what RoomAvatar ended up showing (analytics only; answers null).
+  'avatarShown',
 ] as const;
 export type SeilinkHostAvatarMethod = (typeof SEILINK_HOST_AVATAR_METHODS)[number];
 

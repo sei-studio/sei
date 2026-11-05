@@ -14,7 +14,6 @@ import {
   depthOnSurface,
   END_INSET,
   fitsSurface,
-  KEEP_LIFT,
   LIP_TUCK,
   lipKeep,
   placedItemZ,
@@ -166,13 +165,14 @@ describe('capture distance', () => {
   });
 
   it('keeps the plank it is on while within capture below it, though the next one is nearer by the lean', () => {
-    // Plank 1's front at x 300 is 320, plank 2's back 460. Held 46 px under plank 1 (366):
-    // plank 1 is 46 away, plank 2 94 (75 leaned).
+    // Plank 1's reach at x 300 ends at 320 + LIP_TUCK, plank 2's back is 460. Held 46 px
+    // under plank 1's face (366): plank 1 is 36 away, plank 2 94 (75 leaned).
+    expect(LIP_TUCK).toBe(10);
     expect(snapSpot(R, books, 300, at(366), { fit, prefer: 0 }).surface).toBe(0);
     // Not on it before: still the nearest, plank 1.
     expect(snapSpot(R, books, 300, at(366), { fit }).surface).toBe(0);
-    // Out of capture (75 px under), and leaning down wins: plank 2 (75 v 65 x 0.8 = 52, more than 14 nearer).
-    expect(snapSpot(R, books, 300, at(395), { fit, prefer: 0 }).surface).toBe(1);
+    // Out of capture (70 px under its reach), and leaning down wins: plank 2 (70 v 60 x 0.8 = 48, more than 14 nearer).
+    expect(snapSpot(R, books, 300, at(400), { fit, prefer: 0 }).surface).toBe(1);
   });
 
   it('lands a contact a little past the end of a plank on that plank', () => {
@@ -218,7 +218,7 @@ describe('lip occlusion order', () => {
     expect(z.slice(1, 6).every((v) => v >= 40 && v < 41)).toBe(true);
   });
 
-  it('draws the lip after every item on its top, and cuts those items above its top edge', () => {
+  it('draws the lip after every item on its top, and cuts those items under the plank only', () => {
     const st = state([
       { id: 'books', x: 300, y: at(474) }, // plank 2, middle
       { id: 'vase', x: 200, y: 480 + LIP_TUCK + 4 }, // plank 2, at its very front (tucked)
@@ -234,29 +234,43 @@ describe('lip occlusion order', () => {
       expect(i, (l as ItemLayer).component.id).toBeLessThan(lipAt);
       const clip = (l as ItemLayer).clip!;
       expect(clip).toEqual([lipKeep(plank2.lip as RoomPolygon)]);
-      // Kept: just over the outline above the lip, the item's body. Cut: the lip and under the plank.
-      expect(pointInPolygon(clip[0], 300, 480 - KEEP_LIFT - 0.5)).toBe(true);
+      // Kept: the item's body, and its base inside the lip (the lip layer drawn after it covers
+      // that). Cut: only under the plank's bottom edge (y 490), for an item tucked deeper than
+      // a thin plank.
       expect(pointInPolygon(clip[0], 300, 300)).toBe(true);
-      expect(pointInPolygon(clip[0], 300, 481)).toBe(false);
+      expect(pointInPolygon(clip[0], 300, 482)).toBe(true);
+      expect(pointInPolygon(clip[0], 300, 489.5)).toBe(true);
+      expect(pointInPolygon(clip[0], 300, 491)).toBe(false);
       expect(pointInPolygon(clip[0], 300, 495)).toBe(false);
-      // Past the plank's ends its top edge carries on.
-      expect(pointInPolygon(clip[0], 520, 481)).toBe(false);
-      expect(pointInPolygon(clip[0], 520, 470)).toBe(true);
+      // Past the plank's ends its bottom edge carries on.
+      expect(pointInPolygon(clip[0], 520, 491)).toBe(false);
+      expect(pointInPolygon(clip[0], 520, 485)).toBe(true);
     }
     const bedItem = items.find(([l]) => (l as ItemLayer).index === 2)![0] as ItemLayer;
     expect(bedItem.clip).toBeUndefined();
   });
 
-  it('traces the top edge of a lip that tapers, and of a sloped one', () => {
+  it('follows the bottom edge of a lip that tapers, of a sloped one and of a plank with an end face', () => {
+    // Plank 1's lip runs from (97, 312) to (503, 352) along its bottom: 332 at x 300.
     const slope = lipKeep(plank1.lip as RoomPolygon);
-    expect(pointInPolygon(slope, 300, 320 - KEEP_LIFT - 0.5)).toBe(true);
-    expect(pointInPolygon(slope, 300, 321)).toBe(false);
-    // A gamer-style lip whose bottom follows the plank: only the top edge matters.
+    expect(pointInPolygon(slope, 300, 331.5)).toBe(true);
+    expect(pointInPolygon(slope, 300, 333)).toBe(false);
+    // A gamer-style lip whose bottom follows the plank (its underside tapers to a corner).
     const taper: [number, number][] = [[0, 100], [400, 140], [400, 150], [200, 135], [0, 112]];
     const k = lipKeep(taper);
-    expect(pointInPolygon(k, 200, 120 - KEEP_LIFT - 0.5)).toBe(true);
-    expect(pointInPolygon(k, 200, 121)).toBe(false);
-    expect(pointInPolygon(k, 200, 200)).toBe(false);
+    expect(pointInPolygon(k, 200, 134.5)).toBe(true);
+    expect(pointInPolygon(k, 200, 136)).toBe(false);
+    expect(pointInPolygon(k, 300, 142)).toBe(true);
+    expect(pointInPolygon(k, 300, 143.5)).toBe(false);
+    // A traced plank: the end face (x 0..25) rises to the plank's top, the rest starts at the
+    // front line; only the bottom matters for the cut.
+    const traced: [number, number][] = [[0, 412], [25, 412], [25, 434], [528, 489], [528, 492], [470, 495], [0, 447]];
+    const t = lipKeep(traced);
+    expect(pointInPolygon(t, 10, 420)).toBe(true);
+    expect(pointInPolygon(t, 10, 446)).toBe(true);
+    expect(pointInPolygon(t, 10, 449)).toBe(false);
+    expect(pointInPolygon(t, 470, 494.5)).toBe(true);
+    expect(pointInPolygon(t, 470, 496)).toBe(false);
   });
 
   it('adds a lip only for a top that holds something', () => {

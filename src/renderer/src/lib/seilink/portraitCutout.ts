@@ -186,6 +186,12 @@ export interface CutoutImage {
 }
 
 const cache = new Map<string, Promise<CutoutImage | null>>();
+const done = new Map<string, CutoutImage>();
+
+/** A cutout that has already finished loading, or null. Lets a remount draw on its first frame. */
+export function peekCutout(url: string): CutoutImage | null {
+  return done.get(url) ?? null;
+}
 
 /** Load a portrait and cut it out, as an object URL (cached per portrait URL). Null when it cannot load. */
 export function loadCutout(url: string): Promise<CutoutImage | null> {
@@ -200,6 +206,7 @@ export function loadCutout(url: string): Promise<CutoutImage | null> {
   cache.set(url, job);
   void job.then((r) => {
     if (!r) cache.delete(url);
+    else done.set(url, r);
   });
   return job;
 }
