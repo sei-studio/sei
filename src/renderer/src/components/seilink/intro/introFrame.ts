@@ -64,8 +64,6 @@ export interface IntroFrame {
   brand: number;
   /** The three beat dots: 0..1 lit. */
   dots: [number, number, number];
-  /** The caption's backing shade while her (bright) room fills the screen. */
-  scrim: number;
 }
 
 /** The field's palette per style: background top/bottom and three light colours (r, g, b). */
@@ -103,7 +101,6 @@ export function computeFrame(style: IntroStyle, tl: IntroTimeline, t: number, W:
     pulse: -1,
     brand: ease.out(span(t, 100, 800)),
     dots,
-    scrim: 0,
   };
 
   if (reduced) {
@@ -114,7 +111,6 @@ export function computeFrame(style: IntroStyle, tl: IntroTimeline, t: number, W:
     base.halo = 0.6 * base.avatar.opacity * (1 - span(t, P, P + 1200));
     base.room.opacity = ease.inOut(span(t, P, P + 1200));
     base.room.reveal = 1.2;
-    base.scrim = base.room.opacity;
     return base;
   }
 
@@ -140,7 +136,6 @@ export function computeFrame(style: IntroStyle, tl: IntroTimeline, t: number, W:
   const open = ease.inOut(span(t, P + 150, P + 2300));
   base.room.opacity = open > 0 ? 1 : 0;
   base.room.reveal = open >= 1 ? 1.2 : open * 1.15;
-  base.scrim = ease.inOut(span(t, P + 900, P + 2300));
   base.pulse = t >= K && t < K + 1600 ? span(t, K, K + 1600) : -1;
 
   // Per style: how the light moves (introFx reads style + clock); a few timing differences.
@@ -165,4 +160,44 @@ export function revealMask(f: IntroFrame, center: { x: number; y: number }): str
   const inner = Math.max(0, r - soft);
   const mid = inner + (r - inner) * 0.55;
   return `radial-gradient(circle at ${center.x.toFixed(1)}px ${center.y.toFixed(1)}px, #000 ${inner.toFixed(1)}px, rgba(0,0,0,0.55) ${mid.toFixed(1)}px, transparent ${r.toFixed(1)}px)`;
+}
+
+/**
+ * 0..1 how much of her room shows at screen point `p` (root px), the same
+ * soft circle as revealMask around `centre`, times the room's opacity. The
+ * HUD text switches from night ink to day ink by it (her first room is
+ * white), each piece where it sits, so it never turns dark over the light.
+ */
+export function roomBehind(f: IntroFrame, centre: { x: number; y: number }, p: { x: number; y: number }): number {
+  if (f.room.opacity <= 0) return 0;
+  if (f.room.reveal >= 1) return f.room.opacity;
+  const diag = Math.hypot(f.W, f.H);
+  const r = Math.max(0, f.room.reveal * diag);
+  if (r < 1) return 0;
+  const inner = Math.max(0, r - Math.max(80, diag * 0.16));
+  const d = Math.hypot(p.x - centre.x, p.y - centre.y);
+  const open = d <= inner ? 1 : d >= r ? 0 : 1 - (d - inner) / (r - inner);
+  return f.room.opacity * open;
+}
+
+/** Text over this much of her room is in day ink, under the low end night ink (0..1, eased between). */
+export function dayInk(behind: number): number {
+  const x = Math.min(1, Math.max(0, (behind - 0.25) / 0.5));
+  return x * x * (3 - 2 * x);
+}
+
+/** The caption's top never rises above this, px: it stays clear of the SEILINK corner label. */
+const CAPTION_TOP_MIN = 64;
+
+/**
+ * The caption block's top, px (261106: captions over her chest were hard to
+ * read). It sits in the empty space above her head, about a sixth of the way
+ * down, and moves up when her head comes closer than `gap` (a short window,
+ * a bigger her), never into the corner label.
+ */
+export function captionTop(H: number, captionH: number, her: Box | null): number {
+  const ideal = Math.max(CAPTION_TOP_MIN, H * 0.15);
+  if (!her) return ideal;
+  const gap = Math.max(24, H * 0.04);
+  return Math.max(CAPTION_TOP_MIN, Math.min(ideal, her.y - gap - captionH));
 }

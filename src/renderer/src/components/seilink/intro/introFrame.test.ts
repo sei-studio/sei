@@ -12,6 +12,9 @@
  *      over it (the picture the wallpaper draws, so the window can step aside).
  *   4. Reduced motion: the light stands still, nothing is masked or blurred.
  *   5. Deterministic: the same t gives the same frame.
+ *   6. Captions (261106) sit above her head, never over her, and never rise
+ *      into the corner label; text switches to day ink only where her room
+ *      is behind it.
  */
 import { describe, expect, it } from 'vitest';
 import { INTRO_STYLES } from '@shared/seilinkIntroTelemetry';
@@ -23,7 +26,7 @@ import {
   beatProgress,
   timelineTime,
 } from '../../../lib/seilink/introTimeline';
-import { computeFrame, revealMask } from './introFrame';
+import { captionTop, computeFrame, dayInk, revealMask, roomBehind } from './introFrame';
 
 const W = 1920;
 const H = 1080;
@@ -138,5 +141,54 @@ describe('frames', () => {
       return JSON.stringify([f.field, f.room]);
     };
     expect(new Set(INTRO_STYLES.map(at)).size).toBe(INTRO_STYLES.length);
+  });
+});
+
+describe('captions', () => {
+  // Her box at 1920x1080 in the cozy room: top at half the height.
+  const her = { x: 773, y: 540, w: 405, h: 540 };
+
+  it('sit above her head with a gap', () => {
+    const top = captionTop(H, 110, her);
+    expect(top + 110).toBeLessThanOrEqual(her.y - 24);
+    expect(top).toBeGreaterThanOrEqual(64);
+  });
+
+  it('move up when her head is close, never into the corner label', () => {
+    const near = { ...her, y: 300 };
+    expect(captionTop(H, 110, near) + 110).toBeLessThanOrEqual(300 - 24);
+    expect(captionTop(400, 300, { ...her, y: 120 })).toBe(64);
+  });
+
+  it('use the default place before she has a size', () => {
+    expect(captionTop(H, 110, null)).toBeCloseTo(H * 0.15);
+  });
+
+  it('turn to day ink only where her room shows', () => {
+    const style = 'aurora';
+    const centre = { x: W / 2, y: H * 0.7 };
+    const above = { x: W / 2, y: H * 0.17 };
+    const beforeRoom = computeFrame(style, FULL_TIMELINE, FULL_TIMELINE.beats.link + 500, W, H, false);
+    expect(dayInk(roomBehind(beforeRoom, centre, above))).toBe(0);
+    const end = computeFrame(style, FULL_TIMELINE, FULL_TIMELINE.beats.linked + 600, W, H, false);
+    expect(dayInk(roomBehind(end, centre, above))).toBe(1);
+    // While the circle opens, a point near her is in the room before a far corner is.
+    let near = 0;
+    let far = 0;
+    for (let t = FULL_TIMELINE.beats.port; t < FULL_TIMELINE.beats.linked; t += 50) {
+      const f = computeFrame(style, FULL_TIMELINE, t, W, H, false);
+      if (!near && roomBehind(f, centre, above) >= 1) near = t;
+      if (!far && roomBehind(f, centre, { x: 40, y: 30 }) >= 1) far = t;
+    }
+    expect(near).toBeGreaterThan(0);
+    expect(far).toBeGreaterThan(near);
+  });
+
+  it('follow the crossfade under reduced motion', () => {
+    const centre = { x: W / 2, y: H * 0.7 };
+    const p = { x: 40, y: 30 };
+    const { port } = CALM_TIMELINE.beats;
+    expect(roomBehind(computeFrame('aurora', CALM_TIMELINE, port - 100, W, H, true), centre, p)).toBe(0);
+    expect(roomBehind(computeFrame('aurora', CALM_TIMELINE, port + 1300, W, H, true), centre, p)).toBe(1);
   });
 });

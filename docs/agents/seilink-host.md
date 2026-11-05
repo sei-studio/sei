@@ -435,6 +435,13 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
     (brightness + blur + drop-shadow easing to none) and the room canvases
     (not her) open in a soft radial mask around her. The 261105 holo /
     glitch / tunnel code is gone.
+  - 261106 captions: they sit in the empty space above her head, never over
+    her (`captionTop`: about 15% down, pulled up to keep a gap above her
+    measured box, never above 64px so they clear the corner label). Each HUD
+    piece (SEILINK label, captions, Skip) switches from light ink over a soft
+    dark cloud to deep ink over a soft white cloud by how much of her room is
+    behind it (`roomBehind` + `dayInk`, the same circle as the reveal mask),
+    because her first room is white. Feathered radial clouds, no boxes.
 - **The guide's SeiLink tour** (`lib/seilink/tourPref.ts` decides,
   `seilinkTour.ts` records, `useTutorialStore` mode `seilink`, steps
   `sl_offer` / `sl_button` / `sl_room` in TutorialOverlay). App.tsx polls
