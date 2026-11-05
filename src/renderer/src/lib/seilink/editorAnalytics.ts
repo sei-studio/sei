@@ -8,7 +8,7 @@
  * Only the companion editor (CompanionRoomEditor) passes `telemetry`; the dev
  * preview and the screenshot harness send nothing.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isDirty, type EditHistory } from '@shared/seilinkEdit';
 import {
   EditorSessionTracker,
@@ -22,6 +22,7 @@ import {
   type RoomShapeAtClose,
 } from '@shared/seilinkTelemetry';
 import type { RoomSlotId } from '@shared/seilinkRoom';
+import type { TogetherCount } from '@shared/seilinkTogether';
 import { sei } from '../ipcClient';
 
 export interface EditorTelemetry {
@@ -58,6 +59,16 @@ export interface EditorAnalytics {
   pickerOpened(): void;
   /** 261105 colour pass: a colour was picked from a preset swatch, the custom picker or its recent row. */
   colorPicked(kind: ColorPickKind): void;
+  /** 261105 (T336): decorating together (session counters on seilink_editor_session). */
+  together: TogetherAnalytics;
+}
+
+export interface TogetherAnalytics {
+  /** The editor is shared with her; `onCall` = a call was open. */
+  opened(onCall: boolean): void;
+  /** This room state is her commit, not a player edit. */
+  markHers(state: object): void;
+  count(key: TogetherCount): void;
 }
 
 export function useEditorAnalytics(telemetry: EditorTelemetry | null | undefined, input: EditorAnalyticsInput): EditorAnalytics {
@@ -146,5 +157,21 @@ export function useEditorAnalytics(telemetry: EditorTelemetry | null | undefined
     [on, session],
   );
 
-  return { avatarUpload, pickerOpened, colorPicked };
+  // 261105 (T336): decorating together.
+  const together = useMemo<TogetherAnalytics>(
+    () => ({
+      opened: (onCall) => {
+        if (on) session.tracker.together(onCall);
+      },
+      markHers: (state) => {
+        if (on) session.tracker.markHers(state);
+      },
+      count: (key) => {
+        if (on) session.tracker.count(key);
+      },
+    }),
+    [on, session],
+  );
+
+  return { avatarUpload, pickerOpened, colorPicked, together };
 }

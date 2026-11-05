@@ -158,6 +158,45 @@ Colours come from the room (`RoomCanvas onOverlay`), not the app theme.
   (`roomChangeNote.ts`, 30 min) and the next chat, call or desktop turn that
   has her room gets one note diffed against the room it read. The room line
   itself is read fresh every turn (no cache), so a new preset shows at once.
+- Decorating together (261105, T336). Main: `seilink/editorTogether.ts`
+  (session state, no electron; chatService reads it), `decorateTogether.ts`
+  (open/close/sync IPC, live-line scheduler), `shared/seilinkDecorate.ts`
+  (the decorate tool), `shared/seilinkTogether.ts` (event types). Renderer:
+  `components/seilink/RoomTogether.tsx`, drawn through RoomEditor's
+  `together` render prop by CompanionRoomEditor, only for the resident.
+  - The editor sends its UNSAVED room (`seilink:editor-sync`, 400 ms
+    debounce, validated with the pack like a save). Every surface that reads
+    her room (`roomForSurface` -> `liveRoomFor`) sees that room while the
+    editor is open.
+  - Live lines, off a call: edits arm a 5 s pause timer; then one line
+    (`speakEditorLine`, a `react` desktop turn with the live note, pushed to
+    her chat, no host bubble) about what changed since she last said
+    something. 40 s apart, at most 4 per session, paid like a poke (free
+    inside the weekly cap, silent over it). Silence counts as seen. The idle
+    tick does nothing while her editor is open.
+  - Closing line: `roomReaction.closed(token, together)` diffs against what
+    she already saw live. Nothing new since her last live line = skipped
+    `seen_live`; within 40 s of a live line = `cooldown` (the baseline is
+    kept for her next turn).
+  - Every chat, call or talk-box turn while the editor is open gets
+    `editorTurnNote` in the uncached tail: what changed since her last turn
+    and the room now. On a call she also gets a look() picture of the room
+    (a synthesized look tool_use and tool_result) on the player's next line,
+    only when the room changed since the last picture and at most one per
+    20 s.
+  - The decorate tool is offered (last in the tool list, the same on every
+    voice turn kind) only while that companion's editor is open. `apply`
+    resolves each change against the pack (real parts, palettes, patterns,
+    side placement) and sends ops on `seilink:editor-event`; the editor
+    applies them as ONE undo step (`commitEdit(endGesture(h), next, null)`),
+    crossfades, rings the changed parts and shows "Undo {name}'s changes".
+    `suggest` shows "Try {name}'s idea". At most 5 changes; refusals list the
+    real options and get one more hop.
+  - The talk box is her normal chat turn (`useChatStore.send`), so the rows
+    land in her chat. Hidden on a call (there is a call pill with
+    CallControls instead; edits count as presence). Over the limit it shows
+    "Usage limit reached" and opens the HardStopModal (ModalShell lifts over
+    the editor through `--sei-modal-lift`).
 
 ## The avatar mount point
 

@@ -124,6 +124,56 @@ export class RoomPicker {
     const n = this.natural(resolve(l.frame.src));
     return n ? itemRect(l, n) : null;
   }
+
+  /**
+   * 261105 (T336): canvas-px rect of what a slot draws (its frame's opaque
+   * pixels, so curtains get a curtain-sized box, not the whole canvas), or
+   * null until its frame is prepared or when the slot is empty.
+   */
+  slotRect(manifest: RoomPresetManifest, state: RoomState, time: RoomTime, resolve: RoomUrlResolver, slot: RoomSlotId): [number, number, number, number] | null {
+    const plan = roomDrawPlan(manifest, state, time);
+    let out: [number, number, number, number] | null = null;
+    for (const l of plan.layers) {
+      if (l.kind !== 'slot' || l.slot !== slot) continue;
+      const map = this.maps.get(resolve(l.frame.src));
+      if (!map) continue;
+      const [rx, ry, rw, rh] = l.box ?? [0, 0, manifest.canvas[0], manifest.canvas[1]];
+      const b = opaqueBounds(map);
+      if (!b) continue;
+      const r: [number, number, number, number] = [rx + (b[0] / map.w) * rw, ry + (b[1] / map.h) * rh, ((b[2] - b[0]) / map.w) * rw, ((b[3] - b[1]) / map.h) * rh];
+      out = out ? union(out, r) : r;
+    }
+    return out;
+  }
+}
+
+const boundsCache = new WeakMap<AlphaMap, [number, number, number, number] | null>();
+
+/** [x0, y0, x1, y1] of the pixels at or over HIT_ALPHA, in map px; null when none. */
+function opaqueBounds(map: AlphaMap): [number, number, number, number] | null {
+  if (boundsCache.has(map)) return boundsCache.get(map)!;
+  let x0 = map.w;
+  let y0 = map.h;
+  let x1 = -1;
+  let y1 = -1;
+  for (let y = 0; y < map.h; y++) {
+    for (let x = 0; x < map.w; x++) {
+      if (map.data[y * map.w + x] < HIT_ALPHA) continue;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  const b: [number, number, number, number] | null = x1 < 0 ? null : [x0, y0, x1 + 1, y1 + 1];
+  boundsCache.set(map, b);
+  return b;
+}
+
+function union(a: [number, number, number, number], b: [number, number, number, number]): [number, number, number, number] {
+  const x = Math.min(a[0], b[0]);
+  const y = Math.min(a[1], b[1]);
+  return [x, y, Math.max(a[0] + a[2], b[0] + b[2]) - x, Math.max(a[1] + a[3], b[1] + b[3]) - y];
 }
 
 async function buildMap(url: string): Promise<AlphaMap> {

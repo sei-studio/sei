@@ -18,6 +18,14 @@
 import { ROOM_PRESET_IDS, resolvePattern, resolveSlots, type RoomComponent, type RoomPresetManifest, type RoomSlotId, type RoomState } from './seilinkRoom';
 import { isPresetColour, swatchesFor } from './seilinkEdit';
 import { CODE_PATTERNS } from './seilinkPatterns';
+import {
+  ALL_TOGETHER_COUNTS,
+  EDITOR_TALK_OUTCOMES,
+  HER_EDIT_OUTCOMES,
+  SEILINK_EDITOR_TALK_EVENT,
+  SEILINK_HER_EDIT_EVENT,
+  type TogetherCount,
+} from './seilinkTogether';
 
 export const SEILINK_EDITOR_SESSION_EVENT = 'seilink_editor_session';
 export const SEILINK_EDITOR_ERROR_EVENT = 'seilink_editor_error';
@@ -226,6 +234,11 @@ export class EditorSessionTracker {
   private lights: ReadonlySet<RoomSlotId> | undefined;
   private picks: Record<ColorPickKind, number> = { preset: 0, custom: 0, recent: 0 };
   private pickerOpens = 0;
+  /** 261105 (T336): decorating together. Her commits are not the player's edits. */
+  private hers = new WeakSet<object>();
+  private togetherOn = false;
+  private togetherOnCall = false;
+  private togetherCounts = new Map<TogetherCount, number>();
 
   constructor(
     private readonly openedFrom: EditorOpenedFrom,
@@ -256,6 +269,7 @@ export class EditorSessionTracker {
       return;
     }
     if (h.past.length > 0 && h.past[h.past.length - 1] === p.present && h.past !== p.past) {
+      if (this.hers.has(h.present)) return;
       const types = classifyEdit(p.present, h.present, this.lights);
       if (!types.length) return;
       this.editCount++;
@@ -269,6 +283,23 @@ export class EditorSessionTracker {
     if (!p) return;
     this.firstPanel ??= p;
     this.panels.set(p, (this.panels.get(p) ?? 0) + 1);
+  }
+
+  /** 261105 (T336): the editor is shared with her (she lives on the desktop). `onCall`: a call was open when it opened. */
+  together(onCall: boolean): void {
+    this.togetherOn = true;
+    this.togetherOnCall ||= onCall;
+  }
+
+  /** 261105 (T336): this room state is her commit (her edits, or her idea the player tried): no player edit. */
+  markHers(state: object): void {
+    this.hers.add(state);
+  }
+
+  /** 261105 (T336): one of the together counters. */
+  count(key: TogetherCount): void {
+    if (!ALL_TOGETHER_COUNTS.includes(key)) return;
+    this.togetherCounts.set(key, (this.togetherCounts.get(key) ?? 0) + 1);
   }
 
   /** 261105 colour pass: the custom colour popover opened. */
@@ -325,6 +356,11 @@ export class EditorSessionTracker {
       recent_color_picks: this.picks.recent,
       picker_opens: this.pickerOpens,
     };
+    if (this.togetherOn) {
+      out.together = true;
+      out.on_call_at_open = this.togetherOnCall;
+      for (const k of ALL_TOGETHER_COUNTS) out[k] = this.togetherCounts.get(k) ?? 0;
+    }
     for (const [p, n] of this.panels) out[`panel_${p}`] = n;
     for (const [t, n] of this.edits) out[`edit_${t}`] = n;
     for (const [r, n] of this.avatarFails) out[`avatar_fail_${r}`] = n;
@@ -381,6 +417,7 @@ const SESSION_COUNTS = [
   ...EDITOR_PANELS.map((p) => `panel_${p}`),
   ...EDIT_TYPES.map((t) => `edit_${t}`),
   ...AVATAR_UPLOAD_FAILS.map((r) => `avatar_fail_${r}`),
+  ...ALL_TOGETHER_COUNTS,
 ];
 
 function editorSessionProps(p: Record<string, unknown>): Record<string, Scalar> {
@@ -394,6 +431,10 @@ function editorSessionProps(p: Record<string, unknown>): Record<string, Scalar> 
     outcome: oneOf(EDITOR_OUTCOMES, p.outcome) ?? 'no_changes',
   };
   if (typeof p.particles_on === 'boolean') out.particles_on = p.particles_on;
+  if (p.together === true) {
+    out.together = true;
+    out.on_call_at_open = p.on_call_at_open === true;
+  }
   const last = oneOf(KNOWN_PATTERNS, p.last_pattern);
   if (last) out.last_pattern = last;
   for (const k of SESSION_COUNTS) {
@@ -424,7 +465,13 @@ function moveInProps(p: Record<string, unknown>): Record<string, Scalar> {
 
 /** The events this module owns. */
 export function isSeilinkRendererEvent(event: string): boolean {
-  return event === SEILINK_EDITOR_SESSION_EVENT || event === SEILINK_EDITOR_ERROR_EVENT || event === SEILINK_MOVEIN_SHEET_EVENT;
+  return (
+    event === SEILINK_EDITOR_SESSION_EVENT ||
+    event === SEILINK_EDITOR_ERROR_EVENT ||
+    event === SEILINK_MOVEIN_SHEET_EVENT ||
+    event === SEILINK_EDITOR_TALK_EVENT ||
+    event === SEILINK_HER_EDIT_EVENT
+  );
 }
 
 /** Rebuild a renderer-sent SeiLink event's props from the closed shapes (main's track handler). */
@@ -432,6 +479,18 @@ export function sanitizeSeilinkTrack(event: string, raw: Record<string, unknown>
   const p = raw ?? {};
   if (event === SEILINK_EDITOR_SESSION_EVENT) return editorSessionProps(p);
   if (event === SEILINK_MOVEIN_SHEET_EVENT) return moveInProps(p);
+  if (event === SEILINK_EDITOR_TALK_EVENT) {
+    return { character_id: charId(p.character_id), outcome: oneOf(EDITOR_TALK_OUTCOMES, p.outcome) ?? 'error' };
+  }
+  if (event === SEILINK_HER_EDIT_EVENT) {
+    // From the editor only the player's answers to her edits; main sends the rest itself.
+    const outcome = oneOf(HER_EDIT_OUTCOMES, p.outcome);
+    return {
+      character_id: charId(p.character_id),
+      outcome: outcome === 'undone' || outcome === 'tried' ? outcome : 'undone',
+      surface: 'editor',
+    };
+  }
   if (event === SEILINK_EDITOR_ERROR_EVENT) {
     return {
       character_id: charId(p.character_id),

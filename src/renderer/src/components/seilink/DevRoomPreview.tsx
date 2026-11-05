@@ -38,7 +38,11 @@ import type { RoomFit, RoomOverlay } from '@shared/seilinkDraw';
 import { seilinkResolver, type RoomUrlResolver, type SeilinkPack } from '@shared/seilinkPack';
 import { RoomCanvas } from './RoomCanvas';
 import { clearRoomImageCache } from '../../lib/seilink/roomImages';
-import { RoomEditor } from './RoomEditor';
+import { RoomEditor, type RoomTogetherCtx } from './RoomEditor';
+import { RoomTogether } from './RoomTogether';
+import { useVoiceStore } from '../../lib/stores/useVoiceStore';
+import { useCreditsStore } from '../../lib/stores/useCreditsStore';
+import { useChatStore } from '../../lib/stores/useChatStore';
 import { addItem } from '@shared/seilinkEdit';
 import { settleItems } from '@shared/seilinkPlace';
 import { memoryRoomEditorSource, type EditorPack, type RoomEditorSource } from './roomEditorSource';
@@ -176,8 +180,22 @@ function DevRoomEditor({ onClose }: { onClose(): void }): React.ReactElement {
       onClose={onClose}
       fps={Number(params.get('fps') ?? 30) || 0}
       initial={{ panel: (params.get('panel') as never) ?? null, selected: sel !== null ? Number(sel) : null }}
+      together={params.has('together') ? devTogether : undefined}
     />
   );
+}
+
+/**
+ * &together=<name> (261105, T336): the editor shared with her, over the dev
+ * bridge (devHarnessStubs: window.__seiTogether). The call and credit stores
+ * are on window.__seiTogetherStores so a shot can put her on a call or over
+ * the limit.
+ */
+function devTogether(ctx: RoomTogetherCtx): React.ReactNode {
+  const w = window as unknown as { __seiTogetherStores?: unknown; __seiTogetherCtx?: RoomTogetherCtx };
+  w.__seiTogetherStores ??= { voice: useVoiceStore, credits: useCreditsStore, chat: useChatStore };
+  w.__seiTogetherCtx = ctx;
+  return <RoomTogether ctx={ctx} token="dev" characterId={params.get('char') ?? 'dev-preview'} name={params.get('together') || 'Sui'} />;
 }
 
 export function DevRoomPreview(): React.ReactElement {

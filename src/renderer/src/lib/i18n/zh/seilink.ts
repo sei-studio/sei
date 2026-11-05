@@ -98,4 +98,9 @@ export const ZH_SEILINK: Record<string, string> = {
   "Mute idle lines": "静音闲聊台词",
   "Move out": "搬走",
   "Move out?": "要搬走吗？",
+  "Say something to {name}…": "跟{name}说点什么…",
+  "Undo {name}'s changes": "撤销{name}的改动",
+  "Try {name}'s idea": "试试{name}的点子",
+  "See options": "查看选项",
+  "On a call with {name}": "正在和{name}通话",
 };

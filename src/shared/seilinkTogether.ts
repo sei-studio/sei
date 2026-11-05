@@ -17,6 +17,19 @@ export const TOGETHER_COUNTS = [
 ] as const;
 export type SeilinkEditorCount = (typeof TOGETHER_COUNTS)[number];
 
+/** Session counters the editor keeps itself. */
+export const TOGETHER_RENDERER_COUNTS = ['talk_messages', 'talk_blocked', 'her_edits_undone', 'her_edits_tried'] as const;
+export type TogetherRendererCount = (typeof TOGETHER_RENDERER_COUNTS)[number];
+export type TogetherCount = SeilinkEditorCount | TogetherRendererCount;
+export const ALL_TOGETHER_COUNTS: readonly TogetherCount[] = [...TOGETHER_COUNTS, ...TOGETHER_RENDERER_COUNTS];
+
+/** Renderer events (sanitized in main, shape only). */
+export const SEILINK_EDITOR_TALK_EVENT = 'seilink_editor_talk';
+export const SEILINK_HER_EDIT_EVENT = 'seilink_her_edit';
+export const EDITOR_TALK_OUTCOMES = ['sent', 'limit', 'error'] as const;
+/** seilink_her_edit outcomes: main sends applied/suggested/rejected, the editor undone/tried. */
+export const HER_EDIT_OUTCOMES = ['applied', 'suggested', 'rejected', 'undone', 'tried'] as const;
+
 export function isTogetherCount(k: unknown): k is SeilinkEditorCount {
   return typeof k === 'string' && (TOGETHER_COUNTS as readonly string[]).includes(k);
 }

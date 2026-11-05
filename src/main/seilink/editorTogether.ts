@@ -38,7 +38,7 @@ import {
   type RoomEditOp,
 } from '../../shared/seilinkDecorate';
 import type { RoomPresetManifest } from '../../shared/seilinkRoom';
-import type { SeilinkEditorEvent, SeilinkEditorCount } from '../../shared/seilinkTogether';
+import { SEILINK_HER_EDIT_EVENT, type SeilinkEditorEvent, type SeilinkEditorCount } from '../../shared/seilinkTogether';
 import { clearUnseenBaseline, unseenBaseline, type RoomSnapshot } from './roomChangeNote';
 import type { RoomContext } from './types';
 
@@ -320,8 +320,6 @@ export function runDecorate(
   }
   return { result: r, text: decorateResultText(r) };
 }
-
-export const SEILINK_HER_EDIT_EVENT = 'seilink_her_edit';
 
 /** seilink_her_edit {outcome applied/suggested/rejected, changes, rejected (buckets), surface}: shape only. */
 function reportHerEdit(s: TogetherSession, r: DecorateResult, surface: 'chat' | 'call'): void {
