@@ -169,6 +169,9 @@ export interface RoomEditorProps {
   telemetry?: { openedFrom: EditorOpenedFrom; surface?: EditorSurface };
   /** 261105: a quiet line in the avatar panel ("Preparing {name}'s look..."). */
   avatarNote?: string | null;
+  /** 261106: her portrait (portrait_image ref or URL) and name: the Sei avatar is drawn as the room draws her. */
+  portrait?: string | null;
+  name?: string;
   /** 261105 (T336): decorating together with her (RoomTogether), drawn over the room. */
   together?: (ctx: RoomTogetherCtx) => React.ReactNode;
 }
@@ -269,11 +272,26 @@ function GlassFigure({ height }: { height: number }): React.ReactElement {
   return <div className={styles.figure} style={{ width: height * 0.6, height }} aria-hidden="true" />;
 }
 
-function EditorAvatar({ slot, state, characterId }: { slot: RoomAvatarSlot; state: RoomState; characterId?: string }): React.ReactElement {
+function EditorAvatar({
+  slot,
+  state,
+  characterId,
+  portrait,
+  name,
+}: {
+  slot: RoomAvatarSlot;
+  state: RoomState;
+  characterId?: string;
+  portrait?: string | null;
+  name?: string;
+}): React.ReactElement {
   if (state.avatar.kind === 'live2d' && characterId) {
     // Framed exactly as the room shows her (RoomAvatar), held still while editing.
     return <RoomAvatar slot={slot} characterId={characterId} use="imported" busy motion={false} />;
   }
+  // 261106: with her portrait known, the Sei avatar is her face set or portrait as on the
+  // wallpaper, so the editor on the desktop stage does not swap her for a silhouette.
+  if (characterId && portrait) return <RoomAvatar slot={slot} characterId={characterId} name={name} use="sei" portrait={portrait} busy motion={false} />;
   return <GlassFigure height={slot.height} />;
 }
 
@@ -1285,7 +1303,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
         clock={clock}
         onOverlay={setOverlay}
         onLayout={setVp}
-        avatar={(slot) => <EditorAvatar slot={slot} state={state} characterId={characterId} />}
+        avatar={(slot) => <EditorAvatar slot={slot} state={state} characterId={characterId} portrait={props.portrait} name={props.name} />}
       >
         <div
           ref={stageRef}

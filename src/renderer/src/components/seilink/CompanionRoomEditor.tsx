@@ -140,6 +140,7 @@ export default function CompanionRoomEditor({ characterId, onClose, openedFrom =
   const look = useAnimaLook(characterId, 'editor');
   const token = useEditorSession(characterId);
   const name = useDataStore((s) => s.characters.find((c) => c.id === characterId)?.name ?? '');
+  const portrait = useDataStore((s) => s.characters.find((c) => c.id === characterId)?.portrait_image ?? null);
   const avatarNote = look === 'preparing' && name ? t("Preparing {name}'s look…", { name }) : null;
   // Only the companion who lives on the desktop shares the editor (main checks the same before anything is said).
   const resident = useSeilinkStore((s) => Boolean(s.availability?.enabled) && movedInId(s.status) === characterId);
@@ -154,6 +155,8 @@ export default function CompanionRoomEditor({ characterId, onClose, openedFrom =
       onClose={close}
       telemetry={telemetry}
       avatarNote={avatarNote}
+      portrait={portrait}
+      name={name}
       together={resident && token && name ? together : undefined}
     />
   );

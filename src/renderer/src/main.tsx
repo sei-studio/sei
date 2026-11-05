@@ -50,6 +50,11 @@ if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('ches
   void import('./components/seilink/intro/DevIntroPreview').then(({ DevIntroPreview }) => {
     root.render(<DevIntroPreview />);
   });
+} else if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('seilinkflow')) {
+  // Dev-only first-room flow on a simulated desktop (261106). See DevFirstRoomFlow.
+  void import('./components/seilink/DevFirstRoomFlow').then(({ DevFirstRoomFlow }) => {
+    root.render(<DevFirstRoomFlow />);
+  });
 } else if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('seilinkhost')) {
   // Dev-only SeiLink wallpaper page with the dock and a bubble (261104, M4),
   // over a fake host bridge. See DevHostPreview for params.

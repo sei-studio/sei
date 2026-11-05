@@ -373,6 +373,9 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
      offer`), shared with her as usual (RoomTogether). "Not now": she stays
      in the blank room, the dock comes back with the caption "Decorate
      anytime with the brush." and the offer is not asked again.
+  5. In the editor the Sei avatar is her portrait or face set, drawn as the
+     wallpaper draws her (RoomEditor `portrait`, from CompanionRoomEditor);
+     the glass figure is only for a companion with no portrait.
 - **The desktop stage (261106, `main/seilink/desktopStage.ts`,
   `stageFlow.ts`).** The room editor (and the first-link intro) open ON the
   desktop, above the desktop icons, by turning the MAIN window into a
@@ -489,6 +492,11 @@ errors) is in [`seilink-analytics.md`](seilink-analytics.md). The basics:
   `--shots host-crossfade --portrait <png> --facepacks <packs dir> --facepack-id <an-...>`
   shoots the portrait-to-face-set crossfade as a timed sequence (the face set
   "arrives" 1.5 s after the room draws; dev stub in `devHarnessStubs.ts`).
+- The first-room flow (261106) on a simulated desktop (generic menu bar,
+  icons, dock bar): `?seilinkflow=1&pack=<url>&phase=desktop|offer|prompt|
+  later|editor|decorated|closed` (DevFirstRoomFlow), rendered to stills plus
+  one mp4 by `node scripts/seilink-first-room-flow.mjs --out <dir>
+  [--intro <aurora.mp4 from seilink-intro-shots>]`.
 - CI: `.github/workflows/seilink-host-check.yml` (windows-2022/2025,
   macos-15/26; dispatch, or push to `feat/seilink-host` under the host
   paths). One runner per OS also packages a dir build and checks the addon
