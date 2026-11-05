@@ -116,6 +116,14 @@
  *  - Slots `lights` (string lights, fireflies) and `tree` (forest), and a
  *    per-pack editor `label` on each slot def (English, translated in the
  *    i18n dictionaries): forest calls its bed slot "Tent".
+ *
+ * 261105 (colour pass, T333, Shawn: "make the color options more desirable"):
+ *  - Each pack curates its palettes: `swatches` per tintable part (fabric,
+ *    wall, wood, light), sampled against the room's own art, and
+ *    `accentSwatches` for the second pattern colour. Parts without them get
+ *    the shared house set (seilinkEdit.ts). Colours are stored as values, so
+ *    a room saved with an old swatch draws exactly as before; the editor
+ *    shows such a value as its custom colour.
  */
 import { CODE_PATTERNS, PATTERN_ID_RE, codePattern, toneOnTone, type PatternDef, type PatternQuad, type PatternSurface } from './seilinkPatterns';
 import type { RoomParticles } from './seilinkParticles';
@@ -222,8 +230,10 @@ export interface RoomComponent {
   surfaceTops?: RoomSurfaceTop[];
   /** Slot components: floor and wall this part covers while it is in the room (261105). */
   blocks?: { floor?: RoomPolygon[]; wall?: RoomPolygon[] };
-  /** Tintable components: colours the editor offers first. */
+  /** Tintable components: colours the editor offers first (its curated palette, light to dark). */
   swatches?: string[];
+  /** 261105 (T333): the second pattern colour's palette, offered after the tone-on-tone default. */
+  accentSwatches?: string[];
   /** 261105: scale the frame to cover `box` keeping its aspect (shared views), cropped around `focus`. */
   fit?: 'cover';
   /** 261105: [0..1, 0..1] point of the frame kept in view by fit 'cover' (default the centre). */

@@ -112,18 +112,8 @@
       "name": "canvas tent",
       "tintable": true,
       "defaultTint": "#EDE7DB",
-      "swatches": [
-        "#ede7db",
-        "#e8dfc8",
-        "#d8c9a3",
-        "#b8a77a",
-        "#4e6b45",
-        "#6b7f4a",
-        "#b5603a",
-        "#d4a23c",
-        "#34466b",
-        "#a8403a"
-      ],
+      "accentSwatches": ["#f0e8d5", "#d4a548", "#b8643e", "#6f7f45", "#4f6684", "#2e3a2c", "#4a3a2e"],
+      "swatches": ["#ede7db", "#dccdaa", "#d4a548", "#8c9a62", "#b8643e", "#4f6684", "#8e3d4f", "#5f6d47"],
       "frames": {
         "day": {
           "src": "tent_day.webp",
@@ -260,14 +250,8 @@
       "name": "log seat with a blanket",
       "tintable": true,
       "defaultTint": "#B0473F",
-      "swatches": [
-        "#b0473f",
-        "#3f6d8a",
-        "#d9a848",
-        "#6f8a5a",
-        "#e9dfc9",
-        "#7d5a8c"
-      ],
+      "accentSwatches": ["#f0e8d5", "#d4a548", "#b8643e", "#6f7f45", "#4f6684", "#2e3a2c", "#4a3a2e"],
+      "swatches": ["#b0473f", "#ebe1cc", "#d6a447", "#8a9a5b", "#4a6585", "#7a3f5e", "#3f6d6a", "#5a4334"],
       "frames": {
         "day": {
           "src": "log_day.webp",

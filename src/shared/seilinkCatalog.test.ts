@@ -291,11 +291,11 @@ describe('room shape for analytics', () => {
   it('counts patterned parts, picked accents, cycling lights and particle parts', () => {
     const s0 = defaultRoomState('forest');
     // The sky's dusk rain and the default fireflies.
-    expect(roomShapeOf(manifest, s0)).toEqual({ patterned: 0, accents: 0, cycling: 0, particles: 2, lastPattern: null });
+    expect(roomShapeOf(manifest, s0)).toEqual({ patterned: 0, accents: 0, cycling: 0, particles: 2, lastPattern: null, customColors: 0 });
     let s = setSlotAccent(manifest, setSlotPattern(manifest, s0, 'bed', 'gingham'), 'bed', '#112233');
     s = setSlotCycle(manifest, setSlotComponent(manifest, s, 'lights', 'string'), 'lights', true);
     s = { ...s, items: [{ id: 'blanket', x: 1, y: 1, pattern: 'ditsy' }] };
-    expect(roomShapeOf(manifest, s, 'gingham')).toEqual({ patterned: 2, accents: 1, cycling: 1, particles: 1, lastPattern: 'gingham' });
+    expect(roomShapeOf(manifest, s, 'gingham')).toEqual({ patterned: 2, accents: 1, cycling: 1, particles: 1, lastPattern: 'gingham', customColors: 0 });
     expect(roomShapeOf(manifest, setSlotComponent(manifest, s0, 'lights', null)).particles).toBe(1);
   });
 });

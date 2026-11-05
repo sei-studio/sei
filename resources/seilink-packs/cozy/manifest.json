@@ -150,6 +150,8 @@
       "name": "walls",
       "tintable": true,
       "defaultTint": "#B5C2A0",
+      "accentSwatches": ["#f3ede2", "#d9cdb9", "#c2cfae", "#c79a7e", "#9fae8c", "#8f7f6d", "#5f7257"],
+      "swatches": ["#b5c2a0", "#efe8dc", "#ecd9a0", "#e8c2b4", "#cbbda6", "#b6c8d0", "#c9b4c8", "#7a8b6c"],
       "frames": {
         "day": {
           "src": "shell_day.webp",
@@ -184,6 +186,8 @@
       "name": "round rug",
       "tintable": true,
       "defaultTint": "#EAE3D6",
+      "accentSwatches": ["#f5efe3", "#dccbb0", "#d9a79b", "#d2a24a", "#9aa984", "#b8664a", "#4a5a7a"],
+      "swatches": ["#eae3d6", "#d6c09a", "#e0a99e", "#b9c3a1", "#c89b52", "#b5694d", "#667f9c", "#5a4639"],
       "frames": {
         "day": {
           "src": "rug_day.webp",
@@ -213,6 +217,8 @@
       "name": "curtains",
       "tintable": true,
       "defaultTint": "#ECE6DA",
+      "accentSwatches": ["#f5efe3", "#dccbb0", "#d9a79b", "#d2a24a", "#9aa984", "#b8664a", "#4a5a7a"],
+      "swatches": ["#ece6da", "#dccbb0", "#e0b4a8", "#d6aa55", "#c27a5c", "#7487a3", "#7f875c", "#3d4a68"],
       "frames": {
         "day": {
           "src": "curtains_day.webp",
@@ -293,6 +299,8 @@
       "name": "bed",
       "tintable": true,
       "defaultTint": "#F3EEE4",
+      "accentSwatches": ["#f5efe3", "#dccbb0", "#d9a79b", "#d2a24a", "#9aa984", "#b8664a", "#4a5a7a"],
+      "swatches": ["#f3eee4", "#e3d5bc", "#e6bab0", "#b3c3d4", "#b9c4a5", "#d8b062", "#c4805f", "#465372"],
       "frames": {
         "day": {
           "src": "bed_day.webp",
@@ -488,6 +496,8 @@
       },
       "tintable": true,
       "defaultTint": "#E3A9A6",
+      "accentSwatches": ["#f5efe3", "#dccbb0", "#d9a79b", "#d2a24a", "#9aa984", "#b8664a", "#4a5a7a"],
+      "swatches": ["#e3a9a6", "#f0e7d8", "#e8cf8f", "#adbd94", "#c97a58", "#7a8fab", "#82586c", "#5f7457"],
       "foot": 30,
       "patternSurface": "cushions"
     }

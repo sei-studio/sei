@@ -142,6 +142,27 @@ describe('room shape at close (261105)', () => {
   });
 });
 
+describe('colour picks (261105 colour pass)', () => {
+  it('counts preset, custom and recent picks and picker opens, no colour values', () => {
+    const t = new EditorSessionTracker('gear', 0);
+    t.history(createHistory(base));
+    t.pickerOpened();
+    expect(t.touched).toBe(true);
+    t.colorPicked('preset');
+    t.colorPicked('preset');
+    t.colorPicked('custom');
+    t.colorPicked('recent');
+    t.colorPicked('evil' as never);
+    const out = t.finish(100, false, CHAR, { patterned: 0, accents: 0, cycling: 0, particles: 0, customColors: 2 })!;
+    expect(out).toMatchObject({ preset_color_picks: 2, custom_color_picks: 1, recent_color_picks: 1, picker_opens: 1, custom_colors_at_close: 2 });
+    expect(Object.values(out).some((v) => typeof v === 'string' && v.startsWith('#'))).toBe(false);
+    const clean = sanitizeSeilinkTrack('seilink_editor_session', { ...out, custom_color_picks: -1, picked_hex: '#ff0000' });
+    expect(clean).toMatchObject({ preset_color_picks: 2, recent_color_picks: 1, picker_opens: 1, custom_colors_at_close: 2 });
+    expect(clean.custom_color_picks).toBeUndefined();
+    expect(clean.picked_hex).toBeUndefined();
+  });
+});
+
 describe('sanitizeSeilinkTrack', () => {
   it('keeps only the closed shapes', () => {
     expect(isSeilinkRendererEvent('seilink_editor_session')).toBe(true);

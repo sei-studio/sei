@@ -341,21 +341,50 @@ function colourDistance(a: string, b: string): number {
   return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]);
 }
 
-/** Soft colours offered when a component lists no swatches of its own. */
-export const DEFAULT_SWATCHES: readonly string[] = ['#f2ece2', '#e3b7b0', '#c9b6d8', '#a9bfd9', '#a9c7b4', '#e3cf9a', '#5a5f73'];
+/** Preset swatches per colour row (the custom picker is always the next cell). */
+export const PALETTE_SIZE = 8;
 
-/** Swatches for a tintable component: its default tint first, then its own or the house set, deduped, at most 7 (the custom picker is the 8th). */
+/**
+ * The house palette for a part whose pack lists no swatches of its own
+ * (261105 colour pass): warm interior tones, light to dark, that sit well
+ * in a painted room (linen, oatmeal, dusty rose, sage, mustard, terracotta,
+ * slate blue, navy).
+ */
+export const DEFAULT_SWATCHES: readonly string[] = ['#f2ece2', '#dccdb4', '#dfb0a6', '#a7b591', '#d3a64d', '#bd6b4e', '#6b82a0', '#38425e'];
+
+/** The house second-colour palette: a light, a neutral, warm and cool accents and a deep one. */
+export const DEFAULT_ACCENT_SWATCHES: readonly string[] = ['#f6f1e7', '#a39b90', '#d3a64d', '#bd6b4e', '#8fa27e', '#6b82a0', '#33343b'];
+
+/**
+ * Swatches for a tintable component's main colour: its default tint first
+ * (so a room keeps its shipped look), then its own palette or the house set,
+ * deduped. PALETTE_SIZE cells in all; a light that offers a colour cycle
+ * gives one cell to the cycle swatch.
+ */
 export function swatchesFor(component: RoomComponent): string[] {
+  const out = paletteOf([component.defaultTint, ...(component.swatches ?? DEFAULT_SWATCHES)]);
+  return out.slice(0, component.cycle ? PALETTE_SIZE - 1 : PALETTE_SIZE);
+}
+
+/** Swatches for the second pattern colour: the row's first cell is the automatic tone-on-tone, then these. */
+export function accentSwatchesFor(component: RoomComponent): string[] {
+  return paletteOf(component.accentSwatches ?? DEFAULT_ACCENT_SWATCHES).slice(0, PALETTE_SIZE - 1);
+}
+
+/** Valid hex colours, lower-cased, with near-duplicates dropped (two swatches that look the same are one choice). */
+function paletteOf(list: ReadonlyArray<string | undefined>): string[] {
   const out: string[] = [];
-  const add = (h: string | undefined): void => {
-    if (!h || !/^#[0-9a-f]{6}$/i.test(h)) return;
+  for (const h of list) {
+    if (!h || !/^#[0-9a-f]{6}$/i.test(h)) continue;
     const v = h.toLowerCase();
-    // Two swatches that look the same are one choice.
     if (!out.some((o) => colourDistance(o, v) < 22)) out.push(v);
-  };
-  add(component.defaultTint);
-  for (const s of component.swatches ?? DEFAULT_SWATCHES) add(s);
-  return out.slice(0, 7);
+  }
+  return out;
+}
+
+/** Whether a colour is one of a row's preset swatches (else the editor shows it as the custom colour). */
+export function isPresetColour(swatches: readonly string[], hex: string | null | undefined): boolean {
+  return !!hex && swatches.includes(hex.toLowerCase());
 }
 
 // ── History ─────────────────────────────────────────────────────────────────

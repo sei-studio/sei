@@ -231,6 +231,10 @@ function parseComponent(raw: unknown): RoomComponent | null {
     const swatches = c.swatches.filter(isHexColor).slice(0, 12).map((h) => h.toLowerCase());
     if (swatches.length) out.swatches = swatches;
   }
+  if (Array.isArray(c.accentSwatches)) {
+    const accents = c.accentSwatches.filter(isHexColor).slice(0, 12).map((h) => h.toLowerCase());
+    if (accents.length) out.accentSwatches = accents;
+  }
   // Cover fit is for untinted full-box art (a shared window view); a tint mask would not line up with the crop.
   if (c.fit === 'cover' && !tintable && out.box) out.fit = 'cover';
   if (Array.isArray(c.focus) && c.focus.length === 2 && c.focus.every((n) => isNum(n) && n >= 0 && n <= 1)) out.focus = [c.focus[0], c.focus[1]];

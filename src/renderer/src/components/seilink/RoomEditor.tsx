@@ -76,6 +76,8 @@ import {
   setSlotTint,
   slotChoice,
   swatchesFor,
+  accentSwatchesFor,
+  isPresetColour,
   switchPreset,
   undo,
   type EditHistory,
@@ -93,6 +95,7 @@ import { drawRoomLayers, loadPlanAssets } from '../../lib/seilink/roomCompose';
 import { ctx2d } from '../../lib/seilink/roomImages';
 import { RoomAvatar } from './RoomAvatar';
 import { PlacementGuide } from './PlacementGuide';
+import { ColorPickTelemetryContext, CustomColor, useColorPickTelemetry, type ColorPickTelemetry } from './RoomColorPicker';
 import type { EditorAvatarModel, EditorPack, RoomEditorSource } from './roomEditorSource';
 import {
   AutoIcon,
@@ -392,6 +395,7 @@ function Swatches({
   auto,
   cycle,
   label,
+  accent,
 }: {
   component: RoomComponent;
   value: string | null;
@@ -403,19 +407,15 @@ function Swatches({
   /** 261105: a colour-cycle swatch (a light that runs through the colours). */
   cycle?: { on: boolean; onToggle(on: boolean): void };
   label?: string;
+  /** 261105 colour pass: the second pattern colour's row (its own palette). */
+  accent?: boolean;
 }): React.ReactElement {
   const t = useT();
-  const swatches = swatchesFor(component);
+  const tele = useColorPickTelemetry();
+  const swatches = useMemo(() => (accent ? accentSwatchesFor(component) : swatchesFor(component)), [accent, component]);
   const picked = auto?.on || cycle?.on ? null : value;
-  const custom = picked && !swatches.includes(picked.toLowerCase()) ? picked : null;
-  const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    const end = (): void => onGestureEnd();
-    el.addEventListener('change', end);
-    return () => el.removeEventListener('change', end);
-  }, [onGestureEnd]);
+  // A colour that is not one of the presets (her own, or an older palette's) shows on the custom swatch.
+  const custom = picked !== null && !isPresetColour(swatches, picked);
   return (
     <div className={styles.swatches} role="radiogroup" aria-label={label ?? t('Color')}>
       {auto && (
@@ -427,7 +427,10 @@ function Swatches({
           title={t('Automatic')}
           className={auto.on ? `${styles.swatch} ${styles.swatchAuto} ${styles.swatchOn}` : `${styles.swatch} ${styles.swatchAuto}`}
           style={{ ['--auto' as string]: auto.colour }}
-          onClick={auto.onPick}
+          onClick={() => {
+            tele.picked('preset');
+            auto.onPick();
+          }}
         />
       )}
       {cycle && (
@@ -448,25 +451,16 @@ function Swatches({
           role="radio"
           aria-checked={picked?.toLowerCase() === hex}
           aria-label={hex}
+          title={hex}
           className={picked?.toLowerCase() === hex ? `${styles.swatch} ${styles.swatchOn}` : styles.swatch}
           style={{ background: hex }}
-          onClick={() => onTint(hex, null)}
+          onClick={() => {
+            tele.picked('preset');
+            onTint(hex, null);
+          }}
         />
       ))}
-      <label
-        className={custom ? `${styles.swatch} ${styles.swatchCustom} ${styles.swatchOn}` : `${styles.swatch} ${styles.swatchCustom}`}
-        title={t('Custom color')}
-        style={custom ? { background: custom } : undefined}
-      >
-        <input
-          ref={inputRef}
-          type="color"
-          aria-label={t('Custom color')}
-          value={value ?? '#ffffff'}
-          onChange={(e) => onTint(e.target.value, gesture)}
-          onBlur={onGestureEnd}
-        />
-      </label>
+      <CustomColor value={value ?? swatches[0] ?? '#ffffff'} active={custom} gesture={gesture} label={t('Custom color')} onTint={onTint} onGestureEnd={onGestureEnd} />
     </div>
   );
 }
@@ -545,6 +539,7 @@ function PartLook({
       {editAccent ? (
         <Swatches
           component={component}
+          accent
           value={accent}
           gesture={`${gesture}:accent`}
           label={t('Second color')}
@@ -655,6 +650,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     lightSlots,
     shape: roomShape,
   });
+  const colorTelemetry = useMemo<ColorPickTelemetry>(() => ({ pickerOpened: analytics.pickerOpened, picked: analytics.colorPicked }), [analytics.pickerOpened, analytics.colorPicked]);
 
   // ── load ──
   const loadAll = useCallback(async (): Promise<void> => {
@@ -912,6 +908,8 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     const onKey = (e: KeyboardEvent): void => {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+      // The custom colour popover handles its own keys (Escape closes it, not the panel).
+      if (target?.closest?.('[data-color-picker]')) return;
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         doUndo();
@@ -1350,7 +1348,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
         )}
 
         {/* While an item is dragged the side panel fades away, so the shelves under it show. */}
-        <div className={drag ? `${styles.side} ${styles.sideAway}` : styles.side}>
+        <div className={drag ? `${styles.side} ${styles.sideAway}` : styles.side} data-color-host="">
           <nav className={panel ? `${styles.rail} ${styles.railOpen}` : styles.rail} aria-label={t('Room')}>
             {tile('avatar', t('Avatar'), <PersonIcon size={RAIL_ICON} />)}
             {tile('room', t('Room'), <HouseIcon size={RAIL_ICON} />)}
@@ -1432,5 +1430,5 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
       </RoomCanvas>
     </div>
   );
-  return wrap(body);
+  return wrap(<ColorPickTelemetryContext.Provider value={colorTelemetry}>{body}</ColorPickTelemetryContext.Provider>);
 }
