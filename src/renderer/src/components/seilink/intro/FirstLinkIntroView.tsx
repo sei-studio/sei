@@ -42,7 +42,7 @@ import {
   timelineTime,
   type IntroTimeline,
 } from '../../../lib/seilink/introTimeline';
-import { computeFrame, revealMask, type Box, type IntroFrame } from './introFrame';
+import { captionTop, computeFrame, dayInk, revealMask, roomBehind, type Box, type IntroFrame } from './introFrame';
 import { FIELD_SCALE, drawBack, drawFront, herCentre, voidGradient } from './introFx';
 import styles from './FirstLinkIntro.module.css';
 
@@ -119,7 +119,8 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
   const avatarRef = useRef<HTMLDivElement>(null);
   const hudRef = useRef<HTMLDivElement>(null);
   const brandRef = useRef<HTMLDivElement>(null);
-  const scrimRef = useRef<HTMLDivElement>(null);
+  const captionRef = useRef<HTMLDivElement>(null);
+  const skipRef = useRef<HTMLButtonElement>(null);
   const lineRef = useRef<HTMLParagraphElement>(null);
   const subRef = useRef<HTMLParagraphElement>(null);
   const dotRefs = useRef<Array<HTMLDivElement | null>>([]);
@@ -168,7 +169,24 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
       set(avatarRef.current, 'filter', f.avatar.filter);
 
       set(brandRef.current, 'opacity', f.brand.toFixed(3));
-      set(scrimRef.current, 'opacity', f.scrim.toFixed(3));
+      // Captions sit in the empty space above her head, never over her. Each
+      // HUD piece goes from night ink to day ink by how much of her (white)
+      // room is behind it. Layout reads first, then the writes.
+      const cap = captionRef.current;
+      const lineEl = lineRef.current;
+      if (cap && lineEl) {
+        const top = captionTop(f.H, cap.offsetHeight, her);
+        const y = top + lineEl.offsetTop + lineEl.offsetHeight / 2;
+        const half = Math.min(cap.offsetWidth, Math.max(lineEl.offsetWidth, subRef.current?.offsetWidth ?? 0) + 40) / 2;
+        const behind = Math.min(roomBehind(f, centre, { x: f.W / 2 - half, y }), roomBehind(f, centre, { x: f.W / 2 + half, y }));
+        const corners = [brandRef.current, skipRef.current].map((el) =>
+          el ? roomBehind(f, centre, { x: el.offsetLeft + el.offsetWidth / 2, y: el.offsetTop + el.offsetHeight / 2 }) : 0,
+        );
+        set(cap, 'top', `${top.toFixed(1)}px`);
+        set(cap, '--fl-day', dayInk(behind).toFixed(3));
+        set(brandRef.current, '--fl-day', dayInk(corners[0]).toFixed(3));
+        set(skipRef.current, '--fl-day', dayInk(corners[1]).toFixed(3));
+      }
       f.dots.forEach((d, i) => {
         const el = dotRefs.current[i];
         set(el, 'opacity', (0.28 + 0.72 * d).toFixed(3));
@@ -360,12 +378,12 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
       <canvas ref={frontRef} className={styles.fx} aria-hidden="true" />
 
       <div ref={hudRef} className={styles.hud}>
-        <div ref={scrimRef} className={styles.captionScrim} aria-hidden="true" />
         <div ref={brandRef} className={styles.brand} aria-hidden="true">
           <span className={styles.brandDot} />
           SEILINK
         </div>
-        <div className={styles.caption} aria-live="polite">
+        <div ref={captionRef} className={styles.caption} aria-live="polite">
+          <div className={styles.captionGlow} aria-hidden="true" />
           <p ref={lineRef} className={styles.line} />
           <p ref={subRef} className={styles.sub} />
           <div className={styles.dots} aria-hidden="true">
@@ -380,7 +398,7 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
             ))}
           </div>
         </div>
-        <button type="button" className={styles.skip} onClick={skip}>
+        <button ref={skipRef} type="button" className={styles.skip} onClick={skip}>
           {t('Skip')}
         </button>
       </div>

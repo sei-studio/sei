@@ -11,7 +11,6 @@
 .root {
   --fl-glow: 127 176 255;
   --fl-ink: #f4f7ff;
-  --fl-ink-dim: rgba(232, 238, 252, 0.86);
   position: fixed;
   inset: 0;
   z-index: 4500;
@@ -79,14 +78,25 @@
   pointer-events: none;
 }
 
-.captionScrim {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 34vh;
-  opacity: 0;
-  background: radial-gradient(70% 100% at 50% 100%, rgba(4, 6, 16, 0.62) 0%, rgba(4, 6, 16, 0.38) 45%, rgba(4, 6, 16, 0) 100%);
+/*
+ * The HUD's text reads on two pictures: the light (dark, with bright bands)
+ * and her room (her first room is white). --fl-day (0..1, written per frame
+ * on each piece from how much of her room is behind it: roomBehind)
+ * crossfades between them: light ink over a soft dark cloud while the light
+ * plays, deep ink over a soft white cloud once her room is behind the text.
+ * Clouds and glows only (feathered radial masks): no boxes, no borders.
+ */
+.brand,
+.caption,
+.skip {
+  --fl-day: 0;
+  --fl-d: calc(var(--fl-day) * 100%);
+  --fl-text: color-mix(in srgb, rgb(18 24 46) var(--fl-d), rgb(244 247 255));
+  --fl-text-dim: color-mix(in srgb, rgba(30 38 66 / 0.92) var(--fl-d), rgba(232 238 252 / 0.86));
+  --fl-halo: color-mix(in srgb, rgba(255 255 255 / 0.95) var(--fl-d), rgba(var(--fl-glow) / 0.55));
+  --fl-drop: color-mix(in srgb, rgba(255 255 255 / 0.85) var(--fl-d), rgba(0 0 0 / 0.75));
+  --fl-cloud: color-mix(in srgb, rgba(250 251 255 / 0.86) var(--fl-d), rgba(4 6 16 / 0.62));
+  --fl-feather: radial-gradient(closest-side, #000 0%, rgba(0, 0, 0, 0.85) 40%, rgba(0, 0, 0, 0.35) 72%, transparent 100%);
 }
 
 .brand {
@@ -99,30 +109,69 @@
   font-family: var(--mono);
   font-size: 13px;
   letter-spacing: 0.32em;
-  color: rgba(244, 247, 255, 0.9);
-  text-shadow: 0 0 14px rgba(var(--fl-glow) / 0.7);
+  color: var(--fl-text);
+  text-shadow:
+    0 0 14px var(--fl-halo),
+    0 1px 6px var(--fl-drop);
   opacity: 0;
+  isolation: isolate;
+}
+
+/* A small soft cloud under the label, there only once her room is behind it. */
+.brand::before {
+  content: '';
+  position: absolute;
+  inset: -26px -44px -26px -36px;
+  z-index: -1;
+  opacity: var(--fl-day);
+  background: var(--fl-cloud);
+  mask-image: var(--fl-feather);
+  -webkit-mask-image: var(--fl-feather);
+  pointer-events: none;
 }
 
 .brandDot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: radial-gradient(circle, #ffffff 0%, rgb(var(--fl-glow)) 60%, rgba(var(--fl-glow) / 0) 100%);
+  background: radial-gradient(circle, color-mix(in srgb, rgb(70 112 230) var(--fl-d), #ffffff) 0%, rgb(var(--fl-glow)) 60%, rgba(var(--fl-glow) / 0) 100%);
   box-shadow: 0 0 14px rgba(var(--fl-glow) / 0.9);
 }
 
+/* Above her head (never over her): the view sets the real top each frame (captionTop). */
 .caption {
   position: absolute;
   left: 50%;
-  bottom: 7.5vh;
+  top: 15vh;
   width: min(1100px, calc(100vw - 64px));
   transform: translateX(-50%);
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 12px;
   text-align: center;
+}
+
+/*
+ * The soft cloud behind the captions, feathered on every side, that also
+ * blurs what is behind it a little (the bright bands, the room's lines).
+ * Half strength over the light, full over her room.
+ */
+.captionGlow {
+  position: absolute;
+  left: -6%;
+  right: -6%;
+  top: -80px;
+  bottom: -70px;
+  z-index: -1;
+  opacity: calc(0.5 + 0.5 * var(--fl-day));
+  background: var(--fl-cloud);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  mask-image: var(--fl-feather);
+  -webkit-mask-image: var(--fl-feather);
+  pointer-events: none;
 }
 
 .line {
@@ -133,11 +182,11 @@
   font-weight: 400;
   letter-spacing: 0.05em;
   line-height: 1.3;
-  color: var(--fl-ink);
+  color: var(--fl-text);
   opacity: 0;
   text-shadow:
-    0 0 22px rgba(var(--fl-glow) / 0.55),
-    0 2px 12px rgba(0, 0, 0, 0.75);
+    0 0 22px var(--fl-halo),
+    0 2px 12px var(--fl-drop);
   overflow-wrap: anywhere;
 }
 
@@ -147,9 +196,10 @@
   font-family: var(--sans);
   font-size: clamp(15px, 1.75vh, 22px);
   letter-spacing: 0.02em;
-  color: var(--fl-ink-dim);
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
+  color: var(--fl-text-dim);
+  text-shadow: 0 2px 10px var(--fl-drop);
   opacity: 0;
+  overflow-wrap: anywhere;
 }
 
 /* Three soft lights for the three beats (glow dots, not bars). */
@@ -164,11 +214,11 @@
   height: 9px;
   border-radius: 50%;
   opacity: 0.28;
-  background: radial-gradient(circle, #ffffff 0%, rgb(var(--fl-glow)) 55%, rgba(var(--fl-glow) / 0) 100%);
+  background: radial-gradient(circle, color-mix(in srgb, rgb(70 112 230) var(--fl-d), #ffffff) 0%, rgb(var(--fl-glow)) 55%, rgba(var(--fl-glow) / 0) 100%);
   box-shadow: 0 0 12px rgba(var(--fl-glow) / 0.8);
 }
 
-/* Borderless, like every button (Shawn's rule). */
+/* Borderless, like every button (Shawn's rule); a soft halo keeps it off busy rooms. */
 .skip {
   position: absolute;
   right: 28px;
@@ -177,8 +227,9 @@
   border: none;
   border-radius: var(--radius);
   padding: 8px 14px;
-  background: rgba(4, 6, 16, 0.5);
-  color: rgba(232, 238, 252, 0.85);
+  background: color-mix(in srgb, rgba(250 251 255 / 0.82) var(--fl-d), rgba(4 6 16 / 0.55));
+  box-shadow: 0 0 26px 6px color-mix(in srgb, rgba(250 251 255 / 0.5) var(--fl-d), rgba(4 6 16 / 0.25));
+  color: var(--fl-text);
   font-family: var(--mono);
   font-size: 13px;
   letter-spacing: 0.08em;
@@ -189,8 +240,8 @@
 
 .skip:hover,
 .skip:focus-visible {
-  background: rgba(24, 30, 52, 0.8);
-  color: #ffffff;
+  background: color-mix(in srgb, rgba(255 255 255 / 0.96) var(--fl-d), rgba(24 30 52 / 0.82));
+  color: color-mix(in srgb, rgb(8 12 28) var(--fl-d), #ffffff);
   outline: none;
 }
 
