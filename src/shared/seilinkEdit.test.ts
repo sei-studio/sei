@@ -151,7 +151,7 @@ describe('edit ops', () => {
   it('offers the default tint first, then the component swatches, deduped', () => {
     const linen = manifest.components.find((c) => c.id === 'linen')!;
     expect(swatchesFor(linen)).toEqual(['#ece6da', '#7b4fc9']);
-    expect(swatchesFor(manifest.components[0]).length).toBeLessThanOrEqual(7);
+    expect(swatchesFor(manifest.components[0]).length).toBeLessThanOrEqual(8);
     // A house swatch that looks like the default is dropped.
     expect(swatchesFor({ ...linen, swatches: undefined, defaultTint: '#f0eae0' })).not.toContain('#f2ece2');
   });

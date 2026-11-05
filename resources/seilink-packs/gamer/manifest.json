@@ -136,15 +136,8 @@
       "name": "walls",
       "tintable": true,
       "defaultTint": "#424B63",
-      "swatches": [
-        "#424b63",
-        "#2f2a3d",
-        "#34463f",
-        "#4a3b4f",
-        "#5a5f73",
-        "#1f2433",
-        "#e6e2da"
-      ],
+      "accentSwatches": ["#eef0f5", "#a9afbf", "#9cc4ff", "#3fb8af", "#8c6eff", "#f07ab0", "#16181f"],
+      "swatches": ["#424b63", "#c4c6cc", "#6c7286", "#5a4063", "#5c3443", "#2c575c", "#34463f", "#1b1f2b"],
       "frames": {
         "day": {
           "src": "shell_day.webp",
@@ -217,14 +210,8 @@
       "name": "bed",
       "tintable": true,
       "defaultTint": "#6A7698",
-      "swatches": [
-        "#6a7698",
-        "#2a2f3d",
-        "#e8e6e1",
-        "#8c6fb8",
-        "#7fb0ff",
-        "#c9b6d8"
-      ],
+      "accentSwatches": ["#eef0f5", "#a9afbf", "#9cc4ff", "#3fb8af", "#8c6eff", "#f07ab0", "#16181f"],
+      "swatches": ["#6a7698", "#d5d7de", "#a39bc4", "#3e7a80", "#6c4f86", "#8c3b4c", "#3b3e48", "#252c46"],
       "frames": {
         "day": {
           "src": "bed_day.webp",
@@ -276,18 +263,7 @@
       "name": "LED strip lights",
       "tintable": true,
       "defaultTint": "#7FB0FF",
-      "swatches": [
-        "#7fb0ff",
-        "#3cd6e6",
-        "#3ce0a0",
-        "#ffe2b0",
-        "#ffb347",
-        "#ff6fb5",
-        "#e040c8",
-        "#8c6eff",
-        "#ff4d5e",
-        "#f2f4ff"
-      ],
+      "swatches": ["#7fb0ff", "#3cd6e6", "#3ce0a0", "#ffd9a0", "#ffa040", "#ff5fb0", "#8c6eff"],
       "frames": {
         "day": {
           "src": "led_day.webp",
@@ -316,17 +292,7 @@
       "name": "gaming chair",
       "tintable": true,
       "defaultTint": "#9CC4FF",
-      "swatches": [
-        "#9cc4ff",
-        "#7fb0ff",
-        "#d04850",
-        "#f28db2",
-        "#5fd3a8",
-        "#e8eaf0",
-        "#8c6eff",
-        "#f08a3c",
-        "#f2c94c"
-      ],
+      "swatches": ["#9cc4ff", "#eef0f5", "#f2c94c", "#5fd3a8", "#f07ab0", "#f08a3c", "#d9434f", "#8c6eff"],
       "frames": {
         "day": {
           "src": "chair_day.webp",
