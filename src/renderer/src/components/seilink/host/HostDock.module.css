@@ -82,6 +82,43 @@
   animation: rise 200ms var(--ease-pop);
 }
 
+/* 261106: the decorate-together offer. Text buttons, the first one filled. */
+.textBtn {
+  padding: 0 14px;
+  font-family: var(--display);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.primary {
+  background: rgb(var(--ink) / 0.86);
+  color: rgb(var(--ov));
+}
+
+.primary.pressed {
+  background: rgb(var(--ink) / 0.72);
+}
+
+/* The dock asks itself when her line did not come. Stays up with the buttons. */
+.ask {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  max-width: 360px;
+  padding: 7px 12px 6px;
+  border-radius: var(--radius, 2px);
+  background: rgb(var(--ov) / 0.82);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+  width: max-content;
+  animation: pop 240ms var(--ease-pop);
+}
+
 /* Her line: a soft glass bubble above her head with a small tail. */
 .bubble {
   position: absolute;

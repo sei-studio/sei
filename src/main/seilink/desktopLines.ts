@@ -29,6 +29,10 @@
  * changes her room in the editor. roomReaction.ts decides when; it pays like
  * a poke (the player did something) and goes through speakRoomReaction here,
  * so it shares the one-line-at-a-time guard and the plan read.
+ *
+ * 261106: her decorate-together offer after the first move-in into a blank
+ * room (decorateOffer.ts) is a `react` turn too, through speakDecorateOffer,
+ * paid like a poke.
  */
 import { powerMonitor } from 'electron';
 import type { ChatMessage } from '../../shared/ipc';
@@ -391,6 +395,24 @@ export async function speakRoomReaction(characterId: string, note: string): Prom
   if (running) return 'busy';
   if (seilinkLiveCharacter() !== characterId) return 'not_live';
   return (await say(characterId, 'react', note)).outcome;
+}
+
+/**
+ * 261106: her offer to decorate her blank first room together
+ * (decorateOffer.ts), shown as a bubble like a poke reply. The player just
+ * moved her in, so it pays like a poke: inside a free account's weekly cap,
+ * nothing over it (the dock asks in UI copy instead). One per first move-in.
+ */
+export async function speakDecorateOffer(characterId: string, note: string): Promise<{ outcome: PokeOutcome; budget: LineBudget | null }> {
+  if (!deps) return { outcome: 'not_live', budget: null };
+  if (running) return { outcome: 'busy', budget: null };
+  if (seilinkLiveCharacter() !== characterId) return { outcome: 'not_live', budget: null };
+  if (deps.occupied(characterId)) return { outcome: 'occupied', budget: null };
+  const budget = await budgetInfo(Date.now());
+  const refusal = budgetRefusal('poke', budget.value, budget.credits);
+  if (refusal) return { outcome: refusal, budget: budget.value };
+  if (running) return { outcome: 'busy', budget: budget.value };
+  return { outcome: (await say(characterId, 'react', note)).outcome, budget: budget.value };
 }
 
 /**

@@ -10,6 +10,16 @@
  * skipped / aborted, with the beat, a duration bucket and the host's state).
  * The intro counts as seen once it ended (completed or skipped) on a move-in
  * that worked; an aborted or failed one leaves it for the next try.
+ *
+ * 261106 (first-link flow): a request with `stage` (the first link) plays on
+ * the desktop stage (main/seilink/desktopStage.ts): the window covers the
+ * primary display, the intro ends on her room full screen (holdEnd), and once
+ * she is really there the window steps aside, so the wallpaper (the same
+ * room) is what stays, and the dock asks about decorating together. A start
+ * that failed comes back to the app window and the move-in sheet's error. A
+ * refused stage plays in the window as before and still steps aside at the
+ * end. The view stays mounted until the window has stepped aside, so nothing
+ * of the app shows in between.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { seilinkResolver } from '@shared/seilinkPack';
@@ -18,6 +28,7 @@ import { sei } from '../../../lib/ipcClient';
 import { useDataStore } from '../../../lib/stores/useDataStore';
 import type { SeilinkIntroRequest } from '../../../lib/stores/useSeilinkStore';
 import { introStyle, markIntroSeen } from '../../../lib/seilink/introPref';
+import { revealAndOffer } from '../../../lib/seilink/seilinkFlow';
 import { roomAvatarUse } from '../RoomAvatar';
 import { FirstLinkIntroView, type IntroFinish, type IntroRoom } from './FirstLinkIntroView';
 
@@ -49,6 +60,10 @@ export default function FirstLinkIntro(props: { request: SeilinkIntroRequest; on
   const style = useMemo(() => introStyle(), []);
   const reduced = useMemo(() => prefersReducedMotion(), []);
   const answerRef = useRef<boolean | null>(null);
+  // The desktop stage: null until main answers (or there is none to ask for).
+  const [staged, setStaged] = useState<boolean | null>(request.stage ? null : false);
+  const stagedRef = useRef(false);
+  const doneRef = useRef(false);
   const base = useMemo(
     () => ({ character_id: request.characterId, trigger: request.trigger, entry: request.entry, style, reduced_motion: reduced }),
     [request, style, reduced],
@@ -91,6 +106,43 @@ export default function FirstLinkIntro(props: { request: SeilinkIntroRequest; on
     };
   }, [request.outcome]);
 
+  // Step out over the desktop as soon as there is something to show (the intro starts dark).
+  useEffect(() => {
+    if (!request.stage || room === undefined) return;
+    let dead = false;
+    if (!sei.seilinkStage) {
+      setStaged(false);
+      return;
+    }
+    void sei.seilinkStage({ action: 'enter', purpose: 'intro', characterId: request.characterId }).then(
+      (r) => {
+        if (dead) {
+          if (r.ok) void sei.seilinkStage?.({ action: 'exit', reveal: false });
+          return;
+        }
+        stagedRef.current = r.ok;
+        setStaged(r.ok);
+      },
+      () => !dead && setStaged(false),
+    );
+    return () => {
+      dead = true;
+    };
+    // Once per request: the room only goes from undefined to loaded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request.stage, room === undefined]);
+
+  // Unmounted some other way (an account switch) while on the stage: give the window back.
+  useEffect(
+    () => () => {
+      if (stagedRef.current && !doneRef.current) {
+        stagedRef.current = false;
+        void sei.seilinkStage?.({ action: 'exit', reveal: false });
+      }
+    },
+    [],
+  );
+
   const shown = room !== undefined;
   useEffect(() => {
     if (shown) track({ ...base, action: 'shown' });
@@ -105,7 +157,20 @@ export default function FirstLinkIntro(props: { request: SeilinkIntroRequest; on
       // Seen once the move-in worked; a start still pending is checked when it answers.
       void request.outcome.then((ok) => ok && markIntroSeen(), () => undefined);
     }
-    onDone();
+    if (!request.stage) {
+      onDone();
+      return;
+    }
+    // The first link: once she is there, the window steps aside onto her room and the dock asks.
+    void (async () => {
+      const ok = end.action !== 'aborted' && (await request.outcome.catch(() => false));
+      const wasStaged = stagedRef.current;
+      doneRef.current = true;
+      stagedRef.current = false;
+      if (ok) await revealAndOffer(request.characterId, 'intro', { staged: wasStaged });
+      else if (wasStaged) await sei.seilinkStage?.({ action: 'exit', reveal: false }).catch(() => null);
+      onDone();
+    })();
   };
 
   return (
@@ -119,6 +184,7 @@ export default function FirstLinkIntro(props: { request: SeilinkIntroRequest; on
       use={use}
       answer={request.trigger === 'replay' ? true : answer}
       onFinish={onFinish}
+      holdEnd={staged === true}
     />
   );
 }

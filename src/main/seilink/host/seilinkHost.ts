@@ -17,11 +17,12 @@
  * choke point (endSession), seilink_attach_failed {failure_class} once per
  * class per session. seilink_ended is deliberately NOT a playtime event
  * (a wallpaper runs for hours; see docs/agents/seilink-host.md).
- * M4: seilink_moved_in {character_id, swapped, preset, first_room} when the
+ * M4: seilink_moved_in {character_id, swapped, preset, first_room, blank_room (261106)} when the
  * user moves someone in (not on a restore), seilink_moved_out
  * {character_id, via} when the user moves her out from the app or the dock.
  */
 import { app } from 'electron';
+import { isBlankRoom } from '../../../shared/seilinkRoom';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
@@ -41,6 +42,7 @@ import {
   isSeilinkHostFailure,
   type SeilinkEndReason,
   type SeilinkDockAction,
+  type SeilinkDockOffer,
   type SeilinkHostFailure,
   type SeilinkHostStatus,
 } from '../../../shared/seilinkHost';
@@ -83,8 +85,10 @@ export interface SeilinkHostDeps {
   openChat(characterId: string): SeilinkChatOpen | void;
   /** Double click on her (M4: a poke, answered by desktopLines.ts). */
   onDoubleClick?(characterId: string): void;
-  /** M4: the dock's "edit room": show Sei and open her room editor. */
+  /** M4: the dock's "edit room": her room editor (261106: on the desktop, desktopStage.ts). */
   openRoomEditor?(characterId: string): void;
+  /** 261106: an answer to the decorate-together offer on the dock (decorateOffer.ts). */
+  onOfferAnswer?(characterId: string, answer: 'decorate' | 'later'): void;
   /** M4: the profile changed (SeilinkAvailability to the main window). */
   pushAvailability?(): void;
 }
@@ -143,6 +147,10 @@ interface Session {
   /** seilink_verify_failed sent for these reason sets. */
   verifySeen: Set<string>;
   notShownReason: string | null;
+  /** M4: her idle lines muted (config seilink_deafened), as last sent to the host. */
+  deafened: boolean;
+  /** 261106: the decorate-together offer on the dock. */
+  offer: SeilinkDockOffer;
 }
 
 let deps: SeilinkHostDeps | null = null;
@@ -309,6 +317,8 @@ async function startNow(
       swapped,
       preset: room?.state.preset ?? null,
       first_room: opts?.firstRoom === true,
+      // 261106: her first room starts blank, to decorate together (decorateOffer.ts).
+      blank_room: opts?.firstRoom === true && room !== null && isBlankRoom(room.state),
     });
   }
   if (!guard.stillValid()) throw new Error('ACCOUNT_SWITCHING');
@@ -467,6 +477,8 @@ async function openSession(characterId: string, restored: boolean): Promise<void
     restartDetail: null,
     verifySeen: new Set(),
     notShownReason: null,
+    deafened: false,
+    offer: 'none',
   };
   s.timers.push(
     setTimeout(() => {
@@ -616,7 +628,11 @@ function onConnection(s: Session, sock: net.Socket): void {
         sendTo(s, { type: 'busy', busy: s.busy.busy });
         void sendRoom(s);
         void loadConfig().then(
-          (c) => session === s && sendTo(s, { type: 'dock-state', deafened: c.seilink_deafened === true }),
+          (c) => {
+            if (session !== s) return;
+            s.deafened = c.seilink_deafened === true;
+            sendDockState(s);
+          },
           () => {},
         );
         return;
@@ -765,6 +781,14 @@ async function onDockAction(s: Session, action: SeilinkDockAction): Promise<void
     deps?.openRoomEditor?.(characterId);
     return;
   }
+  if (action === 'decorate' || action === 'later') {
+    // Only while the offer is up (a stale press after it closed does nothing). seilink_decorate_offer has it.
+    if (s.offer === 'none') return;
+    s.offer = 'none';
+    sendDockState(s);
+    deps?.onOfferAnswer?.(characterId, action);
+    return;
+  }
   if (action === 'deafen') {
     let next = false;
     try {
@@ -776,7 +800,10 @@ async function onDockAction(s: Session, action: SeilinkDockAction): Promise<void
       log(`deafen failed: ${(err as Error).message}`);
       return;
     }
-    if (session === s) sendTo(s, { type: 'dock-state', deafened: next });
+    if (session === s) {
+      s.deafened = next;
+      sendDockState(s);
+    }
     capture('seilink_dock_action', { action, character_id: characterId, deafened: next });
     return;
   }
@@ -808,6 +835,29 @@ export function sendSeilinkLine(
 }
 
 /** M4: who is on the desktop right now (attached and drawing), for desktopLines.ts. */
+function sendDockState(s: Session): void {
+  sendTo(s, { type: 'dock-state', deafened: s.deafened, offer: s.offer });
+}
+
+/**
+ * 261106: show or clear the decorate-together offer on her dock. False when
+ * she is not the one on the desktop (or the host is not connected yet).
+ */
+export function setSeilinkDockOffer(characterId: string, offer: SeilinkDockOffer): boolean {
+  const s = session;
+  if (!s || s.ending || s.characterId !== characterId) return false;
+  s.offer = offer;
+  // Not connected yet: the hello sends it.
+  sendDockState(s);
+  return true;
+}
+
+/** 261106: the offer on the dock now ('none' when nobody lives on the desktop). */
+export function seilinkDockOffer(characterId: string): SeilinkDockOffer {
+  const s = session;
+  return s && !s.ending && s.characterId === characterId ? s.offer : 'none';
+}
+
 export function seilinkLiveCharacter(): string | null {
   const s = session;
   if (!s || s.ending || !s.conn || status.state !== 'running') return null;

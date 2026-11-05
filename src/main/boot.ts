@@ -93,6 +93,11 @@ async function start(): Promise<void> {
     const w = focusableWindow();
     if (w && !w.isDestroyed()) {
       if (w.isMinimized()) w.restore();
+      // 261106: the SeiLink desktop stage hides the window when it steps aside (macOS).
+      else if (!w.isVisible()) {
+        if (process.platform !== 'linux') w.setOpacity(1);
+        w.show();
+      }
       w.focus();
     }
   });

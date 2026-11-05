@@ -15,8 +15,16 @@
  *    there, else move her in as above.
  *  - startSeilinkHost: every host start. Plays the first-link intro alongside
  *    the start (never before it) the first time on this account.
+ *
+ * 261106 (first-link flow): her first room is blank (MoveInSheet). The first
+ * link plays the intro on the desktop stage and ends on her room there; the
+ * window steps aside and the dock asks about decorating together
+ * (main/seilink/decorateOffer.ts). A first room without the intro (it was
+ * seen already) steps aside the same way once she is in. The room editor
+ * opens on the desktop for the companion who lives there, from every entry
+ * point (the dock, the offer, the SeiLink button, the gear menu).
  */
-import type { SeilinkHostStatus } from '@shared/seilinkHost';
+import type { SeilinkHostStatus, SeilinkOfferVia } from '@shared/seilinkHost';
 import { SEILINK_ENTRY_EVENT, type EntryAction, type SeilinkEntrySource } from '@shared/seilinkIntroTelemetry';
 import type { EditorOpenedFrom } from '@shared/seilinkTelemetry';
 import { sei } from '../ipcClient';
@@ -43,7 +51,7 @@ function editorFrom(source: SeilinkEntrySource): EditorOpenedFrom {
  */
 export function startSeilinkHost(
   characterId: string,
-  opts: { firstRoom?: boolean; entry: SeilinkEntrySource },
+  opts: { firstRoom?: boolean; entry: SeilinkEntrySource; /** 261106: her first room was just set up blank. */ blank?: boolean },
 ): Promise<SeilinkHostStatus | null> {
   if (!sei.seilinkHostStart) return Promise.resolve(null);
   const start = sei.seilinkHostStart(characterId, opts.firstRoom !== undefined ? { firstRoom: opts.firstRoom } : undefined);
@@ -56,9 +64,37 @@ export function startSeilinkHost(
         (s) => !moveInFailed(s),
         () => false,
       ),
+      stage: true,
     });
+  } else if (opts.blank) {
+    // No intro: once she is in, step aside so the desktop shows her new room, and offer to decorate it.
+    void start.then(
+      (s) => {
+        if (moveInFailed(s)) return;
+        void revealAndOffer(characterId, 'move_in');
+      },
+      () => {},
+    );
   }
   return start;
+}
+
+/** The desktop shows her new room: the app steps aside (resolves then), and the dock offers to decorate together. */
+export async function revealAndOffer(characterId: string, via: SeilinkOfferVia, opts: { staged?: boolean } = {}): Promise<void> {
+  try {
+    if (opts.staged) await sei.seilinkStage?.({ action: 'exit', reveal: true });
+    else await sei.seilinkStage?.({ action: 'reveal', purpose: via, characterId });
+  } catch {
+    /* the offer still goes up on the dock */
+  }
+  // Not awaited: her line can take a few seconds, and the window has already stepped aside.
+  void sei.seilinkOffer?.(characterId, via).catch(() => null);
+}
+
+/** Her editor opens on the desktop when she lives there and the host is up (a refused stage keeps it in the app). */
+function onDesktop(characterId: string): boolean {
+  const s = useSeilinkStore.getState();
+  return Boolean(s.availability?.enabled) && s.status.state === 'running' && s.status.characterId === characterId;
 }
 
 /** "Replay SeiLink intro": the intro for her room, with nothing starting. */
@@ -69,7 +105,7 @@ export function replayIntro(characterId: string, source: SeilinkEntrySource): vo
 
 export function openRoomEditor(characterId: string, source: SeilinkEntrySource): void {
   trackEntry(characterId, source, 'edit');
-  useSeilinkStore.getState().openFlow({ kind: 'editor', characterId, openedFrom: editorFrom(source) });
+  useSeilinkStore.getState().openFlow({ kind: 'editor', characterId, openedFrom: editorFrom(source), desktop: onDesktop(characterId) });
 }
 
 async function moveIn(characterId: string, source: SeilinkEntrySource): Promise<void> {

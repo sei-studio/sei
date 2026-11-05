@@ -366,6 +366,42 @@ export function defaultRoomState(preset: RoomPresetId = 'cozy'): RoomState {
   return { version: SEILINK_ROOM_VERSION, preset, time: 'auto', slots: {}, items: [], avatar: { kind: 'sei' } };
 }
 
+/**
+ * 261106 (first-link flow): the room a companion starts in on her first
+ * link. The cozy room in black and white with nothing in it: grey walls,
+ * floor and window frame (blank_room), a plain grey sky (view_blank) and a
+ * grey armchair for her seat (plain_armchair); every optional part removed,
+ * no items. Same canvas and placement labels as the cozy room, so decorating
+ * together adds its parts and items back (art: scripts/seilink-blank-room.mjs).
+ */
+export const BLANK_ROOM_SLOTS: Readonly<Partial<Record<RoomSlotId, string | null>>> = {
+  view: 'view_blank',
+  shell: 'blank_room',
+  chair: 'plain_armchair',
+  rug: null,
+  curtains: null,
+  shelf: null,
+  bed: null,
+  lamp: null,
+};
+
+export function blankRoomState(): RoomState {
+  const slots: RoomState['slots'] = {};
+  for (const [slot, id] of Object.entries(BLANK_ROOM_SLOTS) as Array<[RoomSlotId, string | null]>) slots[slot] = { id };
+  return { ...defaultRoomState('cozy'), slots };
+}
+
+/** Is this room still the untouched blank first room? (The decorate-together offer only makes sense then.) */
+export function isBlankRoom(state: Pick<RoomState, 'preset' | 'slots' | 'items'>): boolean {
+  if (state.preset !== 'cozy' || state.items.length > 0) return false;
+  for (const [slot, id] of Object.entries(BLANK_ROOM_SLOTS) as Array<[RoomSlotId, string | null]>) {
+    const choice = state.slots[slot];
+    if (!choice || choice.id !== id) return false;
+    if (choice?.tint || choice?.pattern) return false;
+  }
+  return true;
+}
+
 /** Clock time to room time: dawn and dusk both use the dusk art. */
 export function roomTimeAt(date: Date): RoomTime {
   const h = date.getHours() + date.getMinutes() / 60;

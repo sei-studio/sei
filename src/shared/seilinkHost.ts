@@ -8,6 +8,7 @@
  */
 import type { AvatarEmotion } from './ipc';
 import type { SeilinkRoomPayload } from './seilinkPack';
+import type { EditorOpenedFrom } from './seilinkTelemetry';
 
 /**
  * - off: nothing on the desktop.
@@ -169,7 +170,7 @@ export interface SeilinkHostBridge {
   // ── M4: the dock and her desktop lines ──
   /** The display's work area in page CSS px (the dock sits above the taskbar / Dock). */
   onLayout(cb: (layout: SeilinkHostLayout) => void): () => void;
-  /** Dock state from main (deafened). */
+  /** Dock state from main (deafened, 261106 the decorate-together offer). */
   onDockState(cb: (state: SeilinkDockState) => void): () => void;
   /** A press on a dock button (the host routes presses by position; the page never gets DOM clicks). */
   onDockPress(cb: (id: SeilinkDockAction) => void): () => void;
@@ -184,11 +185,12 @@ export interface SeilinkHostBridge {
 export type SeilinkPokeKind = 'click' | 'dblclick' | 'drag';
 
 /**
- * Dock buttons (M4): edit her room (opens the editor in the app), deafen
- * (mute her idle desktop lines; replies to a poke still show), move out
- * (a second press confirms).
+ * Dock buttons (M4): edit her room (261106: opens the editor on the desktop),
+ * deafen (mute her idle desktop lines; replies to a poke still show), move
+ * out (a second press confirms). 261106: while the decorate-together offer
+ * is up the dock shows two text buttons instead, `decorate` and `later`.
  */
-export const SEILINK_DOCK_ACTIONS = ['edit', 'deafen', 'moveout'] as const;
+export const SEILINK_DOCK_ACTIONS = ['edit', 'deafen', 'moveout', 'decorate', 'later'] as const;
 export type SeilinkDockAction = (typeof SEILINK_DOCK_ACTIONS)[number];
 
 export function isSeilinkDockAction(v: unknown): v is SeilinkDockAction {
@@ -199,8 +201,24 @@ export interface SeilinkDockButton extends SeilinkBox {
   id: SeilinkDockAction;
 }
 
+/**
+ * 261106: the decorate-together offer after her first move-in into a blank
+ * room (main/seilink/decorateOffer.ts). `her` = she asked in her bubble, the
+ * dock shows the two answers; `prompt` = her line did not come (budget,
+ * busy, slow), the dock asks in UI copy above the answers; `none` = the
+ * usual dock.
+ */
+export const SEILINK_DOCK_OFFERS = ['none', 'her', 'prompt'] as const;
+export type SeilinkDockOffer = (typeof SEILINK_DOCK_OFFERS)[number];
+
+export function isSeilinkDockOffer(v: unknown): v is SeilinkDockOffer {
+  return typeof v === 'string' && (SEILINK_DOCK_OFFERS as readonly string[]).includes(v);
+}
+
 export interface SeilinkDockState {
   deafened: boolean;
+  /** 261106: the decorate-together offer (absent = none). */
+  offer?: SeilinkDockOffer;
 }
 
 export interface SeilinkHostLayout {
@@ -217,3 +235,36 @@ export interface SeilinkHostLine {
   emotion?: AvatarEmotion | null;
   face?: string | null;
 }
+
+// ── 261106: the desktop stage and the first-room offer ──────────────────────
+
+/** What the main window steps out over the desktop for (main/seilink/desktopStage.ts); `move_in` only steps aside (a first room with no intro). */
+export const SEILINK_STAGE_PURPOSES = ['intro', 'editor', 'move_in'] as const;
+export type SeilinkStagePurpose = (typeof SEILINK_STAGE_PURPOSES)[number];
+
+/** Why the stage was not entered; the caller stays in the app window. `timeout` = main's fallback fired. */
+export const SEILINK_STAGE_ERRORS = ['no_window', 'native_fullscreen', 'busy', 'failed', 'timeout', 'disabled'] as const;
+export type SeilinkStageError = (typeof SEILINK_STAGE_ERRORS)[number];
+
+/**
+ * seilink:stage. `enter`: the window covers the primary display (the intro,
+ * or the room editor on the desktop). `exit`: back; `reveal` leaves the
+ * desktop showing (the window hides or minimizes), otherwise the window comes
+ * back as it was. `reveal` alone (not staged): step aside so the desktop shows.
+ */
+export type SeilinkStageRequest =
+  | { action: 'enter'; purpose: SeilinkStagePurpose; characterId: string; openedFrom?: EditorOpenedFrom }
+  | { action: 'exit'; reveal: boolean }
+  | { action: 'reveal'; purpose: SeilinkStagePurpose; characterId: string };
+
+export type SeilinkStageResult = { ok: true } | { ok: false; error: SeilinkStageError };
+
+/** seilink:open-room-editor push: her room editor, on the desktop when `desktop`. */
+export interface SeilinkOpenEditor {
+  characterId: string;
+  openedFrom: EditorOpenedFrom;
+  desktop: boolean;
+}
+
+/** seilink:offer: the desktop shows her new blank room; ask about decorating together. */
+export type SeilinkOfferVia = 'intro' | 'move_in';

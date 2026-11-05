@@ -8,9 +8,10 @@
  * whole-config saves are not worth risking for a cosmetic flag). A lost flag
  * costs one more viewing of a skippable 10 s sequence.
  *
- * Which treatment plays (`introStyle`) is fixed in code: Shawn picks one of
- * the three and the others are deleted. A dev build (and the harness) can
- * override it with `localStorage['sei.seilinkIntroStyle']`.
+ * Which light plays (`introStyle`) is fixed in code: aurora (261106), the
+ * softest of the three and the one that reads best over her room as it opens.
+ * bloom and tide stay switchable for comparison; a dev build (and the
+ * harness) can pick one with `localStorage['sei.seilinkIntroStyle']`.
  */
 import { INTRO_STYLES, type IntroStyle } from '@shared/seilinkIntroTelemetry';
 import { useAuthStore } from '../stores/useAuthStore';
@@ -18,8 +19,8 @@ import { useAuthStore } from '../stores/useAuthStore';
 const KEY_BASE = 'sei.seilinkIntroSeen.v1';
 const STYLE_OVERRIDE_KEY = 'sei.seilinkIntroStyle';
 
-/** The treatment that ships until Shawn picks (then the other two go). */
-export const DEFAULT_INTRO_STYLE: IntroStyle = 'holo';
+/** The light that ships. */
+export const DEFAULT_INTRO_STYLE: IntroStyle = 'aurora';
 
 /** The active profile scope: the account UUID, or 'local' when signed out. */
 export function profileScope(): string {

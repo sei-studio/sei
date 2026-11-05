@@ -31,6 +31,8 @@ import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { registerFacepackIpc } from './facepack/facepackIpc';
 import { openSeilinkPreview, registerSeilinkIpc } from './seilink/seilinkIpc';
 import { initSeilinkHost, restoreSeilinkHost, stopSeilinkHostForQuit } from './seilink/host/seilinkHost';
+import { initStageFlow, openDesktopEditor } from './seilink/stageFlow';
+import { closeDecorateOffer, initDecorateOffer, onDecorateOfferAnswer } from './seilink/decorateOffer';
 import { registerSeilinkProtocol, seilinkDevEnabled, SEILINK_SCHEME_PRIVILEGES } from './seilink/packs';
 import { devRoomSource, setGameSurfaceProbe, setRoomSource } from './seilink/roomContext';
 import { seilinkAvailability } from './seilink/gate';
@@ -240,23 +242,28 @@ function sweepVoiceCalls(reason: 'window_closed' | 'renderer_gone' | 'renderer_r
 }
 
 /** 261104 SeiLink: a click on her desktop wallpaper (or the dock), waiting for a main window to come up (macOS). */
-let pendingSeilinkOpen: { channel: string; characterId: string } | null = null;
+let pendingSeilinkOpen: { channel: string; payload: unknown } | null = null;
 
-/** From the desktop: bring Sei forward and open her chat (a click on her) or her room editor (the dock). */
-function openFromSeilink(channel: string, characterId: string): 'focused' | 'reopened' | 'deferred' {
+/**
+ * From the desktop: bring Sei forward and open her chat (a click on her) or
+ * her room editor in the app window (the desktop editor goes through
+ * seilink/stageFlow.ts). `payload` is the push's one argument.
+ */
+function openFromSeilink(channel: string, payload: unknown): 'focused' | 'reopened' | 'deferred' {
   const w = mainWindow;
   if (w && !w.isDestroyed()) {
+    if (process.platform !== 'linux') w.setOpacity(1);
     if (w.isMinimized()) w.restore();
     if (!w.isVisible()) w.show();
     // The click landed in the host process, so Sei is not the active app.
     if (process.platform === 'darwin') app.focus({ steal: true });
     w.focus();
-    w.webContents.send(channel, characterId);
+    w.webContents.send(channel, payload);
     return 'focused';
   }
   // macOS keeps running with no window: make one, like a Dock click, and open the chat once
   // its UI says it is listening (app:renderer-ready).
-  pendingSeilinkOpen = { channel, characterId };
+  pendingSeilinkOpen = { channel, payload };
   if (process.platform === 'darwin') app.focus({ steal: true });
   if (mainWindow === null) {
     openMainWindowAgain();
@@ -315,7 +322,7 @@ ipcMain.on(IpcChannel.app.rendererReady, (e) => {
   const pending = pendingSeilinkOpen;
   if (!pending || !mainWindow || mainWindow.isDestroyed() || e.sender !== mainWindow.webContents) return;
   pendingSeilinkOpen = null;
-  mainWindow.webContents.send(pending.channel, pending.characterId);
+  mainWindow.webContents.send(pending.channel, pending.payload);
 });
 
 /**
@@ -1445,14 +1452,28 @@ async function bootstrap(): Promise<void> {
   // Restores whoever moved in on this profile.
   initSeilinkHost({
     pushStatus: (status) => {
+      // 261106: she moved out (or the host went down): the decorate offer goes with her.
+      if (status.state === 'off' || status.state === 'failed' || status.state === 'unsupported') closeDecorateOffer();
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcChannel.seilink.hostStatusChanged, status);
     },
     openChat: openSeilinkChat,
     onDoubleClick: (characterId) => void import('./seilink/desktopLines').then((m) => m.onSeilinkPoke(characterId)),
-    openRoomEditor: (characterId) => openFromSeilink(IpcChannel.seilink.openRoomEditor, characterId),
+    // 261106: the dock's edit button opens her editor ON the desktop (seilink/stageFlow.ts).
+    openRoomEditor: (characterId) => openDesktopEditor(characterId, 'dock'),
+    onOfferAnswer: (characterId, answer) => onDecorateOfferAnswer(characterId, answer),
     pushAvailability: () => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcChannel.seilink.availabilityChanged, seilinkAvailability());
     },
+  });
+  // 261106: the desktop stage (the first-link intro and the room editor over the desktop) and the
+  // decorate-together offer after her first move-in into the blank room.
+  initStageFlow({
+    getMainWindow: () => mainWindow,
+    openWithWindow: (channel, payload) => void openFromSeilink(channel, payload),
+  });
+  initDecorateOffer({
+    openDesktopEditor: (characterId) => openDesktopEditor(characterId, 'offer'),
+    speak: (characterId, note) => import('./seilink/desktopLines').then((m) => m.speakDecorateOffer(characterId, note)),
   });
   void restoreSeilinkHost();
   // M4: her desktop lines (a reply to a double click, rare idle lines, 261105 a reaction to room edits; seilink/desktopLines.ts).
@@ -1828,7 +1849,15 @@ async function bootstrap(): Promise<void> {
       });
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0 && mainWindow === null) openMainWindowAgain();
+      if (BrowserWindow.getAllWindows().length === 0 && mainWindow === null) {
+        openMainWindowAgain();
+        return;
+      }
+      // 261106: the desktop stage hides the window when it steps aside (seilink/desktopStage.ts); the Dock brings it back.
+      if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible() && !mainWindow.isMinimized()) {
+        mainWindow.setOpacity(1);
+        mainWindow.show();
+      }
     });
   });
 

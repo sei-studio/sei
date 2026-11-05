@@ -412,14 +412,15 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
 // dir>&facepackid=<pack id>[&facepackat=<ms>] her face set "arrives" that
 // long after the room first draws (data-room-ready; an avatar-manifest push,
 // like the anima client's), so the portrait-to-face-set crossfade can be shot.
-// ?seilinkintro=1 (261105, the first-link intro) gets the plain stub.
+// ?seilinkintro=1 (261105, the first-link intro) and ?seilinkflow=1 (261106,
+// the first-room flow) get the plain stub.
 const harnessParams = w ? new URLSearchParams(w.location.search) : null;
 if (
   import.meta.env.DEV &&
   w &&
   w.sei == null &&
   harnessParams &&
-  (harnessParams.has('facepack') || harnessParams.has('seilink') || harnessParams.has('seilinkhost') || harnessParams.has('seilinkintro'))
+  (harnessParams.has('facepack') || harnessParams.has('seilink') || harnessParams.has('seilinkhost') || harnessParams.has('seilinkintro') || harnessParams.has('seilinkflow'))
 ) {
   const noop = async (): Promise<undefined> => undefined;
   const rigBase = harnessParams.get('rig')?.replace(/\/?$/, '/') ?? null;

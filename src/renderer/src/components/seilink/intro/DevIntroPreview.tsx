@@ -5,7 +5,9 @@
  *   &name=Lyra              her name in the lines
  *   &portrait=<url>         her portrait (the fallback figure)
  *   &faces=<url>&face=<id>  her face set (a dir of facepacks, as DevRoomPreview)
- *   &style=holo|glitch|tunnel   the treatment (default: the shipping one)
+ *   &style=aurora|bloom|tide   the treatment (default: the shipping one)
+ *   &room=blank|default     her blank first room (default) or the pack's default room
+ *   &hold=1                 end on her room (the desktop stage's ending)
  *   &reduced=1              the reduced-motion version
  *   &answer=ok|fail|pending the host start's answer (default ok, after 1.5 s)
  *   &manual=1               no clock: window.__firstLinkSeek(ms) draws a frame
@@ -17,7 +19,7 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { INTRO_STYLES, type IntroStyle } from '@shared/seilinkIntroTelemetry';
-import { defaultRoomState, type RoomState } from '@shared/seilinkRoom';
+import { blankRoomState, defaultRoomState, type RoomState } from '@shared/seilinkRoom';
 import { parseRoomManifest } from '@shared/seilinkValidate';
 import { isUiLanguage } from '@shared/uiLanguage';
 import { urlPackSource } from '../../../lib/facepack/facepackSource';
@@ -33,7 +35,8 @@ async function loadRoom(base: string): Promise<IntroRoom | null> {
   if (!res.ok) return null;
   const manifest = parseRoomManifest(await res.json());
   if (!manifest) return null;
-  const state: RoomState = defaultRoomState(manifest.id);
+  const blank = params.get('room') !== 'default' && manifest.id === 'cozy';
+  const state: RoomState = blank ? blankRoomState() : defaultRoomState(manifest.id);
   const time = params.get('time') ?? 'day';
   if (['auto', 'day', 'dusk', 'night'].includes(time)) state.time = time as RoomState['time'];
   return { manifest, state, resolve: (rel) => `${rel.startsWith('_shared/') ? `${root}../` : root}${rel}` };
@@ -96,6 +99,7 @@ export function DevIntroPreview(): React.ReactElement | null {
       facepack={facepack}
       answer={manual ? true : answer}
       manual={manual}
+      holdEnd={params.get('hold') === '1'}
       onFinish={setEnded}
       onReady={() => {
         document.body.dataset.roomReady = '1';

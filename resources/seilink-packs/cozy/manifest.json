@@ -16,13 +16,15 @@
         "view_city",
         "view_forest",
         "view_sea",
-        "view_neon"
+        "view_neon",
+        "view_blank"
       ]
     },
     "shell": {
       "z": 10,
       "options": [
-        "cozy_room"
+        "cozy_room",
+        "blank_room"
       ]
     },
     "rug": {
@@ -63,7 +65,8 @@
     "chair": {
       "z": 90,
       "options": [
-        "velvet_armchair"
+        "velvet_armchair",
+        "plain_armchair"
       ]
     }
   },
@@ -145,6 +148,25 @@
       }
     },
     {
+      "id": "view_blank",
+      "slot": "view",
+      "name": "plain grey sky",
+      "box": [1341, 16, 1219, 1292],
+      "fit": "cover",
+      "focus": [0.5, 0.5],
+      "frames": {
+        "day": {
+          "src": "_shared/views/blank_day.webp"
+        },
+        "dusk": {
+          "src": "_shared/views/blank_dusk.webp"
+        },
+        "night": {
+          "src": "_shared/views/blank_night.webp"
+        }
+      }
+    },
+    {
       "id": "cozy_room",
       "slot": "shell",
       "name": "walls",
@@ -165,6 +187,42 @@
           "src": "shell_night.webp",
           "mask": "shell_mask.webp",
           "glow": "shell_glow_night.webp"
+        }
+      },
+      "patternSurface": "walls",
+      "patternQuads": [
+        {
+          "quad": [[0, 0], [465, 145], [465, 1115], [0, 1214]],
+          "size": [481, 970]
+        },
+        {
+          "quad": [[465, 145], [2560, -180], [2560, 1341], [465, 1115]],
+          "size": [1809, 970],
+          "uv": [481, 0]
+        }
+      ]
+    },
+    {
+      "id": "blank_room",
+      "slot": "shell",
+      "name": "bare white walls",
+      "tintable": true,
+      "defaultTint": "#FFFFFF",
+      "accentSwatches": ["#f3ede2", "#d9cdb9", "#c2cfae", "#c79a7e", "#9fae8c", "#8f7f6d", "#5f7257"],
+      "swatches": ["#ffffff", "#b5c2a0", "#efe8dc", "#ecd9a0", "#e8c2b4", "#cbbda6", "#b6c8d0", "#c9b4c8"],
+      "frames": {
+        "day": {
+          "src": "shell_blank_day.webp",
+          "mask": "shell_mask.webp"
+        },
+        "dusk": {
+          "src": "shell_blank_dusk.webp",
+          "mask": "shell_mask.webp"
+        },
+        "night": {
+          "src": "shell_blank_night.webp",
+          "mask": "shell_mask.webp",
+          "glow": "shell_blank_glow_night.webp"
         }
       },
       "patternSurface": "walls",
@@ -385,6 +443,30 @@
         },
         "night": {
           "src": "chair_night.webp"
+        }
+      },
+      "blocks": {
+        "floor": [
+          [[878, 1140], [1724, 1140], [1724, 1200], [1706, 1250], [1664, 1300], [1658, 1350], [1654, 1480], [953, 1480], [949, 1350], [943, 1300], [901, 1250], [878, 1200]]
+        ],
+        "wall": [
+          [[876, 1150], [948, 1100], [998, 1076], [1046, 772], [1300, 762], [1556, 772], [1604, 1076], [1652, 1100], [1726, 1160], [1726, 1260], [1656, 1440], [948, 1440]]
+        ]
+      }
+    },
+    {
+      "id": "plain_armchair",
+      "slot": "chair",
+      "name": "plain grey armchair",
+      "frames": {
+        "day": {
+          "src": "chair_plain_day.webp"
+        },
+        "dusk": {
+          "src": "chair_plain_dusk.webp"
+        },
+        "night": {
+          "src": "chair_plain_night.webp"
         }
       },
       "blocks": {

@@ -73,8 +73,8 @@ Live lines (decorating together): `live_shown`, `live_skip_<reason>`.
 
 | Event | When | Props | Answers |
 |---|---|---|---|
-| `seilink_movein_sheet` | sheet loaded (`shown`), Move in worked (`confirmed`), a try failed (`failed`, once per class), Not now (`dismissed`) | action, reason `first_room`/`swap`/`retry`, preset, pick_room, swap, preset_changed, packs_available (shown), ms_open, error_class `start_failed`/`save_failed`/`unsupported`/`error`, entry `button`/`gear`/`tour`/`dock` (261105: how the person got here) | Sheet funnel and which room people pick |
-| `seilink_moved_in` | host started for her (not a restore) | swapped, preset, first_room | Move-ins |
+| `seilink_movein_sheet` | sheet loaded (`shown`), Move in worked (`confirmed`), a try failed (`failed`, once per class), Not now (`dismissed`) | action, reason `first_room`/`swap`/`retry`, preset, pick_room (261106: true = her first room, there is no picker any more), swap, preset_changed (always false since 261106), blank_room (261106: the first room is the blank one), packs_available (shown), ms_open, error_class `start_failed`/`save_failed`/`unsupported`/`error`, entry `button`/`gear`/`tour`/`dock` (261105: how the person got here) | Sheet funnel |
+| `seilink_moved_in` | host started for her (not a restore) | swapped, preset, first_room, blank_room (261106: the blank first room was created) | Move-ins; blank rooms created |
 | `seilink_moved_out` | she moved out | via app/dock | Move-outs |
 
 ## Entry, first-link intro, tour (261105, T337)
@@ -86,8 +86,23 @@ Shapes in `src/shared/seilinkIntroTelemetry.ts`, rebuilt in main by
 | Event | When | Props | Answers |
 |---|---|---|---|
 | `seilink_entry` | every SeiLink entry click | character_id, source `button`/`gear`/`tour`/`dock`, action `sheet`/`move_in`/`edit`/`move_out`/`replay_intro` | Which entry point people use |
-| `seilink_intro` | the intro shows (`shown`), and how it ended (`completed`/`skipped`/`aborted`) | character_id, action, trigger `first_link`/`replay`, style `holo`/`glitch`/`tunnel`, reduced_motion, entry; on the end: beat `tunnel`/`link`/`port`/`linked` (where it ended), duration_bucket `lt3s`/`3_6s`/`6_9s`/`9_12s`/`12_20s`/`gt20s`, host `ok`/`failed`/`pending`/`none` | Do people watch it, where they skip, does the host keep up |
+| `seilink_intro` | the intro shows (`shown`), and how it ended (`completed`/`skipped`/`aborted`) | character_id, action, trigger `first_link`/`replay`, style `aurora`/`bloom`/`tide` (261106; `holo`/`glitch`/`tunnel` before), reduced_motion, entry; on the end: beat `tunnel`/`link`/`port`/`linked` (where it ended), duration_bucket `lt3s`/`3_6s`/`6_9s`/`9_12s`/`12_20s`/`gt20s`, host `ok`/`failed`/`pending`/`none` | Do people watch it, where they skip, does the host keep up |
 | `seilink_tour` | the guide's tour: `offered`, `sure`, `not_now` (snoozed true on the first, false when it retires), `completed` (the sheet opens), `dropped` (Skip tutorial) | action, audience `new`/`existing`, offer_n (1 or 2), snoozed?, step `offer`/`button`/`room` (dropped) | Tour funnel and snooze outcome |
+
+## First room on the desktop (261106)
+
+Main captures these itself (`main/seilink/decorateOffer.ts`,
+`main/seilink/stageFlow.ts`), so there is no renderer sanitizer for them.
+
+| Event | When | Props | Answers |
+|---|---|---|---|
+| `seilink_decorate_offer` | the desktop shows her new blank room: the offer goes up (`shown`), is answered (`accepted` / `declined`), times out after 10 min (`expired`), ends because she moved out or the room was decorated another way (`closed`), or is not made (`skipped`) | character_id, action, via `intro`/`move_in`, line `her`/`ui` (did she ask in her own line, or the dock in UI copy), line_outcome (ui only: why her line did not come, `budget`/`busy`/`not_live`/`occupied`/`error`/`timeout`/...), wait_ms (shown), ms_open (answers), reason `not_live`/`not_blank`/`already`/`disabled` (skipped) | Offer shown, accepted, declined; how often the budget silences her |
+| `seilink_desktop_stage` | the main window steps out over the desktop (`entered`), back (`exited`), could not (`failed`), or stepped aside without it (`revealed`) | character_id, action, purpose `intro`/`editor`/`move_in`, opened_from (editor), reveal + staged_ms + ok (exited), error_class `native_fullscreen`/`busy`/`failed`/`no_window`/`disabled`/`timeout` (the renderer did not ask for the stage within 4 s of the dock's push) | Does the on-desktop editor open, how long it stays, failure classes per platform |
+
+The editor session also carries `surface` (below): `desktop` when it was on
+the stage. Desktop editor opened = `seilink_desktop_stage` entered with
+purpose `editor` (by opened_from); closed = exited; saved = the session's
+`saves` with surface `desktop`.
 
 ## Her look (anima face sets, 261105)
 
@@ -110,7 +125,7 @@ per app run.
 
 | Event | When | Props | Answers |
 |---|---|---|---|
-| `seilink_editor_session` | the editor closes, or the window goes away with it open (one per session; a drag is one edit) | opened_from `gear`/`dock`/`move_in`/`button`/`tour`/`other`, duration_ms, preset, preset_end, first_panel, panels_opened, `panel_<avatar/room/fabrics/furniture/items>`, edits, `edit_<type>`, undos, saves, save_failures, avatar_upload_start/ok/fail, `avatar_fail_<not_zip/too_big/import_failed>`, dirty_at_close, outcome `saved`/`no_changes`/`discarded`, errors; 261105 catalog: `edit_pattern_change`/`edit_accent_change`/`edit_light_colour`/`edit_light_cycle`, patterned_at_close, accents_at_close, cycling_lights_at_close, particle_parts_at_close, particles_on, last_pattern (a code pattern, a painted tile id, `plain` or `other`); 261105 colour pass: preset_color_picks (a preset swatch or the automatic second colour), custom_color_picks (one per finished custom pick: a drag, a typed hex, a key run), recent_color_picks, picker_opens, custom_colors_at_close (tinted parts whose colour is not one of their presets). Never a colour value | Do people edit, what they change, do they save; do patterns and light colours get used |
+| `seilink_editor_session` | the editor closes, or the window goes away with it open (one per session; a drag is one edit) | opened_from `gear`/`dock`/`move_in`/`button`/`tour`/`offer` (261106)/`other`, surface `desktop`/`app` (261106: on the desktop stage or in the window), duration_ms, preset, preset_end, first_panel, panels_opened, `panel_<avatar/room/fabrics/furniture/items>`, edits, `edit_<type>`, undos, saves, save_failures, avatar_upload_start/ok/fail, `avatar_fail_<not_zip/too_big/import_failed>`, dirty_at_close, outcome `saved`/`no_changes`/`discarded`, errors; 261105 catalog: `edit_pattern_change`/`edit_accent_change`/`edit_light_colour`/`edit_light_cycle`, patterned_at_close, accents_at_close, cycling_lights_at_close, particle_parts_at_close, particles_on, last_pattern (a code pattern, a painted tile id, `plain` or `other`); 261105 colour pass: preset_color_picks (a preset swatch or the automatic second colour), custom_color_picks (one per finished custom pick: a drag, a typed hex, a key run), recent_color_picks, picker_opens, custom_colors_at_close (tinted parts whose colour is not one of their presets). Never a colour value | Do people edit, what they change, do they save; do patterns and light colours get used |
 | (on `seilink_editor_session`) | 261105 (T336), only when the editor was shared with the resident | together, on_call_at_open, live_lines, call_pictures, call_picture_skipped_unchanged, call_picture_rate_limited, her_edits_applied/suggested/rejected/undone/tried, talk_messages, talk_blocked. Her edits are not counted in `edits` / `edit_<type>` | Decorating together usage |
 | `seilink_editor_error` | first time per kind per session | kind `load_failed`/`no_packs`/`save_failed`/`avatar_import_failed`, opened_from | Editor breakage |
 

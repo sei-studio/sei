@@ -1,68 +1,57 @@
 /**
  * MoveInSheet (261104, SeiLink M4): "Move {name} onto your desktop".
  *
- * Shown from the companion page's gear menu the first time a companion moves
- * in (she has no saved room yet), and whenever moving her in would move
- * someone else out. It has:
- *  - a room picker (one card per room preset; all three ship with the app,
- *    261105, and a preset whose pack failed to load is shown disabled, like
- *    the editor). Hidden when she
- *    already has a room: it stays as she left it;
+ * Shown from the companion page's gear menu (and the SeiLink button, the
+ * tour) the first time a companion moves in (she has no saved room yet), and
+ * whenever moving her in would move someone else out. It has:
+ *  - one line on her room: 261106, her first room is the blank room
+ *    (blankRoomState: bare white walls, one plain chair), decorated together
+ *    once she is on the desktop (main/seilink/decorateOffer.ts); a companion
+ *    with a saved room keeps it as she left it. (Until 261106 a first room
+ *    was picked here from the three presets; the editor's Room panel has them.)
  *  - three short lines on what moving in means (wallpaper, pauses when
  *    covered, click her to chat, the dock);
- *  - Move in: saves the picked room when it is new, then starts the host.
- *    Main swaps out whoever lived there (one companion at a time).
+ *  - Move in: saves the blank room when it is her first, then starts the
+ *    host. Main swaps out whoever lived there (one companion at a time).
  *
  * A companion whose room is saved and nobody else moved in skips the sheet
  * (needsMoveInSheet, lib/seilink/moveIn.ts); the page starts the host directly.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { defaultRoomState, ROOM_PRESET_IDS, type RoomPresetId } from '@shared/seilinkRoom';
-import { seilinkResolver, type RoomUrlResolver, type SeilinkPack } from '@shared/seilinkPack';
+import { blankRoomState, defaultRoomState, type RoomPresetId, type RoomState } from '@shared/seilinkRoom';
+import type { SeilinkPack } from '@shared/seilinkPack';
 import { sei } from '../../lib/ipcClient';
 import { useT } from '../../lib/i18n';
-import { roomThumb } from '../../lib/seilink/roomThumbs';
 import { Button } from '../Button';
 import { ModalShell, ModalFooter } from '../ModalShell';
-import { CheckIcon } from './roomEditorIcons';
-import { moveInFailed, ROOM_PRESET_LABEL } from '../../lib/seilink/moveIn';
+import { moveInFailed } from '../../lib/seilink/moveIn';
 import { useAnimaLook } from '../../lib/seilink/useAnimaLook';
 import { SEILINK_MOVEIN_SHEET_EVENT, type MoveInAction, type MoveInFail, type MoveInReason } from '@shared/seilinkTelemetry';
 import type { SeilinkEntrySource } from '@shared/seilinkIntroTelemetry';
 import { startSeilinkHost } from '../../lib/seilink/seilinkFlow';
 import styles from './MoveInSheet.module.css';
 
-function PresetThumb({ pack, resolveFor }: { pack: SeilinkPack; resolveFor?: (p: SeilinkPack) => RoomUrlResolver }): React.ReactElement {
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => {
-    let dead = false;
-    roomThumb(pack.manifest, defaultRoomState(pack.id), { time: 'day', resolve: (resolveFor ?? seilinkResolver)(pack), width: 320, rev: pack.rev }).then(
-      (u) => !dead && setUrl(u),
-      () => {},
-    );
-    return () => {
-      dead = true;
-    };
-  }, [pack, resolveFor]);
-  return url ? <img className={styles.cardImg} src={url} alt="" draggable={false} /> : <span className={styles.cardWait} />;
+/** Her first room: the blank room when its pack is here, else the first pack's own room. */
+export function firstRoomState(packs: readonly SeilinkPack[]): { state: RoomState; blank: boolean } | null {
+  const blank = blankRoomState();
+  const cozy = packs.find((p) => p.id === blank.preset);
+  if (cozy && cozy.manifest.components.some((c) => c.id === blank.slots.shell?.id)) return { state: blank, blank: true };
+  const first = packs[0];
+  return first ? { state: defaultRoomState(first.id), blank: false } : null;
 }
 
 export interface MoveInSheetViewProps {
   name: string;
   /** Who lives on the desktop now and moves out (null = nobody). */
   otherName: string | null;
-  /** Packs that exist, or null while loading. */
-  packs: SeilinkPack[] | null;
-  /** Show the room picker (her first room). */
-  pickRoom: boolean;
-  preset: RoomPresetId | null;
-  onPick: (id: RoomPresetId) => void;
+  /** Her first room (it starts blank); false = she has a room, it stays as she left it. */
+  firstRoom: boolean;
   busy: boolean;
+  /** Her room is still loading (Move in waits for it). */
+  loading?: boolean;
   error: string | null;
   onCancel: () => void;
   onConfirm: () => void;
-  /** Dev screenshots: pack URLs over HTTP instead of sei-room://. */
-  resolveFor?: (pack: SeilinkPack) => RoomUrlResolver;
   /** 261105: her face set is being baked or downloaded (a quiet line, nothing on failure). */
   preparingLook?: boolean;
 }
@@ -71,41 +60,11 @@ export function MoveInSheetView(p: MoveInSheetViewProps): React.ReactElement {
   const t = useT();
   return (
     <ModalShell title={t('Move {name} onto your desktop', { name: p.name })} width={560} onClose={p.busy ? undefined : p.onCancel}>
-      {p.pickRoom ? (
-        <section className={styles.rooms} aria-label={t('Pick a room')}>
-          <h3 className={styles.heading}>{t('Pick a room')}</h3>
-          <div className={styles.cards}>
-            {ROOM_PRESET_IDS.map((id) => {
-              const pack = p.packs?.find((x) => x.id === id) ?? null;
-              const on = p.preset === id;
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  className={on ? `${styles.card} ${styles.cardOn}` : styles.card}
-                  aria-pressed={on}
-                  disabled={!pack || p.busy}
-                  onClick={() => p.onPick(id)}
-                >
-                  <span className={styles.cardArt}>
-                    {pack ? <PresetThumb pack={pack} resolveFor={p.resolveFor} /> : <span className={styles.cardWait} />}
-                    {on ? (
-                      <span className={styles.cardCheck}>
-                        <CheckIcon size={12} />
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className={styles.cardLabel}>
-                    {t(ROOM_PRESET_LABEL[id])}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      ) : (
-        <p className={styles.line}>{t("{name}'s room stays as you left it.", { name: p.name })}</p>
-      )}
+      <p className={styles.line}>
+        {p.firstRoom
+          ? t('{name} starts in an empty room. You can decorate it together.', { name: p.name })
+          : t("{name}'s room stays as you left it.", { name: p.name })}
+      </p>
       <ul className={styles.points}>
         <li>{t('{name} lives on your wallpaper, behind your windows and icons.', { name: p.name })}</li>
         <li>{t('The room pauses while windows cover it.')}</li>
@@ -128,7 +87,7 @@ export function MoveInSheetView(p: MoveInSheetViewProps): React.ReactElement {
         <Button kind="quiet" size="md" disabled={p.busy} onClick={p.onCancel}>
           {t('Not now')}
         </Button>
-        <Button kind="primary" size="md" disabled={p.busy || (p.pickRoom && !p.preset)} onClick={p.onConfirm}>
+        <Button kind="primary" size="md" disabled={p.busy || p.loading === true} onClick={p.onConfirm}>
           {p.busy ? t('Moving in') : t('Move in')}
         </Button>
       </ModalFooter>
@@ -151,30 +110,36 @@ export function MoveInSheet({ characterId, name, otherName, reason, entry, onClo
   const t = useT();
   const [packs, setPacks] = useState<SeilinkPack[] | null>(null);
   const [saved, setSaved] = useState<{ saved: boolean; preset: RoomPresetId } | null>(null);
-  const [preset, setPreset] = useState<RoomPresetId | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 261105: SeiLink opened for her: her face set gets ready in the background while she moves in.
   const look = useAnimaLook(characterId, 'move_in_sheet');
   // Analytics (261105), shape only: shown once loaded, then confirmed, failed (once per class) or dismissed.
   const openedAt = useRef(Date.now());
-  const firstPreset = useRef<RoomPresetId | null>(null);
   const sent = useRef(new Set<string>());
-  const report = (action: MoveInAction, extra: { error_class?: MoveInFail; packs?: number; pick?: boolean; preset?: RoomPresetId | null } = {}): void => {
+  const firstRoom = saved ? !saved.saved : true;
+  const first = packs ? firstRoomState(packs) : null;
+  const report = (
+    action: MoveInAction,
+    extra: { error_class?: MoveInFail; packs?: number; first?: boolean; preset?: RoomPresetId | null; blank?: boolean } = {},
+  ): void => {
     const key = action === 'failed' ? `failed:${extra.error_class}` : action;
     if (sent.current.has(key) || (action !== 'failed' && action !== 'shown' && (sent.current.has('confirmed') || sent.current.has('dismissed')))) return;
     sent.current.add(key);
-    const at = extra.preset !== undefined ? extra.preset : preset;
+    const isFirst = extra.first ?? firstRoom;
+    const blank = extra.blank ?? (isFirst && first?.blank === true);
     try {
       sei.track(SEILINK_MOVEIN_SHEET_EVENT, {
         character_id: characterId,
         action,
         reason: reason ?? null,
-        preset: at,
-        pick_room: extra.pick ?? pickRoom,
+        preset: extra.preset !== undefined ? extra.preset : isFirst ? (first?.state.preset ?? null) : (saved?.preset ?? null),
+        // Until 261106 the first room was picked here; it now starts blank (blank_room).
+        pick_room: isFirst,
         swap: otherName !== null,
-        preset_changed: firstPreset.current !== null && at !== firstPreset.current,
+        preset_changed: false,
         ms_open: Date.now() - openedAt.current,
+        ...(blank ? { blank_room: true } : {}),
         ...(entry ? { entry } : {}),
         ...(extra.packs !== undefined ? { packs_available: extra.packs } : {}),
         ...(extra.error_class ? { error_class: extra.error_class } : {}),
@@ -192,10 +157,8 @@ export function MoveInSheet({ characterId, name, otherName, reason, entry, onClo
         setPacks(list);
         const was = room ? { saved: room.saved === true, preset: room.state.preset } : { saved: false, preset: 'cozy' as RoomPresetId };
         setSaved(was);
-        const usable = list.some((x) => x.id === was.preset) ? was.preset : (list[0]?.id ?? null);
-        setPreset(usable);
-        firstPreset.current = usable;
-        report('shown', { packs: list.length, pick: !was.saved, preset: usable });
+        const f = firstRoomState(list);
+        report('shown', { packs: list.length, first: !was.saved, preset: was.saved ? was.preset : (f?.state.preset ?? null), blank: !was.saved && f?.blank === true });
       },
       () => {
         if (dead) return;
@@ -209,18 +172,18 @@ export function MoveInSheet({ characterId, name, otherName, reason, entry, onClo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [characterId]);
 
-  const pickRoom = saved ? !saved.saved : true;
-
   const confirm = async (): Promise<void> => {
     if (!sei.seilinkHostStart) return;
     setBusy(true);
     setError(null);
     let stage: MoveInFail = 'save_failed';
     try {
-      if (pickRoom && preset && sei.seilinkRoomSet) await sei.seilinkRoomSet(characterId, defaultRoomState(preset));
+      const room = firstRoom ? first : null;
+      if (room && sei.seilinkRoomSet) await sei.seilinkRoomSet(characterId, room.state);
       stage = 'start_failed';
       // 261105: the first move-in on this account plays the first-link intro alongside the start.
-      const status = await startSeilinkHost(characterId, { firstRoom: pickRoom, entry: entry ?? 'gear' });
+      // 261106: a blank first room ends on the desktop with the decorate-together offer (seilinkFlow).
+      const status = await startSeilinkHost(characterId, { firstRoom, entry: entry ?? 'gear', blank: room?.blank === true });
       if (!status || moveInFailed(status)) {
         report('failed', { error_class: status?.state === 'unsupported' ? 'unsupported' : 'start_failed' });
         setError(t('Could not move in. Try again.'));
@@ -240,11 +203,9 @@ export function MoveInSheet({ characterId, name, otherName, reason, entry, onClo
     <MoveInSheetView
       name={name}
       otherName={otherName}
-      packs={packs}
-      pickRoom={pickRoom}
-      preset={preset}
-      onPick={setPreset}
+      firstRoom={firstRoom}
       busy={busy}
+      loading={packs === null || saved === null}
       error={error}
       onCancel={() => {
         report('dismissed');

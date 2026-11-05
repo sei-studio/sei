@@ -121,8 +121,8 @@ describe('first-link intro, play once', () => {
 
   it('ships the default style, with a dev override that must be a real style', () => {
     expect(introPref.introStyle()).toBe(introPref.DEFAULT_INTRO_STYLE);
-    localStorage.setItem('sei.seilinkIntroStyle', 'tunnel');
-    expect(introPref.introStyle()).toBe('tunnel');
+    localStorage.setItem('sei.seilinkIntroStyle', 'tide');
+    expect(introPref.introStyle()).toBe('tide');
     localStorage.setItem('sei.seilinkIntroStyle', 'fireworks');
     expect(introPref.introStyle()).toBe(introPref.DEFAULT_INTRO_STYLE);
   });

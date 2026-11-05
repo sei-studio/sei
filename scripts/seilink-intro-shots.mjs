@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Review videos of the SeiLink first-link intro (261105, T337), rendered
+ * Review videos of the SeiLink first-link intro (261105, T337; 261106 soft
+ * light styles), rendered
  * frame by frame (no dropped frames): one mp4 per treatment plus the reduced
  * motion version, and a capture of the guide's SeiLink tour.
  * Headless, no Electron.
@@ -8,7 +9,7 @@
  *   node scripts/seilink-intro-shots.mjs --out <dir>
  *        [--packs resources/seilink-packs] [--preset cozy]
  *        [--portrait <png>] [--name Lyra] [--faces <dir of facepacks> --face <id>]
- *        [--only option-A,option-B,option-C,reduced,tour] [--fps 30] [--lang <code>]
+ *        [--only aurora,bloom,tide,reduced,tour] [--fps 30] [--lang <code>]
  *
  * Intro videos open `?seilinkintro=1&manual=1` (DevIntroPreview) and call
  * window.__firstLinkSeek(ms) for every frame, then ffmpeg encodes H.264 with
@@ -47,10 +48,10 @@ const SIZE = { width: 1920, height: 1080 };
 
 /** Matches introTimeline.ts (FULL_TIMELINE.end, CALM_TIMELINE.end) plus a short tail. */
 const VIDEOS = {
-  'option-A': { q: 'style=holo', ms: 11_200 + 300 },
-  'option-B': { q: 'style=glitch', ms: 11_200 + 300 },
-  'option-C': { q: 'style=tunnel', ms: 11_200 + 300 },
-  reduced: { q: 'style=holo&reduced=1', ms: 8_300 + 300 },
+  aurora: { q: 'style=aurora&hold=1', ms: 11_200 + 300 },
+  bloom: { q: 'style=bloom&hold=1', ms: 11_200 + 300 },
+  tide: { q: 'style=tide&hold=1', ms: 11_200 + 300 },
+  reduced: { q: 'style=aurora&reduced=1&hold=1', ms: 8_300 + 300 },
 };
 const only = arg('only', [...Object.keys(VIDEOS), 'tour'].join(',')).split(',');
 

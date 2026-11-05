@@ -109,13 +109,20 @@ her box because the native click area is the union of the two (one rect): on
 macOS the hit panel takes the desktop's clicks inside it. Shawn's
 room-editor deck puts these shortcuts in "the bottom dock" of the room, so it
 lives on the wallpaper, not in the app or a tray.
-- Edit room → main `deps.openRoomEditor` (shows Sei, pushes
-  `seilink:open-room-editor`; App.tsx navigates to her page and
-  `useSeilinkStore.requestEditor` opens her editor there).
+- Edit room → main `deps.openRoomEditor` → `stageFlow.openDesktopEditor`
+  (261106): pushes `seilink:open-room-editor {characterId, openedFrom,
+  desktop}` WITHOUT showing Sei; the renderer mounts her editor and puts it
+  on the desktop stage (see "The desktop stage" below). No stage enter
+  within 4 s shows the window the usual way, editor inside.
 - Deafen → toggles `seilink_deafened` (main-owned, per profile), pushed back
   as `dock-state`. Mutes her IDLE lines only; a reply to a poke still shows.
 - Move out → the first press turns the button into "Move out?" for 4 s, a
   second press sends the action; main `stopSeilinkHost('user_stop', 'dock')`.
+- 261106 the offer (`dock-state.offer`, `her` | `prompt` | `none`): after
+  her first move-in into the blank room the dock holds "Decorate together"
+  (`decorate`, BrushIcon, accent fill) and "Not now" (`later`); `prompt` adds
+  the line "Decorate {name}'s room together?" above them (her own line did
+  not come). Main only accepts `decorate` / `later` while an offer is up.
 The page never gets DOM clicks: it reports its buttons' boxes (`CH.dock`) and
 answers a press with `CH.dockAction`, which the host relays as FromHost
 `dock`. A short caption above the dock says what a press did (no hover).
@@ -337,6 +344,73 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   (`seilink_movein_sheet.entry`, the editor's `opened_from`).
 - There is no on/off setting (the Settings "Labs" section was removed
   261105): SeiLink is available wherever `seilinkSupport()` says it can run.
+- **The first-link flow (261106).** Her first room is BLANK
+  (`blankRoomState()` in shared/seilinkRoom.ts: the cozy shell with bare
+  white walls, `view_blank`, one `plain_armchair`, no rug, curtains, shelf
+  or items; art from `scripts/seilink-blank-room.mjs`). Rooms saved before
+  stay as they are; only a companion with no saved room gets the blank one.
+  1. MoveInSheet (no room picker any more): "{name} starts in an empty room.
+     You can decorate it together." Move in saves `blankRoomState()` (the
+     first pack's default room when the cozy pack is missing) and starts the
+     host with `blank: true`.
+  2. The first link plays the intro ON the desktop stage (`stage: true`):
+     the window covers the primary display, the intro ends on her room full
+     screen (`holdEnd`: only the captions fade; a skip rushes to that frame).
+     When the start answered ok the window steps aside (`exit` with
+     `reveal`), so the wallpaper, the same room, is what stays, icons on top.
+     A failed start comes back to the window and the sheet's retry. A first
+     room without the intro (already seen on this account) steps aside the
+     same way once she is in (`reveal`, purpose `move_in`).
+  3. Then `seilink:offer` (`main/seilink/decorateOffer.ts`): she asks in one
+     desktop line (a `react` turn with `DECORATE_OFFER_NOTE` after the cache
+     breakpoint, through the poke budget: nothing for a free account over its
+     cap, no tokens on any other turn), and the dock holds the two answers.
+     Her line has `OFFER_LINE_WAIT_MS` (8 s); without it the dock asks in UI
+     copy (`prompt`). Asked once per companion per run, only while the room
+     is still `isBlankRoom`; it expires after 10 min, and closes when she
+     moves out or the room is decorated another way.
+  4. "Decorate together" opens her editor on the desktop (`opened_from:
+     offer`), shared with her as usual (RoomTogether). "Not now": she stays
+     in the blank room, the dock comes back with the caption "Decorate
+     anytime with the brush." and the offer is not asked again.
+  5. In the editor the Sei avatar is her portrait or face set, drawn as the
+     wallpaper draws her (RoomEditor `portrait`, from CompanionRoomEditor);
+     the glass figure is only for a companion with no portrait.
+- **The desktop stage (261106, `main/seilink/desktopStage.ts`,
+  `stageFlow.ts`).** The room editor (and the first-link intro) open ON the
+  desktop, above the desktop icons, by turning the MAIN window into a
+  borderless surface the size of the primary display (where the wallpaper
+  is); RoomCanvas `fit="cover"` at that size draws the room where the
+  wallpaper draws it, and the covered wallpaper drops to 0 fps. Not a second
+  window (the editor needs the main renderer's stores, chat, call, modals)
+  and not the wallpaper window raised (re-parenting out of WorkerW / the
+  desktop level and back is the riskiest native step SeiLink has).
+  - macOS: move onto the primary display, hide the traffic lights,
+    `setSimpleFullScreen(true)` (no Space animation, stays on the desktop's
+    Space). A window in native fullscreen (its own Space) is refused
+    (`native_fullscreen`); the editor stays in the window.
+  - Windows / Linux: unmaximize, `setResizable(false)`,
+    `setBounds(display.bounds)` on the frameless window (the shell draws a
+    monitor-sized foreground window over the taskbar). Not `setFullScreen`:
+    leaving it while hidden turns WS_VISIBLE back on and flashes the app.
+  - Stepping aside (`reveal`): macOS hides the window first, leaves simple
+    fullscreen, restores the frame, then `app.hide()` when no other Sei
+    window is up ('activate' and second-instance show a hidden main window
+    again). Windows hides, restores bounds while hidden, then minimizes (a
+    maximized window is maximized again on its next restore).
+  - A hidden or minimized window comes back at opacity 0, is moved and
+    sized, then made opaque, so the old frame never flashes.
+  - The renderer drives it (`seilink:stage` enter / exit / reveal, main
+    window only): the editor or intro is already mounted over the whole
+    window when the window changes size, so the app UI never shows full
+    screen. CompanionRoomEditor `desktop`: enter 120 ms after mount (a
+    timer: a hidden window draws no frames), close = exit with reveal, then
+    unmount; any other unmount exits without reveal. A renderer reload while
+    staged gives the window back (`app:renderer-ready`).
+  - Every editor entry point opens the desktop editor for the companion who
+    lives there with the host running (the dock, the offer, the SeiLink
+    button, the gear menu's Edit room); anyone else gets the in-app editor.
+    Closing always steps aside onto the desktop.
 - **The first-link intro** (`components/seilink/intro/`): about 11 s, three
   beats with one line each ("Opening a tunnel to the digital world…",
   "Linking {name}…", "Porting the link to your desktop…"), then "Linked." /
@@ -351,12 +425,16 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   starting.
   - Frames are pure (`introFrame.ts` computeFrame, `introFx.ts` canvases),
     so the harness seeks them: `?seilinkintro=1` (DevIntroPreview,
-    `&style=holo|glitch|tunnel&reduced=1&manual=1`), and
-    `scripts/seilink-intro-shots.mjs` renders the review mp4s.
-  - Three treatments behind `IntroStyle` (`holo`, `glitch`, `tunnel`;
-    `DEFAULT_INTRO_STYLE` ships, a dev override is
-    `localStorage['sei.seilinkIntroStyle']`). Once Shawn picks one, delete
-    the other two branches of computeFrame and their fx.
+    `&style=aurora|bloom|tide&room=blank|default&hold=1&reduced=1&manual=1`),
+    and `scripts/seilink-intro-shots.mjs` renders the review mp4s.
+  - 261106: three soft light styles behind `IntroStyle`: `aurora` (default,
+    `DEFAULT_INTRO_STYLE`), `bloom`, `tide`; a dev override is
+    `localStorage['sei.seilinkIntroStyle']`. Gradients and glows on two
+    canvases a sixth of the screen (`FIELD_SCALE`), stretched, additive: no
+    scanlines, grids, hard edges or glitch slices. She forms out of a glow
+    (brightness + blur + drop-shadow easing to none) and the room canvases
+    (not her) open in a soft radial mask around her. The 261105 holo /
+    glitch / tunnel code is gone.
 - **The guide's SeiLink tour** (`lib/seilink/tourPref.ts` decides,
   `seilinkTour.ts` records, `useTutorialStore` mode `seilink`, steps
   `sl_offer` / `sl_button` / `sl_room` in TutorialOverlay). App.tsx polls
@@ -383,8 +461,8 @@ errors) is in [`seilink-analytics.md`](seilink-analytics.md). The basics:
   wallpaper left running in the background is not playtime (same rule as a
   chat left open), and it would swamp the number. Her desktop lines are
   counted by `seilink_line_shown` instead.
-- M4: `seilink_moved_in` {character_id, swapped, preset, first_room} (not on a
-  restore); `seilink_moved_out` {character_id, via app|dock};
+- M4: `seilink_moved_in` {character_id, swapped, preset, first_room,
+  blank_room (261106)} (not on a restore); `seilink_moved_out` {character_id, via app|dock};
   `seilink_dock_action` {action edit|deafen|moveout, character_id,
   deafened?}; `seilink_line_shown` {kind poke|idle|react, chars, character_id}.
   Never the line's text.
@@ -414,6 +492,11 @@ errors) is in [`seilink-analytics.md`](seilink-analytics.md). The basics:
   `--shots host-crossfade --portrait <png> --facepacks <packs dir> --facepack-id <an-...>`
   shoots the portrait-to-face-set crossfade as a timed sequence (the face set
   "arrives" 1.5 s after the room draws; dev stub in `devHarnessStubs.ts`).
+- The first-room flow (261106) on a simulated desktop (generic menu bar,
+  icons, dock bar): `?seilinkflow=1&pack=<url>&phase=desktop|offer|prompt|
+  later|editor|decorated|closed` (DevFirstRoomFlow), rendered to stills plus
+  one mp4 by `node scripts/seilink-first-room-flow.mjs --out <dir>
+  [--intro <aurora.mp4 from seilink-intro-shots>]`.
 - CI: `.github/workflows/seilink-host-check.yml` (windows-2022/2025,
   macos-15/26; dispatch, or push to `feat/seilink-host` under the host
   paths). One runner per OS also packages a dir build and checks the addon

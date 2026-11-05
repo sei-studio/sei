@@ -157,13 +157,15 @@ export function App(): React.ReactElement {
     [],
   );
   // 261104 SeiLink M4: availability + host status for the companion page and
-  // Settings, and the dock's edit button (open her page with the editor up).
+  // Settings, and the dock's edit button (her editor: on the desktop, 261106,
+  // or on her page in the app).
   useEffect(() => useSeilinkStore.getState().init(), []);
   useEffect(
     () =>
-      sei.onSeilinkOpenRoomEditor?.((characterId) => {
-        useSeilinkStore.getState().requestEditor(characterId);
-        useUiStore.getState().navigate({ kind: 'character', id: characterId });
+      sei.onSeilinkOpenRoomEditor?.((req) => {
+        useSeilinkStore.getState().requestEditor(req);
+        // 261106: on the desktop the app steps aside again when the editor closes; only the in-app editor lands on her page.
+        if (!req.desktop) useUiStore.getState().navigate({ kind: 'character', id: req.characterId });
       }),
     [],
   );
