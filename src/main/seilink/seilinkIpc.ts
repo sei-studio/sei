@@ -11,6 +11,7 @@ import { getRoomPayload, isRoomCharacterId, onRoomChange, setRoomState } from '.
 import { seilinkHostStatus, startSeilinkHost, stopSeilinkHost } from './host/seilinkHost';
 import { ANIMA_TRIGGERS, isAnimaShownKind, type AnimaTrigger } from '../../shared/anima';
 import { anima } from '../anima/animaRuntime';
+import { isEditorSessionToken, onRoomEditorClosed, onRoomEditorOpened } from './roomReaction';
 
 let previewWin: BrowserWindow | null = null;
 let registered = false;
@@ -68,6 +69,14 @@ export function registerSeilinkIpc(opts: { preloadPath: string; rendererTarget: 
   ipcMain.on(IpcChannel.seilink.animaShown, (_e, args: unknown) => {
     const a = args as { characterId?: unknown; kind?: unknown } | null;
     if (isRoomCharacterId(a?.characterId) && isAnimaShownKind(a?.kind)) anima.noteShown(a.characterId, a.kind, 'editor');
+  });
+
+  // 261105 (T335): the companion editor's session, for her one reaction line to the edits.
+  ipcMain.on(IpcChannel.seilink.editorSession, (_e, args: unknown) => {
+    const a = args as { phase?: unknown; token?: unknown; characterId?: unknown } | null;
+    if (!isEditorSessionToken(a?.token)) return;
+    if (a.phase === 'open' && isRoomCharacterId(a.characterId)) onRoomEditorOpened(a.token, a.characterId);
+    else if (a.phase === 'close') onRoomEditorClosed(a.token);
   });
 
   ipcMain.handle(IpcChannel.seilink.openPreview, async () => {

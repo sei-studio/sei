@@ -45,6 +45,12 @@ const LINE = 'oh hey. I was just rearranging the shelf again, it never looks rig
 const LINE_HAPPY = 'haha you found me. I was just rearranging the shelf again';
 const LINE_SURPRISED = 'wait, really?? you moved the lamp?';
 const LINE_JA = 'あ、おかえり。棚の並べ方、まだしっくりこないんだよね';
+// 261105 (T335): her reaction after an edit (pink curtains, the plant moved left); a line from the live probe.
+const REACT_STATE = JSON.stringify({
+  slots: { curtains: { id: 'linen_curtains', tint: '#e070a0' } },
+  items: [{ id: 'monstera', x: 250, y: 1320 }, { id: 'cushion', x: 1500, y: 1300 }],
+});
+const LINE_REACT = "pink curtains?? ok that's a bold choice and i'm kind of into it";
 
 /**
  * name -> { kind: 'host' | 'app', q: query, size?, wait?, act? }.
@@ -59,6 +65,7 @@ const SHOTS = {
   'host-night-deafened-caption': { kind: 'host', q: 'time=night&deafened=1&press=deafen' },
   'host-dusk-edit-caption': { kind: 'host', q: 'time=dusk&press=edit' },
   'host-ja-confirm-line': { kind: 'host', q: `time=day&lang=ja&confirm=1&line=${encodeURIComponent(LINE_JA)}` },
+  'host-react-line': { kind: 'host', q: `time=day&state=${encodeURIComponent(REACT_STATE)}&line=${encodeURIComponent(LINE_REACT)}` },
   'host-taskbar0-line': { kind: 'host', q: `time=day&taskbar=0&line=${encodeURIComponent(LINE)}`, size: { width: 1000, height: 800 } },
   'settings-on-light': { kind: 'app', q: 'screen=settings&seilink=on&theme=light', act: 'labs' },
   'settings-on-dark': { kind: 'app', q: 'screen=settings&seilink=on&theme=dark', act: 'labs' },

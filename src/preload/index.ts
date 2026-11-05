@@ -457,6 +457,7 @@ const api: RendererApi = {
     return () => ipcRenderer.off(IpcChannel.seilink.animaChanged, handler);
   },
   seilinkAnimaShown: (characterId, kind) => ipcRenderer.send(IpcChannel.seilink.animaShown, { characterId, kind }),
+  seilinkEditorSession: (phase, token, characterId) => ipcRenderer.send(IpcChannel.seilink.editorSession, { phase, token, characterId }),
   avatarOverlayCamera: (args) => ipcRenderer.invoke(IpcChannel.avatar.overlayCamera, args),
   avatarOverlayEditing: (editing) => ipcRenderer.invoke(IpcChannel.avatar.overlayEditing, editing),
   avatarOverlayMuteToggle: () => ipcRenderer.invoke(IpcChannel.avatar.overlayMute),

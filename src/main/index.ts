@@ -1455,9 +1455,9 @@ async function bootstrap(): Promise<void> {
     },
   });
   void restoreSeilinkHost();
-  // M4: her desktop lines (a reply to a double click, rare idle lines; seilink/desktopLines.ts).
+  // M4: her desktop lines (a reply to a double click, rare idle lines, 261105 a reaction to room edits; seilink/desktopLines.ts).
   void import('./seilink/desktopLines')
-    .then((m) => m.initDesktopLines({ occupied: (id) => onlineIds.has(id) || isCallActive(id), pushChatMessage }))
+    .then((m) => m.initDesktopLines({ occupied: (id) => onlineIds.has(id) || isCallActive(id), onCall: isCallActive, pushChatMessage }))
     .catch((err) => console.warn(`[seilink] desktop lines not wired: ${(err as Error).message}`));
   if (!app.isPackaged && process.env.SEI_SEILINK_SELFTEST) {
     void import('./seilink/host/selfTest').then((m) => m.runSeilinkSelfTest({ getMainWindow: () => mainWindow }));

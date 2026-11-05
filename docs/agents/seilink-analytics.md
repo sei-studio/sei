@@ -48,14 +48,16 @@ Counters (on `seilink_ended`, per window on `seilink_health`): `clicks`,
 `verify_fail_<reason>`, `sleeps`, `resumes`, `locks`, `unlocks`,
 `poke_<outcome>`, `idle_due`, `idle_skip_<reason>`, `idle_attempted`,
 `idle_shown`, `idle_none_<why>`, `expressions` (261105: desktop lines that
-carried a face for her avatar).
+carried a face for her avatar), `react_shown`, `react_skip_<reason>`
+(261105: room edit reactions).
 
 ## Interaction
 
 | Event | When | Props | Answers |
 |---|---|---|---|
 | `seilink_poke` | a double click on her (a refusal repeats quietly for 60 s) | outcome `ok`/`limited`/`free_plan`/`free_cap`/`over_limit`/`no_plan`/`rate_limited`/`occupied`/`busy`/`not_live`/`not_shown`/`silence`/`no_room`/`aborted`/`error`/`depleted`, latency_ms, budget `own`/`paid`/`free`/`none` | Do pokes work, how fast, why not |
-| `seilink_line_shown` | a bubble line shows | kind poke/idle, chars, expression `tag`/`lexicon`/`none` (261105: where her face for the line came from) | How much she talks on the desktop, and how often her face changes with it |
+| `seilink_room_reaction` | a companion editor session for the desktop resident ended (one per session; nothing for an untouched StrictMode remount) | outcome `shown`/`skipped`, reason `no_change`/`cooldown`/`budget`/`on_call`/`in_game`/`busy`/`not_live`/`silence`/`error`, changes (bucket `0`/`1`/`2`/`3-5`/`6-10`/`11+`), latency_ms (shown), budget `own`/`paid`/`free`/`none` | Does she react to room edits, how fast, why not |
+| `seilink_line_shown` | a bubble line shows | kind poke/idle/react, chars, expression `tag`/`lexicon`/`none` (261105: where her face for the line came from) | How much she talks on the desktop, and how often her face changes with it |
 | `seilink_dock_action` | a dock button | action edit/deafen/moveout, deafened? | Dock use |
 
 Idle lines: a "due window" opens when her gap has passed. `idle_due` counts
