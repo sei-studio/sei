@@ -25,12 +25,18 @@
  * only animated glows redraw, at most `fps` times a second (0 = still, use it
  * when the room is covered). The avatar owns its own animation; `slot.fps`
  * passes the cap along.
+ *
+ * 261106 (first-link v3): a `plain` state draws no room at all, only the
+ * plain background in the OS's light or dark mode (lib/seilink/plainTone.ts,
+ * black or white, followed live) with her at the preset's seat; the overlay
+ * tint (the dock's and the editor's glass) follows that colour.
  */
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { resolveRoomTime, type RoomPresetManifest, type RoomState, type RoomTime } from '@shared/seilinkRoom';
 import { roomTimeMix, roomViewport, type RoomFit, type RoomOverlay, type RoomTimeMix, type RoomViewport } from '@shared/seilinkDraw';
 import type { RoomUrlResolver } from '@shared/seilinkPack';
 import { RoomRenderer } from '../../lib/seilink/roomRenderer';
+import { PLAIN_COLOURS, plainOverlay, usePlainTone } from '../../lib/seilink/plainTone';
 import type { RoomAssetError } from '../../lib/seilink/roomCompose';
 import styles from './RoomCanvas.module.css';
 
@@ -93,6 +99,11 @@ export function RoomCanvas(props: RoomCanvasProps): React.ReactElement {
   // Latest callbacks without re-creating the renderer.
   const cb = useRef(props);
   cb.current = props;
+  // 261106: no room yet, a plain background (the renderer draws an empty scene).
+  const plain = state.plain === true;
+  const plainRef = useRef(plain);
+  plainRef.current = plain;
+  const tone = usePlainTone();
 
   useLayoutEffect(() => {
     const r = new RoomRenderer(
@@ -103,7 +114,9 @@ export function RoomCanvas(props: RoomCanvasProps): React.ReactElement {
           if (cb.current.onError) cb.current.onError(e);
           else console.warn(`[seilink] room file failed: ${e.file}: ${e.message}`);
         },
-        onOverlay: (o) => cb.current.onOverlay?.(o),
+        onOverlay: (o) => {
+          if (!plainRef.current) cb.current.onOverlay?.(o);
+        },
         onLayersUsed: setUsed,
       },
       { fps, fadeMs },
@@ -152,9 +165,21 @@ export function RoomCanvas(props: RoomCanvasProps): React.ReactElement {
     return () => clearTimeout(t);
   }, [vp.scale]);
 
+  // A plain state: every slot empty and no items, so nothing of the room draws (her slot still comes from the manifest).
+  const scene = useMemo<RoomState>(() => {
+    if (!plain) return state;
+    const slots: RoomState['slots'] = {};
+    for (const slot of Object.keys(manifest.slots) as Array<keyof RoomState['slots']>) slots[slot] = { id: null };
+    return { ...state, slots, items: [] };
+  }, [plain, state, manifest]);
+
   useEffect(() => {
-    rendererRef.current?.setScene(manifest, state, resolveUrl);
-  }, [manifest, state, resolveUrl]);
+    rendererRef.current?.setScene(manifest, scene, resolveUrl);
+  }, [manifest, scene, resolveUrl]);
+
+  useEffect(() => {
+    if (plain) cb.current.onOverlay?.(plainOverlay(tone));
+  }, [plain, tone]);
 
   useEffect(() => {
     rendererRef.current?.setFps(fps);
@@ -193,7 +218,12 @@ export function RoomCanvas(props: RoomCanvasProps): React.ReactElement {
   const avatarNode = typeof avatar === 'function' ? avatar(slot) : avatar;
 
   return (
-    <div ref={rootRef} className={className ? `${styles.root} ${className}` : styles.root} style={style}>
+    <div
+      ref={rootRef}
+      className={className ? `${styles.root} ${className}` : styles.root}
+      style={plain ? { background: PLAIN_COLOURS[tone], ...style } : style}
+      data-plain={plain ? tone : undefined}
+    >
       <div className={styles.scene} style={{ left: vp.left, top: vp.top, width: vp.width, height: vp.height }}>
         <canvas ref={backRef} className={styles.layer} />
         {/* 261105: weather and ambience particles, behind her. */}

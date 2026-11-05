@@ -276,6 +276,7 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
           deafened={deafened}
           offer={offer}
           name={room.name}
+          plain={room.state.plain === true}
           press={dockPress}
           onAction={onDockAction}
           onButtons={onDockButtons}

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import {
   LOOK_TOOL,
+  PLAIN_ROOM_LINE,
   devRoomSource,
   lookAtRoom,
   lookResultContent,
@@ -231,5 +232,21 @@ describe('renderRoomImage', () => {
     // Sky through the window: dark at night, light at noon.
     expect(night.sky[2]).toBeLessThan(90);
     expect(day.sky[2]).toBeGreaterThan(200);
+  });
+});
+
+describe('the plain first state (261106)', () => {
+  const plainCtx = (): RoomContext => {
+    const ctx = fixtureRoom();
+    return { ...ctx, state: { ...ctx.state, plain: true } };
+  };
+  it('says there is no room yet, with no time and no em dash', () => {
+    expect(roomPromptLine(plainCtx(), { now: NIGHT, includeTime: true })).toBe(PLAIN_ROOM_LINE);
+    expect(PLAIN_ROOM_LINE).not.toContain('—');
+  });
+  it('look() answers in words with no picture', async () => {
+    const look = await lookAtRoom(plainCtx(), { vision: 'yes', now: NIGHT });
+    expect(look.image).toBeNull();
+    expect(look.text).toMatch(/plain background/);
   });
 });

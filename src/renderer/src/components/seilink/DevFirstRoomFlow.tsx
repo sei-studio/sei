@@ -1,23 +1,30 @@
 /**
- * Dev-only picture of the first-room flow (261106) on a simulated desktop, in
- * a plain browser tab: `?seilinkflow=1&pack=<url of the cozy pack dir>/`.
- * The wallpaper is the real host page (SeilinkHostView over a fake bridge, as
- * in DevHostPreview); generic desktop chrome (a menu bar, icons, a dock bar)
- * sits over it the way the OS draws its own over the wallpaper. Params:
- *   phase=desktop   her blank room, the usual dock
+ * Dev-only picture of the first-room flow (261106; v3: plain spawn and the
+ * guided setup) on a simulated desktop, in a plain browser tab:
+ * `?seilinkflow=1&pack=<url of the cozy pack dir>/` (the other packs are
+ * loaded from beside it). The wallpaper is the real host page
+ * (SeilinkHostView over a fake bridge, as in DevHostPreview); generic desktop
+ * chrome (a menu bar, icons, a dock bar) sits over it the way the OS draws its
+ * own over the wallpaper. She starts on the plain background (black or white
+ * with the page's prefers-color-scheme). Params:
+ *   phase=desktop   her on the plain background, the usual dock
  *   phase=offer     her line and the offer's two buttons (line=<text>)
  *   phase=prompt    the offer in UI copy (her line did not come)
  *   phase=later     the offer, then "Not now" pressed (pressat=<ms>);
  *                   press=decorate|later presses one in any offer phase
  *   phase=editor    the room editor on the desktop stage, covering everything
- *   phase=decorated the editor after decorating (a few items in)
+ *                   (guided: she is still plain)
+ *   phase=decorated the normal editor after decorating (a few items in)
  *   phase=closed    the editor closed: the decorated wallpaper, icons on top
+ *   live=1          the phases follow the presses: "Set up together" opens the
+ *                   guided editor, its Done (or close) goes back to the
+ *                   wallpaper with what was saved
  *   portrait=<url>, name=<name>, lang=<code>, time=day|dusk|night
  * Used by scripts/seilink-first-room-flow.mjs. Never in a packaged build
  * (main.tsx imports it only under import.meta.env.DEV).
  */
-import React, { useEffect, useMemo, useState } from 'react';
-import { blankRoomState, defaultRoomState, type RoomPresetManifest, type RoomState } from '@shared/seilinkRoom';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { defaultRoomState, plainRoomState, ROOM_PRESET_IDS, type RoomPresetManifest, type RoomState } from '@shared/seilinkRoom';
 import type { SeilinkDockAction, SeilinkDockOffer, SeilinkHostBridge } from '@shared/seilinkHost';
 import { parseRoomManifest } from '@shared/seilinkValidate';
 import { desktopLineFace } from '@shared/seilinkExpression';
@@ -42,7 +49,7 @@ function decorated(manifest: RoomPresetManifest): RoomState {
   return s;
 }
 
-function fakeBridge(params: URLSearchParams, manifest: RoomPresetManifest, state: RoomState, phase: Phase): SeilinkHostBridge {
+function fakeBridge(params: URLSearchParams, manifest: RoomPresetManifest, state: RoomState, phase: Phase, onAction?: (a: SeilinkDockAction) => void): SeilinkHostBridge {
   const later = (fn: () => void, ms: number): void => void setTimeout(fn, ms);
   const asks = phase === 'offer' || phase === 'prompt' || phase === 'later';
   let offer: SeilinkDockOffer = 'none';
@@ -107,6 +114,7 @@ function fakeBridge(params: URLSearchParams, manifest: RoomPresetManifest, state
       if (a !== 'decorate' && a !== 'later') return;
       offer = 'none';
       dockState?.({ deafened: false, offer });
+      onAction?.(a);
     },
     onLine: (cb) => {
       const text = params.get('line');
@@ -221,46 +229,76 @@ function DesktopChrome(): React.ReactElement {
 // ── The page ────────────────────────────────────────────────────────────────
 
 interface Loaded {
-  manifest: RoomPresetManifest;
-  resolve: (rel: string) => string;
+  /** The packs found beside `pack` (cozy first). */
+  packs: Array<{ manifest: RoomPresetManifest; resolve: (rel: string) => string }>;
+}
+
+async function loadPack(url: string): Promise<{ manifest: RoomPresetManifest; resolve: (rel: string) => string } | null> {
+  const r = await fetch(`${url}manifest.json`, { cache: 'no-store' }).catch(() => null);
+  if (!r?.ok) return null;
+  const manifest = parseRoomManifest(await r.json());
+  return manifest ? { manifest, resolve: (rel) => (rel.startsWith('_shared/') ? new URL(`../${rel}`, url).href : `${url}${rel}`) } : null;
 }
 
 export function DevFirstRoomFlow(): React.ReactElement {
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
   const raw = params.get('phase') ?? 'desktop';
-  const phase: Phase = (PHASES as readonly string[]).includes(raw) ? (raw as Phase) : 'desktop';
+  const live = params.get('live') === '1';
+  const [phase, setPhase] = useState<Phase>((PHASES as readonly string[]).includes(raw) ? (raw as Phase) : 'desktop');
   const packUrl = (params.get('pack') ?? '').replace(/\/?$/, '/');
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** What the editor saved (live): the wallpaper after it closes. */
+  const [saved, setSaved] = useState<RoomState | null>(null);
 
   useEffect(() => {
     const lang = params.get('lang');
     if (lang) useLangStore.getState().setLang(lang as UiLanguage);
-    void fetch(`${packUrl}manifest.json`, { cache: 'no-store' })
-      .then((r) => r.json())
-      .then((json: unknown) => {
-        const manifest = parseRoomManifest(json);
-        if (!manifest) throw new Error('bad manifest');
-        setLoaded({ manifest, resolve: (rel) => (rel.startsWith('_shared/') ? new URL(`../${rel}`, packUrl).href : `${packUrl}${rel}`) });
+    const first = packUrl.replace(/[^/]+\/$/, '');
+    const others = ROOM_PRESET_IDS.filter((id) => !packUrl.endsWith(`/${id}/`)).map((id) => `${first}${id}/`);
+    void Promise.all([packUrl, ...others].map(loadPack))
+      .then((list) => {
+        const packs = list.filter((x): x is NonNullable<typeof x> => x !== null);
+        if (!packs.length) throw new Error('bad manifest');
+        setLoaded({ packs });
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
   }, [packUrl, params]);
 
+  const main = loaded?.packs[0] ?? null;
   const state = useMemo<RoomState | null>(() => {
-    if (!loaded) return null;
-    const base = phase === 'closed' || phase === 'decorated' ? decorated(loaded.manifest) : blankRoomState();
+    if (!loaded || !main) return null;
     const t = params.get('time');
-    return { ...base, time: t === 'dusk' || t === 'night' ? t : 'day' };
-  }, [loaded, phase, params]);
+    const time = t === 'dusk' || t === 'night' ? t : 'day';
+    if (saved) return saved;
+    const base = phase === 'closed' || phase === 'decorated' ? decorated(main.manifest) : plainRoomState(main.manifest);
+    return { ...base, time };
+    // The phase only picks the starting room; a live run keeps its own.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, main, params, saved, live ? null : phase]);
 
-  const bridge = useMemo(() => (loaded && state ? fakeBridge(params, loaded.manifest, state, phase) : null), [loaded, state, params, phase]);
+  const onDock = useCallback(
+    (a: SeilinkDockAction) => {
+      if (live && a === 'decorate') window.setTimeout(() => setPhase('editor'), 700);
+    },
+    [live],
+  );
+  const wallPack = useMemo(() => (loaded && state ? (loaded.packs.find((p) => p.manifest.id === state.preset) ?? main) : null), [loaded, state, main]);
+  const bridge = useMemo(
+    () => (wallPack && state ? fakeBridge(params, wallPack.manifest, state, phase, onDock) : null),
+    // A new bridge per wallpaper visit (the host page mounts once per bridge).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [wallPack, state, params, phase === 'editor' || phase === 'decorated' ? 'editor' : phase, onDock],
+  );
   const source = useMemo<RoomEditorSource | null>(
-    () => (loaded && state ? memoryRoomEditorSource([{ id: loaded.manifest.id, manifest: loaded.manifest, resolve: loaded.resolve, rev: 1 }], state) : null),
-    [loaded, state],
+    () => (loaded && state ? memoryRoomEditorSource(loaded.packs.map((p) => ({ id: p.manifest.id, manifest: p.manifest, resolve: p.resolve, rev: 1 })), state) : null),
+    // One source per editor visit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [loaded, phase === 'editor' || phase === 'decorated'],
   );
 
   if (error) return <div style={{ padding: 24, color: '#fff', background: '#111' }}>first-room flow: {error}</div>;
-  if (!loaded || !bridge || !source) return <div style={{ height: '100vh', background: '#111' }} />;
+  if (!loaded || !bridge || !source || !wallPack) return <div style={{ height: '100vh', background: '#111' }} />;
 
   // On the desktop stage the editor covers the display: the menu bar, the icons and the dock bar are under it.
   if (phase === 'editor' || phase === 'decorated') {
@@ -270,15 +308,21 @@ export function DevFirstRoomFlow(): React.ReactElement {
         characterId="dev-preview"
         portrait={params.get('portrait')}
         name={params.get('name') ?? 'Sui'}
-        onClose={() => {}}
+        onClose={() => {
+          if (!live) return;
+          void source.load().then((s) => {
+            setSaved(s);
+            setPhase('closed');
+          });
+        }}
         fps={30}
-        initial={{ panel: phase === 'decorated' ? 'items' : null, selected: null }}
+        initial={phase === 'decorated' ? { panel: 'items', selected: null } : undefined}
       />
     );
   }
   return (
     <>
-      <SeilinkHostView bridge={bridge} resolveFor={() => loaded.resolve} />
+      <SeilinkHostView key={`${phase}:${state?.preset}`} bridge={bridge} resolveFor={() => wallPack.resolve} />
       <DesktopChrome />
     </>
   );

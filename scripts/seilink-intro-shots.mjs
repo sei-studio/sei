@@ -1,15 +1,17 @@
 #!/usr/bin/env node
 /**
- * Review videos of the SeiLink first-link intro (261105, T337; 261106 soft
- * light styles), rendered
- * frame by frame (no dropped frames): one mp4 per treatment plus the reduced
- * motion version, and a capture of the guide's SeiLink tour.
+ * Review videos of the SeiLink first-link intro (261105, T337; 261106 space
+ * aurora moods), rendered frame by frame (no dropped frames): one mp4 per
+ * mood ending on the black plain background (OS dark mode), one ending on the
+ * white one (light mode), the reduced motion version, and a capture of the
+ * guide's SeiLink tour.
  * Headless, no Electron.
  *
  *   node scripts/seilink-intro-shots.mjs --out <dir>
  *        [--packs resources/seilink-packs] [--preset cozy]
  *        [--portrait <png>] [--name Lyra] [--faces <dir of facepacks> --face <id>]
- *        [--only aurora,bloom,tide,reduced,tour] [--fps 30] [--lang <code>]
+ *        [--only accretion,nebula,eclipse,nebula-light,reduced,tour] [--fps 30] [--lang <code>]
+ *        [--stills 0,2500,5000,...]   only these frames (ms) as PNGs, no video
  *
  * Intro videos open `?seilinkintro=1&manual=1` (DevIntroPreview) and call
  * window.__firstLinkSeek(ms) for every frame, then ffmpeg encodes H.264 with
@@ -48,12 +50,16 @@ const SIZE = { width: 1920, height: 1080 };
 
 /** Matches introTimeline.ts (FULL_TIMELINE.end, CALM_TIMELINE.end) plus a short tail. */
 const VIDEOS = {
-  aurora: { q: 'style=aurora&hold=1', ms: 11_200 + 300 },
-  bloom: { q: 'style=bloom&hold=1', ms: 11_200 + 300 },
-  tide: { q: 'style=tide&hold=1', ms: 11_200 + 300 },
-  reduced: { q: 'style=aurora&reduced=1&hold=1', ms: 8_300 + 300 },
+  accretion: { q: 'mood=accretion&hold=1', ms: 11_200 + 300, scheme: 'dark' },
+  nebula: { q: 'mood=nebula&hold=1', ms: 11_200 + 300, scheme: 'dark' },
+  eclipse: { q: 'mood=eclipse&hold=1', ms: 11_200 + 300, scheme: 'dark' },
+  'accretion-light': { q: 'mood=accretion&hold=1', ms: 11_200 + 300, scheme: 'light' },
+  'nebula-light': { q: 'mood=nebula&hold=1', ms: 11_200 + 300, scheme: 'light' },
+  'eclipse-light': { q: 'mood=eclipse&hold=1', ms: 11_200 + 300, scheme: 'light' },
+  reduced: { q: 'reduced=1&hold=1', ms: 8_300 + 300, scheme: 'dark' },
 };
-const only = arg('only', [...Object.keys(VIDEOS), 'tour'].join(',')).split(',');
+const STILLS = arg('stills', null)?.split(',').map(Number) ?? null;
+const only = arg('only', 'accretion,nebula,eclipse,nebula-light,reduced,tour').split(',');
 
 function staticServer(root) {
   return new Promise((resolve) => {
@@ -94,7 +100,7 @@ function listen(page, label) {
 }
 
 async function renderVideo(browser, viteUrl, base, name, spec) {
-  const page = await browser.newPage({ viewport: SIZE, deviceScaleFactor: 1 });
+  const page = await browser.newPage({ viewport: SIZE, deviceScaleFactor: 1, colorScheme: spec.scheme ?? 'dark' });
   listen(page, name);
   await page.goto(`${viteUrl}/?seilinkintro=1&manual=1&${base}&${spec.q}`, { waitUntil: 'load' });
   await page.waitForSelector('[data-room-ready="1"]', { timeout: 60_000 }).catch(() => console.log(`  ${name}: room never reported ready`));
@@ -104,6 +110,16 @@ async function renderVideo(browser, viteUrl, base, name, spec) {
   const dir = path.join(OUT, `${name}-frames`);
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(dir, { recursive: true });
+  if (STILLS) {
+    for (const ms of STILLS) {
+      await page.evaluate((t) => window.__firstLinkSeek(t), ms);
+      const file = path.join(OUT, `${name}-${String(ms).padStart(5, '0')}.png`);
+      await page.screenshot({ path: file });
+      console.log(file);
+    }
+    await page.close();
+    return dir;
+  }
   const n = Math.ceil((spec.ms / 1000) * FPS);
   const t0 = Date.now();
   for (let i = 0; i < n; i++) {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { blankRoomState, defaultRoomState, type RoomState } from '../../shared/seilinkRoom';
+import { blankRoomState, defaultRoomState, plainRoomState, withoutPlain, type RoomState } from '../../shared/seilinkRoom';
 
 const m = vi.hoisted(() => ({
   events: [] as Array<{ event: string; props: Record<string, unknown> }>,
@@ -39,6 +39,7 @@ vi.mock('./roomStore', () => ({
 
 import {
   DECORATE_OFFER_NOTE,
+  DECORATE_OFFER_NOTE_PLAIN,
   OFFER_LINE_WAIT_MS,
   OFFER_TTL_MS,
   __resetDecorateOfferForTest,
@@ -160,5 +161,21 @@ describe('decorate-together offer', () => {
     closeDecorateOffer();
     await flush();
     expect(offerEvents().map((e) => e.action)).toEqual(['shown', 'closed']);
+  });
+  it('on the plain first state she asks to set the room up (261106)', async () => {
+    m.rooms.set('sui', plainRoomState({ id: 'cozy', slots: {} }));
+    expect(await offerDecorateTogether('sui', 'move_in')).toEqual({ shown: true, line: 'her' });
+    expect(speak).toHaveBeenCalledWith('sui', DECORATE_OFFER_NOTE_PLAIN);
+    expect(DECORATE_OFFER_NOTE_PLAIN).not.toContain('—');
+  });
+
+  it('closes once the plain room is set up some other way', async () => {
+    const plain = plainRoomState({ id: 'cozy', slots: {} });
+    m.rooms.set('sui', plain);
+    await offerDecorateTogether('sui', 'intro');
+    m.rooms.set('sui', { ...withoutPlain(plain), items: [{ id: 'plant', x: 0.5, y: 0.8 } as never] });
+    for (const fn of m.roomListeners) fn('sui');
+    await flush();
+    expect(m.offer.get('sui')).toBe('none');
   });
 });

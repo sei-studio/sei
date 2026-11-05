@@ -119,12 +119,12 @@ describe('first-link intro, play once', () => {
     expect(() => introPref.markIntroSeen()).not.toThrow();
   });
 
-  it('ships the default style, with a dev override that must be a real style', () => {
-    expect(introPref.introStyle()).toBe(introPref.DEFAULT_INTRO_STYLE);
-    localStorage.setItem('sei.seilinkIntroStyle', 'tide');
-    expect(introPref.introStyle()).toBe('tide');
-    localStorage.setItem('sei.seilinkIntroStyle', 'fireworks');
-    expect(introPref.introStyle()).toBe(introPref.DEFAULT_INTRO_STYLE);
+  it('ships the default mood, with a dev override that must be a real mood', () => {
+    expect(introPref.introMood()).toBe(introPref.DEFAULT_INTRO_MOOD);
+    localStorage.setItem('sei.seilinkIntroMood', 'accretion');
+    expect(introPref.introMood()).toBe('accretion');
+    localStorage.setItem('sei.seilinkIntroMood', 'tide');
+    expect(introPref.introMood()).toBe(introPref.DEFAULT_INTRO_MOOD);
   });
 });
 

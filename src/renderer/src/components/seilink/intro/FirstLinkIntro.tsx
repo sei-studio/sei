@@ -5,7 +5,9 @@
  * intro" in the companion menu.
  *
  * It loads her room (the same state the wallpaper will draw), plays
- * FirstLinkIntroView with the treatment from introStyle(), honours reduced
+ * FirstLinkIntroView in the mood from introMood() (the space aurora's
+ * palette), ending on what the wallpaper will draw (introEndFor: the plain
+ * black or white background while she has no room yet), honours reduced
  * motion, and records what happened (seilink_intro: shown, then completed /
  * skipped / aborted, with the beat, a duration bucket and the host's state).
  * The intro counts as seen once it ended (completed or skipped) on a move-in
@@ -13,9 +15,9 @@
  *
  * 261106 (first-link flow): a request with `stage` (the first link) plays on
  * the desktop stage (main/seilink/desktopStage.ts): the window covers the
- * primary display, the intro ends on her room full screen (holdEnd), and once
+ * primary display, the intro ends on her plain background (or her room) full screen (holdEnd), and once
  * she is really there the window steps aside, so the wallpaper (the same
- * room) is what stays, and the dock asks about decorating together. A start
+ * picture) is what stays, and the dock asks about setting up her room together. A start
  * that failed comes back to the app window and the move-in sheet's error. A
  * refused stage plays in the window as before and still steps aside at the
  * end. The view stays mounted until the window has stepped aside, so nothing
@@ -27,7 +29,8 @@ import { SEILINK_INTRO_EVENT, introDurationBucket, type IntroHost } from '@share
 import { sei } from '../../../lib/ipcClient';
 import { useDataStore } from '../../../lib/stores/useDataStore';
 import type { SeilinkIntroRequest } from '../../../lib/stores/useSeilinkStore';
-import { introStyle, markIntroSeen } from '../../../lib/seilink/introPref';
+import { introMood, markIntroSeen } from '../../../lib/seilink/introPref';
+import { introEndFor } from '../../../lib/seilink/plainTone';
 import { revealAndOffer } from '../../../lib/seilink/seilinkFlow';
 import { roomAvatarUse } from '../RoomAvatar';
 import { FirstLinkIntroView, type IntroFinish, type IntroRoom } from './FirstLinkIntroView';
@@ -57,16 +60,26 @@ export default function FirstLinkIntro(props: { request: SeilinkIntroRequest; on
   const [room, setRoom] = useState<IntroRoom | null | undefined>(undefined);
   const [use, setUse] = useState<'auto' | 'sei' | 'imported'>('auto');
   const [answer, setAnswer] = useState<boolean | null>(null);
-  const style = useMemo(() => introStyle(), []);
+  const mood = useMemo(() => introMood(), []);
   const reduced = useMemo(() => prefersReducedMotion(), []);
   const answerRef = useRef<boolean | null>(null);
   // The desktop stage: null until main answers (or there is none to ask for).
   const [staged, setStaged] = useState<boolean | null>(request.stage ? null : false);
   const stagedRef = useRef(false);
   const doneRef = useRef(false);
+  // What it ends on is fixed once her room has loaded (a theme change mid-intro does not swap it).
+  const endOn = useMemo(() => (room === undefined ? null : introEndFor(room?.state ?? null)), [room]);
   const base = useMemo(
-    () => ({ character_id: request.characterId, trigger: request.trigger, entry: request.entry, style, reduced_motion: reduced }),
-    [request, style, reduced],
+    () => ({
+      character_id: request.characterId,
+      trigger: request.trigger,
+      entry: request.entry,
+      style: 'aurora',
+      mood,
+      end_on: endOn ?? 'plain_dark',
+      reduced_motion: reduced,
+    }),
+    [request, mood, reduced, endOn],
   );
 
   useEffect(() => {
@@ -148,7 +161,7 @@ export default function FirstLinkIntro(props: { request: SeilinkIntroRequest; on
     if (shown) track({ ...base, action: 'shown' });
   }, [shown, base]);
 
-  if (room === undefined) return null;
+  if (room === undefined || endOn === null) return null;
 
   const onFinish = (end: IntroFinish): void => {
     const host: IntroHost = request.trigger === 'replay' ? 'none' : answerRef.current === null ? 'pending' : answerRef.current ? 'ok' : 'failed';
@@ -175,7 +188,8 @@ export default function FirstLinkIntro(props: { request: SeilinkIntroRequest; on
 
   return (
     <FirstLinkIntroView
-      style={style}
+      mood={mood}
+      end={endOn}
       reduced={reduced}
       characterId={request.characterId}
       name={character?.name ?? ''}

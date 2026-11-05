@@ -7,6 +7,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   ENTRY_SOURCES,
+  SEILINK_SETUP_EVENT,
+  SEILINK_SETUP_STEP_EVENT,
+  SETUP_OPENED_FROM,
   SEILINK_ENTRY_EVENT,
   SEILINK_INTRO_EVENT,
   SEILINK_TOUR_EVENT,
@@ -46,7 +49,9 @@ describe('seilink_intro', () => {
       character_id: CID,
       action: 'skipped',
       trigger: 'first_link',
-      style: 'bloom',
+      style: 'aurora',
+      mood: 'nebula',
+      end_on: 'plain_light',
       reduced_motion: true,
       entry: 'tour',
       beat: 'link',
@@ -59,7 +64,9 @@ describe('seilink_intro', () => {
       character_id: CID,
       action: 'skipped',
       trigger: 'first_link',
-      style: 'bloom',
+      style: 'aurora',
+      mood: 'nebula',
+      end_on: 'plain_light',
       reduced_motion: true,
       entry: 'tour',
       beat: 'link',
@@ -123,5 +130,64 @@ describe('how the person entered, on the older SeiLink events', () => {
   it('the editor knows the new entry points', () => {
     expect(EDITOR_OPENED_FROM).toEqual(expect.arrayContaining(['button', 'tour', 'gear', 'dock']));
     expect(sanitizeSeilinkTrack('seilink_editor_error', { kind: 'load_failed', opened_from: 'tour' }).opened_from).toBe('tour');
+  });
+});
+
+describe('the guided setup (261106)', () => {
+  it('seilink_setup keeps the closed shape', () => {
+    expect(isSeilinkIntroEvent(SEILINK_SETUP_EVENT)).toBe(true);
+    const out = sanitizeSeilinkIntroTrack(SEILINK_SETUP_EVENT, {
+      character_id: CID,
+      action: 'abandoned',
+      step: 'furniture',
+      surface: 'desktop',
+      plain: false,
+      steps_completed: 2,
+      steps_skipped: 1,
+      steps_total: 4,
+      ms_open: 42_000,
+      opened_from: 'offer',
+      name: 'Sui',
+    });
+    expect(out).toEqual({
+      character_id: CID,
+      action: 'abandoned',
+      step: 'furniture',
+      surface: 'desktop',
+      plain: false,
+      steps_completed: 2,
+      steps_skipped: 1,
+      steps_total: 4,
+      ms_open: 42_000,
+      opened_from: 'offer',
+    });
+  });
+
+  it('seilink_setup falls back on junk', () => {
+    const out = sanitizeSeilinkIntroTrack(SEILINK_SETUP_EVENT, { action: 'nope', step: 'attic', plain: 'yes', steps_total: -1, opened_from: 'email' });
+    expect(out.action).toBe('started');
+    expect(out.plain).toBe(false);
+    expect(out.step ?? null).toBeNull();
+    expect(out).not.toHaveProperty('steps_total');
+    expect(out).not.toHaveProperty('opened_from');
+  });
+
+  it('seilink_setup_step keeps the closed shape', () => {
+    expect(isSeilinkIntroEvent(SEILINK_SETUP_STEP_EVENT)).toBe(true);
+    expect(sanitizeSeilinkIntroTrack(SEILINK_SETUP_STEP_EVENT, { character_id: CID, step: 'colours', action: 'skipped', resumed: true, changed: false, index: 1, hex: '#fff' })).toEqual({
+      character_id: CID,
+      step: 'colours',
+      action: 'skipped',
+      resumed: true,
+      changed: false,
+      index: 1,
+    });
+    const junk = sanitizeSeilinkIntroTrack(SEILINK_SETUP_STEP_EVENT, { step: 'x', action: 'y', changed: 'no' });
+    expect(junk).toMatchObject({ step: 'room', action: 'shown', resumed: false });
+    expect(junk).not.toHaveProperty('changed');
+  });
+
+  it('opened_from matches the editor session list', () => {
+    expect([...SETUP_OPENED_FROM]).toEqual([...EDITOR_OPENED_FROM]);
   });
 });

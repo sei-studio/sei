@@ -164,7 +164,7 @@ const same = (a: unknown, b: unknown): boolean => JSON.stringify(a ?? null) === 
  */
 export function classifyEdit(prev: RoomState, next: RoomState, lightSlots?: ReadonlySet<RoomSlotId>): EditType[] {
   const out = new Set<EditType>();
-  if (prev.preset !== next.preset) return ['preset_change'];
+  if (prev.preset !== next.preset || (prev.plain === true) !== (next.plain === true)) return ['preset_change'];
   if (prev.time !== next.time) out.add('time_of_day');
   if (!same(prev.avatar, next.avatar)) out.add('avatar_change');
   const slots = new Set([...Object.keys(prev.slots), ...Object.keys(next.slots)]) as Set<RoomSlotId>;
@@ -474,6 +474,8 @@ function moveInProps(p: Record<string, unknown>): Record<string, Scalar> {
   };
   // 261106: the first room starts blank (decorated together afterwards).
   if (p.blank_room === true) out.blank_room = true;
+  // 261106 (first-link v3): it now starts on a plain background (no room), set up together step by step.
+  if (p.plain_room === true) out.plain_room = true;
   const packs = count(p.packs_available);
   if (packs !== undefined) out.packs_available = packs;
   const ms = count(p.ms_open);

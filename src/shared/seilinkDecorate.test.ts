@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { defaultRoomState, type RoomPresetManifest, type RoomState } from './seilinkRoom';
+import { defaultRoomState, plainRoomState, type RoomPresetManifest, type RoomState } from './seilinkRoom';
 import { parseRoomManifest, sanitizeRoomState } from './seilinkValidate';
 import { addItem, commitEdit, createHistory, moveItem, setSlotTint, slotChoice, swatchesFor, undo } from './seilinkEdit';
 import {
@@ -16,6 +16,7 @@ import {
   paletteWords,
   resolveChange,
   resolveDecorate,
+  roomNowLine,
 } from './seilinkDecorate';
 
 function pack(id: string): RoomPresetManifest {
@@ -216,5 +217,33 @@ describe('tool text', () => {
     expect(t.name).toBe('decorate');
     expect((t.input_schema.properties as { changes: { maxItems: number } }).changes.maxItems).toBe(DECORATE_MAX_CHANGES);
     expect(t.description).not.toMatch(/—|friend/);
+  });
+});
+
+describe('the plain first state (261106, first-link v3)', () => {
+  it('her first change sets the bare room up, so it shows', () => {
+    const plain = sanitizeRoomState(cozy, JSON.parse(JSON.stringify(plainRoomState(cozy))));
+    expect(plain.plain).toBe(true);
+    const r = resolveDecorate(cozy, plain, { changes: [{ do: 'add', target: 'floor cushion' }] });
+    expect(r.ops.length).toBe(1);
+    expect(r.state.plain).toBeUndefined();
+    expect(r.state.items.at(-1)).toMatchObject({ id: 'cushion' });
+    expect(r.done.length).toBeGreaterThan(0);
+    // The ops replay the same way in the editor and the store.
+    expect(applyRoomOps(cozy, plain, r.ops).state).toEqual(r.state);
+  });
+  it('a refused change keeps her plain', () => {
+    const plain = plainRoomState(cozy);
+    const r = resolveDecorate(cozy, plain, { changes: [{ do: 'add', target: 'spaceship' }] });
+    expect(r.ops).toEqual([]);
+    expect(r.state).toBe(plain);
+  });
+  it('a change that does nothing keeps her plain', () => {
+    const plain = plainRoomState(cozy);
+    expect(applyRoomOps(cozy, plain, []).state.plain).toBe(true);
+  });
+  it('says there is no room yet', () => {
+    expect(roomNowLine(cozy, plainRoomState(cozy))).toMatch(/no room yet/);
+    expect(roomNowLine(cozy, room())).not.toMatch(/no room yet/);
   });
 });

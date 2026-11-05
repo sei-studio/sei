@@ -277,4 +277,14 @@ describe('261106 first-link flow fields', () => {
     expect(sanitizeSeilinkTrack('seilink_movein_sheet', { action: 'confirmed', reason: 'first_room', blank_room: true })).toMatchObject({ blank_room: true });
     expect(sanitizeSeilinkTrack('seilink_movein_sheet', { action: 'confirmed', reason: 'first_room', blank_room: 'yes' })).not.toHaveProperty('blank_room');
   });
+
+  it('the move-in sheet marks a plain first state (261106)', () => {
+    expect(sanitizeSeilinkTrack('seilink_movein_sheet', { action: 'confirmed', reason: 'first_room', plain_room: true })).toMatchObject({ plain_room: true });
+    expect(sanitizeSeilinkTrack('seilink_movein_sheet', { action: 'confirmed', reason: 'first_room', plain_room: 1 })).not.toHaveProperty('plain_room');
+  });
+
+  it('setting the plain room up counts as a room change', () => {
+    const plain = { ...defaultRoomState('cozy'), plain: true as const };
+    expect(classifyEdit(plain, defaultRoomState('cozy'))).toEqual(['preset_change']);
+  });
 });
