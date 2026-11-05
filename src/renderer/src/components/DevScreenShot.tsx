@@ -13,6 +13,9 @@
  *     &seilink=on|unsupported       SeiLink availability (261104; no setting since 261105)
  *     movein: &pack=<url of a pack dir> (its thumbnail), &swap=1 (Lyra lives there now)
  *     &theme=light|dark  &lang=zh  &backdrop=1 (call: the character-art view)
+ *     &tour=1[&audience=new]  the guide's SeiLink tour, live from its offer on
+ *                    Home (261105): the screen follows the tour's navigation,
+ *                    and its end opens the move-in sheet (&pack= as movein)
  *
  * Other surfaces already have harnesses: ?dashshot=creditwall&part=modal|credits,
  * ?dashshot=signinmodal, ?dashshot=authchoice, ?dashshot=onboard.
@@ -39,6 +42,8 @@ import { TopUpModal } from './TopUpModal';
 import { FactoryResetConfirmModal } from './FactoryResetConfirmModal';
 import { DeleteAccountModal } from './DeleteAccountModal';
 import { MoveInSheetView } from './seilink/MoveInSheet';
+import { TutorialOverlay } from './tutorial/TutorialOverlay';
+import { useTutorialStore } from '../lib/stores/useTutorialStore';
 import { parseRoomManifest } from '@shared/seilinkValidate';
 import type { SeilinkPack } from '@shared/seilinkPack';
 import type { SeilinkAvailability } from '@shared/seilinkHost';
@@ -63,6 +68,7 @@ const params = new URLSearchParams(window.location.search);
 const screen = (params.get('screen') ?? 'home') as Screen;
 const modal = params.get('modal');
 const seilinkShot = params.get('seilink');
+const tourShot = params.get('tour') === '1';
 const seilinkAvailability: SeilinkAvailability | null =
   seilinkShot === 'on'
     ? { supported: true, enabled: true, dev: false }
@@ -179,6 +185,10 @@ function seed(): void {
   if (screen === 'chat') nav({ kind: 'chat', characterId: SUI });
   if (screen === 'call') nav({ kind: 'voice-call', characterId: SUI });
   if (screen === 'settings') nav({ kind: 'settings' });
+  if (tourShot) {
+    nav({ kind: 'home' });
+    useTutorialStore.getState().startSeilink(SUI, params.get('audience') === 'new' ? 'new' : 'existing', 1);
+  }
 }
 
 seed();
@@ -246,8 +256,11 @@ function Modal(): React.ReactElement | null {
 }
 
 export function DevScreenShot(): React.ReactElement {
+  const view = useUiStore((s) => s.view);
+  const flow = useSeilinkStore((s) => s.flow);
+  const shown: Screen = tourShot ? (view.kind === 'chat' ? 'chat' : 'home') : screen;
   const body = (() => {
-    switch (screen) {
+    switch (shown) {
       case 'character':
       case 'edit':
         return <CharacterPage id={SUI} />;
@@ -289,6 +302,8 @@ export function DevScreenShot(): React.ReactElement {
       </MacosWindow>
       {screen === 'edit' ? <EditCharacterModal character={sui} onClose={noop} initialSection={(['appearance', 'voice', 'persona', 'games'] as const).find((x) => x === params.get('section')) ?? 'basic'} /> : null}
       <Modal />
+      {tourShot && flow?.kind === 'sheet' ? <MoveInShot /> : null}
+      {tourShot ? <TutorialOverlay /> : null}
     </div>
   );
 }
