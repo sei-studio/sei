@@ -48,4 +48,10 @@ describe('renderCore', () => {
     expect(renderCore({})).toContain('You are this character. Stay this person.')
     expect(renderCore(null)).toContain('# CORE')
   })
+
+  // 261105 (pass 43): being thanked is one of the moments she reacts to in
+  // character; without it Sui's thanks replies turned into invented debts.
+  it('names thanks among the moments to react to in character', () => {
+    expect(renderCore({ name: 'Pip', expanded: OLD_FORMAT })).toContain('praise or thanks, an insult')
+  })
 })
