@@ -62,8 +62,8 @@ interface KindDef {
 
 export const KIND_DEFS: Readonly<Record<RoomParticleKind, KindDef>> = {
   rain: { per1M: 90, min: 30, max: 140, colour: '#d4e0ee' },
-  snow: { per1M: 40, min: 20, max: 80, colour: '#ffffff' },
-  petals: { per1M: 14, min: 8, max: 30, colour: '#f6b6c8' },
+  snow: { per1M: 70, min: 24, max: 120, colour: '#ffffff' },
+  petals: { per1M: 32, min: 12, max: 48, colour: '#f6b6c8' },
   fireflies: { per1M: 9, min: 8, max: 26, colour: '#e4f57a' },
   embers: { per1M: 40, min: 10, max: 22, colour: '#ffad4a' },
   dust: { per1M: 12, min: 10, max: 30, colour: '#fff3d6' },
@@ -143,13 +143,13 @@ function spawn(field: ParticleField, p: Particle, fresh: boolean): void {
     case 'snow':
       p.vy = (0.035 + r() * 0.05) * p.depth * scale;
       p.vx = 0.02 * field.wind * scale;
-      p.size = (2.5 + r() * 4) * p.depth;
+      p.size = (3 + r() * 4.5) * p.depth;
       p.y = fresh ? ay + r() * ah : ay - p.size * 2;
       break;
     case 'petals':
       p.vy = (0.045 + r() * 0.04) * p.depth * scale;
       p.vx = (0.03 + r() * 0.03) * field.wind * scale;
-      p.size = (7 + r() * 6) * p.depth;
+      p.size = (9 + r() * 7) * p.depth;
       p.y = fresh ? ay + r() * ah : ay - p.size * 2;
       if (!fresh && field.wind > 0.2 && r() < 0.5) {
         // On the wind they also blow in from the side.

@@ -728,6 +728,8 @@
 
 .patternName {
   max-width: 100%;
+  /* A long word hyphenates where the language allows; anywhere is the last resort. */
+  hyphens: auto;
   overflow-wrap: anywhere;
   text-align: center;
   line-height: 1.15;

@@ -179,11 +179,14 @@ const SHOTS = {
   'cat-rain-dusk-zoom': ['time=dusk', null, [1340, 0, 1220, 1320]],
   'cat-rain-curtain-zoom': ['time=dusk&pattern.curtains=gingham', null, [2000, 200, 560, 700]],
   'cat-snow-night': ['time=night'],
+  'cat-snow-zoom': ['time=night', null, [1440, 120, 760, 900]],
   'cat-petals-day': ['time=day'],
+  'cat-petals-zoom': ['time=day', null, [1440, 120, 760, 900]],
   'cat-fireflies-night': ['time=night'],
   'cat-fairy-cycle': ['time=night&cycle.lights=1&panel=lights'],
   'cat-fairy-zoom': ['time=night&cycle.lights=1', null, [0, 40, 1120, 360]],
   'cat-lang-ja': ['time=day&panel=bed&lang=ja&pattern.bed=plaid'],
+  'cat-lang-ru': ['time=day&panel=bed&lang=ru&pattern.bed=plaid'],
   'bed-succulent': ['time=day&items=1', async (page) => dragRoom(page, [390, 430], [330, 965]), [220, 880, 520, 170]],
 };
 
@@ -410,7 +413,8 @@ async function main() {
     const viteUrl = vite.resolvedUrls.local[0].replace(/\/$/, '');
     const packQ = presets.map((p) => `pack=${encodeURIComponent(`http://127.0.0.1:${packs.address().port}/${p}/`)}`).join('&');
     const base = `${viteUrl}/?seilink=1&editor=1&${packQ}`;
-    browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH ?? '/usr/bin/google-chrome' });
+    // CHROME_ARGS: extra flags, e.g. --disable-accelerated-2d-canvas to time CPU raster.
+    browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH ?? '/usr/bin/google-chrome', args: (process.env.CHROME_ARGS ?? '').split(' ').filter(Boolean) });
     if (process.argv.includes('--fx')) {
       // The canvas preview takes one pack (the first preset).
       await fx(browser, `${viteUrl}/?seilink=1&pack=${encodeURIComponent(`http://127.0.0.1:${packs.address().port}/${presets[0]}/`)}`, presets[0]);

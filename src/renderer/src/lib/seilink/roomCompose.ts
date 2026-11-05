@@ -391,27 +391,60 @@ function clipTo(ctx: AnyContext2D, polys: readonly RoomPolygon[]): void {
 
 let glowScratch: { c: AnyCanvas; ctx: AnyContext2D } | null = null;
 
-/** A grey glow multiplied by a colour, at its own trimmed size (cached per glow + colour for still lights). */
-function colouredGlow(glow: TrimmedGlow, colour: string): AnyCanvas | null {
-  if (!glow.bitmap) return null;
+const litGlows = new Map<string, AnyCanvas>();
+// Keyed by the glow's bitmap: a pack reload makes new bitmaps, so new keys (the LRU drops the old).
+const litIds = new WeakMap<ImageBitmap, number>();
+let nextLitId = 1;
+const LIT_MAX = 16;
+
+/**
+ * A grey glow multiplied by a colour, at its own trimmed size. A light that
+ * keeps its colour gets its own canvas, cached per glow + colour (a canvas
+ * that did not change this frame is a cheap blit; recolouring one every
+ * frame is not, on a software GPU). A cycling light (`cached` false) is
+ * recoloured into one shared scratch each frame.
+ */
+function colouredGlow(glow: TrimmedGlow, colour: string, cached: boolean): AnyCanvas | null {
+  const bitmap = glow.bitmap;
+  if (!bitmap) return null;
   const { w, h } = glow;
-  if (!glowScratch || glowScratch.c.width < w || glowScratch.c.height < h) {
-    const c = makeCanvas(Math.max(w, glowScratch?.c.width ?? 0), Math.max(h, glowScratch?.c.height ?? 0));
-    glowScratch = { c, ctx: ctx2d(c) };
+  let key = '';
+  if (cached) {
+    let id = litIds.get(bitmap);
+    if (!id) litIds.set(bitmap, (id = nextLitId++));
+    key = `${id}|${colour}`;
+    const hit = litGlows.get(key);
+    if (hit) return hit;
   }
-  const sc = glowScratch.ctx;
+  let c: AnyCanvas;
+  let sc: AnyContext2D;
+  if (cached) {
+    c = makeCanvas(w, h);
+    sc = ctx2d(c);
+  } else {
+    if (!glowScratch || glowScratch.c.width < w || glowScratch.c.height < h) {
+      const nc = makeCanvas(Math.max(w, glowScratch?.c.width ?? 0), Math.max(h, glowScratch?.c.height ?? 0));
+      glowScratch = { c: nc, ctx: ctx2d(nc) };
+    }
+    c = glowScratch.c;
+    sc = glowScratch.ctx;
+  }
   sc.save();
   sc.setTransform(1, 0, 0, 1, 0, 0);
   sc.globalCompositeOperation = 'source-over';
   sc.clearRect(0, 0, w, h);
-  sc.drawImage(glow.bitmap, 0, 0);
+  sc.drawImage(bitmap, 0, 0);
   sc.globalCompositeOperation = 'multiply';
   sc.fillStyle = colour;
   sc.fillRect(0, 0, w, h);
   sc.globalCompositeOperation = 'destination-in';
-  sc.drawImage(glow.bitmap, 0, 0);
+  sc.drawImage(bitmap, 0, 0);
   sc.restore();
-  return glowScratch.c;
+  if (cached) {
+    litGlows.set(key, c);
+    while (litGlows.size > LIT_MAX) litGlows.delete(litGlows.keys().next().value as string);
+  }
+  return c;
 }
 
 /**
@@ -441,7 +474,7 @@ export function drawRoomGlows(
     ctx.globalAlpha = Math.min(1, a);
     const tint = colour(g);
     const grey = tint ? assets.glowsGrey?.get(g.src) : undefined;
-    const lit = grey && tint ? colouredGlow(grey, tint) : null;
+    const lit = grey && tint ? colouredGlow(grey, tint, !g.cycle) : null;
     const dest: RoomBox = [gx, y + glow.y * sy, glow.w * sx, glow.h * sy];
     if (lit && grey) {
       if (flip) {

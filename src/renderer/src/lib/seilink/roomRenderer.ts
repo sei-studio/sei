@@ -62,7 +62,7 @@ import { createField, fitCounts, particleCount, particleDt, settle, showsStill, 
 import type { RoomUrlResolver } from '@shared/seilinkPack';
 import { drawRoomGlows, drawRoomLayers, loadPlanAssets, tintRegion, type RoomAssetError, type RoomAssets } from './roomCompose';
 import { ctx2d, makeCanvas, type AnyCanvas } from './roomImages';
-import { buildGlassMask, drawParticleLayers } from './roomParticles';
+import { buildGlassMask, drawParticleLayers, tightenGlass } from './roomParticles';
 
 export interface RoomRendererCanvases {
   back: HTMLCanvasElement;
@@ -417,10 +417,10 @@ export class RoomRenderer {
       const shell = back.find((l): l is SlotLayer => l.kind === 'slot' && l.slot === 'shell');
       const glassImg = shell?.frame.glass ? this.assets.masks.get(shell.frame.glass) : undefined;
       const above = at >= 0 ? back.slice(at + 1) : [];
-      glass = {
+      glass = tightenGlass(
         box,
-        mask: buildGlassMask(box, res, (ctx) => drawRoomLayers(ctx, above, manifest.canvas, this.assets, res), glassImg && shell ? { image: glassImg, rect: shell.box ?? [0, 0, cw, ch] } : null),
-      };
+        buildGlassMask(box, res, (ctx) => drawRoomLayers(ctx, above, manifest.canvas, this.assets, res), glassImg && shell ? { image: glassImg, rect: shell.box ?? [0, 0, cw, ch] } : null),
+      );
     }
 
     return {
@@ -446,7 +446,11 @@ export class RoomRenderer {
       glowStill = makeCanvas(w, h);
       const gctx = ctx2d(glowStill);
       gctx.setTransform(res, 0, 0, res, 0, 0);
+      // Glows add up by screen, as the layer meets the scene: a glow file's
+      // opaque black must not cover the glows under it.
+      gctx.globalCompositeOperation = 'screen';
       drawRoomGlows(gctx, still, canvas, this.assets, () => 1);
+      gctx.globalCompositeOperation = 'source-over';
     }
     return { still: glowStill, animated };
   }
@@ -639,6 +643,9 @@ export class RoomRenderer {
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     const animate = this.fps > 0;
     const parts: Array<[TimeCache, number]> = from === to ? [[to, 1]] : [[from, 1 - t], [to, t]];
+    // Screen, like the layer over the scene: black in a glow file adds nothing
+    // (source-over let an animated light's black box hide the still glows).
+    ctx.globalCompositeOperation = 'screen';
     for (const [c, w] of parts) {
       if (w <= 0) continue;
       if (c.glowStill) {
@@ -659,6 +666,7 @@ export class RoomRenderer {
         ctx.setTransform(1, 0, 0, 1, 0, 0);
       }
     }
+    ctx.globalCompositeOperation = 'source-over';
   }
 
   private hasAnimation(): boolean {
@@ -719,9 +727,10 @@ export class RoomRenderer {
     ctx.globalAlpha = 1;
     ctx.clearRect(0, 0, fx.width, fx.height);
     let n = 0;
-    for (const [c, w] of parts) {
-      if (w <= 0 || !c.particles.length) continue;
-      drawParticleLayers(ctx, c.particles, this.res, w, (l) => this.fields.get(l.key)?.field ?? null, c.glass, still, showsStill);
+    const drawn = parts.filter(([c, w]) => w > 0 && c.particles.length > 0);
+    for (const [c, w] of drawn) {
+      // Alone on the cleared canvas: masked in place (see drawParticleLayers).
+      drawParticleLayers(ctx, c.particles, this.res, w, (l) => this.fields.get(l.key)?.field ?? null, c.glass, still, showsStill, drawn.length === 1);
       for (const l of c.particles) n += this.fields.get(l.key)?.field.particles.length ?? 0;
     }
     if (n) {

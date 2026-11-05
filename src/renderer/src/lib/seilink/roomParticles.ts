@@ -5,9 +5,10 @@
  * canvas and her avatar.
  *
  *  - 'outside' particles (a view's rain, snow, petals) and the rain drops on
- *    the glass are drawn into a scratch the size of the view box, then cut
- *    to the room's GLASS mask: the view box minus everything the room draws
- *    over it (walls, frame, curtains), built once per cached time of day
+ *    the glass are drawn first, clipped to the view box, then cut to the
+ *    room's GLASS mask (in place; through a scratch during a crossfade):
+ *    the view box minus everything the room draws over it (walls, frame,
+ *    curtains), built once per cached time of day
  *    (buildGlassMask), optionally narrowed by the shell's own `glass` file.
  *    So the rain is outside, behind the window, and a curtain pulled across
  *    hides it.
@@ -16,7 +17,7 @@
  *
  * Cost per frame: a clear, one step per particle, a few batched paths (rain
  * is 3 strokes, snow 3 fills) and one sprite blit per glow particle, plus
- * one masked composite per outside field. Nothing allocates per frame.
+ * one masked composite per frame. Nothing allocates per frame.
  */
 import type { ParticleLayer } from '@shared/seilinkDraw';
 import type { RoomBox } from '@shared/seilinkRoom';
@@ -208,12 +209,18 @@ export function buildGlassMask(
   return c;
 }
 
-let outsideScratch: { c: AnyCanvas; ctx: AnyContext2D } | null = null;
-
 /**
  * Draw particle layers onto the fx context (transform identity, device px).
  * `fieldOf` gives each layer's live field; `glass` the time's glass mask
  * for 'outside' layers (null: drawn unmasked in the view box).
+ *
+ * `blank` (the fx canvas was just cleared and nothing else goes on it this
+ * frame before these layers): the outside layers are drawn straight onto
+ * it and cut with one destination-in of the glass mask, then the scene
+ * layers go on top. Otherwise (a time crossfade: two masks) they go
+ * through a scratch first. The scratch costs a full blit of a canvas that
+ * changed this frame, measured 50x the direct path on a software GPU
+ * (7.3 ms against 0.14 ms for a 740x720 view box).
  */
 export function drawParticleLayers(
   ctx: AnyContext2D,
@@ -224,20 +231,108 @@ export function drawParticleLayers(
   glass: { box: RoomBox; mask: AnyCanvas } | null,
   still = false,
   showsStill: (kind: ParticleLayer['spec']['kind']) => boolean = () => true,
+  blank = false,
 ): void {
+  const shown = (l: ParticleLayer): ParticleField | null => (still && !showsStill(l.spec.kind) ? null : fieldOf(l));
   const outside = layers.filter((l) => l.where === 'outside');
   const scene = layers.filter((l) => l.where === 'scene');
+  if (outside.length && (!glass || glass.box[2] > 0)) {
+    const box = glass?.box ?? outside[0].area;
+    if (blank) drawOutsideDirect(ctx, outside, box, res, alpha, shown, glass);
+    else drawOutsideScratch(ctx, outside, box, res, alpha, shown, glass);
+  }
   ctx.save();
   ctx.setTransform(res, 0, 0, res, 0, 0);
   for (const l of scene) {
-    if (still && !showsStill(l.spec.kind)) continue;
-    const f = fieldOf(l);
+    const f = shown(l);
     if (f) drawField(ctx, f, alpha);
   }
   ctx.restore();
-  if (!outside.length) return;
-  // Each outside layer is cut to the glass of its own view box.
-  const box = glass?.box ?? outside[0].area;
+}
+
+function drawOutsideDirect(
+  ctx: AnyContext2D,
+  outside: readonly ParticleLayer[],
+  box: RoomBox,
+  res: number,
+  alpha: number,
+  shown: (l: ParticleLayer) => ParticleField | null,
+  glass: { box: RoomBox; mask: AnyCanvas } | null,
+): void {
+  const [bx, by, bw, bh] = box;
+  const px: RoomBox = [Math.round(bx * res), Math.round(by * res), Math.max(1, Math.round(bw * res)), Math.max(1, Math.round(bh * res))];
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.beginPath();
+  ctx.rect(px[0], px[1], px[2], px[3]);
+  ctx.clip();
+  ctx.setTransform(res, 0, 0, res, 0, 0);
+  let drew = false;
+  for (const l of outside) {
+    const f = shown(l);
+    if (!f) continue;
+    drawField(ctx, f, alpha);
+    drew = true;
+  }
+  ctx.restore();
+  if (!drew || !glass) return;
+  // Clipped to the box: destination-in would otherwise touch (clear) the
+  // whole canvas, which measured as most of the frame's raster time.
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.beginPath();
+  ctx.rect(px[0], px[1], px[2], px[3]);
+  ctx.clip();
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'destination-in';
+  ctx.drawImage(glass.mask, 0, 0, glass.mask.width, glass.mask.height, px[0], px[1], px[2], px[3]);
+  ctx.restore();
+}
+
+/**
+ * The glass mask cropped to where it lets anything through, with its box
+ * (canvas px). Read once per cached time of day; it keeps the per-frame
+ * masked composite to the panes instead of the whole view box (in the cozy
+ * room about half of it). Fully covered glass gives an empty box.
+ */
+export function tightenGlass(box: RoomBox, mask: AnyCanvas): { box: RoomBox; mask: AnyCanvas } {
+  const { width: mw, height: mh } = mask;
+  const d = ctx2d(mask, { willReadFrequently: true }).getImageData(0, 0, mw, mh).data;
+  let x0 = mw;
+  let y0 = mh;
+  let x1 = -1;
+  let y1 = -1;
+  for (let y = 0; y < mh; y++) {
+    for (let x = 0; x < mw; x++) {
+      if (d[(y * mw + x) * 4 + 3] === 0) continue;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  const kx = box[2] / mw;
+  const ky = box[3] / mh;
+  if (x1 < 0) return { box: [box[0], box[1], 0, 0], mask: makeCanvas(1, 1) };
+  const w = x1 - x0 + 1;
+  const h = y1 - y0 + 1;
+  if (w === mw && h === mh) return { box, mask };
+  const c = makeCanvas(w, h);
+  ctx2d(c).drawImage(mask, x0, y0, w, h, 0, 0, w, h);
+  return { box: [box[0] + x0 * kx, box[1] + y0 * ky, w * kx, h * ky], mask: c };
+}
+
+let outsideScratch: { c: AnyCanvas; ctx: AnyContext2D } | null = null;
+
+function drawOutsideScratch(
+  ctx: AnyContext2D,
+  outside: readonly ParticleLayer[],
+  box: RoomBox,
+  res: number,
+  alpha: number,
+  shown: (l: ParticleLayer) => ParticleField | null,
+  glass: { box: RoomBox; mask: AnyCanvas } | null,
+): void {
   const [bx, by, bw, bh] = box;
   const pw = Math.max(1, Math.round(bw * res));
   const ph = Math.max(1, Math.round(bh * res));
@@ -257,8 +352,7 @@ export function drawParticleLayers(
   sc.setTransform(res, 0, 0, res, -bx * res, -by * res);
   let drew = false;
   for (const l of outside) {
-    if (still && !showsStill(l.spec.kind)) continue;
-    const f = fieldOf(l);
+    const f = shown(l);
     if (!f) continue;
     drawField(sc, f, alpha);
     drew = true;
