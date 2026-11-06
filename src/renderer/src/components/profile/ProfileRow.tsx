@@ -110,7 +110,7 @@ export function RowValue({
   );
 }
 
-/** The small count chip inside an action button ("2 left", "uses credits"). */
+/** The small count chip inside an action button ("2 left"). */
 export function ActionChip({ children }: { children: React.ReactNode }): React.ReactElement {
   return <span className={styles.chip}>{children}</span>;
 }

@@ -84,7 +84,7 @@ export interface SkinEditorProps {
    */
   onEditSkin?: () => void;
   /**
-   * 261027: show the "make / regenerate Minecraft skin (uses credits)" button
+   * 261027: show the "generate / regenerate Minecraft skin" button (free since 261028)
    * on the view-only path. For characters the player OWNS, which includes
    * Awakened ('unique') companions that are otherwise view-only. The
    * editable path always shows it (only owned characters are editable).

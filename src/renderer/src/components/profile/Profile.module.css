@@ -224,7 +224,7 @@
   color: var(--red);
 }
 
-/* The "2 left" / "uses credits" chip inside an action button. */
+/* The "2 left" chip inside an action button. */
 .chip {
   font-family: var(--mono);
   font-size: 10px;

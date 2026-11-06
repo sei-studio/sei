@@ -27,6 +27,8 @@
  *                    (default), as a built-in, or as another player's World
  *                    companion in your library; &movedin=1 with &seilink=on
  *                    puts her on the desktop (the Idle lines row)
+ *     &noskin=1      (character) skin still the creation placeholder, so
+ *                    the Look tab shows Add / Generate
  *
  * Other surfaces already have harnesses: ?dashshot=creditwall&part=modal|credits,
  * ?dashshot=signinmodal, ?dashshot=authchoice, ?dashshot=onboard.
@@ -137,6 +139,8 @@ if (screen === 'character') {
     sui.shared = false;
   }
   if (who === 'world') sui.owner = OTHER_PLAYER;
+  // &noskin=1: still on the free creation placeholder (skin_pending).
+  if (params.get('noskin') === '1') sui.metadata = { ...(sui.metadata as object), skin_pending: true };
 }
 
 const CHAT = [

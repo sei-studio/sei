@@ -254,7 +254,7 @@ function LookTab(p: ProfileSettingsProps): React.ReactElement {
                   p.openSkinEdit();
                 }}
               >
-                {t('Edit')}
+                {skinGen.firstSkin ? t('Add') : t('Edit')}
               </Button>
             ) : null}
             {showSkinGen ? (
@@ -268,8 +268,7 @@ function LookTab(p: ProfileSettingsProps): React.ReactElement {
                   void skinGen.run();
                 }}
               >
-                <span>{skinGen.running ? t('Making skin...') : skinGen.firstSkin ? t('Make') : t('Regenerate')}</span>
-                {skinGen.running ? null : <ActionChip>{t('uses credits')}</ActionChip>}
+                <span>{skinGen.running ? t('Making skin...') : skinGen.firstSkin ? t('Generate') : t('Regenerate')}</span>
               </Button>
             ) : null}
           </>
@@ -335,8 +334,12 @@ function LookTab(p: ProfileSettingsProps): React.ReactElement {
 type T = (key: string, vars?: Record<string, string | number>) => string;
 
 function skinText(c: Character, t: T): string {
-  if ((c.metadata as Record<string, unknown> | undefined)?.skin_pending === true) return t('Making skin...');
+  // A pending skin is the free painted placeholder until Minecraft (or the
+  // Generate button) makes the real one; to the player that is no skin yet.
+  if ((c.metadata as Record<string, unknown> | undefined)?.skin_pending === true) return t('No skin yet');
   switch (c.skin.source) {
+    case 'none':
+      return t('No skin yet');
     case 'bundled':
       return t('Original skin');
     case 'upload':

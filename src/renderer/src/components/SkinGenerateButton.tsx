@@ -110,8 +110,8 @@ export function SkinGenerateButton({
   const label = gen.running
     ? t('Making skin...')
     : gen.firstSkin
-      ? t('Make Minecraft skin (uses credits)')
-      : t('Regenerate skin (uses credits)');
+      ? t('Generate Minecraft skin')
+      : t('Regenerate skin');
 
   return (
     <div data-slot="skin-generate">

@@ -326,8 +326,8 @@ export const ZH_MISC: Record<string, string> = {
     '皮肤已应用。伙伴下次连接时就会显示。',
   // Skin generate button (SkinGenerateButton, 261027 lazy skins).
   'Making skin...': '正在制作皮肤...',
-  'Make Minecraft skin (uses credits)': '制作 Minecraft 皮肤（消耗额度）',
-  'Regenerate skin (uses credits)': '重新生成皮肤（消耗额度）',
+  'Generate Minecraft skin': '生成 Minecraft 皮肤',
+  'Regenerate skin': '重新生成皮肤',
   'New skin ready. {name} wears it the next time they join.': '新皮肤已就绪。{name} 下次加入时就会换上。',
   'Not enough credits to make a skin. The current skin stays.': '额度不足，无法制作皮肤。当前皮肤保持不变。',
   "You've made the most skins allowed today. Try again tomorrow.": '今天制作的皮肤已达上限。请明天再试。',

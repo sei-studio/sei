@@ -70,7 +70,7 @@ export interface ProfileAccess {
   skin: RowAccess;
   /** The Edit skin button (upload PNG, search a Minecraft name). */
   skinEdit: boolean;
-  /** Make / Regenerate the skin (uses credits); the caller also needs a portrait. */
+  /** Generate / Regenerate the skin (free, product call 261028); the caller also needs a portrait. */
   skinGenerate: boolean;
   /** 'manage' = the avatar library (owner); 'pick' = choose which public avatar plays. */
   avatar: 'manage' | 'pick';
