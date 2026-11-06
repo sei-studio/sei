@@ -471,7 +471,7 @@ describe('EditCharacterModal + VoicePicker (W5 local-TTS voice gating)', () => {
   });
 });
 
-// 261023 (Shawn): web search moved into the Games group ("Games & search"),
+// 261023: web search moved into the Games group ("Games & search"),
 // and the ChatGPT plan block became one row with the sign-in button.
 describe('261023 settings tidy: web search tab + compact ChatGPT plan row', () => {
   const settings = readFileSync(SETTINGS_TSX, 'utf8');

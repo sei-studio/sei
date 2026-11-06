@@ -19,7 +19,7 @@
  * registration, so the next "Continue with ChatGPT" is treated as a new
  * identity (and a different Sei account can link it). The ChatGPT plan, if
  * connected, stays connected. Borderless quiet button, like the row's
- * Cancel (no framed buttons in Settings, Shawn 261023).
+ * Cancel (no framed buttons in Settings, 261023).
  */
 import React, { useEffect, useRef, useState } from 'react';
 import type { ChatgptLoginFailure, ChatgptLoginStatus } from '@shared/ipc';

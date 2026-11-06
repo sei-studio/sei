@@ -1977,7 +1977,7 @@ The design and its measurements are committed at
   as voice after the pass, so the immediate path does not apply; a voice bar
   relative to the trigger level reached 2.5 s in the replay but can split a
   player who keeps talking more quietly, and is not in.
-  Word-only (261101, `fix/bargein-word-only`): Shawn would rather have no
+  Word-only (261101, `fix/bargein-word-only`): we would rather have no
   interrupt than a false one, so nothing but a confirmed word stops her. The
   two energy commits are gone: the sustained run over the bar
   (`BARGE_CONFIRM_MS`) and the unanswered-duck deadline's energy verdict.
@@ -2073,7 +2073,7 @@ The design and its measurements are committed at
     that sentence for `VOICE_CALL_TEXT_LINE`. `VOICE_CALL_PRIMER` itself is
     unchanged (`= VOICE_CALL_PRIMER_BASE + VOICE_CALL_SAY_FIRST`). Typed chat
     voice calls have the same mismatch and are untouched.
-  - **Narration and timing (Shawn).** React to what is IN the picture (the
+  - **Narration and timing.** React to what is IN the picture (the
     place, the boss, the build). Do not read it back: no stats, timers,
     items or stage numbers. Ask about plans only when the next few seconds
     will not answer them. Because lines are heard seconds late, a question
@@ -2081,7 +2081,7 @@ The design and its measurements are committed at
     NOT A NARRATOR + YOU ARE HEARD A FEW SECONDS LATE). These live in the
     contract AND at the end of every look note (`LINE_LENGTH_REMINDER`),
     because 5.5 follows the note's ending and reads the contract loosely.
-    Do not stream LLM text into TTS (Shawn's call).
+    Do not stream LLM text into TTS (product call).
   - **Latency (261010).** The renderer's `look()` runs the STT flush
     (up to `STT_FLUSH_WAIT_MS`) BEFORE compositing the grid, so the newest
     frame is not already 1.2+ s old when the tick leaves. On a call, main
@@ -3685,7 +3685,7 @@ installer process, the new Sei process and its first window, then sprints to
 machine) = the stock path, `quitAndInstall(false, true)` = `--updated
 --force-run`, the one-click "Installing, please wait" banner. The window sits
 in the **bottom-right corner of the primary display's work area** (above the
-taskbar, the card 16 px in from the edges; Shawn, 261031) so the user can keep
+taskbar, the card 16 px in from the edges; 261031) so the user can keep
 using the computer, is topmost only for its first 4 s (while Sei's own window
 is going away), is draggable, and if no Sei comes back it starts `Sei.exe`
 itself, then says so and closes on a click or after a minute (hard cap 15

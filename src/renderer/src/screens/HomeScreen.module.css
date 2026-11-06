@@ -146,7 +146,7 @@
 
 /* A light name can land on bright art in any theme; a tight ink edge plus a
    soft halo keeps the glyphs crisp where the bed is thinnest (261023: was
-   light-scheme only, and dark mode is where Shawn lost "Sui"). */
+   light-scheme only, and dark mode is where "Sui" got lost). */
 .name {
   text-shadow:
     0 1px 2px color-mix(in srgb, var(--art-ink) 55%, transparent),

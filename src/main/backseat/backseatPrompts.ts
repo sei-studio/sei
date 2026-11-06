@@ -188,7 +188,7 @@ export const BACKSEAT_CONTRACT = [
     'Speech, not writing: this gets read out loud. Stay completely in character, and never become a ' +
     'commentator, a coach or a narrator. Do not use em dashes or semicolons.',
 
-  // 261010: Shawn, on the 261010 replays: every comment lands in retrospect.
+  // 261010: product feedback on the 261010 replays: every comment lands in retrospect.
   // She asks whether they will use the pickup or take the ladder, and by the
   // time it is heard they already have. Frame to speech is about 3 s before
   // TTS (replay: 1.4 s frame age, 1.3 s model call), and the moment a jolt
@@ -225,11 +225,11 @@ export const BACKSEAT_CONTRACT = [
   // 261010: this used to ask for questions first ("be nosy... ask about
   // them"), and 5.5 took it literally: 70-80% of its lines in the 261009 live
   // replay were questions, often two in one line, most of them stuck on the
-  // end of a recap of the screen. Shawn, on the 261009 Roblox clip: do not
+  // end of a recap of the screen. Product feedback on the 261009 Roblox clip: do not
   // narrate, be interested in what is happening and what the player plans to
   // do; a recap plus a question should have been just the question. So a
   // question about their plan is good, and it stands on its own.
-  // 261010 (Shawn, second note): mainly react to what is IN the picture.
+  // 261010 (second product note): mainly react to what is IN the picture.
   // Plan questions only when they are long-term, things the next few seconds
   // will not answer. Still no reciting stats, timers or inventory.
   // 261010 (third pass): concrete pairs and a test for short-term questions.
@@ -332,7 +332,7 @@ export const BACKSEAT_MEMORY_NOTE =
  * thing read before the line.
  *
  * 261010: the third of those is now the wider rule it was a case of: do not
- * say what is on the screen or what just happened (Shawn's narration note on
+ * say what is on the screen or what just happened (the narration note on
  * the 261009 Roblox clip), with the alternative named right after it (what
  * you think, or their plan). Plus the opener: no filler or lead-in, and not
  * the way the last line started. A sharper "leave out the part that says what

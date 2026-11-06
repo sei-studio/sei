@@ -216,7 +216,7 @@ const BARGE_REGRACE_MS = 150;
  * sustained run over the bar (BARGE_CONFIRM_MS, 1400 ms) and a deadline that
  * judged the frames since the duck on energy (BARGE_SUSPECT_MAX_MS). Both
  * could cut her on a loud game or her own echo with no word anywhere, and
- * Shawn would rather have no interrupt than a false one. Now the deadline
+ * we would rather have no interrupt than a false one. Now the deadline
  * only retracts the duck: she carries on, and a pass that later comes back
  * with a word the echo gate clears is delivered as the player's turn (the
  * 'late' path). Cost: when STT is slower than the deadline the player does

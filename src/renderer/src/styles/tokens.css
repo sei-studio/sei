@@ -120,7 +120,7 @@
   --acc: 63 111 196;
   --acc-c: rgb(var(--acc));
 
-  /* The PlanButton primary's own fill (261027, Shawn): the brighter blue of
+  /* The PlanButton primary's own fill (261027): the brighter blue of
      the old Summon CTA (ef346069 light accent #3f7fd6, strong #2f6cc0), on
      the plan buttons ONLY; --accent stays the calmer #3f6fc4 everywhere
      else. White label 4.0:1 at rest, 4.5:1 on hover. Each theme sets its
@@ -244,7 +244,7 @@
   --muted: #82807a;
   --muted-2: #56544e;
 
-  /* 261027 (Shawn: "making all of the light blue brighter in dark theme",
+  /* 261027 (product feedback: "making all of the light blue brighter in dark theme",
      then "do the middle one"): halfway between the 260929 periwinkle
      (811a4312: #6c9ae0 / #86ade8, dimmed because the old #7fb0ff / #9cc4ff
      glared on the dark popups) and that old Summon blue. Brighter only

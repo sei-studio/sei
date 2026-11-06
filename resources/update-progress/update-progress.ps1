@@ -392,12 +392,12 @@ if (-not $highContrast) {
   $vg.Freeze(); $Vignette.Fill = $vg
 
   # Bar fill: one solid colour, the theme's accent (tokens.css --accent). The
-  # background already moves; the bar stays calm (Shawn, 261030).
+  # background already moves; the bar stays calm (261030).
   $Fill.Fill = Solid $pal.accent
 }
 
 # ---- placement: bottom-right corner of the primary display's work area -------
-# Out of the way while the update runs (Shawn, 261031): above the taskbar,
+# Out of the way while the update runs (261031): above the taskbar,
 # CardGap px in from the work area's right and bottom edges, so the user can
 # keep using the computer. WorkArea is the PRIMARY display's area minus the
 # taskbar, in the same device-independent units as Left/Top. The window's

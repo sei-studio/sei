@@ -156,8 +156,8 @@ describe('labels + urls', () => {
     // 261003: question words are not content words ("whats" failed every engine).
     expect(looksRelevant([{ title: 'Blox Fruits tier list', snippet: 'the best fruit' }], 'whats the best fruit blox fruits')).toBe(true)
     // Stop words do not count: a name query is judged on the name.
-    expect(looksRelevant([{ title: 'Shawn Hatosy', snippet: 'American actor' }, { title: 'Wang Cong', snippet: 'boxer' }], 'who is Shawn Wang')).toBe(false)
-    expect(looksRelevant([{ title: 'Shawn Wang (swyx)', snippet: 'writer' }], 'who is Shawn Wang')).toBe(true)
+    expect(looksRelevant([{ title: 'Alex Turner', snippet: 'English musician' }, { title: 'Chen Kun', snippet: 'Chinese actor' }], 'who is Alex Chen')).toBe(false)
+    expect(looksRelevant([{ title: 'Alex Chen (designer)', snippet: 'writer' }], 'who is Alex Chen')).toBe(true)
   })
 
   it('search skips a scraped provider whose results do not match the query', async () => {

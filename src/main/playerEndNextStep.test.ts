@@ -43,7 +43,7 @@ function provider(
 }
 
 const GOALS = '# Goals\n\n- [2026-10-11T10:00:00.000Z] finish the cabin roof\n';
-const MEMORY = '# Memory\n\n- [2026-10-10T10:00:00.000Z] Shawn has a job interview on Monday\n';
+const MEMORY = '# Memory\n\n- [2026-10-10T10:00:00.000Z] Alex has a job interview on Monday\n';
 
 function deps(over: Partial<PlayerEndDeps> = {}, llm: LlmProvider = provider('finish the cabin roof')) {
   const saved: Array<[string, string]> = [];
