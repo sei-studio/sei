@@ -6,22 +6,14 @@
  * localStorage, per profile scope (the account UUID or 'local'), like the
  * other one-time renderer flags (gamesTipPref has the why: config.json's
  * whole-config saves are not worth risking for a cosmetic flag). A lost flag
- * costs one more viewing of a skippable 10 s sequence.
+ * costs one more viewing of a skippable 11 s sequence.
  *
- * The light is the aurora (the only style since 261106). Its colour mood
- * (`introMood`) is fixed in code (DEFAULT_INTRO_MOOD); the other space moods
- * stay switchable for comparison: a dev build (and the harness) can pick one
- * with `localStorage['sei.seilinkIntroMood']` (accretion, nebula, eclipse).
+ * The light is the eclipse aurora, the only one since 261106 v4 (the mood
+ * switch and its `sei.seilinkIntroMood` dev override are gone).
  */
-import { INTRO_MOODS, type IntroMood, type IntroStyle } from '@shared/seilinkIntroTelemetry';
 import { useAuthStore } from '../stores/useAuthStore';
 
 const KEY_BASE = 'sei.seilinkIntroSeen.v1';
-const MOOD_OVERRIDE_KEY = 'sei.seilinkIntroMood';
-
-/** The light that ships, and its mood. */
-export const DEFAULT_INTRO_STYLE: IntroStyle = 'aurora';
-export const DEFAULT_INTRO_MOOD: IntroMood = 'nebula';
 
 /** The active profile scope: the account UUID, or 'local' when signed out. */
 export function profileScope(): string {
@@ -53,14 +45,4 @@ export function markIntroSeen(): void {
  */
 export function shouldPlayFirstLink(input: { seen: boolean; failedStart?: boolean }): boolean {
   return !input.seen && input.failedStart !== true;
-}
-
-export function introMood(): IntroMood {
-  try {
-    const v = localStorage.getItem(MOOD_OVERRIDE_KEY);
-    if (v && (INTRO_MOODS as readonly string[]).includes(v)) return v as IntroMood;
-  } catch {
-    /* default */
-  }
-  return DEFAULT_INTRO_MOOD;
 }

@@ -5,7 +5,6 @@
  *   &name=Lyra              her name in the lines
  *   &portrait=<url>         her portrait (the fallback figure)
  *   &faces=<url>&face=<id>  her face set (a dir of facepacks, as DevRoomPreview)
- *   &mood=accretion|nebula|eclipse   the aurora's palette (default: the shipping one)
  *   &room=plain|blank|default   end on the plain background (default; black or
  *                           white with the page's prefers-color-scheme, or &tone),
  *                           the old blank room, or the pack's default room
@@ -21,13 +20,11 @@
  * Lazy-loaded by main.tsx under import.meta.env.DEV only.
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { INTRO_MOODS, type IntroMood } from '@shared/seilinkIntroTelemetry';
 import { blankRoomState, defaultRoomState, plainRoomState, type RoomState } from '@shared/seilinkRoom';
 import { parseRoomManifest } from '@shared/seilinkValidate';
 import { isUiLanguage } from '@shared/uiLanguage';
 import { urlPackSource } from '../../../lib/facepack/facepackSource';
 import { useLangStore } from '../../../lib/i18n';
-import { DEFAULT_INTRO_MOOD } from '../../../lib/seilink/introPref';
 import { introEndFor, plainTone, type PlainTone } from '../../../lib/seilink/plainTone';
 import { FirstLinkIntroView, type IntroFinish, type IntroRoom } from './FirstLinkIntroView';
 
@@ -52,7 +49,6 @@ export function DevIntroPreview(): React.ReactElement | null {
   const [answer, setAnswer] = useState<boolean | null>(null);
   const [run, setRun] = useState(0);
   const [ended, setEnded] = useState<IntroFinish | null>(null);
-  const mood = (INTRO_MOODS as readonly string[]).includes(params.get('mood') ?? '') ? (params.get('mood') as IntroMood) : DEFAULT_INTRO_MOOD;
   const tone: PlainTone = params.get('tone') === 'light' ? 'light' : params.get('tone') === 'dark' ? 'dark' : plainTone();
   const reduced = params.get('reduced') === '1';
   const manual = params.get('manual') === '1';
@@ -96,7 +92,6 @@ export function DevIntroPreview(): React.ReactElement | null {
   return (
     <FirstLinkIntroView
       key={run}
-      mood={mood}
       end={introEndFor(room?.state ?? null, tone)}
       reduced={reduced}
       characterId="dev-preview"

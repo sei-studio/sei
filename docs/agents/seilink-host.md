@@ -444,7 +444,7 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
     lives there with the host running (the dock, the offer, the SeiLink
     button, the gear menu's Edit room); anyone else gets the in-app editor.
     Closing always steps aside onto the desktop.
-- **The first-link intro** (`components/seilink/intro/`): about 11 s, three
+- **The first-link intro** (`components/seilink/intro/`): about 11.3 s, three
   beats with one line each ("Opening a tunnel to the digital world…",
   "Linking {name}…", "Porting the link to your desktop…"), then "Linked." /
   "{name} lives on your desktop now.". `startSeilinkHost` (the only host
@@ -456,29 +456,45 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   `sei.seilinkIntroSeen.v1.<scope>`): seen when it completed or was skipped
   on a move-in that worked. Replay plays it over her room with nothing
   starting.
-  - Frames are pure (`introFrame.ts` computeFrame(mood, timeline, t, W, H,
+  - Frames are pure (`introFrame.ts` computeFrame(timeline, t, W, H,
     reduced, end), `introFx.ts` canvases), so the harness seeks them:
-    `?seilinkintro=1` (DevIntroPreview, `&mood=accretion|nebula|eclipse
-    &room=plain|blank|default&tone=dark|light&hold=1&reduced=1&manual=1`),
-    and `scripts/seilink-intro-shots.mjs` renders the review mp4s (one per
-    mood, the `-light` variants with prefers-color-scheme light, `reduced`;
-    `--stills ms,ms` for PNGs only).
+    `?seilinkintro=1` (DevIntroPreview, `&room=plain|blank|default
+    &tone=dark|light&hold=1&reduced=1&manual=1`), and
+    `scripts/seilink-intro-shots.mjs` renders the review mp4s (`eclipse`,
+    `eclipse-light` with prefers-color-scheme light, `reduced`; `--stills
+    ms,ms` for PNGs only).
   - 261106 (Shawn: keep the aurora, make it space themed): the aurora is
-    the only light (`IntroStyle` 'aurora'; bloom and tide are gone), in three
-    colour moods (`IntroMood`, `introMood()` in introPref.ts, default
-    `DEFAULT_INTRO_MOOD` 'nebula', dev override
-    `localStorage['sei.seilinkIntroMood']`): `accretion` (Interstellar: gold,
-    amber and white on black, blue-white highlights), `nebula` (No Man's Sky:
-    teal, magenta, violet and orange on indigo), `eclipse` (the two mixed).
-    Same motion and shape in every mood (a test pins it). Layers: the void
+    the only light (`IntroStyle` 'aurora'; bloom and tide are gone). v4 the
+    same day: Shawn picked the `eclipse` colours (gold light and blue-white
+    rims against violet and teal nebula, `INTRO_PALETTE`); the other moods
+    (accretion, nebula) and the `sei.seilinkIntroMood` switch are gone, and
+    the event's `mood` is always `eclipse` (`INTRO_MOOD`). Layers: the void
     gradient, a faint seeded starfield canvas (half scale, `STAR_SCALE`), the
     curtains canvas (a sixth, `FIELD_SCALE`), the room, the front glows, a
     still grain tile (dither, alpha 5 or less, fades with the ending), the
-    HUD. Gradients and glows only, additive: no lines, rings or grids.
-    Skia dithers canvas gradients in a 2x2 pattern that shows as a checker
-    once the small canvas is stretched, so each canvas gets a blur(1.2px)
-    self-copy pass (`melt`). She forms out of a glow (brightness + blur +
-    drop-shadow easing to none).
+    black layer (the cut), the HUD. Gradients and glows only, additive: no
+    lines, rings or grids. Skia dithers canvas gradients in a 2x2 pattern
+    that shows as a checker once the small canvas is stretched, so each
+    canvas gets a blur(1.2px) self-copy pass (`melt`).
+  - The climax (261106 v4, Shawn: "before the character shows, climax the
+    lights and cut it all to black, then as the black fades out the
+    character comes in"; `IntroTimeline.climax`, full timeline ms): the
+    light wakes (0 to 1200), the first line shows 250 to 2400 and is gone
+    by 2750, the light builds from 2100 to its peak at 3200 (`field.peak`:
+    brighter, curtains longer, spread top to bottom and edge to edge, a wide
+    bloom, the motion clock up to 2x faster), holds it, and at 3600 (the
+    `link` beat) everything but the HUD cuts to black in one frame (`black`
+    layer). Black holds to 3950 and fades out by 4950 while she fades in and
+    rises about 3.5% of the screen into place, forming out of a glow
+    (brightness + blur + drop-shadow easing to none by 5450), the light
+    settled behind her. "Linking {name}…" from 4500; then port 6500, linked
+    9000, captions fade 10600, end 11300. No caption, dots or corner label
+    through the peak and the black (`caption.block`). The peak is one rise
+    (never a flicker; a test caps brightness reversals at one flash per
+    second). A skip on the desktop stage rushes to the end from 4950
+    (`skipFrom`), never through the climax or the black. Reduced motion
+    (calm timeline, 8.4 s): no peak and no cut, the still light fades gently
+    into black (1800 to 2600) and out (2800 to 3700) as she fades in.
   - The ending (`IntroEndOn`, `introEndFor(state, tone)` in plainTone.ts):
     `plain_dark` fades the light into black; `plain_light` floods it to
     white first (a colour-dodge layer of a rising grey capped at
@@ -558,7 +574,7 @@ errors) is in [`seilink-analytics.md`](seilink-analytics.md). The basics:
   the plain state; `live=1` follows the presses: "Set up together" opens the
   guided editor over the desktop and Done comes back to the saved
   wallpaper). `node scripts/seilink-first-room-flow.mjs --out <dir>
-  [--intro <nebula.mp4>] [--intro-light <nebula-light.mp4>]` clicks through
+  [--intro <eclipse.mp4>] [--intro-light <eclipse-light.mp4>]` clicks through
   the guided setup like a person, once per OS theme, and writes stills plus
   `first-room-flow-dark.mp4` / `-light.mp4`.
 - CI: `.github/workflows/seilink-host-check.yml` (windows-2022/2025,

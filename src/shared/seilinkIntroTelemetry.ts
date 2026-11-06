@@ -38,13 +38,16 @@ export const INTRO_STYLES = ['aurora'] as const;
 export type IntroStyle = (typeof INTRO_STYLES)[number];
 
 /**
- * The aurora's colour mood (261106, space themed): accretion = gold and amber
- * light around a black hole, nebula = saturated teal, magenta, violet and
- * orange on deep indigo, eclipse = the two together. One ships as the
- * default (introPref.DEFAULT_INTRO_MOOD).
+ * The aurora's colour mood. 261106 had three space moods (accretion, nebula,
+ * eclipse); Shawn picked eclipse (261106 v4) and it is the only one. The
+ * prop stays on the event so the shape is unchanged.
  */
-export const INTRO_MOODS = ['accretion', 'nebula', 'eclipse'] as const;
+export const INTRO_MOODS = ['eclipse'] as const;
 export type IntroMood = (typeof INTRO_MOODS)[number];
+
+/** What the app sends: the one style and mood. */
+export const INTRO_STYLE: IntroStyle = 'aurora';
+export const INTRO_MOOD: IntroMood = 'eclipse';
 
 /** What the intro settles into: the plain background she spawns on (black / white with the OS theme), or a room she has. */
 export const INTRO_END_ON = ['plain_dark', 'plain_light', 'room'] as const;

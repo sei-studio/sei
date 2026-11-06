@@ -13,10 +13,16 @@
  *  - drawBack: the nebula haze, the aurora curtains and her halo, behind
  *    whatever she ends on and behind her.
  *  - drawStars: the starfield, slowly drifting, each star breathing a little.
- *  - drawFront: over everything: the swell of light on her as she forms and
- *    the soft breath of light when she is linked (glows only, no rings).
+ *  - drawFront: over everything: the climax's bloom, the swell of light on
+ *    her as she forms and the soft breath of light when she is linked (glows
+ *    only, no rings).
+ *
+ * The climax (`field.peak`, 261106 v4) makes the same curtains brighter,
+ * longer, wider apart and edge to edge (the clock runs faster into it,
+ * computeFrame), with a wide soft bloom over the middle: the screen fills
+ * with light, then the view cuts it all to black.
  */
-import { INTRO_PALETTES, type Box, type IntroFrame, type MoodPalette } from './introFrame';
+import { INTRO_PALETTE as PAL, type Box, type IntroFrame, type IntroPalette } from './introFrame';
 
 /** Screen px per light canvas px. */
 export const FIELD_SCALE = 6;
@@ -85,9 +91,9 @@ function strip(ctx: CanvasRenderingContext2D, x: number, top: number, w: number,
 }
 
 /** Two slow nebula clouds and a low glow, far behind the curtains. */
-function haze(ctx: CanvasRenderingContext2D, f: IntroFrame, w: number, h: number, pal: MoodPalette): void {
+function haze(ctx: CanvasRenderingContext2D, f: IntroFrame, w: number, h: number, pal: IntroPalette): void {
   const k = f.field.clock;
-  const a = f.space;
+  const a = f.space * (1 + 0.9 * f.field.peak);
   if (a <= 0.002) return;
   glow(ctx, w * (0.27 + 0.05 * Math.sin(k * 0.00011)), h * (0.34 + 0.04 * Math.cos(k * 0.00013)), w * 0.62, pal.haze[0], 0.42 * a);
   glow(ctx, w * (0.76 + 0.04 * Math.cos(k * 0.0001)), h * (0.66 + 0.04 * Math.sin(k * 0.00012)), w * 0.56, pal.haze[1], 0.36 * a);
@@ -95,28 +101,32 @@ function haze(ctx: CanvasRenderingContext2D, f: IntroFrame, w: number, h: number
 }
 
 /** Curtains of soft light that sway across, lean in toward her as she forms, then lift away. */
-function aurora(ctx: CanvasRenderingContext2D, f: IntroFrame, w: number, h: number, hx: number, hy: number, pal: MoodPalette): void {
+function aurora(ctx: CanvasRenderingContext2D, f: IntroFrame, w: number, h: number, hx: number, hy: number, pal: IntroPalette): void {
   const k = f.field.clock;
-  const a0 = f.field.opacity * (0.75 + 0.35 * f.field.swell);
+  const pk = f.field.peak;
+  const a0 = f.field.opacity * (0.75 + 0.35 * f.field.swell) * (1 + 0.9 * pk);
   if (a0 <= 0.002) return;
   const hu = hx / w;
   for (let i = 0; i < 4; i++) {
     const c = pal.lights[i];
     const speed = 1 + 0.27 * i;
+    // The climax spreads the curtains over the whole height (top to bottom) instead of the upper middle.
+    const row = mix(0.3 + 0.09 * i, 0.16 + 0.22 * i, pk);
     for (let x = 0; x < w; x++) {
       const u = (x + 0.5) / w;
       // Lean in toward her as she forms: the curtains dip down to her and brighten there.
       const pull = f.field.gather * Math.exp(-(((u - hu) / 0.42) ** 2));
       let yc =
-        h * (0.3 + 0.09 * i) +
-        h * 0.075 * Math.sin(u * Math.PI * 2.1 + k * 0.00042 * speed + i * 1.3) +
+        h * row +
+        h * 0.075 * (1 + 0.6 * pk) * Math.sin(u * Math.PI * 2.1 + k * 0.00042 * speed + i * 1.3) +
         h * 0.035 * Math.sin(u * Math.PI * 5.3 - k * 0.00071 * speed + i * 2.1);
       yc = mix(yc, hy + h * 0.05, pull * 0.7);
-      const len = h * (0.36 + 0.12 * Math.sin(u * 7.1 + k * 0.0009 + i));
+      const len = h * (0.36 + 0.12 * Math.sin(u * 7.1 + k * 0.0009 + i)) * (1 + 0.75 * pk);
       // Rays shimmer: brightness ripples along the curtain.
       const shimmer = 0.6 + 0.4 * Math.sin(u * 9 + k * 0.0012 * speed + i * 4) ** 2;
-      const fadeEdge = Math.min(1, Math.max(0, Math.min(u + 0.1, 1.1 - u) * 4));
-      strip(ctx, x, yc - len * 0.9, 1, len, c, a0 * 0.46 * shimmer * fadeEdge * (1 + 0.5 * pull), 0.82);
+      // The edges fade in a tenth of the width; at the peak the light runs edge to edge.
+      const fadeEdge = Math.min(1, Math.max(0, Math.min(u + 0.1, 1.1 - u) * 4 * (1 + 3 * pk)));
+      strip(ctx, x, yc - len * 0.9, 1, len, c, a0 * 0.46 * shimmer * fadeEdge * (1 + 0.3 * pull), 0.82);
     }
   }
 }
@@ -131,7 +141,7 @@ export function drawBack(ctx: CanvasRenderingContext2D, f: IntroFrame, her: Box 
   const c = herCentre(f, her);
   const hx = c.x * s;
   const hy = c.y * s;
-  const pal = INTRO_PALETTES[f.mood];
+  const pal = PAL;
   ctx.globalCompositeOperation = 'lighter';
   haze(ctx, f, w, h, pal);
   aurora(ctx, f, w, h, hx, hy, pal);
@@ -192,9 +202,9 @@ export function drawStars(ctx: CanvasRenderingContext2D, f: IntroFrame): void {
   const h = ctx.canvas.height;
   ctx.globalCompositeOperation = 'source-over';
   ctx.clearRect(0, 0, w, h);
-  const a = f.space;
+  const a = f.space * (1 + 0.4 * f.field.peak);
   if (a <= 0.002) return;
-  const pal = INTRO_PALETTES[f.mood];
+  const pal = PAL;
   const k = f.field.clock;
   const unit = h / 540;
   ctx.globalCompositeOperation = 'lighter';
@@ -207,7 +217,7 @@ export function drawStars(ctx: CanvasRenderingContext2D, f: IntroFrame): void {
   ctx.globalCompositeOperation = 'source-over';
 }
 
-/** Over everything: the swell of light on her as she forms, and the soft breath when linked. */
+/** Over everything: the climax's bloom, the swell of light on her as she forms, and the soft breath when linked. */
 export function drawFront(ctx: CanvasRenderingContext2D, f: IntroFrame, her: Box | null): void {
   const w = ctx.canvas.width;
   const h = ctx.canvas.height;
@@ -217,9 +227,16 @@ export function drawFront(ctx: CanvasRenderingContext2D, f: IntroFrame, her: Box
   const c = herCentre(f, her);
   const hx = c.x * s;
   const hy = c.y * s;
-  const pal = INTRO_PALETTES[f.mood];
+  const pal = PAL;
   const hr = (her ? her.h : f.H * 0.5) * s;
   ctx.globalCompositeOperation = 'lighter';
+  // The climax: a wide soft bloom over the middle that fills the screen with light (one rise, then the cut).
+  const pk = f.field.peak * f.field.opacity;
+  if (pk > 0.002) {
+    glow(ctx, w * 0.5, h * 0.48, Math.hypot(w, h) * 0.62, pal.halo, 0.3 * pk);
+    glow(ctx, w * 0.5, h * 0.46, Math.hypot(w, h) * 0.34, pal.lights[0], 0.2 * pk);
+    glow(ctx, w * 0.5, h * 0.46, Math.hypot(w, h) * 0.2, [255, 255, 255], 0.16 * pk);
+  }
   if (f.field.swell > 0.002) {
     glow(ctx, hx, hy, hr * 0.6, [255, 255, 255], 0.3 * f.field.swell);
     glow(ctx, hx, hy, hr * 1.6, pal.lights[1], 0.18 * f.field.swell);
@@ -230,12 +247,12 @@ export function drawFront(ctx: CanvasRenderingContext2D, f: IntroFrame, her: Box
     glow(ctx, hx, hy, hr * 0.8, [255, 255, 255], 0.1 * f.linkGlow);
   }
   ctx.globalCompositeOperation = 'source-over';
-  if (f.field.swell > 0.002 || f.linkGlow > 0.002) melt(ctx);
+  if (pk > 0.002 || f.field.swell > 0.002 || f.linkGlow > 0.002) melt(ctx);
 }
 
-/** Deep space behind the light, per mood. */
-export function voidGradient(f: Pick<IntroFrame, 'mood'>): string {
-  const [a, b] = INTRO_PALETTES[f.mood].void;
+/** Deep space behind the light. */
+export function voidGradient(): string {
+  const [a, b] = PAL.void;
   return `radial-gradient(120% 90% at 50% 46%, ${a} 0%, ${b} 72%)`;
 }
 

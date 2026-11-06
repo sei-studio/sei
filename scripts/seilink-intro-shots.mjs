@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 /**
- * Review videos of the SeiLink first-link intro (261105, T337; 261106 space
- * aurora moods), rendered frame by frame (no dropped frames): one mp4 per
- * mood ending on the black plain background (OS dark mode), one ending on the
- * white one (light mode), the reduced motion version, and a capture of the
- * guide's SeiLink tour.
+ * Review videos of the SeiLink first-link intro (261105, T337; 261106 the
+ * eclipse aurora and its climax), rendered frame by frame (no dropped
+ * frames): one mp4 ending on the black plain background (OS dark mode), one
+ * ending on the white one (light mode), the reduced motion version, and a
+ * capture of the guide's SeiLink tour.
  * Headless, no Electron.
  *
  *   node scripts/seilink-intro-shots.mjs --out <dir>
  *        [--packs resources/seilink-packs] [--preset cozy]
  *        [--portrait <png>] [--name Lyra] [--faces <dir of facepacks> --face <id>]
- *        [--only accretion,nebula,eclipse,nebula-light,reduced,tour] [--fps 30] [--lang <code>]
+ *        [--only eclipse,eclipse-light,reduced,tour] [--fps 30] [--lang <code>]
  *        [--stills 0,2500,5000,...]   only these frames (ms) as PNGs, no video
  *
  * Intro videos open `?seilinkintro=1&manual=1` (DevIntroPreview) and call
@@ -50,16 +50,12 @@ const SIZE = { width: 1920, height: 1080 };
 
 /** Matches introTimeline.ts (FULL_TIMELINE.end, CALM_TIMELINE.end) plus a short tail. */
 const VIDEOS = {
-  accretion: { q: 'mood=accretion&hold=1', ms: 11_200 + 300, scheme: 'dark' },
-  nebula: { q: 'mood=nebula&hold=1', ms: 11_200 + 300, scheme: 'dark' },
-  eclipse: { q: 'mood=eclipse&hold=1', ms: 11_200 + 300, scheme: 'dark' },
-  'accretion-light': { q: 'mood=accretion&hold=1', ms: 11_200 + 300, scheme: 'light' },
-  'nebula-light': { q: 'mood=nebula&hold=1', ms: 11_200 + 300, scheme: 'light' },
-  'eclipse-light': { q: 'mood=eclipse&hold=1', ms: 11_200 + 300, scheme: 'light' },
-  reduced: { q: 'reduced=1&hold=1', ms: 8_300 + 300, scheme: 'dark' },
+  eclipse: { q: 'hold=1', ms: 11_300 + 300, scheme: 'dark' },
+  'eclipse-light': { q: 'hold=1', ms: 11_300 + 300, scheme: 'light' },
+  reduced: { q: 'reduced=1&hold=1', ms: 8_400 + 300, scheme: 'dark' },
 };
 const STILLS = arg('stills', null)?.split(',').map(Number) ?? null;
-const only = arg('only', 'accretion,nebula,eclipse,nebula-light,reduced,tour').split(',');
+const only = arg('only', 'eclipse,eclipse-light,reduced,tour').split(',');
 
 function staticServer(root) {
   return new Promise((resolve) => {
