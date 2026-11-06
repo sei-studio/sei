@@ -48,9 +48,11 @@ const sessions = new Map<string, LiveSession>();
 /**
  * Record one player message to `characterId` on the plain-chat path. Opens a
  * session on the first message and refreshes the idle timer on every one.
+ * Returns this message's 1-based number within its session (the turn index
+ * `reply_latency` buckets on, see replyLatency.ts), 0 if recording failed.
  * Never throws — analytics must not be able to break a chat send.
  */
-export function noteChatMessage(characterId: string): void {
+export function noteChatMessage(characterId: string): number {
   try {
     const now = Date.now();
     const live = sessions.get(characterId);
@@ -63,7 +65,7 @@ export function noteChatMessage(characterId: string): void {
       live.timer = setTimeout(() => void endChatSession(characterId, 'idle'), IDLE_TIMEOUT_MS);
       // A pending timer must never hold the app open at quit.
       live.timer.unref?.();
-      return;
+      return live.messages;
     }
     const timer = setTimeout(() => void endChatSession(characterId, 'idle'), IDLE_TIMEOUT_MS);
     timer.unref?.();
@@ -74,7 +76,10 @@ export function noteChatMessage(characterId: string): void {
         capture('chat_session_started', { character_id: characterId });
       } catch { /* best-effort */ }
     })();
-  } catch { /* best-effort */ }
+    return 1;
+  } catch {
+    return 0;
+  }
 }
 
 /**

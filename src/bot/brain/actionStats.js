@@ -118,6 +118,17 @@ function emptyAction() {
 }
 
 /**
+ * 261106 reply_latency: one sample per timed player turn, handed to the sink
+ * set with setLatencySink (bot index.js posts it up the port as
+ * {type:'reply-latency'}; main samples and sends it, src/main/replyLatency.ts).
+ * Shape only: where the line came from, its 1-based number in the session
+ * (per origin), the wait in ms, and how it ended.
+ *
+ * @typedef {{ origin: 'game'|'app', turn: number, ms: number,
+ *   outcome: 'replied'|'silent'|'error'|'aborted', via?: 'say'|'action' }} ReplyLatencySample
+ */
+
+/**
  * @param {{ now?: () => number, unansweredMs?: number }} [opts]
  */
 export function createActionStats({ now = () => Date.now(), unansweredMs = UNANSWERED_MS } = {}) {
@@ -126,8 +137,20 @@ export function createActionStats({ now = () => Date.now(), unansweredMs = UNANS
   let actions = new Map()
   let counters = {}
   let llmErrors = {}
-  /** Arrival times of player lines not yet followed by a reply or action. */
+  /**
+   * Player lines not yet followed by a reply or action: arrival time, origin
+   * ('game' = typed in the game's chat, 'app' = a Sei chat routed in) and the
+   * line's turn number for reply_latency.
+   * `reported` = its reply_latency sample already went out (abandonPending).
+   * @type {{ at: number, origin: 'game'|'app', turn: number, reported?: boolean }[]}
+   */
   let pendingChats = []
+  /** Timed player lines so far, per origin (reply_latency turn numbers). */
+  let turns = { game: 0, app: 0 }
+  /** When the last LLM error happened: an unanswered line after it ended in 'error'. */
+  let lastLlmErrorAt = -Infinity
+  /** @type {((s: ReplyLatencySample) => void) | null} */
+  let latencySink = null
   let meta = {}
   let metaProvider = null
   let dirty = false
@@ -148,9 +171,22 @@ export function createActionStats({ now = () => Date.now(), unansweredMs = UNANS
     }
     llmErrors = {}
     pendingChats = []
+    turns = { game: 0, app: 0 }
+    lastLlmErrorAt = -Infinity
     dirty = false
   }
   reset()
+
+  /** Send one pending line's reply_latency sample (once per line). */
+  function report(p, outcome, t, via) {
+    if (p.reported) return
+    p.reported = true
+    if (!latencySink) return
+    /** @type {ReplyLatencySample} */
+    const sample = { origin: p.origin, turn: p.turn, ms: Math.max(0, t - p.at), outcome }
+    if (via) sample.via = via
+    try { latencySink(sample) } catch {}
+  }
 
   function bump(key, by = 1) {
     counters[key] = (counters[key] ?? 0) + by
@@ -161,20 +197,30 @@ export function createActionStats({ now = () => Date.now(), unansweredMs = UNANS
   function sweep(t = now()) {
     if (pendingChats.length === 0) return
     const keep = []
-    for (const at of pendingChats) {
-      if (t - at >= unansweredMs) bump('unanswered')
-      else keep.push(at)
+    for (const p of pendingChats) {
+      if (t - p.at >= unansweredMs) {
+        bump('unanswered')
+        report(p, lastLlmErrorAt >= p.at ? 'error' : 'silent', t)
+      } else keep.push(p)
     }
     pendingChats = keep
   }
 
-  /** The bot responded (said something, or started a world action). */
-  function answer(t = now()) {
+  /**
+   * The bot responded (said something, or started a world action).
+   * @param {'say'|'action'} via
+   */
+  function answer(via, t = now()) {
     sweep(t)
     if (pendingChats.length === 0) return
     // Latency is measured from the OLDEST waiting line: one reply answers the batch.
     bump('replied')
-    bump('reply_ms_total', Math.max(0, t - pendingChats[0]))
+    bump('reply_ms_total', Math.max(0, t - pendingChats[0].at))
+    // reply_latency: one sample per origin in the batch, from its oldest line.
+    for (const origin of ['game', 'app']) {
+      const oldest = pendingChats.find((p) => p.origin === origin)
+      if (oldest) report(oldest, 'replied', t, via)
+    }
     pendingChats = []
   }
 
@@ -205,28 +251,47 @@ export function createActionStats({ now = () => Date.now(), unansweredMs = UNANS
       dirty = true
     },
     /** A world action was dispatched: counts as a response to waiting player lines. */
-    noteActionStarted() { answer() },
+    noteActionStarted() { answer('action') },
     /** One LLM response arrived; `said` = it carried a say() line. */
     noteLlmTurn({ said = false } = {}) {
       bump('llm_turns')
       bump(said ? 'say_turns' : 'silent_turns')
     },
     noteLlmError(err) {
+      lastLlmErrorAt = now()
       const c = classifyLlmError(err)
       llmErrors[c] = (llmErrors[c] ?? 0) + 1
       dirty = true
     },
     noteStuck() { bump('stuck') },
     noteDeath() { bump('deaths') },
-    /** A player line that should get a response. `voice` lines are counted but not timed. */
-    notePlayerChat({ voice = false } = {}) {
+    /**
+     * A player line that should get a response. `voice` lines are counted but
+     * not timed (the app's voice clock times calls). `origin` 'app' = a Sei
+     * chat message routed into this session (deliverSeiChat).
+     */
+    notePlayerChat({ voice = false, origin = 'game' } = {}) {
       sweep()
       if (voice) { bump('voice_msgs'); return }
       bump('player_msgs')
-      pendingChats.push(now())
+      const o = origin === 'app' ? 'app' : 'game'
+      turns[o] += 1
+      pendingChats.push({ at: now(), origin: o, turn: turns[o] })
     },
     /** The bot spoke (say() reached chat or the call). */
-    noteReply() { answer() },
+    noteReply() { answer('say') },
+    /**
+     * The session is ending: lines still waiting (inside the unanswered
+     * window) get reply_latency 'aborted'. The counters and the pending list
+     * are left alone (the final action-stats snapshot still reads them).
+     */
+    abandonPending() {
+      const t = now()
+      sweep(t)
+      for (const p of pendingChats) report(p, 'aborted', t)
+    },
+    /** @param {((s: ReplyLatencySample) => void) | null} fn */
+    setLatencySink(fn) { latencySink = typeof fn === 'function' ? fn : null },
     setMeta(patch) {
       if (patch && typeof patch === 'object') { meta = { ...meta, ...patch }; dirty = true }
     },

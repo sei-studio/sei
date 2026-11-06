@@ -443,7 +443,7 @@ export async function start({ config, adapter, logger = console, onTerminalError
       if (!raw) return
       const who = String(from || 'The player')
       try { orchestrator.recordIncomingChat?.(who, raw, { companion: false }) } catch {}
-      try { sessionActionStats.notePlayerChat({ voice: voice === true }) } catch {}
+      try { sessionActionStats.notePlayerChat({ voice: voice === true, origin: 'app' }) } catch {}
       // 260708: a live voice-call utterance while the bot is in-game is NOT an
       // out-of-band text message, and the old framing ("NOT in the game with
       // you right now") was factually wrong on every line of a play-while-

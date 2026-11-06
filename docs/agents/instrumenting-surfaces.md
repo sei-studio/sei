@@ -312,6 +312,46 @@ and `messages` carries the shape. `endAllChatSessions()` runs on `before-quit`
 BEFORE `shutdownAnalytics()`, because quitting mid-conversation is the normal
 way a chat ends.
 
+**`reply_latency`: how long the player waits for a reply (261106, retention
+O2 item 6).** One event per SAMPLED player turn, props `{surface: chat|voice|
+minecraft, path: app|in_game, ms, outcome: replied|silent|error|aborted,
+turn_index_bucket: first|2-5|6+, sample_rate: 1|10, via?: say|action}`
+(`via` on minecraft only; `backend` / `ai_provider` come from commonProps).
+`ms` is raw, like every other duration. Sampling lives in ONE place,
+`src/main/replyLatency.ts`: turns 1-5 of a session always, then only every
+tenth turn (10, 20, ...) with `sample_rate: 10`, so each bucket has a single
+rate and per-bucket percentiles need no weighting. Sampled per turn rather
+than rolled up per session on purpose: percentiles do not merge across
+sessions, and a roll-up is lost when a session never closes cleanly. Clocks:
+- chat (main, `chat:send` in ipc.ts, at the `noteChatMessage` choke point,
+  turn = the chat session's message number): handler entry to the first
+  companion bubble handed to the renderer (the early line before a web lookup
+  via `emitReply`, else the returned reply). Empty replies = silent,
+  `CHAT_ABORTED` = aborted, a rejection = error. Realistic-typing pacing is
+  not included. A routed send records nothing here; the bot times it.
+- voice (renderer, `lib/voice/replyClock.ts`, wired in `useVoiceStore`):
+  `dispatchUserTurn` (the STT final) to the audio queue's `onAudible`. Turn =
+  utterance number in the call. A new utterance or hang-up before audio =
+  aborted; all off-game sends returned with nothing queued (plus a 1.5 s IPC
+  grace) = silent; the director exhausting its retries, or a queued line that
+  never played by the 45 s give-up timer = error; nothing at all by then =
+  silent. Sent via `sei.track('reply_latency', ...)`; main's analytics:track
+  handler rebuilds it from closed enums (`sanitizeRendererReplyLatency`) and
+  samples it. Typed mid-call messages are not timed on any surface.
+- minecraft (bot, `brain/actionStats.js`, minecraft sessions only): a timed
+  player line (`notePlayerChat`) to the say() or started world action that
+  answers it (same events as the existing `reply_ms_total`, decision time,
+  not the paced send). Unanswered after `UNANSWERED_MS` (20 s) = silent, or
+  error when an LLM error came after the line; a line still waiting at a
+  terminal lifecycle = aborted (`abandonPending`). Posted per turn as
+  `{type:'reply-latency', origin, turn, ms, outcome, via}`; botSupervisor
+  re-validates it (`parseBotReplyLatency`). `origin: 'app'` (a Sei chat
+  routed in by `deliverSeiChat`) is reported as surface `chat`, path
+  `in_game`; voice lines reaching the bot are not timed there (the voice
+  clock owns calls).
+No model call and no tokens are added; dev launches send nothing (the
+initAnalytics channel gate).
+
 **Every event carries `ui_language` (260801).** `commonProps()` in
 `src/main/analytics.ts` stamps the APP UI language (not the per-character
 `chat_language`) on every event and `$set`s it on the person. Before this the
