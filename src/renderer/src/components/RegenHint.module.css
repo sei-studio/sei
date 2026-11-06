@@ -1,0 +1,137 @@
+/*
+ * RegenHint (261107): the one-time card over the profile's settings gear.
+ * Same card language as the chat header's one-time games tip
+ * (ChatTopBar.module.css .tip): surface-2 card, hairline card edge, pop
+ * shadow, a rotated-square tail. Buttons carry no border lines (product rule).
+ *
+ * It hangs ABOVE the gear (the deploy row is pinned to the bottom of the
+ * page) and is anchored to the gear's RIGHT edge, because the gear ends the
+ * row at the content panel's right gutter and a centred card would be clipped
+ * by the panel's overflow-x: hidden.
+ */
+.hint {
+  /* How far the card's right edge sits past the gear's; the tail offset
+   * in RegenHint.tsx reads it too. Must stay under the panel's right gutter. */
+  --regen-hint-overhang: 8px;
+  position: absolute;
+  bottom: calc(100% + 12px);
+  right: calc(-1 * var(--regen-hint-overhang));
+  width: max-content;
+  min-width: 200px;
+  max-width: 260px;
+  box-sizing: border-box;
+  padding: var(--space-sm) var(--space-sm) var(--space-md) var(--space-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-pop);
+  text-align: left;
+  z-index: 45;
+  animation: regenHintIn 220ms var(--ease) both;
+}
+
+@keyframes regenHintIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hint {
+    animation: none;
+  }
+}
+
+/* Points DOWN at the gear: a rotated square straddling the card's bottom
+ * edge, keeping the card's edge and fill in every theme. `right` is set
+ * inline so it centres on the gear whatever its width. */
+.tail {
+  position: absolute;
+  top: 100%;
+  right: 24px;
+  width: 10px;
+  height: 10px;
+  margin-top: -5px;
+  transform: rotate(45deg);
+  background: var(--surface-2);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
+}
+
+.icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--accent);
+}
+
+.line {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.close {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: var(--space-xs);
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 140ms var(--ease), background 140ms var(--ease);
+}
+
+.close:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.close:focus-visible,
+.regen:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.regen {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  border-radius: var(--radius);
+  padding: 6px 14px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 140ms var(--ease);
+}
+
+.regen:hover {
+  background: var(--accent-strong);
+}

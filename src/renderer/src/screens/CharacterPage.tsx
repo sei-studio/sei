@@ -43,6 +43,7 @@ import { ResetMemoryConfirmModal } from '../components/ResetMemoryConfirmModal';
 import { UnbindConfirmModal } from '../components/UnbindConfirmModal';
 import { KnowledgeModal } from '../components/KnowledgeModal';
 import { PortraitVersionsModal } from '../components/PortraitVersionsModal';
+import { RegenHint, useRegenHint } from '../components/RegenHint';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 import { ReportCompanionModal } from '../components/ReportCompanionModal';
 import { SharedVoiceChoice, SharedVoiceLabel } from '../components/SharedVoiceChoice';
@@ -243,6 +244,24 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       EXIT_MS,
     );
   };
+
+  // 261107: the one-time "Not happy with the look? Regenerate" hint over the
+  // gear (rules in lib/regenHintPref.ts). Hoisted above the early returns.
+  const regenHint = useRegenHint({
+    character,
+    pageOverlayOpen:
+      editing ||
+      settingsOpen ||
+      knowledgeOpen ||
+      cardImageOpen ||
+      artOpen ||
+      resetConfirmOpen ||
+      releaseConfirmOpen ||
+      shareConfirm !== null ||
+      showSignIn ||
+      showReport,
+    leaving,
+  });
 
   // ── Library-state hooks (hoisted above the early-return for stable count) ──
   const addedDefaultIds = useLibraryStateStore((s) => s.addedDefaultIds);
@@ -831,6 +850,16 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                 >
                   <GearIcon size={18} />
                 </Button>
+                {regenHint.show && canShare ? (
+                  <RegenHint
+                    onClose={() => regenHint.dismiss('close')}
+                    onOutside={() => regenHint.dismiss('outside')}
+                    onRegenerate={() => {
+                      regenHint.regenerate();
+                      setCardImageOpen(true);
+                    }}
+                  />
+                ) : null}
                 {settingsOpen ? (
                   <div
                     className={styles.settingsMenu}

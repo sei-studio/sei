@@ -2363,4 +2363,6 @@ export const ES: Record<string, string> = {
   "Something went wrong with avatars. Try again.": "Algo salió mal con los avatares. Inténtalo de nuevo.",
   "Pick which avatar plays for you.": "Elige qué avatar se muestra para ti.",
   "Default": "Predeterminado",
+  // ── regen hint (261107) ──
+  "Not happy with the look?": "¿No te convence su aspecto?",
 };

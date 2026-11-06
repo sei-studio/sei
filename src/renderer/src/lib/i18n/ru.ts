@@ -2363,4 +2363,6 @@ export const RU: Record<string, string> = {
   "Something went wrong with avatars. Try again.": "С аватарами что-то пошло не так. Попробуйте ещё раз.",
   "Pick which avatar plays for you.": "Выберите, какой аватар показывать у вас.",
   "Default": "Основной",
+  // ── regen hint (261107) ──
+  "Not happy with the look?": "Не нравится внешний вид?",
 };
