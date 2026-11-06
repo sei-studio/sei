@@ -159,7 +159,7 @@ describe('AvatarLibraryClient', () => {
     let avatars: unknown[] = [item(A_CARD, { source: 'card', sha256: 'd'.repeat(64), is_default: true })];
     h.routes.set(`GET /avatars/v1/${CHAR}`, () => ({
       status: 200,
-      body: listBody({ default_id: (avatars.findLast((a) => (a as { is_default: boolean }).is_default) as { id: string }).id }, avatars),
+      body: listBody({ default_id: (avatars as Array<{ id: string; is_default: boolean }>).filter((a) => a.is_default).at(-1)!.id }, avatars),
     }));
     h.routes.set(`POST /avatars/v1/${CHAR}/upload`, () => ({
       status: 200,
