@@ -7,29 +7,38 @@
  * cloud bake of about 1 to 2 minutes the first time, then a download). Nine
  * status lines run one at a time, each waiting on a real pipeline milestone
  * (LINK_MILESTONES), then the success line, and only after it does she come
- * in. A line shows when its milestone has arrived, but never sooner than
- * LINE_DWELL_MS after the line before (readable). While a slow stage runs the
+ * in. A line shows when its milestone has arrived, but never sooner than the
+ * line before's minimum time on screen (its `dwell`, default LINE_DWELL_MS).
+ * The first lines dwell longer (product feedback (261106): sending a signal
+ * and waiting for a reply should take a while). While a slow stage runs the
  * current line just holds (no filler lines). The proxy only says queued,
  * running and ready, so the lines inside the bake (5 to 7) are spread over an
  * expected-duration curve (`curve`, a fraction of EXPECTED_LINK_MS) that the
  * bake finishing cuts short (`cut`): an early finish plays the rest at the
  * minimum dwell, it never waits for nothing.
  *
- *   1 Initializing WorldLink…          at once
- *   2 Sending signal to World N…       the request is sent
- *   3 Waiting for a reply…             (the request is out)
- *   4 Signal received.                 the proxy answered (queued, running or ready)
- *   5 Syncing world clocks…            answered, and 15% of the expected time
- *   6 Matching physics constants…      the bake runs, and 35% of the expected time
- *   7 Correcting for time dilation…    the bake runs, and 60% of the expected time
+ *   line                               shows when                          dwell
+ *   1 Initializing WorldLink…          0.7 s after the start               4 s
+ *   2 Sending signal to World N…       the request is sent                 6 s
+ *   3 Waiting for a reply…             (the request is out)                12 s
+ *   4 Signal received.                 the proxy answered                  4 s
+ *   5 Syncing world clocks…            answered, and 40% of the expected time
+ *   6 Matching physics constants…      the bake runs, and 60%
+ *   7 Correcting for time dilation…    the bake runs, and 80%
  *   8 Stabilizing the link…            the bake is done (the pack downloads)
  *   9 Inviting {name}…                 her face set is installed and the host started
  *   WorldLink established between World 0 and World N.   LAST_LINE_MS after line 9
+ *   (5 to 9 dwell LINE_DWELL_MS.)
+ *
+ *   A 75 s bake: 0.7, 4.7, 10.7, 22.7, 30, 45, 60, 72, 75, success 78.2 s.
+ *   A 20 s bake: 0.7, 4.7, 10.7, 22.7, 26.7, 29.5, 32.3, 35.1, 37.9, success 41.1 s.
+ *   Everything ready at once (a cached look, a replay): the same as 20 s.
  *
  * A failure (no network, an error, the host start failing, or no line 9 by
  * LINK_TIMEOUT_MS) shows "WorldLink failed. Lost contact with World N. Come
- * back later." instead, after the current line has had its dwell. "World N"
- * is worldNumber(her id): six digits, the same for her every time.
+ * back later." instead, FAIL_BEAT_MS after the current line came up at the
+ * soonest (a short beat, not a long line's whole dwell). "World N" is
+ * worldNumber(her id): six digits, the same for her every time.
  */
 import {
   LINK_LINE_COUNT,
@@ -63,17 +72,19 @@ export interface StatusLine {
   curve?: number;
   /** ...unless this milestone has arrived (the bake finished early). */
   cut?: LinkMilestone;
+  /** The least time it stays on screen before the next line, ms (default LINE_DWELL_MS). */
+  dwell?: number;
 }
 
 /** The approved copy, word for word (product feedback (261106)). */
 export const STATUS_LINES: readonly StatusLine[] = [
-  { key: 'Initializing WorldLink…', need: [] },
-  { key: 'Sending signal to World {world}…', need: ['sent'] },
-  { key: 'Waiting for a reply…', need: ['sent'] },
-  { key: 'Signal received.', need: ['answered'] },
-  { key: 'Syncing world clocks…', need: ['answered'], curve: 0.15, cut: 'baked' },
-  { key: 'Matching physics constants…', need: ['running'], curve: 0.35, cut: 'baked' },
-  { key: 'Correcting for time dilation…', need: ['running'], curve: 0.6, cut: 'baked' },
+  { key: 'Initializing WorldLink…', need: [], dwell: 4000 },
+  { key: 'Sending signal to World {world}…', need: ['sent'], dwell: 6000 },
+  { key: 'Waiting for a reply…', need: ['sent'], dwell: 12_000 },
+  { key: 'Signal received.', need: ['answered'], dwell: 4000 },
+  { key: 'Syncing world clocks…', need: ['answered'], curve: 0.4, cut: 'baked' },
+  { key: 'Matching physics constants…', need: ['running'], curve: 0.6, cut: 'baked' },
+  { key: 'Correcting for time dilation…', need: ['running'], curve: 0.8, cut: 'baked' },
   { key: 'Stabilizing the link…', need: ['baked'] },
   { key: 'Inviting {name}…', need: ['installed', 'host'] },
 ];
@@ -83,8 +94,15 @@ export const FAILURE_LINE = 'WorldLink failed. Lost contact with World {world}. 
 
 /** The first line shows this long after the start (the intro opens out of the solid colour). */
 export const FIRST_LINE_MS = 700;
-/** The shortest time a line is on screen before the next one (readable). */
+/** The shortest time a line is on screen before the next one (readable), unless it has its own `dwell`. */
 export const LINE_DWELL_MS = 2800;
+/** A failure shows at the soonest this long after the current line came up (never a long line's whole dwell). */
+export const FAIL_BEAT_MS = 2800;
+
+/** A line's minimum time on screen. */
+export function lineDwell(i: number): number {
+  return STATUS_LINES[i]?.dwell ?? LINE_DWELL_MS;
+}
 /** Line 9 is on screen this long before the success line (the climax and the expand into the solid play under it). */
 export const LAST_LINE_MS = 3200;
 /** How long a first bake is expected to take (the curve the middle lines are spread over). */
@@ -162,12 +180,12 @@ export function planLink(log: LinkLog): LinkPlan {
   if (failAt >= last) failAt = Infinity;
   const lines: number[] = [];
   for (let i = 0; i < STATUS_LINES.length; i++) {
-    const s = i === 0 ? FIRST_LINE_MS : Math.max(lines[i - 1] + LINE_DWELL_MS, gateTime(STATUS_LINES[i], T));
+    const s = i === 0 ? FIRST_LINE_MS : Math.max(lines[i - 1] + lineDwell(i - 1), gateTime(STATUS_LINES[i], T));
     if (!Number.isFinite(s) || (i > 0 && s > failAt)) break;
     lines.push(s);
   }
   if (Number.isFinite(failAt)) {
-    return { lines, success: null, fail: { at: Math.max(failAt, lines[lines.length - 1] + LINE_DWELL_MS), failure } };
+    return { lines, success: null, fail: { at: Math.max(failAt, lines[lines.length - 1] + FAIL_BEAT_MS), failure } };
   }
   return { lines, success: lines.length === LINK_LINE_COUNT ? lines[LINK_LINE_COUNT - 1] + LAST_LINE_MS : null, fail: null };
 }

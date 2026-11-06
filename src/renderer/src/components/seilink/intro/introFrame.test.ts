@@ -110,10 +110,10 @@ describe('the timeline (v6)', () => {
     });
   }
 
-  it('the run lengths: about 35 s instant, a 20 s bake under 45 s, a 75 s bake about 87 s', () => {
-    expect(timesFor(RUNS.instant, false).after!.end).toBeGreaterThan(30_000);
-    expect(timesFor(RUNS.instant, false).after!.end).toBeLessThan(40_000);
-    expect(timesFor(RUNS.fast, false).after!.end).toBeLessThan(45_000);
+  it('the run lengths: about 50 s instant or a 20 s bake, a 75 s bake about 87 s', () => {
+    expect(timesFor(RUNS.instant, false).after!.end).toBeGreaterThan(45_000);
+    expect(timesFor(RUNS.instant, false).after!.end).toBeLessThan(55_000);
+    expect(timesFor(RUNS.fast, false).after!.end).toBeLessThan(55_000);
     expect(timesFor(RUNS.slow, false).after!.end).toBeGreaterThan(80_000);
     expect(timesFor(RUNS.slow, false).after!.end).toBeLessThan(95_000);
   });
