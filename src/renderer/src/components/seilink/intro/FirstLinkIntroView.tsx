@@ -1,11 +1,15 @@
 /**
- * The first-link intro's picture (261105, T337; 261106 soft light styles):
+ * The first-link intro's picture (261105, T337; 261106 space aurora moods):
  * data in props, no IPC, so the app (FirstLinkIntro) and the dev harness
  * (DevIntroPreview) render the same thing.
  *
- * Every frame comes from computeFrame(style, timeline, t): a rAF loop writes
- * it to the DOM through refs (no React render per frame) and draws the two
- * light canvases (introFx.ts). With `manual`, there is no loop: the harness
+ * Every frame comes from computeFrame(mood, timeline, t, ..., end): a rAF
+ * loop writes it to the DOM through refs (no React render per frame) and draws
+ * the light and star canvases (introFx.ts).
+ *
+ * What it ends on (`end`): the plain background she spawns on (`plain_dark` /
+ * `plain_light`, the OS theme, PLAIN_COLOURS: the same colour the wallpaper
+ * draws), or her room (`room`, a replay). With `manual`, there is no loop: the harness
  * calls `window.__firstLinkSeek(ms)` and gets exactly that frame, which is
  * how the review videos are rendered without dropped frames.
  *
@@ -13,8 +17,8 @@
  *  - completed: the timeline reached its end. The end card ("Linked.") waits
  *    for the host's answer (`answer`), up to HOLD_MAX_MS. With `holdEnd`
  *    (the first link, played on the desktop stage) only the captions fade:
- *    the last frame is her room full screen, the same picture the wallpaper
- *    draws, so the window can step aside without a visible cut.
+ *    the last frame is her on the plain background (or in her room) full
+ *    screen, the same picture the wallpaper draws, so the window can step aside without a visible cut.
  *  - skipped: the Skip button or Esc, at any time. Fades out fast; with
  *    `holdEnd` it rushes to that last frame instead (SKIP_RUSH times the
  *    speed, a cut under reduced motion) while the captions fade, so a skip
@@ -24,7 +28,7 @@
  *    (the move-in sheet's retry) is what the player sees.
  */
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import type { IntroBeat, IntroStyle } from '@shared/seilinkIntroTelemetry';
+import type { IntroBeat, IntroEndOn, IntroMood } from '@shared/seilinkIntroTelemetry';
 import type { RoomPresetManifest, RoomState } from '@shared/seilinkRoom';
 import type { RoomUrlResolver } from '@shared/seilinkPack';
 import { RoomCanvas, type RoomAvatarSlot } from '../RoomCanvas';
@@ -43,7 +47,8 @@ import {
   type IntroTimeline,
 } from '../../../lib/seilink/introTimeline';
 import { captionTop, computeFrame, dayInk, revealMask, roomBehind, type Box, type IntroFrame } from './introFrame';
-import { FIELD_SCALE, drawBack, drawFront, herCentre, voidGradient } from './introFx';
+import { FIELD_SCALE, STAR_SCALE, drawBack, drawFront, drawStars, grainUrl, herCentre, voidGradient } from './introFx';
+import { PLAIN_COLOURS } from '../../../lib/seilink/plainTone';
 import styles from './FirstLinkIntro.module.css';
 
 export type IntroEnd = 'completed' | 'skipped' | 'aborted';
@@ -63,11 +68,13 @@ export interface IntroRoom {
 }
 
 export interface FirstLinkIntroViewProps {
-  style: IntroStyle;
+  mood: IntroMood;
+  /** What it ends on: the plain background (by the OS theme) or her room. */
+  end: IntroEndOn;
   reduced: boolean;
   characterId: string;
   name: string;
-  /** Her room; null shows a plain backdrop (the pack is not installed yet). */
+  /** Her room (a plain one draws only her); null ends on the plain colour alone (the pack is not installed yet). */
   room: IntroRoom | null;
   portrait?: string | null;
   /** The harness passes a face set; the app lets RoomAvatar find hers. */
@@ -96,7 +103,7 @@ const SKIP_RUSH = 8;
 type Mode = { kind: 'play' } | { kind: 'skip'; at: number; t: number } | { kind: 'abort'; at: number; t: number };
 
 export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactElement {
-  const { style, reduced, characterId, name, room, portrait = null, facepack, use = 'auto', answer, manual = false, holdEnd = false } = props;
+  const { mood, end, reduced, characterId, name, room, portrait = null, facepack, use = 'auto', answer, manual = false, holdEnd = false } = props;
   const t = useT();
   const tl: IntroTimeline = reduced ? CALM_TIMELINE : FULL_TIMELINE;
 
@@ -114,6 +121,8 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
 
   const rootRef = useRef<HTMLDivElement>(null);
   const backRef = useRef<HTMLCanvasElement>(null);
+  const starRef = useRef<HTMLCanvasElement>(null);
+  const grainRef = useRef<HTMLDivElement>(null);
   const frontRef = useRef<HTMLCanvasElement>(null);
   const roomRef = useRef<HTMLDivElement>(null);
   const avatarRef = useRef<HTMLDivElement>(null);
@@ -165,6 +174,10 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
         mask = revealMask(f, { x: centre.x - (lr.left - o.left), y: centre.y - (lr.top - o.top) });
       }
       set(roomEl, '--fl-mask', mask);
+      set(roomEl, '--fl-flood', f.room.flood.toFixed(3));
+      // The grain dithers the dark gradients and the glow on her; it goes as the light settles and the glow fades, so the last frame is the plain colour exactly.
+      const grain = Math.max(f.end === 'room' ? 1 - Math.min(1, f.room.reveal) : 1 - f.room.opacity, f.linkGlow);
+      set(grainRef.current, 'opacity', Math.max(0, grain).toFixed(3));
       set(avatarRef.current, 'opacity', f.avatar.opacity.toFixed(3));
       set(avatarRef.current, 'filter', f.avatar.filter);
 
@@ -230,6 +243,17 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
           c.height = h;
         }
       }
+      const sc = starRef.current;
+      if (sc) {
+        const w = Math.max(16, Math.round(f.W / STAR_SCALE));
+        const h = Math.max(16, Math.round(f.H / STAR_SCALE));
+        if (sc.width !== w || sc.height !== h) {
+          sc.width = w;
+          sc.height = h;
+        }
+        const sctx = sc.getContext('2d');
+        if (sctx) drawStars(sctx, f);
+      }
       const bctx = backRef.current?.getContext('2d');
       if (bctx) drawBack(bctx, f, her);
       const fctx = frontRef.current?.getContext('2d');
@@ -242,9 +266,9 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
     (tt: number): IntroFrame => {
       const W = rootRef.current?.clientWidth || window.innerWidth;
       const H = rootRef.current?.clientHeight || window.innerHeight;
-      return computeFrame(style, tl, tt, W, H, reduced);
+      return computeFrame(mood, tl, tt, W, H, reduced, end);
     },
-    [style, tl, reduced],
+    [mood, tl, reduced, end],
   );
 
   /** The end's fade at timeline time `tt`: [whole overlay, captions]. With holdEnd only the captions go. */
@@ -268,14 +292,23 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
   }, [answer, manual, tl]);
 
   // The clock (or the harness seek).
+  // The clock starts once, at mount: this effect re-runs when a callback changes (the
+  // captions' language, her name), and that must not restart the intro or, in the
+  // harness, draw frame 0 over the frame it seeked to.
+  const clockStarted = useRef(false);
+  const seekedRef = useRef(0);
   useLayoutEffect(() => {
-    startRef.current = performance.now();
+    if (!clockStarted.current) {
+      clockStarted.current = true;
+      startRef.current = performance.now();
+    }
     if (manual) {
       window.__firstLinkSeek = async (ms: number) => {
+        seekedRef.current = ms;
         apply(frameAt(ms), ...endFade(ms), false);
         await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
       };
-      apply(frameAt(0), 1, 1, false);
+      apply(frameAt(seekedRef.current), ...endFade(seekedRef.current), false);
       return () => {
         delete window.__firstLinkSeek;
       };
@@ -334,6 +367,11 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
     if (!room) cb.current.onReady?.();
   }, [room]);
 
+  const grainStyle = useMemo<React.CSSProperties>(() => {
+    const url = grainUrl();
+    return url ? { backgroundImage: `url(${url})` } : { display: 'none' };
+  }, []);
+
   const renderHer = useCallback(
     (slot: RoomAvatarSlot) => (
       <div ref={avatarRef} className={styles.avatarWrap}>
@@ -347,16 +385,20 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
     <div
       ref={rootRef}
       className={styles.root}
-      data-style={style}
+      data-mood={mood}
+      data-end={end}
       data-reduced={reduced ? '1' : undefined}
       role="dialog"
       aria-modal="true"
       aria-label="SeiLink"
       tabIndex={-1}
     >
-      <div className={styles.void} style={{ background: voidGradient(style) }} />
+      <div className={styles.void} style={{ background: voidGradient({ mood }) }} />
+      <canvas ref={starRef} className={styles.fx} aria-hidden="true" />
       <canvas ref={backRef} className={styles.fx} aria-hidden="true" />
       <div ref={roomRef} className={styles.room} aria-hidden="true">
+        {end === 'plain_light' ? <div className={styles.flood} /> : null}
+        {end !== 'room' || !room ? <div className={styles.plain} style={{ background: PLAIN_COLOURS[end === 'plain_light' ? 'light' : 'dark'] }} /> : null}
         {room ? (
           <RoomCanvas
             manifest={room.manifest}
@@ -367,15 +409,15 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
             fps={30}
             fadeMs={0}
             avatar={renderHer}
-            style={{ position: 'absolute', inset: 0 }}
+            // Transparent: the light shows through, and the plain layer above fades in the colour.
+            style={{ position: 'absolute', inset: 0, background: 'transparent' }}
             onReady={() => cb.current.onReady?.()}
             onError={() => cb.current.onReady?.()}
           />
-        ) : (
-          <div className={styles.roomFallback} />
-        )}
+        ) : null}
       </div>
       <canvas ref={frontRef} className={styles.fx} aria-hidden="true" />
+      <div ref={grainRef} className={styles.grain} style={grainStyle} aria-hidden="true" />
 
       <div ref={hudRef} className={styles.hud}>
         <div ref={brandRef} className={styles.brand} aria-hidden="true">

@@ -78,6 +78,7 @@
 /* Shared glass. */
 .rail,
 .panel,
+.guide,
 .times,
 .actions,
 .toolbar,
@@ -295,6 +296,114 @@
   background: rgb(var(--ink) / 0.72);
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 100'%3E%3Cpath d='M30 5c7.6 0 13 6 13 15.5 0 7.4-3.6 12.6-7.6 14.8V40c10 1.8 18.4 8.6 20.4 20.5L58 100H2l2.2-39.5C6.2 48.6 14.6 41.8 24.6 40v-4.7C20.6 33.1 17 27.9 17 20.5 17 11 22.4 5 30 5z'/%3E%3C/svg%3E") center / contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 100'%3E%3Cpath d='M30 5c7.6 0 13 6 13 15.5 0 7.4-3.6 12.6-7.6 14.8V40c10 1.8 18.4 8.6 20.4 20.5L58 100H2l2.2-39.5C6.2 48.6 14.6 41.8 24.6 40v-4.7C20.6 33.1 17 27.9 17 20.5 17 11 22.4 5 30 5z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+/* ── the guided setup (261106, first-link v3): one glass column in place of the rail and its panel ── */
+
+.guide {
+  width: calc(var(--rail-w) + var(--space-md) + var(--panel-w));
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--r-panel);
+  animation: panelIn 260ms var(--ease-pop);
+}
+
+.guideHead {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md-plus) var(--space-md-plus) var(--space-md);
+}
+
+.guideCount {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.guideDots {
+  display: inline-flex;
+  gap: 6px;
+}
+
+/* Filled dots, no outlines: this step wide and full, done steps half, the rest faint. */
+.guideDot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius, 2px);
+  background: rgb(var(--ink) / 0.16);
+  transition:
+    width 220ms var(--ease-pop),
+    background-color 220ms var(--ease);
+}
+
+.guideDotDone {
+  background: rgb(var(--ink) / 0.42);
+}
+
+.guideDotOn {
+  width: 22px;
+  background: rgb(var(--ink) / 0.88);
+}
+
+.guideTitle {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 24px;
+  line-height: 1.15;
+  letter-spacing: 0.02em;
+  color: rgb(var(--ink));
+  overflow-wrap: anywhere;
+}
+
+/* The step's panel, without its own glass: it scrolls between the header and the buttons. */
+.guideBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--space-md-plus);
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--ink) / 0.22) transparent;
+}
+
+.guideBody > .panel {
+  width: auto;
+  max-height: none;
+  overflow: visible;
+  padding: 0 0 var(--space-sm);
+  background: none;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  animation: none;
+}
+
+.guideBody > .groupPanel {
+  padding-block: 0 var(--space-sm);
+}
+
+.guideFoot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-md-plus) var(--space-md-plus);
+  box-shadow: inset 0 1px 0 rgb(var(--ink) / 0.1);
+}
+
+.guideGap {
+  flex: 1 1 auto;
 }
 
 /* ── the options panel ── */

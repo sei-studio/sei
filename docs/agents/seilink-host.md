@@ -123,6 +123,9 @@ lives on the wallpaper, not in the app or a tray.
   (`decorate`, BrushIcon, accent fill) and "Not now" (`later`); `prompt` adds
   the line "Decorate {name}'s room together?" above them (her own line did
   not come). Main only accepts `decorate` / `later` while an offer is up.
+  On the plain first state (first-link v3, HostDock `plain`) the copy is
+  "Set up together", "Set up {name}'s room together?" and, after Not now,
+  "Set up the room anytime with the brush."; the actions are the same.
 The page never gets DOM clicks: it reports its buttons' boxes (`CH.dock`) and
 answers a press with `CH.dockAction`, which the host relays as FromHost
 `dock`. A short caption above the dock says what a press did (no hover).
@@ -344,38 +347,68 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   (`seilink_movein_sheet.entry`, the editor's `opened_from`).
 - There is no on/off setting (the Settings "Labs" section was removed
   261105): SeiLink is available wherever `seilinkSupport()` says it can run.
-- **The first-link flow (261106).** Her first room is BLANK
-  (`blankRoomState()` in shared/seilinkRoom.ts: the cozy shell with bare
-  white walls, `view_blank`, one `plain_armchair`, no rug, curtains, shelf
-  or items; art from `scripts/seilink-blank-room.mjs`). Rooms saved before
-  stay as they are; only a companion with no saved room gets the blank one.
-  1. MoveInSheet (no room picker any more): "{name} starts in an empty room.
-     You can decorate it together." Move in saves `blankRoomState()` (the
-     first pack's default room when the cozy pack is missing) and starts the
-     host with `blank: true`.
+- **The first-link flow (261106; v3 the same day: plain spawn + guided
+  setup).** She first moves in on a PLAIN background, no room at all:
+  `plainRoomState(manifest)` in shared/seilinkRoom.ts is the bare preset room
+  (`bareRoomState`: every optional slot empty, no items) with `plain: true`.
+  RoomCanvas draws nothing of the room for a plain state, only black (OS dark
+  mode) or white (light mode) from `lib/seilink/plainTone.ts`
+  (`prefers-color-scheme`, followed live; `PLAIN_COLOURS`), with her at the
+  preset's seat, and gives the dock and the editor glass to match
+  (`plainOverlay`). Rooms saved before stay as they are (a saved blank room
+  from the first pass still gets the offer, `isFirstRoom`); only a companion
+  with no saved room starts plain. While plain: her prompt line is
+  `PLAIN_ROOM_LINE` (roomContext.ts), look() answers in words with no
+  picture, `describeRoom` / `roomNowLine` list nothing, and her first applied
+  decorate op sets the bare room up (`resolveDecorate` works on
+  `withoutPlain`, `applyRoomOps` drops the flag). `sanitizeRoomState` keeps
+  `plain` and `setup`.
+  1. MoveInSheet (no room picker): "{name} starts on a plain background. You
+     can set up the room together, step by step." Move in saves
+     `firstRoomState(packs)` (the cozy frame, else the first pack's) and
+     starts the host with `fresh: true`.
   2. The first link plays the intro ON the desktop stage (`stage: true`):
-     the window covers the primary display, the intro ends on her room full
-     screen (`holdEnd`: only the captions fade; a skip rushes to that frame).
+     the window covers the primary display and the intro settles into the
+     plain colour (or her room, for a companion who has one), full screen
+     (`holdEnd`: only the captions fade; a skip rushes to that frame).
      When the start answered ok the window steps aside (`exit` with
-     `reveal`), so the wallpaper, the same room, is what stays, icons on top.
-     A failed start comes back to the window and the sheet's retry. A first
-     room without the intro (already seen on this account) steps aside the
-     same way once she is in (`reveal`, purpose `move_in`).
+     `reveal`), so the wallpaper, the same picture, is what stays, icons on
+     top. A failed start comes back to the window and the sheet's retry. A
+     first room without the intro (already seen on this account) steps aside
+     the same way once she is in (`reveal`, purpose `move_in`).
   3. Then `seilink:offer` (`main/seilink/decorateOffer.ts`): she asks in one
-     desktop line (a `react` turn with `DECORATE_OFFER_NOTE` after the cache
-     breakpoint, through the poke budget: nothing for a free account over its
-     cap, no tokens on any other turn), and the dock holds the two answers.
-     Her line has `OFFER_LINE_WAIT_MS` (8 s); without it the dock asks in UI
-     copy (`prompt`). Asked once per companion per run, only while the room
-     is still `isBlankRoom`; it expires after 10 min, and closes when she
-     moves out or the room is decorated another way.
-  4. "Decorate together" opens her editor on the desktop (`opened_from:
-     offer`), shared with her as usual (RoomTogether). "Not now": she stays
-     in the blank room, the dock comes back with the caption "Decorate
-     anytime with the brush." and the offer is not asked again.
+     desktop line (a `react` turn with `DECORATE_OFFER_NOTE_PLAIN`, or
+     `DECORATE_OFFER_NOTE` for a blank room, after the cache breakpoint,
+     through the poke budget: nothing for a free account over its cap, no
+     tokens on any other turn), and the dock holds the two answers. Her line
+     has `OFFER_LINE_WAIT_MS` (8 s); without it the dock asks in UI copy
+     (`prompt`). Asked once per companion per run, only while the room is
+     still `isFirstRoom`; it expires after 10 min, and closes when she moves
+     out or the room is set up another way.
+  4. "Set up together" opens her editor on the desktop (`opened_from:
+     offer`) in the GUIDED SETUP (below), shared with her as usual
+     (RoomTogether: her live reactions and edits use the existing budgeted
+     paths, no new per-turn tokens). "Not now": she stays plain, the dock
+     comes back with the caption "Set up the room anytime with the brush."
+     and the offer is not asked again.
   5. In the editor the Sei avatar is her portrait or face set, drawn as the
      wallpaper draws her (RoomEditor `portrait`, from CompanionRoomEditor);
      the glass figure is only for a companion with no portrait.
+  6. **The guided setup** (RoomEditor `guided`, default on; helpers in
+     `lib/seilink/roomSetup.ts`). Four optional steps, each a panel of the
+     normal editor under a title, a hint, "Step n of m" with dots, and
+     Back / Skip / Next (Done on the last): `room` (the room type cards, each
+     shown bare), `colours` (Walls & fabrics), `furniture`, `extras` (the
+     items library). A step the pack has nothing for is left out
+     (`setupSteps`). On the room step while she is still plain, Skip is "Not
+     now" (closes, she stays plain) and Next takes the checked room bare
+     (cozy by default). The editor opens guided while she is plain or while
+     `RoomState.setup` (`{done: steps}`, saved on every Next and Skip, never
+     in the undo history) says a run was left unfinished, and resumes at the
+     first step not done (`resumeStep`; the room step while still plain).
+     Done saves without the marker and closes onto the wallpaper; the next
+     open is the normal editor. An `initial.panel` (a deep link) opens the
+     normal editor. Escape does not close panels while guided.
 - **The desktop stage (261106, `main/seilink/desktopStage.ts`,
   `stageFlow.ts`).** The room editor (and the first-link intro) open ON the
   desktop, above the desktop icons, by turning the MAIN window into a
@@ -423,25 +456,44 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   `sei.seilinkIntroSeen.v1.<scope>`): seen when it completed or was skipped
   on a move-in that worked. Replay plays it over her room with nothing
   starting.
-  - Frames are pure (`introFrame.ts` computeFrame, `introFx.ts` canvases),
-    so the harness seeks them: `?seilinkintro=1` (DevIntroPreview,
-    `&style=aurora|bloom|tide&room=blank|default&hold=1&reduced=1&manual=1`),
-    and `scripts/seilink-intro-shots.mjs` renders the review mp4s.
-  - 261106: three soft light styles behind `IntroStyle`: `aurora` (default,
-    `DEFAULT_INTRO_STYLE`), `bloom`, `tide`; a dev override is
-    `localStorage['sei.seilinkIntroStyle']`. Gradients and glows on two
-    canvases a sixth of the screen (`FIELD_SCALE`), stretched, additive: no
-    scanlines, grids, hard edges or glitch slices. She forms out of a glow
-    (brightness + blur + drop-shadow easing to none) and the room canvases
-    (not her) open in a soft radial mask around her. The 261105 holo /
-    glitch / tunnel code is gone.
+  - Frames are pure (`introFrame.ts` computeFrame(mood, timeline, t, W, H,
+    reduced, end), `introFx.ts` canvases), so the harness seeks them:
+    `?seilinkintro=1` (DevIntroPreview, `&mood=accretion|nebula|eclipse
+    &room=plain|blank|default&tone=dark|light&hold=1&reduced=1&manual=1`),
+    and `scripts/seilink-intro-shots.mjs` renders the review mp4s (one per
+    mood, the `-light` variants with prefers-color-scheme light, `reduced`;
+    `--stills ms,ms` for PNGs only).
+  - 261106 (Shawn: keep the aurora, make it space themed): the aurora is
+    the only light (`IntroStyle` 'aurora'; bloom and tide are gone), in three
+    colour moods (`IntroMood`, `introMood()` in introPref.ts, default
+    `DEFAULT_INTRO_MOOD` 'nebula', dev override
+    `localStorage['sei.seilinkIntroMood']`): `accretion` (Interstellar: gold,
+    amber and white on black, blue-white highlights), `nebula` (No Man's Sky:
+    teal, magenta, violet and orange on indigo), `eclipse` (the two mixed).
+    Same motion and shape in every mood (a test pins it). Layers: the void
+    gradient, a faint seeded starfield canvas (half scale, `STAR_SCALE`), the
+    curtains canvas (a sixth, `FIELD_SCALE`), the room, the front glows, a
+    still grain tile (dither, alpha 5 or less, fades with the ending), the
+    HUD. Gradients and glows only, additive: no lines, rings or grids.
+    Skia dithers canvas gradients in a 2x2 pattern that shows as a checker
+    once the small canvas is stretched, so each canvas gets a blur(1.2px)
+    self-copy pass (`melt`). She forms out of a glow (brightness + blur +
+    drop-shadow easing to none).
+  - The ending (`IntroEndOn`, `introEndFor(state, tone)` in plainTone.ts):
+    `plain_dark` fades the light into black; `plain_light` floods it to
+    white first (a colour-dodge layer of a rising grey capped at
+    `FLOOD_MAX` 0.55, so the brights reach white before the white layer
+    covers everything; uncapped dodge turns blocky and saturated) and has no
+    link-glow breath (it drew rings on white); `room` opens her room in a
+    soft radial mask around her as before. The last frame is exactly the
+    wallpaper's colour.
   - 261106 captions: they sit in the empty space above her head, never over
     her (`captionTop`: about 15% down, pulled up to keep a gap above her
     measured box, never above 64px so they clear the corner label). Each HUD
     piece (SEILINK label, captions, Skip) switches from light ink over a soft
     dark cloud to deep ink over a soft white cloud by how much of her room is
-    behind it (`roomBehind` + `dayInk`, the same circle as the reveal mask),
-    because her first room is white. Feathered radial clouds, no boxes.
+    behind it (`roomBehind` + `dayInk`, the same circle as the reveal mask,
+    and the white flood on a light ending). Feathered radial clouds, no boxes.
 - **The guide's SeiLink tour** (`lib/seilink/tourPref.ts` decides,
   `seilinkTour.ts` records, `useTutorialStore` mode `seilink`, steps
   `sl_offer` / `sl_button` / `sl_room` in TutorialOverlay). App.tsx polls
@@ -469,7 +521,8 @@ errors) is in [`seilink-analytics.md`](seilink-analytics.md). The basics:
   chat left open), and it would swamp the number. Her desktop lines are
   counted by `seilink_line_shown` instead.
 - M4: `seilink_moved_in` {character_id, swapped, preset, first_room,
-  blank_room (261106)} (not on a restore); `seilink_moved_out` {character_id, via app|dock};
+  blank_room (261106), plain_room + plain_tone dark|light|unknown (261106
+  v3, from nativeTheme)} (not on a restore); `seilink_moved_out` {character_id, via app|dock};
   `seilink_dock_action` {action edit|deafen|moveout, character_id,
   deafened?}; `seilink_line_shown` {kind poke|idle|react, chars, character_id}.
   Never the line's text.
@@ -501,9 +554,13 @@ errors) is in [`seilink-analytics.md`](seilink-analytics.md). The basics:
   "arrives" 1.5 s after the room draws; dev stub in `devHarnessStubs.ts`).
 - The first-room flow (261106) on a simulated desktop (generic menu bar,
   icons, dock bar): `?seilinkflow=1&pack=<url>&phase=desktop|offer|prompt|
-  later|editor|decorated|closed` (DevFirstRoomFlow), rendered to stills plus
-  one mp4 by `node scripts/seilink-first-room-flow.mjs --out <dir>
-  [--intro <aurora.mp4 from seilink-intro-shots>]`.
+  later|editor|decorated|closed[&live=1]` (DevFirstRoomFlow; it starts on
+  the plain state; `live=1` follows the presses: "Set up together" opens the
+  guided editor over the desktop and Done comes back to the saved
+  wallpaper). `node scripts/seilink-first-room-flow.mjs --out <dir>
+  [--intro <nebula.mp4>] [--intro-light <nebula-light.mp4>]` clicks through
+  the guided setup like a person, once per OS theme, and writes stills plus
+  `first-room-flow-dark.mp4` / `-light.mp4`.
 - CI: `.github/workflows/seilink-host-check.yml` (windows-2022/2025,
   macos-15/26; dispatch, or push to `feat/seilink-host` under the host
   paths). One runner per OS also packages a dir build and checks the addon

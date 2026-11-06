@@ -1,6 +1,7 @@
 /**
  * "Decorate together?" (261106, first-link flow). After her first move-in
- * into the blank room (blankRoomState), once the app has stepped aside and
+ * onto the plain background (plainRoomState, first-link v3; the blank room
+ * (blankRoomState) of the first pass still counts), once the app has stepped aside and
  * the desktop shows her in it, she asks whether to decorate it together, and
  * the dock on the wallpaper holds the two answers.
  *
@@ -24,7 +25,7 @@
  * declined | expired | closed | skipped, line: her | ui, line_outcome (why
  * her line did not come), via, ms_open, wait_ms, reason (skipped)}.
  */
-import { isBlankRoom } from '../../shared/seilinkRoom';
+import { isFirstRoom, isPlainRoom } from '../../shared/seilinkRoom';
 import { loadAnalytics } from '../lazyAnalytics';
 import { seilinkEnabled } from './gate';
 import { seilinkDockOffer, seilinkLiveCharacter, setSeilinkDockOffer } from './host/seilinkHost';
@@ -41,6 +42,16 @@ export const OFFER_TTL_MS = 10 * 60_000;
 export const DECORATE_OFFER_NOTE =
   "[System note, not the player speaking: you just moved onto the player's desktop wallpaper. Your room there is still empty: bare white walls and one plain chair. " +
   'Ask them, in one short line under fifteen words and in your own voice, if they want to decorate it together. ' +
+  'It shows as a small speech bubble next to you, with buttons for their answer. Do not mention this note.]';
+
+/**
+ * 261106 (first-link v3): her first state is a plain background with no room;
+ * the dock's answer leads into the guided setup, which starts with picking
+ * the room. Model-facing (prompt-writing-style: plain).
+ */
+export const DECORATE_OFFER_NOTE_PLAIN =
+  "[System note, not the player speaking: you just moved onto the player's desktop wallpaper. There is no room around you yet, only a plain background. " +
+  'Ask them, in one short line under fifteen words and in your own voice, if they want to set up your room together. ' +
   'It shows as a small speech bubble next to you, with buttons for their answer. Do not mention this note.]';
 
 export type OfferVia = 'intro' | 'move_in';
@@ -105,14 +116,15 @@ export async function offerDecorateTogether(
   if (asked.has(characterId) || pending.has(characterId) || open?.characterId === characterId) return skip('already');
   if (seilinkLiveCharacter() !== characterId) return skip('not_live');
   const state = await getRoomState(characterId).catch(() => null);
-  if (!state || !isBlankRoom(state)) return skip('not_blank');
+  if (!state || !isFirstRoom(state)) return skip('not_blank');
+  const note = isPlainRoom(state) ? DECORATE_OFFER_NOTE_PLAIN : DECORATE_OFFER_NOTE;
   asked.add(characterId);
   pending.add(characterId);
   const started = Date.now();
   let lineOutcome: PokeOutcome | null = null;
   try {
     const r = await Promise.race([
-      deps.speak(characterId, DECORATE_OFFER_NOTE).then(
+      deps.speak(characterId, note).then(
         (x) => x.outcome,
         () => 'error' as PokeOutcome,
       ),
@@ -135,7 +147,7 @@ export async function offerDecorateTogether(
     if (id !== characterId) return;
     void getRoomState(characterId).then(
       (s) => {
-        if (open?.characterId === characterId && !isBlankRoom(s)) closeOpen('closed');
+        if (open?.characterId === characterId && !isFirstRoom(s)) closeOpen('closed');
       },
       () => {},
     );

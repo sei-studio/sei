@@ -21,8 +21,8 @@
  * user moves someone in (not on a restore), seilink_moved_out
  * {character_id, via} when the user moves her out from the app or the dock.
  */
-import { app } from 'electron';
-import { isBlankRoom } from '../../../shared/seilinkRoom';
+import { app, nativeTheme } from 'electron';
+import { isBlankRoom, isPlainRoom } from '../../../shared/seilinkRoom';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
@@ -106,6 +106,15 @@ interface HostFacts {
 
 /** Everything the host says, plus 'status' — the CI self-test (selfTest.ts) listens here. */
 export const seilinkHostEvents = new EventEmitter();
+
+/** 261106: the plain background's colour follows the OS theme (the host page draws it from prefers-color-scheme). */
+function osPlainTone(): 'dark' | 'light' | 'unknown' {
+  try {
+    return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+  } catch {
+    return 'unknown';
+  }
+}
 
 const QUIT_GRACE_MS = 1500;
 const HELLO_WINDOW_MS = 5000;
@@ -319,6 +328,8 @@ async function startNow(
       first_room: opts?.firstRoom === true,
       // 261106: her first room starts blank, to decorate together (decorateOffer.ts).
       blank_room: opts?.firstRoom === true && room !== null && isBlankRoom(room.state),
+      // 261106 (first-link v3): she spawns on a plain background, black or white with the OS theme.
+      ...(room !== null && isPlainRoom(room.state) ? { plain_room: true, plain_tone: osPlainTone() } : {}),
     });
   }
   if (!guard.stillValid()) throw new Error('ACCOUNT_SWITCHING');

@@ -5,6 +5,7 @@
  */
 import {
   ROOM_EDITOR_GROUPS,
+  ROOM_SETUP_STEPS,
   ROOM_PRESET_IDS,
   ROOM_TIMES,
   SEILINK_ROOM_FORMAT,
@@ -412,6 +413,12 @@ export function sanitizeRoomState(manifest: RoomPresetManifest, raw: unknown): R
   const av = s.avatar as Record<string, unknown> | undefined;
   if (av && av.kind === 'live2d' && typeof av.modelPath === 'string' && av.modelPath.length > 0 && av.modelPath.length < 1024) {
     out.avatar = { kind: 'live2d', modelPath: av.modelPath };
+  }
+  // 261106: the plain first state and the guided setup's progress.
+  if (s.plain === true) out.plain = true;
+  const setup = s.setup as Record<string, unknown> | undefined;
+  if (setup && typeof setup === 'object' && Array.isArray(setup.done)) {
+    out.setup = { done: ROOM_SETUP_STEPS.filter((step) => (setup.done as unknown[]).includes(step)) };
   }
   return settleItems(manifest, out);
 }

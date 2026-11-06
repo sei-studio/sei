@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { defaultRoomState, describeRoom, resolveSlots, roomTimeAt, tintName, type RoomPresetManifest } from './seilinkRoom';
+import {
+  bareRoomState,
+  defaultRoomState,
+  describeRoom,
+  isFirstRoom,
+  isPlainRoom,
+  PLAIN_ROOM_PLACE,
+  plainRoomState,
+  resolveSlots,
+  roomTimeAt,
+  tintName,
+  withoutPlain,
+  type RoomPresetManifest,
+} from './seilinkRoom';
+import { sanitizeRoomState } from './seilinkValidate';
 
 const manifest: RoomPresetManifest = {
   format: 'sei-room',
@@ -54,5 +68,45 @@ describe('seilinkRoom', () => {
     expect(tintName('#d63a3a')).toBe('red');
     expect(tintName('#3aa04a')).toBe('green');
     expect(tintName('nope')).toBeNull();
+  });
+});
+
+describe('the plain first state and the guided setup marker (261106)', () => {
+  it('the bare room empties every optional slot and has no items', () => {
+    const s = bareRoomState(manifest);
+    expect(s.preset).toBe('cozy');
+    expect(s.slots).toEqual({ rug: { id: null } });
+    expect(s.items).toEqual([]);
+    expect(resolveSlots(manifest, s).map((x) => x.slot)).toEqual(['view', 'shell', 'curtains', 'chair']);
+  });
+
+  it('keeps the time and avatar when asked', () => {
+    const s = bareRoomState(manifest, { time: 'night', avatar: { kind: 'live2d', modelPath: 'm.model3.json' } });
+    expect(s.time).toBe('night');
+    expect(s.avatar).toEqual({ kind: 'live2d', modelPath: 'm.model3.json' });
+  });
+
+  it('plain is the bare room with the flag, and counts as a first room', () => {
+    const p = plainRoomState(manifest);
+    expect(isPlainRoom(p)).toBe(true);
+    expect(isFirstRoom(p)).toBe(true);
+    expect(withoutPlain(p)).toEqual(bareRoomState(manifest));
+    expect(isPlainRoom(defaultRoomState('cozy'))).toBe(false);
+    const d = defaultRoomState('cozy');
+    expect(withoutPlain(d)).toBe(d);
+  });
+
+  it('describes nothing while plain', () => {
+    expect(describeRoom(manifest, plainRoomState(manifest))).toMatchObject({ place: PLAIN_ROOM_PLACE, things: [] });
+  });
+
+  it('sanitize keeps plain and the setup steps, in order, and drops junk', () => {
+    const raw = JSON.parse(JSON.stringify({ ...plainRoomState(manifest), setup: { done: ['furniture', 'nope', 'room', 3] } }));
+    const s = sanitizeRoomState(manifest, raw);
+    expect(s.plain).toBe(true);
+    expect(s.setup).toEqual({ done: ['room', 'furniture'] });
+    const junk = sanitizeRoomState(manifest, { ...defaultRoomState('cozy'), plain: 'yes', setup: 'all' });
+    expect(junk.plain).toBeUndefined();
+    expect(junk.setup).toBeUndefined();
   });
 });

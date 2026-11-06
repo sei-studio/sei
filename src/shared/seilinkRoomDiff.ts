@@ -180,6 +180,13 @@ function pairItems(a: RoomItemPlacement[], b: RoomItemPlacement[]): { pairs: Arr
  * `afterManifest` only when the preset changed (then that is the one change).
  */
 export function roomChanges(beforeManifest: RoomPresetManifest, before: RoomState, afterManifest: RoomPresetManifest, after: RoomState): RoomChange[] {
+  // 261106: the plain first state has no room to diff: setting one up is one change.
+  if ((before.plain === true) !== (after.plain === true)) {
+    return after.plain
+      ? [{ kind: 'preset', text: 'took your room away, back to a plain background' }]
+      : [{ kind: 'preset', text: `set up your room: ${plain(afterManifest.place, 60) || 'a room'}` }];
+  }
+  if (before.plain && after.plain) return [];
   if (before.preset !== after.preset || beforeManifest.id !== afterManifest.id) {
     return [{ kind: 'preset', text: `moved you to ${plain(afterManifest.place, 60) || 'a different room'}` }];
   }

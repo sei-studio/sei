@@ -18,6 +18,16 @@
  *    (shared/seilinkPlace.ts) and shows those places faintly
  *    (PlacementGuide) until it is dropped.
  *
+ * Guided setup (261106, first-link v3): while she is still on the plain
+ * background (no room yet), or a setup run was left unfinished, the editor
+ * opens guided instead of with the rail: one panel per step (room, colours,
+ * furniture, little extras; lib/seilink/roomSetup.ts), a step indicator, a
+ * title and a line under it, and Back / Skip / Next, Done on the last step.
+ * Every step is optional. Next and Skip save the room with the steps done so
+ * far (RoomState.setup), so closing part way resumes at the first step not
+ * done; Done saves it without, and the next open is the normal editor.
+ * Analytics: seilink_setup and seilink_setup_step (shape only).
+ *
  * Every change is live. Rules (placement, ops, undo) are the pure helpers in
  * shared/seilinkEdit.ts; reads and writes go through a RoomEditorSource
  * (IPC in the app, memory in the dev preview). Save writes through IPC and
@@ -27,6 +37,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from 'react-dom';
 import {
   BLANK_FRAME,
+  bareRoomState,
   defaultRoomState,
   PLAIN_PATTERN,
   patternsFor,
@@ -38,10 +49,12 @@ import {
   type RoomPolygon,
   type RoomPresetId,
   type RoomPresetManifest,
+  type RoomSetupStep,
   type RoomSlotId,
   type RoomState,
   type RoomTime,
   ROOM_PRESET_IDS,
+  ROOM_SETUP_STEPS,
 } from '@shared/seilinkRoom';
 import { frameFor, roomDrawPlan, viewportToCanvas, type ItemLayer, type RoomOverlay, type RoomViewport, type SlotLayer } from '@shared/seilinkDraw';
 import { placementOf, placementRegions, snapSpot, spriteFit, type PlacementClass, type RoomSurface } from '@shared/seilinkPlace';
@@ -83,7 +96,10 @@ import {
   type EditHistory,
 } from '@shared/seilinkEdit';
 import { useT } from '../../lib/i18n';
+import { sei } from '../../lib/ipcClient';
 import { ROOM_PRESET_LABEL } from '../../lib/seilink/moveIn';
+import { SEILINK_SETUP_EVENT, SEILINK_SETUP_STEP_EVENT, type SetupAction, type SetupStepAction } from '@shared/seilinkIntroTelemetry';
+import { SETUP_COPY, SETUP_PANEL, markDone, nextStep, opensGuided, prevStep, resumeStep, setupSteps, withoutSetup } from '../../lib/seilink/roomSetup';
 import { useEditorAnalytics, type TogetherAnalytics } from '../../lib/seilink/editorAnalytics';
 import { lightSlotsOf, roomShapeOf, type EditorOpenedFrom, type EditorSurface } from '@shared/seilinkTelemetry';
 import { RoomCanvas, type RoomAvatarSlot } from './RoomCanvas';
@@ -174,6 +190,8 @@ export interface RoomEditorProps {
   name?: string;
   /** 261105 (T336): decorating together with her (RoomTogether), drawn over the room. */
   together?: (ctx: RoomTogetherCtx) => React.ReactNode;
+  /** 261106: false never opens the guided setup (default: guided while she is plain or a run is unfinished; never with `initial.panel`). */
+  guided?: boolean;
 }
 
 /** What the together layer (RoomTogether.tsx) gets from the editor. */
@@ -206,6 +224,30 @@ export function editableSlots(manifest: RoomPresetManifest, state: RoomState): R
       return def.options.length > 1 || def.optional === true || Boolean(id && byId.get(id)?.tintable);
     })
     .map(([slot]) => slot);
+}
+
+/** The guided setup's steps this room has something for (lib/seilink/roomSetup.ts). */
+export function guideStepsFor(manifest: RoomPresetManifest, state: RoomState): RoomSetupStep[] {
+  const slots = editableSlots(manifest, state);
+  return setupSteps({
+    fabrics: groupSlots(slots, 'fabrics', manifest).length > 0,
+    furniture: groupSlots(slots, 'furniture', manifest).length > 0,
+    items: manifest.components.some((c) => c.slot === 'item'),
+  });
+}
+
+/** One guided setup run. */
+interface GuideRun {
+  step: RoomSetupStep;
+  /** Steps done (completed or skipped), saved with the room. */
+  done: RoomSetupStep[];
+  completed: number;
+  skipped: number;
+  /** A run left unfinished before (the room carried `setup`). */
+  resumed: boolean;
+  /** She was on the plain background when it began. */
+  plain: boolean;
+  at: number;
 }
 
 function useDebounced<T>(value: T, ms: number): T {
@@ -661,6 +703,12 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [pickTick, setPickTick] = useState(0);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // 261106: the guided setup run (null = the normal editor).
+  const [guide, setGuide] = useState<GuideRun | null>(null);
+  const guideRef = useRef(guide);
+  guideRef.current = guide;
+  /** A save the guide asked for, run after the render that applied its edit (`setup`: the marker to save, null for none). */
+  const [guideSave, setGuideSave] = useState<{ n: number; setup: RoomSetupStep[] | null; close: boolean } | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const pickerRef = useRef(new RoomPicker());
@@ -681,9 +729,23 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     const m = st ? packsRef.current?.find((p) => p.id === st.preset)?.manifest : undefined;
     return st && m ? roomShapeOf(m, st, lastPattern.current) : undefined;
   }, []);
+  // ── the guided setup: its steps for the room now, the step on screen, and the panel that step shows ──
+  const guiding = guide !== null;
+  const presentNow = history?.present ?? null;
+  const guideSteps = useMemo(() => {
+    const m = presentNow ? packs?.find((p) => p.id === presentNow.preset)?.manifest : undefined;
+    return guiding && presentNow && m ? guideStepsFor(m, presentNow) : [];
+  }, [guiding, presentNow, packs]);
+  // A step the room no longer has (another pack) gives way to the next one it has.
+  const gStep: RoomSetupStep | null = guide
+    ? guideSteps.includes(guide.step)
+      ? guide.step
+      : (guideSteps.find((x) => ROOM_SETUP_STEPS.indexOf(x) > ROOM_SETUP_STEPS.indexOf(guide.step)) ?? guideSteps[guideSteps.length - 1] ?? null)
+    : null;
+  const shownPanel: Group | null = gStep ? SETUP_PANEL[gStep] : panel;
   const analytics = useEditorAnalytics(telemetry ? { ...telemetry, characterId } : null, {
     history,
-    panel,
+    panel: shownPanel,
     saving,
     loadError,
     packsEmpty: packs !== null && packs.length === 0,
@@ -700,15 +762,21 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
       if (!list.length) return;
       const pack = list.find((p) => p.id === saved?.preset) ?? list[0];
       // The clean point is what is on disk; a room whose pack is missing here starts dirty on the first pack.
-      const savedClean = saved && saved.preset === pack.id ? sanitizeRoomState(pack.manifest, saved) : saved;
+      // The setup marker never enters the history (it is added on save while the guide runs).
+      const savedClean = saved && saved.preset === pack.id ? withoutSetup(sanitizeRoomState(pack.manifest, saved)) : saved && withoutSetup(saved);
       const start = initial?.state ?? saved;
       const state =
         start && start.preset === pack.id
           ? start === saved
             ? savedClean!
-            : sanitizeRoomState(pack.manifest, start)
+            : withoutSetup(sanitizeRoomState(pack.manifest, start))
           : { ...defaultRoomState(pack.id), time: start?.time ?? 'auto', avatar: start?.avatar ?? { kind: 'sei' as const } };
       setHistory(createHistory(state, savedClean));
+      if (props.guided !== false && !initial?.panel && opensGuided(saved) && saved?.preset === pack.id) {
+        const done = saved.setup?.done ?? [];
+        const plain = state.plain === true;
+        setGuide({ step: resumeStep(guideStepsFor(pack.manifest, state), done, plain), done, completed: 0, skipped: 0, resumed: Boolean(saved.setup), plain, at: Date.now() });
+      }
     } catch {
       setLoadError(true);
     }
@@ -728,7 +796,8 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
         if (!h || isDirty(h)) return;
         void source.load().then((s) => {
           if (!s) return;
-          setHistory((cur) => (cur && !isDirty(cur) ? createHistory(s, s) : cur));
+          const clean = withoutSetup(s);
+          setHistory((cur) => (cur && !isDirty(cur) ? createHistory(clean, clean) : cur));
         });
       }),
     [source],
@@ -835,13 +904,15 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     };
   }, [inline]);
 
-  const doSave = useCallback(async (): Promise<boolean> => {
+  /** Save. While the guide runs the room carries the steps done so far (`setup` overrides: null = no marker). */
+  const doSave = useCallback(async (setup?: RoomSetupStep[] | null): Promise<boolean> => {
     const h = historyRef.current;
     if (!h) return false;
     const sent = h.present;
+    const done = setup === undefined ? (guideRef.current?.done ?? null) : setup;
     setSaving('saving');
     try {
-      const saved = await source.save(sent);
+      const saved = withoutSetup(await source.save(done ? { ...sent, setup: { done } } : sent));
       setHistory((cur) => (cur ? markSaved(cur, saved, sent) : cur));
       setSaving('saved');
       return true;
@@ -865,9 +936,111 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
   }, [onClose]);
 
   const pickPreset = (id: RoomPresetId): void => {
-    if (!packs?.some((p) => p.id === id)) return;
+    const target = packs?.find((p) => p.id === id);
+    if (!target) return;
     setSelected(null);
-    edit((s) => switchPreset(s, id));
+    // Guided: a room is picked bare (furniture and extras have their own steps), and that ends the plain background.
+    if (guideRef.current) edit((s) => (s.preset === id && !s.plain ? s : bareRoomState(target.manifest, s)));
+    else edit((s) => switchPreset(s, id));
+  };
+
+  // ── the guided setup's analytics (shape only; the companion editor only) and buttons ──
+  const trackSetup = useCallback(
+    (event: typeof SEILINK_SETUP_EVENT | typeof SEILINK_SETUP_STEP_EVENT, props: Record<string, string | number | boolean | null>): void => {
+      if (!telemetry) return;
+      try {
+        sei.track(event, { character_id: characterId ?? null, ...props });
+      } catch {
+        /* analytics must never disrupt the editor */
+      }
+    },
+    [telemetry, characterId],
+  );
+  const runProps = (g: GuideRun, action: SetupAction, step: RoomSetupStep | null): Record<string, string | number | boolean | null> => ({
+    action,
+    step,
+    surface: telemetry?.surface ?? 'app',
+    plain: g.plain,
+    steps_completed: g.completed,
+    steps_skipped: g.skipped,
+    steps_total: guideSteps.length,
+    ms_open: Date.now() - g.at,
+    opened_from: telemetry?.openedFrom ?? null,
+  });
+  const stepEvent = (step: RoomSetupStep, action: SetupStepAction, extra: Record<string, boolean | number> = {}): void =>
+    trackSetup(SEILINK_SETUP_STEP_EVENT, { step, action, resumed: guideRef.current?.resumed === true, index: guideSteps.indexOf(step) + 1, ...extra });
+
+  // Started (or resumed) once per run; each step shown once each time it comes up.
+  const runOpened = useRef(false);
+  useEffect(() => {
+    if (!guide || runOpened.current) return;
+    runOpened.current = true;
+    trackSetup(SEILINK_SETUP_EVENT, runProps(guide, guide.resumed ? 'resumed' : 'started', gStep));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guide !== null]);
+  /** The room when the step came up (`changed` on its completion). */
+  const stepFrom = useRef<string | null>(null);
+  useEffect(() => {
+    if (!gStep) return;
+    stepFrom.current = historyRef.current ? JSON.stringify(historyRef.current.present) : null;
+    stepEvent(gStep, 'shown');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gStep]);
+  // Closed before Done (the close button, Escape, Not now): abandoned, at the step on screen.
+  const gStepRef = useRef(gStep);
+  gStepRef.current = gStep;
+  const runPropsRef = useRef(runProps);
+  runPropsRef.current = runProps;
+  useEffect(
+    () => () => {
+      const g = guideRef.current;
+      if (g && runOpened.current) trackSetup(SEILINK_SETUP_EVENT, runPropsRef.current(g, 'abandoned', gStepRef.current));
+    },
+    [trackSetup],
+  );
+
+  // The guide's saves run after the render that applied its edit, so they save what is on screen.
+  useEffect(() => {
+    if (!guideSave) return;
+    void doSave(guideSave.setup).then((ok) => {
+      if (ok && guideSave.close) onClose();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guideSave]);
+
+  /** Next (Done on the last step) and Skip: mark the step done, save, go on. */
+  const guideOn = (how: 'completed' | 'skipped'): void => {
+    const g = guideRef.current;
+    const h = historyRef.current;
+    if (!g || !gStep || !h || !packs) return;
+    // Next on the room step while she is still plain takes the room shown picked (bare).
+    if (how === 'completed' && gStep === 'room' && h.present.plain) {
+      const m = packs.find((p) => p.id === h.present.preset)?.manifest;
+      if (m) edit((s) => bareRoomState(m, s));
+    }
+    const changed = how === 'completed' && stepFrom.current !== JSON.stringify(h.present);
+    stepEvent(gStep, how, how === 'completed' ? { changed: changed || (gStep === 'room' && h.present.plain === true) } : {});
+    const done = markDone(g.done, gStep);
+    const run: GuideRun = { ...g, done, completed: g.completed + (how === 'completed' ? 1 : 0), skipped: g.skipped + (how === 'skipped' ? 1 : 0) };
+    const next = nextStep(guideSteps, gStep);
+    if (next) {
+      setGuide({ ...run, step: next });
+      setGuideSave((r) => ({ n: (r?.n ?? 0) + 1, setup: done, close: false }));
+      return;
+    }
+    // Done: the run is over; the room is saved without the marker and the editor closes onto it.
+    trackSetup(SEILINK_SETUP_EVENT, runProps(run, 'finished', gStep));
+    setGuide(null);
+    setPanel(null);
+    setGuideSave((r) => ({ n: (r?.n ?? 0) + 1, setup: null, close: true }));
+  };
+  const guideBack = (): void => {
+    const g = guideRef.current;
+    const prev = gStep ? prevStep(guideSteps, gStep) : null;
+    if (!g || !gStep || !prev) return;
+    stepEvent(gStep, 'back');
+    setSelected(null);
+    setGuide({ ...g, step: prev });
   };
 
   const addItemById = (id: string): void => {
@@ -984,7 +1157,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
       if (e.key === 'Escape') {
         if (confirmClose) setConfirmClose(false);
         else if (selected !== null) setSelected(null);
-        else if (panel) setPanel(null);
+        else if (panel && !guideRef.current) setPanel(null);
         else requestClose();
         return;
       }
@@ -1161,6 +1334,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
 
   // ── panels ──
   const renderPanel = (): React.ReactNode => {
+    const panel = shownPanel;
     if (!panel) return null;
     if (panel === 'avatar') {
       return (
@@ -1236,11 +1410,21 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
                     key={id}
                     type="button"
                     className={on ? `${styles.card} ${styles.cardOn}` : styles.card}
+                    data-preset={id}
                     aria-pressed={on}
                     disabled={!p}
                     onClick={() => pickPreset(id)}
                   >
-                    {p ? <RoomCard pack={p} state={on ? state : defaultRoomState(id)} time={time} /> : <span className={styles.cardWait} />}
+                    {p ? (
+                      <RoomCard
+                        pack={p}
+                        // Guided: each room as it would come in (bare); the plain background has nothing to show, so its room is drawn bare too.
+                        state={on && !state.plain ? state : guide ? bareRoomState(p.manifest, state) : defaultRoomState(id)}
+                        time={time}
+                      />
+                    ) : (
+                      <span className={styles.cardWait} />
+                    )}
                     {on && (
                       <span className={styles.cardCheck}>
                         <CheckIcon size={14} />
@@ -1288,6 +1472,53 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
       );
     }
     return null;
+  };
+
+  /** The guided setup (in place of the rail): which step of how many, its title and line, its panel, and Back / Skip / Next. */
+  const renderGuide = (step: RoomSetupStep, g: GuideRun): React.ReactElement => {
+    const n = guideSteps.indexOf(step) + 1;
+    const last = nextStep(guideSteps, step) === null;
+    const back = prevStep(guideSteps, step);
+    const copy = SETUP_COPY[step];
+    // On the room step while she has no room yet there is nothing to skip to: the choice is now or later.
+    const later = step === 'room' && state.plain === true;
+    return (
+      <section className={styles.guide} aria-label={t(copy.title)} data-setup-step={step}>
+        <header className={styles.guideHead}>
+          <div className={styles.guideCount}>
+            <span>{t('Step {n} of {m}', { n, m: guideSteps.length })}</span>
+            <span className={styles.guideDots} aria-hidden="true">
+              {guideSteps.map((x) => (
+                <span key={x} className={x === step ? `${styles.guideDot} ${styles.guideDotOn}` : g.done.includes(x) ? `${styles.guideDot} ${styles.guideDotDone}` : styles.guideDot} />
+              ))}
+            </span>
+          </div>
+          <h2 className={styles.guideTitle}>{t(copy.title)}</h2>
+          <p className={styles.note}>{t(copy.hint)}</p>
+        </header>
+        <div className={styles.guideBody}>{renderPanel()}</div>
+        <footer className={styles.guideFoot}>
+          {back ? (
+            <button type="button" className={styles.pill} onClick={guideBack}>
+              {t('Back')}
+            </button>
+          ) : null}
+          <span className={styles.guideGap} />
+          {later ? (
+            <button type="button" className={styles.pill} onClick={requestClose}>
+              {t('Not now')}
+            </button>
+          ) : (
+            <button type="button" className={styles.pill} onClick={() => guideOn('skipped')}>
+              {t('Skip')}
+            </button>
+          )}
+          <button type="button" className={`${styles.pill} ${styles.pillHot}`} onClick={() => guideOn('completed')}>
+            {last ? t('Done') : t('Next')}
+          </button>
+        </footer>
+      </section>
+    );
   };
 
   const savedLabel = saving === 'saving' ? t('Saving…') : dirty ? t('Save') : t('Saved');
@@ -1410,14 +1641,20 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
 
         {/* While an item is dragged the side panel fades away, so the shelves under it show. */}
         <div className={drag ? `${styles.side} ${styles.sideAway}` : styles.side} data-color-host="">
-          <nav className={panel ? `${styles.rail} ${styles.railOpen}` : styles.rail} aria-label={t('Room')}>
-            {tile('avatar', t('Avatar'), <PersonIcon size={RAIL_ICON} />)}
-            {tile('room', t('Room'), <HouseIcon size={RAIL_ICON} />)}
-            {sections.fabrics.length > 0 && tile('fabrics', t(GROUP_LABEL.fabrics), <RollerIcon size={RAIL_ICON} />)}
-            {sections.furniture.length > 0 && tile('furniture', t(GROUP_LABEL.furniture), <ChairIcon size={RAIL_ICON} />)}
-            {items.length > 0 && tile('items', t('Items'), <BagIcon size={RAIL_ICON} />)}
-          </nav>
-          {renderPanel()}
+          {gStep && guide ? (
+            renderGuide(gStep, guide)
+          ) : (
+            <>
+              <nav className={panel ? `${styles.rail} ${styles.railOpen}` : styles.rail} aria-label={t('Room')}>
+                {tile('avatar', t('Avatar'), <PersonIcon size={RAIL_ICON} />)}
+                {tile('room', t('Room'), <HouseIcon size={RAIL_ICON} />)}
+                {sections.fabrics.length > 0 && tile('fabrics', t(GROUP_LABEL.fabrics), <RollerIcon size={RAIL_ICON} />)}
+                {sections.furniture.length > 0 && tile('furniture', t(GROUP_LABEL.furniture), <ChairIcon size={RAIL_ICON} />)}
+                {items.length > 0 && tile('items', t('Items'), <BagIcon size={RAIL_ICON} />)}
+              </nav>
+              {renderPanel()}
+            </>
+          )}
         </div>
 
         <div className={styles.top}>

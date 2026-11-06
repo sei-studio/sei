@@ -8,19 +8,20 @@
  * whole-config saves are not worth risking for a cosmetic flag). A lost flag
  * costs one more viewing of a skippable 10 s sequence.
  *
- * Which light plays (`introStyle`) is fixed in code: aurora (261106), the
- * softest of the three and the one that reads best over her room as it opens.
- * bloom and tide stay switchable for comparison; a dev build (and the
- * harness) can pick one with `localStorage['sei.seilinkIntroStyle']`.
+ * The light is the aurora (the only style since 261106). Its colour mood
+ * (`introMood`) is fixed in code (DEFAULT_INTRO_MOOD); the other space moods
+ * stay switchable for comparison: a dev build (and the harness) can pick one
+ * with `localStorage['sei.seilinkIntroMood']` (accretion, nebula, eclipse).
  */
-import { INTRO_STYLES, type IntroStyle } from '@shared/seilinkIntroTelemetry';
+import { INTRO_MOODS, type IntroMood, type IntroStyle } from '@shared/seilinkIntroTelemetry';
 import { useAuthStore } from '../stores/useAuthStore';
 
 const KEY_BASE = 'sei.seilinkIntroSeen.v1';
-const STYLE_OVERRIDE_KEY = 'sei.seilinkIntroStyle';
+const MOOD_OVERRIDE_KEY = 'sei.seilinkIntroMood';
 
-/** The light that ships. */
+/** The light that ships, and its mood. */
 export const DEFAULT_INTRO_STYLE: IntroStyle = 'aurora';
+export const DEFAULT_INTRO_MOOD: IntroMood = 'nebula';
 
 /** The active profile scope: the account UUID, or 'local' when signed out. */
 export function profileScope(): string {
@@ -54,12 +55,12 @@ export function shouldPlayFirstLink(input: { seen: boolean; failedStart?: boolea
   return !input.seen && input.failedStart !== true;
 }
 
-export function introStyle(): IntroStyle {
+export function introMood(): IntroMood {
   try {
-    const v = localStorage.getItem(STYLE_OVERRIDE_KEY);
-    if (v && (INTRO_STYLES as readonly string[]).includes(v)) return v as IntroStyle;
+    const v = localStorage.getItem(MOOD_OVERRIDE_KEY);
+    if (v && (INTRO_MOODS as readonly string[]).includes(v)) return v as IntroMood;
   } catch {
     /* default */
   }
-  return DEFAULT_INTRO_STYLE;
+  return DEFAULT_INTRO_MOOD;
 }

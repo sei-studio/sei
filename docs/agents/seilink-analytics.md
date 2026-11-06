@@ -73,8 +73,8 @@ Live lines (decorating together): `live_shown`, `live_skip_<reason>`.
 
 | Event | When | Props | Answers |
 |---|---|---|---|
-| `seilink_movein_sheet` | sheet loaded (`shown`), Move in worked (`confirmed`), a try failed (`failed`, once per class), Not now (`dismissed`) | action, reason `first_room`/`swap`/`retry`, preset, pick_room (261106: true = her first room, there is no picker any more), swap, preset_changed (always false since 261106), blank_room (261106: the first room is the blank one), packs_available (shown), ms_open, error_class `start_failed`/`save_failed`/`unsupported`/`error`, entry `button`/`gear`/`tour`/`dock` (261105: how the person got here) | Sheet funnel |
-| `seilink_moved_in` | host started for her (not a restore) | swapped, preset, first_room, blank_room (261106: the blank first room was created) | Move-ins; blank rooms created |
+| `seilink_movein_sheet` | sheet loaded (`shown`), Move in worked (`confirmed`), a try failed (`failed`, once per class), Not now (`dismissed`) | action, reason `first_room`/`swap`/`retry`, preset, pick_room (261106: true = her first room, there is no picker any more), swap, preset_changed (always false since 261106), blank_room (261106: the first room is the blank one), plain_room (261106 v3: she starts on the plain background), packs_available (shown), ms_open, error_class `start_failed`/`save_failed`/`unsupported`/`error`, entry `button`/`gear`/`tour`/`dock` (261105: how the person got here) | Sheet funnel |
+| `seilink_moved_in` | host started for her (not a restore) | swapped, preset, first_room, blank_room (261106: the blank first room was created), plain_room + plain_tone `dark`/`light`/`unknown` (261106 v3: she spawned on the plain background, in which OS theme) | Move-ins; plain spawns by theme |
 | `seilink_moved_out` | she moved out | via app/dock | Move-outs |
 
 ## Entry, first-link intro, tour (261105, T337)
@@ -86,7 +86,7 @@ Shapes in `src/shared/seilinkIntroTelemetry.ts`, rebuilt in main by
 | Event | When | Props | Answers |
 |---|---|---|---|
 | `seilink_entry` | every SeiLink entry click | character_id, source `button`/`gear`/`tour`/`dock`, action `sheet`/`move_in`/`edit`/`move_out`/`replay_intro` | Which entry point people use |
-| `seilink_intro` | the intro shows (`shown`), and how it ended (`completed`/`skipped`/`aborted`) | character_id, action, trigger `first_link`/`replay`, style `aurora`/`bloom`/`tide` (261106; `holo`/`glitch`/`tunnel` before), reduced_motion, entry; on the end: beat `tunnel`/`link`/`port`/`linked` (where it ended), duration_bucket `lt3s`/`3_6s`/`6_9s`/`9_12s`/`12_20s`/`gt20s`, host `ok`/`failed`/`pending`/`none` | Do people watch it, where they skip, does the host keep up |
+| `seilink_intro` | the intro shows (`shown`), and how it ended (`completed`/`skipped`/`aborted`) | character_id, action, trigger `first_link`/`replay`, style `aurora` (the only one since 261106 v3; `bloom`/`tide` earlier that day, `holo`/`glitch`/`tunnel` before), mood `accretion`/`nebula`/`eclipse` (261106 v3, the space colour mood), end_on `plain_dark`/`plain_light`/`room` (what it settled into), reduced_motion, entry; on the end: beat `tunnel`/`link`/`port`/`linked` (where it ended), duration_bucket `lt3s`/`3_6s`/`6_9s`/`9_12s`/`12_20s`/`gt20s`, host `ok`/`failed`/`pending`/`none` | Do people watch it, where they skip, does the host keep up |
 | `seilink_tour` | the guide's tour: `offered`, `sure`, `not_now` (snoozed true on the first, false when it retires), `completed` (the sheet opens), `dropped` (Skip tutorial) | action, audience `new`/`existing`, offer_n (1 or 2), snoozed?, step `offer`/`button`/`room` (dropped) | Tour funnel and snooze outcome |
 
 ## First room on the desktop (261106)
@@ -96,8 +96,22 @@ Main captures these itself (`main/seilink/decorateOffer.ts`,
 
 | Event | When | Props | Answers |
 |---|---|---|---|
-| `seilink_decorate_offer` | the desktop shows her new blank room: the offer goes up (`shown`), is answered (`accepted` / `declined`), times out after 10 min (`expired`), ends because she moved out or the room was decorated another way (`closed`), or is not made (`skipped`) | character_id, action, via `intro`/`move_in`, line `her`/`ui` (did she ask in her own line, or the dock in UI copy), line_outcome (ui only: why her line did not come, `budget`/`busy`/`not_live`/`occupied`/`error`/`timeout`/...), wait_ms (shown), ms_open (answers), reason `not_live`/`not_blank`/`already`/`disabled` (skipped) | Offer shown, accepted, declined; how often the budget silences her |
+| `seilink_decorate_offer` | the desktop shows her on the plain background (or the earlier blank room): the offer goes up (`shown`), is answered (`accepted` / `declined`), times out after 10 min (`expired`), ends because she moved out or the room was decorated another way (`closed`), or is not made (`skipped`) | character_id, action, via `intro`/`move_in`, line `her`/`ui` (did she ask in her own line, or the dock in UI copy), line_outcome (ui only: why her line did not come, `budget`/`busy`/`not_live`/`occupied`/`error`/`timeout`/...), wait_ms (shown), ms_open (answers), reason `not_live`/`not_blank`/`already`/`disabled` (skipped) | Offer shown, accepted, declined; how often the budget silences her |
 | `seilink_desktop_stage` | the main window steps out over the desktop (`entered`), back (`exited`), could not (`failed`), or stepped aside without it (`revealed`) | character_id, action, purpose `intro`/`editor`/`move_in`, opened_from (editor), reveal + staged_ms + ok (exited), error_class `native_fullscreen`/`busy`/`failed`/`no_window`/`disabled`/`timeout` (the renderer did not ask for the stage within 4 s of the dock's push) | Does the on-desktop editor open, how long it stays, failure classes per platform |
+
+### Guided setup (261106 v3)
+
+Sent by RoomEditor through `sei.track` only when it has `telemetry` (the
+companion editor), sanitized in main by `sanitizeSeilinkIntroTrack`
+(shared/seilinkIntroTelemetry.ts). Never a colour, item or room choice.
+
+| Event | When | Props | Answers |
+|---|---|---|---|
+| `seilink_setup` | a guided run opens (`started`, or `resumed` when a run was left unfinished), Done is pressed (`finished`), or the editor closes before Done (`abandoned`: close, Escape, Not now) | character_id, action, step (the step on screen: where it was finished or abandoned), surface `desktop`/`app`, plain (she was still on the plain background when it opened), steps_completed, steps_skipped, steps_total, ms_open, opened_from (the editor session's list) | Setup funnel; where people drop; how many resume |
+| `seilink_setup_step` | each time a step comes up (`shown`), Next (`completed`), Skip (`skipped`), Back (`back`) | character_id, step `room`/`colours`/`furniture`/`extras`, action, resumed (inside a resumed run), index (1-based position in this pack's steps), changed (completed only: did the room change on that step) | Per-step completion and skip rates |
+
+Plain spawns: `seilink_moved_in` with plain_room, by plain_tone. Setup
+started per plain spawn: `seilink_setup` started (plain true) over those.
 
 The editor session also carries `surface` (below): `desktop` when it was on
 the stage. Desktop editor opened = `seilink_desktop_stage` entered with

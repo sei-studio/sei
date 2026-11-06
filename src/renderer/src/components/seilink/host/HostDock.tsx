@@ -21,7 +21,9 @@
  * buttons, "Decorate together" and "Not now". When she asked in her bubble
  * (`offer: 'her'`) the buttons are the answer; when her line did not come
  * (`prompt`) the dock asks itself, in a line above them. "Not now" leaves a
- * caption pointing at the brush, and the usual dock comes back.
+ * caption pointing at the brush, and the usual dock comes back. On the plain
+ * background (first-link v3: no room yet) the offer is to set her room up
+ * together ("Set up together"), which opens the editor's guided setup.
  *
  * Colours come from the room (RoomCanvas onOverlay: light room, light glass),
  * never the app theme. No border lines on buttons.
@@ -55,6 +57,8 @@ export interface HostDockProps {
   offer?: SeilinkDockOffer;
   /** Her name, for the offer's question. */
   name?: string;
+  /** She is on the plain background (no room yet): the offer is to set the room up. */
+  plain?: boolean;
   press: DockPress | null;
   onAction(action: SeilinkDockAction): void;
   onButtons(buttons: SeilinkDockButton[] | null): void;
@@ -98,10 +102,11 @@ export function HostDock(props: HostDockProps): React.ReactElement {
     }
     setConfirming(false);
     if (press.id === 'deafen') setCaption({ text: deafened ? t('Idle lines on') : t('Idle lines off'), ms: CAPTION_MS });
-    else if (press.id === 'later') setCaption({ text: t('Decorate anytime with the brush.'), ms: LATER_CAPTION_MS });
+    else if (press.id === 'later')
+      setCaption({ text: props.plain ? t('Set up the room anytime with the brush.') : t('Decorate anytime with the brush.'), ms: LATER_CAPTION_MS });
     else if (press.id === 'edit' || press.id === 'decorate') setCaption({ text: t('Opening the room editor'), ms: CAPTION_MS });
     onAction(press.id);
-  }, [press, confirming, deafened, onAction, t]);
+  }, [press, confirming, deafened, onAction, t, props.plain]);
 
   useEffect(() => {
     if (!pressed) return;
@@ -157,13 +162,19 @@ export function HostDock(props: HostDockProps): React.ReactElement {
       <div ref={rootRef} className={styles.dockWrap} style={{ left, top: bottom }}>
         {offer === 'prompt' ? (
           <div className={styles.ask} role="status">
-            {props.name ? t("Decorate {name}'s room together?", { name: props.name }) : t('Decorate the room together?')}
+            {props.plain
+              ? props.name
+                ? t("Set up {name}'s room together?", { name: props.name })
+                : t('Set up the room together?')
+              : props.name
+                ? t("Decorate {name}'s room together?", { name: props.name })
+                : t('Decorate the room together?')}
           </div>
         ) : null}
         <div className={styles.dock}>
           <span data-dock="decorate" className={cls('decorate', styles.textBtn + ' ' + styles.primary)}>
             <BrushIcon size={16} />
-            {t('Decorate together')}
+            {props.plain ? t('Set up together') : t('Decorate together')}
           </span>
           <span data-dock="later" className={cls('later', styles.textBtn)}>
             {t('Not now')}

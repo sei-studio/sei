@@ -26,6 +26,7 @@ import {
   patternsFor,
   PLAIN_PATTERN,
   slotLabel,
+  withoutPlain,
   type RoomComponent,
   type RoomPresetManifest,
   type RoomSlotId,
@@ -116,6 +117,8 @@ export function applyRoomOps(manifest: RoomPresetManifest, state: RoomState, ops
     if (!sameState(next, s)) applied.push(op);
     s = next;
   }
+  // 261106: on the plain first state her changes set the (bare) room up, so they show.
+  if (applied.length && s.plain) s = withoutPlain(s);
   return { state: s, applied };
 }
 
@@ -451,7 +454,9 @@ export function resolveDecorate(manifest: RoomPresetManifest, before: RoomState,
   const list = Array.isArray(input.changes) ? (input.changes as unknown[]) : [];
   const ops: RoomEditOp[] = [];
   const rejected: string[] = [];
-  let state = before;
+  // 261106: on the plain first state her changes are made to the bare room underneath (applyRoomOps sets it up the same way).
+  const base = withoutPlain(before);
+  let state = base;
   for (const raw of list) {
     if (ops.length >= max) {
       rejected.push(`only ${max} changes at a time, so the rest were left out`);
@@ -471,9 +476,10 @@ export function resolveDecorate(manifest: RoomPresetManifest, before: RoomState,
     state = next;
   }
   if (!list.length) rejected.push('no changes were given');
+  if (!ops.length) state = before;
   let done: RoomChange[] = [];
   try {
-    done = ops.length ? roomChanges(manifest, before, manifest, state) : [];
+    done = ops.length ? roomChanges(manifest, base, manifest, state) : [];
   } catch {
     done = [];
   }
@@ -567,6 +573,7 @@ export function decorateTool(manifest: RoomPresetManifest): { name: string; desc
 
 /** "In the room now: ..." for her editor turns (what describeRoom says look() sees). */
 export function roomNowLine(manifest: RoomPresetManifest, state: RoomState, now = new Date()): string {
+  if (state.plain) return 'no room yet, only a plain background around you';
   const things = describeRoom(manifest, state, now).things.slice(0, 16);
   return things.length ? things.join(', ') : 'nothing much yet';
 }

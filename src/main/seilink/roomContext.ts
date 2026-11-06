@@ -139,7 +139,11 @@ export function timeSentence(now: Date): string {
  * time word at all: the status block already says the real time, and the
  * look() result says how the room is lit.
  */
+/** 261106: the plain first state (no room drawn yet). Model-facing, plain words. */
+export const PLAIN_ROOM_LINE = "You're on the player's desktop on a plain background. Your room there is not set up yet.";
+
 export function roomPromptLine(ctx: RoomContext, opts: { now?: Date; includeTime: boolean }): string {
+  if (ctx.state.plain) return PLAIN_ROOM_LINE;
   const now = opts.now ?? new Date();
   const place = placeSentence(ctx.manifest.place);
   const pinned = ctx.state.time !== 'auto';
@@ -180,6 +184,10 @@ const TIME_WORD: Record<string, string> = { day: 'daytime', dusk: 'dusk', night:
  * throws: a failed render still answers with the list.
  */
 export async function lookAtRoom(ctx: RoomContext, opts: { vision: 'yes' | 'no' | 'unknown'; now?: Date }): Promise<RoomLook> {
+  // 261106: nothing to picture yet (no image tokens for a blank colour).
+  if (ctx.state.plain) {
+    return { text: 'No room yet: you are on a plain background on the player\'s desktop, with nothing around you. The player can set your room up with you.', image: null };
+  }
   const now = opts.now ?? new Date();
   const d = describeRoom(ctx.manifest, ctx.state, now);
   const things = d.things.map((t) => plainRoomText(t, 40)).filter(Boolean);

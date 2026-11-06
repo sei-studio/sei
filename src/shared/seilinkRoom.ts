@@ -360,7 +360,26 @@ export interface RoomState {
   slots: Partial<Record<RoomSlotId, RoomSlotChoice>>;
   items: RoomItemPlacement[];
   avatar: { kind: 'sei' } | { kind: 'live2d'; modelPath: string };
+  /**
+   * 261106 (first-link v3, Shawn: "start with plain black or white background
+   * when the AI spawns in"): no room yet. Nothing of the preset is drawn: a
+   * plain background in the computer's light or dark mode (black or white),
+   * with her where the preset seats her. `preset` and `slots` hold the bare
+   * room underneath (bareRoomState), so her decorate ops and the first step of
+   * the guided setup start from it. Absent = a normal room.
+   */
+  plain?: true;
+  /**
+   * 261106: the guided setup (the editor's step-by-step mode) has started and
+   * is not done; `done` lists the steps already passed (next or skip). The
+   * editor resumes at the first step not in it. Absent = no setup running.
+   */
+  setup?: { done: RoomSetupStep[] };
 }
+
+/** The guided setup's steps, in order (261106). Mapped to the editor's panels in RoomEditor. */
+export const ROOM_SETUP_STEPS = ['room', 'colours', 'furniture', 'extras'] as const;
+export type RoomSetupStep = (typeof ROOM_SETUP_STEPS)[number];
 
 export function defaultRoomState(preset: RoomPresetId = 'cozy'): RoomState {
   return { version: SEILINK_ROOM_VERSION, preset, time: 'auto', slots: {}, items: [], avatar: { kind: 'sei' } };
@@ -401,6 +420,47 @@ export function isBlankRoom(state: Pick<RoomState, 'preset' | 'slots' | 'items'>
   }
   return true;
 }
+
+/**
+ * 261106: the preset's room with nothing optional in it: every optional slot
+ * empty, no items (her seat, the shell and the view stay on their defaults).
+ * The guided setup's first step puts this in, so furniture and extras are
+ * added in their own steps. Keeps the time setting and her avatar.
+ */
+export function bareRoomState(manifest: Pick<RoomPresetManifest, 'id' | 'slots'>, keep?: Pick<RoomState, 'time' | 'avatar'>): RoomState {
+  const slots: RoomState['slots'] = {};
+  for (const [slot, def] of Object.entries(manifest.slots) as Array<[RoomSlotId, RoomSlotDef]>) if (def.optional) slots[slot] = { id: null };
+  const out: RoomState = { ...defaultRoomState(manifest.id), slots };
+  if (keep) {
+    out.time = keep.time;
+    out.avatar = keep.avatar;
+  }
+  return out;
+}
+
+/** 261106: her first state on the desktop: no room, a plain background (the bare preset room underneath). */
+export function plainRoomState(manifest: Pick<RoomPresetManifest, 'id' | 'slots'>): RoomState {
+  return { ...bareRoomState(manifest), plain: true };
+}
+
+export function isPlainRoom(state: Pick<RoomState, 'plain'> | null | undefined): boolean {
+  return state?.plain === true;
+}
+
+/** A room the decorate-together offer is for: the plain first state, or the 261106 blank room. */
+export function isFirstRoom(state: Pick<RoomState, 'preset' | 'slots' | 'items' | 'plain'>): boolean {
+  return isPlainRoom(state) || isBlankRoom(state);
+}
+
+/** The room without the plain flag (her first edit, or the first step, sets the room up). */
+export function withoutPlain(state: RoomState): RoomState {
+  if (!state.plain) return state;
+  const { plain: _p, ...rest } = state;
+  return rest;
+}
+
+/** What the AI is told about the plain first state (model-facing: plain words). */
+export const PLAIN_ROOM_PLACE = 'a plain background with no room yet';
 
 /** Clock time to room time: dawn and dusk both use the dusk art. */
 export function roomTimeAt(date: Date): RoomTime {
@@ -555,6 +615,8 @@ const PARTICLE_WORDS: Readonly<Record<string, string | null>> = {
 /** What the AI knows about her room: a place line and a plain item list. */
 export function describeRoom(manifest: RoomPresetManifest, state: RoomState, now: Date = new Date()): { place: string; time: RoomTime; things: string[] } {
   const time = resolveRoomTime(state, now);
+  // 261106: no room drawn yet, so nothing in it.
+  if (state.plain) return { place: PLAIN_ROOM_PLACE, time, things: [] };
   const things: string[] = [];
   const say = (component: RoomComponent, tint: string | undefined, pattern: RoomPatternChoice | null | undefined, cycle?: boolean): string => {
     if (cycle) return `colour-changing ${component.name}`;

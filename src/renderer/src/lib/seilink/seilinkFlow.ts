@@ -16,9 +16,10 @@
  *  - startSeilinkHost: every host start. Plays the first-link intro alongside
  *    the start (never before it) the first time on this account.
  *
- * 261106 (first-link flow): her first room is blank (MoveInSheet). The first
- * link plays the intro on the desktop stage and ends on her room there; the
- * window steps aside and the dock asks about decorating together
+ * 261106 (first-link flow, v3): she first moves in on a plain background, no
+ * room yet (MoveInSheet). The first link plays the intro on the desktop stage
+ * and ends on that plain background there; the window steps aside and the
+ * dock asks about setting up her room together (the editor's guided setup)
  * (main/seilink/decorateOffer.ts). A first room without the intro (it was
  * seen already) steps aside the same way once she is in. The room editor
  * opens on the desktop for the companion who lives there, from every entry
@@ -51,7 +52,7 @@ function editorFrom(source: SeilinkEntrySource): EditorOpenedFrom {
  */
 export function startSeilinkHost(
   characterId: string,
-  opts: { firstRoom?: boolean; entry: SeilinkEntrySource; /** 261106: her first room was just set up blank. */ blank?: boolean },
+  opts: { firstRoom?: boolean; entry: SeilinkEntrySource; /** 261106: she just moved in fresh (a plain background, no room yet). */ fresh?: boolean },
 ): Promise<SeilinkHostStatus | null> {
   if (!sei.seilinkHostStart) return Promise.resolve(null);
   const start = sei.seilinkHostStart(characterId, opts.firstRoom !== undefined ? { firstRoom: opts.firstRoom } : undefined);
@@ -66,8 +67,8 @@ export function startSeilinkHost(
       ),
       stage: true,
     });
-  } else if (opts.blank) {
-    // No intro: once she is in, step aside so the desktop shows her new room, and offer to decorate it.
+  } else if (opts.fresh) {
+    // No intro: once she is in, step aside so the desktop shows her there, and offer to set up her room together.
     void start.then(
       (s) => {
         if (moveInFailed(s)) return;
@@ -79,7 +80,7 @@ export function startSeilinkHost(
   return start;
 }
 
-/** The desktop shows her new room: the app steps aside (resolves then), and the dock offers to decorate together. */
+/** The desktop shows her: the app steps aside (resolves then), and the dock offers to set up (or decorate) her room together. */
 export async function revealAndOffer(characterId: string, via: SeilinkOfferVia, opts: { staged?: boolean } = {}): Promise<void> {
   try {
     if (opts.staged) await sei.seilinkStage?.({ action: 'exit', reveal: true });

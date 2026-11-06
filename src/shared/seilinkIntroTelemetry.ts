@@ -6,10 +6,14 @@
  * buckets and the character id can leave the machine.
  *
  *  - seilink_intro {action: shown|completed|skipped|aborted, trigger, style,
- *    reduced_motion, beat (where it ended), duration_bucket, host}
+ *    mood, end_on, reduced_motion, beat (where it ended), duration_bucket, host}
  *  - seilink_tour {action: offered|sure|not_now|completed|dropped, audience,
  *    offer_n, snoozed (not_now), step (dropped)}
  *  - seilink_entry {source: button|gear|tour|dock, action}
+ *  - seilink_setup {action: started|resumed|finished|abandoned, step, surface,
+ *    plain, steps_completed, steps_skipped, steps_total, ms_open, opened_from}
+ *  - seilink_setup_step {step, action: shown|completed|skipped|back, changed,
+ *    resumed, index}
  *
  * Event table: docs/agents/seilink-analytics.md.
  */
@@ -27,13 +31,24 @@ export const INTRO_TRIGGERS = ['first_link', 'replay'] as const;
 export type IntroTrigger = (typeof INTRO_TRIGGERS)[number];
 
 /**
- * The visual treatments (261106: soft colour gradients, glows and waves, no
- * hard lines): aurora = swaying curtains of aurora light, bloom = slow warm
- * pulses breathing out of her seat, tide = drifting pools of liquid light.
- * One ships as the default (introPref.DEFAULT_INTRO_STYLE).
+ * The visual treatment: the aurora (swaying curtains of soft light). 261106
+ * had `bloom` and `tide` beside it; Shawn kept the aurora and they are gone.
  */
-export const INTRO_STYLES = ['aurora', 'bloom', 'tide'] as const;
+export const INTRO_STYLES = ['aurora'] as const;
 export type IntroStyle = (typeof INTRO_STYLES)[number];
+
+/**
+ * The aurora's colour mood (261106, space themed): accretion = gold and amber
+ * light around a black hole, nebula = saturated teal, magenta, violet and
+ * orange on deep indigo, eclipse = the two together. One ships as the
+ * default (introPref.DEFAULT_INTRO_MOOD).
+ */
+export const INTRO_MOODS = ['accretion', 'nebula', 'eclipse'] as const;
+export type IntroMood = (typeof INTRO_MOODS)[number];
+
+/** What the intro settles into: the plain background she spawns on (black / white with the OS theme), or a room she has. */
+export const INTRO_END_ON = ['plain_dark', 'plain_light', 'room'] as const;
+export type IntroEndOn = (typeof INTRO_END_ON)[number];
 
 /** The beats, in order: open the tunnel and build the room, link her, port to the desktop, linked. */
 export const INTRO_BEATS = ['tunnel', 'link', 'port', 'linked'] as const;
@@ -92,8 +107,38 @@ function small(v: unknown, max: number): number | undefined {
   return Number.isFinite(n) && n >= 0 ? Math.min(Math.round(n), max) : undefined;
 }
 
+// ── The guided setup (261106, first-link v3) ──────────────────────────────
+
+/** One per setup run: started, resumed (a run left unfinished before), finished (Done), abandoned (closed before Done). */
+export const SEILINK_SETUP_EVENT = 'seilink_setup';
+/** One per step action. */
+export const SEILINK_SETUP_STEP_EVENT = 'seilink_setup_step';
+
+export const SETUP_ACTIONS = ['started', 'resumed', 'finished', 'abandoned'] as const;
+export type SetupAction = (typeof SETUP_ACTIONS)[number];
+
+/** The steps (shared/seilinkRoom.ts ROOM_SETUP_STEPS, repeated here so this file has no room import). */
+export const SETUP_STEP_NAMES = ['room', 'colours', 'furniture', 'extras'] as const;
+export type SetupStepName = (typeof SETUP_STEP_NAMES)[number];
+
+/** shown = the step came up; completed = Next (or Done); skipped = Skip; back = Back to the step before. */
+export const SETUP_STEP_ACTIONS = ['shown', 'completed', 'skipped', 'back'] as const;
+export type SetupStepAction = (typeof SETUP_STEP_ACTIONS)[number];
+
+/** Where the setup editor sits: on the desktop stage or in the app window. */
+export const SETUP_SURFACES = ['desktop', 'app'] as const;
+
+/** seilinkTelemetry.EDITOR_OPENED_FROM (that file imports this one, so the list is repeated; a test keeps them equal). */
+export const SETUP_OPENED_FROM = ['gear', 'dock', 'move_in', 'button', 'tour', 'offer', 'other'] as const;
+
 export function isSeilinkIntroEvent(event: string): boolean {
-  return event === SEILINK_INTRO_EVENT || event === SEILINK_TOUR_EVENT || event === SEILINK_ENTRY_EVENT;
+  return (
+    event === SEILINK_INTRO_EVENT ||
+    event === SEILINK_TOUR_EVENT ||
+    event === SEILINK_ENTRY_EVENT ||
+    event === SEILINK_SETUP_EVENT ||
+    event === SEILINK_SETUP_STEP_EVENT
+  );
 }
 
 /** Rebuild a renderer-sent first-link event's props from the closed shapes (main's track handler). */
@@ -105,6 +150,8 @@ export function sanitizeSeilinkIntroTrack(event: string, raw: Record<string, unk
       action: oneOf(INTRO_ACTIONS, p.action) ?? 'shown',
       trigger: oneOf(INTRO_TRIGGERS, p.trigger) ?? 'first_link',
       style: oneOf(INTRO_STYLES, p.style),
+      mood: oneOf(INTRO_MOODS, p.mood),
+      end_on: oneOf(INTRO_END_ON, p.end_on),
       reduced_motion: p.reduced_motion === true,
       entry: oneOf(ENTRY_SOURCES, p.entry),
     };
@@ -126,6 +173,38 @@ export function sanitizeSeilinkIntroTrack(event: string, raw: Record<string, unk
     if (typeof p.snoozed === 'boolean') out.snoozed = p.snoozed;
     const step = oneOf(TOUR_STEPS, p.step);
     if (step) out.step = step;
+    return out;
+  }
+  if (event === SEILINK_SETUP_EVENT) {
+    const out: Record<string, Scalar> = {
+      character_id: charId(p.character_id),
+      action: oneOf(SETUP_ACTIONS, p.action) ?? 'started',
+      step: oneOf(SETUP_STEP_NAMES, p.step),
+      surface: oneOf(SETUP_SURFACES, p.surface),
+      plain: p.plain === true,
+    };
+    const done = small(p.steps_completed, 9);
+    if (done !== undefined) out.steps_completed = done;
+    const skipped = small(p.steps_skipped, 9);
+    if (skipped !== undefined) out.steps_skipped = skipped;
+    const total = small(p.steps_total, 9);
+    if (total !== undefined) out.steps_total = total;
+    const ms = small(p.ms_open, 24 * 3600_000);
+    if (ms !== undefined) out.ms_open = ms;
+    const from = oneOf(SETUP_OPENED_FROM, p.opened_from);
+    if (from) out.opened_from = from;
+    return out;
+  }
+  if (event === SEILINK_SETUP_STEP_EVENT) {
+    const out: Record<string, Scalar> = {
+      character_id: charId(p.character_id),
+      step: oneOf(SETUP_STEP_NAMES, p.step) ?? 'room',
+      action: oneOf(SETUP_STEP_ACTIONS, p.action) ?? 'shown',
+      resumed: p.resumed === true,
+    };
+    if (typeof p.changed === 'boolean') out.changed = p.changed;
+    const n = small(p.index, 9);
+    if (n !== undefined) out.index = n;
     return out;
   }
   if (event === SEILINK_ENTRY_EVENT) {

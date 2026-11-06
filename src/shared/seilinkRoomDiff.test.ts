@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { defaultRoomState, type RoomPresetManifest, type RoomState } from './seilinkRoom';
+import { defaultRoomState, plainRoomState, withoutPlain, type RoomPresetManifest, type RoomState } from './seilinkRoom';
 import { parseRoomManifest, sanitizeRoomState } from './seilinkValidate';
 import { roomChangeBucket, roomChangeLine, roomChanges, withArticle } from './seilinkRoomDiff';
 
@@ -120,5 +120,17 @@ describe('roomChanges (261105, T335)', () => {
     expect(withArticle('hiking backpack')).toBe('a hiking backpack');
     expect(withArticle('old lamp')).toBe('an old lamp');
     expect(withArticle('headset on a stand')).toBe('a headset on a stand');
+  });
+});
+
+describe('roomChanges and the plain first state (261106)', () => {
+  it('setting the room up is one change, and plain to plain is none', () => {
+    const plain = plainRoomState(cozy);
+    const up = roomChanges(cozy, plain, cozy, withoutPlain(plain));
+    expect(up).toHaveLength(1);
+    expect(up[0]).toMatchObject({ kind: 'preset' });
+    expect(up[0].text).toMatch(/^set up your room/);
+    expect(roomChanges(cozy, plain, cozy, plainRoomState(cozy))).toEqual([]);
+    expect(roomChanges(cozy, room(), cozy, plain)[0].text).toMatch(/plain background/);
   });
 });

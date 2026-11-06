@@ -1,11 +1,13 @@
 /**
- * The first-link intro (261105, T337; 261106 soft light styles). Always dark,
- * whatever the app theme: it is a cinematic over the whole window (on the
+ * The first-link intro (261105, T337; 261106 space aurora moods). Dark
+ * while the light plays, whatever the app theme: it is a cinematic over the whole window (on the
  * first link, the whole screen), not a panel. Its few colours are defined
  * once here (the periwinkle is the app's accent hue, #7fb0ff); fonts, corners
  * and easing come from tokens.css. Every moving value is written per frame
  * from FirstLinkIntroView's timeline, so nothing here animates by itself.
- * No hard lines anywhere: the light is gradients on small upscaled canvases.
+ * No hard lines anywhere: the light is gradients on small upscaled canvases,
+ * dithered by a still grain tile so the slow dark gradients never band. It
+ * ends on the plain colour (black or white with the OS theme) or her room.
  */
 
 .root {
@@ -36,10 +38,20 @@
   image-rendering: auto;
 }
 
+/* A still grain over the dark (a seeded noise tile at a few 8-bit steps): dithers the gradients. */
+.grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-repeat: repeat;
+  opacity: 1;
+}
+
 /* Her room: its canvases (direct layers of the scene) fade and open in a soft circle; she is not masked. */
 .room {
   --fl-room: 0;
   --fl-mask: none;
+  --fl-flood: 0;
   position: absolute;
   inset: 0;
 }
@@ -55,11 +67,20 @@
   -webkit-mask-image: var(--fl-mask);
 }
 
-.roomFallback {
+/* Into white: the light floods (colour-dodge by a rising grey: the brights reach white first) before the white covers it. */
+.room > .flood {
+  position: absolute;
+  inset: 0;
+  /* An opaque grey of value --fl-flood: dodge divides by (1 - it), so black is no change and white makes every lit pixel white. */
+  background: color-mix(in srgb, #fff calc(var(--fl-flood) * 100%), #000);
+  mix-blend-mode: color-dodge;
+}
+
+/* The plain background she spawns on: the whole screen settles into it (the colour is set inline, PLAIN_COLOURS). */
+.room > .plain {
   position: absolute;
   inset: 0;
   opacity: var(--fl-room);
-  background: linear-gradient(170deg, #f4f4f4, #d9d9d9);
 }
 
 .avatarWrap {
@@ -80,7 +101,7 @@
 
 /*
  * The HUD's text reads on two pictures: the light (dark, with bright bands)
- * and her room (her first room is white). --fl-day (0..1, written per frame
+ * and what it ends on (white plain background, a light room). --fl-day (0..1, written per frame
  * on each piece from how much of her room is behind it: roomBehind)
  * crossfades between them: light ink over a soft dark cloud while the light
  * plays, deep ink over a soft white cloud once her room is behind the text.
