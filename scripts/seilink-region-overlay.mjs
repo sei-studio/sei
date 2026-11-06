@@ -198,7 +198,7 @@ const r1 = (v) => Math.round(v * 10) / 10;
 
 /**
  * Measure each plank of a part's day frame, column by column (261105 plank
- * pass, Shawn: "select the entire visible plank (both the side and under
+ * pass, product feedback: "select the entire visible plank (both the side and under
  * part) and put it on top of the object"). Per column: the plank's opaque
  * run (alpha; the soft shadow under it is faint and lighter than the
  * outline, so it is left out), the light top face in it (rows at or above

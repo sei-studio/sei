@@ -5,7 +5,7 @@
  * The dock is a small glass pill of three round buttons at the bottom of the
  * work area (above the taskbar or the Dock), beside her (dockPlace.ts): edit her room,
  * deafen (mute her idle lines; a reply to a double click still shows), and
- * move out. Shawn's room-editor deck puts these shortcuts in "the bottom
+ * move out. The room-editor design deck puts these shortcuts in "the bottom
  * dock" of the room itself, so it lives on the wallpaper next to her rather
  * than in the app or the tray.
  *

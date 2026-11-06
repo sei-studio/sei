@@ -32,14 +32,14 @@ export type IntroTrigger = (typeof INTRO_TRIGGERS)[number];
 
 /**
  * The visual treatment: the aurora (swaying curtains of soft light). 261106
- * had `bloom` and `tide` beside it; Shawn kept the aurora and they are gone.
+ * had `bloom` and `tide` beside it; the aurora was kept and they are gone.
  */
 export const INTRO_STYLES = ['aurora'] as const;
 export type IntroStyle = (typeof INTRO_STYLES)[number];
 
 /**
  * The aurora's colour mood. 261106 had three space moods (accretion, nebula,
- * eclipse); Shawn picked eclipse (261106 v4) and it is the only one. The
+ * eclipse); eclipse was picked (261106 v4) and it is the only one. The
  * prop stays on the event so the shape is unchanged.
  */
 export const INTRO_MOODS = ['eclipse'] as const;

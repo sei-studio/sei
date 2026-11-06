@@ -58,7 +58,7 @@
   width: 100%;
 }
 
-/* ── The border rule (Shawn, 261103) ─────────────────────────────────────
+/* ── The border rule (261103) ─────────────────────────────────────
    A button whose fill differs from the surface it sits on has NO visible
    border: the fill already marks it. A button with no fill of its own
    (ghost, danger) keeps its border, since that line is the only thing that

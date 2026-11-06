@@ -503,7 +503,7 @@ export interface RoomOverlay {
 }
 
 /**
- * The overlay tint for UI drawn over the room (Shawn: light room, light
+ * The overlay tint for UI drawn over the room (product feedback: light room, light
  * overlay; dark room, darker overlay), blended across a time crossfade.
  * `sampled` is the renderer's measured average of the room, used when the
  * manifest names no overlay for a time.

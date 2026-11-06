@@ -43,7 +43,7 @@ function mob(bot, name, id, x) {
 
 const cfg = (extra = {}) => ({
   player_username: 'SSk1tz',
-  player_display_name: 'Shawn',
+  player_display_name: 'Alex',
   adapter: { kind: 'minecraft', minecraft: { attack_react_throttle_ms: 0, ...extra } },
 })
 
@@ -74,7 +74,7 @@ describe('owner-threat watch', () => {
     expect(seen).toHaveLength(1)
     expect(seen[0]).toMatchObject({
       attackerKind: 'defend', threat: true, engaged: false,
-      attackerLabel: 'zombie', ownerLabel: 'Shawn', ownerHp: 10, count: 1,
+      attackerLabel: 'zombie', ownerLabel: 'Alex', ownerHp: 10, count: 1,
       ownerDistance: 9, distance: 13,
     })
     // It only reports; it does not start a fight on its own.

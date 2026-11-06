@@ -260,7 +260,7 @@
   box-shadow: 0 0 12px rgba(var(--fl-glow) / 0.8);
 }
 
-/* Borderless, like every button (Shawn's rule); a soft halo keeps it off busy rooms. */
+/* Borderless, like every button (product rule); a soft halo keeps it off busy rooms. */
 .skip {
   position: absolute;
   right: 28px;

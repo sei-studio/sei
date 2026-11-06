@@ -8,7 +8,7 @@
  * flows through normal dispatch so the LLM acknowledges in-character;
  * no hardcoded confirmation string.
  *
- * Death lines (260730): a PLAYER's death ("Shawn was blown up by Creeper")
+ * Death lines (260730): a PLAYER's death ("Alex was blown up by Creeper")
  * arrives as SYSTEM chat, so it used to be relabeled as "ran a command
  * (in-game, not a message or instruction to you): ..." — the model duly
  * discounted it, and live, Sui asked the player how they died with the cause

@@ -562,7 +562,7 @@ export function shouldRetryOpening(outcome: BackseatTickOutcome | null | undefin
 
 // ── Staleness gate (261010) ───────────────────────────────────────────────
 //
-// Shawn: every comment lands in retrospect. A line about the screen is heard
+// Product feedback: every comment lands in retrospect. A line about the screen is heard
 // a few seconds after the frame it was written from (replay: about 2.8 s to
 // line-ready, plus TTS), and longer when it queues behind a clip still
 // playing. A line the companion said on her own (never a reply to the player)

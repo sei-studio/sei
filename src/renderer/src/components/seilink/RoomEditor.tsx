@@ -6,7 +6,7 @@
  *
  *  - left: a rail of five tiles (her avatar, the room, walls & fabrics,
  *    furniture, items). A tile opens a panel next to it; Room, Walls & fabrics
- *    and Furniture hold one section per part of the room (261105, Shawn: fewer
+ *    and Furniture hold one section per part of the room (261105, product feedback: fewer
  *    rail buttons, surfaces apart from standalone pieces), where she swaps the
  *    part and recolours it. Avatar uploads a Live2D model, Items adds items;
  *  - top: time of day (auto follows the clock, or a fixed day/dusk/night to

@@ -129,7 +129,7 @@ installer process, the new Sei process and its first window, then sprints to
 machine) = the stock path, `quitAndInstall(false, true)` = `--updated
 --force-run`, the one-click "Installing, please wait" banner. The window sits
 in the **bottom-right corner of the primary display's work area** (above the
-taskbar, the card 16 px in from the edges; Shawn, 261031) so the user can keep
+taskbar, the card 16 px in from the edges; 261031) so the user can keep
 using the computer, is topmost only for its first 4 s (while Sei's own window
 is going away), is draggable, and if no Sei comes back it starts `Sei.exe`
 itself, then says so and closes on a click or after a minute (hard cap 15

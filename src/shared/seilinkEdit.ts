@@ -42,7 +42,7 @@ import {
 // The rules live in seilinkPlace.ts (floor areas, surface lines, wall areas,
 // blocks, depth); these wrap them for the edit ops.
 
-/** Item scale range in the editor (Shawn: a small range). Per class: SCALE_RANGE. */
+/** Item scale range in the editor (product feedback: a small range). Per class: SCALE_RANGE. */
 export const ITEM_SCALE_MIN = 0.6;
 export const ITEM_SCALE_MAX = 1.5;
 export const ITEM_SCALE_STEP = 0.1;

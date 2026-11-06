@@ -1,5 +1,5 @@
 /**
- * The plain background's colour (261106, first-link v3, Shawn: "start with
+ * The plain background's colour (261106, first-link v3, product feedback: "start with
  * plain black or white background when the AI spawns in"): black while the
  * computer is in dark mode, white in light mode. Read from the OS through
  * `prefers-color-scheme` (the app never overrides nativeTheme.themeSource, so

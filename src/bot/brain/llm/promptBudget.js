@@ -5,7 +5,7 @@
 //   1. LOG the long-prompt price tier. claude-haiku-5-5 bills $0.10 in /
 //      $0.50 out per MTok while the prompt is at most 100,000 tokens, and
 //      $0.50 / $2.50 for EVERY token of the request once the prompt passes it
-//      (prompt = uncached input + cache writes + cache reads). Shawn's call
+//      (prompt = uncached input + cache writes + cache reads). Product call
 //      (261013): pay the 5x rather than cut what the model sees, so a request
 //      over the tier is sent untouched and only logged here (the proxy also
 //      logs and counts the billed ones).

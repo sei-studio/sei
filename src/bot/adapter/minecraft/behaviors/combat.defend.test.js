@@ -55,7 +55,7 @@ function mob(bot, name, id, at = { x: 3, y: 64, z: 0 }) {
 
 const cfg = (extra = {}) => ({
   player_username: 'SSk1tz',
-  player_display_name: 'Shawn',
+  player_display_name: 'Alex',
   adapter: { kind: 'minecraft', minecraft: { attack_react_throttle_ms: 0, ...extra } },
 })
 
@@ -79,7 +79,7 @@ describe('a hostile hitting the owner wakes the bot', () => {
     expect(seen).toHaveLength(1)
     expect(seen[0].attackerKind).toBe('defend')
     expect(seen[0].attackerLabel).toBe('zombie')
-    expect(seen[0].ownerLabel).toBe('Shawn')
+    expect(seen[0].ownerLabel).toBe('Alex')
     expect(seen[0].engaged).toBe(true)
     // The deliberate-target flag is claimed so reflex.js stops kiting the mob
     // we are walking into (same contract attack.js uses).

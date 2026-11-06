@@ -445,7 +445,7 @@ file appears, and keep `noteLaunch()` ahead of anything that writes userData.
   `data-settings-focus` marker, else the local Provider row). Both dismiss
   the popup first. The ChatGPT option is hidden when it is already the
   provider in use. It is never hidden by region: like the Settings plan
-  row, the provider decides (Shawn, 261103).
+  row, the provider decides (261103).
   Verify with `?dashshot=creditwall&part=modal` (+`&gpt=active`,
   `&theme=light|dark`, `&lang=zh`).
 - `onboarding_step {step, index, action: view|complete|skip|back, ms_in_step,

@@ -8,7 +8,7 @@
  * make the colors more space themed. Think interstellar scifi and no man's
  * sky"): curtains of soft light sway across deep space. Space depth comes
  * from a faint, very soft starfield and a nebula haze. One palette, eclipse
- * (261106 v4, Shawn's pick of the three moods): gold light and blue-white
+ * (261106 v4, the pick of the three moods): gold light and blue-white
  * rims against violet and teal nebula.
  *
  * Beats (261106 v5, the climax, product feedback: "fade to black not hard cut, like the
