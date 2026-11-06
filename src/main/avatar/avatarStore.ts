@@ -7,9 +7,10 @@
  * memoryDir (knowledge precedent) so "Reset memory" never touches it; a full
  * character delete / remove-from-library takes it (characterStore, ipc).
  *
- * LOCAL-ONLY by design: nothing here rides `character.metadata`, so nothing
- * syncs to the cloud — a character adopted elsewhere simply has no avatar and
- * the overlay falls back to the static portrait tile.
+ * Nothing here rides `character.metadata`. Since 261106 the avatar library
+ * (main/avatarLibrary/) keeps this store in step with the server: the owner's
+ * imports are uploaded (zipStoredAvatar), other users' apps download the
+ * character's public model into it (manifest.library records the link).
  *
  * Import NORMALIZES the stored model, because real-world VTuber exports are
  * sloppy in three specific ways (all measured on the first test model):
@@ -627,6 +628,54 @@ export async function setAvatarAccessory(
     );
     return next;
   });
+}
+
+/**
+ * Record (or clear) the avatar library link (261106): this stored model is the
+ * server avatar `link.avatarId`. Returns the updated manifest, or null when
+ * the character has no imported avatar.
+ */
+export async function setAvatarLibraryLink(
+  characterId: string,
+  link: { avatarId: string; sha256: string } | null,
+): Promise<AvatarManifest | null> {
+  const manifest = await getAvatarManifest(characterId);
+  if (!manifest) return null;
+  return withLock(characterId, async () => {
+    const next: AvatarManifest = { ...manifest };
+    if (link) next.library = { avatarId: link.avatarId, sha256: link.sha256 };
+    else delete next.library;
+    await writeFile(path.join(paths.avatarsDir(characterId), MANIFEST_NAME), JSON.stringify(next, null, 2), 'utf8');
+    return next;
+  });
+}
+
+/** Fixed entry date for zipStoredAvatar, so the same files always give the same bytes. */
+const STABLE_ZIP_DATE = new Date(Date.UTC(2000, 0, 1, 0, 0, 0));
+const STORED_EXT_RE = /\.(png|jpe?g|webp|gif)$/i;
+
+/**
+ * Pack the stored model back into a zip for the avatar library upload
+ * (261106): files in sorted order with a fixed date, images stored and
+ * everything else deflated, so the same store always hashes the same (the
+ * upload happens once per hash). The manifest is not included (it is ours,
+ * rebuilt by the import on the other side). Null when nothing is stored.
+ */
+export async function zipStoredAvatar(characterId: string): Promise<Buffer | null> {
+  const manifest = await getAvatarManifest(characterId);
+  if (!manifest) return null;
+  const files = await withLock(characterId, () => readStoredFiles(characterId));
+  if (files.length === 0) return null;
+  files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
+  const zip = new JSZip();
+  for (const f of files) {
+    zip.file(f.rel, f.bytes, {
+      date: STABLE_ZIP_DATE,
+      compression: STORED_EXT_RE.test(f.rel) ? 'STORE' : 'DEFLATE',
+      compressionOptions: { level: 6 },
+    });
+  }
+  return zip.generateAsync({ type: 'nodebuffer', platform: 'UNIX' });
 }
 
 /** Delete the character's imported avatar. Idempotent. */

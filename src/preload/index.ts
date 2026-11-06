@@ -43,6 +43,7 @@ import type { PopupAction } from '../shared/popupActions';
 import type { SeilinkAvailability, SeilinkHostStatus, SeilinkOpenEditor } from '../shared/seilinkHost';
 import type { SeilinkEditorEvent } from '../shared/seilinkTogether';
 import type { AnimaStatus } from '../shared/anima';
+import type { AvatarLibraryView } from '../shared/avatarLibrary';
 
 const api: RendererApi = {
   // Game adapters (M0): {characterId, game} (main also still accepts a bare id).
@@ -374,6 +375,22 @@ const api: RendererApi = {
   avatarModelFiles: (characterId) => ipcRenderer.invoke(IpcChannel.avatar.modelFiles, characterId),
   avatarSetAccessory: (characterId, name, on) =>
     ipcRenderer.invoke(IpcChannel.avatar.setAccessory, { characterId, name, on }),
+  // Avatar library (261106)
+  avatarLibraryList: (characterId, opts) =>
+    ipcRenderer.invoke(IpcChannel.avatarLibrary.list, { characterId, sync: opts?.sync === true, fresh: opts?.fresh === true }),
+  avatarLibraryAddImage: (characterId, bytes, name) =>
+    ipcRenderer.invoke(IpcChannel.avatarLibrary.addImage, { characterId, bytes, name }),
+  avatarLibraryAddModel: (characterId, zip) => ipcRenderer.invoke(IpcChannel.avatarLibrary.addModel, { characterId, zip }),
+  avatarLibrarySetFlags: (characterId, avatarId, flags) =>
+    ipcRenderer.invoke(IpcChannel.avatarLibrary.setFlags, { characterId, avatarId, ...flags }),
+  avatarLibraryRemove: (characterId, avatarId) =>
+    ipcRenderer.invoke(IpcChannel.avatarLibrary.remove, { characterId, avatarId }),
+  avatarLibraryPick: (characterId, avatarId) => ipcRenderer.invoke(IpcChannel.avatarLibrary.pick, { characterId, avatarId }),
+  onAvatarLibrary(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, update: { characterId: string; view: AvatarLibraryView }) => cb(update);
+    ipcRenderer.on(IpcChannel.avatarLibrary.changed, handler);
+    return () => ipcRenderer.off(IpcChannel.avatarLibrary.changed, handler);
+  },
   onAvatarManifest(cb) {
     const handler = (
       _e: Electron.IpcRendererEvent,
