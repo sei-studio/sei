@@ -241,6 +241,33 @@ describe('shared avatar library helpers', () => {
     expect(imageMime(PNG)).toBe('image/png');
     expect(imageMime(new Uint8Array([0xff, 0xd8, 0xff, 0]))).toBe('image/jpeg');
     expect(imageMime(ZIP)).toBeNull();
+    // the full 8-byte signature: a PNG start with a broken tail is not an image
+    expect(imageMime(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x0a, 0x00, 0, 0]))).toBeNull();
+  });
+
+  it('the default follows the proxy rule when the reply has no default_id: is_default, else card, else earliest clean', () => {
+    const at = (h: number) => `2026-11-06T${String(h).padStart(2, '0')}:00:00.000Z`;
+    const def = (rows: unknown[]) => parseAvatarList(listBody({ default_id: null }, rows))!;
+    // the marked row wins
+    expect(def([item(A_CARD, { source: 'card' }), item(A_MODEL, { is_default: true, created_at: at(3) })]).default_id).toBe(A_MODEL);
+    // else the card row, even when uploads are older
+    expect(def([item(A_MODEL, { created_at: at(1) }), item(A_CARD, { source: 'card', created_at: at(5) })]).default_id).toBe(A_CARD);
+    // else the earliest-created clean row, not the first in sort order; a pending older row does not count
+    const l = def([
+      item(A_MODEL, { sort_order: 0, created_at: at(4) }),
+      item(A_ADULT, { sort_order: 1, created_at: at(2) }),
+      item(NEW_ID, { sort_order: 2, created_at: at(1), moderation: 'pending' }),
+    ]);
+    expect(l.avatars.map((a) => a.id)).toEqual([A_MODEL, A_ADULT, NEW_ID]);
+    expect(l.default_id).toBe(A_ADULT);
+    expect(effectiveAvatar(l, null)?.id).toBe(A_ADULT);
+    // nothing clean and no card: no default, and nothing plays (no first-row fallback)
+    const none = def([item(A_MODEL, { moderation: 'pending' }), item(A_ADULT, { moderation: 'needs_review' })]);
+    expect(none.default_id).toBeNull();
+    expect(effectiveAvatar(none, null)).toBeNull();
+    expect(effectiveAvatar(none, A_ADULT)?.id).toBe(A_ADULT);
+    // a default_id the reply sends but the list does not hold falls back to the rule
+    expect(parseAvatarList(listBody({ default_id: A_CARD }, [item(A_MODEL, { created_at: at(1) })]))!.default_id).toBe(A_MODEL);
   });
 });
 

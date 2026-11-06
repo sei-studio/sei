@@ -35,7 +35,7 @@
  */
 import { createHash } from 'node:crypto';
 import type { AvatarManifest } from '../../shared/ipc';
-import { avatarImageProblem, MAX_PORTRAIT_SIDE } from '../avatar/avatarImage';
+import { avatarImageProblem, MAX_PORTRAIT_SIDE, sniffAvatarImage } from '../avatar/avatarImage';
 import {
   effectiveAvatar,
   mbBucket,
@@ -123,18 +123,10 @@ export function sha256Hex(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
-/** Image type by magic bytes (png / jpeg / webp), or null. */
+/** Image type by magic bytes (png / jpeg / webp), or null. Same sniff as the upload checks (full 8-byte PNG signature). */
 export function imageMime(bytes: Uint8Array): string | null {
-  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png';
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
-  if (
-    bytes.length >= 12 &&
-    bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 &&
-    bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50
-  ) {
-    return 'image/webp';
-  }
-  return null;
+  const t = sniffAvatarImage(bytes);
+  return t ? `image/${t}` : null;
 }
 
 /** Map a proxy answer to the closed error set. */

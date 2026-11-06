@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_PORTRAIT_SIDE, MAX_TEXTURE_SIDE, avatarImageProblem, imageFacts } from './avatarImage';
+import { MAX_PORTRAIT_SIDE, MAX_TEXTURE_SIDE, avatarImageProblem, imageFacts, sniffAvatarImage } from './avatarImage';
 
 /** Header-only PNG: signature, IHDR (w x h), optional acTL before or after an IDAT, IEND. CRCs are not checked. */
 function pngHeader(w: number, h: number, o: { actl?: 'before' | 'after' } = {}): Uint8Array {
@@ -58,6 +58,19 @@ function jpegHeader(w: number, h: number): Uint8Array {
 }
 
 describe('avatarImage (the proxy rules, read from the header)', () => {
+  it('needs the full 8-byte PNG signature, as the proxy does', () => {
+    const good = pngHeader(4, 4);
+    expect(sniffAvatarImage(good)).toBe('png');
+    // Same first 4 bytes, a broken tail (a text-mode transfer turns \r\n into \n): not a PNG.
+    for (const i of [4, 5, 6, 7]) {
+      const bad = good.slice();
+      bad[i] ^= 0xff;
+      expect(sniffAvatarImage(bad)).toBeNull();
+      expect(imageFacts(bad)).toBeNull();
+    }
+    expect(sniffAvatarImage(good.slice(0, 7))).toBeNull();
+  });
+
   it('reads PNG, JPEG and WebP sizes', () => {
     expect(imageFacts(pngHeader(37, 5))).toEqual({ mime: 'image/png', width: 37, height: 5, animated: false });
     expect(imageFacts(jpegHeader(33, 7))).toEqual({ mime: 'image/jpeg', width: 33, height: 7, animated: false });

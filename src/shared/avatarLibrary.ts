@@ -39,6 +39,8 @@ export interface AvatarItem {
   /** Signed download URL (short-lived), or null. */
   url: string | null;
   expires_in?: number;
+  /** When the row was made (ISO), '' from an older proxy. Orders the default fallback. */
+  created_at: string;
 }
 
 export interface AvatarLibraryLimits {
@@ -140,7 +142,25 @@ function asItem(v: unknown): AvatarItem | null {
     shareable: r.shareable === true,
     url: typeof r.url === 'string' && /^https:\/\//i.test(r.url) ? r.url : null,
     ...(typeof r.expires_in === 'number' ? { expires_in: r.expires_in } : {}),
+    created_at: typeof r.created_at === 'string' ? r.created_at : '',
   };
+}
+
+/**
+ * The default of a list of avatars, the same rule as the proxy's `defaultRow`:
+ * the row marked `is_default`, else the `card` row, else the earliest-created
+ * `clean` row, else none. A non-owner's list holds only rows visible to them,
+ * so the default never points at a row they cannot see.
+ */
+export function defaultAvatarOf(avatars: AvatarItem[]): AvatarItem | null {
+  const marked = avatars.find((a) => a.is_default);
+  if (marked) return marked;
+  const card = avatars.find((a) => a.source === 'card');
+  if (card) return card;
+  const at = (a: AvatarItem) => Date.parse(a.created_at);
+  const clean = avatars.filter((a) => a.moderation === 'clean');
+  clean.sort((x, y) => (Number.isNaN(at(x)) || Number.isNaN(at(y)) ? x.created_at.localeCompare(y.created_at) : at(x) - at(y)));
+  return clean[0] ?? null;
 }
 
 /** Validate a proxy list reply (the single parse point; anything malformed is dropped). */
@@ -157,7 +177,7 @@ export function parseAvatarList(v: unknown): AvatarLibraryList | null {
     character_id: r.character_id,
     is_owner: r.is_owner === true,
     character_public: r.character_public === true,
-    default_id: def ?? avatars.find((a) => a.is_default)?.id ?? null,
+    default_id: def ?? defaultAvatarOf(avatars)?.id ?? null,
     avatars,
     ...(limits && typeof limits === 'object' && typeof limits.max_per_character === 'number' ? { limits } : {}),
   };
@@ -165,12 +185,14 @@ export function parseAvatarList(v: unknown): AvatarLibraryList | null {
 
 /**
  * What plays for this viewer: their own pick when it is still in the list,
- * else the list's default, else the first avatar. Null for an empty list.
+ * else the list's default (`defaultAvatarOf`). Null when there is neither (an
+ * empty list, or only uploads that are not clean yet and no card row): the
+ * character then shows its card image as before.
  */
 export function effectiveAvatar(list: AvatarLibraryList | null, pickId: string | null | undefined): AvatarItem | null {
   if (!list || list.avatars.length === 0) return null;
   const byId = (id: string | null | undefined) => (id ? list.avatars.find((a) => a.id === id) ?? null : null);
-  return byId(pickId) ?? byId(list.default_id) ?? list.avatars[0];
+  return byId(pickId) ?? byId(list.default_id);
 }
 
 /**

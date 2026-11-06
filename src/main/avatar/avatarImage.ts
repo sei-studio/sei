@@ -11,9 +11,12 @@
  * MAX_PORTRAIT_SIDE for a portrait.
  */
 
+/** The full 8-byte PNG signature, as the proxy checks it. */
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
 /** PNG / JPEG / WebP by magic bytes, or null. */
 export function sniffAvatarImage(b: Uint8Array): 'png' | 'jpeg' | 'webp' | null {
-  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'png';
+  if (b.length >= 8 && PNG_SIGNATURE.every((x, i) => b[i] === x)) return 'png';
   if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'jpeg';
   if (
     b.length >= 12 &&

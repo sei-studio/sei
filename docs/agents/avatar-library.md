@@ -104,9 +104,12 @@ body:
 2. The client PUTs the bytes, then `POST /avatars/v1/:character_id/commit
    {kind, sha256, staging_path?, name?, make_default?}`. The proxy streams
    the staging object (at most the size its link declared), checks the
-   sha256 and the size, checks the content, moderates a small copy of every
-   image, writes it to its content path and calls `avatar_commit`. It checks
-   one commit at a time per machine: a full queue answers 503 `busy`, which
+   sha256 and the size, checks the content, moderates small copies of every
+   image (large textures in tiles, images with alpha over black and over
+   white), writes it to its content path and calls `avatar_commit`. An upload
+   link works for one commit only. It checks one commit at a time per machine
+   and one per user: a full queue, or a second commit of the same user while
+   one runs, answers 503 `busy`, which
    the app retries twice (5 s, 15 s) before showing "The server is busy". It
    answers within 85 s (the app waits 95 s): past that it replies 202
    `{state:'processing'}` and finishes in the background, and the app looks
@@ -174,8 +177,12 @@ its hash is the hash of the current card image.
 | anyone else | nothing (403 for a private character, 404 for none) |
 
 Private rows are never listed, signed or baked for anyone but the owner.
-`default_id` in a non-owner list is the default when it is visible, else the
-first visible row.
+`default_id` follows one rule, the same in the proxy (`defaultRow`) and in the
+app (`defaultAvatarOf` in `src/shared/avatarLibrary.ts`, used when a reply has
+no valid `default_id`): the `is_default` row, else the `card` row, else the
+earliest-created `clean` row, else none. For anyone but the owner it is
+applied to the rows that caller can see, so another user only ever gets a
+default from rows visible to them.
 
 Signed URLs: `GET /avatars/v1/:character_id` signs every listed row in one
 `createSignedUrls` call, 1 hour (`AVATAR_SIGN_TTL_S`). The client downloads at
@@ -197,7 +204,8 @@ delete 60, order 60.
 | `POST /avatars/v1/:character_id/order` | `{ids[]}` | the full list body |
 
 An avatar item: `{id, kind, source, name, sha256, rev, bytes, mime,
-is_public, is_default, sort_order, moderation, shareable, url, expires_in}`.
+is_public, is_default, sort_order, moderation, shareable, url, expires_in,
+created_at}`.
 `sha256` is the owner's only (null for everyone else); `rev` is an opaque
 per-row content tag the app caches and links by. `shareable` = public and
 visible to others right now; `url` is null when signing failed.
@@ -242,7 +250,8 @@ operator steps are in the proxy repo (`sei-proxy/docs/avatar-library.md`).
   order with fixed dates, so its hash is stable.
 - **Effective avatar** (any viewer): the viewer's own pick
   (`UserConfig.avatar_prefs[id].avatar_id`, per user, never synced) when it is
-  still listed, else the list's `default_id`. A `live2d`/`rig` effective
+  still listed, else the list's `default_id`, else none (never simply the
+  first row): the character then shows its card image. A `live2d`/`rig` effective
   avatar is downloaded once into the local avatar store (same import and
   normalization as a hand upload) when the store does not already hold that
   row's `rev`. The import checks every entry's declared size before
