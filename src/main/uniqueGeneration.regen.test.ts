@@ -34,7 +34,10 @@ import { listPortraitVersionFilesOnDisk } from './portraitFiles';
 import {
   assemblePortraitPrompt,
   buildRegenPortraitPrompt,
+  MALE_PORTRAIT_PREFIX,
+  portraitGeneratedProps,
   regeneratePortrait,
+  resolveKusartStyleId,
 } from './uniqueGeneration';
 import type { Character } from '../shared/characterSchema';
 import { MAX_PORTRAIT_REGENS } from '../shared/characterSchema';
@@ -133,6 +136,46 @@ describe('assemblePortraitPrompt', () => {
     expect(p).not.toContain('convey:');
     expect(p).not.toContain('Beastkin');
   });
+  // Product call 261107: male portraits lead with booru tags so the
+  // female-biased KusArt styles draw a (clothed) man.
+  it('leads male prompts with the 1boy / male focus / fully clothed tags', () => {
+    const args = { subject: 'A wolf beastkin young man.', tone: 'sly', beastkin: true };
+    const p = assemblePortraitPrompt({ ...args, gender: 'male' });
+    expect(MALE_PORTRAIT_PREFIX).toBe('solo, 1boy, male focus, masculine, fully clothed. ');
+    expect(p.startsWith('solo, 1boy, male focus, masculine, fully clothed. A wolf beastkin young man. One character')).toBe(true);
+    expect(p).toBe(MALE_PORTRAIT_PREFIX + assemblePortraitPrompt(args));
+  });
+  it('leaves female, other and unspecified-gender prompts byte-identical', () => {
+    const args = { subject: 'A fox beastkin woman — ranger.', tone: 'warm', beastkin: true };
+    const plain = assemblePortraitPrompt(args);
+    expect(assemblePortraitPrompt({ ...args, gender: 'female' })).toBe(plain);
+    expect(assemblePortraitPrompt({ ...args, gender: 'other' })).toBe(plain);
+    expect(plain).not.toContain('1boy');
+    expect(plain.startsWith('A fox beastkin woman, ranger. One character')).toBe(true);
+  });
+});
+
+describe('resolveKusartStyleId', () => {
+  it('keeps the female map unchanged', () => {
+    expect(['chibi', 'anime', 'celshaded', 'cartoon', '3d', null].map((a) =>
+      resolveKusartStyleId(a as never, 'female'))).toEqual(['9', '15', '14', '19', '18', '15']);
+    expect(resolveKusartStyleId('3d', 'other')).toBe('18');
+  });
+  it('maps male 3d to 208 Soft-Hue Masculine (30 drew women), others unchanged', () => {
+    expect(['chibi', 'anime', 'celshaded', 'cartoon', '3d', null].map((a) =>
+      resolveKusartStyleId(a as never, 'male'))).toEqual(['9', '13', '211', '59', '208', '13']);
+  });
+});
+
+describe('portraitGeneratedProps', () => {
+  it('builds the shape-only analytics props', () => {
+    expect(portraitGeneratedProps({ source: 'cast', gender: 'male', artStyle: '3d', styleId: '208' })).toEqual({
+      source: 'cast', gender: 'male', art_style: '3d', style_id: '208', male_lead: true, ok: true,
+    });
+    expect(portraitGeneratedProps({ source: 'regen', gender: 'female', artStyle: null, styleId: '15', error: 'network' })).toEqual({
+      source: 'regen', gender: 'female', art_style: 'none', style_id: '15', male_lead: false, ok: false, error_class: 'network',
+    });
+  });
 });
 
 describe('buildRegenPortraitPrompt', () => {
@@ -143,6 +186,11 @@ describe('buildRegenPortraitPrompt', () => {
     expect(r!.prompt.startsWith('A wolf-eared ranger with silver hair. One character')).toBe(true);
     expect(r!.prompt).toContain('direct and candid, never flustered');
     expect(r!.prompt).toContain('Beastkin:');
+  });
+  it('adds the male lead for a male sheet', () => {
+    const r = buildRegenPortraitPrompt(makeChar({ metadata: { soulcaster_sheet: { ...SHEET, gender: 'male' } } }));
+    expect(r!.gender).toBe('male');
+    expect(r!.prompt.startsWith(`${MALE_PORTRAIT_PREFIX}A wolf-eared ranger with silver hair. One character`)).toBe(true);
   });
   it('falls back to name + description + persona source for hand-made characters', () => {
     const r = buildRegenPortraitPrompt(makeChar());
@@ -178,15 +226,19 @@ describe('regeneratePortrait', () => {
     const original = png(0);
     await writeFile(paths.portraitPath(UUID_A), original);
     const fresh = png(7);
-    const generate = vi.fn(async (_prompt: string, _style: string, _jwt: string) => fresh);
+    const generate = vi.fn(async (_prompt: string, _style: string, _jwt: string, _gender: string) => fresh);
 
     const r = await regeneratePortrait({ characterId: UUID_A, jwt: 'jwt-123', generate });
 
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(generate).toHaveBeenCalledTimes(1);
-    const [prompt, styleId, jwt] = generate.mock.calls[0];
+    const [prompt, styleId, jwt, gender] = generate.mock.calls[0];
     expect(prompt).toContain('A wolf-eared ranger');
+    // The sheet's gender rides along so the proxy can pick its curated
+    // negative (261107); a female sheet gets no male lead.
+    expect(gender).toBe('female');
+    expect(prompt).not.toContain('1boy');
     expect(typeof styleId).toBe('string');
     expect(jwt).toBe('jwt-123');
     expect(r.state.regenCount).toBe(1);
