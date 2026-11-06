@@ -7,6 +7,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   ENTRY_SOURCES,
+  INTRO_MOOD,
+  INTRO_STYLE,
   SEILINK_SETUP_EVENT,
   SEILINK_SETUP_STEP_EVENT,
   SETUP_OPENED_FROM,
@@ -50,7 +52,7 @@ describe('seilink_intro', () => {
       action: 'skipped',
       trigger: 'first_link',
       style: 'aurora',
-      mood: 'nebula',
+      mood: 'eclipse',
       end_on: 'plain_light',
       reduced_motion: true,
       entry: 'tour',
@@ -65,7 +67,7 @@ describe('seilink_intro', () => {
       action: 'skipped',
       trigger: 'first_link',
       style: 'aurora',
-      mood: 'nebula',
+      mood: 'eclipse',
       end_on: 'plain_light',
       reduced_motion: true,
       entry: 'tour',
@@ -73,6 +75,11 @@ describe('seilink_intro', () => {
       duration_bucket: '3_6s',
       host: 'ok',
     });
+  });
+
+  it('drops the retired moods (eclipse is the only one since 261106 v4)', () => {
+    for (const mood of ['accretion', 'nebula']) expect(sanitizeSeilinkIntroTrack(SEILINK_INTRO_EVENT, { mood }).mood).toBeNull();
+    expect(sanitizeSeilinkIntroTrack(SEILINK_INTRO_EVENT, { mood: INTRO_MOOD, style: INTRO_STYLE })).toMatchObject({ mood: 'eclipse', style: 'aurora' });
   });
 
   it('falls back on junk', () => {

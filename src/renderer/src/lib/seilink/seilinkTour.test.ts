@@ -119,13 +119,6 @@ describe('first-link intro, play once', () => {
     expect(() => introPref.markIntroSeen()).not.toThrow();
   });
 
-  it('ships the default mood, with a dev override that must be a real mood', () => {
-    expect(introPref.introMood()).toBe(introPref.DEFAULT_INTRO_MOOD);
-    localStorage.setItem('sei.seilinkIntroMood', 'accretion');
-    expect(introPref.introMood()).toBe('accretion');
-    localStorage.setItem('sei.seilinkIntroMood', 'tide');
-    expect(introPref.introMood()).toBe(introPref.DEFAULT_INTRO_MOOD);
-  });
 });
 
 describe('startSeilinkHost and the intro', () => {

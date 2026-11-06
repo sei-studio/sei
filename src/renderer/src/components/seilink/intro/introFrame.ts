@@ -1,21 +1,27 @@
 /**
  * One frame of the first-link intro, as plain numbers and CSS strings:
- * computeFrame(mood, timeline, t, size, reduced, end) is pure, so a seek
- * redraws exactly the same picture (the video harness depends on it) and the
- * view just writes the result to the DOM and the light canvases (introFx.ts).
+ * computeFrame(timeline, t, W, H, reduced, end) is pure, so a seek redraws
+ * exactly the same picture (the video harness depends on it) and the view
+ * just writes the result to the DOM and the light canvases (introFx.ts).
  *
  * The light is the aurora (261106, Shawn: "the aurora is pretty creative ...
  * make the colors more space themed. Think interstellar scifi and no man's
- * sky"): curtains of soft light sway across deep space, lean in toward her
- * as she forms, then lift away. Space depth comes from a faint, very soft
- * starfield and a nebula haze. Only the colours change between moods
- * (INTRO_MOODS): `accretion` (gold and amber light around a black hole, cool
- * blue-white highlights), `nebula` (saturated teal, magenta, violet and
- * sunset orange on deep indigo), `eclipse` (the two together).
+ * sky"): curtains of soft light sway across deep space. Space depth comes
+ * from a faint, very soft starfield and a nebula haze. One palette, eclipse
+ * (261106 v4, Shawn's pick of the three moods): gold light and blue-white
+ * rims against violet and teal nebula.
  *
- * Beats: tunnel (the light wakes), link (she forms out of the light), port
+ * Beats (261106 v4, the climax): tunnel (the light wakes, then builds to a
+ * peak: brighter, fuller, faster, filling the screen, held for a beat, then
+ * one hard cut to black), link (a short hold on black, then the black fades
+ * out as she fades and rises in, the light settled again behind her), port
  * (the light settles and her place opens around her), linked (the end card;
  * the last frame is exactly what the wallpaper shows).
+ *
+ * The peak is ONE swell (it only rises until the cut), never a flicker; the
+ * cut is one change to black. Reduced motion: no peak and no cut, a gentle
+ * fade through black, plain crossfades on the calm timeline and a still
+ * field.
  *
  * How it ends (`end`, first-link v3): on the plain background she spawns on
  * (`plain_dark` black, `plain_light` white, with the OS theme): the light
@@ -24,11 +30,9 @@
  * feathered circle around her as before.
  *
  * No grids, scanlines, rings, slices or hard edges: every shape is a gradient.
- * Reduced motion (any mood): plain crossfades on the calm timeline and a
- * still field.
  */
-import type { IntroBeat, IntroEndOn, IntroMood } from '@shared/seilinkIntroTelemetry';
-import { beatAt, beatProgress, ease, span, type IntroTimeline } from '../../../lib/seilink/introTimeline';
+import type { IntroBeat, IntroEndOn } from '@shared/seilinkIntroTelemetry';
+import { CAPTION_IN_MS, CAPTION_OUT_MS, beatAt, beatProgress, ease, span, type IntroTimeline } from '../../../lib/seilink/introTimeline';
 
 export interface Box {
   x: number;
@@ -43,7 +47,6 @@ export interface IntroFrame {
   W: number;
   H: number;
   reduced: boolean;
-  mood: IntroMood;
   end: IntroEndOn;
   /** The light field (introFx). */
   field: {
@@ -51,13 +54,17 @@ export interface IntroFrame {
     opacity: number;
     /** 0..1 how far it has gathered in on her (link). */
     gather: number;
-    /** Motion clock, ms (still under reduced motion). */
+    /** Motion clock, ms (still under reduced motion; runs faster into the peak). */
     clock: number;
     /** 0..1 extra brightness (the swell as she forms). */
     swell: number;
+    /** 0..1 the climax: brighter, fuller, wider light, one rise up to the cut (0 under reduced motion). */
+    peak: number;
   };
   /** 0..1 the starfield and haze (space behind the light). */
   space: number;
+  /** 0..1 black over the whole picture (not the HUD): the cut, its hold, and its fade out as she comes in. */
+  black: number;
   /**
    * What she ends on: `opacity` of the plain colour or of her room's canvases
    * (she is not in them), `reveal` the radius of the soft circle a room opens
@@ -68,19 +75,22 @@ export interface IntroFrame {
    * last, instead of the whole picture greying through the crossfade).
    */
   room: { opacity: number; reveal: number; flood: number };
-  avatar: { opacity: number; filter: string };
+  /** `rise`: px she still sits below her place as she comes in (0 once in, always 0 under reduced motion). */
+  avatar: { opacity: number; filter: string; rise: number };
   /** 0..1 the soft glow behind and around her. */
   halo: number;
   /** 0..1 a soft breath of light around her when linked (a glow, no ring; none over the white ending, where a glow only greys it). */
   linkGlow: number;
   brand: number;
+  /** Captions: `block` the whole caption area (cloud, lines, dots; the view sets it on the area, so a line shows at line * block), `line` the beat's line, `sub` the end card's second line. Nothing shows through the peak and the black. */
+  caption: { block: number; line: number; sub: number };
   /** The three beat dots: 0..1 lit. */
   dots: [number, number, number];
 }
 
 type RGB = [number, number, number];
 
-export interface MoodPalette {
+export interface IntroPalette {
   /** Deep space behind the light, centre to edge. */
   void: [string, string];
   /** The curtains' colours, one per curtain (four). */
@@ -89,60 +99,25 @@ export interface MoodPalette {
   haze: [RGB, RGB];
   /** Star colour. */
   star: RGB;
-  /** Her halo and the swell. */
+  /** Her halo, the swell and the peak's bloom. */
   halo: RGB;
 }
 
-/** The moods (261106). Colours are the space references, kept soft and luminous. */
-export const INTRO_PALETTES: Record<IntroMood, MoodPalette> = {
-  // A black hole's accretion disk: warm gold, amber and white heat, cool blue-white rims.
-  accretion: {
-    void: ['#0b0805', '#000000'],
-    lights: [
-      [255, 182, 92],
-      [255, 226, 176],
-      [150, 186, 255],
-      [255, 140, 64],
-    ],
-    haze: [
-      [74, 42, 14],
-      [24, 36, 84],
-    ],
-    star: [214, 226, 255],
-    halo: [255, 214, 160],
-  },
-  // A saturated alien nebula: teal, magenta, violet and a sunset orange on deep indigo.
-  nebula: {
-    void: ['#0e0b33', '#03021a'],
-    lights: [
-      [38, 232, 208],
-      [240, 70, 190],
-      [150, 96, 255],
-      [255, 146, 72],
-    ],
-    haze: [
-      [120, 40, 150],
-      [20, 96, 130],
-    ],
-    star: [230, 236, 255],
-    halo: [190, 170, 255],
-  },
-  // The two together: gold light and blue-white rims against violet and teal nebula.
-  eclipse: {
-    void: ['#0a0a1e', '#010106'],
-    lights: [
-      [255, 188, 104],
-      [124, 172, 255],
-      [186, 110, 255],
-      [64, 220, 226],
-    ],
-    haze: [
-      [84, 40, 130],
-      [20, 64, 92],
-    ],
-    star: [222, 230, 255],
-    halo: [214, 200, 255],
-  },
+/** Eclipse: gold light and blue-white rims against violet and teal nebula, kept soft and luminous. */
+export const INTRO_PALETTE: IntroPalette = {
+  void: ['#0a0a1e', '#010106'],
+  lights: [
+    [255, 188, 104],
+    [124, 172, 255],
+    [186, 110, 255],
+    [64, 220, 226],
+  ],
+  haze: [
+    [84, 40, 130],
+    [20, 64, 92],
+  ],
+  star: [222, 230, 255],
+  halo: [214, 200, 255],
 };
 
 /**
@@ -152,9 +127,24 @@ export const INTRO_PALETTES: Record<IntroMood, MoodPalette> = {
  */
 export const FLOOD_MAX = 0.55;
 
-export function computeFrame(mood: IntroMood, tl: IntroTimeline, t: number, W: number, H: number, reduced: boolean, end: IntroEndOn = 'plain_dark'): IntroFrame {
+/** Into the peak the light runs up to this much faster (2x at the peak). */
+export const PEAK_SPEEDUP = 1;
+
+/** The motion clock: real time, plus the extra the climax adds (smoothly faster into the peak, then steady). */
+function motionClock(tl: IntroTimeline, t: number): number {
+  const { build, peak, cut } = tl.climax;
+  const d = Math.max(1, peak - build);
+  const u = Math.min(t, cut);
+  if (u <= build) return t;
+  // Speed rises as s^2 across the build (s = 0..1), so the clock gains d*s^3/3, then the full speedup until the cut.
+  const s = Math.min(1, (u - build) / d);
+  const extra = PEAK_SPEEDUP * (d * (s * s * s) / 3 + Math.max(0, u - peak));
+  return t + extra;
+}
+
+export function computeFrame(tl: IntroTimeline, t: number, W: number, H: number, reduced: boolean, end: IntroEndOn = 'plain_dark'): IntroFrame {
   const B = tl.beats;
-  const L = B.link;
+  const C = tl.climax;
   const P = B.port;
   const K = B.linked;
   const beat = beatAt(tl, t);
@@ -167,55 +157,72 @@ export function computeFrame(mood: IntroMood, tl: IntroTimeline, t: number, W: n
           beat === 'tunnel' ? 0 : ease.out(beatProgress(tl, t, 'link')),
           beat === 'port' ? ease.out(beatProgress(tl, t, 'port')) : 0,
         ];
+  // Captions: no text through the peak and the black. The first line and the block leave before the cut and the block comes back as the black lifts.
+  const block = t < C.cut ? 1 - ease.inOut(span(t, tl.lineOut, tl.lineOut + CAPTION_OUT_MS)) : ease.inOut(span(t, C.lift, C.clear));
+  const lineIn = ease.out(span(t, tl.lineAt[beat], tl.lineAt[beat] + CAPTION_IN_MS));
+  const caption = {
+    block,
+    line: lineIn,
+    sub: beat === 'linked' ? ease.out(span(t, K + 450, K + 1000)) : 0,
+  };
+  const black = t < C.cut ? (reduced ? ease.inOut(span(t, C.build, C.cut)) : 0) : 1 - ease.inOut(span(t, C.lift, C.clear));
   const base: IntroFrame = {
     t,
     beat,
     W,
     H,
     reduced,
-    mood,
     end,
-    field: { opacity: 0, gather: 0, clock: t, swell: 0 },
+    field: { opacity: 0, gather: 0, clock: t, swell: 0, peak: 0 },
     space: 0,
+    black,
     room: { opacity: 0, reveal: 0, flood: 0 },
-    avatar: { opacity: 0, filter: 'none' },
+    avatar: { opacity: 0, filter: 'none', rise: 0 },
     halo: 0,
     linkGlow: 0,
-    brand: ease.out(span(t, 100, 800)),
+    brand: ease.out(span(t, 100, 800)) * block,
+    caption,
     dots,
   };
 
   if (reduced) {
-    // Calm: the field fades in still, she fades in, her place fades in as the field fades out.
+    // Calm: the field fades in still, fades through black, she fades in as the black clears, her place fades in as the field fades out.
     base.field.clock = 2400;
     base.field.opacity = ease.inOut(span(t, 0, 900)) * (1 - ease.inOut(span(t, P, P + 1200)));
     base.space = base.field.opacity;
-    base.avatar.opacity = ease.inOut(span(t, L + 100, L + 1100));
+    base.avatar.opacity = ease.inOut(span(t, C.lift + 100, C.clear + 200));
     base.halo = 0.6 * base.avatar.opacity * (1 - span(t, P, P + 1200));
     base.room.opacity = ease.inOut(span(t, P, P + 1200));
     base.room.reveal = 1.2;
     return base;
   }
 
-  // The light wakes, swells as she forms, and fades as her place opens.
+  // The light wakes, builds to the peak and cuts; behind the black it is settled again, and it fades as her place opens.
   const wake = ease.inOut(span(t, 0, 1200));
   const fade = ease.inOut(span(t, P + 300, P + 2300));
   base.field.opacity = wake * (1 - fade);
-  base.field.gather = ease.inOut(span(t, L, L + 2200)) * (1 - ease.inOut(span(t, P, P + 1800)));
-  base.field.swell = span(t, L + 400, L + 1500) * (1 - span(t, L + 1900, P + 600));
+  base.field.clock = motionClock(tl, t);
+  // One swell: it only rises (eased) up to the peak, holds, and ends at the cut.
+  base.field.peak = t < C.cut ? ease.inOut(span(t, C.build, C.peak)) : 0;
+  // After the cut the curtains lean in toward her as she comes in, then lift away.
+  const L = C.lift;
+  base.field.gather = (t < C.cut ? 0 : ease.inOut(span(t, C.cut, L + 1800))) * (1 - ease.inOut(span(t, P, P + 1800)));
+  // Softer than before the climax (0.6): the peak stays the brightest moment.
+  base.field.swell = 0.6 * span(t, L + 200, L + 1100) * (1 - span(t, L + 1500, P + 600));
   // Space (stars, haze) comes up a little behind the light and lingers a moment longer.
   base.space = ease.inOut(span(t, 200, 1800)) * (1 - ease.inOut(span(t, P + 500, P + 2500)));
 
-  // She forms out of the light: bright, soft and glowing first, then herself.
-  const q = ease.inOut(span(t, L + 300, L + 1900));
-  base.avatar.opacity = ease.out(span(t, L + 200, L + 1100));
+  // She comes in as the black fades: rising a little into place, bright, soft and glowing first, then herself.
+  const q = ease.inOut(span(t, L + 100, L + 1500));
+  base.avatar.opacity = ease.out(span(t, L + 50, L + 1000));
+  base.avatar.rise = H * 0.035 * (1 - ease.out(span(t, L + 50, L + 1400)));
   if (q < 0.999) {
     const r = 1 - q;
     base.avatar.filter =
       `brightness(${(1 + 1.4 * r).toFixed(3)}) saturate(${(0.55 + 0.45 * q).toFixed(3)}) blur(${(6 * r).toFixed(2)}px) ` +
       `drop-shadow(0 0 ${(26 * r).toFixed(1)}px rgba(255, 255, 255, ${(0.85 * r).toFixed(3)}))`;
   }
-  base.halo = span(t, L + 200, L + 1200) * (1 - 0.65 * span(t, P + 200, P + 2000)) * (1 - span(t, K, K + 900));
+  base.halo = span(t, L + 100, L + 1100) * (1 - 0.65 * span(t, P + 200, P + 2000)) * (1 - span(t, K, K + 900));
 
   if (plain) {
     // The whole screen settles into the plain colour as the light fades: no circle, no edge.

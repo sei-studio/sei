@@ -5,8 +5,7 @@
  * intro" in the companion menu.
  *
  * It loads her room (the same state the wallpaper will draw), plays
- * FirstLinkIntroView in the mood from introMood() (the space aurora's
- * palette), ending on what the wallpaper will draw (introEndFor: the plain
+ * FirstLinkIntroView (the eclipse aurora, its climax and cut to black), ending on what the wallpaper will draw (introEndFor: the plain
  * black or white background while she has no room yet), honours reduced
  * motion, and records what happened (seilink_intro: shown, then completed /
  * skipped / aborted, with the beat, a duration bucket and the host's state).
@@ -25,11 +24,11 @@
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { seilinkResolver } from '@shared/seilinkPack';
-import { SEILINK_INTRO_EVENT, introDurationBucket, type IntroHost } from '@shared/seilinkIntroTelemetry';
+import { INTRO_MOOD, INTRO_STYLE, SEILINK_INTRO_EVENT, introDurationBucket, type IntroHost } from '@shared/seilinkIntroTelemetry';
 import { sei } from '../../../lib/ipcClient';
 import { useDataStore } from '../../../lib/stores/useDataStore';
 import type { SeilinkIntroRequest } from '../../../lib/stores/useSeilinkStore';
-import { introMood, markIntroSeen } from '../../../lib/seilink/introPref';
+import { markIntroSeen } from '../../../lib/seilink/introPref';
 import { introEndFor } from '../../../lib/seilink/plainTone';
 import { revealAndOffer } from '../../../lib/seilink/seilinkFlow';
 import { roomAvatarUse } from '../RoomAvatar';
@@ -60,7 +59,6 @@ export default function FirstLinkIntro(props: { request: SeilinkIntroRequest; on
   const [room, setRoom] = useState<IntroRoom | null | undefined>(undefined);
   const [use, setUse] = useState<'auto' | 'sei' | 'imported'>('auto');
   const [answer, setAnswer] = useState<boolean | null>(null);
-  const mood = useMemo(() => introMood(), []);
   const reduced = useMemo(() => prefersReducedMotion(), []);
   const answerRef = useRef<boolean | null>(null);
   // The desktop stage: null until main answers (or there is none to ask for).
@@ -74,12 +72,12 @@ export default function FirstLinkIntro(props: { request: SeilinkIntroRequest; on
       character_id: request.characterId,
       trigger: request.trigger,
       entry: request.entry,
-      style: 'aurora',
-      mood,
+      style: INTRO_STYLE,
+      mood: INTRO_MOOD,
       end_on: endOn ?? 'plain_dark',
       reduced_motion: reduced,
     }),
-    [request, mood, reduced, endOn],
+    [request, reduced, endOn],
   );
 
   useEffect(() => {
@@ -188,7 +186,6 @@ export default function FirstLinkIntro(props: { request: SeilinkIntroRequest; on
 
   return (
     <FirstLinkIntroView
-      mood={mood}
       end={endOn}
       reduced={reduced}
       characterId={request.characterId}

@@ -1,9 +1,9 @@
 /**
- * The first-link intro's picture (261105, T337; 261106 space aurora moods):
- * data in props, no IPC, so the app (FirstLinkIntro) and the dev harness
- * (DevIntroPreview) render the same thing.
+ * The first-link intro's picture (261105, T337; 261106 the eclipse aurora
+ * and its climax): data in props, no IPC, so the app (FirstLinkIntro) and the
+ * dev harness (DevIntroPreview) render the same thing.
  *
- * Every frame comes from computeFrame(mood, timeline, t, ..., end): a rAF
+ * Every frame comes from computeFrame(timeline, t, ..., end): a rAF
  * loop writes it to the DOM through refs (no React render per frame) and draws
  * the light and star canvases (introFx.ts).
  *
@@ -22,13 +22,14 @@
  *  - skipped: the Skip button or Esc, at any time. Fades out fast; with
  *    `holdEnd` it rushes to that last frame instead (SKIP_RUSH times the
  *    speed, a cut under reduced motion) while the captions fade, so a skip
- *    also ends on her room.
+ *    also ends on her room. A skip before the black has cleared starts that
+ *    rush after it (skipFrom): the climax and the cut are never played fast.
  *  - aborted: the host start failed (`answer === false`). "Link interrupted."
  *    shows for a moment, then the overlay fades and the app's own error state
  *    (the move-in sheet's retry) is what the player sees.
  */
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import type { IntroBeat, IntroEndOn, IntroMood } from '@shared/seilinkIntroTelemetry';
+import type { IntroBeat, IntroEndOn } from '@shared/seilinkIntroTelemetry';
 import type { RoomPresetManifest, RoomState } from '@shared/seilinkRoom';
 import type { RoomUrlResolver } from '@shared/seilinkPack';
 import { RoomCanvas, type RoomAvatarSlot } from '../RoomCanvas';
@@ -41,7 +42,7 @@ import {
   beatAt,
   FULL_TIMELINE,
   SKIP_FADE_MS,
-  ease,
+  skipFrom,
   span,
   timelineTime,
   type IntroTimeline,
@@ -68,7 +69,6 @@ export interface IntroRoom {
 }
 
 export interface FirstLinkIntroViewProps {
-  mood: IntroMood;
   /** What it ends on: the plain background (by the OS theme) or her room. */
   end: IntroEndOn;
   reduced: boolean;
@@ -103,7 +103,7 @@ const SKIP_RUSH = 8;
 type Mode = { kind: 'play' } | { kind: 'skip'; at: number; t: number } | { kind: 'abort'; at: number; t: number };
 
 export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactElement {
-  const { mood, end, reduced, characterId, name, room, portrait = null, facepack, use = 'auto', answer, manual = false, holdEnd = false } = props;
+  const { end, reduced, characterId, name, room, portrait = null, facepack, use = 'auto', answer, manual = false, holdEnd = false } = props;
   const t = useT();
   const tl: IntroTimeline = reduced ? CALM_TIMELINE : FULL_TIMELINE;
 
@@ -124,6 +124,7 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
   const starRef = useRef<HTMLCanvasElement>(null);
   const grainRef = useRef<HTMLDivElement>(null);
   const frontRef = useRef<HTMLCanvasElement>(null);
+  const blackRef = useRef<HTMLDivElement>(null);
   const roomRef = useRef<HTMLDivElement>(null);
   const avatarRef = useRef<HTMLDivElement>(null);
   const hudRef = useRef<HTMLDivElement>(null);
@@ -180,6 +181,10 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
       set(grainRef.current, 'opacity', Math.max(0, grain).toFixed(3));
       set(avatarRef.current, 'opacity', f.avatar.opacity.toFixed(3));
       set(avatarRef.current, 'filter', f.avatar.filter);
+      set(avatarRef.current, 'transform', f.avatar.rise > 0.05 ? `translateY(${f.avatar.rise.toFixed(2)}px)` : 'none');
+      // The climax's cut: black over the whole picture (not the HUD), held, then fading out as she comes in.
+      set(blackRef.current, 'opacity', f.black.toFixed(3));
+      set(blackRef.current, 'display', f.black > 0.0005 ? 'block' : 'none');
 
       set(brandRef.current, 'opacity', f.brand.toFixed(3));
       // Captions sit in the empty space above her head, never over her. Each
@@ -196,6 +201,7 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
           el ? roomBehind(f, centre, { x: el.offsetLeft + el.offsetWidth / 2, y: el.offsetTop + el.offsetHeight / 2 }) : 0,
         );
         set(cap, 'top', `${top.toFixed(1)}px`);
+        set(cap, 'opacity', (aborted ? 1 : f.caption.block).toFixed(3));
         set(cap, '--fl-day', dayInk(behind).toFixed(3));
         set(brandRef.current, '--fl-day', dayInk(corners[0]).toFixed(3));
         set(skipRef.current, '--fl-day', dayInk(corners[1]).toFixed(3));
@@ -215,9 +221,8 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
         lineOpacity = 1;
       } else {
         line = lines[f.beat];
-        const at = tl.beats[f.beat] + tl.lineDelay;
-        lineOpacity = ease.out(span(f.t, at, at + 520));
-        if (f.beat === 'linked') subOpacity = ease.out(span(f.t, tl.beats.linked + 450, tl.beats.linked + 1000));
+        lineOpacity = f.caption.line;
+        subOpacity = f.caption.sub;
       }
       const sub = aborted ? '' : lines.linkedSub;
       const last = lastTextRef.current;
@@ -259,16 +264,16 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
       const fctx = frontRef.current?.getContext('2d');
       if (fctx) drawFront(fctx, f, her);
     },
-    [lines, tl],
+    [lines],
   );
 
   const frameAt = useCallback(
     (tt: number): IntroFrame => {
       const W = rootRef.current?.clientWidth || window.innerWidth;
       const H = rootRef.current?.clientHeight || window.innerHeight;
-      return computeFrame(mood, tl, tt, W, H, reduced, end);
+      return computeFrame(tl, tt, W, H, reduced, end);
     },
-    [mood, tl, reduced, end],
+    [tl, reduced, end],
   );
 
   /** The end's fade at timeline time `tt`: [whole overlay, captions]. With holdEnd only the captions go. */
@@ -325,8 +330,9 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
         if (tt >= tl.end) return finish('completed', 'linked');
       } else if (mode.kind === 'skip' && holdRef.current) {
         // Rush to her room (the wallpaper's picture), captions fading; the end is that frame, held.
+        // Never through the climax or the black: from before it has cleared, the rush starts after it.
         const since = now - mode.at;
-        const tt = reduced ? tl.fadeAt : Math.min(tl.fadeAt, mode.t + since * SKIP_RUSH);
+        const tt = reduced ? tl.fadeAt : Math.min(tl.fadeAt, skipFrom(tl, mode.t) + since * SKIP_RUSH);
         const hud = 1 - span(since, 0, SKIP_FADE_MS);
         apply(frameAt(tt), 1, hud, false);
         if (tt >= tl.fadeAt && hud <= 0) return finish('skipped', beatAt(tl, mode.t));
@@ -385,7 +391,6 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
     <div
       ref={rootRef}
       className={styles.root}
-      data-mood={mood}
       data-end={end}
       data-reduced={reduced ? '1' : undefined}
       role="dialog"
@@ -393,7 +398,7 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
       aria-label="SeiLink"
       tabIndex={-1}
     >
-      <div className={styles.void} style={{ background: voidGradient({ mood }) }} />
+      <div className={styles.void} style={{ background: voidGradient() }} />
       <canvas ref={starRef} className={styles.fx} aria-hidden="true" />
       <canvas ref={backRef} className={styles.fx} aria-hidden="true" />
       <div ref={roomRef} className={styles.room} aria-hidden="true">
@@ -418,6 +423,7 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
       </div>
       <canvas ref={frontRef} className={styles.fx} aria-hidden="true" />
       <div ref={grainRef} className={styles.grain} style={grainStyle} aria-hidden="true" />
+      <div ref={blackRef} className={styles.black} aria-hidden="true" />
 
       <div ref={hudRef} className={styles.hud}>
         <div ref={brandRef} className={styles.brand} aria-hidden="true">
