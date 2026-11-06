@@ -13,7 +13,6 @@ export const ZH_PROFILE_261107: Record<string, string> = {
   "Floating avatar": "悬浮形象",
   "No card image": "没有卡片图片",
   "Original art": "原画",
-  "{version} ({n, plural, one {# version} other {# versions}})": "{version}（共 {n} 个版本）",
   "Static, square frame": "静态，方形边框",
   "Static, circle frame": "静态，圆形边框",
   "Versions": "版本",

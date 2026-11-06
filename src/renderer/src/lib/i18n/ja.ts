@@ -2379,7 +2379,6 @@ export const JA: Record<string, string> = {
   "Floating avatar": "フローティングアバター",
   "No card image": "カード画像なし",
   "Original art": "オリジナルイラスト",
-  "{version} ({n, plural, one {# version} other {# versions}})": "{version}（全{n}バージョン）",
   "Static, square frame": "静止画、四角フレーム",
   "Static, circle frame": "静止画、丸フレーム",
   "Versions": "バージョン",

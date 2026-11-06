@@ -2379,7 +2379,6 @@ export const PT_BR: Record<string, string> = {
   "Floating avatar": "Avatar flutuante",
   "No card image": "Sem imagem do card",
   "Original art": "Arte original",
-  "{version} ({n, plural, one {# version} other {# versions}})": "{version} ({n, plural, one {# versão} other {# versões}})",
   "Static, square frame": "Estático, moldura quadrada",
   "Static, circle frame": "Estático, moldura redonda",
   "Versions": "Versões",

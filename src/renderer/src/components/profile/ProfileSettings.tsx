@@ -143,9 +143,7 @@ function LookTab(p: ProfileSettingsProps): React.ReactElement {
     : access.cardImage !== 'edit'
       ? t('Original art')
       : cv && cv.label
-        ? cv.count > 1
-          ? t('{version} ({n, plural, one {# version} other {# versions}})', { version: cv.label, n: cv.count })
-          : cv.label
+        ? cv.label
         : t('Card image');
 
   const skinGen = useSkinGenerate(character, () => void refreshCharacter(character.id));

@@ -2379,7 +2379,6 @@ export const RU: Record<string, string> = {
   "Floating avatar": "Плавающий аватар",
   "No card image": "Нет изображения карточки",
   "Original art": "Оригинальный арт",
-  "{version} ({n, plural, one {# version} other {# versions}})": "{version} ({n, plural, one {# версия} few {# версии} many {# версий} other {# версии}})",
   "Static, square frame": "Статичный, квадратная рамка",
   "Static, circle frame": "Статичный, круглая рамка",
   "Versions": "Версии",

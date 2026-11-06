@@ -2379,7 +2379,6 @@ export const ES: Record<string, string> = {
   "Floating avatar": "Avatar flotante",
   "No card image": "Sin imagen de la carta",
   "Original art": "Arte original",
-  "{version} ({n, plural, one {# version} other {# versions}})": "{version} ({n, plural, one {# versión} other {# versiones}})",
   "Static, square frame": "Estático, marco cuadrado",
   "Static, circle frame": "Estático, marco circular",
   "Versions": "Versiones",
