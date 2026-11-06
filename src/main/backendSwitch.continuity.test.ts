@@ -1,5 +1,5 @@
 /**
- * Backend switch data continuity (261023, Shawn: "make sure that signin to
+ * Backend switch data continuity (261023, product feedback: "make sure that signin to
  * chatgpt doesnt make them lose their current companion/memories").
  *
  * "Use your ChatGPT plan" on a signed-in Sei account does what Settings'

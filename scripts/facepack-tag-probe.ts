@@ -23,7 +23,7 @@
  * without touching the source. --face-template <file> does the same for the
  * per-pack block: `{faces}` in the file becomes the character's bracket list.
  *
- * 261028 shared face list (Shawn msg 991): every character is offered the
+ * 261028 shared face list (msg 991): every character is offered the
  * same faces (FACE_OFFERED_NAMES). The `face` arm uses the real FACE_PROMPT
  * (or --face-template); the `ref` arm uses --ref-template, filled with the
  * same list (`{faces}` = bracket list, `{plain}` = comma list), so two

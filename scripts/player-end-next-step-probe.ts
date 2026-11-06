@@ -65,9 +65,9 @@ const P = (text: string): DigestLine => ({ who: 'player', text });
 const Y = (text: string): DigestLine => ({ who: 'you', text });
 
 const BASE_MEMORY = [
-  'Shawn likes building near water and hates creepers',
+  'Alex likes building near water and hates creepers',
   'we named the wolf Biscuit',
-  'Shawn plays after work, usually in the evening',
+  'Alex plays after work, usually in the evening',
 ];
 
 interface Scene {
@@ -88,7 +88,7 @@ const SCENES: Scene[] = [
     open: true,
     activity: 'playing Minecraft together',
     minutes: 42,
-    goals: ['build a cabin by the lake with Shawn'],
+    goals: ['build a cabin by the lake with Alex'],
     memories: BASE_MEMORY,
     lines: [
       P('ok walls are done'),
@@ -139,7 +139,7 @@ const SCENES: Scene[] = [
     activity: 'playing Stardew Valley together',
     minutes: 35,
     goals: ['upgrade the watering can to copper'],
-    memories: ['Shawn wants to marry Abigail in Stardew', 'Shawn always forgets to water the parsnips'],
+    memories: ['Alex wants to marry Abigail in Stardew', 'Alex always forgets to water the parsnips'],
     lines: [
       P('the egg festival is tomorrow in game'),
       Y('we should save some gold for the strawberry seeds there'),
@@ -224,7 +224,7 @@ const SCENES: Scene[] = [
     activity: 'playing Stardew Valley together',
     minutes: 18,
     goals: [],
-    memories: ['Shawn always forgets to water the parsnips'],
+    memories: ['Alex always forgets to water the parsnips'],
     lines: [
       P('i love the rain music'),
       Y('me too, it makes the farm feel cozy'),

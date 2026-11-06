@@ -31,4 +31,4 @@ Questions, feedback, and show-and-tell go on [Discord](https://discord.gg/Gguvha
 
 If you want to work more closely with us, email me at [ouen@sei.gg](mailto:ouen@sei.gg).
 
-Shawn
+ouen

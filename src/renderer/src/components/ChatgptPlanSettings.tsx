@@ -9,7 +9,7 @@
  * - otherwise (another local provider, or the cloud backend): ONE settings
  *   row, "Use your ChatGPT plan" (the card title from OpenAI's UI
  *   guidelines) with the Continue with ChatGPT button, or "Use ChatGPT plan"
- *   once an account is signed in. 261023 (Shawn: "a lot of text ... i'd
+ *   once an account is signed in. 261023 (product feedback: "a lot of text ... i'd
  *   rather have a clean signin to chatgpt button"): the card's two-sentence
  *   body moved into the row's info tip. It still says what OpenAI asks for
  *   (the guideline body copy, every Sei plan including Free, and that usage

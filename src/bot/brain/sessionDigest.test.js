@@ -31,10 +31,10 @@ describe('convoMemory onLine tap', () => {
   it('hands every recorded line to onLine with who it came from', () => {
     const seen = []
     const { recentChat } = createConvoMemory({ onLine: (who, text) => seen.push([who, text]) })
-    recentChat.pushPlayer('Shawn', 'want to build a cabin?')
+    recentChat.pushPlayer('Alex', 'want to build a cabin?')
     recentChat.pushPlayer('Lyra', 'I can help', { companion: true })
     recentChat.pushSelf('Sui', 'yes, by the lake')
-    recentChat.pushPlayer('Shawn', '   ')
+    recentChat.pushPlayer('Alex', '   ')
     expect(seen).toEqual([
       ['player', 'want to build a cabin?'],
       ['other', 'I can help'],
@@ -44,7 +44,7 @@ describe('convoMemory onLine tap', () => {
 
   it('a throwing tap never breaks the ring buffers', () => {
     const { recentChat } = createConvoMemory({ onLine: () => { throw new Error('boom') } })
-    recentChat.pushPlayer('Shawn', 'hello')
+    recentChat.pushPlayer('Alex', 'hello')
     recentChat.pushSelf('Sui', 'hi')
     expect(recentChat.playerSize).toBe(1)
     expect(recentChat.selfSize).toBe(1)

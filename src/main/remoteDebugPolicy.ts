@@ -10,7 +10,7 @@
  *
  * Policy: a packaged STABLE build (no prerelease tag in its version) refuses to
  * start when it sees any of these switches. Packaged BETAS keep allowing them,
- * because installed-app verification on Shawn's Mac relaunches the app with
+ * because installed-app verification on the dev Mac relaunches the app with
  * `--remote-debugging-port`. Dev (`!app.isPackaged`) is never affected.
  *
  * The enforcement side lives in `remoteDebugGuard.ts`, imported first by

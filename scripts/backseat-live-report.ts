@@ -67,12 +67,12 @@ const opener = (s: string) => (s.trim().split(/\s+/)[0] ?? '').toLowerCase().rep
 // candidate memory bleed; summary.md classifies each by hand (a dog on screen
 // called by that name is bleed, a remark about the real dog is not).
 const BLEED_RE = /\bmochi\b/i
-// 261010 (Shawn: do not narrate). A rough flag for a line that reads the
+// 261010 (product feedback: do not narrate). A rough flag for a line that reads the
 // screen back: "you're on/in/at...", "that's a...", "stage 12 now", "just got
 // hit". It over- and under-counts; summary.md hand-checks a sample.
 const NARR_RE = /\b(you'?re|you are|they'?re|he'?s|she'?s)\s+(now\s+|already\s+|just\s+|still\s+)?(in|on|at|inside|running|walking|climbing|standing|heading|going|getting|back|fighting|chopping|building|walking)\b|\b(that'?s|there'?s|this is)\s+(a|an|the)\b|\bstage \d+\b|\b(just|now)\s+(got|hit|used|died|took|landed)\b/i
 const narrates = (s: string) => NARR_RE.test(s)
-// 261010 (Shawn: every comment is in retrospect). Two rough proxies, on
+// 261010 (product feedback: every comment is in retrospect). Two rough proxies, on
 // non-player lines only:
 //  - retrospective: a past-tense question about what just happened
 //    ("did you grab it?", "you already used it?", "have you ...?").

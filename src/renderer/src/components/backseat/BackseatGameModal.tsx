@@ -17,7 +17,7 @@
  * Recording, then starts the call and WAITS for the game's window, capturing
  * it on its own (useBackseatStore.startWatch).
  *
- * PICK (261004 redesign, Shawn: "too much text and corporate"; then 261004
+ * PICK (261004 redesign, product feedback: "too much text and corporate"; then 261004
  * again: "remove the profile pic and message line, just put play Roblox").
  * A plain "Play Roblox" title, a search pill, and the games as a grid of big
  * 16:9 screenshots. Tapping one picks it: the card lights up for a beat and

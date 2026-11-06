@@ -116,9 +116,9 @@ describe('every acting action ends follow mode', () => {
     const registry = createDefaultRegistry()
     setFollowTarget(null)
     const bot = fakeBot()
-    bot.players = { Shawn: { entity: { position: { x: 1, y: 64, z: 1 } }, username: 'Shawn' } }
-    await registry.execute('follow', { player: 'Shawn' }, bot, {}).catch(() => {})
-    expect(getFollowTargetLabel()).toBe('Shawn')
+    bot.players = { Alex: { entity: { position: { x: 1, y: 64, z: 1 } }, username: 'Alex' } }
+    await registry.execute('follow', { player: 'Alex' }, bot, {}).catch(() => {})
+    expect(getFollowTargetLabel()).toBe('Alex')
   })
 })
 
@@ -128,16 +128,16 @@ describe('follow result on interrupt says whether the trail goes on', () => {
   it('still trailing when the target is kept, ended when something dropped it', async () => {
     const registry = createDefaultRegistry()
     const bot = fakeBot()
-    bot.players = { Shawn: { entity: { position: { x: 1, y: 64, z: 1 } }, username: 'Shawn' } }
+    bot.players = { Alex: { entity: { position: { x: 1, y: 64, z: 1 } }, username: 'Alex' } }
     let ctl = new AbortController()
-    let p = registry.execute('follow', { player: 'Shawn' }, bot, { signal: ctl.signal })
+    let p = registry.execute('follow', { player: 'Alex' }, bot, { signal: ctl.signal })
     ctl.abort()
-    expect(String(await p)).toBe('follow Shawn interrupted (still trailing them)')
+    expect(String(await p)).toBe('follow Alex interrupted (still trailing them)')
 
     ctl = new AbortController()
-    p = registry.execute('follow', { player: 'Shawn' }, bot, { signal: ctl.signal })
+    p = registry.execute('follow', { player: 'Alex' }, bot, { signal: ctl.signal })
     setFollowTarget(null)
     ctl.abort()
-    expect(String(await p)).toBe('follow Shawn ended (no longer following them)')
+    expect(String(await p)).toBe('follow Alex ended (no longer following them)')
   })
 })

@@ -425,7 +425,7 @@ describe('Haiku 5.5 tuning (261010)', () => {
     expect(LINE_LENGTH_REMINDER).toContain('not the way your last line started');
   });
 
-  it('asks for reactions to the picture, not narration, on every look (Shawn, 261010)', () => {
+  it('asks for reactions to the picture, not narration, on every look (261010)', () => {
     expect(BACKSEAT_CONTRACT).toContain('REACT TO WHAT YOU SEE, NOT A NARRATOR.');
     expect(BACKSEAT_CONTRACT).toContain('Say what you think of it, not what it is');
     expect(BACKSEAT_CONTRACT).toContain('numbers, timers, stats, items or which stage it is, is narrating');
@@ -505,7 +505,7 @@ describe('endAtLastSentence (261010)', () => {
 });
 
 /**
- * 261010: Shawn, on the replays: every comment lands in retrospect. The line
+ * 261010: product feedback on the replays: every comment lands in retrospect. The line
  * is heard seconds after the frame, so a question about a quick action
  * arrives with its answer already on screen.
  */

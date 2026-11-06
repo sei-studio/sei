@@ -3,9 +3,9 @@
  * Tokens only. The primary is a flat fill of the theme's --plan-cta (a
  * brighter take on its accent, 261027), set per theme in tokens.css and
  * falling back to --accent. Sharp corners (D-28). No visible border line on either
- * kind (Shawn, 261023).
+ * kind (261023).
  *
- * 261027: Shawn: "remove the top white line, the shading is really dark, it
+ * 261027, product feedback: "remove the top white line, the shading is really dark, it
  * looks dirty and old". The top line was an inset 1px white highlight plus a
  * near-white top gradient stop; the dark shading was the accent-strong
  * gradient stop, the accent-strong border and an accent glow under the
@@ -87,18 +87,18 @@
 
 /* ── primary: the one loud button per card ─────────────────────────── */
 .primary {
-  /* Its own brighter fill (261027, Shawn): the old Summon CTA's blue on
+  /* Its own brighter fill (261027): the old Summon CTA's blue on
      midnight and ice, the same step brighter on acorn and mint (tokens.css
      --plan-cta*). Plan buttons only; --accent itself is unchanged. */
   color: var(--plan-cta-text, var(--accent-text));
   background-color: var(--plan-cta, var(--accent));
 }
 
-/* The glint (261027, Shawn): the travelling light streak of the old Summon
+/* The glint (261027): the travelling light streak of the old Summon
    CTA (CharacterPage .deployBtn::after, ef346069 until f6fef4f0). Same
    angle (100deg), peak (white at 45%), sweep (about 0.85s, ease-in-out) and
    travel (left edge from -60% to 130% of the button). The old loop was
-   3.4s; Shawn wanted it more often, so it is 1.8s: parked for the first
+   3.4s; we wanted it more often, so it is 1.8s: parked for the first
    45%, swept across in the next 47% (0.85s, the old speed), and the rest
    between sweeps is under a second. Other changes: it sits BEHIND the label
    (z-index -1 inside the isolated button), where the old one greyed the

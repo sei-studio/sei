@@ -3,7 +3,7 @@
  * credit pack is picked (261023): the plan cards on the Credits screen, the
  * extra-credit packages (TopUpModal) and the usage-limit popup's Upgrade.
  *
- * Shawn, 261023: the old buttons were small (Button size sm, ~26px) and hard
+ * 261023: the old buttons were small (Button size sm, ~26px) and hard
  * to aim at, which adds friction right where someone is trying to pay. So the
  * primary is full width, 44-48px tall, a flat fill of its own brighter
  * --plan-cta tone (261027: no top highlight, no dark gradient band, no
@@ -53,7 +53,7 @@ export function PlanButton({
 }: PlanButtonProps): React.ReactElement {
   const cls = [styles.button, styles[kind], styles[size]].join(' ');
   const ref = useRef<HTMLButtonElement>(null);
-  // Every glint on screen sweeps at the same moment (Shawn, 261027). A CSS
+  // Every glint on screen sweeps at the same moment (261027). A CSS
   // animation starts when its element mounts or is re-enabled, so a button
   // that appears later (the usage-limit popup over the plan cards, a card
   // that turns primary when the plan loads) would run out of step. Pinning

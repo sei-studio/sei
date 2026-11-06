@@ -160,7 +160,7 @@ describe('redact — provider keys and tokens (261031)', () => {
 
 describe('redact — emails, IPs, usernames in paths (261031)', () => {
   it('redacts emails', () => {
-    const out = redact('[sei/auth] refresh failed for shawn.test+sei@example.co.uk (session_rejected)');
+    const out = redact('[sei/auth] refresh failed for alex.test+sei@example.co.uk (session_rejected)');
     expect(out).toBe('[sei/auth] refresh failed for [email] (session_rejected)');
   });
 
