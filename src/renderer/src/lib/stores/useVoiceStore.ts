@@ -73,6 +73,7 @@ import {
   type MicEchoInfo,
 } from '../voice/echoGate';
 import { createInterruptStats } from '../voice/interruptStats';
+import { createVoiceReplyClock } from '../voice/replyClock';
 import type { CallInterruptCounts } from '@shared/callInterrupts';
 import { sttPolicy } from '../voice/sttPolicy';
 import {
@@ -330,6 +331,26 @@ async function micEchoCheck(info: MicEchoInfo): Promise<boolean> {
 let session = 0;
 /** 261030: interrupt diagnostics for voice_call_ended (interruptStats.ts). */
 const interruptStats = createInterruptStats();
+
+/** 261106: utterance -> first audible reply, sent as reply_latency (replyClock.ts). */
+const replyClock = createVoiceReplyClock({
+  now: () => performance.now(),
+  report: (sample) => {
+    try {
+      sei.track('reply_latency', { ...sample });
+    } catch {
+      /* analytics is never load-bearing */
+    }
+  },
+  setTimer: (fn, ms) => window.setTimeout(fn, ms),
+  clearTimer: (h) => window.clearTimeout(h as number),
+});
+
+/** A companion who is live (or joining) in a game answers through its bot. */
+function inGameNow(characterId: string): boolean {
+  const k = useDataStore.getState().summons[characterId]?.kind;
+  return k === 'online' || k === 'connecting';
+}
 /** A companion's slice of the interrupt counts, for its hang-up report. */
 function interruptsFor(characterId: string): { interrupts: CallInterruptCounts } {
   return { interrupts: interruptStats.take(characterId) };
@@ -846,6 +867,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       );
       replyClockAt = null;
     }
+    replyClock.lineQueued();
     // Caption is set when this clip reaches the playhead (see the audio queue's
     // onSpeakingChange below), NOT here at enqueue time — otherwise a multi-line
     // reply (or two companions' queued lines) would jump the caption straight to
@@ -1240,7 +1262,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
             }
             // Success, abort/supersede, or a failure the chat surface kept.
             if (!directorSendFailed.delete(speakerId)) break;
-            if (attempt >= TURN_RETRY_DELAYS_MS.length) break;
+            if (attempt >= TURN_RETRY_DELAYS_MS.length) {
+              replyClock.failed(mySeq);
+              break;
+            }
             if (mySeq !== directorSeq || get().status !== 'live' || !get().participants.includes(speakerId)) break;
             if (!holdsReconnectSlot) {
               holdsReconnectSlot = true;
@@ -1546,6 +1571,13 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     // Anyone else on the call still takes a normal turn.
     const sharingFor = useBackseatStore.getState().sharingFor;
     const capture = sharingFor && parts.includes(sharingFor) ? backseatCapture() : null;
+    // 261106 reply_latency: the clock runs until the first audible clip. Only
+    // off-game turns that all return can call it silent (in-game replies come
+    // back over the push long after the send, and backseat's own loop owns
+    // its reply), so those wait for the give-up timer.
+    const inGame = parts.some(inGameNow);
+    replyClock.utterance(mySeq, inGame ? 'in_game' : 'app');
+    const directTurns: Promise<void>[] = [];
     for (const id of parts) {
       if (capture && id === sharingFor) {
         // Date the dispatch the way armTurnCapture would, so the reply arriving
@@ -1568,8 +1600,12 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // capture slot is single and the replies stream back through
       // onCompanionText, which speaks and mirrors them regardless (the first
       // responder to actually produce a line takes the floor there).
-      void runCompanionTurn(mySeq, id, { from: 'player', text }, 0, { capture: parts.length === 1 });
+      directTurns.push(runCompanionTurn(mySeq, id, { from: 'player', text }, 0, { capture: parts.length === 1 }));
     }
+    const settles = !inGame && !capture;
+    void Promise.allSettled(directTurns).then(() => {
+      if (settles) replyClock.settled(mySeq);
+    });
   }
 
   // Chat → voice seam: companion text lands here from BOTH reply paths (send()
@@ -1758,6 +1794,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       const dialStart = Date.now();
       liveSince.clear();
       interruptStats.reset();
+      replyClock.reset();
       pendingTts = 0;
       pendingCompanionLines = [];
       remoteEndAt = null;
@@ -1885,6 +1922,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           // Echo gate: this exact text is now coming out of the speakers, so
           // the mic hearing these words back is her, not the player.
           if (text) noteAudibleLine(text);
+          replyClock.audible();
           dictation?.armBargeGrace();
         },
       );
@@ -2286,6 +2324,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       const bs = useBackseatStore.getState();
       if (bs.sharingFor) void bs.stopSharing(backseatReasonForCallEnd(reason));
       directorSeq++; // cancel any running companion chain (bump + clear travel together)
+      replyClock.end();
       clearTurnCapture();
       speakerOriginSeq.clear();
       lastReactorId = null;

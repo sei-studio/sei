@@ -69,6 +69,7 @@ import { facesEnabled } from './facepack/facepackDev';
 import { emitFaceCue } from './facepack/faceEvents';
 import { resolveExpression, type FacePalette } from '../bot/brain/faceExpressions.js';
 import { facePaletteForCharacterName } from './facepack/facepackStore';
+import { parseBotReplyLatency, recordReplyLatency } from './replyLatency';
 
 /**
  * The READY budget: from the bot reporting "booted" (its init-ack) to
@@ -1591,6 +1592,15 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // 261011: action-outcome telemetry snapshot. Not a BotStatus event.
       if ((data as { type?: string }).type === 'action-stats') {
         try { opts.onActionStats?.(characterId, (data as { stats?: unknown }).stats); } catch { /* telemetry never breaks the session */ }
+        return;
+      }
+      // 261106: one player turn's reply latency (shape only), re-validated
+      // and sampled in replyLatency.ts. Not a BotStatus event.
+      if ((data as { type?: string }).type === 'reply-latency') {
+        try {
+          const sample = parseBotReplyLatency(data);
+          if (sample) recordReplyLatency(sample);
+        } catch { /* telemetry never breaks the session */ }
         return;
       }
       if ((data as { type?: string }).type === 'session-digest') {

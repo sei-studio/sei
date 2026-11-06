@@ -68,6 +68,13 @@ import {
   onAiBackendKindChanged,
 } from './apiKeyStore';
 import { capture as trackAnalytics, getAnalyticsOptOut, setAnalyticsOptOut } from './analytics';
+import {
+  REPLY_LATENCY_EVENT,
+  recordReplyLatency,
+  sanitizeRendererReplyLatency,
+  startChatReplyClock,
+  type ChatReplyClock,
+} from './replyLatency';
 import { blockedAutoSummon, clearSummonBlock } from './summonGuard';
 import { noteCreditWall, type CreditWallContext } from './creditWall';
 import { observeOnboardingEvent } from './onboardingFunnel';
@@ -1340,6 +1347,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
 
   ipcMain.handle(IpcChannel.chat.send, async (_event, argsRaw: unknown) => {
+    // 261106 reply_latency: the player's wait starts when the send arrives
+    // (the world-detection pass below is part of it). replyLatency.ts.
+    const sentAt = Date.now();
     const args = z
       .object({
         characterId: IdSchema,
@@ -1400,11 +1410,15 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // event — chess and Draw! have already declined, and a mid-call line is
     // covered by voice_call_ended — so counting here can never double-bill
     // playtime. See chat/chatSession.ts for the session model.
+    // 261106: same choke point for reply_latency (surface chat): a mid-call
+    // line is timed by the renderer's voice clock instead.
+    let replyClock: ChatReplyClock | null = null;
     if (!inCall) {
       const { noteChatMessage } = await import('./chat/chatSession');
-      noteChatMessage(args.characterId);
+      const turn = noteChatMessage(args.characterId);
+      if (turn > 0) replyClock = startChatReplyClock({ turn, startedAt: sentAt });
     }
-    return await sendChatMessage(
+    const turnPromise = sendChatMessage(
       // voiceCall (260705): while a call is open the reply is spoken aloud, so
       // the prompt leads with the voice-call primer (spoken register).
       { characterId: args.characterId, text: args.text, replyTo: args.replyTo, voiceCall: inCall, voicePeers: args.voicePeers },
@@ -1429,9 +1443,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         // the instant it completes, so TTS starts on sentence 1.
         // `speech` carries the sentence's place in its reply, which is what
         // TTS conditions the clip's opening and closing contour on (260729).
-        emitReply: (id, message, speech) => deps.pushChatMessage?.(id, message, speech),
+        // 261106: a pushed companion line (the early line before a web
+        // lookup) is the first thing the player sees, so it stops the clock.
+        emitReply: (id, message, speech) => {
+          if (message.role === 'companion') replyClock?.replied();
+          deps.pushChatMessage?.(id, message, speech);
+        },
       },
     );
+    if (replyClock) {
+      const clock = replyClock;
+      turnPromise.then((r) => clock.settle(r), (err) => clock.settle(null, err));
+    }
+    return await turnPromise;
   });
 
   // ── Chess minigame (260710) ──────────────────────────────────────────────
@@ -3364,6 +3388,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.on(IpcChannel.analytics.track, (_event, raw: unknown) => {
     try {
       const { event, props } = TrackArgsSchema.parse(raw);
+      // 261106: the renderer's voice reply clock. Rebuilt from closed enums
+      // and sampled in main (replyLatency.ts); never passed through raw.
+      if (event === REPLY_LATENCY_EVENT) {
+        const sample = sanitizeRendererReplyLatency(props);
+        if (sample) recordReplyLatency(sample);
+        return;
+      }
       // 261104: setup steps are rebuilt from closed enums (shape only).
       // 261105: so are the SeiLink editor, move-in sheet and first-link events.
       trackAnalytics(

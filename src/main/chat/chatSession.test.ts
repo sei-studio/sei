@@ -49,6 +49,17 @@ afterEach(async () => {
 });
 
 describe('noteChatMessage', () => {
+  it('returns the message number within its session (reply_latency turn index)', async () => {
+    expect(noteChatMessage('char-a')).toBe(1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(noteChatMessage('char-a')).toBe(2);
+    expect(noteChatMessage('char-b')).toBe(1);
+    await vi.advanceTimersByTimeAsync(0);
+    await endChatSession('char-a', 'idle');
+    expect(noteChatMessage('char-a')).toBe(1);
+    await vi.advanceTimersByTimeAsync(0);
+  });
+
   it('opens a session on the first message', async () => {
     await note('char-a');
     expect(events('chat_session_started')).toEqual([{ character_id: 'char-a' }]);

@@ -376,6 +376,12 @@ function postActionStats({ force = false } = {}) {
 function startActionStats(config) {
   _actionStatsEnabled = true
   sessionActionStats.setMetaProvider(() => llmMetaFromConfig(config))
+  // 261106: per-turn reply_latency samples (shape only); main samples and
+  // sends them (src/main/replyLatency.ts).
+  sessionActionStats.setLatencySink((sample) => {
+    if (!initPort) return
+    try { initPort.postMessage({ type: 'reply-latency', ...sample }) } catch {}
+  })
   _actionStatsTimer = setInterval(() => postActionStats(), ACTION_STATS_FLUSH_MS)
   _actionStatsTimer.unref?.()
 }
@@ -411,6 +417,8 @@ function emitLifecycle(payload) {
   // 261011: the final telemetry snapshot must reach main BEFORE the status
   // that closes the play session (same port, so ordering holds).
   if (payload?.type === 'error' || payload?.type === 'summon-stopped') {
+    // 261106: a line still waiting for a reply was cut off by the end.
+    if (_actionStatsEnabled) { try { sessionActionStats.abandonPending() } catch {} }
     postActionStats({ force: true })
     postSessionDigest({ force: true })
   }
