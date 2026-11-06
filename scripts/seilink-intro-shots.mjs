@@ -10,12 +10,14 @@
  *   node scripts/seilink-intro-shots.mjs --out <dir>
  *        [--packs resources/seilink-packs] [--preset cozy]
  *        [--portrait <png>] [--name Lyra] [--faces <dir of facepacks> --face <id>]
- *        [--only eclipse,eclipse-light,reduced,tour] [--fps 30] [--lang <code>]
+ *        [--only eclipse,eclipse-light,reduced,reduced-light,tour] [--fps 30] [--lang <code>]
  *        [--stills 0,2500,5000,...]   only these frames (ms) as PNGs, no video
  *
  * Intro videos open `?seilinkintro=1&manual=1` (DevIntroPreview) and call
  * window.__firstLinkSeek(ms) for every frame, then ffmpeg encodes H.264 with
- * a silent AAC track (Telegram shows a silent mp4 as a GIF). The tour runs
+ * a silent AAC track (Telegram shows a silent mp4 as a GIF) and prints the
+ * biggest frame-to-frame change of mean luminance (lumaReport: a hard cut
+ * shows as a big one; `<name>-luma.txt` has every frame). The tour runs
  * live in `?dashshot=screen&tour=1&seilink=on` (DevScreenShot), clicked
  * through like a person, recorded by Playwright and stills taken on the way.
  *
@@ -50,12 +52,14 @@ const SIZE = { width: 1920, height: 1080 };
 
 /** Matches introTimeline.ts (FULL_TIMELINE.end, CALM_TIMELINE.end) plus a short tail. */
 const VIDEOS = {
-  eclipse: { q: 'hold=1', ms: 11_300 + 300, scheme: 'dark' },
-  'eclipse-light': { q: 'hold=1', ms: 11_300 + 300, scheme: 'light' },
-  reduced: { q: 'reduced=1&hold=1', ms: 8_400 + 300, scheme: 'dark' },
+  eclipse: { q: 'hold=1', ms: 11_400 + 300, scheme: 'dark' },
+  'eclipse-light': { q: 'hold=1', ms: 11_400 + 300, scheme: 'light' },
+  reduced: { q: 'reduced=1&hold=1', ms: 9_500 + 300, scheme: 'dark' },
+  'reduced-light': { q: 'reduced=1&hold=1', ms: 9_500 + 300, scheme: 'light' },
 };
 const STILLS = arg('stills', null)?.split(',').map(Number) ?? null;
 const only = arg('only', 'eclipse,eclipse-light,reduced,tour').split(',');
+const IS_MAIN = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
 function staticServer(root) {
   return new Promise((resolve) => {
@@ -83,6 +87,30 @@ function staticServer(root) {
 function ffmpeg(args) {
   const r = spawnSync('timeout', ['600', 'ffmpeg', '-y', '-loglevel', 'error', ...args], { stdio: 'inherit' });
   if (r.status !== 0) throw new Error(`ffmpeg failed (${r.status})`);
+}
+
+/**
+ * Per-frame mean luminance of a video (ffmpeg signalstats YAVG, limited range
+ * 16..235) into `<video>-luma.txt`, and the biggest frame-to-frame change.
+ */
+export function lumaReport(file) {
+  const out = file.replace(/\.mp4$/, '-luma.txt');
+  const raw = path.join(path.dirname(out), `.${path.basename(out)}.raw`);
+  ffmpeg(['-i', file, '-vf', `signalstats,metadata=print:key=lavfi.signalstats.YAVG:file=${raw}`, '-an', '-f', 'null', '-']);
+  const ys = fs.readFileSync(raw, 'utf8').split('\n').filter((l) => l.includes('YAVG=')).map((l) => Number(l.split('=')[1]));
+  fs.rmSync(raw, { force: true });
+  let max = 0;
+  let at = 0;
+  for (let i = 1; i < ys.length; i++) {
+    const d = Math.abs(ys[i] - ys[i - 1]);
+    if (d > max) {
+      max = d;
+      at = i;
+    }
+  }
+  fs.writeFileSync(out, ys.map((y, i) => `${i}\t${y.toFixed(2)}\t${i ? (y - ys[i - 1]).toFixed(2) : '0'}`).join('\n') + '\n');
+  console.log(`  ${path.basename(file)}: ${ys.length} frames, luma ${Math.min(...ys).toFixed(1)}..${Math.max(...ys).toFixed(1)}, max frame-to-frame delta ${max.toFixed(2)} at frame ${at}`);
+  return { max, at, frames: ys.length };
 }
 
 function listen(page, label) {
@@ -116,7 +144,7 @@ async function renderVideo(browser, viteUrl, base, name, spec) {
     await page.close();
     return dir;
   }
-  const n = Math.ceil((spec.ms / 1000) * FPS);
+  const n = Math.ceil((spec.ms / 1000) * FPS) + 1;
   const t0 = Date.now();
   for (let i = 0; i < n; i++) {
     const ms = (i * 1000) / FPS;
@@ -132,6 +160,7 @@ async function renderVideo(browser, viteUrl, base, name, spec) {
     '-shortest', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18', '-c:a', 'aac', file,
   ]);
   console.log(file);
+  lumaReport(file);
   return dir;
 }
 
@@ -203,7 +232,9 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (IS_MAIN) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

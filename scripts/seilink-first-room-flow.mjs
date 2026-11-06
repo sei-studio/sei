@@ -10,14 +10,17 @@
  * copy, "Not now"). Headless, no Electron.
  *
  *   node scripts/seilink-first-room-flow.mjs [--out <dir>] [--intro <dark intro.mp4>] [--intro-light <light intro.mp4>]
- *        [--schemes dark,light] [--room cozy] [--portrait <png>] [--faces <dir> --face <id>] [--name Sui] [--lang en]
+ *        [--intro-from <s>] [--schemes dark,light] [--room cozy] [--portrait <png>] [--faces <dir> --face <id>] [--name Sui] [--lang en]
  *
  * Opens `?seilinkflow=1&live=1` (DevFirstRoomFlow) on its own Vite dev
  * server, the packs over a CORS static server, Chrome through playwright
  * (CHROME_PATH, default /usr/bin/google-chrome) with prefers-color-scheme set
  * per theme, and ffmpeg for the mp4 (h264 + a silent AAC track). With
- * --intro, its last seconds open the video. Everything it starts is closed
- * before it exits.
+ * --intro, the intro from `--intro-from` seconds (default 0: all of it, the
+ * climax, the solid and the settle into the plain colour) opens the video
+ * and crossfades into her spawn on the desktop. Each mp4 gets the same
+ * luminance report as the intro videos (the biggest frame-to-frame change;
+ * a cut shows as a big one). Everything it starts is closed before it exits.
  */
 import http from 'node:http';
 import fs from 'node:fs';
@@ -27,6 +30,7 @@ import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import react from '@vitejs/plugin-react';
 import { chromium } from 'playwright';
+import { lumaReport } from './seilink-intro-shots.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const arg = (name, dflt) => {
@@ -36,6 +40,7 @@ const arg = (name, dflt) => {
 const PACKS = path.join(REPO, 'resources/seilink-packs');
 const OUT = path.resolve(arg('out', 'seilink-first-room-flow'));
 const INTRO = { dark: arg('intro', null), light: arg('intro-light', null) };
+const INTRO_FROM = Number(arg('intro-from', '0'));
 const SCHEMES = arg('schemes', 'dark,light').split(',');
 const ROOM = arg('room', 'cozy');
 const PORTRAIT = path.resolve(arg('portrait', path.join(REPO, 'vendor/skin-gen/examples/sui-input.png')));
@@ -80,11 +85,13 @@ function buildVideo(scheme, shots) {
   const clips = [];
   const intro = INTRO[scheme] ? path.resolve(INTRO[scheme]) : null;
   if (intro) {
-    // The intro's last 4 s (the light settling into the plain colour, her linked).
+    // The intro from INTRO_FROM (default all of it: the climax, the solid, her entrance and the settle into the plain colour).
     const dur = Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', intro]).toString().trim());
-    const clip = path.join(tmp, 'intro-tail.mp4');
-    ffmpeg(['-ss', String(Math.max(0, dur - 4)), '-i', intro, '-an', '-vf', 'scale=1920:1080,fps=30,format=yuv420p', '-c:v', 'libx264', '-crf', '18', clip]);
-    clips.push([clip, 4]);
+    const from = Math.min(Math.max(0, INTRO_FROM), Math.max(0, dur - 1));
+    const clip = path.join(tmp, 'intro.mp4');
+    ffmpeg(['-ss', String(from), '-i', intro, '-an', '-vf', 'scale=1920:1080,fps=30,format=yuv420p', '-c:v', 'libx264', '-crf', '18', clip]);
+    const len = Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', clip]).toString().trim());
+    clips.push([clip, len]);
   }
   for (const [still, secs] of shots) {
     const clip = path.join(tmp, `${still}.mp4`);
@@ -113,6 +120,7 @@ function buildVideo(scheme, shots) {
   ]);
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(file);
+  lumaReport(file);
 }
 
 function listen(page, label) {

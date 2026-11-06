@@ -53,8 +53,13 @@
   opacity: 1;
 }
 
-/* The climax's cut (261106 v4): pure black over the whole picture, under the HUD (Skip stays). Opacity per frame. */
-.black {
+/*
+ * The solid colour (261106 v5): the theme's plain colour (set inline: white in
+ * light mode, black in dark) over the whole picture, under the HUD (Skip
+ * stays). The intro opens out of it and the climax fills the screen with it.
+ * Opacity per frame.
+ */
+.solid {
   position: absolute;
   inset: 0;
   background: #000;

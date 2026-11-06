@@ -106,8 +106,8 @@ her box (`lib/seilink/dockPlace.ts`: right of her when it fits, else left,
 else centred under her seat). Her figure runs to the bottom of the screen in
 the cozy room, so a dock under her seat sat on her chest. It stays next to
 her box because the native click area is the union of the two (one rect): on
-macOS the hit panel takes the desktop's clicks inside it. The
-room-editor design deck puts these shortcuts in "the bottom dock" of the room, so it
+macOS the hit panel takes the desktop's clicks inside it. The product
+room-editor deck puts these shortcuts in "the bottom dock" of the room, so it
 lives on the wallpaper, not in the app or a tray.
 - Edit room → main `deps.openRoomEditor` → `stageFlow.openDesktopEditor`
   (261106): pushes `seilink:open-room-editor {characterId, openedFrom,
@@ -444,7 +444,7 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
     lives there with the host running (the dock, the offer, the SeiLink
     button, the gear menu's Edit room); anyone else gets the in-app editor.
     Closing always steps aside onto the desktop.
-- **The first-link intro** (`components/seilink/intro/`): about 11.3 s, three
+- **The first-link intro** (`components/seilink/intro/`): about 11.4 s, three
   beats with one line each ("Opening a tunnel to the digital world…",
   "Linking {name}…", "Porting the link to your desktop…"), then "Linked." /
   "{name} lives on your desktop now.". `startSeilinkHost` (the only host
@@ -457,47 +457,66 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   on a move-in that worked. Replay plays it over her room with nothing
   starting.
   - Frames are pure (`introFrame.ts` computeFrame(timeline, t, W, H,
-    reduced, end), `introFx.ts` canvases), so the harness seeks them:
+    reduced, end, tone), `introFx.ts` canvases), so the harness seeks them:
     `?seilinkintro=1` (DevIntroPreview, `&room=plain|blank|default
     &tone=dark|light&hold=1&reduced=1&manual=1`), and
     `scripts/seilink-intro-shots.mjs` renders the review mp4s (`eclipse`,
-    `eclipse-light` with prefers-color-scheme light, `reduced`; `--stills
-    ms,ms` for PNGs only).
+    `eclipse-light` with prefers-color-scheme light, `reduced`,
+    `reduced-light`; `--stills ms,ms` for PNGs only) and prints each one's
+    biggest frame-to-frame change of mean luminance (`<name>-luma.txt`; a
+    cut shows as a big one). `scripts/seilink-first-room-flow.mjs --intro
+    --intro-light` opens its flow videos with the whole intro (`--intro-from`
+    seconds) and reports the same.
   - 261106 (product feedback: keep the aurora, make it space themed): the aurora is
     the only light (`IntroStyle` 'aurora'; bloom and tide are gone). v4 the
-    same day: the pick was the `eclipse` colours (gold light and blue-white
+    same day: the product pick was the `eclipse` colours (gold light and blue-white
     rims against violet and teal nebula, `INTRO_PALETTE`); the other moods
     (accretion, nebula) and the `sei.seilinkIntroMood` switch are gone, and
     the event's `mood` is always `eclipse` (`INTRO_MOOD`). Layers: the void
     gradient, a faint seeded starfield canvas (half scale, `STAR_SCALE`), the
     curtains canvas (a sixth, `FIELD_SCALE`), the room, the front glows, a
     still grain tile (dither, alpha 5 or less, fades with the ending), the
-    black layer (the cut), the HUD. Gradients and glows only, additive: no
+    solid layer (the theme's colour, v5), the HUD. Gradients and glows only, additive: no
     lines, rings or grids. Skia dithers canvas gradients in a 2x2 pattern
     that shows as a checker once the small canvas is stretched, so each
     canvas gets a blur(1.2px) self-copy pass (`melt`).
-  - The climax (261106 v4, product feedback: "before the character shows, climax the
-    lights and cut it all to black, then as the black fades out the
-    character comes in"; `IntroTimeline.climax`, full timeline ms): the
-    light wakes (0 to 1200), the first line shows 250 to 2400 and is gone
-    by 2750, the light builds from 2100 to its peak at 3200 (`field.peak`:
-    brighter, curtains longer, spread top to bottom and edge to edge, a wide
-    bloom, the motion clock up to 2x faster), holds it, and at 3600 (the
-    `link` beat) everything but the HUD cuts to black in one frame (`black`
-    layer). Black holds to 3950 and fades out by 4950 while she fades in and
-    rises about 3.5% of the screen into place, forming out of a glow
-    (brightness + blur + drop-shadow easing to none by 5450), the light
-    settled behind her. "Linking {name}…" from 4500; then port 6500, linked
-    9000, captions fade 10600, end 11300. No caption, dots or corner label
-    through the peak and the black (`caption.block`). The peak is one rise
-    (never a flicker; a test caps brightness reversals at one flash per
-    second). A skip on the desktop stage rushes to the end from 4950
-    (`skipFrom`), never through the climax or the black. Reduced motion
-    (calm timeline, 8.4 s): no peak and no cut, the still light fades gently
-    into black (1800 to 2600) and out (2800 to 3700) as she fades in.
+  - The climax (261106 v5, product feedback: "fade to black not hard cut, like the
+    light expands until fully bright or dark depending on dark or light
+    theme. Same goes for the blank background afterwards"; v4 had a one-frame
+    cut to black; `IntroTimeline.climax`, full timeline ms). The solid
+    (`IntroFrame.solid`, `tone`) is the theme's plain colour (PLAIN_COLOURS):
+    white in light mode, black in dark mode, also for a room ending (the OS
+    theme at mount), so light mode never goes black and dark never white. The
+    intro opens out of the solid (`OPEN_MS` 1800) as the light wakes (0 to
+    1200); the first line shows 300 to 2400 and is gone by 2750; the light
+    builds from 2100 to its peak at 3100 (`field.peak`: brighter, curtains
+    longer, spread top to bottom and edge to edge, a wide bloom, the motion
+    clock up to 2x faster), then the bloom keeps expanding (`field.fill`,
+    3100 to 4300) while the solid comes over it (smoothstep 3150 to 4300,
+    `dim` to `fill`): in light mode the bloom goes white and blooms into
+    white, in dark mode it stays its own colour and dims into black. The
+    solid holds to 4500 (`lift`) and fades back into the scene by 5800
+    (`clear`) while she fades in and rises about 3.5% of the screen into
+    place, forming out of a glow (brightness + blur + drop-shadow easing to
+    none by 6000), the light settled behind her. Beats: link 4300 ("Linking
+    {name}…" from 5000), port 6800, linked 9200, captions fade 10800, end
+    11400. The caption block never shows more than the solid lets through
+    (`min(timing, 1 - solid)`) and HUD ink goes to day ink over the white
+    solid (`roomBehind`). Every fade of the solid and the plain colour is a
+    smoothstep of a second or more: the review renders keep every
+    frame-to-frame change of mean luminance small, and tests cap each 30 fps
+    step and the brightness reversals (at most two direction changes in any
+    second). A skip on the desktop stage rushes to the end from 5800
+    (`skipFrom`), never through the climax or the solid. Reduced motion
+    (calm timeline, 9.5 s): no peak and no bloom; the intro opens out of the
+    solid the same way, the still light crossfades into the solid (2200 to
+    3800) and out (4000 to 5500) as she fades in, and into the plain colour
+    or room (5800 to 7600).
   - The ending (`IntroEndOn`, `introEndFor(state, tone)` in plainTone.ts):
-    `plain_dark` fades the light into black; `plain_light` floods it to
-    white first (a colour-dodge layer of a rising grey capped at
+    on a plain ending the light expands out from behind her (`bloom`, drawn
+    on the back canvas so she stays herself, 261106 v5) as the colour comes
+    over it. `plain_dark` swells a little and dims into black; `plain_light`
+    floods it to white first (a colour-dodge layer of a rising grey capped at
     `FLOOD_MAX` 0.55, so the brights reach white before the white layer
     covers everything; uncapped dodge turns blocky and saturated) and has no
     link-glow breath (it drew rings on white); `room` opens her room in a
@@ -656,7 +675,7 @@ and thumbnails all use the same plan).
   Editor panels: a slot's panel comes from its id (`roomGroups.ts`) unless
   the pack names one (`slots.<id>.group`: room, fabrics or furniture).
   Forest's tent (bed slot) and log blanket (chair slot) are only recoloured,
-  so they set `group: "fabrics"` (msg 1580: recolour or repattern only
+  so they set `group: "fabrics"` (product feedback msg 1580: recolour or repattern only
   = Walls & fabrics, standalone pieces = Furniture).
   The tree stump has no top (261105): it sits behind Sei's head, so decor
   placed there never showed; a room saved with an item on it settles onto

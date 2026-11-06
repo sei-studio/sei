@@ -5,8 +5,10 @@
  * intro" in the companion menu.
  *
  * It loads her room (the same state the wallpaper will draw), plays
- * FirstLinkIntroView (the eclipse aurora, its climax and cut to black), ending on what the wallpaper will draw (introEndFor: the plain
- * black or white background while she has no room yet), honours reduced
+ * FirstLinkIntroView (the eclipse aurora and its climax, which fills the
+ * screen with the theme's solid colour), ending on what the wallpaper will
+ * draw (introEndFor: the plain black or white background while she has no
+ * room yet), honours reduced
  * motion, and records what happened (seilink_intro: shown, then completed /
  * skipped / aborted, with the beat, a duration bucket and the host's state).
  * The intro counts as seen once it ended (completed or skipped) on a move-in
@@ -29,7 +31,7 @@ import { sei } from '../../../lib/ipcClient';
 import { useDataStore } from '../../../lib/stores/useDataStore';
 import type { SeilinkIntroRequest } from '../../../lib/stores/useSeilinkStore';
 import { markIntroSeen } from '../../../lib/seilink/introPref';
-import { introEndFor } from '../../../lib/seilink/plainTone';
+import { introEndFor, plainTone } from '../../../lib/seilink/plainTone';
 import { revealAndOffer } from '../../../lib/seilink/seilinkFlow';
 import { roomAvatarUse } from '../RoomAvatar';
 import { FirstLinkIntroView, type IntroFinish, type IntroRoom } from './FirstLinkIntroView';
@@ -66,7 +68,8 @@ export default function FirstLinkIntro(props: { request: SeilinkIntroRequest; on
   const stagedRef = useRef(false);
   const doneRef = useRef(false);
   // What it ends on is fixed once her room has loaded (a theme change mid-intro does not swap it).
-  const endOn = useMemo(() => (room === undefined ? null : introEndFor(room?.state ?? null)), [room]);
+  const tone = useMemo(() => plainTone(), []);
+  const endOn = useMemo(() => (room === undefined ? null : introEndFor(room?.state ?? null, tone)), [room, tone]);
   const base = useMemo(
     () => ({
       character_id: request.characterId,
@@ -117,7 +120,7 @@ export default function FirstLinkIntro(props: { request: SeilinkIntroRequest; on
     };
   }, [request.outcome]);
 
-  // Step out over the desktop as soon as there is something to show (the intro starts dark).
+  // Step out over the desktop as soon as there is something to show (the intro opens on the theme's solid colour).
   useEffect(() => {
     if (!request.stage || room === undefined) return;
     let dead = false;
@@ -187,6 +190,7 @@ export default function FirstLinkIntro(props: { request: SeilinkIntroRequest; on
   return (
     <FirstLinkIntroView
       end={endOn}
+      tone={tone}
       reduced={reduced}
       characterId={request.characterId}
       name={character?.name ?? ''}

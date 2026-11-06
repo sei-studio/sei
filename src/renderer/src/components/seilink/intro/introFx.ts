@@ -10,8 +10,9 @@
  * soft), and a still grain tile (grainUrl) over the dark keeps the smooth
  * gradients from banding on 8-bit displays and in the review videos.
  *
- *  - drawBack: the nebula haze, the aurora curtains and her halo, behind
- *    whatever she ends on and behind her.
+ *  - drawBack: the nebula haze, the aurora curtains, her halo and the
+ *    ending's bloom (the light expanding out from behind her into the plain
+ *    colour), behind whatever she ends on and behind her.
  *  - drawStars: the starfield, slowly drifting, each star breathing a little.
  *  - drawFront: over everything: the climax's bloom, the swell of light on
  *    her as she forms and the soft breath of light when she is linked (glows
@@ -19,8 +20,10 @@
  *
  * The climax (`field.peak`, 261106 v4) makes the same curtains brighter,
  * longer, wider apart and edge to edge (the clock runs faster into it,
- * computeFrame), with a wide soft bloom over the middle: the screen fills
- * with light, then the view cuts it all to black.
+ * computeFrame), with a wide soft bloom over the middle that keeps expanding
+ * (`field.fill`, v5) while the view's solid layer comes over it: into white
+ * in light mode (the bloom itself goes white), into black in dark mode (the
+ * bloom stays its own colour and dims).
  */
 import { INTRO_PALETTE as PAL, type Box, type IntroFrame, type IntroPalette } from './introFrame';
 
@@ -150,6 +153,18 @@ export function drawBack(ctx: CanvasRenderingContext2D, f: IntroFrame, her: Box 
     glow(ctx, hx, hy, hr, pal.halo, 0.5 * f.halo);
     glow(ctx, hx, hy, hr * 0.55, [255, 255, 255], 0.26 * f.halo);
   }
+  // The ending: the light expands out from behind her until the plain colour covers it (white into white; soft and dimming into black).
+  if (f.bloom.a > 0.002) {
+    const d = Math.hypot(w, h);
+    const r = d * (0.3 + 1.0 * f.bloom.r);
+    if (f.tone === 'light') {
+      glow(ctx, hx, hy, r, [255, 255, 255], 0.85 * f.bloom.a);
+      glow(ctx, hx, hy, r * 0.6, pal.halo, 0.3 * f.bloom.a);
+    } else {
+      glow(ctx, hx, hy, r, pal.halo, 0.28 * f.bloom.a);
+      glow(ctx, hx, hy, r * 0.5, pal.lights[1], 0.12 * f.bloom.a);
+    }
+  }
   ctx.globalCompositeOperation = 'source-over';
   melt(ctx);
 }
@@ -230,12 +245,16 @@ export function drawFront(ctx: CanvasRenderingContext2D, f: IntroFrame, her: Box
   const pal = PAL;
   const hr = (her ? her.h : f.H * 0.5) * s;
   ctx.globalCompositeOperation = 'lighter';
-  // The climax: a wide soft bloom over the middle that fills the screen with light (one rise, then the cut).
+  // The climax: a wide soft bloom over the middle that fills the screen with light (one rise), then keeps expanding (fill) under the solid.
   const pk = f.field.peak * f.field.opacity;
   if (pk > 0.002) {
-    glow(ctx, w * 0.5, h * 0.48, Math.hypot(w, h) * 0.62, pal.halo, 0.3 * pk);
-    glow(ctx, w * 0.5, h * 0.46, Math.hypot(w, h) * 0.34, pal.lights[0], 0.2 * pk);
-    glow(ctx, w * 0.5, h * 0.46, Math.hypot(w, h) * 0.2, [255, 255, 255], 0.16 * pk);
+    const d = Math.hypot(w, h);
+    const fl = f.field.fill;
+    const grow = 1 + 1.1 * fl;
+    const white = f.tone === 'light' ? 0.7 : 0.08;
+    glow(ctx, w * 0.5, h * 0.48, d * 0.62 * grow, pal.halo, 0.3 * pk * (1 + 0.4 * fl));
+    glow(ctx, w * 0.5, h * 0.46, d * 0.34 * grow, pal.lights[0], 0.2 * pk);
+    glow(ctx, w * 0.5, h * 0.46, d * 0.2 * (1 + 2.4 * fl), [255, 255, 255], (0.16 + white * fl) * pk);
   }
   if (f.field.swell > 0.002) {
     glow(ctx, hx, hy, hr * 0.6, [255, 255, 255], 0.3 * f.field.swell);
