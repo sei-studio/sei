@@ -882,8 +882,8 @@ export function parseBingHtml(html) {
  * asked about the Latent Space podcast). API providers do not do this, so the
  * gate applies to ddg/bing only: with two or more significant query words, at
  * least one result must carry two of them, else the scrape is treated as a
- * miss and the chain moves on. Stop words are ignored so "who is Shawn Wang"
- * is judged on shawn + wang.
+ * miss and the chain moves on. Stop words are ignored so "who is Alex Chen"
+ * is judged on alex + chen.
  */
 const STOP_WORDS = new Set(['who', 'what', 'when', 'where', 'why', 'how', 'the', 'and', 'for', 'are', 'was', 'were', 'does', 'did', 'this', 'that', 'with', 'from', 'about', 'into', 'you', 'your', 'can', 'will', 'has', 'have', 'had', 'not', 'but', 'his', 'her', 'its', 'their', 'them', 'they', 'she', 'him', 'best', 'top', 'get', 'make', 'much', 'many', 'any', 'all', 'more', 'most', 'some', 'there', 'than', 'then', 'out', 'over', 'whats', 'hows', 'wheres', 'which', 'should'])
 export function looksRelevant(results, query) {
@@ -898,8 +898,8 @@ export function looksRelevant(results, query) {
 }
 
 // Keyless providers: the scrapers can answer a different query, and Wikipedia's
-// full-text search matches each word separately ("who is Shawn Wang" returned
-// Shawn Hatosy and Wang Cong). API providers rank properly and skip the gate.
+// full-text search matches each word separately ("who is Alex Chen" returned
+// Alex Turner and Chen Kun). API providers rank properly and skip the gate.
 const KEYLESS_PROVIDERS = new Set(['ddg', 'bing', 'wikipedia'])
 
 export function providerChain(provider, apiKey) {

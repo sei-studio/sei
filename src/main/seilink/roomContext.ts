@@ -1,7 +1,7 @@
 /**
  * SeiLink, the AI side (261104): the companion knows the room she lives in.
  *
- * Shawn: "in all future prompts they should be aware of their environment.
+ * Product feedback: "in all future prompts they should be aware of their environment.
  * the very basics, short prompt ... and they can call look() to see their
  * room ... and of course they themselves should be excluded from the pic".
  *

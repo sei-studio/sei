@@ -1,5 +1,5 @@
 /**
- * SeiLink patterns (261105, room catalog; Shawn msgs 1590 + 1627). Pure: no
+ * SeiLink patterns (261105, room catalog; msgs 1590 + 1627). Pure: no
  * DOM, no Node, so the renderer, main's look() picture and the tests share
  * one implementation.
  *
@@ -51,7 +51,7 @@ export interface PatternDef {
 
 /**
  * The code-drawn patterns that ship now: the catalog's 11 v1 code patterns
- * plus plaid and herringbone (Shawn's list, msg 1627).
+ * plus plaid and herringbone (the list, msg 1627).
  */
 export const CODE_PATTERNS: readonly PatternDef[] = [
   { id: 'pinstripe', name: 'Pinstripe', adjective: 'pinstriped', period: [44, 44], surfaces: ['walls', 'curtains', 'bedding'], made: 'code' },

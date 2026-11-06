@@ -4,7 +4,7 @@
 // Vanilla death lines arrive as SYSTEM chat, so before this they were relabeled
 // "ran a command (in-game, not a message or instruction to you): ..." and the
 // model discounted them: live, Sui asked the player how they died while
-// "Shawn was blown up by Creeper" sat verbatim in its own context.
+// "Alex was blown up by Creeper" sat verbatim in its own context.
 //
 // Contract under test: a death line is emitted once, framed as a death, naming
 // the cause, waking a turn but never preempting (playerSpoke false); the bot's
@@ -28,34 +28,34 @@ function makeBot(username) {
 // matcher then re-emits system lines as `chat`.
 function serverLine(bot, text, position, jsonMsg) {
   bot.emit('messagestr', text, position, jsonMsg)
-  bot.emit('chat', bot.username === 'Sui' ? 'Shawn' : 'Shawn', text)
+  bot.emit('chat', bot.username === 'Sui' ? 'Alex' : 'Alex', text)
 }
 
-const DEATH_JSON = { translate: 'death.attack.explosion', with: [{ text: 'Shawn' }, { text: 'Creeper' }] }
+const DEATH_JSON = { translate: 'death.attack.explosion', with: [{ text: 'Alex' }, { text: 'Creeper' }] }
 
 describe('parseDeathLine', () => {
   it('recognizes a translated death message and its subject', () => {
-    expect(parseDeathLine('Shawn was blown up by Creeper', DEATH_JSON)).toEqual({
-      subject: 'Shawn',
-      text: 'Shawn was blown up by Creeper',
+    expect(parseDeathLine('Alex was blown up by Creeper', DEATH_JSON)).toEqual({
+      subject: 'Alex',
+      text: 'Alex was blown up by Creeper',
     })
   })
 
   it('falls back to the text when there is no translate key', () => {
-    expect(parseDeathLine('Shawn fell from a high place', null)?.subject).toBe('Shawn')
-    expect(parseDeathLine('Shawn drowned', null)?.subject).toBe('Shawn')
+    expect(parseDeathLine('Alex fell from a high place', null)?.subject).toBe('Alex')
+    expect(parseDeathLine('Alex drowned', null)?.subject).toBe('Alex')
   })
 
   it('does not fire on ordinary system lines', () => {
     expect(parseDeathLine('Set own game mode to Creative Mode', null)).toBe(null)
-    expect(parseDeathLine('Shawn joined the game', null)).toBe(null)
+    expect(parseDeathLine('Alex joined the game', null)).toBe(null)
     expect(parseDeathLine('', null)).toBe(null)
   })
 })
 
 describe('chat.js death routing', () => {
   let bot, events
-  const config = { player_username: 'Shawn', player_display_name: 'Ouen' }
+  const config = { player_username: 'Alex', player_display_name: 'Ouen' }
 
   beforeEach(() => {
     bot = makeBot('Sui')
@@ -65,12 +65,12 @@ describe('chat.js death routing', () => {
   })
 
   it("frames the player's death as a death, with the cause, exactly once", () => {
-    serverLine(bot, 'Shawn was blown up by Creeper', 'system', DEATH_JSON)
+    serverLine(bot, 'Alex was blown up by Creeper', 'system', DEATH_JSON)
     expect(events).toHaveLength(1)
     const e = events[0]
     expect(e.username).toBe('Ouen') // display name, never the gamertag
     expect(e.message).toContain('just DIED in-game')
-    expect(e.message).toContain('Shawn was blown up by Creeper')
+    expect(e.message).toContain('Alex was blown up by Creeper')
     expect(e.message).not.toContain('ran a command')
     // Wakes a turn, but is not the player speaking, so it cannot preempt.
     expect(e.suppressInterrupt).toBe(false)
@@ -93,8 +93,8 @@ describe('chat.js death routing', () => {
   })
 
   it('leaves real player chat alone', () => {
-    bot.emit('messagestr', '<Shawn> hey sui', 'chat', null)
-    bot.emit('chat', 'Shawn', 'hey sui')
+    bot.emit('messagestr', '<Alex> hey sui', 'chat', null)
+    bot.emit('chat', 'Alex', 'hey sui')
     expect(events).toHaveLength(1)
     expect(events[0].message).toBe('hey sui')
     expect(events[0].playerSpoke).toBe(true)

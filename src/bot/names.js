@@ -7,7 +7,7 @@
 // Why: a character with no explicit `username` plays under its display name
 // filtered to Minecraft's [A-Za-z0-9_]. The filter used to run on the raw
 // name, so every accented letter was DELETED: "Sofía" joined as "Sofa",
-// "Lucía" as "Luca", "Élodie" as "lodie". Shawn (msg 901): "For accents just
+// "Lucía" as "Luca", "Élodie" as "lodie". Product feedback (msg 901): "For accents just
 // replace those letters for in game". foldLatin() replaces each accented
 // Latin letter with its plain one first, then the existing filter runs.
 

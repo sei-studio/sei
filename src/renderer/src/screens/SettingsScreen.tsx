@@ -1483,7 +1483,7 @@ export function SettingsScreen(): React.ReactElement {
               <>
                 {/* 261102: which on-device model speaks. Fast is the original
                     voice packs and the default; Kokoro is offered as a plain
-                    alternative to Fast (Shawn 261102: no beta badge), and picking it
+                    alternative to Fast (261102, product feedback: no beta badge), and picking it
                     offers its download. */}
                 <div className={styles.row}>
                   <span className={styles.label}>

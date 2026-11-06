@@ -1443,7 +1443,7 @@ async function runTurn(
   // spoken before a lookup already counted it).
   if (tick.kind !== 'user' && !leadSpoken) s.unansweredLines += 1;
   // 261010: how stale the line is before TTS even starts (newest grid frame ->
-  // line ready), so a live log shows the timing Shawn hears as retrospective.
+  // line ready), so a live log shows the timing the player hears as retrospective.
   slog(
     s,
     `turn ${tick.kind}: said ${parts.length} line(s)${clip ? ' + clip' : ''}, ` +

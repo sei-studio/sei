@@ -2,7 +2,7 @@
  * Anima client (261105): her face set, baked in the cloud the first time
  * SeiLink opens for her, then kept on disk.
  *
- * Shawn (msg 1607): the bake starts only when the user opens SeiLink (the
+ * Product feedback (msg 1607): the bake starts only when the user opens SeiLink (the
  * move-in sheet, the room editor, or her desktop room starting), never at
  * app start, so people who never use SeiLink cost nothing. It runs in the
  * background while the user sets up the room.

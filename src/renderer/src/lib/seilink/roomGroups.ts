@@ -1,5 +1,5 @@
 /**
- * Which room editor panel holds each slot (261105, Shawn msgs 1576 + 1580).
+ * Which room editor panel holds each slot (261105, msgs 1576 + 1580).
  * The rail has five tiles: Avatar, Room, Walls & fabrics, Furniture, Items.
  * The three middle ones list slots as sections:
  *  - room: the room itself beside the room type (the window view);
@@ -11,7 +11,7 @@ import type { RoomEditorGroup, RoomPresetManifest, RoomSlotId } from '@shared/se
 export type SlotGroup = RoomEditorGroup;
 
 /**
- * Which panel holds each slot (Shawn 261105): the room itself (window view),
+ * Which panel holds each slot (261105): the room itself (window view),
  * surfaces and textiles she only recolours or repatterns, and standalone
  * pieces. A slot missing here is furniture. A pack can move one of its slots
  * (RoomSlotDef.group): forest's tent and log blanket sit in the bed and

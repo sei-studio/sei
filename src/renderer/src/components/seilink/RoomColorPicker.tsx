@@ -1,5 +1,5 @@
 /**
- * The room editor's custom colour (261105 colour pass, T333, Shawn: "add
+ * The room editor's custom colour (261105 colour pass, T333, product feedback: "add
  * color picker for everything where there's color selection"). The last cell
  * of every colour row is a custom swatch that opens this popover: a
  * saturation / brightness square, a hue slider, a hex field and the recent

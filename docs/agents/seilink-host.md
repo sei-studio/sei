@@ -106,8 +106,8 @@ her box (`lib/seilink/dockPlace.ts`: right of her when it fits, else left,
 else centred under her seat). Her figure runs to the bottom of the screen in
 the cozy room, so a dock under her seat sat on her chest. It stays next to
 her box because the native click area is the union of the two (one rect): on
-macOS the hit panel takes the desktop's clicks inside it. Shawn's
-room-editor deck puts these shortcuts in "the bottom dock" of the room, so it
+macOS the hit panel takes the desktop's clicks inside it. The
+room-editor design deck puts these shortcuts in "the bottom dock" of the room, so it
 lives on the wallpaper, not in the app or a tray.
 - Edit room → main `deps.openRoomEditor` → `stageFlow.openDesktopEditor`
   (261106): pushes `seilink:open-room-editor {characterId, openedFrom,
@@ -463,9 +463,9 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
     `scripts/seilink-intro-shots.mjs` renders the review mp4s (`eclipse`,
     `eclipse-light` with prefers-color-scheme light, `reduced`; `--stills
     ms,ms` for PNGs only).
-  - 261106 (Shawn: keep the aurora, make it space themed): the aurora is
+  - 261106 (product feedback: keep the aurora, make it space themed): the aurora is
     the only light (`IntroStyle` 'aurora'; bloom and tide are gone). v4 the
-    same day: Shawn picked the `eclipse` colours (gold light and blue-white
+    same day: the pick was the `eclipse` colours (gold light and blue-white
     rims against violet and teal nebula, `INTRO_PALETTE`); the other moods
     (accretion, nebula) and the `sei.seilinkIntroMood` switch are gone, and
     the event's `mood` is always `eclipse` (`INTRO_MOOD`). Layers: the void
@@ -476,7 +476,7 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
     lines, rings or grids. Skia dithers canvas gradients in a 2x2 pattern
     that shows as a checker once the small canvas is stretched, so each
     canvas gets a blur(1.2px) self-copy pass (`melt`).
-  - The climax (261106 v4, Shawn: "before the character shows, climax the
+  - The climax (261106 v4, product feedback: "before the character shows, climax the
     lights and cut it all to black, then as the black fades out the
     character comes in"; `IntroTimeline.climax`, full timeline ms): the
     light wakes (0 to 1200), the first line shows 250 to 2400 and is gone
@@ -603,7 +603,7 @@ and thumbnails all use the same plan).
   band on load (`settleItems` via `sanitizeRoomState`); items already inside
   stay where they were.
 - `lip`: the WHOLE visible plank below its top face: front face, end face,
-  underside and the dark bottom outline (Shawn 261105: "select the entire
+  underside and the dark bottom outline (261105, product feedback: "select the entire
   visible plank (both the side and under part) and put it on top of the
   object"). When something rests on that top, the plan adds the part's own
   frame again clipped to the lip (`SlotLayer.clip`), at the top of that
@@ -656,7 +656,7 @@ and thumbnails all use the same plan).
   Editor panels: a slot's panel comes from its id (`roomGroups.ts`) unless
   the pack names one (`slots.<id>.group`: room, fabrics or furniture).
   Forest's tent (bed slot) and log blanket (chair slot) are only recoloured,
-  so they set `group: "fabrics"` (Shawn msg 1580: recolour or repattern only
+  so they set `group: "fabrics"` (msg 1580: recolour or repattern only
   = Walls & fabrics, standalone pieces = Furniture).
   The tree stump has no top (261105): it sits behind Sei's head, so decor
   placed there never showed; a room saved with an item on it settles onto

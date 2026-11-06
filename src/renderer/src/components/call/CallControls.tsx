@@ -20,7 +20,7 @@
  * 261030: the interrupt pill (raised hand), right after deafen, while the call is
  * live. Same cut as a confirmed voice barge-in (useVoiceStore.interrupt), for
  * when talking over her does not work: a loud game, a noisy room, a shy
- * player. (The Space-key shortcut for it was removed 261031, Shawn's call: the
+ * player. (The Space-key shortcut for it was removed 261031, product call: the
  * pill and the overlay's interrupt button are the manual paths.)
  *
  * 261031: every pill carries the shared fast data-tip tooltip (global.css),

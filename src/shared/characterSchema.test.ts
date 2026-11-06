@@ -126,7 +126,7 @@ describe('UserConfigSchema — vision_mode', () => {
     // must still parse cleanly and pick up the default.
     const parsed = UserConfigSchema.parse({
       mc_username: 'Steve',
-      preferred_name: 'Shawn',
+      preferred_name: 'Alex',
       provider: 'anthropic',
       ai_backend_kind: 'local',
       dev_console_visible: false,

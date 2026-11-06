@@ -348,7 +348,7 @@ describe('SettingsScreen (W5 china-compat: Voice group, TTS packs + SenseVoice)'
     expect(src.includes('id="local-tts-voice"')).toBe(false);
     // Picking Kokoro without its pack offers the download, then saves.
     expect(src.includes("if (thenKokoro) await persistLocalModel('kokoro')")).toBe(true);
-    // Never labelled experimental (Shawn, 261102). The About row's own
+    // Never labelled experimental (261102). The About row's own
     // "Experimental updates" (261103) is the one allowed use.
     expect(/experimental/i.test(src.replace(/ExperimentalUpdatesRow|Experimental updates/g, ''))).toBe(false);
   });
@@ -482,7 +482,7 @@ describe('EditCharacterModal + VoicePicker (W5 local-TTS voice gating)', () => {
   });
 });
 
-// 261023 (Shawn): web search moved into the Games group ("Games & search"),
+// 261023: web search moved into the Games group ("Games & search"),
 // and the ChatGPT plan block became one row with the sign-in button.
 describe('261023 settings tidy: web search tab + compact ChatGPT plan row', () => {
   const settings = readFileSync(SETTINGS_TSX, 'utf8');

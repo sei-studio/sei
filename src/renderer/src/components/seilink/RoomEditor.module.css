@@ -1,6 +1,6 @@
 /*
  * SeiLink room editor (261104). The room is the hero; the editor is glass
- * over it. Colour comes from the ROOM, not the theme (Shawn's rule): the
+ * over it. Colour comes from the ROOM, not the theme (product rule): the
  * component sets --ov (overlay rgb triple, from manifest.overlay for the time
  * of day) and --ink (text rgb triple that reads on it), and .light / .dark
  * pick how much white the glass and tiles carry. That is the documented

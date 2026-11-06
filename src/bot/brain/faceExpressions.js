@@ -15,7 +15,7 @@
  * Each baked pack also carries its own per-expression `blink` flag, which is
  * what the player actually reads; the copy here is informational.
  *
- * One shared list (261028, Shawn msg 991): every character is offered the
+ * One shared list (261028, msg 991): every character is offered the
  * same faces, the base 12 plus FACE_EXTRA_EXPRESSIONS (deadpan, resigned,
  * smirk, worried); there is no per-character filter. A pack declares which
  * faces it draws (`palette`) and may map others onto them (`aliases`); the
@@ -199,7 +199,7 @@ export function readFaceTags(line, palette) {
 }
 
 /**
- * The faces every character is offered (261028, Shawn msg 991): the same
+ * The faces every character is offered (261028, msg 991): the same
  * list for everyone, the base 12 plus the extras. There is no per-character
  * filter; a pack that does not draw a face maps it to the nearest one it
  * has (pack aliases, then the extra's fallback, see resolveExpression).

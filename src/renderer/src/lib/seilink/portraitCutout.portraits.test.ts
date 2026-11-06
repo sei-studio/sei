@@ -7,7 +7,7 @@
  *  - Marv: a busy backdrop. The traced edge is ragged, so the matte stands
  *    down and he keeps the plain vignette (blocks of backdrop would be worse).
  *  - Lyra's cat ears and twin tail stick out of the head oval. The oval cut
- *    them off at the sides (Shawn, 261105, T335); the silhouette keeps them.
+ *    them off at the sides (261105, T335); the silhouette keeps them.
  */
 import path from 'node:path';
 import sharp from 'sharp';

@@ -11,12 +11,12 @@
  *   P.3 — the recommended badge only shows on an upgrade target, so a Party
  *         subscriber's own card never reads "Recommended".
  *   P.4 — new labels have a zh translation.
- *   P.5 — flat and borderless (Shawn, 261027): no top highlight, no gradient
+ *   P.5 — flat and borderless (261027): no top highlight, no gradient
  *         band, no shadow under the primary, no border line on either kind.
  *   P.6 — the primary carries the old Summon glint (ef346069 .deployBtn), on a
  *         1.8s loop (261027, was 3.4s) scaled by --flux, moved by transform,
- *         and not on a disabled button. Every glint shares one phase (Shawn,
- *         261027: the plan buttons sweep together), no offset class.
+ *         and not on a disabled button. Every glint shares one phase (261027:
+ *         the plan buttons sweep together), no offset class.
  *   P.7 — the primary fill is its own --plan-cta token family (the old
  *         Summon blue), set in every theme and falling back to --accent.
  *         On midnight the global accent itself is brighter (261027), so the
