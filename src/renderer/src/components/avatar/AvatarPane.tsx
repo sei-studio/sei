@@ -20,6 +20,7 @@ import { useAvatarStore } from '../../lib/stores/useAvatarStore';
 import { Seg } from '../Seg';
 import { Toggle } from '../Toggle';
 import { AvatarView } from '../../lib/avatar/AvatarView';
+import { AvatarLibraryPicker } from './AvatarLibraryTiles';
 import styles from './AvatarPane.module.css';
 
 /** Client-side mirror of avatarStore's zip cap (the server-side check is the
@@ -75,7 +76,8 @@ export function AvatarPane({ characterId, cloudAvatar }: AvatarPaneProps): React
       const cfg = await sei.getConfig();
       await sei.saveConfig({
         ...cfg,
-        avatar_prefs: { ...(cfg.avatar_prefs ?? {}), [characterId]: next },
+        // Merge over the on-disk entry: main writes avatar_id (the avatar library pick, 261106).
+        avatar_prefs: { ...(cfg.avatar_prefs ?? {}), [characterId]: { ...(cfg.avatar_prefs?.[characterId] ?? {}), ...next } },
       });
     } catch (err) {
       // eslint-disable-next-line no-console
@@ -156,6 +158,7 @@ export function AvatarPane({ characterId, cloudAvatar }: AvatarPaneProps): React
 
   return (
     <div className={styles.pane}>
+      <AvatarLibraryPicker characterId={characterId} />
       <div className={styles.subTabs}>
         <Seg<SubTab>
           aria-label={t('Avatar type')}

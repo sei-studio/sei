@@ -150,13 +150,18 @@ delete 60, order 60.
 | `GET /avatars/v1/:character_id` | | `{character_id, is_owner, character_public, default_id, avatars[], limits}` |
 | `POST /avatars/v1/:character_id/upload` | `{kind, sha256, bytes, mime}` | `{state:'exists'}` or `{state:'upload', upload}`; 400 `bad_kind`/`too_big`/`bad_request`, 403, 404, 409 `too_many`/`quota` |
 | `POST /avatars/v1/:character_id/commit` | `{kind, sha256, staging_path?, name?, source?, make_default?}` | `{avatar, created}`; 400 `hash_mismatch`/`bad_content`/`missing_upload`, 403, 409 `too_many`/`quota` |
-| `PATCH /avatars/v1/:character_id/:avatar_id` | `{is_public?, is_default?}` | `{avatars[]}`; 409 `last_public`/`not_shareable` |
-| `DELETE /avatars/v1/:character_id/:avatar_id` | | `{avatars[]}`; 409 `last_public`/`card_avatar` |
-| `POST /avatars/v1/:character_id/order` | `{ids[]}` | `{avatars[]}` |
+| `PATCH /avatars/v1/:character_id/:avatar_id` | `{is_public?, is_default?: true}` | the full list body; 409 `last_public`/`not_shareable` |
+| `DELETE /avatars/v1/:character_id/:avatar_id` | | the full list body; 409 `last_public`/`card_avatar` |
+| `POST /avatars/v1/:character_id/order` | `{ids[]}` | the full list body |
 
 An avatar item: `{id, kind, source, name, sha256, bytes, mime, is_public,
 is_default, sort_order, moderation, shareable, url, expires_in}`. `shareable`
-= public and visible to others right now.
+= public and visible to others right now; `url` is null when signing failed.
+`limits` is `{max_per_character, max_image_bytes, max_zip_bytes,
+user_quota_bytes, used_bytes?}` (`used_bytes` for the owner only). The upload
+link lives 2 hours (Supabase's fixed lifetime). With `avatar_id`, Anima
+answers 404 for a row that is not on that character or not visible to the
+caller, 400 `bad_kind` for a model row, and `unavailable` for a flagged one.
 
 Anima per avatar: `POST /anima/v1/request {character_id, avatar_id?}` and
 `GET /anima/v1/status/:character_id?avatar_id=`. With `avatar_id` the proxy
@@ -201,7 +206,18 @@ operator steps are in the proxy repo (`sei-proxy/docs/avatar-library.md`).
 - **Tiles**: Appearance section (owner) lists every avatar as a tile with a
   lock (public/private) and a "Default" pick, plus Add image / Add model. The
   character page's Avatar tab shows the public ones to everyone and lets a
-  viewer pick which one plays for them. Sharp corners, no button borders.
+  viewer pick which one plays for them (shown when someone else's character
+  has two or more public avatars). Sharp corners, no button borders.
+- **Code**: `src/shared/avatarLibrary.ts` (types, parse, effective avatar,
+  the last-public check), `src/main/avatarLibrary/avatarLibraryClient.ts`
+  (logic, tests next to it) and `avatarLibraryRuntime.ts` (wiring),
+  `src/main/cloud/proxyHttp.ts` (shared with Anima), the
+  `avatarLibrary:*` IPC in `src/main/ipc.ts`, `AnimaClient.avatarFor` /
+  `avatarChanged` (per-avatar bakes), `avatarStore.setAvatarLibraryLink` /
+  `zipStoredAvatar`, and `components/avatar/AvatarLibraryTiles.tsx` (tiles
+  and the viewer picker).
+- **Signed out, offline, no cloud row, or a proxy without the routes (404)**:
+  the library is `none`, nothing changes, Anima bakes the card image as before.
 
 ## Cost
 

@@ -511,8 +511,9 @@ export class AvatarLibraryClient {
     const manifest = await this.d.models.manifest(characterId).catch(() => null);
     if (eff.kind === 'live2d' || eff.kind === 'rig') {
       if (manifest?.library?.sha256 === eff.sha256) return;
-      // An owner's local import not uploaded yet is never overwritten.
-      if (manifest && !manifest.library && list.is_owner) return;
+      // A model the user imported by hand (no library link) is never overwritten:
+      // the owner's is uploaded by sync, anyone else's is their own choice.
+      if (manifest && !manifest.library) return;
       if (!eff.url) throw new OpError('server');
       const t0 = this.d.now();
       const zip = await this.d.download(eff.url, MODEL_DOWNLOAD_MAX_BYTES);

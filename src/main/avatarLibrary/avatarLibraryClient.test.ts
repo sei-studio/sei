@@ -305,6 +305,20 @@ describe('AvatarLibraryClient', () => {
     expect(h2.events).toEqual([]);
   });
 
+  it('never overwrites a viewer model imported by hand', async () => {
+    const h = harness();
+    h.local.manifest = manifest();
+    const url = 'https://x.supabase.co/sign/m.zip';
+    h.downloads.set(url, ZIP);
+    h.routes.set(`GET /avatars/v1/${CHAR}`, () => ({
+      status: 200,
+      body: listBody({ is_owner: false }, [item(A_MODEL, { kind: 'live2d', sha256: sha256Hex(ZIP), is_default: true, url })]),
+    }));
+    await h.client.sync(CHAR);
+    expect(h.local.imported).toBeNull();
+    expect(h.calls.some((c) => c.method === 'POST')).toBe(false);
+  });
+
   it('never overwrites an owner local model that is not uploaded yet', async () => {
     const h = harness();
     h.local.manifest = manifest();

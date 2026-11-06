@@ -39,9 +39,12 @@ export interface AvatarItem {
 }
 
 export interface AvatarLibraryLimits {
-  max_avatars: number;
-  max_zip_bytes: number;
+  max_per_character: number;
   max_image_bytes: number;
+  max_zip_bytes: number;
+  user_quota_bytes?: number;
+  /** Owner only: bytes this user's avatars take. */
+  used_bytes?: number;
 }
 
 /** GET /avatars/v1/:character_id. A non-owner only ever sees shareable rows. */
@@ -138,7 +141,7 @@ export function parseAvatarList(v: unknown): AvatarLibraryList | null {
     character_public: r.character_public === true,
     default_id: def ?? avatars.find((a) => a.is_default)?.id ?? null,
     avatars,
-    ...(limits && typeof limits.max_avatars === 'number' ? { limits } : {}),
+    ...(limits && typeof limits === 'object' && typeof limits.max_per_character === 'number' ? { limits } : {}),
   };
 }
 
