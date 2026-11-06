@@ -2269,6 +2269,8 @@ export interface RendererApi {
   seilinkHostStart?(characterId: string, opts?: { firstRoom?: boolean }): Promise<SeilinkHostStatus>;
   seilinkHostStop?(opts?: { reason?: 'link_failed' }): Promise<SeilinkHostStatus>;
   seilinkHostStatus?(): Promise<SeilinkHostStatus>;
+  /** 261107: the profile's Idle lines toggle; writes seilink_deafened (inverted). Resolves with the new state. */
+  seilinkSetIdleLines?(on: boolean): Promise<boolean>;
   onSeilinkHostStatus?(cb: (status: SeilinkHostStatus) => void): Unsubscribe;
   /** She was clicked on the desktop: open her chat (characterId). */
   onSeilinkOpenChat?(cb: (characterId: string) => void): Unsubscribe;
@@ -4373,6 +4375,8 @@ export const IpcChannel = {
     hostStop: 'seilink:host-stop',
     /** Invoke: → SeilinkHostStatus. */
     hostStatus: 'seilink:host-status',
+    /** Invoke (261107): (on: boolean) → boolean. The profile's Idle lines toggle (config seilink_deafened, inverted). */
+    setIdleLines: 'seilink:set-idle-lines',
     /** Push (main → main window): SeilinkHostStatus on every change. */
     hostStatusChanged: 'seilink:host-status-changed',
     /** Push (main → main window): characterId she was clicked on the desktop; open her chat. */

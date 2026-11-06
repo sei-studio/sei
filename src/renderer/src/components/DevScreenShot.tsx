@@ -18,8 +18,15 @@
  *                    and its end opens the move-in sheet (&pack= as movein)
  *
  *     &regenhint=1   (character) the one-time "Not happy with the look?" hint
- *                    over the gear (261107); without it the hint is marked
- *                    seen so other character shots stay as they were.
+ *                    on the Look tab's card image Regenerate button
+ *                    (261107); without it the hint is marked seen so other
+ *                    character shots stay as they were.
+ *     &tab=look|voice|personality|games|sharing|danger   (character) the
+ *                    profile tab to open on (profile v0.7, 261107)
+ *     &who=own|builtin|world   (character) Sui as your own companion
+ *                    (default), as a built-in, or as another player's World
+ *                    companion in your library; &movedin=1 with &seilink=on
+ *                    puts her on the desktop (the Idle lines row)
  *
  * Other surfaces already have harnesses: ?dashshot=creditwall&part=modal|credits,
  * ?dashshot=signinmodal, ?dashshot=authchoice, ?dashshot=onboard.
@@ -31,6 +38,7 @@ import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { useSeilinkStore } from '../lib/stores/useSeilinkStore';
+import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
 import { useLangStore } from '../lib/i18n';
 import { applyTheme } from '../lib/theme';
 import { MacosWindow } from './MacosWindow';
@@ -58,6 +66,7 @@ import suiArt from '../../../../vendor/skin-gen/examples/sui-input.png';
 import lyraArt from '../../../../vendor/skin-gen/examples/lyra-input.png';
 import { isUiLanguage } from '@shared/uiLanguage';
 import { markRegenHintSeen, regenHintKey } from '../lib/regenHintPref';
+import { PROFILE_TABS, requestProfileTab, type ProfileTab } from '../lib/profileRows';
 
 const SUI = '3f6c2a1e-9b7d-4c1a-8e2f-5a6b7c8d9e01';
 const LYRA = '7a1b2c3d-4e5f-4a6b-9c7d-8e9f0a1b2c03';
@@ -116,6 +125,20 @@ const CHARACTERS = [
   character(PEBBLE, 'Pebble', 'A tiny stone golem who collects shiny rocks and speaks in short, earnest sentences.', null, 140),
 ];
 
+// The character screen's companion (261107): whose Sui the profile shows.
+const who = screen === 'character' ? (params.get('who') ?? 'own') : 'own';
+const OTHER_PLAYER = '2b9e7c11-0d4f-4e8a-9a3b-6f1e2d3c4b5a';
+if (screen === 'character') {
+  const sui = CHARACTERS[0] as Record<string, unknown>;
+  sui.public_id = 'K7Q2';
+  sui.metadata = who === 'builtin' ? { voiceId: 'v-lily' } : { voiceId: 'v-sarah', voicePitch: 1.1 };
+  if (who === 'builtin') {
+    sui.is_default = true;
+    sui.shared = false;
+  }
+  if (who === 'world') sui.owner = OTHER_PLAYER;
+}
+
 const CHAT = [
   ['user', 'morning! did you end up finishing the lake house roof?', 46],
   ['companion', 'not yet, i ran out of spruce planks halfway across the west side', 45.5],
@@ -156,6 +179,8 @@ function seed(): void {
       preferred_name: 'Robin',
       ai_backend_kind: 'cloud-proxy',
       ui_language: params.get('lang') ?? 'en',
+      added_default_ids: who === 'builtin' ? [SUI] : [],
+      added_world_ids: who === 'world' ? [SUI] : [],
     }),
     seilinkAvailability: async () => seilinkAvailability,
     getCharacter: async (id: string) => CHARACTERS.find((c) => c.id === id) ?? null,
@@ -164,11 +189,19 @@ function seed(): void {
     voiceListVoices: async () => VOICES,
     voiceListOwnVoices: async () => ({ status: 'unavailable', voices: [] }),
     charsPortraitVersions: async (id: string) => ({
-      versions: [{ file: `${id}.png`, source: 'original' }],
+      versions: [
+        { file: `${id}.png`, source: 'original' },
+        { file: `${id}.v1.png`, source: 'regenerated' },
+      ],
       active: `${id}.png`,
-      regenCount: 0,
+      regenCount: 1,
       regenLimit: 3,
     }),
+    knowledgeList: async () => [
+      { id: 'k1', title: 'Base coordinates', bytes: 420, added: new Date(now - 9 * 24 * HOUR).toISOString(), source: 'text' },
+      { id: 'k2', title: 'Farm plan.md', bytes: 3100, added: new Date(now - 3 * 24 * HOUR).toISOString(), source: 'upload' },
+    ],
+    seilinkRoomGet: async () => ({ saved: true, state: { preset: 'cozy' } }),
   });
   useDataStore.setState({
     characters: CHARACTERS as unknown as ReturnType<typeof useDataStore.getState>['characters'],
@@ -194,6 +227,18 @@ function seed(): void {
     /* no storage: the hint may show */
   }
   if (seilinkAvailability) useSeilinkStore.setState({ availability: seilinkAvailability });
+  if (seilinkAvailability && params.get('movedin') === '1') {
+    useSeilinkStore.setState({
+      status: { state: 'running', characterId: SUI, covered: false, paused: false, fps: 30 },
+    });
+  }
+  useLibraryStateStore.setState({
+    addedDefaultIds: new Set(who === 'builtin' ? [SUI] : []),
+    addedWorldIds: new Set(who === 'world' ? [SUI] : []),
+  });
+  // The profile tab to open on (261107).
+  const shotTab = params.get('tab');
+  if (PROFILE_TABS.includes(shotTab as ProfileTab)) requestProfileTab(shotTab as ProfileTab);
   const nav = useUiStore.getState().navigate;
   if (screen === 'home') nav({ kind: 'home' });
   if (screen === 'character' || screen === 'edit') nav({ kind: 'character', id: SUI });

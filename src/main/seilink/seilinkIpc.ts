@@ -8,7 +8,7 @@ import { IpcChannel } from '../../shared/ipc';
 import { listPacks, publicPack, seilinkDevEnabled, seilinkDevInfo } from './packs';
 import { seilinkAvailability, seilinkEnabled } from './gate';
 import { getRoomPayload, isRoomCharacterId, onRoomChange, setRoomState } from './roomStore';
-import { seilinkHostStatus, startSeilinkHost, stopSeilinkHost } from './host/seilinkHost';
+import { seilinkHostStatus, setSeilinkIdleLines, startSeilinkHost, stopSeilinkHost } from './host/seilinkHost';
 import { ANIMA_TRIGGERS, isAnimaShownKind, type AnimaTrigger } from '../../shared/anima';
 import { anima } from '../anima/animaRuntime';
 import { isEditorSessionToken, onRoomEditorClosed, onRoomEditorOpened } from './roomReaction';
@@ -61,6 +61,11 @@ export function registerSeilinkIpc(opts: { preloadPath: string; rendererTarget: 
     stopSeilinkHost((opts as { reason?: unknown } | null)?.reason === 'link_failed' ? 'link_failed' : 'user_stop'),
   );
   ipcMain.handle(IpcChannel.seilink.hostStatus, async () => seilinkHostStatus());
+  // 261107: the profile's Idle lines toggle (the dock's deafen flag, inverted).
+  ipcMain.handle(IpcChannel.seilink.setIdleLines, async (_e, on: unknown) => {
+    if (typeof on !== 'boolean') throw new Error('SEILINK_BAD_ARG');
+    return setSeilinkIdleLines(on);
+  });
   ipcMain.handle(IpcChannel.seilink.availability, async () => seilinkAvailability());
 
   // 261105 Anima: her face set. Only while SeiLink is on: nobody else starts a bake.

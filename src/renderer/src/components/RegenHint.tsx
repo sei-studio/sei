@@ -3,15 +3,17 @@
  * coachmark on a companion's profile. The rules (once per player, who is
  * eligible, what suppresses it, analytics) live in lib/regenHintPref.ts.
  *
- * It sits inside the profile's settings-gear wrapper and hangs ABOVE the gear
- * with its tail pointing down at it, because "Card image" (versions +
- * Regenerate) lives in that gear's menu. The card's own Regenerate button
- * opens the card image popup directly.
+ * Since the profile v0.7 redesign (261107) it hangs BELOW the Look tab's
+ * card image Regenerate button with its tail pointing up at it
+ * (placement 'below'); 'above' is the original gear placement. The card's
+ * own Regenerate button opens the card image popup and starts a
+ * regeneration.
  *
- * Dismissed by: its close button, its Regenerate button, or a press anywhere
- * else (the gear included: the menu then opens as usual). Escape counts as the
- * close button. If the page goes away while it is up, that is reported as
- * 'outside': the player moved on without using it.
+ * Dismissed by: its close button, its Regenerate button, the Regenerate
+ * button it points at (counted as 'regenerate' by the page), or a press
+ * anywhere else. Escape counts as the close button. If the page goes away
+ * while it is up, that is reported as 'outside': the player moved on without
+ * using it. The page only lets it show while the Look tab is open.
  */
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useT } from '../lib/i18n';
@@ -162,13 +164,25 @@ export interface RegenHintProps {
   onClose: () => void;
   onOutside: () => void;
   onRegenerate: () => void;
+  /**
+   * 'above' hangs over the anchor, tail down (the old gear spot); 'below'
+   * hangs under it, tail up. In 'below' a press on the anchor itself is not
+   * 'outside': the anchor is the Regenerate button, and its own click
+   * reports the hint's outcome.
+   */
+  placement?: 'above' | 'below';
 }
 
 /** The card. Render it inside the anchor's position:relative wrapper. */
-export function RegenHint({ onClose, onOutside, onRegenerate }: RegenHintProps): React.ReactElement {
+export function RegenHint({
+  onClose,
+  onOutside,
+  onRegenerate,
+  placement = 'above',
+}: RegenHintProps): React.ReactElement {
   const t = useT();
   const ref = useRef<HTMLDivElement | null>(null);
-  // Centre the tail on the anchor (the wrapper is exactly the gear button).
+  // Centre the tail on the anchor (the wrapper is exactly the anchor button).
   const [tailRight, setTailRight] = useState<number | null>(null);
   useLayoutEffect(() => {
     const anchor = ref.current?.parentElement;
@@ -178,7 +192,10 @@ export function RegenHint({ onClose, onOutside, onRegenerate }: RegenHintProps):
 
   useEffect(() => {
     const onDown = (e: MouseEvent): void => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onOutside();
+      const target = e.target as Node;
+      if (!ref.current || ref.current.contains(target)) return;
+      if (placement === 'below' && ref.current.parentElement?.contains(target)) return;
+      onOutside();
     };
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') onClose();
@@ -189,10 +206,15 @@ export function RegenHint({ onClose, onOutside, onRegenerate }: RegenHintProps):
       window.removeEventListener('mousedown', onDown, true);
       window.removeEventListener('keydown', onKey);
     };
-  }, [onClose, onOutside]);
+  }, [onClose, onOutside, placement]);
 
   return (
-    <div ref={ref} className={styles.hint} role="dialog" aria-label={t('Not happy with the look?')}>
+    <div
+      ref={ref}
+      className={`${styles.hint} ${placement === 'below' ? styles.below : ''}`}
+      role="dialog"
+      aria-label={t('Not happy with the look?')}
+    >
       <span
         className={styles.tail}
         aria-hidden="true"

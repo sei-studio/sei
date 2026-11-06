@@ -53,8 +53,10 @@ export interface PortraitImagePickerProps {
    * Presentation. 'default' = square preview + Upload/Change/Remove buttons.
    * 'avatar' = a circular preview that reveals a "Change" overlay on hover and
    * opens the picker on click (the user's profile picture in Settings).
+   * 'buttons' = Upload/Change + Remove only, fill-only buttons, no preview
+   * (the profile's card image popup, 261107, which shows the image itself).
    */
-  variant?: 'default' | 'avatar';
+  variant?: 'default' | 'avatar' | 'buttons';
 }
 
 export function PortraitImagePicker({
@@ -193,6 +195,35 @@ export function PortraitImagePicker({
             image={cropImg}
             busy={busy}
             shape="avatar"
+            onCancel={closeCrop}
+            onConfirm={(canvas) => void onCropConfirm(canvas)}
+          />
+        ) : null}
+      </>
+    );
+  }
+
+  if (variant === 'buttons') {
+    return (
+      <>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--gap-control)', flexWrap: 'wrap' }}>
+          {hiddenInput}
+          <Button kind="secondary" size="sm" disabled={busy} onClick={onPick}>
+            {busy ? t('Working…') : value ? t('Upload a new image') : t('Upload')}
+          </Button>
+          {value ? (
+            <Button kind="dangerSoft" size="sm" disabled={busy} onClick={() => void onRemove()}>
+              {t('Remove')}
+            </Button>
+          ) : null}
+          {error ? (
+            <span style={{ color: 'var(--red)', fontSize: 12, fontFamily: 'var(--mono)' }}>{error}</span>
+          ) : null}
+        </div>
+        {cropImg ? (
+          <PortraitCropModal
+            image={cropImg}
+            busy={busy}
             onCancel={closeCrop}
             onConfirm={(canvas) => void onCropConfirm(canvas)}
           />

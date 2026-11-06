@@ -1,9 +1,9 @@
 /* CharacterPage.module.css — full-bleed character detail (Party redesign §4.6;
- * 260721 static-info revision). Portrait bleeds off the right behind a
+ * profile v0.7 "Option A", 261107). Portrait bleeds off the right behind a
  * left→right scrim; a left content panel carries the crumb, name + IdTag,
- * Description / Game tabs (description card, stat boxes, share box), and the
- * Chat + Play deploy row. Box-to-box vertical spacing is one token
- * (--space-md) everywhere. */
+ * the meta line, the section tabs, the active tab's rows (they scroll inside
+ * .panel) and the pinned Chat + Play deploy row. Row styles live in
+ * components/profile/Profile.module.css. */
 
 .root {
   position: relative;
@@ -130,16 +130,16 @@
   position: relative;
   z-index: 3;
   height: 100%;
-  width: min(520px, 60%);
+  /* 261107: wider for the settings rows (label | value | actions). */
+  width: min(600px, 58%);
   display: flex;
   flex-direction: column;
   /* 261103 spacing pass: the header (crumb, title, tabs) and the pane are
-     groups; the pane's boxes sit a stack step apart inside it. Insets are
-     the page tokens (was 18 / 22 / 24 / 34). */
+     groups. Insets are the page tokens (was 18 / 22 / 24 / 34). */
   gap: var(--gap-group);
   padding: var(--page-top) var(--space-lg) var(--page-top) var(--page-gutter);
-  overflow-y: auto;
-  overflow-x: hidden;
+  /* The page never scrolls as a whole: only the tab panel does. */
+  overflow: hidden;
   /* Content panel slides in from the right when the page opens. Clipped by
      .root's overflow:hidden so it never triggers a horizontal scrollbar. */
   animation: detailIn 0.5s var(--ease) both;
@@ -196,22 +196,54 @@
   word-break: break-word;
 }
 
-.reportLink {
-  background: transparent;
-  border: 0;
-  padding: 0;
-  font-family: var(--sans);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--muted);
-  cursor: pointer;
-  transition: color 140ms ease;
+/* Header: title row + meta line, a control gap apart. */
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-control);
 }
 
-.reportLink:hover,
-.reportLink:focus-visible {
-  color: var(--red);
-  outline: none;
+.kindChip {
+  align-self: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+/* One meta line: Bonded / Played / Last launch (was three stat boxes). */
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-lg);
+  row-gap: var(--space-xs);
+  margin: 0;
+}
+
+.metaItem {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+
+.metaItem dt {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.metaItem dd {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
 }
 
 /* ── Tabs (mockup .pf-tab — underline on active) ─────────────────────── */
@@ -249,143 +281,32 @@
   border-bottom-color: var(--accent);
 }
 
-/* ── Pane (Description / Game) ───────────────────────────────────────── */
-/* One token gap between every box on the page (description card → stat
-   boxes → share box). */
-.pane {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-stack);
-  min-height: 0;
+/* The danger tab's label stays muted until picked, then reads red. */
+.tabDanger.tabActive {
+  color: var(--red);
+  border-bottom-color: var(--red);
 }
 
-/* Avatar tab: the pane scrolls INTERNALLY. The .content flex column shrinks
-   .pane (min-height: 0) to fit above the bottom-pinned deploy row, and the
-   Live2D settings are taller than that space — without their own scroll they
-   painted straight under the Chat/Play buttons. The padding is the breathing
-   room between the last control and the deploy row. */
-.paneScroll {
+/* ── Tab panel ─────────────────────────────────────────────────────────
+   Only the active tab renders here, and it scrolls INSIDE this area: the
+   .content column shrinks it (min-height: 0) to fit above the pinned deploy
+   row, so one section never scrolls into the next. The negative margin +
+   padding keep the scrollbar off the rows' right edge. */
+.panel {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-bottom: var(--space-lg);
-}
-
-/* Persona / description card (mockup .persona). */
-.personaBlock {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-control);
-  align-items: flex-start;
-}
-
-.persona {
-  align-self: stretch;
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
-  padding: var(--pad-control) var(--pad-card);
-  border-radius: var(--radius);
-}
-
-.personaHead {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-control);
-  margin-bottom: var(--gap-control);
-}
-
-.rotateBtn {
-  appearance: none;
-  margin-left: auto;
-  background: transparent;
-  border: 1px solid var(--border-strong);
-  padding: 3px;
-  color: var(--muted);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 140ms ease, border-color 140ms ease;
-  border-radius: var(--radius-sm);
-}
-
-.rotateBtn:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.rotateBtn:focus-visible {
-  outline: 1.5px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.personaBody {
-  font-family: var(--sans);
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--text-2);
-  white-space: pre-wrap;
-}
-
-/* ── Boxed stat cells (260705: recovered dev-branch .stats layout) ────── */
-.stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--gap-stack);
-}
-
-.stat {
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
-  padding: var(--pad-control) var(--pad-card);
-  border-radius: var(--radius);
-}
-
-/* Label typography comes from the shared u-lbl utility (same as the
-   description card's header) so the pane reads as one type family. */
-.statEyebrow {
-  display: block;
-  margin-bottom: var(--gap-control);
-}
-
-/* Matches the description card body (sans 14px), just bolder for the figure. */
-.statValue {
-  font-family: var(--sans);
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--text);
-  white-space: nowrap;
-}
-
-/* ── Share box (Toggle + label) — same surface as a stat cell, sits under
-   the stat boxes on the Description tab. ──────────────────────────────── */
-.shareBox {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-control);
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
-  padding: var(--pad-control) var(--pad-card);
-  font-size: 13px;
-  color: var(--text-2);
-  border-radius: var(--radius);
-}
-
-.shareLabel {
-  font-family: var(--sans);
-}
-
-/* 261019 — "Voice for others: <name>" under the share box (own voice only). */
-.shareVoiceRow {
-  padding: 0 2px;
-  font-family: var(--sans);
+  margin: calc(-1 * var(--space-sm)) calc(-1 * var(--space-md)) 0 0;
+  padding: 0 var(--space-md) var(--space-sm) 0;
 }
 
 /* ── Deploy row (mockup .deploy) — pinned to the bottom ──────────────── */
 .deploy {
   margin-top: auto;
+  flex: none;
   display: flex;
   gap: var(--gap-control);
-  padding-top: var(--gap-group);
 }
 
 .deployBig {
@@ -399,69 +320,6 @@
   font-size: 13px;
   color: var(--red);
   margin: 0;
-}
-
-/* ── Settings (gear) popup — Reset memory + Unbind ───────────────────── */
-/* Mirrors the ProviderSelect popover surface (--surface + --border-strong +
- * --shadow-pop); opens UPWARD since the deploy row is pinned to the bottom. */
-.settingsWrap {
-  position: relative;
-  display: flex;
-}
-
-.settingsMenu {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + var(--space-xs));
-  z-index: 40;
-  min-width: 168px;
-  padding: var(--space-xs);
-  display: flex;
-  flex-direction: column;
-  background: var(--surface);
-  box-shadow: var(--shadow-pop);
-  border-radius: var(--radius);
-}
-
-.settingsItem {
-  display: flex;
-  align-items: center;
-  min-height: 34px;
-  padding: 0 var(--space-md);
-  border: none;
-  background: none;
-  font-family: var(--mono);
-  font-weight: 500;
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  text-align: left;
-  color: var(--text-2);
-  cursor: pointer;
-}
-
-.settingsItem:hover,
-.settingsItem:focus-visible {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.settingsItemDanger {
-  color: var(--red);
-}
-
-/* A short status line under a menu item (SeiLink: her room stopped). */
-.settingsNote {
-  max-width: 220px;
-  padding: 2px var(--space-md) var(--space-xs);
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--muted);
-}
-
-.settingsItemDanger:hover,
-.settingsItemDanger:focus-visible {
-  background: color-mix(in srgb, var(--red) 12%, transparent);
-  color: var(--red);
 }
 
 /* ── Share-toggle confirm (rendered inside ModalShell) ───────────────── */
@@ -609,9 +467,9 @@
 
 .skelDeploy {
   margin-top: auto;
+  flex: none;
   display: flex;
   gap: var(--gap-control);
-  padding-top: var(--gap-group);
 }
 
 .skelBtn {

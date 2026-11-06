@@ -1,0 +1,299 @@
+/* Profile rows (261107, profile v0.7 "Option A"). One row = label, value,
+   action(s). Explanations live in HoverTip tooltips, never as subtext. */
+
+.rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(110px, 28%) minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-md);
+  min-height: 46px;
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+.rowTall {
+  align-items: start;
+}
+
+.rowTall .label,
+.rowTall .actions {
+  padding-top: 2px;
+}
+
+.rowTall .body {
+  align-items: flex-start;
+}
+
+/* Value + actions: one line when they fit, the actions under the value
+   (right-aligned) when they do not. */
+.body {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-md);
+  row-gap: var(--space-sm);
+}
+
+.label {
+  min-width: 0;
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.labelDanger {
+  color: var(--red);
+}
+
+.labelTip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  cursor: help;
+}
+
+.infoMark {
+  display: inline-flex;
+  color: var(--muted-2);
+  transition: color 140ms ease;
+}
+
+.labelTip:hover .infoMark,
+.labelTip:focus-visible .infoMark {
+  color: var(--accent);
+}
+
+.value {
+  flex: 1 1 0;
+  min-width: 128px;
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+/* A locked row's value reads as settled, not editable. */
+.rowLocked .value {
+  color: var(--muted);
+}
+
+.actions {
+  flex: none;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--gap-control);
+  flex-wrap: wrap;
+}
+
+.anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+/* ── Values ─────────────────────────────────────────────────────────── */
+
+.val {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-control);
+  min-width: 0;
+}
+
+.valText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.valWrap {
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.35;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  letter-spacing: 0.02em;
+}
+
+.thumb {
+  flex: none;
+  width: 30px;
+  height: 40px;
+  object-fit: cover;
+  object-position: top center;
+  border-radius: var(--radius-sm);
+  background: var(--bg3);
+}
+
+/* The skin face, 8x8 at (8,8), plus the hat layer at (40,8), scaled 4x. */
+.head {
+  position: relative;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg3);
+}
+
+.head i {
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+  background-size: 256px 256px;
+  background-position: -32px -32px;
+  image-rendering: pixelated;
+}
+
+.head i.headHat {
+  background-position: -160px -32px;
+}
+
+.headProbe {
+  display: none;
+}
+
+.clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--text-2);
+  line-height: 1.45;
+}
+
+.slider {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-control);
+  width: 100%;
+  max-width: 280px;
+}
+
+.slider input {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted-2);
+}
+
+.dotOn {
+  background: var(--green);
+}
+
+.dotBad {
+  background: var(--red);
+}
+
+.resultOk,
+.resultErr {
+  font-family: var(--sans);
+  font-size: 13px;
+}
+
+.resultOk {
+  color: var(--green);
+}
+
+.resultErr {
+  color: var(--red);
+}
+
+/* The "2 left" / "uses credits" chip inside an action button. */
+.chip {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  padding: 2px 5px;
+  margin-left: 2px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, currentColor 16%, transparent);
+  white-space: nowrap;
+}
+
+/* ── Locked marker ──────────────────────────────────────────────────── */
+
+.lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  cursor: help;
+  transition: color 140ms ease, background 140ms ease;
+}
+
+.lock:hover,
+.lock:focus-visible {
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+}
+
+/* ── Tooltip (portal) ───────────────────────────────────────────────── */
+
+.tipTrigger {
+  outline: none;
+}
+
+.tipTrigger:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.tip {
+  position: fixed;
+  z-index: 10000;
+  max-width: 280px;
+  padding: 7px 9px;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-pop);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  white-space: normal;
+  pointer-events: none;
+  animation: tipIn 120ms var(--ease);
+}
+
+@keyframes tipIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

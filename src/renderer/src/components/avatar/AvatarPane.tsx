@@ -37,11 +37,16 @@ interface AvatarPaneProps {
    * character's creator and fetching the zip locally is optional.
    */
   cloudAvatar?: CloudAvatarRef | null;
+  /**
+   * Show the avatar library pick at the top (default). The profile's
+   * Floating avatar popup (261107) leaves it out: the Avatar row has its own.
+   */
+  showPicker?: boolean;
 }
 
 type SubTab = 'static' | 'live2d';
 
-export function AvatarPane({ characterId, cloudAvatar }: AvatarPaneProps): React.ReactElement {
+export function AvatarPane({ characterId, cloudAvatar, showPicker = true }: AvatarPaneProps): React.ReactElement {
   const t = useT();
   const prefs = useUiStore((s) => s.avatarPrefsByCharacter[characterId]);
   const setAvatarPrefsFor = useUiStore((s) => s.setAvatarPrefsFor);
@@ -162,7 +167,7 @@ export function AvatarPane({ characterId, cloudAvatar }: AvatarPaneProps): React
 
   return (
     <div className={styles.pane}>
-      <AvatarLibraryPicker characterId={characterId} />
+      {showPicker ? <AvatarLibraryPicker characterId={characterId} /> : null}
       <div className={styles.subTabs}>
         <Seg<SubTab>
           aria-label={t('Avatar type')}

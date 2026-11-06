@@ -853,6 +853,22 @@ function sendDockState(s: Session): void {
 }
 
 /**
+ * 261107 (profile v0.7): the profile's "Idle lines" toggle. Writes the same
+ * global flag as the dock's deafen button (config seilink_deafened, inverted)
+ * and, when someone lives on the desktop, pushes the new dock state so the
+ * dock button agrees. Returns whether idle lines are now on.
+ */
+export async function setSeilinkIdleLines(on: boolean): Promise<boolean> {
+  await updateConfig((c) => ({ ...c, seilink_deafened: !on }));
+  const s = session;
+  if (s && !s.ending) {
+    s.deafened = !on;
+    sendDockState(s);
+  }
+  return on;
+}
+
+/**
  * 261106: show or clear the decorate-together offer on her dock. False when
  * she is not the one on the desktop (or the host is not connected yet).
  */

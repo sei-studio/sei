@@ -446,6 +446,7 @@ const api: RendererApi = {
   seilinkHostStart: (characterId, opts) => ipcRenderer.invoke(IpcChannel.seilink.hostStart, characterId, opts),
   seilinkHostStop: (opts) => ipcRenderer.invoke(IpcChannel.seilink.hostStop, opts ?? null),
   seilinkHostStatus: () => ipcRenderer.invoke(IpcChannel.seilink.hostStatus),
+  seilinkSetIdleLines: (on) => ipcRenderer.invoke(IpcChannel.seilink.setIdleLines, on),
   onSeilinkHostStatus: (cb) => {
     const handler = (_e: Electron.IpcRendererEvent, status: SeilinkHostStatus) => cb(status);
     ipcRenderer.on(IpcChannel.seilink.hostStatusChanged, handler);

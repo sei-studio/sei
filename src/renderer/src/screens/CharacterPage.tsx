@@ -1,25 +1,32 @@
 /**
  * CharacterPage — full-bleed character detail (the "Summoning Terminal").
  *
- * Layout (Party redesign §4.6; 260721 static-info revision): the portrait
- * bleeds off the RIGHT edge behind a left-to-right scrim; a left content
- * panel carries a quiet back crumb, an Oswald name + IdTag, Description /
- * Game tabs, and a bottom deploy row (Chat + Play + a settings gear: it
- * opens the editor directly for owned customs, and drops a Reset memory /
- * Unbind menu for view-only companions).
+ * Layout (profile v0.7 "Option A", product call 261107): the portrait bleeds
+ * off the RIGHT edge behind a left-to-right scrim, with its corner "view full
+ * art" button. The left column carries a quiet back crumb, the name + IdTag,
+ * one meta line (Bonded / Played / Last launch), the section tabs (Look,
+ * Voice, Personality, Games, Sharing or WorldLink, Danger zone) and the
+ * active tab's rows, with Chat + Play (or Invite to party) pinned at the
+ * bottom.
+ *
+ * Tabs are real tabs: only the active one renders, and it scrolls inside its
+ * own area, so one section never scrolls into the next. The rows
+ * (components/profile/ProfileSettings.tsx) are label + value + action; every
+ * action opens the existing editor or popup, which this page owns. Who may
+ * use which row is lib/profileRows.ts. The old settings gear and its menu
+ * are gone; each of its items is a row now.
  *
  * This page is STATIC info only. Minecraft connect/disconnect controls live
  * exclusively in the chat's game surface (McLaunchPanel Launch / the
  * GameSurface end "x"); there is no live status line or session timer here.
  * "Chat" routes to the chat page; "Play" routes to chat AND opens the
  * Minecraft surface (launch panel, or the live dashboard when the bot is
- * already online) and never reflects game state. The public/private share
- * toggle sits in its own box under the stat boxes on the Description tab.
+ * already online) and never reflects game state.
  *
- * Source: docs/design/UI-REDESIGN-PARTY.md §4.6.
+ * Source: docs/design/UI-REDESIGN-PARTY.md §4.6 (frame), 261107 (rows).
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useT, t as tGlobal } from '../lib/i18n';
 import { useUiStore } from '../lib/stores/useUiStore';
@@ -29,16 +36,12 @@ import { useChatStore } from '../lib/stores/useChatStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
 import { movedInId, useSeilinkStore } from '../lib/stores/useSeilinkStore';
-import { moveInOrOut, openRoomEditor, replayIntro } from '../lib/seilink/seilinkFlow';
 import { Button } from '../components/Button';
-import { Toggle } from '../components/Toggle';
 import { ModalShell, ModalFooter } from '../components/ModalShell';
 import { PixelPortrait } from '../components/PixelPortrait';
 import { EditCharacterModal, type EditSection } from '../components/EditCharacterModal';
 import { SignInModal } from '../components/SignInModal';
 import { IdTag } from '../components/IdTag';
-import { SkinEditor } from '../components/SkinEditor';
-import { AvatarPane } from '../components/avatar/AvatarPane';
 import { ResetMemoryConfirmModal } from '../components/ResetMemoryConfirmModal';
 import { UnbindConfirmModal } from '../components/UnbindConfirmModal';
 import { KnowledgeModal } from '../components/KnowledgeModal';
@@ -46,19 +49,42 @@ import { PortraitVersionsModal } from '../components/PortraitVersionsModal';
 import { RegenHint, useRegenHint } from '../components/RegenHint';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 import { ReportCompanionModal } from '../components/ReportCompanionModal';
-import { SharedVoiceChoice, SharedVoiceLabel } from '../components/SharedVoiceChoice';
+import { SharedVoiceChoice } from '../components/SharedVoiceChoice';
+import { ProfileSettings } from '../components/profile/ProfileSettings';
+import { AvatarsModal, FloatingAvatarModal, SkinEditModal } from '../components/profile/ProfileModals';
 import { formatDate } from '../lib/formatDate';
 import { requestGameLaunch, openGame } from '../lib/gameLaunch';
-import { BackIcon, GearIcon, RotateIcon, FullscreenIcon } from '../components/icons';
+import { BackIcon, FullscreenIcon } from '../components/icons';
 import { pickPalette } from '../lib/portraitPalettes';
 import { portraitSrc } from '../lib/portraitSrc';
+import {
+  profileAccess,
+  profileKind,
+  profileTabs,
+  resolveProfileTab,
+  sharingTabLabel,
+  takeRequestedProfileTab,
+  trackProfileActionClicked,
+  trackProfileTabViewed,
+  trackProfileTooltipOpened,
+  type ProfileAction,
+  type ProfileTab,
+} from '../lib/profileRows';
 import type { Character } from '@shared/characterSchema';
-import { cloudAvatarOf } from '@shared/characterSchema';
-import { ownVoiceOf, sharedVoiceIdOf } from '@shared/voiceIds';
+import { NO_VOICE_ID, ownVoiceOf, sharedVoiceIdOf } from '@shared/voiceIds';
 import { sharedVoiceMetadataToSave } from '../lib/sharedVoice';
 import { voicePitchRate } from '@shared/voicePitch';
 import styles from './CharacterPage.module.css';
 
+/** Tab labels (English keys, translated at render). */
+const TAB_LABEL: Record<ProfileTab, string> = {
+  look: 'Look',
+  voice: 'Voice',
+  personality: 'Personality',
+  games: 'Games',
+  sharing: 'Sharing',
+  danger: 'Danger zone',
+};
 
 function fmtMs(ms: number): string {
   if (ms <= 0) return '-';
@@ -72,8 +98,6 @@ function fmtMs(ms: number): string {
 export interface CharacterPageProps {
   id: string;
 }
-
-type CharacterTab = 'description' | 'game' | 'avatar';
 
 /**
  * Wireframe shown while a not-yet-cached character downloads (or on the first
@@ -130,7 +154,9 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const character: Character | undefined = characters.find((c) => c.id === id);
   const [editing, setEditing] = useState<boolean>(false);
   const [editSection, setEditSection] = useState<EditSection>('basic');
-  const [tab, setTab] = useState<CharacterTab>('description');
+  // The tab the player picked (null = the first one). The shown tab is
+  // resolved against the tabs this companion has (resolveProfileTab).
+  const [wantedTab, setWantedTab] = useState<ProfileTab | null>(() => takeRequestedProfileTab());
   const [preparing, setPreparing] = useState<boolean>(false);
   // Flips true once the cache-miss mount effect has concluded (downloaded, or
   // tried and still nothing). Distinguishes "still loading → skeleton" from
@@ -155,46 +181,30 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   // Unbind = remove from library / delete. World-added chars unbind; owned
   // chars delete. Which confirm modal renders is chosen by isAddedFromWorld.
   const [releaseConfirmOpen, setReleaseConfirmOpen] = useState<boolean>(false);
-  // Settings (gear) popup in the deploy row — holds Edit companion (owned
-  // customs), Knowledge, Reset memory and Unbind.
-  const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
-  // 260725 Knowledge popup — available for every character.
+  // 260725 Knowledge popup.
   const [knowledgeOpen, setKnowledgeOpen] = useState<boolean>(false);
-  // 260909 Card image popup (versions + regenerate) — owned characters only.
-  const [cardImageOpen, setCardImageOpen] = useState<boolean>(false);
-  // 261104 SeiLink (M4): the room items exist only while SeiLink is on
-  // (a supported install or the dev flag; no setting since 261105).
+  // 260909 Card image popup (versions + regenerate + upload); `regenerate`
+  // starts a regeneration as soon as it opens (the row's Regenerate button).
+  const [cardImage, setCardImage] = useState<{ regenerate: boolean } | null>(null);
+  // 261107 profile rows' own popups.
+  const [skinEditOpen, setSkinEditOpen] = useState<boolean>(false);
+  const [avatarsOpen, setAvatarsOpen] = useState<{ manage: boolean } | null>(null);
+  const [floatingOpen, setFloatingOpen] = useState<boolean>(false);
+  // Bumped when a popup that changes a row's value closes, so the row re-reads it.
+  const [refreshKey, setRefreshKey] = useState<number>(0);
+  const bumpRefresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+  // 261104 SeiLink (M4): the WorldLink rows exist only while SeiLink is on
+  // (a supported install or the dev flag; no setting since 261105). The
+  // move-in sheet and the room editor are SeilinkFlowHost's (App.tsx).
   const seilinkOn = useSeilinkStore((s) => s.availability?.enabled === true);
   const livingId = useSeilinkStore((s) => movedInId(s.status));
-  // Her host kept crashing and the supervisor gave up (state failed, for her).
-  const seilinkFailedHere = useSeilinkStore((s) => s.status.state === 'failed' && s.status.characterId === id);
-  // 261105 (T337): the move-in sheet and the room editor are SeilinkFlowHost's (App.tsx), shared
-  // with the chat top bar's SeiLink button, the dock and the tour (lib/seilink/seilinkFlow.ts).
-  // A move in / out on its way: a second click waits for it (main also queues them).
-  const moveBusy = useSeilinkStore((s) => s.moveBusy);
-  const settingsRef = useRef<HTMLDivElement | null>(null);
+  // The room editor closing may have changed her room: re-read the Room row.
+  const seilinkFlowOpen = useSeilinkStore((s) => s.flow !== null);
+  const flowWasOpen = useRef(false);
   useEffect(() => {
-    if (!settingsOpen) return;
-    const onDown = (e: MouseEvent): void => {
-      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
-        setSettingsOpen(false);
-      }
-    };
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setSettingsOpen(false);
-    };
-    window.addEventListener('mousedown', onDown);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('mousedown', onDown);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [settingsOpen]);
-  // Own-character details card defaults to the DESCRIPTION when one exists,
-  // otherwise the persona source. The rotate toggle still switches between them.
-  const [paneTab, setPaneTab] = useState<'persona' | 'description'>(
-    () => ((character?.description ?? '').trim() !== '' ? 'description' : 'persona'),
-  );
+    if (flowWasOpen.current && !seilinkFlowOpen) bumpRefresh();
+    flowWasOpen.current = seilinkFlowOpen;
+  }, [seilinkFlowOpen, bumpRefresh]);
   const [shareConfirm, setShareConfirm] = useState<'going_public' | 'going_private' | null>(null);
   // 261019 — "Others will hear" choice in the publish confirm, shown only when
   // the voice is the author's own ElevenLabs voice. null = the close Sei
@@ -245,15 +255,70 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     );
   };
 
-  // 261107: the one-time "Not happy with the look? Regenerate" hint over the
-  // gear (rules in lib/regenHintPref.ts). Hoisted above the early returns.
+  // ── Library-state hooks (hoisted above the early-return for stable count) ──
+  const addedDefaultIds = useLibraryStateStore((s) => s.addedDefaultIds);
+  const addedWorldIds = useLibraryStateStore((s) => s.addedWorldIds);
+  const refreshLibraryState = useLibraryStateStore((s) => s.refresh);
+
+  // ── Who this companion is to the player, and which rows / tabs it gets ──
+  // Null-safe (the character may still be loading) so the hooks below can sit
+  // above the early returns. Rules: lib/profileRows.ts.
+  const currentUserId = authState.kind === 'signed_in' ? authState.user.id : null;
+  const kind = character ? profileKind(character, currentUserId) : 'custom';
+  const isDefault = character?.is_default === true;
+  // 260703 procgen: defaults are opt-in on Home — a default NOT in
+  // added_default_ids shows "Add to library" instead of the Play CTA.
+  const isRemovedDefault = !!character && isDefault && !addedDefaultIds.has(character.id);
+  // A character with a cloud owner that isn't the current user is foreign /
+  // view-only. This holds for SIGNED-OUT users too (currentUserId === null).
+  const isForeignOwned = kind === 'world';
+  const isWorldPreview = !!character && isForeignOwned && !addedWorldIds.has(character.id);
+  const isAddedFromWorld = !!character && isForeignOwned && addedWorldIds.has(character.id);
+  // World-preview / removed-default entries aren't in the library yet — no
+  // memory to reset and nothing to release.
+  const isPreview = isWorldPreview || isRemovedDefault;
+  const access = profileAccess({
+    kind,
+    inLibrary: !!character && !isPreview,
+    seilinkOn,
+    movedInHere: livingId === id,
+    ownVoice: !!ownVoiceOf(character?.metadata),
+    noVoice: character?.metadata?.voiceId === NO_VOICE_ID,
+  });
+  const tabs = profileTabs(access);
+  const tab = resolveProfileTab(tabs, wantedTab);
+
+  // profile_tab_viewed: on open and on every tab change (and a new companion).
+  useEffect(() => {
+    if (!character) return;
+    trackProfileTabViewed(tab, kind);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, character?.id, kind]);
+  // profile_tooltip_opened: once per key per companion visit.
+  const tipsSeen = useRef<{ id: string; keys: Set<string> }>({ id, keys: new Set() });
+  const onTipOpen = useCallback(
+    (key: string): void => {
+      if (tipsSeen.current.id !== id) tipsSeen.current = { id, keys: new Set() };
+      if (tipsSeen.current.keys.has(key)) return;
+      tipsSeen.current.keys.add(key);
+      trackProfileTooltipOpened(key);
+    },
+    [id],
+  );
+
+  // 261107: the one-time "Not happy with the look? Regenerate" hint, on the
+  // Look tab's card image Regenerate button (rules in lib/regenHintPref.ts).
+  // Any other tab counts as covered: it does not show there and is not used up.
   const regenHint = useRegenHint({
     character,
     pageOverlayOpen:
+      tab !== 'look' ||
       editing ||
-      settingsOpen ||
       knowledgeOpen ||
-      cardImageOpen ||
+      cardImage !== null ||
+      skinEditOpen ||
+      avatarsOpen !== null ||
+      floatingOpen ||
       artOpen ||
       resetConfirmOpen ||
       releaseConfirmOpen ||
@@ -262,11 +327,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       showReport,
     leaving,
   });
-
-  // ── Library-state hooks (hoisted above the early-return for stable count) ──
-  const addedDefaultIds = useLibraryStateStore((s) => s.addedDefaultIds);
-  const addedWorldIds = useLibraryStateStore((s) => s.addedWorldIds);
-  const refreshLibraryState = useLibraryStateStore((s) => s.refresh);
 
   // T-04-37 + Phase 11 plan 19: rehydrate / cache-on-demand on mount.
   useEffect(() => {
@@ -334,13 +394,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     };
   }, [id, refreshCharacter]);
 
-  // Default the details card to the description when one exists (re-evaluated
-  // per character — navigation reuses this component, so the useState
-  // initializer alone wouldn't update on an id change or a late load).
-  useEffect(() => {
-    setPaneTab((character?.description ?? '').trim() !== '' ? 'description' : 'persona');
-  }, [character?.id]);
-
   if (!character) {
     // A download error, or a concluded attempt that turned up nothing → the
     // actionable text surface with a way home. Otherwise (first paint or a
@@ -365,37 +418,10 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     return <CharacterPageSkeleton onBack={() => navigate({ kind: 'home' })} />;
   }
 
-  const isDefault = character.is_default;
-  // 260703 procgen: defaults are opt-in on Home — a default NOT in
-  // added_default_ids shows "Add to library" instead of the Play CTA.
-  const isRemovedDefault = isDefault && !addedDefaultIds.has(character.id);
-  const currentUserId = authState.kind === 'signed_in' ? authState.user.id : null;
-  // A character with a cloud owner that isn't the current user is foreign /
-  // view-only. This now holds for SIGNED-OUT users too (currentUserId === null):
-  // a local user opening a World character must view it read-only, not see edit
-  // controls and the publish toggle (item 5). Legacy null-owner local chars
-  // stay editable for everyone.
-  const isForeignOwned = !isDefault && !!character.owner && character.owner !== currentUserId;
-  // 260703 procgen (spec item 5): only user-created ('custom') characters are
-  // editable. System-generated 'unique' companions — even ones the user owns —
-  // are NOT editable (remove / reset-memory only), exactly like foreign-owned
-  // World characters. `kind` defaults to 'custom', so every pre-existing
-  // character stays editable. This folds into the existing viewOnly guard so
-  // all the edit surfaces hide behind one predicate.
-  const isNonEditableKind = character.kind !== 'custom';
-  const viewOnly = isDefault || isForeignOwned || isNonEditableKind;
-  // 260731 — publishing keys on OWNERSHIP, not editability. An Awakened
-  // ('unique') companion is view-only because its persona was cast rather than
-  // written, but it is still the user's to share, so it gets the same
-  // public/private toggle a hand-made one does. Only bundled defaults (D-22,
-  // refused at the IPC boundary anyway) and foreign-owned World characters are
-  // excluded. Kept separate from `viewOnly` so the edit surfaces stay hidden.
-  const canShare = !isDefault && !isForeignOwned;
-  const isWorldPreview = isForeignOwned && !addedWorldIds.has(character.id);
-  const isAddedFromWorld = isForeignOwned && addedWorldIds.has(character.id);
-  // World-preview / removed-default entries aren't in the library yet — no
-  // memory to reset and nothing to release.
-  const isPreview = isWorldPreview || isRemovedDefault;
+  // Only user-created ('custom') companions are editable: built-ins, World
+  // companions and Awakened ('unique') ones show their rows locked
+  // (lib/profileRows.ts). Kept for the publish flow's description gate.
+  const viewOnly = kind !== 'custom';
   const theme: 'light' | 'dark' = resolvedScheme();
   const palette = pickPalette(character.id + character.name, theme);
   // Per-character accent tint for the portrait bloom.
@@ -582,6 +608,36 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     }
   };
 
+  const onAction = (action: ProfileAction): void => {
+    trackProfileActionClicked(action, tab, kind);
+    // The card's Regenerate is the hint's own outcome when the hint is up.
+    if (action === 'regenerate_card') regenHint.regenerate();
+  };
+
+  const selectTab = (next: ProfileTab): void => {
+    if (next === tab) return;
+    // Leaving Look with the hint up: the player moved on without using it.
+    if (regenHint.show) regenHint.dismiss('outside');
+    setWantedTab(next);
+  };
+
+  // Arrow keys move between tabs (WAI-ARIA tabs, automatic activation).
+  const onTabKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    const i = tabs.indexOf(tab);
+    let next: number | null = null;
+    if (e.key === 'ArrowRight') next = (i + 1) % tabs.length;
+    else if (e.key === 'ArrowLeft') next = (i - 1 + tabs.length) % tabs.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = tabs.length - 1;
+    if (next === null) return;
+    e.preventDefault();
+    selectTab(tabs[next]);
+    document.getElementById(`profile-tab-${tabs[next]}`)?.focus();
+  };
+
+  const tabLabel = (key: ProfileTab): string =>
+    key === 'sharing' ? t(sharingTabLabel(access)) : t(TAB_LABEL[key]);
+
   return (
     <div className={styles.root}>
       {/* Portrait bleeds off the right edge behind a left-to-right scrim. */}
@@ -626,178 +682,101 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           </Button>
         </div>
 
-        <div className={styles.titleRow}>
-          <h1 className={styles.title}>{character.name}</h1>
-          {character.public_id ? <IdTag id={character.public_id} size="md" /> : null}
-          {isForeignOwned ? (
-            <button
-              type="button"
-              className={styles.reportLink}
-              onClick={() => setShowReport(true)}
-              aria-label={t('Report {name}', { name: character.name })}
-            >
-              {t('Report')}
-            </button>
-          ) : null}
-        </div>
-
-        {/* Tabs (mockup .pf-tab underline). */}
-        <div className={styles.tabs} role="tablist">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'description'}
-            className={tab === 'description' ? styles.tabActive : styles.tab}
-            onClick={() => setTab('description')}
-          >
-            {t('Description')}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'game'}
-            className={tab === 'game' ? styles.tabActive : styles.tab}
-            onClick={() => setTab('game')}
-          >
-            {t('Game')}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'avatar'}
-            className={tab === 'avatar' ? styles.tabActive : styles.tab}
-            onClick={() => setTab('avatar')}
-          >
-            {t('Avatar')}
-          </button>
-        </div>
-
-        {tab === 'avatar' ? (
-          <div className={`${styles.pane} ${styles.paneScroll}`}>
-            <AvatarPane characterId={character.id} cloudAvatar={cloudAvatarOf(character)} />
+        <header className={styles.head}>
+          <div className={styles.titleRow}>
+            <h1 className={styles.title}>{character.name}</h1>
+            {character.public_id ? <IdTag id={character.public_id} size="md" /> : null}
+            {kind === 'builtin' ? <span className={styles.kindChip}>{t('Built-in')}</span> : null}
           </div>
-        ) : tab === 'description' ? (
-          <div className={styles.pane}>
-            {viewOnly ? (
-              // Non-editable chars (system-generated uniques, World invites,
-              // defaults) get the same boxed description card as customs
-              // (260705: recovered from the dev-branch layout; a bare italic
-              // quote read as unstyled).
-              <div className={styles.persona}>
-                <div className={styles.personaHead}>
-                  <span className="u-lbl">{t('Description')}</span>
-                </div>
-                <div className={styles.personaBody}>
-                  {character.description?.trim() ||
-                    character.persona.source?.trim() ||
-                    t('No description provided.')}
-                </div>
-              </div>
-            ) : (
-              <div className={styles.personaBlock}>
-                <div className={styles.persona}>
-                  <div className={styles.personaHead}>
-                    <span className="u-lbl">
-                      {paneTab === 'persona' ? t('Persona') : t('Description')}
-                    </span>
-                    <button
-                      type="button"
-                      className={styles.rotateBtn}
-                      onClick={() =>
-                        setPaneTab(paneTab === 'persona' ? 'description' : 'persona')
-                      }
-                      aria-label={
-                        paneTab === 'persona' ? t('Switch to description') : t('Switch to persona')
-                      }
-                    >
-                      <RotateIcon size={13} />
-                    </button>
-                  </div>
-                  <div className={styles.personaBody}>
-                    {paneTab === 'persona'
-                      ? character.persona.source || '–'
-                      : character.description?.trim() || t('No description yet.')}
-                  </div>
-                </div>
-                {/* Editing lives on the deploy-row gear — for a character you
-                    own it opens the editor directly. */}
-              </div>
-            )}
-
-            {/* Boxed stat cells (260705: recovered from the dev-branch layout,
-                which framed these as cards instead of hairline kv rows). */}
-            <div className={styles.stats}>
-              <div className={styles.stat}>
-                {/* "Bonded" only reads right once the character is in your
-                    library. For a World character you're just previewing (not
-                    invited) it's their creation date, not a bond, so label it
-                    "Created"; it flips to "Bonded" once you invite them. */}
-                <div className={`u-lbl ${styles.statEyebrow}`}>
-                  {isPreview ? t('Created') : t('Bonded')}
-                </div>
-                <div className={styles.statValue}>{formatDate(character.created)}</div>
-              </div>
-              <div className={styles.stat}>
-                <div className={`u-lbl ${styles.statEyebrow}`}>{t('Played')}</div>
-                <div className={styles.statValue}>{fmtMs(character.playtime_ms)}</div>
-              </div>
-              <div className={styles.stat}>
-                <div className={`u-lbl ${styles.statEyebrow}`}>{t('Last launch')}</div>
-                <div className={styles.statValue}>{formatDate(character.last_launched)}</div>
-              </div>
-              {/* Reset memory moved into the deploy row's settings (gear) menu. */}
+          {/* One meta line (was three stat boxes). "Bonded" only reads right
+              once the companion is in your library; a preview shows when it
+              was made. */}
+          <dl className={styles.meta}>
+            <div className={styles.metaItem}>
+              <dt>{isPreview ? t('Created') : t('Bonded')}</dt>
+              <dd>{formatDate(character.created)}</dd>
             </div>
+            <div className={styles.metaItem}>
+              <dt>{t('Played')}</dt>
+              <dd>{fmtMs(character.playtime_ms)}</dd>
+            </div>
+            <div className={styles.metaItem}>
+              <dt>{t('Last launch')}</dt>
+              <dd>{formatDate(character.last_launched)}</dd>
+            </div>
+          </dl>
+        </header>
 
-            {/* Public/private share toggle (own chars only, Awakened ones
-                included — see canShare), in its own box under the stat boxes. */}
-            {canShare ? (
-              <div className={styles.shareBox}>
-                <Toggle
-                  on={character.shared}
-                  onChange={() => onToggleShared()}
-                  disabled={
-                    shareConfirm !== null ||
-                    (authState.kind !== 'signed_in' && character.shared)
-                  }
-                  aria-label={
-                    character.shared
-                      ? t('Companion is public. Turn off to make private.')
-                      : t('Companion is private. Turn on to make public.')
-                  }
-                />
-                <span className={styles.shareLabel}>
-                  {character.shared ? t('Public: others can invite') : t('Private')}
-                </span>
-              </div>
-            ) : null}
-            {/* 261019 — an own ElevenLabs voice cannot play for anyone else;
-                tell the author which Sei voice others hear. */}
-            {canShare && ownVoiceOf(character.metadata) ? (
-              <div className={styles.shareVoiceRow}>
-                <SharedVoiceLabel
-                  characterId={character.id}
-                  value={sharedVoiceIdOf(character.metadata)}
-                  onChange={!viewOnly ? () => openEdit('voice') : undefined}
-                />
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          <div className={styles.pane}>
-            <SkinEditor
-              character={character}
-              onChanged={() => void refreshCharacter(id)}
-              viewOnly
-              compact
-              previewCaption={t('This is how they appear in your world.')}
-              onEditSkin={viewOnly ? undefined : () => openEdit('appearance')}
-              canGenerate={canShare && !isPreview}
-            />
-          </div>
-        )}
+        <div
+          className={styles.tabs}
+          role="tablist"
+          aria-label={t('Companion settings')}
+          onKeyDown={onTabKeyDown}
+        >
+          {tabs.map((key) => (
+            <button
+              key={key}
+              id={`profile-tab-${key}`}
+              type="button"
+              role="tab"
+              aria-selected={tab === key}
+              aria-controls="profile-tabpanel"
+              tabIndex={tab === key ? 0 : -1}
+              className={`${tab === key ? styles.tabActive : styles.tab} ${key === 'danger' ? styles.tabDanger : ''}`}
+              onClick={() => selectTab(key)}
+            >
+              {tabLabel(key)}
+            </button>
+          ))}
+        </div>
 
-        {/* Deploy row — Chat + Play + settings gear, pinned to the bottom.
-            Both buttons are static routes; neither reflects game state. */}
+        {/* Only the active tab renders; it scrolls inside this area. */}
+        <div
+          id="profile-tabpanel"
+          className={styles.panel}
+          role="tabpanel"
+          aria-labelledby={`profile-tab-${tab}`}
+          data-tab={tab}
+        >
+          <ProfileSettings
+            key={`${character.id}:${tab}`}
+            character={character}
+            access={access}
+            tab={tab}
+            onAction={onAction}
+            onTipOpen={onTipOpen}
+            openEdit={openEdit}
+            openCardImage={(regenerate) => setCardImage({ regenerate })}
+            openKnowledge={() => setKnowledgeOpen(true)}
+            openSkinEdit={() => setSkinEditOpen(true)}
+            openAvatars={(manage) => setAvatarsOpen({ manage })}
+            openFloating={() => setFloatingOpen(true)}
+            onToggleShared={onToggleShared}
+            shareToggleDisabled={
+              shareConfirm !== null || (authState.kind !== 'signed_in' && character.shared)
+            }
+            onResetMemory={onResetMemoryClick}
+            onUnbind={() => setReleaseConfirmOpen(true)}
+            onReport={() => setShowReport(true)}
+            refreshKey={refreshKey}
+            regenHint={
+              regenHint.show ? (
+                <RegenHint
+                  placement="below"
+                  onClose={() => regenHint.dismiss('close')}
+                  onOutside={() => regenHint.dismiss('outside')}
+                  onRegenerate={() => {
+                    regenHint.regenerate();
+                    setCardImage({ regenerate: true });
+                  }}
+                />
+              ) : null
+            }
+          />
+        </div>
+
+        {/* Deploy row — Chat + Play, pinned to the bottom. Both buttons are
+            static routes; neither reflects game state. */}
         {addError ? (
           <p className={styles.addError} role="alert">
             {addError}
@@ -834,144 +813,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
               >
                 {t('Play')}
               </Button>
-              <div className={styles.settingsWrap} ref={settingsRef}>
-                {/* 260725: EVERY character gets the settings menu (it used to
-                    jump straight into the editor for owned customs). Knowledge
-                    is available for all characters — including defaults and
-                    World invites — so it sits here next to Reset memory and
-                    Unbind; Edit companion leads the menu for owned customs. */}
-                <Button
-                  kind="ghost"
-                  size="lg"
-                  aria-haspopup="menu"
-                  aria-expanded={settingsOpen}
-                  aria-label={t('Companion settings')}
-                  onClick={() => setSettingsOpen((o) => !o)}
-                >
-                  <GearIcon size={18} />
-                </Button>
-                {regenHint.show && canShare ? (
-                  <RegenHint
-                    onClose={() => regenHint.dismiss('close')}
-                    onOutside={() => regenHint.dismiss('outside')}
-                    onRegenerate={() => {
-                      regenHint.regenerate();
-                      setCardImageOpen(true);
-                    }}
-                  />
-                ) : null}
-                {settingsOpen ? (
-                  <div
-                    className={styles.settingsMenu}
-                    role="menu"
-                    aria-label={t('Companion settings')}
-                  >
-                    {!viewOnly ? (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className={styles.settingsItem}
-                        onClick={() => {
-                          setSettingsOpen(false);
-                          openEdit('basic');
-                        }}
-                      >
-                        {t('Edit companion')}
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className={styles.settingsItem}
-                      onClick={() => {
-                        setSettingsOpen(false);
-                        setKnowledgeOpen(true);
-                      }}
-                    >
-                      {t('Knowledge')}
-                    </button>
-                    {seilinkOn ? (
-                      <>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className={styles.settingsItem}
-                          disabled={moveBusy}
-                          aria-busy={moveBusy}
-                          onClick={() => {
-                            setSettingsOpen(false);
-                            void moveInOrOut(character.id, 'gear');
-                          }}
-                        >
-                          {livingId === character.id ? t('Move off desktop') : t('Move onto desktop')}
-                        </button>
-                        {seilinkFailedHere && livingId !== character.id ? (
-                          <div className={styles.settingsNote} role="note">
-                            {t('Her desktop room kept stopping, so it was turned off. Move her in to try again.')}
-                          </div>
-                        ) : null}
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className={styles.settingsItem}
-                          onClick={() => {
-                            setSettingsOpen(false);
-                            openRoomEditor(character.id, 'gear');
-                          }}
-                        >
-                          {t('Edit room')}
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className={styles.settingsItem}
-                          onClick={() => {
-                            setSettingsOpen(false);
-                            replayIntro(character.id, 'gear');
-                          }}
-                        >
-                          {t('Replay WorldLink intro')}
-                        </button>
-                      </>
-                    ) : null}
-                    {canShare ? (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className={styles.settingsItem}
-                        onClick={() => {
-                          setSettingsOpen(false);
-                          setCardImageOpen(true);
-                        }}
-                      >
-                        {t('Card image')}
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className={styles.settingsItem}
-                      onClick={() => {
-                        setSettingsOpen(false);
-                        onResetMemoryClick();
-                      }}
-                    >
-                      {t('Reset memory')}
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className={`${styles.settingsItem} ${styles.settingsItemDanger}`}
-                      onClick={() => {
-                        setSettingsOpen(false);
-                        setReleaseConfirmOpen(true);
-                      }}
-                    >
-                      {t('Unbind')}
-                    </button>
-                  </div>
-                ) : null}
-              </div>
             </>
           )}
         </div>
@@ -981,6 +822,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
         <EditCharacterModal
           character={character}
           initialSection={editSection}
+          only
           onClose={onEditClose}
           notice={
             needsDescription
@@ -996,16 +838,29 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
         <KnowledgeModal
           characterId={character.id}
           characterName={character.name}
-          onClose={() => setKnowledgeOpen(false)}
+          onClose={() => {
+            setKnowledgeOpen(false);
+            bumpRefresh();
+          }}
         />
       ) : null}
-      {cardImageOpen ? (
+      {cardImage ? (
         <PortraitVersionsModal
           characterId={character.id}
           characterName={character.name}
-          onClose={() => setCardImageOpen(false)}
+          autoRegenerate={cardImage.regenerate}
+          allowUpload={access.cardUpload}
+          onClose={() => {
+            setCardImage(null);
+            bumpRefresh();
+          }}
         />
       ) : null}
+      {skinEditOpen ? <SkinEditModal character={character} onClose={() => setSkinEditOpen(false)} /> : null}
+      {avatarsOpen ? (
+        <AvatarsModal character={character} manage={avatarsOpen.manage} onClose={() => setAvatarsOpen(null)} />
+      ) : null}
+      {floatingOpen ? <FloatingAvatarModal character={character} onClose={() => setFloatingOpen(false)} /> : null}
       {resetConfirmOpen ? (
         <ResetMemoryConfirmModal
           characterName={character.name}

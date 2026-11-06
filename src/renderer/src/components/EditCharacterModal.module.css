@@ -15,6 +15,28 @@
   border-radius: var(--radius);
 }
 
+/* 261107 (profile v0.7): one section, no sidebar. Sizes to its content up
+   to the shell's max height; the pane still scrolls inside. */
+.editPanelSingle {
+  flex-direction: column;
+  width: 640px;
+  height: auto;
+  min-height: 0;
+}
+
+.editPanelSingle .pane {
+  min-height: 0;
+}
+
+.singleTitle {
+  font-family: var(--display);
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  margin: 0 0 var(--gap-group);
+}
+
 /* ── Left sidebar ─────────────────────────────────────────────────────── */
 .sidebar {
   width: 208px;
