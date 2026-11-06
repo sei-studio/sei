@@ -9,7 +9,9 @@
  *
  * What it ends on (`end`): the plain background she spawns on (`plain_dark` /
  * `plain_light`, the OS theme, PLAIN_COLOURS: the same colour the wallpaper
- * draws), or her room (`room`, a replay). With `manual`, there is no loop: the harness
+ * draws), or her room (`room`, a replay). `tone` is the theme's solid colour
+ * (the climax fills the screen with it): white in light mode, black in dark.
+ * With `manual`, there is no loop: the harness
  * calls `window.__firstLinkSeek(ms)` and gets exactly that frame, which is
  * how the review videos are rendered without dropped frames.
  *
@@ -22,8 +24,8 @@
  *  - skipped: the Skip button or Esc, at any time. Fades out fast; with
  *    `holdEnd` it rushes to that last frame instead (SKIP_RUSH times the
  *    speed, a cut under reduced motion) while the captions fade, so a skip
- *    also ends on her room. A skip before the black has cleared starts that
- *    rush after it (skipFrom): the climax and the cut are never played fast.
+ *    also ends on her room. A skip before the solid has cleared starts that
+ *    rush after it (skipFrom): the climax and the solid are never played fast.
  *  - aborted: the host start failed (`answer === false`). "Link interrupted."
  *    shows for a moment, then the overlay fades and the app's own error state
  *    (the move-in sheet's retry) is what the player sees.
@@ -49,7 +51,7 @@ import {
 } from '../../../lib/seilink/introTimeline';
 import { captionTop, computeFrame, dayInk, revealMask, roomBehind, type Box, type IntroFrame } from './introFrame';
 import { FIELD_SCALE, STAR_SCALE, drawBack, drawFront, drawStars, grainUrl, herCentre, voidGradient } from './introFx';
-import { PLAIN_COLOURS } from '../../../lib/seilink/plainTone';
+import { PLAIN_COLOURS, plainTone, type PlainTone } from '../../../lib/seilink/plainTone';
 import styles from './FirstLinkIntro.module.css';
 
 export type IntroEnd = 'completed' | 'skipped' | 'aborted';
@@ -71,6 +73,8 @@ export interface IntroRoom {
 export interface FirstLinkIntroViewProps {
   /** What it ends on: the plain background (by the OS theme) or her room. */
   end: IntroEndOn;
+  /** The solid colour's theme (default: from a plain `end`, else the OS theme at mount). */
+  tone?: PlainTone;
   reduced: boolean;
   characterId: string;
   name: string;
@@ -104,6 +108,8 @@ type Mode = { kind: 'play' } | { kind: 'skip'; at: number; t: number } | { kind:
 
 export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactElement {
   const { end, reduced, characterId, name, room, portrait = null, facepack, use = 'auto', answer, manual = false, holdEnd = false } = props;
+  // Fixed once mounted: a theme change mid-intro does not swap the solid.
+  const [tone] = React.useState<PlainTone>(() => props.tone ?? (end === 'plain_light' ? 'light' : end === 'plain_dark' ? 'dark' : plainTone()));
   const t = useT();
   const tl: IntroTimeline = reduced ? CALM_TIMELINE : FULL_TIMELINE;
 
@@ -124,7 +130,7 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
   const starRef = useRef<HTMLCanvasElement>(null);
   const grainRef = useRef<HTMLDivElement>(null);
   const frontRef = useRef<HTMLCanvasElement>(null);
-  const blackRef = useRef<HTMLDivElement>(null);
+  const solidRef = useRef<HTMLDivElement>(null);
   const roomRef = useRef<HTMLDivElement>(null);
   const avatarRef = useRef<HTMLDivElement>(null);
   const hudRef = useRef<HTMLDivElement>(null);
@@ -182,9 +188,9 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
       set(avatarRef.current, 'opacity', f.avatar.opacity.toFixed(3));
       set(avatarRef.current, 'filter', f.avatar.filter);
       set(avatarRef.current, 'transform', f.avatar.rise > 0.05 ? `translateY(${f.avatar.rise.toFixed(2)}px)` : 'none');
-      // The climax's cut: black over the whole picture (not the HUD), held, then fading out as she comes in.
-      set(blackRef.current, 'opacity', f.black.toFixed(3));
-      set(blackRef.current, 'display', f.black > 0.0005 ? 'block' : 'none');
+      // The solid colour over the whole picture (not the HUD): the opening, the climax filling the screen, its hold and its fade as she comes in.
+      set(solidRef.current, 'opacity', f.solid.toFixed(3));
+      set(solidRef.current, 'display', f.solid > 0.0005 ? 'block' : 'none');
 
       set(brandRef.current, 'opacity', f.brand.toFixed(3));
       // Captions sit in the empty space above her head, never over her. Each
@@ -271,9 +277,9 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
     (tt: number): IntroFrame => {
       const W = rootRef.current?.clientWidth || window.innerWidth;
       const H = rootRef.current?.clientHeight || window.innerHeight;
-      return computeFrame(tl, tt, W, H, reduced, end);
+      return computeFrame(tl, tt, W, H, reduced, end, tone);
     },
-    [tl, reduced, end],
+    [tl, reduced, end, tone],
   );
 
   /** The end's fade at timeline time `tt`: [whole overlay, captions]. With holdEnd only the captions go. */
@@ -330,7 +336,7 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
         if (tt >= tl.end) return finish('completed', 'linked');
       } else if (mode.kind === 'skip' && holdRef.current) {
         // Rush to her room (the wallpaper's picture), captions fading; the end is that frame, held.
-        // Never through the climax or the black: from before it has cleared, the rush starts after it.
+        // Never through the climax or the solid: from before it has cleared, the rush starts after it.
         const since = now - mode.at;
         const tt = reduced ? tl.fadeAt : Math.min(tl.fadeAt, skipFrom(tl, mode.t) + since * SKIP_RUSH);
         const hud = 1 - span(since, 0, SKIP_FADE_MS);
@@ -392,6 +398,7 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
       ref={rootRef}
       className={styles.root}
       data-end={end}
+      data-tone={tone}
       data-reduced={reduced ? '1' : undefined}
       role="dialog"
       aria-modal="true"
@@ -423,7 +430,7 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
       </div>
       <canvas ref={frontRef} className={styles.fx} aria-hidden="true" />
       <div ref={grainRef} className={styles.grain} style={grainStyle} aria-hidden="true" />
-      <div ref={blackRef} className={styles.black} aria-hidden="true" />
+      <div ref={solidRef} className={styles.solid} style={{ background: PLAIN_COLOURS[tone] }} aria-hidden="true" />
 
       <div ref={hudRef} className={styles.hud}>
         <div ref={brandRef} className={styles.brand} aria-hidden="true">

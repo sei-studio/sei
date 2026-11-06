@@ -8,7 +8,7 @@
  *   &room=plain|blank|default   end on the plain background (default; black or
  *                           white with the page's prefers-color-scheme, or &tone),
  *                           the old blank room, or the pack's default room
- *   &tone=dark|light        force the plain background's colour
+ *   &tone=dark|light        force the plain background's (and the solid's) colour
  *   &hold=1                 end on that picture (the desktop stage's ending)
  *   &reduced=1              the reduced-motion version
  *   &answer=ok|fail|pending the host start's answer (default ok, after 1.5 s)
@@ -93,6 +93,7 @@ export function DevIntroPreview(): React.ReactElement | null {
     <FirstLinkIntroView
       key={run}
       end={introEndFor(room?.state ?? null, tone)}
+      tone={tone}
       reduced={reduced}
       characterId="dev-preview"
       name={params.get('name') ?? 'Sui'}

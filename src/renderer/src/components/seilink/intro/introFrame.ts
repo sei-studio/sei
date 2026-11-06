@@ -4,35 +4,46 @@
  * exactly the same picture (the video harness depends on it) and the view
  * just writes the result to the DOM and the light canvases (introFx.ts).
  *
- * The light is the aurora (261106, Shawn: "the aurora is pretty creative ...
+ * The light is the aurora (261106, product feedback: "the aurora is pretty creative ...
  * make the colors more space themed. Think interstellar scifi and no man's
  * sky"): curtains of soft light sway across deep space. Space depth comes
  * from a faint, very soft starfield and a nebula haze. One palette, eclipse
  * (261106 v4, Shawn's pick of the three moods): gold light and blue-white
  * rims against violet and teal nebula.
  *
- * Beats (261106 v4, the climax): tunnel (the light wakes, then builds to a
- * peak: brighter, fuller, faster, filling the screen, held for a beat, then
- * one hard cut to black), link (a short hold on black, then the black fades
- * out as she fades and rises in, the light settled again behind her), port
- * (the light settles and her place opens around her), linked (the end card;
- * the last frame is exactly what the wallpaper shows).
+ * Beats (261106 v5, the climax, product feedback: "fade to black not hard cut, like the
+ * light expands until fully bright or dark depending on dark or light theme.
+ * Same goes for the blank background afterwards"): tunnel (the light wakes
+ * out of the solid colour, builds to a peak: brighter, fuller, faster,
+ * filling the screen, then keeps expanding until the screen is one solid
+ * colour: in light mode it blooms on into white, in dark mode it expands and
+ * dims into black), link (a short hold on the solid, then it fades back into
+ * the scene as she fades and rises in, the light settled again behind her),
+ * port (the light expands around her once more and settles into the plain
+ * colour, or her room opens), linked (the end card; the last frame is
+ * exactly what the wallpaper shows).
  *
- * The peak is ONE swell (it only rises until the cut), never a flicker; the
- * cut is one change to black. Reduced motion: no peak and no cut, a gentle
- * fade through black, plain crossfades on the calm timeline and a still
- * field.
+ * The solid (`solid`, `tone`) is the theme's colour, the same as the plain
+ * background (PLAIN_COLOURS): light mode never goes black, dark mode never
+ * goes white. Nothing is a cut: the solid, the plain colour and her room all
+ * come and go by smoothstep fades of a second or more, so no frame jumps.
+ * The brightness turns at most twice in any second (a test caps it).
+ * Reduced motion: no peak and no bloom, plain crossfades through the solid
+ * on the calm timeline and a still field.
  *
  * How it ends (`end`, first-link v3): on the plain background she spawns on
  * (`plain_dark` black, `plain_light` white, with the OS theme): the light
- * fades and the whole screen settles into that colour, no shape or edge.
+ * expands out from behind her (`bloom`) and the whole screen settles into
+ * that colour, no shape or edge (into white it floods up to white; into
+ * black it swells a little and dims).
  * `room` (a replay over a room she already has): her room opens in a wide,
  * feathered circle around her as before.
  *
  * No grids, scanlines, rings, slices or hard edges: every shape is a gradient.
  */
 import type { IntroBeat, IntroEndOn } from '@shared/seilinkIntroTelemetry';
-import { CAPTION_IN_MS, CAPTION_OUT_MS, beatAt, beatProgress, ease, span, type IntroTimeline } from '../../../lib/seilink/introTimeline';
+import { CAPTION_IN_MS, CAPTION_OUT_MS, OPEN_MS, beatAt, beatProgress, ease, span, type IntroTimeline } from '../../../lib/seilink/introTimeline';
+import type { PlainTone } from '../../../lib/seilink/plainTone';
 
 export interface Box {
   x: number;
@@ -48,6 +59,8 @@ export interface IntroFrame {
   H: number;
   reduced: boolean;
   end: IntroEndOn;
+  /** The theme: the solid's colour (white in light mode, black in dark mode, as the plain background). */
+  tone: PlainTone;
   /** The light field (introFx). */
   field: {
     /** 0..1 how much of it shows. */
@@ -58,13 +71,21 @@ export interface IntroFrame {
     clock: number;
     /** 0..1 extra brightness (the swell as she forms). */
     swell: number;
-    /** 0..1 the climax: brighter, fuller, wider light, one rise up to the cut (0 under reduced motion). */
+    /** 0..1 the climax: brighter, fuller, wider light, one rise held until the solid covers it (0 under reduced motion). */
     peak: number;
+    /** 0..1 past the peak, how far the climax's bloom has expanded toward filling the screen (0 under reduced motion). */
+    fill: number;
   };
   /** 0..1 the starfield and haze (space behind the light). */
   space: number;
-  /** 0..1 black over the whole picture (not the HUD): the cut, its hold, and its fade out as she comes in. */
-  black: number;
+  /**
+   * 0..1 the solid colour (`tone`) over the whole picture (not the HUD): the
+   * intro opens out of it, the climax fills the screen with it, it holds, then
+   * fades back into the scene as she comes in.
+   */
+  solid: number;
+  /** The ending's light expanding out from behind her (plain endings): `r` 0..1 how far it has spread, `a` 0..1 how bright it is. */
+  bloom: { r: number; a: number };
   /**
    * What she ends on: `opacity` of the plain colour or of her room's canvases
    * (she is not in them), `reveal` the radius of the soft circle a room opens
@@ -82,7 +103,7 @@ export interface IntroFrame {
   /** 0..1 a soft breath of light around her when linked (a glow, no ring; none over the white ending, where a glow only greys it). */
   linkGlow: number;
   brand: number;
-  /** Captions: `block` the whole caption area (cloud, lines, dots; the view sets it on the area, so a line shows at line * block), `line` the beat's line, `sub` the end card's second line. Nothing shows through the peak and the black. */
+  /** Captions: `block` the whole caption area (cloud, lines, dots; the view sets it on the area, so a line shows at line * block), `line` the beat's line, `sub` the end card's second line. Nothing shows through the peak and the solid. */
   caption: { block: number; line: number; sub: number };
   /** The three beat dots: 0..1 lit. */
   dots: [number, number, number];
@@ -132,23 +153,32 @@ export const PEAK_SPEEDUP = 1;
 
 /** The motion clock: real time, plus the extra the climax adds (smoothly faster into the peak, then steady). */
 function motionClock(tl: IntroTimeline, t: number): number {
-  const { build, peak, cut } = tl.climax;
+  const { build, peak, fill } = tl.climax;
   const d = Math.max(1, peak - build);
-  const u = Math.min(t, cut);
+  const u = Math.min(t, fill);
   if (u <= build) return t;
-  // Speed rises as s^2 across the build (s = 0..1), so the clock gains d*s^3/3, then the full speedup until the cut.
+  // Speed rises as s^2 across the build (s = 0..1), so the clock gains d*s^3/3, then the full speedup until the screen is solid.
   const s = Math.min(1, (u - build) / d);
   const extra = PEAK_SPEEDUP * (d * (s * s * s) / 3 + Math.max(0, u - peak));
   return t + extra;
 }
 
-export function computeFrame(tl: IntroTimeline, t: number, W: number, H: number, reduced: boolean, end: IntroEndOn = 'plain_dark'): IntroFrame {
+export function computeFrame(
+  tl: IntroTimeline,
+  t: number,
+  W: number,
+  H: number,
+  reduced: boolean,
+  end: IntroEndOn = 'plain_dark',
+  tone: PlainTone = end === 'plain_light' ? 'light' : 'dark',
+): IntroFrame {
   const B = tl.beats;
   const C = tl.climax;
   const P = B.port;
   const K = B.linked;
   const beat = beatAt(tl, t);
   const plain = end !== 'room';
+  const light = tone === 'light';
   const dots: [number, number, number] =
     beat === 'linked'
       ? [1, 1, 1]
@@ -157,15 +187,22 @@ export function computeFrame(tl: IntroTimeline, t: number, W: number, H: number,
           beat === 'tunnel' ? 0 : ease.out(beatProgress(tl, t, 'link')),
           beat === 'port' ? ease.out(beatProgress(tl, t, 'port')) : 0,
         ];
-  // Captions: no text through the peak and the black. The first line and the block leave before the cut and the block comes back as the black lifts.
-  const block = t < C.cut ? 1 - ease.inOut(span(t, tl.lineOut, tl.lineOut + CAPTION_OUT_MS)) : ease.inOut(span(t, C.lift, C.clear));
+  // The solid: the intro opens out of it, the climax fills the screen with it (a crossfade under reduced motion), it holds, then fades back into the scene.
+  const solid =
+    t < C.build
+      ? 1 - ease.soft(span(t, 0, OPEN_MS))
+      : t < C.fill
+        ? ease.soft(span(t, reduced ? C.build : C.dim, C.fill))
+        : 1 - ease.soft(span(t, C.lift, C.clear));
+  // Captions: no text through the peak and the solid. The first line and the block leave before the peak and come back as the solid lifts.
+  const timing = t < C.fill ? 1 - ease.inOut(span(t, tl.lineOut, tl.lineOut + CAPTION_OUT_MS)) : ease.inOut(span(t, C.lift, C.clear));
+  const block = Math.min(timing, 1 - solid);
   const lineIn = ease.out(span(t, tl.lineAt[beat], tl.lineAt[beat] + CAPTION_IN_MS));
   const caption = {
     block,
     line: lineIn,
     sub: beat === 'linked' ? ease.out(span(t, K + 450, K + 1000)) : 0,
   };
-  const black = t < C.cut ? (reduced ? ease.inOut(span(t, C.build, C.cut)) : 0) : 1 - ease.inOut(span(t, C.lift, C.clear));
   const base: IntroFrame = {
     t,
     beat,
@@ -173,9 +210,11 @@ export function computeFrame(tl: IntroTimeline, t: number, W: number, H: number,
     H,
     reduced,
     end,
-    field: { opacity: 0, gather: 0, clock: t, swell: 0, peak: 0 },
+    tone,
+    field: { opacity: 0, gather: 0, clock: t, swell: 0, peak: 0, fill: 0 },
     space: 0,
-    black,
+    solid,
+    bloom: { r: 0, a: 0 },
     room: { opacity: 0, reveal: 0, flood: 0 },
     avatar: { opacity: 0, filter: 'none', rise: 0 },
     halo: 0,
@@ -186,33 +225,35 @@ export function computeFrame(tl: IntroTimeline, t: number, W: number, H: number,
   };
 
   if (reduced) {
-    // Calm: the field fades in still, fades through black, she fades in as the black clears, her place fades in as the field fades out.
+    // Calm: the field fades in still, crossfades through the solid, she fades in as it clears, her place fades in as the field fades out.
+    const settle = ease.soft(span(t, P, P + 1800));
     base.field.clock = 2400;
-    base.field.opacity = ease.inOut(span(t, 0, 900)) * (1 - ease.inOut(span(t, P, P + 1200)));
+    base.field.opacity = ease.soft(span(t, 0, 1200)) * (1 - settle);
     base.space = base.field.opacity;
     base.avatar.opacity = ease.inOut(span(t, C.lift + 100, C.clear + 200));
-    base.halo = 0.6 * base.avatar.opacity * (1 - span(t, P, P + 1200));
-    base.room.opacity = ease.inOut(span(t, P, P + 1200));
+    base.halo = 0.6 * base.avatar.opacity * (1 - settle);
+    base.room.opacity = settle;
     base.room.reveal = 1.2;
     return base;
   }
 
-  // The light wakes, builds to the peak and cuts; behind the black it is settled again, and it fades as her place opens.
+  // The light wakes, builds to the peak and fills the screen; behind the solid it is settled again, and it fades as her place opens.
   const wake = ease.inOut(span(t, 0, 1200));
   const fade = ease.inOut(span(t, P + 300, P + 2300));
   base.field.opacity = wake * (1 - fade);
   base.field.clock = motionClock(tl, t);
-  // One swell: it only rises (eased) up to the peak, holds, and ends at the cut.
-  base.field.peak = t < C.cut ? ease.inOut(span(t, C.build, C.peak)) : 0;
-  // After the cut the curtains lean in toward her as she comes in, then lift away.
+  // One swell: it only rises (eased) up to the peak, then the bloom expands on until the solid covers it all.
+  base.field.peak = t < C.fill ? ease.soft(span(t, C.build, C.peak)) : 0;
+  base.field.fill = t < C.fill ? ease.soft(span(t, C.peak, C.fill)) : 0;
+  // After the solid the curtains lean in toward her as she comes in, then lift away.
   const L = C.lift;
-  base.field.gather = (t < C.cut ? 0 : ease.inOut(span(t, C.cut, L + 1800))) * (1 - ease.inOut(span(t, P, P + 1800)));
+  base.field.gather = (t < C.fill ? 0 : ease.inOut(span(t, C.fill, L + 1800))) * (1 - ease.inOut(span(t, P, P + 1800)));
   // Softer than before the climax (0.6): the peak stays the brightest moment.
   base.field.swell = 0.6 * span(t, L + 200, L + 1100) * (1 - span(t, L + 1500, P + 600));
   // Space (stars, haze) comes up a little behind the light and lingers a moment longer.
   base.space = ease.inOut(span(t, 200, 1800)) * (1 - ease.inOut(span(t, P + 500, P + 2500)));
 
-  // She comes in as the black fades: rising a little into place, bright, soft and glowing first, then herself.
+  // She comes in as the solid fades: rising a little into place, bright, soft and glowing first, then herself.
   const q = ease.inOut(span(t, L + 100, L + 1500));
   base.avatar.opacity = ease.out(span(t, L + 50, L + 1000));
   base.avatar.rise = H * 0.035 * (1 - ease.out(span(t, L + 50, L + 1400)));
@@ -225,13 +266,17 @@ export function computeFrame(tl: IntroTimeline, t: number, W: number, H: number,
   base.halo = span(t, L + 100, L + 1100) * (1 - 0.65 * span(t, P + 200, P + 2000)) * (1 - span(t, K, K + 900));
 
   if (plain) {
-    // The whole screen settles into the plain colour as the light fades: no circle, no edge.
-    // Into white, the light floods first (the brights go white, then the rest) and the white comes over it.
+    // The light expands out from behind her and the whole screen settles into the plain colour: no circle, no edge.
+    // Into white, the light floods first (the brights go white, then the rest) and the white comes over it; into black it swells a little and dims.
+    base.bloom.r = ease.soft(span(t, P, P + 2200));
     if (end === 'plain_light') {
-      base.room.flood = FLOOD_MAX * ease.inOut(span(t, P, P + 1800));
-      base.room.opacity = ease.inOut(span(t, P + 700, P + 2500));
+      base.bloom.a = ease.soft(span(t, P, P + 1400)) * (1 - span(t, P + 2500, P + 2700));
+      // The dodge brightens faster as it grows, so the flood and the white start early and run long (no steep middle).
+      base.room.flood = FLOOD_MAX * ease.soft(span(t, P, P + 2300));
+      base.room.opacity = ease.soft(span(t, P + 100, P + 2500));
     } else {
-      base.room.opacity = ease.inOut(span(t, P + 300, P + 2500));
+      base.bloom.a = ease.soft(span(t, P, P + 1000)) * (1 - ease.soft(span(t, P + 1200, P + 2500)));
+      base.room.opacity = ease.soft(span(t, P + 400, P + 2500));
     }
     base.room.reveal = 1.2;
   } else {
@@ -260,11 +305,19 @@ export function revealMask(f: IntroFrame, center: { x: number; y: number }): str
 /**
  * 0..1 how much LIGHT background shows at screen point `p` (root px): her
  * room in the same soft circle as revealMask around `centre`, or the white
- * plain background, times its opacity. The black plain background is not
- * light, so it is 0 there. The HUD text switches from night ink to day ink by
+ * plain background, times its opacity, under the white solid (light mode).
+ * The black plain background and the black solid are not light, so they
+ * count 0. The HUD text switches from night ink to day ink by
  * it, each piece where it sits, so it never turns dark over the light.
  */
 export function roomBehind(f: IntroFrame, centre: { x: number; y: number }, p: { x: number; y: number }): number {
+  // The white solid (light mode) is a light background over everything.
+  const white = f.tone === 'light' ? f.solid : 0;
+  const under = sceneBehind(f, centre, p);
+  return white + (1 - white) * under;
+}
+
+function sceneBehind(f: IntroFrame, centre: { x: number; y: number }, p: { x: number; y: number }): number {
   if (f.end === 'plain_dark') return 0;
   // Into white: the flood brightens the picture before the white comes over it.
   if (f.end === 'plain_light') return f.room.opacity + (1 - f.room.opacity) * f.room.flood * 0.7;
