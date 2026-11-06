@@ -107,12 +107,30 @@ const PROXY_BASE_URL = process.env.SEI_PROXY_URL ?? 'https://api.sei.gg';
  *   anime      |   13     | Male-focus                 | the catalog's designated male-anime style
  *   celshaded  |  211     | Dynamic Shonen Painterly   | bold linework, bright flat-leaning color
  *   cartoon    |   59     | Manhwa Sleek               | crisp webtoon inking (no western-cartoon male style exists)
- *   3d         |   30     | Soft-Realistic Male Portrait | soft-realistic dimensional render (3.8M uses)
+ *   3d         |  208     | Soft-Hue Masculine         | soft painterly semi-real (was 30, see below)
  *
- * Runners-up if a slot needs retuning: 208 Soft-Hue Masculine (softer anime),
- * 209 Atmospheric Bishonen, 210 Soft-Line Masculine (mature semi-real), 51
- * Grit Realism (weathered older men). The "3D Models" category has no male
- * style at all. Revisit if KusArt adds dedicated styles.
+ * Product call (261107): male portraits kept coming back as women, often
+ * sexualized, because these SDXL-family styles read booru tags far more
+ * strongly than natural-language "a young man". Three changes fixed it
+ * (seeded A/B on the TEXT_TO_IMAGE model, see MALE_PORTRAIT_PREFIX):
+ *   - every male prompt now starts with MALE_PORTRAIT_PREFIX;
+ *   - the create body carries the gender, and the proxy adds its curated
+ *     male negative_prompt (sei-proxy PORTRAIT_NEGATIVE_BY_GENDER);
+ *   - 3d moved off 30 Soft-Realistic Male Portrait, which still drew women
+ *     (and cropped the head) for long-haired beastkin men even with the
+ *     prefix. 208 drew a man in 19/19 probes; the only bare chests (2, open
+ *     kimono) came without the proxy's male negative. 18 VRChat (the female 3d style)
+ *     and 75 3D MMD drew girls or kids; 215 Classic 3D Animation drew
+ *     beastkin as full animals; 210 drew shirtless men.
+ * Chibi (9) stays: it never sexualizes, but its dot-eyes look keeps
+ * long-haired men androgynous even with the prefix. 240 Chibi PVC is not
+ * chibi-proportioned and added extra figures.
+ *
+ * Runners-up if a slot needs retuning: 30 Soft-Realistic Male Portrait (the
+ * old 3d pick, keep on the proxy allowlist for older clients), 209
+ * Atmospheric Bishonen, 210 Soft-Line Masculine (mature semi-real, tends to
+ * shirtless), 51 Grit Realism (weathered older men). The "3D Models" category
+ * has no male style at all. Revisit if KusArt adds dedicated styles.
  */
 const KUSART_STYLE_BY_ART_STYLE: Record<NonNullable<UserPreferences['art_style']>, string> = {
   chibi: '9',
@@ -126,7 +144,7 @@ const KUSART_MALE_STYLE_BY_ART_STYLE: Record<NonNullable<UserPreferences['art_st
   anime: '13',
   celshaded: '211',
   cartoon: '59',
-  '3d': '30',
+  '3d': '208',
 };
 /** Style used when the user has no art_style preference (null / never asked). */
 const KUSART_STYLE_DEFAULT = '15';
@@ -135,9 +153,10 @@ const KUSART_MALE_STYLE_DEFAULT = '13';
 /**
  * Map the user's art_style preference to a KusArt style_id (anime fallback).
  * Male companions get the male-trained map; female and 'other' use the
- * default (female-trained) map, matching pre-260707 behavior.
+ * default (female-trained) map, matching pre-260707 behavior. Exported for
+ * unit tests.
  */
-function resolveKusartStyleId(
+export function resolveKusartStyleId(
   artStyle: UserPreferences['art_style'] | null | undefined,
   gender: UniqueGender
 ): string {
@@ -145,6 +164,57 @@ function resolveKusartStyleId(
     return artStyle ? KUSART_MALE_STYLE_BY_ART_STYLE[artStyle] : KUSART_MALE_STYLE_DEFAULT;
   }
   return artStyle ? KUSART_STYLE_BY_ART_STYLE[artStyle] : KUSART_STYLE_DEFAULT;
+}
+
+/** Shape-only props of the `portrait_generated` analytics event. */
+export interface PortraitGeneratedProps {
+  /** 'cast' = new unique companion, 'regen' = card-image regenerate. */
+  source: 'cast' | 'regen';
+  gender: UniqueGender;
+  /** The user's art_style preference ('none' = never answered). */
+  art_style: NonNullable<UserPreferences['art_style']> | 'none';
+  style_id: string;
+  /** True when the prompt carried MALE_PORTRAIT_PREFIX (261107 fix). */
+  male_lead: boolean;
+  ok: boolean;
+  /** Set only on failure. */
+  error_class?: 'network' | 'generation_failed';
+}
+
+/** Pure; exported for unit tests. */
+export function portraitGeneratedProps(args: {
+  source: PortraitGeneratedProps['source'];
+  gender: UniqueGender;
+  artStyle: UserPreferences['art_style'] | null | undefined;
+  styleId: string;
+  error?: 'network' | 'generation_failed' | null;
+}): PortraitGeneratedProps {
+  return {
+    source: args.source,
+    gender: args.gender,
+    art_style: args.artStyle ?? 'none',
+    style_id: args.styleId,
+    male_lead: args.gender === 'male',
+    ok: !args.error,
+    ...(args.error ? { error_class: args.error } : {}),
+  };
+}
+
+/**
+ * Fire `portrait_generated` once per KusArt portrait attempt (cast or regen),
+ * so the per-gender / per-style success rate is visible (261107). Shape only:
+ * no prompt, name or image. Fire-and-forget, never throws.
+ */
+function notePortraitGenerated(props: PortraitGeneratedProps): void {
+  void (async () => {
+    try {
+      const { loadAnalytics } = await import('./lazyAnalytics');
+      const { capture } = await loadAnalytics();
+      capture('portrait_generated', { ...props });
+    } catch {
+      // analytics must never affect generation
+    }
+  })();
 }
 
 // Native request dimensions (tall 4:7 portrait, 960×1680, matching the zoom
@@ -896,14 +966,23 @@ function sleepAbortable(ms: number, signal: AbortSignal): Promise<void> {
  * CDN link — no auth needed). Returns the raw PNG bytes. IMAGE_TIMEOUT_MS
  * wall-clock cap over the whole create → poll → download sequence via one
  * AbortController.
+ *
+ * `gender` (261107) lets the proxy add its curated male negative_prompt
+ * (no bare chest / no female anatomy). The proxy never takes negative text
+ * from the client, and an older proxy simply ignores the field.
  */
-async function generatePortraitPng(prompt: string, styleId: string, jwt: string): Promise<Buffer> {
+async function generatePortraitPng(
+  prompt: string,
+  styleId: string,
+  jwt: string,
+  gender: UniqueGender,
+): Promise<Buffer> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), IMAGE_TIMEOUT_MS);
   try {
     const created = await kusartPost(
       '/generate/portrait/create',
-      { prompt, style_id: styleId },
+      { prompt, style_id: styleId, gender },
       jwt,
       controller.signal,
     );
@@ -1214,8 +1293,27 @@ const PORTRAIT_FRAMING_SUFFIX =
   'shallow depth of field. The character is in sharp focus.';
 
 /**
+ * Booru-tag lead for MALE portraits (product call 261107). The KusArt
+ * TEXT_TO_IMAGE styles are female-biased SDXL fine-tunes that weigh leading
+ * tags far above natural language, so "a young wolf beastkin man" alone came
+ * back as a woman (often with cleavage or nude) most of the time. Seeded A/B,
+ * same seed and prompt with only the lead changed:
+ *   - "1boy, male focus" is the part that flips gender; "solo, 1boy, man"
+ *     WITHOUT "male focus" still drew women;
+ *   - "male focus" alone drifts to open-shirt / bare-chest fanservice, which
+ *     "fully clothed" mostly removes;
+ *   - a negative_prompt alone (1girl, breasts, nsfw, ...) is honored upstream
+ *     but barely moves gender; on top of this lead it closes the remaining
+ *     open-kimono / bare-chest renders, so the proxy adds a curated male
+ *     negative when the create body says gender 'male'.
+ * Female and 'other' prompts are unchanged.
+ */
+export const MALE_PORTRAIT_PREFIX = 'solo, 1boy, male focus, masculine, fully clothed. ';
+
+/**
  * Assemble the KusArt prompt: subject + framing suffix + optional tone clause
- * (expression/pose) + beastkin humanization clause. Em/en dashes are stripped
+ * (expression/pose) + beastkin humanization clause, led by
+ * MALE_PORTRAIT_PREFIX for male companions. Em/en dashes are stripped
  * (the subject and tone are LLM-written and may contain them) — user copy
  * standard, and the image model reads a comma identically. Pure; exported for
  * unit tests.
@@ -1224,6 +1322,7 @@ export function assemblePortraitPrompt(args: {
   subject: string;
   tone?: string | null;
   beastkin?: boolean;
+  gender?: UniqueGender;
 }): string {
   const beastkinClause = args.beastkin
     ? ' Beastkin: fully human face and body with smooth human skin, absolutely no fur on the face or body; fur only on the animal ears and tail.'
@@ -1231,7 +1330,8 @@ export function assemblePortraitPrompt(args: {
   const tone = String(args.tone ?? '').replace(/\s+/g, ' ').trim();
   const toneClause = tone ? ` Their expression, pose and body language convey: ${tone}.` : '';
   const subject = args.subject.trim().replace(/[.\s]+$/, '');
-  return (`${subject}. ${PORTRAIT_FRAMING_SUFFIX}` + toneClause + beastkinClause).replace(
+  const lead = args.gender === 'male' ? MALE_PORTRAIT_PREFIX : '';
+  return (`${lead}${subject}. ${PORTRAIT_FRAMING_SUFFIX}` + toneClause + beastkinClause).replace(
     /\s*[—–]\s*/g,
     ', ',
   );
@@ -1262,6 +1362,7 @@ export function buildRegenPortraitPrompt(
           subject: sheet.image_prompt,
           tone: sheet.personality?.tone,
           beastkin: sheet.background === 'beastkin',
+          gender,
         }),
         gender,
       };
@@ -1288,7 +1389,12 @@ export function buildRegenPortraitPrompt(
 /* -------------------------------------------------------------------------- */
 
 /** Raw-PNG producer; the default is the KusArt proxy round trip. */
-export type PortraitGenerateFn = (prompt: string, styleId: string, jwt: string) => Promise<Buffer>;
+export type PortraitGenerateFn = (
+  prompt: string,
+  styleId: string,
+  jwt: string,
+  gender: UniqueGender,
+) => Promise<Buffer>;
 
 export interface RegeneratePortraitArgs {
   characterId: string;
@@ -1347,9 +1453,19 @@ export async function regeneratePortrait(args: RegeneratePortraitArgs): Promise<
   const styleId = resolveKusartStyleId(artStyle, built.gender);
   const generate = args.generate ?? generatePortraitPng;
 
+  const portraitAnalytics = { source: 'regen' as const, gender: built.gender, artStyle, styleId };
+  let raw: Buffer;
+  try {
+    raw = await generate(built.prompt, styleId, jwt, built.gender);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const code = classifyGenError(err);
+    notePortraitGenerated(portraitGeneratedProps({ ...portraitAnalytics, error: code }));
+    return { ok: false, code, message: `Image generation failed: ${msg}` };
+  }
+  notePortraitGenerated(portraitGeneratedProps(portraitAnalytics));
   let bytes: Buffer;
   try {
-    const raw = await generate(built.prompt, styleId, jwt);
     const cropped = await zoomToCharacter(raw);
     bytes = await toCompliantPortraitPng(cropped);
   } catch (err) {
@@ -1553,6 +1669,7 @@ async function runPipeline(args: {
     subject: sheet.image_prompt,
     tone: sheet.personality?.tone,
     beastkin: sheet.background === 'beastkin',
+    gender,
   });
 
   // ── Parallel: (portrait → skin) + persona expansion ────────────────────
@@ -1576,12 +1693,20 @@ async function runPipeline(args: {
     const imgJwt = jwt as string;
     emit('portrait', 'start');
     let rawPng: Buffer;
+    const portraitAnalytics = {
+      source: 'cast' as const,
+      gender,
+      artStyle: config.user_profile?.art_style,
+      styleId,
+    };
     try {
-      rawPng = await generatePortraitPng(imagePrompt, styleId, imgJwt);
+      rawPng = await generatePortraitPng(imagePrompt, styleId, imgJwt, gender);
     } catch (err) {
+      notePortraitGenerated(portraitGeneratedProps({ ...portraitAnalytics, error: classifyGenError(err) }));
       emit('portrait', 'error', err instanceof Error ? err.message : String(err));
       return; // no portrait, no skin
     }
+    notePortraitGenerated(portraitGeneratedProps(portraitAnalytics));
     // Deterministic zoom-crop (character ≈ 75% of frame height). Best-effort:
     // returns rawPng unchanged when the focus detector isn't confident. BOTH
     // branches consume the crop — the tight framing also keeps the skin
