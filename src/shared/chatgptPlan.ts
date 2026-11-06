@@ -50,7 +50,7 @@ export const CHATGPT_USAGE_URL = 'https://chatgpt.com/settings/usage';
  * Where the Credits page "Learn more" link (next to "Use your ChatGPT plan")
  * points. OpenAI's UI/UX guidelines say to "Link Learn more to the OpenAI
  * Help Center for guidance on ChatGPT plan usage"
- * (developers.openai.com/siwc/ui-ux-guidelines). 261027 (Shawn: the bare
+ * (developers.openai.com/siwc/ui-ux-guidelines). 261027 (product feedback: the bare
  * help.openai.com homepage is useless): the Help Center article on exactly
  * this, "Using your ChatGPT plan in other apps and sites".
  */

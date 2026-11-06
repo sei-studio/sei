@@ -26,7 +26,7 @@ function pending(n = 1, over: Partial<PendingLoginAccount> = {}): PendingLoginAc
     clientId: `app_client_${n}`,
     subject: 'chatgpt-sub',
     issuer: 'https://auth.openai.com',
-    email: 'shawn@example.com',
+    email: 'alex@example.com',
     hostId: 'host',
     tokens: { access_token: 'oa-access', refresh_token: 'oa-refresh', token_type: 'Bearer', expires_in: 3600 } as PendingLoginAccount['tokens'],
     receivedAt: Date.now(),
@@ -365,13 +365,13 @@ describe('chatgptAccountLogin.link and plan offer', () => {
       routes: { '/auth/chatgpt/link': () => ({ status: 200, body: { status: 'linked' } }) },
     });
     const r = await h.login.link();
-    expect(r).toEqual({ ok: true, planEnabled: true, email: 'shawn@example.com' });
+    expect(r).toEqual({ ok: true, planEnabled: true, email: 'alex@example.com' });
     expect(h.signInCalls[0]).not.toHaveProperty('forceConsent');
     const sent = h.calls.find((c) => c.path === '/auth/chatgpt/link')!;
     expect(sent.auth).toBe('Bearer sei-jwt');
     expect(sent.body).toEqual({ id_token: 'id-token-1', client_id: 'app_client_1' });
     expect(h.setSessions).toHaveLength(0);
-    expect(await h.login.status()).toEqual({ linked: true, email: 'shawn@example.com', awaitingCode: false });
+    expect(await h.login.status()).toEqual({ linked: true, email: 'alex@example.com', awaitingCode: false });
     expect(h.login.takePlanOffer()).toBe(true);
     expect(h.login.takePlanOffer()).toBe(false);
   });
@@ -436,7 +436,7 @@ describe('chatgptAccountLogin.connectPlan (plan sign-in that also links)', () =>
     expect(h.adopted).toHaveLength(1);
     expect(h.discarded).toHaveLength(0);
     expect(h.regSaves).toEqual([
-      { client_id: 'app_client_1', subject: 'chatgpt-sub', email: 'shawn@example.com', id_token: 'id-token-1', user_id: 'user-1' },
+      { client_id: 'app_client_1', subject: 'chatgpt-sub', email: 'alex@example.com', id_token: 'id-token-1', user_id: 'user-1' },
     ]);
     expect(await h.login.status()).toMatchObject({ linked: true });
     // The plan surface switches itself: no second offer from ChatgptPlanHost.
@@ -484,12 +484,12 @@ describe('chatgptAccountLogin.connectPlan (plan sign-in that also links)', () =>
   });
 
   it('renewing a saved plan account uses THAT account as the target and refuses a different ChatGPT account', async () => {
-    const vault = { acc1: { client_id: 'app_saved', id_token: 'old-id', email: 'shawn@example.com', subject: 'chatgpt-sub' } };
+    const vault = { acc1: { client_id: 'app_saved', id_token: 'old-id', email: 'alex@example.com', subject: 'chatgpt-sub' } };
     const h = harness({ current: ME, vault, routes: { '/auth/chatgpt/link': linkOk } });
     expect(await h.login.connectPlan({ accountId: 'acc1', enablePlan: true })).toMatchObject({ ok: true });
     expect(h.signInCalls[0]).toEqual({
       nonce: 'nonce-1',
-      target: { client_id: 'app_saved', id_token: 'old-id', email: 'shawn@example.com' },
+      target: { client_id: 'app_saved', id_token: 'old-id', email: 'alex@example.com' },
       forceConsent: true,
     });
 

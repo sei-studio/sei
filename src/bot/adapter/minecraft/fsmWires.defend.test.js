@@ -19,7 +19,7 @@ describe('sei:owner_attacked wiring', () => {
       attacker: { id: 7, name: 'zombie' },
       attackerLabel: 'zombie',
       attackerKind: 'defend',
-      ownerLabel: 'Shawn',
+      ownerLabel: 'Alex',
       distance: 4,
       engaged: true,
     })
@@ -27,7 +27,7 @@ describe('sei:owner_attacked wiring', () => {
     expect(onAttacked.mock.calls[0][0]).toMatchObject({
       attackerKind: 'defend',
       attackerLabel: 'zombie',
-      ownerLabel: 'Shawn',
+      ownerLabel: 'Alex',
       distance: 4,
       engaged: true,
     })
@@ -55,14 +55,14 @@ describe('defend prompt framing', () => {
   const data = (engaged) => ({
     attackerLabel: 'zombie',
     attackerKind: 'defend',
-    ownerLabel: 'Shawn',
+    ownerLabel: 'Alex',
     distance: 4,
     engaged,
   })
 
   it('the engaged variant says the swinging is already happening', () => {
     const t = eventAddendum('sei:attacked', data(true))
-    expect(t).toContain('Shawn')
+    expect(t).toContain('Alex')
     expect(t).toContain('zombie')
     expect(t).toContain('4 blocks')
     expect(t).toMatch(/ALREADY swinging/)

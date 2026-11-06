@@ -568,7 +568,7 @@ export function CreditsScreen(): React.ReactElement {
             ask the pricing page to say which plans support it (every Sei plan,
             Free included) and to keep it apart from the app's own
             subscription, so it is its own row under the plan cards, never a
-            feature inside a paid card. 261023 (Shawn: too much text): one
+            feature inside a paid card. 261023 (product feedback: too much text): one
             line plus the sign-in button; the "not a Sei charge" disclosure
             sits in the info tip. The button signs in right here, then Settings
             opens on the switch confirmation (view.useChatgptPlan). */}

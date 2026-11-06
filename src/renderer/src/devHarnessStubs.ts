@@ -258,7 +258,7 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
     ...(homeMode
       ? {
           // &art= (261023): every wall slot has a last line, the call row
-          // Shawn's report showed, so the hover reveal has text to measure.
+          // the bug report showed, so the hover reveal has text to measure.
           ...(params.has('art')
             ? {
                 chatPreviews: async () =>

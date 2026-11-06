@@ -11,7 +11,7 @@ import {
 } from './geometry';
 import { frameScale, type DisplayInfo } from './types';
 
-// Shawn's setup: 3024x1964@2x built-in (1512x982 points, main) and a
+// Dev Mac setup: 3024x1964@2x built-in (1512x982 points, main) and a
 // 3440x1440@1x external to its right.
 const builtIn: DisplayInfo = { id: 1, bounds: { x: 0, y: 0, w: 1512, h: 982 }, scale: 2, main: true };
 const external: DisplayInfo = { id: 2, bounds: { x: 1512, y: -200, w: 3440, h: 1440 }, scale: 1, main: false };
@@ -56,7 +56,7 @@ describe('mixed-DPI capture planning', () => {
   });
 });
 
-describe("Shawn's real layout (helper displays output, 260925)", () => {
+describe("The dev Mac's real layout (helper displays output, 260925)", () => {
   // External main at 0,0; built-in to its LEFT, at negative x.
   const real: DisplayInfo[] = [
     { id: 2, bounds: { x: 0, y: 0, w: 3440, h: 1440 }, scale: 1, main: true },

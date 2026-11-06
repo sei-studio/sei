@@ -1,6 +1,6 @@
 /**
  * Dev pack store (261028, facepack pilot): reads baked packs from
- * SEI_FACEPACK_DIR. Nothing is bundled into the app yet (Shawn has not
+ * SEI_FACEPACK_DIR. Nothing is bundled into the app yet (we have not
  * decided bundle vs download, ~24 MB for the three defaults), so every read
  * returns empty while the dev flag is off.
  */
