@@ -10,18 +10,16 @@
  * soft), and a still grain tile (grainUrl) over the dark keeps the smooth
  * gradients from banding on 8-bit displays and in the review videos.
  *
- *  - drawBack: the nebula haze, the aurora curtains, her halo and the
- *    ending's bloom (the light expanding out from behind her into the plain
- *    colour), behind whatever she ends on and behind her.
+ *  - drawBack: the nebula haze and the aurora curtains, behind whatever she
+ *    ends on and behind her.
  *  - drawStars: the starfield, slowly drifting, each star breathing a little.
- *  - drawFront: over everything: the climax's bloom, the swell of light on
- *    her as she forms and the soft breath of light when she is linked (glows
- *    only, no rings).
+ *  - drawFront: over the light: the climax's bloom (glows only, no rings).
  *
- * The status lines (`field.energy`, 261106 v6): each line makes the light a
- * step brighter, the curtains longer, wider swaying and edge to edge, the
- * haze and stars fuller (the clock runs faster too, computeFrame). Under
- * reduced motion only the brightness steps (crossfades); the shapes stand.
+ * The status lines (`field.energy` and `waves`, 261106 v6 and v7): each line
+ * adds one wave (tall bands, spread top to bottom, WAVE_ROWS) and makes the
+ * light a step brighter, the curtains longer, wider swaying and edge to
+ * edge, the haze and stars fuller (the clock runs faster too, computeFrame).
+ * Under reduced motion every wave stands still at a dimmer energy.
  *
  * The climax (`field.peak`, 261106 v4) makes the same curtains brighter,
  * longer, wider apart and edge to edge (the clock runs faster into it,
@@ -43,9 +41,6 @@ function rgba(c: RGB, a: number): string {
   return `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${Math.max(0, Math.min(1, a)).toFixed(4)})`;
 }
 
-function mix(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
-}
 
 /** Her centre (screen px): her box's upper middle, or where she will sit. */
 export function herCentre(f: IntroFrame, her: Box | null): { x: number; y: number } {
@@ -101,78 +96,67 @@ function strip(ctx: CanvasRenderingContext2D, x: number, top: number, w: number,
 /** Two slow nebula clouds and a low glow, far behind the curtains. */
 function haze(ctx: CanvasRenderingContext2D, f: IntroFrame, w: number, h: number, pal: IntroPalette): void {
   const k = f.field.clock;
-  const a = f.space * (1 + 0.9 * f.field.peak) * (0.8 + 0.6 * f.field.energy);
+  const a = f.space * (1 + 0.9 * f.field.peak) * (0.45 + 0.95 * f.field.energy);
   if (a <= 0.002) return;
   glow(ctx, w * (0.27 + 0.05 * Math.sin(k * 0.00011)), h * (0.34 + 0.04 * Math.cos(k * 0.00013)), w * 0.62, pal.haze[0], 0.42 * a);
   glow(ctx, w * (0.76 + 0.04 * Math.cos(k * 0.0001)), h * (0.66 + 0.04 * Math.sin(k * 0.00012)), w * 0.56, pal.haze[1], 0.36 * a);
   glow(ctx, w * 0.5, h * 0.92, w * 0.7, pal.lights[0], 0.16 * a * f.field.opacity);
 }
 
-/** Curtains of soft light that sway across, lean in toward her as she forms, then lift away. */
-function aurora(ctx: CanvasRenderingContext2D, f: IntroFrame, w: number, h: number, hx: number, hy: number, pal: IntroPalette): void {
+/**
+ * The waves, in the order the lines add them (product feedback (261106)):
+ * `row` is where a wave's bright lower edge sits (0 top .. 1 bottom); its
+ * rays rise about half the height above it, so together the nine cover the
+ * screen top to bottom, evenly (so no band of the screen piles up to white).
+ * The first sits a little below the middle, the rest alternate above and
+ * below it.
+ */
+const WAVE_ROWS = [0.57, 0.37, 0.76, 0.28, 0.67, 0.47, 0.86, 0.18, 0.96] as const;
+
+/** Curtains of soft light that sway across: one wave per status line (`f.waves`). */
+function aurora(ctx: CanvasRenderingContext2D, f: IntroFrame, w: number, h: number, pal: IntroPalette): void {
   const k = f.field.clock;
   const pk = f.field.peak;
-  // The lines' energy: brightness always, the shape only with motion.
+  // The lines' energy: brightness always, the shape only with motion. Line 1 is faint, all nine bright.
   const en = f.field.energy;
   const es = f.reduced ? 0 : en;
-  const a0 = f.field.opacity * (0.75 + 0.35 * f.field.swell) * (1 + 0.9 * pk) * (0.72 + 0.5 * en);
+  // Nine waves add up: the climax gains less per wave than the old four curtains did (in dark mode hardly any, so it never washes out to white).
+  const light = f.tone === 'light';
+  const a0 = f.field.opacity * (1 + (light ? 0.35 : 0) * pk) * (0.3 + 0.9 * en);
   if (a0 <= 0.002) return;
-  const hu = hx / w;
-  for (let i = 0; i < 4; i++) {
-    const c = pal.lights[i];
-    const speed = 1 + 0.27 * i;
-    // The climax spreads the curtains over the whole height (top to bottom) instead of the upper middle.
-    const row = mix(0.3 + 0.09 * i, 0.16 + 0.22 * i, pk);
+  for (let i = 0; i < f.waves.length; i++) {
+    const on = f.waves[i];
+    if (on <= 0.002) continue;
+    const c = pal.lights[i % 4];
+    const speed = 1 + 0.17 * (i % 5);
+    const row = WAVE_ROWS[i % WAVE_ROWS.length];
     for (let x = 0; x < w; x++) {
       const u = (x + 0.5) / w;
-      // Lean in toward her as she forms: the curtains dip down to her and brighten there.
-      const pull = f.field.gather * Math.exp(-(((u - hu) / 0.42) ** 2));
-      let yc =
+      const yc =
         h * row +
-        h * 0.075 * (1 + 0.6 * pk + 0.45 * es) * Math.sin(u * Math.PI * 2.1 + k * 0.00042 * speed + i * 1.3) +
-        h * 0.035 * Math.sin(u * Math.PI * 5.3 - k * 0.00071 * speed + i * 2.1);
-      yc = mix(yc, hy + h * 0.05, pull * 0.7);
-      const len = h * (0.36 + 0.12 * Math.sin(u * 7.1 + k * 0.0009 + i)) * (1 + 0.75 * pk) * (1 + 0.3 * es);
+        h * 0.06 * (1 + 0.6 * pk + 0.45 * es) * Math.sin(u * Math.PI * 2.1 + k * 0.00042 * speed + i * 1.3) +
+        h * 0.03 * Math.sin(u * Math.PI * 5.3 - k * 0.00071 * speed + i * 2.1);
+      // Tall bands: rays about half the screen high.
+      const len = h * (0.5 + 0.14 * Math.sin(u * 7.1 + k * 0.0009 + i)) * (1 + (light ? 0.5 : 0.15) * pk) * (1 + 0.2 * es);
       // Rays shimmer: brightness ripples along the curtain.
       const shimmer = 0.6 + 0.4 * Math.sin(u * 9 + k * 0.0012 * speed + i * 4) ** 2;
       // The edges fade in a tenth of the width; at the peak the light runs edge to edge.
       const fadeEdge = Math.min(1, Math.max(0, Math.min(u + 0.1, 1.1 - u) * 4 * (1 + 3 * pk + 1.2 * es)));
-      strip(ctx, x, yc - len * 0.9, 1, len, c, a0 * 0.46 * shimmer * fadeEdge * (1 + 0.3 * pull), 0.82);
+      strip(ctx, x, yc - len * 0.9, 1, len, c, a0 * 0.3 * on * shimmer * fadeEdge, 0.82);
     }
   }
 }
 
-/** The nebula, the curtains and her halo, behind her. `ctx` is FIELD_SCALE smaller than the screen. */
-export function drawBack(ctx: CanvasRenderingContext2D, f: IntroFrame, her: Box | null): void {
+/** The nebula and the curtains. `ctx` is FIELD_SCALE smaller than the screen. */
+export function drawBack(ctx: CanvasRenderingContext2D, f: IntroFrame): void {
   const w = ctx.canvas.width;
   const h = ctx.canvas.height;
-  const s = w / Math.max(1, f.W);
   ctx.globalCompositeOperation = 'source-over';
   ctx.clearRect(0, 0, w, h);
-  const c = herCentre(f, her);
-  const hx = c.x * s;
-  const hy = c.y * s;
   const pal = PAL;
   ctx.globalCompositeOperation = 'lighter';
   haze(ctx, f, w, h, pal);
-  aurora(ctx, f, w, h, hx, hy, pal);
-  if (f.halo > 0.002) {
-    const hr = (her ? her.h : f.H * 0.5) * s * 0.85;
-    glow(ctx, hx, hy, hr, pal.halo, 0.5 * f.halo);
-    glow(ctx, hx, hy, hr * 0.55, [255, 255, 255], 0.26 * f.halo);
-  }
-  // The ending: the light expands out from behind her until the plain colour covers it (white into white; soft and dimming into black).
-  if (f.bloom.a > 0.002) {
-    const d = Math.hypot(w, h);
-    const r = d * (0.3 + 1.0 * f.bloom.r);
-    if (f.tone === 'light') {
-      glow(ctx, hx, hy, r, [255, 255, 255], 0.85 * f.bloom.a);
-      glow(ctx, hx, hy, r * 0.6, pal.halo, 0.3 * f.bloom.a);
-    } else {
-      glow(ctx, hx, hy, r, pal.halo, 0.28 * f.bloom.a);
-      glow(ctx, hx, hy, r * 0.5, pal.lights[1], 0.12 * f.bloom.a);
-    }
-  }
+  aurora(ctx, f, w, h, pal);
   ctx.globalCompositeOperation = 'source-over';
   melt(ctx);
 }
@@ -240,18 +224,13 @@ export function drawStars(ctx: CanvasRenderingContext2D, f: IntroFrame): void {
   ctx.globalCompositeOperation = 'source-over';
 }
 
-/** Over everything: the climax's bloom, the swell of light on her as she forms, and the soft breath when linked. */
-export function drawFront(ctx: CanvasRenderingContext2D, f: IntroFrame, her: Box | null): void {
+/** Over the light: the climax's bloom. */
+export function drawFront(ctx: CanvasRenderingContext2D, f: IntroFrame): void {
   const w = ctx.canvas.width;
   const h = ctx.canvas.height;
-  const s = w / Math.max(1, f.W);
   ctx.globalCompositeOperation = 'source-over';
   ctx.clearRect(0, 0, w, h);
-  const c = herCentre(f, her);
-  const hx = c.x * s;
-  const hy = c.y * s;
   const pal = PAL;
-  const hr = (her ? her.h : f.H * 0.5) * s;
   ctx.globalCompositeOperation = 'lighter';
   // The climax: a wide soft bloom over the middle that fills the screen with light (one rise), then keeps expanding (fill) under the solid.
   const pk = f.field.peak * f.field.opacity;
@@ -259,22 +238,16 @@ export function drawFront(ctx: CanvasRenderingContext2D, f: IntroFrame, her: Box
     const d = Math.hypot(w, h);
     const fl = f.field.fill;
     const grow = 1 + 1.1 * fl;
-    const white = f.tone === 'light' ? 0.7 : 0.08;
-    glow(ctx, w * 0.5, h * 0.48, d * 0.62 * grow, pal.halo, 0.3 * pk * (1 + 0.4 * fl));
-    glow(ctx, w * 0.5, h * 0.46, d * 0.34 * grow, pal.lights[0], 0.2 * pk);
-    glow(ctx, w * 0.5, h * 0.46, d * 0.2 * (1 + 2.4 * fl), [255, 255, 255], (0.16 + white * fl) * pk);
-  }
-  if (f.field.swell > 0.002) {
-    glow(ctx, hx, hy, hr * 0.6, [255, 255, 255], 0.3 * f.field.swell);
-    glow(ctx, hx, hy, hr * 1.6, pal.lights[1], 0.18 * f.field.swell);
-  }
-  // Linked: a wide soft glow that swells and fades (computeFrame leaves it out over the white ending).
-  if (f.linkGlow > 0.002) {
-    glow(ctx, hx, hy, hr * 1.9, pal.halo, 0.2 * f.linkGlow);
-    glow(ctx, hx, hy, hr * 0.8, [255, 255, 255], 0.1 * f.linkGlow);
+    const light = f.tone === 'light';
+    const white = light ? 0.7 : 0.04;
+    // Dark mode: a softer bloom over the nine waves, so the climax stays coloured light, not white.
+    const k = light ? 1 : 0.3;
+    glow(ctx, w * 0.5, h * 0.48, d * 0.62 * grow, pal.halo, 0.3 * k * pk * (1 + 0.4 * fl));
+    glow(ctx, w * 0.5, h * 0.46, d * 0.34 * grow, pal.lights[0], 0.2 * k * pk);
+    glow(ctx, w * 0.5, h * 0.46, d * 0.2 * (1 + 2.4 * fl), [255, 255, 255], (0.16 * k + white * fl) * pk);
   }
   ctx.globalCompositeOperation = 'source-over';
-  if (pk > 0.002 || f.field.swell > 0.002 || f.linkGlow > 0.002) melt(ctx);
+  if (pk > 0.002) melt(ctx);
 }
 
 /** Deep space behind the light. */

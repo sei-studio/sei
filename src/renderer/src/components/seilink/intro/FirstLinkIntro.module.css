@@ -72,7 +72,6 @@
 .room {
   --fl-room: 0;
   --fl-mask: none;
-  --fl-flood: 0;
   position: absolute;
   inset: 0;
 }
@@ -86,15 +85,6 @@
   opacity: var(--fl-room);
   mask-image: var(--fl-mask);
   -webkit-mask-image: var(--fl-mask);
-}
-
-/* Into white: the light floods (colour-dodge by a rising grey: the brights reach white first) before the white covers it. */
-.room > .flood {
-  position: absolute;
-  inset: 0;
-  /* An opaque grey of value --fl-flood: dodge divides by (1 - it), so black is no change and white makes every lit pixel white. */
-  background: color-mix(in srgb, #fff calc(var(--fl-flood) * 100%), #000);
-  mix-blend-mode: color-dodge;
 }
 
 /* The plain background she spawns on: the whole screen settles into it (the colour is set inline, PLAIN_COLOURS). */
@@ -128,7 +118,6 @@
  * plays, deep ink over a soft white cloud once her room is behind the text.
  * Clouds and glows only (feathered radial masks): no boxes, no borders.
  */
-.brand,
 .caption,
 .skip {
   --fl-day: 0;
@@ -141,50 +130,11 @@
   --fl-feather: radial-gradient(closest-side, #000 0%, rgba(0, 0, 0, 0.85) 40%, rgba(0, 0, 0, 0.35) 72%, transparent 100%);
 }
 
-.brand {
-  position: absolute;
-  left: 32px;
-  top: 28px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-family: var(--mono);
-  font-size: 13px;
-  letter-spacing: 0.32em;
-  color: var(--fl-text);
-  text-shadow:
-    0 0 14px var(--fl-halo),
-    0 1px 6px var(--fl-drop);
-  opacity: 0;
-  isolation: isolate;
-}
-
-/* A small soft cloud under the label, there only once her room is behind it. */
-.brand::before {
-  content: '';
-  position: absolute;
-  inset: -26px -44px -26px -36px;
-  z-index: -1;
-  opacity: var(--fl-day);
-  background: var(--fl-cloud);
-  mask-image: var(--fl-feather);
-  -webkit-mask-image: var(--fl-feather);
-  pointer-events: none;
-}
-
-.brandDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, rgb(70 112 230) var(--fl-d), #ffffff) 0%, rgb(var(--fl-glow)) 60%, rgba(var(--fl-glow) / 0) 100%);
-  box-shadow: 0 0 14px rgba(var(--fl-glow) / 0.9);
-}
-
-/* Above her head (never over her): the view sets the real top each frame (captionTop). */
+/* Centred on the screen (product feedback (261106)): the view sets the real top each frame (captionTop). */
 .caption {
   position: absolute;
   left: 50%;
-  top: 15vh;
+  top: 50%;
   width: min(1100px, calc(100vw - 64px));
   transform: translateX(-50%);
   isolation: isolate;
@@ -245,6 +195,24 @@
   overflow-wrap: anywhere;
 }
 
+/* The words still to come: laid out, not drawn, so a typing line keeps its full width and centre. */
+.rest {
+  visibility: hidden;
+}
+
+/* What screen readers hear: each whole line once (the drawn lines are word by word, so aria-hidden). */
+.live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Borderless, like every button (product rule); a soft halo keeps it off busy rooms. */
 .skip {
   position: absolute;
@@ -273,10 +241,6 @@
 }
 
 @media (max-width: 640px) {
-  .brand {
-    left: 16px;
-    top: 16px;
-  }
   .skip {
     right: 16px;
     bottom: 16px;
