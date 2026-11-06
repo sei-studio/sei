@@ -19,7 +19,7 @@ The library spans both repos:
 
 ## What an avatar is
 
-An avatar is how a companion appears as a living figure: the SeiLink room,
+An avatar is how a companion appears as a living figure: the WorldLink room (SeiLink in code),
 the floating avatar overlay, the call tile. It is not the card image. The
 card image (`characters.portrait_image`) stays the identity picture on cards,
 chat and Browse, and is still edited with the existing portrait picker.

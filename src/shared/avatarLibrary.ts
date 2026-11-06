@@ -3,7 +3,7 @@
  * public/private lock and one default. Shared between main and the renderer.
  * Design: docs/agents/avatar-library.md. Server: sei-proxy /avatars/v1/*.
  *
- * An avatar is how a companion appears as a living figure (SeiLink room,
+ * An avatar is how a companion appears as a living figure (WorldLink room, SeiLink in code;
  * overlay, call tile), not the card image: a portrait (played as its Anima
  * face set, else its cutout) or a Live2D / rig model zip.
  */

@@ -2333,7 +2333,7 @@ export const RU: Record<string, string> = {
   "Default avatar": "Аватар по умолчанию",
   "Delete avatar": "Удалить аватар",
   "Hidden": "Скрыт",
-  "How they appear in SeiLink and on calls. Public avatars are shared with everyone who adds this companion.": "Как компаньон выглядит в SeiLink и в звонках. Публичные аватары видят все, кто добавил этого компаньона.",
+  "How they appear in WorldLink and on calls. Public avatars are shared with everyone who adds this companion.": "Как компаньон выглядит в WorldLink и в звонках. Публичные аватары видят все, кто добавил этого компаньона.",
   "Image": "Картинка",
   "In review": "На проверке",
   "Loading avatars…": "Загружаем аватары…",

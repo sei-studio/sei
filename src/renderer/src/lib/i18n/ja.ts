@@ -2333,7 +2333,7 @@ export const JA: Record<string, string> = {
   "Default avatar": "デフォルトのアバター",
   "Delete avatar": "アバターを削除",
   "Hidden": "非表示",
-  "How they appear in SeiLink and on calls. Public avatars are shared with everyone who adds this companion.": "SeiLinkや通話での見た目です。公開アバターは、このコンパニオンを追加したすべての人に共有されます。",
+  "How they appear in WorldLink and on calls. Public avatars are shared with everyone who adds this companion.": "WorldLinkや通話での見た目です。公開アバターは、このコンパニオンを追加したすべての人に共有されます。",
   "Image": "画像",
   "In review": "審査中",
   "Loading avatars…": "アバターを読み込み中…",

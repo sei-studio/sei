@@ -11,6 +11,7 @@
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useT } from '../../lib/i18n';
+import { Button } from '../Button';
 import { PlusIcon, StarIcon, TrashIcon } from '../icons';
 import {
   isLastPublicLock,
@@ -130,7 +131,7 @@ export function AvatarLibraryTiles({ characterId, characterShared }: AvatarLibra
   return (
     <div className={styles.wrap}>
       <p className={styles.hint}>
-        {t('How they appear in SeiLink and on calls. Public avatars are shared with everyone who adds this companion.')}
+        {t('How they appear in WorldLink and on calls. Public avatars are shared with everyone who adds this companion.')}
       </p>
       <div className={styles.grid} role="list">
         {list.avatars.map((a) => {
@@ -163,7 +164,8 @@ export function AvatarLibraryTiles({ characterId, characterShared }: AvatarLibra
                     type="button"
                     className={styles.del}
                     aria-label={t('Delete avatar')}
-                    title={t('Delete avatar')}
+                    data-tip={t('Delete avatar')}
+                    data-tip-edge="right"
                     disabled={busy !== null}
                     onClick={() => void run(a.id, () => window.sei.avatarLibraryRemove(characterId, a.id))}
                   >
@@ -172,24 +174,22 @@ export function AvatarLibraryTiles({ characterId, characterShared }: AvatarLibra
                 ) : null}
               </div>
               <div className={styles.bar}>
-                <span className={styles.lockWrap}>
-                  <button
-                    type="button"
-                    className={`${styles.icon} ${a.is_public ? styles.on : ''}`}
-                    aria-label={lockLabel}
-                    aria-pressed={a.is_public}
-                    aria-disabled={lastPublic || busy !== null}
-                    onClick={() => {
-                      if (lastPublic || busy !== null) return;
-                      void run(a.id, () => window.sei.avatarLibrarySetFlags(characterId, a.id, { is_public: !a.is_public }));
-                    }}
-                  >
-                    <LockGlyph open={a.is_public} />
-                  </button>
-                  <span className={styles.tip} role="tooltip">
-                    {lockLabel}
-                  </span>
-                </span>
+                <button
+                  type="button"
+                  className={`${styles.icon} ${styles.lockIcon} ${a.is_public ? styles.on : ''}`}
+                  aria-label={lockLabel}
+                  data-tip={lockLabel}
+                  data-tip-up=""
+                  data-tip-edge="left"
+                  aria-pressed={a.is_public}
+                  aria-disabled={lastPublic || busy !== null}
+                  onClick={() => {
+                    if (lastPublic || busy !== null) return;
+                    void run(a.id, () => window.sei.avatarLibrarySetFlags(characterId, a.id, { is_public: !a.is_public }));
+                  }}
+                >
+                  <LockGlyph open={a.is_public} />
+                </button>
                 <span className={styles.name} title={a.name ?? kindLabel(a)}>
                   {a.name ?? kindLabel(a)}
                 </span>
@@ -197,7 +197,9 @@ export function AvatarLibraryTiles({ characterId, characterShared }: AvatarLibra
                   type="button"
                   className={`${styles.icon} ${isDefault ? styles.on : ''}`}
                   aria-label={isDefault ? t('Default avatar') : t('Make default')}
-                  title={isDefault ? t('Default avatar') : t('Make default')}
+                  data-tip={isDefault ? t('Default avatar') : t('Make default')}
+                  data-tip-up=""
+                  data-tip-edge="right"
                   aria-pressed={isDefault}
                   disabled={busy !== null}
                   onClick={() => {
@@ -212,14 +214,12 @@ export function AvatarLibraryTiles({ characterId, characterShared }: AvatarLibra
         })}
         {!full ? (
           <div className={styles.addTile} role="listitem">
-            <button type="button" className={styles.add} disabled={busy !== null} onClick={() => imageInput.current?.click()}>
-              <PlusIcon size={14} />
-              <span>{t('Add image')}</span>
-            </button>
-            <button type="button" className={styles.add} disabled={busy !== null} onClick={() => modelInput.current?.click()}>
-              <PlusIcon size={14} />
-              <span>{t('Add model')}</span>
-            </button>
+            <Button kind="secondary" size="sm" fullWidth className={styles.addBtn} icon={<PlusIcon size={12} />} disabled={busy !== null} onClick={() => imageInput.current?.click()}>
+              {t('Add image')}
+            </Button>
+            <Button kind="secondary" size="sm" fullWidth className={styles.addBtn} icon={<PlusIcon size={12} />} disabled={busy !== null} onClick={() => modelInput.current?.click()}>
+              {t('Add model')}
+            </Button>
           </div>
         ) : null}
       </div>

@@ -8,7 +8,7 @@ export const ZH_AVATARS_261106: Record<string, string> = {
   "Default avatar": "默认形象",
   "Delete avatar": "删除形象",
   "Hidden": "已隐藏",
-  "How they appear in SeiLink and on calls. Public avatars are shared with everyone who adds this companion.": "TA在 SeiLink 和通话中的样子。公开的形象会分享给每个添加这个伙伴的人。",
+  "How they appear in WorldLink and on calls. Public avatars are shared with everyone who adds this companion.": "TA在 WorldLink 和通话中的样子。公开的形象会分享给每个添加这个伙伴的人。",
   "Image": "图片",
   "In review": "审核中",
   "Loading avatars…": "正在加载形象…",

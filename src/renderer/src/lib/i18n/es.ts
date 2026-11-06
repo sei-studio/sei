@@ -2333,7 +2333,7 @@ export const ES: Record<string, string> = {
   "Default avatar": "Avatar predeterminado",
   "Delete avatar": "Eliminar avatar",
   "Hidden": "Oculto",
-  "How they appear in SeiLink and on calls. Public avatars are shared with everyone who adds this companion.": "Cómo se ve en SeiLink y en las llamadas. Los avatares visibles se comparten con todos los que añaden este compañero.",
+  "How they appear in WorldLink and on calls. Public avatars are shared with everyone who adds this companion.": "Cómo se ve en WorldLink y en las llamadas. Los avatares visibles se comparten con todos los que añaden este compañero.",
   "Image": "Imagen",
   "In review": "En revisión",
   "Loading avatars…": "Cargando avatares…",

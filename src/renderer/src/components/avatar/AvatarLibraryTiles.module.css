@@ -1,4 +1,7 @@
-/* Avatar library tiles (261106): sharp corners, no button borders. */
+/* Avatar library tiles (261106). Design system: corners on --radius, no
+   visible button borders (filled or icon-only buttons), spacing by role
+   (tokens.css), mono 10.5px micro-labels, the shared [data-tip] tooltip, and
+   the Button component for the add actions. */
 
 .wrap {
   display: flex;
@@ -25,7 +28,7 @@
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
-  gap: var(--space-sm);
+  gap: var(--gap-stack);
 }
 
 .tile,
@@ -76,9 +79,11 @@
   left: var(--space-xs);
   top: var(--space-xs);
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  line-height: 1.3;
   padding: 1px var(--space-xs);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--muted);
 }
@@ -87,7 +92,7 @@
   color: var(--red);
 }
 
-.del {
+.thumb > .del {
   -webkit-appearance: none;
   appearance: none;
   position: absolute;
@@ -119,7 +124,7 @@
 .bar {
   display: flex;
   align-items: center;
-  gap: var(--space-xs);
+  gap: var(--gap-tight);
   padding: var(--space-xs);
   min-width: 0;
 }
@@ -165,82 +170,49 @@
 .icon[aria-disabled='true'],
 .icon:disabled {
   cursor: default;
+}
+
+/* Dim the glyph, not the button: opacity on the button would also fade its
+   [data-tip] tooltip and drop it under the neighbouring tiles. */
+.icon[aria-disabled='true'] > svg,
+.icon:disabled > svg {
   opacity: 0.55;
 }
 
 .icon:focus-visible,
-.del:focus-visible,
-.add:focus-visible {
+.del:focus-visible {
   outline: 1.5px solid var(--accent);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 
-/* CSS-only tooltip for the lock (a disabled control gets no native title). */
-.lockWrap {
-  position: relative;
-  display: inline-flex;
-}
-
-.tip {
-  position: absolute;
-  left: 0;
-  bottom: calc(100% + var(--space-xs));
-  z-index: 5;
+/* The lock's sentence is longer than the one-line [data-tip] labels: let it
+   wrap inside a tile-sized box instead of running off the pane. */
+.lockIcon[data-tip]::after {
+  white-space: normal;
   width: max-content;
   max-width: 200px;
-  padding: var(--space-xs) var(--space-sm);
-  border-radius: var(--radius);
-  background: var(--text);
-  color: var(--bg2);
-  font-family: var(--sans);
-  font-size: 12px;
   line-height: 1.35;
-  pointer-events: none;
-  opacity: 0;
-  transform: translateY(2px);
-  transition: opacity 120ms var(--ease), transform 120ms var(--ease);
-}
-
-.lockWrap:hover .tip,
-.lockWrap:focus-within .tip {
-  opacity: 1;
-  transform: none;
 }
 
 .addTile {
   justify-content: center;
-  gap: var(--space-xs);
+  gap: var(--gap-control);
   padding: var(--space-sm);
   background: var(--bg4);
   min-height: 120px;
 }
 
-.add {
-  -webkit-appearance: none;
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-xs);
-  border: none;
-  border-radius: var(--radius);
-  background: var(--surface-2);
-  color: var(--text-2);
-  font-family: var(--sans);
-  font-size: 12px;
-  padding: var(--space-sm);
-  cursor: pointer;
-  transition: color 120ms var(--ease), background 120ms var(--ease);
+/* Button (secondary, sm) in a ~100px tile: narrower side padding, and the
+   label may wrap (long locales) instead of squeezing the icon out. */
+.addBtn {
+  padding-inline: var(--space-xs);
+  white-space: normal;
+  line-height: 1.2;
+  text-align: center;
 }
 
-.add:hover:not(:disabled) {
-  color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.add:disabled {
-  cursor: wait;
-  opacity: 0.6;
+.addBtn > svg {
+  flex-shrink: 0;
 }
 
 /* Viewer pick (Avatar tab): the whole tile is the control. */
@@ -261,7 +233,7 @@
 
 .pickTile:focus-visible {
   outline: 1.5px solid var(--accent);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 
 /* The default avatar: a solid chip on the thumbnail (the tint alone is too quiet). */
@@ -270,10 +242,11 @@
   left: var(--space-xs);
   bottom: var(--space-xs);
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: 10.5px;
   letter-spacing: 0.04em;
+  line-height: 1.3;
   padding: 1px var(--space-xs);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   background: var(--accent);
   color: var(--accent-text);
 }
