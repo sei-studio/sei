@@ -4,7 +4,7 @@
 
 <p>Sei (<a href="https://sei.gg">sei.gg</a>) is a desktop platform for building AI companions with their own personality, voice, look, and memory. They play games with you, join your calls, and watch your screen. Run them on Sei Cloud, your own AI account, or fully local.</p>
 
-[![Latest release](https://img.shields.io/github/v/release/sei-studio/sei?style=flat-square&label=release&color=7fb0ff&labelColor=1f2a40)](https://github.com/sei-studio/sei/releases/latest) [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-7fb0ff?style=flat-square&labelColor=1f2a40)](https://github.com/sei-studio/sei/releases/latest) [![License](https://img.shields.io/badge/license-AGPL--3.0-7fb0ff?style=flat-square&labelColor=1f2a40)](LICENSE) [![Discord](https://img.shields.io/badge/chat-Discord-7fb0ff?style=flat-square&logo=discord&logoColor=white&labelColor=1f2a40)](https://discord.gg/GguvhaEKXU)
+[![Latest release](docs/readme/badge-release.svg)](https://github.com/sei-studio/sei/releases/latest) [![Platform](docs/readme/badge-platform.svg)](https://github.com/sei-studio/sei/releases/latest) [![License](docs/readme/badge-license.svg)](LICENSE) [![Discord](docs/readme/badge-discord.svg)](https://discord.gg/GguvhaEKXU)
 
 <a href="https://github.com/sei-studio/sei/releases/latest/download/Sei-mac-arm64.dmg"><img src="docs/readme/btn-macos.png" alt="Download for macOS" height="52"></a>&nbsp;&nbsp;<a href="https://github.com/sei-studio/sei/releases/latest/download/Sei-win-x64.exe"><img src="docs/readme/btn-windows.png" alt="Download for Windows" height="52"></a>
 
@@ -46,7 +46,7 @@ A plain clone needs no `.env`: sign-in and Sei Cloud work through the Sei proxy.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for ideas, bug reports, and pull requests. Come talk with us on [Discord](https://discord.gg/GguvhaEKXU). For closer collaboration, email Shawn at [ouen@sei.gg](mailto:ouen@sei.gg).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for ideas, bug reports, and pull requests. Come chat on [Discord](https://discord.gg/GguvhaEKXU). For closer collaboration, email [team@sei.gg](mailto:team@sei.gg).
 
 ## License
 
