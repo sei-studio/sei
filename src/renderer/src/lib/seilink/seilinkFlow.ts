@@ -98,7 +98,7 @@ function onDesktop(characterId: string): boolean {
   return Boolean(s.availability?.enabled) && s.status.state === 'running' && s.status.characterId === characterId;
 }
 
-/** "Replay SeiLink intro": the intro for her room, with nothing starting. */
+/** "Replay WorldLink intro": the intro for her room, with nothing starting. */
 export function replayIntro(characterId: string, source: SeilinkEntrySource): void {
   trackEntry(characterId, source, 'replay_intro');
   useSeilinkStore.getState().playIntro({ characterId, trigger: 'replay', entry: source, outcome: Promise.resolve(true) });

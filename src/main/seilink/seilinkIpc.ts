@@ -56,7 +56,10 @@ export function registerSeilinkIpc(opts: { preloadPath: string; rendererTarget: 
     const firstRoom = typeof opts === 'object' && opts !== null && (opts as { firstRoom?: unknown }).firstRoom === true;
     return startSeilinkHost(characterId, { firstRoom });
   });
-  ipcMain.handle(IpcChannel.seilink.hostStop, async () => stopSeilinkHost('user_stop'));
+  // 261106: the WorldLink intro's failure path stops with `link_failed` (the move-in is cleared the same way).
+  ipcMain.handle(IpcChannel.seilink.hostStop, async (_e, opts: unknown) =>
+    stopSeilinkHost((opts as { reason?: unknown } | null)?.reason === 'link_failed' ? 'link_failed' : 'user_stop'),
+  );
   ipcMain.handle(IpcChannel.seilink.hostStatus, async () => seilinkHostStatus());
   ipcMain.handle(IpcChannel.seilink.availability, async () => seilinkAvailability());
 

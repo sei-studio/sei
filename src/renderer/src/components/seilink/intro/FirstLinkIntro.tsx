@@ -1,7 +1,7 @@
 /**
  * The first-link intro in the app (261105, T337). SeilinkFlowHost mounts it
  * for a useSeilinkStore `intro` request: the first move-in on this account
- * (seilinkFlow.startSeilinkHost, while the host starts) or "Replay SeiLink
+ * (seilinkFlow.startSeilinkHost, while the host starts) or "Replay WorldLink
  * intro" in the companion menu.
  *
  * It loads her room (the same state the wallpaper will draw), plays
@@ -13,6 +13,14 @@
  * skipped / aborted, with the beat, a duration bucket and the host's state).
  * The intro counts as seen once it ended (completed or skipped) on a move-in
  * that worked; an aborted or failed one leaves it for the next try.
+ *
+ * 261106 v6 (WorldLink): the status lines follow her Anima bake and the host
+ * start (animaLinkSource; a replay plays them at the minimum dwell), and
+ * seilink_intro_link records how they went. A failed link (the failure line,
+ * closed with Close or Esc) stops the host if it had started (`link_failed`:
+ * she is not left on the desktop without her intro), gives the window back
+ * and leaves the intro unseen, so the next WorldLink press plays it again
+ * (main retries a failed bake).
  *
  * 261106 (first-link flow): a request with `stage` (the first link) plays on
  * the desktop stage (main/seilink/desktopStage.ts): the window covers the
@@ -26,13 +34,15 @@
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { seilinkResolver } from '@shared/seilinkPack';
-import { INTRO_MOOD, INTRO_STYLE, SEILINK_INTRO_EVENT, introDurationBucket, type IntroHost } from '@shared/seilinkIntroTelemetry';
+import { INTRO_MOOD, INTRO_STYLE, SEILINK_INTRO_EVENT, SEILINK_INTRO_LINK_EVENT, introDurationBucket, type IntroHost } from '@shared/seilinkIntroTelemetry';
 import { sei } from '../../../lib/ipcClient';
 import { useDataStore } from '../../../lib/stores/useDataStore';
 import type { SeilinkIntroRequest } from '../../../lib/stores/useSeilinkStore';
 import { markIntroSeen } from '../../../lib/seilink/introPref';
 import { introEndFor, plainTone } from '../../../lib/seilink/plainTone';
 import { revealAndOffer } from '../../../lib/seilink/seilinkFlow';
+import { animaLinkSource } from '../../../lib/seilink/animaLinkSource';
+import { fixedSource, instantLog } from '../../../lib/seilink/worldLink';
 import { roomAvatarUse } from '../RoomAvatar';
 import { FirstLinkIntroView, type IntroFinish, type IntroRoom } from './FirstLinkIntroView';
 
@@ -47,9 +57,9 @@ function prefersReducedMotion(): boolean {
   }
 }
 
-function track(props: Record<string, string | number | boolean | null>): void {
+function track(props: Record<string, string | number | boolean | null>, event: string = SEILINK_INTRO_EVENT): void {
   try {
-    sei.track(SEILINK_INTRO_EVENT, props);
+    sei.track(event, props);
   } catch {
     /* analytics must never disrupt SeiLink */
   }
@@ -60,7 +70,6 @@ export default function FirstLinkIntro(props: { request: SeilinkIntroRequest; on
   const character = useDataStore((s) => s.characters.find((c) => c.id === request.characterId) ?? null);
   const [room, setRoom] = useState<IntroRoom | null | undefined>(undefined);
   const [use, setUse] = useState<'auto' | 'sei' | 'imported'>('auto');
-  const [answer, setAnswer] = useState<boolean | null>(null);
   const reduced = useMemo(() => prefersReducedMotion(), []);
   const answerRef = useRef<boolean | null>(null);
   // The desktop stage: null until main answers (or there is none to ask for).
@@ -103,21 +112,21 @@ export default function FirstLinkIntro(props: { request: SeilinkIntroRequest; on
     };
   }, [request.characterId]);
 
+  // What paces the status lines: her bake and the host start (a replay has nothing to wait on).
+  const source = useMemo(
+    () => (request.trigger === 'replay' ? fixedSource(instantLog()) : animaLinkSource(request.characterId, request.outcome)),
+    [request],
+  );
+
   useEffect(() => {
-    let dead = false;
     void request.outcome.then(
       (ok) => {
         answerRef.current = ok;
-        if (!dead) setAnswer(ok);
       },
       () => {
         answerRef.current = false;
-        if (!dead) setAnswer(false);
       },
     );
-    return () => {
-      dead = true;
-    };
   }, [request.outcome]);
 
   // Step out over the desktop as soon as there is something to show (the intro opens on the theme's solid colour).
@@ -164,12 +173,22 @@ export default function FirstLinkIntro(props: { request: SeilinkIntroRequest; on
 
   if (room === undefined || endOn === null) return null;
 
+  const onReport = (report: Record<string, string | number>): void => {
+    track({ ...report, trigger: request.trigger, reduced_motion: reduced, anima_start: source.startStage?.() ?? 'none' }, SEILINK_INTRO_LINK_EVENT);
+  };
+
   const onFinish = (end: IntroFinish): void => {
     const host: IntroHost = request.trigger === 'replay' ? 'none' : answerRef.current === null ? 'pending' : answerRef.current ? 'ok' : 'failed';
     track({ ...base, action: end.action, beat: end.beat, duration_bucket: introDurationBucket(end.elapsedMs), host });
     if (request.trigger === 'first_link' && end.action !== 'aborted') {
       // Seen once the move-in worked; a start still pending is checked when it answers.
       void request.outcome.then((ok) => ok && markIntroSeen(), () => undefined);
+    }
+    if (end.action === 'aborted') {
+      // The link failed: she does not stay on the desktop without it (the host is stopped once it has answered).
+      void request.outcome
+        .then((ok) => (ok ? sei.seilinkHostStop?.({ reason: 'link_failed' }) : null), () => null)
+        .catch(() => null);
     }
     if (!request.stage) {
       onDone();
@@ -197,8 +216,9 @@ export default function FirstLinkIntro(props: { request: SeilinkIntroRequest; on
       room={room}
       portrait={character?.portrait_image ?? null}
       use={use}
-      answer={request.trigger === 'replay' ? true : answer}
+      source={source}
       onFinish={onFinish}
+      onReport={onReport}
       holdEnd={staged === true}
     />
   );

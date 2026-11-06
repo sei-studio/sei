@@ -27,9 +27,32 @@ export function isAnimaPackId(id: unknown): id is string {
  */
 export type AnimaUiState = 'idle' | 'preparing' | 'ready';
 
+/**
+ * Where her bake stands, finer than AnimaUiState (261106, the WorldLink
+ * first-link intro paces its status lines on it):
+ *  - checking: SeiLink opened for her, looking at the pack on disk;
+ *  - requesting: POST /anima/v1/request sent, no answer yet;
+ *  - queued / running: the proxy's answer (waiting for a worker / baking);
+ *  - downloading: the bake is done, the pack is downloading;
+ *  - ready: her face set is on disk;
+ *  - unavailable: no pack will come for now (no_pack, deferred, unavailable,
+ *    signed out, no such character): the fallback avatar is her look;
+ *  - offline: no network and no pack on disk;
+ *  - failed: the request, the bake or the install failed (`failure`).
+ */
+export type AnimaStage = 'checking' | 'requesting' | 'queued' | 'running' | 'downloading' | 'ready' | 'unavailable' | 'offline' | 'failed';
+
+export const ANIMA_STAGES: readonly AnimaStage[] = ['checking', 'requesting', 'queued', 'running', 'downloading', 'ready', 'unavailable', 'offline', 'failed'];
+
+/** Why a stage is `failed`. */
+export type AnimaFailure = 'network' | 'timeout' | 'bake_failed' | 'install' | 'http' | 'auth' | 'error';
+
 export interface AnimaStatus {
   characterId: string;
   state: AnimaUiState;
+  /** Absent before SeiLink ever opened for her in this app run. */
+  stage?: AnimaStage;
+  failure?: AnimaFailure;
 }
 
 /** What opened SeiLink for her (analytics only). */

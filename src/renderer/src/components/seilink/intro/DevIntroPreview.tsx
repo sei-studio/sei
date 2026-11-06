@@ -1,5 +1,5 @@
 /**
- * Dev-only preview of the SeiLink first-link intro (261105, T337), in a plain
+ * Dev-only preview of the WorldLink first-link intro (261105, T337), in a plain
  * browser tab: http://localhost:5173/?seilinkintro=1&pack=<url of a pack dir>
  *
  *   &name=Lyra              her name in the lines
@@ -11,24 +11,53 @@
  *   &tone=dark|light        force the plain background's (and the solid's) colour
  *   &hold=1                 end on that picture (the desktop stage's ending)
  *   &reduced=1              the reduced-motion version
- *   &answer=ok|fail|pending the host start's answer (default ok, after 1.5 s)
+ *   &sim=<ms>               a simulated link whose Anima bake is done after <ms>
+ *                           (lib/seilink/worldLink.ts simulatedLog; default: all
+ *                           ready at once, the lines at the minimum dwell)
+ *   &simfail=<ms>&failure=<class>   the simulated link fails there instead
+ *                           (default bake_failed)
+ *   &host=<ms>              when the simulated host start answers (default 2500)
  *   &manual=1               no clock: window.__firstLinkSeek(ms) draws a frame
  *                           (scripts/seilink-intro-shots.mjs renders the mp4s so)
  *   &time=day|dusk|night    the room's time of day (default day)
  *   &lang=<code>            UI language
- * The room's first draw sets document.body.dataset.roomReady = '1'.
+ * The room's first draw sets document.body.dataset.roomReady = '1'; the
+ * status lines' report (seilink_intro_link) lands on window.__firstLinkReport.
  * Lazy-loaded by main.tsx under import.meta.env.DEV only.
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { blankRoomState, defaultRoomState, plainRoomState, type RoomState } from '@shared/seilinkRoom';
 import { parseRoomManifest } from '@shared/seilinkValidate';
 import { isUiLanguage } from '@shared/uiLanguage';
+import { LINK_FAILURES, type LinkFailure } from '@shared/seilinkIntroTelemetry';
 import { urlPackSource } from '../../../lib/facepack/facepackSource';
 import { useLangStore } from '../../../lib/i18n';
 import { introEndFor, plainTone, type PlainTone } from '../../../lib/seilink/plainTone';
+import { fixedSource, instantLog, simulatedLog, type LinkLog } from '../../../lib/seilink/worldLink';
 import { FirstLinkIntroView, type IntroFinish, type IntroRoom } from './FirstLinkIntroView';
 
 const params = new URLSearchParams(window.location.search);
+
+declare global {
+  interface Window {
+    __firstLinkReport?: Record<string, string | number>;
+  }
+}
+
+function num(key: string): number | undefined {
+  const v = Number(params.get(key));
+  return params.get(key) !== null && Number.isFinite(v) ? v : undefined;
+}
+
+/** The simulated link from the URL (a fresh object for every run: the view writes nothing into a fixed log, but a run must not share one). */
+function simLog(): LinkLog {
+  const done = num('sim');
+  const failAt = num('simfail');
+  const f = params.get('failure');
+  const failure: LinkFailure | undefined = f && (LINK_FAILURES as readonly string[]).includes(f) ? (f as LinkFailure) : undefined;
+  if (done === undefined && failAt === undefined) return instantLog();
+  return simulatedLog({ doneMs: done ?? 75_000, failAtMs: failAt, failure, hostMs: num('host') });
+}
 
 async function loadRoom(base: string): Promise<IntroRoom | null> {
   const root = base.replace(/\/?$/, '/');
@@ -46,7 +75,6 @@ async function loadRoom(base: string): Promise<IntroRoom | null> {
 
 export function DevIntroPreview(): React.ReactElement | null {
   const [room, setRoom] = useState<IntroRoom | null | undefined>(params.get('pack') ? undefined : null);
-  const [answer, setAnswer] = useState<boolean | null>(null);
   const [run, setRun] = useState(0);
   const [ended, setEnded] = useState<IntroFinish | null>(null);
   const tone: PlainTone = params.get('tone') === 'light' ? 'light' : params.get('tone') === 'dark' ? 'dark' : plainTone();
@@ -63,14 +91,8 @@ export function DevIntroPreview(): React.ReactElement | null {
     if (pack) void loadRoom(pack).then(setRoom, () => setRoom(null));
   }, []);
 
-  useEffect(() => {
-    if (manual) return;
-    setAnswer(null);
-    const mode = params.get('answer') ?? 'ok';
-    if (mode === 'pending') return;
-    const t = window.setTimeout(() => setAnswer(mode !== 'fail'), 1500);
-    return () => window.clearTimeout(t);
-  }, [run, manual]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const source = useMemo(() => fixedSource(simLog()), [run]);
 
   if (room === undefined) return null;
   if (ended) {
@@ -100,10 +122,14 @@ export function DevIntroPreview(): React.ReactElement | null {
       room={room}
       portrait={params.get('portrait')}
       facepack={facepack}
-      answer={manual ? true : answer}
+      source={source}
       manual={manual}
       holdEnd={params.get('hold') === '1'}
       onFinish={setEnded}
+      onReport={(r) => {
+        window.__firstLinkReport = r;
+        console.info('[seilink_intro_link]', JSON.stringify(r));
+      }}
       onReady={() => {
         document.body.dataset.roomReady = '1';
       }}

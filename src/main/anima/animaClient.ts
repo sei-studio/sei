@@ -22,10 +22,15 @@
  *   kept; the next SeiLink open asks again (the proxy keeps no_pack final for
  *   that portrait, so asking again is cheap).
  *
+ * Stages (261106, the WorldLink first-link intro): besides the ui state,
+ * each run reports where it stands (`AnimaStage`: checking, requesting,
+ * queued, running, downloading, ready, or how it ended) through onProgress,
+ * so the intro can pace its status lines on the real pipeline.
+ *
  * Analytics: `seilink_anima` with `phase` (shape only, never the portrait or
  * a URL), see docs/agents/seilink-analytics.md.
  */
-import type { AnimaShownKind, AnimaStatus, AnimaTrigger, AnimaUiState } from '../../shared/anima';
+import type { AnimaFailure, AnimaShownKind, AnimaStage, AnimaStatus, AnimaTrigger, AnimaUiState } from '../../shared/anima';
 import { animaPackId } from '../../shared/anima';
 import { AnimaPackError, type AnimaIndexEntry, type AnimaPackStore } from './animaPacks';
 
@@ -67,6 +72,8 @@ export interface AnimaClientDeps {
   /** Her pack is installed (or changed): views re-resolve her avatar. */
   onReady(characterId: string, packId: string): void;
   onStatus(status: AnimaStatus): void;
+  /** The stage changed (AnimaStatus with `stage`); the ui state may be the same. */
+  onProgress?(status: AnimaStatus): void;
   now(): number;
   setTimeout(fn: () => Promise<void> | void, ms: number): unknown;
   clearTimeout(t: unknown): void;
@@ -106,6 +113,7 @@ export class AnimaClient {
   private gen = 0;
   private readonly runs = new Map<string, Run>();
   private readonly ui = new Map<string, AnimaUiState>();
+  private readonly stages = new Map<string, { stage: AnimaStage; failure?: AnimaFailure }>();
   /** Once per app run: (phase|character|...) keys already sent. */
   private readonly sent = new Set<string>();
   private pruned: Promise<number> | null = null;
@@ -113,7 +121,8 @@ export class AnimaClient {
   constructor(private readonly d: AnimaClientDeps) {}
 
   status(characterId: string): AnimaStatus {
-    return { characterId, state: this.ui.get(characterId) ?? 'idle' };
+    const st = this.stages.get(characterId);
+    return { characterId, state: this.ui.get(characterId) ?? 'idle', ...(st ? { stage: st.stage, ...(st.failure ? { failure: st.failure } : {}) } : {}) };
   }
 
   /** Her pack id when it is on disk (RoomAvatar's facepackForCharacter). */
@@ -126,23 +135,30 @@ export class AnimaClient {
     if (!UUID_RE.test(characterId)) return this.status(characterId);
     const live = this.runs.get(characterId);
     if (live) return this.status(characterId);
+    // Synchronously, before the first await: a caller that reads status() right after sees this run, not the last one's end.
+    this.setStage(characterId, 'checking');
     try {
       // Once per run, before any install (every prepare waits on the same pass).
       this.pruned ??= this.d.store.prune(true).catch(() => 0);
       await this.pruned;
       const ref = await this.d.portraitRef(characterId);
-      if (ref === undefined) return this.status(characterId);
+      if (ref === undefined) {
+        this.setStage(characterId, 'unavailable');
+        return this.status(characterId);
+      }
       const entry = await this.d.store.entry(characterId);
       const packId = entry ? await this.d.store.packIdFor(characterId) : null;
       const fresh = entry && packId && entry.portrait_ref === ref && this.d.now() - entry.checked_at < CHECK_TTL_MS;
       if (fresh && trigger !== 'portrait_changed') {
         this.setUi(characterId, 'ready');
+        this.setStage(characterId, 'ready');
         this.once(`ready|${characterId}`, { phase: 'ready', trigger, from_cache: true, source: 'disk', wait_ms: 0 });
         return this.status(characterId);
       }
       if (!this.d.online()) {
         this.once(`skipped|offline|${characterId}`, { phase: 'skipped', reason: 'offline', trigger });
         if (packId) this.setUi(characterId, 'ready');
+        this.setStage(characterId, packId ? 'ready' : 'offline');
         return this.status(characterId);
       }
       const run: Run = {
@@ -158,10 +174,12 @@ export class AnimaClient {
         recheck: 0,
       };
       this.runs.set(characterId, run);
+      this.setStage(characterId, 'requesting');
       await this.ask(characterId, run, 'request', ref);
     } catch (err) {
       this.d.log?.(`[anima] prepare failed (${(err as Error).message})`);
       this.runs.delete(characterId);
+      this.setStage(characterId, 'failed', 'error');
     }
     return this.status(characterId);
   }
@@ -199,6 +217,7 @@ export class AnimaClient {
     this.gen++;
     for (const id of [...this.runs.keys()]) this.stop(id);
     this.ui.clear();
+    this.stages.clear();
   }
 
   private stop(characterId: string): void {
@@ -213,7 +232,18 @@ export class AnimaClient {
     if ((this.ui.get(characterId) ?? 'idle') === state) return;
     this.ui.set(characterId, state);
     try {
-      this.d.onStatus({ characterId, state });
+      this.d.onStatus(this.status(characterId));
+    } catch {
+      /* a closed window */
+    }
+  }
+
+  private setStage(characterId: string, stage: AnimaStage, failure?: AnimaFailure): void {
+    const was = this.stages.get(characterId);
+    if (was && was.stage === stage && was.failure === failure) return;
+    this.stages.set(characterId, failure ? { stage, failure } : { stage });
+    try {
+      this.d.onProgress?.(this.status(characterId));
     } catch {
       /* a closed window */
     }
@@ -259,6 +289,7 @@ export class AnimaClient {
       run.busy = false;
       if (err instanceof AnimaNoSession) {
         this.once(`skipped|signed_out|${characterId}`, { phase: 'skipped', reason: 'signed_out', trigger: run.trigger });
+        this.setStage(characterId, 'unavailable');
         this.finish(characterId, run);
         return;
       }
@@ -268,6 +299,7 @@ export class AnimaClient {
         return;
       }
       this.once(`failed|network|${characterId}`, { phase: 'failed', reason: 'network', trigger: run.trigger });
+      this.setStage(characterId, 'failed', 'network');
       this.settleUi(characterId, run);
       this.finish(characterId, run);
       return;
@@ -284,6 +316,8 @@ export class AnimaClient {
       const reason = res.status === 404 ? 'not_found' : res.status === 403 ? 'forbidden' : res.status === 401 ? 'auth' : `http_${res.status}`;
       const phase = res.status === 404 || res.status === 403 ? 'unavailable' : 'failed';
       this.once(`${phase}|${reason}|${characterId}`, { phase, reason, trigger: run.trigger });
+      if (phase === 'unavailable') this.setStage(characterId, 'unavailable');
+      else this.setStage(characterId, 'failed', res.status === 401 ? 'auth' : 'http');
       this.settleUi(characterId, run);
       this.finish(characterId, run);
       return;
@@ -306,10 +340,12 @@ export class AnimaClient {
         if (this.ui.get(characterId) !== 'ready') this.setUi(characterId, 'preparing');
         if (this.d.now() - run.startedAt >= POLL_MAX_MS) {
           this.once(`failed|timeout|${characterId}`, { phase: 'failed', reason: 'poll_timeout', trigger: run.trigger });
+          this.setStage(characterId, 'failed', 'timeout');
           this.settleUi(characterId, run);
           this.finish(characterId, run);
           return;
         }
+        this.setStage(characterId, reply.state);
         this.schedule(characterId, run, pollDelay(run.polls++), ref);
         return;
       }
@@ -340,6 +376,8 @@ export class AnimaClient {
           trigger: run.trigger,
           wait_ms: this.d.now() - run.startedAt,
         });
+        if (reply.state === 'failed') this.setStage(characterId, 'failed', 'bake_failed');
+        else this.setStage(characterId, 'unavailable');
         // Her old pack was for another portrait: it no longer shows her.
         const entry = await this.d.store.entry(characterId).catch(() => null);
         if (entry && reply.portrait_hash && entry.portrait_hash !== reply.portrait_hash) {
@@ -378,6 +416,7 @@ export class AnimaClient {
     const pack = reply.pack;
     if (!pack || !/^[0-9a-f]{64}$/.test(pack.sha256) || !/^https:\/\//i.test(pack.url)) {
       this.once(`failed|bad_reply|${characterId}`, { phase: 'failed', reason: 'bad_reply', trigger: run.trigger });
+      this.setStage(characterId, 'failed', 'http');
       this.settleUi(characterId, run);
       this.finish(characterId, run);
       return;
@@ -388,6 +427,7 @@ export class AnimaClient {
     let bytes = 0;
     if (!had) {
       if (this.ui.get(characterId) !== 'ready') this.setUi(characterId, 'preparing');
+      this.setStage(characterId, 'downloading');
       const t0 = this.d.now();
       try {
         const zip = await this.d.download(pack.url, DOWNLOAD_MAX_BYTES);
@@ -397,6 +437,7 @@ export class AnimaClient {
         const reason = err instanceof AnimaPackError ? err.code : 'download';
         this.once(`failed|${reason}|${characterId}`, { phase: 'failed', reason, trigger: run.trigger });
         this.d.log?.(`[anima] install failed (${reason})`);
+        this.setStage(characterId, 'failed', 'install');
         this.settleUi(characterId, run);
         this.finish(characterId, run);
         return;
@@ -413,6 +454,7 @@ export class AnimaClient {
     await this.d.store.setEntry(characterId, entry);
     const changed = before?.pack_sha256 !== pack.sha256;
     this.setUi(characterId, 'ready');
+    this.setStage(characterId, 'ready');
     this.once(`ready|${characterId}|${pack.sha256}`, {
       phase: 'ready',
       trigger: run.trigger,

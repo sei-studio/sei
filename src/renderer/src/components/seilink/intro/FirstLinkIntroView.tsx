@@ -1,55 +1,63 @@
 /**
  * The first-link intro's picture (261105, T337; 261106 the eclipse aurora
- * and its climax): data in props, no IPC, so the app (FirstLinkIntro) and the
- * dev harness (DevIntroPreview) render the same thing.
+ * and its climax; 261106 v6 the WorldLink status lines): data in props, no
+ * IPC, so the app (FirstLinkIntro) and the dev harness (DevIntroPreview)
+ * render the same thing.
  *
- * Every frame comes from computeFrame(timeline, t, ..., end): a rAF
- * loop writes it to the DOM through refs (no React render per frame) and draws
+ * The lines are paced by a progress source (`source`, lib/seilink/worldLink.ts
+ * LinkSource): the app's follows her Anima bake and the host start
+ * (animaLinkSource), the harness's is simulated and known up front. Every
+ * frame comes from computeFrame(introTimes(planLink(log)), t, ...): a rAF loop
+ * writes it to the DOM through refs (no React render per frame) and draws
  * the light and star canvases (introFx.ts).
  *
  * What it ends on (`end`): the plain background she spawns on (`plain_dark` /
  * `plain_light`, the OS theme, PLAIN_COLOURS: the same colour the wallpaper
  * draws), or her room (`room`, a replay). `tone` is the theme's solid colour
  * (the climax fills the screen with it): white in light mode, black in dark.
- * With `manual`, there is no loop: the harness
- * calls `window.__firstLinkSeek(ms)` and gets exactly that frame, which is
- * how the review videos are rendered without dropped frames.
+ * With `manual`, there is no loop: the harness calls
+ * `window.__firstLinkSeek(ms)` and gets exactly that frame (and reads the
+ * length from `window.__firstLinkLength`), which is how the review videos
+ * are rendered without dropped frames.
  *
  * Ends (onFinish once):
- *  - completed: the timeline reached its end. The end card ("Linked.") waits
- *    for the host's answer (`answer`), up to HOLD_MAX_MS. With `holdEnd`
- *    (the first link, played on the desktop stage) only the captions fade:
- *    the last frame is her on the plain background (or in her room) full
- *    screen, the same picture the wallpaper draws, so the window can step aside without a visible cut.
- *  - skipped: the Skip button or Esc, at any time. Fades out fast; with
- *    `holdEnd` it rushes to that last frame instead (SKIP_RUSH times the
- *    speed, a cut under reduced motion) while the captions fade, so a skip
- *    also ends on her room. A skip before the solid has cleared starts that
- *    rush after it (skipFrom): the climax and the solid are never played fast.
- *  - aborted: the host start failed (`answer === false`). "Link interrupted."
- *    shows for a moment, then the overlay fades and the app's own error state
- *    (the move-in sheet's retry) is what the player sees.
+ *  - completed: the success line landed, she came in and the timeline
+ *    reached its end. With `holdEnd` (the first link, played on the desktop
+ *    stage) only the captions fade: the last frame is her on the plain
+ *    background (or in her room) full screen, the same picture the
+ *    wallpaper draws, so the window can step aside without a visible cut.
+ *  - skipped: the Skip button or Esc. Fades out fast; with `holdEnd` it
+ *    crossfades into the solid (before the success line) and plays her
+ *    entrance, rushing the settle (SKIP_RUSH) once the solid has cleared, so
+ *    a skip also ends on her room. The climax and the solid are never played fast.
+ *  - aborted: the link failed (the failure line). The light stays with the
+ *    line and no her; the button turns into Close, and Close or Esc fades
+ *    the overlay out (the move-in sheet's retry shows when the host failed).
+ * onReport gets the status lines' analytics once: at the end, or when it is
+ * unmounted before one.
  */
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import type { IntroBeat, IntroEndOn } from '@shared/seilinkIntroTelemetry';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { IntroBeat, IntroEndOn, LinkOutcome } from '@shared/seilinkIntroTelemetry';
 import type { RoomPresetManifest, RoomState } from '@shared/seilinkRoom';
 import type { RoomUrlResolver } from '@shared/seilinkPack';
 import { RoomCanvas, type RoomAvatarSlot } from '../RoomCanvas';
 import { RoomAvatar, type RoomAvatarUse } from '../RoomAvatar';
 import type { FacepackSource } from '../../../lib/facepack/facepackSource';
 import { useT } from '../../../lib/i18n';
+import { SKIP_FADE_MS, beatAt, introTimes, skipFrom, span, type IntroTimes } from '../../../lib/seilink/introTimeline';
 import {
-  ABORT_MS,
-  CALM_TIMELINE,
-  beatAt,
-  FULL_TIMELINE,
-  SKIP_FADE_MS,
-  skipFrom,
-  span,
-  timelineTime,
-  type IntroTimeline,
-} from '../../../lib/seilink/introTimeline';
-import { captionTop, computeFrame, dayInk, revealMask, roomBehind, type Box, type IntroFrame } from './introFrame';
+  FAILURE_LINE,
+  STATUS_LINES,
+  SUCCESS_LINE,
+  emptyLog,
+  linkReport,
+  planLink,
+  recordLink,
+  worldNumber,
+  type LinkLog,
+  type LinkSource,
+} from '../../../lib/seilink/worldLink';
+import { captionTop, computeFrame, dayInk, revealMask, roomBehind, type Box, type CaptionId, type IntroFrame } from './introFrame';
 import { FIELD_SCALE, STAR_SCALE, drawBack, drawFront, drawStars, grainUrl, herCentre, voidGradient } from './introFx';
 import { PLAIN_COLOURS, plainTone, type PlainTone } from '../../../lib/seilink/plainTone';
 import styles from './FirstLinkIntro.module.css';
@@ -84,11 +92,13 @@ export interface FirstLinkIntroViewProps {
   /** The harness passes a face set; the app lets RoomAvatar find hers. */
   facepack?: FacepackSource | null;
   use?: RoomAvatarUse;
-  /** The host start's answer: null while it is starting. */
-  answer: boolean | null;
-  /** Harness: no clock, frames come from window.__firstLinkSeek(ms). */
+  /** What paces the status lines (read once, at mount). */
+  source: LinkSource;
+  /** Harness: no clock, frames come from window.__firstLinkSeek(ms) (needs a `fixed` source). */
   manual?: boolean;
   onFinish?(end: IntroFinish): void;
+  /** The status lines' analytics (seilink_intro_link props, without trigger and the like), once. */
+  onReport?(report: Record<string, string | number>): void;
   /** The room has drawn (or there is none). */
   onReady?(): void;
   /** End on her room (captions fade, the picture stays) instead of fading the whole overlay out. */
@@ -98,31 +108,33 @@ export interface FirstLinkIntroViewProps {
 declare global {
   interface Window {
     __firstLinkSeek?: (ms: number) => Promise<void>;
+    /** Harness: how long the seeked intro runs (ms): its end, or a few seconds past the failure line. */
+    __firstLinkLength?: number;
   }
 }
 
-/** A skip with holdEnd plays the rest this many times faster. */
-const SKIP_RUSH = 8;
+/** A skip with holdEnd plays the settle this many times faster (once the solid has cleared). */
+const SKIP_RUSH = 6;
+/** The harness renders this long past the failure line. */
+const FAIL_TAIL_MS = 7000;
 
-type Mode = { kind: 'play' } | { kind: 'skip'; at: number; t: number } | { kind: 'abort'; at: number; t: number };
+type Mode = { kind: 'play' } | { kind: 'skip'; at: number; t: number } | { kind: 'close'; at: number; t: number; action: IntroEnd };
 
 export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactElement {
-  const { end, reduced, characterId, name, room, portrait = null, facepack, use = 'auto', answer, manual = false, holdEnd = false } = props;
+  const { end, reduced, characterId, name, room, portrait = null, facepack, use = 'auto', source, manual = false, holdEnd = false } = props;
   // Fixed once mounted: a theme change mid-intro does not swap the solid.
-  const [tone] = React.useState<PlainTone>(() => props.tone ?? (end === 'plain_light' ? 'light' : end === 'plain_dark' ? 'dark' : plainTone()));
+  const [tone] = useState<PlainTone>(() => props.tone ?? (end === 'plain_light' ? 'light' : end === 'plain_dark' ? 'dark' : plainTone()));
   const t = useT();
-  const tl: IntroTimeline = reduced ? CALM_TIMELINE : FULL_TIMELINE;
+  const world = useMemo(() => String(worldNumber(characterId)), [characterId]);
+  const [failedShown, setFailedShown] = useState(false);
 
-  const lines = useMemo(
+  const texts = useMemo(
     () => ({
-      tunnel: t('Opening a tunnel to the digital world…'),
-      link: t('Linking {name}…', { name }),
-      port: t('Porting the link to your desktop…'),
-      linked: t('Linked.'),
-      linkedSub: t('{name} lives on your desktop now.', { name }),
-      aborted: t('Link interrupted.'),
+      lines: STATUS_LINES.map((l) => t(l.key, { world, name })),
+      success: t(SUCCESS_LINE, { world }),
+      fail: t(FAILURE_LINE, { world }),
     }),
-    [t, name],
+    [t, name, world],
   );
 
   const rootRef = useRef<HTMLDivElement>(null);
@@ -138,29 +150,57 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
   const captionRef = useRef<HTMLDivElement>(null);
   const skipRef = useRef<HTMLButtonElement>(null);
   const lineRef = useRef<HTMLParagraphElement>(null);
-  const subRef = useRef<HTMLParagraphElement>(null);
-  const dotRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const prevRef = useRef<HTMLParagraphElement>(null);
 
+  // The log: a fixed source's whole log, or what the live source has said so far (ms from the start).
+  const logRef = useRef<LinkLog>(source.fixed ?? emptyLog());
   const modeRef = useRef<Mode>({ kind: 'play' });
   const startRef = useRef<number>(0);
-  const answeredAtRef = useRef<number | null>(null);
   const finishedRef = useRef(false);
-  const lastTextRef = useRef({ line: '', sub: '' });
+  const reportedRef = useRef(false);
+  const failedRef = useRef(false);
+  const lastTextRef = useRef({ cur: '', prev: '' });
   const cb = useRef(props);
   cb.current = props;
   // A ref: the stage answers after the clock started, and the clock must not restart for it.
   const holdRef = useRef(holdEnd);
   holdRef.current = holdEnd;
 
-  const finish = useCallback((action: IntroEnd, beat: IntroBeat) => {
-    if (finishedRef.current) return;
-    finishedRef.current = true;
-    cb.current.onFinish?.({ action, beat, elapsedMs: Math.max(0, performance.now() - startRef.current) });
+  const report = useCallback((outcome: LinkOutcome, endedAt: number) => {
+    if (reportedRef.current) return;
+    reportedRef.current = true;
+    try {
+      cb.current.onReport?.(linkReport(logRef.current, planLink(logRef.current), endedAt, outcome));
+    } catch {
+      /* analytics must never disrupt the intro */
+    }
   }, []);
+
+  const finish = useCallback(
+    (action: IntroEnd, beat: IntroBeat, timesNow: IntroTimes, tt: number) => {
+      if (finishedRef.current) return;
+      finishedRef.current = true;
+      const elapsed = Math.max(0, performance.now() - startRef.current);
+      const reached = timesNow.success !== null && tt >= timesNow.success;
+      report(action === 'aborted' ? 'failed' : action === 'completed' || reached ? 'success' : 'abandoned', elapsed);
+      cb.current.onFinish?.({ action, beat, elapsedMs: elapsed });
+    },
+    [report],
+  );
+
+  const timesAt = useCallback(
+    (skipT: number | null): IntroTimes => introTimes(planLink(logRef.current), reduced, skipT),
+    [reduced],
+  );
+
+  const textFor = useCallback(
+    (id: CaptionId | null): string => (id === null ? '' : typeof id === 'number' ? (texts.lines[id] ?? '') : id === 'success' ? texts.success : texts.fail),
+    [texts],
+  );
 
   /** Write one frame to the DOM and canvases. `rootOpacity` fades everything, `hudOpacity` only the captions. */
   const apply = useCallback(
-    (f: IntroFrame, rootOpacity: number, hudOpacity: number, aborted: boolean) => {
+    (f: IntroFrame, rootOpacity: number, hudOpacity: number) => {
       const set = (el: HTMLElement | null, k: string, v: string): void => {
         if (el && el.style.getPropertyValue(k) !== v) el.style.setProperty(k, v);
       };
@@ -188,61 +228,53 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
       set(avatarRef.current, 'opacity', f.avatar.opacity.toFixed(3));
       set(avatarRef.current, 'filter', f.avatar.filter);
       set(avatarRef.current, 'transform', f.avatar.rise > 0.05 ? `translateY(${f.avatar.rise.toFixed(2)}px)` : 'none');
-      // The solid colour over the whole picture (not the HUD): the opening, the climax filling the screen, its hold and its fade as she comes in.
+      // The solid colour over the whole picture (not the HUD): the opening, the climax filling the screen, its hold under the success line and its fade as she comes in.
       set(solidRef.current, 'opacity', f.solid.toFixed(3));
       set(solidRef.current, 'display', f.solid > 0.0005 ? 'block' : 'none');
 
       set(brandRef.current, 'opacity', f.brand.toFixed(3));
+
+      // Captions: one line at a time in the same place, the new one fading up as the last one fades out.
+      const cur = textFor(f.caption.cur);
+      const prev = textFor(f.caption.prev);
+      const last = lastTextRef.current;
+      if (lineRef.current && last.cur !== cur) {
+        lineRef.current.textContent = cur;
+        last.cur = cur;
+      }
+      if (prevRef.current && last.prev !== prev) {
+        prevRef.current.textContent = prev;
+        last.prev = prev;
+      }
+      set(lineRef.current, 'opacity', f.caption.curIn.toFixed(3));
+      set(lineRef.current, 'transform', `translateY(${((1 - f.caption.curIn) * 8).toFixed(2)}px)`);
+      set(prevRef.current, 'opacity', f.caption.prevOut.toFixed(3));
+      set(prevRef.current, 'transform', `translateY(${((f.caption.prevOut - 1) * 6).toFixed(2)}px)`);
+
       // Captions sit in the empty space above her head, never over her. Each
-      // HUD piece goes from night ink to day ink by how much of her (white)
-      // room is behind it. Layout reads first, then the writes.
+      // HUD piece goes from night ink to day ink by how much of a light
+      // background (the white solid, her room, the white plain one) is behind
+      // it. Layout reads first, then the writes.
       const cap = captionRef.current;
       const lineEl = lineRef.current;
       if (cap && lineEl) {
         const top = captionTop(f.H, cap.offsetHeight, her);
         const y = top + lineEl.offsetTop + lineEl.offsetHeight / 2;
-        const half = Math.min(cap.offsetWidth, Math.max(lineEl.offsetWidth, subRef.current?.offsetWidth ?? 0) + 40) / 2;
+        const half = Math.min(cap.offsetWidth, Math.max(lineEl.offsetWidth, prevRef.current?.offsetWidth ?? 0) + 40) / 2;
         const behind = Math.min(roomBehind(f, centre, { x: f.W / 2 - half, y }), roomBehind(f, centre, { x: f.W / 2 + half, y }));
         const corners = [brandRef.current, skipRef.current].map((el) =>
           el ? roomBehind(f, centre, { x: el.offsetLeft + el.offsetWidth / 2, y: el.offsetTop + el.offsetHeight / 2 }) : 0,
         );
         set(cap, 'top', `${top.toFixed(1)}px`);
-        set(cap, 'opacity', (aborted ? 1 : f.caption.block).toFixed(3));
+        set(cap, 'opacity', f.caption.block.toFixed(3));
         set(cap, '--fl-day', dayInk(behind).toFixed(3));
         set(brandRef.current, '--fl-day', dayInk(corners[0]).toFixed(3));
         set(skipRef.current, '--fl-day', dayInk(corners[1]).toFixed(3));
       }
-      f.dots.forEach((d, i) => {
-        const el = dotRefs.current[i];
-        set(el, 'opacity', (0.28 + 0.72 * d).toFixed(3));
-        set(el, 'transform', `scale(${(0.7 + 0.3 * d).toFixed(3)})`);
-      });
-
-      // Captions: each beat's line fades up (no typing caret: soft light, not a terminal).
-      let line: string;
-      let lineOpacity: number;
-      let subOpacity = 0;
-      if (aborted) {
-        line = lines.aborted;
-        lineOpacity = 1;
-      } else {
-        line = lines[f.beat];
-        lineOpacity = f.caption.line;
-        subOpacity = f.caption.sub;
+      if (f.caption.cur === 'fail' && !failedRef.current) {
+        failedRef.current = true;
+        setFailedShown(true);
       }
-      const sub = aborted ? '' : lines.linkedSub;
-      const last = lastTextRef.current;
-      if (lineRef.current && last.line !== line) {
-        lineRef.current.textContent = line;
-        last.line = line;
-      }
-      if (subRef.current && last.sub !== sub) {
-        subRef.current.textContent = sub;
-        last.sub = sub;
-      }
-      set(lineRef.current, 'opacity', lineOpacity.toFixed(3));
-      set(lineRef.current, 'transform', `translateY(${((1 - lineOpacity) * 8).toFixed(2)}px)`);
-      set(subRef.current, 'opacity', subOpacity.toFixed(3));
 
       // The light: small canvases, stretched (the upscale is the softness).
       for (const c of [backRef.current, frontRef.current]) {
@@ -270,37 +302,46 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
       const fctx = frontRef.current?.getContext('2d');
       if (fctx) drawFront(fctx, f, her);
     },
-    [lines],
+    [textFor],
   );
 
   const frameAt = useCallback(
-    (tt: number): IntroFrame => {
+    (times: IntroTimes, tt: number): IntroFrame => {
       const W = rootRef.current?.clientWidth || window.innerWidth;
       const H = rootRef.current?.clientHeight || window.innerHeight;
-      return computeFrame(tl, tt, W, H, reduced, end, tone);
+      return computeFrame(times, tt, W, H, reduced, end, tone);
     },
-    [tl, reduced, end, tone],
+    [reduced, end, tone],
   );
 
   /** The end's fade at timeline time `tt`: [whole overlay, captions]. With holdEnd only the captions go. */
-  const endFade = useCallback(
-    (tt: number): [number, number] => {
-      const out = 1 - span(tt, tl.fadeAt, tl.end);
-      return holdRef.current ? [1, out] : [out, 1];
-    },
-    [tl],
-  );
+  const endFade = useCallback((times: IntroTimes, tt: number): [number, number] => {
+    const out = times.after ? 1 - span(tt, times.after.fadeAt, times.after.end) : 1;
+    return holdRef.current ? [1, out] : [out, 1];
+  }, []);
 
-  // The host's answer.
+  // The live source: each event lands in the log at the ms it came.
+  const sourceRef = useRef(source);
   useEffect(() => {
-    if (answer === null || answeredAtRef.current !== null) return;
-    const now = performance.now();
-    answeredAtRef.current = now - startRef.current;
-    if (answer === false && modeRef.current.kind === 'play' && !manual) {
-      const elapsed = now - startRef.current;
-      modeRef.current = { kind: 'abort', at: now, t: timelineTime(tl, elapsed, answeredAtRef.current) };
+    const src = sourceRef.current;
+    if (src.fixed || !src.subscribe) return;
+    let off: (() => void) | undefined;
+    try {
+      off = src.subscribe((e) => recordLink(logRef.current, e, performance.now() - startRef.current));
+    } catch {
+      recordLink(logRef.current, { kind: 'failed', failure: 'error' }, performance.now() - startRef.current);
     }
-  }, [answer, manual, tl]);
+    return () => off?.();
+  }, []);
+
+  // Unmounted before it ended (an account switch, the window closing): abandoned.
+  useEffect(
+    () => () => {
+      if (!manual && !reportedRef.current) report('abandoned', Math.max(0, performance.now() - startRef.current));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
 
   // The clock (or the harness seek).
   // The clock starts once, at mount: this effect re-runs when a callback changes (the
@@ -314,14 +355,17 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
       startRef.current = performance.now();
     }
     if (manual) {
+      const times = timesAt(null);
+      window.__firstLinkLength = times.after ? times.after.end : times.fail !== null ? times.fail + FAIL_TAIL_MS : 0;
       window.__firstLinkSeek = async (ms: number) => {
         seekedRef.current = ms;
-        apply(frameAt(ms), ...endFade(ms), false);
+        apply(frameAt(times, ms), ...endFade(times, ms));
         await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
       };
-      apply(frameAt(seekedRef.current), ...endFade(seekedRef.current), false);
+      apply(frameAt(times, seekedRef.current), ...endFade(times, seekedRef.current));
       return () => {
         delete window.__firstLinkSeek;
+        delete window.__firstLinkLength;
       };
     }
     let raf = 0;
@@ -330,37 +374,49 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
       const elapsed = now - startRef.current;
       const mode = modeRef.current;
       if (mode.kind === 'play') {
-        const tt = timelineTime(tl, elapsed, answeredAtRef.current);
-        const f = frameAt(tt);
-        apply(f, ...endFade(tt), false);
-        if (tt >= tl.end) return finish('completed', 'linked');
-      } else if (mode.kind === 'skip' && holdRef.current) {
-        // Rush to her room (the wallpaper's picture), captions fading; the end is that frame, held.
-        // Never through the climax or the solid: from before it has cleared, the rush starts after it.
-        const since = now - mode.at;
-        const tt = reduced ? tl.fadeAt : Math.min(tl.fadeAt, skipFrom(tl, mode.t) + since * SKIP_RUSH);
-        const hud = 1 - span(since, 0, SKIP_FADE_MS);
-        apply(frameAt(tt), 1, hud, false);
-        if (tt >= tl.fadeAt && hud <= 0) return finish('skipped', beatAt(tl, mode.t));
+        const times = timesAt(null);
+        const f = frameAt(times, elapsed);
+        apply(f, ...endFade(times, elapsed));
+        if (times.after && elapsed >= times.after.end) return finish('completed', 'linked', times, elapsed);
+      } else if (mode.kind === 'skip') {
+        // To her room (the wallpaper's picture), captions fading: before the success line a calm crossfade into
+        // the solid and her entrance, then the settle rushed; the end is that frame, held.
+        const times = timesAt(mode.t);
+        const a = times.after;
+        if (!a) {
+          modeRef.current = { kind: 'close', at: now, t: elapsed, action: 'skipped' };
+        } else {
+          const pivot = skipFrom(times, mode.t);
+          const tt = Math.min(a.fadeAt, elapsed <= pivot ? elapsed : pivot + (elapsed - pivot) * SKIP_RUSH);
+          const hud = 1 - span(now - mode.at, 0, SKIP_FADE_MS);
+          apply(frameAt(times, tt), 1, hud);
+          if (tt >= a.fadeAt) return finish('skipped', beatAt(times, mode.t), times, tt);
+        }
       } else {
-        const since = now - mode.at;
-        const f = frameAt(mode.t);
-        const fadeFrom = mode.kind === 'abort' ? ABORT_MS : 0;
-        const op = 1 - span(since, fadeFrom, fadeFrom + SKIP_FADE_MS);
-        apply(f, op, 1, mode.kind === 'abort');
-        if (op <= 0) return finish(mode.kind === 'abort' ? 'aborted' : 'skipped', f.beat);
+        // Close: the overlay fades out on the frame it was closed on (a skip in the window, Close on the failure line).
+        const times = timesAt(null);
+        const f = frameAt(times, mode.t);
+        const op = 1 - span(now - mode.at, 0, SKIP_FADE_MS);
+        apply(f, op, 1);
+        if (op <= 0) return finish(mode.action, f.beat, times, mode.t);
       }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [manual, apply, frameAt, finish, tl, endFade, reduced]);
+  }, [manual, apply, frameAt, finish, endFade, timesAt]);
 
   const skip = useCallback(() => {
     if (manual || modeRef.current.kind !== 'play') return;
     const now = performance.now();
-    modeRef.current = { kind: 'skip', at: now, t: timelineTime(tl, now - startRef.current, answeredAtRef.current) };
-  }, [manual, tl]);
+    const elapsed = now - startRef.current;
+    const plan = planLink(logRef.current);
+    if (plan.fail && elapsed >= plan.fail.at) {
+      modeRef.current = { kind: 'close', at: now, t: elapsed, action: 'aborted' };
+      return;
+    }
+    modeRef.current = holdRef.current ? { kind: 'skip', at: now, t: elapsed } : { kind: 'close', at: now, t: elapsed, action: 'skipped' };
+  }, [manual]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -402,7 +458,7 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
       data-reduced={reduced ? '1' : undefined}
       role="dialog"
       aria-modal="true"
-      aria-label="SeiLink"
+      aria-label="WorldLink"
       tabIndex={-1}
     >
       <div className={styles.void} style={{ background: voidGradient() }} />
@@ -435,26 +491,17 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
       <div ref={hudRef} className={styles.hud}>
         <div ref={brandRef} className={styles.brand} aria-hidden="true">
           <span className={styles.brandDot} />
-          SEILINK
+          WORLDLINK
         </div>
-        <div ref={captionRef} className={styles.caption} aria-live="polite">
+        <div ref={captionRef} className={styles.caption}>
           <div className={styles.captionGlow} aria-hidden="true" />
-          <p ref={lineRef} className={styles.line} />
-          <p ref={subRef} className={styles.sub} />
-          <div className={styles.dots} aria-hidden="true">
-            {[0, 1, 2].map((i) => (
-              <div
-                key={i}
-                ref={(el) => {
-                  dotRefs.current[i] = el;
-                }}
-                className={styles.dot}
-              />
-            ))}
+          <div className={styles.lines}>
+            <p ref={prevRef} className={styles.line} aria-hidden="true" />
+            <p ref={lineRef} className={styles.line} aria-live="polite" />
           </div>
         </div>
         <button ref={skipRef} type="button" className={styles.skip} onClick={skip}>
-          {t('Skip')}
+          {failedShown ? t('Close') : t('Skip')}
         </button>
       </div>
     </div>

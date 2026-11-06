@@ -2232,7 +2232,7 @@ export interface RendererApi {
   /** Desktop host: she moves in, her room becomes the wallpaper (SeiLink available: a supported install or the dev flag). */
   /** M4: `firstRoom` = the move-in sheet just set up her first room (analytics only). */
   seilinkHostStart?(characterId: string, opts?: { firstRoom?: boolean }): Promise<SeilinkHostStatus>;
-  seilinkHostStop?(): Promise<SeilinkHostStatus>;
+  seilinkHostStop?(opts?: { reason?: 'link_failed' }): Promise<SeilinkHostStatus>;
   seilinkHostStatus?(): Promise<SeilinkHostStatus>;
   onSeilinkHostStatus?(cb: (status: SeilinkHostStatus) => void): Unsubscribe;
   /** She was clicked on the desktop: open her chat (characterId). */

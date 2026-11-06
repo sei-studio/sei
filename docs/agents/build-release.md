@@ -31,7 +31,7 @@ Packaging is **electron-builder** (`electron-builder.yml`):
   (manual dispatch) re-verifies them on windows-latest. Release builds are
   signed through Azure Trusted Signing (the "unsigned for v1" note is stale).
 - **Linux:** AppImage (best-effort unsigned).
-- **SeiLink desktop host addon (261104):** `native/seilink` is built by
+- **WorldLink desktop host addon (261104):** `native/seilink` is built by
   `scripts/build-seilink-addon.mjs` (mac universal via lipo, win x64) into
   `resources/seilink/seilink.node`, packed by `extraResources` outside
   app.asar. It runs in `predev` / `predist*` and in its own release.yml step.

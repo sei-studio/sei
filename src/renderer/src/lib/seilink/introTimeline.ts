@@ -1,130 +1,142 @@
 /**
- * The first-link intro's timeline (261105, T337). Pure, so the view, the
- * harness and the tests agree on where each beat starts.
+ * The first-link intro's timeline (261105, T337; 261106 v6, the WorldLink
+ * status lines). Pure, so the view, the harness and the tests agree on where
+ * each beat starts.
  *
- * Three beats and an end card, about 11.4 s (9.5 s calm):
- *   tunnel  the light wakes out of the solid colour and builds to its climax
- *           (the beat keeps its 261105 name for analytics), then keeps
- *           expanding until the whole screen is one solid colour
- *   link    the solid fades back into the scene as she comes in (261106 v5,
- *           product feedback: "fade to black not hard cut, like the light expands until
- *           fully bright or dark depending on dark or light theme")
- *   port    the light expands once more and settles into the plain colour
- *           (or her room opens) around her
- *   linked  "Linked." over that picture, then the window steps aside and the
- *           same picture is there as the wallpaper (desktopStage)
+ * v6 (product feedback (261106)): the length is set by the real pipeline. The
+ * status lines (lib/seilink/worldLink.ts planLink) run one at a time over the
+ * eclipse aurora, each a step brighter and faster; with the last line the
+ * light builds to its climax and expands until the screen is one solid
+ * colour; the success line lands on the solid; only then does the solid fade
+ * back into the scene as she comes in, and the light settles into the plain
+ * colour (or her room opens). Beats, for analytics: tunnel (the lines), link
+ * (from the success line, she comes in), port (the settle), linked (the
+ * picture the wallpaper draws).
  *
  * The solid is the theme's colour (PLAIN_COLOURS): white in light mode, black
  * in dark mode, so light mode never goes black and dark mode never goes
  * white. Nothing on the timeline is a cut: every change is a fade of at
  * least a few hundred ms.
  *
- * The intro never delays the host start: it plays while the host comes up.
- * Only the end card waits for the start's answer (HOLD_MAX_MS at most), so
- * "Linked." is not said before she is there. A failed start ends it early
- * (abort), a skip ends it at once.
+ * A failure (the failure line) holds the scene with no climax and no her,
+ * until the person closes it. A skip before the success line crossfades into
+ * the solid (no peak: never played fast) and plays her entrance from there.
  */
 import type { IntroBeat } from '@shared/seilinkIntroTelemetry';
+import { LAST_LINE_MS, type LinkPlan } from './worldLink';
 
 /**
  * The climax and the solid (ms from the start). The light builds from `build`
  * to its peak at `peak`, then keeps expanding until the screen is one solid
- * colour at `fill` (= beats.link): in light mode it blooms on up into white
- * from `peak`; in dark mode it expands a moment longer and dims into black
- * from `dim`. The solid holds to `lift`, then fades back into the scene by
- * `clear` while she comes in. Reduced motion has no peak and no bloom: the
- * still light crossfades into the solid from `build` to `fill` instead.
+ * colour at `fill`: in light mode it blooms on up into white from `peak`; in
+ * dark mode it expands a moment longer and dims into black from `dim`. A
+ * `calm` climax (reduced motion, a skip) has no peak and no bloom: the light
+ * crossfades into the solid from `build` to `fill`.
  */
 export interface IntroClimax {
   build: number;
   peak: number;
   dim: number;
   fill: number;
+  calm: boolean;
+}
+
+/** After the success line (or a skip): the solid holds to `lift`, fades back into the scene by `clear` as she comes in, then the settle. */
+export interface IntroAfter {
+  success: number;
   lift: number;
   clear: number;
+  port: number;
+  linked: number;
+  fadeAt: number;
+  end: number;
+}
+
+export interface IntroTimes {
+  /** Starts of the status lines on screen (as far as known). */
+  lines: number[];
+  /** The success line (null: not yet, failed, or skipped before it). */
+  success: number | null;
+  /** The failure line. */
+  fail: number | null;
+  climax: IntroClimax | null;
+  after: IntroAfter | null;
+  /** A skip before the success line, ms. */
+  skip: number | null;
 }
 
 /** The intro opens out of the solid colour (the light wakes as it fades) over this long. */
 export const OPEN_MS = 1800;
 
-export interface IntroTimeline {
-  /** Start of each beat, ms from the intro's start. */
-  beats: Record<IntroBeat, number>;
-  climax: IntroClimax;
-  /** When each beat's caption starts to fade up. */
-  lineAt: Record<IntroBeat, number>;
-  /** The first caption (and the caption block) fades out from here, so no text rides the peak or the solid. */
-  lineOut: number;
-  /** When the fade out starts, and the end. */
-  fadeAt: number;
-  end: number;
-}
+/** The climax under line 9 (offsets from its start); the success line lands LAST_LINE_MS after it, on the full solid. */
+export const CLIMAX = { build: 500, peak: 1500, dim: 1550, fill: 2700 } as const;
+export const CALM_CLIMAX = { build: 400, fill: 2000 } as const;
+/** From the success line: the solid holds (it is read on the solid), then she comes in and the light settles. */
+export const AFTER = { lift: 1800, clear: 3100, port: 4100, linked: 6500, fadeAt: 8100, end: 8700 } as const;
+export const CALM_AFTER = { lift: 1500, clear: 3000, port: 3300, linked: 5000, fadeAt: 6400, end: 7000 } as const;
 
-export const FULL_TIMELINE: IntroTimeline = {
-  beats: { tunnel: 0, link: 4300, port: 6800, linked: 9200 },
-  climax: { build: 2100, peak: 3100, dim: 3150, fill: 4300, lift: 4500, clear: 5800 },
-  lineAt: { tunnel: 300, link: 5000, port: 7050, linked: 9450 },
-  lineOut: 2400,
-  fadeAt: 10800,
-  end: 11400,
-};
+/** A skip before the success line crossfades into the solid over this long, then her entrance plays (lift this long after). */
+export const SKIP_SOLID_MS = 1200;
+export const SKIP_LIFT_MS = 200;
 
-/** Reduced motion: calm crossfades (a gentle fade through the solid colour), shorter. */
-export const CALM_TIMELINE: IntroTimeline = {
-  beats: { tunnel: 0, link: 3800, port: 5800, linked: 7500 },
-  climax: { build: 2200, peak: 2200, dim: 2200, fill: 3800, lift: 4000, clear: 5500 },
-  lineAt: { tunnel: 300, link: 4500, port: 5950, linked: 7650 },
-  lineOut: 1800,
-  fadeAt: 8900,
-  end: 9500,
-};
-
-/** A caption fades up over this long, and the first one fades out over CAPTION_OUT_MS. */
+/** A caption fades up over this long (starting CAPTION_GAP_MS after the line before begins to fade over CAPTION_OUT_MS). */
 export const CAPTION_IN_MS = 520;
-export const CAPTION_OUT_MS = 350;
+export const CAPTION_OUT_MS = 300;
+export const CAPTION_GAP_MS = 120;
 
-/** The end card waits at most this long for the host's answer, then says Linked anyway (it is starting). */
-export const HOLD_MAX_MS = 6000;
-/** A skip fades out this fast; an abort (the start failed) shows its line this long. */
+/** A skip in the app window fades out this fast (and the close on the failure line). */
 export const SKIP_FADE_MS = 380;
-export const ABORT_MS = 1400;
 
-/**
- * Where a skip that rushes to the end (holdEnd) starts from: never inside the
- * climax or the solid, which played fast would flash. Before the solid has
- * cleared it starts from the frame where it has (her, in the settled light).
- */
-export function skipFrom(tl: IntroTimeline, t: number): number {
-  return t < tl.climax.clear ? tl.climax.clear : t;
-}
-
-const ORDER: readonly IntroBeat[] = ['tunnel', 'link', 'port', 'linked'];
-
-export function beatAt(tl: IntroTimeline, t: number): IntroBeat {
-  let out: IntroBeat = 'tunnel';
-  for (const b of ORDER) if (t >= tl.beats[b]) out = b;
-  return out;
-}
-
-/** 0..1 progress through a beat. */
-export function beatProgress(tl: IntroTimeline, t: number, beat: IntroBeat): number {
-  const i = ORDER.indexOf(beat);
-  const start = tl.beats[beat];
-  const end = i + 1 < ORDER.length ? tl.beats[ORDER[i + 1]] : tl.fadeAt;
-  return clamp01((t - start) / Math.max(1, end - start));
+function afterFrom(s: number, reduced: boolean, lift?: number): IntroAfter {
+  const a = reduced ? CALM_AFTER : AFTER;
+  const l = lift ?? s + a.lift;
+  const d = l - (s + a.lift);
+  return { success: s, lift: l, clear: s + a.clear + d, port: s + a.port + d, linked: s + a.linked + d, fadeAt: s + a.fadeAt + d, end: s + a.end + d };
 }
 
 /**
- * The timeline position for a real elapsed time, holding at the end card's
- * start while the host has not answered (up to HOLD_MAX_MS). `answeredAt` is
- * the real elapsed ms the answer came in (null = not yet).
+ * The times for a plan. `skip` (ms) is a skip before the success line: the
+ * calm crossfade into the solid from there, her entrance after it.
  */
-export function timelineTime(tl: IntroTimeline, elapsed: number, answeredAt: number | null): number {
-  const hold = tl.beats.linked;
-  if (elapsed <= hold) return elapsed;
-  const releasedAt = answeredAt === null ? hold + HOLD_MAX_MS : Math.min(Math.max(answeredAt, hold), hold + HOLD_MAX_MS);
-  if (elapsed <= releasedAt) return hold;
-  return hold + (elapsed - releasedAt);
+export function introTimes(plan: LinkPlan, reduced: boolean, skip: number | null = null): IntroTimes {
+  const base = { lines: plan.lines, fail: plan.fail?.at ?? null };
+  const skipped = skip !== null && (plan.success === null || skip < plan.success - LAST_LINE_MS + CLIMAX.build) && (plan.fail === null || skip < plan.fail.at);
+  if (skipped) {
+    const fill = skip + SKIP_SOLID_MS;
+    return {
+      ...base,
+      lines: plan.lines.filter((s) => s <= skip),
+      success: null,
+      fail: null,
+      climax: { build: skip, peak: skip, dim: skip, fill, calm: true },
+      after: afterFrom(fill, reduced, fill + SKIP_LIFT_MS),
+      skip,
+    };
+  }
+  if (plan.success === null) return { ...base, success: null, climax: null, after: null, skip: null };
+  const s9 = plan.success - LAST_LINE_MS;
+  const climax: IntroClimax = reduced
+    ? { build: s9 + CALM_CLIMAX.build, peak: s9 + CALM_CLIMAX.build, dim: s9 + CALM_CLIMAX.build, fill: s9 + CALM_CLIMAX.fill, calm: true }
+    : { build: s9 + CLIMAX.build, peak: s9 + CLIMAX.peak, dim: s9 + CLIMAX.dim, fill: s9 + CLIMAX.fill, calm: false };
+  return { ...base, success: plan.success, climax, after: afterFrom(plan.success, reduced), skip: null };
+}
+
+export function beatAt(times: IntroTimes, t: number): IntroBeat {
+  const a = times.after;
+  if (!a || t < (times.success ?? a.success)) return 'tunnel';
+  if (t < a.port) return 'link';
+  if (t < a.linked) return 'port';
+  return 'linked';
+}
+
+/**
+ * Where a skip that rushes to the end (holdEnd) runs its clock from, once it
+ * is past the success line: never inside the climax or the solid, which
+ * played fast would flash. Before the solid has cleared, the rush starts after it.
+ */
+export function skipFrom(times: IntroTimes, t: number): number {
+  const clear = times.after?.clear ?? t;
+  return t < clear ? clear : t;
 }
 
 export function clamp01(x: number): number {
@@ -134,6 +146,14 @@ export function clamp01(x: number): number {
 /** 0..1 across [a, b] of t. */
 export function span(t: number, a: number, b: number): number {
   return clamp01((t - a) / Math.max(1, b - a));
+}
+
+/** The integral over [a, t] of ease.soft(span(x, a, a + d)) dx (the motion clock's extra from an eased step). */
+export function softIntegral(t: number, a: number, d: number): number {
+  if (t <= a) return 0;
+  if (t >= a + d) return d / 2 + (t - a - d);
+  const u = (t - a) / d;
+  return d * (u * u * u - (u * u * u * u) / 2);
 }
 
 export const ease = {
