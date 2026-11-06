@@ -456,21 +456,28 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   (`lib/seilink/worldLink.ts`, `STATUS_LINES`, word for word) wait on real
   milestones (`LINK_MILESTONES`) from a progress source (`LinkSource`):
 
-  | # | Line | Waits for |
-  |---|---|---|
-  | 1 | Initializing WorldLink… | 0.7 s after the start |
-  | 2 | Sending signal to World N… | the Anima request is sent (`requesting`) |
-  | 3 | Waiting for a reply… | (same) |
-  | 4 | Signal received. | the proxy answered (`queued` / `running` / ready) |
-  | 5 | Syncing world clocks… | answered, and 15% of `EXPECTED_LINK_MS` (75 s), cut short by the bake finishing |
-  | 6 | Matching physics constants… | the bake is running, and 35% (same cut) |
-  | 7 | Correcting for time dilation… | the bake is running, and 60% (same cut) |
-  | 8 | Stabilizing the link… | the bake is done (`downloading`) |
-  | 9 | Inviting {name}… | her face set installed (`ready`) and the host start answered ok |
-  | | WorldLink established between World 0 and World N. | `LAST_LINE_MS` (3.2 s) after line 9, on the full solid |
+  | # | Line | Waits for | Dwell |
+  |---|---|---|---|
+  | 1 | Initializing WorldLink… | 0.7 s after the start | 4 s |
+  | 2 | Sending signal to World N… | the Anima request is sent (`requesting`) | 6 s |
+  | 3 | Waiting for a reply… | (same) | 12 s |
+  | 4 | Signal received. | the proxy answered (`queued` / `running` / ready) | 4 s |
+  | 5 | Syncing world clocks… | answered, and 40% of `EXPECTED_LINK_MS` (75 s), cut short by the bake finishing | 2.8 s |
+  | 6 | Matching physics constants… | the bake is running, and 60% (same cut) | 2.8 s |
+  | 7 | Correcting for time dilation… | the bake is running, and 80% (same cut) | 2.8 s |
+  | 8 | Stabilizing the link… | the bake is done (`downloading`) | 2.8 s |
+  | 9 | Inviting {name}… | her face set installed (`ready`) and the host start answered ok | 3.2 s (`LAST_LINE_MS`) |
+  | | WorldLink established between World 0 and World N. | `LAST_LINE_MS` after line 9, on the full solid | |
 
-  A line never shows sooner than `LINE_DWELL_MS` (2.8 s) after the one
-  before; on a slow stage the current line holds (no filler lines) while
+  A line never shows sooner than the line before has had its dwell (its
+  `dwell` in `STATUS_LINES`, default `LINE_DWELL_MS` 2.8 s; the first four
+  are longer, product feedback (261106): sending a signal and waiting for a
+  reply should take a while). The milestone gates apply on top: a slow
+  proxy holds "Waiting for a reply…" until it answers. Measured: a 75 s
+  bake shows the lines at 0.7, 4.7, 10.7, 22.7, 30, 45, 60, 72 and 75 s,
+  success 78.2 s, end 86.9 s; a 20 s bake (and a cached look or a replay)
+  at 0.7, 4.7, 10.7, 22.7, 26.7, 29.5, 32.3, 35.1 and 37.9 s, success
+  41.1 s, end 49.8 s. On a slow stage the current line holds (no filler lines) while
   the light keeps moving. The proxy says nothing finer than queued, running
   and ready, so lines 5 to 7 spread over the expected-duration curve, and an
   early finish plays the rest at the minimum dwell (`planLink`; a start
@@ -487,7 +494,9 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   the lines at the minimum dwell (`instantLog`).
 
   Failure ("WorldLink failed. Lost contact with World N. Come back later.",
-  after the current line's dwell): offline (stage or the window offline for
+  at the soonest `FAIL_BEAT_MS` (2.8 s) after the current line came up, so
+  a failure during the 12 s "Waiting for a reply…" shows after a short
+  beat): offline (stage or the window offline for
   5 s), a request, bake or install error, no line 9 by `LINK_TIMEOUT_MS`
   (3.5 min; the bake goes on in the background), or the host start failing.
   The light calms and stays, no her; Skip turns into Close (Esc too), which

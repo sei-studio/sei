@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   EXPECTED_LINK_MS,
   FAILURE_LINE,
+  FAIL_BEAT_MS,
   FIRST_LINE_MS,
   LAST_LINE_MS,
   LINE_DWELL_MS,
@@ -15,6 +16,7 @@ import {
   SUCCESS_LINE,
   emptyLog,
   instantLog,
+  lineDwell,
   linkReport,
   planLink,
   recordLink,
@@ -73,14 +75,27 @@ describe('the copy', () => {
 });
 
 const gaps = (xs: number[]): number[] => xs.slice(1).map((x, i) => x - xs[i]);
+/** Every line stayed up at least its own dwell. */
+const dwellsKept = (xs: number[]): void => gaps(xs).forEach((g, i) => expect(g).toBeGreaterThanOrEqual(lineDwell(i)));
+const secs = (xs: number[]): number[] => xs.map((x) => Math.round(x / 100) / 10);
+
+describe('the dwells (product feedback (261106): the first lines take a while)', () => {
+  it('the first four lines stay up 4, 6, 12 and 4 s; the rest LINE_DWELL_MS', () => {
+    expect(STATUS_LINES.map((_, i) => lineDwell(i))).toEqual([4000, 6000, 12_000, 4000, ...Array(5).fill(LINE_DWELL_MS)]);
+    expect(STATUS_LINES.slice(4, 7).map((l) => l.curve)).toEqual([0.4, 0.6, 0.8]);
+    expect(STATUS_LINES.slice(4, 7).map((l) => l.cut)).toEqual(['baked', 'baked', 'baked']);
+  });
+});
 
 describe('planLink', () => {
-  it('everything ready at once: nine lines at the minimum dwell, then the success line', () => {
+  it('everything ready at once: nine lines at their minimum dwells, then the success line', () => {
     const p = planLink(instantLog());
     expect(p.lines).toHaveLength(9);
     expect(p.lines[0]).toBe(FIRST_LINE_MS);
-    for (const g of gaps(p.lines)) expect(g).toBe(LINE_DWELL_MS);
+    gaps(p.lines).forEach((g, i) => expect(g).toBe(lineDwell(i)));
+    expect(secs(p.lines)).toEqual([0.7, 4.7, 10.7, 22.7, 26.7, 29.5, 32.3, 35.1, 37.9]);
     expect(p.success).toBe(p.lines[8] + LAST_LINE_MS);
+    expect(p.success).toBe(41_100);
     expect(p.fail).toBeNull();
   });
 
@@ -88,11 +103,12 @@ describe('planLink', () => {
     const log = simulatedLog({ doneMs: 75_000 });
     const p = planLink(log);
     expect(p.lines).toHaveLength(9);
-    for (const g of gaps(p.lines)) expect(g).toBeGreaterThanOrEqual(LINE_DWELL_MS);
+    dwellsKept(p.lines);
     // 5 to 7 spread over the expected time while the bake runs; 8 when it is done; 9 when it is installed.
-    expect(p.lines[4]).toBeGreaterThanOrEqual(0.15 * EXPECTED_LINK_MS);
-    expect(p.lines[5]).toBeGreaterThanOrEqual(0.35 * EXPECTED_LINK_MS);
-    expect(p.lines[6]).toBeGreaterThanOrEqual(0.6 * EXPECTED_LINK_MS);
+    expect(p.lines[4]).toBe(0.4 * EXPECTED_LINK_MS);
+    expect(p.lines[5]).toBe(0.6 * EXPECTED_LINK_MS);
+    expect(p.lines[6]).toBe(0.8 * EXPECTED_LINK_MS);
+    expect(secs(p.lines)).toEqual([0.7, 4.7, 10.7, 22.7, 30, 45, 60, 72, 75]);
     expect(p.lines[7]).toBe(log.at.baked);
     expect(p.lines[8]).toBe(log.at.installed);
     expect(p.success).toBe(75_000 + LAST_LINE_MS);
@@ -102,12 +118,13 @@ describe('planLink', () => {
     const log = simulatedLog({ doneMs: 20_000 });
     const p = planLink(log);
     expect(p.lines).toHaveLength(9);
-    for (const g of gaps(p.lines)) expect(g).toBeGreaterThanOrEqual(LINE_DWELL_MS);
+    dwellsKept(p.lines);
     // Nothing waits past the moment the bake was done plus the dwell chain.
     const doneAt = log.at.baked!;
     const firstAfter = p.lines.findIndex((s) => s >= doneAt);
-    for (let i = firstAfter + 1; i < 9; i++) expect(p.lines[i] - p.lines[i - 1]).toBe(LINE_DWELL_MS);
-    expect(p.success!).toBeLessThan(40_000);
+    for (let i = firstAfter + 1; i < 9; i++) expect(p.lines[i] - p.lines[i - 1]).toBe(lineDwell(i - 1));
+    expect(secs(p.lines)).toEqual([0.7, 4.7, 10.7, 22.7, 26.7, 29.5, 32.3, 35.1, 37.9]);
+    expect(p.success).toBe(41_100);
   });
 
   it('a past start never moves when more of the log arrives', () => {
@@ -134,13 +151,13 @@ describe('planLink', () => {
     expect(p.fail).toEqual({ at: LINK_TIMEOUT_MS, failure: 'timeout' });
   });
 
-  it('a failure shows the failure line after the current line has had its dwell, and no more lines', () => {
+  it('a failure shows the failure line a short beat after the current line came up, and no more lines', () => {
     const p = planLink(simulatedLog({ doneMs: 75_000, failAtMs: 30_000, failure: 'bake_failed' }));
     expect(p.success).toBeNull();
     expect(p.fail!.failure).toBe('bake_failed');
     const last = p.lines[p.lines.length - 1];
     expect(last).toBeLessThanOrEqual(30_000);
-    expect(p.fail!.at).toBe(Math.max(30_000, last + LINE_DWELL_MS));
+    expect(p.fail!.at).toBe(Math.max(30_000, last + FAIL_BEAT_MS));
     expect(p.lines.length).toBeLessThan(9);
   });
 
@@ -149,7 +166,24 @@ describe('planLink', () => {
     recordLink(log, { kind: 'failed', failure: 'offline' }, 0);
     const p = planLink(log);
     expect(p.lines).toEqual([FIRST_LINE_MS]);
-    expect(p.fail).toEqual({ at: FIRST_LINE_MS + LINE_DWELL_MS, failure: 'offline' });
+    expect(p.fail).toEqual({ at: FIRST_LINE_MS + FAIL_BEAT_MS, failure: 'offline' });
+  });
+
+  it('a failure while waiting for a reply shows after a short beat, not the line\'s whole 12 s', () => {
+    // The request went out, no answer, then the network gave up 1 s into "Waiting for a reply…".
+    const log: LinkLog = { at: { sent: 250, host: 2500 }, failed: { at: 11_700, failure: 'network' } };
+    const p = planLink(log);
+    expect(secs(p.lines)).toEqual([0.7, 4.7, 10.7]);
+    expect(p.fail).toEqual({ at: 10_700 + FAIL_BEAT_MS, failure: 'network' });
+    expect(p.fail!.at - p.lines[2]).toBeLessThan(lineDwell(2) / 2);
+    // Late in the line: at once.
+    expect(planLink({ ...log, failed: { at: 18_000, failure: 'network' } }).fail!.at).toBe(18_000);
+  });
+
+  it('a slow proxy holds "Waiting for a reply…" until it answers', () => {
+    const p = planLink({ at: { sent: 250, answered: 40_000, host: 2500 }, failed: null });
+    expect(p.lines[3]).toBe(40_000);
+    expect(p.lines[3] - p.lines[2]).toBeGreaterThan(lineDwell(2));
   });
 
   it('the host failing is a failure; a failure after everything arrived is ignored', () => {
@@ -184,7 +218,8 @@ describe('linkReport', () => {
     const r = linkReport(log, p, p.success! + 9000, 'success');
     expect(r.outcome).toBe('success');
     expect(r.lines_shown).toBe(9);
-    expect(r.line_1_ms).toBe(LINE_DWELL_MS);
+    expect(r.line_1_ms).toBe(lineDwell(0));
+    expect(r.line_3_ms).toBe(lineDwell(2));
     expect(r.line_9_ms).toBe(LAST_LINE_MS);
     expect(r.slowest).toBe('baked');
     expect(r.slowest_ms).toBe(log.at.baked! - log.at.running!);
