@@ -9,7 +9,7 @@ import { surveyBlocks } from './veins.js'
 import { nearbyEntities, droppedItemName, isDeadEntity, trackEntityDeaths } from './entities.js'
 import { givenDropFor } from './givenDrops.js'
 import { HOSTILE_MOBS } from '../behaviors/hostiles.js'
-import { CRITICAL_HP } from '../behaviors/attack.js'
+import { CRITICAL_HP, attackRunState, attackInFlightSuffix } from '../behaviors/attack.js'
 import { setHandles, HANDLE_TTL_MS } from './targeting.js'
 import { getCraftableEntries } from './craftable.js'
 import { getFollowTargetLabel, getFollowStuckInfo } from '../behaviors/follow.js'
@@ -162,7 +162,16 @@ export function composeSnapshot(bot, opts = {}) {
   // it's what the owner-whereabouts line reads coords from below.
   const owner = resolveOwner(bot, pinUsername ?? null, companions)
   const ownerPinName = owner?.username ?? (pinUsername ?? null)
-  const ents = nearbyEntities(bot, { radius: ENTITY_RADIUS, count: MAX_ENTITIES, pin: ownerPinName, pins: companions, requireLineOfSight: true })
+  // 261106 (quality pass 44): while attackEntity runs, the mob it is on is
+  // listed even when the sight filter would hide it (a zombie in the river),
+  // and the in_flight line below gives the kills so far and the next mob the
+  // fight goes on to by itself. See
+  // attackRunState in behaviors/attack.js.
+  let fight = null
+  if (inFlight?.name === 'attackEntity') {
+    try { fight = attackRunState(bot) } catch { fight = null }
+  }
+  const ents = nearbyEntities(bot, { radius: ENTITY_RADIUS, count: MAX_ENTITIES, pin: ownerPinName, pins: companions, pinIds: fight?.targetId != null ? [fight.targetId] : [], requireLineOfSight: true })
 
   const lines = []
   // Which world this is (multi-world memory). Surfaced first so the bot anchors
@@ -219,7 +228,8 @@ export function composeSnapshot(bot, opts = {}) {
   // preserves the em-dash + y=<currentY> channels byte-stable;
   // only the elapsed trailer changes from `(Xs)` to `started=Xs ago`.
   // 261014: the gather line reads the same item counts as the inventory line.
-  const inFlightLine = getInFlightLineForSnapshot(inFlight, Date.now(), { inventory: inv })
+  let inFlightLine = getInFlightLineForSnapshot(inFlight, Date.now(), { inventory: inv })
+  if (inFlightLine && fight) inFlightLine += attackInFlightSuffix(fight, bot, pinUsername ?? ownerPinName ?? null)
   if (inFlightLine) lines.push(inFlightLine)
   // 261012: say so when nothing runs. The absence of an in_flight line was the
   // only signal, and in the scripted-convo eval she told the player "still

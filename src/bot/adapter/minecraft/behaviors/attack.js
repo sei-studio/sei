@@ -370,12 +370,142 @@ export function continueAttack(bot, running, use) {
   const live = bot.entities?.[ctx.currentId]
   if (!live || ctx.deadIds.has(ctx.currentId) || isDeadEntity(bot, live)) return null
   const args = use.input ?? {}
-  if (!sameFight(bot, live, args)) return null
+  const same = sameFight(bot, live, args)
+  if (!same && !sameKindInReach(bot, live, args)) return null
   ctx.budget = Math.max(ctx.budget, ctx.used + clampTimes(args.times))
   ctx.fightStartedAt = Date.now()
   const label = live.username ?? live.name ?? 'mob'
   const left = ctx.budget - ctx.used
-  return `your attackEntity is already on that ${label} (${ctx.used} ${ctx.used === 1 ? 'swing' : 'swings'} so far), so it keeps going with up to ${left} more instead of starting over. Its result comes when the fight ends.`
+  const swings = `${ctx.used} ${ctx.used === 1 ? 'swing' : 'swings'} so far`
+  if (same) return `your attackEntity is already on that ${label} (${swings}), so it keeps going with up to ${left} more instead of starting over. Its result comes when the fight ends.`
+  const next = attackRunState(bot)?.next
+  const owner = ownerLabelOf(bot)
+  const after = next && owner ? `, and after this kill it goes on by itself to the next one near ${owner}` : ''
+  return `your attackEntity is already swinging at ${aMob(label)} next to you (${swings}), so it keeps going with up to ${left} more instead of switching${after}. To go for one ${label} in particular, call attackEntity with its # handle. Its result comes when the fight ends.`
+}
+
+// 261106 (quality pass 44): a repeat call by mob name while the running attack
+// is swinging at a mob of that name within reach, near the player. In the combat_night eval
+// (11-03 scorecard and the 10-31/11-02 compares) 16 of 22 attacks she aborted
+// herself were replaced by attackEntity on the same kind of mob, nearly
+// always "zombie" while she was already hitting a zombie ("aborted after 1/8
+// hits", "after 5/8 hits"). The name resolved to a second zombie nearer the
+// player, so the swing rhythm restarted on a mob the running attack would
+// have gone on to after the kill anyway. A # handle (or an entity_id) still
+// names one mob and switches to it, and so does the name when the mob she is
+// hitting is not near the player (she chased it away from them).
+const SAME_KIND_NEAR_OWNER = 8
+// Swing reach plus the knockback a hit gives a mob between two swings.
+const SAME_KIND_REACH = 5
+function sameKindInReach(bot, live, args) {
+  if (!live || live.username || live.type === 'player') return false
+  const asked = typeof args?.entity === 'string' ? args.entity
+    : (typeof args?.target === 'string' && !args.target.startsWith('#') ? args.target : null)
+  if (!asked || args?.entity_id != null) return false
+  if (String(asked).trim().toLowerCase() !== String(live.name ?? '').toLowerCase()) return false
+  let d = null
+  try { d = bot.entity?.position?.distanceTo?.(live.position) } catch { d = null }
+  if (!(typeof d === 'number' && Number.isFinite(d) && d <= SAME_KIND_REACH)) return false
+  const owner = ownerEntityOf(bot)
+  if (!owner?.position) return true
+  let dOwner = null
+  try { dOwner = live.position.distanceTo(owner.position) } catch { dOwner = null }
+  return typeof dOwner === 'number' && Number.isFinite(dOwner) && dOwner <= SAME_KIND_NEAR_OWNER
+}
+
+function ownerLabelOf(bot) {
+  const o = ownerEntityOf(bot)
+  return o?.username ?? null
+}
+
+/**
+ * 261106 (quality pass 44): the running attackEntity right now, for the
+ * snapshot and the defend turn. Null when no attack is running.
+ *
+ * In the combat_night eval (11-03 scorecard, combat_night-01 02:29) the mob
+ * her attack was chasing stood in the river, where the line-of-sight filter
+ * hides it from the entity list. Her snapshot showed "in_flight:
+ * attackEntity(zombie)", no zombie, "aggro: none" and "recent_events: zombie
+ * died", so she told the player "zombies are down" and called goTo back to
+ * them ("I'll head back toward them while the swing finishes"). The goTo
+ * ended the fight with two zombies 8 blocks from the player.
+ *
+ * @returns {{ targetId:number|null, kills:number, next:any|null }|null}
+ */
+export function attackRunState(bot) {
+  const run = bot?._seiAttackRun
+  if (!run?.open || !run.ctx) return null
+  const ctx = run.ctx
+  if (ctx.signal?.aborted) return null
+  const live = bot.entities?.[ctx.currentId]
+  const alive = !!live && !ctx.deadIds.has(ctx.currentId) && !isDeadEntity(bot, live)
+  let kills = 0
+  for (const id of ctx.tagged) if (ctx.deadIds.has(id)) kills++
+  // What the chain after a kill would pick now (see attackEntityAction).
+  let next = null
+  if (run.mobTarget && HOSTILE_MOBS.has(run.name) && ctx.used < ctx.budget) {
+    try {
+      next = pickHostileForOwner(bot, (e) => !NO_AUTO_ENGAGE.has(e.name), {
+        ownerRadius: CHAIN_OWNER_RADIUS, excludeIds: new Set([...ctx.deadIds, ctx.currentId]),
+      })
+    } catch { next = null }
+  }
+  return {
+    targetId: alive ? ctx.currentId : null,
+    kills,
+    next,
+  }
+}
+
+const blocks = (d) => { const n = Math.round(d); return `${n} ${n === 1 ? 'block' : 'blocks'}` }
+const aMob = (label) => `${/^[aeiou]/i.test(String(label)) ? 'an' : 'a'} ${label}`
+
+/**
+ * The text the snapshot's in_flight line gets while attackEntity runs: the
+ * kills so far and where the chain goes next. Empty string when there is
+ * neither. The mob it is on is in the entity list (pinned there, see
+ * snapshot.js). It leaves out the fight's distance and that a new action
+ * replaces this one (the reply frame already says that): in the pass 44 probe
+ * both made her finish a fight 19 blocks from a hurt player who asked her to
+ * come back (goes to them 16/24 on dev, 8/24 with that text, 7/12 without).
+ *
+ * @param {ReturnType<typeof attackRunState>} state
+ * @param {any} bot
+ * @param {string|null} ownerLabel  the player's name as the snapshot shows it
+ */
+export function attackInFlightSuffix(state, bot, ownerLabel) {
+  if (!state) return ''
+  let text = state.kills > 0 ? `, ${state.kills} killed so far.` : ''
+  const nx = state.next
+  if (nx?.position && ownerLabel) {
+    let d = null
+    try { d = nx.position.distanceTo(ownerEntityOf(bot)?.position) } catch { d = null }
+    const where = typeof d === 'number' && Number.isFinite(d) ? `${blocks(d)} from ${ownerLabel}` : `near ${ownerLabel}`
+    const lead = state.targetId != null ? 'after this kill it' : 'it'
+    text += text ? ` ${lead[0].toUpperCase()}${lead.slice(1)}` : `, ${lead}`
+    text += ` goes on by itself to the ${nx.name ?? 'mob'} ${where}.`
+  }
+  return text
+}
+
+/**
+ * The defend turn's data when the turn is written (index.js eventAddendum):
+ * a hit on the player by the mob her running attackEntity is on reads as
+ * handled by that action, and says when the attack will go on to another one
+ * on them. In the combat_night eval (11-03 scorecard, combat_night-02 02:17)
+ * the defend event fired before her attack started and was read 0.1s after:
+ * "you are ALREADY swinging at it ... 1 more hostile mob on them that nothing
+ * is swinging at ... call attackEntity on another one". She did, which ended
+ * the attack after 1 hit, and the next turn did the same again.
+ */
+export function withAttackRunState(bot, event, data) {
+  if (event !== 'sei:attacked' || !data || typeof data !== 'object') return data
+  if (data.attackerKind !== 'defend' || data.threat || data.unarmed) return data
+  let state = null
+  try { state = attackRunState(bot) } catch { state = null }
+  if (!state || state.targetId == null) return data
+  if (data.attacker?.id !== state.targetId) return data
+  return { ...data, engaged: true, actionOnIt: true, runGoesOn: state.next != null }
 }
 
 // The repeat call is on the running fight when a fresh attackEntity with the

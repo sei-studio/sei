@@ -19,7 +19,7 @@ import { sessionActionStats, classifyActionOutcome } from '../../brain/actionSta
 import { createSnapshotComposer } from './observers/snapshot.js'
 import { getProgression as readProgression } from './observers/progression.js'
 import { setWorldPaused } from './behaviors/pause.js'
-import { continueAttack } from './behaviors/attack.js'
+import { continueAttack, withAttackRunState } from './behaviors/attack.js'
 import { staleAttackerText } from './observers/staleAttacker.js'
 import { withWeaponState } from './observers/weaponState.js'
 import { minecraftVocabulary } from './vocabulary.js'
@@ -179,7 +179,7 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false, act
     // 261019: an attack event whose mob died or left view before this turn
     // gets plain "it is gone" text instead of "attack it now".
     // 261030: a mob-fight event says so when she owns no weapon.
-    eventAddendum: (event, data) => staleAttackerText(bot, event, data) ?? eventAddendum(event, withWeaponState(bot, event, data), config?.vision?.mode),
+    eventAddendum: (event, data) => staleAttackerText(bot, event, data) ?? eventAddendum(event, withAttackRunState(bot, event, withWeaponState(bot, event, data)), config?.vision?.mode),
     cantReachNudge,
     // 261013: item, block and mob names for the brain's repeat note
     // (vocabulary.js), so it never names the job as a habit.
