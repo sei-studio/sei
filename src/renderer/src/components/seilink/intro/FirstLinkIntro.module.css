@@ -195,12 +195,12 @@
   overflow-wrap: anywhere;
 }
 
-/* The words still to come: laid out, not drawn, so a typing line keeps its full width and centre. */
+/* The letters still to come: laid out, not drawn, so a typing line keeps its full width and centre. */
 .rest {
   visibility: hidden;
 }
 
-/* What screen readers hear: each whole line once (the drawn lines are word by word, so aria-hidden). */
+/* What screen readers hear: each whole line once (the drawn lines are letter by letter, so aria-hidden). */
 .live {
   position: absolute;
   width: 1px;

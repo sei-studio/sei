@@ -1,28 +1,34 @@
 /**
- * The WorldLink status lines typed out word by word, with cycling dots
- * (product feedback (261106)). Pure and deterministic, so a seeked
- * frame (the review renders) shows exactly what the app plays.
+ * The WorldLink status lines typed out letter by letter, like a typewriter,
+ * with cycling dots (product feedback (261106), letters (261107)). Pure and
+ * deterministic, so a seeked frame (the review renders) shows exactly what
+ * the app plays.
  *
- * A line is split into the words that type in (`typeUnits`: a word with the
- * spaces and punctuation after it; CJK, which has no spaces, by the word
- * segments Intl.Segmenter finds) and a trailing ellipsis, which is not typed
- * but turns into dots that cycle ".", "..", "..." once the words are in
- * (`splitEllipsis`: "…", "...", "。。。" or "⋯", in any locale's catalog;
- * the catalogs keep their text as it is). Each word takes 90 to 130 ms
- * (a fixed spread from the text, `wordDelays`), the whole line at most
- * TYPE_MAX_MS, after TYPE_START_MS (the line before fading out), so typing
- * always fits inside the shortest dwell and never moves the line's timing.
+ * A line is split into the letters that type in (`typeUnits`: grapheme
+ * clusters, so an emoji, a flag or an accented letter is one unit; CJK one
+ * character each) and a trailing ellipsis, which is not typed but turns into
+ * dots that cycle ".", "..", "..." once the letters are in (`splitEllipsis`:
+ * "…", "...", "。。。" or "⋯", in any locale's catalog; the catalogs keep
+ * their text as it is). Each letter takes 28 to 40 ms (a fixed spread from
+ * the text), a little longer after a space or punctuation (`typeDelays`),
+ * the whole line at most TYPE_MAX_MS, after TYPE_START_MS (the line before
+ * fading out), so typing always fits inside the shortest dwell and never
+ * moves the line's timing.
  */
 
 /** Typing starts this long after the line's start (the line before has faded out by then). */
 export const TYPE_START_MS = 300;
-/** One word takes this long, give or take TYPE_SPREAD_MS. */
-export const TYPE_WORD_MS = 110;
-export const TYPE_SPREAD_MS = 20;
+/** One letter takes this long, give or take TYPE_SPREAD_MS. */
+export const TYPE_CHAR_MS = 34;
+export const TYPE_SPREAD_MS = 6;
+/** Added after a space (the small beat between words). */
+export const TYPE_SPACE_MS = 12;
+/** Added after punctuation (",", ".", "、", "。" ...). */
+export const TYPE_PUNCT_MS = 45;
 /** A whole line types in within this (a long translation types faster). Under the 2.8 s dwell with TYPE_START_MS. */
 export const TYPE_MAX_MS = 1800;
-/** A word comes up over this (a quick fade, so it does not pop). */
-export const WORD_IN_MS = 70;
+/** A letter comes up over this (barely a fade, so it reads as typed but does not flicker). */
+export const CHAR_IN_MS = 20;
 /** The dots step every this long: ".", "..", "...", "." ... */
 export const DOT_STEP_MS = 400;
 
@@ -30,7 +36,7 @@ export const DOT_STEP_MS = 400;
 const ELLIPSIS_RE = /(?:…+|\.{3,}|。{3,}|⋯+)\s*$/u;
 
 export interface SplitLine {
-  /** The text before the ellipsis (the words that type in). */
+  /** The text before the ellipsis (the letters that type in). */
   body: string;
   /** The dot the cycling dots are made of ("." or "。"), or null: the line has no ellipsis. */
   dot: string | null;
@@ -42,66 +48,109 @@ export function splitEllipsis(text: string): SplitLine {
   return { body: text.slice(0, m.index), dot: m[0].trimEnd().startsWith('。') ? '。' : '.' };
 }
 
-type Segmenter = { segment(s: string): Iterable<{ segment: string; isWordLike?: boolean }> };
+type Segmenter = { segment(s: string): Iterable<{ segment: string }> };
+
+let graphemes: Segmenter | null | undefined;
 
 function segmenter(): Segmenter | null {
+  if (graphemes !== undefined) return graphemes;
   try {
     const S = (Intl as unknown as { Segmenter?: new (l?: string, o?: { granularity: string }) => Segmenter }).Segmenter;
-    return S ? new S(undefined, { granularity: 'word' }) : null;
+    graphemes = S ? new S(undefined, { granularity: 'grapheme' }) : null;
   } catch {
-    return null;
+    graphemes = null;
   }
+  return graphemes;
 }
 
 /**
- * The pieces a line types in, in order; joined they are the text exactly.
- * Each piece is one word and whatever follows it up to the next word
- * (spaces, punctuation); anything before the first word rides with it.
+ * The letters a line types in, in order; joined they are the text exactly.
+ * Grapheme clusters (Intl.Segmenter), so an emoji or a combined letter never
+ * splits; without Intl.Segmenter, code points.
  */
 export function typeUnits(text: string): string[] {
   if (!text) return [];
   const seg = segmenter();
-  const parts: Array<{ s: string; word: boolean }> = seg
-    ? Array.from(seg.segment(text), (p) => ({ s: p.segment, word: p.isWordLike !== false && /\S/u.test(p.segment) && !/^[\p{P}\p{S}]+$/u.test(p.segment) }))
-    : text.split(/(\s+)/u).filter(Boolean).map((s) => ({ s, word: /\S/u.test(s) }));
-  const units: string[] = [];
-  let lead = '';
-  for (const p of parts) {
-    if (p.word) {
-      units.push(lead + p.s);
-      lead = '';
-    } else if (units.length) units[units.length - 1] += p.s;
-    else lead += p.s;
-  }
-  if (lead) units.length ? (units[units.length - 1] += lead) : units.push(lead);
-  return units;
+  return seg ? Array.from(seg.segment(text), (p) => p.segment) : Array.from(text);
 }
 
-/** FNV-1a 32 of a string and a number (the spread is fixed per line and word). */
-function hash(s: string, n: number): number {
-  let h = 0x811c9dc5 ^ n;
+/** FNV-1a 32 of a string (the spread is fixed per line). */
+function hash(s: string): number {
+  let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);
     h = Math.imul(h, 0x01000193) >>> 0;
   }
-  h ^= h >>> 15;
-  h = Math.imul(h, 0x2c1b3c6d) >>> 0;
-  return (h ^ (h >>> 12)) >>> 0;
+  return h;
 }
 
-/** Each unit's typing time, ms: 90 to 130, fixed for the text, scaled so the whole line fits TYPE_MAX_MS. */
-export function wordDelays(units: readonly string[]): number[] {
-  const key = units.join('');
-  const raw = units.map((_, i) => TYPE_WORD_MS - TYPE_SPREAD_MS + (hash(key, i) % (2 * TYPE_SPREAD_MS + 1)));
+/** A well mixed 32 bit value from the line's seed and a letter's index. */
+function mix(seed: number, n: number): number {
+  let h = (seed ^ Math.imul(n + 1, 0x9e3779b1)) >>> 0;
+  h ^= h >>> 15;
+  h = Math.imul(h, 0x2c1b3c6d) >>> 0;
+  h ^= h >>> 12;
+  h = Math.imul(h, 0x297a2d39) >>> 0;
+  return (h ^ (h >>> 15)) >>> 0;
+}
+
+const SPACE_RE = /^\s+$/u;
+const PUNCT_RE = /^\p{P}+$/u;
+
+/**
+ * Each letter's typing time (ms until the next one shows): 28 to 40, fixed
+ * for the text, plus TYPE_SPACE_MS after a space and TYPE_PUNCT_MS after
+ * punctuation, scaled so the whole line fits TYPE_MAX_MS.
+ */
+export function typeDelays(units: readonly string[]): number[] {
+  const seed = hash(units.join(''));
+  const raw = units.map(
+    (u, i) =>
+      TYPE_CHAR_MS -
+      TYPE_SPREAD_MS +
+      (mix(seed, i) % (2 * TYPE_SPREAD_MS + 1)) +
+      (SPACE_RE.test(u) ? TYPE_SPACE_MS : PUNCT_RE.test(u) ? TYPE_PUNCT_MS : 0),
+  );
   const total = raw.reduce((a, b) => a + b, 0);
   const k = total > TYPE_MAX_MS ? TYPE_MAX_MS / total : 1;
   return raw.map((d) => d * k);
 }
 
+interface Plan {
+  body: string;
+  dot: string | null;
+  units: string[];
+  /** When each letter shows, ms from the line's start. */
+  at: number[];
+  /** When the last letter has had its time (the dots start), ms from the line's start. */
+  end: number;
+}
+
+/** The last few lines' plans (typedAt runs every frame on the same one or two lines). */
+const plans = new Map<string, Plan>();
+
+function plan(text: string): Plan {
+  const hit = plans.get(text);
+  if (hit) return hit;
+  const { body, dot } = splitEllipsis(text);
+  const units = typeUnits(body);
+  const delays = typeDelays(units);
+  const at: number[] = [];
+  let t = TYPE_START_MS;
+  for (const d of delays) {
+    at.push(t);
+    t += d;
+  }
+  const p = { body, dot, units, at, end: t };
+  if (plans.size >= 8) plans.delete(plans.keys().next().value as string);
+  plans.set(text, p);
+  return p;
+}
+
 export interface Typed {
   /**
    * The line as three parts that always join to the body: `typed` (in),
-   * `fresh` (the newest word, coming up over WORD_IN_MS: `freshIn` 0..1) and
+   * `fresh` (the newest letter, coming up over CHAR_IN_MS: `freshIn` 0..1) and
    * `rest` (still to come, drawn invisible so the line keeps its full width
    * and its centre from the first frame).
    */
@@ -109,9 +158,9 @@ export interface Typed {
   fresh: string;
   freshIn: number;
   rest: string;
-  /** The words are all in. */
+  /** The letters are all in. */
   done: boolean;
-  /** How many dots show (0 to 3; 0 until the words are in, always 0 without an ellipsis). */
+  /** How many dots show (0 to 3; 0 until the letters are in, always 0 without an ellipsis). */
   dots: number;
   /** The dot ("." or "。"), or null: no cycling dots (no ellipsis, or reduced motion, where the line keeps its own). */
   dot: string | null;
@@ -119,32 +168,24 @@ export interface Typed {
 
 /** How long the line takes to type, from its start (ms). */
 export function typeLength(text: string): number {
-  return TYPE_START_MS + wordDelays(typeUnits(splitEllipsis(text).body)).reduce((a, b) => a + b, 0);
+  return plan(text).end;
 }
 
 /**
- * A line `age` ms after it started. A word starts to show once the word
+ * A line `age` ms after it started. A letter starts to show once the letter
  * before it has had its time. `reduced`: the whole line at once, its
  * ellipsis kept as written (static).
  */
 export function typedAt(text: string, age: number, reduced = false): Typed {
   if (reduced) return { typed: text, fresh: '', freshIn: 1, rest: '', done: true, dots: 0, dot: null };
-  const { body, dot } = splitEllipsis(text);
-  const units = typeUnits(body);
-  const delays = wordDelays(units);
-  // Word i shows from at[i]; the dots start once the last word has had its time.
-  let t = TYPE_START_MS;
+  const { body, dot, units, at, end } = plan(text);
+  // How many letters show: the last one with at[i] <= age.
   let n = 0;
-  let shownAt = 0;
-  for (; n < units.length; n++) {
-    if (age < t) break;
-    shownAt = t;
-    t += delays[n];
-  }
-  const done = n >= units.length && age >= t;
+  while (n < units.length && age >= at[n]) n++;
+  const done = n >= units.length && age >= end;
   const typed = units.slice(0, Math.max(0, n - 1)).join('');
   const fresh = n > 0 ? units[n - 1] : '';
-  const freshIn = n > 0 ? Math.min(1, (age - shownAt) / WORD_IN_MS) : 0;
-  const dots = done && dot ? 1 + (Math.floor((age - t) / DOT_STEP_MS) % 3) : 0;
+  const freshIn = n > 0 ? Math.min(1, (age - at[n - 1]) / CHAR_IN_MS) : 0;
+  const dots = done && dot ? 1 + (Math.floor((age - end) / DOT_STEP_MS) % 3) : 0;
   return { typed, fresh, freshIn, rest: body.slice(typed.length + fresh.length), done, dots, dot };
 }

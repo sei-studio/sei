@@ -511,22 +511,26 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   `sei.seilinkIntroSeen.v1.<scope>`): seen when it completed or was skipped
   on a move-in that worked. Replay plays it over her room with nothing
   starting.
-  - Typing (v7, product feedback (261106), `lib/seilink/typing.ts`): every
-    line, the success and failure lines too, types in word by word
-    (`typeUnits`: a word plus the spaces and punctuation after it; CJK by
-    Intl.Segmenter word segments), 90 to 130 ms a word (`wordDelays`, a
-    fixed spread hashed from the text, so renders are stable), starting
-    `TYPE_START_MS` (300) after the line's start and capped at
-    `TYPE_MAX_MS` (1.8 s, a long translation types faster), so it always
-    fits inside the shortest dwell and never moves line timing. The newest
-    word comes up over `WORD_IN_MS` (70). A trailing ellipsis ("…", "...",
-    "。。。", "⋯", repeats) is not typed: once the words are in it becomes
-    dots cycling ".", "..", "..." every `DOT_STEP_MS` (400) until the next
-    line (`splitEllipsis`; "。" dots only for a "。。。" source; the
-    catalogs keep their text). The view draws each line as typed / newest
-    / rest (laid out with `visibility: hidden`) / three dot slots (opacity
-    only), so the line keeps its full width and centre from the first
-    frame; the line going out keeps its words and dots as they were when
+  - Typing (v7, product feedback (261106); letter by letter since v9,
+    product feedback (261107), `lib/seilink/typing.ts`): every line, the
+    success and failure lines too, types in letter by letter like a
+    typewriter (`typeUnits`: grapheme clusters from Intl.Segmenter, so
+    emoji and CJK stay whole; `Array.from` without it). Each letter takes
+    `TYPE_CHAR_MS` (34) give or take `TYPE_SPREAD_MS` (6), a fixed spread
+    hashed from the text so renders are stable, plus `TYPE_SPACE_MS` (12)
+    after a space and `TYPE_PUNCT_MS` (45) after punctuation
+    (`typeDelays`), starting `TYPE_START_MS` (300) after the line's start
+    and capped at `TYPE_MAX_MS` (1.8 s, a long translation types faster),
+    so it always fits inside the shortest dwell and never moves line
+    timing. The newest letter comes up over `CHAR_IN_MS` (20). A trailing
+    ellipsis ("…", "...", "。。。", "⋯", repeats) is not typed: once the
+    letters are in it becomes dots cycling ".", "..", "..." every
+    `DOT_STEP_MS` (400) until the next line (`splitEllipsis`; "。" dots
+    only for a "。。。" source; the catalogs keep their text). The view
+    draws each line as typed / newest / rest (laid out with
+    `visibility: hidden`) / three dot slots (opacity only), so the line
+    keeps its full width and centre from the first frame; the line going
+    out keeps its letters and dots as they were when
     the next one started (`caption.prevAge`). Reduced motion: the whole
     line at once with its own static ellipsis, crossfaded as before. The
     drawn lines are `aria-hidden`; a visually hidden `aria-live` element
