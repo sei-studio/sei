@@ -53,6 +53,8 @@ const ERROR_TEXT: Partial<Record<AvatarLibraryError, string>> = {
   bad_kind: 'That file is not a supported image or model.',
   import_failed: 'That model could not be read. Check it is a Live2D or rig zip.',
   rate_limited: 'Too many changes at once. Try again in a minute.',
+  staging_quota: 'You uploaded a lot in the last hour. Try again later.',
+  upload_required: 'Something went wrong with avatars. Try again.',
 };
 
 export function AvatarLibraryTiles({ characterId, characterShared }: AvatarLibraryTilesProps): React.ReactElement | null {

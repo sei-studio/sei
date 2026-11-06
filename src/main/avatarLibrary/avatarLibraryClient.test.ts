@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AvatarManifest } from '../../shared/ipc';
-import { isLastPublicLock, effectiveAvatar, parseAvatarList } from '../../shared/avatarLibrary';
+import { isLastPublicLock, effectiveAvatar, parseAvatarList, publicCount } from '../../shared/avatarLibrary';
 import { AvatarLibraryClient, AvatarLibraryNoSession, errorOf, imageMime, sha256Hex, type AvatarLibraryDeps } from './avatarLibraryClient';
 
 const CHAR = '0b9d3f9e-1111-4222-8333-444455556666';
@@ -19,6 +19,7 @@ function item(id: string, over: Record<string, unknown> = {}) {
     source: 'upload',
     name: null,
     sha256: 'c'.repeat(64),
+    rev: `${id.replace(/-/g, '').slice(0, 8)}${'0'.repeat(24)}`,
     bytes: 100,
     mime: 'image/png',
     is_public: true,
@@ -52,6 +53,7 @@ interface H {
   downloads: Map<string, Uint8Array>;
   effectiveChanges: string[];
   online: { v: boolean };
+  skip: Map<string, string>;
 }
 
 function harness(): H {
@@ -66,6 +68,7 @@ function harness(): H {
     downloads: new Map(),
     effectiveChanges: [],
     online: { v: true },
+    skip: new Map(),
   } as unknown as H;
   const deps: AvatarLibraryDeps = {
     api: async (method, path, body) => {
@@ -101,6 +104,11 @@ function harness(): H {
         h.local.removed++;
       },
     },
+    skip: {
+      has: async (id, rev) => h.skip.get(id) === rev,
+      add: async (id, rev) => void h.skip.set(id, rev),
+      clear: async (id) => void h.skip.delete(id),
+    },
     getPick: async () => h.pick.v,
     setPick: async (_id, v) => void (h.pick.v = v),
     capture: (event, props) => h.events.push({ event, props }),
@@ -130,6 +138,34 @@ describe('shared avatar library helpers', () => {
     expect(effectiveAvatar(l, A_ADULT)?.id).toBe(A_MODEL);
   });
 
+  it('sha256 is optional (owner only) but rev is required; a malformed hash drops the row', () => {
+    const l = parseAvatarList(
+      listBody({}, [
+        item(A_CARD, { sha256: null }),
+        item(A_MODEL, { sha256: 'xyz' }),
+        item(A_ADULT, { sha256: null, rev: undefined }),
+      ]),
+    )!;
+    expect(l.avatars.map((a) => [a.id, a.sha256])).toEqual([[A_CARD, null]]);
+    // An older proxy without rev: the hash stands in.
+    const old = parseAvatarList(listBody({}, [item(A_CARD, { rev: undefined })]))!;
+    expect(old.avatars[0].rev).toBe('c'.repeat(64));
+  });
+
+  it('publicCount matches the SQL: flagged rows never count, pending public rows do', () => {
+    const l = parseAvatarList(
+      listBody({}, [
+        item(A_CARD, { moderation: 'pending' }),
+        item(A_MODEL, { moderation: 'flagged' }),
+        item(A_ADULT, { is_public: false }),
+      ]),
+    )!;
+    expect(publicCount(l)).toBe(1);
+    // The flagged public row's lock is never held; the pending one holds the rule.
+    expect(isLastPublicLock(l, l.avatars.find((a) => a.id === A_MODEL)!)).toBe(false);
+    expect(isLastPublicLock(l, l.avatars.find((a) => a.id === A_CARD)!)).toBe(true);
+  });
+
   it('locks the last public avatar of a public character only', () => {
     const one = parseAvatarList(listBody({}, [item(A_CARD), item(A_ADULT, { is_public: false })]))!;
     expect(isLastPublicLock(one, one.avatars[0])).toBe(true);
@@ -152,10 +188,11 @@ describe('shared avatar library helpers', () => {
 });
 
 describe('AvatarLibraryClient', () => {
-  it('owner sync uploads a changed card image and migrates an unlinked local model', async () => {
+  it('owner sync asks the proxy to rebuild a changed card row and migrates a local model private, not default', async () => {
     const h = harness();
     h.card.v = { bytes: PNG, mime: 'image/png' };
     h.local.manifest = manifest();
+    const NEW_REV = 'ab'.repeat(16);
     let avatars: unknown[] = [item(A_CARD, { source: 'card', sha256: 'd'.repeat(64), is_default: true })];
     h.routes.set(`GET /avatars/v1/${CHAR}`, () => ({
       status: 200,
@@ -166,10 +203,10 @@ describe('AvatarLibraryClient', () => {
       body: { state: 'upload', upload: { url: 'https://x.supabase.co/upload/sign/s', path: 'staging/u/1', expires_in: 600 } },
     }));
     h.routes.set(`POST /avatars/v1/${CHAR}/commit`, (body) => {
-      const b = body as { kind: string; sha256: string };
+      const b = body as { kind: string; sha256: string; make_default?: boolean };
       if (b.kind === 'live2d') {
-        avatars = [...avatars.map((a) => ({ ...(a as object), is_default: false })), item(NEW_ID, { kind: 'live2d', sha256: b.sha256, is_public: false, is_default: true })];
-        return { status: 200, body: { avatar: { id: NEW_ID, moderation: 'pending' }, created: true } };
+        avatars = [...avatars, item(NEW_ID, { kind: 'live2d', sha256: b.sha256, rev: NEW_REV, is_public: false, is_default: b.make_default === true })];
+        return { status: 200, body: { avatar: { id: NEW_ID, rev: NEW_REV, moderation: 'pending' }, created: true } };
       }
       return { status: 200, body: { avatar: { id: A_CARD, moderation: 'clean' }, created: false } };
     });
@@ -180,26 +217,63 @@ describe('AvatarLibraryClient', () => {
       ['portrait', 'card'],
       ['live2d', 'upload'],
     ]);
-    expect(commits[0].sha256).toBe(sha256Hex(PNG));
-    expect(commits[1]).toMatchObject({ make_default: true, staging_path: 'staging/u/1' });
-    expect(h.puts).toHaveLength(2);
-    expect(h.local.manifest?.library).toEqual({ avatarId: NEW_ID, sha256: sha256Hex(ZIP) });
+    // The card row: only the hash this device expects, never bytes or a staging path.
+    expect(commits[0]).toEqual({ kind: 'portrait', source: 'card', sha256: sha256Hex(PNG) });
+    expect(h.calls.filter((c) => c.path.endsWith('/upload')).map((c) => (c.body as { kind: string }).kind)).toEqual(['live2d']);
+    expect(commits[1]).toMatchObject({ staging_path: 'staging/u/1' });
+    expect(commits[1].make_default).toBeUndefined();
+    expect(h.calls.some((c) => c.method === 'PATCH')).toBe(false);
+    expect(h.puts).toHaveLength(1);
+    expect(h.local.manifest?.library).toEqual({ avatarId: NEW_ID, rev: NEW_REV });
+    // It still plays here: this device picks it for the owner.
+    expect(h.pick.v).toBe(NEW_ID);
     expect(view.effective_id).toBe(NEW_ID);
+    expect(view.list?.default_id).toBe(A_CARD);
     const uploaded = h.events.filter((e) => e.event === 'avatar_uploaded').map((e) => e.props.source);
     expect(uploaded).toEqual(['card', 'migration']);
   });
 
-  it('skips the PUT when the server already has the bytes (dedupe)', async () => {
+  it('an unchanged card asks nothing; a card the cloud does not have yet is retried quietly', async () => {
     const h = harness();
     h.card.v = { bytes: PNG, mime: 'image/png' };
+    h.routes.set(`GET /avatars/v1/${CHAR}`, () => ({ status: 200, body: listBody({}, [item(A_CARD, { source: 'card', sha256: sha256Hex(PNG) })]) }));
+    await h.client.sync(CHAR);
+    expect(h.calls.some((c) => c.method === 'POST')).toBe(false);
+
+    for (const error of ['card_changed', 'no_card', 'card_conflict']) {
+      const h2 = harness();
+      h2.card.v = { bytes: PNG, mime: 'image/png' };
+      h2.routes.set(`GET /avatars/v1/${CHAR}`, () => ({ status: 200, body: listBody({}, []) }));
+      h2.routes.set(`POST /avatars/v1/${CHAR}/commit`, () => ({ status: 409, body: { error } }));
+      const v = await h2.client.sync(CHAR);
+      expect(v.state).toBe('ready');
+      expect(h2.events.filter((e) => e.event === 'avatar_library_failed')).toEqual([]);
+    }
+  });
+
+  it('an explicit model add becomes the default (still private)', async () => {
+    const h = harness();
+    h.local.manifest = manifest();
+    h.routes.set(`GET /avatars/v1/${CHAR}`, () => ({ status: 200, body: listBody({}, [item(A_CARD, { source: 'card', is_default: true })]) }));
+    h.routes.set(`POST /avatars/v1/${CHAR}/upload`, () => ({ status: 200, body: { state: 'exists' } }));
+    h.routes.set(`POST /avatars/v1/${CHAR}/commit`, () => ({ status: 200, body: { avatar: { id: NEW_ID, rev: 'cd'.repeat(16) } } }));
+    await h.client.addLocalModel(CHAR);
+    const commit = h.calls.find((c) => c.path.endsWith('/commit'))!.body as Record<string, unknown>;
+    expect(commit).toMatchObject({ kind: 'live2d', source: 'upload', make_default: true });
+    expect(commit.is_public).toBeUndefined();
+  });
+
+  it('skips the PUT when the server already has the bytes (dedupe)', async () => {
+    const h = harness();
+    h.local.manifest = manifest();
     h.routes.set(`GET /avatars/v1/${CHAR}`, () => ({ status: 200, body: listBody({}, []) }));
     h.routes.set(`POST /avatars/v1/${CHAR}/upload`, () => ({ status: 200, body: { state: 'exists' } }));
-    h.routes.set(`POST /avatars/v1/${CHAR}/commit`, () => ({ status: 200, body: { avatar: { id: A_CARD } } }));
+    h.routes.set(`POST /avatars/v1/${CHAR}/commit`, () => ({ status: 200, body: { avatar: { id: NEW_ID, rev: 'ef'.repeat(16) } } }));
     await h.client.sync(CHAR);
     expect(h.puts).toEqual([]);
     const commit = h.calls.find((c) => c.path.endsWith('/commit'))!.body as Record<string, unknown>;
     expect(commit.staging_path).toBeUndefined();
-    expect(h.events.find((e) => e.event === 'avatar_uploaded')?.props.dedupe).toBe(true);
+    expect(h.events.find((e) => e.event === 'avatar_uploaded')?.props).toMatchObject({ dedupe: true, source: 'migration' });
   });
 
   it('another user downloads a public model once and never regenerates it', async () => {
@@ -224,17 +298,52 @@ describe('AvatarLibraryClient', () => {
     expect(h.calls.some((c) => c.method === 'POST')).toBe(false);
   });
 
-  it('rejects a download whose hash does not match', async () => {
+  it('rejects a download whose hash does not match, and does not fetch it again', async () => {
     const h = harness();
     const url = 'https://x.supabase.co/sign/model.zip';
     h.downloads.set(url, new Uint8Array([1, 2, 3]));
     h.routes.set(`GET /avatars/v1/${CHAR}`, () => ({
       status: 200,
-      body: listBody({ is_owner: false }, [item(A_MODEL, { kind: 'live2d', sha256: sha256Hex(ZIP), url })]),
+      body: listBody({}, [item(A_MODEL, { kind: 'live2d', sha256: sha256Hex(ZIP), url, is_default: true })]),
     }));
+    let downloads = 0;
+    const real = h.downloads.get.bind(h.downloads);
+    h.downloads.get = (k: string) => (downloads++, real(k));
     await h.client.ensure(CHAR);
     expect(h.local.imported).toBeNull();
     expect(h.events.at(-1)).toEqual({ event: 'avatar_library_failed', props: { op: 'download', reason: 'hash_mismatch' } });
+    await h.client.sync(CHAR);
+    expect(downloads).toBe(1);
+  });
+
+  it('a non-owner (no hash) downloads by rev; a model that fails to import is never downloaded again', async () => {
+    const h = harness();
+    const url = 'https://x.supabase.co/sign/bomb.zip';
+    h.downloads.set(url, ZIP);
+    const row = item(A_MODEL, { kind: 'live2d', sha256: null, is_default: true, url });
+    h.routes.set(`GET /avatars/v1/${CHAR}`, () => ({ status: 200, body: listBody({ is_owner: false }, [item(A_CARD, { sha256: null }), row]) }));
+    let imports = 0;
+    const deps = (h.client as unknown as { d: AvatarLibraryDeps }).d;
+    deps.models.import = async () => {
+      imports++;
+      throw new Error('avatar zip file expands past its declared size');
+    };
+    await h.client.ensure(CHAR);
+    expect(imports).toBe(1);
+    expect(h.skip.get(A_MODEL)).toBe(row.rev);
+    expect(h.events.at(-1)?.props).toMatchObject({ op: 'download', reason: 'import_failed' });
+    // later passes leave it alone
+    await h.client.view(CHAR, { fresh: true });
+    await h.client.ensure(CHAR);
+    await h.client.sync(CHAR);
+    expect(imports).toBe(1);
+    // a new rev (the owner replaced it) is a new try; so is the viewer picking it again
+    h.skip.set(A_MODEL, 'f'.repeat(32));
+    await h.client.view(CHAR, { fresh: true });
+    await h.client.ensure(CHAR);
+    expect(imports).toBe(2);
+    await h.client.setPick(CHAR, A_MODEL);
+    expect(imports).toBe(3);
   });
 
   it('a viewer pick of a portrait clears the downloaded model and re-asks Anima for that portrait', async () => {
@@ -253,7 +362,7 @@ describe('AvatarLibraryClient', () => {
     expect(res.ok).toBe(true);
     expect(h.local.manifest).toBeNull();
     expect(h.effectiveChanges).toEqual([CHAR]);
-    expect(await h.client.animaAvatarFor(CHAR)).toEqual({ avatarId: A_ADULT, sha256: 'e'.repeat(64) });
+    expect(await h.client.animaAvatarFor(CHAR)).toEqual({ avatarId: A_ADULT, rev: item(A_ADULT).rev });
     expect(h.events.find((e) => e.event === 'avatar_default_changed')?.props).toMatchObject({ by: 'viewer', kind: 'portrait', from_kind: 'live2d' });
   });
 
@@ -339,10 +448,29 @@ describe('AvatarLibraryClient', () => {
       status: 200,
       body: listBody({ is_owner: false }, [item(A_CARD, { source: 'card' }), item(A_MODEL, { kind: 'live2d', is_default: true })]),
     }));
-    const r = await h.client.modelRemovedLocally(CHAR, { avatarId: A_MODEL, sha256: 'c'.repeat(64) });
+    const r = await h.client.modelRemovedLocally(CHAR, { avatarId: A_MODEL, rev: item(A_MODEL).rev });
     expect(r.ok).toBe(true);
     expect(h.pick.v).toBe(A_CARD);
     expect(h.calls.some((c) => c.method === 'DELETE')).toBe(false);
+  });
+
+  it('a refused owner delete of a locally removed model does not bring it back', async () => {
+    const h = harness();
+    const url = 'https://x.supabase.co/sign/model.zip';
+    h.downloads.set(url, ZIP);
+    const model = item(A_MODEL, { kind: 'live2d', sha256: sha256Hex(ZIP), is_default: true, url });
+    h.routes.set(`GET /avatars/v1/${CHAR}`, () => ({ status: 200, body: listBody({}, [model]) }));
+    h.routes.set(`DELETE /avatars/v1/${CHAR}/${A_MODEL}`, () => ({ status: 409, body: { error: 'last_public' } }));
+    await h.client.ensure(CHAR);
+    expect(h.local.imported).toEqual(ZIP);
+    // the user removes it on this device (ipc avatar.remove clears the store first)
+    h.local.manifest = null;
+    h.local.imported = null;
+    const r = await h.client.modelRemovedLocally(CHAR, { avatarId: A_MODEL, rev: model.rev });
+    expect(r).toEqual({ ok: false, error: 'last_public' });
+    await h.client.sync(CHAR);
+    await h.client.ensure(CHAR);
+    expect(h.local.imported).toBeNull();
   });
 
   it('writes offline answer offline without calling the proxy', async () => {

@@ -781,11 +781,12 @@ export interface AvatarManifest {
   accessories?: Record<string, boolean>;
   /**
    * Avatar library link (261106, docs/agents/avatar-library.md): this local
-   * model IS the server avatar `avatarId`, whose zip hashes to `sha256`.
+   * model IS the server avatar `avatarId` at content tag `rev` (the row's
+   * opaque `rev`, which changes when its bytes do).
    * Absent = a local import not uploaded yet (the owner's next sync uploads
    * it). A new import replaces the manifest, which drops the link.
    */
-  library?: { avatarId: string; sha256: string };
+  library?: { avatarId: string; rev: string };
 }
 
 /** One file of a Live2D model bundle, shipped renderer-ward over IPC so the

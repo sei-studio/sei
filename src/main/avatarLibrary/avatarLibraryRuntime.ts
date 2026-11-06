@@ -3,7 +3,8 @@
  * local avatar store, the config (viewer picks), windows and analytics.
  * Logic and its tests live in avatarLibraryClient.ts.
  */
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { BrowserWindow, net } from 'electron';
 import { IpcChannel, type AvatarManifest } from '../../shared/ipc';
 import { getCharacter } from '../characterStore';
@@ -20,9 +21,10 @@ import {
   zipStoredAvatar,
 } from '../avatar/avatarStore';
 import { paths } from '../paths';
-import { AvatarLibraryClient, AvatarLibraryNoSession, imageMime } from './avatarLibraryClient';
+import { AvatarLibraryClient, AvatarLibraryNoSession, imageMime, type SkipList } from './avatarLibraryClient';
 
 const CARD_MAX_BYTES = 10 * 1024 * 1024;
+const COMMIT_TIMEOUT_MS = 180_000;
 
 function log(line: string): void {
   console.log(line);
@@ -50,8 +52,62 @@ async function cardPortrait(characterId: string): Promise<{ bytes: Uint8Array; m
   return mime ? { bytes, mime } : null;
 }
 
+/** At most this many skipped rows are remembered (oldest dropped first). */
+const SKIP_MAX = 500;
+
+/**
+ * The skip list as a small JSON file in the active profile
+ * (`{ "<avatarId>": "<rev>" }`): read on every check so an account switch
+ * reads the new profile's file. Writes are serialized.
+ */
+function fileSkipList(): SkipList {
+  let chain: Promise<unknown> = Promise.resolve();
+  const read = async (): Promise<Record<string, string>> => {
+    try {
+      const v = JSON.parse(await readFile(paths.avatarLibrarySkipPath(), 'utf8')) as unknown;
+      return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, string>) : {};
+    } catch {
+      return {};
+    }
+  };
+  const write = async (map: Record<string, string>): Promise<void> => {
+    const file = paths.avatarLibrarySkipPath();
+    await mkdir(path.dirname(file), { recursive: true });
+    const tmp = `${file}.tmp`;
+    await writeFile(tmp, JSON.stringify(map), 'utf8');
+    await rename(tmp, file);
+  };
+  const update = (fn: (m: Record<string, string>) => Record<string, string> | null): Promise<void> => {
+    const next = chain.then(async () => {
+      const m = fn(await read());
+      if (m) await write(m);
+    });
+    chain = next.catch(() => undefined);
+    return next;
+  };
+  return {
+    has: async (id, rev) => (await read())[id] === rev,
+    add: (id, rev) =>
+      update((m) => {
+        delete m[id];
+        m[id] = rev;
+        const keys = Object.keys(m);
+        for (const k of keys.slice(0, Math.max(0, keys.length - SKIP_MAX))) delete m[k];
+        return m;
+      }),
+    clear: (id) =>
+      update((m) => {
+        if (!(id in m)) return null;
+        delete m[id];
+        return m;
+      }),
+  };
+}
+
 export const avatarLibrary = new AvatarLibraryClient({
-  api: (method, route, body) => proxyJson(method, route, body, () => new AvatarLibraryNoSession()),
+  // A commit downloads the upload, inflates every zip entry and moderates every image: give it time.
+  api: (method, route, body) =>
+    proxyJson(method, route, body, () => new AvatarLibraryNoSession(), route.endsWith('/commit') ? COMMIT_TIMEOUT_MS : undefined),
   online: () => {
     try {
       return net.isOnline();
@@ -69,6 +125,7 @@ export const avatarLibrary = new AvatarLibraryClient({
     link: (id, link) => setAvatarLibraryLink(id, link),
     remove: (id) => removeAvatar(id),
   },
+  skip: fileSkipList(),
   getPick: async (id) => (await loadConfig()).avatar_prefs?.[id]?.avatar_id ?? null,
   setPick: async (id, avatarId) => {
     await updateConfig((c) => {

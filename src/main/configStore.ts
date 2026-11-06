@@ -939,8 +939,34 @@ export async function saveConfigFromRenderer(config: UserConfig): Promise<void> 
       // Absent (an optional field the renderer's copy never carried) → keep disk.
       if (key in incoming) next[key] = incoming[key];
     }
+    if ('avatar_prefs' in incoming) {
+      next.avatar_prefs = keepMainAvatarPicks(current.avatar_prefs, incoming.avatar_prefs as UserConfig['avatar_prefs']);
+    }
     return next as UserConfig;
   });
+}
+
+/**
+ * `avatar_prefs[id].avatar_id` (the avatar library pick, 261106) is written by
+ * main only: a renderer save carries the rest of each entry and keeps whatever
+ * pick is on disk, so a stale renderer copy never undoes a pick main just made.
+ */
+export function keepMainAvatarPicks(
+  disk: UserConfig['avatar_prefs'],
+  incoming: UserConfig['avatar_prefs'],
+): UserConfig['avatar_prefs'] {
+  if (!incoming || typeof incoming !== 'object') return disk;
+  const out: NonNullable<UserConfig['avatar_prefs']> = {};
+  for (const [id, entry] of Object.entries(incoming)) {
+    if (!entry || typeof entry !== 'object') continue;
+    const { avatar_id: _ignored, ...rest } = entry;
+    out[id] = rest;
+  }
+  for (const [id, entry] of Object.entries(disk ?? {})) {
+    if (typeof entry?.avatar_id === 'string') out[id] = { ...(out[id] ?? {}), avatar_id: entry.avatar_id };
+  }
+  for (const id of Object.keys(out)) if (Object.keys(out[id]!).length === 0) delete out[id];
+  return out;
 }
 
 /**

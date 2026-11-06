@@ -4,15 +4,19 @@
  * docs/agents/avatar-library.md. Wiring: avatarLibraryRuntime.ts.
  *
  *   view(id)        the list + the viewer's pick + what plays (cached 60 s)
- *   sync(id)        owner: upload the card image when its hash changed and a
- *                   local Live2D/rig model with no library link yet (this is
- *                   the migration of existing local models: a model on disk
- *                   is uploaded the next time its owner opens the character),
- *                   then ensure(). Anyone else: just ensure().
+ *   sync(id)        owner: ask the proxy to rebuild the card row when the
+ *                   card hash changed (the proxy reads the card image itself;
+ *                   no bytes go up), and upload a local Live2D/rig model with
+ *                   no library link yet (the migration of existing local
+ *                   models: uploaded private, never made the default or
+ *                   public; this device picks it for the owner), then
+ *                   ensure(). Anyone else: just ensure().
  *   ensure(id)      make the local avatar store match what plays: download a
  *                   public model once (other users' copies of a public
  *                   character never regenerate it), clear a library-backed
- *                   local model when a portrait plays instead.
+ *                   local model when a portrait plays instead. A row that
+ *                   failed to import (or that the user removed locally) is
+ *                   on the skip list and never downloaded again.
  *   animaAvatarFor  the portrait avatar Anima should bake for her (per
  *                   portrait hash, not per character), or null (old path).
  *
@@ -54,8 +58,19 @@ export interface LocalModelStore {
   /** The stored model as a stable zip (zipStoredAvatar), or null. */
   zip(characterId: string): Promise<Uint8Array | null>;
   import(characterId: string, zip: Uint8Array): Promise<AvatarManifest>;
-  link(characterId: string, link: { avatarId: string; sha256: string } | null): Promise<AvatarManifest | null>;
+  link(characterId: string, link: { avatarId: string; rev: string } | null): Promise<AvatarManifest | null>;
   remove(characterId: string): Promise<void>;
+}
+
+/**
+ * Library rows (by id + rev) this profile does not download again: an import
+ * that failed, or a model the user removed locally. Persisted per profile.
+ */
+export interface SkipList {
+  has(avatarId: string, rev: string): Promise<boolean>;
+  add(avatarId: string, rev: string): Promise<void>;
+  /** The user chose this row again: allow one more try. */
+  clear(avatarId: string): Promise<void>;
 }
 
 export interface AvatarLibraryDeps {
@@ -65,9 +80,10 @@ export interface AvatarLibraryDeps {
   /** PUT bytes to a signed upload URL. */
   putSigned(url: string, bytes: Uint8Array, mime: string): Promise<void>;
   download(url: string, maxBytes: number): Promise<Uint8Array>;
-  /** The owner's card image bytes, or null. */
+  /** The owner's card image bytes (hashed only, never uploaded), or null. */
   cardPortrait(characterId: string): Promise<{ bytes: Uint8Array; mime: string } | null>;
   models: LocalModelStore;
+  skip: SkipList;
   /** The viewer's pick (UserConfig.avatar_prefs[id].avatar_id). */
   getPick(characterId: string): Promise<string | null>;
   setPick(characterId: string, avatarId: string | null): Promise<void>;
@@ -107,6 +123,7 @@ export function errorOf(status: number, body: unknown): AvatarLibraryError {
   const code = (body as { error?: unknown } | null)?.error;
   const known: AvatarLibraryError[] = [
     'too_big', 'too_many', 'quota', 'last_public', 'not_shareable', 'card_avatar', 'hash_mismatch', 'bad_content', 'bad_kind',
+    'upload_required', 'staging_quota', 'card_changed', 'no_card', 'card_conflict',
   ];
   if (typeof code === 'string' && (known as string[]).includes(code)) return code as AvatarLibraryError;
   if (status === 401) return 'signed_out';
@@ -166,11 +183,11 @@ export class AvatarLibraryClient {
   }
 
   /** The portrait avatar Anima should bake for her, or null (bake her card image the old way). */
-  async animaAvatarFor(characterId: string): Promise<{ avatarId: string; sha256: string } | null> {
+  async animaAvatarFor(characterId: string): Promise<{ avatarId: string; rev: string } | null> {
     if (!UUID_RE.test(characterId)) return null;
     const view = await this.ensure(characterId);
     const eff = view.list?.avatars.find((a) => a.id === view.effective_id) ?? null;
-    return eff && eff.kind === 'portrait' ? { avatarId: eff.id, sha256: eff.sha256 } : null;
+    return eff && eff.kind === 'portrait' ? { avatarId: eff.id, rev: eff.rev } : null;
   }
 
   // ── writes ────────────────────────────────────────────────────────────────
@@ -180,7 +197,7 @@ export class AvatarLibraryClient {
     const mime = imageMime(bytes);
     if (!mime) return { ok: false, error: 'bad_content' };
     return this.write('upload', characterId, async () => {
-      await this.upload(characterId, 'portrait', bytes, mime, { name, source: 'upload', origin: 'user' });
+      await this.upload(characterId, 'portrait', bytes, mime, { name, origin: 'user' });
     });
   }
 
@@ -226,6 +243,7 @@ export class AvatarLibraryClient {
         });
       }
       if (body.is_default === true) {
+        await this.d.skip.clear(avatarId).catch(() => {});
         const prev = before ? effectiveAvatar(before, null) : null;
         this.d.capture('avatar_default_changed', {
           character_id: characterId,
@@ -251,6 +269,7 @@ export class AvatarLibraryClient {
     if (avatarId && !list?.avatars.some((a) => a.id === avatarId)) return { ok: false, error: 'not_found' };
     const prev = list ? effectiveAvatar(list, await this.d.getPick(characterId).catch(() => null)) : null;
     try {
+      if (avatarId) await this.d.skip.clear(avatarId).catch(() => {});
       await this.d.setPick(characterId, avatarId);
     } catch {
       return { ok: false, error: 'server' };
@@ -282,9 +301,18 @@ export class AvatarLibraryClient {
    * deletes it from the library (the server keeps the public rule); anyone
    * else switches their own pick to a portrait so it is not downloaded again.
    */
-  async modelRemovedLocally(characterId: string, link: { avatarId: string; sha256: string }): Promise<AvatarLibraryResult> {
+  async modelRemovedLocally(characterId: string, link: { avatarId: string; rev?: string }): Promise<AvatarLibraryResult> {
+    // Whatever the server says next, this device does not fetch that model
+    // back by itself (a refused delete, offline, another user's model).
+    const known = this.cache.get(characterId)?.list?.avatars.find((a) => a.id === link.avatarId) ?? null;
+    const rev = typeof link.rev === 'string' && link.rev ? link.rev : known?.rev ?? null;
+    if (rev) await this.d.skip.add(link.avatarId, rev).catch(() => {});
     const list = await this.list(characterId, false).catch(() => null);
     if (!list) return { ok: false, error: 'not_found' };
+    if (!rev) {
+      const row = list.avatars.find((a) => a.id === link.avatarId);
+      if (row) await this.d.skip.add(row.id, row.rev).catch(() => {});
+    }
     if (list.is_owner) return this.remove(characterId, link.avatarId);
     const portrait = list.avatars.find((a) => a.kind === 'portrait') ?? null;
     if (!portrait) return { ok: false, error: 'not_found' };
@@ -361,8 +389,8 @@ export class AvatarLibraryClient {
     kind: UploadableAvatarKind,
     bytes: Uint8Array,
     mime: string,
-    opts: { name: string | null; source: 'card' | 'upload'; origin: 'user' | 'migration' | 'card'; makeDefault?: boolean },
-  ): Promise<{ id: string } | null> {
+    opts: { name: string | null; origin: 'user' | 'migration'; makeDefault?: boolean },
+  ): Promise<{ id: string; rev: string | null } | null> {
     const sha = sha256Hex(bytes);
     const ask = await this.d.api('POST', `/avatars/v1/${characterId}/upload`, { kind, sha256: sha, bytes: bytes.byteLength, mime });
     if (ask.status !== 200) throw new OpError(errorOf(ask.status, ask.body));
@@ -380,11 +408,11 @@ export class AvatarLibraryClient {
       sha256: sha,
       ...(staging ? { staging_path: staging } : {}),
       ...(opts.name ? { name: opts.name.slice(0, 80) } : {}),
-      source: opts.source,
+      source: 'upload',
       ...(opts.makeDefault ? { make_default: true } : {}),
     });
     if (commit.status !== 200) throw new OpError(errorOf(commit.status, commit.body));
-    const c = commit.body as { avatar?: { id?: string; moderation?: string } } | null;
+    const c = commit.body as { avatar?: { id?: string; rev?: string; moderation?: string } } | null;
     const list = this.cache.get(characterId)?.list ?? null;
     this.d.capture('avatar_uploaded', {
       character_id: characterId,
@@ -397,7 +425,39 @@ export class AvatarLibraryClient {
     });
     this.cache.delete(characterId);
     const id = c?.avatar?.id;
-    return typeof id === 'string' && UUID_RE.test(id) ? { id } : null;
+    const rev = typeof c?.avatar?.rev === 'string' ? c.avatar.rev : null;
+    return typeof id === 'string' && UUID_RE.test(id) ? { id, rev } : null;
+  }
+
+  /**
+   * Ask the proxy to rebuild the card row from the card image it holds.
+   * `sha` is the hash of this device's card image; when the cloud copy is not
+   * that yet (card_changed) or there is none (no_card), the next sync tries
+   * again, quietly. card_conflict: those bytes sit on an upload row that is
+   * not clean, which is the server's call to keep apart.
+   */
+  private async commitCard(characterId: string, sha: string): Promise<boolean> {
+    const res = await this.d.api('POST', `/avatars/v1/${characterId}/commit`, { kind: 'portrait', source: 'card', sha256: sha });
+    if (res.status === 200) {
+      const c = res.body as { avatar?: { moderation?: string } } | null;
+      const list = this.cache.get(characterId)?.list ?? null;
+      this.d.capture('avatar_uploaded', {
+        character_id: characterId,
+        kind: 'portrait',
+        source: 'card',
+        dedupe: true,
+        mb: null,
+        moderation: c?.avatar?.moderation ?? null,
+        own_character_public: list?.character_public ?? null,
+      });
+      return true;
+    }
+    const code = errorOf(res.status, res.body);
+    if (code === 'card_changed' || code === 'no_card' || code === 'card_conflict') {
+      this.d.log?.(`[avatars] card row not rebuilt (${code})`);
+      return false;
+    }
+    throw new OpError(code);
   }
 
   private async runSync(characterId: string, ownerUploads: boolean): Promise<AvatarLibraryView> {
@@ -446,10 +506,7 @@ export class AvatarLibraryClient {
     if (card) {
       const sha = sha256Hex(card.bytes);
       const cardRow = list.avatars.find((a) => a.source === 'card');
-      if (!cardRow || cardRow.sha256 !== sha) {
-        await this.upload(characterId, 'portrait', card.bytes, card.mime, { name: null, source: 'card', origin: 'card' });
-        changed = true;
-      }
+      if ((!cardRow || cardRow.sha256 !== sha) && (await this.commitCard(characterId, sha))) changed = true;
     }
     const manifest = await this.d.models.manifest(characterId).catch(() => null);
     if (manifest) {
@@ -467,8 +524,10 @@ export class AvatarLibraryClient {
 
   /**
    * Upload her local, not yet linked model (or find it already in the
-   * library), make it the default (it is what she shows on this device), and
-   * link the local copy. True when the library changed.
+   * library) and link the local copy. It stays private. An upload the owner
+   * just chose (`user`) becomes the default; a migration of a model already
+   * on disk is never made the default, only picked on this device so it
+   * keeps playing here. True when the library changed.
    */
   private async pushLocalModel(
     characterId: string,
@@ -482,23 +541,28 @@ export class AvatarLibraryClient {
     const kind: UploadableAvatarKind = manifest.kind === 'rig' ? 'rig' : 'live2d';
     const existing = list.avatars.find((a) => a.sha256 === sha && a.kind === kind) ?? null;
     let avatarId: string | null = existing?.id ?? null;
+    let rev: string | null = existing?.rev ?? null;
     let changed = false;
     if (!existing) {
       const item = await this.upload(characterId, kind, zip, 'application/zip', {
         name: manifest.name,
-        source: 'upload',
         origin,
-        makeDefault: true,
+        makeDefault: origin === 'user',
       });
       avatarId = item?.id ?? null;
+      rev = item?.rev ?? null;
       changed = true;
-    } else if (!existing.is_default) {
+    } else if (origin === 'user' && !existing.is_default) {
       const res = await this.d.api('PATCH', `/avatars/v1/${characterId}/${existing.id}`, { is_default: true });
       if (res.status !== 200) throw new OpError(errorOf(res.status, res.body));
       changed = true;
     }
-    if (avatarId) {
-      const m = await this.d.models.link(characterId, { avatarId, sha256: sha });
+    if (avatarId && !rev) {
+      rev = (await this.list(characterId, true))?.avatars.find((a) => a.id === avatarId)?.rev ?? null;
+    }
+    if (avatarId && rev) {
+      if (origin === 'migration') await this.d.setPick(characterId, avatarId).catch(() => {});
+      const m = await this.d.models.link(characterId, { avatarId, rev });
       if (m) this.d.onModel(characterId, m);
     }
     return changed;
@@ -510,19 +574,26 @@ export class AvatarLibraryClient {
     if (!eff) return;
     const manifest = await this.d.models.manifest(characterId).catch(() => null);
     if (eff.kind === 'live2d' || eff.kind === 'rig') {
-      if (manifest?.library?.sha256 === eff.sha256) return;
+      if (manifest?.library?.avatarId === eff.id && manifest.library.rev === eff.rev) return;
       // A model the user imported by hand (no library link) is never overwritten:
       // the owner's is uploaded by sync, anyone else's is their own choice.
       if (manifest && !manifest.library) return;
+      // Failed to import before, or removed by the user: never fetched again by itself.
+      if (await this.d.skip.has(eff.id, eff.rev).catch(() => false)) return;
       if (!eff.url) throw new OpError('server');
       const t0 = this.d.now();
       const zip = await this.d.download(eff.url, MODEL_DOWNLOAD_MAX_BYTES);
-      if (sha256Hex(zip) !== eff.sha256) throw new OpError('hash_mismatch');
+      // The owner gets the hash; anyone else trusts the signed URL of that row.
+      if (eff.sha256 && sha256Hex(zip) !== eff.sha256) {
+        await this.d.skip.add(eff.id, eff.rev).catch(() => {});
+        throw new OpError('hash_mismatch');
+      }
       let m: AvatarManifest | null;
       try {
         await this.d.models.import(characterId, zip);
-        m = await this.d.models.link(characterId, { avatarId: eff.id, sha256: eff.sha256 });
+        m = await this.d.models.link(characterId, { avatarId: eff.id, rev: eff.rev });
       } catch {
+        await this.d.skip.add(eff.id, eff.rev).catch(() => {});
         throw new OpError('import_failed');
       }
       this.d.onModel(characterId, m);

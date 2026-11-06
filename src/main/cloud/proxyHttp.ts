@@ -19,6 +19,8 @@ export async function proxyJson(
   route: string,
   body: unknown,
   noSession: () => Error,
+  /** Longer than the default 15 s for slow routes (the avatar commit). */
+  timeoutMs: number = API_TIMEOUT_MS,
 ): Promise<{ status: number; body: unknown }> {
   let jwt: string;
   try {
@@ -28,7 +30,7 @@ export async function proxyJson(
     throw err;
   }
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), API_TIMEOUT_MS);
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const res = await fetch(`${PROXY_BASE}${route}`, {
       method,

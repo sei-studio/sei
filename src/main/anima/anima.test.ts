@@ -106,7 +106,7 @@ interface Harness {
   replies: Array<ProxyReply | { status: number; body: unknown } | Error>;
   clock: { t: number };
   set(
-    o: Partial<{ online: boolean; ref: string | null | undefined; zip: Uint8Array; avatar: { avatarId: string; sha256: string } | null }>,
+    o: Partial<{ online: boolean; ref: string | null | undefined; zip: Uint8Array; avatar: { avatarId: string; rev: string } | null }>,
   ): void;
   /** Run the next timer. */
   tick(): Promise<void>;
@@ -119,7 +119,7 @@ async function harness(): Promise<Harness> {
     online: true,
     ref: 'sui.png|t1|1' as string | null | undefined,
     zip: await packZip(),
-    avatar: null as { avatarId: string; sha256: string } | null,
+    avatar: null as { avatarId: string; rev: string } | null,
   };
   h.set = (o) => Object.assign(opts, o);
   const deps: AnimaClientDeps = {
@@ -334,20 +334,23 @@ describe('AnimaClient', () => {
 });
 
 describe('AnimaClient per-avatar bakes (261106)', () => {
-  const AV1 = { avatarId: '11111111-2222-4333-8444-555555555555', sha256: 'a'.repeat(64) };
-  const AV2 = { avatarId: '66666666-7777-4888-8999-000000000000', sha256: 'b'.repeat(64) };
+  // `rev` is the row's opaque content tag (not its hash, which non-owners never get).
+  const AV1 = { avatarId: '11111111-2222-4333-8444-555555555555', rev: 'a'.repeat(32) };
+  const AV2 = { avatarId: '66666666-7777-4888-8999-000000000000', rev: 'b'.repeat(32) };
+  const H1 = 'a'.repeat(64);
+  const H2 = 'b'.repeat(64);
 
   it('asks for the library avatar that plays and re-asks when it changes', async () => {
     const h = await harness();
     const zip = await packZip();
     h.set({ zip, avatar: AV1 });
-    h.replies.push({ state: 'queued', portrait_hash: AV1.sha256, created: true });
+    h.replies.push({ state: 'queued', portrait_hash: H1, created: true });
     await h.client.prepare(CHAR, 'editor');
     expect(h.bodies[0]).toEqual({ character_id: CHAR, avatar_id: AV1.avatarId });
-    h.replies.push(readyReply(zip, AV1.sha256));
+    h.replies.push(readyReply(zip, H1));
     await h.tick();
     expect(h.calls[1]).toEqual({ method: 'GET', path: `/anima/v1/status/${CHAR}?avatar_id=${AV1.avatarId}` });
-    expect((await h.store.entry(CHAR))?.portrait_ref).toBe(`avatar:${AV1.avatarId}:${AV1.sha256}`);
+    expect((await h.store.entry(CHAR))?.portrait_ref).toBe(`avatar:${AV1.avatarId}:${AV1.rev}`);
 
     // Same avatar: nothing to ask.
     h.calls.length = 0;
@@ -358,7 +361,7 @@ describe('AnimaClient per-avatar bakes (261106)', () => {
     h.set({ avatar: AV2 });
     const zip2 = await packZip({ 'frames/extra.webp': new Uint8Array([7]) });
     h.set({ zip: zip2 });
-    h.replies.push(readyReply(zip2, AV2.sha256));
+    h.replies.push(readyReply(zip2, H2));
     await h.client.avatarChanged(CHAR);
     expect(h.bodies.at(-1)).toEqual({ character_id: CHAR, avatar_id: AV2.avatarId });
     expect(await h.store.packIdFor(CHAR)).toBe(animaPackId(sha256Hex(zip2)));

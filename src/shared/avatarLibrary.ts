@@ -24,7 +24,10 @@ export interface AvatarItem {
   /** 'card' mirrors the card image (one per character); 'upload' is anything else. */
   source: 'card' | 'upload';
   name: string | null;
-  sha256: string;
+  /** The content hash, sent to the owner only (null for everyone else). */
+  sha256: string | null;
+  /** Opaque content tag of this row: changes when its bytes do. What the app caches by. */
+  rev: string;
   bytes: number;
   mime: string;
   is_public: boolean;
@@ -82,6 +85,11 @@ export const AVATAR_LIBRARY_ERRORS = [
   'card_avatar',
   'hash_mismatch',
   'bad_content',
+  'upload_required',
+  'staging_quota',
+  'card_changed',
+  'no_card',
+  'card_conflict',
   'bad_kind',
   'import_failed',
   'rate_limited',
@@ -99,20 +107,26 @@ export type AvatarLibraryResult = { ok: true; view: AvatarLibraryView } | { ok: 
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SHA_RE = /^[0-9a-f]{64}$/;
+const REV_RE = /^[0-9a-f]{16,64}$/;
 
 function asItem(v: unknown): AvatarItem | null {
   if (!v || typeof v !== 'object') return null;
   const r = v as Record<string, unknown>;
   if (typeof r.id !== 'string' || !UUID_RE.test(r.id)) return null;
   if (typeof r.kind !== 'string' || !(AVATAR_KINDS as readonly string[]).includes(r.kind)) return null;
-  if (typeof r.sha256 !== 'string' || !SHA_RE.test(r.sha256)) return null;
+  const sha256 = typeof r.sha256 === 'string' && SHA_RE.test(r.sha256) ? r.sha256 : null;
+  if (r.sha256 !== undefined && r.sha256 !== null && sha256 === null) return null;
+  // A proxy without `rev` (older deploy) still sends the hash.
+  const rev = typeof r.rev === 'string' && REV_RE.test(r.rev) ? r.rev : sha256;
+  if (!rev) return null;
   const moderation = (['pending', 'clean', 'flagged', 'needs_review'] as const).find((m) => m === r.moderation) ?? 'pending';
   return {
     id: r.id,
     kind: r.kind as AvatarKind,
     source: r.source === 'card' ? 'card' : 'upload',
     name: typeof r.name === 'string' ? r.name.slice(0, 80) : null,
-    sha256: r.sha256,
+    sha256,
+    rev,
     bytes: typeof r.bytes === 'number' && Number.isFinite(r.bytes) ? r.bytes : 0,
     mime: typeof r.mime === 'string' ? r.mime : '',
     is_public: r.is_public === true,
@@ -155,17 +169,22 @@ export function effectiveAvatar(list: AvatarLibraryList | null, pickId: string |
   return byId(pickId) ?? byId(list.default_id) ?? list.avatars[0];
 }
 
-/** Public avatars of a list (the ones that count for the public rule). */
+/**
+ * Public avatars that count for the public rule, exactly as the SQL counts
+ * them: public and not flagged. A public row still pending review counts (it
+ * holds the rule) even though others cannot see it until it is clean.
+ */
 export function publicCount(list: AvatarLibraryList): number {
-  return list.avatars.filter((a) => a.is_public).length;
+  return list.avatars.filter((a) => a.is_public && a.moderation !== 'flagged').length;
 }
 
 /**
  * The lock of this avatar cannot be opened to private: the character is
  * public and this is its last public avatar (the server enforces the same).
+ * A flagged row never counts, so its lock is never held.
  */
 export function isLastPublicLock(list: AvatarLibraryList, item: AvatarItem): boolean {
-  return list.character_public && item.is_public && publicCount(list) <= 1;
+  return list.character_public && item.is_public && item.moderation !== 'flagged' && publicCount(list) <= 1;
 }
 
 /** Megabytes rounded to one decimal, for analytics (never exact sizes). */

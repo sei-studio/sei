@@ -26,6 +26,7 @@ export const ZH_AVATARS_261106: Record<string, string> = {
   "That file is not a supported image or model.": "不支持这个文件，请选择图片或模型。",
   "That model could not be read. Check it is a Live2D or rig zip.": "无法读取这个模型。请确认它是 Live2D 或绑骨模型的 zip 文件。",
   "Too many changes at once. Try again in a minute.": "操作太频繁了。请一分钟后再试。",
+  "You uploaded a lot in the last hour. Try again later.": "过去一小时上传太多了。请稍后再试。",
   "Something went wrong with avatars. Try again.": "形象出了点问题。请再试一次。",
   "Pick which avatar plays for you.": "选择你这边显示哪个形象。",
   "Default": "默认",

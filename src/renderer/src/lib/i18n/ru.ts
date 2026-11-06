@@ -2351,6 +2351,7 @@ export const RU: Record<string, string> = {
   "That file is not a supported image or model.": "Этот файл не подходит. Выберите картинку или модель.",
   "That model could not be read. Check it is a Live2D or rig zip.": "Не удалось прочитать модель. Проверьте, что это zip с Live2D или ригом.",
   "Too many changes at once. Try again in a minute.": "Слишком много изменений сразу. Попробуйте через минуту.",
+  "You uploaded a lot in the last hour. Try again later.": "За последний час загружено слишком много. Попробуйте позже.",
   "Something went wrong with avatars. Try again.": "С аватарами что-то пошло не так. Попробуйте ещё раз.",
   "Pick which avatar plays for you.": "Выберите, какой аватар показывать у вас.",
   "Default": "Основной",

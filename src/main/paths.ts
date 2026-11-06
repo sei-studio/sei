@@ -156,6 +156,8 @@ export const paths = {
   /** Active profile's data root. */
   profileRoot: profileRootDir,
   configPath: () => path.join(profileRootDir(), 'config.json'),
+  /** Avatar library rows this profile will not download again (failed import, refused delete). */
+  avatarLibrarySkipPath: () => path.join(profileRootDir(), 'avatar-library-skip.json'),
   charactersDir: () => path.join(profileRootDir(), 'characters'),
   characterPath: (id: string) => path.join(profileRootDir(), 'characters', `${id}.json`),
   characterPortraitPath: (id: string) => path.join(profileRootDir(), 'characters', `${id}.png`),

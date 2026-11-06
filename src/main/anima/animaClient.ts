@@ -73,7 +73,7 @@ export interface AnimaClientDeps {
    * The library portrait avatar that plays for her (261106), or null: bake
    * her card image the old way. Optional (tests, old wiring).
    */
-  avatarFor?(characterId: string): Promise<{ avatarId: string; sha256: string } | null>;
+  avatarFor?(characterId: string): Promise<{ avatarId: string; rev: string } | null>;
   capture(event: string, props: Record<string, unknown>): void;
   /** Her pack is installed (or changed): views re-resolve her avatar. */
   onReady(characterId: string, packId: string): void;
@@ -212,15 +212,15 @@ export class AnimaClient {
   }
 
   /**
-   * What her pack is checked against: the library avatar (`avatar:<id>:<sha>`)
+   * What her pack is checked against: the library avatar (`avatar:<id>:<rev>`)
    * when one plays, else her local portrait ref. Null: no such character.
    */
   private async refFor(characterId: string): Promise<{ ref: string | null; avatarId: string | null } | null> {
     const ref = await this.d.portraitRef(characterId);
     if (ref === undefined) return null;
     const avatar = this.d.avatarFor ? await this.d.avatarFor(characterId).catch(() => null) : null;
-    if (avatar && UUID_RE.test(avatar.avatarId) && /^[0-9a-f]{64}$/.test(avatar.sha256)) {
-      return { ref: `avatar:${avatar.avatarId}:${avatar.sha256}`, avatarId: avatar.avatarId };
+    if (avatar && UUID_RE.test(avatar.avatarId) && /^[0-9a-f]{16,64}$/.test(avatar.rev)) {
+      return { ref: `avatar:${avatar.avatarId}:${avatar.rev}`, avatarId: avatar.avatarId };
     }
     return { ref, avatarId: null };
   }

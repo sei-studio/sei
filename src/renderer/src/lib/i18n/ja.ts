@@ -2351,6 +2351,7 @@ export const JA: Record<string, string> = {
   "That file is not a supported image or model.": "対応していないファイルです。画像かモデルを選んでください。",
   "That model could not be read. Check it is a Live2D or rig zip.": "このモデルを読み込めませんでした。Live2Dまたはリグのzipか確認してください。",
   "Too many changes at once. Try again in a minute.": "変更が多すぎます。1分ほどしてからもう一度お試しください。",
+  "You uploaded a lot in the last hour. Try again later.": "この1時間のアップロードが多すぎます。しばらくしてからもう一度お試しください。",
   "Something went wrong with avatars. Try again.": "アバターで問題が起きました。もう一度お試しください。",
   "Pick which avatar plays for you.": "あなたの画面で使うアバターを選べます。",
   "Default": "デフォルト",

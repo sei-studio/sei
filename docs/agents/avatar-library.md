@@ -83,25 +83,33 @@ staging/<user_id>/<uuid>           signed-upload landing spot, moved or deleted 
 
 Content addressed: rows on different characters (or of different users) with
 the same bytes share one object. Access is decided by rows, never by the
-object, so a private row and a public row of the same bytes are fine. An
-object is deleted only when no row references its path any more
-(`avatar_delete` returns `orphan_path`; `avatar_gc_candidates` lists objects
-left over by cascades and staging older than a day).
+object, so a private row and a public row of the same bytes are fine.
+Objects are removed only by the hourly GC (`avatar_gc_candidates`): content
+no row references that was not written for an hour, and staging older than
+3 hours. Commits and deletes never remove objects themselves.
 
 Upload is two steps so the bytes never pass through a Fly machine's request
 body:
 
 1. `POST /avatars/v1/:character_id/upload {kind, sha256, bytes, mime}`:
-   checks owner, kind, size, count and quota. If an object for that kind and
-   hash already exists: `{state:'exists'}`. Otherwise a signed upload URL to
-   `staging/<user>/<uuid>` (`{state:'upload', upload:{url, path, expires_in}}`).
+   checks owner, kind, size, count and quota. `{state:'exists'}` only when a
+   row the caller can already read holds those bytes (their own, or a public
+   clean upload of a character public to them); knowing a hash is not
+   enough. Otherwise, within an hourly per-user staging cap (429
+   `staging_quota`), a signed upload URL to `staging/<user>/<uuid>`
+   (`{state:'upload', upload:{url, path, expires_in}}`).
 2. The client PUTs the bytes, then `POST /avatars/v1/:character_id/commit
-   {kind, sha256, staging_path?, name?, source?, make_default?}`. The proxy
-   downloads the staging object (at most 2 at a time per machine), checks the
-   sha256 and the size, checks the content (image magic bytes; for a zip the
-   central directory: entry count, extracted size, no absolute or `..` paths,
-   the required entry file), moderates it, moves it to its content path and
-   calls `avatar_commit`.
+   {kind, sha256, staging_path?, name?, make_default?}` (the app allows it
+   180 s). The proxy downloads the staging object, checks the sha256 and the
+   size, checks the content, moderates every image, writes it to its content
+   path and calls `avatar_commit`. A zip is checked the way the app imports
+   it: every entry inflated at exactly its declared size; every PNG/JPEG/WebP
+   entry is an image and is moderated; a GIF/TIFF/BMP/ICO/AVIF entry or an
+   image-named entry that is not a real image refuses it; live2d needs the
+   first `*.model3.json` naming an existing `Moc`, and every `Textures` entry
+   must exist and be an image; a rig needs a valid `rig.json` whose layer
+   `src` and `states` images all exist and are images. A zip with no image
+   is held for review.
 
 ## The public rule
 
@@ -109,10 +117,12 @@ A public character (`characters.shared = true`) with at least one avatar row
 keeps at least one public avatar. Enforced three times:
 
 - In SQL, always: a constraint trigger on `character_avatars` raises
-  `last_public_avatar` when an update or delete would leave a shared
-  character with rows and none public. A trigger on `characters` (shared
-  turning true) makes the default avatar public (or the card row, or the
-  first row) when none is, so publishing never fails on it.
+  `last_public_avatar` when an owner's update or delete would leave a shared
+  character with rows and none public (`flagged` rows do not count, and a
+  moderation verdict never trips it). A trigger on `characters` (shared
+  turning true) makes the `card` row public when none is. Uploads are never
+  made public automatically: they stay private until the owner opens their
+  lock.
 - In the RPCs: `avatar_set_flags` and `avatar_delete` check first and answer
   `last_public` (HTTP 409 `{error:'last_public'}`) instead of raising.
 - In the UI: on a public character the lock of the last public avatar is
@@ -123,12 +133,24 @@ A character with no rows yet (everything made before this feature, until its
 owner's app syncs) satisfies the rule trivially: its card image is already
 public through the `portraits` bucket.
 
+### The card row
+
+The proxy builds the `card` row itself from `characters.portrait_image`
+(the `portraits` bucket): it downloads, sniffs, hashes and moderates the card
+image, and never takes card bytes from the app. The app sends only the hash
+it expects (`{kind:'portrait', source:'card', sha256}`): 409 `card_changed`
+when the cloud card is not that yet, `no_card` when there is none (both
+retried on the next sync), `card_conflict` when those bytes sit on an upload
+row that is not clean (never promoted). The proxy also creates the card row
+before a character's first upload. Other users see a card row only while
+its hash is the hash of the current card image.
+
 ## Who can read what
 
 | caller | sees |
 |---|---|
 | the character's owner | every row, with signed URLs, moderation state and flags |
-| anyone signed in, character public (`shared`) or a default (owner = `DEFAULT_CHARACTERS_OWNER`), character moderation not `flagged`/`soft_flagged` | rows with `is_public` AND (source `card` OR moderation `clean`) |
+| anyone signed in, character public (`shared`) or a default (owner = `DEFAULT_CHARACTERS_OWNER`), character moderation not `flagged`/`soft_flagged` | rows with `is_public` AND moderation `clean` (a `card` row also only while it holds the current card image) |
 | anyone else | nothing (403 for a private character, 404 for none) |
 
 Private rows are never listed, signed or baked for anyone but the owner.
@@ -154,14 +176,17 @@ delete 60, order 60.
 | `DELETE /avatars/v1/:character_id/:avatar_id` | | the full list body; 409 `last_public`/`card_avatar` |
 | `POST /avatars/v1/:character_id/order` | `{ids[]}` | the full list body |
 
-An avatar item: `{id, kind, source, name, sha256, bytes, mime, is_public,
-is_default, sort_order, moderation, shareable, url, expires_in}`. `shareable`
-= public and visible to others right now; `url` is null when signing failed.
+An avatar item: `{id, kind, source, name, sha256, rev, bytes, mime,
+is_public, is_default, sort_order, moderation, shareable, url, expires_in}`.
+`sha256` is the owner's only (null for everyone else); `rev` is an opaque
+per-row content tag the app caches and links by. `shareable` = public and
+visible to others right now; `url` is null when signing failed.
 `limits` is `{max_per_character, max_image_bytes, max_zip_bytes,
 user_quota_bytes, used_bytes?}` (`used_bytes` for the owner only). The upload
 link lives 2 hours (Supabase's fixed lifetime). With `avatar_id`, Anima
 answers 404 for a row that is not on that character or not visible to the
-caller, 400 `bad_kind` for a model row, and `unavailable` for a flagged one.
+caller, 400 `bad_kind` for a model row, and `unavailable` for any row that is
+not `clean` (the owner's too).
 
 Anima per avatar: `POST /anima/v1/request {character_id, avatar_id?}` and
 `GET /anima/v1/status/:character_id?avatar_id=`. With `avatar_id` the proxy
@@ -177,27 +202,37 @@ The proxy caps avatars per character, zip and image size, and stored bytes
 per user, and checks zips the same way the app's avatarStore does (entry
 count, extracted size, safe paths, the required entry file). Uploads are
 moderated before anyone else can see them: until a row is `clean` only its
-owner sees it (with a note that it is waiting for review). A `card` row
-follows the card image's own moderation. The numbers, thresholds and
+owner sees it (with a note that it is waiting for review). A `card` row is
+moderated by the proxy when it builds it. The numbers, thresholds and
 operator steps are in the proxy repo (`sei-proxy/docs/avatar-library.md`).
 
 ## The app
 
 - **Sync (owner)** runs when the owner opens the Appearance section or the
-  Avatar tab, and after a local Live2D/rig import: it uploads the card image
-  as the `card` row when the card hash changed, and uploads the local model
-  when it has no library link yet. That is the migration of existing local
-  Live2D avatars: nothing to opt into, a model that exists on disk is
-  uploaded (private) the next time its owner opens the character. The
-  manifest records the link (`AvatarManifest.library = {avatarId, sha256}`)
-  so it is uploaded once. The zip is rebuilt from the stored files in a fixed
+  Avatar tab, and after a local Live2D/rig import: when the card hash
+  changed it asks the proxy to rebuild the `card` row (hash only, no bytes),
+  and it uploads the local model when it has no library link yet. That is
+  the migration of existing local Live2D avatars: nothing to opt into, a
+  model that exists on disk is uploaded the next time its owner opens the
+  character, private and not as the character's default; this device picks
+  it for the owner so it keeps playing here, and only the owner's lock click
+  makes it public. A model the owner adds by hand becomes the default (still
+  private). The manifest records the link
+  (`AvatarManifest.library = {avatarId, rev}`) so it is uploaded once. The zip is rebuilt from the stored files in a fixed
   order with fixed dates, so its hash is stable.
 - **Effective avatar** (any viewer): the viewer's own pick
   (`UserConfig.avatar_prefs[id].avatar_id`, per user, never synced) when it is
   still listed, else the list's `default_id`. A `live2d`/`rig` effective
   avatar is downloaded once into the local avatar store (same import and
-  normalization as a hand upload) when the store does not already hold those
-  bytes. A `portrait` effective avatar asks Anima for that avatar's face set;
+  normalization as a hand upload) when the store does not already hold that
+  row's `rev`. The import checks every entry's declared size before
+  inflating and stops at it while inflating, takes textures and rig layers
+  only as PNG/JPEG/WebP, and leaves out other images. A row that fails to
+  import, or that the user removed on this device (even when the owner's
+  delete was refused), goes on a per-profile skip list
+  (`avatar-library-skip.json`) and is not downloaded again until its `rev`
+  changes or the user picks it. `avatar_prefs[id].avatar_id` is written by
+  main only; a renderer config save keeps the value on disk. A `portrait` effective avatar asks Anima for that avatar's face set;
   a library-linked local model is then cleared so it does not shadow the face
   set (it is still on the server).
 - **Other users' copies of a public character** download its public avatars

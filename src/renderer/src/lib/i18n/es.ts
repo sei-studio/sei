@@ -2351,6 +2351,7 @@ export const ES: Record<string, string> = {
   "That file is not a supported image or model.": "Ese archivo no es una imagen o un modelo compatible.",
   "That model could not be read. Check it is a Live2D or rig zip.": "No se pudo leer ese modelo. Comprueba que sea un zip de Live2D o de rig.",
   "Too many changes at once. Try again in a minute.": "Demasiados cambios a la vez. Inténtalo de nuevo en un minuto.",
+  "You uploaded a lot in the last hour. Try again later.": "Subiste mucho en la última hora. Inténtalo más tarde.",
   "Something went wrong with avatars. Try again.": "Algo salió mal con los avatares. Inténtalo de nuevo.",
   "Pick which avatar plays for you.": "Elige qué avatar se muestra para ti.",
   "Default": "Predeterminado",

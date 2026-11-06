@@ -51,6 +51,8 @@ export const AVATAR_ZIP_MAX_BYTES = 128 * 1024 * 1024;
 export const AVATAR_EXTRACTED_MAX_BYTES = 256 * 1024 * 1024;
 /** Cap on extracted entry count. */
 export const AVATAR_MAX_ENTRIES = 512;
+/** One extracted file at most (the avatar library proxy's per-entry cap). */
+export const AVATAR_ENTRY_MAX_BYTES = 64 * 1024 * 1024;
 
 const MANIFEST_NAME = 'manifest.json';
 /** v2 = paths renamed ASCII-safe (v1 stores are lazily re-normalized). */
@@ -296,6 +298,39 @@ export function parseRigSpec(raw: unknown): AvatarRigSpec {
 }
 
 /** Every image path a rig spec references, in declaration order. */
+/**
+ * The image types an avatar may hold (261106): PNG, JPEG, WebP by magic
+ * bytes. Exactly what the avatar library proxy moderates, so whatever this
+ * store holds can be uploaded and checked.
+ */
+export function sniffAvatarImage(b: Uint8Array): 'png' | 'jpeg' | 'webp' | null {
+  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'png';
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'jpeg';
+  if (
+    b.length >= 12 &&
+    b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+    b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50
+  ) {
+    return 'webp';
+  }
+  return null;
+}
+
+/** Names that look like images (the proxy refuses a zip where one is not a real PNG/JPEG/WebP). */
+const IMAGE_NAME_RE = /\.(png|jpe?g|webp|gif|bmp|tiff?|avif|heic|heif|ico)$/i;
+
+/** GIF / TIFF / BMP / ICO / AVIF / HEIC by magic bytes: images nobody moderates (the proxy refuses them). */
+function isUnsupportedImage(b: Uint8Array): boolean {
+  if (b.length >= 4 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) return true;
+  if (b.length >= 4 && ((b[0] === 0x49 && b[1] === 0x49 && b[2] === 0x2a && b[3] === 0) || (b[0] === 0x4d && b[1] === 0x4d && b[2] === 0 && b[3] === 0x2a))) return true;
+  if (b.length >= 26 && b[0] === 0x42 && b[1] === 0x4d && [12, 40, 52, 56, 64, 108, 124].includes(b[14]! | (b[15]! << 8))) return true;
+  if (b.length >= 6 && b[0] === 0 && b[1] === 0 && b[2] === 1 && b[3] === 0 && (b[4]! | (b[5]! << 8)) > 0) return true;
+  if (b.length >= 12 && b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) {
+    return /^(avif|avis|heic|heix|hevc|heim|heis|mif1|msf1)$/.test(Buffer.from(b.subarray(8, 12)).toString('latin1'));
+  }
+  return false;
+}
+
 function rigImageRefs(spec: AvatarRigSpec): string[] {
   const refs: string[] = [];
   for (const l of spec.layers) {
@@ -340,9 +375,9 @@ async function normalizeRigAndWrite(
     ? entryFile.rel.slice(0, entryFile.rel.lastIndexOf('/'))
     : '';
   for (const ref of rigImageRefs(spec)) {
-    if (!byRel.has(resolveRef(entryDir, ref))) {
-      throw new Error(`rig.json references missing image: ${ref}`);
-    }
+    const f = byRel.get(resolveRef(entryDir, ref));
+    if (!f) throw new Error(`rig.json references missing image: ${ref}`);
+    if (!sniffAvatarImage(f.bytes)) throw new Error(`rig.json image is not a PNG, JPEG or WebP: ${ref}`);
   }
 
   const safeMap = buildSafePathMap([...byRel.keys()]);
@@ -425,10 +460,11 @@ async function normalizeAndWrite(
   const refs = settings.FileReferences;
   const mocRel = resolveRef(entryDir, refs.Moc!);
   if (!byRel.has(mocRel)) throw new Error(`model references missing moc3 file: ${refs.Moc}`);
+  if (refs.Textures !== undefined && !Array.isArray(refs.Textures)) throw new Error('model Textures is not a list');
   for (const tex of refs.Textures ?? []) {
-    if (!byRel.has(resolveRef(entryDir, tex))) {
-      throw new Error(`model references missing texture: ${tex}`);
-    }
+    const f = typeof tex === 'string' ? byRel.get(resolveRef(entryDir, tex)) : undefined;
+    if (!f) throw new Error(`model references missing texture: ${String(tex)}`);
+    if (!sniffAvatarImage(f.bytes)) throw new Error(`model texture is not a PNG, JPEG or WebP: ${tex}`);
   }
 
   // ── Normalize: register expressions + ensure EyeBlink group ─────────────
@@ -539,22 +575,90 @@ export async function importAvatarZip(characterId: string, zip: Buffer): Promise
   }
   const archive = await JSZip.loadAsync(zip, { decodeFileName: decodeZipName });
 
-  // ── Extract into memory, sanitized + capped ─────────────────────────────
-  const files: ExtractedFile[] = [];
-  let total = 0;
+  // ── Check every declared size BEFORE inflating anything (a 1 MB zip can
+  // declare, and inflate to, a gigabyte) ────────────────────────────────────
+  const wanted: Array<{ rel: string; entry: JSZip.JSZipObject; size: number }> = [];
+  let declaredTotal = 0;
   for (const entry of Object.values(archive.files)) {
     if (entry.dir) continue;
     const rel = sanitizeEntryPath(entry.name);
     if (!rel || isJunkEntry(rel)) continue;
-    const bytes = Buffer.from(await entry.async('uint8array'));
-    total += bytes.byteLength;
-    if (total > AVATAR_EXTRACTED_MAX_BYTES) throw new Error('avatar zip expands too large');
-    files.push({ rel, bytes });
-    if (files.length > AVATAR_MAX_ENTRIES) throw new Error('avatar zip has too many files');
+    const size = declaredSize(entry);
+    if (size > AVATAR_ENTRY_MAX_BYTES) throw new Error('avatar zip has a file that is too large');
+    declaredTotal += size;
+    if (declaredTotal > AVATAR_EXTRACTED_MAX_BYTES) throw new Error('avatar zip expands too large');
+    wanted.push({ rel, entry, size });
+    if (wanted.length > AVATAR_MAX_ENTRIES) throw new Error('avatar zip has too many files');
+  }
+
+  // ── Extract into memory, each entry capped at its declared size ─────────
+  const files: ExtractedFile[] = [];
+  for (const w of wanted) {
+    const bytes = await readEntryCapped(w.entry, w.size);
+    // Images only as PNG/JPEG/WebP (what the avatar library moderates). A
+    // model's textures and rig layers are checked by name in normalize; any
+    // other unusable image (a GIF preview, a broken thumbnail) is left out.
+    if (!sniffAvatarImage(bytes) && (isUnsupportedImage(bytes) || IMAGE_NAME_RE.test(w.rel))) continue;
+    files.push({ rel: w.rel, bytes });
   }
   if (files.length === 0) throw new Error('avatar zip is empty');
 
   return withLock(characterId, () => normalizeAndWrite(characterId, files));
+}
+
+/** An entry's uncompressed size as its central directory declares it. */
+function declaredSize(entry: JSZip.JSZipObject): number {
+  const n = (entry as unknown as { _data?: { uncompressedSize?: unknown } })._data?.uncompressedSize;
+  if (typeof n !== 'number' || !Number.isInteger(n) || n < 0) throw new Error('avatar zip entry has no size');
+  return n;
+}
+
+interface EntryStream {
+  on(event: 'data', cb: (chunk: Uint8Array) => void): EntryStream;
+  on(event: 'error', cb: (err: unknown) => void): EntryStream;
+  on(event: 'end', cb: () => void): EntryStream;
+  resume(): EntryStream;
+  pause(): EntryStream;
+}
+
+/**
+ * Inflate one entry chunk by chunk and stop the moment it passes `size`
+ * bytes (its declared size): a lying header never gets to allocate more.
+ * The result must be exactly `size` bytes.
+ */
+export function readEntryCapped(entry: JSZip.JSZipObject, size: number): Promise<Buffer> {
+  return new Promise<Buffer>((resolve, reject) => {
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    let settled = false;
+    const finish = (err: Error | null): void => {
+      if (settled) return;
+      settled = true;
+      if (err) reject(err);
+      else resolve(Buffer.concat(chunks, total));
+    };
+    let stream: EntryStream;
+    try {
+      stream = (entry as unknown as { internalStream(type: 'uint8array'): EntryStream }).internalStream('uint8array');
+    } catch (err) {
+      finish(err instanceof Error ? err : new Error(String(err)));
+      return;
+    }
+    stream
+      .on('data', (chunk) => {
+        if (settled) return;
+        total += chunk.byteLength;
+        if (total > size) {
+          stream.pause();
+          finish(new Error('avatar zip file expands past its declared size'));
+          return;
+        }
+        chunks.push(chunk);
+      })
+      .on('error', (err) => finish(err instanceof Error ? err : new Error(String(err))))
+      .on('end', () => finish(total === size ? null : new Error('avatar zip file is not its declared size')))
+      .resume();
+  });
 }
 
 /** Read the stored avatar tree back as ExtractedFiles (manifest excluded). */
@@ -637,13 +741,22 @@ export async function setAvatarAccessory(
  */
 export async function setAvatarLibraryLink(
   characterId: string,
-  link: { avatarId: string; sha256: string } | null,
+  link: { avatarId: string; rev: string } | null,
 ): Promise<AvatarManifest | null> {
-  const manifest = await getAvatarManifest(characterId);
-  if (!manifest) return null;
+  // Heal a v1 store first (it takes the lock itself), then read the manifest
+  // again INSIDE the lock, so an import that lands meanwhile is never
+  // overwritten with the old manifest.
+  if (!(await getAvatarManifest(characterId))) return null;
   return withLock(characterId, async () => {
+    let manifest: AvatarManifest;
+    try {
+      manifest = JSON.parse(await readFile(path.join(paths.avatarsDir(characterId), MANIFEST_NAME), 'utf8')) as AvatarManifest;
+    } catch {
+      return null;
+    }
+    if (typeof manifest?.entry !== 'string' || manifest.version !== MANIFEST_VERSION) return null;
     const next: AvatarManifest = { ...manifest };
-    if (link) next.library = { avatarId: link.avatarId, sha256: link.sha256 };
+    if (link) next.library = { avatarId: link.avatarId, rev: link.rev };
     else delete next.library;
     await writeFile(path.join(paths.avatarsDir(characterId), MANIFEST_NAME), JSON.stringify(next, null, 2), 'utf8');
     return next;
@@ -652,7 +765,7 @@ export async function setAvatarLibraryLink(
 
 /** Fixed entry date for zipStoredAvatar, so the same files always give the same bytes. */
 const STABLE_ZIP_DATE = new Date(Date.UTC(2000, 0, 1, 0, 0, 0));
-const STORED_EXT_RE = /\.(png|jpe?g|webp|gif)$/i;
+const STORED_EXT_RE = /\.(png|jpe?g|webp)$/i;
 
 /**
  * Pack the stored model back into a zip for the avatar library upload
