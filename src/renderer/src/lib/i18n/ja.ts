@@ -2363,4 +2363,6 @@ export const JA: Record<string, string> = {
   "Something went wrong with avatars. Try again.": "アバターで問題が起きました。もう一度お試しください。",
   "Pick which avatar plays for you.": "あなたの画面で使うアバターを選べます。",
   "Default": "デフォルト",
+  // ── regen hint (261107) ──
+  "Not happy with the look?": "見た目が気に入りませんか？",
 };

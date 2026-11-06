@@ -17,6 +17,10 @@
  *                    Home (261105): the screen follows the tour's navigation,
  *                    and its end opens the move-in sheet (&pack= as movein)
  *
+ *     &regenhint=1   (character) the one-time "Not happy with the look?" hint
+ *                    over the gear (261107); without it the hint is marked
+ *                    seen so other character shots stay as they were.
+ *
  * Other surfaces already have harnesses: ?dashshot=creditwall&part=modal|credits,
  * ?dashshot=signinmodal, ?dashshot=authchoice, ?dashshot=onboard.
  */
@@ -53,6 +57,7 @@ import { SettingsScreen } from '../screens/SettingsScreen';
 import suiArt from '../../../../vendor/skin-gen/examples/sui-input.png';
 import lyraArt from '../../../../vendor/skin-gen/examples/lyra-input.png';
 import { isUiLanguage } from '@shared/uiLanguage';
+import { markRegenHintSeen, regenHintKey } from '../lib/regenHintPref';
 
 const SUI = '3f6c2a1e-9b7d-4c1a-8e2f-5a6b7c8d9e01';
 const LYRA = '7a1b2c3d-4e5f-4a6b-9c7d-8e9f0a1b2c03';
@@ -158,6 +163,12 @@ function seed(): void {
     getSkinServerUrl: async () => ({ baseUrl: 'http://127.0.0.1:1' }),
     voiceListVoices: async () => VOICES,
     voiceListOwnVoices: async () => ({ status: 'unavailable', voices: [] }),
+    charsPortraitVersions: async (id: string) => ({
+      versions: [{ file: `${id}.png`, source: 'original' }],
+      active: `${id}.png`,
+      regenCount: 0,
+      regenLimit: 3,
+    }),
   });
   useDataStore.setState({
     characters: CHARACTERS as unknown as ReturnType<typeof useDataStore.getState>['characters'],
@@ -175,6 +186,13 @@ function seed(): void {
     },
   } as never);
   useCreditsStore.setState({ ai_backend_kind: 'cloud-proxy' } as never);
+  // 261107: the one-time regenerate hint shows only with &regenhint=1.
+  try {
+    if (params.get('regenhint') === '1') localStorage.removeItem(regenHintKey());
+    else markRegenHintSeen();
+  } catch {
+    /* no storage: the hint may show */
+  }
   if (seilinkAvailability) useSeilinkStore.setState({ availability: seilinkAvailability });
   const nav = useUiStore.getState().navigate;
   if (screen === 'home') nav({ kind: 'home' });

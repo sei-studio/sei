@@ -110,6 +110,8 @@ export const ZH_MODALS: Record<string, string> = {
   'Description': '描述',
   'For you and other players': '给你和其他玩家看的',
   'Card image': '卡片图片',
+  // 261107: the one-time regenerate hint on a companion's profile.
+  'Not happy with the look?': '对外观不满意？',
   'Skin': '皮肤',
   'Image and skin changes apply immediately.': '图片和皮肤的更改会立即生效。',
   'How they sound on voice calls. Changes save when you press Done.':
