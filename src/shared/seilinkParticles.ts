@@ -1,5 +1,5 @@
 /**
- * SeiLink weather and ambience particles (261105, room catalog; Shawn msg
+ * SeiLink weather and ambience particles (261105, room catalog; msg
  * 1627). Pure simulation: no DOM, so the tests can drive it and the renderer
  * only draws what it says.
  *

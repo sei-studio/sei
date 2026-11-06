@@ -18,7 +18,7 @@
  *   - "Top up"  → the same navigation, with `requestTopUp()` so the plan screen
  *     opens the packages on arrival. The purchase then runs where the checkout
  *     watcher lives, instead of polling behind a popup with no progress UI.
- * 261103: ONE CTA (Shawn: two buttons to the same page read as if topping up
+ * 261103: ONE CTA (product feedback: two buttons to the same page read as if topping up
  * beat upgrading). Free and Quest get "Upgrade"; Party, which has no tier
  * above it, gets "Top up". The copy no longer pitches either.
  * Close and ESC dismiss it: the bot has already left or was never summoned, so
@@ -50,7 +50,7 @@
  *     (startChatgptPlan, lib/popupActions.ts): Settings at the ChatGPT plan
  *     row, then the sign-in or the switch that row's own button would run.
  *     Hidden when the plan is already the provider in use. Never hidden by
- *     region: like the Settings row, the provider decides (Shawn, 261103).
+ *     region: like the Settings row, the provider decides (261103).
  *   - "Use your own API key or a local model": Settings at the AI Backend row
  *     (view.focus 'ai-backend').
  * Both dismiss the popup FIRST, like Upgrade, then navigate.
@@ -315,7 +315,7 @@ export function HardStopModal(): React.ReactElement | null {
         )}
         {/* 261103: ways to keep playing that cost Sei nothing, one step
             quieter than Upgrade: an "or", then sm buttons. ChatGPT goes last so
-            its note is the bottom line (Shawn: less text in the lower half). */}
+            its note is the bottom line (product feedback: less text in the lower half). */}
         {free.chatgpt || free.ownKey ? (
           <div className={styles.free} data-testid="wall-free-options">
             <p className={styles.freeTitle}>{t('or')}</p>

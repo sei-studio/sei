@@ -4,11 +4,11 @@
  * exactly the same picture (the video harness depends on it) and the view
  * just writes the result to the DOM and the light canvases (introFx.ts).
  *
- * The light is the aurora (261106, Shawn: "the aurora is pretty creative ...
+ * The light is the aurora (261106, product feedback: "the aurora is pretty creative ...
  * make the colors more space themed. Think interstellar scifi and no man's
  * sky"): curtains of soft light sway across deep space. Space depth comes
  * from a faint, very soft starfield and a nebula haze. One palette, eclipse
- * (261106 v4, Shawn's pick of the three moods): gold light and blue-white
+ * (261106 v4, the pick of the three moods): gold light and blue-white
  * rims against violet and teal nebula.
  *
  * Beats (261106 v4, the climax): tunnel (the light wakes, then builds to a

@@ -175,7 +175,7 @@ describe('look() over a shelf', () => {
 });
 
 describe('the bundled shelf lips (261105 plank pass)', () => {
-  // Shawn: "select the entire visible plank (both the side and under part) and put it on top of
+  // Product feedback: "select the entire visible plank (both the side and under part) and put it on top of
   // the object". Each lip is traced from the art: everything of the plank below its top face.
   it.each([
     ['cozy', 'floating_shelves'],

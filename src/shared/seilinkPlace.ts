@@ -1,5 +1,5 @@
 /**
- * SeiLink physics-aware placement (261105, Shawn: "make it somewhat physics
+ * SeiLink physics-aware placement (261105, product feedback: "make it somewhat physics
  * aware... the bottom of furniture pics has to touch" the ground or a shelf).
  * Pure: no DOM, no Node. The editor snaps with it, the draw plan takes depth
  * scale and z from it, and sanitizeRoomState settles stored rooms with it, so
@@ -29,7 +29,7 @@
  * the spot itself when valid, else the nearest point on the edges of the
  * areas and blocks (projected for each sampled point of the sprite), else a
  * widening ring search. Surface snaps are forgiving (261105 shelf pass,
- * Shawn: "make the thing forgiving so there's some leeway"): a contact held
+ * product feedback: "make the thing forgiving so there's some leeway"): a contact held
  * within SURFACE_CAPTURE px of a top (a little above or below a plank, or
  * past its end) lands on that top, the top it was on is kept while it stays
  * that close, and further out they lean a little downward (an item held
@@ -45,7 +45,7 @@
  * below its top face (front face, end face, underside and bottom outline,
  * traced from the art), and the contact of an item on a lipped top may
  * reach LIP_TUCK px into it, so an item at the front sits low enough that
- * the plank hides its base (Shawn: "select the entire visible plank (both
+ * the plank hides its base (product feedback: "select the entire visible plank (both
  * the side and under part) and put it on top of the object"). Items on a
  * lipped top are also cut to above the plank's bottom edge
  * (AreaSurface.keep), so nothing of them shows under a thin plank.
@@ -105,7 +105,7 @@ export const BACK_OF_BASE = 1;
  * ends a few px above its contact (the contact is the middle of its soft
  * shadow, `foot`), so without this an item at the very front ends on the
  * plank's front edge and reads as perched in front of the shelf (261105,
- * Shawn: "put shelf in front"). A 5 px tuck still showed the item's own
+ * product feedback: "put shelf in front"). A 5 px tuck still showed the item's own
  * bottom edge along the plank's, so it read as pasted on; with this one the
  * bottom 9-12 px of an item at the front (about 6-10% of the shipped
  * shelf items, more than its rounded base and its outline) go behind the

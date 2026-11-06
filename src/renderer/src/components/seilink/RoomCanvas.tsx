@@ -77,7 +77,7 @@ export interface RoomCanvasProps {
   onError?(err: RoomAssetError): void;
   /** Canvas px to CSS px of this element (the editor maps pointers with viewportToCanvas). */
   onLayout?(viewport: RoomViewport): void;
-  /** Tint for UI over the room: light room, light overlay (Shawn's rule). */
+  /** Tint for UI over the room: light room, light overlay (product rule). */
   onOverlay?(overlay: RoomOverlay): void;
 }
 

@@ -5,7 +5,7 @@
  * Three beats and an end card, about 11.3 s (8.4 s calm):
  *   tunnel  the light wakes and builds to its climax (the beat keeps its
  *           261105 name for analytics), then everything cuts to black
- *   link    the black fades out as she comes in (261106 v4, Shawn: "climax
+ *   link    the black fades out as she comes in (261106 v4, product feedback: "climax
  *           the lights and cut it all to black, then as the black fades out
  *           the character comes in")
  *   port    the light settles into the plain colour (or her room) around her

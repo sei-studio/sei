@@ -465,7 +465,7 @@ The design and its measurements are committed at
   as voice after the pass, so the immediate path does not apply; a voice bar
   relative to the trigger level reached 2.5 s in the replay but can split a
   player who keeps talking more quietly, and is not in.
-  Word-only (261101, `fix/bargein-word-only`): Shawn would rather have no
+  Word-only (261101, `fix/bargein-word-only`): we would rather have no
   interrupt than a false one, so nothing but a confirmed word stops her. The
   two energy commits are gone: the sustained run over the bar
   (`BARGE_CONFIRM_MS`) and the unanswered-duck deadline's energy verdict.
@@ -561,7 +561,7 @@ The design and its measurements are committed at
     that sentence for `VOICE_CALL_TEXT_LINE`. `VOICE_CALL_PRIMER` itself is
     unchanged (`= VOICE_CALL_PRIMER_BASE + VOICE_CALL_SAY_FIRST`). Typed chat
     voice calls have the same mismatch and are untouched.
-  - **Narration and timing (Shawn).** React to what is IN the picture (the
+  - **Narration and timing.** React to what is IN the picture (the
     place, the boss, the build). Do not read it back: no stats, timers,
     items or stage numbers. Ask about plans only when the next few seconds
     will not answer them. Because lines are heard seconds late, a question
@@ -569,7 +569,7 @@ The design and its measurements are committed at
     NOT A NARRATOR + YOU ARE HEARD A FEW SECONDS LATE). These live in the
     contract AND at the end of every look note (`LINE_LENGTH_REMINDER`),
     because 5.5 follows the note's ending and reads the contract loosely.
-    Do not stream LLM text into TTS (Shawn's call).
+    Do not stream LLM text into TTS (product call).
   - **Latency (261010).** The renderer's `look()` runs the STT flush
     (up to `STT_FLUSH_WAIT_MS`) BEFORE compositing the grid, so the newest
     frame is not already 1.2+ s old when the tick leaves. On a call, main
@@ -683,8 +683,8 @@ The design and its measurements are committed at
   - Not changed: the tone swings. A custom character with no
     `metadata.voiceStability` sends no stability, so ElevenLabs uses the
     voice's default (~0.5, expressive). Sui is pinned at 0.85. That is a voice
-    default for every custom character, not a Backseat fix, so it was left for
-    Shawn to decide. Alarm lines were also an excited-tone source, and fewer
+    default for every custom character, not a Backseat fix, so it was left as an
+    open product call. Alarm lines were also an excited-tone source, and fewer
     of them now reach TTS.
 
 **Extracted:** the screen-watching half is mirrored as a public standalone repo

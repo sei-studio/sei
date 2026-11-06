@@ -123,7 +123,7 @@ describe('HardStopModal: free options at the wall', () => {
     const html = render();
     expect(html).toContain('wall-free-options');
     expect(html).toContain('Upgrade');
-    // One CTA (Shawn 261103): no Top up beside Upgrade, no top-up pitch.
+    // One CTA (261103): no Top up beside Upgrade, no top-up pitch.
     expect(html).not.toContain('Top up');
     expect(html).not.toContain('top up');
     const own = html.indexOf('Use your own API key or a local model');

@@ -1,5 +1,5 @@
 /**
- * SeiLink room format v1 (261104, Shawn's "SeiLink visuals" doc, msg 1531).
+ * SeiLink room format v1 (261104, the "SeiLink visuals" doc, msg 1531).
  *
  * A room is a fixed webcam-POV scene: she sits at her desk facing the player,
  * so no desk is drawn. Lower center holds her chair (drawn behind her), a
@@ -47,7 +47,7 @@
  *  - Editor rules (placement areas, scale range, edit ops, undo) live in
  *    seilinkEdit.ts.
  *
- * 261105 (placement pass, Shawn: "the bottom of furniture has to touch"
+ * 261105 (placement pass, product feedback: "the bottom of furniture has to touch"
  * the ground or shelf), all optional; a pack without them places as before:
  *  - `floorAreas` (manifest): polygons of real floor, canvas px, following the
  *    room's perspective. A floor item's bottom centre stands inside one. They
@@ -71,7 +71,7 @@
  *    with its y (nearer = in front of further back); a surface item takes the
  *    z of the part it rests on plus a half. Rules live in seilinkPlace.ts.
  *
- * 261105 (shelf pass, Shawn: "make it forgiving ... on the shelf it's just a
+ * 261105 (shelf pass, product feedback: "make it forgiving ... on the shelf it's just a
  * line", "make the item go INSIDE the shelf not on top"), also optional:
  *  - `surfaceTops` (slot components): the whole visible top face of a plank,
  *    desk, log or bed, as `{ area, lip?, sink? }`. `area` runs from the back
@@ -87,7 +87,7 @@
  *  - Items on one part's tops draw in order of the tops (back to front by
  *    their y): items on a top, then its lip, then the next top's items.
  *
- * 261105 (room catalog engine, Shawn msgs 1590 + 1627), all optional, so
+ * 261105 (room catalog engine, msgs 1590 + 1627), all optional, so
  * every pack and saved room from before reads and draws exactly as it did:
  *  - Patterns (seilinkPatterns.ts): a tintable component offers patterns
  *    through `patternSurface` (every pattern made for that kind of surface)
@@ -117,7 +117,7 @@
  *    per-pack editor `label` on each slot def (English, translated in the
  *    i18n dictionaries): forest calls its bed slot "Tent".
  *
- * 261105 (colour pass, T333, Shawn: "make the color options more desirable"):
+ * 261105 (colour pass, T333, product feedback: "make the color options more desirable"):
  *  - Each pack curates its palettes: `swatches` per tintable part (fabric,
  *    wall, wood, light), sampled against the room's own art, and
  *    `accentSwatches` for the second pattern colour. Parts without them get
@@ -361,7 +361,7 @@ export interface RoomState {
   items: RoomItemPlacement[];
   avatar: { kind: 'sei' } | { kind: 'live2d'; modelPath: string };
   /**
-   * 261106 (first-link v3, Shawn: "start with plain black or white background
+   * 261106 (first-link v3, product feedback: "start with plain black or white background
    * when the AI spawns in"): no room yet. Nothing of the preset is drawn: a
    * plain background in the computer's light or dark mode (black or white),
    * with her where the preset seats her. `preset` and `slots` hold the bare

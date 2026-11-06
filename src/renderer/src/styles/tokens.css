@@ -71,7 +71,7 @@
   --page-gutter: var(--space-xl);
 
   /* ── Corner radius ───────────────────────────────────────────
-   * 2px (261103, Shawn's pick over 0 and 4): sharp-ish, not severe. Was 0
+   * 2px (261103, picked over 0 and 4): sharp-ish, not severe. Was 0
    * (D-28). Every rectangular piece of chrome reads these, never a literal:
    * Button, PlanButton, framed inputs and selects, cards, tiles, list
    * boxes, modal and popup shells, menus, tooltips, Seg, Toggle, call

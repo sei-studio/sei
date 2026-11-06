@@ -1,5 +1,5 @@
 /**
- * The guided room setup (261106, first-link v3, Shawn: set her room up step
+ * The guided room setup (261106, first-link v3, product feedback: set her room up step
  * by step, starting with the room). Pure helpers for RoomEditor's guided
  * mode; the editor owns the state and the UI.
  *
