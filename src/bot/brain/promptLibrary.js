@@ -425,6 +425,10 @@ export const DEFEND_ADDENDUM_THREAT = `{closing} {owner}: the nearest is {ownerD
 // In the protect_player eval this used the ENGAGED wording, and she called
 // attackEntity on it again, which aborted the chase and started it over.
 export const DEFEND_ADDENDUM_ACTION = `{owner} is being hit by {label}{dist}, the mob your attackEntity is already going after. Let it run; calling attackEntity on it again only restarts the chase. Say one short line so they know you are coming.`
+// 261106 (quality pass 44): added when the running attack will go on to another
+// hostile near them after this kill (adapter withAttackRunState). The others
+// clause above told her to call attackEntity on it, which ended the attack.
+export const DEFEND_ACTION_GOES_ON = `After this kill it goes on by itself to the next one near them.`
 // 261030 (quality pass 31): the threat and held turns after a death took her
 // weapon and she has none again (a bot that never had one keeps the dev text).
 // Both said to attackEntity the mob, and after a death took her sword she ran at
@@ -459,6 +463,7 @@ export const DEFEND_ADDENDUM = (label, data) => {
   if (data?.engaged && !data?.actionOnIt && others > 0) {
     text += ` There ${others > 1 ? 'are' : 'is'} ${fillTemplate(DEFEND_OTHERS_CLAUSE, { others, mobWord: others > 1 ? 'mobs' : 'mob' })}`
   }
+  if (data?.actionOnIt && data?.runGoesOn === true) text += ` ${DEFEND_ACTION_GOES_ON}`
   if (hpKnown && hpRaw <= 10) text += ` ${fillTemplate(DEFEND_OWNER_HP_CLAUSE, { hp: hpRaw })}`
   return text
 }

@@ -148,7 +148,10 @@ export function isDeadEntity(bot, entity) {
  * entity slots and drops out, so the model can't see its teammate to coordinate.
  *
  * @param {import('mineflayer').Bot} bot
- * @param {{ radius?:number, count?:number, pin?:string|null, pins?:string[] }} [opts]
+ * `pinIds`: entity ids force-included the same way (and exempt from the
+ * line-of-sight filter), for the mob her running attackEntity is fighting.
+ *
+ * @param {{ radius?:number, count?:number, pin?:string|null, pins?:string[], pinIds?:number[], requireLineOfSight?:boolean }} [opts]
  * @returns {{ entries: Array<{ entity:any, distance:number }>, more:number }}
  */
 export function nearbyEntities(bot, opts = {}) {
@@ -158,6 +161,10 @@ export function nearbyEntities(bot, opts = {}) {
   const pinSet = new Set()
   if (opts.pin) pinSet.add(opts.pin)
   for (const p of (opts.pins ?? [])) if (p) pinSet.add(p)
+  // 261106 (quality pass 44): entity ids pinned the same way as the usernames
+  // (the mob her running attackEntity is on). See snapshot.js.
+  const pinIds = new Set((opts.pinIds ?? []).filter((id) => id != null))
+  const isPinned = (e) => !!e && ((e.username && pinSet.has(e.username)) || pinIds.has(e.id))
   const me = bot.entity
   if (!me) return { entries: [], more: 0 }
   const all = []
@@ -176,7 +183,7 @@ export function nearbyEntities(bot, opts = {}) {
     // human + AI teammates) bypass it: the bot needs their coords for
     // goTo/follow even through cover, and the owner-whereabouts line handles an
     // out-of-view owner separately.
-    if (requireLOS && !(e.username && pinSet.has(e.username)) &&
+    if (requireLOS && !isPinned(e) &&
         !hasClearLineOfSight(bot, e, { maxRange: radius, stepsPerBlock: 2 })) continue
     all.push({ entity: e, distance: d })
   }
@@ -188,8 +195,7 @@ export function nearbyEntities(bot, opts = {}) {
   // would just drop the pin again (it's at rank > count by definition). If every
   // visible slot is already a pin, we let the set overflow slightly rather than
   // drop a teammate — the pin set is small (human + a teammate or two).
-  if (pinSet.size > 0) {
-    const isPinned = (e) => e && e.username && pinSet.has(e.username)
+  if (pinSet.size > 0 || pinIds.size > 0) {
     for (const pinEntry of all) {
       if (!isPinned(pinEntry.entity)) continue
       if (entries.some((x) => x.entity === pinEntry.entity)) continue
