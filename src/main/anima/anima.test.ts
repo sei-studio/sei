@@ -98,6 +98,7 @@ interface Harness {
   client: AnimaClient;
   store: AnimaPackStore;
   calls: Array<{ method: string; path: string }>;
+  bodies: unknown[];
   events: Array<Record<string, unknown>>;
   statuses: string[];
   /** 261106: every stage push (onProgress), as `stage` or `stage:failure`. */
@@ -106,19 +107,27 @@ interface Harness {
   timers: Array<{ fn: () => Promise<void> | void; ms: number }>;
   replies: Array<ProxyReply | { status: number; body: unknown } | Error>;
   clock: { t: number };
-  set(o: Partial<{ online: boolean; ref: string | null | undefined; zip: Uint8Array }>): void;
+  set(
+    o: Partial<{ online: boolean; ref: string | null | undefined; zip: Uint8Array; avatar: { avatarId: string; rev: string } | null }>,
+  ): void;
   /** Run the next timer. */
   tick(): Promise<void>;
 }
 
 async function harness(): Promise<Harness> {
   const store = new AnimaPackStore(() => root);
-  const h: Partial<Harness> = { calls: [], events: [], statuses: [], stages: [], ready: [], timers: [], replies: [], clock: { t: 1_000_000 } };
-  const opts = { online: true, ref: 'sui.png|t1|1' as string | null | undefined, zip: await packZip() };
+  const h: Partial<Harness> = { calls: [], bodies: [], events: [], statuses: [], stages: [], ready: [], timers: [], replies: [], clock: { t: 1_000_000 } };
+  const opts = {
+    online: true,
+    ref: 'sui.png|t1|1' as string | null | undefined,
+    zip: await packZip(),
+    avatar: null as { avatarId: string; rev: string } | null,
+  };
   h.set = (o) => Object.assign(opts, o);
   const deps: AnimaClientDeps = {
-    api: async (method, p) => {
+    api: async (method, p, body) => {
       h.calls!.push({ method, path: p });
+      h.bodies!.push(body);
       const r = h.replies!.shift();
       if (!r) throw new Error('no reply queued');
       if (r instanceof Error) throw r;
@@ -129,6 +138,7 @@ async function harness(): Promise<Harness> {
     download: async () => opts.zip,
     store,
     portraitRef: async () => opts.ref,
+    avatarFor: async () => opts.avatar,
     capture: (_e, props) => h.events!.push(props),
     onReady: (id) => h.ready!.push(id),
     onStatus: (s) => h.statuses!.push(s.state),
@@ -373,5 +383,48 @@ describe('AnimaClient', () => {
     const h = await harness();
     await h.client.prepare('local-only', 'editor');
     expect(h.calls).toEqual([]);
+  });
+});
+
+describe('AnimaClient per-avatar bakes (261106)', () => {
+  // `rev` is the row's opaque content tag (not its hash, which non-owners never get).
+  const AV1 = { avatarId: '11111111-2222-4333-8444-555555555555', rev: 'a'.repeat(32) };
+  const AV2 = { avatarId: '66666666-7777-4888-8999-000000000000', rev: 'b'.repeat(32) };
+  const H1 = 'a'.repeat(64);
+  const H2 = 'b'.repeat(64);
+
+  it('asks for the library avatar that plays and re-asks when it changes', async () => {
+    const h = await harness();
+    const zip = await packZip();
+    h.set({ zip, avatar: AV1 });
+    h.replies.push({ state: 'queued', portrait_hash: H1, created: true });
+    await h.client.prepare(CHAR, 'editor');
+    expect(h.bodies[0]).toEqual({ character_id: CHAR, avatar_id: AV1.avatarId });
+    h.replies.push(readyReply(zip, H1));
+    await h.tick();
+    expect(h.calls[1]).toEqual({ method: 'GET', path: `/anima/v1/status/${CHAR}?avatar_id=${AV1.avatarId}` });
+    expect((await h.store.entry(CHAR))?.portrait_ref).toBe(`avatar:${AV1.avatarId}:${AV1.rev}`);
+
+    // Same avatar: nothing to ask.
+    h.calls.length = 0;
+    await h.client.avatarChanged(CHAR);
+    expect(h.calls).toEqual([]);
+
+    // The owner made another portrait the default: asked right away, for that one.
+    h.set({ avatar: AV2 });
+    const zip2 = await packZip({ 'frames/extra.webp': new Uint8Array([7]) });
+    h.set({ zip: zip2 });
+    h.replies.push(readyReply(zip2, H2));
+    await h.client.avatarChanged(CHAR);
+    expect(h.bodies.at(-1)).toEqual({ character_id: CHAR, avatar_id: AV2.avatarId });
+    expect(await h.store.packIdFor(CHAR)).toBe(animaPackId(sha256Hex(zip2)));
+  });
+
+  it('falls back to the per-character request without a library avatar', async () => {
+    const h = await harness();
+    h.set({ avatar: null });
+    h.replies.push({ state: 'no_pack', portrait_hash: 'p1', reason: 'qc' });
+    await h.client.prepare(CHAR, 'editor');
+    expect(h.bodies[0]).toEqual({ character_id: CHAR });
   });
 });

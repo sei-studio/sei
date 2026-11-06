@@ -1,0 +1,261 @@
+/* Avatar library tiles (261106). Design system: corners on --radius, no
+   visible button borders (filled or icon-only buttons), spacing by role
+   (tokens.css), mono 10.5px micro-labels, the shared [data-tip] tooltip, and
+   the Button component for the add actions. */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-control);
+}
+
+.hint {
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+  margin: 0;
+}
+
+.err {
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--red);
+  margin: 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: var(--gap-stack);
+}
+
+.tile,
+.addTile {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: visible;
+  min-width: 0;
+}
+
+.tileDefault {
+  background: var(--accent-soft);
+}
+
+.tile[aria-busy='true'] {
+  opacity: 0.6;
+}
+
+.thumb {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  border-radius: var(--radius) var(--radius) 0 0;
+  overflow: hidden;
+  background: var(--bg4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.kindMark {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+}
+
+.tag {
+  position: absolute;
+  left: var(--space-xs);
+  top: var(--space-xs);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  line-height: 1.3;
+  padding: 1px var(--space-xs);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.tagBad {
+  color: var(--red);
+}
+
+.thumb > .del {
+  -webkit-appearance: none;
+  appearance: none;
+  position: absolute;
+  right: var(--space-xs);
+  top: var(--space-xs);
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms var(--ease), color 120ms var(--ease);
+}
+
+.tile:hover .del,
+.del:focus-visible {
+  opacity: 1;
+}
+
+.del:hover:not(:disabled):not([aria-disabled='true']) {
+  color: var(--red);
+}
+
+/* The last public avatar while another would remain: kept for the public rule. */
+.del[aria-disabled='true'] {
+  cursor: default;
+}
+
+.del[aria-disabled='true'] > svg {
+  opacity: 0.55;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-tight);
+  padding: var(--space-xs);
+  min-width: 0;
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.icon {
+  -webkit-appearance: none;
+  appearance: none;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+  transition: color 120ms var(--ease), background 120ms var(--ease);
+}
+
+.icon:hover:not(:disabled):not([aria-disabled='true']) {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.icon.on {
+  color: var(--accent);
+}
+
+.icon[aria-disabled='true'],
+.icon:disabled {
+  cursor: default;
+}
+
+/* Dim the glyph, not the button: opacity on the button would also fade its
+   [data-tip] tooltip and drop it under the neighbouring tiles. */
+.icon[aria-disabled='true'] > svg,
+.icon:disabled > svg {
+  opacity: 0.55;
+}
+
+.icon:focus-visible,
+.del:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The lock's sentence is longer than the one-line [data-tip] labels: let it
+   wrap inside a tile-sized box instead of running off the pane. */
+.lockIcon[data-tip]::after {
+  white-space: normal;
+  width: max-content;
+  max-width: 200px;
+  line-height: 1.35;
+}
+
+.addTile {
+  justify-content: center;
+  gap: var(--gap-control);
+  padding: var(--space-sm);
+  background: var(--bg4);
+  min-height: 120px;
+}
+
+/* Button (secondary, sm) in a ~100px tile: narrower side padding, and the
+   label may wrap (long locales) instead of squeezing the icon out. */
+.addBtn {
+  padding-inline: var(--space-xs);
+  white-space: normal;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.addBtn > svg {
+  flex-shrink: 0;
+}
+
+/* Viewer pick (Avatar tab): the whole tile is the control. */
+.pickTile {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+.pickTile:hover:not(:disabled) .name {
+  color: var(--accent);
+}
+
+.pickTile:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The default avatar: a solid chip on the thumbnail (the tint alone is too quiet). */
+.defaultChip {
+  position: absolute;
+  left: var(--space-xs);
+  bottom: var(--space-xs);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  line-height: 1.3;
+  padding: 1px var(--space-xs);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-text);
+}

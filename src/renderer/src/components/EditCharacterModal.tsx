@@ -31,6 +31,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useT } from '../lib/i18n';
+import { AvatarLibraryTiles } from './avatar/AvatarLibraryTiles';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useChatStore } from '../lib/stores/useChatStore';
 import { useUiStore } from '../lib/stores/useUiStore';
@@ -593,6 +594,10 @@ export function EditCharacterModal({
                         {t('Regenerate')}
                       </Button>
                     </div>
+                  </div>
+                  <div className={styles.subSection}>
+                    <label className={styles.label}>{t('Avatars')}</label>
+                    <AvatarLibraryTiles characterId={character.id} characterShared={character.shared} />
                   </div>
                   <div className={styles.subSection}>
                     <label className={styles.label}>{t('Skin')}</label>

@@ -92,6 +92,17 @@ describe('addPlaytimeMs', () => {
 });
 
 describe('saveConfigFromRenderer', () => {
+  it('a renderer save never undoes the avatar library pick main wrote (avatar_prefs[id].avatar_id, 261106)', async () => {
+    await saveConfig({ ...(await loadConfig()), avatar_prefs: { c1: { frame: 'circle', avatar_id: 'old' } } });
+    const mountSnapshot = await loadConfig(); // carries avatar_id 'old'
+    // main picks another avatar (sync migration, viewer pick)...
+    await updateConfig((c) => ({ ...c, avatar_prefs: { ...c.avatar_prefs, c1: { ...c.avatar_prefs?.c1, avatar_id: 'new' }, c2: { avatar_id: 'p2' } } }));
+    // ...then the Avatar tab saves its own field over the stale copy
+    await saveConfigFromRenderer({ ...mountSnapshot, avatar_prefs: { c1: { frame: 'square', avatar_id: 'old' }, c3: { tab: 'live2d', avatar_id: 'forged' } } });
+    const cfg = await loadConfig();
+    expect(cfg.avatar_prefs).toEqual({ c1: { frame: 'square', avatar_id: 'new' }, c2: { avatar_id: 'p2' }, c3: { tab: 'live2d' } });
+  });
+
   it('a stale renderer copy can never revert ai_backend_kind (the recurring "switched back to local" bug)', async () => {
     // The exact failure sequence: SettingsScreen snapshots the config at
     // mount, the user confirms Switch to cloud (setAiBackendKind path writes

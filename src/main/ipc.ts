@@ -2403,6 +2403,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     if (bytes.byteLength > AVATAR_ZIP_MAX_BYTES) throw new Error('avatar zip too large');
     const manifest = await importAvatarZip(id, bytes);
     noteSeilinkAvatarChanged(id, manifest);
+    // 261106: the owner's new model goes up to her avatar library (background).
+    void import('./avatarLibrary/avatarLibraryRuntime')
+      .then((m) => m.avatarLibrary.sync(id))
+      .catch(() => {});
     return manifest;
   });
 
@@ -2435,9 +2439,78 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
 
   ipcMain.handle(IpcChannel.avatar.remove, async (_event, idArg: unknown) => {
     const id = IdSchema.parse(idArg);
-    const { removeAvatar } = await import('./avatar/avatarStore');
+    const { removeAvatar, getAvatarManifest } = await import('./avatar/avatarStore');
+    const link = (await getAvatarManifest(id).catch(() => null))?.library ?? null;
     await removeAvatar(id);
     noteSeilinkAvatarChanged(id, null);
+    // 261106: a library-backed model: the owner deletes it there too, anyone
+    // else switches their pick so it is not downloaded again.
+    if (link) {
+      void import('./avatarLibrary/avatarLibraryRuntime')
+        .then((m) => m.avatarLibrary.modelRemovedLocally(id, link))
+        .catch(() => {});
+    }
+  });
+
+  // ── Avatar library (261106, docs/agents/avatar-library.md) ─────────────
+  // Main owns every URL and upload: the renderer names a character and an
+  // avatar id, never a storage path. Writes answer AvatarLibraryResult.
+  const AvatarIdSchema = z.string().uuid();
+  // Structured clone may hand over an ArrayBuffer or a view (avatar:import accepts both).
+  const BytesSchema = z
+    .custom<ArrayBuffer | ArrayBufferView>((v) => v instanceof ArrayBuffer || ArrayBuffer.isView(v), 'bytes')
+    .transform((v) => (v instanceof ArrayBuffer ? Buffer.from(v) : Buffer.from(v.buffer, v.byteOffset, v.byteLength)));
+  ipcMain.handle(IpcChannel.avatarLibrary.list, async (_event, argsRaw: unknown) => {
+    const a = z.object({ characterId: IdSchema, sync: z.boolean().optional(), fresh: z.boolean().optional() }).parse(argsRaw);
+    const { avatarLibrary } = await import('./avatarLibrary/avatarLibraryRuntime');
+    return a.sync ? avatarLibrary.sync(a.characterId) : avatarLibrary.view(a.characterId, { fresh: a.fresh === true });
+  });
+  ipcMain.handle(IpcChannel.avatarLibrary.addImage, async (_event, argsRaw: unknown) => {
+    const a = z
+      .object({ characterId: IdSchema, bytes: BytesSchema, name: z.string().max(80).nullable() })
+      .parse(argsRaw);
+    if (a.bytes.byteLength > 10 * 1024 * 1024) return { ok: false, error: 'too_big' };
+    const { avatarLibrary } = await import('./avatarLibrary/avatarLibraryRuntime');
+    return avatarLibrary.addPortrait(a.characterId, a.bytes, a.name);
+  });
+  ipcMain.handle(IpcChannel.avatarLibrary.addModel, async (_event, argsRaw: unknown) => {
+    const a = z.object({ characterId: IdSchema, zip: BytesSchema }).parse(argsRaw);
+    const { importAvatarZip, AVATAR_ZIP_MAX_BYTES } = await import('./avatar/avatarStore');
+    if (a.zip.byteLength > AVATAR_ZIP_MAX_BYTES) return { ok: false, error: 'too_big' };
+    let manifest;
+    try {
+      manifest = await importAvatarZip(a.characterId, a.zip);
+    } catch {
+      return { ok: false, error: 'import_failed' };
+    }
+    noteSeilinkAvatarChanged(a.characterId, manifest);
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send(IpcChannel.avatar.manifestState, { characterId: a.characterId, manifest });
+    }
+    const { avatarLibrary } = await import('./avatarLibrary/avatarLibraryRuntime');
+    return avatarLibrary.addLocalModel(a.characterId);
+  });
+  ipcMain.handle(IpcChannel.avatarLibrary.setFlags, async (_event, argsRaw: unknown) => {
+    const a = z
+      .object({
+        characterId: IdSchema,
+        avatarId: AvatarIdSchema,
+        is_public: z.boolean().optional(),
+        is_default: z.boolean().optional(),
+      })
+      .parse(argsRaw);
+    const { avatarLibrary } = await import('./avatarLibrary/avatarLibraryRuntime');
+    return avatarLibrary.setFlags(a.characterId, a.avatarId, { is_public: a.is_public, is_default: a.is_default });
+  });
+  ipcMain.handle(IpcChannel.avatarLibrary.remove, async (_event, argsRaw: unknown) => {
+    const a = z.object({ characterId: IdSchema, avatarId: AvatarIdSchema }).parse(argsRaw);
+    const { avatarLibrary } = await import('./avatarLibrary/avatarLibraryRuntime');
+    return avatarLibrary.remove(a.characterId, a.avatarId);
+  });
+  ipcMain.handle(IpcChannel.avatarLibrary.pick, async (_event, argsRaw: unknown) => {
+    const a = z.object({ characterId: IdSchema, avatarId: AvatarIdSchema.nullable() }).parse(argsRaw);
+    const { avatarLibrary } = await import('./avatarLibrary/avatarLibraryRuntime');
+    return avatarLibrary.setPick(a.characterId, a.avatarId);
   });
 
   ipcMain.handle(IpcChannel.avatar.modelFiles, async (_event, idArg: unknown) => {

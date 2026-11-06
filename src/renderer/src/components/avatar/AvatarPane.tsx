@@ -20,11 +20,13 @@ import { useAvatarStore } from '../../lib/stores/useAvatarStore';
 import { Seg } from '../Seg';
 import { Toggle } from '../Toggle';
 import { AvatarView } from '../../lib/avatar/AvatarView';
+import { AvatarLibraryPicker } from './AvatarLibraryTiles';
 import styles from './AvatarPane.module.css';
 
 /** Client-side mirror of avatarStore's zip cap (the server-side check is the
  * authority; this just fails fast with a readable message). */
-const ZIP_MAX_BYTES = 128 * 1024 * 1024;
+/** The avatar store and avatar library cap (64 MB). */
+const ZIP_MAX_BYTES = 64 * 1024 * 1024;
 
 interface AvatarPaneProps {
   characterId: string;
@@ -73,9 +75,13 @@ export function AvatarPane({ characterId, cloudAvatar }: AvatarPaneProps): React
     setAvatarPrefsFor(characterId, next);
     try {
       const cfg = await sei.getConfig();
+      // avatar_id (the avatar library pick, 261106) belongs to main: never sent
+      // from here, and main keeps its on-disk value whatever a save carries.
+      const { avatar_id: _pick, ...ours } = next;
+      const { avatar_id: _diskPick, ...diskEntry } = cfg.avatar_prefs?.[characterId] ?? {};
       await sei.saveConfig({
         ...cfg,
-        avatar_prefs: { ...(cfg.avatar_prefs ?? {}), [characterId]: next },
+        avatar_prefs: { ...(cfg.avatar_prefs ?? {}), [characterId]: { ...diskEntry, ...ours } },
       });
     } catch (err) {
       // eslint-disable-next-line no-console
@@ -156,6 +162,7 @@ export function AvatarPane({ characterId, cloudAvatar }: AvatarPaneProps): React
 
   return (
     <div className={styles.pane}>
+      <AvatarLibraryPicker characterId={characterId} />
       <div className={styles.subTabs}>
         <Seg<SubTab>
           aria-label={t('Avatar type')}

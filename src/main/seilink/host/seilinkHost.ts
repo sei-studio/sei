@@ -53,6 +53,7 @@ import { answerHostAvatarCall, hostPortrait, type HostAvatarStores } from './hos
 import { getCharacter } from '../../characterStore';
 import { paths } from '../../paths';
 import { anima } from '../../anima/animaRuntime';
+import { avatarLibrary } from '../../avatarLibrary/avatarLibraryRuntime';
 import { facepackIdForCharacter, packFilePath, readPackManifest } from '../../facepack/facepackStore';
 import { getRoomPayload, isRoomCharacterId, onRoomChange } from '../roomStore';
 import { loadConfig, updateConfig } from '../../configStore';
@@ -362,6 +363,7 @@ async function stopNow(reason: SeilinkEndReason, via: 'app' | 'dock'): Promise<S
 export function stopSeilinkHostForAccountSwitch(): Promise<void> {
   // 261105: her face-set polls stop too; the next account asks for itself.
   anima.reset();
+  avatarLibrary.reset();
   return serial(() => (session ? endSession('account_switch') : Promise.resolve()));
 }
 

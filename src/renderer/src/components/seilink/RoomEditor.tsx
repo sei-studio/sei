@@ -167,7 +167,8 @@ const TIMES: ReadonlyArray<{ id: RoomState['time']; label: string; Icon: (p: { s
 /** Slots whose tile shows the scene itself (cropped), not a trimmed object. */
 const SCENE_SLOTS: ReadonlySet<RoomSlotId> = new Set(['view', 'shell']);
 
-const ZIP_MAX_BYTES = 128 * 1024 * 1024;
+/** The avatar store and avatar library cap (64 MB). */
+const ZIP_MAX_BYTES = 64 * 1024 * 1024;
 
 export interface RoomEditorProps {
   source: RoomEditorSource;

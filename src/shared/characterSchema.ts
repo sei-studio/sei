@@ -718,6 +718,8 @@ export const UserConfigSchema = z.object({
         always_bright: z.boolean().optional(),
         /** Which profile sub-tab (Static / Live2D) was last chosen. */
         tab: z.enum(['static', 'live2d']).optional(),
+        /** 261106: the viewer's pick from her avatar library (an avatar id), absent = the owner's default. */
+        avatar_id: z.string().max(64).optional(),
       }),
     )
     .optional(),

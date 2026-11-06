@@ -20,6 +20,7 @@ import type { RoomState } from './seilinkRoom';
 import type { SeilinkAvailability, SeilinkHostStatus, SeilinkOfferVia, SeilinkOpenEditor, SeilinkStageRequest, SeilinkStageResult } from './seilinkHost';
 import type { SeilinkEditorEvent, SeilinkEditorSync } from './seilinkTogether';
 import type { AnimaShownKind, AnimaStatus, AnimaTrigger } from './anima';
+import type { AvatarLibraryResult, AvatarLibraryView } from './avatarLibrary';
 import { z } from 'zod';
 import type {
   Character,
@@ -747,8 +748,10 @@ export interface AvatarExpressionInfo {
 
 /** Manifest of a character's imported Live2D avatar model (260804), stored at
  * `<profileRoot>/avatars/<characterId>/manifest.json` alongside the extracted
- * model tree. LOCAL-ONLY: never cloud-synced (the bytes cannot follow), so a
- * character without one simply falls back to the static portrait tile. */
+ * model tree. Since 261106 the store is the local copy of the character's
+ * playing model from the avatar library (sei-proxy /avatars/v1): the owner's
+ * imports are uploaded, other users download the public ones. A character
+ * without one falls back to the face set or the portrait. */
 export interface AvatarManifest {
   /** Store format version (2 = ASCII-safe stored paths; v1 stores are lazily
    * re-normalized by main on read). */
@@ -776,6 +779,14 @@ export interface AvatarManifest {
    * frame, layered under the emotion expressions. Sparse; absent = off.
    */
   accessories?: Record<string, boolean>;
+  /**
+   * Avatar library link (261106, docs/agents/avatar-library.md): this local
+   * model IS the server avatar `avatarId` at content tag `rev` (the row's
+   * opaque `rev`, which changes when its bytes do).
+   * Absent = a local import not uploaded yet (the owner's next sync uploads
+   * it). A new import replaces the manifest, which drops the link.
+   */
+  library?: { avatarId: string; rev: string };
 }
 
 /** One file of a Live2D model bundle, shipped renderer-ward over IPC so the
@@ -2167,6 +2178,30 @@ export interface RendererApi {
     name: string,
     on: boolean,
   ): Promise<AvatarManifest | null>;
+  /**
+   * Avatar library (261106, docs/agents/avatar-library.md): the character's
+   * server-stored avatars with their public locks and default. `sync` (the
+   * owner's card image and local model go up, a public model comes down)
+   * runs when the edit modal or the Avatar tab opens; plain reads use the
+   * main-side cache. Never throws: state 'none' when there is no library.
+   */
+  avatarLibraryList(characterId: string, opts?: { sync?: boolean; fresh?: boolean }): Promise<AvatarLibraryView>;
+  /** Owner: add an image (png/jpeg/webp bytes) as a portrait avatar. */
+  avatarLibraryAddImage(characterId: string, bytes: ArrayBuffer, name: string | null): Promise<AvatarLibraryResult>;
+  /** Owner: add a Live2D/rig zip as an avatar (imports it locally first, then uploads it). */
+  avatarLibraryAddModel(characterId: string, zipBytes: ArrayBuffer): Promise<AvatarLibraryResult>;
+  /** Owner: flip an avatar's public lock and/or make it the default. 409s come back as an error code. */
+  avatarLibrarySetFlags(
+    characterId: string,
+    avatarId: string,
+    flags: { is_public?: boolean; is_default?: boolean },
+  ): Promise<AvatarLibraryResult>;
+  /** Owner: delete an avatar. */
+  avatarLibraryRemove(characterId: string, avatarId: string): Promise<AvatarLibraryResult>;
+  /** Anyone: their own pick of which avatar plays (null = the owner's default). */
+  avatarLibraryPick(characterId: string, avatarId: string | null): Promise<AvatarLibraryResult>;
+  /** Push: a character's library view changed (any window). */
+  onAvatarLibrary(cb: (update: { characterId: string; view: AvatarLibraryView }) => void): Unsubscribe;
   /** Subscribe to avatar manifest changes (any window). Live Live2D views use
    * it to re-apply accessory toggles without reloading the model. */
   onAvatarManifest(
@@ -3960,6 +3995,23 @@ export const IpcChannel = {
     packState: 'speech:pack-state',
     /** Invoke: SenseVoice transcription ({pcm, sampleRate} → {text, language?}). */
     sttTranscribe: 'speech:stt-transcribe',
+  },
+  /** Avatar library (261106): server-stored avatars, public locks, default. */
+  avatarLibrary: {
+    /** Invoke: ({characterId, sync?, fresh?}) → AvatarLibraryView. */
+    list: 'avatar-library:list',
+    /** Invoke: ({characterId, bytes, name}) → AvatarLibraryResult. */
+    addImage: 'avatar-library:add-image',
+    /** Invoke: ({characterId, zip}) → AvatarLibraryResult. */
+    addModel: 'avatar-library:add-model',
+    /** Invoke: ({characterId, avatarId, is_public?, is_default?}) → AvatarLibraryResult. */
+    setFlags: 'avatar-library:set-flags',
+    /** Invoke: ({characterId, avatarId}) → AvatarLibraryResult. */
+    remove: 'avatar-library:remove',
+    /** Invoke: ({characterId, avatarId | null}) → AvatarLibraryResult. */
+    pick: 'avatar-library:pick',
+    /** Push (main → every window): {characterId, view}. */
+    changed: 'avatar-library:changed',
   },
   avatar: {
     /** Invoke: import a Live2D model zip for a character → AvatarManifest. */

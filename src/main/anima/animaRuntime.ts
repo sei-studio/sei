@@ -8,78 +8,20 @@ import { IpcChannel } from '../../shared/ipc';
 import type { AnimaStatus } from '../../shared/anima';
 import { getCharacter } from '../characterStore';
 import { onCharacterSaved } from '../characterSignals';
-import { getProxyJwt, ProxyAuthError } from '../auth/proxyJwtFetcher';
+import { downloadCapped as download, proxyJson } from '../cloud/proxyHttp';
 import { loadAnalytics } from '../lazyAnalytics';
 import { noteSeilinkAvatarChanged } from '../seilink/host/hostSignals';
+import { avatarLibrary } from '../avatarLibrary/avatarLibraryRuntime';
 import { AnimaClient, AnimaNoSession } from './animaClient';
 import { animaStore } from './animaStore';
 import { paths } from '../paths';
-
-/** Proxy base URL (proxyClient.ts's rule). `SEI_PROXY_URL` overrides for dev. */
-const PROXY_BASE = process.env.SEI_PROXY_URL ?? 'https://api.sei.gg';
-const API_TIMEOUT_MS = 15_000;
-const DOWNLOAD_TIMEOUT_MS = 180_000;
 
 function log(line: string): void {
   console.log(line);
 }
 
-async function api(method: 'GET' | 'POST', route: string, body?: unknown): Promise<{ status: number; body: unknown }> {
-  let jwt: string;
-  try {
-    jwt = await getProxyJwt();
-  } catch (err) {
-    if (err instanceof ProxyAuthError && err.code === 'PROXY_NO_SESSION') throw new AnimaNoSession();
-    throw err;
-  }
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), API_TIMEOUT_MS);
-  try {
-    const res = await fetch(`${PROXY_BASE}${route}`, {
-      method,
-      headers: { authorization: `Bearer ${jwt}`, ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-      signal: ctrl.signal,
-    });
-    const json = await res.json().catch(() => null);
-    return { status: res.status, body: json };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function download(url: string, maxBytes: number): Promise<Uint8Array> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), DOWNLOAD_TIMEOUT_MS);
-  try {
-    const res = await fetch(url, { signal: ctrl.signal });
-    if (!res.ok || !res.body) throw new Error(`download ${res.status}`);
-    const declared = Number(res.headers.get('content-length') ?? 0);
-    if (declared > maxBytes) throw new Error('download too big');
-    const chunks: Uint8Array[] = [];
-    let total = 0;
-    const reader = res.body.getReader();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > maxBytes) {
-        ctrl.abort();
-        throw new Error('download too big');
-      }
-      chunks.push(value);
-    }
-    const out = new Uint8Array(total);
-    let at = 0;
-    for (const c of chunks) {
-      out.set(c, at);
-      at += c.byteLength;
-    }
-    return out;
-  } finally {
-    clearTimeout(timer);
-  }
-}
+const api = (method: 'GET' | 'POST', route: string, body?: unknown) =>
+  proxyJson(method, route, body, () => new AnimaNoSession());
 
 function broadcast(channel: string, payload: unknown): void {
   for (const w of BrowserWindow.getAllWindows()) {
@@ -118,6 +60,8 @@ export const anima = new AnimaClient({
     }
     return `${c.portrait_image}|${c.cloud_updated_at ?? ''}|${file}`;
   },
+  // 261106: bake the library portrait avatar that plays for her, when there is one.
+  avatarFor: (id) => avatarLibrary.animaAvatarFor(id),
   capture: (event, props) => {
     void loadAnalytics()
       .then((a) => a.capture(event, props))

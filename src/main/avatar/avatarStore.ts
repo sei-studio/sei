@@ -7,9 +7,10 @@
  * memoryDir (knowledge precedent) so "Reset memory" never touches it; a full
  * character delete / remove-from-library takes it (characterStore, ipc).
  *
- * LOCAL-ONLY by design: nothing here rides `character.metadata`, so nothing
- * syncs to the cloud — a character adopted elsewhere simply has no avatar and
- * the overlay falls back to the static portrait tile.
+ * Nothing here rides `character.metadata`. Since 261106 the avatar library
+ * (main/avatarLibrary/) keeps this store in step with the server: the owner's
+ * imports are uploaded (zipStoredAvatar), other users' apps download the
+ * character's public model into it (manifest.library records the link).
  *
  * Import NORMALIZES the stored model, because real-world VTuber exports are
  * sloppy in three specific ways (all measured on the first test model):
@@ -35,6 +36,7 @@ import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path';
 import JSZip from 'jszip';
 import { paths } from '../paths';
+import { avatarImageProblem, MAX_TEXTURE_SIDE, sniffAvatarImage, type ImageProblem } from './avatarImage';
 import type {
   AvatarEmotion,
   AvatarManifest,
@@ -43,13 +45,16 @@ import type {
   AvatarRigSpec,
 } from '../../shared/ipc';
 
-/** Upload cap for the zip itself (a full VTuber model with 4k textures is
- * ~20 MB; 128 MB leaves generous headroom without inviting abuse). */
-export const AVATAR_ZIP_MAX_BYTES = 128 * 1024 * 1024;
+/** Cap for the zip itself (a full VTuber model with 4k textures is ~20 MB).
+ * The same as the avatar library proxy's zip cap, so every model this store
+ * takes can also be uploaded. */
+export const AVATAR_ZIP_MAX_BYTES = 64 * 1024 * 1024;
 /** Cap on total EXTRACTED bytes (zip-bomb guard). */
 export const AVATAR_EXTRACTED_MAX_BYTES = 256 * 1024 * 1024;
 /** Cap on extracted entry count. */
 export const AVATAR_MAX_ENTRIES = 512;
+/** One extracted file at most (the avatar library proxy's per-entry cap). */
+export const AVATAR_ENTRY_MAX_BYTES = 64 * 1024 * 1024;
 
 const MANIFEST_NAME = 'manifest.json';
 /** v2 = paths renamed ASCII-safe (v1 stores are lazily re-normalized). */
@@ -295,6 +300,29 @@ export function parseRigSpec(raw: unknown): AvatarRigSpec {
 }
 
 /** Every image path a rig spec references, in declaration order. */
+/**
+ * The image types an avatar may hold (261106): PNG, JPEG, WebP by magic
+ * bytes, static and at most MAX_TEXTURE_SIDE px (avatarImage.ts). Exactly
+ * what the avatar library proxy moderates, so whatever this store holds can
+ * be uploaded and checked.
+ */
+export { sniffAvatarImage };
+
+/** Names that look like images (the proxy refuses a zip where one is not a real PNG/JPEG/WebP). */
+const IMAGE_NAME_RE = /\.(png|jpe?g|webp|gif|bmp|tiff?|avif|heic|heif|ico)$/i;
+
+/** GIF / TIFF / BMP / ICO / AVIF / HEIC by magic bytes: images nobody moderates (the proxy refuses them). */
+function isUnsupportedImage(b: Uint8Array): boolean {
+  if (b.length >= 4 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) return true;
+  if (b.length >= 4 && ((b[0] === 0x49 && b[1] === 0x49 && b[2] === 0x2a && b[3] === 0) || (b[0] === 0x4d && b[1] === 0x4d && b[2] === 0 && b[3] === 0x2a))) return true;
+  if (b.length >= 26 && b[0] === 0x42 && b[1] === 0x4d && [12, 40, 52, 56, 64, 108, 124].includes(b[14]! | (b[15]! << 8))) return true;
+  if (b.length >= 6 && b[0] === 0 && b[1] === 0 && b[2] === 1 && b[3] === 0 && (b[4]! | (b[5]! << 8)) > 0) return true;
+  if (b.length >= 12 && b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) {
+    return /^(avif|avis|heic|heix|hevc|heim|heis|mif1|msf1)$/.test(Buffer.from(b.subarray(8, 12)).toString('latin1'));
+  }
+  return false;
+}
+
 function rigImageRefs(spec: AvatarRigSpec): string[] {
   const refs: string[] = [];
   for (const l of spec.layers) {
@@ -302,6 +330,14 @@ function rigImageRefs(spec: AvatarRigSpec): string[] {
     if (l.states) refs.push(l.states.open, l.states.closed);
   }
   return refs;
+}
+
+/** Why a referenced image was left out by the image rules, or null. */
+function refusedMessage(problem: ImageProblem | undefined, ref: string): string | null {
+  if (problem === 'animated_image') return `model image is animated (APNG or animated WebP): ${ref}`;
+  if (problem === 'image_too_large') return `model image is larger than ${MAX_TEXTURE_SIDE} px: ${ref}`;
+  if (problem === 'bad_image') return `model image is not a readable PNG, JPEG or WebP: ${ref}`;
+  return null;
 }
 
 /** Replace the avatar dir with the given file set + manifest. Shared tail of
@@ -333,15 +369,17 @@ async function normalizeRigAndWrite(
   characterId: string,
   entryFile: ExtractedFile,
   byRel: Map<string, ExtractedFile>,
+  refused: Map<string, ImageProblem>,
 ): Promise<AvatarManifest> {
   const spec = parseRigSpec(JSON.parse(entryFile.bytes.toString('utf8')));
   const entryDir = entryFile.rel.includes('/')
     ? entryFile.rel.slice(0, entryFile.rel.lastIndexOf('/'))
     : '';
   for (const ref of rigImageRefs(spec)) {
-    if (!byRel.has(resolveRef(entryDir, ref))) {
-      throw new Error(`rig.json references missing image: ${ref}`);
-    }
+    const rel = resolveRef(entryDir, ref);
+    const f = byRel.get(rel);
+    if (!f) throw new Error(refusedMessage(refused.get(rel), ref) ?? `rig.json references missing image: ${ref}`);
+    if (!sniffAvatarImage(f.bytes)) throw new Error(`rig.json image is not a PNG, JPEG or WebP: ${ref}`);
   }
 
   const safeMap = buildSafePathMap([...byRel.keys()]);
@@ -387,8 +425,22 @@ async function normalizeAndWrite(
   /** Accessory toggles to carry over (the v1→v2 heal path; a fresh import
    * starts clean — a new model's expression names owe it nothing). */
   keepAccessories?: Record<string, boolean>,
+  /** A fresh import applies the image rules (avatarImage.ts); the v1 heal of
+   * a store already on disk does not (it keeps rendering what it had). */
+  imageRules = false,
 ): Promise<AvatarManifest> {
-  const stripped = stripCommonRoot(incoming);
+  const all = stripCommonRoot(incoming);
+  // Animated or oversized images are left out like unsupported ones; a model
+  // that references one fails with that reason.
+  const refused = new Map<string, ImageProblem>();
+  const stripped = imageRules
+    ? all.filter((f) => {
+        if (!sniffAvatarImage(f.bytes)) return true;
+        const problem = avatarImageProblem(f.bytes, MAX_TEXTURE_SIDE);
+        if (problem) refused.set(f.rel, problem);
+        return !problem;
+      })
+    : all;
   const byRel = new Map(stripped.map((f) => [f.rel, f]));
 
   // ── Locate + parse the model3.json ──────────────────────────────────────
@@ -413,7 +465,7 @@ async function normalizeAndWrite(
     const rigEntry = stripped
       .filter((f) => (f.rel.split('/').pop() ?? '') === 'rig.json')
       .sort((a, b) => a.rel.split('/').length - b.rel.split('/').length)[0];
-    if (rigEntry) return normalizeRigAndWrite(characterId, rigEntry, byRel);
+    if (rigEntry) return normalizeRigAndWrite(characterId, rigEntry, byRel, refused);
     throw new Error('no .model3.json with a Moc reference (and no rig.json) found in the zip');
   }
   const entryDir = entryFile.rel.includes('/')
@@ -424,10 +476,12 @@ async function normalizeAndWrite(
   const refs = settings.FileReferences;
   const mocRel = resolveRef(entryDir, refs.Moc!);
   if (!byRel.has(mocRel)) throw new Error(`model references missing moc3 file: ${refs.Moc}`);
+  if (refs.Textures !== undefined && !Array.isArray(refs.Textures)) throw new Error('model Textures is not a list');
   for (const tex of refs.Textures ?? []) {
-    if (!byRel.has(resolveRef(entryDir, tex))) {
-      throw new Error(`model references missing texture: ${tex}`);
-    }
+    const rel = typeof tex === 'string' ? resolveRef(entryDir, tex) : '';
+    const f = rel ? byRel.get(rel) : undefined;
+    if (!f) throw new Error(refusedMessage(refused.get(rel), String(tex)) ?? `model references missing texture: ${String(tex)}`);
+    if (!sniffAvatarImage(f.bytes)) throw new Error(`model texture is not a PNG, JPEG or WebP: ${tex}`);
   }
 
   // ── Normalize: register expressions + ensure EyeBlink group ─────────────
@@ -538,22 +592,90 @@ export async function importAvatarZip(characterId: string, zip: Buffer): Promise
   }
   const archive = await JSZip.loadAsync(zip, { decodeFileName: decodeZipName });
 
-  // ── Extract into memory, sanitized + capped ─────────────────────────────
-  const files: ExtractedFile[] = [];
-  let total = 0;
+  // ── Check every declared size BEFORE inflating anything (a 1 MB zip can
+  // declare, and inflate to, a gigabyte) ────────────────────────────────────
+  const wanted: Array<{ rel: string; entry: JSZip.JSZipObject; size: number }> = [];
+  let declaredTotal = 0;
   for (const entry of Object.values(archive.files)) {
     if (entry.dir) continue;
     const rel = sanitizeEntryPath(entry.name);
     if (!rel || isJunkEntry(rel)) continue;
-    const bytes = Buffer.from(await entry.async('uint8array'));
-    total += bytes.byteLength;
-    if (total > AVATAR_EXTRACTED_MAX_BYTES) throw new Error('avatar zip expands too large');
-    files.push({ rel, bytes });
-    if (files.length > AVATAR_MAX_ENTRIES) throw new Error('avatar zip has too many files');
+    const size = declaredSize(entry);
+    if (size > AVATAR_ENTRY_MAX_BYTES) throw new Error('avatar zip has a file that is too large');
+    declaredTotal += size;
+    if (declaredTotal > AVATAR_EXTRACTED_MAX_BYTES) throw new Error('avatar zip expands too large');
+    wanted.push({ rel, entry, size });
+    if (wanted.length > AVATAR_MAX_ENTRIES) throw new Error('avatar zip has too many files');
+  }
+
+  // ── Extract into memory, each entry capped at its declared size ─────────
+  const files: ExtractedFile[] = [];
+  for (const w of wanted) {
+    const bytes = await readEntryCapped(w.entry, w.size);
+    // Images only as PNG/JPEG/WebP (what the avatar library moderates). A
+    // model's textures and rig layers are checked by name in normalize; any
+    // other unusable image (a GIF preview, a broken thumbnail) is left out.
+    if (!sniffAvatarImage(bytes) && (isUnsupportedImage(bytes) || IMAGE_NAME_RE.test(w.rel))) continue;
+    files.push({ rel: w.rel, bytes });
   }
   if (files.length === 0) throw new Error('avatar zip is empty');
 
-  return withLock(characterId, () => normalizeAndWrite(characterId, files));
+  return withLock(characterId, () => normalizeAndWrite(characterId, files, undefined, true));
+}
+
+/** An entry's uncompressed size as its central directory declares it. */
+function declaredSize(entry: JSZip.JSZipObject): number {
+  const n = (entry as unknown as { _data?: { uncompressedSize?: unknown } })._data?.uncompressedSize;
+  if (typeof n !== 'number' || !Number.isInteger(n) || n < 0) throw new Error('avatar zip entry has no size');
+  return n;
+}
+
+interface EntryStream {
+  on(event: 'data', cb: (chunk: Uint8Array) => void): EntryStream;
+  on(event: 'error', cb: (err: unknown) => void): EntryStream;
+  on(event: 'end', cb: () => void): EntryStream;
+  resume(): EntryStream;
+  pause(): EntryStream;
+}
+
+/**
+ * Inflate one entry chunk by chunk and stop the moment it passes `size`
+ * bytes (its declared size): a lying header never gets to allocate more.
+ * The result must be exactly `size` bytes.
+ */
+export function readEntryCapped(entry: JSZip.JSZipObject, size: number): Promise<Buffer> {
+  return new Promise<Buffer>((resolve, reject) => {
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    let settled = false;
+    const finish = (err: Error | null): void => {
+      if (settled) return;
+      settled = true;
+      if (err) reject(err);
+      else resolve(Buffer.concat(chunks, total));
+    };
+    let stream: EntryStream;
+    try {
+      stream = (entry as unknown as { internalStream(type: 'uint8array'): EntryStream }).internalStream('uint8array');
+    } catch (err) {
+      finish(err instanceof Error ? err : new Error(String(err)));
+      return;
+    }
+    stream
+      .on('data', (chunk) => {
+        if (settled) return;
+        total += chunk.byteLength;
+        if (total > size) {
+          stream.pause();
+          finish(new Error('avatar zip file expands past its declared size'));
+          return;
+        }
+        chunks.push(chunk);
+      })
+      .on('error', (err) => finish(err instanceof Error ? err : new Error(String(err))))
+      .on('end', () => finish(total === size ? null : new Error('avatar zip file is not its declared size')))
+      .resume();
+  });
 }
 
 /** Read the stored avatar tree back as ExtractedFiles (manifest excluded). */
@@ -627,6 +749,63 @@ export async function setAvatarAccessory(
     );
     return next;
   });
+}
+
+/**
+ * Record (or clear) the avatar library link (261106): this stored model is the
+ * server avatar `link.avatarId`. Returns the updated manifest, or null when
+ * the character has no imported avatar.
+ */
+export async function setAvatarLibraryLink(
+  characterId: string,
+  link: { avatarId: string; rev: string } | null,
+): Promise<AvatarManifest | null> {
+  // Heal a v1 store first (it takes the lock itself), then read the manifest
+  // again INSIDE the lock, so an import that lands meanwhile is never
+  // overwritten with the old manifest.
+  if (!(await getAvatarManifest(characterId))) return null;
+  return withLock(characterId, async () => {
+    let manifest: AvatarManifest;
+    try {
+      manifest = JSON.parse(await readFile(path.join(paths.avatarsDir(characterId), MANIFEST_NAME), 'utf8')) as AvatarManifest;
+    } catch {
+      return null;
+    }
+    if (typeof manifest?.entry !== 'string' || manifest.version !== MANIFEST_VERSION) return null;
+    const next: AvatarManifest = { ...manifest };
+    if (link) next.library = { avatarId: link.avatarId, rev: link.rev };
+    else delete next.library;
+    await writeFile(path.join(paths.avatarsDir(characterId), MANIFEST_NAME), JSON.stringify(next, null, 2), 'utf8');
+    return next;
+  });
+}
+
+/** Fixed entry date for zipStoredAvatar, so the same files always give the same bytes. */
+const STABLE_ZIP_DATE = new Date(Date.UTC(2000, 0, 1, 0, 0, 0));
+const STORED_EXT_RE = /\.(png|jpe?g|webp)$/i;
+
+/**
+ * Pack the stored model back into a zip for the avatar library upload
+ * (261106): files in sorted order with a fixed date, images stored and
+ * everything else deflated, so the same store always hashes the same (the
+ * upload happens once per hash). The manifest is not included (it is ours,
+ * rebuilt by the import on the other side). Null when nothing is stored.
+ */
+export async function zipStoredAvatar(characterId: string): Promise<Buffer | null> {
+  const manifest = await getAvatarManifest(characterId);
+  if (!manifest) return null;
+  const files = await withLock(characterId, () => readStoredFiles(characterId));
+  if (files.length === 0) return null;
+  files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
+  const zip = new JSZip();
+  for (const f of files) {
+    zip.file(f.rel, f.bytes, {
+      date: STABLE_ZIP_DATE,
+      compression: STORED_EXT_RE.test(f.rel) ? 'STORE' : 'DEFLATE',
+      compressionOptions: { level: 6 },
+    });
+  }
+  return zip.generateAsync({ type: 'nodebuffer', platform: 'UNIX' });
 }
 
 /** Delete the character's imported avatar. Idempotent. */

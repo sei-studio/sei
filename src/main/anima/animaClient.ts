@@ -22,6 +22,12 @@
  *   kept; the next SeiLink open asks again (the proxy keeps no_pack final for
  *   that portrait, so asking again is cheap).
  *
+ * Avatar library (261106): when her effective avatar is a portrait avatar
+ * from the library (avatarFor), the bake is asked for THAT avatar
+ * (avatar_id on request and status), so each portrait avatar gets its own
+ * face set, deduped server-side by portrait hash. Without one (old proxy,
+ * no library, a model avatar) the request is the old per-character one.
+ *
  * Stages (261106, the WorldLink first-link intro): besides the ui state,
  * each run reports where it stands (`AnimaStage`: checking, requesting,
  * queued, running, downloading, ready, or how it ended) through onProgress,
@@ -68,6 +74,11 @@ export interface AnimaClientDeps {
   store: AnimaPackStore;
   /** Her local portrait ref (portrait_image + cloud watermark); undefined = no such character. */
   portraitRef(characterId: string): Promise<string | null | undefined>;
+  /**
+   * The library portrait avatar that plays for her (261106), or null: bake
+   * her card image the old way. Optional (tests, old wiring).
+   */
+  avatarFor?(characterId: string): Promise<{ avatarId: string; rev: string } | null>;
   capture(event: string, props: Record<string, unknown>): void;
   /** Her pack is installed (or changed): views re-resolve her avatar. */
   onReady(characterId: string, packId: string): void;
@@ -94,6 +105,8 @@ interface Run {
   /** portrait_changed: the hash the old pack was baked from, to spot a cloud row that has not caught up. */
   oldPortraitHash: string | null;
   recheck: number;
+  /** The library avatar this run bakes (avatar_id), or null for the card image. */
+  avatarId: string | null;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -141,11 +154,12 @@ export class AnimaClient {
       // Once per run, before any install (every prepare waits on the same pass).
       this.pruned ??= this.d.store.prune(true).catch(() => 0);
       await this.pruned;
-      const ref = await this.d.portraitRef(characterId);
-      if (ref === undefined) {
+      const found = await this.refFor(characterId);
+      if (!found) {
         this.setStage(characterId, 'unavailable');
         return this.status(characterId);
       }
+      const { ref, avatarId } = found;
       const entry = await this.d.store.entry(characterId);
       const packId = entry ? await this.d.store.packIdFor(characterId) : null;
       const fresh = entry && packId && entry.portrait_ref === ref && this.d.now() - entry.checked_at < CHECK_TTL_MS;
@@ -172,6 +186,7 @@ export class AnimaClient {
         busy: false,
         oldPortraitHash: trigger === 'portrait_changed' ? (entry?.portrait_hash ?? null) : null,
         recheck: 0,
+        avatarId,
       };
       this.runs.set(characterId, run);
       this.setStage(characterId, 'requesting');
@@ -192,13 +207,40 @@ export class AnimaClient {
   async portraitMaybeChanged(characterId: string): Promise<void> {
     const entry = await this.d.store.entry(characterId).catch(() => null);
     if (!entry && !this.ui.has(characterId)) return;
-    const ref = await this.d.portraitRef(characterId).catch(() => undefined);
-    if (ref === undefined || (entry && entry.portrait_ref === ref)) return;
+    const found = await this.refFor(characterId).catch(() => null);
+    if (!found || (entry && entry.portrait_ref === found.ref)) return;
     this.stop(characterId);
     const gen = this.gen;
     this.d.setTimeout(async () => {
       if (gen === this.gen) await this.prepare(characterId, 'portrait_changed');
     }, PORTRAIT_RECHECK_MS[0]);
+  }
+
+  /**
+   * Her effective library avatar changed (owner default, viewer pick, a new
+   * card image): ask again now. Only for characters that went through SeiLink.
+   */
+  async avatarChanged(characterId: string): Promise<void> {
+    const entry = await this.d.store.entry(characterId).catch(() => null);
+    if (!entry && !this.ui.has(characterId)) return;
+    const found = await this.refFor(characterId).catch(() => null);
+    if (!found || (entry && entry.portrait_ref === found.ref)) return;
+    this.stop(characterId);
+    await this.prepare(characterId, 'portrait_changed');
+  }
+
+  /**
+   * What her pack is checked against: the library avatar (`avatar:<id>:<rev>`)
+   * when one plays, else her local portrait ref. Null: no such character.
+   */
+  private async refFor(characterId: string): Promise<{ ref: string | null; avatarId: string | null } | null> {
+    const ref = await this.d.portraitRef(characterId);
+    if (ref === undefined) return null;
+    const avatar = this.d.avatarFor ? await this.d.avatarFor(characterId).catch(() => null) : null;
+    if (avatar && UUID_RE.test(avatar.avatarId) && /^[0-9a-f]{16,64}$/.test(avatar.rev)) {
+      return { ref: `avatar:${avatar.avatarId}:${avatar.rev}`, avatarId: avatar.avatarId };
+    }
+    return { ref, avatarId: null };
   }
 
   /** What a view ended up showing for her (once per character, surface and kind per run). */
@@ -283,8 +325,14 @@ export class AnimaClient {
     try {
       res =
         kind === 'request'
-          ? await this.d.api('POST', '/anima/v1/request', { character_id: characterId })
-          : await this.d.api('GET', `/anima/v1/status/${encodeURIComponent(characterId)}`);
+          ? await this.d.api('POST', '/anima/v1/request', {
+              character_id: characterId,
+              ...(run.avatarId ? { avatar_id: run.avatarId } : {}),
+            })
+          : await this.d.api(
+              'GET',
+              `/anima/v1/status/${encodeURIComponent(characterId)}${run.avatarId ? `?avatar_id=${encodeURIComponent(run.avatarId)}` : ''}`,
+            );
     } catch (err) {
       run.busy = false;
       if (err instanceof AnimaNoSession) {
