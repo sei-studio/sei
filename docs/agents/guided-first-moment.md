@@ -63,9 +63,9 @@ this, onboarding landed on Home: 24% of new installs never used any surface.
   (text-only model: chess leads, no Backseat). The harness greeting is
   a stub; the live greeting's wording is the model's.
 
-## The SeiLink tour is a second tutorial mode (261105, T337)
+## The WorldLink tour is a second tutorial mode (261105, T337)
 
-`useTutorialStore` also runs the guide's short SeiLink tour (`mode:
+`useTutorialStore` also runs the guide's short WorldLink tour (`mode:
 'seilink'`, steps `sl_offer` / `sl_button` / `sl_room`). It never runs in the
 session that ran onboarding (`noteOnboardingThisSession` in
 `handleOnboardComplete`), waits for a calm Home, is not persisted in

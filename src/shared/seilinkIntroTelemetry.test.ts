@@ -14,6 +14,7 @@ import {
   SETUP_OPENED_FROM,
   SEILINK_ENTRY_EVENT,
   SEILINK_INTRO_EVENT,
+  SEILINK_INTRO_LINK_EVENT,
   SEILINK_TOUR_EVENT,
   introDurationBucket,
   isSeilinkIntroEvent,
@@ -28,6 +29,7 @@ describe('isSeilinkIntroEvent', () => {
     expect(isSeilinkIntroEvent(SEILINK_INTRO_EVENT)).toBe(true);
     expect(isSeilinkIntroEvent(SEILINK_TOUR_EVENT)).toBe(true);
     expect(isSeilinkIntroEvent(SEILINK_ENTRY_EVENT)).toBe(true);
+    expect(isSeilinkIntroEvent(SEILINK_INTRO_LINK_EVENT)).toBe(true);
     expect(isSeilinkIntroEvent('seilink_movein_sheet')).toBe(false);
   });
 });
@@ -89,6 +91,45 @@ describe('seilink_intro', () => {
     expect(out.reduced_motion).toBe(false);
     expect(out).not.toHaveProperty('beat');
     expect(out.character_id).not.toBe('not a uuid');
+  });
+});
+
+describe('seilink_intro_link (261106 v6)', () => {
+  it('keeps the line timings, the slowest milestone and the outcome, never an id or text', () => {
+    const out = sanitizeSeilinkIntroTrack(SEILINK_INTRO_LINK_EVENT, {
+      outcome: 'failed',
+      failure: 'timeout',
+      trigger: 'first_link',
+      reduced_motion: false,
+      lines_shown: 7,
+      line_1_ms: 2800.4,
+      line_7_ms: 99_000_000,
+      line_10_ms: 5,
+      total_ms: 210_000,
+      slowest: 'running',
+      slowest_ms: 150_000,
+      anima_start: 'queued',
+      character_id: CID,
+      text: 'Sending signal to World 123456…',
+    });
+    expect(out).toEqual({
+      outcome: 'failed',
+      failure: 'timeout',
+      trigger: 'first_link',
+      reduced_motion: false,
+      lines_shown: 7,
+      line_1_ms: 2800,
+      line_7_ms: 30 * 60_000,
+      total_ms: 210_000,
+      slowest: 'running',
+      slowest_ms: 150_000,
+      anima_start: 'queued',
+    });
+  });
+
+  it('falls back on junk', () => {
+    const out = sanitizeSeilinkIntroTrack(SEILINK_INTRO_LINK_EVENT, { outcome: 'great', failure: 'gremlins', slowest: 'nope', slowest_ms: 5, lines_shown: 40 });
+    expect(out).toEqual({ outcome: 'abandoned', trigger: 'first_link', reduced_motion: false, lines_shown: 9 });
   });
 });
 

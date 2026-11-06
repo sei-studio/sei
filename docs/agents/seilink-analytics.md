@@ -1,6 +1,8 @@
-# SeiLink analytics (261105)
+# WorldLink analytics (261105)
 
-What SeiLink (her room as the live wallpaper) reports, and which question
+WorldLink was called SeiLink until 261106; the event names keep `seilink_*`.
+
+What WorldLink (her room as the live wallpaper) reports, and which question
 each event answers. Shape only, like every surface
 (`instrumenting-surfaces.md`): closed enums, counts, durations, buckets and
 the character id. Never a line's text, a file name, a path, a model name or
@@ -40,7 +42,7 @@ an error message.
 | Event | When | Props | Answers |
 |---|---|---|---|
 | `seilink_health` | every 30 min of a live session | window_ms, fps_p50, fps_p95, fps_p5, fps_samples (visible time only), visible_pct, covered_pct, paused_pct, detached_pct, heartbeat_misses, mem_mb_max, mem_bucket, dropped_frames_est, cpu_avg, plus the counters below for that window, session_ms, shown, facts | Long sessions: does it stay smooth and small |
-| `seilink_ended` | every stop (single choke point) | reason, duration_ms, attached, restarts, failure_class?, session_ms, shown, first_frame_ms, not_shown_reason?, the whole-session health props, all counters, facts | One row per session: how it ran and how it ended |
+| `seilink_ended` | every stop (single choke point) | reason (261106 v6 adds `link_failed`: the WorldLink intro's link failed after the host had started, so it was stopped), duration_ms, attached, restarts, failure_class?, session_ms, shown, first_frame_ms, not_shown_reason?, the whole-session health props, all counters, facts | One row per session: how it ran and how it ended |
 
 Counters (on `seilink_ended`, per window on `seilink_health`): `clicks`,
 `double_clicks`, `chat_open_focused|reopened|deferred|unknown`,
@@ -85,8 +87,9 @@ Shapes in `src/shared/seilinkIntroTelemetry.ts`, rebuilt in main by
 
 | Event | When | Props | Answers |
 |---|---|---|---|
-| `seilink_entry` | every SeiLink entry click | character_id, source `button`/`gear`/`tour`/`dock`, action `sheet`/`move_in`/`edit`/`move_out`/`replay_intro` | Which entry point people use |
-| `seilink_intro` | the intro shows (`shown`), and how it ended (`completed`/`skipped`/`aborted`) | character_id, action, trigger `first_link`/`replay`, style `aurora` (the only one since 261106 v3; `bloom`/`tide` earlier that day, `holo`/`glitch`/`tunnel` before), mood `eclipse` (261106 v4: the only colour mood; `accretion`/`nebula` were sent on 261106 v3 builds only), end_on `plain_dark`/`plain_light`/`room` (what it settled into), reduced_motion, entry; on the end: beat `tunnel`/`link`/`port`/`linked` (where it ended), duration_bucket `lt3s`/`3_6s`/`6_9s`/`9_12s`/`12_20s`/`gt20s`, host `ok`/`failed`/`pending`/`none` | Do people watch it, where they skip, does the host keep up |
+| `seilink_entry` | every WorldLink entry click | character_id, source `button`/`gear`/`tour`/`dock`, action `sheet`/`move_in`/`edit`/`move_out`/`replay_intro` | Which entry point people use |
+| `seilink_intro` | the intro shows (`shown`), and how it ended (`completed`/`skipped`/`aborted`; since 261106 v6 `aborted` = closed from the WorldLink failure line, and the v6 intro runs 30 s or longer so duration_bucket is mostly `gt20s`: use `seilink_intro_link.total_ms`) | character_id, action, trigger `first_link`/`replay`, style `aurora` (the only one since 261106 v3; `bloom`/`tide` earlier that day, `holo`/`glitch`/`tunnel` before), mood `eclipse` (261106 v4: the only colour mood; `accretion`/`nebula` were sent on 261106 v3 builds only), end_on `plain_dark`/`plain_light`/`room` (what it settled into), reduced_motion, entry; on the end: beat `tunnel`/`link`/`port`/`linked` (where it ended), duration_bucket `lt3s`/`3_6s`/`6_9s`/`9_12s`/`12_20s`/`gt20s`, host `ok`/`failed`/`pending`/`none` | Do people watch it, where they skip, does the host keep up |
+| `seilink_intro_link` | once per intro, when it ends (or is unmounted): how the WorldLink status lines went (261106 v6, `lib/seilink/worldLink.ts` linkReport) | outcome `success` (the success line landed)/`failed` (the failure line showed and was closed)/`abandoned` (skipped or closed before either), failure `offline`/`network`/`timeout`/`bake_failed`/`install`/`http`/`auth`/`host`/`error` (failed only), trigger, reduced_motion, lines_shown (0 to 9), line_1_ms .. line_9_ms (how long each line was on screen), total_ms, slowest (the milestone that took longest after the one before: `sent`/`answered`/`running`/`baked`/`installed`/`host`) + slowest_ms, anima_start (her bake's `AnimaStage` when the intro started, or `none`). No character id, no text | Is the link fast enough, which stage is slow, how often it fails and why |
 | `seilink_tour` | the guide's tour: `offered`, `sure`, `not_now` (snoozed true on the first, false when it retires), `completed` (the sheet opens), `dropped` (Skip tutorial) | action, audience `new`/`existing`, offer_n (1 or 2), snoozed?, step `offer`/`button`/`room` (dropped) | Tour funnel and snooze outcome |
 
 ## First room on the desktop (261106)
@@ -126,13 +129,13 @@ per app run.
 
 | phase | When | Props | Answers |
 |---|---|---|---|
-| `requested` | the first POST /anima/v1/request for her this run | trigger `move_in_sheet`/`editor`/`host_start`/`host_restore`/`portrait_changed`, state (the proxy's first answer), created (this call queued a new bake) | How often SeiLink opens lead to a bake |
+| `requested` | the first POST /anima/v1/request for her this run | trigger `move_in_sheet`/`editor`/`host_start`/`host_restore`/`portrait_changed`, state (the proxy's first answer), created (this call queued a new bake) | How often WorldLink opens lead to a bake |
 | `ready` | her face set is on disk and in use | trigger, from_cache (no bake was waited on), source `disk`/`cloud_cache`/`baked`, wait_ms (from the request), pack_mb? | How long people wait for her look |
 | `deferred` | the proxy held the bake | reason `budget`/`user_cap`, trigger, wait_ms | Budget switch and weekly cap hits |
 | `no_pack` | her portrait cannot become a face set (final for that portrait) | trigger, wait_ms | Portraits that stay on the fallback |
 | `failed` | the bake, the download or the install failed | reason (the bake's, or `network`/`poll_timeout`/`hash_mismatch`/`bad_archive`/`bad_entry`/`too_big`/`no_manifest`/`download`/`bad_reply`/`http_<n>`), trigger | Breakage |
 | `unavailable` | the proxy will not bake her | reason `not_configured`/`no_portrait`/`portrait_unreadable`/`moderation`/`not_found` (no cloud row)/`forbidden`, trigger | Characters that cannot get a look |
-| `skipped` | nothing was asked | reason `offline`/`signed_out`, trigger | Signed-out and offline SeiLink use |
+| `skipped` | nothing was asked | reason `offline`/`signed_out`, trigger | Signed-out and offline WorldLink use |
 | `shown` | a RoomAvatar settled on a kind | avatar_kind `live2d`/`rig`/`facepack`/`portrait`/`placeholder`, surface `desktop`/`editor`, anima_state `idle`/`preparing`/`ready` | What people actually see |
 
 ## Room editor

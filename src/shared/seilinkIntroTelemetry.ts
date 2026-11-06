@@ -14,6 +14,10 @@
  *    plain, steps_completed, steps_skipped, steps_total, ms_open, opened_from}
  *  - seilink_setup_step {step, action: shown|completed|skipped|back, changed,
  *    resumed, index}
+ *  - seilink_intro_link (261106 v6, the WorldLink status lines) {outcome:
+ *    success|failed|abandoned, failure, trigger, reduced_motion, lines_shown,
+ *    line_1_ms .. line_9_ms, total_ms, slowest (milestone), slowest_ms,
+ *    anima_start}. No character id, no text.
  *
  * Event table: docs/agents/seilink-analytics.md.
  */
@@ -22,7 +26,7 @@ export const SEILINK_INTRO_EVENT = 'seilink_intro';
 export const SEILINK_TOUR_EVENT = 'seilink_tour';
 export const SEILINK_ENTRY_EVENT = 'seilink_entry';
 
-/** shown on start; completed = played to the end; skipped = the person skipped; aborted = the host failed, it ended early. */
+/** shown on start; completed = played to the end; skipped = the person skipped; aborted = the link failed (261106 v6: the host or her look), closed from the failure line. */
 export const INTRO_ACTIONS = ['shown', 'completed', 'skipped', 'aborted'] as const;
 export type IntroAction = (typeof INTRO_ACTIONS)[number];
 
@@ -95,6 +99,37 @@ export type EntryAction = (typeof ENTRY_ACTIONS)[number];
 
 type Scalar = string | number | boolean | null;
 
+// ── The WorldLink status lines (261106 v6) ────────────────────────────────
+
+/** One per intro: how the status lines went (lib/seilink/worldLink.ts linkReport). */
+export const SEILINK_INTRO_LINK_EVENT = 'seilink_intro_link';
+
+/**
+ * The pipeline milestones the lines wait on, in order (host is the host
+ * start's answer, independent of the rest): the Anima request sent, its
+ * answer, the bake running, the bake done, her face set installed.
+ */
+export const LINK_MILESTONES = ['sent', 'answered', 'running', 'baked', 'installed', 'host'] as const;
+export type LinkMilestone = (typeof LINK_MILESTONES)[number];
+
+/** Why the link failed: no network, a request or install error, the 3.5 min timeout, the bake gave up, the host start failed. */
+export const LINK_FAILURES = ['offline', 'network', 'timeout', 'bake_failed', 'install', 'http', 'auth', 'host', 'error'] as const;
+export type LinkFailure = (typeof LINK_FAILURES)[number];
+
+/** success = the success line landed; failed = the failure line showed; abandoned = skipped or closed before either. */
+export const LINK_OUTCOMES = ['success', 'failed', 'abandoned'] as const;
+export type LinkOutcome = (typeof LINK_OUTCOMES)[number];
+
+/** The number of status lines. */
+export const LINK_LINE_COUNT = 9;
+
+/** Where her bake stood when the intro started (shared/anima.ts AnimaStage), or none (a replay, no IPC). */
+export const LINK_ANIMA_START = ['checking', 'requesting', 'queued', 'running', 'downloading', 'ready', 'unavailable', 'offline', 'failed', 'none'] as const;
+export type LinkAnimaStart = (typeof LINK_ANIMA_START)[number];
+
+/** The longest a timing prop can say (ms). */
+const LINK_MS_MAX = 30 * 60_000;
+
 const ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function oneOf<T extends string>(list: readonly T[], v: unknown): T | null {
@@ -140,7 +175,8 @@ export function isSeilinkIntroEvent(event: string): boolean {
     event === SEILINK_TOUR_EVENT ||
     event === SEILINK_ENTRY_EVENT ||
     event === SEILINK_SETUP_EVENT ||
-    event === SEILINK_SETUP_STEP_EVENT
+    event === SEILINK_SETUP_STEP_EVENT ||
+    event === SEILINK_INTRO_LINK_EVENT
   );
 }
 
@@ -164,6 +200,30 @@ export function sanitizeSeilinkIntroTrack(event: string, raw: Record<string, unk
     if (bucket) out.duration_bucket = bucket;
     const host = oneOf(INTRO_HOST, p.host);
     if (host) out.host = host;
+    return out;
+  }
+  if (event === SEILINK_INTRO_LINK_EVENT) {
+    const out: Record<string, Scalar> = {
+      outcome: oneOf(LINK_OUTCOMES, p.outcome) ?? 'abandoned',
+      trigger: oneOf(INTRO_TRIGGERS, p.trigger) ?? 'first_link',
+      reduced_motion: p.reduced_motion === true,
+    };
+    const failure = oneOf(LINK_FAILURES, p.failure);
+    if (failure) out.failure = failure;
+    const shown = small(p.lines_shown, LINK_LINE_COUNT);
+    if (shown !== undefined) out.lines_shown = shown;
+    for (let i = 1; i <= LINK_LINE_COUNT; i++) {
+      const ms = small(p[`line_${i}_ms`], LINK_MS_MAX);
+      if (ms !== undefined) out[`line_${i}_ms`] = ms;
+    }
+    const total = small(p.total_ms, LINK_MS_MAX);
+    if (total !== undefined) out.total_ms = total;
+    const slowest = oneOf(LINK_MILESTONES, p.slowest);
+    if (slowest) out.slowest = slowest;
+    const slowMs = small(p.slowest_ms, LINK_MS_MAX);
+    if (slowest && slowMs !== undefined) out.slowest_ms = slowMs;
+    const start = oneOf(LINK_ANIMA_START, p.anima_start);
+    if (start) out.anima_start = start;
     return out;
   }
   if (event === SEILINK_TOUR_EVENT) {

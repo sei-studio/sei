@@ -181,8 +181,8 @@ The detailed notes for each area live in `docs/agents/`. This file stays short s
 | [`docs/agents/draw.md`](docs/agents/draw.md) | Draw! minigame |
 | [`docs/agents/call-scenes.md`](docs/agents/call-scenes.md) | Call scenes and the backdrop toggle |
 | [`docs/agents/avatar-overlay.md`](docs/agents/avatar-overlay.md) | Avatar overlay (always-on-top call overlay, desktop avatar) |
-| [`docs/agents/seilink-host.md`](docs/agents/seilink-host.md) | SeiLink desktop host: her room as the live wallpaper (native addon, host process, supervisor, CI check) |
-| [`docs/agents/seilink-analytics.md`](docs/agents/seilink-analytics.md) | SeiLink analytics: event table (did it show, health, pokes, move-in, editor funnel, errors) |
+| [`docs/agents/seilink-host.md`](docs/agents/seilink-host.md) | WorldLink desktop host: her room as the live wallpaper (native addon, host process, supervisor, CI check) |
+| [`docs/agents/seilink-analytics.md`](docs/agents/seilink-analytics.md) | WorldLink analytics: event table (did it show, health, pokes, move-in, editor funnel, errors) |
 | [`docs/agents/backseat.md`](docs/agents/backseat.md) | Backseat: screen watching, looks, chatter pacing |
 | [`docs/agents/minecraft-setup-wizard.md`](docs/agents/minecraft-setup-wizard.md) | Minecraft setup wizard and target version |
 | [`docs/agents/game-adapters-stardew-dst.md`](docs/agents/game-adapters-stardew-dst.md) | Game adapters: Stardew Valley and Don't Starve Together (helper mods, IPC, eval) |

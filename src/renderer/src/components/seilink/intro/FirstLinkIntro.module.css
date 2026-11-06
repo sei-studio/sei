@@ -216,8 +216,21 @@
   pointer-events: none;
 }
 
+/* One status line at a time: the old and the new line share one cell and crossfade. */
+.lines {
+  display: grid;
+  justify-items: center;
+  align-items: center;
+  width: 100%;
+}
+
+.lines > .line {
+  grid-area: 1 / 1;
+}
+
 .line {
   margin: 0;
+  max-width: 100%;
   min-height: 1.3em;
   font-family: var(--display);
   font-size: clamp(20px, 2.6vh, 34px);
@@ -230,34 +243,6 @@
     0 0 22px var(--fl-halo),
     0 2px 12px var(--fl-drop);
   overflow-wrap: anywhere;
-}
-
-.sub {
-  margin: 0;
-  min-height: 1.4em;
-  font-family: var(--sans);
-  font-size: clamp(15px, 1.75vh, 22px);
-  letter-spacing: 0.02em;
-  color: var(--fl-text-dim);
-  text-shadow: 0 2px 10px var(--fl-drop);
-  opacity: 0;
-  overflow-wrap: anywhere;
-}
-
-/* Three soft lights for the three beats (glow dots, not bars). */
-.dots {
-  display: flex;
-  gap: 14px;
-  margin-top: 8px;
-}
-
-.dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  opacity: 0.28;
-  background: radial-gradient(circle, color-mix(in srgb, rgb(70 112 230) var(--fl-d), #ffffff) 0%, rgb(var(--fl-glow)) 55%, rgba(var(--fl-glow) / 0) 100%);
-  box-shadow: 0 0 12px rgba(var(--fl-glow) / 0.8);
 }
 
 /* Borderless, like every button (product rule); a soft halo keeps it off busy rooms. */

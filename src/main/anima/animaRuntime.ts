@@ -129,6 +129,8 @@ export const anima = new AnimaClient({
     void pushAvatarChanged(characterId).catch((err) => log(`[anima] avatar push failed (${(err as Error).message})`));
   },
   onStatus: (s: AnimaStatus) => broadcast(IpcChannel.seilink.animaChanged, s),
+  // 261106: the stage pushes ride the same channel (the WorldLink intro paces its lines on them).
+  onProgress: (s: AnimaStatus) => broadcast(IpcChannel.seilink.animaChanged, s),
   now: () => Date.now(),
   setTimeout: (fn, ms) => {
     const t = setTimeout(fn, ms);
