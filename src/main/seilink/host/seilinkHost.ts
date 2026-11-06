@@ -351,7 +351,7 @@ async function stopNow(reason: SeilinkEndReason, via: 'app' | 'dock'): Promise<S
     if (id) capture('seilink_moved_out', { character_id: id, via });
   }
   if (session) await endSession(reason);
-  if (reason === 'user_stop' || reason === 'disabled' || reason === 'character_removed') {
+  if (reason === 'user_stop' || reason === 'disabled' || reason === 'character_removed' || reason === 'link_failed') {
     await updateConfig((c) => (c.seilink_moved_in ? { ...c, seilink_moved_in: null } : c)).catch((err) =>
       log(`clear moved-in failed: ${(err as Error).message}`),
     );

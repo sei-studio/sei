@@ -101,6 +101,8 @@ interface Harness {
   bodies: unknown[];
   events: Array<Record<string, unknown>>;
   statuses: string[];
+  /** 261106: every stage push (onProgress), as `stage` or `stage:failure`. */
+  stages: string[];
   ready: string[];
   timers: Array<{ fn: () => Promise<void> | void; ms: number }>;
   replies: Array<ProxyReply | { status: number; body: unknown } | Error>;
@@ -114,7 +116,7 @@ interface Harness {
 
 async function harness(): Promise<Harness> {
   const store = new AnimaPackStore(() => root);
-  const h: Partial<Harness> = { calls: [], bodies: [], events: [], statuses: [], ready: [], timers: [], replies: [], clock: { t: 1_000_000 } };
+  const h: Partial<Harness> = { calls: [], bodies: [], events: [], statuses: [], stages: [], ready: [], timers: [], replies: [], clock: { t: 1_000_000 } };
   const opts = {
     online: true,
     ref: 'sui.png|t1|1' as string | null | undefined,
@@ -140,6 +142,7 @@ async function harness(): Promise<Harness> {
     capture: (_e, props) => h.events!.push(props),
     onReady: (id) => h.ready!.push(id),
     onStatus: (s) => h.statuses!.push(s.state),
+    onProgress: (s) => h.stages!.push(s.failure ? `${s.stage}:${s.failure}` : String(s.stage)),
     now: () => h.clock!.t,
     setTimeout: (fn, ms) => {
       const t = { fn, ms };
@@ -192,6 +195,56 @@ describe('AnimaClient', () => {
     expect(h.events[0]).toMatchObject({ trigger: 'move_in_sheet', state: 'queued', created: true });
     expect(h.events[1]).toMatchObject({ from_cache: false, source: 'baked', wait_ms: 20_000 });
     expect(h.timers).toEqual([]);
+  });
+
+  it('reports each stage of a bake (the WorldLink intro paces its lines on them)', async () => {
+    const h = await harness();
+    const zip = await packZip();
+    h.set({ zip });
+    h.replies.push({ state: 'queued', portrait_hash: 'p1', created: true });
+    const pending = h.client.prepare(CHAR, 'move_in_sheet');
+    // Before the first await: a caller reading status() right away sees this run.
+    expect(h.client.status(CHAR).stage).toBe('checking');
+    await pending;
+    expect(h.client.status(CHAR)).toMatchObject({ state: 'preparing', stage: 'queued' });
+    h.replies.push({ state: 'running', portrait_hash: 'p1' });
+    await h.tick();
+    h.replies.push(readyReply(zip));
+    await h.tick();
+    expect(h.stages).toEqual(['checking', 'requesting', 'queued', 'running', 'downloading', 'ready']);
+    // A second open with the pack on disk: checking, then ready (no network).
+    h.stages.length = 0;
+    await h.client.prepare(CHAR, 'host_start');
+    expect(h.stages).toEqual(['checking', 'ready']);
+  });
+
+  it('ends a stage run with how it failed, or unavailable when no pack will come', async () => {
+    const h = await harness();
+    h.replies.push({ state: 'queued', portrait_hash: 'p1' });
+    await h.client.prepare(CHAR, 'move_in_sheet');
+    h.replies.push({ state: 'failed', portrait_hash: 'p1' });
+    await h.tick();
+    expect(h.client.status(CHAR)).toMatchObject({ stage: 'failed', failure: 'bake_failed' });
+
+    h.replies.push({ state: 'deferred', reason: 'user_cap', portrait_hash: 'p1' });
+    await h.client.prepare(CHAR, 'host_start');
+    expect(h.client.status(CHAR).stage).toBe('unavailable');
+    expect(h.client.status(CHAR).failure).toBeUndefined();
+
+    h.replies.push(new Error('ECONNRESET'));
+    await h.client.prepare(CHAR, 'host_start');
+    expect(h.client.status(CHAR)).toMatchObject({ stage: 'failed', failure: 'network' });
+
+    h.replies.push({ status: 500, body: { error: 'x' } });
+    await h.client.prepare(CHAR, 'host_start');
+    expect(h.client.status(CHAR)).toMatchObject({ stage: 'failed', failure: 'http' });
+
+    h.set({ online: false });
+    await h.client.prepare(CHAR, 'host_start');
+    expect(h.client.status(CHAR).stage).toBe('offline');
+
+    h.client.reset();
+    expect(h.client.status(CHAR).stage).toBeUndefined();
   });
 
   it('uses the pack on disk without the network while her portrait is unchanged', async () => {

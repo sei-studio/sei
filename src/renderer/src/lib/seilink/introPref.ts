@@ -1,6 +1,6 @@
 /**
  * The SeiLink first-link intro's memory (261105, T337): it plays once per
- * account, on the first move-in that works, and "Replay SeiLink intro" in the
+ * account, on the first move-in that works, and "Replay WorldLink intro" in the
  * companion menu plays it again on demand.
  *
  * localStorage, per profile scope (the account UUID or 'local'), like the

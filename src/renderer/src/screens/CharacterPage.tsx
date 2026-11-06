@@ -901,7 +901,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                             replayIntro(character.id, 'gear');
                           }}
                         >
-                          {t('Replay SeiLink intro')}
+                          {t('Replay WorldLink intro')}
                         </button>
                       </>
                     ) : null}

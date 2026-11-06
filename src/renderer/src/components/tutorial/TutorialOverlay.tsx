@@ -177,7 +177,7 @@ export function TutorialOverlay(): React.ReactElement | null {
       seilinkTour?.audience === 'new'
         ? tt("Hey, it's me again! Got a minute? I want to show you one more thing.")
         : tt("Hey! Remember me? I'm back! Let me show you something cool we just added."),
-    sl_button: tt('This is SeiLink. {name} can move onto your desktop and live there, right on your wallpaper.', {
+    sl_button: tt('This is WorldLink. {name} can move onto your desktop and live there, right on your wallpaper.', {
       name: companion?.name ?? tt('them'),
     }),
     sl_room: tt("{name} gets a room there that you can decorate together. Let's go see!", { name: companion?.name ?? tt('them') }),

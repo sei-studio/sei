@@ -65,7 +65,9 @@ export type SeilinkEndReason =
   | 'failed'
   | 'disabled'
   /** M4: the moved-in companion was deleted or removed from the library. */
-  | 'character_removed';
+  | 'character_removed'
+  /** 261106: the WorldLink first-link intro failed (her look never came) and was closed: she moves back out, the next try starts over. */
+  | 'link_failed';
 
 /** What the main window sees (push + pull). */
 export interface SeilinkHostStatus {

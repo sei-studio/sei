@@ -1,4 +1,8 @@
-# SeiLink desktop host (261104, milestones 3 and 4)
+# WorldLink desktop host (261104, milestones 3 and 4)
+
+The feature was called SeiLink until 261106 (product feedback (261106)); only
+the user-visible name changed. Code identifiers, file paths, IPC channels
+(`seilink:*`), storage keys and analytics events (`seilink_*`) keep `seilink`.
 
 The companion's room as a live wallpaper: one window behind the desktop
 icons on the primary display (Windows: the WorkerW/Progman layer; macOS: the
@@ -162,7 +166,7 @@ Colours come from the room (`RoomCanvas onOverlay`), not the app theme.
   `shared/seilinkRoomDiff.ts` (moves with a direction, recolours with
   tintName words, patterns, add/remove/swap, time, preset), at most 5 named,
   biggest first, in the note after the cache breakpoint. Only for the
-  resident at open and at close (never before she moves in or with SeiLink
+  resident at open and at close (never before she moves in or with WorldLink
   off), one per session, 5 min cooldown, paid like a poke (free inside the
   weekly cap; refused = silent). On a call, in a game, on cooldown, over the
   limit or after a failed line, the room before the session is kept
@@ -275,7 +279,7 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   facepack dev flag's, as in the app. `avatarShown` (analytics only) reports
   which kind RoomAvatar settled on.
 - **Her look: anima face sets (261105).** `src/main/anima/`. The first time
-  SeiLink opens for her (the move-in sheet, the room editor, her host
+  WorldLink opens for her (the move-in sheet, the room editor, her host
   starting or being restored; never at app start for anyone else), main asks
   sei-proxy `POST /anima/v1/request {character_id}` with the user's Sei JWT;
   the proxy bakes a facepack from her cloud portrait on a GPU worker
@@ -317,8 +321,8 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   (`onSeilinkCharacterRemoved`, reason `character_removed`) clear it; quit,
   failure and an account switch keep it.
 - Move-in (M4): the companion page's gear menu has "Move onto desktop" /
-  "Move off desktop" and "Edit room" while SeiLink is available, and the chat
-  top bar has the SeiLink button (261105, see "Entry points and the first
+  "Move off desktop" and "Edit room" while WorldLink is available, and the chat
+  top bar has the WorldLink button (261105, see "Entry points and the first
   link" below). The first move-in
   of a companion (no saved room: `SeilinkRoomPayload.saved`), or one that
   moves someone else out, opens `MoveInSheet` (room cards from the packs
@@ -330,23 +334,23 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
 
 ## Entry points and the first link (261105, T337)
 
-- Every way into SeiLink goes through `lib/seilink/seilinkFlow.ts`, and the
+- Every way into WorldLink goes through `lib/seilink/seilinkFlow.ts`, and the
   move-in sheet, the room editor and the intro are rendered once, by
   `SeilinkFlowHost` (mounted in App.tsx, state in `useSeilinkStore.flow` /
   `.intro`). Entry points:
-  - the SeiLink button in `ChatTopBar` (after Backseat, before Call;
-    `data-tutorial="seilink-btn"`), shown wherever SeiLink is available.
+  - the WorldLink button in `ChatTopBar` (after Backseat, before Call;
+    `data-tutorial="seilink-btn"`), shown wherever WorldLink is available.
     She lives there: her room editor. Otherwise: move her in
     (`openSeilink`, source `button`).
   - the companion page's gear menu: "Move onto desktop" / "Move off desktop"
-    (`moveInOrOut`), "Edit room" (`openRoomEditor`), "Replay SeiLink intro"
+    (`moveInOrOut`), "Edit room" (`openRoomEditor`), "Replay WorldLink intro"
     (`replayIntro`). Source `gear`.
   - the dock's edit button (main push `seilink:open-room-editor`), `dock`.
   - the guide's tour (below), `tour`.
   Each records `seilink_entry {source, action}` and passes the source on
   (`seilink_movein_sheet.entry`, the editor's `opened_from`).
 - There is no on/off setting (the Settings "Labs" section was removed
-  261105): SeiLink is available wherever `seilinkSupport()` says it can run.
+  261105): WorldLink is available wherever `seilinkSupport()` says it can run.
 - **The first-link flow (261106; v3 the same day: plain spawn + guided
   setup).** She first moves in on a PLAIN background, no room at all:
   `plainRoomState(manifest)` in shared/seilinkRoom.ts is the bare preset room
@@ -417,7 +421,7 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   wallpaper draws it, and the covered wallpaper drops to 0 fps. Not a second
   window (the editor needs the main renderer's stores, chat, call, modals)
   and not the wallpaper window raised (re-parenting out of WorkerW / the
-  desktop level and back is the riskiest native step SeiLink has).
+  desktop level and back is the riskiest native step WorldLink has).
   - macOS: move onto the primary display, hide the traffic lights,
     `setSimpleFullScreen(true)` (no Space animation, stays on the desktop's
     Space). A window in native fullscreen (its own Space) is refused
@@ -441,28 +445,81 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
     unmount; any other unmount exits without reveal. A renderer reload while
     staged gives the window back (`app:renderer-ready`).
   - Every editor entry point opens the desktop editor for the companion who
-    lives there with the host running (the dock, the offer, the SeiLink
+    lives there with the host running (the dock, the offer, the WorldLink
     button, the gear menu's Edit room); anyone else gets the in-app editor.
     Closing always steps aside onto the desktop.
-- **The first-link intro** (`components/seilink/intro/`): about 11.4 s, three
-  beats with one line each ("Opening a tunnel to the digital world…",
-  "Linking {name}…", "Porting the link to your desktop…"), then "Linked." /
-  "{name} lives on your desktop now.". `startSeilinkHost` (the only host
-  start in the renderer) requests it alongside the start, so it never delays
-  the host; only the end card waits for the start's answer (`HOLD_MAX_MS`).
-  A failed start aborts it ("Link interrupted.", then the sheet's retry
-  shows). Skip button and Esc. Reduced motion plays the calm timeline
-  (fades only). Once per account (`lib/seilink/introPref.ts`, localStorage
+- **The first-link intro** (`components/seilink/intro/`), v6 "WorldLink"
+  (261106, product feedback (261106)): nine status lines, one at a time over
+  the light, then the success line, and only then does she come in.
+  `startSeilinkHost` (the only host start in the renderer) requests it
+  alongside the start, so it never delays the host. The lines
+  (`lib/seilink/worldLink.ts`, `STATUS_LINES`, word for word) wait on real
+  milestones (`LINK_MILESTONES`) from a progress source (`LinkSource`):
+
+  | # | Line | Waits for | Dwell |
+  |---|---|---|---|
+  | 1 | Initializing WorldLink… | 0.7 s after the start | 4 s |
+  | 2 | Sending signal to World N… | the Anima request is sent (`requesting`) | 6 s |
+  | 3 | Waiting for a reply… | (same) | 12 s |
+  | 4 | Signal received. | the proxy answered (`queued` / `running` / ready) | 4 s |
+  | 5 | Syncing world clocks… | answered, and 40% of `EXPECTED_LINK_MS` (75 s), cut short by the bake finishing | 2.8 s |
+  | 6 | Matching physics constants… | the bake is running, and 60% (same cut) | 2.8 s |
+  | 7 | Correcting for time dilation… | the bake is running, and 80% (same cut) | 2.8 s |
+  | 8 | Stabilizing the link… | the bake is done (`downloading`) | 2.8 s |
+  | 9 | Inviting {name}… | her face set installed (`ready`) and the host start answered ok | 3.2 s (`LAST_LINE_MS`) |
+  | | WorldLink established between World 0 and World N. | `LAST_LINE_MS` after line 9, on the full solid | |
+
+  A line never shows sooner than the line before has had its dwell (its
+  `dwell` in `STATUS_LINES`, default `LINE_DWELL_MS` 2.8 s; the first four
+  are longer, product feedback (261106): sending a signal and waiting for a
+  reply should take a while). The milestone gates apply on top: a slow
+  proxy holds "Waiting for a reply…" until it answers. Measured: a 75 s
+  bake shows the lines at 0.7, 4.7, 10.7, 22.7, 30, 45, 60, 72 and 75 s,
+  success 78.2 s, end 86.9 s; a 20 s bake (and a cached look or a replay)
+  at 0.7, 4.7, 10.7, 22.7, 26.7, 29.5, 32.3, 35.1 and 37.9 s, success
+  41.1 s, end 49.8 s. On a slow stage the current line holds (no filler lines) while
+  the light keeps moving. The proxy says nothing finer than queued, running
+  and ready, so lines 5 to 7 spread over the expected-duration curve, and an
+  early finish plays the rest at the minimum dwell (`planLink`; a start
+  that is past never moves when more arrives). "World N" is
+  `worldNumber(characterId)`: FNV-1a 32 of the id, mod 900000, plus 100000
+  (six digits, stable). The app's source is `lib/seilink/animaLinkSource.ts`:
+  it calls `seilinkAnimaPrepare(id, 'host_start')` (a no-op while a bake
+  runs, a retry after one failed) and follows the `stage` main now puts on
+  every `AnimaStatus` (`AnimaStage`: checking, requesting, queued, running,
+  downloading, ready, unavailable, offline, failed + `AnimaFailure`;
+  `animaClient.ts setStage`, pushed on `seilink:anima-changed`).
+  `unavailable` (no pack will come, signed out) counts as every milestone:
+  the fallback avatar is her look and the link still works. A replay plays
+  the lines at the minimum dwell (`instantLog`).
+
+  Failure ("WorldLink failed. Lost contact with World N. Come back later.",
+  at the soonest `FAIL_BEAT_MS` (2.8 s) after the current line came up, so
+  a failure during the 12 s "Waiting for a reply…" shows after a short
+  beat): offline (stage or the window offline for
+  5 s), a request, bake or install error, no line 9 by `LINK_TIMEOUT_MS`
+  (3.5 min; the bake goes on in the background), or the host start failing.
+  The light calms and stays, no her; Skip turns into Close (Esc too), which
+  fades the overlay out as `aborted`. FirstLinkIntro then stops the host if
+  it had started (`seilinkHostStop({reason: 'link_failed'})`, which also
+  clears the move-in), gives the window back without a reveal, and leaves
+  the intro unseen, so the next WorldLink press plays it again. Skip before
+  the success line (on the desktop stage) crossfades into the solid and
+  plays her entrance, then rushes the settle. Reduced motion: the same
+  lines, order and failure, calm (crossfades, no bloom). Once per account
+  (`lib/seilink/introPref.ts`, localStorage
   `sei.seilinkIntroSeen.v1.<scope>`): seen when it completed or was skipped
   on a move-in that worked. Replay plays it over her room with nothing
   starting.
-  - Frames are pure (`introFrame.ts` computeFrame(timeline, t, W, H,
-    reduced, end, tone), `introFx.ts` canvases), so the harness seeks them:
-    `?seilinkintro=1` (DevIntroPreview, `&room=plain|blank|default
-    &tone=dark|light&hold=1&reduced=1&manual=1`), and
-    `scripts/seilink-intro-shots.mjs` renders the review mp4s (`eclipse`,
-    `eclipse-light` with prefers-color-scheme light, `reduced`,
-    `reduced-light`; `--stills ms,ms` for PNGs only) and prints each one's
+  - Frames are pure (`introFrame.ts` computeFrame(introTimes(planLink(log)),
+    t, W, H, reduced, end, tone), `introFx.ts` canvases), so the harness
+    seeks them: `?seilinkintro=1` (DevIntroPreview, `&room=plain|blank|default
+    &tone=dark|light&hold=1&reduced=1&manual=1`, and a simulated link:
+    `&sim=<ms>` the bake done then, `&simfail=<ms>&failure=<class>`; the
+    seeked length is `window.__firstLinkLength`), and
+    `scripts/seilink-intro-shots.mjs` renders the review mp4s (`worldlink`
+    75 s and `worldlink-light`, `fast` 20 s, `fail`, `reduced`,
+    `reduced-light`, `instant`; `--stills ms,ms` for PNGs only) and prints each one's
     biggest frame-to-frame change of mean luminance (`<name>-luma.txt`; a
     cut shows as a big one). `scripts/seilink-first-room-flow.mjs --intro
     --intro-light` opens its flow videos with the whole intro (`--intro-from`
@@ -482,36 +539,32 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
     canvas gets a blur(1.2px) self-copy pass (`melt`).
   - The climax (261106 v5, product feedback: "fade to black not hard cut, like the
     light expands until fully bright or dark depending on dark or light
-    theme. Same goes for the blank background afterwards"; v4 had a one-frame
-    cut to black; `IntroTimeline.climax`, full timeline ms). The solid
+    theme"; v6 moved it under line 9, `lib/seilink/introTimeline.ts`
+    `introTimes`, ms from line 9 / the success line). The solid
     (`IntroFrame.solid`, `tone`) is the theme's plain colour (PLAIN_COLOURS):
     white in light mode, black in dark mode, also for a room ending (the OS
     theme at mount), so light mode never goes black and dark never white. The
-    intro opens out of the solid (`OPEN_MS` 1800) as the light wakes (0 to
-    1200); the first line shows 300 to 2400 and is gone by 2750; the light
-    builds from 2100 to its peak at 3100 (`field.peak`: brighter, curtains
-    longer, spread top to bottom and edge to edge, a wide bloom, the motion
-    clock up to 2x faster), then the bloom keeps expanding (`field.fill`,
-    3100 to 4300) while the solid comes over it (smoothstep 3150 to 4300,
-    `dim` to `fill`): in light mode the bloom goes white and blooms into
-    white, in dark mode it stays its own colour and dims into black. The
-    solid holds to 4500 (`lift`) and fades back into the scene by 5800
-    (`clear`) while she fades in and rises about 3.5% of the screen into
-    place, forming out of a glow (brightness + blur + drop-shadow easing to
-    none by 6000), the light settled behind her. Beats: link 4300 ("Linking
-    {name}…" from 5000), port 6800, linked 9200, captions fade 10800, end
-    11400. The caption block never shows more than the solid lets through
-    (`min(timing, 1 - solid)`) and HUD ink goes to day ink over the white
-    solid (`roomBehind`). Every fade of the solid and the plain colour is a
-    smoothstep of a second or more: the review renders keep every
-    frame-to-frame change of mean luminance small, and tests cap each 30 fps
-    step and the brightness reversals (at most two direction changes in any
-    second). A skip on the desktop stage rushes to the end from 5800
-    (`skipFrom`), never through the climax or the solid. Reduced motion
-    (calm timeline, 9.5 s): no peak and no bloom; the intro opens out of the
-    solid the same way, the still light crossfades into the solid (2200 to
-    3800) and out (4000 to 5500) as she fades in, and into the plain colour
-    or room (5800 to 7600).
+    intro opens out of the solid (`OPEN_MS` 1800) as the light wakes. Each
+    status line adds a ninth of `field.energy` (smoothstep over `STEP_MS`
+    1400): brighter, longer, wider curtains, more stars and a faster clock
+    (up to 1.6x), so the build is gradual. Under line 9 the light builds
+    from +500 to its peak at +1500 (`field.peak`, the clock up to 2x more),
+    then the bloom keeps expanding (`field.fill`) while the solid comes over
+    it (+1550 to +2700): in light mode it blooms into white, in dark mode it
+    dims into black. The success line lands on the full solid (+3200). From
+    the success line: the solid holds to +1800 (`lift`) and fades back into
+    the scene by +3100 (`clear`) while she fades in and rises about 3.5% of
+    the screen into place, forming out of a glow; port +4100, linked +6500,
+    captions fade +8100, end +8700. She has no frame before the success line
+    (no `after` timing exists until it is planned). HUD ink goes to day ink
+    over the white solid (`roomBehind`). Every fade is a smoothstep of a
+    second or more: tests cap each 30 fps step and the brightness reversals
+    (at most two direction changes in any second) for instant, 20 s, 75 s
+    and failed runs. A skip on the desktop stage rushes to the end only
+    after the solid has cleared (`skipFrom`). Reduced motion: no peak and no
+    bloom; the still light steps its brightness by crossfades and
+    crossfades into the solid (+400 to +2000 under line 9) and out as she
+    fades in.
   - The ending (`IntroEndOn`, `introEndFor(state, tone)` in plainTone.ts):
     on a plain ending the light expands out from behind her (`bloom`, drawn
     on the back canvas so she stays herself, 261106 v5) as the colour comes
@@ -525,18 +578,18 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   - 261106 captions: they sit in the empty space above her head, never over
     her (`captionTop`: about 15% down, pulled up to keep a gap above her
     measured box, never above 64px so they clear the corner label). Each HUD
-    piece (SEILINK label, captions, Skip) switches from light ink over a soft
+    piece (WORLDLINK label, captions, Skip/Close) switches from light ink over a soft
     dark cloud to deep ink over a soft white cloud by how much of her room is
     behind it (`roomBehind` + `dayInk`, the same circle as the reveal mask,
     and the white flood on a light ending). Feathered radial clouds, no boxes.
-- **The guide's SeiLink tour** (`lib/seilink/tourPref.ts` decides,
+- **The guide's WorldLink tour** (`lib/seilink/tourPref.ts` decides,
   `seilinkTour.ts` records, `useTutorialStore` mode `seilink`, steps
   `sl_offer` / `sl_button` / `sl_room` in TutorialOverlay). App.tsx polls
   for a calm Home (no modal, tour, first moment, call, game or share; the
-  same `readCalmUi` as the boot offers). Only where SeiLink is available,
+  same `readCalmUi` as the boot offers). Only where WorldLink is available,
   never in a session that ran onboarding, never for someone already linked.
   Existing users: "Hey! Remember me? I'm back! ..." New players: a day after
-  onboarding. Sure: her chat, the SeiLink button spotlighted with two lines,
+  onboarding. Sure: her chat, the WorldLink button spotlighted with two lines,
   then the move-in sheet. Not now: asked once more 3 days later, then never.
   Not persisted in `tutorial_state` (a quit ends it).
 
@@ -593,7 +646,7 @@ errors) is in [`seilink-analytics.md`](seilink-analytics.md). The basics:
   the plain state; `live=1` follows the presses: "Set up together" opens the
   guided editor over the desktop and Done comes back to the saved
   wallpaper). `node scripts/seilink-first-room-flow.mjs --out <dir>
-  [--intro <eclipse.mp4>] [--intro-light <eclipse-light.mp4>]` clicks through
+  [--intro <worldlink.mp4>] [--intro-light <worldlink-light.mp4>]` clicks through
   the guided setup like a person, once per OS theme, and writes stills plus
   `first-room-flow-dark.mp4` / `-light.mp4`.
 - CI: `.github/workflows/seilink-host-check.yml` (windows-2022/2025,

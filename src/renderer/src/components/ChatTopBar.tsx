@@ -253,9 +253,9 @@ export function ChatTopBar({ characterId, gameOpen = false }: ChatTopBarProps): 
             type="button"
             className={seilinkHere ? `${styles.iconBtn} ${styles.iconBtnActive}` : styles.iconBtn}
             onClick={() => void openSeilink(characterId, 'button')}
-            aria-label={t('SeiLink')}
+            aria-label={t('WorldLink')}
             aria-pressed={seilinkHere}
-            data-tip={seilinkHere ? t("SeiLink: edit {name}'s room", { name: companionName }) : t('SeiLink: put {name} on your desktop', { name: companionName })}
+            data-tip={seilinkHere ? t("WorldLink: edit {name}'s room", { name: companionName }) : t('WorldLink: put {name} on your desktop', { name: companionName })}
             data-tip-edge="right"
             data-tutorial="seilink-btn"
           >

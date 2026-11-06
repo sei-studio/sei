@@ -18,6 +18,11 @@
  *    her as she forms and the soft breath of light when she is linked (glows
  *    only, no rings).
  *
+ * The status lines (`field.energy`, 261106 v6): each line makes the light a
+ * step brighter, the curtains longer, wider swaying and edge to edge, the
+ * haze and stars fuller (the clock runs faster too, computeFrame). Under
+ * reduced motion only the brightness steps (crossfades); the shapes stand.
+ *
  * The climax (`field.peak`, 261106 v4) makes the same curtains brighter,
  * longer, wider apart and edge to edge (the clock runs faster into it,
  * computeFrame), with a wide soft bloom over the middle that keeps expanding
@@ -96,7 +101,7 @@ function strip(ctx: CanvasRenderingContext2D, x: number, top: number, w: number,
 /** Two slow nebula clouds and a low glow, far behind the curtains. */
 function haze(ctx: CanvasRenderingContext2D, f: IntroFrame, w: number, h: number, pal: IntroPalette): void {
   const k = f.field.clock;
-  const a = f.space * (1 + 0.9 * f.field.peak);
+  const a = f.space * (1 + 0.9 * f.field.peak) * (0.8 + 0.6 * f.field.energy);
   if (a <= 0.002) return;
   glow(ctx, w * (0.27 + 0.05 * Math.sin(k * 0.00011)), h * (0.34 + 0.04 * Math.cos(k * 0.00013)), w * 0.62, pal.haze[0], 0.42 * a);
   glow(ctx, w * (0.76 + 0.04 * Math.cos(k * 0.0001)), h * (0.66 + 0.04 * Math.sin(k * 0.00012)), w * 0.56, pal.haze[1], 0.36 * a);
@@ -107,7 +112,10 @@ function haze(ctx: CanvasRenderingContext2D, f: IntroFrame, w: number, h: number
 function aurora(ctx: CanvasRenderingContext2D, f: IntroFrame, w: number, h: number, hx: number, hy: number, pal: IntroPalette): void {
   const k = f.field.clock;
   const pk = f.field.peak;
-  const a0 = f.field.opacity * (0.75 + 0.35 * f.field.swell) * (1 + 0.9 * pk);
+  // The lines' energy: brightness always, the shape only with motion.
+  const en = f.field.energy;
+  const es = f.reduced ? 0 : en;
+  const a0 = f.field.opacity * (0.75 + 0.35 * f.field.swell) * (1 + 0.9 * pk) * (0.72 + 0.5 * en);
   if (a0 <= 0.002) return;
   const hu = hx / w;
   for (let i = 0; i < 4; i++) {
@@ -121,14 +129,14 @@ function aurora(ctx: CanvasRenderingContext2D, f: IntroFrame, w: number, h: numb
       const pull = f.field.gather * Math.exp(-(((u - hu) / 0.42) ** 2));
       let yc =
         h * row +
-        h * 0.075 * (1 + 0.6 * pk) * Math.sin(u * Math.PI * 2.1 + k * 0.00042 * speed + i * 1.3) +
+        h * 0.075 * (1 + 0.6 * pk + 0.45 * es) * Math.sin(u * Math.PI * 2.1 + k * 0.00042 * speed + i * 1.3) +
         h * 0.035 * Math.sin(u * Math.PI * 5.3 - k * 0.00071 * speed + i * 2.1);
       yc = mix(yc, hy + h * 0.05, pull * 0.7);
-      const len = h * (0.36 + 0.12 * Math.sin(u * 7.1 + k * 0.0009 + i)) * (1 + 0.75 * pk);
+      const len = h * (0.36 + 0.12 * Math.sin(u * 7.1 + k * 0.0009 + i)) * (1 + 0.75 * pk) * (1 + 0.3 * es);
       // Rays shimmer: brightness ripples along the curtain.
       const shimmer = 0.6 + 0.4 * Math.sin(u * 9 + k * 0.0012 * speed + i * 4) ** 2;
       // The edges fade in a tenth of the width; at the peak the light runs edge to edge.
-      const fadeEdge = Math.min(1, Math.max(0, Math.min(u + 0.1, 1.1 - u) * 4 * (1 + 3 * pk)));
+      const fadeEdge = Math.min(1, Math.max(0, Math.min(u + 0.1, 1.1 - u) * 4 * (1 + 3 * pk + 1.2 * es)));
       strip(ctx, x, yc - len * 0.9, 1, len, c, a0 * 0.46 * shimmer * fadeEdge * (1 + 0.3 * pull), 0.82);
     }
   }
@@ -217,7 +225,7 @@ export function drawStars(ctx: CanvasRenderingContext2D, f: IntroFrame): void {
   const h = ctx.canvas.height;
   ctx.globalCompositeOperation = 'source-over';
   ctx.clearRect(0, 0, w, h);
-  const a = f.space * (1 + 0.4 * f.field.peak);
+  const a = f.space * (1 + 0.4 * f.field.peak) * (0.85 + 0.35 * f.field.energy);
   if (a <= 0.002) return;
   const pal = PAL;
   const k = f.field.clock;

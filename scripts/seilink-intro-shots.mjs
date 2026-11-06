@@ -1,16 +1,20 @@
 #!/usr/bin/env node
 /**
- * Review videos of the SeiLink first-link intro (261105, T337; 261106 the
- * eclipse aurora and its climax), rendered frame by frame (no dropped
- * frames): one mp4 ending on the black plain background (OS dark mode), one
- * ending on the white one (light mode), the reduced motion version, and a
- * capture of the guide's SeiLink tour.
+ * Review videos of the WorldLink first-link intro (261105, T337; 261106 the
+ * eclipse aurora and its climax; 261106 v6 the status lines), rendered frame
+ * by frame (no dropped frames) on a simulated link (DevIntroPreview &sim):
+ * a 75 s bake ending on the black plain background (OS dark mode) and on the
+ * white one (light mode), a 20 s bake, a failure, everything ready at once
+ * (a replay), the reduced motion version, and a capture of the guide's
+ * WorldLink tour. Each video's length is the intro's own
+ * (window.__firstLinkLength) plus a short tail.
  * Headless, no Electron.
  *
  *   node scripts/seilink-intro-shots.mjs --out <dir>
  *        [--packs resources/seilink-packs] [--preset cozy]
  *        [--portrait <png>] [--name Lyra] [--faces <dir of facepacks> --face <id>]
- *        [--only eclipse,eclipse-light,reduced,reduced-light,tour] [--fps 30] [--lang <code>]
+ *        [--only worldlink,worldlink-light,fast,fail,fail-light,instant,reduced,reduced-light,tour]
+ *        [--fps 30] [--lang <code>] [--keep-frames]
  *        [--stills 0,2500,5000,...]   only these frames (ms) as PNGs, no video
  *
  * Intro videos open `?seilinkintro=1&manual=1` (DevIntroPreview) and call
@@ -50,15 +54,22 @@ const FPS = Number(arg('fps', '30'));
 const LANG = arg('lang', null);
 const SIZE = { width: 1920, height: 1080 };
 
-/** Matches introTimeline.ts (FULL_TIMELINE.end, CALM_TIMELINE.end) plus a short tail. */
+/** The simulated links (DevIntroPreview: &sim = the bake done after that many ms, &simfail = it fails there). */
 const VIDEOS = {
-  eclipse: { q: 'hold=1', ms: 11_400 + 300, scheme: 'dark' },
-  'eclipse-light': { q: 'hold=1', ms: 11_400 + 300, scheme: 'light' },
-  reduced: { q: 'reduced=1&hold=1', ms: 9_500 + 300, scheme: 'dark' },
-  'reduced-light': { q: 'reduced=1&hold=1', ms: 9_500 + 300, scheme: 'light' },
+  worldlink: { q: 'hold=1&sim=75000', scheme: 'dark' },
+  'worldlink-light': { q: 'hold=1&sim=75000', scheme: 'light' },
+  fast: { q: 'hold=1&sim=20000', scheme: 'dark' },
+  fail: { q: 'hold=1&sim=75000&simfail=30000&failure=bake_failed', scheme: 'dark' },
+  'fail-light': { q: 'hold=1&sim=75000&simfail=30000&failure=bake_failed', scheme: 'light' },
+  instant: { q: 'hold=1', scheme: 'dark' },
+  reduced: { q: 'reduced=1&hold=1&sim=20000', scheme: 'dark' },
+  'reduced-light': { q: 'reduced=1&hold=1&sim=20000', scheme: 'light' },
 };
+/** Rendered past the intro's own length. */
+const TAIL_MS = 300;
+const KEEP_FRAMES = process.argv.includes('--keep-frames');
 const STILLS = arg('stills', null)?.split(',').map(Number) ?? null;
-const only = arg('only', 'eclipse,eclipse-light,reduced,tour').split(',');
+const only = arg('only', 'worldlink,worldlink-light,fast,fail,reduced,tour').split(',');
 const IS_MAIN = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
 function staticServer(root) {
@@ -144,7 +155,10 @@ async function renderVideo(browser, viteUrl, base, name, spec) {
     await page.close();
     return dir;
   }
-  const n = Math.ceil((spec.ms / 1000) * FPS) + 1;
+  const len = (await page.evaluate(() => window.__firstLinkLength)) || 0;
+  if (!len) throw new Error(`${name}: no __firstLinkLength`);
+  const n = Math.ceil(((len + TAIL_MS) / 1000) * FPS) + 1;
+  console.log(`  ${name}: ${(len / 1000).toFixed(1)} s`);
   const t0 = Date.now();
   for (let i = 0; i < n; i++) {
     const ms = (i * 1000) / FPS;
@@ -161,6 +175,7 @@ async function renderVideo(browser, viteUrl, base, name, spec) {
   ]);
   console.log(file);
   lumaReport(file);
+  if (!KEEP_FRAMES) fs.rmSync(dir, { recursive: true, force: true });
   return dir;
 }
 

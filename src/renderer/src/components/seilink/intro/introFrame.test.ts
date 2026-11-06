@@ -1,242 +1,69 @@
 /**
  * The first-link intro's timeline and frames (261105, T337; 261106 the
- * eclipse aurora, first-link v3 plain ending, v4 climax, v5 the climax fills
- * the screen with the theme's solid colour instead of cutting to black).
- * The frames are pure, so the review videos (seeked frame by frame) show
- * exactly what the app plays.
+ * eclipse aurora, the plain ending, the climax into the theme's solid
+ * colour; 261106 v6 the WorldLink status lines). The frames are pure, so the
+ * review videos (seeked frame by frame) show exactly what the app plays.
  *
- * Invariants under test:
- *   1. Three beats then the end card, in order, about 11.4 s (9.5 s calm).
- *   2. The end card holds for the host's answer, at most HOLD_MAX_MS, and
- *      never delays anything before it.
- *   3. Every ending: she is not there before the solid lifts, she is fully
- *      herself by the end card, and the end card is what the wallpaper draws
- *      (the plain colour or her room, full screen) with no light, stars or
- *      glow left over it, so the window can step aside without a cut.
- *   4. A plain ending is never masked: the whole screen settles into the
- *      colour, no circle or edge.
- *   5. Reduced motion: the light stands still, nothing is masked or blurred.
- *   6. Deterministic: the same t gives the same frame.
- *   7. Captions (261106) sit above her head, never over her, and never rise
- *      into the corner label; text switches to day ink only where a light
- *      background (her room, the white plain one) is behind it, never over
- *      the black one.
- *   8. The climax (261106 v5): one swell, then the bloom expands while the
- *      solid comes over it (white in light mode, black in dark mode), a hold,
- *      then the solid fades out as she comes in; no caption during the peak
- *      or the solid; never more than one flash in any second; no frame-sized
- *      jump anywhere (no cuts), in either theme, with or without reduced
- *      motion; reduced motion has no peak and no bloom (a gentle crossfade
- *      through the solid); a skip never rushes through it.
+ * Invariants under test, for an instant link (a replay), a 75 s bake, a 20 s
+ * one and a failure, in both themes, every ending, with and without reduced
+ * motion:
+ *   1. She is never there before the success line (not her, not her halo),
+ *      and never at all when the link failed.
+ *   2. The status lines show one at a time, in order; the success line lands
+ *      on the full solid, after the last line; a failure line holds.
+ *   3. The light builds with the lines (each a step brighter, never a jump)
+ *      and peaks only under the last line; reduced motion has no peak and no
+ *      bloom and a still light.
+ *   4. No cut anywhere: no layer jumps more than a fade allows between two
+ *      30 fps frames, and never more than one flash in any second.
+ *   5. The end is what the wallpaper draws (the plain colour or her room,
+ *      full screen) with no light left over it.
+ *   6. The solid is the theme's colour: light mode never goes black, dark
+ *      mode never white; HUD ink follows what is behind it.
+ *   7. A skip before the success line crossfades into the solid and plays
+ *      her entrance; it never rushes the climax or the solid.
  */
-import { describe, expect, it } from "vitest";
-import { INTRO_END_ON } from "@shared/seilinkIntroTelemetry";
-import {
-  CALM_TIMELINE,
-  FULL_TIMELINE,
-  HOLD_MAX_MS,
-  OPEN_MS,
-  beatAt,
-  beatProgress,
-  skipFrom,
-  timelineTime,
-  type IntroTimeline,
-} from "../../../lib/seilink/introTimeline";
-import {
-  FLOOD_MAX,
-  INTRO_PALETTE,
-  captionTop,
-  computeFrame,
-  dayInk,
-  revealMask,
-  roomBehind,
-  type IntroFrame,
-} from "./introFrame";
+import { describe, expect, it } from 'vitest';
+import { INTRO_END_ON } from '@shared/seilinkIntroTelemetry';
+import { CLIMAX, OPEN_MS, beatAt, introTimes, skipFrom, type IntroTimes } from '../../../lib/seilink/introTimeline';
+import { LAST_LINE_MS, instantLog, planLink, simulatedLog, type LinkLog } from '../../../lib/seilink/worldLink';
+import { FLOOD_MAX, INTRO_PALETTE, captionTop, computeFrame, dayInk, revealMask, roomBehind, type IntroFrame } from './introFrame';
 
 const W = 1920;
 const H = 1080;
+const TONES = ['dark', 'light'] as const;
 
-describe("timeline", () => {
-  it("runs the beats in order and ends after the fade", () => {
-    for (const tl of [FULL_TIMELINE, CALM_TIMELINE]) {
-      const { tunnel, link, port, linked } = tl.beats;
-      expect(tunnel).toBe(0);
-      expect(link).toBeGreaterThan(tunnel);
-      expect(port).toBeGreaterThan(link);
-      expect(linked).toBeGreaterThan(port);
-      expect(tl.fadeAt).toBeGreaterThan(linked);
-      expect(tl.end).toBeGreaterThan(tl.fadeAt);
-      expect(beatAt(tl, 0)).toBe("tunnel");
-      expect(beatAt(tl, link)).toBe("link");
-      expect(beatAt(tl, port + 1)).toBe("port");
-      expect(beatAt(tl, tl.end)).toBe("linked");
-    }
-    expect(FULL_TIMELINE.end).toBeGreaterThanOrEqual(10_500);
-    expect(FULL_TIMELINE.end).toBeLessThanOrEqual(12_000);
-    expect(CALM_TIMELINE.end).toBeLessThan(FULL_TIMELINE.end);
-  });
+const RUNS: Record<string, LinkLog> = {
+  instant: instantLog(),
+  slow: simulatedLog({ doneMs: 75_000 }),
+  fast: simulatedLog({ doneMs: 20_000 }),
+};
+const FAIL = simulatedLog({ doneMs: 75_000, failAtMs: 30_000, failure: 'bake_failed' });
 
-  it("beat progress runs 0..1", () => {
-    expect(beatProgress(FULL_TIMELINE, 0, "tunnel")).toBe(0);
-    expect(
-      beatProgress(FULL_TIMELINE, FULL_TIMELINE.beats.link, "tunnel"),
-    ).toBe(1);
-    expect(
-      beatProgress(FULL_TIMELINE, FULL_TIMELINE.beats.link + 1, "link"),
-    ).toBeGreaterThan(0);
-  });
+const timesFor = (log: LinkLog, reduced: boolean, skip: number | null = null): IntroTimes => introTimes(planLink(log), reduced, skip);
 
-  it("holds at the end card until the host answers, at most HOLD_MAX_MS", () => {
-    const tl = FULL_TIMELINE;
-    const K = tl.beats.linked;
-    // Before the end card the answer changes nothing.
-    expect(timelineTime(tl, 4000, null)).toBe(4000);
-    // Answered early: no hold at all.
-    expect(timelineTime(tl, K + 500, 1000)).toBe(K + 500);
-    // Not answered: holds, then goes on after the cap.
-    expect(timelineTime(tl, K + 3000, null)).toBe(K);
-    expect(timelineTime(tl, K + HOLD_MAX_MS + 400, null)).toBe(K + 400);
-    // Answered during the hold: goes on from then.
-    expect(timelineTime(tl, K + 2500, K + 2000)).toBe(K + 500);
-  });
-});
+/** The ends a tone can have: its plain colour, or a room. */
+function endsFor(tone: 'dark' | 'light') {
+  return [tone === 'light' ? 'plain_light' : 'plain_dark', 'room'] as const;
+}
 
-describe("frames", () => {
-  for (const end of INTRO_END_ON) {
-    describe(`ending on ${end}`, () => {
-      const at = (t: number, reduced = false) =>
-        computeFrame(
-          reduced ? CALM_TIMELINE : FULL_TIMELINE,
-          t,
-          W,
-          H,
-          reduced,
-          end,
-        );
-
-      it("she is not there before the solid lifts and fully herself by the port beat", () => {
-        const tl = FULL_TIMELINE;
-        for (let t = 0; t <= tl.climax.lift; t += 50)
-          expect(at(t).avatar.opacity).toBe(0);
-        const f = at(tl.beats.port);
-        expect(f.avatar.opacity).toBe(1);
-        expect(f.avatar.filter).toBe("none");
-        expect(f.avatar.rise).toBe(0);
-      });
-
-      it("the light and space wake first and the ending stays hidden until the port beat", () => {
-        const tl = FULL_TIMELINE;
-        expect(at(0).field.opacity).toBe(0);
-        expect(at(1500).field.opacity).toBeGreaterThan(0.9);
-        expect(at(2500).space).toBeGreaterThan(0.9);
-        for (let t = 0; t <= tl.beats.port; t += 100)
-          expect(at(t).room.opacity).toBe(0);
-        const mid = at(tl.beats.port + 1200);
-        if (end === "room") {
-          expect(mid.room.opacity).toBe(1);
-          expect(mid.room.reveal).toBeGreaterThan(0);
-          expect(mid.room.reveal).toBeLessThan(1);
-          expect(revealMask(mid, { x: W / 2, y: H / 2 })).toMatch(
-            /^radial-gradient\(/,
-          );
-        } else {
-          // The whole screen settles into the colour: partly there, never masked.
-          expect(mid.room.opacity).toBeGreaterThan(0);
-          expect(mid.room.opacity).toBeLessThan(1);
-          expect(revealMask(mid, { x: W / 2, y: H / 2 })).toBe("none");
-        }
-      });
-
-      it("ends on the wallpaper picture, full screen, with no light left over it", () => {
-        const tl = FULL_TIMELINE;
-        for (const t of [tl.beats.linked + 1600, tl.fadeAt, tl.end]) {
-          const f = at(t);
-          expect(f.room.opacity).toBe(1);
-          expect(f.room.reveal).toBeGreaterThanOrEqual(1);
-          expect(revealMask(f, { x: 0, y: 0 })).toBe("none");
-          expect(f.field.opacity).toBe(0);
-          expect(f.space).toBe(0);
-          expect(f.halo).toBe(0);
-          expect(f.linkGlow).toBe(0);
-          expect(f.room.flood).toBe(end === "plain_light" ? FLOOD_MAX : 0);
-          expect(f.avatar).toEqual({ opacity: 1, filter: "none", rise: 0 });
-          expect(f.solid).toBe(0);
-          expect(f.field.peak).toBe(0);
-          expect(f.field.fill).toBe(0);
-          expect(f.bloom.a).toBe(0);
-        }
-      });
-
-      it("breathes one soft glow around her when linked (none over the white ending)", () => {
-        const K = FULL_TIMELINE.beats.linked;
-        if (end === "plain_light") {
-          for (let t = K; t < K + 1600; t += 50) expect(at(t).linkGlow).toBe(0);
-          return;
-        }
-        expect(at(K - 10).linkGlow).toBe(0);
-        expect(at(K + 800).linkGlow).toBeCloseTo(1, 5);
-        expect(at(K + 400).linkGlow).toBeGreaterThan(0);
-      });
-
-      it("is deterministic", () => {
-        for (const t of [0, 777, 1650, 3500, 5000, 6800, 8000, 9500])
-          expect(at(t)).toEqual(at(t));
-      });
-
-      it("reduced motion: a still light, plain fades, nothing masked or blurred", () => {
-        const tl = CALM_TIMELINE;
-        for (let t = 0; t <= tl.end; t += 50) {
-          const f = at(t, true);
-          expect(f.field.clock).toBe(at(0, true).field.clock);
-          expect(f.field.gather).toBe(0);
-          expect(f.field.swell).toBe(0);
-          expect(f.field.peak).toBe(0);
-          expect(f.field.fill).toBe(0);
-          expect(f.bloom.a).toBe(0);
-          expect(f.linkGlow).toBe(0);
-          expect(f.room.reveal).toBeGreaterThanOrEqual(1);
-          expect(f.avatar.filter).toBe("none");
-          expect(f.avatar.rise).toBe(0);
-        }
-        const last = at(tl.end, true);
-        expect(last.avatar.opacity).toBe(1);
-        expect(last.room.opacity).toBe(1);
-        expect(last.field.opacity).toBe(0);
-        expect(last.space).toBe(0);
-        expect(last.halo).toBe(0);
-      });
-    });
-  }
-
-  it("the palette is a dark sky with bright light (space, no pastel)", () => {
-    const lum = (hex: string): number => {
-      const n = parseInt(hex.slice(1), 16);
-      return (
-        ((n >> 16) & 255) * 0.299 + ((n >> 8) & 255) * 0.587 + (n & 255) * 0.114
-      );
-    };
-    for (const v of INTRO_PALETTE.void) expect(lum(v)).toBeLessThan(24);
-    for (const c of INTRO_PALETTE.lights)
-      expect(Math.max(...c)).toBeGreaterThanOrEqual(200);
-  });
-});
-
-const TONES = ["dark", "light"] as const;
+/** The last ms worth sampling. */
+const lengthOf = (x: IntroTimes): number => x.after?.end ?? (x.fail ?? 0) + 7000;
 
 /**
  * How bright the picture is, roughly, 0 (black) .. 1 (white): the light and
  * its climax, her, the plain colour or room she ends on, under the solid.
  */
 function brightness(f: IntroFrame): number {
-  const light = f.tone === "light";
+  const light = f.tone === 'light';
   const scene = Math.min(
     1,
-    0.35 * f.field.opacity * (1 + 0.9 * f.field.peak) +
+    0.35 * f.field.opacity * (0.72 + 0.5 * f.field.energy) * (1 + 0.9 * f.field.peak) +
       (light ? 0.6 : 0.15) * f.field.fill * f.field.peak +
       0.25 * f.avatar.opacity +
       (light ? 0.5 : 0.1) * f.bloom.a,
   );
-  const ending = f.end === "plain_light" ? 1 : f.end === "plain_dark" ? 0.1 : 0.6;
+  const ending = f.end === 'plain_light' ? 1 : f.end === 'plain_dark' ? 0.1 : 0.6;
   const base = scene + (ending - scene) * f.room.opacity;
   return base + ((light ? 1 : 0) - base) * f.solid;
 }
@@ -257,237 +84,389 @@ function reversals(values: number[], eps = 0.03): number[] {
   return out;
 }
 
-/** The ends a tone can have: its plain colour, or a room. */
-function endsFor(tone: "dark" | "light") {
-  return [tone === "light" ? "plain_light" : "plain_dark", "room"] as const;
-}
+describe('the timeline (v6)', () => {
+  for (const [name, log] of Object.entries(RUNS)) {
+    it(`${name}: the climax under the last line, the success line on the full solid, then she comes in`, () => {
+      for (const reduced of [false, true]) {
+        const x = timesFor(log, reduced);
+        expect(x.lines).toHaveLength(9);
+        const s9 = x.lines[8];
+        expect(x.success).toBe(s9 + LAST_LINE_MS);
+        const C = x.climax!;
+        const A = x.after!;
+        expect(C.build).toBeGreaterThan(s9);
+        expect(C.fill).toBeLessThan(x.success!);
+        expect(A.success).toBe(x.success);
+        expect(A.lift).toBeGreaterThan(A.success);
+        expect(A.clear).toBeGreaterThan(A.lift);
+        expect(A.port).toBeGreaterThan(A.lift);
+        expect(A.linked).toBeGreaterThan(A.port);
+        expect(A.end).toBeGreaterThan(A.fadeAt);
+        expect(beatAt(x, s9)).toBe('tunnel');
+        expect(beatAt(x, A.success)).toBe('link');
+        expect(beatAt(x, A.port)).toBe('port');
+        expect(beatAt(x, A.end)).toBe('linked');
+      }
+    });
+  }
 
-describe("the climax (261106 v5)", () => {
-  const tl = FULL_TIMELINE;
-  const C = tl.climax;
+  it('the run lengths: about 50 s instant or a 20 s bake, a 75 s bake about 87 s', () => {
+    expect(timesFor(RUNS.instant, false).after!.end).toBeGreaterThan(45_000);
+    expect(timesFor(RUNS.instant, false).after!.end).toBeLessThan(55_000);
+    expect(timesFor(RUNS.fast, false).after!.end).toBeLessThan(55_000);
+    expect(timesFor(RUNS.slow, false).after!.end).toBeGreaterThan(80_000);
+    expect(timesFor(RUNS.slow, false).after!.end).toBeLessThan(95_000);
+  });
+
+  it('a failure has no climax and no after, only the failure line', () => {
+    const x = timesFor(FAIL, false);
+    expect(x.success).toBeNull();
+    expect(x.climax).toBeNull();
+    expect(x.after).toBeNull();
+    expect(x.fail).not.toBeNull();
+    expect(x.lines.length).toBeLessThan(9);
+  });
+
+  it('a link still waiting has no after yet (nothing of her can show)', () => {
+    const x = timesFor({ at: { sent: 100, answered: 900, host: 2000 }, failed: null }, false);
+    expect(x.after).toBeNull();
+    expect(x.climax).toBeNull();
+  });
+});
+
+describe('she appears only after the success line', () => {
+  for (const reduced of [false, true]) {
+    for (const end of INTRO_END_ON) {
+      for (const [name, log] of Object.entries(RUNS)) {
+        it(`${name}${reduced ? ' reduced' : ''} ${end}`, () => {
+          const x = timesFor(log, reduced);
+          const at = (t: number) => computeFrame(x, t, W, H, reduced, end);
+          for (let t = 0; t <= x.success!; t += 50) {
+            const f = at(t);
+            expect(f.avatar.opacity).toBe(0);
+            expect(f.halo).toBe(0);
+            expect(f.room.opacity).toBe(0);
+          }
+          // Still hidden while the success line is read on the solid.
+          for (let t = x.success!; t <= x.after!.lift; t += 50) expect(at(t).avatar.opacity).toBe(0);
+          const f = at(x.after!.port + (reduced ? 400 : 0));
+          expect(f.avatar.opacity).toBeGreaterThan(0.9);
+          const last = at(x.after!.end);
+          expect(last.avatar).toEqual({ opacity: 1, filter: 'none', rise: 0 });
+        });
+      }
+      it(`failure${reduced ? ' reduced' : ''} ${end}: never`, () => {
+        const x = timesFor(FAIL, reduced);
+        for (let t = 0; t <= lengthOf(x) + 60_000; t += 100) {
+          const f = computeFrame(x, t, W, H, reduced, end);
+          expect(f.avatar.opacity).toBe(0);
+          expect(f.halo).toBe(0);
+          expect(f.room.opacity).toBe(0);
+        }
+      });
+    }
+  }
+});
+
+describe('the lines', () => {
+  it('one at a time, in order, then the success line', () => {
+    const x = timesFor(RUNS.slow, false);
+    const at = (t: number) => computeFrame(x, t, W, H, false, 'plain_dark');
+    expect(at(0).caption.cur).toBeNull();
+    let lastIdx = -1;
+    for (let t = 0; t < x.success!; t += 100) {
+      const c = at(t).caption;
+      if (c.cur === null) continue;
+      expect(typeof c.cur).toBe('number');
+      expect(c.cur as number).toBeGreaterThanOrEqual(lastIdx);
+      lastIdx = c.cur as number;
+    }
+    expect(lastIdx).toBe(8);
+    for (let t = x.success!; t <= x.after!.end; t += 100) expect(at(t).caption.cur).toBe('success');
+    // The new line fades up only after the one before has begun to fade out.
+    const s = x.lines[3];
+    const f = at(s + 60);
+    expect(f.caption.cur).toBe(3);
+    expect(f.caption.prev).toBe(2);
+    expect(f.caption.curIn).toBe(0);
+    expect(f.caption.prevOut).toBeGreaterThan(0);
+    expect(at(s + 1000).caption.curIn).toBeCloseTo(1, 5);
+    expect(at(s + 1000).caption.prevOut).toBe(0);
+  });
+
+  it('the success line is read on the full solid', () => {
+    for (const reduced of [false, true]) {
+      for (const tone of TONES) {
+        const x = timesFor(RUNS.instant, reduced);
+        const f = computeFrame(x, x.success! + 600, W, H, reduced, tone === 'light' ? 'plain_light' : 'plain_dark', tone);
+        expect(f.caption.cur).toBe('success');
+        expect(f.solid).toBe(1);
+      }
+    }
+  });
+
+  it('a failure line holds, and the light calms but stays', () => {
+    const x = timesFor(FAIL, false);
+    const at = (t: number) => computeFrame(x, t, W, H, false, 'plain_dark');
+    for (let t = x.fail!; t < x.fail! + 120_000; t += 500) {
+      const f = at(t);
+      expect(f.caption.cur).toBe('fail');
+      expect(f.solid).toBe(0);
+      expect(f.field.opacity).toBe(1);
+      expect(f.field.peak).toBe(0);
+    }
+    expect(at(x.fail! + 4000).field.energy).toBeLessThan(at(x.fail! - 10).field.energy);
+  });
+});
+
+describe('the light builds with the lines', () => {
+  it('each line adds a step of energy, eased, and the peak only comes under the last', () => {
+    const x = timesFor(RUNS.slow, false);
+    const at = (t: number) => computeFrame(x, t, W, H, false, 'plain_dark');
+    let e = 0;
+    for (let t = 0; t < x.climax!.fill; t += 33) {
+      const f = at(t);
+      expect(f.field.energy).toBeGreaterThanOrEqual(e - 1e-12);
+      expect(f.field.energy - e).toBeLessThan(0.02);
+      e = f.field.energy;
+      if (t < x.climax!.build) expect(f.field.peak).toBe(0);
+    }
+    expect(at(x.lines[4] + 2000).field.energy).toBeCloseTo(5 / 9, 5);
+    expect(at(x.lines[8] + 1500).field.energy).toBeCloseTo(1, 5);
+    expect(at(x.climax!.peak).field.peak).toBe(1);
+    // Faster with every line: the clock runs about 1.6x with all of them up.
+    const speed = (t: number) => at(t + 10).field.clock - at(t).field.clock;
+    expect(speed(x.lines[1] - 50)).toBeLessThan(speed(x.lines[5] - 50));
+    expect(speed(x.lines[8] - 50)).toBeCloseTo(10 * (1 + 0.6 * (8 / 9)), 5);
+  });
+
+  it('reduced motion: a still light, no peak, no bloom, nothing masked or blurred', () => {
+    for (const [, log] of Object.entries(RUNS)) {
+      const x = timesFor(log, true);
+      for (const end of INTRO_END_ON) {
+        for (let t = 0; t <= x.after!.end; t += 50) {
+          const f = computeFrame(x, t, W, H, true, end);
+          expect(f.field.clock).toBe(2400);
+          expect(f.field.gather).toBe(0);
+          expect(f.field.swell).toBe(0);
+          expect(f.field.peak).toBe(0);
+          expect(f.field.fill).toBe(0);
+          expect(f.bloom.a).toBe(0);
+          expect(f.linkGlow).toBe(0);
+          expect(f.room.reveal).toBeGreaterThanOrEqual(1);
+          expect(f.avatar.filter).toBe('none');
+          expect(f.avatar.rise).toBe(0);
+        }
+      }
+    }
+  });
+});
+
+describe('no cuts', () => {
+  const cases: Array<[string, LinkLog]> = [...Object.entries(RUNS), ['failed', FAIL]];
+  for (const reduced of [false, true]) {
+    for (const tone of TONES) {
+      for (const end of endsFor(tone)) {
+        for (const [name, log] of cases) {
+          it(`${name}${reduced ? ' reduced' : ''} ${tone} ${end}`, () => {
+            const x = timesFor(log, reduced);
+            const at = (t: number) => computeFrame(x, t, W, H, reduced, end, tone);
+            // One 30 fps frame: no layer jumps more than a fade of about a second allows (a cut is a step of 1).
+            let prev = at(0);
+            for (const v of Object.values(prev.field)) expect(Number.isFinite(v)).toBe(true);
+            const vals: number[] = [brightness(prev)];
+            const len = lengthOf(x);
+            for (let t = 33; t <= len; t += 33) {
+              const f = at(t);
+              expect(Math.abs(f.solid - prev.solid)).toBeLessThan(0.06);
+              expect(Math.abs(brightness(f) - brightness(prev))).toBeLessThan(0.06);
+              if (end !== 'room') expect(Math.abs(f.room.opacity - prev.room.opacity)).toBeLessThan(0.06);
+              expect(Math.abs(f.field.opacity - prev.field.opacity)).toBeLessThan(0.1);
+              expect(Math.abs(f.avatar.opacity - prev.avatar.opacity)).toBeLessThan(0.1);
+              expect(Math.abs(f.field.energy - prev.field.energy)).toBeLessThan(0.03);
+              vals.push(brightness(f));
+              prev = f;
+            }
+            // A flash is a pair of opposing changes: at most 2 direction changes in any 1 s.
+            const rev = reversals(vals).map((i) => i * 33);
+            for (const r of rev) expect(rev.filter((y) => y >= r && y < r + 1000).length).toBeLessThanOrEqual(2);
+          });
+        }
+      }
+    }
+  }
+});
+
+describe('the climax and the solid', () => {
   for (const tone of TONES) {
     for (const end of endsFor(tone)) {
-      const at = (t: number) => computeFrame(tl, t, W, H, false, end, tone);
-      const label = `${tone} ${end}`;
-
-      it(`${label}: opens out of the solid, one swell, the bloom expands into the solid, held, fading out as she comes in`, () => {
-        expect(C.build).toBeLessThan(C.peak);
-        expect(C.peak).toBeLessThan(C.dim);
-        expect(C.dim).toBeLessThan(C.fill);
-        expect(C.fill).toBe(tl.beats.link);
-        expect(C.lift).toBeGreaterThan(C.fill);
-        expect(C.clear).toBeGreaterThan(C.lift);
+      it(`${tone} ${end}: opens out of the solid, one swell into the solid, held under the success line, fading as she comes in`, () => {
+        const x = timesFor(RUNS.instant, false);
+        const C = x.climax!;
+        const A = x.after!;
+        const at = (t: number) => computeFrame(x, t, W, H, false, end, tone);
         expect(at(0).tone).toBe(tone);
-        // The intro opens out of the solid colour, gone before the build.
         expect(at(0).solid).toBe(1);
         let o = 1;
-        for (let t = 0; t <= C.build; t += 10) {
+        for (let t = 0; t <= OPEN_MS; t += 10) {
           const k = at(t).solid;
           expect(k).toBeLessThanOrEqual(o);
           o = k;
         }
-        for (let t = OPEN_MS; t <= C.dim; t += 10) expect(at(t).solid).toBe(0);
-        // The peak only rises (never a flicker) and holds until the solid covers it.
+        for (let t = OPEN_MS; t <= C.dim; t += 50) expect(at(t).solid).toBe(0);
         let last = 0;
         for (let t = 0; t < C.fill; t += 10) {
           const p = at(t).field.peak;
           expect(p).toBeGreaterThanOrEqual(last);
           last = p;
         }
-        expect(at(C.peak).field.peak).toBe(1);
-        expect(at(C.fill - 1).field.peak).toBe(1);
-        // Past the peak the bloom expands, only growing, while the solid comes over it.
-        let fl = 0;
-        let sd = 0;
-        for (let t = C.peak; t < C.fill; t += 10) {
-          const f = at(t);
-          expect(f.field.fill).toBeGreaterThanOrEqual(fl);
-          expect(f.solid).toBeGreaterThanOrEqual(sd);
-          fl = f.field.fill;
-          sd = f.solid;
-        }
         expect(at(C.fill - 1).field.fill).toBeGreaterThan(0.99);
-        // Brighter and faster at the peak.
-        const peakBright = (t: number) => {
-          const f = at(t);
-          return 0.35 * f.field.opacity * (1 + 0.9 * f.field.peak);
-        };
-        expect(peakBright(C.peak)).toBeGreaterThan(peakBright(C.build) * 1.6);
-        const speed = (t: number) => at(t + 10).field.clock - at(t).field.clock;
-        expect(speed(C.peak)).toBeCloseTo(20, 5);
-        expect(speed(500)).toBeCloseTo(10, 5);
-        // Solid at the fill, held, and nothing of the climax left under it.
-        for (let t = C.fill; t <= C.lift; t += 10) {
+        for (let t = C.fill; t <= A.lift; t += 10) {
           expect(at(t).solid).toBe(1);
           expect(at(t).field.peak).toBe(0);
           expect(at(t).field.fill).toBe(0);
         }
-        // The solid only fades out from there, and she comes in while it does.
         let b = 1;
-        for (let t = C.lift; t <= C.clear; t += 10) {
+        for (let t = A.lift; t <= A.clear; t += 10) {
           const k = at(t).solid;
           expect(k).toBeLessThanOrEqual(b);
           b = k;
         }
-        expect(at(C.clear).solid).toBe(0);
-        const mid = at((C.lift + C.clear) / 2);
+        const mid = at((A.lift + A.clear) / 2);
         expect(mid.solid).toBeGreaterThan(0);
         expect(mid.solid).toBeLessThan(1);
         expect(mid.avatar.opacity).toBeGreaterThan(0);
-        expect(at(C.lift + 60).avatar.rise).toBeGreaterThan(0);
-        for (let t = C.clear; t <= tl.end; t += 50) expect(at(t).solid).toBe(0);
+        for (let t = A.clear; t <= A.end; t += 50) expect(at(t).solid).toBe(0);
       });
 
-      it(`${label}: no caption over the peak or the solid`, () => {
-        for (let t = tl.lineOut + 350; t <= C.lift; t += 10) {
-          const f = at(t);
-          expect(f.caption.block).toBe(0);
-          expect(f.brand).toBe(0);
+      it(`${tone} ${end}: ends on the wallpaper picture, full screen, with no light left over it`, () => {
+        const x = timesFor(RUNS.fast, false);
+        const A = x.after!;
+        for (const t of [A.linked + 1600, A.fadeAt, A.end]) {
+          const f = computeFrame(x, t, W, H, false, end, tone);
+          expect(f.room.opacity).toBe(1);
+          expect(f.room.reveal).toBeGreaterThanOrEqual(1);
+          expect(revealMask(f, { x: 0, y: 0 })).toBe('none');
+          expect(f.field.opacity).toBe(0);
+          expect(f.space).toBe(0);
+          expect(f.halo).toBe(0);
+          expect(f.linkGlow).toBe(0);
+          expect(f.room.flood).toBe(end === 'plain_light' ? FLOOD_MAX : 0);
+          expect(f.solid).toBe(0);
+          expect(f.bloom.a).toBe(0);
         }
-        for (let t = 0; t <= tl.end; t += 10) {
-          const f = at(t);
-          // Never more caption than the solid lets through, and none near the peak.
-          expect(f.caption.block).toBeLessThanOrEqual(1 - f.solid + 1e-9);
-          if (t < C.fill && f.field.peak >= 0.75) expect(f.caption.block * f.caption.line).toBe(0);
-        }
-        // The first line was up before it left, and the next comes once the solid has lifted.
-        expect(at(tl.lineOut - 10).caption.line * at(tl.lineOut - 10).caption.block).toBe(1);
-        expect(at(tl.lineAt.link).beat).toBe("link");
-        expect(tl.lineAt.link).toBeGreaterThan(C.lift);
-        expect(at(C.clear + 200).caption.line * at(C.clear + 200).caption.block).toBeGreaterThan(0.9);
-      });
-
-      it(`${label}: never more than one flash in any second`, () => {
-        const step = 10;
-        const vals: number[] = [];
-        for (let t = 0; t <= tl.end; t += step) vals.push(brightness(at(t)));
-        const rev = reversals(vals).map((i) => i * step);
-        // A flash is a pair of opposing changes: at most 2 direction changes in any 1 s.
-        for (const r of rev) expect(rev.filter((x) => x >= r && x < r + 1000).length).toBeLessThanOrEqual(2);
       });
     }
   }
 
-  for (const reduced of [false, true]) {
-    for (const tone of TONES) {
-      for (const end of endsFor(tone)) {
-        it(`no cut anywhere: ${reduced ? "reduced, " : ""}${tone} ${end}`, () => {
-          const x = reduced ? CALM_TIMELINE : FULL_TIMELINE;
-          const at = (t: number) => computeFrame(x, t, W, H, reduced, end, tone);
-          // One 30 fps frame: no layer jumps more than a fade of about a second allows (a cut is a step of 1).
-          let prev = at(0);
-          for (let t = 33; t <= x.end; t += 33) {
-            const f = at(t);
-            expect(Math.abs(f.solid - prev.solid)).toBeLessThan(0.06);
-            expect(Math.abs(brightness(f) - brightness(prev))).toBeLessThan(0.06);
-            if (end !== "room") expect(Math.abs(f.room.opacity - prev.room.opacity)).toBeLessThan(0.06);
-            expect(Math.abs(f.field.opacity - prev.field.opacity)).toBeLessThan(0.1);
-            expect(Math.abs(f.avatar.opacity - prev.avatar.opacity)).toBeLessThan(0.1);
-            prev = f;
-          }
-        });
-      }
-    }
-  }
-
-  it("the solid is the theme's colour: a light theme never goes black, a dark one never white", () => {
+  it('the solid is the theme colour; HUD ink follows it', () => {
+    const x = timesFor(RUNS.instant, false);
     for (const end of INTRO_END_ON) {
-      expect(computeFrame(FULL_TIMELINE, 0, W, H, false, end, "light").tone).toBe("light");
-      expect(computeFrame(FULL_TIMELINE, 0, W, H, false, end, "dark").tone).toBe("dark");
+      expect(computeFrame(x, 0, W, H, false, end, 'light').tone).toBe('light');
+      expect(computeFrame(x, 0, W, H, false, end, 'dark').tone).toBe('dark');
     }
-    // Without a tone, a plain ending gives its own.
-    expect(computeFrame(FULL_TIMELINE, 0, W, H, false, "plain_light").tone).toBe("light");
-    expect(computeFrame(FULL_TIMELINE, 0, W, H, false, "plain_dark").tone).toBe("dark");
-    // Text over the white solid is in day ink, over the black one in night ink.
+    expect(computeFrame(x, 0, W, H, false, 'plain_light').tone).toBe('light');
+    expect(computeFrame(x, 0, W, H, false, 'plain_dark').tone).toBe('dark');
     const centre = { x: W / 2, y: H * 0.7 };
-    const p = { x: W - 60, y: H - 40 };
-    expect(dayInk(roomBehind(computeFrame(FULL_TIMELINE, C.fill, W, H, false, "room", "light"), centre, p))).toBe(1);
-    expect(dayInk(roomBehind(computeFrame(FULL_TIMELINE, C.fill, W, H, false, "room", "dark"), centre, p))).toBe(0);
+    const p = { x: W / 2, y: H * 0.17 };
+    const fill = x.climax!.fill + 100;
+    expect(dayInk(roomBehind(computeFrame(x, fill, W, H, false, 'room', 'light'), centre, p))).toBe(1);
+    expect(dayInk(roomBehind(computeFrame(x, fill, W, H, false, 'room', 'dark'), centre, p))).toBe(0);
+    // The lines over the night light are in night ink.
+    expect(dayInk(roomBehind(computeFrame(x, x.lines[3], W, H, false, 'room', 'light'), centre, p))).toBe(0);
   });
 
-  it("reduced motion: no peak and no bloom, a gentle crossfade through the solid", () => {
-    const calm = CALM_TIMELINE;
-    for (const tone of TONES) {
-      const at = (t: number) => computeFrame(calm, t, W, H, true, tone === "light" ? "plain_light" : "plain_dark", tone);
-      for (let t = 0; t <= calm.end; t += 33) {
-        expect(at(t).field.peak).toBe(0);
-        expect(at(t).field.fill).toBe(0);
-        expect(at(t).bloom.a).toBe(0);
-      }
-      expect(at(calm.climax.fill).solid).toBe(1);
-      expect(at(calm.climax.clear).solid).toBe(0);
-      expect(at(calm.climax.lift).avatar.opacity).toBe(0);
-      expect(at(calm.climax.clear + 300).avatar.opacity).toBeGreaterThan(0.9);
-      for (let t = calm.lineOut + 350; t <= calm.climax.lift; t += 10) expect(at(t).caption.block).toBe(0);
-    }
-  });
-
-  it("a skip never rushes through the climax or the solid", () => {
-    for (const t of [0, 1000, C.build, C.peak, C.dim, C.fill, C.lift, C.clear - 1]) expect(skipFrom(tl, t)).toBe(C.clear);
-    for (const t of [C.clear, tl.beats.port, tl.fadeAt]) expect(skipFrom(tl, t)).toBe(t);
-  });
-
-  it("keeps the whole intro about as long as before (11.3 s then)", () => {
-    const len = (x: IntroTimeline) => x.end;
-    expect(len(FULL_TIMELINE)).toBeGreaterThanOrEqual(11_000);
-    expect(len(FULL_TIMELINE)).toBeLessThanOrEqual(11_800);
-  });
-
-  it("the plain endings expand out of the light into the colour", () => {
-    const P = tl.beats.port;
-    for (const end of ["plain_dark", "plain_light"] as const) {
-      const at = (t: number) => computeFrame(tl, t, W, H, false, end);
-      let r = 0;
-      for (let t = P; t <= P + 2200; t += 50) {
-        expect(at(t).bloom.r).toBeGreaterThanOrEqual(r);
-        r = at(t).bloom.r;
-      }
-      expect(at(P + 1000).bloom.a).toBeGreaterThan(0.5);
-      expect(at(P + 2700).bloom.a).toBe(0);
-    }
-    expect(computeFrame(tl, P + 1000, W, H, false, "room").bloom.a).toBe(0);
+  it('is deterministic', () => {
+    const x = timesFor(RUNS.slow, false);
+    for (const t of [0, 777, 5000, 30_000, 76_000, 80_000, 86_000]) expect(computeFrame(x, t, W, H, false, 'room')).toEqual(computeFrame(x, t, W, H, false, 'room'));
   });
 });
 
-describe("captions", () => {
+describe('a skip', () => {
+  it('before the success line: a calm crossfade into the solid, then her entrance', () => {
+    for (const tone of TONES) {
+      const skip = 9000;
+      const x = timesFor(RUNS.slow, false, skip);
+      expect(x.skip).toBe(skip);
+      expect(x.climax!.calm).toBe(true);
+      expect(x.success).toBeNull();
+      const at = (t: number) => computeFrame(x, t, W, H, false, tone === 'light' ? 'plain_light' : 'plain_dark', tone);
+      for (let t = skip; t < x.after!.lift; t += 20) {
+        const f = at(t);
+        expect(f.avatar.opacity).toBe(0);
+        expect(f.field.peak).toBe(0);
+        expect(f.field.fill).toBe(0);
+      }
+      expect(at(x.climax!.fill).solid).toBe(1);
+      expect(at(skip + 800).caption.block).toBe(0);
+      expect(at(x.after!.end).avatar.opacity).toBe(1);
+      // The solid never jumps.
+      let prev = at(skip);
+      for (let t = skip + 33; t <= x.after!.end; t += 33) {
+        const f = at(t);
+        expect(Math.abs(f.solid - prev.solid)).toBeLessThan(0.06);
+        prev = f;
+      }
+    }
+  });
+
+  it('under the climax plays it out as planned', () => {
+    const plain = timesFor(RUNS.instant, false);
+    const late = plain.climax!.build + 10;
+    expect(timesFor(RUNS.instant, false, late).skip).toBeNull();
+    expect(timesFor(RUNS.instant, false, plain.lines[8] + CLIMAX.build - 10).skip).not.toBeNull();
+  });
+
+  it('never rushes the climax or the solid', () => {
+    const x = timesFor(RUNS.instant, false);
+    const A = x.after!;
+    for (const t of [0, 1000, x.climax!.build, x.climax!.fill, A.success, A.lift, A.clear - 1]) expect(skipFrom(x, t)).toBe(A.clear);
+    for (const t of [A.clear, A.port, A.fadeAt]) expect(skipFrom(x, t)).toBe(t);
+  });
+});
+
+describe('the palette', () => {
+  it('is a dark sky with bright light (space, no pastel)', () => {
+    const lum = (hex: string): number => {
+      const n = parseInt(hex.slice(1), 16);
+      return ((n >> 16) & 255) * 0.299 + ((n >> 8) & 255) * 0.587 + (n & 255) * 0.114;
+    };
+    for (const v of INTRO_PALETTE.void) expect(lum(v)).toBeLessThan(24);
+    for (const c of INTRO_PALETTE.lights) expect(Math.max(...c)).toBeGreaterThanOrEqual(200);
+  });
+});
+
+describe('captions', () => {
   // Her box at 1920x1080 in the cozy room: top at half the height.
   const her = { x: 773, y: 540, w: 405, h: 540 };
 
-  it("sit above her head with a gap", () => {
+  it('sit above her head with a gap', () => {
     const top = captionTop(H, 110, her);
     expect(top + 110).toBeLessThanOrEqual(her.y - 24);
     expect(top).toBeGreaterThanOrEqual(64);
   });
 
-  it("move up when her head is close, never into the corner label", () => {
+  it('move up when her head is close, never into the corner label', () => {
     const near = { ...her, y: 300 };
     expect(captionTop(H, 110, near) + 110).toBeLessThanOrEqual(300 - 24);
     expect(captionTop(400, 300, { ...her, y: 120 })).toBe(64);
   });
 
-  it("use the default place before she has a size", () => {
+  it('use the default place before she has a size', () => {
     expect(captionTop(H, 110, null)).toBeCloseTo(H * 0.15);
   });
 
-  it("turn to day ink only where her room shows", () => {
-    const at = (t: number) =>
-      computeFrame(FULL_TIMELINE, t, W, H, false, "room");
+  it('turn to day ink only where her room shows', () => {
+    const x = timesFor(RUNS.instant, false);
+    const A = x.after!;
+    const at = (t: number) => computeFrame(x, t, W, H, false, 'room', 'dark');
     const centre = { x: W / 2, y: H * 0.7 };
     const above = { x: W / 2, y: H * 0.17 };
-    expect(
-      dayInk(roomBehind(at(FULL_TIMELINE.beats.link + 500), centre, above)),
-    ).toBe(0);
-    expect(
-      dayInk(roomBehind(at(FULL_TIMELINE.beats.linked + 600), centre, above)),
-    ).toBe(1);
-    // While the circle opens, a point near her is in the room before a far corner is.
+    expect(dayInk(roomBehind(at(A.clear + 200), centre, above))).toBe(0);
+    expect(dayInk(roomBehind(at(A.linked + 600), centre, above))).toBe(1);
     let near = 0;
     let far = 0;
-    for (
-      let t = FULL_TIMELINE.beats.port;
-      t < FULL_TIMELINE.beats.linked;
-      t += 50
-    ) {
+    for (let t = A.port; t < A.linked; t += 50) {
       const f = at(t);
       if (!near && roomBehind(f, centre, above) >= 1) near = t;
       if (!far && roomBehind(f, centre, { x: 40, y: 30 }) >= 1) far = t;
@@ -496,49 +475,13 @@ describe("captions", () => {
     expect(far).toBeGreaterThan(near);
   });
 
-  it("follow the crossfade under reduced motion", () => {
+  it('follow the crossfade under reduced motion', () => {
+    const x = timesFor(RUNS.instant, true);
     const centre = { x: W / 2, y: H * 0.7 };
     const p = { x: 40, y: 30 };
-    const { port } = CALM_TIMELINE.beats;
-    for (const end of ["room", "plain_light"] as const) {
-      expect(
-        roomBehind(
-          computeFrame(CALM_TIMELINE, port - 100, W, H, true, end),
-          centre,
-          p,
-        ),
-      ).toBe(0);
-      expect(
-        roomBehind(
-          computeFrame(CALM_TIMELINE, port + 1800, W, H, true, end),
-          centre,
-          p,
-        ),
-      ).toBe(1);
+    for (const end of ['room', 'plain_light'] as const) {
+      expect(roomBehind(computeFrame(x, x.after!.clear + 50, W, H, true, end, 'dark'), centre, p)).toBe(0);
+      expect(roomBehind(computeFrame(x, x.after!.port + 1800, W, H, true, end, 'dark'), centre, p)).toBe(1);
     }
-  });
-
-  it("go to day ink over the white plain background, never over the black one", () => {
-    const centre = { x: W / 2, y: H * 0.7 };
-    const above = { x: W / 2, y: H * 0.17 };
-    const t = FULL_TIMELINE.beats.linked + 600;
-    expect(
-      dayInk(
-        roomBehind(
-          computeFrame(FULL_TIMELINE, t, W, H, false, "plain_light"),
-          centre,
-          above,
-        ),
-      ),
-    ).toBe(1);
-    expect(
-      dayInk(
-        roomBehind(
-          computeFrame(FULL_TIMELINE, t, W, H, false, "plain_dark"),
-          centre,
-          above,
-        ),
-      ),
-    ).toBe(0);
   });
 });
