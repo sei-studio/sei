@@ -2352,6 +2352,8 @@ export const ES: Record<string, string> = {
   "That model could not be read. Check it is a Live2D or rig zip.": "No se pudo leer ese modelo. Comprueba que sea un zip de Live2D o de rig.",
   "Too many changes at once. Try again in a minute.": "Demasiados cambios a la vez. Inténtalo de nuevo en un minuto.",
   "You uploaded a lot in the last hour. Try again later.": "Subiste mucho en la última hora. Inténtalo más tarde.",
+  "The server is busy. Try again in a minute.": "El servidor está ocupado. Inténtalo de nuevo en un minuto.",
+  "Still checking that file. It will show up here soon.": "Todavía estamos revisando ese archivo. Aparecerá aquí pronto.",
   "Something went wrong with avatars. Try again.": "Algo salió mal con los avatares. Inténtalo de nuevo.",
   "Pick which avatar plays for you.": "Elige qué avatar se muestra para ti.",
   "Default": "Predeterminado",

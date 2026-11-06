@@ -25,7 +25,8 @@ import styles from './AvatarPane.module.css';
 
 /** Client-side mirror of avatarStore's zip cap (the server-side check is the
  * authority; this just fails fast with a readable message). */
-const ZIP_MAX_BYTES = 128 * 1024 * 1024;
+/** The avatar store and avatar library cap (64 MB). */
+const ZIP_MAX_BYTES = 64 * 1024 * 1024;
 
 interface AvatarPaneProps {
   characterId: string;

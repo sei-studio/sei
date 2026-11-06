@@ -22,7 +22,12 @@
  *
  * Writes (upload, setFlags, remove, setPick) answer AvatarLibraryResult with
  * a closed error code; the server enforces the public rule, the UI only
- * mirrors it. Nothing here throws to its caller.
+ * mirrors it. Nothing here throws to its caller. Uploads check the listed
+ * byte caps and the image rules (avatarImage.ts) before anything goes up; a
+ * model the server refused (too_big, bad_content, bad_kind) is remembered by
+ * its zip hash so sync never sends the same bytes again. A commit answered
+ * 503 busy is retried twice; 202 processing is followed by looking for the
+ * row by hash in the owner list.
  *
  * Analytics, shape only (kinds, MB, counts, the character id): avatar_uploaded,
  * avatar_visibility_changed, avatar_default_changed, avatar_downloaded_shared,
@@ -30,6 +35,7 @@
  */
 import { createHash } from 'node:crypto';
 import type { AvatarManifest } from '../../shared/ipc';
+import { avatarImageProblem, MAX_PORTRAIT_SIDE } from '../avatar/avatarImage';
 import {
   effectiveAvatar,
   mbBucket,
@@ -43,8 +49,19 @@ import {
 } from '../../shared/avatarLibrary';
 
 export const LIST_TTL_MS = 60_000;
-/** Download cap for a model zip (the proxy's own cap is lower). */
-export const MODEL_DOWNLOAD_MAX_BYTES = 128 * 1024 * 1024;
+/** Download cap for a model zip: the proxy's zip cap, and the local store's (AVATAR_ZIP_MAX_BYTES). */
+export const MODEL_DOWNLOAD_MAX_BYTES = 64 * 1024 * 1024;
+/** 503 busy on commit: wait this long, then commit again (the staging upload stays valid for hours). */
+export const COMMIT_BUSY_RETRY_MS = [5_000, 15_000] as const;
+/** 202 processing: the server finishes the commit in the background; look for the row this often. */
+export const COMMIT_POLL_MS = 10_000;
+export const COMMIT_POLLS = 6;
+/** Server refusals of the bytes themselves: the same bytes are never sent again by sync. */
+const REFUSED_CODES: ReadonlySet<AvatarLibraryError> = new Set(['too_big', 'bad_content', 'bad_kind']);
+/** Skip-list key of a local model the server refused (rev = the zip's sha256). */
+export function refusedUploadKey(characterId: string): string {
+  return `upload:${characterId}`;
+}
 
 export class AvatarLibraryNoSession extends Error {
   constructor() {
@@ -95,6 +112,8 @@ export interface AvatarLibraryDeps {
   /** What plays changed: Anima re-checks her face set. */
   onEffectiveChanged?(characterId: string): void;
   now(): number;
+  /** Wait (tests pass an instant one). */
+  sleep?(ms: number): Promise<void>;
   log?(line: string): void;
 }
 
@@ -123,9 +142,11 @@ export function errorOf(status: number, body: unknown): AvatarLibraryError {
   const code = (body as { error?: unknown } | null)?.error;
   const known: AvatarLibraryError[] = [
     'too_big', 'too_many', 'quota', 'last_public', 'not_shareable', 'card_avatar', 'hash_mismatch', 'bad_content', 'bad_kind',
-    'upload_required', 'staging_quota', 'card_changed', 'no_card', 'card_conflict',
+    'upload_required', 'staging_quota', 'card_changed', 'no_card', 'card_conflict', 'busy',
   ];
   if (typeof code === 'string' && (known as string[]).includes(code)) return code as AvatarLibraryError;
+  // The staging upload is not there (or not this user's): upload again.
+  if (code === 'missing_upload') return 'upload_required';
   if (status === 401) return 'signed_out';
   if (status === 403) return 'forbidden';
   if (status === 404) return 'not_found';
@@ -196,6 +217,12 @@ export class AvatarLibraryClient {
   async addPortrait(characterId: string, bytes: Uint8Array, name: string | null): Promise<AvatarLibraryResult> {
     const mime = imageMime(bytes);
     if (!mime) return { ok: false, error: 'bad_content' };
+    // The proxy's own checks, before anything goes up: static, at most
+    // MAX_PORTRAIT_SIDE px, at most the listed byte cap.
+    const problem = avatarImageProblem(bytes, MAX_PORTRAIT_SIDE);
+    if (problem) return { ok: false, error: problem === 'image_too_large' ? 'too_big' : 'bad_content' };
+    const maxBytes = this.cache.get(characterId)?.list?.limits?.max_image_bytes;
+    if (typeof maxBytes === 'number' && bytes.byteLength > maxBytes) return { ok: false, error: 'too_big' };
     return this.write('upload', characterId, async () => {
       await this.upload(characterId, 'portrait', bytes, mime, { name, origin: 'user' });
     });
@@ -403,7 +430,7 @@ export class AvatarLibraryClient {
     } else if (a?.state !== 'exists') {
       throw new OpError('server');
     }
-    const commit = await this.d.api('POST', `/avatars/v1/${characterId}/commit`, {
+    const c = await this.commitUpload(characterId, kind, sha, {
       kind,
       sha256: sha,
       ...(staging ? { staging_path: staging } : {}),
@@ -411,8 +438,6 @@ export class AvatarLibraryClient {
       source: 'upload',
       ...(opts.makeDefault ? { make_default: true } : {}),
     });
-    if (commit.status !== 200) throw new OpError(errorOf(commit.status, commit.body));
-    const c = commit.body as { avatar?: { id?: string; rev?: string; moderation?: string } } | null;
     const list = this.cache.get(characterId)?.list ?? null;
     this.d.capture('avatar_uploaded', {
       character_id: characterId,
@@ -427,6 +452,41 @@ export class AvatarLibraryClient {
     const id = c?.avatar?.id;
     const rev = typeof c?.avatar?.rev === 'string' ? c.avatar.rev : null;
     return typeof id === 'string' && UUID_RE.test(id) ? { id, rev } : null;
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return this.d.sleep ? this.d.sleep(ms) : new Promise((r) => setTimeout(r, ms));
+  }
+
+  /**
+   * Commit an upload. 503 busy (the proxy checks one commit at a time): try
+   * again a little later, twice. 202 processing (the check ran past the
+   * proxy's deadline and finishes in the background): look for the row by
+   * its hash in the owner list a few times; still not there is `processing`.
+   */
+  private async commitUpload(
+    characterId: string,
+    kind: UploadableAvatarKind,
+    sha: string,
+    body: Record<string, unknown>,
+  ): Promise<{ avatar?: { id?: string; rev?: string; moderation?: string } } | null> {
+    let res = await this.d.api('POST', `/avatars/v1/${characterId}/commit`, body);
+    for (const wait of COMMIT_BUSY_RETRY_MS) {
+      if (!(res.status === 503 && errorOf(res.status, res.body) === 'busy')) break;
+      await this.sleep(wait);
+      res = await this.d.api('POST', `/avatars/v1/${characterId}/commit`, body);
+    }
+    if (res.status === 200) return res.body as { avatar?: { id?: string; rev?: string; moderation?: string } } | null;
+    if (res.status === 202 && (res.body as { state?: unknown } | null)?.state === 'processing') {
+      for (let i = 0; i < COMMIT_POLLS; i++) {
+        await this.sleep(COMMIT_POLL_MS);
+        const list = await this.list(characterId, true).catch(() => null);
+        const row = list?.avatars.find((a) => a.source === 'upload' && a.kind === kind && a.sha256 === sha) ?? null;
+        if (row) return { avatar: { id: row.id, rev: row.rev, moderation: row.moderation } };
+      }
+      throw new OpError('processing');
+    }
+    throw new OpError(errorOf(res.status, res.body));
   }
 
   /**
@@ -452,8 +512,10 @@ export class AvatarLibraryClient {
       });
       return true;
     }
+    // Past the proxy's deadline: the row is being written in the background.
+    if (res.status === 202) return true;
     const code = errorOf(res.status, res.body);
-    if (code === 'card_changed' || code === 'no_card' || code === 'card_conflict') {
+    if (code === 'card_changed' || code === 'no_card' || code === 'card_conflict' || code === 'busy') {
       this.d.log?.(`[avatars] card row not rebuilt (${code})`);
       return false;
     }
@@ -535,6 +597,7 @@ export class AvatarLibraryClient {
     manifest: AvatarManifest,
     origin: 'user' | 'migration',
   ): Promise<boolean> {
+    const maxZip = list.limits?.max_zip_bytes;
     const zip = await this.d.models.zip(characterId);
     if (!zip) return false;
     const sha = sha256Hex(zip);
@@ -544,11 +607,23 @@ export class AvatarLibraryClient {
     let rev: string | null = existing?.rev ?? null;
     let changed = false;
     if (!existing) {
-      const item = await this.upload(characterId, kind, zip, 'application/zip', {
-        name: manifest.name,
-        origin,
-        makeDefault: origin === 'user',
-      });
+      const refusedKey = refusedUploadKey(characterId);
+      // Refused before: sync never sends the same bytes again. The user
+      // adding the model by hand gets one more try.
+      if (origin === 'migration' && (await this.d.skip.has(refusedKey, sha).catch(() => false))) return false;
+      let item: { id: string; rev: string | null } | null;
+      try {
+        // Over the listed cap: refused here, before any request.
+        if (typeof maxZip === 'number' && zip.byteLength > maxZip) throw new OpError('too_big');
+        item = await this.upload(characterId, kind, zip, 'application/zip', {
+          name: manifest.name,
+          origin,
+          makeDefault: origin === 'user',
+        });
+      } catch (err) {
+        if (err instanceof OpError && REFUSED_CODES.has(err.code)) await this.d.skip.add(refusedKey, sha).catch(() => {});
+        throw err;
+      }
       avatarId = item?.id ?? null;
       rev = item?.rev ?? null;
       changed = true;

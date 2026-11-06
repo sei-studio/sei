@@ -36,6 +36,7 @@ import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path';
 import JSZip from 'jszip';
 import { paths } from '../paths';
+import { avatarImageProblem, MAX_TEXTURE_SIDE, sniffAvatarImage, type ImageProblem } from './avatarImage';
 import type {
   AvatarEmotion,
   AvatarManifest,
@@ -44,9 +45,10 @@ import type {
   AvatarRigSpec,
 } from '../../shared/ipc';
 
-/** Upload cap for the zip itself (a full VTuber model with 4k textures is
- * ~20 MB; 128 MB leaves generous headroom without inviting abuse). */
-export const AVATAR_ZIP_MAX_BYTES = 128 * 1024 * 1024;
+/** Cap for the zip itself (a full VTuber model with 4k textures is ~20 MB).
+ * The same as the avatar library proxy's zip cap, so every model this store
+ * takes can also be uploaded. */
+export const AVATAR_ZIP_MAX_BYTES = 64 * 1024 * 1024;
 /** Cap on total EXTRACTED bytes (zip-bomb guard). */
 export const AVATAR_EXTRACTED_MAX_BYTES = 256 * 1024 * 1024;
 /** Cap on extracted entry count. */
@@ -300,21 +302,11 @@ export function parseRigSpec(raw: unknown): AvatarRigSpec {
 /** Every image path a rig spec references, in declaration order. */
 /**
  * The image types an avatar may hold (261106): PNG, JPEG, WebP by magic
- * bytes. Exactly what the avatar library proxy moderates, so whatever this
- * store holds can be uploaded and checked.
+ * bytes, static and at most MAX_TEXTURE_SIDE px (avatarImage.ts). Exactly
+ * what the avatar library proxy moderates, so whatever this store holds can
+ * be uploaded and checked.
  */
-export function sniffAvatarImage(b: Uint8Array): 'png' | 'jpeg' | 'webp' | null {
-  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'png';
-  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'jpeg';
-  if (
-    b.length >= 12 &&
-    b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
-    b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50
-  ) {
-    return 'webp';
-  }
-  return null;
-}
+export { sniffAvatarImage };
 
 /** Names that look like images (the proxy refuses a zip where one is not a real PNG/JPEG/WebP). */
 const IMAGE_NAME_RE = /\.(png|jpe?g|webp|gif|bmp|tiff?|avif|heic|heif|ico)$/i;
@@ -338,6 +330,14 @@ function rigImageRefs(spec: AvatarRigSpec): string[] {
     if (l.states) refs.push(l.states.open, l.states.closed);
   }
   return refs;
+}
+
+/** Why a referenced image was left out by the image rules, or null. */
+function refusedMessage(problem: ImageProblem | undefined, ref: string): string | null {
+  if (problem === 'animated_image') return `model image is animated (APNG or animated WebP): ${ref}`;
+  if (problem === 'image_too_large') return `model image is larger than ${MAX_TEXTURE_SIDE} px: ${ref}`;
+  if (problem === 'bad_image') return `model image is not a readable PNG, JPEG or WebP: ${ref}`;
+  return null;
 }
 
 /** Replace the avatar dir with the given file set + manifest. Shared tail of
@@ -369,14 +369,16 @@ async function normalizeRigAndWrite(
   characterId: string,
   entryFile: ExtractedFile,
   byRel: Map<string, ExtractedFile>,
+  refused: Map<string, ImageProblem>,
 ): Promise<AvatarManifest> {
   const spec = parseRigSpec(JSON.parse(entryFile.bytes.toString('utf8')));
   const entryDir = entryFile.rel.includes('/')
     ? entryFile.rel.slice(0, entryFile.rel.lastIndexOf('/'))
     : '';
   for (const ref of rigImageRefs(spec)) {
-    const f = byRel.get(resolveRef(entryDir, ref));
-    if (!f) throw new Error(`rig.json references missing image: ${ref}`);
+    const rel = resolveRef(entryDir, ref);
+    const f = byRel.get(rel);
+    if (!f) throw new Error(refusedMessage(refused.get(rel), ref) ?? `rig.json references missing image: ${ref}`);
     if (!sniffAvatarImage(f.bytes)) throw new Error(`rig.json image is not a PNG, JPEG or WebP: ${ref}`);
   }
 
@@ -423,8 +425,22 @@ async function normalizeAndWrite(
   /** Accessory toggles to carry over (the v1→v2 heal path; a fresh import
    * starts clean — a new model's expression names owe it nothing). */
   keepAccessories?: Record<string, boolean>,
+  /** A fresh import applies the image rules (avatarImage.ts); the v1 heal of
+   * a store already on disk does not (it keeps rendering what it had). */
+  imageRules = false,
 ): Promise<AvatarManifest> {
-  const stripped = stripCommonRoot(incoming);
+  const all = stripCommonRoot(incoming);
+  // Animated or oversized images are left out like unsupported ones; a model
+  // that references one fails with that reason.
+  const refused = new Map<string, ImageProblem>();
+  const stripped = imageRules
+    ? all.filter((f) => {
+        if (!sniffAvatarImage(f.bytes)) return true;
+        const problem = avatarImageProblem(f.bytes, MAX_TEXTURE_SIDE);
+        if (problem) refused.set(f.rel, problem);
+        return !problem;
+      })
+    : all;
   const byRel = new Map(stripped.map((f) => [f.rel, f]));
 
   // ── Locate + parse the model3.json ──────────────────────────────────────
@@ -449,7 +465,7 @@ async function normalizeAndWrite(
     const rigEntry = stripped
       .filter((f) => (f.rel.split('/').pop() ?? '') === 'rig.json')
       .sort((a, b) => a.rel.split('/').length - b.rel.split('/').length)[0];
-    if (rigEntry) return normalizeRigAndWrite(characterId, rigEntry, byRel);
+    if (rigEntry) return normalizeRigAndWrite(characterId, rigEntry, byRel, refused);
     throw new Error('no .model3.json with a Moc reference (and no rig.json) found in the zip');
   }
   const entryDir = entryFile.rel.includes('/')
@@ -462,8 +478,9 @@ async function normalizeAndWrite(
   if (!byRel.has(mocRel)) throw new Error(`model references missing moc3 file: ${refs.Moc}`);
   if (refs.Textures !== undefined && !Array.isArray(refs.Textures)) throw new Error('model Textures is not a list');
   for (const tex of refs.Textures ?? []) {
-    const f = typeof tex === 'string' ? byRel.get(resolveRef(entryDir, tex)) : undefined;
-    if (!f) throw new Error(`model references missing texture: ${String(tex)}`);
+    const rel = typeof tex === 'string' ? resolveRef(entryDir, tex) : '';
+    const f = rel ? byRel.get(rel) : undefined;
+    if (!f) throw new Error(refusedMessage(refused.get(rel), String(tex)) ?? `model references missing texture: ${String(tex)}`);
     if (!sniffAvatarImage(f.bytes)) throw new Error(`model texture is not a PNG, JPEG or WebP: ${tex}`);
   }
 
@@ -603,7 +620,7 @@ export async function importAvatarZip(characterId: string, zip: Buffer): Promise
   }
   if (files.length === 0) throw new Error('avatar zip is empty');
 
-  return withLock(characterId, () => normalizeAndWrite(characterId, files));
+  return withLock(characterId, () => normalizeAndWrite(characterId, files, undefined, true));
 }
 
 /** An entry's uncompressed size as its central directory declares it. */

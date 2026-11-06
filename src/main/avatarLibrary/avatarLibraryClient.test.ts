@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import type { AvatarManifest } from '../../shared/ipc';
-import { isLastPublicLock, effectiveAvatar, parseAvatarList, publicCount } from '../../shared/avatarLibrary';
-import { AvatarLibraryClient, AvatarLibraryNoSession, errorOf, imageMime, sha256Hex, type AvatarLibraryDeps } from './avatarLibraryClient';
+import { isLastPublicDeleteBlocked, isLastPublicLock, effectiveAvatar, parseAvatarList, publicCount } from '../../shared/avatarLibrary';
+import {
+  AvatarLibraryClient,
+  AvatarLibraryNoSession,
+  COMMIT_BUSY_RETRY_MS,
+  COMMIT_POLL_MS,
+  COMMIT_POLLS,
+  errorOf,
+  imageMime,
+  refusedUploadKey,
+  sha256Hex,
+  type AvatarLibraryDeps,
+} from './avatarLibraryClient';
 
 const CHAR = '0b9d3f9e-1111-4222-8333-444455556666';
 const A_CARD = '11111111-1111-4111-8111-111111111111';
@@ -10,6 +21,28 @@ const A_ADULT = '33333333-3333-4333-8333-333333333333';
 const NEW_ID = '44444444-4444-4444-8444-444444444444';
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+
+/** Header-only PNG (w x h), optionally an APNG: what the client's image rules read. */
+function pngHeader(w: number, h: number, apng = false): Uint8Array {
+  const chunk = (type: string, data: Buffer) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length, 0);
+    return Buffer.concat([len, Buffer.from(type, 'latin1'), data, Buffer.alloc(4)]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  return new Uint8Array(
+    Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      chunk('IHDR', ihdr),
+      ...(apng ? [chunk('acTL', Buffer.from([0, 0, 0, 2, 0, 0, 0, 0]))] : []),
+      chunk('IEND', Buffer.alloc(0)),
+    ]),
+  );
+}
 const ZIP = new Uint8Array([0x50, 0x4b, 3, 4, 9, 9, 9]);
 
 function item(id: string, over: Record<string, unknown> = {}) {
@@ -54,6 +87,7 @@ interface H {
   effectiveChanges: string[];
   online: { v: boolean };
   skip: Map<string, string>;
+  sleeps: number[];
 }
 
 function harness(): H {
@@ -69,6 +103,7 @@ function harness(): H {
     effectiveChanges: [],
     online: { v: true },
     skip: new Map(),
+    sleeps: [],
   } as unknown as H;
   const deps: AvatarLibraryDeps = {
     api: async (method, path, body) => {
@@ -116,6 +151,7 @@ function harness(): H {
     onModel: () => {},
     onEffectiveChanged: (id) => h.effectiveChanges.push(id),
     now: () => 1_000_000,
+    sleep: async (ms) => void h.sleeps.push(ms),
   };
   h.client = new AvatarLibraryClient(deps);
   return h;
@@ -176,7 +212,28 @@ describe('shared avatar library helpers', () => {
     expect(isLastPublicLock(priv, priv.avatars[0])).toBe(false);
   });
 
+  it('blocks deleting the last public avatar only while another non-flagged one would remain (the SQL rule)', () => {
+    // Only avatar: deleting it is allowed (her card image shows the old way); the lock still holds.
+    const only = parseAvatarList(listBody({}, [item(A_MODEL, { kind: 'live2d' })]))!;
+    expect(isLastPublicLock(only, only.avatars[0])).toBe(true);
+    expect(isLastPublicDeleteBlocked(only, only.avatars[0])).toBe(false);
+    // Only flagged rows would remain: allowed too.
+    const flaggedLeft = parseAvatarList(listBody({}, [item(A_MODEL), item(A_ADULT, { is_public: false, moderation: 'flagged' })]))!;
+    expect(isLastPublicDeleteBlocked(flaggedLeft, flaggedLeft.avatars[0])).toBe(false);
+    // A private non-flagged row would remain: blocked.
+    const privLeft = parseAvatarList(listBody({}, [item(A_MODEL), item(A_ADULT, { is_public: false })]))!;
+    expect(isLastPublicDeleteBlocked(privLeft, privLeft.avatars[0])).toBe(true);
+    expect(isLastPublicDeleteBlocked(privLeft, privLeft.avatars[1])).toBe(false);
+    // Two public rows, or a private character: never blocked.
+    const two = parseAvatarList(listBody({}, [item(A_MODEL), item(A_ADULT)]))!;
+    expect(isLastPublicDeleteBlocked(two, two.avatars[0])).toBe(false);
+    const priv = parseAvatarList(listBody({ character_public: false }, [item(A_MODEL), item(A_ADULT, { is_public: false })]))!;
+    expect(isLastPublicDeleteBlocked(priv, priv.avatars[0])).toBe(false);
+  });
+
   it('maps proxy errors to the closed set and sniffs images', () => {
+    expect(errorOf(503, { error: 'busy' })).toBe('busy');
+    expect(errorOf(400, { error: 'missing_upload' })).toBe('upload_required');
     expect(errorOf(409, { error: 'last_public' })).toBe('last_public');
     expect(errorOf(413, { error: 'quota' })).toBe('quota');
     expect(errorOf(401, null)).toBe('signed_out');
@@ -479,5 +536,141 @@ describe('AvatarLibraryClient', () => {
     expect(await h.client.setFlags(CHAR, A_CARD, { is_public: true })).toEqual({ ok: false, error: 'offline' });
     expect(await h.client.addPortrait(CHAR, ZIP, null)).toEqual({ ok: false, error: 'bad_content' });
     expect(h.calls).toEqual([]);
+  });
+  // ── round 3: upload limits, refusals, busy, processing ──────────────────────
+
+  function uploadRoutes(h: H, avatars: () => unknown[], over: Record<string, unknown> = {}) {
+    h.routes.set(`GET /avatars/v1/${CHAR}`, () => ({ status: 200, body: listBody(over, avatars()) }));
+    h.routes.set(`POST /avatars/v1/${CHAR}/upload`, () => ({
+      status: 200,
+      body: { state: 'upload', upload: { url: 'https://x.supabase.co/upload/sign/s', path: 'staging/u/1' } },
+    }));
+  }
+
+  it('a local model the server refused is never sent again by sync (per character + zip hash)', async () => {
+    const h = harness();
+    h.local.manifest = manifest();
+    uploadRoutes(h, () => []);
+    h.routes.set(`POST /avatars/v1/${CHAR}/commit`, () => ({ status: 400, body: { error: 'bad_content' } }));
+    await h.client.sync(CHAR);
+    expect(h.skip.get(refusedUploadKey(CHAR))).toBe(sha256Hex(ZIP));
+    expect(h.puts).toHaveLength(1);
+    const asked = h.calls.length;
+    await h.client.sync(CHAR);
+    // Only the list again: no upload ask, no PUT, no commit.
+    expect(h.calls.slice(asked).map((c) => `${c.method} ${c.path}`)).toEqual([`GET /avatars/v1/${CHAR}`]);
+    expect(h.puts).toHaveLength(1);
+    // The user adding it by hand gets one more try.
+    await h.client.addLocalModel(CHAR);
+    expect(h.calls.filter((c) => c.path.endsWith('/commit'))).toHaveLength(2);
+  });
+
+  it('a busy, rate-limited or quota answer is not remembered as a refusal', async () => {
+    for (const [status, error] of [[503, 'busy'], [429, 'staging_quota'], [413, 'quota']] as const) {
+      const h = harness();
+      h.local.manifest = manifest();
+      uploadRoutes(h, () => []);
+      h.routes.set(`POST /avatars/v1/${CHAR}/commit`, () => ({ status, body: { error } }));
+      if (error === 'staging_quota') h.routes.set(`POST /avatars/v1/${CHAR}/upload`, () => ({ status, body: { error } }));
+      await h.client.sync(CHAR);
+      expect(h.skip.has(refusedUploadKey(CHAR))).toBe(false);
+    }
+  });
+
+  it('a model over the listed zip cap is refused before any upload request', async () => {
+    const h = harness();
+    h.local.manifest = manifest();
+    uploadRoutes(h, () => [], { limits: { max_per_character: 8, max_image_bytes: 1000, max_zip_bytes: ZIP.byteLength - 1 } });
+    expect(await h.client.addLocalModel(CHAR)).toEqual({ ok: false, error: 'too_big' });
+    expect(h.calls.some((c) => c.path.endsWith('/upload') || c.path.endsWith('/commit'))).toBe(false);
+    expect(h.skip.get(refusedUploadKey(CHAR))).toBe(sha256Hex(ZIP));
+  });
+
+  it('portraits: animated or over 4096 px or over the listed byte cap are refused before anything goes up', async () => {
+    const h = harness();
+    uploadRoutes(h, () => [], { limits: { max_per_character: 8, max_image_bytes: 200, max_zip_bytes: 1000 } });
+    await h.client.view(CHAR);
+    expect(await h.client.addPortrait(CHAR, pngHeader(8, 8, true), null)).toEqual({ ok: false, error: 'bad_content' });
+    expect(await h.client.addPortrait(CHAR, pngHeader(4097, 8), null)).toEqual({ ok: false, error: 'too_big' });
+    expect(await h.client.addPortrait(CHAR, new Uint8Array([...pngHeader(8, 8), ...new Uint8Array(300)]), null)).toEqual({ ok: false, error: 'too_big' });
+    expect(await h.client.addPortrait(CHAR, PNG, null)).toEqual({ ok: false, error: 'bad_content' });
+    expect(h.calls.some((c) => c.method === 'POST')).toBe(false);
+  });
+
+  it('503 busy on commit is retried a little later; still busy surfaces busy', async () => {
+    const h = harness();
+    uploadRoutes(h, () => []);
+    let n = 0;
+    h.routes.set(`POST /avatars/v1/${CHAR}/commit`, () =>
+      ++n < 3 ? { status: 503, body: { error: 'busy' } } : { status: 200, body: { avatar: { id: NEW_ID, rev: 'ab'.repeat(16) } } },
+    );
+    expect((await h.client.addPortrait(CHAR, pngHeader(8, 8), 'x')).ok).toBe(true);
+    expect(n).toBe(3);
+    expect(h.sleeps).toEqual([...COMMIT_BUSY_RETRY_MS]);
+    // The same staging upload each time.
+    const bodies = h.calls.filter((c) => c.path.endsWith('/commit')).map((c) => (c.body as { staging_path?: string }).staging_path);
+    expect(bodies).toEqual(['staging/u/1', 'staging/u/1', 'staging/u/1']);
+
+    const h2 = harness();
+    uploadRoutes(h2, () => []);
+    h2.routes.set(`POST /avatars/v1/${CHAR}/commit`, () => ({ status: 503, body: { error: 'busy' } }));
+    expect(await h2.client.addPortrait(CHAR, pngHeader(8, 8), null)).toEqual({ ok: false, error: 'busy' });
+    expect(h2.calls.filter((c) => c.path.endsWith('/commit'))).toHaveLength(1 + COMMIT_BUSY_RETRY_MS.length);
+  });
+
+  it('202 processing: looks for the row by hash in the owner list, then links the model', async () => {
+    const h = harness();
+    h.local.manifest = manifest();
+    let avatars: unknown[] = [];
+    let polls = 0;
+    h.routes.set(`GET /avatars/v1/${CHAR}`, () => {
+      polls++;
+      return { status: 200, body: listBody({}, avatars) };
+    });
+    h.routes.set(`POST /avatars/v1/${CHAR}/upload`, () => ({
+      status: 200,
+      body: { state: 'upload', upload: { url: 'https://x.supabase.co/upload/sign/s', path: 'staging/u/1' } },
+    }));
+    h.routes.set(`POST /avatars/v1/${CHAR}/commit`, () => {
+      // The background commit lands two polls later.
+      const at = polls + 2;
+      h.routes.set(`GET /avatars/v1/${CHAR}`, () => {
+        polls++;
+        if (polls >= at) avatars = [item(NEW_ID, { kind: 'live2d', sha256: sha256Hex(ZIP), rev: 'cd'.repeat(16), is_public: false })];
+        return { status: 200, body: listBody({}, avatars) };
+      });
+      return { status: 202, body: { state: 'processing' } };
+    });
+    const r = await h.client.addLocalModel(CHAR);
+    expect(r.ok).toBe(true);
+    expect(h.sleeps).toEqual([COMMIT_POLL_MS, COMMIT_POLL_MS]);
+    expect(h.local.manifest?.library).toEqual({ avatarId: NEW_ID, rev: 'cd'.repeat(16) });
+  });
+
+  it('202 processing that never shows up answers processing (nothing remembered as refused)', async () => {
+    const h = harness();
+    h.local.manifest = manifest();
+    uploadRoutes(h, () => []);
+    h.routes.set(`POST /avatars/v1/${CHAR}/commit`, () => ({ status: 202, body: { state: 'processing' } }));
+    expect(await h.client.addLocalModel(CHAR)).toEqual({ ok: false, error: 'processing' });
+    expect(h.sleeps).toHaveLength(COMMIT_POLLS);
+    expect(h.skip.size).toBe(0);
+    expect(h.events.find((e) => e.event === 'avatar_library_failed')?.props).toEqual({ op: 'upload', reason: 'processing' });
+  });
+
+  it('card row: 202 processing counts as rebuilt, busy is retried on the next sync quietly', async () => {
+    const h = harness();
+    h.card.v = { bytes: PNG, mime: 'image/png' };
+    h.routes.set(`GET /avatars/v1/${CHAR}`, () => ({ status: 200, body: listBody({}, []) }));
+    h.routes.set(`POST /avatars/v1/${CHAR}/commit`, () => ({ status: 202, body: { state: 'processing' } }));
+    await h.client.sync(CHAR);
+    // Rebuilt: the list is read again.
+    expect(h.calls.filter((c) => c.method === 'GET')).toHaveLength(2);
+    const h2 = harness();
+    h2.card.v = { bytes: PNG, mime: 'image/png' };
+    h2.routes.set(`GET /avatars/v1/${CHAR}`, () => ({ status: 200, body: listBody({}, []) }));
+    h2.routes.set(`POST /avatars/v1/${CHAR}/commit`, () => ({ status: 503, body: { error: 'busy' } }));
+    expect((await h2.client.sync(CHAR)).state).toBe('ready');
+    expect(h2.events.filter((e) => e.event === 'avatar_library_failed')).toEqual([]);
   });
 });

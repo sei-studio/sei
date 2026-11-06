@@ -5,8 +5,9 @@
  * default pick. Design: docs/agents/avatar-library.md.
  *
  * The public rule (a public character keeps at least one public avatar) is
- * enforced by the server; here the last public lock is disabled with a
- * tooltip so the user never hits the refusal. Opening the block runs the
+ * enforced by the server; here the last public lock (and its delete, while
+ * another avatar would remain) is disabled with a tooltip so the user never
+ * hits the refusal. Opening the block runs the
  * owner sync (card image and a local model not uploaded yet go up).
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -14,6 +15,7 @@ import { useT } from '../../lib/i18n';
 import { Button } from '../Button';
 import { PlusIcon, StarIcon, TrashIcon } from '../icons';
 import {
+  isLastPublicDeleteBlocked,
   isLastPublicLock,
   type AvatarItem,
   type AvatarLibraryError,
@@ -54,6 +56,8 @@ const ERROR_TEXT: Partial<Record<AvatarLibraryError, string>> = {
   import_failed: 'That model could not be read. Check it is a Live2D or rig zip.',
   rate_limited: 'Too many changes at once. Try again in a minute.',
   staging_quota: 'You uploaded a lot in the last hour. Try again later.',
+  busy: 'The server is busy. Try again in a minute.',
+  processing: 'Still checking that file. It will show up here soon.',
   upload_required: 'Something went wrong with avatars. Try again.',
 };
 
@@ -139,6 +143,8 @@ export function AvatarLibraryTiles({ characterId, characterShared }: AvatarLibra
         {list.avatars.map((a) => {
           const isDefault = a.id === list.default_id;
           const lastPublic = isLastPublicLock(list, a);
+          const keepForPublic = isLastPublicDeleteBlocked(list, a);
+          const delLabel = keepForPublic ? t('A public companion needs at least one public avatar.') : t('Delete avatar');
           const lockLabel = lastPublic
             ? t('A public companion needs at least one public avatar.')
             : a.is_public
@@ -165,11 +171,15 @@ export function AvatarLibraryTiles({ characterId, characterShared }: AvatarLibra
                   <button
                     type="button"
                     className={styles.del}
-                    aria-label={t('Delete avatar')}
-                    data-tip={t('Delete avatar')}
+                    aria-label={delLabel}
+                    data-tip={delLabel}
                     data-tip-edge="right"
+                    aria-disabled={keepForPublic || busy !== null}
                     disabled={busy !== null}
-                    onClick={() => void run(a.id, () => window.sei.avatarLibraryRemove(characterId, a.id))}
+                    onClick={() => {
+                      if (keepForPublic || busy !== null) return;
+                      void run(a.id, () => window.sei.avatarLibraryRemove(characterId, a.id));
+                    }}
                   >
                     <TrashIcon size={12} />
                   </button>

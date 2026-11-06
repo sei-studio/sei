@@ -2352,6 +2352,8 @@ export const JA: Record<string, string> = {
   "That model could not be read. Check it is a Live2D or rig zip.": "このモデルを読み込めませんでした。Live2Dまたはリグのzipか確認してください。",
   "Too many changes at once. Try again in a minute.": "変更が多すぎます。1分ほどしてからもう一度お試しください。",
   "You uploaded a lot in the last hour. Try again later.": "この1時間のアップロードが多すぎます。しばらくしてからもう一度お試しください。",
+  "The server is busy. Try again in a minute.": "サーバーが混み合っています。1分ほどしてからもう一度お試しください。",
+  "Still checking that file. It will show up here soon.": "ファイルを確認中です。まもなくここに表示されます。",
   "Something went wrong with avatars. Try again.": "アバターで問題が起きました。もう一度お試しください。",
   "Pick which avatar plays for you.": "あなたの画面で使うアバターを選べます。",
   "Default": "デフォルト",

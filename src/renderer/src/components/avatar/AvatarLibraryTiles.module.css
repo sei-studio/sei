@@ -117,8 +117,17 @@
   opacity: 1;
 }
 
-.del:hover:not(:disabled) {
+.del:hover:not(:disabled):not([aria-disabled='true']) {
   color: var(--red);
+}
+
+/* The last public avatar while another would remain: kept for the public rule. */
+.del[aria-disabled='true'] {
+  cursor: default;
+}
+
+.del[aria-disabled='true'] > svg {
+  opacity: 0.55;
 }
 
 .bar {

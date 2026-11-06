@@ -93,6 +93,10 @@ export const AVATAR_LIBRARY_ERRORS = [
   'bad_kind',
   'import_failed',
   'rate_limited',
+  /** The proxy is at its commit limit (503 busy) after the client's own retries. */
+  'busy',
+  /** The commit is still being checked on the server (202) and did not show up in time. */
+  'processing',
   'network',
   'server',
 ] as const;
@@ -180,11 +184,24 @@ export function publicCount(list: AvatarLibraryList): number {
 
 /**
  * The lock of this avatar cannot be opened to private: the character is
- * public and this is its last public avatar (the server enforces the same).
- * A flagged row never counts, so its lock is never held.
+ * public and this is its last public avatar (the server enforces the same,
+ * avatar_set_flags). A flagged row never counts, so its lock is never held.
  */
 export function isLastPublicLock(list: AvatarLibraryList, item: AvatarItem): boolean {
   return list.character_public && item.is_public && item.moderation !== 'flagged' && publicCount(list) <= 1;
+}
+
+/**
+ * This avatar cannot be deleted for the public rule: it is the last public
+ * avatar of a public character AND another non-flagged avatar would remain
+ * (the same test as the server's avatar_delete and its guard trigger).
+ * Deleting it when nothing else, or only flagged rows, would remain is
+ * allowed: the character then shows her card image the old way.
+ */
+export function isLastPublicDeleteBlocked(list: AvatarLibraryList, item: AvatarItem): boolean {
+  return (
+    isLastPublicLock(list, item) && list.avatars.some((a) => a.id !== item.id && a.moderation !== 'flagged')
+  );
 }
 
 /** Megabytes rounded to one decimal, for analytics (never exact sizes). */

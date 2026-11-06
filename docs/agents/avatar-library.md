@@ -96,13 +96,23 @@ body:
    row the caller can already read holds those bytes (their own, or a public
    clean upload of a character public to them); knowing a hash is not
    enough. Otherwise, within an hourly per-user staging cap (429
-   `staging_quota`), a signed upload URL to `staging/<user>/<uuid>`
-   (`{state:'upload', upload:{url, path, expires_in}}`).
+   `staging_quota`; every link issued counts, used or not), a signed upload
+   URL to `staging/<user>/<uuid>`
+   (`{state:'upload', upload:{url, path, expires_in}}`). Before asking, the
+   app checks the listed `limits` (`max_image_bytes`, `max_zip_bytes`) and the
+   image rules below, so a file the proxy would refuse never goes up.
 2. The client PUTs the bytes, then `POST /avatars/v1/:character_id/commit
-   {kind, sha256, staging_path?, name?, make_default?}` (the app allows it
-   180 s). The proxy downloads the staging object, checks the sha256 and the
-   size, checks the content, moderates every image, writes it to its content
-   path and calls `avatar_commit`. A zip is checked the way the app imports
+   {kind, sha256, staging_path?, name?, make_default?}`. The proxy streams
+   the staging object (at most the size its link declared), checks the
+   sha256 and the size, checks the content, moderates a small copy of every
+   image, writes it to its content path and calls `avatar_commit`. It checks
+   one commit at a time per machine: a full queue answers 503 `busy`, which
+   the app retries twice (5 s, 15 s) before showing "The server is busy". It
+   answers within 85 s (the app waits 95 s): past that it replies 202
+   `{state:'processing'}` and finishes in the background, and the app looks
+   for the row by its hash in the owner list (6 times, 10 s apart), else
+   shows "Still checking that file". An upload becomes the default only with
+   `make_default`. A zip is checked the way the app imports
    it: every entry inflated at exactly its declared size; every PNG/JPEG/WebP
    entry is an image and is moderated; a GIF/TIFF/BMP/ICO/AVIF entry or an
    image-named entry that is not a real image refuses it; live2d needs the
@@ -110,6 +120,13 @@ body:
    must exist and be an image; a rig needs a valid `rig.json` whose layer
    `src` and `states` images all exist and are images. A zip with no image
    is held for review.
+3. Image rules (proxy `src/avatars/image.ts`, app
+   `src/main/avatar/avatarImage.ts`, read from the header): no APNG (an
+   `acTL`/`fcTL`/`fdAT` chunk) and no animated WebP (the VP8X flag or an
+   `ANIM`/`ANMF` chunk), since moderation sees one frame; at most 4096 px a
+   side for a portrait and 8192 px for an image in a zip. The local import
+   applies the same rules: a texture or rig layer that breaks them refuses
+   the model, any other such image is left out.
 
 ## The public rule
 
@@ -126,8 +143,11 @@ keeps at least one public avatar. Enforced three times:
 - In the RPCs: `avatar_set_flags` and `avatar_delete` check first and answer
   `last_public` (HTTP 409 `{error:'last_public'}`) instead of raising.
 - In the UI: on a public character the lock of the last public avatar is
-  disabled, with the tooltip "A public character needs at least one public
-  avatar."
+  disabled, and so is its delete while another non-flagged avatar would
+  remain (`isLastPublicDeleteBlocked`, the same test as the SQL), with the
+  tooltip "A public companion needs at least one public avatar." Deleting
+  the only avatar (or the last one besides flagged rows) is allowed: the
+  character then shows her card image the old way.
 
 A character with no rows yet (everything made before this feature, until its
 owner's app syncs) satisfies the rule trivially: its card image is already
@@ -171,7 +191,7 @@ delete 60, order 60.
 |---|---|---|
 | `GET /avatars/v1/:character_id` | | `{character_id, is_owner, character_public, default_id, avatars[], limits}` |
 | `POST /avatars/v1/:character_id/upload` | `{kind, sha256, bytes, mime}` | `{state:'exists'}` or `{state:'upload', upload}`; 400 `bad_kind`/`too_big`/`bad_request`, 403, 404, 409 `too_many`/`quota` |
-| `POST /avatars/v1/:character_id/commit` | `{kind, sha256, staging_path?, name?, source?, make_default?}` | `{avatar, created}`; 400 `hash_mismatch`/`bad_content`/`missing_upload`, 403, 409 `too_many`/`quota` |
+| `POST /avatars/v1/:character_id/commit` | `{kind, sha256, staging_path?, name?, source?, make_default?}` | `{avatar, created}`; 202 `{state:'processing'}`; 400 `hash_mismatch`/`bad_content`/`missing_upload`/`too_big`, 403, 409 `too_many`/`quota`, 503 `busy` |
 | `PATCH /avatars/v1/:character_id/:avatar_id` | `{is_public?, is_default?: true}` | the full list body; 409 `last_public`/`not_shareable` |
 | `DELETE /avatars/v1/:character_id/:avatar_id` | | the full list body; 409 `last_public`/`card_avatar` |
 | `POST /avatars/v1/:character_id/order` | `{ids[]}` | the full list body |
@@ -231,7 +251,11 @@ operator steps are in the proxy repo (`sei-proxy/docs/avatar-library.md`).
   import, or that the user removed on this device (even when the owner's
   delete was refused), goes on a per-profile skip list
   (`avatar-library-skip.json`) and is not downloaded again until its `rev`
-  changes or the user picks it. `avatar_prefs[id].avatar_id` is written by
+  changes or the user picks it. The same list remembers a local model the
+  server refused (`too_big`, `bad_content`, `bad_kind`) under
+  `upload:<character_id>` with its zip sha256, so sync never uploads those
+  bytes again; adding the model by hand tries once more. The local store and
+  the download take zips up to 64 MB, the proxy's cap. `avatar_prefs[id].avatar_id` is written by
   main only; a renderer config save keeps the value on disk. A `portrait` effective avatar asks Anima for that avatar's face set;
   a library-linked local model is then cleared so it does not shadow the face
   set (it is still on the server).
@@ -280,7 +304,7 @@ character id; never a file name, URL or model name):
 | `avatar_visibility_changed` | a lock was toggled | kind, to `public`/`private`, character_public, public_count |
 | `avatar_default_changed` | the owner picked another default, or a viewer picked one | kind, by `owner`/`viewer`, from_kind |
 | `avatar_downloaded_shared` | a non-owner's app downloaded a public model | kind, mb, ms |
-| `avatar_library_failed` | any step failed | op `list`/`upload`/`commit`/`flags`/`delete`/`download`/`sync`, reason (closed set: `offline`, `signed_out`, `http_4xx` code, `too_big`, `too_many`, `quota`, `last_public`, `hash_mismatch`, `bad_content`, `import_failed`, `network`, `server`) |
+| `avatar_library_failed` | any step failed | op `list`/`upload`/`commit`/`flags`/`delete`/`download`/`sync`, reason (closed set: `offline`, `signed_out`, `http_4xx` code, `too_big`, `too_many`, `quota`, `last_public`, `hash_mismatch`, `bad_content`, `import_failed`, `busy`, `processing`, `network`, `server`) |
 
 ## Deploy order
 

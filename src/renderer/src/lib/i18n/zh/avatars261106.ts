@@ -27,6 +27,8 @@ export const ZH_AVATARS_261106: Record<string, string> = {
   "That model could not be read. Check it is a Live2D or rig zip.": "无法读取这个模型。请确认它是 Live2D 或绑骨模型的 zip 文件。",
   "Too many changes at once. Try again in a minute.": "操作太频繁了。请一分钟后再试。",
   "You uploaded a lot in the last hour. Try again later.": "过去一小时上传太多了。请稍后再试。",
+  "The server is busy. Try again in a minute.": "服务器正忙。请一分钟后再试。",
+  "Still checking that file. It will show up here soon.": "还在检查这个文件，稍后就会出现在这里。",
   "Something went wrong with avatars. Try again.": "形象出了点问题。请再试一次。",
   "Pick which avatar plays for you.": "选择你这边显示哪个形象。",
   "Default": "默认",

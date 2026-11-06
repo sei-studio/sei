@@ -24,7 +24,8 @@ import { paths } from '../paths';
 import { AvatarLibraryClient, AvatarLibraryNoSession, imageMime, type SkipList } from './avatarLibraryClient';
 
 const CARD_MAX_BYTES = 10 * 1024 * 1024;
-const COMMIT_TIMEOUT_MS = 180_000;
+/** The proxy answers a commit within 85 s (202 processing past that; Cloudflare cuts at 100 s). */
+const COMMIT_TIMEOUT_MS = 95_000;
 
 function log(line: string): void {
   console.log(line);
@@ -105,7 +106,7 @@ function fileSkipList(): SkipList {
 }
 
 export const avatarLibrary = new AvatarLibraryClient({
-  // A commit downloads the upload, inflates every zip entry and moderates every image: give it time.
+  // A commit downloads the upload, inflates every zip entry and moderates every image: give it the proxy's deadline.
   api: (method, route, body) =>
     proxyJson(method, route, body, () => new AvatarLibraryNoSession(), route.endsWith('/commit') ? COMMIT_TIMEOUT_MS : undefined),
   online: () => {
