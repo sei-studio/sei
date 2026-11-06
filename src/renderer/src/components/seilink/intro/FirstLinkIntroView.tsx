@@ -9,7 +9,10 @@
  * (animaLinkSource), the harness's is simulated and known up front. Every
  * frame comes from computeFrame(introTimes(planLink(log)), t, ...): a rAF loop
  * writes it to the DOM through refs (no React render per frame) and draws
- * the light and star canvases (introFx.ts).
+ * the light and star canvases (introFx.ts). The lines are centred and type
+ * in word by word, their ellipsis cycling as dots (lib/seilink/typing.ts,
+ * LineParts below); screen readers get each whole line once from a hidden
+ * live region.
  *
  * What it ends on (`end`): the plain background she spawns on (`plain_dark` /
  * `plain_light`, the OS theme, PLAIN_COLOURS: the same colour the wallpaper
@@ -57,6 +60,7 @@ import {
   type LinkLog,
   type LinkSource,
 } from '../../../lib/seilink/worldLink';
+import { typedAt, type Typed } from '../../../lib/seilink/typing';
 import { captionTop, computeFrame, dayInk, revealMask, roomBehind, type Box, type CaptionId, type IntroFrame } from './introFrame';
 import { FIELD_SCALE, STAR_SCALE, drawBack, drawFront, drawStars, grainUrl, herCentre, voidGradient } from './introFx';
 import { PLAIN_COLOURS, plainTone, type PlainTone } from '../../../lib/seilink/plainTone';
@@ -146,11 +150,12 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
   const roomRef = useRef<HTMLDivElement>(null);
   const avatarRef = useRef<HTMLDivElement>(null);
   const hudRef = useRef<HTMLDivElement>(null);
-  const brandRef = useRef<HTMLDivElement>(null);
   const captionRef = useRef<HTMLDivElement>(null);
   const skipRef = useRef<HTMLButtonElement>(null);
   const lineRef = useRef<HTMLParagraphElement>(null);
   const prevRef = useRef<HTMLParagraphElement>(null);
+  // The lines on screen are drawn word by word, so screen readers get them from here instead: each whole line once.
+  const liveRef = useRef<HTMLParagraphElement>(null);
 
   // The log: a fixed source's whole log, or what the live source has said so far (ms from the start).
   const logRef = useRef<LinkLog>(source.fixed ?? emptyLog());
@@ -159,7 +164,7 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
   const finishedRef = useRef(false);
   const reportedRef = useRef(false);
   const failedRef = useRef(false);
-  const lastTextRef = useRef({ cur: '', prev: '' });
+  const lastTextRef = useRef({ live: '' });
   const cb = useRef(props);
   cb.current = props;
   // A ref: the stage answers after the clock started, and the clock must not restart for it.
@@ -221,9 +226,8 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
         mask = revealMask(f, { x: centre.x - (lr.left - o.left), y: centre.y - (lr.top - o.top) });
       }
       set(roomEl, '--fl-mask', mask);
-      set(roomEl, '--fl-flood', f.room.flood.toFixed(3));
-      // The grain dithers the dark gradients and the glow on her; it goes as the light settles and the glow fades, so the last frame is the plain colour exactly.
-      const grain = Math.max(f.end === 'room' ? 1 - Math.min(1, f.room.reveal) : 1 - f.room.opacity, f.linkGlow);
+      // The grain dithers the dark gradients; it goes as her place comes in (under the solid), so the last frame is the plain colour exactly.
+      const grain = 1 - f.room.opacity;
       set(grainRef.current, 'opacity', Math.max(0, grain).toFixed(3));
       set(avatarRef.current, 'opacity', f.avatar.opacity.toFixed(3));
       set(avatarRef.current, 'filter', f.avatar.filter);
@@ -232,22 +236,21 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
       set(solidRef.current, 'opacity', f.solid.toFixed(3));
       set(solidRef.current, 'display', f.solid > 0.0005 ? 'block' : 'none');
 
-      set(brandRef.current, 'opacity', f.brand.toFixed(3));
-
-      // Captions: one line at a time in the same place, the new one fading up as the last one fades out.
+      // Captions: one line at a time in the same place. The new one types in
+      // word by word (its ellipsis turning into cycling dots) as the last one
+      // fades out with its words and dots as they were; under reduced motion
+      // the whole line fades up at once with its own static ellipsis.
       const cur = textFor(f.caption.cur);
-      const prev = textFor(f.caption.prev);
       const last = lastTextRef.current;
-      if (lineRef.current && last.cur !== cur) {
-        lineRef.current.textContent = cur;
-        last.cur = cur;
+      if (liveRef.current && last.live !== cur) {
+        liveRef.current.textContent = cur;
+        last.live = cur;
       }
-      if (prevRef.current && last.prev !== prev) {
-        prevRef.current.textContent = prev;
-        last.prev = prev;
-      }
-      set(lineRef.current, 'opacity', f.caption.curIn.toFixed(3));
-      set(lineRef.current, 'transform', `translateY(${((1 - f.caption.curIn) * 8).toFixed(2)}px)`);
+      paintLine(lineRef.current, typedAt(cur, f.caption.curAge, f.reduced), set);
+      paintLine(prevRef.current, typedAt(textFor(f.caption.prev), f.caption.prevAge, f.reduced), set);
+      const curIn = f.reduced ? f.caption.curIn : 1;
+      set(lineRef.current, 'opacity', curIn.toFixed(3));
+      set(lineRef.current, 'transform', curIn < 1 ? `translateY(${((1 - curIn) * 8).toFixed(2)}px)` : 'none');
       set(prevRef.current, 'opacity', f.caption.prevOut.toFixed(3));
       set(prevRef.current, 'transform', `translateY(${((f.caption.prevOut - 1) * 6).toFixed(2)}px)`);
 
@@ -258,18 +261,16 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
       const cap = captionRef.current;
       const lineEl = lineRef.current;
       if (cap && lineEl) {
-        const top = captionTop(f.H, cap.offsetHeight, her);
+        const top = captionTop(f.H, cap.offsetHeight);
         const y = top + lineEl.offsetTop + lineEl.offsetHeight / 2;
         const half = Math.min(cap.offsetWidth, Math.max(lineEl.offsetWidth, prevRef.current?.offsetWidth ?? 0) + 40) / 2;
         const behind = Math.min(roomBehind(f, centre, { x: f.W / 2 - half, y }), roomBehind(f, centre, { x: f.W / 2 + half, y }));
-        const corners = [brandRef.current, skipRef.current].map((el) =>
-          el ? roomBehind(f, centre, { x: el.offsetLeft + el.offsetWidth / 2, y: el.offsetTop + el.offsetHeight / 2 }) : 0,
-        );
+        const sk = skipRef.current;
+        const corner = sk ? roomBehind(f, centre, { x: sk.offsetLeft + sk.offsetWidth / 2, y: sk.offsetTop + sk.offsetHeight / 2 }) : 0;
         set(cap, 'top', `${top.toFixed(1)}px`);
         set(cap, 'opacity', f.caption.block.toFixed(3));
         set(cap, '--fl-day', dayInk(behind).toFixed(3));
-        set(brandRef.current, '--fl-day', dayInk(corners[0]).toFixed(3));
-        set(skipRef.current, '--fl-day', dayInk(corners[1]).toFixed(3));
+        set(sk, '--fl-day', dayInk(corner).toFixed(3));
       }
       if (f.caption.cur === 'fail' && !failedRef.current) {
         failedRef.current = true;
@@ -298,9 +299,9 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
         if (sctx) drawStars(sctx, f);
       }
       const bctx = backRef.current?.getContext('2d');
-      if (bctx) drawBack(bctx, f, her);
+      if (bctx) drawBack(bctx, f);
       const fctx = frontRef.current?.getContext('2d');
-      if (fctx) drawFront(fctx, f, her);
+      if (fctx) drawFront(fctx, f);
     },
     [textFor],
   );
@@ -465,7 +466,6 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
       <canvas ref={starRef} className={styles.fx} aria-hidden="true" />
       <canvas ref={backRef} className={styles.fx} aria-hidden="true" />
       <div ref={roomRef} className={styles.room} aria-hidden="true">
-        {end === 'plain_light' ? <div className={styles.flood} /> : null}
         {end !== 'room' || !room ? <div className={styles.plain} style={{ background: PLAIN_COLOURS[end === 'plain_light' ? 'light' : 'dark'] }} /> : null}
         {room ? (
           <RoomCanvas
@@ -489,16 +489,13 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
       <div ref={solidRef} className={styles.solid} style={{ background: PLAIN_COLOURS[tone] }} aria-hidden="true" />
 
       <div ref={hudRef} className={styles.hud}>
-        <div ref={brandRef} className={styles.brand} aria-hidden="true">
-          <span className={styles.brandDot} />
-          WORLDLINK
-        </div>
         <div ref={captionRef} className={styles.caption}>
           <div className={styles.captionGlow} aria-hidden="true" />
           <div className={styles.lines}>
-            <p ref={prevRef} className={styles.line} aria-hidden="true" />
-            <p ref={lineRef} className={styles.line} aria-live="polite" />
+            <LineParts ref={prevRef} />
+            <LineParts ref={lineRef} />
           </div>
+          <p ref={liveRef} className={styles.live} aria-live="polite" />
         </div>
         <button ref={skipRef} type="button" className={styles.skip} onClick={skip}>
           {failedShown ? t('Close') : t('Skip')}
@@ -517,4 +514,44 @@ function herBox(el: HTMLElement | null, root: HTMLElement | null): Box | null {
   if (r.height < 4) return null;
   const w = Math.max(r.width, r.height * 0.42);
   return { x: r.left - o.left + (r.width - w) / 2, y: r.top - o.top, w, h: r.height };
+}
+
+/**
+ * One caption line: the typed words, the newest word coming up, the words
+ * still to come (there but invisible, so the line keeps its width and its
+ * centre while it types) and three dot places (all three always laid out,
+ * so the cycling dots never move the line). Hidden from screen readers:
+ * `live` reads each whole line once.
+ */
+const LineParts = React.forwardRef<HTMLParagraphElement>(function LineParts(_props, ref) {
+  return (
+    <p ref={ref} className={styles.line} aria-hidden="true">
+      <span />
+      <span />
+      <span className={styles.rest} />
+      <span>
+        <span />
+        <span />
+        <span />
+      </span>
+    </p>
+  );
+});
+
+/** Writes a line's state into its LineParts (text only when it changes). */
+function paintLine(el: HTMLElement | null, s: Typed, set: (el: HTMLElement | null, k: string, v: string) => void): void {
+  if (!el || el.children.length < 4) return;
+  const [typed, fresh, rest, dots] = Array.from(el.children) as HTMLElement[];
+  const text = (node: HTMLElement, v: string): void => {
+    if (node.textContent !== v) node.textContent = v;
+  };
+  text(typed, s.typed);
+  text(fresh, s.fresh);
+  text(rest, s.rest);
+  set(fresh, 'opacity', s.freshIn >= 1 ? '1' : s.freshIn.toFixed(3));
+  const marks = Array.from(dots.children) as HTMLElement[];
+  marks.forEach((m, i) => {
+    text(m, s.dot ?? '');
+    set(m, 'opacity', i < s.dots ? '1' : '0');
+  });
 }

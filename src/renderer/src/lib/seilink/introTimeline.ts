@@ -7,9 +7,8 @@
  * status lines (lib/seilink/worldLink.ts planLink) run one at a time over the
  * eclipse aurora, each a step brighter and faster; with the last line the
  * light builds to its climax and expands until the screen is one solid
- * colour; the success line lands on the solid; only then does the solid fade
- * back into the scene as she comes in, and the light settles into the plain
- * colour (or her room opens). Beats, for analytics: tunnel (the lines), link
+ * colour; the success line lands on the solid, holds and fades out; then she
+ * fades in on the solid (the light never comes back). Beats, for analytics: tunnel (the lines), link
  * (from the success line, she comes in), port (the settle), linked (the
  * picture the wallpaper draws).
  *
@@ -41,9 +40,18 @@ export interface IntroClimax {
   calm: boolean;
 }
 
-/** After the success line (or a skip): the solid holds to `lift`, fades back into the scene by `clear` as she comes in, then the settle. */
+/**
+ * After the success line (or a skip). The light does not come back
+ * (product feedback (261106)): the screen stays the solid colour, the success
+ * line holds and fades out from `textOut` (over TEXT_OUT_MS), then from
+ * `lift` she fades in on the solid, slowly, until `clear` (her place, the
+ * plain colour or her room, was laid in under the solid meanwhile, so what
+ * comes in is exactly what the wallpaper shows). `port` and `linked` are
+ * the analytics beats; the overlay hands off at `fadeAt`..`end`.
+ */
 export interface IntroAfter {
   success: number;
+  textOut: number;
   lift: number;
   clear: number;
   port: number;
@@ -71,9 +79,14 @@ export const OPEN_MS = 1800;
 /** The climax under line 9 (offsets from its start); the success line lands LAST_LINE_MS after it, on the full solid. */
 export const CLIMAX = { build: 500, peak: 1500, dim: 1550, fill: 2700 } as const;
 export const CALM_CLIMAX = { build: 400, fill: 2000 } as const;
-/** From the success line: the solid holds (it is read on the solid), then she comes in and the light settles. */
-export const AFTER = { lift: 1800, clear: 3100, port: 4100, linked: 6500, fadeAt: 8100, end: 8700 } as const;
-export const CALM_AFTER = { lift: 1500, clear: 3000, port: 3300, linked: 5000, fadeAt: 6400, end: 7000 } as const;
+/**
+ * From the success line: it types in and holds about 2 s on the solid, fades
+ * out over TEXT_OUT_MS, then she fades in over about 2.8 s on the solid.
+ */
+export const AFTER = { textOut: 3200, lift: 4400, clear: 7200, port: 7200, linked: 7800, fadeAt: 9400, end: 10000 } as const;
+export const CALM_AFTER = { textOut: 2800, lift: 4000, clear: 6800, port: 6800, linked: 7200, fadeAt: 8600, end: 9200 } as const;
+/** The success line fades out over this long. */
+export const TEXT_OUT_MS = 1000;
 
 /** A skip before the success line crossfades into the solid over this long, then her entrance plays (lift this long after). */
 export const SKIP_SOLID_MS = 1200;
@@ -91,7 +104,7 @@ function afterFrom(s: number, reduced: boolean, lift?: number): IntroAfter {
   const a = reduced ? CALM_AFTER : AFTER;
   const l = lift ?? s + a.lift;
   const d = l - (s + a.lift);
-  return { success: s, lift: l, clear: s + a.clear + d, port: s + a.port + d, linked: s + a.linked + d, fadeAt: s + a.fadeAt + d, end: s + a.end + d };
+  return { success: s, textOut: s + a.textOut + d, lift: l, clear: s + a.clear + d, port: s + a.port + d, linked: s + a.linked + d, fadeAt: s + a.fadeAt + d, end: s + a.end + d };
 }
 
 /**

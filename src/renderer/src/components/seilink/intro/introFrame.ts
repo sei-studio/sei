@@ -13,38 +13,37 @@
  *
  * 261106 v6, the WorldLink status lines (product feedback (261106)): the
  * intro opens out of the solid colour; the nine status lines run one at a
- * time over the light (`times.lines`, lib/seilink/worldLink.ts), each one a
- * step brighter, longer and faster (`field.energy`, eased over STEP_MS, so
- * no step is a jump); under the last line the light builds to the climax
- * and expands until the screen is one solid colour (v5's climax: in light
- * mode it blooms into white, in dark mode it expands and dims into black);
- * the success line lands on the solid; only after it does the solid fade
- * back into the scene as she fades and rises in (link), the light settles
- * into the plain colour or her room opens (port), and the last frame is
- * exactly what the wallpaper shows (linked). She is never there before the
- * success line. A failure keeps the light (calming down) with the failure
- * line and no her. A skip before the success line crossfades into the solid
- * (no peak) and plays her entrance from there.
+ * time, centred, over the light (`times.lines`, lib/seilink/worldLink.ts).
+ * v7 (product feedback (261106)): the aurora is built line by line: each
+ * line adds one wave (`waves`, WAVES of them, spread over the whole height)
+ * and a step of brightness and speed (`field.energy`), both eased over
+ * STEP_MS, so line 1 is one faint wave and line 9 the full aurora. Under
+ * the last line the light builds to the climax and expands until the
+ * screen is one solid colour (in light mode it blooms into white, in dark
+ * mode it expands and dims into black). The success line lands on the
+ * solid and the light never comes back: the line holds about 2 s and fades
+ * out, then she fades in slowly on the solid (the solid fades off her and
+ * her place, which was laid in under it), and the last frame is exactly
+ * what the wallpaper shows (linked). She is never there before the success
+ * line. A failure keeps the light (calming down) with the failure line and
+ * no her. A skip before the success line crossfades into the solid (no
+ * peak) and plays her entrance from there.
  *
  * The solid (`solid`, `tone`) is the theme's colour, the same as the plain
  * background (PLAIN_COLOURS): light mode never goes black, dark mode never
- * goes white. Nothing is a cut: the solid, the plain colour and her room all
- * come and go by smoothstep fades of a second or more, so no frame jumps.
- * Reduced motion: no peak and no bloom, a still field whose brightness
- * steps by crossfades, plain crossfades through the solid.
+ * goes white. Nothing is a cut: every layer comes and goes by smoothstep
+ * fades, so no frame jumps.
+ * Reduced motion: no peak and no build, a still, dimmer aurora with every
+ * wave, plain crossfades through the solid.
  *
- * How it ends (`end`, first-link v3): on the plain background she spawns on
- * (`plain_dark` black, `plain_light` white, with the OS theme): the light
- * expands out from behind her (`bloom`) and the whole screen settles into
- * that colour, no shape or edge (into white it floods up to white; into
- * black it swells a little and dims).
- * `room` (a replay over a room she already has): her room opens in a wide,
- * feathered circle around her as before.
+ * How it ends (`end`): she comes in on her place, the plain background she
+ * spawns on (`plain_dark` black, `plain_light` white, with the OS theme) or
+ * (`room`, a replay over a room she already has) her room, full screen.
  *
  * No grids, scanlines, rings, slices or hard edges: every shape is a gradient.
  */
 import type { IntroBeat, IntroEndOn } from '@shared/seilinkIntroTelemetry';
-import { CAPTION_GAP_MS, CAPTION_IN_MS, CAPTION_OUT_MS, OPEN_MS, beatAt, ease, softIntegral, span, type IntroTimes } from '../../../lib/seilink/introTimeline';
+import { CAPTION_GAP_MS, CAPTION_IN_MS, CAPTION_OUT_MS, OPEN_MS, TEXT_OUT_MS, beatAt, ease, softIntegral, span, type IntroTimes } from '../../../lib/seilink/introTimeline';
 import type { PlainTone } from '../../../lib/seilink/plainTone';
 
 export interface Box {
@@ -70,12 +69,8 @@ export interface IntroFrame {
   field: {
     /** 0..1 how much of it shows. */
     opacity: number;
-    /** 0..1 how far it has gathered in on her (link). */
-    gather: number;
     /** Motion clock, ms (still under reduced motion; runs faster with each line and into the peak). */
     clock: number;
-    /** 0..1 extra brightness (the swell as she forms). */
-    swell: number;
     /** 0..1 the climax: brighter, fuller, wider light, one rise held until the solid covers it (0 under reduced motion). */
     peak: number;
     /** 0..1 past the peak, how far the climax's bloom has expanded toward filling the screen (0 under reduced motion). */
@@ -83,39 +78,37 @@ export interface IntroFrame {
     /** 0..1 how far the status lines have built the light up (a step per line); it calms after the solid or a failure. */
     energy: number;
   };
+  /**
+   * 0..1 each aurora wave (one per status line, WAVES of them): a line adds
+   * its wave, eased in over STEP_MS (all of them, still, under reduced motion).
+   */
+  waves: number[];
   /** 0..1 the starfield and haze (space behind the light). */
   space: number;
   /**
    * 0..1 the solid colour (`tone`) over the whole picture (not the HUD): the
    * intro opens out of it, the climax fills the screen with it, it holds
-   * under the success line, then fades back into the scene as she comes in.
+   * under the success line, then fades off her and her place as she comes in.
    */
   solid: number;
-  /** The ending's light expanding out from behind her (plain endings): `r` 0..1 how far it has spread, `a` 0..1 how bright it is. */
-  bloom: { r: number; a: number };
   /**
    * What she ends on: `opacity` of the plain colour or of her room's canvases
-   * (she is not in them), `reveal` the radius of the soft circle a room opens
-   * in around her, as a fraction of the screen's diagonal (>= 1 = no mask; a
-   * plain ending is never masked). `flood` (white ending only): 0..1 how far
-   * the light has flooded toward white before the colour covers it (a
-   * colour-dodge layer, so the bright light goes white first and the dark
-   * last, instead of the whole picture greying through the crossfade).
+   * (she is not in them; laid in under the full solid after the success
+   * line), `reveal` the radius of the soft circle a room opens in around her,
+   * as a fraction of the screen's diagonal (>= 1 = no mask, which is how
+   * this intro always shows it).
    */
-  room: { opacity: number; reveal: number; flood: number };
+  room: { opacity: number; reveal: number };
   /** `rise`: px she still sits below her place as she comes in (0 once in, always 0 under reduced motion). */
   avatar: { opacity: number; filter: string; rise: number };
-  /** 0..1 the soft glow behind and around her. */
-  halo: number;
-  /** 0..1 a soft breath of light around her when linked (a glow, no ring; none over the white ending, where a glow only greys it). */
-  linkGlow: number;
-  brand: number;
   /**
    * Captions, one line at a time: `cur` fades up (`curIn`) a moment after
    * the line before it (`prev`) starts to fade out (`prevOut`, 1 = still
    * fully there), in the same place. `block` is the whole caption area.
+   * `curAge`: ms since `cur` started (its typing runs on it, lib/seilink/typing.ts);
+   * `prevAge`: how old `prev` was when `cur` started (its words and dots stay as they were then).
    */
-  caption: { block: number; cur: CaptionId | null; curIn: number; prev: CaptionId | null; prevOut: number };
+  caption: { block: number; cur: CaptionId | null; curIn: number; curAge: number; prev: CaptionId | null; prevOut: number; prevAge: number };
 }
 
 type RGB = [number, number, number];
@@ -129,7 +122,7 @@ export interface IntroPalette {
   haze: [RGB, RGB];
   /** Star colour. */
   star: RGB;
-  /** Her halo, the swell and the peak's bloom. */
+  /** The peak's bloom. */
   halo: RGB;
 }
 
@@ -150,20 +143,23 @@ export const INTRO_PALETTE: IntroPalette = {
   halo: [214, 200, 255],
 };
 
-/**
- * How far the white ending's flood goes (a colour-dodge by this grey: the
- * picture brightens about 2x, the brights reach white). Further, the dodge
- * would blow the soft light's 8-bit steps up into visible blocks.
- */
-export const FLOOD_MAX = 0.55;
-
 
 /** Into the peak the light runs up to this much faster (2x at the peak). */
 export const PEAK_SPEEDUP = 1;
 /** With all the lines up (energy 1) the light runs this much faster. */
 export const ENERGY_SPEEDUP = 0.6;
-/** Each status line's step of energy eases in over this long. */
-export const STEP_MS = 1400;
+/** Each status line's step of energy (and its wave) eases in over this long. */
+export const STEP_MS = 1200;
+/** The aurora's waves: one per status line. */
+export const WAVES = 9;
+/** Reduced motion: no build, a still aurora at this (dimmer) energy. */
+export const REDUCED_ENERGY = 0.4;
+/** Behind the solid, the light fades out over this long once the screen is solid (it does not come back). */
+const LIGHT_OUT_MS = 800;
+/** Her place (the plain colour or her room) is laid in under the full solid over this long, from the success line. */
+const PLACE_IN_MS = 1000;
+/** She is put in under the solid over this long from `lift`; what shows is the solid fading off her. */
+const HER_IN_MS = 700;
 /** After the solid the light settles back this far (to 60%); after a failure further (to 35%), over FAIL_CALM_MS. */
 const SETTLE_DROP = 0.4;
 const FAIL_DROP = 0.65;
@@ -224,15 +220,21 @@ function captionAt(times: IntroTimes, t: number): IntroFrame['caption'] {
   if (times.fail !== null) entries.push([times.fail, 'fail']);
   let k = -1;
   for (let i = 0; i < entries.length; i++) if (entries[i][0] <= t) k = i;
-  const block = times.skip === null ? 1 : 1 - ease.inOut(span(t, times.skip, times.skip + 400));
-  if (k < 0) return { block, cur: null, curIn: 0, prev: null, prevOut: 0 };
+  // The whole caption goes on a skip, and after the success line has held (it fades out before she comes in).
+  const skipOut = times.skip === null ? 1 : 1 - ease.inOut(span(t, times.skip, times.skip + 400));
+  const A = times.after;
+  const textOut = times.success !== null && A ? 1 - ease.inOut(span(t, A.textOut, A.textOut + TEXT_OUT_MS)) : 1;
+  const block = skipOut * textOut;
+  if (k < 0) return { block, cur: null, curIn: 0, curAge: 0, prev: null, prevOut: 0, prevAge: 0 };
   const [s, cur] = entries[k];
   return {
     block,
     cur,
     curIn: ease.out(span(t, s + CAPTION_GAP_MS, s + CAPTION_GAP_MS + CAPTION_IN_MS)),
+    curAge: t - s,
     prev: k > 0 ? entries[k - 1][1] : null,
     prevOut: k > 0 ? 1 - ease.inOut(span(t, s, s + CAPTION_OUT_MS)) : 0,
+    prevAge: k > 0 ? s - entries[k - 1][0] : 0,
   };
 }
 
@@ -248,10 +250,7 @@ export function computeFrame(
   const C = times.climax;
   const A = times.after;
   const L = A?.lift ?? Infinity;
-  const P = A?.port ?? Infinity;
-  const K = A?.linked ?? Infinity;
-  const plain = end !== 'room';
-  // The solid: the intro opens out of it, the climax fills the screen with it (a crossfade when calm), it holds under the success line, then fades back into the scene.
+  // The solid: the intro opens out of it, the climax fills the screen with it (a crossfade when calm), it holds under the success line, then fades off her and her place.
   const open = 1 - ease.soft(span(t, 0, OPEN_MS));
   const solid =
     !C || !A || t < C.build
@@ -269,87 +268,52 @@ export function computeFrame(
     reduced,
     end,
     tone,
-    field: { opacity: 0, gather: 0, clock: t, swell: 0, peak: 0, fill: 0, energy },
+    field: { opacity: 0, clock: t, peak: 0, fill: 0, energy },
+    waves: Array.from({ length: WAVES }, (_, i) => (reduced ? 1 : i < times.lines.length ? ease.soft(span(t, times.lines[i], times.lines[i] + STEP_MS)) : 0)),
     space: 0,
     solid,
-    bloom: { r: 0, a: 0 },
-    room: { opacity: 0, reveal: 0, flood: 0 },
+    room: { opacity: 0, reveal: 0 },
     avatar: { opacity: 0, filter: 'none', rise: 0 },
-    halo: 0,
-    linkGlow: 0,
-    brand: ease.out(span(t, 100, 800)) * caption.block,
     caption,
   };
 
-  if (reduced) {
-    // Calm: the field fades in still and brightens by crossfades with the lines, crossfades through the solid, she fades in as it clears, her place fades in as the field fades out.
-    const settle = A ? ease.soft(span(t, P, P + 1800)) : 0;
-    base.field.clock = 2400;
-    base.field.opacity = ease.soft(span(t, 0, 1200)) * (1 - settle);
-    base.space = base.field.opacity;
-    if (A) {
-      base.avatar.opacity = ease.inOut(span(t, L + 100, A.clear + 200));
-      base.halo = 0.6 * base.avatar.opacity * (1 - settle);
-      base.room.opacity = settle;
-    }
+  // Once the screen is solid the light fades out behind it and does not come back; her place is laid in under it.
+  const out = C && A ? 1 - ease.soft(span(t, C.fill, C.fill + LIGHT_OUT_MS)) : 1;
+  if (A) {
+    base.room.opacity = ease.soft(span(t, A.success, A.success + PLACE_IN_MS));
     base.room.reveal = 1.2;
+    // Put in under the full solid; what shows is the solid fading off her (lift..clear).
+    base.avatar.opacity = ease.soft(span(t, L, L + HER_IN_MS));
+  }
+
+  if (reduced) {
+    // Calm: a still, dimmer aurora (no build), plain crossfades through the solid, she fades in as it clears.
+    base.field.clock = 2400;
+    base.field.energy = REDUCED_ENERGY;
+    base.field.opacity = ease.soft(span(t, 0, 1200)) * out;
+    base.space = base.field.opacity;
     return base;
   }
 
-  // The light wakes, builds with the lines to the peak and fills the screen; behind the solid it is settled again, and it fades as her place opens.
-  const wake = ease.inOut(span(t, 0, 1200));
-  // (No after yet, or a failure: nothing settles. Guarded, since span over Infinity is NaN.)
-  const fade = A ? ease.inOut(span(t, P + 300, P + 2300)) : 0;
-  base.field.opacity = wake * (1 - fade);
+  // The light wakes and builds with the lines to the peak, filling the screen; then it is gone behind the solid.
+  base.field.opacity = ease.inOut(span(t, 0, 1200)) * out;
   base.field.clock = motionClock(times, t);
   // One swell: it only rises (eased) up to the peak, then the bloom expands on until the solid covers it all.
   if (C && !C.calm && t < C.fill) {
     base.field.peak = ease.soft(span(t, C.build, C.peak));
     base.field.fill = ease.soft(span(t, C.peak, C.fill));
   }
-  // Space (stars, haze) comes up a little behind the light and lingers a moment longer.
-  base.space = ease.inOut(span(t, 200, 1800)) * (A ? 1 - ease.inOut(span(t, P + 500, P + 2500)) : 1);
+  // Space (stars, haze) comes up a little behind the light.
+  base.space = ease.inOut(span(t, 200, 1800)) * out;
   if (!C || !A) return base;
 
-  // After the solid the curtains lean in toward her as she comes in, then lift away.
-  base.field.gather = (t < C.fill ? 0 : ease.inOut(span(t, C.fill, L + 1800))) * (1 - ease.inOut(span(t, P, P + 1800)));
-  // Softer than the climax (0.6): the peak stays the brightest moment.
-  base.field.swell = 0.6 * span(t, L + 200, L + 1100) * (1 - span(t, L + 1500, P + 600));
-
-  // She comes in as the solid fades (never before the success line): rising a little into place, bright, soft and glowing first, then herself.
-  const q = ease.inOut(span(t, L + 100, L + 1500));
-  base.avatar.opacity = ease.out(span(t, L + 50, L + 1000));
-  base.avatar.rise = H * 0.035 * (1 - ease.out(span(t, L + 50, L + 1400)));
+  // She comes in as the solid fades off her: rising a touch into place, soft first, then sharp.
+  const q = ease.inOut(span(t, L, A.clear));
+  base.avatar.rise = H * 0.02 * (1 - ease.out(span(t, L, A.clear)));
   if (q < 0.999) {
     const r = 1 - q;
-    base.avatar.filter =
-      `brightness(${(1 + 1.4 * r).toFixed(3)}) saturate(${(0.55 + 0.45 * q).toFixed(3)}) blur(${(6 * r).toFixed(2)}px) ` +
-      `drop-shadow(0 0 ${(26 * r).toFixed(1)}px rgba(255, 255, 255, ${(0.85 * r).toFixed(3)}))`;
+    base.avatar.filter = `brightness(${(1 + 0.35 * r).toFixed(3)}) blur(${(4 * r).toFixed(2)}px)`;
   }
-  base.halo = span(t, L + 100, L + 1100) * (1 - 0.65 * span(t, P + 200, P + 2000)) * (1 - span(t, K, K + 900));
-
-  if (plain) {
-    // The light expands out from behind her and the whole screen settles into the plain colour: no circle, no edge.
-    // Into white, the light floods first (the brights go white, then the rest) and the white comes over it; into black it swells a little and dims.
-    base.bloom.r = ease.soft(span(t, P, P + 2200));
-    if (end === 'plain_light') {
-      base.bloom.a = ease.soft(span(t, P, P + 1400)) * (1 - span(t, P + 2500, P + 2700));
-      // The dodge brightens faster as it grows, so the flood and the white start early and run long (no steep middle).
-      base.room.flood = FLOOD_MAX * ease.soft(span(t, P, P + 2300));
-      base.room.opacity = ease.soft(span(t, P + 100, P + 2500));
-    } else {
-      base.bloom.a = ease.soft(span(t, P, P + 1000)) * (1 - ease.soft(span(t, P + 1200, P + 2500)));
-      base.room.opacity = ease.soft(span(t, P + 400, P + 2500));
-    }
-    base.room.reveal = 1.2;
-  } else {
-    // Her room opens out around her in a soft circle.
-    const o = ease.inOut(span(t, P + 150, P + 2300));
-    base.room.opacity = o > 0 ? 1 : 0;
-    base.room.reveal = o >= 1 ? 1.2 : o * 1.15;
-  }
-  // Linked: one soft breath of light around her (a glow that swells and fades).
-  if (end !== 'plain_light') base.linkGlow = Math.sin(Math.PI * span(t, K, K + 1600)) * (t >= K && t < K + 1600 ? 1 : 0);
   return base;
 }
 
@@ -374,16 +338,15 @@ export function revealMask(f: IntroFrame, center: { x: number; y: number }): str
  * it, each piece where it sits, so it never turns dark over the light.
  */
 export function roomBehind(f: IntroFrame, centre: { x: number; y: number }, p: { x: number; y: number }): number {
-  // The white solid (light mode) is a light background over everything.
+  // The solid covers everything: white (light mode) is a light background, black (dark mode) a dark one.
   const white = f.tone === 'light' ? f.solid : 0;
   const under = sceneBehind(f, centre, p);
-  return white + (1 - white) * under;
+  return white + (1 - f.solid) * under;
 }
 
 function sceneBehind(f: IntroFrame, centre: { x: number; y: number }, p: { x: number; y: number }): number {
   if (f.end === 'plain_dark') return 0;
-  // Into white: the flood brightens the picture before the white comes over it.
-  if (f.end === 'plain_light') return f.room.opacity + (1 - f.room.opacity) * f.room.flood * 0.7;
+  if (f.end === 'plain_light') return f.room.opacity;
   if (f.room.opacity <= 0) return 0;
   if (f.room.reveal >= 1) return f.room.opacity;
   const diag = Math.hypot(f.W, f.H);
@@ -401,18 +364,11 @@ export function dayInk(behind: number): number {
   return x * x * (3 - 2 * x);
 }
 
-/** The caption's top never rises above this, px: it stays clear of the WORLDLINK corner label. */
-const CAPTION_TOP_MIN = 64;
-
 /**
- * The caption block's top, px (261106: captions over her chest were hard to
- * read). It sits in the empty space above her head, about a sixth of the way
- * down, and moves up when her head comes closer than `gap` (a short window,
- * a bigger her), never into the corner label.
+ * The caption block's top, px: centred on the screen (product feedback
+ * (261106)). She is never on screen with a status line (she comes in after
+ * the success line has faded), so nothing has to make room for her.
  */
-export function captionTop(H: number, captionH: number, her: Box | null): number {
-  const ideal = Math.max(CAPTION_TOP_MIN, H * 0.15);
-  if (!her) return ideal;
-  const gap = Math.max(24, H * 0.04);
-  return Math.max(CAPTION_TOP_MIN, Math.min(ideal, her.y - gap - captionH));
+export function captionTop(H: number, captionH: number): number {
+  return Math.max(0, (H - captionH) / 2);
 }

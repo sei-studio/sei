@@ -475,9 +475,9 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   reply should take a while). The milestone gates apply on top: a slow
   proxy holds "Waiting for a reply…" until it answers. Measured: a 75 s
   bake shows the lines at 0.7, 4.7, 10.7, 22.7, 30, 45, 60, 72 and 75 s,
-  success 78.2 s, end 86.9 s; a 20 s bake (and a cached look or a replay)
+  success 78.2 s, end 88.2 s; a 20 s bake (and a cached look or a replay)
   at 0.7, 4.7, 10.7, 22.7, 26.7, 29.5, 32.3, 35.1 and 37.9 s, success
-  41.1 s, end 49.8 s. On a slow stage the current line holds (no filler lines) while
+  41.1 s, end 51.1 s. On a slow stage the current line holds (no filler lines) while
   the light keeps moving. The proxy says nothing finer than queued, running
   and ready, so lines 5 to 7 spread over the expected-duration curve, and an
   early finish plays the rest at the minimum dwell (`planLink`; a start
@@ -511,6 +511,26 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   `sei.seilinkIntroSeen.v1.<scope>`): seen when it completed or was skipped
   on a move-in that worked. Replay plays it over her room with nothing
   starting.
+  - Typing (v7, product feedback (261106), `lib/seilink/typing.ts`): every
+    line, the success and failure lines too, types in word by word
+    (`typeUnits`: a word plus the spaces and punctuation after it; CJK by
+    Intl.Segmenter word segments), 90 to 130 ms a word (`wordDelays`, a
+    fixed spread hashed from the text, so renders are stable), starting
+    `TYPE_START_MS` (300) after the line's start and capped at
+    `TYPE_MAX_MS` (1.8 s, a long translation types faster), so it always
+    fits inside the shortest dwell and never moves line timing. The newest
+    word comes up over `WORD_IN_MS` (70). A trailing ellipsis ("…", "...",
+    "。。。", "⋯", repeats) is not typed: once the words are in it becomes
+    dots cycling ".", "..", "..." every `DOT_STEP_MS` (400) until the next
+    line (`splitEllipsis`; "。" dots only for a "。。。" source; the
+    catalogs keep their text). The view draws each line as typed / newest
+    / rest (laid out with `visibility: hidden`) / three dot slots (opacity
+    only), so the line keeps its full width and centre from the first
+    frame; the line going out keeps its words and dots as they were when
+    the next one started (`caption.prevAge`). Reduced motion: the whole
+    line at once with its own static ellipsis, crossfaded as before. The
+    drawn lines are `aria-hidden`; a visually hidden `aria-live` element
+    gets each whole line once.
   - Frames are pure (`introFrame.ts` computeFrame(introTimes(planLink(log)),
     t, W, H, reduced, end, tone), `introFx.ts` canvases), so the harness
     seeks them: `?seilinkintro=1` (DevIntroPreview, `&room=plain|blank|default
@@ -544,44 +564,52 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
     (`IntroFrame.solid`, `tone`) is the theme's plain colour (PLAIN_COLOURS):
     white in light mode, black in dark mode, also for a room ending (the OS
     theme at mount), so light mode never goes black and dark never white. The
-    intro opens out of the solid (`OPEN_MS` 1800) as the light wakes. Each
-    status line adds a ninth of `field.energy` (smoothstep over `STEP_MS`
-    1400): brighter, longer, wider curtains, more stars and a faster clock
-    (up to 1.6x), so the build is gradual. Under line 9 the light builds
+    intro opens out of the solid (`OPEN_MS` 1800) as the light wakes. v7
+    (product feedback (261106)): the aurora is built per line. Each status
+    line adds one wave (`IntroFrame.waves`, `WAVES` 9, tall bands about half
+    the screen high whose edges `WAVE_ROWS` spread evenly top to bottom) and
+    a ninth of `field.energy` (both smoothstep over `STEP_MS` 1200):
+    brighter, wider swaying, more stars and a faster clock (up to 1.6x), so
+    line 1 is one faint wave and line 9 the full aurora. Nine additive waves
+    pile up fast, so per-wave alpha is lower than the old four curtains and
+    the dark-mode climax gains no extra wave brightness (it stayed white
+    otherwise). Under line 9 the light builds
     from +500 to its peak at +1500 (`field.peak`, the clock up to 2x more),
     then the bloom keeps expanding (`field.fill`) while the solid comes over
     it (+1550 to +2700): in light mode it blooms into white, in dark mode it
-    dims into black. The success line lands on the full solid (+3200). From
-    the success line: the solid holds to +1800 (`lift`) and fades back into
-    the scene by +3100 (`clear`) while she fades in and rises about 3.5% of
-    the screen into place, forming out of a glow; port +4100, linked +6500,
-    captions fade +8100, end +8700. She has no frame before the success line
-    (no `after` timing exists until it is planned). HUD ink goes to day ink
+    dims into black. The success line lands on the full solid (+3200). v7:
+    the light never comes back. It fades out behind the full solid; her
+    place (the plain colour or her room, full screen) is laid in under it
+    from the success line (`room.opacity` over 1 s); the success line types
+    in, holds and fades out (`textOut` +3200, `TEXT_OUT_MS` 1000); then she
+    is put in under the solid at `lift` (+4400) and the solid fades off her
+    and her place by `clear` (+7200, 2.8 s, a slight rise and blur clearing),
+    so what comes in is exactly what the wallpaper shows; port = clear,
+    linked +7800, overlay fade +9400, end +10000 (reduced: textOut +2800,
+    lift +4000, clear +6800, end +9200). She has no frame before the
+    success line (no `after` timing exists until it is planned). HUD ink goes to day ink
     over the white solid (`roomBehind`). Every fade is a smoothstep of a
     second or more: tests cap each 30 fps step and the brightness reversals
     (at most two direction changes in any second) for instant, 20 s, 75 s
     and failed runs. A skip on the desktop stage rushes to the end only
     after the solid has cleared (`skipFrom`). Reduced motion: no peak and no
-    bloom; the still light steps its brightness by crossfades and
-    crossfades into the solid (+400 to +2000 under line 9) and out as she
-    fades in.
+    build; a still, dimmer aurora (every wave, `REDUCED_ENERGY` 0.4) that
+    crossfades into the solid (+400 to +2000 under line 9); she fades in as
+    the solid fades off her.
   - The ending (`IntroEndOn`, `introEndFor(state, tone)` in plainTone.ts):
-    on a plain ending the light expands out from behind her (`bloom`, drawn
-    on the back canvas so she stays herself, 261106 v5) as the colour comes
-    over it. `plain_dark` swells a little and dims into black; `plain_light`
-    floods it to white first (a colour-dodge layer of a rising grey capped at
-    `FLOOD_MAX` 0.55, so the brights reach white before the white layer
-    covers everything; uncapped dodge turns blocky and saturated) and has no
-    link-glow breath (it drew rings on white); `room` opens her room in a
-    soft radial mask around her as before. The last frame is exactly the
-    wallpaper's colour.
-  - 261106 captions: they sit in the empty space above her head, never over
-    her (`captionTop`: about 15% down, pulled up to keep a gap above her
-    measured box, never above 64px so they clear the corner label). Each HUD
-    piece (WORLDLINK label, captions, Skip/Close) switches from light ink over a soft
-    dark cloud to deep ink over a soft white cloud by how much of her room is
-    behind it (`roomBehind` + `dayInk`, the same circle as the reveal mask,
-    and the white flood on a light ending). Feathered radial clouds, no boxes.
+    `plain_dark` / `plain_light` (the plain colour, the same as the solid)
+    or `room` (her room, full screen, no reveal circle since v7). It is laid
+    in under the solid, so the hand-off is the solid fading off her; the
+    v5 bloom, the white flood (`FLOOD_MAX`), her halo and the link-glow
+    breath were removed in v7 (they were light coming back). The last frame
+    is exactly the wallpaper.
+  - Captions (v7): centred on the screen (`captionTop`), since she is
+    never on screen with a status line. The WORLDLINK corner label is gone
+    (the dialog keeps `aria-label="WorldLink"`). The captions and Skip/Close
+    switch from light ink over a soft dark cloud to deep ink over a soft
+    white cloud by how much light background is behind them (`roomBehind`
+    + `dayInk`: the white solid, or her place as the solid fades off it).
+    Feathered radial clouds, no boxes.
 - **The guide's WorldLink tour** (`lib/seilink/tourPref.ts` decides,
   `seilinkTour.ts` records, `useTutorialStore` mode `seilink`, steps
   `sl_offer` / `sl_button` / `sl_room` in TutorialOverlay). App.tsx polls
