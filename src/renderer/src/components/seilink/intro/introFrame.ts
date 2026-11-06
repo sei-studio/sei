@@ -106,7 +106,7 @@ export interface IntroFrame {
    * the line before it (`prev`) starts to fade out (`prevOut`, 1 = still
    * fully there), in the same place. `block` is the whole caption area.
    * `curAge`: ms since `cur` started (its typing runs on it, lib/seilink/typing.ts);
-   * `prevAge`: how old `prev` was when `cur` started (its words and dots stay as they were then).
+   * `prevAge`: how old `prev` was when `cur` started (its letters and dots stay as they were then).
    */
   caption: { block: number; cur: CaptionId | null; curIn: number; curAge: number; prev: CaptionId | null; prevOut: number; prevAge: number };
 }

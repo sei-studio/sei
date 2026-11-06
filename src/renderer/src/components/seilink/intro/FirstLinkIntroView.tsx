@@ -10,7 +10,7 @@
  * frame comes from computeFrame(introTimes(planLink(log)), t, ...): a rAF loop
  * writes it to the DOM through refs (no React render per frame) and draws
  * the light and star canvases (introFx.ts). The lines are centred and type
- * in word by word, their ellipsis cycling as dots (lib/seilink/typing.ts,
+ * in letter by letter, their ellipsis cycling as dots (lib/seilink/typing.ts,
  * LineParts below); screen readers get each whole line once from a hidden
  * live region.
  *
@@ -154,7 +154,7 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
   const skipRef = useRef<HTMLButtonElement>(null);
   const lineRef = useRef<HTMLParagraphElement>(null);
   const prevRef = useRef<HTMLParagraphElement>(null);
-  // The lines on screen are drawn word by word, so screen readers get them from here instead: each whole line once.
+  // The lines on screen are drawn letter by letter, so screen readers get them from here instead: each whole line once.
   const liveRef = useRef<HTMLParagraphElement>(null);
 
   // The log: a fixed source's whole log, or what the live source has said so far (ms from the start).
@@ -237,8 +237,8 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
       set(solidRef.current, 'display', f.solid > 0.0005 ? 'block' : 'none');
 
       // Captions: one line at a time in the same place. The new one types in
-      // word by word (its ellipsis turning into cycling dots) as the last one
-      // fades out with its words and dots as they were; under reduced motion
+      // letter by letter (its ellipsis turning into cycling dots) as the last one
+      // fades out with its letters and dots as they were; under reduced motion
       // the whole line fades up at once with its own static ellipsis.
       const cur = textFor(f.caption.cur);
       const last = lastTextRef.current;
@@ -517,7 +517,7 @@ function herBox(el: HTMLElement | null, root: HTMLElement | null): Box | null {
 }
 
 /**
- * One caption line: the typed words, the newest word coming up, the words
+ * One caption line: the typed letters, the newest letter coming up, the letters
  * still to come (there but invisible, so the line keeps its width and its
  * centre while it types) and three dot places (all three always laid out,
  * so the cycling dots never move the line). Hidden from screen readers:
