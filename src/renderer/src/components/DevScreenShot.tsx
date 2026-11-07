@@ -17,10 +17,11 @@
  *                    Home (261105): the screen follows the tour's navigation,
  *                    and its end opens the move-in sheet (&pack= as movein)
  *
- *     &loginitem=off|on|approval  "Open Sei when I log in" (261107): shown in
- *                    the move-in sheet and Settings > Appearance as on a
- *                    packaged mac/win build; approval = macOS waiting for the
- *                    user in System Settings. Without it the switch is hidden.
+ *     &loginitem=off|on|approval  "Open on login" (261107): Settings >
+ *                    Appearance as on a packaged mac/win build; approval =
+ *                    macOS waiting for the user in System Settings. Without
+ *                    it the row is hidden. (The setup step after the guided
+ *                    room setup: ?seilinkflow=1&phase=login, DevFirstRoomFlow.)
  *
  *     &regenhint=1   (character) the one-time "Not happy with the look?" hint
  *                    over the gear (261107); without it the hint is marked
@@ -85,7 +86,7 @@ const seilinkAvailability: SeilinkAvailability | null =
 const loginItemShot = params.get('loginitem');
 const loginItemState =
   loginItemShot === 'on' || loginItemShot === 'off' || loginItemShot === 'approval'
-    ? { supported: true, enabled: loginItemShot !== 'off', needsApproval: loginItemShot === 'approval' }
+    ? { supported: true, enabled: loginItemShot !== 'off', needsApproval: loginItemShot === 'approval', decided: true }
     : null;
 const HOUR = 3_600_000;
 const now = Date.now();
@@ -168,8 +169,8 @@ function seed(): void {
       ui_language: params.get('lang') ?? 'en',
     }),
     seilinkAvailability: async () => seilinkAvailability,
-    seilinkLoginItemGet: async () => loginItemState ?? { supported: false, enabled: false, needsApproval: false },
-    seilinkLoginItemSet: async (enabled: boolean) => ({ ...(loginItemState ?? { supported: true, needsApproval: false }), enabled }),
+    seilinkLoginItemGet: async () => loginItemState ?? { supported: false, enabled: false, needsApproval: false, decided: false },
+    seilinkLoginItemSet: async (enabled: boolean) => ({ ...(loginItemState ?? { supported: true, needsApproval: false }), enabled, decided: true }),
     getCharacter: async (id: string) => CHARACTERS.find((c) => c.id === id) ?? null,
     listCharacters: async () => CHARACTERS,
     getSkinServerUrl: async () => ({ baseUrl: 'http://127.0.0.1:1' }),
@@ -224,7 +225,6 @@ const noop = (): void => undefined;
 
 /** The move-in sheet (261106: a first room starts blank; &saved=1 = she has a room already). */
 function MoveInShot(): React.ReactElement {
-  const [loginOn, setLoginOn] = React.useState(loginItemState?.enabled ?? false);
   return (
     <MoveInSheetView
       name="Sui"
@@ -234,7 +234,6 @@ function MoveInShot(): React.ReactElement {
       error={null}
       onCancel={noop}
       onConfirm={noop}
-      openAtLogin={loginItemState ? { on: loginOn, onChange: setLoginOn } : null}
     />
   );
 }

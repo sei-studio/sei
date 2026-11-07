@@ -136,8 +136,9 @@ export const ZH_SEILINK: Record<string, string> = {
   "See options": "查看选项",
   "On a call with {name}": "正在和{name}通话",
   // ── open at login (261107) ──
-  "Open Sei when I log in": "登录时打开 Sei",
-  "{name} comes back to your desktop after a restart.": "重启电脑后，{name}会回到你的桌面。",
+  "Open on login": "登录时打开",
+  "{name} comes back after a restart.": "重启后，{name}会回来。",
+  "Turn on": "开启",
   "About opening Sei at login": "关于登录时打开 Sei",
   "Starts Sei in the background when you log in, so the companion on your desktop is back in their room. The Sei window stays closed until you open it.": "登录时在后台启动 Sei，让桌面上的伙伴回到自己的房间。在你打开之前，Sei 的窗口会保持关闭。",
   "Allow Sei in System Settings, under General > Login Items.": "请在“系统设置”的“通用 > 登录项”中允许 Sei。",

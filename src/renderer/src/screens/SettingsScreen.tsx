@@ -1895,7 +1895,7 @@ export function SettingsScreen(): React.ReactElement {
               onChange={(next) => void onSelectAvatarMode(next)}
             />
           </div>
-          {/* 261107: "Open Sei when I log in" (WorldLink back after a restart).
+          {/* 261107: "Open on login" (WorldLink back after a restart).
               Packaged macOS / Windows only; renders nothing elsewhere. */}
           <OpenAtLoginRow />
           {/* Conversation starters (260707): on a quiet call, a companion may

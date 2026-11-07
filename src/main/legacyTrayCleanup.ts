@@ -19,7 +19,7 @@
  * removing the login item fails, the file stays so the next launch retries.
  * Can be deleted once no beta.1/beta.2 installs remain.
  *
- * 261107: "Open Sei when I log in" (seilink/openAtLogin.ts) registers a login
+ * 261107: "Open on login" (seilink/openAtLogin.ts) registers a login
  * item of its own, and this cleanup must never remove it:
  *  - Windows: the retired item was the Run value named after the
  *    AppUserModelId (Electron's default name, and Electron deletes by name);
@@ -45,7 +45,7 @@ export interface LegacyTrayCleanupDeps {
   isPackaged: boolean;
   execPath: string;
   setLoginItemSettings: (settings: Electron.Settings) => void;
-  /** macOS: the "Open Sei when I log in" setting holds the app's login item now (see the header). */
+  /** macOS: the "Open on login" setting holds the app's login item now (see the header). */
   ownedByOpenAtLogin: () => boolean;
   log: (msg: string) => void;
 }

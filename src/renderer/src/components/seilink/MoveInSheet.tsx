@@ -16,9 +16,8 @@
  *  - Move in: saves the plain background when it is her first, then starts the
  *    host. Main swaps out whoever lived there (one companion at a time).
  *
- *  - 261107: "Open Sei when I log in" (off by default; packaged macOS and
- *    Windows only, main/seilink/openAtLogin.ts). Applied when Move in
- *    succeeds; Not now changes nothing. Settings has the same switch.
+ *  - "Open on login" is not asked here (product call 261107): it is a step
+ *    after the guided room setup (RoomEditor, lib/seilink/loginStep.ts).
  *
  * A companion whose room is saved and nobody else moved in skips the sheet
  * (needsMoveInSheet, lib/seilink/moveIn.ts); the page starts the host directly.
@@ -29,7 +28,6 @@ import type { SeilinkPack } from '@shared/seilinkPack';
 import { sei } from '../../lib/ipcClient';
 import { useT } from '../../lib/i18n';
 import { Button } from '../Button';
-import { Toggle } from '../Toggle';
 import { ModalShell, ModalFooter } from '../ModalShell';
 import { moveInFailed } from '../../lib/seilink/moveIn';
 import { useAnimaLook } from '../../lib/seilink/useAnimaLook';
@@ -48,11 +46,6 @@ export function firstRoomState(packs: readonly SeilinkPack[]): { state: RoomStat
   return pack ? { state: plainRoomState(pack.manifest), plain: true } : null;
 }
 
-/** 261107: the open-at-login value Move in applies, or null when the user left it as it was. */
-export function loginChangeOnMoveIn(login: { saved: boolean; want: boolean } | null): boolean | null {
-  return login && login.want !== login.saved ? login.want : null;
-}
-
 export interface MoveInSheetViewProps {
   name: string;
   /** Who lives on the desktop now and moves out (null = nobody). */
@@ -67,8 +60,6 @@ export interface MoveInSheetViewProps {
   onConfirm: () => void;
   /** 261105: her face set is being baked or downloaded (a quiet line, nothing on failure). */
   preparingLook?: boolean;
-  /** 261107: "Open Sei when I log in". Absent where it is not supported (dev, Linux, no WorldLink). */
-  openAtLogin?: { on: boolean; onChange: (next: boolean) => void } | null;
 }
 
 export function MoveInSheetView(p: MoveInSheetViewProps): React.ReactElement {
@@ -87,20 +78,6 @@ export function MoveInSheetView(p: MoveInSheetViewProps): React.ReactElement {
       </ul>
       {p.otherName ? (
         <p className={styles.line}>{t('{other} moves out first. One companion lives on the desktop at a time.', { other: p.otherName })}</p>
-      ) : null}
-      {p.openAtLogin ? (
-        <div className={styles.loginRow}>
-          <div className={styles.loginText}>
-            <span className={styles.loginTitle}>{t('Open Sei when I log in')}</span>
-            <span className={styles.loginSub}>{t('{name} comes back to your desktop after a restart.', { name: p.name })}</span>
-          </div>
-          <Toggle
-            aria-label={t('Open Sei when I log in')}
-            on={p.openAtLogin.on}
-            disabled={p.busy}
-            onChange={p.openAtLogin.onChange}
-          />
-        </div>
       ) : null}
       {p.preparingLook ? (
         <p className={styles.preparing} role="status">
@@ -143,20 +120,6 @@ export function MoveInSheet({ characterId, name, otherName, reason, entry, onClo
   const [error, setError] = useState<string | null>(null);
   // 261105: SeiLink opened for her: her face set gets ready in the background while she moves in.
   const look = useAnimaLook(characterId, 'move_in_sheet');
-  // 261107: "Open Sei when I log in": the saved choice, and what the toggle says now (applied on Move in).
-  const [login, setLogin] = useState<{ saved: boolean; want: boolean } | null>(null);
-  useEffect(() => {
-    let dead = false;
-    void (sei.seilinkLoginItemGet?.() ?? Promise.resolve(null)).then(
-      (s) => {
-        if (!dead && s?.supported) setLogin({ saved: s.enabled, want: s.enabled });
-      },
-      () => {},
-    );
-    return () => {
-      dead = true;
-    };
-  }, []);
   // Analytics (261105), shape only: shown once loaded, then confirmed, failed (once per class) or dismissed.
   const openedAt = useRef(Date.now());
   const sent = useRef(new Set<string>());
@@ -234,11 +197,6 @@ export function MoveInSheet({ characterId, name, otherName, reason, entry, onClo
         return;
       }
       report('confirmed');
-      // 261107: only a change is applied (main sends seilink_login_item_changed, surface move_in).
-      const loginChange = loginChangeOnMoveIn(login);
-      if (loginChange !== null && sei.seilinkLoginItemSet) {
-        void sei.seilinkLoginItemSet(loginChange, 'move_in').catch(() => {});
-      }
       onClose();
     } catch {
       report('failed', { error_class: stage });
@@ -261,7 +219,6 @@ export function MoveInSheet({ characterId, name, otherName, reason, entry, onClo
       }}
       onConfirm={() => void confirm()}
       preparingLook={look === 'preparing'}
-      openAtLogin={login ? { on: login.want, onChange: (next) => setLogin({ ...login, want: next }) } : null}
     />
   );
 }

@@ -3,7 +3,9 @@
  * that brings WorldLink back after a restart.
  *
  * Opt-in, off by default, packaged macOS and Windows builds only (and only
- * where WorldLink can run). The user's choice lives in Sei's own device-global
+ * where WorldLink can run). Offered once, as a step after the guided room
+ * setup (product call 261107: preselected there, but nothing is registered
+ * until the user answers it), and always in Settings. The user's choice lives in Sei's own device-global
  * file `<userData>/open-at-login.json` (the login item belongs to the OS user
  * and the install, not to an account, and the launch reads it synchronously
  * before any profile is known). Every launch re-syncs the file and the OS
@@ -59,6 +61,8 @@ export interface OpenAtLoginFile {
   registered_path?: string;
   /** macOS: registered, but the OS asked for the user's approval and has not had it yet. */
   approval_pending?: boolean;
+  /** The user answered once (setup step, Settings, or turned off in the OS). Sticky: only a factory reset clears it. */
+  decided?: boolean;
 }
 
 export const OPEN_AT_LOGIN_DEFAULT: OpenAtLoginFile = { open_at_login: false, registered: false };
@@ -114,6 +118,7 @@ export function parseOpenAtLoginFile(raw: unknown): OpenAtLoginFile {
     registered: r.registered === true,
     ...(typeof r.registered_path === 'string' && r.registered_path ? { registered_path: r.registered_path } : {}),
     ...(r.approval_pending === true ? { approval_pending: true } : {}),
+    ...(r.decided === true ? { decided: true } : {}),
   };
 }
 
@@ -204,11 +209,13 @@ export function readOpenAtLoginFile(filePath: string): OpenAtLoginFile {
   }
 }
 
+/** Writes the file. `decided` is sticky: a write without it keeps the one on disk. */
 function writeFile(d: OpenAtLoginDeps, next: OpenAtLoginFile): void {
   try {
+    const out = next.decided || readOpenAtLoginFile(d.filePath).decided ? { ...next, decided: true } : next;
     mkdirSync(path.dirname(d.filePath), { recursive: true });
     const tmp = `${d.filePath}.tmp`;
-    writeFileSync(tmp, JSON.stringify(next));
+    writeFileSync(tmp, JSON.stringify(out));
     renameSync(tmp, d.filePath);
   } catch (err) {
     d.log(`could not save: ${(err as Error).message}`);
@@ -286,6 +293,8 @@ function stateOf(d: OpenAtLoginDeps, file: OpenAtLoginFile): OpenAtLoginState {
     supported,
     enabled: supported && file.open_at_login,
     needsApproval: supported && d.platform === 'darwin' && file.open_at_login && file.approval_pending === true,
+    // An install that chose before `decided` existed (on, or registered) counts as decided.
+    decided: file.decided === true || file.open_at_login || file.registered,
   };
 }
 
@@ -310,7 +319,7 @@ export function openAtLoginOwnsLoginItem(filePath: string): boolean {
   return f.open_at_login || f.registered;
 }
 
-/** The user turned the setting on or off (the move-in sheet, Settings). */
+/** The user turned the setting on or off (the setup step, Settings). Either answer marks it decided. */
 export function setOpenAtLogin(
   on: boolean,
   surface: OpenAtLoginSurface,
@@ -319,6 +328,14 @@ export function setOpenAtLogin(
   if (!d) return { ...OPEN_AT_LOGIN_OFF };
   const before = readOpenAtLoginFile(d.filePath);
   if (!openAtLoginSupported(d)) return stateOf(d, before);
+  // macOS: "Not now" with nothing registered has nothing to remove, and the
+  // app's one login item may be one the user added by hand: leave the OS alone.
+  if (!on && d.platform === 'darwin' && !before.open_at_login && !before.registered) {
+    const next: OpenAtLoginFile = { open_at_login: false, registered: false, decided: true };
+    writeFile(d, next);
+    changed(d, false, surface, true);
+    return stateOf(d, next);
+  }
   const r = apply(d, on);
   const target = targetFor(d);
   let next: OpenAtLoginFile;
@@ -339,6 +356,7 @@ export function setOpenAtLogin(
     next = { open_at_login: false, registered: r.failure !== null && r.os !== 'off' };
     if (next.registered && d.platform === 'win32') next.registered_path = target;
   }
+  next.decided = true;
   writeFile(d, next);
   if (r.failure) fail(d, r.failure, 'set', on);
   changed(d, on, surface, r.failure === null || r.failure === 'requires_approval');
@@ -373,7 +391,8 @@ export function syncOpenAtLoginAtLaunch(d: OpenAtLoginDeps | null = injected): S
     }
     if (action === 'reflect_off') {
       d.log(`turned off in the OS (${os}); following it`);
-      writeFile(d, { open_at_login: false, registered: os === 'disabled', ...(os === 'disabled' && file.registered_path ? { registered_path: file.registered_path } : {}) });
+      // Turned off in the OS is an answer too: the setup step is not offered after it.
+      writeFile(d, { open_at_login: false, registered: os === 'disabled', ...(os === 'disabled' && file.registered_path ? { registered_path: file.registered_path } : {}), decided: true });
       changed(d, false, 'os', true);
       return action;
     }

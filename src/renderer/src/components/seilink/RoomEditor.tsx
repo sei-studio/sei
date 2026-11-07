@@ -28,6 +28,11 @@
  * done; Done saves it without, and the next open is the normal editor.
  * Analytics: seilink_setup and seilink_setup_step (shape only).
  *
+ * After Done (261107, product call 261107): the "Open on login" step, once,
+ * where the login item works and the user has not answered it yet
+ * (lib/seilink/loginStep.ts, the `openAtLogin` prop). "Turn on" (the
+ * preselected answer) or "Not now"; closing on it registers nothing.
+ *
  * Every change is live. Rules (placement, ops, undo) are the pure helpers in
  * shared/seilinkEdit.ts; reads and writes go through a RoomEditorSource
  * (IPC in the app, memory in the dev preview). Save writes through IPC and
@@ -100,6 +105,7 @@ import { sei } from '../../lib/ipcClient';
 import { ROOM_PRESET_LABEL } from '../../lib/seilink/moveIn';
 import { SEILINK_SETUP_EVENT, SEILINK_SETUP_STEP_EVENT, type SetupAction, type SetupStepAction } from '@shared/seilinkIntroTelemetry';
 import { SETUP_COPY, SETUP_PANEL, markDone, nextStep, opensGuided, prevStep, resumeStep, setupSteps, withoutSetup } from '../../lib/seilink/roomSetup';
+import { LOGIN_STEP_DEFAULT, loginStepAfter, offersLoginStep, type OpenAtLoginSource } from '../../lib/seilink/loginStep';
 import { useEditorAnalytics, type TogetherAnalytics } from '../../lib/seilink/editorAnalytics';
 import { lightSlotsOf, roomShapeOf, type EditorOpenedFrom, type EditorSurface } from '@shared/seilinkTelemetry';
 import { RoomCanvas, type RoomAvatarSlot } from './RoomCanvas';
@@ -179,7 +185,7 @@ export interface RoomEditorProps {
   /** Effects frame cap (RoomCanvas fps). */
   fps?: number;
   /** Dev / screenshots: open with a panel or an item selected. */
-  initial?: { panel?: PanelRequest | null; selected?: number | null; state?: RoomState };
+  initial?: { panel?: PanelRequest | null; selected?: number | null; state?: RoomState; loginStep?: boolean };
   /** Render inline instead of in a portal over the whole window (dev preview). */
   inline?: boolean;
   /** Usage analytics (shape only). Only the companion editor passes it. */
@@ -193,6 +199,8 @@ export interface RoomEditorProps {
   together?: (ctx: RoomTogetherCtx) => React.ReactNode;
   /** 261106: false never opens the guided setup (default: guided while she is plain or a run is unfinished; never with `initial.panel`). */
   guided?: boolean;
+  /** 261107: the "Open on login" setting, offered once after the guided setup's Done (absent: never offered). */
+  openAtLogin?: OpenAtLoginSource | null;
 }
 
 /** What the together layer (RoomTogether.tsx) gets from the editor. */
@@ -235,6 +243,16 @@ export function guideStepsFor(manifest: RoomPresetManifest, state: RoomState): R
     furniture: groupSlots(slots, 'furniture', manifest).length > 0,
     items: manifest.components.some((c) => c.slot === 'item'),
   });
+}
+
+/** 261107: the "Open on login" step while it is up. */
+interface LoginStepUi {
+  /** The answer is with main. */
+  busy: boolean;
+  /** A line after an answer: the OS did not take it, or macOS waits for approval. */
+  note: 'failed' | 'approval' | null;
+  /** The run before it was a resumed one (analytics). */
+  resumed: boolean;
 }
 
 /** One guided setup run. */
@@ -710,6 +728,13 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
   guideRef.current = guide;
   /** A save the guide asked for, run after the render that applied its edit (`setup`: the marker to save, null for none). */
   const [guideSave, setGuideSave] = useState<{ n: number; setup: RoomSetupStep[] | null; close: boolean } | null>(null);
+  // 261107: the "Open on login" step after Done (null = not up), and whether it is due (main said so).
+  const [loginStep, setLoginStep] = useState<LoginStepUi | null>(null);
+  const loginStepRef = useRef(loginStep);
+  loginStepRef.current = loginStep;
+  const loginDue = useRef(false);
+  /** An answer main took (or the approval note is up): closing after it is not `closed`. */
+  const loginAnswered = useRef(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const pickerRef = useRef(new RoomPicker());
@@ -1029,11 +1054,14 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
       setGuideSave((r) => ({ n: (r?.n ?? 0) + 1, setup: done, close: false }));
       return;
     }
-    // Done: the run is over; the room is saved without the marker and the editor closes onto it.
+    // Done: the run is over; the room is saved without the marker and the editor closes onto it
+    // (261107: or the "Open on login" step comes up first, once).
     trackSetup(SEILINK_SETUP_EVENT, runProps(run, 'finished', gStep));
     setGuide(null);
     setPanel(null);
-    setGuideSave((r) => ({ n: (r?.n ?? 0) + 1, setup: null, close: true }));
+    const login = loginDue.current;
+    setGuideSave((r) => ({ n: (r?.n ?? 0) + 1, setup: null, close: !login }));
+    if (login) openLoginStep(run.resumed);
   };
   const guideBack = (): void => {
     const g = guideRef.current;
@@ -1043,6 +1071,66 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     setSelected(null);
     setGuide({ ...g, step: prev });
   };
+
+  // ── 261107: the "Open on login" step (lib/seilink/loginStep.ts) ──
+  const openAtLogin = props.openAtLogin ?? null;
+  const openLoginStep = (resumed: boolean): void => {
+    loginDue.current = false;
+    setSelected(null);
+    setLoginStep({ busy: false, note: null, resumed });
+    trackSetup(SEILINK_SETUP_STEP_EVENT, { step: 'login', action: 'shown', resumed });
+  };
+  // Asked once, when a guided run opens (or for a dev shot that opens on the step).
+  const loginAsked = useRef(false);
+  useEffect(() => {
+    if (!openAtLogin || loginAsked.current || (!guide && !initial?.loginStep)) return;
+    loginAsked.current = true;
+    void openAtLogin.get().then(
+      (s) => {
+        loginDue.current = offersLoginStep(s);
+        if (initial?.loginStep && loginDue.current) openLoginStep(false);
+      },
+      () => {},
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openAtLogin, guide !== null]);
+  const closeFromLogin = (): void => {
+    loginAnswered.current = true;
+    setLoginStep(null);
+    onClose();
+  };
+  /** "Turn on" (the preselected answer) or "Not now": main applies it and reads the OS back. */
+  const answerLogin = (on: boolean): void => {
+    const ls = loginStepRef.current;
+    if (!ls || ls.busy) return;
+    if (!openAtLogin) return closeFromLogin();
+    setLoginStep({ ...ls, busy: true });
+    void openAtLogin
+      .set(on)
+      .catch(() => null)
+      .then((s) => {
+        trackSetup(SEILINK_SETUP_STEP_EVENT, {
+          step: 'login',
+          action: on ? 'completed' : 'skipped',
+          resumed: ls.resumed,
+          enabled: on,
+          kept_default: on === LOGIN_STEP_DEFAULT,
+          ok: s?.enabled === on,
+        });
+        const after = loginStepAfter(on, s);
+        if (after === 'close') return closeFromLogin();
+        if (after === 'approval') loginAnswered.current = true;
+        setLoginStep({ ...ls, busy: false, note: after });
+      });
+  };
+  // Closed on the step without an answer (the close button, Escape): nothing was registered.
+  useEffect(
+    () => () => {
+      const ls = loginStepRef.current;
+      if (ls && !loginAnswered.current) trackSetup(SEILINK_SETUP_STEP_EVENT, { step: 'login', action: 'closed', resumed: ls.resumed });
+    },
+    [trackSetup],
+  );
 
   const addItemById = (id: string): void => {
     if (!manifest) return;
@@ -1522,6 +1610,38 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     );
   };
 
+  /** 261107: "Open on login" after Done, in the guide's frame: a title, one line, "Not now" and "Turn on" (preselected). */
+  const renderLoginStep = (ls: LoginStepUi): React.ReactElement => (
+    <section className={styles.guide} aria-label={t('Open on login')} data-setup-step="login">
+      <header className={styles.guideHead}>
+        <h2 className={styles.guideTitle}>{t('Open on login')}</h2>
+        {props.name ? <p className={styles.note}>{t('{name} comes back after a restart.', { name: props.name })}</p> : null}
+        {ls.note ? (
+          <p className={styles.loginNote} role="status">
+            {ls.note === 'approval' ? t('Allow Sei in System Settings, under General > Login Items.') : t('Could not change this setting. Try again.')}
+          </p>
+        ) : null}
+      </header>
+      <footer className={styles.guideFoot}>
+        <span className={styles.guideGap} />
+        {ls.note === 'approval' ? (
+          <button type="button" className={`${styles.pill} ${styles.pillHot}`} onClick={closeFromLogin}>
+            {t('Done')}
+          </button>
+        ) : (
+          <>
+            <button type="button" className={styles.pill} disabled={ls.busy} onClick={() => answerLogin(false)}>
+              {t('Not now')}
+            </button>
+            <button type="button" className={`${styles.pill} ${styles.pillHot}`} disabled={ls.busy} onClick={() => answerLogin(true)}>
+              {t('Turn on')}
+            </button>
+          </>
+        )}
+      </footer>
+    </section>
+  );
+
   const savedLabel = saving === 'saving' ? t('Saving…') : dirty ? t('Save') : t('Saved');
 
   const body = (
@@ -1642,7 +1762,9 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
 
         {/* While an item is dragged the side panel fades away, so the shelves under it show. */}
         <div className={drag ? `${styles.side} ${styles.sideAway}` : styles.side} data-color-host="">
-          {gStep && guide ? (
+          {loginStep ? (
+            renderLoginStep(loginStep)
+          ) : gStep && guide ? (
             renderGuide(gStep, guide)
           ) : (
             <>

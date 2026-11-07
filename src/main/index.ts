@@ -1756,7 +1756,7 @@ async function bootstrap(): Promise<void> {
       capture('installer_first_launch', installerFirstLaunchProps(currentFirstLaunchEnv()));
     }
     // prev_exit / prev_version: how the previous session ended (crashReporting.ts).
-    // 261107: login_launch = started by "Open Sei when I log in" (seilink/loginLaunch.ts).
+    // 261107: login_launch = started by "Open on login" (seilink/loginLaunch.ts).
     capture('app_opened', { ...appOpenedCrashProps(), login_launch: launchedAtLogin() });
     // Boot safety (261031). Packaged only: dev never counts starts.
     if (app.isPackaged) {
@@ -1888,7 +1888,7 @@ async function bootstrap(): Promise<void> {
     // file and the login item it may have registered. See legacyTrayCleanup.ts.
     cleanupLegacyTraySettings();
 
-    // 261107: "Open Sei when I log in". AFTER the legacy cleanup: both act on
+    // 261107: "Open on login". AFTER the legacy cleanup: both act on
     // the same macOS login item (the cleanup leaves it when this setting holds
     // it), and on Windows the sync puts back a missing item the user wants.
     // Then classify the launch (seilink/loginLaunch.ts).

@@ -1,6 +1,7 @@
 /**
- * 261107: Settings > Appearance "Open Sei when I log in" (OpenAtLoginRow.tsx)
- * and the same switch on the WorldLink move-in sheet (MoveInSheet.tsx).
+ * 261107: Settings > Appearance "Open on login" (OpenAtLoginRow.tsx). The
+ * other place it is offered is the step after the guided room setup
+ * (lib/seilink/loginStep.test.ts); the move-in sheet no longer has it.
  *
  * No DOM in this repo's vitest: Toggle is mocked to record its handler and
  * the views are rendered to static markup.
@@ -26,20 +27,13 @@ vi.mock('../Toggle', () => ({
     return <button type="button" role="switch" aria-checked={props.on} aria-label={props['aria-label']} />;
   },
 }));
-vi.mock('../ModalShell', () => ({
-  ModalShell: (p: { title: string; children: React.ReactNode }) => (
-    <div data-title={p.title}>{p.children}</div>
-  ),
-  ModalFooter: (p: { children: React.ReactNode }) => <footer>{p.children}</footer>,
-}));
 vi.mock('../../lib/ipcClient', () => ({ sei: {} }));
 
 const { OpenAtLoginRowView } = await import('./OpenAtLoginRow');
-const { MoveInSheetView, loginChangeOnMoveIn } = await import('../seilink/MoveInSheet');
 const { DICTIONARIES } = await import('../../lib/i18n');
 
-const on: OpenAtLoginState = { supported: true, enabled: true, needsApproval: false };
-const off: OpenAtLoginState = { supported: true, enabled: false, needsApproval: false };
+const on: OpenAtLoginState = { supported: true, enabled: true, needsApproval: false, decided: true };
+const off: OpenAtLoginState = { supported: true, enabled: false, needsApproval: false, decided: false };
 
 const row = (p: Partial<React.ComponentProps<typeof OpenAtLoginRowView>> = {}): string =>
   renderToStaticMarkup(<OpenAtLoginRowView state={off} busy={false} failed={false} onToggle={() => {}} {...p} />);
@@ -50,14 +44,16 @@ beforeEach(() => {
 
 describe('OpenAtLoginRowView (Settings)', () => {
   it('is not shown where it is not supported (dev, Linux, no WorldLink) or before main answers', () => {
-    expect(row({ state: { supported: false, enabled: false, needsApproval: false } })).toBe('');
+    expect(row({ state: { supported: false, enabled: false, needsApproval: false, decided: false } })).toBe('');
     expect(row({ state: null })).toBe('');
     expect(h.toggle).toBeNull();
   });
 
   it('shows the label and the switch in its saved state', () => {
     const html = row({ state: on });
-    expect(html).toContain('Open Sei when I log in');
+    expect(html).toContain('Open on login');
+    expect(html).toContain('aria-label="Open on login"');
+    expect(html).not.toContain('Open Sei when I log in');
     expect(h.toggle?.on).toBe(true);
     expect(html).not.toContain('role="status"');
   });
@@ -78,55 +74,18 @@ describe('OpenAtLoginRowView (Settings)', () => {
 
   it('every line is translated in every UI language', () => {
     const keys = [
-      'Open Sei when I log in',
-      '{name} comes back to your desktop after a restart.',
+      'Open on login',
+      '{name} comes back after a restart.',
+      'Turn on',
       'About opening Sei at login',
       'Allow Sei in System Settings, under General > Login Items.',
       'Could not change this setting. Try again.',
     ];
     for (const [lang, dict] of Object.entries(DICTIONARIES)) {
       for (const k of keys) expect(dict[k], `${lang}: ${k}`).toBeTruthy();
+      // The 261107 move-in sheet copy is gone with the switch.
+      expect(dict['Open Sei when I log in'], lang).toBeUndefined();
+      expect(dict['{name} comes back to your desktop after a restart.'], lang).toBeUndefined();
     }
-  });
-});
-
-describe('MoveInSheetView open-at-login row', () => {
-  const sheet = (openAtLogin: React.ComponentProps<typeof MoveInSheetView>['openAtLogin'], busy = false): string =>
-    renderToStaticMarkup(
-      <MoveInSheetView
-        name="Sui"
-        otherName={null}
-        firstRoom
-        busy={busy}
-        error={null}
-        onCancel={() => {}}
-        onConfirm={() => {}}
-        openAtLogin={openAtLogin}
-      />,
-    );
-
-  it('is absent where it is not supported', () => {
-    expect(sheet(null)).not.toContain('Open Sei when I log in');
-    expect(h.toggle).toBeNull();
-  });
-
-  it('starts off and names her in the sub-line', () => {
-    const onChange = vi.fn();
-    const html = sheet({ on: false, onChange });
-    expect(html).toContain('Open Sei when I log in');
-    expect(html).toContain('Sui comes back to your desktop after a restart.');
-    expect(h.toggle?.on).toBe(false);
-    h.toggle?.onChange(true);
-    expect(onChange).toHaveBeenCalledWith(true);
-    sheet({ on: true, onChange }, true);
-    expect(h.toggle?.disabled).toBe(true);
-  });
-
-  it('Move in applies the switch only when the user changed it', () => {
-    expect(loginChangeOnMoveIn(null)).toBeNull();
-    expect(loginChangeOnMoveIn({ saved: false, want: false })).toBeNull();
-    expect(loginChangeOnMoveIn({ saved: true, want: true })).toBeNull();
-    expect(loginChangeOnMoveIn({ saved: false, want: true })).toBe(true);
-    expect(loginChangeOnMoveIn({ saved: true, want: false })).toBe(false);
   });
 });

@@ -1,8 +1,8 @@
 /**
- * OpenAtLoginRow (261107): Settings > Appearance "Open Sei when I log in".
+ * OpenAtLoginRow (261107): Settings > Appearance "Open on login".
  *
- * The same setting the WorldLink move-in sheet offers
- * (main/seilink/openAtLogin.ts): off by default, shown only on a packaged
+ * The same setting the step after the WorldLink guided room setup offers once
+ * (main/seilink/openAtLogin.ts): off until chosen, shown only on a packaged
  * macOS or Windows build where WorldLink runs (`supported`). Main applies it
  * to the OS login item, reads it back and answers the state it found, so the
  * switch shows what the OS took: a refused change flips back with a short
@@ -38,7 +38,7 @@ export function OpenAtLoginRowView({ state, busy, failed, onToggle }: OpenAtLogi
     <>
       <div className={[styles.row, note ? styles.rowOpen : ''].filter(Boolean).join(' ')}>
         <span className={styles.label}>
-          {t('Open Sei when I log in')}
+          {t('Open on login')}
           <InfoTip
             label={t('About opening Sei at login')}
             text={t(
@@ -46,7 +46,7 @@ export function OpenAtLoginRowView({ state, busy, failed, onToggle }: OpenAtLogi
             )}
           />
         </span>
-        <Toggle aria-label={t('Open Sei when I log in')} on={state.enabled} disabled={busy} onChange={onToggle} />
+        <Toggle aria-label={t('Open on login')} on={state.enabled} disabled={busy} onChange={onToggle} />
       </div>
       {note ? (
         <div className={styles.inlineConfirm} role="status">
