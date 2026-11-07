@@ -1,13 +1,17 @@
 /**
- * "Open Sei when I log in" for WorldLink (261107, product call 261107).
+ * "Open on login" for WorldLink (261107, product call 261107).
  *
  * Shared by main (src/main/seilink/openAtLogin.ts, the OS login item) and the
- * renderer (the move-in sheet toggle and the Settings row). Shape only: these
- * types never carry a path or an OS message.
+ * renderer (the "Open on login" step after the guided room setup, and the
+ * Settings row). Shape only: these types never carry a path or an OS message.
  */
 
-/** Where the user changed the setting. `os` = turned off in the OS (System Settings, Task Manager), seen at launch. */
-export const OPEN_AT_LOGIN_SURFACES = ['move_in', 'settings', 'os'] as const;
+/**
+ * Where the user changed the setting. `setup` = the step after the guided room
+ * setup (product call 261107; it was the move-in sheet, `move_in`, before).
+ * `os` = turned off in the OS (System Settings, Task Manager), seen at launch.
+ */
+export const OPEN_AT_LOGIN_SURFACES = ['setup', 'settings', 'os'] as const;
 export type OpenAtLoginSurface = (typeof OPEN_AT_LOGIN_SURFACES)[number];
 
 /** The surfaces the renderer may name (the OS one is main's own). */
@@ -39,9 +43,11 @@ export interface OpenAtLoginState {
   enabled: boolean;
   /** macOS: on in Sei, but the OS waits for the user to allow it in System Settings. */
   needsApproval: boolean;
+  /** The user has answered once, either way (the setup step, Settings, or the OS): the setup step is not offered again. */
+  decided: boolean;
 }
 
-export const OPEN_AT_LOGIN_OFF: OpenAtLoginState = { supported: false, enabled: false, needsApproval: false };
+export const OPEN_AT_LOGIN_OFF: OpenAtLoginState = { supported: false, enabled: false, needsApproval: false, decided: false };
 
 /** Analytics events (docs/agents/seilink-analytics.md, "Open at login"). */
 export const OPEN_AT_LOGIN_CHANGED_EVENT = 'seilink_login_item_changed';

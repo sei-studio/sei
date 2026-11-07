@@ -118,7 +118,7 @@ describe('setOpenAtLogin', () => {
     const mac = new FakeMac();
     for (const over of [{ isPackaged: false }, { platform: 'linux' as const }, { seilinkSupported: () => false }]) {
       const d = depsFor(mac, over);
-      expect(openAtLoginState(d)).toEqual({ supported: false, enabled: false, needsApproval: false });
+      expect(openAtLoginState(d)).toEqual({ supported: false, enabled: false, needsApproval: false, decided: false });
       expect(setOpenAtLogin(true, 'settings', d).enabled).toBe(false);
     }
     expect(mac.status).toBe('not-registered');
@@ -128,15 +128,15 @@ describe('setOpenAtLogin', () => {
   it('macOS: registers, reads back, saves, and reports the change', () => {
     const mac = new FakeMac();
     const d = depsFor(mac);
-    expect(openAtLoginState(d)).toEqual({ supported: true, enabled: false, needsApproval: false });
-    expect(setOpenAtLogin(true, 'move_in', d)).toEqual({ supported: true, enabled: true, needsApproval: false });
+    expect(openAtLoginState(d)).toEqual({ supported: true, enabled: false, needsApproval: false, decided: false });
+    expect(setOpenAtLogin(true, 'setup', d)).toEqual({ supported: true, enabled: true, needsApproval: false, decided: true });
     expect(mac.status).toBe('enabled');
-    expect(saved()).toEqual({ open_at_login: true, registered: true });
-    expect(events).toEqual([[OPEN_AT_LOGIN_CHANGED_EVENT, { enabled: true, surface: 'move_in', ok: true, platform: 'darwin' }]]);
+    expect(saved()).toEqual({ open_at_login: true, registered: true, decided: true });
+    expect(events).toEqual([[OPEN_AT_LOGIN_CHANGED_EVENT, { enabled: true, surface: 'setup', ok: true, platform: 'darwin' }]]);
     events.length = 0;
     expect(setOpenAtLogin(false, 'settings', d).enabled).toBe(false);
     expect(mac.status).toBe('not-registered');
-    expect(saved()).toEqual({ open_at_login: false, registered: false });
+    expect(saved()).toEqual({ open_at_login: false, registered: false, decided: true });
     expect(events).toEqual([[OPEN_AT_LOGIN_CHANGED_EVENT, { enabled: false, surface: 'settings', ok: true, platform: 'darwin' }]]);
   });
 
@@ -144,7 +144,7 @@ describe('setOpenAtLogin', () => {
     const mac = new FakeMac();
     mac.needsApproval = true;
     const d = depsFor(mac);
-    expect(setOpenAtLogin(true, 'settings', d)).toEqual({ supported: true, enabled: true, needsApproval: true });
+    expect(setOpenAtLogin(true, 'settings', d)).toEqual({ supported: true, enabled: true, needsApproval: true, decided: true });
     expect(events.map((e) => e[0])).toEqual([OPEN_AT_LOGIN_FAILED_EVENT, OPEN_AT_LOGIN_CHANGED_EVENT]);
     expect(events[0][1]).toMatchObject({ failure_class: 'requires_approval', phase: 'set' });
     // Still waiting at the next launch: kept, not read as "the user turned it off".
@@ -153,7 +153,7 @@ describe('setOpenAtLogin', () => {
     // Approved in System Settings: the note goes.
     mac.status = 'enabled';
     syncOpenAtLoginAtLaunch(d);
-    expect(openAtLoginState(d)).toEqual({ supported: true, enabled: true, needsApproval: false });
+    expect(openAtLoginState(d)).toEqual({ supported: true, enabled: true, needsApproval: false, decided: true });
   });
 
   it('a throw or a read-back mismatch flips the switch back and sends the failure class', () => {
@@ -186,7 +186,7 @@ describe('setOpenAtLogin', () => {
     const d = depsFor(win);
     expect(setOpenAtLogin(true, 'settings', d).enabled).toBe(true);
     expect(win.run.get(WIN_RUN_NAME)).toEqual({ path: NSIS_EXE, args: [LOGIN_ARG], enabled: true });
-    expect(saved()).toEqual({ open_at_login: true, registered: true, registered_path: NSIS_EXE });
+    expect(saved()).toEqual({ open_at_login: true, registered: true, registered_path: NSIS_EXE, decided: true });
     setOpenAtLogin(false, 'settings', d);
     expect(win.run.size).toBe(0);
   });
@@ -197,11 +197,46 @@ describe('setOpenAtLogin', () => {
     setOpenAtLogin(true, 'settings', d);
     mac.ignoreSet = true;
     setOpenAtLogin(false, 'settings', d);
-    expect(saved()).toEqual({ open_at_login: false, registered: true });
+    expect(saved()).toEqual({ open_at_login: false, registered: true, decided: true });
     mac.ignoreSet = false;
     expect(syncOpenAtLoginAtLaunch(d)).toBe('unregister');
     expect(mac.status).toBe('not-registered');
-    expect(saved()).toEqual({ open_at_login: false, registered: false });
+    expect(saved()).toEqual({ open_at_login: false, registered: false, decided: true });
+  });
+
+  it('macOS: "Not now" from the setup step marks it decided without touching the OS item', () => {
+    const mac = new FakeMac();
+    // A login item the user added by hand: Sei never registered it, so "Not now" must leave it.
+    mac.status = 'enabled';
+    let sets = 0;
+    const d = depsFor(mac, {
+      setLoginItemSettings: (s: Electron.Settings) => {
+        sets++;
+        mac.set(s);
+      },
+    });
+    expect(openAtLoginState(d).decided).toBe(false);
+    expect(setOpenAtLogin(false, 'setup', d)).toEqual({ supported: true, enabled: false, needsApproval: false, decided: true });
+    expect(sets).toBe(0);
+    expect(mac.status).toBe('enabled');
+    expect(saved()).toEqual({ open_at_login: false, registered: false, decided: true });
+    expect(events).toEqual([[OPEN_AT_LOGIN_CHANGED_EVENT, { enabled: false, surface: 'setup', ok: true, platform: 'darwin' }]]);
+  });
+
+  it('decided is sticky across launch syncs, and an older file that was on counts as decided', () => {
+    const mac = new FakeMac();
+    const d = depsFor(mac);
+    setOpenAtLogin(true, 'settings', d);
+    // Removed in Login Items: reflected off, still decided.
+    mac.status = 'not-registered';
+    syncOpenAtLoginAtLaunch(d);
+    expect(saved()).toMatchObject({ open_at_login: false, decided: true });
+    expect(openAtLoginState(d).decided).toBe(true);
+    // A file from before `decided` existed.
+    writeFileSync(file, JSON.stringify({ open_at_login: true, registered: true }));
+    expect(openAtLoginState(d).decided).toBe(true);
+    writeFileSync(file, JSON.stringify({ open_at_login: false, registered: false }));
+    expect(openAtLoginState(d).decided).toBe(false);
   });
 });
 

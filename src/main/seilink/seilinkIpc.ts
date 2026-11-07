@@ -64,12 +64,12 @@ export function registerSeilinkIpc(opts: { preloadPath: string; rendererTarget: 
   );
   ipcMain.handle(IpcChannel.seilink.hostStatus, async () => seilinkHostStatus());
   ipcMain.handle(IpcChannel.seilink.availability, async () => seilinkAvailability());
-  // 261107: "Open Sei when I log in" (openAtLogin.ts). Main sends the analytics.
+  // 261107: "Open on login" (openAtLogin.ts). Main sends the analytics.
   ipcMain.handle(IpcChannel.seilink.loginItemGet, async () => openAtLoginState());
   ipcMain.handle(IpcChannel.seilink.loginItemSet, async (_e, args: unknown) => {
     const a = args as { enabled?: unknown; surface?: unknown } | null;
     if (typeof a?.enabled !== 'boolean') throw new Error('SEILINK_BAD_ARGS');
-    const surface: OpenAtLoginUiSurface = a.surface === 'move_in' ? 'move_in' : 'settings';
+    const surface: OpenAtLoginUiSurface = a.surface === 'setup' ? 'setup' : 'settings';
     return setOpenAtLogin(a.enabled, surface);
   });
 

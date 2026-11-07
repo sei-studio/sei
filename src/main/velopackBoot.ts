@@ -284,7 +284,7 @@ if (process.platform === 'win32' && app.isPackaged && !isSeilinkHostLaunch(proce
     builder.onFirstRun((v) => {
       firstRunVersion = v;
     });
-    // 261107: an uninstall takes the "Open Sei when I log in" Run value with it
+    // 261107: an uninstall takes the "Open on login" Run value with it
     // (seilink/loginItemUninstall.ts). The hook exits right after this returns.
     builder.onBeforeUninstallFastCallback(() => {
       const root = velopackPathsFor(process.execPath)?.root;

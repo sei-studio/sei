@@ -12,8 +12,8 @@
  *  - seilink_entry {source: button|gear|tour|dock, action}
  *  - seilink_setup {action: started|resumed|finished|abandoned, step, surface,
  *    plain, steps_completed, steps_skipped, steps_total, ms_open, opened_from}
- *  - seilink_setup_step {step, action: shown|completed|skipped|back, changed,
- *    resumed, index}
+ *  - seilink_setup_step {step, action: shown|completed|skipped|back|closed,
+ *    changed, resumed, index; the login step (261107): enabled, kept_default, ok}
  *  - seilink_intro_link (261106 v6, the WorldLink status lines) {outcome:
  *    success|failed|abandoned, failure, trigger, reduced_motion, lines_shown,
  *    line_1_ms .. line_9_ms, total_ms, slowest (milestone), slowest_ms,
@@ -155,12 +155,18 @@ export const SEILINK_SETUP_STEP_EVENT = 'seilink_setup_step';
 export const SETUP_ACTIONS = ['started', 'resumed', 'finished', 'abandoned'] as const;
 export type SetupAction = (typeof SETUP_ACTIONS)[number];
 
-/** The steps (shared/seilinkRoom.ts ROOM_SETUP_STEPS, repeated here so this file has no room import). */
-export const SETUP_STEP_NAMES = ['room', 'colours', 'furniture', 'extras'] as const;
+/**
+ * The steps (shared/seilinkRoom.ts ROOM_SETUP_STEPS, repeated here so this file has no room import),
+ * plus `login` (261107): the "Open on login" step after Done, never saved with the room.
+ */
+export const SETUP_STEP_NAMES = ['room', 'colours', 'furniture', 'extras', 'login'] as const;
 export type SetupStepName = (typeof SETUP_STEP_NAMES)[number];
 
-/** shown = the step came up; completed = Next (or Done); skipped = Skip; back = Back to the step before. */
-export const SETUP_STEP_ACTIONS = ['shown', 'completed', 'skipped', 'back'] as const;
+/**
+ * shown = the step came up; completed = Next (or Done); skipped = Skip; back = Back to the step before.
+ * The login step: completed = "Turn on", skipped = "Not now", closed = the editor closed on it unanswered.
+ */
+export const SETUP_STEP_ACTIONS = ['shown', 'completed', 'skipped', 'back', 'closed'] as const;
 export type SetupStepAction = (typeof SETUP_STEP_ACTIONS)[number];
 
 /** Where the setup editor sits: on the desktop stage or in the app window. */
@@ -266,6 +272,12 @@ export function sanitizeSeilinkIntroTrack(event: string, raw: Record<string, unk
       resumed: p.resumed === true,
     };
     if (typeof p.changed === 'boolean') out.changed = p.changed;
+    // The login step's answer: on or off, whether that is the preselected choice, whether the OS took it.
+    if (out.step === 'login') {
+      if (typeof p.enabled === 'boolean') out.enabled = p.enabled;
+      if (typeof p.kept_default === 'boolean') out.kept_default = p.kept_default;
+      if (typeof p.ok === 'boolean') out.ok = p.ok;
+    }
     const n = small(p.index, 9);
     if (n !== undefined) out.index = n;
     return out;

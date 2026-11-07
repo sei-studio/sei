@@ -22,6 +22,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RoomEditor, type RoomTogetherCtx } from './RoomEditor';
+import { ipcOpenAtLoginSource } from '../../lib/seilink/loginStep';
 import { RoomTogether } from './RoomTogether';
 import { ipcRoomEditorSource } from './roomEditorSource';
 import type { EditorOpenedFrom, EditorSurface } from '@shared/seilinkTelemetry';
@@ -134,6 +135,8 @@ export interface CompanionRoomEditorProps {
 export default function CompanionRoomEditor({ characterId, onClose, openedFrom = 'other', desktop = false }: CompanionRoomEditorProps): React.ReactElement {
   const t = useT();
   const source = useMemo(() => ipcRoomEditorSource(characterId), [characterId]);
+  // 261107: "Open on login", offered once after the guided setup's Done (main decides where it works).
+  const openAtLogin = useMemo(() => ipcOpenAtLoginSource(), []);
   const [surface, close] = useDesktopStage(desktop, characterId, openedFrom, onClose);
   const telemetry = useMemo(() => ({ openedFrom, surface }), [openedFrom, surface]);
   // 261105: SeiLink opened for her: her face set gets ready in the background while the room is set up.
@@ -158,6 +161,7 @@ export default function CompanionRoomEditor({ characterId, onClose, openedFrom =
       portrait={portrait}
       name={name}
       together={resident && token && name ? together : undefined}
+      openAtLogin={openAtLogin}
     />
   );
 }

@@ -1,6 +1,6 @@
 /**
  * 261107: the retired tray mode's leftover cleanup (legacyTrayCleanup.ts)
- * must never remove the "Open Sei when I log in" item (seilink/openAtLogin.ts).
+ * must never remove the "Open on login" item (seilink/openAtLogin.ts).
  * Runs both the way index.ts does at launch, cleanup first and then the sync,
  * against fakes of the macOS and Windows login item APIs.
  */
@@ -64,7 +64,7 @@ function launch(fake: FakeMac | FakeWin): { cleanup: string; sync: string } {
 describe('legacy tray cleanup vs open at login', () => {
   it('macOS: a leftover tray file never takes the item the new setting holds', () => {
     const mac = new FakeMac();
-    setOpenAtLogin(true, 'move_in', fakeDeps(mac, loginFile, events));
+    setOpenAtLogin(true, 'setup', fakeDeps(mac, loginFile, events));
     writeFileSync(trayFile, JSON.stringify(legacyOptedIn));
     expect(launch(mac)).toEqual({ cleanup: 'removed', sync: 'nothing' });
     expect(mac.status).toBe('enabled');

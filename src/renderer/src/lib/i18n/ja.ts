@@ -2366,8 +2366,9 @@ export const JA: Record<string, string> = {
   // ── regen hint (261107) ──
   "Not happy with the look?": "見た目が気に入りませんか？",
   // ── open at login (261107) ──
-  "Open Sei when I log in": "ログイン時にSeiを開く",
-  "{name} comes back to your desktop after a restart.": "再起動したあとも、{name}がデスクトップに戻ってきます。",
+  "Open on login": "ログイン時に開く",
+  "{name} comes back after a restart.": "再起動したあとも{name}が戻ってきます。",
+  "Turn on": "オンにする",
   "About opening Sei at login": "ログイン時にSeiを開くについて",
   "Starts Sei in the background when you log in, so the companion on your desktop is back in their room. The Sei window stays closed until you open it.": "ログインするとSeiをバックグラウンドで起動し、デスクトップのコンパニオンが部屋に戻ってきます。Seiのウィンドウは開くまで閉じたままです。",
   "Allow Sei in System Settings, under General > Login Items.": "システム設定の「一般 > ログイン項目」でSeiを許可してください。",

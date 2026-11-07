@@ -406,6 +406,14 @@
   flex: 1 1 auto;
 }
 
+/* 261107: the "Open on login" step's line after an answer (a refusal, macOS approval). */
+.loginNote {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.35;
+  color: rgb(var(--ink) / 0.86);
+}
+
 /* ── the options panel ── */
 
 .panel {

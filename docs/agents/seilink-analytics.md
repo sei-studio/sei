@@ -111,7 +111,7 @@ companion editor), sanitized in main by `sanitizeSeilinkIntroTrack`
 | Event | When | Props | Answers |
 |---|---|---|---|
 | `seilink_setup` | a guided run opens (`started`, or `resumed` when a run was left unfinished), Done is pressed (`finished`), or the editor closes before Done (`abandoned`: close, Escape, Not now) | character_id, action, step (the step on screen: where it was finished or abandoned), surface `desktop`/`app`, plain (she was still on the plain background when it opened), steps_completed, steps_skipped, steps_total, ms_open, opened_from (the editor session's list) | Setup funnel; where people drop; how many resume |
-| `seilink_setup_step` | each time a step comes up (`shown`), Next (`completed`), Skip (`skipped`), Back (`back`) | character_id, step `room`/`colours`/`furniture`/`extras`, action, resumed (inside a resumed run), index (1-based position in this pack's steps), changed (completed only: did the room change on that step) | Per-step completion and skip rates |
+| `seilink_setup_step` | each time a step comes up (`shown`), Next (`completed`), Skip (`skipped`), Back (`back`). 261107: the `login` step after Done: `shown`, "Turn on" (`completed`), "Not now" (`skipped`), the editor closed on it unanswered (`closed`) | character_id, step `room`/`colours`/`furniture`/`extras`/`login`, action, resumed (inside a resumed run), index (1-based position in this pack's steps; not on `login`), changed (completed only: did the room change on that step); `login` answers only: enabled, kept_default (the preselected "Turn on" was taken), ok (the OS took it) | Per-step completion and skip rates; login step shown vs answered, default kept vs turned down |
 
 Plain spawns: `seilink_moved_in` with plain_room, by plain_tone. Setup
 started per plain spawn: `seilink_setup` started (plain true) over those.
@@ -164,7 +164,7 @@ Main-side, `src/shared/openAtLogin.ts` lists the closed sets.
 
 | Event | When | Props | Answers |
 |---|---|---|---|
-| `seilink_login_item_changed` | the setting changed: by the user (`move_in`/`settings`) or found off in the OS at launch (`os`) | enabled, surface `move_in`/`settings`/`os`, ok, platform | Opt-in rate per surface, how often people turn it off in the OS |
+| `seilink_login_item_changed` | the setting changed: by the user (`setup`/`settings`) or found off in the OS at launch (`os`). `setup` is the step after the guided room setup (261107, preselected on: enabled true = the default kept, false = "Not now"); builds before it sent `move_in` (the move-in sheet switch, retired) | enabled, surface `setup`/`settings`/`os`, ok, platform | Opt-in rate per surface, how often people turn it off in the OS |
 | `seilink_login_item_failed` | registering, removing or reading the item threw, or the read-back did not match | failure_class `register_threw`/`unregister_threw`/`read_threw`/`readback_mismatch`/`requires_approval`/`not_found`, phase `set`/`sync`, enabled, platform | Does registration work per OS |
 | `seilink_login_launch` | a login launch after its startup restore | outcome `room`/`nothing_to_show` (quiet quit), opened (the window was shown before that) | Do login launches bring her back |
 | `seilink_login_launch_opened` | a login launch's window first shown | via `room`/`dock`/`second_launch`/`other`, after_ms | Do people open Sei from her room after a login |
