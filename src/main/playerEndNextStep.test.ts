@@ -6,6 +6,7 @@ import {
   PLAYER_END_MIN_MS,
   _resetPlayerEndNextStep,
   buildPlayerEndPrompt,
+  isFreeCloudPlan,
   isPlayerEndedGame,
   memoryEntries,
   noteSessionDigest,
@@ -55,6 +56,7 @@ function deps(over: Partial<PlayerEndDeps> = {}, llm: LlmProvider = provider('fi
     buildProvider: async () => llm,
     isOnline: () => true,
     overLimit: async () => false,
+    freeCloud: async () => false,
     readText: async (file) => (file.includes('HEARTBEAT') ? GOALS : MEMORY),
     memoryFile: (id) => `/mem/${id}/MEMORY.md`,
     goalsFile: (id, game) => `/mem/${id}/${game === 'minecraft' ? 'HEARTBEAT.md' : `HEARTBEAT.${game}.md`}`,
@@ -123,6 +125,78 @@ describe('content gate', () => {
       ['next_step_checked', { ...base, duration_s: 60 }],
       ['next_step_checked', { ...base, duration_s: 1500 }],
     ]);
+  });
+});
+
+describe('261107: text chat and the free cloud gate', () => {
+  const chat = (over: Partial<PlayerEndInput> = {}) =>
+    input({ surface: 'chat', game: undefined, goalsGame: undefined, activity: 'a text chat', skipOnFreeCloud: true, minPlayerLines: 4, ...over });
+
+  it('a free cloud chat never builds a provider and reports not_covered with free_cloud', async () => {
+    const build = vi.fn();
+    const { d, saved, events } = deps({ buildProvider: build, freeCloud: async () => true });
+    expect(await runPlayerEndNextStep(chat(), d)).toBe('free_cloud');
+    expect(build).not.toHaveBeenCalled();
+    expect(saved).toEqual([]);
+    expect(events).toEqual([
+      [
+        'next_step_checked',
+        {
+          character_id: 'char-1',
+          source: 'player_end',
+          surface: 'chat',
+          saved: false,
+          outcome: 'not_covered',
+          skip_reason: 'free_cloud',
+          reached_model: false,
+          duration_s: 1500,
+        },
+      ],
+    ]);
+  });
+
+  it('a trivial chat is reported trivial before the plan read', async () => {
+    const free = vi.fn(async () => true);
+    const { d } = deps({ freeCloud: free });
+    expect(await runPlayerEndNextStep(chat({ playerLines: 3 }), d)).toBe('trivial');
+    expect(free).not.toHaveBeenCalled();
+  });
+
+  it('BYOK, local or paid: the chat check runs, saves under the app section and tags chat', async () => {
+    const tags: unknown[] = [];
+    const inGame: unknown[] = [];
+    const llm = provider('note: ask how the interview went\nplayer: Tell Sui how the interview went\ngame: none');
+    const { d, events } = deps(
+      {
+        save: async (_id, _line, opts) => {
+          inGame.push(opts?.inGame);
+          return true;
+        },
+        tagPlan: async (_id, surface, game, line) => {
+          tags.push([surface, game, line]);
+        },
+      },
+      llm,
+    );
+    expect(await runPlayerEndNextStep(chat(), d)).toBe('saved');
+    expect(inGame).toEqual([false]);
+    expect(tags).toEqual([['chat', undefined, 'Tell Sui how the interview went']]);
+    expect(llm.calls[0].messages[0].content).toContain('Session: a text chat');
+    expect(events.map((e) => e[0])).toEqual(['next_step_checked', 'next_step_saved']);
+    expect(events[1][1]).toEqual({ character_id: 'char-1', source: 'player_end', surface: 'chat' });
+  });
+
+  it('other inputs never consult the gate', async () => {
+    const free = vi.fn(async () => true);
+    const { d } = deps({ freeCloud: free });
+    expect(await runPlayerEndNextStep(input(), d)).toBe('saved');
+    expect(free).not.toHaveBeenCalled();
+  });
+
+  it('only quest and party leave the cost with the account', () => {
+    expect(isFreeCloudPlan('quest')).toBe(false);
+    expect(isFreeCloudPlan('party')).toBe(false);
+    for (const p of ['free', '', null, undefined, 'unknown']) expect(isFreeCloudPlan(p)).toBe(true);
   });
 });
 

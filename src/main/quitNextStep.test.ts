@@ -179,7 +179,9 @@ describe('parsing', () => {
   });
 
   it('what happens to the file after each outcome', () => {
-    for (const o of ['saved', 'none', 'trivial', 'over_limit', 'no_character'] as const) expect(afterOutcome(o, 0)).toBe('delete');
+    for (const o of ['saved', 'none', 'trivial', 'over_limit', 'no_character', 'free_cloud'] as const) {
+      expect(afterOutcome(o, 0)).toBe('delete');
+    }
     for (const o of ['busy', 'cancelled'] as const) expect(afterOutcome(o, 0)).toBe('keep');
     for (const o of ['offline', 'error', 'timeout'] as const) {
       expect(afterOutcome(o, 0)).toBe('retry');
@@ -229,6 +231,35 @@ describe('run on next launch', () => {
     expect(started[0].lines).toHaveLength(2);
     expect(started[0].game).toBeUndefined();
     expect(existsSync(fileOf('char-2'))).toBe(false);
+  });
+
+  it('261107: a text chat reads its typed rows and keeps the free cloud gate', async () => {
+    const endedAt = NOW - HOUR;
+    persistQuitSession({ characterId: 'char-3', surface: 'chat', durationMs: 6 * 60_000, endedAt });
+    expect(readPending('char-3')).toMatchObject({ surface: 'chat', durationMs: 6 * 60_000, endedAt });
+    const rows = [
+      row({ role: 'user', text: 'before the chat', ts: endedAt - 20 * 60_000 }),
+      row({ role: 'user', text: 'lets build the lighthouse next', ts: endedAt - 6 * 60_000 }),
+      row({ role: 'user', voice: true, text: 'a call line', ts: endedAt - 3 * 60_000 }),
+      row({ role: 'companion', text: 'yes, copper first', ts: endedAt - 2 * 60_000 }),
+      row({ role: 'user', text: 'ok gtg', ts: endedAt }),
+      row({ role: 'companion', text: 'bye', ts: endedAt + 3_000 }),
+    ];
+    const { d, started } = deps({ recentRows: async () => rows });
+    await runPendingQuitNextSteps(d);
+    expect(started).toHaveLength(1);
+    expect(started[0]).toMatchObject({
+      surface: 'chat',
+      activity: 'a text chat',
+      durationMs: 6 * 60_000,
+      playerLines: 2,
+      minPlayerLines: 4,
+      skipOnFreeCloud: true,
+      source: 'app_quit',
+      eventProps: { late_hours: 1 },
+    });
+    expect(started[0].lines.map((l) => l.text)).toEqual(['lets build the lighthouse next', 'yes, copper first', 'ok gtg', 'bye']);
+    expect(existsSync(fileOf('char-3'))).toBe(false);
   });
 
   it('runs every pending character once, one at a time, and ignores dirs without a file', async () => {

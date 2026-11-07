@@ -182,6 +182,16 @@ describe('session end', () => {
     expect(events('chat_session_ended')).toHaveLength(1);
   });
 
+  it('261107: every end reports its next step for surface chat (a short chat is trivial)', async () => {
+    await note('char-a');
+    await note('char-a');
+    await endChatSession('char-a', 'idle');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(events('next_step_checked')).toEqual([
+      expect.objectContaining({ character_id: 'char-a', surface: 'chat', outcome: 'trivial', end_reason: 'idle', reached_model: false }),
+    ]);
+  });
+
   it('is a no-op for a character that never talked', async () => {
     await endChatSession('char-never', 'quit');
     expect(events('chat_session_ended')).toHaveLength(0);

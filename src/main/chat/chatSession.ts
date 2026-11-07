@@ -70,6 +70,9 @@ export function noteChatMessage(characterId: string): number {
     const timer = setTimeout(() => void endChatSession(characterId, 'idle'), IDLE_TIMEOUT_MS);
     timer.unref?.();
     sessions.set(characterId, { characterId, startedAt: now, lastAt: now, messages: 1, timer });
+    // 261107: a next-step check from the last chat still running on a local
+    // model gives the GPU back to this one (playerEndNextStep.ts).
+    void import('../playerEndNextStep').then((m) => m.yieldToNewSession(characterId)).catch(() => {});
     void (async () => {
       try {
         const { capture } = await import('../analytics');
@@ -101,13 +104,12 @@ export async function endChatSession(characterId: string, reason: ChatSessionEnd
       messages: live.messages,
       reason,
     });
-    // 261107 (O2 reach): text chat runs no "next time" check; one
-    // next_step_checked per session end says so (playerEndNextStep.ts).
-    const { reportNextStepNotRun } = await import('../playerEndNextStep');
-    reportNextStepNotRun(
-      { characterId, surface: 'chat', outcome: 'not_covered', endReason: reason, durationMs: live.lastAt - live.startedAt },
-      capture,
-    );
+    // 261107 (O2): the "next time" check for text chat (chatNextStep.ts):
+    // run in the background on an idle end, kept for the next launch on a
+    // quit, skipped on the free cloud plan. Never awaited past its start, so
+    // closing the chat does not wait on the model.
+    const { chatSessionNextStep } = await import('../chatNextStep');
+    await chatSessionNextStep(live, reason, capture);
   } catch { /* best-effort */ }
 }
 
