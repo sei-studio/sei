@@ -131,3 +131,72 @@ describe('goTo(x,y,z) after a reflex cut the climb short', () => {
     expect(goToMock).not.toHaveBeenCalled()
   })
 })
+
+// 261107 (quality pass 45): one 12s leg is ~25-35m of walking, so a goTo back
+// to a player farther than that came back "timeout" part way there and the
+// model read it as a failed walk. A timed-out leg that was still closing in
+// walks on; one that went nowhere still ends the goTo.
+describe('goTo walks on while a timed-out leg was closing in (261107)', () => {
+  function farBot() {
+    const bot = flatBot()
+    bot._alex.position = new Vec3(64.5, 64, 0.5)
+    return bot
+  }
+
+  it('reaches a player 64m off over several legs', async () => {
+    const bot = farBot()
+    goToMock.mockImplementation(async (b, x, y, z) => {
+      const p = b.entity.position
+      const nx = Math.min(x - 1, p.x + 25)
+      b.entity.position = new Vec3(nx, y, z + 0.5)
+      return nx >= x - 1 ? 'reached' : 'timeout'
+    })
+    const reg = createDefaultRegistry()
+    const r = String(await reg.execute('goTo', { player: 'Alex' }, bot, {}))
+    expect(goToMock).toHaveBeenCalledTimes(3)
+    expect(r).toMatch(/^reached Alex/)
+  })
+
+  it('a leg that did not close in still ends the goTo with the distance', async () => {
+    const bot = farBot()
+    goToMock.mockImplementation(async (b) => { b.entity.position = b.entity.position.offset(1, 0, 0); return 'timeout' })
+    const reg = createDefaultRegistry()
+    const r = String(await reg.execute('goTo', { player: 'Alex' }, bot, {}))
+    expect(goToMock).toHaveBeenCalledTimes(1)
+    expect(r).toMatch(/^timeout\. Alex is at 64,64,0, 63\.0m from you$/)
+  })
+
+  it('walks on at most PROGRESS_LEGS more legs', async () => {
+    const bot = farBot()
+    bot._alex.position = new Vec3(500.5, 64, 0.5)
+    bot.players.Alex.entity = bot._alex
+    goToMock.mockImplementation(async (b) => { b.entity.position = b.entity.position.offset(20, 0, 0); return 'timeout' })
+    const reg = createDefaultRegistry()
+    const r = String(await reg.execute('goTo', { player: 'Alex' }, bot, {}))
+    expect(goToMock).toHaveBeenCalledTimes(4)
+    expect(r).toMatch(/^timeout\. Alex is at 500,64,0/)
+  })
+
+  it('goTo(x,y,z) walks on the same way', async () => {
+    const bot = flatBot()
+    goToMock.mockImplementation(async (b, x, y, z) => {
+      const p = b.entity.position
+      const nx = Math.min(x, p.x + 25)
+      b.entity.position = new Vec3(nx, y, z + 0.5)
+      return nx >= x ? 'reached' : 'timeout'
+    })
+    const reg = createDefaultRegistry()
+    const r = String(await reg.execute('goTo', { x: 60, y: 64, z: 0, range: 2 }, bot, {}))
+    expect(goToMock).toHaveBeenCalledTimes(3)
+    expect(r).toBe('reached')
+  })
+
+  it('an aborted walk does not walk on', async () => {
+    const bot = farBot()
+    const ac = new AbortController()
+    goToMock.mockImplementation(async (b) => { b.entity.position = b.entity.position.offset(20, 0, 0); ac.abort(); return 'timeout' })
+    const reg = createDefaultRegistry()
+    await reg.execute('goTo', { x: 60, y: 64, z: 0, range: 2 }, bot, { signal: ac.signal })
+    expect(goToMock).toHaveBeenCalledTimes(1)
+  })
+})

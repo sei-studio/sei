@@ -338,6 +338,45 @@ function resolvePlayer(bot, name) {
 
 const PLAYER_WALK_LEGS = 3
 
+// 261107 (quality pass 45): a walk that ran out of time while still closing in
+// walks on, up to this many more legs. The wall clock is one leg
+// (pathfinder_timeout_ms, 12s), which is about 25-35m of walking without
+// sprint, so every goTo back to a player more than ~30m off came back
+// "timeout" part way there (gather_craft free play: 64m -> 30m, 28m -> 7m),
+// and the model read it as a failed walk: it explored away, or told the player
+// it was stuck. A leg only counts as progress when it closed at least
+// PROGRESS_MIN_M, so a wedged or circling walk still ends after one leg.
+export const PROGRESS_LEGS = 3
+export const PROGRESS_MIN_M = 4
+
+function distFrom(bot, p) {
+  const me = bot?.entity?.position
+  if (!me || !p) return NaN
+  return Math.hypot(p.x - me.x, p.y - me.y, p.z - me.z)
+}
+
+/** A timed-out leg that closed in by at least PROGRESS_MIN_M. */
+export function timedOutClosingIn(result, before, after) {
+  return String(result).startsWith('timeout') && Number.isFinite(before) && Number.isFinite(after) &&
+    before - after >= PROGRESS_MIN_M
+}
+
+/**
+ * goTo(x,y,z) with the walk-on rule above: walk again while each timed-out
+ * leg was still getting closer.
+ */
+export async function goToCoordsWalkingOn(bot, target, range, timeoutMs, signal, walk = goToCoords) {
+  let before = distFrom(bot, target)
+  let r = await walk(bot, target, range, timeoutMs, signal)
+  for (let leg = 0; leg < PROGRESS_LEGS && !signal?.aborted; leg++) {
+    const after = distFrom(bot, target)
+    if (!timedOutClosingIn(r, before, after)) break
+    before = after
+    r = await walk(bot, target, range, timeoutMs, signal)
+  }
+  return r
+}
+
 function fmtPos(p) {
   return `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`
 }
@@ -347,17 +386,20 @@ function fmtPos(p) {
  * the start of each leg; when they moved on during the walk, walks again
  * (a few legs at most). The result says how far from them she ended.
  */
-export async function goToPlayer(bot, name, range, timeoutMs, signal) {
+export async function goToPlayer(bot, name, range, timeoutMs, signal, walk = goToCoords) {
   const who = resolvePlayer(bot, name)
   if (!who) return `no such player: ${name}`
   let r = null
-  for (let leg = 0; leg < PLAYER_WALK_LEGS; leg++) {
+  let movedOn = 0
+  let closingIn = 0
+  while (movedOn < PLAYER_WALK_LEGS) {
     const ent = resolvePlayer(bot, who.username)?.entity
     const at = ent?.position
     if (!at || ![at.x, at.y, at.z].every(Number.isFinite)) {
       return `can't see ${who.username} from here (too far away or not loaded). Ask where they are, or goTo the last place you saw them`
     }
-    r = await goToCoords(bot, { x: Math.floor(at.x), y: Math.floor(at.y), z: Math.floor(at.z) }, range, timeoutMs, signal)
+    const before = distFrom(bot, at)
+    r = await walk(bot, { x: Math.floor(at.x), y: Math.floor(at.y), z: Math.floor(at.z) }, range, timeoutMs, signal)
     if (signal?.aborted || String(r).startsWith('aborted')) return r
     const now = resolvePlayer(bot, who.username)?.entity?.position
     const me = bot.entity?.position
@@ -365,9 +407,15 @@ export async function goToPlayer(bot, name, range, timeoutMs, signal) {
     const d = Math.hypot(now.x - me.x, now.y - me.y, now.z - me.z)
     if (d <= range + 1) return `reached ${who.username} (${d.toFixed(1)}m away)`
     if (!String(r).startsWith('reached')) {
+      // 261107 (pass 45): out of time but still closing in: walk on.
+      if (closingIn < PROGRESS_LEGS && timedOutClosingIn(r, before, d)) {
+        closingIn++
+        continue
+      }
       return `${r}. ${who.username} is at ${fmtPos(now)}, ${d.toFixed(1)}m from you`
     }
     // Reached where they were, but they moved on: walk again.
+    movedOn++
   }
   const now = resolvePlayer(bot, who.username)?.entity?.position
   const me = bot.entity?.position
@@ -443,7 +491,7 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
       if (range <= 1 && isCoordsAtKnownPlayer(bot, args.x, args.y, args.z)) {
         range = 2
       }
-      return goToCoords(bot, { x: args.x, y: args.y, z: args.z }, range, timeoutMs, config?.signal)
+      return goToCoordsWalkingOn(bot, { x: args.x, y: args.y, z: args.z }, range, timeoutMs, config?.signal)
     }
   )
 

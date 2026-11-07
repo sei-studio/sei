@@ -37,7 +37,7 @@ import { Vec3 } from 'vec3'
 import mcDataLib from 'minecraft-data'
 import { resolveTerm } from '../loose-terms.js'
 import { goTo as realGoTo, waitForReflexClear, dropWalkOpts } from './pathfind.js'
-import { digAction as realDigAction, digReachDistance, DIG_REACH } from './dig.js'
+import { digAction as realDigAction, digReachDistance, DIG_REACH, closeInForDig } from './dig.js'
 import { isUnreachable, noteUnreachable } from './unreachable.js'
 import { inventoryCounts, gained } from './pickup.js'
 import { droppedItemName } from '../observers/entities.js'
@@ -331,10 +331,11 @@ export async function gatherAction(args, bot, config, _deps) {
       // the same metric dig.js checks (eyes to block center), and the walk
       // aims for dig reach rather than "feet within 3", which for a high log
       // meant climbing.
+      let walk = null
       if (digReachDistance(bot, np) > DIG_REACH) {
         // Pre-pathfind to dig reach (Pitfall 2 — dig.js does NOT pathfind in).
         // 261012: never scaffold with what we are gathering.
-        await goTo(bot, np.x, np.y, np.z, 3, perBlockTimeoutMs, signal, { reach: DIG_REACH - 0.3, ...(dropItems.length ? { keepItems: dropItems } : {}) })
+        walk = await goTo(bot, np.x, np.y, np.z, 3, perBlockTimeoutMs, signal, { reach: DIG_REACH - 0.3, ...(dropItems.length ? { keepItems: dropItems } : {}) })
       }
 
       if (signal?.aborted) return 'aborted'
@@ -351,6 +352,17 @@ export async function gatherAction(args, bot, config, _deps) {
         r = await digAction({ x: np.x, y: np.y, z: np.z }, bot, config)
       }
       if (r === 'aborted') return 'aborted'
+      // 261107 (pass 45): the walk said "reached" but stopped a step or two
+      // short (at the edge of its goal): one more short walk before calling
+      // the block unreachable. Not after a failed walk.
+      if (typeof r === 'string' && r.startsWith('out of range') && walk === 'reached') {
+        const step = await closeInForDig(bot, np, goTo, signal, dropItems.length ? { keepItems: dropItems } : {})
+        if (step === 'aborted' || signal?.aborted) return 'aborted'
+        if (step != null) {
+          r = await digAction({ x: np.x, y: np.y, z: np.z }, bot, config)
+          if (r === 'aborted') return 'aborted'
+        }
+      }
       if (typeof r === 'string' && r.startsWith('dug ')) {
         dug++
         progress.dug++

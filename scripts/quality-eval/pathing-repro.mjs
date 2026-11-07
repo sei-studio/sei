@@ -47,6 +47,15 @@
 //   dig_raised_5m   dig a granite on a 3-high pillar 5 blocks off, one call
 //   craft_second_pickaxe craft a wooden pickaxe with one already in the bag
 //                   and the parts only as planks and logs
+//   dig_buried_stone 261107 (pass 45): the arena with 2 dirt layers under the
+//                   grass, so the nearest stone is 3 below the surface (the
+//                   gather_craft-02-B ground): dig({block:"stone"}) twice.
+//                   base: "out of range (4.5-5.0m) ... walk ended: reached"
+//   gather_buried_stone same ground, gather 4 stone
+//   goto_far_player the player 68m off across the flat arena: goTo the
+//                   player (base: one 12s leg, "timeout" part way there)
+//   stone_02b_a/b/c natural: the gather_craft-02-B spots, dig({block:"stone"})
+//                   twice from each (run alone right after the reset)
 //   beach_hole_a/b/c the combat_night holes on the natural beach: goTo from
 //                   where she was stuck. natural: no arena, so run these
 //                   alone right after the reset (--cases beach_hole_a,...)
@@ -488,6 +497,67 @@ CASES.death_recover = {
     return { result: `${g.result} | ${p.result}`, ms, inv: pr?.inv, success: ok }
   },
 }
+
+// 261107 (quality pass 45): digs at the edge of dig reach after a walk.
+const BURIED = [`fill ${A.x0} ${A_FLOOR - 2} ${A.z0} ${A.x1} ${A_FLOOR - 1} ${A.z1} dirt`]
+async function digStoneTwice(ctx) {
+  const results = []
+  const t0 = Date.now()
+  for (let i = 0; i < 2; i++) {
+    const d = await ctx.exec('dig', { block: 'stone', maxDistance: 32 }, { timeoutMs: 40000 })
+    results.push(String(d.result))
+    await sleep(800)
+  }
+  const ms = Date.now() - t0
+  const n = await itemCount(ctx.bot, 'cobblestone')
+  const outOfRange = results.filter((r) => r.startsWith('out of range')).length
+  return { result: results.join(' | '), ms, cobblestone: n, outOfRange, success: n >= 2 && outOfRange === 0 }
+}
+CASES.dig_buried_stone = {
+  world: BURIED,
+  give: ['wooden_pickaxe'],
+  run: digStoneTwice,
+}
+CASES.gather_buried_stone = {
+  world: BURIED,
+  give: ['wooden_pickaxe'],
+  async run(ctx) {
+    const t0 = Date.now()
+    const g = await ctx.exec('gather', { name: 'stone', count: 4 }, { timeoutMs: 90000 })
+    const ms = Date.now() - t0
+    await sleep(800)
+    const n = await itemCount(ctx.bot, 'cobblestone')
+    return { result: g.result, ms, cobblestone: n, success: n >= 4 }
+  },
+}
+CASES.goto_far_player = {
+  give: [],
+  async run(ctx) {
+    const from = { x: A.x1 - 1, y: Y, z: A.z1 - 1 }
+    const to = { x: A.x0 + 1, y: Y, z: A.z0 + 1 }
+    await cmds([tp(ctx.bot, from, to), tp(PLAYER, to, from)])
+    await sleep(2000)
+    const t0 = Date.now()
+    const r = await ctx.exec('goTo', { player: PLAYER, range: 2 }, { timeoutMs: 90000 })
+    const ms = Date.now() - t0
+    const d = distTo(ctx.pbot, ctx.bot)
+    return { result: r.result, ms, dist: Number(d.toFixed(1)), success: /^reached/.test(String(r.result)) && d <= 4.5 }
+  },
+}
+function stone02b(at) {
+  return {
+    natural: true,
+    give: ['wooden_pickaxe'],
+    async run(ctx) {
+      await cmds([`tp ${ctx.bot} ${at.x + 0.5} ${at.y} ${at.z + 0.5}`, `tp ${PLAYER} ${at.x + 3.5} ${at.y + 1} ${at.z + 3.5}`])
+      await sleep(2500)
+      return digStoneTwice(ctx)
+    },
+  }
+}
+CASES.stone_02b_a = stone02b({ x: 185, y: 66, z: -5 })
+CASES.stone_02b_b = stone02b({ x: 189, y: 66, z: -11 })
+CASES.stone_02b_c = stone02b({ x: 187, y: 66, z: -3 })
 
 // 261019: the combat_night holes on the natural beach (free-play world, no
 // arena). goTo from where she was stuck to where she was going.
