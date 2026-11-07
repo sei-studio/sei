@@ -122,6 +122,18 @@ describe('sanitizeRendererSetupProps', () => {
       sanitizeRendererSetupProps({ game: 'minecraft', step: 'lan_wait', outcome: 'fail', error_code: 'LAN_WAIT_CLOSED', ended: 'closed', wait_ms: 12, note: 'C:\\Users\\bob' }),
     ).toEqual({ game: 'minecraft', step: 'lan_wait', outcome: 'fail', error_code: 'LAN_WAIT_CLOSED', ended: 'closed', wait_ms: 12 });
   });
+
+  // Issue #52: main stamps why the watcher found no world on a failed wait.
+  it('stamps the LAN discovery class on a failed lan_wait only', () => {
+    const diag = { discovery: 'stateless_failed' as const, brokenStateSeen: true };
+    const fail = { game: 'minecraft', step: 'lan_wait', outcome: 'fail', error_code: 'LAN_WAIT_CLOSED', ended: 'closed' };
+    expect(sanitizeRendererSetupProps(fail, diag)).toMatchObject({ discovery: 'stateless_failed', win_state0: true });
+    expect(sanitizeRendererSetupProps({ ...fail, outcome: 'ok', ended: 'world_open' }, diag)).not.toHaveProperty('discovery');
+    expect(sanitizeRendererSetupProps({ ...fail, step: 'install_scan' }, diag)).not.toHaveProperty('discovery');
+    expect(sanitizeRendererSetupProps(fail, null)).not.toHaveProperty('discovery');
+    // A renderer cannot send its own class: only main's argument counts.
+    expect(sanitizeRendererSetupProps({ ...fail, discovery: 'no_java', win_state0: true })).not.toHaveProperty('discovery');
+  });
 });
 
 describe('trackOpenLauncher', () => {

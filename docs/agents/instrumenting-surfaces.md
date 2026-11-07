@@ -619,7 +619,9 @@ the analytics:track handler, so no path, username or free text can ride.
   stages `fabric`, `mods_link`, `skin_mod`, `config` (folded from the
   wizard progress stream, `observeWizardProgress`), `start_minecraft`,
   `open_launcher`, `lan_wait` (McSetupModal searching mode; `ended`:
-  world_open / closed / skin_setup / left).
+  world_open / closed / skin_setup / left; a fail also carries main's
+  `discovery` class and `win_state0`, see minecraft-setup-wizard.md).
+  World detection itself sends `lan_world_found` (which source found it).
 - Stardew steps: `find_game` (scan, once per distinct answer),
   `choose_folder`, `smapi_download`, `smapi_run`, `mod_copy`, `mod_silent`
   (game up 15 s with the helper silent), `farm_seen` (first open farm per
