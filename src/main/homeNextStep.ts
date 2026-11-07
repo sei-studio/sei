@@ -15,7 +15,9 @@
  *   - It expires after NEXT_STEP_MAX_AGE_MS (7 days).
  *   - It is consumed once a later session's greeting has seen it: a game
  *     session going online or a voice call greeting (both greetings are told
- *     about the plan, NEXT_TIME_GREETING). Nothing in T80 marked a plan as
+ *     about the plan, NEXT_TIME_GREETING). 261107: a plan from a text chat
+ *     is also used up when the next text chat with the character starts
+ *     (its first message); other plans are not. Nothing in T80 marked a plan as
  *     used, and MEMORY.md is model-facing, so the mark lives in a small
  *     sidecar, NEXT_STEP.json in the memory dir, as a watermark
  *     (`consumedAt`): a plan written at or before it is used up. Starting a
@@ -407,17 +409,22 @@ export async function tagLatestPlan(
  * so most session starts touch nothing. Returns whether it wrote. Never throws.
  * 261020: `game` = a game session started. A newest plan for a different game
  * was not raised by it (readPendingPlan), so it stays open for that game.
+ * 261107: `onlySurface: 'chat'` = a text chat session started (first message,
+ * chat/chatSession.ts). Only a plan tagged from a text chat (and tied to no
+ * game) is used up: a game or call plan keeps its card until that surface
+ * runs, and an untagged plan is left alone.
  */
 export async function consumeNextStep(
   memoryDir: string,
   now = Date.now(),
-  opts: { game?: GameId | null } = {},
+  opts: { game?: GameId | null; onlySurface?: 'chat' } = {},
 ): Promise<boolean> {
   try {
     const plan = newest(planEntries(await readOrEmpty(path.join(memoryDir, 'MEMORY.md'))));
     if (!plan) return false;
     return await updateLedger(memoryDir, (l) => {
       if (planIsForOtherGame(plan, l, opts.game)) return false;
+      if (opts.onlySurface && (tagFor(plan, l)?.surface !== opts.onlySurface || planGame(plan, l) !== null)) return false;
       const prev = l.consumedAt ? Date.parse(l.consumedAt) : NaN;
       if (Number.isFinite(prev) && plan.at <= prev) return false;
       l.consumedAt = new Date(now).toISOString();
