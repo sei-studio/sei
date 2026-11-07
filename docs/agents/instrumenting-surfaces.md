@@ -251,6 +251,38 @@ aborted on any provider (`yieldAlways`). Events: the same
 on macOS a call whose window was closed earlier still counts as live at the
 later Cmd-Q (its duration is overstated; the lines are right).
 
+**Every session end reports its next step (261107, O2 reach).** Only 12% of
+10-05..10-27 installs had a `next_step_saved`, mostly because the check
+shipped in stable 0.6.9 (10-24): earlier installs never ran it. On 0.6.9+
+the gaps were Stardew/DST (closing the game arrived as `error` /
+GAME_WORLD_NOT_OPEN, never `world_closed`), calls ended by closing the
+window (main closes them in `sweepVoiceCalls`; on Windows the window's
+`closed` fires before before-quit, so `persistCallsForQuit` found no live
+call either), and every skip being invisible (the event only fired when the
+model was called). Now:
+- The Stardew and DST runtimes pass `{ endReason: 'world_closed' }` for a
+  live world that closed (as Minecraft does), so the check runs.
+- `src/main/nextStepReach.ts` (pure, tested) routes each end:
+  `gameEndRoute` (check / persist for the next launch / goodbye /
+  not_covered) and `mainClosedCallRoute` (window close: check now on macOS,
+  persist elsewhere; app quit: already persisted; account switch, renderer
+  gone or reload: not_covered). `endCallsForAccountSwitch` hands each closed
+  call to `onClosed` for this.
+- `next_step_checked` goes out once per session end on every surface, with
+  `reached_model` and `duration_s`. Check outcomes: saved, none, trivial,
+  offline, over_limit, busy (dedupe), timeout, error, no_character
+  (cancelled still sends nothing). Ends that ran no check
+  (`reportNextStepNotRun`): goodbye (`saved` = it left a plan), in_game (a
+  call during a game), deferred / trivial (app quit, run or not on the next
+  launch), not_covered + `end_reason` (backseat ends other than the player's
+  End, game kicks / crashes / credit stops, chat idle / quit, chess, Draw!).
+  Count checks with `reached_model = true` to compare with older data.
+- A companion goodbye plan also sends `next_step_saved {source:'companion'}`,
+  so `next_step_saved` counts every plan source.
+Not covered, by choice: text chat, chess and Draw! (a check there would be a
+new LLM call for free users), DST final death, companion goodbyes without a
+plan, and calls lost to an account switch or a renderer crash.
+
 **Forge/NeoForge hosts are blocked before summon (260929).** Only on STRONG
 evidence: the status ping's forgeData/modinfo (`forgeModCount != null`) or an
 explicit launch target on the host command line (`LanHost.forgeLaunchTarget`,

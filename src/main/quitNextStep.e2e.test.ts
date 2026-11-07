@@ -117,6 +117,8 @@ describe('app-quit check on the next launch (production wiring)', () => {
       late_hours: 2,
       saved: true,
       outcome: 'saved',
+      reached_model: true,
+      duration_s: expect.any(Number),
     });
     expect(capture).toHaveBeenCalledWith('next_step_saved', {
       character_id: 'char-1',

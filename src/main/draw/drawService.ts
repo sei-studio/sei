@@ -1018,6 +1018,9 @@ async function recordFinishedGame(
         first_drawer: s.firstDrawer,
         phase: s.phase,
       });
+      // 261107 (O2 reach): Draw! runs no "next time" check; say so.
+      const { reportNextStepNotRun } = await import('../playerEndNextStep');
+      reportNextStepNotRun({ characterId: s.characterId, surface: 'draw', outcome: 'not_covered', endReason: reason, durationMs }, capture);
     } catch { /* analytics is never load-bearing */ }
   })();
 
