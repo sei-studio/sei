@@ -3418,6 +3418,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const r = await chatgptAccountLogin().connectPlan(args);
     // A new account brings a new model catalog (default model + vision).
     if (r.ok) void import('./llm/capability').then((m) => m.pushLlmCapability());
+    else if (r.reason !== 'cancelled') {
+      // 261107 (T363): failures after the browser step were invisible (the
+      // renderer shows one generic line, nothing was logged or counted).
+      const { signInFailureDetail } = await import('./chatgptPlan/session');
+      const detail = signInFailureDetail(r.message);
+      console.warn(`[chatgpt] plan sign-in failed: ${r.reason}${detail ? ` (${detail})` : ''}`);
+      trackAnalytics('chatgpt_plan_sign_in_failed', {
+        reason: r.reason,
+        detail: detail ?? 'none',
+        renewal: typeof args.accountId === 'string',
+        enable_plan: args.enablePlan === true,
+      });
+    }
     return r;
   });
   ipcMain.handle(IpcChannel.chatgpt.cancelSignIn, async () => {
