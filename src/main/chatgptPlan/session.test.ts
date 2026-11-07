@@ -618,3 +618,15 @@ describe('account login (261023)', () => {
     expect(srv.revoked).toEqual([r.pending.tokens.refresh_token]);
   });
 });
+
+describe('signInFailureDetail (T363 failure log + event)', () => {
+  it('keeps short machine codes and drops free text', async () => {
+    const { signInFailureDetail } = await import('./session');
+    expect(signInFailureDetail(undefined)).toBeNull();
+    expect(signInFailureDetail('invalid_grant')).toBe('invalid_grant');
+    expect(signInFailureDetail('http_403')).toBe('http_403');
+    expect(signInFailureDetail('no refresh_token')).toBe('no_refresh_token');
+    expect(signInFailureDetail('jwks HTTP 503')).toBe('jwks_HTTP_503');
+    expect(signInFailureDetail("EPERM: operation not permitted, rename 'C:\\Users\\x\\a.tmp'")).toBe('other');
+  });
+});

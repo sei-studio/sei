@@ -144,6 +144,17 @@ export function parseVault(raw: unknown): VaultData {
   };
 }
 
+/**
+ * The shape-only failure detail for logs and analytics: an OAuth error code,
+ * an ID-token check name, `http_403`, `vault_EPERM`. Anything else (free text
+ * that could carry a path or an address) becomes 'other'.
+ */
+export function signInFailureDetail(message: string | undefined): string | null {
+  if (!message) return null;
+  const m = message.trim().replace(/\s+/g, '_');
+  return /^[A-Za-z0-9_.-]{1,48}$/.test(m) ? m : 'other';
+}
+
 export function accountIdOf(clientId: string, subject: string): string {
   return `${clientId}:${subject}`;
 }
@@ -482,7 +493,7 @@ export function createChatgptSession(deps: ChatgptSessionDeps): ChatgptSession {
       return no((err as Error).message === 'timeout' ? 'timeout' : 'cancelled');
     }
     const outcome = validateCallback(q, pending);
-    if (outcome.kind === 'invalid') return no(outcome.reason === 'no_code' ? 'exchange_failed' : outcome.reason);
+    if (outcome.kind === 'invalid') return outcome.reason === 'no_code' ? no('exchange_failed', 'no_code') : no(outcome.reason);
     if (outcome.kind === 'denied') {
       log(`[chatgpt] ${p.label} declined (${outcome.error})`);
       if (isProviderRegionRefusal(`${outcome.error} ${outcome.description ?? ''}`)) return no('region_unsupported', outcome.error);
@@ -504,7 +515,12 @@ export function createChatgptSession(deps: ChatgptSessionDeps): ChatgptSession {
       // region (403 unsupported_country_region_territory).
       if (isProviderRegionRefusal(err)) return no('region_unsupported');
       // invalid_grant: the code is discarded; the user starts a fresh attempt.
-      return no('exchange_failed', err instanceof OAuthError ? (err.oauthError ?? undefined) : undefined);
+      // The detail is the OAuth error code, or the HTTP status when the body
+      // had none (a firewall or CDN page), for the failure log and event.
+      return no(
+        'exchange_failed',
+        err instanceof OAuthError ? (err.oauthError ?? (err.httpStatus ? `http_${err.httpStatus}` : undefined)) : undefined,
+      );
     }
     const receivedAt = now();
     if (!tokens.id_token || !tokens.refresh_token) {
@@ -514,7 +530,7 @@ export function createChatgptSession(deps: ChatgptSessionDeps): ChatgptSession {
     try {
       claims = await verifyIdToken(tokens.id_token, { jwks, clientId: outcome.clientId, nonce: p.nonce, now: now() });
     } catch (err) {
-      return no('id_token_invalid', err instanceof IdTokenError ? err.reason : 'verification failed');
+      return no('id_token_invalid', err instanceof IdTokenError ? err.reason : 'jwks_unreachable');
     }
     return {
       ok: true,
@@ -578,7 +594,8 @@ export function createChatgptSession(deps: ChatgptSessionDeps): ChatgptSession {
         ok: false,
         result: fail(
           (err as Error).message === 'KEYCHAIN_UNAVAILABLE' ? 'keychain_unavailable' : 'exchange_failed',
-          (err as Error).message,
+          // An errno code, never the message: it carries the profile path.
+          (err as Error).message === 'KEYCHAIN_UNAVAILABLE' ? undefined : `vault_${(err as NodeJS.ErrnoException).code ?? 'save_failed'}`,
         ),
       };
     }
