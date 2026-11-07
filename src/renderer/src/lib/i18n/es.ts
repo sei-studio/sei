@@ -2365,4 +2365,11 @@ export const ES: Record<string, string> = {
   "Default": "Predeterminado",
   // ── regen hint (261107) ──
   "Not happy with the look?": "¿No te convence su aspecto?",
+  // ── open at login (261107) ──
+  "Open Sei when I log in": "Abrir Sei al iniciar sesión",
+  "{name} comes back to your desktop after a restart.": "{name} vuelve a tu escritorio después de reiniciar.",
+  "About opening Sei at login": "Acerca de abrir Sei al iniciar sesión",
+  "Starts Sei in the background when you log in, so the companion on your desktop is back in their room. The Sei window stays closed until you open it.": "Inicia Sei en segundo plano cuando inicias sesión, para que tu compi del escritorio vuelva a su habitación. La ventana de Sei sigue cerrada hasta que la abras.",
+  "Allow Sei in System Settings, under General > Login Items.": "Permite Sei en Ajustes del Sistema, en General > Ítems de inicio.",
+  "Could not change this setting. Try again.": "No se pudo cambiar este ajuste. Inténtalo de nuevo.",
 };

@@ -71,6 +71,14 @@ const SHOTS = {
   'movein-dark': { kind: 'app', q: 'screen=home&modal=movein&theme=dark', act: 'thumb' },
   'movein-swap-dark': { kind: 'app', q: 'screen=home&modal=movein&swap=1&theme=dark', act: 'thumb' },
   'movein-ru-light': { kind: 'app', q: 'screen=home&modal=movein&theme=light&lang=ru', act: 'thumb' },
+  // 261107: "Open Sei when I log in" on the move-in sheet (off by default) and in Settings > Appearance.
+  'movein-login-light': { kind: 'app', q: 'screen=home&modal=movein&loginitem=off&theme=light', act: 'thumb' },
+  'movein-login-dark': { kind: 'app', q: 'screen=home&modal=movein&loginitem=off&theme=dark', act: 'thumb' },
+  'movein-login-on-dark': { kind: 'app', q: 'screen=home&modal=movein&loginitem=on&theme=dark', act: 'thumb' },
+  'movein-login-ja-light': { kind: 'app', q: 'screen=home&modal=movein&loginitem=off&theme=light&lang=ja', act: 'thumb' },
+  'settings-login-light': { kind: 'app', q: 'screen=settings&seilink=on&loginitem=on&theme=light', act: 'login-row' },
+  'settings-login-dark': { kind: 'app', q: 'screen=settings&seilink=on&loginitem=on&theme=dark', act: 'login-row' },
+  'settings-login-approval-dark': { kind: 'app', q: 'screen=settings&seilink=on&loginitem=approval&theme=dark', act: 'login-row' },
   'character-menu-dark': { kind: 'app', q: 'screen=character&seilink=on&theme=dark', act: 'menu' },
   'character-menu-light': { kind: 'app', q: 'screen=character&seilink=on&theme=light', act: 'menu' },
   // 261105: her face for a line (needs --facepacks): neutral, the line's face while the bubble is up, neutral again.
@@ -113,6 +121,14 @@ async function act(page, what) {
   } else if (what === 'thumb') {
     await page.waitForSelector('img', { timeout: 15_000 }).catch(() => console.log('  no thumbnail'));
     await page.waitForTimeout(800);
+  } else if (what === 'login-row') {
+    const row = page.getByRole('switch', { name: 'Open Sei when I log in' }).first();
+    await row.scrollIntoViewIfNeeded({ timeout: 10_000 }).catch(() => console.log('  no open-at-login row'));
+    await page.evaluate(() => {
+      const el = document.querySelector('[aria-label="Open Sei when I log in"]');
+      el?.scrollIntoView({ block: 'center' });
+    });
+    await page.waitForTimeout(400);
   } else if (what === 'menu') {
     const gear = page.getByRole('button', { name: 'Companion settings', exact: true }).first();
     await gear.click({ timeout: 10_000 }).catch(() => console.log('  no gear menu button'));

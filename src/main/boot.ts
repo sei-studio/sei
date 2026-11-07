@@ -35,6 +35,7 @@ import { app, ipcMain } from 'electron';
 import path from 'node:path';
 import {
   focusableWindow,
+  handleSecondLaunch,
   initBootGuard,
   setStartFailedFallback,
   isMainWindowSender,
@@ -89,7 +90,10 @@ function log(line: string): void {
 }
 
 async function start(): Promise<void> {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_e, argv) => {
+    // 261107: a login launch while Sei already runs, or no window to bring
+    // forward (her desktop room kept Sei running), is the app's call.
+    if (handleSecondLaunch(argv)) return;
     const w = focusableWindow();
     if (w && !w.isDestroyed()) {
       if (w.isMinimized()) w.restore();

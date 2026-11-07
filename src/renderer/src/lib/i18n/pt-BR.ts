@@ -2365,4 +2365,11 @@ export const PT_BR: Record<string, string> = {
   "Default": "Padrão",
   // ── regen hint (261107) ──
   "Not happy with the look?": "Não curtiu o visual?",
+  // ── open at login (261107) ──
+  "Open Sei when I log in": "Abrir o Sei ao fazer login",
+  "{name} comes back to your desktop after a restart.": "{name} volta para a sua área de trabalho depois de reiniciar.",
+  "About opening Sei at login": "Sobre abrir o Sei ao fazer login",
+  "Starts Sei in the background when you log in, so the companion on your desktop is back in their room. The Sei window stays closed until you open it.": "Inicia o Sei em segundo plano quando você faz login, para que o companion da sua área de trabalho volte para o quarto dele. A janela do Sei fica fechada até você abri-la.",
+  "Allow Sei in System Settings, under General > Login Items.": "Permita o Sei nos Ajustes do Sistema, em Geral > Itens de Início.",
+  "Could not change this setting. Try again.": "Não foi possível alterar esta configuração. Tente de novo.",
 };

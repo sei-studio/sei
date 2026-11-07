@@ -53,3 +53,31 @@
     animation: none;
   }
 }
+
+/* 261107: "Open Sei when I log in" (label and one line, the switch on the right). */
+.loginRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.loginText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.loginTitle {
+  font-family: var(--sans);
+  font-size: 15px;
+  color: var(--text);
+}
+
+.loginSub {
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--muted);
+}

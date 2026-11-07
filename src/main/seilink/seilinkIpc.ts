@@ -14,6 +14,8 @@ import { anima } from '../anima/animaRuntime';
 import { isEditorSessionToken, onRoomEditorClosed, onRoomEditorOpened } from './roomReaction';
 import { onTogetherClosed, onTogetherOpened, onTogetherSync } from './decorateTogether';
 import { setTogetherSink } from './editorTogether';
+import { openAtLoginState, setOpenAtLogin } from './openAtLogin';
+import type { OpenAtLoginUiSurface } from '../../shared/openAtLogin';
 
 let previewWin: BrowserWindow | null = null;
 let registered = false;
@@ -62,6 +64,14 @@ export function registerSeilinkIpc(opts: { preloadPath: string; rendererTarget: 
   );
   ipcMain.handle(IpcChannel.seilink.hostStatus, async () => seilinkHostStatus());
   ipcMain.handle(IpcChannel.seilink.availability, async () => seilinkAvailability());
+  // 261107: "Open Sei when I log in" (openAtLogin.ts). Main sends the analytics.
+  ipcMain.handle(IpcChannel.seilink.loginItemGet, async () => openAtLoginState());
+  ipcMain.handle(IpcChannel.seilink.loginItemSet, async (_e, args: unknown) => {
+    const a = args as { enabled?: unknown; surface?: unknown } | null;
+    if (typeof a?.enabled !== 'boolean') throw new Error('SEILINK_BAD_ARGS');
+    const surface: OpenAtLoginUiSurface = a.surface === 'move_in' ? 'move_in' : 'settings';
+    return setOpenAtLogin(a.enabled, surface);
+  });
 
   // 261105 Anima: her face set. Only while SeiLink is on: nobody else starts a bake.
   ipcMain.handle(IpcChannel.seilink.animaPrepare, async (_e, args: unknown) => {

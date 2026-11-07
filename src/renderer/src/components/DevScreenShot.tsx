@@ -17,6 +17,11 @@
  *                    Home (261105): the screen follows the tour's navigation,
  *                    and its end opens the move-in sheet (&pack= as movein)
  *
+ *     &loginitem=off|on|approval  "Open Sei when I log in" (261107): shown in
+ *                    the move-in sheet and Settings > Appearance as on a
+ *                    packaged mac/win build; approval = macOS waiting for the
+ *                    user in System Settings. Without it the switch is hidden.
+ *
  *     &regenhint=1   (character) the one-time "Not happy with the look?" hint
  *                    over the gear (261107); without it the hint is marked
  *                    seen so other character shots stay as they were.
@@ -77,6 +82,11 @@ const seilinkAvailability: SeilinkAvailability | null =
     : seilinkShot === 'unsupported'
       ? { supported: false, reason: 'platform', enabled: false, dev: false }
       : null;
+const loginItemShot = params.get('loginitem');
+const loginItemState =
+  loginItemShot === 'on' || loginItemShot === 'off' || loginItemShot === 'approval'
+    ? { supported: true, enabled: loginItemShot !== 'off', needsApproval: loginItemShot === 'approval' }
+    : null;
 const HOUR = 3_600_000;
 const now = Date.now();
 
@@ -158,6 +168,8 @@ function seed(): void {
       ui_language: params.get('lang') ?? 'en',
     }),
     seilinkAvailability: async () => seilinkAvailability,
+    seilinkLoginItemGet: async () => loginItemState ?? { supported: false, enabled: false, needsApproval: false },
+    seilinkLoginItemSet: async (enabled: boolean) => ({ ...(loginItemState ?? { supported: true, needsApproval: false }), enabled }),
     getCharacter: async (id: string) => CHARACTERS.find((c) => c.id === id) ?? null,
     listCharacters: async () => CHARACTERS,
     getSkinServerUrl: async () => ({ baseUrl: 'http://127.0.0.1:1' }),
@@ -212,6 +224,7 @@ const noop = (): void => undefined;
 
 /** The move-in sheet (261106: a first room starts blank; &saved=1 = she has a room already). */
 function MoveInShot(): React.ReactElement {
+  const [loginOn, setLoginOn] = React.useState(loginItemState?.enabled ?? false);
   return (
     <MoveInSheetView
       name="Sui"
@@ -221,6 +234,7 @@ function MoveInShot(): React.ReactElement {
       error={null}
       onCancel={noop}
       onConfirm={noop}
+      openAtLogin={loginItemState ? { on: loginOn, onChange: setLoginOn } : null}
     />
   );
 }

@@ -59,6 +59,7 @@ import { LocalImportRow } from '../components/settings/LocalImportRow';
 import { FishAudioSettings } from '../components/settings/FishAudioSettings';
 import { FacepackDevRow } from '../components/settings/FacepackDevRow';
 import { ExperimentalUpdatesRow } from '../components/settings/ExperimentalUpdatesRow';
+import { OpenAtLoginRow } from '../components/settings/OpenAtLoginRow';
 import { ChatgptPlanSettings, revealSettingsFocus, settingsFocusTargetClass } from '../components/ChatgptPlanSettings';
 import { ChatgptLinkRow } from '../components/settings/ChatgptLinkRow';
 import { chatgptReady, useChatgptStore } from '../lib/stores/useChatgptStore';
@@ -1894,6 +1895,9 @@ export function SettingsScreen(): React.ReactElement {
               onChange={(next) => void onSelectAvatarMode(next)}
             />
           </div>
+          {/* 261107: "Open Sei when I log in" (WorldLink back after a restart).
+              Packaged macOS / Windows only; renders nothing elsewhere. */}
+          <OpenAtLoginRow />
           {/* Conversation starters (260707): on a quiet call, a companion may
               bring up a topic on its own. On by default. */}
           <div className={styles.row}>

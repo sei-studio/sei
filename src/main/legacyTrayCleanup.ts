@@ -18,11 +18,23 @@
  * returns at once; a corrupt file is just deleted; nothing here throws. If
  * removing the login item fails, the file stays so the next launch retries.
  * Can be deleted once no beta.1/beta.2 installs remain.
+ *
+ * 261107: "Open Sei when I log in" (seilink/openAtLogin.ts) registers a login
+ * item of its own, and this cleanup must never remove it:
+ *  - Windows: the retired item was the Run value named after the
+ *    AppUserModelId (Electron's default name, and Electron deletes by name);
+ *    the new one is WIN_RUN_NAME, so this removal cannot reach it.
+ *  - macOS: both are the app's one login item. When Sei's new setting holds
+ *    it (`ownedByOpenAtLogin`), the file is deleted and the item is left.
+ * Order at launch: this cleanup first, then syncOpenAtLoginAtLaunch, which
+ * reads the OS state this cleanup left (on Windows it puts back a missing
+ * item the user wants). legacyTrayCleanup.openAtLogin.test.ts pins both.
  */
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
 import { paths } from './paths';
+import { OPEN_AT_LOGIN_FILE, openAtLoginOwnsLoginItem } from './seilink/openAtLogin';
 
 /** argv marker the retired Windows login item was registered with. */
 const LEGACY_HIDDEN_ARG = '--hidden';
@@ -33,6 +45,8 @@ export interface LegacyTrayCleanupDeps {
   isPackaged: boolean;
   execPath: string;
   setLoginItemSettings: (settings: Electron.Settings) => void;
+  /** macOS: the "Open Sei when I log in" setting holds the app's login item now (see the header). */
+  ownedByOpenAtLogin: () => boolean;
   log: (msg: string) => void;
 }
 
@@ -47,6 +61,7 @@ function defaultDeps(): LegacyTrayCleanupDeps {
     isPackaged: app.isPackaged,
     execPath: process.execPath,
     setLoginItemSettings: (s) => app.setLoginItemSettings(s),
+    ownedByOpenAtLogin: () => openAtLoginOwnsLoginItem(path.join(paths.userData(), OPEN_AT_LOGIN_FILE)),
     log: (m) => console.log(`[sei] legacy tray cleanup: ${m}`),
   };
 }
@@ -64,8 +79,20 @@ export function cleanupLegacyTraySettings(
     } catch {
       // Corrupt file: nothing to trust in it, just remove it.
     }
-    const ownsLoginItem =
+    let ownsLoginItem =
       registered && deps.isPackaged && (deps.platform === 'darwin' || deps.platform === 'win32');
+    if (ownsLoginItem && deps.platform === 'darwin') {
+      let taken = true;
+      try {
+        taken = deps.ownedByOpenAtLogin();
+      } catch {
+        // Cannot tell: leave the item (a stray login item is better than a lost one).
+      }
+      if (taken) {
+        deps.log('login item now belongs to the open-at-login setting; leaving it');
+        ownsLoginItem = false;
+      }
+    }
     if (ownsLoginItem) {
       try {
         if (deps.platform === 'win32') {

@@ -29,6 +29,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { bundleRequire } from './bundleRequire';
 import { isSeilinkHostLaunch } from './seilink/host/hostArgs';
+import { removeLoginValueForUninstall } from './seilink/loginItemUninstall';
 import {
   applyInProgress,
   isUpdaterImage,
@@ -76,6 +77,7 @@ export interface VelopackModule {
       setLogger(cb: (level: string, msg: string) => void): unknown;
       onRestarted(cb: (v: string) => void): unknown;
       onFirstRun(cb: (v: string) => void): unknown;
+      onBeforeUninstallFastCallback(cb: (v: string) => void): unknown;
       setAutoApplyOnStartup(autoApply: boolean): unknown;
       run(): void;
     };
@@ -281,6 +283,12 @@ if (process.platform === 'win32' && app.isPackaged && !isSeilinkHostLaunch(proce
     });
     builder.onFirstRun((v) => {
       firstRunVersion = v;
+    });
+    // 261107: an uninstall takes the "Open Sei when I log in" Run value with it
+    // (seilink/loginItemUninstall.ts). The hook exits right after this returns.
+    builder.onBeforeUninstallFastCallback(() => {
+      const root = velopackPathsFor(process.execPath)?.root;
+      if (root) removeLoginValueForUninstall(root, velopackLog);
     });
     builder.setAutoApplyOnStartup(false);
     builder.run();

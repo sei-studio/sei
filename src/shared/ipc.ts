@@ -19,6 +19,7 @@ import type { SeilinkDevInfo, SeilinkPack, SeilinkRoomPayload } from './seilinkP
 import type { RoomState } from './seilinkRoom';
 import type { SeilinkAvailability, SeilinkHostStatus, SeilinkOfferVia, SeilinkOpenEditor, SeilinkStageRequest, SeilinkStageResult } from './seilinkHost';
 import type { SeilinkEditorEvent, SeilinkEditorSync } from './seilinkTogether';
+import type { OpenAtLoginState, OpenAtLoginUiSurface } from './openAtLogin';
 import type { AnimaShownKind, AnimaStatus, AnimaTrigger } from './anima';
 import type { AvatarLibraryResult, AvatarLibraryView } from './avatarLibrary';
 import { z } from 'zod';
@@ -2292,6 +2293,9 @@ export interface RendererApi {
   /** 261105 (T336): decorating together. The editor's unsaved room, and main's events for it. */
   seilinkEditorSync?(sync: SeilinkEditorSync): void;
   onSeilinkEditorEvent?(cb: (ev: SeilinkEditorEvent) => void): Unsubscribe;
+  /** 261107: "Open Sei when I log in" (packaged macOS / Windows with WorldLink; `supported` false elsewhere). */
+  seilinkLoginItemGet?(): Promise<OpenAtLoginState>;
+  seilinkLoginItemSet?(enabled: boolean, surface: OpenAtLoginUiSurface): Promise<OpenAtLoginState>;
   /**
    * Overlay window only (260806): stream a character's tile camera (zoom +
    * pan within the tile) while edit-mode wheel/drag adjusts it; `commit`
@@ -4401,6 +4405,10 @@ export const IpcChannel = {
     editorSync: 'seilink:editor-sync',
     /** Push (261105, T336): her edits and the session counters for an open editor (SeilinkEditorEvent). */
     editorEvent: 'seilink:editor-event',
+    /** Invoke (261107): "Open Sei when I log in" (OpenAtLoginState). */
+    loginItemGet: 'seilink:login-item-get',
+    /** Invoke (261107): turn it on or off ({enabled, surface: move_in|settings}) -> OpenAtLoginState after the OS read-back. */
+    loginItemSet: 'seilink:login-item-set',
   },
 } as const;
 
