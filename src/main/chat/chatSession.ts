@@ -101,6 +101,13 @@ export async function endChatSession(characterId: string, reason: ChatSessionEnd
       messages: live.messages,
       reason,
     });
+    // 261107 (O2 reach): text chat runs no "next time" check; one
+    // next_step_checked per session end says so (playerEndNextStep.ts).
+    const { reportNextStepNotRun } = await import('../playerEndNextStep');
+    reportNextStepNotRun(
+      { characterId, surface: 'chat', outcome: 'not_covered', endReason: reason, durationMs: live.lastAt - live.startedAt },
+      capture,
+    );
   } catch { /* best-effort */ }
 }
 

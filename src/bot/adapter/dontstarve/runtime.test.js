@@ -142,6 +142,8 @@ describe('createRuntime + fake mod', () => {
     mod.silence(true)
     await waitFor(() => h.onError.mock.calls.length === 1, 6_000)
     expect(h.onError.mock.calls[0][0].error).toBe('GAME_WORLD_NOT_OPEN')
+    // 261107: the player closing the world, so main runs the "next time" check.
+    expect(h.onError.mock.calls[0][0].endReason).toBe('world_closed')
     expect(h.onDisconnected).toHaveBeenCalledWith({ reason: 'heartbeat lost', willRetry: false })
     expect(h.brain.stop).toHaveBeenCalled()
   })

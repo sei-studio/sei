@@ -64,7 +64,7 @@ import { surfaceLanguage } from '../../shared/chatLanguage';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import * as chatStore from '../chat/chatStore';
 import { classifyUsageLimit, raiseUsageLimitPopup } from '../chat/usageLimit';
-import { startPlayerEndNextStep } from '../playerEndNextStep';
+import { reportNextStepNotRun, startPlayerEndNextStep } from '../playerEndNextStep';
 import type { LogBatch } from '../../shared/ipc';
 import {
   BACKSEAT_CONTRACT,
@@ -590,6 +590,16 @@ async function endBackseatSession(
       lines: s.state.lines.slice(-16).map((l) => ({ who: l.who === 'player' ? 'player' : 'you', text: l.text })),
       playerLines,
     }).catch(() => {});
+  } else {
+    // 261107 (O2 reach): a share that ended any other way runs no check; say so.
+    reportNextStepNotRun({
+      characterId,
+      surface: 'backseat',
+      ...(s.game ? { game: s.game.def.id } : {}),
+      outcome: 'not_covered',
+      endReason: reason,
+      durationMs,
+    });
   }
 
   // Continuity, OUT/short-term: one play row so the session exists in the

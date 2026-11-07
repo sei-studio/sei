@@ -1240,6 +1240,12 @@ function endSession(
         player_moves: playerMoveCount(s),
         nudges: s.nudges,
       });
+      // 261107 (O2 reach): chess runs no "next time" check; say so.
+      const { reportNextStepNotRun } = await import('../playerEndNextStep');
+      reportNextStepNotRun(
+        { characterId: s.characterId, surface: 'chess', outcome: 'not_covered', endReason: opts?.reason ?? result.reason, durationMs },
+        capture,
+      );
     } catch { /* analytics is never load-bearing */ }
   })();
 
