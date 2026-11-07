@@ -29,6 +29,7 @@ function deps(over: Partial<LegacyTrayCleanupDeps> = {}): LegacyTrayCleanupDeps 
     isPackaged: true,
     execPath: 'C:\\Sei\\Sei.exe',
     setLoginItemSettings: vi.fn(),
+    ownedByOpenAtLogin: () => false,
     log: () => {},
     ...over,
   } as LegacyTrayCleanupDeps & { setLoginItemSettings: ReturnType<typeof vi.fn> };

@@ -158,6 +158,20 @@ optional slot whose part shows particles (forest fireflies) counts as a
 swap or removal, and `particle_parts_at_close` / `particles_on` give the
 state at close.
 
+## Open at login (261107)
+
+Main-side, `src/shared/openAtLogin.ts` lists the closed sets.
+
+| Event | When | Props | Answers |
+|---|---|---|---|
+| `seilink_login_item_changed` | the setting changed: by the user (`move_in`/`settings`) or found off in the OS at launch (`os`) | enabled, surface `move_in`/`settings`/`os`, ok, platform | Opt-in rate per surface, how often people turn it off in the OS |
+| `seilink_login_item_failed` | registering, removing or reading the item threw, or the read-back did not match | failure_class `register_threw`/`unregister_threw`/`read_threw`/`readback_mismatch`/`requires_approval`/`not_found`, phase `set`/`sync`, enabled, platform | Does registration work per OS |
+| `seilink_login_launch` | a login launch after its startup restore | outcome `room`/`nothing_to_show` (quiet quit), opened (the window was shown before that) | Do login launches bring her back |
+| `seilink_login_launch_opened` | a login launch's window first shown | via `room`/`dock`/`second_launch`/`other`, after_ms | Do people open Sei from her room after a login |
+
+`app_opened` carries `login_launch` (true for a login launch), so normal and
+login starts can be told apart.
+
 ## Errors
 
 | Event | When | Props | Answers |

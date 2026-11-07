@@ -2365,4 +2365,11 @@ export const RU: Record<string, string> = {
   "Default": "Основной",
   // ── regen hint (261107) ──
   "Not happy with the look?": "Не нравится внешний вид?",
+  // ── open at login (261107) ──
+  "Open Sei when I log in": "Открывать Sei при входе в систему",
+  "{name} comes back to your desktop after a restart.": "{name} вернётся на рабочий стол после перезагрузки.",
+  "About opening Sei at login": "Об открытии Sei при входе",
+  "Starts Sei in the background when you log in, so the companion on your desktop is back in their room. The Sei window stays closed until you open it.": "Запускает Sei в фоне при входе в систему, чтобы компаньон на рабочем столе снова был в своей комнате. Окно Sei остаётся закрытым, пока вы его не откроете.",
+  "Allow Sei in System Settings, under General > Login Items.": "Разрешите Sei в Системных настройках: Основные > Объекты входа.",
+  "Could not change this setting. Try again.": "Не удалось изменить настройку. Попробуйте ещё раз.",
 };

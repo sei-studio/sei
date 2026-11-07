@@ -167,6 +167,27 @@ export function updaterWindow(): BrowserWindow | null {
   return ctx.getMainWindow();
 }
 
+/**
+ * 261107: index.ts decides a second launch first. It returns true when it has
+ * handled the launch: a login launch while Sei already runs (nothing to do),
+ * or no window left to bring forward (Windows kept running for her desktop
+ * room after the last window closed), so it makes one.
+ */
+let secondLaunchHandler: ((argv: readonly string[]) => boolean) | null = null;
+
+export function setSecondLaunchHandler(fn: ((argv: readonly string[]) => boolean) | null): void {
+  secondLaunchHandler = fn;
+}
+
+/** boot.ts second-instance: true = handled, do not focus a window. Never throws. */
+export function handleSecondLaunch(argv: readonly string[]): boolean {
+  try {
+    return secondLaunchHandler ? secondLaunchHandler(argv) : false;
+  } catch {
+    return false;
+  }
+}
+
 /** The window a second launch should bring forward. */
 export function focusableWindow(): BrowserWindow | null {
   return updaterWindow();

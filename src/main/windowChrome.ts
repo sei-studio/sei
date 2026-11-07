@@ -16,6 +16,8 @@ export interface CreateMainWindowOptions {
    * never appears while the logo is still on screen. Errors never block the
    * show. */
   beforeFirstShow?: () => Promise<void>;
+  /** 261107: a login launch (seilink/loginLaunch.ts): load, but never show on its own. */
+  startHidden?: boolean;
 }
 
 export function createMainWindow(opts: CreateMainWindowOptions): BrowserWindow {
@@ -85,6 +87,8 @@ export function createMainWindow(opts: CreateMainWindowOptions): BrowserWindow {
   win.once('ready-to-show', () => {
     const reveal = (): void => {
       if (win.isDestroyed()) return;
+      // Something already showed it (a click on her, the Dock) while it loaded.
+      if (opts.startHidden) return;
       win.show();
       // DevTools only auto-opens with the dev-tools flag (SEI_DEV_TOOLS=1, set
       // by `npm run dev -- --tools` / `npm run dev:tools`). A plain `npm run

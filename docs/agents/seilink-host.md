@@ -332,6 +332,60 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   `stopSeilinkHostForAccountSwitch()`; starts take `beginSessionStart()`
   (`ACCOUNT_SWITCHING` during a switch).
 
+## Open Sei when I log in (261107)
+
+Opt-in, off by default, so her room comes back after a restart. Shown only on
+a packaged macOS or Windows build where WorldLink runs
+(`openAtLoginSupported`): a switch on the move-in sheet (applied when Move in
+works, only if changed) and Settings > Appearance (`OpenAtLoginRow.tsx`).
+IPC `seilink:login-item-get|set` answers `OpenAtLoginState
+{supported, enabled, needsApproval}` after main has read the OS back.
+
+- Files: `seilink/openAtLogin.ts` (setting + OS item + launch sync, pure
+  `decideSync`), `seilink/loginLaunch.ts` (pure launch rules),
+  `seilink/loginLaunchRuntime.ts` (Electron wiring), `seilink/loginItemUninstall.ts`
+  (Velopack uninstall), `build/installer.nsh` `customUnInstall` (NSIS).
+- The choice lives in the device-global `<userData>/open-at-login.json`
+  (`open_at_login`, `registered`, `registered_path` on Windows,
+  `approval_pending` on macOS). The OS item is device-global too, so the
+  setting is not per profile.
+- Registration: `app.setLoginItemSettings`. macOS: `{openAtLogin}` only
+  (SMAppService mainApp on 13+, status read back). Windows: its own HKCU Run
+  value `SeiWorldLink` (never the AppUserModelId name the retired tray item
+  used), `args: ['--seilink-login']`, path = `<root>\current\Sei.exe` for a
+  Velopack install (stable across updates) or the NSIS exe.
+- Every change is read back. A throw or a mismatch flips the switch back and
+  sends `seilink_login_item_failed`. macOS `requires-approval` right after
+  Sei's own register stays on with "Allow Sei in System Settings" until it
+  is approved.
+- Launch sync (`syncOpenAtLoginAtLaunch`, at ready, AFTER
+  `cleanupLegacyTraySettings`): the user removed or turned off the item in the
+  OS (Login Items, Task Manager) = off in Sei, never re-added
+  (`changed` with surface `os`). Windows only: a missing value with the
+  setting on is written again (NSIS to Velopack moves the exe), but an old
+  path with a disabled value stays off. Setting off = a stray item is removed
+  (macOS only one Sei registered, so a hand-added login item survives).
+- A login launch (Windows: the marker arg; macOS: `wasOpenedAtLogin` and the
+  setting on): no splash, no launch-time update apply, the main window made
+  hidden. The room restores as usual; a click on her, the Dock or a second
+  launch shows the window. The player-end "next time" LLM check and the
+  Velopack migration wait for that first show (`afterLoginReveal`). Once
+  bootstrap is done and the seilink queue is idle, no room up (signed out,
+  nobody moved in, unsupported, start failed) = quiet quit; her room ending
+  while still hidden quits too.
+- Windows residency: closing the last window keeps Sei running while her room
+  is up and the setting is on (or it is a login launch); it quits when the
+  room ends with no window. macOS is unchanged (always resident).
+- Uninstall: NSIS removes the value on a real uninstall (not an update) only
+  when it starts `$INSTDIR`; Velopack's uninstall hook does the same with
+  reg.exe. macOS: dragging Sei to the Trash runs no code, so the
+  SMAppService entry may stay in Login Items until the user removes it
+  (not verified on a real Mac).
+  Factory reset unregisters before the wipe. Sign-out keeps the item; a login
+  launch with no move-in in that profile just quits.
+- Caveat: the avatar overlay set to "Always" may show on a login launch, since
+  the renderer runs hidden.
+
 ## Entry points and the first link (261105, T337)
 
 - Every way into WorldLink goes through `lib/seilink/seilinkFlow.ts`, and the

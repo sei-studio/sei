@@ -4385,6 +4385,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         // A leftover tray-settings.json (retired tray mode) is the only record
         // that Sei registered a login item: remove the item before the wipe.
         try { (await import('./legacyTrayCleanup')).cleanupLegacyTraySettings(); } catch { /* best-effort */ }
+        // 261107: and the "Open Sei when I log in" item, before the wipe takes the file that records it.
+        try { (await import('./seilink/openAtLogin')).unregisterOpenAtLoginForReset(); } catch { /* best-effort */ }
       },
     });
   });
