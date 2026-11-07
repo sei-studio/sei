@@ -121,7 +121,11 @@ tested). MEMORY.md does not say where a plan came from and is model-facing,
 so main keeps a sidecar `NEXT_STEP.json` in the memory dir: tags (plan text
 key -> surface/game, written right after a goodbye plan or a player-end save)
 and a `consumedAt` watermark set when a bot session goes online or a call
-greeting runs (both greetings are told about the plan). Only the NEWEST plan
+greeting runs (both greetings are told about the plan). 261107: a text chat
+session starting (its first message, `chat/chatSession.ts`) sets it too, but
+only for a newest plan tagged `chat` with no game (`consumeNextStep`
+`onlySurface: 'chat'`); a game, call, backseat or untagged plan stays until
+its own surface runs. No consume event exists for any surface. Only the NEWEST plan
 counts: a consumed or expired newest plan never falls back to an older one.
 IPC `home:next-steps` + push `home:next-step-changed`; renderer
 `lib/homeNextStep.ts`, `useHomeNextStepStore` (cleared on account switch),
