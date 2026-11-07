@@ -7,7 +7,7 @@ import { DICTIONARIES } from './index';
  * English strings the app passes to t(); English itself has no dictionary).
  */
 const REFERENCE = DICTIONARIES.zh;
-const ADDED = ['ja', 'ru', 'pt-BR', 'es'] as const satisfies readonly UiLanguage[];
+const ADDED = ['ja', 'ru', 'pt-BR', 'es', 'it'] as const satisfies readonly UiLanguage[];
 
 /** Placeholders the English key carries that a translation may drop. */
 const OPTIONAL: Record<string, readonly string[]> = {
@@ -22,6 +22,7 @@ const FRIEND: Record<(typeof ADDED)[number], RegExp> = {
   ru: /(?<![а-яё])(друг|друга|другу|другом|друге|друзья|друзей|друзьям|друзьями|друзьях|дружище|подруг[а-яё]*)(?![а-яё])/iu,
   'pt-BR': /\b(amig[oa]s?|amiguinh[oa]s?|parceir[oa]s?|parças?)\b/iu,
   es: /\b(amig[oa]s?|amiguit[oa]s?|parcer[oa]s?|cuates?|colegas?)\b/iu,
+  it: /\b(amic[oaie]|amichet[taoie]+)\b/iu,
 };
 
 /** Every `{name}` placeholder and plural variable, at any depth. */

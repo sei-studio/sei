@@ -1,6 +1,6 @@
 /**
- * Main-process and shared copy for the 261104 UI languages (ja, ru, pt-BR,
- * es). en and zh stay inline beside each table's code; these four are kept
+ * Main-process and shared copy for the added UI languages (ja, ru, pt-BR,
+ * es, it). en and zh stay inline beside each table's code; the others are kept
  * here so the tables stay readable. Same review pipeline as the renderer
  * dictionaries. Keys match the English table each site already has.
  *
@@ -11,6 +11,40 @@ import type { UiLanguage } from './uiLanguage';
 export type AddedUiLanguage = Exclude<UiLanguage, 'en' | 'zh'>;
 
 export const SAFE_MODE_ADDED = {
+  it: {
+    docTitle: 'Modalità provvisoria di Sei',
+    title: 'Sei ha avuto un problema all’avvio',
+    bodyRepeated: 'Sei non si è avviato correttamente per due volte consecutive, quindi si è aperto in modalità provvisoria. Giochi, finestre flottanti e voce sono temporaneamente disattivati.',
+    bodyForced: 'Sei è stato avviato in modalità provvisoria. Giochi, finestre flottanti e voce sono temporaneamente disattivati.',
+    updatesHeading: 'Aggiornamenti',
+    updatesHint: 'Una versione più recente potrebbe aver già risolto il problema.',
+    check: 'Controlla aggiornamenti',
+    checking: 'Verifica degli aggiornamenti...',
+    available: 'Sei {v} è disponibile.',
+    download: 'Scarica aggiornamento',
+    downloading: 'Download dell’aggiornamento... {p}%',
+    ready: 'L’aggiornamento è pronto.',
+    install: 'Riavvia e aggiorna',
+    installing: 'Installazione dell’aggiornamento. Sei si riavvierà tra poco.',
+    upToDate: 'Hai già l’ultima versione ({v}).',
+    updateError: 'Impossibile verificare gli aggiornamenti. Controlla la connessione e riprova.',
+    checkTimeout: 'Il server degli aggiornamenti non ha ancora risposto. Controlla la connessione e riprova.',
+    updatesDev: 'Gli aggiornamenti funzionano solo nell’app installata.',
+    otherHeading: 'Altre soluzioni da provare',
+    openLogs: 'Apri cartella dei log',
+    openLogsError: 'Impossibile aprire la cartella dei log.',
+    reset: 'Ripristina impostazioni',
+    resetHint: 'Riporta le preferenze ai valori predefiniti.',
+    resetConfirm: 'Ripristinare le impostazioni? Tema, voce, finestre flottanti e opzioni di gioco torneranno ai valori predefiniti. Personaggi, chat e account rimarranno intatti.',
+    resetYes: 'Ripristina',
+    resetNo: 'Annulla',
+    resetDone: 'Impostazioni ripristinate. Prova l’avvio normale per verificare se il problema è risolto.',
+    resetError: 'Impossibile ripristinare le impostazioni.',
+    normal: 'Prova avvio normale',
+    normalHint: 'Sei si riavvia e tenta una volta l’avvio normale.',
+    logsHint: 'Se il problema persiste, il file più recente in quella cartella ci aiuta a capirne la causa.',
+    versionLine: 'Versione {v}',
+  },
   ja: {
     docTitle: "Seiセーフモード",
     title: "Seiの起動に問題が発生しました",
@@ -150,6 +184,18 @@ export const SAFE_MODE_ADDED = {
 } as const satisfies Record<AddedUiLanguage, Record<string, string>>;
 
 export const UPDATE_WINDOW_ADDED = {
+  it: {
+    title: 'Aggiornamento',
+    subtitle: 'Sei si riaprirà automaticamente al termine.',
+    minutes: 'Mancano circa {n} minuti',
+    oneMinute: 'Manca circa un minuto',
+    underMinute: 'Manca meno di un minuto',
+    seconds: 'Mancano pochi secondi',
+    almost: 'Quasi pronto',
+    longer: 'Ci vuole un po’ più del solito',
+    opening: 'Apertura di Sei',
+    failed: 'Sei non si è riaperto. Aprilo dal menu Start.',
+  },
   ja: {
     title: "アップデート中",
     subtitle: "完了するとSeiが自動で再起動します。",
@@ -201,6 +247,18 @@ export const UPDATE_WINDOW_ADDED = {
 } as const satisfies Record<AddedUiLanguage, Record<string, string>>;
 
 export const FREE_PLAY_RESET_ADDED = {
+  it: {
+    freeToday: 'Il tempo di gioco gratuito si rinnova oggi alle {time}.',
+    freeTomorrow: 'Il tempo di gioco gratuito si rinnova domani ({date}).',
+    freeDays: 'Il tempo di gioco gratuito si rinnova tra {n, plural, one {# giorno} other {# giorni}} ({date}).',
+    allowanceToday: 'La disponibilità settimanale si rinnova oggi alle {time}.',
+    allowanceTomorrow: 'La disponibilità settimanale si rinnova domani ({date}).',
+    allowanceDays: 'La disponibilità settimanale si rinnova tra {n, plural, one {# giorno} other {# giorni}} ({date}).',
+    quietFree: 'Per ora hai esaurito il tempo di gioco gratuito, quindi {name} continua a giocare in silenzio, senza chat.',
+    quietAllowance: 'Hai esaurito i crediti di questa settimana, quindi {name} continua a giocare in silenzio, senza chat.',
+    ctaTopUp: 'Acquista crediti per riprendere a interagire prima.',
+    ctaTopUpOrUpgrade: 'Acquista crediti o passa a un piano superiore per riprendere a interagire prima.',
+  },
   ja: {
     freeToday: "無料プレイは今日の{time}にリセットされます。",
     freeTomorrow: "無料プレイは明日リセットされます（{date}）。",
@@ -252,6 +310,14 @@ export const FREE_PLAY_RESET_ADDED = {
 } as const satisfies Record<AddedUiLanguage, Record<string, string>>;
 
 export const VELOPACK_SPLASH_ADDED = {
+  it: {
+    updating: 'Aggiornamento…',
+    secondsLeft: 'circa {s} secondi rimanenti',
+    minuteLeft: 'circa un minuto rimanente',
+    minutesLeft: 'circa {n} minuti rimanenti',
+    longer: 'ancora qualche minuto',
+    error: 'Aggiornamento non riuscito. Apertura di Sei…',
+  },
   ja: {
     updating: "アップデート中…",
     secondsLeft: "残り約{s}秒",
@@ -287,6 +353,11 @@ export const VELOPACK_SPLASH_ADDED = {
 } as const satisfies Record<AddedUiLanguage, Record<string, string>>;
 
 export const DST_GRANT_ADDED = {
+  it: {
+    message: 'macOS richiede il tuo permesso una volta. Fai clic su «Installa supporto» per consentire a Sei di aggiungere la mod di supporto a Don’t Starve Together.',
+    hint: 'Quella era un’altra cartella. Fai clic su «Installa supporto» con la cartella «mods» aperta.',
+    button: 'Installa supporto',
+  },
   ja: {
     message: "macOSで一度だけ許可が必要です。「補助MODをインストール」をクリックすると、SeiがDon't Starve Togetherに補助MODを追加できます。",
     hint: "別のフォルダが選ばれています。「mods」フォルダを開いた状態で「補助MODをインストール」をクリックしてください。",

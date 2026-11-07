@@ -30,6 +30,13 @@ describe('detectUiLanguage', () => {
     expect(detectUiLanguage(undefined, ['pt_PT'])).toBe('pt-BR');
   });
 
+  it('detects Italian only before an explicit UI-language choice', () => {
+    expect(detectUiLanguage(undefined, ['it-IT', 'en-US'])).toBe('it');
+    expect(detectUiLanguage(undefined, ['it-CH'])).toBe('it');
+    expect(detectUiLanguage('en', ['it-IT'])).toBeNull();
+    expect(detectUiLanguage(undefined, ['en-US', 'it-IT'])).toBeNull();
+  });
+
   it('never overrides an explicit choice, any value', () => {
     expect(detectUiLanguage('en', ['zh-CN'])).toBeNull();
     expect(detectUiLanguage('zh', ['zh-CN'])).toBeNull();
