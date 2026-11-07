@@ -560,7 +560,8 @@ built for the loop itself.
   `DIG_MAX_REACH` (5.0) is where `digAction` refuses (mineflayer's
   `canDigBlock` allows 5.1, the 1.21 server 4.5 + 1 to the block's box). A dig
   still a step short after its walk gets one short close-in walk
-  (`closeInForDig`, aimed at 3.5, 4s) in the dig tool and in gather before the
+  (`closeInForDig`, aimed at 3.5, 4s; only when the walk said `reached`) in the
+  dig tool and in gather before the
   block is marked unreachable. Until 261107 (pass 45) the refusal was 4.5 and
   "out of range (4.5m-5.0m) ... (the walk toward it ended: reached)" came up on
   every gather_craft free-play run.

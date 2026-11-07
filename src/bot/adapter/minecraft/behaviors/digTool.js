@@ -220,13 +220,15 @@ export async function digToolAction(args, bot, config, _deps) {
   }
   if (r === 'aborted') return 'aborted'
 
-  // 261107 (pass 45): a step or two short of reach after the walk: one more
-  // short walk, then the dig again.
-  if (typeof r === 'string' && r.startsWith('out of range')) {
+  // 261107 (pass 45): the walk said "reached" but stopped a step or two short
+  // of reach: one more short walk, then the dig again. Not after a walk that
+  // failed (that says the block is out of the way, and the close-in would
+  // only fail the same way).
+  if (typeof r === 'string' && r.startsWith('out of range') && walk === 'reached') {
     const step = await closeInForDig(bot, pos, goTo, signal, keep)
     if (step === 'aborted' || signal?.aborted) return 'aborted'
     if (step != null) {
-      if (walk == null || String(step) === 'reached') walk = step
+      walk = step
       r = await dig()
       if (r === 'aborted') return 'aborted'
     }

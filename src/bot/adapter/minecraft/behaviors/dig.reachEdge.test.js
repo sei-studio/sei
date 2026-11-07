@@ -91,4 +91,19 @@ describe('dig reach at the edge of a walk (261107)', () => {
     expect(dig).toHaveBeenCalledTimes(2)
     expect(r).toMatch(/^dug stone/)
   })
+
+  it('no close-in walk after a walk that failed (timeout or cant_reach)', async () => {
+    for (const result of ['timeout', 'cant_reach']) {
+      const bot = makeBot({ x: 6.5, y: 66, z: 0.5 })
+      const goTo = vi.fn(async () => {
+        bot.entity.position = new Vec3(6, 66, 1.5)
+        return result
+      })
+      const dig = vi.fn(async () => 'out of range (5.8m, need ≤5.0) for stone @3,62,0')
+      const r = await digToolAction({ x: 3, y: 62, z: 0 }, bot, {}, { goTo, digAction: dig, sleep: async () => {} })
+      expect(goTo).toHaveBeenCalledTimes(1)
+      expect(dig).toHaveBeenCalledTimes(1)
+      expect(r).toContain(`(the walk toward it ended: ${result}`)
+    }
+  })
 })
