@@ -57,7 +57,8 @@ import { PLAYER_END_NEXT_STEP_SYSTEM } from '../bot/brain/promptLibrary.js';
 import { gameDisplayName, gameIdFromName, nameInSentence } from '../shared/homeNextStep';
 import { GAME_IDS, isGameId, type GameId } from '../shared/gameIpc';
 
-export type NextStepSurface = 'game' | 'call' | 'backseat';
+/** 261107: 'chat' = a text-chat session (chatNextStep.ts). */
+export type NextStepSurface = 'game' | 'call' | 'backseat' | 'chat';
 
 export interface DigestLine {
   /** The human player, this companion, or a sibling companion. */
@@ -94,9 +95,9 @@ export function isPlayerEndedGame(reason: string | undefined): boolean {
   return typeof reason === 'string' && PLAYER_ENDED_GAME_REASONS.has(reason);
 }
 
-/** Long enough, and either the player talked or there was a goal. */
-export function worthChecking(p: { durationMs: number; playerLines: number; goals: number }): boolean {
-  return p.durationMs >= PLAYER_END_MIN_MS && (p.playerLines >= 2 || p.goals > 0);
+/** Long enough, and either the player talked (`minPlayerLines`, default 2) or there was a goal. */
+export function worthChecking(p: { durationMs: number; playerLines: number; goals: number; minPlayerLines?: number }): boolean {
+  return p.durationMs >= PLAYER_END_MIN_MS && (p.playerLines >= (p.minPlayerLines ?? 2) || p.goals > 0);
 }
 
 // ── session digests from the bot port ─────────────────────────────────────
@@ -430,6 +431,14 @@ export interface PlayerEndInput {
   source?: 'player_end' | 'app_quit';
   /** Extra shape-only props for the two events (T120: `late_hours`). */
   eventProps?: Record<string, string | number | boolean>;
+  /** Fewer player lines than this (and no goal) is trivial. Default 2. */
+  minPlayerLines?: number;
+  /**
+   * 261107: skip when the call would be paid by Sei for a free cloud account
+   * (text chat: a check there is a new LLM call). Reported as `not_covered`
+   * with `skip_reason: 'free_cloud'`.
+   */
+  skipOnFreeCloud?: boolean;
 }
 
 export type PlayerEndOutcome =
@@ -442,7 +451,8 @@ export type PlayerEndOutcome =
   | 'timeout'
   | 'error'
   | 'cancelled'
-  | 'no_character';
+  | 'no_character'
+  | 'free_cloud';
 
 export interface PlayerEndDeps {
   buildProvider(): Promise<LlmProvider>;
@@ -450,6 +460,13 @@ export interface PlayerEndDeps {
   isOnline(): boolean;
   /** Cloud account over its limit (fails open: false on any error / BYOK). */
   overLimit(): Promise<boolean>;
+  /**
+   * 261107: the check would be a cost to Sei, i.e. the cloud backend on the
+   * free plan (or signed out). BYOK, local models, the ChatGPT plan and a
+   * paid plan are false. Fails CLOSED: true on any error or slow read.
+   * Only consulted for inputs with `skipOnFreeCloud`.
+   */
+  freeCloud(): Promise<boolean>;
   readText(file: string): Promise<string>;
   memoryFile(characterId: string): string;
   goalsFile(characterId: string, game: string): string;
@@ -519,9 +536,17 @@ export async function runPlayerEndNextStep(
   const outcome = await (async (): Promise<PlayerEndOutcome> => {
     try {
       const goals = await readGoals(deps, input);
-      if (!worthChecking({ durationMs: input.durationMs, playerLines: input.playerLines, goals: goals.length })) {
+      if (
+        !worthChecking({
+          durationMs: input.durationMs,
+          playerLines: input.playerLines,
+          goals: goals.length,
+          minPlayerLines: input.minPlayerLines,
+        })
+      ) {
         return 'trivial';
       }
+      if (input.skipOnFreeCloud && (await deps.freeCloud())) return 'free_cloud';
       provider = await deps.buildProvider();
       const local = provider.kind === 'ollama';
       if (!local && !deps.isOnline()) return 'offline';
@@ -613,7 +638,8 @@ function reportCheckOutcome(
     capture('next_step_checked', {
       ...base,
       saved: outcome === 'saved',
-      outcome,
+      // 261107: a free cloud chat is the not_covered of before, now with why.
+      ...(outcome === 'free_cloud' ? { outcome: 'not_covered', skip_reason: 'free_cloud' } : { outcome }),
       reached_model: reachedModel,
       duration_s: Math.max(0, Math.round(input.durationMs / 1000)),
     });
@@ -783,6 +809,7 @@ function defaultDeps(): PlayerEndDeps {
         return false;
       }
     },
+    freeCloud: () => freeCloudNow(),
     readText: (file) => readFile(file, 'utf8'),
     memoryFile(characterId) {
       return path.join(memoryDirOf(characterId), 'MEMORY.md');
@@ -831,6 +858,38 @@ function defaultDeps(): PlayerEndDeps {
     now: () => Date.now(),
     log: (msg) => console.log(msg),
   };
+}
+
+/** How long the plan read behind freeCloud may take before it counts as free. */
+export const FREE_CLOUD_READ_MS = 5_000;
+
+/**
+ * True when a check would be paid by Sei: the cloud backend on the free plan,
+ * signed out, or a plan read that failed or took longer than
+ * FREE_CLOUD_READ_MS. Any other backend (BYOK, Ollama and other local
+ * models, the ChatGPT plan) is the user's own cost; a paid plan spends its
+ * own allowance, like a call.
+ */
+async function freeCloudNow(): Promise<boolean> {
+  try {
+    const { getAiBackendKind } = await import('./apiKeyStore');
+    if ((await getAiBackendKind()) !== 'cloud-proxy') return false;
+    const { creditsGet } = await import('./cloud/proxyClient');
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const slow = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), FREE_CLOUD_READ_MS);
+      timer.unref?.();
+    });
+    const status = await Promise.race([creditsGet(), slow]).finally(() => clearTimeout(timer));
+    return !status || isFreeCloudPlan(status.plan);
+  } catch {
+    return true;
+  }
+}
+
+/** A plan that leaves the check's cost with Sei. Pure. */
+export function isFreeCloudPlan(plan: string | null | undefined): boolean {
+  return plan !== 'quest' && plan !== 'party';
 }
 
 let lazyAnalytics: Promise<typeof import('./lazyAnalytics')> | null = null;

@@ -279,9 +279,30 @@ model was called). Now:
   Count checks with `reached_model = true` to compare with older data.
 - A companion goodbye plan also sends `next_step_saved {source:'companion'}`,
   so `next_step_saved` counts every plan source.
-Not covered, by choice: text chat, chess and Draw! (a check there would be a
-new LLM call for free users), DST final death, companion goodbyes without a
-plan, and calls lost to an account switch or a renderer crash.
+Not covered, by choice: chess and Draw! (a check there would be a new LLM
+call for free users), DST final death, companion goodbyes without a plan, and
+calls lost to an account switch or a renderer crash.
+
+**Text chat gets the check when it costs Sei nothing (261107, O2).** The chat
+memory fold (`continuity.ts`) is not a session-end call: it runs per 50-message
+batch and never sees the newest 50, so it cannot carry the plan. Instead
+`src/main/chatNextStep.ts` runs the same player-end check on a chat end, with
+`surface: 'chat'`, activity `a text chat`, lines = the typed transcript rows
+in the session window (`chatDigestFromRows`), and two extra input gates:
+`minPlayerLines` 4 (`CHAT_MIN_PLAYER_MESSAGES`) and `skipOnFreeCloud`. The
+gate (`PlayerEndDeps.freeCloud`) passes BYOK, Ollama and other local models,
+the ChatGPT plan, and paid plans (quest / party spend their own allowance);
+the cloud free plan, signed out, or a plan read that fails or takes over 5 s
+is skipped and reported as `outcome: 'not_covered', skip_reason:
+'free_cloud'`. Routing (`chatEndRoute`): idle end = check in the background
+(endChatSession never waits on it); quit = `PENDING_NEXT_STEP.json` with
+surface `chat`, checked on the next launch through the same gate; account
+switch = not_covered. A new chat session yields a local-model check. Plans
+about a game are tagged with that game; others are tagged `chat`, and the
+Home card's button is "Message {name}" (opens the chat). Probe:
+`npx tsx scripts/chat-next-step-probe.ts --reps 3` (16 chats, 261107: saved
+17 of 24 on chats with a plan, 0 of 24 on small talk; misses were "ask how X
+went" chats). Not done: a chat plan is not marked used by the next chat.
 
 **Forge/NeoForge hosts are blocked before summon (260929).** Only on STRONG
 evidence: the status ping's forgeData/modinfo (`forgeModCount != null`) or an

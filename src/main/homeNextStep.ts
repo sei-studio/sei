@@ -272,7 +272,7 @@ export function parseLedger(raw: string | null): NextStepLedger {
             !!t &&
             typeof t.key === 'string' &&
             typeof t.at === 'string' &&
-            (t.surface === 'game' || t.surface === 'call' || t.surface === 'backseat') &&
+            (t.surface === 'game' || t.surface === 'call' || t.surface === 'backseat' || t.surface === 'chat') &&
             (t.game === undefined || typeof t.game === 'string'),
         )
           // 261014: a non-string line is dropped, the tag kept.
