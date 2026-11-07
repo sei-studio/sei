@@ -78,6 +78,7 @@ import {
 import { blockedAutoSummon, clearSummonBlock } from './summonGuard';
 import { noteCreditWall, type CreditWallContext } from './creditWall';
 import { observeOnboardingEvent } from './onboardingFunnel';
+import { getLanDiagnosis } from './lanSources';
 import { sanitizeRendererSetupProps, trackMcScan, trackOpenLauncher, trackStardewScan, trackStartMinecraft } from './setupTelemetry';
 import { GAME_SETUP_EVENT } from '../shared/setupTelemetry';
 import { isSeilinkRendererEvent, sanitizeSeilinkTrack } from '../shared/seilinkTelemetry';
@@ -3486,7 +3487,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       trackAnalytics(
         event,
         event === GAME_SETUP_EVENT
-          ? sanitizeRendererSetupProps(props)
+          ? sanitizeRendererSetupProps(props, getLanDiagnosis())
           : isSeilinkRendererEvent(event)
             ? sanitizeSeilinkTrack(event, props)
             : isSeilinkIntroEvent(event)

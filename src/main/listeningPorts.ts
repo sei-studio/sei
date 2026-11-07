@@ -63,7 +63,11 @@ export function parseNetstat(out: string): ListeningPort[] {
     //   `TCP  0.0.0.0:61871  0.0.0.0:0  LISTENING  1234`
     //   `TCP  [::]:61871     [::]:0     LISTENING  1234`
     // UDP rows have no state column and are skipped by the proto check.
-    if (parts.length < 5) continue;
+    // Issue #52: some Windows 11 builds (26300.x with KB5127936) report a
+    // listener's state as 0, which has no name. netstat then usually drops
+    // the row, but a row printed with an empty state column (4 fields) is
+    // still a listener by the foreign-port-0 shape below, so keep it.
+    if (parts.length < 4) continue;
     if (!/^TCP/i.test(parts[0])) continue;
     // Locale-proof LISTENING detection (issue #5): localized Windows
     // translates the state word (German "ABHÖREN"), so match the shape
@@ -144,4 +148,189 @@ export async function listeningPorts(): Promise<ListeningPort[]> {
   // darwin + linux: -nP (no DNS/port-name resolution), TCP listeners only.
   const out = await run('lsof', ['-nP', '-iTCP', '-sTCP:LISTEN']);
   return parseLsof(out);
+}
+
+// ---------------------------------------------------------------------------
+// Windows fallback: listeners with a broken state (issue #52)
+// ---------------------------------------------------------------------------
+//
+// On some Windows 11 builds (26300.9818 with KB5127936; Microsoft Q&A
+// "GetExtendedTcpTable returns dwState 0 for listening sockets") the TCP
+// table reports a LISTEN socket with state 0. 0 is not a valid
+// MIB_TCP_STATE, so netstat leaves the row out entirely and
+// Get-NetTCPConnection shows it with an empty State. The port still accepts
+// connections, so the world is reachable; only the listing is wrong.
+// Get-NetTCPConnection still lists the row (with its owning pid), so it is
+// the fallback enumerator. It runs through PowerShell, which costs ~0.5-1s of
+// CPU per call, so the watcher only uses it while a Java process runs and
+// netstat has found no world (winLanFallback.ts), never per 2s poll.
+
+/** True for a process image name that is a Java runtime (java.exe, javaw.exe). */
+export function isJavaCommand(command: string): boolean {
+  return /java/i.test(command);
+}
+
+/**
+ * Pids of running Java processes, from one `tasklist` call. Also refreshes the
+ * pid -> name cache that `winFillCommands` reads, so a pid seen here never
+ * costs a second tasklist. Throws when tasklist fails.
+ */
+export async function winJavaPids(): Promise<number[]> {
+  const names = parseTasklist(await run('tasklist', ['/fo', 'csv', '/nh']));
+  const pids: number[] = [];
+  for (const [pid, name] of names) {
+    winPidCommand.set(pid, name);
+    if (isJavaCommand(name)) pids.push(pid);
+  }
+  return pids.sort((a, b) => a - b);
+}
+
+/** One row of our Get-NetTCPConnection listing. */
+export interface TcpConnRow {
+  localAddress: string;
+  localPort: number;
+  remoteAddress: string;
+  remotePort: number | null;
+  /** Raw state as printed: MIB_TCP_STATE number ('2' = Listen), a name, or '' when broken. */
+  state: string;
+  pid: number | null;
+}
+
+const SENTINEL = '#sei-done';
+
+/**
+ * PowerShell script that lists the TCP rows owned by `pids` as
+ * `local|port|remote|rport|state|pid` lines, then a sentinel line so an empty
+ * listing can be told apart from a failed run. State is read RAW from the CIM
+ * property (a number, so it is also locale-proof): the formatted `.State`
+ * cannot show 0, which is exactly the value this fallback exists for.
+ * No double quotes in the script, so execFile's Windows quoting stays simple.
+ */
+export function netTcpConnectionScript(pids: readonly number[]): string {
+  const list = pids.filter((p) => Number.isInteger(p) && p > 0).join(',');
+  // One line (statements joined by `;`): a newline inside a CreateProcess
+  // argument is not something to rely on.
+  return (
+    "$ErrorActionPreference='SilentlyContinue'; " +
+    `Get-NetTCPConnection -OwningProcess ${list} | ForEach-Object { ` +
+    // Copy $_ first: a catch block rebinds $_ to the error record.
+    '$c=$_; $s=$null; ' +
+    "try { $s=$c.CimInstanceProperties['State'].Value } catch {}; " +
+    'if ($null -eq $s) { try { $s=[int]$c.State } catch { try { $s=[string]$c.State } catch {} } }; ' +
+    "'{0}|{1}|{2}|{3}|{4}|{5}' -f $c.LocalAddress,$c.LocalPort,$c.RemoteAddress,$c.RemotePort,$s,$c.OwningProcess " +
+    '}; ' +
+    `'${SENTINEL}'`
+  );
+}
+
+/**
+ * Parse the script's output. `complete` is false when the sentinel is
+ * missing (PowerShell crashed, was blocked, or timed out part way).
+ */
+export function parseNetTcpConnection(out: string): { rows: TcpConnRow[]; complete: boolean } {
+  const rows: TcpConnRow[] = [];
+  let complete = false;
+  for (const raw of out.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line === SENTINEL) {
+      complete = true;
+      continue;
+    }
+    const f = line.split('|');
+    if (f.length !== 6) continue;
+    const localPort = Number(f[1]);
+    if (!Number.isInteger(localPort) || localPort < 1 || localPort > 65535) continue;
+    const rp = f[3].trim() === '' ? NaN : Number(f[3]);
+    const pidNum = Number(f[5]);
+    rows.push({
+      localAddress: f[0].trim(),
+      localPort,
+      remoteAddress: f[2].trim(),
+      remotePort: Number.isInteger(rp) ? rp : null,
+      state: f[4].trim(),
+      pid: Number.isInteger(pidNum) && pidNum > 0 ? pidNum : null,
+    });
+  }
+  return { rows, complete };
+}
+
+// MIB_TCP_STATE names as Get-NetTCPConnection prints them, and their numbers.
+const LISTEN_STATES = new Set(['2', 'listen']);
+const KNOWN_STATES = new Set([
+  '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '100',
+  'closed', 'listen', 'synsent', 'synreceived', 'established', 'finwait1', 'finwait2',
+  'closewait', 'closing', 'lastack', 'timewait', 'deletetcb', 'bound',
+]);
+
+/** A state the OS could not name: empty, 0, or a value outside MIB_TCP_STATE. */
+export function isUnknownTcpState(state: string): boolean {
+  const s = state.trim().toLowerCase();
+  return s === '' || s === '0' || !KNOWN_STATES.has(s);
+}
+
+function isUnspecifiedAddress(addr: string): boolean {
+  const a = addr.trim().toLowerCase();
+  return a === '' || a === '0.0.0.0' || a === '::' || a === '[::]' || a === '::ffff:0.0.0.0';
+}
+
+function isLocalListenAddress(addr: string): boolean {
+  const a = addr.trim().toLowerCase();
+  return isUnspecifiedAddress(a) || a === '::1' || a.startsWith('127.');
+}
+
+/**
+ * Pick the listener candidates out of Get-NetTCPConnection rows:
+ *   - state Listen, or
+ *   - an unknown state (empty / 0) on a row that looks like a listener: no
+ *     remote peer, or a wildcard/loopback local address, or owned by a Java
+ *     process (`javaPids`).
+ * Every candidate is only a guess until the status ping answers; that ping is
+ * what makes a wrong guess harmless. `brokenStateSeen` reports the issue #52
+ * signature (an unknown-state row with no remote peer) for analytics.
+ */
+export function statelessListenerCandidates(
+  rows: readonly TcpConnRow[],
+  javaPids: ReadonlySet<number> = new Set(),
+): { ports: ListeningPort[]; brokenStateSeen: boolean } {
+  const ports = new Map<number, ListeningPort>();
+  let brokenStateSeen = false;
+  for (const r of rows) {
+    const noPeer = r.remotePort === 0 || r.remotePort === null || isUnspecifiedAddress(r.remoteAddress);
+    const listen = LISTEN_STATES.has(r.state.trim().toLowerCase());
+    const unknown = isUnknownTcpState(r.state);
+    if (unknown && noPeer) brokenStateSeen = true;
+    const javaOwned = r.pid != null && javaPids.has(r.pid);
+    const candidate = listen || (unknown && (noPeer || isLocalListenAddress(r.localAddress) || javaOwned));
+    if (!candidate) continue;
+    if (!ports.has(r.localPort)) {
+      ports.set(r.localPort, {
+        port: r.localPort,
+        pid: r.pid,
+        command: r.pid != null ? (winPidCommand.get(r.pid) ?? '') : '',
+      });
+    }
+  }
+  return { ports: [...ports.values()], brokenStateSeen };
+}
+
+/**
+ * Get-NetTCPConnection for the given Java pids. Throws when PowerShell is
+ * missing, blocked, or does not finish (no sentinel), so the caller can tell
+ * "nothing listed" from "could not list".
+ */
+export async function winStatelessListeners(
+  javaPids: readonly number[],
+): Promise<{ ports: ListeningPort[]; brokenStateSeen: boolean }> {
+  if (javaPids.length === 0) return { ports: [], brokenStateSeen: false };
+  const out = await run(
+    'powershell.exe',
+    // No -ExecutionPolicy / -EncodedCommand: policy does not apply to
+    // -Command, and both flags are what antivirus heuristics look for.
+    ['-NoProfile', '-NonInteractive', '-Command', netTcpConnectionScript(javaPids)],
+    10_000,
+  );
+  const { rows, complete } = parseNetTcpConnection(out);
+  if (!complete) throw new Error('GET_NETTCPCONNECTION_INCOMPLETE');
+  return statelessListenerCandidates(rows, new Set(javaPids));
 }

@@ -18,6 +18,15 @@
  *   2. Status-ping the candidates over loopback (`mcPing()` — raw SLP).
  *   3. The one that speaks Minecraft IS the open world; read its port + MOTD.
  *
+ * Windows extra sources (issue #52, 261107): some Windows 11 builds report a
+ * listener's state as 0, so netstat leaves Minecraft's port out while the
+ * port still answers. When netstat finds no world, winLanFallback.ts adds
+ * Java-owned Get-NetTCPConnection rows with a broken state and, once the
+ * table is shown to be broken, Minecraft's own multicast announcement
+ * (Windows has no multicast gate). Their ports go through the same status
+ * ping, so a wrong hint costs one refused connect. `lan_world_found` records
+ * which source found the world; getLanDiagnosis() says why none was found.
+ *
  * Loopback TCP is exempt from Local Network privacy, so this needs no
  * entitlement and no permission prompt. Minecraft's LAN port is random per
  * session; reading the live socket table every poll recovers it directly, so a
@@ -33,36 +42,80 @@
 import type { LanHost, LanState } from '../shared/ipc';
 import { classifyCmdline, cmdlineForPid, hasForgeLaunchTarget } from './hostClient';
 import { inspectHostMods } from './hostSetup';
-import { listeningPorts, type ListeningPort } from './listeningPorts';
+import { listeningPorts, winJavaPids, winStatelessListeners, type ListeningPort } from './listeningPorts';
 import { mcPing, type McStatus } from './mcPing';
+import { startLanBeacon } from './lanBeacon';
+import {
+  diagnoseNoWorld,
+  mergeCandidates,
+  pingTiers,
+  setLanDiagnosis,
+  verifyCandidates,
+  type LanCandidate,
+  type LanSource,
+  type PingFn,
+} from './lanSources';
+import { createWinLanFallback, type WinLanFallback } from './winLanFallback';
+import { loadAnalytics } from './lazyAnalytics';
 
 const POLL_INTERVAL_MS = 2000;
 // Per-ping wall clock. Loopback status answers in single-digit ms; this only
 // bounds how long a non-Minecraft listener can stall us.
 const PING_TIMEOUT_MS = 700;
 
+/** Shape-only facts about how a world was found (analytics). */
+export interface LanFoundMeta {
+  source: LanSource;
+  sources: LanSource[];
+  javaOwned: boolean;
+  /** Windows: the #52 broken-state signature was seen this session. */
+  brokenStateSeen: boolean;
+  /** Windows: the multicast fallback was running. */
+  beaconActive: boolean;
+}
+
+export const LAN_WORLD_FOUND_EVENT = 'lan_world_found';
+
 export interface WatchLanOptions {
   onUpdate: (state: LanState) => void;
   /** @deprecated multicast-era knob; ignored by the loopback watcher. */
   staleMs?: number;
+  // Test seams; production uses the defaults.
+  listPorts?: () => Promise<ListeningPort[]>;
+  ping?: PingFn;
+  /** Windows extra sources (issue #52). Default: created on win32, null elsewhere. */
+  fallback?: WinLanFallback | null;
+  /** Default: `lan_world_found` through the lazy analytics import. */
+  onFound?: (meta: LanFoundMeta) => void;
+  platform?: NodeJS.Platform;
 }
 
-/** First candidate that answers the Minecraft status ping (with its owning
- *  pid), or null. Resolves as soon as one succeeds (Promise.any) — it does not
- *  wait out slow non-MC ports. */
-async function firstMcWorld(
-  ports: ListeningPort[],
-): Promise<{ status: McStatus; pid: number | null } | null> {
-  if (ports.length === 0) return null;
-  try {
-    return await Promise.any(
-      ports.map((p) =>
-        mcPing(p.port, '127.0.0.1', PING_TIMEOUT_MS).then((status) => ({ status, pid: p.pid })),
-      ),
-    );
-  } catch {
-    return null; // AggregateError — none spoke Minecraft
-  }
+/** `lan_world_found` props, shape only. */
+export function lanFoundProps(meta: LanFoundMeta): Record<string, string | boolean> {
+  return {
+    source: meta.source,
+    sources: meta.sources.join(','),
+    java_owned: meta.javaOwned,
+    win_state0: meta.brokenStateSeen,
+    beacon_active: meta.beaconActive,
+  };
+}
+
+const trackFound = (meta: LanFoundMeta): void => {
+  void loadAnalytics()
+    .then((a) => a.capture(LAN_WORLD_FOUND_EVENT, lanFoundProps(meta)))
+    .catch(() => {
+      /* analytics is never load-bearing */
+    });
+};
+
+function defaultWinFallback(): WinLanFallback {
+  return createWinLanFallback({
+    javaPids: winJavaPids,
+    statelessEnum: winStatelessListeners,
+    startBeacon: () => startLanBeacon(),
+    now: Date.now,
+  });
 }
 
 /**
@@ -74,7 +127,14 @@ async function firstMcWorld(
  */
 const OPEN_MISS_TOLERANCE = 2;
 
-export function watchLan({ onUpdate }: WatchLanOptions): {
+export function watchLan({
+  onUpdate,
+  listPorts = listeningPorts,
+  ping = (port) => mcPing(port, '127.0.0.1', PING_TIMEOUT_MS),
+  fallback,
+  onFound = trackFound,
+  platform = process.platform,
+}: WatchLanOptions): {
   stop: () => void;
   /**
    * Run one detection pass RIGHT NOW and return the raw fresh state (260703).
@@ -91,6 +151,11 @@ export function watchLan({ onUpdate }: WatchLanOptions): {
   let timer: NodeJS.Timeout | null = null;
   let lastEmitted: LanState | null = null;
   let missStreak = 0;
+  const primarySource: LanSource = platform === 'win32' ? 'netstat' : 'lsof';
+  const win: WinLanFallback | null =
+    fallback !== undefined ? fallback : platform === 'win32' ? defaultWinFallback() : null;
+  // Meta of the world the latest pass found, keyed by port, read by emit().
+  let foundMeta: { port: number; meta: LanFoundMeta } | null = null;
   // Host-client classification cache, keyed `${pid}:${port}`. The cmdline read
   // spawns a subprocess, so it must run once per world session, not per 2s
   // poll. A world close/reopen changes the port (random per session), so a
@@ -136,9 +201,18 @@ export function watchLan({ onUpdate }: WatchLanOptions): {
         (next.port !== lastEmitted.port ||
           next.motd !== lastEmitted.motd ||
           next.host?.client !== lastEmitted.host?.client));
+    const newWorld =
+      next.kind === 'open' && (lastEmitted?.kind !== 'open' || lastEmitted.port !== next.port);
     if (changed) {
       lastEmitted = next;
       onUpdate(next);
+    }
+    if (newWorld && foundMeta?.port === next.port) {
+      try {
+        onFound(foundMeta.meta);
+      } catch {
+        /* analytics is never load-bearing */
+      }
     }
   };
 
@@ -156,31 +230,65 @@ export function watchLan({ onUpdate }: WatchLanOptions): {
     emit(next);
   };
 
-  /** One full detection pass: socket table → java-first pings → state. */
+  /**
+   * One full detection pass:
+   *   1. the OS socket table (netstat / lsof), java-first status pings;
+   *   2. Windows only, when (1) found nothing: the extra sources (issue #52)
+   *      for ports netstat did not list, pinged the same way.
+   * Every port is verified by the status ping before it is reported.
+   */
   const runCheck = async (): Promise<LanState> => {
-    let ports: ListeningPort[];
+    let ports: ListeningPort[] = [];
+    let primaryFailed = false;
     try {
-      ports = await listeningPorts();
+      ports = await listPorts();
     } catch {
-      return { kind: 'unavailable' };
+      primaryFailed = true;
     }
-    // Ping likely Minecraft (java) ports first so the common case pokes only
-    // the world; fall back to the rest so a non-standard process name still
-    // resolves.
-    const java = ports.filter((p) => /java/i.test(p.command));
-    const rest = ports.filter((p) => !/java/i.test(p.command));
-    const world = (await firstMcWorld(java)) ?? (await firstMcWorld(rest));
-    if (!world) return { kind: 'closed' };
+    const primary = mergeCandidates([{ source: primarySource, ports }]);
+    let world = primaryFailed ? null : await verifyCandidates(pingTiers(primary), ping);
+    let snap: ReturnType<WinLanFallback['candidates']> | null = null;
+    let extra: LanCandidate[] = [];
+    if (!world && win) {
+      snap = win.candidates({ primaryFailed, primaryListenerCount: ports.length });
+      const listed = new Set(primary.map((c) => c.port));
+      extra = mergeCandidates(snap.lists).filter((c) => !listed.has(c.port));
+      world = await verifyCandidates(pingTiers(extra), ping);
+    }
+    if (!world) {
+      setLanDiagnosis({
+        discovery: diagnoseNoWorld({
+          primaryFailed,
+          candidates: [...primary, ...extra],
+          win: snap ? { java: snap.java, pending: snap.pending, statelessFailed: snap.statelessFailed } : null,
+        }),
+        brokenStateSeen: snap?.brokenStateSeen ?? false,
+      });
+      return primaryFailed ? { kind: 'unavailable' } : { kind: 'closed' };
+    }
+    setLanDiagnosis(null);
+    const { status, candidate } = world;
+    win?.noteFound(candidate.sources[0]);
+    foundMeta = {
+      port: status.port,
+      meta: {
+        source: candidate.sources[0],
+        sources: candidate.sources,
+        javaOwned: /java/i.test(candidate.command),
+        brokenStateSeen: snap?.brokenStateSeen ?? false,
+        beaconActive: snap?.beaconActive ?? false,
+      },
+    };
     return {
       kind: 'open',
-      port: world.status.port,
-      motd: world.status.motd,
+      port: status.port,
+      motd: status.motd,
       lastSeenAt: Date.now(),
-      host: await hostFor(world),
+      host: await hostFor({ status, pid: candidate.pid }),
       // 260720 diagnostics: carry the ping's MC version + protocol through so
       // main can stamp mc_version / mc_protocol onto failed-summon diagnostics.
-      versionName: world.status.versionName,
-      protocol: world.status.protocol,
+      versionName: status.versionName,
+      protocol: status.protocol,
     };
   };
 
@@ -203,6 +311,7 @@ export function watchLan({ onUpdate }: WatchLanOptions): {
   return {
     stop: () => {
       stopped = true;
+      win?.stop();
       if (timer) {
         clearInterval(timer);
         timer = null;
