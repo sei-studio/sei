@@ -168,7 +168,10 @@ describe('goTo and dig mark unreachable blocks (261015)', () => {
   it('an out-of-range dig from right beside the block marks it, from far away it does not', async () => {
     const reg = createDefaultRegistry()
     const { bot } = makeBot([[4, 71, 0, 'oak_log'], [30, 65, 0, 'iron_ore']])
+    // Twice: 6.3m is close enough for the one short close-in walk (261107)
+    // and the dig after it.
     digMock.mockResolvedValueOnce('out of range (5.7m, need ≤4.5) for oak_log @4,71,0')
+      .mockResolvedValueOnce('out of range (5.7m, need ≤4.5) for oak_log @4,71,0')
     await reg.execute('dig', { x: 4, y: 71, z: 0 }, bot, {})
     expect(isUnreachable(bot, { x: 4, y: 71, z: 0 })).toBe(true)
     // 261025: the dig walks first; a walk that timed out far away says
@@ -184,11 +187,17 @@ describe('goTo and dig mark unreachable blocks (261015)', () => {
     const reg = createDefaultRegistry()
     const { bot } = makeBot([[6, 65, 0, 'coal_ore'], [0, 66, 7, 'oak_log']])
     goToMock.mockClear()
+    digMock.mockClear()
     digMock.mockResolvedValueOnce('out of range (5.6m, need ≤4.5) for coal_ore @6,65,0')
+      .mockResolvedValueOnce('out of range (5.6m, need ≤4.5) for coal_ore @6,65,0')
     await reg.execute('dig', { block: 'coal_ore' }, bot, {})
-    expect(goToMock).toHaveBeenCalledTimes(1)
+    // The walk into reach, then (261107) one short close-in walk aimed well
+    // inside reach because the block is still only a step too far.
+    expect(goToMock).toHaveBeenCalledTimes(2)
     expect(goToMock.mock.calls[0].slice(1, 4)).toEqual([6, 65, 0])
     expect(goToMock.mock.calls[0][7]).toMatchObject({ reach: 4.2 })
+    expect(goToMock.mock.calls[1][7]).toMatchObject({ reach: 3.5 })
+    expect(digMock).toHaveBeenCalledTimes(2)
     expect(digMock).toHaveBeenLastCalledWith({ x: 6, y: 65, z: 0 }, bot, expect.anything())
     expect(isUnreachable(bot, { x: 6, y: 65, z: 0 })).toBe(true)
     // Under the block (a log on the ledge right above her) still marks it.

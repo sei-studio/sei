@@ -11,12 +11,29 @@ export const DEFAULT_TIMEOUT_MS = 8000
 // standing still for — the timeout is the give-up.
 export const MAX_TIMEOUT_MS = 30000
 const PICKUP_TIMEOUT_MS = 3000
-export const DIG_REACH = 4.5  // mineflayer's effective reach for breaking blocks
+// Walks aim to end within this of the block (eyes to center; the goal is
+// DIG_REACH - 0.3 per cell), and a block farther than this triggers a walk.
+export const DIG_REACH = 4.5
+/**
+ * The farthest block digAction will swing at (eyes to block center).
+ *
+ * 261107 (quality pass 45): the refusal used to be DIG_REACH too, but a walk
+ * cannot promise to end inside it. The pathfinder's goal is checked on the
+ * CELL the feet are in (its center), and the walk stops as soon as the body is
+ * within 0.35 of the last node on each axis, so a walk aimed at 4.2 ends with
+ * the eyes up to ~0.7 farther. Free play showed it on every gather_craft run:
+ * "out of range (4.5m, need ≤4.5) ... (the walk toward it ended: reached)",
+ * 4.5 to 5.0m, then the block was marked unreachable and she walked off to
+ * find stone that was under her feet. Nothing about the block stops that dig:
+ * mineflayer's canDigBlock allows 5.1 from the eyes (it uses 1.65 for them,
+ * we use 1.62) and the 1.21 server checks 4.5 + 1 to the block's box.
+ */
+export const DIG_MAX_REACH = 5.0
 
 /**
  * Distance that decides whether a block is in dig reach: from the bot's EYES
  * to the block's CENTER, the way mineflayer's canDigBlock and the server
- * measure it (mineflayer allows 5.1; DIG_REACH keeps a margin).
+ * measure it (mineflayer allows 5.1; see DIG_MAX_REACH).
  *
  * 261011: this used to be feet to the block's min corner, which reads a log
  * five blocks up the trunk as 5.0m away while the eyes are 3.9m from it, so
@@ -28,6 +45,31 @@ export function digReachDistance(bot, pos) {
   if (!p || !pos) return Infinity
   const eye = Number.isFinite(bot.entity?.eyeHeight) ? bot.entity.eyeHeight : 1.62
   return Math.hypot(pos.x + 0.5 - p.x, pos.y + 0.5 - (p.y + eye), pos.z + 0.5 - p.z)
+}
+
+// A dig that came back out of range this close after its walk gets one more
+// short walk, aimed well inside reach (see closeInForDig).
+export const CLOSE_IN_MAX_M = DIG_MAX_REACH + 1.5
+const CLOSE_IN_REACH = DIG_REACH - 1.0
+const CLOSE_IN_TIMEOUT_MS = 4000
+
+/**
+ * 261107 (pass 45): one more short walk toward a block a dig just found out of
+ * range, when it is only a step or two too far (the walk before it stopped at
+ * the edge of its goal). Aims well inside reach, so where the walk stops in
+ * its last cell no longer decides the dig. Returns the walk result, or null
+ * when the block is too far for a step to help (that walk already failed).
+ * @param {object} bot
+ * @param {{x:number,y:number,z:number}} pos
+ * @param {Function} goTo pathfind.goTo (or a test double)
+ * @param {AbortSignal} [signal]
+ * @param {object} [walkOpts] extra goTo opts (keepItems)
+ */
+export async function closeInForDig(bot, pos, goTo, signal, walkOpts = {}) {
+  const d = digReachDistance(bot, pos)
+  if (!Number.isFinite(d) || d <= DIG_MAX_REACH || d > CLOSE_IN_MAX_M) return null
+  if (signal?.aborted) return 'aborted'
+  return goTo(bot, pos.x, pos.y, pos.z, 2, CLOSE_IN_TIMEOUT_MS, signal, { ...walkOpts, reach: CLOSE_IN_REACH })
 }
 
 // LLM-facing tool description moved to ../prompts.js → ACTION_DESCRIPTIONS.dig.
@@ -132,8 +174,8 @@ export async function digAction(args, bot, config) {
   // Reach check — pathfinder is best-effort, the LLM should know it needs to
   // walk closer before issuing another dig at this block.
   const dist = digReachDistance(bot, block.position)
-  if (Number.isFinite(dist) && dist > DIG_REACH) {
-    const baseMsg = `out of range (${dist.toFixed(1)}m, need ≤${DIG_REACH}) for ${blockName} @${bx},${by},${bz}`
+  if (Number.isFinite(dist) && dist > DIG_MAX_REACH) {
+    const baseMsg = `out of range (${dist.toFixed(1)}m, need ≤${DIG_MAX_REACH.toFixed(1)}) for ${blockName} @${bx},${by},${bz}`
     const bp = bot.entity?.position
     if (bp && by > bp.y + 2) {
       return `${baseMsg} — unreachable — try build to Y=${by}`

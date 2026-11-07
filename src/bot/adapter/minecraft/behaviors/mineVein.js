@@ -37,7 +37,7 @@ import { Vec3 } from 'vec3'
 import mcDataLib from 'minecraft-data'
 import { resolveTerm } from '../loose-terms.js'
 import { goTo as realGoTo, waitForReflexClear, dropWalkOpts } from './pathfind.js'
-import { digAction as realDigAction, digReachDistance, DIG_REACH } from './dig.js'
+import { digAction as realDigAction, digReachDistance, DIG_REACH, closeInForDig } from './dig.js'
 import { isUnreachable, noteUnreachable } from './unreachable.js'
 import { inventoryCounts, gained } from './pickup.js'
 import { droppedItemName } from '../observers/entities.js'
@@ -351,6 +351,17 @@ export async function gatherAction(args, bot, config, _deps) {
         r = await digAction({ x: np.x, y: np.y, z: np.z }, bot, config)
       }
       if (r === 'aborted') return 'aborted'
+      // 261107 (pass 45): a step or two short after the walk (it stopped at
+      // the edge of its goal): one more short walk before calling the block
+      // unreachable.
+      if (typeof r === 'string' && r.startsWith('out of range')) {
+        const step = await closeInForDig(bot, np, goTo, signal, dropItems.length ? { keepItems: dropItems } : {})
+        if (step === 'aborted' || signal?.aborted) return 'aborted'
+        if (step != null) {
+          r = await digAction({ x: np.x, y: np.y, z: np.z }, bot, config)
+          if (r === 'aborted') return 'aborted'
+        }
+      }
       if (typeof r === 'string' && r.startsWith('dug ')) {
         dug++
         progress.dug++
