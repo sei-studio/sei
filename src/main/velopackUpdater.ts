@@ -76,7 +76,7 @@ const BETA_CHANNEL = 'beta';
 /** How long a finished download waits for its stage before the restart is offered anyway. */
 const STAGE_OFFER_WAIT_MS = 3 * 60 * 1000;
 /** Bump when the splash page changes (splashPage.ts), so cached overlay frames are re-rendered. */
-const FRAMES_VERSION = '3';
+const FRAMES_VERSION = '4';
 
 export interface VelopackAutoUpdater {
   autoDownload: boolean;

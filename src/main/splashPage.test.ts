@@ -7,6 +7,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  GLOW_RGB,
+  GLOW_STATUS_FONT_PX,
+  GLOW_WIDE_RGB,
   SEI_LIGHT_BLUE_RGB,
   SPLASH_SIZE,
   SPLASH_STATUS_STYLE,
@@ -47,8 +50,23 @@ describe('launchSplashStatus', () => {
 });
 
 describe('splashHtml', () => {
-  it('ships the light blue pill by default', () => {
-    expect(SPLASH_STATUS_STYLE).toBe('pill');
+  it('ships the dark blue glow by default (product call 261108)', () => {
+    expect(SPLASH_STATUS_STYLE).toBe('glow');
+  });
+
+  it("glow: Sei's dark blues from the theme tokens, bigger status line, no backdrop", () => {
+    const tokens = readFileSync(resolve(ROOT, 'src/renderer/src/styles/tokens.css'), 'utf-8');
+    const hex = (name: string): string => {
+      const h = new RegExp(`--${name}:\\s*#([0-9a-f]{6})`, 'i').exec(tokens)![1];
+      return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)).join(',');
+    };
+    expect(GLOW_RGB).toBe(hex('accent-strong'));
+    expect(GLOW_WIDE_RGB).toBe(hex('accent'));
+    const html = splashHtml('AAAA', { status: 'Updating…', style: 'glow' });
+    expect(html).not.toContain('background:rgba(');
+    expect(html).toContain(`text-shadow:0 0 1px rgba(${GLOW_RGB},1)`);
+    expect(html).toContain(`data-fs="${GLOW_STATUS_FONT_PX}"`);
+    expect(GLOW_STATUS_FONT_PX).toBeGreaterThan(13);
   });
 
   it("uses Sei's light blue from the theme tokens, not a new color", () => {
@@ -109,7 +127,7 @@ const CHROME = ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr
 );
 
 describe.skipIf(!CHROME)('update overlay frames, rendered in Chrome', () => {
-  it('every frame passes overlayFrameLooksRight in both styles, nothing clipped', async () => {
+  it('every frame passes overlayFrameLooksRight in every style, nothing clipped', async () => {
     const { chromium } = await import('playwright');
     const logo = readFileSync(resolve(ROOT, 'src/renderer/public/img/sei-text.png')).toString('base64');
     const browser = await chromium.launch({
@@ -143,7 +161,9 @@ describe.skipIf(!CHROME)('update overlay frames, rendered in Chrome', () => {
       const runs: Array<[SplashStatusStyle, number, readonly string[]]> = [
         [SPLASH_STATUS_STYLE, 1, UI_LANGUAGES],
         [SPLASH_STATUS_STYLE, 2, ['en', 'ja', 'ru']],
-        [SPLASH_STATUS_STYLE === 'pill' ? 'shadow' : 'pill', 1, UI_LANGUAGES],
+        ...(['pill', 'shadow', 'glow'] as const)
+          .filter((st) => st !== SPLASH_STATUS_STYLE)
+          .map((st): [SplashStatusStyle, number, readonly string[]] => [st, 1, UI_LANGUAGES]),
       ];
       const widest = (lang: (typeof UI_LANGUAGES)[number]): Array<[string, string]> => {
         const { updating, error, ...eta } = overlayFrames(lang);
