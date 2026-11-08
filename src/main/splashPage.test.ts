@@ -50,18 +50,20 @@ describe('launchSplashStatus', () => {
 });
 
 describe('splashHtml', () => {
-  it('ships the dark blue glow by default (product call 261108)', () => {
+  it('ships the near-black blue glow by default (product call 261108)', () => {
     expect(SPLASH_STATUS_STYLE).toBe('glow');
   });
 
-  it("glow: Sei's dark blues from the theme tokens, bigger status line, no backdrop", () => {
+  it("glow: Sei's near-black blues from the theme tokens, bigger status line, no backdrop", () => {
     const tokens = readFileSync(resolve(ROOT, 'src/renderer/src/styles/tokens.css'), 'utf-8');
     const hex = (name: string): string => {
       const h = new RegExp(`--${name}:\\s*#([0-9a-f]{6})`, 'i').exec(tokens)![1];
       return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)).join(',');
     };
-    expect(GLOW_RGB).toBe(hex('accent-strong'));
-    expect(GLOW_WIDE_RGB).toBe(hex('accent'));
+    expect(GLOW_RGB).toBe(hex('art-ink'));
+    // --bg3 is defined per theme; the glow uses the dark theme's value.
+    expect(tokens).toMatch(/--bg3:\s*#101a2e/i);
+    expect(GLOW_WIDE_RGB).toBe('16,26,46');
     const html = splashHtml('AAAA', { status: 'Updating…', style: 'glow' });
     expect(html).not.toContain('background:rgba(');
     expect(html).toContain(`text-shadow:0 0 1px rgba(${GLOW_RGB},1)`);

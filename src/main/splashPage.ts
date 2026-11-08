@@ -18,7 +18,7 @@ export const SPLASH_SIZE = { width: 320, height: 170 } as const;
  * velopackUpdater.ts with it so cached overlay frames are rendered again.
  *  - 'pill':   a translucent Sei light blue rounded backdrop behind the line.
  *  - 'shadow': no backdrop, a strong dark shadow under the line and the logo.
- *  - 'glow':   no backdrop, a large Sei dark blue glow under the line and the logo,
+ *  - 'glow':   no backdrop, a large near-black Sei blue glow under the line and the logo,
  *              and a bigger status line (product call 261108, the default).
  */
 export type SplashStatusStyle = 'pill' | 'shadow' | 'glow';
@@ -26,9 +26,9 @@ export const SPLASH_STATUS_STYLE: SplashStatusStyle = 'glow';
 
 /** Sei's light blue: the light theme's chrome periwinkle (--rail / --elbow #7fb0ff in tokens.css). */
 export const SEI_LIGHT_BLUE_RGB = '127,176,255';
-/** Sei's dark blues for the 'glow' style: --accent-strong (#335da6) for the tight edge, --accent (#3f6fc4) for the wide glow. */
-export const GLOW_RGB = '51,93,166';
-export const GLOW_WIDE_RGB = '63,111,196';
+/** Sei's near-black blues for the 'glow' style (product call 261108, "very dark almost black"): --art-ink (#0e1624) for the tight edge, the dark theme's --bg3 (#101a2e) for the wide glow. */
+export const GLOW_RGB = '14,22,36';
+export const GLOW_WIDE_RGB = '16,26,46';
 
 /** Status pill geometry in DIPs (the 'pill' style). Fill only, no border. */
 export const STATUS_PILL = {
