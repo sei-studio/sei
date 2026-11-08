@@ -858,11 +858,11 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
     registry.register(
       'look',
       z.object({
-        // 261108 (quality pass 47): compass directions too ("keep going north"
-      // was a guess against a facing the gaze kept turning). The old aliases
-      // are still accepted but no longer listed, so the tool costs no more.
-      orientation: z.preprocess(normalizeExploreOrientation,
-        z.enum(['north', 'south', 'east', 'west', 'forward', 'backwards', 'left', 'right', 'up', 'down']).optional()),
+        // 261108 (quality pass 47): the old aliases are still accepted but no
+        // longer listed. No compass words here: look turns relative to her
+        // facing (visualize.js ORIENTATION_DEG), so "north" would not turn her.
+        orientation: z.preprocess(normalizeExploreOrientation,
+          z.enum(['forward', 'backwards', 'left', 'right', 'up', 'down']).optional()),
         angle: z.number().min(0).max(360).optional(),
         around: z.boolean().optional(),
       }),

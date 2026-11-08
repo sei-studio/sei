@@ -703,10 +703,6 @@
             "orientation": {
               "type": "string",
               "enum": [
-                "north",
-                "south",
-                "east",
-                "west",
                 "forward",
                 "backwards",
                 "left",
@@ -1759,10 +1755,6 @@
             "orientation": {
               "type": "string",
               "enum": [
-                "north",
-                "south",
-                "east",
-                "west",
                 "forward",
                 "backwards",
                 "left",
