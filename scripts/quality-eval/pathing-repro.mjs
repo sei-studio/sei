@@ -59,9 +59,14 @@
 //   explore_east_32 / explore_west_32 / explore_left_20 / explore_chain_north /
 //   explore_compass_north  261108 (pass 47), natural: the gather_craft-03-B
 //                   explore spots (blocked, 10 of 32, timeout, walked back to
-//                   base); progress measured along the asked direction
-//   river_gather_stone / river_dig_stone  natural: the 02-B river bed with a
-//                   wooden pickaxe; success = she does not drown
+//                   base); progress measured along the asked direction.
+//                   explore_pit_east / _west / _left start down in the base
+//                   pit, where the 03-B ones really started
+//   river_gather_stone / river_dig_stone / river_idle  natural: the 02-B
+//                   flooded cave under the river bank (stone ceiling overhead,
+//                   air 12 cells away through the cave mouth) with a wooden
+//                   pickaxe; river_idle runs no action (the drowning reflex
+//                   alone); success = she does not drown
 //   beach_hole_a/b/c the combat_night holes on the natural beach: goTo from
 //                   where she was stuck. natural: no arena, so run these
 //                   alone right after the reset (--cases beach_hole_a,...)
@@ -619,17 +624,29 @@ const hpos = (p) => p ? { x: Math.round(p.x), y: Math.round(p.y), z: Math.round(
  * the player trails her from the second call on, so she looks back at them.
  * `dir` is the way the player asked for; progress is measured along it.
  */
-function exploreCase({ from, face, lead = 3, dir, calls, follow = false, need }) {
+function exploreCase({ from, face, lead = 3, dir, calls, follow = false, need, pit = null }) {
   return {
     natural: true,
     give: [],
     async run(ctx) {
       const [fx, fz] = DIRV[face]
       await placeOnSurface(ctx, PLAYER, from.x + fx * lead, from.z + fz * lead)
-      await placeOnSurface(ctx, ctx.bot, from.x, from.z, NAT_YAW[face])
-      await sleep(2500)
+      // The tp right after the companion joins is sometimes lost (she stayed
+      // at the spawn): place her again until the probe agrees.
+      let p0 = null
+      for (let t = 0; t < 3; t++) {
+        if (pit) {
+          // 03-B: she was down in the 3x3 stone pit she had dug at the base.
+          await cmds([`fill ${from.x - 1} ${pit.floor + 1} ${from.z - 1} ${from.x + 1} ${pit.top} ${from.z + 1} air`])
+          await cmds([`tp ${ctx.bot} ${from.x + 0.5} ${pit.floor + 1} ${from.z + 0.5} ${NAT_YAW[face]} 0`])
+        } else {
+          await placeOnSurface(ctx, ctx.bot, from.x, from.z, NAT_YAW[face])
+        }
+        await sleep(2500)
+        p0 = (await ctx.comp.probe())?.pos
+        if (p0 && Math.hypot(p0.x - (from.x + 0.5), p0.z - (from.z + 0.5)) <= 3) break
+      }
       const [vx, vz] = DIRV[dir]
-      const p0 = (await ctx.comp.probe())?.pos
       const hops = []
       for (let i = 0; i < calls.length; i++) {
         if (follow && i === 1) {
@@ -662,6 +679,14 @@ CASES.explore_east_32 = exploreCase({ from: { x: 174, z: -7 }, face: 'east', dir
 CASES.explore_west_32 = exploreCase({ from: { x: 174, z: -7 }, face: 'west', dir: 'west', calls: [{ orientation: 'forward', blocks: 32 }], need: 20 })
 // 03-B A33: left 20 facing west (left = south) -> timeout, no progress.
 CASES.explore_left_20 = exploreCase({ from: { x: 175, z: -7 }, face: 'west', dir: 'south', calls: [{ orientation: 'left', blocks: 20 }], need: 10 })
+// The same three from where they really started: down in the base pit
+// (y62, the surface is y65). Base: a 3D goal at the pit floor's height 32
+// blocks out is inside the hill (A19 cant_reach), and one 8s leg climbs out
+// and stops (A29 10 of 32, A33 timeout).
+const PIT = { floor: 61, top: 64 }
+CASES.explore_pit_east = exploreCase({ from: { x: 174, z: -7 }, face: 'east', dir: 'east', pit: PIT, calls: [{ orientation: 'forward', blocks: 32 }], need: 12 })
+CASES.explore_pit_west = exploreCase({ from: { x: 174, z: -7 }, face: 'west', dir: 'west', pit: PIT, calls: [{ orientation: 'forward', blocks: 32 }], need: 20 })
+CASES.explore_pit_left = exploreCase({ from: { x: 174, z: -7 }, face: 'west', dir: 'south', pit: PIT, calls: [{ orientation: 'left', blocks: 20 }], need: 10 })
 // 03-B A34 -> A35: "keep going north", forward three times with the player
 // following behind; base walked back toward the player and the base.
 CASES.explore_chain_north = exploreCase({ from: { x: 174, z: -7 }, face: 'north', dir: 'north', follow: true, calls: [{ orientation: 'forward', blocks: 24 }, { orientation: 'forward', blocks: 24 }, { orientation: 'forward', blocks: 24 }], need: 40 })
@@ -693,7 +718,7 @@ function riverCase(at, act) {
             const pr = await ctx.comp.probe(1500)
             if (pr) {
               if (Number.isFinite(pr.oxy)) minOxy = Math.min(minOxy, pr.oxy)
-              trace.push(`${Math.round((Date.now() - t0) / 1000)}s:${pr.oxy ?? '?'}@${pr.pos ? Math.round(pr.pos.y) : '?'}`)
+              trace.push(`${Math.round((Date.now() - t0) / 1000)}s:${pr.oxy ?? '?'}@${pr.pos ? `${Math.round(pr.pos.x)},${Math.round(pr.pos.y)},${Math.round(pr.pos.z)}` : '?'}`)
             }
             await sleep(1000)
           }
@@ -714,6 +739,8 @@ CASES.river_gather_stone = riverCase(RIVER, async (ctx) => {
   const g = await ctx.exec('gather', { name: 'stone', count: 8, maxDistance: 16 }, { timeoutMs: 150000 })
   return [String(g.result ?? g.error).slice(0, 300)]
 })
+// No action: only the drowning reflex, from the same spot under the bank.
+CASES.river_idle = riverCase(RIVER, async () => { await sleep(30000); return ['idle'] })
 CASES.river_dig_stone = riverCase(RIVER, async (ctx) => {
   const out = []
   for (let i = 0; i < 4; i++) {

@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi } from 'vitest'
 import { Vec3 } from 'vec3'
-import { lowOnAir, surfaceForAir, airLine, isUnderwaterBlock, AIR_LOW } from './air.js'
+import { lowOnAir, surfaceForAir, airLine, isUnderwaterBlock, AIR_LOW, findBreathPath, breathPathSideways } from './air.js'
 import { digAction, AIR_STOP_PREFIX } from './dig.js'
 import { gatherAction, MAX_AIR_BREAKS } from './mineVein.js'
 
@@ -135,5 +135,54 @@ describe('gatherAction with low air', () => {
     const r = await gatherAction({ name: 'stone', count: 4 }, bot, {}, { goTo: vi.fn(async () => 'reached'), digAction })
     expect(digAction).toHaveBeenCalledTimes(MAX_AIR_BREAKS)
     expect(r).toMatch(/ran low on air under water 2 times and swam up each time/)
+  })
+})
+
+/** A flooded cave: water y 60-61 over x 0..6, a stone ceiling at y 62 over
+ * x 0..5, open air above the water at x 6 (the cave mouth). */
+function cave() {
+  const water = [], blocks = []
+  for (let x = -2; x <= 8; x++) for (let z = -2; z <= 2; z++) {
+    blocks.push([x, 59, z, 'stone'])
+    if (x < 0 || x > 6 || Math.abs(z) > 1) { for (let y = 60; y <= 62; y++) blocks.push([x, y, z, 'stone']); continue }
+    water.push([x, 60, z], [x, 61, z])
+    if (x <= 5) blocks.push([x, 62, z, 'stone'])
+  }
+  return { water, blocks }
+}
+
+describe('the way out of a flooded cave', () => {
+  it('goes sideways to the cave mouth when straight up is a ceiling', () => {
+    const { water, blocks } = cave()
+    const { bot } = makeBot({ water, blocks, pos: new Vec3(0.5, 60, 0.5) })
+    const path = findBreathPath(bot)
+    expect(path.at(-1)).toMatchObject({ x: 6, y: 61 })
+    expect(breathPathSideways(path, bot.entity.position)).toBe(true)
+  })
+
+  it('leaves with air to spare: low on air at 15 seven cells from the mouth, not in open water', () => {
+    const { water, blocks } = cave()
+    const { bot } = makeBot({ water, blocks, pos: new Vec3(0.5, 60, 0.5), oxy: 15 })
+    expect(lowOnAir(bot)).toBe(true)
+    const open = makeBot({ water: [[0, 60, 0], [0, 61, 0]], blocks: [[0, 59, 0, 'stone']], pos: new Vec3(0.5, 60, 0.5), oxy: 15 }).bot
+    expect(lowOnAir(open)).toBe(false)
+  })
+
+  it('surfacing swims her toward the mouth, not into the ceiling', async () => {
+    const { water, blocks } = cave()
+    const { bot } = makeBot({ water, blocks, pos: new Vec3(0.5, 60, 0.5), oxy: 9 })
+    bot.look = vi.fn()
+    const p = surfaceForAir(bot, undefined, 400)
+    await new Promise((r) => setTimeout(r, 150))
+    expect(bot.controls.forward).toBe(true)
+    const yaw = bot.look.mock.calls.at(-1)[0]
+    expect(-Math.sin(yaw)).toBeGreaterThan(0.9) // facing +x, the mouth
+    expect(await p).toBe('timeout')
+    expect(bot.controls.forward).toBe(false)
+  })
+
+  it('finds nothing when there is no air in reach', () => {
+    const { bot } = makeBot({ water: [[0, 60, 0], [0, 61, 0]], blocks: [[0, 62, 0, 'stone'], [0, 59, 0, 'stone'], [1, 60, 0, 'stone'], [-1, 60, 0, 'stone'], [0, 60, 1, 'stone'], [0, 60, -1, 'stone'], [1, 61, 0, 'stone'], [-1, 61, 0, 'stone'], [0, 61, 1, 'stone'], [0, 61, -1, 'stone']], pos: new Vec3(0.5, 60, 0.5) })
+    expect(findBreathPath(bot)).toBe(null)
   })
 })
