@@ -572,3 +572,14 @@ built for the loop itself.
   (`registry.js`). A leg that went nowhere still ends the goTo, so a wedged
   walk answers as fast as before. Repro: `pathing-repro.mjs` cases
   `dig_buried_stone`, `stone_02b_*` and `goto_far_player`.
+- **placeBlock picks from every open cell in reach (261108, pass 46).**
+  `behaviors/placeSpots.js` ranks cells that are empty or hold a plant the
+  block replaces (grass tufts, tall grass, snow), with a full solid floor to
+  click, no body in them (her own hitbox included), in reach and in sight;
+  water comes last. place.js tries the best 3, then steps once to the nearest
+  open standing spot (`findOpenStandSpot`, 8 blocks) and tries again, and only
+  then puts it in water. Never click a tuft or water: the server places INTO a
+  replaceable block, so mineflayer waits on the cell above, times out, and the
+  tool said "no open spot" for a table that was in fact down. craft() with a
+  crafting_table in the bag puts it down instead of walking to a world table
+  more than 8m off, or when that walk fails. Repro: `place-repro.mjs`.

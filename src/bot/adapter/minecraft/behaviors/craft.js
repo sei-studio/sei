@@ -18,6 +18,7 @@ import { reason } from '../../../brain/errStrings.js'
 import { detectCraftingTable, maxRepetitions } from '../observers/craftable.js'
 import { recordOwnStation } from '../observers/ownStations.js'
 import { goTo } from './pathfind.js'
+import { placeBlockAction } from './place.js'
 import { digReachDistance, DIG_REACH } from './dig.js'
 import { liveInventoryItems, liveCount, hasLiveInventory, waitInventoryQuiet } from '../observers/liveInventory.js'
 
@@ -249,6 +250,9 @@ async function craftParts(bot, steps, table, timeoutMs, signal) {
 // blocks away, and goTo then timed out. craft walks there itself.
 const TABLE_WALK_RADIUS = 16
 const TABLE_WALK_TIMEOUT_MS = 8000
+// 261108: past this (eyes to table) a crafting_table in the bag is put down
+// instead of walking to the one in the world.
+const CARRIED_TABLE_WINS_M = 8
 
 function nearbyCraftingTable(bot) {
   try {
@@ -297,9 +301,16 @@ export async function craftAction(args, bot, config) {
   const timeoutMs = args?.timeout_ms ?? config?.craft_timeout_ms ?? CRAFT_TIMEOUT_MS
 
   // Needs a table and none is in reach: walk to one that is close by.
+  // 261108 (quality pass 46): with a table in the bag, a table more than a
+  // few steps off (or one the walk cannot reach) loses to putting the carried
+  // one down right here. She walked 20 blocks to an unreachable table on a
+  // hill with one in her bag, timed out, and never crafted.
+  let tableNote = ''
   if (!tableBlock && allVariantsNeedTable(bot, itemId)) {
     const near = nearbyCraftingTable(bot)
-    if (near?.position) {
+    const carried = holdsCraftingTable(bot)
+    let walkFail = null
+    if (near?.position && !(carried && digReachDistance(bot, near.position) > CARRIED_TABLE_WINS_M)) {
       const p = near.position
       const walk = await goTo(bot, p.x, p.y, p.z, 2, TABLE_WALK_TIMEOUT_MS, signal, { reach: 3.5 })
       if (walk === 'aborted' || signal?.aborted) return 'aborted'
@@ -311,11 +322,20 @@ export async function craftAction(args, bot, config) {
         const live = bot.blockAt?.(p)
         if (live?.name === 'crafting_table') tableBlock = live
       }
-      if (!tableBlock) {
-        return `can't craft ${item}: it needs a crafting table, and the walk to the one at ${p.x},${p.y},${p.z} did not get there (${walk})`
+      if (!tableBlock) walkFail = `the walk to the one at ${p.x},${p.y},${p.z} did not get there (${walk})`
+    }
+    if (!tableBlock && carried) {
+      const put = await placeBlockAction({ block: 'crafting_table' }, bot, config)
+      if (put === 'aborted' || signal?.aborted) return 'aborted'
+      if (!/^placed /.test(put)) {
+        return `can't craft ${item}: it needs a crafting table${walkFail ? `, ${walkFail},` : ''} and putting down the one in your inventory failed (${put})`
       }
-    } else if (holdsCraftingTable(bot)) {
-      return `can't craft ${item} here: it needs a crafting table, and there is none in reach. You have one in your inventory: place it (placeBlock crafting_table), then craft`
+      tableBlock = detectCraftingTable(bot)
+      if (!tableBlock) return `can't craft ${item}: ${put}, but the table is not in reach to craft at`
+      const tp = tableBlock.position
+      tableNote = `; put down your crafting_table at ${tp.x},${tp.y},${tp.z} to craft at`
+    } else if (walkFail) {
+      return `can't craft ${item}: it needs a crafting table, and ${walkFail}`
     }
   }
 
@@ -379,7 +399,7 @@ export async function craftAction(args, bot, config) {
   if (first !== 'ok') return first === 'failed' ? `cannot craft ${item}` : `cannot craft ${item}: ${first}`
   // 261017 (pass 14b): a table she crafted at counts as hers for the spine.
   if (tableBlock?.position) recordOwnStation(bot, 'crafting_table', tableBlock.position)
-  if (!live) return `crafted ${produced} ${item}${over}${partsNote}${placeNote(item)}`
+  if (!live) return `crafted ${produced} ${item}${over}${partsNote}${tableNote}${placeNote(item)}`
 
   if (await waitInventoryQuiet(bot, withSignal(SETTLE_AFTER, signal)) === 'aborted') return 'aborted'
   let got = liveCount(bot, itemId) - before
@@ -405,7 +425,7 @@ export async function craftAction(args, bot, config) {
     return `the craft of ${item} did not go through: the server put the materials back${retried ? ' twice' : ''}, and you have ${have} ${item}. Check your inventory and try craft again`
   }
   if (got < produced) {
-    return `crafted ${got} ${item}, not ${produced}: the server undid the rest (you have ${have} ${item})${partsNote}${placeNote(item)}`
+    return `crafted ${got} ${item}, not ${produced}: the server undid the rest (you have ${have} ${item})${partsNote}${tableNote}${placeNote(item)}`
   }
-  return `crafted ${got} ${item}${over}${partsNote}${placeNote(item)}`
+  return `crafted ${got} ${item}${over}${partsNote}${tableNote}${placeNote(item)}`
 }

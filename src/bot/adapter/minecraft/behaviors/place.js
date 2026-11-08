@@ -4,57 +4,15 @@ import { resolveBlock, isStaleHandle } from '../observers/targeting.js'
 import { reason } from '../../../brain/errStrings.js'
 import { liveCount, hasLiveInventory, waitInventoryQuiet } from '../observers/liveInventory.js'
 import { recordOwnStation } from '../observers/ownStations.js'
+import { goTo } from './pathfind.js'
+import { checkPlaceCell, findPlaceSpots, findOpenStandSpot, openKind } from './placeSpots.js'
 
 export const DEFAULT_TIMEOUT_MS = 4000
+const RETRY_TIMEOUT_MS = 2500 // later spots in one placeBlock
+const MAX_TRIES = 3 // spots tried per position
+const STEP_TIMEOUT_MS = 8000 // the one step to a more open spot
 
 const AIR = new Set(['air', 'cave_air', 'void_air'])
-
-// 6 neighbour offsets in placement priority: floor first, then horizontals,
-// then ceiling. First non-air neighbour of the target cell is the face we
-// place against. (Same order build.js uses — inlined here to avoid a circular
-// import, since build.js already imports placeBlockAction.)
-const FACE_PRIORITY = [
-  { off: [0, -1, 0], face: [0, 1, 0] },
-  { off: [0, 0, -1], face: [0, 0, 1] },
-  { off: [0, 0, 1], face: [0, 0, -1] },
-  { off: [1, 0, 0], face: [-1, 0, 0] },
-  { off: [-1, 0, 0], face: [1, 0, 0] },
-  { off: [0, 1, 0], face: [0, -1, 0] },
-]
-
-function isAir(name) { return AIR.has(name) }
-
-// For an (assumed empty) cell, find an adjacent solid block to place against.
-function refFaceForCell(bot, c) {
-  for (const { off, face } of FACE_PRIORITY) {
-    const refBlk = bot.blockAt(new Vec3(c.x + off[0], c.y + off[1], c.z + off[2]))
-    if (refBlk && !isAir(refBlk.name)) return { refBlk, face: new Vec3(face[0], face[1], face[2]) }
-  }
-  return null
-}
-
-// 260618: auto-pick an open cell beside the bot that a block can actually be
-// placed in (empty, with a solid neighbour to place against). This is what
-// "place a crafting_table" usually means, and it works underground / on uneven
-// ground where the model's chosen reference face is buried in stone — the exact
-// failure that made placeBlock time out five times in a row before the model
-// stumbled onto build(). Feet ring first, then head ring.
-function autoPlacementNearBot(bot) {
-  const p = bot.entity?.position
-  if (!p) return null
-  const fx = Math.floor(p.x), fy = Math.floor(p.y), fz = Math.floor(p.z)
-  const ring = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]]
-  for (const dy of [0, 1]) {
-    for (const [dx, , dz] of ring) {
-      const c = { x: fx + dx, y: fy + dy, z: fz + dz }
-      const cell = bot.blockAt(new Vec3(c.x, c.y, c.z))
-      if (cell && !isAir(cell.name)) continue // cell occupied — can't place here
-      const rf = refFaceForCell(bot, c)
-      if (rf) return rf
-    }
-  }
-  return null
-}
 
 // 261012 (quality pass 5): placeBlock resolving is not proof the block is
 // there. The eval had "placed crafting_table on barrier" with the table still
@@ -141,17 +99,67 @@ export async function placeBlockAction(args, bot, config) {
     return tryPlace(bot, referenceBlock, new Vec3(fv.x, fv.y, fv.z), itemName, timeoutMs, signal)
   }
 
-  // Model path ("place X near me"): try the chosen reference first (default to
-  // the top face), then fall back to any open cell beside the bot.
-  if (referenceBlock) {
-    const r = await tryPlace(bot, referenceBlock, new Vec3(0, 1, 0), itemName, timeoutMs, signal)
+  // Model path ("place X near me"). 261108 (quality pass 46): every open cell
+  // in reach is ranked (placeSpots.js) and the best few are tried; with none,
+  // or none that took the block, she steps to the nearest open standing spot
+  // once and tries again.
+  const tried = new Set()
+  const attempt = async (spots, budget) => {
+    let last = null
+    for (const s of spots) {
+      if (budget <= 0) break
+      const key = `${s.cell.x},${s.cell.y},${s.cell.z}`
+      if (tried.has(key)) continue
+      tried.add(key)
+      budget--
+      // A later try gets a shorter wait: a refused place never lands.
+      const r = await tryPlace(bot, s.refBlk, s.face, itemName, tried.size === 1 ? timeoutMs : Math.min(timeoutMs, RETRY_TIMEOUT_MS), signal)
+      if (placed(r)) return r
+      last = r
+      if (signal?.aborted) return 'aborted'
+    }
+    return last
+  }
+  // Her own aim first, when it names a cell a block can go in: the top of
+  // `against`, or `against` itself when it is a grass tuft or water.
+  let lastErr = null
+  if (referenceBlock?.position) {
+    const rp = referenceBlock.position
+    const cell = openKind(referenceBlock) ? { x: rp.x, y: rp.y, z: rp.z } : { x: rp.x, y: rp.y + 1, z: rp.z }
+    const own = checkPlaceCell(bot, cell)
+    if (own) {
+      const r = await attempt([own], 1)
+      if (placed(r)) return r
+      lastErr = r
+    }
+  }
+  const spots = findPlaceSpots(bot)
+  const dry = spots.filter((s) => s.kind !== 'wet')
+  if (dry.length) {
+    const r = await attempt(dry, MAX_TRIES)
     if (placed(r)) return r
+    lastErr = r ?? lastErr
   }
   if (signal?.aborted) return 'aborted'
-  const auto = autoPlacementNearBot(bot)
-  if (auto) {
-    const r = await tryPlace(bot, auto.refBlk, auto.face, itemName, timeoutMs, signal)
-    if (placed(r)) return r
+  // Nothing dry beside her took it: one step to an open spot, then again.
+  const stand = findOpenStandSpot(bot)
+  let stepped = null
+  if (stand) {
+    const walk = await goTo(bot, stand.x, stand.y, stand.z, 0.5, STEP_TIMEOUT_MS, signal)
+    if (walk === 'aborted' || signal?.aborted) return 'aborted'
+    stepped = stand
+    const r = await attempt(findPlaceSpots(bot, { dryOnly: true }), MAX_TRIES)
+    if (placed(r)) return `${r} (stepped to ${stand.x},${stand.y},${stand.z} first: no open spot right beside you)`
+    lastErr = r ?? lastErr
   }
-  return `couldn't place ${itemName} — no open spot in reach. Step somewhere more open, or use build({from:{x,y:<your y>,z}, to:{x,y,z}, block:"${itemName}"}) on a spot beside you.`
+  // Last resort: the water around her.
+  const wet = findPlaceSpots(bot).filter((s) => s.kind === 'wet')
+  if (wet.length) {
+    const r = await attempt(wet, 1)
+    if (placed(r)) return `${r} (into the water: there was no dry spot in reach)`
+    lastErr = r ?? lastErr
+  }
+  const why = lastErr && !/^no /.test(lastErr) ? ` Last try: ${lastErr}.` : ''
+  const step = stepped ? `, even after stepping to ${stepped.x},${stepped.y},${stepped.z}` : ''
+  return `couldn't place ${itemName}: no open spot in reach${step}.${why} Walk a few blocks onto open, flat ground and try placeBlock again.`
 }
