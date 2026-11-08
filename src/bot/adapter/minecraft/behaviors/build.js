@@ -9,6 +9,7 @@ import { placeBlockAction } from './place.js'
 import { goTo } from './pathfind.js'
 import { isNaturalBlock } from './naturalBlocks.js'
 import { reason } from '../../../brain/errStrings.js'
+import { bodyInCell } from './placeSpots.js'
 
 export const DEFAULT_TIMEOUT_MS = 4000 // per-cell, inherited via placeBlockAction
 export const ITERATION_ORDER = 'Y-asc, then nearest-to-builder first within each layer (hollow layers: perimeter walk rotated to start nearest)' // D-07 documented constant
@@ -768,31 +769,9 @@ export async function buildAction(args, bot, config, deps = {}) {
   return `built ${placed} placed, ${skippedSolid} skipped (already solid), of ${total} cells`
 }
 
-/**
- * 261019 (quality pass 19). Who stands in a build cell: "you" for the bot
- * itself, a player's name, or a mob's name; null when the cell is clear.
- * Item drops, arrows and other non-living entities do not block a place.
- */
-export function bodyInCell(bot, c) {
-  const hits = (e, w, h) => {
-    const p = e?.position
-    if (!p || ![p.x, p.y, p.z].every(Number.isFinite)) return false
-    const hw = w / 2
-    return p.x + hw > c.x && p.x - hw < c.x + 1 &&
-      p.z + hw > c.z && p.z - hw < c.z + 1 &&
-      p.y + h > c.y && p.y < c.y + 1
-  }
-  if (hits(bot.entity, 0.6, 1.8)) return 'you'
-  for (const e of Object.values(bot.entities ?? {})) {
-    if (!e || e === bot.entity) continue
-    const living = e.type === 'player' || e.type === 'mob' || e.type === 'hostile' || e.type === 'animal' || e.kind === 'Hostile mobs' || !!e.username
-    if (!living) continue
-    const w = Number.isFinite(e.width) && e.width > 0 ? e.width : 0.6
-    const h = Number.isFinite(e.height) && e.height > 0 ? e.height : 1.8
-    if (hits(e, w, h)) return e.username ?? e.name ?? 'a mob'
-  }
-  return null
-}
+// 261019 (quality pass 19): who stands in a build cell. Moved to placeSpots.js
+// (261108) so placeBlock's own spot search can share it.
+export { bodyInCell }
 
 /**
  * 261012. The highest solid block under the lowest floating cell, scanning at
