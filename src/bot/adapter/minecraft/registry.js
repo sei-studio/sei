@@ -9,7 +9,7 @@ import { z } from 'zod'
 import mcDataLib from 'minecraft-data'
 import { Vec3 } from 'vec3'
 import { createRegistry } from '../../registry.js'
-import { goTo, waitForBodyFree } from './behaviors/pathfind.js'
+import { goTo, waitForBodyFree, PROGRESS_LEGS, PROGRESS_MIN_M, timedOutClosingIn } from './behaviors/pathfind.js'
 import { climbOut, escapeUp, findOpenColumn, isPassable, MIN_PIT_DEPTH } from './behaviors/climbOut.js'
 import { noteUnreachable, isUnreachable, isUnreachableResult } from './behaviors/unreachable.js'
 import { resolveTerm } from './loose-terms.js'
@@ -338,27 +338,15 @@ function resolvePlayer(bot, name) {
 
 const PLAYER_WALK_LEGS = 3
 
-// 261107 (quality pass 45): a walk that ran out of time while still closing in
-// walks on, up to this many more legs. The wall clock is one leg
-// (pathfinder_timeout_ms, 12s), which is about 25-35m of walking without
-// sprint, so every goTo back to a player more than ~30m off came back
-// "timeout" part way there (gather_craft free play: 64m -> 30m, 28m -> 7m),
-// and the model read it as a failed walk: it explored away, or told the player
-// it was stuck. A leg only counts as progress when it closed at least
-// PROGRESS_MIN_M, so a wedged or circling walk still ends after one leg.
-export const PROGRESS_LEGS = 3
-export const PROGRESS_MIN_M = 4
+// 261107 (quality pass 45): goTo walks on while a timed-out leg was still
+// closing in (PROGRESS_LEGS / timedOutClosingIn live in pathfind.js now,
+// shared with explore).
+export { PROGRESS_LEGS, PROGRESS_MIN_M, timedOutClosingIn }
 
 function distFrom(bot, p) {
   const me = bot?.entity?.position
   if (!me || !p) return NaN
   return Math.hypot(p.x - me.x, p.y - me.y, p.z - me.z)
-}
-
-/** A timed-out leg that closed in by at least PROGRESS_MIN_M. */
-export function timedOutClosingIn(result, before, after) {
-  return String(result).startsWith('timeout') && Number.isFinite(before) && Number.isFinite(after) &&
-    before - after >= PROGRESS_MIN_M
 }
 
 /**
@@ -422,6 +410,14 @@ export async function goToPlayer(bot, name, range, timeoutMs, signal, walk = goT
   if (!now || !me) return r
   const d = Math.hypot(now.x - me.x, now.y - me.y, now.z - me.z)
   return `${who.username} kept moving: you are ${d.toFixed(1)}m from them (they are at ${fmtPos(now)}). follow them to keep up`
+}
+
+const EXPLORE_ALIASES = { forwards: 'forward', backward: 'backwards', back: 'backwards', front: 'forward', behind: 'backwards' }
+/** explore orientation: lower-case, and the old aliases to the listed words. */
+export function normalizeExploreOrientation(v) {
+  if (typeof v !== 'string') return v
+  const k = v.trim().toLowerCase()
+  return EXPLORE_ALIASES[k] ?? k
 }
 
 export function createDefaultRegistry({ visionEnabled = false } = {}) {
@@ -511,7 +507,11 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
   // orchestrator's capabilities.vision gate too).
   registry.register('explore',
     z.object({
-      orientation: z.enum(['forward', 'forwards', 'backward', 'backwards', 'back', 'left', 'right', 'up', 'down']).optional(),
+      // 261108 (quality pass 47): compass directions too ("keep going north"
+      // was a guess against a facing the gaze kept turning). The old aliases
+      // are still accepted but no longer listed, so the tool costs no more.
+      orientation: z.preprocess(normalizeExploreOrientation,
+        z.enum(['north', 'south', 'east', 'west', 'forward', 'backwards', 'left', 'right', 'up', 'down']).optional()),
       angle: z.number().min(0).max(360).optional(),
       blocks: z.number().min(4).max(48).optional(),
     }),
@@ -858,7 +858,11 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
     registry.register(
       'look',
       z.object({
-        orientation: z.enum(['forward', 'forwards', 'backward', 'backwards', 'back', 'left', 'right', 'up', 'down']).optional(),
+        // 261108 (quality pass 47): compass directions too ("keep going north"
+      // was a guess against a facing the gaze kept turning). The old aliases
+      // are still accepted but no longer listed, so the tool costs no more.
+      orientation: z.preprocess(normalizeExploreOrientation,
+        z.enum(['north', 'south', 'east', 'west', 'forward', 'backwards', 'left', 'right', 'up', 'down']).optional()),
         angle: z.number().min(0).max(360).optional(),
         around: z.boolean().optional(),
       }),

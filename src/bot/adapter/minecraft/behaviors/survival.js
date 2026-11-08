@@ -201,6 +201,8 @@ export function startSurvival(bot, config) {
 
   function drownEngage() {
     _drownActive = true
+    // 261108 (pass 47): dig and gather read this and stand aside (air.js).
+    bot._seiDrowning = true
     _drownStartMs = Date.now()
     _drownStartY = bot.entity.position.y
     _airDir = null
@@ -213,6 +215,7 @@ export function startSurvival(bot, config) {
 
   function drownDisengage() {
     _drownActive = false
+    bot._seiDrowning = false
     _airDir = null
     releaseControls()
     try { bot.look(bot.entity.yaw, 0, false) } catch (_) {}
@@ -370,6 +373,7 @@ export function startSurvival(bot, config) {
     if (bot._seiPaused) {
       if (_drownActive || _retreatActive || bot._seiSurvivalActive) {
         _drownActive = false
+        bot._seiDrowning = false
         _airDir = null
         _retreatActive = false
         _retreatMobId = null
@@ -391,7 +395,7 @@ export function startSurvival(bot, config) {
 
     // CREEPER FLEE WINS: reflex owns movement — stand fully down.
     if (bot._seiReflexActive) {
-      if (_drownActive) { _drownActive = false; _airDir = null; releaseControls() }
+      if (_drownActive) { _drownActive = false; bot._seiDrowning = false; _airDir = null; releaseControls() }
       if (_retreatActive) { _retreatActive = false; _retreatMobId = null; bot._seiCriticalRetreat = false }
       // Do NOT restore the goal here — reflex owns it and will restore its own
       // saved goal on flee exit. Just drop our ownership flag if we held it.
@@ -434,6 +438,7 @@ export function startSurvival(bot, config) {
     if (bot._seiSurvivalActive) endOwnership()
     bot._seiCriticalRetreat = false
     _drownActive = false
+    bot._seiDrowning = false
     _retreatActive = false
     try { bot.removeListener('physicsTick', tick) } catch (_) {}
     try { bot.removeListener('death', dispose) } catch (_) {}

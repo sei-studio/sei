@@ -93,18 +93,20 @@ export async function startCompanion({ sessDir, mode = 'brain', botRepo = harnes
     events, log, proc, userDataDir, bootMs: Date.now() - t0,
     get ready() { return ready }, get exited() { return exited }, get exitCode() { return exitCode },
     send,
-    execStart(name, args = {}) {
+    execStart(name, args = {}, { snap = false } = {}) {
       const id = `x${nextId++}`
       const doneP = new Promise((resolve) => {
         const on = (ev) => { if (ev.id === id) { events.off('qe_result', on); resolve(ev) } }
         events.on('qe_result', on)
         done.then(() => resolve({ id, error: 'companion exited' }))
       })
-      send({ type: 'qe-exec', id, name, args })
+      send({ type: 'qe-exec', id, name, args, snap })
       return { id, done: doneP }
     },
-    async exec(name, args = {}, { timeoutMs = 120000 } = {}) {
-      const { id, done: d } = c.execStart(name, args)
+    // snap: compose one prompt snapshot right before the action, the way the
+    // brain does on every turn (state that rides on "what she was shown").
+    async exec(name, args = {}, { timeoutMs = 120000, snap = false } = {}) {
+      const { id, done: d } = c.execStart(name, args, { snap })
       const tm = setTimeout(() => send({ type: 'qe-abort', id }), timeoutMs)
       try { return await d } finally { clearTimeout(tm) }
     },
