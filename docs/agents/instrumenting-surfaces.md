@@ -472,6 +472,15 @@ read). Rules in `src/main/analyticsContext.ts` (pure, tested):
 - `summon_failed` carries `game`, and redact() also scrubs the player's own
   `mc_username` / `preferred_name` (`RedactOptions.playerNames`).
 
+**Launch timing (261108, `src/main/index.ts` noteStartupWindowShown).**
+`app_window_shown {startup_ms, update_screen}` once per process at the first
+show of the main window: `startup_ms` is process creation
+(`app.getAppMetrics()` browser `creationTime`, else `process.uptime()`) to
+that show. A normal launch has no splash since product call (261108), so this
+is the empty moment between the click and Sei; `update_screen` is true on the
+launch right after Update.exe restarted Sei (the update splash covered it).
+Hidden login launches are skipped. Filter `packaged = true`.
+
 **Crash reporting (261031, T278, `src/main/crashReporting.ts`).** No Sentry,
 no minidump upload. `initCrashReporting()` runs first in whenReady:
 - `<userData>/session.json` is written `open` at launch (heartbeat every 60s,

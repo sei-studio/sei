@@ -27,6 +27,7 @@ import { app, BrowserWindow, ipcMain, net, session, systemPreferences } from 'el
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { closeSplashWindow, createMainWindow, createSplashWindow } from './windowChrome';
+import { launchSplashStatus, msSinceProcessStart } from './splashPage';
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { registerFacepackIpc } from './facepack/facepackIpc';
 import { openSeilinkPreview, registerSeilinkIpc } from './seilink/seilinkIpc';
@@ -165,8 +166,9 @@ setMainWindowGetter(() => mainWindow);
 let bootstrapStarted = false;
 /** bootstrap() made its main window; before that, a reopen leaves it to bootstrap. */
 let firstWindowMade = false;
-// Startup splash (260728) — shown from whenReady, closed when the main window
-// first paints (or by the failsafe timer).
+// Update splash (261030): shown from whenReady only on the launch right after
+// Update.exe restarted Sei, closed when the main window first paints (or by
+// the failsafe timer). A normal launch has none (product call 261108).
 let splashWindow: BrowserWindow | null = null;
 let latestLanState: LanState = { kind: 'closed' };
 // Game adapters (M0, 260908): the Minecraft GameModule wraps the LAN watcher;
@@ -930,6 +932,31 @@ async function endGameSurfacesForQuit(): Promise<void> {
   await Promise.race([ends, new Promise((resolve) => setTimeout(resolve, QUIT_SURFACE_END_TIMEOUT_MS))]);
 }
 
+/**
+ * product call (261108): launch timing, now that no splash covers the start.
+ * `app_window_shown {startup_ms, update_screen}` once per process, at the
+ * first show of bootstrap's main window: `startup_ms` is process start to
+ * that show (the window stays hidden until ready-to-show, so this is the
+ * empty moment a user sees between the click and Sei). A hidden login launch
+ * is skipped: its first show is whenever the user opens Sei.
+ */
+function noteStartupWindowShown(win: BrowserWindow): void {
+  if (loginLaunch().isHidden()) return;
+  const updateScreen = splashWindow !== null;
+  win.once('show', () => {
+    let creationTime: number | undefined;
+    try {
+      creationTime = app.getAppMetrics().find((m) => m.type === 'Browser')?.creationTime;
+    } catch {
+      /* process.uptime() stands in */
+    }
+    capture('app_window_shown', {
+      startup_ms: msSinceProcessStart(Date.now(), creationTime, process.uptime()),
+      update_screen: updateScreen,
+    });
+  });
+}
+
 async function bootstrap(): Promise<void> {
   bootstrapStarted = true;
   // 0-pre. Install marker (260926). MUST be the first thing bootstrap does:
@@ -1225,8 +1252,8 @@ async function bootstrap(): Promise<void> {
     // 261107: a login launch loads the window hidden (seilink/loginLaunch.ts);
     // her room, the Dock or a second launch of Sei shows it.
     startHidden: loginLaunch().isHidden(),
-    // Startup splash (260728): once the main window is ready, close the splash
-    // immediately (no fade, 260729) before the first show — the two never
+    // Update splash: once the main window is ready, close the splash
+    // immediately (no fade, 260729) before the first show, so the two never
     // overlap. The failsafe timer in whenReady covers a bootstrap that never
     // gets here.
     beforeFirstShow: async () => {
@@ -1239,6 +1266,7 @@ async function bootstrap(): Promise<void> {
   });
   wireMainWindowEvents(mainWindow);
   watchMainWindowShow(mainWindow);
+  noteStartupWindowShown(mainWindow);
   firstWindowMade = true;
   // Startup popup (261027): lock the operator page's iframe to sei.gg/popup/,
   // send its links (and any window.open) to the default browser, and let it
@@ -1897,20 +1925,26 @@ async function bootstrap(): Promise<void> {
       onSecondLaunch(argv, openMainWindowAgain, () => !!mainWindow && !mainWindow.isDestroyed()),
     );
 
-    // Startup splash (260728): the white Sei logo, up before any heavy
-    // bootstrap work, closed when the main window first paints. The failsafe
-    // timer covers a bootstrap that errors before showing a window.
-    // Windows, right after Update.exe restarted Sei (261030): the same splash
-    // with "Updating…" under it, matching the update overlay it replaces.
-    // Not on a login launch: nothing shows until Sei is opened.
-    splashWindow = login ? null : createSplashWindow({ status: updateSplashStatusForLaunch() });
-    setTimeout(() => {
-      if (splashWindow && !splashWindow.isDestroyed()) closeSplashWindow(splashWindow);
-      splashWindow = null;
-    }, 15_000);
+    // Update splash (261030): on Windows, right after Update.exe restarted
+    // Sei, the white Sei logo with "Updating…" (or the error line) under it,
+    // matching the update overlay it replaces, closed when the main window
+    // first paints. product call (261108): a normal launch shows no splash,
+    // the main window appears on its own once it has painted (it stays hidden
+    // until ready-to-show, so there is never a blank window). Not on a login
+    // launch either: nothing shows until Sei is opened. The failsafe timer
+    // covers a bootstrap that errors before showing a window.
+    const splashStatus = launchSplashStatus(login, updateSplashStatusForLaunch);
+    splashWindow = splashStatus ? createSplashWindow(splashStatus) : null;
+    if (splashWindow) {
+      setTimeout(() => {
+        if (splashWindow && !splashWindow.isDestroyed()) closeSplashWindow(splashWindow);
+        splashWindow = null;
+      }, 15_000);
+    }
 
     // Windows: an update that was downloaded and staged but never applied
-    // (Sei was killed) is applied now, behind the splash, instead of booting.
+    // (Sei was killed) is applied now, behind the update splash (it puts one
+    // up itself when this launch has none), instead of booting.
     // Not at login: a pending update applies on the next quit or the next
     // launch the user starts, never as an update screen at login.
     void (login ? Promise.resolve(false) : applyPendingAtLaunch(splashWindow))
