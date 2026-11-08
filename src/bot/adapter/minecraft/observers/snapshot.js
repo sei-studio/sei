@@ -3,6 +3,7 @@
 import { vitals } from './vitals.js'
 import { world } from './world.js'
 import { facingLine } from '../facing.js'
+import { airLine } from '../behaviors/air.js'
 import { inventory, heldItem } from './inventory.js'
 import { aroundFeet } from './blocks.js'
 import { surveyBlocks } from './veins.js'
@@ -186,6 +187,13 @@ export function composeSnapshot(bot, opts = {}) {
   // (the 260731 Nether bridge, which ended in a lava death). Sits directly
   // under pos: the two together are the whole coordinate frame.
   lines.push(`facing: ${facingLine(w.facing)}`)
+  // 261108 (quality pass 47): remember the facing this snapshot SHOWED, so a
+  // relative explore ("left", "forward") turns against what the model read
+  // here, not wherever the gaze has turned the head by the time it runs.
+  try {
+    const f = w.facing?.forward
+    if (f && bot) bot._seiShownFacing = { yaw: Math.atan2(-f.dx, -f.dz), at: Date.now() }
+  } catch { /* best-effort */ }
   // Light levels are 0-15; sky is exposure to open sky (does not drop at
   // night), block is torches/lava. Lets the model answer "why is it dark"
   // from data instead of arguing with the player about the time of day.
@@ -205,6 +213,13 @@ export function composeSnapshot(bot, opts = {}) {
 
   // Vitals
   lines.push(`hp: ${v.hp}/20  food: ${v.food}/20  xp: lvl ${v.xp.level}`)
+  // 261108 (quality pass 47): her air, only while it is not full or her head
+  // is under water (behaviors/air.js), so "coming up for air" is something
+  // she can see rather than guess.
+  try {
+    const air = airLine(bot)
+    if (air) lines.push(air)
+  } catch { /* best-effort */ }
   // 261019 (pass 18): the attackEntity refusal line before she tries it. In
   // the combat_night eval she called attackEntity again right after it refused
   // at low health (on another mob, or after eating and expecting the bread to

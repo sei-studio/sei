@@ -4,6 +4,7 @@ import { resolveBlock, isStaleHandle } from '../observers/targeting.js'
 import { goTo, stopPathfinderDig, dropWalkOpts } from './pathfind.js'
 import { equipBestTool, harvestNote } from './toolSelect.js'
 import { firstLine, truncate } from '../../../brain/errStrings.js'
+import { lowOnAir, surfaceForAir, airLevel } from './air.js'
 
 export const DEFAULT_TIMEOUT_MS = 8000
 // Hard ceiling on the derived timeout below. Anything that needs longer than
@@ -111,6 +112,8 @@ export async function digCuboid(args, bot, config) {
 
   for (const c of cells) {
     if (signal?.aborted) return `aborted after ${dug}/${total}`
+    // 261108 (pass 47): surface for air between cells (air.js).
+    if (lowOnAir(bot) && await surfaceForAir(bot, signal) === 'aborted') return `aborted after ${dug}/${total}`
     const blk = bot.blockAt(new Vec3(c.x, c.y, c.z))
     if (!blk || blk.name === 'air' || blk.name === 'cave_air' || blk.name === 'void_air') {
       skippedAir++
@@ -151,6 +154,14 @@ export async function digAction(args, bot, config) {
 
   const blockName = block.name
   const bx = block.position.x, by = block.position.y, bz = block.position.z
+
+  // 261108 (quality pass 47): low on air under water: swim up before any
+  // swing (air.js). The block stays where it is.
+  if (lowOnAir(bot)) {
+    const s = await surfaceForAir(bot, signal)
+    if (s === 'aborted') return 'aborted'
+    return airStopText(bot, blockName, bx, by, bz)
+  }
 
   // A dig left running by a walk's pathfinder (a route that breaks a block)
   // is not ours: cancel it rather than refusing. 261011: the walk onto a
@@ -305,5 +316,36 @@ export async function digAction(args, bot, config) {
     signal.addEventListener('abort', onAbort, { once: true })
   })
 
-  return Promise.race([op, tmo, abrt]).finally(cleanup)
+  // 261108 (pass 47): an underwater dig is slow (5x, 25x while floating), so
+  // the air can run low during one swing: stop it and swim up.
+  let airTimer = null
+  const air = new Promise((r) => {
+    airTimer = setInterval(() => { if (lowOnAir(bot)) r('air') }, AIR_POLL_MS)
+  })
+
+  const first = await Promise.race([op, tmo, abrt, air]).finally(() => {
+    cleanup()
+    if (airTimer) { clearInterval(airTimer); airTimer = null }
+  })
+  if (first !== 'air') return first
+  try { bot.stopDigging() } catch {}
+  const s = await surfaceForAir(bot, signal)
+  if (s === 'aborted') return 'aborted'
+  // The low-air check can also fire during the pickup walk after the block
+  // broke: then it was dug.
+  try {
+    const live = bot.blockAt?.(block.position)
+    if (live && live.name !== blockName) return `dug ${blockName} (then swam up for air before the pickup)`
+  } catch {}
+  return airStopText(bot, blockName, bx, by, bz)
+}
+
+const AIR_POLL_MS = 250
+
+/** Result text when a dig stopped to swim up for air. Starts with
+ * AIR_STOP_PREFIX so gather can tell it apart. */
+export const AIR_STOP_PREFIX = 'stopped for air'
+function airStopText(bot, blockName, bx, by, bz) {
+  const air = airLevel(bot)
+  return `${AIR_STOP_PREFIX}: you were running out of air under water, so you swam up first${air != null ? ` (air now ${air}/20)` : ''}; ${blockName} @${bx},${by},${bz} was not dug. Dig somewhere dry, or go back down with full air`
 }

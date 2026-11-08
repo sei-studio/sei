@@ -40,6 +40,7 @@
 import pkg from 'mineflayer-pathfinder'
 import { Vec3 } from 'vec3'
 import { HOSTILE_MOBS } from './hostiles.js'
+import { airToLeave, findBreathPath, breathPathSideways, breathSteer } from './air.js'
 const { goals } = pkg
 
 // Columns that drown you: open water/bubbles PLUS kelp and seagrass, which are
@@ -163,6 +164,10 @@ export function startSurvival(bot, config) {
   let _drownStartY = 0
   let _lastAirScanMs = 0
   let _airDir = null
+  // 261108 (pass 47): the way out of a flooded cave (air.js findBreathPath).
+  // Straight up into a stone ceiling drowned her in the 02-B river bank.
+  let _escape = null // { path, at }
+  let _escaping = false
 
   function headInWater(pos) {
     try {
@@ -199,8 +204,21 @@ export function startSurvival(bot, config) {
     return { x: best.x / len, z: best.z / len }
   }
 
+  // Air to start the swim at: the configured level for open water above,
+  // more when the way out goes sideways (a ceiling over her), so she leaves
+  // a flooded cave while she still has the air to get out.
+  function leaveAt(pos, oxy) {
+    if (oxy <= TH.oxygen_flee_enter || oxy >= 20) return TH.oxygen_flee_enter
+    const need = airToLeave(bot)
+    return breathPathSideways(bot._seiBreathCache?.path, pos) ? Math.max(TH.oxygen_flee_enter, need) : TH.oxygen_flee_enter
+  }
+
   function drownEngage() {
     _drownActive = true
+    _escape = null
+    _escaping = false
+    // 261108 (pass 47): dig and gather read this and stand aside (air.js).
+    bot._seiDrowning = true
     _drownStartMs = Date.now()
     _drownStartY = bot.entity.position.y
     _airDir = null
@@ -213,7 +231,10 @@ export function startSurvival(bot, config) {
 
   function drownDisengage() {
     _drownActive = false
+    bot._seiDrowning = false
     _airDir = null
+    _escape = null
+    _escaping = false
     releaseControls()
     try { bot.look(bot.entity.yaw, 0, false) } catch (_) {}
     endOwnership()
@@ -224,15 +245,32 @@ export function startSurvival(bot, config) {
   function updateDrown(pos, oxy) {
     if (_drownActive) {
       const stillWater = headInWater(pos)
-      if (!stillWater || oxy >= TH.oxygen_flee_exit) { drownDisengage(); return false }
+      // Air does not come back under water, so a swim out of a cave that
+      // started with high air runs until her head is out.
+      if (!stillWater || (oxy >= TH.oxygen_flee_exit && !_escaping)) { drownDisengage(); return false }
     } else {
-      if (typeof oxy !== 'number' || oxy > TH.oxygen_flee_enter) return false
+      if (typeof oxy !== 'number' || oxy >= 20) return false
       if (!headInWater(pos)) return false
+      if (oxy > leaveAt(pos, oxy)) return false
       drownEngage()
     }
 
     // Foreign goal grabbed the pathfinder while we own movement — clear it again.
     if (_goalStolen) { setGoalSelf(null, false); _goalStolen = false }
+
+    // The way to air: sideways when there is a ceiling over her.
+    const now0 = Date.now()
+    if (!_escape || now0 - _escape.at > 750) {
+      const path = findBreathPath(bot)
+      _escape = { path, at: now0 }
+      // Any way out steers (it centers her under an open column too); the
+      // plain swim-up below is for when nothing is found in reach.
+      _escaping = Array.isArray(path) && path.length > 0
+    }
+    if (_escaping) {
+      breathSteer(bot, _escape)
+      return true
+    }
 
     // Always hold jump: in water, jump = ascend.
     try { bot.setControlState('jump', true) } catch (_) {}
@@ -370,6 +408,7 @@ export function startSurvival(bot, config) {
     if (bot._seiPaused) {
       if (_drownActive || _retreatActive || bot._seiSurvivalActive) {
         _drownActive = false
+        bot._seiDrowning = false
         _airDir = null
         _retreatActive = false
         _retreatMobId = null
@@ -391,7 +430,7 @@ export function startSurvival(bot, config) {
 
     // CREEPER FLEE WINS: reflex owns movement — stand fully down.
     if (bot._seiReflexActive) {
-      if (_drownActive) { _drownActive = false; _airDir = null; releaseControls() }
+      if (_drownActive) { _drownActive = false; bot._seiDrowning = false; _airDir = null; releaseControls() }
       if (_retreatActive) { _retreatActive = false; _retreatMobId = null; bot._seiCriticalRetreat = false }
       // Do NOT restore the goal here — reflex owns it and will restore its own
       // saved goal on flee exit. Just drop our ownership flag if we held it.
@@ -434,6 +473,7 @@ export function startSurvival(bot, config) {
     if (bot._seiSurvivalActive) endOwnership()
     bot._seiCriticalRetreat = false
     _drownActive = false
+    bot._seiDrowning = false
     _retreatActive = false
     try { bot.removeListener('physicsTick', tick) } catch (_) {}
     try { bot.removeListener('death', dispose) } catch (_) {}

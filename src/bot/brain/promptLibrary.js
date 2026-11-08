@@ -270,7 +270,7 @@ export const ACTION_DESCRIPTIONS = {
     'Return the nearest matching block or creature (`{name:"<term>"}`) and its position; does not move.',
 
   explore:
-    'Walk a short hop (default 16, max 48) to load new terrain when goTo fails or find comes up empty; `{orientation:"forward|backwards|left|right"}` or `{angle:0-360}`.',
+    'Walk a short hop (default 16) to load new terrain when goTo fails or find comes up empty; `{orientation:"north|south|east|west|forward|left|right"}` or `{angle}`.',
 
   placeBlock:
     'Place one block beside you (`{block}`); optionally aim it with `against`. Use build for multi-cell shapes.',
@@ -320,7 +320,7 @@ export const ACTION_DESCRIPTIONS = {
 }
 
 // explore()'s description with the picture promise removed (Looking off).
-export const EXPLORE_DESCRIPTION_NOVISION = `Walk a short hop (default 16, max 48) to load new terrain when goTo fails or find comes up empty; \`{orientation:"forward|backwards|left|right"}\` or \`{angle:0-360}\`. Returns where you ended up as text.`
+export const EXPLORE_DESCRIPTION_NOVISION = `Walk a short hop (default 16) to load new terrain when goTo fails or find comes up empty; \`{orientation:"north|south|east|west|forward|left|right"}\` or \`{angle}\`. Returns where you ended up as text.`
 
 // 3f. Per-event (per-tick) framing appended to the seed for a fresh loop.
 //
