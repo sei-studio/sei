@@ -18,12 +18,17 @@ export const SPLASH_SIZE = { width: 320, height: 170 } as const;
  * velopackUpdater.ts with it so cached overlay frames are rendered again.
  *  - 'pill':   a translucent Sei light blue rounded backdrop behind the line.
  *  - 'shadow': no backdrop, a strong dark shadow under the line and the logo.
+ *  - 'glow':   no backdrop, a large Sei dark blue glow under the line and the logo,
+ *              and a bigger status line (product call 261108, the default).
  */
-export type SplashStatusStyle = 'pill' | 'shadow';
-export const SPLASH_STATUS_STYLE: SplashStatusStyle = 'pill';
+export type SplashStatusStyle = 'pill' | 'shadow' | 'glow';
+export const SPLASH_STATUS_STYLE: SplashStatusStyle = 'glow';
 
 /** Sei's light blue: the light theme's chrome periwinkle (--rail / --elbow #7fb0ff in tokens.css). */
 export const SEI_LIGHT_BLUE_RGB = '127,176,255';
+/** Sei's dark blues for the 'glow' style: --accent-strong (#335da6) for the tight edge, --accent (#3f6fc4) for the wide glow. */
+export const GLOW_RGB = '51,93,166';
+export const GLOW_WIDE_RGB = '63,111,196';
 
 /** Status pill geometry in DIPs (the 'pill' style). Fill only, no border. */
 export const STATUS_PILL = {
@@ -33,6 +38,9 @@ export const STATUS_PILL = {
   maxWidth: SPLASH_SIZE.width - 4,
   alpha: 0.9,
 } as const;
+
+/** The 'glow' style's status line size in px (bigger than the pill's 13 px, product call 261108). */
+export const GLOW_STATUS_FONT_PX = 16;
 
 /** Smallest font the status line shrinks to when a long translation does not fit. */
 export const STATUS_MIN_FONT_PX = 10;
@@ -55,7 +63,7 @@ const STATUS_FONT = "600 13px 'Segoe UI','Microsoft YaHei UI','Microsoft YaHei',
  */
 const FIT_SCRIPT =
   '<script>(()=>{const s=document.getElementById("status");if(!s)return;' +
-  `const fit=()=>{let f=13;s.style.fontSize=f+"px";while(s.scrollWidth>s.clientWidth+0.5&&f>${STATUS_MIN_FONT_PX}){f-=0.5;s.style.fontSize=f+"px"}};` +
+  `const fit=()=>{let f=parseFloat(s.dataset.fs||"13");s.style.fontSize=f+"px";while(s.scrollWidth>s.clientWidth+0.5&&f>${STATUS_MIN_FONT_PX}){f-=0.5;s.style.fontSize=f+"px"}};` +
   'fit();document.fonts&&document.fonts.ready.then(fit)})()</script>';
 
 /** The logo's filter: glyphs forced to white, with a shadow that keeps them on a light desktop. */
@@ -65,12 +73,22 @@ function logoFilter(style: SplashStatusStyle): string {
   const shadow =
     style === 'shadow'
       ? 'drop-shadow(0 0 1px rgba(0,0,0,.7)) drop-shadow(0 2px 8px rgba(0,0,0,.6))'
-      : 'drop-shadow(0 0 1px rgba(30,50,90,.45)) drop-shadow(0 2px 10px rgba(14,22,36,.5))';
+      : style === 'glow'
+        ? `drop-shadow(0 0 2px rgba(${GLOW_RGB},.95)) drop-shadow(0 0 10px rgba(${GLOW_WIDE_RGB},.85))`
+        : 'drop-shadow(0 0 1px rgba(30,50,90,.45)) drop-shadow(0 2px 10px rgba(14,22,36,.5))';
   return `brightness(0) invert(1) ${shadow}`;
 }
 
 function statusHtml(status: string, style: SplashStatusStyle): string {
   const text = escapeHtml(status);
+  if (style === 'glow') {
+    return (
+      `<div id="status" data-fs="${GLOW_STATUS_FONT_PX}" style="position:absolute;left:2px;right:2px;top:${STATUS_PILL.top + 1}px;text-align:center;color:#fff;` +
+      `font:${STATUS_FONT.replace('13px', `${GLOW_STATUS_FONT_PX}px`)};letter-spacing:.2px;white-space:nowrap;` +
+      `text-shadow:0 0 1px rgba(${GLOW_RGB},1),0 0 1px rgba(${GLOW_RGB},1),0 0 2px rgba(${GLOW_RGB},1),0 0 4px rgba(${GLOW_RGB},1),0 0 8px rgba(${GLOW_WIDE_RGB},.95),0 0 14px rgba(${GLOW_WIDE_RGB},.8),0 0 22px rgba(${GLOW_WIDE_RGB},.6)">` +
+      `${text}</div>`
+    );
+  }
   if (style === 'shadow') {
     return (
       `<div id="status" style="position:absolute;left:2px;right:2px;top:${STATUS_PILL.top + 3}px;text-align:center;color:#fff;` +
