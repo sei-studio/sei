@@ -17,15 +17,16 @@
  *     background priority. update-downloaded fires once that is done, so a
  *     restart only swaps folders. A failed, skipped (low disk) or slow stage
  *     still offers the update; the apply then extracts as stock Velopack does.
- *   - restart (quitAndInstall): the update screen. Sei shows its launch splash
- *     with "Updating…", hides its other windows, renders the same splash as
+ *   - restart (quitAndInstall): the update screen. Sei shows its update splash
+ *     (splashPage.ts) with "Updating…", hides its other windows, renders the same splash as
  *     frames for Update.exe's native overlay, starts `Update.exe apply
  *     --noHooks --seiOverlay`, waits until the overlay is on screen and quits.
  *     The overlay covers the gap and closes when the new Sei's splash (also
  *     "Updating…") is up. On failure it says so and opens the old version.
  *   - update on quit: the same apply without restart and without overlay.
  *   - launch with a staged update still pending (Sei was killed before it
- *     could apply): applyPendingAtLaunch() applies it behind the splash.
+ *     could apply): applyPendingAtLaunch() puts the update splash up and
+ *     applies it. A normal launch shows no splash (product call 261108).
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
@@ -74,8 +75,8 @@ const STABLE_CHANNEL = 'win';
 const BETA_CHANNEL = 'beta';
 /** How long a finished download waits for its stage before the restart is offered anyway. */
 const STAGE_OFFER_WAIT_MS = 3 * 60 * 1000;
-/** Bump when the splash page changes, so cached overlay frames are re-rendered. */
-const FRAMES_VERSION = '2';
+/** Bump when the splash page changes (splashPage.ts), so cached overlay frames are re-rendered. */
+const FRAMES_VERSION = '3';
 
 export interface VelopackAutoUpdater {
   autoDownload: boolean;
@@ -281,7 +282,7 @@ async function showScreenAndApply(
   const lang = await uiLang();
   const text = updateScreenText(lang);
   if (existingSplash && !existingSplash.isDestroyed()) await closeSplashWindow(existingSplash);
-  const splash = createSplashWindow({ status: text.updating });
+  const splash = createSplashWindow(text.updating);
   st.splash = splash;
   for (const w of BrowserWindow.getAllWindows()) {
     if (w !== splash && !w.isDestroyed() && w.isVisible()) {
@@ -725,7 +726,8 @@ function clearLaunchApplyStateIfCurrent(): void {
 }
 
 /**
- * Called by index.ts right after the splash is up, before bootstrap. When an
+ * Called by index.ts before bootstrap (`splash` is the update splash when this
+ * launch already shows one, else null). When an
  * update was downloaded and staged but never applied (Sei was killed, or the
  * PC shut down before the update on quit ran), applies it now behind the
  * update screen and quits; returns true so the caller stops booting. A stage

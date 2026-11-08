@@ -16,7 +16,7 @@
  *       folder swap, before the bookkeeping. With a staged copy the swap is
  *       two renames, so the restart gap is roughly "Sei quits + Sei starts".
  *   `apply ... --seiOverlay <dir>`
- *       Shows <dir>'s frames (Sei's own launch splash with "Updating…",
+ *       Shows <dir>'s frames (Sei's own update splash with "Updating…",
  *       rendered by Sei) as a native topmost window, from before Update.exe
  *       waits for Sei to exit until the restarted Sei shows its own window.
  *
@@ -175,7 +175,9 @@ export function overlaySpec(x: number, y: number, frameNames: readonly string[],
 
 /**
  * True when a rendered overlay frame looks like the splash: mostly transparent
- * (the page has no backdrop) with some opaque ink (the logo). `pixels` is
+ * (no page backdrop; the status pill, splashPage.ts, covers about a tenth of
+ * it: rendered frames measure 39-48% clear vs the 30% floor) with some
+ * opaque ink (the logo). `pixels` is
  * 4 bytes per pixel with alpha last (BGRA or RGBA). An offscreen window's
  * first paint can be solid white before the page commits (CI run 41028220016:
  * 3 of 8 runs cached a white `updating` frame and the overlay showed a white
