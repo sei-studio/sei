@@ -298,18 +298,19 @@
       },
       {
         "name": "explore",
-        "description": "Walk a short hop (default 16, max 48) to load new terrain when goTo fails or find comes up empty; `{orientation:\"forward|backwards|left|right\"}` or `{angle:0-360}`.",
+        "description": "Walk a short hop (default 16) to load new terrain when goTo fails or find comes up empty; `{orientation:\"north|south|east|west|forward|left|right\"}` or `{angle}`.",
         "input_schema": {
           "type": "object",
           "properties": {
             "orientation": {
               "type": "string",
               "enum": [
+                "north",
+                "south",
+                "east",
+                "west",
                 "forward",
-                "forwards",
-                "backward",
                 "backwards",
-                "back",
                 "left",
                 "right",
                 "up",
@@ -702,11 +703,12 @@
             "orientation": {
               "type": "string",
               "enum": [
+                "north",
+                "south",
+                "east",
+                "west",
                 "forward",
-                "forwards",
-                "backward",
                 "backwards",
-                "back",
                 "left",
                 "right",
                 "up",
@@ -1352,18 +1354,19 @@
       },
       {
         "name": "explore",
-        "description": "Walk a short hop (default 16, max 48) to load new terrain when goTo fails or find comes up empty; `{orientation:\"forward|backwards|left|right\"}` or `{angle:0-360}`.",
+        "description": "Walk a short hop (default 16) to load new terrain when goTo fails or find comes up empty; `{orientation:\"north|south|east|west|forward|left|right\"}` or `{angle}`.",
         "input_schema": {
           "type": "object",
           "properties": {
             "orientation": {
               "type": "string",
               "enum": [
+                "north",
+                "south",
+                "east",
+                "west",
                 "forward",
-                "forwards",
-                "backward",
                 "backwards",
-                "back",
                 "left",
                 "right",
                 "up",
@@ -1756,11 +1759,12 @@
             "orientation": {
               "type": "string",
               "enum": [
+                "north",
+                "south",
+                "east",
+                "west",
                 "forward",
-                "forwards",
-                "backward",
                 "backwards",
-                "back",
                 "left",
                 "right",
                 "up",
@@ -2405,18 +2409,19 @@
       },
       {
         "name": "explore",
-        "description": "Walk a short hop (default 16, max 48) to load new terrain when goTo fails or find comes up empty; `{orientation:\"forward|backwards|left|right\"}` or `{angle:0-360}`. Returns where you ended up as text.",
+        "description": "Walk a short hop (default 16) to load new terrain when goTo fails or find comes up empty; `{orientation:\"north|south|east|west|forward|left|right\"}` or `{angle}`. Returns where you ended up as text.",
         "input_schema": {
           "type": "object",
           "properties": {
             "orientation": {
               "type": "string",
               "enum": [
+                "north",
+                "south",
+                "east",
+                "west",
                 "forward",
-                "forwards",
-                "backward",
                 "backwards",
-                "back",
                 "left",
                 "right",
                 "up",
