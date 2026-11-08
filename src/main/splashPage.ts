@@ -18,12 +18,15 @@ export const SPLASH_SIZE = { width: 320, height: 170 } as const;
  * velopackUpdater.ts with it so cached overlay frames are rendered again.
  *  - 'pill':   a translucent Sei light blue rounded backdrop behind the line.
  *  - 'shadow': no backdrop, a strong dark shadow under the line and the logo.
+ *  - 'glow':   no backdrop, a large Sei light blue glow under the line and the logo.
  */
-export type SplashStatusStyle = 'pill' | 'shadow';
+export type SplashStatusStyle = 'pill' | 'shadow' | 'glow';
 export const SPLASH_STATUS_STYLE: SplashStatusStyle = 'pill';
 
 /** Sei's light blue: the light theme's chrome periwinkle (--rail / --elbow #7fb0ff in tokens.css). */
 export const SEI_LIGHT_BLUE_RGB = '127,176,255';
+/** A deeper step of the same blue for the inner edge of the 'glow' style, so white text holds an edge on white. */
+export const GLOW_RGB = '74,134,232';
 
 /** Status pill geometry in DIPs (the 'pill' style). Fill only, no border. */
 export const STATUS_PILL = {
@@ -65,12 +68,22 @@ function logoFilter(style: SplashStatusStyle): string {
   const shadow =
     style === 'shadow'
       ? 'drop-shadow(0 0 1px rgba(0,0,0,.7)) drop-shadow(0 2px 8px rgba(0,0,0,.6))'
-      : 'drop-shadow(0 0 1px rgba(30,50,90,.45)) drop-shadow(0 2px 10px rgba(14,22,36,.5))';
+      : style === 'glow'
+        ? `drop-shadow(0 0 2px rgba(${GLOW_RGB},.95)) drop-shadow(0 0 10px rgba(${SEI_LIGHT_BLUE_RGB},.9))`
+        : 'drop-shadow(0 0 1px rgba(30,50,90,.45)) drop-shadow(0 2px 10px rgba(14,22,36,.5))';
   return `brightness(0) invert(1) ${shadow}`;
 }
 
 function statusHtml(status: string, style: SplashStatusStyle): string {
   const text = escapeHtml(status);
+  if (style === 'glow') {
+    return (
+      `<div id="status" style="position:absolute;left:2px;right:2px;top:${STATUS_PILL.top + 3}px;text-align:center;color:#fff;` +
+      `font:${STATUS_FONT};letter-spacing:.2px;white-space:nowrap;` +
+      `text-shadow:0 0 1px rgba(${GLOW_RGB},1),0 0 1px rgba(${GLOW_RGB},1),0 0 2px rgba(${GLOW_RGB},1),0 0 4px rgba(${GLOW_RGB},1),0 0 8px rgba(${SEI_LIGHT_BLUE_RGB},1),0 0 14px rgba(${SEI_LIGHT_BLUE_RGB},1),0 0 22px rgba(${SEI_LIGHT_BLUE_RGB},.8)">` +
+      `${text}</div>`
+    );
+  }
   if (style === 'shadow') {
     return (
       `<div id="status" style="position:absolute;left:2px;right:2px;top:${STATUS_PILL.top + 3}px;text-align:center;color:#fff;` +
