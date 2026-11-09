@@ -381,8 +381,9 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
         }
       : {}),
     // ?dashshot=onboard and ?dashshot=creditwall (the usage-limit popup's
-    // credit_wall_action clicks, 261103) record track calls.
-    ...(onboardMode || creditWallMode
+    // credit_wall_action clicks, 261103) record track calls. So does
+    // ?dashshot=roblox (the Suggest-a-game hint events, 261109).
+    ...(onboardMode || creditWallMode || robloxMode
       ? {
           track: (event: string, props: unknown) => {
             const dev = window as unknown as { __seiDevTrack?: Array<{ event: string; props: unknown; at: number }> };

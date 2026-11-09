@@ -31,3 +31,19 @@
   color: var(--red);
   margin: 0;
 }
+
+/* 261109: "Roblox already works in Sei" under the Suggest-a-game field. */
+.gameHint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+}
+
+.gameHintText {
+  font-size: 14px;
+  color: var(--accent);
+  min-width: 0;
+}

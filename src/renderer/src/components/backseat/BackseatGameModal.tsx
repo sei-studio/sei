@@ -60,6 +60,9 @@ import styles from './BackseatGameModal.module.css';
 export interface BackseatGameModalProps {
   characterId: string;
   gameId: string;
+  /** 261109: a search to prefill and run in the pick step (the Suggest-a-game
+   *  hint passes "Forsaken" for "Roblox Forsaken"). */
+  query?: string;
 }
 
 type Step = 'intro' | 'pick';
@@ -81,6 +84,7 @@ export function pickHandoffMs(reduced: boolean): { highlight: number; leave: num
 export function BackseatGameModal({
   characterId,
   gameId,
+  query,
 }: BackseatGameModalProps): React.ReactElement | null {
   const t = useT();
   const def = backseatGame(gameId);
@@ -154,6 +158,7 @@ export function BackseatGameModal({
     <PickStep
       gameId={def.id}
       gameName={t(def.name)}
+      initialQuery={query}
       onClose={closeModal}
       onDone={(picked, source) => void proceed(picked, source)}
     />
@@ -169,17 +174,21 @@ export type Notice =
 export function PickStep({
   gameId,
   gameName,
+  initialQuery,
   onClose,
   onDone,
 }: {
   gameId: string;
   /** The game's display name, already translated. */
   gameName: string;
+  /** Prefilled search, run once when the step opens (one request, the same
+   *  as the player pressing Enter, so it fits the search rate limit). */
+  initialQuery?: string;
   onClose: () => void;
   onDone: (picked: BackseatGameInfo | null, source: BackseatGameSource) => void;
 }): React.ReactElement {
   const t = useT();
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(() => initialQuery?.trim() ?? '');
   const [busy, setBusy] = useState(false);
   const [popular, setPopular] = useState<BackseatGameInfo[] | null>(null);
   const [results, setResults] = useState<BackseatGameInfo[] | null>(null);
@@ -251,6 +260,15 @@ export function PickStep({
     if (out.results !== undefined) setResults(out.results);
     setNotice(out.notice);
   };
+
+  const ranInitial = useRef(false);
+  useEffect(() => {
+    if (ranInitial.current || !initialQuery?.trim()) return;
+    ranInitial.current = true;
+    void submit(initialQuery);
+    // Once, when the step opens with a prefilled search.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const clear = (): void => {
     seq.current += 1;

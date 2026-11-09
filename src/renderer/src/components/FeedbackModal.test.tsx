@@ -64,3 +64,41 @@ describe('feedback sent confirmation', () => {
     expect(ZH[NOTE]).not.toMatch(/[—–]/);
   });
 });
+
+// 261109 (T379): "roblox" kept arriving as a game suggestion. The suggest
+// form says when the typed game already works, with a button into it.
+describe('suggest-a-game "already works" hint', () => {
+  const SUGGEST = 'modal:Suggest a game';
+  const render = (text: string, withHint = true): string => {
+    setFeedbackDraft(SUGGEST, text);
+    const html = renderToStaticMarkup(
+      React.createElement(FeedbackModal, {
+        onClose: () => undefined,
+        title: 'Suggest a game',
+        form: 'suggest_game',
+        ...(withHint ? { onKnownGame: () => undefined } : {}),
+      }),
+    );
+    clearFeedbackDraft(SUGGEST);
+    return html;
+  };
+
+  it('names the game and offers to play it, and submit stays on', () => {
+    const html = render('Roblox Forsaken');
+    expect(html).toContain('Roblox already works in Sei');
+    expect(html).toContain('Play Roblox');
+    expect(html).toMatch(/<button[^>]*type="submit"(?![^>]*disabled)/);
+  });
+
+  it('says nothing for a game we do not have, or without the opener', () => {
+    expect(render('Rainbow six seige')).not.toContain('already works');
+    expect(render('roblox', false)).not.toContain('already works');
+  });
+
+  it('is translated, with no em dash', () => {
+    const k = '{game} already works in Sei';
+    expect(ZH[k]).toContain('{game}');
+    expect(ZH[k]).not.toContain('—');
+  });
+});
+

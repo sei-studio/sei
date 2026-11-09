@@ -1909,6 +1909,10 @@ export const FeedbackSubmitArgsSchema = z.object({
   body: z.string().min(1).max(4000),
   email: z.string().max(320).optional(),
   claimReward: z.boolean().optional(),
+  /** 261109: analytics only, never sent to the proxy. Which form sent it, and
+   *  (Suggest a game) whether the "already works in Sei" hint showed. */
+  form: z.enum(['suggest_game']).optional(),
+  gameHintShown: z.boolean().optional(),
 });
 
 /**
@@ -3152,7 +3156,13 @@ export interface RendererApi {
    * when this account claimed before (the renderer retires the banner either
    * way). Error codes: PROXY_NO_SESSION | PROXY_RATE_LIMITED | PROXY_NETWORK.
    */
-  feedbackSubmit: (args: { body: string; email?: string; claimReward?: boolean }) => Promise<
+  feedbackSubmit: (args: {
+    body: string;
+    email?: string;
+    claimReward?: boolean;
+    form?: 'suggest_game';
+    gameHintShown?: boolean;
+  }) => Promise<
     | { ok: true; usage_reset: boolean; already_claimed: boolean }
     | { ok: false; code: string; status?: number; reason?: string }
   >;

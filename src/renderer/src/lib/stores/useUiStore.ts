@@ -172,7 +172,9 @@ export type Modal =
   | { kind: 'share-screen'; characterId: string; game?: BackseatGameSelection; manual?: boolean }
   // 260929 — a backseat game tile: the one-time intro, then the optional
   // "which game are you playing?" step, then the share picker above.
-  | { kind: 'backseat-game'; characterId: string; gameId: string };
+  // 261109: `query` prefills (and runs) the pick step's search, from the
+  // Suggest-a-game hint ("Roblox Forsaken").
+  | { kind: 'backseat-game'; characterId: string; gameId: string; query?: string };
 
 /**
  * B4 — which tab CharactersScreen should open on. The compass icon in the

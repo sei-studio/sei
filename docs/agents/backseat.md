@@ -352,6 +352,22 @@ The design and its measurements are committed at
   (never the typed search), and `backseat_started/_ended` carry `game`.
   Verify with `?dashshot=roblox&part=picker|intro|pick|share` (+`&lang=zh`) or
   `scripts/roblox-backseat-shots.ts`.
+- **Suggest a game says when a game already works (261109, T379).** Players
+  kept sending "roblox" through the picker's Suggest-a-game form, one row
+  under the Roblox tile (PostHog: 2 of the 3 found the tile within a minute
+  AFTER sending, one had already played it). `shared/knownGame.ts` matches the
+  typed text against `GAME_CATALOG` names + `aliases` (case, accent,
+  apostrophe and spacing insensitive, whole words; hanzi/kana anywhere;
+  "Minecraft Dungeons"/"bedrock" excluded) and FeedbackModal shows
+  "<Game> already works in Sei" + "Play <Game>", which runs the tile's own
+  `onPlay`. For Roblox the rest of the text ("Roblox Forsaken") becomes the
+  `backseat-game` modal's `query`: PickStep prefills it and runs the search
+  once. Submitting stays possible. Analytics (shape only):
+  `suggest_game_hint_shown {game}` once per game per form,
+  `suggest_game_hint_clicked {game, has_query}`, and `feedback_submitted` /
+  `feedback_failed` from this form carry `form: 'suggest_game'` and
+  `game_hint_shown`. New names a player types belong in the catalog's
+  `aliases`, never in a phrase list.
 - **THERE IS ONE CONVERSATION, NOT TWO (260804).** While a companion is sharing,
   `dispatchUserTurn` routes the player's utterance to `capture.sendUserTick`
   and SKIPS that companion's ordinary voice turn; anyone else on the call still

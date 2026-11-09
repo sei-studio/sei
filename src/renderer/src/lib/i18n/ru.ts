@@ -2373,4 +2373,6 @@ export const RU: Record<string, string> = {
   "Starts Sei in the background when you log in, so the companion on your desktop is back in their room. The Sei window stays closed until you open it.": "Запускает Sei в фоне при входе в систему, чтобы компаньон на рабочем столе снова был в своей комнате. Окно Sei остаётся закрытым, пока вы его не откроете.",
   "Allow Sei in System Settings, under General > Login Items.": "Разрешите Sei в Системных настройках: Основные > Объекты входа.",
   "Could not change this setting. Try again.": "Не удалось изменить настройку. Попробуйте ещё раз.",
+  // ── suggest-a-game hint (261109) ──
+  "{game} already works in Sei": "{game} уже работает в Sei",
 };

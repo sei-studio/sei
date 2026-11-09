@@ -2373,4 +2373,6 @@ export const JA: Record<string, string> = {
   "Starts Sei in the background when you log in, so the companion on your desktop is back in their room. The Sei window stays closed until you open it.": "ログインするとSeiをバックグラウンドで起動し、デスクトップのコンパニオンが部屋に戻ってきます。Seiのウィンドウは開くまで閉じたままです。",
   "Allow Sei in System Settings, under General > Login Items.": "システム設定の「一般 > ログイン項目」でSeiを許可してください。",
   "Could not change this setting. Try again.": "この設定を変更できませんでした。もう一度お試しください。",
+  // ── suggest-a-game hint (261109) ──
+  "{game} already works in Sei": "{game}はすでにSeiで遊べます",
 };

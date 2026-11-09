@@ -46,4 +46,29 @@ describe('submitFeedbackTracked', () => {
     expect(track).toHaveBeenCalledWith('feedback_failed', expect.objectContaining({ code: 'EXCEPTION' }));
     expect(track).not.toHaveBeenCalledWith('feedback_submitted', expect.anything());
   });
+
+  // 261109: the Suggest-a-game form says so, and whether its hint showed.
+  it('the suggest form adds form and game_hint_shown to both events', async () => {
+    const track = vi.fn();
+    const submit = vi.fn(async () => ({ ok: true as const, usage_reset: false, already_claimed: false }));
+    await submitFeedbackTracked({ body: 'roblox', form: 'suggest_game', gameHintShown: true }, { submit, track });
+    expect(track).toHaveBeenCalledWith('feedback_submitted', {
+      reward_claim: false,
+      form: 'suggest_game',
+      game_hint_shown: true,
+    });
+    const track2 = vi.fn();
+    await submitFeedbackTracked(
+      { body: 'valheim', form: 'suggest_game' },
+      { submit: async () => ({ ok: false, code: 'PROXY_NETWORK' }), track: track2 },
+    );
+    expect(track2).toHaveBeenCalledWith('feedback_failed', {
+      code: 'PROXY_NETWORK',
+      status: null,
+      reason: null,
+      reward_claim: false,
+      form: 'suggest_game',
+      game_hint_shown: false,
+    });
+  });
 });
