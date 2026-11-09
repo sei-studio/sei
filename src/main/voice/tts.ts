@@ -41,7 +41,7 @@ import type { Character } from '../../shared/characterSchema';
 import { characterLanguage, clampChatLanguage, type ChatLanguage } from '../../shared/chatLanguage';
 import { toSpokenRegister, toSpokenUtterance } from './spokenRegister';
 import { stripAudioTags, SUPPORTS_AUDIO_TAGS } from './audioTags';
-import { resolveVoiceId, isPoolVoiceId, ownVoicePickOf, ownVoiceStandInId } from './voiceAssign';
+import { resolveVoiceId, isPoolVoiceId, ownVoicePickOf, ownVoiceStandInId, previewVoiceIdFor } from './voiceAssign';
 import { previewCacheKey, readCachedPreview, writeCachedPreview } from './previewCache';
 import { NO_VOICE_ID } from '../../shared/voiceIds';
 import { resolveElevenLabsRoute, resolveTtsRoute, type ElevenLabsRoute } from './elevenLabsKeyStore';
@@ -1244,7 +1244,19 @@ export async function voicePreviewTts(args: {
     }
     return await synthesizeLocalClip(localText, voiceId ?? '', language, args.characterId ?? '', genderHint);
   }
-  const voiceId = args.voiceId ?? '';
+  let voiceId = args.voiceId ?? '';
+  // 261110: the profile Overview's sample asks by companion only: play the
+  // voice a call with them would use (resolved without writing anything, so
+  // a World preview's cached row is never touched).
+  if (!voiceId && args.characterId) {
+    const character = await getCharacter(args.characterId);
+    if (!character) throw new Error('VOICE_TTS_FAILED: unknown character');
+    if (character.metadata?.voiceId === NO_VOICE_ID) throw new Error('VOICE_DISABLED: this companion has no voice');
+    voiceId = previewVoiceIdFor(character);
+    // The author's own ElevenLabs voice on a machine whose key cannot speak
+    // it: the stand-in they approved for others, as a live line would.
+    if (!isPoolVoiceId(voiceId) && !(await isOwnVoiceId(voiceId))) voiceId = ownVoiceStandInId(character);
+  }
   // Closed allowlist: the curated pool, or (261019) a voice in the user's
   // own ElevenLabs account as listed with the current own-voice key. Own
   // voices only list when that key exists, and they synthesize on its direct

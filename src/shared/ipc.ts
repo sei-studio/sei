@@ -1701,6 +1701,26 @@ export interface BrowseEntry {
 }
 
 /**
+ * The cloud facts behind a profile's Overview (product call 261110), from
+ * chars:overview-info (main/cloud/characterOverview.ts). Every field is
+ * best-effort: null / false = unknown, and the Overview leaves it out.
+ */
+export interface CharacterOverviewInfo {
+  /** The author's public display name; null for your own, built-ins and unnamed authors. */
+  creatorName: string | null;
+  /** Accounts with it in their library (the World card's number); null when unknown. */
+  addCount: number | null;
+  /** A Stardew Valley farmer look exists (this device or the shared cloud row). */
+  stardewLook: boolean;
+  /**
+   * The curated-pool voice its sample plays (bundled clip, no TTS call).
+   * Null for "no voice", or an own ElevenLabs voice you can hear (that one
+   * is synthesized through voicePreview with the character id).
+   */
+  sampleVoiceId: string | null;
+}
+
+/**
  * World tab sort (product call 261110). 'popular' (library adds desc) is the
  * default. Applied server-side by `search_public_characters_sorted`; when that
  * RPC is missing main falls back to the old newest-first RPC and reports
@@ -2058,6 +2078,8 @@ export interface RendererApi {
   charsPortraitRegenerate(characterId: string): Promise<PortraitRegenResult>;
   /** Make a stored version the active portrait (copies its bytes onto the canonical file). */
   charsPortraitSelect(args: { characterId: string; file: string }): Promise<PortraitVersionsState>;
+  /** 261110: creator name, library add count and game looks for the profile Overview. Never throws. */
+  charsOverviewInfo(characterId: string): Promise<CharacterOverviewInfo>;
 
   // Phase 11 D-16 — toggle public/private visibility of a character. Refuses
   // when the character is a bundled default. Triggers the standard cloud-mirror
@@ -3750,6 +3772,8 @@ export const IpcChannel = {
     portraitVersions: 'chars:portrait-versions',
     portraitRegenerate: 'chars:portrait-regenerate',
     portraitSelect: 'chars:portrait-select',
+    // 261110 — the profile Overview's cloud facts (creator, add count, game looks).
+    overviewInfo: 'chars:overview-info',
     // Phase 11 D-16 — toggle a character's `shared` flag (public listing
     // visibility). Defaults are rejected by the handler. Triggers the
     // standard cloud-mirror upsert via saveCharacter.
