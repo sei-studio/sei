@@ -187,3 +187,20 @@ login starts can be told apart.
   open path is known).
 - Displays other than the one she lives on.
 - fps while macOS App Nap throttles the host reads as low fps, not as a pause.
+
+## Setup pass (261110, product call 261110)
+
+`src/shared/seilinkSetupTelemetry.ts` owns these; main's analytics:track
+rebuilds the props with `sanitizeSeilinkSetupTrack` (closed enums, a capped
+count, the character id). `seilink_minimize_windows` is sent by main itself
+(`stageFlow.handleMinimizeOthers`).
+
+| Event | When | Props | Answers |
+|---|---|---|---|
+| `seilink_setup_call` | the Call button by the room editor's talk box | character_id, outcome `started`/`consent_shown`/`install_started`/`installed`/`install_failed`/`declined`/`error`, guided (the guided setup was open), gate `ready`/`installing`/`consent` (the voice module when pressed) | Do people call her while setting up; how often the voice module is in the way |
+| `seilink_live_hint` | the "{name} lives on your desktop now" card (once per account, until dismissed) | character_id, action `shown`/`dismissed` (Got it)/`minimized` (Minimize other windows / Hide other apps)/`show_desktop` (the window went hidden while it was up: Win+D), surface `intro_end` (over the first link's last frame)/`app_window` (in the app after a move-in without the intro), os `mac`/`windows`/`linux` | Is the card read; how people get to the desktop |
+| `seilink_minimize_windows` | "Minimize other windows" ran (main) | outcome `ok`/`failed`/`unsupported`, windows (how many were minimized, Windows only, capped at 50), surface `live_card`/`other`, os | Does the minimize work per platform |
+| `seilink_placement_guide` | the first drop of a dragged item, per kind of place, per editor session | mode `outline` (the outlined areas that replaced the blur), cls `floor`/`surface`/`wall`, placed (true: the item was dropped) | Sanity check that the outline guide shows |
+
+`seilink_movein_sheet` also carries `notice: 'beta_v1'` since 261110: the
+sheet's bullets became one short beta notice.

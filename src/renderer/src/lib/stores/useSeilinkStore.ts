@@ -57,6 +57,16 @@ interface SeilinkStoreState {
   setMoveBusy: (busy: boolean) => void;
   playIntro: (req: Omit<SeilinkIntroRequest, 'seq'>) => void;
   endIntro: (seq: number) => void;
+  /** 261110: the "lives on your desktop" card in the app (a move-in without the intro), or null. */
+  liveHint: SeilinkLiveHint | null;
+  showLiveHint: (hint: SeilinkLiveHint) => void;
+  endLiveHint: () => void;
+}
+
+/** 261110: the live card after a move-in without the intro. `fresh`: the window steps aside once it is dismissed. */
+export interface SeilinkLiveHint {
+  characterId: string;
+  fresh: boolean;
 }
 
 let introSeq = 0;
@@ -67,6 +77,7 @@ export const useSeilinkStore = create<SeilinkStoreState>((set) => ({
   flow: null,
   moveBusy: false,
   intro: null,
+  liveHint: null,
   init: () => {
     const offs = [
       sei.onSeilinkAvailability?.((a) => set({ availability: a })) ?? (() => {}),
@@ -91,6 +102,8 @@ export const useSeilinkStore = create<SeilinkStoreState>((set) => ({
   setMoveBusy: (moveBusy) => set({ moveBusy }),
   playIntro: (req) => set({ intro: { ...req, seq: ++introSeq } }),
   endIntro: (seq) => set((s) => (s.intro?.seq === seq ? { intro: null } : s)),
+  showLiveHint: (liveHint) => set({ liveHint }),
+  endLiveHint: () => set({ liveHint: null }),
 }));
 
 /** The companion who moved in, while the host is up or coming up (null when off or failed). */

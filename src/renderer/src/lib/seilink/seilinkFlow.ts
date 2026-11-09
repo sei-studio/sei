@@ -32,6 +32,7 @@ import { sei } from '../ipcClient';
 import { movedInId, useSeilinkStore } from '../stores/useSeilinkStore';
 import { moveInFailed, needsMoveInSheet } from './moveIn';
 import { introSeen, shouldPlayFirstLink } from './introPref';
+import { liveHintDismissed } from './liveHintPref';
 
 export function trackEntry(characterId: string, source: SeilinkEntrySource, action: EntryAction): void {
   try {
@@ -67,12 +68,14 @@ export function startSeilinkHost(
       ),
       stage: true,
     });
-  } else if (opts.fresh) {
+  } else if (opts.fresh || !liveHintDismissed()) {
     // No intro: once she is in, step aside so the desktop shows her there, and offer to set up her room together.
+    // 261110: until it was dismissed once, the "lives on your desktop" card comes first (SeilinkFlowHost reveals after it).
     void start.then(
       (s) => {
         if (moveInFailed(s)) return;
-        void revealAndOffer(characterId, 'move_in');
+        if (!liveHintDismissed()) useSeilinkStore.getState().showLiveHint({ characterId, fresh: opts.fresh === true });
+        else void revealAndOffer(characterId, 'move_in');
       },
       () => {},
     );

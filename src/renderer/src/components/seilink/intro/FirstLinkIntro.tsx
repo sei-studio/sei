@@ -45,6 +45,9 @@ import { animaLinkSource } from '../../../lib/seilink/animaLinkSource';
 import { fixedSource, instantLog } from '../../../lib/seilink/worldLink';
 import { roomAvatarUse } from '../RoomAvatar';
 import { FirstLinkIntroView, type IntroFinish, type IntroRoom } from './FirstLinkIntroView';
+import type { SeilinkStageFrame } from '@shared/seilinkHost';
+import { liveHintDismissed } from '../../../lib/seilink/liveHintPref';
+import { LiveCard } from '../LiveCard';
 
 /** Wait this long for her room before playing over a plain backdrop. */
 const ROOM_WAIT_MS = 1500;
@@ -75,6 +78,10 @@ export default function FirstLinkIntro(props: { request: SeilinkIntroRequest; on
   // The desktop stage: null until main answers (or there is none to ask for).
   const [staged, setStaged] = useState<boolean | null>(request.stage ? null : false);
   const stagedRef = useRef(false);
+  // 261110: where the display sits in the staged window (the room lines up with the wallpaper).
+  const [frame, setFrame] = useState<SeilinkStageFrame | null>(null);
+  // 261110: the "lives on your desktop" card over the held end, and what goes on once it is dismissed.
+  const [liveCard, setLiveCard] = useState<(() => void) | null>(null);
   const doneRef = useRef(false);
   // What it ends on is fixed once her room has loaded (a theme change mid-intro does not swap it).
   const tone = useMemo(() => plainTone(), []);
@@ -144,6 +151,7 @@ export default function FirstLinkIntro(props: { request: SeilinkIntroRequest; on
           return;
         }
         stagedRef.current = r.ok;
+        if (r.ok) setFrame(r.frame ?? null);
         setStaged(r.ok);
       },
       () => !dead && setStaged(false),
@@ -198,6 +206,8 @@ export default function FirstLinkIntro(props: { request: SeilinkIntroRequest; on
     void (async () => {
       const ok = end.action !== 'aborted' && (await request.outcome.catch(() => false));
       const wasStaged = stagedRef.current;
+      // 261110: she is live. On the stage, the card says where she lives and how to reach her first (until dismissed once).
+      if (ok && wasStaged && !liveHintDismissed()) await new Promise<void>((go) => setLiveCard(() => go));
       doneRef.current = true;
       stagedRef.current = false;
       if (ok) await revealAndOffer(request.characterId, 'intro', { staged: wasStaged });
@@ -207,19 +217,33 @@ export default function FirstLinkIntro(props: { request: SeilinkIntroRequest; on
   };
 
   return (
-    <FirstLinkIntroView
-      end={endOn}
-      tone={tone}
-      reduced={reduced}
-      characterId={request.characterId}
-      name={character?.name ?? ''}
-      room={room}
-      portrait={character?.portrait_image ?? null}
-      use={use}
-      source={source}
-      onFinish={onFinish}
-      onReport={onReport}
-      holdEnd={staged === true}
-    />
+    <>
+      <FirstLinkIntroView
+        end={endOn}
+        tone={tone}
+        reduced={reduced}
+        characterId={request.characterId}
+        name={character?.name ?? ''}
+        room={room}
+        portrait={character?.portrait_image ?? null}
+        use={use}
+        source={source}
+        onFinish={onFinish}
+        onReport={onReport}
+        holdEnd={staged === true}
+        frame={frame}
+      />
+      {liveCard ? (
+        <LiveCard
+          characterId={request.characterId}
+          name={character?.name ?? ''}
+          surface="intro_end"
+          onDone={() => {
+            setLiveCard(null);
+            liveCard();
+          }}
+        />
+      ) : null}
+    </>
   );
 }

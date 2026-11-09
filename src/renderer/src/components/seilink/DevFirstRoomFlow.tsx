@@ -18,6 +18,10 @@
  *   phase=closed    the editor closed: the decorated wallpaper, icons on top
  *   together=<name> 261110: the editor shared with her (RoomTogether: talk box,
  *                   Call button); voicegate=consent makes Call ask for the module
+ *   livecard=stage|app  261110: the "lives on your desktop" card over the
+ *                   wallpaper (stage: as over the first link's last frame;
+ *                   app: the dialog after a move-in without the intro);
+ *                   os=windows|mac|linux picks the shortcut line
  *   phase=login     261107: the "Open on login" step the guided setup's Done
  *                   brings up (over the decorated room)
  *   loginitem=off|approval|fail  261107: the login item as a packaged mac/win
@@ -41,6 +45,7 @@ import { addItem } from '@shared/seilinkEdit';
 import { SeilinkHostView } from './host/SeilinkHostView';
 import { RoomEditor, type RoomTogetherCtx } from './RoomEditor';
 import { RoomTogether } from './RoomTogether';
+import { LiveCardView } from './LiveCard';
 import { memoryRoomEditorSource, type RoomEditorSource } from './roomEditorSource';
 import { useLangStore, type UiLanguage } from '../../lib/i18n';
 import type { OpenAtLoginSource } from '../../lib/seilink/loginStep';
@@ -350,7 +355,16 @@ export function DevFirstRoomFlow(): React.ReactElement {
   return (
     <>
       <SeilinkHostView key={`${phase}:${state?.preset}`} bridge={bridge} resolveFor={() => wallPack.resolve} />
-      <DesktopChrome />
+      {params.get('livecard') === 'stage' ? null : <DesktopChrome />}
+      {params.has('livecard') ? (
+        <LiveCardView
+          name={params.get('name') ?? 'Sui'}
+          os={params.get('os') === 'mac' ? 'mac' : params.get('os') === 'linux' ? 'linux' : 'windows'}
+          placement={params.get('livecard') === 'app' ? 'app' : 'stage'}
+          onMinimize={params.get('os') === 'linux' ? undefined : () => undefined}
+          onDismiss={() => undefined}
+        />
+      ) : null}
     </>
   );
 }
