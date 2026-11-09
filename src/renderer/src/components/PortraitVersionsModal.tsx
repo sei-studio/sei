@@ -13,6 +13,16 @@
  * result as the next version. Each character has MAX_PORTRAIT_REGENS lifetime
  * regenerations; every version stays on disk so switching back is free. Only
  * the selected version is mirrored to the cloud.
+ *
+ * 261107 (profile v0.7): the profile's Look tab opens it from "Versions" and
+ * from "Regenerate" (`autoRegenerate`: the round trip starts as soon as the
+ * versions have loaded, so the button does what it says). For user-made
+ * companions (`allowUpload`) it also carries Upload / Remove, which used to
+ * live in the edit modal's Appearance section.
+ *
+ * 261110 (product call): no Regenerate while the image showing is one the
+ * player uploaded (cardImageOrigin 'uploaded'). Their own picture is kept as
+ * made; picking a generated version brings the button back.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -24,8 +34,9 @@ import { useDataStore } from '../lib/stores/useDataStore';
 import { bumpPortraitRef, portraitSrc } from '../lib/portraitSrc';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
+import { PortraitImagePicker } from './PortraitImagePicker';
 import type { PortraitVersionsState } from '@shared/ipc';
-import { portraitVersionIndex, type PortraitVersion } from '@shared/characterSchema';
+import { cardImageOrigin, portraitVersionIndex, type PortraitVersion } from '@shared/characterSchema';
 import styles from './PortraitVersionsModal.module.css';
 
 export interface PortraitVersionsModalProps {
@@ -34,6 +45,10 @@ export interface PortraitVersionsModalProps {
   onClose: () => void;
   /** Stack above another modal (the Edit modal opens this on top of itself). */
   tier?: 'base' | 'stacked';
+  /** Start a regeneration once the versions have loaded (the profile's Regenerate). */
+  autoRegenerate?: boolean;
+  /** Offer Upload / Remove (user-made companions only). */
+  allowUpload?: boolean;
 }
 
 export function PortraitVersionsModal({
@@ -41,11 +56,14 @@ export function PortraitVersionsModal({
   characterName,
   onClose,
   tier = 'base',
+  autoRegenerate = false,
+  allowUpload = false,
 }: PortraitVersionsModalProps): React.ReactElement {
   const t = useT();
   const authState = useAuthStore((s) => s.state);
   const signedIn = authState.kind === 'signed_in';
   const refreshCharacter = useDataStore((s) => s.refreshCharacter);
+  const character = useDataStore((s) => s.characters.find((c) => c.id === characterId) ?? null);
 
   const [state, setState] = useState<PortraitVersionsState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -118,10 +136,42 @@ export function PortraitVersionsModal({
     }
   };
 
+  // The profile's Regenerate: start once, as soon as the versions are known.
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (!autoRegenerate || autoStarted.current || !state) return;
+    autoStarted.current = true;
+    void regenerate();
+    // regenerate reads the state it closes over; it only needs to run once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRegenerate, state]);
+
+  /**
+   * Upload / Remove (user-made companions). The renderer-side save after main
+   * applied the bytes is load-bearing for shared companions: the moderation
+   * gate on new portrait bytes runs only in the chars:save handler (see
+   * EditCharacterModal.persistPortrait). Read the latest row first so the
+   * portrait_versions records main just wrote survive.
+   */
+  const onUploaded = async (ref: string | null): Promise<void> => {
+    setError(null);
+    try {
+      const latest = await sei.getCharacter(characterId);
+      if (latest) await sei.saveCharacter({ ...latest, portrait_image: ref }, { skipExpansion: true });
+      bumpPortraitRef(`${characterId}.png`);
+      await refreshCharacter(characterId);
+      await load();
+    } catch (err) {
+      setError(cleanIpcError(err));
+    }
+  };
+
   const regensLeft = state ? Math.max(0, state.regenLimit - state.regenCount) : 0;
   const canRegenerate = !!state && signedIn && regensLeft > 0 && !regenerating && !selecting;
   const activeSrc = state?.active ? portraitSrc(state.active) : null;
   const busy = regenerating || selecting !== null;
+  // A custom (uploaded) image showing: no Regenerate (product call 261110).
+  const customImage = !!character && !!state && !regenerating && cardImageOrigin(character, state) === 'uploaded';
 
   const label = (v: PortraitVersion, i: number): string => {
     if (v.source === 'original') return t('Original');
@@ -185,12 +235,25 @@ export function PortraitVersionsModal({
         </div>
       ) : null}
 
-      <div className={styles.regenRow}>
-        <Button kind="accent" size="md" onClick={() => void regenerate()} disabled={!canRegenerate}>
-          {regenerating ? t('Regenerating…') : t('Regenerate')}
-        </Button>
-        <span className={styles.hint}>{hint}</span>
-      </div>
+      {customImage ? null : (
+        <div className={styles.regenRow}>
+          <Button kind="accent" size="md" onClick={() => void regenerate()} disabled={!canRegenerate}>
+            {regenerating ? t('Regenerating…') : t('Regenerate')}
+          </Button>
+          <span className={styles.hint}>{hint}</span>
+        </div>
+      )}
+
+      {allowUpload ? (
+        <div className={styles.uploadRow}>
+          <PortraitImagePicker
+            characterId={characterId}
+            value={state?.active ?? null}
+            onChange={(ref) => void onUploaded(ref)}
+            variant="buttons"
+          />
+        </div>
+      ) : null}
 
       {error ? (
         <p className={styles.error} role="alert">

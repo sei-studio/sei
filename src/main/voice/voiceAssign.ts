@@ -254,6 +254,20 @@ export function ownVoiceStandInId(character: Character): string {
 }
 
 /**
+ * The voice a sample of this character should play (261110, the profile
+ * Overview), resolved like resolveVoiceId but never written back: the
+ * assigned voice, else the borrowed stand-in for someone else's own voice,
+ * else the deterministic roll with no roster exclusions. Callers handle the
+ * "no voice" sentinel first.
+ */
+export function previewVoiceIdFor(character: Character): string {
+  const assigned = assignedVoiceId(character);
+  if (assigned) return assigned;
+  if (isBorrowedOwnVoice(character)) return ownVoiceStandInId(character);
+  return rollFallbackVoice(character, undefined, []);
+}
+
+/**
  * Resolve (and persist, when newly assigned) the character's TTS voice id.
  * Never throws for assignment reasons — the fallback roll always lands on a
  * valid pool voice; only storage errors propagate from saveCharacter, and

@@ -76,7 +76,22 @@ export interface EditCharacterModalProps {
    * a normal edit.
    */
   notice?: string;
+  /**
+   * 261107 (profile v0.7): show ONLY `initialSection`, without the sidebar.
+   * Each profile row opens the editor for its own thing; the sidebar would
+   * let the player wander into the others.
+   */
+  only?: boolean;
 }
+
+/** The single-section editor's title (profile v0.7). */
+const ONLY_TITLE: Record<EditSection, string> = {
+  basic: 'Name and description',
+  appearance: 'Appearance',
+  voice: 'Voice',
+  persona: 'Persona',
+  games: 'Chess',
+};
 
 export function EditCharacterModal({
   character,
@@ -84,6 +99,7 @@ export function EditCharacterModal({
   onSaved,
   initialSection = 'basic',
   notice,
+  only = false,
 }: EditCharacterModalProps): React.ReactElement {
   const t = useT();
   const [section, setSection] = useState<EditSection | 'danger'>(initialSection);
@@ -526,14 +542,15 @@ export function EditCharacterModal({
     <>
       <ModalShell
         title={null}
-        width={920}
-        panelClassName={styles.editPanel}
+        width={only ? 640 : 920}
+        panelClassName={only ? `${styles.editPanel} ${styles.editPanelSingle}` : styles.editPanel}
         escClose={false}
         scrimClose
         onClose={() => void requestClose()}
         aria-label={t('Edit companion')}
       >
-        {/* ── Sidebar ── */}
+        {/* ── Sidebar (not in the profile's single-section mode) ── */}
+        {only ? null : (
         <aside className={styles.sidebar}>
             <h2 id="edit-character-title" className={styles.title}>
               {t('Edit companion')}
@@ -552,9 +569,15 @@ export function EditCharacterModal({
               ))}
             </nav>
           </aside>
+        )}
 
           {/* ── Content pane ── */}
           <section className={styles.pane}>
+            {only ? (
+              <h2 id="edit-character-title" className={styles.singleTitle}>
+                {t(ONLY_TITLE[initialSection])}
+              </h2>
+            ) : null}
             <div className={styles.paneScroll}>
               {notice ? <p className={styles.notice}>{notice}</p> : null}
               {section === 'basic' ? (
@@ -588,10 +611,12 @@ export function EditCharacterModal({
                         onChange={(ref) => void persistPortrait(ref)}
                       />
                       {/* 260909: the editor only opens for characters the user
-                          owns, so the versions + regenerate popup is always
-                          available here (it gates sign-in itself). */}
+                          owns, so the versions popup is always available here
+                          (it gates sign-in itself). 261110: labelled Versions,
+                          since a user-made companion's image is an upload and
+                          the popup offers no Regenerate for one. */}
                       <Button kind="ghost" size="sm" onClick={() => setPortraitVersionsOpen(true)}>
-                        {t('Regenerate')}
+                        {t('Versions')}
                       </Button>
                     </div>
                   </div>

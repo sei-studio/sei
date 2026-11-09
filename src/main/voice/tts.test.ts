@@ -682,6 +682,39 @@ describe('own ElevenLabs voices', () => {
   });
 });
 
+describe('voicePreviewTts by companion (261110, profile Overview sample)', () => {
+  it('plays the assigned pool voice and resolves it without writing anything', async () => {
+    mockGetCharacter.mockResolvedValue({ ...CHAR, metadata: { voiceId: VOICES[1].id } });
+    mockResolveVoiceId.mockClear();
+    fetchSpy.mockResolvedValue(okAudio());
+    await voicePreviewTts({ characterId: 'c1' });
+    expect(fetchSpy.mock.calls[0][0]).toBe('https://api.sei.gg/tts/speech');
+    expect(JSON.parse(String((fetchSpy.mock.calls[0][1] as RequestInit).body)).voice_id).toBe(VOICES[1].id);
+    expect(mockResolveVoiceId).not.toHaveBeenCalled();
+  });
+
+  it('a silent companion has no sample', async () => {
+    mockGetCharacter.mockResolvedValue({ ...CHAR, metadata: { voiceId: 'none' } });
+    await expect(voicePreviewTts({ characterId: 'c1' })).rejects.toThrow(/VOICE_DISABLED/);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("someone else's own ElevenLabs voice samples as the voice they chose for others", async () => {
+    const foreign = {
+      ...CHAR,
+      owner: '22222222-2222-4222-8222-222222222222',
+      is_default: false,
+      metadata: { voiceId: 'aBcDeFgHiJkLmNoPqRsT', voiceOwn: { name: 'Clone', gender: 'female' }, voiceShared: VOICES[2].id },
+    };
+    mockGetCharacter.mockResolvedValue(foreign);
+    fetchSpy.mockResolvedValue(okAudio());
+    await voicePreviewTts({ characterId: 'c1' });
+    expect(JSON.parse(String((fetchSpy.mock.calls[0][1] as RequestInit).body)).voice_id).toBe(
+      ownVoiceStandInId(foreign as never),
+    );
+  });
+});
+
 describe('directElevenLabsError (BYOK account answers)', () => {
   it('voice missing → VOICE_NOT_IN_LIBRARY', () => {
     expect(directElevenLabsError(404, '{"detail":{"status":"voice_not_found"}}')).toMatch(/^VOICE_NOT_IN_LIBRARY/);

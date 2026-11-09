@@ -92,6 +92,18 @@
   color: var(--accent);
 }
 
+/* ── Kind: soft — accent-tinted fill, so no border (261107) ───────────
+   The fill-only twin of an accent action that should not shout: the
+   profile's Regenerate. Deepens on hover. */
+.soft {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: transparent;
+}
+.soft:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
 /* ── Kind: ghost — no fill, so bordered; lights up to accent ─────────── */
 .ghost {
   background: none;
@@ -130,4 +142,16 @@
   border-color: var(--red);
   color: var(--red-strong);
   background: color-mix(in srgb, var(--red) 9%, transparent);
+}
+
+/* ── Kind: dangerSoft — red-tinted fill, so no border (261107) ─────────
+   The fill-only twin of danger, for rows where the border rule applies
+   (the profile's Danger zone). */
+.dangerSoft {
+  background: color-mix(in srgb, var(--red) 14%, transparent);
+  color: var(--red-strong);
+  border-color: transparent;
+}
+.dangerSoft:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--red) 22%, transparent);
 }

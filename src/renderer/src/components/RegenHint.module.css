@@ -1,13 +1,14 @@
 /*
- * RegenHint (261107): the one-time card over the profile's settings gear.
+ * RegenHint (261107): the one-time card on the profile's card image
+ * Regenerate button (.below, since the v0.7 profile) or over an anchor.
  * Same card language as the chat header's one-time games tip
  * (ChatTopBar.module.css .tip): surface-2 card, hairline card edge, pop
  * shadow, a rotated-square tail. Buttons carry no border lines (product rule).
  *
- * It hangs ABOVE the gear (the deploy row is pinned to the bottom of the
- * page) and is anchored to the gear's RIGHT edge, because the gear ends the
- * row at the content panel's right gutter and a centred card would be clipped
- * by the panel's overflow-x: hidden.
+ * The default hangs ABOVE its anchor (it was made for the old settings gear
+ * in the pinned deploy row) and is anchored to the anchor's RIGHT edge,
+ * because the anchor ends its row at the panel's right edge and a centred
+ * card would be clipped by the panel's overflow.
  */
 .hint {
   /* How far the card's right edge sits past the gear's; the tail offset
@@ -134,4 +135,42 @@
 
 .regen:hover {
   background: var(--accent-strong);
+}
+
+/* 261107 (profile v0.7): under the Look tab's Regenerate button, tail up.
+ * No overhang: the tab panel scrolls, so anything past its right edge would
+ * add a horizontal scrollbar. */
+.below {
+  --regen-hint-overhang: 0px;
+  top: calc(100% + 12px);
+  bottom: auto;
+  animation-name: regenHintInBelow;
+}
+
+@keyframes regenHintInBelow {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.below .tail {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: -5px;
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .below {
+    animation: none;
+  }
 }

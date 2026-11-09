@@ -119,6 +119,12 @@
   margin-top: 0;
 }
 
+/* 261107: Upload / Remove for user-made companions (was in the edit modal). */
+.uploadRow {
+  display: flex;
+  align-items: center;
+}
+
 .hint {
   font-family: var(--mono);
   font-size: 11px;

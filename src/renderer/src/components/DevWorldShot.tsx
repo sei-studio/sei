@@ -126,13 +126,16 @@ function toCharacter(f: Fixture) {
     description: f.persona,
     shared: true,
     slug: null,
-    metadata: {},
+    metadata: { voiceId: 'v-sarah' },
     created: new Date(now - f.daysAgo * DAY).toISOString(),
     last_launched: null,
     last_chatted: null,
     playtime_ms: 0,
     ...(f.art ? { portrait_image: f.art } : {}),
-    skin: { source: 'none', mojang_username: null, png_sha256: null, applied_at: null },
+    // A shared companion's skin travels with it (the Overview's Minecraft line).
+    skin: f.art
+      ? { source: 'upload', mojang_username: null, png_sha256: 'shot', applied_at: null }
+      : { source: 'none', mojang_username: null, png_sha256: null, applied_at: null },
     username: null,
     owner: ownerOf(f),
   };
@@ -181,6 +184,34 @@ function seed(): void {
       regenCount: 0,
       regenLimit: 3,
     }),
+    // The Overview's cloud facts (261110).
+    charsOverviewInfo: async (id: string) => {
+      const f = FIXTURES.find((x) => x.id === id);
+      return {
+        creatorName: f && !f.isDefault ? f.author : null,
+        addCount: f ? f.adds : null,
+        stardewLook: f?.name === 'Aria',
+        sampleVoiceId: 'v-sarah',
+      };
+    },
+    voiceListVoices: async () => [
+      { id: 'v-sarah', label: 'Sarah', gender: 'female', age: 'young', tags: [], vibe: 'bright and playful, American' },
+    ],
+    // Aria has two public avatars beyond her card image; the rest only the card.
+    avatarLibraryList: async (id: string) => {
+      const item = (aid: string, kind: string, source: string, name: string | null, url: string | null) => ({
+        id: aid, kind, source, name, sha256: null, rev: aid, bytes: 1, mime: 'image/png', is_public: true,
+        is_default: source === 'card', sort_order: 0, moderation: 'clean', shareable: true, url, created_at: '',
+      });
+      const f = FIXTURES.find((x) => x.id === id);
+      const avatars = [item(`${id}-card`, 'portrait', 'card', null, f?.art ?? null)];
+      if (f?.name === 'Aria') {
+        avatars.push(item(`${id}-a1`, 'portrait', 'upload', 'Festival outfit', f.art));
+        avatars.push(item(`${id}-a2`, 'live2d', 'upload', 'Stage', null));
+      }
+      return { state: 'ready', list: { is_owner: false, avatars, default_id: `${id}-card` }, pick_id: null, effective_id: `${id}-card` };
+    },
+    onAvatarLibrary: () => () => undefined,
   });
   useDataStore.setState({
     characters: characters as unknown as ReturnType<typeof useDataStore.getState>['characters'],

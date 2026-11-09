@@ -96,6 +96,7 @@ const api: RendererApi = {
   charsRemovePortrait: (id) => ipcRenderer.invoke(IpcChannel.chars.removePortrait, id),
   // 260909 — card-image versions + regeneration.
   charsPortraitVersions: (id) => ipcRenderer.invoke(IpcChannel.chars.portraitVersions, id),
+  charsOverviewInfo: (id) => ipcRenderer.invoke(IpcChannel.chars.overviewInfo, id),
   charsPortraitRegenerate: (id) => ipcRenderer.invoke(IpcChannel.chars.portraitRegenerate, id),
   charsPortraitSelect: (args) => ipcRenderer.invoke(IpcChannel.chars.portraitSelect, args),
 
@@ -446,6 +447,7 @@ const api: RendererApi = {
   seilinkHostStart: (characterId, opts) => ipcRenderer.invoke(IpcChannel.seilink.hostStart, characterId, opts),
   seilinkHostStop: (opts) => ipcRenderer.invoke(IpcChannel.seilink.hostStop, opts ?? null),
   seilinkHostStatus: () => ipcRenderer.invoke(IpcChannel.seilink.hostStatus),
+  seilinkSetIdleLines: (on) => ipcRenderer.invoke(IpcChannel.seilink.setIdleLines, on),
   onSeilinkHostStatus: (cb) => {
     const handler = (_e: Electron.IpcRendererEvent, status: SeilinkHostStatus) => cb(status);
     ipcRenderer.on(IpcChannel.seilink.hostStatusChanged, handler);

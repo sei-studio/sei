@@ -102,6 +102,11 @@ describe('isRegenHintEligible', () => {
     ).toBe(false);
   });
 
+  it('never for a card image the player uploaded (product call 261110)', () => {
+    expect(isRegenHintEligible({ ...eligibleBase, customImage: true })).toBe(false);
+    expect(isRegenHintEligible({ ...eligibleBase, customImage: false })).toBe(true);
+  });
+
   it('needs real portrait art', () => {
     expect(isRegenHintEligible({ ...eligibleBase, hasPortrait: false })).toBe(false);
   });
