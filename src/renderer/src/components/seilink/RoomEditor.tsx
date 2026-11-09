@@ -112,6 +112,7 @@ import { RoomCanvas, type RoomAvatarSlot } from './RoomCanvas';
 import { componentThumb, deviceThumbPx, roomThumb } from '../../lib/seilink/roomThumbs';
 import { placementPanelSide } from '../../lib/seilink/panelSide';
 import { SEILINK_PLACEMENT_GUIDE_EVENT } from '@shared/seilinkSetupTelemetry';
+import type { SeilinkStageFrame } from '@shared/seilinkHost';
 import { patternThumb } from '../../lib/seilink/patternThumbs';
 import { RoomPicker } from '../../lib/seilink/roomPick';
 import { groupSlots, slotGroup, type SlotGroup } from '../../lib/seilink/roomGroups';
@@ -192,6 +193,8 @@ export interface RoomEditorProps {
   initial?: { panel?: PanelRequest | null; selected?: number | null; state?: RoomState; loginStep?: boolean };
   /** Render inline instead of in a portal over the whole window (dev preview). */
   inline?: boolean;
+  /** 261110: on the desktop stage, where the display sits in the window (RoomCanvas `frame`). */
+  frame?: SeilinkStageFrame | null;
   /** Usage analytics (shape only). Only the companion editor passes it. */
   telemetry?: { openedFrom: EditorOpenedFrom; surface?: EditorSurface };
   /** 261105: a quiet line in the avatar panel ("Preparing {name}'s look..."). */
@@ -1692,6 +1695,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
         clock={clock}
         onOverlay={setOverlay}
         onLayout={setVp}
+        frame={props.frame}
         avatar={(slot) => <EditorAvatar slot={slot} state={state} characterId={characterId} portrait={props.portrait} name={props.name} />}
       >
         <div

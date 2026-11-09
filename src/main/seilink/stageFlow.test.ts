@@ -5,8 +5,9 @@ const m = vi.hoisted(() => ({
   enabled: true,
   live: 'sui' as string | null,
   staged: false,
-  enter: { ok: true } as { ok: true } | { ok: false; error: string },
+  enter: { ok: true } as { ok: true; frame?: unknown } | { ok: false; error: string },
   reveal: true,
+  minimize: { ok: true, minimized: 3 } as { ok: true; minimized?: number } | { ok: false; error: string },
 }));
 
 vi.mock('electron', () => ({ app: { focus: vi.fn() }, ipcMain: { handle: vi.fn(), on: vi.fn() }, BrowserWindow: class {} }));
@@ -29,8 +30,9 @@ vi.mock('./desktopStage', () => ({
   isStaged: () => m.staged,
   revealDesktop: () => m.reveal,
 }));
+vi.mock('./minimizeOthers', () => ({ minimizeOtherWindows: async () => m.minimize }));
 
-import { EDITOR_ENTER_WAIT_MS, __resetStageFlowForTest, handleStage, initStageFlow, openDesktopEditor } from './stageFlow';
+import { EDITOR_ENTER_WAIT_MS, __resetStageFlowForTest, handleMinimizeOthers, handleStage, initStageFlow, openDesktopEditor } from './stageFlow';
 
 function fakeWindow(visible = false) {
   const sent: Array<[string, unknown]> = [];
@@ -131,5 +133,26 @@ describe('stage flow', () => {
     expect(handleStage(win as never, { action: 'reveal', purpose: 'move_in', characterId: 'sui' })).toEqual({ ok: true });
     await flush();
     expect(m.events[0]).toMatchObject({ action: 'revealed', purpose: 'move_in' });
+  });
+
+  it('261110: an enter hands back where the display sits in the window', () => {
+    m.enter = { ok: true, frame: { x: 0, y: 0, width: 1920, height: 1080 } };
+    expect(handleStage(win as never, { action: 'enter', purpose: 'intro', characterId: 'sui' })).toEqual({ ok: true, frame: { x: 0, y: 0, width: 1920, height: 1080 } });
+    m.enter = { ok: true };
+  });
+
+  it('261110: minimize_others minimizes, says how many, and counts it (shape only)', async () => {
+    m.events = [];
+    expect(await handleMinimizeOthers({ action: 'minimize_others', surface: 'live_card' })).toEqual({ ok: true, minimized: 3 });
+    await flush();
+    expect(m.events.at(-1)).toMatchObject({ event: 'seilink_minimize_windows', outcome: 'ok', windows: 3, surface: 'live_card' });
+    m.minimize = { ok: false, error: 'unsupported' };
+    expect(await handleMinimizeOthers({ action: 'minimize_others' })).toEqual({ ok: false, error: 'unsupported' });
+    await flush();
+    expect(m.events.at(-1)).toMatchObject({ event: 'seilink_minimize_windows', outcome: 'unsupported', surface: 'other' });
+    m.enabled = false;
+    expect(await handleMinimizeOthers({ action: 'minimize_others' })).toEqual({ ok: false, error: 'disabled' });
+    m.enabled = true;
+    m.minimize = { ok: true, minimized: 3 };
   });
 });

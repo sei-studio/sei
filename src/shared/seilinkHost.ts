@@ -245,7 +245,7 @@ export const SEILINK_STAGE_PURPOSES = ['intro', 'editor', 'move_in'] as const;
 export type SeilinkStagePurpose = (typeof SEILINK_STAGE_PURPOSES)[number];
 
 /** Why the stage was not entered; the caller stays in the app window. `timeout` = main's fallback fired. */
-export const SEILINK_STAGE_ERRORS = ['no_window', 'native_fullscreen', 'busy', 'failed', 'timeout', 'disabled'] as const;
+export const SEILINK_STAGE_ERRORS = ['no_window', 'native_fullscreen', 'busy', 'failed', 'timeout', 'disabled', 'unsupported'] as const;
 export type SeilinkStageError = (typeof SEILINK_STAGE_ERRORS)[number];
 
 /**
@@ -257,9 +257,26 @@ export type SeilinkStageError = (typeof SEILINK_STAGE_ERRORS)[number];
 export type SeilinkStageRequest =
   | { action: 'enter'; purpose: SeilinkStagePurpose; characterId: string; openedFrom?: EditorOpenedFrom }
   | { action: 'exit'; reveal: boolean }
-  | { action: 'reveal'; purpose: SeilinkStagePurpose; characterId: string };
+  | { action: 'reveal'; purpose: SeilinkStagePurpose; characterId: string }
+  // 261110: minimize (Windows) or hide (macOS) every other app's windows, so the desktop shows when Sei steps aside.
+  | { action: 'minimize_others'; surface?: 'live_card' | 'other' };
 
-export type SeilinkStageResult = { ok: true } | { ok: false; error: SeilinkStageError };
+/**
+ * 261110: where the primary display (the wallpaper) sits in the staged window,
+ * CSS px from the window's top left. On Windows the stage is the work area
+ * (the taskbar stays visible), so the display can start above or left of the
+ * window and reach past it; the room is drawn at this rect to line up with
+ * the wallpaper under it.
+ */
+export interface SeilinkStageFrame {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** `frame` comes with a successful enter; `minimized` with minimize_others (Windows: how many windows). */
+export type SeilinkStageResult = { ok: true; frame?: SeilinkStageFrame; minimized?: number } | { ok: false; error: SeilinkStageError };
 
 /** seilink:open-room-editor push: her room editor, on the desktop when `desktop`. */
 export interface SeilinkOpenEditor {

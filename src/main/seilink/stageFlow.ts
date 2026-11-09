@@ -17,9 +17,14 @@
  *  - seilink:offer: the desktop shows her new room; ask about decorating
  *    together (decorateOffer.ts).
  *
+ *  - seilink:stage minimize_others (261110): "Minimize other windows" on the
+ *    live card, so the desktop (her room) shows when Sei steps aside
+ *    (minimizeOthers.ts).
+ *
  * Analytics, shape only: seilink_desktop_stage {action: entered | exited |
  * failed | revealed, purpose: intro | editor, opened_from (editor), reveal and
- * staged_ms (exited), error_class (failed), character_id}.
+ * staged_ms (exited), error_class (failed), character_id}; 261110:
+ * seilink_minimize_windows {outcome, windows, surface, os}.
  */
 import { BrowserWindow, app, ipcMain } from 'electron';
 import { IpcChannel } from '../../shared/ipc';
@@ -34,6 +39,8 @@ import {
 import { EDITOR_OPENED_FROM, type EditorOpenedFrom } from '../../shared/seilinkTelemetry';
 import { loadAnalytics } from '../lazyAnalytics';
 import { enterDesktopStage, exitDesktopStage, isStaged, revealDesktop } from './desktopStage';
+import { minimizeOtherWindows } from './minimizeOthers';
+import { SEILINK_MINIMIZE_EVENT, sanitizeSeilinkSetupTrack } from '../../shared/seilinkSetupTelemetry';
 import { offerDecorateTogether } from './decorateOffer';
 import { seilinkEnabled } from './gate';
 import { seilinkLiveCharacter } from './host/seilinkHost';
@@ -146,7 +153,7 @@ export function handleStage(win: BrowserWindow, raw: unknown): SeilinkStageResul
     if (!res.ok) return fail(res.error);
     onStage = { purpose, characterId, openedFrom };
     capture({ action: 'entered', purpose, opened_from: openedFrom, character_id: characterId });
-    return { ok: true };
+    return res.frame ? { ok: true, frame: res.frame } : { ok: true };
   }
   if (r.action === 'exit') {
     const reveal = r.reveal === true;
@@ -176,6 +183,29 @@ export function handleStage(win: BrowserWindow, raw: unknown): SeilinkStageResul
   return { ok: false, error: 'failed' };
 }
 
+function osName(): 'mac' | 'windows' | 'linux' {
+  return process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'windows' : 'linux';
+}
+
+/** seilink:stage minimize_others (261110). Exported for tests. */
+export async function handleMinimizeOthers(raw: unknown): Promise<SeilinkStageResult> {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const surface = r.surface === 'live_card' ? 'live_card' : 'other';
+  if (!seilinkEnabled()) return { ok: false, error: 'disabled' };
+  const res = await minimizeOtherWindows().catch(() => ({ ok: false as const, error: 'failed' as const }));
+  const props = sanitizeSeilinkSetupTrack(SEILINK_MINIMIZE_EVENT, {
+    outcome: res.ok ? 'ok' : res.error,
+    windows: res.ok ? res.minimized : undefined,
+    surface,
+    os: osName(),
+  });
+  void loadAnalytics()
+    .then((a) => a.capture(SEILINK_MINIMIZE_EVENT, props))
+    .catch(() => {});
+  if (!res.ok) return { ok: false, error: res.error };
+  return res.minimized !== undefined ? { ok: true, minimized: res.minimized } : { ok: true };
+}
+
 export function initStageFlow(d: StageFlowDeps): void {
   deps = d;
   if (registered) return;
@@ -183,6 +213,7 @@ export function initStageFlow(d: StageFlowDeps): void {
   ipcMain.handle(IpcChannel.seilink.stage, async (e, raw: unknown): Promise<SeilinkStageResult> => {
     const win = deps?.getMainWindow() ?? null;
     if (!win || win.isDestroyed() || e.sender !== win.webContents) return { ok: false, error: 'no_window' };
+    if ((raw as { action?: unknown } | null)?.action === 'minimize_others') return handleMinimizeOthers(raw);
     return handleStage(win, raw);
   });
   ipcMain.handle(IpcChannel.seilink.offer, async (_e, raw: unknown): Promise<{ shown: boolean }> => {

@@ -26,6 +26,7 @@ import { ipcOpenAtLoginSource } from '../../lib/seilink/loginStep';
 import { RoomTogether } from './RoomTogether';
 import { ipcRoomEditorSource } from './roomEditorSource';
 import type { EditorOpenedFrom, EditorSurface } from '@shared/seilinkTelemetry';
+import type { SeilinkStageFrame } from '@shared/seilinkHost';
 import { useT } from '../../lib/i18n';
 import { useDataStore } from '../../lib/stores/useDataStore';
 import { useAnimaLook } from '../../lib/seilink/useAnimaLook';
@@ -77,8 +78,15 @@ const STAGE_DELAY_MS = 120;
  * (with reveal) or unmounts some other way (without: the app comes back).
  * Returns the surface it is on and the close that steps aside first.
  */
-function useDesktopStage(desktop: boolean, characterId: string, openedFrom: EditorOpenedFrom, onClose: () => void): [EditorSurface, () => void] {
+function useDesktopStage(
+  desktop: boolean,
+  characterId: string,
+  openedFrom: EditorOpenedFrom,
+  onClose: () => void,
+): [EditorSurface, () => void, SeilinkStageFrame | null] {
   const [surface, setSurface] = useState<EditorSurface>('app');
+  // 261110: where the display sits in the staged window (Windows stages at the work area).
+  const [frame, setFrame] = useState<SeilinkStageFrame | null>(null);
   const staged = useRef(false);
   const closing = useRef(false);
   useEffect(() => {
@@ -94,6 +102,7 @@ function useDesktopStage(desktop: boolean, characterId: string, openedFrom: Edit
             return;
           }
           staged.current = true;
+          setFrame(r.frame ?? null);
           setSurface('desktop');
         },
         () => {},
@@ -120,7 +129,7 @@ function useDesktopStage(desktop: boolean, characterId: string, openedFrom: Edit
     const exit = sei.seilinkStage?.({ action: 'exit', reveal: true }) ?? Promise.resolve(null);
     void exit.catch(() => null).then(() => onClose());
   }, [onClose]);
-  return [surface, close];
+  return [surface, close, surface === 'desktop' ? frame : null];
 }
 
 export interface CompanionRoomEditorProps {
@@ -137,7 +146,7 @@ export default function CompanionRoomEditor({ characterId, onClose, openedFrom =
   const source = useMemo(() => ipcRoomEditorSource(characterId), [characterId]);
   // 261107: "Open on login", offered once after the guided setup's Done (main decides where it works).
   const openAtLogin = useMemo(() => ipcOpenAtLoginSource(), []);
-  const [surface, close] = useDesktopStage(desktop, characterId, openedFrom, onClose);
+  const [surface, close, frame] = useDesktopStage(desktop, characterId, openedFrom, onClose);
   const telemetry = useMemo(() => ({ openedFrom, surface }), [openedFrom, surface]);
   // 261105: SeiLink opened for her: her face set gets ready in the background while the room is set up.
   const look = useAnimaLook(characterId, 'editor');
@@ -162,6 +171,7 @@ export default function CompanionRoomEditor({ characterId, onClose, openedFrom =
       name={name}
       together={resident && token && name ? together : undefined}
       openAtLogin={openAtLogin}
+      frame={frame}
     />
   );
 }
