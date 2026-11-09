@@ -2548,6 +2548,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const args = z.object({ id: z.string().max(64), level: z.number().min(0).max(1) }).parse(argsRaw);
     const { forwardOverlayLevel } = await import('./callOverlay');
     forwardOverlayLevel(args.id, args.level);
+    // 261110: her desktop room too, when she is the one on the desktop (her mouth moves there).
+    const { sendSeilinkVoiceLevel } = await import('./seilink/host/seilinkHost');
+    sendSeilinkVoiceLevel(args.id, args.level);
   });
 
   // Overlay window chrome hover: flip the window between click-through and

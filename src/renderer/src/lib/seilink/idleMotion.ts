@@ -417,3 +417,25 @@ export function poseTransform(p: IdlePose, height: number): string {
   const ty = -p.lift * height;
   return `translate3d(${tx.toFixed(2)}px, ${ty.toFixed(2)}px, 0) rotate(${p.lean.toFixed(3)}deg) scale(${p.scale.toFixed(4)}, ${(p.scale * p.breath).toFixed(4)})`;
 }
+
+// ── frame pacing (261110) ───────────────────────────────────────────────────
+
+/** Phases where her whole body travels across the room: drawn smoother when the cap allows. */
+export function isTravelPhase(phase: IdlePhase | null): boolean {
+  return phase === 'walkingOut' || phase === 'walkingIn' || phase === 'standing' || phase === 'sitting' || phase === 'shifting';
+}
+
+/** Her motion cap while travelling: up to 60 when the room runs at 30 or more, else the room's cap. */
+export const TRAVEL_FPS = 60;
+
+/**
+ * The frame cap for her body: the room's cap (`roomFps`, 0 = hold still),
+ * limited to `restFps` while she sits, and raised to TRAVEL_FPS while she
+ * travels (a walk at 30 fps moves her about 12 device px a frame and reads as
+ * stepping). On battery the room's cap is below 30 and is kept as is.
+ */
+export function motionFps(roomFps: number, restFps: number, travelling: boolean): number {
+  if (!(roomFps > 0)) return 0;
+  if (travelling && roomFps >= 30) return Math.max(Math.min(roomFps, restFps), TRAVEL_FPS);
+  return Math.min(roomFps, restFps);
+}

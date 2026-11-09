@@ -83,6 +83,16 @@ main (src/main/seilink/host/seilinkHost.ts)        host (hostEntry.ts, same bina
   Windows coverage events; macOS occlusion of the room window and of the hit
   panel), locked, asleep, held → fps 0, otherwise the cap
   (`SEILINK_HOST_FPS` 30, 15 on battery). The page stops every rAF loop at 0.
+- 261110 frame pacing (`lib/framePacer.ts` `FramePacer`, used by the page's
+  frame ticker, RoomAvatar's idle motion and FacepackView): draws every n-th
+  vsync (n held steady from the measured rAF interval), counted by rounding,
+  so jitter never adds a skipped vsync. The old `t - last >= 1000/cap - 1`
+  check gave an uneven 2,2,3,2 rhythm at 30 fps on 60 Hz. Her body's
+  transform runs at up to 60 fps while she travels (`idleMotion.ts`
+  `motionFps`, `isTravelPhase`; walking at 30 fps stepped about 12 device px
+  a frame at 175%); seated she stays at the cap. Windows: the host turns off
+  Chromium's `CalculateNativeWinOcclusion` (the room always sits under the
+  icon window, and coverage.ts already sets the rate).
 - `clicks.ts` `ClickClassifier`: a single click waits for the OS double-click
   interval (clamped 200 to 900 ms). Click on her → main `openChat` (restore,
   show and focus the main window, navigate to her chat). Double click → a
@@ -93,24 +103,39 @@ main (src/main/seilink/host/seilinkHost.ts)        host (hostEntry.ts, same bina
   (walked out of the frame). Windows: the host's raw-input hit test
   (`setHitRect`, physical px). macOS: an almost transparent NSPanel over her
   (`hitPanel`, points); clicks elsewhere reach the desktop.
-- M4: the native click area is ONE rect, the union of her box and the dock
-  buttons (`dock.ts` `unionBox`). hostEntry routes each press by position
+- M4/261110: the native click areas come from `dock.ts` `hitAreas`: her box
+  grown by `HER_SLOP_PX` (8, so a tap at her edge while she sways counts),
+  the dock's buttons, and on Windows one passive rect over her box grown by
+  `NEAR_MISS_PX` plus the dock (a press just outside her is counted as
+  `press_near_miss`, not acted on). macOS has two hit panels (addon
+  `hitPanelSlots` 2: slot 0 her, slot 1 the dock; an older addon falls back
+  to one union panel). hostEntry routes each press by position
   (`pressTarget`, page CSS px via `toPagePoint`: Windows physical px divided
   by the scale factor, mac global top-left points minus the display origin):
   a dock button → `CH.dockPress` to the page; her → the click classifier;
   the small gap the union adds → ignored. On mac the press target is taken
   at `down`, and a dock press acts on `click` (dblclick and drags dropped).
+- 261110: a press going down on her sends `CH.press` at once; RoomAvatarHost
+  answers with a 220 ms squash (her feet stay put), since the click itself
+  waits for the double-click time. The drag slop scales with the display
+  (`dragSlopPhysical`, 8 DIP; it was a fixed 6 physical px, under 4 CSS px
+  at 175%). Each press is counted `press_tap|press_drag|press_long`.
+  Touch: Windows raw input sees mouse and pen-as-mouse only; a finger tap on
+  the wallpaper is not reported (not fixed).
 
 ## The dock (M4)
 
 `host/HostDock.tsx`, drawn by the wallpaper page itself: a small glass pill
-of three round, borderless buttons at the bottom of the work area (above the
-taskbar or the Dock; the host sends `CH.layout` with the work area), beside
-her box (`lib/seilink/dockPlace.ts`: right of her when it fits, else left,
-else centred under her seat). Her figure runs to the bottom of the screen in
-the cozy room, so a dock under her seat sat on her chest. It stays next to
-her box because the native click area is the union of the two (one rect): on
-macOS the hit panel takes the desktop's clicks inside it. The product
+of three round, borderless buttons in the bottom-right corner of the work
+area (above the taskbar or the Dock; the host sends `CH.layout` with the
+work area; `lib/seilink/dockPlace.ts` `dockCorner`, 16 px in from the
+side and bottom). 261110 (product call): it used to sit beside her box and
+followed her sway, re-measured 4 times a second, so it crept a pixel or two
+all the time; now it never moves. It is faint (opacity 0.42, a thin glass)
+until the cursor comes near: the host polls the cursor every 150 ms
+(`dock.ts` `dockHover`, 28 px around the buttons) and sends `CH.hover`; a
+press, the move-out confirm, a caption or the offer wake it too
+(`dockAwake`). The product
 room-editor deck puts these shortcuts in "the bottom dock" of the room, so it
 lives on the wallpaper, not in the app or a tray.
 - Edit room → main `deps.openRoomEditor` → `stageFlow.openDesktopEditor`
@@ -132,7 +157,7 @@ lives on the wallpaper, not in the app or a tray.
   "Set up the room anytime with the brush."; the actions are the same.
 The page never gets DOM clicks: it reports its buttons' boxes (`CH.dock`) and
 answers a press with `CH.dockAction`, which the host relays as FromHost
-`dock`. A short caption above the dock says what a press did (no hover).
+`dock`. A short caption above the dock says what a press did.
 Colours come from the room (`RoomCanvas onOverlay`), not the app theme.
 
 ## Desktop lines (M4, `seilink/desktopLines.ts`)
@@ -233,10 +258,28 @@ which renders `RoomAvatar` with:
 | `use` | `roomAvatarUse(room.state.avatar)` |
 | `busy` | main (a chat turn with her, held 60 s after the reply) OR 8 s after a click on her |
 | `speaking` | one of her lines is in a bubble (`levelRef` is a made-up syllable envelope; no audio plays in the host) |
+| `voice`, `voiceLevel` | 261110: she is talking in a call in the main window (below) |
+| `pressSeq` | 261110: a press went down on her (the squash) |
 | `emotion`, `face`, `faceSeq` | her face for the line (261105, below) |
 | `facepack` | not passed (RoomAvatar asks main for her pack) |
 
 The contract for any replacement is in the file header.
+
+### Her voice on the desktop (261110)
+
+Call TTS plays in the main window. `SeilinkVoiceRelay` (mounted in App.tsx)
+watches `useVoiceStore.speakingId` against the desktop resident
+(`lib/seilink/voiceRelay.ts`) and sends `seilink:voice {characterId,
+speaking}`; main (`sendSeilinkVoice`) relays it to the host only for the
+resident (ToHost `voice`, page `CH.voice`). It also arms the level tap for
+her clips (`avatarLevelTap.setDesktopLevelResident`), so her real level
+goes through the existing `avatar:overlay-level` IPC; main forwards it to
+the call overlay as before and to the host (`sendSeilinkVoiceLevel`, ToHost
+`level`, page `CH.level`). RoomAvatarHost's mouth reads a fresh level
+(under 250 ms, `hostLook.ts` `mouthLevel`) and else its syllable envelope,
+so a clip the tap cannot observe (suspended AudioContext) still moves her
+mouth. Counted `voice_lines` / `voice_levels` (seilink_ended counters). The
+room editor's figure (stage flow) does not get `speaking` for live lines.
 
 ### Her face on the desktop (261105)
 
@@ -381,10 +424,20 @@ places. IPC `seilink:login-item-get|set` answers `OpenAtLoginState
 - Registration: `app.setLoginItemSettings`. macOS: `{openAtLogin}` only
   (SMAppService mainApp on 13+, status read back). Windows: its own HKCU Run
   value `SeiWorldLink` (never the AppUserModelId name the retired tray item
-  used), `args: ['--seilink-login']`, path = `<root>\current\Sei.exe` for a
-  Velopack install (stable across updates) or the NSIS exe.
+  used), `args: ['--seilink-login']`, path = the Velopack stub
+  `<root>\Sei.exe` (it runs `Update.exe start`, so updates apply first; 261110)
+  when it exists, else `<root>\current\Sei.exe`, or the NSIS exe
+  (`windowsLoginTarget`). A value written at `current\` by beta.2 is
+  re-pointed at the stub by the launch sync.
 - Every change is read back. A throw or a mismatch flips the switch back and
-  sends `seilink_login_item_failed`. macOS `requires-approval` right after
+  sends `seilink_login_item_failed`. 261110: Windows reads the item back by
+  value NAME (`SeiWorldLink`, user scope) only: Electron's
+  `getLoginItemSettings().launchItems[].args` drops switches (Chromium
+  `CommandLine::GetArgs`), so `--seilink-login` was never there and every
+  Windows turn-on in beta.2 was `readback_mismatch`. A refused change shows
+  where to set it by hand (Windows: Settings > Apps > Startup or Task
+  Manager > Startup apps; macOS: System Settings > General > Login Items;
+  `lib/seilink/openAtLoginNote.ts`) and, in Settings, Contact support. macOS `requires-approval` right after
   Sei's own register stays on with "Allow Sei in System Settings" until it
   is approved.
 - Launch sync (`syncOpenAtLoginAtLaunch`, at ready, AFTER
@@ -972,10 +1025,9 @@ without them render as before.
 
 - More displays: everything goes through `primaryRect()`; attach takes a
   rect, so it is a window per display plus bookkeeping.
-- Her voice on the desktop: TTS lives in the main renderer and is tied to
-  calls, so desktop lines are bubbles only (the mouth moves without audio).
-- The dock is always shown (no hover on the wallpaper: Windows raw input
-  only reports presses, the mac panel only covers the click area).
+- Her voice on the desktop outside calls: desktop lines are bubbles only
+  (the mouth moves without audio). Call TTS moves her desktop mouth (261110).
+- Touch taps on Windows (raw input is mouse only).
 - Pack downloads (`downloadPack` is a stub): the three presets (cozy, gamer,
   forest, about 2.5 MB each) ship bundled in `resources/seilink-packs`
   (extraResources); a pack that fails to load shows its card disabled.

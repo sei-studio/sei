@@ -16,6 +16,9 @@
 //                             would sweep every window away). Clicks next to her box are the
 //                             desktop's as usual.
 //   hitPanelClose()
+//                             261110: both take an optional slot (0 = her, 1 = the dock in the
+//                             corner of the screen; HIT_PANEL_SLOTS). Slot 1's occlusion is
+//                             observed as tag "dock". hitPanelClose() with no slot closes all.
 //   observeOcclusion(handle, tag)  NSWindowDidChangeOcclusionStateNotification -> {type:'occlusion'}.
 //                             The panel is observed as tag "panel" automatically. Returns the
 //                             current visibility.
@@ -123,7 +126,10 @@ static CGFloat PrimaryH() { return [[NSScreen screens] firstObject].frame.size.h
 }
 @end
 
-static SeiHitPanel* g_hitPanel = nil;
+// 261110: one hit panel per slot: 0 = her box, 1 = the dock (now in the screen's corner, away
+// from her, so one panel over both would block the desktop between them).
+static const int kHitPanelSlots = 2;
+static SeiHitPanel* g_hitPanels[kHitPanelSlots] = {nil, nil};
 static NSMutableArray* g_observers = nil;
 
 namespace {
@@ -195,41 +201,58 @@ Napi::Value OnEvents(const Napi::CallbackInfo& info) {
   return Napi::Boolean::New(env, true);
 }
 
+// The slot argument at `index`, or -1 when absent / not a valid slot.
+int SlotArg(const Napi::CallbackInfo& info, size_t index) {
+  if (info.Length() <= index || !info[index].IsNumber()) return -1;
+  int slot = info[index].As<Napi::Number>().Int32Value();
+  return slot >= 0 && slot < kHitPanelSlots ? slot : -1;
+}
+
 Napi::Value HitPanel(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   if (info.Length() < 1 || !info[0].IsObject()) return Napi::Boolean::New(env, false);
+  int slot = info.Length() > 1 ? SlotArg(info, 1) : 0;
+  if (slot < 0) return Napi::Boolean::New(env, false);
   auto o = info[0].As<Napi::Object>();
   double w = Num(o, "w"), h = Num(o, "h");
   if (w < 1 || h < 1) return Napi::Boolean::New(env, false);
   NSRect fr = TopLeftToCocoa(Num(o, "x"), Num(o, "y"), w, h);
-  if (!g_hitPanel) {
-    g_hitPanel = [[SeiHitPanel alloc] initWithContentRect:fr
-                                                styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
-                                                  backing:NSBackingStoreBuffered
-                                                    defer:NO];
-    [g_hitPanel setOpaque:NO];
-    [g_hitPanel setBackgroundColor:[NSColor clearColor]];
-    [g_hitPanel setHasShadow:NO];
-    [g_hitPanel setHidesOnDeactivate:NO];
-    [g_hitPanel setBecomesKeyOnlyIfNeeded:YES];
-    [g_hitPanel setFloatingPanel:NO];
-    [g_hitPanel setMovable:NO];
-    [g_hitPanel setReleasedWhenClosed:NO];
-    [g_hitPanel setIgnoresMouseEvents:NO];
-    [g_hitPanel setAcceptsMouseMovedEvents:NO];
-    [g_hitPanel setCollectionBehavior:NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorStationary |
-                                      NSWindowCollectionBehaviorIgnoresCycle];
-    [g_hitPanel setContentView:[[SeiHitView alloc] initWithFrame:NSMakeRect(0, 0, w, h)]];
-    [g_hitPanel setLevel:CGWindowLevelForKey(kCGDesktopIconWindowLevelKey) + 1];
-    ObserveWindow(g_hitPanel, @"panel");
+  SeiHitPanel* panel = g_hitPanels[slot];
+  if (!panel) {
+    panel = [[SeiHitPanel alloc] initWithContentRect:fr
+                                           styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
+                                             backing:NSBackingStoreBuffered
+                                               defer:NO];
+    [panel setOpaque:NO];
+    [panel setBackgroundColor:[NSColor clearColor]];
+    [panel setHasShadow:NO];
+    [panel setHidesOnDeactivate:NO];
+    [panel setBecomesKeyOnlyIfNeeded:YES];
+    [panel setFloatingPanel:NO];
+    [panel setMovable:NO];
+    [panel setReleasedWhenClosed:NO];
+    [panel setIgnoresMouseEvents:NO];
+    [panel setAcceptsMouseMovedEvents:NO];
+    [panel setCollectionBehavior:NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorStationary |
+                                 NSWindowCollectionBehaviorIgnoresCycle];
+    [panel setContentView:[[SeiHitView alloc] initWithFrame:NSMakeRect(0, 0, w, h)]];
+    [panel setLevel:CGWindowLevelForKey(kCGDesktopIconWindowLevelKey) + 1];
+    ObserveWindow(panel, slot == 0 ? @"panel" : @"dock");
+    g_hitPanels[slot] = panel;
   }
-  [g_hitPanel setFrame:fr display:YES];
-  [g_hitPanel orderFrontRegardless];
-  return Napi::Boolean::New(env, ([g_hitPanel occlusionState] & NSWindowOcclusionStateVisible) != 0);
+  [panel setFrame:fr display:YES];
+  [panel orderFrontRegardless];
+  return Napi::Boolean::New(env, ([panel occlusionState] & NSWindowOcclusionStateVisible) != 0);
 }
 
 Napi::Value HitPanelClose(const Napi::CallbackInfo& info) {
-  if (g_hitPanel) [g_hitPanel orderOut:nil];
+  if (info.Length() > 0 && info[0].IsNumber()) {
+    int slot = SlotArg(info, 0);
+    if (slot >= 0 && g_hitPanels[slot]) [g_hitPanels[slot] orderOut:nil];
+    return info.Env().Undefined();
+  }
+  for (int i = 0; i < kHitPanelSlots; i++)
+    if (g_hitPanels[i]) [g_hitPanels[i] orderOut:nil];
   return info.Env().Undefined();
 }
 
@@ -251,6 +274,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("onEvents", Napi::Function::New(env, OnEvents));
   exports.Set("hitPanel", Napi::Function::New(env, HitPanel));
   exports.Set("hitPanelClose", Napi::Function::New(env, HitPanelClose));
+  exports.Set("hitPanelSlots", Napi::Number::New(env, kHitPanelSlots));
   exports.Set("observeOcclusion", Napi::Function::New(env, ObserveOcclusion));
   exports.Set("doubleClickMs", Napi::Function::New(env, DoubleClickMs));
   return exports;

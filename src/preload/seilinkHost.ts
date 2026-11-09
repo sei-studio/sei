@@ -34,6 +34,10 @@ export const SEILINK_HOST_PRELOAD_CHANNELS = {
   dock: 'seilink-host:dock',
   dockAction: 'seilink-host:dock-action',
   line: 'seilink-host:line',
+  voice: 'seilink-host:voice',
+  level: 'seilink-host:level',
+  hover: 'seilink-host:hover',
+  press: 'seilink-host:press',
 } as const;
 
 const C = SEILINK_HOST_PRELOAD_CHANNELS;
@@ -73,6 +77,10 @@ if (process.contextIsolated) {
       ),
     dockAction: (action: string) => ipcRenderer.send(C.dockAction, String(action)),
     onLine: (cb: (line: unknown) => void) => listen(C.line, cb),
+    onVoice: (cb: (speaking: boolean) => void) => listen<boolean>(C.voice, (v) => cb(v === true)),
+    onLevel: (cb: (level: number) => void) => listen<number>(C.level, (v) => cb(Math.max(0, Math.min(1, num(v))))),
+    onHover: (cb: (hover: boolean) => void) => listen<boolean>(C.hover, (v) => cb(v === true)),
+    onPress: (cb: () => void) => listen(C.press, () => cb()),
   });
   const call = (method: string, ...args: unknown[]): Promise<unknown> => ipcRenderer.invoke(C.call, method, args);
   contextBridge.exposeInMainWorld('sei', {

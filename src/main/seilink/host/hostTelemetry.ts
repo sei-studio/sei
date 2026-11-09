@@ -84,6 +84,43 @@ export function gpuState(compositing: unknown): 'on' | 'off' | 'unknown' {
   return 'unknown';
 }
 
+/**
+ * 261110: Chromium's raw gpu_compositing status, as a closed set (a slow room
+ * on a PC whose host composites in software reads `disabled_software`).
+ */
+const GPU_STATUSES = new Set([
+  'enabled',
+  'enabled_on',
+  'enabled_force',
+  'enabled_force_on',
+  'enabled_readback',
+  'disabled_software',
+  'disabled_off',
+  'disabled_off_ok',
+  'unavailable_software',
+  'unavailable_off',
+  'unavailable_off_ok',
+]);
+
+export function gpuStatusBucket(raw: unknown): string {
+  const s = String(raw ?? '');
+  if (!s) return 'unknown';
+  return GPU_STATUSES.has(s) ? s : 'other';
+}
+
+/** 261110: the display's refresh rate, bucketed (the room's motion is paced against it). */
+export function refreshBucket(hz: unknown): string {
+  const n = Number(hz);
+  if (!Number.isFinite(n) || n <= 0) return 'unknown';
+  if (n < 55) return 'lt_55';
+  if (n <= 62) return '60';
+  if (n <= 80) return '75';
+  if (n <= 105) return '90_100';
+  if (n <= 125) return '120';
+  if (n <= 150) return '144';
+  return 'gt_150';
+}
+
 /** The host's validate() reasons (closed set from win.cc / hostEntry), anything else is 'other'. */
 const VERIFY_REASONS = new Set([
   'no-progman',

@@ -69,6 +69,7 @@ import { UniqueRevealScreen } from './screens/UniqueRevealScreen';
 import { CallMiniBar } from './components/call/CallMiniBar';
 import { MiniTile } from './components/MiniTile';
 import { CallOverlayPusher } from './components/CallOverlayPusher';
+import { SeilinkVoiceRelay } from './components/seilink/SeilinkVoiceRelay';
 import { CrossLaunchConfirmModal } from './components/CrossLaunchConfirmModal';
 import { ShareScreenModal } from './components/backseat/ShareScreenModal';
 import { BackseatGameModal } from './components/backseat/BackseatGameModal';
@@ -1411,6 +1412,8 @@ export function App(): React.ReactElement {
       {/* Task 4 — drives the always-on-top call overlay window (renders nothing;
           pushes call state to main, which owns the overlay window). */}
       <CallOverlayPusher />
+      {/* 261110: her voice moves her mouth in her desktop room too (renders nothing). */}
+      <SeilinkVoiceRelay />
       {/* Startup popup (261027, replaced the notices inbox). Self-mounting:
           renders nothing until main reports an unshown popup, then waits for a
           calm screen and shows only once the page has really loaded. Mounted

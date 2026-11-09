@@ -29,13 +29,14 @@ import {
   type SeilinkHostLine,
   type SeilinkHostRoom,
 } from '@shared/seilinkHost';
-import { roomViewport, type RoomOverlay } from '@shared/seilinkDraw';
+import type { RoomOverlay } from '@shared/seilinkDraw';
 import { isUiLanguage, uiLanguageForLocale } from '@shared/uiLanguage';
 import { useLangStore } from '../../../lib/i18n';
 import { RoomCanvas, type RoomAvatarSlot } from '../RoomCanvas';
+import { FramePacer } from '../../../lib/framePacer';
 import { bubbleMs, HostBubble, HostDock, speakMs, type DockPress } from './HostDock';
 import { roomAvatarUse } from '../RoomAvatar';
-import { HostAvatar, type HostAvatarPoke } from './hostAvatar';
+import { HostAvatar, type HostAvatarPoke, type VoiceLevel } from './hostAvatar';
 import { lineFaceHoldMs, NEUTRAL_LOOK, toNeutral, type HostAvatarLook } from './hostLook';
 import styles from './SeilinkHost.module.css';
 
@@ -80,6 +81,11 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
   const [fps, setFps] = useState(0);
   const [busy, setBusy] = useState(false);
   const [poke, setPoke] = useState<HostAvatarPoke | null>(null);
+  // 261110: the dock wakes near the cursor; her voice from a call in the main window; a press on her.
+  const [dockHover, setDockHover] = useState(false);
+  const [voice, setVoice] = useState(false);
+  const voiceLevel = useRef<VoiceLevel>({ level: 0, at: 0 });
+  const [pressSeq, setPressSeq] = useState(0);
   const frames = useRef(0);
   const sceneReady = useRef(false);
   const firstSent = useRef(false);
@@ -105,6 +111,12 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
       }) ?? (() => {}),
       bridge.onDockPress?.((id) => setDockPress((p) => ({ id, n: (p?.n ?? 0) + 1 }))) ?? (() => {}),
       bridge.onLine?.((l) => setLine(l)) ?? (() => {}),
+      bridge.onHover?.((h) => setDockHover(h)) ?? (() => {}),
+      bridge.onVoice?.((v) => setVoice(v)) ?? (() => {}),
+      bridge.onLevel?.((level) => {
+        voiceLevel.current = { level, at: performance.now() };
+      }) ?? (() => {}),
+      bridge.onPress?.(() => setPressSeq((n) => n + 1)) ?? (() => {}),
     ];
     bridge.ready();
     return () => offs.forEach((off) => off());
@@ -148,6 +160,7 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
     setLine(null);
     setSpeaking(false);
     setLook(toNeutral);
+    setDockHover(false);
   }, [fps]);
 
   const onDockAction = useCallback((action: SeilinkDockAction) => bridge?.dockAction?.(action), [bridge]);
@@ -163,10 +176,9 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
   useEffect(() => {
     if (fps <= 0) return;
     let raf = 0;
-    let last = 0;
+    const pacer = new FramePacer();
     const step = (t: number): void => {
-      if (t - last >= 1000 / fps - 2) {
-        last = t;
+      if (pacer.due(t, fps)) {
         frames.current++;
         maybeFirstFrame();
       }
@@ -242,6 +254,9 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
         busy={busy}
         poke={poke}
         speaking={speaking}
+        voice={voice}
+        voiceLevel={voiceLevel}
+        pressSeq={pressSeq}
         emotion={look.emotion}
         face={look.face}
         faceSeq={look.seq}
@@ -255,14 +270,8 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
 
   if (!room) return <div className={styles.root} />;
 
-  // M4: the dock beside her, above the taskbar / Dock; her line above her head.
+  // M4: the dock above the taskbar / Dock (261110: in the bottom-right corner); her line above her head.
   const workArea = layout?.workArea ?? { x: 0, y: 0, w: size.w, h: size.h };
-  const anchorX = pack
-    ? (() => {
-        const vp = roomViewport(pack.manifest.canvas, size.w, size.h, 'cover');
-        return vp.left + pack.manifest.avatar.x * vp.scale;
-      })()
-    : size.w * 0.72;
   const ov = overlay ?? { color: pack?.manifest.overlay?.day ?? '#25304f', ink: pack ? '#1d1b22' : '#f4f1ee', light: Boolean(pack) };
   const tint = { '--ov': hexTriple(ov.color), '--ink': hexTriple(ov.ink) } as React.CSSProperties;
   const chrome = (
@@ -271,8 +280,8 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
       {layout || props.bridge ? (
         <HostDock
           workArea={workArea}
-          her={herBox}
-          anchorX={anchorX}
+          pageWidth={size.w}
+          hover={dockHover}
           deafened={deafened}
           offer={offer}
           name={room.name}

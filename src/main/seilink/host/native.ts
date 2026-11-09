@@ -49,8 +49,12 @@ export interface SeilinkMacAddon {
   setDesktopLevel(handle: Buffer): { ok: boolean; wanted?: number; level?: number; failure?: SeilinkHostFailure; os?: string };
   windowLevel(handle: Buffer): number;
   onEvents(cb: (json: string) => void): boolean;
-  hitPanel(rect: { x: number; y: number; w: number; h: number }): boolean;
-  hitPanelClose(): void;
+  /** 261110: `slot` 0 = her (default), 1 = the dock (when hitPanelSlots >= 2). */
+  hitPanel(rect: { x: number; y: number; w: number; h: number }, slot?: number): boolean;
+  /** No slot: every panel. */
+  hitPanelClose(slot?: number): void;
+  /** 261110: how many hit panels this build has (absent = 1). */
+  hitPanelSlots?: number;
   observeOcclusion(handle: Buffer, tag: string): boolean;
   doubleClickMs(): number;
 }

@@ -71,4 +71,27 @@ describe('seilink click classifier', () => {
     vi.advanceTimersByTime(1000);
     expect(onClick).toHaveBeenCalledTimes(1);
   });
+
+  it('261110: a press that moved a little on a high-DPI display is still a tap once the slop scales', () => {
+    const onClick = vi.fn();
+    const onDrag = vi.fn();
+    const outcomes: string[] = [];
+    const c = new ClickClassifier({ dblMs: 500, dragPx: 6, onClick, onDoubleClick: vi.fn(), onDrag, onPress: (o) => outcomes.push(o) });
+    // 10 physical px at 175% is under 6 CSS px of hand movement: a drag with the old fixed 6 px.
+    c.press({ x: 100, y: 100, t: 0 }, { x: 108, y: 106, t: 90 });
+    expect(onDrag).toHaveBeenCalledTimes(1);
+    c.setDragPx(14);
+    c.press({ x: 100, y: 100, t: 2000 }, { x: 108, y: 106, t: 2090 });
+    vi.advanceTimersByTime(600);
+    expect(onClick).toHaveBeenCalledTimes(1);
+    // A held press is neither.
+    c.press({ x: 100, y: 100, t: 5000 }, { x: 100, y: 100, t: 7000 });
+    vi.advanceTimersByTime(600);
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(outcomes).toEqual(['drag', 'tap', 'long']);
+    // Bad values keep the last good one.
+    c.setDragPx(0);
+    c.press({ x: 100, y: 100, t: 9000 }, { x: 110, y: 100, t: 9050 });
+    expect(outcomes.at(-1)).toBe('tap');
+  });
 });

@@ -2292,6 +2292,8 @@ export interface RendererApi {
   onSeilinkAnima?(cb: (status: AnimaStatus) => void): Unsubscribe;
   /** What a RoomAvatar ended up showing for her (analytics only). */
   seilinkAnimaShown?(characterId: string, kind: AnimaShownKind): void;
+  /** 261110: a companion's voice (TTS) started or stopped here; main relays it to her desktop room when she is the one there. */
+  seilinkVoice?(characterId: string, speaking: boolean): void;
   /** 261105: the companion room editor opened or closed (one token per session); she may react to the edits. */
   seilinkEditorSession?(phase: 'open' | 'close', token: string, characterId: string): void;
   /** 261105 (T336): decorating together. The editor's unsaved room, and main's events for it. */
@@ -4409,6 +4411,8 @@ export const IpcChannel = {
     animaChanged: 'seilink:anima-changed',
     /** Send: what a RoomAvatar ended up showing ({characterId, kind}), analytics only. */
     animaShown: 'seilink:anima-shown',
+    /** Send (261110): a companion's voice started or stopped in this window ({characterId, speaking}); her mouth moves on the desktop. */
+    voice: 'seilink:voice',
     /** Send: the companion editor opened or closed ({phase, token, characterId}); main diffs her room for her reaction line (roomReaction.ts). */
     editorSession: 'seilink:editor-session',
     /** Send (261105, T336): the editor's unsaved room ({token, characterId, state}), debounced (decorateTogether.ts). */

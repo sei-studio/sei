@@ -49,7 +49,8 @@ import {
   type SeilinkPokeKind,
 } from '../../../shared/seilinkHost';
 import { AvatarRelay } from './avatarRelay';
-import { pressTarget, toPagePoint, unionBox, type PressTarget } from './dock';
+import { dockHover, dragSlopPhysical, HER_SLOP_PX, hitAreas, isNearMiss, pressTarget, toPagePoint, unionBox, type PressTarget } from './dock';
+import type { SeilinkHostCountKey } from './protocol';
 
 /** Dev/CI smoke without a desktop layer (native.ts fakeDesktopEnabled): a plain window on any OS. */
 const FAKE = fakeDesktopEnabled(app.isPackaged);
@@ -74,6 +75,13 @@ app.setPath('userData', ARGS.userData);
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+if (IS_WIN) {
+  // 261110: Chromium's own window-occlusion tracking walks every top-level window on each
+  // move/resize to decide whether to throttle. The room sits under the desktop icons (a window
+  // that always "covers" it), and coverage.ts already sets the frame rate from the shell's
+  // real state, so that work is pure cost (and a source of uneven frames) here.
+  app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+}
 if (IS_MAC) {
   // No Dock icon, no menu bar, never the active app.
   try {
@@ -187,11 +195,33 @@ const activity = new RoomActivity(SEILINK_HOST_FPS, (a) => {
 
 const clicks = new ClickClassifier({
   dblMs: 500,
+  // 261110: set from the display's scale factor at ready (dragSlopPhysical): a fixed 6 physical
+  // px was under 4 CSS px at 175%, so a press that moved a hair was a drag and did nothing.
   dragPx: 6,
   onClick: () => poke('click'),
   onDoubleClick: () => poke('dblclick'),
   onDrag: () => poke('drag'),
+  onPress: (outcome) => count(outcome === 'tap' ? 'press_tap' : outcome === 'drag' ? 'press_drag' : 'press_long'),
 });
+
+/** 261110: a shape-only count for the session (seilink_ended). */
+function count(key: SeilinkHostCountKey): void {
+  send({ type: 'count', key });
+}
+
+/** 261110: a press went down on her: she reacts at once (the click itself waits for the double-click time). */
+function pressFeedback(): void {
+  toPage(CH.press, null);
+}
+
+/** 261110: Windows raw input is physical px; the drag slop follows the scale factor. */
+function syncDragSlop(): void {
+  try {
+    clicks.setDragPx(dragSlopPhysical(primaryDisplay().scaleFactor));
+  } catch {
+    /* keeps the last one */
+  }
+}
 
 function poke(kind: SeilinkPokeKind): void {
   log(`poke ${kind}`);
@@ -207,8 +237,17 @@ function dockPress(id: SeilinkDockAction): void {
 
 /** Where a native press landed, in page terms. */
 function targetAt(x: number, y: number): PressTarget {
-  const p = toPagePoint({ x, y }, primaryDisplay(), IS_WIN ? 'physical' : 'points');
-  return pressTarget(p, box, dock);
+  return pressTarget(pagePoint(x, y), box, dock, HER_SLOP_PX);
+}
+
+function pagePoint(x: number, y: number): { x: number; y: number } {
+  return toPagePoint({ x, y }, primaryDisplay(), IS_WIN ? 'physical' : 'points');
+}
+
+/** A press went down: she reacts at once when it is on her; a near miss is counted (diagnostics). */
+function onPressDown(x: number, y: number, target: PressTarget): void {
+  if (target.kind === 'her') pressFeedback();
+  else if (target.kind === 'none' && isNearMiss(pagePoint(x, y), box)) count('press_near_miss');
 }
 
 function layoutNow(): SeilinkHostLayout {
@@ -262,6 +301,15 @@ function onCommand(m: ToHost): void {
       const emotion = isAvatarEmotion(m.emotion) ? m.emotion : null;
       const face = isFaceWord(m.face) ? m.face : null;
       if (text) toPage(CH.line, { id: ++lineSeq, text, kind: m.kind === 'poke' ? 'poke' : 'idle', emotion, face });
+      break;
+    }
+    case 'voice':
+      // 261110: her voice in the main window (a call): her mouth moves here too.
+      toPage(CH.voice, m.speaking === true);
+      break;
+    case 'level': {
+      const level = Number(m.level);
+      toPage(CH.level, Number.isFinite(level) ? Math.max(0, Math.min(1, level)) : 0);
       break;
     }
     case 'set-paused':
@@ -486,8 +534,15 @@ ipcMain.on(CH.firstFrame, (e) => {
   if (firstFramePendingAt !== null) reportFirstFrame();
 });
 
+let factsAfterFrameSent = false;
+
 function reportFirstFrame(): void {
   firstFramePendingAt = null;
+  if (!factsAfterFrameSent) {
+    factsAfterFrameSent = true;
+    // The GPU process has drawn by now: what it says is what the room got.
+    setTimeout(() => sendFacts('first_frame'), 500);
+  }
   const v = verifyNow();
   const a = activity.current;
   send({ type: 'first-frame', sinceStartMs: Date.now() - T0, verified: v.ok, hidden: v.hidden, covered: a.covered, paused: a.paused, reasons: v.reasons });
@@ -533,8 +588,12 @@ function noteVerify(trigger: string, reasons: string[]): void {
   send({ type: 'verify-failed', reasons, trigger: trigger.split('+')[0] });
 }
 
-/** Display and GPU facts for main's analytics (no names, no ids). */
-function sendFacts(): void {
+/**
+ * Display and GPU facts for main's analytics (no names, no ids). 261110: sent again after the
+ * first frame and when Chromium updates its GPU info: at start the GPU process is not up yet,
+ * so the first read can say "off" on a PC that composites on the GPU (beta.2 reported off).
+ */
+function sendFacts(when: 'start' | 'first_frame' | 'gpu_update' | 'display' = 'start'): void {
   try {
     const d = primaryDisplay();
     const px = physicalRect(d);
@@ -552,6 +611,8 @@ function sendFacts(): void {
       heightPx: px.h,
       gpu,
       hwAccel: app.isHardwareAccelerationEnabled(),
+      refreshHz: Number(d.displayFrequency) || 0,
+      when,
     });
   } catch {
     /* analytics only */
@@ -573,37 +634,70 @@ function applyHitRect(): void {
   const d = primaryDisplay();
   const b = d.bounds;
   const toScreen = (r: SeilinkBox): SeilinkBox => ({ x: b.x + r.x, y: b.y + r.y, w: r.w, h: r.h });
-  // M4: the click area is her box plus the dock (one native rect); presses are routed by position.
-  const hit = unionBox([box, ...(box ? (dock ?? []) : [])]);
-  const screenBox = hit ? toScreen(hit) : null;
+  // M4: the click area is her box plus the dock; presses are routed by position (dock.ts).
+  // 261110: the dock sits in the screen's corner and takes presses whether or not she is in
+  // the frame. Windows: one passive rect over both (it never blocks the desktop). macOS: a
+  // panel each, since a panel takes the desktop's clicks under it.
+  const areas = hitAreas(box, dock);
   send({
     type: 'box',
     screen: box ? toScreen(box) : null,
-    ...(box && dock ? { dock: dock.map((d0) => ({ id: d0.id, ...toScreen(d0) })) } : {}),
+    ...(dock ? { dock: dock.map((d0) => ({ id: d0.id, ...toScreen(d0) })) } : {}),
   });
   if (IS_WIN) {
     const s = d.scaleFactor;
+    const one = areas.one ? toScreen(areas.one) : null;
     (addon as SeilinkWinAddon).setHitRect(
-      screenBox && attached
-        ? { x: Math.round(screenBox.x * s), y: Math.round(screenBox.y * s), w: Math.round(screenBox.w * s), h: Math.round(screenBox.h * s) }
-        : null,
+      one && attached ? { x: Math.round(one.x * s), y: Math.round(one.y * s), w: Math.round(one.w * s), h: Math.round(one.h * s) } : null,
     );
   } else if (IS_MAC) {
     const mac = addon as SeilinkMacAddon;
     const wa = d.workArea;
     const inset = MAC_PANEL_EDGE_INSET;
-    const panel = screenBox && clipRect(screenBox, { x: wa.x + inset, y: wa.y + inset, w: wa.width - 2 * inset, h: wa.height - 2 * inset });
-    if (panel && attached) {
-      const key = `${Math.round(panel.x)},${Math.round(panel.y)} ${Math.round(panel.w)}x${Math.round(panel.h)}`;
-      if (key !== lastPanelKey) log(`hit panel ${key} (work area ${wa.x},${wa.y} ${wa.width}x${wa.height})`);
-      lastPanelKey = key;
-      const visible = mac.hitPanel(panel);
+    const clip = (r: SeilinkBox | null): SeilinkBox | null =>
+      r && clipRect(toScreen(r), { x: wa.x + inset, y: wa.y + inset, w: wa.width - 2 * inset, h: wa.height - 2 * inset });
+    const two = (mac.hitPanelSlots ?? 1) >= 2;
+    // An older addon has one panel: it covers both, as before 261110.
+    const herPanel = clip(two ? areas.her : unionBox([areas.her, areas.dock]));
+    const dockPanel = two ? clip(areas.dock) : null;
+    const key = [herPanel, dockPanel].map((r) => (r ? `${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.w)}x${Math.round(r.h)}` : '-')).join(' | ');
+    if (attached && key !== lastPanelKey) log(`hit panels ${key} (work area ${wa.x},${wa.y} ${wa.width}x${wa.height})`);
+    lastPanelKey = key;
+    // Her panel's visibility is the box-occluded signal (coverage.ts); the dock's is not.
+    if (herPanel && attached) {
+      const visible = mac.hitPanel(herPanel, 0);
       activity.set({ hasPanel: true, panelVisible: visible });
     } else {
-      mac.hitPanelClose();
+      mac.hitPanelClose(0);
       activity.set({ hasPanel: false });
     }
+    if (two) {
+      if (dockPanel && attached) mac.hitPanel(dockPanel, 1);
+      else mac.hitPanelClose(1);
+    }
   }
+}
+
+// ── Dock hover (261110) ─────────────────────────────────────────────────────
+
+/** How often the cursor is checked against the dock while the room draws. */
+const HOVER_POLL_MS = 150;
+let hovering = false;
+
+function pollHover(): void {
+  let next = false;
+  try {
+    if (dock && attached && pageReady && activity.current.fps > 0) {
+      const c = screen.getCursorScreenPoint();
+      const b = primaryDisplay().bounds;
+      next = dockHover({ x: c.x - b.x, y: c.y - b.y }, dock);
+    }
+  } catch {
+    next = false;
+  }
+  if (next === hovering) return;
+  hovering = next;
+  toPage(CH.hover, next);
 }
 
 // ── Attach ──────────────────────────────────────────────────────────────────
@@ -786,6 +880,7 @@ function onNativeEvent(json: string): void {
       if (e.kind === 'down') {
         downPress = p;
         downTarget = targetAt(p.x, p.y);
+        onPressDown(p.x, p.y, downTarget);
       } else if (e.kind === 'up' && downPress) {
         log(`press at ${p.x},${p.y}`);
         const start = downTarget;
@@ -804,6 +899,7 @@ function onNativeEvent(json: string): void {
       if (e.kind !== 'down') log(`hit ${String(e.kind)} at ${Number(e.x)},${Number(e.y)}`);
       if (e.kind === 'down') {
         downTarget = targetAt(Number(e.x), Number(e.y));
+        onPressDown(Number(e.x), Number(e.y), downTarget);
         return;
       }
       if (downTarget.kind === 'dock') {
@@ -923,6 +1019,7 @@ void app
       return;
     }
     registerRoomProtocol();
+    syncDragSlop();
     if (IS_WIN) {
       const a = addon as SeilinkWinAddon;
       clicksDblMs(a.doubleClickMs());
@@ -943,7 +1040,22 @@ void app
     // host waiting for it is alive, not hung (CI 261104: it was killed as hung every 3 s).
     setInterval(heartbeat, 1000);
     heartbeat();
-    sendFacts();
+    sendFacts('start');
+    setInterval(pollHover, HOVER_POLL_MS);
+    // 261110: GPU facts again when Chromium learns more, at most every 5 s; a lost GPU process
+    // is counted (after a few, Chromium composites in software for good).
+    let lastGpuFacts = 0;
+    app.on('gpu-info-update', () => {
+      const now = Date.now();
+      if (now - lastGpuFacts < 5000) return;
+      lastGpuFacts = now;
+      sendFacts('gpu_update');
+    });
+    app.on('child-process-gone', (_e, details) => {
+      if (details.type !== 'GPU') return;
+      count('gpu_process_gone');
+      log(`gpu process gone: ${details.reason}`, 'warn');
+    });
     await waitForShell();
     await createRoomWindow();
     await attach('initial');
@@ -951,9 +1063,10 @@ void app
     const onDisplays = (): void => {
       if (IS_WIN && win && !win.isDestroyed()) win.setBounds(primaryDisplay().bounds);
       toPage(CH.layout, layoutNow());
+      syncDragSlop();
       applyHitRect();
       validateSoon('display');
-      sendFacts();
+      sendFacts('display');
     };
     screen.on('display-metrics-changed', onDisplays);
     screen.on('display-added', onDisplays);

@@ -30,6 +30,14 @@
  * - `speaking` (M4): one of her lines is on screen as a bubble. Move her
  *   mouth and hold her in her seat. No audio plays in the host, so there is
  *   no real level: RoomAvatarHost makes a soft syllable envelope.
+ * - `voice` / `voiceLevel` (261110): her voice is playing in a call in Sei's
+ *   main window. `voice` is true while she talks; `voiceLevel.current` is the
+ *   latest audio level (0..1) and when it came (performance.now()). A fresh
+ *   level (under VOICE_LEVEL_FRESH_MS old, hostLook.ts) drives her mouth; else the
+ *   syllable envelope does.
+ * - `pressSeq` (261110): counts up the moment a button goes down on her,
+ *   before the click is classified. RoomAvatarHost answers with a short
+ *   squash so the tap feels seen.
  * - `emotion` / `face` / `faceSeq` (261105): her face for the line she is
  *   saying (hostLook.ts): `emotion` for an imported Live2D model while she
  *   says it, `face` (a face-set word, 'neutral' when it goes back) for her
@@ -38,13 +46,15 @@
  *   RoomAvatar's views make (avatarGet, avatarModelFiles, onAvatarManifest,
  *   facepackForCharacter, facepackManifest, facepackFile), relayed to main
  *   for this character only (src/preload/seilinkHost.ts).
- * - Not wired yet: her voice (TTS) on the desktop.
  */
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { AvatarEmotion } from '@shared/ipc';
 import type { RoomAvatarSlot } from '../RoomCanvas';
 import type { SeilinkPokeKind } from '@shared/seilinkHost';
 import { RoomAvatar, type RoomAvatarUse } from '../RoomAvatar';
+import { mouthLevel, type VoiceLevel } from './hostLook';
+
+export type { VoiceLevel } from './hostLook';
 
 export interface HostAvatarPoke {
   kind: SeilinkPokeKind;
@@ -74,6 +84,12 @@ export interface HostAvatarProps {
   face?: string | null;
   /** 261105: bumped with each new face. */
   faceSeq?: number;
+  /** 261110: her voice is playing in a call in the main window. */
+  voice?: boolean;
+  /** 261110: latest call audio level and its performance.now() time. */
+  voiceLevel?: React.MutableRefObject<VoiceLevel>;
+  /** 261110: counts up when a button goes down on her. */
+  pressSeq?: number;
 }
 
 export type HostAvatarComponent = React.ComponentType<HostAvatarProps>;
@@ -83,10 +99,45 @@ export const POKE_HOLD_MS = 8_000;
 
 /** RoomAvatar in the host: her figure is the click area, and a poke holds her still for a moment. */
 export function RoomAvatarHost(props: HostAvatarProps): React.ReactElement {
-  const { characterId, name, slot, portrait, use, busy, poke, speaking = false, emotion = null, face = null, faceSeq = 0 } = props;
+  const { characterId, name, slot, portrait, use, busy, poke, speaking = false, emotion = null, face = null, faceSeq = 0, voice = false, voiceLevel, pressSeq = 0 } = props;
   const ref = useRef<HTMLDivElement>(null);
   const [held, setHeld] = useState(false);
-  const levelRef = useSyllableLevel(speaking && slot.fps > 0);
+  const talking = speaking || voice;
+  // The syllable envelope covers a bubble line, and a call line until its first level arrives.
+  const syllable = useSyllableLevel(talking && slot.fps > 0);
+  const voiceRef = useRef(voiceLevel);
+  voiceRef.current = voiceLevel;
+  // Read once per frame by the figure: a getter, so no extra timer merges the two.
+  const levelRef = useMemo<React.MutableRefObject<number>>(
+    () => ({
+      get current() {
+        return mouthLevel(voiceRef.current?.current, syllable.current, performance.now());
+      },
+      set current(_v: number) {
+        /* read-only */
+      },
+    }),
+    [syllable],
+  );
+
+  // 261110: a short squash the moment a button goes down on her (feet stay put).
+  useEffect(() => {
+    if (pressSeq === 0 || slot.fps === 0) return;
+    const fig = ref.current?.querySelector<HTMLElement>('[data-seilink-hit]');
+    if (!fig || typeof fig.animate !== 'function') return;
+    const anim = fig.animate(
+      [
+        { transform: 'scale(1, 1)' },
+        { transform: 'scale(1.04, 0.95)', offset: 0.35 },
+        { transform: 'scale(0.99, 1.02)', offset: 0.7 },
+        { transform: 'scale(1, 1)' },
+      ],
+      { duration: 220, easing: 'ease-out', composite: 'add' },
+    );
+    fig.style.transformOrigin = '50% 100%';
+    return () => anim.cancel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pressSeq]);
 
   useEffect(() => {
     if (!poke) return;
@@ -110,7 +161,7 @@ export function RoomAvatarHost(props: HostAvatarProps): React.ReactElement {
         portrait={portrait}
         use={use}
         busy={busy || held}
-        speaking={speaking}
+        speaking={talking}
         levelRef={levelRef}
         emotion={emotion}
         face={face}

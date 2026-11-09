@@ -12,30 +12,44 @@
   pointer-events: none;
 }
 
+/* 261110: small, in the bottom-right corner, and faint until the cursor comes
+   near it (.awake, the host polls the cursor). Only opacity, background and
+   shadow change between the two looks, never the size: the buttons' boxes are
+   the native click areas. */
 .dock {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px;
+  gap: 2px;
+  padding: 3px;
   border-radius: var(--radius, 2px);
-  background: rgb(var(--ov) / 0.5);
-  -webkit-backdrop-filter: blur(14px) saturate(1.2);
-  backdrop-filter: blur(14px) saturate(1.2);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.14);
-  opacity: 0.86;
+  background: rgb(var(--ov) / 0.28);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+  backdrop-filter: blur(10px) saturate(1.1);
+  box-shadow: none;
+  opacity: 0.42;
+  transition:
+    opacity 220ms var(--ease),
+    background 220ms var(--ease),
+    box-shadow 220ms var(--ease);
+}
+
+.awake .dock {
+  background: rgb(var(--ov) / 0.62);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.12);
+  opacity: 1;
 }
 
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-width: 36px;
-  height: 36px;
-  padding: 0 9px;
+  gap: 5px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
   border-radius: var(--radius, 2px);
-  background: rgb(var(--ink) / 0.07);
-  color: rgb(var(--ink) / 0.86);
+  background: transparent;
+  color: rgb(var(--ink) / 0.82);
   transition:
     background 160ms var(--ease),
     transform 160ms var(--ease-pop),
@@ -56,7 +70,7 @@
 .confirm {
   background: rgb(var(--ink) / 0.86);
   color: rgb(var(--ov));
-  padding: 0 14px 0 11px;
+  padding: 0 11px 0 8px;
 }
 
 .confirmText {
@@ -68,9 +82,8 @@
 
 .caption {
   position: absolute;
-  left: 50%;
+  right: 0;
   bottom: calc(100% + 8px);
-  transform: translateX(-50%);
   padding: 4px 12px 3px;
   border-radius: var(--radius, 2px);
   background: rgb(var(--ov) / 0.78);
@@ -103,7 +116,7 @@
 /* The dock asks itself when her line did not come. Stays up with the buttons. */
 .ask {
   position: absolute;
-  left: 0;
+  right: 0;
   bottom: calc(100% + 8px);
   max-width: 360px;
   padding: 7px 12px 6px;
