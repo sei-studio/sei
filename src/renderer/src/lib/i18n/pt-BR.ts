@@ -2373,4 +2373,6 @@ export const PT_BR: Record<string, string> = {
   "Starts Sei in the background when you log in, so the companion on your desktop is back in their room. The Sei window stays closed until you open it.": "Inicia o Sei em segundo plano quando você faz login, para que o companion da sua área de trabalho volte para o quarto dele. A janela do Sei fica fechada até você abri-la.",
   "Allow Sei in System Settings, under General > Login Items.": "Permita o Sei nos Ajustes do Sistema, em Geral > Itens de Início.",
   "Could not change this setting. Try again.": "Não foi possível alterar esta configuração. Tente de novo.",
+  // ── suggest-a-game hint (261109) ──
+  "{game} already works in Sei": "{game} já funciona no Sei",
 };

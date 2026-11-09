@@ -9,6 +9,12 @@
  * the error code, the HTTP status when the proxy answered, and which step
  * failed. Shape only, never the feedback text.
  *
+ * 261109: the Suggest-a-game form adds `form: 'suggest_game'` and
+ * `game_hint_shown` (did its "already works in Sei" hint show before the
+ * send) to both events. Other forms send neither, as before. These two are
+ * analytics only: proxyClient.feedbackSubmit builds the proxy body itself
+ * and never forwards them.
+ *
  * Pure (deps injected) so the event contract is unit-testable without
  * Electron's ipcMain.
  */
@@ -16,6 +22,8 @@ export interface FeedbackArgs {
   body: string;
   email?: string;
   claimReward?: boolean;
+  form?: 'suggest_game';
+  gameHintShown?: boolean;
 }
 
 export type FeedbackResult =
@@ -29,21 +37,25 @@ export interface FeedbackDeps {
 
 export async function submitFeedbackTracked(args: FeedbackArgs, deps: FeedbackDeps): Promise<FeedbackResult> {
   const rewardClaim = args.claimReward === true;
+  const formProps: Record<string, string | boolean> = args.form
+    ? { form: args.form, game_hint_shown: args.gameHintShown === true }
+    : {};
   let res: FeedbackResult;
   try {
     res = await deps.submit(args);
   } catch (err) {
-    deps.track('feedback_failed', { code: 'EXCEPTION', status: null, reason: 'exception', reward_claim: rewardClaim });
+    deps.track('feedback_failed', { code: 'EXCEPTION', status: null, reason: 'exception', reward_claim: rewardClaim, ...formProps });
     throw err;
   }
   if (res.ok) {
-    deps.track('feedback_submitted', { reward_claim: rewardClaim });
+    deps.track('feedback_submitted', { reward_claim: rewardClaim, ...formProps });
   } else {
     deps.track('feedback_failed', {
       code: res.code,
       status: res.status ?? null,
       reason: res.reason ?? null,
       reward_claim: rewardClaim,
+      ...formProps,
     });
   }
   return res;
