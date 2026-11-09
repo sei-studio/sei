@@ -143,4 +143,8 @@ export const ZH_SEILINK: Record<string, string> = {
   "Starts Sei in the background when you log in, so the companion on your desktop is back in their room. The Sei window stays closed until you open it.": "登录时在后台启动 Sei，让桌面上的伙伴回到自己的房间。在你打开之前，Sei 的窗口会保持关闭。",
   "Allow Sei in System Settings, under General > Login Items.": "请在“系统设置”的“通用 > 登录项”中允许 Sei。",
   "Could not change this setting. Try again.": "无法更改此设置，请重试。",
+  // 261110: where to change it by hand, and the support form.
+  "Could not change this setting. Turn Sei on in Windows Settings > Apps > Startup, or in Task Manager > Startup apps.": "无法更改此设置。请在 Windows 的“设置 > 应用 > 启动”或“任务管理器 > 启动应用”中开启 Sei。",
+  "Could not change this setting. Add Sei in System Settings > General > Login Items.": "无法更改此设置。请在“系统设置 > 通用 > 登录项”中添加 Sei。",
+  "Contact support": "联系支持",
 };

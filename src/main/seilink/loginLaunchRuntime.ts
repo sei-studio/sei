@@ -5,6 +5,7 @@
  * two pure modules; this file only connects them.
  */
 import { app, BrowserWindow } from 'electron';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { paths } from '../paths';
 import { loadAnalytics } from '../lazyAnalytics';
@@ -41,6 +42,7 @@ function realDeps(): OpenAtLoginDeps {
     filePath: path.join(paths.userData(), OPEN_AT_LOGIN_FILE),
     getLoginItemSettings: (o) => app.getLoginItemSettings(o),
     setLoginItemSettings: (s) => app.setLoginItemSettings(s),
+    exists: (p) => existsSync(p),
     capture,
     log,
   };

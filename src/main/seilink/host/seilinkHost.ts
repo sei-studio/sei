@@ -31,7 +31,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { HostSupervisor, type HostChild } from './supervisor';
-import { createLineReader, encodeLine, hostPipePath, type FromHost, type ToHost } from './protocol';
+import { createLineReader, encodeLine, hostPipePath, isSeilinkHostCountKey, type FromHost, type ToHost } from './protocol';
 import { seilinkHostArgv } from './hostArgs';
 import { addonAvailability } from './native';
 import {
@@ -67,7 +67,9 @@ import {
   SHOWN_DEADLINE_MS,
   ShownWatchdog,
   gpuState,
+  gpuStatusBucket,
   reattachCause,
+  refreshBucket,
   resolutionBucket,
   scaleBucket,
   verifyReasonList,
@@ -103,6 +105,10 @@ interface HostFacts {
   resolution: string;
   gpu: 'on' | 'off' | 'unknown';
   hwAccel: boolean;
+  /** 261110: Chromium's raw status (closed set), the refresh rate, and when it was read. */
+  gpuStatus: string;
+  refresh: string;
+  when: string;
 }
 
 /** Everything the host says, plus 'status' — the CI self-test (selfTest.ts) listens here. */
@@ -161,6 +167,8 @@ interface Session {
   deafened: boolean;
   /** 261106: the decorate-together offer on the dock. */
   offer: SeilinkDockOffer;
+  /** 261110: her voice in the main window, relayed to the desktop (speaking, and a level seen for this line). */
+  voice: { speaking: boolean; leveled: boolean };
 }
 
 let deps: SeilinkHostDeps | null = null;
@@ -247,7 +255,16 @@ function capture(event: string, props: Record<string, unknown>): void {
 
 function factProps(f: HostFacts | null): Record<string, unknown> {
   if (!f) return {};
-  return { display_count: f.displays, scale_factor: f.scale, resolution: f.resolution, gpu: f.gpu, hw_accel: f.hwAccel };
+  return {
+    display_count: f.displays,
+    scale_factor: f.scale,
+    resolution: f.resolution,
+    gpu: f.gpu,
+    hw_accel: f.hwAccel,
+    gpu_status: f.gpuStatus,
+    refresh_hz: f.refresh,
+    facts_when: f.when,
+  };
 }
 
 /** A ShownWatchdog verdict, with the session's facts. */
@@ -502,6 +519,7 @@ async function openSession(characterId: string, restored: boolean): Promise<void
     notShownReason: null,
     deafened: false,
     offer: 'none',
+    voice: { speaking: false, leveled: false },
   };
   s.timers.push(
     setTimeout(() => {
@@ -749,7 +767,13 @@ function onHostMessage(s: Session, m: FromHost): void {
         resolution: resolutionBucket(m.widthPx, m.heightPx),
         gpu: gpuState(m.gpu),
         hwAccel: m.hwAccel === true,
+        gpuStatus: gpuStatusBucket(m.gpu),
+        refresh: refreshBucket(m.refreshHz),
+        when: m.when === 'first_frame' || m.when === 'gpu_update' || m.when === 'display' ? m.when : 'start',
       };
+      break;
+    case 'count':
+      if (isSeilinkHostCountKey(m.key)) s.counters.add(m.key);
       break;
     case 'verify-failed': {
       const reasons = verifyReasonList(m.reasons);
@@ -855,6 +879,33 @@ export function sendSeilinkLine(
   sendTo(s, { type: 'line', text, kind, emotion: look.emotion, face: look.face });
   if (expression !== 'none') s.counters.add('expressions');
   return { expression };
+}
+
+/**
+ * 261110: her voice (TTS in the main window: a chat reply or a call) started or stopped. Only
+ * the companion on the desktop; her mouth moves there while it plays. False when she is not
+ * the one on the desktop.
+ */
+export function sendSeilinkVoice(characterId: string, speaking: boolean): boolean {
+  const s = session;
+  if (!s || s.ending || s.characterId !== characterId || !s.conn) return false;
+  if (speaking === s.voice.speaking) return true;
+  s.voice = { speaking, leveled: false };
+  if (speaking) s.counters.add('voice_lines');
+  sendTo(s, { type: 'voice', speaking });
+  return true;
+}
+
+/** 261110: her voice's level now (0..1), about 25 a second while it plays. */
+export function sendSeilinkVoiceLevel(characterId: string, level: number): void {
+  const s = session;
+  if (!s || s.ending || s.characterId !== characterId || !s.conn) return;
+  const l = Number.isFinite(level) ? Math.max(0, Math.min(1, level)) : 0;
+  if (l > 0 && !s.voice.leveled) {
+    s.voice.leveled = true;
+    s.counters.add('voice_levels');
+  }
+  sendTo(s, { type: 'level', level: Math.round(l * 1000) / 1000 });
 }
 
 /** M4: who is on the desktop right now (attached and drawing), for desktopLines.ts. */

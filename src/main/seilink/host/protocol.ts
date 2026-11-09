@@ -33,6 +33,13 @@ export type ToHost =
   | { type: 'dock-state'; deafened: boolean; offer?: SeilinkDockOffer }
   /** M4: a line she says on the desktop (a bubble near her). */
   | { type: 'line'; text: string; kind: 'idle' | 'poke'; emotion?: AvatarEmotion | null; face?: string | null }
+  /**
+   * 261110: her voice (TTS in the main window, a chat reply or a call) started or stopped, so
+   * her mouth moves on the desktop too. Only for the companion on the desktop.
+   */
+  | { type: 'voice'; speaking: boolean }
+  /** 261110: her voice's level now (0..1, about 25 a second while it plays). */
+  | { type: 'level'; level: number }
   /** Hold the room still (a future dock "pause"). */
   | { type: 'set-paused'; paused: boolean }
   | { type: 'quit' }
@@ -44,6 +51,29 @@ export type ToHost =
   | { type: 'ping'; seq: number }
   /** CI self-test hosts only (--seilink-test): wedge the main thread for `ms`. */
   | { type: 'test-hang'; ms: number };
+
+/**
+ * 261110: counts the host adds to the session (taps on her, how presses went, GPU process
+ * losses). A closed set: main ignores any other key.
+ */
+export const SEILINK_HOST_COUNT_KEYS = [
+  // A press that started on her: a tap, a drag (moved past the slop), a long press (> 1.5 s).
+  'press_tap',
+  'press_drag',
+  'press_long',
+  // A press just outside her box (within 48 px): a tap that missed her.
+  'press_near_miss',
+  // The GPU process went away (Chromium falls back to software after a few).
+  'gpu_process_gone',
+  // Her voice from the main window reached the desktop (a line with a level, or speaking only).
+  'voice_lines',
+  'voice_levels',
+] as const;
+export type SeilinkHostCountKey = (typeof SEILINK_HOST_COUNT_KEYS)[number];
+
+export function isSeilinkHostCountKey(v: unknown): v is SeilinkHostCountKey {
+  return typeof v === 'string' && (SEILINK_HOST_COUNT_KEYS as readonly string[]).includes(v);
+}
 
 /** Host -> main. */
 export type FromHost =
@@ -66,7 +96,21 @@ export type FromHost =
       reasons?: string[];
     }
   /** 261105: display and GPU facts for analytics (at start and on a display change). */
-  | { type: 'facts'; displays: number; scale: number; widthPx: number; heightPx: number; gpu: string; hwAccel: boolean }
+  | {
+      type: 'facts';
+      displays: number;
+      scale: number;
+      widthPx: number;
+      heightPx: number;
+      gpu: string;
+      hwAccel: boolean;
+      /** 261110: the primary display's refresh rate (Hz), 0 when unknown. */
+      refreshHz?: number;
+      /** 261110: when it was read (at start the GPU process may not be up yet). */
+      when?: 'start' | 'first_frame' | 'gpu_update' | 'display';
+    }
+  /** 261110: one of the host's shape-only counts (SEILINK_HOST_COUNT_KEYS), for seilink_ended. */
+  | { type: 'count'; key: SeilinkHostCountKey }
   /**
    * 261105: a post-attach check found something wrong that a re-attach does not report (the
    * room window hidden while still parented, mac window not visible). Once per distinct set.

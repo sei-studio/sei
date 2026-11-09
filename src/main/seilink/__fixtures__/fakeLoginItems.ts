@@ -46,7 +46,9 @@ export class FakeWin {
     const want = ((o as { path?: string } | undefined)?.path ?? '').toLowerCase();
     const launchItems = [...this.run.entries()]
       .filter(([, v]) => v.path.toLowerCase() === want)
-      .map(([name, v]) => ({ name, path: v.path, args: v.args, scope: 'user' as const, enabled: v.enabled }));
+      // Like Electron on Windows: args come from Chromium's CommandLine::GetArgs(),
+      // which drops every switch (`--seilink-login` included), keeping loose args only.
+      .map(([name, v]) => ({ name, path: v.path, args: v.args.filter((x) => !/^(--|-|\/)/.test(x)), scope: 'user' as const, enabled: v.enabled }));
     return { openAtLogin: false, launchItems, executableWillLaunchAtLogin: launchItems.some((i) => i.enabled) } as unknown as Electron.LoginItemSettings;
   };
   /** The user turns it off in Task Manager (StartupApproved). */
@@ -58,6 +60,8 @@ export class FakeWin {
 
 export const NSIS_EXE = 'C:\\Users\\robin\\AppData\\Local\\Programs\\sei\\Sei.exe';
 export const VELO_EXE = 'C:\\Users\\robin\\AppData\\Local\\Sei\\current\\Sei.exe';
+/** The Velopack root stub (runs `Update.exe start -- <args>`). */
+export const VELO_STUB = 'C:\\Users\\robin\\AppData\\Local\\Sei\\Sei.exe';
 
 export function fakeDeps(
   fake: FakeMac | FakeWin,

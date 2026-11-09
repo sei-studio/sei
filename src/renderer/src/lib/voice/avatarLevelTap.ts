@@ -40,6 +40,23 @@ export function setAvatarLevelTapEnabled(on: boolean): void {
 }
 
 /**
+ * 261110: the companion on the desktop (WorldLink), or null. Her clips are
+ * tapped too and their level goes to main the same way (avatarOverlayLevel),
+ * which relays it to her desktop room, so her mouth moves there while she
+ * talks in a call. Set by SeilinkVoiceRelay.
+ */
+let desktopResident: string | null = null;
+
+export function setDesktopLevelResident(characterId: string | null): void {
+  desktopResident = characterId;
+}
+
+/** Whether a clip of `characterId` is sent to main (the overlay, or her desktop room). */
+export function relaysLevelFor(characterId: string): boolean {
+  return enabled || (desktopResident !== null && characterId === desktopResident);
+}
+
+/**
  * In-window level + band listeners (261028, facepack pilot): a FacepackView
  * in THIS window picks mouth shapes from them. Empty unless the facepack dev
  * flag mounted one, so with no listener the tap behaves exactly as before.
@@ -60,7 +77,8 @@ export function subscribeClipLevels(fn: LocalSink): () => void {
  * pseudo-envelopes on its own).
  */
 export function tapClipLevel(el: HTMLAudioElement, characterId: string): (() => void) | null {
-  if (!enabled && localSinks.size === 0) return null;
+  const relay = relaysLevelFor(characterId);
+  if (!relay && localSinks.size === 0) return null;
   const ctx = sharedContext();
   // A suspended context would SILENCE any element we route through it; only
   // tap when audio is genuinely flowing through this context already (calls).
@@ -102,7 +120,7 @@ export function tapClipLevel(el: HTMLAudioElement, characterId: string): (() => 
       analyser.getFloatTimeDomainData(data);
       level = levelFromTimeDomain(data);
     }
-    if (enabled) void seiApi()?.avatarOverlayLevel?.(characterId, level).catch(() => {});
+    if (relay) void seiApi()?.avatarOverlayLevel?.(characterId, level).catch(() => {});
   }, SAMPLE_MS);
 
   return () => {
@@ -118,7 +136,7 @@ export function tapClipLevel(el: HTMLAudioElement, characterId: string): (() => 
       /* ditto */
     }
     // Leave the mouth closed rather than frozen on the last sample.
-    if (enabled) void seiApi()?.avatarOverlayLevel?.(characterId, 0).catch(() => {});
+    if (relay) void seiApi()?.avatarOverlayLevel?.(characterId, 0).catch(() => {});
     for (const fn of localSinks) fn(characterId, null);
   };
 }

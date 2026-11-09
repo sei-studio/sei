@@ -8,7 +8,7 @@ import { IpcChannel } from '../../shared/ipc';
 import { listPacks, publicPack, seilinkDevEnabled, seilinkDevInfo } from './packs';
 import { seilinkAvailability, seilinkEnabled } from './gate';
 import { getRoomPayload, isRoomCharacterId, onRoomChange, setRoomState } from './roomStore';
-import { seilinkHostStatus, startSeilinkHost, stopSeilinkHost } from './host/seilinkHost';
+import { seilinkHostStatus, sendSeilinkVoice, startSeilinkHost, stopSeilinkHost } from './host/seilinkHost';
 import { ANIMA_TRIGGERS, isAnimaShownKind, type AnimaTrigger } from '../../shared/anima';
 import { anima } from '../anima/animaRuntime';
 import { isEditorSessionToken, onRoomEditorClosed, onRoomEditorOpened } from './roomReaction';
@@ -86,6 +86,11 @@ export function registerSeilinkIpc(opts: { preloadPath: string; rendererTarget: 
   ipcMain.handle(IpcChannel.seilink.animaStatus, async (_e, characterId: unknown) => {
     if (!isRoomCharacterId(characterId)) throw new Error('SEILINK_BAD_ID');
     return anima.status(characterId);
+  });
+  // 261110: her voice in this window started or stopped; her mouth moves on the desktop too.
+  ipcMain.on(IpcChannel.seilink.voice, (_e, args: unknown) => {
+    const a = args as { characterId?: unknown; speaking?: unknown } | null;
+    if (isRoomCharacterId(a?.characterId)) sendSeilinkVoice(a.characterId, a.speaking === true);
   });
   ipcMain.on(IpcChannel.seilink.animaShown, (_e, args: unknown) => {
     const a = args as { characterId?: unknown; kind?: unknown } | null;

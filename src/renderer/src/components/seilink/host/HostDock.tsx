@@ -2,8 +2,11 @@
  * The SeiLink dock and her speech bubble, drawn by the room host page
  * (261104, M4).
  *
- * The dock is a small glass pill of three round buttons at the bottom of the
- * work area (above the taskbar or the Dock), beside her (dockPlace.ts): edit her room,
+ * The dock is a small glass pill of three buttons in the bottom-right corner
+ * of the work area (above the taskbar or the Dock; 261110, dockPlace.ts, it
+ * used to ride beside her and crept with her sway). Faint at rest, it wakes
+ * when the cursor comes near it (`hover`, the host polls the cursor), while
+ * it asks or answers something, and for a moment after a press: edit her room,
  * deafen (mute her idle lines; a reply to a double click still shows), and
  * move out. The room-editor design deck puts these shortcuts in "the bottom
  * dock" of the room itself, so it lives on the wallpaper next to her rather
@@ -32,12 +35,14 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { SeilinkBox, SeilinkDockAction, SeilinkDockButton, SeilinkDockOffer } from '@shared/seilinkHost';
 import { useT } from '../../../lib/i18n';
 import { BrushIcon, BubbleIcon, BubbleOffIcon, MoveOutIcon } from '../roomEditorIcons';
-import { dockBottom, dockLeft } from '../../../lib/seilink/dockPlace';
+import { dockAwake, dockCorner } from '../../../lib/seilink/dockPlace';
 import styles from './HostDock.module.css';
 
 /** How long "Move out?" waits for the second press. */
 export const MOVE_OUT_CONFIRM_MS = 4_000;
 const CAPTION_MS = 2_600;
+/** 261110: how long the dock stays awake after a press (its press look is CSS, 180 ms). */
+const PRESS_AWAKE_MS = 1_200;
 /** "Not now" leaves a longer caption: it says where decorating lives from now on. */
 const LATER_CAPTION_MS = 5_000;
 
@@ -48,10 +53,10 @@ export interface DockPress {
 
 export interface HostDockProps {
   workArea: SeilinkBox;
-  /** Her box (page CSS px): the dock sits beside it. */
-  her: SeilinkBox | null;
-  /** Her seat's x (page CSS px): the dock centres under it when there is no room beside her. */
-  anchorX: number;
+  /** The page's width (CSS px): the dock's right edge is fixed to the work area's right edge. */
+  pageWidth: number;
+  /** 261110: the cursor is near the dock (the host polls it): full strength. */
+  hover?: boolean;
   deafened: boolean;
   /** 261106: the decorate-together offer ('none' = the usual dock). */
   offer?: SeilinkDockOffer;
@@ -76,14 +81,13 @@ function sameButtons(a: SeilinkDockButton[] | null, b: SeilinkDockButton[] | nul
 }
 
 export function HostDock(props: HostDockProps): React.ReactElement {
-  const { workArea, her, anchorX, deafened, press, onAction, onButtons } = props;
+  const { workArea, pageWidth, deafened, press, onAction, onButtons } = props;
   const offer = props.offer ?? 'none';
   const t = useT();
   const [confirming, setConfirming] = useState(props.initialConfirm === true);
   const [caption, setCaption] = useState<{ text: string; ms: number } | null>(null);
   const [pressed, setPressed] = useState<SeilinkDockAction | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(0);
 
   // A press from the host.
   const last = useRef<number>(0);
@@ -114,6 +118,15 @@ export function HostDock(props: HostDockProps): React.ReactElement {
     return () => clearTimeout(id);
   }, [pressed]);
 
+  // 261110: awake for a moment after any press, so what it did can be seen.
+  const [recent, setRecent] = useState(false);
+  useEffect(() => {
+    if (!press) return;
+    setRecent(true);
+    const id = setTimeout(() => setRecent(false), PRESS_AWAKE_MS);
+    return () => clearTimeout(id);
+  }, [press]);
+
   useEffect(() => {
     if (!confirming || props.initialConfirm) return;
     const id = setTimeout(() => setConfirming(false), MOVE_OUT_CONFIRM_MS);
@@ -126,23 +139,17 @@ export function HostDock(props: HostDockProps): React.ReactElement {
     return () => clearTimeout(id);
   }, [caption]);
 
-  // Where it sits: beside her at the bottom of the work area. Placed by its
-  // collapsed width, so "Move out?" grows it away from her instead of moving it.
-  const restWidth = useRef(0);
-  const rest = restWidth.current || width;
-  const placed = dockLeft(workArea, her, anchorX, rest);
-  // Left of her: grow leftwards, away from her.
-  const left = her && placed + rest <= her.x ? placed - Math.max(0, width - rest) : placed;
-  const bottom = dockBottom(workArea);
+  // Where it sits: the bottom-right corner of the work area (261110). The right edge is fixed,
+  // so "Move out?" grows it to the left. Nothing here follows her.
+  const corner = dockCorner(workArea, pageWidth);
+  const place: React.CSSProperties = { right: corner.right, top: corner.bottom };
+  const awake = dockAwake({ hover: props.hover === true, confirming, caption: caption !== null, offer: offer !== 'none', pressed: recent });
 
   // Report the buttons' boxes whenever they may have moved.
   const lastSent = useRef<SeilinkDockButton[] | null>(null);
   useLayoutEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-    const w = root.getBoundingClientRect().width;
-    if (!confirming) restWidth.current = w;
-    if (Math.abs(w - width) >= 1) setWidth(w);
     const buttons: SeilinkDockButton[] = [];
     root.querySelectorAll<HTMLElement>('[data-dock]').forEach((el) => {
       const r = el.getBoundingClientRect();
@@ -159,7 +166,7 @@ export function HostDock(props: HostDockProps): React.ReactElement {
 
   if (offer !== 'none') {
     return (
-      <div ref={rootRef} className={styles.dockWrap} style={{ left, top: bottom }}>
+      <div ref={rootRef} className={awake ? `${styles.dockWrap} ${styles.awake}` : styles.dockWrap} style={place}>
         {offer === 'prompt' ? (
           <div className={styles.ask} role="status">
             {props.plain
@@ -173,7 +180,7 @@ export function HostDock(props: HostDockProps): React.ReactElement {
         ) : null}
         <div className={styles.dock}>
           <span data-dock="decorate" className={cls('decorate', styles.textBtn + ' ' + styles.primary)}>
-            <BrushIcon size={16} />
+            <BrushIcon size={14} />
             {props.plain ? t('Set up together') : t('Decorate together')}
           </span>
           <span data-dock="later" className={cls('later', styles.textBtn)}>
@@ -185,7 +192,7 @@ export function HostDock(props: HostDockProps): React.ReactElement {
   }
 
   return (
-    <div ref={rootRef} className={styles.dockWrap} style={{ left, top: bottom }}>
+    <div ref={rootRef} className={awake ? `${styles.dockWrap} ${styles.awake}` : styles.dockWrap} style={place}>
       {caption ? (
         <div className={styles.caption} role="status">
           {caption.text}
@@ -193,13 +200,13 @@ export function HostDock(props: HostDockProps): React.ReactElement {
       ) : null}
       <div className={styles.dock}>
         <span data-dock="edit" className={cls('edit')} aria-label={t('Edit room')}>
-          <BrushIcon size={18} />
+          <BrushIcon size={15} />
         </span>
         <span data-dock="deafen" className={cls('deafen', deafened ? styles.off : '')} aria-label={deafened ? t('Turn idle lines on') : t('Mute idle lines')}>
-          {deafened ? <BubbleOffIcon size={18} /> : <BubbleIcon size={18} />}
+          {deafened ? <BubbleOffIcon size={15} /> : <BubbleIcon size={15} />}
         </span>
         <span data-dock="moveout" className={cls('moveout', confirming ? styles.confirm : '')} aria-label={t('Move out')}>
-          <MoveOutIcon size={18} />
+          <MoveOutIcon size={15} />
           {confirming ? <span className={styles.confirmText}>{t('Move out?')}</span> : null}
         </span>
       </div>

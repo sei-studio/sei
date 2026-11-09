@@ -106,6 +106,7 @@ import { ROOM_PRESET_LABEL } from '../../lib/seilink/moveIn';
 import { SEILINK_SETUP_EVENT, SEILINK_SETUP_STEP_EVENT, type SetupAction, type SetupStepAction } from '@shared/seilinkIntroTelemetry';
 import { SETUP_COPY, SETUP_PANEL, markDone, nextStep, opensGuided, prevStep, resumeStep, setupSteps, withoutSetup } from '../../lib/seilink/roomSetup';
 import { LOGIN_STEP_DEFAULT, loginStepAfter, offersLoginStep, type OpenAtLoginSource } from '../../lib/seilink/loginStep';
+import { openAtLoginFailNote } from '../../lib/seilink/openAtLoginNote';
 import { useEditorAnalytics, type TogetherAnalytics } from '../../lib/seilink/editorAnalytics';
 import { lightSlotsOf, roomShapeOf, type EditorOpenedFrom, type EditorSurface } from '@shared/seilinkTelemetry';
 import { RoomCanvas, type RoomAvatarSlot } from './RoomCanvas';
@@ -1618,7 +1619,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
         {props.name ? <p className={styles.note}>{t('{name} comes back after a restart.', { name: props.name })}</p> : null}
         {ls.note ? (
           <p className={styles.loginNote} role="status">
-            {ls.note === 'approval' ? t('Allow Sei in System Settings, under General > Login Items.') : t('Could not change this setting. Try again.')}
+            {ls.note === 'approval' ? t('Allow Sei in System Settings, under General > Login Items.') : t(openAtLoginFailNote(sei.platform))}
           </p>
         ) : null}
       </header>

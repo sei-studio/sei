@@ -37,4 +37,12 @@ export const SEILINK_HOST_CHANNELS = {
   dockAction: 'seilink-host:dock-action',
   /** host -> page: SeilinkHostLine. */
   line: 'seilink-host:line',
+  /** host -> page: boolean, her voice is playing in the main window (261110). */
+  voice: 'seilink-host:voice',
+  /** host -> page: number 0..1, her voice's level (261110). */
+  level: 'seilink-host:level',
+  /** host -> page: boolean, the cursor is over the dock (261110: it wakes up). */
+  hover: 'seilink-host:hover',
+  /** host -> page: a press went down on her (261110: she reacts at once). */
+  press: 'seilink-host:press',
 } as const;

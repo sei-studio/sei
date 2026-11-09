@@ -31,6 +31,7 @@ vi.mock('../../lib/ipcClient', () => ({ sei: {} }));
 
 const { OpenAtLoginRowView } = await import('./OpenAtLoginRow');
 const { DICTIONARIES } = await import('../../lib/i18n');
+const { OPEN_AT_LOGIN_FAIL_MAC, OPEN_AT_LOGIN_FAIL_WIN } = await import('../../lib/seilink/openAtLoginNote');
 
 const on: OpenAtLoginState = { supported: true, enabled: true, needsApproval: false, decided: true };
 const off: OpenAtLoginState = { supported: true, enabled: false, needsApproval: false, decided: false };
@@ -72,6 +73,17 @@ describe('OpenAtLoginRowView (Settings)', () => {
     expect(row({ failed: true })).toContain('Could not change this setting. Try again.');
   });
 
+  it('a change that did not take says where to do it by hand on this OS, with the support form', () => {
+    const win = row({ failed: true, platform: 'win32', onContactSupport: () => {} });
+    expect(win).toContain('Windows Settings &gt; Apps &gt; Startup');
+    expect(win).toContain('Task Manager &gt; Startup apps');
+    expect(win).toContain('Contact support');
+    const mac = row({ failed: true, platform: 'darwin', onContactSupport: () => {} });
+    expect(mac).toContain('System Settings &gt; General &gt; Login Items');
+    // No failure, no support button.
+    expect(row({ state: on, platform: 'win32', onContactSupport: () => {} })).not.toContain('Contact support');
+  });
+
   it('every line is translated in every UI language', () => {
     const keys = [
       'Open on login',
@@ -80,6 +92,9 @@ describe('OpenAtLoginRowView (Settings)', () => {
       'About opening Sei at login',
       'Allow Sei in System Settings, under General > Login Items.',
       'Could not change this setting. Try again.',
+      OPEN_AT_LOGIN_FAIL_WIN,
+      OPEN_AT_LOGIN_FAIL_MAC,
+      'Contact support',
     ];
     for (const [lang, dict] of Object.entries(DICTIONARIES)) {
       for (const k of keys) expect(dict[k], `${lang}: ${k}`).toBeTruthy();

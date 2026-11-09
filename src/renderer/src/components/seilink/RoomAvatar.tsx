@@ -42,10 +42,13 @@ import { FacepackView } from '../../lib/facepack/FacepackView';
 import type { FacepackSource } from '../../lib/facepack/facepackSource';
 import { portraitSrc } from '../../lib/portraitSrc';
 import { loadCutout, peekCutout, type CutoutImage } from '../../lib/seilink/portraitCutout';
+import { FramePacer } from '../../lib/framePacer';
 import {
   IdleScheduler,
   REST_POSE,
   poseTransform,
+  isTravelPhase,
+  motionFps,
   type IdleExits,
   type IdleMotionConfig,
   type IdlePhase,
@@ -242,12 +245,13 @@ function useIdleMotion(
     let lastMeasure = -Infinity;
     let phase: IdlePhase | null = null;
     let talk = 0;
+    // 261110: an even cadence, and up to 60 fps while she walks (motionFps).
+    const pacer = new FramePacer();
     const tick = (t: number): void => {
       raf = requestAnimationFrame(tick);
       const L = live.current;
-      const cap = Math.min(MOTION_FPS_MAX, L.fps);
+      if (!pacer.due(t, motionFps(L.fps, MOTION_FPS_MAX, isTravelPhase(phase)))) return;
       const dt = t - lastTick;
-      if (dt < 1000 / cap - 1) return;
       lastTick = t;
       // A long gap (tab hidden, a stall) counts as a short one: she does not skip ahead.
       clock.current += Math.min(dt, 250);

@@ -182,6 +182,15 @@ export interface SeilinkHostBridge {
   dockAction(action: SeilinkDockAction): void;
   /** A short line from her (a click reply or a rare idle line), shown as a bubble. */
   onLine(cb: (line: SeilinkHostLine) => void): () => void;
+  // ── 261110 ──
+  /** Her voice (TTS in the main window) started or stopped: her mouth moves. */
+  onVoice?(cb: (speaking: boolean) => void): () => void;
+  /** Her voice's level (0..1) while it plays, about 25 a second. */
+  onLevel?(cb: (level: number) => void): () => void;
+  /** The cursor is over the dock (or left it): the dock wakes up from its quiet rest look. */
+  onHover?(cb: (hover: boolean) => void): () => void;
+  /** A press went down on her: a small reaction at once (the click itself waits for the double-click time). */
+  onPress?(cb: () => void): () => void;
 }
 
 export type SeilinkPokeKind = 'click' | 'dblclick' | 'drag';

@@ -45,6 +45,7 @@ import {
 } from './animation';
 import { cueExpression, expressionBlinks, filesFor, layersFor, posesOf, resolveExpressionName } from './compose';
 import { FaceImageCache, type FacepackSource, ipcPackSource } from './facepackSource';
+import { FramePacer } from '../framePacer';
 
 export interface FaceDebugState {
   expression: string;
@@ -309,7 +310,9 @@ export function FacepackView({
           return { expression: exprName, pose: avail.includes(idlePose) ? idlePose : avail[0] };
         };
 
-        let lastTick = 0;
+        // 261110: an even cadence under the cap (the old `now - last < 1000/cap - 1` check skipped
+        // a whole vsync on a slightly early frame).
+        const pacer = new FramePacer();
         const frame = (): void => {
           if (cancelled) return;
           const cap = live.current.fps;
@@ -319,8 +322,7 @@ export function FacepackView({
           }
           raf = requestAnimationFrame(frame);
           const now = performance.now();
-          if (cap !== undefined && cap > 0 && now - lastTick < 1000 / cap - 1) return;
-          lastTick = now;
+          if (cap !== undefined && cap > 0 && !pacer.due(now, cap)) return;
           const L = live.current;
 
           // Expression input -> timeline (+ decay).

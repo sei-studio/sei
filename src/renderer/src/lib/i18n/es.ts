@@ -2376,6 +2376,10 @@ export const ES: Record<string, string> = {
   "Starts Sei in the background when you log in, so the companion on your desktop is back in their room. The Sei window stays closed until you open it.": "Inicia Sei en segundo plano cuando inicias sesión, para que tu compi del escritorio vuelva a su habitación. La ventana de Sei sigue cerrada hasta que la abras.",
   "Allow Sei in System Settings, under General > Login Items.": "Permite Sei en Ajustes del Sistema, en General > Ítems de inicio.",
   "Could not change this setting. Try again.": "No se pudo cambiar este ajuste. Inténtalo de nuevo.",
+  // 261110: where to change it by hand, and the support form.
+  "Could not change this setting. Turn Sei on in Windows Settings > Apps > Startup, or in Task Manager > Startup apps.": "No se pudo cambiar este ajuste. Activa Sei en Configuración de Windows > Aplicaciones > Inicio, o en Administrador de tareas > Aplicaciones de arranque.",
+  "Could not change this setting. Add Sei in System Settings > General > Login Items.": "No se pudo cambiar este ajuste. Añade Sei en Ajustes del Sistema > General > Ítems de inicio.",
+  "Contact support": "Contactar con soporte",
   // ── suggest-a-game hint (261109) ──
   "{game} already works in Sei": "{game} ya funciona en Sei",
 };

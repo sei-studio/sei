@@ -6,7 +6,9 @@ import {
   ShownWatchdog,
   attachMode,
   gpuState,
+  gpuStatusBucket,
   histPercentile,
+  refreshBucket,
   memoryBucket,
   reattachCause,
   resolutionBucket,
@@ -47,6 +49,26 @@ describe('shapes', () => {
   it('keeps verify reasons to the closed set', () => {
     expect(verifyReasonList(['no-workerw', 'hidden', 'no-workerw', 'C:\\secret'])).toEqual(['hidden', 'no_workerw', 'other']);
     expect(verifyReasonList('no')).toEqual([]);
+  });
+});
+
+describe('261110 GPU status and refresh rate', () => {
+  it('keeps Chromium\'s gpu_compositing status as a closed set', () => {
+    expect(gpuStatusBucket('disabled_software')).toBe('disabled_software');
+    expect(gpuStatusBucket('enabled')).toBe('enabled');
+    expect(gpuStatusBucket('something new')).toBe('other');
+    expect(gpuStatusBucket(undefined)).toBe('unknown');
+  });
+
+  it('buckets the refresh rate', () => {
+    expect(refreshBucket(0)).toBe('unknown');
+    expect(refreshBucket(59.94)).toBe('60');
+    expect(refreshBucket(60)).toBe('60');
+    expect(refreshBucket(75)).toBe('75');
+    expect(refreshBucket(120)).toBe('120');
+    expect(refreshBucket(143.9)).toBe('144');
+    expect(refreshBucket(240)).toBe('gt_150');
+    expect(refreshBucket('x')).toBe('unknown');
   });
 });
 

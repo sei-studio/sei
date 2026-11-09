@@ -51,7 +51,20 @@ Counters (on `seilink_ended`, per window on `seilink_health`): `clicks`,
 `poke_<outcome>`, `idle_due`, `idle_skip_<reason>`, `idle_attempted`,
 `idle_shown`, `idle_none_<why>`, `expressions` (261105: desktop lines that
 carried a face for her avatar), `react_shown`, `react_skip_<reason>`
-(261105: room edit reactions).
+(261105: room edit reactions), and 261110: `press_tap`, `press_drag`,
+`press_long` (every completed press on her, so taps that turned into drags
+show), `press_near_miss` (a press within 48 px of her box but outside it),
+`gpu_process_gone`, `voice_lines` (call lines of hers relayed to the room),
+`voice_levels` (lines whose real audio level reached the room).
+
+261110 facts (on the facts props): `gpu_status` (Chromium's
+`gpu_compositing` status from a closed set, e.g. `enabled`,
+`disabled_software`, `unavailable_software`, else `other`), `refresh_hz`
+(bucket `60`, `75`, `90_100`, `120`, `144`, `gt_150`, `lt_55`, `unknown`),
+`facts_when` (`start`, `first_frame`, `gpu_update`, `display`). The
+start-time `gpu` read comes before the GPU process is up and said `off` on a
+PC that composites on the GPU; the facts are sent again 500 ms after the
+first frame and on Chromium's gpu-info-update (at most every 5 s).
 
 ## Interaction
 
@@ -165,7 +178,7 @@ Main-side, `src/shared/openAtLogin.ts` lists the closed sets.
 | Event | When | Props | Answers |
 |---|---|---|---|
 | `seilink_login_item_changed` | the setting changed: by the user (`setup`/`settings`) or found off in the OS at launch (`os`). `setup` is the step after the guided room setup (261107, preselected on: enabled true = the default kept, false = "Not now"); builds before it sent `move_in` (the move-in sheet switch, retired) | enabled, surface `setup`/`settings`/`os`, ok, platform | Opt-in rate per surface, how often people turn it off in the OS |
-| `seilink_login_item_failed` | registering, removing or reading the item threw, or the read-back did not match | failure_class `register_threw`/`unregister_threw`/`read_threw`/`readback_mismatch`/`requires_approval`/`not_found`, phase `set`/`sync`, enabled, platform | Does registration work per OS |
+| `seilink_login_item_failed` | registering, removing or reading the item threw, or the read-back did not match | failure_class `register_threw`/`unregister_threw`/`read_threw`/`readback_mismatch`/`requires_approval`/`not_found`, phase `set`/`sync`, enabled, platform, 261110: os_state `on`/`off`/`disabled`/..., launch_items (count, 9 = 9 or more), target_kind `velopack_stub`/`velopack_current`/`exe` (Windows) | Does registration work per OS |
 | `seilink_login_launch` | a login launch after its startup restore | outcome `room`/`nothing_to_show` (quiet quit), opened (the window was shown before that) | Do login launches bring her back |
 | `seilink_login_launch_opened` | a login launch's window first shown | via `room`/`dock`/`second_launch`/`other`, after_ms | Do people open Sei from her room after a login |
 

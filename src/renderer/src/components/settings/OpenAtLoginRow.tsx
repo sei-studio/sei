@@ -7,12 +7,16 @@
  * to the OS login item, reads it back and answers the state it found, so the
  * switch shows what the OS took: a refused change flips back with a short
  * line, and macOS 13+ waiting for approval says where to allow it.
+ * 261110: a change that truly did not take says where to do it by hand on
+ * this OS (lib/seilink/openAtLoginNote.ts) and offers the feedback form.
  *
  * Split into a stateless view and a container (no @testing-library here).
  */
 import React, { useEffect, useState } from 'react';
 import type { OpenAtLoginState } from '@shared/openAtLogin';
 import { InfoTip } from '../InfoTip';
+import { FeedbackModal } from '../FeedbackModal';
+import { openAtLoginFailNote } from '../../lib/seilink/openAtLoginNote';
 import { Toggle } from '../Toggle';
 import { sei } from '../../lib/ipcClient';
 import { useT } from '../../lib/i18n';
@@ -24,13 +28,24 @@ export interface OpenAtLoginRowViewProps {
   /** The last change did not take. */
   failed: boolean;
   onToggle: (next: boolean) => void;
+  /** process.platform, for where to change it by hand. */
+  platform?: string;
+  /** Opens the app's feedback form (shown with the failure line). */
+  onContactSupport?: () => void;
 }
 
-export function OpenAtLoginRowView({ state, busy, failed, onToggle }: OpenAtLoginRowViewProps): React.ReactElement | null {
+export function OpenAtLoginRowView({
+  state,
+  busy,
+  failed,
+  onToggle,
+  platform,
+  onContactSupport,
+}: OpenAtLoginRowViewProps): React.ReactElement | null {
   const t = useT();
   if (!state?.supported) return null;
   const note = failed
-    ? t('Could not change this setting. Try again.')
+    ? t(openAtLoginFailNote(platform))
     : state.needsApproval
       ? t('Allow Sei in System Settings, under General > Login Items.')
       : null;
@@ -51,6 +66,11 @@ export function OpenAtLoginRowView({ state, busy, failed, onToggle }: OpenAtLogi
       {note ? (
         <div className={styles.inlineConfirm} role="status">
           <p className={styles.inlineConfirmText}>{note}</p>
+          {failed && onContactSupport ? (
+            <button type="button" className={styles.creditLink} onClick={onContactSupport}>
+              {t('Contact support')}
+            </button>
+          ) : null}
         </div>
       ) : null}
     </>
@@ -61,6 +81,7 @@ export function OpenAtLoginRow(): React.ReactElement | null {
   const [state, setState] = useState<OpenAtLoginState | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [support, setSupport] = useState(false);
   useEffect(() => {
     let dead = false;
     void (sei.seilinkLoginItemGet?.() ?? Promise.resolve(null)).then(
@@ -88,5 +109,17 @@ export function OpenAtLoginRow(): React.ReactElement | null {
       )
       .finally(() => setBusy(false));
   };
-  return <OpenAtLoginRowView state={state} busy={busy} failed={failed} onToggle={onToggle} />;
+  return (
+    <>
+      <OpenAtLoginRowView
+        state={state}
+        busy={busy}
+        failed={failed}
+        onToggle={onToggle}
+        platform={sei.platform}
+        onContactSupport={() => setSupport(true)}
+      />
+      {support ? <FeedbackModal onClose={() => setSupport(false)} /> : null}
+    </>
+  );
 }

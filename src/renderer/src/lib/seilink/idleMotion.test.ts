@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_IDLE_CONFIG,
   IdleScheduler,
+  isTravelPhase,
+  motionFps,
   eventGap,
   expSample,
   poseTransform,
@@ -239,5 +241,26 @@ describe('poseTransform', () => {
   it('maps heights to px about the bottom centre', () => {
     const t = poseTransform({ x: 0.1, lift: 0.05, lean: 1.5, scale: 0.97, breath: 1.01, phase: 'seated', present: true }, 400);
     expect(t).toBe('translate3d(40.00px, -20.00px, 0) rotate(1.500deg) scale(0.9700, 0.9797)');
+  });
+});
+
+describe('motionFps (261110)', () => {
+  it('raises a 30 fps room to 60 while she travels, never while seated', () => {
+    expect(motionFps(30, 30, true)).toBe(60);
+    expect(motionFps(30, 30, false)).toBe(30);
+    expect(motionFps(60, 30, false)).toBe(30);
+  });
+
+  it('keeps a low (battery) cap and 0 as they are', () => {
+    expect(motionFps(15, 30, true)).toBe(15);
+    expect(motionFps(0, 30, true)).toBe(0);
+  });
+
+  it('travel phases are the ones where her body crosses the room', () => {
+    expect(isTravelPhase('walkingOut')).toBe(true);
+    expect(isTravelPhase('walkingIn')).toBe(true);
+    expect(isTravelPhase('seated')).toBe(false);
+    expect(isTravelPhase('away')).toBe(false);
+    expect(isTravelPhase(null)).toBe(false);
   });
 });

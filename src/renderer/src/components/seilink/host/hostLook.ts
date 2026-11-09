@@ -33,3 +33,20 @@ export function toNeutral(l: HostAvatarLook): HostAvatarLook {
   if (!l.emotion && (l.face === null || l.face === 'neutral')) return l;
   return { emotion: null, face: l.face === null ? null : 'neutral', seq: l.seq + 1 };
 }
+
+// ── her voice from a call (261110) ──────────────────────────────────────────
+
+/** A call audio level relayed from the main window, and its performance.now() time. */
+export interface VoiceLevel {
+  level: number;
+  at: number;
+}
+
+/** A call level older than this no longer moves her mouth (levels arrive every ~50 ms while audio plays). */
+export const VOICE_LEVEL_FRESH_MS = 250;
+
+/** The mouth level: a fresh call level wins, else the syllable envelope. */
+export function mouthLevel(voice: VoiceLevel | undefined, syllable: number, now: number): number {
+  if (voice && voice.at > 0 && now - voice.at < VOICE_LEVEL_FRESH_MS) return Math.max(0, Math.min(1, voice.level));
+  return syllable;
+}

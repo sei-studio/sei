@@ -25,6 +25,8 @@ export interface ClickClassifierOptions {
   onClick(): void;
   onDoubleClick(): void;
   onDrag?(): void;
+  /** 261110 (diagnostics): how a Windows press on her went. */
+  onPress?(outcome: 'tap' | 'drag' | 'long'): void;
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (t: unknown) => void;
 }
@@ -51,14 +53,24 @@ export class ClickClassifier {
     this.o.dblMs = ms;
   }
 
+  /** 261110: Windows' drag threshold follows the display's scale factor (physical px). */
+  setDragPx(px: number): void {
+    if (Number.isFinite(px) && px > 0) this.o.dragPx = px;
+  }
+
   /** Windows: a whole press. */
   press(down: PressPoint, up: PressPoint): void {
     const moved = Math.hypot(up.x - down.x, up.y - down.y);
     if (moved > this.o.dragPx) {
+      this.o.onPress?.('drag');
       this.drag();
       return;
     }
-    if (up.t - down.t > (this.o.maxPressMs ?? 1500)) return;
+    if (up.t - down.t > (this.o.maxPressMs ?? 1500)) {
+      this.o.onPress?.('long');
+      return;
+    }
+    this.o.onPress?.('tap');
     const prev = this.lastTap;
     if (prev && this.pending !== null && up.t - prev.t <= this.o.dblMs && Math.hypot(up.x - prev.x, up.y - prev.y) <= this.o.dragPx * 2) {
       this.doubleTap();
