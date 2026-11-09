@@ -25,7 +25,7 @@ describe('mergeWorldEntries (server sorted)', () => {
   it('keeps the server order and puts defaults where the server ranked them', () => {
     const server = [
       entry('sui', { name: 'Sui', portraitUrl: 'cloud-sui.png', addCount: 1100 }),
-      entry('aria', { addCount: 46 }),
+      entry('aria', { addCount: 72 }),
       entry('lyra', { name: 'Lyra', addCount: 27 }),
       entry('zed', { addCount: 0 }),
     ];
@@ -36,7 +36,7 @@ describe('mergeWorldEntries (server sorted)', () => {
   });
 
   it('holds a default the server has not returned until the list is exhausted', () => {
-    const server = [entry('aria', { addCount: 46 })];
+    const server = [entry('aria', { addCount: 72 })];
     const args = { defaults: [sui], entries: server, sort: 'popular' as const, serverSorted: true };
     expect(mergeWorldEntries({ ...args, exhausted: false }).map((e) => e.id)).toEqual(['aria']);
     expect(mergeWorldEntries({ ...args, exhausted: true }).map((e) => e.id)).toEqual(['aria', 'sui']);
@@ -100,7 +100,7 @@ describe('formatAddCount', () => {
   it('compacts large numbers in English', () => {
     expect(formatAddCount(1)).toBe('1');
     expect(formatAddCount(999)).toBe('999');
-    expect(formatAddCount(1138)).toBe('1.1K');
+    expect(formatAddCount(1140)).toBe('1.1K');
     expect(formatAddCount(1250)).toBe('1.3K');
     expect(formatAddCount(15300)).toBe('15.3K');
     expect(formatAddCount(2_400_000)).toBe('2.4M');
@@ -108,6 +108,6 @@ describe('formatAddCount', () => {
 
   it('uses the UI locale and survives a bad tag', () => {
     expect(formatAddCount(12345, 'ja-JP')).toBe('1.2万');
-    expect(formatAddCount(1138, 'not a locale!!')).toBe('1.1K');
+    expect(formatAddCount(1140, 'not a locale!!')).toBe('1.1K');
   });
 });

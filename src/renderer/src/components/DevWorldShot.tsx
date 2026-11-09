@@ -68,14 +68,14 @@ const uid = (n: number): string => `5e1d0000-0000-4000-8000-${String(n).padStart
 
 // Defaults first (the harness's own Sui/Lyra/Marv), then user-shared rows.
 const FIXTURES: Fixture[] = [
-  { id: uid(1), name: 'Sui', persona: 'A teasing, sunny gremlin who loves building ridiculous things and always remembers what you were worried about last week.', art: suiArt, adds: 1138, daysAgo: 120, author: 'Sei', code: '0001', isDefault: true },
-  { id: uid(2), name: 'Marv', persona: 'A grumpy red lobster with a heart of gold and strong opinions about redstone.', art: marvArt, adds: 14, daysAgo: 118, author: 'Sei', code: '0002', isDefault: true },
-  { id: uid(3), name: 'Lyra', persona: 'A calm, bookish catgirl who plans every farm three seasons ahead and hums while she fishes.', art: lyraArt, adds: 27, daysAgo: 119, author: 'Sei', code: '0003', isDefault: true },
-  { id: uid(10), name: 'Aria', persona: 'A cheerful bard who narrates your mining trips like an epic and keeps a tally of every diamond you drop in lava.', art: animeF, adds: 46, daysAgo: 21, author: 'kitsune', code: 'M5IR' },
-  { id: uid(11), name: 'Mina', persona: 'Soft-spoken healer who carries too many golden carrots and worries out loud when you go below y=0.', art: celF, adds: 33, daysAgo: 30, author: 'mochi', code: 'XJSL' },
-  { id: uid(12), name: 'Kaito', persona: 'A competitive speedrunner who times everything, including how long you take to pick a door.', art: animeM, adds: 30, daysAgo: 12, author: 'zeph', code: '1PDO' },
-  { id: uid(13), name: 'Eris', persona: 'Hot-headed swordswoman, bad at waiting, great at clearing a mob farm in thirty seconds flat.', art: threeF, adds: 23, daysAgo: 40, author: 'rudeus', code: 'SWU8' },
-  { id: uid(14), name: 'Emilia', persona: 'Gentle half-elf who names every animal she tames and insists on a proper house for each one.', art: cartoonF, adds: 17, daysAgo: 9, author: 'puck', code: 'WKA4' },
+  { id: uid(1), name: 'Sui', persona: 'A teasing, sunny gremlin who loves building ridiculous things and always remembers what you were worried about last week.', art: suiArt, adds: 2400, daysAgo: 120, author: 'Sei', code: '0001', isDefault: true },
+  { id: uid(2), name: 'Marv', persona: 'A grumpy red lobster with a heart of gold and strong opinions about redstone.', art: marvArt, adds: 19, daysAgo: 118, author: 'Sei', code: '0002', isDefault: true },
+  { id: uid(3), name: 'Lyra', persona: 'A calm, bookish catgirl who plans every farm three seasons ahead and hums while she fishes.', art: lyraArt, adds: 58, daysAgo: 119, author: 'Sei', code: '0003', isDefault: true },
+  { id: uid(10), name: 'Aria', persona: 'A cheerful bard who narrates your mining trips like an epic and keeps a tally of every diamond you drop in lava.', art: animeF, adds: 72, daysAgo: 21, author: 'kitsune', code: 'M5IR' },
+  { id: uid(11), name: 'Mina', persona: 'Soft-spoken healer who carries too many golden carrots and worries out loud when you go below y=0.', art: celF, adds: 41, daysAgo: 30, author: 'mochi', code: 'XJSL' },
+  { id: uid(12), name: 'Kaito', persona: 'A competitive speedrunner who times everything, including how long you take to pick a door.', art: animeM, adds: 36, daysAgo: 12, author: 'zeph', code: '1PDO' },
+  { id: uid(13), name: 'Eris', persona: 'Hot-headed swordswoman, bad at waiting, great at clearing a mob farm in thirty seconds flat.', art: threeF, adds: 28, daysAgo: 40, author: 'rudeus', code: 'SWU8' },
+  { id: uid(14), name: 'Emilia', persona: 'Gentle half-elf who names every animal she tames and insists on a proper house for each one.', art: cartoonF, adds: 22, daysAgo: 9, author: 'puck', code: 'WKA4' },
   { id: uid(15), name: 'Chen Wei', persona: 'Retired architect who critiques your builds with kindness and a little too much detail.', art: celM, adds: 15, daysAgo: 55, author: 'linli', code: 'OYTL' },
   { id: uid(16), name: 'Ultron', persona: 'A dramatic robot overlord who is secretly very good at organizing chests.', art: threeM, adds: 12, daysAgo: 33, author: 'stark', code: 'YD50' },
   { id: uid(17), name: 'Marta Novak', persona: 'Field botanist who catalogues every flower biome and gets distracted by bees.', art: cartoonM, adds: 9, daysAgo: 4, author: 'fern', code: 'I5UT' },

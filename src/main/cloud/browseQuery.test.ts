@@ -89,9 +89,9 @@ describe('fetchBrowseRows', () => {
 
 describe('fetchAddCounts', () => {
   it('maps counts and fills 0 for ids with no adds', async () => {
-    const c = client({ [COUNTS_RPC]: { data: [{ character_id: 'a', adds: 1138 }, { character_id: 'b', adds: '7' }], error: null } });
+    const c = client({ [COUNTS_RPC]: { data: [{ character_id: 'a', adds: 1140 }, { character_id: 'b', adds: '7' }], error: null } });
     const out = await fetchAddCounts(c, ['a', 'b', 'c']);
-    expect(out && Object.fromEntries(out)).toEqual({ a: 1138, b: 7, c: 0 });
+    expect(out && Object.fromEntries(out)).toEqual({ a: 1140, b: 7, c: 0 });
     expect(c.calls).toEqual([[COUNTS_RPC, { character_ids: ['a', 'b', 'c'] }]]);
   });
 
