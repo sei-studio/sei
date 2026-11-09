@@ -74,6 +74,9 @@ export const JA: Record<string, string> = {
   "Sort companions": "コンパニオンの並び替え",
   "A–Z": "A–Z",
   "Newest": "新着",
+  "Popular": "人気",
+  "Added by 1 player": "1人のプレイヤーが追加",
+  "Added by {n} players": "{n}人のプレイヤーが追加",
   // ── chatui ──
   "Party full": "パーティーが満員",
   // ── screens-a ──

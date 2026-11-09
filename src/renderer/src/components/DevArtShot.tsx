@@ -98,6 +98,7 @@ export function DevArtShot(): React.ReactElement {
     skinUrl: null,
     updatedAt: new Date().toISOString(),
     inMyLibrary: false,
+    addCount: null,
   }));
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'var(--window)', padding: 24 }}>

@@ -1692,6 +1692,35 @@ export interface BrowseEntry {
   updatedAt: string;
   /** Precomputed by main handler — true when the character JSON exists on local disk. */
   inMyLibrary: boolean;
+  /**
+   * How many accounts have this character in their library (cloud
+   * `character_library`, aggregate only; product call 261110). 0 when nobody
+   * added it, null when unknown (counts RPC not deployed, offline, error).
+   */
+  addCount: number | null;
+}
+
+/**
+ * World tab sort (product call 261110). 'popular' (library adds desc) is the
+ * default. Applied server-side by `search_public_characters_sorted`; when that
+ * RPC is missing main falls back to the old newest-first RPC and reports
+ * `sorted: false`, so the renderer sorts the loaded pages itself.
+ */
+export const BROWSE_SORTS = ['popular', 'recent', 'alpha'] as const;
+export type BrowseSort = (typeof BROWSE_SORTS)[number];
+export const DEFAULT_BROWSE_SORT: BrowseSort = 'popular';
+
+/** One World page as main returns it. */
+export interface BrowsePage {
+  entries: BrowseEntry[];
+  hasMore: boolean;
+  /** True when the server applied `sort`; false = server order is newest first. */
+  sorted: boolean;
+  /**
+   * Shape-only failure class for analytics. 'rpc_failed' = the listing RPC
+   * errored (entries is empty). Absent on success.
+   */
+  failure?: 'rpc_failed';
 }
 
 /**
@@ -3073,7 +3102,7 @@ export interface RendererApi {
    * the RPC fails or there are no rows; `hasMore` is true when the
    * returned page is full (renderer can request the next offset).
    */
-  browseList(args: { query: string; limit: number; offset: number }): Promise<{ entries: BrowseEntry[]; hasMore: boolean }>;
+  browseList(args: { query: string; limit: number; offset: number; sort?: BrowseSort }): Promise<BrowsePage>;
   // The legacy publish-with-moderation IPC method was removed in 260525-qy0
   // — moderation now runs inline inside chars.save / chars.setShared so the
   // renderer's existing calls to charsSave + charsSetShared trigger the gate.

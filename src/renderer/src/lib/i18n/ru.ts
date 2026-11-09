@@ -74,6 +74,9 @@ export const RU: Record<string, string> = {
   "Sort companions": "Сортировка компаньонов",
   "A–Z": "А–Я",
   "Newest": "Новые",
+  "Popular": "Популярные",
+  "Added by 1 player": "Добавил 1 игрок",
+  "Added by {n} players": "{n, plural, one {Добавил # игрок} few {Добавили # игрока} many {Добавили # игроков} other {Добавили # игрока}}",
   // ── chatui ──
   "Party full": "Команда заполнена",
   // ── screens-a ──

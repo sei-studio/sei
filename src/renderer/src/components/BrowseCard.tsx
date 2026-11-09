@@ -7,6 +7,9 @@
  * card body opens the character profile, where the "Add to library" CTA
  * lives — there is no in-card invite action anymore.
  *
+ * 261110: the "by" line carries the library add count on its right
+ * (AddCount; hidden for 0 / unknown).
+ *
  * Lean-component contract (CONTEXT D-31c): does NOT subscribe to auth/sync/
  * cloud stores.
  */
@@ -17,6 +20,7 @@ import { PixelPortrait } from './PixelPortrait';
 import { pickPalette } from '../lib/portraitPalettes';
 import { useT } from '../lib/i18n';
 import { IdTag } from './IdTag';
+import { AddCount } from './AddCount';
 import styles from './BrowseCard.module.css';
 
 export interface BrowseCardProps {
@@ -94,7 +98,10 @@ export function BrowseCard({
           <span className={styles.name}>{entry.name}</span>
           {entry.publicId ? <IdTag id={entry.publicId} size="sm" /> : null}
         </div>
-        <span className={styles.by}>{entry.creatorLabel}</span>
+        <div className={styles.byRow}>
+          <span className={styles.by}>{entry.creatorLabel}</span>
+          <AddCount count={entry.addCount} variant="card" />
+        </div>
       </div>
       {!ready ? (
         <div className={styles.skel} aria-hidden="true">
