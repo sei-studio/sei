@@ -110,6 +110,7 @@ import { useEditorAnalytics, type TogetherAnalytics } from '../../lib/seilink/ed
 import { lightSlotsOf, roomShapeOf, type EditorOpenedFrom, type EditorSurface } from '@shared/seilinkTelemetry';
 import { RoomCanvas, type RoomAvatarSlot } from './RoomCanvas';
 import { componentThumb, deviceThumbPx, roomThumb } from '../../lib/seilink/roomThumbs';
+import { placementPanelSide } from '../../lib/seilink/panelSide';
 import { patternThumb } from '../../lib/seilink/patternThumbs';
 import { RoomPicker } from '../../lib/seilink/roomPick';
 import { groupSlots, slotGroup, type SlotGroup } from '../../lib/seilink/roomGroups';
@@ -145,6 +146,8 @@ import styles from './RoomEditor.module.css';
 /** The rail's panels (261105). Room, Walls & fabrics and Furniture hold several slots as sections. */
 type Group = 'avatar' | SlotGroup | 'items';
 const GROUPS: readonly Group[] = ['avatar', 'room', 'fabrics', 'furniture', 'items'];
+/** The side panel's reach from the screen edge, CSS px (inset + rail + panel, or the guide's column). */
+const PANEL_ZONE = 410;
 /**
  * What `initial.panel` may name: a group, or a slot (old links, screenshot
  * scripts), which opens the slot's group with its section in view.
@@ -1324,6 +1327,10 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     ? { left: vp.left + selRect[0] * vp.scale, top: vp.top + selRect[1] * vp.scale, width: selRect[2] * vp.scale, height: selRect[3] * vp.scale }
     : null;
 
+  // 261110: while items are placed, the panel moves right when on the left it would hide the tops they go on.
+  const panelSide =
+    shownPanel === 'items' && regions && !loginStep ? placementPanelSide(regions, state, vp, stageRef.current?.clientWidth ?? 0, PANEL_ZONE) : 'left';
+
   const tile = (key: Group, label: string, content: React.ReactNode): React.ReactElement => (
     <button
       key={key}
@@ -1775,7 +1782,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
         )}
 
         {/* While an item is dragged the side panel fades away, so the shelves under it show. */}
-        <div className={drag ? `${styles.side} ${styles.sideAway}` : styles.side} data-color-host="">
+        <div className={[styles.side, panelSide === 'right' ? styles.sideRight : '', drag ? styles.sideAway : ''].filter(Boolean).join(' ')} data-color-host="" data-panel-side={panelSide}>
           {loginStep ? (
             renderLoginStep(loginStep)
           ) : gStep && guide ? (
