@@ -79,6 +79,13 @@ export interface RoomCanvasProps {
   onLayout?(viewport: RoomViewport): void;
   /** Tint for UI over the room: light room, light overlay (product rule). */
   onOverlay?(overlay: RoomOverlay): void;
+  /**
+   * 261110: draw the room at this rect (CSS px of this element) instead of
+   * filling the element: the desktop stage passes where the display sits in
+   * the window (Windows stages at the work area), so the room lines up with
+   * the wallpaper under it.
+   */
+  frame?: { x: number; y: number; width: number; height: number } | null;
 }
 
 /** How often 'auto' time re-reads the clock. A clock fade lasts 30 minutes, so this is smooth. */
@@ -144,7 +151,14 @@ export function RoomCanvas(props: RoomCanvasProps): React.ReactElement {
     return () => ro.disconnect();
   }, []);
 
-  const vp = useMemo(() => roomViewport(manifest.canvas, box.w, box.h, fit), [manifest.canvas, box.w, box.h, fit]);
+  const { frame } = props;
+  const fx = frame && frame.width > 0 && frame.height > 0 ? frame : null;
+  const vp = useMemo(() => {
+    if (!fx || !box.w || !box.h) return roomViewport(manifest.canvas, box.w, box.h, fit);
+    const v = roomViewport(manifest.canvas, fx.width, fx.height, fit);
+    return { ...v, left: v.left + fx.x, top: v.top + fx.y };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manifest.canvas, box.w, box.h, fit, fx?.x, fx?.y, fx?.width, fx?.height]);
 
   useEffect(() => {
     cb.current.onLayout?.(vp);

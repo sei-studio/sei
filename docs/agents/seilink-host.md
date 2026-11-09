@@ -1031,3 +1031,52 @@ without them render as before.
 - Pack downloads (`downloadPack` is a stub): the three presets (cozy, gamer,
   forest, about 2.5 MB each) ship bundled in `resources/seilink-packs`
   (extraResources); a pack that fails to load shows its card disabled.
+
+## Setup pass (261110, product call 261110)
+
+- **Work-area stage on Windows.** `desktopStage.planEnter` sizes the stage
+  to `display.workArea` on win32 (the taskbar stays visible and on top; a
+  frameless window the size of the display that is not in the foreground
+  does not cover the taskbar, which hid the editor's bottom row). macOS and
+  Linux keep the whole display. The enter result carries a `frame` (the
+  display's rect relative to the window, from the real content bounds) and
+  RoomCanvas / FirstLinkIntroView / RoomEditor offset the room by it, so
+  the staged room lines up with the wallpaper behind the taskbar. On
+  win32 a setBounds that did not take (DPI across monitors) is set once
+  more.
+- **minimize_others** (`seilink:stage {action:'minimize_others'}`,
+  `main/seilink/minimizeOthers.ts`). Windows: a PowerShell EnumWindows
+  script minimizes every visible, minimizable top-level window of other
+  processes without activating it (skips Sei's own pids, owned/tool/
+  noactivate/cloaked windows, Progman/WorkerW/the taskbars). macOS:
+  `Menu.sendActionToFirstResponder('hideOtherApplications:')` (the app
+  menu's Hide Others; no Apple Events, no new entitlement). Linux:
+  `unsupported`. Hand-test only.
+- **LiveCard** (`components/seilink/LiveCard.tsx`, `lib/seilink/liveHintPref.ts`):
+  "{name} lives on your desktop now", the show-desktop shortcut (Win+D;
+  F11 / fn+F11), click = chat, double-click = a quick reply, and Minimize /
+  Got it. Over the first link's held last frame before the window steps
+  aside (FirstLinkIntro waits on it), or in the app after a move-in without
+  the intro (`useSeilinkStore.liveHint`, SeilinkFlowHost; a fresh move-in
+  steps aside once it is dismissed). Once per account (localStorage). The
+  window going hidden while it is up (Win+D) counts as dismissed.
+- Room editor: outlined placement areas (PlacementGuide, `.placeGuide`, no
+  blur), sharp DPR-sized thumbnails (`roomThumbs.thumbScale`), a compact
+  room step (`.roomCompact`), the items panel moves right when it would
+  hide the shelves (`panelSide.ts`), and a Call button by the talk box
+  (`lib/voice/callGate.ts` + useVoiceStore.startCall).
+- Harness: `scripts/seilink-setup-shots.mjs` (DevFirstRoomFlow
+  `together=`, `voicegate=consent`, `livecard=stage|app`, `os=`).
+
+### Not done: the editor overlaid on the real desktop
+
+The editor still covers the desktop with a picture of the room (the stage)
+instead of editing the live wallpaper behind transparent controls. Doing
+that needs: a transparent always-on-top overlay BrowserWindow per display
+with its own renderer (the editor's stores, the room source and the call
+audio live in the main renderer today); the host to draw unsaved edits
+live (a preview-state push over the host protocol, rate-limited, with a
+revert on cancel); the host's coverage detection to ignore our own overlay
+(it pauses the wallpaper while a window covers it); and the talk box and
+calls bridged into the overlay. Until then: work-area staging, Minimize
+other windows, and the go-to-desktop hint.

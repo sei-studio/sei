@@ -43,6 +43,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import type { IntroBeat, IntroEndOn, LinkOutcome } from '@shared/seilinkIntroTelemetry';
 import type { RoomPresetManifest, RoomState } from '@shared/seilinkRoom';
 import type { RoomUrlResolver } from '@shared/seilinkPack';
+import type { SeilinkStageFrame } from '@shared/seilinkHost';
 import { RoomCanvas, type RoomAvatarSlot } from '../RoomCanvas';
 import { RoomAvatar, type RoomAvatarUse } from '../RoomAvatar';
 import type { FacepackSource } from '../../../lib/facepack/facepackSource';
@@ -107,6 +108,8 @@ export interface FirstLinkIntroViewProps {
   onReady?(): void;
   /** End on her room (captions fade, the picture stays) instead of fading the whole overlay out. */
   holdEnd?: boolean;
+  /** On the desktop stage: where the display sits in the window, so the room lines up with the wallpaper. */
+  frame?: SeilinkStageFrame | null;
 }
 
 declare global {
@@ -125,7 +128,7 @@ const FAIL_TAIL_MS = 7000;
 type Mode = { kind: 'play' } | { kind: 'skip'; at: number; t: number } | { kind: 'close'; at: number; t: number; action: IntroEnd };
 
 export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactElement {
-  const { end, reduced, characterId, name, room, portrait = null, facepack, use = 'auto', source, manual = false, holdEnd = false } = props;
+  const { end, reduced, characterId, name, room, portrait = null, facepack, use = 'auto', source, manual = false, holdEnd = false, frame = null } = props;
   // Fixed once mounted: a theme change mid-intro does not swap the solid.
   const [tone] = useState<PlainTone>(() => props.tone ?? (end === 'plain_light' ? 'light' : end === 'plain_dark' ? 'dark' : plainTone()));
   const t = useT();
@@ -473,6 +476,7 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
             state={room.state}
             resolveUrl={room.resolve}
             fit="cover"
+            frame={frame}
             // 30 in the harness too: a face set draws nothing at 0 (a still).
             fps={30}
             fadeMs={0}

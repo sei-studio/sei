@@ -25,6 +25,7 @@ vi.mock('../stores/useAuthStore', () => ({
 const track = vi.fn();
 const hostStart = vi.fn();
 const roomGet = vi.fn();
+const stage = vi.fn(async (_r: unknown) => ({ ok: true }));
 const getConfig = vi.fn(async () => ({}));
 const saveConfig = vi.fn(async (_c: unknown) => undefined);
 vi.mock('../ipcClient', () => ({
@@ -32,6 +33,8 @@ vi.mock('../ipcClient', () => ({
     track: (...a: unknown[]) => track(...a),
     seilinkHostStart: (...a: unknown[]) => hostStart(...a),
     seilinkRoomGet: (...a: unknown[]) => roomGet(...a),
+    seilinkStage: (r: unknown) => stage(r),
+    seilinkOffer: async () => undefined,
     getConfig: () => getConfig(),
     saveConfig: (c: unknown) => saveConfig(c),
     onSeilinkStatus: () => () => undefined,
@@ -41,6 +44,7 @@ vi.mock('../ipcClient', () => ({
 }));
 
 const introPref = await import('./introPref');
+const liveHintPref = await import('./liveHintPref');
 const tourPref = await import('./tourPref');
 const tour = await import('./seilinkTour');
 const flow = await import('./seilinkFlow');
@@ -80,9 +84,10 @@ beforeEach(() => {
   track.mockClear();
   hostStart.mockReset();
   roomGet.mockReset();
+  stage.mockClear();
   tourPref.__resetTourSessionForTest();
   useTutorialStore.setState({ active: false, mode: 'onboarding', seilink: null, characterId: null, step: 'meet' });
-  useSeilinkStore.setState({ intro: null, flow: null, moveBusy: false });
+  useSeilinkStore.setState({ intro: null, flow: null, moveBusy: false, liveHint: null });
 });
 
 afterEach(() => {
@@ -163,6 +168,76 @@ describe('startSeilinkHost and the intro', () => {
     expect(b.seq).toBeGreaterThan(a.seq);
     expect(hostStart).not.toHaveBeenCalled();
     expect(track).toHaveBeenCalledWith('seilink_entry', { character_id: 'c1', source: 'gear', action: 'replay_intro' });
+  });
+});
+
+// ── 1b. the "lives on your desktop" card (261110) ──────────────────────────
+
+describe('the live card after a move-in without the intro', () => {
+  const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+  it('is remembered per account once dismissed', () => {
+    expect(liveHintPref.liveHintDismissed()).toBe(false);
+    authState = signedIn('acct-a');
+    liveHintPref.markLiveHintDismissed();
+    expect(liveHintPref.liveHintDismissed()).toBe(true);
+    authState = signedIn('acct-b');
+    expect(liveHintPref.liveHintDismissed()).toBe(false);
+    install(fakeStorage({ throws: true }));
+    expect(liveHintPref.liveHintDismissed()).toBe(false);
+    expect(() => liveHintPref.markLiveHintDismissed()).not.toThrow();
+  });
+
+  it('names the OS the shortcut is written for', () => {
+    expect(liveHintPref.liveHintOs('win32')).toBe('windows');
+    expect(liveHintPref.liveHintOs('darwin')).toBe('mac');
+    expect(liveHintPref.liveHintOs(undefined)).toBe('linux');
+  });
+
+  it('a fresh move-in shows the card first and does not step aside yet', async () => {
+    introPref.markIntroSeen();
+    hostStart.mockResolvedValue({ state: 'running', characterId: 'c1' });
+    await flow.startSeilinkHost('c1', { entry: 'button', fresh: true });
+    await settle();
+    expect(useSeilinkStore.getState().liveHint).toEqual({ characterId: 'c1', fresh: true });
+    expect(stage).not.toHaveBeenCalled();
+  });
+
+  it('a move-in back into a saved room shows it too, until dismissed', async () => {
+    introPref.markIntroSeen();
+    hostStart.mockResolvedValue({ state: 'running', characterId: 'c1' });
+    await flow.startSeilinkHost('c1', { entry: 'gear' });
+    await settle();
+    expect(useSeilinkStore.getState().liveHint).toEqual({ characterId: 'c1', fresh: false });
+  });
+
+  it('once dismissed, a fresh move-in steps aside as before and a saved room does nothing', async () => {
+    introPref.markIntroSeen();
+    liveHintPref.markLiveHintDismissed();
+    hostStart.mockResolvedValue({ state: 'running', characterId: 'c1' });
+    await flow.startSeilinkHost('c1', { entry: 'button', fresh: true });
+    await settle();
+    expect(useSeilinkStore.getState().liveHint).toBeNull();
+    expect(stage).toHaveBeenCalledWith({ action: 'reveal', purpose: 'move_in', characterId: 'c1' });
+    stage.mockClear();
+    await flow.startSeilinkHost('c1', { entry: 'gear' });
+    await settle();
+    expect(stage).not.toHaveBeenCalled();
+    expect(useSeilinkStore.getState().liveHint).toBeNull();
+  });
+
+  it('not after a failed start, and not while the first-link intro plays (it shows its own)', async () => {
+    introPref.markIntroSeen();
+    hostStart.mockResolvedValue({ state: 'failed', characterId: 'c1', failure: 'spawn' });
+    await flow.startSeilinkHost('c1', { entry: 'button', fresh: true });
+    await settle();
+    expect(useSeilinkStore.getState().liveHint).toBeNull();
+    install(fakeStorage());
+    hostStart.mockResolvedValue({ state: 'running', characterId: 'c1' });
+    await flow.startSeilinkHost('c1', { entry: 'button', fresh: true });
+    await settle();
+    expect(useSeilinkStore.getState().intro).not.toBeNull();
+    expect(useSeilinkStore.getState().liveHint).toBeNull();
   });
 });
 

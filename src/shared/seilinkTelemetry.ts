@@ -485,6 +485,8 @@ function moveInProps(p: Record<string, unknown>): Record<string, Scalar> {
   // 261105 (T337): how the person got here (the SeiLink button, the gear menu, the tour, the dock).
   const entry = oneOf(ENTRY_SOURCES, p.entry);
   if (entry) out.entry = entry;
+  // 261110: which notice the sheet showed (the one-line beta notice replaced the bulleted one).
+  if (p.notice === 'beta_v1') out.notice = 'beta_v1';
   return out;
 }
 

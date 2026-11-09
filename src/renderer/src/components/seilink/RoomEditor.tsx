@@ -110,7 +110,10 @@ import { openAtLoginFailNote } from '../../lib/seilink/openAtLoginNote';
 import { useEditorAnalytics, type TogetherAnalytics } from '../../lib/seilink/editorAnalytics';
 import { lightSlotsOf, roomShapeOf, type EditorOpenedFrom, type EditorSurface } from '@shared/seilinkTelemetry';
 import { RoomCanvas, type RoomAvatarSlot } from './RoomCanvas';
-import { componentThumb, roomThumb } from '../../lib/seilink/roomThumbs';
+import { componentThumb, deviceThumbPx, roomThumb } from '../../lib/seilink/roomThumbs';
+import { placementPanelSide } from '../../lib/seilink/panelSide';
+import { SEILINK_PLACEMENT_GUIDE_EVENT } from '@shared/seilinkSetupTelemetry';
+import type { SeilinkStageFrame } from '@shared/seilinkHost';
 import { patternThumb } from '../../lib/seilink/patternThumbs';
 import { RoomPicker } from '../../lib/seilink/roomPick';
 import { groupSlots, slotGroup, type SlotGroup } from '../../lib/seilink/roomGroups';
@@ -146,6 +149,8 @@ import styles from './RoomEditor.module.css';
 /** The rail's panels (261105). Room, Walls & fabrics and Furniture hold several slots as sections. */
 type Group = 'avatar' | SlotGroup | 'items';
 const GROUPS: readonly Group[] = ['avatar', 'room', 'fabrics', 'furniture', 'items'];
+/** The side panel's reach from the screen edge, CSS px (inset + rail + panel, or the guide's column). */
+const PANEL_ZONE = 410;
 /**
  * What `initial.panel` may name: a group, or a slot (old links, screenshot
  * scripts), which opens the slot's group with its section in view.
@@ -189,6 +194,8 @@ export interface RoomEditorProps {
   initial?: { panel?: PanelRequest | null; selected?: number | null; state?: RoomState; loginStep?: boolean };
   /** Render inline instead of in a portal over the whole window (dev preview). */
   inline?: boolean;
+  /** 261110: on the desktop stage, where the display sits in the window (RoomCanvas `frame`). */
+  frame?: SeilinkStageFrame | null;
   /** Usage analytics (shape only). Only the companion editor passes it. */
   telemetry?: { openedFrom: EditorOpenedFrom; surface?: EditorSurface };
   /** 261105: a quiet line in the avatar panel ("Preparing {name}'s look..."). */
@@ -222,6 +229,10 @@ export interface RoomTogetherCtx {
   analytics: TogetherAnalytics;
   /** The room canvas's layer box (for the crossfade snapshot). */
   sceneEl(): HTMLElement | null;
+  /** 261110: the guided setup is running (analytics). */
+  guided?: boolean;
+  /** 261110: the side the editor's panel is on (the talk box takes the other). */
+  panelSide?: 'left' | 'right';
 }
 
 /** Slots the editor offers anything for, in draw order. */
@@ -320,10 +331,15 @@ function PartThumb({ pack, component, tint, time, cover }: { pack: EditorPack; c
   return url ? <img className={cover ? styles.thumbCover : styles.thumb} src={url} alt="" draggable={false} /> : <span className={styles.thumbWait} />;
 }
 
-function RoomCard({ pack, state, time }: { pack: EditorPack; state: RoomState; time: RoomTime }): React.ReactElement {
+/** A room type card's picture, `width` CSS px wide (drawn at the screen's scale). */
+function RoomCard({ pack, state, time, width }: { pack: EditorPack; state: RoomState; time: RoomTime; width: number }): React.ReactElement {
   const key = JSON.stringify({ ...state, time: null });
   const debounced = useDebounced(key, 300);
-  const url = useAsyncUrl(() => roomThumb(pack.manifest, JSON.parse(debounced) as RoomState, { time, resolve: pack.resolve, width: 320, rev: pack.rev }), `${pack.id}:${pack.rev}:${debounced}:${time}`);
+  const px = deviceThumbPx(width);
+  const url = useAsyncUrl(
+    () => roomThumb(pack.manifest, JSON.parse(debounced) as RoomState, { time, resolve: pack.resolve, width: px, rev: pack.rev }),
+    `${pack.id}:${pack.rev}:${debounced}:${time}:${px}`,
+  );
   return url ? <img className={styles.cardImg} src={url} alt="" draggable={false} /> : <span className={styles.cardWait} />;
 }
 
@@ -1215,6 +1231,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     setDrag((prev) => (prev && prev.index === d.index && prev.x === x && prev.y === y ? prev : { index: d.index, x, y, surface }));
   };
 
+  const guideSeen = useRef(new Set<string>());
   const onStageUp = (e: React.PointerEvent<HTMLDivElement>): void => {
     const d = dragRef.current;
     if (!d || d.pointerId !== e.pointerId) return;
@@ -1224,6 +1241,16 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     if (d.lifted && pos && manifest) {
       const c = manifest.components.find((x) => x.id === state?.items[d.index]?.id);
       edit((s) => moveItem(manifest, s, d.index, pos.x, pos.y, { natural: c ? naturalOf(c) : null, prefer: pos.surface }));
+      // 261110: the outlined placement areas, once per kind of place per editor session.
+      const cls = c ? placementOf(c) : null;
+      if (telemetry && cls && !guideSeen.current.has(cls)) {
+        guideSeen.current.add(cls);
+        try {
+          sei.track(SEILINK_PLACEMENT_GUIDE_EVENT, { mode: 'outline', cls, placed: true });
+        } catch {
+          /* analytics must never disrupt the editor */
+        }
+      }
     }
   };
 
@@ -1319,6 +1346,10 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
   const cssRect = selRect
     ? { left: vp.left + selRect[0] * vp.scale, top: vp.top + selRect[1] * vp.scale, width: selRect[2] * vp.scale, height: selRect[3] * vp.scale }
     : null;
+
+  // 261110: while items are placed, the panel moves right when on the left it would hide the tops they go on.
+  const panelSide =
+    shownPanel === 'items' && regions && !loginStep ? placementPanelSide(regions, state, vp, stageRef.current?.clientWidth ?? 0, PANEL_ZONE) : 'left';
 
   const tile = (key: Group, label: string, content: React.ReactNode): React.ReactElement => (
     <button
@@ -1488,7 +1519,15 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     }
     if (panel === 'room') {
       return (
-        <section key="room" ref={panelRef} className={`${styles.panel} ${styles.groupPanel}`} aria-label={t('Room')}>
+        // 261110: in the guided step the room types sit in one row and the views
+        // in a denser grid, so the view outside the window shows without scrolling.
+        <section
+          key="room"
+          ref={panelRef}
+          className={guide ? `${styles.panel} ${styles.groupPanel} ${styles.roomCompact}` : `${styles.panel} ${styles.groupPanel}`}
+          aria-label={t('Room')}
+          data-room-layout={guide ? 'compact' : 'cards'}
+        >
           <div className={styles.section} role="group" aria-label={t('Room type')} data-section="room-type">
             <h2 className={styles.title}>{t('Room type')}</h2>
             <div className={styles.cards}>
@@ -1511,6 +1550,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
                         // Guided: each room as it would come in (bare); the plain background has nothing to show, so its room is drawn bare too.
                         state={on && !state.plain ? state : guide ? bareRoomState(p.manifest, state) : defaultRoomState(id)}
                         time={time}
+                        width={guide ? 150 : 270}
                       />
                     ) : (
                       <span className={styles.cardWait} />
@@ -1656,6 +1696,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
         clock={clock}
         onOverlay={setOverlay}
         onLayout={setVp}
+        frame={props.frame}
         avatar={(slot) => <EditorAvatar slot={slot} state={state} characterId={characterId} portrait={props.portrait} name={props.name} />}
       >
         <div
@@ -1762,7 +1803,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
         )}
 
         {/* While an item is dragged the side panel fades away, so the shelves under it show. */}
-        <div className={drag ? `${styles.side} ${styles.sideAway}` : styles.side} data-color-host="">
+        <div className={[styles.side, panelSide === 'right' ? styles.sideRight : '', drag ? styles.sideAway : ''].filter(Boolean).join(' ')} data-color-host="" data-panel-side={panelSide}>
           {loginStep ? (
             renderLoginStep(loginStep)
           ) : gStep && guide ? (
@@ -1835,6 +1876,8 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
           undoIf,
           analytics: analytics.together,
           sceneEl: () => (stageRef.current?.closest('[data-room-editor]')?.querySelector('canvas')?.parentElement as HTMLElement | null) ?? null,
+          guided: gStep !== null,
+          panelSide,
         })}
 
         {saving === 'error' && (

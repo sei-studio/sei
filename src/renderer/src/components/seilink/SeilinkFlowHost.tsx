@@ -8,16 +8,22 @@
  *    lib/seilink/seilinkFlow.ts). The editor opens on the desktop for the
  *    companion who lives there (`desktop`);
  *  - `intro`: the first-link intro (FirstLinkIntro), over everything, while
- *    the host starts.
+ *    the host starts;
+ *  - `liveHint` (261110): the "lives on your desktop" card after a move-in
+ *    without the intro (LiveCard); a fresh move-in steps aside once it is
+ *    dismissed.
  * All three are lazy chunks: nothing loads until someone opens SeiLink.
  */
 import React, { Suspense, lazy } from 'react';
 import { movedInId, useSeilinkStore } from '../../lib/stores/useSeilinkStore';
 import { useDataStore } from '../../lib/stores/useDataStore';
+import { revealAndOffer } from '../../lib/seilink/seilinkFlow';
+import { sei } from '../../lib/ipcClient';
 
 const CompanionRoomEditor = lazy(() => import('./CompanionRoomEditor'));
 const MoveInSheet = lazy(() => import('./MoveInSheet'));
 const FirstLinkIntro = lazy(() => import('./intro/FirstLinkIntro'));
+const LiveCard = lazy(() => import('./LiveCard').then((m) => ({ default: m.LiveCard })));
 
 export function SeilinkFlowHost(): React.ReactElement | null {
   const flow = useSeilinkStore((s) => s.flow);
@@ -26,7 +32,9 @@ export function SeilinkFlowHost(): React.ReactElement | null {
   const characters = useDataStore((s) => s.characters);
   const closeFlow = useSeilinkStore((s) => s.closeFlow);
   const endIntro = useSeilinkStore((s) => s.endIntro);
-  if (!flow && !intro) return null;
+  const liveHint = useSeilinkStore((s) => s.liveHint);
+  const endLiveHint = useSeilinkStore((s) => s.endLiveHint);
+  if (!flow && !intro && !liveHint) return null;
   const nameOf = (id: string): string | null => characters.find((c) => c.id === id)?.name ?? null;
   return (
     <Suspense fallback={null}>
@@ -51,6 +59,20 @@ export function SeilinkFlowHost(): React.ReactElement | null {
         />
       ) : null}
       {intro ? <FirstLinkIntro key={intro.seq} request={intro} onDone={() => endIntro(intro.seq)} /> : null}
+      {liveHint && !intro ? (
+        <LiveCard
+          key={liveHint.characterId}
+          characterId={liveHint.characterId}
+          name={nameOf(liveHint.characterId) ?? ''}
+          surface="app_window"
+          onDone={(end) => {
+            endLiveHint();
+            // A fresh move-in steps aside onto her (the window is already hidden after a Win+D).
+            if (liveHint.fresh) void revealAndOffer(liveHint.characterId, 'move_in');
+            else if (end === 'minimized') void sei.seilinkStage?.({ action: 'reveal', purpose: 'move_in', characterId: liveHint.characterId }).catch(() => null);
+          }}
+        />
+      ) : null}
     </Suspense>
   );
 }

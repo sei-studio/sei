@@ -2,16 +2,37 @@
  * title, gap rhythm and footer. Tokens only. (The 261105 room picker cards
  * went with 261106: a first room starts blank.) */
 
-.points {
-  margin: 0;
-  padding-left: 1.2em;
+/* 261110: the beta notice. One tinted block (no border): a Beta tag and one line. */
+.notice {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding: var(--pad-control) var(--pad-card);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+
+.beta {
+  flex: none;
+  margin-top: 2px;
+  padding: 2px 8px 1px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-text);
+  font-family: var(--display);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 1.4;
+}
+
+.noticeText {
+  margin: 0;
   font-family: var(--sans);
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.45;
-  color: var(--text-2);
+  color: var(--text);
 }
 
 .line {

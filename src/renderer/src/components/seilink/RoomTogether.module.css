@@ -319,3 +319,124 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* 261110: with the editor's panel on the right, the dock sits bottom-left. */
+.dockLeft {
+  right: auto;
+  left: var(--edge);
+  align-items: flex-start;
+  min-width: 320px;
+}
+
+.dockLeft .chips {
+  justify-content: flex-start;
+}
+
+/* 261110: Call, beside Send. No fill until hovered (no border lines). */
+.callBtn {
+  flex: none;
+  height: 34px;
+  min-width: 34px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--radius, 2px);
+  color: rgb(var(--ink) / 0.82);
+  transition:
+    background-color 160ms var(--ease),
+    opacity 160ms var(--ease),
+    transform 160ms var(--ease-pop);
+}
+
+.callBtn:hover:not(:disabled) {
+  background: rgb(var(--ink) / 0.1);
+  color: rgb(var(--ink));
+}
+
+.callBtn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.callBtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* 261110: the voice module card over the talk box (ask, download, failed). */
+.voiceCard {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: 14px 16px;
+  border-radius: var(--radius, 2px);
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: blur(22px) saturate(1.35);
+  backdrop-filter: blur(22px) saturate(1.35);
+  box-shadow: var(--panel-shadow);
+  animation: chipIn 220ms var(--ease-pop);
+}
+
+.voiceTitle {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.voiceBody {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+  color: rgb(var(--ink) / 0.82);
+}
+
+.voiceActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+  margin-top: 2px;
+}
+
+.voiceQuiet,
+.voiceHot {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: var(--radius, 2px);
+  font-size: 14px;
+  font-weight: 600;
+  transition:
+    background-color 160ms var(--ease),
+    transform 160ms var(--ease-pop);
+}
+
+.voiceQuiet {
+  color: var(--muted);
+}
+
+.voiceQuiet:hover {
+  background: rgb(var(--ink) / 0.1);
+}
+
+.voiceHot {
+  background: var(--hot);
+  color: var(--hot-ink);
+}
+
+.voiceQuiet:active,
+.voiceHot:active {
+  transform: scale(0.97);
+}
+
+.voiceBar {
+  height: 4px;
+  border-radius: 2px;
+  background: rgb(var(--ink) / 0.14);
+  overflow: hidden;
+}
+
+.voiceBarFill {
+  height: 100%;
+  background: var(--hot);
+  transition: width 200ms var(--ease);
+}

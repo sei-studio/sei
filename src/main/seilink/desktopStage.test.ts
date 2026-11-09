@@ -9,7 +9,7 @@ const electron = vi.hoisted(() => ({
 vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: () => electron.windows },
   app: { hide: electron.appHide, focus: electron.appFocus },
-  screen: { getPrimaryDisplay: () => ({ bounds: { x: 0, y: 0, width: 1920, height: 1080 } }) },
+  screen: { getPrimaryDisplay: () => ({ bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: { x: 0, y: 0, width: 1920, height: 1032 } }) },
 }));
 
 import {
@@ -51,6 +51,31 @@ describe('planEnter', () => {
     expect(names(p.ops)).toEqual(['resizable', 'setBounds', 'focus']);
     expect(p.ops[1]).toEqual({ op: 'setBounds', bounds: DISPLAY });
     expect(p.saved).toEqual({ platform: 'win32', bounds: BOUNDS, maximized: false, resizable: true });
+    expect(p.frame).toEqual({ x: 0, y: 0, width: 1920, height: 1080 });
+  });
+
+  it('261110 Windows: the work area (the taskbar stays visible), the room drawn at the display rect', () => {
+    const bottom = planEnter(snap({ workArea: { x: 0, y: 0, width: 1920, height: 1032 } }));
+    if (!bottom.ok) throw new Error('refused');
+    expect(bottom.ops[1]).toEqual({ op: 'setBounds', bounds: { x: 0, y: 0, width: 1920, height: 1032 } });
+    // The display reaches 48 px past the window's bottom: the taskbar covers that strip of wallpaper too.
+    expect(bottom.frame).toEqual({ x: 0, y: 0, width: 1920, height: 1080 });
+    // A taskbar on the left or top: the display starts left of / above the window.
+    const left = planEnter(snap({ workArea: { x: 62, y: 0, width: 1858, height: 1080 } }));
+    if (!left.ok) throw new Error('refused');
+    expect(left.frame).toEqual({ x: -62, y: 0, width: 1920, height: 1080 });
+    const top = planEnter(snap({ display: { x: -1920, y: 0, width: 1920, height: 1080 }, workArea: { x: -1920, y: 40, width: 1920, height: 1040 } }));
+    if (!top.ok) throw new Error('refused');
+    expect(top.frame).toEqual({ x: 0, y: -40, width: 1920, height: 1080 });
+  });
+
+  it('261110 macOS and Linux keep the whole display (simple fullscreen; no target on Linux)', () => {
+    const wa = { x: 0, y: 25, width: 1920, height: 1000 };
+    const mac = planEnter(snap({ platform: 'darwin', workArea: wa }));
+    const linux = planEnter(snap({ platform: 'linux', workArea: wa }));
+    if (!mac.ok || !linux.ok) throw new Error('refused');
+    expect(mac.frame).toEqual({ x: 0, y: 0, width: 1920, height: 1080 });
+    expect(linux.ops.find((o) => o.op === 'setBounds')).toEqual({ op: 'setBounds', bounds: DISPLAY });
   });
 
   it('macOS: onto the primary display, traffic lights off, then simple fullscreen', () => {
@@ -171,9 +196,9 @@ describe('runtime', () => {
   it('enters once, refuses a second window, and exits with the time on stage', () => {
     const w = fakeWindow();
     const other = fakeWindow();
-    expect(enterDesktopStage(w as never)).toEqual({ ok: true });
+    expect(enterDesktopStage(w as never)).toMatchObject({ ok: true, frame: { width: 1920, height: 1080 } });
     expect(isStaged(w as never)).toBe(true);
-    expect(enterDesktopStage(w as never)).toEqual({ ok: true });
+    expect(enterDesktopStage(w as never)).toMatchObject({ ok: true });
     expect(enterDesktopStage(other as never)).toEqual({ ok: false, error: 'busy' });
     // Not staged: nothing to exit.
     expect(exitDesktopStage(other as never, true).ok).toBe(false);

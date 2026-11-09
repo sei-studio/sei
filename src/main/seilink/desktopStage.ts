@@ -24,12 +24,22 @@
  *    restores the frame and style. A window already in native fullscreen is
  *    in its own Space, away from the desktop, so the stage refuses
  *    (`native_fullscreen`) and the caller uses the in-app editor.
- *  - Windows (and Linux): unmaximize if needed, then setBounds(display.bounds)
- *    on the frameless window. NOT setFullScreen: leaving fullscreen while the
- *    window is hidden forces it visible again (Electron flips WS_VISIBLE back
- *    on), which would flash the app between the editor and the desktop. A
- *    frameless foreground window the size of the monitor is drawn over the
- *    taskbar by the shell (the borderless-game rule).
+ *  - Windows: unmaximize if needed, then setBounds(display.workArea) on the
+ *    frameless window: the desktop above the taskbar, which stays visible as
+ *    it is on the real desktop. Until 261110 it was the whole display, which
+ *    relied on the shell's borderless-game rule (a frameless FOREGROUND
+ *    window the size of the monitor is drawn over the taskbar). A stage
+ *    opened from the wallpaper's dock often is not the foreground window
+ *    (Windows refuses to hand focus to a background app), and then the
+ *    taskbar stayed on top and covered the editor's bottom row (product
+ *    call 261110: "doesn't fullscreen properly"). The room is still drawn at
+ *    the display's rect (`frame`, below), so it lines up with the wallpaper.
+ *    setBounds is checked and applied again once when the window lands at
+ *    another size (moving between monitors of different scale).
+ *    NOT setFullScreen: leaving fullscreen while the window is hidden forces
+ *    it visible again (Electron flips WS_VISIBLE back on), which would flash
+ *    the app between the editor and the desktop.
+ *  - Linux: as Windows, at the display's full bounds (no target, dev only).
  *
  * Stepping aside ("reveal"): the window goes away so the desktop is what
  * shows, her new room in the wallpaper and the icons on top.
@@ -86,6 +96,8 @@ export interface StageSnapshot {
   resizable: boolean;
   /** The primary display's full bounds (DIP). */
   display: Rectangle;
+  /** The primary display's work area (DIP): the display less the taskbar or Dock. */
+  workArea?: Rectangle;
 }
 
 /** What entering saved, for the way back. */
@@ -96,7 +108,20 @@ export interface StageSaved {
   resizable: boolean;
 }
 
-export type EnterPlan = { ok: true; ops: StageOp[]; saved: StageSaved } | { ok: false; error: StageErrorClass };
+/** Where the display sits in the staged window (CSS px; shared/seilinkHost.ts SeilinkStageFrame). */
+export interface StageFrame {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export type EnterPlan = { ok: true; ops: StageOp[]; saved: StageSaved; frame: StageFrame } | { ok: false; error: StageErrorClass };
+
+/** The display's rect relative to a window at `win`. */
+export function frameIn(display: Rectangle, win: Rectangle): StageFrame {
+  return { x: display.x - win.x, y: display.y - win.y, width: display.width, height: display.height };
+}
 
 /** A rect of the same size on the primary display (macOS: simple fullscreen uses the window's current screen). */
 function ontoDisplay(b: Rectangle, d: Rectangle): Rectangle {
@@ -111,20 +136,23 @@ export function planEnter(s: StageSnapshot): EnterPlan {
   const ops: StageOp[] = [];
   const away = s.minimized || !s.visible;
   if (away) ops.push({ op: 'opacity', value: 0 }, { op: s.minimized ? 'restore' : 'show' });
+  // Simple fullscreen is the whole screen; Windows stays above the taskbar (the work area).
+  let target: Rectangle = { ...s.display };
   if (s.platform === 'darwin') {
     if (s.maximized) ops.push({ op: 'unmaximize' });
     ops.push({ op: 'setBounds', bounds: ontoDisplay(s.bounds, s.display) });
     ops.push({ op: 'buttons', visible: false });
     ops.push({ op: 'simpleFullScreen', on: true });
   } else {
+    if (s.platform === 'win32' && s.workArea && s.workArea.width > 0 && s.workArea.height > 0) target = { ...s.workArea };
     if (s.maximized) ops.push({ op: 'unmaximize' });
     ops.push({ op: 'resizable', on: false });
-    ops.push({ op: 'setBounds', bounds: { ...s.display } });
+    ops.push({ op: 'setBounds', bounds: target });
   }
   // Back from hidden or minimized: seen only now, already over the desktop.
   if (away) ops.push({ op: 'opacity', value: 1 });
   ops.push({ op: 'focus' });
-  return { ok: true, ops, saved };
+  return { ok: true, ops, saved, frame: frameIn(s.display, target) };
 }
 
 /**
@@ -172,6 +200,7 @@ interface Staged {
   win: BrowserWindow;
   saved: StageSaved;
   since: number;
+  frame: StageFrame;
 }
 
 let staged: Staged | null = null;
@@ -184,6 +213,10 @@ function platform(): StagePlatform {
   return process.platform === 'darwin' || process.platform === 'win32' ? process.platform : 'linux';
 }
 
+function sameRect(a: Rectangle, b: Rectangle): boolean {
+  return Math.abs(a.x - b.x) <= 1 && Math.abs(a.y - b.y) <= 1 && Math.abs(a.width - b.width) <= 1 && Math.abs(a.height - b.height) <= 1;
+}
+
 function applyOps(win: BrowserWindow, ops: StageOp[]): void {
   for (const o of ops) {
     if (win.isDestroyed()) return;
@@ -193,6 +226,10 @@ function applyOps(win: BrowserWindow, ops: StageOp[]): void {
         break;
       case 'setBounds':
         win.setBounds(o.bounds, false);
+        // 261110: moving onto a monitor of another scale can land at the wrong
+        // size (the DIP size is converted with the old monitor's scale); once
+        // it is on the new monitor, the same call lands right.
+        if (process.platform === 'win32' && !sameRect(win.getBounds(), o.bounds)) win.setBounds(o.bounds, false);
         break;
       case 'simpleFullScreen':
         win.setSimpleFullScreen(o.on);
@@ -247,10 +284,11 @@ function applyOps(win: BrowserWindow, ops: StageOp[]): void {
 }
 
 /** Step the window out over the desktop. */
-export function enterDesktopStage(win: BrowserWindow | null): { ok: true } | { ok: false; error: StageErrorClass } {
+export function enterDesktopStage(win: BrowserWindow | null): { ok: true; frame?: StageFrame } | { ok: false; error: StageErrorClass } {
   if (!win || win.isDestroyed()) return { ok: false, error: 'no_window' };
-  if (staged) return staged.win === win ? { ok: true } : { ok: false, error: 'busy' };
+  if (staged) return staged.win === win ? { ok: true, frame: staged.frame } : { ok: false, error: 'busy' };
   try {
+    const primary = screen.getPrimaryDisplay();
     const plan = planEnter({
       platform: platform(),
       bounds: win.isMaximized() ? win.getNormalBounds() : win.getBounds(),
@@ -259,15 +297,20 @@ export function enterDesktopStage(win: BrowserWindow | null): { ok: true } | { o
       visible: win.isVisible(),
       nativeFullScreen: win.isFullScreen(),
       resizable: win.isResizable(),
-      display: screen.getPrimaryDisplay().bounds,
+      display: primary.bounds,
+      workArea: primary.workArea,
     });
     if (!plan.ok) return plan;
-    staged = { win, saved: plan.saved, since: Date.now() };
+    staged = { win, saved: plan.saved, since: Date.now(), frame: plan.frame };
     win.once('closed', () => {
       if (staged?.win === win) staged = null;
     });
     applyOps(win, plan.ops);
-    return { ok: true };
+    // Where the window really landed (a monitor of another scale, a refused size).
+    let frame = plan.frame;
+    if (process.platform === 'win32' && !win.isDestroyed()) frame = frameIn(primary.bounds, win.getContentBounds());
+    staged.frame = frame;
+    return { ok: true, frame };
   } catch (err) {
     console.warn(`[seilink] desktop stage enter failed: ${(err as Error).message}`);
     if (staged?.win === win) {

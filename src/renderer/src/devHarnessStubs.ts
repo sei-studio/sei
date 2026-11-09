@@ -505,6 +505,9 @@ if (
     answers.track = (event: string, props: unknown) => {
       dev.tracked.push({ event, props });
     };
+    // &voicegate=consent (261110): the Call button meets a missing voice module
+    // (the local fallback on, nothing in the cache), so it asks first.
+    if (harnessParams.get('voicegate') === 'consent') answers.getConfig = async () => ({ stt_local_fallback: true });
   }
   (window as unknown as { sei: unknown }).sei = new Proxy(
     {},
