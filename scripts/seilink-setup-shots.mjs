@@ -126,6 +126,32 @@ const SHOTS = {
       await p.waitForTimeout(3500);
     },
   },
+  'together-call': {
+    flow: 'phase=editor&together=Sui',
+    scheme: 'dark',
+    run: async (p) => {
+      await step(p, 'room');
+      await p.waitForTimeout(4000);
+      await p.locator('[data-setup-call]').hover();
+      await p.waitForTimeout(400);
+    },
+  },
+  'together-call-consent': {
+    flow: 'phase=editor&together=Sui&voicegate=consent',
+    scheme: 'dark',
+    run: async (p) => {
+      await step(p, 'room');
+      await p.waitForTimeout(3000);
+      await p.locator('[data-setup-call]').click();
+      await p.waitForSelector('[data-voice-card="consent"]', { timeout: 10_000 });
+      await p.waitForTimeout(500);
+    },
+  },
+  'together-extras': {
+    flow: 'phase=editor&together=Sui',
+    scheme: 'dark',
+    run: async (p) => SHOTS['step-extras'].run(p),
+  },
   'drag-shelf-item': {
     flow: 'phase=decorated',
     scheme: 'dark',

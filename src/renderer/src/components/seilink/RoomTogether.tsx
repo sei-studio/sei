@@ -17,6 +17,12 @@
  *    {name}'s idea" instead.
  *  - On a call: a small call pill (mute, hang up), and edits count as being
  *    there for the call's inactivity check.
+ *  - 261110 (product call 261110): a Call button beside the talk box starts
+ *    the usual call in place (useVoiceStore.startCall), so setting up the
+ *    room goes on by voice; she already sees the live room on call turns.
+ *    Without the voice module it asks first, in a small card over the box
+ *    (the call screen's own words), and shows the download.
+ *  - 261110: with the editor's panel on the right, the dock goes left.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { applyRoomOps, opTargets, type RoomEditOp } from '@shared/seilinkDecorate';
@@ -24,7 +30,7 @@ import { SEILINK_HER_EDIT_EVENT, SEILINK_EDITOR_TALK_EVENT, isTogetherCount, typ
 import type { RoomState } from '@shared/seilinkRoom';
 import type { RoomTogetherCtx } from './RoomEditor';
 import { CallControls } from '../call/CallControls';
-import { SendIcon } from '../icons';
+import { PhoneIcon, SendIcon } from '../icons';
 import { CloseIcon, SparkleIcon, UndoIcon } from './roomEditorIcons';
 import { useT } from '../../lib/i18n';
 import { useChatStore } from '../../lib/stores/useChatStore';
@@ -32,6 +38,9 @@ import { useCreditsStore } from '../../lib/stores/useCreditsStore';
 import { useVoiceStore } from '../../lib/stores/useVoiceStore';
 import { sei } from '../../lib/ipcClient';
 import { bubbleMs, freshCompanionLine } from '../../lib/seilink/togetherBubble';
+import { callGate } from '../../lib/voice/callGate';
+import { prefetchPct, prefetchVoiceModel } from '../../lib/voice/modelPrefetch';
+import { SEILINK_SETUP_CALL_EVENT, type SetupCallOutcome } from '@shared/seilinkSetupTelemetry';
 import styles from './RoomTogether.module.css';
 
 /** The editor's room goes to main this long after the last change. */
@@ -78,6 +87,16 @@ export function RoomTogether({ ctx, token, characterId, name }: RoomTogetherProp
   const [fade, setFade] = useState<{ canvas: HTMLCanvasElement; key: number } | null>(null);
   const [draft, setDraft] = useState('');
   const [bubble, setBubble] = useState<{ id: string; text: string } | null>(null);
+  /** The voice module card over the talk box: asking, downloading (pct), or failed. */
+  const [voiceCard, setVoiceCard] = useState<{ kind: 'consent' | 'installing' | 'failed'; pct: number } | null>(null);
+  const [dialing, setDialing] = useState(false);
+  const alive = useRef(true);
+  useEffect(
+    () => () => {
+      alive.current = false;
+    },
+    [],
+  );
 
   // ── open: the session counters know it is shared; her chat is loaded ──
   useEffect(() => {
@@ -217,6 +236,63 @@ export function RoomTogether({ ctx, token, characterId, name }: RoomTogetherProp
       );
   };
 
+  // ── the Call button ──
+  const callTrack = (outcome: SetupCallOutcome, gate?: string): void =>
+    track(SEILINK_SETUP_CALL_EVENT, { character_id: characterId, outcome, guided: ctx.guided === true, ...(gate ? { gate } : {}) });
+  const dial = (gate: string): void => {
+    setVoiceCard(null);
+    callTrack('started', gate);
+    void useVoiceStore
+      .getState()
+      .startCall(characterId)
+      .catch(() => callTrack('error', gate))
+      .finally(() => alive.current && setDialing(false));
+  };
+  const install = (): void => {
+    callTrack('install_started');
+    setVoiceCard({ kind: 'installing', pct: prefetchPct() });
+    prefetchVoiceModel((pct) => alive.current && setVoiceCard((c) => (c?.kind === 'installing' ? { kind: 'installing', pct } : c))).then(
+      () => {
+        callTrack('installed');
+        if (alive.current) dial('installing');
+      },
+      () => {
+        callTrack('install_failed');
+        if (alive.current) setVoiceCard({ kind: 'failed', pct: 0 });
+      },
+    );
+  };
+  const call = (): void => {
+    if (dialing || onCall) return;
+    setDialing(true);
+    void callGate(characterId).then(
+      (gate) => {
+        if (!alive.current) return;
+        if (gate === 'ready') return dial(gate);
+        setDialing(false);
+        if (gate === 'installing') {
+          callTrack('install_started', gate);
+          setVoiceCard({ kind: 'installing', pct: prefetchPct() });
+          prefetchVoiceModel((pct) => alive.current && setVoiceCard((c) => (c?.kind === 'installing' ? { kind: 'installing', pct } : c))).then(
+            () => alive.current && dial(gate),
+            () => alive.current && setVoiceCard({ kind: 'failed', pct: 0 }),
+          );
+          return;
+        }
+        callTrack('consent_shown', gate);
+        setVoiceCard({ kind: 'consent', pct: 0 });
+      },
+      () => {
+        callTrack('error');
+        if (alive.current) setDialing(false);
+      },
+    );
+  };
+  // A call that starts (from here or elsewhere) closes the card.
+  useEffect(() => {
+    if (onCall) setVoiceCard(null);
+  }, [onCall]);
+
   // ── where things go ──
   const head = useMemo(() => {
     const a = ctx.manifest.avatar;
@@ -258,7 +334,53 @@ export function RoomTogether({ ctx, token, characterId, name }: RoomTogetherProp
         </div>
       )}
 
-      <div className={styles.dock}>
+      <div className={ctx.panelSide === 'right' ? `${styles.dock} ${styles.dockLeft}` : styles.dock} data-dock-side={ctx.panelSide === 'right' ? 'left' : 'right'}>
+        {voiceCard && !onCall && (
+          <div className={styles.voiceCard} role="dialog" aria-label={t('Set up voice calls')} data-voice-card={voiceCard.kind}>
+            <p className={styles.voiceTitle}>{voiceCard.kind === 'failed' ? t('Download failed') : t('Set up voice calls')}</p>
+            {voiceCard.kind === 'consent' ? (
+              <>
+                <p className={styles.voiceBody}>
+                  {t('Calling {name} needs the voice module, a one-time ~40 MB download that lets Sei understand your voice. Install it now?', { name })}
+                </p>
+                <div className={styles.voiceActions}>
+                  <button
+                    type="button"
+                    className={styles.voiceQuiet}
+                    onClick={() => {
+                      callTrack('declined', 'consent');
+                      setVoiceCard(null);
+                    }}
+                  >
+                    {t('Not now')}
+                  </button>
+                  <button type="button" className={styles.voiceHot} onClick={install}>
+                    {t('Install')}
+                  </button>
+                </div>
+              </>
+            ) : voiceCard.kind === 'installing' ? (
+              <>
+                <p className={styles.voiceBody}>{t('Downloading the voice module… {pct}%', { pct: voiceCard.pct })}</p>
+                <div className={styles.voiceBar} role="progressbar" aria-valuenow={voiceCard.pct} aria-valuemin={0} aria-valuemax={100}>
+                  <div className={styles.voiceBarFill} style={{ width: `${voiceCard.pct}%` }} />
+                </div>
+              </>
+            ) : (
+              <>
+                <p className={styles.voiceBody}>{t("The voice module couldn't be downloaded. Check your connection and try again.")}</p>
+                <div className={styles.voiceActions}>
+                  <button type="button" className={styles.voiceQuiet} onClick={() => setVoiceCard(null)}>
+                    {t('Not now')}
+                  </button>
+                  <button type="button" className={styles.voiceHot} onClick={install}>
+                    {t('Retry')}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
         {(hersNow || idea) && (
           <div className={styles.chips}>
             {idea && (
@@ -316,6 +438,17 @@ export function RoomTogether({ ctx, token, characterId, name }: RoomTogetherProp
                 if (e.key === 'Escape') e.currentTarget.blur();
               }}
             />
+            <button
+              type="button"
+              className={styles.callBtn}
+              aria-label={t('Call {name}', { name })}
+              title={t('Call {name}', { name })}
+              disabled={dialing || voiceCard?.kind === 'installing'}
+              onClick={call}
+              data-setup-call=""
+            >
+              <PhoneIcon size={17} />
+            </button>
             <button type="submit" className={styles.send} aria-label={t('Send')} title={t('Send')} disabled={!draft.trim() || awaiting}>
               <SendIcon size={17} />
             </button>

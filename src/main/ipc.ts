@@ -83,6 +83,7 @@ import { sanitizeRendererSetupProps, trackMcScan, trackOpenLauncher, trackStarde
 import { GAME_SETUP_EVENT } from '../shared/setupTelemetry';
 import { isSeilinkRendererEvent, sanitizeSeilinkTrack } from '../shared/seilinkTelemetry';
 import { isSeilinkIntroEvent, sanitizeSeilinkIntroTrack } from '../shared/seilinkIntroTelemetry';
+import { isSeilinkSetupEvent, sanitizeSeilinkSetupTrack } from '../shared/seilinkSetupTelemetry';
 import { registerPermissionHandlers } from './permissions/permissionsService';
 import { setSupervisor as setAuthSupervisor } from './auth/authHandlers';
 import type { BotSupervisor } from './botSupervisor';
@@ -3492,7 +3493,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
             ? sanitizeSeilinkTrack(event, props)
             : isSeilinkIntroEvent(event)
               ? sanitizeSeilinkIntroTrack(event, props)
-              : props,
+              : isSeilinkSetupEvent(event)
+                ? sanitizeSeilinkSetupTrack(event, props)
+                : props,
       );
       // 261005: remember where onboarding is, so a quit can report it.
       observeOnboardingEvent(event, props);

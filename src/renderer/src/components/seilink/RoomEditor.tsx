@@ -111,6 +111,7 @@ import { lightSlotsOf, roomShapeOf, type EditorOpenedFrom, type EditorSurface } 
 import { RoomCanvas, type RoomAvatarSlot } from './RoomCanvas';
 import { componentThumb, deviceThumbPx, roomThumb } from '../../lib/seilink/roomThumbs';
 import { placementPanelSide } from '../../lib/seilink/panelSide';
+import { SEILINK_PLACEMENT_GUIDE_EVENT } from '@shared/seilinkSetupTelemetry';
 import { patternThumb } from '../../lib/seilink/patternThumbs';
 import { RoomPicker } from '../../lib/seilink/roomPick';
 import { groupSlots, slotGroup, type SlotGroup } from '../../lib/seilink/roomGroups';
@@ -224,6 +225,10 @@ export interface RoomTogetherCtx {
   analytics: TogetherAnalytics;
   /** The room canvas's layer box (for the crossfade snapshot). */
   sceneEl(): HTMLElement | null;
+  /** 261110: the guided setup is running (analytics). */
+  guided?: boolean;
+  /** 261110: the side the editor's panel is on (the talk box takes the other). */
+  panelSide?: 'left' | 'right';
 }
 
 /** Slots the editor offers anything for, in draw order. */
@@ -1222,6 +1227,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     setDrag((prev) => (prev && prev.index === d.index && prev.x === x && prev.y === y ? prev : { index: d.index, x, y, surface }));
   };
 
+  const guideSeen = useRef(new Set<string>());
   const onStageUp = (e: React.PointerEvent<HTMLDivElement>): void => {
     const d = dragRef.current;
     if (!d || d.pointerId !== e.pointerId) return;
@@ -1231,6 +1237,16 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     if (d.lifted && pos && manifest) {
       const c = manifest.components.find((x) => x.id === state?.items[d.index]?.id);
       edit((s) => moveItem(manifest, s, d.index, pos.x, pos.y, { natural: c ? naturalOf(c) : null, prefer: pos.surface }));
+      // 261110: the outlined placement areas, once per kind of place per editor session.
+      const cls = c ? placementOf(c) : null;
+      if (telemetry && cls && !guideSeen.current.has(cls)) {
+        guideSeen.current.add(cls);
+        try {
+          sei.track(SEILINK_PLACEMENT_GUIDE_EVENT, { mode: 'outline', cls, placed: true });
+        } catch {
+          /* analytics must never disrupt the editor */
+        }
+      }
     }
   };
 
@@ -1855,6 +1871,8 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
           undoIf,
           analytics: analytics.together,
           sceneEl: () => (stageRef.current?.closest('[data-room-editor]')?.querySelector('canvas')?.parentElement as HTMLElement | null) ?? null,
+          guided: gStep !== null,
+          panelSide,
         })}
 
         {saving === 'error' && (
