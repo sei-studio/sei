@@ -34,7 +34,7 @@ import {
   trackRegenHintShown,
   type RegenHintDismissHow,
 } from '../lib/regenHintPref';
-import type { Character } from '@shared/characterSchema';
+import { cardImageOrigin, type Character } from '@shared/characterSchema';
 import { CloseIcon, SparkleIcon } from './icons';
 import styles from './RegenHint.module.css';
 
@@ -81,7 +81,7 @@ export function useRegenHint(input: {
 
   // Regenerations left, read only while the hint could still show here.
   const characterId = character?.id ?? null;
-  const [regens, setRegens] = useState<{ id: string; left: number } | null>(null);
+  const [regens, setRegens] = useState<{ id: string; left: number; custom: boolean } | null>(null);
   useEffect(() => {
     if (seen || !ownedAndSignedIn || !characterId) return;
     let cancelled = false;
@@ -89,7 +89,11 @@ export function useRegenHint(input: {
       .charsPortraitVersions(characterId)
       .then((st) => {
         if (cancelled || !st) return;
-        setRegens({ id: characterId, left: Math.max(0, st.regenLimit - st.regenCount) });
+        setRegens({
+          id: characterId,
+          left: Math.max(0, st.regenLimit - st.regenCount),
+          custom: !!character && cardImageOrigin(character, st) === 'uploaded',
+        });
       })
       .catch(() => {
         /* unknown = not eligible this time */
@@ -97,11 +101,15 @@ export function useRegenHint(input: {
     return () => {
       cancelled = true;
     };
-  }, [seen, ownedAndSignedIn, characterId]);
+    // character is read for the image's origin at answer time; the read
+    // re-runs per companion, and a new upload re-renders the page anyway.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seen, ownedAndSignedIn, characterId, character?.portrait_image]);
   const regensLeft = regens && regens.id === characterId ? regens.left : null;
+  const customImage = !!regens && regens.id === characterId && regens.custom;
 
   const eligible =
-    !!character && isRegenHintEligible({ character, currentUserId, hasPortrait, regensLeft });
+    !!character && isRegenHintEligible({ character, currentUserId, hasPortrait, regensLeft, customImage });
   const candidate = shouldShowRegenHint({
     seen,
     eligible,

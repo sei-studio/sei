@@ -27,6 +27,9 @@
  *   - signed in: image generation rides the proxy in every backend mode.
  *   - it has real portrait art (the "look" the copy talks about).
  *   - at least one regeneration left (known only after the versions read).
+ *   - the image showing is not one the player uploaded (product call
+ *     261110): a custom card image is theirs as made, so there is nothing
+ *     to "regenerate" and the hint would be noise.
  * An ineligible profile does NOT use up the hint; it waits for one that is.
  *
  * SUPPRESSED (also without using it up) while something else has the
@@ -91,8 +94,11 @@ export function isRegenHintEligible(input: {
   /** portraitSrc(character.portrait_image) is non-null. */
   hasPortrait: boolean;
   regensLeft: number | null;
+  /** The active card image is one the player uploaded (cardImageOrigin 'uploaded'). */
+  customImage?: boolean;
 }): boolean {
   const { character, currentUserId } = input;
+  if (input.customImage) return false;
   if (character.is_default) return false;
   // Foreign-owned (a World companion, added or previewed): not ours to redraw.
   if (character.owner && character.owner !== currentUserId) return false;

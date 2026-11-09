@@ -176,6 +176,36 @@ export function portraitRegenCountOf(c: Pick<Character, 'metadata'>): number {
   return typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0;
 }
 
+/**
+ * Where the card image showing now came from (product call 261110: no
+ * Regenerate for a picture the player put in themselves).
+ *   - 'generated': drawn by Sei. An Awakened ('unique') companion's art is
+ *     generated at creation, a built-in's art is Sei's, and a Regenerate
+ *     result is stored as a 'regen' version.
+ *   - 'uploaded': anything else. A user-made ('custom') companion only ever
+ *     gets a card image from the image picker (creation, the editor, the
+ *     card image popup), so its original and its 'upload' versions are the
+ *     player's own pictures.
+ *   - 'none': no card image.
+ * `state` is the versions read (chars:portrait-versions) when the caller has
+ * it; without it the recorded metadata decides, and an unversioned image
+ * counts by kind.
+ */
+export type CardImageOrigin = 'generated' | 'uploaded' | 'none';
+
+export function cardImageOrigin(
+  c: Pick<Character, 'kind' | 'is_default' | 'metadata' | 'portrait_image'>,
+  state?: { versions: PortraitVersion[]; active: string | null } | null,
+): CardImageOrigin {
+  const hasImage = state ? state.active !== null : !!c.portrait_image;
+  if (!hasImage) return 'none';
+  if (c.is_default || c.kind === 'unique') return 'generated';
+  const versions = state ? state.versions : portraitVersionsOf(c);
+  const active = state ? state.active : portraitActiveOf(c);
+  const entry = active ? versions.find((v) => v.file === active) : undefined;
+  return entry?.source === 'regen' ? 'generated' : 'uploaded';
+}
+
 /** Server-assigned public tag: 4 chars, A-Z / 0-9 (cloud `characters.public_id`). */
 export const PUBLIC_ID_REGEX = /^[A-Z0-9]{4}$/;
 

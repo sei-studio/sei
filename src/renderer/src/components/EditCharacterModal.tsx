@@ -611,10 +611,12 @@ export function EditCharacterModal({
                         onChange={(ref) => void persistPortrait(ref)}
                       />
                       {/* 260909: the editor only opens for characters the user
-                          owns, so the versions + regenerate popup is always
-                          available here (it gates sign-in itself). */}
+                          owns, so the versions popup is always available here
+                          (it gates sign-in itself). 261110: labelled Versions,
+                          since a user-made companion's image is an upload and
+                          the popup offers no Regenerate for one. */}
                       <Button kind="ghost" size="sm" onClick={() => setPortraitVersionsOpen(true)}>
-                        {t('Regenerate')}
+                        {t('Versions')}
                       </Button>
                     </div>
                   </div>

@@ -19,6 +19,10 @@
  * versions have loaded, so the button does what it says). For user-made
  * companions (`allowUpload`) it also carries Upload / Remove, which used to
  * live in the edit modal's Appearance section.
+ *
+ * 261110 (product call): no Regenerate while the image showing is one the
+ * player uploaded (cardImageOrigin 'uploaded'). Their own picture is kept as
+ * made; picking a generated version brings the button back.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -32,7 +36,7 @@ import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { PortraitImagePicker } from './PortraitImagePicker';
 import type { PortraitVersionsState } from '@shared/ipc';
-import { portraitVersionIndex, type PortraitVersion } from '@shared/characterSchema';
+import { cardImageOrigin, portraitVersionIndex, type PortraitVersion } from '@shared/characterSchema';
 import styles from './PortraitVersionsModal.module.css';
 
 export interface PortraitVersionsModalProps {
@@ -59,6 +63,7 @@ export function PortraitVersionsModal({
   const authState = useAuthStore((s) => s.state);
   const signedIn = authState.kind === 'signed_in';
   const refreshCharacter = useDataStore((s) => s.refreshCharacter);
+  const character = useDataStore((s) => s.characters.find((c) => c.id === characterId) ?? null);
 
   const [state, setState] = useState<PortraitVersionsState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -165,6 +170,8 @@ export function PortraitVersionsModal({
   const canRegenerate = !!state && signedIn && regensLeft > 0 && !regenerating && !selecting;
   const activeSrc = state?.active ? portraitSrc(state.active) : null;
   const busy = regenerating || selecting !== null;
+  // A custom (uploaded) image showing: no Regenerate (product call 261110).
+  const customImage = !!character && !!state && !regenerating && cardImageOrigin(character, state) === 'uploaded';
 
   const label = (v: PortraitVersion, i: number): string => {
     if (v.source === 'original') return t('Original');
@@ -228,12 +235,14 @@ export function PortraitVersionsModal({
         </div>
       ) : null}
 
-      <div className={styles.regenRow}>
-        <Button kind="accent" size="md" onClick={() => void regenerate()} disabled={!canRegenerate}>
-          {regenerating ? t('Regenerating…') : t('Regenerate')}
-        </Button>
-        <span className={styles.hint}>{hint}</span>
-      </div>
+      {customImage ? null : (
+        <div className={styles.regenRow}>
+          <Button kind="accent" size="md" onClick={() => void regenerate()} disabled={!canRegenerate}>
+            {regenerating ? t('Regenerating…') : t('Regenerate')}
+          </Button>
+          <span className={styles.hint}>{hint}</span>
+        </div>
+      )}
 
       {allowUpload ? (
         <div className={styles.uploadRow}>
