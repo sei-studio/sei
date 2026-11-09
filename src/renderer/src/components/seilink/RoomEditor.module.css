@@ -165,11 +165,15 @@
   pointer-events: none;
 }
 
-/* Where the dragged item can go (PlacementGuide): faint, no outlines. */
-.guide {
+/* Where the dragged item can go (PlacementGuide): outlined areas over the
+   room as it is. Its own class: it shared `.guide` with the glass panels,
+   so their backdrop blur frosted the whole room during a drag (261110).
+   The dark shadow keeps the light outline readable on a pale room. */
+.placeGuide {
   position: absolute;
   pointer-events: none;
-  filter: drop-shadow(0 0 6px rgb(255 255 255 / 0.3));
+  overflow: visible;
+  filter: drop-shadow(0 0 1.5px rgb(0 0 0 / 0.55)) drop-shadow(0 0 6px rgb(0 0 0 / 0.25));
   animation: guideIn 180ms var(--ease) both;
 }
 
