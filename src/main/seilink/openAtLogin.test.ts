@@ -20,10 +20,11 @@ import {
   syncOpenAtLoginAtLaunch,
   unregisterOpenAtLoginForReset,
   windowsLoginTarget,
+  windowsTargetKind,
   WIN_RUN_NAME,
   type OpenAtLoginDeps,
 } from './openAtLogin';
-import { fakeDeps, FakeMac, FakeWin, NSIS_EXE, VELO_EXE } from './__fixtures__/fakeLoginItems';
+import { fakeDeps, FakeMac, FakeWin, NSIS_EXE, VELO_EXE, VELO_STUB } from './__fixtures__/fakeLoginItems';
 import { OPEN_AT_LOGIN_CHANGED_EVENT, OPEN_AT_LOGIN_FAILED_EVENT } from '../../shared/openAtLogin';
 
 let dir: string;
@@ -56,6 +57,22 @@ describe('pure parts', () => {
     expect(windowsLoginTarget(NSIS_EXE)).toBe(NSIS_EXE);
   });
 
+  it('points a Velopack install at its root stub when the stub is there', () => {
+    expect(windowsLoginTarget(VELO_EXE, (p) => p === VELO_STUB)).toBe(VELO_STUB);
+    expect(windowsLoginTarget(VELO_EXE, () => false)).toBe(VELO_EXE);
+    // A throwing check is "no stub", never a throw.
+    expect(
+      windowsLoginTarget(VELO_EXE, () => {
+        throw new Error('EACCES');
+      }),
+    ).toBe(VELO_EXE);
+    // NSIS never looks for a stub.
+    expect(windowsLoginTarget(NSIS_EXE, () => true)).toBe(NSIS_EXE);
+    expect(windowsTargetKind(VELO_EXE, VELO_STUB)).toBe('velopack_stub');
+    expect(windowsTargetKind(VELO_EXE, VELO_EXE)).toBe('velopack_current');
+    expect(windowsTargetKind(NSIS_EXE, NSIS_EXE)).toBe('exe');
+  });
+
   it('registers on Windows under its own value name with the marker arg', () => {
     expect(loginItemSettingsFor('win32', true, NSIS_EXE)).toEqual({
       openAtLogin: true,
@@ -86,7 +103,11 @@ describe('pure parts', () => {
     expect(win([])).toBe('off');
     expect(win([{ name: WIN_RUN_NAME, args: [LOGIN_ARG], scope: 'user', enabled: true }])).toBe('on');
     expect(win([{ name: WIN_RUN_NAME, args: [LOGIN_ARG], scope: 'user', enabled: false }])).toBe('disabled');
-    expect(win([{ name: WIN_RUN_NAME, args: [], scope: 'user', enabled: true }])).toBe('off');
+    // Real Electron: Chromium's GetArgs() drops switches, so the marker is never in
+    // args. The item is Sei's by its value name (beta.2 read every toggle as a mismatch).
+    expect(win([{ name: WIN_RUN_NAME, args: [], scope: 'user', enabled: true }])).toBe('on');
+    expect(win([{ name: WIN_RUN_NAME, args: [], scope: 'user', enabled: false }])).toBe('disabled');
+    expect(win([{ name: WIN_RUN_NAME, args: [], scope: 'machine', enabled: true }])).toBe('off');
     // The retired tray item (named after the AUMID) is not Sei's open-at-login item.
     expect(win([{ name: 'com.sei.app', args: ['--hidden'], scope: 'user', enabled: true }])).toBe('off');
   });
@@ -160,13 +181,22 @@ describe('setOpenAtLogin', () => {
     const mac = new FakeMac();
     mac.throwOnSet = true;
     expect(setOpenAtLogin(true, 'settings', depsFor(mac)).enabled).toBe(false);
-    expect(events[0]).toEqual([OPEN_AT_LOGIN_FAILED_EVENT, { failure_class: 'register_threw', phase: 'set', enabled: true, platform: 'darwin' }]);
+    expect(events[0]).toEqual([
+      OPEN_AT_LOGIN_FAILED_EVENT,
+      { failure_class: 'register_threw', phase: 'set', enabled: true, platform: 'darwin', os_state: 'off', launch_items: 0 },
+    ]);
     expect(events[1][1]).toMatchObject({ ok: false });
     events.length = 0;
     const win = new FakeWin();
     const d = depsFor(win, { setLoginItemSettings: () => {} });
     expect(setOpenAtLogin(true, 'settings', d).enabled).toBe(false);
-    expect(events[0][1]).toMatchObject({ failure_class: 'readback_mismatch', platform: 'win32' });
+    expect(events[0][1]).toMatchObject({
+      failure_class: 'readback_mismatch',
+      platform: 'win32',
+      os_state: 'off',
+      launch_items: 0,
+      target_kind: 'exe',
+    });
     expect(saved().open_at_login).toBe(false);
   });
 
@@ -310,6 +340,37 @@ describe('syncOpenAtLoginAtLaunch', () => {
     expect(win.run.get(WIN_RUN_NAME)?.path).toBe(VELO_EXE);
   });
 
+  it('Windows: turning it on reads back on although Electron drops the marker switch', () => {
+    const win = new FakeWin();
+    const d = depsFor(win);
+    expect(setOpenAtLogin(true, 'settings', d).enabled).toBe(true);
+    // The value starts Sei with the marker (a login launch, loginLaunch.ts) ...
+    expect(win.run.get(WIN_RUN_NAME)?.args).toEqual([LOGIN_ARG]);
+    // ... and the read-back (args without switches) still sees it as on.
+    expect(win.get({ path: NSIS_EXE } as Electron.LoginItemSettingsOptions).launchItems[0].args).toEqual([]);
+    expect(events.find(([e]) => e === OPEN_AT_LOGIN_FAILED_EVENT)).toBeUndefined();
+    expect(events.at(-1)).toEqual([OPEN_AT_LOGIN_CHANGED_EVENT, { enabled: true, surface: 'settings', ok: true, platform: 'win32' }]);
+    // The next launch leaves it alone; off removes it.
+    expect(syncOpenAtLoginAtLaunch(d)).toBe('nothing');
+    expect(setOpenAtLogin(false, 'settings', d).enabled).toBe(false);
+    expect(win.run.size).toBe(0);
+    expect(events.find(([e]) => e === OPEN_AT_LOGIN_FAILED_EVENT)).toBeUndefined();
+  });
+
+  it('Windows Velopack: registers the root stub, and re-points an older current\\ value to it', () => {
+    const win = new FakeWin();
+    // An install from before the stub rule registered current\Sei.exe.
+    setOpenAtLogin(true, 'settings', depsFor(win, { execPath: VELO_EXE, exists: () => false }));
+    expect(win.run.get(WIN_RUN_NAME)?.path).toBe(VELO_EXE);
+    const withStub = depsFor(win, { execPath: VELO_EXE, exists: (p) => p === VELO_STUB });
+    expect(syncOpenAtLoginAtLaunch(withStub)).toBe('register');
+    expect([...win.run.keys()]).toEqual([WIN_RUN_NAME]);
+    expect(win.run.get(WIN_RUN_NAME)).toEqual({ path: VELO_STUB, args: [LOGIN_ARG], enabled: true });
+    expect(saved().registered_path).toBe(VELO_STUB);
+    expect(syncOpenAtLoginAtLaunch(withStub)).toBe('nothing');
+    expect(openAtLoginState(withStub).enabled).toBe(true);
+  });
+
   it('Windows: an item turned off before the install moved stays off', () => {
     const win = new FakeWin();
     setOpenAtLogin(true, 'settings', depsFor(win));
@@ -341,7 +402,10 @@ describe('syncOpenAtLoginAtLaunch', () => {
       ),
     ).toBe('failed');
     expect(saved().open_at_login).toBe(true);
-    expect(events[0]).toEqual([OPEN_AT_LOGIN_FAILED_EVENT, { failure_class: 'register_threw', phase: 'sync', enabled: true, platform: 'win32' }]);
+    expect(events[0]).toEqual([
+      OPEN_AT_LOGIN_FAILED_EVENT,
+      { failure_class: 'register_threw', phase: 'sync', enabled: true, platform: 'win32', os_state: 'off', launch_items: 0, target_kind: 'exe' },
+    ]);
   });
 
   it('does nothing unsupported, and reads no OS state on macOS when never used', () => {

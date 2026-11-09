@@ -16,10 +16,17 @@
  *    `com.sei.app`, which the retired tray mode used: legacyTrayCleanup.ts
  *    deletes that name, so it can never touch this one) that starts
  *    `"<exe>" --seilink-login`. The exe is the install's stable launcher
- *    (`windowsLoginTarget`): NSIS updates in place, and a Velopack install's
- *    `current\Sei.exe` keeps its path across updates (Velopack has no
- *    versioned app-x.y.z dirs). An NSIS -> Velopack migration changes the
- *    path; the next launch re-points the value (same name, so no duplicate).
+ *    (`windowsLoginTarget`): NSIS updates in place; a Velopack install
+ *    registers its root stub `<root>\Sei.exe` (it runs `Update.exe start`,
+ *    which forwards the args and picks the current version, also mid-update),
+ *    falling back to `current\Sei.exe` when the stub is missing. An NSIS ->
+ *    Velopack migration (or a stub that appears later) changes the path; the
+ *    next launch re-points the value (same name, so no duplicate).
+ *    Read back by value NAME only (osStateFrom): Electron's launchItems keep
+ *    only the items whose exe matches the asked path, and Chromium's
+ *    CommandLine::GetArgs() drops every switch, so `--seilink-login` is never
+ *    in `args`. Requiring it there made every Windows toggle a
+ *    readback_mismatch ("Could not change this setting", beta.2, 261110).
  *    Turned off by the user in Task Manager or Settings > Apps > Startup =
  *    Electron's launchItems[].enabled false (the StartupApproved key): Sei
  *    reflects that as off and never re-enables it.
@@ -89,6 +96,8 @@ export interface OpenAtLoginDeps {
   filePath: string;
   getLoginItemSettings: (opts?: Electron.LoginItemSettingsOptions) => Electron.LoginItemSettings;
   setLoginItemSettings: (settings: Electron.Settings) => void;
+  /** Windows: finds the Velopack root stub. Missing = treated as absent. */
+  exists?: (p: string) => boolean;
   capture: (event: string, props: Record<string, unknown>) => void;
   log: (msg: string) => void;
 }
@@ -99,15 +108,34 @@ export interface OpenAtLoginDeps {
 
 /**
  * The exe a Windows login item must start: one that survives updates. A
- * Velopack install runs from `<root>\current\Sei.exe` and keeps that path
- * across updates (the folder is swapped in place); an NSIS install updates in
- * its own folder. So both are the running exe, normalised for Velopack.
+ * Velopack install runs from `<root>\current\Sei.exe`, which Velopack swaps
+ * during an update, so the item starts the root stub `<root>\Sei.exe` (the
+ * same target as the Velopack shortcuts, velopackLaunchTarget) when it
+ * exists, else `current\Sei.exe`. An NSIS install updates in its own folder,
+ * so it is the running exe.
  */
-export function windowsLoginTarget(execPath: string): string {
+export function windowsLoginTarget(execPath: string, exists: (p: string) => boolean = () => false): string {
   const w = path.win32;
   const bin = w.dirname(execPath);
-  if (w.basename(bin).toLowerCase() === 'current') return w.join(w.dirname(bin), 'current', w.basename(execPath));
-  return execPath;
+  if (w.basename(bin).toLowerCase() !== 'current') return execPath;
+  const root = w.dirname(bin);
+  const stub = w.join(root, w.basename(execPath));
+  let stubThere = false;
+  try {
+    stubThere = exists(stub);
+  } catch {
+    stubThere = false;
+  }
+  return stubThere ? stub : w.join(root, 'current', w.basename(execPath));
+}
+
+/** Shape-only: which kind of exe the Windows item points at (diagnostics). */
+export type WinTargetKind = 'velopack_stub' | 'velopack_current' | 'exe';
+
+export function windowsTargetKind(execPath: string, target: string): WinTargetKind {
+  const w = path.win32;
+  if (w.basename(w.dirname(execPath)).toLowerCase() !== 'current') return 'exe';
+  return w.basename(w.dirname(target)).toLowerCase() === 'current' ? 'velopack_current' : 'velopack_stub';
 }
 
 export function parseOpenAtLoginFile(raw: unknown): OpenAtLoginFile {
@@ -131,12 +159,20 @@ export function loginItemSettingsFor(platform: NodeJS.Platform, on: boolean, tar
   return { openAtLogin: on };
 }
 
-/** Reads one platform's answer from getLoginItemSettings. */
+/**
+ * Reads one platform's answer from getLoginItemSettings.
+ *
+ * Windows: the item is found by its value NAME (Sei's own) in the user scope.
+ * Electron already keeps only the Run values whose exe matches the path
+ * readOs asks about, and it parses the command with Chromium's CommandLine,
+ * whose GetArgs() returns only the loose args, never switches: the
+ * `--seilink-login` marker is never in `args`, so it must not be required.
+ */
 export function osStateFrom(platform: NodeJS.Platform, s: Electron.LoginItemSettings | null | undefined): OsLoginState {
   if (!s) return 'unknown';
   if (platform === 'win32') {
     const item = (s.launchItems ?? []).find((i) => i.name === WIN_RUN_NAME && i.scope === 'user');
-    if (!item || !(item.args ?? []).includes(LOGIN_ARG)) return 'off';
+    if (!item) return 'off';
     return item.enabled === false ? 'disabled' : 'on';
   }
   const status = (s as { status?: unknown }).status;
@@ -223,7 +259,7 @@ function writeFile(d: OpenAtLoginDeps, next: OpenAtLoginFile): void {
 }
 
 function targetFor(d: OpenAtLoginDeps): string {
-  return d.platform === 'win32' ? windowsLoginTarget(d.execPath) : d.execPath;
+  return d.platform === 'win32' ? windowsLoginTarget(d.execPath, d.exists) : d.execPath;
 }
 
 function readOs(d: OpenAtLoginDeps, exe?: string): OsLoginState {
@@ -250,10 +286,37 @@ function readOsWithPrevious(d: OpenAtLoginDeps, file: OpenAtLoginFile): OsLoginS
   return before === 'disabled' ? 'disabled' : here;
 }
 
-function fail(d: OpenAtLoginDeps, failure: OpenAtLoginFailure, phase: 'set' | 'sync', enabled: boolean): void {
-  d.log(`${phase}: ${failure}`);
+/** Shape-only facts about the last read, for a failure report. */
+interface ReadFacts {
+  os: OsLoginState;
+  /** Windows: launchItems Electron returned for the asked exe (any name). */
+  items: number;
+}
+
+function readFacts(d: OpenAtLoginDeps): ReadFacts {
   try {
-    d.capture(OPEN_AT_LOGIN_FAILED_EVENT, { failure_class: failure, phase, enabled, platform: d.platform });
+    const opts: Electron.LoginItemSettingsOptions | undefined =
+      d.platform === 'win32' ? ({ path: targetFor(d), args: [LOGIN_ARG] } as Electron.LoginItemSettingsOptions) : undefined;
+    const s = opts ? d.getLoginItemSettings(opts) : d.getLoginItemSettings();
+    return { os: osStateFrom(d.platform, s), items: Array.isArray(s?.launchItems) ? s.launchItems.length : 0 };
+  } catch (err) {
+    d.log(`read failed: ${(err as Error).message}`);
+    return { os: 'unknown', items: 0 };
+  }
+}
+
+function fail(d: OpenAtLoginDeps, failure: OpenAtLoginFailure, phase: 'set' | 'sync', enabled: boolean, facts?: ReadFacts): void {
+  d.log(`${phase}: ${failure}${facts ? ` (os ${facts.os}, items ${facts.items})` : ''}`);
+  try {
+    d.capture(OPEN_AT_LOGIN_FAILED_EVENT, {
+      failure_class: failure,
+      phase,
+      enabled,
+      platform: d.platform,
+      // Shape only (261110): what the read-back saw, and which exe kind was asked about.
+      ...(facts ? { os_state: facts.os, launch_items: Math.min(facts.items, 9) } : {}),
+      ...(d.platform === 'win32' ? { target_kind: windowsTargetKind(d.execPath, targetFor(d)) } : {}),
+    });
   } catch {
     /* analytics never breaks this */
   }
@@ -268,23 +331,25 @@ function changed(d: OpenAtLoginDeps, enabled: boolean, surface: OpenAtLoginSurfa
 }
 
 /** Register or remove, then read back. */
-function apply(d: OpenAtLoginDeps, on: boolean): { os: OsLoginState; failure: OpenAtLoginFailure | null } {
+function apply(d: OpenAtLoginDeps, on: boolean): { os: OsLoginState; failure: OpenAtLoginFailure | null; facts: ReadFacts } {
   try {
     d.setLoginItemSettings(loginItemSettingsFor(d.platform, on, targetFor(d)));
   } catch (err) {
     d.log(`${on ? 'register' : 'unregister'} threw: ${(err as Error).message}`);
-    return { os: readOs(d), failure: on ? 'register_threw' : 'unregister_threw' };
+    const facts = readFacts(d);
+    return { os: facts.os, failure: on ? 'register_threw' : 'unregister_threw', facts };
   }
-  const os = readOs(d);
-  if (os === 'unknown') return { os, failure: 'read_threw' };
+  const facts = readFacts(d);
+  const os = facts.os;
+  if (os === 'unknown') return { os, failure: 'read_threw', facts };
   if (on) {
-    if (os === 'on') return { os, failure: null };
-    if (os === 'disabled' && d.platform === 'darwin') return { os, failure: 'requires_approval' };
-    if (os === 'not_found') return { os, failure: 'not_found' };
-    return { os, failure: 'readback_mismatch' };
+    if (os === 'on') return { os, failure: null, facts };
+    if (os === 'disabled' && d.platform === 'darwin') return { os, failure: 'requires_approval', facts };
+    if (os === 'not_found') return { os, failure: 'not_found', facts };
+    return { os, failure: 'readback_mismatch', facts };
   }
-  if (os === 'off') return { os, failure: null };
-  return { os, failure: 'readback_mismatch' };
+  if (os === 'off') return { os, failure: null, facts };
+  return { os, failure: 'readback_mismatch', facts };
 }
 
 function stateOf(d: OpenAtLoginDeps, file: OpenAtLoginFile): OpenAtLoginState {
@@ -358,7 +423,7 @@ export function setOpenAtLogin(
   }
   next.decided = true;
   writeFile(d, next);
-  if (r.failure) fail(d, r.failure, 'set', on);
+  if (r.failure) fail(d, r.failure, 'set', on, r.facts);
   changed(d, on, surface, r.failure === null || r.failure === 'requires_approval');
   return stateOf(d, next);
 }
@@ -400,7 +465,7 @@ export function syncOpenAtLoginAtLaunch(d: OpenAtLoginDeps | null = injected): S
     const r = apply(d, on);
     const target = targetFor(d);
     if (r.failure && !(on && r.failure === 'requires_approval')) {
-      fail(d, r.failure, 'sync', on);
+      fail(d, r.failure, 'sync', on, r.facts);
       // Keep the user's choice: the next launch tries again.
       return 'failed';
     }
