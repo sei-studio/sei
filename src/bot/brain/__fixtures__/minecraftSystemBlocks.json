@@ -13,7 +13,7 @@
     "tools": [
       {
         "name": "say",
-        "description": "Speak ONE short line to the player - the only thing you produce that reaches them; your text output is a private scratchpad and is never shown. Call at most once per turn, and only when you genuinely have something to say. When you tell them how many of something you have, use the count on your inventory line this turn; it changes as you gather, craft and use things, so a number from earlier in the conversation may be out of date.",
+        "description": "Speak ONE short line to the player - the only thing you produce that reaches them; your text output is a private scratchpad and is never shown. Call at most once per turn, and only when you genuinely have something to say. It is heard before any action you call with it runs, so speak of that action, or one still running, as not done yet. When you say how many of something you have, use the count on your inventory line this turn, not a number from earlier in the conversation.",
         "input_schema": {
           "type": "object",
           "properties": {
@@ -1065,7 +1065,7 @@
     "tools": [
       {
         "name": "say",
-        "description": "Speak ONE short line to the player - the only thing you produce that reaches them; your text output is a private scratchpad and is never shown. Call at most once per turn, and only when you genuinely have something to say. When you tell them how many of something you have, use the count on your inventory line this turn; it changes as you gather, craft and use things, so a number from earlier in the conversation may be out of date.",
+        "description": "Speak ONE short line to the player - the only thing you produce that reaches them; your text output is a private scratchpad and is never shown. Call at most once per turn, and only when you genuinely have something to say. It is heard before any action you call with it runs, so speak of that action, or one still running, as not done yet. When you say how many of something you have, use the count on your inventory line this turn, not a number from earlier in the conversation.",
         "input_schema": {
           "type": "object",
           "properties": {
@@ -2116,7 +2116,7 @@
     "tools": [
       {
         "name": "say",
-        "description": "Speak ONE short line to the player - the only thing you produce that reaches them; your text output is a private scratchpad and is never shown. Call at most once per turn, and only when you genuinely have something to say. When you tell them how many of something you have, use the count on your inventory line this turn; it changes as you gather, craft and use things, so a number from earlier in the conversation may be out of date.",
+        "description": "Speak ONE short line to the player - the only thing you produce that reaches them; your text output is a private scratchpad and is never shown. Call at most once per turn, and only when you genuinely have something to say. It is heard before any action you call with it runs, so speak of that action, or one still running, as not done yet. When you say how many of something you have, use the count on your inventory line this turn, not a number from earlier in the conversation.",
         "input_schema": {
           "type": "object",
           "properties": {

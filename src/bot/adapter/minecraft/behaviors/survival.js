@@ -226,7 +226,11 @@ export function startSurvival(bot, config) {
     // Clear any action goal so pathfinder controls don't fight the jump/forward
     // we drive by hand. (Re-asserted below if something steals the pathfinder.)
     setGoalSelf(null, false)
-    emitSurvival('drowning', 'deep water', 1)
+    // 261109 (pass 48): the air she has left rides along, so the heads-up can
+    // say how close it was. The swim starts at 10 of 20 air (up to 19 under a
+    // ceiling), long before air hurts, and "almost drowned" at full health
+    // read as made up.
+    emitSurvival('drowning', 'deep water', 1, { air: typeof bot.oxygenLevel === 'number' ? bot.oxygenLevel : null })
   }
 
   function drownDisengage() {
@@ -389,13 +393,13 @@ export function startSurvival(bot, config) {
   // alex?" x4) that also cut into the running build. The swim-up itself still
   // re-engages every time; only the narration event is rate-limited.
   const _lastEmitAt = new Map()
-  function emitSurvival(kind, threatLabel, count) {
+  function emitSurvival(kind, threatLabel, count, extra = {}) {
     const now = Date.now()
     const last = _lastEmitAt.get(kind)
     if (last != null && now - last < TH.survival_emit_cooldown_ms) return
     _lastEmitAt.set(kind, now)
     try {
-      bot.emit('sei:survival', { kind, threatLabel, count })
+      bot.emit('sei:survival', { kind, threatLabel, count, ...extra })
     } catch (_) {}
   }
 
