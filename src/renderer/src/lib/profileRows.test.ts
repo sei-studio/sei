@@ -10,17 +10,19 @@ const track = vi.fn();
 
 const {
   PROFILE_SECTIONS,
+  OWNER_TABS,
   foreignSettingsRows,
-  foreignTabs,
   isProfileFocus,
   lockTipKey,
   ownerSections,
   profileAccess,
   profileKind,
+  profileTabs,
   profileView,
   requestProfileFocus,
-  resolveForeignTab,
+  resolveProfileTab,
   sectionOf,
+  tabGroups,
   takeRequestedProfileFocus,
   trackProfileActionClicked,
   trackProfileCtaClicked,
@@ -75,7 +77,34 @@ describe('profileKind / profileView', () => {
   });
 });
 
-describe('owner page (one scroll, sections in use order)', () => {
+describe('owner page (section menu, one tab at a time, product call 261110)', () => {
+  it('tabs: Look, Voice, Personality, Games, WorldLink (when available), More; More ends with the Danger zone', () => {
+    const a = profileAccess({ ...base, kind: 'custom', seilinkOn: true });
+    expect(OWNER_TABS).toEqual(['look', 'voice', 'personality', 'games', 'worldlink', 'more']);
+    expect(profileTabs(a)).toEqual(['look', 'voice', 'personality', 'games', 'worldlink', 'more']);
+    expect(profileTabs(profileAccess({ ...base, kind: 'custom' }))).toEqual(['look', 'voice', 'personality', 'games', 'more']);
+    expect(tabGroups(a, 'look')).toEqual([{ section: null, rows: ['cardImage', 'skin', 'avatar', 'floatingAvatar'] }]);
+    expect(tabGroups(a, 'worldlink')).toEqual([{ section: null, rows: ['desktopRoom', 'room', 'intro'] }]);
+    expect(tabGroups(a, 'more')).toEqual([
+      { section: 'sharing', rows: ['publicToggle'] },
+      { section: 'danger', rows: ['resetMemory', 'unbind'] },
+    ]);
+    expect(tabGroups(a, 'overview')).toEqual([]);
+  });
+
+  it('deep links to a row group open the tab that holds it', () => {
+    const tabs = profileTabs(profileAccess({ ...base, kind: 'custom' }));
+    expect(resolveProfileTab(tabs, 'voice')).toBe('voice');
+    expect(resolveProfileTab(tabs, 'sharing')).toBe('more');
+    // No WorldLink on this install: its deep link falls back to the first tab.
+    expect(resolveProfileTab(tabs, 'worldlink')).toBe('look');
+    expect(resolveProfileTab(tabs, 'danger')).toBe('more');
+    expect(resolveProfileTab(tabs, 'overview')).toBe('look');
+    expect(resolveProfileTab(tabs, null)).toBe('look');
+  });
+});
+
+describe('owner row groups (sections in use order)', () => {
   it('custom: Look, Voice, Personality, Games, Sharing, Danger zone, every row live', () => {
     expect(sections({ ...base, kind: 'custom' })).toEqual({
       look: ['cardImage', 'skin', 'avatar', 'floatingAvatar'],
@@ -165,7 +194,10 @@ describe('foreign companions (Overview first, no owner rows)', () => {
 
   it('in the library: Overview + Your settings with only your per-companion rows', () => {
     const a = profileAccess({ ...base, kind: 'builtin', seilinkOn: true });
-    expect(foreignTabs(a)).toEqual(['overview', 'settings']);
+    expect(profileTabs(a)).toEqual(['overview', 'settings', 'worldlink', 'more']);
+    expect(tabGroups(a, 'settings')).toEqual([{ section: null, rows: ['avatar', 'floatingAvatar', 'knowledge', 'dst'] }]);
+    expect(tabGroups(a, 'worldlink')).toEqual([{ section: null, rows: ['desktopRoom', 'room', 'intro'] }]);
+    expect(tabGroups(a, 'more')).toEqual([{ section: 'danger', rows: ['resetMemory', 'unbind'] }]);
     expect(foreignSettingsRows(a)).toEqual([
       'avatar',
       'floatingAvatar',
@@ -182,7 +214,7 @@ describe('foreign companions (Overview first, no owner rows)', () => {
 
   it('a preview (World, or a removed built-in): the Overview only', () => {
     const a = profileAccess({ ...base, kind: 'world', inLibrary: false, seilinkOn: true });
-    expect(foreignTabs(a)).toEqual(['overview']);
+    expect(profileTabs(a)).toEqual(['overview']);
     expect(foreignSettingsRows(a)).toEqual([]);
     expect(a.report).toBe(true);
     expect(profileAccess({ ...base, kind: 'builtin', inLibrary: false }).report).toBe(false);
@@ -199,10 +231,14 @@ describe('foreign companions (Overview first, no owner rows)', () => {
     expect(foreignSettingsRows(profileAccess({ ...base, kind: 'custom' }))).toEqual([]);
   });
 
-  it('resolveForeignTab falls back to Overview', () => {
-    expect(resolveForeignTab(['overview', 'settings'], 'settings')).toBe('settings');
-    expect(resolveForeignTab(['overview'], 'settings')).toBe('overview');
-    expect(resolveForeignTab(['overview'], null)).toBe('overview');
+  it('resolveProfileTab falls back to the first tab', () => {
+    expect(resolveProfileTab(['overview', 'settings', 'more'], 'settings')).toBe('settings');
+    expect(resolveProfileTab(['overview'], 'settings')).toBe('overview');
+    expect(resolveProfileTab(['overview'], null)).toBe('overview');
+    // A row group lands on the tab that holds it.
+    expect(resolveProfileTab(['overview', 'settings', 'more'], 'danger')).toBe('more');
+    expect(resolveProfileTab(['overview', 'settings', 'worldlink', 'more'], 'worldlink')).toBe('worldlink');
+    expect(resolveProfileTab(['overview', 'settings', 'more'], 'look')).toBe('overview');
   });
 });
 
@@ -217,6 +253,7 @@ describe('requested focus', () => {
 
   it('isProfileFocus accepts tabs and sections only', () => {
     expect(isProfileFocus('overview')).toBe(true);
+    expect(isProfileFocus('more')).toBe(true);
     expect(isProfileFocus('worldlink')).toBe(true);
     expect(isProfileFocus('sharing')).toBe(true);
     expect(isProfileFocus('nope')).toBe(false);
@@ -238,15 +275,15 @@ describe('analytics (shape only)', () => {
 
   it('sends the profile events with closed props', () => {
     trackProfileViewed('foreign', 'world', 'world', false);
-    trackProfileTabViewed('overview', 'builtin');
-    trackProfileActionClicked('replay_intro', 'worldlink', 'custom');
+    trackProfileTabViewed('overview', 'foreign', 'builtin');
+    trackProfileActionClicked('replay_intro', 'more', 'custom');
     trackProfileTooltipOpened('locked');
     trackProfileVoiceSample('foreign', 'world', 'overview', 'bundled', 'played');
     trackProfileCtaClicked('invite', 'foreign', 'world', 'world');
     expect(track.mock.calls).toEqual([
       ['profile_viewed', { view: 'foreign', character_kind: 'world', entry: 'world', in_library: false }],
-      ['profile_tab_viewed', { tab: 'overview', character_kind: 'builtin' }],
-      ['profile_action_clicked', { action: 'replay_intro', tab: 'worldlink', character_kind: 'custom' }],
+      ['profile_tab_viewed', { tab: 'overview', view: 'foreign', character_kind: 'builtin' }],
+      ['profile_action_clicked', { action: 'replay_intro', tab: 'more', character_kind: 'custom' }],
       ['profile_tooltip_opened', { key: 'locked' }],
       [
         'profile_voice_sample_played',

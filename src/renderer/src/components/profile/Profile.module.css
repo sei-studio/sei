@@ -1,4 +1,4 @@
-/* Profile rows (261107, profile v0.7 "Option A"). One row = label, value,
+/* Profile rows (261107; profile v2, 261110). One row = label, value,
    action(s). Explanations live in HoverTip tooltips, never as subtext. */
 
 .rows {
@@ -11,7 +11,7 @@
   grid-template-columns: minmax(110px, 28%) minmax(0, 1fr);
   align-items: center;
   column-gap: var(--space-md);
-  min-height: 46px;
+  min-height: 52px;
   padding: var(--space-sm) 0;
   border-bottom: 1px solid var(--border);
 }
@@ -78,7 +78,7 @@
   flex: 1 1 0;
   min-width: 128px;
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: 15px;
   color: var(--text-2);
 }
 
@@ -298,7 +298,10 @@
   }
 }
 
-/* ── Owner page sections (product call 261110) ─────────────────────── */
+/* ── A tab's row groups (profile v2, product call 261110) ───────────── */
+/* One tab shows at a time. A single-group tab (Look, Voice, ...) has no
+   heading; More heads Sharing, WorldLink and the Danger zone with a quiet
+   sentence-case line, the same as the Overview's shelf headings. */
 
 .sections {
   display: flex;
@@ -313,14 +316,10 @@
 }
 
 .sectionHead {
-  margin: 0 0 var(--space-xs);
-  padding-bottom: var(--space-xs);
-  border-bottom: 1px solid var(--border-strong);
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
   color: var(--muted);
 }
 

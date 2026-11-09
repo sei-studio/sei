@@ -2472,5 +2472,7 @@ export const PT_BR: Record<string, string> = {
   "Skin ready": "Skin pronta",
   "Stop sample": "Parar amostra",
   "Your settings": "Suas configurações",
+  // profile v2 section menu (product call 261110)
+  "More": "Mais",
   "by {name}": "por {name}",
 };

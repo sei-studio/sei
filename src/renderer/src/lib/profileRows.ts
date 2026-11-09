@@ -1,25 +1,31 @@
 /**
  * Profile rows: which settings row a companion's profile shows, and whether
- * it is live, locked or hidden. Single source of truth for the page
- * (screens/CharacterPage.tsx) and its rows (components/profile/).
+ * it is live, locked or hidden, and which tab of the page it sits on. Single
+ * source of truth for the page (screens/CharacterPage.tsx) and its rows
+ * (components/profile/).
  *
- * Two views (product call 261110):
+ * Two views:
  *
  *  - OWNER (your own companion: 'custom', or an Awakened 'awakened' one):
- *    one scrolling settings page, no tabs, so nothing sits behind an extra
- *    click. Sections in the order people use them: Look, Voice,
- *    Personality, Games, Sharing, WorldLink, Danger zone. 261107 had six
- *    tabs; the call found too much hidden. Duplicates merged: Name and
- *    Description were two rows into the same editor (now "Name and
- *    description"), and the in-game username was its own row into the skin
- *    popup (now part of the Minecraft skin row).
+ *    a top section menu, one tab shown at a time (product call 261110,
+ *    second pass: "I don't like scrolling"; the first pass had made it one
+ *    long page, 261107 had six tabs that hid too much). Tabs: Look, Voice,
+ *    Personality, Games, WorldLink (only where WorldLink is available) and
+ *    More (Sharing, then the Danger zone last, each under a small heading).
+ *    WorldLink is its own tab so More never needs a scroll. Duplicates stay merged:
+ *    "Name and description" is one row, the in-game username is part of the
+ *    Minecraft skin row.
  *  - FOREIGN (a built-in like Sui, or someone else's World companion): the
- *    page leads with an Overview (who made it, how many players added it,
- *    what it is, its voice, its games and its public avatars). The few
- *    settings that are genuinely yours for a companion in your library
- *    (which avatar plays, the floating avatar, Knowledge, the DST survivor,
- *    WorldLink, Reset memory, Unbind) sit on a second "Your settings" tab.
- *    Nothing an owner edits (look, voice, persona, Public) is shown there.
+ *    page leads with an Overview (its voice, games and public avatars). Once
+ *    it is in your library, "Your settings" holds the few rows that are yours
+ *    for it (which avatar plays, the floating avatar, Knowledge, the DST
+ *    survivor), then WorldLink, and More holds the Danger zone, as on your
+ *    own companion's page. Nothing an owner edits (look, voice, persona, Public)
+ *    is shown there.
+ *
+ * Row groups (`ProfileSection`: look, voice, personality, games, sharing,
+ * worldlink, danger) stay the unit rows belong to; a tab shows one or more
+ * groups (`ProfileTab`).
  *
  * Access rules (unchanged from the gear menu era):
  *  - Only user-made `kind: 'custom'` companions edit name, description,
@@ -37,16 +43,26 @@ import { sei } from './ipcClient';
 /** Who the companion is to the player, for row rules and analytics. */
 export type ProfileKind = 'custom' | 'awakened' | 'builtin' | 'world';
 
-/** Owner = one settings page; foreign = Overview first. */
+/** Owner = settings tabs; foreign = Overview first. */
 export type ProfileView = 'owner' | 'foreign';
 
-/** The owner page's sections, top to bottom. */
+/** Row groups, in page order (the Danger zone is always last). */
 export const PROFILE_SECTIONS = ['look', 'voice', 'personality', 'games', 'sharing', 'worldlink', 'danger'] as const;
 export type ProfileSection = (typeof PROFILE_SECTIONS)[number];
 
-/** A foreign companion's tabs (settings only while it is in your library). */
-export const FOREIGN_TABS = ['overview', 'settings'] as const;
+/** Your own companion's tabs, left to right. */
+export const OWNER_TABS = ['look', 'voice', 'personality', 'games', 'worldlink', 'more'] as const;
+export type OwnerTab = (typeof OWNER_TABS)[number];
+
+/** A foreign companion's tabs (all but the Overview only while it is in your library). */
+export const FOREIGN_TABS = ['overview', 'settings', 'worldlink', 'more'] as const;
 export type ForeignTab = (typeof FOREIGN_TABS)[number];
+
+/** Any tab of the page's section menu. */
+export type ProfileTab = OwnerTab | ForeignTab;
+
+/** The row groups the More tab holds, under small headings. */
+const MORE_SECTIONS: readonly ProfileSection[] = ['sharing', 'danger'];
 
 /** 'edit' = live controls, 'locked' = value plus a Locked marker, 'hidden' = no row. */
 export type RowAccess = 'edit' | 'locked' | 'hidden';
@@ -193,10 +209,15 @@ export function ownerSections(access: ProfileAccess): { section: ProfileSection;
   })).filter((s) => s.rows.length > 0);
 }
 
+/** The owner tab a row group sits on. */
+export function ownerTabOf(section: ProfileSection): OwnerTab {
+  return MORE_SECTIONS.includes(section) ? 'more' : (section as OwnerTab);
+}
+
 /**
- * A foreign companion's "Your settings" rows, in page order: the avatar pick
- * and floating avatar, Knowledge, the DST survivor, WorldLink, then the
- * danger rows. Empty for a preview (nothing is yours yet).
+ * A foreign companion's settings rows, in page order: the avatar pick and
+ * floating avatar, Knowledge, the DST survivor, WorldLink, then the danger
+ * rows. Empty for a preview (nothing is yours yet).
  */
 const FOREIGN_SETTINGS_ROWS: readonly RowKey[] = [
   'avatar',
@@ -216,21 +237,63 @@ export function foreignSettingsRows(access: ProfileAccess): RowKey[] {
   return FOREIGN_SETTINGS_ROWS.filter((row) => access[row] !== 'hidden');
 }
 
-/** A foreign companion's tabs: Overview, plus Your settings once it is in the library. */
-export function foreignTabs(access: ProfileAccess): ForeignTab[] {
-  return foreignSettingsRows(access).length > 0 ? ['overview', 'settings'] : ['overview'];
+/** One heading's worth of rows on a tab; `section` null = no heading. */
+export interface TabGroup {
+  section: ProfileSection | null;
+  rows: RowKey[];
 }
 
-/** The tab to show: the asked-for one when it exists, else Overview. */
-export function resolveForeignTab(tabs: readonly ForeignTab[], wanted: ForeignTab | null | undefined): ForeignTab {
-  if (wanted && tabs.includes(wanted)) return wanted;
-  return 'overview';
+/**
+ * The rows a tab shows, grouped. A tab that is one row group (Look, Voice,
+ * WorldLink) has no heading (the tab names it); More heads each group.
+ */
+export function tabGroups(access: ProfileAccess, tab: ProfileTab): TabGroup[] {
+  if (tab === 'overview') return [];
+  if (access.view === 'owner') {
+    const groups = ownerSections(access).filter((g) => ownerTabOf(g.section) === tab);
+    return tab === 'more' ? groups : groups.map((g) => ({ section: null, rows: g.rows }));
+  }
+  const rows = foreignSettingsRows(access);
+  if (tab === 'settings' || tab === 'worldlink') {
+    const plain = rows.filter((r) => {
+      const section = sectionOf(r);
+      return tab === 'worldlink' ? section === 'worldlink' : section !== 'worldlink' && !MORE_SECTIONS.includes(section);
+    });
+    return plain.length > 0 ? [{ section: null, rows: plain }] : [];
+  }
+  if (tab === 'more') {
+    return MORE_SECTIONS.map((section) => ({ section, rows: rows.filter((r) => sectionOf(r) === section) })).filter(
+      (g) => g.rows.length > 0,
+    );
+  }
+  return [];
+}
+
+/** The page's tabs: your own companion's sections, or Overview plus what is yours. */
+export function profileTabs(access: ProfileAccess): ProfileTab[] {
+  if (access.view === 'owner') return OWNER_TABS.filter((tab) => tabGroups(access, tab).length > 0);
+  return FOREIGN_TABS.filter((tab) => tab === 'overview' || tabGroups(access, tab).length > 0);
+}
+
+/**
+ * The tab a focus request lands on: a tab itself, or the tab that holds a
+ * row group (Sharing and the Danger zone are on More). Falls back to
+ * the first tab when the page has no such tab.
+ */
+export function resolveProfileTab(tabs: readonly ProfileTab[], wanted: ProfileFocus | null | undefined): ProfileTab {
+  if (wanted) {
+    const tab: ProfileTab = (PROFILE_SECTIONS as readonly string[]).includes(wanted)
+      ? ownerTabOf(wanted as ProfileSection)
+      : (wanted as ProfileTab);
+    if (tabs.includes(tab)) return tab;
+  }
+  return tabs[0] ?? 'overview';
 }
 
 // Where the next profile opens (a deep link, or the screenshot harness): a
-// foreign tab, or an owner section scrolled into view. Read once by the
-// page when it mounts, then cleared.
-export type ProfileFocus = ForeignTab | ProfileSection;
+// tab, or a row group (the page opens the tab that holds it and brings the
+// group into view). Read once by the page when it mounts, then cleared.
+export type ProfileFocus = ProfileTab | ProfileSection;
 let pendingFocus: ProfileFocus | null = null;
 
 /** Open the next profile page on `focus` (used once). */
@@ -248,7 +311,9 @@ export function takeRequestedProfileFocus(): ProfileFocus | null {
 export function isProfileFocus(v: unknown): v is ProfileFocus {
   return (
     typeof v === 'string' &&
-    ((FOREIGN_TABS as readonly string[]).includes(v) || (PROFILE_SECTIONS as readonly string[]).includes(v))
+    ((FOREIGN_TABS as readonly string[]).includes(v) ||
+      (OWNER_TABS as readonly string[]).includes(v) ||
+      (PROFILE_SECTIONS as readonly string[]).includes(v))
   );
 }
 
@@ -298,8 +363,8 @@ export type ProfileAction =
 /** How the player got to the profile. */
 export type ProfileEntry = 'world' | 'chat' | 'library';
 
-/** Where on the page an action happened: an owner section, or a foreign tab. */
-export type ProfilePlace = ProfileSection | ForeignTab;
+/** Where on the page an action happened: the tab it was on. */
+export type ProfilePlace = ProfileTab;
 
 /** The page's main buttons. */
 export type ProfileCta = 'invite' | 'chat' | 'play';
@@ -317,12 +382,16 @@ export function trackProfileViewed(view: ProfileView, kind: ProfileKind, entry: 
   track('profile_viewed', { view, character_kind: kind, entry, in_library: inLibrary });
 }
 
-/** profile_tab_viewed {tab, character_kind}: a foreign companion's tab, on open and on every change. */
-export function trackProfileTabViewed(tab: ForeignTab, kind: ProfileKind): void {
-  track('profile_tab_viewed', { tab, character_kind: kind });
+/**
+ * profile_tab_viewed {tab, view, character_kind}: the section menu's tab, on
+ * open and on every change (your own companion's tabs too, since 261110's
+ * second pass).
+ */
+export function trackProfileTabViewed(tab: ProfileTab, view: ProfileView, kind: ProfileKind): void {
+  track('profile_tab_viewed', { tab, view, character_kind: kind });
 }
 
-/** profile_action_clicked {action, tab, character_kind}; `tab` is the section or foreign tab. */
+/** profile_action_clicked {action, tab, character_kind}; `tab` is the tab the action was on. */
 export function trackProfileActionClicked(action: ProfileAction, place: ProfilePlace, kind: ProfileKind): void {
   track('profile_action_clicked', { action, tab: place, character_kind: kind });
 }

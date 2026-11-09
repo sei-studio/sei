@@ -1,79 +1,54 @@
-/* Profile Overview (product call 261110): a companion you do not own.
-   Calm and scannable: the description, then a short label | value list. */
+/* Profile Overview (profile v2, product call 261110): a companion you do
+   not own. One surface, no boxed panels, few type sizes: 16-17px reading
+   text, 15px tile names, 13px quiet details and shelf headings. Games and
+   avatars are picture tiles of one height, side by side when they fit. */
 
 .overview {
   display: flex;
   flex-direction: column;
-  gap: var(--space-lg);
-  padding-top: var(--space-xs);
+  gap: var(--gap-section);
+}
+
+/* ── Intro: the description and the voice line ──────────────────────── */
+
+.intro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-group);
 }
 
 .desc {
   margin: 0;
+  max-width: 62ch;
   font-family: var(--sans);
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.55;
   color: var(--text-2);
   white-space: pre-line;
   display: -webkit-box;
-  -webkit-line-clamp: 8;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
-.facts {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
+/* Layout B: the Overview tab leads with it, at reading size. */
+.introWide .desc {
+  font-size: 17px;
+  -webkit-line-clamp: 6;
 }
-
-.fact {
-  display: grid;
-  grid-template-columns: minmax(90px, 22%) minmax(0, 1fr);
-  column-gap: var(--space-md);
-  align-items: start;
-  padding: var(--space-sm) 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.fact:last-child {
-  border-bottom: 0;
-}
-
-.fact dt {
-  padding-top: 7px;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.fact dd {
-  margin: 0;
-  min-width: 0;
-  font-family: var(--sans);
-  font-size: 14px;
-  color: var(--text-2);
-}
-
-.none {
-  display: inline-block;
-  padding-top: 5px;
-  color: var(--muted);
-}
-
-/* ── Voice ──────────────────────────────────────────────────────────── */
 
 .voice {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: var(--gap-control);
+  gap: var(--gap-stack);
+  min-width: 0;
 }
 
 .voiceLabel {
   min-width: 0;
+  font-family: var(--sans);
+  font-size: 15px;
+  color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -94,14 +69,14 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-xs);
-  min-width: 30px;
-  height: 30px;
-  padding: 0 var(--space-sm);
+  min-width: 34px;
+  height: 34px;
+  padding: 0 var(--space-md);
   border-radius: var(--radius-sm);
   background: var(--accent-soft);
   color: var(--accent);
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   transition: background 140ms ease, color 140ms ease;
@@ -134,79 +109,100 @@
   color: var(--red);
 }
 
-/* ── Games ──────────────────────────────────────────────────────────── */
+/* ── Shelves: Games, then Avatars ───────────────────────────────────── */
 
-.games {
+.shelves {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--gap-section);
+  row-gap: var(--gap-group);
+}
+
+.shelf {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-stack);
+  min-width: 0;
+}
+
+.shelfHead {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.none {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.tiles {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-sm);
+  gap: var(--gap-stack);
 }
 
+/* A game: its cover art, the name, and what is ready for it. */
 .game {
+  width: 152px;
   display: flex;
-  align-items: center;
-  gap: var(--gap-control);
-  padding: 5px var(--space-sm) 5px 5px;
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--muted) 10%, transparent);
+  flex-direction: column;
+  gap: var(--gap-tight);
   min-width: 0;
 }
 
-.gameThumb {
-  flex: none;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
+.cover {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  margin-bottom: var(--gap-tight);
+  border-radius: var(--radius);
+  background-color: var(--bg3);
   background-size: cover;
   background-position: center;
 }
 
-.gameText {
+.tileName {
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tileDetail {
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.25;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* An avatar: the picture, as tall as a game tile (cover + two text lines). */
+.avatar {
+  width: 92px;
   display: flex;
   flex-direction: column;
+  gap: var(--gap-tight);
   min-width: 0;
 }
 
-.gameName {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--text);
-  white-space: nowrap;
-}
-
-.gameDetail {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-/* ── Avatars ────────────────────────────────────────────────────────── */
-
-.avatars {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-sm);
-}
-
-.avatar {
-  width: 72px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-}
-
-.avatarThumb {
-  width: 72px;
-  height: 90px;
-  border-radius: var(--radius-sm);
+.avatarArt {
+  width: 100%;
+  height: 128px;
+  border-radius: var(--radius);
   overflow: hidden;
   background: var(--bg3);
   display: flex;
@@ -214,7 +210,7 @@
   justify-content: center;
 }
 
-.avatarThumb img {
+.avatarArt img {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -222,18 +218,10 @@
 }
 
 .avatarKind {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-}
-
-.avatarName {
-  font-size: 12px;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
   color: var(--text-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* ── Report (quiet link, someone else's companion) ──────────────────── */
@@ -245,11 +233,10 @@
   align-self: flex-start;
   display: inline-flex;
   align-items: center;
-  gap: var(--space-xs);
+  gap: var(--gap-tight);
   padding: 2px 0;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
+  font-family: var(--sans);
+  font-size: 13px;
   color: var(--muted);
   cursor: pointer;
   transition: color 140ms ease;

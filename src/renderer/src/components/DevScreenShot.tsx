@@ -27,10 +27,13 @@
  *                    on the Look tab's card image Regenerate button
  *                    (261107); without it the hint is marked seen so other
  *                    character shots stay as they were.
- *     &tab=overview|settings   (character, someone else's companion) the
- *                    tab to open on; &tab=look|voice|personality|games|
- *                    sharing|worldlink|danger scrolls your own companion's
- *                    page to that section (product call 261110)
+ *     &tab=overview|settings|worldlink|more   (character, someone else's
+ *                    companion) the tab to open on; &tab=look|voice|
+ *                    personality|games|worldlink|more opens that tab of your
+ *                    own companion's section menu (worldlink needs
+ *                    &seilink=on), and a row group (sharing|danger) opens
+ *                    the tab that holds it (product call 261110)
+ *     &profilelayout=a|b   profile v2 layout option (lib/profileLayout.ts)
  *     &who=own|builtin|world   (character) Sui as your own companion
  *                    (default), as a built-in, or as another player's World
  *                    companion in your library; &movedin=1 with &seilink=on
@@ -249,8 +252,8 @@ function seed(): void {
       });
       const avatars = [item(`${id}-card`, 'portrait', 'card', null, suiArt)];
       if (who !== 'own') {
-        avatars.push(item(`${id}-a1`, 'portrait', 'upload', 'Winter cloak', suiArt));
-        avatars.push(item(`${id}-a2`, 'live2d', 'upload', 'Desk buddy', null));
+        avatars.push(item(`${id}-a1`, 'portrait', 'upload', null, suiArt));
+        avatars.push(item(`${id}-a2`, 'live2d', 'upload', null, null));
       }
       return {
         state: 'ready',
