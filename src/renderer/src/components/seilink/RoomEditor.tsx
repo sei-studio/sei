@@ -109,7 +109,7 @@ import { LOGIN_STEP_DEFAULT, loginStepAfter, offersLoginStep, type OpenAtLoginSo
 import { useEditorAnalytics, type TogetherAnalytics } from '../../lib/seilink/editorAnalytics';
 import { lightSlotsOf, roomShapeOf, type EditorOpenedFrom, type EditorSurface } from '@shared/seilinkTelemetry';
 import { RoomCanvas, type RoomAvatarSlot } from './RoomCanvas';
-import { componentThumb, roomThumb } from '../../lib/seilink/roomThumbs';
+import { componentThumb, deviceThumbPx, roomThumb } from '../../lib/seilink/roomThumbs';
 import { patternThumb } from '../../lib/seilink/patternThumbs';
 import { RoomPicker } from '../../lib/seilink/roomPick';
 import { groupSlots, slotGroup, type SlotGroup } from '../../lib/seilink/roomGroups';
@@ -319,10 +319,15 @@ function PartThumb({ pack, component, tint, time, cover }: { pack: EditorPack; c
   return url ? <img className={cover ? styles.thumbCover : styles.thumb} src={url} alt="" draggable={false} /> : <span className={styles.thumbWait} />;
 }
 
-function RoomCard({ pack, state, time }: { pack: EditorPack; state: RoomState; time: RoomTime }): React.ReactElement {
+/** A room type card's picture, `width` CSS px wide (drawn at the screen's scale). */
+function RoomCard({ pack, state, time, width }: { pack: EditorPack; state: RoomState; time: RoomTime; width: number }): React.ReactElement {
   const key = JSON.stringify({ ...state, time: null });
   const debounced = useDebounced(key, 300);
-  const url = useAsyncUrl(() => roomThumb(pack.manifest, JSON.parse(debounced) as RoomState, { time, resolve: pack.resolve, width: 320, rev: pack.rev }), `${pack.id}:${pack.rev}:${debounced}:${time}`);
+  const px = deviceThumbPx(width);
+  const url = useAsyncUrl(
+    () => roomThumb(pack.manifest, JSON.parse(debounced) as RoomState, { time, resolve: pack.resolve, width: px, rev: pack.rev }),
+    `${pack.id}:${pack.rev}:${debounced}:${time}:${px}`,
+  );
   return url ? <img className={styles.cardImg} src={url} alt="" draggable={false} /> : <span className={styles.cardWait} />;
 }
 
@@ -1487,7 +1492,15 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     }
     if (panel === 'room') {
       return (
-        <section key="room" ref={panelRef} className={`${styles.panel} ${styles.groupPanel}`} aria-label={t('Room')}>
+        // 261110: in the guided step the room types sit in one row and the views
+        // in a denser grid, so the view outside the window shows without scrolling.
+        <section
+          key="room"
+          ref={panelRef}
+          className={guide ? `${styles.panel} ${styles.groupPanel} ${styles.roomCompact}` : `${styles.panel} ${styles.groupPanel}`}
+          aria-label={t('Room')}
+          data-room-layout={guide ? 'compact' : 'cards'}
+        >
           <div className={styles.section} role="group" aria-label={t('Room type')} data-section="room-type">
             <h2 className={styles.title}>{t('Room type')}</h2>
             <div className={styles.cards}>
@@ -1510,6 +1523,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
                         // Guided: each room as it would come in (bare); the plain background has nothing to show, so its room is drawn bare too.
                         state={on && !state.plain ? state : guide ? bareRoomState(p.manifest, state) : defaultRoomState(id)}
                         time={time}
+                        width={guide ? 150 : 270}
                       />
                     ) : (
                       <span className={styles.cardWait} />

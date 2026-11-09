@@ -9,6 +9,11 @@
  *  - roomThumb: a whole preset room (no avatar) at card size.
  *
  * Results are object URLs, cached by everything that changes the picture.
+ *
+ * 261110 (product call 261110): sized in device px (CSS size times the
+ * screen's scale), so a card or tile is not upscaled on a 150% or Retina
+ * screen; a room card is drawn at twice its size and scaled down smoothly,
+ * so thin edges (a window frame, a sprite's outline) do not break into dots.
  */
 import { roomDrawPlan, type ItemLayer, type SlotLayer } from '@shared/seilinkDraw';
 import type { RoomComponent, RoomPresetManifest, RoomState, RoomTime } from '@shared/seilinkRoom';
@@ -18,6 +23,17 @@ import { ctx2d, loadRoomImage, loadRoomMask, makeCanvas, type AnyCanvas } from '
 
 const cache = new Map<string, Promise<string>>();
 const MAX = 240;
+
+/** The screen's px per CSS px, 1 to 3. */
+export function thumbScale(): number {
+  const dpr = typeof window !== 'undefined' ? window.devicePixelRatio : 1;
+  return Math.min(3, Math.max(1, Number.isFinite(dpr) && dpr > 0 ? dpr : 1));
+}
+
+/** Device px for a thumbnail shown `css` CSS px wide. */
+export function deviceThumbPx(css: number, scale = thumbScale()): number {
+  return Math.round(css * scale);
+}
 
 function remember(key: string, make: () => Promise<string>): Promise<string> {
   const hit = cache.get(key);
@@ -97,7 +113,8 @@ export function componentThumb(
   component: RoomComponent,
   opts: { time: RoomTime; tint: string | null; resolve: RoomUrlResolver; size?: number; cover?: boolean },
 ): Promise<string> {
-  const size = opts.size ?? 112;
+  // A tile's thumb shows at about 88 CSS px (the guided step's grid).
+  const size = opts.size ?? Math.max(112, deviceThumbPx(88));
   const frame = component.frames[opts.time] ?? component.frames.day;
   const key = `c:${manifest.id}:${opts.resolve(frame.src)}:${opts.tint ?? ''}:${size}:${opts.cover ? 1 : 0}`;
   return remember(key, async () => {
@@ -135,7 +152,7 @@ export function componentThumb(
   });
 }
 
-/** A whole room (no avatar) at `width` px, for the room type cards. */
+/** A whole room (no avatar) at `width` device px, for the room type cards. */
 export function roomThumb(
   manifest: RoomPresetManifest,
   state: RoomState,
@@ -147,14 +164,23 @@ export function roomThumb(
     const plan = roomDrawPlan(manifest, state, opts.time, { avatar: false });
     const { assets } = await loadPlanAssets(plan, opts.resolve);
     const [cw, ch] = manifest.canvas;
-    const s = width / cw;
-    const c = makeCanvas(width, ch * s);
+    // Drawn at twice the size (up to the room's own), then scaled down smoothly.
+    const work = Math.min(cw, width * 2);
+    const s = work / cw;
+    const c = makeCanvas(work, ch * s);
     const ctx = ctx2d(c);
+    ctx.imageSmoothingQuality = 'high';
     ctx.setTransform(s, 0, 0, s, 0, 0);
     const layers = plan.layers.filter((l): l is SlotLayer | ItemLayer => l.kind !== 'avatar');
     drawRoomLayers(ctx, layers, manifest.canvas, assets, s);
     ctx.globalCompositeOperation = 'screen';
     drawRoomGlows(ctx, plan.glows, manifest.canvas, assets, () => 1);
-    return toUrl(c);
+    if (work <= width) return toUrl(c);
+    const out = makeCanvas(width, Math.round((ch * width) / cw));
+    const octx = ctx2d(out);
+    octx.imageSmoothingEnabled = true;
+    octx.imageSmoothingQuality = 'high';
+    octx.drawImage(c, 0, 0, out.width, out.height);
+    return toUrl(out);
   });
 }

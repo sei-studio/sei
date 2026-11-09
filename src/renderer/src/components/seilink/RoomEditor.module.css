@@ -682,6 +682,72 @@
   backdrop-filter: blur(10px);
 }
 
+/* 261110: the guided room step, compact so the view outside the window
+   shows without scrolling: the room types in one row with their names under
+   the pictures, the views four to a row. */
+.roomCompact .cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-sm);
+}
+
+.roomCompact .card {
+  aspect-ratio: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: visible;
+  background: none;
+  text-align: left;
+}
+
+.roomCompact .cardOn {
+  box-shadow: none;
+}
+
+.roomCompact .cardImg,
+.roomCompact .card .cardWait {
+  position: static;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--r-tile);
+  background: var(--tile);
+}
+
+.roomCompact .cardOn .cardImg {
+  box-shadow: var(--tile-on-shadow);
+}
+
+.roomCompact .cardCheck {
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+}
+
+.roomCompact .cardLabel {
+  position: static;
+  display: block;
+  padding: 0 2px;
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.roomCompact .cardOn .cardLabel {
+  color: rgb(var(--ink));
+}
+
+.roomCompact .grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 /* Swatches (261105 colour pass): one row of nine cells, the same grid in
    every section: eight presets (or the automatic / colour-cycle cell and
    seven), then the custom colour (RoomColorPicker). */
