@@ -3,16 +3,11 @@
  *
  * Profile v2 (product call 261110, second pass): no long scroll, one tab of
  * a top section menu at a time, bigger type and the actions near the
- * content. Two layout options share this component (lib/profileLayout.ts):
- *
- *  - A (backdrop): the portrait bleeds off the RIGHT edge behind a
- *    left-to-right scrim. The left column: back crumb, name + share code
- *    (+ Built-in chip), one meta line, then for someone else's companion
- *    its description and voice, then Chat + Play (or Invite to party), then
- *    the section menu and the active tab.
- *  - B (framed): the portrait is a framed panel on the left; a wide sheet on
- *    the right has the name with Chat + Play beside it, the section menu,
- *    and the tab (the Overview leads with the description and voice).
+ * content. The content is on the left: back crumb, name + share code
+ * (+ Built-in chip) with Chat + Play (or Invite to party) beside it, one
+ * meta line, the section menu and the active tab (the Overview leads with
+ * the description and voice). The portrait is a panel on the right whose
+ * inner (left) edge fades into the page.
  *
  * Tabs (lib/profileRows.ts):
  *  - YOUR companion: Look, Voice, Personality, Games, WorldLink (where
@@ -93,7 +88,6 @@ import {
   type ProfileFocus,
   type ProfileTab,
 } from '../lib/profileRows';
-import { profileLayout } from '../lib/profileLayout';
 import type { Character } from '@shared/characterSchema';
 import type { CharacterOverviewInfo } from '@shared/ipc';
 import { NO_VOICE_ID, ownVoiceOf, sharedVoiceIdOf } from '@shared/voiceIds';
@@ -128,27 +122,16 @@ export interface CharacterPageProps {
 
 /**
  * Wireframe shown while a not-yet-cached character downloads (or on the first
- * paint before the mount effect resolves). Mirrors the real page frame — a
- * portrait block bleeding off the right, name / chip / description / kv / deploy
- * bars on the left — static grey blocks (260705: no shimmer sweep), so the wait
+ * paint before the mount effect resolves). Mirrors the real page frame: name /
+ * description / deploy / kv bars on the left, the portrait panel on the right,
+ * as static grey blocks (260705: no shimmer sweep), so the wait
  * reads as intentional instead of a blank flash. Keeps a working Back crumb so
  * the user is never stranded.
  */
 function CharacterPageSkeleton({ onBack }: { onBack: () => void }): React.ReactElement {
   const t = useT();
-  const layout = profileLayout();
   return (
-    <div
-      className={`${styles.root} ${layout === 'b' ? styles.layoutB : styles.layoutA}`}
-      aria-busy="true"
-      aria-label={t('Loading companion')}
-    >
-      <div className={styles.art}>
-        <div className={styles.portraitLayer} aria-hidden="true">
-          <div className={styles.skelPortrait} />
-          <div className={styles.dScrim} />
-        </div>
-      </div>
+    <div className={styles.root} aria-busy="true" aria-label={t('Loading companion')}>
       <main className={styles.content}>
         <div className={styles.crumb}>
           <Button kind="quiet" size="sm" icon={<BackIcon size={13} />} onClick={onBack}>
@@ -171,6 +154,12 @@ function CharacterPageSkeleton({ onBack }: { onBack: () => void }): React.ReactE
           <div className={styles.skelKvRow} />
         </div>
       </main>
+      <div className={styles.art}>
+        <div className={styles.portraitLayer} aria-hidden="true">
+          <div className={styles.skelPortrait} />
+          <div className={styles.dScrim} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -202,8 +191,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const [initialFocus] = useState<ProfileFocus | null>(() => takeRequestedProfileFocus());
   // The section menu tab the player picked (null = the first tab).
   const [wantedTab, setWantedTab] = useState<ProfileFocus | null>(initialFocus);
-  // Option A or B of the profile v2 layout (lib/profileLayout.ts).
-  const [layout] = useState(profileLayout);
   // chars:overview-info (creator, add count, Stardew look, sample voice).
   const [overview, setOverview] = useState<{ id: string; info: CharacterOverviewInfo } | null>(null);
   const [preparing, setPreparing] = useState<boolean>(false);
@@ -765,8 +752,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   };
 
   // Chat + Play (or Invite to party for a preview). Static routes; neither
-  // reflects game state. Option A puts them under the description, option B
-  // beside the name.
+  // reflects game state. They sit beside the name.
   const actions = (
     <div className={styles.deploy} data-actions="true">
       {isPreview ? (
@@ -793,9 +779,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       )}
     </div>
   );
-  // Who it is (someone else's companion): the description and its voice.
-  // Option A shows it in the header above the actions; option B on the
-  // Overview tab.
+  // Who it is (someone else's companion): the description and its voice,
+  // at the top of the Overview tab.
   const intro =
     view === 'foreign' ? (
       <ProfileIntro
@@ -803,50 +788,11 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
         character={character}
         info={info}
         onSample={(r) => onSample(r)}
-        size={layout === 'b' ? 'wide' : 'header'}
       />
     ) : null;
 
   return (
-    <div className={`${styles.root} ${layout === 'b' ? styles.layoutB : styles.layoutA}`} data-layout={layout}>
-      <div className={styles.art}>
-        {/* A: the portrait bleeds off the right edge behind a left-to-right
-            scrim. B: a framed panel on the left. */}
-        <div className={styles.portraitLayer} aria-hidden="true">
-          <div
-            className={styles.portraitTint}
-            style={{ background: `radial-gradient(70% 90% at 70% 30%, ${tint}4d, transparent 66%)` }}
-          />
-          <PixelPortrait
-            seed={character.id + character.name}
-            palette={palette}
-            size={520}
-            portraitImage={character.portrait_image}
-            className={`${styles.dPic} ${leaving ? styles.dPicLeaving : ''}`}
-            style={{ width: '100%', height: '100%' }}
-          />
-          <div className={styles.dScrim} />
-        </div>
-
-        {/* Expand the full art (260729) — only when there is real portrait art
-            to show (the procedural sprite has nothing to save). */}
-        {portraitSrc(character.portrait_image) ? (
-          <button
-            type="button"
-            className={styles.artExpandBtn}
-            onClick={() => {
-              setArtSavedTo(null);
-              setArtOpen(true);
-            }}
-            aria-label={t('View full art')}
-            data-tip={t('View full art')}
-            data-tip-edge="right"
-          >
-            <FullscreenIcon size={16} />
-          </button>
-        ) : null}
-      </div>
-
+    <div className={styles.root}>
       <main className={`${styles.content} ${leaving ? styles.contentLeaving : ''}`}>
         <div className={styles.crumb}>
           <Button kind="quiet" size="sm" icon={<BackIcon size={13} />} onClick={closePage}>
@@ -889,11 +835,9 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
               )}
             </dl>
           </div>
-          {layout === 'b' ? actions : null}
+          {actions}
         </header>
 
-        {layout === 'a' ? intro : null}
-        {layout === 'a' ? actions : null}
         {addError ? (
           <p className={styles.addError} role="alert">
             {addError}
@@ -939,7 +883,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
               info={info}
               inLibrary={!isPreview}
               canReport={access.report}
-              intro={layout === 'b' ? intro : null}
+              intro={intro}
               onReport={() => {
                 onAction('report');
                 setShowReport(true);
@@ -966,6 +910,44 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           )}
         </div>
       </main>
+
+      <div className={styles.art}>
+        {/* The portrait panel, right of the content; its left edge fades
+            into the page. */}
+        <div className={styles.portraitLayer} aria-hidden="true">
+          <div
+            className={styles.portraitTint}
+            style={{ background: `radial-gradient(70% 90% at 70% 30%, ${tint}4d, transparent 66%)` }}
+          />
+          <PixelPortrait
+            seed={character.id + character.name}
+            palette={palette}
+            size={520}
+            portraitImage={character.portrait_image}
+            className={`${styles.dPic} ${leaving ? styles.dPicLeaving : ''}`}
+            style={{ width: '100%', height: '100%' }}
+          />
+          <div className={styles.dScrim} />
+        </div>
+
+        {/* Expand the full art (260729), only when there is real portrait art
+            to show (the procedural sprite has nothing to save). */}
+        {portraitSrc(character.portrait_image) ? (
+          <button
+            type="button"
+            className={styles.artExpandBtn}
+            onClick={() => {
+              setArtSavedTo(null);
+              setArtOpen(true);
+            }}
+            aria-label={t('View full art')}
+            data-tip={t('View full art')}
+            data-tip-edge="right"
+          >
+            <FullscreenIcon size={16} />
+          </button>
+        ) : null}
+      </div>
 
       {editing ? (
         <EditCharacterModal

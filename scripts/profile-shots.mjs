@@ -3,17 +3,15 @@
  * Screenshots of the companion profile page (profile v2, product call 261110),
  * headless, no Electron.
  *
- *   node scripts/profile-shots.mjs [--out profile-shots] [--layout a|b|both]
+ *   node scripts/profile-shots.mjs [--out profile-shots] [--prefix name-]
  *                                  [--shots world,builtin,own-look,...] [--size 1280x800]
  *                                  [--query '<extra params>']
  *
  * Starts the renderer's Vite dev server on its own (no electron-vite) and
  * Chrome through playwright, then opens the `?dashshot=screen` harnesses
  * (DevWorldShot for a World companion, DevScreenShot for Sui as a built-in
- * or as your own companion). `--layout b` adds `&profilelayout=b`, the
- * dev-only switch to the second layout option (lib/profileLayout.ts); `both`
- * writes `optionA-<shot>.png` and `optionB-<shot>.png`. Everything it starts
- * is closed before it exits. CHROME_PATH overrides the browser (default
+ * or as your own companion) and writes `<prefix><shot>.png` for each shot.
+ * Everything it starts is closed before it exits. CHROME_PATH overrides the browser (default
  * /usr/bin/google-chrome). Analytics are stubbed by the harnesses.
  */
 import fs from 'node:fs';
@@ -30,7 +28,7 @@ const arg = (name, dflt) => {
 };
 const OUT = path.resolve(arg('out', 'profile-shots'));
 const [VW, VH] = arg('size', '1280x800').split('x').map(Number);
-const LAYOUT = arg('layout', 'both');
+const PREFIX = arg('prefix', '');
 const QUERY = arg('query', '');
 const SHOTS = {
   world: 'screen=worldprofile&who=Aria',
@@ -48,7 +46,6 @@ const SHOTS = {
   'own-custom-image': 'screen=character&tab=look&img=custom',
 };
 const names = arg('shots', Object.keys(SHOTS).join(',')).split(',');
-const layouts = LAYOUT === 'both' ? ['a', 'b'] : [LAYOUT];
 
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
@@ -70,22 +67,20 @@ async function main() {
       if (m.type() === 'error') console.log(`[page ${m.type()}] ${m.text().slice(0, 240)}`);
     });
     page.on('pageerror', (e) => console.log(`[page error] ${e.message.slice(0, 300)}`));
-    for (const layout of layouts) {
-      for (const name of names) {
-        const q = SHOTS[name];
-        if (!q) {
-          console.log(`unknown shot ${name}`);
-          continue;
-        }
-        const url = `${viteUrl}/?dashshot=screen&${q}${layout === 'b' ? '&profilelayout=b' : ''}${QUERY ? `&${QUERY}` : ''}`;
-        await page.goto(url, { waitUntil: 'load' });
-        await page.waitForSelector('main h1', { timeout: 60_000 }).catch(() => console.log(`${name}: no page title`));
-        // Let the page's open animation, the portrait and the rows' reads settle.
-        await page.waitForTimeout(1600);
-        const file = path.join(OUT, `option${layout.toUpperCase()}-${name}.png`);
-        await page.screenshot({ path: file });
-        console.log(file);
+    for (const name of names) {
+      const q = SHOTS[name];
+      if (!q) {
+        console.log(`unknown shot ${name}`);
+        continue;
       }
+      const url = `${viteUrl}/?dashshot=screen&${q}${QUERY ? `&${QUERY}` : ''}`;
+      await page.goto(url, { waitUntil: 'load' });
+      await page.waitForSelector('main h1', { timeout: 60_000 }).catch(() => console.log(`${name}: no page title`));
+      // Let the page's open animation, the portrait and the rows' reads settle.
+      await page.waitForTimeout(1600);
+      const file = path.join(OUT, `${PREFIX}${name}.png`);
+      await page.screenshot({ path: file });
+      console.log(file);
     }
   } finally {
     await browser?.close().catch(() => {});

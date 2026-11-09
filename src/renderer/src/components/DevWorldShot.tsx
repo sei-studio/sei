@@ -11,7 +11,6 @@
  *                   newest-first pages, `sorted: false`, no counts
  *     &delay=<ms>   per-page latency (default 300), to watch the auto-load
  *     &theme=light|dark  &lang=zh|ja|ru|pt-BR|es
- *     &profilelayout=a|b   profile v2 layout option (lib/profileLayout.ts)
  *
  * The fixture pager answers like main's browse:list: PAGE_SIZE rows per call
  * in the requested order, `hasMore` when a full page came back.

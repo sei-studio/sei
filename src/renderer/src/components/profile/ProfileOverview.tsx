@@ -5,8 +5,7 @@
  *
  *   - ProfileIntro: the description and its voice, with a play button
  *     (VoiceSample: the bundled clip, no TTS spend, for every pool voice).
- *     Layout A shows it in the page header above the actions; layout B at
- *     the top of this tab (`intro`).
+ *     The page passes it as `intro`, at the top of this tab.
  *   - the games it already has a look for (a Minecraft skin, a Stardew
  *     farmer, the Don't Starve Together survivor you picked), as cover
  *     tiles,
@@ -38,8 +37,6 @@ export interface ProfileIntroProps {
   /** chars:overview-info; null while loading or when it failed. */
   info: CharacterOverviewInfo | null;
   onSample: (r: SampleResult) => void;
-  /** 'header' = layout A's page header (clamped); 'wide' = layout B's Overview tab. */
-  size: 'header' | 'wide';
 }
 
 /** The description, then the voice line (play button + who it sounds like). */
@@ -51,7 +48,7 @@ export function ProfileIntro(p: ProfileIntroProps): React.ReactElement {
   const label = useVoiceLabel(character, { borrowed: !!ownVoiceOf(character.metadata) });
   const silent = character.metadata?.voiceId === NO_VOICE_ID;
   return (
-    <div className={`${styles.intro} ${p.size === 'wide' ? styles.introWide : ''}`} data-ov="intro">
+    <div className={styles.intro} data-ov="intro">
       {description ? (
         <p className={styles.desc} data-ov="description">
           {description}
@@ -76,7 +73,7 @@ export interface ProfileOverviewProps {
   /** Show the Report link (someone else's companion). */
   canReport: boolean;
   onReport: () => void;
-  /** ProfileIntro, when this tab leads with it (layout B). */
+  /** ProfileIntro, which this tab leads with. */
   intro?: React.ReactNode;
 }
 

@@ -33,7 +33,6 @@
  *                    own companion's section menu (worldlink needs
  *                    &seilink=on), and a row group (sharing|danger) opens
  *                    the tab that holds it (product call 261110)
- *     &profilelayout=a|b   profile v2 layout option (lib/profileLayout.ts)
  *     &who=own|builtin|world   (character) Sui as your own companion
  *                    (default), as a built-in, or as another player's World
  *                    companion in your library; &movedin=1 with &seilink=on

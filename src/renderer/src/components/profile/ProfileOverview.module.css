@@ -1,5 +1,5 @@
 /* Profile Overview (profile v2, product call 261110): a companion you do
-   not own. One surface, no boxed panels, few type sizes: 16-17px reading
+   not own. One surface, no boxed panels, few type sizes: 17px reading
    text, 15px tile names, 13px quiet details and shelf headings. Games and
    avatars are picture tiles of one height, side by side when they fit. */
 
@@ -21,20 +21,14 @@
   margin: 0;
   max-width: 62ch;
   font-family: var(--sans);
-  font-size: 16px;
+  font-size: 17px;
   line-height: 1.55;
   color: var(--text-2);
   white-space: pre-line;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 6;
   -webkit-box-orient: vertical;
   overflow: hidden;
-}
-
-/* Layout B: the Overview tab leads with it, at reading size. */
-.introWide .desc {
-  font-size: 17px;
-  -webkit-line-clamp: 6;
 }
 
 .voice {

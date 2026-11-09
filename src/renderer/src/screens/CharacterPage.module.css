@@ -1,12 +1,7 @@
-/* CharacterPage.module.css — a companion's profile (Party redesign §4.6;
- * profile v2, product call 261110). Two layouts share these classes
- * (lib/profileLayout.ts):
- *
- *   .layoutA  the portrait bleeds off the right behind a left-to-right
- *             scrim; one column on the left (header, intro, actions, the
- *             section menu, the active tab).
- *   .layoutB  the portrait is a framed panel on the left; a wide sheet on
- *             the right with the actions beside the name.
+/* CharacterPage.module.css: a companion's profile (Party redesign §4.6;
+ * profile v2, product call 261110). The content (header with the actions
+ * beside the name, the section menu, the active tab) is on the left; the
+ * portrait is a panel on the right whose inner edge fades into the page.
  *
  * One dark surface, no boxed panels, few type sizes: the name (display),
  * 16-17px reading text, 15px controls and tabs, 13-14px quiet details. Row
@@ -18,16 +13,31 @@
   height: 100%;
   overflow: hidden;
   background: var(--window);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 34%);
 }
 
-/* ── Art: the portrait (+ the expand button) ─────────────────────────── */
-.layoutA .art {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(660px, 54%);
-  z-index: 0;
+/* ── Art: the portrait panel (+ the expand button) ───────────────────── */
+.art {
+  position: relative;
+  margin: var(--page-top) var(--page-gutter) var(--page-top) 0;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg3);
+  min-height: 0;
+  /* The inner (left) edge fades into the page instead of a hard frame
+     line: an eased ramp over the first fifth, so the art itself stays
+     whole. */
+  --art-fade: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, black 22%, transparent) 6%,
+    color-mix(in srgb, black 60%, transparent) 13%,
+    color-mix(in srgb, black 88%, transparent) 19%,
+    black 24%
+  );
+  -webkit-mask-image: var(--art-fade);
+  mask-image: var(--art-fade);
 }
 
 .portraitLayer {
@@ -35,6 +45,7 @@
   inset: 0;
   z-index: 0;
   overflow: hidden;
+  background: linear-gradient(180deg, var(--card-top), var(--card-bottom));
 }
 
 .portraitTint {
@@ -47,7 +58,9 @@
   position: absolute !important;
   inset: 0;
   z-index: 1;
-  filter: drop-shadow(-30px 0 60px rgba(0, 0, 0, 0.5));
+  /* The panel's own backing shows through a cut-out portrait (and the tint
+     glow with it), so the panel reads as one piece. */
+  background: transparent;
   /* Portrait rises + fades in on open. */
   animation: picRise 0.7s var(--ease) both;
 }
@@ -84,47 +97,7 @@
   inset: 0;
   z-index: 2;
   pointer-events: none;
-  /* Softened 260729: fainter wash, shorter reach — the art carries the right
-     half of the page uncovered; the left band stays strong enough for text. */
-  background:
-    linear-gradient(
-      90deg,
-      var(--window) 3%,
-      color-mix(in srgb, var(--window) 74%, transparent) 24%,
-      color-mix(in srgb, var(--window) 22%, transparent) 46%,
-      transparent 62%
-    ),
-    linear-gradient(0deg, color-mix(in srgb, var(--window) 45%, transparent), transparent 20%);
-}
-
-/* Layout B: the art is a framed panel, the page's left column. No scrim
-   over it (nothing sits on top), only a soft fade at its foot. */
-.layoutB {
-  display: grid;
-  grid-template-columns: minmax(260px, 34%) minmax(0, 1fr);
-}
-
-.layoutB .art {
-  position: relative;
-  margin: var(--page-top) 0 var(--page-top) var(--page-gutter);
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: var(--bg3);
-  min-height: 0;
-}
-
-.layoutB .portraitLayer {
-  background: linear-gradient(180deg, var(--card-top), var(--card-bottom));
-}
-
-/* The frame's own backing shows through a cut-out portrait (and the tint
-   glow with it), so the panel reads as one framed piece. */
-.layoutB .dPic {
-  filter: none;
-  background: transparent;
-}
-
-.layoutB .dScrim {
+  /* A soft fade at the panel's foot, under the expand button. */
   background: linear-gradient(0deg, color-mix(in srgb, var(--window) 40%, transparent), transparent 22%);
 }
 
@@ -187,14 +160,9 @@
   animation: detailIn 0.5s var(--ease) both;
 }
 
-.layoutA .content {
-  width: min(620px, 56%);
+.content {
   padding: var(--page-top) var(--space-lg) var(--page-top) var(--page-gutter);
-}
-
-.layoutB .content {
-  padding: var(--page-top) var(--page-gutter);
-  max-width: 820px;
+  max-width: 860px;
 }
 
 @keyframes detailIn {
@@ -231,7 +199,7 @@
   align-self: flex-start;
 }
 
-/* Header: the name block (+ the actions beside it in layout B). */
+/* Header: the name block, the actions beside it. */
 .head {
   display: flex;
   align-items: center;
@@ -329,10 +297,6 @@
   justify-content: center;
 }
 
-.layoutA .deploy {
-  margin-top: var(--space-xs);
-}
-
 /* ── Section menu (one row of tabs, underline on the active one) ─────── */
 .tabs {
   flex: none;
@@ -340,10 +304,6 @@
   flex-wrap: wrap;
   column-gap: var(--space-lg);
   border-bottom: 1px solid var(--border);
-}
-
-.layoutA .tabs {
-  margin-top: var(--space-sm);
 }
 
 .tab,
