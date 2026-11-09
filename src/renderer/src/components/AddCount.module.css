@@ -1,0 +1,32 @@
+/* AddCount — quiet "added by N players" label (261110). No border, no fill. */
+
+.count {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+.count svg {
+  flex-shrink: 0;
+}
+
+/* Over the card's dark bottom scrim (same treatment as the "by" line). */
+.card {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+/* On the profile title row, next to the IdTag. */
+.page {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}

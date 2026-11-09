@@ -16,6 +16,9 @@
  *  - Move in: saves the plain background when it is her first, then starts the
  *    host. Main swaps out whoever lived there (one companion at a time).
  *
+ *  - "Open on login" is not asked here (product call 261107): it is a step
+ *    after the guided room setup (RoomEditor, lib/seilink/loginStep.ts).
+ *
  * A companion whose room is saved and nobody else moved in skips the sheet
  * (needsMoveInSheet, lib/seilink/moveIn.ts); the page starts the host directly.
  */

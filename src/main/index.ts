@@ -27,6 +27,7 @@ import { app, BrowserWindow, ipcMain, net, session, systemPreferences } from 'el
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { closeSplashWindow, createMainWindow, createSplashWindow } from './windowChrome';
+import { launchSplashStatus, msSinceProcessStart } from './splashPage';
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { registerFacepackIpc } from './facepack/facepackIpc';
 import { openSeilinkPreview, registerSeilinkIpc } from './seilink/seilinkIpc';
@@ -55,11 +56,14 @@ import { sessionEndProps, isSessionFailure, type SessionEndProps } from './sessi
 import { consumeGoodbye, gameEndHookProps, callEndHookProps, goodbyePlanPlace } from './sessionGoodbye';
 import { callInterruptProps } from '../shared/callInterrupts';
 import { endCallsForAccountSwitch } from './voice/accountSwitchCalls';
+import { gameEndRoute, mainClosedCallRoute } from './nextStepReach';
+import type { GoodbyeNote } from './sessionGoodbye';
 import {
   bindPlayerEndRuntime,
   clearSessionDigest,
-  isPlayerEndedGame,
   noteSessionDigest,
+  reportGoodbyePlanSaved,
+  reportNextStepNotRun,
   startPlayerEndNextStep,
   takeSessionDigest,
   yieldToNewSession,
@@ -84,6 +88,7 @@ import {
   noteRendererGone,
   reportStartupFailure,
   setMainWindowGetter,
+  setSecondLaunchHandler,
   takeSafeModeReport,
 } from './bootContext';
 import { applyPendingAtLaunch, updateSplashStatusForLaunch } from './velopackUpdater';
@@ -96,6 +101,17 @@ import { loadWizardState, saveWizardState } from './wizardStateStore';
 import { registerPortraitScheme, registerPortraitProtocol } from './portraitProtocol';
 import { cleanupRelocationLeftover } from './relocate';
 import { cleanupLegacyTraySettings } from './legacyTrayCleanup';
+import {
+  afterLoginReveal,
+  keepRunningOnLastWindowClosed,
+  launchedAtLogin,
+  loginLaunch,
+  noteRevealVia,
+  onSecondLaunch,
+  settleLoginLaunch,
+  startOpenAtLoginAtReady,
+  watchMainWindowShow,
+} from './seilink/loginLaunchRuntime';
 import { initMcDashboardService } from './mcDashboard/mcDashboardService';
 import {
   initGameDashboardService,
@@ -150,8 +166,9 @@ setMainWindowGetter(() => mainWindow);
 let bootstrapStarted = false;
 /** bootstrap() made its main window; before that, a reopen leaves it to bootstrap. */
 let firstWindowMade = false;
-// Startup splash (260728) — shown from whenReady, closed when the main window
-// first paints (or by the failsafe timer).
+// Update splash (261030): shown from whenReady only on the launch right after
+// Update.exe restarted Sei, closed when the main window first paints (or by
+// the failsafe timer). A normal launch has none (product call 261108).
 let splashWindow: BrowserWindow | null = null;
 let latestLanState: LanState = { kind: 'closed' };
 // Game adapters (M0, 260908): the Minecraft GameModule wraps the LAN watcher;
@@ -211,7 +228,34 @@ async function endVoiceCallsFromMain(reason: string): Promise<void> {
     closeOverlay: closeCallOverlay,
     capture,
     emitCallSession,
+    onClosed: (id, connectedMs, goodbye) => nextStepForMainClosedCall(reason, id, connectedMs, goodbye),
   });
+}
+
+/**
+ * 261107 (O2 reach): the "next time" check for a call main closed itself
+ * (nextStepReach.ts mainClosedCallRoute). Closing the window is a common way
+ * to end a call, and it used to run no check on any platform. Synchronous up
+ * to the check it starts, so the Windows quit that follows the window close
+ * still finds the pending file written.
+ */
+function nextStepForMainClosedCall(reason: string, id: string, connectedMs: number, goodbye: GoodbyeNote): void {
+  if (goodbye.nextStepHook) reportGoodbyePlanSaved({ characterId: id, surface: 'call' }, capture);
+  const route = mainClosedCallRoute({
+    reason,
+    platform: process.platform,
+    companionEnded: goodbye.companionEnded,
+    inGame: onlineIds.has(id) || playStartedAt.has(id),
+  });
+  const notRun = { characterId: id, surface: 'call' as const, endReason: reason, durationMs: connectedMs };
+  if (route.kind === 'check') {
+    void startCallNextStep(id, connectedMs);
+  } else if (route.kind === 'persist') {
+    const kept = persistQuitSession({ characterId: id, surface: 'call', durationMs: connectedMs, endedAt: Date.now() });
+    reportNextStepNotRun({ ...notRun, outcome: kept ? 'deferred' : 'trivial' }, capture);
+  } else if (route.kind === 'report') {
+    reportNextStepNotRun({ ...notRun, outcome: route.outcome, saved: goodbye.nextStepHook }, capture);
+  }
 }
 
 /**
@@ -251,6 +295,8 @@ let pendingSeilinkOpen: { channel: string; payload: unknown } | null = null;
  */
 function openFromSeilink(channel: string, payload: unknown): 'focused' | 'reopened' | 'deferred' {
   const w = mainWindow;
+  // 261107: a hidden login launch counts this as opened from her room.
+  noteRevealVia('room');
   if (w && !w.isDestroyed()) {
     if (process.platform !== 'linux') w.setOpacity(1);
     if (w.isMinimized()) w.restore();
@@ -306,6 +352,7 @@ function reopenMainWindow(): void {
   const win = createMainWindow({ preloadPath: preloadPath(), indexHtmlUrlOrPath: rendererTarget() });
   mainWindow = win;
   wireMainWindowEvents(win);
+  watchMainWindowShow(win);
   installPopupFrameGuards(win);
   // Auth pushes (and their replay on load) go to the new window.
   void import('./auth/authState')
@@ -626,12 +673,16 @@ function closePlaySession(id: string, end: SessionEndProps, failed: boolean): vo
   if (failed) {
     capture('bot_session_failed', { character_id: id, duration_s: durationS, game: started.game, ...end });
   }
-  // 261013 (T120): the app is quitting, so there is no time for the
-  // player-end check below. Keep what it needs (synchronous, a few KB, never
-  // throws) and run it on the next launch (quitNextStep.ts). Skipped when a
-  // goodbye already ended the session or set up a plan.
-  if (end.reason === 'app_quit' && !goodbye.companionEnded && !goodbye.nextStepHook) {
-    persistQuitSession({
+  if (goodbye.nextStepHook) reportGoodbyePlanSaved({ characterId: id, surface: 'game', game: started.game }, capture);
+  // 261107 (O2 reach, nextStepReach.ts): every end either runs the check
+  // below or reports why not, so next_step_checked covers every session end.
+  // 261013 (T120): an app quit leaves no time for the check, so 'persist'
+  // keeps what it needs (synchronous, a few KB, never throws) for the next
+  // launch (quitNextStep.ts). A goodbye that ended it or set a plan skips it.
+  const route = gameEndRoute({ reason: end.reason, companionGoodbye: goodbye.companionEnded || goodbye.nextStepHook });
+  const notRun = { characterId: id, surface: 'game' as const, game: started.game, endReason: end.reason, durationMs };
+  if (route.kind === 'persist') {
+    const kept = persistQuitSession({
       characterId: id,
       surface: 'game',
       game: started.game,
@@ -639,12 +690,15 @@ function closePlaySession(id: string, end: SessionEndProps, failed: boolean): vo
       endedAt: Date.now(),
       ...(digest ? { digest } : {}),
     });
+    reportNextStepNotRun({ ...notRun, outcome: kept ? 'deferred' : 'trivial' }, capture);
+  } else if (route.kind === 'report') {
+    reportNextStepNotRun({ ...notRun, outcome: route.outcome, saved: goodbye.nextStepHook }, capture);
   }
   // 261011: the player ended it (Stop, closed the world), so no goodbye turn
   // set up a next session. One small background check after teardown decides
   // if there is a plan worth saving (playerEndNextStep.ts). Fire and forget:
   // it never delays this close, the bot's exit or the next summon.
-  if (isPlayerEndedGame(end.reason)) {
+  if (route.kind === 'check') {
     const gameName = getGameModule(started.game)?.displayName ?? started.game;
     void startPlayerEndNextStep({
       characterId: id,
@@ -714,8 +768,14 @@ function endAllPlaySessionsForQuit(): void {
 function persistCallsForQuit(): void {
   const now = Date.now();
   for (const c of liveCallsNow(now)) {
-    if (onlineIds.has(c.characterId) || playStartedAt.has(c.characterId)) continue;
-    persistQuitSession({ characterId: c.characterId, surface: 'call', durationMs: c.connectedMs, endedAt: now });
+    const notRun = { characterId: c.characterId, surface: 'call' as const, endReason: 'app_quit', durationMs: c.connectedMs };
+    if (onlineIds.has(c.characterId) || playStartedAt.has(c.characterId)) {
+      reportNextStepNotRun({ ...notRun, outcome: 'in_game' }, capture);
+      continue;
+    }
+    const kept = persistQuitSession({ characterId: c.characterId, surface: 'call', durationMs: c.connectedMs, endedAt: now });
+    // 261107: the call's voice_call_ended (app_quit) comes from main right after.
+    reportNextStepNotRun({ ...notRun, outcome: kept ? 'deferred' : 'trivial' }, capture);
   }
 }
 
@@ -870,6 +930,31 @@ async function endGameSurfacesForQuit(): Promise<void> {
     (async () => (await import('./backseat/backseatService')).endAllBackseat('app_quit'))(),
   ]);
   await Promise.race([ends, new Promise((resolve) => setTimeout(resolve, QUIT_SURFACE_END_TIMEOUT_MS))]);
+}
+
+/**
+ * product call (261108): launch timing, now that no splash covers the start.
+ * `app_window_shown {startup_ms, update_screen}` once per process, at the
+ * first show of bootstrap's main window: `startup_ms` is process start to
+ * that show (the window stays hidden until ready-to-show, so this is the
+ * empty moment a user sees between the click and Sei). A hidden login launch
+ * is skipped: its first show is whenever the user opens Sei.
+ */
+function noteStartupWindowShown(win: BrowserWindow): void {
+  if (loginLaunch().isHidden()) return;
+  const updateScreen = splashWindow !== null;
+  win.once('show', () => {
+    let creationTime: number | undefined;
+    try {
+      creationTime = app.getAppMetrics().find((m) => m.type === 'Browser')?.creationTime;
+    } catch {
+      /* process.uptime() stands in */
+    }
+    capture('app_window_shown', {
+      startup_ms: msSinceProcessStart(Date.now(), creationTime, process.uptime()),
+      update_screen: updateScreen,
+    });
+  });
 }
 
 async function bootstrap(): Promise<void> {
@@ -1164,8 +1249,11 @@ async function bootstrap(): Promise<void> {
   mainWindow = createMainWindow({
     preloadPath: preloadPath(),
     indexHtmlUrlOrPath: rendererTarget(),
-    // Startup splash (260728): once the main window is ready, close the splash
-    // immediately (no fade, 260729) before the first show — the two never
+    // 261107: a login launch loads the window hidden (seilink/loginLaunch.ts);
+    // her room, the Dock or a second launch of Sei shows it.
+    startHidden: loginLaunch().isHidden(),
+    // Update splash: once the main window is ready, close the splash
+    // immediately (no fade, 260729) before the first show, so the two never
     // overlap. The failsafe timer in whenReady covers a bootstrap that never
     // gets here.
     beforeFirstShow: async () => {
@@ -1177,6 +1265,8 @@ async function bootstrap(): Promise<void> {
     },
   });
   wireMainWindowEvents(mainWindow);
+  watchMainWindowShow(mainWindow);
+  noteStartupWindowShown(mainWindow);
   firstWindowMade = true;
   // Startup popup (261027): lock the operator page's iframe to sei.gg/popup/,
   // send its links (and any window.open) to the default browser, and let it
@@ -1338,7 +1428,8 @@ async function bootstrap(): Promise<void> {
       endVoiceCalls: endVoiceCallsFromMain,
       // 261013 (T120): the new account's sessions an app quit ended.
       onScopeSwitched: () => {
-        void runPendingQuitNextSteps();
+        // 261107: not on a login launch until Sei is opened (no LLM call at login).
+        afterLoginReveal(() => void runPendingQuitNextSteps());
         // 261104 SeiLink: config is per profile; bring back whoever moved in on this one.
         void restoreSeilinkHost();
         void import('./seilink/desktopLines').then((m) => m.resetDesktopLineBudget()).catch(() => {});
@@ -1608,7 +1699,15 @@ async function bootstrap(): Promise<void> {
         );
       }
       // 261011: the player hung up (no companion goodbye), outside a game.
-      if (!goodbye.companionEnded && !onlineIds.has(id)) void startCallNextStep(id, connectedMs);
+      // 261107: the other two branches report why no check ran.
+      if (goodbye.nextStepHook) reportGoodbyePlanSaved({ characterId: id, surface: 'call' }, capture);
+      if (goodbye.companionEnded) {
+        reportNextStepNotRun({ characterId: id, surface: 'call', outcome: 'goodbye', saved: goodbye.nextStepHook, endReason: reason, durationMs: connectedMs }, capture);
+      } else if (onlineIds.has(id)) {
+        reportNextStepNotRun({ characterId: id, surface: 'call', outcome: 'in_game', endReason: reason, durationMs: connectedMs }, capture);
+      } else {
+        void startCallNextStep(id, connectedMs);
+      }
     },
     // Voice calls (260705): the call went live — companion greets first. An
     // in-game session takes it over the port (say() routes into the call); an
@@ -1685,7 +1784,8 @@ async function bootstrap(): Promise<void> {
       capture('installer_first_launch', installerFirstLaunchProps(currentFirstLaunchEnv()));
     }
     // prev_exit / prev_version: how the previous session ended (crashReporting.ts).
-    capture('app_opened', appOpenedCrashProps());
+    // 261107: login_launch = started by "Open on login" (seilink/loginLaunch.ts).
+    capture('app_opened', { ...appOpenedCrashProps(), login_launch: launchedAtLogin() });
     // Boot safety (261031). Packaged only: dev never counts starts.
     if (app.isPackaged) {
       const safe = takeSafeModeReport();
@@ -1761,12 +1861,14 @@ async function bootstrap(): Promise<void> {
   // broken bootstrap can still be updated; the notices startup leg is here.
   initNotices({ getMainWindow: () => mainWindow });
   void refreshNotices('startup');
-  scheduleVelopackMigration({ isUpdateReady: isUpdateReadyToInstall, handOff: handOffUpdatesToMigration });
+  // 261107: a login launch waits until Sei is opened (the hand-off restarts Sei into a window).
+  afterLoginReveal(() => scheduleVelopackMigration({ isUpdateReady: isUpdateReadyToInstall, handOff: handOffUpdatesToMigration }));
 
   // 5d. 261013 (T120): run the "next time" check for sessions the last quit
   //     ended, once auth and the token refresh have settled. Fire and forget;
   //     each check waits for a ready backend and never surfaces an error.
-  setTimeout(() => void runPendingQuitNextSteps(), LAUNCH_DELAY_MS).unref?.();
+  //     261107: a login launch runs it only once Sei is opened (no LLM call at login).
+  afterLoginReveal(() => setTimeout(() => void runPendingQuitNextSteps(), LAUNCH_DELAY_MS).unref?.());
 
   // 6. Linux fallback warning (RESEARCH Pitfall 3)
   if (process.platform === 'linux' && safeStorageBackendKind() === 'basic_text') {
@@ -1814,20 +1916,38 @@ async function bootstrap(): Promise<void> {
     // file and the login item it may have registered. See legacyTrayCleanup.ts.
     cleanupLegacyTraySettings();
 
-    // Startup splash (260728): the white Sei logo, up before any heavy
-    // bootstrap work, closed when the main window first paints. The failsafe
-    // timer covers a bootstrap that errors before showing a window.
-    // Windows, right after Update.exe restarted Sei (261030): the same splash
-    // with "Updating…" under it, matching the update overlay it replaces.
-    splashWindow = createSplashWindow({ status: updateSplashStatusForLaunch() });
-    setTimeout(() => {
-      if (splashWindow && !splashWindow.isDestroyed()) closeSplashWindow(splashWindow);
-      splashWindow = null;
-    }, 15_000);
+    // 261107: "Open on login". AFTER the legacy cleanup: both act on
+    // the same macOS login item (the cleanup leaves it when this setting holds
+    // it), and on Windows the sync puts back a missing item the user wants.
+    // Then classify the launch (seilink/loginLaunch.ts).
+    const login = startOpenAtLoginAtReady().login;
+    setSecondLaunchHandler((argv) =>
+      onSecondLaunch(argv, openMainWindowAgain, () => !!mainWindow && !mainWindow.isDestroyed()),
+    );
+
+    // Update splash (261030): on Windows, right after Update.exe restarted
+    // Sei, the white Sei logo with "Updating…" (or the error line) under it,
+    // matching the update overlay it replaces, closed when the main window
+    // first paints. product call (261108): a normal launch shows no splash,
+    // the main window appears on its own once it has painted (it stays hidden
+    // until ready-to-show, so there is never a blank window). Not on a login
+    // launch either: nothing shows until Sei is opened. The failsafe timer
+    // covers a bootstrap that errors before showing a window.
+    const splashStatus = launchSplashStatus(login, updateSplashStatusForLaunch);
+    splashWindow = splashStatus ? createSplashWindow(splashStatus) : null;
+    if (splashWindow) {
+      setTimeout(() => {
+        if (splashWindow && !splashWindow.isDestroyed()) closeSplashWindow(splashWindow);
+        splashWindow = null;
+      }, 15_000);
+    }
 
     // Windows: an update that was downloaded and staged but never applied
-    // (Sei was killed) is applied now, behind the splash, instead of booting.
-    void applyPendingAtLaunch(splashWindow)
+    // (Sei was killed) is applied now, behind the update splash (it puts one
+    // up itself when this launch has none), instead of booting.
+    // Not at login: a pending update applies on the next quit or the next
+    // launch the user starts, never as an update screen at login.
+    void (login ? Promise.resolve(false) : applyPendingAtLaunch(splashWindow))
       .catch(() => false)
       .then((applying) => {
         if (applying) {
@@ -1835,7 +1955,7 @@ async function bootstrap(): Promise<void> {
           noteNeutralExit();
           return;
         }
-        bootstrap().catch((err) => {
+        bootstrap().then(() => settleLoginLaunch()).catch((err) => {
           logger.error(`bootstrap failed: ${(err as Error).message}`);
           markProfileScopeReady();
           // A failed start, not a clean quit (crashReporting.ts). Before the
@@ -1849,6 +1969,7 @@ async function bootstrap(): Promise<void> {
       });
 
     app.on('activate', () => {
+      noteRevealVia('dock');
       if (BrowserWindow.getAllWindows().length === 0 && mainWindow === null) {
         openMainWindowAgain();
         return;
@@ -1863,6 +1984,10 @@ async function bootstrap(): Promise<void> {
 
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
+      // 261107 Windows: her desktop room keeps Sei running when the user asked
+      // for Sei at login; it quits when she moves out with no window open
+      // (seilink/loginLaunchRuntime.ts). Otherwise closing quits, as before.
+      if (keepRunningOnLastWindowClosed()) return;
       app.quit();
       return;
     }

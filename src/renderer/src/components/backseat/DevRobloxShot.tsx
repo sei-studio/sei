@@ -101,7 +101,7 @@ export function DevRobloxShot(): React.ReactElement {
     <div style={{ position: 'fixed', inset: 0, background: 'var(--window)' }}>
       {modal?.kind === 'games-picker' ? <GamesPickerModal characterId={modal.characterId} /> : null}
       {modal?.kind === 'backseat-game' ? (
-        <BackseatGameModal characterId={modal.characterId} gameId={modal.gameId} />
+        <BackseatGameModal characterId={modal.characterId} gameId={modal.gameId} query={modal.query} />
       ) : null}
       {modal?.kind === 'share-screen' ? (
         <ShareScreenModal characterId={modal.characterId} game={modal.game} />

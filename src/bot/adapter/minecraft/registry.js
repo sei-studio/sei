@@ -9,7 +9,7 @@ import { z } from 'zod'
 import mcDataLib from 'minecraft-data'
 import { Vec3 } from 'vec3'
 import { createRegistry } from '../../registry.js'
-import { goTo, waitForBodyFree } from './behaviors/pathfind.js'
+import { goTo, waitForBodyFree, PROGRESS_LEGS, PROGRESS_MIN_M, timedOutClosingIn } from './behaviors/pathfind.js'
 import { climbOut, escapeUp, findOpenColumn, isPassable, MIN_PIT_DEPTH } from './behaviors/climbOut.js'
 import { noteUnreachable, isUnreachable, isUnreachableResult } from './behaviors/unreachable.js'
 import { resolveTerm } from './loose-terms.js'
@@ -338,6 +338,33 @@ function resolvePlayer(bot, name) {
 
 const PLAYER_WALK_LEGS = 3
 
+// 261107 (quality pass 45): goTo walks on while a timed-out leg was still
+// closing in (PROGRESS_LEGS / timedOutClosingIn live in pathfind.js now,
+// shared with explore).
+export { PROGRESS_LEGS, PROGRESS_MIN_M, timedOutClosingIn }
+
+function distFrom(bot, p) {
+  const me = bot?.entity?.position
+  if (!me || !p) return NaN
+  return Math.hypot(p.x - me.x, p.y - me.y, p.z - me.z)
+}
+
+/**
+ * goTo(x,y,z) with the walk-on rule above: walk again while each timed-out
+ * leg was still getting closer.
+ */
+export async function goToCoordsWalkingOn(bot, target, range, timeoutMs, signal, walk = goToCoords) {
+  let before = distFrom(bot, target)
+  let r = await walk(bot, target, range, timeoutMs, signal)
+  for (let leg = 0; leg < PROGRESS_LEGS && !signal?.aborted; leg++) {
+    const after = distFrom(bot, target)
+    if (!timedOutClosingIn(r, before, after)) break
+    before = after
+    r = await walk(bot, target, range, timeoutMs, signal)
+  }
+  return r
+}
+
 function fmtPos(p) {
   return `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`
 }
@@ -347,17 +374,20 @@ function fmtPos(p) {
  * the start of each leg; when they moved on during the walk, walks again
  * (a few legs at most). The result says how far from them she ended.
  */
-export async function goToPlayer(bot, name, range, timeoutMs, signal) {
+export async function goToPlayer(bot, name, range, timeoutMs, signal, walk = goToCoords) {
   const who = resolvePlayer(bot, name)
   if (!who) return `no such player: ${name}`
   let r = null
-  for (let leg = 0; leg < PLAYER_WALK_LEGS; leg++) {
+  let movedOn = 0
+  let closingIn = 0
+  while (movedOn < PLAYER_WALK_LEGS) {
     const ent = resolvePlayer(bot, who.username)?.entity
     const at = ent?.position
     if (!at || ![at.x, at.y, at.z].every(Number.isFinite)) {
       return `can't see ${who.username} from here (too far away or not loaded). Ask where they are, or goTo the last place you saw them`
     }
-    r = await goToCoords(bot, { x: Math.floor(at.x), y: Math.floor(at.y), z: Math.floor(at.z) }, range, timeoutMs, signal)
+    const before = distFrom(bot, at)
+    r = await walk(bot, { x: Math.floor(at.x), y: Math.floor(at.y), z: Math.floor(at.z) }, range, timeoutMs, signal)
     if (signal?.aborted || String(r).startsWith('aborted')) return r
     const now = resolvePlayer(bot, who.username)?.entity?.position
     const me = bot.entity?.position
@@ -365,15 +395,29 @@ export async function goToPlayer(bot, name, range, timeoutMs, signal) {
     const d = Math.hypot(now.x - me.x, now.y - me.y, now.z - me.z)
     if (d <= range + 1) return `reached ${who.username} (${d.toFixed(1)}m away)`
     if (!String(r).startsWith('reached')) {
+      // 261107 (pass 45): out of time but still closing in: walk on.
+      if (closingIn < PROGRESS_LEGS && timedOutClosingIn(r, before, d)) {
+        closingIn++
+        continue
+      }
       return `${r}. ${who.username} is at ${fmtPos(now)}, ${d.toFixed(1)}m from you`
     }
     // Reached where they were, but they moved on: walk again.
+    movedOn++
   }
   const now = resolvePlayer(bot, who.username)?.entity?.position
   const me = bot.entity?.position
   if (!now || !me) return r
   const d = Math.hypot(now.x - me.x, now.y - me.y, now.z - me.z)
   return `${who.username} kept moving: you are ${d.toFixed(1)}m from them (they are at ${fmtPos(now)}). follow them to keep up`
+}
+
+const EXPLORE_ALIASES = { forwards: 'forward', backward: 'backwards', back: 'backwards', front: 'forward', behind: 'backwards' }
+/** explore orientation: lower-case, and the old aliases to the listed words. */
+export function normalizeExploreOrientation(v) {
+  if (typeof v !== 'string') return v
+  const k = v.trim().toLowerCase()
+  return EXPLORE_ALIASES[k] ?? k
 }
 
 export function createDefaultRegistry({ visionEnabled = false } = {}) {
@@ -443,7 +487,7 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
       if (range <= 1 && isCoordsAtKnownPlayer(bot, args.x, args.y, args.z)) {
         range = 2
       }
-      return goToCoords(bot, { x: args.x, y: args.y, z: args.z }, range, timeoutMs, config?.signal)
+      return goToCoordsWalkingOn(bot, { x: args.x, y: args.y, z: args.z }, range, timeoutMs, config?.signal)
     }
   )
 
@@ -463,7 +507,11 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
   // orchestrator's capabilities.vision gate too).
   registry.register('explore',
     z.object({
-      orientation: z.enum(['forward', 'forwards', 'backward', 'backwards', 'back', 'left', 'right', 'up', 'down']).optional(),
+      // 261108 (quality pass 47): compass directions too ("keep going north"
+      // was a guess against a facing the gaze kept turning). The old aliases
+      // are still accepted but no longer listed, so the tool costs no more.
+      orientation: z.preprocess(normalizeExploreOrientation,
+        z.enum(['north', 'south', 'east', 'west', 'forward', 'backwards', 'left', 'right', 'up', 'down']).optional()),
       angle: z.number().min(0).max(360).optional(),
       blocks: z.number().min(4).max(48).optional(),
     }),
@@ -810,7 +858,11 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
     registry.register(
       'look',
       z.object({
-        orientation: z.enum(['forward', 'forwards', 'backward', 'backwards', 'back', 'left', 'right', 'up', 'down']).optional(),
+        // 261108 (quality pass 47): the old aliases are still accepted but no
+        // longer listed. No compass words here: look turns relative to her
+        // facing (visualize.js ORIENTATION_DEG), so "north" would not turn her.
+        orientation: z.preprocess(normalizeExploreOrientation,
+          z.enum(['forward', 'backwards', 'left', 'right', 'up', 'down']).optional()),
         angle: z.number().min(0).max(360).optional(),
         around: z.boolean().optional(),
       }),

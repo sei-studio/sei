@@ -17,6 +17,12 @@
  *                    Home (261105): the screen follows the tour's navigation,
  *                    and its end opens the move-in sheet (&pack= as movein)
  *
+ *     &loginitem=off|on|approval  "Open on login" (261107): Settings >
+ *                    Appearance as on a packaged mac/win build; approval =
+ *                    macOS waiting for the user in System Settings. Without
+ *                    it the row is hidden. (The setup step after the guided
+ *                    room setup: ?seilinkflow=1&phase=login, DevFirstRoomFlow.)
+ *
  *     &regenhint=1   (character) the one-time "Not happy with the look?" hint
  *                    on the Look tab's card image Regenerate button
  *                    (261107); without it the hint is marked seen so other
@@ -29,6 +35,9 @@
  *                    puts her on the desktop (the Idle lines row)
  *     &noskin=1      (character) skin still the creation placeholder, so
  *                    the Look tab shows Add / Generate
+ *
+ * The World tab and a profile opened from World: ?dashshot=screen&screen=world|worldprofile
+ * (DevWorldShot, 261110).
  *
  * Other surfaces already have harnesses: ?dashshot=creditwall&part=modal|credits,
  * ?dashshot=signinmodal, ?dashshot=authchoice, ?dashshot=onboard.
@@ -88,6 +97,11 @@ const seilinkAvailability: SeilinkAvailability | null =
     : seilinkShot === 'unsupported'
       ? { supported: false, reason: 'platform', enabled: false, dev: false }
       : null;
+const loginItemShot = params.get('loginitem');
+const loginItemState =
+  loginItemShot === 'on' || loginItemShot === 'off' || loginItemShot === 'approval'
+    ? { supported: true, enabled: loginItemShot !== 'off', needsApproval: loginItemShot === 'approval', decided: true }
+    : null;
 const HOUR = 3_600_000;
 const now = Date.now();
 
@@ -187,6 +201,8 @@ function seed(): void {
       added_world_ids: who === 'world' ? [SUI] : [],
     }),
     seilinkAvailability: async () => seilinkAvailability,
+    seilinkLoginItemGet: async () => loginItemState ?? { supported: false, enabled: false, needsApproval: false, decided: false },
+    seilinkLoginItemSet: async (enabled: boolean) => ({ ...(loginItemState ?? { supported: true, needsApproval: false }), enabled, decided: true }),
     getCharacter: async (id: string) => CHARACTERS.find((c) => c.id === id) ?? null,
     listCharacters: async () => CHARACTERS,
     getSkinServerUrl: async () => ({ baseUrl: 'http://127.0.0.1:1' }),

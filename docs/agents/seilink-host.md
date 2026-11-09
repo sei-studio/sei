@@ -332,6 +332,89 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   `stopSeilinkHostForAccountSwitch()`; starts take `beginSessionStart()`
   (`ACCOUNT_SWITCHING` during a switch).
 
+## Open on login (261107)
+
+Opt-in, so her room comes back after a restart. Shown only on a packaged
+macOS or Windows build where WorldLink runs (`openAtLoginSupported`), in two
+places. IPC `seilink:login-item-get|set` answers `OpenAtLoginState
+{supported, enabled, needsApproval, decided}` after main has read the OS back.
+
+- **The setup step** (product call 261107; it was a switch on the move-in
+  sheet before): after the guided room setup's Done, once. RoomEditor shows
+  it in the guide's frame (`renderLoginStep`, helpers in
+  `lib/seilink/loginStep.ts`, source from CompanionRoomEditor): the title
+  "Open on login", one line ("{name} comes back after a restart."), and
+  "Not now" / "Turn on". "Turn on" is the hot button: the preselected answer,
+  as the step's other buttons are Skip / Next. Two buttons, not a switch:
+  the editor has no switch control (the app Toggle's accent colours are not
+  the editor's ink-on-glass), and the footer pairing matches every earlier
+  step. The state is read when a guided run opens; the step is due when
+  `supported && !decided`. Nothing is registered until "Turn on" is
+  pressed: closing the editor on the step (close button, Escape) registers
+  nothing and leaves it unanswered, and since setup is done the step does
+  not come back (Settings has it). A refusal shows "Could not change this
+  setting. Try again." with both buttons still there; macOS approval shows
+  the System Settings line with Done.
+  - Who sees it: only people who press Done on the last guided step, in a
+    first run or a resumed one. Skip on a step still goes on to Done, so
+    skipping steps does not skip it. "Not now" on the room step while she is
+    still plain, or closing part way, leaves the run unfinished: no login
+    step then, and it comes at the end of the resumed run. Rooms set up
+    before this build, and a normal (unguided) editor, never show it.
+- **Settings > Appearance** (`OpenAtLoginRow.tsx`, label "Open on login",
+  with the info tip): a switch that reflects the real state; the macOS
+  approval note, and a refused change flips back with a line.
+- `decided` (in `open-at-login.json`, sticky) is set by any answer: the
+  step (either button), the Settings row, or the item turned off in the OS
+  (launch sync `reflect_off`). An older file that is on or registered counts
+  as decided. macOS "Not now" with nothing registered writes the file only
+  and never calls `setLoginItemSettings` (a hand-added login item survives).
+
+- Files: `seilink/openAtLogin.ts` (setting + OS item + launch sync, pure
+  `decideSync`), `seilink/loginLaunch.ts` (pure launch rules),
+  `seilink/loginLaunchRuntime.ts` (Electron wiring), `seilink/loginItemUninstall.ts`
+  (Velopack uninstall), `build/installer.nsh` `customUnInstall` (NSIS).
+- The choice lives in the device-global `<userData>/open-at-login.json`
+  (`open_at_login`, `registered`, `registered_path` on Windows,
+  `approval_pending` on macOS, `decided`). The OS item is device-global too, so the
+  setting is not per profile.
+- Registration: `app.setLoginItemSettings`. macOS: `{openAtLogin}` only
+  (SMAppService mainApp on 13+, status read back). Windows: its own HKCU Run
+  value `SeiWorldLink` (never the AppUserModelId name the retired tray item
+  used), `args: ['--seilink-login']`, path = `<root>\current\Sei.exe` for a
+  Velopack install (stable across updates) or the NSIS exe.
+- Every change is read back. A throw or a mismatch flips the switch back and
+  sends `seilink_login_item_failed`. macOS `requires-approval` right after
+  Sei's own register stays on with "Allow Sei in System Settings" until it
+  is approved.
+- Launch sync (`syncOpenAtLoginAtLaunch`, at ready, AFTER
+  `cleanupLegacyTraySettings`): the user removed or turned off the item in the
+  OS (Login Items, Task Manager) = off in Sei, never re-added
+  (`changed` with surface `os`; marks it decided). Windows only: a missing value with the
+  setting on is written again (NSIS to Velopack moves the exe), but an old
+  path with a disabled value stays off. Setting off = a stray item is removed
+  (macOS only one Sei registered, so a hand-added login item survives).
+- A login launch (Windows: the marker arg; macOS: `wasOpenedAtLogin` and the
+  setting on): no splash, no launch-time update apply, the main window made
+  hidden. The room restores as usual; a click on her, the Dock or a second
+  launch shows the window. The player-end "next time" LLM check and the
+  Velopack migration wait for that first show (`afterLoginReveal`). Once
+  bootstrap is done and the seilink queue is idle, no room up (signed out,
+  nobody moved in, unsupported, start failed) = quiet quit; her room ending
+  while still hidden quits too.
+- Windows residency: closing the last window keeps Sei running while her room
+  is up and the setting is on (or it is a login launch); it quits when the
+  room ends with no window. macOS is unchanged (always resident).
+- Uninstall: NSIS removes the value on a real uninstall (not an update) only
+  when it starts `$INSTDIR`; Velopack's uninstall hook does the same with
+  reg.exe. macOS: dragging Sei to the Trash runs no code, so the
+  SMAppService entry may stay in Login Items until the user removes it
+  (not verified on a real Mac).
+  Factory reset unregisters before the wipe. Sign-out keeps the item; a login
+  launch with no move-in in that profile just quits.
+- Caveat: the avatar overlay set to "Always" may show on a login launch, since
+  the renderer runs hidden.
+
 ## Entry points and the first link (261105, T337)
 
 - Every way into WorldLink goes through `lib/seilink/seilinkFlow.ts`, and the
@@ -681,6 +764,10 @@ errors) is in [`seilink-analytics.md`](seilink-analytics.md). The basics:
   [--intro <worldlink.mp4>] [--intro-light <worldlink-light.mp4>]` clicks through
   the guided setup like a person, once per OS theme, and writes stills plus
   `first-room-flow-dark.mp4` / `-light.mp4`.
+  261107: `phase=login` opens on the "Open on login" step over the decorated
+  room; `&loginitem=off|approval|fail` fakes a supported, unanswered login
+  item (with `live=1` the step follows the guided Done). Shots:
+  `node scripts/seilink-host-shots.mjs --shots setup-login-light,setup-login-dark,setup-login-ja-light,settings-login-dark`.
 - CI: `.github/workflows/seilink-host-check.yml` (windows-2022/2025,
   macos-15/26; dispatch, or push to `feat/seilink-host` under the host
   paths). One runner per OS also packages a dir build and checks the addon

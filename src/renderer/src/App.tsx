@@ -1466,7 +1466,7 @@ export function App(): React.ReactElement {
       ) : null}
       {/* 260929 — a backseat game tile (Roblox): intro + pick-your-game. */}
       {modal?.kind === 'backseat-game' ? (
-        <BackseatGameModal characterId={modal.characterId} gameId={modal.gameId} />
+        <BackseatGameModal characterId={modal.characterId} gameId={modal.gameId} query={modal.query} />
       ) : null}
       {/* 260721 — launching a game while another one is active: confirm ends
           the previous session via its normal end path, then proceeds. */}

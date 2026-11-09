@@ -13,7 +13,7 @@
  */
 import { closeAllCallsFromMain } from './callState';
 import { trackScopedWrite } from '../profile/scopeBarrier';
-import { consumeGoodbye, callEndHookProps } from '../sessionGoodbye';
+import { consumeGoodbye, callEndHookProps, type GoodbyeNote } from '../sessionGoodbye';
 
 export interface AccountSwitchCallDeps {
   /** Supervisor: the bot's chat mode (on a call or not). */
@@ -22,6 +22,12 @@ export interface AccountSwitchCallDeps {
   capture(event: string, props: Record<string, unknown>): void;
   /** The call row writer (index.ts emitCallSession). */
   emitCallSession(characterId: string, connectedMs: number): Promise<void>;
+  /**
+   * 261107: each connected call main closed, after its voice_call_ended,
+   * with its goodbye note (the "next time" bookkeeping, index.ts). Never
+   * awaited; a throw is swallowed.
+   */
+  onClosed?(characterId: string, connectedMs: number, goodbye: GoodbyeNote): void;
 }
 
 export async function endCallsForAccountSwitch(reason: string, deps: AccountSwitchCallDeps): Promise<void> {
@@ -41,12 +47,18 @@ export async function endCallsForAccountSwitch(reason: string, deps: AccountSwit
     }
     // Never connected: no row and no event, the renderer's own rule.
     if (connectedMs === null || connectedMs <= 0) continue;
+    const goodbye = consumeGoodbye(characterId, 'call');
     deps.capture('voice_call_ended', {
       character_id: characterId,
       duration_ms: connectedMs,
       reason,
-      ...callEndHookProps(consumeGoodbye(characterId, 'call')),
+      ...callEndHookProps(goodbye),
     });
+    try {
+      deps.onClosed?.(characterId, connectedMs, goodbye);
+    } catch {
+      /* bookkeeping only */
+    }
     writes.push(
       trackScopedWrite(deps.emitCallSession(characterId, connectedMs)).catch((err) => {
         console.warn(`[sei] account switch: call row for ${characterId} failed: ${(err as Error).message}`);

@@ -19,6 +19,7 @@ import type { SeilinkDevInfo, SeilinkPack, SeilinkRoomPayload } from './seilinkP
 import type { RoomState } from './seilinkRoom';
 import type { SeilinkAvailability, SeilinkHostStatus, SeilinkOfferVia, SeilinkOpenEditor, SeilinkStageRequest, SeilinkStageResult } from './seilinkHost';
 import type { SeilinkEditorEvent, SeilinkEditorSync } from './seilinkTogether';
+import type { OpenAtLoginState, OpenAtLoginUiSurface } from './openAtLogin';
 import type { AnimaShownKind, AnimaStatus, AnimaTrigger } from './anima';
 import type { AvatarLibraryResult, AvatarLibraryView } from './avatarLibrary';
 import { z } from 'zod';
@@ -1691,6 +1692,35 @@ export interface BrowseEntry {
   updatedAt: string;
   /** Precomputed by main handler — true when the character JSON exists on local disk. */
   inMyLibrary: boolean;
+  /**
+   * How many accounts have this character in their library (cloud
+   * `character_library`, aggregate only; product call 261110). 0 when nobody
+   * added it, null when unknown (counts RPC not deployed, offline, error).
+   */
+  addCount: number | null;
+}
+
+/**
+ * World tab sort (product call 261110). 'popular' (library adds desc) is the
+ * default. Applied server-side by `search_public_characters_sorted`; when that
+ * RPC is missing main falls back to the old newest-first RPC and reports
+ * `sorted: false`, so the renderer sorts the loaded pages itself.
+ */
+export const BROWSE_SORTS = ['popular', 'recent', 'alpha'] as const;
+export type BrowseSort = (typeof BROWSE_SORTS)[number];
+export const DEFAULT_BROWSE_SORT: BrowseSort = 'popular';
+
+/** One World page as main returns it. */
+export interface BrowsePage {
+  entries: BrowseEntry[];
+  hasMore: boolean;
+  /** True when the server applied `sort`; false = server order is newest first. */
+  sorted: boolean;
+  /**
+   * Shape-only failure class for analytics. 'rpc_failed' = the listing RPC
+   * errored (entries is empty). Absent on success.
+   */
+  failure?: 'rpc_failed';
 }
 
 /**
@@ -1908,6 +1938,10 @@ export const FeedbackSubmitArgsSchema = z.object({
   body: z.string().min(1).max(4000),
   email: z.string().max(320).optional(),
   claimReward: z.boolean().optional(),
+  /** 261109: analytics only, never sent to the proxy. Which form sent it, and
+   *  (Suggest a game) whether the "already works in Sei" hint showed. */
+  form: z.enum(['suggest_game']).optional(),
+  gameHintShown: z.boolean().optional(),
 });
 
 /**
@@ -2294,6 +2328,9 @@ export interface RendererApi {
   /** 261105 (T336): decorating together. The editor's unsaved room, and main's events for it. */
   seilinkEditorSync?(sync: SeilinkEditorSync): void;
   onSeilinkEditorEvent?(cb: (ev: SeilinkEditorEvent) => void): Unsubscribe;
+  /** 261107: "Open on login" (packaged macOS / Windows with WorldLink; `supported` false elsewhere). */
+  seilinkLoginItemGet?(): Promise<OpenAtLoginState>;
+  seilinkLoginItemSet?(enabled: boolean, surface: OpenAtLoginUiSurface): Promise<OpenAtLoginState>;
   /**
    * Overlay window only (260806): stream a character's tile camera (zoom +
    * pan within the tile) while edit-mode wheel/drag adjusts it; `commit`
@@ -3067,7 +3104,7 @@ export interface RendererApi {
    * the RPC fails or there are no rows; `hasMore` is true when the
    * returned page is full (renderer can request the next offset).
    */
-  browseList(args: { query: string; limit: number; offset: number }): Promise<{ entries: BrowseEntry[]; hasMore: boolean }>;
+  browseList(args: { query: string; limit: number; offset: number; sort?: BrowseSort }): Promise<BrowsePage>;
   // The legacy publish-with-moderation IPC method was removed in 260525-qy0
   // — moderation now runs inline inside chars.save / chars.setShared so the
   // renderer's existing calls to charsSave + charsSetShared trigger the gate.
@@ -3150,7 +3187,13 @@ export interface RendererApi {
    * when this account claimed before (the renderer retires the banner either
    * way). Error codes: PROXY_NO_SESSION | PROXY_RATE_LIMITED | PROXY_NETWORK.
    */
-  feedbackSubmit: (args: { body: string; email?: string; claimReward?: boolean }) => Promise<
+  feedbackSubmit: (args: {
+    body: string;
+    email?: string;
+    claimReward?: boolean;
+    form?: 'suggest_game';
+    gameHintShown?: boolean;
+  }) => Promise<
     | { ok: true; usage_reset: boolean; already_claimed: boolean }
     | { ok: false; code: string; status?: number; reason?: string }
   >;
@@ -4405,6 +4448,10 @@ export const IpcChannel = {
     editorSync: 'seilink:editor-sync',
     /** Push (261105, T336): her edits and the session counters for an open editor (SeilinkEditorEvent). */
     editorEvent: 'seilink:editor-event',
+    /** Invoke (261107): "Open on login" (OpenAtLoginState). */
+    loginItemGet: 'seilink:login-item-get',
+    /** Invoke (261107): turn it on or off ({enabled, surface: setup|settings}) -> OpenAtLoginState after the OS read-back. */
+    loginItemSet: 'seilink:login-item-set',
   },
 } as const;
 

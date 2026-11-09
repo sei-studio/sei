@@ -17,9 +17,21 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const { captureSpy } = vi.hoisted(() => ({ captureSpy: vi.fn() }));
+const { captureSpy, consumeSpy, changedSpy } = vi.hoisted(() => ({
+  captureSpy: vi.fn(),
+  consumeSpy: vi.fn(async () => true),
+  changedSpy: vi.fn(),
+}));
 
 vi.mock('../analytics', () => ({ capture: captureSpy }));
+// 261107: a new chat session uses up the last chat's plan (homeNextStep.ts
+// pins the rule itself; here only the wiring).
+vi.mock('../homeNextStep', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../homeNextStep')>()),
+  consumeNextStep: consumeSpy,
+  noteHomeNextStepChanged: changedSpy,
+}));
+vi.mock('../paths', () => ({ paths: { memoryDir: (id: string) => `/mem/${id}` } }));
 
 import { noteChatMessage, endChatSession, endAllChatSessions } from './chatSession';
 
@@ -40,6 +52,9 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-08-01T12:00:00Z'));
   captureSpy.mockClear();
+  consumeSpy.mockClear();
+  consumeSpy.mockImplementation(async () => true);
+  changedSpy.mockClear();
 });
 
 afterEach(async () => {
@@ -182,8 +197,54 @@ describe('session end', () => {
     expect(events('chat_session_ended')).toHaveLength(1);
   });
 
+  it('261107: every end reports its next step for surface chat (a short chat is trivial)', async () => {
+    await note('char-a');
+    await note('char-a');
+    await endChatSession('char-a', 'idle');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(events('next_step_checked')).toEqual([
+      expect.objectContaining({ character_id: 'char-a', surface: 'chat', outcome: 'trivial', end_reason: 'idle', reached_model: false }),
+    ]);
+  });
+
   it('is a no-op for a character that never talked', async () => {
     await endChatSession('char-never', 'quit');
     expect(events('chat_session_ended')).toHaveLength(0);
+  });
+});
+
+describe('261107: chat start uses up a chat plan', () => {
+  it('asks for a chat-only consume once per session, on the first message', async () => {
+    await note('char-a');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(consumeSpy).toHaveBeenCalledTimes(1);
+    expect(consumeSpy).toHaveBeenCalledWith('/mem/char-a', Date.parse('2026-08-01T12:00:00Z'), { onlySurface: 'chat' });
+    expect(changedSpy).toHaveBeenCalledWith('char-a');
+    await note('char-a');
+    await note('char-a');
+    expect(consumeSpy).toHaveBeenCalledTimes(1);
+    // The next session (after the idle gap) asks again.
+    await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS + 1);
+    await note('char-a');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(consumeSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('no card push when nothing changed', async () => {
+    consumeSpy.mockImplementation(async () => false);
+    await note('char-b');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(consumeSpy).toHaveBeenCalledTimes(1);
+    expect(changedSpy).not.toHaveBeenCalled();
+  });
+
+  it('a failing consume never breaks the chat send', async () => {
+    consumeSpy.mockImplementation(async () => {
+      throw new Error('disk gone');
+    });
+    expect(noteChatMessage('char-c')).toBe(1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(changedSpy).not.toHaveBeenCalled();
+    expect(events('chat_session_started')).toHaveLength(1);
   });
 });

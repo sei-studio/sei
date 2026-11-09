@@ -121,7 +121,11 @@ tested). MEMORY.md does not say where a plan came from and is model-facing,
 so main keeps a sidecar `NEXT_STEP.json` in the memory dir: tags (plan text
 key -> surface/game, written right after a goodbye plan or a player-end save)
 and a `consumedAt` watermark set when a bot session goes online or a call
-greeting runs (both greetings are told about the plan). Only the NEWEST plan
+greeting runs (both greetings are told about the plan). 261107: a text chat
+session starting (its first message, `chat/chatSession.ts`) sets it too, but
+only for a newest plan tagged `chat` with no game (`consumeNextStep`
+`onlySurface: 'chat'`); a game, call, backseat or untagged plan stays until
+its own surface runs. No consume event exists for any surface. Only the NEWEST plan
 counts: a consumed or expired newest plan never falls back to an older one.
 IPC `home:next-steps` + push `home:next-step-changed`; renderer
 `lib/homeNextStep.ts`, `useHomeNextStepStore` (cleared on account switch),
@@ -250,6 +254,59 @@ aborted on any provider (`yieldAlways`). Events: the same
 `late_hours`. Not covered: a crash or force-kill (nothing runs at exit), and
 on macOS a call whose window was closed earlier still counts as live at the
 later Cmd-Q (its duration is overstated; the lines are right).
+
+**Every session end reports its next step (261107, O2 reach).** Only 12% of
+10-05..10-27 installs had a `next_step_saved`, mostly because the check
+shipped in stable 0.6.9 (10-24): earlier installs never ran it. On 0.6.9+
+the gaps were Stardew/DST (closing the game arrived as `error` /
+GAME_WORLD_NOT_OPEN, never `world_closed`), calls ended by closing the
+window (main closes them in `sweepVoiceCalls`; on Windows the window's
+`closed` fires before before-quit, so `persistCallsForQuit` found no live
+call either), and every skip being invisible (the event only fired when the
+model was called). Now:
+- The Stardew and DST runtimes pass `{ endReason: 'world_closed' }` for a
+  live world that closed (as Minecraft does), so the check runs.
+- `src/main/nextStepReach.ts` (pure, tested) routes each end:
+  `gameEndRoute` (check / persist for the next launch / goodbye /
+  not_covered) and `mainClosedCallRoute` (window close: check now on macOS,
+  persist elsewhere; app quit: already persisted; account switch, renderer
+  gone or reload: not_covered). `endCallsForAccountSwitch` hands each closed
+  call to `onClosed` for this.
+- `next_step_checked` goes out once per session end on every surface, with
+  `reached_model` and `duration_s`. Check outcomes: saved, none, trivial,
+  offline, over_limit, busy (dedupe), timeout, error, no_character
+  (cancelled still sends nothing). Ends that ran no check
+  (`reportNextStepNotRun`): goodbye (`saved` = it left a plan), in_game (a
+  call during a game), deferred / trivial (app quit, run or not on the next
+  launch), not_covered + `end_reason` (backseat ends other than the player's
+  End, game kicks / crashes / credit stops, chat idle / quit, chess, Draw!).
+  Count checks with `reached_model = true` to compare with older data.
+- A companion goodbye plan also sends `next_step_saved {source:'companion'}`,
+  so `next_step_saved` counts every plan source.
+Not covered, by choice: chess and Draw! (a check there would be a new LLM
+call for free users), DST final death, companion goodbyes without a plan, and
+calls lost to an account switch or a renderer crash.
+
+**Text chat gets the check when it costs Sei nothing (261107, O2).** The chat
+memory fold (`continuity.ts`) is not a session-end call: it runs per 50-message
+batch and never sees the newest 50, so it cannot carry the plan. Instead
+`src/main/chatNextStep.ts` runs the same player-end check on a chat end, with
+`surface: 'chat'`, activity `a text chat`, lines = the typed transcript rows
+in the session window (`chatDigestFromRows`), and two extra input gates:
+`minPlayerLines` 4 (`CHAT_MIN_PLAYER_MESSAGES`) and `skipOnFreeCloud`. The
+gate (`PlayerEndDeps.freeCloud`) passes BYOK, Ollama and other local models,
+the ChatGPT plan, and paid plans (quest / party spend their own allowance);
+the cloud free plan, signed out, or a plan read that fails or takes over 5 s
+is skipped and reported as `outcome: 'not_covered', skip_reason:
+'free_cloud'`. Routing (`chatEndRoute`): idle end = check in the background
+(endChatSession never waits on it); quit = `PENDING_NEXT_STEP.json` with
+surface `chat`, checked on the next launch through the same gate; account
+switch = not_covered. A new chat session yields a local-model check. Plans
+about a game are tagged with that game; others are tagged `chat`, and the
+Home card's button is "Message {name}" (opens the chat). Probe:
+`npx tsx scripts/chat-next-step-probe.ts --reps 3` (16 chats, 261107: saved
+17 of 24 on chats with a plan, 0 of 24 on small talk; misses were "ask how X
+went" chats). Not done: a chat plan is not marked used by the next chat.
 
 **Forge/NeoForge hosts are blocked before summon (260929).** Only on STRONG
 evidence: the status ping's forgeData/modinfo (`forgeModCount != null`) or an
@@ -415,6 +472,15 @@ read). Rules in `src/main/analyticsContext.ts` (pure, tested):
 - `summon_failed` carries `game`, and redact() also scrubs the player's own
   `mc_username` / `preferred_name` (`RedactOptions.playerNames`).
 
+**Launch timing (261108, `src/main/index.ts` noteStartupWindowShown).**
+`app_window_shown {startup_ms, update_screen}` once per process at the first
+show of the main window: `startup_ms` is process creation
+(`app.getAppMetrics()` browser `creationTime`, else `process.uptime()`) to
+that show. A normal launch has no splash since product call (261108), so this
+is the empty moment between the click and Sei; `update_screen` is true on the
+launch right after Update.exe restarted Sei (the update splash covered it).
+Hidden login launches are skipped. Filter `packaged = true`.
+
 **Crash reporting (261031, T278, `src/main/crashReporting.ts`).** No Sentry,
 no minidump upload. `initCrashReporting()` runs first in whenReady:
 - `<userData>/session.json` is written `open` at launch (heartbeat every 60s,
@@ -562,7 +628,9 @@ the analytics:track handler, so no path, username or free text can ride.
   stages `fabric`, `mods_link`, `skin_mod`, `config` (folded from the
   wizard progress stream, `observeWizardProgress`), `start_minecraft`,
   `open_launcher`, `lan_wait` (McSetupModal searching mode; `ended`:
-  world_open / closed / skin_setup / left).
+  world_open / closed / skin_setup / left; a fail also carries main's
+  `discovery` class and `win_state0`, see minecraft-setup-wizard.md).
+  World detection itself sends `lan_world_found` (which source found it).
 - Stardew steps: `find_game` (scan, once per distinct answer),
   `choose_folder`, `smapi_download`, `smapi_run`, `mod_copy`, `mod_silent`
   (game up 15 s with the helper silent), `farm_seen` (first open farm per

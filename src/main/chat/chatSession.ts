@@ -70,6 +70,13 @@ export function noteChatMessage(characterId: string): number {
     const timer = setTimeout(() => void endChatSession(characterId, 'idle'), IDLE_TIMEOUT_MS);
     timer.unref?.();
     sessions.set(characterId, { characterId, startedAt: now, lastAt: now, messages: 1, timer });
+    // 261107: a next-step check from the last chat still running on a local
+    // model gives the GPU back to this one (playerEndNextStep.ts).
+    void import('../playerEndNextStep').then((m) => m.yieldToNewSession(characterId)).catch(() => {});
+    // 261107: the player is back in a text chat, so a plan the last chat left
+    // ("up next" card, homeNextStep.ts) is used, as a game session's start
+    // uses its plan. A game, call or untagged plan stays (onlySurface).
+    void consumeChatPlan(characterId);
     void (async () => {
       try {
         const { capture } = await import('../analytics');
@@ -80,6 +87,26 @@ export function noteChatMessage(characterId: string): number {
   } catch {
     return 0;
   }
+}
+
+/**
+ * Mark a chat-sourced plan used (consumeNextStep, onlySurface 'chat') and tell
+ * the renderer to re-read the card when that changed something. Tracked as a
+ * scoped write like index.ts updateHomeNextStep, so an account switch waits
+ * for it. Never rejects.
+ */
+async function consumeChatPlan(characterId: string): Promise<void> {
+  try {
+    const [{ paths }, { consumeNextStep, noteHomeNextStepChanged }, { trackScopedWrite }] = await Promise.all([
+      import('../paths'),
+      import('../homeNextStep'),
+      import('../profile/scopeBarrier'),
+    ]);
+    const changed = await trackScopedWrite(
+      consumeNextStep(paths.memoryDir(characterId), Date.now(), { onlySurface: 'chat' }),
+    );
+    if (changed) noteHomeNextStepChanged(characterId);
+  } catch { /* the card stays until its TTL */ }
 }
 
 /**
@@ -101,6 +128,12 @@ export async function endChatSession(characterId: string, reason: ChatSessionEnd
       messages: live.messages,
       reason,
     });
+    // 261107 (O2): the "next time" check for text chat (chatNextStep.ts):
+    // run in the background on an idle end, kept for the next launch on a
+    // quit, skipped on the free cloud plan. Never awaited past its start, so
+    // closing the chat does not wait on the model.
+    const { chatSessionNextStep } = await import('../chatNextStep');
+    await chatSessionNextStep(live, reason, capture);
   } catch { /* best-effort */ }
 }
 

@@ -25,7 +25,14 @@ if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('ches
   // summon and no real IPC, so the game-styled panels can be checked in a
   // plain browser tab. Lazy import keeps it out of prod bundles.
   const which = new URLSearchParams(window.location.search).get('dashshot') ?? '';
-  if (which === 'screen') {
+  const screenShot = new URLSearchParams(window.location.search).get('screen') ?? '';
+  if (which === 'screen' && (screenShot === 'world' || screenShot === 'worldprofile')) {
+    // 261110: the World tab / a profile opened from World over a fixture
+    // listing with library add counts (DevWorldShot).
+    void import('./components/DevWorldShot').then(({ DevWorldShot }) => {
+      root.render(<DevWorldShot />);
+    });
+  } else if (which === 'screen') {
     // 261103: the real screens in the real shell (DevScreenShot).
     void import('./components/DevScreenShot').then(({ DevScreenShot }) => {
       root.render(<DevScreenShot />);

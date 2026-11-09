@@ -119,6 +119,26 @@ const FAIL_REASONS: readonly FailReason[] = [
 export type WaitEnd = 'world_open' | 'closed' | 'skin_setup' | 'left';
 const WAIT_ENDS: readonly WaitEnd[] = ['world_open', 'closed', 'skin_setup', 'left'];
 
+/**
+ * lan_wait fail only, stamped by main (issue #52): why the LAN watcher found
+ * no world. Mirrors LanDiscoveryFailure in src/main/lanSources.ts.
+ */
+export type LanDiscoveryClass =
+  | 'enum_failed'
+  | 'no_java'
+  | 'pending'
+  | 'stateless_failed'
+  | 'no_java_listener'
+  | 'unverified';
+const LAN_DISCOVERY_CLASSES: readonly LanDiscoveryClass[] = [
+  'enum_failed',
+  'no_java',
+  'pending',
+  'stateless_failed',
+  'no_java_listener',
+  'unverified',
+];
+
 export interface SetupStepInput {
   game: SetupGame;
   step: SetupStep;
@@ -138,6 +158,10 @@ export interface SetupStepInput {
   wait_ms?: number | null;
   /** game_version: the game is new enough for the helper (null = unreadable). */
   version_ok?: boolean | null;
+  /** lan_wait fail: the watcher's no-world class (main stamps it). */
+  discovery?: LanDiscoveryClass | null;
+  /** lan_wait fail: Windows showed the broken listener state (issue #52). */
+  win_state0?: boolean | null;
 }
 
 const CODE_RE = /^[A-Z][A-Z0-9_]{1,63}$/;
@@ -175,6 +199,8 @@ export function setupStepProps(input: SetupStepInput): Record<string, string | n
     out.wait_ms = Math.round(input.wait_ms);
   }
   if (input.version_ok != null) out.version_ok = input.version_ok === true;
+  if (input.discovery != null && LAN_DISCOVERY_CLASSES.includes(input.discovery)) out.discovery = input.discovery;
+  if (input.win_state0 != null) out.win_state0 = input.win_state0 === true;
   return out;
 }
 

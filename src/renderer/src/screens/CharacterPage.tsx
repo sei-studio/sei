@@ -42,6 +42,8 @@ import { PixelPortrait } from '../components/PixelPortrait';
 import { EditCharacterModal, type EditSection } from '../components/EditCharacterModal';
 import { SignInModal } from '../components/SignInModal';
 import { IdTag } from '../components/IdTag';
+import { AddCount } from '../components/AddCount';
+import { useBrowseStore } from '../lib/stores/useBrowseStore';
 import { ResetMemoryConfirmModal } from '../components/ResetMemoryConfirmModal';
 import { UnbindConfirmModal } from '../components/UnbindConfirmModal';
 import { KnowledgeModal } from '../components/KnowledgeModal';
@@ -144,6 +146,13 @@ function CharacterPageSkeleton({ onBack }: { onBack: () => void }): React.ReactE
 export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const t = useT();
   const navigate = useUiStore((s) => s.navigate);
+  // 261110: opened from the World tab (Back returns to World, not a chat) =
+  // show the World card's library add count beside the name. The number is
+  // the one the World page already fetched; no extra request.
+  const openedFromWorld = useUiStore((s) => s.homeTab === 'world' && s.chatReturnId !== id);
+  const worldAddCount = useBrowseStore(
+    (s) => s.entries.find((e) => e.id === id)?.addCount ?? null,
+  );
   const characters = useDataStore((s) => s.characters);
   const refreshCharacter = useDataStore((s) => s.refreshCharacter);
   const authState = useAuthStore((s) => s.state);
@@ -686,6 +695,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           <div className={styles.titleRow}>
             <h1 className={styles.title}>{character.name}</h1>
             {character.public_id ? <IdTag id={character.public_id} size="md" /> : null}
+            {openedFromWorld ? <AddCount count={worldAddCount} variant="page" /> : null}
             {kind === 'builtin' ? <span className={styles.kindChip}>{t('Built-in')}</span> : null}
           </div>
           {/* One meta line (was three stat boxes). "Bonded" only reads right

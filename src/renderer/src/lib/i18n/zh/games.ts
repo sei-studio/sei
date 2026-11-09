@@ -192,4 +192,6 @@ export const ZH_GAMES: Record<string, string> = {
   'Could not start sharing.': '无法开始共享。',
   'your game': '你的游戏',
   'Open {game} and its window will show up here.': '打开 {game}，它的窗口就会出现在这里。',
+  // Suggest-a-game hint (261109)
+  '{game} already works in Sei': '{game} 已经可以在 Sei 里玩了',
 };

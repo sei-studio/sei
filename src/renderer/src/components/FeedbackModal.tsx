@@ -9,12 +9,22 @@
  *
  * Form scaffolding cloned from SetNewPasswordModal (fields / error / done
  * sub-state swap); renders through ModalShell.
+ *
+ * 261109 (T379): with `onKnownGame` (the games picker's Suggest a game), a
+ * line under the field says when the typed game already works in Sei, with a
+ * button into it. Players kept suggesting "roblox" with the Roblox tile one
+ * row up. The lookup is our own catalog (shared/knownGame.ts), debounced so
+ * "draw" on the way to "drawing" does not flash. Submitting stays possible.
+ * Analytics: `suggest_game_hint_shown {game}` once per game per form,
+ * `suggest_game_hint_clicked {game, has_query}`, and the submit events carry
+ * `form` + `game_hint_shown` (main, feedbackSubmit.ts). Never the text.
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { clearFeedbackDraft, getFeedbackDraft, setFeedbackDraft } from '../lib/feedbackDraft';
 import { useT } from '../lib/i18n';
+import { matchKnownGame, type KnownGameMatch } from '@shared/knownGame';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { TextField } from './TextField';
@@ -43,7 +53,15 @@ export interface FeedbackModalProps {
   /** One extra line on the "Feedback sent" confirmation (261023: the games
    * picker points a game wish at Backseat, which already covers any game). */
   doneNote?: string;
+  /** Turns on the "already works in Sei" hint (Suggest a game): opens the
+   *  matched game. The caller closes this form. */
+  onKnownGame?: (match: KnownGameMatch) => void;
+  /** Analytics: which form this is (sent with the submit events). */
+  form?: 'suggest_game';
 }
+
+/** Typing pause before the hint follows the text. */
+export const GAME_HINT_DEBOUNCE_MS = 350;
 
 export function FeedbackModal({
   onClose,
@@ -52,6 +70,8 @@ export function FeedbackModal({
   fieldLabel = 'Feedback',
   placeholder = 'What should we improve?',
   doneNote,
+  onKnownGame,
+  form,
 }: FeedbackModalProps): React.ReactElement {
   const t = useT();
   const [email, setEmail] = useState('');
@@ -68,6 +88,23 @@ export function FeedbackModal({
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
+  // The hint follows the text after a short pause; a restored draft is
+  // checked at once.
+  const [hintText, setHintText] = useState(body);
+  useEffect(() => {
+    if (!onKnownGame) return;
+    const id = window.setTimeout(() => setHintText(body), GAME_HINT_DEBOUNCE_MS);
+    return () => window.clearTimeout(id);
+  }, [body, onKnownGame]);
+  const knownGame = onKnownGame ? matchKnownGame(hintText) : null;
+  const hintedGames = useRef(new Set<string>());
+  const knownGameId = knownGame?.gameId;
+  useEffect(() => {
+    if (!knownGameId || hintedGames.current.has(knownGameId)) return;
+    hintedGames.current.add(knownGameId);
+    sei.track('suggest_game_hint_shown', { game: knownGameId });
+  }, [knownGameId]);
+
   const canSubmit = body.trim().length > 0 && !submitting;
 
   const handleSubmit = async (e: React.FormEvent): Promise<void> => {
@@ -80,6 +117,7 @@ export function FeedbackModal({
       const res = await sei.feedbackSubmit({
         body: body.trim(),
         ...(trimmedEmail ? { email: trimmedEmail } : {}),
+        ...(form ? { form, gameHintShown: hintedGames.current.size > 0 } : {}),
       });
       if (res.ok) {
         clearFeedbackDraft(draftKey);
@@ -124,6 +162,27 @@ export function FeedbackModal({
             placeholder={t(placeholder)}
             aria-label={t(fieldLabel)}
           />
+          {knownGame && onKnownGame ? (
+            <div className={styles.gameHint} role="status">
+              <span className={styles.gameHintText}>
+                {t('{game} already works in Sei', { game: t(knownGame.name) })}
+              </span>
+              <Button
+                kind="secondary"
+                size="sm"
+                type="button"
+                onClick={() => {
+                  sei.track('suggest_game_hint_clicked', {
+                    game: knownGame.gameId,
+                    has_query: !!knownGame.query,
+                  });
+                  onKnownGame(knownGame);
+                }}
+              >
+                {t('Play {game}', { game: t(knownGame.name) })}
+              </Button>
+            </div>
+          ) : null}
         </div>
         {error ? (
           <p className={styles.errorText} role="alert">

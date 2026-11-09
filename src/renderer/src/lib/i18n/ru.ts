@@ -74,6 +74,9 @@ export const RU: Record<string, string> = {
   "Sort companions": "Сортировка компаньонов",
   "A–Z": "А–Я",
   "Newest": "Новые",
+  "Popular": "Популярные",
+  "Added by 1 player": "Добавил 1 игрок",
+  "Added by {n} players": "{n, plural, one {Добавил # игрок} few {Добавили # игрока} many {Добавили # игроков} other {Добавили # игрока}}",
   // ── chatui ──
   "Party full": "Команда заполнена",
   // ── screens-a ──
@@ -2431,4 +2434,14 @@ export const RU: Record<string, string> = {
   "Tell us if {name} breaks the rules.": "Сообщите нам, если {name} нарушает правила.",
   "Wipes chats and memories of you. Game inventory stays.": "Стирает чаты и воспоминания о вас. Инвентарь в игре останется.",
   "Upload a new image": "Загрузить новое изображение",
+  // ── open at login (261107) ──
+  "Open on login": "Открывать при входе",
+  "{name} comes back after a restart.": "{name} вернётся после перезагрузки.",
+  "Turn on": "Включить",
+  "About opening Sei at login": "Об открытии Sei при входе",
+  "Starts Sei in the background when you log in, so the companion on your desktop is back in their room. The Sei window stays closed until you open it.": "Запускает Sei в фоне при входе в систему, чтобы компаньон на рабочем столе снова был в своей комнате. Окно Sei остаётся закрытым, пока вы его не откроете.",
+  "Allow Sei in System Settings, under General > Login Items.": "Разрешите Sei в Системных настройках: Основные > Объекты входа.",
+  "Could not change this setting. Try again.": "Не удалось изменить настройку. Попробуйте ещё раз.",
+  // ── suggest-a-game hint (261109) ──
+  "{game} already works in Sei": "{game} уже работает в Sei",
 };

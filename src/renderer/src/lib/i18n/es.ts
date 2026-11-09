@@ -74,6 +74,9 @@ export const ES: Record<string, string> = {
   "Sort companions": "Ordenar compis",
   "A–Z": "A–Z",
   "Newest": "Más recientes",
+  "Popular": "Populares",
+  "Added by 1 player": "Añadido por 1 jugador",
+  "Added by {n} players": "Añadido por {n, plural, one {# jugador} other {# jugadores}}",
   // ── chatui ──
   "Party full": "Equipo completo",
   // ── screens-a ──
@@ -2431,4 +2434,14 @@ export const ES: Record<string, string> = {
   "Tell us if {name} breaks the rules.": "Avísanos si {name} incumple las normas.",
   "Wipes chats and memories of you. Game inventory stays.": "Borra los chats y los recuerdos sobre ti. El inventario del juego se queda.",
   "Upload a new image": "Subir una imagen nueva",
+  // ── open at login (261107) ──
+  "Open on login": "Abrir al iniciar sesión",
+  "{name} comes back after a restart.": "{name} vuelve después de reiniciar.",
+  "Turn on": "Activar",
+  "About opening Sei at login": "Acerca de abrir Sei al iniciar sesión",
+  "Starts Sei in the background when you log in, so the companion on your desktop is back in their room. The Sei window stays closed until you open it.": "Inicia Sei en segundo plano cuando inicias sesión, para que tu compi del escritorio vuelva a su habitación. La ventana de Sei sigue cerrada hasta que la abras.",
+  "Allow Sei in System Settings, under General > Login Items.": "Permite Sei en Ajustes del Sistema, en General > Ítems de inicio.",
+  "Could not change this setting. Try again.": "No se pudo cambiar este ajuste. Inténtalo de nuevo.",
+  // ── suggest-a-game hint (261109) ──
+  "{game} already works in Sei": "{game} ya funciona en Sei",
 };

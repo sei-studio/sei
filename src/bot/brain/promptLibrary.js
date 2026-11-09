@@ -270,7 +270,7 @@ export const ACTION_DESCRIPTIONS = {
     'Return the nearest matching block or creature (`{name:"<term>"}`) and its position; does not move.',
 
   explore:
-    'Walk a short hop (default 16, max 48) to load new terrain when goTo fails or find comes up empty; `{orientation:"forward|backwards|left|right"}` or `{angle:0-360}`.',
+    'Walk a short hop (default 16) to load new terrain when goTo fails or find comes up empty; `{orientation:"north|south|east|west|forward|left|right"}` or `{angle}`.',
 
   placeBlock:
     'Place one block beside you (`{block}`); optionally aim it with `against`. Use build for multi-cell shapes.',
@@ -320,7 +320,7 @@ export const ACTION_DESCRIPTIONS = {
 }
 
 // explore()'s description with the picture promise removed (Looking off).
-export const EXPLORE_DESCRIPTION_NOVISION = `Walk a short hop (default 16, max 48) to load new terrain when goTo fails or find comes up empty; \`{orientation:"forward|backwards|left|right"}\` or \`{angle:0-360}\`. Returns where you ended up as text.`
+export const EXPLORE_DESCRIPTION_NOVISION = `Walk a short hop (default 16) to load new terrain when goTo fails or find comes up empty; \`{orientation:"north|south|east|west|forward|left|right"}\` or \`{angle}\`. Returns where you ended up as text.`
 
 // 3f. Per-event (per-tick) framing appended to the seed for a fresh loop.
 //
@@ -393,12 +393,24 @@ export const REFLEX_ADDENDUM = (label, data) => {
 // hostile at low HP). Like the reflex warning, the physical response is already
 // happening on its own — this is a heads-up so the bot can react in character,
 // NOT an instruction to move.
+// 261109 (pass 48): the swim starts at 10 of 20 air (up to 19 under a
+// ceiling, pass 47), long before air hurts, but the old line handed her "you
+// nearly drowned" and she said it at full health ("almost drowned in a puddle
+// lol"), which the judge read as made up: 40 of the 56 off-labelled air lines
+// in the dev scorecards and compares. The air she has left now rides on the
+// event; "nearly drowned" is offered only when it was nearly gone.
 export const SURVIVAL_ADDENDUM_DROWNING = `Heads up — you were running out of air underwater and are AUTOMATICALLY swimming up to breathe; the escape is on reflex, so you do not need to move manually. If it fits you, warn the player in ONE short in-character line (you nearly drowned / coming up for air), or stay silent. Don't say you drowned — you're getting out.`
+export const SURVIVAL_ADDENDUM_AIR_TEXT = `Heads up: you are under water with {air} of 20 air left, so you are AUTOMATICALLY swimming up to breathe. The swim is on reflex, so you do not need to move. Air only hurts once it runs out, and yours has not, so this is a swim up for air, not a near-drowning. If it fits you, tell the player in ONE short in-character line that you are coming up for air, or stay silent.`
+export const AIR_NEARLY_GONE = 3
 export const SURVIVAL_ADDENDUM_RETREAT = `Heads up — your health is LOW and hostiles are near, so you are AUTOMATICALLY backing away from {label}{many} to survive; the retreat is on reflex, you do not need to move manually. Do NOT fight at this health. Warn the player in ONE short in-character line — you're hurt and pulling back — then make the call: call them to come help, or once you're clear wall yourself in with placed blocks. Don't say you were killed — you weren't.`
 export const SURVIVAL_ADDENDUM = (label, data) => {
   const n = Number(data?.count)
   const many = Number.isFinite(n) && n > 1 ? ` (${n} hostiles close)` : ''
-  if (data?.survivalKind === 'drowning') return SURVIVAL_ADDENDUM_DROWNING
+  if (data?.survivalKind === 'drowning') {
+    const air = Number(data?.air)
+    if (data?.air == null || !Number.isFinite(air) || air <= AIR_NEARLY_GONE) return SURVIVAL_ADDENDUM_DROWNING
+    return fillTemplate(SURVIVAL_ADDENDUM_AIR_TEXT, { air: String(Math.round(air)) })
+  }
   return fillTemplate(SURVIVAL_ADDENDUM_RETREAT, { label, many })
 }
 
@@ -539,8 +551,15 @@ export const GREETING_HINT =
   `You have not greeted the player yet this session — work one short in-character hello into this turn's say(), before or alongside whatever else you do.`
 
 export const PERSONALITY_TOOL_DESCRIPTIONS = {
+  // 261109 (pass 48): the timing sentence. say() is emitted up front, before
+  // the actions called with it run, but she wrote the line as if the turn had
+  // already played out: "table's down" with the placeBlock that then failed,
+  // "8 logs turned into planks" with the craft, "zombies are down" while the
+  // attack still ran (the top free-play wrong_or_hallucinated mechanism over
+  // the pass 45-47 compares and the 10-30..11-03 dev scorecards). The count
+  // sentence was shortened to keep the description about the same length.
   say:
-    `Speak ONE short line to the player - the only thing you produce that reaches them; your text output is a private scratchpad and is never shown. Call at most once per turn, and only when you genuinely have something to say. When you tell them how many of something you have, use the count on your inventory line this turn; it changes as you gather, craft and use things, so a number from earlier in the conversation may be out of date.`,
+    `Speak ONE short line to the player - the only thing you produce that reaches them; your text output is a private scratchpad and is never shown. Call at most once per turn, and only when you genuinely have something to say. It is heard before any action you call with it runs, so speak of that action, or one still running, as not done yet. When you say how many of something you have, use the count on your inventory line this turn, not a number from earlier in the conversation.`,
 
   remember:
     `Append one line to MEMORY.md in your own voice: an impression, your read on the player, or something they asked you to keep in mind (a plan you made together counts, and a task they gave you also goes in setGoal so you carry it out); never a coordinate dump or transaction log. MEMORY.md loads at the start of every future session and stays small, so save only what you would genuinely need then; routine greetings and ordinary moments do not belong in it. Record your misses too, when you were wrong or failed, so you don't repeat them.`,

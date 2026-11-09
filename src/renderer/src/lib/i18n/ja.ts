@@ -74,6 +74,9 @@ export const JA: Record<string, string> = {
   "Sort companions": "コンパニオンの並び替え",
   "A–Z": "A–Z",
   "Newest": "新着",
+  "Popular": "人気",
+  "Added by 1 player": "1人のプレイヤーが追加",
+  "Added by {n} players": "{n}人のプレイヤーが追加",
   // ── chatui ──
   "Party full": "パーティーが満員",
   // ── screens-a ──
@@ -2431,4 +2434,14 @@ export const JA: Record<string, string> = {
   "Tell us if {name} breaks the rules.": "{name}がルールに違反していたら教えてください。",
   "Wipes chats and memories of you. Game inventory stays.": "チャットとあなたについての記憶を消去します。ゲーム内の持ち物は残ります。",
   "Upload a new image": "新しい画像をアップロード",
+  // ── open at login (261107) ──
+  "Open on login": "ログイン時に開く",
+  "{name} comes back after a restart.": "再起動したあとも{name}が戻ってきます。",
+  "Turn on": "オンにする",
+  "About opening Sei at login": "ログイン時にSeiを開くについて",
+  "Starts Sei in the background when you log in, so the companion on your desktop is back in their room. The Sei window stays closed until you open it.": "ログインするとSeiをバックグラウンドで起動し、デスクトップのコンパニオンが部屋に戻ってきます。Seiのウィンドウは開くまで閉じたままです。",
+  "Allow Sei in System Settings, under General > Login Items.": "システム設定の「一般 > ログイン項目」でSeiを許可してください。",
+  "Could not change this setting. Try again.": "この設定を変更できませんでした。もう一度お試しください。",
+  // ── suggest-a-game hint (261109) ──
+  "{game} already works in Sei": "{game}はすでにSeiで遊べます",
 };

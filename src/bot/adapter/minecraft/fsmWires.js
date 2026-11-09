@@ -154,6 +154,7 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
         attackerKind: 'reflex',
         survivalKind: payload.kind ?? 'critical_retreat',
         count: typeof payload.count === 'number' ? payload.count : 1,
+        ...(typeof payload.air === 'number' ? { air: payload.air } : {}),
       })
     } catch (err) {
       console.error?.(`[sei/wires] onSurvival handler threw: ${err && err.message}`)

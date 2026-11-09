@@ -64,3 +64,34 @@ DETECTION ONLY: Sei cannot write its Fabric profile there, so the step says
 so, offers Launch (the bot joins any LAN world on a supported version) and
 points skins at the official launcher.
 
+
+## LAN world detection (lanWatcher, 260624 / 261107)
+
+Main finds the open world every 2s without multicast on macOS (signed apps
+cannot receive it there): list local listening TCP ports (`lsof`, or
+`netstat -ano` on Windows), then status-ping each over loopback
+(`mcPing.ts`). Only a port that answers the ping is ever reported.
+
+Issue #52 (Windows 11 26300.x with KB5127936): the TCP table reports
+listeners with state 0, so netstat leaves Minecraft's port out while it
+still accepts connections, and Sei sat on "No open world". When the netstat
+pass finds nothing, Windows adds two sources (`winLanFallback.ts`):
+- `stateless_enum`: `Get-NetTCPConnection -OwningProcess <java pids>`
+  through PowerShell, reading the raw CIM state. Rows with an empty / 0
+  state that look like listeners become candidates. Background refresh
+  every 10s (30s after six empty runs or once it found the world), only
+  while tasklist shows a Java process, and off for the session once netstat
+  itself has found a world. Never on the 2s poll.
+- `multicast`: Minecraft's `[MOTD]..[/MOTD][AD]port[/AD]` announcement on
+  224.0.2.60:4445 (`lanBeacon.ts`). Binding UDP can raise the Windows
+  Firewall prompt, so it starts only on evidence that the table is broken
+  (the state-0 signature, PowerShell or tasklist failing, netstat failing
+  or listing no listeners). Not on macOS / Linux.
+Ping order: Java-owned ports, then fallback hints, then the rest
+(`lanSources.ts`). Analytics, shape only: `lan_world_found {source,
+sources, java_owned, win_state0, beacon_active}` once per world, and a
+failed `game_setup_step` `lan_wait` carries main's `discovery` class
+(`enum_failed`, `no_java`, `pending`, `stateless_failed`,
+`no_java_listener`, `unverified`) and `win_state0`. There is no manual port
+entry; the bot CLI copy (`src/bot/adapter/minecraft/lanDiscovery.js`) has
+no fallback.

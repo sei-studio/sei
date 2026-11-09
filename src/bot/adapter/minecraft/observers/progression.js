@@ -294,7 +294,15 @@ export function nextNeedAfterGive(node, items = {}, given = '') {
   if (isWood && ('planks' in recipe || 'stick' in recipe)) {
     const wood = logsForRecipe(node, items)
     if (wood && wood.need > wood.logs) {
-      return `your next step (${label}) takes ${wood.need} ${wood.need === 1 ? 'log' : 'logs'} to make and you have ${wood.logs}, so you need ${wood.need - wood.logs} more for it`
+      // 261109 (pass 48): the other parts she is short of too. "get an iron
+      // pickaxe takes 1 log" read as the whole recipe, and she told the
+      // player one more log would make her an iron pickaxe with no iron.
+      const rest = Object.entries(recipe)
+        .filter(([k, n]) => k !== 'planks' && k !== 'stick' && (Number(items?.[k]) || 0) < n)
+        .map(([k, n]) => `${n} ${k} (you have ${Number(items?.[k]) || 0})`)
+      const logs = `${wood.need} ${wood.need === 1 ? 'log' : 'logs'}`
+      if (rest.length) return `your next step (${label}) takes ${logs} for its planks and sticks and you have ${wood.logs}, and it also takes ${rest.join(' and ')}`
+      return `your next step (${label}) takes ${logs} to make and you have ${wood.logs}, so you need ${wood.need - wood.logs} more for it`
     }
     return ''
   }

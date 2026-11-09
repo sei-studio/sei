@@ -41,12 +41,25 @@ export interface GameCatalogEntry {
   backseat?: boolean;
   /** The name the # GAMES prompt line uses, when it differs from the tile's. */
   promptName?: string;
+  /**
+   * 261109: other names players type for this game (short forms, the name in
+   * the UI languages), for the "Suggest a game" form's "already works" hint
+   * (knownGame.ts). Matched case and spacing insensitively, as whole words;
+   * the tile name is always matched too.
+   */
+  aliases?: readonly string[];
 }
 
 /** Order is the picker's tile order. */
 export const GAME_CATALOG: GameCatalogEntry[] = [
-  { id: 'minecraft', name: 'Minecraft', available: true, selfLaunch: true },
-  { id: 'chess', name: 'Chess', available: true },
+  {
+    id: 'minecraft',
+    name: 'Minecraft',
+    available: true,
+    selfLaunch: true,
+    aliases: ['Minecraft Java', '我的世界', 'マインクラフト', 'マイクラ', 'Майнкрафт'],
+  },
+  { id: 'chess', name: 'Chess', available: true, aliases: ['国际象棋', 'チェス', 'Шахматы', 'Xadrez', 'Ajedrez'] },
   { id: 'draw', name: 'Draw!', available: true },
   // 260803: no "Backseat" entry. Sharing your screen is not a game and it does
   // not belong in a grid beside chess, so it lives on the call controls' share
@@ -55,8 +68,18 @@ export const GAME_CATALOG: GameCatalogEntry[] = [
   // Game adapters (260908): both bot-backed games are live tiles. The
   // companion cannot start them itself (no selfLaunch): each needs a one-time
   // install pass (SMAPI / the DST helper mod) that only the player can run.
-  { id: 'stardew', name: 'Stardew Valley', available: true },
-  { id: 'dontstarve', name: "Don't Starve Together", available: true },
+  {
+    id: 'stardew',
+    name: 'Stardew Valley',
+    available: true,
+    aliases: ['Stardew', '星露谷物语', '星露谷', 'スターデューバレー'],
+  },
+  {
+    id: 'dontstarve',
+    name: "Don't Starve Together",
+    available: true,
+    aliases: ["Don't Starve", 'DST', '饥荒联机版', '饥荒', 'ドントスターブ'],
+  },
   // 260929: backseat games, derived from their registry so adding one there is
   // all it takes. The 260803 rule above still holds for the share button
   // itself; these tiles are GAMES the player plays while the companion
@@ -67,6 +90,8 @@ export const GAME_CATALOG: GameCatalogEntry[] = [
     available: true,
     backseat: true,
     promptName: g.promptName,
+    // The proper name ("Roblox"), not only the tile's "Roblox (Backseat)".
+    aliases: [g.name, ...(g.aliases ?? [])],
   })),
   { id: 'focus', name: 'Focus', available: false },
 ];

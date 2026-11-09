@@ -35,6 +35,8 @@ export interface BackseatGameDef {
   name: string;
   /** Picker tile label ("Roblox (Backseat)"). */
   tileName: string;
+  /** Other names players type for it (see GameCatalogEntry.aliases). */
+  aliases?: readonly string[];
   /** How the # GAMES prompt line names it, so the companion knows it watches. */
   promptName: string;
   /** Tile + info popup art, renderer-relative (served from public/). */
@@ -170,6 +172,7 @@ export const BACKSEAT_GAMES: readonly BackseatGameDef[] = [
     id: 'roblox',
     name: 'Roblox',
     tileName: 'Roblox (Backseat)',
+    aliases: ['罗布乐思', 'ロブロックス', 'Роблокс'],
     promptName: 'Roblox (by screen share)',
     // Original Sei art (261003): Sui watching a generic obby on a monitor,
     // generated from her own sprites. It replaced the Roblox press-kit render,

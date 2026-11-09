@@ -373,6 +373,16 @@ export function stopSeilinkHostForQuit(): void {
 }
 
 /** App start and after an account switch: bring back whoever moved in on this profile. */
+/** 261107: resolves once every start / stop / restore queued so far has run (a login launch judges the room after it). */
+export function seilinkHostIdle(): Promise<void> {
+  return serial(async () => undefined);
+}
+
+/** 261107: her host session is open (starting, running or restarting). */
+export function seilinkRoomUp(s: SeilinkHostStatus = status): boolean {
+  return s.state === 'starting' || s.state === 'running' || s.state === 'restarting';
+}
+
 export function restoreSeilinkHost(): Promise<void> {
   return serial(restoreNow);
 }

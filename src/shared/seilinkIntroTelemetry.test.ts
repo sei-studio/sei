@@ -235,6 +235,20 @@ describe('the guided setup (261106)', () => {
     expect(junk).not.toHaveProperty('changed');
   });
 
+  it('seilink_setup_step carries the login step answer (261107), and only there', () => {
+    expect(sanitizeSeilinkIntroTrack(SEILINK_SETUP_STEP_EVENT, { character_id: CID, step: 'login', action: 'completed', resumed: false, enabled: true, kept_default: true, ok: true, path: '/x' })).toEqual({
+      character_id: CID,
+      step: 'login',
+      action: 'completed',
+      resumed: false,
+      enabled: true,
+      kept_default: true,
+      ok: true,
+    });
+    expect(sanitizeSeilinkIntroTrack(SEILINK_SETUP_STEP_EVENT, { step: 'login', action: 'closed' })).toMatchObject({ step: 'login', action: 'closed' });
+    expect(sanitizeSeilinkIntroTrack(SEILINK_SETUP_STEP_EVENT, { step: 'room', action: 'completed', enabled: true, kept_default: false })).not.toHaveProperty('enabled');
+  });
+
   it('opened_from matches the editor session list', () => {
     expect([...SETUP_OPENED_FROM]).toEqual([...EDITOR_OPENED_FROM]);
   });

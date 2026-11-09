@@ -186,9 +186,24 @@
    * show through, so it must be theme-aware: near-black in dark, white in
    * light (a hardcoded #000 left a dark hole in the light-mode rail). */
   background: var(--surface-2);
-  border: 1px solid var(--rail-border);
   filter: saturate(0.9);
   transition: box-shadow 0.2s ease;
+}
+
+/* The resting line sits UNDER the avatar art (product call 261110): an
+ * opaque portrait covers it edge to edge, so it reads as a clean square,
+ * while a transparent PNG still shows the line around it. */
+.avatarClip::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius);
+  border: 1px solid var(--rail-border);
+  pointer-events: none;
+}
+
+.avatarClip > * {
+  position: relative;
 }
 
 /* Summoned socket: pulsing green ring (mockup .socket.summoned::after). */

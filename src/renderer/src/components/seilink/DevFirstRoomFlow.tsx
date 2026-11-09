@@ -16,6 +16,12 @@
  *                   (guided: she is still plain)
  *   phase=decorated the normal editor after decorating (a few items in)
  *   phase=closed    the editor closed: the decorated wallpaper, icons on top
+ *   phase=login     261107: the "Open on login" step the guided setup's Done
+ *                   brings up (over the decorated room)
+ *   loginitem=off|approval|fail  261107: the login item as a packaged mac/win
+ *                   build has it (not answered yet); "Turn on" then works, waits
+ *                   for macOS approval, or is refused. Without it only
+ *                   phase=login offers the step (as `off`)
  *   live=1          the phases follow the presses: "Set up together" opens the
  *                   guided editor, its Done (or close) goes back to the
  *                   wallpaper with what was saved
@@ -34,9 +40,23 @@ import { SeilinkHostView } from './host/SeilinkHostView';
 import { RoomEditor } from './RoomEditor';
 import { memoryRoomEditorSource, type RoomEditorSource } from './roomEditorSource';
 import { useLangStore, type UiLanguage } from '../../lib/i18n';
+import type { OpenAtLoginSource } from '../../lib/seilink/loginStep';
+
+/** 261107: a login item that is supported and not answered yet; `mode` says what "Turn on" gets. */
+function fakeLoginSource(mode: string): OpenAtLoginSource {
+  let enabled = false;
+  return {
+    get: async () => ({ supported: true, enabled, needsApproval: false, decided: false }),
+    set: async (on) => {
+      await new Promise((r) => setTimeout(r, 300));
+      enabled = on && mode !== 'fail';
+      return { supported: true, enabled, needsApproval: enabled && mode === 'approval', decided: true };
+    },
+  };
+}
 
 type Cb<T> = (v: T) => void;
-const PHASES = ['desktop', 'offer', 'prompt', 'later', 'editor', 'decorated', 'closed'] as const;
+const PHASES = ['desktop', 'offer', 'prompt', 'later', 'editor', 'decorated', 'closed', 'login'] as const;
 type Phase = (typeof PHASES)[number];
 
 const MENU_H = 26;
@@ -271,7 +291,7 @@ export function DevFirstRoomFlow(): React.ReactElement {
     const t = params.get('time');
     const time = t === 'dusk' || t === 'night' ? t : 'day';
     if (saved) return saved;
-    const base = phase === 'closed' || phase === 'decorated' ? decorated(main.manifest) : plainRoomState(main.manifest);
+    const base = phase === 'closed' || phase === 'decorated' || phase === 'login' ? decorated(main.manifest) : plainRoomState(main.manifest);
     return { ...base, time };
     // The phase only picks the starting room; a live run keeps its own.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -294,14 +314,16 @@ export function DevFirstRoomFlow(): React.ReactElement {
     () => (loaded && state ? memoryRoomEditorSource(loaded.packs.map((p) => ({ id: p.manifest.id, manifest: p.manifest, resolve: p.resolve, rev: 1 })), state) : null),
     // One source per editor visit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [loaded, phase === 'editor' || phase === 'decorated'],
+    [loaded, phase === 'editor' || phase === 'decorated' || phase === 'login'],
   );
+  const loginMode = params.get('loginitem') ?? (phase === 'login' ? 'off' : null);
+  const loginSource = useMemo(() => (loginMode ? fakeLoginSource(loginMode) : null), [loginMode]);
 
   if (error) return <div style={{ padding: 24, color: '#fff', background: '#111' }}>first-room flow: {error}</div>;
   if (!loaded || !bridge || !source || !wallPack) return <div style={{ height: '100vh', background: '#111' }} />;
 
   // On the desktop stage the editor covers the display: the menu bar, the icons and the dock bar are under it.
-  if (phase === 'editor' || phase === 'decorated') {
+  if (phase === 'editor' || phase === 'decorated' || phase === 'login') {
     return (
       <RoomEditor
         source={source}
@@ -316,7 +338,8 @@ export function DevFirstRoomFlow(): React.ReactElement {
           });
         }}
         fps={30}
-        initial={phase === 'decorated' ? { panel: 'items', selected: null } : undefined}
+        initial={phase === 'decorated' ? { panel: 'items', selected: null } : phase === 'login' ? { loginStep: true } : undefined}
+        openAtLogin={loginSource}
       />
     );
   }

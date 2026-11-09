@@ -7,15 +7,17 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { IpcChannel } from '../shared/ipc';
 import { overlayFrameLooksRight } from './velopackFastApply';
+import { SPLASH_SIZE, splashHtml } from './splashPage';
 
 export interface CreateMainWindowOptions {
   preloadPath: string;
   indexHtmlUrlOrPath: string;
-  /** Awaited between ready-to-show and the first show. The splash handoff
-   * lives here: the caller fades the splash out fully so the main window
-   * never appears while the logo is still on screen. Errors never block the
-   * show. */
+  /** Awaited between ready-to-show and the first show. The update splash
+   * handoff lives here: the caller closes the splash so the main window never
+   * appears while the logo is still on screen. Errors never block the show. */
   beforeFirstShow?: () => Promise<void>;
+  /** 261107: a login launch (seilink/loginLaunch.ts): load, but never show on its own. */
+  startHidden?: boolean;
 }
 
 export function createMainWindow(opts: CreateMainWindowOptions): BrowserWindow {
@@ -85,6 +87,8 @@ export function createMainWindow(opts: CreateMainWindowOptions): BrowserWindow {
   win.once('ready-to-show', () => {
     const reveal = (): void => {
       if (win.isDestroyed()) return;
+      // Something already showed it (a click on her, the Dock) while it loaded.
+      if (opts.startHidden) return;
       win.show();
       // DevTools only auto-opens with the dev-tools flag (SEI_DEV_TOOLS=1, set
       // by `npm run dev -- --tools` / `npm run dev:tools`). A plain `npm run
@@ -125,67 +129,20 @@ function splashLogoB64(): string | null {
   }
 }
 
-/** Splash window size in DIPs. The Windows update overlay frames are rendered at exactly this size too. */
-export const SPLASH_SIZE = { width: 320, height: 170 } as const;
-
-function escapeHtml(text: string): string {
-  return text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-}
-
 /**
- * The splash page. No card, no backdrop: just the white logo floating on the
- * desktop (the window itself is transparent). brightness(0) forces the glyphs
- * to black regardless of source color before invert(1) lifts them to white,
- * and the faint drop-shadow keeps it readable over a light desktop.
+ * The update splash (261030): a tiny frameless window with the white Sei logo
+ * and a status line ("Updating…", or the error line), placed in the middle of
+ * the primary display's work area, the spot Update.exe's overlay frames are
+ * drawn at. Self-contained data: URL (no renderer bundle, no dev-server
+ * dependency), so it appears instantly. The logo PNG (black pixel art on
+ * transparent) is read from the renderer's static assets and turned white
+ * with CSS (splashPage.ts). Returns null if the asset cannot be found; an
+ * update must never fail over a splash.
  *
- * The BODY owns a slow opacity transition: it fades in to FULLY OPAQUE on
- * first paint (the double-rAF guarantees the opacity:0 frame is committed
- * first) and holds there. No fade with `fade: false` (the update screen, which
- * must look identical to the frame Update.exe showed a moment before) or when
- * the system asks for reduced motion.
- *
- * `status` is the small white line under the logo ("Updating…"). It is
- * positioned absolutely, so the logo sits at the same spot with or without it.
- * Exported for the update overlay frames, which render this same page.
+ * product call (261108): only the update screen uses it. A normal launch no
+ * longer shows the logo window (it was the startup splash from 260728).
  */
-export function splashHtml(logoB64: string, opts: { status?: string; fade?: boolean } = {}): string {
-  const fade = opts.fade !== false;
-  const status = opts.status
-    ? `<div id="status" style="position:absolute;left:0;right:0;top:134px;text-align:center;color:#fff;` +
-      `font:600 13px 'Segoe UI','Microsoft YaHei UI','Microsoft YaHei',system-ui,sans-serif;letter-spacing:.2px;` +
-      `text-shadow:0 1px 6px rgba(0,0,0,.6);white-space:nowrap">${escapeHtml(opts.status)}</div>`
-    : '';
-  return (
-    '<!doctype html><meta charset="utf-8"><style>' +
-    'html,body{margin:0;height:100%;background:transparent;overflow:hidden}' +
-    `body{position:relative;opacity:${fade ? 0 : 1};transition:${fade ? 'opacity 800ms ease' : 'none'}}` +
-    '@media (prefers-reduced-motion: reduce){body{opacity:1!important;transition:none!important}}' +
-    '</style><body>' +
-    '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">' +
-    `<img alt="Sei" style="height:92px;filter:brightness(0) invert(1) ` +
-    `drop-shadow(0 2px 10px rgba(0,0,0,.55));image-rendering:pixelated" ` +
-    `src="data:image/png;base64,${logoB64}"></div>` +
-    status +
-    (fade ? '<script>requestAnimationFrame(()=>requestAnimationFrame(()=>{document.body.style.opacity="1"}))</script>' : '') +
-    '</body>'
-  );
-}
-
-/**
- * Startup splash (260728): a tiny frameless window with the white Sei logo,
- * shown the moment the app is ready and closed when the main window first
- * paints. Self-contained data: URL — no renderer bundle, no dev-server
- * dependency — so it appears instantly. The logo PNG (black pixel art on
- * transparent) is read from the renderer's static assets and inverted to
- * white with CSS. Returns null if the asset cannot be found; startup must
- * never fail over a splash.
- *
- * With `status` (261030) it is the Windows update screen: the same splash
- * with a status line, shown without the fade-in. Placed explicitly in the
- * middle of the primary display's work area, the spot Update.exe's overlay
- * frames are drawn at.
- */
-export function createSplashWindow(opts: { status?: string } = {}): BrowserWindow | null {
+export function createSplashWindow(status: string): BrowserWindow | null {
   const logoB64 = splashLogoB64();
   if (!logoB64) return null;
 
@@ -204,7 +161,7 @@ export function createSplashWindow(opts: { status?: string } = {}): BrowserWindo
     skipTaskbar: true,
     hasShadow: false,
     show: false,
-    focusable: !opts.status,
+    focusable: false,
     backgroundColor: '#00000000',
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
@@ -212,7 +169,7 @@ export function createSplashWindow(opts: { status?: string } = {}): BrowserWindo
   win.once('ready-to-show', () => {
     if (!win.isDestroyed()) win.show();
   });
-  const html = splashHtml(logoB64, { status: opts.status, fade: !opts.status });
+  const html = splashHtml(logoB64, { status });
   void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
   return win;
 }
@@ -272,7 +229,7 @@ export async function renderSplashFrames(
     for (const [name, status] of Object.entries(statuses)) {
       if (Date.now() > deadline) break;
       latest = null;
-      const html = splashHtml(logoB64, { status, fade: false });
+      const html = splashHtml(logoB64, { status });
       // The page reports when the logo is decoded, its fonts are in and two
       // frames have committed.
       const page = html.replace(
@@ -312,10 +269,9 @@ export async function renderSplashFrames(
 }
 
 /**
- * Fade the splash out over its body transition, then close it. Resolves once
- * the window is closed, so callers can sequence the main window's first show
- * strictly after it. No fade (260729): the logo cuts out the instant the main
- * window is ready — the fade-out just delayed startup by 850ms.
+ * Close the splash. Resolves once the window is closed, so callers can
+ * sequence the main window's first show strictly after it. No fade (260729):
+ * the logo cuts out the instant the main window is ready.
  */
 export function closeSplashWindow(win: BrowserWindow): Promise<void> {
   if (!win.isDestroyed()) win.close();

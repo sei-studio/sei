@@ -18,7 +18,7 @@
 //    result now says what reached the inventory, or where the drop still lies.
 import { Vec3 } from 'vec3'
 import mcDataLib from 'minecraft-data'
-import { digAction as realDigAction, digReachDistance, DIG_REACH } from './dig.js'
+import { digAction as realDigAction, digReachDistance, DIG_REACH, closeInForDig } from './dig.js'
 import { goTo as realGoTo, dropWalkOpts } from './pathfind.js'
 import { isUnreachable, noteUnreachable, isUnreachableResult } from './unreachable.js'
 import { inventoryCounts } from './pickup.js'
@@ -199,13 +199,11 @@ export async function digToolAction(args, bot, config, _deps) {
 
   // Walk into reach first, measured the way the dig measures it.
   let walk = null
+  // Never scaffold with what she came to dig.
+  const keep = items.length ? { keepItems: items } : {}
   if (digReachDistance(bot, pos) > DIG_REACH) {
     const timeoutMs = config?.pathfinder_timeout_ms ?? 12000
-    walk = await goTo(bot, pos.x, pos.y, pos.z, 3, timeoutMs, signal, {
-      reach: DIG_REACH - 0.3,
-      // Never scaffold with what she came to dig.
-      ...(items.length ? { keepItems: items } : {}),
-    })
+    walk = await goTo(bot, pos.x, pos.y, pos.z, 3, timeoutMs, signal, { reach: DIG_REACH - 0.3, ...keep })
     if (walk === 'aborted' || signal?.aborted) return 'aborted'
   }
 
@@ -221,6 +219,20 @@ export async function digToolAction(args, bot, config, _deps) {
     r = await dig()
   }
   if (r === 'aborted') return 'aborted'
+
+  // 261107 (pass 45): the walk said "reached" but stopped a step or two short
+  // of reach: one more short walk, then the dig again. Not after a walk that
+  // failed (that says the block is out of the way, and the close-in would
+  // only fail the same way).
+  if (typeof r === 'string' && r.startsWith('out of range') && walk === 'reached') {
+    const step = await closeInForDig(bot, pos, goTo, signal, keep)
+    if (step === 'aborted' || signal?.aborted) return 'aborted'
+    if (step != null) {
+      walk = step
+      r = await dig()
+      if (r === 'aborted') return 'aborted'
+    }
+  }
 
   if (typeof r === 'string' && r.startsWith('out of range')) {
     // She ended up near it and still could not reach it: the next find,

@@ -458,6 +458,8 @@ const api: RendererApi = {
     return () => ipcRenderer.off(IpcChannel.seilink.openChat, handler);
   },
   seilinkAvailability: () => ipcRenderer.invoke(IpcChannel.seilink.availability),
+  seilinkLoginItemGet: () => ipcRenderer.invoke(IpcChannel.seilink.loginItemGet),
+  seilinkLoginItemSet: (enabled, surface) => ipcRenderer.invoke(IpcChannel.seilink.loginItemSet, { enabled, surface }),
   onSeilinkAvailability: (cb) => {
     const handler = (_e: Electron.IpcRendererEvent, a: SeilinkAvailability) => cb(a);
     ipcRenderer.on(IpcChannel.seilink.availabilityChanged, handler);

@@ -384,11 +384,15 @@ export async function createRuntime(config, hooks) {
     } catch {}
   }
 
-  const fail = (message) => {
+  // `end` (261107): {endReason} for a live session that ended, as in the
+  // Minecraft runtime: a world that stopped answering is the player closing
+  // it (`world_closed`, which runs main's "next time" check).
+  const fail = (message, end = null) => {
     if (_stopped) return
     _stopped = true
     clearTimers()
-    try { onError({ error: classifyConnectError(message), message }) } catch (err) {
+    const extra = end?.endReason ? { endReason: end.endReason } : {}
+    try { onError({ error: classifyConnectError(message), message, ...extra }) } catch (err) {
       logger.warn(`onError hook threw: ${err && err.message}`)
     }
   }
@@ -463,7 +467,10 @@ export async function createRuntime(config, hooks) {
         logger.info(`[sei] DST world stopped answering (${Math.round(gap / 1000)}s) — stopping.`)
         void dropBrain().then(() => {
           try { onDisconnected({ reason: 'heartbeat lost', willRetry: false }) } catch {}
-          fail("GAME_WORLD_NOT_OPEN: The Don't Starve Together world closed or stopped answering. Host the world again and press Play.")
+          fail(
+            "GAME_WORLD_NOT_OPEN: The Don't Starve Together world closed or stopped answering. Host the world again and press Play.",
+            { endReason: 'world_closed' },
+          )
         })
       }
     }, 1_000)

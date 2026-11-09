@@ -2,7 +2,13 @@
    windowChrome.createSplashWindow) inside the main window, for the boot
    routing's wait. The splash floats a white logo on the desktop; here it sits
    on the app background, so it takes the text color. The fade starts after a
-   short delay, so an ordinary launch that routes at once shows nothing. */
+   short delay, so an ordinary launch that routes at once shows nothing.
+   product call (261108): the startup splash window is gone on a normal
+   launch, and the mark fading in a moment after the window opened read as
+   the same "Sei" splash. The delay is now 1.2 s: an ordinary launch shows
+   the plain app background until its first view, and only a boot that is
+   really waiting (auth state, a slow PC) gets the mark so it never looks
+   stuck on an empty window. */
 .root {
   position: fixed;
   inset: 0;
@@ -15,7 +21,7 @@
 
 .mark {
   opacity: 0;
-  animation: bootSplashIn 800ms ease 200ms forwards;
+  animation: bootSplashIn 800ms ease 1200ms forwards;
 }
 
 @keyframes bootSplashIn {
@@ -24,9 +30,9 @@
   }
 }
 
+/* Reduced motion: no fade, the mark just appears after the same delay. */
 @media (prefers-reduced-motion: reduce) {
   .mark {
-    animation: none;
-    opacity: 1;
+    animation-duration: 1ms;
   }
 }

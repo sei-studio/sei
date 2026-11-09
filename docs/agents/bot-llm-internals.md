@@ -548,3 +548,38 @@ built for the loop itself.
   opens the group: the keyless chain needs no setup.
 
 ---
+
+## Walks and dig reach (Minecraft skills)
+
+- **A walk does not end where its goal says.** mineflayer-pathfinder checks
+  the goal on the CELL the feet are in and stops once the body is within 0.35
+  of the last node on each axis, so the eyes can end ~0.7m from where the cell
+  center put them. Two reach numbers in `behaviors/dig.js` keep that from
+  failing digs: `DIG_REACH` (4.5, eyes to block center) decides when a dig,
+  gather or cuboid walks first, and that walk aims for `DIG_REACH - 0.3`;
+  `DIG_MAX_REACH` (5.0) is where `digAction` refuses (mineflayer's
+  `canDigBlock` allows 5.1, the 1.21 server 4.5 + 1 to the block's box). A dig
+  still a step short after its walk gets one short close-in walk
+  (`closeInForDig`, aimed at 3.5, 4s; only when the walk said `reached`) in the
+  dig tool and in gather before the
+  block is marked unreachable. Until 261107 (pass 45) the refusal was 4.5 and
+  "out of range (4.5m-5.0m) ... (the walk toward it ended: reached)" came up on
+  every gather_craft free-play run.
+- **goTo walks on while it is getting closer.** One leg is
+  `pathfinder_timeout_ms` (12s, about 25-35m without sprint). A leg that timed
+  out after closing at least `PROGRESS_MIN_M` (4m) walks again, up to
+  `PROGRESS_LEGS` (3) more legs, for goTo(player) and goTo(x,y,z)
+  (`registry.js`). A leg that went nowhere still ends the goTo, so a wedged
+  walk answers as fast as before. Repro: `pathing-repro.mjs` cases
+  `dig_buried_stone`, `stone_02b_*` and `goto_far_player`.
+- **placeBlock picks from every open cell in reach (261108, pass 46).**
+  `behaviors/placeSpots.js` ranks cells that are empty or hold a plant the
+  block replaces (grass tufts, tall grass, snow), with a full solid floor to
+  click, no body in them (her own hitbox included), in reach and in sight;
+  water comes last. place.js tries the best 3, then steps once to the nearest
+  open standing spot (`findOpenStandSpot`, 8 blocks) and tries again, and only
+  then puts it in water. Never click a tuft or water: the server places INTO a
+  replaceable block, so mineflayer waits on the cell above, times out, and the
+  tool said "no open spot" for a table that was in fact down. craft() with a
+  crafting_table in the bag puts it down instead of walking to a world table
+  more than 8m off, or when that walk fails. Repro: `place-repro.mjs`.

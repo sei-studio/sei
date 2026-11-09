@@ -12,6 +12,7 @@ import {
   classifyFailReason,
   mcScanFound,
   setupStepProps,
+  type LanDiscoveryClass,
   type McSetupStep,
   type SetupStepInput,
 } from '../shared/setupTelemetry';
@@ -184,10 +185,16 @@ export function trackOpenLauncher(res: OpenLauncherResult, sink: SetupSink = tra
  * A `game_setup_step` the renderer sent through analytics:track goes back
  * through the same builder, so a renderer bug cannot add a free-text field.
  */
-export function sanitizeRendererSetupProps(props: Record<string, unknown> | undefined): Record<string, string | number | boolean> {
+export function sanitizeRendererSetupProps(
+  props: Record<string, unknown> | undefined,
+  /** Main's LAN watcher diagnosis (issue #52), stamped on a failed lan_wait only. */
+  lanDiagnosis?: { discovery: LanDiscoveryClass; brokenStateSeen: boolean } | null,
+): Record<string, string | number | boolean> {
   const p = (props ?? {}) as Record<string, unknown>;
   const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+  const lanFail = p.step === 'lan_wait' && p.outcome === 'fail' && lanDiagnosis != null;
   return setupStepProps({
+    ...(lanFail ? { discovery: lanDiagnosis.discovery, win_state0: lanDiagnosis.brokenStateSeen } : {}),
     game: p.game === 'stardew' ? 'stardew' : 'minecraft',
     step: (str(p.step) ?? 'unknown') as SetupStepInput['step'],
     outcome: (str(p.outcome) ?? 'start') as SetupStepInput['outcome'],

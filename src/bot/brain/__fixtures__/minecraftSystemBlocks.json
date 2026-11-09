@@ -13,7 +13,7 @@
     "tools": [
       {
         "name": "say",
-        "description": "Speak ONE short line to the player - the only thing you produce that reaches them; your text output is a private scratchpad and is never shown. Call at most once per turn, and only when you genuinely have something to say. When you tell them how many of something you have, use the count on your inventory line this turn; it changes as you gather, craft and use things, so a number from earlier in the conversation may be out of date.",
+        "description": "Speak ONE short line to the player - the only thing you produce that reaches them; your text output is a private scratchpad and is never shown. Call at most once per turn, and only when you genuinely have something to say. It is heard before any action you call with it runs, so speak of that action, or one still running, as not done yet. When you say how many of something you have, use the count on your inventory line this turn, not a number from earlier in the conversation.",
         "input_schema": {
           "type": "object",
           "properties": {
@@ -298,18 +298,19 @@
       },
       {
         "name": "explore",
-        "description": "Walk a short hop (default 16, max 48) to load new terrain when goTo fails or find comes up empty; `{orientation:\"forward|backwards|left|right\"}` or `{angle:0-360}`.",
+        "description": "Walk a short hop (default 16) to load new terrain when goTo fails or find comes up empty; `{orientation:\"north|south|east|west|forward|left|right\"}` or `{angle}`.",
         "input_schema": {
           "type": "object",
           "properties": {
             "orientation": {
               "type": "string",
               "enum": [
+                "north",
+                "south",
+                "east",
+                "west",
                 "forward",
-                "forwards",
-                "backward",
                 "backwards",
-                "back",
                 "left",
                 "right",
                 "up",
@@ -703,10 +704,7 @@
               "type": "string",
               "enum": [
                 "forward",
-                "forwards",
-                "backward",
                 "backwards",
-                "back",
                 "left",
                 "right",
                 "up",
@@ -1067,7 +1065,7 @@
     "tools": [
       {
         "name": "say",
-        "description": "Speak ONE short line to the player - the only thing you produce that reaches them; your text output is a private scratchpad and is never shown. Call at most once per turn, and only when you genuinely have something to say. When you tell them how many of something you have, use the count on your inventory line this turn; it changes as you gather, craft and use things, so a number from earlier in the conversation may be out of date.",
+        "description": "Speak ONE short line to the player - the only thing you produce that reaches them; your text output is a private scratchpad and is never shown. Call at most once per turn, and only when you genuinely have something to say. It is heard before any action you call with it runs, so speak of that action, or one still running, as not done yet. When you say how many of something you have, use the count on your inventory line this turn, not a number from earlier in the conversation.",
         "input_schema": {
           "type": "object",
           "properties": {
@@ -1352,18 +1350,19 @@
       },
       {
         "name": "explore",
-        "description": "Walk a short hop (default 16, max 48) to load new terrain when goTo fails or find comes up empty; `{orientation:\"forward|backwards|left|right\"}` or `{angle:0-360}`.",
+        "description": "Walk a short hop (default 16) to load new terrain when goTo fails or find comes up empty; `{orientation:\"north|south|east|west|forward|left|right\"}` or `{angle}`.",
         "input_schema": {
           "type": "object",
           "properties": {
             "orientation": {
               "type": "string",
               "enum": [
+                "north",
+                "south",
+                "east",
+                "west",
                 "forward",
-                "forwards",
-                "backward",
                 "backwards",
-                "back",
                 "left",
                 "right",
                 "up",
@@ -1757,10 +1756,7 @@
               "type": "string",
               "enum": [
                 "forward",
-                "forwards",
-                "backward",
                 "backwards",
-                "back",
                 "left",
                 "right",
                 "up",
@@ -2120,7 +2116,7 @@
     "tools": [
       {
         "name": "say",
-        "description": "Speak ONE short line to the player - the only thing you produce that reaches them; your text output is a private scratchpad and is never shown. Call at most once per turn, and only when you genuinely have something to say. When you tell them how many of something you have, use the count on your inventory line this turn; it changes as you gather, craft and use things, so a number from earlier in the conversation may be out of date.",
+        "description": "Speak ONE short line to the player - the only thing you produce that reaches them; your text output is a private scratchpad and is never shown. Call at most once per turn, and only when you genuinely have something to say. It is heard before any action you call with it runs, so speak of that action, or one still running, as not done yet. When you say how many of something you have, use the count on your inventory line this turn, not a number from earlier in the conversation.",
         "input_schema": {
           "type": "object",
           "properties": {
@@ -2405,18 +2401,19 @@
       },
       {
         "name": "explore",
-        "description": "Walk a short hop (default 16, max 48) to load new terrain when goTo fails or find comes up empty; `{orientation:\"forward|backwards|left|right\"}` or `{angle:0-360}`. Returns where you ended up as text.",
+        "description": "Walk a short hop (default 16) to load new terrain when goTo fails or find comes up empty; `{orientation:\"north|south|east|west|forward|left|right\"}` or `{angle}`. Returns where you ended up as text.",
         "input_schema": {
           "type": "object",
           "properties": {
             "orientation": {
               "type": "string",
               "enum": [
+                "north",
+                "south",
+                "east",
+                "west",
                 "forward",
-                "forwards",
-                "backward",
                 "backwards",
-                "back",
                 "left",
                 "right",
                 "up",
