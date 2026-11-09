@@ -66,16 +66,12 @@ export function MoveInSheetView(p: MoveInSheetViewProps): React.ReactElement {
   const t = useT();
   return (
     <ModalShell title={t('Move {name} onto your desktop', { name: p.name })} width={560} onClose={p.busy ? undefined : p.onCancel}>
-      <p className={styles.line}>
-        {p.firstRoom
-          ? t('{name} starts on a plain background. You can set up the room together, step by step.', { name: p.name })
-          : t("{name}'s room stays as you left it.", { name: p.name })}
-      </p>
-      <ul className={styles.points}>
-        <li>{t('{name} lives on your wallpaper, behind your windows and icons.', { name: p.name })}</li>
-        <li>{t('The room pauses while windows cover it.')}</li>
-        <li>{t('Click {name} to chat. The dock in the room edits it, mutes idle lines, or moves {name} out.', { name: p.name })}</li>
-      </ul>
+      {/* 261110 (product call 261110): one short notice, no bullets. What the
+          room does on the desktop is shown when it goes live (LiveCard). */}
+      <div className={styles.notice} data-movein-notice="beta_v1">
+        <span className={styles.beta}>{t('Beta')}</span>
+        <p className={styles.noticeText}>{t('WorldLink is a beta feature that puts {name} in a virtual space on your desktop.', { name: p.name })}</p>
+      </div>
       {p.otherName ? (
         <p className={styles.line}>{t('{other} moves out first. One companion lives on the desktop at a time.', { other: p.otherName })}</p>
       ) : null}
@@ -144,6 +140,8 @@ export function MoveInSheet({ characterId, name, otherName, reason, entry, onClo
         pick_room: isFirst,
         swap: otherName !== null,
         preset_changed: false,
+        // 261110: the one-line beta notice in place of the bulleted sheet.
+        notice: 'beta_v1',
         ms_open: Date.now() - openedAt.current,
         ...(plain ? { plain_room: true } : {}),
         ...(entry ? { entry } : {}),
