@@ -76,7 +76,7 @@ describe('craftAction', () => {
     const craft = vi.fn(async () => {})
     const bot = makeBot({ items: [{ name: 'oak_planks', count: 8 }], table: { name: 'crafting_table' }, craft })
     const res = await craftAction({ item: 'chest', count: 1 }, bot, {})
-    expect(res).toBe('crafted 1 chest; it is in your inventory, not placed yet (placeBlock chest to put it down)')
+    expect(res).toBe('crafted 1 chest; it is in your inventory, not placed yet (placeBlock chest to put it down; it is down once that result says placed)')
     expect(craft).toHaveBeenCalledTimes(1)
   })
 
@@ -99,7 +99,7 @@ describe('craftAction', () => {
     // you have"; now the planks are made on the way.
     const bot = makeBot({ items: [{ name: 'oak_planks', count: 2 }, { name: 'oak_log', count: 6 }] })
     const res = await craftAction({ item: 'crafting_table' }, bot, {})
-    expect(res).toBe('crafted 1 crafting_table, made 4 oak_planks for it first; it is in your inventory, not placed yet (placeBlock crafting_table to put it down)')
+    expect(res).toBe('crafted 1 crafting_table, made 4 oak_planks for it first; it is in your inventory, not placed yet (placeBlock crafting_table to put it down; it is down once that result says placed)')
     expect(bot.craft).toHaveBeenCalledTimes(2)
   })
 
@@ -205,7 +205,7 @@ describe('craftAction', () => {
     goTo.mockImplementationOnce(async () => { walked = true; return 'reached' })
     const res = await craftAction({ item: 'chest', count: 1 }, bot, {})
     expect(goTo).toHaveBeenCalledWith(bot, 8, 64, 0, 2, expect.any(Number), undefined, { reach: 3.5 })
-    expect(res).toBe('crafted 1 chest; it is in your inventory, not placed yet (placeBlock chest to put it down)')
+    expect(res).toBe('crafted 1 chest; it is in your inventory, not placed yet (placeBlock chest to put it down; it is down once that result says placed)')
   })
 })
 

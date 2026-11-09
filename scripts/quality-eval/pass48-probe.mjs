@@ -60,6 +60,8 @@ const { createOrchestrator, _setTickIntervalForTests } = await imp('src/bot/brai
 const { createSessionState } = await imp('src/bot/brain/sessionState.js')
 const { createAnthropicProvider } = await imp('src/bot/brain/llm/anthropicProvider.js')
 const { loadPlayer, savePlayer, formatPlayerSeedBlock } = await imp('src/bot/brain/memory/player.js')
+// the tree's own craft note, so each arm shows the result its code writes
+const { placeNote } = await imp('src/bot/adapter/minecraft/behaviors/craft.js')
 _setTickIntervalForTests?.(10_000_000)
 
 const KEY = (process.env.ANTHROPIC_API_KEY || fs.readFileSync(path.join(os.homedir(), '.sei-dev/anthropic-test-key'), 'utf8')).trim()
@@ -115,10 +117,10 @@ const CASES = {
     me: v(184.5, 64, -3.5), alex: v(183.5, 64, -6.5),
     inv: [['oak_log', 4], ['oak_planks', 3], ['cobblestone', 12], ['furnace', 1], ['oak_sapling', 1], ['wooden_pickaxe', 1], ['dirt', 6], ['stone_pickaxe', 1]],
     steps: [...OPEN,
-      { t: 20, player: 'nice, you got the raw iron to me. now make a furnace by me so we can smelt it', uses: [['say', { text: 'no table in reach, making one right here by you' }], ['craft', { item: 'crafting_table', count: 1 }, { result: 'crafted 1 crafting_table, made 4 oak_planks for it first; it is in your inventory, not placed yet (placeBlock crafting_table to put it down)' }]] },
+      { t: 20, player: 'nice, you got the raw iron to me. now make a furnace by me so we can smelt it', uses: [['say', { text: 'no table in reach, making one right here by you' }], ['craft', { item: 'crafting_table', count: 1 }, { result: `crafted 1 crafting_table, made 4 oak_planks for it first${placeNote('crafting_table')}` }]] },
       { t: 24, uses: [['placeBlock', { block: 'crafting_table' }, { result: 'placed crafting_table on grass_block @185,63,-4' }]] },
       { t: 27, uses: [['say', { text: "table's down, furnace going in now" }], ['craft', { item: 'furnace', count: 1 }, { hold: true }]] },
-      { t: 30, resolve: 'crafted 1 furnace; it is in your inventory, not placed yet (placeBlock furnace to put it down)', live: true },
+      { t: 30, resolve: `crafted 1 furnace${placeNote('furnace')}`, live: true },
     ],
     judge: judgeEarly,
   },

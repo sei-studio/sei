@@ -280,10 +280,13 @@ function holdsCraftingTable(bot) {
 // 261011 (quality pass 2): "crafted 1 crafting_table" read as "the table is
 // down": in the eval she told the player a crafted table or furnace was
 // placed three times while it sat in her bag. Say where it is.
+// 261109 (pass 48): and when it counts as down. The next turn she called
+// placeBlock with "furnace is down" in the same turn, heard before the place
+// ran (and failed); a brain probe of that turn went 7/30 -> 1/30.
 const PLACEABLE_STATIONS = new Set(['crafting_table', 'furnace', 'blast_furnace', 'smoker', 'chest', 'barrel', 'bed', 'white_bed'])
 export function placeNote(item) {
   if (!PLACEABLE_STATIONS.has(item) && !/_bed$/.test(item)) return ''
-  return `; it is in your inventory, not placed yet (placeBlock ${item} to put it down)`
+  return `; it is in your inventory, not placed yet (placeBlock ${item} to put it down; it is down once that result says placed)`
 }
 
 export async function craftAction(args, bot, config) {
