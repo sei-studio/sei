@@ -28,6 +28,8 @@ import {
   type PortraitVersionsState,
   type PrefsGetResult,
   type BrowseEntry,
+  type BrowsePage,
+  BROWSE_SORTS,
   type CreditsStatus,
   type SubscriptionStatusInfo,
   type CreditsHardStopEvent,
@@ -4113,24 +4115,30 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // for anon callers. Main pre-joins each row with the public Storage URL
   // and computes inMyLibrary against the local characters/index.json so the
   // renderer never crosses two stores per row.
+  //
+  // 261110 (product call): `sort` ('popular' default in the renderer,
+  // 'recent', 'alpha') is applied server-side by
+  // search_public_characters_sorted, and each entry carries its library add
+  // count (character_library_counts, aggregate only). Both degrade: no sorted
+  // RPC = the old newest-first RPC with `sorted: false` (the renderer sorts
+  // the loaded pages, as before); no counts RPC = `addCount: null` (hidden).
+  // See cloud/browseQuery.ts.
   const BrowseListSchema = z.object({
     query: z.string().max(200),
     limit: z.number().int().min(1).max(50),
     offset: z.number().int().min(0),
+    sort: z.enum(BROWSE_SORTS).optional(),
   });
-  ipcMain.handle(IpcChannel.browse.list, async (_event, argsRaw: unknown): Promise<{ entries: BrowseEntry[]; hasMore: boolean }> => {
+  ipcMain.handle(IpcChannel.browse.list, async (_event, argsRaw: unknown): Promise<BrowsePage> => {
     const parsed = BrowseListSchema.parse(argsRaw);
     const { getClient } = await import('./auth/supabaseClient');
     const { getStoragePublicUrl } = await import('./cloud/cloudCharacterClient');
-    const { data: rows, error } = await getClient().rpc('search_public_characters', {
-      search_query: parsed.query,
-      page_limit: parsed.limit,
-      page_offset: parsed.offset,
-    });
-    if (error) {
-      console.warn(`[sei] browse:list rpc failed: ${error.message}`);
-      return { entries: [], hasMore: false };
+    const { fetchBrowseRows, fetchAddCounts } = await import('./cloud/browseQuery');
+    const listing = await fetchBrowseRows(getClient(), parsed);
+    if (listing.error !== null) {
+      return { entries: [], hasMore: false, sorted: false, failure: 'rpc_failed' };
     }
+    const rows = listing.rows;
 
     // Precompute the in-library set so each BrowseEntry.inMyLibrary is O(1).
     // Strict definition (the World pill must match what HomeGrid actually
@@ -4178,7 +4186,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       .map((r) => (typeof r.owner === 'string' ? r.owner : ''))
       .filter((x) => !!x);
     const { getProfileNames } = await import('./cloud/cloudCharacterClient');
-    const nameByOwner = await getProfileNames(ownerIdsForNames);
+    const [nameByOwner, addCounts] = await Promise.all([
+      getProfileNames(ownerIdsForNames),
+      fetchAddCounts(getClient(), rowsArr.map((r) => String(r.id))),
+    ]);
 
     const entries: BrowseEntry[] = rowsArr.map((row: Record<string, unknown>) => {
       const personaSource = typeof row.persona_source === 'string' ? row.persona_source : '';
@@ -4214,9 +4225,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
           ? row.updated_at
           : (typeof row.created_at === 'string' ? row.created_at : ''),
         inMyLibrary: localIds.has(id),
+        addCount: addCounts ? (addCounts.get(id) ?? 0) : null,
       };
     });
-    return { entries, hasMore: entries.length === parsed.limit };
+    return { entries, hasMore: entries.length === parsed.limit, sorted: listing.sorted };
   });
 
   // --- Phase 12 — Publish-with-moderation: TOMBSTONE (260525-qy0 Task 4) ---

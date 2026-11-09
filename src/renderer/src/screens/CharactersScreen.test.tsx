@@ -323,4 +323,20 @@ describe('CharactersScreen (B4 Home / World refactor)', () => {
     const card = readFileSync(BROWSE_CARD, 'utf-8');
     expect(card.includes('readyOverride')).toBe(true);
   });
+  it('Test 21: World auto-loads on scroll (no Load more button) and defaults to Popular (261110)', () => {
+    const source = readFileSync(TSX_PATH, 'utf-8');
+    expect(source.includes("t('Load more')")).toBe(false);
+    expect(source.includes('IntersectionObserver')).toBe(true);
+    expect(source.includes('sentinelRef')).toBe(true);
+    expect(source.includes('AUTOLOAD_MARGIN_PX')).toBe(true);
+    // Popular is listed first; the selected value comes from the store
+    // (DEFAULT_BROWSE_SORT), not component state.
+    const popular = source.indexOf('<option value="popular">');
+    expect(popular).toBeGreaterThan(-1);
+    expect(popular).toBeLessThan(source.indexOf('<option value="recent">'));
+    expect(source.includes("useState<'alpha' | 'recent'>")).toBe(false);
+    expect(source.includes('mergeWorldEntries(')).toBe(true);
+    const css = readFileSync(CSS_PATH, 'utf-8');
+    expect(css.includes('.autoloadSentinel')).toBe(true);
+  });
 });

@@ -74,6 +74,9 @@ export const ES: Record<string, string> = {
   "Sort companions": "Ordenar compis",
   "A–Z": "A–Z",
   "Newest": "Más recientes",
+  "Popular": "Populares",
+  "Added by 1 player": "Añadido por 1 jugador",
+  "Added by {n} players": "Añadido por {n, plural, one {# jugador} other {# jugadores}}",
   // ── chatui ──
   "Party full": "Equipo completo",
   // ── screens-a ──

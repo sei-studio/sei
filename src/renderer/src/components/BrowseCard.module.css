@@ -122,7 +122,18 @@
   text-overflow: ellipsis;
 }
 
+/* "by {creator}" left, add count right (261110). The creator ellipsizes; the
+ * count never shrinks. */
+.byRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
 .by {
+  flex: 1;
+  min-width: 0;
   color: rgba(255, 255, 255, 0.72);
   font-family: var(--sans);
   font-size: 12px;

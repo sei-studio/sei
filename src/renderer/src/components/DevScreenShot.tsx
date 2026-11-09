@@ -27,6 +27,9 @@
  *                    over the gear (261107); without it the hint is marked
  *                    seen so other character shots stay as they were.
  *
+ * The World tab and a profile opened from World: ?dashshot=screen&screen=world|worldprofile
+ * (DevWorldShot, 261110).
+ *
  * Other surfaces already have harnesses: ?dashshot=creditwall&part=modal|credits,
  * ?dashshot=signinmodal, ?dashshot=authchoice, ?dashshot=onboard.
  */

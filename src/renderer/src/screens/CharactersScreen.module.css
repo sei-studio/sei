@@ -105,8 +105,9 @@
   color: var(--muted);
 }
 
-/* Scrollable list region: holds the grid plus the "Load more" row and
- * loading/empty/error states, so paging keeps working while the top bar pins. */
+/* Scrollable list region: holds the grid plus the auto-load sentinel, the
+ * retry row and loading/empty/error states, so paging keeps working while the
+ * top bar pins. */
 .scroll {
   flex: 1;
   min-height: 0;
@@ -155,6 +156,15 @@
   display: flex;
   justify-content: center;
   padding: var(--space-md) 0;
+}
+
+/* Auto-load target under the World grid (261110). Zero visual footprint: the
+ * negative margin cancels the .scroll flex gap it would otherwise add. */
+.autoloadSentinel {
+  flex-shrink: 0;
+  height: 1px;
+  margin-top: calc(-1 * var(--space-md-plus));
+  pointer-events: none;
 }
 
 /* Wireframe placeholder card shown in unfilled grid slots while a World page
